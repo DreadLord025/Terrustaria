@@ -404,12 +404,13 @@ fn shared_crate_loop<R: PrefixRandom + ?Sized>(
             flag5 = false;
         }
         // `:8635-8652` — the Dungeon crate: the Lock Box + the two
-        // optional tails (Golden Key 5-15, bone-type bars 25-50).
+        // optional tails (Books 149 ×5-15, the three dungeon-brick
+        // picks 134/137/139 ×25-50).
         if (crate_kind == 3205 || crate_kind == 3984) && flag5 && rng.next_max(max_value) == 0 {
             quick_spawn(rng, out, 3085, 1);
             flag5 = false;
             if rng.next_max(2) == 0 {
-                quick_spawn(rng, out, 149, range(rng, 5, 16));
+                quick_spawn(rng, out, 149, range(rng, 5, 16)); // Book
             }
             if rng.next_max(2) == 0 {
                 let item = [134, 137, 139][rng.next_max(3) as usize];

@@ -59,6 +59,45 @@ pub fn is_misc_bag(kind: u16) -> bool {
     matches!(kind, 3093 | 4345 | 4410 | 6142 | 3085 | 4879)
 }
 
+/// One located carry slot for [`consume_item`]: the 58-slot inventory
+/// (the grid 0..50 then the coin rows 50..54 then the ammo rows
+/// 54..58 — the C# `inventory[0..58]` order) or the open void bag's
+/// 40 slots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CarryLoc {
+    Inventory(usize),
+    VoidBag(usize),
+}
+
+/// `Player.ConsumeItem(type, reverseOrder: false, includeVoidBag)`
+/// (`Player.cs:9269-9308`) over a LOCATED slot list: the first
+/// `stack > 0 && type` slot in the C# scan order loses one (at 0 it
+/// turns to air — the caller applies that via the returned loc);
+/// `None` when nothing matched. The `includeVoidBag` half scans the
+/// vault ONLY when `use_void_bag` (the caller resolves
+/// `Player.useVoidBag`, `:23171-23181`). The wiring passes the slots
+/// in the C# order; the reverseOrder arm has no caller here (the
+/// LockBox gate passes false, `ItemSlot.cs:1838`).
+pub fn consume_item_loc(
+    kind: u16,
+    inventory: &[crate::item::ItemSlot],
+    void_bag: Option<&crate::bank::BankStore>,
+) -> Option<CarryLoc> {
+    for (i, s) in inventory.iter().enumerate() {
+        if s.count > 0 && s.kind == kind {
+            return Some(CarryLoc::Inventory(i));
+        }
+    }
+    if let Some(vault) = void_bag {
+        for (i, s) in vault.iter().enumerate() {
+            if s.count > 0 && s.kind == kind {
+                return Some(CarryLoc::VoidBag(i));
+            }
+        }
+    }
+    None
+}
+
 /// `Player.OpenHerbBag(int bagType)` (`Player.cs:9367-9441`): 2-4
 /// herbs (+1 on a 1/3), each a 14-way pick with a 2-4 stack (+1-4 on
 /// a 1/3).

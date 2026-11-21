@@ -1413,8 +1413,20 @@ impl App {
         let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
         let mut grants = Vec::new();
         crate::boss_bags::open_boss_bag(bag.kind, &env, &mut rng, &mut grants);
-        // The fill: the favourite guard + the per-fill chime ride the same
-        // stream. The vault is the per-item last resort when enabled.
+        self.fill_quick_spawn_grants(&mut grants, &mut rng);
+        *self.rngs.global() = rng;
+        self.finish_container_open(slot);
+    }
+
+    /// The `QuickSpawnItem` → `GetOrDropItem` fill shared by every
+    /// container open (W4-f35): the favourite guard + the per-fill
+    /// chime ride the caller's stream; the vault is the per-item last
+    /// resort when enabled.
+    fn fill_quick_spawn_grants(
+        &mut self,
+        grants: &mut Vec<crate::boss_bags::BagGrant>,
+        rng: &mut tr_core::UnifiedRandom,
+    ) {
         let favs = self.favorite_slots.clone();
         let fav = move |i: usize| favs.contains(&i);
         let App {
@@ -1427,7 +1439,7 @@ impl App {
         } = self;
         let vault_enabled = player.as_ref().is_some_and(|p| p.void_vault_enabled);
         let center = player.as_ref().map(|p| p.center()).unwrap_or((0.0, 0.0));
-        for g in grants {
+        for g in grants.drain(..) {
             let is_coin = registry::is_coin(g.item);
             let mut left = g.stack;
             if is_coin {
@@ -1444,7 +1456,7 @@ impl App {
                     let s = &mut *slots[i];
                     let max = registry::max_stack(g.item);
                     if s.count > 0 && s.count < max && s.kind == g.item && s.prefix == g.prefix {
-                        audio.play_pickup_sound(true, &mut rng);
+                        audio.play_pickup_sound(true, rng);
                         let moved = left.min(max - s.count);
                         s.count += moved;
                         left -= moved;
@@ -1457,7 +1469,7 @@ impl App {
                 if left > 0 {
                     for i in (0..n).rev() {
                         if slots[i].count == 0 {
-                            audio.play_pickup_sound(true, &mut rng);
+                            audio.play_pickup_sound(true, rng);
                             *slots[i] = ItemSlot {
                                 kind: g.item,
                                 name: registry::name(g.item),
@@ -1483,7 +1495,7 @@ impl App {
                     &fav,
                     &mut |moved| {
                         if moved > 0 {
-                            audio.play_pickup_sound(false, &mut rng);
+                            audio.play_pickup_sound(false, rng);
                         }
                     },
                 );
@@ -1500,7 +1512,7 @@ impl App {
                             registry::max_stack(g.item),
                             is_coin,
                             audio,
-                            &mut rng,
+                            rng,
                         );
                         left -= taken;
                     }
@@ -1529,19 +1541,150 @@ impl App {
                 ));
             }
         }
-        // The bag stack decrements AFTER the grants (`ItemSlot.cs:1795-1799`);
-        // at 0 it turns to air (`SetDefaults(0)`).
-        let bag_slot = &mut inventory[slot];
+    }
+
+    /// `ItemSlot.TryOpenContainer`'s post-grant tail
+    /// (`UI/ItemSlot.cs:1793-1803`): the container stack decrements
+    /// AFTER the grants (at 0 → air), sound 7, `stackSplit = 30`,
+    /// `mouseRightRelease = false`. The caller restores the global
+    /// stream BEFORE this call (the rng snapshot convention).
+    fn finish_container_open(&mut self, slot: usize) {
+        let bag_slot = &mut self.inventory[slot];
         bag_slot.count -= 1;
         if bag_slot.count == 0 {
             *bag_slot = EMPTY_SLOT;
         }
-        let (kind, count) = (inventory[slot].kind, inventory[slot].count);
-        *self.rngs.global() = rng;
+        let (kind, count) = (self.inventory[slot].kind, self.inventory[slot].count);
         self.audio.play("Grab"); // `SoundEngine.PlaySound(7)` (`:1800`)
         self.stack_split = 30; // `:1801`
         self.ui_right_press = false; // `:1802` — `Main.mouseRightRelease = false`
         self.coin_slot.force_slot_state(slot as i32, 0, kind, count);
+    }
+
+    /// `ItemSlot.TryOpenContainer_GrantItems` (`UI/ItemSlot.cs:1806-
+    /// 1865`) over the NON-boss-bag openable kinds (W4-f35): the
+    /// fishing crates → the herb bag → the can of worms → the oyster →
+    /// the goodie bag → the chillet egg → the Lock Box (the Golden Key
+    /// CONSUME gate) → the Shadow Lockbox (the Shadow Key PRESENCE
+    /// gate) → the Present → the legacy presents, in the C# else-if
+    /// order. A refused key gate returns WITHOUT the stack decrement /
+    /// sound / cooldown (`:1838-1841/:1846-1849` return false).
+    fn open_container_click(&mut self, slot: usize) {
+        let kind = self.inventory[slot].kind;
+        if kind == 0 || self.inventory[slot].count == 0 {
+            return;
+        }
+        let remix = self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+        let ftw = self
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        let mut rng = std::mem::replace(self.rngs.global(), tr_core::UnifiedRandom::default());
+        let mut grants = Vec::new();
+        if crate::fishing_crates::is_fishing_crate(kind) {
+            // `:1812-1815` — the crate trees read the skyblock lowTiles
+            // seam (false — the port carries no gen-time tile census).
+            let env = crate::fishing_crates::CrateEnv {
+                remix,
+                skyblock_low_tiles: false,
+            };
+            crate::fishing_crates::open_fishing_crate(kind, &env, &mut rng, &mut grants);
+        } else if kind == 3093 {
+            crate::misc_bags::open_herb_bag(&mut rng, &mut grants); // `:1816-1819`
+        } else if kind == 4345 {
+            crate::misc_bags::open_can_of_worms(&mut rng, &mut grants); // `:1820-1823`
+        } else if kind == 4410 {
+            crate::misc_bags::open_oyster(&mut rng, &mut grants); // `:1824-1827`
+        } else if kind == crate::presents::GOODIE_BAG {
+            crate::presents::open_goodie_bag(&mut rng, &mut grants); // `:1828-1831`
+        } else if kind == 6142 {
+            crate::misc_bags::open_chillet_egg(&mut rng, &mut grants); // `:1832-1835`
+        } else if kind == 3085 {
+            // `:1836-1843` — the Golden Key CONSUME gate
+            // (`ConsumeItem(327, reverseOrder: false, includeVoidBag:
+            // true)`): the 58-slot scan then the OPEN void bag. A miss
+            // refuses the whole open (no decrement, no sound).
+            let vault_open = crate::chest::use_void_bag(self)
+                && self.player.as_ref().is_some_and(|p| p.void_vault_enabled);
+            let carry: Vec<ItemSlot> = self
+                .inventory
+                .iter()
+                .chain(self.equip.coins.iter())
+                .chain(self.equip.ammo.iter())
+                .copied()
+                .collect();
+            let vault = if vault_open {
+                self.player.as_ref().map(|p| &p.banks[3])
+            } else {
+                None
+            };
+            match crate::misc_bags::consume_item_loc(327, &carry, vault) {
+                None => {
+                    *self.rngs.global() = rng;
+                    return;
+                }
+                Some(crate::misc_bags::CarryLoc::Inventory(i)) => {
+                    if i < crate::item::INV {
+                        self.inventory[i].count -= 1;
+                        if self.inventory[i].count == 0 {
+                            self.inventory[i] = EMPTY_SLOT;
+                        }
+                    } else if i < crate::item::INV + 4 {
+                        let c = &mut self.equip.coins[i - crate::item::INV];
+                        c.count -= 1;
+                        if c.count == 0 {
+                            *c = EMPTY_SLOT;
+                        }
+                    } else {
+                        let a = &mut self.equip.ammo[i - crate::item::INV - 4];
+                        a.count -= 1;
+                        if a.count == 0 {
+                            *a = EMPTY_SLOT;
+                        }
+                    }
+                }
+                Some(crate::misc_bags::CarryLoc::VoidBag(i)) => {
+                    if let Some(p) = self.player.as_mut() {
+                        p.banks[3][i].count -= 1;
+                        if p.banks[3][i].count == 0 {
+                            p.banks[3][i] = EMPTY_SLOT; // `TurnToAir` (`:9303`)
+                        }
+                    }
+                }
+            }
+            crate::misc_bags::open_lock_box(remix, ftw, &mut rng, &mut grants);
+        } else if kind == 4879 {
+            // `:1844-1851` — the Shadow Key PRESENCE gate
+            // (`HasItemInInventoryOrOpenVoidBag(329)`, `Player.cs:55918-
+            // 55929`): NOT consumed.
+            let has_in_inv = self
+                .inventory
+                .iter()
+                .chain(self.equip.coins.iter())
+                .chain(self.equip.ammo.iter())
+                .any(|s| s.count > 0 && s.kind == 329);
+            let has_in_vault = crate::chest::use_void_bag(self)
+                && self.player.as_ref().is_some_and(|p| {
+                    p.void_vault_enabled && p.banks[3].iter().any(|s| s.count > 0 && s.kind == 329)
+                });
+            if !has_in_inv && !has_in_vault {
+                *self.rngs.global() = rng;
+                return;
+            }
+            crate::misc_bags::open_shadow_lockbox(remix, &mut rng, &mut grants);
+        } else if kind == crate::presents::PRESENT {
+            crate::presents::open_present(self.world.hard_mode, &mut rng, &mut grants);
+        // `:1852-1855`
+        } else if crate::presents::is_legacy_present(kind) {
+            crate::presents::open_legacy_present(self.world.hard_mode, &mut rng, &mut grants);
+        // `:1856-1863`
+        } else {
+            *self.rngs.global() = rng;
+            return; // `:1858-1861` — not an openable kind
+        }
+        self.fill_quick_spawn_grants(&mut grants, &mut rng);
+        *self.rngs.global() = rng;
+        self.finish_container_open(slot);
     }
 
     pub(crate) fn handle_inventory_clicks(&mut self) {
@@ -2077,19 +2220,27 @@ impl App {
         let can_take = held.count == 0 || (can_stack && held.count < registry::max_stack(target.kind));
         // `RightClick`'s `OpenableBag` arm (`ItemSlot.cs:1660-1667`, W4-f35):
         // an air cursor or one that cannot stack with the cell opens the
-        // boss bag on the press edge (`Main.mouseRightRelease`) — BEFORE
+        // container on the press edge (`Main.mouseRightRelease`) — BEFORE
         // the `HasItemSwap` cycle (`:1668`). The arm RETURNS on every held
         // frame too (no split pickup while a bag sits under the pointer).
-        // The C# set is `ItemID.Sets.OpenableBag` (`ItemID.cs:1384`); only
-        // the `BossBag` subset has a ported opener (`Player.OpenBossBag`) —
-        // the crates/presents/herb bags stay unported (they fall through
-        // to the swap/split arms below, the recorded gap).
+        // The C# set is `ItemID.Sets.OpenableBag` (`ItemID.cs:1384`): the
+        // boss bags + the fishing crates + the presents + the misc bags —
+        // every kind now has a ported opener (the four family modules).
         if !left
             && (held.count == 0 || !can_stack)
-            && crate::boss_bags::is_boss_bag(target.kind)
+            && (crate::boss_bags::is_boss_bag(target.kind)
+                || crate::fishing_crates::is_fishing_crate(target.kind)
+                || crate::misc_bags::is_misc_bag(target.kind)
+                || target.kind == crate::presents::GOODIE_BAG
+                || target.kind == crate::presents::PRESENT
+                || crate::presents::is_legacy_present(target.kind))
         {
             if right_edge {
-                self.open_boss_bag_click(slot);
+                if crate::boss_bags::is_boss_bag(target.kind) {
+                    self.open_boss_bag_click(slot);
+                } else {
+                    self.open_container_click(slot);
+                }
             }
             return;
         }
@@ -2800,8 +2951,8 @@ impl App {
     /// (possibly drained) slot so the caller can write it back to its
     /// container. The ctx-0/3 `SwapEquip` ladder (`:1685-1697`) and the
     /// `HasItemSwap` cycle (`:1668-1675`) run in the callers BEFORE this split
-    /// (S1-P-i48); the OpenableBag arm (`:1660-1667`) has no container-opening
-    /// state in the port.
+    /// (S1-P-i48); the OpenableBag arm (`:1660-1667`) opens the container
+    /// in the callers BEFORE this split (W4-f35 — every bag kind).
     fn right_click_split(&mut self, mut slot: ItemSlot) -> ItemSlot {
         if self.stack_split > 1 || slot.kind == 0 || slot.count == 0 {
             return slot; // `:1700`
@@ -6396,5 +6547,239 @@ mod w4_f35_boss_bag_open_tests {
             .map(|s| s.kind)
             .collect();
         assert!(non_bag.is_empty(), "no grants: {non_bag:?}");
+    }
+
+    // --- W4-f35 the non-boss container opens (the four family modules) ---
+
+    /// The same-seed twin: the App open's grants + the global stream
+    /// state must match a direct family-module call on a fresh
+    /// `UnifiedRandom` (the fill draws are compared through the second
+    /// App's identical inventory state).
+    fn open_twin(kind: u16) -> (App, App) {
+        let mut a = bag_app(kind, 2);
+        let mut b = bag_app(kind, 2);
+        a.ui_right_press = true;
+        a.place_down = true;
+        a.handle_inventory_clicks();
+        b.ui_right_press = true;
+        b.place_down = true;
+        b.handle_inventory_clicks();
+        (a, b)
+    }
+
+    #[test]
+    fn w4_f35_right_click_opens_the_wooden_crate() {
+        // The crate arm fires: the stack decrements, the split cooldown
+        // arms, and SOME grant landed (the crate always grants at least
+        // the coin/bar/potion chains on any seed).
+        let mut app = bag_app(2334, 3);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].kind, 2334);
+        assert_eq!(app.inventory[5].count, 2, "the crate decremented");
+        assert_eq!(app.stack_split, 30);
+        assert!(!app.ui_right_press);
+        let grants: Vec<u16> = app
+            .inventory
+            .iter()
+            .filter(|s| s.kind != 0 && s.kind != 2334)
+            .map(|s| s.kind)
+            .collect();
+        assert!(!grants.is_empty(), "the crate granted: {grants:?}");
+        // The same-seed replay: two identical Apps open identically.
+        let (a, b) = open_twin(2334);
+        assert_eq!(a.inventory, b.inventory);
+        assert_eq!(a.items.len(), b.items.len());
+        assert_eq!(*a.rngs.global(), *b.rngs.global());
+    }
+
+    #[test]
+    fn w4_f35_right_click_opens_the_present_and_the_goodie_bag() {
+        for kind in [1869u16, 1774, 599, 600, 601] {
+            let mut app = bag_app(kind, 2);
+            app.ui_right_press = true;
+            app.place_down = true;
+            app.handle_inventory_clicks();
+            assert_eq!(app.inventory[5].count, 1, "kind {kind} decremented");
+            let grants: Vec<u16> = app
+                .inventory
+                .iter()
+                .filter(|s| s.kind != 0 && s.kind != kind)
+                .map(|s| s.kind)
+                .collect();
+            assert!(!grants.is_empty(), "kind {kind} granted: {grants:?}");
+            let (a, b) = open_twin(kind);
+            assert_eq!(a.inventory, b.inventory, "kind {kind} twin");
+            assert_eq!(*a.rngs.global(), *b.rngs.global(), "kind {kind} stream");
+        }
+    }
+
+    #[test]
+    fn w4_f35_right_click_opens_the_herb_bag_and_the_small_bags() {
+        for kind in [3093u16, 4345, 4410, 6142] {
+            let mut app = bag_app(kind, 2);
+            app.ui_right_press = true;
+            app.place_down = true;
+            app.handle_inventory_clicks();
+            assert_eq!(app.inventory[5].count, 1, "kind {kind} decremented");
+            let grants: Vec<u16> = app
+                .inventory
+                .iter()
+                .filter(|s| s.kind != 0 && s.kind != kind)
+                .map(|s| s.kind)
+                .collect();
+            assert!(!grants.is_empty(), "kind {kind} granted: {grants:?}");
+            let (a, b) = open_twin(kind);
+            assert_eq!(a.inventory, b.inventory, "kind {kind} twin");
+            assert_eq!(*a.rngs.global(), *b.rngs.global(), "kind {kind} stream");
+        }
+        // The herb bag grants 2-5 herbs (the count range + the bump).
+        let mut app = bag_app(3093, 1);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        let herbs: u32 = app
+            .inventory
+            .iter()
+            .filter(|s| matches!(s.kind, 307..=318 | 2357 | 2358))
+            .map(|s| s.count)
+            .sum();
+        assert!((4..=25).contains(&herbs), "2-5 herbs x 2-8 each: {herbs}");
+    }
+
+    #[test]
+    fn w4_f35_the_lock_box_refuses_without_a_golden_key() {
+        // No key anywhere: the open refuses — NO decrement, NO sound
+        // cooldown, NO grants (`ItemSlot.cs:1838-1841` returns false).
+        let mut app = bag_app(3085, 2);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].count, 2, "the box did NOT open");
+        assert_eq!(app.stack_split, 0, "no cooldown armed");
+        let grants: Vec<u16> = app
+            .inventory
+            .iter()
+            .filter(|s| s.kind != 0 && s.kind != 3085)
+            .map(|s| s.kind)
+            .collect();
+        assert!(grants.is_empty(), "no grants: {grants:?}");
+    }
+
+    #[test]
+    fn w4_f35_the_lock_box_consumes_one_golden_key_and_opens() {
+        // A key stack at slot 7: the open consumes ONE (the first-match
+        // scan) and grants the box's weapons.
+        let mut app = bag_app(3085, 2);
+        app.inventory[7] = ItemSlot { kind: 327, name: registry::name(327), count: 3, prefix: 0 };
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].count, 1, "the box opened");
+        // The key stack lost exactly one (the grants never grant 327).
+        let keys: u32 = app
+            .inventory
+            .iter()
+            .filter(|s| s.kind == 327)
+            .map(|s| s.count)
+            .sum();
+        assert_eq!(keys, 2, "one key consumed");
+        // The same-seed twin with the same key layout opens identically;
+        // the keyless twin refuses and draws NOTHING.
+        let mut twin = bag_app(3085, 2);
+        twin.inventory[7] = ItemSlot { kind: 327, name: registry::name(327), count: 3, prefix: 0 };
+        twin.ui_right_press = true;
+        twin.place_down = true;
+        twin.handle_inventory_clicks();
+        assert_eq!(app.inventory, twin.inventory, "the keyed twin");
+        assert_eq!(*app.rngs.global(), *twin.rngs.global(), "the keyed twin stream");
+        let (a, b) = open_twin(3085);
+        assert_eq!(a.inventory[5].count, 2, "the keyless twin refused");
+        assert_eq!(*a.rngs.global(), *b.rngs.global(), "the refusal drew nothing");
+    }
+
+    #[test]
+    fn w4_f35_the_shadow_lockbox_needs_a_shadow_key_but_does_not_consume_it() {
+        // No key: refuse.
+        let mut app = bag_app(4879, 2);
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].count, 2, "the box refused");
+        // A key at slot 9: the open fires, the key STAYS.
+        let mut app2 = bag_app(4879, 2);
+        app2.inventory[9] = ItemSlot { kind: 329, name: registry::name(329), count: 1, prefix: 0 };
+        app2.ui_right_press = true;
+        app2.place_down = true;
+        app2.handle_inventory_clicks();
+        assert_eq!(app2.inventory[5].count, 1, "the box opened");
+        assert_eq!(app2.inventory[9].kind, 329, "the key stays");
+        assert_eq!(app2.inventory[9].count, 1, "NOT consumed");
+        let (a, b) = open_twin(4879);
+        assert_eq!(a.inventory, b.inventory);
+        assert_eq!(*a.rngs.global(), *b.rngs.global());
+    }
+
+    #[test]
+    fn w4_f35_the_key_gates_read_the_open_void_bag() {
+        // The Golden Key in the OPEN void bag: the consume finds it
+        // there (`includeVoidBag: true`).
+        let mut app = bag_app(3085, 1);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.void_vault_enabled = true;
+            p.banks[3][4] = ItemSlot { kind: 327, name: registry::name(327), count: 2, prefix: 0 };
+        }
+        // The Void Bag 4131 must be CARRIED (`useVoidBag`).
+        app.inventory[8] = ItemSlot { kind: 4131, name: registry::name(4131), count: 1, prefix: 0 };
+        app.ui_right_press = true;
+        app.place_down = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.inventory[5].count, 0, "the box opened via the vault key");
+        assert_eq!(app.player.as_ref().unwrap().banks[3][4].count, 1, "one vault key consumed");
+        // The Shadow Key in the vault: the presence gate passes.
+        let mut app2 = bag_app(4879, 1);
+        {
+            let p = app2.player.as_mut().unwrap();
+            p.void_vault_enabled = true;
+            p.banks[3][6] = ItemSlot { kind: 329, name: registry::name(329), count: 1, prefix: 0 };
+        }
+        app2.inventory[8] = ItemSlot { kind: 4131, name: registry::name(4131), count: 1, prefix: 0 };
+        app2.ui_right_press = true;
+        app2.place_down = true;
+        app2.handle_inventory_clicks();
+        assert_eq!(app2.inventory[5].count, 0, "the shadow box opened via the vault key");
+        assert_eq!(app2.player.as_ref().unwrap().banks[3][6].count, 1, "the shadow key stays");
+        // The DISABLED vault refuses both.
+        let mut app3 = bag_app(3085, 1);
+        {
+            let p = app3.player.as_mut().unwrap();
+            p.void_vault_enabled = false;
+            p.banks[3][4] = ItemSlot { kind: 327, name: registry::name(327), count: 2, prefix: 0 };
+        }
+        app3.inventory[8] = ItemSlot { kind: 4131, name: registry::name(4131), count: 1, prefix: 0 };
+        app3.ui_right_press = true;
+        app3.place_down = true;
+        app3.handle_inventory_clicks();
+        assert_eq!(app3.inventory[5].count, 1, "the disabled vault refused");
+    }
+
+    #[test]
+    fn w4_f35_the_container_opens_spare_the_named_streams() {
+        // Every family's open rides NamedRngs::global only.
+        for kind in [2334u16, 3979, 3205, 4877, 1869, 1774, 3093, 4410, 6142] {
+            let mut app = bag_app(kind, 1);
+            let pristine: Vec<_> = crate::app::RngKey::ALL
+                .iter()
+                .map(|k| app.rngs.stream(*k).clone())
+                .collect();
+            app.ui_right_press = true;
+            app.place_down = true;
+            app.handle_inventory_clicks();
+            for (k, want) in crate::app::RngKey::ALL.iter().zip(pristine) {
+                assert_eq!(*app.rngs.stream(*k), want, "kind {kind}: {} pristine", k.name());
+            }
+        }
     }
 }

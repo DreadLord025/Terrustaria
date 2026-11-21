@@ -5342,6 +5342,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         spawn_coins(app, &npc);
         spawn_loot(app, &npc);
+        // W4-f35 — the death HEAL feed (`NPC.cs:78898`'s
+        // `NPCLoot_DropHeals` + the `:79505-79507` boss tail): AFTER the
+        // loot, keeping the C#'s loot-before-heals order on the shared
+        // `UpdateNPCs` stream (the coins-before-loot fold above is the
+        // recorded pre-existing deviation).
+        spawn_heals(app, &npc);
     }
     // B-6b — the shield lifecycle's live consumers, at the death path's
     // tail (the C# owns the reset in the static state, `NPC.cs:95247-
@@ -6960,6 +6966,98 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
             req.item as u16,
             req.stack as u32,
             0,
+            x,
+            y,
+            vx,
+            vy,
+            phase,
+        ));
+    }
+}
+
+/// W4-f35 — the death HEAL feed through [`crate::npc_death_heals`]:
+/// the boss potions/hearts tail (`DoDeathEvents`'s `this.boss` arm,
+/// `NPC.cs:79505-79507`) then `NPCLoot_DropHeals` (`:78898`). Every
+/// drop is an `Item.NewItem` — the `spawn_loot` convention: the
+/// heart/star seasonal remap BEFORE the prefix/velocity draws
+/// (`Item.cs:49668-49714`), the `Prefix(-1)` roll + the velocity
+/// triplet on the same `UpdateNPCs` stream. The Badger's Hat latches
+/// live on the World (the dusk transition clears them, `Main.cs:65221`).
+fn spawn_heals(app: &mut App, npc: &Npc) {
+    let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
+    let net_id = entry.net_id;
+    // The EoW head's dynamic boss latch (`DropEoWLoot`, `NPC.cs:78414-
+    // 78429`): the LAST living segment's death sets `boss = true`
+    // before its NPCLoot. The port's death retain already removed the
+    // dead slots — any remaining 13/14/15 means segments still live.
+    let eow_last = npc.kind == NpcKind::EaterOfWorldsHead
+        && !app.npcs.iter().any(|n| {
+            n.hp > 0
+                && matches!(
+                    n.kind,
+                    NpcKind::EaterOfWorldsHead
+                        | NpcKind::EaterOfWorldsBody
+                        | NpcKind::EaterOfWorldsTail
+                )
+        });
+    let boss = crate::npc_death_heals::is_boss_kind(net_id) && (net_id != 13 || eow_last);
+    let (life_below, mana_below, luck) = app
+        .player
+        .as_ref()
+        .map(|p| (p.hp < p.max_hp, p.mana < p.mana_max, p.luck()))
+        .unwrap_or((false, false, 0.0));
+    let heal_npc = crate::npc_death_heals::HealNpc {
+        net_id,
+        kind: net_id,
+        life_max: npc.max_hp,
+        damage: npc.damage_override.unwrap_or(npc.kind.contact_damage()),
+    };
+    let heal_player = crate::npc_death_heals::HealPlayer {
+        luck,
+        life_below_max: life_below,
+        mana_below_max: mana_below,
+    };
+    let rng = app.rngs.stream(RngKey::UpdateNpcs);
+    let mut out = Vec::new();
+    if boss {
+        let mut latches = crate::npc_death_heals::BadgerLatches {
+            eoc_killed_today: app.world.eoc_killed_today,
+            wof_killed_today: app.world.wof_killed_today,
+        };
+        crate::npc_death_heals::drop_boss_potions_and_hearts(net_id, &mut latches, rng, &mut out);
+        app.world.eoc_killed_today = latches.eoc_killed_today;
+        app.world.wof_killed_today = latches.wof_killed_today;
+    }
+    // `Main.expertMode` — the port models the classic world (the e25
+    // seam, the boss_bags constants-off note).
+    crate::npc_death_heals::drop_heals(&heal_npc, &heal_player, false, rng, &mut out);
+    let (tenth, halloween, xmas) = (
+        app.world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        app.world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
+        app.world
+            .micro_seeds
+            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+    );
+    let (x, y) = (npc.x, npc.y);
+    for req in out {
+        if crate::registry::get(req.item).is_none() {
+            continue;
+        }
+        // The heart/star seasonal remap (`Item.cs:49668-49714`) — the
+        // 58/184 kinds remap on the anniversary/both-seasons seeds.
+        let kind =
+            crate::world_sim::items::seasonal_pickup_kind(req.item, tenth, halloween, xmas, rng);
+        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rng.next_float();
+        let phase = rng.next_float() * std::f32::consts::TAU;
+        app.items.push(ItemDrop::new(
+            kind,
+            req.stack,
+            crate::prefix::roll_prefix(kind, -1, rng),
             x,
             y,
             vx,
