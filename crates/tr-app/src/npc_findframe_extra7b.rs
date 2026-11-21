@@ -106,6 +106,21 @@ pub enum FindFrameExtra7bKind {
     /// `NPCID.GraniteFlyer` = 483 (`NPCID.cs:11639`) — `case 483`
     /// (`NPC.cs:75168-75201`).
     GraniteFlyer,
+    /// `NPCID.EnchantedNightcrawler` = 484 (`NPCID.cs:11641`) — the
+    /// 357/448/606 crawler group (`NPC.cs:72776`).
+    EnchantedNightcrawler,
+    /// `NPCID.Grubby` = 485 (`NPCID.cs:11643`) — the 485..487 grub
+    /// group (`NPC.cs:72829`).
+    Grubby,
+    /// `NPCID.Sluggy` = 486 (`NPCID.cs:11645`) — the same grub group
+    /// (`NPC.cs:72830`).
+    Sluggy,
+    /// `NPCID.Buggy` = 487 (`NPCID.cs:11647`) — the same grub group
+    /// (`NPC.cs:72831`).
+    Buggy,
+    /// `NPCID.TargetDummy` = 488 (`NPCID.cs:11649`) — `case 488`
+    /// (`NPC.cs:70847-70878`).
+    TargetDummy,
 }
 
 impl FindFrameExtra7bKind {
@@ -122,6 +137,11 @@ impl FindFrameExtra7bKind {
             Self::GreekSkeleton => 481,
             Self::GraniteGolem => 482,
             Self::GraniteFlyer => 483,
+            Self::EnchantedNightcrawler => 484,
+            Self::Grubby => 485,
+            Self::Sluggy => 486,
+            Self::Buggy => 487,
+            Self::TargetDummy => 488,
         }
     }
 
@@ -144,6 +164,12 @@ impl FindFrameExtra7bKind {
             Self::GreekSkeleton => 19,
             Self::GraniteGolem => 20,
             Self::GraniteFlyer => 22,
+            // Main.cs:67132 (entries 484..488): 2, 4, 4, 4, 11.
+            Self::EnchantedNightcrawler => 2,
+            Self::Grubby => 4,
+            Self::Sluggy => 4,
+            Self::Buggy => 4,
+            Self::TargetDummy => 11,
         }
     }
 }
@@ -162,6 +188,11 @@ pub fn find_frame_kind_extra7b(vanilla_type: i16) -> Option<FindFrameExtra7bKind
         481 => FindFrameExtra7bKind::GreekSkeleton,
         482 => FindFrameExtra7bKind::GraniteGolem,
         483 => FindFrameExtra7bKind::GraniteFlyer,
+        484 => FindFrameExtra7bKind::EnchantedNightcrawler,
+        485 => FindFrameExtra7bKind::Grubby,
+        486 => FindFrameExtra7bKind::Sluggy,
+        487 => FindFrameExtra7bKind::Buggy,
+        488 => FindFrameExtra7bKind::TargetDummy,
         _ => return None,
     })
 }
@@ -627,6 +658,141 @@ pub fn find_frame_extra7b(kind: FindFrameExtra7bKind, s: &mut FrameState, i: &Fr
                 s.rotation = i.vx * 0.1;
             }
         }
+        // `case 484` in the 357/448/606 crawler group (`NPC.cs:
+        // 72774-72828` — d48's 357 Worm / d40's 448 GoldWorm / the
+        // 606 Maggot are the SAME machine, keep-one at the merge):
+        // `localAI[0] = -2` FIRST (`:72779`); the grounded branch
+        // zeroes the rotation (`:72782`), the idle pins row 1 +
+        // zeroes the counter (`:72783-72787`), the walk ticks the
+        // counter with the > 12 step and the STRICT row > 1 wrap to
+        // 0 (`:72788-72800` — the 2-row sheet's rows 0/1); the air
+        // ACCUMULATES the tilt `rotation += direction * 0.1` and
+        // pins row 1 WITHOUT touching the counter (`:72802-72806`);
+        // the resolved slope probe (`:72807-72826`, the header's
+        // skip) snaps rotation ±0.785 and re-latches `localAI[0]`
+        // to 0. No sprite write.
+        FindFrameExtra7bKind::EnchantedNightcrawler => {
+            // `:72779`.
+            s.local_ai[0] = -2.0;
+            if i.vy == 0.0 {
+                // `:72782`.
+                s.rotation = 0.0;
+                if i.vx == 0.0 {
+                    // `:72783-72787`.
+                    s.row = 1;
+                    s.counter = 0.0;
+                } else {
+                    // `:72788-72800`.
+                    s.counter += 1.0;
+                    if s.counter > 12.0 {
+                        s.counter = 0.0;
+                        s.row += 1;
+                        if s.row > 1 {
+                            s.row = 0;
+                        }
+                    }
+                }
+            } else {
+                // `:72802-72806`.
+                s.rotation += i.direction as f32 * 0.1;
+                s.row = 1;
+            }
+            // `:72807-72826` — the resolved slope probe.
+            if i.slope == 1 {
+                s.rotation = 0.785;
+                s.local_ai[0] = 0.0;
+            } else if i.slope == 2 {
+                s.rotation = -0.785;
+                s.local_ai[0] = 0.0;
+            }
+        }
+        // `case 485..487` (`NPC.cs:72829-72883`): the Grubby/Sluggy/
+        // Buggy trio — the crawler shape PLUS the UNCONDITIONAL
+        // direction copy (`:72833`) and the |vx*5| accumulator
+        // (`:72845` — Math.Abs(vx * 5), NOT |vx| * 5 after the abs,
+        // identical for reals but cited verbatim) with the > 10
+        // step and the STRICT row > 3 wrap to 0 (`:72846-72854` —
+        // the 4-row sheet); the air tilt/pin and the slope probe
+        // are the crawler group's (`:72857-72881`).
+        FindFrameExtra7bKind::Grubby
+        | FindFrameExtra7bKind::Sluggy
+        | FindFrameExtra7bKind::Buggy => {
+            // `:72833-72834`.
+            s.sprite_dir = i.direction;
+            s.local_ai[0] = -2.0;
+            if i.vy == 0.0 {
+                // `:72837`.
+                s.rotation = 0.0;
+                if i.vx == 0.0 {
+                    // `:72838-72842`.
+                    s.row = 1;
+                    s.counter = 0.0;
+                } else {
+                    // `:72843-72855`.
+                    s.counter += (i.vx * 5.0).abs();
+                    if s.counter > 10.0 {
+                        s.counter = 0.0;
+                        s.row += 1;
+                        if s.row > 3 {
+                            s.row = 0;
+                        }
+                    }
+                }
+            } else {
+                // `:72857-72861`.
+                s.rotation += i.direction as f32 * 0.1;
+                s.row = 1;
+            }
+            // `:72862-72881` — the resolved slope probe.
+            if i.slope == 1 {
+                s.rotation = 0.785;
+                s.local_ai[0] = 0.0;
+            } else if i.slope == 2 {
+                s.rotation = -0.785;
+                s.local_ai[0] = 0.0;
+            }
+        }
+        // `case 488` (`NPC.cs:70847-70878`): the Target Dummy's
+        // recoil clock. `num134 = (int)localAI[1]` (the hit
+        // direction, NPCHit `:82694`), NEGATED when the weapon-rack
+        // tile probe reads frameX >= 36 (`:70849-70853`, the
+        // header's resolved [`FrameInput::frame_x36`] skip);
+        // `localAI[0]` (the recoil magnitude, NPCHit `:82685-82693`
+        // clamps it 20..120) clamps to 24 FIRST then decrements
+        // toward 0 (`:70854-70865`); the row is the CEIL of
+        // `localAI[0] / num135` where num135 = 4 for the negated
+        // direction else 6 (`:70866-70871`), PLUS 5 when nonzero
+        // and the direction is +1 (`:70872-70875` — rows 6..10 are
+        // the right-facing recoil, rows 1..6 the left). No counter/
+        // sprite/rotation write.
+        FindFrameExtra7bKind::TargetDummy => {
+            // `:70849-70853`.
+            let mut num134 = s.local_ai[1] as i32;
+            if i.frame_x36 {
+                num134 *= -1;
+            }
+            // `:70854-70865`.
+            if s.local_ai[0] > 24.0 {
+                s.local_ai[0] = 24.0;
+            }
+            if s.local_ai[0] > 0.0 {
+                s.local_ai[0] -= 1.0;
+            }
+            if s.local_ai[0] < 0.0 {
+                s.local_ai[0] = 0.0;
+            }
+            // `:70866-70871`.
+            let num135 = if num134 == -1 { 4 } else { 6 };
+            let mut num136 = (s.local_ai[0] as i32) / num135;
+            if s.local_ai[0] % num135 as f32 != 0.0 {
+                num136 += 1;
+            }
+            // `:70872-70875`.
+            if num136 != 0 && num134 == 1 {
+                num136 += 5;
+            }
+            s.row = num136 as u32;
+        }
     }
 }
 
@@ -664,6 +830,11 @@ mod tests {
             FindFrameExtra7bKind::GreekSkeleton,
             FindFrameExtra7bKind::GraniteGolem,
             FindFrameExtra7bKind::GraniteFlyer,
+            FindFrameExtra7bKind::EnchantedNightcrawler,
+            FindFrameExtra7bKind::Grubby,
+            FindFrameExtra7bKind::Sluggy,
+            FindFrameExtra7bKind::Buggy,
+            FindFrameExtra7bKind::TargetDummy,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -958,5 +1129,200 @@ mod tests {
         find_frame_extra7b(k, &mut s, &charged);
         assert_eq!(s.row, 21, "the > 21 clamp holds 21");
         assert_eq!(s.counter, 0.0, "the step zeroed the counter");
+    }
+
+    /// The Enchanted Nightcrawler (`NPC.cs:72779-72826`): the
+    /// localAI[0] = -2 latch every tick, the grounded idle row 1,
+    /// the > 12 walk step alternating rows 0/1 on the 2-row sheet
+    /// (the 13th tick steps, the 26th wraps), the air tilt
+    /// ACCUMULATE + row 1 with the counter HELD, and the resolved
+    /// slope probe's ±0.785 snap + localAI[0] re-latch.
+    #[test]
+    fn f26s7b_the_nightcrawler_two_row_walk_and_slope_latch() {
+        let k = FindFrameExtra7bKind::EnchantedNightcrawler;
+        assert_eq!(
+            rows_over(k, input(2.0, 0.0), 27),
+            vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
+        );
+        let mut s = FrameState { row: 0, counter: 5.0, rotation: 0.3, local_ai: [3.0, 0.0], ..Default::default() };
+        find_frame_extra7b(k, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter, s.rotation, s.local_ai[0]), (1, 0.0, 0.0, -2.0), "idle + latch");
+        // The air: rotation += direction * 0.1, row 1, counter HELD.
+        let mut air = input(0.0, -2.0);
+        air.direction = -1;
+        find_frame_extra7b(k, &mut s, &air);
+        assert_eq!(s.row, 1);
+        assert_eq!(s.counter, 0.0, "the air never touches the counter");
+        assert!((s.rotation - -0.1).abs() < 1e-6, "the air tilt accumulates");
+        // The slope probe snaps ±0.785 and re-latches localAI[0].
+        let mut slope = input(2.0, 0.0);
+        slope.slope = 1;
+        find_frame_extra7b(k, &mut s, &slope);
+        assert_eq!((s.rotation, s.local_ai[0]), (0.785, 0.0), "slope 1");
+        slope.slope = 2;
+        find_frame_extra7b(k, &mut s, &slope);
+        assert_eq!((s.rotation, s.local_ai[0]), (-0.785, 0.0), "slope 2");
+    }
+
+    /// The Grubby/Sluggy/Buggy trio (`NPC.cs:72833-72881`): the
+    /// UNCONDITIONAL direction copy (0 included), the |vx*5|
+    /// accumulator with the > 10 step over the 4-row sheet (vx 3 →
+    /// +15/tick steps EVERY tick, rows 1/2/3/0 cycling; vx 1 →
+    /// +5/tick steps every 3rd), the strict > 3 wrap, the air
+    /// row-1 pin + tilt accumulate, and the slope probe.
+    #[test]
+    fn f26s7b_the_grub_trio_four_row_cycle() {
+        for k in [FindFrameExtra7bKind::Grubby, FindFrameExtra7bKind::Sluggy, FindFrameExtra7bKind::Buggy] {
+            assert_eq!(rows_over(k, input(3.0, 0.0), 9), vec![1, 2, 3, 0, 1, 2, 3, 0, 1], "{k:?} vx 3");
+            let mut slow = input(1.0, 0.0);
+            slow.direction = -1;
+            assert_eq!(rows_over(k, slow, 9), vec![0, 0, 1, 1, 1, 2, 2, 2, 3], "{k:?} vx 1");
+            let mut s = FrameState { row: 2, counter: 7.0, sprite_dir: 1, rotation: 0.2, local_ai: [3.0, 0.0] };
+            let mut air = input(0.0, 2.0);
+            air.direction = -1;
+            find_frame_extra7b(k, &mut s, &air);
+            assert_eq!((s.row, s.counter, s.sprite_dir, s.local_ai[0]), (1, 7.0, -1, -2.0), "{k:?} air");
+            assert!((s.rotation - 0.1).abs() < 1e-6, "{k:?} tilt accumulate");
+            let mut slope = input(3.0, 0.0);
+            slope.direction = 0;
+            slope.slope = 2;
+            find_frame_extra7b(k, &mut s, &slope);
+            assert_eq!((s.sprite_dir, s.rotation, s.local_ai[0]), (0, -0.785, 0.0), "{k:?} dir-0 copy + slope");
+        }
+    }
+
+    /// The Target Dummy's recoil clock (`NPC.cs:70849-70876`): the
+    /// localAI[0] 24-clamp + decrement, the ceil(localAI[0]/num135)
+    /// row with num135 = 4 (negated hit dir) / 6, the +5 bank for
+    /// the +1 direction (rows 6..10 right, 1..6 left), and the
+    /// frameX >= 36 probe's sign flip. NPCHit seeds localAI[0]
+    /// 20..120 (`:82685-82693`).
+    #[test]
+    fn f26s7b_the_target_dummy_recoil_banks() {
+        let k = FindFrameExtra7bKind::TargetDummy;
+        // Right hit: 24 → 23, ceil(23/6) = 4, +5 = row 9.
+        let mut s = FrameState { local_ai: [24.0, 1.0], ..Default::default() };
+        find_frame_extra7b(k, &mut s, &FrameInput::default());
+        assert_eq!((s.row, s.local_ai[0]), (9, 23.0));
+        // Left hit: ceil(23/4) = 6, NO +5.
+        let mut s = FrameState { local_ai: [24.0, -1.0], ..Default::default() };
+        find_frame_extra7b(k, &mut s, &FrameInput::default());
+        assert_eq!(s.row, 6);
+        // The frameX >= 36 probe flips the sign: right → the 4-row
+        // bank.
+        let mut probe = FrameInput::default();
+        probe.frame_x36 = true;
+        let mut s = FrameState { local_ai: [24.0, 1.0], ..Default::default() };
+        find_frame_extra7b(k, &mut s, &probe);
+        assert_eq!(s.row, 6, "the probe flips +1 to the 4-row bank");
+        // The 24-clamp: a 120-magnitude hit reads the same as 24.
+        let mut s = FrameState { local_ai: [120.0, 1.0], ..Default::default() };
+        find_frame_extra7b(k, &mut s, &FrameInput::default());
+        assert_eq!((s.row, s.local_ai[0]), (9, 23.0));
+        // The full right decay: rows 9 (5 ticks) / 8 (6) / 7 (6) /
+        // 6 (6) then 0 — the ceil bands over the 6-row divisor
+        // (replay-derived 26 ticks).
+        let mut s = FrameState { local_ai: [24.0, 1.0], ..Default::default() };
+        let mut out = Vec::new();
+        for _ in 0..26 {
+            find_frame_extra7b(k, &mut s, &FrameInput::default());
+            out.push(s.row);
+        }
+        assert_eq!(out, vec![9, 9, 9, 9, 9, 8, 8, 8, 8, 8, 8, 7, 7, 7, 7, 7, 7, 6, 6, 6, 6, 6, 6, 0, 0, 0]);
+        assert_eq!(s.local_ai[0], 0.0, "the clock floors at 0");
+        // The left decay: the 4-row divisor's bands 6/5/4/3/2/1/0.
+        let mut s = FrameState { local_ai: [24.0, -1.0], ..Default::default() };
+        let mut out = Vec::new();
+        for _ in 0..26 {
+            find_frame_extra7b(k, &mut s, &FrameInput::default());
+            out.push(s.row);
+        }
+        assert_eq!(out, vec![6, 6, 6, 5, 5, 5, 5, 4, 4, 4, 4, 3, 3, 3, 3, 2, 2, 2, 2, 1, 1, 1, 1, 0, 0, 0]);
+    }
+
+    /// The 15-kind strip sweep: every kind ticks 72 input combos
+    /// (ai[0] 0/2/8/4.1 × vx 0/1/3 × vy 0/-2/2 × ai[2] -1/2, ai[1] =
+    /// 15, direction alternating) for 10 ticks each — every row
+    /// stays inside its own sheet (the slice-6 18-combo sweep
+    /// widened for the mimic state axis + the gaze gates,
+    /// replay-derived bounds).
+    #[test]
+    fn f26s7b_the_15_kind_strip_sweep_stays_in_sheet() {
+        let kinds = [
+            FindFrameExtra7bKind::BigMimicCorruption,
+            FindFrameExtra7bKind::BigMimicCrimson,
+            FindFrameExtra7bKind::BigMimicHallow,
+            FindFrameExtra7bKind::BigMimicJungle,
+            FindFrameExtra7bKind::Mothron,
+            FindFrameExtra7bKind::MothronSpawn,
+            FindFrameExtra7bKind::Medusa,
+            FindFrameExtra7bKind::GreekSkeleton,
+            FindFrameExtra7bKind::GraniteGolem,
+            FindFrameExtra7bKind::GraniteFlyer,
+            FindFrameExtra7bKind::EnchantedNightcrawler,
+            FindFrameExtra7bKind::Grubby,
+            FindFrameExtra7bKind::Sluggy,
+            FindFrameExtra7bKind::Buggy,
+            FindFrameExtra7bKind::TargetDummy,
+        ];
+        for k in kinds {
+            let mut s = FrameState::default();
+            let mut combo = 0;
+            for ai0 in [0.0f32, 2.0, 8.0, 4.1] {
+                for vx in [0.0f32, 1.0, 3.0] {
+                    for vy in [0.0f32, -2.0, 2.0] {
+                        for ai2 in [-1.0f32, 2.0] {
+                            let i = FrameInput {
+                                vx,
+                                vy,
+                                direction: if combo % 2 == 0 { 1 } else { -1 },
+                                ai: [ai0, 15.0, ai2, 0.0],
+                                ..Default::default()
+                            };
+                            for _ in 0..10 {
+                                find_frame_extra7b(k, &mut s, &i);
+                                assert!(
+                                    s.row < k.frame_count(),
+                                    "{k:?} combo {combo} row {} escapes the {}-row sheet",
+                                    s.row,
+                                    k.frame_count()
+                                );
+                            }
+                            combo += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The seam maps exactly this slice's ids — the d40-covered
+    /// 472, the no-case 478, the next-slice 494 and the port-covered
+    /// 305 stay `None`.
+    #[test]
+    fn f26s7b_the_seam_maps_exactly_the_slice() {
+        for (id, k) in [
+            (473, FindFrameExtra7bKind::BigMimicCorruption),
+            (474, FindFrameExtra7bKind::BigMimicCrimson),
+            (475, FindFrameExtra7bKind::BigMimicHallow),
+            (476, FindFrameExtra7bKind::BigMimicJungle),
+            (477, FindFrameExtra7bKind::Mothron),
+            (479, FindFrameExtra7bKind::MothronSpawn),
+            (480, FindFrameExtra7bKind::Medusa),
+            (481, FindFrameExtra7bKind::GreekSkeleton),
+            (482, FindFrameExtra7bKind::GraniteGolem),
+            (483, FindFrameExtra7bKind::GraniteFlyer),
+            (484, FindFrameExtra7bKind::EnchantedNightcrawler),
+            (485, FindFrameExtra7bKind::Grubby),
+            (486, FindFrameExtra7bKind::Sluggy),
+            (487, FindFrameExtra7bKind::Buggy),
+            (488, FindFrameExtra7bKind::TargetDummy),
+        ] {
+            assert_eq!(find_frame_kind_extra7b(id), Some(k));
+            assert_eq!(k.vanilla_type(), id);
+        }
+        for id in [305, 452, 472, 478, 494] {
+            assert_eq!(find_frame_kind_extra7b(id), None, "{id}");
+        }
     }
 }
