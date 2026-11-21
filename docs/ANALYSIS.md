@@ -39244,3 +39244,35 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d106 worldgen lane 6 — retire-phase fidelity notes (2026-11-21, code-only)
+
+The full retire record is `docs/research/240-d106-worldgen-6-retire-final.md`
+(the overlap census, the keep-one drop-hunks, the pin schedule, the family
+declaration). The three behaviour-relevant facts:
+
+- **Gen-time `kill_tile(..., true)` is NOT a deviation.** The C#
+  `WorldGen.KillTile` forces `noItem = true` whenever
+  `isGeneratingOrLoadingWorld` (`WorldGen.cs:63546-63549`, the flag set at
+  `:6612` for the whole generation), so every gen call site's explicit
+  `true` encodes the vanilla override — the 2-arg C# calls' `false`
+  default never survives to the drop path at gen. Receipt for e20
+  research-148 §3a; covers all d106 R3/R4/R5/R6 kill sites.
+- **The `ClearBrokenTraps` two-list swap keeps leftovers** (e20
+  research-148 §3b, FIXED): `Utils.Swap` (`WorldGen.cs:26856`) does not
+  clear the swapped-in list; cells left by the 2000-pop inner cap are
+  processed in later outer waves. The port's `t2.clear()` dropped them;
+  removed. Only >2000-pop wired blobs are affected; draw-free.
+- **The Final Cleanup stream is ONE instance** (g36 matrix-88 §6.4):
+  the poo scatter and the ShimmerCleanUp ellipse jitter draw on the same
+  per-pass genRand in C#; the port now threads one
+  `pass_rng("Final Cleanup")` through both (a fresh stream at the cleanup
+  call replayed the scatter's draws). The flag-gated Finish* hosts keep
+  their own name-seeded streams (the M5-SEED-1 deviation, unchanged).
+  Also executed: the stalactite moss-support membership reads the
+  GENERATED `tiledata::TILE_MOSS` (627 was missing from the local union —
+  research-96 §3 point 5).
+
+Witnesses for all three are WRITTEN NOT RUN (code-only branch); both
+classic hash pins stay stale-by-design, the sequential re-pin schedule is
+research-240 §4.

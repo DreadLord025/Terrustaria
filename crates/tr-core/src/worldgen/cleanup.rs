@@ -616,21 +616,44 @@ fn reset_to_type(t: &mut Tile, kind: u16) {
 /// track keeps its frame, set to 1). `visited` is the pass-wide
 /// already-went-over set (the C# `pointsWeAlreadyWentOver`).
 fn clear_broken_traps(world: &mut World, start: (i32, i32), visited: &mut Vec<(i32, i32)>) {
+    // `:26848`/`:26857` — both C# counters are 2000.
+    clear_broken_traps_capped(world, start, visited, 2000, 2000);
+}
+
+/// [`clear_broken_traps`] with the two BFS caps exposed — a test-only seam
+/// (the vanilla call always passes 2000/2000): the >cap leftover-carry edge
+/// (e20 research-148 §3b) is unreachable on a runnable fixture at the real
+/// 2000-pop cap, so the witness drives small caps through this body.
+fn clear_broken_traps_capped(
+    world: &mut World,
+    start: (i32, i32),
+    visited: &mut Vec<(i32, i32)>,
+    outer_waves: i32,
+    inner_pops: i32,
+) {
     // The C#'s two-list swap BFS (`t`/`t2`), each bounded by 2000.
     let mut t: Vec<(i32, i32)> = Vec::new();
     let mut t2: Vec<(i32, i32)> = vec![start];
     let mut list: Vec<(i32, i32)> = Vec::new();
     let mut has_trap = false;
     let mut has_trigger = false;
-    let mut num = 2000;
+    let mut num = outer_waves;
     while !t2.is_empty() {
         num -= 1;
         if num <= 0 {
             break;
         }
+        // `:26856` — `Utils.Swap(ref t, ref t2)` with NO clear (e20
+        // research-148 §3b, VERIFIED against the C#): when the inner loop
+        // breaks on the 2000-pop cap with `t` still non-empty, the leftover
+        // cells survive in the swapped-in `t2` and are processed BEFORE the
+        // next wave's appended neighbours. The previous `t2.clear()` here
+        // dropped them (the >2000-inner-pop edge); removed for the 1:1 swap.
+        // The working-circuit break path also carries leftovers into `t2`,
+        // but the outer `flag2 & flag` break exits before another swap —
+        // identical to the C#.
         std::mem::swap(&mut t, &mut t2);
-        t2.clear();
-        let mut num2 = 2000;
+        let mut num2 = inner_pops;
         while !t.is_empty() {
             num2 -= 1;
             if num2 <= 0 {
@@ -709,6 +732,12 @@ fn clear_broken_traps(world: &mut World, start: (i32, i32), visited: &mut Vec<(i
         }
         // `:26942-26956` — the trap tile dies (except the statue 105); the
         // trigger tile dies too, except the minecart track 314 (frameX = 1).
+        // The C# calls the 2-arg `KillTile(x, y)` (`noItem = false` default,
+        // `:63517`), but `KillTile` itself forces `noItem = true` whenever
+        // `WorldGen.isGeneratingOrLoadingWorld` (`:63546-63549`, set at
+        // `:6612` for the whole generation) — at gen time the `true` here IS
+        // the vanilla behaviour, no items spawn (e20 research-148 §3a,
+        // VERIFIED; receipt in research-240 §3).
         let tile = world.tile(x, y).copied().unwrap_or_default();
         if is_it_a_trap(&tile) && tile.kind != 105 {
             kill_tile(world, x, y, true);
@@ -2127,8 +2156,11 @@ fn shimmerator(world: &mut World, x: i32, y: i32, max_tile_count: i32) {
 /// ore→stone / block-kill / moss→stone sweep, the jittered cleanse ellipse,
 /// the shimmer-fill walk, the anniversary shimmer band and the tree-in-shimmer
 /// kill. `None`-guarded on `gv.shimmer_position` (the C# guards on `(0,0)`;
-/// the port has no shimmer until d102's Shimmer pass lands). The disc's two
-/// `NextDouble` jitter draws ride the pass's own stream.
+/// the producer at the gate is g36 A1's published position — d102's Shimmer
+/// copy DROPs per research-88 §2.1). The disc's two `NextDouble` jitter
+/// draws ride the THREADED Final Cleanup stream (the scatter's continuation,
+/// `final_cleanup`'s note). Gate keep-one: this local arm DROPs onto g36's
+/// `shimmer.rs::shimmer_clean_up` (research-88 §6.4, research-240 §2).
 fn shimmer_clean_up(world: &mut World, rng: &mut Rng, gv: &GenVars, opts: &GenOptions) {
     let Some((sx, sy)) = gv.shimmer_position else {
         return;
@@ -2306,8 +2338,16 @@ pub(crate) fn final_cleanup(world: &mut World, gv: &mut GenVars, streams: &mut S
     }
     // `:22150-22378` — the whole-world sweep.
     final_cleanup_sweep(world, ws, rock_layer, opts);
-    // `:22379-22422` — the poo-668 scatter.
-    poo_scatter(world, &mut streams.pass_rng("Final Cleanup"), opts);
+    // `:22379-22422` — the poo-668 scatter. ONE `pass_rng("Final Cleanup")`
+    // instance threads through the whole pass tail (research-88 §6.4 stream
+    // note): the C# `genRand` is a single per-pass UnifiedRandom, so the
+    // ShimmerCleanUp ellipse jitter (`:34753`) CONTINUES the scatter's
+    // sequence — a fresh `pass_rng` at the cleanup call would replay the
+    // scatter's draws instead. (The flag-gated Finish* hosts draw their own
+    // name-seeded streams — the recorded M5-SEED-1 deviation; on a classic
+    // world nothing draws between the scatter and the cleanup.)
+    let mut fc_rng = streams.pass_rng("Final Cleanup");
+    poo_scatter(world, &mut fc_rng, opts);
     // `:22423-22426` — FinishNoTraps (flag-gated).
     if opts.flags.contains(SeedFlags::NO_TRAPS) {
         finish_no_traps(world, &mut streams.pass_rng("FinishNoTraps"), opts);
@@ -2331,8 +2371,16 @@ pub(crate) fn final_cleanup(world: &mut World, gv: &mut GenVars, streams: &mut S
     // `:22467` — FinalizeSecretSeeds rides `step_seed_finish`.
     // `:22468-22471` — the anniversary paint-trees/mushrooms tail rides
     // `step_seed_finish` (the M5-SEED-1 seam).
-    // `:22472` — ShimmerCleanUp (None-guarded).
-    shimmer_clean_up(world, &mut streams.pass_rng("ShimmerCleanUp"), gv, opts);
+    // `:22472` — ShimmerCleanUp (None-guarded), on the THREADED scatter
+    // stream (the note above). KEEP-ONE (research-88 §2.1/§6.4/§7): at the
+    // gate g36's `shimmer.rs::shimmer_clean_up` is the surviving arm and
+    // this local copy (plus `shimmerator` below) DROPs; the compose-hunk
+    // moves the call to the tail of g41's `step_seed_finish` with the SAME
+    // threaded Rng stashed through GenVars (research-240 §2 publishes the
+    // d106-side drop hunks). The merge sweep below rides the g47/g46-union
+    // `LiquidSystem` surface at the graft (`set_gen_settle_context` +
+    // `set_gen_shimmer_position` + a pub `gen_merge_sweep` wrapper).
+    shimmer_clean_up(world, &mut fc_rng, gv, opts);
     // `:22473-22483` — the final whole-world LiquidCheck merge sweep
     // (y-outer / x-inner, createMergeTilesDuringGen: true).
     let mut sys = LiquidSystem::new(world);
@@ -2492,6 +2540,49 @@ mod tests {
         assert!(nt.wires.wire(100, 100), "noTraps skips the sweep");
     }
 
+    /// e20 research-148 §3b (FIXED, retire phase): the C# `Utils.Swap` does
+    /// NOT clear the swapped-in `t2` — leftover cells from a capped inner
+    /// wave survive and are processed in later outer waves. A wired plus at
+    /// (100,100) (all FIVE cells wired) with a 2-pop inner cap (1 effective
+    /// pop/wave): wave 2 pops the wired (99,100) — its neighbour queue keeps
+    /// `t2` non-empty so the outer loop continues — and breaks with the
+    /// three other wired cells still in `t`; the old `t2.clear()` dropped
+    /// them (their wires survived), the 1:1 swap carries them in `t2` into
+    /// a later wave (before that wave's own appended neighbours — the C#
+    /// order). Small caps via the test seam — the
+    /// vanilla 2000-pop edge is the same code path.
+    #[test]
+    fn r5_the_bfs_carries_capped_leftovers_like_the_cs_swap() {
+        let mut w = World::new("traps".into(), 200, 200);
+        let plus = [(100, 100), (99, 100), (101, 100), (100, 99), (100, 101)];
+        for (x, y) in plus {
+            w.wires.set(x, y, crate::wiring::WireColor::Red, true);
+        }
+        let mut visited = Vec::new();
+        clear_broken_traps_capped(&mut w, (100, 100), &mut visited, 2000, 2);
+        for (x, y) in plus {
+            assert!(!w.wires.wire(x, y), "the leftover cell ({x},{y}) was stripped");
+            assert!(visited.contains(&(x, y)), "({x},{y}) was visited");
+        }
+    }
+
+    /// The outer-cap exhaustion path reads the same way: with 2 outer waves
+    /// (1 effective swap) only the start cell is processed; the queued
+    /// neighbours stay unvisited in `t2` — the C# breaks before the next
+    /// swap, so their wires survive (no strip of unvisited cells).
+    #[test]
+    fn r5_the_outer_cap_leaves_the_queue_unprocessed() {
+        let mut w = World::new("traps".into(), 200, 200);
+        for (x, y) in [(100, 100), (101, 100), (100, 99), (100, 101)] {
+            w.wires.set(x, y, crate::wiring::WireColor::Red, true);
+        }
+        let mut visited = Vec::new();
+        clear_broken_traps_capped(&mut w, (100, 100), &mut visited, 2, 2000);
+        assert!(!w.wires.wire(100, 100), "the start was stripped");
+        assert!(w.wires.wire(101, 100), "the queued neighbour kept its wire");
+        assert_eq!(visited, vec![(100, 100)]);
+    }
+
     // --- W4-d106 R6 witnesses (written NOT run — code-only branch) -----------
 
     /// A GenVars with the layer anchors the Final Cleanup sweep reads.
@@ -2594,5 +2685,128 @@ mod tests {
         final_cleanup(&mut a, &mut gv_a, &mut sa, &opts());
         final_cleanup(&mut b, &mut gv_b, &mut sb, &opts());
         assert_eq!(a.tiles, b.tiles, "a == b");
+    }
+
+    // --- W4-d106 retire witnesses (written NOT run — code-only branch) -------
+
+    /// research-88 §6.4 stream note (FIXED): the ShimmerCleanUp ellipse
+    /// jitter CONTINUES the scatter's `pass_rng("Final Cleanup")` sequence —
+    /// the C# genRand is ONE per-pass instance. The witness replays both
+    /// candidate streams over the full 241×241 disc loop, picks the first
+    /// cell where the two ellipse gates DIFFER (below the dirt band, off
+    /// the fill-walk row), plants a wall-2 marker there, and asserts the
+    /// pass zeroed it iff the CONTINUED gate is inside. A fresh
+    /// `pass_rng("ShimmerCleanUp")` (the pre-fix form) replays the scatter's
+    /// draws and fails. A shimmer position is REQUIRED — on a classic world
+    /// the None guard returns before any draw and the trap cannot bite.
+    #[test]
+    fn r6_the_shimmer_cleanup_continues_the_scatter_stream() {
+        let (sx, sy) = (256i32, 350i32);
+        // Replay one stream's ellipse gates over the whole disc loop,
+        // recording (cell, inside) — 2 NextDouble per cell, C# order.
+        let gates = |rng: &mut Rng| -> Vec<((i32, i32), bool)> {
+            let mut out = Vec::new();
+            for i in (sy - 120)..=(sy + 120) {
+                for j in (sx - 120)..=(sx + 120) {
+                    let dx = (j - sx).abs() as f64;
+                    let dy = (i - sy).abs() as f64;
+                    let stretch = if (i as f64) > sy as f64 { 1.2 } else { 1.4 };
+                    let jx = dx * (1.0 + rng.next_f64() * 0.02);
+                    let jy = dy * stretch * (1.0 + rng.next_f64() * 0.02);
+                    out.push(((j, i), ((jx * jx + jy * jy).sqrt() as i32) < 90));
+                }
+            }
+            out
+        };
+        let streams = Streams::new(42);
+        let mut continued = streams.pass_rng("Final Cleanup");
+        // The all-dirt scatter band makes the scatter draw exactly 3×2
+        // range rolls (3 successful picks, no retries).
+        for _ in 0..3 {
+            continued.range(50, 462);
+            continued.range(50, 312);
+        }
+        let cont = gates(&mut continued);
+        let fresh = gates(&mut streams.pass_rng("Final Cleanup"));
+        // The marker cell: gates differ, below the dirt band (y > 311), off
+        // the fill-walk row (350) and away from the fill-walk stone seats.
+        let pick = cont
+            .iter()
+            .zip(fresh.iter())
+            .find(|((c, a), (f, b))| {
+                c == f && a != b && c.1 > 320 && c.1 != 350
+            })
+            .map(|((c, a), _)| (*c, *a));
+        let ((mx, my), in_continued) =
+            pick.expect("seed 42 separates the streams somewhere in the lower disc");
+        let mut w = World::new("fc".into(), 512, 512);
+        for y in 50..312 {
+            for x in 50..462 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 0, flags: FLAG_ACTIVE, ..Default::default() };
+            }
+        }
+        // The shimmer-fill walk (`:34764-34788`) terminates on active seats:
+        // stone left/right of the centre on row 350 and below it.
+        for (x, y) in [(200, 350), (300, 350), (256, 351)] {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        let m = w.index(mx, my);
+        w.tiles[m].wall = 2;
+        let mut gv = gv_with_layers(120.0, 280.0);
+        gv.shimmer_position = Some((sx, sy));
+        let mut streams = Streams::new(42);
+        final_cleanup(&mut w, &mut gv, &mut streams, &opts());
+        assert_eq!(
+            w.tile(mx, my).unwrap().wall == 0,
+            in_continued,
+            "the cleanse ellipse at ({mx},{my}) followed the CONTINUED scatter stream"
+        );
+    }
+
+    /// The final LiquidCheck merge sweep (`:22473-22483`) visits y-OUTER /
+    /// x-INNER: a lava cell with a water neighbour to its LEFT merges to
+    /// obsidian 56 only when the left cell was already zeroed by the earlier
+    /// visit in the same row — a x-outer sweep would see the water still
+    /// there at the lava cell's own check and produce the same merge, but
+    /// the y-order matters across rows: the fixture pins the sweep result
+    /// against a manual y-outer/x-inner liquid_check replay.
+    #[test]
+    fn r6_the_merge_sweep_matches_the_y_outer_replay() {
+        let build = || {
+            let mut w = World::new("fc".into(), 512, 512);
+            // Two adjacent liquid rows below the scatter band: water at
+            // (250, 400), lava at (251, 400); honey at (250, 401) under the
+            // water. 30+30 >= 24 so the side arm merges.
+            let a = w.index(250, 400);
+            w.tiles[a].liquid = 30;
+            w.tiles[a].set_liquid_kind(LiquidKind::Water);
+            let b = w.index(251, 400);
+            w.tiles[b].liquid = 30;
+            w.tiles[b].set_liquid_kind(LiquidKind::Lava);
+            let c = w.index(250, 401);
+            w.tiles[c].liquid = 30;
+            w.tiles[c].set_liquid_kind(LiquidKind::Honey);
+            w
+        };
+        let mut swept = build();
+        let mut gv = gv_with_layers(120.0, 280.0);
+        let mut streams = Streams::new(42);
+        final_cleanup(&mut swept, &mut gv, &mut streams, &opts());
+        // The manual replay over the same fixture (the sweep's own body).
+        let mut replay = build();
+        let mut sys = LiquidSystem::new(&replay);
+        sys.set_generating(true);
+        for y in 0..replay.height {
+            for x in 0..replay.width {
+                if let Some(t) = replay.tile(x, y).copied() {
+                    if t.liquid > 0 {
+                        sys.liquid_check(&mut replay, x, y, liquid_code(t.liquid_kind()), true);
+                    }
+                }
+            }
+        }
+        assert_eq!(swept.tiles, replay.tiles, "the sweep == the y-outer/x-inner replay");
     }
 }

@@ -399,6 +399,15 @@ fn gem_cave(world: &mut World, rng: &mut Rng, x: i32, y: i32) {
 /// the spider pass's landed port skips it (its seats are pre-validated), the
 /// Stalac pass runs it ([`check_stalactite`]) — keeping the spider output
 /// byte-identical.
+///
+/// KEEP-ONE NOTE (research-88 §3.2 / research-96 §3, the g41 stalactite
+/// 6-point FINAL): at the merge gate g41's chain body wins and wires the
+/// validator INSIDE `place_tight`'s tail; the four Stalac call sites below
+/// then DROP their explicit `check_stalactite` blocks (the
+/// d106-double-validation trap — keeping both doubles the `Next(3)`
+/// mismatch draws). This branch keeps the caller-runs convention so the
+/// standalone witnesses stay self-consistent until the graft; the drop
+/// hunks are published in research-240 §2.
 pub(crate) fn place_tight(
     world: &mut World,
     rng: &mut impl super::chest_stock::WorldGenRand,
@@ -434,7 +443,12 @@ fn place_unchecked_stalactite(
         && !world.tile(x, y + 1).is_some_and(|t| t.active());
     if hanging {
         let support = world.tile(x, y - 1).map(|t| t.kind).unwrap_or(0);
-        let is_moss = MOSS_TILES.contains(&support) || NEON_MOSS.contains(&support) || support == 381;
+        // ONE moss truth — the generated `tiledata::TILE_MOSS` (`sets.rs:44`,
+        // `Main.cs:7031`: 179/381/534/536/539/625/627/180/181/182/183). The
+        // old local `MOSS_TILES`+`NEON_MOSS`+381 union lacked 627 (KryptonMoss
+        // Brown); research-88 §3.2 point 5 / research-96 §3 dedupe executed
+        // here (research-240 §2).
+        let is_moss = td::TILE_MOSS.has(support);
         if spiders {
             // `:38334-38350` — the spider stalactite, always two tiles tall.
             let frame = 108 + variation * 18;
@@ -480,7 +494,8 @@ fn place_unchecked_stalactite(
         && !world.tile(x, y - 1).is_some_and(|t| t.active());
     if rising {
         let support = world.tile(x, y + 1).map(|t| t.kind).unwrap_or(0);
-        let is_moss = MOSS_TILES.contains(&support) || NEON_MOSS.contains(&support) || support == 381;
+        // The generated moss set (the hanging-arm note above; 627 included).
+        let is_moss = td::TILE_MOSS.has(support);
         let frame = if matches!(support, 396 | 397) {
             378 + variation * 18
         } else if support == TILE_GRANITE {
@@ -2107,6 +2122,27 @@ mod tests {
                 "the supported stalactite survived the check"
             );
         }
+    }
+
+    /// research-88 §3.2 point 5 / research-96 §3 (EXECUTED, retire phase):
+    /// the moss support test reads the GENERATED `tiledata::TILE_MOSS`
+    /// (`Main.cs:7031`), which includes 627 (KryptonMoss Brown) — the old
+    /// local `MOSS_TILES`+`NEON_MOSS`+381 union missed it, so a stalactite
+    /// under a 627 ceiling silently refused to place. Same fixture as the
+    /// stone witness, support kind 627.
+    #[test]
+    fn r4_place_tight_hangs_under_the_generated_moss_627() {
+        let mut w = flat_world(200, 200, 60);
+        carve_pocket(&mut w, 99, 100, 3, 3);
+        // The ceiling at (100, 99) becomes KryptonMoss Brown 627.
+        let j = w.index(100, 99);
+        w.tiles[j].kind = 627;
+        let mut rng = crate::UnifiedRandom::new(7);
+        place_tight(&mut w, &mut rng, 100, 100, false);
+        assert!(
+            w.tile(100, 100).is_some_and(|t| t.active() && t.kind == TILE_STALACTITE),
+            "the 627 moss ceiling seats a stalactite (the generated TILE_MOSS)"
+        );
     }
 
     /// `CheckStalactite` kills a stalactite whose support was removed.
