@@ -13889,11 +13889,11 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
 /// The styles whose arms this port has are 2 (the thrown family, whose own
 /// branch head applies the same term), 8/24/28 (Phase 3), 29 (Phase 4a's gem
 /// bolts) and the styles that already had ported arms (1 the arrows, 16 the
-/// bombs) keep their pre-existing no-wind behaviour; W4-d4 adds 35 (the rope
-/// coils, `:22126`) with its arm; the rest (10/14/…) port in a later phase or
-/// not at all.
+/// bombs) keep their pre-existing no-wind behaviour; W4-d4 adds 32 (the
+/// beach ball, `:22123`) and 35 (the rope coils, `:22126`) with their arms;
+/// the rest (10/14/…) port in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 2 | 8 | 24 | 28 | 29 | 35)
+    matches!(ai_style, 2 | 8 | 24 | 28 | 29 | 32 | 35)
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
@@ -14738,6 +14738,12 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// W4-d4 — the beach ball's `Game.BallBounceResult` broadcasts
+    /// (`Projectile.cs:18605-18608`, the type-155 movement arm): the chat
+    /// lines the bounce chain queued this tick. The world sim drains them
+    /// into the chat monitor (the golf `CupScored` chat precedent — the
+    /// pool cannot borrow the App).
+    pending_ball_chats: Vec<String>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15137,6 +15143,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            pending_ball_chats: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -15232,6 +15239,14 @@ impl ProjectilePool {
     /// hands to the owner's inventory (the `QuickSpawnItem` overflow drop).
     pub fn drain_catches(&mut self) -> Vec<(u8, u16, i32)> {
         std::mem::take(&mut self.pending_catches)
+    }
+
+    /// W4-d4 — the beach ball's bounce-result chat drain
+    /// (`Projectile.cs:18605-18608`): the world sim prints each line on the
+    /// chat monitor in `ChatColors.ServerMessage` (the golf cup-chat
+    /// precedent).
+    pub fn drain_ball_chats(&mut self) -> Vec<String> {
+        std::mem::take(&mut self.pending_ball_chats)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -17762,6 +17777,13 @@ impl ProjectilePool {
                         // ai_ice_block carve-out); it owns its integration
                         // (tileCollide false, `:2576`).
                         35 => self.slots[i].ai_rope_coil(world, local_owner),
+                        // W4-d4 — `AI()`'s `else if (this.aiStyle == 32)`
+                        // (`Projectile.cs:26887-27048`): the Beach Ball
+                        // (155). A POOL-side step — the ai[0]≥20 bounce
+                        // machine scans the player, the NPC vec AND the
+                        // 1000-slot array (the dragon_step shape). The
+                        // >10-bounce chat rides `pending_ball_chats`.
+                        32 => self.beach_ball_step(i, world, &npcs[..], player.as_deref()),
                         // S1-P-i16 — the aiStyle-77 Electrosphere sphere
                         // (`AI()` `:30671-30761`): the fade/pulse/frame
                         // machine + the dust draws; the arm owns its
@@ -21649,6 +21671,243 @@ impl ProjectilePool {
             damage,
             knock_back,
         );
+    }
+
+    /// `AI()`'s aiStyle-32 arm (`Projectile.cs:26887-27048`) + the type-155
+    /// movement halves — the Beach Ball (155, the style's only row,
+    /// `:2426-2433`). W4-d4. A POOL-side step (the `dragon_step` shape): the
+    /// ai[0]≥20 bounce machine scans the 255 players, the NPC vec AND the
+    /// 1000-slot projectile array (`:26895-27000`) — a slot arm cannot see
+    /// the pool.
+    ///
+    /// The head pins `timeLeft = 10` and counts `ai[0]`; at ≥20 it resets
+    /// to 18 and runs the three scans, each hit kicking the velocity off
+    /// the entity's direction/velocity (the shared `:26900-26926` shape)
+    /// and bumping `ai[1]`. The tail is the zero-velocity kill, the
+    /// 0.02·vx spin, the wet/dry X drag, the ±0.03 X deadzone and the wet
+    /// buoyancy / dry 0.1 gravity + 10 clamp.
+    ///
+    /// Movement: `HandleMovement`'s type-155 arm (`:18603-18618`) — the
+    /// ai[1]>10 `Game.BallBounceResult` chat (the pool intent), ai[1]=0,
+    /// the ×−0.6 axis bounces (Y only when lastVelocity.Y > 2) — plus the
+    /// wet-exit Y×0.5 (`:16920-16923`, the generic wet block's 155 arm).
+    /// The wet flags ride the bobber's faithful probe at the tick head
+    /// (the one-tick-lag convention, ANALYSIS "Fishing rod (S1-P-i35)").
+    fn beach_ball_step(
+        &mut self,
+        i: usize,
+        world: &World,
+        npcs: &[Npc],
+        player: Option<&crate::player::Player>,
+    ) {
+        // The wet probe at the head (the C# `Update` tail `:16790-17007`
+        // writes the flags AFTER the AI; the port reads last tick's state).
+        let was_wet = self.slots[i].wet;
+        crate::projectile_bobber::probe_wet(&mut self.slots[i], world);
+        let p = &mut self.slots[i];
+        // `:26889-26890` — the life pin + the counter.
+        p.time_left = 10;
+        p.ai[0] += 1.0;
+        // `:26891-27001` — the bounce machine at ai[0] ≥ 20.
+        if p.ai[0] >= 20.0 {
+            p.ai[0] = 18.0;
+            let rect = tr_core::whip::Rect::new(
+                p.pos.x as i32,
+                p.pos.y as i32,
+                p.w as i32,
+                p.h as i32,
+            );
+            // The shared kick (`:26900-26926` / `:26934-26960` /
+            // `:26972-26998`): ai[0]=0, vy=-4.5, the ±2 X clamp, the
+            // (vx + dir·1.75)/2 blend, +3× the entity's vx, + its vy, the
+            // ±6 X clamp, the 16-speed normalize, netUpdate, ai[1]++.
+            fn kick(p: &mut Projectile, dir: i32, evx: f32, evy: f32) {
+                p.ai[0] = 0.0;
+                p.vel.y = -4.5;
+                if p.vel.x > 2.0 {
+                    p.vel.x = 2.0;
+                }
+                if p.vel.x < -2.0 {
+                    p.vel.x = -2.0;
+                }
+                p.vel.x = (p.vel.x + dir as f32 * 1.75) / 2.0;
+                p.vel.x += evx * 3.0;
+                p.vel.y += evy;
+                if p.vel.x > 6.0 {
+                    p.vel.x = 6.0;
+                }
+                if p.vel.x < -6.0 {
+                    p.vel.x = -6.0;
+                }
+                if p.vel.length() > 16.0 {
+                    p.vel = safe_normalize(p.vel) * 16.0;
+                }
+                p.net_update = true;
+                p.ai[1] += 1.0;
+            }
+            // `:26895-26928` — the 255-player scan. The port has ONE player
+            // (the single-player stand-in): the local player stands in for
+            // every active `Main.player[]` slot. The C# gate is `active`
+            // (the slot is in use), NOT `!dead` — a dead player's body
+            // still bounces the ball.
+            if let Some(pl) = player {
+                if rect.intersects(tr_core::whip::Rect::new(
+                    pl.x as i32,
+                    pl.y as i32,
+                    pl.width as i32,
+                    pl.height as i32,
+                )) {
+                    kick(p, pl.facing, pl.vx, pl.vy);
+                }
+            }
+            // `:26929-26962` — the NPC scan.
+            for n in npcs {
+                if n.hp <= 0 {
+                    continue;
+                }
+                let (nw, nh) = n.size();
+                if rect.intersects(tr_core::whip::Rect::new(
+                    n.x as i32, n.y as i32, nw as i32, nh as i32,
+                )) {
+                    kick(p, n.facing, n.vx, n.vy);
+                }
+            }
+            // `:26963-27000` — the 1000-projectile scan (skips self). The
+            // C# reads the LIVE array while mutating this slot; the port
+            // snapshots the (dir, vel, box) triples first — the scan never
+            // reads the mutating slot's own entry (the `whoAmI` skip), so
+            // the snapshot is byte-identical for every read (the golf
+            // club-helper precedent).
+            let others: Vec<(usize, i32, f32, f32, tr_core::whip::Rect)> = self
+                .slots
+                .iter()
+                .enumerate()
+                .filter(|(j, q)| *j != i && q.active)
+                .map(|(j, q)| {
+                    (
+                        j,
+                        q.direction,
+                        q.vel.x,
+                        q.vel.y,
+                        tr_core::whip::Rect::new(
+                            q.pos.x as i32,
+                            q.pos.y as i32,
+                            q.w as i32,
+                            q.h as i32,
+                        ),
+                    )
+                })
+                .collect();
+            for (_j, dir, vx, vy, qrect) in others {
+                if rect.intersects(qrect) {
+                    kick(p, dir, vx, vy);
+                }
+            }
+        }
+        // `:27002-27005` — the zero-velocity kill.
+        if p.vel.x == 0.0 && p.vel.y == 0.0 {
+            p.kill();
+        }
+        // `:27006` — the spin.
+        p.rot += 0.02 * p.vel.x;
+        // `:27007-27018` — the X drag: grounded 0.98, wet 0.99, dry 0.995.
+        if p.vel.y == 0.0 {
+            p.vel.x *= 0.98;
+        } else if p.wet {
+            p.vel.x *= 0.99;
+        } else {
+            p.vel.x *= 0.995;
+        }
+        // `:27019-27022` — the ±0.03 X deadzone.
+        if p.vel.x > -0.03 && p.vel.x < 0.03 {
+            p.vel.x = 0.0;
+        }
+        // `:27023-27043` — the wet buoyancy / dry gravity.
+        if p.wet {
+            p.ai[1] = 0.0;
+            if p.vel.y > 0.0 {
+                p.vel.y *= 0.95;
+            }
+            p.vel.y -= 0.1;
+            if p.vel.y < -4.0 {
+                p.vel.y = -4.0;
+            }
+            if p.vel.x == 0.0 {
+                p.kill();
+            }
+        } else {
+            p.vel.y += 0.1;
+        }
+        // `:27044-27047` — the 10 Y clamp.
+        if p.vel.y > 10.0 {
+            p.vel.y = 10.0;
+        }
+        // The movement: `HandleMovement`'s TileCollision (flag6 = true —
+        // 155 is on no fall-through exclusion) + SlopeCollision, then the
+        // type-155 bounce arm (`:18603-18618`) on the blocked flag. The
+        // chat rides the pool intent. The integrate uses the collision-
+        // adjusted velocity (the C# `UpdatePosition` adds `base.velocity`
+        // AFTER HandleMovement rewrote it).
+        let mut moved_vel = p.vel;
+        if p.tile_collide && p.active {
+            let last = p.vel;
+            let tc = crate::collision::tile_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [p.vel.x, p.vel.y],
+                p.w,
+                p.h,
+                true,
+                true,
+            );
+            let after_tc = Vec2::new(tc.vel[0], tc.vel[1]);
+            // `:17656-17697` — the SlopeCollision follow-up (the port's
+            // shared helper, the yoyo precedent): a ramp slide also arms
+            // the blocked flag.
+            let sc = crate::collision::slope_collision(
+                world,
+                [p.pos.x, p.pos.y],
+                [after_tc.x, after_tc.y],
+                p.w,
+                p.h,
+                true,
+            );
+            let after_sc = Vec2::new(sc.vel[0], sc.vel[1]);
+            p.pos = Vec2::new(sc.pos[0], sc.pos[1]);
+            let blocked = after_tc != last || after_sc != after_tc;
+            p.vel = after_sc;
+            moved_vel = after_sc;
+            if blocked {
+                // `:18605-18608` — the >10-bounce broadcast.
+                if p.ai[1] > 10.0 {
+                    let name = crate::lang::projectile_name(p.kind as i32);
+                    let text = crate::lang::text_args(
+                        "Game.BallBounceResult",
+                        &[name, (p.ai[1] as i32).to_string()],
+                    );
+                    self.pending_ball_chats.push(text);
+                }
+                // `:18609-18617` — the reset + the ×−0.6 axis bounces.
+                p.ai[1] = 0.0;
+                if p.vel.x != last.x {
+                    p.vel.x = last.x * -0.6;
+                }
+                if p.vel.y != last.y && last.y > 2.0 {
+                    p.vel.y = last.y * -0.6;
+                }
+                moved_vel = p.vel;
+            }
+        }
+        // `:16920-16923` — the wet-exit Y halve (the generic wet block's
+        // 155 arm; the probe at the head carries last tick's wet state).
+        if was_wet && !p.wet {
+            p.vel.y *= 0.5;
+            moved_vel.y = p.vel.y;
+        }
+        // `UpdatePosition`'s integrate (`:20445`) — 32 is not on the skip
+        // list; the dead slot moves too (the C# shape). The velocity is
+        // the post-bounce one.
+        p.pos += moved_vel;
     }
 
     /// `AI_121_StardustDragon` (`Projectile.cs:42824-43080`, the dispatch
@@ -26322,6 +26581,113 @@ mod arrow_tests {
         assert!(p.active, "the foreign coil never places (`:27202-27205`)");
         assert_eq!(p.ai[1], 0.0);
         assert!(w.tile(10, 19).is_none_or(|t| !t.active()), "no rope placed");
+    }
+
+    /// W4-d4 — the aiStyle-32 Beach Ball (`Projectile.cs:26887-27048`):
+    /// the row, the life pin + counter, the dry gravity/drag tail and the
+    /// zero-velocity kill.
+    #[test]
+    fn the_beach_ball_row_and_flight_tail() {
+        let d = proj_data(BEACH_BALL).expect("the 155 row");
+        assert_eq!((d.w, d.h), (44.0, 44.0), "`:2429-2430`");
+        assert_eq!(d.ai_style, 32, "`:2431`");
+        assert!(d.net_important, "`:2428`");
+        let mut pool = ProjectilePool::new();
+        let ball = pool
+            .spawn_with_data(BEACH_BALL, 1600.0, 400.0, 4.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut w = World::new("t".into(), 300, 200);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        let p = &pool.slots()[ball];
+        // The head: timeLeft pinned to 10 then the per-sub-step decrement
+        // (`:17201`) leaves 9; ai[0] counts to 1.
+        assert_eq!(p.time_left, 9, "the 10-pin (`:26889`) minus the tick");
+        assert_eq!(p.ai[0], 1.0, "the counter (`:26890`)");
+        // The dry tail: vy 0 → the 0.98 X drag, then +0.1 gravity. The
+        // spin (`:27006`) runs BEFORE the drag, so it reads the pre-drag
+        // vx = 4.0.
+        assert!((p.vel.x - 4.0 * 0.98).abs() < 1e-6, "the grounded 0.98 drag (`:27009`)");
+        assert!((p.vel.y - 0.1).abs() < 1e-6, "the dry 0.1 gravity (`:27042`)");
+        assert!((p.rot - 0.02 * 4.0).abs() < 1e-6, "the 0.02·vx spin (`:27006`)");
+    }
+
+    /// The bounce machine (`:26891-27001`): at ai[0] ≥ 20 the ball kicks
+    /// off an overlapping NPC — ai[0] resets to 0, vy = −4.5 + the NPC's
+    /// vy, the (vx + dir·1.75)/2 blend + 3× the NPC's vx, ai[1]++.
+    #[test]
+    fn the_beach_ball_bounces_off_an_npc_at_20_ticks() {
+        let mut pool = ProjectilePool::new();
+        // The ball at (1600, 400) with ai[0] = 19: the next tick's ++ hits
+        // 20 and the scan runs. Zero velocity keeps the tail's kill out of
+        // the way until the kick lands.
+        let ball = pool
+            .spawn_with_data_ai(BEACH_BALL, 1600.0, 400.0, 0.0, 0.0, 0, 0.0, 19.0, 0.0)
+            .unwrap();
+        let mut w = World::new("t".into(), 300, 200);
+        // An NPC whose box overlaps the ball's (1600..1644, 400..444):
+        // a zombie at (1610, 410), facing +1, velocity (1, 0.5).
+        let mut n = Npc::new(NpcKind::Zombie, 1610.0, 410.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.vx = 1.0;
+        n.vy = 0.5;
+        let mut npcs = vec![n];
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        let p = &pool.slots()[ball];
+        assert!(p.active, "the kick keeps the ball alive");
+        assert_eq!(p.ai[0], 0.0, "the hit resets the counter (`:26934`)");
+        assert_eq!(p.ai[1], 1.0, "the bounce count (`:26960`)");
+        assert!(p.net_update, "the netUpdate flag (`:26959`)");
+        // vy = −4.5 + 0.5 = −4.0; vx = (0 + 1·1.75)/2 + 3·1 = 0.875 + 3 = 3.875.
+        assert!((p.vel.y - (-4.0)).abs() < 1e-5, "the −4.5 kick + the NPC's vy");
+        assert!((p.vel.x - 3.875).abs() < 1e-5, "the dir blend + 3× the NPC's vx");
+    }
+
+    /// The zero-velocity kill (`:27002-27005`): a stopped ball dies on its
+    /// first tick (before the gravity tail can move it).
+    #[test]
+    fn the_beach_ball_dies_at_zero_velocity() {
+        let mut pool = ProjectilePool::new();
+        let ball = pool
+            .spawn_with_data(BEACH_BALL, 1600.0, 400.0, 0.0, 0.0, 0, 0.0)
+            .unwrap();
+        let mut w = World::new("t".into(), 300, 200);
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(!pool.slots()[ball].active, "the zero-velocity kill (`:27004`)");
     }
 }
 

@@ -605,6 +605,12 @@ pub const ROPE_COIL: u16 = 171;
 pub const VINE_ROPE_COIL: u16 = 475;
 pub const SILK_ROPE_COIL: u16 = 505;
 pub const WEB_ROPE_COIL: u16 = 506;
+/// The Beach Ball (`ProjectileID.BeachBall = 155`, `Projectile.cs:2426-2433`:
+/// aiStyle 32, 44×44, friendly, netImportant). The bounce machine
+/// (`:26887-27048`) kicks off players/NPCs/projectiles; the type-155
+/// movement arm (`:18603-18618`) bounces ×−0.6 and broadcasts the
+/// `Game.BallBounceResult` chat above 10 bounces. W4-d4.
+pub const BEACH_BALL: u16 = 155;
 /// The Venom Dart Trap's projectile (the C# `VenomDartTrap = 980`,
 /// `Projectile.cs:9330-9339`; the WIRE-1 legacy named it TRAP_SPIKY).
 pub const TRAP_VENOM_DART: u16 = 980;
@@ -2325,6 +2331,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 RESET_STATE,
             ),
+            // `:2426-2433` — the Beach Ball (155): 44x44, aiStyle **32**,
+            // friendly, netImportant (the overlay below); the stock
+            // penetrate 1 / tileCollide true / timeLeft 3600 (the AI pins
+            // timeLeft = 10 every tick, `:26889`).
+            BEACH_BALL => (44.0, 44.0, 32, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // The wiring.device arms (M7-WIRE-2): the explosives 141's
             // explosion (`Projectile.cs:1953-1965` — aiStyle 16, 260×260,
             // `timeLeft` 2, `tileCollide = false`, trap), the land mine's
@@ -4188,7 +4199,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             )
             // S1-P-i55 — `Projectile.cs:7628`: the golf balls (721 + the 14
             // dyed twins) set `netImportant = true` themselves.
-            || matches!(kind, GOLF_BALL | 739..=752),
+            || matches!(kind, GOLF_BALL | 739..=752)
+            // W4-d4 — `Projectile.cs:2428`: the Beach Ball (155) sets
+            // `netImportant = true`.
+            || kind == BEACH_BALL,
         ignore_water: ((minion || sentry)
             && !matches!(
                 kind,

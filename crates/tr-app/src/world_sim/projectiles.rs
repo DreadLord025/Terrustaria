@@ -557,6 +557,14 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     for (style, x, y) in app.projectiles.drain_splashes() {
         app.audio.play_splash_sound(style, x, y, rng);
     }
+    // W4-d4 — the beach ball's `Game.BallBounceResult` broadcasts
+    // (`Projectile.cs:18605-18608`, the type-155 movement arm): the C#
+    // `ChatHelper.BroadcastChatMessage(..., ChatColors.ServerMessage)` runs
+    // inline mid-`HandleMovement`; the port drains the pool's queued lines
+    // at the pass tail (the golf cup-chat precedent).
+    for text in app.projectiles.drain_ball_chats() {
+        app.chat.new_text(text, crate::chat::COLOR_SERVER_MESSAGE);
+    }
     // S1-P-i35 — the bobber death hook's catch drain (`Projectile.cs:71986-
     // 71994` → `GiveItemToPlayer` → `QuickSpawnItem` → `GetOrDropItem`): the
     // item fills the owner's inventory first (`Player.GetItem`'s slot walk),

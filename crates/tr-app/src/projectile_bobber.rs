@@ -442,7 +442,10 @@ pub(crate) fn kill_hook(p: &mut Projectile, level: i32, rng: &mut dyn DropRng) -
 /// `Collision.WetCollision` (`Collision.cs:1572-1651`) + `LavaCollision`
 /// (`:1653-1684`) folded into one probe: the inset rectangle for wet/honey/
 /// shimmer, the FULL box for lava. Writes the slot's four flags.
-fn probe_wet(p: &mut Projectile, world: &World) {
+/// `pub(crate)` since W4-d4: the beach-ball arm (aiStyle 32) reads the same
+/// probe at its tick head (the one-tick-lag convention, ANALYSIS "Fishing
+/// rod (S1-P-i35)").
+pub(crate) fn probe_wet(p: &mut Projectile, world: &World) {
     let (x, y, w, h) = (p.pos.x, p.pos.y, p.w, p.h);
     let wi = w as i32;
     let hi = h as i32;
