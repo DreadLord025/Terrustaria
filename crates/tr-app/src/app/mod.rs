@@ -1009,6 +1009,11 @@ pub(crate) struct App {
     /// the mining damage book: per-cell accumulated damage, 100 breaks the
     /// tile (`Player.PickTile` `Player.cs:53769`), 60-tick TTL decay.
     pub(crate) hit_tile: tr_core::hit_tile::HitTile,
+    /// `Player.hitReplace` (`Player.cs:1660`) — the block-swap damage book
+    /// (`PlaceThing_TryReplacingTiles`, `:39857-39873`): a SECOND `HitTile`,
+    /// independent of the mining book; `ClearMiningCacheAt` clears both
+    /// (`:53846-53850`).
+    pub(crate) hit_replace: tr_core::hit_tile::HitTile,
     /// `Player.poundRelease` (`Player.cs:1502`): the hammer's pound latch.
     /// Set on the use-button release (`Player.cs:45635-45638`), consumed by
     /// `ItemCheck_UseMiningTools_TryPoundingTile` (`:45969-46311`) on the
@@ -4093,6 +4098,7 @@ impl App {
             item_time: 0.0,
             tool_time: 0.0,
             hit_tile: tr_core::hit_tile::HitTile::new(),
+            hit_replace: tr_core::hit_tile::HitTile::new(),
             pound_release: false,
             mining_can_hit_walls: true,
             coins,
