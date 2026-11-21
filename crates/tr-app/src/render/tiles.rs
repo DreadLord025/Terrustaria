@@ -10,7 +10,7 @@ use crate::player::{self, Player};
 use crate::render::entities::{
     draw_npcs, draw_player, flip_uv, ArmorKinds, NpcAssets, PlayerAssets,
 };
-use crate::render::foliage::draw_tree_foliage;
+use crate::render::foliage::{draw_tree_foliage, emit_living_tree_leaf};
 use crate::render::liquids::{draw_tile_liquid_behind, draw_waters, LiquidPass};
 use crate::ui::text::{hud_text, hud_text_width};
 use glam::Vec2;
@@ -306,9 +306,16 @@ pub(crate) fn draw_tiles(
     grass_wind_counter: f32,
     tree_wind_counter: f32,
     sunflower_wind_counter: f32,
-    // `EmitTreeLeaves` spawns collected by the foliage pass, drained by the
-    // caller into the leaf particle list.
-    leaf_spawns: &mut Vec<crate::render::foliage::LeafSpawn>,
+    // `EmitTreeLeaves` spawns now go straight into the gore pool (W4-g68):
+    // this is the pool (`Main.gore`) and the `Main.rand` stream the
+    // `NewGore*` internals roll on. The gate draws stay on `leaf_rng`
+    // (the `TileDrawing._rand` stand-in below).
+    gore: &mut tr_core::gore::GorePool,
+    main_rand: &mut tr_core::UnifiedRandom,
+    // `TileDrawing._isActiveAndNotPaused` (`TileDrawing.cs:469`,
+    // `FocusHelper.AllowTileDrawingToEmitEffects`) — the particle-emission
+    // gate; the port reads `!game_paused` (the focus gate is unported).
+    emit_effects: bool,
     // `TileDrawing._vineWindCounter` (`TileDrawing.cs:375`): the vine
     // strips' own sway counter (S1-G-1).
     vine_wind_counter: f32,
@@ -1075,49 +1082,28 @@ pub(crate) fn draw_tiles(
                         &dd,
                     );
                     stats.quads += 1;
-                    // `TileDrawing.cs:6849-6855` + `EmitLivingTreeLeaf`
-                    // (`TileDrawing.cs:7549-7590`): leaf blocks shed leaf gores
-                    // below and downwind at `leafFrequency / 4`.
-                    if tile.kind == 192
-                        && wind.sway_enabled
-                        && leaf_rng.next_range(0, tr_core::wind::leaf_frequency(wind.speed_current) / 4)
-                            == 0
-                    {
-                        let wind_v = wind.speed_current;
-                        // Below: the tile's bottom edge, if open.
-                        let below_open = !world
-                            .tile(tx, ty + 1)
-                            .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind) && t.kind != 192)
-                            && world.tile(tx, ty + 1).is_none_or(|t| t.liquid == 0);
-                        if below_open {
-                            leaf_spawns.push(crate::render::foliage::LeafSpawn {
-                                pos: glam::Vec2::new(tx as f32 * 16.0, ty as f32 * 16.0 + 16.0),
-                                style: 910,
-                            });
-                        }
-                        // Sideways downwind (|wind| > 0.2), 1/2 of the rolls.
-                        let sideways = if wind_v > 0.2 {
-                            1
-                        } else if wind_v < -0.2 {
-                            -1
-                        } else {
-                            0
-                        };
-                        if sideways != 0
-                            && leaf_rng.next_range(0, 2) == 0
-                            && !world
-                                .tile(tx + sideways, ty)
-                                .is_some_and(|t| t.active() && td::TILE_SOLID.has(t.kind) && t.kind != 192)
-                            && world.tile(tx + sideways, ty).is_none_or(|t| t.liquid == 0)
-                        {
-                            let shift = if sideways < 0 { -10 } else { 0 };
-                            leaf_spawns.push(crate::render::foliage::LeafSpawn {
-                                pos: glam::Vec2::new(
-                                    tx as f32 * 16.0 + 8.0 + 4.0 * sideways as f32 + shift as f32,
-                                    ty as f32 * 16.0 + 8.0,
-                                ),
-                                style: 910,
-                            });
+                    // W4-g68: the inline leaf arm is reconciled with the
+                    // faithful `EmitLivingTreeLeaf` body (the W4-d60 flagged
+                    // deviation): no `sway_enabled` gate, the sideways
+                    // `Next(2)` is UNCONDITIONAL, the below-spawn needs two
+                    // open downwind cells in strong wind, the paint column
+                    // rides the gore frame, and type 384 sheds 914.
+                    // `TileDrawing.cs:6848-6855` + `:7549-7592`.
+                    if emit_effects && matches!(tile.kind, 192 | 384) {
+                        let max_value =
+                            tr_core::wind::leaf_frequency(wind.speed_current) / 4;
+                        if leaf_rng.next_range(0, max_value) == 0 {
+                            let leaf_type = if tile.kind == 192 { 910 } else { 914 };
+                            emit_living_tree_leaf(
+                                world,
+                                tx,
+                                ty,
+                                leaf_type,
+                                wind.speed_current,
+                                &mut leaf_rng,
+                                main_rand,
+                                gore,
+                            );
                         }
                     }
                 }
@@ -1159,7 +1145,9 @@ pub(crate) fn draw_tiles(
             wind,
             tree_wind_counter,
             &mut leaf_rng,
-            leaf_spawns,
+            main_rand,
+            gore,
+            emit_effects,
             x0,
             y0,
             x1,

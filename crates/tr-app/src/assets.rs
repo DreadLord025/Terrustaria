@@ -1941,14 +1941,11 @@ pub struct Lookups {
     /// projectile id (`Projectile_<id>` naming, the `AssetInitializer.cs:124`
     /// convention the `item_icons` scan uses).
     pub yoyo_sprites: std::collections::HashMap<u16, tr_render::SheetRect>,
-    /// The ambient leaf gores the world's trees can shed: `Gore_910`
-    /// (forest) and `Gore_911` (palm), 32-column (paint) x 8-row (variant)
-    /// strips (`GoreID.cs:645-647`, `Gore.cs:1390-1401`).
-    pub leaf_gores: [Option<tr_render::SheetRect>; 2],
     /// `TextureAssets.Gore[type]` — one packed sheet per gore id whose
     /// `Images/Gore_<id>` file exists (`AssetInitializer.cs:135-137`), the
     /// `Main.DrawGore` source (`Main.cs:21873-21907`). Includes the leaf
-    /// gores 910/911 (they also ride `leaf_gores` for the foliage pass).
+    /// gores 910/911 (packed via `STATIC_SHEET_NAMES`) and every other
+    /// leaf style (914 &c.) — W4-g68 draws all leaf gores through this map.
     pub gore_sheets: std::collections::HashMap<u16, tr_render::SheetRect>,
     /// `Item_71..74`: copper/silver/gold/platinum coin sprites.
     pub coins: [Option<tr_render::SheetRect>; 4],
@@ -2339,7 +2336,6 @@ impl Lookups {
                         .map(|r| (k, r))
                 })
                 .collect(),
-            leaf_gores: [910, 911].map(|i| atlas.sheet(&format!("Gore_{i}")).copied()),
             // Every `Gore_<id>` sheet that made it into the atlas, keyed by
             // the parsed id (`AssetInitializer.cs:135-137` names them
             // `Images/Gore_<l>`) — the same prefix scan as `item_icons`; an
@@ -2956,43 +2952,6 @@ impl Lookups {
             rect.width,
             rect.height,
         ))
-    }
-
-    /// The leaf gore sheet for `WorldGen.GetTreeLeaf`'s `passStyle` —
-    /// `Gore_910` (forest) at index 0, `Gore_911` (palm) at index 1; the other
-    /// biome styles load with their biomes.
-    pub fn leaf_sheet(&self, style: u32) -> Option<&tr_render::SheetRect> {
-        let idx = match style {
-            910 => 0,
-            911 => 1,
-            _ => return None,
-        };
-        self.leaf_gores.get(idx).and_then(|s| s.as_ref())
-    }
-
-    /// One leaf frame: the 32-column (paint) x 8-row (variant) strip
-    /// (`Gore.cs:1390-1401`); the port draws column 0 (no paint).
-    pub fn leaf_uv(&self, style: u32, row: u8) -> Option<[f32; 4]> {
-        let sheet = self.leaf_sheet(style)?;
-        let fw = sheet.width / 32;
-        let fh = sheet.height / 8;
-        if fw == 0 || fh == 0 || row as u32 >= 8 {
-            return None;
-        }
-        Some(uv_rect(
-            sheet,
-            self.atlas_size,
-            0,
-            row as i32 * fh as i32,
-            fw,
-            fh,
-        ))
-    }
-
-    /// The pixel frame size of one leaf cell.
-    pub fn leaf_frame(&self, style: u32) -> Option<(f32, f32)> {
-        let sheet = self.leaf_sheet(style)?;
-        Some((sheet.width as f32 / 32.0, sheet.height as f32 / 8.0))
     }
 
     /// UV and frame size of a projectile sprite — `Main.DrawProj`'s

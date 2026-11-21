@@ -251,7 +251,6 @@ impl App {
                     sunflower_wind_counter,
                     sunflower_wind_step,
                     vine_wind_counter,
-                    leaves,
                     items,
                     swing,
                     projectiles,
@@ -640,10 +639,13 @@ impl App {
                     // the tile pass and its `AddLight` list feeds the light compute.
                     // Running it unconditionally (not only on world-range rebuilds)
                     // keeps the light feed a pure function of the frame index.
-                    let mut leaf_spawns = Vec::new();
-                    let mut leaf_rng = tr_core::tile_light::FastRandom::new(
-                        (*frame_count as u64).wrapping_mul(0x6A09_E667_F3BC_C909) ^ world.seed,
-                    );
+                    // W4-g68: the leaf spawns go straight into `App.gore`
+                    // (`Main.gore`) during the tile/foliage passes — no
+                    // intermediate Vec. The `Main.rand` stand-in for the
+                    // draw-side `NewGore*` internals is the bare global
+                    // stream (the C# `DrawTiles_EmitParticles` runs outside
+                    // every SwapRandom block; the per-frame pinning of the
+                    // gate stream stays below in `draw_tiles`).
                     if !crate::env::no_waterfall() {
                         let half_v = screen * 0.5 / world_zoom;
                         let vx0 = (((camera.x - half_v.x) / TILE_PX).floor() as i32 - 1)
@@ -1173,7 +1175,13 @@ impl App {
                             *grass_wind_counter,
                             *tree_wind_counter,
                             *sunflower_wind_counter,
-                            &mut leaf_spawns,
+                            // W4-g68: the leaf spawns land in the gore pool
+                            // directly; `Main.rand` is the bare global stream
+                            // (the tile-draw emission runs outside every
+                            // SwapRandom block in the C#).
+                            gore,
+                            self.rngs.global(),
+                            !game_paused_for_specials && !crate::env::no_wind(),
                             *vine_wind_counter,
                             // S1-F-9 slice B: the engine-driven DrawData cases'
                             // inputs (plates 428, party 455, echo sight 541).
@@ -1243,23 +1251,13 @@ impl App {
                         );
                     }
 
-                    // `TileDrawing.EmitTreeLeaves`: the foliage pass's spawns become
-                    // leaf gores; `Gore_UpdateLeaf` ticks them and the draw rides the
-                    // world-effect range like the rain (world content — under the map
-                    // batches and the interface). `TR_NO_WIND` is the A/B switch for
-                    // the whole wind feature, spawns included.
-                    let wind_ab_on = !crate::env::no_wind();
-                    let drained: Vec<_> = leaf_spawns.drain(..).collect();
-                    for s in drained.into_iter().take_while(|_| wind_ab_on) {
-                        if leaves.len() >= 400 {
-                            break;
-                        }
-                        leaves.push(crate::render::foliage::LeafGore::from_spawn(
-                            s,
-                            &mut leaf_rng,
-                        ));
-                    }
-                    crate::render::foliage::tick_leaves(leaves, world, wind.speed_current);
+                    // W4-g68: the leaf gores live in `App.gore` now — the
+                    // foliage/tile passes spawned them during the world
+                    // pass, `Gore_UpdateLeaf` ticks them in the `gores`
+                    // phase (`Main.cs:17971`), and `Main.DrawGore` below
+                    // draws them in the world-effect range like the rain.
+                    // The old private 400-cap `LeafGore` Vec and its
+                    // draw-time tick are retired.
 
                     draw_phase("rain");
                     rain.draw(renderer, lookups, light, draw_cam, world_zoom, screen);
@@ -1278,9 +1276,6 @@ impl App {
                     // 213-draw (self-lit gray, `Dust.cs:2498-2501`), the same
                     // world-content range as the rain/sand dust.
                     crate::minecart::draw(dust, renderer, lookups, draw_cam, world_zoom, screen);
-                    crate::render::foliage::draw_leaves(
-                        renderer, lookups, light, draw_cam, world_zoom, screen, leaves,
-                    );
                     // `Main.DrawWires` (`Main.cs:57028-57030`): the wire overlay
                     // rides the tile batch after the liquids, under the
                     // over-wire entities (the port draws it before the
