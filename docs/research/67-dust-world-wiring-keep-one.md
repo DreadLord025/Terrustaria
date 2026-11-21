@@ -1,7 +1,9 @@
 # 67 — World-lane dust WIRING (W4-f6): keep-one + seam census
 
-Status: FINAL (W4-f6, the world lane's wiring + final phase, branch
-`task/W4-f6-dust-world-3`). The 40 staged emitters (research/65, commits
+Status: SEALED (W4-f6, the world lane's wiring + final phase, branch
+`task/W4-f6-dust-world-3`, pushed tip `ebdcbd96d`; the SEAL receipts at
+the foot discharge the d54 §8.1 push-owed row and publish the c14/d8
+mutual receipts). The 40 staged emitters (research/65, commits
 `885a6bfa`/`d6f555b8`/`9dec91b0`/`680ac9d8`) are called from the live
 machines at their C# positions; the final phase applied the d54 drill-atan2
 fix, published the g68 `tile_draw_rand` keep-one + the mount-abilities
@@ -285,3 +287,116 @@ merge-verify compile window. The base-213 spark stream is byte-identical
 (the variant adds zero rolls for `SparkVariant::Sparks`); the drill-atan2
 fix changes only the aim angle's last-ulp precision (the cos/sin velocity
 bytes), no draw count.
+
+## SEAL receipts (post-push re-census, 2026-11-21)
+
+The five SEAL items, each with the pushed evidence + the co-lane mutual
+receipt. All reads below were taken at `git fetch origin --prune` this
+round; the cited C# windows were re-read verbatim (≤100-line windows).
+
+### (1) DRILL-ATAN2 PUSHED + tile_draw_rand ONE-field + UseDrill seam + minecart 4 delegates — LANDED
+
+`HEAD == origin/task/W4-f6-dust-world-3` verified by `git rev-parse`:
+`ebdcbd96d71f36010a3adbe156bf70b9421dc1af` — the FINAL record and all four
+final-phase commits below it are ON ORIGIN, nothing unpushed.
+
+- **`76aeaf3c3`** — drill-atan2: the f64 body is at `mount_dust.rs:88` and
+  the witness mirror at `:1849` on the origin tip
+  (`(d.y as f64).atan2(d.x as f64) as f32`, git-grep ×2, no f32 remainder).
+- **`8a34f6642`** — tile_draw_rand keep-one verdict (ONE field, BOTH
+  consumers, drips-before-pylons; §"The g68 collision" above).
+- **`a67d13638`** — the UseDrill activation seam (§"The mount ABILITIES
+  co-lane" above), re-read against the C# this round: `Player.cs:28288-28291`
+  is the `mount.Type == 8 → UseDrill` call after `PlayerFrame` (:28286) +
+  `DoDeadCellsBeheadedParticles` (:28287); `Mount.cs:3061` is the
+  `_type != 8 || !_abilityActive` refusal; the blocks dust pair
+  `:3108-3116` fires OUTSIDE the `flag2` pick guard (:3101-3104) and BEFORE
+  `SmoothSlope` (:3119) — the contract's "dust even on refused picks"
+  stands verbatim.
+- **`573b7e7f2`** — the four MinecartDust delegates: `SparkVariant` +
+  `spark_variant_of` at `minecart.rs:1008`/:1025 (rows 51/53/11/33 →
+  Fart/TerraFart/Mech/Meow, `_ => Sparks`), `spawn_fart_cloud` STAGED at
+  `:1682` with `#[allow(dead_code)]` — the c14-delegate activation seam.
+
+### (2) c14 M2-MOUNT-4 co-lane ALIVE — the mutual receipt (f6 → c14)
+
+`origin/task/W4-c14-tile-break-footstep-sounds` tip **`367322868`** (the
+rocket vanity-tier doc-sweep fix), ALIVE. Its research/82 five-site
+`Mount.cs` sound census: MeowcartLandingSound `:661` + MeowcartBumperSound
+`:666` PORTED (`play_meowcart_sound`), the Santank ability pair
+`:3300`/`:3311` PORTED (`play_mount_ability_sound`, "W4-c14 M2-MOUNT-4,
+research/83" — the Scutlix/Santank auto-fire machine whole:
+`Player::update_mount_ability`), and the cart-rattle/landing/bumper
+Item53/55/56 cues + the playing guards (`w4_c14_the_cart_rattle_guard_
+refuses_while_the_slot_is_live`). c14's ANALYSIS "The tile-break fail +
+movement-sound wave" keeps **"the fart clouds (gore 435-437 + the dust)
+are visual seams"** — its three sound delegates
+(`minecart_jumping_sound_fart` :1368 / `minecart_landing_sound_fart`
+:1385 / `minecart_bumper_sound_fart` :1311) are the exact C# sites that
+call `SpawnFartCloud` inline (`DelegateMethods.cs:311`/:318 useDelay
+false, `:325` useDelay true — re-read verbatim).
+
+**f6's receipt:** the visual half is STAGED and waiting at
+`minecart.rs::spawn_fart_cloud` (`573b7e7f2`): the 3 gores 435-437 with
+the `(Width/2−18, Height−16)` anchor + the ×0.2/+carry/Y×0.75 post-writes,
+the 20-tick `fartKartCloudDelay` gate, the 53-only 15-dust 107 tail — all
+rolls on the caller's `UpdatePlayers` stream in C# order. c14's activation
+is: add `Player.fartKartCloudDelay` (`Player.cs:1614`, decrement `:28098`),
+call `spawn_fart_cloud` after each delegate's sound plays (the C# inline
+order), pass `use_delay` false/false/true. c14's Meowcart SOUND half +
+f6's `SparksMeow` dust half (row 33) are disjoint halves of the same
+delegate — neither duplicates the other. The UseDrill activation contract
+(§ above) is c14/d8-readable at this tip: c14's research/82 already defers
+"the Drill (8) ability … the `UseDrill` mining consumer is the mount
+lane's" — this doc is that contract.
+
+### (3) d8 drill-mining payload — M2-MOUNT-4 STAYS; f6's UseDrill seam contract
+
+`origin/task/W4-d8-proj-ai-71-80` ADVANCED `50dcaa75` → **`e9de71683`**
+(+2: `85e874995` final (1) + `e9de71683` final (2)-(5) census). Its
+research/97 final phase ported the Drill ability half WHOLE
+(`DrillMountData`/`DrillBeam`, `update_drill`, `aim_ability_drill`,
+`use_ability_drill` toggle + 453 spawn tuple, `drill_update_effects_gate`)
+and its split-contract keeps **"the mining WRITE stays M2-MOUNT-4"**
+(`UseDrill` :3059-3180 — `PickTile`/`PickWall`/`Tile.SmoothSlope`/`Hurt`/
+dust-230; `SmoothSlope` unported, App-level seams). Its "activation
+contract (what the write-half inherits)" exposes `ability_active()` /
+`set_ability_active(bool)` — **the same `_abilityActive` f6's `MountState.
+ability_active` carries**: the keep-one (d8's accessors + f6's declaration,
+§ above) is unchanged by d8's advance. f6's contract adds what d8's
+write-half needs at the seam: the exact call position
+(`Player.cs:28288-28291`), the dust-fires-on-refused-picks + remote-players
+rule, the `drill_beam_dust(target=(point<<4)+8, Center)` signature (the
+f64 atan2 inside), and the direct-call-or-DrillBeam-request options (the
+`world_sim/player.rs:1569` drain is order-safe today). f6's
+`drill_beam_dust` stays STAGED until the write lands; no double-fire.
+
+### (4) d54 bible §8.1 f6-local owed — DISCHARGED (the push receipt)
+
+`origin/task/W4-d54-dust-sites-world` tip **`72226e500`** (research/150
+collision-registry round 2). Its research/131 §8.1 still carries the
+pre-push snapshot: the f6 row `0f9fd642f origin / a67d13638 LOCAL` and the
+fold row **"f6 double-atan2 | RESOLVED-LOCAL, PUSH OWED"** ("origin
+`0f9fd642f` still f32 ×2 — §7.1 fallback hunk stands until the push").
+**That condition is DISCHARGED:** origin `task/W4-f6-dust-world-3` now
+carries `76aeaf3c3` (ancestor of the pushed tip `ebdcbd96d`), and the
+origin blob reads `(d.y as f64).atan2(d.x as f64) as f32` at
+`mount_dust.rs:88` + the mirror `:1849` (git-grep at the origin ref this
+round). The §7.1 fallback hunk is RETIRED — the merger takes f6's pushed
+tip directly (its own merger note: "take f6's tip AFTER its push"). The
+§8.1 sibling rows (`8a34f6642` keep-one / `a67d13638` contract,
+"VERIFIED-PUBLISHED f6 local") are now pushed too. d54's next bible round
+flips the fold row to RESOLVED-PUSHED on this receipt; nothing is owed by
+f6 for the atan2 fold.
+
+### (5) research/67 SEALED + the mount-dust-family bible
+
+This document is the mount-dust-family bible: the e4 keep-one (f6's 27 ⊃
+e4's 19, `mount_dust.rs` canonical), the g68 `tile_draw_rand` ONE-field
+verdict, the seam census (all 40 staged emitters' live positions), the
+UseDrill activation contract (c14/d8/M2-MOUNT-4), the four minecart
+delegate variants + the staged fart cloud, and the SEAL receipts above.
+Status: **SEALED** — every f6-side obligation is landed and pushed; the
+remaining cross-lane items (c14's fart-cloud activation field+calls, d8's
+successor mining write, the merge-verify witness compile window) belong
+to their named lanes, not f6.
