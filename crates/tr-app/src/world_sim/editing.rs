@@ -16100,6 +16100,15 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
+    // W4-e10 — `Player.cs:43926`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15 slot 0 (playing guard, no draws),
+    // BEFORE `StartInvasion` (`:43932`), at the player's top-left.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -16107,7 +16116,6 @@ pub(crate) fn use_goblin_battle_standard(app: &mut App) -> bool {
         1,
         Some(crate::app::RngKey::UpdatePlayers),
     );
-    app.audio.play("Roar_0");
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -16144,6 +16152,15 @@ pub(crate) fn use_celestial_sigil(app: &mut App) -> bool {
     if crate::world_sim::lunar::anyone_near_cultists(app) {
         return false;
     }
+    // W4-e10 — `Player.cs:44030`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15 slot 0, after the ApplyItemTime
+    // decision, before StartImpendingDoom (`:44032`).
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.world.moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
     app.world.max_moon_lord_countdown = crate::world_sim::lunar::SIGIL_COUNTDOWN;
     crate::chat::broadcast_death_text(
@@ -16170,7 +16187,14 @@ pub fn use_snow_globe(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    app.audio.play("Roar_0");
+    // W4-e10 — `Player.cs:43943`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15 slot 0, BEFORE StartInvasion(2).
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
@@ -16195,7 +16219,15 @@ pub fn use_snow_globe(app: &mut App) -> bool {
 /// play. The C# gate is `ItemTimeIsZero && itemAnimation > 0`: the ACTION
 /// re-arms inside the running swing, the animation is untouched.
 fn apply_moon_item(app: &mut App, kind: u16) {
-    app.audio.play("Roar_0");
+    // W4-e10 — `Player.cs:43977`/`:44044`: `PlaySound(15,
+    // (int)position.X, (int)position.Y, 0)` — case 15 slot 0 (the
+    // playing guard, no draws), at the player's top-left.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
     if app.inventory[app.selected].count == 0 {
         app.inventory[app.selected].kind = 0;
@@ -16618,6 +16650,41 @@ mod loot_summon_tests {
         );
     }
 
+    /// W4-e10 — the invasion items' roars ride the case-15 slot-0 seam
+    /// (`Player.cs:43926`/`:43943`/`:43960`/`:43977`/`:44030`/`:44044`):
+    /// one play per accepted use, at the player's top-left, no draws.
+    /// The playing guard refuses a second roar while the slot is live
+    /// (`LegacySoundPlayer.cs:834`) — headless the slot never fills, so
+    /// each use counts one.
+    #[test]
+    fn w4_e10_the_invasion_items_play_the_roar_once_per_use() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        player.max_hp = 200;
+        app.player = Some(player);
+        app.inventory[app.selected] = ItemSlot {
+            kind: 602,
+            name: "Snow Globe".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(use_snow_globe(&mut app));
+        assert_eq!(app.audio.played_count(), before + 1, "the globe's roar");
+        // A live invasion refuses the next use — no cue on the refusal.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1315,
+            name: "Pirate Map".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(!use_pirate_map(&mut app), "the live invasion refuses");
+        assert_eq!(app.audio.played_count(), before, "the refusal is silent");
+    }
+
     #[test]
     fn the_eoc_kill_sets_the_downed_flag() {
         // `NPC.downedBoss1 = true` rides the death pass; the loot resolves
@@ -16650,7 +16717,14 @@ pub fn use_pirate_map(app: &mut App) -> bool {
     if !crate::world_sim::npcs::can_start_invasion(&app.world, life_max) {
         return false;
     }
-    app.audio.play("Roar_0");
+    // W4-e10 — `Player.cs:43960`: `PlaySound(15, (int)position.X,
+    // (int)position.Y, 0)` — case 15 slot 0, BEFORE StartInvasion(3).
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
     app.world.invasion_delay = 0;
     crate::world_sim::npcs::start_invasion_in(
         app,
