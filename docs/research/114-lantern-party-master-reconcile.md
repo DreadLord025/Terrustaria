@@ -1066,3 +1066,73 @@ Scope (the band lane's first row, or a follow-on `d43r` branch off it):
 
 Nothing lands on c39 (no kind here either); the seed is recorded for
 the band lane. WRITTEN NOT RUN (code-only).
+
+---
+
+## 15. RETIRE — the Empress-23-route receipt for d125b (flag-direct-write → helper-route)
+
+d125's tip re-read at retire: **`d8047a109`**
+(`origin/task/W4-d125-empress-r7-drain`, phase-5 docs FINAL). The §9
+row-23 finding CONFIRMED unchanged on that tip:
+
+- `world_sim/npcs.rs:5174-5176` — the case-636 arm:
+
+  ```rust
+  NpcKind::EmpressOfLight => {
+      app.world.downed_empress_of_light = true;
+  }
+  ```
+
+  A DIRECT flag write — no `was_down` capture, no
+  `SetEventFlagCleared` edge, no lantern arm. The C#
+  (`NPC.cs:79351-79353`) calls `SetEventFlagCleared(ref
+  downedEmpressOfLight, 23)` — the false→true edge fires
+  `OnGameEventClearedForTheFirstTime(23)`, a DEFAULT row: the first
+  Empress kill ARMS the lantern night. d125's arm drops that edge.
+- d125's `world_events.rs` has NO `on_game_event_cleared` (grep: only
+  the `next_night_is_lantern_night` field + the check-night consumer) —
+  the helper is c39's (`world_events.rs:372`); it lands with c39's
+  module at merge. **The route hunk below compiles only after the c39
+  helper is in the merged tree — merge order: c39's world_events first
+  (or same merge), then this hunk.**
+
+### The route hunk (apply on the merged tree, `world_sim/npcs.rs:5174`)
+
+```diff
+             // W4-d125 — `DoDeathEvents`'s case 636 (`NPC.cs:79351-79353`):
+             // `SetEventFlagCleared(ref downedEmpressOfLight, 23)`. The
+             // progression notification rides the flag (the fishron
+             // precedent); the .wld flags block owns the byte.
+             NpcKind::EmpressOfLight => {
++                let was_down = app.world.downed_empress_of_light;
+                 app.world.downed_empress_of_light = true;
++                crate::world_events::on_game_event_cleared(&mut app.world_events, 23, !was_down);
+             }
+```
+
+The exact shape of every re-pointed arm on c39 (the Golem/Fishron/
+Deerclops precedent, `npcs.rs:5165-5184`): capture → write → route with
+`!was_down` as the first-kill edge. Id 23 is NOT in the helper's
+4/21/22 skip list — the default arm sets
+`next_night_is_lantern_night = true` on the edge only; repeat kills
+route with `first = false` and no-op (`world_events.rs:373-375`).
+
+### Witness receipt (d125's existing rig survives)
+
+d125's `the_lacewing_release_chain`-family witness asserts
+`app.world.downed_empress_of_light` after the boss death
+(`npcs.rs:18686`) — the routed arm keeps that assertion TRUE (the write
+is unchanged). The merge ADDS two assertions to the same rig (the
+c39 death-arm witness shape): after the first kill
+`app.world_events.next_night_is_lantern_night` is TRUE; a second kill
+(with the flag already up) leaves a freshly-cleared
+`next_night_is_lantern_night` FALSE (the repeat edge no-ops). The
+id-table witness (`world_events.rs:686`) already sweeps id 23 as an
+ARM row — no table change.
+
+**Receipt state: d125b's obligation is DISCHARGED-AS-HUNK** — the exact
+route is published here; d125's own branch needs no further commit (the
+hunk applies at merge against c39's helper). The v18 union side is
+already aligned: d125's empress byte is seated in BOTH f44's and g71's
+heads and at §8 `[100]` — the §12 correction does not touch it.
+WRITTEN NOT RUN (code-only).
