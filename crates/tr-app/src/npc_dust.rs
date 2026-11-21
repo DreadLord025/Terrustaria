@@ -1279,9 +1279,10 @@ mod tests {
     }
 
     /// Site 40302 — the tether: at ai0 = 54, num1396 = 0 → in range; one
-    /// 658 centre at the anchor itself gives value3 == value4 == anchor
-    /// (dist 0 → count 2), so 2 type-269 dusts at anchor + RandomVector2.
-    /// At ai0 = 40, num1396 < 0 → NO draws.
+    /// 658 centre at the anchor gives value3 = anchor (t=0 Hermite) and
+    /// value4 = anchor + (0,-35.625) (t=0.05: the -off·t + off·t² terms),
+    /// dist 35.625 > 10 → count 4 type-269 dusts. At ai0 = 40,
+    /// num1396 < 0 → NO draws.
     #[test]
     fn w4_e2_sand_tether_count_and_range_gate() {
         let w = world();
@@ -1300,21 +1301,27 @@ mod tests {
         let mut r1 = UnifiedRandom::new(112);
         let mut m1 = UnifiedRandom::new(112);
         sand_elemental_tether(anchor, 54.0, &[anchor], &mut r1, &mut p1, &c, &w);
-        // value3 = value4 = CatmullRom(anchor+off, anchor, anchor,
-        // anchor+off, 0) = anchor (the t=0 Hermite returns p2). dist 0 →
-        // count 2. Two dusts, each NewDust(anchor,0,0,269) + RandomVector2.
-        for _ in 0..2 {
+        let off = Vec2::new(0.0, 1500.0);
+        let value3 = catmull_rom(anchor + off, anchor, anchor, anchor + off, 0.0);
+        let value4 = catmull_rom(anchor + off, anchor, anchor, anchor + off, 0.05);
+        let dist = (value3 - value4).length();
+        let count = if dist > 10.0 { 4.0 } else if dist > 5.0 { 3.0 } else { 2.0 };
+        assert_eq!(count, 4.0, "the t=0.05 offset spans 35.6 px");
+        let mut i = 0.0f32;
+        while i < count {
             let idx = mp1.new_dust(&mut m1, &c, &w, anchor, 0, 0, 269, 0.0, 0.0, 0, Color::default(), 1.0);
             let d = mp1.slot_mut(idx);
+            let lerp = value3 + (value4 - value3) * (i / count);
             let rx = 4.0 * m1.next_double() as f32 - 2.0;
             let ry = 4.0 * m1.next_double() as f32 - 2.0;
-            d.position = anchor + Vec2::new(rx, ry);
+            d.position = lerp + Vec2::new(rx, ry);
             d.no_light = true;
             d.scale = 0.3;
+            i += 1.0;
         }
-        assert_eq!(active(&p1).len(), 2);
+        assert_eq!(active(&p1).len(), 4);
         assert_eq!(r1.next_range(0, 1000), m1.next_range(0, 1000));
-        for i in 0..2 {
+        for i in 0..4 {
             assert_eq!(p1.slot(i).position, mp1.slot(i).position);
             assert!(p1.slot(i).no_light);
             assert_eq!(p1.slot(i).scale, 0.3);

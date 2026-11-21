@@ -34351,12 +34351,11 @@ mod w4_e2_batch5_tests {
         let ctx = permissive_dust_ctx(&w);
         n.update_eternia_crystal(&w, &p, &mut rng, &mut dust, &ctx);
         // The win arm's dust block: vector222 = Center + (0,-20), the
-        // num1418 = 0.99 ramp (ai[0] = 1 < 60). 9 skip-gates.
+        // num1418 = 0.99 ramp (ai[0] = 1 < 60). 9 skip-gates. The block
+        // reads the PRE-integration centre (the port runs it before
+        // `self.y += self.vy`, like the C# before UpdateNPC's tail) —
+        // undo the move on the post-call position.
         let (cw, ch) = n.size();
-        // The arm integrated y by vy BEFORE the dust block? No — the
-        // dust block reads self.x/self.y AFTER `self.y += self.vy`? The
-        // C# block is BEFORE the integration; the port placed it before
-        // `self.y += self.vy` too. So the centre is the PRE-move one.
         let ccx = n.x + cw * 0.5;
         let ccy = n.y - n.vy + ch * 0.5 - 20.0;
         let num1418 = 0.99f32;
