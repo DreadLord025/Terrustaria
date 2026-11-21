@@ -31157,6 +31157,31 @@ merge. The research number renamed 143→238→262 per the d54 registry-150
 d42's earlier `9eadc3043` 12:15:55 rename vs c8's `2a0b5c701` 12:24:19 —
 c8 assigned 262).
 
+### W4-c8 SEAL (2026-11-21, code-only — research/262 §8, the four seal items)
+
+All four seal claims re-verified at the pushed tips (research/262 §8
+carries the full receipt): (1) the retire chain `7c2de9c06` landed —
+the 143→238 rename, the §3a d22 warn, the §1a Goldfish-55 lift LIVE
+(base kind, `a725acb04` ancestor of current main `051600da8`), the §7
+CRAWLER-FAMILY declaration + the §7a five-lane auto-cover receipt (the
+lane tips re-resolved exact; the c9 5/0-row citation corrected to
+`npc/data.rs:3720`/`:4090` — the retire draft had e26's line numbers);
+(2) d22's SEAL `3ec231f98` CONSUMED the 110-tick fix —
+`the_worm_head_digs_and_stumbles` now `0..110` on d22 too (npc.rs:21897
+at d22 tip `7307eaae9`, seal ancestor-check exit 0); the
+`worm_head_step` comment-stripped diff shows the ONLY code delta is
+c8's five 375 lines (head-list row + the `:51861` inversion block) —
+type-10 kinematics identical; the far-player 150-loop stays both
+branches; merger keep-one by content, keep c8's superset body; (3) the
+238 TRIPLE collision resolved per registry-150 round 2 (`72226e500`
+§6.3): d42 WINS 238 (`9eadc3043` 12:15:55, tip `bac408be0`), c8 renamed
+262 at `65dd65f8b` (zero stale refs, git grep exit 1), g61's
+237→238→273 EXECUTED (tip `707a972e1`); a fresh all-tip sweep shows 238
+only d42 / 262 only c8; (4) research/262 is the SEALED receipt + the
+§7 CRAWLER-FAMILY bible FINAL — no further c8 commits planned beyond
+the seal; the merge-time residuals stand (§6). Witnesses remain
+WRITTEN NOT RUN.
+
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides

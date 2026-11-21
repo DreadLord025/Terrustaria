@@ -1,4 +1,4 @@
-# 262 — W4-c8 crawler FINAL census: the cross-lane provider contract, the gold set, the d22 compose, the sheets union
+# 262 — W4-c8 crawler FINAL census: the cross-lane provider contract, the gold set, the d22 compose, the sheets union (SEALED)
 
 > **RENUMBER-CHAIN 143 → 238 → 262** (registry-150 §6.3, d54 round-2
 > refresh `72226e500`): 238 belongs to W4-d42's earlier rename
@@ -256,6 +256,10 @@ have been consumed):
   `world_sim/npcs.rs:14298` comment "~110 ticks saturate it" is
   consistent). d22's two `w4_d22_the_*` single-tick witnesses and c8's
   `w4_c8_compose_*` carries are content-identical — keep-one (§6).
+  **SEAL UPDATE (§8 item 2)**: d22 CONSUMED the warn at its seal
+  `3ec231f98` — its loop is now `0..110` too (npc.rs:21897 at the d22
+  tip `7307eaae9`); the pin is keep-one by content, no longer a
+  c8-vs-d22 delta.
 
 ## 4. The crawler sheets in the union inventory — the d35 lazy-load census
 
@@ -329,7 +333,9 @@ are ENTRIES rows).
   `the_worm_head_digs_and_stumbles` saturation loop: keep c8's 110-tick
   pin (the numeric mirror shows d22's 150 overshoots the ground_air
   hole — §3; retire-time re-read of d22 tip `bcd42ddd1` confirms the
-  150-loop UNFIXED at `npc.rs:21889` — the receipt §3a).
+  150-loop UNFIXED at `npc.rs:21889` — the receipt §3a; SEAL-time d22
+  `3ec231f98` CONSUMED the fix — both branches now `0..110`, keep-one
+  by content, §8 item 2).
 - **c4**: the Goldfish provider freeze is lifted HERE; c4's UI
   `unlock_state` call sites reconcile onto `unlock_state_world` (the
   c8 fold). c4's GoldGoldfish 592 entry auto-rides the gold arm.
@@ -358,10 +364,12 @@ non-catchable), and the bestiary unlocks on SIGHT through the GENERIC
 `GOLD_PEER_TABLE` + 14-member collection — a provider contract that
 auto-covers every sibling critter lane's kinds the moment they merge,
 with zero per-lane wiring. The residual work is merge-time only: the
-d22 keep-c8-superset + 110-tick pin (§3a receipt), the c4 UI
+d22 keep-c8-superset + 110-tick pin (§3a receipt — d22 consumed the pin
+at its seal `3ec231f98`, keep-one now, §8 item 2), the c4 UI
 `unlock_state_world` fold (§1a receipt — the 55 lift itself is already
 live), the d35 NPC-page census re-run (§4), and the d40 gold-band
-extensions of the peer table's unported rows.
+extensions of the peer table's unported rows. **BIBLE FINAL — sealed
+at §8 (the four verification items receipted at the pushed tips).**
 
 ### 7a. The critter-lanes auto-cover RECEIPT (verified at the lane tips)
 
@@ -373,7 +381,7 @@ edit at merge):
 | lane | tip | kinds verified on the tip | the 5/0 rows |
 |---|---|---|---|
 | c7-fireflies | `c2cc6ec61` | Firefly/LightningBug/Lavafly/Shimmerfly (`npc.rs:1095-1107`, cs 355/358/654/677 `npc/data.rs:593+`) | `npc/data.rs:3666` max_hp 5, `:4034` damage 0 |
-| c9-snails | `2042d77f1` | Snail/GlowingSnail/MagmaSnail (`npc.rs:1095-1105`, cs 359/360/655; +Shimmerfly shared) | `npc/data.rs:3681` max_hp 5, `:4048` damage 0 |
+| c9-snails | `2042d77f1` | Snail/GlowingSnail/MagmaSnail (`npc.rs:1095-1105`, cs 359/360/655; +Shimmerfly shared) | `npc/data.rs:3720` max_hp 5, `:4090` damage 0 (the four-kind group row incl. Shimmerfly; SEAL-time re-grep corrected the retire draft's :3681/:4048 — those lines are e26's group on its own branch) |
 | c10-waterfowl | `5fcc68ae6` | Duck/Duck2/DuckWhite/DuckWhite2/Seagull/Seagull2/Grebe/Grebe2 (`npc.rs:1094+`, cs 362-365/602/603/608/609) | `npc/data.rs:3825-3832` max_hp 5 (`NPC.cs:13620`…`:16828` cited), `:4215-4222` damage 0 |
 | e26-ladybugs | `048cca6cf` | Frog/LadyBug/GoldLadyBug (`npc.rs:1095/1109/1115`, cs 361/604/605; +Duck peer row) | `npc/data.rs:3681` max_hp 5, `:4048` damage 0 |
 | c4-fish | `0df6964be` | Goldfish 55 (BASE — §1a), GoldGoldfish 592 (`npc.rs:1156`, cs row `npc/data.rs:625/3246`), GoldGoldfishWalker 593 (d42's interim entry re-points onto 592 per c4 research/148 item 5) | base 55 rows (§1a) + c4 `npc/data.rs:3710` max_hp 5 / `:4086` damage 0 (the 592/607/615/688 group); the stats witness `npc.rs:24441` pins 592 = 0 dmg / 5 HP |
@@ -386,3 +394,65 @@ auto-ride the gold provider on merge; d40's gold band (443/442/444/445/
 for every lane. **No sibling lane needs to write a sight scan, a
 provider arm, or a peer-table row — the c8 machinery is the family's
 shared provider seam.**
+
+## 8. SEAL — the four verification items (2026-11-21 seal phase, code-only)
+
+Re-fetched origin and re-probed every seal claim at the PUSHED tips
+(all reads ≤100-line windows, no cargo/tests/rustfmt/graphify):
+
+1. **c8 retire `7c2de9c06` landed** — HEAD == origin tip at seal start,
+   clean tree. The retire chain verified commit-by-commit: `2a0b5c701`
+   (the 143→238 rename per registry-150 §2), `15f472f97` (§3a the d22
+   NOT-fixed receipt at d22 `bcd42ddd1`), `53a3fa2d1` (§1a the
+   Goldfish-55 lift LIVE — base kind `a725acb04` on main, ancestor-check
+   exit 0 vs current main `051600da8`: `NpcKind::Goldfish` npc.rs:464,
+   the ENTRIES row bestiary.rs:658-665 re-read), `7c2de9c06` (§7 the
+   CRAWLER-FAMILY declaration + §7a the five-lane auto-cover receipt).
+   The lane tips re-resolved EXACT: c7 `c2cc6ec61` / c9 `2042d77f1` /
+   c10 `5fcc68ae6` / e26 `048cca6cf` / c4 `0df6964be`; the 5/0 rows
+   re-grepped at each tip (c7 :3666/:4034, c9 :3720/:4090 — the §7a
+   citation corrected above, c10 :3832/:4222 the eight-kind group,
+   e26 :3681/:4048, c4 :3710/:4086). The symbols re-grepped on HEAD:
+   `counts_as_a_critter` bestiary.rs:2280, `is_critter_entry` :2303,
+   `GOLD_PEER_TABLE` :2332 (13 rows + 593-absent asserted :2963-2965),
+   `unlock_state_world` :2412, `scan_world_for_critter_sights` :2490,
+   `ai_066_crawler_family` npc.rs:5662, `transform_to_kind` :5217,
+   `find_frame_crawler_slope` :6871, `dont_take_damage_from_hostiles`
+   :1586, `ai_style66` npc_ai_style66.rs:374, `gold_worm_sparkle_dust`
+   :556, the catch-chain witness bug_net.rs:1437, the compose carries
+   world_sim/npcs.rs:14307/:14339, the sight-scan witness :14597, the
+   sheets witness render/entities.rs:3604.
+2. **d22 SEAL `3ec231f98` — the 110-tick fix CONSUMED.** d22's seal
+   commit (2026-11-21T13:58:41+02:00) flipped
+   `the_worm_head_digs_and_stumbles` `0..150` → `0..110` (the diff hunk
+   re-read; the loop now at d22 npc.rs:21897) citing c8's `708522fc6`
+   mirror + this doc §3a. The `worm_head_step` bodies re-diffed at the
+   d22 tip: comment-stripped Compare-Object shows the ONLY code delta
+   is c8's five 375 lines (the head-list row + the four-line `:51861`
+   inversion block) — type-10 kinematics identical, the mirror verdict
+   transfers. The far-player override's 150-loop STAYS on both
+   branches (d22 world_sim/npcs.rs:14308 / c8 :14290, the empty
+   2000×800 world). d22 has since advanced to `7307eaae9` (the
+   fighter-correction, docs-only vs the worm machine; `3ec231f98`
+   ancestor-check exit 0, the 110-loop re-grepped intact at the new
+   tip). **Merger action UPDATED**: the 110-pin is no longer
+   c8-only — both branches carry it; keep-one by content, keep c8's
+   `worm_head_step` superset body.
+3. **The 238 TRIPLE collision resolved per registry-150 round 2**
+   (d54 tip `72226e500`, §6.3): d42's `238-d42-roster-sheets.md`
+   (`9eadc3043` 12:15:55) WINS 238 — re-read at d42 tip `bac408be0`
+   (238+239 both present); c8's interim 238 (`2a0b5c701` 12:24:19)
+   LOST → renamed **262** at `65dd65f8b` (this doc; git mv + the chain
+   banner + INDEX/ANALYSIS×6/PORT_MAP/ROADMAP refs; zero stale
+   interim-238 doc-path or research-key refs at HEAD — git grep exit 1
+   over docs+crates+anchors); g61's chain 237→238→**273** EXECUTED at its
+   tip `707a972e1` (`273-g61-spawn-family-final.md` re-read). A fresh
+   all-tip ls-tree sweep at seal time: 238 claimed ONLY by d42, 262
+   ONLY by c8 — no fourth claimant.
+4. **This doc is the SEALED receipt; §7 is the CRAWLER-FAMILY bible
+   FINAL.** No further c8 commits planned beyond this seal. The
+   merge-time residuals stand (§6/§7): d22 keep-c8-superset +
+   keep-one 110-pin (now on both branches), c4's three UI
+   `unlock_state` folds onto `unlock_state_world`, the d35 NPC-page
+   census re-run, the d40 gold-band extensions. All witnesses remain
+   WRITTEN NOT RUN (code-only lane).
