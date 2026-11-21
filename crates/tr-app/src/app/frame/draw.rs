@@ -1586,6 +1586,70 @@ impl App {
                             );
                         }
                     } else if menu.is_none() && !crate::env::no_hud() && !fullscreen_map {
+                        // S1-W4-g81 residuals — `Main.DrawInterface_9_WireSelection`
+                        // (`Main.cs:46196-46204` → `WiresUI.HandleWiresUI`,
+                        // `WiresUI.cs:698-702`): the tool-mode radial's Update+Draw,
+                        // the interface layer between the town-house banners (7)
+                        // and the capture check (10) — under the inventory/hotbar/
+                        // cursor layers the `draw_hud` below carries. The petal
+                        // clicks XOR `wire_tool_mode`; the hover write folds into
+                        // the mine-suppression stand-in through `wires_radial.hovering`.
+                        {
+                            let held = inventory.get(*selected).copied().unwrap_or(crate::item::EMPTY_SLOT);
+                            let tool_mode_ui =
+                                ui::wires_ui::draw_tool_mode_ui(held.kind, held.count);
+                            let allow_actuators = ui::wires_ui::draw_tool_allow_actuators(
+                                held.kind,
+                                held.count,
+                                &mut self.wires_radial.last_actuator_enabled,
+                            );
+                            // The Multicolor Wrench's in-reach icon latch
+                            // (`Player.cs:46756-46760`) — the cursorItemIconEnabled
+                            // stand-in (the icon ID stays 0 for the wiring tools).
+                            let icon_enabled = held.kind == 3625
+                                && held.count > 0
+                                && player.as_ref().is_some_and(|p| {
+                                    let (rx, ry) = p.tile_interaction_reach();
+                                    let (sw2, sh2) = (screen.x, screen.y);
+                                    let mx = camera.x + (self.mouse_pos.x - sw2 * 0.5) / *zoom;
+                                    let my = camera.y + (self.mouse_pos.y - sh2 * 0.5) / *zoom;
+                                    let (tx, ty) = ((mx / TILE_PX) as i32, (my / TILE_PX) as i32);
+                                    let lx = (p.x / TILE_PX) as i32 - rx;
+                                    let hx = ((p.x + crate::player::WIDTH) / TILE_PX).ceil() as i32 - 1 + rx;
+                                    let ly = (p.y / TILE_PX) as i32 - ry;
+                                    let hy = ((p.y + p.height) / TILE_PX).ceil() as i32 - 1 + ry;
+                                    tx >= lx && tx <= hx && ty >= ly && ty <= hy
+                                });
+                            let over_ui_slot = self.slot_at_mouse().is_some()
+                                || self.coin_ammo_at_mouse().is_some()
+                                || self.wires_radial.hovering;
+                            let inp = ui::wires_ui::RadialInputs {
+                                mouse: self.mouse_pos,
+                                screen,
+                                held_kind: held.kind,
+                                held_count: held.count,
+                                dead: player.as_ref().is_some_and(|p| p.dead),
+                                mouse_item: self.mouse_item.count > 0,
+                                icon_enabled,
+                                chat_open: self.chat.open,
+                                mouse_interface: over_ui_slot,
+                                options_or_fancy: self.ingame_options.open
+                                    || self.bestiary_open
+                                    || self.achievements_open,
+                                right_press: self.place_down && !self.place_prev_down,
+                                left_press: self.mine_down && !self.mine_prev_down,
+                                no_throw: self.no_throw != 0,
+                                talking: self.talk_npc.is_some(),
+                            };
+                            self.wires_radial.update(tool_mode_ui, allow_actuators, &inp);
+                            self.wires_radial.draw(
+                                renderer,
+                                lookups,
+                                &mut self.wire_tool_mode,
+                                allow_actuators,
+                                &inp,
+                            );
+                        }
                         let craft_available = if self.crafting_open {
                             // `Recipe.UpdateRecipeList` (`Recipe.cs:230-259`): the
                             // owned counts fold the inventory and the in-range

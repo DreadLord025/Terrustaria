@@ -117,6 +117,10 @@ impl App {
     // trash cell (`Main.DrawInventory`'s `ItemSlot.Handle` sites).
     let over_ui_slot = self.slot_at_mouse().is_some()
         || self.coin_ammo_at_mouse().is_some()
+        // S1-W4-g81 residuals — the wiring radial's petal hover writes
+        // `player.mouseInterface = true` (`WiresUI.cs:499`); the port's
+        // draw-side state folds into the same suppression stand-in.
+        || self.wires_radial.hovering
         || (self.inventory_open && {
             let (sw, sh) = self.screen_size();
             let screen = Vec2::new(sw, sh);
