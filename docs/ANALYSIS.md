@@ -12169,7 +12169,7 @@ Deviations (deliberate):
 - **The shop price rows** (`AddShopLines`, `Main.cs:20448-20555`) stay
   with the shop lane (W4-f37).
 
-Witnesses: 27 tooltip tests + 3 set tests + 1 settings test, WRITTEN NOT
+Witnesses: 26 tooltip tests + 3 set tests + 1 settings test, WRITTEN NOT
 RUN (code-only mode — no compiler invoked).
 
 

@@ -1767,7 +1767,7 @@ mod tests {
     /// `Main.cs:20818-20825`: the Discount Card 854's equipable row swaps to
     /// tip[60] while a shop is open.
     #[test]
-    fn w4_e16_the_shop_swaps_the_pocket_mirror_equipable_row() {
+    fn w4_e16_the_shop_swaps_the_discount_card_equipable_row() {
         let mirror = crate::registry::get(854).expect("the discount card row");
         let rows = item_tooltip_lines(854, mirror, TooltipContext::default());
         assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(23)));
