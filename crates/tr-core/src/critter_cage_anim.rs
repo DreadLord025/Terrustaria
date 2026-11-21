@@ -18,19 +18,23 @@
 //! later machine's draws land on the same stream position as vanilla. No
 //! other RNG is touched; tile framing (`framing.rs`) is untouched.
 //!
-//! Lane split (W4-g33/g34): the DRAW wiring is halved — g33 wires the
-//! big-cage ids + snails 285/286 (the d63 quarter list), g34 wires the
-//! small-animal + water/jellyfish ids (d64 batches 2-3). The ANIMATOR is
-//! shared and ported whole here because the machines share one RNG stream;
-//! splitting it would desynchronise every downstream draw.
+//! Wiring (W4-g34 union, research/67): the DRAW seam covers ALL 92 cage
+//! ids (`drawdata_furniture::is_cage_kind` — the g33 42 + g34 50 union).
+//! The ANIMATOR is ported whole because the machines share one RNG
+//! stream; splitting it would desynchronise every downstream draw.
 //!
 //! The `Main.critterCage` proximity gate is fed by the caller (the tile
 //! draw sets it when a cage cell is drawn, `TileDrawing.cs:5672` etc.; the
 //! non-solid pass clears it at `:474`). The init warm-up
 //! (`Initialize_TileAndNPCData2`, `Main.cs:6800-6807`: 3600 forced ticks)
-//! is exposed as [`CritterCageAnimator::warm_up`] but NOT wired into App
-//! init — it needs the full `Initialize_TileAndNPCData2` RNG-order census
-//! (documented deviation, docs/ANALYSIS.md).
+//! is WIRED at App construction (research/67 §2.6/§4) via
+//! [`CritterCageAnimator::warm_up`] on a FRESH world-seeded
+//! `UnifiedRandom` clone (f14 semantics) — the live `Main.rand` stand-in
+//! stream is untouched; the exact-stream replay of the ctor draws before
+//! `:6610` (`Next(6)` `:6467` + `RandomizeBackgrounds` `:6594-6601`) is
+//! the recorded residual (docs/ANALYSIS.md, research/67 §4). PROCESS
+//! state: no world-entry reset (the `:8387-8395` zero loop covers
+//! `tileFrame` only; the cage arrays live in `static Main()`).
 
 use crate::drawdata_furniture::{CageAnim, CAGE_FRAMES};
 use crate::unified_random::UnifiedRandom;
@@ -112,8 +116,11 @@ impl CritterCageAnimator {
         Self::default()
     }
 
-    /// The world-load reset: every table back to the zero-initialised state
-    /// (`Main.cs:66902-66972` allocates fresh zeroed arrays).
+    /// Back to the bare zero allocation (`Main.cs:66902-66972`). NOT a
+    /// world-load hook — the cage tables are PROCESS state (research/67
+    /// §2.5: the static-ctor allocation runs once per process; the C#
+    /// world-load zero loop `:8387-8395` covers `tileFrame` only). Kept
+    /// for tests that need the vanilla t=0 draw state.
     pub fn reset(&mut self) {
         *self = Self::new();
     }
@@ -226,7 +233,8 @@ impl CritterCageAnimator {
 
     /// `Initialize_TileAndNPCData2`'s warm-up (`Main.cs:6802-6807`): force
     /// `critterCage = true` and tick 3600 times so the cages start mid-cycle
-    /// rather than all-zero. NOT wired into App init (see module docs).
+    /// rather than all-zero. WIRED at App construction on a fresh
+    /// world-seeded clone (research/67 §2.6/§4 — see module docs).
     pub fn warm_up(&mut self, rand: &mut UnifiedRandom) {
         for _ in 0..3600 {
             self.animate(true, rand);

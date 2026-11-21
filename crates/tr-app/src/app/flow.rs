@@ -2131,7 +2131,7 @@ pub(crate) mod front_flow_tests {
     ) -> App {
         let world = World::new("flow".into(), 8, 8);
         let liquids = LiquidSystem::new(&world);
-        App {
+        let mut app = App {
             ambient_waterfall: (0.0, 0.0, 0.0),
             ambient_lavafall: (0.0, 0.0, 0.0),
             ambient_counter: 0.0,
@@ -2479,7 +2479,12 @@ pub(crate) mod front_flow_tests {
             summon_shot: false,
             world_key: None,
             hell_black_box_bottom: 0.0,
-        }
+        };
+        // W4-g34 union (research/67 §4): the ctor warm-up twin — the same
+        // fresh-clone form as `App::new` (seed 1, this harness's stand-in
+        // seed; the live `rngs` stream stays untouched).
+        app.cage_anim.warm_up(&mut tr_core::UnifiedRandom::new(1));
+        app
     }
 
     #[test]
