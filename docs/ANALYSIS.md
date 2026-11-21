@@ -32846,6 +32846,123 @@ NOT the credit-id spelling); the GoldGoldfish 592 keeps its OWN entry
 + `w4_c4_the_style16_swimmers_step_and_walk_their_strips` in `npc.rs`;
 the routing pin + the Arapaima/Dolphin/Pufferfish/Orca FindFrame witnesses
 in `npc_ai_style16.rs`). **No compiler invoked** (code-only mode).
+
+## The style-16 dup-check: keep-one verdicts (W4-c4 follow-up, 2026-11-21, code-only)
+
+The phase-3+4 claim-scan ("ZERO claims on the nine members") was WRONG:
+it scanned `NpcKind::` arms but missed the **kinds-coverage bands** that
+port the same vanilla types under port-local protocol ids. Re-derived
+against the pushed tips (git-show, read-only) + the d37 reconcile
+playbook `docs/research/108-roster-master-reconcile.md` (tip `08f7d25cf`).
+
+### BloodFeeder 241 — c4 × d37 `750d8e44` (DUPLICATE KIND)
+
+d37's 211-280 band ports BloodFeeder at **protocol 373** (the port-local
+354-399 corridor; `cs_id`/`net_id` carry the vanilla 241). c4 ports the
+SAME `NpcKind::BloodFeeder` at **protocol 241** (vanilla-free). Arm-by-arm:
+
+| Arm | d37 `750d8e44` | c4 `22cec16f` | Equal? |
+|---|---|---|---|
+| `to_u16`/`from_u16` | 373 | 241 | **DIFFERENT id** |
+| `cs_id` / bestiary `net_id` | 241 | 241 | yes |
+| `size` | 18×20 | 18×20 | yes |
+| `contact_damage`/`defense`/`max_hp` | 50/20/150 | 50/20/150 | yes |
+| `value` / `knock_back_resist` | 500 / 1.0 (no row, `:8533`) | 500 / 1.0 | yes |
+| `ai_style` / `no_gravity` | 16 / true | 16 / true | yes |
+| hit/death sounds | NPCHit13 / NPCDeath19 | NPCHit13 / NPCDeath19 | yes |
+| debuff immunity | `{31}` | `{31}` | yes |
+| AI routing | `update_swimmer` → `ai_016_step` (`vanilla_type` 241) | same | yes |
+| FindFrame | inline case-55 group (`npc.rs`, wet 6/12/18/24 rows 0..3, dry 6/12 rows 4/5) | `style16_find_frame` case `55\|57\|58\|102\|241\|465\|592\|607` (same bands) | **behaviour-identical**, two copies |
+| draw sheet | `D37_SHEETS` NPC_241 (36×180) | `STYLE16_SHEETS` NPC_241 | same name (loader dedupes) |
+
+**Verdict: KEEP d37's row (protocol 373), RETIRE c4's duplicate.**
+Rationale: (1) 373 sits inside d37's frozen 354-399 band — the 108 final
+union plan (§3) keeps every d37 pushed id untouched; (2) c4's 241 squats
+a **reserved cs-owned hole**: 108 §3 lists `229/237-249/251-265/276-280`
+as "cs-owned, never reassign" (241 = the BloodFeeder's own vanilla type,
+already owned by d37's kind at 373). Neither id is "free" — both are
+claimed; 373 is the safe survivor. The merge keeps ONE `BloodFeeder`
+variant at 373/cs 241, dedupes the FindFrame onto c4's `style16_find_frame`
+helper (drop d37's inline arm), and keeps c4's `vanilla_type` 241 row
+(d37 added the identical row). c4's `update_swimmer` wiring is the SAME
+base function d37 rides — no behavioural change.
+
+### CrimsonGoldfish 465 — c4 × d40 `ec05fbcc9` (DUPLICATE KIND, same id)
+
+d40's 421-490 band ports CrimsonGoldfish at **protocol 465** (vanilla-free)
+— the SAME id c4 uses. Pure kind-duplication (no wire-id collision). Two
+d40 defects vs c4:
+
+| Arm | d40 `ec05fbcc9` | c4 `22cec16f` | C# truth |
+|---|---|---|---|
+| `knock_back_resist` | **0.4** (the stock fallback) | **1.0** (no row) | `NPC.cs:14483-14495` writes NO kb row → the `:8533` reset 1f. **d40 WRONG** |
+| `vanilla_type` extension | **MISSING** (only 55/58/65) | 465 added | d40's `update_swimmer` → `ai_016_step` → `vanilla_type(CrimsonGoldfish)` hits `unreachable!` → **PANIC at runtime**. c4 works |
+| FindFrame | inline case-465 (wet/dry 6-band) | `style16_find_frame` (same bands) | identical |
+| stats/sounds/immunity/sheet | 18×20/31/7/110/500, 1/1, `{31}`, NPC_465 | same | equal |
+
+**Verdict: KEEP c4's implementation at the shared id 465, RETIRE d40's
+duplicate row.** c4 is correct on both counts (kb 1.0; the `vanilla_type`
+row that makes the swimmer arm reachable). d40's 465 is inside its frozen
+430-488 vanilla-free band, so the id stays 465; the merge drops d40's
+kind + its kb-0.4 arm + its inline FindFrame (dedupe onto c4's helper).
+
+### 592/607/615/688/692 — c4 × d42/d43 (UNCLAIMED; c4 stands)
+
+Probed the local worktrees read-only (`git -C … log`/`status`/`diff`):
+- **d42** (`task/W4-d42-npc-kinds-561-630`): branch ABSENT on origin;
+  worktree `TR-W4-d42` tip == base `a725acb04` with **UNCOMMITTED WIP**
+  (`npc.rs` +58 / `npc/data.rs` +27) porting **578-587 only**
+  (DD2LightningBug…EyeballFlyingFish) at a port-local **354..404** band.
+  It does NOT touch 592/607/615/688/692. **LOCAL-ONLY — resume note:** the
+  WIP band 354..404 hard-collides with d37's pushed 354-399 AND c4's
+  FlyingFish 354, and its FlyingAntlion 581 / EyeballFlyingFish 587 rows
+  duplicate c4's kinds — the WIP is stale (written pre-d37-push) and must
+  renumber to the 108 §3 guidance (d42 vanilla-free 491-697) on resume.
+- **d43** (`task/W4-d43-npc-kinds-631-697`): worktree `TR-W4-d43` CLEAN,
+  tip == base, no work pushed or staged. 688/692 unclaimed.
+
+**Verdict: c4's vanilla-free 592/607/615/688/692 STAND** (no pushed or
+local claim). The 108 §3 guidance confirms protocol ≥489 is free for the
+d41/d42/d43 lanes, so these ids are safe.
+
+### BONUS hard collision — FlyingFish 224: c4 proto 354 × d37 CochinealBeetle 354
+
+c4's phase-1 FlyingFish rides **protocol 354** (`data.rs:595`); d37's
+CochinealBeetle ALSO rides **354** (`750d8e44`, the band's first id). Both
+pushed → a **wire-id collision** (the S1-F-1 class) if merged naively, AND
+d37 ports its OWN FlyingFish at **359** (a duplicate kind). **Verdict:
+KEEP d37's FlyingFish id 359 (frozen band), RETIRE c4's 354.** c4's
+FlyingFish is the fully-wired one (the world-sim style-44 pre-pass); d37's
+is a solo `update_flying_fish` wrapper over the SAME base
+`npc_ai_style44` module. The merge keeps ONE FlyingFish at 359/cs 224 with
+c4's world-sim wiring (dedupe d37's solo wrapper). c4's 509/581/587
+(vanilla-free) are free on the pushed union (d41 absent; d42's 581/587 are
+local-only WIP) — they stand, pending the d42 resume renumber.
+
+### Secondary flag — c4's CorruptGoldfish 229 / Arapaima 237 squat reserved holes
+
+No other branch claims these two kinds, but their protocol ids sit in the
+108 §3 reserved cs-owned hole set: **229 = the Pirate's vanilla type**
+(d37 ports Pirate at 361), **237 = JungleCreeperWall's** (d37 at 369).
+Assigning them to OTHER kinds (CorruptGoldfish cs 57 / Arapaima cs 157)
+re-creates the cs/proto confusion the reservation exists to prevent.
+**Merge-wave action:** renumber CorruptGoldfish/Arapaima to genuinely free
+port-local ids (above the frozen bands, the d35 698+ precedent); their
+`cs_id`/`net_id`/sheets are unaffected. Flagged here, not executed (the
+renumber is the merger's call per 108 §7).
+
+### Net merge guidance (this lane)
+
+The nine swimmers' AI/FindFrame/draw wiring in c4 is the keeper (d37/d40
+ride the same base `update_swimmer` + `npc_ai_style44`); the protocol ids
+reconcile to the 108 frozen bands: BloodFeeder→373, CrimsonGoldfish→465
+(shared), FlyingFish→359, the five critters/enemies keep vanilla-free
+592/607/615/688/692, CorruptGoldfish/Arapaima renumber off the reserved
+holes. Duplicate `NpcKind` variants + `to_u16`/`from_u16` arms dedupe at
+merge (the `deny(unreachable_patterns)` guard forces it). **No renumber
+executed on this branch** — the verdict is the deliverable; the witnesses
+below pin the corrected behaviour. Code-only: no compiler invoked.
+
 ## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
 
 **Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module
