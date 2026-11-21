@@ -429,6 +429,14 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     let difficulty = app.active_player_difficulty();
     let gems_only = difficulty == 0 || difficulty == 3;
     drop_items(app, x, y, gems_only);
+    // `KillMe` `:38864-38866`: `if (Main.myPlayer == whoAmI && difficulty ==
+    // 2) HardcoreDeathPenalty()` — AFTER DropItems, BEFORE PlayDeathSound.
+    // The port's single player IS myPlayer. The penalty's file deletion is
+    // the death-side half of the persistence lane (the f44-family owns the
+    // .plr read/write walk; THIS call is the hardcore permadeath).
+    if difficulty == 2 {
+        hardcore_death_penalty(app);
+    }
     // `KillMe`'s coin bookkeeping: `:38849-38853` books `lostCoins =
     // coinsOwned` for EVERY difficulty first; `:38925-38936` overwrites with
     // `DropCoins()`'s dropped value for difficulty 0/3 only (softcore halves
@@ -496,6 +504,61 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
     tomb.pos = Vec2::new(x, y);
     tomb.text = death_text.to_string();
     app.tomb_falls.push(tomb);
+}
+
+/// `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`) — the App glue
+/// around the [`crate::player::Player::hardcore_death_penalty`] stat half.
+/// Inside `Main.surviveHardcoreDeath` the −60 `statLifeMax` runs; a positive
+/// remainder survives and fires `NotifyProgressionEvent(35)` (EXTRA_LIFE,
+/// `:38782`). Otherwise (no crossover, or the pool hit 0) `KillMeForGood`
+/// (`:38786`) deletes the character file.
+fn hardcore_death_penalty(app: &mut App) {
+    let seeds = app.world.seeds;
+    // `HardcoreDeathPenalty` is a method on the live player — no player, no
+    // penalty (the death caller always has one; the guard keeps the disk-less
+    // test Apps from deleting a file). The stat half runs on the player
+    // borrow; the App-side tails run after it releases.
+    let survived = match app.player.as_mut() {
+        Some(p) => p.hardcore_death_penalty(seeds),
+        None => return,
+    };
+    if survived {
+        // `:38782` — the survive arm's progression event.
+        let _ = app.notify_progression_net(35);
+        return;
+    }
+    kill_me_for_good(app);
+}
+
+/// `Player.KillMeForGood` (`Player.cs:38789-38805`): the hardcore permadeath
+/// file deletion. `Main.playerPathName` is `ActivePlayerFileData.Path`
+/// (`Main.cs:2857`) — the port's active-player file is the session draft's
+/// saved `.plr` (`session.rs::save_created_character` →
+/// `save::default_player_path(name)`). The `!ServerSideCharacter` gate
+/// (`:38792`) has no port carrier (the port has no server-side characters),
+/// so the deletion always runs; a disk-less session stand-in resolves a path
+/// whose `Exists` is false, so nothing deletes — exactly the C# `Exists`
+/// guard.
+///
+/// **Deviation — the `ActivePlayerFileData = new PlayerFileData()` reset
+/// (`:38803`) is NOT ported as a `session_draft` clear.** In C# the reset
+/// swaps the *file-data* singleton, but `Main.player[myPlayer]` still points
+/// at the OLD `Player` object, so its `difficulty` stays 2 and `UpdateDead`
+/// still latches the ghost. The port derives `Player.difficulty` from
+/// `session_draft` every tick (`world_sim/player.rs:638`); clearing the draft
+/// would reset the live difficulty to 0 and break the ghost latch the sibling
+/// lane landed. The reset's only observable effect is menu-side (the
+/// character select shows no active player), which the port's disk re-list
+/// already reflects once the file is gone. Documented in ANALYSIS.
+fn kill_me_for_good(app: &mut App) {
+    let name = app
+        .session_draft
+        .as_ref()
+        .map(|d| d.name.clone())
+        .unwrap_or_else(|| app.player_name.clone());
+    if let Some(path) = tr_core::save::default_player_path(&name) {
+        crate::player_file::kill_player_files(&path);
+    }
 }
 
 #[cfg(test)]
@@ -902,6 +965,63 @@ mod revenge_tests {
         assert_eq!(app.items[0].count, 2);
         assert_eq!(app.mouse_item.count, 0);
         assert!(!app.inventory.iter().any(|s| s.kind == 1522));
+    }
+
+    /// W4-c46 final — `KillMe` `:38864-38866` → `HardcoreDeathPenalty` →
+    /// `KillMeForGood` (`Player.cs:38775-38805`): the hardcore death deletes
+    /// the session character's `.plr` AND `<path>.bak` (the string-concat
+    /// backup, `:38799`), while a softcore death touches neither. The
+    /// `USERPROFILE` pin routes `save::default_player_path` into the scratch.
+    #[test]
+    fn w4_c46_the_hardcore_death_deletes_the_plr_and_its_bak() {
+        let dir = crate::test_world_helpers::test_scratch("c46-hardcore-delete");
+        let _env = crate::app::tr_hooks::ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        unsafe { std::env::set_var("USERPROFILE", dir.to_str().unwrap()) };
+        // The seeded path resolves through the pin (Players/ under the
+        // Terrustaria root, `save.rs:172-200`).
+        let resolved = tr_core::save::default_player_path("Doomed").unwrap();
+        let resolved_bak = crate::player_file::backup_path(&resolved);
+        assert!(resolved_bak.ends_with("Doomed.plr.bak"), "concat, not extension swap");
+        std::fs::create_dir_all(resolved.parent().unwrap()).unwrap();
+        std::fs::write(&resolved, b"character bytes").unwrap();
+        std::fs::write(&resolved_bak, b"backup bytes").unwrap();
+        let mut app = flow_app(None, vec![], vec![]);
+        app.session_draft = Some(crate::ui::char_creation::NewPlayerDraft {
+            name: "Doomed".into(),
+            difficulty: 2,
+            ..Default::default()
+        });
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        on_player_death(&mut app, 100.0, 100.0, "Doomed was slain...");
+        assert!(!resolved.exists(), "KillMeForGood deleted the .plr (:38797)");
+        assert!(!resolved_bak.exists(), "and the .bak (:38801)");
+        // The draft survives the deletion (the documented :38803 deviation —
+        // the live Player keeps difficulty 2 so the ghost still latches).
+        assert_eq!(app.active_player_difficulty(), 2);
+        // Softcore: the same files stay.
+        std::fs::write(&resolved, b"softcore").unwrap();
+        std::fs::write(&resolved_bak, b"softcore bak").unwrap();
+        let mut soft = flow_app(None, vec![], vec![]);
+        soft.session_draft = Some(crate::ui::char_creation::NewPlayerDraft {
+            name: "Doomed".into(),
+            difficulty: 0,
+            ..Default::default()
+        });
+        soft.player = Some(crate::player::Player::spawn(&soft.world));
+        on_player_death(&mut soft, 100.0, 100.0, "Doomed was slain...");
+        assert!(resolved.exists() && resolved_bak.exists(), "softcore keeps the files");
+        // A disk-less session stand-in: nothing resolves on disk, no crash.
+        let mut ghost = flow_app(None, vec![], vec![]);
+        ghost.player_name = "NoSuchCharacter".into();
+        ghost.session_draft = Some(crate::ui::char_creation::NewPlayerDraft {
+            name: "NoSuchCharacter".into(),
+            difficulty: 2,
+            ..Default::default()
+        });
+        ghost.player = Some(crate::player::Player::spawn(&ghost.world));
+        on_player_death(&mut ghost, 100.0, 100.0, "gone...");
+        unsafe { std::env::remove_var("USERPROFILE") };
+        crate::test_world_helpers::remove_scratch(&dir);
     }
 }
 

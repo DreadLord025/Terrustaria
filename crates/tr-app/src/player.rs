@@ -3840,6 +3840,24 @@ impl Player {
             && !seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
     }
 
+    /// `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`)'s stat half:
+    /// ONLY inside `Main.surviveHardcoreDeath` does
+    /// `statLifeMax = Math.Max(statLifeMax - 60, 0)` run (`:38779` — the
+    /// floor is 0; the −60 does NOT touch the plain ghost death). Returns
+    /// true when the character survives (`statLifeMax > 0`, `:38780-38784`
+    /// — the caller fires `AchievementsHelper.NotifyProgressionEvent(35)`,
+    /// EXTRA_LIFE); false means `KillMeForGood` (`:38786` — the App-side
+    /// file deletion, `death.rs::hardcore_permadeath`).
+    pub fn hardcore_death_penalty(&mut self, seeds: tr_core::seeds::SeedFlags) -> bool {
+        if Self::survive_hardcore_death(seeds) {
+            self.max_hp = (self.max_hp - 60).max(0);
+            if self.max_hp > 0 {
+                return true;
+            }
+        }
+        false
+    }
+
     /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
     /// respawn decrement clamped to `respawnTimerMax` (3600), and the
     /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
@@ -17363,6 +17381,43 @@ mod tests {
             t.update_dead(false, false, false, false);
         }
         assert_eq!(t.immune_alpha, 255);
+    }
+
+    /// W4-c46 final — `Player.HardcoreDeathPenalty` (`Player.cs:38775-38787`)'s
+    /// stat half: ONLY inside the survive crossover does the −60 statLifeMax
+    /// run (floor 0); a positive remainder returns true (EXTRA_LIFE fires at
+    /// the App layer), 0 or no crossover returns false (KillMeForGood).
+    #[test]
+    fn w4_c46_the_hardcore_penalty_drains_60_only_inside_the_crossover() {
+        let w = ground_world();
+        let crossover = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY,
+        );
+        // No crossover: the pool is UNTOUCHED, the character dies for good.
+        let mut p = Player::spawn(&w);
+        p.max_hp = 400;
+        assert!(!p.hardcore_death_penalty(tr_core::seeds::SeedFlags::none()));
+        assert_eq!(p.max_hp, 400, "no −60 outside the crossover (:38777)");
+        // Crossover: −60, positive remainder survives.
+        assert!(p.hardcore_death_penalty(crossover));
+        assert_eq!(p.max_hp, 340);
+        // The floor is 0 (`Math.Max(statLifeMax - 60, 0)`, :38779): 40 → 0,
+        // and 0 means KillMeForGood even inside the crossover.
+        let mut q = Player::spawn(&w);
+        q.max_hp = 40;
+        assert!(!q.hardcore_death_penalty(crossover));
+        assert_eq!(q.max_hp, 0, "the 0 floor, no negative pool");
+        // Exactly 60 lands on 0 — no survive at the boundary.
+        let mut r = Player::spawn(&w);
+        r.max_hp = 60;
+        assert!(!r.hardcore_death_penalty(crossover));
+        assert_eq!(r.max_hp, 0);
+        // FTW cancels the crossover — the pool stays, death for good.
+        let mut s = Player::spawn(&w);
+        s.max_hp = 500;
+        let ftw = crossover | tr_core::seeds::SeedFlags::FOR_THE_WORTHY;
+        assert!(!s.hardcore_death_penalty(ftw));
+        assert_eq!(s.max_hp, 500);
     }
 
     /// W4-c46 — `Player.Ghost` (`Player.cs:6715-6849`): the 0.2 acceleration

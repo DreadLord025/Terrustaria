@@ -1090,6 +1090,42 @@ pub fn write_player_file(path: &Path, file: &PlayerFileWrite) -> Result<(), Play
     Ok(())
 }
 
+/// `<path>.bak` — the string CONCATENATION the C# uses everywhere
+/// (`Player.cs:54732`/`:38799`/`:55873`): `Belsin.plr.bak`, NOT a
+/// `with_extension` swap. The `SavePlayer` backup copy (`:54732`,
+/// `FileUtilities.Copy(path, path + ".bak")`) and the corrupt-load restore
+/// (`LoadPlayer`, `:55873-55875`, `FileUtilities.Move(file + ".bak", file)`)
+/// are the f44-family persistence lane's `.plr`-walk; only the death-side
+/// DELETE reads this helper here (W4-c46).
+pub fn backup_path(path: &Path) -> PathBuf {
+    let mut s = path.as_os_str().to_os_string();
+    s.push(".bak");
+    PathBuf::from(s)
+}
+
+/// `Player.KillMeForGood` (`Player.cs:38789-38805`): the hardcore
+/// permadeath file deletion. `Main.playerPathName` is
+/// `Main.ActivePlayerFileData.Path` (`Main.cs:2857`); the `Exists`-then-
+/// `Delete` pair runs on the `.plr` first, then `<path>.bak` (`:38795-38802`).
+/// `FileUtilities.Delete` without `forceDeleteFile` routes to
+/// `IPathService.MoveToRecycleBin` (`FileUtilities.cs:23-37`) — the port
+/// deletes outright, the same deviation `save_list::erase_player` documents
+/// (no recycle-bin API). The cloud arm (`IsCloudSave`) has no port carrier —
+/// the path is always local. The caller owns the
+/// `!ServerSideCharacter` gate (`:38792` — the port has no server-side
+/// characters) and the `Main.ActivePlayerFileData = new PlayerFileData()`
+/// reset (`:38803`). A delete error is logged, not propagated — the C#
+/// `File.Delete` throw would crash the death tick; the port keeps dying.
+pub fn kill_player_files(path: &Path) {
+    for target in [path.to_path_buf(), backup_path(path)] {
+        if target.exists() {
+            if let Err(e) = std::fs::remove_file(&target) {
+                log::warn!("hardcore permadeath delete failed ({}): {e}", target.display());
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
