@@ -39603,3 +39603,103 @@ census, the Pirate shimmer-split twin-pool (batch 13, 2).
 **Lane total: 56 witnesses WRITTEN NOT RUN (code-only mode — no
 cargo/rustc/tests invoked): 45 through the DOC-SWEEP + EoW fade, 11
 across batches 11-13.**
+
+### W4-g59 ACTIVATIONS-2 (batches 14-16): the g8/d120/f42 row-gated activations + the base-fold check
+
+The 60-kind row-gated remainder (15 base-present folds + 45 no-row) was
+re-intersected against **ALL 355 pushed task refs** (33 unique
+`npc/data.rs`+`bestiary.rs` trees, the scripted `cs_id` hand-row +
+bestiary-fallback extraction — `g59_act2_probe.py` /
+`g59_act2_sweep.py`). The roster re-read: d34 stays `5f3435a8` (no
+advance past phase 3), d35 `e5558b0a` (docs-only past `7d131be3`), d36
+`0eb4fee9` (**census pushed, NO kind rows** — the 731-768 port-local
+band plan only), d37 `bdd59afb` (docs past `08f7d25c`), d38 `6f9dd02d`,
+d40 `8fe1d6d3`, d41 `4ed22f0b` (claim), **d42 `9b22c091` — the 51-kind
+578-630 wave NOW PUSHED** (the batch-13 probe saw WIP `88df5809`;
+intersect ∅, the band is >230), d33 `b08acf46` (dragonflies 595-601),
+c9 `2042d77f` (snails 359/360/655/677), f42 `75f055fc` (desert 9 kinds,
+protocol 354-362: 546/61/69/78/79/630/80/580/581), d120 `c5e68a80`
+(the four town kinds + the 579 BartenderUnconscious hand row), **g8
+`82c93cec`** (lane 1's ≤230 machine wiring — the missed claimant: 13
+no-row kinds + the 64 PinkJellyfish artifact row).
+
+**The 45-no-row set intersects exactly THREE tips — 17 kinds, ALL
+activated (batches 14-15):**
+
+**Batch 14 (7 kinds):** 69 Antlion (`:86562-86565`, 50× type-250 at
+2×dir/-2 — the shared 69/580/581/508/509/582 arm's num514=50 default,
+only 582 lowers it; f42's bestiary row + g8's hand row, the
+double-claim; the 97/98 gore pair is constant), 142 SantaClaus /
+178 Steampunker (`:88163`/`:88186`, 50× type-5 2.5×dir — d120's
+landed-truth hand rows, d36 skips them per the keep-one note), 150
+IceBat / 152 GiantFlyingFox (`:85807`, the bat arm — consolidated to
+`49 | 51 | 150 | 152 | 226`, the shared `:85797` arm), 164/165
+WallCreeper pair (`:87783-87786`, 50× type-18 2.5×dir).
+
+**Batch 15 (10 kinds):** 158 VampireBat (the `82 | 158` wraith arm
+extension, `:88959` shared), 160 Truffle (`:88272-88275`, 50× type-26
+— the mushroom-spore town shape), 169 IceElemental (`:88830-88836`,
+100× type-92, the scale=1.5 post-write OVERRIDE, vel×2 noGravity,
+dust-only), 174/182 Herpling/FloatyGross (`:86419-86422`, 50× type-5
+at `this.alpha` — the shared `:86409` arm), 177 Derpling
+(`:85733-85736`, 15× type-5), 179 CrimsonAxe (the `83 | 84 | 179`
+cursed arm extension — the SAME 6 `Next(-2,3)` gore-ARGUMENT draws,
+the g63 rule), 195/196 LostGirl/Nymph (`:86797-86800`, 75× type-5),
+209 Cyborg (`:88438-88441`, 50× type-5 town shape).
+
+All batch-14/15 gore tails draw NO arguments beyond the cursed arm's
+already-consumed 6 (the town shimmer ladders, the herpling 225/226 +
+238/239, the derpling 234/235/236/236, the nymph 254/255/256 +
+`this.scale`, the bat/creeper/antlion constants — verified).
+
+**Batch 16 — the 15-base-fold head-wiring check:** the base's
+`entry_for_npc` folds 8/9→7, 11/12→10, 14/15→13, 88-92→87, 118/119→117,
+105→107 — every head ALREADY wired (batches 2/5), the segments fire
+through the head's match; the C# arms cover the raw segment ids with
+the SAME burst (`:87556` 7-9, `:87590` 10-12, `:87622` 13-15, `:88909`
+87-92, `:87436` 117-119, `:87870` 105-108 — verified); 105 joins the
+`105 | 106 | 107 | 108` arm as the raw-id belt-and-braces, fold
+citations land on the head arms. **139 Probe folds 134 — the
+Destroyer head's death arm (`:89266-89323`) is NOT dust-first** (the
+ungated gore-156 + the `Next(2)` gate wrap the 10×31 + 5×(6+6) burst)
+and stays UNWIRED in this lane: f5 wave D `1b6a1979` ports
+`destroyer_death`/`probe_death` (`npc_hit_effect_d.rs` sites 776-786)
+INCLUDING the dust census — the keep-one at merge (f5's dispatcher is
+unwired, `#![allow(dead_code)]`, the strike-path claim is their
+wiring wave; the d32 style lane's tips carry NO death-arm wiring —
+`ac1d38e7` is witness fixes only). The 139 Probe arm (`:89210-89244`)
+is the same shape (10×31 + 5 pairs + 4×`Next(61,64)` ARG draws). No
+double-consume.
+
+**The remainder after batches 14-16: 43 of the 173 dust-first clean
+census kinds stay row-gated UNWIRED** — 13 base-present folds riding
+wired heads (8/9/11/12/14/15/88-92/118/119; 105 activated batch 16) +
+139 Probe (the unwired Destroyer head, f5's keep-one) + 112 (g62's
+every-hit re-own) + 28 no-row kinds (68 DungeonGuardian + the d36 band
+141/148/149/153/154/155/159/163/166/167/168/170/171/173/176/180/181/
+185/197/198/199/201-206). 64 PinkJellyfish stays OUT of the clean
+census (the color-only nested `:85537` artifact) — g8's row landed;
+its (225,70,140) tint composes with 63's arm shape at merge, recorded
+not activated. **129 wired match types / 130 census kinds** across 16
+batches (the 40/41 fold accounts for the gap).
+
+**The g60 boundary (research/110) stays CLEAN:** every activated cs_id
+is ≤ 229 ≤ 230 — ZERO >230 activations. The newly-rowed >230 siblings
+FLAG to the g60 lane: f42's 546 Tumbleweed / 580 WalkingAntlion / 581
+FlyingAntlion / 630 BloodMummy (the antlion arm's 580/581/582 siblings
++ the mummy 630), d120's 579 BartenderUnconscious, d42's whole 578-630
+wave, d33's 595-601 dragonflies, c9's 359/360/655/677 snails — all
+g60's band per the 110 verdict.
+
+10 witnesses WRITTEN NOT RUN (code-only): the Antlion 50×6-draw twin,
+the Santa/Steampunker shared census, the bat-arm 4-way census
+equality, the WallCreeper pair twin-pool (batch 14, 4); the
+Truffle/Cyborg counts, the Herpling/FloatyGross live-alpha census, the
+Derpling/IceElemental counts + scale-override pin, the
+Nymph/Vampire/Crimson shared-arm censuses incl. the 6-ARG twin (batch
+15, 4); the BoundGoblin fold-census equality, the worm-fold
+head-wiring sweep + the unwired-134 zero-draw pin (batch 16, 2).
+
+**Lane total: 66 witnesses WRITTEN NOT RUN (code-only mode — no
+cargo/rustc/tests invoked): 56 through batch 13, 10 across batches
+14-16.**
