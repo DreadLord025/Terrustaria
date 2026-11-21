@@ -53,7 +53,7 @@ use crate::orchestrator_dust::{next_vector2_circular, next_vector2_square, to_ro
 /// `Math.Sign(float)` (`System.Math`): −1 / 0 / +1 as an INTEGER — the
 /// zero case matters (Rust's `f32::signum` returns ±1.0 for ±0.0, the
 /// C# returns 0; the dash kicks read it at rest).
-fn math_sign(v: f32) -> i32 {
+pub(crate) fn math_sign(v: f32) -> i32 {
     if v < 0.0 {
         -1
     } else if v > 0.0 {
@@ -721,6 +721,137 @@ pub(crate) fn drill_mount_trail(
         d.no_gravity = true; // `:5073`
         d.velocity = Vec2::ZERO; // `:5074`
     }
+}
+
+/// W4-e4 — the player-tick mount-dust drain: resolves one
+/// [`crate::mount::MountDustRequest`] into its emitter on the caller's
+/// `UpdatePlayers` stream. The state machines ran inline in
+/// `MountState::update_frame_extras` / `Player::update_mount`; the emitter
+/// bodies roll here (the App owns the dust pool). The `&Player` snapshot is
+/// the tick-moment one the minecart/trinket anchors read
+/// (`rotated_relative_point`); the WoF goat's tile probe re-reads `world`.
+pub(crate) fn drain_mount_request(
+    req: crate::mount::MountDustRequest,
+    p: &crate::player::Player,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    use crate::mount::MountDustRequest::*;
+    match req {
+        UnicornRing { mount_type, centre, width, direction, vx, run_speed, frame_extra } => {
+            unicorn_dash_ring(mount_type, centre, width, direction, vx, run_speed, frame_extra, rng, dust, ctx, world);
+        }
+        UnicornBody { position, width, height } => {
+            unicorn_dash_body(position, width, height, rng, dust, ctx, world);
+        }
+        WolfRing { centre, width, direction, vx, speed_len, run_speed } => {
+            wolf_dash_ring(centre, width, direction, vx, speed_len, run_speed, rng, dust, ctx, world);
+        }
+        WolfPuff { bottom, width, vx, run_speed } => {
+            wolf_ground_puff(bottom, width, vx, run_speed, rng, dust, ctx, world);
+        }
+        WitchRing { centre, width, direction, vx, speed_len, run_speed } => {
+            witch_dash_ring(centre, width, direction, vx, speed_len, run_speed, rng, dust, ctx, world);
+        }
+        WitchPuff { centre, pvx, pvy } => {
+            witch_gated_puff(centre, pvx, pvy, rng, dust, ctx, world);
+        }
+        BasiliskPuffs { bottom_left, width, vx } => {
+            basilisk_charge_puffs(bottom_left, width, vx, rng, dust, ctx, world);
+        }
+        BasiliskTrail { bottom_left, centre, width, sign, pvx, pvy, charge, run_speed } => {
+            basilisk_charge_trail(bottom_left, centre, width, sign, pvx, pvy, charge, run_speed, rng, dust, ctx, world);
+        }
+        WofGoatFlames { tx, ty, position } => {
+            // `Mount.cs:3907-3908` — the tile-below probe: active, dry,
+            // SolidTileAllowBottomSlope. A pass spawns the goat flames.
+            let pass = world.tile(tx, ty).is_some_and(|t| {
+                t.active()
+                    && t.liquid == 0
+                    && crate::projectile_ai026_c::solid_tile_allow_bottom_slope(world, tx, ty)
+            });
+            if pass {
+                let s = crate::orchestrator_dust::OrchestraSettings {
+                    position,
+                    movement: Vec2::ZERO,
+                    info: 0,
+                    invoker: 0,
+                };
+                wof_goat_mount_flames(&s, rng, dust, ctx, world);
+            }
+        }
+        WitchBroom { wind_speed, in_wind } => {
+            // `Mount.cs:4817-4819` — the origin: Center + (29×dir, −4) +
+            // (rotation + π/2).ToRotationVector2()×11, then
+            // RotatedRelativePoint. The rotation is the RNG-free sway helper.
+            let rot = witch_broom_trinket_rotation(p.vx, p.misc_counter, wind_speed, in_wind);
+            let (cx, cy) = p.center();
+            let centre = Vec2::new(cx, cy);
+            let offset = Vec2::new(29.0 * p.facing as f32, -4.0);
+            let spin = to_rotation_vector2(rot + std::f32::consts::PI / 2.0) * 11.0;
+            let origin = p.rotated_relative_point(centre + offset + spin, 0);
+            witch_broom_trinket(p, origin, rng, dust, ctx, world);
+        }
+        GemMinecart { dust_type } => {
+            gem_minecart_effect(p, dust_type, rng, dust, ctx, world);
+        }
+        SteamMinecart { dust_type } => {
+            steam_minecart_effect(p, p.mount.frame(), dust_type, rng, dust, ctx, world);
+        }
+        ExhaustMinecart { dust_type } => {
+            exhaust_minecart_effect(p, dust_type, rng, dust, ctx, world);
+        }
+        ConfettiMinecart => {
+            confetti_minecart_effect(p, rng, dust, ctx, world);
+        }
+        DrillTrail => {
+            // `Mount.cs:5035-5051` — the num9/num8 fold + the two rotated
+            // offsets, then the lerp trail. num8 = Sign(vx) (or direction at
+            // rest); num9 = −24 (−22 when direction != num8, +1 when num8
+            // == −1). vector6 = (num9×num8, −19).RotatedBy(fullRotation);
+            // vector7 = the two Lerps of fullRotation/(π/4), rotated, scaled
+            // by Lerp(1, 0.6, |…|) when num8 == Sign(fullRotation).
+            let mut num8 = math_sign(p.vx);
+            if num8 == 0 {
+                num8 = p.facing;
+            }
+            let mut num9 = -24.0f32;
+            if p.facing != num8 {
+                num9 = -22.0;
+            }
+            if num8 == -1 {
+                num9 += 1.0;
+            }
+            let fr = p.full_rotation;
+            let vector6 = rotated_by(Vec2::new(num9 * num8 as f32, -19.0), fr as f64);
+            let t = fr / (std::f32::consts::PI / 4.0);
+            let mut vector7 = rotated_by(
+                Vec2::new(lerp_f32(0.0, -8.0, t), lerp_f32(0.0, 2.0, t.abs())),
+                fr as f64,
+            );
+            if num8 == math_sign(fr) {
+                vector7 *= lerp_f32(1.0, 0.6, t.abs());
+            }
+            let (cx, cy) = p.center();
+            let centre = Vec2::new(cx, cy);
+            let (bx, by) = p.bottom();
+            let bottom = Vec2::new(bx, by);
+            let current = bottom + vector6 + vector7;
+            let old = Vec2::new(p.old_x, p.old_y)
+                + Vec2::new(p.width * 0.5, p.height)
+                + vector6
+                + vector7;
+            drill_mount_trail(centre, current, old, rng, dust, ctx, world);
+        }
+    }
+}
+
+/// `MathHelper.Lerp` (`MonoGame MathHelper.cs`): `value1 + (value2 − value1)
+/// × amount` in f32 — the drill-mount fold's two Lerps (`Mount.cs:5045`).
+fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
 }
 
 #[cfg(test)]
