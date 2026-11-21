@@ -44,6 +44,41 @@ c39 `rain.rs:1878`). **g67 folds: NONE of the c39 hunks** — they are c39's
 fold-source, listed here so the d130f work-list is complete in one place.
 The g67-unique folds are exactly R5/R6/R7 + A2 (hash-list below).
 
+## SEAL — registry-150-wave check + the g67-drop-wholesale FINAL instruction
+
+**Registry sweep (2026-11-21, `git ls-tree` over EVERY origin branch's
+`docs/research/`):** `origin/task/W4-d54-dust-sites-world` tip `1d16ef4ea`
+has NOT pushed a research/150 (its 1xx set is 108/109/113/125/131 only) —
+no assignment table to read. The pushed claims relevant to this rename:
+**134 = f11** (`134-light-family-unification.md` — the collision this rename
+resolves), **145 = DOUBLE-claimed** (c10 `145-waterfowl-band-final.md` + g89
+`145-rod-teleport-union-composition.md` — do not take 145), 133 double
+(f11+c42), 135 double (f11+g90), 136 double (f11+g31), 143 triple
+(c4+d120+d42), max-on-origin = 145. **g67 takes 146** (= max+1, unclaimed by
+any pushed branch) — provisional per-assignment: if d54's 150-wave or the
+merger's registry assigns differently, renumber at merge (the file is
+self-contained; the cross-refs are this doc + INDEX + PORT_MAP + ANALYSIS +
+the rain.rs banners, all renamed in the same seal commit).
+
+**g67-drop-wholesale FINAL (the merger's one-paragraph instruction):** DROP
+g67's `crates/tr-app/src/rain.rs` WHOLESALE at the weather union — every
+sim/draw fn body, the compacted-Vec drop storage, the `spawn_acc` cadence,
+the `snow_mode` biome gate, the `rain_light_tile`/`rain_drop_tint` helpers,
+the KNOWN-WRONG alpha-255 tint witness, and every DEPRECATED-BY-UNION
+banners-carrying half — d130's `rain.rs` (tip `97ed44f5d` + d130f's folds) is
+canonical wholesale (research/83 §3 + the KEEP-d130-CANONICAL FINAL-FINAL
+below). The ONLY content that crosses from g67: the four-commit hash-list
+above (R5 `f8c4b659c` / R6 `356a1ac0e` / R7 `01ba6c7a9` / A2-witness-only
+`7aaf66f00`), folded hunk-by-hunk onto d130's shapes by d130f BEFORE the
+drop — never take a g67 fn body over a d130 one. The player-lane files
+(`player.rs`, `world_sim/player.rs`, `render/player_layers.rs`),
+`tr-core/src/world.rs`/`scene.rs`, `scene_scan.rs`, `worldgen/mod.rs`,
+`app/mod.rs` hunks from R5/R6/R7 are NOT part of the rain.rs drop — they are
+the folds themselves (d130 keeps its own player files; the arms graft in).
+g67's `app/frame/draw.rs` census wiring from `7aaf66f00` drops (d130's draw
+path is canonical). The splash lane needs NO decision — d130 already carries
+the transplant (`88cfbf38`) + the cull fix (`16a792d5`).
+
 ## SEAL — the YOUR-unique fold-source FINAL hash-list (for d130f / the merger)
 
 The EXACT commits carrying g67's still-unique content, full hashes, verified

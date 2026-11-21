@@ -1244,7 +1244,7 @@ band) through the XNA byte chain `*0.85` then shimmer `*(1-shimmerAlpha)`
 (`rain_drop_tint`, the d130 `rain_tint` shape; W4-g67 final render census — the earlier
 f32 `light_at(pos)*0.85` tint was two deviations: the wrong sample tile and no byte
 casts / no shimmer arm; the byte chain dims ALPHA too — g67's tint witness
-wrongly pinned alpha at 255, d130's witness is the correct one, research/134
+wrongly pinned alpha at 255, d130's witness is the correct one, research/146
 fold-addendum A1). `DrawRain` has NO cull rect and NO black-kill (unlike
 `DrawDust`); the per-drop `Update` inside the draw loop (`:38819-38822`,
 `FocusHelper.AllowRain`-gated) rides the port's 60 Hz weather tick (the recorded
@@ -1286,7 +1286,7 @@ cloudAlpha > 0`) and moves the drops in `DrawRain` (`:38819-38822`) — net
 spawn-then-move per cycle; d130's tick keeps that order (`spawn` then
 `update_drops`), g67's tick runs update-then-spawn (superseded — the union keeps
 d130's core wholesale, research/83 §3). The `spawn_acc` cadence and the
-budget-before-attempts early-out are the recorded g67 divergences (research/134
+budget-before-attempts early-out are the recorded g67 divergences (research/146
 "Deliberate divergences") — d130's float attempt loop is canonical.
 
 **W4-g67 FINAL visual-overlap census (2026-11-21)** — rain × blizzard ×
@@ -1329,7 +1329,7 @@ sandstorm, per the C# and both ports:
 The g67 branch is DONE (fold-source tip `e777b3e2`, retire commits
 `9159c15a`/`5afdb38b`/`52b2ef92`). The union decision stands: **the merger keeps
 d130's `rain.rs` core wholesale; g67's `rain.rs` drops wholesale EXCEPT the
-folded hunks** (research/134 FINAL-FINAL, re-checked at d130 tip `97ed44f5`).
+folded hunks** (research/146 FINAL-FINAL, re-checked at d130 tip `97ed44f5`).
 d130 `16a792d5` already executed R1–R4 (`is_it_raining` + the five consumers,
 `clear_rain` + the save-and-quit call, the cull rect + else-kill — extended to
 `snow::draw` — and the `new_rain_forced` seam) plus the gameMenu kill-only arm
