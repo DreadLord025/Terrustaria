@@ -39495,3 +39495,71 @@ Code-only: the census scripts RUN and passed
 determinism). The 2 new Rust witnesses are WRITTEN, NOT RUN — **no
 cargo/rustc/tests invoked**; brace balance verified on both edited
 files. The anchors canary rows' markers verified present.
+
+## W4-d38 RETIRE phase (2026-11-21, code-only mode) — the band SEALED
+
+The retire close of the d38 lane (research/125 §§11-13, the SAME
+branch continued past the FINAL tip `1ba0395c7`). No game-code change:
+the phase publishes the wiring-round merger's exact edits + the
+closure receipts, then declares the band complete.
+
+1. **The stand-in drop-hunks + the residual (sheet 1, §11)**: re-probed
+   at d44's CURRENT tip `c863a7a5` (wire round 3, past the FINAL
+   census's `7c430def6`) — the extra7 hook is NOW WIRED (`5568fabf`),
+   so **5 of the 7 stand-ins resolve on the d44 tip itself**
+   (287/295 extra6 + 322/323/324 extra7, the hooks return-early before
+   the body match). The **residual stand-in list is exactly 294/296**:
+   the wave-B module (`npc_findframe_b.rs`) carries the faithful
+   fighter arms (air pin 0) but NO cs_id mapper/hook on ANY pushed tip
+   — the stand-ins stay until the wave-B wiring batch. The five exact
+   comment+arm drop windows + the FINAL-witness re-pin recipe
+   published; the §7 303 row CORRECTED (the extra7 mapper carries 337
+   NOT 303 — the 68 `c863a7a5` cell agrees: 303 keeps the d38 inline
+   arm); the 10 keep-one faithful-twin dedupes enumerated with
+   windows (none draws RNG in either form).
+2. **The 328 extra-card exact drop-hunk (sheet 2, §12)**: the 7-part
+   edit published with unique anchors (the ENTRIES row, the slot id +
+   declared 216→215, the parallel vec row, the portrait arm, the three
+   witness re-pins). The **panic-path proof**: `entry_for_npc` ends in
+   `.expect` and the blade's silent despawn sets `hp = 0`
+   (`npc_ai_style59.rs:255`) which feeds the kill-credit loop
+   (`world_sim/npcs.rs:5283`) — a bare ENTRIES delete PANICS the death
+   pass, so the drop REQUIRES a credit-preserving guard (the
+   `try_entry_for_npc` split; both options recorded, merger-owned).
+   The kill credit itself re-verified faithful at source
+   (`NPC.cs:78901-78912` — 328 passes `IsNPCValidForBestiaryKillCredit`;
+   `NPCKillsTracker.cs:23-33` counts with no entry requirement). The
+   in-world kind/sheet/draw/rotation/b6 witnesses are NOT dropped. The
+   merger re-pins: the 108-E §5 union 323→322, the E4 entries 489→488
+   (the 35-kinds/35-sheets pins unchanged).
+3. **GAP-1 CLOSED by c8 (sheet 3, §13a)**: the critter sight provider
+   landed on `task/W4-c8-style66-crawling-critters`
+   (`scan_world_for_critter_sights` at the `update_npcs` head,
+   `a17cd75b8`) and GENERALIZED to the C# `CountsAsACritter` gate
+   (`af2a06880`, local FINAL tip `af1f8ba1d` — origin pushes stop at
+   `3705670d3`, the nine-kind-list form; recorded). **All six d38
+   critters (297/298/299/300/303/337) pass the generic gate on their
+   SetDefaults rows (5 HP / 0 dmg), no other d38 kind passes** —
+   mechanically extracted; the credit ids land unfolded in the same
+   sights set the dispatch reads; none is a `GOLD_PEER_TABLE` key (the
+   d40 gold peers read our Squirrel sightings for free). **d38
+   provider action: NONE** (the 143 §1 cross-lane contract); the merge
+   edit is this branch's 3 kill-only UI call sites
+   (`ui/bestiary.rs:510/:537/:1803`) folding onto `unlock_state_world`.
+   GAP-2 (rarity stars) stays open, display-only, unclaimed.
+4. **The SEAL declaration (§13b)**: 35 kinds + 35 sheets + 35
+   portraits COMPLETE; the 6-item merger hand-off published (the
+   stand-in drops, the keep-one dedupes, the 328 card drop, the UI
+   sight fold, the 113 §10.6 step-7 lazy migration, GAP-2).
+
+### Verification (RETIRE)
+
+Code-only: `tools/_d38_retire_check.py` RUN, **44/44 PASS** (R1 the
+d44-tip claim sets/hook order/residual + the wave-B no-hook proof; R2
+the six unique 328 drop anchors + the panic-path; R3 the generic gate
++ the six-critter coverage + the credit rows + the gold-key absence;
+R4 the census pins 284 entries / 216==216==216 slots + the post-drop
+arithmetic). Output `tools/_d38_retire_check.txt` committed (UTF-8 via
+python — the c096bac9 Tee-Object precedent). **No cargo/rustc/tests/
+rustfmt invoked; no game-code file touched this phase.** The anchors
+canary row's marker verified present.
