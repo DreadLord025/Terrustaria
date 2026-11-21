@@ -36055,6 +36055,89 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The fighter residuals (W4-g4 lane 15, task/W4-g4-npc-style3-fighter, 2026-11-21, code-only mode)
+
+Branch `task/W4-g4-npc-style3-fighter` on the DONE base `6dbed20d`. The
+five residual items the Lead scoped after the doc-sweep phase; the
+full census + the d22r RESUME keep-both fold-list live in
+`docs/research/91-addendum-d22r-fold-list.md`. **Code-only mode — no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked; every witness below is
+WRITTEN, NOT RUN.**
+
+### The blood-moon door-break distinction was inverted (items 1-2, fixed in place)
+
+The port's `DOOR_BASH_TYPES` doc + the bash-gate witness note claimed the
+Blood Zombie (489) "resets on a normal night but accumulates on a blood
+moon". The C# is the OPPOSITE: flag27 (`NPC.cs:60007`,
+`(!bloodMoon || getGoodWorld) && !flag25 & flag24`) is false for 489 on
+EVERY night (489 is NOT in the flag24 list `:59996`), so the Blood Zombie
+accumulates `ai[1]` and opens doors on a NORMAL night. The flag24 types
+(the zombie family) reset every bash on a normal night and only
+accumulate on a BLOOD MOON (or a graveyard 1/60 roll, flag25) — the
+blood-moon door-BREAK is the flag24 types' privilege. The bash CODE was
+already faithful (`flag27 = (!world.blood_moon) && !flag25 && flag24`);
+only the comments were wrong. Fix: the doc + witness note corrected, and
+`w4_g4_the_blood_zombie_opens_doors_on_a_normal_night` added (the 489
+normal-night open + the flag24 zombie reset control).
+
+The census also confirmed fighters do NOT open doors "normally" (no
+town-style 1/10 walk roll): the ONLY fighter door interaction is the
+60-tick bash (`ai[2] >= 60`) gated on `ai[1] >= 10` (flag28). The three
+`WorldGen.OpenDoor` call sites are the town walker (`:54047`/`:54056`),
+the fighter bash (`:60061`) and the unicorn (`:64257`) — no missing
+fighter arm. d22's GoblinPeon door-SMASH (`:60049-60056`, the type-26
+`KillTile` arm) is a distinct mechanic it claims in the drain.
+
+### The confused-immunity table (item 3, fixed)
+
+`npc_buffs::debuff_immune_ids` folded whole families to `&[]` where the
+C# `NPCID.Sets.DebuffImmunitySets` carries rows. The fighter-relevant
+fixes: Skeleton 21 / UndeadMiner 44 → [20]; the frost trio 143/144/145 →
+[20, 44, 324]; GoblinSummoner 471 → [31, 153]; PirateCaptain 216 → [31];
+the lunar [31] kinds (402/405/406/407/412-414/420/421/428/518) + Corite
+418 → [20, 24, 31, 323]; the DD2 walker roster → [31] (Betsy 551 →
+[24, 31, 323], skeletons 566/567 → [20, 31]). `whip_immune` gains the
+BlazingWheel 72 + the DD2LanePortal 549. The knockback half
+(`tr_core::damage::knock_back_npc` + the per-kind `knock_back_resist`
+table) was re-censused against every g4 fighter kind's `SetDefaults`
+block — ALL rows match; the AI_003 head's live `knockBackResist` writes
+name no g4-claimed kind except the Summoner 471 (already P2). So item
+(3)'s real g4-side gap is the immunity census, not a knockback gap.
+
+Two existing witnesses tested IMPOSSIBLE states (a Confused-immune kind
+carrying buff 31): `w4_g4_the_confused_shooter_never_fires` used
+BrainScrambler 381 ([31]) and `w4_g4_the_confused_generic_walkers_reverse_the_walk`
+used VortexHeadcrab 428 ([31]). Repointed to RayGunner 382 / VortexSoldier
+429 (null rows) respectively, with the immune kinds' rejection pinned.
+The new census witness
+`w4_g4_the_fighter_roster_immunity_rows_match_the_csharp_sets` pins the
+rows. d22's core reads the flip through `find_buff_index(31)` — the
+immune table hides the buff, so the flip correctly never fires for the
+immune kinds; the fold-list forbids re-folding the table to `&[]`.
+
+### The coin/star drops (item 4, cross-note only)
+
+Per the Lead's scope, g4 does NOT wire the drops (f35 owns the loot
+trees, g60 the death-feed dust). Cross-noted in the addendum:
+`spawn_coins` carries two false stand-ins (`midas = false`,
+`blood_moon = false`) where the C# reads `this.midas` (buff 72) and
+`Main.bloodMoon` (`NPC.cs:79631-79634`/`:79660-79663`) — both LIVE port
+inputs; wiring them adds one draw per value roll on UpdateNPCs. The
+heart/star `NPCLoot_DropHeals` → `DropCommonLifeAndMana`
+(`NPC.cs:79098-79557`) is UNPORTED (no `spawn_heals` seam). Both are f35
+remainders.
+
+### The d22r RESUME fold-list (item 5)
+
+d22's tip re-probed to `b24977d9` (four pushed commits). Its style-3 core
+(`npc_ai_style3.rs`, the 22-plain-walker claim set) still carries the
+pre-P5 scan (`flag25 = false`, no rng). The addendum publishes the exact
+keep-both fold-list: thread rng into `fighter_obstacle_scan_g`, replace
+`flag25 = false` with the `target_zone_graveyard` pre-stamp &&
+`next_max(60)`, keep the P5 pre-pass + chain term + the four witnesses,
+keep the P6 generic arms (non-claimed riders), keep the P9 immunity rows,
+keep d22's GoblinPeon smash drain. The full checklist is addendum §7.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
