@@ -956,7 +956,9 @@ mod w4_f28_tests {
                     "MechdusaSummonNotDuringEverything": "'It has no effect in this world'",
                     "MinorStats": "Minor improvements to all stats"
                 },
-                "GameUI": { "Expert": "Expert", "Master": "Master" },
+                "GameUI": { "Expert": "Expert", "Master": "Master",
+                            "PrecentFishingPower": "{0}% fishing power",
+                            "BaitRequired": "Requires bait to catch fish" },
                 "UI": { "ItemCannotBePlacedInsideItself": "Placing into itself will be blocked",
                         "ItemSetBonusGeneral": "Set Bonus: {Description}",
                         "ItemSetBonusEquipped": "Set Bonus ({Numerator}/{Denominator})\n{Description}",
@@ -1403,5 +1405,23 @@ mod w4_f28_tests {
         p.kb_glove = true;
         let kb = display_knockback(4, def(4), 5.5, Some(&p), 0);
         assert_eq!(kb, 11.0);
+    }
+
+    /// W4-f28 salvage (research/128 §5-e16.1) — the fishing rows
+    /// (`Main.cs:20804-20815`): the power row reads the vanilla's OWN typo'd
+    /// key `GameUI.PrecentFishingPower` (`:20806`); the base-era
+    /// `RecentFishingPower` spelling resolved nothing. The Wood Fishing Pole
+    /// 2289 (power 5) prints "5% fishing power" then the argument-less
+    /// BaitRequired row (`:20808`).
+    #[test]
+    fn w4_f28_the_fishing_rows_read_the_vanilla_typo_key() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_lang();
+        let rows = item_tooltip_lines(2289, def(2289), TooltipContext::default());
+        let t = texts(&rows);
+        assert!(t.contains(&"5% fishing power"), "{t:?}");
+        assert!(t.contains(&"Requires bait to catch fish"), "{t:?}");
+        // The wrong key must not be read anywhere on this path.
+        assert!(!t.contains(&"RecentFishingPower"));
     }
 }
