@@ -20146,6 +20146,45 @@ impl ProjectilePool {
             399 => Some((13, 0, pos.x, pos.y)),
             // `:73965`/`:73982` — the Javelin / Bone Javelin Dig thud.
             507 | 598 => Some((0, 0, pos.x, pos.y)),
+            // `:74014` — the arrow/dart family's Dig thud (the wooden /
+            // hostile wooden arrows, the Poison Dart, the Venom Dart Trap;
+            // the unrowed 1073 sibling stays out).
+            1 | 81 | 98 | 980 => Some((0, 0, pos.x, pos.y)),
+            // `:74161`/`:74173`/`:74238` — the North Pole spear / Frost
+            // Shard / hostile Ornament's Item27 shatter.
+            343 | 349 | 346 => Some((2, 27, pos.x, pos.y)),
+            // `:74184` — the Stake's Dig thud.
+            323 => Some((0, 0, pos.x, pos.y)),
+            // `:74305` — the Poison Dart Trap's Dig thud (the unrowed 195
+            // sibling stays out).
+            184 => Some((0, 0, pos.x, pos.y)),
+            // `:74328` — the Plantera seeds' Dig thud.
+            275 | 276 => Some((0, 0, pos.x, pos.y)),
+            // `:74352` — the Skull's Dig thud; the int overload's Style 27
+            // is unused by case 0 (`LegacySoundPlayer.cs:440-452`), kept
+            // on the payload for the census mapping.
+            270 => Some((0, 27, pos.x, pos.y)),
+            // `:74369` — the Book of Skulls' skull: the SAME Dig thud,
+            // gated `penetrate != maxPenetrate` (`:74367` — a skull that
+            // never hit anything dies silent).
+            837 if p.penetrate != p.max_penetrate => Some((0, 27, pos.x, pos.y)),
+            // `:74444` — the Drippler flail's extra ball Dig thud.
+            928 => Some((0, 0, pos.x, pos.y)),
+            // `:74517` — the spore cloud's Grass rustle (id 6), gated
+            // `type != 206 || alpha < 255` (`:74515` — the fully-faded
+            // Gas Trap 206 dies silent; the 225 spore always plays).
+            206 if p.alpha < 255 => Some((6, 0, pos.x, pos.y)),
+            225 => Some((6, 0, pos.x, pos.y)),
+            // `:74545` — the Frost Arrow's Dig thud.
+            120 => Some((0, 0, pos.x, pos.y)),
+            // `:74736` — the Bone Arrow's Dig thud (the 1124 bone-shard
+            // spawn `:74748` is the unported state remainder).
+            117 => Some((0, 0, pos.x, pos.y)),
+            // `:74762` — the friendly Snowball's Item51 splat.
+            166 => Some((2, 51, pos.x, pos.y)),
+            // `:75214` — the Holy Arrow / falling star's Item10 (the star
+            // spawn rides `special_arrow_kill` below the hook).
+            91 | 92 => Some((2, 10, pos.x, pos.y)),
             _ => None,
         };
         if let Some((id, style, x, y)) = cue {
@@ -23882,6 +23921,82 @@ mod s1_e_21h_sound_tests {
             .expect("the bomb row spawns");
         pool.kill_tail_cue(slot);
         assert!(pool.drain_proj_sounds().is_empty(), "the bomb keeps its latch cue");
+    }
+
+    /// S1-E-21h d77 — the cue map batch 2 (sites `:74014`-`:75214`): the
+    /// arrow/dart/frost families' payloads plus the two gated arms (the
+    /// Book of Skulls' `penetrate != maxPenetrate` gate `:74367` and the
+    /// Gas Trap's `alpha < 255` gate `:74515`). WRITTEN NOT RUN.
+    #[test]
+    fn s1_e_21h_d77_the_kill_tail_cue_map_batch2_and_gates() {
+        let mut pool = ProjectilePool::new();
+        let cases: [(u16, (u16, i32)); 15] = [
+            (1, (0, 0)),
+            (81, (0, 0)),
+            (98, (0, 0)),
+            (980, (0, 0)),
+            (343, (2, 27)),
+            (349, (2, 27)),
+            (323, (0, 0)),
+            (346, (2, 27)),
+            (184, (0, 0)),
+            (275, (0, 0)),
+            (276, (0, 0)),
+            (270, (0, 27)),
+            (928, (0, 0)),
+            (120, (0, 0)),
+            (166, (2, 51)),
+        ];
+        for (kind, want) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue");
+            assert_eq!((queued[0].0, queued[0].1), want, "kind {kind}'s payload");
+            pool.kill(slot);
+        }
+        // The 837 gate: an untouched skull (penetrate == maxPenetrate)
+        // dies silent; a spent one plays the Dig thud with Style 27.
+        let slot = pool
+            .spawn_with_data_ai_owned(837, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the skull row spawns");
+        pool.slots_mut()[slot].penetrate = pool.slots()[slot].max_penetrate;
+        pool.kill_tail_cue(slot);
+        assert!(pool.drain_proj_sounds().is_empty(), "the untouched skull is silent");
+        pool.slots_mut()[slot].penetrate -= 1;
+        pool.kill_tail_cue(slot);
+        let queued = pool.drain_proj_sounds();
+        assert_eq!(queued.len(), 1);
+        assert_eq!((queued[0].0, queued[0].1), (0, 27), "the spent skull's thud");
+        pool.kill(slot);
+        // The 206 gate: the fully-faded Gas Trap is silent, the fading one
+        // rustles; the 225 spore always rustles (id 6 Grass).
+        for (kind, alpha, plays) in [(206u16, 255, false), (206, 100, true), (225, 255, true)] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the spore row spawns");
+            pool.slots_mut()[slot].alpha = alpha;
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), usize::from(plays), "kind {kind} alpha {alpha}");
+            if plays {
+                assert_eq!((queued[0].0, queued[0].1), (6, 0), "the Grass rustle");
+            }
+            pool.kill(slot);
+        }
+        // The 91/92 Item10 (the star chain rides special_arrow_kill).
+        for kind in [91u16, 92] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the arrow row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1);
+            assert_eq!((queued[0].0, queued[0].1), (2, 10));
+            pool.kill(slot);
+        }
     }
 }
 
