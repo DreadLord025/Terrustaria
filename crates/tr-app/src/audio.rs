@@ -175,6 +175,11 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_45", 4),
     ("NPC_Killed_42", 4),
     ("NPC_Killed_44", 4),
+    // W4-e9 tail — Medusa's stone-gaze cry (`NPC.cs:56403`,
+    // `PlaySound(4, pos, 17)` int overload) and the balloon pops'
+    // `NPCDeath63` (`NPC.cs:43726`/`:47951`/`:48062`, the style façade).
+    ("NPC_Killed_17", 4),
+    ("NPC_Killed_63", 4),
     // The Force Bubble's death cue (`NPC.cs:13890`'s `NPCDeath45`) and the
     // Tesla Turret's (`NPC.cs:13931`'s `NPCDeath56`, S1-F-13d).
     ("NPC_Killed_45", 4),
@@ -1465,6 +1470,11 @@ impl Audio {
             // the 316 machine's wiring consumes the row).
             55 => "NPC_Killed_55",
             61 => "NPC_Killed_61",
+            // W4-e9 tail — the balloon pops' `this.DeathSound` =
+            // `NPCDeath63` (`SetDefaults` 686/594, `NPC.cs:17636`/`:16716`;
+            // the ClumsySlimeBalloon `:43726` + the WindyBalloon
+            // `:47951`/`:48062` sites, the style façade).
+            63 => "NPC_Killed_63",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
@@ -1495,6 +1505,11 @@ impl Audio {
             9 => "NPC_Killed_9",
             6 => "NPC_Killed_6",
             22 => "NPC_Killed_22",
+            // W4-e9 tail — Medusa's stone-gaze cry (`NPC.cs:56403`,
+            // `PlaySound(4, (int)position.X, (int)position.Y, 17)` — the
+            // int overload, NO NextFloat; the 480 kind's wiring consumes
+            // the row).
+            17 => "NPC_Killed_17",
             _ => return None,
         };
         let style = npc_sound_style(cue, "NPC_Killed_", 4)?;
@@ -1697,6 +1712,74 @@ impl Audio {
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         self.emit("eow_dig", x, y, style.volume, pitch.clamp(-1.0, 1.0));
         Some("eow_dig")
+    }
+
+    /// W4-e9 tail — one case-65 Queen Slime idle-moan play
+    /// (`NPC.cs:45759`, `PlaySound(65, base.position)` — the int overload,
+    /// NO `GetRandomPitch` NextFloat). The attenuation gate first
+    /// (`LegacySoundPlayer.cs:369-436`), then case 65 (`:1382-1402`): the
+    /// 115/116/117 playing guards refuse BEFORE any draw, `Next(115, 118)`
+    /// picks the slot, ×0.5 volume, NO pitch draw. The slot is overwritten
+    /// (detached, the case creates a fresh instance `:1397`). Returns the
+    /// asset played; `None` when the gate or a playing guard refused.
+    pub fn play_queen_slime_moan(
+        &mut self,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(65, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let voice = crate::ambient_sound::critter_legacy_voice(
+            65,
+            0,
+            &mut |lo, hi| rng.next_range(lo, hi),
+            &|slot| self.zombie_playing(slot),
+        )?;
+        self.play_critter(voice, x, y);
+        Some(voice.asset)
+    }
+
+    /// W4-e9 tail — one `Sounds/Custom/` NPC trackable play by asset name
+    /// (the Pal pain/joy cries `NPC.cs:42983-43001` and the Statue Mimic's
+    /// scare/jump/laugh `:43562-43608`; `SoundID.CreateTrackable`,
+    /// `SoundID.cs:1714-1743`). The style façade (`SoundEngine.cs:93-99`)
+    /// consumes the `GetRandomPitch` NextFloat on the audio-only stream
+    /// (the Pal rows variance 0, the Statue Mimic rows 0.1 — the draw
+    /// still happens), then the attenuation gate, then case 42
+    /// (`LegacySoundPlayer.cs:1376-1381`): no volume tweak, no gameplay
+    /// draw, the style's own volume, the pinned first variation (the
+    /// multi-variation laugh plays `_0`, the wave-A pin). `cue` must be a
+    /// registered [`NPC_CUSTOM_CUES`] name. Returns the cue played;
+    /// `None` when the name is unregistered or the gate refused.
+    pub fn play_npc_trackable(
+        &mut self,
+        cue: &'static str,
+        x: f32,
+        y: f32,
+    ) -> Option<&'static str> {
+        if !NPC_CUSTOM_CUES.contains(&cue) {
+            return None;
+        }
+        // The multi-variation families pin `_0` (the bank's name); the
+        // style row's trackable is the base name (strip the suffix).
+        let base = cue.strip_suffix("_0").unwrap_or(cue);
+        let style = crate::soundid::SOUND_STYLES
+            .iter()
+            .find(|s| s.sound_id == 42 && s.trackable == Some(base))?;
+        let draw = self.sound_style_random.next_float();
+        let pitch = sound::get_random_pitch(style.pitch_variance, draw);
+        let x = x.trunc();
+        let y = y.trunc();
+        if sound::play_sound(42, x, y, self.listener, style.volume).is_none() {
+            return None;
+        }
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, style.volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
     }
 
     /// S1-E-21 wave B — one tile/wall-placement cue

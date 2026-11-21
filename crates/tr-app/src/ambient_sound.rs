@@ -663,6 +663,23 @@ pub fn critter_legacy_voice(
             }
             Some(voice(109, 0.3, roll(-10, 11)))
         }
+        // W4-e9 tail — case 65 (`:1382-1402`): the Queen Slime's idle moan
+        // (`NPC.cs:45759`'s `Next(360) == 0` site — the 657 kind is
+        // unported, the arm lands table-complete). The 115/116/117 playing
+        // guards refuse BEFORE any draw; `Next(115, 118)` picks the slot,
+        // ×0.5, NO pitch draw (the case sets Volume/Pan only).
+        65 => {
+            if is_playing(115) || is_playing(116) || is_playing(117) {
+                return None;
+            }
+            let slot = roll(115, 118).max(0) as usize;
+            Some(CritterVoice {
+                slot,
+                asset: zombie_asset(slot),
+                volume_mult: 0.5,
+                pitch: 0.0,
+            })
+        }
         // S1-E-21e — the fighter-moan cases (`AI_003_Fighters`,
         // `NPC.cs:57340-57367`). Case 14 (`:793-824`): NO pitch draw and no
         // playing guard — the style-542 slot 7, the 489/586 `Next(21, 24)`
@@ -846,6 +863,11 @@ fn zombie_asset(slot: usize) -> &'static str {
         84 => "Zombie_84",
         85 => "Zombie_85",
         86 => "Zombie_86",
+        // W4-e9 tail — the Queen Slime moan's case-65 slots
+        // (`LegacySoundPlayer.cs:1396`'s `Next(115, 118)`).
+        115 => "Zombie_115",
+        116 => "Zombie_116",
+        117 => "Zombie_117",
         _ => "Zombie_0",
     }
 }

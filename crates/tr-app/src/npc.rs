@@ -1323,6 +1323,17 @@ pub enum NpcSoundCue {
     /// — the Ghost's flee cry (`NPC.cs:24693`, the aiStyle-22 type-316
     /// `localAI[3]` 0→1 latch, the style façade); case 4.
     NpcDeath55,
+    /// W4-e9 tail — `PlaySound(SoundID.NPCHit6, base.position)` — the
+    /// Pirate Ghost's spawn cue (`NPC.cs:44848`, the aiStyle-122
+    /// `localAI[0]` 0→1 latch, the style façade — NPCHit6 is the legacy
+    /// id-3 style 6, `SoundID.cs:1262`); case 3's one pitch draw + the
+    /// façade NextFloat.
+    NpcHit6,
+    /// W4-e9 tail — `PlaySound(SoundID.NPCDeath63, base.position)` — the
+    /// balloon pops' `this.DeathSound` (`NPC.cs:43726` the
+    /// ClumsySlimeBalloon, `:47951`/`:48062` the WindyBalloon; the style
+    /// façade, `SetDefaults` 686/594's NPCDeath63); case 4.
+    NpcDeath63,
     /// `PlaySound(SoundID.NPCDeath61, Center)` — the Moon Lord core's
     /// crash cry (`NPC.cs:41432`, the style façade); case 4.
     NpcDeath61,
@@ -1341,6 +1352,35 @@ pub enum NpcSoundCue {
     /// (`water_collision_splash`): entry shimmer 4 / honey 1 / water 0 /
     /// lava 1, exit shimmer 5 / honey 1 / water 0 / lava 1.
     Splash(i32),
+    /// W4-e9 tail — `PlaySound(14, base.Center, 542)` — the Sand Shark's
+    /// style-542 cry (`NPC.cs:40632`, the aiStyle-103 chase latch): the
+    /// int overload, case 14's style-542 slot-7 path (NO draws, ×0.4).
+    SandSharkCry,
+    /// W4-e9 tail — `PlaySound(SoundID.ItemN, pos)` — the NPC AI sites'
+    /// item cues: the Antlion's spit (`NPC.cs:24449`, Item5), the
+    /// ShadowFlameApparition/Squidhead teleports (`:37268`/`:37321`,
+    /// Item8), the Queen Slime's landing thud (`:45558`, Item167), the
+    /// Blood Nautilus' volley/scream (`:47263`/`:47268`/`:47293`,
+    /// Item170/172), the Big Mimic's reflect tink (`:66429`, Item150)
+    /// and the FairyEffects shimmer-release chime (`:48682`, Item4).
+    /// The style façade + case 2's one pitch draw.
+    ItemCue(i32),
+    /// W4-e9 tail — `PlaySound(65, base.position)` — the Queen Slime's
+    /// idle moan (`NPC.cs:45759`, the `Next(360) == 0` gate): the int
+    /// overload, case 65's `Next(115, 118)` slot pick behind the
+    /// 115/116/117 playing guards, ×0.5, NO pitch draw.
+    QueenSlimeMoan,
+    /// W4-e9 tail — `PlaySound(27, (int)position.X, (int)position.Y)` —
+    /// the FairyCritter's Pixie hum (`NPC.cs:48327`/`:48473`/`:48545`):
+    /// the int overload, case 27's one `Next(-10, 11)` pitch draw (the
+    /// live-slot update returns null but the draw still happens).
+    Pixie,
+    /// W4-e9 tail — the Pal pain/joy cries (`NPC.cs:42983`/`:42987`/
+    /// `:42997`/`:43001`) and the Statue Mimic's scare/jump/laugh
+    /// (`:43562`/`:43569`/`:43580`/`:43608`): the `Sounds/Custom/`
+    /// trackables, case 42 — the façade NextFloat on the audio-only
+    /// stream, NO gameplay draw, the pinned first variation.
+    Trackable(&'static str),
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position

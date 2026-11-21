@@ -1158,6 +1158,12 @@ fn play_npc_sound_request(
         NpcSoundCue::NpcDeath55 => {
             audio.play_npc_death_style(55, req.x, req.y, rng);
         }
+        NpcSoundCue::NpcHit6 => {
+            audio.play_npc_hit_sound("NPC_Hit_6", req.x, req.y, rng);
+        }
+        NpcSoundCue::NpcDeath63 => {
+            audio.play_npc_death_style(63, req.x, req.y, rng);
+        }
         NpcSoundCue::NpcDeath13 => {
             audio.play_npc_death_style(13, req.x, req.y, rng);
         }
@@ -1166,6 +1172,21 @@ fn play_npc_sound_request(
         }
         NpcSoundCue::Splash(style) => {
             audio.play_splash_sound(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::ItemCue(style) => {
+            audio.play_npc_item_cue(style, req.x, req.y, rng);
+        }
+        NpcSoundCue::SandSharkCry => {
+            audio.play_fighter_moan(14, 542, req.x, req.y, rng);
+        }
+        NpcSoundCue::QueenSlimeMoan => {
+            audio.play_queen_slime_moan(req.x, req.y, rng);
+        }
+        NpcSoundCue::Pixie => {
+            audio.play_pixie(req.x, req.y, rng);
+        }
+        NpcSoundCue::Trackable(cue) => {
+            audio.play_npc_trackable(cue, req.x, req.y);
         }
     }
 }
