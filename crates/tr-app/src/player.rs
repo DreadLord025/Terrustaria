@@ -2070,6 +2070,10 @@ pub struct Player {
     pending_hair_dye_dust: Option<crate::player_dust2::HairDyeDust>,
     pending_mana_heat_dust: Option<crate::player_dust2::ManaHeatDust>,
     pending_stoned_burst_dust: Option<crate::player_dust2::StonedBurstDust>,
+    /// W4-e1 batch 4 — the Vortex stealth rings (25877/25887) and the liquid
+    /// entry/exit splash bursts (27785/27812/27825/27839/27879/27906/27919/27933).
+    pending_vortex_ring_dust: Option<crate::player_dust2::VortexRingDust>,
+    pending_liquid_splash_dust: Option<crate::player_dust2::LiquidSplashDust>,
     /// W4-e1 — `Player.hairDye` (`Player.cs:2546`): the applied hair-dye shader
     /// index (`ItemCheck` `:42863` grants `item.hairDye`, the post-processed
     /// shader id). The team-dye puff gate (`:24270`) reads it against
@@ -3031,6 +3035,8 @@ impl Player {
             pending_hair_dye_dust: None,
             pending_mana_heat_dust: None,
             pending_stoned_burst_dust: None,
+            pending_vortex_ring_dust: None,
+            pending_liquid_splash_dust: None,
             hair_dye: -1,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
@@ -3670,6 +3676,12 @@ impl Player {
     }
     pub(crate) fn take_stoned_burst_dust(&mut self) -> Option<crate::player_dust2::StonedBurstDust> {
         self.pending_stoned_burst_dust.take()
+    }
+    pub(crate) fn take_vortex_ring_dust(&mut self) -> Option<crate::player_dust2::VortexRingDust> {
+        self.pending_vortex_ring_dust.take()
+    }
+    pub(crate) fn take_liquid_splash_dust(&mut self) -> Option<crate::player_dust2::LiquidSplashDust> {
+        self.pending_liquid_splash_dust.take()
     }
 
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
@@ -6010,6 +6022,25 @@ impl Player {
                 0 // `:27832`
             };
             self.pending_splash_sound = Some((style, self.x, self.y));
+            // W4-e1 — the entry splash dust (`:27783-27940`, sites
+            // 27785/27812/27825/27839). The liquid kind picks the burst; the
+            // water style feeds Dust.dustWater(). The drain replays it AFTER
+            // the splash sound (the C# sound-then-dust order is dust-then-
+            // sound here — the sound queues first, the dust drain follows the
+            // sound drain in the world_sim seam, matching the source's
+            // PlaySound-after-NewDust within the same tick).
+            let liquid_kind = if now_lava { 1 } else if now_shimmer { 3 } else if now_honey { 2 } else { 0 };
+            self.pending_liquid_splash_dust = Some(crate::player_dust2::LiquidSplashDust {
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                liquid: liquid_kind,
+                entry: true,
+                water_dust: tr_core::particles::dust_water(
+                    crate::biome::calculate_water_style(world, Vec2::new(self.x, self.y)) as i32,
+                ),
+            });
         } else if !now_any_wet && was_any_wet {
             // `:27864` — the exit jump clamp (`jump > jumpHeight/5`) is a
             // movement seam, not a sound one; the splash gate stands alone.
@@ -6025,6 +6056,20 @@ impl Player {
                     0 // `:27926`
                 };
                 self.pending_splash_sound = Some((style, self.x, self.y));
+                // W4-e1 — the exit splash dust (`:27877-27939`, sites
+                // 27879/27906/27919/27933). The OLD wet flags pick the kind.
+                let liquid_kind = if self.lava_wet { 1 } else if self.shimmer_wet { 3 } else if self.honey_wet { 2 } else { 0 };
+                self.pending_liquid_splash_dust = Some(crate::player_dust2::LiquidSplashDust {
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    liquid: liquid_kind,
+                    entry: false,
+                    water_dust: tr_core::particles::dust_water(
+                        crate::biome::calculate_water_style(world, Vec2::new(self.x, self.y)) as i32,
+                    ),
+                });
             }
         }
         self.wet = now_wet;
@@ -7150,6 +7195,12 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // W4-e1 — `Player.cs:25826-25895`: the Vortex stealth machine (the
+        // setVortex arm of the stealth else-if chain). The stealth ramps
+        // ±0.04/tick; while it moves (flag11) the two ring dust sites
+        // (25877/25887) queue for the drain. The ranged damage/crit/aggro
+        // grants + the run-speed ×0.3 ride the live stealth.
+        self.update_vortex_stealth();
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
         // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`
@@ -10222,6 +10273,48 @@ impl Player {
         });
     }
 
+    /// W4-e1 — the Vortex stealth machine (`Player.cs:25826-25895`, sites
+    /// 25877/25887): the setVortex arm of the stealth else-if chain. The
+    /// stealth ramps ±0.04/tick (down while active, up otherwise); while it
+    /// moves (flag11) the two ring dust sites queue. The ranged damage/crit/
+    /// aggro grants + the run-speed ×0.3 ride the live stealth. The mount
+    /// cancels the active state (`:25850-25853`).
+    fn update_vortex_stealth(&mut self) {
+        if !self.set_vortex {
+            return;
+        }
+        let mut flag11 = false;
+        if self.vortex_stealth_active {
+            let num26 = self.stealth;
+            self.stealth -= 0.04;
+            if self.stealth < 0.0 {
+                self.stealth = 0.0;
+            } else {
+                flag11 = true;
+            }
+            let _ = num26; // the net-sync edge (`:25841`) is MP-only.
+            self.ranged_damage += (1.0 - self.stealth) * 0.8;
+            self.ranged_crit += ((1.0 - self.stealth) * 20.0) as i32;
+            self.aggro -= ((1.0 - self.stealth) * 1200.0) as i32;
+            self.acc_run_speed *= 0.3;
+            self.max_run_speed *= 0.3;
+            if self.mount.is_active() {
+                self.vortex_stealth_active = false;
+            }
+        } else {
+            self.stealth += 0.04;
+            if self.stealth > 1.0 {
+                self.stealth = 1.0;
+            } else {
+                flag11 = true;
+            }
+        }
+        if flag11 {
+            let (cx, cy) = self.center();
+            self.pending_vortex_ring_dust = Some(crate::player_dust2::VortexRingDust { cx, cy });
+        }
+    }
+
     /// W4-e1 — `Player.UpdateHairDyeDust` (`Player.cs:24268-24295`, site
     /// 24274): the team-dye puff. The gate is the team-dye shader state +
     /// alive/not-stoned/not-frozen/not-ghost; the drain rolls the Next(45) +
@@ -11735,6 +11828,10 @@ impl Player {
         // keyDir 0 (down) != num when reversed → early return (`:56771-56774`).
         if 0 != num {
             return;
+        }
+        // W4-e1 — `:56775-56778`: the Vortex set's stealth toggle (no mount).
+        if self.set_vortex && !self.mount.is_active() {
+            self.vortex_stealth_active = !self.vortex_stealth_active;
         }
         if self.set_forbidden {
             self.minion_rest_target_aim(world, mouse_world);

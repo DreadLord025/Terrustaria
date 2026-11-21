@@ -1095,6 +1095,151 @@ pub(crate) fn stoned_burst(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Sites 25877 / 25887 — the Vortex stealth rings (`Player.cs:25872-25894`).
+// ---------------------------------------------------------------------------
+
+/// The Vortex stealth-ring snapshot: the center at the C# read moment. The
+/// host gates `flag11` (the stealth ramp still moving); the drain rolls the
+/// two Next(2) gates + the RotatedByRandom angle draws + the spawn chains.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct VortexRingDust {
+    pub cx: f32,
+    pub cy: f32,
+}
+
+/// `:25874-25893` — two independent Next(2) gates. Ring 1 (type 229): the
+/// UnitY.RotatedByRandom(TAU) angle (two NextDouble draws), spawn at
+/// Center−vector*30, then noGravity, position = Center−vector*Next(5,11),
+/// velocity = vector.RotatedBy(π/2)*4, scale = 0.5+NextFloat, fadeIn 0.5.
+/// Ring 2 (type 240): the same angle draw, position = Center−vector*12,
+/// velocity = vector.RotatedBy(−π/2)*2.
+pub(crate) fn vortex_stealth_rings(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &VortexRingDust,
+) {
+    let center = Vec2::new(b.cx, b.cy);
+    let tau = 6.2831854820251465f64;
+    let half_pi = 1.5707963705062866f64;
+    // `:25874-25883` — ring 1 (type 229).
+    if rng.next_max(2) == 0 {
+        // UnitY.RotatedByRandom(TAU): NextDouble*TAU − NextDouble*TAU.
+        let angle = rng.next_double() * tau - rng.next_double() * tau;
+        let vector = rotate_by(Vec2::new(0.0, 1.0), angle);
+        let idx = nd(
+            rng, dust, ctx, world, center - vector * 30.0, 0, 0, 229,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.position = center - vector * rng.next_range(5, 11) as f32;
+        d.velocity = rotate_by(vector, half_pi) * 4.0;
+        d.scale = 0.5 + rng.next_float();
+        d.fade_in = 0.5;
+    }
+    // `:25884-25893` — ring 2 (type 240).
+    if rng.next_max(2) == 0 {
+        let angle = rng.next_double() * tau - rng.next_double() * tau;
+        let vector = rotate_by(Vec2::new(0.0, 1.0), angle);
+        let idx = nd(
+            rng, dust, ctx, world, center - vector * 30.0, 0, 0, 240,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.position = center - vector * 12.0;
+        d.velocity = rotate_by(vector, -half_pi) * 2.0;
+        d.scale = 0.5 + rng.next_float();
+        d.fade_in = 0.5;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sites 27785 / 27812 / 27825 / 27839 / 27879 / 27906 / 27919 / 27933 — the
+// liquid entry/exit splash bursts (`Player.cs:27772-27944`).
+// ---------------------------------------------------------------------------
+
+/// The liquid-splash snapshot: the box/velocity at the entry/exit moment +
+/// the liquid kind + the entry/exit direction. The host gates the wetCount
+/// cooldown + the shimmering state; the drain replays the per-kind burst.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct LiquidSplashDust {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// The liquid kind: 0 water, 1 lava, 2 honey, 3 shimmer.
+    pub liquid: i32,
+    /// true = entry (`:27772-27848`), false = exit (`:27861-27943`).
+    pub entry: bool,
+    /// `Dust.dustWater()` — the per-water-style splash dust id (the host
+    /// computes it from the biome water style).
+    pub water_dust: i32,
+}
+
+/// `:27783-27940` — the per-kind splash burst. Shimmer: 50 type-308 puffs
+/// with the Next(6) colour pick; honey: 20 type-152; water: 50 dustWater;
+/// lava: 20 type-35. The entry/exit arms differ in the Y offset + scale +
+/// velocity.Y lift (the C# tables). No explicit argument draws except the
+/// shimmer Next(6) colour pick (per puff, AFTER the internals).
+pub(crate) fn liquid_splash(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &LiquidSplashDust,
+) {
+    let (count, ty, scale, alpha, y_lift, y_off) = match (b.liquid, b.entry) {
+        // Shimmer entry (`:27783-27805`): 50 type-308, scale 0.8, Y−4, no alpha.
+        (3, true) => (50, 308, 0.8f32, 0, 4.0f32, 0.0f32),
+        // Shimmer exit (`:27877-27899`): 50 type-308, scale 0.75, Y−4.
+        (3, false) => (50, 308, 0.75, 0, 4.0, 0.0),
+        // Honey entry (`:27810-27818`): 20 type-152, scale 1.3, alpha 100, Y−1, Y−8.
+        (2, true) => (20, 152, 1.3, 100, 1.0, -8.0),
+        // Honey exit (`:27904-27912`): same.
+        (2, false) => (20, 152, 1.3, 100, 1.0, -8.0),
+        // Water entry (`:27823-27831`): 50 dustWater, scale 0.8, alpha 100, Y−3, Y−8.
+        (0, true) => (50, b.water_dust, 0.8, 100, 3.0, -8.0),
+        // Water exit (`:27917-27925`): 50 dustWater, scale 0.8, alpha 100, Y−4, no Y off.
+        (0, false) => (50, b.water_dust, 0.8, 100, 4.0, 0.0),
+        // Lava entry (`:27837-27845`): 20 type-35, scale 1.3, alpha 100, Y−1.5, Y−8.
+        (1, true) => (20, 35, 1.3, 100, 1.5, -8.0),
+        // Lava exit (`:27931-27939`): same.
+        (1, false) => (20, 35, 1.3, 100, 1.5, -8.0),
+        _ => return,
+    };
+    let pos = Vec2::new(b.x - 6.0, b.y + (b.height as i32 / 2) as f32 + y_off);
+    for _ in 0..count {
+        // The C# NewDust call uses the DEFAULT scale 1.0 (no Scale argument);
+        // the per-kind scale is a POST-spawn overwrite (`:27788` et al.).
+        let idx = nd(
+            rng, dust, ctx, world, pos, b.width as i32 + 12, 24, ty,
+            0.0, 0.0, alpha, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity.y -= y_lift;
+        d.velocity.x *= 2.5;
+        d.scale = scale;
+        if alpha != 0 {
+            d.alpha = alpha;
+        }
+        d.no_gravity = true;
+        // The shimmer colour pick (`:27790-27804` / `:27884-27898`): Next(6)
+        // AFTER the internals, per puff.
+        if ty == 308 {
+            d.color = match rng.next_max(6) {
+                0 => Color::new(255, 255, 210, 255),
+                1 => Color::new(190, 245, 255, 255),
+                2 => Color::new(255, 150, 255, 255),
+                _ => Color::new(190, 175, 255, 255),
+            };
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1770,5 +1915,157 @@ mod tests {
             assert_eq!(pool.slot(i).position, mpool.slot(i).position);
         }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 sites 25877/25887 — the Vortex rings: two independent Next(2)
+    /// gates, each with a RotatedByRandom angle (two NextDouble draws). The
+    /// mirror consumes the same order; the spawned records' shape pins.
+    #[test]
+    fn w4_e1_vortex_rings_gate_and_angle_order() {
+        let w = world();
+        let c = ctx();
+        let b = VortexRingDust { cx: 500.0, cy: 500.0 };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(79);
+        vortex_stealth_rings(&mut rng, &mut pool, &c, &w, &b);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(79);
+        let tau = 6.2831854820251465f64;
+        let half_pi = 1.5707963705062866f64;
+        let center = Vec2::new(500.0, 500.0);
+        let mut expect = 0usize;
+        if mirror.next_max(2) == 0 {
+            let angle = mirror.next_double() * tau - mirror.next_double() * tau;
+            let vector = rotate_by(Vec2::new(0.0, 1.0), angle);
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, center - vector * 30.0, 0, 0, 229,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.position = center - vector * mirror.next_range(5, 11) as f32;
+            md.velocity = rotate_by(vector, half_pi) * 4.0;
+            md.scale = 0.5 + mirror.next_float();
+            md.fade_in = 0.5;
+            expect += 1;
+        }
+        if mirror.next_max(2) == 0 {
+            let angle = mirror.next_double() * tau - mirror.next_double() * tau;
+            let vector = rotate_by(Vec2::new(0.0, 1.0), angle);
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, center - vector * 30.0, 0, 0, 240,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.position = center - vector * 12.0;
+            md.velocity = rotate_by(vector, -half_pi) * 2.0;
+            md.scale = 0.5 + mirror.next_float();
+            md.fade_in = 0.5;
+            expect += 1;
+        }
+        assert_eq!(active(&pool).len(), expect);
+        for i in 0..expect {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+            assert_eq!(pool.slot(i).fade_in, 0.5);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 sites 27825/27919 — the water splash: 50 dustWater puffs, the
+    /// velocity.Y lift + velocity.X ×2.5 + scale overwrite + noGravity. The
+    /// entry arm lifts Y−3 (Y−8 offset), the exit Y−4 (no offset).
+    #[test]
+    fn w4_e1_water_splash_entry_and_exit() {
+        let w = world();
+        let c = ctx();
+        let entry = LiquidSplashDust {
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0,
+            liquid: 0, entry: true, water_dust: 33,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(83);
+        liquid_splash(&mut rng, &mut pool, &c, &w, &entry);
+        assert_eq!(active(&pool).len(), 50);
+        for i in 0..50 {
+            assert_eq!(pool.slot(i).dust_type, 33);
+            assert_eq!(pool.slot(i).scale, 0.8);
+            assert_eq!(pool.slot(i).alpha, 100);
+            assert!(pool.slot(i).no_gravity);
+        }
+        // The exit arm: 50 puffs, scale 0.8, Y−4 lift.
+        let exit = LiquidSplashDust { entry: false, ..entry };
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(83);
+        liquid_splash(&mut rng2, &mut pool2, &c, &w, &exit);
+        assert_eq!(active(&pool2).len(), 50);
+        assert_eq!(pool2.slot(0).scale, 0.8);
+    }
+
+    /// W4-e1 sites 27785/27879 — the shimmer splash: 50 type-308 puffs, each
+    /// with a Next(6) colour pick AFTER the internals. The mirror consumes
+    /// the colour draw per puff.
+    #[test]
+    fn w4_e1_shimmer_splash_colour_pick_order() {
+        let w = world();
+        let c = ctx();
+        let b = LiquidSplashDust {
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0,
+            liquid: 3, entry: true, water_dust: 33,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(89);
+        liquid_splash(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 50);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(89);
+        for _ in 0..50 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(294.0, 320.0), 32, 24, 308,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity.y -= 4.0;
+            md.velocity.x *= 2.5;
+            md.scale = 0.8;
+            md.no_gravity = true;
+            md.color = match mirror.next_max(6) {
+                0 => Color::new(255, 255, 210, 255),
+                1 => Color::new(190, 245, 255, 255),
+                2 => Color::new(255, 150, 255, 255),
+                _ => Color::new(190, 175, 255, 255),
+            };
+        }
+        for i in 0..50 {
+            assert_eq!(pool.slot(i).color, mpool.slot(i).color);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 sites 27812/27839 — the honey/lava splash: 20 puffs (type 152 /
+    /// 35), scale 1.3, alpha 100, the Y−1 / Y−1.5 lift.
+    #[test]
+    fn w4_e1_honey_lava_splash_counts() {
+        let w = world();
+        let c = ctx();
+        let honey = LiquidSplashDust {
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0,
+            liquid: 2, entry: true, water_dust: 33,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(97);
+        liquid_splash(&mut rng, &mut pool, &c, &w, &honey);
+        assert_eq!(active(&pool).len(), 20);
+        assert_eq!(pool.slot(0).dust_type, 152);
+        assert_eq!(pool.slot(0).scale, 1.3);
+        let lava = LiquidSplashDust { liquid: 1, ..honey };
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(97);
+        liquid_splash(&mut rng2, &mut pool2, &c, &w, &lava);
+        assert_eq!(active(&pool2).len(), 20);
+        assert_eq!(pool2.slot(0).dust_type, 35);
     }
 }

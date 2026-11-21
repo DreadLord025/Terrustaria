@@ -1546,6 +1546,16 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &b,
                 );
             }
+            // W4-e1 batch 4 — the Vortex stealth rings (25877/25887).
+            if let Some(b) = p.take_vortex_ring_dust() {
+                crate::player_dust2::vortex_stealth_rings(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
@@ -1650,6 +1660,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     sy,
                     0.0,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
+            // W4-e1 batch 4 — the liquid entry/exit splash dust
+            // (27785/27812/27825/27839/27879/27906/27919/27933). The C# spawns
+            // the dust BEFORE the PlaySound(19) within the splash block, so
+            // the dust drain precedes the splash-sound drain below.
+            if let Some(b) = p.take_liquid_splash_dust() {
+                crate::player_dust2::liquid_splash(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
                 );
             }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
