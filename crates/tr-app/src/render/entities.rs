@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(D125_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1246,6 +1247,15 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// W4-d125 sheets phase: the Empress of Light's + the Prismatic Lacewing's
+/// own sheets, keyed by the vanilla net id in [`NpcAssets::npc_sheet`] like
+/// the families. REAL .xnb dims: NPC_636 166x352 (2 rows of 176), NPC_661
+/// 24x72 (3 rows of 24) — measured + packed by `tools/_d125_sheets_measure.js`
+/// (skyline 8116 px main / 8117 px boot-font on this branch's base, 76/75 px
+/// under the strict-GPU bound; the sibling-union reconciliation is the
+/// atlas-repack wave's, research/113).
+pub(crate) const D125_SHEETS: &[u32] = &[636, 661];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3175,16 +3185,16 @@ pub(crate) fn draw_npcs(
             // halo + the colour-shift pass) is the render-side remainder;
             // this arm draws the body sheet at `Main.npcFrameCount[636]`
             // = 2 rows (`Main.cs:67147`) with the generic centred anchor.
-            // The sheet is DEFERRED (the ~71-px atlas headroom, the
-            // wyvern precedent — `npc_sheet` returns None and the draw
-            // skips until the repack).
+            // The sheet is PACKED (the sheets phase, `D125_SHEETS` — the
+            // real 166x352 strip divides into 2 whole 176-px rows).
             NpcKind::EmpressOfLight => {
                 pumpkin_moon_draw(assets.npc_sheet(636), npc_rows(636), n, w, h)
             }
             // The Prismatic Lacewing — the butterfly group's generic draw
             // at `Main.npcFrameCount[661]` = 3 rows (`Main.cs:67150`),
             // the `vx * 0.3` tilt rides the rotation whitelist below
-            // (`FindFrame` case 661, `NPC.cs:72747`). Sheet deferred.
+            // (`FindFrame` case 661, `NPC.cs:72747`). Sheet PACKED (the
+            // sheets phase — the real 24x72 strip, 3 whole 24-px rows).
             NpcKind::PrismaticLacewing => {
                 pumpkin_moon_draw(assets.npc_sheet(661), npc_rows(661), n, w, h)
             }
@@ -3596,6 +3606,42 @@ mod anchor_tests {
             );
             assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
             // And the strip the machine walks never leaves those rows.
+            assert!(fh.fract() == 0.0, "{kind:?}: a fractional row means a wrong divisor");
+        }
+    }
+
+    /// W4-d125 sheets phase: the Empress + Lacewing strips divide into
+    /// their vanilla rows over the REAL .xnb dims (the pinned LZX harness,
+    /// `tools/_d125_sheets_measure.js`: NPC_636 166x352, NPC_661 24x72),
+    /// both sheets are packed (`D125_SHEETS` + `STATIC_SHEET_NAMES`), the
+    /// bestiary order table carries both slots, and the draw arms' generic
+    /// anchor keeps the sheet width (the d35 packing-audit shape).
+    #[test]
+    fn the_d125_strips_divide_into_their_vanilla_rows() {
+        // (kind, sheet w, sheet h, npcFrameCount[type]) — Main.cs:67147
+        // (636 = 2) / :67150 (661 = 3).
+        let cases: &[(NpcKind, f32, f32, u32)] = &[
+            (NpcKind::EmpressOfLight, 166.0, 352.0, 2),   // NPC_636
+            (NpcKind::PrismaticLacewing, 24.0, 72.0, 3),  // NPC_661
+        ];
+        for &(kind, w, h, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            assert!(D125_SHEETS.contains(&(net as u32)), "{kind:?} packed");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&format!("NPC_{net}").as_str()),
+                "NPC_{net} is asked for by npc_sheet but never packed"
+            );
+            assert!(
+                crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&net),
+                "NPC_{net} has no bestiary sheet slot"
+            );
+            let t = sheet(w, h);
+            let npc = bare(kind);
+            let (tex, fh, size, _) = pumpkin_moon_draw(Some(&t), rows, &npc, 100.0, 100.0);
+            assert!(tex.is_some());
+            assert_eq!(fh, h / rows as f32, "{kind:?}: whole rows");
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
             assert!(fh.fract() == 0.0, "{kind:?}: a fractional row means a wrong divisor");
         }
     }

@@ -1275,6 +1275,15 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-d125 sheets phase: the Empress + the Lacewing's own sheets
+        // (`D125_SHEETS`). REAL .xnb dims 166x352 / 24x72 (the pinned LZX
+        // harness, tools/_d125_sheets_measure.js): both pack SOLO on this
+        // branch's base at skyline 8116 px main / 8117 px boot-font (76/75
+        // px headroom under the 8192 strict-GPU bound, verify() + double-run
+        // determinism). The sibling-union overflow is the atlas-repack
+        // wave's (research/113 on task/W4-d35-npc-kinds-71-140).
+        "NPC_636",
+        "NPC_661",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1860,7 +1869,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 183] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1895,6 +1904,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
+        // W4-d125 sheets phase — the Empress + the Lacewing (both visible
+        // bestiary kinds), appended last for the same reason.
+        636, 661,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2657,6 +2669,10 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
+                // W4-d125 sheets phase — the Empress's 2-row NPC_636 strip
+                // + the Lacewing's 3-row NPC_661 strip.
+                atlas.sheet("NPC_636").copied(),
+                atlas.sheet("NPC_661").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

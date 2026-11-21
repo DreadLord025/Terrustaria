@@ -35847,9 +35847,8 @@ invoked; the new witnesses are WRITTEN NOT RUN.**
   revenge `BOSS_KINDS` gate, `FindFrame` (case 636's phase-2 row pin
   `NPC.cs:67022-67024`; case 661's 7-tick bands + the `vx*0.3` tilt
   `:72742-72771`), the render draw/portrait arms (the NPC_636/NPC_661
-  sheets are DEFERRED — the ~71-px atlas headroom, the wyvern precedent;
-  `npc_sheet` returns None and the draw skips until the repack) and the
-  netglue hover seeds.
+  sheets were deferred at the wiring phase; the sheets phase below PACKS
+  them) and the netglue hover seeds.
 * **The aiStyle-120 axis arm** (`npc.rs::ai_120_empress`, the fishron
   adapter's shape): the live fields ride `EmpressState`/`EmpressEnv` and
   back; every draw stays on the caller's `UpdateNPCs` stream in the
@@ -35907,6 +35906,31 @@ invoked; the new witnesses are WRITTEN NOT RUN.**
 * **Witnesses**: 7 in `npc_ai_lacewing.rs`, 9 in `world_sim/npcs.rs`'s
   `empress_wiring_tests`, 1 in `projectile.rs` (the telegraph), the v18
   save round-trip + the wld tail-2024 patch — all WRITTEN NOT RUN.
+
+### The d125 sheets phase (2026-11-21 — code-only mode)
+
+The wiring phase's sheet deferral is RETIRED: `NPC_636` (166×352, 2 rows
+of 176) and `NPC_661` (24×72, 3 rows of 24) are measured over the REAL
+retail `.xnb` dims (the pinned LZX harness, `tools/_d125_sheets_measure.js`
+— d35's tip copy) and PACKED: skyline **8116 px main / 8117 px boot-font**
+on this branch's base (76/75 px headroom; the pair costs +1/−2 px — the
+661 strip valley-fills), `verify()` + double-run determinism on every
+scenario. The stale "~71-px headroom" note is superseded the same way
+d35's sheets phase superseded it (the base re-measures 8115/8119 with the
+E-4b gore set landed). `STATIC_SHEET_NAMES` + `D125_SHEETS` +
+`BESTIARY_NPC_SHEET_IDS` 181→183 (+ the parallel vec rows); the portrait
+arms ride the sheets' own row heights AND widths (the d35
+`SetFrameSize` shape). 636 stays OUT of the rotation whitelist — the
+pure core ports no `this.rotation` write (the `NPC.cs:47082+` writes are
+AI_119 Dandelion's, past AI_120's `:46982` end); 661 already rides it.
+The sibling-union overflow (d35's re-extraction: 26 branches / 339 names,
+skyline 9382, area bound 8835 — over the bound WITHOUT d125) is the
+atlas-repack wave's; d125's overflow-ledger entry (+2 names, +0.061 Mpx,
+low area pressure / high visibility, page-1 append under research/113's
+incremental two-page form) is `docs/research/125-empress-sheets-ledger.md`.
+Witnesses: `the_d125_strips_divide_into_their_vanilla_rows`
+(render/entities.rs) + `the_d125_portraits_ride_the_real_sheet_dims`
+(ui/bestiary.rs) — WRITTEN NOT RUN.
 ## The waterfowl family (S1-D-3 aiStyle-68, task/S1-D-3-aistyle68, 2026-11-19, code-only mode)
 
 `crates/tr-app/src/npc_ai_style68.rs` ports `NPC.AI()`'s

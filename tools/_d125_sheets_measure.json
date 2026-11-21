@@ -1,0 +1,72 @@
+[
+ {
+  "label": "base (d125 HEAD, no sheet adds)",
+  "sheets": 9497,
+  "height": 8115,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + boot font",
+  "sheets": 9498,
+  "height": 8119,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + NPC_661 solo",
+  "sheets": 9498,
+  "height": 8113,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + font + NPC_661 solo",
+  "sheets": 9499,
+  "height": 8118,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + NPC_636 solo",
+  "sheets": 9498,
+  "height": 8118,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + font + NPC_636 solo",
+  "sheets": 9499,
+  "height": 8125,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + both (636 then 661)",
+  "sheets": 9499,
+  "height": 8116,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + font + both",
+  "sheets": 9500,
+  "height": 8117,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + pushed union (198) + both",
+  "sheets": 9697,
+  "height": 8541,
+  "overflow": true,
+  "deterministic": true
+ },
+ {
+  "label": "base + font + pushed union + both",
+  "sheets": 9698,
+  "height": 8541,
+  "overflow": true,
+  "deterministic": true
+ }
+]
