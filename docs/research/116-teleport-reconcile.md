@@ -327,6 +327,11 @@ merge-verify wave executes them.
 
 ## 5. Final phase — the g61b co-lane cross-verify + the two seam folds
 
+> **Dust-retire update (§7 below):** the local g61 tip advanced AGAIN to
+> `b5ff1803d` (+4 over `5852697a`: seam 6 key-summon + docs + 2 borrow-fix
+> rounds). The five-seam census below stands; §7 adds the seam-6 row and
+> the alive/dead probe.
+
 g61's branch ADVANCED past the `a9628928` the union-exec adapted:
 `origin/task/W4-g61-npc-spawn-dust` is still `a96289284`, but the LOCAL
 `task/W4-g61-npc-spawn-dust` tip is `5852697a6` (+5 wiring-seam commits:
@@ -431,3 +436,81 @@ sites re-read `Wiring.cs:2437`/`:2465`; the g13 file diffed
 the g61b seams read as full diffs (`git show 1eedb9a3/b4e40449/
 31baa315/c289d64f/5852697a`). The two new/extended witnesses are
 WRITTEN NOT RUN.
+
+## 7. Dust-retire phase — the g61b probe (alive) + the ONE-paragraph merger instruction
+
+### 7.1 g61b worktree probe (read-only) — ALIVE, local-ahead, push owed
+
+`TR-W4-g61` probed at 2026-11-21 09:05 local:
+
+* **Tip `b5ff1803d`** (committed 08:32:20), **+9 over origin `a96289284`**
+  (ancestry verified: `git merge-base --is-ancestor a96289284 b5ff1803d`
+  exit 0). The nine: `1eedb9a3` seam 1, `b4e40449` seam 2, `31baa315`
+  seam 3, `c289d64f` seam 4, `5852697a` seam 5, `8f545007` seam 6
+  (key-summon), `7bed9a1c` wiring docs, `4402e4be` + `b5ff1803` the two
+  NLL borrow-fix rounds.
+* **Status: tracked-clean**, only two untracked scratch files
+  (`spawn_census_raw.txt` 2026-11-20 21:09, `spawn_regions_dump.txt`
+  21:13 — census dumps, junk-class per the lifecycle rules).
+* **ALIVE**: `world_sim/wiring.rs` mtime 08:30:34, `chest.rs` 08:25:30,
+  `bug_net.rs` 08:22:55 — writes within ~35 min of the probe, matching
+  the borrow-fix commit times. NOT dead-dirty; no rescue needed beyond
+  the ordinary **push of the 9 local commits** (the g61 session owns
+  that push; this lane must NOT push another agent's branch).
+
+**Seam-6 dup census (the new commit vs this branch):**
+`8f545007` adds `Player.last_chest` + `chest::chest_change_events`
+(`Player.cs:28760-28775` at `:25384`, close edge) wired at the
+player-tick tail, and `chest::big_mimic_summon_check`
+(`NPC.cs:77517-77605`). **NO DUP with the teleport dispatcher** — the
+key-summon is a `NewNPC` + `BigMimicSpawnSmoke` spawn family (g61's
+`npc_spawn_visuals.rs` lane), never `TeleportEffect`; the player-tick
+tail region hosts BOTH the g11 Shellphone-11 drain and g61b's
+`chest_change_events` — they SHARE the UpdatePlayers stream, so the
+merger keeps both at their cited slots (`chest_change_events` at the
+`Player.Update` `:25384` position; the replay drain at §2's canonical
+tail — the replay-deferral stream note of §2 already covers the
+relative order, no new deviation). The
+borrow-fix rounds (`4402e4be`/`b5ff1803`) touch g61-side call shapes
+only (`catch_npc` anchor copy, pad gate-probe copy) — the pad-loop
+merge note from §5 seam 4 stands: keep the g11 QUEUE replay, drop
+g61b's `npc_teleport_wiring` helper (the borrow fix dies with it).
+
+### 7.2 ONE-paragraph merger instruction (dust-master 131 cross-ref)
+
+**For the d54f-131 dust-master merge (research/131 §2 Main lane + §3
+order):** resolve `main_dust.rs` to ONE file per §6's keep table — keep
+g11's teleport SEAMS dispatcher (`teleport_effect` + `CellRng` +
+`player_teleport`/`npc_teleport` replays + the statue-14 queue fold)
+calling the ONE g61 widest-11 body in `teleport_dust.rs` (adapted from
+`a9628928`; styles 0-13 incl. pylon 9, the six §4 gaps closed), keep
+g13's six site-17-23 bodies + feeds + `capture_snow_cull` verbatim
+(its `rig`/`live` helpers renamed `pool_rig`/`pool_live`), keep g12's
+`main_dust_b.rs` bone-arm pair + `moon_lord_core_dust` (its three
+`teleport_effect_case*` fns + 4 witnesses DROP — the g61 body covers
+sites 9-11), fuse g12's Moon-Lord feed with g13's tentacle feed into ONE
+caller pass, dedupe the `mod main_dust;` declaration to g11's spot; DROP
+g11's deprecated `snowing`/`SnowingEnv`/consts + the four snow witnesses
++ the `scene_scan` SnowingEnv block for d130's `snow.rs` — **read d130's
+LOCAL tip `16a792d56`, not origin `560a02ea`**: d130e applied F1+F5+F7 at
+`099df89e2` (global `UnifiedRandom` stream, splitmix retired, int loop,
+g11 mirrors ported) + the cull-kill at `16a792d56`, so NO patch-hunks or
+witness migration are owed (research/83 §-receipt) — and flag both
+weather/spawn rescue pushes: d130's 2 fold commits and g61's 9 wiring
+commits (`b5ff1803d` tip, ALIVE) are local-only ahead of their origins;
+keep g61's `npc_spawn_visuals.rs` whole (poof/mimic/transform/key-summon
+— disjoint from the dispatcher, §5/§7.1 censuses), keep ONE `Npc`
+teleport field set (g11's names) + ONE sound-callback shape (the
+dispatcher's; g61b's `play_teleport_cue` may be hoisted as the named
+helper), keep the g11 pad QUEUE replay and DROP g61b's
+`npc_teleport_wiring` env-driver helper (its borrow fixes die with it),
+keep d54's `world_dust_main.rs` filename but DROP its teleport + snowing
+halves; the union witness census is g11's 26 surviving `main_dust.rs`
+witnesses + the pad/statue wiring witnesses + g13's 20 +
+`teleport_dust.rs`'s 8 + d130's re-pinned snow witnesses — ALL WRITTEN
+NOT RUN, the merge-verify wave executes the catalog command.
+
+Verification: code-only. Probe = `git -C TR-W4-g61 status --porcelain`
++ `git log` + direct-path file mtimes (no junction recursion); seam 6
+read as `git show 8f545007` (player.rs/world_sim/player.rs hunks quoted
+above); ancestry + ahead-counts from `git log origin..local --oneline`.
