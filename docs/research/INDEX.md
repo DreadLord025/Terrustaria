@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 99 | .plr complete audit (W4-f44 verify-sweep: the full Serialize offset table + Deserialize gate matrix, 7 found gaps ported, shim coverage, golden divergence set; code-only) | `99-plr-complete-audit.md` | ✅ |
+| 132 | Persist MASTER MAP (W4-f44 crosspersist: the three layers .plr/.trplayer/.trwld+.wld, per-field ownership + no-dup-write rules, the G7-vs-sidecar boundary census, per-layer merge order over 99/103/122/92/135, cross-layer back-compat matrix, the e10 voice co-lane cross-note, the six divergences re-verified + the timestamp fix; code-only) | `132-persist-master-map.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

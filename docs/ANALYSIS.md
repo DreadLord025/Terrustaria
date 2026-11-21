@@ -19022,6 +19022,36 @@ written, code-only — not run): `the_unlock_and_counter_header_fields_round_tri
 refunds 3819 / inventory 291 / armor 111); the three over-count witnesses
 updated to the corrected expectations.
 
+**W4-f44 crosspersist (2026-11-21): the three-layer master map + the
+timestamp residual fix.** `docs/research/132-persist-master-map.md`
+publishes the cross-layer contract over research/99 (`.plr`),
+research/103 v9 + 122 (`.trplayer`), research/92 + 135 (`.trwld` 21-byte
+v18 union / `.wld`): per-field ownership (the G7 `used_upgrades[6]`
+array and the g89/g90 sidecar bools are THE SAME vanilla fields at
+different save cadences — a deliberate dual-carrier, one writer per
+file, one slot/token per field), the per-layer merge order, the
+cross-layer back-compat matrix, and the e10 voice co-lane cross-note
+(e10 tip `2c024e444` lands NO `.plr` write — its `Player.voice_variant`
+is a live consumer field; research/99 row 67's transport is complete on
+this branch, the hydration seam is a cast at the future character-load
+restore). **The timestamp fix (`d331ea7c`)**: `read_player_file` now
+ports `LoadPlayer:55096-55099`'s zero-stamp mtime fallback
+(`File.GetLastWriteTimeUtc(path).ToBinary()` — DateTime binary = UTC
+ticks low 62 bits + kind bits 01, whole seconds), and the creation save
+(`session.rs`) stamps `utc_now_binary()` like `Player.cs:54909` instead
+of the historical 0. The byte-level codec stays caller-stamped (golden
+FixtureClock parity untouched). **Divergence re-verification** (the
+sweep's six, C# re-read): #1 narrowed (this fix; remaining residue =
+the caller-stamped codec + whole-second precision); #2/#3 provably
+C#-identical (`InternalSavePlayerFile:54739` calls `Metadata.Write` not
+`IncrementAndWrite` — the only Increment call is `WorldFile.cs:1175`;
+vanilla `IsFavorite` never set true, `favorites.json` is the live
+store); #4 (legacy -1..-48 verbatim), #5 (cart-derive equip stand-in),
+#6 (dialogue first-occurrence order) still deliberate. 2 witnesses
+written not run (code-only):
+`the_utc_binary_encoding_pins_the_epoch_and_the_fixture_clock` (.NET
+ToBinary-derived pins), `a_zero_stamp_falls_back_to_the_file_mtime_on_the_disk_read`.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port

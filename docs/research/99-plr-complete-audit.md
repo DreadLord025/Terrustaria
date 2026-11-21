@@ -276,7 +276,15 @@ default to the same fresh values the old hardcoded writes emitted
   fixture carries 0x48DF4506E391C000 at 2845, so the read now surfaces it
   instead of dropping it; the fresh-WRITE default stays 0).
 
-**The only deliberate divergences** (all pre-existing, documented in ANALYSIS):
+**The only deliberate divergences** (all pre-existing, documented in ANALYSIS;
+**re-verified by the crosspersist pass — see `132-persist-master-map.md` §6**:
+#1 NARROWED by the `d331ea7c` timestamp fix — the creation save stamps UtcNow
+and the disk read ports the `LoadPlayer:55096-55099` mtime fallback, the
+byte-level codec stays caller-stamped for golden parity; #2/#3 now provably
+C#-identical — `InternalSavePlayerFile:54739` calls `Metadata.Write`, NOT
+`IncrementAndWrite` (whose only call site is `WorldFile.cs:1175`), and vanilla
+`IsFavorite` is never set true, the star lives in `favorites.json`; #4/#5/#6
+still deliberate):
 1. the write timestamp is caller-stamped (0 = unknown) vs the C#'s UtcNow —
    the golden test pins the FixtureClock value;
 2. the metadata favorites u64 is always 0 (the star lives in the `.trfav`
