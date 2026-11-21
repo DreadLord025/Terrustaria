@@ -586,6 +586,15 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-f18 first-20 port — the critters take the next-free
+            // port-local band 237.. (229 free but kept as a gap; 230-236
+            // are the holiday zombies + blood-moon pair). The vanilla
+            // types ride cs_id/net_id (355-360), NOT these protocol ids.
+            NpcKind::Firefly => 237,
+            NpcKind::Butterfly => 238,
+            NpcKind::Worm => 239,
+            NpcKind::LightningBug => 240,
+            NpcKind::Snail => 241,
         }
     }
 
@@ -916,6 +925,13 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-f18 first-20 port — the critters' 237.. band (`to_u16`
+            // above). `NPCID.cs:11387-11395`.
+            237 => NpcKind::Firefly,
+            238 => NpcKind::Butterfly,
+            239 => NpcKind::Worm,
+            240 => NpcKind::LightningBug,
+            241 => NpcKind::Snail,
             _ => return None,
         })
     }
@@ -1796,6 +1812,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-f18 first-20 port — the critters' `SoundID.NPCHit1` rows
+            // (`NPC.cs:13525`/`:13539`/`:13553`/`:13567`/`:13581`).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2119,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-f18 first-20 port — the critters' `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13526`/`:13540`/`:13554`/`:13568`/`:13582`).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2200,6 +2222,12 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-f18 first-20 port — the critters' `noGravity = true` rows
+            // with kb 1 (the class default, no kb row): 355 (`NPC.cs:13528`),
+            // 356 (`:13542`), 358 (`:13570`), 359 (`:13584`). The Worm 357
+            // writes no flag (grounded); the Snail's AI-head noGravity writes
+            // are live state (the static table keeps the SetDefaults row).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => true,
             _ => false,
         }
     }
@@ -2451,6 +2479,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-f18 first-20 port — the critters' aiStyle rows: 355/358
+            // 64 (`NPC.cs:13521`/`:13563`), 356 65 (`:13535`), 357 66
+            // (`:13549`), 359 67 (`:13577`).
+            NpcKind::Firefly | NpcKind::LightningBug => 64,
+            NpcKind::Butterfly => 65,
+            NpcKind::Worm => 66,
+            NpcKind::Snail => 67,
         }
     }
 
@@ -2981,6 +3016,15 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-f18 first-20 port — the critters' `SetDefaults` boxes:
+            // 355 10x10 (`NPC.cs:13519-13520`), 356 10x10
+            // (`:13533-13534`), 357 10x4 (`:13547-13548`), 358 12x12
+            // (`:13561-13562`), 359 12x12 (`:13575-13576`).
+            NpcKind::Firefly => (10.0, 10.0),
+            NpcKind::Butterfly => (10.0, 10.0),
+            NpcKind::Worm => (10.0, 4.0),
+            NpcKind::LightningBug => (12.0, 12.0),
+            NpcKind::Snail => (12.0, 12.0),
         }
     }
 
@@ -3622,6 +3666,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-f18 first-20 port — the critters' `lifeMax = 5` rows
+            // (`NPC.cs:13524`/`:13538`/`:13552`/`:13566`/`:13580`).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 5,
         }
     }
 
@@ -3986,6 +4033,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-f18 first-20 port — the critters' `damage = 0` rows
+            // (`NPC.cs:13522`/`:13536`/`:13550`/`:13564`/`:13578`).
+            NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 0,
         }
     }
 }

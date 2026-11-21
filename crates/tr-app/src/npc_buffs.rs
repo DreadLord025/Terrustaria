@@ -484,6 +484,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-f18 first-20 port — the critters' `SpecificallyImmuneTo`
+        // rows: 355-359 each immune to the Confused debuff (31)
+        // (`NPCID.cs:8156-8190`).
+        NpcKind::Firefly
+        | NpcKind::Butterfly
+        | NpcKind::Worm
+        | NpcKind::LightningBug
+        | NpcKind::Snail => &[31],
     }
 }
 

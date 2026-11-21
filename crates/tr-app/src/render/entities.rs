@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(CRITTER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1246,6 +1247,13 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// W4-f18 first-20 port — the critters' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// [`NpcAssets::npc_sheets`] exactly like `SMALL_KIND_SHEETS`. Batch 1:
+/// the Firefly (355), the Butterfly (356), the Worm (357), the Lightning
+/// Bug (358) and the Snail (359).
+pub(crate) const CRITTER_SHEETS: &[u32] = &[355, 356, 357, 358, 359];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3170,6 +3178,27 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-f18 first-20 port — batch 1's critters: the generic
+            // anchor (`Main.cs:25511-25516`), the sheet's own row height
+            // over `Main.npcFrameCount[type]`. The three scale-rolled
+            // kinds (355/356/358/359 — the AI latches `scale` from
+            // `Next(75,111)`/`Next(80,111)`) ride `scaled_anchor` (the
+            // BlazingWheel's shape); the worm's scale stays 1.
+            NpcKind::Firefly => {
+                scaled_anchor(assets.npc_sheet(355), npc_rows(355), n, w, h)
+            }
+            NpcKind::Butterfly => {
+                scaled_anchor(assets.npc_sheet(356), npc_rows(356), n, w, h)
+            }
+            NpcKind::Worm => {
+                pumpkin_moon_draw(assets.npc_sheet(357), npc_rows(357), n, w, h)
+            }
+            NpcKind::LightningBug => {
+                scaled_anchor(assets.npc_sheet(358), npc_rows(358), n, w, h)
+            }
+            NpcKind::Snail => {
+                scaled_anchor(assets.npc_sheet(359), npc_rows(359), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3348,14 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-f18 first-20 port — batch 1's critters: the
+                    // butterfly's velocity tilt (`NPC.cs:72745`, vx*0.3),
+                    // the worm's airborne tilt (`:72804`, direction*0.1)
+                    // and the snail's wall-crawl quadrant rotation
+                    // (`:34525-34619`, the ±0.1 ease).
+                    | NpcKind::Butterfly
+                    | NpcKind::Worm
+                    | NpcKind::Snail
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

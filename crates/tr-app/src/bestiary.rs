@@ -2171,6 +2171,50 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-f18 first-20 port — batch 1's five critters. The credit ids are
+    // the vanilla `NPCID` names (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // `ContentSamples.NpcBestiaryCreditIdsByNpcNetIds` rows); the display
+    // names ride `en-US.NPCs.json`'s NPCName rows.
+    BestiaryEntryDef {
+        credit_id: "Firefly",
+        net_id: 355,
+        kind: NpcKind::Firefly,
+        variant: None,
+        quick_unlock: false,
+        name: "Firefly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Butterfly",
+        net_id: 356,
+        kind: NpcKind::Butterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Butterfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "Worm",
+        net_id: 357,
+        kind: NpcKind::Worm,
+        variant: None,
+        quick_unlock: false,
+        name: "Worm",
+    },
+    BestiaryEntryDef {
+        credit_id: "LightningBug",
+        net_id: 358,
+        kind: NpcKind::LightningBug,
+        variant: None,
+        quick_unlock: false,
+        name: "Lightning Bug",
+    },
+    BestiaryEntryDef {
+        credit_id: "Snail",
+        net_id: 359,
+        kind: NpcKind::Snail,
+        variant: None,
+        quick_unlock: false,
+        name: "Snail",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

@@ -68,6 +68,9 @@ mod revenge;
 mod npc_ai;
 mod npc_ai_prime_limbs;
 mod npc_ai_style64;
+// W4-f18 first-20 port: the Butterfly 356's AI_065 machine (NPC.cs:
+// 44896-45119) — the style-axis 65 arm claims it (npc.rs).
+mod npc_ai_style65;
 mod npc_ai_style70;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;

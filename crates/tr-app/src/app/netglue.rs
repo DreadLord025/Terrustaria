@@ -3566,6 +3566,20 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-f18 first-20 port — batch 1's critters: the flyers (355/356/
+        // 358, noGravity) ride the hover ctor; the grounded crawler 357
+        // and the wall-crawler 359 plant their feet on the column surface
+        // (the machines take over on the first tick; the net state
+        // overwrites the position below).
+        crate::npc::NpcKind::Firefly
+        | crate::npc::NpcKind::Butterfly
+        | crate::npc::NpcKind::LightningBug => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::Worm | crate::npc::NpcKind::Snail => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 
