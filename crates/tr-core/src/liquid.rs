@@ -700,20 +700,27 @@ impl LiquidSystem {
         }
 
         // --- fall through the cell below ---------------------------------------
+        // W4-g45 doc-sweep: the C# reads the LIVE `tile5.liquid` here
+        // (`:570-575`) — AFTER the underworld evaporation may have shed
+        // units — not the entry snapshot. The pre-evap `start.liquid`
+        // resurrected the shed units on every fall inside the band (the
+        // g46 UNION's `own_now` fix, f57d7bacd:832 — keep that form at the
+        // graft). `start` stays the kill-bookkeeping capture (`:464`).
+        let own_now = world.tiles[i].liquid;
         if let Some(below) = world.tile(x, y + 1).copied() {
             if !self.tile_is_solid(&below)
                 && (below.liquid == 0 || kind_code(below.liquid_kind()) == kind)
                 && below.liquid < 255
             {
                 let mut amount = 255 - below.liquid;
-                if amount > start.liquid {
-                    amount = start.liquid;
+                if amount > own_now {
+                    amount = own_now;
                 }
                 // The original keeps a 255 source intact when only one unit moves.
-                let keep_one = amount == 1 && start.liquid == 255;
+                let keep_one = amount == 1 && own_now == 255;
                 let j = world.index(x, y + 1);
                 if !keep_one {
-                    world.tiles[i].liquid = start.liquid - amount;
+                    world.tiles[i].liquid = own_now - amount;
                 }
                 world.tiles[j].liquid += amount;
                 set_kind(&mut world.tiles[j], kind);
@@ -2322,6 +2329,35 @@ mod liquid_merge_cadence {
         sys.add_water(&mut w, 10, 212);
         run(&mut sys, &mut w, 5);
         assert_eq!(w.tiles[w.index(10, 212)].liquid, 100, "the layer row is exempt");
+    }
+
+    /// W4-g45 doc-sweep — the fall arm reads the LIVE post-evaporation level
+    /// (`Liquid.cs:570-575`), not the entry snapshot (`:464`'s `byte liquid`
+    /// capture is the kill-bookkeeping value only). A 100-water cell one row
+    /// above the floor INSIDE the band evaporates to 98 on visit 1, then the
+    /// down arm moves the 98 — the pre-fix port moved the pre-evap 100,
+    /// resurrecting the two shed units on every fall. (The g46 UNION's
+    /// `own_now` form, f57d7bacd:832 — the graft keeps it.) Written, NOT run.
+    #[test]
+    fn the_fall_arm_moves_the_post_evaporation_level() {
+        // shaft(5, 400, 350, 2): floor at 356, layer at 212; the cell at
+        // (8, 354) sits two rows above the floor, deep in the band, with
+        // the open (8, 355) below it.
+        let mut w = shaft(5, 400, 350, 2);
+        put_as(&mut w, 8, 354, 100, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&mut w, 8, 354);
+        run(&mut sys, &mut w, 1);
+        assert_eq!(w.tiles[w.index(8, 354)].liquid, 0, "the source drained");
+        assert_eq!(
+            w.tiles[w.index(8, 355)].liquid, 98,
+            "the fall moved the post-evap 98, not the pre-evap 100"
+        );
+        // Visit 2 clears the skip flag; visit 3 the landed cell evaporates
+        // 98 -> 96 and stays (the floor below is solid, the walls fence the
+        // row arms).
+        run(&mut sys, &mut w, 2);
+        assert_eq!(w.tiles[w.index(8, 355)].liquid, 96, "the band keeps shedding");
     }
 
     #[test]
