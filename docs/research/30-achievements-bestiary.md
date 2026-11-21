@@ -370,16 +370,17 @@ a content-coverage question (the NPC-kind/item tables), not a notify-path
 gap. Progression 0/2/4 have no listening row (faithful no-op wires).
 
 **Progression/flag/int/float conditions with NO notify path anywhere (the
-gap list, after c36+f30):**
+gap list, after c36+f30; SUPERSEDED by the RETIRE (2) FINAL census below —
+35 retired on c46, the 24/22 kinds landed on d42):**
 
 | Row | Cond | C# site | Missing owning system |
 | --- | --- | --- | --- |
 | IT_CAN_TALK | 18 | `WorldGen.cs:5580` | ~~Truffle kind 160~~ **kind LANDED on d120 `4b17a2cf1`** (proto 242, bestiary net_id 160) — the notify-18 wire + the arrival-ladder entry stay open (NOTIFY-SYNC (4)) |
-| TURN_GNOME_TO_STATUE | 24 | `NPC.cs:55896` | gnome AI |
+| TURN_GNOME_TO_STATUE | 24 | `NPC.cs:55896` | ~~gnome AI~~ **kind LANDED on d42 `2d7ac08c3`** (Gnome 624, `npc.rs:1250` + bestiary `:2398`) — the AI rides `update_zombie` (stand-in, `npc.rs:6715`), the statue-conversion + notify stay unowned (RETIRE FINAL) |
 | QUEEN_MACHINE | 31 | `NPC.cs:78866` | Mechdusa summon 5334 + combined-boss death (f30 cited; the seed gate landed) |
 | FEAR_THE_SUN | 33 | `Player.cs:28647` | vampire sun-scorch (f30 cited) |
 | ITS_SHALING_OUTSIDE | 34 | `WorldGen.cs:71694` | boulder rain (f30 cited) |
-| EXTRA_LIFE | 35 | `Player.cs:38782` | hardcore death penalty (f30 cited) |
+| EXTRA_LIFE | 35 | `Player.cs:38782` | ~~hardcore death penalty (f30 cited)~~ **RETIRED — c46 WIRES it live** (`4445a1459`, tip `2802ed5b9`: `death.rs:527` `notify_progression_net(35)` on the survive arm, wired at the KillMe difficulty-2 gate `:437-438`) — RETIRE FINAL |
 | GRAVE_MISTAKE | 36 | `Player.cs:20473`/`:38836` | striking gravestones + MP teammate deaths (f30 cited) |
 | FORTUNE_FAVORS_THE_BOULD | 39 | `Main.cs:61828` | rainbow boulder draw (f30 cited) |
 | TRAINING_DAY | 40 | `Player.cs:25697` | ~~combat book vol. 2 use 5336 (f30 cited)~~ **g90b WIRES it live** (`0316b4446`, tip `b3b82d071`) — see the NOTIFY-SYNC keep-one below |
@@ -390,7 +391,7 @@ gap list, after c36+f30):**
 | SPICY_LICKS (partial) | 37 | `Player.cs:46574`/`:46588` | The Axe 1305 / Carbon+Ivy 4057/4372 chord arms (the 4715 arm wired by f30) |
 | VEHICULAR_MANSLAUGHTER | "Hit" | `Player.cs:27602` | minecart NPC-collision damage (`GetMinecartDamage` block) |
 | PET_THE_PET | "Do" | `Player.cs:33350`/`:33397` | petting system |
-| FIND_A_FAIRY | "Do" | `NPC.cs:48647` | fairy kind |
+| FIND_A_FAIRY | "Do" | `NPC.cs:48647` | ~~fairy kind~~ **kinds LANDED on d42 `2d7ac08c3`** (FairyCritterPink/Green/Blue 583-585, bestiary `:2203-2224`) — the sight seam (HandleSpecialEvent 22) stays unowned on every tip (RETIRE FINAL) |
 | PURIFY_ENTIRE_WORLD | "Do" | `Main.cs:40276` (`DryadText_WorldPurityOrStardewValleyBit`) | Dryad world-status dialog (`GetDryadWorldStatusDialog` + the status button) |
 | TO_INFINITY_AND_BEYOND | "Do" | `Projectile.cs:70861` (1020 kill at Y ≤ 640) | Jim's Drone aiStyle 195 (the id row exists, the AI does not) |
 | GOING_OLDSCHOOL | "Do" | `Main.cs:63018` → `AchievementsHelper.cs:384` | classic title-screen sun/moon grab |
@@ -425,11 +426,11 @@ branches exist.
 | Row | Cond | Owning lane / tip | In main? | Post-merge seam |
 | --- | --- | --- | --- | --- |
 | IT_CAN_TALK | 18 | ~~d36 `65e481f96` (CLAIM only)~~ **NOTIFY-SYNC (4): the Truffle kind IS ported — on d120 `4b17a2cf1`, NOT d36** (kinds A `2891b0bd8`: SantaClaus 142/Truffle 160/Steampunker 178, proto 241-243; Cyborg 209 proto 244 in kinds B; bestiary net ids vanilla). d36 stays CLAIM-only; d119 `04d7f9fd2`'s `unlocked_truffle_spawn` housing gate reads the f45 World latch (`6352d3840`, `world.rs:797`). STILL NO notify 18 on any tip (d120's arrival comment `npcs.rs:5038` still says "waits on a ported Truffle kind" — stale, the kind is on its own tip) | no | the arrival switch (`world_sim/npcs.rs:4949`'s cited comment) — `net_id() == 160` arm → 18 + `unlockedTruffleSpawn` (`WorldGen.cs:5579-5583`); the exact hunk is published in NOTIFY-SYNC (4); the arrival LADDER entry (Truffle's `condition_holds` arm + LADDER row) is d120/f43's lane — the kind alone never arrives |
-| TURN_GNOME_TO_STATUE | 24 | none — d40's 473 row is BigMimicCorruption, NOT the gnome | no | gnome AI (`NPC.cs:55896`) unowned |
+| TURN_GNOME_TO_STATUE | 24 | ~~none — d40's 473 row is BigMimicCorruption, NOT the gnome~~ **RETIRE FINAL: the Gnome kind 624 IS on d42 `2d7ac08c3`** (`npc.rs:1247-1250`, bestiary `:2398-2403`; e26 `048cca6cf` ports the Garden Gnome ITEM 4609 → tile 567, NOT the NPC conversion) | no | the statue-conversion AI (`NPC.cs:55896`) unowned — d42's Gnome rides `update_zombie` (`npc.rs:6715`, a stand-in); the conversion + notify 24 stay the wiring lane's |
 | QUEEN_MACHINE | 31 | f30 `f8cef8cb8` (seed gate + mecha_mayhem machine; 31 CITED) | no | Mechdusa summon 5334 + combined-boss death (`NPC.cs:78857-78869`) unowned |
 | FEAR_THE_SUN | 33 | f50 `ff56e6e51` does NOT port `UpdateSunScorch` (grep: no sun_scorch writer); the `vampire_burning_in_sunlight` flag still has no play writer (`armor_sets.rs:345`) | no | `Player.cs:28647` unowned |
 | ITS_SHALING_OUTSIDE | 34 | d15 ports `SpawnFallingObjects`' starfall loop ONLY — the boulder-rain arm folds false (its own comment); f45 carries the header fields | no | `WorldGen.cs:71694` boulder-rain start unowned |
-| EXTRA_LIFE | 35 | none (all-tip grep: no `surviveHardcoreDeath`/`HardcoreDeathPenalty`) | no | `Player.cs:38782` unowned |
+| EXTRA_LIFE | 35 | ~~none (all-tip grep: no `surviveHardcoreDeath`/`HardcoreDeathPenalty`)~~ **SUPERSEDED — c46 `2802ed5b9` WIRES 35 LIVE**: final-phase-1 `4445a1459` ports `HardcoreDeathPenalty` (`Player.cs:38775-38787`, the −60 stat half `player.rs:3851`) + `KillMeForGood` (`:38789-38805`), wired at KillMe's `:38864-38866` difficulty-2 gate AFTER DropItems (`death.rs:437-438`); the survive arm fires `notify_progression_net(35)` (`death.rs:525-528`, `:38782`) | no | NONE — c46 owns it; f30's citation retires at merge; c36 owes nothing |
 | GRAVE_MISTAKE | 36 | none — `death.rs` tombstones are the falling visual, not striking projectiles | no | `Player.cs:20473`/`:38836` unowned |
 | FORTUNE_FAVORS_THE_BOULD | 39 | none (all-tip grep: no rainbow-boulder music counter) | no | `Main.cs:61828` unowned |
 | TRAINING_DAY | 40 | ~~a6 `8ed96ee5d` … fires NO notify 40~~ **SUPERSEDED — g90b `b3b82d071` WIRES 40 LIVE**: `world_sim/player.rs:1625-1627` (`drop_backlog` tail) reads `combat_book_was_used && combat_book_volume_two_was_used` → `notify_progression_net(40)` every tick the pair stands (`Player.cs:25695-25698`, idempotent — `notify_with` skips completed rows). g90's lane-7 `0316b4446` ports `use_combat_book` 4382/5336 itself (`editing.rs`, both world flags). **f12 `61724db38` has NO 40 wire** (grep: only the `achievements_data.rs` row + the `npc_ai_town` ladder's flag READS — no notify). **c36's owed armor-tail wire is RETIRED** (keep-one: g90b-live) | no | NONE — g90b owns it; at the a6×g90 merge keep ONE `use_combat_book` (both write the same flags; g90's carries the notify's producers) and ONE notify site (g90's `:1625`); f30's cited comment (`world_sim/player.rs:1631-1635`) retires with it |
@@ -440,7 +441,7 @@ branches exist.
 | SPICY_LICKS (partial) | 37 | f30 wires the 4715 arm; NO lane ports `ItemCheck_PlayInstruments` (a1 grep negative) — the 1305/4057/4372 arms stay cited | no | `Player.cs:46574`/`:46588` unowned (the instruments use system) |
 | VEHICULAR_MANSLAUGHTER | "Hit" | none (all-tip grep: no `GetMinecartDamage`); the prerequisites ARE in main (`mount::is_cart`, `damage_var`, `minecart.rs`) | no | `Player.cs:27585-27604` unowned |
 | PET_THE_PET | "Do" | none — the petting stop is cited-unported in `player.rs:9178` | no | `Player.cs:33350`/`:33397` unowned |
-| FIND_A_FAIRY | "Do" | d42 `88df58090` WIP adds the FairyCritter enum variants (non-compiling, superseded) | no | fairy kinds + the sight seam (`NPC.cs:48647`, HandleSpecialEvent 22) |
+| FIND_A_FAIRY | "Do" | ~~d42 `88df58090` WIP adds the FairyCritter enum variants (non-compiling, superseded)~~ **RETIRE FINAL: d42's roster join COMPILES the kinds** — `2d7ac08c3` carries FairyCritterPink/Green/Blue 583-585 (`npc/data.rs:601-603` cs ids 583-585, bestiary `:2203-2224` net ids 583/584/585) | no | the sight seam (`NPC.cs:48647`, HandleSpecialEvent 22 → FIND_A_FAIRY "Do") unowned on every tip — no `handle_special_event(22)`/`complete_condition("FIND_A_FAIRY"` anywhere (all-tip grep); the kinds alone never sight |
 | PURIFY_ENTIRE_WORLD | "Do" | f22 `e7756fa70` does NOT port the Dryad status dialog (grep negative) | no | `Main.cs:40276` unowned |
 | TO_INFINITY_AND_BEYOND | "Do" | **d20 `13de9ccf6` ports AI_195 Jim's Drone + the altitude/held-5451 kill gates** (`projectile_ai_misc.rs:1092-1110` — the `pos.y - h <= 640` kill at `:1105-1109`) — but NO achievement wire; the 1020 `proj_data` row IS on d20 (`data.rs:3633`), NOT on main (the spawn drops there) | no | the exact kill-arm hunk for d20b is PUBLISHED in NOTIFY-SYNC (3) below — the `Kill()` 1020 arm (`Projectile.cs:70857-70862`) latches a `wants_to_infinity` intent at the death hook, the world-sim drain fires `complete_condition("TO_INFINITY_AND_BEYOND", "Do")` (the c36 lava-fishing pattern) |
 | GOING_OLDSCHOOL | "Do" | none — the classic title screen is unported on every tip | no | `Main.cs:63018` → `AchievementsHelper.cs:382-385` unowned |
@@ -460,7 +461,9 @@ kind landed on d120 and its arrival hunk is published (NOTIFY-SYNC (4)).
 in-tree; 2 rows (40/43) fully covered on sibling tips, 3 rows
 (TO_INFINITY/18/45) carry exact published hunks or merge joins; the
 roster 17 activates at the d120/d37 merge (4 kinds landed), 26 waits
-for the slime kinds (unported on every tip).**
+for the slime kinds (unported on every tip).** (The RETIRE (2) FINAL
+census below re-sweeps all 357 tips: 35 joins 40/43 as retired — the
+final no-path list is 17 rows.)
 
 ### (2) The 29 / S1-F-15 tier-bug census — VERIFIED FIXED, no bug to fix
 
@@ -510,7 +513,8 @@ reserved tail, no double-wire:
 
 | Gap-list row | f30 verdict | Owner after merge |
 | --- | --- | --- |
-| 31, 33, 34, 35, 36, 39, 44, 46 | CITED (same missing systems) | f30's citation stands; c36 does not re-cite |
+| 31, 33, 34, 36, 39, 44, 46 | CITED (same missing systems) | f30's citation stands; c36 does not re-cite |
+| 35 | CITED (hardcore death penalty) | **RETIRED — c46-live** (`4445a1459`, tip `2802ed5b9`: `death.rs:527` fires 35 on the survive arm). f30's citation retires at merge; c36 owes nothing (RETIRE (2)) |
 | 40 | CITED (vol-2 flag never sets) | **RETIRED — g90b-live** (`b3b82d071`: g90 ports BOTH book uses + the `world_sim/player.rs:1625` notify itself). f30's cited comment retires at merge; c36 owes nothing (the earlier "armor-tail wire is f30's seam" note is superseded — f30's tip `f8cef8cb8` still CITES 40, g90's tip WIRES it) |
 | 43 | CITED (state 25 skip) | **RETIRED — f47-live** (`a2561d6d9`: `6f126bd9e` wires the emergence seam + the post-pass `notify_progression_net(43)` itself). f30's citation retires at merge; c36 owes nothing — the b3 adapter fold is f47's published contract (NOTIFY-SYNC (2)) |
 | 45 | PREP (`check_research_achievement`) | **c24 ports the consumer** — the click wire joins f30's prep at merge |
@@ -863,6 +867,66 @@ unlock latches (`7a65b6800`) fold onto the same rows.
 ladder wiring + the f45 colour-latch fold + the c39 party-hat special
 cases + QueenSlime 657 (c39 §14's hunk is ready). Zero c36 edits at
 activation — the roster scan reads `kind.net_id()` through `ENTRIES`.
+
+## W4-c36 RETIRE (2) — the 180-condition FINAL census (2026-11-21)
+
+Method: `git fetch origin --prune`, then a scripted `git grep` of EVERY
+one of the 357 `origin/task/W4-*` tip trees (not diffs) for each gap row's
+notify symbols — `notify_progression_net(N)` for 18/24/31/33-36/39/44-46,
+the row names for the flag rows, and the `complete_condition("ROW"` /
+`handle_special_event(9/21/22)` dispatch shapes — excluding the registry
+(`achievements_data.rs`), the manager (`achievements.rs`), the menu and
+c36's own hooks. f30 re-read at its LATEST tip: **`f8cef8cb8` UNCHANGED
+(no f30b branch exists on origin)** — its tail census stands: 21/37-partial
+(4715 arm)/38/41 WIRED, 45 PREP (`research.rs:111`
+`check_research_achievement`, the notify rides the caller — the doc at
+`:103`, no live call site), 31/33/34/35/36/39/40/43/44/46 CITED.
+
+**Deltas vs the NOTIFY-SYNC net (the tips moved):**
+
+| Row | Delta | Evidence |
+| --- | --- | --- |
+| EXTRA_LIFE 35 | **RETIRED — c46 wires it LIVE** | c46 `4445a1459` (tip `2802ed5b9`): `death.rs:527` `notify_progression_net(35)` on the `HardcoreDeathPenalty` survive arm, wired at the KillMe difficulty-2 gate `:437-438` (`Player.cs:38782`/`:38864-38866`); the stat half `player.rs:3851`, `KillMeForGood` `:38789-38805` |
+| TURN_GNOME_TO_STATUE 24 | the KIND landed; the notify stays unowned | d42 `2d7ac08c3` (the roster join now compiles — the old non-compiling-WIP note retires): Gnome 624 `npc.rs:1250` + bestiary `:2398`; the AI rides `update_zombie` (`:6715`, stand-in) — no statue conversion, no notify 24 on any tip |
+| FIND_A_FAIRY "Do" | the KINDS landed; the sight seam stays unowned | d42 `2d7ac08c3`: FairyCritterPink/Green/Blue, bestiary net ids 583/584/585 (`:2203-2224`); no `handle_special_event(22)` / FIND_A_FAIRY completion on any tip (g58's hits are NEGATIVE assertions in a witness, `app/mod.rs:5824-5825`) |
+| TRAINING_DAY 40 / NEW_DIGS 43 | re-verified LIVE at the moved tips | g90 `740650d75`: `world_sim/player.rs:1625-1627` intact; f47 `a2561d6d9` unchanged: `world_sim/npcs.rs:6368` intact |
+| TO_INFINITY "Do" | the d20 hunks' line pins still VALID | d20 `13de9ccf6→243f81672` is DOCS-ONLY (`git diff --stat -- crates` EMPTY); the 1020 row `data.rs:3633` + `ai_jims_drone` `projectile_ai_misc.rs:1067` intact; still NO achievement wire |
+| IT_CAN_TALK 18 | the d120 arrival site MOVED | d120 `2408233da`: the NO_HOBO notify is now `npcs.rs:5042` (was `:4949`/`:4951` on c36's base); the stale "waits on a ported Truffle kind" comment `:5038-5039` unchanged; the published hunk lands after `:5042` (NOTIFY-SYNC (4)'s shape, re-pinned) |
+| 5043 GAIN_TORCH_GODS_FAVOR | f33's FINAL verdict supersedes the DOC-SWEEP keep-both note | f33 `83387628b` research/93a §3b/§8: keep the f33 full body, DROP c36's reduced arm — the exact c36 drop-hunk is published in RETIRE (3) below |
+
+**THE FINAL LIST — conditions with NO notify path ANYWHERE (17 rows,
+after the 35 retirement; every one re-grepped across all 357 tips):**
+
+| # | Row | Cond | C# site | Missing owning system (final state) |
+| --- | --- | --- | --- | --- |
+| 1 | IT_CAN_TALK | 18 | `WorldGen.cs:5580` | the arrival-ladder entry (d120/f43's lane); the kind is on d120, the hunk published |
+| 2 | TURN_GNOME_TO_STATUE | 24 | `NPC.cs:55896` | the gnome statue-conversion AI (kind on d42, zombie stand-in) |
+| 3 | QUEEN_MACHINE | 31 | `NPC.cs:78866` | Mechdusa summon 5334 + combined-boss death (f30's seed gate landed; no 5334 item/AI on any tip) |
+| 4 | FEAR_THE_SUN | 33 | `Player.cs:28647` | vampire sun-scorch (`UpdateSunScorch`) |
+| 5 | ITS_SHALING_OUTSIDE | 34 | `WorldGen.cs:71694` | boulder-rain start |
+| 6 | GRAVE_MISTAKE | 36 | `Player.cs:20473`/`:38836` | striking gravestones + MP teammate deaths |
+| 7 | FORTUNE_FAVORS_THE_BOULD | 39 | `Main.cs:61828` | rainbow-boulder draw counter |
+| 8 | MY_PEOPLE_NEED_ME | 44 | `Player.cs:24076` | remix top-world death (`BordersMovement`) |
+| 9 | TRASH_COMPACTOR | 45 | `AchievementsHelper.cs:396` | the c24+f30 merge join (consumer + prep both pushed, no live call) |
+| 10 | INTERDIMENSIONAL_RECYCLING | 46 | `Main.cs:40294` | Dryad Joja-cola gift path |
+| 11 | SPICY_LICKS (partial) | 37 | `Player.cs:46574`/`:46588` | the 1305/4057/4372 instrument arms (`ItemCheck_PlayInstruments` unported on every tip; f30's 4715 arm live) |
+| 12 | VEHICULAR_MANSLAUGHTER | "Hit" | `Player.cs:27602` | minecart NPC-collision damage (`GetMinecartDamage` — all-tip grep empty) |
+| 13 | PET_THE_PET | "Do" | `Player.cs:33350`/`:33397` | petting system |
+| 14 | FIND_A_FAIRY | "Do" | `NPC.cs:48647` | the fairy SIGHT seam (kinds on d42; HandleSpecialEvent 22 unwired) |
+| 15 | PURIFY_ENTIRE_WORLD | "Do" | `Main.cs:40276` | Dryad world-status dialog + button |
+| 16 | TO_INFINITY_AND_BEYOND | "Do" | `Projectile.cs:70861` | the kill-arm wire (AI + row on d20; the 4-hunk patch published, NOTIFY-SYNC (3)) |
+| 17 | GOING_OLDSCHOOL | "Do" | `Main.cs:63018` | classic title-screen sun/moon grab |
+
+**Retired since the DOC-SWEEP census (3):** TRAINING_DAY 40 (g90b-live),
+NEW_DIGS 43 (f47-live), EXTRA_LIFE 35 (c46-live). **Reachable-but-gated
+(the wire exists, the gate cannot pass in play):** REAL_ESTATE_AGENT 17
+(the 4 town kinds on d120/d37 — activates at their merge; the arrival
+LADDER is the residual gate), ALL_TOWN_SLIMES 26 (the 8 kinds unported —
+the DEAD d43 lane, RETIRE (1)'s HIGH-priority seed), BOOK_WORM 29 (the
+hook fires; the residual gate is c37's provider fold). Everything else
+in the 86 mapped conditions has a live notify site on this branch, f30's
+tip, or a published merge join; the 94 Npc/Item/Tile/Craft conditions all
+keep their live dispatch (per-id reachability is content coverage).
 
 ## Task seeds
 
