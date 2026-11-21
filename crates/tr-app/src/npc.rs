@@ -33872,3 +33872,56 @@ mod s1_f_13d_tests {
         }
     }
 }
+
+/// W4-c7 SEAL (research/283 §3/§6) — the d37 E8 roster receipts, pinned
+/// against the CURRENT tip. The E8 renumber (Firefly 355→735,
+/// LightningBug 358→736) is MERGE-TIME work (the 108 merge order); this
+/// witness pins the as-pushed state + the seams that must NOT move
+/// (cs_id, the bestiary net ids, the sheet keys — R1's seam evidence).
+/// WRITTEN, NOT RUN (code-only mode — no compiler invoked).
+#[cfg(test)]
+mod w4_c7_seal_roster_tests {
+    use super::*;
+
+    /// research/283 §3 — the c7 four keep their vanilla protocol ids at
+    /// this tip (the E8 table's "old" column); the cs_id hand rows ride
+    /// the same values; the Shimmerfly 677 is CANONICAL-c7 (c9's
+    /// duplicate drops at merge — E8 c9 table), so `from_u16(677)`
+    /// decodes to c7's kind and the G6 render key stays injective.
+    #[test]
+    fn w4_c7_seal_the_roster_e8_receipts_hold() {
+        // (kind, as-pushed protocol id, cs_id, E8 merge-time target)
+        let rows = [
+            (NpcKind::Firefly, 355u16, 355u16, 735u16),
+            (NpcKind::LightningBug, 358, 358, 736),
+            (NpcKind::Lavafly, 654, 654, 654),
+            (NpcKind::Shimmerfly, 677, 677, 677),
+        ];
+        for (kind, proto, cs, e8) in rows {
+            assert_eq!(kind.to_u16(), proto, "{kind:?} as-pushed protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} round-trip");
+            assert_eq!(kind.cs_id(), cs, "{kind:?} cs_id never moves (R1)");
+            // The E8 targets are FREE at this tip (the renumber is owed,
+            // not executed — a decode of 735/736 must not exist yet).
+            if e8 != proto {
+                assert_eq!(NpcKind::from_u16(e8), None, "{kind:?} E8 target still free");
+            }
+            // The frame strips: Main.npcFrameCount[355/358/654/677] = 4
+            // (Main.cs:67082, machine-counted; the 677's pixel-wrap quirk
+            // still reads a 4-row sheet).
+            assert_eq!(
+                crate::render::entities::npc_rows(crate::render::entities::texture_net_id(kind)),
+                4,
+                "{kind:?} frame rows"
+            );
+        }
+        // The Shimmerfly canonical-owner pin: 677 decodes to c7's kind
+        // (c9's duplicate row drops at the 108 merge, E8 c9 table).
+        assert_eq!(NpcKind::from_u16(677), Some(NpcKind::Shimmerfly));
+        // The style axis: all four claim 64 (the pooled sim arm subsumes
+        // c9's kind-gated arm at merge — c9's 109 §4e compose).
+        for (kind, _, _, _) in rows {
+            assert_eq!(kind.ai_style(), 64, "{kind:?} aiStyle");
+        }
+    }
+}

@@ -39272,3 +39272,40 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The critter-family SEAL (W4-c7, research/283, 2026-11-21, code-only mode)
+
+The c7 lane's FINAL artifact (`task/W4-c7-style65-critters`, stacked on
+the pushed style-64 tip `c2cc6ec61`): **research/283** — the
+critter-family census + bible, registry-number adjudicated per
+research/150 (the fresh 360-tip sweep caught 281 TRIPLE-claimed
+(d30 `ec89521fb` 15:42:58 wins / d125 `5a26ae348` / g48 `9c776ca2f`)
+and 282 DOUBLE-claimed (d125 wins / g48); **283 is the first free
+number**, taken by this seal). NO style-65 code was ported on this
+lane — the census found the machine already five-way copied across the
+wave; d30's research/281 §3 keep-one (the whole-arm
+`ai_065_butterflies` CANONICAL, the f18/d39 356-only `ai_065_step`
+subsets + d125's lacewing module DROP, c10's adapter + d125's
+pre-pass/drain COMPOSE) is re-verified and adopted. The seal's four
+receipts: (1) the git-log census — the c7 three phases
+(81094ca06/045922d95/c2cc6ec61) landed exactly Firefly 355 /
+LightningBug 358 / Lavafly 654 / Shimmerfly 677 (the brief's
+"Butterfly356/LightningBug357" labels corrected: 356 was never c7's,
+357 is c8's Worm); (2) the SIGHT gate — c8's generalized
+`counts_as_a_critter` (`NPC.cs:6887-6897`, hp<=5 && dmg==0 &&
+cs_id∉{594,686}) auto-covers all four c7 kinds with zero provider
+wiring (the hit-side `NPCID.Sets.CountsAsCritter` 99-id set
+`NPCID.cs:10460` is a DIFFERENT gate, cited not conflated); (3) the d37
+E8 roster receipts — c7's 355→735/358→736 renumber owed at the 108
+merge (cs_id/net/sheets never move), Shimmerfly 677 canonical-c7 (c9
+dup drops), the Butterfly 356 f18×d39 keep-one verdict (d39's @817
+roster row keeps, f18's @238 verify-lane row drops, f18's FindFrame
+saturation fix `a832d38ea` composes onto d39's case); (4) the gold peer
+table — c7's gold kinds NONE (the 14-member collection + 13-row
+provider dictionary carry no firefly id; 444→{356} activates with the
+Butterfly keep-one). Three witnesses WRITTEN NOT RUN
+(`bestiary.rs::w4_c7_seal_tests` ×2, `npc.rs::w4_c7_seal_roster_tests`
+×1) + three anchors canary rows. **No deliberate deviations** — the
+seal is receipts-only; the merge-time work (E8 renumbers, keep-one
+drops, sheet-grid gap closes) is itemized in research/283 §5's bible
+paragraph. No cargo/tests/rustfmt/graphify invoked.
