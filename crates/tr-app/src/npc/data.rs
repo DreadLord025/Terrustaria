@@ -595,6 +595,13 @@ impl NpcKind {
             NpcKind::Worm => 239,
             NpcKind::LightningBug => 240,
             NpcKind::Snail => 241,
+            // W4-f18 batch 2 — the critters take the next-free band 242..
+            // (the vanilla types 360-364 ride cs_id/net_id, NOT these).
+            NpcKind::GlowingSnail => 242,
+            NpcKind::Frog => 243,
+            NpcKind::Duck => 244,
+            NpcKind::Duck2 => 245,
+            NpcKind::DuckWhite => 246,
         }
     }
 
@@ -932,6 +939,13 @@ impl NpcKind {
             239 => NpcKind::Worm,
             240 => NpcKind::LightningBug,
             241 => NpcKind::Snail,
+            // W4-f18 batch 2 — the critters' 242.. band (`to_u16` above).
+            // `NPCID.cs:11397-11405`.
+            242 => NpcKind::GlowingSnail,
+            243 => NpcKind::Frog,
+            244 => NpcKind::Duck,
+            245 => NpcKind::Duck2,
+            246 => NpcKind::DuckWhite,
             _ => return None,
         })
     }
@@ -1815,6 +1829,9 @@ impl NpcKind {
             // W4-f18 first-20 port — the critters' `SoundID.NPCHit1` rows
             // (`NPC.cs:13525`/`:13539`/`:13553`/`:13567`/`:13581`).
             NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => "NPC_Hit_1",
+            // W4-f18 batch 2 — the critters' `SoundID.NPCHit1` rows
+            // (`NPC.cs:13591`/`:13605`/`:13617`/`:13629`/`:13641`).
+            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2122,6 +2139,9 @@ impl NpcKind {
             // W4-f18 first-20 port — the critters' `SoundID.NPCDeath1` rows
             // (`NPC.cs:13526`/`:13540`/`:13554`/`:13568`/`:13582`).
             NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => "NPC_Killed_1",
+            // W4-f18 batch 2 — the critters' `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13592`/`:13606`/`:13618`/`:13630`/`:13642`).
+            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2228,6 +2248,11 @@ impl NpcKind {
             // writes no flag (grounded); the Snail's AI-head noGravity writes
             // are live state (the static table keeps the SetDefaults row).
             NpcKind::Firefly | NpcKind::Butterfly | NpcKind::LightningBug | NpcKind::Snail => true,
+            // W4-f18 batch 2 — the GlowingSnail 360's `noGravity = true`
+            // (`NPC.cs:13594`, kb 1). The Frog/Ducks write no flag
+            // (grounded); the Duck2 363's noGravity is the AI-head's live
+            // write (`npc_ai_style68`, the static table keeps SetDefaults).
+            NpcKind::GlowingSnail => true,
             _ => false,
         }
     }
@@ -2486,6 +2511,11 @@ impl NpcKind {
             NpcKind::Butterfly => 65,
             NpcKind::Worm => 66,
             NpcKind::Snail => 67,
+            // W4-f18 batch 2 — 360 67 (`NPC.cs:13589`), 361/362/364 7
+            // (`:13603`/`:13615`/`:13639`), 363 68 (`:13627`).
+            NpcKind::GlowingSnail => 67,
+            NpcKind::Frog | NpcKind::Duck | NpcKind::DuckWhite => 7,
+            NpcKind::Duck2 => 68,
         }
     }
 
@@ -3025,6 +3055,13 @@ impl NpcKind {
             NpcKind::Worm => (10.0, 4.0),
             NpcKind::LightningBug => (12.0, 12.0),
             NpcKind::Snail => (12.0, 12.0),
+            // W4-f18 batch 2 — 360 14x14 (`NPC.cs:13587-13588`), 361 12x10
+            // (`:13601-13602`), 362/364 22x26 (`:13613-13614`/
+            // `:13637-13638`), 363 28x22 (`:13625-13626`).
+            NpcKind::GlowingSnail => (14.0, 14.0),
+            NpcKind::Frog => (12.0, 10.0),
+            NpcKind::Duck | NpcKind::DuckWhite => (22.0, 26.0),
+            NpcKind::Duck2 => (28.0, 22.0),
         }
     }
 
@@ -3669,6 +3706,9 @@ impl NpcKind {
             // W4-f18 first-20 port — the critters' `lifeMax = 5` rows
             // (`NPC.cs:13524`/`:13538`/`:13552`/`:13566`/`:13580`).
             NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 5,
+            // W4-f18 batch 2 — the critters' `lifeMax = 5` rows
+            // (`NPC.cs:13590`/`:13604`/`:13616`/`:13628`/`:13640`).
+            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 5,
         }
     }
 
@@ -4036,6 +4076,9 @@ impl NpcKind {
             // W4-f18 first-20 port — the critters' `damage = 0` rows
             // (`NPC.cs:13522`/`:13536`/`:13550`/`:13564`/`:13578`).
             NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 0,
+            // W4-f18 batch 2 — the critters' `damage = 0` rows
+            // (`NPC.cs:13588`/`:13602`/`:13614`/`:13626`/`:13638`).
+            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 0,
         }
     }
 }

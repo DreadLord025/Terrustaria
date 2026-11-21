@@ -3580,6 +3580,20 @@ fn npc_seed(
         crate::npc::NpcKind::Worm | crate::npc::NpcKind::Snail => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-f18 batch 2 — the GlowingSnail 360 (noGravity) rides the
+        // hover ctor; the Frog/Duck/DuckWhite (grounded town critters) and
+        // the Duck2 (the swimming waterfowl) plant their feet on the
+        // column surface (the machines take over on the first tick).
+        crate::npc::NpcKind::GlowingSnail => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        crate::npc::NpcKind::Frog
+        | crate::npc::NpcKind::Duck
+        | crate::npc::NpcKind::Duck2
+        | crate::npc::NpcKind::DuckWhite => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

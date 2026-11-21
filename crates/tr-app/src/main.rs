@@ -71,6 +71,10 @@ mod npc_ai_style64;
 // W4-f18 first-20 port: the Butterfly 356's AI_065 machine (NPC.cs:
 // 44896-45119) — the style-axis 65 arm claims it (npc.rs).
 mod npc_ai_style65;
+// W4-f18 batch 2: the town-CRITTER path of AI_007 (NPC.cs:52965-55561,
+// the TownCritter subset) — the Frog 361 / Duck 362 / DuckWhite 364 ride
+// the style-axis 7 arm (npc.rs); the full town machine stays unwired.
+mod npc_ai_town_critter;
 mod npc_ai_style70;
 mod npc_ai_frost_boss_b;
 mod npc_ai_frost_boss;

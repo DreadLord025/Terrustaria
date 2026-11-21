@@ -6162,9 +6162,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
+                        // W4-f18 batch 2 — the Duck2 363's dry landing
+                        // transforms into the walker Duck 362
+                        // (`NPC.cs:34760`, the aiStyle-68 arm).
+                        362 => NpcKind::Duck,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);
+                    // `NPC.cs:81111-81114` — the Transform's ai1 argument
+                    // lands AFTER the ai-zero loop (the aiStyle-68 waterfowl
+                    // carries the drawn 200 + Next(200); the 75 pair pass 0).
+                    npcs[i].ai[1] = npcs[i].wants_transform_ai1;
+                    npcs[i].wants_transform_ai1 = 0.0;
                 }
             }
         }

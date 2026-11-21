@@ -1626,6 +1626,36 @@ fn portrait_data(
                 .unwrap_or(12.0);
             (sheet_i, h, 12.0, h, white)
         }
+        // W4-f18 batch 2 — the GlowingSnail (6 frames), the Frog (13), the
+        // walker ducks (15; the Duck2 363 folds onto the Duck 362's entry,
+        // so its portrait reads the Duck's sheet — the Hide=true fold).
+        (NpcKind::GlowingSnail, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 14.0, h, white)
+        }
+        (NpcKind::Frog, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 12.0, h, white)
+        }
+        (NpcKind::Duck | NpcKind::DuckWhite, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 22.0, h, white)
+        }
+        // The Duck2 363 folds onto the Duck 362's entry (Hide=true), so
+        // `entry.kind` is never Duck2 here — the arm keeps the exhaustive
+        // match whole (the DetonatingBubble/Sharkron2 fold precedent).
+        (NpcKind::Duck2, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 28.0, h, white)
+        }
     }
 }
 

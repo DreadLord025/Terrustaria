@@ -2215,6 +2215,42 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Snail",
     },
+    // W4-f18 batch 2 — the GlowingSnail, the Frog and the two walker
+    // ducks. The Duck2 363 is Hide=true (`NPCID.cs:3617-3622`) — it folds
+    // onto the Duck 362's entry (no row of its own, the DetonatingBubble
+    // precedent); the credit ids ride the vanilla NPCID names.
+    BestiaryEntryDef {
+        credit_id: "GlowingSnail",
+        net_id: 360,
+        kind: NpcKind::GlowingSnail,
+        variant: None,
+        quick_unlock: false,
+        name: "Glowing Snail",
+    },
+    BestiaryEntryDef {
+        credit_id: "Frog",
+        net_id: 361,
+        kind: NpcKind::Frog,
+        variant: None,
+        quick_unlock: false,
+        name: "Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "Duck",
+        net_id: 362,
+        kind: NpcKind::Duck,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
+    BestiaryEntryDef {
+        credit_id: "DuckWhite",
+        net_id: 364,
+        kind: NpcKind::DuckWhite,
+        variant: None,
+        quick_unlock: false,
+        name: "Duck",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2336,6 +2372,10 @@ pub fn try_entry_for_npc(
         // kill credit is "Sharkron" — only the UI provider maps onto 370,
         // `BestiaryDatabaseNPCsPopulator.cs:691`).
         NpcKind::DetonatingBubble | NpcKind::Sharkron2 => NpcKind::DukeFishron,
+        // W4-f18 batch 2 — the Duck2 363 is Hide=true (`NPCID.cs:3617-
+        // 3622`): the swimming form folds onto the walker Duck 362's
+        // entry (one credit per waterfowl, the DetonatingBubble precedent).
+        NpcKind::Duck2 => NpcKind::Duck,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2407,6 +2447,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-f18 batch 2 — the Duck2 363 folds onto the Duck 362's row
+        // (Hide=true, `NPCID.cs:3617-3622`; the try_entry twin above).
+        NpcKind::Duck2 => NpcKind::Duck,
         other => other,
     };
     ENTRIES

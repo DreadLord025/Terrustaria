@@ -1111,6 +1111,32 @@ pub enum NpcKind {
     /// 2006 (`NPC.cs:13573-13586`). W4-f18: the faithful
     /// `npc_ai_style67::snail_ai_step` arm claims aiStyle 67.
     Snail,
+    /// `NPCID.GlowingSnail` (360, `NPCID.cs:11397`) — the mushroom critter
+    /// (`aiStyle 67`): 14x14, dmg 0, def 0, 5 HP, noGravity, catchItem
+    /// 2007, the blue glow (`NPC.cs:13587-13600`). W4-f18: the aiStyle-67
+    /// arm (the Snail's machine, the 0.6 speed + blue-light branch).
+    GlowingSnail,
+    /// `NPCID.Frog` (361, `NPCID.cs:11399`) — the jungle critter
+    /// (`aiStyle 7`, the town-critter path): 12x10, dmg 0, def 0, 5 HP,
+    /// catchItem 2121 (`NPC.cs:13601-13612`). W4-f18: the faithful
+    /// `npc_ai_town_critter::town_critter_step` arm claims aiStyle 7.
+    Frog,
+    /// `NPCID.Duck` (362, `NPCID.cs:11401`) — the surface waterfowl
+    /// (`aiStyle 7`, the town-critter path): 22x26, dmg 0, def 0, 5 HP,
+    /// catchItem 2122 (`NPC.cs:13613-13624`). W4-f18: the aiStyle-7
+    /// town-critter arm; the Duck2 363's dry-landing transform target.
+    Duck,
+    /// `NPCID.Duck2` (363, `NPCID.cs:11403`) — the swimming waterfowl
+    /// (`aiStyle 68`): 28x22, dmg 0, def 0, 5 HP, catchItem 2122
+    /// (`NPC.cs:13625-13636`). Hide=true (the bestiary folds onto the
+    /// Duck 362). W4-f18: the faithful `npc_ai_style68::ai_style_68` arm
+    /// claims aiStyle 68; the dry landing transforms to the Duck 362.
+    Duck2,
+    /// `NPCID.DuckWhite` (364, `NPCID.cs:11405`) — the white surface
+    /// waterfowl (`aiStyle 7`, the town-critter path): 22x26, dmg 0,
+    /// def 0, 5 HP, catchItem 2123 (`NPC.cs:13637-13648`). W4-f18: the
+    /// aiStyle-7 town-critter arm; the DuckWhite2 365's transform target.
+    DuckWhite,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1802,6 +1828,11 @@ pub struct Npc {
     /// (`NPC.cs:36056-36063`): 390 → 382 RayGunner, 416 → 518 SolarSpearman.
     /// The sim runs `NPC.Transform` (`NPC.cs:81084-81114`) in place.
     pub wants_transform: Option<i32>,
+    /// The `Transform`'s `ai1` argument (`NPC.cs:81111-81114` writes it
+    /// AFTER the ai-zero loop). The aiStyle-75 transforms pass 0; the
+    /// aiStyle-68 waterfowl dry landing passes the drawn `200 + Next(200)`
+    /// (`NPC.cs:34760`, W4-f18). The sim's drain applies it post-transform.
+    pub wants_transform_ai1: f32,
     /// The aiStyle-75 `SoundEngine.PlaySound(SoundID.Item12/Item39, pos)`
     /// cues (`(style, x, y)`) queued by the standalone `update_rng` wrapper
     /// (no audio seam there); the sim's pooled path drains them immediately
@@ -3124,6 +3155,7 @@ impl Npc {
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
+            wants_transform_ai1: 0.0,
             wants_item_sounds: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
@@ -3558,6 +3590,10 @@ impl Npc {
             // row, so the C# class default 1f stands (`NPC.cs:8533`; the
             // arms `:13517-13586` carry none) — NOT this fn's 0.4 catch-all.
             NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 1.0,
+            // W4-f18 batch 2 — the critters write no knockBackResist row,
+            // so the C# class default 1f stands (`NPC.cs:8533`; the arms
+            // `:13587-13648` carry none) — NOT this fn's 0.4 catch-all.
+            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 1.0,
             _ => 0.4,
         }
     }
@@ -3941,6 +3977,9 @@ impl Npc {
             // W4-f18 first-20 port — the critters' `defense = 0` rows
             // (`NPC.cs:13523`/`:13537`/`:13551`/`:13565`/`:13579`).
             NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 0,
+            // W4-f18 batch 2 — the critters' `defense = 0` rows
+            // (`NPC.cs:13589`/`:13603`/`:13615`/`:13627`/`:13639`).
+            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4296,6 +4335,10 @@ impl Npc {
             // `SetDefaults` stock 0f, `NPC.cs:8544`; the arms
             // `:13517-13586` carry none).
             NpcKind::Firefly | NpcKind::Butterfly | NpcKind::Worm | NpcKind::LightningBug | NpcKind::Snail => 0.0,
+            // W4-f18 batch 2 — the critters write no value row (the
+            // `SetDefaults` stock 0f, `NPC.cs:8544`; the arms
+            // `:13587-13648` carry none).
+            NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4960,6 +5003,22 @@ impl Npc {
             // `Collision_MoveSnailOnSlopes` tail replaces the normal
             // slope pass (`NPC.cs:92568-92571`).
             67 => self.ai_067_snail_family(world, player, rng),
+            // W4-f18 batch 2 — `if (this.aiStyle == 7)` (`NPC.cs:20812-
+            // 20815` → `AI_007_TownEntities`, `:52965-55561`): the town
+            // CRITTERS (the Frog 361, the Duck 362, the DuckWhite 364)
+            // ride the focused `npc_ai_town_critter::town_critter_step`
+            // (the TownCritter subset). The town NPCs keep their live
+            // `update_guide` stand-in until the full town wiring lands —
+            // the kind guard keeps this arm scoped to the critters.
+            7 if matches!(self.kind, NpcKind::Frog | NpcKind::Duck | NpcKind::DuckWhite) => {
+                self.ai_007_town_critter(world, player, rng);
+            }
+            // `else if (this.aiStyle == 68)` (`NPC.cs:34623-34879`): the
+            // Duck2 363 (the swimming waterfowl; the 365/603/609 members
+            // land with their batches). The faithful
+            // `npc_ai_style68::ai_style_68` arm; the dry landing's
+            // Transform(362) queues on `wants_transform` for the sim drain.
+            68 => self.ai_068_waterfowl(world, player, rng),
             // `else if (this.aiStyle == 75)` (`NPC.cs:35501-36070`) — the
             // mount/rider family (390/392/393/394/492/416). S1-D-3-wire-saucer:
             // the SOLO path (a test's bare `update_rng`) runs the faithful
@@ -5818,6 +5877,79 @@ impl Npc {
         crate::npc_ai_style67::snail_move_on_slopes(self, world);
     }
 
+    /// W4-f18 batch 2 — the aiStyle-7 town-critter wrapper: the focused
+    /// `npc_ai_town_critter::town_critter_step` (the Frog 361 / Duck 362 /
+    /// DuckWhite 364) + the post-`AI()` gravity + `UpdateCollision` tail.
+    /// The critters are grounded (`SetDefaults` writes no noGravity,
+    /// `NPC.cs:13601-13648`), so the DEFAULT gravity 0.3 / maxFallSpeed 10
+    /// applies (`NPC.UpdateNPC_UpdateGravity`, `NPC.cs:90878-90881`).
+    fn ai_007_town_critter(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        // `NPC.UpdateNPC`'s wet stamp (`Collision_WaterCollision`,
+        // `NPC.cs:92526`) — the Frog's swim / the ducks' drown gates read
+        // it (the `update_cave_bat` precedent).
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let ctx = crate::npc_ai_town_critter::TownCritterCtx {
+            players: &[cand],
+            ticker: 0,
+        };
+        crate::npc_ai_town_critter::town_critter_step(self, world, &ctx, rng);
+        // `NPC.cs:90465-90472` — the gravity term + the fall cap.
+        self.vy = (self.vy + 0.3).min(10.0);
+        self.integrate_flyer_collision(world);
+    }
+
+    /// W4-f18 batch 2 — the aiStyle-68 wrapper: the faithful
+    /// `npc_ai_style68::ai_style_68` (the Duck2 363) + the post-`AI()`
+    /// tail. The arm's `noGravity` outcome gates the gravity term (the
+    /// perch clears it, the swim/flight set it — `NPC.cs:34635-34670`);
+    /// the dry landing's `Transform(362)` core is applied in-place by the
+    /// module, the kind flip queues on `wants_transform` for the sim drain
+    /// (the aiStyle-75 `wants_transform` pattern). The poop shot is the
+    /// BirdDroppings 1080 — a cosmetic projectile the port has no kind
+    /// for yet, a documented remainder (the module doc).
+    fn ai_068_waterfowl(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        // `NPC.UpdateNPC`'s wet stamp (`NPC.cs:92526`) — the swim/perch
+        // gate reads it (the `update_cave_bat` precedent).
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let cand = crate::npc_target::session_candidate(player);
+        let p = crate::npc_ai_style24::Style24Player {
+            candidate: cand,
+            luck: player.luck(),
+            // `Player.IsThisCenx` — the port has no character-name seam
+            // yet; the stock false (the poop gate's bypass never fires).
+            is_cenx: false,
+        };
+        let ctx = crate::npc_ai_style68::Style68Ctx {
+            players: &[p],
+            net_mode: 0,
+            ticker: 0,
+        };
+        let out = crate::npc_ai_style68::ai_style_68(
+            self,
+            self.kind.cs_id() as i32,
+            world,
+            &ctx,
+            rng,
+        );
+        // The poop shot (BirdDroppings 1080) is a documented remainder.
+        let _ = out.poop_shot;
+        // The dry landing's Transform: the module applied the core reset
+        // in place; queue the kind flip + the drawn ai1 for the sim drain.
+        if let Some((ty, ai1)) = out.transform {
+            self.wants_transform = Some(ty);
+            self.wants_transform_ai1 = ai1;
+        }
+        // `NPC.cs:90465-90472` — the gravity term gates on the arm's last
+        // noGravity write.
+        if !out.no_gravity {
+            self.vy = (self.vy + 0.3).min(10.0);
+        }
+        self.integrate_flyer_collision(world);
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -6294,6 +6426,18 @@ impl Npc {
             }
             NpcKind::Snail => {
                 unreachable!("aiStyle 67 rides the style axis (W4-f18)")
+            }
+            // W4-f18 batch 2 — the GlowingSnail rides the 67 axis arm; the
+            // Frog/Duck/DuckWhite ride the critter-guarded 7 arm; the Duck2
+            // rides the 68 arm (all unreachable through `update_rng`).
+            NpcKind::GlowingSnail => {
+                unreachable!("aiStyle 67 rides the style axis (W4-f18)")
+            }
+            NpcKind::Frog | NpcKind::Duck | NpcKind::DuckWhite => {
+                unreachable!("aiStyle 7's town-critter arm rides the style axis (W4-f18)")
+            }
+            NpcKind::Duck2 => {
+                unreachable!("aiStyle 68 rides the style axis (W4-f18)")
             }
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
@@ -6902,6 +7046,126 @@ impl Npc {
                 );
                 self.frame = row;
                 self.frame_counter = counter;
+            }
+            // W4-f18 batch 2 — `case 360` shares the Snail's case 359/360/
+            // 655 (`NPC.cs:72238-72295`): the same pure twin.
+            NpcKind::GlowingSnail => {
+                let (row, counter) = crate::npc_ai_style67::snail_find_frame(
+                    self.vx,
+                    self.vy,
+                    self.frame,
+                    self.frame_counter,
+                );
+                self.frame = row;
+                self.frame_counter = counter;
+            }
+            // `case 361` (`NPC.cs:76618-76685`, shared with the unported
+            // 445/687): the wet rows 10/11/12 by the |vx| thresholds
+            // .25/.15; the grounded idle 6-tick cycle rows 0..5, the walk
+            // num196=6 rows 0/6/8/9; the airborne fall row 9 / rise row 8.
+            NpcKind::Frog => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter = 0.0;
+                    if self.vx > 0.25 || self.vx < -0.25 {
+                        self.frame = 10;
+                    } else if self.vx > 0.15 || self.vx < -0.15 {
+                        self.frame = 11;
+                    } else {
+                        self.frame = 12;
+                    }
+                } else if self.vy == 0.0 {
+                    if self.vx == 0.0 {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                        }
+                        if self.frame > 5 {
+                            self.frame = 0;
+                        }
+                    } else {
+                        self.frame_counter += 1.0;
+                        let num196 = 6.0;
+                        if self.frame_counter < num196 {
+                            self.frame = 0;
+                        } else if self.frame_counter < num196 * 2.0 {
+                            self.frame = 6;
+                        } else if self.frame_counter < num196 * 3.0 {
+                            self.frame = 8;
+                        } else {
+                            self.frame = 9;
+                            if self.frame_counter >= num196 * 4.0 - 1.0 {
+                                self.frame_counter = 0.0;
+                            }
+                        }
+                    }
+                } else if self.vy > 0.0 {
+                    self.frame = 9;
+                } else {
+                    self.frame = 8;
+                }
+            }
+            // `case 362/364` (`NPC.cs:73747-73771`, shared with the
+            // unported 608): the 4-tick walk cycle rows 3..9 (vx == 0
+            // pins row 0 + resets); the frame clamps into [3, 9].
+            NpcKind::Duck | NpcKind::DuckWhite => {
+                self.sprite_dir = self.facing;
+                if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 10 {
+                        self.frame = 3;
+                    }
+                    if self.frame < 3 {
+                        self.frame = 3;
+                    }
+                }
+            }
+            // `case 363` (`NPC.cs:73772-73818`, shared with the unported
+            // 365/609): the wet 8-tick cycle rows 1..2 (rotation 0); the
+            // still pose row 1; the fly 4-tick cycle rows 11..14 with the
+            // vx*0.1 tilt.
+            NpcKind::Duck2 => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 2 {
+                        self.frame = 1;
+                    }
+                    if self.frame < 1 {
+                        self.frame = 1;
+                    }
+                    self.rotation = 0.0;
+                } else if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                    self.rotation = 0.0;
+                } else {
+                    self.rotation = self.vx * 0.1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    // `Main.npcFrameCount[363]` = 15 (`Main.cs:67082+`).
+                    if self.frame >= 15 {
+                        self.frame = 11;
+                    }
+                    if self.frame < 11 {
+                        self.frame = 11;
+                    }
+                }
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -18861,6 +19125,14 @@ impl Npc {
             NpcKind::Worm => 357,
             NpcKind::LightningBug => 358,
             NpcKind::Snail => 359,
+            // W4-f18 batch 2 — the critters' vanilla types 360-364 (the
+            // Duck2 363 keeps its OWN key — the bestiary fold is the
+            // credit's, not the render hash's; the G6 key stays injective).
+            NpcKind::GlowingSnail => 360,
+            NpcKind::Frog => 361,
+            NpcKind::Duck => 362,
+            NpcKind::Duck2 => 363,
+            NpcKind::DuckWhite => 364,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23929,7 +24201,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 275] = [
+    pub(super) const ALL_KINDS: [NpcKind; 280] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24214,6 +24486,12 @@ mod tests {
         NpcKind::Worm,
         NpcKind::LightningBug,
         NpcKind::Snail,
+        // W4-f18 first-20 port — batch 2: the five critters 360-364.
+        NpcKind::GlowingSnail,
+        NpcKind::Frog,
+        NpcKind::Duck,
+        NpcKind::Duck2,
+        NpcKind::DuckWhite,
     ];
 
     #[test]
@@ -27832,8 +28110,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            275,
-            "every decodable kind resolves (the wire roster's size - 275 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-f18 batch 1's five critters)"
+            280,
+            "every decodable kind resolves (the wire roster's size - 280 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-f18 batches 1-2's ten critters)"
         );
         assert!(
             covered > 43,
@@ -31482,6 +31760,13 @@ mod s1_d_2_tests {
         (NpcKind::Worm, 66),
         (NpcKind::LightningBug, 64),
         (NpcKind::Snail, 67),
+        // W4-f18 batch 2's critters (`NPC.cs:13589`/`:13603`/`:13615`/
+        // `:13627`/`:13639`).
+        (NpcKind::GlowingSnail, 67),
+        (NpcKind::Frog, 7),
+        (NpcKind::Duck, 7),
+        (NpcKind::Duck2, 68),
+        (NpcKind::DuckWhite, 7),
     ];
 
     #[test]

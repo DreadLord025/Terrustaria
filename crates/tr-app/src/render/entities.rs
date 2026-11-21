@@ -1114,6 +1114,10 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-f18 batch 2 — the Duck2 363's bestiary credit folds onto the
+        // Duck 362 (`entry_for_npc`), but its DRAW sheet is its own
+        // NPC_363 (the swimming form's art) — the fishron-hazard precedent.
+        NpcKind::Duck2 => 363,
         _ => kind.net_id() as u16,
     }
 }
@@ -1253,7 +1257,10 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// [`NpcAssets::npc_sheets`] exactly like `SMALL_KIND_SHEETS`. Batch 1:
 /// the Firefly (355), the Butterfly (356), the Worm (357), the Lightning
 /// Bug (358) and the Snail (359).
-pub(crate) const CRITTER_SHEETS: &[u32] = &[355, 356, 357, 358, 359];
+pub(crate) const CRITTER_SHEETS: &[u32] = &[
+    355, 356, 357, 358, 359, // batch 1
+    360, 361, 362, 363, 364, // batch 2 (the Duck2 363 draws its own sheet)
+];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3199,6 +3206,25 @@ pub(crate) fn draw_npcs(
             NpcKind::Snail => {
                 scaled_anchor(assets.npc_sheet(359), npc_rows(359), n, w, h)
             }
+            // W4-f18 batch 2 — the GlowingSnail's scale stays 1 (the 359
+            // scale roll is type-359-only, `NPC.cs:34361`); the Frog and
+            // the walker ducks are grounded (scale 1); the Duck2's flight
+            // scale stays 1 too. All ride the generic anchor.
+            NpcKind::GlowingSnail => {
+                pumpkin_moon_draw(assets.npc_sheet(360), npc_rows(360), n, w, h)
+            }
+            NpcKind::Frog => {
+                pumpkin_moon_draw(assets.npc_sheet(361), npc_rows(361), n, w, h)
+            }
+            NpcKind::Duck => {
+                pumpkin_moon_draw(assets.npc_sheet(362), npc_rows(362), n, w, h)
+            }
+            NpcKind::Duck2 => {
+                pumpkin_moon_draw(assets.npc_sheet(363), npc_rows(363), n, w, h)
+            }
+            NpcKind::DuckWhite => {
+                pumpkin_moon_draw(assets.npc_sheet(364), npc_rows(364), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3356,6 +3382,11 @@ pub(crate) fn draw_npcs(
                     | NpcKind::Butterfly
                     | NpcKind::Worm
                     | NpcKind::Snail
+                    // W4-f18 batch 2 — the GlowingSnail's wall-crawl
+                    // rotation (the Snail's machine) and the Duck2's fly
+                    // tilt (`NPC.cs:73802`, vx*0.1).
+                    | NpcKind::GlowingSnail
+                    | NpcKind::Duck2
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
