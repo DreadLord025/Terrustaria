@@ -39326,9 +39326,14 @@ unless marked deferred:
     non-lake island. The port built a planks-9 box inline on EVERY
     island (lakes included). LANDED: the GenVars arrays
     (`island_house_x/y/style`, `sky_lake`, `num_island_houses`), the
-    new `floating island houses` pipeline step at its vanilla slot
-    (`:17859` — after `cave houses`, before the micro group in the
-    port's grouped chain), the lake skip, the house cap applied to
+    new `floating island houses` pipeline step immediately after
+    `floating islands` (the port's discs already place late in the
+    grouped chain — after the vegetation family — so the houses follow
+    their ledger directly; vanilla `:17859` runs before the vegetation
+    passes, but the house build reads only the disc, so the relative
+    islands→houses order is preserved and the living-tree anchor scan
+    still starts at the height-map row), the lake skip, the house cap
+    applied to
     `numIslandHouses` AFTER the loop (`:13117-13120`).
 11. **The house itself** (`IslandHouse`, `:79203-79484`): C# builds a
     SUNPLATE (202) box with the DISC WALL (82) interior — not planks

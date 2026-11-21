@@ -1152,9 +1152,10 @@ mod tests {
 
     #[test]
     fn the_floating_islands_hang_in_the_sky() {
-        // The 4200-world carries 3-4 cloud islands (189) with the grass
+        // The 4200-world carries 3+1 cloud islands (189) with the grass
         // caps, the sky lake (the rain cloud 196 + the water) and the
-        // houses (the planks 9 + the cloud walls 73 + the chests).
+        // houses (the sunplate 202 + the disc walls 82 + the chests —
+        // W4-g44's verbatim IslandHouse; the lake island carries none).
         let w = generate(&GenOptions {
             seed: 55,
             ..Default::default()
@@ -1167,7 +1168,7 @@ mod tests {
         };
         assert!(count(189) > 1500, "the cloud blocks ({})", count(189));
         assert!(count(196) > 30, "the rain cloud rim ({})", count(196));
-        assert!(count(9) > 40, "the house planks ({})", count(9));
+        assert!(count(202) > 40, "the house sunplate ({})", count(202));
         // The islands sit above the surface line: every cloud tile's row is
         // above `world_surface` (the surface scan finds none below).
         let below = w

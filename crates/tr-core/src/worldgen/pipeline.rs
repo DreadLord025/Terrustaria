@@ -89,7 +89,8 @@ pub(crate) struct Streams<'a> {
     /// tail-till-the-end draws (`mod.rs`'s `rng`).
     pub(crate) rng: Rng,
     /// The detail stream — the ocean caves, fragile ice, underground jungle
-    /// trees, exposed gems, vines and floating islands (`drng`).
+    /// trees, exposed gems and vines (`drng`). (The floating islands moved
+    /// onto their own `pass_rng("Floating Islands")` slot — W4-g44.)
     pub(crate) drng: Rng,
     /// The structures stream — shrines, chests, altars, pyramids, pots,
     /// hives, forts, temple, mini-biomes (`srng`).
@@ -366,6 +367,26 @@ pub(crate) struct GenVars {
     /// main item — the cycle with the `> 3 → Next(4)` re-roll. S1-A-4:
     /// drawn at the island-house site, once per house.
     pub(crate) sky_island_house_count: u32,
+    /// `GenVars.skyLakes` (`GenVars.cs:210`, reset `WorldGen.cs:11182-11190`):
+    /// the sky-lake budget — 1, +1 above 8000 wide, +1 above 6000 wide. The
+    /// `FloatingIslands` loop runs `num + skyLakes` islands and the tail
+    /// `skyLakes` of them are forced lakes (`num2 >= num`, `:13051-13053`);
+    /// the extraFloatingIslands multipliers hit it too (`:12947`/`:12952`).
+    /// W4-g44: reset in `reset_genvars` (the C# Reset spot).
+    pub(crate) sky_lakes: i32,
+    /// `GenVars.numIslandHouses` + the `floatingIslandHouseX/Y/Style` and
+    /// `skyLake` arrays (`GenVars.cs:216-226`, the 300-slot allocations
+    /// `:453-456`): the placed-island ledger the `FloatingIslands` pass
+    /// writes (`WorldGen.cs:13108-13112`) and the `FloatingIslandHouses`
+    /// pass consumes (`:17865-17871` — a house on every non-lake island).
+    /// The port grows the vecs per placement (the C# 300 cap is never
+    /// reached: the multiplied counts still place under the width budget).
+    /// W4-g44.
+    pub(crate) num_island_houses: i32,
+    pub(crate) island_house_x: Vec<i32>,
+    pub(crate) island_house_y: Vec<i32>,
+    pub(crate) island_style: Vec<i32>,
+    pub(crate) sky_lake: Vec<bool>,
 }
 
 impl Default for GenVars {
@@ -403,6 +424,15 @@ impl Default for GenVars {
             // `GenVars.skyIslandHouseCount` zeroes in Reset too
             // (`GenVars.cs`'s statics).
             sky_island_house_count: 0,
+            // The sky-lake budget + the island ledger zero-init here; the
+            // width-scaled `skyLakes` reset draws nothing and rides
+            // `reset_genvars` (the C# Reset spot, `WorldGen.cs:11182-11190`).
+            sky_lakes: 0,
+            num_island_houses: 0,
+            island_house_x: Vec::new(),
+            island_house_y: Vec::new(),
+            island_style: Vec::new(),
+            sky_lake: Vec::new(),
             shell_start_x_left: 0,
             shell_start_y_left: 0,
             shell_start_x_right: 0,
@@ -1361,6 +1391,15 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
         "floating islands",
         "Floating Islands",
         step_floating_islands
+    ),
+    // The vanilla Floating Island Houses slot (`WorldGen.cs:17859`): the
+    // house build over the islands ledger — W4-g44. The port's discs
+    // place late in the grouped chain, so the houses follow their ledger
+    // directly (the relative islands→houses order is the C#'s).
+    step!(
+        "floating island houses",
+        "Floating Island Houses",
+        step_floating_island_houses
     ),
     // The vanilla Remove Water From Sand / Shell Piles slots
     // (`WorldGen.cs:16211`, `:16266`): after the carve family, before Smooth
@@ -2547,18 +2586,41 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    // W4-g44: the verbatim pass on its own world-pass slot (the
+    // `WorldGenerator.cs:497` re-seed model — was the shared `drng`; its
+    // remaining consumers all run earlier, so no other stream shifts).
+    let surface_low = gv.layers().surface_low;
+    islands::pass_floating_islands(
+        world,
+        gv,
+        &mut streams.pass_rng("Floating Islands"),
+        surface_low,
+    );
+}
+
+/// The vanilla `FloatingIslandHouses` slot (`WorldGen.cs:17859-17874`):
+/// the house build over the islands ledger, on its own world-pass slot
+/// (W4-g44). The port's discs place late in the grouped chain, so the
+/// houses follow directly (ANALYSIS "Sky lakes / floating-island
+/// residuals").
+fn step_floating_island_houses(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
     opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    let heights = gv.map().heights.to_vec();
-    islands::pass_floating_islands(
+    islands::pass_floating_island_houses(
         world,
-        &heights,
-        &mut streams.drng,
+        gv,
+        &mut streams.pass_rng("Floating Island Houses"),
         streams.chest_stock.as_deref_mut(),
         opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
-        &mut gv.sky_island_house_count,
     );
 }
 
@@ -2851,6 +2913,16 @@ fn reset_genvars(core: &StreamCore, opts: &GenOptions) -> GenVars {
     let mut reset_rng = core.pass_rng("Reset");
     gv.crimson_left = reset_rng.range(0, 2) == 1;
     gv.flip_infections = opts.flags.flip_infections();
+    // `GenVars.skyLakes = 1; if (maxTilesX > 8000) skyLakes++;
+    // if (maxTilesX > 6000) skyLakes++;` (`WorldGen.cs:11182-11190`) —
+    // the sky-lake budget, derived from the width, no draw (W4-g44).
+    gv.sky_lakes = 1;
+    if opts.width > 8000 {
+        gv.sky_lakes += 1;
+    }
+    if opts.width > 6000 {
+        gv.sky_lakes += 1;
+    }
     gv
 }
 
@@ -3123,7 +3195,7 @@ mod tests {
     }
 
     #[test]
-    fn the_executed_pipeline_is_59_named_steps() {
+    fn the_executed_pipeline_is_67_named_steps() {
         let names = executed_pass_names();
         // WORLDGEN-CAVES: + `surface caves` (vanilla "Surface Caves",
         // `WorldGen.cs:12162`) between `dirt-in-stone blobs` and `wavy caves`.
@@ -3140,7 +3212,9 @@ mod tests {
         // `WorldGen.cs:21066`) between `sword shrines` and `mahogany trees`.
         // S1-K-2 wave C: + `thin ice` (vanilla "Micro Biomes",
         // `WorldGen.cs:20941`) before `campsites`.
-        assert_eq!(names.len(), 66);
+        // W4-g44: + `floating island houses` (vanilla "Floating Island
+        // Houses", `WorldGen.cs:17859`) after `floating islands`.
+        assert_eq!(names.len(), 67);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
