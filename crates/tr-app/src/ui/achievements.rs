@@ -88,7 +88,6 @@ pub fn icon_frame_rect(icon_index: i32, locked: bool) -> [f32; 4] {
 /// wrapped text is taller, `scale.Y *= num3 / size.Y`. The small branch
 /// re-measures the UNWRAPPED description (`:104-107`) — the caller passes the
 /// matching height. Returns the clamped Y scale.
-#[allow(dead_code)] // the port's horizontal shrink-to-fit twin is documented
 pub fn description_scale_y(wrapped_height: f32, large: bool) -> f32 {
     let cap = 38.0 + if large { 20.0 } else { 0.0 }; // `:108`
     let mut scale_y = 0.92; // `vector3` (`:101`)
@@ -834,16 +833,12 @@ fn draw_row(
     draw_inner_panel_bottom(r, lookups, text_x, desc_panel_y, text_w, panel_tint);
     let desc_color = lerp(if locked { DESCRIPTION_LOCKED } else { DESCRIPTION_OPEN }, [1.0; 4], if hover { 1.0 } else { 0.0 });
     let desc = lang::text(&desc_key(a.name));
-    push_clipped_text(
-        r,
-        lookups,
-        text_x + 8.0,
-        desc_panel_y + 4.0,
-        0.92,
-        desc_color,
-        &desc,
-        text_w - 8.0,
-    );
+    // `CreateWrappedText(Description, (num2 - 20) * (1/0.92), culture)`
+    // (`:102`) through d121's ReLogic wrap port, then the `GetStringSize`
+    // Y-clamp (`:103-112`), then the wrapped string's rows at +8/+4
+    // (`:128-130`) — the horizontal shrink-to-fit stand-in is gone.
+    let (wrapped, scale_y) = description_layout(lookups, &desc, text_w);
+    draw_description(r, lookups, text_x + 8.0, desc_panel_y + 4.0, scale_y, desc_color, &wrapped);
 
     // The tracker bar — only while locked and only with a tracker
     // (`flag = (Item1 != 0 || Item2 != 0) && _locked`, `:93-98`). The anchor
@@ -1095,10 +1090,11 @@ fn draw_progress(
     text::hud_item_text(r, lookups, x, anchor_y, 0.75, name_color, &readout);
 }
 
-/// `FontAssets.ItemStack.Value.CreateWrappedText`'s clamp — the port has no
-/// word-wrap yet, so the row's text is drawn at the source scale and clipped
-/// to the row's text width by the caller (documented deviation: the C#
-/// wraps to a second line, growing the row while the text stays short).
+/// The name row's clamp (`ChatManager.DrawColorCodedStringWithShadow(…,
+/// num2)`'s snippet walk, `UIAchievementListItem.cs:124`): names carry no
+/// '\n' and no chat tags, so the port draws the raw string at the source
+/// scale, shrunk to the row's text width when it overflows (the snippet
+/// layout's word-wrap arm is unreachable for the short registry names).
 fn push_clipped_text(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -1114,14 +1110,86 @@ fn push_clipped_text(
     }
     let w = text::hud_item_text_width(r, lookups, text, scale);
     if w > max_w {
-        // Shrink to fit rather than overflowing the row (`vector3.Y *=
-        // num3 / stringSize.Y` is the C#'s vertical clamp; the port's is
-        // the horizontal twin).
+        // Shrink to fit rather than overflowing the row — the name-row
+        // stand-in only; the description wraps through `description_layout`.
         let scale = (scale * max_w / w).max(0.4);
         text::hud_item_text(r, lookups, x, y, scale, color, text);
         return;
     }
     text::hud_item_text(r, lookups, x, y, scale, color, text);
+}
+
+/// The description's wrap + vertical clamp (`UIAchievementListItem.cs:
+/// 101-112`): `text = CreateWrappedText(Description, (num2 - 20) *
+/// (1 / 0.92), culture)` (`:102` — the wrap width is the TEXT width minus
+/// 20, divided by the X scale so the wrapped box fits at 0.92), measured
+/// through `ChatManager.GetStringSize(ItemStack, text, (0.92, 0.92), num2)`
+/// (`:103`); the large layout keeps the wrapped measure, the small branch
+/// re-measures the UNWRAPPED description (`:104-107`, pinned out — `LARGE =
+/// true`). `description_scale_y` clamps Y at the 38+20 cap (`:108-112`).
+/// Returns `(wrapped text, clamped Y scale)`.
+pub fn description_layout(lookups: &Lookups, desc: &str, text_w: f32) -> (String, f32) {
+    // `(num2 - 20f) * (1f / vector3.X)` (`:102`).
+    let wrap_w = (text_w - 20.0) * (1.0 / 0.92);
+    let wrapped = super::text_wrap::create_wrapped_text(
+        lookups.item_font.as_ref(),
+        desc,
+        wrap_w,
+        crate::lang::active_culture(),
+    );
+    // `GetStringSize(font, text, vector3, num2)` — one snippet, no tags:
+    // the box is `MeasureString(wrapped) * scale` (the maxWidth re-wrap in
+    // `LayoutSnippets` never fires — the wrap already fits num2). The
+    // measure's height floor stands in as the drawn glyph height (d121's
+    // recorded `Padding.Height` approximation).
+    let (_, h) = super::text_wrap::measure_string(lookups.item_font.as_ref(), &wrapped);
+    let scale_y = description_scale_y(h * 0.92, LARGE);
+    (wrapped, scale_y)
+}
+
+/// The wrapped description's draw (`UIAchievementListItem.cs:130`'s
+/// `DrawColorCodedStringWithShadow(ItemStack, text, position, baseColor2,
+/// …, vector3)`): the '\n'-separated rows at X scale 0.92, Y scale the
+/// clamp, stepping `LineSpacing * scale.Y` per row (`DynamicSpriteFont.
+/// DrawString`'s newline arm). The shadow is the four ±2 px black passes
+/// (`ChatManager.ShadowDirections`, `ChatManager.cs:376-382` — the port's
+/// existing bordered-string convention stands in for the parse-free fast
+/// path's ±2 ring).
+fn draw_description(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    x: f32,
+    y: f32,
+    scale_y: f32,
+    color: [f32; 4],
+    wrapped: &str,
+) {
+    match lookups.item_font.as_ref() {
+        Some(f) => {
+            // The shadow passes (`ChatManager.cs:338-342`).
+            for [dx, dy] in [[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]] {
+                text::push_font_text_xy(
+                    r,
+                    f,
+                    x + dx,
+                    y + dy,
+                    0.92,
+                    scale_y,
+                    [0.0, 0.0, 0.0, 1.0],
+                    wrapped,
+                );
+            }
+            text::push_font_text_xy(r, f, x, y, 0.92, scale_y, color, wrapped);
+        }
+        // The bitmap fallback keeps one row per '\n' at the clamped scale
+        // (no kerning metrics — the 8 px stand-in, docs/ANALYSIS.md).
+        None => {
+            let step = 8.0 * scale_y;
+            for (i, line) in wrapped.split('\n').enumerate() {
+                text::hud_item_text(r, lookups, x, y + i as f32 * step, 0.92, color, line);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1289,6 +1357,35 @@ mod tests {
         assert_eq!(description_scale_y(58.0, true), 0.92);
         assert_eq!(description_scale_y(116.0, true), 0.92 * 0.5);
         assert_eq!(description_scale_y(76.0, false), 0.92 * 0.5);
+    }
+
+    /// W4-g53 witness: the description wraps through d121's ReLogic port
+    /// at `(num2 - 20) * (1/0.92)` (`UIAchievementListItem.cs:102`) and the
+    /// Y scale clamps at the 58 px cap (`:108-112`). With no retail font
+    /// the bitmap fallback measures 8 px/char, 8 px rows — "aaaa bbbb"
+    /// (9 chars) at text_w 60 wraps at `(60-20)/0.92 ≈ 43.5` px: "aaaa "
+    /// (5 chars = 40) fits, "bbbb" wraps; two rows measure 16 px unscaled,
+    /// 14.72 at 0.92 — under the cap, so the scale stays 0.92.
+    #[test]
+    fn the_description_wraps_at_the_relogic_width() {
+        let lookups = Lookups::default();
+        let (wrapped, scale_y) = description_layout(&lookups, "aaaa bbbb", 60.0);
+        assert_eq!(wrapped, "aaaa \nbbbb");
+        assert_eq!(scale_y, 0.92);
+        // A long description wraps to many rows: 9 rows * 8 px * 0.92 =
+        // 66.24 > 58 clamps the Y scale to 0.92 * 58/66.24 (each "aaaa "
+        // pair fits 40 px on a row — the space token rides the word it
+        // follows, d121's `Append` `:96-100`).
+        let long = "aaaa ".repeat(9); // 45 chars -> 9 "aaaa " rows
+        let (wrapped, scale_y) = description_layout(&lookups, &long, 60.0);
+        let rows = wrapped.split('\n').count();
+        assert_eq!(rows, 9);
+        let h = rows as f32 * 8.0 * 0.92;
+        assert_eq!(scale_y, 0.92 * (58.0 / h));
+        // A short one-liner never wraps nor clamps.
+        let (wrapped, scale_y) = description_layout(&lookups, "short", 400.0);
+        assert_eq!(wrapped, "short");
+        assert_eq!(scale_y, 0.92);
     }
 
     #[test]
