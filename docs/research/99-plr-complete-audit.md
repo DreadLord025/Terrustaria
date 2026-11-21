@@ -48,7 +48,7 @@ PKCS7 13×0x0D).
 | 17 | statManaMax | `:54775` | i32 | 62 | yes | ungated; clamp 200 `:55227` |
 | 18 | extraAccessory | `:54776` | bool | 66 | **sweep** (was fresh-false) | 125 (`:55235`) |
 | 19 | unlockedBiomeTorches | `:54777` | bool | 67 | **sweep** | 229 (`:55239`) |
-| 20 | UsingBiomeTorches | `:54778` | bool | 68 | **sweep** | 229 |
+| 20 | UsingBiomeTorches (the slot-11 PROPERTY: write = getter `unlocked && builderAccStatus[11]==0`, read = setter `slot = !value`; FINAL fix `63204f85`) | `:54778` | bool | 68 | **sweep + FINAL** | 229 |
 | 21 | ateArtisanBread | `:54779` | bool | 69 | **sweep** | 256 (`:55243`) |
 | 22 | the dead 324 slot | `:54780` `Write(value: false)` | bool | 70 | const false (C# hardcodes) | 324 (`:55247-55250`, read-dropped) |
 | 23 | usedAegisCrystal | `:54781` | bool | 71 | **sweep** (`used_upgrades[0]`) | 260 (`:55253`) |
@@ -300,6 +300,18 @@ still deliberate):
 **No NEW divergence was introduced by the sweep** — every corrected read
 policy moves the port TOWARD the C#, and every new write field defaults to
 the byte the old writer hardcoded.
+
+**FINAL-phase postscript (`63204f85`):** the last full re-diff found ONE
+remaining semantics gap — row 20's `UsingBiomeTorches` is a PROPERTY over
+`builderAccStatus[11]` (`Player.cs:3950-3963`), not a stored field. The
+write now emits the getter (`unlocked && slot == 0`), the read applies the
+setter (`slot = !value`) with the later >=230 builder-array read
+overwriting the slot in C# order; the 279 subset's slot-11 default rides
+the same setter. The raw `using_biome_torches` field stays the
+file-verbatim transport byte. Witness:
+`the_using_biome_torches_byte_is_the_slot11_property`; the G7 header
+witness re-pinned. Golden parity untouched (the fresh locked character
+writes the same false byte). See research/132 §6's addendum.
 
 ## 6. Witnesses (written, code-only — not run)
 

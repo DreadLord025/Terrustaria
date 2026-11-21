@@ -19052,6 +19052,33 @@ written not run (code-only):
 `the_utc_binary_encoding_pins_the_epoch_and_the_fixture_clock` (.NET
 ToBinary-derived pins), `a_zero_stamp_falls_back_to_the_file_mtime_on_the_disk_read`.
 
+**W4-f44 FINAL (2026-11-21, `63204f85`): the slot-11 property fix + the
+master INDEX close.** The last full Serialize/Deserialize re-diff found
+ONE remaining semantics gap: the `:54778`/`:55242` `UsingBiomeTorches`
+byte is a PROPERTY over `builderAccStatus[11]` (`Player.cs:3950-3963`),
+not a stored field — the C# write emits the GETTER
+(`unlockedBiomeTorches && builderAccStatus[11] == 0`) and the read lands
+on the SETTER (`builderAccStatus[11] = !value`), with the later >=230
+builder-array read (`:55635-55653`) overwriting the slot from the file
+in C# order. The G7 sweep's raw-bool transport round-tripped the byte
+but lost the slot link (a locked character with a stray `using=true`
+wrote a byte the C# never writes; the unlocked+disabled toggle had no
+carrier). Fixed on the full walk + the 279 subset; the raw
+`using_biome_torches` field stays the file-verbatim carry (the f33
+fold's shape parity), the writer IGNORES it. Golden parity untouched.
+Witness: `the_using_biome_torches_byte_is_the_slot11_property`; the G7
+header witness re-pinned. **research/132 is now the persist MASTER
+INDEX (FINAL)**: it seats the f33 torch-favor v7 fork (tip `8a000407f`,
+a 2-token pair-line — the value-range recognition rule vs g88's life
+pair, §2d), the g88 v10 crystal fold + a6b/138 adjudications (worktree
+states read), and the L3 union re-extend obligation: g71c's five-branch
+21-byte head (g70/g71/g69/d125/d109-dense) must seat g72d's 31-byte
+cave claim (research/64-addendum, worktree `108cc0934`), g90's 2-byte
+book pair (135 §4) and c43's 44-byte identity block — the reconciled
+FINAL head is **97 bytes + W×H dense**, with the per-claimant
+truncation-constant moves and the g71c/g72c roll keep-one adjudication
+recorded (§3-L3). The condensed L1→L2→L3 merger checklist is 132 §8.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
