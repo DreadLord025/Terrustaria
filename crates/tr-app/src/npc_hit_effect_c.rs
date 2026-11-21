@@ -251,6 +251,7 @@
 //! | 1294-1298 | `:88677-88682` | the 453 SkeletonMerchant death (5 gores, distinct pairs, shimmer) |
 //! | 1299-1308 | `:88698-88721` | the 269-276/281-286 armored-bones block (5 shared gores + 5 per-type +20 extras) |
 //! | 1309-1317 | `:88759-88815` | the 341 PresentMimic + 85/629 Mimic + 473-476 BigMimic deaths (3 smoke gores each) |
+//! | 1318-1325 | `:88858-88887` | the 170/180 + 171 Pigron deaths (4 gores each at Y+h/2-10) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7719,6 +7720,84 @@ fn big_mimic_death(
     }
 }
 
+/// The 170/180 Pigron death (`NPC.cs:88850-88860`, sites 1318-1321): the
+/// 10-dust type-54 burst (scale 1.5, velocity ×2, noGravity post-writes),
+/// then FOUR gores of type 99 at `(pos.X, pos.Y + height/2 - 10)` (the C#
+/// integer half), velocity `(hitDirection, 0)` then `velocity *= 0.3`
+/// post-write, at `this.scale`.
+fn pigron_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:88850-88855` — the 10-dust type-54 burst.
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 0,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:88856-88860` — the 4-gore 99 loop.
+    let anchor = Vec2::new(pos.x, pos.y + (h as i32 / 2) as f32 - 10.0);
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    for _ in 0..4 {
+        let idx = gore.new_gore(rng, world, anchor, vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 171 PigronHallow death (`NPC.cs:88874-88889`, sites 1322-1325): the
+/// 10-dust type-16 burst (scale 1.5, velocity ×2, noGravity post-writes),
+/// then the 4-iteration loop — `num733 = 11 + i`, and when `num733 > 13`
+/// (the fourth iteration) it is REDRAWN as `Next(11, 14)` — spawning at
+/// `(pos.X, pos.Y + height/2 - 10)`, velocity `(hitDirection, 0)` then
+/// `velocity *= 0.3` post-write, at `this.scale`. So the types are
+/// 11/12/13/Next(11,14).
+fn pigron_hallow_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:88874-88879` — the 10-dust type-16 burst.
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:88880-88889` — the 4-gore loop with the >13 redraw.
+    let anchor = Vec2::new(pos.x, pos.y + (h as i32 / 2) as f32 - 10.0);
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    for num732 in 0..4 {
+        let mut num733 = 11 + num732;
+        if num733 > 13 {
+            num733 = rng.next_range(11, 14); // :88885
+        }
+        let idx = gore.new_gore(rng, world, anchor, vel, num733, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8664,6 +8743,14 @@ pub fn hit_effect_c(
     // `:88796-88817` — the 473-476 BigMimic arm (sites 1315-1317).
     if (473..=476).contains(&npc_type) && npc.hp <= 0 {
         big_mimic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88838-88861` — the 170/180 Pigron arm (sites 1318-1321).
+    if (npc_type == 170 || npc_type == 180) && npc.hp <= 0 {
+        pigron_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88862-88890` — the 171 PigronHallow arm (sites 1322-1325).
+    if npc_type == 171 && npc.hp <= 0 {
+        pigron_hallow_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -13609,6 +13696,60 @@ mod tests {
         }
         let d = dust.slots().iter().find(|d| d.active).unwrap();
         assert_eq!(d.dust_type, 31);
+    }
+
+    /// `NPC.cs:88858-88859` — the Pigron death: FOUR type-99 gores at
+    /// Y+height/2−10, velocity (hitDirection,0) ×0.3 post-write.
+    #[test]
+    fn w4_f10_the_pigron_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1381);
+        pigron_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![99, 99, 99, 99]);
+        for i in 0..4 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 118.0));
+        }
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.dust_type, 54);
+        assert!(d.no_gravity);
+    }
+
+    /// `NPC.cs:88882-88888` — the PigronHallow death: the types are
+    /// 11/12/13 then a Next(11,14) redraw for the fourth (the >13 arm). The
+    /// twin replay pins the redraw BEFORE the fourth gore's kicks.
+    #[test]
+    fn w4_f10_the_pigron_hallow_death_redraws_the_fourth_type() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1387);
+        pigron_hallow_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, -1.0);
+        // The twin: 10 type-16 dusts (6 default-block draws, no tweak) then
+        // 3 gores x 2 kicks, the redraw, then the fourth gore's 2 kicks.
+        let mut twin = UnifiedRandom::new(1387);
+        for _ in 0..10 {
+            let _px = twin.next_max(40 - 4);
+            let _py = twin.next_max(56 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for i in 0..3 {
+            assert_eq!(gore.slot(i).gore_type, 11 + i as i32);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        let fourth = twin.next_range(11, 14);
+        assert_eq!(gore.slot(3).gore_type, fourth);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "the pigron hallow mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
