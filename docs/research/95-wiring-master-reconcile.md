@@ -467,7 +467,7 @@ classes are documented folds, not gaps: (a) `SetCurrentUser`/`CurrentUser`
 
 ## 12. FINAL merger-checklist (95 + 133, the single-branch keep) — SEALED
 
-> **SEALED (the seal phase, research/240):** §12 + the 133 receipt §6 are
+> **SEALED (the seal phase, research/280):** §12 + the 133 receipt §6 are
 > the final merger instructions; the research/146 compile blocker is
 > FIXED on this branch (the `a2d6cdad0` resize/Vec port + witness); the
 > e20 census REMAINDER re-pick instruction is §13.2 below. No further
@@ -516,7 +516,7 @@ on this tree.
 research/77 §3 (`82bc71ea`, read at origin tip) — the 657 right-click
 `SwitchMonolith` use arm **LANDED** (`f173fb88`:
 `TileInteraction::MonolithToggle` + the doors.rs arm +
-`Player.quick_grapple_cooldown`). **Compose receipt (research/240 §2):**
+`Player.quick_grapple_cooldown`). **Compose receipt (research/280 §2):**
 g78's §3.1 hunks are DOCS-ONLY on its branch (zero `MonolithSwitch` code
 hits at `82bc71ea`) — c42's landed arm is the keep-one; the naming delta
 (`MonolithToggle`/`use_switch_monolith` vs the requested
@@ -528,7 +528,7 @@ lit-row +2 quirk) stays the c31/g17/g47/f41 break-lane contract
 (research/77 §3.2's own co-lane list — NOT this lane's). g85's
 wiring-round note (`c69073b0`) carries no c42 request (its contested
 seams are render/tiles.rs + spawner.rs). g48's `19` apply arm arrived
-and consumes the canonical bodies — **keep-one receipt (research/240
+and consumes the canonical bodies — **keep-one receipt (research/280
 §3):** the shift_trapdoor/shift_tall_gate calls already pass the
 trailing `None` + cues (compatible, no change); ONLY the
 `open_door`/`close_door` pair needs the trailing-`None` merge note
@@ -547,7 +547,7 @@ trapdoor refusal, the stamped gate refusal + unconditional echo, the
 echo-field computation, the hopper-range scan) + the sensor-drain pin +
 the plate-break-drain pin + the monolith use-arm pin. The seal phase
 added **1**: `w4_c42_the_hopper_slot_arms_grow_the_chest_vec` (both
-`Chest.Resize` growth sites, research/240 §1). Every KEEP/unique
+`Chest.Resize` growth sites, research/280 §1). Every KEEP/unique
 witness named in §1-7 + the 133 receipt §4 ledger is present under its
 original name.
 
@@ -561,7 +561,7 @@ added 4: `cell_blocked_by_entity`, `take_door_echoes`,
 
 ## 13. SEAL — the research/146 re-pick verdict + the FINAL wiring-family instruction
 
-> The seal phase (this section; standalone publication: research/240).
+> The seal phase (this section; standalone publication: research/280).
 > Consumes e20's retire escalation research/146 (`46fdcfd8` tip, the
 > `e47e1399f` publication) at THIS branch's tip. Code-only, as always.
 

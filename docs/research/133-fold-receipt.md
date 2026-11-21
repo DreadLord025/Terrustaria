@@ -154,7 +154,7 @@ re-land. Gate: `cargo test --workspace --skip
 migrates_version_2_kinds_to_item_ids` (the merger runs it; this lane is
 code-only, every witness WRITTEN NOT RUN).
 
-## 7. SEAL addendum (the seal phase — research/95 §13 + research/240)
+## 7. SEAL addendum (the seal phase — research/95 §13 + research/280)
 
 **SEALED.** No fold-133 region changed in the seal phase either; the seal
 consumed the e20 retire escalation (research/146, `46fdcfd8`) and the

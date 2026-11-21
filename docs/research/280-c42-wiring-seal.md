@@ -1,4 +1,12 @@
-# 240 — W4-c42 WIRING SEAL: the research/146 re-pick verdict + the g78/g48 compose receipts + the wiring-family bible
+# 280 — W4-c42 WIRING SEAL: the research/146 re-pick verdict + the g78/g48 compose receipts + the wiring-family bible
+
+> **RENUMBERED 240 → 280 (REGISTRY-RENAME-EXEC, research/150 §6.3 at
+> `72226e500`, origin/task/W4-d54).** The original pick 240 collided with
+> W4-g58's `240-happiness-final.md` (12:16:37, executed push `cdfe3d108`)
+> and W4-d53's 240 (→275); c42's 240 was pushed last (14:17:05,
+> `2910a7209`) → the registry assigns **280**. The number-240 provenance
+> notes below are kept as the historical pick record; every live
+> reference to this doc is now research/280.
 
 > **STATUS: SEAL — 2026-11-21, branch `task/W4-c42-wiring-device-arms`
 > (the seal phase, on top of the final tip `15810df4`).** Consumes the
@@ -6,10 +14,12 @@
 > `e47e1399f`), the g78 compose request (research/77 §3, `82bc71ea`),
 > and the g48 NET-APPLY-1 seal (`9460c85d9`). Code-only lane: no
 > cargo/tests/rustfmt/graphify run; all proofs are git-object reads and
-> greps quoted below. Number 240: the taken-set scan across ALL remote
+> greps quoted below. Number 240 (HISTORICAL PICK — renumbered to 280,
+> see the banner): the taken-set scan across ALL remote
 > tips ends at 239 (`239-d42-final-keep-one-and-band.md`; 237/238 are
-> contested on other lanes — 240 is the first free number, the
-> research/150 registry's sequential-block convention).
+> contested on other lanes — 240 was the first free number at pick time,
+> the research/150 registry's sequential-block convention; the round-2
+> re-scan found the g58/d53 racing 240s and assigned 280).
 
 ## 1. research/146 RE-PICK — verdict: compile blocker FIXED HERE, census remainder re-picked merger-side
 
@@ -228,7 +238,9 @@ added the `w4_c42_the_hopper_slot_arms_grow_the_chest_vec` row) via
 - g78/g48 receipts: git-object reads at `82bc71ea`/`9460c85d9` (the
   docs-only §3.1 proof, the two call-site signatures, the shift-body
   compatibility).
-- Number 240: the full remote-tip scan (`git ls-tree docs/research/`
-  per tip) — max taken 239, 240 free.
+- Number 240 (HISTORICAL PICK — renumbered to **280** per research/150
+  §6.3, `72226e500`): the full remote-tip scan (`git ls-tree docs/research/`
+  per tip) — max taken 239, 240 free at pick time; g58's executed 240
+  (`cdfe3d108`) wins the collision, c42 → 280.
 - No cargo/tests/rustfmt/graphify run (lane rule). Every witness
   WRITTEN NOT RUN.
