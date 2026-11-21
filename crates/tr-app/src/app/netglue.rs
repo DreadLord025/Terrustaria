@@ -2025,7 +2025,7 @@ impl App {
             // TITLE-SCREEN sun/moon drag offsets (the only writers are
             // `DrawSunAndMoon`'s `gameMenu && netMode != 1` block,
             // `Main.cs:62983-63007`) — no port field yet, parked (W4-c27;
-            // research/248 s4: the wire keeps them, the apply drops them).
+            // research/332 s4: the wire keeps them, the apply drops them).
             S2c::SetTime(t) => {
                 self.world.day_time = t.day_time;
                 self.world.time = t.time as f64;
@@ -5501,7 +5501,7 @@ mod message_family_tests {
         assert_eq!(client_app.world.time, 16_200.0, "the int clock applied");
     }
 
-    /// W4-c27 SEAL (research/248): the apply arm stores ONLY the clock — the
+    /// W4-c27 SEAL (research/332): the apply arm stores ONLY the clock — the
     /// parked `sunModY`/`moonModY` fields never touch world state
     /// (`MessageBuffer.cs:1295-1296` writes `Main.sunModY`/`moonModY`, which
     /// have no port home; the offsets feed only the title-screen celestial
@@ -5541,7 +5541,7 @@ mod message_family_tests {
         assert_eq!(client_app.world.moondial_cooldown, 0, "no cooldown write from 18");
     }
 
-    /// W4-c27 SEAL (research/248), the clock-family composition: the wire
+    /// W4-c27 SEAL (research/332), the clock-family composition: the wire
     /// `int` (`NetMessage.cs:533` `(int)Main.time` truncates toward zero) and
     /// the STRICT boundary tests (`Main.cs:65137`/`:65148`, ported in
     /// `world_sim/clock.rs::advance_time`) compose — a clock applied exactly

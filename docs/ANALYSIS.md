@@ -11558,7 +11558,7 @@ The handshake and the wire frame are 1:1 ports; the deliberate deviations
   10 Hz). The C# sends `7 WorldInfo` only at join
   (`MessageBuffer.cs:469`/`:670`) and syncs the clock through the world
   flags; the exact 1:1 clock path is pinned in M6-NET-2. **W4-c27 SEAL
-  update (research/248):** the `18 SetTime` reader/codec/apply LANDED on
+  update (research/332):** the `18 SetTime` reader/codec/apply LANDED on
   the c27 tip (6fb7bcb25/412b6bc0d) — but the C# has ZERO `SendData(18)`
   sites (g48's census re-probe), so the faithful retirement of this
   stand-in is the id-7 cadence switch (the 3600-tick `UpdateServer`
@@ -39251,7 +39251,7 @@ cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
 
-## The W4-c27 SetTime SEAL (research/248, code-only)
+## The W4-c27 SetTime SEAL (research/332, code-only)
 
 The entity-state lane's clock leg is SEALED at tip 412b6bc0d: the
 `18 SetTime` reader/codec/apply landed verbatim in batch 1 (6fb7bcb25,
@@ -39277,4 +39277,4 @@ clock rides `7 WorldData`), and g48's census FINAL (2b61530b4) records
 - Three seal witnesses WRITTEN NOT RUN (`net.rs` full-short-range
   offsets; `netglue.rs` parked-offset drop + the `(int)` truncation ×
   strict-boundary composition through the net path). The clock-family
-  bible (one owner per body, the merge order) is research/248 s5.
+  bible (one owner per body, the merge order) is research/332 s5.

@@ -5099,7 +5099,7 @@ mod tests {
         assert!(S2c::decode(18, &mut NetReader::new(&[1, 0, 0])).is_none());
     }
 
-    /// W4-c27 SEAL (research/248): the PARKED `sunModY`/`moonModY` offsets
+    /// W4-c27 SEAL (research/332): the PARKED `sunModY`/`moonModY` offsets
     /// still ride the wire verbatim — the full `short` range round-trips
     /// (`NetMessage.cs:534-535`, both `short`, `Main.cs:1185`/`:1187`), so a
     /// future title-screen-drag sender needs no codec change.

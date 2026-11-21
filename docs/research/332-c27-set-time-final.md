@@ -1,6 +1,11 @@
-# 248 — W4-c27 SEAL: the 18 SetTime lane FINAL + the clock-family bible
+# 332 — W4-c27 SEAL: the 18 SetTime lane FINAL + the clock-family bible
 
-Number **248** per the research/150 registry rule (38bfd1d22): the
+Number **332** — chain **248→332** per the research/150 registry §9.2
+UNIFIED FINAL (d54 tip b243c7086, row 332): 248's first-add belongs to
+e26-luck (a23c64933), so this doc renumbers to 332. The seal-time scan
+below is chain history, kept verbatim.
+
+Chain history — number **248** per the research/150 registry rule (38bfd1d22): the
 151–236 block consumed; 237 = e23 (g61 238 / g48 239 renames), 240 =
 c42/d53/g58 triple, 241–243 = g58, **244 = g48's 244-c28-18-send-switch
 (first-add 2b61530b4 14:30:16) beats f39's 244-f39-v18-claim-input
@@ -109,7 +114,8 @@ Re-probed at g48 tip **2b61530b4** (correction phase; the SEAL is
   8704691a3 **14:32:01**, so per registry-150 first-pushed-wins **g48
   keeps 244** and f39's renumber is ITS lane's obligation (recorded
   here for the f39 lane/merger, not acted on from c27). This seal
-  takes 248, clear of both.
+  took 248, clear of both at seal time (chain history — renumbered
+  to 332 by the registry §9.2 UNIFIED FINAL: 248's first-add is e26's).
 
 ## 4. sunModY/moonModY — PARKED, with the full C# scope pin
 
