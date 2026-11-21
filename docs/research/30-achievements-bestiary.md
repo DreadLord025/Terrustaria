@@ -1032,6 +1032,112 @@ real `UsingBiomeTorches` property).
 feature-text clause to f33's `torch_god_favor_use.rs` (the canary rule —
 never delete the row).
 
+## W4-c36 RETIRE (4) — FINAL-FINAL + the achievement-family merger-bible (2026-11-21)
+
+> **The M task-seed update (this phase):** the notify-site M seed's
+> remaining list is the RETIRE (2) FINAL 17-row register (was 20 — 40/43
+> retired at NOTIFY-SYNC, 35 retired here onto c46); the d43r slime-8
+> seed is NEW at HIGH priority (three published consumers + the ready
+> QueenSlime-657 hunk). No other seed changes state this pass: the c37
+> provider fold, the ReportDroprates L, the bestiary-UI M and the
+> ENTRIES/sheet reconciliation S stay open with their owners named.
+
+**Status: FINAL-FINAL.** The lane retires at this commit. Code behaviour
+is exactly `3a64a1b96`'s (the NOTIFY-SYNC (5) tip) — the four RETIRE
+phases are doc-only; all witnesses WRITTEN NOT RUN (no cargo/tests/
+rustfmt/graphify in any phase). Every obligation is either landed on this
+branch, retired onto a sibling's live wire, or published as an exact
+evidence-cited hunk/seed for its owner.
+
+### The final state (one paragraph)
+
+137 rows / 180 conditions, all modelled; 86 mapped conditions carry live
+notify sites on this branch + f30's tip + the sibling live wires
+(40 g90b, 43 f47, 35 c46); the FINAL no-path list is **17 rows** (RETIRE
+(2)), each with its missing owning system named; the roster 17 activates
+at the d120/d37 merge (zero c36 edits), 26 waits on the DEAD d43 lane's
+fresh dispatch (RETIRE (1), HIGH-priority seed); the save wire matches the
+C#'s single external call site; the popup/event-queue landed via S1-E-26.
+
+### The achievement-family merger-bible (the keeper's ordered recipe)
+
+Read at the fetched tips (2026-11-21): c36 `deaffcfda` (this), f30
+`f8cef8cb8`, e22 `aae211f16`, g53 `04013f53d`, f33 `83387628b`, a6
+`c039e4448`, g90 `740650d75`, g88 `a9f1c29d8`, f47 `a2561d6d9`, b3
+`96a5d88f0`, c46 `2802ed5b9`, d20 `243f81672`, d120 `2408233da`, d37
+`a341daa12`, c24 `e2e50a427`, c37 `3e138525e`, d42 `2d7ac08c3`, f43
+`79a037f5e`, f45 `6352d3840`, c39 `7dd785dc5`, main `a725acb04`.
+
+1. **Registry + condition table (e22 + g53 win the data):** keep ONE
+   `achievements_data.rs` — e22's `CONDITION_COUNTS` transcription test
+   (`aae211f16`) + g53's `Category::Slayer` correction on
+   GAIN_TORCH_GODS_FAVOR (`04013f53d`, blob `b9f8c4f8…`; the vanilla
+   `(AchievementCategory)0` default — c36/f33's `Category::None` blob
+   `e0486920…` dedups onto it). c36/f30 never touch the table (the lane
+   contract); no semantic conflict — the rows are identical otherwise.
+2. **The notify-site union (c36 + f30 + the live siblings):** c36's site
+   table (the lane-claim + DOC-SWEEP tables) and f30's tail
+   (21/37-partial/38/41) are DISJOINT by the co-lane reservation — take
+   both wholesale. The three live sibling wires join with ZERO c36/f30
+   edits: 40 (g90 `world_sim/player.rs:1625-1627` — f30's cited comment
+   `:1631-1635` retires), 43 (f47 `npcs.rs:6368` — f30's citation
+   retires), 35 (c46 `death.rs:527` — f30's citation retires). At the
+   a6×g90 merge keep ONE `use_combat_book` (g90's — the notify's
+   producer) and drop a6's `powerups.rs` dispatch arm (NOTIFY-SYNC (1)).
+3. **5043 (RETIRE (3)):** keep f33's full body + named dispatcher; apply
+   the published c36 4-hunk drop (`editing.rs:2017/:2088-2094/:16325-16353/:16534-16559`)
+   and a6's §3b drop (`powerups.rs:347-366/:104/:71` + the two witnesses);
+   keep c36's enter-world re-check; ONE `complete_condition` helper
+   (a6b's `frac`-clear rides the survivor). The persist halves ride
+   g88's v11 superset per 93a §8 step 4 / 103 §9.
+4. **The b3 town-AI merge (NOTIFY-SYNC (2)):** f47's `town_shimmer_step`
+   keeps ONE driver — if b3's adapter survives, apply the published
+   2-hunk drain (`npc.rs:10208-10209` replace + the `npcs.rs:4684`
+   insert, the `wants_shimmer_town_progression` field/ctor riders) and
+   lift `shimmering: false` (`npc.rs:10186`) to the live buff-353 flag;
+   if f47's pre-pass survives, drop the adapter hunk. Never both.
+5. **The d20 merge (NOTIFY-SYNC (3)):** apply the published 4-hunk
+   TO_INFINITY kill-arm (the `wants_to_infinity` field + 3 literal tails,
+   the death-hook latch after `moonlord_arrow_kill` `:20205`, the
+   `drain_to_infinity` pool drain, the pass-tail `complete_condition`) —
+   the line pins re-verified VALID at `243f81672` (crates diff empty).
+6. **The d120/d37 merge (NOTIFY-SYNC (4)):** the roster-17 scan activates
+   with zero edits; apply the published IT_CAN_TALK arrival hunk after
+   the NO_HOBO notify — **re-pinned to d120 `2408233da`'s
+   `npcs.rs:5042`** (was `:4949`); the `unlocked_truffle_spawn` latch is
+   f45's (`world.rs:797`); the stale comments (c36 `:4947`, d120
+   `:5038-5039`) retire. The arrival LADDER arms are d120/f43's lane.
+7. **The c24+f30 merge (45):** the sacrifice click (`journey_clicks.rs`)
+   → f30's `check_research_achievement` (`research.rs:111`) →
+   `notify_progression_net(45)`; the enter-world forced call
+   (`Player.cs:325`) + the per-tick `:25703` ride the same join.
+8. **The c37 provider fold (29's residual gate):** c37's `Gate` enum +
+   the `WorldBestiary` completion move (`3e138525e`) — c36's two
+   `KillTracker`-based `try_grant_bestiary_100` call sites
+   (`netglue.rs:2987`, `netmodules.rs:467`) take the one-line rebase;
+   the gate predicate is identical, no semantic conflict.
+9. **The d43r fresh dispatch (RETIRE (1), HIGH):** the 8 town-slime kinds
+   + QueenSlime 657 — the roster-26 gate, f43's ladder arms, c39's
+   party-hat colour cases and the f45 colour latches all activate/fold
+   with zero c36 edits.
+10. **Post-merge verify:** the anchors canary (`anchors.txt:901`'s marker
+    survives the 5043 drop — repoint the feature text), the four
+    NOTIFY-SYNC consumer witnesses + the DOC-SWEEP four + the lane-claim
+    witnesses run green, and the FINAL census's 17-row list is the
+    residual gap register for the next wave's task seeds.
+
+### The retire commit table
+
+| Phase | Commit | Scope |
+| --- | --- | --- |
+| RETIRE (1) | `40006c825` | the d43r probe (DEAD pre-work) + the HIGH-priority slime-8 seed |
+| RETIRE (2) | `5be9d3438` | the 180-condition FINAL census (17-row final list, 35 retired, the 24/22 kinds noted) |
+| RETIRE (3) | `deaffcfda` | 5043 keep-f33 verdict + the exact c36 drop-hunk |
+| RETIRE (4) | this commit | FINAL-FINAL + the merger-bible + the ANALYSIS/ROADMAP/PORT_MAP/INDEX receipts |
+
+**The merger's entry point: this section + RETIRE (2)'s final list +
+RETIRE (3)'s drop-hunk. Nothing on this branch needs a follow-up pass.**
+
 ## Task seeds
 
 - ~~**S** — Model `NPCKilledCondition.CreateMany` faithfully~~ — **done (S1-E-18)**.

@@ -14556,7 +14556,11 @@ powers/research вЂ” each needs its own scope.
   pass 2026-11-21):** TRAINING_DAY 40 + NEW_DIGS 43 are WIRED LIVE on
   g90b `b3b82d071` / f47 `a2561d6d9` — c36's owed rows retired (the
   keep-one contracts + the published b3/d20b/d120 hunks live in
-  research/30 NOTIFY-SYNC (1)-(4)).
+  research/30 NOTIFY-SYNC (1)-(4)). **RETIRE FINAL (W4-c36, 2026-11-21):**
+  EXTRA_LIFE 35 joins the retired rows — c46 `2802ed5b9` wires it live
+  (`death.rs:527`); the FINAL no-path census is 17 rows (research/30
+  RETIRE (2)); the d43 slime lane is DEAD pre-work (the HIGH-priority
+  d43r seed, RETIRE (1)).
 - **Notify sites, first batch (W4-c36, 2026-11-21).** The row-targeted
   `AchievementManager::complete_condition(row, cond)` primitive ports
   `GetCondition(row, conditionName).Complete()` (`AchievementManager.cs:220-227`,
@@ -14611,14 +14615,30 @@ powers/research вЂ” each needs its own scope.
   Steampunker 178, Cyborg 209, Pirate 229, Bartender 550 and the eight town
   slimes have no NpcKind rows; the coffin-cart queue drains at the player
   pass (the C# fires inside `SetMount` — same tick, the
-  `pending_lucky_break` convention). **5043 keep-one (c36/f33b/g90b):** no
-  overlap to delete — c36 owns the use-flag write + the achievement/bestiary
-  credit (`ItemCheck_UseTorchGodsFavor`), f33 owns the event machine + the
-  survival drop + the flag READS (`:18066-18076`), g90 owns the neighbouring
-  5326 loaf; the merge keeps both halves of the favor flag. The full
+  `pending_lucky_break` convention). **5043 keep-one (c36/f33b/g90b):**
+  ~~no overlap to delete~~ **SUPERSEDED — the RETIRE (3) FINAL verdict
+  (f33 93a §3b/§8, tip `83387628b`): keep f33's full-body use arm + named
+  dispatcher, DROP c36's reduced copy (the exact 4-hunk drop published in
+  research/30 RETIRE (3): `editing.rs:2017/:2088-2094/:16325-16353/:16534-16559`)
+  and a6's arm; c36's enter-world re-check survives.** The full
   180-condition notify-path census (the gap list: 20 rows with no complete
   notify path, each with its missing owning system) lives in research/30
   "W4-c36 DOC-SWEEP". 4 witnesses written not run (code-only mode).
+- **RETIRE FINAL-FINAL (W4-c36, 2026-11-21).** The lane retires at the
+  RETIRE (4) commit; code behaviour is exactly `3a64a1b96`'s (the four
+  retire phases are doc-only, witnesses written not run). The final
+  state: the 180-condition census re-swept across ALL 357 pushed tips —
+  **17 rows have no notify path anywhere** (research/30 RETIRE (2));
+  40/43/35 retired onto g90b/f47/c46 live wires; the Gnome 624 + Fairy
+  583-585 kinds landed on d42 `2d7ac08c3` (the conversion/sight seams stay
+  unowned); the roster 17 activates at the d120/d37 merge, 26 waits on
+  the DEAD d43 lane (checkout-only reflog, zero commits — the
+  HIGH-priority d43r fresh-dispatch seed, three published consumers
+  waiting). The 5043 keep-one is f33's full body (the c36 drop-hunk
+  published). The achievement-family merger-bible (the 10-step ordered
+  recipe: e22/g53 data, the notify union, 5043, b3/f47, d20, d120/d37,
+  c24+f30, c37, d43r, the post-merge verify) lives in research/30
+  "W4-c36 RETIRE (4)". All witnesses WRITTEN NOT RUN (code-only).
 - **The menu's `largeForOtherLanguages` flag is always `true`** (`flag = true` in
   `InitializePage`), which is what fixes the row height at `66 + 16 + 20 = 102`
   and the `MinWidth`/`MaxWidth` at 700/900. The in-game arm (`OnActivate`'s
