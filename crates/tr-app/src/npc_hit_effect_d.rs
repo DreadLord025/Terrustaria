@@ -3937,6 +3937,75 @@ fn stylist_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88220
 }
 
+/// The 160 Truffle death (`NPC.cs:88262-88281`, sites 580-584): the 50x
+/// dust-26 burst at (2.5·hd, −2.5) — the mushroom spores, NOT dust-5 —
+/// then 188/189x2/190x2 (shimmer 1366/1367x2/1368x2), scale 1f.
+fn truffle_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88272-88275` — the 50x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if shimmer { (1366, 1367, 1368) } else { (188, 189, 190) };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :88276
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88277
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88278
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88279
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88280
+}
+
+/// The 18 Nurse death (`NPC.cs:88282-88304`, sites 585-589): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head 33
+/// (shimmer 1324, default-0 stand-in) + 34x2 at +20 Y + 35x2 at +34 Y
+/// (shimmer 1326/1327), scale 1f.
+fn nurse_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88292-88295` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88296-88299` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1324 } else { 33 }, 1.0); // :88298
+    let mid = if shimmer { 1326 } else { 34 };
+    let legs = if shimmer { 1327 } else { 35 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88300
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88301
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88302
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88303
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4399,6 +4468,14 @@ pub fn hit_effect_d(
     // the same normal types, different shimmer).
     else if npc_type == 37 || npc_type == 54 {
         old_man_clothier_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88262-88281` — the 160 Truffle arm (sites 580-584).
+    else if npc_type == 160 {
+        truffle_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88282-88304` — the 18 Nurse arm (sites 585-589).
+    else if npc_type == 18 {
+        nurse_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7656,6 +7733,39 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, want, "town {kind} shimmer={shimmer}");
             let mut twin = UnifiedRandom::new(599);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88276-88280` — the Truffle ladder (dust-26 spores);
+    /// `:88298-88303` — the Nurse ladder (altTexture head gate).
+    #[test]
+    fn w4_f5d_the_truffle_and_nurse_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want, dt) in [
+            (160, false, vec![188, 189, 189, 190, 190], 26),
+            (160, true, vec![1366, 1367, 1367, 1368, 1368], 26),
+            (18, false, vec![33, 34, 34, 35, 35], 5),
+            (18, true, vec![1324, 1326, 1326, 1327, 1327], 5),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(601);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let puff = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(puff.dust_type, dt, "town {kind} dust");
+            let mut twin = UnifiedRandom::new(601);
             for _ in 0..50 {
                 twin_dust(&mut twin, 30, 44);
             }
