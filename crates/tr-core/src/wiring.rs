@@ -2028,6 +2028,15 @@ impl Wiring {
             }
         }
         self.gates_done.clear();
+        // `Wiring.cs:714-717` (W4-f11 lifecycle census, fold-133): the
+        // one-iteration teleport block clears at the END of the gate pass —
+        // the plate poke (`PressurePlateHelper.PokeLocation`) and the
+        // PlayerAbove sensor arm set it, and the C# drops it here after the
+        // chained trips ran. Without this the flag latched forever and every
+        // later teleporter pad refused to move the player.
+        if self.block_player_teleportation {
+            self.block_player_teleportation = false;
+        }
     }
 
     /// `Wiring.CheckLogicGate` (`Wiring.cs:733-830`): walk down from the lamp
@@ -3842,11 +3851,20 @@ mod tests {
         // block arms for one iteration, `PokeLocation` `:160`).
         wiring.destroy_plate(&mut w, 10, 20);
         assert!(!wiring.plate_is_pressed(10, 20), "the plate released");
-        assert!(wiring.block_player_teleportation(), "the poke armed the block");
+        // W4-f11 lifecycle fix (fold-133): the block cleared inside the poke's
+        // own `LogicGatePass` tail (`Wiring.cs:714-717`) — the C# flag lives
+        // for exactly that one iteration, not beyond it.
+        assert!(
+            !wiring.block_player_teleportation(),
+            "the gate pass cleared the one-iteration block"
+        );
         // An unpressed plate is a no-op (the `TryGetValue` gate).
-        wiring.set_block_player_teleportation(false);
+        wiring.set_block_player_teleportation(true);
         wiring.destroy_plate(&mut w, 10, 20);
-        assert!(!wiring.block_player_teleportation(), "no poke on an unpressed plate");
+        assert!(
+            wiring.block_player_teleportation(),
+            "no poke on an unpressed plate — the flag is untouched"
+        );
     }
 
     #[test]
