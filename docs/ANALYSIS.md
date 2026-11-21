@@ -39411,3 +39411,27 @@ pirate ladder `:88462-88501` are constant data).
 
 3 witnesses WRITTEN NOT RUN (code-only): the eye trio's 50-count, the
 pirate family's shared census, the Dye/Party girls' 50-count.
+### W4-g59 batch 7 (the final present-clean kinds, 4 kinds)
+
+222 QueenBee (`:87491-87494`, 50× type-18 at `this.alpha`/`this.color`/
+`this.scale`, SpeedX = dir — the 6-gore tail `:87495-87500` is constant
+types), 225 UmbrellaSlime (`:85038-85041`, 50× type-4 tinted
+(0,80,255,100) alpha 100 — the 314 gore is constant), 227 Painter /
+228 WitchDoctor (`:88086`/`:88109`, 50× type-5 2.5×dir/-2.5 — the
+shimmer/altTexture gates are field reads).
+
+All batch-7 gore tails draw NO arguments.
+
+**The lane is complete for the port's kind set**: 64 dust-first clean
+kinds across 7 batches (66 C# types — the 138 arm's gate also carries
+120/137, shared-arm siblings with no port kind row yet). The census's
+109 absent kinds (the worm segments, casters, frost/martian/dd2 families,
+the 195-206/209/217-221/226/229 bands) stay UNWIRED until their kind rows
+land (the S1-F-9b row-gate convention); their arm citations are in the
+census above.
+
+3 witnesses WRITTEN NOT RUN (code-only): the Queen Bee's type-18 census,
+the Umbrella's tinted type-4 census, the Painter/Witch Doctor's 50-count.
+
+**Lane total: 32 witnesses WRITTEN NOT RUN across 7 commits (code-only
+mode — no cargo/rustc/tests invoked).**

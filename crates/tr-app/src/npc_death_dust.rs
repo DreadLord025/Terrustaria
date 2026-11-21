@@ -1,5 +1,6 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-6 (60 kinds).
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-7 (64 kinds — every
+//! dust-first clean kind the port's kind set carries).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -92,6 +93,28 @@
 //!
 //! All batch-6 gore tails draw NO arguments (the eye per-kind types and
 //! the pirate ladder `:88462-88501` are constant data).
+//!
+//! ## Scope — batch 7 (the final present-clean kinds)
+//!
+//! | C# type(s) | port kind(s) | death arm | shape |
+//! | --- | --- | --- | --- |
+//! | 222 | QueenBee | `:87491-87494` | 50× type-18 alpha/color/scale, dir |
+//! | 225 | UmbrellaSlime | `:85038-85041` | 50× type-4 tinted (0,80,255,100) |
+//! | 227/228 | Painter/WitchDoctor | `:88086`/`:88109` | 50× type-5, 2.5×dir/-2.5 |
+//!
+//! All batch-7 gore tails draw NO arguments (the Queen Bee's 6-gore
+//! ladder `:87495-87500`, the Umbrella's 314 and the painter/witch
+//! shimmer gates are constant data / field reads).
+//!
+//! ## The lane's remainder (the census's absent kinds)
+//!
+//! The 173-kind dust-first clean census has 109 kinds with NO port kind
+//! row (the worm segments 8/9/11/12/14/15, the casters 31/37/39-41/43,
+//! the frost/martian/dd2 families, the 195-206/209/217-221/226/229
+//! bands, …). Their arms stay UNWIRED until the kind lands (the S1-F-9b
+//! row-gate convention); the census rows + arm citations live in
+//! docs/ANALYSIS.md. The 20 dust-only kinds' absent members (34/63/75/
+//! 112/120/122/137/141/169/204) are the same remainder.
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
@@ -535,6 +558,41 @@ pub fn death_dust(
         // puffs at 2.5×dir/-2.5 (the per-kind gore ladder `:88462-88501`
         // is constant data).
         212 | 213 | 214 | 215 | 216 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // ---- batch 7 (the Queen Bee, the umbrella slime, the painter/
+        // witch doctor — the final present-clean kinds).
+        // `NPC.cs:87491-87494` — the Queen Bee (222): 50 type-18 puffs at
+        // `this.alpha`/`this.color`/`this.scale`, SpeedX = dir (the
+        // 6-gore tail `:87495-87500` is constant types).
+        222 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 18, dir, -2.0,
+                    npc.alpha as i32, Color::default(), npc.scale,
+                );
+            }
+        }
+        // `NPC.cs:85038-85041` — the Umbrella Slime (225): 50 type-4
+        // puffs at 2×dir/-2, alpha 100, tinted (0,80,255,100) (the 314
+        // gore is a constant type).
+        225 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 4, 2.0 * dir, -2.0, 100,
+                    Color::new(0, 80, 255, 100), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:88086-88089` / `:88109-88112` — the Painter (227) /
+        // Witch Doctor (228): 50 type-5 puffs at 2.5×dir/-2.5 (the
+        // shimmer/altTexture gore gates are field reads).
+        227 | 228 => {
             for _ in 0..50 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
@@ -1232,6 +1290,54 @@ mod tests {
             let n = corpse(kind);
             let mut dust = DustPool::new();
             let mut rng = UnifiedRandom::new(113);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+        }
+    }
+
+    /// `NPC.cs:87491-87494` — the Queen Bee: 50 type-18 puffs at
+    /// `this.alpha`/`this.scale`, SpeedX = dir (the type-18 shape).
+    #[test]
+    fn w4_g59_the_queen_bee_death_draws_fifty_type_eighteens() {
+        let w = air();
+        let n = corpse(NpcKind::QueenBee);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(127);
+        assert!(death_dust(&n, 222, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 18));
+    }
+
+    /// `NPC.cs:85038-85041` — the Umbrella Slime: 50 type-4 puffs at
+    /// 2×dir/-2, alpha 100, tinted (0,80,255,100).
+    #[test]
+    fn w4_g59_the_umbrella_slime_death_draws_tinted_fours() {
+        let w = air();
+        let n = corpse(NpcKind::UmbrellaSlime);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(131);
+        assert!(death_dust(&n, 225, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        for d in &live {
+            assert_eq!(d.dust_type, 4);
+            assert_eq!(d.alpha, 100);
+            assert_eq!(d.color, Color::new(0, 80, 255, 100));
+        }
+    }
+
+    /// `NPC.cs:88086-88089` / `:88109-88112` — the Painter / Witch
+    /// Doctor: 50 type-5 puffs at 2.5×dir/-2.5 each.
+    #[test]
+    fn w4_g59_the_painter_and_witch_doctor_draw_fifty() {
+        let w = air();
+        for (kind, ty) in [(NpcKind::Painter, 227), (NpcKind::WitchDoctor, 228)] {
+            let n = corpse(kind);
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(137);
             assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
             let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 50);
