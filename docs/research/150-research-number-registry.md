@@ -1204,7 +1204,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 355 | d11 | 355-w4-d11-retire-final | DONE 7820a9466 |
 | 356 | c11 | 356-c11-martian-turret-final | DONE 466ffcae1 |
 | 357 | e26 | 357-e26-luck-final-census | DONE 35de96a5e |
-| 358 | g15 | 77-doc-sweep-items (§7.3's 284 target voided: 284=g52) | NEW rename owed |
+| 358 | g15 | 358-doc-sweep-items | DONE 353bf7582 |
 | 359 | g51 | 359-g51-net-te-family-seal | DONE 77db84121 |
 | 360 | g10 | 360-g10-pets-final (7414ba339) | KEEP (first-add wins the ≥360 rule) |
 | 361 | d5 | 361-projectile-ai-41-50-final | DONE 0a1e4daa8 |
@@ -1221,3 +1221,12 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 - e26's 248 doc: g82's reservation wins (§6.3); e26→357 (not 333).
 - d13 has TWO docs: pet-light FINAL→336, band-final→353.
 - Merger dedupes filenames by THIS table. Chain-banners must cite §9.
+
+### §9.4 — EXECUTION COMPLETE (49/49)
+
+All §9.2 rename rows are EXECUTED and pushed (verified per-lane reports +
+zero-stale greps). The registry race is CLOSED. Remaining number-claim rule:
+new docs ≥367 require a Lead assignment appended here; NO self-picks.
+Orch note: d54's orch_dust*.rs modules carry the e4-reserved first-40 +
+union steps; the 24-arm router remainder (orch_dispatch.rs, d54j catalog)
+is in flight as a separate dispatch.
