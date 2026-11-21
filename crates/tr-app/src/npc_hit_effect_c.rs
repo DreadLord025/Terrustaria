@@ -252,6 +252,7 @@
 //! | 1299-1308 | `:88698-88721` | the 269-276/281-286 armored-bones block (5 shared gores + 5 per-type +20 extras) |
 //! | 1309-1317 | `:88759-88815` | the 341 PresentMimic + 85/629 Mimic + 473-476 BigMimic deaths (3 smoke gores each) |
 //! | 1318-1325 | `:88858-88887` | the 170/180 + 171 Pigron deaths (4 gores each at Y+h/2-10) |
+//! | 1326-1334 | `:88901-88956` | the 290 Paladin (3 random gores) + 87-92 Wyvern (N random gores) + 78-80/630 Mummy (smoke trio) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7798,6 +7799,116 @@ fn pigron_hallow_death(
     }
 }
 
+/// The 290 Paladin death (`NPC.cs:88895-88906`, sites 1326-1328): the
+/// 10-dust type-16 burst (scale 1.5, velocity ×2, noGravity post-writes),
+/// then 3 gores at Y+0/+20/+40, velocity `default` (Zero), type
+/// `Next(11, 14)` drawn per gore, then `velocity *= 0.5` post-write, at
+/// `this.scale`.
+fn paladin_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:88895-88900` — the 10-dust type-16 burst.
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:88901-88906` — the 3 random-type gores at the +0/+20/+40 ladder.
+    let s = npc.scale;
+    for dy in [0.0, 20.0, 40.0] {
+        let ty = rng.next_range(11, 14);
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), Vec2::ZERO, ty, s);
+        gore.slot_mut(idx).velocity *= 0.5;
+    }
+}
+
+/// The 87-92 Wyvern death (`NPC.cs:88921-88932`, sites 1329-1331, N+): the
+/// 10-dust type-16 burst (scale 1.5, velocity ×2, noGravity post-writes),
+/// then `num742 = Next(1, 4)` gores (1-3, the count draw fires FIRST) at
+/// `(pos.X, pos.Y + height/2 - 10)`, velocity `(hitDirection, 0)`, type
+/// `Next(11, 14)` drawn per gore, then `velocity *= 0.8` post-write, at
+/// `this.scale`.
+fn wyvern_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:88921-88926` — the 10-dust type-16 burst.
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    // `:88927-88932` — the count draw, then the per-gore type draws.
+    let count = rng.next_range(1, 4);
+    let anchor = Vec2::new(pos.x, pos.y + (h as i32 / 2) as f32 - 10.0);
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    for _ in 0..count {
+        let ty = rng.next_range(11, 14);
+        let idx = gore.new_gore(rng, world, anchor, vel, ty, s);
+        gore.slot_mut(idx).velocity *= 0.8;
+    }
+}
+
+/// The 78/79/80/630 Mummy death (`NPC.cs:88946-88957`, sites 1332-1334):
+/// the 20-dust type-31 burst (scale 1.5, velocity ×2, noGravity
+/// post-writes), then the smoke trio at `this.scale` — 61 at Y−10, 62 at
+/// Y+height/2−10 (the C# integer half), 63 at Y+height−10 — velocity
+/// `(hitDirection, 0)` then `velocity *= 0.3` post-write.
+fn mummy_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:88946-88951` — the 20-dust type-31 burst.
+    for _ in 0..20 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 0,
+            Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    let top = Vec2::new(pos.x, pos.y - 10.0);
+    let mid = Vec2::new(pos.x, pos.y + (h as i32 / 2) as f32 - 10.0);
+    let bot = Vec2::new(pos.x, pos.y + h - 10.0);
+    for (anchor, ty) in [(top, 61), (mid, 62), (bot, 63)] {
+        let idx = gore.new_gore(rng, world, anchor, vel, ty, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8751,6 +8862,18 @@ pub fn hit_effect_c(
     // `:88862-88890` — the 171 PigronHallow arm (sites 1322-1325).
     if npc_type == 171 && npc.hp <= 0 {
         pigron_hallow_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88891-88908` — the 290 Paladin arm (sites 1326-1328).
+    if npc_type == 290 && npc.hp <= 0 {
+        paladin_death(npc, dust, dust_ctx, gore, rng, world);
+    }
+    // `:88909-88933` — the 87-92 Wyvern arm (sites 1329-1331, N+).
+    if (87..=92).contains(&npc_type) && npc.hp <= 0 {
+        wyvern_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88934-88958` — the 78/79/80/630 Mummy arm (sites 1332-1334).
+    if (npc_type == 78 || npc_type == 79 || npc_type == 80 || npc_type == 630) && npc.hp <= 0 {
+        mummy_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -13750,6 +13873,95 @@ mod tests {
         let _ky = twin.next_range(10, 31);
         let _kx = twin.next_range(-20, 21);
         assert_eq!(rng.peek(), twin.peek(), "the pigron hallow mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88901-88906` — the Paladin death: 3 Next(11,14) gores at
+    /// Y+0/+20/+40, Zero velocity, ×0.5 post-write. The twin pins the type
+    /// draw BEFORE each gore's kicks.
+    #[test]
+    fn w4_f10_the_paladin_death_spawns_the_random_trio() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1399);
+        paladin_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        // The twin: 10 type-16 dusts (6 default-block draws) then per gore
+        // the type draw + 2 kicks.
+        let mut twin = UnifiedRandom::new(1399);
+        for _ in 0..10 {
+            let _px = twin.next_max(40 - 4);
+            let _py = twin.next_max(56 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for (i, dy) in [0.0, 20.0, 40.0].iter().enumerate() {
+            let ty = twin.next_range(11, 14);
+            assert_eq!(gore.slot(i).gore_type, ty);
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy));
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).velocity.x, kx * 0.5);
+            assert_eq!(gore.slot(i).velocity.y, -ky * 0.5);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the paladin mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88927-88931` — the Wyvern death: the count draw Next(1,4)
+    /// fires FIRST, then per gore the Next(11,14) type draw + 2 kicks;
+    /// velocity (hitDirection,0) rides inside the ×0.8 post-write.
+    #[test]
+    fn w4_f10_the_wyvern_death_draws_the_count_first() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1409);
+        wyvern_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let mut twin = UnifiedRandom::new(1409);
+        for _ in 0..10 {
+            let _px = twin.next_max(40 - 4);
+            let _py = twin.next_max(56 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        let count = twin.next_range(1, 4);
+        let active = gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(active, count as usize);
+        for i in 0..count as usize {
+            let ty = twin.next_range(11, 14);
+            assert_eq!(gore.slot(i).gore_type, ty);
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 118.0));
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).velocity.x, (1.0 + kx) * 0.8);
+            assert_eq!(gore.slot(i).velocity.y, -ky * 0.8);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the wyvern mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88952-88957` — the Mummy death: the smoke trio 61/62/63 at
+    /// Y−10 / Y+height/2−10 / Y+height−10 after the type-31 burst.
+    #[test]
+    fn w4_f10_the_mummy_death_spawns_the_smoke_trio() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1423);
+        mummy_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![61, 62, 63]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 90.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 118.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 146.0));
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.dust_type, 31);
+        assert!(d.no_gravity);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
