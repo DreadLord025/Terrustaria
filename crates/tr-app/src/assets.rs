@@ -510,6 +510,28 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Armor/Armor_2",
         "Armor/Armor_3",
         "Armor/Armor_4",
+        // W4-d115 wiring round — the Acc_Neck layer family
+        // (`TextureAssets.AccNeck[n]` = `Images/Acc_Neck_{n}`,
+        // `AssetInitializer.cs:223-226`; `ArmorIDs.Neck.Count` = 15,
+        // `ArmorIDs.cs:2325`). Index 0 has no file (the empty slot —
+        // `DrawPlayer_20_NeckAcc` gates `neck > 0`, `PlayerDrawLayers.cs:
+        // 2028`); 1..14 are the fourteen neck accessories (the Cross
+        // Necklace 554 rides slot 2, `Item.cs:7992`). The layer draws the
+        // body frame at the torso anchor (`PlayerDrawLayers.cs:2030`).
+        "Acc_Neck_1",
+        "Acc_Neck_2",
+        "Acc_Neck_3",
+        "Acc_Neck_4",
+        "Acc_Neck_5",
+        "Acc_Neck_6",
+        "Acc_Neck_7",
+        "Acc_Neck_8",
+        "Acc_Neck_9",
+        "Acc_Neck_10",
+        "Acc_Neck_11",
+        "Acc_Neck_12",
+        "Acc_Neck_13",
+        "Acc_Neck_14",
         "NPC_1",
         "NPC_22",
         "NPC_21",

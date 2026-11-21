@@ -40,6 +40,11 @@ pub(crate) enum PlayerPart {
     Pants,
     Shoes,
     Shirt,
+    /// W4-d115 wiring round — `DrawPlayer_20_NeckAcc`
+    /// (`PlayerDrawLayers.cs:2026-2034`): the `AccNeck[neck]` sprite at
+    /// the torso anchor, between the waist layer and the head
+    /// (`LegacyPlayerRenderer.cs:210-214`).
+    NeckAcc,
     Head,
     EyeWhites,
     Eyes,
@@ -203,6 +208,13 @@ pub(crate) struct PlayerCompositeState {
     pub(crate) body_armor: i16,
     /// `Player.legs` — the leg armor's slot; replaces the pants sprite.
     pub(crate) leg_armor: i16,
+    /// W4-d115 wiring round — `Player.neck` (`Player.cs:1686`): the
+    /// visible neck accessory's slot (−1 = none, 1..14 = `ArmorIDs.Neck`);
+    /// `DrawPlayer_20_NeckAcc` gates `0 < neck < 15`
+    /// (`PlayerDrawLayers.cs:2028`).
+    pub(crate) neck: i32,
+    /// `Player.cNeck` — the neck layer's dye shader (0 = plain).
+    pub(crate) c_neck: u32,
     /// `Player.compositeFrontArm` (`Player.cs:1906`).
     pub(crate) front_arm: CompositeArmState,
     /// `Player.compositeBackArm`.
@@ -797,6 +809,30 @@ pub(crate) fn body_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<Lay
             },
         ),
     );
+    // W4-d115 wiring round — 20_NeckAcc (`PlayerDrawLayers.cs:2026-2034`,
+    // `LegacyPlayerRenderer.cs:210-211`: after 19_WaistAcc, before
+    // 21_Head): `AccNeck[neck]` draws the BODY frame at the torso anchor
+    // (`(int)(Position.X − screenX − bodyFrame.Width/2 + width/2)`,
+    // `(int)(Position.Y − screenY + height − bodyFrame.Height + 4)` +
+    // `bodyPosition` + `(bodyFrame.Width/2, bodyFrame.Height/2)` — the
+    // port's 40x56 box collapses it to the plain torso anchor), tinted
+    // `colorArmorBody` (the armor-white light tint), `bodyRotation` (0 —
+    // `ResetEffects` `:37586`, the sleeping pose rotates the whole set
+    // afterwards), `playerEffect` flip. The gate is `neck > 0 && neck <
+    // ArmorIDs.Neck.Count` (`:2028`). The torso sandwich's `torsoOffset`
+    // rides it (the seated drop — the layer sits inside the
+    // TorsoPlus/Minus pair, `:205-215`).
+    if s.neck > 0 && s.neck < crate::id_tables::ARMOR_NECK_COUNT {
+        push_part(
+            &mut out,
+            PlayerPart::NeckAcc,
+            a.acc_neck.get(s.neck as usize).copied().flatten(),
+            |t| flip_uv(player_frame_uv(t, s.body_frame), flip),
+            part_pos(s, shift, [0.0, 0.0], 0.0),
+            0.0,
+            tint(s.light, ARMOR_WHITE),
+        );
+    }
     // 21_Head: head, eye whites, eyes, hair — the whole block sits inside
     // the torso sandwich (`LegacyPlayerRenderer.cs:205-225`), so the seated
     // drop rides along.
@@ -1495,6 +1531,7 @@ fn apply_dye(layers: &mut [LayerSprite], s: &PlayerCompositeState) {
             | PlayerPart::FrontArmArmor
             | PlayerPart::FrontShoulderArmor => s.c_body,
             PlayerPart::Pants => s.c_legs,
+            PlayerPart::NeckAcc => s.c_neck,
             PlayerPart::Mount => s.c_mount,
             _ => 0,
         };
@@ -2142,6 +2179,7 @@ mod tests {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            acc_neck: [None; 15],
             mount_back: [Some(sheet()); crate::mount::MOUNT_COUNT],
             mount_front: [Some(sheet()); crate::mount::MOUNT_COUNT],
         }
@@ -2169,6 +2207,8 @@ mod tests {
             head_armor: -1,
             body_armor: -1,
             leg_armor: -1,
+            neck: -1,
+            c_neck: 0,
             front_arm: CompositeArmState::DISABLED,
             back_arm: CompositeArmState::DISABLED,
             mount: None,
@@ -2341,6 +2381,52 @@ mod tests {
                 PlayerPart::Hair,
             ]
         );
+    }
+
+    /// W4-d115 wiring round — the Acc_Neck layer
+    /// (`DrawPlayer_20_NeckAcc`, `PlayerDrawLayers.cs:2026-2034`): the
+    /// gate is `0 < neck < 15`, the sprite draws the BODY frame at the
+    /// torso anchor between the shirt torso and the head
+    /// (`LegacyPlayerRenderer.cs:208-214`), tinted `colorArmorBody`
+    /// (armor-white × light) and flipped with `playerEffect`; the dye
+    /// rides `cNeck` (`apply_dye`).
+    #[test]
+    fn w4_d115_wiring_the_neck_layer_gates_and_slots_between_torso_and_head() {
+        let mut a = fixture();
+        a.acc_neck[2] = Some(sheet()); // the Cross Necklace's slot
+        let mut s = state();
+        // No neck: nothing draws (the :2028 gate).
+        assert!(!parts(&body_layers(&s, &a)).contains(&PlayerPart::NeckAcc));
+        s.neck = 2;
+        let layers = body_layers(&s, &a);
+        let ps = parts(&layers);
+        let shirt = ps.iter().position(|p| *p == PlayerPart::Shirt).unwrap();
+        let neck = ps.iter().position(|p| *p == PlayerPart::NeckAcc).unwrap();
+        let head = ps.iter().position(|p| *p == PlayerPart::Head).unwrap();
+        assert!(shirt < neck && neck < head, "20_NeckAcc sits 17_Torso < 20 < 21_Head");
+        let layer = &layers[neck];
+        // The torso anchor: the same box position as the shirt torso.
+        let torso = &layers[shirt];
+        assert_eq!(layer.pos, torso.pos, "the body-frame anchor (:2030)");
+        assert_eq!(layer.size, [40.0, 56.0]);
+        // colorArmorBody = the armor-white light tint (state light 1,1,1).
+        assert_eq!(layer.color, [1.0, 1.0, 1.0, 1.0]);
+        // The flip mirrors the UVs (playerEffect, :2030).
+        s.facing = -1.0;
+        let flipped = body_layers(&s, &a);
+        let fl = &flipped[parts(&flipped).iter().position(|p| *p == PlayerPart::NeckAcc).unwrap()];
+        assert!(fl.uv[0] > fl.uv[2], "the left-facing mirror");
+        // Out-of-range slots never draw (the < Count gate).
+        s.neck = 15;
+        assert!(!parts(&body_layers(&s, &a)).contains(&PlayerPart::NeckAcc));
+        s.neck = 0;
+        assert!(!parts(&body_layers(&s, &a)).contains(&PlayerPart::NeckAcc));
+        // The dye rides cNeck through apply_dye.
+        s.neck = 2;
+        s.c_neck = 7;
+        let mut full = assemble_layers(&s, &a);
+        let n = full.iter_mut().find(|l| l.part == PlayerPart::NeckAcc).unwrap();
+        assert_eq!(n.dye, 7, "item.shader = drawinfo.cNeck (:2031)");
     }
 
     #[test]
@@ -2976,6 +3062,7 @@ mod player_draw_tests {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            acc_neck: [None; 15],
             mount_back: std::array::from_fn(|_| None),
             mount_front: std::array::from_fn(|_| None),
         }
@@ -3004,6 +3091,8 @@ mod player_draw_tests {
             head_armor: -1,
             body_armor: -1,
             leg_armor: -1,
+            neck: -1,
+            c_neck: 0,
             front_arm: crate::player::CompositeArmState::DISABLED,
             back_arm: crate::player::CompositeArmState::DISABLED,
             c_head: 0,

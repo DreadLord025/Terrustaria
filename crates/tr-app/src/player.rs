@@ -1225,6 +1225,24 @@ pub struct Player {
     /// (`Item.legSlot`). The Moon Lord carve-out (`140`) and the sitting
     /// carve-out (`217`) read it; `0` = the default legs sheet.
     pub legs_armor: i32,
+    /// `Player.neck` (`Player.cs:1686`, init −1): the visible neck
+    /// accessory's `Item.neckSlot` (`ArmorIDs.Neck`, 1..14). W4-d115
+    /// wiring round — the Acc_Neck layer family's sim half:
+    /// `ResetVisibleAccessories` (`:31135`, called from `ResetEffects`
+    /// `:25624`) clears it to −1 each tick, `UpdateVisibleAccessories`
+    /// (`:36753-36805`, called from `PlayerFrame` `:35770` while alive)
+    /// re-derives it: the LAST visible slot with `neckSlot > 0` wins
+    /// (`UpdateVisibleAccessory` `:36927-36930` — functional slots 3..10
+    /// gated `!hideVisibleAccessory[i]`, then vanity slots 13..20
+    /// unconditionally). The draw layer (`DrawPlayer_20_NeckAcc`,
+    /// `PlayerDrawLayers.cs:2026-2034`) gates `0 < neck < 15`.
+    pub neck: i32,
+    /// `Player.cNeck` (`Player.cs:2938`): the neck layer's dye shader —
+    /// `UpdateItemDye`'s `neckSlot` arm (`:9683-9686`) stamps the slot's
+    /// dye; the port derives it beside `neck` (the hidden functional
+    /// slot's early-return `:9628-9631` keeps its dye out, the vanity
+    /// slot's dye overrides).
+    pub c_neck: u32,
     /// The held-item half of `PlayerFrame()` - the C# reads
     /// `inventory[selectedItem]` directly, the port feeds the summary in from
     /// the app before the tick (`world_sim/player.rs`).
@@ -2681,6 +2699,8 @@ impl Player {
             sand_storm: false,
             carpet_frame: -1,
             legs_armor: 0,
+            neck: -1,
+            c_neck: 0,
             frame_inputs: FrameInputs::default(),
             melee_npc_hit_cooldown: std::collections::HashMap::new(),
             wet: false,
@@ -6306,6 +6326,12 @@ impl Player {
         self.black_belt = false;
         self.mystic_sash_dodge = false;
         self.long_invince = false;
+        // W4-d115 wiring round — `ResetVisibleAccessories`' neck clear
+        // (`Player.cs:25624` → `:31135`, `neck = -1`) and `UpdateDyes`'
+        // `cNeck = 0` (`:9590`): the Acc_Neck layer's per-tick reset;
+        // `update_visible_neck_accessory` re-derives both in PlayerFrame.
+        self.neck = -1;
+        self.c_neck = 0;
         // W4-d115 — `ResetEffects`' `onHitDodge = false` (`Player.cs:18443`):
         // the Hallowed set rows re-arm it in `apply_armor_set_bonuses`.
         self.on_hit_dodge = false;
@@ -7860,6 +7886,62 @@ impl Player {
         }
     }
 
+    /// W4-d115 wiring round — the Acc_Neck layer family's sim half:
+    /// `Player.UpdateVisibleAccessories` (`Player.cs:36753-36805`)'s neck
+    /// arm. The functional loop (slots 3..10, `IsItemSlotUnlockedAndUsable`
+    /// gated, `!hideVisibleAccessory[i]` at `:36790-36793`) then the vanity
+    /// loop (slots 13..20, unconditional `:36795-36805`) each call
+    /// `UpdateVisibleAccessory`, whose `neckSlot > 0` arm (`:36927-36930`)
+    /// overwrites `neck` — LAST visible slot wins. `ItemIsVisuallyIncompatible`
+    /// (`:36835-36858`) never rejects a neck item (its five gates read
+    /// shield/back/shoe/balloon slots only). The dye mirrors `UpdateItemDye`'s
+    /// neck arm (`:9683-9686`) with the hidden-functional early-return
+    /// (`:9628-9631` — a neck item is never a wing/934/4341/5126/4563/1987,
+    /// so `flag = isNotInVanitySlot & isSetToHidden` skips its dye); the
+    /// vanity slot's dye overrides. `ResetEffects`' `ResetVisibleAccessories`
+    /// (`:25624` → `:31135`) clears `neck = -1` each tick and `UpdateDyes`
+    /// (`:9590`) zeroes `cNeck` — the port clears both at the fold head.
+    fn update_visible_neck_accessory(&mut self) {
+        // The per-slot fold: (slot, dye-slot index, hidden-gate). The
+        // functional slots read `hide_visible_accessory[slot]`; the vanity
+        // slots (13..20 → dye index slot−10) never hide (`:36795-36805`
+        // has no hide gate, `UpdateItemDye`'s `isSetToHidden` is
+        // `hideVisibleAccessory[num]` but `isNotInVanitySlot` is false).
+        let mut pick = |kind: u16, dye_kind: u16, hidden_functional: bool, neck: &mut i32, c: &mut u32| {
+            let slot = crate::id_tables::item_neck_slot(kind);
+            if slot > 0 {
+                *neck = slot;
+                if !hidden_functional {
+                    *c = dye::shader_id_for(dye_kind);
+                }
+            }
+        };
+        let mut neck = -1;
+        let mut c_neck = 0;
+        for i in 3..10 {
+            if !self.is_item_slot_unlocked_and_usable(i) {
+                continue;
+            }
+            let kind = self.equipped[i];
+            if kind == 0 {
+                continue;
+            }
+            pick(kind, self.dye_slots[i], self.hide_visible_accessory[i], &mut neck, &mut c_neck);
+        }
+        for j in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(j) {
+                continue;
+            }
+            let kind = self.equipped[j];
+            if kind == 0 {
+                continue;
+            }
+            pick(kind, self.dye_slots[j - 10], false, &mut neck, &mut c_neck);
+        }
+        self.neck = neck;
+        self.c_neck = c_neck;
+    }
+
     /// `PlayerFrame()` (`Player.cs:35755-36647`) — the legs and body rows of
     /// every pose. The chain order is the vanilla one: the swim window, the
     /// mount animator (`flag7` plus `DoesNotOverrideLegFrames`), the leg rows,
@@ -7877,6 +7959,14 @@ impl Player {
     /// pulley/rope item (`pulley`) and the raised shield (`shield_raised`).
     fn update_frames(&mut self, world: &World) {
         let held = self.frame_inputs;
+        // W4-d115 wiring round — `PlayerFrame`'s visible-accessory call
+        // (`Player.cs:35768-35771`): `if (!dead) UpdateVisibleAccessories()`.
+        // The port's neck half re-derives `neck`/`c_neck` here; the rest
+        // of the family (wings/shoe/waist/shield/face/balloon/back) waits
+        // for its draw layers (the Acc_Neck census, ANALYSIS).
+        if !self.dead {
+            self.update_visible_neck_accessory();
+        }
         // `:35947-35949`: `PlayerFrame` re-derives the fast-run footstep cue
         // every frame — the default is the legacy Run (17, style -1, cooldown
         // 9); the Moon Lord legs (140) swap in the Item-24 click at cooldown 6
@@ -19769,6 +19859,68 @@ mod tests {
         assert_ne!(p.render_key(), base, "the brain counter rides the key");
         p.brain_of_confusion_dodge_animation_counter = 0;
         assert_eq!(p.render_key(), base, "a ghost-free player keeps the old key");
+    }
+
+    /// W4-d115 wiring round — the Acc_Neck sim half: the Cross Necklace
+    /// 554 arms `neck = 2` (`Item.cs:7992` → `UpdateVisibleAccessory`
+    /// `:36927-36930`), the LAST visible slot wins (`:36755-36805`'s two
+    /// loops), the hide flag drops the functional slot, the vanity slot
+    /// overrides unconditionally, and the per-tick reset clears to −1
+    /// when the item comes off (`ResetVisibleAccessories` `:31135`).
+    #[test]
+    fn w4_d115_wiring_the_neck_slot_rederives_from_the_visible_slots() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert_eq!(p.neck, -1, "the spawn default (Player.cs:1686)");
+        p.equipped[3] = 554; // the Cross Necklace, neckSlot 2
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "554 → neckSlot 2 (Item.cs:7992)");
+        // A second neck item in a later slot wins (last-write, :36929).
+        p.equipped[4] = 3212; // Shark Tooth Necklace, neckSlot 7
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 7, "the later slot overwrites (:36927-36930)");
+        // Hiding the later slot falls back to the earlier one.
+        p.hide_visible_accessory[4] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "the hidden slot is skipped (:36790)");
+        // The vanity slot (13..20) overrides unconditionally (:36795-36805).
+        p.equipped[13] = 1303; // Jellyfish Necklace, neckSlot 1
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 1, "the vanity loop runs after the functional one");
+        // Taking everything off resets to −1 (ResetVisibleAccessories).
+        p.equipped = [0; 20];
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, -1, "the per-tick reset clears (:31135)");
+        // A non-neck accessory never arms the layer.
+        p.equipped[3] = 963; // the Black Belt — no neckSlot
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, -1);
+    }
+
+    /// W4-d115 wiring round — the neck dye mirrors `UpdateItemDye`'s
+    /// neck arm (`Player.cs:9683-9686`): the visible slot's dye stamps
+    /// `cNeck`, the hidden functional slot's early-return (`:9628-9631`)
+    /// keeps its dye out, the vanity slot's dye overrides.
+    #[test]
+    fn w4_d115_wiring_the_neck_dye_follows_the_visible_slot() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 554;
+        p.dye_slots[3] = 1007; // Red Dye (the update_dye_cache witness's kind)
+        p.update(&w, PlayerInput::default());
+        let dyed = p.c_neck;
+        assert!(dyed != 0, "the visible slot's dye stamps cNeck (:9685)");
+        // Hidden: the dye stays out (the :9628-9631 early-return).
+        p.hide_visible_accessory[3] = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.c_neck, 0, "the hidden functional slot keeps its dye out");
+        assert_eq!(p.neck, -1, "and the layer itself hides");
+        // The vanity slot's dye overrides even while the functional hides.
+        p.equipped[13] = 554;
+        p.dye_slots[3] = 1015; // Blue Dye on the vanity slot (13 − 10 = 3)
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.neck, 2, "the vanity neck shows");
+        assert!(p.c_neck != 0 && p.c_neck != dyed, "the vanity dye overrides");
     }
 
     // -- S1-P-i41: mount item use + data witnesses ---------------------------

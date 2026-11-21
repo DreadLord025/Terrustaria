@@ -50,6 +50,13 @@ pub(crate) struct PlayerAssets {
     pub(crate) armor_head: [Option<BgTex>; 5],
     pub(crate) armor_body: [Option<BgTex>; 5],
     pub(crate) armor_legs: [Option<BgTex>; 5],
+    /// W4-d115 wiring round — the Acc_Neck layer family
+    /// (`TextureAssets.AccNeck[n]` = `Images/Acc_Neck_{n}`,
+    /// `AssetInitializer.cs:223-226`), indexed by `ArmorIDs.Neck` slot
+    /// 1..14 (`ARMOR_NECK_COUNT` = 15; index 0 is the empty slot — the
+    /// layer gates `neck > 0`, `PlayerDrawLayers.cs:2028`). The Cross
+    /// Necklace 554 rides slot 2 (`Item.cs:7992`).
+    pub(crate) acc_neck: [Option<BgTex>; 15],
     /// The mount sheets, indexed by [`crate::mount::mount_index`]: the back
     /// strips (`MountData.backTexture`) and the front strips
     /// (`frontTexture`) of the ground + hover/flyer + cart sets.
@@ -76,6 +83,7 @@ impl Default for PlayerAssets {
             armor_head: [None; 5],
             armor_body: [None; 5],
             armor_legs: [None; 5],
+            acc_neck: [None; 15],
             mount_back: [None; crate::mount::MOUNT_COUNT],
             mount_front: [None; crate::mount::MOUNT_COUNT],
         }
@@ -127,6 +135,17 @@ pub(crate) fn make_player_assets(atlas: &Atlas) -> PlayerAssets {
             body
         },
         armor_legs: armor_sheets("Armor_Legs"),
+        // W4-d115 wiring round — the Acc_Neck strips (`AssetInitializer.cs:
+        // 223-226`): the file number is the neck slot, 1..14 (index 0 has
+        // no file — the empty slot). A missing file stays `None` and the
+        // layer skips it.
+        acc_neck: std::array::from_fn(|slot| {
+            if slot == 0 {
+                None
+            } else {
+                sky_tex(atlas, &format!("Acc_Neck_{slot}"), None)
+            }
+        }),
         // The mount strips resolve by the rows' own sheet names (`Mount.cs:
         // 696-2567`); a missing file stays `None` and the draw skips it.
         mount_back: std::array::from_fn(|i| {
@@ -1706,6 +1725,10 @@ pub(crate) fn player_draw_layers(
         head_armor,
         body_armor,
         leg_armor,
+        // W4-d115 wiring round — the Acc_Neck layer's inputs: the sim's
+        // `update_visible_neck_accessory` re-derives both per tick.
+        neck: player.neck,
+        c_neck: player.c_neck,
         // The live `Player.compositeFrontArm`/`compositeBackArm`
         // (`Player.cs:1906`) — the sim assigns them per `useStyle`/`holdStyle`
         // (the S1-G-16 swing parity); the renderer's composite machine
@@ -3804,6 +3827,13 @@ mod anchor_tests {
             ML_EYE_SHEET,
         ] {
             assert!(packed(name), "{name} is asked for by the Moon Lord's parts");
+        }
+        // W4-d115 wiring round: `make_player_assets` asks `Acc_Neck_{1..14}`
+        // for the neck layer (AssetInitializer.cs:223-226, ArmorIDs.Neck.Count
+        // = 15 with slot 0 the empty file-less index).
+        for slot in 1..crate::id_tables::ARMOR_NECK_COUNT {
+            let name = format!("Acc_Neck_{slot}");
+            assert!(packed(&name), "{name} is asked for by the neck layer but never packed");
         }
         // Every lunar kind must resolve to a sheet the pillar set carries —
         // `npc_sheet(texture_net_id(kind))` is the draw's only source.

@@ -1702,6 +1702,55 @@ pub const ARMOR_NECK: &[(i32, &str)] = &[
 /// `ArmorIDs.Neck.Count` (`ArmorIDs.cs`): 15.
 pub const ARMOR_NECK_COUNT: i32 = 15;
 
+/// W4-d115 wiring round — the `Item.neckSlot` census: EVERY `neckSlot =`
+/// assignment in `Item.cs` (the generated `ItemDef` carries no neck
+/// slot, so the table lives here — the `ARMOR_NECK` convention).
+/// `(item_id, neckSlot, Item.cs line)`:
+/// * 554 Cross Necklace → 2 (`:7992`) — the dodge family's parry item;
+/// * 862 Star Veil → 5 (`:11476`);
+/// * 1158 Pygmy Necklace → 4 (`:14256`);
+/// * 1290 Panic Necklace → 3 (`:15955`);
+/// * 1303 Jellyfish Necklace → 1 (`:16111`);
+/// * 1578 Sweetheart Necklace → 6 (`:18924`);
+/// * 3212 Shark Tooth Necklace → 7 (`:28976`);
+/// * 3224 Worm Scarf → 8 (`:29756`, expert);
+/// * 3809 Apprentice Scarf → 9 (`:33719`);
+/// * 4007 Stinger Necklace → 10 (`:35559`);
+/// * 4038 Molten Charm → 12 (`:35570`);
+/// * 5107 Magiluminescence → 11 (`:40917`);
+/// * 6180 Seraph Necklace → 14 (`:47603`);
+/// * 6187 Crossed Heart Necklace → 13 (`:47640`).
+/// The default is −1 (`Item.cs:227`); the `SetDefaults` epilogue reset
+/// (`:49041`) only re-defaults air items. `ArmorIDs.Neck.Sets.IsAScarf`
+/// = {8, 9} (`ArmorIDs.cs:2289`) — the two scarves, no draw consumer
+/// beyond the shared layer.
+pub const ITEM_NECK_SLOT: &[(u16, i32)] = &[
+    (554, 2),
+    (862, 5),
+    (1158, 4),
+    (1290, 3),
+    (1303, 1),
+    (1578, 6),
+    (3212, 7),
+    (3224, 8),
+    (3809, 9),
+    (4007, 10),
+    (4038, 12),
+    (5107, 11),
+    (6180, 14),
+    (6187, 13),
+];
+
+/// `Item.neckSlot` for an item kind — −1 when the item has no neck
+/// visual (the `Item.cs:227` default). The `UpdateVisibleAccessory`
+/// arm (`Player.cs:36927-36930`) reads it.
+pub fn item_neck_slot(kind: u16) -> i32 {
+    ITEM_NECK_SLOT
+        .iter()
+        .find(|&&(k, _)| k == kind)
+        .map_or(-1, |&(_, s)| s)
+}
+
 /// `ArmorIDs.Face` — `(face_id, const name)` verbatim.
 pub const ARMOR_FACE: &[(i32, &str)] = &[
     (1, "NaturesGift"),
@@ -1897,5 +1946,29 @@ mod tests {
         assert!(!immunity_retaliate(3), "WrongBugNet");
         assert!(!immunity_retaliate(4), "Lava");
         assert!(!immunity_retaliate(2), "LegacyUnused2 (no C# consumer)");
+    }
+
+    /// W4-d115 wiring round — the `Item.neckSlot` census: all fourteen
+    /// assignments (`Item.cs:7992..:47640`), each slot in 1..15, every
+    /// `ArmorIDs.Neck` slot 1..14 covered exactly once, and the lookup
+    /// defaults −1 for a non-neck item.
+    #[test]
+    fn w4_d115_wiring_the_neck_slot_census_covers_every_assignment() {
+        assert_eq!(ITEM_NECK_SLOT.len(), 14, "the fourteen neckSlot assignments");
+        let mut slots: Vec<i32> = ITEM_NECK_SLOT.iter().map(|&(_, s)| s).collect();
+        slots.sort_unstable();
+        assert_eq!(slots, (1..15).collect::<Vec<_>>(), "slots 1..14 exactly once");
+        // The Cross Necklace rides slot 2 (the dodge family's item).
+        assert_eq!(item_neck_slot(554), 2);
+        assert_eq!(item_neck_slot(3224), 8, "the Worm Scarf");
+        assert_eq!(item_neck_slot(6180), 14, "the Seraph Necklace");
+        // Non-neck items default −1 (Item.cs:227).
+        assert_eq!(item_neck_slot(963), -1, "the Black Belt has no neckSlot");
+        assert_eq!(item_neck_slot(0), -1);
+        // Every row's item exists in the registry and is an accessory.
+        for &(kind, _) in ITEM_NECK_SLOT {
+            let d = crate::registry::get(kind).unwrap_or_else(|| panic!("item {kind}"));
+            assert!(d.accessory, "item {kind} is an accessory");
+        }
     }
 }
