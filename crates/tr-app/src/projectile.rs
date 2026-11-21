@@ -5641,6 +5641,102 @@ impl Projectile {
         None
     }
 
+    /// W4-c19 round 3 — `AI_165_Whip`'s per-type dust switch tail
+    /// (`Projectile.cs:47781-48269`) for the 849 ScytheWhip (`:47824-47848`)
+    /// and the 912 CoolWhip (`:47979-48012`): the rand-gated dust bursts'
+    /// EXPLICIT draws censused (the `Dust.NewDust*` internal rolls go with the
+    /// dust pool, the `projectile_ai_darts` convention), the two
+    /// `Lighting.AddLight` sites (`:47846` / `:48011`) armed as intents on the
+    /// pass's `UpdateProjectiles` stream. Every other whip type's dust case is
+    /// draw-skipped wholesale here — the dust pass's lane (ANALYSIS round 3
+    /// records the inter-case stream deviation).
+    ///
+    /// The curve: `FillWhipControlPoints` with `getActualCollisionPoints =
+    /// false` (the dust cases call the default overload, `:47832`/`:47988`) —
+    /// the spin seed is the slot's `ai[1]`, unlike the collision sweep's
+    /// forced 1f. The arm anchor is the player-centre stand-in (the `ai_whip`
+    /// deviation); `whipRangeMultiplier` folds to 1f (the arm carries no
+    /// player — the golf-context seam is the follow-up). The light anchor:
+    /// `Utils.CenteredRectangle(point, 30)` (`Utils.cs:947-950`) truncates
+    /// `point − 15` per axis, `Rectangle.Center` adds 15 back, and the
+    /// `AddLight(Vector2, Vector3)` overload truncates the /16 quotient
+    /// (`Lighting.cs:135-138`).
+    fn whip_dust_lights(
+        &mut self,
+        owner: Option<(f32, f32)>,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<(i32, i32, [f32; 3])> {
+        let kind = self.kind;
+        if kind != SCYTHE_WHIP && kind != COOL_WHIP {
+            return None;
+        }
+        let Some(settings) = self.whip_settings else {
+            return None;
+        };
+        // The C# reads `Main.player[owner]` unconditionally (`:47673`); the
+        // port's owner-less whip (the pool tests) has no arm to hang from.
+        let (ax, ay) = owner?;
+        let t = self.ai[0] / settings.time_fly_out;
+        let lerp = tr_core::scene::get_lerp_value;
+        let curve = |this: &Projectile| {
+            let inputs = tr_core::whip::WhipCurveInputs {
+                kind: this.kind,
+                ai0: this.ai[0],
+                frame_offset: 0,
+                ai1: this.ai[1],
+                sprite_direction: this.sprite_direction,
+                rotation: this.rot,
+                arm_position: Vec2::new(ax, ay),
+                held_use_animation: this.whip_use_animation,
+                whip_range_multiplier: 1.0,
+                velocity_len: this.vel.length(),
+                get_actual_collision_points: false,
+            };
+            tr_core::whip::fill_whip_control_points(&inputs, &settings)
+        };
+        // `Utils.CenteredRectangle(p, (30,30)).Center.ToVector2()` →
+        // `AddLight`'s `(int)(v / 16f)` per axis.
+        let anchor = |p: Vec2| {
+            let cx = (p.x - 15.0) as i32 + 15;
+            let cy = (p.y - 15.0) as i32 + 15;
+            ((cx as f32 / 16.0) as i32, (cy as f32 / 16.0) as i32)
+        };
+        if kind == SCYTHE_WHIP {
+            // `:47826-47829` — the two discarded `GetLerpValue` calls, then
+            // `num4 > 0.4 && Main.rand.Next(9) != 0`.
+            if !(t > 0.4) || rng.next_range(0, 9) == 0 {
+                return None;
+            }
+            let points = curve(self);
+            let tip = points[points.len() - 1];
+            // `:47835-47845` — the 191 dust (no draws), then the
+            // `Next(2) == 0` BlackLightningSmall particle gate.
+            if rng.next_range(0, 2) == 0 {
+                // The particle orchestrator has no port (the render
+                // follow-up); the gate draw stays.
+            }
+            // `:47846` — `AddLight(r2.Center, (0.2, 0, 0.4))`.
+            let (x, y) = anchor(tip);
+            return Some((x, y, [0.2, 0.0, 0.4]));
+        }
+        // `:47981-47983` — the 912's `num28 > 0.1 && NextFloat() < num28/2`.
+        let num28 = lerp(0.1, 0.7, t, true) * lerp(0.9, 0.7, t, true);
+        if !(num28 > 0.1) || !(rng.next_float() < num28 / 2.0) {
+            return None;
+        }
+        let points = curve(self);
+        let tip = points[points.len() - 1];
+        // `:47991-48000` — the 3× dust-16 loop + the 1× dust-13: no draws.
+        // `:48001-48010` — the 3-iteration `Next(2) != 0` dust-261 gate
+        // (the taken branch's `NewDustDirect` draws nothing explicit).
+        for _ in 0..3 {
+            let _ = rng.next_range(0, 2);
+        }
+        // `:48011` — `AddLight(r16.Center, (0.1, 0.1, 0.2))`.
+        let (x, y) = anchor(tip);
+        Some((x, y, [0.1, 0.1, 0.2]))
+    }
+
     /// The C# `Vector2` overload of `Utils.MoveTowards` (`Utils.cs:1772-1780`)
     /// — the length-clamped step toward the target (the scalar peer lives in
     /// `ambient_sound.rs`).
@@ -18047,6 +18143,16 @@ impl ProjectilePool {
                             // pool spawns, so the request comes back out.
                             if let Some(arm) = self.slots[i].ai_whip(owner, aim, rng) {
                                 self.spawn_whip_arm(i, arm, owner);
+                            }
+                            // W4-c19 round 3 — the dust switch tail
+                            // (`:47781-48269`): the 849/912 rand-gated light
+                            // intents (`:47846`/`:48011`), after the swing
+                            // state (the C#'s order). A killed swing (the
+                            // `timeToFlyOut` return `:47683`) skips the tail.
+                            if self.slots[i].active {
+                                if let Some(l) = self.slots[i].whip_dust_lights(owner, rng) {
+                                    self.pending_ai_lights.push(l);
+                                }
                             }
                         }
                         15 => {
@@ -35158,7 +35264,7 @@ mod magic_ai_tests {
             } else {
                 assert!(got.is_none(), "age {age}: the missed gate stays dark");
             }
-            assert_eq!(rng, twin, "age {age}: the draw sequence is the C#'s");
+            assert_eq!(rng.seed, twin.seed, "age {age}: the draw sequence is the C#'s");
         }
     }
 
@@ -35252,6 +35358,148 @@ mod magic_ai_tests {
         assert_eq!(drained.len(), 3, "one intent per taken sub-step");
         for l in &drained {
             assert_eq!(l.2, [0.1, 0.4, 0.6]);
+        }
+        assert!(pool.drain_ai_lights().is_empty(), "the drain empties the vec");
+    }
+
+    /// The 849's gate census (`Projectile.cs:47826-47846`): `t > 0.4` gates
+    /// the ONE `Next(9)`; a taken gate adds the `Next(2)` particle draw and
+    /// the (0.2, 0, 0.4) light at the curve tip's CenteredRectangle anchor.
+    /// The twin replays the draws; the anchor is recomputed off the same
+    /// `fill_whip_control_points` curve (the spin seed = the slot's ai[1]).
+    #[test]
+    fn the_scythe_whip_gate_draws_next9_then_next2() {
+        let center = (300.0, 200.0);
+        let mut pool = whip_at(center, SCYTHE_WHIP, 60);
+        // Mid-swing: ai[0] = 45 of timeToFlyOut 90 → t = 0.5 > 0.4.
+        pool.slots[0].ai[0] = 45.0;
+        pool.slots[0].ai[1] = 1.0;
+        let mut rng = tr_core::tile_light::FastRandom::new(4242);
+        let mut twin = tr_core::tile_light::FastRandom::new(4242);
+        for _ in 0..30 {
+            let got = pool.slots[0].whip_dust_lights(Some(center), &mut rng);
+            let gate = twin.next_range(0, 9);
+            if gate != 0 {
+                let _ = twin.next_range(0, 2);
+                let p = &pool.slots[0];
+                let settings = p.whip_settings.unwrap();
+                let points = tr_core::whip::fill_whip_control_points(
+                    &tr_core::whip::WhipCurveInputs {
+                        kind: p.kind,
+                        ai0: p.ai[0],
+                        frame_offset: 0,
+                        ai1: p.ai[1],
+                        sprite_direction: p.sprite_direction,
+                        rotation: p.rot,
+                        arm_position: Vec2::new(center.0, center.1),
+                        held_use_animation: p.whip_use_animation,
+                        whip_range_multiplier: 1.0,
+                        velocity_len: p.vel.length(),
+                        get_actual_collision_points: false,
+                    },
+                    &settings,
+                );
+                let tip = points[points.len() - 1];
+                let cx = (tip.x - 15.0) as i32 + 15;
+                let cy = (tip.y - 15.0) as i32 + 15;
+                assert_eq!(
+                    got,
+                    Some(((cx as f32 / 16.0) as i32, (cy as f32 / 16.0) as i32, [0.2, 0.0, 0.4]))
+                );
+            } else {
+                assert!(got.is_none(), "the Next(9)==0 miss stays dark");
+            }
+            assert_eq!(rng.seed, twin.seed, "the draw sequence is the C#'s");
+        }
+        // Below the t gate: NO draws at all.
+        pool.slots[0].ai[0] = 9.0; // t = 0.1
+        let before = rng.seed;
+        assert!(pool.slots[0].whip_dust_lights(Some(center), &mut rng).is_none());
+        assert_eq!(rng.seed, before, "the t gate short-circuits the draw");
+        // No owner: no arm anchor, no draws.
+        pool.slots[0].ai[0] = 45.0;
+        assert!(pool.slots[0].whip_dust_lights(None, &mut rng).is_none());
+        assert_eq!(rng.seed, before, "the owner-less whip draws nothing");
+    }
+
+    /// The 912's gate census (`Projectile.cs:47981-48011`): `num28 > 0.1`
+    /// gates ONE `NextFloat` against `num28/2`; a taken gate adds the three
+    /// `Next(2)` dust-261 draws and the (0.1, 0.1, 0.2) light. At t = 0.5,
+    /// num28 = (2/3)² = 4/9 → the float gate is `< 2/9`.
+    #[test]
+    fn the_cool_whip_gate_draws_nextfloat_then_three_next2() {
+        let center = (300.0, 200.0);
+        let mut pool = whip_at(center, COOL_WHIP, 45);
+        // timeToFlyOut = 30 * 2 = 60; ai[0] = 30 → t = 0.5.
+        pool.slots[0].ai[0] = 30.0;
+        pool.slots[0].ai[1] = 1.0;
+        let mut rng = tr_core::tile_light::FastRandom::new(4242);
+        let mut twin = tr_core::tile_light::FastRandom::new(4242);
+        let num28 = (2.0f32 / 3.0) * (2.0f32 / 3.0);
+        for _ in 0..30 {
+            let got = pool.slots[0].whip_dust_lights(Some(center), &mut rng);
+            let roll = twin.next_float();
+            if roll < num28 / 2.0 {
+                for _ in 0..3 {
+                    let _ = twin.next_range(0, 2);
+                }
+                let l = got.expect("the taken gate lights");
+                assert_eq!(l.2, [0.1, 0.1, 0.2]);
+            } else {
+                assert!(got.is_none(), "the float miss stays dark");
+            }
+            assert_eq!(rng.seed, twin.seed, "the draw sequence is the C#'s");
+        }
+        // t = 0.05: num28 = 0 → the lerp gate short-circuits the float draw.
+        pool.slots[0].ai[0] = 3.0;
+        let before = rng.seed;
+        assert!(pool.slots[0].whip_dust_lights(Some(center), &mut rng).is_none());
+        assert_eq!(rng.seed, before, "the num28 gate draws nothing");
+    }
+
+    /// The whip seam: a taken 849 gate appends its intent to the pool's
+    /// `pending_ai_lights` through the aiStyle-165 dispatch (the swing state
+    /// runs first, the dust tail after — the C#'s order).
+    #[test]
+    fn the_whip_lights_ride_the_pending_drain_seam() {
+        struct NeverZero(tr_core::tile_light::FastRandom);
+        impl DropRng for NeverZero {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (0, 9) {
+                    return 1; // the 849 gate always taken
+                }
+                self.0.next_range(min, max)
+            }
+            fn next_float(&mut self) -> f32 {
+                self.0.next_float()
+            }
+            fn next_double(&mut self) -> f64 {
+                self.0.next_double()
+            }
+        }
+        let center = (300.0, 200.0);
+        let mut pool = whip_at(center, SCYTHE_WHIP, 60);
+        // t past 0.4 on every sub-step of the tick: ai[0] starts at 36.
+        pool.slots[0].ai[0] = 36.0;
+        let mut w = ground();
+        let mut rng = NeverZero(tr_core::tile_light::FastRandom::new(9));
+        pool.update(
+            &mut w,
+            &mut [],
+            Some(center),
+            Some(Vec2::new(1.0, 0.0)),
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        // extraUpdates = 2 → three sub-steps, each t > 0.4 → three intents.
+        let drained = pool.drain_ai_lights();
+        assert_eq!(drained.len(), 3, "one intent per taken sub-step");
+        for l in &drained {
+            assert_eq!(l.2, [0.2, 0.0, 0.4]);
         }
         assert!(pool.drain_ai_lights().is_empty(), "the drain empties the vec");
     }
