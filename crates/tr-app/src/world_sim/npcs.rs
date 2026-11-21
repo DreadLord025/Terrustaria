@@ -6152,6 +6152,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // 390 → 382 RayGunner, 416 → 518 SolarSpearman): `NPC.Transform`
     // (`:81084-81114`) in place — the bottom-anchored reposition, the
     // SetDefaults swap, TargetClosest and the integer life rescale.
+    // W4-d40 seal: the aiStyle-89 egg timer joins the same drain
+    // (`NPC.cs:38378-38381`: `ai[0] >= 900` (600 expert) → `Transform(479)`
+    // MothronSpawn) — the d40 wiring step the c10 research/270 §2.4
+    // contract names (was 149/145 pre-rename); the g61 research/273 §3
+    // `transform_visuals(478, 479)` parity arm fires from this drain once
+    // the g61 module lands.
     {
         let player_ref = app.player.as_ref();
         let world_ref = &app.world;
@@ -6161,6 +6167,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 if let Some(ty) = npcs[i].wants_transform {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
+                        479 => NpcKind::MothronSpawn,
                         518 => NpcKind::SolarSpearman,
                         _ => continue,
                     };
@@ -9785,6 +9792,33 @@ mod rider_tests {
             app.npcs.iter().any(|n| n.kind == NpcKind::RayGunner),
             "the rider transforms into the RayGunner (382)"
         );
+    }
+
+    #[test]
+    fn the_mothron_egg_transforms_on_the_479_drain_arm() {
+        // W4-d40 seal witness (WRITTEN NOT RUN — code-only): the aiStyle-89
+        // egg timer's `Transform(479)` (`NPC.cs:38378-38381`) drains through
+        // the same `wants_transform` match as the style-75 pair — the c10
+        // research/270 §2.4 wiring step (was 149/145 pre-rename). The egg's
+        // 200 HP rescales onto the spawn's 700 (`NPC.cs:81106-81110`'s
+        // integer share) and the bottom edge holds across the 34→30 box.
+        let (mut app, _player) = app_with_player();
+        let mut egg = Npc::new(NpcKind::MothronEgg, 110.0 * TILE_PX, 1800.0, 1, 0.0);
+        egg.hp = egg.max_hp;
+        let bottom = egg.y + 34.0;
+        egg.wants_transform = Some(479);
+        app.npcs.push(egg);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let spawn = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::MothronSpawn)
+            .expect("the egg transforms into the Baby Mothron (479)");
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::MothronEgg));
+        assert_eq!(spawn.max_hp, 700, "the SetDefaults swap (NPC.cs:15631)");
+        assert_eq!(spawn.hp, 700, "200 * 700 / 200 — the integer life share");
+        assert_eq!(spawn.y + 30.0, bottom, "the bottom-anchored reposition");
+        assert!(spawn.wants_transform.is_none(), "the request drained");
     }
 
     #[test]

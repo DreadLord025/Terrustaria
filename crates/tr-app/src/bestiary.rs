@@ -2411,7 +2411,23 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Mothron",
     },
-    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    // W4-d40 seal: the MothronEgg 478 is `Hide = true`
+    // (`NPCID.cs:4405-4410`) so the populator's exclusion set skips it —
+    // but `kind_from_net_id` still needs a row to resolve (the g8
+    // VampireBat 158 precedent, its "still needs a row to resolve"
+    // comment + own row; the g61 research/273 §3 478-resolution-gap fix
+    // PUBLISHED FOR d40). The credit fold stays (`entry_for_npc`'s
+    // `MothronEgg => Mothron` arm — the vanilla kills credit Mothron);
+    // this row only makes the net id resolve, so a saved/remote egg
+    // instantiates the egg, not the moth.
+    BestiaryEntryDef {
+        credit_id: "MothronEgg",
+        net_id: 478,
+        kind: NpcKind::MothronEgg,
+        variant: None,
+        quick_unlock: false,
+        name: "Mothron Egg",
+    },
     BestiaryEntryDef {
         credit_id: "MothronSpawn",
         net_id: 479,
@@ -2787,6 +2803,24 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ENTRIES.len());
+    }
+
+    #[test]
+    fn the_mothron_egg_resolves_through_its_own_row_but_credits_mothron() {
+        // W4-d40 seal witness (WRITTEN NOT RUN — code-only): the g61
+        // research/273 §3 478-resolution-gap fix — the Hide=true egg
+        // (`NPCID.cs:4405-4410`) carries an own ENTRIES row so
+        // `kind_from_net_id(478)` resolves (the g8 VampireBat precedent),
+        // while the credit fold keeps `entry_for_npc` on Mothron's row.
+        let (kind, _) = crate::npc::kind_from_net_id(478)
+            .expect("the egg's own row resolves the net id");
+        assert_eq!(kind, NpcKind::MothronEgg);
+        let entry = entry_for_npc(NpcKind::MothronEgg, SlimeVariant::Blue);
+        assert_eq!(entry.net_id, 477, "the credit folds onto Mothron");
+        assert_eq!(entry.credit_id, "Mothron");
+        // The spawn keeps its own row (the Transform(479) target).
+        let (kind, _) = crate::npc::kind_from_net_id(479).expect("the spawn row");
+        assert_eq!(kind, NpcKind::MothronSpawn);
     }
 
     #[test]
