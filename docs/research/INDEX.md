@@ -75,7 +75,40 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 131 | Dust cross-lane MASTER STATUS (W4-d54 crosslane: per-file keep-one FINAL table re-confirmed from fetched tips — WorldGen resolved on d54, main_dust g13+g11-seams/g61-body, mount f6-superset, trail g63/g64/e3 disjoint, snowing d130-canonical; merge order, 309-witness union census, outstanding folds g73e/g11c-F1-F7/f6-atan2/116-gaps/e3-contracts) | `131-dust-master-status.md` | crosslane status doc |
+| 131 | Dust cross-lane MASTER STATUS — **BIBLE-FINAL §8** (W4-d54: all-lane tips + per-fold VERIFIED/OWED table, Dust.cs FAMILY COMPLETE declaration + per-family spawn censuses, merger keep-one symbol checklist, witness recount 318→492 gross/≈461 net; F1-F7/g75d/116/G1-G6 closed, R5-R7+G2+e3-contracts+f6-push owed) | `131-dust-master-status.md` | ✅ consolidated final |
+
+| 150 | Research-number COLLISION REGISTRY (W4-d54 doc-integrity: full 355-tip scan — 32 colliding number keys, 86 rename assignments 151–236, first-pushed-timestamp winners, per-lane rename instructions + refs-to-update, same-path fork dedupe rules) | `150-research-number-registry.md` | registry |
+
+## ⚠️ Collision-aware index note (2026-11-21, W4-d54) — READ BEFORE MERGING
+
+The number space `docs/research/NN-*.md` is **collided across the task/W4-\*
+branches**: a full scan of all 355 remote tips found **32 colliding number
+keys** (far more than the 7 originally reported). The authoritative registry
+is **`150-research-number-registry.md`** — per-number winner (earliest
+first-pushed timestamp wins), loser → FREE-number assignments **151–236**,
+per-lane rename instructions with refs-to-update, and same-path fork rules.
+
+**Merger rules (dedupe per registry, not per filename guess):**
+1. Numbers 08, 61–63, 90–92 belong to the inherited base census docs
+   (`08-tile-framing`, `61-weapon-data-census`, `62-ammo-potion-census`,
+   `63-special-bullets-census`, `90-consolidated-findings`,
+   `91-post-audit-landed`, `92-roadmap-reverification`). Any W4-lane doc
+   reusing those numbers is a loser and renames per registry §3 — do NOT
+   index two different docs under one number.
+2. When two branches carry the SAME filename: identical blob → keep one
+   (clean merge); diverged blob → same-path fork, keep the earlier-first-add
+   copy under the number, the later copy takes its assigned free number
+   (registry §1 fork rows / §4).
+3. Lanes rename on their OWN branches (registry §3 table); until a lane has
+   renamed, the merger applies the registry mapping at merge time. The
+   registry's §3 d54 rows (65→186, 66→194) are applied at/after the dust
+   union so sibling-lane citations into `131-dust-master-status.md` stay live.
+4. 107/139/143/144 are single-claimant at the tips (g24/g89/c4/c4) — the
+   reported opposite-side docs were never pushed; if they appear later they
+   take free numbers **237+**.
+5. This INDEX's row set above is the base+d54 view; rows for other lanes'
+   docs enter with their merges, renumbered per the registry. The merger
+   dedupes INDEX rows by (number, filename) using the registry mapping.
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

@@ -1,5 +1,23 @@
 # 66 — World-dust RECONCILE (W4-d54 merger assist): arm diffs, KEEP/DROP, witness union
 
+**BIBLE-FINAL POINTER (bible-final round, 2026-11-21): the consolidated
+final record is research/131 §8** (commit `ad0d95d4b` on this branch) —
+the all-lanes tip table + per-fold VERIFIED/OWED status (§8.1), the
+Dust.cs FAMILY COMPLETE declaration + per-family spawn censuses
+(§8.2), the merger keep-one symbol checklist (§8.3) and the
+witness-union recount (§8.4: 318 SUPERSEDED → 492 gross / ≈461 net).
+This doc's d54/g14-scoped decisions ALL STAND; the crosslane rows below
+are superseded in place by 131 §8 where they differ. Key deltas since
+this doc's last round: d130 EXECUTED F1-F7 (`099df89e2`/`852507123` at
+tip `97ed44f5d` — §6's F4 hoist note fully closed, no g11b fix owed);
+g11 EXECUTED research/116 (`98283df08` — the §2 filename-collision
+resolve is now the THREE-WAY per-fn table in 116 §6); g73 EXECUTED the
+g75d re-fold + falls closeout (`5d444f15a` — §2's mount/waterfall
+cross-refs current); g13 closed the 52-light G1 gap (`a234107ac`) and
+declared the Main family COMPLETE (`4444e1011`); f6's atan2 fix is
+RESOLVED-LOCAL (`76aeaf3c3`, push owed — §2's "STILL owed at 5daa1d70"
+note is historical); g61's wiring wave PUSHED (`b5ff1803d`).
+
 Status: **FINAL — EXECUTED on `task/W4-d54-dust-sites-world`** (union-exec
 round + final-audit round, 2026-11-21 — §6 landed hashes; residuals ZERO
 per the final audit: all 11 anchors markers re-verified present at the
