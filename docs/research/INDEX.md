@@ -76,6 +76,8 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 
+| 283 | W4-g81 WIRE-DRAW SEAL: the compose verdicts (c42 arms / f11 radial-drops / d13 pool-keep-one / g86 outline+icon-override / g78 disjoint), the junction-box correction (423/424/445 NOT in HasOutlines, no MouseOver arm - no such C# hover highlight; the 423 range rect is the always-on DrawWires box), the MassWireOperation c42-owned confirmation, the ghost alpha-0 additive fix, the wire-draw-family bible; code-only | `283-g81-wire-draw-seal.md` | SEALED |
+
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
   counts question is ticketed.
