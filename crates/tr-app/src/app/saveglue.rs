@@ -370,6 +370,18 @@ impl App {
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
         self.world.fast_forward_to_dawn = false;
         self.world.fast_forward_to_dusk = false;
+        // W4-f39 (folded, co-lane compose): `Main.cs:48216-48219` (`DrawMenu`):
+        // `menuMode <= 1 && Main.slimeRain → Main.StopSlimeRain()` — the event
+        // ends when the player returns to the main menu. The port's
+        // save-and-quit is the in-world → menuMode-0 transition; the stop runs
+        // AFTER the save (the C# saves the live event, then the menu frame
+        // stops it), so the saved world keeps the running rain and the
+        // menu-side state carries the negative cooldown. The draw rides the
+        // bare Main.rand stand-in (the menu frame is outside every SwapRandom
+        // block).
+        if self.world.slime_rain {
+            crate::world_sim::weather::stop_slime_rain(&mut self.world, self.rngs.global());
+        }
         // `WorldGen.cs:6682`: `Main.menuMode = 0` — back to the main menu
         // (`Main.gameMenu` stays true; the port's `menu.is_some()` is that
         // flag, `frame.rs:256`).
@@ -1333,6 +1345,49 @@ mod chest_save_tests {
             (back.rain.visual_alpha() - 0.75).abs() < f32::EPSILON,
             "cloudAlpha := maxRaining (WorldFile.cs:162)"
         );
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-f39 (folded, co-lane compose) — the menu-return `StopSlimeRain`
+    /// (`Main.cs:48216-48219`): `save_and_quit` stops a live slime rain AFTER
+    /// the save — the saved world keeps the running event, the menu-side
+    /// state carries the negative cooldown (`-Next(3024,6048)*100` on the
+    /// bare global stream). A world with no slime rain draws nothing.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f39_compose_the_menu_return_stops_the_slime_rain_after_the_save() {
+        let world = chest_rig();
+        let dir = scratch("w4-f39-menu-return-slime-stop");
+        let path = dir.join("world.trwld");
+        let mut app = app_for(
+            world,
+            WorldSections::native(save::WorldSide::default()),
+            path.clone(),
+        );
+        app.player = None;
+        app.settings.map_enabled = false;
+        app.world.slime_rain = true;
+        app.world.slime_rain_time = 30_000.0;
+        // Twin the bare global stream: the stop's one Next(3024,6048) draw.
+        let mut twin = app.rngs.global().clone();
+        let want = -(twin.next_range(3024, 6048) as f64) * 100.0;
+        app.save_and_quit();
+        assert!(!app.world.slime_rain, "the menu frame stopped the event");
+        assert_eq!(app.world.slime_rain_time, want, "the negative cooldown");
+        assert_eq!(
+            app.world.slime_warning_time,
+            crate::world_sim::weather::SLIME_WARNING_DELAY,
+            "the announcement armed"
+        );
+        // The SAVED world kept the live event (the stop ran after the write).
+        let (saved, _) = crate::app::load_world(&path).expect("the saved world reloads");
+        let _ = std::fs::remove_file(&path);
+        assert!(saved.slime_rain, "the save snapshotted the running event");
+        assert_eq!(saved.slime_rain_time, 30_000.0);
+        // A second quit (no live slime rain) draws nothing on the global.
+        let state = app.rngs.global().clone();
+        app.save_and_quit();
+        assert_eq!(*app.rngs.global(), state, "the !slimeRain guard draws nothing");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

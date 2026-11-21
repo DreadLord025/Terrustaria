@@ -195,6 +195,10 @@ impl App {
         eclipse: self.world.eclipse
             && self.camera.y
                 < self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
+        // `flag24` (`Main.cs:12200`): the Slime Rain event track 48
+        // (`:12654-12657`) — the raw flag; the ladder arm applies the
+        // graveyard/blood-moon/surface gates (W4-f39 co-lane compose).
+        slime_rain: self.world.slime_rain,
         shimmer: self.scene_metrics.zone_shimmer,
         town_npcs: self.scene_metrics.town_npc_count,
         // — the M1.4-BG-20 ambience-track inputs (`Main.cs:11527-11600`) —

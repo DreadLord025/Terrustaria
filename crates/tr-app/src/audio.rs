@@ -2417,6 +2417,12 @@ pub struct MusicEnv {
     // `Main.cs:12187-12988`), in ladder order —
     /// `Main.eclipse` with the surface gate (`:12644`).
     pub eclipse: bool,
+    /// `Main.slimeRain` (`flag24`, `:12200`) — the Slime Rain track 48 arm
+    /// (`:12654-12657`): `flag24 && !ZoneGraveyard && (!bloodMoon || dayTime)
+    /// && Center.Y < worldSurface*16 + screenHeight/2`. Sits between the
+    /// eclipse arms and the remix-blood-moon arms (both port-absent), ahead
+    /// of the shimmer zone. (W4-f39 co-lane compose, d130 retire phase.)
+    pub slime_rain: bool,
     /// `SceneMetrics.ZoneShimmer` (`:12668`).
     pub shimmer: bool,
     /// `SceneMetrics.TownNPCCount` (`:12199`) — 0 until M4-TOWN lands.
@@ -2708,6 +2714,19 @@ impl MusicSystem {
         // centre above `worldSurface * 16 + screenHeight/2`).
         if env.eclipse {
             self.new_music = 27;
+            return;
+        }
+        // `:12654-12657`: the Slime Rain event track 48 (`flag24`,
+        // `Main.slimeRain` at `:12200`) — `!ZoneGraveyard && (!bloodMoon ||
+        // dayTime)` and the surface gate. The remix-blood-moon arms between
+        // it and the shimmer zone (`:12658-12665`) are port-absent.
+        // (W4-f39 co-lane compose, d130 retire phase.)
+        if env.slime_rain
+            && !env.graveyard
+            && (!env.blood_moon || env.day)
+            && env.center_y < env.surface_band_px
+        {
+            self.new_music = 48;
             return;
         }
         // `:12668`: the shimmer zone.
@@ -3396,6 +3415,7 @@ mod tests {
             boss_music: None,
             clock: 27000.0,
             eclipse: false,
+            slime_rain: false,
             shimmer: false,
             town_npcs: 0,
             shadow_candle: false,
@@ -3428,6 +3448,59 @@ mod tests {
             menu: false,
             menu_flags: Default::default(),
         }
+    }
+
+    #[test]
+    fn w4_f39_compose_the_slime_rain_track_48_arm() {
+        // `Main.cs:12654-12657` (`flag24` = `Main.slimeRain`, `:12200`):
+        // track 48 sits AFTER the eclipse (27) and BEFORE the shimmer zone
+        // (91), gated `!ZoneGraveyard && (!bloodMoon || dayTime)` and the
+        // surface band. The King Slime boss scan (93) outranks it.
+        // WRITTEN NOT RUN (code-only, d130 retire compose).
+        let mut m = system();
+        let mut e = env(true);
+        e.slime_rain = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48, "the live slime rain plays track 48");
+        // The graveyard cut.
+        let mut m = system();
+        e.graveyard = true;
+        m.decide_new_music(e);
+        assert_ne!(m.new_music, 48, "ZoneGraveyard closes the arm");
+        e.graveyard = false;
+        // A night blood moon closes it; the day blood moon does not.
+        let mut m = system();
+        let mut night = env(false);
+        night.slime_rain = true;
+        night.blood_moon = true;
+        m.decide_new_music(night);
+        assert_ne!(m.new_music, 48, "the night blood moon closes the arm");
+        let mut m = system();
+        e.blood_moon = true; // day stays true
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48, "(!bloodMoon || dayTime) — day passes");
+        e.blood_moon = false;
+        // The surface gate: below worldSurface*16 + screenHeight/2 refuses.
+        let mut m = system();
+        e.center_y = e.surface_band_px; // NOT < — the strict edge
+        m.decide_new_music(e);
+        assert_ne!(m.new_music, 48, "the surface band is strict <");
+        e.center_y = 0.0;
+        // Ladder order: the eclipse beats it, it beats the shimmer zone.
+        let mut m = system();
+        e.eclipse = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 27, "the eclipse outranks the slime rain");
+        e.eclipse = false;
+        let mut m = system();
+        e.shimmer = true;
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 48, "the slime rain outranks the shimmer zone");
+        // The boss scan outranks everything.
+        let mut m = system();
+        e.boss_music = Some(93);
+        m.decide_new_music(e);
+        assert_eq!(m.new_music, 93, "the King's track outranks the event");
     }
 
     #[test]

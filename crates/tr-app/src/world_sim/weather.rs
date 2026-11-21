@@ -455,9 +455,13 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
     }
 }
 
-/// `Main.cs:64932-64947`'s roll shape: `num3 = (int)(450000.00000000006 /
-/// dayRate)` — halved before the first King, x1.5 hardmode after, x5 without
-/// a fight-ready player; the classic requires ready (`(flag3 || expertMode)`
+/// `Main.cs:64927-64948`'s roll shape: `num3 = (int)(450000.00000000006 /
+/// dayRate)` — halved before the first King (INTEGER division, `:64930`),
+/// then the `WorldGen.Skyblock.lowTiles` `/5` arm (`:64931-64934` — the flag
+/// now rides `World.skyblock_low_tiles`, the g67 R5 census; f39's tip left
+/// this documented-false, the d130 compose activates it), x1.5 hardmode
+/// after (the ELSE-if, `:64936-64939`), x5 without a fight-ready player
+/// (`:64941-64944`); the classic requires ready (`(flag3 || expertMode)`
 /// folds to `ready`), and the roll is `Main.rand.Next(num3) == 0` — one
 /// `Next(num3)` draw, consumed only when the gates pass (`&&` order).
 pub(crate) fn slime_rain_roll(
@@ -468,6 +472,11 @@ pub(crate) fn slime_rain_roll(
     let mut num3 = (450000.00000000006f64 / (world.day_rate().max(1) as f64)) as i32;
     if !world.downed_slime_king {
         num3 /= 2;
+        // `:64931-64934`: the low-tiles skyblock arm — inside the pre-King
+        // half (integer division again).
+        if world.skyblock_low_tiles {
+            num3 /= 5;
+        }
     } else if world.hard_mode {
         num3 = (num3 as f64 * 1.5) as i32;
     }
@@ -1154,6 +1163,55 @@ mod tests {
             app.rain.is_raining(),
             "statLifeMax >= 120 arms the start rolls"
         );
+    }
+
+    #[test]
+    fn w4_f39_compose_the_skyblock_low_tiles_fifth_arm() {
+        // `Main.cs:64931-64934`: inside the pre-King `/2` half, the
+        // `WorldGen.Skyblock.lowTiles` flag divides num3 by 5 again —
+        // 450000 → 225000 → 45000 at dayRate 1. f39's tip left the arm
+        // documented-false; the g67 R5 census (`World.skyblock_low_tiles`)
+        // activates it here (d130 retire compose). The draw is still ONE
+        // `Next(num3)` — only the denominator moves. WRITTEN NOT RUN.
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world.downed_slime_king = false;
+        app.world.hard_mode = false;
+        app.world.skyblock_low_tiles = true;
+        // A seed whose first sample hits Next(45000)==0 but misses
+        // Next(225000)!=0: `next_max` is `(sample * max) as i32`, so
+        // Next(45000)==0 iff sample < 1/45000 = 5/225000 — i.e. the
+        // Next(225000) probe lands in 1..=4 (0 would hit both).
+        let mut hit = None;
+        for s in 0..1_000_000i32 {
+            let mut probe = UnifiedRandom::new(s);
+            let first = probe.next_max(225_000);
+            if (1..5).contains(&first) {
+                hit = Some(s);
+                break;
+            }
+        }
+        let seed = hit.expect("a discriminating seed exists");
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(
+            super::slime_rain_roll(&app.world, true, &mut rng),
+            "the /5 arm hits Next(45000)"
+        );
+        // The same seed on a non-low-tiles world misses Next(225000).
+        app.world.skyblock_low_tiles = false;
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(
+            !super::slime_rain_roll(&app.world, true, &mut rng),
+            "the plain /2 arm misses Next(225000)"
+        );
+        // After the first King the arm is dead (the else-if hardmode branch).
+        app.world.skyblock_low_tiles = true;
+        app.world.downed_slime_king = true;
+        let mut a = UnifiedRandom::new(7);
+        let mut b = UnifiedRandom::new(7);
+        let _ = super::slime_rain_roll(&app.world, true, &mut a);
+        app.world.skyblock_low_tiles = false;
+        let _ = super::slime_rain_roll(&app.world, true, &mut b);
+        assert_eq!(a, b, "the post-King roll ignores lowTiles (same 450000)");
     }
 
     #[test]

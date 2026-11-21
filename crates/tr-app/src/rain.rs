@@ -783,9 +783,14 @@ impl Rain {
     pub(crate) fn start_rain(&mut self, world: &World, remix_world: bool, player_luck: f32) {
         // `Main.cs:64661`.
         if !remix_world && world.world_surface > 50.0 && !self.raining {
-            // `Main.cs:64663-64667`: `range = 25`; the tenth-anniversary 5 needs
-            // anniversary worlds (`tenthAnniversaryWorld`) — none is generated.
-            let range = 25;
+            // `Main.cs:64663-64667`: `range = 25`; the tenth-anniversary
+            // world (not getGood) narrows it to 5 (W4-f39 Phase B compose —
+            // the port HAS the anniversary seed now). The roll's DRAW COUNT
+            // is unchanged at luck 0 (one `Next(range)`); only the
+            // denominator moves.
+            let anniversary = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+                && !world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+            let range = if anniversary { 5 } else { 25 };
             // `Main.cs:64668`: `GetPlayerWithHighestLuck().RollLuck(range)` —
             // consumed on the Rain stream like every rain roll (WEATHER-2); a
             // hit branch draws 2 more, exactly like the C# branch shape.
@@ -2742,6 +2747,52 @@ mod tests {
             "no drain under TR_NO_WEATHER"
         );
         assert_eq!(quiet.rng, state);
+    }
+
+    /// W4-f39 Phase B compose (d130 retire) — the anniversary coin-rain range
+    /// (`Main.cs:64663-64667`): `tenthAnniversaryWorld && !getGoodWorld`
+    /// narrows `RollLuck(range)` from 25 to 5. The DRAW COUNT at luck 0 is
+    /// unchanged (one `Next(range)`, plus the coin draw on a hit) — only the
+    /// denominator moves. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f39_compose_the_anniversary_range_is_5_not_25() {
+        let mut anniv = rain_world();
+        anniv.seeds.insert(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        // Find a seed whose first draw hits Next(5)==0 but misses Next(25)!=0
+        // — the coin arm fires ONLY on the anniversary world.
+        let seed = (1..100_000u64)
+            .find(|&s| {
+                let mut r = StreamReplay::new(s);
+                let d = r.next_u64();
+                d % 5 == 0 && d % 25 != 0
+            })
+            .expect("a discriminating seed exists");
+        let mut a = Rain::with_forced(seed, None, false);
+        a.start_rain(&anniv, false, 0.0);
+        let mut r = StreamReplay::new(seed);
+        assert_eq!(r.next(0, 5), 0, "the anniversary roll hits");
+        let _coin = r.next(75, 151); // the coin draw was consumed
+        let (want_time, want_target, want_state) = replay_start_rain_tail(&mut r);
+        assert_eq!(a.rng, want_state, "the anniversary stream position");
+        assert_eq!(a.rain_time, want_time);
+        assert_eq!(a.target, want_target);
+        // The same seed on a classic world misses Next(25) — no coin draw.
+        let classic = rain_world();
+        let mut c = Rain::with_forced(seed, None, false);
+        c.start_rain(&classic, false, 0.0);
+        let mut r = StreamReplay::new(seed);
+        assert_ne!(r.next(0, 25), 0, "the classic roll misses");
+        let (want_time, want_target, want_state) = replay_start_rain_tail(&mut r);
+        assert_eq!(c.rng, want_state, "the classic stream skips the coin draw");
+        assert_eq!(c.rain_time, want_time);
+        assert_eq!(c.target, want_target);
+        // getGood (FOR_THE_WORTHY) cancels the narrowing (`!getGoodWorld`).
+        let mut ftw = rain_world();
+        ftw.seeds.insert(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        ftw.seeds.insert(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        let mut f = Rain::with_forced(seed, None, false);
+        f.start_rain(&ftw, false, 0.0);
+        assert_eq!(f.rng, c.rng, "anniversary+getGood keeps the 25 range");
     }
 
     #[test]
