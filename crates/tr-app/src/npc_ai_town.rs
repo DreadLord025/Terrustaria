@@ -3048,8 +3048,14 @@ fn town_social_ladder(
         // (NPC-texture lane), the bunny-statue swap (wiring lane) and the
         // NerdySlime spawn gate (town-spawn lane). This gate + state machine
         // are the S1-D-3 port; the aiStyle-7 axis WIRING is W4-b3's
-        // (96a5d88f0) and the live `party_up` feed at the TownEnv build is
-        // b3 phase 2's declared follow-up — co-lane, not ported here.
+        // (96a5d88f0: the axis arm npc.rs:4722 + the ai_007_town_family
+        // adapter :10121) and the live `party_up` feed at the TownEnv build
+        // is b3 phase 2's declared follow-up (its npc.rs:10160 still
+        // `party_up: false` — the solo adapter takes (&World, &Player), no
+        // App, so the feed rides the phase-2 live-list/talk threading) —
+        // co-lane, not ported here. The f41 party-center-FALSE census
+        // (research/70 §8h/§9b) confirms this gate + the facing machine are
+        // the ONLY party-position-adjacent town behavior the C# has.
         for (n, p) in env.players.iter().enumerate() {
             if p.candidate.active
                 && !p.candidate.dead

@@ -39401,3 +39401,26 @@ All final-sweep witnesses WRITTEN NOT RUN (code-only).
   this branch's anchor-bearing superset; f34's non-party scope (the
   honey-contact grant, the 366 player arm + reset, the +2/+2 regen fold
   and their witnesses) stays f34's own merge.
+
+**SEALED (research/70 §9)** — the party-family bible + the four co-lane
+receipts close the lane: (9a) c39 retired `7dd785dc5` — its cake-side
+drops name f41c canonical (the §8f verdicts stand), the hats are
+DISJOINT (this branch's player vanity 3732/head 195 vs c39's NPC
+`party_hat.rs` draw layer — both keep), the scheduler fold's mechanical
+re-derive census (the clock feed + 7 witness sites gain the
+`tenth_anniversary` arg), and the shop case-13 superset survives f40's
+`LanternNight→LanternsUp` rename (105 §9.2) + the g58/d122
+no-party-rows census; (9b) b3 phase-1 receipt — the aiStyle-7 axis
+(npc.rs:4722) + adapter (:10121) are b3's, the live `party_up` feed is
+its phase-2 contract (npc.rs:10160 still false; the source expression
+is the shop-feed precedent `world_events::party_is_up`), the
+party-center-FALSE census confirms the talk gate + facing machine are
+the ONLY party town behavior — nothing else to wire; (9c) the EXACT
+f34-drop-hunks published (10 hunks with f34-tip line numbers + the
+surviving superset forms; the neighbour no-draw witness must not
+survive as written — 621 now draws the pitch roll) + the non-party KEEP
+list verified absent here; (9d) the g14 loot-vs-dust DISJOINT receipt —
+dust = `KillTile_MakeTileDust` 454=>139 + `Next(4)` confetti
+(WorldGen.cs:66946-66948/:69156-69158, g14's worldgen_dust_tile.rs:2070/
+:1721, witness :1883), loot = this branch's CheckChand `Item.NewItem`
+block (kill.rs carries zero dust references); no overlap at the merge.
