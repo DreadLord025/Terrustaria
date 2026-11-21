@@ -1835,6 +1835,106 @@ mod tests {
         assert_eq!(res.text, "a\nb");
     }
 
+    // --- SEAL witnesses (W4-c25 retire, research/281) — WRITTEN NOT RUN.
+    // The chat/sign/text-input compose boundary: the sign editor keeps the
+    // KeyboardState path (f22's lane), the search box keeps c24's event.text
+    // seam until a consumer attaches; these pin the c25 half's contract at
+    // the exact seams those consumers will wire to. All three tests call
+    // ONLY c25-half symbols (no layout/click_at/draw/Context::Sign) so they
+    // compose verbatim into the f22 merge (research/281 §2).
+
+    #[test]
+    fn seal_sign_enter_appends_the_newline_outside_get_input_text() {
+        // `UIVirtualKeyboard.DrawSelf` (`UIVirtualKeyboard.cs:750-754`):
+        // `GetInputText(this.Text, this._editingSign)` — the pass itself
+        // never inserts '\n' for code 13 (only the flag, `Main.cs:20071-
+        // 20074`); the sign arm appends it AFTER, then `this.Text = text`
+        // (`:782`) re-trims at the 1200 cap (`IngameFancyUI.cs:145`).
+        let mut f = TextField::new("line one", 1200);
+        let mut r = BackspaceRepeat::default();
+        let keys = InputKeys { typed: vec![13], ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", true);
+        assert!(res.enter);
+        assert_eq!(res.text, "line one", "13 sets the flag, never a char");
+        // The sign consumer's append + the SetText cap.
+        f.write("\n");
+        assert_eq!(f.text, "line one\n");
+        // A full 1200 box swallows the newline (insert first, trim after —
+        // `UITextBox.cs:40` then `:46`).
+        let mut full = TextField::new(&"x".repeat(1200), 1200);
+        full.write("\n");
+        assert_eq!(full.text.chars().count(), 1200);
+        assert!(!full.text.ends_with('\n'));
+    }
+
+    #[test]
+    fn seal_textfield_at_the_pinned_caret_matches_keyboardstate() {
+        // The sign session edits through `KeyboardState`/`write_str` (f22's
+        // signs.rs opens `KeyboardState::new`, the physical Enter's newline
+        // rides `write_str`), NOT the caret field: `UITextBox.DrawSelf`
+        // pins `_cursor = Text.Length` every frame (`UITextBox.cs:86`), so
+        // at the pinned caret the two halves agree char-for-char — the
+        // keep-both compose (research/281 §2) has no behavioural seam.
+        let req = Request {
+            label: String::new(),
+            initial: "stored".into(),
+            allow_empty: false,
+            max_length: 1200, // `IngameFancyUI.cs:145`'s sign cap
+            context: Context::Text,
+        };
+        let mut state = KeyboardState::new(&req);
+        let mut field = TextField::new("stored", 1200);
+        // Append (the sign dialog's typing / `CopyTextToSign`'s source).
+        write_str(&mut state, " text");
+        field.write(" text");
+        assert_eq!(state.text, field.text);
+        // Backspace at the pinned caret (`UITextBox.cs:86`'s per-frame pin).
+        for _ in 0..3 {
+            state.backspace();
+            field.cursor = field.text.chars().count();
+            field.backspace();
+            assert_eq!(state.text, field.text);
+        }
+        // The physical Enter's newline (`:751-754`).
+        write_str(&mut state, "\n");
+        field.write("\n");
+        assert_eq!(state.text, field.text);
+        assert!(state.text.ends_with('\n'));
+        // The 1200 cap agrees on overflow (f22's signs.rs witness pins the
+        // write_str 1300→1200 arm; this pins the TextField twin).
+        let big = "x".repeat(1300);
+        write_str(&mut state, &big);
+        field.write(&big);
+        assert_eq!(state.text.chars().count(), 1200);
+        assert_eq!(field.text, state.text);
+    }
+
+    #[test]
+    fn seal_search_box_seam_matches_the_50_cap_and_stop_flags() {
+        // `UISearchBar.DrawSelf` (`UISearchBar.cs:145-167`): GetInputText
+        // over actualContents, Enter/Escape ToggleTakingText (`:156-164`),
+        // SetContents ALWAYS runs (`:165`) — the cap applies on the flag
+        // frame too (`SetText`, `:80-81`; MaxInputLength 50, `:63`). The
+        // c24 stand-in (app/loop.rs's search_writing arm) stops on the
+        // flags and caps at 50; the binding reproduces both, plus the
+        // queue-order append the stand-in's per-char push also keeps.
+        let mut f = TextField::new(&"a".repeat(49), 50);
+        let mut r = BackspaceRepeat::default();
+        let keys = InputKeys { typed: vec!['b' as u32, 'c' as u32, 13], ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert!(res.enter, "the stop flag fires on the same frame");
+        assert_eq!(
+            res.text,
+            "a".repeat(49) + "b",
+            "the 50 cap trims 'c' even on the Enter frame (`:165`)"
+        );
+        // Escape keeps the text (the seam stops without reverting).
+        let keys = InputKeys { typed: vec![27], ..Default::default() };
+        let (res, _) = get_input_text(&mut f, &keys, &mut r, "", false);
+        assert!(res.escape);
+        assert_eq!(res.text.chars().count(), 50);
+    }
+
     #[test]
     fn panel_bg_truncates_to_the_xna_bytes() {
         // `new Color(23, 33, 69) * 0.7f` (`:206`).
