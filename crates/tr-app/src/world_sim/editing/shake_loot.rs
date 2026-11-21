@@ -300,10 +300,13 @@ pub(super) fn shake_tree_loot(
             let px = bx + rng.next_range(-2, 2);
             let py = by - 1 + rng.next_range(-2, 2);
             let ty = [210i32, 211][rng.next_max(2) as usize];
-            spawn_shake_npc(app, rng, ty, px as f32 * TILE_PX, py as f32 * TILE_PX, None, flags.get_good);
-            // `obj4.ai[1] = 65f` — set on the freshly spawned bee.
-            if let Some(n) = app.npcs.last_mut() {
-                n.ai[1] = 65.0;
+            let spawned = spawn_shake_npc(app, rng, ty, px as f32 * TILE_PX, py as f32 * TILE_PX, None, flags.get_good);
+            // `obj4.ai[1] = 65f` — set on the freshly spawned bee (only when
+            // the kind spawned — the C# writes the new slot, never a stale one).
+            if spawned {
+                if let Some(n) = app.npcs.last_mut() {
+                    n.ai[1] = 65.0;
+                }
             }
         }
         return;
@@ -428,8 +431,10 @@ fn next_vector2_circular_edge(rng: &mut UnifiedRandom, half_w: f32, half_h: f32)
 /// `Bottom` anchor (`nPC.Bottom = new Vector2(X, Y)`) maps to top-left
 /// `(X - w/2, Y - h)`, `timeLeft = activeTime*1.25` = 937 (`NPC.cs:95186`).
 /// Negative ids resolve through `NPCID.FromNetId`'s `NetIdMap` (`NPCID.cs`).
-/// Unported kinds consume the getGood draw then spawn nothing.
-fn spawn_shake_npc(app: &mut App, rng: &mut UnifiedRandom, net_id: i32, x: f32, y: f32, vel: Option<Vec2>, get_good: bool) {
+/// Unported kinds consume the getGood draw then spawn nothing. Returns
+/// whether an NPC was pushed (the bee burst's `ai[1] = 65` write guards on
+/// it — the C# writes the freshly spawned bee, never a stale slot).
+fn spawn_shake_npc(app: &mut App, rng: &mut UnifiedRandom, net_id: i32, x: f32, y: f32, vel: Option<Vec2>, get_good: bool) -> bool {
     // `NPC.NewNPC` head: `if (Main.getGoodWorld && Main.rand.Next(3) != 0)`
     // — the draw runs unconditionally on a getGood world (the 46/62 swaps
     // never match a shake kind).
@@ -449,7 +454,7 @@ fn spawn_shake_npc(app: &mut App, rng: &mut UnifiedRandom, net_id: i32, x: f32, 
         net_id
     };
     let Some((kind, variant)) = crate::npc::kind_from_net_id(resolved) else {
-        return;
+        return false;
     };
     let (w, h) = kind.size();
     let mut n = Npc::new(kind, x - w * 0.5, y - h, 1, 0.0);
@@ -462,6 +467,7 @@ fn spawn_shake_npc(app: &mut App, rng: &mut UnifiedRandom, net_id: i32, x: f32, 
         n.vy = v.y;
     }
     app.npcs.push(n);
+    true
 }
 
 /// The `:63219-63227` per-cell wood drop: `KillTile_GetItemDrops(i, j,
