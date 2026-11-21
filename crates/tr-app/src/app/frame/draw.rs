@@ -450,14 +450,6 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
-                        // S1-D-3ff d39 wave 1 — the critter band's glow
-                        // (the aiStyle-64 tail, `NPC.cs:34154-34174`): the
-                        // Firefly/LightningBug light their truncated centre
-                        // tile while the glow timer is live. RNG-free (the
-                        // npc_lights precedent); reads the post-step state.
-                        if let Some((x, y, rgb)) = crate::npc_lights::critter_light(n, pos) {
-                            self.entity_lights.add(x, y, rgb);
-                        }
                         // S1-D-4 W-10: the Horseman's unconditional
                         // `Lighting.AddLight(Center, 0.4, 0.36, 0.2)`
                         // (`NPC.cs:62420`) — slice B's pure fn, no RNG

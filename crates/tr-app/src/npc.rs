@@ -1086,37 +1086,21 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
-    // ---- S1-D-3ff d39 wave 1: the critter band 355-359 ----
-    /// `NPCID.Firefly` (355, `NPCID.cs:11387`) — the night glow-fly
-    /// (`NPC.cs:13517-13530`): 10x10, aiStyle 64, dmg 0, def 0, 5 HP,
-    /// slots 0.2, noGravity, catchItem 1992. WIRED: the axis' 64 arm
-    /// rides `npc_ai_style64::ai_064_step` (the glow tail's light feeds
-    /// `npc_lights::critter_light`).
-    Firefly,
+    // ---- W4-d39 (research/125): the band 351-420's unclaimed kinds ----
+    // The checkpoint wave's Firefly (355) / Worm (357) / LightningBug
+    // (358) / Snail (359) variants are DROPPED here — those kinds are
+    // claimed by the pushed c7/c8/c9 lanes (research/125 §2); their
+    // rows live on in commit 024c9877f for the merge wave's keep-one.
     /// `NPCID.Butterfly` (356, `NPCID.cs:11389`) — the day flutter
     /// (`NPC.cs:13531-13544`): 10x10, aiStyle 65, dmg 0, def 0, 5 HP,
     /// slots 0.25, noGravity, catchItem 1994 (+ai[2]-1 per tick,
     /// `:45106` — `bug_net::catch_item` already re-derives it). WIRED:
     /// the axis' 65 arm rides `npc_ai_style65::ai_065_step` (the new
     /// module, the type-356 branches of `AI_065_Butterflies`,
-    /// `NPC.cs:44896-45119`).
+    /// `NPC.cs:44896-45119`). Protocol id 781 (research/108 §3's
+    /// port-local 781-804 band — vanilla 356 sits inside d37's pushed
+    /// 354-399 protocol corridor).
     Butterfly,
-    /// `NPCID.Worm` (357, `NPCID.cs:11391`) — the ground crawler
-    /// (`NPC.cs:13545-13558`): 10x4, aiStyle 66, dmg 0, def 0, 5 HP,
-    /// slots 0.1, catchItem 2002, friendly. WIRED: the axis' 66 arm
-    /// rides `npc_ai_style66::ai_style66`.
-    Worm,
-    /// `NPCID.LightningBug` (358, `NPCID.cs:11393`) — the jungle
-    /// glow-fly (`NPC.cs:13559-13572`): 12x12, aiStyle 64, dmg 0,
-    /// def 0, 5 HP, slots 0.2, noGravity, catchItem 2004. WIRED: the
-    /// axis' 64 arm (the teal glow colour, `NPC.cs:34162`).
-    LightningBug,
-    /// `NPCID.Snail` (359, `NPCID.cs:11395`) — the wall-crawler
-    /// (`NPC.cs:13573-13586`): 12x12, aiStyle 67, dmg 0, def 0, 5 HP,
-    /// slots 0.5, noGravity, catchItem 2006. WIRED: the axis' 67 arm
-    /// rides `npc_ai_style67::snail_ai_step` (the scale roll resizes
-    /// the box; the slope pass is `snail_move_on_slopes`).
-    Snail,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3560,15 +3544,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
-            // S1-D-3ff d39 wave 1: the critter band writes NO
-            // knockBackResist row — the `SetDefaults` head's 1f
-            // (`NPC.cs:8533`); the stock `_ => 0.4` below never sees
-            // them (the BlazingWheel precedent).
-            NpcKind::Firefly
-            | NpcKind::Butterfly
-            | NpcKind::Worm
-            | NpcKind::LightningBug
-            | NpcKind::Snail => 1.0,
+            // W4-d39: the Butterfly writes NO knockBackResist row — the
+            // `SetDefaults` head's 1f (`NPC.cs:8533`); the stock
+            // `_ => 0.4` below never sees it (the BlazingWheel precedent).
+            NpcKind::Butterfly => 1.0,
             _ => 0.4,
         }
     }
@@ -3949,13 +3928,9 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
-            // S1-D-3ff d39 wave 1: the critter band's `defense = 0`
-            // rows (`NPC.cs:13523`/`:13537`/`:13551`/`:13565`/`:13579`).
-            NpcKind::Firefly
-            | NpcKind::Butterfly
-            | NpcKind::Worm
-            | NpcKind::LightningBug
-            | NpcKind::Snail => 0,
+            // W4-d39: the Butterfly's `defense = 0` row
+            // (`NPC.cs:13537`).
+            NpcKind::Butterfly => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4328,13 +4303,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
-            // S1-D-3ff d39 wave 1: the critter band writes no value row
-            // (the `SetDefaults` head's `value = 0f`, `NPC.cs:8544`).
-            NpcKind::Firefly
-            | NpcKind::Butterfly
-            | NpcKind::Worm
-            | NpcKind::LightningBug
-            | NpcKind::Snail => 0.0,
+            // W4-d39: the Butterfly writes no value row (the
+            // `SetDefaults` head's `value = 0f`, `NPC.cs:8544`).
+            NpcKind::Butterfly => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4984,29 +4955,11 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
-            // ---- S1-D-3ff d39 wave 1: the critter band's style arms ----
-            // `else if (this.aiStyle == 64)` (`NPC.cs:34019-34248`) — the
-            // Firefly (355) / LightningBug (358). The faithful
-            // `npc_ai_style64::ai_064_step` (the glow tail's light feeds
-            // `npc_lights::critter_light`); the noGravity flyer rides
-            // `integrate_flyer_collision`. The 677 threat scan never runs
-            // for these two, so the sibling pool is empty.
-            64 => {
-                let cand = crate::npc_target::session_candidate(player);
-                let ctx = crate::npc_ai_style64::Ai64Ctx {
-                    players: &[cand],
-                    npcs: &[],
-                    ticker: 0,
-                };
-                let _ = crate::npc_ai_style64::ai_064_step(
-                    self.kind.cs_id() as i32,
-                    self,
-                    world,
-                    &ctx,
-                    rng,
-                );
-                self.integrate_flyer_collision(world);
-            }
+            // ---- W4-d39 (research/125): the Butterfly's style arm ----
+            // The checkpoint wave's 64/66/67 arms are dropped with their
+            // claimed kinds (c7/c8/c9 own Firefly/LightningBug/Worm/
+            // TruffleWorm/Snail/GlowingSnail — their lanes wire the same
+            // base modules `npc_ai_style64/66/67`).
             // `else if (this.aiStyle == 65)` (`NPC.cs:44896-45119`) — the
             // Butterfly (356). The new `npc_ai_style65::ai_065_step` (the
             // type-356 branches); the noGravity flyer rides
@@ -5029,57 +4982,6 @@ impl Npc {
                     rng,
                 );
                 self.integrate_flyer_collision(world);
-            }
-            // `else if (this.aiStyle == 66)` (`NPC.cs:34253-34347`) — the
-            // Worm (357) / TruffleWorm (374). The faithful
-            // `npc_ai_style66::ai_style66`; the grounded crawler rides the
-            // depth-scaled gravity + the blocked-axis collision. The 374
-            // dig request queues on `wants_transform` (the sim's drain
-            // resolves it to the TruffleWormDigger, wave 3).
-            66 => {
-                let cand = crate::npc_target::session_candidate(player);
-                let out = crate::npc_ai_style66::ai_style66(
-                    self,
-                    world,
-                    &[cand],
-                    self.kind.cs_id() as i32,
-                    // `Main.essScale` — the 484 flicker reads it; the
-                    // Worm/TruffleWorm never do, so the stock 1 is a no-op.
-                    1.0,
-                    0,
-                    rng,
-                );
-                if out.transform_to_digger {
-                    self.wants_transform = Some(375);
-                }
-                self.integrate_crawler(world, true);
-            }
-            // `else if (this.aiStyle == 67)` (`NPC.cs:34348-34622`) — the
-            // Snail (359) / GlowingSnail (360). The faithful
-            // `npc_ai_style67::snail_ai_step`; the `no_gravity` event gates
-            // the integration's gravity, and the slope pass is
-            // `snail_move_on_slopes` (the aiStyle-67 replacement for the
-            // normal slope/stair pass, `NPC.cs:92568-92571`).
-            67 => {
-                let cand = crate::npc_target::session_candidate(player);
-                let ctx = crate::npc_ai_style67::SnailCtx::stock(self.kind.cs_id() as i32);
-                let ev = crate::npc_ai_style67::snail_ai_step(
-                    self,
-                    &ctx,
-                    world,
-                    &[cand],
-                    rng,
-                    0,
-                );
-                // The shimmer transform needs the unported Shimmerfly
-                // (677); the statue-despawn zeroes hp (the death pass
-                // owns the deactivation). Both are cited seams.
-                if ev.shimmer_statue_despawn {
-                    self.hp = 0;
-                }
-                let gravity_on = ev.no_gravity.map(|ng| !ng).unwrap_or(true);
-                self.integrate_crawler(world, gravity_on);
-                crate::npc_ai_style67::snail_move_on_slopes(self, world);
             }
             _ => self.update_kind_ai(world, player, dt, rng),
         }
@@ -6438,21 +6340,12 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
-            // S1-D-3ff d39 wave 1: the critter band's aiStyles 64/65/66/67
-            // ride the style axis above (the faithful modules) — these arms
-            // keep the kind match exhaustive and are unreachable through
-            // `update_rng` (the aiStyle-5/9 marker precedent).
-            NpcKind::Firefly | NpcKind::LightningBug => {
-                unreachable!("aiStyle 64 rides the style axis (S1-D-3ff d39 wave 1)")
-            }
+            // W4-d39: the Butterfly's aiStyle 65 rides the style axis
+            // above (the faithful module) — this arm keeps the kind
+            // match exhaustive and is unreachable through `update_rng`
+            // (the aiStyle-5/9 marker precedent).
             NpcKind::Butterfly => {
-                unreachable!("aiStyle 65 rides the style axis (S1-D-3ff d39 wave 1)")
-            }
-            NpcKind::Worm => {
-                unreachable!("aiStyle 66 rides the style axis (S1-D-3ff d39 wave 1)")
-            }
-            NpcKind::Snail => {
-                unreachable!("aiStyle 67 rides the style axis (S1-D-3ff d39 wave 1)")
+                unreachable!("aiStyle 65 rides the style axis (W4-d39)")
             }
         }
     }
@@ -9138,25 +9031,7 @@ impl Npc {
             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                 self.frame = 1;
             }
-            // S1-D-3ff d39 wave 1 — the critter band's `FindFrame` cases.
-            // `case 355 : case 358 : case 654` (`NPC.cs:72688-72708`):
-            // spriteDirection = direction, the 4/7-tick two-row flap, and
-            // the dark-pause offset (+2 rows while localAI[2] <= 0).
-            NpcKind::Firefly | NpcKind::LightningBug => {
-                self.sprite_dir = self.facing;
-                self.frame_counter += 1.0;
-                if self.frame_counter < 4.0 {
-                    self.frame = 0;
-                } else {
-                    self.frame = 1;
-                    if self.frame_counter >= 7.0 {
-                        self.frame_counter = 0.0;
-                    }
-                }
-                if self.local_ai[2] <= 0.0 {
-                    self.frame += 2;
-                }
-            }
+            // W4-d39 (research/125) — the Butterfly's `FindFrame` case.
             // `case 356` (`NPC.cs:72739-72773`): the |v|-weighted 7-tick
             // four-phase flap (0/1/2/1), the vx*0.3 tilt, and the colour
             // band offset `(ai[2]-1)*3` (the type-356 gate at `:72768` —
@@ -9181,44 +9056,6 @@ impl Npc {
                 }
                 // `:72770` — `(int)((float)(num*3) * (ai[2]-1f))` / num.
                 self.frame += (3.0 * (self.ai[2] - 1.0)) as u32;
-            }
-            // `case 357` (`NPC.cs:72774-72828`, the 357/448/484/606 group):
-            // the 12-tick two-frame crawl (idle pins row 1), the airborne
-            // `direction*0.1` tilt, and the localAI[0] = -2 marker. The
-            // slope-1/2 ±0.785 rotation + localAI[0] = 0 tail (`:72806-
-            // 72826`) reads `Framing.GetTileSafely` — `find_frame` carries
-            // no world (the pure-frame convention), so the probe is a
-            // documented seam (ANALYSIS "d39 wave 1"); the marker stays -2.
-            NpcKind::Worm => {
-                self.local_ai[0] = -2.0;
-                if self.vy == 0.0 {
-                    self.rotation = 0.0;
-                    if self.vx == 0.0 {
-                        self.frame = 1;
-                        self.frame_counter = 0.0;
-                    } else {
-                        self.frame_counter += 1.0;
-                        if self.frame_counter > 12.0 {
-                            self.frame_counter = 0.0;
-                            self.frame = (self.frame + 1) % 2;
-                        }
-                    }
-                } else {
-                    self.rotation += self.facing as f32 * 0.1;
-                    self.frame = 1;
-                }
-            }
-            // `case 359 : case 360 : case 655` (`NPC.cs:72238-72295`): the
-            // snail's fall/walk strip rides the style67 module's pure twin.
-            NpcKind::Snail => {
-                let (row, counter) = crate::npc_ai_style67::snail_find_frame(
-                    self.vx,
-                    self.vy,
-                    self.frame,
-                    self.frame_counter,
-                );
-                self.frame = row;
-                self.frame_counter = counter;
             }
             // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
             // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
@@ -10732,28 +10569,6 @@ impl Npc {
             self.y = ny;
             self.on_ground = false;
         }
-    }
-
-    /// The grounded-crawler integration (aiStyle 66/67, S1-D-3ff d39):
-    /// the depth-scaled 0.3 gravity + the 10 fall cap
-    /// (`NPC.UpdateNPC_UpdateGravity`, `NPC.cs:90878-90936`, the
-    /// `npc_ai_golem::body_gravity` fold) gated by `gravity_on`, then the
-    /// blocked-axis collision with the ground snap
-    /// (`integrate_flyer_collision`). The Worm (357) is always
-    /// `gravity_on` (its `SetDefaults` writes no `noGravity`); the Snail
-    /// (359) toggles it per tick via `SnailEvents::no_gravity`
-    /// (`NPC.cs:34445` fall / `:34488` crawl).
-    fn integrate_crawler(&mut self, world: &World, gravity_on: bool) {
-        if gravity_on {
-            self.vy = (self.vy
-                + crate::npc_ai_golem::body_gravity(
-                    self.y,
-                    world.width as i32,
-                    world.world_surface,
-                ))
-            .min(10.0);
-        }
-        self.integrate_flyer_collision(world);
     }
 
     /// `AI_005_EaterOfSouls`'s hover core through the framework's
@@ -18872,14 +18687,10 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // S1-D-3ff d39 wave 1: the critter band's vanilla ids —
-            // 355-359 are unused by every arm above (the G6 key stays
-            // injective; the 370-373 clash is the fishron family's).
-            NpcKind::Firefly => 355,
+            // W4-d39: the Butterfly's vanilla render id (its own sheet;
+            // 356 is unused by every arm above — the G6 key stays
+            // injective).
             NpcKind::Butterfly => 356,
-            NpcKind::Worm => 357,
-            NpcKind::LightningBug => 358,
-            NpcKind::Snail => 359,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23948,7 +23759,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 275] = [
+    pub(super) const ALL_KINDS: [NpcKind; 271] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24227,12 +24038,8 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
-        // S1-D-3ff d39 wave 1 — the critter band 355-359.
-        NpcKind::Firefly,
+        // W4-d39 (research/125): the band's first unclaimed kind.
         NpcKind::Butterfly,
-        NpcKind::Worm,
-        NpcKind::LightningBug,
-        NpcKind::Snail,
     ];
 
     #[test]
@@ -27844,8 +27651,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            271,
+            "every decodable kind resolves (the wire roster's size - 271 after W4-d39's Butterfly (research/125); 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31487,6 +31294,9 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody2, 6),
         (NpcKind::WyvernBody3, 6),
         (NpcKind::WyvernTail, 6),
+        // W4-d39 (research/125) — the Butterfly's `SetDefaults` aiStyle
+        // row (`NPC.cs:13535`).
+        (NpcKind::Butterfly, 65),
     ];
 
     #[test]
@@ -32037,6 +31847,142 @@ mod s1_d_2_tests {
                 assert!(n.hp <= hp, "{kind:?} hp grew");
             }
         }
+    }
+
+    // ---- W4-d39 (research/125) — the Butterfly (356), the band's first
+    // unclaimed kind. Tests-as-code, WRITTEN NOT RUN (code-only mode — no
+    // compiler invoked). Every constant pins to its C# `SetDefaults`
+    // literal (`NPC.cs:13531-13544`). The checkpoint wave's Firefly/Worm/
+    // LightningBug/Snail witnesses live on in commit 024c9877f (their
+    // kinds belong to the pushed c7/c8/c9 lanes). ----
+
+    /// The Butterfly's `SetDefaults` rows: size, aiStyle, lifeMax 5,
+    /// damage 0, defense 0, value 0, knockBackResist 1 (the head default,
+    /// `NPC.cs:8533` — no row written), NPCHit1/NPCDeath1, and the `[31]`
+    /// Confused immunity (`NPCID.cs:8164`). The protocol id is the
+    /// port-local 781 (research/108 §3), NOT the vanilla 356.
+    #[test]
+    fn w4_d39_the_butterfly_setdefaults_rows() {
+        let kind = NpcKind::Butterfly;
+        assert_eq!(kind.cs_id(), 356, "vanilla type (the bestiary net id)");
+        assert_eq!(kind.net_id(), 356, "net id");
+        assert_eq!(kind.to_u16(), 781, "protocol id = port-local 781");
+        assert_eq!(NpcKind::from_u16(781), Some(kind), "decode");
+        assert_eq!(NpcKind::from_u16(356), None, "356 stays d37-band free");
+        assert_eq!(kind.size(), (10.0, 10.0), "size");
+        assert_eq!(kind.ai_style(), 65, "aiStyle");
+        assert_eq!(kind.max_hp(), 5, "lifeMax");
+        assert_eq!(kind.contact_damage(), 0, "damage");
+        let n = bare(kind);
+        assert_eq!(n.defense(), 0, "defense");
+        assert_eq!(n.value(), 0.0, "value");
+        assert_eq!(n.knock_back_resist(), 1.0, "kb head default");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "hit");
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "death");
+        // The `[31]` Confused immunity — the only debuff row.
+        let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+        assert!(b.buff_immune[31], "Confused immune");
+        assert_eq!(
+            b.buff_immune.iter().filter(|x| **x).count(),
+            1,
+            "only [31]"
+        );
+        // The catchable arm spawns friendly with the 90-tick window
+        // (`NPC.cs:17851-17855`); `bug_net::npc_catchable` covers it.
+        assert!(crate::bug_net::npc_catchable(356), "catchable");
+        assert!(n.friendly, "friendly (catchable)");
+        assert!(kind.no_gravity(), "the noGravity flyer");
+    }
+
+    /// The catch item (`NPC.cs:13543`): the butterfly's re-derives from
+    /// ai[2] (`:45106`) — 1994 + band - 1.
+    #[test]
+    fn w4_d39_the_butterfly_catch_item() {
+        assert_eq!(crate::bug_net::catch_item(356, 1.0), 1994);
+        assert_eq!(crate::bug_net::catch_item(356, 4.0), 1997);
+        assert_eq!(crate::bug_net::catch_item(356, 7.0), 2000);
+    }
+
+    /// The Butterfly `FindFrame` case (`NPC.cs:72739-72773`): the
+    /// |v|-weighted 7-tick four-phase flap, the vx*0.3 tilt, and the
+    /// colour-band offset (ai[2]-1)*3.
+    #[test]
+    fn w4_d39_the_butterfly_flaps_the_colour_band() {
+        let mut n = bare(NpcKind::Butterfly);
+        n.facing = 1;
+        n.ai[2] = 1.0; // band 0
+        n.vx = 0.0;
+        n.vy = 0.0;
+        // Still air: the counter adds 1/tick; the 7-tick phases 0/1/2/1.
+        let mut rows = Vec::new();
+        for _ in 0..27 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(
+            rows,
+            [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1, 1],
+            "the 7-tick four-phase flap"
+        );
+        // The tilt rides vx.
+        n.vx = 2.0;
+        n.find_frame();
+        assert_eq!(n.rotation, 2.0 * 0.3, ":72745");
+        // Band 3 (ai[2] = 4) offsets the rows by 9.
+        n.ai[2] = 4.0;
+        n.frame_counter = 0.0;
+        n.vx = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 9, "band 3 row 0 + 9");
+    }
+
+    /// The Butterfly's bestiary entry: its own entry with the vanilla
+    /// net id, the NPCID credit name and the en-US display name
+    /// (`NPCs.json:316`); `quick_unlock` is false.
+    #[test]
+    fn w4_d39_the_butterfly_bestiary_entry() {
+        let e = crate::bestiary::entry_for_npc(NpcKind::Butterfly, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 356, "net id");
+        assert_eq!(e.credit_id, "Butterfly", "credit");
+        assert_eq!(e.name, "Butterfly", "display name");
+        assert!(!e.quick_unlock, "not a boss");
+    }
+
+    /// The Butterfly steps its aiStyle-65 machine without panicking and
+    /// keeps its frame inside the sheet's 24-row budget (the wave-A
+    /// family-machine witness's shape). The flyer rides the noGravity
+    /// integration.
+    #[test]
+    fn w4_d39_the_butterfly_steps_its_family_machine() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let kind = NpcKind::Butterfly;
+        let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        let hp = n.hp;
+        let rows = crate::render::entities::npc_rows(
+            crate::render::entities::texture_net_id(kind),
+        );
+        for _ in 0..120 {
+            n.update(&w, &mut player, 1.0 / 60.0);
+            assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+            assert!(n.hp <= hp, "{kind:?} hp grew");
+        }
+    }
+
+    /// The G6 `render_key`'s kind term: the Butterfly's vanilla id 356
+    /// is unused by every other arm (the roster-wide injectivity test
+    /// covers the rest; this pins the new arm's own value).
+    #[test]
+    fn w4_d39_the_butterfly_render_key_term() {
+        let mut n = Npc::new(NpcKind::Butterfly, 100.0, 200.0, 1, 0.0);
+        n.hp = 100;
+        let key_butterfly = n.render_key();
+        // A second kind at the identical state must differ (the kind
+        // term is the only delta) — the DungeonSpirit's 288 is the
+        // nearest landed small-kind arm.
+        let mut m = Npc::new(NpcKind::DungeonSpirit, 100.0, 200.0, 1, 0.0);
+        m.hp = 100;
+        assert_ne!(key_butterfly, m.render_key(), "the kind term separates");
     }
 
     // ---- S1-D-3z (zombie fighter audit) — the holiday zombie variants +

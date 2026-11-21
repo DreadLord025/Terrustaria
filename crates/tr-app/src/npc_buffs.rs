@@ -484,14 +484,9 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
-        // S1-D-3ff d39 wave 1: the critter band's `{ type, [31] }` rows
-        // (`NPCID.cs:8156-8246` — 355/356/357/358/359 all carry the
-        // single `[31]` Confused immunity, the catchable-critter set).
-        NpcKind::Firefly
-        | NpcKind::Butterfly
-        | NpcKind::Worm
-        | NpcKind::LightningBug
-        | NpcKind::Snail => &[31],
+        // W4-d39: the Butterfly's `{ 356, [31] }` row (`NPCID.cs:8164`
+        // — the single Confused immunity, the catchable-critter set).
+        NpcKind::Butterfly => &[31],
     }
 }
 

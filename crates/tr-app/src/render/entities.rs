@@ -939,10 +939,6 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
     match n.kind {
         // The vanilla's 124 — the port's `Mechanic` kind — at `:23000`.
         Mechanic | BoundMechanic => num46 = 2.0,
-        // S1-D-3ff d39 wave 1 — `:22999-23002`: the Worm's (357)
-        // `num46 = rCurrentNPC.localAI[0]` (the FindFrame slope marker:
-        // -2 on flat ground, 0 on a slope — the crawl's draw lift).
-        Worm => num46 = n.local_ai[0],
         // `:23026` — the id 477 group's `num47 = 22` (an absolute, not an
         // add: the DD2 Ogre's sheet is far taller than its box).
         DD2OgreT2 | DD2OgreT3 => num47 = 22.0,
@@ -1252,15 +1248,11 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     384, // the Force Bubble
 ];
 
-/// S1-D-3ff d39 wave 1 — the critter band 355-359's own sheets
-/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// W4-d39 (research/125) — the band 351-420's unclaimed kinds' own
+/// sheets (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
 /// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`.
 pub(crate) const CRITTER_SHEETS: &[u32] = &[
-    355, // the Firefly
     356, // the Butterfly
-    357, // the Worm
-    358, // the Lightning Bug
-    359, // the Snail
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3186,29 +3178,15 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
-            // S1-D-3ff d39 wave 1 — the critter band draws its own sheet
+            // W4-d39 (research/125) — the Butterfly draws its own sheet
             // (`CRITTER_SHEETS`) at `SetFrameSize`'s integer-division row
-            // height over `Main.npcFrameCount[type]` (`Main.cs:67082`:
-            // 355 four frames, 356 twenty-four, 357 two, 358 four, 359
-            // six) with the generic centred anchor (`Main.cs:25511-25516`).
-            // The Firefly/Butterfly/Snail scale rides `n.scale` (the AI's
-            // ai[3] latch / the snail's scale roll) via `scaled_anchor`
-            // (the stardust cells' convention); the Worm is unscaled. The
-            // Butterfly/Snail rotate (the whitelist below).
-            NpcKind::Firefly => {
-                scaled_anchor(assets.npc_sheet(355), npc_rows(355), n, w, h)
-            }
+            // height over `Main.npcFrameCount[356]` = 24
+            // (`Main.cs:67082`) with the generic centred anchor
+            // (`Main.cs:25511-25516`). The scale rides `n.scale` (the
+            // AI's ai[3] latch) via `scaled_anchor` (the stardust cells'
+            // convention); the Butterfly rotates (the whitelist below).
             NpcKind::Butterfly => {
                 scaled_anchor(assets.npc_sheet(356), npc_rows(356), n, w, h)
-            }
-            NpcKind::Worm => {
-                pumpkin_moon_draw(assets.npc_sheet(357), npc_rows(357), n, w, h)
-            }
-            NpcKind::LightningBug => {
-                scaled_anchor(assets.npc_sheet(358), npc_rows(358), n, w, h)
-            }
-            NpcKind::Snail => {
-                scaled_anchor(assets.npc_sheet(359), npc_rows(359), n, w, h)
             }
         };
         let Some(tex) = tex else {
@@ -3359,14 +3337,10 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
-                    // S1-D-3ff d39 wave 1: the Butterfly's vx*0.3 tilt
-                    // (`NPC.cs:72745`), the Worm's airborne direction*0.1
-                    // tilt (`:72802`), and the Snail's wall-crawl rotation
-                    // ease (`:34525-34619`) — the C#'s generic draw rotates
+                    // W4-d39: the Butterfly's vx*0.3 tilt
+                    // (`NPC.cs:72745`) — the C#'s generic draw rotates
                     // every NPC by `npc.rotation` (`Main.cs:26632`).
                     | NpcKind::Butterfly
-                    | NpcKind::Worm
-                    | NpcKind::Snail
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

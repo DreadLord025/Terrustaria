@@ -75,56 +75,6 @@ pub(crate) fn npc_light(
     ))
 }
 
-/// S1-D-3ff d39 wave 1 — the critter band's `Lighting.AddLight` sources,
-/// the draw-side feed (the `npc_light` precedent: RNG-free, reads the
-/// post-step NPC state). Two families:
-///
-/// * the aiStyle-64 glow tail (`NPC.cs:34154-34174`): the Firefly (355) /
-///   LightningBug (358) light their truncated centre tile while
-///   `localAI[2] > 3`, the colour riding the CURRENT scale (`ai[3]`). The
-///   decrement runs on every glow tick, so the feed reads the post-step
-///   value (the C# lights BEFORE the decrement — the `> 3` gate on the
-///   pre-decrement value is the same as `> 2` on the post, but the arm
-///   already ran; the feed re-derives the C#'s pre-decrement gate from
-///   `local_ai[2] + 1`).
-/// * the aiStyle-67 per-type light (`NPC.cs:34385-34392`): the
-///   GlowingSnail (360) lights (0.1, 0.2, 0.7) every tick — its arm lands
-///   with wave 2's kind. The Snail (359) has no light.
-///
-/// `pos` is the NPC's top-left including `netOffset` (the C# adds it
-/// around the aiStyle-8 chain; the 64/67 tails read `base.Center`
-/// directly, so the offset is folded here for consistency with the
-/// `npc_light` feed).
-pub(crate) fn critter_light(n: &crate::npc::Npc, pos: Vec2) -> Option<(i32, i32, [f32; 3])> {
-    use crate::npc::NpcKind;
-    let (w, h) = n.size();
-    match n.kind {
-        // The glow tail: `localAI[2] > 3` on the PRE-decrement value. The
-        // arm decremented once this tick, so the gate is `local_ai[2]+1 > 3`
-        // (i.e. `local_ai[2] > 2`). The colour rides the current scale.
-        NpcKind::Firefly | NpcKind::LightningBug => {
-            if n.local_ai[2] + 1.0 > 3.0 {
-                let s = n.scale;
-                let rgb = if n.kind == NpcKind::LightningBug {
-                    // `:34162` — the teal glow.
-                    [0.10124999 * s, 0.21374999 * s, 0.225 * s]
-                } else {
-                    // `:34170` — the Firefly's green (the else arm).
-                    [0.109500006 * s, 0.15 * s, 0.0615 * s]
-                };
-                Some((
-                    tile_x(pos, w, XAnchor::CenterTruncated),
-                    tile_y(pos, h, XAnchor::CenterTruncated),
-                    rgb,
-                ))
-            } else {
-                None
-            }
-        }
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1275,14 +1275,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
-        // S1-D-3ff d39 wave 1 — the critter band 355-359's own sheets,
-        // keyed by the vanilla net id in `NpcAssets::npc_sheets`
+        // W4-d39 (research/125) — the Butterfly's own sheet, keyed by
+        // the vanilla net id in `NpcAssets::npc_sheets`
         // (`render/entities.rs`'s CRITTER_SHEETS).
-        "NPC_355",
         "NPC_356",
-        "NPC_357",
-        "NPC_358",
-        "NPC_359",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1868,7 +1864,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 186] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 182] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1903,9 +1899,9 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 186] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
-        // S1-D-3ff d39 wave 1 — the critter band, appended last for the
+        // W4-d39 (research/125) — the Butterfly, appended last for the
         // same reason (the parallel `bestiary_npc_sheets` vec below).
-        355, 356, 357, 358, 359,
+        356,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2668,13 +2664,9 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
-                // S1-D-3ff d39 wave 1 — the critter band's five strips
-                // (355-359), in BESTIARY_NPC_SHEET_IDS' appended order.
-                atlas.sheet("NPC_355").copied(),
+                // W4-d39 (research/125) — the Butterfly's strip, in
+                // BESTIARY_NPC_SHEET_IDS' appended order.
                 atlas.sheet("NPC_356").copied(),
-                atlas.sheet("NPC_357").copied(),
-                atlas.sheet("NPC_358").copied(),
-                atlas.sheet("NPC_359").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),
