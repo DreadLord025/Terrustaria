@@ -358,3 +358,126 @@ picking it up and using it currently grants a buff that expires the same tick
 (no `UpdatePet`) and spawns no persistent pet (no 994 row/AI). **Recorded as
 seeds, not ported here** (cross-lane; porting would touch `editing.rs` and the
 pet-equip hot files outside this lane's scope).
+
+---
+
+## Item 5 — 191 TrueNightsEdge vs 190 NightsEdge: terra-chain progression
+
+**The chain (item → projectile → aiStyle).** Verified against `Item.cs`
+SetDefaults + `Projectile.cs` SetDefaults + `ProjectileID.cs`/`ItemID.cs`:
+
+| Item | id | `shoot` | C# use-path arm | spawns (kind, velocity, damage, ai0/ai1/ai2) |
+| --- | --- | --- | --- | --- |
+| Nights Edge | 273 (`Item.cs:4578`) | 972 | `Player.cs:48870-48877` | **972** slash `(dir,0)` dmg `dir·gravDir / itemAnimMax / scale`; **972** beam `(num4,num5)` dmg `dir·gravDir·0.1 / 30 / scale` |
+| True Nights Edge | 675 (`Item.cs:9299`) | 973 | `Player.cs:48914-48921` | **972** slash `(dir,0)` dmg `dir·gravDir / itemAnimMax / scale`; **973** beam `(num4,num5)` **dmg/2** `dir·gravDir / 32 / scale` |
+| True Excalibur | 674 (`Item.cs:9280`) | 983 | `Player.cs:48922-48929` | **983** slash `(dir,0)` dmg `dir·gravDir / itemAnimMax / scale`; **982** ghost `(dir,0)` **dmg 0** `dir·gravDir / itemAnimMax / scale` |
+| Terra Blade | 757 (`Item.cs:10212`) | 985 | `Player.cs:48930-48937` | **984** slash `(dir,0)` dmg `dir·gravDir / itemAnimMax / scale`; **985** beam `(num4,num5)·5` dmg `dir·gravDir / 18 / scale` |
+
+(`num4,num5` = the aim normalized to `shootSpeed`, `Player.cs:47277-47307`;
+`scale` = `GetAdjustedItemScale`, `:42566-42574` = `item.scale × 1.1` iff
+melee+glove; `itemAnimMax` = the prefixed `itemAnimationMax`.)
+
+**Projectile rows + aiStyle:**
+
+| proj | id | aiStyle | C# SetDefaults | d19 row | d20 row |
+| --- | --- | --- | --- | --- | --- |
+| NightsEdge | 972 | 190 | `:9298-9314` | ✓ `data.rs:3700` | **absent** |
+| TrueNightsEdge | 973 | 191 | `:9315-9329` | — | ✓ `data.rs:3656` |
+| Excalibur | 982 | 190 | `:9354-9370` | ✓ `:3707` | **absent** |
+| TrueExcalibur | 983 | 190 | `:9371-9387` | ✓ `:3713` | **absent** |
+| TerraBlade2 (slash) | 984 | 190 | `:9388-9404` | ✓ `:3719` | **absent** |
+| TerraBlade2Shot (beam) | 985 | 191 | `:9405-9421` | — | ✓ `data.rs:3662` |
+| HorsemansBlade | 997 | 190 | `:9466-9482` | ✓ `:3707` | absent |
+| DeadCellsFlintSlash | 1043 | 190 | `:9858-9874` | ✓ `:3725` | ✓ `data.rs:3651` (dup) |
+| ChlorophyteClaymoreBlade | 1126 | 190 | `:10543-10558` | ✓ `:3734` | absent |
+
+**AI-arm fidelity — BOTH faithful.**
+
+- **190 `AI_190_NightsEdge`** (`Projectile.cs:41972-42227`): d19's
+  `projectile_ai_sword_styles.rs::ai_nights_edge` (`:1035`) ports the spine
+  verbatim — the first-tick 984 Item60 cue (`:41978`, port `:1048`) + 1126
+  vel-y latch (`:41986`, port `:1051`); the age/progress/rotation
+  (`:41991-41994`, port `:1057-1061`); the per-kind scale pair
+  (`:41997-42016`, port `:1065-1076`); the centre pin + progress scale
+  (`:42017-42018`, port `:1085-1086`); the 972/1043 thrust extension
+  (`:42019-42049`, port `:1089+`); the per-kind dust gates; the 1126 spore
+  machine (`:42078-42182`) queuing 1128 clouds; the `scale *= ai[2]` + num≥1
+  kill (`:42222-42226`). Dispatch wired (`projectile.rs:17423` on d19).
+- **191 `AI_191_TrueNightsEdge`** (`Projectile.cs:41640-41808`): d20's
+  `projectile_ai_misc.rs::ai_true_nights_edge` (`:1533`) ports it verbatim —
+  the envelope constants + 985 swap (`:41642-41653`, port `:1539-1551`); the
+  973 first-tick Item8 cue (`:41654-41657`, port `:1553-1554`); the age +
+  fast-forwards (`:41658-41666`, port `:1556-1563`); the opacity envelope
+  (`:41667`, port `:1565-1567`); the num4 kill (`:41668-41673`, port
+  `:1569-1575`); the 973 spin/LOS/centre/dust (`:41678-41725`, port
+  `:1583-1634`); the 985 ownerHitCheck window + damage-zero + drag ladder +
+  retract (`:41730-41807`, port `:1641-1703`); the 985 blocked-move retract
+  (`:18104-18110`, `terra_blade_move` `:1710`). Dispatch wired
+  (`projectile.rs:17524`). Witnesses pin the rows, the cue, the num4 kill, the
+  ownerHitCheck window, the damage-zero, the retract and the dispatch
+  (`projectile_ai_misc.rs:2964-3089`).
+
+**Both arms read `ai[1]` as the lifetime envelope** (190: `num = localAI[0] /
+ai[1]`, `:41992`; 191: `num3 = ai[1] + 50`, `fromValue = localAI[0] / ai[1]`,
+`:41644/:41675`) and `ai[2]` as the scale (`:42222` / `:41710/:41737`). The
+witnesses spawn with `ai[1] = 30, ai[2] = 1` (`:2988/:3070`) — the **correct
+use-path payload**.
+
+**THE REAL GAP — the use-path spawn arms are missing on EVERY branch.** The
+four C# arms (`Player.cs:48870/:48914/:48922/:48930`) that spawn the paired
+slash+beam with the `ai0/ai1/ai2` payload have **no port** (all-branch grep
+`48870|48914|48930|kind == 273|kind == 675|kind == 757` in `editing.rs`: 0 hits).
+The swords fall through to the **generic `Item.shoot` tail**
+(`editing.rs::fire_non_ammo_shot`, `:4093-4225`), which spawns ONE projectile
+(the item's `shoot`) at the aim velocity with **`ai0 = ai1 = 0`** (`:4113-4114`)
+and `ai2 = 0` (the spawn seam carries ai0/ai1 only, `projectile.rs:16034`).
+
+Consequences (behavioural, not cosmetic):
+
+1. **The envelope collapses.** With `ai[1] = 0`, the 190/191 arms divide by zero
+   (`localAI[0] / ai[1]` → ∞/NaN). The 191 num4 kill (`localAI[0] >= ai[1]+65 =
+   65`) fires after 65 ticks regardless; the opacity/scale remaps read NaN. The
+   190 `num >= 1` kill (`:42223`) fires immediately (∞ ≥ 1). The slash/beam
+   choreography never plays as designed.
+2. **The paired slash is never spawned.** TrueNightsEdge should spawn a 972
+   slash + a 973 beam (half damage); the port spawns only a 973. Terra Blade
+   should spawn a 984 slash + a 985 beam (×5 velocity); the port spawns only a
+   985. TrueExcalibur should spawn 983 + a 982 ghost (damage 0); the port spawns
+   only 983. NightsEdge should spawn 972 slash + 972 beam; the port spawns one
+   972.
+3. **The 972/984/982/983 rows are absent on d20** (they live only on d19), so
+   even a naive use-path port on d20 could not spawn the slash kinds.
+
+**Verdict — AI arms FAITHFUL (both 190 and 191 shoot the correct child types
+*when given the correct payload*); the use-path spawner is a cross-lane real
+gap.** The d20 lane's 191 arm is correct and complete; the d19 lane's 190 arm is
+correct and complete. The missing piece is the **item-use lane's** per-item
+spawn arms (`Player.cs:48870-48937`), which must:
+
+- spawn the paired slash+beam with `ai0 = dir·gravDir` (slash) / `dir·gravDir`
+  or `·0.1` (beam), `ai1 = itemAnimMax` (slash) / `30/32/18` (beam), `ai2 =
+  GetAdjustedItemScale`;
+- spawn at `MountedCenter` (slash, velocity `(dir,0)`) and the aim velocity
+  (beam, `(num4,num5)`, Terra Blade ×5);
+- halve the TrueNightsEdge beam damage, zero the TrueExcalibur ghost damage.
+
+**T5 (item-use lane, depends on d19's rows landing):** port the four arms into
+`editing.rs::fire_non_ammo_shot` ahead of the generic tail, reading the prefixed
+`use_animation`/`scale` and `p.melee_speed`-adjusted `itemAnimationMax`. The
+972/984/982/983 rows come from d19 (do NOT duplicate them on d20). The
+`GetAdjustedItemScale` helper already exists (`melee_swing.rs:132`,
+`adjusted_item_scale`); the glove flag is unported (`accessory_combat.rs:18`) so
+it folds to `item.scale` (×1.0) until the glove lands. **Not a d20 port** —
+it touches the item-use hot file and depends on d19's data; recorded as a seed.
+
+**Progression verify (the lane's question): do both item shoots land correctly?**
+At the AI level YES — 973 (191) and 985 (191) on d20, 972/982/983/984/997/1043/
+1126 (190) on d19, all faithful, all reading the same `ai[1]`/`ai[2]` envelope.
+At the use-path level NO — neither branch spawns the paired slash+beam with the
+payload, so the terra-chain progression (NightsEdge → TrueNightsEdge →
+TerraBlade) is **AI-complete but use-path-inert** until T5 lands. The 1043 flint
+slash (d20's 198 arm spawns it via `wants_dart_spawns`, `projectile.rs:17485`)
+is the ONE chain member whose spawn IS wired — but its 190 AI arm lives on d19,
+so on d20 alone the 1043 spawns and flies inert (no 190 dispatch); on d19 alone
+the 1043 row exists but the 198 flint arm that spawns it does not. **The flint
+slash is the merge canary for the 190/198 cross-lane dependency.**
