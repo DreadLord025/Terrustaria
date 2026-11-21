@@ -39448,3 +39448,25 @@ port the wide ±1000/±1050 box + strict-`<` 4×4 intersection, and
 
 8 new `w4_g67_*` witnesses (phases 3-5) join the original 7 — **15 total,
 written NOT run** (code-only mode).
+
+### The umbrella held-item arm (W4-g67 follow-up, 2026-11-21)
+
+The Umbrella (946) / Tragic Umbrella (4707) — the only `holdStyle == 2` /
+`useStyle == 3` items in 1.4.5.8 — were missing their held-item sim arm.
+`Player.ItemCheck_ApplyHoldStyle` (`Player.cs:50476-50498`, reached via
+`ItemCheck` `:42846` at `:28285`, after `BordersMovement` `:28278`): at rest
+(`itemAnimation == 0`) and not on a rope (`!pulley`), the umbrella caps the fall
+at **2 px/tick** unless `controlDown` (`:50494-50497`) and refreshes the fall
+origin every tick (`:50481-50484`, `flag = !isDisplayDollOrInanimate` — always
+true for a real player, so the umbrella nullifies fall damage). The
+`gravDir == -1` mirror (`:50485-50493`) has no ported gravity flip; the
+`CanVisuallyHoldItem` gate (`:50271`) blocks the arm on the `DontHoldItems`
+mounts {55, 56, 61}. Ported as `Player::umbrella_hold_slow_fall`, called at the
+`ItemCheck` position in `update_with_grapple` (after the border clamps). The
+draw half — the overhead placement `position + (width/2 - 16*dir, 22)`,
+rotation 0 (`:50478-50480`) — overrides the generic holdStyle-2 quarter-turn in
+`render/player_layers.rs::hold_item_placement`. The useStyle-3 thrust nudge
+(`:51054-51057`) and the melee hitbox +14/-10 (`:45180-45188`) were already
+ported (S1-P-i05). The vampire-seed sunlight umbrella check (`:28690`) is a
+separate unported seed arm. 2 witnesses written NOT run (the fall cap + gates,
+the overhead placement).

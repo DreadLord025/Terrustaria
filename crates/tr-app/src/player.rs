@@ -7723,6 +7723,14 @@ impl Player {
             self.respawn();
         }
 
+        // `Player.ItemCheck_ApplyHoldStyle`'s umbrella arm
+        // (`Player.cs:50476-50498`, via `ItemCheck` `:42846` at `:28285` — after
+        // `BordersMovement` `:28278`): a held Umbrella (946) / Tragic Umbrella
+        // (4707) at rest caps the fall at 2 px/tick (no `controlDown`) and
+        // refreshes the fall origin. The itemLocation/rotation half is the draw
+        // seam (`render/player_layers.rs`); this is the sim's velocity half.
+        self.umbrella_hold_slow_fall();
+
         // The immune purge runs near the end of the original update, after movement
         // and effects (`Player.cs:26012-26018`).
         self.buffs.purge_immune_buffs();
@@ -7739,6 +7747,34 @@ impl Player {
         // the tick — the double-tap reads the press edges against them.
         self.right_prev = input.right;
         self.left_prev = input.left;
+    }
+
+    /// `Player.ItemCheck_ApplyHoldStyle`'s umbrella arm (`Player.cs:50476-50498`):
+    /// a held Umbrella (946) / Tragic Umbrella (4707) — `holdStyle == 2`, the only
+    /// two style-3 items — at rest (`itemAnimation == 0`, `AnimatePlayerAndGetItemFrame`
+    /// `:43378-43385`) and not on a rope (`!pulley`, `:50474`) caps the fall at
+    /// 2 px/tick unless `controlDown` (`:50494-50497`) and refreshes the fall
+    /// origin (`:50481-50484`, `flag = !isDisplayDollOrInanimate` — a real player
+    /// is neither, so it always fires). The `gravDir == -1` mirror (`:50485-50493`)
+    /// has no ported gravity flip. The `CanVisuallyHoldItem` gate (`:50271`) blocks
+    /// the whole arm on the `DontHoldItems` mounts {55, 56, 61} (`Mount.cs:6572-6579`).
+    /// The itemLocation/rotation half is the draw seam (`render/player_layers.rs`).
+    fn umbrella_hold_slow_fall(&mut self) {
+        let held = self.frame_inputs.item_type;
+        if (held != 946 && held != 4707)
+            || self.frame_inputs.hold_style != 2
+            || self.frame_inputs.swing_active
+            || self.pulley
+            || !self.frame_inputs.can_visually_hold
+        {
+            return;
+        }
+        // `:50481-50484`: the fall origin refreshes every umbrella-rest tick.
+        self.fall_start = (self.y / TILE_PX) as i32;
+        // `:50494-50497`: the fall cap (gravDir 1).
+        if self.vy > 2.0 && !self.control_down {
+            self.vy = 2.0;
+        }
     }
 
     /// `Mount.TryLanding` (`Mount.cs:4562-4568`): while the frame state is
@@ -21880,5 +21916,63 @@ mod s1_p_i27_tests {
         p.equipped[0] = 5101;
         p.update(&w, PlayerInput::default());
         assert!(p.eyebrella_cloud, "the head armor slot arms the cloud");
+    }
+
+    /// W4-g67 — the umbrella held-item slow-fall (`Player.ItemCheck_ApplyHoldStyle`,
+    /// `Player.cs:50476-50498`): a held Umbrella (946) / Tragic Umbrella (4707) at
+    /// rest caps the fall at 2 px/tick (no `controlDown`) and refreshes the fall
+    /// origin; `controlDown` releases the cap; a swing / rope / non-umbrella item
+    /// takes no arm. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_umbrella_hold_caps_the_fall_at_2() {
+        let w = World::new("air".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.frame_inputs.item_type = 946;
+        p.frame_inputs.hold_style = 2;
+        p.frame_inputs.can_visually_hold = true;
+        p.frame_inputs.swing_active = false;
+        p.control_down = false;
+        p.pulley = false;
+        // A fast fall caps at 2 and the fall origin refreshes.
+        p.vy = 10.0;
+        p.y = 320.0;
+        p.fall_start = 0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 2.0, "the umbrella caps the fall at 2");
+        assert_eq!(p.fall_start, (320.0 / TILE_PX) as i32, "the fall origin refreshes");
+        // controlDown releases the cap.
+        p.vy = 10.0;
+        p.control_down = true;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 10.0, "controlDown falls through the cap");
+        p.control_down = false;
+        // The Tragic Umbrella (4707) shares the arm.
+        p.frame_inputs.item_type = 4707;
+        p.vy = 10.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 2.0, "4707 shares the umbrella arm");
+        // A swing (itemAnimation > 0) takes the use-style path, not the hold.
+        p.frame_inputs.item_type = 946;
+        p.frame_inputs.swing_active = true;
+        p.vy = 10.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 10.0, "a swing skips the hold arm");
+        p.frame_inputs.swing_active = false;
+        // A rope (pulley) skips the arm (`:50474`).
+        p.pulley = true;
+        p.vy = 10.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 10.0, "the pulley skips the hold arm");
+        p.pulley = false;
+        // A non-umbrella holdStyle-2 item takes no cap.
+        p.frame_inputs.item_type = 8; // torch, holdStyle 1 actually — any non-946/4707
+        p.vy = 10.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, 10.0, "only the umbrella pair caps");
+        // An upward velocity is untouched (the cap is `vy > 2`).
+        p.frame_inputs.item_type = 946;
+        p.vy = -5.0;
+        p.umbrella_hold_slow_fall();
+        assert_eq!(p.vy, -5.0, "the rise is not capped");
     }
 }

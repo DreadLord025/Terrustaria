@@ -1115,9 +1115,18 @@ fn hold_item_placement(s: &PlayerCompositeState, dir: f32, w: f32, h: f32) -> ([
         // `:50400-50414` (holdStyle 1, the generic arm): the item lies in the
         // hand at `position + (width/2 + frame.W/2 + 2)·dir`, `position.Y + 24`.
         1 => ([pos_x + 10.0 + (w * 0.5 + 2.0) * dir, pos_y + 24.0], 0.0),
-        // `:50499-50509` (holdStyle 2): the item is held up beside the head,
-        // turned a quarter.
-        2 => ([pos_x + 10.0 + 6.0 * dir, pos_y + 16.0], -0.79 * dir),
+        // `:50476-50509` (holdStyle 2): the umbrella pair (946/4707 — the only
+        // holdStyle-2 items) overrides the generic arm: rotation 0, the item
+        // held overhead at `position + (width/2 - 16*dir, 22)` (`:50478-50480`).
+        // The generic else (`:50499-50509`) holds it beside the head, turned a
+        // quarter (`position + (width/2 + 6*dir, 16)`, `-0.79*dir`).
+        2 => {
+            if s.item_type == 946 || s.item_type == 4707 {
+                ([pos_x + 10.0 - 16.0 * dir, pos_y + 22.0], 0.0)
+            } else {
+                ([pos_x + 10.0 + 6.0 * dir, pos_y + 16.0], -0.79 * dir)
+            }
+        }
         // `:50511-50519` (holdStyle 3): the item is centred on the body.
         3 => ([pos_x + 10.0 - dir * 2.0, mounted_y - h * 0.5], 0.0),
         // `:50520-50549` (holdStyle 4, the umbrella): the item rides the
@@ -1688,6 +1697,38 @@ mod tests {
         let (loc, _) = hold_item_placement(&s, 1.0, 16.0, 16.0);
         assert!((loc[0] - 126.0).abs() < 1e-6, "{:?}", loc);
         assert!((loc[1] - (200.0 + 10.0 + 30.0 - 2.0 + 2.0)).abs() < 1e-6, "{:?}", loc);
+    }
+
+    /// W4-g67 — the umbrella holdStyle-2 override (`Player.cs:50476-50480`): the
+    /// 946/4707 pair holds the item overhead at `position + (width/2 - 16*dir, 22)`
+    /// with rotation 0, NOT the generic beside-the-head quarter-turn.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_umbrella_hold_places_the_item_overhead() {
+        let mut s = state();
+        s.body_frame = 0;
+        s.hold_style = 2;
+        // Right-facing umbrella: x = pos_x + 10 - 16 = 110 + 10 - 16 = 104,
+        // y = pos_y + 22 = 210 + 22 = 232, rotation 0.
+        s.item_type = 946;
+        let (loc, rot) = hold_item_placement(&s, 1.0, 44.0, 44.0);
+        assert!((rot - 0.0).abs() < 1e-6, "the umbrella hold is unrotated");
+        assert!((loc[0] - 104.0).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - 232.0).abs() < 1e-6, "{:?}", loc);
+        // Left-facing mirrors the X offset: x = 110 + 10 + 16 = 136.
+        let (loc, _) = hold_item_placement(&s, -1.0, 44.0, 44.0);
+        assert!((loc[0] - 136.0).abs() < 1e-6, "{:?}", loc);
+        // The Tragic Umbrella (4707) shares the override.
+        s.item_type = 4707;
+        let (loc, rot) = hold_item_placement(&s, 1.0, 44.0, 44.0);
+        assert!((rot - 0.0).abs() < 1e-6);
+        assert!((loc[0] - 104.0).abs() < 1e-6, "{:?}", loc);
+        // A non-umbrella holdStyle-2 item keeps the generic quarter-turn arm.
+        s.item_type = 0;
+        let (loc, rot) = hold_item_placement(&s, 1.0, 16.0, 16.0);
+        assert!((rot - (-0.79)).abs() < 1e-6, "the generic arm turns a quarter");
+        assert!((loc[0] - (110.0 + 10.0 + 6.0)).abs() < 1e-6, "{:?}", loc);
+        assert!((loc[1] - (210.0 + 16.0)).abs() < 1e-6, "{:?}", loc);
     }
 
     #[test]
