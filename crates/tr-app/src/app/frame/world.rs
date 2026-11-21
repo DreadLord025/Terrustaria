@@ -185,7 +185,11 @@ impl App {
         day: self.world.day_time,
         underground: self.camera.y
             >= self.world.world_surface as f32 * TILE_PX + screen.y * 0.5,
-        rain: self.rain.is_raining(),
+        // g67b IsItRaining fix: the music rain branches read
+        // `Main.cloudAlpha > 0` (`Main.cs:12859/:12880/:12932/:12973`),
+        // NOT the `Main.raining` event flag — the post-StopRain cloud ramp
+        // keeps the rain track until the clouds clear.
+        rain: self.rain.is_it_raining(),
         boss_music,
         clock: self.world.time,
         eclipse: self.world.eclipse
@@ -250,7 +254,9 @@ impl App {
         rock_band_px: self.world.rock_layer as f32 * TILE_PX + screen.y * 0.5,
         jungle_deep_band_px: (self.world.rock_layer as f32 - 50.0) * TILE_PX
             + screen.y * 0.5,
-        quiet_sky: !self.rain.is_raining() && !self.wind.happy_windy_day,
+        // g67b IsItRaining fix: the town quiet-sky gate reads
+        // `Main.cloudAlpha == 0` (`Main.cs:12670/:12674`), not the event flag.
+        quiet_sky: !self.rain.is_it_raining() && !self.wind.happy_windy_day,
         menu: false,
         menu_flags: Default::default(),
         music_box: self.scene_metrics.active_music_box,
@@ -491,7 +497,10 @@ impl App {
         pumpkin_moon: self.world.pumpkin_moon,
         snow_moon: self.world.snow_moon,
         hard_mode: self.world.hard_mode,
-        is_raining: self.rain.is_raining(),
+        // g67b IsItRaining fix: the scheduler's sunny/calm gates read
+        // `Main.IsItRaining` = `cloudAlpha > 0` (`Main.cs:2597`,
+        // `AmbienceServer.cs:32/:50`), NOT the event flag.
+        is_raining: self.rain.is_it_raining(),
         is_storming: self.wind.storming,
         happy_windy_day: self.wind.happy_windy_day,
         too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),

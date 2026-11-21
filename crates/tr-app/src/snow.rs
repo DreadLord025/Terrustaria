@@ -288,8 +288,11 @@ pub(crate) fn type_76_tails(d: &mut Dust) {
     d.scale -= 0.01;
 }
 
-/// `Main.DrawDust`'s generic path (`Main.cs:38968-39018`) over the pool's
-/// type-76 slots: the light sampled at `(pos + 4) / 16` (`:38968`), the
+/// `Main.DrawDust`'s generic path (`Main.cs:38836-39023`) over the pool's
+/// type-76 slots: the ±1000/±1050 cull rect + else-kill
+/// (`:38832`/`:38847`/`:39020-39022` — g67b `2c452eddb`'s fix applies to
+/// EVERY DrawDust type, 76 included; the geometry helpers live in
+/// `crate::rain`), the light sampled at `(pos + 4) / 16` (`:38968`), the
 /// `GetAlpha` default formula (76 has no per-type arm — the light itself at
 /// alpha 0), the 8×8 frame at `(4,4)` origin with `GetVisualRotation`/
 /// `GetVisualScale` (`:39005`), and the full-dark kill (`:39015-39017`).
@@ -309,11 +312,18 @@ pub(crate) fn draw(
             (p.y - camera.y) * zoom + screen.y * 0.5,
         ]
     };
+    // `:38832`: the cull rect off `Main.screenPosition` (the view's top-left).
+    let cull = crate::rain::splash_cull_rect(camera - screen * 0.5 / zoom, screen);
     for i in 0..DUST_SENTINEL {
         if !pool.slot(i).active || pool.slot(i).dust_type != 76 {
             continue;
         }
         let d = *pool.slot(i);
+        // `:38847` + `:39020-39022`: outside the rect → deactivate, no draw.
+        if !crate::rain::dust_in_cull_rect(d.position, cull) {
+            pool.slot_mut(i).active = false;
+            continue;
+        }
         // `:38968`: the light at `(int)(pos + 4.0) / 16` per axis.
         let c = light_at(light, d.position + Vec2::splat(4.0));
         // `:39015-39017`: `newColor == Color.Black` deactivates — the

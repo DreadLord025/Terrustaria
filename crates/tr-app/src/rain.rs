@@ -227,6 +227,12 @@ pub struct RainInputs {
     pub gfx_quality: f32,
     /// `Main.remixWorld` (`Rain.cs:84/110-116`).
     pub remix_world: bool,
+    /// `Main.gameMenu` (`Rain.cs:84/103-109`, g67b `d2dd8989` fold): the
+    /// `Rain.Update` kill-only arm (+2000, no gate roll, no splash) and the
+    /// `MakeRain` spawn-through-solids disjunct. The port's frame gates the
+    /// weather cluster out of menus, so production passes the front-state
+    /// flag for shape — residual drops never tick there (g67's note).
+    pub game_menu: bool,
 }
 
 /// Bridges the Rain stream into [`tr_core::loot::DropRng`] for `Luck.RollLuck`
@@ -297,6 +303,29 @@ impl Rain {
     /// fountain (`tile.frameX == 90`) case.
     pub fn is_raining(&self) -> bool {
         self.raining
+    }
+
+    /// `Main.IsItRaining` (`Main.cs:2597`: `cloudAlpha > 0f`) — g67b
+    /// `112d1b20`'s census fix: the ambience scheduler's sunny/calm gates
+    /// (`AmbienceServer.cs:32/:50`), the ambient-sky entity aborts
+    /// (`AmbientSky.cs:216` passim), the music rain branches
+    /// (`Main.cs:12859/:12880/:12932/:12973`), the town quiet-sky gate
+    /// (`:12670/:12674`) and the storm-lightning relaxation
+    /// (`WorldGen.cs:71871`) all read the CLOUD, not the event flag — a
+    /// post-`StopRain` cloud ramp still counts as raining for them.
+    pub fn is_it_raining(&self) -> bool {
+        self.intensity > 0.0
+    }
+
+    /// `Rain.ClearRain` (`Rain.cs:22-28`, g67b `5c9398ea` fold): deactivate
+    /// every drop. The C# calls it from `SaveAndQuitCallBack`
+    /// (`WorldGen.cs:6672`) and `genWorldCallBack` (`:6747`); the port's
+    /// save-and-quit funnel calls it, and a freshly generated world boots a
+    /// fresh `Rain` (empty drops) so the gen-side call is a no-op there.
+    pub(crate) fn clear_rain(&mut self) {
+        for d in &mut self.drops {
+            d.active = false;
+        }
     }
 
     /// `Main.rainTime`: ticks left in the event (`Main.cs:64874` drains it).
@@ -901,19 +930,24 @@ impl Rain {
         // 100f margin as RAW world px (the C# adds it unscaled — g67's shape;
         // the earlier 100/zoom fold was a deviation, re-pinned W4-d130
         // reconcile, docs/research/83).
-        let bottom = i.camera.y + i.screen.y * 0.5 / i.zoom + 100.0;
+        let view_bottom = i.camera.y + i.screen.y * 0.5 / i.zoom;
+        let bottom = view_bottom + 100.0;
         for slot in 0..MAX_DROPS {
             let mut d = self.drops[slot];
             if !d.active {
                 continue;
             }
-            // `:102`: `position += velocity`.
+            // `:102`: `position += velocity` — runs under EVERY arm, the
+            // menu/remix kill-only ones included.
             d.pos += d.vel;
             // `:103-116`: the gameMenu (+2000f) / remixWorld (+100f) kill-only
             // arms — `active = false` and NOTHING else: the :120 impact roll
-            // sits inside the :117 else-if, so these arms never roll.
-            // `gameMenu` never holds in-world (folded); the remix arm stays.
-            let die = if i.remix_world {
+            // sits inside the :117 else-if, so these arms never roll and
+            // never probe collisions. The menu arm is g67b `d2dd8989`'s
+            // (the earlier "gameMenu never holds in-world" fold dropped it).
+            let die = if i.game_menu {
+                d.pos.y > view_bottom + 2000.0
+            } else if i.remix_world {
                 d.pos.y > bottom
             } else {
                 // `:117`: solid OR bottom OR wet — the C# `||` short-circuits,
@@ -1006,9 +1040,10 @@ impl Rain {
             // `:66-83`: the tile indices, clamped to the world.
             let num4 = ((x as i32) / 16).clamp(0, world.width - 1);
             let num5 = ((y as i32) / 16).clamp(0, world.height - 1);
-            // `:84`: remixWorld spawns anywhere; else open sky only —
+            // `:84`: remixWorld OR gameMenu spawns anywhere (the menu
+            // disjunct is g67b `5c9398ea`'s); else open sky only —
             // `!SolidTile && wall <= 0`.
-            let open = i.remix_world || {
+            let open = i.remix_world || i.game_menu || {
                 let t = world.tile(num4, num5);
                 let solid = t.is_some_and(|t| {
                     t.active()
@@ -1045,6 +1080,11 @@ impl Rain {
             num2 = (num2 as f32 * num4) as i32;
         }
         // `:181-182`: the snow-tile suppression, then `atmo^9`.
+        // `SceneMetrics.SnowTileThreshold` is skyblock-aware (300 low-tiles /
+        // 1500 normal, `SceneMetrics.cs:154-163`); the port tracks no
+        // `World.skyblock_low_tiles`, so it reads the normal threshold
+        // (g67b `5c9398ea`'s documented gap — the skyblock arm lands with
+        // that field).
         let snow_threshold = tr_core::scene::thresholds::SNOW_TILE_NORMAL as f32;
         let num5 = (i.snow_tile_count as f32 / snow_threshold).clamp(0.0, 1.0);
         num2 = (((num2 as f32) * (1.0 - num5 * num5)) as i32 as f64
@@ -1078,6 +1118,48 @@ impl Rain {
             rot: vel.x.atan2(-vel.y),
             kind,
         };
+    }
+
+    /// `Rain.NewRainForced` (`Rain.cs:135-164`, g67b `5c9398ea` fold): the
+    /// Eyebrella vanity drip (`Player.DoEyebrellaRainEffect`,
+    /// `Player.cs:14308-14331` — the caller is unported, so this seam has no
+    /// production writer yet). Unlike `NewRain` it ignores
+    /// cloudAlpha/snow/atmo: the budget is `maxRain` cut by the gfx
+    /// `(1+q)/2` when q<0.9 (`:139-143`), then the first inactive slot takes
+    /// the spawn. Returns the slot index, or `maxRain` when full
+    /// (`:152-155`). RNG order: scale roll then frame roll (`:159-162`).
+    #[allow(dead_code)] // the Eyebrella caller (Player.cs:14308) is unported
+    pub(crate) fn new_rain_forced(&mut self, i: &RainInputs, position: Vec2, velocity: Vec2) -> usize {
+        let mut num2 = MAX_DROPS as i32; // `:138`
+        let num3 = (1.0 + i.gfx_quality) / 2.0; // `:139`
+        if num3 < 0.9 {
+            num2 = (num2 as f32 * num3) as i32; // `:140-143`
+        }
+        // `:144-155`: the first inactive slot under the budget (the fixed
+        // 750-slot pool keeps its holes — the same scan `new_rain` runs).
+        let mut slot = None;
+        for (s, d) in self.drops.iter().enumerate().take(num2.max(0) as usize) {
+            if !d.active {
+                slot = Some(s);
+                break;
+            }
+        }
+        let Some(s) = slot else {
+            return MAX_DROPS;
+        };
+        // `:159-162`: scale, velocity, rotation, frame type.
+        let scale = 1.0 + self.range_signed(-20, 21) as f32 * 0.01;
+        let vel = velocity * scale;
+        let kind = (i.water_style * 3 + self.range(0, 3)) as u8;
+        self.drops[s] = Drop {
+            active: true,
+            pos: position,
+            vel,
+            scale,
+            rot: vel.x.atan2(-vel.y),
+            kind,
+        };
+        s
     }
 
     /// The `Rain.Update` splash recipe (`Rain.cs:122-130`, g67 `40128e5d`
@@ -1305,9 +1387,15 @@ pub(crate) fn water_splash_arm(d: &mut tr_core::particles::Dust, world: &World) 
 /// update loop's own kill (`Dust.cs:2393-2395`); this entry walks the live
 /// family slots.
 ///
-/// The 4×4 on-screen cull rect (`:38847`, the ±1000/±1050 slack box) is not
-/// modelled — the spawn cull already dropped off-screen dust and the shared
-/// loop kills below-view slots; a documented widening (ANALYSIS).
+/// The 4×4 on-screen cull rect (`:38832`/`:38847`) is ported verbatim
+/// (g67b `2c452eddb` fold — the earlier "documented widening" was WRONG):
+/// `Main.DrawDust`'s live rect is the ±1000/±1050 slack box
+/// (`screenPosition + (-1000, -1050, screenWidth+2000, screenHeight+2100)`
+/// — `:38832` overwrites `:38831`'s ±500/±50 box; the trail types'
+/// `rectangle = rectangle2` restore at `:38845` is a no-op because both
+/// hold the same wide rect). A dust whose 4×4 box misses it is DEACTIVATED
+/// (`:39020-39022`'s else arm), not merely skipped. The rect is world-px
+/// (no zoom term), mapped through the camera-centred view's top-left.
 pub(crate) fn draw_splashes(
     pool: &mut tr_core::particles::DustPool,
     r: &mut SpriteRenderer,
@@ -1317,11 +1405,19 @@ pub(crate) fn draw_splashes(
     zoom: f32,
     screen: Vec2,
 ) {
+    // `:38832`: the cull rect off `Main.screenPosition` (the view's top-left).
+    let screen_pos = camera - screen * 0.5 / zoom;
+    let cull = splash_cull_rect(screen_pos, screen);
     for i in 0..tr_core::particles::DUST_SENTINEL {
         if !pool.slot(i).active || !is_splash_type(pool.slot(i).dust_type) {
             continue;
         }
         let d = *pool.slot(i);
+        // `:38847` + `:39020-39022`: outside the rect → deactivate, no draw.
+        if !dust_in_cull_rect(d.position, cull) {
+            pool.slot_mut(i).active = false;
+            continue;
+        }
         // `:38968`: `Lighting.GetColor((int)((double)pos.X + 4.0) / 16, …)`
         // as XNA bytes (the gore-pass convention, `render/gore.rs`).
         let c = light_at(light, d.position + Vec2::splat(4.0));
@@ -1395,6 +1491,31 @@ pub(crate) fn draw_splashes(
     }
 }
 
+/// `Main.DrawDust`'s on-screen cull rect (`Main.cs:38832`, g67b `2c452eddb`
+/// fold): the ±1000/±1050 slack box off `Main.screenPosition` —
+/// `(screenX-1000, screenY-1050, screenWidth+2000, screenHeight+2100)`.
+/// `:38831`'s ±500/±50 box is overwritten before the loop; the trail
+/// types' `:38845` restore copies the SAME wide rect back, so one rect
+/// covers the whole family. World px, no zoom term. Returns `(x, y, w, h)`.
+pub(crate) fn splash_cull_rect(screen_pos: Vec2, screen: Vec2) -> (i32, i32, i32, i32) {
+    (
+        screen_pos.x as i32 - 1000,
+        screen_pos.y as i32 - 1050,
+        screen.x as i32 + 2000,
+        screen.y as i32 + 2100,
+    )
+}
+
+/// `Main.cs:38847`: `new Rectangle((int)pos.X, (int)pos.Y, 4, 4).Intersects(rect)`
+/// — XNA's strict-`<` intersection on both axes (the `Dust.cs:98` spawn-cull
+/// convention). A miss means the `:39020-39022` else arm deactivates the dust.
+pub(crate) fn dust_in_cull_rect(position: Vec2, rect: (i32, i32, i32, i32)) -> bool {
+    let (rx, ry, rw, rh) = rect;
+    let sx = position.x as i32;
+    let sy = position.y as i32;
+    rx < sx + 4 && sx < rx + rw && ry < sy + 4 && sy < ry + rh
+}
+
 /// `Lighting.GetColor` for a world-space point, clamped to the computed light rect.
 pub(crate) fn light_at(light: &LightMap, p: Vec2) -> [f32; 3] {
     if light.w <= 0 || light.h <= 0 {
@@ -1445,6 +1566,7 @@ mod tests {
             any_danger: false,
             gfx_quality: 1.0,
             remix_world: false,
+            game_menu: false,
         }
     }
 
@@ -3064,5 +3186,135 @@ mod tests {
             crate::app::next_rand(&mut twin);
         }
         assert_eq!(a.rng, twin, "5 × (gate + 6 defaults), no extra draws");
+    }
+
+    // --- g67b residual folds (d2dd8989 / 5c9398ea / 2c452eddb / 112d1b20),
+    // re-pinned to the d130 fixed-slot pool + RainInputs shape.
+
+    /// g67b witness (d2dd8989) — the `gameMenu` kill-only arm
+    /// (`Rain.cs:103-109`): the drop still MOVES (`:102` runs first), dies
+    /// only below `screenPosition.Y + screenHeight + 2000`, and NEITHER the
+    /// gfx gate NOR a splash fires (the else-if chain never reaches `:117`).
+    /// view bottom = 400 + 100 = 500 → menu bound 2500.
+    #[test]
+    fn w4_g67_menu_arm_kills_only_below_plus_2000_without_a_roll() {
+        // The one-row floor at row 80 (the (c) rig of the impact-gate
+        // witness): the probes clamp at height-40 = 88, so row 80 is solid.
+        let mut w = World::new("rain-tall".into(), 64, 128);
+        for x in 0..64 {
+            let idx = w.index(x, 80);
+            w.tiles[idx] = Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= FLAG_ACTIVE;
+        }
+        w.compute_column_surface();
+        w.compute_chunks();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        let mut si = inputs();
+        si.game_menu = true;
+        si.camera = Vec2::new(512.0, 1300.0); // view bottom 1400 → bound 3400
+        // A drop INSIDE the solid floor survives the menu arm — the C#
+        // menu branch never probes collisions (steps to 1282, under 3400).
+        pin_drop(&mut rain, 0, Vec2::new(500.0, 1268.0), Vec2::new(0.0, 14.0));
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = splash_ctx();
+        let state = rain.rng;
+        rain.update_drops(&w, &si, Some((&mut pool, &ctx)));
+        assert!(rain.drops[0].active, "no collision kill in menu mode");
+        assert_eq!(rain.drops[0].pos, Vec2::new(500.0, 1282.0), ":102 moved it");
+        assert_eq!(rain.rng, state, "the gate never rolls");
+        assert_eq!(splash_count(&pool), 0);
+        // Below the +2000 bound: kill-only, still no roll, no splash.
+        pin_drop(&mut rain, 0, Vec2::new(500.0, 3390.0), Vec2::new(0.0, 14.0));
+        rain.update_drops(&w, &si, Some((&mut pool, &ctx)));
+        assert!(!rain.drops[0].active, "3404 > 3400");
+        assert_eq!(rain.rng, state, "the menu kill rolls nothing");
+        assert_eq!(splash_count(&pool), 0);
+    }
+
+    /// g67b witness (5c9398ea) — `NewRainForced` (`Rain.cs:135-164`): the
+    /// budget is `maxRain` cut by `(1+q)/2` when q<0.9, ignoring
+    /// cloudAlpha/snow/atmo. At q 0 the cap is 375; the 376th spawn refuses
+    /// with the `maxRain` sentinel. The spawn takes the `:159-162` shape.
+    #[test]
+    fn w4_g67_new_rain_forced_budget_and_shape() {
+        let mut rain = Rain::with_forced(7, None, false); // intensity 0 — forced ignores it
+        let mut i = inputs();
+        i.gfx_quality = 0.0; // (1+0)/2 = 0.5 < 0.9 → cap 750*0.5 = 375
+        let pos = Vec2::new(500.0, 300.0);
+        let vel = Vec2::new(2.0, 9.0);
+        let idx = rain.new_rain_forced(&i, pos, vel);
+        assert_eq!(idx, 0);
+        let d = rain.drops[0];
+        assert_eq!(d.pos, pos);
+        assert!((d.scale - 1.0).abs() <= 0.2 + 1e-6);
+        assert_eq!(d.vel, vel * d.scale, "`:160` velocity * scale");
+        assert_eq!(d.rot, d.vel.x.atan2(-d.vel.y), "`:161`");
+        // Fill to the cap, then the next refuses.
+        let mut n = 1;
+        while n < 375 {
+            assert_eq!(rain.new_rain_forced(&i, pos, vel), n);
+            n += 1;
+        }
+        assert_eq!(rain.new_rain_forced(&i, pos, vel), MAX_DROPS, "full → maxRain");
+        assert_eq!(rain.drop_count(), 375);
+    }
+
+    /// g67b witness (112d1b20) — `ClearRain` (`Rain.cs:22-28`) empties the
+    /// field; `IsItRaining` (`Main.cs:2597`) follows `cloudAlpha`, NOT the
+    /// event flag.
+    #[test]
+    fn w4_g67_clear_rain_and_is_it_raining_semantics() {
+        let w = ground();
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        let i = inputs();
+        for _ in 0..60 {
+            rain.update(&w, &i, 1.0 / 60.0, None);
+        }
+        assert!(rain.drop_count() > 0);
+        rain.clear_rain();
+        assert_eq!(rain.drop_count(), 0, "ClearRain deactivates every drop");
+        // The event flag is off but the clouds still linger → IsItRaining true.
+        rain.raining = false;
+        rain.intensity = 0.5;
+        assert!(!rain.is_raining(), "Main.raining is the event flag");
+        assert!(rain.is_it_raining(), "cloudAlpha 0.5 > 0 → IsItRaining");
+        rain.intensity = 0.0;
+        assert!(!rain.is_it_raining(), "cloudAlpha 0 → not raining");
+    }
+
+    /// g67b witness (2c452eddb) — the `DrawDust` cull rect (`Main.cs:38832`
+    /// / `:38847` / `:39020-39022`): the ±1000/±1050 slack box off
+    /// `screenPosition`, the 4×4 strict-`<` intersection, and the else-arm
+    /// DEACTIVATION (the old widening dropped the kill). Pure geometry —
+    /// both draw loops (splashes + snow 76) apply exactly this test before
+    /// drawing each family slot.
+    #[test]
+    fn w4_g67_drawdust_cull_rect_is_the_wide_box_with_an_else_kill() {
+        // screenPosition (0,0), screen 1600×900 → rect (-1000,-1050,3600,3000).
+        let rect = splash_cull_rect(Vec2::ZERO, Vec2::new(1600.0, 900.0));
+        assert_eq!(rect, (-1000, -1050, 3600, 3000), ":38832's wide box");
+        // Inside: a splash near the view centre.
+        assert!(dust_in_cull_rect(Vec2::new(800.0, 450.0), rect));
+        // The slack margins: just inside the left/top edges still draw.
+        assert!(dust_in_cull_rect(Vec2::new(-999.0, -1049.0), rect));
+        // Outside → the else arm kills. Past the right edge (x ≥ 2600).
+        assert!(!dust_in_cull_rect(Vec2::new(2600.0, 450.0), rect));
+        // Past the bottom edge (y ≥ 1950).
+        assert!(!dust_in_cull_rect(Vec2::new(800.0, 1950.0), rect));
+        // Far left (x + 4 ≤ -1000 → x ≤ -1004).
+        assert!(!dust_in_cull_rect(Vec2::new(-1004.0, 450.0), rect));
+        // The 4×4 box: a dust at x = -1003 still intersects (−1003+4 > −1000).
+        assert!(dust_in_cull_rect(Vec2::new(-1003.0, 450.0), rect));
+        // Non-zero screenPosition shifts the box (the camera-centred mapping).
+        let shifted = splash_cull_rect(Vec2::new(5000.0, 3000.0), Vec2::new(1600.0, 900.0));
+        assert_eq!(shifted, (4000, 1950, 3600, 3000));
+        assert!(dust_in_cull_rect(Vec2::new(5000.0, 3000.0), shifted));
+        assert!(
+            !dust_in_cull_rect(Vec2::new(800.0, 450.0), shifted),
+            "the old view is now outside"
+        );
     }
 }

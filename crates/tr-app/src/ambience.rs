@@ -58,6 +58,11 @@ pub(crate) struct AmbienceCtx<'a> {
     pub pumpkin_moon: bool,
     pub snow_moon: bool,
     pub hard_mode: bool,
+    /// `Main.IsItRaining` (`Main.cs:2597`, `cloudAlpha > 0`) — the
+    /// `IsSunnyDay`/`IsCalmNight` gates (`AmbienceServer.cs:32/:50`) and the
+    /// entity aborts (`AmbientSky.cs:216` passim) read the CLOUD, not the
+    /// `Main.raining` event flag (g67b `112d1b20`'s fix — a post-StopRain
+    /// ramp still suppresses the sunny spawns).
     pub is_raining: bool,
     pub is_storming: bool,
     pub happy_windy_day: bool,

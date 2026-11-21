@@ -64,6 +64,10 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
                 .any(|n| n.hp > 0 && crate::revenge::BOSS_KINDS.contains(&n.kind)),
         gfx_quality: app.gfx_quality.quality,
         remix_world: app.wind.remix_world,
+        // `Main.gameMenu` (g67b fold): the frame gates the weather cluster
+        // out of menus, so this is false in production — carried for shape
+        // (the residual-drop menu tick, `Rain.cs:103-109`).
+        game_menu: app.menu.is_some() || app.front.is_some(),
     };
     // g67's splash drain (transplanted, docs/research/83 §3): the collision
     // splashes drain into the shared `DustPool` (the d50 contract) —
@@ -107,7 +111,9 @@ fn thunder_inputs(app: &App) -> crate::rain::ThunderInputs {
         // `WorldGen.cs:580-586`) plus `Main.IsItRaining` — the three
         // `WorldGen.SpawnStormLightning` (`:71866-71881`) inputs `thunder_step`
         // reads. A classic world leaves them off, so its chain is unchanged.
-        raining: app.rain.is_raining(),
+        // g67b IsItRaining fix: `:71871` reads `cloudAlpha > 0`
+        // (`Main.cs:2597`), NOT the event flag.
+        raining: app.rain.is_it_raining(),
         more_lightning: app
             .world
             .micro_seeds
@@ -849,6 +855,7 @@ mod tests {
             any_danger: false,
             gfx_quality: 1.0,
             remix_world: false,
+            game_menu: false,
         }
     }
 
