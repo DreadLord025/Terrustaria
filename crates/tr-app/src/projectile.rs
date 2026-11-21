@@ -23407,10 +23407,12 @@ impl ProjectilePool {
     /// the dust/gore burst. The port spawns the slot, resizes it to the
     /// 160×160 blast box centred on the spawn, runs the box walk, queues the
     /// cue, then kills the slot (the `celeb2_death` resize-and-walk shape).
-    /// The dust/gore burst bodies are the visual lane (the draw census is
-    /// recorded, the spawns ride the dust-pool task). `owner` is the local
-    /// player id; `dolls` the worn-doll friendly gate; `rng`/`luck` the hit
-    /// lane's stream + the owner's luck.
+    /// The dust/gore burst bodies now spawn through the dust seam
+    /// (`solar_flare_blast_bodies`, the g64-pattern adapter — deviation 2;
+    /// g64's ledger claims no 608 row). `owner` is the local player id;
+    /// `dolls` the worn-doll friendly gate; `rng`/`luck` the hit lane's
+    /// stream + the owner's luck; `dust`/`ctx`/`gore` the pools + spawn ctx.
+    #[allow(clippy::too_many_arguments)]
     pub fn solar_flare_blast(
         &mut self,
         center: (f32, f32),
@@ -23420,6 +23422,10 @@ impl ProjectilePool {
         dolls: (bool, bool),
         rng: &mut dyn DropRng,
         luck: f32,
+        dust: &mut tr_core::particles::DustPool,
+        ctx: &tr_core::particles::SpawnCtx,
+        world: &World,
+        gore: &mut tr_core::gore::GorePool,
     ) {
         let (cx, cy) = center;
         // `NewProjectile(.., base.Center.X, base.Center.Y, 0f, 0f, 608,
@@ -23457,10 +23463,28 @@ impl ProjectilePool {
         // the id-2 style-14 cue (the `play_proj_sound` façade).
         self.pending_proj_sounds.push((2, 14, cx - 80.0, cy - 80.0, 0.0));
         // `:72183-72224` — the dust/gore burst (4× dust 31, 30× dust-6 pairs,
-        // 10× dust 6, 10× dust 31, 2× gore 61-63): the visual lane, the draw
-        // census recorded (the spawns ride the dust-pool task). The explicit
-        // `Main.rand` draws stay on the stream in the C#'s order.
-        crate::projectile_ai_misc::solar_flare_blast_draws(rng);
+        // 10× dust 6, 10× dust 31, 2× gore 61-63): the bodies spawn through
+        // the dust seam (deviation 2, the g64-pattern adapter); every
+        // explicit `Main.rand` draw stays in the C#'s order and the
+        // `NewDust`/`NewGore` internal draws ride the pools. The box
+        // geometry is read BEFORE the kill (the C# `base.position`/`Center`
+        // at the Kill site).
+        let (bpos, bw, bh, bvel) = {
+            let p = &self.slots[slot];
+            (p.pos, p.w, p.h, p.vel)
+        };
+        crate::projectile_ai_misc::solar_flare_blast_bodies(
+            rng,
+            dust,
+            ctx,
+            world,
+            gore,
+            bpos,
+            bw,
+            bh,
+            Vec2::new(cx, cy),
+            bvel,
+        );
         // `Kill()`'s tail (`:70644+`): the slot deactivates.
         self.kill(slot);
     }

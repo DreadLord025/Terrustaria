@@ -229,7 +229,7 @@ Determinism: items 1, 2, 9 and 10 all change RNG draw counts / results on the sh
 | `:38255-38269` | `hasFootball` → the 861 return + slot clear | **NEW** — queues `pending_football` (hit dir); the drain scans the inventory, spawns 861 `(-hitDir*4, -6)` ai1=1 ai2=stack, clears the slot. The `hasFootball` equip scan (`:12906-12918`) + clear (`:18345`) |
 | `:38271-38280` | the held jousting lance → kill owned 877/878/879 | **NEW** — queues `pending_golf_club_kill`; the drain checks the held kind (4788/4789/4790) + kills the owned lances |
 | `:38281-38290` | the invis strip (`DelBuff(10)`) | **NEW** — `clear_buff(10)`, the no-rescan quirk |
-| `:38305-38320` | `Counter[cooldownCounter] && ConsumeSolarFlare()` → `num2 = (int)(0.8*num2)` + the 608 blast | **NEW** — `consume_solar_flare` (`:56742-56762`), gated on `retaliate_lane` (the Counter set = {General, BossNoCheese}); the 608 blast queues `pending_solar_blast`, the `ProjectilePool::solar_flare_blast` seam walks the 160×160 box + queues Item14 + the draw census |
+| `:38305-38320` | `Counter[cooldownCounter] && ConsumeSolarFlare()` → `num2 = (int)(0.8*num2)` + the 608 blast | **NEW** — `consume_solar_flare` (`:56742-56762`), gated on `retaliate_lane` (the Counter set = {General, BossNoCheese}); the 608 blast queues `pending_solar_blast`, the `ProjectilePool::solar_flare_blast` seam walks the 160×160 box + queues Item14 + spawns the burst BODIES (deviation 2: `solar_flare_blast_bodies`, the g64-pattern `BlastRng` adapter, 84 dust + 2 gore; the census stays as the parity oracle) |
 | `:38321-38337` | `beetleDefense && beetleOrbs > 0` → `num2 = (int)((1-0.15*orbs)*num2)`, orb--, the 95-97 ladder | **NEW** — `hurt_inner`, no cooldown gate (every lane) |
 | `:38338-38368` | the paladin team share | **UNPORTED** — single-player-unreachable (`defendedByPaladin` needs a second team player) |
 | `:38382` | `CombatText.NewText(playerRect, DamagedFriendly[Crit], num2, Crit)` | **NEW** — queues `pending_hurt_text`, the drain spawns BEFORE the retaliate block (the C# `:38382` < `:38401` order) |
@@ -243,12 +243,13 @@ Determinism: items 1, 2, 9 and 10 all change RNG draw counts / results on the sh
 The combat text's 2 (+1 crit) placement rolls draw BEFORE the retaliate block's
 rolls on every lane (the C# `:38382` < `:38401` order). The hit-dust loop's
 `NextFloat` per particle + the `NewDust` internal draws follow the hurt sound
-(`:38525` < `:38527`). The 608 blast's box-walk crit/DamageVar rolls + the
-`solar_flare_blast_draws` census (the RotatedByRandom/NextDouble/gore draws) ride
-the hitting lane's stream at the pass tail. The Solar grant-dust burst's 16
-`NewDust` chains ride the `UpdatePlayers` stream (the set machine runs in
-`Player.Update`). The set-bonus machines themselves draw NOTHING (the orb-orbit
-`Next(-100,101)` draws are the unported visual lane).
+(`:38525` < `:38527`). The 608 blast's box-walk crit/DamageVar rolls + the burst
+bodies' 830 draws (252 explicit RotatedByRandom/NextDouble/gore + 578
+`NewDust`/`NewGore` internal, deviation 2) ride the hitting lane's stream at the
+pass tail. The Solar grant-dust burst's 16 `NewDust` chains ride the
+`UpdatePlayers` stream (the set machine runs in `Player.Update`). The set-bonus
+recharge machines draw NOTHING; the Beetle orb-orbit's `Next(-100,101)` pair per
+orb per tick rides `UpdatePlayers` (deviation 3).
 
 ### Deviations (ANALYSIS mirror)
 

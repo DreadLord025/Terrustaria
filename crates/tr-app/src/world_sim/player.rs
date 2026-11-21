@@ -1512,6 +1512,8 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // the fall/petrify lane's accepted hit consumed a shield charge
             // and queued the 608 blast; the drain rides the `UpdatePlayers`
             // stream (the `Main.cs:17754` swap), the S1-E-21c batch convention.
+            // Deviation 2 threads the dust/gore pools through (disjoint field
+            // borrows: `p` is `app.player`, the pools are `app.dust`/`app.gore`).
             if let Some((center, damage)) = p.take_solar_blast() {
                 let dolls = p.doll_flags();
                 let luck = p.luck();
@@ -1523,6 +1525,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     dolls,
                     app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                     luck,
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &mut app.gore,
                 );
             }
             // W4-f50 — the hit-dust loop + football + golf-club hurt drains

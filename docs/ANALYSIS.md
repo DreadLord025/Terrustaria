@@ -39322,10 +39322,21 @@ re-verified FIRST: both are already on main (`npc.rs::contact` /
   draws ride the visual lane). The `solarDashing` dash machine is the
   melee lane's (the `dashType = 3` grant lands, the dash-state disjunct
   folds false).
-- **The 608 blast's dust/gore burst bodies** are the visual lane (the
-  `solar_flare_blast_draws` census keeps the explicit `Main.rand` draws
-  on the stream in the C# order; the `NewDust`/`NewGore` internal draws
-  + spawns ride the dust-pool task, the `celeb2_explosion` precedent).
+- **The 608 blast's dust/gore burst bodies** — **PORTED** (deviation 2,
+  through the dust seam in the g64-pattern adapter). g64's ledger
+  (`77616a7d`: 41 trail kinds + deferred 813/957/670/590) claims NO 608
+  row, so this branch ports `Projectile.cs:72183-72224` whole:
+  `solar_flare_blast_bodies` spawns the 4× dust 31 + 30× dust-6 pairs +
+  10× dust 6 + 10× dust 31 + 2× gore 61-63 with every post-arm
+  (noGravity/velocity ×/fadeIn 2.5/the UnitY+UnitX ring repositions),
+  `BlastRng` adapting `DustRng`/`GoreRng` over the machine's
+  `&mut dyn DropRng` (`Next(max) = Next(0, max)`, one Sample step —
+  g64's `DustDraw` is the same shape, keep-one at merge). The three
+  hurt lanes thread `app.dust`/`app.gore`/`spawn_ctx` through
+  `solar_flare_blast`. The old `solar_flare_blast_draws` census stays
+  as the `#[cfg(test)]` stream-parity oracle (252 explicit + 578
+  internal = 830 draws, ordered-subsequence witness). The `shader`
+  post-arms stay dropped (the dye layer).
 - **The stealth-decay machine** (`:25733-25898`): **f3-canonical keep-one**.
   `task/W4-f3-dust-player-3` `4d820f7d` landed the FULL machine
   (`update_stealth`: the Psycho-Knife 3106 / Shroomite / Vortex if-else-if

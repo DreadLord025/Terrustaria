@@ -458,22 +458,178 @@ pub(crate) fn fairy_queen_death_draws(rng: &mut dyn DropRng) {
     }
 }
 
-/// W4-f50 — the Solar Flare hurt blast's `Kill()` dust/gore burst
-/// (`Projectile.cs:72183-72224`), as the DRAW CENSUS: every explicit
-/// `Main.rand` draw stays on the stream in the C#'s order, the `NewDust`/
-/// `NewGore` internal draws + bodies are the visual lane (the dust-pool
-/// task, the `celeb2_explosion` precedent). The burst:
-/// - 4× dust 31 (`:72183-72187`): each a `RotatedByRandom(π)` (TWO
-///   `NextDouble`) + one `NextDouble` (the radius) = 3 doubles.
-/// - 30× dust-6 pairs (`:72188-72201`): each pair two `RotatedByRandom(π)`
-///   + `NextDouble` triples = 6 doubles.
-/// - 10× dust 6 (`:72202-72209`): each a `RotatedByRandom(π)` = 2 doubles
-///   (the `RotatedBy(velocity.ToRotation())` draws nothing).
-/// - 10× dust 31 (`:72210-72216`): each a `RotatedByRandom(π)` = 2 doubles.
-/// - 2× gore 61-63 (`:72217-72224`): each the position `Next(100)` pair +
-///   the `Next(61, 64)` type + the `NewGore` kicks `Next(10, 31)`/
-///   `Next(-20, 21)` (`Gore.cs:1327-1328`) + the `RotatedByRandom(π)` +
-///   `NextDouble` reposition + the two `Next(-10, 11)` velocity kicks.
+/// W4-f50 deviation 2 — the Solar Flare hurt blast's `Kill()` dust/gore
+/// burst BODIES (`Projectile.cs:72183-72224`), ported through the dust seam
+/// in the g64 adapter pattern (`BlastRng`: `DustRng`/`GoreRng` over the
+/// caller's `&mut dyn DropRng`, `Next(max) = Next(0, max)` — one `Sample()`
+/// step, `UnifiedRandom.cs:120-141`; g64's `DustDraw` is the same shape,
+/// keep-one at merge). Every explicit `Main.rand` draw stays in the C#'s
+/// order AND the `NewDust`/`NewGore` internal draws now ride the pools:
+/// - 4× dust 31 (`:72183-72187`): alpha 100, scale 1.5; the position
+///   overwrite `Center + UnitY.RotatedByRandom(π) * (float)NextDouble() *
+///   width / 2f` (TWO `NextDouble` + one radius double).
+/// - 30× dust-6 pairs (`:72188-72201`): the first alpha 200 scale 3.7,
+///   `noGravity`, velocity ×3; the second alpha 100 scale 1.5, velocity ×2,
+///   `noGravity`, `fadeIn = 2.5`. Each its own spin + radius triple.
+/// - 10× dust 6 (`:72202-72209`): alpha 0 scale 2.7, `noGravity`, velocity
+///   ×3; the position `Center + UnitX.RotatedByRandom(π).RotatedBy(
+///   velocity.ToRotation()) * width / 2f` — NO radius double.
+/// - 10× dust 31 (`:72210-72216`): alpha 0 scale 1.5, the same UnitX shape.
+/// - 2× gore 61-63 (`:72217-72224`): the spawn position `pos + (width *
+///   Next(100) / 100f, height * Next(100) / 100f) - One * 10`, type
+///   `Next(61, 64)`; the `NewGore` kicks (`Gore.cs:1327-1328`); the
+///   reposition spin + radius; velocity ×0.3 then the two `Next(-10, 11) *
+///   0.05f` kicks.
+/// The `shader` post-arms are the dye layer's (dropped fields). The C#
+/// writes into `Main.dust[6000]`/`Main.gore[600]` on a refused spawn — the
+/// port's sentinel slots receive the same writes.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn solar_flare_blast_bodies(
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+    gore: &mut tr_core::gore::GorePool,
+    pos: Vec2,
+    w: f32,
+    h: f32,
+    center: Vec2,
+    vel: Vec2,
+) {
+    let mut r = BlastRng(rng);
+    // `3.1415927410125732` — the C# float PI literal widened to double.
+    const PI_F: f64 = 3.1415927410125732;
+    let (wi, hi) = (w as i32, h as i32);
+    let box_pos = pos;
+    // `UnitY.RotatedByRandom(π) * (float)NextDouble() * width / 2f`.
+    let ring_y = |r: &mut BlastRng| -> Vec2 {
+        let angle = r.0.next_double() * PI_F - r.0.next_double() * PI_F;
+        let radius = r.0.next_double() as f32 * w / 2.0;
+        center + crate::bow_launch::rotated_by(Vec2::new(0.0, 1.0), angle) * radius
+    };
+    // `UnitX.RotatedByRandom(π).RotatedBy(velocity.ToRotation()) * width/2f`
+    // — `ToRotation` is `(float)Math.Atan2(Y, X)` (`Utils.cs:1655-1658`).
+    let rot = (vel.y as f64).atan2(vel.x as f64) as f32;
+    let ring_x = |r: &mut BlastRng| -> Vec2 {
+        let angle = r.0.next_double() * PI_F - r.0.next_double() * PI_F;
+        let spun = crate::bow_launch::rotated_by(Vec2::new(1.0, 0.0), angle);
+        center + crate::bow_launch::rotated_by(spun, rot as f64) * (w / 2.0)
+    };
+    let spawn = |r: &mut BlastRng,
+                 dust: &mut tr_core::particles::DustPool,
+                 dust_type: i32,
+                 alpha: i32,
+                 scale: f32|
+     -> usize {
+        dust.new_dust(
+            r,
+            ctx,
+            world,
+            box_pos,
+            wi,
+            hi,
+            dust_type,
+            0.0,
+            0.0,
+            alpha,
+            tr_core::particles::Color::default(),
+            scale,
+        )
+    };
+    // `:72183-72187` — 4× dust 31.
+    for _ in 0..4 {
+        let idx = spawn(&mut r, dust, 31, 100, 1.5);
+        dust.slot_mut(idx).position = ring_y(&mut r);
+    }
+    // `:72188-72201` — 30× dust-6 pairs.
+    for _ in 0..30 {
+        let idx = spawn(&mut r, dust, 6, 200, 3.7);
+        let d = dust.slot_mut(idx);
+        d.position = ring_y(&mut r);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+        let idx = spawn(&mut r, dust, 6, 100, 1.5);
+        let d = dust.slot_mut(idx);
+        d.position = ring_y(&mut r);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+        d.fade_in = 2.5;
+    }
+    // `:72202-72209` — 10× dust 6, the velocity-rotated UnitX ring.
+    for _ in 0..10 {
+        let idx = spawn(&mut r, dust, 6, 0, 2.7);
+        let d = dust.slot_mut(idx);
+        d.position = ring_x(&mut r);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
+    // `:72210-72216` — 10× dust 31, the same ring.
+    for _ in 0..10 {
+        let idx = spawn(&mut r, dust, 31, 0, 1.5);
+        let d = dust.slot_mut(idx);
+        d.position = ring_x(&mut r);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
+    // `:72217-72224` — 2× gore 61-63.
+    for _ in 0..2 {
+        let gx = (wi * r.0.next_range(0, 100)) as f32 / 100.0;
+        let gy = (hi * r.0.next_range(0, 100)) as f32 / 100.0;
+        let gore_type = r.0.next_range(61, 64);
+        let idx = gore.new_gore(
+            &mut r,
+            world,
+            pos + Vec2::new(gx, gy) - Vec2::ONE * 10.0,
+            Vec2::ZERO,
+            gore_type,
+            1.0,
+        );
+        let g = gore.slot_mut(idx);
+        g.position = ring_y(&mut r);
+        g.velocity *= 0.3;
+        g.velocity.x += r.0.next_range(-10, 11) as f32 * 0.05;
+        g.velocity.y += r.0.next_range(-10, 11) as f32 * 0.05;
+    }
+}
+
+/// The g64-pattern adapter: the pool traits over the machine's
+/// `&mut dyn DropRng` stream. `Next(max) = Next(0, max)` — the SAME single
+/// `Sample()` step (`UnifiedRandom.cs:134-141`); `NextFloatDirection` =
+/// `(float)NextDouble() * 2f - 1f` (`Utils.cs:1203-1206`).
+pub(crate) struct BlastRng<'a>(pub &'a mut dyn DropRng);
+
+impl tr_core::particles::DustRng for BlastRng<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_range(0, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
+}
+
+impl tr_core::gore::GoreRng for BlastRng<'_> {
+    fn next_max(&mut self, max: i32) -> i32 {
+        self.0.next_range(0, max)
+    }
+    fn next_range(&mut self, min: i32, max: i32) -> i32 {
+        self.0.next_range(min, max)
+    }
+    fn next_float(&mut self) -> f32 {
+        self.0.next_float()
+    }
+    fn next_float_direction(&mut self) -> f32 {
+        self.0.next_double() as f32 * 2.0 - 1.0
+    }
+}
+
+/// The DRAW CENSUS oracle (the pre-body form, kept for the stream-parity
+/// witness): every EXPLICIT `Main.rand` draw of the burst in the C#'s
+/// order — the bodies fn above consumes exactly these plus the
+/// `NewDust`/`NewGore` internal draws.
+#[cfg(test)]
 pub(crate) fn solar_flare_blast_draws(rng: &mut dyn DropRng) {
     // `RotatedByRandom(π)` = two `NextDouble` (`Utils.cs:1697-1700`).
     fn rotated(rng: &mut dyn DropRng) {
@@ -1290,5 +1446,140 @@ mod tests {
                 pool.slots()[s].kind
             );
         }
+    }
+
+    // ---- W4-f50 deviation 2: the 608 blast burst BODIES -------------------
+
+    /// A recording `Main.rand` stand-in over a real seeded stream: every
+    /// draw is logged as `(tag, a, b)` — tag 0 = `Next(min,max)`, 1 =
+    /// `NextFloat`, 2 = `NextDouble`. The bodies fn and the census oracle
+    /// run on the SAME seed, so the parity witness compares the logs.
+    struct BlastRecord {
+        inner: tr_core::UnifiedRandom,
+        log: Vec<(u8, i32, i32)>,
+    }
+    impl BlastRecord {
+        fn new(seed: i32) -> Self {
+            Self { inner: tr_core::UnifiedRandom::new(seed), log: Vec::new() }
+        }
+    }
+    impl DropRng for BlastRecord {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.log.push((0, min, max));
+            self.inner.next_range(min, max)
+        }
+        fn next_float(&mut self) -> f32 {
+            self.log.push((1, 0, 0));
+            self.inner.next_float()
+        }
+        fn next_double(&mut self) -> f64 {
+            self.log.push((2, 0, 0));
+            self.inner.next_double()
+        }
+    }
+
+    fn blast_ctx() -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(4800.0, 3200.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// The bodies spawn the C#'s 84 dust + 2 gore, in type order, with the
+    /// post-arms (`Projectile.cs:72183-72224`): 4× dust 31, 60× dust 6 (the
+    /// 30 pairs), 10× dust 6, 10× dust 31, 2× gore 61-63. The pair's second
+    /// dust carries `fadeIn = 2.5`; every burst dust but the first four is
+    /// `noGravity`.
+    #[test]
+    fn w4_f50_the_608_blast_bodies_spawn_the_census_counts_and_post_arms() {
+        let w = world();
+        let ctx = blast_ctx();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
+        let mut rng = BlastRecord::new(42);
+        let center = Vec2::new(1600.0, 800.0);
+        solar_flare_blast_bodies(
+            &mut rng,
+            &mut dust,
+            &ctx,
+            &w,
+            &mut gore,
+            center - Vec2::new(80.0, 80.0),
+            160.0,
+            160.0,
+            center,
+            Vec2::new(3.0, -4.0),
+        );
+        let active: Vec<&tr_core::particles::Dust> =
+            dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 84, "4 + 60 + 10 + 10 dust (:72183-72216)");
+        // The type order: 4× 31, 60× 6 (the 30 pairs), 10× 6, 10× 31.
+        let types: Vec<i32> = active.iter().map(|d| d.dust_type).collect();
+        assert_eq!(&types[..4], &[31, 31, 31, 31]);
+        assert!(types[4..64].iter().all(|&t| t == 6), "the 30 pairs are dust 6");
+        assert_eq!(&types[64..74], &[6; 10]);
+        assert_eq!(&types[74..84], &[31; 10]);
+        // The first four (alpha-100 dust 31) keep gravity; the rest noGravity.
+        assert!(active[..4].iter().all(|d| !d.no_gravity));
+        assert!(active[4..].iter().all(|d| d.no_gravity));
+        // The pair's second dust (odd index within 4..64) carries fadeIn 2.5.
+        for i in (5..64).step_by(2) {
+            assert_eq!(active[i].fade_in, 2.5, "pair second fadeIn (:72199)");
+        }
+        // 2 gore, types in 61..=63.
+        let gores: Vec<&tr_core::gore::Gore> =
+            gore.slots().iter().filter(|g| g.active).collect();
+        assert_eq!(gores.len(), 2, "2× gore (:72217)");
+        assert!(gores.iter().all(|g| (61..=63).contains(&g.gore_type)));
+    }
+
+    /// Stream parity: the bodies fn consumes EXACTLY the census oracle's
+    /// explicit draws (in order) PLUS the `NewDust`/`NewGore` internal
+    /// draws. The oracle's log is an ordered subsequence of the bodies'
+    /// log; the unmatched draws are the 578 internal rolls (14 dust-31 × 6
+    /// + 70 dust-6 × 7 defaults/damps + 2 gore × 2 kicks). Total 830 =
+    /// 252 + 578.
+    #[test]
+    fn w4_f50_the_608_blast_bodies_keep_the_census_stream_order() {
+        let w = world();
+        let ctx = blast_ctx();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut gore = tr_core::gore::GorePool::new();
+        let center = Vec2::new(1600.0, 800.0);
+        let mut bodies_rng = BlastRecord::new(42);
+        solar_flare_blast_bodies(
+            &mut bodies_rng,
+            &mut dust,
+            &ctx,
+            &w,
+            &mut gore,
+            center - Vec2::new(80.0, 80.0),
+            160.0,
+            160.0,
+            center,
+            Vec2::new(3.0, -4.0),
+        );
+        let mut census_rng = BlastRecord::new(42);
+        solar_flare_blast_draws(&mut census_rng);
+        let a = &bodies_rng.log;
+        let b = &census_rng.log;
+        assert_eq!(b.len(), 252, "the explicit census draws");
+        assert_eq!(a.len(), 830, "252 explicit + 578 internal");
+        // Greedy ordered-subsequence match: every census draw appears in the
+        // bodies log in order. The dust section of the census is pure
+        // doubles (the rings), so the internal dust ranges never mis-match;
+        // the gore ranges align at the tail.
+        let mut bi = 0;
+        for draw in a {
+            if bi < b.len() && *draw == b[bi] {
+                bi += 1;
+            }
+        }
+        assert_eq!(bi, b.len(), "the census is an ordered subsequence of the bodies");
+        assert_eq!(a.len() - b.len(), 578, "the unmatched draws are the internal rolls");
     }
 }

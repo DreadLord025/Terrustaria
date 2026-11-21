@@ -4833,6 +4833,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     if let Some((center, damage)) = app.player.as_mut().and_then(|p| p.take_solar_blast()) {
         let dolls = app.player.as_ref().map_or((false, false), |p| p.doll_flags());
         let luck = app.player.as_ref().map_or(0.0, |p| p.luck());
+        let blast_ctx = app.spawn_ctx();
         app.projectiles.solar_flare_blast(
             center,
             damage,
@@ -4841,6 +4842,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             dolls,
             app.rngs.stream(RngKey::UpdateNpcs),
             luck,
+            &mut app.dust,
+            &blast_ctx,
+            &app.world,
+            &mut app.gore,
         );
     }
     // W4-f50 — the hit-dust loop + football + golf-club hurt drains
