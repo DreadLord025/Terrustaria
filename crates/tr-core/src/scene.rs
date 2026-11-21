@@ -1096,6 +1096,15 @@ impl Sandstorm {
         self.change_severity_intentions();
     }
 
+    /// `Sandstorm.WorldClear` (`Sandstorm.cs:27-30`): the per-world reset
+    /// clears ONLY `Happening` — the severity/intent/RNG state survive
+    /// (the C#'s own scope; `Main.cs:52247`'s WorldClear family). The
+    /// port's live reset is `App::new`'s fresh `Sandstorm`; this is the
+    /// vanilla entry point for the swap path (W4-c40).
+    pub fn world_clear(&mut self) {
+        self.happening = false;
+    }
+
     /// `Sandstorm.ChangeSeverityIntentions` (`Sandstorm.cs:79-97`); the
     /// `NetMessage.SendData(7)` tail (`:93-96`) is multiplayer-only.
     fn change_severity_intentions(&mut self) {
@@ -2856,6 +2865,23 @@ mod tests {
         // values the port must use (the literals of `:58-59`).
         assert_eq!(21600 * 3, 64800);
         assert_eq!(21600 * 2, 43200);
+    }
+
+    /// W4-c40 — `Sandstorm.WorldClear` (`Sandstorm.cs:27-30`) clears ONLY
+    /// `Happening`: the timeLeft/severity/intent survive (unlike
+    /// `StopSandstorm`, which zeroes timeLeft and re-rolls the intent).
+    #[test]
+    fn w4_c40_world_clear_clears_only_happening() {
+        let mut s = Sandstorm::new(5);
+        s.happening = true;
+        s.time_left = 12_345;
+        s.severity = 0.7;
+        s.intended_severity = 0.9;
+        s.world_clear();
+        assert!(!s.happening);
+        assert_eq!(s.time_left, 12_345, "the timer survives");
+        assert_eq!(s.severity.to_bits(), 0.7f32.to_bits());
+        assert_eq!(s.intended_severity.to_bits(), 0.9f32.to_bits());
     }
 
     /// W4-c40 — the hardMode flag changes ONLY the start denominator: a
