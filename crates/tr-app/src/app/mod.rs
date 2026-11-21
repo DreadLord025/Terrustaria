@@ -490,6 +490,14 @@ pub(crate) struct App {
     pub(crate) net_npcs: HashMap<u32, crate::npc::Npc>,
     /// Set when the npc store changed and `self.npcs` must be rebuilt.
     pub(crate) net_npcs_dirty: bool,
+    /// `NPC.pendingDamages` (`NPC.cs:6159`, `new List<PendingDamage>()` at
+    /// `:95178`) — the CLIENT's predicted-strike queue the `162 DamageNPCAck`
+    /// pops FIFO (`NPC.AckDamage`, `:90703-90713`). A client strike pushes
+    /// an entry (`PushPendingDamage`, `:90672-90685`), the landed damage
+    /// folds in (`AddStrikeDamage`, `:90687-90693`), and the `23` reader
+    /// subtracts the pending sum from the wire life (`GetPendingDamage`,
+    /// `:90715-90727`, `MessageBuffer.cs:1668-1676`). W4-g51 id-162.
+    pub(crate) net_pending_damages: Vec<crate::app::net_npc_sync::PendingDamage>,
     /// S1-I-4d: the per-NPC `netSpam` throttle state keyed by the stable
     /// `Npc.uid` (`NPC.cs:6133-6149`). The C# keeps it on the NPC; the port's
     /// Vec compacts on death, so the state rides the uid, not the index.
@@ -3842,6 +3850,7 @@ impl App {
             net_dropped: false,
             net_npcs: HashMap::new(),
             net_npcs_dirty: false,
+            net_pending_damages: Vec::new(),
             net_npc_states: HashMap::new(),
             net_npc_outbox: Vec::new(),
             net_npc_despawns: Vec::new(),

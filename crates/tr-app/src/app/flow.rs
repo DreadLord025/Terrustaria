@@ -2273,6 +2273,7 @@ pub(crate) mod front_flow_tests {
             net_dropped: false,
             net_npcs: std::collections::HashMap::new(),
             net_npcs_dirty: false,
+            net_pending_damages: Vec::new(),
             net_npc_states: std::collections::HashMap::new(),
             net_npc_outbox: Vec::new(),
             net_npc_despawns: Vec::new(),

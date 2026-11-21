@@ -210,8 +210,9 @@ pub mod id {
     pub const SECTION_REQUEST: u8 = 159;
     /// `162 DamageNPCAck` (`MessageID.cs:338`) — the host's ack of a `28`
     /// strike, no body (`MessageBuffer.cs:1768-1771` sends, `:1819-1824`
-    /// pops `NPC.pendingDamages[0]`). W4-g51 lifted the parked d92 codec; the
-    /// client `AckDamage` is parked (no pendingDamages queue yet).
+    /// pops `NPC.pendingDamages[0]`). W4-g51 lifted the parked d92 codec and
+    /// wired the queue: the client strike pushes (`send_npc_strike`), the
+    /// `23` reader subtracts the pending sum, the ack pops FIFO.
     pub const NPC_STRIKE_ACK: u8 = 162;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits

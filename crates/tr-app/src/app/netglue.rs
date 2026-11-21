@@ -456,6 +456,11 @@ impl App {
             // the strike and relays it, plus a full `23` update on death
             // (`MessageBuffer.cs:1805-1815`).
             C2s::NpcStrike(st) => {
+                // `MessageBuffer.cs:1768-1771` — the host acks EVERY `28`
+                // with a bodyless `162` to the sender, BEFORE the body reads
+                // and the generation gate (the client pops its pending entry
+                // even when the strike is refused). W4-g51 id-162.
+                server.send(id, &S2c::NpcStrikeAck);
                 let slot = st.npc as usize;
                 let gen_ok = self
                     .net_npc_gen
@@ -1831,9 +1836,28 @@ impl App {
                 npc.vx = info.vx;
                 npc.vy = info.vy;
                 npc.facing = if info.dir_right { 1 } else { -1 };
-                if !info.life_full && info.hp >= 0 {
-                    npc.hp = info.hp;
+                // `MessageBuffer.cs:1657-1677` — the pending-damage
+                // reconciliation (W4-g51 id-162): the `life_full` bit snaps
+                // the wire life to lifeMax (`:1657-1660`), then the wire life
+                // minus the summed predicted damage (`GetPendingDamage`,
+                // `NPC.cs:90715-90727`) lands UNLESS a phase change fired
+                // (`:1669` — the local life + ai are kept; the port's `23`
+                // body carries no ai array, so the ai-copy half is structural
+                // and `SetStrikePhaseChange` has no ported trigger yet — the
+                // flag stays false, the subtraction always runs).
+                let wire_life = if info.life_full { npc.max_hp } else { info.hp };
+                let (pending, phase_change) = crate::app::net_npc_sync::get_pending_damage(
+                    &self.net_pending_damages,
+                    info.slot as i16,
+                    info.generation,
+                );
+                if !phase_change {
+                    npc.hp = wire_life - pending; // `:1671`
                 }
+                // The C#'s despawn gate (`:1661`) reads the WIRE life
+                // (`num175`), not the reconciled one — a predicted-to-death
+                // NPC stays active until the host's own death `23` lands
+                // (the early-despawn branch above handles wire ≤ 0).
                 self.net_npcs.insert(slot, npc);
                 self.net_npcs_dirty = true;
             }
@@ -2252,11 +2276,13 @@ impl App {
             // the arm parks with them (S1-I-4).
             S2c::ExtraSpawnLoaded { .. } => {}
             // `case 162`'s client half (`MessageBuffer.cs:1819-1824`):
-            // `NPC.AckDamage` pops `NPC.pendingDamages[0]` (`NPC.cs:90703-
-            // 90713`). The port has no pending-damage queue (the client-side
-            // damage prediction the ack reconciles is unported), so the arm
-            // parks with it (S1-I-4).
-            S2c::NpcStrikeAck => {}
+            // `NPC.AckDamage` pops `NPC.pendingDamages[0]` FIFO
+            // (`NPC.cs:90703-90713`). W4-g51 id-162 wired the queue: the
+            // client's strike pushes (`send_npc_strike`), the `23` reader
+            // subtracts the pending sum, and this ack pops the oldest.
+            S2c::NpcStrikeAck => {
+                crate::app::net_npc_sync::ack_damage(&mut self.net_pending_damages);
+            }
             // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
             // `Main.player[num103].immuneAlpha = 255` — the dead-peer ghost
             // fade. The port's `immuneAlpha` blinkVisual half is draw-side
@@ -2511,6 +2537,9 @@ impl App {
         self.map = Some(map::WorldMap::new(&self.world));
         self.npcs.clear();
         self.items.clear();
+        // `NPC.ClearAll` (`NPC.cs:8369`) — the pending-damage queue clears
+        // with the world (W4-g51 id-162).
+        self.net_pending_damages.clear();
         self.world_key = None;
         self.net_info = None;
         self.net_pending_sections.clear();
@@ -3644,13 +3673,19 @@ impl App {
     /// A client-side strike on a networked NPC: the `28` body addressed by the
     /// host's slot and the generation the `23` push delivered
     // (`NPC.StrikeNPC`'s `fromNet: false` send, `NPC.cs:81218`).
+    /// W4-g51 id-162: the send also PUSHES the pending-damage entry
+    /// (`NPC.PushPendingDamage`, `NPC.cs:81221` → `:90672-90685`) and folds
+    /// the landed damage in (`AddStrikeDamage`, `:90687-90693` — the caller
+    /// passes `landed_damage`, 0 when the local strike was refused). The
+    /// `realLife` redirect (`:90674-90677`) resolves the carrier first.
     pub(crate) fn send_npc_strike(
-        &self,
+        &mut self,
         idx: usize,
         damage: i32,
         knock_back: f32,
         crit: bool,
         from_right: bool,
+        landed_damage: i32,
     ) {
         if !matches!(self.net, NetRole::Client(_)) {
             return;
@@ -3665,6 +3700,30 @@ impl App {
             .get(&slot)
             .map(|(_, g)| *g as u8)
             .unwrap_or(0);
+        // `PushPendingDamage`'s `realLife` redirect (`NPC.cs:90674-90677`):
+        // a linked segment's entry keys the CARRIER's slot + generation.
+        let carrier_slot = crate::npc::Npc::carrier_index(&self.npcs, idx)
+            .and_then(|c| self.net_npc_slots.get(c).copied())
+            .unwrap_or(slot);
+        let carrier_gen = self
+            .net_npc_gen
+            .get(&carrier_slot)
+            .map(|(_, g)| *g as u8)
+            .unwrap_or(generation);
+        let current = crate::app::net_npc_sync::push_pending_damage(
+            &mut self.net_pending_damages,
+            carrier_slot as i16,
+            carrier_gen,
+        );
+        // `AddStrikeDamage` (`NPC.cs:90687-90693`): the landed damage folds
+        // into the current entry (the client gate is this method's role check).
+        crate::app::net_npc_sync::add_strike_damage(
+            &mut self.net_pending_damages,
+            Some(current),
+            carrier_slot as i16,
+            carrier_gen,
+            landed_damage,
+        );
         if let NetRole::Client(client) = &self.net {
             client.send(&C2s::NpcStrike(net::NpcStrike {
                 npc: slot as u8,
@@ -6390,6 +6449,81 @@ mod message_family_tests {
             .achievements
             .notify(achievements::CondKind::NpcKilled(4));
         assert_eq!(again, None, "the 97 already completed EYE_ON_YOU");
+    }
+
+    /// W4-g51 id-162: the client's strike pushes a pending-damage entry, the
+    /// host's `162` ack pops it FIFO, and the `23` reader subtracts the
+    /// pending sum from the wire life (`MessageBuffer.cs:1668-1676`).
+    #[test]
+    fn the_pending_damage_queue_pushes_acks_and_reconciles_the_23_life() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let mut npc = crate::npc::Npc::new(crate::npc::NpcKind::Slime, 100.0, 100.0, 1, 0.0);
+        npc.hp = 1000;
+        npc.max_hp = 1000;
+        host_app.npcs.clear();
+        host_app.npcs.push(npc);
+        host_app.net_npc_gen.insert(0, (1, 1));
+        pump(&mut host_app, &mut client_app, 20);
+        // The client's store knows slot 0; rebuild the render list so the
+        // strike's idx→slot map resolves.
+        client_app.net_npcs_dirty = true;
+        client_app.net_rebuild_lists();
+        assert!(client_app.net_pending_damages.is_empty());
+        // A landed 40-damage strike: the push + the fold.
+        client_app.send_npc_strike(0, 40, 1.0, false, true, 40);
+        assert_eq!(client_app.net_pending_damages.len(), 1);
+        assert_eq!(client_app.net_pending_damages[0].damage, 40);
+        assert_eq!(client_app.net_pending_damages[0].index, 0);
+        // A `23` snap with wire life 1000 reconciles to 960 (the pending 40).
+        let info = net::NpcInfo {
+            slot: 0,
+            generation: 1,
+            spawn: false,
+            kind: crate::npc::NpcKind::Slime.to_u16() as i16,
+            x: 100.0,
+            y: 100.0,
+            vx: 0.0,
+            vy: 0.0,
+            dir_right: true,
+            dir_y_down: false,
+            sprite_right: true,
+            life_full: false,
+            hp: 1000,
+        };
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::NpcInfo(Box::new(info))),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.net_npcs.get(&0).map(|n| n.hp),
+            Some(960),
+            "the wire life minus the pending 40"
+        );
+        // The host's ack (the `28` it received) pops the entry.
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            client_app.net_pending_damages.is_empty(),
+            "the 162 ack popped the entry"
+        );
+        // A second snap now reads the wire life unmodified.
+        let info2 = net::NpcInfo { hp: 900, ..info };
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::NpcInfo(Box::new(info2))),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(
+            client_app.net_npcs.get(&0).map(|n| n.hp),
+            Some(900),
+            "no pending entry: the wire life stands"
+        );
     }
 
     /// `AchievementsHelper.NotifyProgressionEvent` (`:227-237`): the host's
