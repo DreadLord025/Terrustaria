@@ -385,6 +385,46 @@ The 984/982/983 rows are pinned by the existing rows witness
 is AI-complete, use-path-inert until d20c-T5 lands the four spawner arms
 against these rows. No d19 change needed — the contract holds.**
 
+### §7a — RETIRE monitor: d20c-T5 at origin's LATEST d20 tip (this pass)
+
+Re-fetched (`git ls-remote` + `fetch --prune`): the ONLY d20 branch on
+origin is `task/W4-d20-proj-ai-191-200` at **`243f81672`** (the doc-sweep
+consolidation; NO separate d20c branch exists). **T5 has NOT landed.**
+Read at that tip:
+
+- **No use-path arms.** `world_sim/editing.rs` has NO `48870/48914/
+  48922/48930` citation and no 273/675/674/757 spawn arm; the only
+  973/985 mention is the pre-existing magic-missile deflection set
+  (`:3064–3071`, `ProjectileID.cs:547` — not a spawner). The four C#
+  arms re-read WHOLE again this pass (`Player.cs:48870–48877/48914–
+  48921/48922–48929/48930–48937`) — §7's table matches verbatim
+  (675's slash kind is the LITERAL 972 `:48917`; 674's ghost the
+  LITERAL 982 dmg 0 `:48926`; 757's slash the LITERAL 984 `:48933`,
+  beam vel ×5 `:48934`).
+- **No row duplication.** d20's `projectile/data.rs` has NO rows for
+  972/982/983/984/997/1126 (the full-file grep: the only 190-style row
+  is 1043 `:3651`). d20's research/109 (T5 seed, `:612`) itself says
+  "d19's 972/982/983/984 rows landing; do NOT duplicate them on d20" —
+  the slashes-ONLY-d19 GATE is honoured on the published tip.
+- **The 1043 dup re-compared:** d20's row (`data.rs:3651`,
+  `(16.0, 16.0, 190, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
+  (true, -1, false, -1, 0, 1.0))`) is value-identical to d19's
+  `data.rs:3726–3729` row — keep-ONE at merge (either copy; d19's
+  rides the band set). The merge canary stands: 1043 needs d20's 198
+  spawner AND d19's 190 dispatch.
+- **The §7 witness re-read at this tip** (`6b56e27c`,
+  `projectile_ai_sword_styles.rs:1625–1649`): the 972 row-gated spawn,
+  the `ai = [1, 20, 1, 0]` payload pin, the finite `num = 1/20`, the
+  `(1 + num·0.2)·ai2` scale, the progress-1 kill — intact.
+
+**Monitor verdict: nothing to verify-landed; the receipt owed is this
+one. When d20c-T5 pushes, its merger check is exactly §7: the four
+spawner arms feed `ai:[dir·gravDir, itemAnimMax|30|32|18, 0, 0]` +
+`set_ai2(scale)` through `spawn_with_data_ai_owned`, the slash rows
+come from d19's merge, and the envelope witness must pass against the
+merged pool. No-row-duplication is a HARD gate (a second 972/982/983/
+984 row set on d20 would shadow d19's at merge).**
+
 ## Witnesses — the FINAL round (WRITTEN NOT RUN — code-only)
 
 - `projectile_ai_sword_styles.rs`: +1 new
