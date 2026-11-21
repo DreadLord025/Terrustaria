@@ -206,7 +206,12 @@ impl WaterfallManager {
                     });
                 }
                 let tile3 = world.tile(num13, num14).copied().unwrap_or_default();
+                // `tile3.nactive()` (`WaterfallManager.cs:555`): the break
+                // needs active AND not actuated-off; `solid_tile_draw` already
+                // carries the same `nactive` half (the explicit gate mirrors
+                // the C# call shape).
                 if tile3.active()
+                    && !tile3.inactive()
                     && solid_tile_draw(&tile3)
                     && !td::TILE_SOLID_TOP.has(tile3.kind)
                     && !td::SET_PLATFORMS.has(tile3.kind)
@@ -1018,6 +1023,56 @@ fn push(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tile::FLAG_INACTIVE;
+
+    /// `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`) reads `nactive()`
+    /// (`Tile.cs:240-247`: active AND not actuated-off), so an actuated tile
+    /// never stops a fall or a spout. (g73's union witness, kept alongside
+    /// the mod.rs spout/column replays.)
+    #[test]
+    fn an_actuated_tile_is_not_solid() {
+        let mut t = Tile::default();
+        t.kind = 1; // stone
+        t.flags |= crate::tile::FLAG_ACTIVE;
+        assert!(solid_tile(&t));
+        t.flags |= FLAG_INACTIVE;
+        assert!(!solid_tile(&t));
+    }
+
+    /// `WaterfallManager.GetAlpha`'s wall gate (`WaterfallManager.cs:1037`):
+    /// `wall != 0 && (showInvisible || (wall != 318 && !invisibleWall()))`,
+    /// OR'd with the below-`worldSurface` dim — both dim to `0.6 * Alpha`.
+    /// (g73's union witness; the latch form feeds `show_invisible` from
+    /// `WaterfallManager::set_show_invisible`, the `:1120` head latch.)
+    #[test]
+    fn get_alpha_wall_gate_matches_the_csharp() {
+        let mut w = World::new("test".into(), 40, 40);
+        w.world_surface = 20.0;
+        let mut t = Tile::default();
+        // Above the surface, no wall: full alpha.
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        // Below the surface: 0.6 regardless of wall.
+        assert_eq!(get_alpha(1.0, 100, 0, 20, 0, &t, &w, 5, false), 0.6);
+        // A plain wall above the surface dims.
+        t.wall = 4;
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 0.6);
+        // Wall 318 (the fake wall) never dims — unless invisible sight is on.
+        t.wall = 318;
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, true), 0.6);
+        // An Echo-coated wall never dims — unless invisible sight is on.
+        t.wall = 4;
+        w.set_invisible_wall(5, 10, true);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 0, 10, 0, &t, &w, 5, true), 0.6);
+        // The typed falls bypass the gate entirely.
+        assert_eq!(get_alpha(1.0, 100, 1, 30, 0, &t, &w, 5, false), 1.0);
+        assert_eq!(get_alpha(1.0, 100, 14, 30, 0, &t, &w, 5, false), 0.8);
+        assert_eq!(get_alpha(1.0, 100, 25, 30, 0, &t, &w, 5, false), 0.75);
+        // The last-10-steps fade multiplies after the gate (`:1039-1042`):
+        // wall-dimmed 0.6 x the k=99 fade 0.1.
+        assert!((get_alpha(1.0, 100, 0, 10, 99, &t, &w, 5, true) - 0.06).abs() < 1e-6);
+    }
 
     /// `TrySparkling` is the only randomness in the waterfall walk: one
     /// 1-in-20000 roll per lit fall per frame, keyed on the frame-derived

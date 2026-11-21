@@ -913,23 +913,6 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   sparkle beside the stream (velocity zeroed). The sparkles ride the rain module's dust
   drawing (`Dust` frame 43, scale 0.5) and fade with the generic dust decay
   (`alpha -= 25` per tick) вЂ” the type's own AI is not ported.
-- Lavafall ambience scan (W4-g74, code-only): `DrawWaterfall`'s kind-1 arm
-  (`WaterfallManager.cs:685-707`) accumulates `Main.ambientLavafallStrength` вЂ” per
-  lava segment inside the 2Г—-screen box, `1 - dist/(screenWidth*0.75)` when positive вЂ”
-  and tracks the nearest segment's cell-centre world pixels (`x*16+8` / `y*16+8`) into
-  `ambientLavafallX/Y`. The port keeps the original's verbatim quirk at `:702-705`:
-  the Y-distance arm tests `num36` but stores `num35` (the X distance) into the Y
-  sentinel. The triple is stored per pass (`:963-965`, last active pass wins; the
-  water-style triple `:960-962` stays with the waterfall co-lane) and rides
-  `AmbientScan` out of `WaterfallManager::draw` into `App::ambient_lavafall` вЂ” the
-  lavafall loop's volume/pan inputs (`Main.Ambience`, `Main.cs:13488-13508`). The
-  `Main.drewLava` gates (`:354`/`:368`/`:531`) are ported as the `drew_lava` parameter;
-  `Draw()` clears the flag at `:1125` before the first pass, so every pass of a call
-  sees false regardless of the call-site state. The rain-arm view cull (`:381`) reads
-  the raw `Main.screenPosition`/`screenWidth` (`ScreenInfo`), not the scan rectangle.
-  Witnesses: `lavafall_scan_sums_strength_and_tracks_the_nearest_cell`,
-  `water_falls_leave_the_lavafall_triple_at_the_reset`,
-  `the_last_active_pass_overwrites_the_lavafall_triple` (written, not run вЂ” code-only).
 - Honeyfall lane + the water-style ambience scan (W4-g75, code-only): the second
   `DrawWaterfall` ambience arm (`WaterfallManager.cs:708-729`, locals `:328-332`,
   store `:960-962`) now rides a second `AmbientScan` out of `WaterfallManager::draw`
@@ -1006,6 +989,82 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   `liquid_ambience_out_of_range_leaves_the_loop_untouched`,
   `liquid_ambience_scales_with_the_slider_menu_and_shimmer` (written, not
   run вЂ” code-only).
+- Ambience scans (W4-g73/g74/g75 FINAL union on `task/W4-g75-honeyfall-draw`,
+  code-only): `DrawWaterfall` accumulates BOTH
+  triples in one walk. The lavafall arm (`WaterfallManager.cs:685-707`, locals
+  `:333-337`) sums kind-1 segments; the water-style arm (`:708-729` — every kind except
+  1/14/25/11/12/22, so the disco, gemspark and fountain falls count, honey excluded)
+  accumulates `Main.ambientWaterfallStrength` — per visited cell inside the 2×-screen
+  box, `1 - dist/(screenWidth*0.75)` when positive — and tracks the nearest cell-centre
+  world pixels (`x*16+8` / `y*16+8`) into `ambientWaterfallX/Y`. The scan runs per CELL,
+  not per quad: a boxed-in liquid cell whose body quad is skipped (`:926-930`) still
+  contributes. The port keeps both verbatim quirks: the water Y arm (`:725-728`) tests
+  `num39` but stores `num38` (the X distance) into the Y sentinel, and the lava Y arm
+  (`:702-705`) does the same with `num36`/`num35` — so the stored Y is the first
+  X-nearest cell's row, not a true Y minimum. Both triples ride `AmbientScan` out of
+  `WaterfallManager::draw` as `(water, lava)` (per-pass locals reset `:328-337`, stores
+  `:960-965`, last active pass wins; no active pass leaves the `Main.cs:67230-67234`
+  load reset (-1, -1, 0) on both) into `App::ambient_waterfall`/`ambient_lavafall` —
+  the waterfall/lavafall loops' volume/pan inputs (`Main.Ambience`,
+  `Main.cs:13466-13508`). The quad-based lavafall approximation is gone. The
+  lavafall witnesses (`lavafall_scan_sums_strength_and_tracks_the_nearest_cell`,
+  `water_falls_leave_the_lavafall_triple_at_the_reset`,
+  `the_last_active_pass_overwrites_the_lavafall_triple`,
+  `lava_frames_ride_the_slow_counter`, `lava_quads_carry_the_190_self_glow_floor`
+  on the 140-row glow fixture, `lava_glow_flickers_with_mouse_text_color`) ride
+  the fixed 51-cell left-bend walk. `ScreenInfo`
+  carries the raw `Main.screenPosition`/`Width`/`Height`; `centre()` truncates the int
+  halving before the float add. See `docs/UNION-CONTRACT-waterfalls.md` for the
+  g73/g74/g75 family-merge contract — the canonical branch is
+  `task/W4-g75-honeyfall-draw` (the final union fold).
+- `GetAlpha`'s wall gate (`WaterfallManager.cs:1037`) is ported in full:
+  `wall != 0 && (showInvisible || (wall != 318 && !tile.invisibleWall()))` — any wall
+  dims while invisible sight is on; wall 318 and Echo-coated walls never dim
+  otherwise. The latch is `WaterfallManager::set_show_invisible` — the `:1120`
+  `_shouldShowInvisibleBlocksAndWalls = Main.ShouldShowInvisibleBlocksAndWalls()`
+  head refresh (`Main.cs:58023-58030`), fed from `LightParams::draw_invisible_walls`
+  (`TR_SHOW_INVISIBLE`, false until the EchoMonolith / 4409-accessory systems land)
+  by the app before every `waterfall.draw` call. This supersedes the g73 union's
+  `show_invisible` draw parameter with the verbatim C# static-latch shape.
+  The `:555` walk break and `WorldGen.SolidTile` (`WorldGen.cs:69957-69974`) read
+  `nactive()` (`Tile.cs:240-247`) — active AND not actuated-off — so an actuated tile
+  never stops a fall or a spout.
+- The slope-entry foam (`WaterfallManager.cs:745-757`) sets `color5 = Color.White`
+  after drawing the entry cap — the white propagates to the cell's remaining draws
+  and the next cell's `color4` (`:945`); both C# branches draw the same flipped rect.
+  The rain-arm view cull (`:381`) reads the raw `Main.screenPosition`/`screenWidth`
+  with float divides and ±20-tile margins, not the find-pass scan rectangle.
+  The `Main.drewLava` gates (`:354`/`:368`/`:531`) are ported as a `drew_lava`
+  parameter (g74/g75 union): `Draw()`'s `:1125` reset shadows it to false for
+  every pass, so the call-site value documents the `Main.cs:63281` state only.
+  Union witnesses (g73's 8 + g74's fixed 6 + g75's 6):
+  `waterfall_scan_sums_strength_and_tracks_the_nearest_cell`,
+  `an_empty_pass_stores_the_load_reset_triple`,
+  `the_last_active_pass_overwrites_the_waterfall_triple`,
+  `the_scan_visits_cells_the_quad_list_skips`, `get_alpha_wall_gate_matches_the_csharp`,
+  `an_actuated_tile_is_not_solid`, `slope_entry_and_exit_draw_the_transition_sheets`,
+  `the_rain_arm_culls_against_the_raw_screen`,
+  `lavafall_scan_sums_strength_and_tracks_the_nearest_cell`,
+  `water_falls_leave_the_lavafall_triple_at_the_reset`,
+  `the_last_active_pass_overwrites_the_lavafall_triple`,
+  `lava_frames_ride_the_slow_counter`, `lava_quads_carry_the_190_self_glow_floor`,
+  `lava_glow_flickers_with_mouse_text_color`, `honey_spout_uses_type_fourteen`,
+  `honey_frames_ride_the_slow_counter`,
+  `honey_alpha_is_flat_point_eight_without_a_glow_floor`,
+  `honey_falls_emit_no_light_and_feed_neither_ambience_scan`,
+  `waterfall_scan_y_arm_keeps_the_num3_equals_num38_quirk`
+  (written, not run — code-only). The g75 residuals census adds 15 more
+  (10 waterfall + 5 `liquid_ambience`, listed in the residuals bullet above):
+  `shimmer_spout_uses_type_twenty_five_and_honey_outranks_it`,
+  `shimmer_frames_ride_the_slow_counter`, `shimmer_alpha_is_flat_point_seven_five`,
+  `shimmer_quads_carry_the_walked_cell_and_opacity`,
+  `shimmer_falls_emit_light_but_feed_neither_ambience_scan`,
+  `sand_fountain_tile_460_drops_below`,
+  `sand_fall_draws_one_sheet_with_the_even_column_lead_and_fade`,
+  `echo_and_glass_walls_skip_the_get_alpha_damp_until_the_latch`,
+  `an_actuated_dry_side_still_admits_the_spout`,
+  `an_actuated_stone_in_the_column_does_not_stop_the_walk` — 34 lane witnesses
+  in total, all written, not run (code-only).
 - `LiquidRenderer.DrawShimmer` (`LiquidRenderer.cs:675-723`): shimmer liquid never
   takes the normal liquid path вЂ” every type-3 cell draws twice, the base quad with
   per-corner `GetShimmerBaseColor` wave colours (self-luminous: the light map is

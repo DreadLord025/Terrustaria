@@ -646,8 +646,8 @@ impl App {
                     );
                     if !crate::env::no_waterfall() {
                         // `Main.screenPosition` / `screenWidth` / `screenHeight`
-                        // for the lavafall ambience scan and the rain-arm view
-                        // cull (`WaterfallManager.cs:381`/`:687-691`): the
+                        // for both ambience scans and the rain-arm view cull
+                        // (`WaterfallManager.cs:381`/`:687-691`/`:710-714`): the
                         // unscaled world-pixel view, top-left = draw_cam -
                         // screen/2 (the S1-E-19 `Camera.UnscaledPosition`
                         // convention).
