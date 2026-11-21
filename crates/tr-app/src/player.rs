@@ -1953,6 +1953,16 @@ pub struct Player {
     /// (true while the key is up). The double-tap edge is
     /// `controlDown && releaseDown` (`Utils.JustBecameTrue`).
     release_down: bool,
+    /// `Player.releaseUp` (`Player.cs:1756`) — the up-key release latch (true
+    /// while the key is up), recomputed by `UpdateControlHolds`
+    /// (`:29093-29100`). W4-f3: the latch lands; its five C# consumers are
+    /// folded — the grav-flip toggles (`:26696`/`:26716`, no `gravControl2`/
+    /// `forcedGravity` machine), the hover-up latch (`:25267`, `controlUp`
+    /// merges into `control_jump`), the hover-mount up-nudge (`:26738`,
+    /// M2-MOUNT-4 no `controlUp` key) and the flexible-wand cycle (`:29084`,
+    /// no `GetFlexibleTileWand` row). The up double-tap (`:25041`) reads it
+    /// when the up-cardinal command lane lands.
+    release_up: bool,
     /// `Player.hasJumpOption_*` / `canJumpAgain_*` / `isPerformingJump_*`
     /// (`Player.cs:2664-2716`), indexed by [`ExtraJump::index`]. The has
     /// flags re-derive per tick from the equipment; the can flags re-arm on
@@ -3175,6 +3185,7 @@ impl Player {
             double_tap_down_timer: 0,
             hold_down_timer: 0,
             release_down: true,
+            release_up: true,
             has_jump_options: [false; 9],
             can_jump_again: [false; 9],
             performing_jump: None,
@@ -8496,6 +8507,11 @@ impl Player {
         }
         self.right_prev = input.right;
         self.left_prev = input.left;
+        // W4-f3 — `Player.UpdateControlHolds` (`Player.cs:29080-29101`): the
+        // up-key release latch refreshes beside the run-key flags (the C#'s
+        // three call slots `:26492`/`:26742`/`:27398` all write the same
+        // `!controlUp` mirror; the consumers are folded — see the field doc).
+        self.update_control_holds();
     }
 
     /// `Mount.TryLanding` (`Mount.cs:4562-4568`): while the frame state is
@@ -12755,6 +12771,21 @@ impl Player {
         }
         // `Player.releaseDown = !controlDown` (the per-tick latch refresh).
         self.release_down = !control_down;
+    }
+
+    /// `Player.UpdateControlHolds` (`Player.cs:29080-29101`): the up-key
+    /// release latch — `releaseUp = !controlUp` (`:29093-29100`). W4-f3: the
+    /// flexible-wand cycle head (`:29082-29092`, `GetFlexibleTileWand() !=
+    /// null` + the `FlexibleWandCycleOffset` ±1 on the up/down press edges)
+    /// folds — no wand row in the port. The C# calls this at three slots
+    /// (`:26492` the pulley ride tail, `:26742` the movement-block tail,
+    /// `:27398` the flight tail); the port refreshes once at the tick end
+    /// beside the run-key release flags (`:27618-27652`) — the latch is a
+    /// pure `!controlUp` mirror, so one refresh per tick is observationally
+    /// identical for the (folded) consumers.
+    pub fn update_control_holds(&mut self) {
+        // `:29093-29100`: holding up clears the latch, releasing arms it.
+        self.release_up = !self.control_up;
     }
 
     /// `Player.CheckDrowning` (`Player.cs:23191-23281`): the breath only
@@ -24167,5 +24198,25 @@ mod w4_f3_carpet_tests {
         }
         assert!((p.run_acceleration - 0.1).abs() < 1e-6, "×1.25 (:26615)");
         assert!((p.max_run_speed - 4.5).abs() < 1e-6, "×1.5 (:26616)");
+    }
+
+    /// W4-f3 — `Player.UpdateControlHolds` (`Player.cs:29080-29101`): the
+    /// up-key release latch is a pure `!controlUp` mirror (`:29093-29100`).
+    /// Holding up clears it; releasing arms it (the press edge the folded
+    /// grav-flip / hover-up / wand consumers read as `controlUp && releaseUp`).
+    #[test]
+    fn w4_f3_the_up_release_latch_mirrors_control_up() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.control_up = true;
+        p.update_control_holds();
+        assert!(!p.release_up, "holding up clears the latch (:29095)");
+        p.control_up = false;
+        p.update_control_holds();
+        assert!(p.release_up, "releasing up arms it (:29099)");
+        // The press edge: a fresh up press after a release reads true.
+        p.control_up = true;
+        let edge = p.control_up && p.release_up;
+        assert!(edge, "controlUp && releaseUp is the press edge (:25041)");
     }
 }
