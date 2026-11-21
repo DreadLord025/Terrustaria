@@ -559,11 +559,10 @@ fn shimmer_tail(app: &mut App, idx: u32) {
         };
         // `:1835-1842` — `stack > 0 ? shimmerTime = 1f : 0f`.
         drop.shimmer_time = if drop.count > 0 { 1.0 } else { 0.0 };
-        // `:1843-1845` — shimmerWet + wet + the velocity cut. The port's
-        // `ItemDrop` has no separate `wet` field (the box probe re-derives
-        // it each tick, `item.rs::box_is_wet`); shimmerWet is the flag the
-        // ramp/float read, so it is the one carried.
+        // `:1843-1845` — shimmerWet + wet + the velocity cut (W4-e19: the
+        // per-drop `wet` flag landed with the honey/water gravity arms).
         drop.shimmer_wet = true;
+        drop.wet = true;
         drop.vel *= 0.1;
         (drop.center(), drop.count > 0)
     };
@@ -692,6 +691,7 @@ fn apply_decraft(app: &mut App, idx: u32, recipe_index: usize, amount: u32) {
         drop.shimmer_time = 1.0;
         drop.shimmered = true;
         drop.shimmer_wet = true;
+        drop.wet = true; // `WorldItem.cs:635` — the modifier sets `wet` too.
         app.items.push(drop);
         if app.items.len() > 300 {
             app.items.remove(0);

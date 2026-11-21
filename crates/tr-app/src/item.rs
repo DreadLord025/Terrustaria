@@ -673,12 +673,23 @@ const MAX_FALL: f32 = 7.0;
 /// `gravity = 0.065f; maxFallSpeed = 4f; wetVelocity = velocity * 0.375f`.
 const SHIMMER_GRAVITY: f32 = 0.065;
 const SHIMMER_MAX_FALL: f32 = 4.0;
+/// `WorldItem.UpdateItem`'s honey-wet arm (`WorldItem.cs:386-391`):
+/// `gravity = 0.05f; maxFallSpeed = 3f; wetVelocity = velocity * 0.25f`.
+const HONEY_GRAVITY: f32 = 0.05;
+const HONEY_MAX_FALL: f32 = 3.0;
+/// `WorldItem.UpdateItem`'s water-wet arm (`WorldItem.cs:392-396`):
+/// `gravity = 0.08f; maxFallSpeed = 5f` — `wetVelocity` keeps the `:379`
+/// air default `* 0.5f` (the arm does not re-scale it).
+const WATER_GRAVITY: f32 = 0.08;
+const WATER_MAX_FALL: f32 = 5.0;
 /// `WorldItem.UpdateItem`'s wet-velocity factors (`WorldItem.cs:379-390`):
 /// the air default `wetVelocity = velocity * 0.5f` (`:379`), the shimmer-wet
-/// override `* 0.375f` (`:384`). `ApplyMovement` (`:1074-1084`) integrates a
-/// wet drop at `wetVelocity` while the collision pass runs at full velocity.
+/// override `* 0.375f` (`:384`), the honey-wet `* 0.25f` (`:390`).
+/// `ApplyMovement` (`:1074-1084`) integrates a wet drop at `wetVelocity`
+/// while the collision pass runs at full velocity.
 const WET_STEP_AIR: f32 = 0.5;
 const WET_STEP_SHIMMER: f32 = 0.375;
+const WET_STEP_HONEY: f32 = 0.25;
 /// `WorldItem.MoveInWorld` (`WorldItem.cs:854-860`): the horizontal friction
 /// `base.velocity.X *= 0.95f` and the snap to rest below `0.1`.
 const FRICTION_X: f32 = 0.95;
@@ -886,6 +897,17 @@ pub struct ItemDrop {
     /// parks the result here; `move_in_world` consumes it (the
     /// `velocity.X *= 0.8f` tail, `:859-862`) and clears it. Transient.
     pub repulsed: bool,
+    /// `Entity.wet` (`WorldItem.cs:879-958`) — `Collision.WetCollision` hit
+    /// ANY liquid. Latched: set on entry (`:956`), cleared on exit (`:961`);
+    /// the gravity head's water arm (`:392-396`) reads it.
+    pub wet: bool,
+    /// `Entity.honeyWet` (`WorldItem.cs:870-874`) — `Collision.honey` set it;
+    /// cleared only when `!wet` (`:1039`). The honey gravity arm (`:386-391`).
+    pub honey_wet: bool,
+    /// `Entity.lavaWet` (`WorldItem.cs:865-869`) — `Collision.LavaCollision`
+    /// set it; cleared only when `!wet` (`:1038`). The splash arms read it
+    /// (`:886`/`:965`); lava keeps the air gravity pair (no C# arm).
+    pub lava_wet: bool,
     /// The natural roll's prefix (`Item.NewItem`'s `prefix` argument,
     /// `Item.cs:49730`); 0 = none.
     pub prefix: u16,
@@ -937,6 +959,9 @@ impl ItemDrop {
             shimmer_pending: false,
             shimmer_wet: false,
             repulsed: false,
+            wet: false,
+            honey_wet: false,
+            lava_wet: false,
             prefix,
             pos: Vec2::new(x, y),
             vel: Vec2::new(vx, vy),
@@ -987,18 +1012,6 @@ impl ItemDrop {
             world.tile(tx, y)
                 .is_some_and(|t| tr_core::shimmer::tile_is_shimmer(t))
         })
-    }
-
-    /// `Collision.WetCollision(position, width, height)`'s `Collision.shimmer`
-    /// flag (`WorldItem.cs:870-878`): the faithful centre-shrunk probe with
-    /// the liquid-surface offset and the sloped-tile-under-liquid arm — the
-    /// `npc_ai_slime::wet_collision` port (`Collision.cs:1572-1651`), reused
-    /// UNMODIFIED. The old `box_in_shimmer` was a naive full-box overlap (no
-    /// surface offset, no slope arm, no centre shrink).
-    fn box_in_shimmer(&self, world: &World) -> bool {
-        let (_, _, shimmer) =
-            crate::npc_ai_slime::wet_collision(world, self.pos.x, self.pos.y, SIZE as i32, SIZE as i32);
-        shimmer
     }
 
     /// `Collision.WetCollision(position, width, height)` (`WorldItem.cs:870`):
@@ -1204,29 +1217,36 @@ impl ItemDrop {
     pub fn update(&mut self, world: &World, dt: f32) {
         self.age += dt;
         if self.being_grabbed {
-            // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`): the wet
-            // flags clear and `ApplyMovement` integrates at FULL velocity
-            // (`wet` false → `:1082`).
+            // `UpdateItem`'s grabbed arm (`WorldItem.cs:425-435`): ALL the wet
+            // flags clear (`:427-431`) and `ApplyMovement` integrates at FULL
+            // velocity (`wet` false → `:1082`).
+            self.wet = false;
+            self.lava_wet = false;
+            self.honey_wet = false;
             self.shimmer_wet = false;
             self.being_grabbed = false;
             self.on_conveyor = false;
             self.pos += self.vel;
         } else {
             // `UpdateItem`'s gravity head (`:364-396`): the air pair, then the
-            // shimmer-wet override (`:380-385`, 0.065 / 4) read from the
-            // PREVIOUS tick's `shimmerWet` (the flag `MoveInWorld` re-probes at
-            // `:875`, AFTER this head). The honey/water arms (`:386-396`) need
-            // the honeyWet/wet flags the port does not carry per-drop yet — the
-            // air pair stands in for them (ANALYSIS).
+            // ELSE-IF chain shimmer-wet → honey-wet → water-wet, all read from
+            // the PREVIOUS tick's flags (`MoveInWorld` re-probes at `:865-878`,
+            // AFTER this head). `:379` — `wetVelocity = velocity * 0.5f`; the
+            // shimmer arm re-scales to `* 0.375f` (`:384`), honey to `* 0.25f`
+            // (`:390`); the water arm keeps the 0.5 default (`:392-396`).
             let (mut gravity, mut max_fall) = (GRAVITY, MAX_FALL);
-            // `:379-384` — `wetVelocity = velocity * 0.5f`, the shimmer-wet
-            // arm re-scales to `* 0.375f`. The factor rides the same
-            // previous-tick flag as the gravity pair.
             let mut wet_step = WET_STEP_AIR;
             if self.shimmer_wet {
                 gravity = SHIMMER_GRAVITY;
                 max_fall = SHIMMER_MAX_FALL;
                 wet_step = WET_STEP_SHIMMER;
+            } else if self.honey_wet {
+                gravity = HONEY_GRAVITY;
+                max_fall = HONEY_MAX_FALL;
+                wet_step = WET_STEP_HONEY;
+            } else if self.wet {
+                gravity = WATER_GRAVITY;
+                max_fall = WATER_MAX_FALL;
             }
             // `UpdateShimmer` (`:403`) runs BEFORE `MoveInWorld` (`:413`); a
             // shimmered drop overrides gravity to 0 (`:483`).
@@ -1298,15 +1318,44 @@ impl ItemDrop {
         self.pos = Vec2::new(bp[0], bp[1]);
         self.vel = Vec2::new(bv[0], bv[1]);
         // `MoveInWorld`'s wet re-probe (`:865-878`), BEFORE the collision +
-        // `ApplyMovement` halves: `LavaCollision`/`WetCollision` at the
-        // pre-movement position. The port derives `wet`/`shimmerWet` from the
-        // faithful probes each tick (the C# LATCHES them, `:868`/`:877` — the
-        // kind flags clear only via `!wet` at `:1036-1041`; the honey/lava
-        // per-drop flags land with the gravity arms, ANALYSIS W4-e19). The
-        // probe result feeds BOTH the next tick's gravity head and THIS
-        // tick's `ApplyMovement` gate (`:1076` reads `base.wet` post-set).
-        let wet_now = self.box_is_wet(world);
-        self.shimmer_wet = self.box_in_shimmer(world);
+        // `ApplyMovement` halves: `LavaCollision` (`:865`) then
+        // `WetCollision` (`:870`, which also sets the `Collision.honey`/
+        // `Collision.shimmer` statics the `:871-878` arms copy). The flags
+        // LATCH (`:868`/`:873`/`:877` are set-only); `wet` itself follows the
+        // entry/exit edges (`:956`/`:961`) and the `!wet` tail (`:1036-1041`)
+        // clears the three kind flags. The probe feeds BOTH the next tick's
+        // gravity head and THIS tick's `ApplyMovement` gate (`:1076` reads
+        // `base.wet` post-set).
+        if crate::player::lava_collision(world, self.pos.x, self.pos.y, SIZE, SIZE) {
+            self.lava_wet = true; // `:866-869`
+        }
+        let (wet_hit, honey_hit, shimmer_hit) = crate::npc_ai_slime::wet_collision(
+            world,
+            self.pos.x,
+            self.pos.y,
+            SIZE as i32,
+            SIZE as i32,
+        );
+        if honey_hit {
+            self.honey_wet = true; // `:871-874`
+        }
+        if shimmer_hit {
+            self.shimmer_wet = true; // `:875-878`
+        }
+        // `:879-958`/`:959-961` — the entry sets `wet`, the exit clears it
+        // (the splash dust arms ride these edges, deferred item 4).
+        if wet_hit {
+            self.wet = true;
+        } else if self.wet {
+            self.wet = false;
+        }
+        // `:1036-1041` — while dry, the kind flags clear.
+        if !self.wet {
+            self.lava_wet = false;
+            self.honey_wet = false;
+            self.shimmer_wet = false;
+        }
+        let wet_now = self.wet;
         // `wetVelocity` (`:379-390`'s head value, `:1046-1066`'s refresh):
         // the collision pass runs at FULL velocity; an axis it overrides
         // keeps that residual in `wetVelocity` too (`:1052-1059`), the free
@@ -2486,5 +2535,87 @@ mod s1_p_i47_tests {
         // wetVelocity.Y → the drop lands flush this tick.
         assert!((d.pos.y - 306.0).abs() < 1e-4, "flush landing: {}", d.pos.y);
         assert!((d.vel.y - 1.0).abs() < 1e-4, "the residual velocity: {}", d.vel.y);
+    }
+
+    /// W4-e19 — the honey/water gravity arms (`WorldItem.cs:386-396`): the
+    /// ELSE-IF chain reads the PREVIOUS tick's per-drop flags. Honey 0.05 /
+    /// cap 3 / wet_step 0.25; water 0.08 / cap 5 / the 0.5 air wet_step.
+    #[test]
+    fn w4_e19_the_honey_and_water_gravity_arms() {
+        let w = ground(); // dry world — the flags are the carried ones
+        // Honey-wet: gravity 0.05, cap 3.
+        let mut h = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        h.honey_wet = true;
+        h.update(&w, 1.0 / 60.0);
+        assert!((h.vel.y - 0.05).abs() < 1e-6, "honey gravity: {}", h.vel.y);
+        let mut hfast = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 6.0, 0.0);
+        hfast.honey_wet = true;
+        hfast.update(&w, 1.0 / 60.0);
+        assert!((hfast.vel.y - 3.0).abs() < 1e-6, "honey cap 3: {}", hfast.vel.y);
+        // Water-wet: gravity 0.08, cap 5.
+        let mut aq = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        aq.wet = true;
+        aq.update(&w, 1.0 / 60.0);
+        assert!((aq.vel.y - 0.08).abs() < 1e-6, "water gravity: {}", aq.vel.y);
+        let mut afast = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 6.0, 0.0);
+        afast.wet = true;
+        afast.update(&w, 1.0 / 60.0);
+        assert!((afast.vel.y - 5.0).abs() < 1e-6, "water cap 5: {}", afast.vel.y);
+        // The chain order: shimmerWet beats honeyWet beats wet (`:380-396`).
+        let mut both = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 0.0, 0.0, 0.0);
+        both.shimmer_wet = true;
+        both.honey_wet = true;
+        both.wet = true;
+        both.update(&w, 1.0 / 60.0);
+        assert!((both.vel.y - 0.065).abs() < 1e-6, "shimmer wins: {}", both.vel.y);
+    }
+
+    /// The per-drop wet flags latch from the faithful probes (`:865-878`)
+    /// and clear via the `!wet` tail (`:1036-1041`): a drop in a honey pool
+    /// carries honeyWet + wet; parked dry, both clear.
+    #[test]
+    fn w4_e19_the_wet_flags_latch_and_clear() {
+        let mut w = ground();
+        for x in 0..32 {
+            for y in 18..=19 {
+                let j = w.index(x, y);
+                w.tiles[j] = Tile::default();
+                w.tiles[j].set_liquid_kind(tr_core::tile::LiquidKind::Honey);
+                w.tiles[j].liquid = 255;
+            }
+        }
+        // Inside the honey pool: the probe sets honeyWet + wet.
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 18.0 * TILE_PX + 4.0, 0.0, 0.0, 0.0);
+        d.update(&w, 1.0 / 60.0);
+        assert!(d.wet && d.honey_wet, "the honey probe latched");
+        assert!(!d.shimmer_wet && !d.lava_wet);
+        // The NEXT tick's head reads the carried honey flag (0.05).
+        let mut d2 = d.clone();
+        d2.vel = Vec2::ZERO;
+        d2.update(&w, 1.0 / 60.0);
+        assert!((d2.vel.y - 0.05).abs() < 1e-6, "the carried honey gravity: {}", d2.vel.y);
+        // Parked dry (high above the pool): the exit clears wet, the !wet
+        // tail clears honeyWet.
+        let mut dry = d.clone();
+        dry.pos.y = 5.0 * TILE_PX;
+        dry.update(&w, 1.0 / 60.0);
+        assert!(!dry.wet && !dry.honey_wet, "the dry tail cleared the flags");
+    }
+
+    /// The grabbed arm clears ALL the wet flags (`:427-431`).
+    #[test]
+    fn w4_e19_the_grabbed_arm_clears_every_wet_flag() {
+        let w = ground();
+        let mut d = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 10.0 * TILE_PX, 1.0, 0.0, 0.0);
+        d.wet = true;
+        d.honey_wet = true;
+        d.lava_wet = true;
+        d.shimmer_wet = true;
+        d.being_grabbed = true;
+        d.update(&w, 1.0 / 60.0);
+        assert!(!d.wet && !d.honey_wet && !d.lava_wet && !d.shimmer_wet);
+        assert!(!d.being_grabbed);
+        // The full-velocity ApplyMovement (`:1082`): pos += vel, no fraction.
+        assert!((d.pos.x - (10.0 * TILE_PX + 1.0)).abs() < 1e-5);
     }
 }
