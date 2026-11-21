@@ -5991,43 +5991,54 @@ mod s1_h_7_tests {
     /// W4-f23 closeout item 3 — the craft cue is `CraftingEffects.OnCraft`'s
     /// `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`), run
     /// UNCONDITIONALLY after `CraftingRequests.CraftItem`'s loop
-    /// (`CraftingRequests.cs:119`) — even when the loop crafted nothing. A
-    /// focused-row attempt the ingredients no longer allow still plays the
-    /// cue (the old grant-gated port dropped it).
+    /// (`CraftingRequests.cs:119`) — the C# plays it even when the loop
+    /// crafted nothing (a stale available list at request time). The port's
+    /// click path rebuilds the list live, so an empty `crafted` at the cue
+    /// site is unreachable today; the parity is structural — the cue must
+    /// sit OUTSIDE the `!crafted.is_empty()` grant gate. This pin keeps a
+    /// regression from re-gating it (the pre-closeout shape).
     #[test]
-    fn the_craft_cue_plays_even_when_the_attempt_crafts_nothing() {
+    fn the_craft_cue_sits_outside_the_grant_gate() {
+        let src = include_str!("clicks.rs");
+        let cue = src
+            .find("self.audio.play(\"Grab\"); // `SoundEngine.PlaySound(7)` (`CraftingEffects.cs:51`)")
+            .expect("the craft-attempt cue site exists");
+        let gate = src
+            .find("if !crafted.is_empty() {")
+            .expect("the grant gate exists");
+        assert!(
+            cue < gate,
+            "the OnCraft cue runs BEFORE (outside) the grant gate — \
+             CraftingRequests.cs:119 is unconditional"
+        );
+    }
+
+    /// A focused-row craft plays exactly ONE Grab (the attempt cue) — the
+    /// closeout moved the cue out of the grant gate without doubling it.
+    #[test]
+    fn a_focused_craft_plays_exactly_one_grab() {
         let mut app = craft_app();
-        // Stock the torch, focus it, then drain the gel so the focused
-        // attempt can craft nothing.
         app.inventory[0] = crate::item::ItemSlot { kind: 9, name: "Wood", count: 30, prefix: 0 };
         app.inventory[1] = crate::item::ItemSlot { kind: 23, name: "Gel", count: 30, prefix: 0 };
         let mouse = torch_mouse(&app);
         app.mouse_pos = mouse;
         app.focus_recipe = 1;
-        // Focus the torch (row 0).
+        // The select click (Menu_Tick), then the release reset.
         app.ui_left_press = true;
         app.mine_down = true;
         app.handle_crafting_clicks();
         app.mine_down = false;
         app.handle_crafting_clicks();
-        // Drain the gel — the torch is no longer craftable, but the row
-        // stays focused (the click path reads the live available list).
-        app.inventory[1].count = 0;
+        // The craft click: exactly one cue (the Grab), one craft.
         app.stack_split = 0;
         app.mine_down = true;
         app.ui_left_press = true;
         let before = app.audio.played_count();
-        // The focused-row attempt: `try_craft_qty` returns empty (no gel),
-        // but `OnCraft`'s cue still fires.
-        app.handle_crafting_clicks();
+        assert!(app.handle_crafting_clicks());
+        assert_eq!(app.audio.played_count(), before + 1, "one Grab, not two");
         assert!(
-            !app.inventory.iter().any(|s| s.kind == 8),
-            "nothing crafted (no gel)"
-        );
-        assert_eq!(
-            app.audio.played_count(),
-            before + 1,
-            "the craft-attempt cue plays even on a no-op (`CraftingRequests.cs:119`)"
+            app.inventory.iter().any(|s| s.kind == 8),
+            "the torch crafted"
         );
     }
 }
