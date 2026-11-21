@@ -922,7 +922,9 @@ non-solid and solid tile passes (`Main.DoDraw_Waterfalls`).
   this renderer blends non-premultiplied, so the sparkle encodes the premultiplied
   colour as `rgb/max(r,g,b)` with `alpha = max(r,g,b)` вЂ” the same source contribution
   with a slightly dimmed backdrop under the sparkle. `Main.DrawTileInWater` (the
-  tile-518 submerged redraw) is not ported: the generator never places tile 518.
+  tile-518 submerged redraw) is ported AND wired (W4-g12 render-sweep-2): both live
+  record paths call it per visible cell (`LiquidRenderer.cs:664`/`:707`) and the tile
+  pass skips wet pads (`TileDrawing.cs:872-875`) — see "The submerged lily-pad redraw".
 - Not ported: the `HorizonClouds`-style shader tint of `NextHorizonRenderer.CloudsEnd`
   for falls, `Main.ambientLava(X/Y/Strength)` (an audio-ambience feed, not lighting),
   the `player.lavaOpacity` factor and the storm/rare cloud type branches.
@@ -39488,18 +39490,33 @@ actuated/platform/half/sloped ceilings do not clamp), the tile's own
 16x16 frame at `(x*16, y*16 - num) + drawOffset` with the
 `Lighting.GetColor` tint, no rotation/flip/scale.
 
-**STAGED, not wired:** the only C# caller is the retro `oldDrawWater`
-sprite pass (`Main.cs:57667`, reached when `!Lighting.NotRetro`,
-`:57519-57522`). The port's liquid draw is the `LiquidRenderer` record
-path in every mode; the retro sprite pass itself is unported and its
-dust feeds are the g13 lane's (`retro_liquid_dust_feed`, wired). The
-redraw joins that pass when it lands — the g13 merge or a retro-liquid
-follow-up calls this fn per liquid cell in the C# walk order (row-major
-`i` outer / `j` inner, before the water quad, `:57667-57669`). The
-`GetTileDrawTexture` paint lookup folds to the plain frame (518 has no
-paint variants in `TilePaintSystemV2`; a painted pad would need the
-g79 paint chain — recorded). 2 witnesses WRITTEN NOT RUN (the lift/
-clamp ladder incl. the actuated ceiling, the gate/anchor source scan).
+**WIRED (W4-g12 render-sweep-2 correction):** the doc-sweep's "the
+only C# caller is the retro `oldDrawWater` sprite pass" reading was
+WRONG — the LIVE record path calls it too:
+`LiquidRenderer.DrawNormalLiquids` (`LiquidRenderer.cs:664`) and
+`DrawShimmer` (`:707`) invoke `Main.DrawTileInWater` per visible liquid
+cell BEFORE each water/shimmer quad, and `DrawSingleTile`
+(`TileDrawing.cs:872-875`) early-returns for a wet pad (active 518,
+`liquid > 0`) so the tile pass never draws it — the liquid-pass redraw
+is the pad's ONLY sprite. Wired: both record paths call
+`draw_tile_in_water` (the tint is `Lighting.GetColor(x, y)` through the
+port's `style.shade` mode stand-in, `draw_offset` Vec2::ZERO in
+world-pixel quads), and the tile loop carries the wet-pad skip before
+`GetTileDrawData` (breaking an open dark run — the C# return precedes
+`DrawBlack`, `:988-990`). Dry pads (liquid 0) keep the tile pass's
+case-518 dry-float arm (`drawdata_cases_a::lily_pad_top_delta`,
+`TileDrawing.cs:4604-4630`). The retro sprite pass (`Main.cs:57667`)
+itself stays unported — its dust feeds are g13's
+(`retro_liquid_dust_feed`, wired); the fn is shared, no second copy at
+that merge. The `GetTileDrawTexture` paint lookup folds to the plain
+frame (518 has no paint variants in `TilePaintSystemV2`; a painted pad
+would need the g79 paint chain — recorded). G6: no new key field — the
+pad's inputs (liquid level, frame, cell light) already ride
+`world_revision` (the liquid settle bumps it, `liquid.rs:306`) +
+`light_generation` + the `liquid_anim` frame slot. 2 + 2 witnesses
+WRITTEN NOT RUN (the lift/clamp ladder incl. the actuated ceiling, the
+gate/anchor source scan; the two call-site order scans, the tile-pass
+skip scan).
 
 ## The wave-A slime scale rows (W4-g12 doc-sweep)
 

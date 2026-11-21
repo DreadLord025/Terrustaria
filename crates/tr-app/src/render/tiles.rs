@@ -502,7 +502,9 @@ pub(crate) fn draw_tiles(
     if !crate::env::no_liqback() {
         stats.liquids += draw_waters(
             r,
+            world,
             lookups,
+            atlas,
             light,
             style,
             anim_time,
@@ -660,6 +662,24 @@ pub(crate) fn draw_tiles(
                     l = [l[0] * 0.4, l[1] * 0.4, l[2] * 0.4];
                 }
                 let active = tile.active();
+                // `DrawSingleTile`'s first gate (`TileDrawing.cs:872-875`):
+                // a WET lily pad (active 518, liquid > 0) never draws in the
+                // tile pass — `LiquidRenderer` redraws it under the water
+                // quad via `Main.DrawTileInWater` (liquids.rs, W4-g12
+                // render-sweep-2). Before GetTileDrawData, so no frame
+                // data, no black quad, no dust either. Dry pads (liquid 0)
+                // keep the normal path — the case-518 dry-float arm.
+                if active && tile.kind == 518 && tile.liquid > 0 {
+                    // The C# return precedes DrawBlack (`:988-990`): the
+                    // cell emits NO black quad, so an open dark run must
+                    // break here (a merged rect would paint over the pad
+                    // the liquid pass draws).
+                    if run_start >= 0 {
+                        scratch.cur.push((run_start, tx - 1));
+                        run_start = -1;
+                    }
+                    continue;
+                }
                 // `TileDrawing.Draw`'s vine arm (`TileDrawing.cs:536-545`):
                 // a `VineThreads` cell never draws through `DrawSingleTile`
                 // — the crawl registers the strip's root as a special point
@@ -1351,7 +1371,9 @@ pub(crate) fn draw_tiles(
     if !crate::env::no_liqfront() {
         stats.liquids += draw_waters(
             r,
+            world,
             lookups,
+            atlas,
             light,
             style,
             anim_time,

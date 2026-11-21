@@ -30,7 +30,9 @@ pub(crate) fn is_liquid_style_water(style: usize) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_waters(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -51,14 +53,18 @@ pub(crate) fn draw_waters(
         } else {
             liquid_alpha[j]
         };
-        quads += draw_liquids(r, lookups, light, style, anim_time, draws, pass, j, alpha, true);
+        quads += draw_liquids(
+            r, world, lookups, atlas, light, style, anim_time, draws, pass, j, alpha, true,
+        );
         fading = true;
     }
     // `this.DrawLiquid(isBackground, Main.waterStyle, flag ? liquidAlpha[style] : 1f)`.
     let alpha = if fading { liquid_alpha[water_style] } else { 1.0 };
     quads += draw_liquids(
         r,
+        world,
         lookups,
+        atlas,
         light,
         style,
         anim_time,
@@ -69,7 +75,7 @@ pub(crate) fn draw_waters(
         false,
     );
     // `if (!waterOnly) { LiquidRenderer.Instance.DrawShimmer(...); }`.
-    quads += draw_shimmer(r, lookups, anim_time, draws, pass);
+    quads += draw_shimmer(r, world, lookups, atlas, light, style, anim_time, draws, pass);
     quads
 }
 
@@ -84,7 +90,9 @@ pub(crate) fn draw_waters(
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_liquids(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
@@ -114,6 +122,25 @@ pub(crate) fn draw_liquids(
             2 => (11, 0.95),
             _ => (water_style, 0.60),
         };
+        // `Main.DrawTileInWater(drawOffset, i, j)` — the submerged pad
+        // redraw BEFORE the water quad (`LiquidRenderer.cs:664`, W4-g12
+        // render-sweep-2: the earlier "only caller is retro oldDrawWater"
+        // reading was wrong, this LIVE record path calls it too). The
+        // tint is `Lighting.GetColor(x, y)` (`Main.cs:57549`) through the
+        // port's mode-shader stand-in `style.shade` (the shroom-cap
+        // convention); `draw_offset` is Vec2::ZERO in world-pixel quads.
+        if let Some(a) = atlas {
+            quads += draw_tile_in_water(
+                r,
+                world,
+                lookups,
+                a,
+                style.shade(light.get(d.x, d.y), d.x, d.y, anim_time),
+                [0.0, 0.0],
+                d.x,
+                d.y,
+            );
+        }
         let corners = light.corner4(d.x, d.y);
         // `DrawNormalLiquids`: surface tiles snap to the still frame at y=1280,
         // everything else advances inside its 80 px block.
@@ -194,15 +221,20 @@ pub(crate) fn draw_liquids(
 /// `rgb/max(r,g,b)` with `alpha = max(r,g,b)` — the same source contribution
 /// with a slightly dimmed backdrop under the sparkle (documented deviation).
 ///
-/// `Main.DrawTileInWater` (the tile-518 submerged redraw) is ported below
-/// ([`draw_tile_in_water`], W4-g12 doc-sweep) — STAGED: its only C# caller
-/// is the retro `oldDrawWater` sprite pass (`Main.cs:57667`), which the
-/// port has not ported (the liquid draw is the `LiquidRenderer` record
-/// path); the g13 lane owns that pass's dust feeds. The "generator never
-/// places tile 518" note was stale — the c33 lane ports `PlaceLilyPad`.
+/// `Main.DrawTileInWater` (the tile-518 submerged redraw) runs here per
+/// visible shimmer cell BEFORE the base quad (`LiquidRenderer.cs:707`,
+/// W4-g12 render-sweep-2): the earlier "only caller is the retro
+/// `oldDrawWater` pass" reading was wrong — the LIVE record path calls it
+/// too (`:664` in `DrawNormalLiquids`, `:707` here). The retro sprite
+/// pass (`Main.cs:57667`) stays unported; g13 owns its dust feeds.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_shimmer(
     r: &mut SpriteRenderer,
+    world: &World,
     lookups: &assets::Lookups,
+    atlas: Option<&tr_render::Atlas>,
+    light: &LightMap,
+    style: &LightStyle,
     anim_time: f32,
     draws: &[tr_core::liquid_draw::LiquidDraw],
     pass: LiquidPass,
@@ -214,6 +246,24 @@ pub(crate) fn draw_shimmer(
     for d in draws {
         if !d.visible || d.liquid_type != 3 || d.src_w <= 0 || d.src_h <= 0 {
             continue;
+        }
+        // `Main.DrawTileInWater(drawOffset, num3, num4)` — the submerged
+        // pad redraw BEFORE the shimmer base quad (`LiquidRenderer.cs:707`;
+        // the cell coords are the record's, `:703-704`). The tint is
+        // `Lighting.GetColor(x, y)` (`Main.cs:57549`) through the port's
+        // mode-shader stand-in `style.shade` (the shroom-cap convention);
+        // `draw_offset` is Vec2::ZERO in the port's world-pixel quads.
+        if let Some(a) = atlas {
+            quads += draw_tile_in_water(
+                r,
+                world,
+                lookups,
+                a,
+                style.shade(light.get(d.x, d.y), d.x, d.y, anim_time),
+                [0.0, 0.0],
+                d.x,
+                d.y,
+            );
         }
         // `val = Opacity * (isBackgroundDraw ? 1f : 0.75f)`.
         let val = if pass == LiquidPass::Background {
@@ -299,13 +349,19 @@ fn solid_tile_probe(world: &World, x: i32, y: i32) -> bool {
 /// `(x*16, y*16 - num) + drawOffset`, tinted `Lighting.GetColor(x, y)`,
 /// no rotation/flip/scale.
 ///
-/// STAGED (the module note above): the caller is the retro sprite pass
-/// the port has not ported; `draw_offset` is the C#'s
-/// `-screenPosition + offScreenRange` vector — the port's world-range
-/// equivalent is `Vec2::ZERO` (the GPU transform applies). The tint
-/// comes in as the shaded light colour (the caller's `style.shade`
-/// convention); `atlas` resolves the frame through `Lookups::rect_uv`.
-#[allow(dead_code)] // STAGED — the retro oldDrawWater merge wires it.
+/// WIRED (W4-g12 render-sweep-2): the LIVE record path calls it per
+/// visible liquid cell — [`draw_liquids`] (`LiquidRenderer.cs:664`) and
+/// [`draw_shimmer`] (`:707`), before each water/shimmer quad; the tile
+/// pass skips wet pads (`TileDrawing.cs:872-875`, the tiles.rs twin), so
+/// this redraw is their ONLY sprite. The retro `oldDrawWater` sprite
+/// pass (`Main.cs:57667`) stays unported (g13 owns its dust feeds).
+/// `draw_offset` is the C#'s `-screenPosition + offScreenRange` vector —
+/// the port's world-pixel equivalent is `Vec2::ZERO` (the GPU transform
+/// applies). The tint is `Lighting.GetColor(x, y)` (`Main.cs:57549`)
+/// through the callers' `style.shade` mode-shader stand-in (the
+/// shroom-cap convention — raw GetColor in Color/White, the mode ramp
+/// in Trippy/Retro); `atlas` resolves the frame through
+/// `Lookups::rect_uv`.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_tile_in_water(
     r: &mut SpriteRenderer,
@@ -771,6 +827,57 @@ mod tests {
         assert!(body.contains("num > 8"), "the clamp threshold");
         assert!(body.contains("- num as f32"), "the y anchor lifts by num");
         assert!(body.contains("[16.0, 16.0]"), "the 16x16 frame");
+    }
+
+    /// W4-g12 render-sweep-2: the LIVE record path calls the pad redraw
+    /// per visible cell BEFORE the water/shimmer quad
+    /// (`LiquidRenderer.cs:664`/`:707`) — the earlier "only caller is the
+    /// retro oldDrawWater pass" staging note was wrong. Source scan pins
+    /// both call sites and their order (the redraw precedes the pass's
+    /// corner sample / base quad push).
+    #[test]
+    fn w4_g12_sweep2_the_record_path_calls_the_pad_redraw_before_the_quads() {
+        let src = include_str!("liquids.rs");
+        let liquids = &src[src.find("pub(crate) fn draw_liquids(").unwrap()..];
+        let liquids = &liquids[..liquids.find("pub(crate) fn draw_shimmer(").unwrap()];
+        let call = liquids.find("draw_tile_in_water(").expect("normal-path call");
+        let corners = liquids.find("light.corner4").expect("the corner sample");
+        assert!(call < corners, "the :664 redraw precedes the water quad");
+        assert!(liquids[..call].contains("LiquidRenderer.cs:664"), "citation");
+        let shimmer = &src[src.find("pub(crate) fn draw_shimmer(").unwrap()..];
+        let shimmer = &shimmer[..shimmer.find("fn solid_tile_probe").unwrap()];
+        let call = shimmer.find("draw_tile_in_water(").expect("shimmer-path call");
+        let val = shimmer.find("let val =").expect("the base opacity");
+        assert!(call < val, "the :707 redraw precedes the shimmer base quad");
+        assert!(shimmer[..call].contains("LiquidRenderer.cs:707"), "citation");
+        // Both sample the cell light (`Main.cs:57549`'s GetColor) through
+        // the port's `style.shade` stand-in, and pass the zero world-pixel
+        // draw offset.
+        assert!(liquids.contains("style.shade(light.get(d.x, d.y)"));
+        assert!(shimmer.contains("style.shade(light.get(d.x, d.y)"));
+        assert!(liquids.contains("[0.0, 0.0]"));
+        assert!(shimmer.contains("[0.0, 0.0]"));
+    }
+
+    /// W4-g12 render-sweep-2: the tile pass's twin of `DrawSingleTile`'s
+    /// wet-pad early return (`TileDrawing.cs:872-875`) — active 518 with
+    /// liquid > 0 never draws in the tile loop (the liquid pass owns its
+    /// sprite), the gate sits BEFORE GetTileDrawData, and it breaks an
+    /// open dark run (the C# return precedes DrawBlack, `:988-990`).
+    #[test]
+    fn w4_g12_sweep2_the_tile_pass_skips_wet_pads_before_draw_data() {
+        let src = include_str!("tiles.rs");
+        let gate = src
+            .find("tile.kind == 518 && tile.liquid > 0")
+            .expect("the wet-pad gate");
+        let dd = src.find("tr_core::drawdata::draw_data(").unwrap();
+        assert!(gate < dd, "the :872 return precedes GetTileDrawData");
+        let end = gate + src[gate..].find("let vine_cell").unwrap();
+        let block = &src[gate..end];
+        assert!(block.contains("scratch.cur.push"), "breaks the dark run");
+        assert!(block.contains("run_start = -1"));
+        assert!(block.contains("continue;"), "no tile-pass sprite");
+        assert!(src[..gate].contains("TileDrawing.cs:872-875"), "citation");
     }
 
     fn record(x: i32, y: i32, w: i32, h: i32, visible: bool) -> LiquidDraw {
