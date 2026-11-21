@@ -64,6 +64,21 @@ pub struct ShopFlags {
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
     /// like the vanilla's `SetupShop(19)` reads it live.
     pub travel_stock: [u16; 40],
+    /// W4-f39: `Main.halloween` / `Main.xMas` — the resolved season flags
+    /// (`World.halloween`/`xmas`) the holiday shop rows read
+    /// (`Chest.cs:1558`/`:1655`/`:1903`/`:1966`/`:2027`/`:2249`/`:2667`).
+    pub halloween: bool,
+    pub xmas: bool,
+    /// W4-f39: `Main.tenthAnniversaryWorld && !Main.getGoodWorld` — the
+    /// Princess's anniversary block (`Chest.cs:3436-3468`). The port's
+    /// `getGoodWorld` is the FOR_THE_WORTHY seed.
+    pub anniversary_not_ftw: bool,
+    /// `Main.player[myPlayer].ZoneDesert` — the anniversary block's
+    /// Sandstorm-in-a-Bottle row (`Chest.cs:3441`).
+    pub zone_desert: bool,
+    /// `NPC.downedPirates` — the anniversary block's pirate-gated moon-phase
+    /// rows (`Chest.cs:3449`).
+    pub downed_pirates: bool,
 }
 
 impl Default for ShopFlags {
@@ -95,6 +110,11 @@ impl Default for ShopFlags {
             infected_seed: false,
             crimson_world: false,
             travel_stock: [0; 40],
+            halloween: false,
+            xmas: false,
+            anniversary_not_ftw: false,
+            zone_desert: false,
+            downed_pirates: false,
         }
     }
 }
@@ -124,6 +144,12 @@ impl ShopFlags {
             infected_seed: world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
+            // W4-f39: the resolved season flags + the anniversary gate.
+            halloween: world.halloween,
+            xmas: world.xmas,
+            anniversary_not_ftw: world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+                && !world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+            downed_pirates: world.downed_pirates,
             ..Self::default()
         }
     }
@@ -233,6 +259,24 @@ pub enum StockWhen {
     /// row (`Chest.cs:3169`/`:3186`/`:3202`/`:3207`/`:3223`/`:3228`/
     /// `:3233`), so each row names its own threshold + operator.
     GolfScore(i32, bool),
+    /// W4-f39: `Main.halloween` — the holiday shop rows (the Arms Dealer's
+    /// masks `Chest.cs:1558`, the Dryad's pumpkins `:1655`, the Clothier's
+    /// `:1903`/`:1966`, the Wizard's hat `:2027`, the Dye Trader's `:2249`,
+    /// the Witch Doctor's `:2667`).
+    Halloween,
+    /// W4-f39: `Main.xMas` — the Santa shop's holiday block
+    /// (`Chest.cs:2485-2494`, the 1948-1957 set).
+    Xmas,
+    /// W4-f39: `Main.tenthAnniversaryWorld && !Main.getGoodWorld` — the
+    /// Princess's anniversary block head (`Chest.cs:3436`).
+    Anniversary,
+    /// The anniversary block's `ZoneDesert` row (`Chest.cs:3441`).
+    AnniversaryDesert,
+    /// The anniversary block's `Main.bloodMoon` row (`Chest.cs:3445`).
+    AnniversaryBloodMoon,
+    /// The anniversary block's `hardMode && downedPirates && moonPhase pair`
+    /// rows (`Chest.cs:3449-3466`) — the pair index is `moonPhase / 2`.
+    AnniversaryPiratePair(u8),
 }
 
 /// `Chest.SetupShop`'s stock list for one shop index. The port carries the
@@ -293,6 +337,11 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3108, StockWhen::PlayerHasItem(3107)),
             row(1783, StockWhen::PlayerHasItem(1782)),
             row(1785, StockWhen::PlayerHasItem(1784)),
+            // W4-f39: `:1558-1566`'s halloween masks (the Guy Fawkes /
+            // Dye Trader / Steampunk goggles set — 1736/1737/1738).
+            row(1736, StockWhen::Halloween),
+            row(1737, StockWhen::Halloween),
+            row(1738, StockWhen::Halloween),
         ],
         // The Painter (`Chest.cs:2443-2483`): the paint rollers and the
         // paintings (1071/1072/1100/1097/1099/1098/1966); the moon-phase
@@ -332,8 +381,13 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         // Flask 986 always; the conditionals (the Queen Bee 2999, the
         // jungle 6147/1167, the night 1158, the hardmode 1159, the
         // Imbuing Station 1160?/1161, the 1339/1171/1162 rows) sit
-        // constants-off until their flags land.
-        16 => vec![row(1430, StockWhen::Always), row(986, StockWhen::Always)],
+        // constants-off until their flags land. W4-f39: the halloween
+        // Tiki mask (1791, `:2667-2670`) rides the season flag.
+        16 => vec![
+            row(1430, StockWhen::Always),
+            row(986, StockWhen::Always),
+            row(1791, StockWhen::Halloween),
+        ],
         // The Clothier (`Chest.cs:1814-1989`): the base 254/981; the day
         // 242; the moon-phase hats; the full set in the tail — the v1
         // carries the always-on rows (the moon-phase and the clown rows
@@ -344,6 +398,14 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(269, StockWhen::Always),
             row(270, StockWhen::Always),
             row(271, StockWhen::Always),
+            // W4-f39: `:1903-1907`'s halloween mask (1740) and
+            // `:1966-1970`'s halloween pair (3246/3247). The port's list
+            // keeps the always rows then the gated ones (the filter
+            // preserves relative order; the unported hardmode moon-phase /
+            // downedFrost rows between them are absent).
+            row(1740, StockWhen::Halloween),
+            row(3246, StockWhen::Halloween),
+            row(3247, StockWhen::Halloween),
         ],
         // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
         // branch, the base rows, the flower-seed moon-phase pairs. The
@@ -367,6 +429,10 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(4505, StockWhen::HardMode),
             row(5214, StockWhen::ZoneUnderworld),
             row(194, StockWhen::ZoneGlowshroom),
+            // W4-f39: `:1655-1661`'s halloween pumpkins (1853/1854), ahead
+            // of the 3215 flower-seed block.
+            row(1853, StockWhen::Halloween),
+            row(1854, StockWhen::Halloween),
             row(3215, StockWhen::Always),
             row(3216, StockWhen::Always),
             row(3219, StockWhen::Always),
@@ -421,9 +487,9 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(5104, StockWhen::Always),
         ],
         // The Wizard's shop (index 7, `Chest.cs:2004-2032`): the nine
-        // magic rows always, the hardmode blood-moon deck (5461) and the
-        // halloween hat (1739) constants-off (the port has neither
-        // season).
+        // magic rows always; the hardmode blood-moon deck (5461) stays
+        // constants-off, the halloween hat (1739) rides the season flag
+        // (W4-f39, `:2027-2031`).
         7 => vec![
             row(487, StockWhen::Always),
             row(496, StockWhen::Always),
@@ -434,6 +500,7 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(149, StockWhen::Always),
             row(576, StockWhen::Always),
             row(3186, StockWhen::Always),
+            row(1739, StockWhen::Halloween),
         ],
         // The Mechanic's shop (index 8, `Chest.cs:2033-2090`): the wire
         // family's rows; the graveyard goggles (4409) constants-off and
@@ -481,6 +548,10 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         12 => vec![
             row(1120, StockWhen::Always),
             row(5920, StockWhen::Always),
+            // W4-f39: `:2249-2253`'s halloween pair (3248/1741), ahead of
+            // the 1037/2874 always rows.
+            row(3248, StockWhen::Halloween),
+            row(1741, StockWhen::Halloween),
             row(1037, StockWhen::Always),
             row(2874, StockWhen::Always),
             row(2871, StockWhen::MoonPhasePair(0)),
@@ -536,7 +607,7 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
         ],
         // The Princess's shop (index 24, `Chest.cs:3409-3471`): the
         /// 17 vanity dresses + the two slime-kings row + the Moon Lord's
-        /// hat (the tenth-anniversary rows sit constants-off).
+        /// hat + the tenth-anniversary block (W4-f39, `:3436-3468`).
         24 => vec![
             row(5071, StockWhen::Always),
             row(5072, StockWhen::Always),
@@ -558,6 +629,20 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(5228, StockWhen::Always),
             row(5266, StockWhen::DownedBothSlimes),
             row(5044, StockWhen::HardModeMoonlord),
+            // W4-f39: the anniversary block (`Main.tenthAnniversaryWorld &&
+            // !Main.getGoodWorld`, `:3436`): the three always-in-block rows
+            // (the Sparkle Slime Balloon 1309, the Heart Lantern 1859, the
+            // Star in a Bottle 1358), the desert row (857), the blood-moon
+            // row (4144) and the four hardmode+pirate moon-phase pairs.
+            row(1309, StockWhen::Anniversary),
+            row(1859, StockWhen::Anniversary),
+            row(1358, StockWhen::Anniversary),
+            row(857, StockWhen::AnniversaryDesert),
+            row(4144, StockWhen::AnniversaryBloodMoon),
+            row(2584, StockWhen::AnniversaryPiratePair(0)),
+            row(854, StockWhen::AnniversaryPiratePair(1)),
+            row(855, StockWhen::AnniversaryPiratePair(2)),
+            row(905, StockWhen::AnniversaryPiratePair(3)),
             row(5088, StockWhen::Always),
         ],
         // The Golfer's shop (index 22, `Chest.cs:3156-3262`): the golf
@@ -1312,6 +1397,18 @@ pub fn resolve_stock_entries_moon(
                     flags.golfer_score > min
                 }
             }
+            // W4-f39: the season + anniversary gates.
+            StockWhen::Halloween => flags.halloween,
+            StockWhen::Xmas => flags.xmas,
+            StockWhen::Anniversary => flags.anniversary_not_ftw,
+            StockWhen::AnniversaryDesert => flags.anniversary_not_ftw && flags.zone_desert,
+            StockWhen::AnniversaryBloodMoon => flags.anniversary_not_ftw && flags.blood_moon,
+            StockWhen::AnniversaryPiratePair(pair) => {
+                flags.anniversary_not_ftw
+                    && flags.hard_mode
+                    && flags.downed_pirates
+                    && moon_phase / 2 == pair as u32
+            }
         })
         .collect()
 }
@@ -1704,6 +1801,73 @@ mod s1_f_16_tests {
         w.hard_mode = true;
         let f = ShopFlags::from_world(&w);
         assert!(f.downed_slime_king && f.downed_queen_slime && f.downed_moon_lord && f.hard_mode);
+    }
+
+    // ---- W4-f39: the season + anniversary shop rows ----
+
+    #[test]
+    fn w4_f39_the_halloween_rows_ride_the_season_flag() {
+        // The Arms Dealer's masks (1736/1737/1738, `Chest.cs:1558`), the
+        // Dryad's pumpkins (1853/1854, `:1655`), the Wizard's hat (1739,
+        // `:2027`), the Dye Trader's pair (3248/1741, `:2249`) and the Witch
+        // Doctor's Tiki mask (1791, `:2667`) appear only in season.
+        let mut f = ShopFlags::default();
+        assert!(!resolve_stock(2, &f, &[]).contains(&1736));
+        assert!(!resolve_stock(3, &f, &[]).contains(&1853));
+        assert!(!resolve_stock(7, &f, &[]).contains(&1739));
+        assert!(!resolve_stock(12, &f, &[]).contains(&3248));
+        assert!(!resolve_stock(16, &f, &[]).contains(&1791));
+        f.halloween = true;
+        let arms = resolve_stock(2, &f, &[]);
+        assert!(arms.contains(&1736) && arms.contains(&1737) && arms.contains(&1738));
+        let dryad = resolve_stock(3, &f, &[]);
+        assert!(dryad.contains(&1853) && dryad.contains(&1854));
+        assert!(resolve_stock(7, &f, &[]).contains(&1739));
+        let dye = resolve_stock(12, &f, &[]);
+        assert!(dye.contains(&3248) && dye.contains(&1741));
+        assert!(resolve_stock(16, &f, &[]).contains(&1791));
+        // The Clothier's two halloween blocks (`:1903`/`:1966`).
+        let clothier = resolve_stock(5, &f, &[]);
+        assert!(clothier.contains(&1740) && clothier.contains(&3246) && clothier.contains(&3247));
+    }
+
+    #[test]
+    fn w4_f39_the_princess_anniversary_block_rides_the_seed() {
+        // `Chest.cs:3436-3468`: the block needs `tenthAnniversaryWorld &&
+        // !getGoodWorld`; the desert/blood-moon/pirate rows nest inside it.
+        let mut f = ShopFlags::default();
+        assert!(!resolve_stock(24, &f, &[]).contains(&1309));
+        f.anniversary_not_ftw = true;
+        let stock = resolve_stock(24, &f, &[]);
+        assert!(stock.contains(&1309) && stock.contains(&1859) && stock.contains(&1358));
+        assert!(!stock.contains(&857), "the desert row needs ZoneDesert");
+        assert!(!stock.contains(&4144), "the blood-moon row needs the blood moon");
+        assert!(!stock.contains(&2584), "the pirate rows need hardmode+pirates");
+        // The nested gates open one at a time.
+        f.zone_desert = true;
+        assert!(resolve_stock(24, &f, &[]).contains(&857));
+        f.blood_moon = true;
+        assert!(resolve_stock(24, &f, &[]).contains(&4144));
+        f.hard_mode = true;
+        f.downed_pirates = true;
+        // moon_phase 0 → pair 0 (2584); phase 2 → pair 1 (854).
+        assert!(resolve_stock_entries_moon(24, &f, &[], 0).iter().any(|e| e.item == 2584));
+        assert!(resolve_stock_entries_moon(24, &f, &[], 2).iter().any(|e| e.item == 854));
+        assert!(resolve_stock_entries_moon(24, &f, &[], 4).iter().any(|e| e.item == 855));
+        assert!(resolve_stock_entries_moon(24, &f, &[], 6).iter().any(|e| e.item == 905));
+    }
+
+    #[test]
+    fn w4_f39_from_world_carries_the_season_and_anniversary_flags() {
+        let mut w = World::new("t".into(), 64, 48);
+        w.halloween = true;
+        w.xmas = true;
+        w.seeds.insert(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        let f = ShopFlags::from_world(&w);
+        assert!(f.halloween && f.xmas && f.anniversary_not_ftw);
+        // getGood cancels the anniversary term.
+        w.seeds.insert(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+        assert!(!ShopFlags::from_world(&w).anniversary_not_ftw);
     }
 }
 #[cfg(test)]

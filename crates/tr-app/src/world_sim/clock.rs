@@ -10,11 +10,17 @@ use crate::app::App;
 /// eclipse)` starts so the host broadcasts them (`ChatColors.World`); `rng` is
 /// the `_rngs["UpdateTime"]` stream (`Main.cs:17795`), `any_player_life_over_120`
 /// the `statLifeMax > 120` gate (`Main.cs:65342-65349`).
+///
+/// W4-f39: `date` is the caller-pinned wall-clock `(month, day)` the dawn
+/// season checks read (`Main.checkXMas`/`checkHalloween`, `Main.cs:65390-65391`)
+/// — the `FixtureClock` seam: the runtime passes `season::now_month_day()`,
+/// a witness pins any date. The season re-derivation is draw-free.
 pub(crate) fn advance_time(
     world: &mut World,
     dt: f32,
     rng: &mut UnifiedRandom,
     any_player_life_over_120: bool,
+    date: (u32, u32),
 ) -> (bool, bool) {
     let mut blood_moon_started = false;
     let mut eclipse_started = false;
@@ -46,8 +52,13 @@ pub(crate) fn advance_time(
             // the port's uniform-threshold form), through the named `UpdateTime`
             // stream the stage runs under.
             let roll = rng.next_double();
+            // W4-f39: `Main.cs:65334-65337` — the anniversary world widens
+            // the blood-moon window to 1-in-6 (`maxValue2 = 6`). The roll
+            // itself is the same single `NextDouble`; only the threshold
+            // moves, so the stream position is unchanged.
+            let anniversary = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
             blood_moon_started =
-                world.roll_blood_moon(roll, false, any_player_life_over_120, false);
+                world.roll_blood_moon(roll, anniversary, any_player_life_over_120, false);
             // `Main.cs:65353-65354`: `Main.time = 0.0; Main.dayTime = false;` —
             // the overshoot past the boundary is discarded, not wrapped.
             t = 0.0;
@@ -61,6 +72,12 @@ pub(crate) fn advance_time(
         // cooldowns on one (`:65422-65430`) — event rolls land with M4.
         world.fast_forward_to_dawn = false;
         world.sundial_cooldown = world.sundial_cooldown.saturating_sub(1);
+        // W4-f39: `UpdateTime_StartDay`'s season trio (`Main.cs:65389-65391`)
+        // — `CheckForMoonEventsStartingTemporarySeasons()` + `checkXMas()` +
+        // `checkHalloween()`, BEFORE `stopMoonEvent` (`:65392`) clears the
+        // moon state the temporary-season check reads. Draw-free; the date
+        // is the caller-pinned seam.
+        world.refresh_seasons(date.0, date.1);
         // `Main.cs:65382`/`:65389`: `Main.time = 0.0; Main.dayTime = true;`.
         // `UpdateTime_StartDay`'s `Main.stopMoonEvent()` (`Main.cs:65392`):
         // the moon events end at dawn — the flag clears are unconditional,
@@ -118,9 +135,13 @@ pub(crate) fn advance_time_with_events(
     let eclipse_was_up = app.world.eclipse;
     let blood_moon_was_up = app.world.blood_moon;
     let was_day = app.world.day_time;
+    // W4-f39: the runtime wall-clock date for the dawn season checks — read
+    // ONCE per call (the C# reads `DateTime.Now` inside each check; the port
+    // snapshots it at the boundary, the `FixtureClock` seam's runtime arm).
+    let date = tr_core::season::now_month_day();
     let (blood_moon_started, eclipse_started) = {
         let rng = app.rngs.stream(crate::app::RngKey::UpdateTime);
-        advance_time(&mut app.world, dt, rng, any_player_life_over_120)
+        advance_time(&mut app.world, dt, rng, any_player_life_over_120, date)
     };
     // The eclipse/blood-moon farewell rows ride before the scheduler block:
     // the RNG borrow below (`UpdateTime`'s stream) is exclusive, so the
@@ -287,7 +308,7 @@ mod tests {
         w.moondial_cooldown = 2;
         // The roll in the 1-in-9 window with a 120+ player.
         let mut rng = stream_with_first_roll(|r| r < 1.0 / 9.0);
-        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true);
+        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true, (6, 1));
         assert!(blood);
         assert!(!eclipse);
         assert!(w.blood_moon);
@@ -307,7 +328,7 @@ mod tests {
         w.sundial_cooldown = 6;
         // The roll in the 1-in-20 window.
         let mut rng = stream_with_first_roll(|r| r < 1.0 / 20.0);
-        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true);
+        let (blood, eclipse) = advance_time(&mut w, 5.0, &mut rng, true, (6, 1));
         assert!(!blood);
         assert!(eclipse);
         assert!(w.eclipse);
@@ -330,7 +351,7 @@ mod tests {
         w.report_frost_moon_kill(344);
         w.wave_number = 5;
         let mut rng = UnifiedRandom::new(1);
-        advance_time(&mut w, 5.0, &mut rng, false);
+        advance_time(&mut w, 5.0, &mut rng, false, (6, 1));
         assert!(w.day_time, "the dawn transition ran");
         assert!(
             !w.snow_moon && !w.pumpkin_moon,
@@ -356,7 +377,7 @@ mod tests {
         w.total_invasion_points = 210.0;
         w.wave_number = 4;
         let mut rng = UnifiedRandom::new(1);
-        advance_time(&mut w, 5.0, &mut rng, false);
+        advance_time(&mut w, 5.0, &mut rng, false, (6, 1));
         assert!(!w.day_time, "dusk ran");
         assert!(
             !w.pumpkin_moon && !w.snow_moon,
@@ -372,7 +393,7 @@ mod tests {
         w.day_time = false;
         w.time = 32399.0;
         let mut rng = UnifiedRandom::new(1);
-        advance_time(&mut w, 5.0, &mut rng, false);
+        advance_time(&mut w, 5.0, &mut rng, false, (6, 1));
         assert_eq!(
             (w.wave_number, w.wave_kills, w.total_invasion_points),
             (0, 0.0, 0.0)
@@ -396,11 +417,11 @@ mod tests {
         let mut w = World::new("t".into(), 8, 8);
         w.time = 53999.0;
         w.day_time = true;
-        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(!w.day_time);
         assert!(w.time < 100.0, "time {}", w.time);
         w.time = 32399.0;
-        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(w.day_time);
         assert!(w.time < 100.0, "time {}", w.time);
     }
@@ -415,7 +436,7 @@ mod tests {
         w.time = 32040.0;
         w.moon_phase = 3;
         w.fast_forward_to_dawn = true;
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(w.day_time, "StartDay ran on the crossing tick");
         // `Main.cs:65382`/`:65389`: `Main.time = 0.0; Main.dayTime = true;` —
         // the overshoot is discarded, not wrapped into the new half.
@@ -432,7 +453,7 @@ mod tests {
         w.time = 53640.0;
         w.moon_phase = 2;
         w.fast_forward_to_dusk = true;
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(!w.day_time, "StartNight ran on the crossing tick");
         // `Main.cs:65353-65354`: `Main.time = 0.0; Main.dayTime = false;`.
         assert_eq!(w.time, 0.0);
@@ -451,7 +472,7 @@ mod tests {
         w.fast_forward_to_dawn = true;
         assert!(w.is_fast_forwarding());
         assert_eq!(w.day_rate(), 60);
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(
             !w.fast_forward_to_dawn,
             "the flag clears on the transition tick"
@@ -459,7 +480,7 @@ mod tests {
         assert!(!w.is_fast_forwarding());
         assert_eq!(w.day_rate(), 1);
         // The next add runs at dayRate 1: a 1 s step advances 60 ticks, not 3600.
-        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 1.0, &mut UnifiedRandom::new(0), false, (6, 1));
         assert_eq!(w.time, 60.0);
     }
 
@@ -490,13 +511,13 @@ mod tests {
         w.time = 32395.0;
         w.sundial_cooldown = 3;
         w.moondial_cooldown = 5;
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert_eq!(w.sundial_cooldown, 2, "dawn decrements the sundial");
         assert_eq!(w.moondial_cooldown, 5, "StartDay leaves the moondial alone");
         // The following dusk decrements the moondial only.
         w.day_time = true;
         w.time = 53995.0;
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert_eq!(w.moondial_cooldown, 4, "dusk decrements the moondial");
         assert_eq!(w.sundial_cooldown, 2, "StartNight leaves the sundial alone");
     }
@@ -508,11 +529,11 @@ mod tests {
         let mut w = World::new("t".into(), 8, 8);
         w.day_time = false;
         w.time = 32395.0;
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert_eq!(w.sundial_cooldown, 0);
         w.day_time = true;
         w.time = 53995.0;
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert_eq!(w.moondial_cooldown, 0);
     }
 
@@ -529,12 +550,12 @@ mod tests {
         w.day_time = false;
         w.time = 32400.0 - 360.0;
         w.fast_forward_to_dawn = true;
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(w.day_time, "exactly one transition fired");
         assert_eq!(w.time, 0.0);
         // From the fresh day start (rate back to 1) the next step stays inside
         // the day half — no dusk this call.
-        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.1, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(w.day_time);
         assert!(
             (0.0..54000.0).contains(&w.time),
@@ -610,27 +631,139 @@ mod tests {
         assert_eq!(32400.0 / 60.0, 540.0, "the 9-minute night");
         // Exactly on the dusk boundary: still day.
         w.time = 54000.0;
-        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(w.day_time, "54000.0 exactly is still the day");
         assert_eq!(w.time, 54000.0);
         // One step past it: the night, overshoot discarded (`:65151`).
-        advance_time(&mut w, 0.05, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.05, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(!w.day_time, "past 54000.0 the night starts");
         assert_eq!(w.time, 0.0);
         // The night boundary is strict in the same way.
         w.time = 32400.0;
-        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(!w.day_time, "32400.0 exactly is still the night");
-        advance_time(&mut w, 0.05, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.05, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(w.day_time, "past 32400.0 the day starts");
         // The mid-half pins: noon 27000 (`:5906-5908`), midnight 16200
         // (`:5910-5913`) — both inside their half, so no flip.
         w.time = 27000.0;
-        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(w.day_time, "noon is the middle of the day");
         w.day_time = false;
         w.time = 16200.0;
-        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false);
+        advance_time(&mut w, 0.0, &mut UnifiedRandom::new(0), false, (6, 1));
         assert!(!w.day_time, "midnight is the middle of the night");
+    }
+
+    // ---- W4-f39: the season/date gates at the dawn boundary (pinned dates) ----
+
+    /// A night world one tick below the dawn boundary, ready to cross.
+    fn night_at_dawn_edge() -> World {
+        let mut w = World::new("t".into(), 40, 40);
+        w.day_time = false;
+        w.time = 32399.0;
+        w
+    }
+
+    #[test]
+    fn w4_f39_the_dawn_check_opens_the_halloween_window() {
+        // `Main.cs:65391` (`checkHalloween`) at the dawn crossing: Oct 10-31
+        // + Nov 1 open `Main.halloween`; the edges are inclusive.
+        for (date, want) in [
+            ((10u32, 9u32), false),
+            ((10, 10), true),
+            ((10, 31), true),
+            ((11, 1), true),
+            ((11, 2), false),
+            ((6, 15), false),
+        ] {
+            let mut w = night_at_dawn_edge();
+            advance_time(&mut w, 5.0, &mut UnifiedRandom::new(1), false, date);
+            assert!(w.day_time, "dawn ran for {date:?}");
+            assert_eq!(w.halloween, want, "halloween at {date:?}");
+            assert!(!w.xmas, "the xmas window stays shut at {date:?}");
+        }
+    }
+
+    #[test]
+    fn w4_f39_the_dawn_check_opens_the_xmas_window() {
+        // `Main.cs:65390` (`checkXMas`): Dec 15-31 open `Main.xMas`.
+        for (date, want) in [
+            ((12u32, 14u32), false),
+            ((12, 15), true),
+            ((12, 31), true),
+            ((1, 1), false),
+        ] {
+            let mut w = night_at_dawn_edge();
+            advance_time(&mut w, 5.0, &mut UnifiedRandom::new(1), false, date);
+            assert_eq!(w.xmas, want, "xmas at {date:?}");
+            assert!(!w.halloween, "the halloween window stays shut at {date:?}");
+        }
+    }
+
+    #[test]
+    fn w4_f39_the_endless_seeds_keep_the_season_on_out_of_window() {
+        // `forceHalloweenForever`/`forceXMasForever` (the endless micro seeds,
+        // `WorldGen.cs:572-578`) hold the flags up at a mid-summer date.
+        let mut w = night_at_dawn_edge();
+        w.micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        w.micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        advance_time(&mut w, 5.0, &mut UnifiedRandom::new(1), false, (7, 4));
+        assert!(w.halloween, "the endless halloween seed");
+        assert!(w.xmas, "the endless christmas seed");
+        // The forever seed suppresses its own today-flag (`Main.cs:10919-10926`).
+        assert!(!w.force_halloween_for_today);
+        assert!(!w.force_xmas_for_today);
+    }
+
+    #[test]
+    fn w4_f39_the_moon_wave_15_raises_the_temporary_season_before_the_stop() {
+        // `CheckForMoonEventsStartingTemporarySeasons` (`Main.cs:65389`) reads
+        // the RUNNING moon event (wave >= 15) BEFORE `stopMoonEvent` (`:65392`)
+        // clears it — a pumpkin moon at wave 15 forces halloween for the day
+        // even out of window, and the event itself stops at dawn.
+        let mut w = night_at_dawn_edge();
+        w.start_pumpkin_moon();
+        w.wave_number = 15;
+        advance_time(&mut w, 5.0, &mut UnifiedRandom::new(1), false, (6, 1));
+        assert!(w.force_halloween_for_today, "the wave-15 temporary season");
+        assert!(w.halloween, "checkHalloween reads the today-flag");
+        assert!(!w.pumpkin_moon, "stopMoonEvent cleared the event at dawn");
+        assert_eq!(w.wave_number, 0, "the stop reset the wave");
+        // A snow moon at wave 15 forces xmas instead.
+        let mut w = night_at_dawn_edge();
+        w.start_snow_moon();
+        w.wave_number = 20;
+        advance_time(&mut w, 5.0, &mut UnifiedRandom::new(1), false, (6, 1));
+        assert!(w.force_xmas_for_today);
+        assert!(w.xmas);
+        assert!(!w.snow_moon);
+        // Below wave 15: no temporary season.
+        let mut w = night_at_dawn_edge();
+        w.start_pumpkin_moon();
+        w.wave_number = 14;
+        advance_time(&mut w, 5.0, &mut UnifiedRandom::new(1), false, (6, 1));
+        assert!(!w.force_halloween_for_today);
+        assert!(!w.halloween);
+    }
+
+    #[test]
+    fn w4_f39_the_season_checks_are_draw_free() {
+        // The whole dawn season trio consumes no `UpdateTime` draw beyond the
+        // boundary's own eclipse/invasion roll — a same-seed twin with the
+        // season flags forced differs only in state, never in stream position.
+        let mut plain = night_at_dawn_edge();
+        let mut seeded = night_at_dawn_edge();
+        seeded
+            .micro_seeds
+            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        let mut a = UnifiedRandom::new(42);
+        let mut b = UnifiedRandom::new(42);
+        advance_time(&mut plain, 5.0, &mut a, false, (6, 1));
+        advance_time(&mut seeded, 5.0, &mut b, false, (6, 1));
+        assert_eq!(a, b, "the season re-derivation draws nothing");
+        assert!(seeded.halloween && !plain.halloween, "only the state differs");
     }
 }

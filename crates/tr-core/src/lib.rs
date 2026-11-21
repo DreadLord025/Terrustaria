@@ -34,6 +34,7 @@ pub mod mapdata;
 pub mod particles;
 pub mod save;
 pub mod scene;
+pub mod season;
 pub mod seeds;
 pub mod shimmer;
 pub mod shimmer_tables;

@@ -22141,6 +22141,74 @@ window `Next(min, max)` + the kind chain (`Next(200)`, [`Next(10)`], [`Next(5)`]
 `SpawnNPC`. Every witness mirrors the sequence on a cloned `UnifiedRandom` and compares
 the full stream state.
 
+## The season/date gates (W4-f39 Phase B, 2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked. Verified by re-reading
+the C# in ≤100-line windows (`Main.cs:13118-13172`, `:10901-10937`, `:65389-65392`,
+`:65334-65337`, `:64664-64667`, `:65945-65948`; `WorldFile.cs:651-652`, `:1347-1351`,
+`:1386-1387`, `:2334-2340`; `NPC.cs:79210-79238`, `:6371-6379`; `Chest.cs:1558`/`:1655`/
+`:1903`/`:1966`/`:2027`/`:2249`/`:2667`/`:3436-3468`; `AmbienceServer.cs:130-137`;
+`Item.cs:49668-49714`) and hand-arithmetic on the witnesses (written, not run).
+
+**The user-flagged gap.** The port had NO calendar: `Main.halloween`/`Main.xMas` were stood
+in by the endless micro seeds alone, so the Oct/Dec windows never opened. Phase B ports the
+date decisions and wires every constants-off season consumer to the resolved flags.
+
+* **The pure date module** (`tr-core/src/season.rs`): `is_halloween_date` (Oct 10-31 + Nov 1,
+  `Main.cs:13141-13155`, both edges inclusive), `is_xmas_date` (Dec 15-31, `:13123`),
+  `check_xmas`/`check_halloween` (date OR force-today OR force-forever, `:13118-13172`), and
+  `moon_event_temporary_seasons` (`CheckForMoonEventsStartingTemporarySeasons`,
+  `:10901-10937` — wave >= 15 raises the today-flag, the forever seed suppresses its own).
+  Every decision takes a caller-pinned `(month, day)` — the **FixtureClock seam**
+  (`tools/WldFixtureHarness/Shims/FixtureClock.cs` precedent): the wall clock is injected,
+  never read inside the decision. `now_month_day()` is the ONLY runtime read (UTC
+  `SystemTime` → Hinnant `civil_from_days`, the `ui/world_select.rs` conversion). All
+  draw-free — the C# checks compare integers, they consume no `Main.rand`.
+* **The resolved statics** (`World.xmas`/`halloween`/`force_xmas_for_today`/
+  `force_halloween_for_today`): re-derived at every dawn by `World::refresh_seasons`
+  (`Main.cs:65389-65391`, BEFORE `stopMoonEvent` at `:65392` clears the moon state the
+  temporary-season check reads) and at world load (`enter_loaded_world`,
+  `WorldFile.cs:651-652`). The `*Forever` flags are the endless micro seeds
+  (`WorldGen.cs:572-578`). Runtime-only — the C# does not save the resolved flags (they
+  re-derive from the date + the saved force flags).
+* **The dawn seam** (`world_sim/clock.rs::advance_time` gains a `date: (u32, u32)` param):
+  the runtime caller (`advance_time_with_events`) passes `season::now_month_day()`; the
+  witnesses pin any date. The season trio runs in the dawn branch ahead of `stop_moon_event`.
+* **The five seasonal moon-boss downeds** (`World.downed_halloween_king`/`_tree`,
+  `downed_christmas_tree`/`_ice_queen`/`_santank`, `NPC.cs:6371-6379`): the `DoDeathEvents`
+  cases 325/327/344/345/346 (`NPC.cs:79210-79238`) raise them under the RUNNING event's own
+  flag. Persisted: the `.trwld` v18 tail (5 bytes) + the C# `.wld` flags block
+  (`WorldFile.cs:1347-1351`, tail offsets 1893-1897) + the `*ForToday` pair
+  (`WorldFile.cs:1386-1387`, offsets 2002-2003). NOTE: these do NOT gate the season flags —
+  `checkXMas`/`checkHalloween` read only the date + force flags (the task's "unlock" framing
+  is the emote-wheel/help-text readers, `UIEmotesMenu.cs:250-268`/`Main.cs:39752-39757`).
+* **The consumers wired to the resolved flags:** the loot flags (`world_sim/npcs.rs`
+  `LootFlags.halloween`/`xmas`), the heart/star pickup remap (`world_sim/wiring.rs` +
+  `items.rs::seasonal_pickup_kind`, i52), the spawner holiday arms (`SpawnFlags.halloween`/
+  `xmas` — the night zombie ladder `NPC.cs:4727-4735` + `GetBasicSlimeToSpawn` `:5644-5651`),
+  the shop holiday rows (`StockWhen::Halloween`/`Xmas` — the Arms Dealer/Dryad/Clothier/
+  Wizard/Dye Trader/Witch Doctor) and the Princess anniversary block
+  (`StockWhen::Anniversary*`, `Chest.cs:3436-3468`) + her arrival gate
+  (`town_arrival.rs`, `Main.cs:65945-65948`).
+* **The anniversary RNG gates** (date-independent, the seed): the blood-moon roll widens to
+  1-in-6 (`Main.cs:65334-65337`, `clock.rs` — same single `NextDouble`, only the threshold),
+  the coin-rain `RollLuck` range narrows 25→5 (`Main.cs:64664-64667`, `rain.rs::start_rain` —
+  same draw count at luck 0), the ambience `ResetSpawnTime` halves (`AmbienceServer.cs:133-136`,
+  `ambience.rs` — same `Next(600,7200)`, only the post-divide).
+
+**Documented folds:** the `*ForToday` pair is runtime-only in the `.trwld` (the port's moon
+event is itself unsaved, ANALYSIS "The moon-event wave machinery") but IS owned in the C#
+`.wld` round trip (the C# saves it). The Santa shop (index 25, `Chest.cs:2485-2494`'s xmas
+block) has no ported Santa kind yet — the `StockWhen::Xmas` gate is ready for it. The
+holiday spawner kinds (Raven 301, BunnySlimed 303, Ghost 316, the owl/spaceship eyes 317/318,
+the skeleton costumes 322-324, BunnyXmas 337) are unported — the holiday zombie/slime arms
+map to the ported kinds (the S1-D-3z convention). The `netMode == 1` temporary-season skip
+and the change-broadcast (`Misc.StartedVictory*`) are the host/UI seam.
+
+**RNG argument:** the date checks draw NOTHING (integer compares). The anniversary gates
+change a threshold/divisor, never the draw count or order — a same-seed twin with the seed
+forced differs only in state/outcome, never in stream position (the witnesses pin this).
+
 ## S1-D-3 вЂ” the aiStyle-8 caster family (`npc_ai_bat.rs`, 2026-11-18, code-only mode)
 
 **Code-only mode.** This slice landed under the Lead's code-only directive: no

@@ -964,6 +964,19 @@ fn try_open_town_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
             .contains(tr_core::seeds::MicroSeedFlags::WORLD_IS_INFECTED),
         crimson_world: false, // the port persists no world-evil type (see `shop.rs`)
         travel_stock: app.world.travel_shop,
+        // W4-f39: the resolved season flags + the anniversary block's gates.
+        halloween: app.world.halloween,
+        xmas: app.world.xmas,
+        anniversary_not_ftw: app
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            && !app
+                .world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+        zone_desert: app.scene_metrics.zone_desert,
+        downed_pirates: app.world.downed_pirates,
     };
     let inv_ids: Vec<u16> = app
         .inventory
@@ -5261,6 +5274,39 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::Deerclops => {
                 app.world.downed_deerclops = true;
             }
+            // W4-f39: the seasonal moon-boss downed flags (`DoDeathEvents`'s
+            // cases 325/327/344/345/346, `NPC.cs:79210-79238`): each
+            // `SetEventFlagCleared(ref NPC.downedX, n)` rides the RUNNING
+            // event's own flag (`Main.pumpkinMoon` / `Main.snowMoon`). The
+            // game-event ids (4/5/20/21/22) fire no lantern night
+            // (`OnGameEventClearedForTheFirstTime`'s cases 4/21/22 break,
+            // `NPC.cs:78789-78792`; 5/20 hit the default but the port's
+            // lantern scheduler is the F-14 seam — the flag is the state).
+            NpcKind::Pumpking => {
+                if app.world.pumpkin_moon {
+                    app.world.downed_halloween_king = true;
+                }
+            }
+            NpcKind::MourningWood => {
+                if app.world.pumpkin_moon {
+                    app.world.downed_halloween_tree = true;
+                }
+            }
+            NpcKind::Everscream => {
+                if app.world.snow_moon {
+                    app.world.downed_christmas_tree = true;
+                }
+            }
+            NpcKind::IceQueen => {
+                if app.world.snow_moon {
+                    app.world.downed_christmas_ice_queen = true;
+                }
+            }
+            NpcKind::SantaNK1 => {
+                if app.world.snow_moon {
+                    app.world.downed_christmas_santank = true;
+                }
+            }
             NpcKind::SolarTower => {
                 app.world.downed_tower_solar = true;
                 app.world.tower_active_solar = false;
@@ -6760,6 +6806,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // moon override (`NPC.cs:771-774`): the events force
                     // `5·2.3` max spawns / rate 20 the moment they are up.
                     moon_event: app.world.pumpkin_moon || app.world.snow_moon,
+                    // W4-f39: the resolved season flags the holiday spawn
+                    // arms read (`NPC.cs:4727-4735`/`:5644-5651`).
+                    halloween: app.world.halloween,
+                    xmas: app.world.xmas,
                     ..spawner::SpawnFlags::default()
                 },
                 world: &app.world,
@@ -6957,23 +7007,17 @@ fn spawn_loot(app: &mut App, npc: &Npc) {
                 .seeds
                 .contains(tr_core::seeds::SeedFlags::SKYBLOCK),
             remix_seed: app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
-            // M5-SEED-2: `Main.forceHalloweenForever` / `Main.forceXMasForever`
-            // (`Main.cs:13168` / `:13135`), which `InitializeSecretSeeds`
-            // sets for the `endlessHalloween` / `endlessChristmas` micro seeds
-            // (`WorldGen.cs:572-578`) — the two feed `Main.halloween` /
-            // `Main.xMas` (`checkHalloween` / `checkXMas`), the flags
+            // W4-f39: `Main.halloween` / `Main.xMas` are the RESOLVED season
+            // flags now (`World.halloween`/`xmas`, re-derived at dawn + load
+            // by `checkHalloween`/`checkXMas` from the date window + the
+            // force flags). The endless micro seeds still feed them through
+            // `forceHalloweenForever`/`forceXMasForever` (`Main.cs:13168`/
+            // `:13135` ← `WorldGen.cs:572-578`), but the Oct/Dec calendar
+            // windows and the moon-event temporary season open them too.
             // `loot.rs`'s `HalloweenWeapons`/`HalloweenGoodieBagDrop`/
-            // `IsChristmas`/`XmasPresentDrop` conditions read (`loot.rs:1481-
-            // 1499`). A classic world leaves them off, so a world without the
-            // micro seeds drops exactly as before.
-            halloween: app
-                .world
-                .micro_seeds
-                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
-            xmas: app
-                .world
-                .micro_seeds
-                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+            // `IsChristmas`/`XmasPresentDrop` conditions read these.
+            halloween: app.world.halloween,
+            xmas: app.world.xmas,
             ..Default::default()
         },
         npc: tr_core::loot::LootNpc {
@@ -17956,6 +18000,54 @@ mod fishron_wiring_tests {
         update_npcs(&mut app, 1.0 / 60.0);
         assert!(app.world.downed_fishron);
         assert!(app.npcs.iter().all(|n| n.kind != NpcKind::DukeFishron));
+    }
+
+    // ---- W4-f39: the seasonal moon-boss downed flags (NPC.cs:79210-79238) ----
+
+    /// A dead moon boss of `kind` in an air world with the running event up;
+    /// one `update_npcs` tick resolves the death. Returns the world.
+    fn moon_boss_death(kind: NpcKind, pumpkin: bool, snow: bool) -> World {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = air();
+        app.world.pumpkin_moon = pumpkin;
+        app.world.snow_moon = snow;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0 * 16.0;
+        player.y = 100.0 * 16.0;
+        app.player = Some(player);
+        let mut boss = Npc::new(kind, 90.0 * 16.0, 90.0 * 16.0, 1, 0.0);
+        boss.hp = 0;
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        app.world
+    }
+
+    #[test]
+    fn w4_f39_the_pumpkin_bosses_raise_the_halloween_downeds_under_the_event() {
+        // `DoDeathEvents` cases 327/325 (`NPC.cs:79210-79221`): the flags ride
+        // `Main.pumpkinMoon`.
+        let w = moon_boss_death(NpcKind::Pumpking, true, false);
+        assert!(w.downed_halloween_king, "Pumpking → downedHalloweenKing");
+        let w = moon_boss_death(NpcKind::MourningWood, true, false);
+        assert!(w.downed_halloween_tree, "Mourning Wood → downedHalloweenTree");
+        // Without the event up the death raises nothing (the C# gate).
+        let w = moon_boss_death(NpcKind::Pumpking, false, false);
+        assert!(!w.downed_halloween_king, "no pumpkin moon, no flag");
+    }
+
+    #[test]
+    fn w4_f39_the_frost_bosses_raise_the_christmas_downeds_under_the_event() {
+        // `DoDeathEvents` cases 344/345/346 (`NPC.cs:79222-79238`): the flags
+        // ride `Main.snowMoon`.
+        let w = moon_boss_death(NpcKind::Everscream, false, true);
+        assert!(w.downed_christmas_tree, "Everscream → downedChristmasTree");
+        let w = moon_boss_death(NpcKind::IceQueen, false, true);
+        assert!(w.downed_christmas_ice_queen, "Ice Queen → downedChristmasIceQueen");
+        let w = moon_boss_death(NpcKind::SantaNK1, false, true);
+        assert!(w.downed_christmas_santank, "Santa-NK1 → downedChristmasSantank");
+        // The wrong event raises nothing.
+        let w = moon_boss_death(NpcKind::Everscream, true, false);
+        assert!(!w.downed_christmas_tree, "a pumpkin moon is not the snow gate");
     }
 
     /// The shark spawn seam: the aiStyle-64 cloud's request becomes a

@@ -571,7 +571,7 @@ impl Ambience {
             self.updates_until_next_attempt -= ctx.day_rate.max(1);
             return;
         }
-        self.reset_spawn_time(rng);
+        self.reset_spawn_time(ctx, rng);
         let eligible: Vec<SkyEntityType> = PRIMARY_CONDITIONS
             .iter()
             .copied()
@@ -624,9 +624,13 @@ impl Ambience {
     }
 
     /// `AmbienceServer.ResetSpawnTime` (`:130-137`): `Next(600, 7200)`, halved
-    /// on tenth-anniversary worlds (no such worlds in the port).
-    fn reset_spawn_time(&mut self, rng: &mut UnifiedRandom) {
+    /// on tenth-anniversary worlds (W4-f39 — the port HAS the seed now; the
+    /// draw itself is unchanged, only the post-divide).
+    fn reset_spawn_time(&mut self, ctx: &AmbienceCtx, rng: &mut UnifiedRandom) {
         self.updates_until_next_attempt = rng.next_range(600, 7200);
+        if ctx.world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY) {
+            self.updates_until_next_attempt /= 2;
+        }
     }
 
     /// `SpawnForcedEntities` (`:144-168`): every queued request spawns or dies
@@ -1767,14 +1771,29 @@ mod tests {
 
     #[test]
     fn spawn_timer_stays_inside_the_csharp_bounds() {
-        // `Next(600, 7200)` (`:132`).
+        // `Next(600, 7200)` (`:132`); the anniversary halving (`:133-136`)
+        // keeps a classic world inside the full bounds.
         let world = test_world();
+        let c = ctx(&world, true, SURFACE_Y);
         let mut amb = Ambience::new();
         let mut rng = UnifiedRandom::new(7);
         for _ in 0..200 {
-            amb.reset_spawn_time(&mut rng);
+            amb.reset_spawn_time(&c, &mut rng);
             assert!((600..7200).contains(&amb.updates_until_next_attempt));
         }
+        // W4-f39: the anniversary world halves the reset (the draw is the
+        // same `Next(600,7200)`, only the post-divide).
+        let mut anniv = test_world();
+        anniv.seeds.insert(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        let ca = ctx(&anniv, true, SURFACE_Y);
+        let mut amb = Ambience::new();
+        let mut rng = UnifiedRandom::new(7);
+        let mut twin = UnifiedRandom::new(7);
+        amb.reset_spawn_time(&ca, &mut rng);
+        let raw = twin.next_range(600, 7200);
+        assert_eq!(rng, twin, "the halving consumes no extra draw");
+        assert_eq!(amb.updates_until_next_attempt, raw / 2);
+        assert!((300..3600).contains(&amb.updates_until_next_attempt));
     }
 
     #[test]

@@ -235,6 +235,37 @@ pub struct World {
     /// `NPC.downedDeerclops` — the frozen boss's defeat (the event flag
     /// 25, `NPC.cs:79355`).
     pub downed_deerclops: bool,
+    /// W4-f39: the five seasonal moon-boss downed flags (`NPC.cs:6371-6379`,
+    /// the `DoDeathEvents` cases `:79210-79238` — `SetEventFlagCleared` under
+    /// the running event's own flag). `downedHalloweenKing` (Pumpking 327,
+    /// game event 5), `downedHalloweenTree` (Mourning Wood 325, event 4),
+    /// `downedChristmasTree` (Everscream 344, event 21),
+    /// `downedChristmasIceQueen` (Ice Queen 345, event 20),
+    /// `downedChristmasSantank` (Santa-NK1 346, event 22). The C# saves them
+    /// (`WorldFile.cs:1347-1351`); the emote wheel's boss rows
+    /// (`UIEmotesMenu.cs:250-268`) and the help-text hints
+    /// (`Main.cs:39752-39757`) read them. NOTE: they do NOT gate the season
+    /// flags — `checkXMas`/`checkHalloween` read only the date + force flags.
+    pub downed_halloween_king: bool,
+    pub downed_halloween_tree: bool,
+    pub downed_christmas_tree: bool,
+    pub downed_christmas_ice_queen: bool,
+    pub downed_christmas_santank: bool,
+    /// W4-f39: `Main.xMas` / `Main.halloween` (`Main.cs:609`/`:611`) — the
+    /// resolved season flags, re-derived at every dawn by `checkXMas` /
+    /// `checkHalloween` (`Main.cs:65390-65391`) and at world load
+    /// (`WorldFile.cs:651-652`). Runtime-only: the C# does not save them
+    /// (they re-derive from the date + the saved force flags).
+    pub xmas: bool,
+    pub halloween: bool,
+    /// W4-f39: `Main.forceXMasForToday` / `Main.forceHalloweenForToday`
+    /// (`Main.cs:613`/`:615`) — the moon-event temporary season (wave >= 15),
+    /// re-derived at dawn by `CheckForMoonEventsStartingTemporarySeasons`
+    /// (`Main.cs:65389`). The C# saves them (`WorldFile.cs:1386-1387`) but
+    /// the port's moon event is itself runtime-only, so these ride the same
+    /// transient (ANALYSIS "The season/date gates").
+    pub force_xmas_for_today: bool,
+    pub force_halloween_for_today: bool,
     /// The Skeletron Prime head's centre + the present flag (the limbs'
     /// tether reads — the WoF write-through shape).
     pub prime_present: bool,
@@ -653,6 +684,15 @@ impl World {
             downed_golem: false,
             downed_fishron: false,
             downed_deerclops: false,
+            downed_halloween_king: false,
+            downed_halloween_tree: false,
+            downed_christmas_tree: false,
+            downed_christmas_ice_queen: false,
+            downed_christmas_santank: false,
+            xmas: false,
+            halloween: false,
+            force_xmas_for_today: false,
+            force_halloween_for_today: false,
             golem_present: false,
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
@@ -877,6 +917,47 @@ impl World {
             self.wave_kills = 0.0;
             self.wave_number = 0;
         }
+    }
+
+    /// W4-f39: `UpdateTime_StartDay`'s season trio (`Main.cs:65389-65391`):
+    /// `CheckForMoonEventsStartingTemporarySeasons()` then `checkXMas()` then
+    /// `checkHalloween()`, ahead of `stopMoonEvent` (`:65392`) — the moon
+    /// state is sampled BEFORE the caller's stop clears it. `(month, day)`
+    /// is the caller-pinned wall-clock date (the `FixtureClock` seam —
+    /// `tr_core::season::now_month_day()` at runtime, a fixed date in tests).
+    /// The `*Forever` flags are the endless micro seeds
+    /// (`WorldGen.cs:572-578`'s `InitializeSecretSeeds` writes). Draw-free.
+    pub fn refresh_seasons(&mut self, month: u32, day: u32) {
+        let force_halloween_forever = self
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        let force_xmas_forever = self
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS);
+        // `Main.cs:65389` — the temporary-season re-derivation reads the
+        // RUNNING event (the caller runs this before `stop_moon_event`).
+        let (h, x) = crate::season::moon_event_temporary_seasons(
+            self.pumpkin_moon,
+            self.snow_moon,
+            self.wave_number,
+            force_halloween_forever,
+            force_xmas_forever,
+        );
+        self.force_halloween_for_today = h;
+        self.force_xmas_for_today = x;
+        // `Main.cs:65390-65391` — the two checks, xMas first.
+        self.xmas = crate::season::check_xmas(
+            month,
+            day,
+            self.force_xmas_for_today,
+            force_xmas_forever,
+        );
+        self.halloween = crate::season::check_halloween(
+            month,
+            day,
+            self.force_halloween_for_today,
+            force_halloween_forever,
+        );
     }
 
     /// `NPC.GetMoonEventPointScalar` (`NPC.cs:78432-78440`): master 2.5 /

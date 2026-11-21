@@ -55,6 +55,13 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// / `jungleBG` / `hallowBG` / `crimsonBG` at `WorldFile.cs:1319-1323` and
 /// `mushroomBG` at `:1375`) that the `DrawSurfaceBG_*` variants resolve their
 /// `Background_<id>` sheets from; a pre-v16 file loads the `setBG` defaults.
+/// v18 appended the five seasonal moon-boss downed flags
+/// (`NPC.downedHalloweenKing`/`downedHalloweenTree`/`downedChristmasIceQueen`/
+/// `downedChristmasSantank`/`downedChristmasTree`, `WorldFile.cs:1347-1351`,
+/// W4-f39); a pre-v18 file loads them down. The resolved `Main.xMas`/
+/// `Main.halloween` and the `*ForToday` pair are NOT saved — the C# re-derives
+/// them from the date + the force flags at load (`WorldFile.cs:651-652`), and
+/// the port's moon event (the `*ForToday` source) is itself runtime-only.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -65,7 +72,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -428,6 +435,16 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `:79349`) — S1-D-3 W-9 fishron wiring; the v15 queen-slime byte's
     // shape.
     w.write_all(&[u8::from(world.downed_fishron)])?;
+    // v18: the five seasonal moon-boss downed flags (`WorldFile.cs:1347-1351`,
+    // W4-f39) — the C# write order: HalloweenKing, HalloweenTree,
+    // ChristmasIceQueen, ChristmasSantank, ChristmasTree.
+    w.write_all(&[
+        u8::from(world.downed_halloween_king),
+        u8::from(world.downed_halloween_tree),
+        u8::from(world.downed_christmas_ice_queen),
+        u8::from(world.downed_christmas_santank),
+        u8::from(world.downed_christmas_tree),
+    ])?;
     Ok(())
 }
 
@@ -810,6 +827,15 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
     }
+    // v18: the five seasonal moon-boss downed flags (see the writer's
+    // citation) — a pre-v18 file loads them down.
+    if version >= 18 {
+        world.downed_halloween_king = r.u8()? != 0;
+        world.downed_halloween_tree = r.u8()? != 0;
+        world.downed_christmas_ice_queen = r.u8()? != 0;
+        world.downed_christmas_santank = r.u8()? != 0;
+        world.downed_christmas_tree = r.u8()? != 0;
+    }
     world.revision = 0;
     Ok((world, side))
 }
@@ -1082,13 +1108,14 @@ mod tests {
     #[test]
     fn dw_1_4_version_above_4_rejected() {
         // DW-1.4 (dirty): the existing loader rejects a version above the
-        // current one (`save.rs` version gate). v17 (the downedFishron
-        // byte, S1-D-3 W-9) is now the current format, so the gate pins 17.
+        // current one (`save.rs` version gate). v18 (the five seasonal
+        // moon-boss downed bytes, W4-f39) is now the current format, so the
+        // gate pins 18.
         let w = World::new("Test".into(), 32, 32);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf[8..12].copy_from_slice(&18u32.to_le_bytes());
-        assert!(parse(&buf).is_err(), "version 18 is unsupported");
+        buf[8..12].copy_from_slice(&19u32.to_le_bytes());
+        assert!(parse(&buf).is_err(), "version 19 is unsupported");
     }
 
     #[test]
@@ -1166,8 +1193,9 @@ mod tests {
         // The v7 block of an empty-wire/entity/chest/banner/bestiary world: the
         // fixed flags block + four empty colour counts + one empty entity count +
         // one empty chest count + one empty banner count + one empty bestiary count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1));
+        // (+1: the v17 downedFishron byte; +5: the v18 seasonal downed bytes
+        // ride the flags block's tail.)
+        buf.truncate(buf.len() - (V6_FLAGS_LEN + 1 + 4 * 4 + 4 + 4 + 4 + 4 + 4 + 1 + 5));
         buf[8..12].copy_from_slice(&6u32.to_le_bytes());
         let (back, side) = parse(&buf).unwrap();
         let chests = side.chests;
@@ -1277,9 +1305,9 @@ mod tests {
         let cur_len = buf.len();
         let mut v12 = buf.clone();
         // The v13 block is the tail: 4 + (4+len+8) + 4 + 8 bytes, then the
-        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5)
-        // and the v17 fishron flag (1).
-        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1;
+        // v14 rain block (9 bytes), the v15 flag (1), the v16 styles (5),
+        // the v17 fishron flag (1) and the v18 seasonal downeds (5).
+        let tail = 4 + (4 + "first — ünïcode".len() + 8) + (4 + "second".len() + 8) + 4 + 8 + 9 + 1 + 5 + 1 + 5;
         v12.truncate(cur_len - tail - 1);
         v12[8..12].copy_from_slice(&12u32.to_le_bytes());
         let (back, _) = parse(&v12).unwrap();
@@ -1306,8 +1334,9 @@ mod tests {
     const EMPTY_V13_TAIL: usize = 8;
     /// The v14 rain block: 1 bool + 4 i32 + 4 f32 (the constants-off defaults
     /// for an empty rain event), the v15 Queen Slime flag byte, the v16
-    /// five style bytes and the v17 downedFishron byte (S1-D-3 W-9).
-    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1;
+    /// five style bytes, the v17 downedFishron byte (S1-D-3 W-9) and the
+    /// v18 five seasonal moon-boss downed bytes (W4-f39).
+    const EMPTY_V16_TAIL: usize = EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 5;
 
     fn back_flags(buf: &[u8]) -> u16 {
         let end = buf.len() - EMPTY_V16_TAIL;
@@ -1493,13 +1522,48 @@ mod tests {
         assert!(back.downed_queen_slime, "the flag survives the reload");
         // A pre-v15 file (the tail truncated, the version patched) loads
         // with the flag down — the vanilla's own reset arm (`:2376`).
-        // The v16 style bytes + the v17 fishron byte ride behind the v15
-        // flag (6 bytes).
+        // The v16 style bytes + the v17 fishron byte + the v18 seasonal
+        // downeds ride behind the v15 flag (5 + 1 + 5 = 11 bytes).
         let mut v14 = buf.clone();
-        v14.truncate(v14.len() - 1 - 5 - 1);
+        v14.truncate(v14.len() - 1 - 5 - 1 - 5);
         v14[8..12].copy_from_slice(&14u32.to_le_bytes());
         let (back, _) = parse(&v14).unwrap();
         assert!(!back.downed_queen_slime, "a pre-v15 file resets the flag");
+    }
+
+    #[test]
+    fn w4_f39_the_seasonal_moon_boss_downeds_round_trip_in_v18() {
+        // W4-f39: the five seasonal moon-boss downed flags ride the v18 tail
+        // (`WorldFile.cs:1347-1351`); a pre-v18 file loads them down.
+        let mut w = World::new("Test".into(), 64, 48);
+        w.downed_halloween_king = true;
+        w.downed_halloween_tree = true;
+        w.downed_christmas_ice_queen = true;
+        w.downed_christmas_santank = true;
+        w.downed_christmas_tree = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(back.downed_halloween_king && back.downed_halloween_tree);
+        assert!(back.downed_christmas_ice_queen && back.downed_christmas_santank);
+        assert!(back.downed_christmas_tree);
+        // A pre-v18 file (the 5-byte tail truncated, the version patched)
+        // loads them down — the vanilla's own reset arm.
+        let mut v17 = buf.clone();
+        v17.truncate(v17.len() - 5);
+        v17[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (back, _) = parse(&v17).unwrap();
+        assert!(!back.downed_halloween_king && !back.downed_christmas_tree);
+        // The resolved season flags are NOT saved (they re-derive from the
+        // date + the force flags at load) — a saved `xmas`/`halloween` comes
+        // back down, the runtime re-derivation owns them.
+        let mut w = World::new("Test".into(), 64, 48);
+        w.xmas = true;
+        w.halloween = true;
+        let mut buf = Vec::new();
+        write_world(&mut buf, &w, &WorldSide::default()).unwrap();
+        let (back, _) = parse(&buf).unwrap();
+        assert!(!back.xmas && !back.halloween, "the season flags re-derive, not persist");
     }
 
     #[test]
@@ -1513,10 +1577,15 @@ mod tests {
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        // The v6 tail of an empty-wire/entity world: the fixed flags block +
-        // four empty colour counts + one empty entity count.
-        // (+1: the v17 downedFishron byte rides the flags block's tail.)
-        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 1 + 4 * 4 + 4));
+        // The post-v5 tail: the v6 seed u16 (2) + the v7 flags block + the
+        // four empty wire colour counts (4*4) + the empty TE count (4) + the
+        // empty chest/banner/bestiary/NPC counts (4*4) + the v11 ore presence
+        // (1) + the v12 seed bitmasks (10) + the v13 empty sign/plate counts
+        // (8) + the v14 rain triple (9) + the v15 queen-slime flag (1) + the
+        // v16 styles (5) + the v17 fishron flag (1) + the v18 seasonal
+        // downeds (5). Truncating exactly this lands the buffer on the v5
+        // bed-presence byte (0), so the v5 parse ends cleanly.
+        buf.truncate(buf.len() - (2 + V6_FLAGS_LEN + 4 * 4 + 4 + 4 * 4 + 1 + 10 + 8 + 9 + 1 + 5 + 1 + 5));
         buf[8..12].copy_from_slice(&5u32.to_le_bytes());
         let (back, _chests) = parse(&buf).unwrap();
         assert!(!back.hard_mode);

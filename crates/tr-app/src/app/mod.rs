@@ -2293,6 +2293,28 @@ impl App {
     /// (`client_install_world`'s tail is the twin) — exactly one of `front`/`menu`
     /// is ever live (`Review Focus 1`), and in-game neither is.
     pub(crate) fn enter_loaded_world(&mut self) {
+        // W4-f39: `WorldFile.LoadWorld`'s season checks (`WorldFile.cs:651-652`
+        // — `Main.checkXMas()` then `Main.checkHalloween()` at the load head):
+        // the resolved flags re-derive from the wall-clock date + the saved
+        // force flags (the `*Forever` micro seeds, the `*ForToday` pair the
+        // `.wld` carries). Draw-free; the date is the runtime seam.
+        let (month, day) = tr_core::season::now_month_day();
+        self.world.xmas = tr_core::season::check_xmas(
+            month,
+            day,
+            self.world.force_xmas_for_today,
+            self.world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS),
+        );
+        self.world.halloween = tr_core::season::check_halloween(
+            month,
+            day,
+            self.world.force_halloween_for_today,
+            self.world
+                .micro_seeds
+                .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN),
+        );
         if self.menu.is_some() {
             self.close_menu();
         }

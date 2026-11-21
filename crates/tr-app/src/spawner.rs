@@ -66,6 +66,14 @@ pub struct SpawnFlags {
     pub enemy_spawns: bool,
     /// `Main.wofNPCIndex >= 0` (the Wall of Flesh is alive).
     pub wof_active: bool,
+    /// W4-f39: `Main.halloween` / `Main.xMas` — the resolved season flags
+    /// (`World.halloween`/`xmas`), gating the night zombie ladder's holiday
+    /// arms (`NPC.cs:4727-4735`) and `GetBasicSlimeToSpawn`'s holiday slimes
+    /// (`NPC.cs:5644-5651`). The endless micro seeds feed them through the
+    /// force-forever flags; the Oct/Dec windows + the moon temporary season
+    /// open them too.
+    pub halloween: bool,
+    pub xmas: bool,
 }
 
 /// The wave-20 boss kinds the `Spawner` ctor weights (`NPC.cs:273-286`):
@@ -1237,24 +1245,21 @@ fn spawn_npc_at(
         if rng.next_max(torch_zombie_chance) == 0 {
             return Npc::spawn_zombie(ctx.world, x);
         }
-        // M5-SEED-2: `:4728-4731`'s halloween arm — `Main.halloween &&
+        // W4-f39: `:4728-4731`'s halloween arm — `Main.halloween &&
         // Main.rand.Next(2) == 0` → `Next(319, 322)` = the ZombieDoctor/
-        // Superman/Pixie (319-321, `NPCID.cs`). `Main.halloween` is
-        // `Main.forceHalloweenForever`'s write (`Main.cs:13168`, set for the
-        // `endlessHalloween` micro seed by `InitializeSecretSeeds`
-        // `WorldGen.cs:572-574`), so the roll — and only the roll — runs
-        // under the flag: the C# `&&` short-circuits it on a classic world.
+        // Superman/Pixie (319-321, `NPCID.cs`). `Main.halloween` is the
+        // RESOLVED season flag (`ctx.flags.halloween` = `World.halloween`,
+        // re-derived from the date window + the force flags — the
+        // `endlessHalloween` micro seed feeds it through
+        // `forceHalloweenForever`, `Main.cs:13168` ← `WorldGen.cs:572-574`),
+        // so the roll — and only the roll — runs under the flag: the C# `&&`
+        // short-circuits it on a classic world out of season.
         // S1-D-3z: the three halloween zombie types now have `NpcKind`
         // variants — the `Next(319, 322)` pick (0/1/2 → 319/320/321) spawns
         // the matching kind. The draw ORDER is unchanged (the gate's
         // `Next(2)` then the type pick), so the stream fingerprint is
         // byte-identical; only the spawned kind differs.
-        if ctx
-            .world
-            .micro_seeds
-            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)
-            && rng.next_max(2) == 0
-        {
+        if ctx.flags.halloween && rng.next_max(2) == 0 {
             let pick = rng.next_max(3); // `Next(319, 322)` — the type pick.
             let kind = match pick {
                 0 => NpcKind::ZombieDoctor,
@@ -1264,16 +1269,12 @@ fn spawn_npc_at(
             return Npc::spawn_zombie_variant(ctx.world, x, kind);
         }
         // `:4732-4735`'s xmas arm — `Main.xMas && Next(2) == 0` →
-        // `Next(331, 333)` = ZombieXmas/ZombieSweater (331/332), the same
-        // `forceXMasForever` source (`Main.cs:13135`,
-        // `WorldGen.cs:576-578`). S1-D-3z: the pick (0/1 → 331/332) spawns
-        // the matching kind; the draw order is unchanged.
-        if ctx
-            .world
-            .micro_seeds
-            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)
-            && rng.next_max(2) == 0
-        {
+        // `Next(331, 333)` = ZombieXmas/ZombieSweater (331/332), the resolved
+        // `ctx.flags.xmas` (= `World.xmas`, the `forceXMasForever` source
+        // `Main.cs:13135` ← `WorldGen.cs:576-578` plus the Dec window).
+        // S1-D-3z: the pick (0/1 → 331/332) spawns the matching kind; the
+        // draw order is unchanged.
+        if ctx.flags.xmas && rng.next_max(2) == 0 {
             let pick = rng.next_max(2); // `Next(331, 333)` — the type pick.
             let kind = if pick == 0 {
                 NpcKind::ZombieXmas
@@ -2002,16 +2003,17 @@ fn spawn_basic_slime(
     x: i32,
     surface: bool,
 ) -> Option<Npc> {
-    // M5-SEED-2: `GetBasicSlimeToSpawn`'s `default:` arm opens with the two
+    // W4-f39: `GetBasicSlimeToSpawn`'s `default:` arm opens with the two
     // holiday slimes (`NPC.cs:5643-5651`) — `Main.halloween &&
     // GetBasicSlimeToSpawn_ChanceToBeHolidaySlime()` → the Ice Slime 302 and
     // `Main.xMas && ...` → `Next(333, 337)` = the ribbon slimes (333-336).
     // The helper is `Main.rand.Next(3) != 0` outside skyblock
     // (`:5666-5672`), and the miss (1/3) falls through to the forest ladder
     // below, so the arm consumes exactly one draw and returns. The flags are
-    // the `endlessHalloween` / `endlessChristmas` micro seeds again
-    // (`Main.forceHalloweenForever`/`forceXMasForever`, `Main.cs:13168`/
-    // `:13135` ← `WorldGen.cs:572-578`).
+    // the RESOLVED season statics (`ctx.flags.halloween`/`xmas` =
+    // `World.halloween`/`xmas`): the endless micro seeds feed them through
+    // `forceHalloweenForever`/`forceXMasForever` (`Main.cs:13168`/`:13135` ←
+    // `WorldGen.cs:572-578`), and the Oct/Dec windows open them too.
     //
     // Neither holiday type has a `SlimeVariant` of its own, so — like the
     // ladder's other unmodelled outcomes — the hit lands on the port's base
@@ -2019,20 +2021,10 @@ fn spawn_basic_slime(
     // Pinky `RollLuck(180)` promotion never runs (the C# promotes the
     // `-1` result only, `NPC.cs:5238-5246`).
     if surface {
-        if ctx
-            .world
-            .micro_seeds
-            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN)
-            && rng.next_max(3) != 0
-        {
+        if ctx.flags.halloween && rng.next_max(3) != 0 {
             return Npc::spawn_slime_variant(ctx.world, x, SlimeVariant::Blue);
         }
-        if ctx
-            .world
-            .micro_seeds
-            .contains(tr_core::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)
-            && rng.next_max(3) != 0
-        {
+        if ctx.flags.xmas && rng.next_max(3) != 0 {
             return Npc::spawn_slime_variant(ctx.world, x, SlimeVariant::Blue);
         }
     }
@@ -2648,23 +2640,24 @@ mod tests {
         w
     }
 
-    // M5-SEED-2: `endlessHalloween` / `endlessChristmas`
-    // (`Main.forceHalloweenForever`/`forceXMasForever`, `Main.cs:13168`/
-    // `:13135` ← `WorldGen.cs:572-578`) gate the night zombie ladder's
-    // holiday arms (`NPC.cs:4728-4735`) and `GetBasicSlimeToSpawn`'s holiday
-    // slimes (`NPC.cs:5643-5651`). Both C# arms sit behind `Main.halloween`/
-    // `Main.xMas &&` short-circuits, so the flag's ONLY effect on a classic
-    // world is nothing — and on a seeded world it spends the arm's own draw
-    // exactly where vanilla does.
+    // W4-f39 (was M5-SEED-2): the resolved season flags gate the night zombie
+    // ladder's holiday arms (`NPC.cs:4728-4735`) and `GetBasicSlimeToSpawn`'s
+    // holiday slimes (`NPC.cs:5643-5651`). The endless micro seeds feed
+    // `World.halloween`/`xmas` through `forceHalloweenForever`/`forceXMasForever`
+    // (`Main.cs:13168`/`:13135` ← `WorldGen.cs:572-578`); the spawner reads the
+    // resolved flag (`ctx.flags.halloween`). Both C# arms sit behind
+    // `Main.halloween`/`Main.xMas &&` short-circuits, so the flag's ONLY effect
+    // on a classic out-of-season world is nothing — and in season it spends
+    // the arm's own draw exactly where vanilla does.
     #[test]
     fn the_endless_holiday_flags_gate_the_spawner_holiday_arms() {
-        let mut classic = ground_tall();
-        let mut seeded = ground_tall();
-        seeded
-            .micro_seeds
-            .insert(tr_core::seeds::MicroSeedFlags::ENDLESS_HALLOWEEN);
+        let classic = ground_tall();
+        let seeded = ground_tall();
         let night = night_ctx_flags(&classic, false, false);
-        let holiday = night_ctx_flags(&seeded, false, false);
+        let mut holiday = night_ctx_flags(&seeded, false, false);
+        // The resolved season flag the endless seed produces (`World.halloween`
+        // = `check_halloween(.., force_forever=true)`).
+        holiday.flags.halloween = true;
         // The stream fingerprint per seed (the `UnifiedRandom` state after
         // one surface-spawn call): identical everywhere the holiday arm's
         // short-circuit skips its draw, shifted where it fires.

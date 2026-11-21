@@ -766,9 +766,13 @@ impl Rain {
     pub(crate) fn start_rain(&mut self, world: &World, remix_world: bool, player_luck: f32) {
         // `Main.cs:64661`.
         if !remix_world && world.world_surface > 50.0 && !self.raining {
-            // `Main.cs:64663-64667`: `range = 25`; the tenth-anniversary 5 needs
-            // anniversary worlds (`tenthAnniversaryWorld`) — none is generated.
-            let range = 25;
+            // `Main.cs:64663-64667`: `range = 25`; the tenth-anniversary
+            // world (not getGood) narrows it to 5 (W4-f39 — the port HAS the
+            // anniversary seed now). The roll's DRAW COUNT is unchanged at
+            // luck 0 (one `Next(range)`); only the denominator moves.
+            let anniversary = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+                && !world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+            let range = if anniversary { 5 } else { 25 };
             // `Main.cs:64668`: `GetPlayerWithHighestLuck().RollLuck(range)` —
             // consumed on the Rain stream like every rain roll (WEATHER-2); a
             // hit branch draws 2 more, exactly like the C# branch shape.
