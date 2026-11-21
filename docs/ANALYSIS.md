@@ -39849,3 +39849,99 @@ zones with their chat-bubble draws are the documented skip, the
 entry-by-entry AND render/entities.rs NPC_FRAME_COUNT (463=16
 `:67130` slot 3, 467=13 slot 7, 471=20 `:67131` slot 1, 472=6 slot
 2, 492=9 `:67133` slot 2 — all five agree with the port table).
+
+### The extra-9 per-case notes (the batch + the fixes landed)
+
+`crates/tr-app/src/npc_findframe_extra9.rs` — the 5 fix arms verbatim
+(row-index convention — `num` cancels), ONE batch of 5 kinds:
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 463 | Nailhead | `:68613` (the humanoid fighter group) | 16 (`:67130`) |
+| 467 | DeadlySphere | `:75069-75102` | 13 (`:67130`) |
+| 471 | GoblinSummoner | `:75532-75617` | 20 (`:67131`) |
+| 472 | ShadowFlameApparition | `:71369-71397` | 6 (`:67131`) |
+| 492 | PirateShipCannon | `:71156-71158` | 9 (`:67133`) |
+
+* **463 the Nailhead** (the humanoid-group case list `:68613` →
+  `:68647-69655`): the wave-B `humanoid_fighter_frame` keep-one
+  delegate (the extra-8 Butcher precedent). aiStyle 3 (`:15538`, no
+  townNPC) → `num57` = 0, the FULL-16 wrap; the grounded ±1 flip,
+  the idle row-0 snap, the `|vx| * 2 + 1` > 6 stride, the air row 1
+  (NOT in the `:69647` pin list, NOT the 140/489 idle-row-1 pair).
+  The d40 `humanoid_town_frame` stand-in is WRONG three ways: no
+  flip, no air tail (its vy != 0 path writes nothing), and its
+  `humanoid_frame_count` has no Nailhead row (falls to `_ => 1`,
+  d40 data.rs:3578) so the walk wraps at 1 − 0 = 1 and never leaves
+  row 2. The merger replaces the stand-in with this machine (the
+  slice-8 460/462 note's third instance).
+* **467 the Deadly Sphere** (`:75069-75102`): the two-phase strip.
+  `ai[0] == 1` winds UP — the counter++ every tick, the > 4 step
+  advances the row ONLY while row < 6; at 6+ the step zeroes the
+  counter but writes NO row (the hold — the sheet's rows 7..12 are
+  never reached by this arm). Else winds DOWN — the > 4 step FIRST
+  clamps any row > 3 to 3 (`:75092-75095`) THEN decrements while
+  row > 0: a sphere at row 9 lands **2** on its first step, not 8.
+  The `IsABestiaryIconDummy` disjunct (`:75070`) + its row-0 reset
+  (`:75081-75084`) are the display-only skip (the extra-7/8
+  precedent). No sprite/rotation/direction write. The d40 row-0
+  stub is superseded.
+* **471 the Goblin Summoner** (`:75532-75617`): the ai[3] phase
+  machine. SHADOWFLAME (`ai[3] < 0`): the ±1 flip, the
+  `|velocity| * 0.5 + 1` counter, the < 6 / < 12 / < 18 / < 23 bands
+  pick rows 17/18/19/18 — the >= 23 reset tick zeroes the counter
+  and HOLDS row 18 (the fourth band and the reset write the same
+  row, the MothronSpawn reset-tick quirk's cousin). SUMMONING
+  (`ai[3] == 1`): the row-16 pin + counter zero. GROUNDED: the ±1
+  flip, the idle row-0 snap, the `|vx| * 2 + 1` **> 7** walk (not
+  the fighter's > 6) over rows 2..15 with BOTH clamps AFTER the
+  step and NO lift-to-2 before the accumulate (a walk entered at
+  row 19 keeps its counter and clamps to 2). AIR: row 1 + counter
+  zero. No rotation write — the AI owns it (`:56520`'s ×0.9 decay,
+  `npc.rs:10648`). OUR kind: the v1 `npc.rs:7768` free
+  `(vx != 0) + 0.6 >= 8` strip was WRONG; the arm now delegates
+  (row/counter/sprite copy back, the 439-fix shape).
+* **472 the Shadowflame Apparition** (`:71369-71397`): the vx sign
+  WRITES direction (`:71370-71377` — the else covers vx == 0 → +1,
+  NOT a hold), the ±1 sprite copy, the tilt is
+  `atan2(vy * direction, vx * direction)` — the direction-folded
+  aim with NO wrap/ease (unlike the 461 wet swimmer's ±3.14/6.28
+  wrap + the /5 ease), the counter++ every tick with the > 4 step
+  over the 6-row sheet and the >= 6 wrap to 0. The d40 row-0 stub
+  is superseded. The wiring copies direction back too (the arm
+  writes it — the 461 wet-branch precedent).
+* **492 the Pirate Ship Cannon** (`:71156-71158`): the ONE-LINE
+  `frame.Y = num * (int)ai[2]` — the aim octant the aiStyle-75
+  machine owns (`NPC.cs:35789-35820`: the eight-ray closest-probe
+  + 1, the `spriteDirection == 1` → 9 − x mirror, the no-sight
+  clear to 0; the port's `npc_ai_style75.rs:594-668` ports that
+  block verbatim, so the row follows the LIVE aim). The counter/
+  sprite/rotation/direction are NEVER touched. OUR kind: the v1
+  `npc.rs:7744` free strip was WRONG; the arm now delegates (ONLY
+  row copies back). The 491 ship keeps its row-0 pin — NO
+  FindFrame case label, `npcFrameCount[491]` = 1 (`Main.cs:67133`),
+  correct-by-construction (the 478 MothronEgg / tower precedent).
+
+The d40 merger notes (the roster wave's arms this slice supersedes
+or confirms): 463's `humanoid_town_frame` stand-in → the extra-9
+Nailhead machine (the fighter delegate); 467/472's row-0 stubs →
+the extra-9 machines; 464/465/466/468/469/470's inline arms are
+FAITHFUL — keep the d40 inline arms at merge (the f26 7c
+Medusa/Hoplite/GraniteGolem keep-one precedent), the extra-9 module
+carries no arms for them (the verdict table's cites are the parity
+references). The 489/490/491/493 verdicts need no merger action
+(our arms stay).
+
+Zero RNG verified mechanically per arm (a `Main.rand`/`.Next(`/
+`NextFloat`/`NextDouble` grep over the cited body ranges
+`:75069-75102` / `:75532-75617` / `:71369-71397` / `:71156-71158` /
+`:68634-68661` + `:69489-69655` = ZERO; the humanoid group's town
+pose zones with their chat-bubble draws are the documented skip —
+the 463 fighter never enters them). Frame counts counted
+entry-by-entry out of `Main.cs:67082`'s initializer AND
+cross-checked against `render/entities.rs::NPC_FRAME_COUNT` — all
+5 agree. 8 module witnesses + 1 wiring witness WRITTEN NOT RUN
+(code-only), every replay vector re-derived by mechanical Python
+replay of line-for-line C# transcriptions + the 5-kind
+5x3x3x3 strip sweep (40 ticks per combo, every row asserted inside
+its own sheet).
