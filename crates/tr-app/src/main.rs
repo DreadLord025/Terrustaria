@@ -75,6 +75,7 @@ mod npc_ai_frost_mob_b;
 mod npc_ai_frost_mob;
 mod npc_ai_caster;
 mod npc_ai_town;
+mod npc_hit_effect_d;
 mod npc_ai3_speeds;
 // S1-D-3z (zombie fighter audit): the AI_003 obstacle scan tail
 // (NPC.cs:59831-60284) + the Drippler's aiStyle-22 machine.

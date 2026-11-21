@@ -39377,3 +39377,13 @@ read `base.oldVelocity` (the sub-step start velocity, threaded from the
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
 invoked** (user directive). The 21 draw-mirror witnesses are owed a compile
 window before merge.
+
+## The NPC HitEffect classic-mob chain (W4-f5 phase 2, wave D, task/W4-f5-dust-proj-3, 2026-11-21, code-only mode)
+
+**Claim.** `npc_hit_effect_d.rs` ports the giant classic-mob else-if tail of `NPC.HitEffect` (`NPC.cs:85560-89835`): 853 `Gore.NewGore` sites in source order, from the 50 King Slime death (`:85684`) to the 156 arm's 184/185/185 (`:89829-89831`). Boundary: f10 wave C (`npc_hit_effect_c.rs`, tip `7d94a465`) owns everything BELOW `:85560` including its in-flight `:83562-85559` continuation; d55 wave A owns `:81660-81941`; e5 wave B owns `:81942-82202`. The dust halves stay the dust lanes': g62 owns the HIT (`life > 0`) halves (its `npc_hit_dust.rs` replay already covers this window's bat/demon-eye/zombie/skeleton/goblin/EoS/hornet hit loops), g59/g60 the death feeds; this module ports the death-half dust loops ONLY as the gore bodies' draw census (the f10 `death_dust_loop` precedent, keep-one at merge).
+
+**RNG contract.** The strike caller's `Main.rand` (`StrikeNPC_Inner` `:81488`, NOT the NPC pass stream). Per site, in C# order: (1) the death dust loop through `DustPool::new_dust` — 6 default-block draws + per-type tweaks pool-owned, culls consume the C#'s draws; (2) ARGUMENT draws BEFORE the `NewGore` (named args evaluate in source-written order — `:87405`'s Velocity/Position/Type draws Next(-80,81), Next(-60,21), Next(140,143)); (3) the two `NewGore` kicks, Y then X (`Gore.cs:1327-1328`, pool-side). Sentinel writes kept (`Main.gore[600]`).
+
+**Documented drops.** The 59/60/151 lava arm (`:85562-85669`) has NO gore sites — dust census the dust lanes', expert/skyblock/remix lava writes a World seam (wiring wave). Roster/World seams ride `HitEffectOutcomeD` (the 50 King Slime's `Next(4)+4` blue-slime spawns first). `netMode` SP fold; sounds c13; the type axis rides an explicit `npc_type` parameter (unrowed kinds, f10 precedent).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked** (user directive). Batches land <=10 sites per commit, witnesses owed a compile window before merge.
