@@ -231,7 +231,7 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(false); // unlockedArmsDealerSpawn
     w.boolean(false); // unlockedNurseSpawn
     w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
-    w.boolean(false); // combatBookVolumeTwoWasUsed
+    w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed
     w.boolean(false); // peddlersSatchelWasUsed
     w.boolean(false); // unlockedSlimeGreenSpawn
     w.boolean(false); // unlockedSlimeOldSpawn
@@ -626,7 +626,7 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.unlocked_princess = r.bool()?; // unlockedPrincessSpawn
     }
     if version >= 259 {
-        r.skip(1)?; // combatBookVolumeTwoWasUsed
+        world.combat_book_volume_two_was_used = r.bool()?; // combatBookVolumeTwoWasUsed
     }
     if version >= 260 {
         r.skip(1)?; // peddlersSatchelWasUsed

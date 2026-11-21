@@ -1,8 +1,8 @@
 //! W4-a6 — the permanent power-up consumables: `Player.ItemCheck`'s
 //! `ItemCheck_UseLifeCrystal` / `UseLifeFruit` / `UseManaCrystal` /
-//! `UseDemonHeart` / `UseMinecartPowerUp` / `UseArtisanLoaf`
-//! (`Player.cs:45192-45320`) and their sibling `ItemCheck_Use*` arms
-//! (`:45226-45423`, later commits).
+//! `UseDemonHeart` / `UseMinecartPowerUp` / `UseArtisanLoaf` /
+//! `UseCombatBook` (`Player.cs:45192-45350`) and their sibling
+//! `ItemCheck_Use*` arms (`:45226-45423`, later commits).
 //!
 //! Every arm rides the C# mid-swing gate `itemAnimation > 0 &&
 //! ItemTimeIsZero` (`:4064`): the use START (`ApplyItemAnimation`) ran on
@@ -60,7 +60,7 @@ fn use_time_secs(held: ItemSlot) -> f32 {
 /// The power-up kinds this machine owns — the `ItemCheck_Use*` cluster's
 /// ids (`Player.cs:43595-43601`'s call row).
 pub(crate) fn is_powerup(kind: u16) -> bool {
-    matches!(kind, 29 | 109 | 1291 | 3335 | 5289 | 5326)
+    matches!(kind, 29 | 109 | 1291 | 3335 | 5289 | 5326 | 4382 | 5336)
 }
 
 /// `Player.ItemCheck_CheckCanUse_Inner`'s Demon Heart refusal
@@ -92,6 +92,7 @@ fn run_powerup_arm(app: &mut App, held: ItemSlot) -> bool {
         3335 => use_demon_heart(app),
         5289 => use_minecart_powerup(app),
         5326 => use_artisan_loaf(app),
+        4382 | 5336 => use_combat_book(app, held.kind),
         _ => false,
     };
     if fired {
@@ -290,6 +291,33 @@ fn use_artisan_loaf(app: &mut App) -> bool {
         return false;
     }
     p.ate_artisan_bread = true;
+    true
+}
+
+/// `Player.ItemCheck_UseCombatBook` (`Player.cs:45322-45350`): the 4382
+/// arm gates `!NPC.combatBookWasUsed`, the 5336 arm
+/// `!NPC.combatBookVolumeTwoWasUsed` — each grants `ApplyItemTime`,
+/// raises its flag and prints the `Misc.*Used` line in the World colour
+/// (`Main.NewText`, `:45330`/`:45343`). The statics are World fields (the
+/// S1-P-i35 standing-in); the MP `SendData(61, -11/-17)` legs fold out.
+/// The town stat ladder (`NPC.cs:53018-53031`) reads both flags through
+/// `TownEnv.combat_book`/`combat_book_two`.
+fn use_combat_book(app: &mut App, kind: u16) -> bool {
+    let key = if kind == 4382 {
+        if app.world.combat_book_was_used {
+            return false;
+        }
+        app.world.combat_book_was_used = true; // `:45329`
+        "Misc.CombatBookUsed"
+    } else {
+        if app.world.combat_book_volume_two_was_used {
+            return false;
+        }
+        app.world.combat_book_volume_two_was_used = true; // `:45342`
+        "Misc.CombatBookVolumeTwoUsed"
+    };
+    app.chat
+        .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
     true
 }
 
@@ -752,5 +780,65 @@ mod tests {
         app.mine_down = true;
         tick(&mut app);
         assert_eq!(app.inventory[app.selected].count, 1, "the second refuses");
+    }
+
+    /// Combat Book 4382: the world flag flips, the World-colour chat line
+    /// prints, one consumed (`:45324-45331`).
+    #[test]
+    fn combat_book_sets_the_world_flag_and_chats() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = rig(4382, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.world.combat_book_was_used);
+        assert_eq!(app.inventory[app.selected].count, 1);
+        let line = app.chat.messages.first().expect("the chat line");
+        assert_eq!(line.text, crate::lang::text("Misc.CombatBookUsed"));
+        assert_eq!(line.color, crate::chat::COLOR_WORLD);
+    }
+
+    /// A second Combat Book refuses (the `!NPC.combatBookWasUsed` gate) —
+    /// no second chat line, no consume.
+    #[test]
+    fn a_second_combat_book_refuses() {
+        let mut app = rig(4382, 2);
+        app.world.combat_book_was_used = true;
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
+        assert!(app.chat.messages.is_empty(), "no chat on refusal");
+    }
+
+    /// Combat Book Volume Two 5336: its OWN flag (`:45337-45344`) — the
+    /// vol.1 flag does not gate it, and it does not set vol.1's.
+    #[test]
+    fn combat_book_volume_two_sets_its_own_flag() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = rig(5336, 2);
+        app.world.combat_book_was_used = true; // vol.1 already used
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.world.combat_book_volume_two_was_used);
+        assert_eq!(app.inventory[app.selected].count, 1);
+        let line = app.chat.messages.first().expect("the chat line");
+        assert_eq!(line.text, crate::lang::text("Misc.CombatBookVolumeTwoUsed"));
+        assert_eq!(line.color, crate::chat::COLOR_WORLD);
+    }
+
+    /// A second Volume Two refuses (the `!combatBookVolumeTwoWasUsed` gate).
+    #[test]
+    fn a_second_combat_book_volume_two_refuses() {
+        let mut app = rig(5336, 2);
+        app.world.combat_book_volume_two_was_used = true;
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
+        assert!(app.chat.messages.is_empty());
     }
 }

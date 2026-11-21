@@ -1684,6 +1684,8 @@ mod tests {
         // (`:1413`, v261) — ride the round-trip at non-default values.
         world.combat_book_was_used = true;
         world.unlocked_slime_red_spawn = true;
+        // W4-a6: the combat book vol.2 byte (WorldFile.cs:1407, v259).
+        world.combat_book_volume_two_was_used = true;
         world
     }
 
@@ -1910,6 +1912,11 @@ mod tests {
             got.unlocked_slime_red_spawn, want.unlocked_slime_red_spawn,
             "{context}: unlockedSlimeRedSpawn"
         );
+        // W4-a6: the combat book vol.2 byte.
+        assert_eq!(
+            got.combat_book_volume_two_was_used, want.combat_book_volume_two_was_used,
+            "{context}: combatBookVolumeTwoWasUsed"
+        );
     }
 
     #[test]
@@ -2064,6 +2071,9 @@ mod tests {
         // party + 13 sandstorm + 4 DD2 + 5 BG (mushroom/underworld/tree2-4)
         // = tail offset 1939 (gate V3, i35).
         tail[1939] = u8::from(world.combat_book_was_used);
+        // combatBookVolumeTwoWasUsed (`WorldFile.cs:1407`): the unlocks end
+        // at princess@2035, +1 (W4-a6).
+        tail[2036] = u8::from(world.combat_book_volume_two_was_used);
         tail[2045] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
         tail[2046] = world.moondial_cooldown; // moondialCooldown (`:1417`)
         b.extend(tail);
@@ -3643,6 +3653,16 @@ mod tests {
         data[tail_at + flags_tail(260).len() - 1] = 1; // peddlersSatchelWasUsed — skipped
         let w = parse(&data).expect("v260 loads");
         assert!(!w.unlocked_slime_red_spawn, "below 261: red slime stays false");
+        // W4-a6: combatBookVolumeTwoWasUsed reads from v259 — below the gate
+        // it stays false; at 259 it is the LAST tail byte (the satchel needs
+        // 260, the slime run 261).
+        let w = parse(&synthetic_file(258, &[2, 144], 160, 11)).expect("v258 loads");
+        assert!(!w.combat_book_volume_two_was_used, "below 259: book2 stays false");
+        let mut data = synthetic_file(259, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 259);
+        data[tail_at + flags_tail(259).len() - 1] = 1; // combatBookVolumeTwoWasUsed
+        let w = parse(&data).expect("v259 loads");
+        assert!(w.combat_book_volume_two_was_used, "combatBookVolumeTwoWasUsed reads from 259");
         // v261: green/old/purple(3) rainbow(1) red(1) yellow/copper(2) — the
         // red byte sits 3 from the tail end (2 skip + 1 red).
         let mut data = synthetic_file(261, &[2, 144], 160, 11);
@@ -3661,6 +3681,7 @@ mod tests {
         let tail_at = ptr1 - flags_tail(VER).len();
         assert_eq!(buf[tail_at + 1939], 1, "combatBookWasUsed at tail 1939");
         assert_eq!(buf[tail_at + 2042], 1, "unlockedSlimeRedSpawn at tail 2042");
+        assert_eq!(buf[tail_at + 2036], 1, "combatBookVolumeTwoWasUsed at tail 2036 (W4-a6)");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------
