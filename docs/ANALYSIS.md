@@ -39524,3 +39524,65 @@ in ≤100-line reads: `NPC.cs:11154-11167`/`:17723-17735`/`:20817-21376`
 `:1762-1765`/`:2053-2069`. The atlas headroom measured via
 `tools/atlas_sim.js` (the LZX-decoded real sheet dims, the skyline
 packer mirror).
+
+### W4-g5 RETIRE: the lane close (research/244, code-only)
+
+The retire round publishes **research/244 — the caster-family
+declaration + the d37d-E8 keep-one contract**. Summary (the doc carries
+the full drop-lists + citations):
+
+* **The 693 dedupe-flag RESOLVED**: d43 batch-12 (`8fc608bc`) also
+  rowed the LibrarianSkeleton; **g5's full-kind+caster-wiring row is
+  canonical** (d43's arm skips the 1092 book shot — "the kind casts
+  silently"; g5's is live). d43's 693 identity/match/bestiary/
+  netglue hunks retire at merge (the exact per-file table in 244 §2);
+  its ONE unique contribution — the `NPC.cs:18960` dungeon-wall gate
+  — is ABSORBED here: `dungeon_wall_gated` now matches
+  `{DarkCaster | LibrarianSkeleton}` (the phases-4-6 draft omitted the
+  693; the C# group is 32/281-286/693). The gate is stream-neutral
+  (acceptance, not draws). Witness
+  `w4_g5_the_librarian_skeleton_needs_a_dungeon_wall_or_a_live_skeletron`
+  written not run. The merged match unions d38's six hardmode kinds.
+* **R4 FINALIZED — the 665 fold STAYS**: the full C# surface re-derived
+  (244 §3): stat-identical SetDefaults, one aiStyle-9 arm (`:21519`),
+  one {31} immunity row, one "Chaos Ball" name, NPC_665.xnb
+  SHA256-identical to NPC_30.xnb. The ONE real split — the banner
+  (665 → Tim's 177, `BannerSystem.cs:864-866`; 30 → the Sorcerer's 39)
+  — is UNREACHABLE in the port: both ids are Hide=true bestiary
+  exclusions (`NPCID.cs:1443-1456`), no ENTRIES row, no kill-credit/
+  banner drain fires for either (the port's drain keys
+  `entry.net_id`). d43's distinct ChaosBallTim kind + its EXTRA
+  bestiary card (the vanilla has none — the d38-328 overclaim shape)
+  retire at merge. Recorded as the fold's one deviation; the
+  `npc_to_banner` 665→177 row already exists for the future
+  hidden-credit wave.
+* **The caster/sphere immunity census FIXED** (`npc_buffs.rs`): the
+  base's "no debuff-immunity rows" comment was wrong —
+  `NPCID.Sets.DebuffImmunitySets` carries 29 {31}, 45/32 {20,31},
+  24 {24,31,323}, 533 the 14-row set, 25/30/33/665 {31}
+  (`NPCID.cs:6227-6285`/`:9085-9095`). All landed verbatim; the 665
+  row rides the folded kind (the R4 fold's one stat gap repaired).
+  Witness `w4_g5_the_caster_family_immunity_rows_match_the_id_sets`
+  written not run.
+* **The RuneWizard protocol renumber 354 → 827 EXECUTED** (the E8
+  work order, self-served): 354 squats d37's CochinealBeetle corridor
+  (research/108 E2 — the kinds-lane owns 354-399); 827 is above d39's
+  pushed 817-823 + the R7 826 ceiling, scripted-verified free on ALL
+  `task/W4-*` tips. to_u16/from_u16/render_key + the witness tuple
+  moved; cs_id/net_id/sheets/lang stay vanilla 172.
+* **The style-7 census FINAL** (244 §6): all 13 aiStyle-8 kinds
+  claimed on the pushed union (base 5 + g5 2 + d38 6); NO unwired
+  caster kind remains. The d33-style102/103 routing note: 102 = the
+  SandElemental 541, 103 = the Sand Sharks 542-545 — NOT casters;
+  d33's modules unwired, the kinds ride d41's band; the caster lane
+  owes nothing. The union's residuals (owed by d38/the merge wave,
+  itemized): the 290/291 `proj_data` rows MISSING on d38's tip (its
+  Necromancer/Diabolist shots no-op — `spawn_with_data_ai_owned`'s
+  `proj_data(kind)?`), the d38 ambient Next(2) gates still skipped
+  (policy A extension), the three-way `dungeon_wall_gated` union.
+* `npc_ai_caster.rs` (the unwired SPEC) retires AFTER the union
+  verifies (the d128 plan's last step) — not before.
+
+**Verification**: no cargo/rustc/rustfmt/tests/graphify invoked
+(code-only). The C# re-reads + the branch probes + the 827-free scan
+are recorded in 244 §8. Witnesses written, NOT run.
