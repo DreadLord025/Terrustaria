@@ -20,7 +20,9 @@ The ledger's "~96 sites" resolves EXACTLY on re-count: the port carries
 C# token count is different: `Projectile.cs` carries **20 `wetVelocity`
 token lines** — the capture `:16765`, the two call sites
 `:17015`/`:19858` (the `HandleMovement`→`UpdatePosition` pass), the
-signature pair `:17469`/`:20433`, the drag block's 9 lines
+signature trio `:17469`/`:20433`/`:43655` (the third is
+`AI_015_HandleMovementCollision(ref Vector2 wetVelocity, ...)` — the
+`:43715` refresh's enclosing method), the drag block's 9 lines
 (`:17618/17621/17625` shimmer ×0.375, `:17632/17635/17639` honey ×0.25,
 `:17646/17649/17653` water ×0.5), the integrate `:20441`, the AI_015
 bounce refresh pair `:19323`/`:43715`, and the DEAD
