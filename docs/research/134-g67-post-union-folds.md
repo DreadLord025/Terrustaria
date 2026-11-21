@@ -1,8 +1,15 @@
 # 134 — W4-g67 post-union fold-list (for W4-d130f)
 
-**STATUS: RETIRED — R1–R4/R6-partial EXECUTED BY d130 `16a792d5`; R5/R6-caller/R7
-+ the 2-hunk fold-addendum OPEN for d130f** (code-only,
-`task/W4-g67-weather-rain-splash`).
+**STATUS: FINAL-FINAL / RETIRED — R1–R4/R6-partial EXECUTED BY d130 `16a792d5`;
+R5/R6-caller/R7 + the 2-hunk fold-addendum OPEN for d130f** (code-only,
+`task/W4-g67-weather-rain-splash`, fold-source tip `e777b3e2` + the retire
+commits `9159c15a` (this re-check) / `5afdb38b` (the rain.rs
+DEPRECATED-BY-UNION banners, comments-only)). The g67 branch is DONE — no
+further rain.rs code lands here; the dup-halves carry per-fn banners, the
+uniques (R5 threshold read, the Eyebrella/umbrella player lanes, the A2
+witness) stay live as the d130f fold-source. Merger: g67's `rain.rs` drops
+WHOLESALE EXCEPT those folded hunks — see KEEP-d130-CANONICAL FINAL-FINAL
+below.
 
 ## Fold-monitor re-check (g67 retire phase, 2026-11-21, tip `97ed44f5`)
 

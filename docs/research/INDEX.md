@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 134 | W4-g67 post-union fold-list for d130d/e (R1–R7 per-hunk residuals vs the d130 tip 560a02eac; FINAL re-check 2026-11-21: d130e NOT landed, all seven OPEN; KEEP-d130-canonical instruction + the draw-side boundary + the fn/render/overlap census additions; code-only) | `134-g67-post-union-folds.md` | FOLD-LIST STANDS |
+| 134 | W4-g67 post-union fold-list — FINAL-FINAL (retire phase 2026-11-21, fold-source tip e777b3e2): d130 tip 97ed44f5 re-check — 16a792d5 EXECUTED R1–R4 (+R6 seam, +gameMenu arm, +snow-lane cull) BEFORE the 134 FINAL, stale-rows table superseded; d130f work-list = R5/R6-caller/R7 + the 2-hunk fold-addendum (A1 g67's tint-witness alpha assertions WRONG — keep d130's rain_tint/witness verbatim; A2 light-tile witness re-pin); g67 rain.rs dup-halves carry DEPRECATED-BY-UNION banners (5afdb38b, comments-only), uniques stay live; KEEP-d130-canonical FINAL-FINAL instruction; code-only | `134-g67-post-union-folds.md` | RETIRED — d130f work-list published |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
