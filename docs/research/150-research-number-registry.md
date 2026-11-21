@@ -1267,7 +1267,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 368 | f43 | 368-pet-arrival-family-final | DONE ffadc1f49 |
 | 369 | d34 | 369-band-211-280-seal-bible | DONE 2f7aed30b (worktree TR-W4-d34seal — cleanup-phase removal) |
 | 370 | d54j | 370-d54j-orch-dispatch-router | DONE 97c8c5180 (rename executed at landing) |
-| 382 | g81 | 283-wire-draw-seal (ad5899985, post-§10 self-pick into f26's 283) | NEW rename owed 283→382 |
+| 382 | g81 | 382-g81-wire-draw-seal | DONE a978fbd6a |
 
 ### §9.3 — rules
 
