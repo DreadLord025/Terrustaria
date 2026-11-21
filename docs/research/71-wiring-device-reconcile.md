@@ -1,5 +1,25 @@
 # 71 — Wiring device-arm duplicate reconcile (W4-e20 × W4-f11) + e21 census
 
+> **STATUS: EXECUTED (merge-IN phase) — 2026-11-21, branch
+> `task/W4-e20-wiring-device-arms-2`.** The §3b must-merge-IN list landed on the
+> canonical e20 branch: §3b.1 PlaySound(7) (`f167082e` — the empty-slot arm's
+> cue + case-7 wiring-stream draw, `via_empty_slot` threaded through
+> `try_put_item_in_chest`; stack-merge/coin arms pinned draw-free), §3b.2
+> OnceLock build-once options cache (`6336e3b4` — f11's shape over the kept
+> `TRACK_FRAMES`, `Option<&'static [i32]>`, no per-hit Vec), §3b.3 all six f11
+> witnesses rebased onto the e20 bodies (`b0d0836f` CoinsSplit / 192-centred
+> grab rect with strict-`<` edge fixtures / locked-gate; `5272cd52`
+> non-anchor-cell hopper+extractinator hits re-routed around the anchor wire,
+> the three cooldown-expiry re-hit witnesses, and the §3c f11-only table
+> popcount pin re-pointed at `TRACK_FRAMES` incl. OnceLock boundary masks
+> 0/18). Plus `a2d6cdad`: the hopper slot arms take `&mut Vec<ItemSlot>` (the
+> `slots.resize` write-back cannot compile on a slice — latent code-only-lane
+> error surfaced by this pass). The e20 branch is now the FULL canonical
+> superset per the contract: every §3a e20-unique fix untouched, every §3b
+> f11 win merged in; the merger drops f11's duplicate halves per §5 with
+> nothing left to salvage except the §3b.4 hammer-placement follow-up note.
+> Witnesses WRITTEN NOT RUN (code-only lane).
+
 > Merger assist · 2026-11-21 · code-only (no cargo/tests run) ·
 > sources: `decompiled/Terraria/Minecart.cs`, `Wiring.cs`, `Utils.cs`, `Item.cs`,
 > `Chest.cs` + the three branch tips below.
@@ -187,7 +207,9 @@ unaffected by it.
 2. Drop f11's `tr-core/src/minecart.rs` + `world_sim/wiring_devices.rs` + the
    core 314/21/467/219/642 duplicate arms; keep e20's.
 3. Port §3b.1 (PlaySound(7)) and §3b.2 (OnceLock) into the kept e20 code;
-   re-point the §3b.3 witnesses.
+   re-point the §3b.3 witnesses. **[DONE on the e20 branch — `f167082e`,
+   `6336e3b4`, `b0d0836f`, `5272cd52` (+ `a2d6cdad` slot-Vec fix); nothing
+   left for the merger here.]**
 4. Keep every §3a item verbatim — f11's tip still carries the wall-trap
    `vy: 2.0` and the spawn-point/top-left cap; a merge that takes f11's
    `TrapRequest::Spear` shape or trap arms silently re-introduces both WRONGs.
