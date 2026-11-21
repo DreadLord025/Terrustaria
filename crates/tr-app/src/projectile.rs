@@ -7105,6 +7105,12 @@ impl Projectile {
         if self.alpha < 0 {
             self.alpha = 0;
         }
+        // W4-g1 lane a — `base.oldPosition = base.position`
+        // (`Projectile.cs:17013`) latches between the AI and HandleMovement;
+        // the 521 Kill hook's split spawns read it (`:73324`). The port's
+        // standing latch is golf-only (`:19798`), so the 521 arm carries its
+        // own — the pre-move position, exactly as the C#.
+        self.old_position = self.pos;
         // The movement: no gem features → the default tile arm.
         self.kill_step(world);
     }
@@ -8392,6 +8398,35 @@ impl Projectile {
         // The collision chain's default (`:19849-19853`): one last step into
         // the tile, then the kill — the port's [`Projectile::kill_step`].
         self.kill_step(world);
+    }
+
+    /// W4-g1 lane a — the CrystalPulse2 (522) shard's movement
+    /// (`HandleMovement`'s per-type arm `Projectile.cs:18796-18806`): the
+    /// FULL ±1.0 reflection on each blocked axis (no 0.8 damp, no penetrate
+    /// spend, no kill-on-bounce — the ai[1] > 40 counter in the AI arm is the
+    /// only kill). The free move is `UpdatePosition` (`:19858`/`:20445`).
+    /// The port's per-axis probe is the `gem_bolt_move` model.
+    fn crystal_pulse2_move(&mut self, world: &World) {
+        if !self.tile_collide {
+            self.pos += self.vel;
+            return;
+        }
+        let last = self.vel;
+        let hit_x = crate::player::collides_rect(world, self.pos.x + last.x, self.pos.y, self.w, self.h);
+        let hit_y = crate::player::collides_rect(world, self.pos.x, self.pos.y + last.y, self.w, self.h);
+        if !(hit_x || hit_y) {
+            self.pos += self.vel;
+            return;
+        }
+        // `:18798-18805` — the full reflection on the blocked axis.
+        if hit_x {
+            self.vel.x = -last.x;
+        }
+        if hit_y {
+            self.vel.y = -last.y;
+        }
+        // `UpdatePosition` (`:19858`) integrates the reflected velocity.
+        self.pos += self.vel;
     }
 
     /// `FinalizeProjectile`'s gem arm (`Projectile.cs:22057-22059`) →
@@ -17757,6 +17792,20 @@ impl ProjectilePool {
                             // is the `else` branch, `:37823-37826`).
                             if self.slots[i].kind == CRYSTAL_PULSE {
                                 self.slots[i].ai_crystal_pulse(world);
+                            } else if self.slots[i].kind == CRYSTAL_PULSE_2 {
+                                // W4-g1 lane a — the 522 split shard's OWN
+                                // AI_029 arm (`:37742-37773`): the ai[1]
+                                // counter kill at > 40 + the gravity/drag,
+                                // then the full-reflection bounce movement
+                                // (`HandleMovement` `:18796-18806`). The
+                                // `!active` return (`:17027-17030`) skips
+                                // the movement on the kill tick.
+                                crate::projectile_kill_hooks_a::crystal_pulse2_step(
+                                    &mut self.slots[i],
+                                );
+                                if self.slots[i].active {
+                                    self.slots[i].crystal_pulse2_move(world);
+                                }
                             } else {
                                 self.slots[i].ai_gem_staff(world, npcs, owner, player.as_deref())
                             }
@@ -20065,6 +20114,15 @@ impl ProjectilePool {
                         self.pending_catches.push((self.slots[i].owner, item, stack));
                     }
                 }
+                // W4-g1 lane a — the functional Kill() hooks (census
+                // research/26d), kind-disjoint from every arm above, in the
+                // C# body order (:72987 < :73014 < :73271 < :73292 < :73338
+                // < :73603 < :75533). The dust/gore censuses + resizes ride
+                // the module; the Damage() bursts and the tile break ride
+                // the pool seams below. A dead slot never returns to
+                // active, so each fires at most once per death (the
+                // moonlord_arrow_kill precedent).
+                self.kill_hooks_a(i, world, npcs, player.as_deref_mut(), rng, luck, local_owner);
             }
             // S1-P-i16 — the dart split / cluster ring spawn requests the
             // AI arms parked mid-iteration (the `wants_mark_spawn`
@@ -20606,6 +20664,145 @@ impl ProjectilePool {
             // `:73451` — the ai1 payload rides after the slot-order bump.
             self.slots[new_slot].ai[1] = delay as f32;
         }
+    }
+
+    /// W4-g1 lane a — the functional `Kill()` hooks (census
+    /// `docs/research/26d-projectile-kill-hooks-census.md`: the six missing
+    /// kinds + the 522 split shard's own dust census), run from the
+    /// pool's death hook in the C# body order. The module
+    /// (`projectile_kill_hooks_a`) owns the draw censuses + resizes; this
+    /// dispatcher owns the pool-side state: the `Damage()` bursts (the
+    /// friendly PVE box walk / the hostile EVP player hit), the 521 split
+    /// spawns and the 80 tile break. Kind-gated, one-shot per death.
+    fn kill_hooks_a(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        npcs: &mut [Npc],
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        let kind = self.slots[slot].kind;
+        match kind {
+            // `:72987-73013` — the PhantasmalEye: resize + gore census, then
+            // the hostile EVP burst through the final 30×30 box.
+            PHANTASMAL_EYE => {
+                crate::projectile_kill_hooks_a::phantasmal_eye_kill(&mut self.slots[slot], rng);
+                self.death_burst_player_hit(slot, player, rng);
+            }
+            // `:73014-73045` — the PhantasmalSphere: the 208 box + ring/gore
+            // census, then the hostile EVP burst through the 208×208 box.
+            PHANTASMAL_SPHERE => {
+                crate::projectile_kill_hooks_a::phantasmal_sphere_kill(&mut self.slots[slot], rng);
+                self.death_burst_player_hit(slot, player, rng);
+            }
+            // `:73271-73290` — the CrystalPulse2's own Kill arm: the
+            // 10-dust-254 census (the explicit Next(3) gate + branch draws
+            // stay on the stream), no functional state.
+            CRYSTAL_PULSE_2 => {
+                crate::projectile_kill_hooks_a::crystal_pulse2_kill_draws(rng);
+            }
+            // `:73292-73327` — the CrystalPulse: the dust census + the
+            // owner-gated 522 split. The velocity draws are state-bearing and
+            // ride the module; the spawns land through the pool here.
+            CRYSTAL_PULSE => {
+                let shards = crate::projectile_kill_hooks_a::crystal_pulse_kill(
+                    &self.slots[slot], rng, local_owner,
+                );
+                let owner = self.slots[slot].owner;
+                for s in shards {
+                    // The C# passes the CENTRE; the port spawn takes the
+                    // top-left — recentre by the 522 row's 8×8 box (the
+                    // xenopopper precedent). The corpse-flag lift keeps the
+                    // dying 521's slot out of the scan (the moonlord
+                    // precedent): the shard takes the NEXT free slot.
+                    self.slots[slot].active = true;
+                    let _ = self.spawn_with_data_ai_owned(
+                        CRYSTAL_PULSE_2, owner, s.x - 4.0, s.y - 4.0, s.vx, s.vy, s.damage, s.kb,
+                        0.0, 0.0,
+                    );
+                    self.slots[slot].active = false;
+                }
+            }
+            // `:73338-73371` (the 459/709 SHARED burst — g1's claim, the f20
+            // F3 cross-note 01e0b1083 ports the 709-only half :73372-73388 +
+            // the 1110 row; at the merge this gate widens to 459 | 709,
+            // kind-disjoint from f20's sky_dragons_fury_kill). At scale ≥ 1
+            // the resize → the friendly PVE burst through the 144×144 box
+            // → the draw census (the C# :73351 Damage() precedes the :73353
+            // dust rings); below 1 the small dust census only.
+            CHARGED_BLASTER_ORB => {
+                let burst = crate::projectile_kill_hooks_a::charged_blaster_orb_kill(
+                    &mut self.slots[slot],
+                );
+                if burst {
+                    self.damage_pve_boxed(slot, npcs, doll_flags(player.as_deref()), rng, luck);
+                }
+                crate::projectile_kill_hooks_a::charged_blaster_orb_kill_draws(burst, rng);
+            }
+            // `:73603-73631` — the SaucerMissile: the 112 box + gore census,
+            // then the hostile EVP burst through the 112×112 box.
+            SAUCER_MISSILE => {
+                crate::projectile_kill_hooks_a::saucer_missile_kill(&mut self.slots[slot], rng);
+                self.death_burst_player_hit(slot, player, rng);
+            }
+            // `:75533-75553` — the IceBlock: the draw census (rolls nothing)
+            // + the tile-127 break at the block's tile.
+            ICE_BLOCK => {
+                crate::projectile_kill_hooks_a::ice_block_kill_draws(&self.slots[slot], rng);
+                let p = &self.slots[slot];
+                let tx = (p.pos.x / 16.0) as i32;
+                let ty = (p.pos.y / 16.0) as i32;
+                // `:75549-75552` — only an ACTIVE tile-127 (the magical ice
+                // block) breaks; the C# `WorldGen.KillTile` default noItem
+                // false drops the block (the port's kill_tile seam).
+                if world.tile(tx, ty).is_some_and(|t| t.active() && t.kind == MAGICAL_ICE_BLOCK) {
+                    let _ = tr_core::edit::kill_tile(world, tx, ty, false);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// W4-g1 lane a — the hostile death bursts' player hit (`Damage()` →
+    /// `Damage_EVP`, `Projectile.cs:14773-14900`): the resized box overlaps
+    /// the player's box (`Colliding`'s fallback `:15888`), the per-kind gate
+    /// passes, and the shot is hostile with positive damage. The hurt rides
+    /// the SAME `hurt_with_source` seam as `damage_player` (raw damage,
+    /// dodgeable, kind); the EVP ×2 / hostileDamageScaling / banner / cold
+    /// multipliers and the BossNoCheese cooldown are the STANDING single-lane
+    /// deviations (M4-HAZARD-1, census 26d). The burst does NOT re-kill the
+    /// slot (already dead; the C# EVP has no kill-on-hit). The `!hostile`
+    /// proxy is the port's `!friendly` (the `damage_player` convention).
+    fn death_burst_player_hit(
+        &mut self,
+        slot: usize,
+        player: Option<&mut crate::player::Player>,
+        rng: &mut dyn DropRng,
+    ) {
+        let Some(player) = player else {
+            return;
+        };
+        let p = &self.slots[slot];
+        if p.friendly || p.damage <= 0 {
+            return; // `:14775` — the hostile + damage gate
+        }
+        if !crate::projectile_kill_hooks_a::hostile_burst_colliding(p) {
+            return;
+        }
+        // The box overlap (`Colliding`'s fallback, the truncated rects).
+        let (px, py, pw, ph) = (p.pos.x as i32, p.pos.y as i32, p.w as i32, p.h as i32);
+        let (qx, qy) = (player.x as i32, player.y as i32);
+        let (qw, qh) = (crate::player::WIDTH as i32, crate::player::HEIGHT as i32);
+        let hit = px < qx + qw && px + pw > qx && py < qy + qh && py + ph > qy;
+        if !hit {
+            return;
+        }
+        let cx = p.pos.x + p.w * 0.5;
+        let (damage, dodgeable, kind) = (p.damage, p.is_damage_dodgeable(), p.kind);
+        player.hurt_with_source(damage, cx, rng, dodgeable, kind);
     }
 
     // (Resync keep-one: the 442 Electrosphere Missile's Kill arm lives in
@@ -44382,5 +44579,216 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+/// W4-g1 lane a — the pool-side death-hook witnesses (WRITTEN NOT RUN,
+/// code-only mode): the six functional Kill hooks fire through
+/// `ProjectilePool::update`'s death seam, the resizes/spawns/tile-break land,
+/// and the hostile EVP bursts hurt the player through the resized box.
+#[cfg(test)]
+mod w4_g1a_kill_hook_tests {
+    use super::*;
+    use tr_core::tile::{FLAG_ACTIVE, Tile};
+
+    fn air() -> World {
+        World::new("t".into(), 64, 64)
+    }
+
+    fn step(pool: &mut ProjectilePool, w: &mut World, player: Option<&mut crate::player::Player>) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            player,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// The 522 row is verbatim (`Projectile.cs:5919-5928`): 8x8, aiStyle 29,
+    /// alpha 255, penetrate 1, stock extraUpdates 0, magic.
+    #[test]
+    fn w4_g1a_the_crystal_pulse2_row_is_verbatim() {
+        let d = proj_data(CRYSTAL_PULSE_2).expect("the 522 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.extra_updates), (8.0, 8.0, 29, 1, 0));
+        assert_eq!(d.alpha, 255);
+        assert!(d.magic);
+        assert!(d.tile_collide);
+    }
+
+    /// The 521 death splits 3-5 CrystalPulse2 shards at the pre-move centre
+    /// (`oldPosition + (w/2, h/2)`), damage `(int)(d·0.8)`, knockback `·0.8`.
+    /// The 521 is spawned flying +X with timeLeft 1 so the lifetime block
+    /// kills it on the first update; the split rides the death hook.
+    #[test]
+    fn w4_g1a_the_crystal_pulse_death_splits_shards() {
+        let mut w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CRYSTAL_PULSE, 0, 320.0, 320.0, 0.0, 0.0, 40, 4.0, 0.0, 0.0)
+            .expect("the 521 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        step(&mut pool, &mut w, None);
+        assert!(!pool.slots()[slot].active, "the lifetime kill");
+        let shards: Vec<&Projectile> = pool
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == CRYSTAL_PULSE_2)
+            .collect();
+        assert!((3..=5).contains(&shards.len()), "the Next(3,6) split: {}", shards.len());
+        for s in &shards {
+            assert_eq!(s.damage, 32, "(int)(40·0.8)");
+            assert!((s.knock_back - 3.2).abs() < 1e-4, "4·0.8");
+            // The spawn centre is oldPosition (320,320) + (7,7) = (327,327),
+            // top-left (323,323). The shards spawn at slots ABOVE the dying
+            // 521's index, so the `for i in 0..MAX` loop updates them this
+            // same tick (the C# ProjectileUpdateLoopIndex compensation) and
+            // they integrate one velocity step — the exact spawn centre is
+            // pinned by the module witness (crystal_pulse_kill), not here.
+            assert_eq!(s.kind, CRYSTAL_PULSE_2);
+        }
+    }
+
+    /// The 522 shard's AI arm counts ai[1] up and kills at > 40; the gravity
+    /// (+0.2, clamp 18) and drag (×0.98) run each tick. Spawned at ai[1] 39
+    /// with timeLeft high, it lives one tick then dies the next.
+    #[test]
+    fn w4_g1a_the_crystal_pulse2_shard_counts_and_dies() {
+        let mut w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CRYSTAL_PULSE_2, 0, 320.0, 320.0, 10.0, 0.0, 32, 3.2, 0.0, 39.0)
+            .expect("the 522 row spawns");
+        step(&mut pool, &mut w, None);
+        assert!(pool.slots()[slot].active, "ai[1] 40 lives");
+        assert_eq!(pool.slots()[slot].ai[1], 40.0);
+        step(&mut pool, &mut w, None);
+        assert!(!pool.slots()[slot].active, "ai[1] 41 kills");
+    }
+
+    /// The 459 orb at scale ≥ 1 resizes to 144×144 on death and runs the PVE
+    /// box burst; below 1 it keeps its box. The orb is spawned with timeLeft 1
+    /// (the lifetime kill) at scale 1.6 (the ai[1] latch clamps to 1.6).
+    #[test]
+    fn w4_g1a_the_charged_blaster_orb_death_resizes_at_scale() {
+        let mut w = air();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CHARGED_BLASTER_ORB, 0, 320.0, 320.0, 0.0, 0.0, 40, 4.0, 0.0, 1.6)
+            .expect("the 459 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        step(&mut pool, &mut w, None);
+        assert!(!pool.slots()[slot].active);
+        assert_eq!((pool.slots()[slot].w, pool.slots()[slot].h), (144.0, 144.0), "the scale≥1 resize");
+    }
+
+    /// The 80 IceBlock death breaks an active tile-127 at its tile; a non-127
+    /// tile is spared. The block is spawned in the placed phase (ai[0] < 0,
+    /// ai[1] < 0) with timeLeft 1 so the lifetime kill fires the hook.
+    #[test]
+    fn w4_g1a_the_ice_block_death_breaks_the_magical_ice_tile() {
+        let mut w = air();
+        put(&mut w, 20, 20, MAGICAL_ICE_BLOCK);
+        let mut pool = ProjectilePool::new();
+        // The block's top-left at tile (20,20) → pos (320,320).
+        let slot = pool
+            .spawn_with_data_ai_owned(ICE_BLOCK, 0, 320.0, 320.0, 0.0, 0.0, 0, 0.0, -1.0, -1.0)
+            .expect("the 80 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        step(&mut pool, &mut w, None);
+        assert!(!pool.slots()[slot].active);
+        assert!(!w.tile(20, 20).unwrap().active(), "the tile-127 break");
+    }
+
+    /// The 452 PhantasmalEye death burst hurts the player through the final
+    /// 30×30 box when the per-kind gate passes (ai[0] ≥ 2). Spawned hostile
+    /// 20 px +X of the player's centre — OUTSIDE the standing centre-point
+    /// contact (`damage_player`) but INSIDE the resized 30×30 burst box —
+    /// with timeLeft 1 and ai[0] 2. The homing leg (no owner centre → the
+    /// (0,0) stand-in) accelerates ~0.4 px/tick from rest; the lifetime
+    /// kill fires before the burst reads the box.
+    #[test]
+    fn w4_g1a_the_phantasmal_eye_death_burst_hurts_the_player() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile(PHANTASMAL_EYE, Vec2::new(pcx + 20.0 - 7.0, pcy - 7.0), Vec2::ZERO, 25, 0.0)
+            .expect("the 452 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.slots_mut()[slot].ai[0] = 2.0;
+        let hp0 = player.hp;
+        step(&mut pool, &mut w.clone(), Some(&mut player));
+        assert!(player.hp < hp0, "the EVP burst hurt");
+    }
+
+    /// The 454 PhantasmalSphere death burst refuses inside the 0..60 window
+    /// (ai[1] != -1) — the player is spared; with ai[1] == -1 the gate opens
+    /// and the 208×208 box hurts. Spawned 80 px +X of the player's centre —
+    /// outside the standing centre-point contact, inside the 208 burst box
+    /// — so the ONLY possible hurt is the death burst itself.
+    #[test]
+    fn w4_g1a_the_phantasmal_sphere_death_burst_gates_on_the_window() {
+        let w = air();
+        // Inside the window: spared.
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile(PHANTASMAL_SPHERE, Vec2::new(pcx + 80.0 - 20.0, pcy - 20.0), Vec2::ZERO, 25, 0.0)
+            .expect("the 454 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.slots_mut()[slot].ai[0] = 30.0;
+        pool.slots_mut()[slot].ai[1] = 0.0;
+        let hp0 = player.hp;
+        step(&mut pool, &mut w.clone(), Some(&mut player));
+        assert_eq!(player.hp, hp0, "the window gate spares");
+        // ai[1] == -1 opens the gate.
+        let mut player2 = crate::player::Player::spawn(&w);
+        let (pcx2, pcy2) = player2.center();
+        let mut pool2 = ProjectilePool::new();
+        let slot2 = pool2
+            .spawn_hostile(PHANTASMAL_SPHERE, Vec2::new(pcx2 + 80.0 - 20.0, pcy2 - 20.0), Vec2::ZERO, 25, 0.0)
+            .expect("the 454 row spawns");
+        pool2.slots_mut()[slot2].time_left = 1;
+        pool2.slots_mut()[slot2].ai[0] = 30.0;
+        pool2.slots_mut()[slot2].ai[1] = -1.0;
+        let hp1 = player2.hp;
+        step(&mut pool2, &mut w.clone(), Some(&mut player2));
+        assert!(player2.hp < hp1, "ai[1] == -1 opens the burst");
+    }
+
+    /// The 448 SaucerMissile death burst hurts the player through the 112×112
+    /// box (no per-kind gate). Spawned hostile 50 px +X of the player's
+    /// centre — outside the standing centre-point contact AND the arm's
+    /// 42-px proximity kill, inside the 112 burst box — with timeLeft 1.
+    /// The arm's tick-1 arming (`ai[0] = 1`, speed +4 on a zero velocity
+    /// is zero) moves nothing; the lifetime kill fires the hook.
+    #[test]
+    fn w4_g1a_the_saucer_missile_death_burst_hurts_the_player() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile(SAUCER_MISSILE, Vec2::new(pcx + 50.0 - 7.0, pcy - 7.0), Vec2::ZERO, 25, 0.0)
+            .expect("the 448 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        let hp0 = player.hp;
+        step(&mut pool, &mut w.clone(), Some(&mut player));
+        assert!(player.hp < hp0, "the EVP burst hurt");
     }
 }

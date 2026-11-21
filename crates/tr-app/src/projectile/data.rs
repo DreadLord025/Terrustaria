@@ -1096,6 +1096,11 @@ pub const CHARGED_BLASTER_BEAM: u16 = 461;
 /// `ProjectileID.CrystalPulse` (521, `ProjectileID.cs:1596`) — the Crystal
 /// Serpent's pulse (aiStyle 29's own 521 arm, `extraUpdates = 1`).
 pub const CRYSTAL_PULSE: u16 = 521;
+/// `ProjectileID.CrystalPulse2` (522, `ProjectileID.cs:1598`) — the pulse's
+/// death-split shard (aiStyle 29's own 522 arm, `Projectile.cs:37742-37773`:
+/// the ai[1] counter kills at > 40, the 0.2 gravity / 0.98 drag). W4-g1 lane a
+/// (the 521 Kill hook's spawn target — row+arm+hook land together).
+pub const CRYSTAL_PULSE_2: u16 = 522;
 /// `ProjectileID.SparkleGuitar` (856, `ProjectileID.cs:2266`) — the Sparkle
 /// Guitar's note (aiStyle 167, the CatmullRom arc).
 pub const SPARKLE_GUITAR: u16 = 856;
@@ -3823,6 +3828,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:5908-5918` — the Crystal Pulse (521): 14x14,
             // aiStyle 29, `alpha = 255`, `penetrate = 1`, `extraUpdates = 1`.
             CRYSTAL_PULSE => (14.0, 14.0, 29, 1, TIME_LEFT_DEFAULT, 1, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // `Projectile.cs:5919-5928` — the Crystal Pulse 2 (522): 8x8,
+            // aiStyle 29, `alpha = 255`, `penetrate = 1`, magic, friendly.
+            // NO extraUpdates line (the stock 0). W4-g1 lane a — the 521
+            // Kill hook's split shard (the row+arm+hook land together).
+            CRYSTAL_PULSE_2 => (8.0, 8.0, 29, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `Projectile.cs:8206-8219` — the Sparkle Guitar note (856): 32x32,
             // aiStyle 167, `alpha = 255`, `tileCollide = false`,
             // `extraUpdates = 2`, local immunity −1, ignoreWater, magic.
@@ -4308,6 +4318,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+                // W4-g1 lane a — the Crystal Serpent pair's `magic = true`
+                // (`Projectile.cs:5914`/`:5925`).
+                | CRYSTAL_PULSE | CRYSTAL_PULSE_2
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the

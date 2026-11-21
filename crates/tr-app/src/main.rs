@@ -195,6 +195,10 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-g1 lane a — the six functional Kill() hooks missing for rowed+armed
+// kinds (452/454/459/521/448/80, census research/26d) + the 522 split shard's
+// AI arm.
+mod projectile_kill_hooks_a;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

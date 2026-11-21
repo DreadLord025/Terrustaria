@@ -35,8 +35,19 @@
 
 All six are UNCLAIMED (no pushed branch ports them). Ported by this lane in
 `crates/tr-app/src/projectile_kill_hooks_a.rs` + pool death hooks + the 522
-row/arm. The 709 half of the 459 arm (`:73372-73388`, the Sky Dragon's Fury
-circle) is UNROWED — deferred with its AI arm.
+row/arm (the 522's own Kill dust census `:73271-73290` lands with it).
+
+**709/459 dedupe cross-note (resume round, 2026-11-21):** the 459/709 arm is
+SHARED (`if (this.type == 459 || this.type == 709)` `:73338`). The burst half
+`:73338-73371` (resize + `Damage()` + dust/gore rings) stays THIS lane's
+claim; the 709-only half `:73372-73388` (the Sky Dragon's Fury circle: the
+80×80 sibling 1110 pull-in + the centre spawn + the `30·Next(2,6)` life) +
+the 1110 row/arm was ported by **f20** (`task/W4-f20-proj-ai-verify-2`,
+commit `01e0b1083`, census `26f` F3 — the "UNROWED, deferred" note above is
+superseded by that landing). The two halves are kind-disjoint at the pool:
+this lane's `CHARGED_BLASTER_ORB` gate widens to `459 | 709` at the merge
+(709's row lives on d15; the gate is inert for 709 until then), f20's
+`sky_dragons_fury_kill` owns the 709-only tail. No overlap, no double-port.
 
 ## Deferred functional hooks (kind unrowed / AI arm unported — not this lane)
 
@@ -98,3 +109,14 @@ spawn inline.
   reflection, no penetrate spend, no kill-on-bounce (the ai[1]>40 counter kills).
 - **Sound cues** (`SoundID.Item14/27/110/…`) are the sound-lane skip; the dust
   bodies are the dust-lane skip. Only the explicit draws + functional state land.
+- **The 459 `Damage()` order.** The C# runs `Damage()` (`:73351`) BETWEEN the
+  resize (`:73345-73347`) and the dust rings (`:73353+`); the port splits the
+  arm into `charged_blaster_orb_kill` (resize + flag) and
+  `charged_blaster_orb_kill_draws` (census) with the pool's `damage_pve_boxed`
+  between them, so the per-hit crit/DamageVar draws stay ahead of the ring
+  draws on the stream. The 452/454/448 arms run `Damage()` LAST (`:73012`/
+  `:73044`/`:73630`), census first — their pool order is census → burst.
+- **The 522 kill-tick movement skip.** The C# `Update` returns at `:17027-
+  17030` when the AI killed the slot, so `HandleMovement` does NOT run on the
+  ai[1] > 40 kill tick (the gravity/drag writes at `:37750-37755` still ran
+  inside the AI arm); the pool gates `crystal_pulse2_move` on `active`.
