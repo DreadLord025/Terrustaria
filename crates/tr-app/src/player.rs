@@ -1625,6 +1625,15 @@ pub struct Player {
     /// `Player.rocketBoots` (`Player.cs:2756`): the boots tier
     /// (`TR_BOOTS=<1..5>` pins it).
     pub rocket_boots: i32,
+    /// W4-c14 doc-sweep - `Player.vanityRocketBoots` (`Player.cs:2760`): the
+    /// VISUAL boots tier the rocket cue picks its sound from
+    /// (`:26886`/`:2691`). The functional equip rows set it equal to
+    /// `rocketBoots` (`:14420`/`:15023`/`:15222`/`:15380-15400`); the vanity
+    /// pass (`UpdateBootVisualEffects`, `:36704-36751`) re-derives it from
+    /// the visible boot and the Red's Leggings 668 sets tier 6
+    /// (`:13088-13091`). ResetEffects clears it (`:18354`), the mount block
+    /// zeroes it (`:26630`).
+    pub vanity_rocket_boots: i32,
     /// `Player.canRocket` / `rocketRelease` (`Player.cs:2762,2752`): the
     /// midair arming and the release-jump latch the trigger reads.
     can_rocket: bool,
@@ -2800,6 +2809,7 @@ impl Player {
             rocket_delay2: 0,
             rocket_sound_delay: 0,
             rocket_boots: 0,
+            vanity_rocket_boots: 0,
             can_rocket: false,
             rocket_release: false,
             merman: false,
@@ -4901,6 +4911,24 @@ impl Player {
         }
     }
 
+    /// W4-c14 doc-sweep - `Player.UpdateBootVisualEffects`
+    /// (`Player.cs:36704-36751`): the boot kind -> VISUAL rocket tier. Only
+    /// the tier-setting arms land (the rocket cue reads the tier); the
+    /// `CancelAllBootRunVisualEffects` dash flags (`sailDash`/`coldDash`/
+    /// `desertDash`/`fairyBoots`/`hellfireTreads`, `:36664-36671`) and the
+    /// Hermes-54 cancel are run-particle visual seams. `None` = the kind
+    /// sets no visual tier (the C# switch falls through).
+    fn boot_visual_tier(kind: u16) -> Option<i32> {
+        match kind {
+            128 => Some(1),          // `:36708-36710` Rocket Boots
+            405 | 898 | 3993 => Some(2), // `:36714-36718` Spectre/Lightning + `:36745-36749` Fairy
+            1862 => Some(3),         // `:36724-36727` Frostspark
+            5000 => Some(4),         // `:36728-36731` Terraspark
+            4874 => Some(5),         // `:36719-36723` Hellfire Treads
+            _ => None,
+        }
+    }
+
     /// `Player.UpdateEquips`' functional-accessory loop (`Player.cs:12946-12952`):
     /// for the slots 3..10, `IsItemSlotUnlockedAndUsable` gates the slot and
     /// `ApplyEquipFunctional` applies the worn kind. `GetEffectiveArmor`
@@ -4924,7 +4952,38 @@ impl Player {
                 continue;
             }
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
+            // W4-c14 doc-sweep - `ApplyEquipFunctional`'s visible-boot half
+            // (`Player.cs:14378-14380`): `UpdateBootVisualEffects` runs only
+            // when the slot is NOT hidden. The functional grant below is
+            // unconditional (the C# switch sits outside the gate).
+            if !self.hide_visible_accessory[m] {
+                if let Some(tier) = Self::boot_visual_tier(kind) {
+                    self.vanity_rocket_boots = tier;
+                }
+            }
             self.apply_equip_functional(m, kind);
+        }
+        // W4-c14 doc-sweep - `UpdateEquips`' vanity-accessory loop
+        // (`Player.cs:13009-13015` -> `ApplyEquipVanity` `:14197` ->
+        // `UpdateBootVisualEffects` `:14234`): the slots 13..20 re-derive the
+        // visual boot tier from the SOCIAL accessory (no hide gate on this
+        // loop). The other `ApplyEquipVanity` grants (shader/wings/merman/
+        // bobber/voice) stay draw seams; only the rocket-cue tier lands.
+        for n in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(n) {
+                continue;
+            }
+            if let Some(tier) = Self::boot_visual_tier(self.equipped[n]) {
+                self.vanity_rocket_boots = tier;
+            }
+        }
+        // W4-c14 doc-sweep - `Player.cs:13088-13091`: the Red's Leggings 668
+        // in the leg armour slot (2) OR its vanity slot (12) sets the visual
+        // rocket tier 6 (the bee-costume rocket cue, Item24 cadence 15).
+        // `GetEffectiveArmor` collapses to `equipped[slot]` (no loadouts).
+        // This runs AFTER the accessory loops, so it wins like the C#.
+        if self.equipped[2] == 668 || self.equipped[12] == 668 {
+            self.vanity_rocket_boots = 6;
         }
         // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
         // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
@@ -5126,6 +5185,7 @@ impl Player {
             3993 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:14420` (W4-c14 doc-sweep)
             }
             // The Sand Boots (`:14422-14425`): 6f plus the desert-run flag
             // (the sand-floor 1.75x rides the floor-modifier chain).
@@ -5134,17 +5194,22 @@ impl Player {
                 self.desert_boots = true;
             }
             // The Rocket Boots (`:15021-15024` - `rocketBoots = 1`).
-            128 => self.rocket_boots = 1,
+            128 => {
+                self.rocket_boots = 1;
+                self.vanity_rocket_boots = 1; // `:15023` (W4-c14 doc-sweep)
+            }
             // The Spectre Boots (`:15219-15223` - tier 2).
             405 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:15222` (W4-c14 doc-sweep)
             }
             // The Lightning Boots (`:15376-15380` - tier 2, 6.75 speed,
             // +8% move).
             898 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 2;
+                self.vanity_rocket_boots = 2; // `:15380` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
             }
             // The Frostspark Boots (`:15382-15388` - tier 3 and the ice
@@ -5152,6 +5217,7 @@ impl Player {
             1862 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 3;
+                self.vanity_rocket_boots = 3; // `:15386` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
                 self.ice_skate = true;
             }
@@ -5159,6 +5225,7 @@ impl Player {
             5000 => {
                 self.acc_run_speed = 6.75;
                 self.rocket_boots = 4;
+                self.vanity_rocket_boots = 4; // `:15393` (W4-c14 doc-sweep)
                 self.move_speed += 0.08;
                 self.ice_skate = true;
                 // The Terraspark row (`:15168-15174`): the water/fire walk
@@ -5169,6 +5236,7 @@ impl Player {
             4874 => {
                 self.acc_run_speed = 6.0;
                 self.rocket_boots = 5;
+                self.vanity_rocket_boots = 5; // `:15400` (W4-c14 doc-sweep)
             }
             _ if Self::wing_slot(kind as i32) > 0 => {
                 // `:15593-15602`: the accessory's `wingSlot` is both the
@@ -6774,6 +6842,9 @@ impl Player {
         self.ice_skate = false;
         self.desert_boots = false;
         self.rocket_boots = 0;
+        // W4-c14 doc-sweep - `:18354`: `vanityRocketBoots = 0` clears with
+        // the gameplay tier; the equip rows + the vanity pass re-arm it.
+        self.vanity_rocket_boots = 0;
         self.no_knockback = false;
         // `:18777`: `hasPaladinShield = false` — the wave-C pass
         // (`accessory_defense.rs`) re-grants per tick. `fireWalk`'s `:18355`
@@ -6977,6 +7048,9 @@ impl Player {
         }
         if self.pinned_rocket_boots > self.rocket_boots {
             self.rocket_boots = self.pinned_rocket_boots;
+            // W4-c14 doc-sweep - the pin stands in for the equip row, which
+            // sets both tiers equal (`Player.cs:14420` etc.).
+            self.vanity_rocket_boots = self.pinned_rocket_boots;
         }
         if self.pinned_dash != 0 {
             self.dash_type = self.pinned_dash;
@@ -7114,6 +7188,7 @@ impl Player {
         if self.cart_mounted {
             self.run_slowdown = 0.2; // `:26625`
             self.rocket_boots = 0; // `:26628`
+            self.vanity_rocket_boots = 0; // `:26630` (W4-c14 doc-sweep)
             self.wings_logic = 0; // `:26631-26633` (`wings = 0` has no port field)
             self.max_run_speed = CART_RUN_SPEED; // `:26652` mount.RunSpeed
             self.acc_run_speed = CART_DASH_SPEED; // `:26653` mount.DashSpeed
@@ -9675,6 +9750,7 @@ impl Player {
             self.run_slowdown = 0.2;
         }
         self.rocket_boots = 0;
+        self.vanity_rocket_boots = 0; // `:26630` (W4-c14 doc-sweep)
         if !self.mount.can_use_wings() {
             self.has_wings = false;
             self.wings_logic = 0;
@@ -9911,17 +9987,18 @@ impl Player {
                 }
                 // W4-c14 - `:26884-26896`: the rocketSoundDelay cue - the
                 // VANITY tier picks the cue (1/5 Item13 cadence 30,
-                // 2/3/4/6 Item24 cadence 15). The port has no vanity-rocket
-                // producer (the `vanityRocketBoots` equip rows are
-                // unported), so the gameplay tier stands in for the vanity
-                // one (the equip rows set both equal, `Player.cs:14420`/
-                // `:15023`/`:15222`/`:15380-15400`); tier 6 (the Bee
-                // costume, `:13090`) awaits its producer. The play queues
-                // on the movement-cue drain (the Item55 convention).
+                // 2/3/4/6 Item24 cadence 15). W4-c14 doc-sweep: the vanity
+                // producer lands (`vanity_rocket_boots` - the equip rows set
+                // both tiers equal, `Player.cs:14420`/`:15023`/`:15222`/
+                // `:15380-15400`, the vanity pass `UpdateBootVisualEffects`
+                // `:36704-36751` re-derives it, the Red's Leggings 668 sets
+                // tier 6 `:13088-13091`), so the cue reads the vanity tier
+                // like the C#. The play queues on the movement-cue drain
+                // (the Item55 convention).
                 if self.rocket_sound_delay <= 0 {
-                    let cue = match self.rocket_boots {
+                    let cue = match self.vanity_rocket_boots {
                         1 | 5 => Some(("Item_13", 30)),
-                        2 | 3 | 4 => Some(("Item_24", 15)),
+                        2 | 3 | 4 | 6 => Some(("Item_24", 15)),
                         _ => None,
                     };
                     if let Some((cue, delay)) = cue {
@@ -18009,9 +18086,9 @@ mod tests {
     /// `:26903-26905`): the first fuel tick queues the tier's Item cue at
     /// the top-left and arms rocketSoundDelay (30 tier 1 / 15 tiers 2-4,
     /// the same tick's decrement brings it to 29/14); the held thrust
-    /// stays silent until the cadence expires. The vanity-tier producer
-    /// is unported - the gameplay tier stands in (the equip rows set both
-    /// equal).
+    /// stays silent until the cadence expires. W4-c14 doc-sweep: the cue
+    /// reads the VANITY tier (the producer lands - the pin/equip rows set
+    /// both tiers equal, so this witness's pinned tiers drive it unchanged).
     #[test]
     fn w4_c14_the_rocket_cue_rides_its_own_cadence() {
         let w = ground_world();
@@ -18079,6 +18156,62 @@ mod tests {
         assert_eq!(cues.len(), 1);
         assert_eq!(cues[0].cue, "Item_24", "tier 2 -> Item24");
         assert_eq!(p.rocket_sound_delay, 14);
+    }
+
+    /// W4-c14 doc-sweep - the vanity-rocket producer
+    /// (`Player.cs:2760`/`:14420`/`:15023`/`:15222`/`:15380-15400` +
+    /// `UpdateBootVisualEffects` `:36704-36751` + the Red's Leggings 668
+    /// `:13088-13091`): the equip rows set BOTH tiers equal, the social
+    /// slot re-derives the visual tier, and tier 6 plays the Item24 cue.
+    /// The cue arm reads `vanity_rocket_boots`, so a divergent vanity tier
+    /// picks its OWN cue while the gameplay tier stays the thrust source.
+    #[test]
+    fn w4_c14_the_vanity_rocket_tier_produces_the_cue() {
+        let w = ground_world();
+        // The functional equip rows set both tiers equal.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 128; // Rocket Boots -> tier 1
+        p.update_equips();
+        assert_eq!(p.rocket_boots, 1);
+        assert_eq!(p.vanity_rocket_boots, 1, "the equip row sets both equal");
+        p.equipped[3] = 4874; // Hellfire Treads -> tier 5
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 5);
+        // The Red's Leggings 668 (leg slot 2) sets tier 6 AFTER the loops.
+        p.equipped[2] = 668;
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 6, "the bee-costume tier 6");
+        assert_eq!(p.rocket_boots, 5, "the gameplay tier is untouched");
+        // The social slot (13) re-derives the visual tier (no hide gate).
+        let mut p = Player::spawn(&w);
+        p.equipped[13] = 1862; // Frostspark in the vanity slot -> tier 3
+        p.update_equips();
+        assert_eq!(p.vanity_rocket_boots, 3, "the vanity pass re-derives");
+        assert_eq!(p.rocket_boots, 0, "no functional grant from the social slot");
+        // The cue reads the VANITY tier: the Red's Leggings 668 sets tier 6
+        // AFTER the pin re-arms tier 1, so the cue plays Item24 cadence 15
+        // while the gameplay tier stays 1 (the thrust source). The 668 row
+        // re-arms every tick, so the divergence survives reset_effects.
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.pinned_rocket_boots = 1; // the gameplay thrust tier
+        p.equipped[2] = 668; // the Red's Leggings -> vanity tier 6
+        p.rocket_time = 7;
+        p.rocket_time_max = 7;
+        p.can_rocket = true;
+        p.rocket_release = true;
+        p.jump = 1;
+        p.vy = 2.0;
+        p.on_ground = false;
+        p.update(&w, PlayerInput { jump: true, ..Default::default() });
+        assert_eq!(p.rocket_boots, 1, "the gameplay tier stays the thrust source");
+        assert_eq!(p.vanity_rocket_boots, 6, "the 668 row wins the visual tier");
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1);
+        assert_eq!(cues[0].cue, "Item_24", "vanity tier 6 -> Item24");
+        assert_eq!(p.rocket_sound_delay, 14, "cadence 15, one tick spent");
     }
 
     /// W4-c14 - the Pogo Stick's (mount 43) hop cue (`Player.cs:19782-19793`):

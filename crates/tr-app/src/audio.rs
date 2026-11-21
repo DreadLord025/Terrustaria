@@ -669,6 +669,13 @@ pub struct Audio {
     /// `NPC.cs:24853-24856`); no ported Pixie kind yet — the seam is
     /// table-complete for the future kind.
     pixie_slot: Option<rodio::Sink>,
+    /// W4-c14 doc-sweep — the `SoundInstanceItem[SoundID.ItemSoundCount]`
+    /// slots (`LegacySoundPlayer.cs:72`, 211 entries `SoundID.cs:1595`):
+    /// case 2's 53/55/159 playing guards read them (`:559`/`:583`) and a
+    /// fresh play stops + re-creates the slot (`:590-593`/`:607`); the
+    /// stack-allowed styles (`:595-605`) never write a slot. A map over the
+    /// styles the port plays (the `npc_killed_slots` precedent).
+    item_slots: HashMap<usize, rodio::Sink>,
 }
 
 impl Audio {
@@ -773,6 +780,7 @@ impl Audio {
             mech_slots: [None],
             roar_slots: [None, None, None],
             pixie_slot: None,
+            item_slots: HashMap::new(),
         }
     }
 
@@ -1096,6 +1104,19 @@ impl Audio {
             (cue, style.volume, pitch_offset.clamp(-1.0, 1.0))
         } else {
             debug_assert_eq!(style.sound_id, 2, "item-use styles are the id-2 family");
+            // W4-c14 doc-sweep — the 53/55/159 playing guards
+            // (`LegacySoundPlayer.cs:559-562`/`:583-586`): while the slot's
+            // instance is Playing the play returns null BEFORE the pitch
+            // draw (the `npc_hit_case3` 57-guard precedent). Headless no
+            // slot ever plays, so the guard never trips (the case-28
+            // witness precedent).
+            let playing = self
+                .item_slots
+                .get(&(style.style as usize))
+                .is_some_and(|s| !s.empty());
+            if sound::item_case2_playing_guard(style.style, playing) {
+                return None;
+            }
             let mut roll = |lo: i32, hi: i32| rng.next_range(lo, hi);
             let (num, tweak, pitch) = sound::item_use_case2(style.style, &mut roll);
             let cue = format!("Item_{num}");
@@ -1114,7 +1135,23 @@ impl Audio {
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
-        self.emit(name, x, y, volume_scale, pitch);
+        let sink = self.emit(name, x, y, volume_scale, pitch);
+        // W4-c14 doc-sweep — the case-2 instance pool (`:580-607`): the
+        // guarded styles 53/55/159 and the default arm stop the slot's old
+        // instance and re-create it; the stack-allowed list (`:595-605`:
+        // 9/10/24/26/34/43/103/156/162/205) never touches a slot (the old
+        // sound keeps playing — the fresh-source behaviour the port had).
+        if style.sound_id == 2
+            && !matches!(style.style, 9 | 10 | 24 | 26 | 34 | 43 | 103 | 156 | 162 | 205)
+        {
+            let idx = style.style as usize;
+            if let Some(old) = self.item_slots.remove(&idx) {
+                old.stop();
+            }
+            if let Some(sink) = sink {
+                self.item_slots.insert(idx, sink);
+            }
+        }
         Some(name)
     }
 
@@ -4044,6 +4081,51 @@ mod tests {
         for name in ["Item_57", "Item_58"] {
             assert_eq!(sound_type(name), 37, "{name}");
         }
+    }
+
+    /// W4-c14 doc-sweep — the 53/55/159 playing guards
+    /// (`LegacySoundPlayer.cs:559-562`/`:583-586`) refuse a fresh play while
+    /// the slot's instance is live, BEFORE the case-2 pitch draw. Headless
+    /// (no output device) no slot ever plays, so a second cart-rattle play
+    /// still draws — the engine's fresh-instance behaviour (the case-28
+    /// witness precedent). The guard's refusal path is pinned by feeding a
+    /// live slot directly.
+    #[test]
+    fn w4_c14_the_cart_rattle_guard_refuses_while_the_slot_is_live() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Headless: the 55 rattle plays twice, one case-2 draw each (the
+        // slot never fills without a device, so the guard never trips).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-20, -11);
+        let _ = witness.next_range(-20, -11);
+        assert_eq!(audio.play_npc_item_cue(55, 0.0, 0.0, &mut rng), Some("Item_55"));
+        assert_eq!(audio.play_npc_item_cue(55, 0.0, 0.0, &mut rng), Some("Item_55"));
+        assert_eq!(rng.peek(), witness.peek(), "two rattles, two pitch draws");
+        // The refusal path, pinned through the pure guard decision (the
+        // `mech_case28`/`npc_hit_case3` precedent): a LIVE 53/55/159 slot
+        // refuses; every other style plays regardless of its slot.
+        for style in [53, 55, 159] {
+            assert!(sound::item_case2_playing_guard(style, true), "{style} refuses live");
+            assert!(!sound::item_case2_playing_guard(style, false), "{style} plays idle");
+        }
+        for style in [1, 24, 37, 56, 168] {
+            assert!(!sound::item_case2_playing_guard(style, true), "{style} never guards");
+        }
+        // A live slot's read is the `!sink.empty()` predicate the facade uses.
+        assert!(
+            !audio.item_slots.get(&55).is_some_and(|s| !s.empty()),
+            "headless the slot stays empty/absent, the guard reads not-playing"
+        );
+        // A muted rattle is draw-free (the gate precedes the guard + draw).
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_item_cue(55, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
     }
 
     /// S1-E-21e - the fighter moans' RNG contract: the moan arms' rolls ride
