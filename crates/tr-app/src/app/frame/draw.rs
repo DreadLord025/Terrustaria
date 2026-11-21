@@ -385,9 +385,12 @@ impl App {
                         // mute the dial light while one ticks (0..=8, u8 on World).
                         sundial_cooldown: i32::from(world.sundial_cooldown),
                         moondial_cooldown: i32::from(world.moondial_cooldown),
-                        // `Main.jellyfishCageMode`: `Main.AnimateTiles` is not ported, so
-                        // every cage stays in mode 0.
-                        cage_mode: [[0u8; tr_core::tile_light::CAGE_FRAMES]; 3],
+                        // `Main.jellyfishCageMode` (`Main.cs:66948`): the wired
+                        // critter-cage animator's mode bytes (W4-g34 union). The
+                        // scanner's jellyfish arm (`TileLightScanner.cs:714-768`)
+                        // brightens the cage while mode == 2; feeding the live
+                        // table keeps that pulse in step with the draw frames.
+                        cage_mode: self.cage_anim.jellyfish_mode,
                         rng_seed: self.light_rng_seed,
                         // `Main.ShouldShowInvisibleBlocksAndWalls` (`Main.cs:58023`):
                         // false until the EchoMonolith / 4409-accessory systems land;
