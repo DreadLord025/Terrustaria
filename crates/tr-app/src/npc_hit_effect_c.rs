@@ -224,6 +224,7 @@
 //! | 1062-1071 | `:87807-87831` | the 239/240 BloodCrawler + 236/237 JungleCreeper death (5 gores each) |
 //! | 1072-1078 | `:87847-87868` | the 241 BloodFeeder (2 gores) + 242 BloodJelly (5 gores) death |
 //! | 1079-1088 | `:87886-87900` | the 105/107 GoblinTinkerer + 106/108 Wizard death (5 gores each, shimmer) |
+//! | 1089-1098 | `:87916-87940` | the 123/124 Mechanic + 22 Guide death (5 gores each, shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6269,6 +6270,70 @@ fn bound_npc_death(
     }
 }
 
+/// The 123/124 Mechanic death (`NPC.cs:87912-87920`, sites 1089-1093): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder with shimmer variants — 151 (1317 shimmer) head, 152/152
+/// (1318) at +20, 153/153 (1319) at +34. Scale defaults to 1.
+fn mechanic_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(124);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1317 } else { 151 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1318 } else { 152 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1318 } else { 152 }, 1.0);
+    gore.new_gore(rng, world, low, vel, if shimmer { 1319 } else { 153 }, 1.0);
+    gore.new_gore(rng, world, low, vel, if shimmer { 1319 } else { 153 }, 1.0);
+}
+
+/// The 22 Guide death (`NPC.cs:87932-87940`, sites 1094-1098): the 50-dust
+/// type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the 5-gore
+/// ladder with shimmer variants — 73 (1314 shimmer) head, 74/74 (1315) at
+/// +20, 75/75 (1316) at +34. Scale defaults to 1.
+fn guide_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(22);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1314 } else { 73 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1315 } else { 74 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1315 } else { 74 }, 1.0);
+    gore.new_gore(rng, world, low, vel, if shimmer { 1316 } else { 75 }, 1.0);
+    gore.new_gore(rng, world, low, vel, if shimmer { 1316 } else { 75 }, 1.0);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7035,6 +7100,14 @@ pub fn hit_effect_c(
     // (sites 1079-1088).
     if (npc_type == 105 || npc_type == 107 || npc_type == 106 || npc_type == 108) && npc.hp <= 0 {
         bound_npc_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87902-87921` — the 123/124 Mechanic arm (sites 1089-1093).
+    if (npc_type == 123 || npc_type == 124) && npc.hp <= 0 {
+        mechanic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87922-87941` — the 22 Guide arm (sites 1094-1098).
+    if npc_type == 22 && npc.hp <= 0 {
+        guide_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -11081,6 +11154,52 @@ mod tests {
         bound_npc_death(&n3, 107, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
         let types3: Vec<i32> = gore3.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types3, vec![1308, 1309, 1309, 1310, 1310]);
+    }
+
+    /// `NPC.cs:87916-87920` — the Mechanic death: the 5-gore ladder
+    /// 151/152/153 (normal) or 1317/1318/1319 (shimmer).
+    #[test]
+    fn w4_f10_the_mechanic_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1069);
+        mechanic_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![151, 152, 152, 153, 153]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1069);
+        mechanic_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1317, 1318, 1318, 1319, 1319]);
+    }
+
+    /// `NPC.cs:87936-87940` — the Guide death: the 5-gore ladder 73/74/75
+    /// (normal) or 1314/1315/1316 (shimmer).
+    #[test]
+    fn w4_f10_the_guide_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1087);
+        guide_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![73, 74, 74, 75, 75]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1087);
+        guide_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1314, 1315, 1315, 1316, 1316]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
