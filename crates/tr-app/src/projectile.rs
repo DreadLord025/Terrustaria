@@ -6898,6 +6898,33 @@ impl Projectile {
     /// straight, as in the vanilla game. S1-D-3q's BulletSnowman 110 joins
     /// the same list (`:55962`) with its latch + fade hooks above.
     fn ai_style1_rider(&mut self, world: &World) {
+        // W4-g63 — the dust-free scratch entry (the `ProjectilePool::update`
+        // precedent); the live sim threads the real pool through
+        // [`Projectile::ai_style1_rider_dust`].
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(world.width as f32 * TILE_PX, world.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = tr_core::UnifiedRandom::new(0);
+        self.ai_style1_rider_dust(world, &mut rng, &mut dust, &ctx);
+    }
+
+    /// W4-g63 — the rider step with the caller's `UpdateProjectiles`
+    /// stream + the live dust pool: the 265 PoisonFang / 355 VenomFang
+    /// `alpha == 0` dusts (`:56710-56745`) are RE-ARMED after their fades.
+    /// Every other rider's stream stays untouched.
+    fn ai_style1_rider_dust(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // The PurpleLaser (`:54021-54045`): the `extraUpdates` remap off
         // `ai[0]`, then the scale growth to 4 with the owner-only knockback
         // and the 8-tick counter. `ai[0]` sits at rest on this kind, so the
@@ -6951,9 +6978,35 @@ impl Projectile {
             self.alpha = self.alpha.max(0);
         }
         // The VenomFang's fade and its dust cue (`:56728-56747`): the
-        // `alpha -= 50` state rides; the dust 205 at `alpha == 0` is SKIPPED.
+        // `alpha -= 50` state rides. W4-g63: the dust 205 at `alpha == 0`
+        // RE-ARMED.
         if self.kind == VENOM_FANG {
             self.alpha = (self.alpha - 50).max(0);
+            if self.alpha == 0 {
+                crate::projectile_trail_dust::venom_fang_dust(
+                    &crate::projectile_trail_dust::TrailSlot::of(self),
+                    rng, dust, dust_ctx, world,
+                );
+            }
+        }
+        // W4-g63 — the PoisonFang 265's fade + dust (`:56710-56727`): the
+        // C# block fades `alpha -= 50` clamp 0 then spawns dust 163 at
+        // `alpha == 0`. The port's rider previously carried no 265 fade
+        // (the S1-P-i22 arm kept the flight only) — the fade + dust ride
+        // together here, the C# order.
+        if self.kind == POISON_FANG {
+            if self.alpha > 0 {
+                self.alpha -= 50;
+            }
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            if self.alpha == 0 {
+                crate::projectile_trail_dust::poison_fang_dust(
+                    &crate::projectile_trail_dust::TrailSlot::of(self),
+                    rng, dust, dust_ctx, world,
+                );
+            }
         }
         // The BulletSnowman 110 (S1-D-3q): the first-tick `ai[1] = 1f` latch
         // (`:55244-55248`; the `SoundID.Item11` cue is SKIPPED — no sound
@@ -9055,6 +9108,32 @@ impl Projectile {
     /// no gravity, so the counter advances inert; the rotation tail
     /// (`:57748-57751`) and the +16 clamp (`:57764-57767`) still apply.
     fn ai_blizzard(&mut self, world: &World, player: Option<&crate::player::Player>) {
+        // W4-g63 — the dust-free scratch entry; the live sim threads the
+        // real pool through [`Projectile::ai_blizzard_dust`].
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(world.width as f32 * TILE_PX, world.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = tr_core::UnifiedRandom::new(0);
+        self.ai_blizzard_dust(world, player, &mut rng, &mut dust, &ctx);
+    }
+
+    /// W4-g63 — the Blizzard step with the caller's stream + the live
+    /// dust pool: the 1-in-2 dust-197 sparkle (`:56949-56954`) RE-ARMED
+    /// after the frame pin, before the rotation tail.
+    fn ai_blizzard_dust(
+        &mut self,
+        world: &World,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:56038-56041` — `flag3` true: the counter runs (no gravity arm).
         self.ai[0] += 1.0;
         // `:56940-56943`: below the owner's top − 300 → collide. The C# reads
@@ -9070,6 +9149,12 @@ impl Projectile {
         }
         // `:56948`: the icicle row.
         self.frame = self.ai[1] as i32;
+        // `:56949-56954` — W4-g63: the 1-in-2 dust-197 sparkle RE-ARMED
+        // (the Next(2) gate draws every tick).
+        crate::projectile_trail_dust::blizzard_sparkle(
+            &crate::projectile_trail_dust::TrailSlot::of(self),
+            rng, dust, dust_ctx, world,
+        );
         // `:57748-57751` + `:57764-57767` — the rotation tail and the clamp.
         self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
         if self.vel.y > 16.0 {
@@ -17133,7 +17218,9 @@ impl ProjectilePool {
                     // (`projectile_frost_shots.rs`) — the generic aiStyle-1
                     // flight / `_ => {}` no-op would mis-fly every one of them.
                     if crate::projectile_frost_shots::handles(self.slots[i].kind) {
-                        crate::projectile_frost_shots::frost_shot_step(&mut self.slots[i], world);
+                        crate::projectile_frost_shots::frost_shot_step_dust(
+                            &mut self.slots[i], world, rng, dust, dust_ctx,
+                        );
                     } else {
                     match data.ai_style {
                         // The aiStyle-1 riders of M4-PROJ-6 Phase 3 gate
@@ -17154,7 +17241,7 @@ impl ProjectilePool {
                             // kind-gated ahead of the generic flight (the
                             // slice-A/B/C precedent).
                             PINE_NEEDLE_FRIENDLY => self.slots[i].ai_pine_needle(world),
-                            BLIZZARD => self.slots[i].ai_blizzard(world, player.as_deref()),
+                            BLIZZARD => self.slots[i].ai_blizzard_dust(world, player.as_deref(), rng, dust, dust_ctx),
                             // S1-P-i22 — the magic guns' aiStyle-1 riders with
                             // their own per-type hooks: the Electrosphere
                             // Missile 442 (`:54726-54771`), the Charged Blaster
@@ -17162,15 +17249,18 @@ impl ProjectilePool {
                             // (the straight flight, `flag3 = false` `:55973`).
                             ELECTROSPHERE_MISSILE => self.slots[i].ai_electrosphere_missile(world),
                             CHARGED_BLASTER_ORB => self.slots[i].ai_charged_blaster_orb(world),
-                            POISON_FANG => self.slots[i].ai_style1_rider(world),
+                            POISON_FANG => self.slots[i].ai_style1_rider_dust(world, rng, dust, dust_ctx),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
-                                self.slots[i].ai_style1_rider(world)
+                                self.slots[i].ai_style1_rider_dust(world, rng, dust, dust_ctx)
                             }
                             kind if crate::projectile_ai001_a::handles(kind) => {
-                                crate::projectile_ai001_a::ai001_slice_a(
+                                crate::projectile_ai001_a::ai001_slice_a_dust(
                                     &mut self.slots[i],
                                     world,
                                     owner,
+                                    rng,
+                                    dust,
+                                    dust_ctx,
                                 )
                             }
                             // S1-D-5 slice B — the higher-id rowed kinds'
@@ -17285,10 +17375,13 @@ impl ProjectilePool {
                                     self.slots[i].active = false;
                                     self.slots[i].time_left = 0;
                                 } else {
-                                    crate::special_arrows::step(
+                                    crate::special_arrows::step_dust(
                                         &mut self.slots[i],
                                         world,
                                         npcs,
+                                        rng,
+                                        dust,
+                                        dust_ctx,
                                     )
                                 }
                             }
@@ -17300,11 +17393,14 @@ impl ProjectilePool {
                             // the frostmoon and moonlord sets): every other
                             // kind keeps its existing arm byte-identical.
                             kind if crate::projectile_special_bullets::covers(kind) => {
-                                crate::projectile_special_bullets::step(
+                                crate::projectile_special_bullets::step_dust(
                                     &mut self.slots[i],
                                     world,
                                     npcs,
                                     &self.local_immunity[i * 256..(i + 1) * 256],
+                                    rng,
+                                    dust,
+                                    dust_ctx,
                                 )
                             }
                             // S1-P-i28 — the Javelin (507, `AI_001`'s

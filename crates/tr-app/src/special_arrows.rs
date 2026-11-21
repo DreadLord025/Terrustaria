@@ -149,7 +149,48 @@ fn gravity_of(kind: u16) -> Gravity {
 /// The 225's bounce needs the NPC scan, so the whole step takes `npcs`
 /// (the ai001_c precedent); no other kind reads it.
 pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
+    // W4-g63 — the dust-free scratch entry (the `ProjectilePool::update`
+    // precedent): the witnesses below run the flight on a scratch pool;
+    // the live sim threads the real pool through [`step_dust`].
+    let mut dust = tr_core::particles::DustPool::new();
+    let ctx = tr_core::particles::SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: Vec2::ZERO,
+        screen_size: Vec2::new(
+            world.width as f32 * tr_core::TILE_PX,
+            world.height as f32 * tr_core::TILE_PX,
+        ),
+        max_dust_to_draw: 6000,
+    };
+    let mut rng = tr_core::UnifiedRandom::new(0);
+    step_dust(p, world, npcs, &mut rng, &mut dust, &ctx);
+}
+
+/// W4-g63 — the full step with the caller's `UpdateProjectiles` stream +
+/// the live dust pool: the 41/282 per-tick dusts (`:55483-55489` /
+/// `:55003-55011`) and the 120's gravity-arm trail (`:57251-57253`) are
+/// RE-ARMED at their C# statement positions. Every other kind's stream
+/// stays untouched (no emitter fires).
+pub(crate) fn step_dust(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // ---- 1. The hook group above the counter ------------------------------
+    // `:55003-55011` — W4-g63: the 282 Venom Arrow's per-tick dust 171
+    // RE-ARMED (the `Next(1,10)` scale draw rides the pass's stream).
+    // The C# block sits ABOVE the 469 hook (`:55197`) — order kept.
+    if p.kind == VENOM_ARROW {
+        crate::projectile_trail_dust::venom_arrow_dust(
+            &crate::projectile_trail_dust::TrailSlot::of(p),
+            rng, dust, dust_ctx, world,
+        );
+    }
     // `:55197-55208` — the Bee Arrow (469): `localAI[1]++`, then from the
     // 3rd sub-step the alpha loses 50 with the 0 floor (the row seeds
     // alpha 255, `:5437`).
@@ -161,6 +202,14 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
                 p.alpha = 0;
             }
         }
+    }
+    // `:55483-55489` — W4-g63: the 41 Hellfire Arrow's per-tick dust
+    // 31 + dust 6 pair RE-ARMED (no explicit draws).
+    if p.kind == HELLFIRE_ARROW {
+        crate::projectile_trail_dust::hellfire_arrow_dust(
+            &crate::projectile_trail_dust::TrailSlot::of(p),
+            rng, dust, dust_ctx, world,
+        );
     }
     // The 469's water kill (`:54012-54015`, `wet && !honeyWet &&
     // !shimmerWet`) needs the world's liquid flags — it rides the pool's
@@ -194,6 +243,12 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
             }
         }
         Gravity::Frost => {
+            // `:57251-57253` — W4-g63: the 120's dust-67 trail RE-ARMED
+            // (it runs EVERY tick inside the gravity arm, before the pin).
+            crate::projectile_trail_dust::frost_arrow_trail(
+                &crate::projectile_trail_dust::TrailSlot::of(p),
+                rng, dust, dust_ctx, world,
+            );
             if p.ai[0] >= 30.0 {
                 p.ai[0] = 30.0;
                 p.vel.y += 0.05;

@@ -1322,6 +1322,331 @@ pub(crate) fn molotov_fire_dust(
 }
 
 // ---------------------------------------------------------------------------
+// AI_001 — the aiStyle-1 per-kind trail arms (kinds ≤400, batch 5).
+// `Projectile.cs:54002-57825`. The contested slice modules (ai001_a/b/c/d,
+// special_arrows, projectile_special_bullets, projectile_ai_frostmoon,
+// ai_blizzard) keep their flight machines; these emitters ride the C#
+// statement positions through the machines' dust seams (research/66).
+// ---------------------------------------------------------------------------
+
+/// Sites 55485/55487 — the Hellfire Arrow 41's per-tick pair
+/// (`Projectile.cs:55483-55489`): dust 31 (alpha 100, scale 1.6) then
+/// dust 6 (alpha 100, scale 2), both noGravity, at position, box w×h.
+/// NO explicit draws — the pool internals only.
+pub(crate) fn hellfire_arrow_dust(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        31, 0.0, 0.0, 100, Color::default(), 1.6,
+    );
+    dust.slot_mut(idx).no_gravity = true; // `:55486`
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        6, 0.0, 0.0, 100, Color::default(), 2.0,
+    );
+    dust.slot_mut(idx).no_gravity = true; // `:55488`
+}
+
+/// Site 55005 — the Venom Arrow 282's per-tick dust 171 (`Projectile.cs:
+/// 55003-55011`): alpha 100, then the `Next(1,10)*0.1` scale (the draw
+/// runs AFTER the spawn — a post-spawn write, not an argument),
+/// noGravity, fadeIn 1.5, velocity ×0.25 + v×0.25.
+pub(crate) fn venom_arrow_dust(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        171, 0.0, 0.0, 100, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.scale = rng.next_range(1, 10) as f32 * 0.1; // `:55006`
+    d.no_gravity = true; // `:55007`
+    d.fade_in = 1.5; // `:55008`
+    d.velocity *= 0.25; // `:55009`
+    d.velocity += p.vel * 0.25; // `:55010`
+}
+
+/// Site 57251 — the Frost Arrow 120's dust 67 trail (`Projectile.cs:
+/// 57249-57259`, inside the gravity else-if chain — it runs EVERY tick
+/// the kind reaches its arm, before the 30-tick gravity pin): one dust
+/// at `position - velocity`, box w×h, speeds = velocity, alpha 100,
+/// scale 1.2; noGravity, velocity ×0.3. No explicit draws.
+pub(crate) fn frost_arrow_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos - p.vel, p.w as i32, p.h as i32,
+        67, p.vel.x, p.vel.y, 100, Color::default(), 1.2,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:57252`
+    d.velocity *= 0.3; // `:57253`
+}
+
+/// Site 56951 — the Blizzard icicle 337's 1-in-2 sparkle (`Projectile.cs:
+/// 56938-56955`): the `Next(2) == 0` gate draws every tick the arm runs;
+/// taken → one dust 197 at position, box w×h, defaults (alpha 0, scale
+/// 1); velocity ×0.5, noGravity.
+pub(crate) fn blizzard_sparkle(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:56949` — the gate, always drawn.
+    if rng.next_range(0, 2) != 0 {
+        return;
+    }
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        197, 0.0, 0.0, 0, Color::default(), 1.0,
+    );
+    let d = dust.slot_mut(idx);
+    d.velocity *= 0.5; // `:56952`
+    d.no_gravity = true; // `:56953`
+}
+
+/// Sites 55143/55152 — the SantaNK1 Missile 350's `alpha == 0` window
+/// (`Projectile.cs:55138-55157`, AFTER the machine's alpha −100 fade):
+/// the `Next(3) != 0` gate → dust 6 at `Center − (2,4) − v×0.5`, box
+/// 4×4, alpha 100; scale ×= `1.3 + Next(10)*0.05` (the draw AFTER the
+/// spawn), velocity ×0.2, noGravity + noLight, velocity += v×0.25.
+/// Then the `Next(4) == 0` gate → dust 31 at the same point, box 4×4,
+/// alpha 100, scale 0.5; fadeIn = `0.6 + Next(5)*0.1`, velocity ×0.05
+/// + v×0.25. BOTH gate draws run every tick the window is open.
+pub(crate) fn santa_missile_dust(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let at = p.center() - Vec2::new(2.0, 4.0) - p.vel * 0.5; // `:55143`
+    // `:55141` — the first gate, always drawn inside the window.
+    if rng.next_range(0, 3) != 0 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, at, 4, 4,
+            6, 0.0, 0.0, 100, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.scale *= 1.3 + rng.next_range(0, 10) as f32 * 0.05; // `:55144`
+        d.velocity *= 0.2; // `:55145`
+        d.no_gravity = true; // `:55146`
+        d.no_light = true; // `:55147`
+        d.velocity += p.vel * 0.25; // `:55148`
+    }
+    // `:55150` — the second gate, always drawn.
+    if rng.next_range(0, 4) == 0 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, at, 4, 4,
+            31, 0.0, 0.0, 100, Color::default(), 0.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.fade_in = 0.6 + rng.next_range(0, 5) as f32 * 0.1; // `:55153`
+        d.velocity *= 0.05; // `:55154`
+        d.velocity += p.vel * 0.25; // `:55155`
+    }
+}
+
+/// Sites 55177/55186 — the Flaming Wood 325's `alpha == 0` window
+/// (`Projectile.cs:55172-55190`, the 350 twin with its own constants):
+/// `Next(3) != 0` → dust 6, scale ×= `1.2 + Next(10)*0.05`; `Next(4) ==
+/// 0` → dust 31, fadeIn = `0.5 + Next(5)*0.05`, velocity ×0.05 (NO
+/// velocity += v — the 350's `:55155` has no twin here).
+pub(crate) fn flaming_wood_dust(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let at = p.center() - Vec2::new(2.0, 4.0) - p.vel * 0.5; // `:55177`
+    if rng.next_range(0, 3) != 0 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, at, 4, 4,
+            6, 0.0, 0.0, 100, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.scale *= 1.2 + rng.next_range(0, 10) as f32 * 0.05; // `:55178`
+        d.velocity *= 0.2; // `:55179`
+        d.no_gravity = true; // `:55180`
+        d.no_light = true; // `:55181`
+        d.velocity += p.vel * 0.25; // `:55182`
+    }
+    if rng.next_range(0, 4) == 0 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, at, 4, 4,
+            31, 0.0, 0.0, 100, Color::default(), 0.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.fade_in = 0.5 + rng.next_range(0, 5) as f32 * 0.05; // `:55187`
+        d.velocity *= 0.05; // `:55188`
+    }
+}
+
+/// Site 56081 — the Skull 270's first-tick 10× dust 5 burst
+/// (`Projectile.cs:56075-56088`, inside the `localAI[0] == 0` latch the
+/// machine already runs): speeds = velocity, alpha 0, scale 2,
+/// noGravity; velocity = Normalize(Center − dust.position) × −5 + v/2.
+/// No explicit draws (the sound latch is the machine's).
+pub(crate) fn skull_first_burst(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let center = p.center();
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            5, p.vel.x, p.vel.y, 0, Color::default(), 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:56082`
+        // `:56083-56086` — the inward-then-out velocity.
+        d.velocity = (center - d.position).normalize_or_zero();
+        d.velocity *= -5.0;
+        d.velocity += p.vel / 2.0;
+    }
+}
+
+/// Site 56680 — the Skull 270's per-tick 2× dust 5 trail (`Projectile.cs:
+/// 56676-56686`, the `type == 270` arm of the 270/837 block): dust 5 at
+/// `position + (4,4)`, box (w−8)×(h−8), speeds = v×0.2, alpha 100,
+/// scale 1.5; position −= v, noGravity, velocity ×0.3. No explicit draws.
+pub(crate) fn skull_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..2 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world,
+            p.pos + Vec2::splat(4.0), p.w as i32 - 8, p.h as i32 - 8,
+            5, p.vel.x * 0.2, p.vel.y * 0.2, 100, Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.position -= p.vel; // `:56681`
+        d.no_gravity = true; // `:56682`
+        d.velocity *= 0.3; // `:56683-56684`
+    }
+}
+
+/// Site 56722 — the Poison Fang 265's `alpha == 0` dust 163 (`Projectile.
+/// cs:56710-56727`, AFTER the machine's alpha −50 fade): speeds =
+/// velocity, alpha 100, scale 1.2; noGravity, velocity ×0.3 − v×0.4.
+/// No explicit draws. The 355 VenomFang twin ([`venom_fang_dust`]) shares
+/// the shape with dust 205.
+pub(crate) fn poison_fang_dust(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        163, p.vel.x, p.vel.y, 100, Color::default(), 1.2,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:56723`
+    d.velocity *= 0.3; // `:56724`
+    d.velocity -= p.vel * 0.4; // `:56725`
+}
+
+/// Site 56740 — the Venom Fang 355's `alpha == 0` dust 205 (`Projectile.
+/// cs:56728-56745`): the 265 twin with dust 205. No explicit draws.
+pub(crate) fn venom_fang_dust(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+        205, p.vel.x, p.vel.y, 100, Color::default(), 1.2,
+    );
+    let d = dust.slot_mut(idx);
+    d.no_gravity = true; // `:56741`
+    d.velocity *= 0.3; // `:56742`
+    d.velocity -= p.vel * 0.4; // `:56743`
+}
+
+/// Site 56786 — the Chlorophyte Bullet 207's `alpha < 170` 10-point trail
+/// (`Projectile.cs:56778-56793`, the 207/837 block's 207 arm): ten dusts
+/// 75 at `position − v/10·i` (i = 0..9), box 1×1; alpha = the slot's
+/// alpha, position pinned to the trail point, velocity ×0, noGravity.
+/// No explicit draws. The 357 PulseBolt twin ([`pulse_bolt_trail`]) uses
+/// dust 206 (W4-f20b's slice-D kind).
+pub(crate) fn chlorophyte_bullet_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for i in 0..10 {
+        let x = p.pos.x - p.vel.x / 10.0 * i as f32; // `:56784`
+        let y = p.pos.y - p.vel.y / 10.0 * i as f32; // `:56785`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, Vec2::new(x, y), 1, 1,
+            75, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.alpha = p.alpha; // `:56787`
+        d.position = Vec2::new(x, y); // `:56788-56789`
+        d.velocity *= 0.0; // `:56790`
+        d.no_gravity = true; // `:56791`
+    }
+}
+
+/// Site 56761 — the Pulse Bolt 357's `alpha < 170` 10-point trail
+/// (`Projectile.cs:56753-56768`): the 207 twin with dust 206. UNWIRED on
+/// this branch — the 357's flight arm is W4-f20 slice D
+/// (`projectile_ai001_d`, 4bd2f496), not yet merged; the emitter is ready
+/// for the f20b dust seam (research/66). No explicit draws.
+#[allow(dead_code)]
+pub(crate) fn pulse_bolt_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for i in 0..10 {
+        let x = p.pos.x - p.vel.x / 10.0 * i as f32; // `:56759`
+        let y = p.pos.y - p.vel.y / 10.0 * i as f32; // `:56760`
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, Vec2::new(x, y), 1, 1,
+            206, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.alpha = p.alpha; // `:56762`
+        d.position = Vec2::new(x, y); // `:56763-56764`
+        d.velocity *= 0.0; // `:56765`
+        d.no_gravity = true; // `:56766`
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses — WRITTEN NOT RUN (code-only mode). Each mirrors the C#
 // draw sequence on a recording stream + a scratch pool with the
 // permissive ctx (the npc.rs `dust_ctx` convention), so the pool never
@@ -1790,5 +2115,206 @@ mod tests {
         // Center + (4,-8) - (5,5) = (108-1, 108-13) = (107, 95).
         assert!((d.position.x - 107.0).abs() < 1.0);
         assert!((d.position.y - 95.0).abs() < 1.0);
+    }
+
+    // ---- batch 5: the AI_001 per-kind trail arms (kinds ≤400) ----
+
+    /// W4-g63 — the 41 Hellfire pair: dust 31 (scale 1.6) + dust 6
+    /// (scale 2), both noGravity, no explicit draws (the 6 internals
+    /// each: 2 position + 2 velocity + 1 frame + 1 scale).
+    #[test]
+    fn w4_g63_the_hellfire_pair_draws_two() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        hellfire_arrow_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 2);
+        assert_eq!(dust.slot(0).dust_type, 31);
+        assert_eq!(dust.slot(1).dust_type, 6);
+        assert!(dust.slot(0).no_gravity && dust.slot(1).no_gravity);
+        assert!(rng.ranges.iter().all(|r| *r != (1, 10)), "no scale argument draw");
+    }
+
+    /// W4-g63 — the 282 Venom dust: the `Next(1,10)` scale draw runs
+    /// AFTER the spawn (a post-spawn write), fadeIn 1.5, noGravity.
+    #[test]
+    fn w4_g63_the_venom_arrow_scale_draw() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        venom_arrow_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 171);
+        assert!(dust.slot(0).no_gravity);
+        assert!((dust.slot(0).fade_in - 1.5).abs() < 1e-6);
+        assert!(rng.ranges.contains(&(1, 10)), "the scale draw");
+        // roll 0 → Next(1,10) returns 0 → scale 0 (the C# draw range).
+        assert!((dust.slot(0).scale - 0.0).abs() < 1e-6);
+    }
+
+    /// W4-g63 — the 120 Frost trail: dust 67 at position − velocity,
+    /// speeds = velocity, noGravity, velocity ×0.3; no explicit draws.
+    #[test]
+    fn w4_g63_the_frost_arrow_trail() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(6.0, 2.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        frost_arrow_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        let d = dust.slot(0);
+        assert_eq!(d.dust_type, 67);
+        assert!(d.no_gravity);
+        // The spawn point is position − v = (94, 98); the pool adds its
+        // own jitter (roll 0 → +4 each axis) → (98, 102).
+        assert!((d.position.x - 98.0).abs() < 1.0);
+        assert!((d.position.y - 102.0).abs() < 1.0);
+    }
+
+    /// W4-g63 — the 337 Blizzard sparkle: the Next(2) gate draws every
+    /// tick; a refused gate spawns nothing, a taken gate spawns dust 197.
+    #[test]
+    fn w4_g63_the_blizzard_sparkle_gates_every_tick() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(1);
+        blizzard_sparkle(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges, vec![(0, 2)]);
+        assert_eq!(live(&dust), 0);
+        let mut rng = Recorder::new(0);
+        blizzard_sparkle(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 197);
+        assert!(dust.slot(0).no_gravity);
+    }
+
+    /// W4-g63 — the 350 Missile window: roll 0 → the Next(3)!=0 gate
+    /// refuses the dust 6, the Next(4)==0 gate takes the dust 31 (its
+    /// fadeIn draws Next(5)). Two gate draws + the fadeIn draw.
+    #[test]
+    fn w4_g63_the_santa_missile_window_gates() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        santa_missile_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges[0], (0, 3), "the first gate");
+        assert!(rng.ranges.contains(&(0, 4)), "the second gate");
+        assert!(rng.ranges.contains(&(0, 5)), "the fadeIn draw");
+        assert_eq!(live(&dust), 1, "roll 0: only the dust 31");
+        assert_eq!(dust.slot(0).dust_type, 31);
+        // roll 1 → Next(3)!=0 takes the dust 6 (scale draw Next(10)),
+        // Next(4)==0 refuses the dust 31.
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(1);
+        santa_missile_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 6);
+        assert!(rng.ranges.contains(&(0, 10)), "the scale draw");
+    }
+
+    /// W4-g63 — the 325 Flaming Wood window: the 350 twin with the 1.2
+    /// scale base + the 0.05 fadeIn step; the dust 31 has NO velocity+=v.
+    #[test]
+    fn w4_g63_the_flaming_wood_window_gates() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(1);
+        flaming_wood_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 1, "roll 1: the dust 6");
+        assert_eq!(dust.slot(0).dust_type, 6);
+        assert!(dust.slot(0).no_gravity && dust.slot(0).no_light);
+    }
+
+    /// W4-g63 — the 270 Skull first burst: 10× dust 5, noGravity, the
+    /// velocity points inward-then-out (Normalize(Center−pos)×−5 + v/2).
+    #[test]
+    fn w4_g63_the_skull_first_burst_draws_ten() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        skull_first_burst(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 10);
+        assert!(dust.slots()[..10].iter().all(|d| d.dust_type == 5 && d.no_gravity));
+    }
+
+    /// W4-g63 — the 270 Skull trail: 2× dust 5 at position+(4,4), box
+    /// (w−8)×(h−8), position −= v, noGravity, velocity ×0.3.
+    #[test]
+    fn w4_g63_the_skull_trail_draws_two() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        skull_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 2);
+        assert!(dust.slots()[..2].iter().all(|d| d.dust_type == 5 && d.no_gravity));
+    }
+
+    /// W4-g63 — the 265/355 fang dusts: dust 163 / 205, noGravity,
+    /// velocity ×0.3 − v×0.4; no explicit draws.
+    #[test]
+    fn w4_g63_the_fang_dusts() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        poison_fang_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(dust.slot(0).dust_type, 163);
+        assert!(dust.slot(0).no_gravity);
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        venom_fang_dust(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(dust.slot(0).dust_type, 205);
+        assert!(dust.slot(0).no_gravity);
+    }
+
+    /// W4-g63 — the 207 Chlorophyte trail: 10× dust 75 at the
+    /// position − v/10·i points, alpha = the slot's alpha, velocity
+    /// zeroed, noGravity; no explicit draws.
+    #[test]
+    fn w4_g63_the_chlorophyte_trail_draws_ten() {
+        let w = world();
+        let c = ctx(&w);
+        let mut p = slot(Vec2::new(100.0, 100.0), Vec2::new(10.0, 0.0));
+        p.alpha = 100;
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        chlorophyte_bullet_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 10);
+        assert!(dust.slots()[..10].iter().all(|d| d.dust_type == 75 && d.no_gravity));
+        assert!(dust.slots()[..10].iter().all(|d| d.alpha == 100));
+        // The i=1 X point: 100 − 10/10·1 = 99.
+        assert!((dust.slot(1).position.x - 99.0).abs() < 1e-4);
+        assert!(dust.slots()[..10].iter().all(|d| d.velocity == Vec2::ZERO));
+    }
+
+    /// W4-g63 — the 357 PulseBolt trail (UNWIRED, f20b's): the 207 twin
+    /// with dust 206.
+    #[test]
+    fn w4_g63_the_pulse_bolt_trail_draws_ten() {
+        let w = world();
+        let c = ctx(&w);
+        let mut p = slot(Vec2::new(100.0, 100.0), Vec2::new(10.0, 0.0));
+        p.alpha = 100;
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        pulse_bolt_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 10);
+        assert!(dust.slots()[..10].iter().all(|d| d.dust_type == 206 && d.no_gravity));
     }
 }
