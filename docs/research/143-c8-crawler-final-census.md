@@ -131,6 +131,20 @@ crawler branch keeps its own kinematics pins after the merge (the d22
 originals keep their names on their branch — the merge dedupes by
 content, keep-one).
 
+**Numeric re-derivation delta (the JS mirror of the composed machine,
+f32-rounded)**: every single-tick pin verified exactly (−0.165/+0.165/
+0.11 digger, −0.1/+0.11 escape, +0.055/−0.05 dig accel, −1.11 air
+sign). The `the_worm_head_digs_and_stumbles` saturation loop is
+**110 ticks, NOT d22's 150**: on the `ground_air` fixture (the surface
+hole x 960..2240 / y 2000..2160) the head reaches the hole at ~tick 118
+and the air arm flips vy positive — at 150 ticks speed 5.50 / vy +1.02
+(the d22 pin would FAIL on this fixture). At 110 ticks: speed 5.955,
+vy −2.5, y 2165 — still digging, saturated within 0.1. The far-player
+override's 150-tick loop is fine (empty world, no hole — speed 6.005).
+**Cross-note to d22**: re-check your 150-tick `ground_air` pin on the
+merged base — the composed machine + this fixture saturates at ~109
+and overshoots by 150.
+
 **Cross-note to d22**: the c8 compose is line-for-line your
 `worm_head_step` body plus the 375 inversion at `:51861` and the 375
 head-claim/override rows (already on c8). At merge the two
@@ -197,7 +211,7 @@ are ENTRIES rows).
 | `w4_c8_compose_the_air_stumble_keys_on_the_velocity_sign` | world_sim/npcs.rs | the d22 velocity-sign kick + air latch (compose carry) |
 | `w4_c8_the_digger_rides_the_worm_pass_and_flees` (re-pinned) | world_sim/npcs.rs | the −0.165 flee accel, the +0.165/0.11 air kick, no 375 latch |
 | `w4_c8_final_the_crawler_sheets_are_in_the_union_inventory` | render/entities.rs | the packing rows, texture_net_id, dims/rows, the bestiary superset |
-| re-derived: `the_corruption_escape_digs_down_and_despawns_deep`, `the_far_player_forces_the_dig_override`, `the_worm_head_digs_and_stumbles` | world_sim/npcs.rs, npc.rs | the d22 accel semantics (from-rest nudges, 150-tick saturation) |
+| re-derived: `the_corruption_escape_digs_down_and_despawns_deep`, `the_far_player_forces_the_dig_override`, `the_worm_head_digs_and_stumbles` | world_sim/npcs.rs, npc.rs | the d22 accel semantics (from-rest nudges, saturation — 110 ticks on ground_air, the numeric mirror's delta vs d22's 150) |
 
 ## 6. Merge notes
 
@@ -205,7 +219,10 @@ are ENTRIES rows).
   kinematics + the 375 inversion at the C# position + the 375 claim
   rows). The `w4_c8_compose_*` witnesses duplicate d22's
   `w4_d22_the_dig_steer_*`/`w4_d22_the_air_stumble_*` by content —
-  keep-one at merge (either name; the bodies are the same).
+  keep-one at merge (either name; the bodies are the same). The
+  `the_worm_head_digs_and_stumbles` saturation loop: keep c8's 110-tick
+  pin (the numeric mirror shows d22's 150 overshoots the ground_air
+  hole — §3).
 - **c4**: the Goldfish provider freeze is lifted HERE; c4's UI
   `unlock_state` call sites reconcile onto `unlock_state_world` (the
   c8 fold). c4's GoldGoldfish 592 entry auto-rides the gold arm.

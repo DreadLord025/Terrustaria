@@ -21798,12 +21798,16 @@ mod tests {
         let mut rng = UnifiedRandom::new(11);
         let mut next_id = 1u32;
         // The player parked above the dirt. The dig ramps the speed toward
-        // num45 = 6 over ~110 ticks (the accel approach, not an instant
-        // snap). The head stays deep in the dirt while it ramps (the
-        // player is ~550 px up-right; the head travels well under that
-        // before saturating).
+        // num45 = 6 by num46 = 0.05 per tick (the accel approach, not an
+        // instant snap) — ~109 ticks saturate it (the numeric re-derivation:
+        // speed 6.02 at tick 109). The window closes before the head
+        // reaches the surface hole (y 2000..2160 at x 960..2240): at tick
+        // 110 the head is still at y ~2165, deep in the dirt; by tick ~118
+        // it enters the hole and the air arm takes over (the d22 original's
+        // 150-tick loop overshoots into the hole — the velocity flips
+        // positive there; 110 is the faithful saturation pin).
         let pc = (100.0 * 16.0, 116.0 * 16.0);
-        for _ in 0..150 {
+        for _ in 0..110 {
             crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
         }
         let h0 = &npcs[0];
