@@ -30652,7 +30652,10 @@ mod s1_f_13c2_tests {
         for kind in [NpcKind::Nutcracker, NpcKind::NutcrackerSpinning, NpcKind::ElfArcher] {
             let b = NpcBuffs::for_kind(kind);
             assert!(
-                b.buff_immune.iter().all(|&i| !i),
+                // The shimmer-353 flag is its own set (`NPCID.cs:10467`,
+                // W4-d6 residual 9) — the null DebuffImmunitySets row
+                // pins every OTHER id false.
+                b.buff_immune.iter().enumerate().all(|(i, &v)| !v || i == 353),
                 "{kind:?} carries the null dictionary entry"
             );
         }
@@ -31691,7 +31694,9 @@ mod s1_d_2_tests {
         ] {
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(
-                !b.buff_immune.iter().any(|x| *x),
+                // The shimmer-353 flag is its own set (`NPCID.cs:10467`,
+                // W4-d6 residual 9), not a DebuffImmunitySets row.
+                !b.buff_immune.iter().enumerate().any(|(i, x)| *x && i != 353),
                 "{kind:?} null row — no immunity"
             );
         }
@@ -31801,10 +31806,11 @@ mod s1_d_2_tests {
             assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
             assert_eq!(kind.death_sound(), Some("NPC_Killed_2"), "{kind:?} death");
             // The null `DebuffImmunitySets` rows (`NPCID.cs:7964-7966`/
-            // `:8024-8025`).
+            // `:8024-8025`). The shimmer-353 flag is its own set
+            // (`NPCID.cs:10467`, W4-d6 residual 9).
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(
-                !b.buff_immune.iter().any(|x| *x),
+                !b.buff_immune.iter().enumerate().any(|(i, x)| *x && i != 353),
                 "{kind:?} null immunity row"
             );
         }
@@ -32028,8 +32034,13 @@ mod s1_d_2_tests {
             assert_eq!(kind.hit_sound(), Some(hit), "{kind:?} hit");
             assert_eq!(kind.death_sound(), Some(death), "{kind:?} death");
             // The null `DebuffImmunitySets` rows (`NPCID.cs:8892-8893`).
+            // The shimmer-353 flag is its own set (`NPCID.cs:10467`,
+            // W4-d6 residual 9).
             let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
-            assert!(!b.buff_immune.iter().any(|x| *x), "{kind:?} null immunity");
+            assert!(
+                !b.buff_immune.iter().enumerate().any(|(i, x)| *x && i != 353),
+                "{kind:?} null immunity"
+            );
         }
     }
 

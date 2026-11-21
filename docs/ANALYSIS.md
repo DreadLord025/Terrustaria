@@ -39622,3 +39622,48 @@ colour + the 1042 palette/×0.8/draw-count
 (`w4_d6_the_slime_and_shimmer_bursts_carry_their_colours`), the
 scale-death kicked base (`w4_d6_the_scale_death_burst_reads_the_kicked_
 base`), the unclaimed-kind inertness (`w4_d6_other_kinds_stay_inert`).
+
+## W4-d6 residual 9 — the ShimmerGun 5495 shimmer-source chain (census + the immunity seam)
+
+**The question the census answers: does the 1042 projectile apply
+`shimmerWet` to NPCs? NO.** The full chain, every link cited:
+
+1. **The use arm** (`Player.cs:49124-49127`, item 5495): fires 1042 with
+   `ai0: 0f, ai1: 1f` — landed in residual 2 (the editing.rs payload
+   block, the no-draw witness).
+2. **The contact** (`Projectile.cs:29018-29043`, the style-60 arm): the
+   1042's switch row sets buff 353 / duration 100 / flag25 = false
+   (`:29018-29022`); every intersecting NPC (`active && !dontTakeDamage
+   && lifeMax > 1`) takes `AddBuff(353, 100)` through the immune guard,
+   then the blob Kills (`:29041` — OUTSIDE the flag26 gate, so an immune
+   NPC still kills it). flag24 is false for all three guns, so the
+   `ShimmerTownTransform` gate (`:29033`) is dead. flag25 = false skips
+   the player-buff loop entirely (`:29044`). The arm NEVER writes
+   `NPC.shimmerWet` — the projectile-side `shimmerWet` field is the
+   slot's OWN liquid state (`:10891` at spawn, the wet machine
+   `:16808`), not an NPC write.
+3. **The immune guard** (`NPC.cs:89928`): `buffImmune[353]`, set at
+   `SetDefaults` from `NPCID.Sets.ShimmerImmunity` (`NPC.cs:17838`,
+   the 131-id set `NPCID.cs:10467`). THIS was the missing port link —
+   `NpcBuffs::for_kind` now applies it (the verbatim set keyed on
+   `cs_id`); the four null-immunity witnesses exclude index 353 (their
+   "null DebuffImmunitySets row" claim is about the OTHER ids — the
+   shimmer flag is its own set, exactly like the C#).
+4. **The buff → flag → transform tail** (the f47 co-lane, UNMERGED):
+   buff 353 → the `shimmering` flag (`NPC.cs:92133-92143`, the immune
+   branch DelBuff-mid-scan), the transparency ramp (`:91514-91544`),
+   `GetShimmered` (`:91548-91592`). The NPC's OWN `shimmerWet` writer is
+   its liquid contact (`NPC.cs:93070`, `Collision_WaterCollision`) —
+   f47's `shimmer_wet_contact_pass`, not the gun's. The e19 co-lane
+   owns the item-side shimmer (quicksell/decraft); neither touches the
+   gun's buff path.
+
+**What lands here:** the `SHIMMER_IMMUNITY` verbatim set + the
+`for_kind` application (the one missing link on this branch), the
+null-row witness adjustments, and two witnesses: the set's gate
+(`w4_d6_the_shimmer_immunity_set_gates_buff_353` — the listed kinds
+refuse AddBuff, the unlisted accept, the 422/550 gaps stay false, the
+131-length pin) and the gun's contact
+(`w4_d6_the_shimmer_stream_buffs_353_through_the_immunity_gate` — the
+zombie takes 353/100, the immune ForceBubble refuses but still kills
+the blob, the 1042 has no player loop). WRITTEN NOT RUN (code-only).

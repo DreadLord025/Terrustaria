@@ -475,6 +475,56 @@ mod tests {
         assert_eq!(rng.ranges[25], (0, 6), "the taken gate's colour");
     }
 
+    /// W4-d6 residual 9 — the ShimmerGun's shimmer-source chain
+    /// (`Projectile.cs:29018-29043`): the 1042's contact grants buff 353
+    /// (Shimmering) for 100 ticks through `NPC.AddBuff`'s immune guard —
+    /// the `ShimmerImmunity` set (`NPCID.cs:10467`, `NPC.cs:17838`)
+    /// refuses the listed kinds, but the Kill runs either way (`:29041`
+    /// sits OUTSIDE the flag26 gate). The 1042 sets flag25 = false
+    /// (`:29021`) — NO player-buff loop. The projectile NEVER writes
+    /// `shimmerWet` on an NPC: the only NPC-side writer is the NPC's own
+    /// liquid contact (`NPC.cs:93070`, the f47 lane); the gun's chain is
+    /// buff 353 → the `shimmering` flag (`NPC.cs:92133-92143`, f47's
+    /// set-flags arm) → the transparency ramp → GetShimmered.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_shimmer_stream_buffs_353_through_the_immunity_gate() {
+        let mut w = world();
+        let mut rng = CensusRng { ranges: Vec::new() };
+        let mut p = proj(SHIMMER_GUN_STREAM);
+        p.ai[0] = 4.0;
+        // A plain zombie (type 3 — outside the ShimmerImmunity set) and
+        // a ForceBubble (384 — inside it) both overlapping the blob.
+        let mut zombie = Npc::new(crate::npc::NpcKind::Zombie, p.pos.x, p.pos.y, 1, 0.0);
+        zombie.max_hp = 40;
+        zombie.hp = 40;
+        let mut bubble = Npc::new(crate::npc::NpcKind::ForceBubble, p.pos.x + 2.0, p.pos.y, 1, 0.0);
+        bubble.max_hp = 40;
+        bubble.hp = 40;
+        assert!(!zombie.buffs.buff_immune[353], "type 3 outside the set");
+        assert!(bubble.buffs.buff_immune[353], "type 384 in the :10467 set");
+        let mut npcs = vec![zombie, bubble];
+        let _ = gun_stream(&mut p, &mut w, &mut npcs, None, 0, &mut rng);
+        assert!(!p.active, "the contact kills (:29041)");
+        assert!(npcs[0].buffs.has_buff(353), "the zombie takes Shimmering");
+        let idx = npcs[0].buffs.find_buff_index(353).unwrap();
+        assert_eq!(npcs[0].buffs.buff_time[idx], 100, "the :29020 duration");
+        assert!(!npcs[1].buffs.has_buff(353), "the immune guard refuses the bubble");
+        // The 1042 has NO player-buff loop (flag25 = false, `:29021`):
+        // a foreign-owner player overlapping the blob takes nothing.
+        let mut w = world();
+        let mut rng = CensusRng { ranges: Vec::new() };
+        let mut p = proj(SHIMMER_GUN_STREAM);
+        p.ai[0] = 4.0;
+        p.owner = 1; // the local player (index 0) is NOT the owner
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = p.pos.x;
+        player.y = p.pos.y;
+        let _ = gun_stream(&mut p, &mut w, &mut [], Some(&mut player), 0, &mut rng);
+        assert!(player.buffs.find_buff_index(353).is_none(), "no player loop for 1042");
+        assert!(p.active, "no NPC contact, no kill");
+    }
+
     // (W4-d6 residual 8: the death-dust census witness that sat here is
     // REPLACED by `projectile_gun_splash.rs`'s real-pool mirrors — the
     // stub it pinned no longer exists.)
