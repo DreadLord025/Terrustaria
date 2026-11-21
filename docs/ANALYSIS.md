@@ -35932,6 +35932,41 @@ Witnesses: `the_d125_strips_divide_into_their_vanilla_rows`
 (render/entities.rs) + `the_d125_portraits_ride_the_real_sheet_dims`
 (ui/bestiary.rs) — WRITTEN NOT RUN.
 
+### The d125 hitbox phase (2026-11-21 — code-only mode)
+
+Remainder 3: the 919/923/872 `Colliding` special-case hitboxes
+(`Projectile.cs:15625-15641`/`:15642-15668`/`:15675-15694`), wired into
+`projectile.rs::damage_player` (the `Damage_EVP` `:14816` seam). The
+three arms REPLACE the box test (each returns outright, never falling
+through to `:15888`'s base intersect):
+* **919 FairyQueenLance** (the `919 || 932` arm): the ±40 px line along
+  `rotation` at width 8 (`num23 = 40f` carries NO scale), gated on the
+  300×300 `_lanceHitboxBounds` (`:79777`) centred on the TRUNCATED
+  position. `check_aabb_v_line_collision` (the existing
+  `Collision.cs:273-369` port) does the line test.
+* **923 FairyQueenSunDance**: the three-segment beam — centre to
+  centre + rotVec·scale·{510, 660, 800} at widths 0.7·scale·{100, 60, 10},
+  NO bounds pre-gate. The `localAI[0] <= 60` telegraph gate (landed in
+  the wiring phase) runs first.
+* **872 HallowBossLastingRainbow**: the oldPos ring — every 2nd of the
+  first 50 entries (l = 0, 2, .. 48), the projectile's own box moved to
+  the entry's TRUNCATED position, zero entries skipped. The C# resizes
+  `oldPos` to `TrailCacheLength[872] = 120` at `SetDefaults`
+  (`:718-728`, `ProjectileID.cs:522`); the port keeps the fixed 10-entry
+  base and adds the `trail_extra`/`trail_extra_rot`/`trail_extra_dir`
+  110-entry extensions (Box'd, `None` for every other kind — the pool's
+  1000 slots stay lean). The `TrailingMode` 2 shift (`:17130-17138`)
+  walks the concatenation as ONE array (the base tail feeds the
+  extension head). `trailing_mode(872) = 2` (`ProjectileID.cs:521`'s
+  `872, 2` row).
+The generic hostile contact keeps its centre-in-box stand-in (the full
+`myRect.Intersects` is the M4-PROJ damage-box row); the hurt-direction
+`cx` now reads the shot's own `w` (was the fixed `SIZE`). Witnesses:
+`w4_d125_the_empress_bolt_hitboxes_replace_the_box_test` (the lance's
+30-px reach, the beam's 400-px reach, the ring's even/odd/extension
+entries) + `w4_d125_the_872_trail_ring_shifts_across_the_extension` —
+WRITTEN NOT RUN.
+
 ### The d125 draw phase (2026-11-21 — code-only mode)
 
 Remainders 2+5 (the OurFavoriteColor tint + the trail/draw work) close

@@ -551,21 +551,36 @@ pub struct Projectile {
     /// AI_026 slice C latches it in `ai026_c_tick`; the other arms keep
     /// the stock ZERO until their movement ports land.
     pub old_position: Vec2,
-    /// `Projectile.oldPos` (`Projectile.cs:388`) — the 10-entry position ring the
+    /// `Projectile.oldPos` (`Projectile.cs:388`) — the position ring the
     /// `TrailingMode` chain shifts once per update call (`:17091-17195`),
     /// newest first (index 0 = this tick's position). M4-PROJ-6b Phase 7's
     /// trail quads walk it (`Main.DrawTrail`'s cheap fallback,
     /// `Main.cs:27886-27905`); an unwritten slot reads `Vec2::ZERO`, the C#'s
-    /// "no entry" marker.
+    /// "no entry" marker. The C# array is RESIZED per kind at `SetDefaults`
+    /// (`:718-728`, `ProjectileID.Sets.TrailCacheLength` `ProjectileID.cs:522`);
+    /// the port keeps the fixed 10-entry default and carries the 872's
+    /// 120-entry ring in [`Self::trail_extra`] (W4-d125 — the Colliding
+    /// oldPos-ring hitbox reads every 2nd of 50 entries, `:15675-15694`).
     pub old_pos: [Vec2; 10],
+    /// W4-d125: the 872 HallowBossLastingRainbow's `TrailCacheLength` 120
+    /// ring extension (`ProjectileID.cs:522`'s `872, 120` row) — entries
+    /// 10..120 of the C#'s resized `oldPos`. `None` for every other kind
+    /// (the fixed 10 above IS the whole ring). The shift walks the
+    /// concatenation; the Colliding arm reads the first 50.
+    pub trail_extra: Option<Box<[Vec2; 110]>>,
     /// `Projectile.oldRot` (`:390`) — the rotations the modes 2-5 record beside
     /// the ring positions (the C# orients the strip's width axis by them,
     /// `VertexStrip.cs:151-156`; the quad approximation orients by the segment
     /// direction instead, so the ring's rotations are state only here).
     pub old_rot: [f32; 10],
+    /// W4-d125: the 872's `oldRot` extension (the `Array.Resize` at
+    /// `Projectile.cs:726` resizes all three rings together).
+    pub trail_extra_rot: Option<Box<[f32; 110]>>,
     /// `Projectile.oldSpriteDirection` (`:392`) — the sprite directions the
     /// modes 2-5 records beside the ring positions.
     pub old_sprite_direction: [i32; 10],
+    /// W4-d125: the 872's `oldSpriteDirection` extension (`:727`).
+    pub trail_extra_dir: Option<Box<[i32; 110]>>,
     /// `Kill()`'s captured `num = this.timeLeft` (`Projectile.cs:70649`,
     /// taken BEFORE the `:70650` zeroing) — the 639 MoonlordArrow's death
     /// hook (`:73444-73451`) computes the 640 trail's spawn delay from it.
@@ -803,8 +818,11 @@ impl Default for Projectile {
             frame_counter: 0,
             old_position: Vec2::ZERO,
             old_pos: [Vec2::ZERO; 10],
+            trail_extra: None,
             old_rot: [0.0; 10],
+            trail_extra_rot: None,
             old_sprite_direction: [0; 10],
+            trail_extra_dir: None,
             kill_time_left: 0,
             w: SIZE,
             h: SIZE,
@@ -10104,8 +10122,23 @@ impl Projectile {
         // Modes 2-5 record the rotations and the sprite directions beside the
         // positions; modes 0/1 the positions only.
         let with_rotations = mode >= 2;
+        // W4-d125: the 872's 120-entry ring (the `trail_extra` extension) —
+        // the C# shifts the WHOLE resized array (`:17130-17138`), so the
+        // extension's head takes the base ring's tail before the base shifts.
+        if let Some(extra) = self.trail_extra.as_mut() {
+            shift_ring(extra.as_mut_slice());
+            extra[0] = self.old_pos[9];
+        }
         shift_ring(&mut self.old_pos);
         if with_rotations {
+            if let Some(extra) = self.trail_extra_rot.as_mut() {
+                shift_ring(extra.as_mut_slice());
+                extra[0] = self.old_rot[9];
+            }
+            if let Some(extra) = self.trail_extra_dir.as_mut() {
+                shift_ring(extra.as_mut_slice());
+                extra[0] = self.old_sprite_direction[9];
+            }
             shift_ring(&mut self.old_rot);
             shift_ring(&mut self.old_sprite_direction);
         }
@@ -13416,6 +13449,11 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         | MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL => 0,
         // `:17099`'s mode 1 — the Vortex Ritual's bolt.
         VORTEX_RITUAL_BOLT => 1,
+        // W4-d125: the 872 HallowBossLastingRainbow's mode-2 ring
+        // (`ProjectileID.cs:521`'s `872, 2` row) — the Colliding oldPos-ring
+        // hitbox (`:15675-15694`) reads it; the 120-entry `TrailCacheLength`
+        // (`:522`'s `872, 120`) rides the `trail_extra` extension.
+        HALLOW_BOSS_LASTING_RAINBOW => 2,
         // `:17128`'s mode 2 — the gem bolts' family plus the Gradient yoyo and
         // Betsy's fireball.
         GRADIENT_YOYO | BETSY_FIREBALL | GEM_BOLT_AMETHYST | GEM_BOLT_TOPAZ
@@ -16045,6 +16083,14 @@ impl ProjectilePool {
         };
         let base = slot * 256;
         self.local_immunity[base..base + 256].fill(0);
+        // W4-d125: the 872's `SetDefaults` ring resize (`Projectile.cs:718-728`
+        // — `TrailCacheLength[872] = 120`, `ProjectileID.cs:522`): the port's
+        // fixed 10-entry base + the 110-entry extension = the C#'s 120.
+        if kind == HALLOW_BOSS_LASTING_RAINBOW {
+            self.slots[slot].trail_extra = Some(Box::new([Vec2::ZERO; 110]));
+            self.slots[slot].trail_extra_rot = Some(Box::new([0.0; 110]));
+            self.slots[slot].trail_extra_dir = Some(Box::new([0; 110]));
+        }
         // `NewProjectile`'s tail (`Projectile.cs:11094`): `FinalizeProjectile`
         // runs after the `ai0/ai1` arguments have landed (`:10921-10923`), so
         // the gem bolts' spawn-time bonuses read the packed features out of
@@ -23429,15 +23475,112 @@ impl ProjectilePool {
         {
             return;
         }
-        let cx = p.pos.x + SIZE * 0.5;
-        let cy = p.pos.y + SIZE * 0.5;
-        let inside = cx >= player.x
-            && cx < player.x + crate::player::WIDTH
-            && cy >= player.y
-            && cy < player.y + crate::player::HEIGHT;
-        if !inside {
+        // W4-d125 — `Damage_EVP`'s `Colliding(projRectangle, player.getRect())`
+        // (`Projectile.cs:14816`) special-case arms for the empress bolts.
+        // The three arms REPLACE the box test (each returns true/false
+        // outright, never falling through to `:15888`'s base intersect).
+        let target = tr_core::whip::Rect::new(
+            player.x as i32,
+            player.y as i32,
+            crate::player::WIDTH as i32,
+            player.height as i32,
+        );
+        let touches = match p.kind {
+            FAIRY_QUEEN_LANCE => {
+                // `:15625-15641` (the 919 || 932 arm): the ±40 px line along
+                // the rotation at width 8, gated on the 300×300
+                // `_lanceHitboxBounds` (`:79777`) centred on the TRUNCATED
+                // position. `num23 = 40f` carries NO scale factor.
+                let (s, c) = p.rot.sin_cos();
+                let cx = p.pos.x + p.w * 0.5;
+                let cy = p.pos.y + p.h * 0.5;
+                let ls = [cx - c * 40.0, cy - s * 40.0];
+                let le = [cx + c * 40.0, cy + s * 40.0];
+                let bounds = tr_core::whip::Rect::new(
+                    p.pos.x as i32 - 150,
+                    p.pos.y as i32 - 150,
+                    300,
+                    300,
+                );
+                bounds.intersects(target)
+                    && crate::collision::check_aabb_v_line_collision(
+                        [target.x as f32, target.y as f32],
+                        [target.w as f32, target.h as f32],
+                        ls,
+                        le,
+                        8.0,
+                    )
+            }
+            FAIRY_QUEEN_SUN_DANCE => {
+                // `:15642-15668`: the three-segment beam — centre to
+                // centre + rotVec·scale·{510, 660, 800} at widths
+                // 0.7·scale·{100, 60, 10}. NO bounds pre-gate (the C#
+                // calls CheckAABBvLineCollision directly).
+                let (s, c) = p.rot.sin_cos();
+                let cx = p.pos.x + p.w * 0.5;
+                let cy = p.pos.y + p.h * 0.5;
+                let v = [c * p.scale, s * p.scale];
+                let w = p.scale * 0.7;
+                let tp = [target.x as f32, target.y as f32];
+                let td = [target.w as f32, target.h as f32];
+                [(510.0, 100.0), (660.0, 60.0), (800.0, 10.0)]
+                    .iter()
+                    .any(|&(len, width)| {
+                        crate::collision::check_aabb_v_line_collision(
+                            tp,
+                            td,
+                            [cx, cy],
+                            [cx + v[0] * len, cy + v[1] * len],
+                            w * width,
+                        )
+                    })
+            }
+            HALLOW_BOSS_LASTING_RAINBOW => {
+                // `:15675-15694`: the oldPos ring — every 2nd of the first
+                // 50 entries (l = 0, 2, .. 48), the projectile's own box
+                // moved to the entry's TRUNCATED position, zero entries
+                // skipped. The 120-entry `TrailCacheLength` ring
+                // (`ProjectileID.cs:522`) rides `trail_extra` (entries
+                // 10..120); the first 50 span the base 10 + extra[0..40].
+                let mut hit = false;
+                for l in (0..50usize).step_by(2) {
+                    let entry = if l < 10 {
+                        p.old_pos[l]
+                    } else {
+                        p.trail_extra.as_ref().map_or(Vec2::ZERO, |e| e[l - 10])
+                    };
+                    if entry == Vec2::ZERO {
+                        continue;
+                    }
+                    let hb = tr_core::whip::Rect::new(
+                        entry.x as i32,
+                        entry.y as i32,
+                        p.w as i32,
+                        p.h as i32,
+                    );
+                    if hb.intersects(target) {
+                        hit = true;
+                        break;
+                    }
+                }
+                hit
+            }
+            _ => {
+                // The generic arm's centre-in-box stand-in (the port's
+                // pre-existing hostile contact shape — the full
+                // `myRect.Intersects` is the M4-PROJ damage-box row).
+                let cx = p.pos.x + SIZE * 0.5;
+                let cy = p.pos.y + SIZE * 0.5;
+                cx >= player.x
+                    && cx < player.x + crate::player::WIDTH
+                    && cy >= player.y
+                    && cy < player.y + crate::player::HEIGHT
+            }
+        };
+        if !touches {
             return;
         }
+        let cx = p.pos.x + p.w * 0.5;
         // `Projectile.cs:14862-14870` — `bool dodgeable =
         // this.IsDamageDodgeable();` feeds the player's `Hurt(.., dodgeable)`
         // with `Crit: false` and `PlayerDeathReason.ByProjectile` — the port
@@ -24384,6 +24527,144 @@ mod tests {
             assert!(player.hp < hp0, "kind {kind}: past 60 the shot lands");
             assert!(!pool.slots()[slot].active, "kind {kind}: the hit kill");
         }
+    }
+
+    /// W4-d125 — the 919/923/872 `Colliding` special-case hitboxes
+    /// (`Projectile.cs:15625-15641`/`:15642-15668`/`:15675-15694`).
+    /// WRITTEN NOT RUN (code-only mode). The three arms REPLACE the box
+    /// test; the lance's ±40 line + the sun dance's three-segment beam
+    /// reach far past the old centre-in-box stand-in, and the 872's ring
+    /// hits from its trail history.
+    #[test]
+    fn w4_d125_the_empress_bolt_hitboxes_replace_the_box_test() {
+        let w = ground();
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut rng = tr_core::UnifiedRandom::new(3);
+        // The 919 lance: a shot 30 px to the LEFT of the player's centre,
+        // rotation 0 (the line runs along +X). The ±40 line at width 8
+        // reaches the player; the old centre-in-box test missed it.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai_owned(
+                FAIRY_QUEEN_LANCE, 0,
+                Vec2::new(pcx - 30.0 - 4.0, pcy - 4.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the lance spawns");
+        pool.slots[slot].local_ai[0] = 61.0; // past the telegraph
+        pool.slots[slot].rot = 0.0;
+        let hp0 = player.hp;
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert!(player.hp < hp0, "the lance's line reaches 30 px out");
+        assert!(!pool.slots()[slot].active, "the hit kill");
+        // The 923 sun dance: a shot 400 px to the RIGHT of the player,
+        // rotation pointing LEFT (π). The 510·scale segment at width 70
+        // reaches (the world is 1024 px wide — a vertical beam would run
+        // off the 64-tile map).
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai_owned(
+                FAIRY_QUEEN_SUN_DANCE, 0,
+                Vec2::new(pcx + 400.0 - 15.0, pcy - 15.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the sun dance spawns");
+        pool.slots[slot].local_ai[0] = 61.0;
+        pool.slots[slot].rot = std::f32::consts::PI;
+        let hp0 = player.hp;
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert!(player.hp < hp0, "the beam's 510 px segment reaches");
+        // The 872 lasting rainbow: the CURRENT position misses (far away)
+        // but a trail entry sits on the player — the ring hits.
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai_owned(
+                HALLOW_BOSS_LASTING_RAINBOW, 0,
+                Vec2::new(pcx + 500.0, pcy + 500.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the rainbow spawns");
+        assert!(pool.slots()[slot].trail_extra.is_some(), "the 120-ring extension");
+        // Entry 4 (even, < 10) at the player's top-left.
+        pool.slots[slot].old_pos[4] = Vec2::new(player.x, player.y);
+        let hp0 = player.hp;
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert!(player.hp < hp0, "the ring's entry 4 hits");
+        // An ODD entry (3) is never read — the every-2nd walk skips it.
+        let mut player = crate::player::Player::spawn(&w);
+        let (pcx, pcy) = player.center();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai_owned(
+                HALLOW_BOSS_LASTING_RAINBOW, 0,
+                Vec2::new(pcx + 500.0, pcy + 500.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the rainbow spawns");
+        pool.slots[slot].old_pos[3] = Vec2::new(player.x, player.y);
+        let hp0 = player.hp;
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert_eq!(player.hp, hp0, "the odd entry 3 is skipped");
+        assert!(pool.slots()[slot].active, "no hit, no kill");
+        // An extension entry (l = 12 → extra[2]) also hits.
+        let mut player = crate::player::Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile_ai_owned(
+                HALLOW_BOSS_LASTING_RAINBOW, 0,
+                Vec2::new(5000.0, 5000.0),
+                Vec2::ZERO, 60, 0.0, 0.0, 0.0,
+            )
+            .expect("the rainbow spawns");
+        pool.slots[slot].trail_extra.as_mut().unwrap()[2] =
+            Vec2::new(player.x, player.y);
+        let hp0 = player.hp;
+        pool.damage_player(slot, Some(&mut player), &mut rng);
+        assert!(player.hp < hp0, "the extension entry 12 hits");
+    }
+
+    /// W4-d125 — the 872's 120-entry trail ring shifts as ONE array: the
+    /// base ring's tail feeds the extension's head, the extension's tail
+    /// drops (`Projectile.cs:17130-17138` over the resized array).
+    #[test]
+    fn w4_d125_the_872_trail_ring_shifts_across_the_extension() {
+        let mut p = Projectile {
+            kind: HALLOW_BOSS_LASTING_RAINBOW,
+            trail_extra: Some(Box::new([Vec2::ZERO; 110])),
+            trail_extra_rot: Some(Box::new([0.0; 110])),
+            trail_extra_dir: Some(Box::new([0; 110])),
+            ..Default::default()
+        };
+        // Fill the base ring with distinct positions, the extension head
+        // with a marker.
+        for i in 0..10 {
+            p.old_pos[i] = Vec2::new(i as f32, 0.0);
+            p.old_rot[i] = i as f32;
+        }
+        p.trail_extra.as_mut().unwrap()[0] = Vec2::new(99.0, 0.0);
+        p.pos = Vec2::new(1000.0, 0.0);
+        p.rot = 42.0;
+        p.shift_trailing_history();
+        assert_eq!(p.old_pos[0], Vec2::new(1000.0, 0.0), "the head");
+        assert_eq!(p.old_pos[1], Vec2::new(0.0, 0.0), "the shift");
+        assert_eq!(p.old_pos[9], Vec2::new(8.0, 0.0), "the base tail");
+        assert_eq!(
+            p.trail_extra.as_ref().unwrap()[0],
+            Vec2::new(9.0, 0.0),
+            "the extension head takes the OLD base tail"
+        );
+        assert_eq!(
+            p.trail_extra.as_ref().unwrap()[1],
+            Vec2::new(99.0, 0.0),
+            "the extension shifts too"
+        );
+        assert_eq!(p.old_rot[0], 42.0, "the rotation ring");
+        assert_eq!(p.trail_extra_rot.as_ref().unwrap()[0], 9.0);
     }
 
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
@@ -30473,8 +30754,11 @@ mod phasmal_projectile_tests {
             bounces: 0,
             blast_spawned: false,
             old_pos: [Vec2::ZERO; 10],
+            trail_extra: None,
             old_rot: [0.0; 10],
+            trail_extra_rot: None,
             old_sprite_direction: [0; 10],
+            trail_extra_dir: None,
             kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
@@ -30882,8 +31166,11 @@ mod ritual_projectile_tests {
             bounces: 0,
             blast_spawned: false,
             old_pos: [Vec2::ZERO; 10],
+            trail_extra: None,
             old_rot: [0.0; 10],
+            trail_extra_rot: None,
             old_sprite_direction: [0; 10],
+            trail_extra_dir: None,
             kill_time_left: 0,
             should_fall_through: false,
             step_speed: 1.0,
