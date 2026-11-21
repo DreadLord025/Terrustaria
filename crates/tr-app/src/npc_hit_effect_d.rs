@@ -2455,6 +2455,88 @@ fn brain_death(
     }
 }
 
+/// The 267 Creeper death (`NPC.cs:87259-87274`, site 384): the 20x
+/// dust-5 burst, then ONE gore 402 at position, scale 1f.
+fn creeper_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87269-87272` — the 20x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        20,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 402, 1.0); // :87273
+}
+
+/// The 4/125/126 Eye of Cthulhu family death (`NPC.cs:87275-87340`):
+/// the 150x dust-5 burst, then the TWO-iteration loop — each iteration
+/// spawns 2/7/9 with the scatter velocity `(Next(-30,31)*0.2,
+/// Next(-30,31)*0.2)` (X then Y BEFORE each NewGore), then the per-kind
+/// fourth: 4 EoC → 10 (+ the SoundID.Item15 cue, c13's lane), 125
+/// Retinazer → 146, 126 Spazmatism → 145 (`:87289-87306`). The live
+/// kinds: 125/126 (the twins, sites 385-392); the 4 EoC branch + the
+/// 125/126 sparkle tail land next batch. Scale 1f throughout.
+fn eye_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87285-87288` — the 150x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        150,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:87289-87307` — the two-iteration loop.
+    for _ in 0..2 {
+        for t in [2, 7, 9] {
+            let vx = rng.next_range(-30, 31) as f32 * 0.2;
+            let vy = rng.next_range(-30, 31) as f32 * 0.2;
+            gore.new_gore(rng, world, pos, Vec2::new(vx, vy), t, 1.0); // :87291-87293
+        }
+        if npc_type == 125 {
+            let vx = rng.next_range(-30, 31) as f32 * 0.2;
+            let vy = rng.next_range(-30, 31) as f32 * 0.2;
+            gore.new_gore(rng, world, pos, Vec2::new(vx, vy), 146, 1.0); // :87301
+        } else if npc_type == 126 {
+            let vx = rng.next_range(-30, 31) as f32 * 0.2;
+            let vy = rng.next_range(-30, 31) as f32 * 0.2;
+            gore.new_gore(rng, world, pos, Vec2::new(vx, vy), 145, 1.0); // :87305
+        }
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -2734,6 +2816,16 @@ pub fn hit_effect_d(
     // `:87238-87258` — the 266 Brain of Cthulhu arm (sites 378-383).
     else if npc_type == 266 {
         brain_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87259-87274` — the 267 Creeper arm (site 384).
+    else if npc_type == 267 {
+        creeper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87275-87340` — the 4/125/126 Eye family arm; the 125/126 twins
+    // are live (sites 385-392), the 4 EoC branch + the sparkle tail land
+    // next batch.
+    else if matches!(npc_type, 4 | 125 | 126) {
+        eye_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4942,5 +5034,55 @@ mod tests {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
         }
         assert_eq!(rng.peek(), twin.peek(), "the brain mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87273` — the Creeper single 402 after the 20x dust-5
+    /// burst.
+    #[test]
+    fn w4_f5d_the_creeper_spawns_the_single() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(389);
+        let _ = hit_effect_d(&n, 267, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 402);
+        assert!(!gore.slot(1).active, "exactly one gore");
+        let mut twin = UnifiedRandom::new(389);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "the creeper mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87291-87305` — the twins' two-iteration loop: each round
+    /// 2/7/9 + the kind fourth (125→146, 126→145), all scatter-velocity;
+    /// the twin replay pins the interleaved argument draws.
+    #[test]
+    fn w4_f5d_the_twins_loop_the_two_rounds() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 50.0);
+        for (kind, fourth) in [(125, 146), (126, 145)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(397);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..8].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![2, 7, 9, fourth, 2, 7, 9, fourth], "twin {kind}");
+            assert!(!gore.slot(8).active, "exactly eight gores");
+            let mut twin = UnifiedRandom::new(397);
+            for _ in 0..150 {
+                twin_dust(&mut twin, 50, 50);
+            }
+            for _ in 0..8 {
+                let _vx = twin.next_range(-30, 31);
+                let _vy = twin.next_range(-30, 31);
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "twin {kind} mirrors the C# draws");
+        }
     }
 }
