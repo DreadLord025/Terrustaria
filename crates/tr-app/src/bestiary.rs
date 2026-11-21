@@ -2444,6 +2444,47 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Granite Golem",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "GraniteFlyer",
+        net_id: 483,
+        kind: NpcKind::GraniteFlyer,
+        variant: None,
+        quick_unlock: false,
+        name: "Granite Elemental",
+    },
+    BestiaryEntryDef {
+        credit_id: "EnchantedNightcrawler",
+        net_id: 484,
+        kind: NpcKind::EnchantedNightcrawler,
+        variant: None,
+        quick_unlock: false,
+        name: "Enchanted Nightcrawler",
+    },
+    BestiaryEntryDef {
+        credit_id: "Grubby",
+        net_id: 485,
+        kind: NpcKind::Grubby,
+        variant: None,
+        quick_unlock: false,
+        name: "Grubby",
+    },
+    BestiaryEntryDef {
+        credit_id: "Sluggy",
+        net_id: 486,
+        kind: NpcKind::Sluggy,
+        variant: None,
+        quick_unlock: false,
+        name: "Sluggy",
+    },
+    BestiaryEntryDef {
+        credit_id: "Buggy",
+        net_id: 487,
+        kind: NpcKind::Buggy,
+        variant: None,
+        quick_unlock: false,
+        name: "Buggy",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

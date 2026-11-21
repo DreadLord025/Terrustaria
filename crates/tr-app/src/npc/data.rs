@@ -645,6 +645,12 @@ impl NpcKind {
             NpcKind::Medusa => 480,
             NpcKind::GreekSkeleton => 481,
             NpcKind::GraniteGolem => 482,
+            // W4-d40: GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy keep their vanilla ids (free in the protocol space).
+            NpcKind::GraniteFlyer => 483,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -1035,6 +1041,12 @@ impl NpcKind {
             480 => NpcKind::Medusa,
             481 => NpcKind::GreekSkeleton,
             482 => NpcKind::GraniteGolem,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            483 => NpcKind::GraniteFlyer,
+            484 => NpcKind::EnchantedNightcrawler,
+            485 => NpcKind::Grubby,
+            486 => NpcKind::Sluggy,
+            487 => NpcKind::Buggy,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1971,6 +1983,12 @@ impl NpcKind {
             | NpcKind::Medusa => "NPC_Hit_1",
             NpcKind::GreekSkeleton => "NPC_Hit_2",
             NpcKind::GraniteGolem => "NPC_Hit_41",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => "NPC_Hit_7",
+            NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2335,6 +2353,12 @@ impl NpcKind {
             | NpcKind::Medusa => "NPC_Killed_1",
             NpcKind::GreekSkeleton => "NPC_Killed_2",
             NpcKind::GraniteGolem => "NPC_Killed_43",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => "NPC_Killed_6",
+            NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2772,6 +2796,12 @@ impl NpcKind {
             NpcKind::Medusa
             | NpcKind::GreekSkeleton
             | NpcKind::GraniteGolem => 3,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 91,
+            NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => 66,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3362,6 +3392,12 @@ impl NpcKind {
             NpcKind::Medusa
             | NpcKind::GreekSkeleton => (18.0, 40.0),
             NpcKind::GraniteGolem => (28.0, 48.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::GraniteFlyer => (20.0, 30.0),
+            NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => (10.0, 4.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -4070,6 +4106,12 @@ impl NpcKind {
             NpcKind::Medusa => 400,
             NpcKind::GreekSkeleton => 70,
             NpcKind::GraniteGolem => 110,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 40,
+            NpcKind::EnchantedNightcrawler => 5,
+            NpcKind::Grubby => 5,
+            NpcKind::Sluggy => 5,
+            NpcKind::Buggy => 5,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4494,6 +4536,12 @@ impl NpcKind {
             NpcKind::Medusa => 30,
             NpcKind::GreekSkeleton => 22,
             NpcKind::GraniteGolem => 30,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 24,
+            NpcKind::EnchantedNightcrawler => 0,
+            NpcKind::Grubby => 0,
+            NpcKind::Sluggy => 0,
+            NpcKind::Buggy => 0,
             NpcKind::DungeonSpirit => 70,
         }
     }

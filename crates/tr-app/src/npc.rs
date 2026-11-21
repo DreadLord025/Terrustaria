@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy.
+    /// `NPCID.GraniteFlyer` (483): 20x30, aiStyle 91, dmg 24, def 8, 40 HP,
+    /// kb 0.6, value 1000 (`NPC.cs` SetDefaults arm).
+    GraniteFlyer,
+    /// `NPCID.EnchantedNightcrawler` (484): 10x4, aiStyle 66, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    EnchantedNightcrawler,
+    /// `NPCID.Grubby` (485): 10x4, aiStyle 66, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    Grubby,
+    /// `NPCID.Sluggy` (486): 10x4, aiStyle 66, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    Sluggy,
+    /// `NPCID.Buggy` (487): 10x4, aiStyle 66, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    Buggy,
     // W4-d40 (NPCID 421-490 roster wave): MothronEgg, MothronSpawn, Medusa, GreekSkeleton, GraniteGolem.
     /// `NPCID.MothronEgg` (478): 34x34, aiStyle 89, dmg 0, def 30, 200 HP,
     /// kb 0.7, value 0 (`NPC.cs` SetDefaults arm).
@@ -3220,6 +3236,9 @@ impl Npc {
                 // W4-d40: the explicit `friendly = true` SetDefaults rows
                 // (`NPC.cs:14313`/`:14344`/`:14401`/`:14588`).
                 || matches!(kind, NpcKind::SkeletonMerchant)
+                // W4-d40: the explicit `friendly = true` SetDefaults rows
+                // (`NPC.cs:14313`/`:14344`/`:14401`/`:14588`).
+                || matches!(kind, NpcKind::EnchantedNightcrawler | NpcKind::Grubby | NpcKind::Sluggy | NpcKind::Buggy)
                 || crate::bug_net::npc_catchable(kind.cs_id() as i32),
             // `NPC.releaseOwner = 255` (`NPC.cs:8445`'s SetDefaults reset).
             release_owner: 255,
@@ -3770,6 +3789,12 @@ impl Npc {
             NpcKind::Medusa => 0.15,
             NpcKind::GreekSkeleton => 0.4,
             NpcKind::GraniteGolem => 0.35,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 0.6,
+            NpcKind::EnchantedNightcrawler => 1.0,
+            NpcKind::Grubby => 1.0,
+            NpcKind::Sluggy => 1.0,
+            NpcKind::Buggy => 1.0,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4210,6 +4235,12 @@ impl Npc {
             NpcKind::Medusa => 20,
             NpcKind::GreekSkeleton => 10,
             NpcKind::GraniteGolem => 18,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 8,
+            NpcKind::EnchantedNightcrawler => 0,
+            NpcKind::Grubby => 0,
+            NpcKind::Sluggy => 0,
+            NpcKind::Buggy => 0,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4642,6 +4673,12 @@ impl Npc {
             NpcKind::Medusa => 1000.0,
             NpcKind::GreekSkeleton => 300.0,
             NpcKind::GraniteGolem => 500.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::GraniteFlyer => 1000.0,
+            NpcKind::EnchantedNightcrawler => 0.0,
+            NpcKind::Grubby => 0.0,
+            NpcKind::Sluggy => 0.0,
+            NpcKind::Buggy => 0.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6725,6 +6762,13 @@ impl Npc {
             NpcKind::Medusa
             | NpcKind::GreekSkeleton
             | NpcKind::GraniteGolem => self.update_skeleton(world, player, dt),
+            // W4-d40: GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::GraniteFlyer
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => {}
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9906,6 +9950,13 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = 1;
                 }
+            }
+            NpcKind::GraniteFlyer
+            | NpcKind::EnchantedNightcrawler
+            | NpcKind::Grubby
+            | NpcKind::Sluggy
+            | NpcKind::Buggy => {
+                self.frame = 0;
             }
             NpcKind::DukeFishron => {
                 if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
@@ -19589,6 +19640,12 @@ impl Npc {
             NpcKind::Medusa => 480,
             NpcKind::GreekSkeleton => 481,
             NpcKind::GraniteGolem => 482,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::GraniteFlyer => 483,
+            NpcKind::EnchantedNightcrawler => 484,
+            NpcKind::Grubby => 485,
+            NpcKind::Sluggy => 486,
+            NpcKind::Buggy => 487,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24658,7 +24715,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 320] = [
+    pub(super) const ALL_KINDS: [NpcKind; 325] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24937,6 +24994,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy.
+        NpcKind::GraniteFlyer,
+        NpcKind::EnchantedNightcrawler,
+        NpcKind::Grubby,
+        NpcKind::Sluggy,
+        NpcKind::Buggy,
         // W4-d40: MothronEgg, MothronSpawn, Medusa, GreekSkeleton, GraniteGolem.
         NpcKind::MothronEgg,
         NpcKind::MothronSpawn,
@@ -28608,7 +28671,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            320,
+            325,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -35233,5 +35296,70 @@ mod w4_d40_mothronegg_mothronspawn_tests {
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Medusa, SlimeVariant::Blue).net_id, 480);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GreekSkeleton, SlimeVariant::Blue).net_id, 481);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GraniteGolem, SlimeVariant::Blue).net_id, 482);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the GraniteFlyer, EnchantedNightcrawler, Grubby, Sluggy, Buggy
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_graniteflyer_enchantednightcrawler_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::GraniteFlyer, 483u16, 91u8, 20.0, 30.0, 24, 8, 40, 0.6f32, 1000.0),
+            (NpcKind::EnchantedNightcrawler, 484u16, 66u8, 10.0, 4.0, 0, 0, 5, 1.0f32, 0.0),
+            (NpcKind::Grubby, 485u16, 66u8, 10.0, 4.0, 0, 0, 5, 1.0f32, 0.0),
+            (NpcKind::Sluggy, 486u16, 66u8, 10.0, 4.0, 0, 0, 5, 1.0f32, 0.0),
+            (NpcKind::Buggy, 487u16, 66u8, 10.0, 4.0, 0, 0, 5, 1.0f32, 0.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::GraniteFlyer.hit_sound(), Some("NPC_Hit_7"));
+        assert_eq!(NpcKind::GraniteFlyer.death_sound(), Some("NPC_Killed_6"));
+        assert_eq!(NpcKind::EnchantedNightcrawler.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::EnchantedNightcrawler.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::Grubby.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Grubby.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::Sluggy.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Sluggy.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::Buggy.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::Buggy.death_sound(), Some("NPC_Killed_1"));
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::GraniteFlyer.to_u16(), 483);
+        assert_eq!(NpcKind::from_u16(483), Some(NpcKind::GraniteFlyer));
+        assert_eq!(NpcKind::EnchantedNightcrawler.to_u16(), 484);
+        assert_eq!(NpcKind::from_u16(484), Some(NpcKind::EnchantedNightcrawler));
+        assert_eq!(NpcKind::Grubby.to_u16(), 485);
+        assert_eq!(NpcKind::from_u16(485), Some(NpcKind::Grubby));
+        assert_eq!(NpcKind::Sluggy.to_u16(), 486);
+        assert_eq!(NpcKind::from_u16(486), Some(NpcKind::Sluggy));
+        assert_eq!(NpcKind::Buggy.to_u16(), 487);
+        assert_eq!(NpcKind::from_u16(487), Some(NpcKind::Buggy));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GraniteFlyer, SlimeVariant::Blue).net_id, 483);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::EnchantedNightcrawler, SlimeVariant::Blue).net_id, 484);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Grubby, SlimeVariant::Blue).net_id, 485);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Sluggy, SlimeVariant::Blue).net_id, 486);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Buggy, SlimeVariant::Blue).net_id, 487);
+        assert!(Npc::new(NpcKind::EnchantedNightcrawler, 0.0, 0.0, 1, 0.0).friendly);
+        assert!(Npc::new(NpcKind::Grubby, 0.0, 0.0, 1, 0.0).friendly);
+        assert!(Npc::new(NpcKind::Sluggy, 0.0, 0.0, 1, 0.0).friendly);
+        assert!(Npc::new(NpcKind::Buggy, 0.0, 0.0, 1, 0.0).friendly);
     }
 }

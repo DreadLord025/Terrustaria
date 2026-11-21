@@ -1654,6 +1654,12 @@ fn portrait_data(
         (NpcKind::Medusa, _)
         | (NpcKind::GreekSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::GraniteGolem, _) => (sheet_i, 48.0, 28.0, 48.0, white),
+        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::GraniteFlyer, _) => (sheet_i, 30.0, 20.0, 30.0, white),
+        (NpcKind::EnchantedNightcrawler, _)
+        | (NpcKind::Grubby, _)
+        | (NpcKind::Sluggy, _)
+        | (NpcKind::Buggy, _) => (sheet_i, 4.0, 10.0, 4.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }
