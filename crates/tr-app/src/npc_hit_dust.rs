@@ -192,6 +192,23 @@
 //!   velocity ×1.5 + noGravity.
 //! - 88844 — 170/180 (`:88838-88847`): ×50 dust 54, same shape.
 //! - 88868 — 171 (`:88862-88871`): ×50 dust 16, same shape.
+//! Batch 14 (the mummy/wraith/spore/serpent live arms):
+//! - 88940 — the mummies 78/79/80/630 (`:88934-88943`): ×50 dust 31,
+//!   (0,0), scale 1.5, velocity ×2 + noGravity.
+//! - 88965 — 82/158/159/250/253 (`:88959-88968`): ×50 dust 54, (0,0),
+//!   alpha 50, scale 1.5, velocity ×2 + noGravity.
+//! - 88990 — 316/330 (`:88984-88992`): ×100 dust 192, alpha 100,
+//!   (100,100,100,100), noGravity.
+//! - 89009 — 662 (`:89003-89013`): ×100 dust 180 at (vx,vy), velocity
+//!   ×2 + noGravity + scale 1.4.
+//! - 89032 — 315 (`:89026-89035`): ×50 dust 54, the 88965 shape.
+//! - 89059 — the FungiSpore group 254-261/634/635 (`:89053-89062`):
+//!   ×50 dust 165, (0,0), alpha 50, scale 1.5, velocity ×2 + noGravity.
+//! - 89105 — the Bone Serpent 39/40/41 (`:89099-89107`): ×50 dust 26.
+//! - 89121/89125 — Cursed Skull 34 (`:89115-89128`): ×30 PAIRS at
+//!   (-vx·0.2,-vy·0.2) — dust 15 alpha 100 scale 1.8 noLight noGravity
+//!   ×1.3, then dust 26 scale 0.9 noLight ×1.3.
+//! - 89150 — 289 (`:89144-89154`): ×30 dust 181, the 15-shape single.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -966,6 +983,99 @@ pub fn replay_hit_dust(
                 let d = dust.slot_mut(idx);
                 d.velocity *= 1.5;
                 d.no_gravity = true;
+            }
+        }
+        // `:88934-88943` — the mummies: ×50 dust 31, (0,0), scale 1.5,
+        // velocity ×2 + noGravity.
+        78 | 79 | 80 | 630 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 31, 0.0, 0.0, 0, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
+        // `:88959-88968`/`:89026-89035` — the wraith group + 315: ×50
+        // dust 54, (0,0), alpha 50, scale 1.5, velocity ×2 + noGravity.
+        82 | 158 | 159 | 250 | 253 | 315 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 54, 0.0, 0.0, 50, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
+        // `:88984-88992` — 316/330: ×100 dust 192, alpha 100, the grey
+        // tint, noGravity.
+        316 | 330 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let idx = live_dust(
+                    s, 192, dir, -1.0, 100, Color::new(100, 100, 100, 100), 1.0,
+                    rng, dust, ctx, world,
+                );
+                dust.slot_mut(idx).no_gravity = true; // `:88991`
+            }
+        }
+        // `:89003-89013` — 662: ×100 dust 180 at the NPC's own velocity,
+        // velocity ×2 + noGravity + scale 1.4.
+        662 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let idx = live_dust(s, 180, s.vx, s.vy, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+                d.scale = 1.4;
+            }
+        }
+        // `:89053-89062` — the FungiSpore group: ×50 dust 165, (0,0),
+        // alpha 50, scale 1.5, velocity ×2 + noGravity.
+        254..=261 | 634 | 635 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 165, 0.0, 0.0, 50, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
+        // `:89099-89107` — the Bone Serpent segments: ×50 dust 26.
+        39 | 40 | 41 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 26, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:89115-89128` — the Cursed Skull: ×30 PAIRS at the reflected
+        // velocity — dust 15 (alpha 100, scale 1.8, noLight+noGravity,
+        // ×1.3) then dust 26 (scale 0.9, noLight, ×1.3).
+        34 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 30.0) {
+                let idx = live_dust(
+                    s, 15, -s.vx * 0.2, -s.vy * 0.2, 100, Color::default(), 1.8,
+                    rng, dust, ctx, world,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_light = true; // `:89122`
+                d.no_gravity = true; // `:89123`
+                d.velocity *= 1.3; // `:89124`
+                let idx = live_dust(
+                    s, 26, -s.vx * 0.2, -s.vy * 0.2, 0, Color::default(), 0.9,
+                    rng, dust, ctx, world,
+                ); // `:89125`
+                let d = dust.slot_mut(idx);
+                d.no_light = true; // `:89126`
+                d.velocity *= 1.3; // `:89127`
+            }
+        }
+        // `:89144-89154` — 289: ×30 dust 181, the 15-shape single.
+        289 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 30.0) {
+                let idx = live_dust(
+                    s, 181, -s.vx * 0.2, -s.vy * 0.2, 100, Color::default(), 1.8,
+                    rng, dust, ctx, world,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_light = true;
+                d.no_gravity = true;
+                d.velocity *= 1.3;
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -2008,5 +2118,76 @@ mod tests {
             assert_eq!(live2.len(), 5, "type {t}");
             assert!(live2.iter().all(|d| d.dust_type == dt && d.no_gravity), "type {t}");
         }
+    }
+
+    /// W4-g62 batch 14 — the Cursed Skull pair (`NPC.cs:89121-89127`):
+    /// dust 15 then dust 26 per iteration, both noLight ×1.3, the first
+    /// also noGravity — the full mirror on one iteration.
+    #[test]
+    fn w4_g62_the_cursed_skull_pair_mirrors() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(34, 100, 100, 10.0 / 3.0); // ×30 → 1
+        s.vx = 3.0;
+        s.vy = -1.0;
+        let mut rng = UnifiedRandom::new(137);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(137);
+        let mut twin = DustPool::new();
+        for _ in 0..1 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 15,
+                -0.6, 0.2, 100, Color::default(), 1.8,
+            );
+            let d = twin.slot_mut(idx);
+            d.no_light = true;
+            d.no_gravity = true;
+            d.velocity *= 1.3;
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 26,
+                -0.6, 0.2, 0, Color::default(), 0.9,
+            );
+            let d = twin.slot_mut(idx);
+            d.no_light = true;
+            d.velocity *= 1.3;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 14 — the mummy/wraith/spore ×2-velocity rows and the
+    /// 316/330 grey noGravity, 662's own-velocity 1.4 scale.
+    #[test]
+    fn w4_g62_the_batch14_rows() {
+        let world = air();
+        let ctx = ctx();
+        for (t, dt, mult, alpha) in [
+            (78, 31, 50.0, 0), (82, 54, 50.0, 50), (250, 54, 50.0, 50),
+            (315, 54, 50.0, 50), (254, 165, 50.0, 50), (261, 165, 50.0, 50),
+            (316, 192, 100.0, 100), (39, 26, 50.0, 0),
+        ] {
+            let s = snap(t, 100, 100, 10.0);
+            let want = hit_count(10.0, 100, mult);
+            let mut r = UnifiedRandom::new(139);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt && d.alpha == alpha), "type {t}");
+            if dt != 26 {
+                assert!(live.iter().all(|d| d.no_gravity), "type {t}");
+            }
+        }
+        // 662: own velocity, scale pinned 1.4.
+        let mut s = snap(662, 100, 100, 5.0); // ×100 → 5
+        s.vx = 1.5;
+        s.vy = -0.5;
+        let mut r = UnifiedRandom::new(139);
+        let mut p = DustPool::new();
+        replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+        let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 5);
+        assert!(live.iter().all(|d| d.dust_type == 180 && d.scale == 1.4 && d.no_gravity));
     }
 }
