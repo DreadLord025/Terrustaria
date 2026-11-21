@@ -1707,6 +1707,9 @@ mod tests {
         world.downed_christmas_tree = true;
         world.shadow_orb_smashed = true;
         world.spawn_meteor = true;
+        // W4-f45: the starfall pair (the meteor shower + coin rain).
+        world.meteor_shower_count = 2800;
+        world.coin_rain = 1_200_000;
         world.shadow_orb_count = 7;
         world.altars_smashed = 3;
         world.hard_mode = true;
@@ -1940,6 +1943,11 @@ mod tests {
             "{context}: orbs"
         );
         assert_eq!(got.spawn_meteor, want.spawn_meteor, "{context}: meteor");
+        assert_eq!(
+            got.meteor_shower_count, want.meteor_shower_count,
+            "{context}: meteorShowerCount"
+        );
+        assert_eq!(got.coin_rain, want.coin_rain, "{context}: coinRain");
         assert_eq!(
             got.shadow_orb_count, want.shadow_orb_count,
             "{context}: orb count"
@@ -2380,6 +2388,9 @@ mod tests {
         tail[2048 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)); // forceXMasForever (`:1419`)
         tail[2049 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::VAMPIRISM)); // vampireSeed (`:1420`)
         tail[2050 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)); // infectedSeed (`:1421`)
+        // W4-f45: the starfall pair at 2051..2059 (`:1422-1423`).
+        tail[2051 + d..2055 + d].copy_from_slice(&world.meteor_shower_count.to_le_bytes());
+        tail[2055 + d..2059 + d].copy_from_slice(&world.coin_rain.to_le_bytes());
         tail[2059 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)); // teamBasedSpawnsSeed (`:1424`)
         tail[2061 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)); // dualDungeonsSeed (`:1426`)
         tail[2062 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::MORE_LIGHTNING)); // moreLightningSeed (`:1427`)
@@ -4551,6 +4562,43 @@ mod tests {
         let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
         let tail_at = flags_at + prefix_len;
         assert_eq!(buf[tail_at + 37], 1, "afterPartyOfDoom round-trips");
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `meteorShowerCount`/`coinRain` land at tail 2051/2055
+    /// (`WorldFile.cs:1422-1423`) and follow the v291 read gate (`:2488-2497`).
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_starfall_pair_lands_and_gates() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 2051..tail_at + 2055].copy_from_slice(&2800i32.to_le_bytes());
+        data[tail_at + 2055..tail_at + 2059].copy_from_slice(&1_200_000i32.to_le_bytes());
+        let w = parse(&data).expect("the patched fixture parses");
+        assert_eq!(w.meteor_shower_count, 2800, "meteorShowerCount at tail 2051");
+        assert_eq!(w.coin_rain, 1_200_000, "coinRain at tail 2055");
+        // v290: the pair does not exist yet — both stay 0.
+        let w = parse(&synthetic_file(290, &[2, 144], 160, 11)).expect("v290 loads");
+        assert_eq!(w.meteor_shower_count, 0, "below 291: meteorShowerCount stays 0");
+        assert_eq!(w.coin_rain, 0, "below 291: coinRain stays 0");
+        // The writer's own block carries the owned world's pair (the 2-slot
+        // celebrant list shifts them by d=8).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 2051 + d..tail_at + 2055 + d].try_into().unwrap()),
+            2800, "meteorShowerCount round-trips"
+        );
+        assert_eq!(
+            i32::from_le_bytes(buf[tail_at + 2055 + d..tail_at + 2059 + d].try_into().unwrap()),
+            1_200_000, "coinRain round-trips"
+        );
         assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
     }
 

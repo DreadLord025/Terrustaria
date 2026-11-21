@@ -830,11 +830,11 @@ fn world_click(app: &mut App, row: usize) {
             // `remixWorld` and `GetPlayerWithHighestLuck().luck` are the same
             // inputs `update_world_tick` passes (`weather.rs:178-187`).
             if app.rain.is_raining() {
-                app.rain.stop_rain();
+                app.rain.stop_rain(&mut app.world);
             } else {
                 let remix_world = app.wind.remix_world;
                 let player_luck = app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0);
-                app.rain.start_rain(&app.world, remix_world, player_luck);
+                app.rain.start_rain(&mut app.world, remix_world, player_luck);
             }
         }
         14 => {

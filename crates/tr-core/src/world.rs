@@ -341,6 +341,20 @@ pub struct World {
     /// (`Main.cs:65230`) and the orb-boss deaths (`NPC.cs:79450`) raise it;
     /// the 16200-tick resolution lands the ore (`HandleMeteorFall`).
     pub spawn_meteor: bool,
+    /// `WorldGen.meteorShowerCount` (`WorldFile.cs:1422` write / `:2490` read,
+    /// v291+, via `_tempMeteorShowerCount`): the falling-star shower's remaining
+    /// spawns. `StartMeteorShower` (`WorldGen.cs:6239-6244`) rolls
+    /// `Next(650,751)*4`; `SpawnFallingObjects` (`:71744-71761`) decrements it
+    /// per star (the dial fast-forward zeroes it). The star projectiles are
+    /// unported, so the count round-trips + the start arm rolls it (W4-f45).
+    pub meteor_shower_count: i32,
+    /// `Main.coinRain` (`WorldFile.cs:1423` write / `:2491` read, v291+, via
+    /// `_tempCoinRain`): the coin-rain event's remaining value. `StartRain`
+    /// (`Main.cs:64672-64673`) rolls `Next(75,151)*100*100 * maxTilesX/4200f`
+    /// on a luck hit; `StopRain` (`:64651`) zeroes it; `SpawnFallingObjects`
+    /// (`WorldGen.cs:71781-71821`) drains it per coin. The coin projectiles are
+    /// unported, so the value round-trips + the rain arms set it (W4-f45).
+    pub coin_rain: i32,
     /// The body's `life / lifeMax` (`Main.npc[NPC.golemBoss].life` reads
     /// of the fists' chase/dash tiers, `:19274`/`:19370`, and the free
     /// head's power tiers, `:31524-31548`) — the WoF write-through shape.
@@ -852,6 +866,8 @@ impl World {
             golem_present: false,
             golem_hp_ratio: 1.0,
             spawn_meteor: false,
+            meteor_shower_count: 0,
+            coin_rain: 0,
             golem_x: 0.0,
             skeletron_x: 0.0,
             prime_present: false,

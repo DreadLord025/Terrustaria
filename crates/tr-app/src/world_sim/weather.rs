@@ -177,7 +177,7 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // (`Main.cs:64966`); `remixWorld` reads Wind's stand-in field.
         rain.update_time(
             day_rate,
-            world,
+            &mut app.world,
             any_player_120,
             wind.remix_world,
             // `GetPlayerWithHighestLuck().luck` for the coin-rain roll

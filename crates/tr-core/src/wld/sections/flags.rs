@@ -271,8 +271,8 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::ENDLESS_CHRISTMAS)); // forceXMasForever (`:575-578`)
     w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::VAMPIRISM)); // vampireSeed (`:555-558`)
     w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::WORLD_IS_INFECTED)); // infectedSeed (`:559-562`)
-    w.i32(0); // _tempMeteorShowerCount
-    w.i32(0); // _tempCoinRain
+    w.i32(world.meteor_shower_count); // _tempMeteorShowerCount (W4-f45, `:1422`)
+    w.i32(world.coin_rain); // _tempCoinRain (W4-f45, `:1423`)
               // WorldFile.cs:1424-1426: team-based spawns plus the extra spawn point
               // list (`ExtraSpawnPointManager.Write`) — the spawn list is unowned,
               // so a zero count; the seed byte is the micro-seed mirror.
@@ -756,7 +756,10 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         }
     }
     if version >= 291 {
-        r.skip(2 * 4)?; // _tempMeteorShowerCount, _tempCoinRain
+        // W4-f45: the starfall pair lands (`SetOngoingToTemps:177-178` restores
+        // them to `WorldGen.meteorShowerCount` / `Main.coinRain`).
+        world.meteor_shower_count = r.i32()?; // _tempMeteorShowerCount (`:2490`)
+        world.coin_rain = r.i32()?; // _tempCoinRain (`:2491`)
     }
     if version >= 297 {
         if r.bool()? {
