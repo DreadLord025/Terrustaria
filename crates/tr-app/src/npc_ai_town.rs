@@ -690,6 +690,19 @@ impl TownEnvFlags {
     /// Classic damage multiplier. `expert_mode` is the session player's
     /// buff mirror (`Main.expertMode`'s standing-in, the b3 feeder's
     /// `player.buffs.expert_mode` read).
+    ///
+    /// FEEDER-CANONICAL (W4-g90 retire, the b3 receipt — research/135
+    /// §11): b3's phase-1 tip `96a5d88f0` builds its `TownEnv` INLINE in
+    /// `npc.rs::ai_007_town_family` and folds `combat_book_two: false`
+    /// ("volume two unported") — STALE on that branch: the g90 world
+    /// flag (`World.combat_book_volume_two_was_used`) is the carrier.
+    /// This builder reads BOTH books live; every other scalar agrees
+    /// with b3's inline env field-for-field (the retire census). At the
+    /// merge b3's arm builds its env through `from_world(...).env(...)`
+    /// (the live lists + the per-NPC homeless seam ride `env`), and the
+    /// arm's `town_stat_bonuses` call (`npc_ai_town.rs:1737`) dedupes
+    /// onto the `update_npcs` feeder pre-pass — same inputs → same
+    /// writes, RNG-free, idempotent (the reset-then-read base).
     pub fn from_world(world: &World, expert_mode: bool) -> Self {
         Self {
             day_time: world.day_time,
@@ -4734,5 +4747,131 @@ mod tests {
         assert_eq!(n.defense_override, Some(((15 + 8 + 2) as f64 * 1.1) as i32));
         assert!((d2 - first.0 * 1.1).abs() < 1e-5);
         assert!((d3 - first.1 * 0.9).abs() < 1e-5);
+    }
+
+    /// W4-g90 RETIRE — the b3-dedup receipt witness 1/2 (WRITTEN NOT
+    /// RUN): the feeder's `from_world` env and b3's phase-1 INLINE env
+    /// (`npc.rs::ai_007_town_family`, tip `96a5d88f0`) agree on every
+    /// scalar EXCEPT `combat_book_two` — b3 folds it false ("volume two
+    /// unported", stale: the g90 world flag is the carrier). The census
+    /// pins the field-for-field claim; witness 2/2 pins the ladder delta.
+    #[test]
+    fn w4_g90_the_b3_inline_env_matches_from_world_except_book_two() {
+        let mut w = ground();
+        w.combat_book_was_used = true;
+        w.combat_book_volume_two_was_used = true;
+        w.downed_eoc = true;
+        let b3 = TownEnv {
+            world: &w,
+            day_time: w.day_time,
+            raining: w.raining,
+            eclipse: w.eclipse,
+            slime_rain: w.slime_rain,
+            storming: false,
+            net_mode: 0,
+            expert_mode: false,
+            master_mode: false,
+            players: &[],
+            npcs: &[],
+            dungeon_x: 0,
+            dungeon_y: 0,
+            combat_book: w.combat_book_was_used,
+            combat_book_two: false, // the b3 fold — the ONE divergence
+            party_up: false,
+            skyblock_low_tiles: false,
+            infected_seed: w.seeds.contains(tr_core::seeds::SeedFlags::ZENITH),
+            only_shimmer_ocean: false,
+            x_mas: false,
+            town_damage_multiplier: 1.0,
+            downed_slime_king: w.downed_slime_king,
+            downed_boss1: w.downed_eoc,
+            downed_deerclops: w.downed_deerclops,
+            downed_boss2: w.downed_eow,
+            downed_boss3: w.downed_skeletron,
+            downed_queen_bee: w.downed_queen_bee,
+            hard_mode: w.hard_mode,
+            downed_queen_slime: w.downed_queen_slime,
+            downed_mech1: w.downed_mech_boss1,
+            downed_mech2: w.downed_mech_boss2,
+            downed_mech3: w.downed_mech_boss3,
+            downed_plant: w.downed_plant_boss,
+            downed_empress: false,
+            downed_fishron: w.downed_fishron,
+            downed_golem: w.downed_golem,
+            downed_cultist: w.downed_ancient_cultist,
+            homeless: false,
+            breath: 200,
+            shimmering: false,
+        };
+        let feeder = TownEnvFlags::from_world(&w, false).env(&w, &[], &[], false);
+        // The scalar census: every field EXCEPT combat_book_two agrees.
+        assert_eq!(feeder.day_time, b3.day_time);
+        assert_eq!(feeder.raining, b3.raining);
+        assert_eq!(feeder.eclipse, b3.eclipse);
+        assert_eq!(feeder.slime_rain, b3.slime_rain);
+        assert_eq!(feeder.storming, b3.storming);
+        assert_eq!(feeder.net_mode, b3.net_mode);
+        assert_eq!(feeder.expert_mode, b3.expert_mode);
+        assert_eq!(feeder.master_mode, b3.master_mode);
+        assert_eq!(feeder.dungeon_x, b3.dungeon_x);
+        assert_eq!(feeder.dungeon_y, b3.dungeon_y);
+        assert_eq!(feeder.combat_book, b3.combat_book);
+        assert!(feeder.combat_book_two && !b3.combat_book_two, "the ONE fold");
+        assert_eq!(feeder.party_up, b3.party_up);
+        assert_eq!(feeder.skyblock_low_tiles, b3.skyblock_low_tiles);
+        assert_eq!(feeder.infected_seed, b3.infected_seed);
+        assert_eq!(feeder.only_shimmer_ocean, b3.only_shimmer_ocean);
+        assert_eq!(feeder.x_mas, b3.x_mas);
+        assert_eq!(feeder.town_damage_multiplier, b3.town_damage_multiplier);
+        assert_eq!(feeder.downed_slime_king, b3.downed_slime_king);
+        assert_eq!(feeder.downed_boss1, b3.downed_boss1);
+        assert_eq!(feeder.downed_deerclops, b3.downed_deerclops);
+        assert_eq!(feeder.downed_boss2, b3.downed_boss2);
+        assert_eq!(feeder.downed_boss3, b3.downed_boss3);
+        assert_eq!(feeder.downed_queen_bee, b3.downed_queen_bee);
+        assert_eq!(feeder.hard_mode, b3.hard_mode);
+        assert_eq!(feeder.downed_queen_slime, b3.downed_queen_slime);
+        assert_eq!(feeder.downed_mech1, b3.downed_mech1);
+        assert_eq!(feeder.downed_mech2, b3.downed_mech2);
+        assert_eq!(feeder.downed_mech3, b3.downed_mech3);
+        assert_eq!(feeder.downed_plant, b3.downed_plant);
+        assert_eq!(feeder.downed_empress, b3.downed_empress);
+        assert_eq!(feeder.downed_fishron, b3.downed_fishron);
+        assert_eq!(feeder.downed_golem, b3.downed_golem);
+        assert_eq!(feeder.downed_cultist, b3.downed_cultist);
+        assert_eq!(feeder.homeless, b3.homeless);
+        assert_eq!(feeder.breath, b3.breath);
+        assert_eq!(feeder.shimmering, b3.shimmering);
+    }
+
+    /// W4-g90 RETIRE — the b3-dedup receipt witness 2/2 (WRITTEN NOT
+    /// RUN): with both books up the feeder's ladder writes 750 HP /
+    /// def 31 while b3's book-two-false fold writes 500 HP / def 23 —
+    /// the delta is exactly one ladder row (+250 HP / +8 def / +0.25
+    /// num2 / ×0.8 num3). The merge dedup (b3's arm env through
+    /// `from_world(...).env(...)`, its `:1737` ladder call onto the
+    /// feeder pre-pass) restores it mechanically: same inputs → same
+    /// writes, zero draws (the idempotence witness above).
+    #[test]
+    fn w4_g90_the_b3_book_two_fold_drops_exactly_one_ladder_row() {
+        let mut w = ground();
+        w.combat_book_was_used = true;
+        w.combat_book_volume_two_was_used = true;
+        w.downed_eoc = true;
+        let feeder = TownEnvFlags::from_world(&w, false).env(&w, &[], &[], false);
+        let mut b3 = TownEnvFlags::from_world(&w, false).env(&w, &[], &[], false);
+        b3.combat_book_two = false; // the b3 phase-1 fold
+        let mut n_feed = guide(0.0, 0.0, None);
+        let mut n_b3 = guide(0.0, 0.0, None);
+        let (f2, f3) = town_stat_bonuses(&mut n_feed, stats(), &feeder, false, false);
+        let (b2, b3v) = town_stat_bonuses(&mut n_b3, stats(), &b3, false, false);
+        assert_eq!(n_feed.max_hp, 750, "the feeder feeds BOTH books");
+        assert_eq!(n_b3.max_hp, 500, "b3's fold drops book two's +250");
+        assert_eq!(n_feed.hp, 750, "the full-heal-on-growth both ways");
+        assert_eq!(n_b3.hp, 500);
+        assert_eq!(n_feed.defense_override, Some(15 + 8 + 8 + 2));
+        assert_eq!(n_b3.defense_override, Some(15 + 8 + 2));
+        assert!((f2 - b2 - 0.25).abs() < 1e-5, "one +0.25 num2 row");
+        assert!((f3 - b3v * 0.8).abs() < 1e-5, "one ×0.8 num3 row");
     }
 }

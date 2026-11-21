@@ -6831,6 +6831,31 @@ onto the superset's restore, 103 §9 step 7; the sidecar restore runs
 SECOND after the character-load hydration, 132 §2c). The branch keeps
 its v7 shape until the merge (the standing decision, 135 header).
 
+**W4-g90 RETIRE — the b3 feeder receipt (research/135 §11a)**: b3's
+pushed tip is `96a5d88f0` — **phase 1 ONLY, phase 2 NOT landed** (two
+commits over wave-3; the phase-2 remainder is b3's own module doc:
+the `TownOutputs` drain, the real `TownDoorOps`, the live NPC list +
+`talk_npc`, the `HomeTileUpdate`/message-60 seam). Phase 1 wires the
+aiStyle-7 dispatch and retires `update_guide`, but its arm builds the
+`TownEnv` INLINE (`npc.rs::ai_007_town_family`) folding
+`combat_book_two: false` ("volume two unported") — STALE: the g90
+world flag is the pushed carrier. The retire census compared b3's
+inline env against `TownEnvFlags::from_world` field-for-field: every
+scalar agrees EXCEPT that one fold (the empress false-fold is shared —
+no `World.downed_empress` on either tip, d125's lane). **The g90
+feeder is canonical** (`8521139d`): at the merge b3's arm env builds
+through `from_world(...).env(...)` (the live lists + homeless ride the
+parameters; the Andrew/Slimefors defaults adjustment stays in the arm)
+and the arm's `town_stat_bonuses` call (`npc_ai_town.rs:1737`) dedupes
+onto the `update_npcs` pre-pass — same inputs → same writes, RNG-free,
+idempotent; the `(num2, num3)` scales stay dropped until phase 2 drains
+`TownOutputs`. Two b3-dedup witnesses WRITTEN NOT RUN
+(`npc_ai_town.rs`): the field-census pin
+(`w4_g90_the_b3_inline_env_matches_from_world_except_book_two`) + the
+one-row delta pin (`w4_g90_the_b3_book_two_fold_drops_exactly_one_ladder_row`
+— 750 HP/def 31 vs 500/23, exactly +250/+8/+0.25/×0.8). Feeder-canonical
+banners landed comments-only on `from_world` + the pre-pass.
+
 **W4-g90 artisan-loaf consumer census (`33d4b1625`)**: the
 `ateArtisanBread` full-source census is exactly four families — the
 use arm (`Player.cs:45218-45221`), `AdjTiles`' TB=4 crafting reach

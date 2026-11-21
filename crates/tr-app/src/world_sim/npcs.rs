@@ -4410,6 +4410,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 // (num2, num3) attack scales have no consumer until the
                 // b3 AI wiring drains `TownOutputs` — dropped here (the
                 // eye wiring's `let _ = out` precedent).
+                // FEEDER-CANONICAL (retire, the b3 receipt): b3's
+                // phase-1 tip `96a5d88f0` wires the AI dispatch on its
+                // own branch but folds combat_book_two false in its
+                // INLINE env — this feeder is the canonical env source
+                // (`from_world`, both books live); at the merge b3's
+                // arm env builds through it and the arm's ladder call
+                // (`npc_ai_town.rs:1737`) dedupes onto THIS pre-pass
+                // (the two b3-dedup witnesses pin the field census +
+                // the one-row delta).
                 {
                     let flags = crate::npc_ai_town::TownEnvFlags::from_world(
                         world,

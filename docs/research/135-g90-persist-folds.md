@@ -800,6 +800,62 @@ arm keeps the AI dispatch; its ladder call dedups onto the feeder at
 the merge (same inputs → same writes, zero draws — the b3-receipt
 recorded in ANALYSIS "W4-g90 retire: the b3 feeder receipt").
 
+### 11a. The b3-receipt (retire probe — origin/task/W4-b3-npc-ai-town-wire)
+
+**b3 tip read: `96a5d88f0` — phase 1 ONLY; phase 2 has NOT landed.**
+The branch carries exactly two commits over wave-3 `a725acb04`: the
+phase-1 wiring (`96a5d88f0`) and nothing else. Phase 1 wires the
+aiStyle-7 axis (`npc.rs::update_rng_dust` → `Npc::ai_007_town_family` →
+`npc_ai_town::town_npc_ai`), retires `update_guide`, registers the door
+latch fields + the NO-OP `TownDoorOps`, and runs the generic
+`UpdateNPC` collision tail. **Phase 2 remainder (b3's own module doc):**
+drain `TownOutputs` (shots/strikes/partner writes/home updates/saved
+states), implement `TownDoorOps` over `tr_core::edit::{open_door,
+close_door}`, thread the live NPC list + `App.talk_npc`, apply
+`HomeTileUpdate` through `TownRooms` + message 60.
+
+**The feeder-canonical verdict (the g90d position, verified at retire):**
+b3's phase-1 arm builds its `TownEnv` INLINE in `npc.rs`
+(`ai_007_town_family`, the env literal at b3 `npc.rs:10141-10190`) and
+folds **`combat_book_two: false` ("volume two unported")** — STALE on
+that branch: the g90 world flag `World.combat_book_volume_two_was_used`
+is the pushed carrier (this lane, `8521139d` + lane 7). The retire
+census compared b3's inline env against `TownEnvFlags::from_world`
+field-for-field: **every scalar agrees EXCEPT that one fold** (the
+same world reads — day/rain/eclipse/slime-rain, both book ONE reads,
+the full downed-boss ladder incl. deerclops/queen-slime, hard mode,
+zenith infected-seed; the same false folds — storming/party/skyblock/
+only-shimmer-ocean/xMas/empress, net_mode 0, master false, ×1.0
+Classic, breath 200, shimmering false). The empress fold is shared
+(no `World.downed_empress` field on either tip — d125's lane owns the
+flag's wiring; both fold false, no divergence).
+
+**The merge dedup (mechanical, two steps):**
+1. b3's arm builds its env through `TownEnvFlags::from_world(world,
+   player.buffs.expert_mode).env(world, &players, &npcs, homeless)` —
+   the live lists + the per-NPC homeless seam ride `env`'s parameters;
+   the one fold flips to the live flag. The arm's Andrew/Slimefors
+   defaults-copy adjustment (`npc_ai_town.rs:1704-1711`) stays INSIDE
+   the arm (it mutates the per-NPC `stats`, not the env).
+2. The arm's `town_stat_bonuses` call (`npc_ai_town.rs:1737`) dedupes
+   onto the `update_npcs` feeder pre-pass (`world_sim/npcs.rs:4454`) —
+   same inputs → same writes, RNG-free, idempotent (the reset-then-read
+   base). The feeder runs BEFORE the slot loop; the arm's call would
+   re-run the identical ladder at the slot turn — drop the arm's call,
+   keep the feeder's (the ForceBubble pre-pass convention). The
+   `(num2, num3)` attack scales stay dropped until b3 phase 2 drains
+   `TownOutputs` (the arm reads them for the attack-time math — the
+   feeder's drop is the recorded remainder, unchanged).
+
+**Two b3-dedup witnesses WRITTEN NOT RUN** (`npc_ai_town.rs`):
+`w4_g90_the_b3_inline_env_matches_from_world_except_book_two` (the
+field-for-field census, b3's inline env transcribed from its tip) +
+`w4_g90_the_b3_book_two_fold_drops_exactly_one_ladder_row` (750/31 vs
+500/23 with both books up — the delta is exactly one ladder row:
++250 HP / +8 def / +0.25 num2 / ×0.8 num3). The feeder-canonical
+banner is landed on `from_world`'s doc + the `update_npcs` pre-pass
+comment (comments-only).
+
 **Witness census (all WRITTEN NOT RUN — code-only lane):** the lane-7
 17 + the feeder 4 + the fishing 1 + the loaf live-chain 2 = 24 g90
 witnesses across `editing.rs`/`player.rs`/`persist.rs`/`player_file.rs`/
