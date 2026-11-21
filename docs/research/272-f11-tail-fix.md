@@ -1,20 +1,28 @@
-# 239 — W4-g48: the f11 minecart fail-tile tail-fix hunk (upstream publish)
+# 272 — W4-g48: the f11 minecart fail-tile tail-fix hunk (upstream publish)
 
-Number **239** — RENAMED from the initial 237 (correction phase,
-2026-11-21). The 237 pick per the research/150 free block
-(`origin/task/W4-d54-dust-sites-world` tip `38bfd1d22`: "Numbers 237+ stay
-FREE for future lanes"; 139 RESERVED for g52c-net-master) TRIPLE-collided:
+Number **272** — RENAMED chain **237 → 239 → 272** (REGISTRY-RENAME per
+research/150 round 2, d54 tip `72226e500`, §6.3 g48 row: the 237 key
+belongs to e23's earlier push → this doc takes **272**). Chain history:
+the initial 237 pick per the round-1 free block (`38bfd1d22`: "Numbers
+237+ stay FREE"; 139 RESERVED for g52c-net-master) TRIPLE-collided —
 e23 `237-bestiary-ui-final.md` (first-add `7a7779690`
 2026-11-21T10:53:03+02:00), g61 `237-g61-spawn-family-final.md`
-(`fd406ecba` 12:12:59), this doc (`34029437a` 12:15:09). First-pushed
-timestamp wins per the registry rules → **e23 keeps 237**; the losers
-renumber in first-add order: **g61 → 238** (that lane's own rename),
-**g48 → 239** (this doc). A full 358-tip `task/W4-*` scan found exactly
-these three 237 claims; 238/239 were unclaimed (g58's 240–243 happiness
-family is the only other 237+ claim at scan time — the lane's new
-correction publishes took 244/245). All refs on this branch re-pointed
-(INDEX row, ANALYSIS final-phase note, PORT_MAP minecart row,
-research/17 witness counts + the g52c receipt note).
+(`fd406ecba` 12:12:59), this doc (`34029437a` 12:15:09) — and the
+correction phase (`2b61530b4` 14:30:16) self-renamed to 239 on the
+then-unclaimed scan. The registry round-2 refresh superseded both:
+**237 = e23 KEEPS**, g61's chain 237→238 also lost (238 = d42
+`9eadc3043` 12:15:55) → g61 takes 273, and **239 = d42**
+`239-d42-final-keep-one-and-band.md` (`bac408be0` 12:55:30, pushed
+before this lane's 14:30:16 rename landed) — g56's 239 → 274, f21's
+239 → 276, this lane's 239 → **272** per the §6.3 assignment. All refs
+on this branch re-pointed (INDEX row, ANALYSIS final-phase +
+correction-phase notes, PORT_MAP minecart row, research/17 witness
+counts + the g52c receipt note + the correction receipt). The lane's
+sibling correction publishes 244/245 were ALSO inside the registry's
+consumed 244–280 assignment block (244 → c31, 245 → the d81/g53 fork)
+and renumbered in the same round: 244 → **281**, 245 → **282** (fresh
+362-tip sweep, 281/282 unclaimed; the registry cutoff note: post-sweep
+pushes self-adjudicate, free numbers ≥281).
 
 ## The defect (f11 branch tail, STILL wrong at its tip)
 

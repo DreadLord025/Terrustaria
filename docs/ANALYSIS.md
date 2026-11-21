@@ -39614,7 +39614,7 @@ upstream publish, the g52c-139 receipt and the research/17 tail SEAL
   scan + reservation fields (`WorldItem.cs:188-285`) that no tip rows;
   g49/g50/g51 grep-empty, the item lane owns it. The table counts
   mechanically: 30 WIRED / 4 N/A / 4 DEAD / 2 PARKED = 40/40.
-- **The f11 fail-tile tail-fix publish (research/239, renamed from 237).**
+- **The f11 fail-tile tail-fix publish (research/272, chain 237→239→272).**
   The f11 tip `84ed6342b` STILL carries the killing
   `kill_tile(world, i, j, true)` in `frame_track`'s
   `(pound & flag4) && !mute` tail — inert for f11's mute:true callers,
@@ -39623,16 +39623,18 @@ upstream publish, the g52c-139 receipt and the research/17 tail SEAL
   witness (`w4_g48_the_pound_fail_tail_never_removes_the_track` — the
   mask-18 isolated-rail pound cycle survives the fail tail). Number
   initially 237 per the research/150 registry's free block (139
-  reserved for g52c); **RENAMED 237→239 in the correction phase** — the
-  237 pick triple-collided (e23 bestiary-final first-add 10:53:03 wins
-  237 per the first-pushed rule; g61 spawn-final 12:12:59 → 238; this
-  doc 12:15:09 → 239; full 358-tip scan, no other 237+ claim). The
+  reserved for g52c); the correction phase self-renamed 237→239 (the
+  237 triple-collision: e23 bestiary-final first-add 10:53:03 wins 237;
+  g61 spawn-final 12:12:59; this doc 12:15:09); the research/150
+  round-2 refresh (§6.3, d54 `72226e500`) then assigned the final
+  **272** — 239 belongs to d42's earlier 12:55:30 push (g61's chain
+  →273). The
   correction-phase consumption receipt: the f11e-retire wave
   (tip `14ca0a8d5`) did NOT consume the hunk — minecart.rs blob
   `5efef353` unchanged, the defect still at tip lines 360-362; the e20
   union-survivor fail slice is already the correct no-op shape
   (condition-return + app-side 314 slice, no kill), so the hunk matters
-  for any f11-body-survives merge path (research/239).
+  for any f11-body-survives merge path (research/272).
 - **The g52c-139-master receipt.** The pushed g52 tip `590b93565`
   (`task/W4-g52-net-relay-host`) carries NO research/139 master-final
   table — the g52c sub-round is unpushed (the research/150 registry
@@ -39658,26 +39660,27 @@ WRITTEN NOT RUN (the fail-tail pin); the lane total is 17 g48 witnesses.
 The post-SEAL correction round (re-probe citations only — the seal
 stands, the receipt lives in research/17 after the declaration):
 
-- **The 237 triple-collision rename.** The research/150 registry's
-  first-pushed rule adjudicates the three 237 claims: e23
-  bestiary-final (`7a7779690`, 10:53:03) keeps 237; g61 spawn-final
-  (`fd406ecba`, 12:12:59) → 238; this lane's f11-tail-fix
-  (`34029437a`, 12:15:09) → **239**. Full 358-tip scan: exactly these
-  three 237 claims; 238/239 unclaimed (g58's 240–243 family is the only
-  other 237+ claim at scan time; the new publishes took 244/245).
-  Rename + all refs executed.
+- **The 237 triple-collision rename (final chain 237→239→272).** The
+  research/150 registry's first-pushed rule adjudicates the three 237
+  claims: e23 bestiary-final (`7a7779690`, 10:53:03) keeps 237; g61
+  spawn-final (`fd406ecba`, 12:12:59) and this lane's f11-tail-fix
+  (`34029437a`, 12:15:09) lose. This lane self-renamed to 239 at the
+  correction phase (then-unclaimed scan); the round-2 refresh (d54
+  `72226e500` §6.3) then showed 238 = d42 (12:15:55) and 239 = d42
+  (12:55:30) — g61's chain → 273, this lane's → **272**. Rename + all
+  refs executed (REGISTRY-RENAME round).
 - **The f11e-retire consumption receipt.** The f11 tip advanced
   `84ed6342b` → `14ca0a8d5` (the retire phases 1/2/3+4/1b — the
   233/234/235 registry renames + the c42e fold-lists) but the
   minecart.rs blob `5efef353` is UNCHANGED: the killing
   `kill_tile(world, i, j, true)` tail is still live at tip lines
-  360-362. The exact no-op hunk is re-published in research/239 for
+  360-362. The exact no-op hunk is re-published in research/272 for
   the f11f-seal/merger. The e20 union-survivor fail slice re-probed
   already correct (tip `46fdcfd8e`: the condition-return + the
   app-side no-kill 314 slice) — the hunk binds only on any
   f11-body-survives merge path; the g48 net-17 kind-15 reader keeps
   the landed no-op form.
-- **The c28 send-switch correction (research/244).** The C# has ZERO
+- **The c28 send-switch correction (research/281, renamed 244→281).** The C# has ZERO
   `SendData(18)` sites (c28's own census json has no 18 key) — the
   live clock sync rides `7 WorldData` (the event edges + the
   3600-tick `UpdateServer` heartbeat, `Main.cs:64560`). The
@@ -39685,7 +39688,7 @@ stands, the receipt lives in research/17 after the declaration):
   cadence"; the exact 5-step switch is published for the c28 lane
   (the c27 18 reader stays wire-compat). The internal-205 deviation
   (research/17 row 13) stays admitted until that switch lands.
-- **The 39 item-lane task-seed (research/245).** The lane
+- **The 39 item-lane task-seed (research/282, renamed 245→282).** The lane
   adjudication: not g49/g50/g51 (grep-empty re-verified), not the
   landed M6-NET-5 ATLAS row (the 27/28/29 sync) — the ROADMAP
   S1-I-4a "stay M6-NET-5" note is a forward-reference to the
@@ -39696,3 +39699,25 @@ stands, the receipt lives in research/17 after the declaration):
 Verification: code-only — no cargo/rustc/tests/rustfmt/graphify
 invoked; all probes at the re-fetched tip hashes (the receipt in
 research/17 lists them); no code change this round.
+
+### NET-APPLY-1 REGISTRY-RENAME round (W4-g48, 2026-11-21, code-only)
+
+The research/150 round-2 refresh (d54 tip `72226e500`, §6.3) landed
+AFTER this lane's correction push (`2b61530b4` 14:30:16 — outside the
+refresh's final sweep, per its cutoff note). Three renames executed on
+this branch per the registry + the post-sweep self-adjudication rule:
+
+- **239-f11-tail-fix → 272** (§6.3 g48 row assigns 272; chain
+  237→239→272 — 237 = e23 `7a7779690` 10:53:03, 239 = d42 `bac408be0`
+  12:55:30, both earlier than this lane's claims).
+- **244-c28-18-send-switch → 281**: 244 sits inside the refresh's
+  consumed 244–280 assignment block (= c31 jungle-residuals §6.3) and
+  was additionally claimed post-sweep by f39 (`8704691a3` 14:32:01)
+  and d53 (`a106d13e8` 14:56:57). Fresh 362-tip sweep: 281 unclaimed.
+- **245-39-item-ownership-seed → 282**: 245 = the d81/g53 18b-fork
+  assignment (§6.3), never free. Fresh 362-tip sweep: 282 unclaimed
+  (only 280+ doc anywhere: c42's assigned `280-c42-wiring-seal.md`).
+
+All refs re-pointed (INDEX rows + note, these ANALYSIS sections, the
+PORT_MAP minecart row, research/17 rows/receipt). Docs-only — no
+cargo/rustc/tests/rustfmt/graphify invoked.
