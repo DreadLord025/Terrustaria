@@ -944,15 +944,21 @@ fn dj_blizzard(app: &mut App, b: &DoubleJumpDust) {
 /// `Player.cs:21654`/`:21678`/`:21729`, `WallslideMovement` `:21790`/`:21826` —
 /// all five sites share the same chain). One type-31 `Dust.NewDust`, box 8×8
 /// at the wall-side body corner `(x + width/2 + (width/2 - 4)*slideDir,
-/// y + height/2 + (height/2 - 4)*gravDir)` (gravDir 1). Post-arms in source
+/// y + height/2 + (height/2 - 4)*gravDir)` — INTEGER halves (`:21654` casts
+/// the int division; the g66 keep-one form), gravDir 1. Post-arms in source
 /// order: `slideDir < 0 → position.X -= 10`, the `gravDir < 0 → Y -= 12` fold
 /// (dead, gravDir 1), `velocity *= 0.1`, `scale *= 1.2`, `noGravity`, the
 /// dropped `cShoe` shader, then the Rat's `scale *= 0.5` (`flag`). The
 /// suppression probe (the Rat climbing into a ceiling) ran on the tick side.
 pub(crate) fn drain_wall_dust(app: &mut App, b: WallDust) {
+    // W4-f3 retire keep-one (g66 248f0ff4d verdict): the C# corner uses
+    // INTEGER halves (`(float)(base.width / 2)`, `:21654`) — float halves
+    // drift 0.5 px on odd hitboxes. g66's form adopted.
+    let hw = b.width as i32 / 2;
+    let hh = b.height as i32 / 2;
     let pos = Vec2::new(
-        b.x + b.width / 2.0 + (b.width / 2.0 - 4.0) * b.slide_dir as f32,
-        b.y + b.height / 2.0 + (b.height / 2.0 - 4.0),
+        b.x + hw as f32 + (hw - 4) as f32 * b.slide_dir as f32,
+        b.y + hh as f32 + (hh - 4) as f32,
     );
     let idx = nd(app, pos, 8, 8, 31, 0.0, 0.0, 0, Color::default(), 1.0);
     let d = app.dust.slot_mut(idx);
@@ -2869,8 +2875,10 @@ mod tests {
         let d = slots[0];
         let mut rng = UnifiedRandom::new(0x5EED);
         // The default position draws land in the 8×8 box at the corner; the
-        // -10 shift is on top. Recompute the corner the drain used.
-        let corner_x = b.x + b.width / 2.0 + (b.width / 2.0 - 4.0) * -1.0;
+        // -10 shift is on top. Recompute the corner the drain used (INTEGER
+        // halves — the g66 keep-one form; even hitbox here, same value).
+        let hw = b.width as i32 / 2;
+        let corner_x = b.x + hw as f32 + (hw - 4) as f32 * -1.0;
         let px = rng.next_max(8.max(5) - 4);
         let _ = rng.next_max(8.max(5) - 4);
         let _ = rng.next_range(-20, 21);
@@ -2880,6 +2888,36 @@ mod tests {
         // The pool's default position is `corner + Next(w-4) + 4` (`Dust.cs:159`).
         assert_eq!(d.position.x, corner_x + px as f32 + 4.0 - 10.0);
         assert_eq!(d.scale, scale * 1.2 * 0.5, "the Rat halves the scale");
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// W4-f3 retire keep-one — the ODD-hitbox corner: the C# halves are
+    /// INTEGER divisions (`(float)(base.width / 2)`, `:21654`); a 21×43 box
+    /// corners at hw=10/hh=21, NOT the float 10.5/21.5 (the g66 248f0ff4d
+    /// verdict — f3's float halves drifted 0.5 px on odd hitboxes).
+    #[test]
+    fn w4_f3_the_odd_hitbox_corner_uses_integer_halves() {
+        let mut app = rig(0x5EED);
+        let b = WallDust {
+            x: 300.0,
+            y: 600.0,
+            width: 21.0,
+            height: 43.0,
+            slide_dir: 1,
+            rat_mount: false,
+        };
+        drain_wall_dust(&mut app, b);
+        let d = live(&app)[0];
+        let mut rng = UnifiedRandom::new(0x5EED);
+        // hw = 21/2 = 10, hh = 43/2 = 21: corner = (300+10+6, 600+21+17).
+        let px = rng.next_max(8.max(5) - 4);
+        let py = rng.next_max(8.max(5) - 4);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_max(3);
+        let _ = rng.next_range(-20, 21);
+        assert_eq!(d.position.x, 316.0 + px as f32 + 4.0, "hw=10 not 10.5");
+        assert_eq!(d.position.y, 638.0 + py as f32 + 4.0, "hh=21 not 21.5");
         assert_eq!(stream_of(&mut app), rng);
     }
 

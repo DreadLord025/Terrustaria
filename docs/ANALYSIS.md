@@ -39710,3 +39710,130 @@ gains one leading idle tick so its first press arms the window as before. The
 other i27/f3 witnesses call `key_double_tap_down` directly — unaffected. One
 new witness `w4_f3_the_down_release_latch_spawns_false` pins the spawn default
 + the arm/clear refresh. WRITTEN NOT RUN (code-only).
+
+### The retire pass — item 2: the e1b-141 three-way reconcile input (f3 × g66 × e1)
+
+Inputs: THIS branch tip (post-`100730dd`), g66 `origin/task/W4-g66-player-trail-dust`
+tip `7213f3c7` PLUS its unpushed local tip `248f0ff4d` ("final phase 1: the f3
+wall/carpet keep-one inputs" — present in the shared object store, NOT on the
+remote branch), and e1 `origin/task/W4-e1-dust-sites-player-2` tip `3245d624`
+(the e1b-active player-dust lane, 40/40 sites + the fidelity-fix round). All
+compares below ran against those exact trees (`git show <ref>:<path>`), not
+commit messages.
+
+**(a) WallClimb/Wallslide f3 `1a719d30` × g66 `b2dcd063` — byte-compare:
+IDENTICAL after normalisation; KEEP f3, drop g66's machines.** Normalisation:
+comments stripped, `TILE_PX`→`16.0`, `1E-05`→`1e-5`, `flag3/flag4`→`up/down`,
+`!(vy > 0)`↔`vy <= 0`, one redundant grouping paren, f3's
+`wall_probe`/`wall_dust_suppressed` helpers ↔ g66's inline probe/guard forms,
+the `num3` slow-fall block and the level-1 ternary canonicalised. SHA256 both
+sides: `wall_climb_movement`
+`93ea3c817ad711b3f5e435841c51cdfa4a5c6ec607da7d2d188a816b37064866`,
+`wallslide_movement`
+`dcf476cc4049bd22f6e148d66967c4c245d2add13f2218d8f563de0bff428f11`.
+KEEP f3: the helpers are the readable form, the call site carries the
+`!pulley_ride` gate g66 lacks (g66 never ported the pulley), and the
+`:20670`/`:20778`/`:20632`/`:26057` sliding consumers are f3's. **One g66 arm
+KEPT and adopted HERE this pass:** the wall-puff corner uses INTEGER halves
+(`(float)(base.width / 2)`, `:21654`) — f3's float halves drifted 0.5 px on
+odd hitboxes (the g66 `248f0ff4d` verdict, re-verified against the C# cast).
+`player_dust.rs::drain_wall_dust` now computes `hw = width as i32 / 2` /
+`hh = height as i32 / 2`; a new odd-hitbox (21×43) witness pins the corner.
+The even-hitbox witnesses are unchanged (same values).
+
+**(b) Carpet keep-one — re-verified at BOTH g66 tips; KEEP f3.** The
+`carpet_movement` bodies f3 `player.rs:10585-10638` × g66 origin `7213f3c7`
+`player.rs:10693-10744` × g66 local `248f0ff4d` `player.rs:10705-10758` are
+byte-identical after normalisation (comments, `flag`↔`glide`, `TILE_PX`,
+`1E-06`): SHA256
+`0a5410776a2b155bd0f383833feb991a777a8e52edef15c2dd601fab795f7a67` on all
+three (this pass's normaliser; the `69492c6b…` hash in the close-out above is
+the same equality under its own normaliser). The union shadow-read
+(`:26745-26752` pre-zero emulation) is in all three. KEEP f3's copy: the call
+site `player.rs:8092` gates `!grappling && !self.tongued && !pulley_ride`
+(the C# `:26494` else-if + the ride bypass); g66 local `248f0ff4d` adopted the
+tongue gate (`:8028`) but still lacks `!pulley_ride` — its carpet would fire
+on a ride tick. g66 local ALSO ported the two consumers (`:26613-26617` run
+boost at its `:7727`, `:28066`/`:23537` step-up at its `:12895`) as "f3
+keep-one inputs" — at the e1b merge those are DEDUPED against f3's (f3's
+survive; same behaviour, f3's citations).
+
+**(c) The 934 census — NOT f3-unique, NOT g66-misattributed: BOTH ports carry
+it, byte-identical.** C# `Player.cs:15034-15037`: `if (currentItem.type ==
+934) { this.carpet = true; }`. f3 `player.rs:5941` and g66 `player.rs:5941`
+(both tips) read `934 => self.carpet = true,` — the same line. The g66
+`b2dcd063` commit message lists 934 among its grants and that is accurate;
+the close-out's "934 NOT unique" note stands. e1 does NOT port the grant (no
+`carpet` field; its `carpet_frame` is the rest-pin reader only). One grant
+survives the merge — f3's row. The climbing grants census: f3 953|975 `+= 1`
+(`:5933`), 976 `+= 2` (`:5934`), 984 `= 2` (`:5922`), frog 3995/3996 `+= 2`
+(`:5663`/`:5669`), Rat +1 (`:5448`, `Mount.cs:3002`); g66's rows (`:5942`/
+`:5943`/`:5987`/`:5723-5736` + the Rat tail) are semantically identical; e1
+ports ONLY the Rat +1 (`:5145`) — its wall machines read a `spiked_boots`
+that no accessory ever raises, so e1's wallslide dust never fires on foot.
+KEEP f3's grant block.
+
+**(d) e1's wall-machine copy — DROP at the merge (five verified deviations
+from the gravDir-1 C#).** e1 `player.rs:10041-10197` +
+`player_dust2.rs::wall_cling_puff`:
+1. `:10079` keeps `&& !(self.vy < gravity)` in the climb gate — the C#
+   `:21639` clause `(!(vy < gravity) || gravDir != -1)` is VACUOUS at
+   gravDir 1; e1's extra AND blocks the early return, so a resting Rat
+   (vy ≤ 0, no keys) wrongly clings + sets `sliding` where the C# returns.
+2. `:10105` the same vacuous-clause bug on the level-1 gate (`:21709`'s
+   `!(vy < -0.5) || gravDir != -1`): e1 proceeds while rising fast.
+3. `:10171` the wallslide `:21777` gate, same bug (clings at rest).
+4. `:10186` `else if (wall && vy > 0.5) || vy < -0.5` — the second disjunct
+   is the C# `:21814` gravDir −1 arm, UNGUARDED in e1: a rising player
+   slides with NO wall.
+5. `:10130` `climb_probe_solid` divides (`(probe.x / TILE_PX) as i32`)
+   where `ToTileCoordinates` is `(int)v >> 4` (`Utils.cs:1807-1810`) — the
+   arithmetic shift differs on negative probe coordinates.
+f3's copy has none of these (the folds are cited per-arm). e1's
+`WallClingDust`/`wall_cling_puff`/`take_wall_cling_dust` + the two host
+machines are dropped wholesale; f3's `WallDust`/`drain_wall_dust` survive.
+
+**(e) Stealth — KEEP f3's chain; e1's spawn default is WRONG.** C#
+`Player.cs:1562`: `public float stealth = 1f;` — f3 spawns `stealth: 1.0`
+(`player.rs:3306`), e1 spawns `stealth: 0.0` (its `:3063`). f3's
+`update_stealth` is the FULL `:25733-25899` else-if chain (shroomite arm +
+vortex arm + the `else stealth = 1` reset); e1's `update_vortex_stealth`
+(`:10290-10331`) is the vortex arm only, with the reset deferred to "the
+shroomite lane" (its own comment) — but f3 IS that lane, already landed.
+The ring drains are chain-identical (f3 `drain_vortex_stealth`
+`player_dust.rs:985` × e1 `vortex_stealth_rings` `player_dust2.rs:1117`,
+both replay `:25874-25893` draw-for-draw); KEEP f3's queue + drain, drop
+e1's `VortexRingDust` + `update_vortex_stealth`. e1's set-loss disarm
+(`3245d624`, `:16315-16321`) is already f3's (`player.rs:7056`).
+
+**(f) The shared-site overlaps beyond wall/carpet/stealth — merge verdicts.**
+* `DoubleJumpVisuals` (`:21892-22021`): THREE copies (f3
+  `drain_double_jump_dust` `player_dust.rs:748`, g66
+  `player_trail_dust::drain_double_jump_visuals`, e1
+  `player_dust2::double_jump_visuals`). KEEP f3's (the d51-merged
+  performing-jump lifecycle + the cancel sites are f3's); the g66/e1
+  drains are the same six-arm chain.
+* `MakeFloorDust` (`:23983`): three copies; **KEEP-E1's falling-flag
+  capture** — e1 `3245d624` captures `falling` at the movement head
+  (`:28073-28081`) so landing ticks fire the 20-dust burst; f3's capture
+  sits on the REST path (`player.rs:8453`, `vy == 0` gate) where
+  `vy > gravity || vy < -gravity` is always false — f3's landing burst
+  never fires. At the e1b merge the f3/g66 floor drains survive but the
+  `falling` input MUST come from e1's head capture (a one-line re-site,
+  not a machine rewrite). e1's drain-order fidelity round (hair-dye/
+  manaHeat before stoned/Vortex/drowning/splash/floor; floor after the
+  splash sound) is the EXECUTION order (`Player.Update` runs those
+  machines before `CheckDrowning`/`FloorVisuals`) — the merged
+  `world_sim/player.rs` drain sequence follows e1's order with f3's
+  wall/double-jump slots between dash and splash.
+* e1's pre-21654 lanes (Yoraiz0r eye, GlassSlipper, Solar, teleport,
+  regen sparkles, MowTheLawn, hair-dye, manaHeat, stoned, drowning,
+  splash) have NO f3/g66 counterpart — they land as-is.
+
+**Net e1b-141 merge recipe (player-move family):** f3's machines + grants +
+queues survive; g66 contributes the integer-half corner (ALREADY adopted
+here) and its wing/boot/trail lanes (no f3 overlap); e1 contributes its
+disjoint site lanes + the falling-flag capture + the drain execution order;
+e1's wall machines, wall-cling drain, vortex machine/rings and `stealth: 0.0`
+spawn are dropped. 1 new witness (odd-hitbox corner) WRITTEN NOT RUN
+(code-only).
