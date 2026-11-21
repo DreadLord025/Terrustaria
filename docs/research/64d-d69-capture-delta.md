@@ -1,5 +1,10 @@
 # 64d — the d69 capture-compose DELTA (W4-g72 closeout)
 
+> **SEALED (W4-g72 retire, 2026-11-21).** The delta is published; consuming
+> it is the d69 lane's work (§5's retire monitor: NOT consumed at the
+> retire probe). The seven-seam match + the 4-arg append below are the
+> standing instructions.
+
 **Branch:** `task/W4-g72-bg-layers-3` (closeout). **Mode:** code-only.
 **Audience:** `origin/task/W4-d69-layer-target-consumers` (the S1-G-13
 capture/consume lane). **Question (the Lead's item 4):** d69's
@@ -107,3 +112,28 @@ seven-seam match (§1) is a re-read of d69's targets.rs at `79f914fdb`; the
 `repeated_compute_into_the_same_rect_is_a_cache_hit` / capture-entity
 witnesses are unaffected (they pin the tile/light/entity paths, not the
 bg call arity).
+
+## 5. The RETIRE monitor — is the 4-arg append CONSUMED? (re-probe receipt)
+
+**NO — the delta is still OPEN on d69.** Re-fetched
+`origin/task/W4-d69-layer-target-consumers` at the retire probe
+(2026-11-21): the tip is STILL **`79f914fdb`** (the same commit the
+closeout read — its capture-closeout work since our publication was the
+entity-tail screen-range fix, not the bg arity). Both call sites re-read
+verbatim at that tip:
+
+- `crates/tr-app/src/app/capture_render.rs:393` — still the **10-arg**
+  shape (`renderer, layer_cam, 1.0, layer_screen, cw.world, cw.sky,
+  cw.light, 0.0, cw.anim_time, &mut hell_bottom`); no
+  `show_invisible`/`metrics`/`ug_back`/`shimmer` argument or
+  `CaptureWorld` field.
+- `crates/tr-app/src/app/layer_targets.rs:426` — still **10-arg**
+  (`…, frame.cave_parallax, frame.anim_time, &mut hell_bottom`). The
+  `frame.show_invisible_blocks` hit in that file is the TILE-pass flag
+  (`draw_tile_pass`), NOT a bg arg — do not misread it as consumption.
+
+**Verdict: the §2 mechanical 4-arg append + the `CaptureWorld`/`LayerFrame`
+`metrics`/`ug_back` field threading remain owed on the d69 lane** (or at
+the merge, whichever composes first). Nothing changes on OUR side — the
+14-arg signature is landed and stable; this note is the standing delta.
+Monitor closed for the retire: the receipt above is the last probe.
