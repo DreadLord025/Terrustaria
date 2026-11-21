@@ -45,7 +45,7 @@ per `docs/superpowers` agreements).
 | --- | --- | --- | --- |
 | 25 | NPC AI families (aiStyle dispatch) | `25-npc-ai-audit.md` | в¬њ |
 | 26 | Projectile AI families (aiStyle dispatch) | `26-projectile-ai-audit.md` | в¬њ |
-| 26f | d78 FINAL Kill dedupe (g1-dup / g3 keep-one / the 620 d77 co-claim / the drop-vs-keep tables) — SEALED §6: g1-drop-hunks refreshed (602ln), the d77-617-drop mutual receipt, the g3-cue-position-fix hunks, the blasts-family bible | `26f-d78-final-kill-dedupe.md` | sealed |
+| 372 | d78 FINAL Kill dedupe (g1-dup / g3 keep-one / the 620 d77 co-claim / the drop-vs-keep tables) — SEALED §6: g1-drop-hunks refreshed (602ln), the d77-617-drop mutual receipt, the g3-cue-position-fix hunks, the blasts-family bible (renumber 26f→372 per registry §10.2; 26f belongs to f20) | `372-d78-final-kill-dedupe.md` | sealed |
 | 27 | Mounts / pets / minecart / grapple | `27-mounts-pets-vehicles.md` | в¬њ |
 | 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | в¬њ |
 | 29 | Town NPCs (housing/happiness/pylon) | `29-town-npc-housing.md` | в¬њ |

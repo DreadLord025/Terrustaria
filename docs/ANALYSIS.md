@@ -39471,7 +39471,7 @@ rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
 
 ## The projectile Kill death-effect wave, FINAL adjudication (W4-d78, 2026-11-21, code-only mode)
 
-**The merger-facing dedupe publish** (`docs/research/26f-d78-final-kill-dedupe.md`
+**The merger-facing dedupe publish** (`docs/research/372-d78-final-kill-dedupe.md`
 — the full tables, every claim re-probed at the LATEST pushed tips). Four
 adjudications close the lane:
 
@@ -39489,7 +39489,7 @@ adjudications close the lane:
    `magic_death_blast` DROPS at merge.** g3's `aimed_spell_kill` +
    `nebula_spirit_onyx_kill` are strict supersets (same resize/pen/Damage/
    restore state + the Item10/14 cues + the trail-death draw censuses);
-   the 659 arm is g3-unique. Exact drop-hunks pinned in research/26f §2
+   the 659 arm is g3-unique. Exact drop-hunks pinned in research/372 §2
    (fn :21513-21586, call :20102-20114 keeping the `luck` let, tests
    :26004-26201, anchors :899). Two merger notes published: the g3 blaze
    cue plays post-recentre where the C# `:72015` plays PRE-snap — keep-one
@@ -39514,7 +39514,7 @@ adjudications close the lane:
    1124 Colliding gate + the 246/249 7-tick immunity ladder arms are
    d78-UNIQUE and KEEP (d77's boxed ladder has no 246/249 arm — verified
    at its tip). Only the 620 row/AI overlaps (adjudication 3). The full
-   per-hunk drop-vs-keep table is research/26f §4.
+   per-hunk drop-vs-keep table is research/372 §4.
 
 **Verification.** Code-only: the g1/g65 worktrees probed READ-ONLY
 (`git status`/`git diff`/direct file reads — no writes, no junction
@@ -39525,7 +39525,7 @@ recursion); every branch tip re-fetched at adjudication time (the d77
 **no cargo/rustc/rustfmt/tests/graphify invoked** (the Lead's constraint).
 
 **SEAL (the resume pass).** The FINAL commit `fd59c51a0` landed AND pushed
-before the prior session died (ls-remote confirmed). research/26f is SEALED
+before the prior session died (ls-remote confirmed). research/372 (renumbered from 26f per registry §10.2) is SEALED
 with §6 addenda: (6a) the g1-drop-hunks refreshed against g1's LIVE 602-line
 local hooks file (was 535 at adjudication — R3-g1-resume grew the witness
 suite; verdict unchanged, exact drop/keep pins republished); (6b) the

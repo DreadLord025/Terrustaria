@@ -1,4 +1,10 @@
-# 26f — d78 FINAL: the Kill death-effect dedupe adjudication + drop-vs-keep tables (W4-d78)
+# 372 — d78 FINAL: the Kill death-effect dedupe adjudication + drop-vs-keep tables (W4-d78)
+
+> Renumber 26f → 372 per registry §10.2 (`docs/research/150-research-number-registry.md`,
+> d54 tip `08d21666e`): 26f belongs to W4-f20 (round-1 winner, 05:13:47); d78's
+> `26f-d78-final-kill-dedupe.md` (fd59c51a0 12:50:43, pre-round-2 sweep miss)
+> renumbers to **372**. Chain: 26f → 372. Every `research/26f` cite in this
+> lane's docs/anchors/code-comments now reads `research/372`.
 
 > Researched 2026-11-21 (final phase) against the LATEST pushed tips:
 > g1 `5bd68ce2` (census-only push) + the TR-W4-g1 worktree's LOCAL state,

@@ -4923,7 +4923,7 @@ mod tests {
     /// rows the SAME kind as `NEBULA_ARCANUM_SHARD` (its data.rs:1058/:2833):
     /// `(8, 8, 29, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
     /// (false, -2, false, -1, 255, 1.0))` — field-for-field THIS row. The
-    /// merge keeps ONE row/const (research/26f §3); this witness pins the
+    /// merge keeps ONE row/const (research/372 §3); this witness pins the
     /// values both sides carry so either survivor passes it verbatim.
     #[test]
     fn w4_d78_final_the_shard_row_matches_the_d77_co_claim() {
