@@ -61,7 +61,7 @@ blocks) are NOT trails; they stay with the general proj-site co-lanes
 | 574 | 102 | 33336 (host) | — |
 | 578 | 108 | 33746, 33754 (wind-up) | 33688 (ai[1]==1 25-burst) |
 | 579 | 108 | 33721, 33731 (wind-up) | 33688 (shared burst) |
-| 596 | 107 | 33623 (the Next(3)!=0 EARLY-RETURN ring) | 33644 (timeLeft<4 death burst → g65) |
+| 596 | 107 | 33623 (the Next(3)!=0 EARLY-RETURN ring) | 33644 (timeLeft<4 death burst → g65; the d11 census keeps the box/damage re-arm + the ten Next(2) picks) |
 | 618 | 119 | 34871 | — |
 | 642 | 84 | 31648, 31654 | — |
 | 656 | 127 | 36074 | — |
@@ -140,6 +140,17 @@ seam** is pinned by a witness
 (`w4_g64_wire_596_bool_seam_gates_the_ai_continuation`): `false` = the C#
 `return` from AI() (`:33619-33622`) — the caller must abort the machine's
 continuation; 659's twin CONTINUES (wired).
+
+**Remainder-wave row updates (2026-11-21, the d11/d13 reads):** the row
+census above is the wiring wave's snapshot; the remainder wave rows + wires
+four more kinds — **596** (the d11 row: 8x8/107/pen 1/180/alpha 255/
+ignoreWater, `projFrames` 4; `ai_djinn_curse` ACTIVATES the pinned bool
+seam — false returns from the machine, the homing tail + the orphan cap
+skipped that tick; the timeLeft<4 flash keeps the d11 census, the bodies
+g65's), **895/898/957** (the d13 rows, the style-124 machine — remainder 1)
+and **813** (the d11 shared 108 row — remainder 2). The unrowed list
+shrinks to 22 (596/895/898 drop off; 957/813 were deferred-ledger entries,
+not ledger kinds).
 
 **Deferred-kind census (the wiring wave's re-probe):**
 - **644 — UNBLOCKED, PORTED + WIRED.** The original deferral cited

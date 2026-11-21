@@ -9374,6 +9374,115 @@ impl Projectile {
         self.vel.x += wind_speed * WIND_PHYSICS_STRENGTH;
     }
 
+    /// `AI()`'s aiStyle-107 block's 596 arm (`Projectile.cs:33582-33677`) —
+    /// the Desert Djinn's curse flame (W4-g64 remainder 3, the d11
+    /// e0395afc row + machine read; the 575 NebulaSphere half stays d11's
+    /// `ai_nebula_sphere` — the merge keep-one). The alpha fade + the
+    /// solid clamp + the 4-frame cycle, the POST-increment `ai[1]++` (the
+    /// orbit angle), then the three `Next(3) != 0` EARLY-RETURN gates:
+    /// `trail_596`'s `false` IS the C# `return` FROM AI() (`:33619-33622`)
+    /// — the homing tail below does NOT run that tick (the pinned bool
+    /// seam, `w4_g64_wire_596_bool_seam_gates_the_ai_continuation`). The
+    /// `timeLeft < 4` death burst (`:33631-33651`) keeps d11's census: the
+    /// box/damage re-arm + the ten SelectRandom(27,6) Next(2) picks stay
+    /// on the stream, the bodies are g65's. The dead `num805` (`:33616`)
+    /// computes no draws — dropped with a note (the trail_596 doc).
+    /// `player` is the local player (the single-player fold of
+    /// `Main.player[ai[0]]`); the homing is the (v*9 + dir*7.5)/10 blend
+    /// past the 40-px radius, the orphan cap timeLeft 30 + ai[0] = -1.
+    fn ai_djinn_curse(
+        &mut self,
+        world: &World,
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        // `:33584-33585` — the curse's homing parameters.
+        let num801 = 10.0f32;
+        let num802 = 7.5f32;
+        let num803 = 40.0f32;
+        // `:33586-33597` — the alpha fade, the solid clamp, the floor.
+        if self.time_left > 30 && self.alpha > 0 {
+            self.alpha -= 25;
+        }
+        if self.time_left > 30
+            && self.alpha < 128
+            && solid_collision(world, self.pos, self.w, self.h)
+        {
+            self.alpha = 128;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        // `:33598-33605` — the 5-tick 4-frame cycle.
+        self.frame_counter += 1;
+        if self.frame_counter > 4 {
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= 4 {
+                self.frame = 0;
+            }
+        }
+        // `:33615` — the POST-increment orbit angle (the trail reads it).
+        self.ai[1] += 1.0;
+        // `:33617-33630` — W4-g64: the orbit ring RE-ARMED on the live
+        // pool. The fn's `false` is the AI() early return — the death
+        // burst AND the homing tail below do not run that tick.
+        let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+        if !crate::proj_trail_dust::trail_596(
+            center,
+            self.ai[1],
+            self.time_left,
+            rng,
+            dust,
+            dust_ctx,
+            world,
+        ) {
+            return; // `:33621` — the C# returns from the whole AI().
+        }
+        // `:33631-33651` — the final flash (the d11 census kept): the box
+        // grows to 60x60 around the centre, the damage re-arms (30 /
+        // expert 22), ten SelectRandom(27,6) picks stay on the stream
+        // (the bodies are g65's death burst).
+        if self.time_left < 4 {
+            let expert = player.is_some_and(|pl| pl.buffs.expert_mode);
+            let num807 = if expert { 22 } else { 30 };
+            self.pos = center;
+            self.w = 60.0;
+            self.h = 60.0;
+            self.pos = center - Vec2::new(self.w * 0.5, self.h * 0.5);
+            self.damage = num807;
+            for _ in 0..10 {
+                let _ = rng.next_range(0, 2); // SelectRandom(27, 6)
+            }
+        }
+        // `:33653-33677` — the player-index homing / the orphan cap.
+        let num809 = self.ai[0] as i32;
+        let target_active = player.is_some_and(|pl| !pl.dead);
+        if num809 >= 0 && target_active {
+            if let Some(pl) = player {
+                let (px, py) = pl.center();
+                let target = Vec2::new(px, py);
+                if center.distance(target) > num803 {
+                    let mut vector114 = safe_normalize(target - center);
+                    if vector114.is_nan() || vector114 == Vec2::ZERO {
+                        vector114 = Vec2::UNIT_Y; // `:33659-33662`
+                    }
+                    self.vel = (self.vel * (num801 - 1.0) + vector114 * num802) / num801;
+                }
+            }
+        } else {
+            if self.time_left > 30 {
+                self.time_left = 30;
+            }
+            if self.ai[0] != -1.0 {
+                self.ai[0] = -1.0;
+                self.net_update = true;
+            }
+        }
+    }
+
     /// `HandleMovement`'s half for the aiStyle-53 sentries (308 Frost Hydra,
     /// 377 Queen Spider, 966 Houndius Shootius): `Collision.TileCollision`
     /// (`:17587-17650`, `flag6 = false` for aiStyle 53 at `:17532-17535`) then
@@ -18437,7 +18546,24 @@ impl ProjectilePool {
                                 .unwrap_or((self.slots[i].pos.x, self.slots[i].pos.y));
                             self.slots[i].ai_vortex_ritual(player_pos, rng, dust, dust_ctx, world);
                         }
-                        // W4-g64 (the d13 machine port, dust-wired) — `AI()`'s
+                        // W4-g64 (the d11 row port, dust-wired) — `AI()`'s
+                        // aiStyle-107 block (`Projectile.cs:33553-33678`):
+                        // the 596 DesertDjinnCurse — the alpha fade, the
+                        // 4-frame cycle, the post-increment ai[1] orbit +
+                        // the three Next(3) EARLY-RETURN gates (the pinned
+                        // bool seam: false returns from the machine, the
+                        // homing tail skipped that tick), the timeLeft<4
+                        // flash census + the player-index homing/orphan
+                        // cap. `kill_step` integrates (tileCollide false).
+                        // The 575 NebulaSphere stays d11's ai_nebula_sphere
+                        // (unrowed here — the merge keep-one).
+                        107 => {
+                            if self.slots[i].kind == DESERT_DJINN_CURSE {
+                                self.slots[i].ai_djinn_curse(world, player.as_deref(), rng, dust, dust_ctx);
+                                self.slots[i].kill_step(world);
+                            }
+                        }
+                        // W4-g64 (the d13 machine port, dust-wired) - `AI()`'s
                         // `else if (this.aiStyle == 124)` (`Projectile.cs:
                         // 34970-35696`): the seven pet rows (650 + 882/888/
                         // 895/896/898/957, `STYLE124_PETS`; only 895/898/957
@@ -45213,5 +45339,92 @@ mod w4_g64_wiring_tests {
         for _ in 0..8 {
             assert_eq!(rng.next_range(0, 1000), rng2.next_range(0, 1000), "stream tail");
         }
+    }
+
+    /// W4-g64 remainder 3 — the 596 bool seam ACTIVATED: the row landed
+    /// (the d11 read: 8x8, aiStyle 107, penetrate 1, timeLeft 180, alpha
+    /// 255, ignoreWater, projFrames 4) and `ai_djinn_curse` returns from
+    /// the machine on `trail_596`'s false — the homing tail does NOT run
+    /// that tick (the velocity unchanged), while a full-ring tick pulls
+    /// the flight. The orphan cap runs only past the gates.
+    #[test]
+    fn w4_g64_wire_596_seam_activated_skips_the_homing_tail() {
+        let d = proj_data(DESERT_DJINN_CURSE).expect("the 596 row");
+        assert_eq!(d.ai_style, 107);
+        assert_eq!((d.w, d.h), (8.0, 8.0));
+        assert_eq!(d.penetrate, 1, "the stock :774");
+        assert_eq!(d.time_left, 180);
+        assert_eq!(d.alpha, 255);
+        assert!(d.ignore_water, ":6457");
+        assert!(!d.tile_collide);
+        assert_eq!(proj_frames(DESERT_DJINN_CURSE), 4, "Main.cs:8491");
+        let w = World::new("g64r3".into(), 200, 200);
+        let (mut sd, sc) = scratch_dust(&w);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.x = 1600.0;
+        pl.y = 1000.0;
+        let mk = || Projectile {
+            active: true,
+            kind: DESERT_DJINN_CURSE,
+            owner: 0,
+            pos: Vec2::new(1000.0, 1000.0),
+            vel: Vec2::new(2.0, 0.0),
+            w: 8.0,
+            h: 8.0,
+            tile_collide: false,
+            alpha: 255,
+            time_left: 180,
+            ai: [0.0, 0.0, 0.0, 0.0],
+            ..Default::default()
+        };
+        // Scan seeds: a bail tick (the first Next(3) != 0) leaves the
+        // velocity UNCHANGED (the early return skips the homing blend);
+        // the ai[1] post-increment still ran (it precedes the gates).
+        let mut bailed = false;
+        let mut pulled = false;
+        for seed in 0..200i32 {
+            let mut p = mk();
+            let mut rng = tr_core::UnifiedRandom::new(seed);
+            let vel_before = p.vel;
+            p.ai_djinn_curse(&w, Some(&pl), &mut rng, &mut sd, &sc);
+            assert_eq!(p.ai[1], 1.0, "the post-increment precedes the gates");
+            if p.vel == vel_before {
+                bailed = true; // the gate bailed — no homing this tick
+            } else {
+                // The full ring ran: the blend pulled toward the player.
+                let center = Vec2::new(1004.0, 1004.0);
+                let (px, py) = pl.center();
+                let toward = (Vec2::new(px, py) - center).normalize();
+                let want = (vel_before * 9.0 + toward * 7.5) / 10.0;
+                assert!((p.vel - want).length() < 1e-4, "the homing blend (seed {seed})");
+                pulled = true;
+            }
+            if bailed && pulled {
+                break;
+            }
+        }
+        assert!(bailed, "a bail seed exists in 0..200");
+        assert!(pulled, "a full-ring seed exists in 0..200");
+        // The orphan cap: a DEAD player takes the else path — the life
+        // caps at 30 and ai[0] latches -1 (only on a full-ring tick; the
+        // bail returns before the cap, so detect it by the life write).
+        let mut found_orphan = false;
+        for seed in 0..200i32 {
+            let mut p = mk();
+            p.time_left = 180;
+            let mut dead = crate::player::Player::spawn(&w);
+            dead.dead = true;
+            let mut rng = tr_core::UnifiedRandom::new(seed);
+            p.ai_djinn_curse(&w, Some(&dead), &mut rng, &mut sd, &sc);
+            if p.time_left == 30 {
+                assert_eq!(p.ai[0], -1.0, "the orphan latch");
+                assert!(p.net_update);
+                found_orphan = true;
+                break;
+            } else {
+                assert_eq!(p.time_left, 180, "the bail skips the cap too");
+            }
+        }
+        assert!(found_orphan, "a full-ring seed reaches the orphan cap");
     }
 }

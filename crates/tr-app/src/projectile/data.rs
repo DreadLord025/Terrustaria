@@ -298,6 +298,11 @@ pub const STARDUST_MARK: u16 = 540;
 pub const NEBULA_EYE: u16 = 574;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
+/// `ProjectileID.DesertDjinnCurse` (596) — the djinn's curse flame,
+/// aiStyle 107 (`Projectile.cs:6450-6460`: 8x8, hostile, alpha 255,
+/// ignoreWater, timeLeft 180, tileCollide false). W4-g64 (the d11
+/// e0395afc row port — the bool-seam activation).
+pub const DESERT_DJINN_CURSE: u16 = 596;
 /// `ProjectileID.BloodNautilusTears` (813) — the Blood Nautilus' tear
 /// ritual marker, aiStyle 108 (`Projectile.cs:6282-6293`: the shared
 /// 32x32 row with the 578/579, friendly + hostile, alpha 255,
@@ -2488,6 +2493,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             VORTEX_LIGHTNING | VORTEX_PORTAL | BLOOD_NAUTILUS_TEARS => {
                 (32.0, 32.0, 108, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // W4-g64 (the d11 e0395afc row port) — `Projectile.cs:6450-6460`
+            // (596, the DesertDjinnCurse): 8x8, aiStyle 107, alpha 255,
+            // timeLeft 180, tileCollide false; the stock penetrate 1
+            // (`:774`). The 575 NebulaSphere row stays d11's (its
+            // ai_nebula_sphere machine covers both at the merge keep-one).
+            DESERT_DJINN_CURSE => {
+                (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
             // `:6294-6305`'s VortexLightning (the 580): 14x14, aiStyle 88,
             // extraUpdates 4, ignoreWater.
             VORTEX_RITUAL_BOLT => (14.0, 14.0, 88, -1, 600, 4, true, false, false, RESET_STATE),
@@ -4271,7 +4284,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-g64 (the d11 row port) — the 596 DesertDjinnCurse sets
+            // `ignoreWater` (`Projectile.cs:6457`); the 575 sphere does
+            // NOT (`:6219-6229` has no such line — d11's census).
+            || kind == DESERT_DJINN_CURSE,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4776,6 +4793,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at it. The other glowsticks/flares keep the stock 1 (no
         // `projFrames` override in `Main.cs:8444-8727`).
         FAIRY_GLOWSTICK => 4,
+        // W4-g64 (the d11 row port) — the 596 curse flame's 4-frame sheet
+        // (`Main.cs:8491`) — the aiStyle-107 5-tick cycle wraps at it
+        // (`Projectile.cs:33598-33605`). The 575 sphere's sheet stays
+        // d11's (`Main.cs:8550`).
+        DESERT_DJINN_CURSE => 4,
         _ => 1,
     }
 }

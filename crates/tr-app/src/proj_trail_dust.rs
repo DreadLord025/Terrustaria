@@ -3632,8 +3632,9 @@ mod tests {
     /// machine's continuation (the orbit's remaining dusts AND the
     /// `timeLeft < 4` death burst below it, g65's); `true` ran the whole
     /// three-dust ring. The 659 twin CONTINUES instead (its own witness).
-    /// The 596 kind is UNWIRED (no row) — this pins the seam for the wave
-    /// that lands the row.
+    /// W4-g64 remainder 3: the 596 row landed (the d11 read) and the seam
+    /// is ACTIVATED in `ai_djinn_curse` — the machine-side witness
+    /// `w4_g64_wire_596_seam_activated_skips_the_homing_tail` pins it.
     #[test]
     fn w4_g64_wire_596_bool_seam_gates_the_ai_continuation() {
         let w = world();
