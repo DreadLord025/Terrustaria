@@ -39425,14 +39425,54 @@ WRITTEN NOT RUN — no cargo/rustc/tests per the lane directive.
   fire only once a kind row lands. `GasTrapCheck` (the gas-trap item
   5346, `Projectile.cs:41242`) is a cited skip (no gas-trap family).
 
-**KEEP-ONE (the g11 merge):** this module's `teleport_effect` is the
-FULL eleven-arm `Main.TeleportEffect` port. W4-g11's
-`main_dust.rs::teleport_effect` (batch 1, styles 0-7 only, the
-`EffectRect` shape, UNMERGED) is SUPERSEDED at the merge: the g11
-styles 0/1/2/3/4/5/7 arms are DROPPED in favour of this module's (the
-NPC-side driver owns the whole family; g11b wires the player-side call
-sites THROUGH this module). The g11 `snowing` site and the
-`portal_color` helper keep their own lanes.
+**KEEP-ONE (ADJUDICATED + EXECUTED on the g11 branch — this note's
+earlier direction is RETIRED):** the `1eedb9a3` note claimed this
+module's `teleport_effect` supersedes g11's `main_dust` styles 0-5/7 at
+the merge. That was the INVERSE direction of the agreed keep-one and
+g11 has since EXECUTED the fold on ITS branch (g11 research/116
+§3/§4/§5, `origin/task/W4-g11-dust-main-sites-1` tip `98283df0`,
+union-exec `56afc0c0` + `8540a8ad`, final-phase folds `cc8c767b`):
+
+* **The surviving BODY is g11's `crates/tr-app/src/teleport_dust.rs`** —
+  this module's widest-eleven `teleport_effect` adapted per-hunk from
+  `a9628928` (`TeleportDustEnv` = `SpawnVisualsEnv` minus the gore pool;
+  no teleport arm spawns gores). Both branches always agreed the g61
+  BODY survives; g11's file is the adapted copy.
+* **The surviving SEAMS are g11's** (`main_dust.rs`): the App-level
+  `teleport_effect` dispatcher (builds the env, resolves the Audio
+  façade, calls the body for ALL styles) + the Entry-OLD→Exit-NEW
+  `PlayerTeleportReq`/`NpcTeleportReq` replays (`other_position` both
+  legs — gap 2; the style-9 pylon latch — gap 3; the stored
+  `App.water_style` — gap 4; the style-8 double cue + the replay-owned
+  camera transition — gap 5; the grant dedupe — gap 6).
+* **RETIRED from THIS branch at the merge (fold-source, already
+  consumed — marked DEPRECATED in-code):** `npc_spawn_visuals.rs`'s
+  `teleport_effect` / `npc_teleport` env-level driver /
+  `update_npc_teleport_visuals` triple shape / `portal_color` /
+  `pylon_spawn_in_world_dust` + the 9 teleport witnesses (g11 adapted 8
+  as `w4_g11u_*` in `teleport_dust.rs` + the driver witness as
+  `w4_g11_npc_teleport_style4_two_sided_burst_and_latch` in
+  `main_dust.rs`); the `world_sim/wiring.rs::npc_teleport_wiring`
+  immediate helper (the §5 DUP RISK — the merger keeps the g11 QUEUE
+  replay: the pad loop already rides it, the statue style 14 queues
+  through the SAME drain with the `:81052-81053` grants latched, §5
+  Fold B); the `world_sim/npcs.rs` copy-in/out fade drain (g11's
+  surviving `update_npc_teleport_visuals` takes `&mut Npc` on the g11
+  fields — `teleport_style_id` naming, ONE field set — at the SAME
+  pre-AI slot, fed `tfv = anim_time*60 % 216000`, §5 Fold A of this
+  branch's seam-4 order).
+* **STAYS g61's:** the poof/mimic/transform/alt-texture halves + their
+  8 pure witnesses + ALL the wiring-seam witnesses (the §5 dup census:
+  seams 2/3/5 NO-DUP — the bug-net poof, the statue/lamp poofs, the
+  Transform tail are g61's lane; the frog's style-13 `NPC.Teleport` at
+  `NPC.cs:79880`, when its lane lands, must ride
+  `main_dust::npc_teleport` on the caller's pass, not a g61 driver).
+  `Audio::play_teleport_cue` survives (the §5 audio note: the merger
+  may hoist the g11 dispatcher's inline resolution into this named
+  helper, zero behaviour change). `make_transition_effects_for_texture_changes`
+  stays (the town alt-texture seam is outside the union).
+* The g11 `snowing` site is separately adjudicated (g11 research/83 —
+  d130-canonical, marked DEPRECATED on the g11 branch).
 
 **Stream-parity witnesses (WRITTEN NOT RUN):** the bug-net poof
 (scratch-pool replay ends where the live `UpdatePlayers` stream ends),

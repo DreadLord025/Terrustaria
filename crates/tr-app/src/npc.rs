@@ -1282,11 +1282,16 @@ pub struct Npc {
     /// `UpdateNPC_TeleportVisuals` (`:92194-92241`) decays per tick
     /// (styles 4/12 −0.02 in-arm, style 13 instant clear, the shared
     /// −0.005 tail). 0 = no fade armed (the head gate draws nothing).
+    /// KEEP-ONE (g11 research/116 §5 seam-1 row): semantically the SAME
+    /// field as g11's — the merger keeps ONE field set under g11's names.
     pub teleport_time: f32,
     /// `NPC.teleportStyle` (`NPC.cs:6039`) — the `Teleport` style the
     /// fade reads (`NPC.cs:81053` writes it last). The pad ride is 0,
     /// the teleporting statues 14 (no dust arm — fields only), the
     /// mystic frog 13, the shimmer town hop 12, the portal pair 4.
+    /// KEEP-ONE (g11 research/116 §2/§5): the surviving name is g11's
+    /// `teleport_style_id` (`npc.rs:1256-1263` on the g11 branch) — the
+    /// merger renames this field onto it, one field set.
     pub teleport_style: i32,
     /// `NPC.lastPortalColorIndex` (`NPC.cs:6581`) — the style-4 latch
     /// `Teleport` writes BETWEEN the Entry/Exit bursts (`:81046-81050`)

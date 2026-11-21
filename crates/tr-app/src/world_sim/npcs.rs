@@ -4405,6 +4405,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // the head gate (`time <= 0`) draws nothing, so the
                         // common case is a zero-draw no-op. The fade plays no
                         // sound (the module's styles 0/4/12/13 are dust-only).
+                        // DEPRECATED SHAPE (g11 research/116 §4/§5, g11
+                        // `56afc0c0` + `cc8c767b`): the merger keeps g11's
+                        // `teleport_dust::update_npc_teleport_visuals` taking
+                        // `&mut Npc` on the g11 fields (`teleport_style_id`)
+                        // at this SAME pre-AI slot — this copy-in/out triple
+                        // drain drops with the g61 module's teleport family.
                         if n.teleport_time > 0.0 {
                             let mut tp = (n.teleport_time, n.teleport_style, n.last_portal_color_index);
                             let mut env = crate::npc_spawn_visuals::SpawnVisualsEnv {

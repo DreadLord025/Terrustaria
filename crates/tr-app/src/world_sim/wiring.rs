@@ -553,6 +553,16 @@ fn wiring_poof(app: &mut App, position: Vec2) {
 /// resolve through `play_teleport_cue` at the C# call position (the pitch
 /// draws join the wiring stream). `water_style` is `Dust.dustWater()`
 /// (`Main.cs`'s `calculateWaterStyle` at the camera) for the style-5 column.
+///
+/// DEPRECATED (the §5 DUP RISK — g11 research/116, g11 tip `98283df0`): the
+/// merger KEEPS the g11 QUEUE replay (`main_dust::npc_teleport` draining
+/// `NpcTeleportReq` on the `UpdateWorldGen` key — the pad loop already rides
+/// it on g11, and the §5 Fold B queues the statue style 14 through the SAME
+/// drain with the `:81052-81053` grants latched) and DROPS this immediate
+/// helper with the module's env-level `npc_teleport` driver. The semantics
+/// this helper pins (the two-sided burst, the style-14 zero-draw latch, the
+/// cue position) are already in the surviving g11 shape. Kept compiling
+/// until the merge so the seam witnesses stay runnable.
 fn npc_teleport_wiring(app: &mut App, slot: usize, new_pos: Vec2, style: i32, extra_info: i32) {
     let water_style = crate::biome::calculate_water_style(&app.world, app.camera) as i32;
     let ctx = app.spawn_ctx();

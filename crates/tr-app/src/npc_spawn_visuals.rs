@@ -34,7 +34,8 @@
 //!   zero-draw parity call); the 158/159 vampire + 478/479 mothron
 //!   arms are roster-gapped (the d35/d40 kind lanes).
 //!
-//! The teleport-in family: [`teleport_effect`] (`Main.TeleportEffect`,
+//! The teleport-in family (FOLD-SOURCE, already consumed — see the
+//! KEEP-ONE note below): [`teleport_effect`] (`Main.TeleportEffect`,
 //! `Main.cs:13233-13464` — all eleven style arms), [`npc_teleport`]
 //! (`NPC.Teleport`, `NPC.cs:81035-81058` — the two-sided Entry/Exit
 //! driver), [`update_npc_teleport_visuals`]
@@ -42,16 +43,44 @@
 //! per-tick fade, styles 0/4/12/13) and
 //! [`make_transition_effects_for_texture_changes`]
 //! (`NPC.cs:90236-90263` — the town alt-texture puffs, the party-hat /
-//! zoologist transitions).
+//! zoologist transitions — this one STAYS g61's: the town alt-texture
+//! seam is outside the g11 union).
 //!
-//! **KEEP-ONE (the g11 merge):** this module's [`teleport_effect`] is
-//! the FULL eleven-arm `Main.TeleportEffect` port. W4-g11's
-//! `main_dust.rs::teleport_effect` (batch 1, styles 0-7 only, the
-//! `EffectRect` shape) SUPERSEDES nothing here — at the merge the g11
-//! styles 0/1/2/3/4/5/7 arms are DROPPED in favour of this module's
-//! (the NPC-side driver owns the whole family; g11b wires the
-//! player-side call sites THROUGH this module). The g11 `snowing`
-//! site and the `portal_color` helper keep their own lanes.
+//! **KEEP-ONE (ADJUDICATED + EXECUTED on the g11 branch — g11 research/116
+//! §3/§4/§5, union-exec `56afc0c0` + `8540a8ad` + the final-phase
+//! `cc8c767b`/`98283df0`):** the surviving copy of this module's
+//! [`teleport_effect`] body is **g11's `teleport_dust.rs`** (adapted
+//! per-hunk from this module at `a9628928`; `TeleportDustEnv` =
+//! [`SpawnVisualsEnv`] minus the gore pool — no teleport arm spawns
+//! gores). The g11 SEAMS are canonical: `main_dust::teleport_effect` is
+//! the App-level dispatcher (it builds the env + resolves the Audio
+//! façade, then calls the body for ALL styles); the Entry-OLD →
+//! Exit-NEW `PlayerTeleportReq`/`NpcTeleportReq` replays own the call
+//! sites (`other_position` per gap 2, the style-9 pylon latch per gap 3,
+//! the stored `water_style` per gap 4). This module's env-level
+//! [`npc_teleport`] driver is RETIRED at the merge (the g11 App-level
+//! replay supersedes it), [`update_npc_teleport_visuals`] survives
+//! re-signed to the g11 `Npc` fields (`teleport_style_id` naming — the
+//! `(f32, i32, i32)` triple is retired), WIRED PRE-AI in the `UpdateNPC`
+//! slot preamble (`NPC.cs:90322` after the cast lights, BEFORE `AI()`
+//! `:90423`) fed `tfv = anim_time*60 % 216000` (the §5 fold of this
+//! branch's seam-4 order). The statue-14 grants ride the SAME
+//! `NpcTeleportReq` queue as the pads (§5 Fold B). This module's
+//! teleport family + its 9 teleport witnesses are the FOLD SOURCE —
+//! already consumed (8 adapted as `w4_g11u_*` in `teleport_dust.rs` +
+//! the driver witness in `main_dust.rs`); the MERGER DROPS them here
+//! and keeps g11's copies. The earlier "supersedes g11 main_dust styles
+//! 0-5/7" note (commit `1eedb9a3`) was the INVERSE direction and is
+//! RETIRED — both branches agreed the g61 BODY survives; g11 executed
+//! the fold on ITS branch. The poof/mimic/transform/alt-texture halves
+//! + their 8 witnesses STAY g61's (research/116 §4 merger-drops note);
+//! the g61b seam-2/3/5 wirings are NO-DUP (the §5 census). The g61b
+//! seam-4 `npc_teleport_wiring` helper is the one DUP RISK — the merger
+//! keeps the g11 QUEUE replay and drops the helper with its env-level
+//! driver (the statue + fade semantics already landed on g11).
+//! `Audio::play_teleport_cue` may hoist into the g11 dispatcher closure
+//! with zero behaviour change (the §5 audio note). The g11 `snowing`
+//! site is separately adjudicated (research/83, d130-canonical).
 //!
 //! **`NewNPC` itself draws no spawn dust.** `NPC.NewNPC`
 //! (`NPC.cs:80750-80795`) has exactly ONE RNG draw — the
@@ -86,7 +115,14 @@
 //!
 //! Witnesses: the tests below record EVERY stream call through a
 //! `RecordingRng` and pin the exact slot sequence per site (WRITTEN
-//! NOT RUN — code-only mode, no cargo per the lane directive).
+//! NOT RUN — code-only mode, no cargo per the lane directive). The 9
+//! `w4_g61_teleport_*`/`w4_g61_npc_teleport_*` witnesses are the FOLD
+//! SOURCE too — g11 union-adapted 8 of them as `w4_g11u_*` in
+//! `teleport_dust.rs` + the driver witness as
+//! `w4_g11_npc_teleport_style4_two_sided_burst_and_latch` in
+//! `main_dust.rs` (research/116 §4); the merger drops the g61 copies.
+//! The 8 poof/mimic/transform/alt-texture witnesses + the wiring-seam
+//! witnesses STAY g61's.
 #![allow(dead_code)] // The wiring round drains the poof at the bug-net/statue seams, the mimic smoke at the key-summon seam, TransformVisuals at the live transform tails and the teleport family at the statue/pad call sites; arms whose kinds are roster-gapped (the 158/159 vampire pair, the 478/479 mothron hatch, the big mimics) keep their parity code unwired until the kind lanes land.
 
 use crate::npc::Npc;
@@ -430,6 +466,12 @@ pub fn transform_visuals<R: DustRng + GoreRng>(
 /// parameter is unread inside the C# body (only style 10 reads
 /// `otherPosition`), so the port drops it. All eleven C# arms:
 /// 0/1/2/3/4/5/7/9/10/11/13 (6/8 have no arm).
+///
+/// DEPRECATED (FOLD-SOURCE — g11 research/116 §3/§4, executed at g11
+/// `56afc0c0`): the surviving copy is g11's `teleport_dust.rs`
+/// (this body adapted per-hunk at `a9628928`); the merger drops THIS
+/// fn and keeps the g11 dispatcher → body path. Kept compiling until
+/// the merge so this branch's witnesses stay runnable.
 ///
 /// The `effectRect` is `NPC.getRect()` (`NPC.cs:90025-90028`): the
 /// INTEGER-cast top-left + the integer width/height. Styles 9/10
@@ -814,6 +856,11 @@ pub fn teleport_effect<R: DustRng + GoreRng>(
 /// (`PortalHelper.cs:373-392`), the `netMode == 0` single-player arm:
 /// `colorIndex / 2` is the player (unread here), `colorIndex % 2` the
 /// portal — 0 → hsl(0.12, 1, 0.5), else hsl(0.52, 1, 0.6); alpha 66.
+///
+/// DEPRECATED (FOLD-SOURCE — g11 research/116 §4): g11's
+/// `teleport_dust.rs::portal_color` is the surviving copy (same
+/// canonical `ui::color::hsl_to_rgb`); the merger drops this one with
+/// the teleport family.
 pub fn portal_color(color_index: i32) -> Color {
     let rgb = if color_index % 2 != 0 {
         crate::ui::color::hsl_to_rgb(0.52, 1.0, 0.6, 66)
@@ -831,6 +878,10 @@ pub fn portal_color(color_index: i32) -> Color {
 /// 255 and truncates (`(byte)(v*255)`); the Snow/Mushroom 1.2 blue
 /// clamps at 255 (XNA's float ctor clamps to [0,1] — the port clamps
 /// the same, the pylons render precedent).
+///
+/// DEPRECATED (FOLD-SOURCE — g11 research/116 §4): the surviving copy
+/// is g11's `teleport_dust.rs::pylon_spawn_in_world_dust` (the style-9
+/// body); the merger drops this one with the teleport family.
 fn pylon_spawn_in_world_dust<R: DustRng + GoreRng>(
     env: &mut SpawnVisualsEnv<'_, R>,
     tile_style: i32,
@@ -883,6 +934,15 @@ fn pylon_spawn_in_world_dust<R: DustRng + GoreRng>(
 /// copies the `Npc` fields in, calls this, and writes them back (the
 /// `&mut Npc` + `&mut`-field disjoint-borrow convention); the pure fn
 /// stays field-agnostic so the witnesses drive the triple directly.
+///
+/// DEPRECATED (RETIRED at the merge — g11 research/116 §3/§4): g11's
+/// App-level `main_dust::npc_teleport` replay supersedes this env-level
+/// driver (it carries `other_position` on both legs per gap 2 and reads
+/// the g11 `Npc` fields — the triple is retired). The g61b
+/// `npc_teleport_wiring` helper (the statue-14/pad-0 immediate seam) is
+/// the §5 DUP RISK: the merger keeps the g11 QUEUE replay (the pad
+/// drain + the §5 Fold B statue queue) and drops the helper with this
+/// driver. Kept compiling until the merge (the seam witnesses pin it).
 #[allow(clippy::too_many_arguments)]
 pub fn npc_teleport<R: DustRng + GoreRng>(
     env: &mut SpawnVisualsEnv<'_, R>,
@@ -947,6 +1007,15 @@ pub fn npc_teleport<R: DustRng + GoreRng>(
 /// * The tail (`:92240`): `time = max(0, time − 0.005)` runs for EVERY
 ///   style that entered (the `time > 0` head gate `:92196-92199`
 ///   returns before it otherwise).
+///
+/// DEPRECATED (FOLD-SOURCE — g11 research/116 §4/§5, executed at g11
+/// `56afc0c0` + `cc8c767b`): the surviving copy is g11's
+/// `teleport_dust.rs::update_npc_teleport_visuals`, re-signed to
+/// `&mut Npc` on the g11 fields (`teleport_style_id` naming — this
+/// triple shape is retired) and WIRED PRE-AI in the `UpdateNPC` slot
+/// preamble (the §5 Fold A of this branch's seam-4 order). The merger
+/// drops THIS fn + the `world_sim/npcs.rs` copy-in/out drain and keeps
+/// the g11 wiring. Kept compiling until the merge.
 pub fn update_npc_teleport_visuals<R: DustRng + GoreRng>(
     env: &mut SpawnVisualsEnv<'_, R>,
     npc: &Npc,

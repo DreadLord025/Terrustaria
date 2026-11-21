@@ -1565,6 +1565,10 @@ impl Audio {
     /// (`SoundEngine.cs:102-108`, no NextFloat) → [`Audio::play_splash_sound`].
     /// `sound_id` 2 → the item-use façade, 19 → the splash. Returns the cue
     /// played; `None` when the gate refused or the style has no row.
+    /// KEEP-ONE (g11 research/116 §5 audio note): the g11 dispatcher closure
+    /// carries the SAME resolution inline — the merger may hoist it into
+    /// this named helper (this shape) with zero behaviour change; one call
+    /// path either way, no dup risk. This helper SURVIVES the merge.
     pub fn play_teleport_cue(
         &mut self,
         sound_id: i32,
