@@ -39398,25 +39398,37 @@ scan already passed them).
 - `StatusNPC`'s 476 arm (`:11474-11477`): LifeDrain (151) for 30 ticks,
   no roll (the heal-over-time is the buff layer's follow-up).
 
-**The 184 BadTorchLuck torch-god event contract (f33).** The event
-machine is `Player.TorchAttack` (`Player.cs:17813-17910`, driven by
-`TryRecalculatingTorchLuck` `:17731-17738` under `happyFunTorchTime`):
-every 21 ticks it picks a lit torch, snuffs it (`frameX += 66`), and
-spawns the 949 with **ai0 = the torch's `TorchID.Dust` id, ai1 = the
-distance to the player**, velocity 8 toward the player, damage
-`40 × HostileProjectileDamageMultiplier`. **The f33 branch
-(`task/W4-f33-torch-god-favor`) is NOT on origin** (verified by
-`git ls-remote` — only `task/W4-e27-torch-luck-biome` exists, the
-biome-matching lane, no event machine). The projectile side is landed
-and event-ready: the 949 row + the 184 arm read exactly those ai slots
-(the dust type + the flight-distance drain), and the self-hurt
+**The 184 BadTorchLuck torch-god event contract (f33) — UPDATED
+(keep-one round 2).** The event machine is `Player.TorchAttack`
+(`Player.cs:17813-17910`, driven by `TryRecalculatingTorchLuck`
+`:17731-17738` under `happyFunTorchTime`): every 21 ticks it picks a lit
+torch, snuffs it (`frameX += 66`), and spawns the 949 with **ai0 = the
+torch's `TorchID.Dust` id, ai1 = the distance to the player**, velocity
+8 toward the player, damage `40 × HostileProjectileDamageMultiplier`.
+**The f33 branch (`task/W4-f33-torch-god-favor`) is NOW on origin at
+`8a000407f`** (the earlier probe pre-dated its push): the event machine
+(`ce076c9f9` + the witness fix `333479e0b`), the 5043 use arm +
+permanence (`6f2c122e8`), the biome-torch arms (`a429b37c0`/`8a000407f`).
+**Compose VERIFIED:** f33's `torch_god.rs::drain_pending` calls
+`spawn_with_data_ai_owned(949, local_owner, launch.x, launch.y,
+launch.vx, launch.vy, launch.damage, 1.0, dust_id as f32, distance)`
+then pins `friendly = false` + `net_update = true` — exactly the C#
+argument order (`:17900-17903`); `launch_aim` keeps the pre-normalize
+length in ai[1] and the reciprocal-multiply normalize × 8 (NaN on zero,
+no guard — the C# has none). The d19 184 arm reads exactly those slots
+(the dust type + the flight-distance drain) and the self-hurt
 (`SelfHurtPlayers` `:15025-15062`) passes `dodgeable: true` into the
-shared `Player::hurt` dodge lane (`Player.cs:38214-38241` — sash → belt
-→ brain → shadow; the 949 is outside the exactly-9999 Moon Lord
-exemption `:15067`). When f33's event lands it only needs the spawn call
-(`spawn_with_data_ai_owned(949, owner, x, y, vx, vy, dmg, 1.0, dust_id,
-distance)`) — no projectile-side change. The dodge integration is
-witness-tested (`w4_d19_the_torch_fireball_self_hurt_is_dodgeable`).
+shared dodge lane (sash → belt → brain → shadow; the 949 is outside the
+exactly-9999 exemption `:15067`) — witness
+`w4_d19_the_torch_fireball_self_hurt_is_dodgeable`. The 949 rows on
+both branches are value-identical (`:8948-8955`). **No projectile-side
+change needed.** The two branches DO carry duplicate 949 machines that
+diverge (f33's `ai_184_bad_torch_luck` keeps the full NewDust draw
+census + the Kill census + the explicit hitDirection/source hurt; d19's
+`ai_bad_torch_luck` skips the dust bodies and under-draws the shared
+stream) — the keep-f33 adjudication + merge instructions are recorded
+in `docs/research/26g-clouds-keep-one.md` §3 (f33 owns the event lane;
+this branch does not edit it).
 
 **Documented deviations.** The 1007 `hide` flag (no port field, the draw
 seam); the GasTrap particle broadcast (the particle layer's skip, no
@@ -39434,3 +39446,24 @@ damage-walk module, 1 dodge witness in `projectile_ai_sword_styles`)
 are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify
 invoked**. The census pin stays satisfied: aiStyle 92 has exactly one
 24-space dispatch arm; 209 stays d21's.
+
+**Keep-one round 2 (the d10/f33/d21 cross-branch adjudication).** The
+d10 branch (`1f0b60e96`, arm `b34ad73c5`) ported the same aiStyle-92 arm
+into `projectile_ai_91_100.rs::ai_clouds` — adjudicated arm-by-arm in
+`docs/research/26g-clouds-keep-one.md`: THIS module survives (the
+faithful superset — the shared collision probe, the 190 drain, the
+ungated gas player lane); the d10-only Item16 broadcast cue folded
+here, plus the `localAI[0]==0` outer-gate shape fix; two d10
+written-not-run witness defects re-derived and corrected (the tick-1
+bloom scale 0.28864/w=7, the toxic tie-break self-sign (−1,+1)); +2
+folded witnesses here, +1 `IsWorldPointSolid` witness in `collision.rs`
+(d10's private probe twin dies at merge — its `/16` truncation and raw
+192-solid read are the defects). The f33 contract note above is UPDATED
+(f33 now on origin, compose verified, the duplicate 949 machines
+adjudicated keep-f33). The d21 1129 merge-contract re-verified at d21's
+tip `9fa9e9ba0`: the row (`:10580-10596` values verbatim incl.
+ignoreWater/melee/local-pair), the 209 dispatch arm (free integrate,
+tileCollide false), `ai_claymore_blade_slam` verbatim against
+`:69622-69631` — the drain's centre offset (16×16 → −8), ai1=128 /
+ai2=96 and the full damage (`:41967`) all compose; the both-states
+witness holds. All WRITTEN NOT RUN (code-only).
