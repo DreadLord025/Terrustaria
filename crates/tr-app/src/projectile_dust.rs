@@ -1039,6 +1039,9 @@ pub(crate) fn style8_default(
 /// then the dust-172 (977) / dust-229 (1045) at the centre (noGravity, the
 /// `NextVector2Circular(1,1)` + 0.5·vel velocity). The caller owns the
 /// ×0.96 drag.
+// STAGED (the W4-d16 lane owns the machine): the witnesses are the only
+// caller until the merge feeds d16's skip block — the style73 precedent.
+#[allow(dead_code)]
 pub(crate) fn star_slash_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
     let dust_type = if p.kind == 977 { 172 } else { 229 };
     if d.rng.next_range(0, 8) == 0 {
@@ -1066,6 +1069,8 @@ pub(crate) fn star_slash_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
 /// trail (noGravity, ×0.5 velocity), then the `localAI[1] == 0` one-shot
 /// 10-dust burst (each with the two `NextFloat` velocity draws). The caller
 /// owns the `localAI[1]` latch (set AFTER this call, as the C# orders it).
+// STAGED (the W4-d16 lane owns the machine) — see `star_slash_dust`.
+#[allow(dead_code)]
 pub(crate) fn star_slash_976(p: &Projectile, world: &World, d: &mut ProjDust) {
     if d.rng.next_range(0, 3) == 0 {
         let idx = d.new_dust_direct(
