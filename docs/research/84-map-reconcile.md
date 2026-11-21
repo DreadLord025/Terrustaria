@@ -1,6 +1,8 @@
 # 84 — Map reveal dup-reconcile: W4-e18 vs W4-f46 (2026-11-21, code-only)
 
-> **STATUS: EXECUTED (2026-11-21, salvage-exec on `task/W4-f46-minimap-reveal-2`).**
+> **STATUS: COMPLETE (2026-11-21 closeout — see §10 for the final status +
+> merger checklist).** EXECUTED (2026-11-21, salvage-exec on
+> `task/W4-f46-minimap-reveal-2`).
 > The §8 union landed on this branch: e18's skeleton adopted verbatim
 > (base commit `0bc3414d`), then the six f46 salvages + the
 > `sections_left()` accessor committed per piece. **Fold phase (same day):
@@ -328,3 +330,59 @@ diff enumerated and read in full), direct reads of the C# windows listed in
 the header, and `git show 354b50d2:crates/tr-app/src/map_sections.rs`
 confirming e18's `flag = false` init. All witnesses cited are
 written-not-run on both branches (their own commit messages say so).
+
+## 10. FINAL STATUS + merger checklist (2026-11-21 closeout)
+
+**STATUS: COMPLETE.** The union on `task/W4-f46-minimap-reveal-2` is the
+branch the merger keeps; the separate e18/f46 versions are dropped. Chain
+since the EXECUTED header: fold phase (`c06bc2fe`/`6dea2b66`/`0fc306bc` +
+docs `af1bc80c`), then the closeout: `cc17880a` (e18 tip re-fetch — still
+`670c948d`, zero post-fold commits, nothing to re-fold), `08b749bd` (the
+minimap remaining census: pan inertia PHANTOM, fullscreen zoom keys already
+landed, the style-1 minimap zoom keys + the Tab style-cycle key ported with
+5 witnesses), `8bb34f71` (the f29/e17 overlay composition cross-note,
+research/14). The e18d final-sweep contract stays published in research/14
+"fold status": any later e18 commit past `670c948d` re-folds per the recipe
+(fetch tip → cherry-pick → per-hunk onto the union seams).
+
+**Merger checklist (in order):**
+
+1. **Take THIS branch's union only** — never a plain e18 or f46 merge. The
+   §8 KEEP/DROP table is the per-file ruling; the driver is
+   `frame/world.rs::map_reveal_draw` called from `frame/draw.rs` on the
+   DoDraw half ahead of `WorldMap::prepare` (NOT an update-half call — the
+   S1-B-8 orchestrator pin walks the frozen phase list and the driver is
+   deliberately absent from it).
+2. **Re-fetch `origin/task/W4-e18-minimap-reveal-queue` at merge time.** If
+   the tip moved past `670c948d`, fold each new commit per research/14's
+   recipe BEFORE merging (the closeout re-fetch found it unmoved).
+3. **The overlay siblings are a SEPARATE keep-one, not part of this union:**
+   `origin/task/W4-f29-map-overlay-2` (`e18bf6dd`) and
+   `origin/task/W4-e17-map-overlay-layers` (`8500c3e5`, revived) port the
+   SAME nine overlay pieces twice. Take ONE implementation (research/14
+   "W4-f46 × f29/e17 overlay composition" lists the seams: the draws insert
+   before the hover text leaving the union's close/cursor tail last; the
+   head icon re-homes to `:55931` with the 255-loop; the pan state lands
+   twice — f29's `update_map_input` step vs e17's `prepare` lerp). Close the
+   two shared gaps against the C# while folding: the movement-key pan
+   cancel (`Player.cs:24776-24791`) and the `resetMapFull` pan clear
+   (`Main.cs:55418`, missing in f29's arm).
+4. **Anchors:** the union's rows are `map_sections.rs::get_next_map_draw`,
+   `frame/world.rs::map_reveal_sweep_fields`, `map.rs::draw_to_map_section`,
+   `map.rs::clear_map`, `ui/chrome.rs::fullmap_close_button_pos`,
+   `ui/cursor.rs::draw_thick`, `ui/minimap.rs::apply_key_zoom`,
+   `app/loop.rs`'s `MapAction::Style` arm — plus the overlay pick's own rows.
+   Never delete rows to silence the canary; the f46 pre-union rows pointing
+   at dropped files were already removed by the base adoption.
+5. **Run the catalog verification on the merged state** (this closeout was
+   code-only as tasked — every witness on the branch is written-not-run):
+   `cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`,
+   judge by the `test result: ok` lines. The new witnesses to watch:
+   `ui::minimap::tests::w4_f46_key_zoom_*`,
+   `app::w4_f46_minimap_zoom_key_tests`, `app::loop::tests::w4_f46_*`, and
+   the folded e18/f46 sets (§7).
+6. **Docs are already union-shaped:** research/14 (censuses + fold status +
+   composition note), this file, PORT_MAP's map rows, ROADMAP row 14,
+   ANALYSIS's union note. The overlay pick brings its own doc updates —
+   resolve the research/14 append conflicts by keeping both sections (the
+   e18/f29/e17 censuses describe different passes, not rivals).
