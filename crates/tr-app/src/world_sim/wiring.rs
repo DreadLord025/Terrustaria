@@ -702,6 +702,10 @@ fn consume_one(
 /// path. The cut half's cached `Kill*` drops (`Item.DropCache`,
 /// `:3325-3326`) spawn at `master.Center` with zero spread on the caller's
 /// stage stream — the use path rides `UpdatePlayers`.
+// The 3625 use arm is c42's editing lane (not on this base); the g50 host
+// arm runs its own sender-stock variant (`netglue::host_mass_wire_operation`).
+// This copy stays for the union keep-one — allow the interim dead code.
+#[allow(dead_code)]
 pub(crate) fn mass_wire_operation(app: &mut App, ps: (i32, i32), pe: (i32, i32), mode: u8) {
     // `:423-433` — the stock census over the 58 carry slots.
     let mut wire_count: i32 = 0;
