@@ -212,6 +212,7 @@
 //! | 984-986 | `:87450` | the 117-119 Leech death (1 gore each, 134+(type-117)) |
 //! | 987-991 | `:87468-87478` | the 217/218/219 beetle death (per-type gores, type-18 alpha dust) |
 //! | 992-997 | `:87495-87500` | the 222 QueenBee death (6 gores 303-308 at spread Y anchors) |
+//! | 998-1006 | `:87518-87534` | the 6/94/166 EaterofSouls/Corruptor/SwampThing death (per-type gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5697,6 +5698,56 @@ fn queen_bee_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y - 10.0), vel, 308, s);
 }
 
+/// The 6/94/166 EaterofSouls/Corruptor/SwampThing death
+/// (`NPC.cs:87512-87535`, sites 998-1006): the 50-dust type-18 burst
+/// (SpeedX `hitDirection`, SpeedY -2, alpha/color/scale from the NPC), then
+/// the per-type gores at position at `this.scale` — 94 Corruptor →
+/// [108,108,109,110], 166 SwampThing → [209,210,211], and the `else` (6
+/// EaterofSouls) → [14,15] with `alpha = this.alpha` post-writes.
+///
+/// `this.color` stand-in: these kinds set NO color in `SetDefaults`, so the
+/// dust color is `Color::default()`; alpha rides `npc.alpha`.
+fn eater_of_souls_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    // `:87512-87515` — the 50-dust type-18 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:87516-87535` — the per-type gores.
+    if npc_type == 94 {
+        gore.new_gore(rng, world, pos, vel, 108, s); // :87518
+        gore.new_gore(rng, world, pos, vel, 108, s); // :87519
+        gore.new_gore(rng, world, pos, vel, 109, s); // :87520
+        gore.new_gore(rng, world, pos, vel, 110, s); // :87521
+    } else if npc_type == 166 {
+        gore.new_gore(rng, world, pos, vel, 209, s); // :87525
+        gore.new_gore(rng, world, pos, vel, 210, s); // :87526
+        gore.new_gore(rng, world, pos, vel, 211, s); // :87527
+    } else {
+        // `:87531-87534` — the 6 EaterofSouls, with the alpha copies.
+        let idx = gore.new_gore(rng, world, pos, vel, 14, s);
+        gore.slot_mut(idx).alpha = alpha;
+        let idx = gore.new_gore(rng, world, pos, vel, 15, s);
+        gore.slot_mut(idx).alpha = alpha;
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6388,6 +6439,11 @@ pub fn hit_effect_c(
     // `:87481-87501` — the 222 QueenBee arm (sites 992-997).
     if npc_type == 222 && npc.hp <= 0 {
         queen_bee_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87502-87536` — the 6/94/166 EaterofSouls/Corruptor/SwampThing arm
+    // (sites 998-1006).
+    if (npc_type == 6 || npc_type == 94 || npc_type == 166) && npc.hp <= 0 {
+        eater_of_souls_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10123,6 +10179,39 @@ mod tests {
         assert_eq!(gore.slot(3).position, Vec2::new(100.0, 120.0));
         assert_eq!(gore.slot(4).position, Vec2::new(100.0, 110.0));
         assert_eq!(gore.slot(5).position, Vec2::new(100.0, 90.0));
+    }
+
+    /// `NPC.cs:87518-87534` — the EaterofSouls family: 94 Corruptor →
+    /// [108,108,109,110], 166 SwampThing → [209,210,211], 6 EaterofSouls →
+    /// [14,15] with alpha copies.
+    #[test]
+    fn w4_f10_the_eater_of_souls_death_uses_the_per_type_list() {
+        let w = air();
+        // The Corruptor 94.
+        let mut n = boss(100.0, 100.0, 40.0, 40.0);
+        n.alpha = 40;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(953);
+        eater_of_souls_death(&n, 94, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![108, 108, 109, 110]);
+        // The SwampThing 166.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(953);
+        eater_of_souls_death(&n, 166, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![209, 210, 211]);
+        // The EaterofSouls 6: alpha copies.
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(953);
+        eater_of_souls_death(&n, 6, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        assert_eq!(gore3.slot(0).gore_type, 14);
+        assert_eq!(gore3.slot(1).gore_type, 15);
+        assert_eq!(gore3.slot(0).alpha, 40);
+        assert_eq!(gore3.slot(1).alpha, 40);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
