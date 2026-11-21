@@ -2237,6 +2237,23 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Gold Grasshopper",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "GoldMouse",
+        net_id: 447,
+        kind: NpcKind::GoldMouse,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Mouse",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldWorm",
+        net_id: 448,
+        kind: NpcKind::GoldWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Worm",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2369,6 +2386,9 @@ pub fn try_entry_for_npc(
         // the Hide=true variants have no own entry).
         NpcKind::ArmedZombieTwiggy => NpcKind::TwiggyZombie,
         NpcKind::ArmedZombieCenx => NpcKind::FemaleZombie,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::BoneThrowingSkeleton => NpcKind::Skeleton,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2451,6 +2471,9 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // the Hide=true variants have no own entry).
         NpcKind::ArmedZombieTwiggy => NpcKind::TwiggyZombie,
         NpcKind::ArmedZombieCenx => NpcKind::FemaleZombie,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::BoneThrowingSkeleton => NpcKind::Skeleton,
         other => other,
     };
     ENTRIES

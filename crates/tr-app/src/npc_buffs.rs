@@ -489,6 +489,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::GoldButterfly
         | NpcKind::GoldFrog
         | NpcKind::GoldGrasshopper => &[31],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::GoldMouse
+        | NpcKind::GoldWorm => &[31],
+        NpcKind::BoneThrowingSkeleton
+        | NpcKind::BoneThrowingSkeleton2
+        | NpcKind::BoneThrowingSkeleton3 => &[20],
         // S1-D-3 W-9 fishron wiring — 370/371/372/373 have NO
         // `DebuffImmunitySets` rows (`NPCID.cs:6075+`'s dictionary carries
         // no 370-373 keys) — the null-row else-branch, no immunity.

@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): GoldMouse, GoldWorm, BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3.
+    /// `NPCID.GoldMouse` (447): 14x12, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    GoldMouse,
+    /// `NPCID.GoldWorm` (448): 10x4, aiStyle 66, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    GoldWorm,
+    /// `NPCID.BoneThrowingSkeleton` (449): 18x40, aiStyle 3, dmg 20, def 8, 60 HP,
+    /// kb 0.5, value 100 (`NPC.cs` SetDefaults arm).
+    BoneThrowingSkeleton,
+    /// `NPCID.BoneThrowingSkeleton2` (450): 18x40, aiStyle 3, dmg 20, def 12, 55 HP,
+    /// kb 0.5, value 130 (`NPC.cs` SetDefaults arm).
+    BoneThrowingSkeleton2,
+    /// `NPCID.BoneThrowingSkeleton3` (451): 18x40, aiStyle 3, dmg 18, def 8, 65 HP,
+    /// kb 0.5, value 120 (`NPC.cs` SetDefaults arm).
+    BoneThrowingSkeleton3,
     // W4-d40 (NPCID 421-490 roster wave): GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper.
     /// `NPCID.GoldBird` (442): 14x14, aiStyle 24, dmg 0, def 0, 5 HP,
     /// kb 0.8, value 0 (`NPC.cs` SetDefaults arm).
@@ -3102,6 +3118,9 @@ impl Npc {
                 // W4-d40: the explicit `friendly = true` SetDefaults rows
                 // (`NPC.cs:14313`/`:14344`/`:14401`/`:14588`).
                 || matches!(kind, NpcKind::GoldGrasshopper)
+                // W4-d40: the explicit `friendly = true` SetDefaults rows
+                // (`NPC.cs:14313`/`:14344`/`:14401`/`:14588`).
+                || matches!(kind, NpcKind::GoldWorm)
                 || crate::bug_net::npc_catchable(kind.cs_id() as i32),
             // `NPC.releaseOwner = 255` (`NPC.cs:8445`'s SetDefaults reset).
             release_owner: 255,
@@ -3600,6 +3619,12 @@ impl Npc {
             NpcKind::GoldButterfly => 1.0,
             NpcKind::GoldFrog => 1.0,
             NpcKind::GoldGrasshopper => 1.0,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::GoldMouse => 1.0,
+            NpcKind::GoldWorm => 1.0,
+            NpcKind::BoneThrowingSkeleton => 0.5,
+            NpcKind::BoneThrowingSkeleton2 => 0.5,
+            NpcKind::BoneThrowingSkeleton3 => 0.5,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -3998,6 +4023,12 @@ impl Npc {
             NpcKind::GoldButterfly => 0,
             NpcKind::GoldFrog => 0,
             NpcKind::GoldGrasshopper => 0,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::GoldMouse => 0,
+            NpcKind::GoldWorm => 0,
+            NpcKind::BoneThrowingSkeleton => 8,
+            NpcKind::BoneThrowingSkeleton2 => 12,
+            NpcKind::BoneThrowingSkeleton3 => 8,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4388,6 +4419,12 @@ impl Npc {
             NpcKind::GoldButterfly => 0.0,
             NpcKind::GoldFrog => 0.0,
             NpcKind::GoldGrasshopper => 0.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::GoldMouse => 0.0,
+            NpcKind::GoldWorm => 0.0,
+            NpcKind::BoneThrowingSkeleton => 100.0,
+            NpcKind::BoneThrowingSkeleton2 => 130.0,
+            NpcKind::BoneThrowingSkeleton3 => 120.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6415,6 +6452,14 @@ impl Npc {
             | NpcKind::GoldFrog => {}
             // W4-d40: GoldGrasshopper ride the family machine.
             NpcKind::GoldGrasshopper => self.update_slime(world, player, dt),
+            // W4-d40: GoldMouse, GoldWorm - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::GoldMouse
+            | NpcKind::GoldWorm => {}
+            // W4-d40: BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3 ride the family machine.
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => self.update_skeleton(world, player, dt),
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9165,6 +9210,45 @@ impl Npc {
             | NpcKind::GoldFrog
             | NpcKind::GoldGrasshopper => {
                 self.frame = 0;
+            }
+            NpcKind::GoldMouse
+            | NpcKind::GoldWorm => {
+                self.frame = 0;
+            }
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => {
+                // `FindFrame` case 449-452 (`NPC.cs:71398-71453`): the
+                // grounded ai[2] attack ladder reads the ai[1] wind-up bands
+                // (rows count-5..count-1), else the 2..14 walk stride; the
+                // air pin is row 1. `npcFrameCount` 449-451 = 19, 452 = 20.
+                let count = crate::render::entities::npc_rows(self.kind.cs_id());
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        let a1 = self.ai[1];
+                        let n52 = if a1 >= 50.0 { 1 }
+                            else if a1 >= 43.0 { 2 }
+                            else if a1 >= 36.0 { 3 }
+                            else if a1 >= 29.0 { 4 } else { 0 };
+                        self.frame = (count - 5) + n52;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    if self.vx == 0.0 { self.frame = 0; return; }
+                    if self.frame < 2 { self.frame = 2; }
+                    self.frame_counter += self.vx.abs() * 2.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 15 { self.frame = 2; }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
             }
             NpcKind::DukeFishron => {
                 if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
@@ -18806,6 +18890,12 @@ impl Npc {
             NpcKind::GoldButterfly => 444,
             NpcKind::GoldFrog => 445,
             NpcKind::GoldGrasshopper => 446,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::GoldMouse => 447,
+            NpcKind::GoldWorm => 448,
+            NpcKind::BoneThrowingSkeleton => 449,
+            NpcKind::BoneThrowingSkeleton2 => 450,
+            NpcKind::BoneThrowingSkeleton3 => 451,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23875,7 +23965,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 285] = [
+    pub(super) const ALL_KINDS: [NpcKind; 290] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24154,6 +24244,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: GoldMouse, GoldWorm, BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3.
+        NpcKind::GoldMouse,
+        NpcKind::GoldWorm,
+        NpcKind::BoneThrowingSkeleton,
+        NpcKind::BoneThrowingSkeleton2,
+        NpcKind::BoneThrowingSkeleton3,
         // W4-d40: GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper.
         NpcKind::GoldBird,
         NpcKind::GoldBunny,
@@ -27783,7 +27879,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            285,
+            290,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -33962,5 +34058,65 @@ mod w4_d40_goldbird_goldbunny_tests {
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldFrog, SlimeVariant::Blue).net_id, 445);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldGrasshopper, SlimeVariant::Blue).net_id, 446);
         assert!(Npc::new(NpcKind::GoldGrasshopper, 0.0, 0.0, 1, 0.0).friendly);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the GoldMouse, GoldWorm, BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_goldmouse_goldworm_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::GoldMouse, 447u16, 7u8, 14.0, 12.0, 0, 0, 5, 1.0f32, 0.0),
+            (NpcKind::GoldWorm, 448u16, 66u8, 10.0, 4.0, 0, 0, 5, 1.0f32, 0.0),
+            (NpcKind::BoneThrowingSkeleton, 449u16, 3u8, 18.0, 40.0, 20, 8, 60, 0.5f32, 100.0),
+            (NpcKind::BoneThrowingSkeleton2, 450u16, 3u8, 18.0, 40.0, 20, 12, 55, 0.5f32, 130.0),
+            (NpcKind::BoneThrowingSkeleton3, 451u16, 3u8, 18.0, 40.0, 18, 8, 65, 0.5f32, 120.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::GoldMouse.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::GoldMouse.death_sound(), Some("NPC_Killed_4"));
+        assert_eq!(NpcKind::GoldWorm.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::GoldWorm.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::BoneThrowingSkeleton.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::BoneThrowingSkeleton.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::BoneThrowingSkeleton2.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::BoneThrowingSkeleton2.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::BoneThrowingSkeleton3.hit_sound(), Some("NPC_Hit_2"));
+        assert_eq!(NpcKind::BoneThrowingSkeleton3.death_sound(), Some("NPC_Killed_2"));
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::GoldMouse.to_u16(), 447);
+        assert_eq!(NpcKind::from_u16(447), Some(NpcKind::GoldMouse));
+        assert_eq!(NpcKind::GoldWorm.to_u16(), 448);
+        assert_eq!(NpcKind::from_u16(448), Some(NpcKind::GoldWorm));
+        assert_eq!(NpcKind::BoneThrowingSkeleton.to_u16(), 449);
+        assert_eq!(NpcKind::from_u16(449), Some(NpcKind::BoneThrowingSkeleton));
+        assert_eq!(NpcKind::BoneThrowingSkeleton2.to_u16(), 450);
+        assert_eq!(NpcKind::from_u16(450), Some(NpcKind::BoneThrowingSkeleton2));
+        assert_eq!(NpcKind::BoneThrowingSkeleton3.to_u16(), 451);
+        assert_eq!(NpcKind::from_u16(451), Some(NpcKind::BoneThrowingSkeleton3));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldMouse, SlimeVariant::Blue).net_id, 447);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldWorm, SlimeVariant::Blue).net_id, 448);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::BoneThrowingSkeleton, SlimeVariant::Blue).kind, NpcKind::Skeleton);
+        assert!(Npc::new(NpcKind::GoldWorm, 0.0, 0.0, 1, 0.0).friendly);
     }
 }

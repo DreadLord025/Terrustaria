@@ -603,6 +603,12 @@ impl NpcKind {
             NpcKind::GoldButterfly => 444,
             NpcKind::GoldFrog => 445,
             NpcKind::GoldGrasshopper => 446,
+            // W4-d40: GoldMouse, GoldWorm, BoneThrowingSkeleton, BoneThrowingSkeleton2, BoneThrowingSkeleton3 keep their vanilla ids (free in the protocol space).
+            NpcKind::GoldMouse => 447,
+            NpcKind::GoldWorm => 448,
+            NpcKind::BoneThrowingSkeleton => 449,
+            NpcKind::BoneThrowingSkeleton2 => 450,
+            NpcKind::BoneThrowingSkeleton3 => 451,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -951,6 +957,12 @@ impl NpcKind {
             444 => NpcKind::GoldButterfly,
             445 => NpcKind::GoldFrog,
             446 => NpcKind::GoldGrasshopper,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            447 => NpcKind::GoldMouse,
+            448 => NpcKind::GoldWorm,
+            449 => NpcKind::BoneThrowingSkeleton,
+            450 => NpcKind::BoneThrowingSkeleton2,
+            451 => NpcKind::BoneThrowingSkeleton3,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1842,6 +1854,12 @@ impl NpcKind {
             | NpcKind::GoldButterfly
             | NpcKind::GoldFrog
             | NpcKind::GoldGrasshopper => "NPC_Hit_1",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::GoldMouse
+            | NpcKind::GoldWorm => "NPC_Hit_1",
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => "NPC_Hit_2",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2164,6 +2182,12 @@ impl NpcKind {
             | NpcKind::GoldButterfly
             | NpcKind::GoldFrog
             | NpcKind::GoldGrasshopper => "NPC_Killed_1",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::GoldMouse => "NPC_Killed_4",
+            NpcKind::GoldWorm => "NPC_Killed_1",
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => "NPC_Killed_2",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2545,6 +2569,12 @@ impl NpcKind {
             | NpcKind::GoldFrog => 7,
             NpcKind::GoldButterfly => 65,
             NpcKind::GoldGrasshopper => 1,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::GoldMouse => 7,
+            NpcKind::GoldWorm => 66,
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => 3,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3093,6 +3123,12 @@ impl NpcKind {
             NpcKind::GoldButterfly => (10.0, 10.0),
             NpcKind::GoldFrog => (12.0, 10.0),
             NpcKind::GoldGrasshopper => (14.0, 10.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::GoldMouse => (14.0, 12.0),
+            NpcKind::GoldWorm => (10.0, 4.0),
+            NpcKind::BoneThrowingSkeleton
+            | NpcKind::BoneThrowingSkeleton2
+            | NpcKind::BoneThrowingSkeleton3 => (18.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3172,6 +3208,10 @@ impl NpcKind {
             NpcKind::ForceBubble => 384,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
+            // W4-d40: hand rows for the kinds with no bestiary entry
+            // (the Hide=true exclusions with no credit-fold).
+            NpcKind::BoneThrowingSkeleton2 => 450,
+            NpcKind::BoneThrowingSkeleton3 => 451,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -3752,6 +3792,12 @@ impl NpcKind {
             NpcKind::GoldButterfly => 5,
             NpcKind::GoldFrog => 5,
             NpcKind::GoldGrasshopper => 5,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::GoldMouse => 5,
+            NpcKind::GoldWorm => 5,
+            NpcKind::BoneThrowingSkeleton => 60,
+            NpcKind::BoneThrowingSkeleton2 => 55,
+            NpcKind::BoneThrowingSkeleton3 => 65,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4134,6 +4180,12 @@ impl NpcKind {
             NpcKind::GoldButterfly => 0,
             NpcKind::GoldFrog => 0,
             NpcKind::GoldGrasshopper => 0,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::GoldMouse => 0,
+            NpcKind::GoldWorm => 0,
+            NpcKind::BoneThrowingSkeleton => 20,
+            NpcKind::BoneThrowingSkeleton2 => 20,
+            NpcKind::BoneThrowingSkeleton3 => 18,
             NpcKind::DungeonSpirit => 70,
         }
     }

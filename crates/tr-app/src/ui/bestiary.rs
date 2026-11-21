@@ -1612,6 +1612,12 @@ fn portrait_data(
         (NpcKind::GoldButterfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
         (NpcKind::GoldFrog, _) => (sheet_i, 10.0, 12.0, 10.0, white),
         (NpcKind::GoldGrasshopper, _) => (sheet_i, 10.0, 14.0, 10.0, white),
+        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::GoldMouse, _) => (sheet_i, 12.0, 14.0, 12.0, white),
+        (NpcKind::GoldWorm, _) => (sheet_i, 4.0, 10.0, 4.0, white),
+        (NpcKind::BoneThrowingSkeleton, _)
+        | (NpcKind::BoneThrowingSkeleton2, _)
+        | (NpcKind::BoneThrowingSkeleton3, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }
