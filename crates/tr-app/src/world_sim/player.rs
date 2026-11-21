@@ -2243,20 +2243,20 @@ mod tests {
     }
 
     /// W4-f12 gap 3 — the full-seam werewolf chain: the Moon Charm (485)
-    /// arms `wolfAcc` (`Player.cs:15182-15189`), the wiring's wave-E status
-    /// arm reads the LIVE flag and grants the stat block (`:11895-11904`),
-    /// then the `:25601-25604` night grant (re-)arms buff 28 and the
-    /// `:25605` clear rides AFTER the scan (the C# order). Day breaks: the
-    /// buff dies.
+    /// arms `wolfAcc` (`Player.cs:15182-15189`), the `:25601-25604` night
+    /// grant (inside `update_with_grapple`'s merman tail) adds buff 28, the
+    /// wiring's wave-E status arm then reads the LIVE flag and grants the
+    /// stat block (`:11895-11904`), and the `:25605` clear rides AFTER the
+    /// scan. The port's seam order (grant before scan) lands the effect on
+    /// the SAME tick as the grant — a one-tick lead over the C#'s steady
+    /// state (recorded); from tick 2 the two agree. Day breaks: the buff dies.
     #[test]
     fn w4_f12_moon_charm_werewolf_chain_through_the_seam() {
         let mut app = ammo_app();
         app.world.day_time = false; // night
         app.equip.armor[3] = slot(485); // Moon Charm
-        // Tick 1: the wiring arms the werewolf effect from the live flag,
-        // then the night grant adds buff 28 (the grant runs after the scan
-        // in the port's seam order — the effect leads the buff by one tick,
-        // the C#'s steady state from tick 2 on).
+        // Tick 1: the night grant adds buff 28, then the wiring arms the
+        // werewolf effect from the live flag; the clear rides after.
         tick_ammo(&mut app);
         let p = app.player.as_ref().unwrap();
         assert!(p.were_wolf, "the wiring's status arm grants the effect (`:11898`)");
