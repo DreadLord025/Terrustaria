@@ -2911,6 +2911,55 @@ mod tests {
         }
     }
 
+    /// W4-c40 DOC-SWEEP lane 6 — `Sandstorm.ChangeSeverityIntentions`'s
+    /// NOT-HAPPENING bands (`Sandstorm.cs:85-92`): a third of the rolls want
+    /// to stay clear (`Next(3) == 0` → 0), the rest take a low ambient
+    /// severity (`NextFloat() * 0.3`). The HAPPENING band (`:83`,
+    /// `0.4 + NextFloat`) is pinned by `test_DW_1_2_start_sets_duration_range_and_intent`;
+    /// the calm bands had no witness. `stop_sandstorm` (`:124-129`) clears
+    /// `Happening` and re-rolls the intent, so it is the public entry into
+    /// the calm branch. The replay draws the C#'s slot order on a twin
+    /// `FastRandom` (the `random_counter_drift_replays_the_rand_stream`
+    /// convention): ONE `Next(3)` per roll, then a `NextFloat` ONLY on the
+    /// ambient arm — the clear arm consumes no float.
+    #[test]
+    fn w4_c40_the_calm_intent_bands_replay_the_rand_stream() {
+        let mut s = Sandstorm::new(0x5EED);
+        let mut probe = FastRandom::new(0x5EED);
+        let mut clear_rolls = 0;
+        let mut ambient_rolls = 0;
+        for _ in 0..400 {
+            // Re-arm a running storm so `stop_sandstorm` re-rolls the intent
+            // from the not-happening branch every iteration.
+            s.happening = true;
+            s.stop_sandstorm();
+            assert!(!s.happening, "StopSandstorm clears Happening (:126)");
+            assert_eq!(s.time_left, 0, "and zeroes TimeLeft (:127)");
+            // The C#'s calm branch: `Next(3)` first, `NextFloat` only on the
+            // ambient arm (`Sandstorm.cs:85-92`).
+            if probe.next_range(0, 3) == 0 {
+                assert_eq!(s.intended_severity, 0.0, "the clear band (:87)");
+                clear_rolls += 1;
+            } else {
+                let expected = probe.next_float() * 0.3;
+                assert_eq!(
+                    s.intended_severity.to_bits(),
+                    expected.to_bits(),
+                    "the ambient band (:91)"
+                );
+                assert!(
+                    (0.0..0.3).contains(&s.intended_severity),
+                    "ambient severity stays below 0.3"
+                );
+                ambient_rolls += 1;
+            }
+        }
+        // Both bands fire on a 400-roll run (the 1/3 clear split is not
+        // degenerate), and the machine consumed exactly the probe's draws.
+        assert!(clear_rolls > 0 && ambient_rolls > 0, "both calm bands fire");
+        assert_eq!(s.rng.next_float().to_bits(), probe.next_float().to_bits());
+    }
+
     #[test]
     fn show_sandstorm_visuals_gate() {
         // `Sandstorm.cs:131-138`.
