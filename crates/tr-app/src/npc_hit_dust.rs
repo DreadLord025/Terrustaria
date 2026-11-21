@@ -437,6 +437,21 @@
 //! - 84643 — the gold critters (`NPCID.Sets.IsGoldCritter`,
 //!   `NPCID.cs:10126`: 442-448/539/592/593/601/605/613/627,
 //!   `:84637-84644`): FLAT 10, the Next(232,234) type arg per dust.
+//! Batch 31 (the DD2 beast Direct bursts + the solar/critter tail):
+//! - 82482 — 620 (`:82476-82485`): ×150 dust-5 NewDustDirect, velocity
+//!   ×2.5, scale 1.7.
+//! - 82508 — 619 (`:82502-82511`): ×150 Direct, velocity ×2.5, fadeIn
+//!   1.7 (NOT scale).
+//! - 82534 — 618 (`:82528-82537`): ×200 Direct, velocity ×2.5, scale 2
+//!   (the death half's 2.5 is g60's).
+//! - 82868 — the Solar Crawltipedes 412-414 (`:82862-82869`): ×50 dust
+//!   241 (dir,-1), no child gate live.
+//! - 83959 — 478 (`:83953-83961`): FLAT 10 dust 238, noGravity.
+//! - 83981 — 466 (`:83975-83982`): ×100 dust 5.
+//! - 84003 — 468 (`:83997-84004`): ×100 dust 5.
+//! - 84025 — 469 (`:84019-84026`): ×100 dust 5.
+//! - 84047 — 463 (`:84041-84048`): ×100 dust 5.
+//! - 84069 — 461 (`:84063-84070`): ×100 dust 5.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1587,6 +1602,46 @@ pub fn replay_hit_dust(
         // `:87259-87266` — the Creeper: ×50 dust 5.
         267 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:82476-82537` — the DD2 beast Direct bursts: dust 5 at
+        // (dir,-1), velocity ×2.5; 620 scale 1.7, 619 fadeIn 1.7, 618
+        // scale 2 (the death half's 2.5 is g60's).
+        620 | 619 | 618 => {
+            let mult = if s.npc_type == 618 { 200.0 } else { 150.0 };
+            for _ in 0..hit_count(s.dmg, s.life_max, mult) {
+                let idx = dust.new_dust_direct(
+                    rng, ctx, world, Vec2::new(s.x, s.y), s.w, s.h, 5,
+                    dir, -1.0, 0, Color::default(), 1.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.5;
+                match s.npc_type {
+                    620 => d.scale = 1.7,   // `:82484`
+                    619 => d.fade_in = 1.7, // `:82510`
+                    _ => d.scale = 2.0,     // `:82536`
+                }
+            }
+        }
+        // `:82862-82869` — the Solar Crawltipedes: ×50 dust 241, no
+        // live child gate (the 6-dust pairs are death-half only).
+        412..=414 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 241, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:83953-83961` — 478: FLAT 10 dust 238, noGravity.
+        478 => {
+            for _ in 0..10 {
+                let idx = live_dust(s, 238, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                dust.slot_mut(idx).no_gravity = true; // `:83960`
+            }
+        }
+        // `:83975-84070` — the blood-critter ×100 dust-5 rows:
+        // 466/468/469/463/461.
+        466 | 468 | 469 | 463 | 461 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
@@ -3997,6 +4052,54 @@ mod tests {
             let mut p3 = DustPool::new();
             replay_hit_dust(&s3, &mut r3, &mut p3, &ctx, &world);
             assert_eq!(p3.slots().iter().filter(|d| d.active).count() as u32, want, "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 31 — the DD2 Direct bursts (`NPC.cs:82482-82484`
+    /// etc.): the per-type post-write (620 scale 1.7, 619 fadeIn 1.7,
+    /// 618 scale 2), velocity ×2.5; 478's FLAT 10; the crawltipede ×50.
+    #[test]
+    fn w4_g62_the_dd2_direct_bursts_and_the_tail() {
+        let world = air();
+        let ctx = ctx();
+        for (t, mult) in [(620, 150.0), (619, 150.0), (618, 200.0)] {
+            let s = snap(t, 100, 100, 10.0 / mult * 100.0); // → 10 iterations
+            let mut rng = UnifiedRandom::new(263);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(263);
+            let mut twin = DustPool::new();
+            for _ in 0..10 {
+                let idx = twin.new_dust_direct(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
+                    1.0, -1.0, 0, Color::default(), 1.0,
+                );
+                let d = twin.slot_mut(idx);
+                d.velocity *= 2.5;
+                match t {
+                    620 => d.scale = 1.7,
+                    619 => d.fade_in = 1.7,
+                    _ => d.scale = 2.0,
+                }
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
+        let f = snap(478, 100, 100, 1.0);
+        let mut r = UnifiedRandom::new(263);
+        let mut p = DustPool::new();
+        replay_hit_dust(&f, &mut r, &mut p, &ctx, &world);
+        let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 10);
+        assert!(live.iter().all(|d| d.dust_type == 238 && d.no_gravity));
+        for t in [412, 466, 468, 469, 463, 461] {
+            let s2 = snap(t, 100, 100, 10.0);
+            let mult = if t == 412 { 50.0 } else { 100.0 };
+            let want = hit_count(10.0, 100, mult);
+            let mut r2 = UnifiedRandom::new(263);
+            let mut p2 = DustPool::new();
+            replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
+            assert_eq!(p2.slots().iter().filter(|d| d.active).count() as u32, want, "type {t}");
         }
     }
 }
