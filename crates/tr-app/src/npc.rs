@@ -47,9 +47,8 @@ pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
 /// queue ([`crate::audio::Audio::play_splash_sound`], the `UpdateNPCs`
 /// stream); the exit half also halves
 /// `velocity.X` and clears `base.wet` (`:93179-93180`, movement seams).
-/// The `Npc` port has no `wetCount`/per-kind wet flags yet (the
-/// style21/67 modules' cited gap) — the water-collision layer's wiring
-/// consumes this decision.
+/// WIRED: `npc_water_collision::collision_water_step` runs the decision
+/// at the `UpdateCollision` call site (`world_sim/npcs.rs`, W4-e9).
 #[allow(dead_code)] // the water-collision layer's wiring consumes the decision
 pub(crate) struct WaterSplashDecision {
     /// `base.wetCount = 10` — the edge fired (even if the play gate refused).
@@ -62,17 +61,21 @@ pub(crate) struct WaterSplashDecision {
 }
 
 /// The shared water/shimmer type gate (`:93119`/`:93152`/`:93217`/
-/// `:93250` — the four arms carry the SAME set, the C# only reorders
-/// the 16/59/300 terms): the slime/fish/critter exclusions, the
-/// noGravity exclusion, and the 615 (seahorse) override.
+/// `:93250`): the slime/fish/critter exclusions, the noGravity
+/// exclusion, and the 615 (Dolphin) override. THE SECOND 147-QUIRK
+/// (W4-f2's reconcile `9d9c94fe` finding, adopted): only THREE of the
+/// four arms carry `type != 147` — the EXIT-WATER gate `:93250` DROPS
+/// it (the IceSlime 147 exits water with a splash while its entry is
+/// silent). `exit_water` selects the `:93250` term set; the C# also
+/// reorders the 16/59/300 terms there (order-irrelevant, all `&&`).
 #[allow(dead_code)] // reachable only through the wiring-gated decision fn
-fn water_splash_gate(npc_type: i32, ai_style: i32, no_gravity: bool) -> bool {
+fn water_splash_gate(npc_type: i32, ai_style: i32, no_gravity: bool, exit_water: bool) -> bool {
     (npc_type != 376
         && npc_type != 579
         && ai_style != 1
         && npc_type != 1
         && npc_type != 16
-        && npc_type != 147
+        && (exit_water || npc_type != 147)
         && npc_type != 59
         && npc_type != 300
         && ai_style != 39
@@ -123,7 +126,7 @@ pub(crate) fn water_collision_splash(
                 // `:93093-93122` — the shimmer arm: 617/616/625 skip the
                 // whole block; the play is style 4 (`:93121`).
                 if npc_type != 617 && npc_type != 616 && npc_type != 625
-                    && water_splash_gate(npc_type, ai_style, no_gravity)
+                    && water_splash_gate(npc_type, ai_style, no_gravity, false)
                 {
                     out.style = Some(4);
                 }
@@ -134,7 +137,7 @@ pub(crate) fn water_collision_splash(
                 }
             } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
                 // `:93141-93155` — the water arm: style 0.
-                if water_splash_gate(npc_type, ai_style, no_gravity) {
+                if water_splash_gate(npc_type, ai_style, no_gravity, false) {
                     out.style = Some(0);
                 }
             }
@@ -153,7 +156,7 @@ pub(crate) fn water_collision_splash(
             if shimmer_wet {
                 // `:93188-93220` — the shimmer exit: style 5 (`:93219`).
                 if npc_type != 617 && npc_type != 616 && npc_type != 625
-                    && water_splash_gate(npc_type, ai_style, no_gravity)
+                    && water_splash_gate(npc_type, ai_style, no_gravity, false)
                 {
                     out.style = Some(5);
                 }
@@ -163,8 +166,10 @@ pub(crate) fn water_collision_splash(
                     out.style = Some(1);
                 }
             } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
-                // `:93239-93253` — the water exit: style 0.
-                if water_splash_gate(npc_type, ai_style, no_gravity) {
+                // `:93239-93253` — the water exit: style 0. THE SECOND
+                // 147-QUIRK: `:93250` drops `type != 147` (the entry
+                // `:93152` keeps it) — the IceSlime's exit plays.
+                if water_splash_gate(npc_type, ai_style, no_gravity, true) {
                     out.style = Some(0);
                 }
             }
@@ -19276,10 +19281,17 @@ mod tests {
         }
         // The 615 override forces the water/shimmer play past noGravity.
         let d = water_collision_splash(615, 0, true, true, false, 0, false, false, false);
-        assert_eq!(d.style, Some(0), "the seahorse override");
+        assert_eq!(d.style, Some(0), "the Dolphin override");
         // ...but NOT the honey gate (no 615 term there).
         let d = water_collision_splash(615, 0, true, true, false, 0, false, false, true);
         assert!(d.style.is_none());
+        // THE FIRST 147 term: the IceSlime's ENTRY water/shimmer arms are
+        // silent (`:93119`/`:93152` carry type != 147; aiStyle 1 refuses
+        // anyway — style 0 isolates the type term).
+        let d = water_collision_splash(147, 0, false, true, false, 0, false, false, false);
+        assert!(d.arm_cooldown && d.style.is_none(), "147 entry water silent");
+        let d = water_collision_splash(147, 0, false, true, false, 0, false, true, false);
+        assert!(d.arm_cooldown && d.style.is_none(), "147 entry shimmer silent");
         // The long gate's extra terms: 376 refuses water, plays honey.
         let d = water_collision_splash(376, 0, false, true, false, 0, false, false, false);
         assert!(d.style.is_none());
@@ -19318,6 +19330,17 @@ mod tests {
         assert!(d.style.is_none());
         let d = water_collision_splash(617, 0, false, false, true, 0, false, false, true);
         assert_eq!(d.style, Some(1));
+        // THE SECOND 147-QUIRK (f2's reconcile finding, adopted): the
+        // EXIT-WATER gate `:93250` DROPS type != 147 — the IceSlime's
+        // exit-water plays style 0 while its entry is silent. The exit
+        // shimmer `:93217` and honey `:93234` KEEP the term.
+        let d = water_collision_splash(147, 0, false, false, true, 0, false, false, false);
+        assert!(d.arm_cooldown);
+        assert_eq!(d.style, Some(0), "the 147 exit-water quirk (:93250)");
+        let d = water_collision_splash(147, 0, false, false, true, 0, false, true, false);
+        assert!(d.arm_cooldown && d.style.is_none(), "147 exit shimmer silent (:93217)");
+        let d = water_collision_splash(147, 0, false, false, true, 0, false, false, true);
+        assert!(d.arm_cooldown && d.style.is_none(), "147 exit honey silent (:93234)");
     }
 
     /// S1-E-21a — the per-kind hit/death cues (`NPC.HitSound`/`NPC.DeathSound`,
