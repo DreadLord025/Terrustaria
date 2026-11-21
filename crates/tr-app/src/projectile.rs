@@ -769,18 +769,21 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
-    /// W4-f49 — the `AI_075` channel holders' mana-flower auto-drink
+    /// W4-f49 — the pool-side CheckMana pays' mana-flower auto-drink
     /// (`Player.CheckMana` `:52588-52609` reached from the Last Prism's
-    /// interval pay `Projectile.cs:66613` AND the Charged Blaster Cannon's
-    /// `flag3` pay `:66479`): `Some(rawAmountToPay)` when the pay was short
+    /// interval pay `Projectile.cs:66613`, the Charged Blaster Cannon's
+    /// `flag3` pay `:66479`, and the d-lane AI bodies' pays on their
+    /// branches — the Glacier Fang `:36943` (d21), the Life Drain `:42662`
+    /// (d19), the Medusa Head `:44567` (d10)): `Some(rawAmountToPay)` when
+    /// the pay was short
     /// AND `manaFlower` is armed — the pure pool-side pay already took the
     /// ManaV2 empty arm; the world-sim pass re-runs the FULL `CheckMana`
     /// (the QuickMana drink + the post-drink re-pay) through
     /// `potions::check_mana_with_flower_on` on the `UpdateProjectiles`
     /// stream (the pool cannot borrow the inventory). `None` = no flower
-    /// drink owed this tick. (The name keeps the prism-era anchor; the
-    /// blaster shares the slot — `drain_prism_flower_drinks` walks ALL
-    /// slots.)
+    /// drink owed this tick. (The name keeps the prism-era anchor; every
+    /// CheckMana holder shares the slot — `drain_prism_flower_drinks`
+    /// walks ALL slots.)
     pub(crate) wants_prism_flower_drink: Option<i32>,
 }
 
@@ -16157,10 +16160,15 @@ impl ProjectilePool {
         std::mem::take(&mut self.pending_npc_hit_sounds)
     }
 
-    /// W4-f49 — the `AI_075` channel holders' mana-flower auto-drink intents
-    /// (`Player.CheckMana` `:52588-52609` reached from the Last Prism's
-    /// interval pay `Projectile.cs:66613` AND the Charged Blaster Cannon's
-    /// `flag3` pay `:66479`): the raw `item.mana` per short+flower pay tick.
+    /// W4-f49 — the mana-flower auto-drink intents the pool-side CheckMana
+    /// pays queue (`Player.CheckMana` `:52588-52609` reached from the Last
+    /// Prism's interval pay `Projectile.cs:66613`, the Charged Blaster
+    /// Cannon's `flag3` pay `:66479`, and — via the d-lane AI bodies on
+    /// their branches — the Glacier Fang's charge pay `:36943` (d21), the
+    /// Life Drain's first-tick pay `:42662` (d19), the Medusa Head's fire
+    /// pay `:44567` (d10); the 439 holder `:66204` + the Forbidden storm
+    /// `Player.cs:56870` ride their lanes): the raw `item.mana` per
+    /// short+flower pay tick.
     /// The world sim re-runs the FULL `CheckMana` (the QuickMana drink + the
     /// post-drink re-pay) through `potions::check_mana_with_flower_on` on the
     /// `UpdateProjectiles` stream — the pool cannot borrow the inventory.

@@ -428,6 +428,44 @@ pub fn check_mana_with_flower_on(
     true
 }
 
+/// W4-f49 MANA FINAL — the CheckMana constants-copy convention for the
+/// AI-lane ports (research/85 FINAL-STATUS): the d-lanes' projectile AI
+/// bodies call `crate::regen::check_mana` (the pure pool-side pay) and,
+/// where the flower lane is owed, record the shared
+/// `wants_prism_flower_drink` intent — the pass-tail drain re-runs the
+/// FULL CheckMana through [`check_mana_with_flower_on`] on the
+/// `UpdateProjectiles` stream. The five R1-census sites:
+/// - `Projectile.cs:66204` (AI_075 type 439, Laser Machinegun) — the AI
+///   body is STILL unported (the i22 OUT list; no d-lane covers the 75
+///   holder's 439 arm). The site rides that lane; the constants below
+///   are its pay's shape when it lands.
+/// - `Projectile.cs:36943` (AI_208, Glacier Fang 1115) — d21 LANDED the
+///   body (`projectile_ai_201_210.rs::ai_glacier_fang_shot`, tip
+///   9fa9e9ba0): the every-20-tick `ai[0] <= 60` charge pay rides
+///   `check_mana` on the held row's mana (6153: 10).
+/// - `Projectile.cs:42662` (AI_185, Life Drain / Soul Drain 476) — d19
+///   LANDED the body (`projectile_ai_sword_styles.rs::ai_life_drain`,
+///   tip 1054c396a): the first-tick overlap pay rides `check_mana` on
+///   the held row's mana (3006: 10), then latches `localAI[0] = 1`.
+/// - `Projectile.cs:44567` (AI_100, Medusa Head 535) — d10 LANDED the
+///   body (`projectile_ai_91_100.rs::ai_medusa_head`, tip 1f0b60e96):
+///   the fire-cadence pay rides `check_mana` on the held row's mana
+///   (3269: 15); the `!flag ||` short-circuit never skips it.
+/// - `Player.cs:56870` (CommandForbiddenStorm) — the storm command's
+///   lane (deferred, ANALYSIS): the flat 20-mana pay + the
+///   ApplyManaRegenerationDelay follow-up. The constants-copy below
+///   pins the pay's shape for that lane.
+/// The held-row mana values are the generated itemdata rows (the
+/// constants-copy: the AI lanes read `registry::item(...).mana`, never
+/// a hand-typed number — these constants are the WITNESS pins only).
+pub const LASER_MACHINEGUN_MANA: i32 = 6; // itemdata 2795 (Item.cs row)
+pub const GLACIER_FANG_MANA: i32 = 10; // itemdata 6153
+pub const SOUL_DRAIN_MANA: i32 = 10; // itemdata 3006
+pub const MEDUSA_HEAD_MANA: i32 = 15; // itemdata 3269
+/// `Player.CommandForbiddenStorm`'s flat pay (`Player.cs:56870`:
+/// `this.CheckMana(20, pay: true)`) — NOT a held-row read.
+pub const FORBIDDEN_STORM_MANA: i32 = 20;
+
 /// Whether the held kind rides the potion/buff drink arm: a `potion`-flagged
 /// item, one carrying healLife/healMana, or a buff consumable in the
 /// EatFood/DrinkLiquid styles (2/9). The summon staffs carry buffType too
@@ -2062,5 +2100,85 @@ mod tests {
         assert_eq!(app.player.as_ref().unwrap().mana, 50, "the Lesser won");
         assert_eq!(app.inventory[0].count, 0);
         assert_eq!(app.inventory[1].count, 1, "the Super untouched");
+    }
+
+    /// W4-f49 MANA FINAL item 2 — the five R1-census CheckMana sites'
+    /// pay shapes, armed through the SHARED machinery via the
+    /// constants-copy (the d-lane AI bodies read `registry::item(...).mana`,
+    /// never a hand-typed number; the constants are the witness pins).
+    /// The d-lanes LANDED three of the five bodies on their own branches
+    /// (d21 AI_208 Glacier Fang 1115, d19 AI_185 Life Drain 476, d10
+    /// AI_100 Medusa Head 535) — each already calls `regen::check_mana`;
+    /// the 439 Laser Machinegun (AI_075's holder arm) and the
+    /// CommandForbiddenStorm stay their lanes'. This witness pins the
+    /// pay contract those bodies ride: the generated row's mana, the
+    /// `manaCost` scale, the shipped ManaV2 empty arm (drain to 0, slow
+    /// cast, never refuse), and the flower lane's full re-check.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_five_checkmana_sites_pay_through_the_shared_machine() {
+        // The four held-row sites: (item id, the constants-copy pin).
+        let rows = [
+            (2795u16, LASER_MACHINEGUN_MANA), // 439 holder, AI_075 :66204
+            (6153, GLACIER_FANG_MANA),        // 1115, AI_208 :36943 (d21)
+            (3006, SOUL_DRAIN_MANA),          // 476, AI_185 :42662 (d19)
+            (3269, MEDUSA_HEAD_MANA),         // 535, AI_100 :44567 (d10)
+        ];
+        for (id, pin) in rows {
+            let def = registry::get(id).expect("the generated row exists");
+            assert_eq!(def.mana, pin, "item {id}: the constants-copy pin");
+            // The enough-mana pay scales by manaCost (`:52579`).
+            let mut mana = 100;
+            let mut slow = false;
+            assert!(crate::regen::check_mana(&mut mana, &mut slow, pin, 0.5, true));
+            assert_eq!(mana, 100 - (pin as f32 * 0.5) as i32, "item {id}: scaled");
+            assert!(!slow, "the exact pay never arms the slow cast");
+            // The short bar takes the ManaV2 empty arm (`:52610-52614`):
+            // drain to 0, arm the slow cast, return true (never refuse).
+            let mut mana = 1;
+            let mut slow = false;
+            assert!(crate::regen::check_mana(&mut mana, &mut slow, pin, 1.0, true));
+            assert_eq!(mana, 0, "item {id}: the V2 empty arm drains");
+            assert!(slow, "item {id}: DoRunOutOfManaEffect armed");
+        }
+        // The flower lane's full re-check (the pass-tail drain convention):
+        // a short bar with the flower armed drinks the first healMana
+        // potion and re-pays. The Soul Drain's 10-mana pay at manaCost 1
+        // needs 10; the Lesser 50 restores capped at 20, then 10 paid → 10.
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 2);
+        app.selected = 0;
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_flower = true;
+            p.mana = 0;
+        }
+        assert!(check_mana_with_flower_on(
+            &mut app,
+            SOUL_DRAIN_MANA,
+            true,
+            false,
+            crate::app::RngKey::UpdateProjectiles,
+        ));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.mana, 10, "50 capped at 20, then the 10-mana pay");
+        assert!(!p.slow_magic_use, "the drink covered the cost");
+        // CommandForbiddenStorm's FLAT 20 pay (`Player.cs:56870`) — NOT a
+        // held-row read — plus the ApplyManaRegenerationDelay follow-up
+        // (`:56873`). The storm command's lane owns the spawn; this pins
+        // the pay + the delay reset the constants-copy carries.
+        let mut mana = 100;
+        let mut slow = false;
+        assert!(crate::regen::check_mana(
+            &mut mana,
+            &mut slow,
+            FORBIDDEN_STORM_MANA,
+            1.0,
+            true,
+        ));
+        assert_eq!(mana, 80, "the flat 20 pay");
+        let mut st = crate::regen::RegenState::default();
+        crate::regen::apply_mana_regen_delay(&mut st, 200, mana, false);
+        assert_eq!(st.mana_regen_delay, 4.0, "the V2 pin after the pay (:56873)");
     }
 }
