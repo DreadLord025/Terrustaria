@@ -87,9 +87,14 @@ zombie-centre direction, self-consistent with the Manhattan scan).
   pre-existing recorded skip (their witnesses pin the current stream).
 - `Lighting.AddLight` feeds the render light layer only — skipped.
 - The 582's `lazyNPCOwnedProjectileSearchArray` latch (`:34050`) and the 584's
-  `HealEffect` combat-text (`:34089`) are cited skips (the seams are unported).
-- The 813's 619 BloodSquid spawn carries the raw C# NPC id (the kind is
-  unported — the `drain_mark_spawns` `from_u16` folds it).
+  `HealEffect` combat-text (`:34089`) were cited skips — both landed in the
+  DOC-SWEEP phase (`af760b3b4` the pool cache + the `:53166-53179` re-derivation
+  + the `:55214-55217` second-throw suppression; `c1e686f26` the
+  `wants_heal_text` → HEAL_LIFE drain on the `UpdateProjectiles` stream).
+- The 813's 619 BloodSquid spawn carried the raw C# NPC id (the kind was
+  unported) — `eae7b5097` landed the 619 kind row (`NPC.cs:16934-16949`) +
+  AI_005's 619 branches, so the 90th-tick spawn intent now resolves the real
+  kind instead of the `from_u16` Slime fold.
 - The single-player fold: every `Main.player[target]` / `Main.player[owner]`
   read maps to the local player; `Main.netMode != 1` is always true.
 - The 102 host drag rides `old_x/old_y` (the one-tick latch) vs the C#'s
@@ -101,3 +106,41 @@ zombie-centre direction, self-consistent with the Manhattan scan).
 All ten aiStyles 101-110 have exactly one live dispatch arm (the
 `s1_d_4c_every_rowed_style_has_exactly_one_live_arm` pin passes: 103 arms,
 no duplicates). Every rowed kind in the range is armed.
+
+## DOC-SWEEP phase (the nebula-sweep continuation)
+
+After the census, the branch carried a DOC-SWEEP wave (the 619 BloodSquid kind
+row `eae7b5097`, the 582 wrench latch `af760b3b4`, the 584 heal-text seam
+`c1e686f26`) and the Nebula set's magic on-hit pickup proc — the producer
+(`121672908`: `setNebula`/`nebulaCD` + the `(2760,2761,2762)` Benefits.Nebula
+arm, the `canGhostHeal` gate, the `Projectile.cs:13826-13830` proc with its
+four rolls, the buff lifecycle `NebulaLevelup`/`UpdateBuffs_NebulaBuffs`/
+`ApplyNebulaBuffMana`) and the completion (`ab42de2d7`: the
+`wants_nebula_pickup` drain + the world-sim drop spawn, the `aiStyle != 59`
+gate fix). The proc's pickup drop is DRAW-FREE (the explicit-velocity arm);
+the four hit-site rolls ride the `UpdateProjectiles` stream in C# order.
+
+### Sibling-lane dedupe notes (merge keep-one guidance)
+
+- **The nebula buff lifecycle overlaps d79 (`b78b02022`) / f49 (`a597ce2c5`) /
+  d117 (`0dbcb0136`).** Those unmerged siblings port the SAME
+  `nebulaLevelLife/Mana/Damage` + `nebulaManaCounter` fields, `nebula_levelup`,
+  `update_buffs_nebula`, `apply_nebula_buff_mana` and the `:10444-10461` buff
+  arms. d11's copies are functionally identical (verified line-by-line against
+  the C#); the merge keeps ONE writer. d11 adds the pieces the siblings lack:
+  `setNebula`/`nebulaCD` + the `(2760,2761,2762)` set arm + the
+  `Projectile.cs:13826-13830` PRODUCER proc + its drain. d79/f49 own the
+  CONSUME arm (`PickupItem` `Player.cs:35045-35058`, the positioned case-7 Grab
+  via `play_grab_sound`) and the 12/5 pull (`:34953-34956`) — d11 does NOT port
+  those (the consume side stays the sibling lanes'). The producer (d11) and the
+  consumer (d79/f49) are complementary, not duplicates; only the lifecycle
+  fields/methods need keep-one.
+- **d77c armed cue 539 (id-4 style-7) + 576 on d11.** The d77 Kill-host wave
+  (`0573b70f2`) arms the 539 StardustJellyfishSmall's derived centre-40
+  `NPC_Killed_7` cry and the 576 NebulaLaser cue on d11's kinds via
+  `kill_tail_cue`. d11's nebula-sweep WIP touches the 539/573/574/576 AI rows
+  (`ai_tower_orb`, `2ba79d55`) and the nebula pickup proc — DISJOINT from the
+  Kill-tail sound cues (the proc is a Damage_PVE_Inner on-hit effect, the cues
+  are Kill()-tail). No overlap: d11 carries no `kill_tail_cue` map at all
+  (verified — the seam is d77's, `0573b70f2`), so it adds no competing 539/576
+  cue. Merge keeps d77's cue arms; d11's AI-row + proc work is disjoint.
