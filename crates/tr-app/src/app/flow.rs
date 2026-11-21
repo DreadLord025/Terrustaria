@@ -1635,6 +1635,38 @@ pub(crate) mod front_flow_tests {
         assert!(matches!(app.front, Some(FrontScreen::CharSelect)));
     }
 
+    /// W4-g22 DOC-SWEEP wiring witness — a difficulty row plays ONE
+    /// Menu_Tick (`UIDifficultyButton.LeftMouseDown`, `:84`) and the pick
+    /// lands; the randomize-player button plays ONE Menu_Tick
+    /// (`Click_RandomizePlayer`, `:1547`).
+    #[test]
+    fn doc_sweep_difficulty_and_randomize_play_one_tick() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The Expert row (display index 2 -> id 1).
+        app.mouse_pos = centre(l.difficulty_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the row");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::CharCreation(ref s)) if s.draft.difficulty == 1
+        ));
+        // The Clothing category's randomize button.
+        app.mouse_pos = centre(l.categories[1]);
+        front_press(&mut app);
+        app.mouse_pos = centre(l.template_buttons[2]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on randomize");
+    }
+
     #[test]
     fn bug17_a_front_click_plays_the_activation_cue() {
         // Bug 17: the front-end clicks play the menu open (10) — the vanilla

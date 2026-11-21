@@ -1531,6 +1531,16 @@ pub fn click_cue(click: Click) -> Option<u32> {
         // `Click_CopyHex` (`:1333`) / `Click_PasteHex` (`:1339`) play 12
         // before the clipboard read/write (a failed paste still played).
         Click::CopyHex | Click::PasteHex => 12,
+        // `Click_CopyPlayerTemplate` (`:1410`) / `Click_PastePlayerTemplate`
+        // (`:1416`) play 12 before the clipboard read/write.
+        Click::CopyTemplate | Click::PasteTemplate => 12,
+        // `Click_RandomizePlayer` (`:1547`) and `Click_RandomizeSingleColor`
+        // (`:1781`) play 12 before the `Main.rand` rolls.
+        Click::RandomizePlayer | Click::RandomizeColor => 12,
+        // `UIDifficultyButton.LeftMouseDown` (`UIDifficultyButton.cs:84`)
+        // plays 12 after the difficulty write — the row is a button of its
+        // own, not a `Click_*` handler.
+        Click::Difficulty(_) => 12,
         _ => return None,
     })
 }
@@ -2732,6 +2742,16 @@ mod tests {
         assert_eq!(click_cue(Click::Back), Some(11));
         assert_eq!(click_cue(Click::CopyHex), Some(12));
         assert_eq!(click_cue(Click::PasteHex), Some(12));
+        // The template pair (`:1410`/`:1416`), the two randomizers
+        // (`:1547`/`:1781`) and the difficulty rows
+        // (`UIDifficultyButton.cs:84`) all play 12.
+        assert_eq!(click_cue(Click::CopyTemplate), Some(12));
+        assert_eq!(click_cue(Click::PasteTemplate), Some(12));
+        assert_eq!(click_cue(Click::RandomizePlayer), Some(12));
+        assert_eq!(click_cue(Click::RandomizeColor), Some(12));
+        for d in DIFFICULTY_IDS {
+            assert_eq!(click_cue(Click::Difficulty(d)), Some(12), "difficulty {d}");
+        }
         // A dead click is silent.
         assert_eq!(click_cue(Click::None), None);
     }
