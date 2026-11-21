@@ -1282,6 +1282,8 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_149",
         "NPC_153",
         "NPC_154",
+        // W4-d36 E4 — the Wolf's own strip.
+        "NPC_155",
         // W4-d36 hover batch.
         "NPC_173",
         "NPC_176",
@@ -1871,7 +1873,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 189] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1908,6 +1910,8 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 189] = [
         72, 250, 288,
         // W4-d36 census batch 0 — ENTRIES order (141/148/149/153/154).
         141, 148, 149, 153, 154,
+        // W4-d36 E4 — ENTRIES order (the Wolf rides after the tortoises).
+        155,
         // W4-d36 hover batch — ENTRIES order (173/176/205).
         173, 176, 205,
     ];
@@ -2679,6 +2683,9 @@ impl Lookups {
                 atlas.sheet("NPC_149").copied(),
                 atlas.sheet("NPC_153").copied(),
                 atlas.sheet("NPC_154").copied(),
+                // W4-d36 E4 — the parallel vec keeps the
+                // BESTIARY_NPC_SHEET_IDS order (the Wolf after 154).
+                atlas.sheet("NPC_155").copied(),
                 // W4-d36 hover batch — the parallel vec keeps the
                 // BESTIARY_NPC_SHEET_IDS order (173/176/205).
                 atlas.sheet("NPC_173").copied(),

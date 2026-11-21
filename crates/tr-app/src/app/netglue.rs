@@ -3571,7 +3571,10 @@ fn npc_seed(
         // overwrites the position below).
         crate::npc::NpcKind::ToxicSludge
         | crate::npc::NpcKind::GiantTortoise
-        | crate::npc::NpcKind::IceTortoise => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        | crate::npc::NpcKind::IceTortoise
+        // W4-d36 E4 — the Wolf (aiStyle 26) plants its feet like the
+        // Horseman/Hellhound seeds above.
+        | crate::npc::NpcKind::Wolf => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::Penguin
         | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
         // W4-d36 hover batch — the aiStyle-5 trio rides the hover

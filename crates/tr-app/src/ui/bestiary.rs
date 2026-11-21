@@ -1627,6 +1627,15 @@ fn portrait_data(
                 .unwrap_or(32.0);
             (sheet_i, h, 50.0, h, white)
         }
+        // W4-d36 E4 portrait — the Wolf's sheet frame height (the vanilla
+        // strip: 155 = 13 rows, `Main.cs:67082`) with the padded box width
+        // (the b0 convention).
+        (NpcKind::Wolf, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 50.0, h, white)
+        }
         // W4-d36 hover batch portraits — the sheet's frame height (the
         // vanilla strips: 173 = 2 rows, 176 = 2, 205 = 3, `Main.cs:67082`)
         // with the padded box width (the b0 convention).

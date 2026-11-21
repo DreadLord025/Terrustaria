@@ -1259,8 +1259,8 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// atlas packing is the repack wave's (research/108 §5: the union
 /// overflows 8192); the draw arms reference the sheets, absent ones
 /// render nothing. Batch 0: 141/148/149/153/154; hover batch:
-/// 173/176/205.
-pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 173, 176, 205];
+/// 173/176/205; E4: 155.
+pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 155, 173, 176, 205];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3191,7 +3191,9 @@ pub(crate) fn draw_npcs(
             | NpcKind::Penguin
             | NpcKind::PenguinBlack
             | NpcKind::GiantTortoise
-            | NpcKind::IceTortoise => {
+            | NpcKind::IceTortoise
+            // W4-d36 E4 — the Wolf's own 13-row strip (`Main.cs:67082`).
+            | NpcKind::Wolf => {
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }

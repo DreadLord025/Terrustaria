@@ -1108,6 +1108,15 @@ pub enum NpcKind {
     /// case 154, `:10945-10960`): 46x32, aiStyle 39, dmg 55, def 28, 400 HP,
     /// kb 0.3, value 450, coldDamage.
     IceTortoise,
+    /// `NPCID.Wolf` (155) — W4-d36 E4 (`NPC.cs` SetDefaults case 155,
+    /// `:10961-10973`): 46x30, aiStyle 26, dmg 65, def 30, 300 HP,
+    /// kb 0.3, value 1000, NPCHit1/NPCDeath1. WIRED: the aiStyle-26
+    /// machine (`npc_ai_unicorn::unicorn_step` — the 155 hop-over
+    /// `:62558` + the 0.95 turnaround `:62621`). FindFrame case 155
+    /// (`:74311-74373`) over the 13-row strip (`Main.cs:67082`).
+    /// The hit/death dust arm (`NPC.cs:87717-87737`) is the gore/dust
+    /// wave's remainder.
+    Wolf,
     // ---- W4-d36 hover batch (the in-flight stash's presets COMPLETED:
     // R7-band slots 781/782/793, ascending vanilla order).
     /// `NPCID.Crimera` (173) — W4-d36 (`NPC.cs` SetDefaults case 173,
@@ -3579,6 +3588,8 @@ impl Npc {
             | NpcKind::PenguinBlack => 1.0,
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => 0.3,
+            // W4-d36 E4 (`NPC.cs:10971`).
+            NpcKind::Wolf => 0.3,
             // W4-d36 hover batch (`NPC.cs:11180`/`:11232`/`:11634`):
             // Crimera/MossHornet 0.5, Moth 0.4.
             NpcKind::Crimera
@@ -3971,6 +3982,8 @@ impl Npc {
             | NpcKind::PenguinBlack => 0,
             NpcKind::GiantTortoise => 30,
             NpcKind::IceTortoise => 28,
+            // W4-d36 E4 (`NPC.cs:10967`).
+            NpcKind::Wolf => 30,
             // W4-d36 hover batch (`NPC.cs:11175`/`:11229`/`:11631`).
             NpcKind::Crimera => 8,
             NpcKind::MossHornet => 22,
@@ -4354,6 +4367,8 @@ impl Npc {
             | NpcKind::PenguinBlack => 0.0,
             NpcKind::GiantTortoise => 500.0,
             NpcKind::IceTortoise => 450.0,
+            // W4-d36 E4 (`NPC.cs:10972`).
+            NpcKind::Wolf => 1000.0,
             // W4-d36 hover batch (`NPC.cs:11181`/`:11234`/`:11636`).
             NpcKind::Crimera => 90.0,
             NpcKind::MossHornet => 600.0,
@@ -6265,16 +6280,19 @@ impl Npc {
             | NpcKind::Scarecrow9
             | NpcKind::Scarecrow10
             | NpcKind::Splinterling => self.update_skeleton(world, player, dt),
-            // The Headless Horseman (315) and the Hellhound (329): aiStyle 26
+            // The Headless Horseman (315), the Hellhound (329) and the
+            // Wolf (155, W4-d36 E4): aiStyle 26
             // (`AI_026_Unicorns`, `NPC.cs:62366-62924`, the caller arm
             // `:25631-25634`) — S1-F-13b2 slice A: the named machine in
             // `npc_ai_unicorn.rs` (the stuck windows, the Horseman's
             // 480-tick pumpkin lob, the hop/walk/step-up/jump core). The
-            // other aiStyle-26 kinds keep their own routings below — this
-            // arm is kind-scoped, not a style-axis claim. The gallop dust
+            // Wolf rides the shared 155/329 hop-over (`:62558`) and its
+            // own 0.95 turnaround arm (`:62621-62631`); the pumpkin-moon
+            // despawn gate (`:62583`) lists 329/315 ONLY — the Wolf
+            // retargets normally. The gallop dust
             // (with its draws), the FindFrame 315/329 arms and the
             // AddLight ride slice B (module docs + ANALYSIS).
-            NpcKind::HeadlessHorseman | NpcKind::Hellhound => {
+            NpcKind::HeadlessHorseman | NpcKind::Hellhound | NpcKind::Wolf => {
                 crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
             }
             // The Poltergeist (330): aiStyle 22's ghost dwell/dash/flee
@@ -8822,6 +8840,25 @@ impl Npc {
             // rows 2..=9).
             NpcKind::Hellhound => {
                 let (dir, counter, row) = crate::npc_ai_unicorn_b::hellhound_find_frame(
+                    self.vx,
+                    self.vy,
+                    self.facing,
+                    self.sprite_dir,
+                    self.frame_counter,
+                    self.frame,
+                );
+                self.sprite_dir = dir;
+                self.frame_counter = counter;
+                self.frame = row;
+            }
+            // `FindFrame`'s case 155 (`NPC.cs:74311-74373`) — W4-d36 E4:
+            // the Wolf's pure arm (the airborne rows 10/11 keep the
+            // counter/sprite state, the standstill rests row 0, the
+            // backwards wind-up walks rows 0..2, the forward gallop
+            // cycles 3..=9 off the |vx|*0.4 > 8 subtract clock; row 12
+            // is the airborne-landing rest).
+            NpcKind::Wolf => {
+                let (dir, counter, row) = crate::npc_ai_unicorn_b::wolf_find_frame(
                     self.vx,
                     self.vy,
                     self.facing,
@@ -18866,6 +18903,8 @@ impl Npc {
             NpcKind::Crimera => 555,
             NpcKind::MossHornet => 556,
             NpcKind::Moth => 557,
+            // W4-d36 E4 — the next fresh hash slot (injective).
+            NpcKind::Wolf => 558,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23934,7 +23973,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 278] = [
+    pub(super) const ALL_KINDS: [NpcKind; 279] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24219,6 +24258,8 @@ mod tests {
         NpcKind::PenguinBlack,
         NpcKind::GiantTortoise,
         NpcKind::IceTortoise,
+        // W4-d36 E4.
+        NpcKind::Wolf,
         // W4-d36 hover batch.
         NpcKind::Crimera,
         NpcKind::MossHornet,
@@ -24480,6 +24521,76 @@ mod tests {
         }
         assert_eq!(seen, vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1], "the 16-tick phase walk");
         assert_eq!(t.frame_counter, 0.0, "the 16th tick resets the clock");
+    }
+
+    /// W4-d36 E4 — the Wolf's `SetDefaults` row (`NPC.cs:10961-10973`) +
+    /// its FindFrame case 155 clock (`:74311-74373`) pin against the C#
+    /// through the port's tables (the b0 pin's shape). The protocol id
+    /// rides the d37-R7 band slot 772. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_wolf_the_defaults_and_frame_clock_match_the_csharp() {
+        let kind = NpcKind::Wolf;
+        let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        assert_eq!(kind.cs_id(), 155, "vanilla type");
+        assert_eq!(kind.to_u16(), 772, "the R7-band slot");
+        assert_eq!(NpcKind::from_u16(772), Some(kind), "round-trip");
+        assert_eq!(kind.ai_style(), 26, "aiStyle (`:10965`)");
+        assert_eq!(kind.size(), (46.0, 30.0), "size (`:10963-10964`)");
+        assert_eq!(kind.contact_damage(), 65, "damage (`:10966`)");
+        assert_eq!(shell.defense(), 30, "defense (`:10967`)");
+        assert_eq!(kind.max_hp(), 300, "lifeMax (`:10968`)");
+        assert_eq!(shell.hp, 300, "spawn hp");
+        assert_eq!(shell.knock_back_resist(), 0.3, "kb (`:10971`)");
+        assert_eq!(shell.value(), 1000.0, "value (`:10972`)");
+        assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "NPCHit1 (`:10969`)");
+        assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "NPCDeath1 (`:10970`)");
+        assert!(!kind.no_gravity(), "the case writes no noGravity row");
+        // The 155 null-row (`NPCID.cs:7041`): no immunity — the shell's
+        // buff table carries no immune bit (the derived rules add none).
+        assert!(
+            !shell.buffs.buff_immune.iter().any(|&b| b),
+            "155 null-row (`NPCID.cs:7041`) — no immunity"
+        );
+        assert_eq!(crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id, 155, "bestiary net_id");
+        assert_eq!(crate::render::entities::npc_rows(155), 13, "the 13-row strip (`Main.cs:67082`)");
+        // The FindFrame case-155 clock: the standstill rests row 0
+        // (`:74326-74330`); rising/falling pin rows 10/11 WITHOUT
+        // touching the counter (`:74318-74325`); the forward gallop
+        // accrues |vx|*0.4 and advances at > 8 (subtract, not reset —
+        // `:74356-74370`); an airborne row lands on 12 with counter 0.
+        let mut n = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "the standstill rests row 0");
+        n.vy = -2.0;
+        n.frame_counter = 3.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (10, 3.0), "rising row 10 keeps the counter");
+        n.vy = 2.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (11, 3.0), "falling row 11 keeps the counter");
+        n.vy = 0.0;
+        n.vx = 6.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (12, 0.0), "the airborne row lands on 12");
+        n.frame_counter = 7.0;
+        n.find_frame();
+        // 7 + 6*0.4 = 9.4 > 8: the row advances 12 -> 13 -> wraps to 3
+        // (`num283 > 9`) and the clock SUBTRACTS 8 (not reset).
+        assert_eq!(n.frame, 3, "the gallop wraps 12 -> 3 (`num283 > 9`)");
+        assert!((n.frame_counter - (7.0 + 6.0 * 0.4 - 8.0)).abs() < 1e-4, "the clock SUBTRACTS 8");
+        n.find_frame();
+        assert_eq!(n.frame, 3, "the sub-8 tick holds the row");
+        // The backwards wind-up walk (`:74331-74352`): facing against a
+        // sub-4 velocity walks rows 0..2 on the counter++ > 5 clock.
+        let mut b = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+        b.vx = -1.0;
+        for _ in 0..5 {
+            b.find_frame();
+        }
+        assert_eq!((b.frame, b.frame_counter), (0, 5.0), "the 5th tick holds row 0");
+        b.find_frame();
+        assert_eq!((b.frame, b.frame_counter), (1, 0.0), "the 6th tick advances");
+        assert_eq!(b.sprite_dir, 1, "the sprite rides the facing (`:74333`)");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -27936,8 +28047,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            278,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three, L-B gate)"
+            279,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three + W4-d36 E4's Wolf, L-B gate)"
         );
         assert!(
             covered > 43,

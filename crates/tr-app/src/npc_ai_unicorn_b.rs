@@ -198,6 +198,73 @@ pub(crate) fn hellhound_find_frame(
     (facing, counter, row)
 }
 
+/// `FindFrame`'s case 155 (`NPC.cs:74311-74373`) — the Wolf's sprite arm
+/// (W4-d36 E4). Same row-index convention and return triple as
+/// [`hellhound_find_frame`]. The vertical arms (`:74318-74325`) set rows
+/// 10/11 and fall to the frame write WITHOUT touching the counter or the
+/// sprite direction (unlike the 329 case's counter reset). The
+/// `IsABestiaryIconDummy` row-3 clamp (`:74314-74317`) is the documented
+/// skip — the port has no bestiary dummy (`npc_findframe_b.rs` module
+/// docs). The 13-row strip is `Main.npcFrameCount[155]` (`Main.cs:67082`).
+pub(crate) fn wolf_find_frame(
+    vx: f32,
+    vy: f32,
+    facing: i32,
+    sprite_dir: i32,
+    frame_counter: f32,
+    frame_row: u32,
+) -> (i32, f32, u32) {
+    let mut row = frame_row;
+    let mut counter = frame_counter;
+    // `:74318-74325` — rising row 10 / falling row 11, state untouched.
+    if vy < 0.0 {
+        return (sprite_dir, counter, 10);
+    }
+    if vy > 0.0 {
+        return (sprite_dir, counter, 11);
+    }
+    // `:74326-74330` — the grounded standstill rests row 0.
+    if vx == 0.0 {
+        return (sprite_dir, 0.0, 0);
+    }
+    // `:74331-74352` — walking against the facing below 4: the sprite
+    // rides the facing, rows > 2 reset to the 0..2 wind-up walk; the
+    // counter++ clock advances at > 5, row 2 holds with counter 0.
+    if ((facing > 0 && vx < 0.0) || (facing < 0 && vx > 0.0)) && vx.abs() < 4.0 {
+        if row > 2 {
+            row = 0;
+            counter = 0.0;
+        }
+        if row < 2 {
+            counter += 1.0;
+            if counter > 5.0 {
+                counter = 0.0;
+                row += 1;
+            }
+        } else {
+            counter = 0.0;
+        }
+        return (facing, counter, row);
+    }
+    // `:74353-74371` — the forward gallop: the sprite rides the velocity
+    // sign, the counter accrues |vx| * 0.4; an airborne row (10/11) lands
+    // on row 12 with counter 0, else advance at > 8 (SUBTRACT 8, not
+    // reset) over the 3..=9 cycle.
+    let dir = if vx < 0.0 { -1 } else { 1 };
+    counter += vx.abs() * 0.4;
+    if row == 10 || row == 11 {
+        row = 12;
+        counter = 0.0;
+    } else if counter > 8.0 {
+        counter -= 8.0;
+        row += 1;
+        if row > 9 {
+            row = 3;
+        }
+    }
+    (dir, counter, row)
+}
+
 /// The Horseman's gallop dust (`NPC.cs:62421-62439`) — one AI tick's
 /// arm, drawing the caller's `UpdateNPCs` stream at the exact C#
 /// position (module docs: the draw-order argument).

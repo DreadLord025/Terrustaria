@@ -596,6 +596,8 @@ impl NpcKind {
             NpcKind::PenguinBlack => 769,
             NpcKind::GiantTortoise => 770,
             NpcKind::IceTortoise => 771,
+            // W4-d36 E4 — the Wolf (155) at the next R7-band slot.
+            NpcKind::Wolf => 772,
             // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
             // R7-band slots (ascending vanilla order, the b0 convention).
             NpcKind::Crimera => 781,
@@ -939,6 +941,8 @@ impl NpcKind {
             769 => NpcKind::PenguinBlack,
             770 => NpcKind::GiantTortoise,
             771 => NpcKind::IceTortoise,
+            // W4-d36 E4 — the Wolf's decode arm.
+            772 => NpcKind::Wolf,
             // W4-d36 census batch 1 — the hover trio's decode arms.
             781 => NpcKind::Crimera,
             782 => NpcKind::MossHornet,
@@ -1828,7 +1832,9 @@ impl NpcKind {
             // the cue banks with the wave's audio row).
             NpcKind::ToxicSludge
             | NpcKind::Penguin
-            | NpcKind::PenguinBlack => "NPC_Hit_1",
+            | NpcKind::PenguinBlack
+            // W4-d36 E4: the Wolf's NPCHit1 (`NPC.cs:10969`).
+            | NpcKind::Wolf => "NPC_Hit_1",
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => "NPC_Hit_24",
             // W4-d36 census batch 1: the hover trio's NPCHit1
@@ -2144,7 +2150,9 @@ impl NpcKind {
             // `:10870`/`:10882`), 153/154 NPCDeath27 (`:10941`/`:10956`).
             NpcKind::ToxicSludge
             | NpcKind::Penguin
-            | NpcKind::PenguinBlack => "NPC_Killed_1",
+            | NpcKind::PenguinBlack
+            // W4-d36 E4: the Wolf's NPCDeath1 (`NPC.cs:10970`).
+            | NpcKind::Wolf => "NPC_Killed_1",
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => "NPC_Killed_27",
             // W4-d36 census batch 1: the hover trio's NPCDeath1
@@ -2517,6 +2525,9 @@ impl NpcKind {
             | NpcKind::PenguinBlack => 7,
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => 39,
+            // W4-d36 E4: the Wolf (155) aiStyle 26 (`NPC.cs:10965`) —
+            // `AI_026_Unicorns`, the Horseman/Hellhound machine's own arm.
+            NpcKind::Wolf => 26,
             // W4-d36 census batch 1: 173/176/205 aiStyle 5
             // (`NPC.cs:11173`/`:11227`/`:11629`) — the style axis claims
             // them (`ai_005_hover_family`).
@@ -2579,6 +2590,9 @@ impl NpcKind {
             NpcKind::Scarecrow5 | NpcKind::Scarecrow10 => 1.0,
             NpcKind::Splinterling => 2.0,
             NpcKind::HeadlessHorseman | NpcKind::Hellhound => 6.0,
+            // W4-d36 E4 — the Wolf (155) rides the same aiStyle-26 chase
+            // ceiling (`num10 = 6f`, `NPC.cs:62617`).
+            NpcKind::Wolf => 6.0,
             // S1-D-3ff wave A — the `num107` group's per-type rows
             // (`AI_003_Fighters`, `NPC.cs:58324-58376`): the default 1f
             // (52/53/161 carry no override), 132 0.95f (`:58345-58348`),
@@ -3060,6 +3074,8 @@ impl NpcKind {
             | NpcKind::PenguinBlack => (16.0, 34.0),
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => (46.0, 32.0),
+            // W4-d36 E4 (`NPC.cs:10963-10964`): the Wolf 46x30.
+            NpcKind::Wolf => (46.0, 30.0),
             // W4-d36 census batch 1 (`NPC.cs:11171-11172`/`:11225-11226`/
             // `:11627-11628`): Crimera 30x30, Moss Hornet 34x32, Moth 40x40.
             NpcKind::Crimera => (30.0, 30.0),
@@ -3173,6 +3189,8 @@ impl NpcKind {
             NpcKind::PenguinBlack => 149,
             NpcKind::GiantTortoise => 153,
             NpcKind::IceTortoise => 154,
+            // W4-d36 E4 (`NPCID.cs:2293`).
+            NpcKind::Wolf => 155,
             // W4-d36 census batch 1 (`NPCID.cs:11023`/`:11029`/`:11087`).
             NpcKind::Crimera => 173,
             NpcKind::MossHornet => 176,
@@ -3727,6 +3745,8 @@ impl NpcKind {
             | NpcKind::PenguinBlack => 5,
             NpcKind::GiantTortoise => 470,
             NpcKind::IceTortoise => 400,
+            // W4-d36 E4 (`NPC.cs:10968`).
+            NpcKind::Wolf => 300,
             // W4-d36 census batch 1 (`NPC.cs:11176`/`:11230`/`:11632`).
             NpcKind::Crimera => 40,
             NpcKind::MossHornet => 220,
@@ -4102,6 +4122,8 @@ impl NpcKind {
             | NpcKind::PenguinBlack => 0,
             NpcKind::GiantTortoise => 80,
             NpcKind::IceTortoise => 55,
+            // W4-d36 E4 (`NPC.cs:10966`).
+            NpcKind::Wolf => 65,
             // W4-d36 census batch 1 (`NPC.cs:11174`/`:11228`/`:11630`).
             NpcKind::Crimera => 22,
             NpcKind::MossHornet => 70,

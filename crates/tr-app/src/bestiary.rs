@@ -2212,6 +2212,17 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Ice Tortoise",
     },
+    // W4-d36 E4 — own entry (the populator adds the Night/Snow info at
+    // `BestiaryDatabaseNPCsPopulator.cs:1513-1517`; the name rides
+    // `Lang.GetNPCNameValue`).
+    BestiaryEntryDef {
+        credit_id: "Wolf",
+        net_id: 155,
+        kind: NpcKind::Wolf,
+        variant: None,
+        quick_unlock: false,
+        name: "Wolf",
+    },
     // W4-d36 hover batch — own entries (no Hide folds; the populator adds
     // the Crimson/Jungle info at `BestiaryDatabaseNPCsPopulator.cs:611`/
     // `:1339`/`:1570`; the names ride `Lang.GetNPCNameValue`).

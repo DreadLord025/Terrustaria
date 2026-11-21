@@ -1,10 +1,11 @@
 //! `AI_026_Unicorns` (`NPC.cs:62366-62924`) — the aiStyle-26 machine for the
 //! Pumpkin Moon's Headless Horseman (315) and Hellhound (329), S1-F-13b2
-//! slice A. The C# machine also serves the Unicorn (155), the lunar
+//! slice A. The C# machine also serves the Wolf (155 — W4-d36 E4 landed
+//! its hop-over/turnaround arms), the lunar
 //! pillar mobs (410's kamikaze, 423's NebulaBeast charge) and the Sand
-//! Elemental (546). 155/410/546 are not in the port's roster and 423
+//! Elemental (546). 410/546 are not in the port's roster and 423
 //! rides its own ported machine (`npc.rs::update_nebula_beast`,
-//! M4-EVENT-9), so only the 315/329 arms are ported here — the shared
+//! M4-EVENT-9), so only the 315/329/155 arms are ported here — the shared
 //! core is verbatim, the other types' branches are cited and skipped.
 //!
 //! RNG (`Main.rand` rides the `UpdateNPCs` stream —
@@ -251,7 +252,9 @@ pub(crate) fn unicorn_step(
     // standstill flips the facing every 2 ticks (`ai[0]`), `directionY`
     // arms the jump probe below.
     if npc.ai[3] < num {
-        if !world.pumpkin_moon {
+        // `:62583-62586` — the despawn gate lists 329/315 ONLY; the Wolf
+        // (155, W4-d36 E4) takes the else-branch's `TargetClosest()`.
+        if !world.pumpkin_moon && npc.kind != NpcKind::Wolf {
             npc.encourage_despawn(10);
         } else {
             let cand = TargetCandidate {
@@ -324,6 +327,17 @@ pub(crate) fn unicorn_step(
                 if npc.vx < 0.0 - num10 {
                     npc.vx = 0.0 - num10;
                 }
+            }
+        } else if npc.kind == NpcKind::Wolf {
+            // `:62621-62631` — the 155 arm (W4-d36 E4): the 0.95
+            // turnaround damping ONLY — no ±3 band nudge (the 329 arm's
+            // rows below are not the Wolf's); the shared block still
+            // accelerates to the 6 cap.
+            if npc.vx > 0.0 && npc.facing < 0 {
+                npc.vx *= 0.95;
+            }
+            if npc.vx < 0.0 && npc.facing > 0 {
+                npc.vx *= 0.95;
             }
         } else {
             // `:62632-62650` — the 329 arm: the 0.9 turnaround damping
