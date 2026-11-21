@@ -357,21 +357,11 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
             app.world_key = None;
             return true;
         }
-        edit::TileInteraction::CakeSlice => {
-            // `Player.cs:32600-32605`: `this.AddBuff(192, 7200)` — SugarRush
-            // for 2 minutes; `PlaySound(SoundID.Item2, base.position)` — the
-            // case-2 style play at the PLAYER's position (the façade
-            // truncates, `SoundEngine.cs:88-91`), the one
-            // `Next(-6, 7) * 0.01` pitch draw on the tile-use stream.
-            if let Some(p) = app.player.as_mut() {
-                p.buffs.add_buff(192, 7200);
-                let (cx, cy) = p.center();
-                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
-                app.audio.play_npc_item_cue(2, cx, cy, rng);
-            }
-            app.world_key = None;
-            return true;
-        }
+        // The cake (621) right-click rides W4-f34's shared `StationBuff`
+        // arm (`add_buff` then the cue, research/70 §1f — the unpitched
+        // e28 stand-in is f34's recorded deviation; folding this lane's
+        // faithful pitched case-2 play (`play_npc_item_cue(2, …)`) into
+        // that arm is the recorded follow-up, not part of the merge).
         edit::TileInteraction::CandleToggled => {
             app.world_key = None;
             return true;
@@ -470,11 +460,10 @@ fn interaction_events(
         edit::TileInteraction::BedInteract { .. } => (None, Vec::new()),
         edit::TileInteraction::BedSleep { .. } => (None, Vec::new()),
         edit::TileInteraction::ClockRead { .. } => (None, Vec::new()),
-        // The party monolith and the cake slice are consumed in
-        // `interact_tile` ahead of this mapping (the mech cue / the buff +
-        // Item2 ride the player and the world events) — no drops.
+        // The party monolith is consumed in `interact_tile` ahead of this
+        // mapping (the mech cue + ToggleManualParty ride the world events)
+        // — no drops. The cake (621) rides W4-f34's `StationBuff` arm.
         edit::TileInteraction::PartyMonolithToggle => (None, Vec::new()),
-        edit::TileInteraction::CakeSlice => (None, Vec::new()),
         // The bank open is consumed in `interact_tile` ahead of this
         // mapping (the SoundID 10/11/12 keys are absent from the cue set).
         edit::TileInteraction::BankOpen { .. } => (None, Vec::new()),
@@ -1087,31 +1076,6 @@ mod tests {
         assert!(interact_tile(&mut app, 10, 19));
         assert!(app.world_events.manual_party);
         assert!(crate::world_events::party_is_up(&app.world_events));
-    }
-
-    /// W4-f41 — the cake's right-click (`Player.cs:32600-32605`): the click
-    /// is consumed, SugarRush (192) lands for 7200 ticks and the Item2 cue
-    /// plays at the player; the cake tile stays placed (the interaction
-    /// kills nothing — the buff refreshes on every click).
-    #[test]
-    fn w4_f41_the_cake_click_grants_sugar_rush() {
-        let mut app = flow_app(None, vec![], vec![]);
-        app.world = object_world();
-        let i = app.world.index(12, 19);
-        app.world.tiles[i].kind = 621;
-        app.world.tiles[i].flags |= FLAG_ACTIVE;
-        app.player = Some(Player::spawn(&app.world));
-        let cues0 = app.audio.played_count();
-        assert!(interact_tile(&mut app, 12, 19), "the click is consumed");
-        let p = app.player.as_ref().unwrap();
-        let bi = p.buffs.find_buff_index(192).expect("SugarRush lands");
-        assert_eq!(p.buffs.buff_time[bi], 7200, "the 2-minute duration");
-        assert!(app.audio.played_count() > cues0, "the Item2 cue played");
-        assert!(app.world.tile(12, 19).unwrap().active(), "the cake stays");
-        // The re-click refreshes the buff (AddBuff's time-additive cap
-        // body owns the exact stacking; the arm re-runs either way).
-        assert!(interact_tile(&mut app, 12, 19));
-        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(192).is_some());
     }
 
     #[test]

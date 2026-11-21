@@ -250,11 +250,6 @@ pub enum TileInteraction {
     /// `BirthdayParty.cs:202-217`). `GamepadEnableGrappleCooldown` is
     /// gamepad-only (unported input census). No world write here.
     PartyMonolithToggle,
-    /// The slice-of-cake branch (tile 621, `Player.cs:32600-32605`):
-    /// `flag2 = true`, `this.AddBuff(192, 7200)` (SugarRush, 2 minutes) and
-    /// `SoundEngine.PlaySound(SoundID.Item2, base.position)` — both ride the
-    /// player, so the app layer applies them; no world write here.
-    CakeSlice,
     /// The Extractinator branch (tiles 219/642) ran: the clicked tile is an
     /// extractinator and the held item decides the rest (`Player.cs:41665-41697`
     /// — the C# arm is item-anchored inside `PlaceThing`, so it rides the
@@ -312,13 +307,9 @@ pub fn interact_at(
     if t.kind == 455 {
         return TileInteraction::PartyMonolithToggle;
     }
-    // The slice of cake (`Player.cs:32600-32605`): the chain's furniture
-    // section tests the kind literal between the food platter (520) and
-    // the sharptalon station (464); the registry def's interaction is
-    // `None`, so the same kind-literal shape applies.
-    if t.kind == 621 {
-        return TileInteraction::CakeSlice;
-    }
+    // The cake (621, `Player.cs:32600-32605`) rides W4-f34's `StationBuff`
+    // dispatch (the seven-row kind match, `621 => Some((192, 7_200))`,
+    // research/70 §1f — the anchor-bearing superset route); no arm here.
     // The bank tiles (tiles 29/97/463/491, `Player.cs:33056-33138`): the
     // num73 switch maps 29 -> -2, 97 -> -3, 463 -> -4, 491 -> -5. The
     // vanilla opens via `OpenChest(num74, num75, num76)`; the port's banks
@@ -1189,19 +1180,6 @@ mod tests {
         w.tiles[i].flags &= !FLAG_ACTIVE;
         let hit = interact_at(&mut w, 10, 19, 1, &blocked);
         assert!(matches!(hit, TileInteraction::None));
-    }
-
-    /// W4-f41 — the cake dispatch (`Player.cs:32600-32605`): tile 621
-    /// answers `CakeSlice`, no world write (the buff + the Item2 cue ride
-    /// the player).
-    #[test]
-    fn w4_f41_the_cake_dispatches_the_slice() {
-        let mut w = object_world();
-        set_active(&mut w, 12, 19, 621);
-        let blocked = |_: i32, _: i32| false;
-        let hit = interact_at(&mut w, 12, 19, 1, &blocked);
-        assert!(matches!(hit, TileInteraction::CakeSlice));
-        assert!(w.tile(12, 19).unwrap().active(), "the cake stays placed");
     }
 
     #[test]

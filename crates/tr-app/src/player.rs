@@ -6521,14 +6521,10 @@ impl Player {
                 // `:10015-10017` — `BuffID.Sharpened` (159): the melee-only
                 // +12 armor penetration.
                 159 => self.melee_armor_penetration += 12,
-                // W4-f41 — `:9935-9939` — `BuffID.SugarRush` (192, the cake
-                // slice's buff, `Player.cs:32603`): `pickSpeed -= 0.2f;
-                // moveSpeed += 0.2f` (the port's positive-bonus convention
-                // for the pick half, the Mining-104 precedent).
-                192 => {
-                    self.pick_speed_bonus += 0.2;
-                    self.move_speed += 0.2;
-                }
+                // SugarRush (192, `Player.cs:9935-9939`) rides W4-f34's
+                // identical arm — the single copy survives the merge
+                // (research/70 §1e: two `192 =>` arms in one match would
+                // not compile); the W4-f41 rebase/expiry witness stays.
                 // `:10461-10470` — the Ice Barrier (62, the Frozen Turtle
                 // Shell): +25% while at or below half life.
                 62 => {
@@ -12709,6 +12705,9 @@ mod tests {
     /// W4-f41 — SugarRush (192, the cake slice's buff): `pickSpeed -= 0.2f;
     /// moveSpeed += 0.2f` (`Player.cs:9935-9939`), rebased every tick like
     /// every buff row (no accumulation), and gone when the buff expires.
+    /// The arm itself is W4-f34's byte-identical copy (research/70 §1e —
+    /// the merge keeps ONE `192 =>` arm); this witness covers the disjoint
+    /// rebase + expiry aspects and stays in the union (§4).
     #[test]
     fn w4_f41_sugar_rush_speeds_the_pick_and_the_run() {
         let w = World::new("t".into(), 64, 800);
