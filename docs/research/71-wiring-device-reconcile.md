@@ -1,5 +1,15 @@
 # 71 — Wiring device-arm duplicate reconcile (W4-e20 × W4-f11) + e21 census
 
+> **STALE FORK — SEAL BANNER (W4-c42 seal phase).** This copy is the v1
+> fork of `8791f07fe` (the research/150 registry assigns it →212 at the
+> merge). It NEVER carried the §6a/§7a re-pick instruction — the FINAL
+> research-71 lives on `task/W4-e20-wiring-device-arms-2` (`46fdcfd8`),
+> with the standalone escalation at research/146. The c42-side verdict:
+> research/95 §13 (this branch) — the slice+resize compile blocker is
+> FIXED here (the `a2d6cdad0` port); the hammer/placement/track-item
+> census remainder is the merger-side re-pick from the e20 `6d1754719`
+> chain. Read §13, not this fork, for the merge instructions.
+
 > Merger assist · 2026-11-21 · code-only (no cargo/tests run) ·
 > sources: `decompiled/Terraria/Minecart.cs`, `Wiring.cs`, `Utils.cs`, `Item.cs`,
 > `Chest.cs` + the three branch tips below.

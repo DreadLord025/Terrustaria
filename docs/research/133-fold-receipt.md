@@ -153,3 +153,43 @@ branch only; the f11 deprecated halves (this receipt's source lane) never
 re-land. Gate: `cargo test --workspace --skip
 migrates_version_2_kinds_to_item_ids` (the merger runs it; this lane is
 code-only, every witness WRITTEN NOT RUN).
+
+## 7. SEAL addendum (the seal phase — research/95 §13 + research/240)
+
+**SEALED.** No fold-133 region changed in the seal phase either; the seal
+consumed the e20 retire escalation (research/146, `46fdcfd8`) and the
+g78/g48 compose receipts:
+
+1. **research/146 re-pick** — the compile blocker (the slice+resize pair,
+   re-verified STILL present at the pre-seal tip `15810df4`) is FIXED on
+   this branch: the e20 `a2d6cdad0` shape ported verbatim (2 `&mut
+   Vec<ItemSlot>` signatures + the direct `world_chests[idx].slots`
+   routing; the sort/extractinator read paths keep `chest_slots_mut`),
+   witness `w4_c42_the_hopper_slot_arms_grow_the_chest_vec` (the 283rd
+   dedicated-module witness). The census REMAINDER
+   (`0cea13365`/`865e9d83f`/`f74384e97`/`6d1754719` — hammer/placement/
+   track-item/`is_pressure_plate`) is a merger-side re-pick from the e20
+   `6d1754719` chain; the exact instruction is research/95 §13.2. This
+   receipt's §4 "Already-rebased on e20" line stands corrected in scope:
+   the `e8e6b159` device pick carried the bodies but NOT the census —
+   §13.2 names what the merger still takes from e20.
+2. **g78 compose receipt** (research/77 §3, `82bc71ea`): the §3.1 use-arm
+   hunks are docs-only on g78's branch; this tree's landed
+   `MonolithToggle`/`use_switch_monolith` arm (`f173fb88`) is the
+   keep-one (same shape as the requested `MonolithSwitch`/
+   `switch_monolith_use`, plus the real `:32275` cooldown port). The
+   `Check2xX` drop-5345 break check stays c31/g17/g47/f41.
+3. **g48 keep-one receipt** (tip `9460c85d9`): its `19` apply consumes
+   this tree's canonical shift bodies with the trailing `None` + cues
+   ALREADY passed (compatible); only the `open_door`/`close_door` pair
+   (`net_apply.rs:635`/`:650`) needs the trailing `None` (the 95 §8.2
+   merge note). The 34-destroy refinement keeps g52's `e2a5968a4`
+   (g48's own `d3200ef3a` receipt).
+
+The registry assignments (research/150 §3, on d54's branch: this doc →
+`232-fold-receipt.md`, the c42 research-71 fork →
+`212-wiring-device-reconcile-c42.md`) are RECORDED here for the merger;
+the seal keeps both files under their current names (the registry doc is
+not on this branch; renaming now would break this tree's internal refs —
+95 cites both — for zero merge benefit; the merger executes the renames
+with the registry's landing, refs: research/95 only).

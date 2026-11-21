@@ -465,15 +465,36 @@ classes are documented folds, not gaps: (a) `SetCurrentUser`/`CurrentUser`
 (SP owner-0 fold), (b) the three `Get*Source` provenance constructors
 (metadata-only, the entity-source system contract).
 
-## 12. FINAL merger-checklist (95 + 133, the single-branch keep)
+## 12. FINAL merger-checklist (95 + 133, the single-branch keep) — SEALED
+
+> **SEALED (the seal phase, research/240):** §12 + the 133 receipt §6 are
+> the final merger instructions; the research/146 compile blocker is
+> FIXED on this branch (the `a2d6cdad0` resize/Vec port + witness); the
+> e20 census REMAINDER re-pick instruction is §13.2 below. No further
+> rounds on this lane.
 
 **SINGLE-BRANCH KEEP: `task/W4-c42-wiring-device-arms` is the wiring
-canonical.** Merge THIS branch; the f11/e20/e21/g4/d6 wiring content is
-already unioned here (§10 + §10.1 + the final phase) — their branches'
-wiring halves are DEPRECATED-BY-UNION (f11's own banners, `e052a69f`),
-never cherry-pick them again. The §9 playbook ran in full; the
-never-ship-both list (§9 tail) has zero surviving duplicate symbols on
-this tree.
+canonical — WITH THE SEAL CARVE-OUT.** Merge THIS branch for everything
+it owns (§10 + §10.1 + the final phase + this seal); the f11/e21/g4/d6
+wiring content is already unioned here — their branches' wiring halves
+are DEPRECATED-BY-UNION (f11's own banners, `e052a69f`), never
+cherry-pick them again. **CARVE-OUT (research/146, e20 `46fdcfd8`): the
+e20 device-census REMAINDER is NOT on this branch** — the
+hammer/placement/track-item census (`0cea13365` TrackHammer + Item52
+cue/wake, `865e9d83f` `edit::place_track`/`minecart::track_item`/the
+`cell_drops` 314 arm, `6d1754719` `minecart::is_pressure_plate`). The
+merger takes those halves from the e20 `6d1754719` chain (exact 25-commit
+list: research/146 §1; state `02ac64ab6`, docs tail `46fdcfd8`). What
+146 flagged as compile-BLOCKING on this branch — the slice+resize pair —
+is FIXED here (the seal phase ported e20's `a2d6cdad0` shape verbatim:
+`&mut Vec<ItemSlot>` signatures + the direct `world_chests[idx].slots`
+routing; witness `w4_c42_the_hopper_slot_arms_grow_the_chest_vec`). The
+kept hopper/extractinator/flip-switch-track bodies on this tree are the
+e20-unioned shapes (the `f1c24c381`/`e8e6b159c` picks + the OnceLock
+cache `f167082ed`/`6336e3b44` content) — do NOT re-pick those arms; take
+ONLY the missing census remainder above. The §9 playbook ran in full;
+the never-ship-both list (§9 tail) has zero surviving duplicate symbols
+on this tree.
 
 **Final-phase seam state (§8 re-audit at this tip):**
 
@@ -491,19 +512,32 @@ this tree.
 | 8.10 boulder aiStyle-25 proj_data row | OPEN — `projectile/data.rs` still has no 99 row; the DeviceShot drops with the ANALYSIS note until the family lane lands (contract). |
 | 8.11 can_kill_tile slice | unchanged — the wiring slice stays; the g48 reader injects the FULL `edit::can_kill_tile` with the chest-store scan (its lane's choice, compatible). |
 
-**Contested-seam requests consumed**: g78 research/76 (`3e7bdba0`, read at
-origin tip) — the 657 right-click `SwitchMonolith` use arm **LANDED**
-(`f173fb88`: `TileInteraction::MonolithToggle` + the doors.rs arm +
-`Player.quick_grapple_cooldown`); the 657 `Check2xX` break check stays the
-c31/g17/g47/f41 break-lane contract (research/76's own co-lane list — NOT
-this lane's). g85's wiring-round note (`c69073b0`) carries no c42 request
-(its contested seams are render/tiles.rs + spawner.rs). g48's `19` apply
-arm arrived and consumes the canonical bodies (the signature merge-note
-above). No g78/g85 publishing hunks target this branch's files.
+**Contested-seam requests consumed**: g78 research/76 (`3e7bdba0`) +
+research/77 §3 (`82bc71ea`, read at origin tip) — the 657 right-click
+`SwitchMonolith` use arm **LANDED** (`f173fb88`:
+`TileInteraction::MonolithToggle` + the doors.rs arm +
+`Player.quick_grapple_cooldown`). **Compose receipt (research/240 §2):**
+g78's §3.1 hunks are DOCS-ONLY on its branch (zero `MonolithSwitch` code
+hits at `82bc71ea`) — c42's landed arm is the keep-one; the naming delta
+(`MonolithToggle`/`use_switch_monolith` vs the requested
+`MonolithSwitch`/`switch_monolith_use`) is the SAME shape, and c42's arm
+ports `:32275` for real (the cooldown field) where g78's hunk recorded a
+no-gamepad deviation — do NOT apply g78's §3.1 code hunks on top. The
+657 `Check2xX` break check (drop 5345, the origin-cell spawn, the 410
+lit-row +2 quirk) stays the c31/g17/g47/f41 break-lane contract
+(research/77 §3.2's own co-lane list — NOT this lane's). g85's
+wiring-round note (`c69073b0`) carries no c42 request (its contested
+seams are render/tiles.rs + spawner.rs). g48's `19` apply arm arrived
+and consumes the canonical bodies — **keep-one receipt (research/240
+§3):** the shift_trapdoor/shift_tall_gate calls already pass the
+trailing `None` + cues (compatible, no change); ONLY the
+`open_door`/`close_door` pair needs the trailing-`None` merge note
+above. No g78/g85 publishing hunks target this branch's files.
 
-**Witness-total** (ALL WRITTEN NOT RUN, code-only lane): **282 tests in
-the seven dedicated wiring modules** — core `wiring.rs` 143, app
-`world_sim/wiring.rs` 33, app `minecart.rs` 43, core `edit.rs` 34, app
+**Witness-total** (ALL WRITTEN NOT RUN, code-only lane): **283 tests in
+the seven dedicated wiring modules** (282 at the final phase + 1 seal
+witness) — core `wiring.rs` 143, app
+`world_sim/wiring.rs` 34, app `minecart.rs` 43, core `edit.rs` 34, app
 `editing/doors.rs` 14, app `editing/wiring.rs` 14, app
 `world_sim/tile_entities.rs` 1 — plus the cross-module pins (the g4 bash
 pair in `world_sim/npcs.rs`, the e20/f11 device pins in chest/netglue/
@@ -511,7 +545,9 @@ player/projectiles, the plate-break pin in `world_sim/editing.rs`). The
 final phase added **7**: 4 core (`w4_c42_final_seam_tests` — the stamped
 trapdoor refusal, the stamped gate refusal + unconditional echo, the
 echo-field computation, the hopper-range scan) + the sensor-drain pin +
-the plate-break-drain pin + the monolith use-arm pin. Every KEEP/unique
+the plate-break-drain pin + the monolith use-arm pin. The seal phase
+added **1**: `w4_c42_the_hopper_slot_arms_grow_the_chest_vec` (both
+`Chest.Resize` growth sites, research/240 §1). Every KEEP/unique
 witness named in §1-7 + the 133 receipt §4 ledger is present under its
 original name.
 
@@ -522,3 +558,99 @@ Canary: `anchors.txt` rows for every landed feature (the final phase
 added 4: `cell_blocked_by_entity`, `take_door_echoes`,
 `is_hopper_in_range_of`, `use_switch_monolith`); `tr-core/build.rs` +
 `cargo test -p tr-app --test main_anchors` read them.
+
+## 13. SEAL — the research/146 re-pick verdict + the FINAL wiring-family instruction
+
+> The seal phase (this section; standalone publication: research/240).
+> Consumes e20's retire escalation research/146 (`46fdcfd8` tip, the
+> `e47e1399f` publication) at THIS branch's tip. Code-only, as always.
+
+### 13.1 The compile blocker — FIXED ON THIS BRANCH (the resize/Vec port)
+
+research/146 §2 flagged four sites at the pre-seal tip `15810df4`
+(re-verified by `git grep` at that tip before the port — the defect was
+STILL present):
+
+| Site (pre-seal lines) | Defect | Seal fix |
+| --- | --- | --- |
+| `world_sim/wiring.rs:674` | `try_move_coins_in_chest(slots: &mut [ItemSlot])` | `&mut Vec<ItemSlot>` |
+| `world_sim/wiring.rs:721` | `slots.resize(t + 1, EMPTY_SLOT)` on the slice | unchanged body — now legal on the Vec |
+| `world_sim/wiring.rs:773` | `try_put_item_in_chest(slots: &mut [ItemSlot])` | `&mut Vec<ItemSlot>` |
+| `world_sim/wiring.rs:795` | `slots.resize(idx + 1, EMPTY_SLOT)` on the slice | unchanged body — now legal on the Vec |
+| routing `:864` (via `chest.rs:228-232` `chest_slots_mut` → `as_mut_slice`) | the accessor erases the Vec to a slice | `hopper_pull` passes `&mut app.world_chests[idx].slots` directly (`find_chest` proved the index live) |
+
+The port is e20's `a2d6cdad0` shape VERBATIM (the census ruled it small:
+2 signatures + 1 routing site, zero behaviour change — `Chest.Resize`,
+`Chest.cs:118-130`, grows the slot Vec exactly as the C# does). The
+read-only sort path (`:890`) and the extractinator slot-consume path
+(`:944`) KEEP `chest_slots_mut` (no growth there — e20 keeps them too,
+verified at `46fdcfd8`). Witness:
+`w4_c42_the_hopper_slot_arms_grow_the_chest_vec` pins BOTH growth sites
+directly (the empty-slot fill past `slots.len()` + the coin write-back
+into an empty Vec) — WRITTEN NOT RUN (code-only). **The E0599 pair no
+longer exists on this tree; this branch's hopper arms compile-shape-match
+e20's canonical.**
+
+### 13.2 The census REMAINDER — the merger-side re-pick instruction (FINAL)
+
+The port above unblocks COMPILE; it does not import the census. What
+research/146 §3 flagged as missing is STILL missing at the seal tip
+(re-grepped): zero `TrackHammer`/`frame_track_hammer`/`frame_track_place`/
+`refit_tracks_around` hits; `track_item`/`is_pressure_plate` absent;
+`edit/hammer.rs:413` still returns `PoundOutcome::Consumed` for 314;
+`cell_drops` (`world_sim/editing.rs:6207`) has no 314 arm. **The merger
+takes those halves from the e20 branch, NOT from this one:**
+
+- **Source:** `task/W4-e20-wiring-device-arms-2`, the `6d1754719` chain —
+  the exact 25-commit list is research/146 §1 (base `a725acb04`; state at
+  `02ac64ab6`, docs tail `46fdcfd8`). The census-bearing commits:
+  `0cea13365` (hammer-placement: FULL `frame_track(pound, mute)` +
+  `PoundOutcome::TrackHammer` + the Item52 cue/wake drain), `865e9d83f`
+  (track pieces: `edit::place_track`, `minecart::track_item`, the
+  `cell_drops` 314 arm yielding `Vec<(u16,i32)>` per `29d9dc224`, the
+  placement wake), `f74384e97` (hopper INPUT-side census), `6d1754719`
+  (`minecart::is_pressure_plate`, `Minecart.cs:549-560`).
+- **What NOT to re-pick:** the hopper/extractinator/flip-switch-track
+  bodies (this tree carries the e20-unioned shapes — `flip_switch_track`
+  byte-equal to e20's, the OnceLock `track_switch_options` cache, the
+  strict-`<` grab box, the `(placed, remaining)` remainder, the
+  PlaySound(7) cue, the Vec signatures per §13.1); the trap-fix round
+  `cb14ba4fb` (this tree's `TrapRequest::Spear` already carries
+  `cap_x/cap_y`, the wall `vy: 0.0` arms present — re-verified);
+  `8791f07fe`/`f1c24c381`/`e8e6b159c` (the stale v1 lineage).
+- **Overlap resolutions at the union:** e20's FULL
+  `frame_track(world, i, j, pound, mute) -> (bool, bool)` SUPERSEDES this
+  tree's wiring-only `frame_track_pound` slice (`minecart.rs:1385` — the
+  slice's pound path is behaviour-identical; e20's wrapper
+  `frame_track_pound = frame_track(…, true, true).0` keeps the wiring
+  call sites unchanged). The `IsPressurePlate` keep-one is research/148
+  §3c (e20's app-side fn vs d106's inline tr-core predicate — ONE truth;
+  d106's pass is ALREADY LANDED, do not re-port). `TRACK_FRAMES` stays
+  the 36-row superset (byte-equal on both trees); f11's
+  `tr-core/src/minecart.rs` duplicate never lands (133 §4b).
+- **research-71 doc**: this branch's copy is the stale v1 fork (the
+  research/150 registry assigns it →212 at merge); the merger reads
+  e20's FINAL research-71 (§6a/§7a/§8) at `46fdcfd8` — never this fork.
+
+### 13.3 The wiring-family bible (one paragraph)
+
+**The wiring family after the seal:** `task/W4-c42-wiring-device-arms`
+(THIS branch) is the canonical union — doors/trapdoors/tall-gates, the
+light unification, the fold-133 lifecycle/mass-wire uniques, the
+`de176ccdd` fix round, the §8 seam closures (entity gate, 19-echoes,
+drain union, `is_hopper_in_range_of`), the monolith use arm, and the
+compile-fixed hopper/extractinator/flip-switch-track device arms (283
+dedicated-module witnesses, all WRITTEN NOT RUN); **f11** contributes
+nothing further (its uniques are folded — the 133 receipt — its
+deprecated halves never re-land); **e20** contributes ONLY the §13.2
+census remainder (hammer/placement/track-item/`is_pressure_plate`, the
+`6d1754719` chain) plus the one-truth seam resolutions (research/148
+§3c); **e21**'s four fixes are already in the union (the kept
+`switch_monolith` body under the use arm); **g48** owns the NET-APPLY
+lane — it consumes this branch's `edit/shift.rs` + `edit.rs` bodies
+verbatim, needs ONLY the trailing-`None` at its `open_door`/`close_door`
+pair (§8.2 note), and its 34-destroy refinement comes from g52's
+`e2a5968a4` (keep-one, g48's own receipt `d3200ef3a`). The gate-command
+is §12's; the ownership detail is e20's research/149 bible (its
+"c42 CANNOT MERGE AS-IS" rule 1 is superseded IN PART by §13.1 — the
+compile blocker is gone; the census-remainder carve-out stands).
