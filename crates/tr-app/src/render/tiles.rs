@@ -2444,4 +2444,57 @@ mod tests {
         assert!(!tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 1, false));
         assert!(!tile_hides_wall(&mut lookups, Some(&atlas), 0, 0, 0, 0, true));
     }
+
+    // S1-G-13 consumers: the `solidLayer` split (`TileDrawing.Draw`'s per-cell
+    // test, `TileDrawing.cs:517`, via `IsTileDrawLayerSolid` `:4469-4475`).
+    // The fused default keeps every cell; the two halves partition the active
+    // cells by solidity; the direct-screen blocks draw no cells.
+    #[test]
+    fn tile_filter_partitions_the_active_cells_by_solidity() {
+        // Dirt (0) is solid; a torch (4) is not. The forced-solid override
+        // table (`TileID.Sets.DrawTileInSolidLayer`, `TileID.cs:516-528`)
+        // pins 11/78/470/475/579 solid regardless of `_tileSolid`.
+        assert!(tile_draw_layer_solid(0), "dirt is solid");
+        assert!(!tile_draw_layer_solid(4), "a torch is non-solid");
+        // The fused default keeps every cell, active or not.
+        assert!(TileFilter::All.keeps(0, true));
+        assert!(TileFilter::All.keeps(4, false));
+        // The solid half keeps only active solid cells.
+        assert!(TileFilter::Solid.keeps(0, true));
+        assert!(!TileFilter::Solid.keeps(4, true));
+        assert!(!TileFilter::Solid.keeps(0, false), "inactive cells draw in neither half");
+        // The non-solid half keeps only active non-solid cells.
+        assert!(TileFilter::NonSolid.keeps(4, true));
+        assert!(!TileFilter::NonSolid.keeps(0, true));
+        assert!(!TileFilter::NonSolid.keeps(4, false));
+        // The two halves are complementary on active cells.
+        for kind in [0_u16, 4, 11, 78, 470, 475, 579, 82, 192] {
+            assert_ne!(
+                TileFilter::Solid.keeps(kind, true),
+                TileFilter::NonSolid.keeps(kind, true),
+                "kind {kind} lands in exactly one half"
+            );
+        }
+        // The direct-screen blocks draw no tile cells.
+        assert!(!TileFilter::Screen.keeps(0, true));
+        assert!(!TileFilter::ScreenExtras.keeps(4, true));
+    }
+
+    // S1-G-13 consumers: the forced-solid override wins over `_tileSolid`
+    // (`IsTileDrawLayerSolid` checks `DrawTileInSolidLayer[type].HasValue`
+    // first, `TileDrawing.cs:4471-4474`).
+    #[test]
+    fn tile_filter_honours_the_forced_solid_override() {
+        // The generated table sets these to 1 (forced solid).
+        for kind in [11_u16, 78, 470, 475, 579] {
+            assert_eq!(
+                td::SET_DRAW_TILE_IN_SOLID_LAYER.get(kind as usize).copied(),
+                Some(1),
+                "kind {kind} is forced solid in the generated table"
+            );
+            assert!(tile_draw_layer_solid(kind), "kind {kind} draws in the solid half");
+            assert!(TileFilter::Solid.keeps(kind, true));
+            assert!(!TileFilter::NonSolid.keeps(kind, true));
+        }
+    }
 }
