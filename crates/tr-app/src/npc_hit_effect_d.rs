@@ -7555,7 +7555,10 @@ mod tests {
             (178, false, vec![231, 232, 232, 233]),
             (178, true, vec![1348, 1349, 1349, 1350]),
             (353, false, vec![544, 543, 546, 546, 545, 545]),
-            (354, true, vec![1351, 1352, 1353, 1353, 1354, 1354]),
+            (353, true, vec![1351, 1352, 1353, 1353, 1354, 1354]),
+            // The 354 WebbedStylist is NOT in ShimmerTownTransform
+            // (NPCID.cs Sets.Factory) — variation 1 keeps the normal row.
+            (354, true, vec![544, 543, 546, 546, 545, 545]),
         ] {
             n.variation_index = if shimmer { 1 } else { 0 };
             let mut gore = GorePool::new();
