@@ -65,7 +65,7 @@ pub use grass::{
     spread_desert_walls, spread_grass, spread_grass_walls, update_world_grass_growth,
 };
 pub(crate) use grass::convert_wall_by_case;
-use grass::{grow_moss_arm, SPREAD_UNDERGROUND};
+use grass::{grow_moss_arm, grow_moss_arm_underground, SPREAD_UNDERGROUND};
 
 // S1-K-3: the decorations family lives in `growth/decorations.rs`; the public
 // seams stay on `growth` (verbatim move, behaviour frozen).
@@ -980,8 +980,8 @@ pub fn update_world(
         let x = rng.next_range(10, world.width - 10);
         let y = rng.next_range(world.world_surface as i32 - 1, world.height - 20);
         // The underground dispatcher (`UpdateWorld_UndergroundTile`
-        // `:73214-73614`) replaces the overground parity call; the dyed/
-        // moss/oyster arms inside it park (ANALYSIS).
+        // `:73214-73813`) replaces the overground parity call; the dyed/
+        // oyster arms inside it park (ANALYSIS).
         update_world_underground_tile(
             world,
             x,
@@ -1427,11 +1427,11 @@ pub(super) mod tests {
 
     #[test]
     fn the_underground_dispatcher_runs_the_passed_arms() {
-        // `UpdateWorld_UndergroundTile`'s ported arms (`:73214-73614`): the
+        // `UpdateWorld_UndergroundTile`'s ported arms (`:73214-73813`): the
         // alch plant grows, the grass family converts (underground), the lily
         // becomes 74, the grass growth re-runs the spikes and the cattail runs
         // its validity/growth pair. The parked arms (the 655 kill, the dye/
-        // seaweed, the 444/396 moss/oyster, the web/town-NPC) stay out.
+        // seaweed, the 444/396 oyster, the web/town-NPC) stay out.
         // The lily conversion: a lily (61) at Next(3)==0 over a non-226 tile
         // converts to 74.
         let mut w = world();
@@ -1684,12 +1684,13 @@ pub(super) mod tests {
 
 /// `WorldGen.UpdateWorld_UndergroundTile` (`WorldGen.cs:73214-73614`): the
 /// underground growth dispatcher — the clamps, the alch/hard-mode arms, the
-/// grass growth (underground) + the spike arms, the lily conversion, the five
-/// vine families and, behind `allowed_to_spread`, the wall arms.
+/// grass growth (underground) + the spike arms, the moss arm (no `NextDouble`
+/// gate), the lily conversion, the five vine families and, behind
+/// `allowed_to_spread`, the wall arms.
 ///
 /// Parked (documented in ANALYSIS): the 655 life-fruit kill (the NPC store),
 /// `plantDye` (and its `Main.rand.Next(2500)`/`Next(10000)` head rolls),
-/// the 444/396 moss and oyster arms (`PlayerLOS`/`AnchorValid`/
+/// the 444/396 oyster arms (`PlayerLOS`/`AnchorValid`/
 /// `CountNearBlocksTypes` have no ports), `TrySpawningTownNPC`, the net sides,
 /// and the C#'s dual `genRand`/`Main.rand` streams (the port's per-consumer
 /// stream carries every draw).
@@ -1721,7 +1722,7 @@ pub fn update_world_underground_tile(
         // The C# `nactive` else-if (`:73252`) does not fire on an inactive
         // cell — the hardUpdateWorld call parks with the active arm below.
         // The tail `else`'s web arm (`:73803-73806`: wall 62, no liquid).
-        // The dye/seaweed, 444/396 and town-NPC arms park.
+        // The dye/seaweed, 444/396 oyster and town-NPC arms park.
         if world.tile(i, j).is_some_and(|t| t.wall == 62 && t.liquid == 0) {
             grow_web(world, i, j, rng);
         }
@@ -1768,6 +1769,15 @@ pub fn update_world_underground_tile(
     {
         grow_check_seaweed(world, i, j, rng);
     }
+    // The moss arm (`:73699-73755`): the `else if (tileMoss || tileMossBrick)`
+    // branch — NO `NextDouble` gate (unlike the overground twin), the box
+    // conversion + the 184 spray. The C# does NOT return here (the wall arms
+    // `:73809` run after the chain), so the port falls through too; the moss
+    // kinds match none of the later return-guards (the grass family, the lily,
+    // the vine arm). The 444/396 oyster arms ahead of it park.
+    if crate::tiledata::TILE_MOSS.has(kind) || crate::tiledata::SET_TILE_MOSS_BRICK.has(kind) {
+        grow_moss_arm_underground(world, i, j, min_i, max_i, min_j, max_j, rng);
+    }
     // The grass family + the spikes (`:73281-73295`).
     if SPREAD_UNDERGROUND.contains(&kind) {
         update_world_grass_growth(
@@ -1806,7 +1816,7 @@ pub fn update_world_underground_tile(
         return;
     }
     // The five vine families (`:73311-73482`) — the port's one-fn arm. The
-    // 444/396 moss and oyster arms park.
+    // 444/396 oyster arms park.
     grow_vine_arm(world, i, j, rng);
     // The wall arms (`:72499-72502`, behind `AllowedToSpreadInfections`); the
     // web and town-NPC arms park.

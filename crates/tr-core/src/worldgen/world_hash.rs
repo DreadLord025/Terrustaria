@@ -324,6 +324,10 @@ mod tests {
     // verbatim infection loops) is RUNTIME-only — `UpdateWorld` runs on the
     // fixed-step growth tick, never inside the generation pipeline. This
     // pin is UNCHANGED. a == b stays.
+    // W4-d103 tail P9 (2026-11-21, code-only): the underground moss arm
+    // (`UpdateWorld_UndergroundTile`'s `:73699-73755` branch) is RUNTIME-only
+    // — the growth tick, not the pipeline. This pin is UNCHANGED. a == b
+    // stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -433,6 +437,8 @@ mod tests {
     // its gates are RUNTIME-only (the fixed-step growth tick) — no
     // executed pipeline step calls them, classic or seeded. This pin is
     // UNCHANGED. a == b stays.
+    // W4-d103 tail P9 (2026-11-21, code-only): the underground moss arm is
+    // RUNTIME-only (the growth tick). This pin is UNCHANGED. a == b stays.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

@@ -51,7 +51,7 @@ takes the WorldGen POST-passes — the hardmode/growth functions outside
 | P6 | `SmashAltar` | 48927-49109 | `ores.rs::smash_altar` (classic tiers/bands/blobs landed) | drunk tier-flip arms `:48939-48948`/`:48976-48985`/`:49008-49017`, the remix band `:49056-49067`, the anniversary strength `:49069-49071` — THIS LANE (seed arms); the wraith spawn `:49078-49105` parks (no NPC.SpawnOnPlayer port) |
 | P7 | `OreRunner` | 48831-48925 | `ores.rs::ore_runner` (shape walk landed) | the 59-above-sky stop `:48843-48846`, the velocity drift + clamp `:48915-48923`, the runtime paint-reset + SquareTileFrame `:48887-48895`, the wallType/stayInArea/onlyReplace parameters — THIS LANE |
 | P8 | `hardUpdateWorld` | 69600-69955 | `spread.rs::hard_update_world_gated` + `growth.rs::grow_crystal_shards` | **LANDED (P8 slice)** — the hardModeWorldUpdates gate `:69602`, the 60-grass chlorophyte seeding arm `:69652-69660`, the SINGLE type-9 purge pick `:69689-69700` (the C# `while(flag)` never re-arms), ChlorophyteDefense `:69456-69462` + Convert types 9/10 `:55671-55763`, the sunflower retry semantics (`continue`, not break), the walls:false Converts |
-| P9 | Moss conversion micro-passes | 72371-72430 (overground), 73699-73755 (underground) | `growth/grass.rs::grow_moss_arm` = overground ONLY | **the underground arm is missing** (no NextDouble gate, flag9 net gate, PlaceTile 184 spray) — THIS LANE |
+| P9 | Moss conversion micro-passes | 72371-72430 (overground), 73699-73755 (underground) | `growth/grass.rs::grow_moss_arm` / `grow_moss_arm_underground` | **LANDED (P9 slice)** — the underground arm (no NextDouble gate, the flag9 net gate parks, the shared `moss_arm_body` + the bare-write PlaceTile(184) spray approximation) |
 | P10 | `MossConversion` | 71457-71493 | `growth/grass.rs::moss_conversion` | landed verbatim (DW-2.9 witnesses) |
 | P11 | `CanChlorophyteGrow` | 69464-69515 | `spread.rs::can_chlorophyte_grow` | **LANDED (P8 slice)** — the remix arm (+5/×15/−4/−8) + the above-rock halving of BOTH caps and ×1.5 of BOTH boxes |
 | P12 | `DoStartInHardmode` | 1899-1903 | `micro_surface.rs::start_in_hardmode` | landed (seed-gated); rides the P2-P5 rewrite automatically |
@@ -100,7 +100,21 @@ Not this lane (runtime/event helpers, own lanes): `TryProtectingSpawnedItems`/
      approximation shape (documented at the call site).
    - 6 witnesses written NOT run; pins unchanged (runtime-only), a==b
      stays.
-6. **P9** — the underground moss arm.
+6. **P9** — the underground moss arm. → landed (this slice): the
+   `:73699-73755` branch is the overground body minus the `NextDouble`
+   gate — `grow_moss_arm_underground` calls the extracted shared
+   `moss_arm_body` (the overground `grow_moss_arm` keeps its gate and
+   delegates to the same body, behaviour frozen). The dispatcher routes
+   the moss/moss-brick kinds into the arm and falls through to the wall
+   arms (the C# does not return). The `flag9` net gate parks; the
+   `PlaceTile(184)` spray keeps the overground slice's bare-write
+   approximation (the `:59703-59721` support gate / `frameY = Next(3)*18`
+   / re-frame documented at the body). 2 witnesses written NOT run; pins
+   unchanged (runtime-only), a==b stays.
+
+**The POST-pass family is exhausted by this lane's slices** (P0 does not
+exist; P1/P10/P12/P14 landed or stay by design; P2-P9 + P11 + P13 landed
+above).
 
 ## Discipline
 
