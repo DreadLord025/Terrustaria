@@ -113,9 +113,10 @@ pub(crate) fn normalized_luck(luck: f32) -> f32 {
 /// exist. The C# sets them by the NPC **type** — 17/18/19/20/37/38/124/
 /// 107/54/160/178/229/209/208/353/22/441 for `flag`..`flag17`.
 ///
-/// The port's roster carries no Old Man (37), Truffle (160), Steampunker
-/// (178), Pirate (229) or Cyborg (209) kinds yet, so those flags stay
-/// false until the kinds land — the ladder arms keep their C# shape.
+/// W4-d120: the Truffle (160), Steampunker (178) and Cyborg (209) kinds
+/// are ported (the claim doc); the Old Man (37) and Pirate (229) ride the
+/// d34/d37 lanes — their flags light up when those kinds merge (the scan
+/// keys on `cs_id`, the vanilla type every lane keeps).
 #[derive(Clone, Copy, Default)]
 struct Flags {
     /// 17 — the Merchant (`flag`).
@@ -241,7 +242,18 @@ pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
         NpcKind::Golfer => golfer(ctx),
         NpcKind::Zoologist => zoologist(ctx),
         NpcKind::Princess => princess(ctx),
-        _ => String::new(),
+        // W4-d120 — the claimed chatter kinds (the claim doc
+        // `tools/_d120_claim.md`).
+        NpcKind::SantaClaus => santa(ctx),
+        NpcKind::Truffle => truffle(ctx, &flags),
+        // W4-d120 — the sibling lanes' kinds (OldMan 37 = d34, Pirate 229
+        // = d37, SkeletonMerchant 453 = d40): the arms key on the VANILLA
+        // type so they compile before the kinds merge and go live the
+        // moment they do (`cs_id` keeps the vanilla ids on every lane).
+        _ => match ty {
+            37 => old_man(ctx),
+            _ => String::new(),
+        },
     }
 }
 
@@ -1030,6 +1042,58 @@ fn princess(ctx: &mut ChatContext) -> String {
     }
 }
 
+/// 37 — the Old Man (`NPC.cs:94017-94037`). NO event text — the arm has
+/// no `HasSpecialEventText` call. Night OR remix answers the stat band
+/// (`statLifeMax < 300 || statDefense < 10` → the 85-88 quartet, else
+/// 89-92); the plain day the 82-84 trio. The kind rides the d34 lane;
+/// this arm keys on the vanilla type until it merges.
+fn old_man(ctx: &mut ChatContext) -> String {
+    if !ctx.day_time || ctx.remix_world {
+        let n = ctx.next(4);
+        if ctx.player_base_life_max < 300 || ctx.player_defense < 10 {
+            return crate::lang::dialog(85 + n);
+        }
+        return crate::lang::dialog(89 + n);
+    }
+    let n = ctx.next(3);
+    crate::lang::dialog(82 + n)
+}
+
+/// 142 — Santa (`NPC.cs:94279-94301`): `Next(3)` UP FRONT (`:94280`),
+/// then the event text, then the three fixed lines 224/225/226.
+fn santa(ctx: &mut ChatContext) -> String {
+    let num7 = ctx.next(3); // `:94280` — the draw precedes the event text
+    if let Some(text) = special_event_text(ctx, "Santa", 142) {
+        return text;
+    }
+    crate::lang::dialog(224 + num7)
+}
+
+/// 160 — the Truffle (`NPC.cs:94302-94341`): `Next(6)` UP FRONT
+/// (`:94304`), the event text, the Dryad/Clothier neighbour gates, then
+/// the six fixed lines 231/233/234/235/240/241 (232/236 are the
+/// neighbour lines, NOT switch arms).
+fn truffle(ctx: &mut ChatContext, f: &Flags) -> String {
+    let num8 = ctx.next(6); // `:94304` — the draw precedes every gate
+    if let Some(text) = special_event_text(ctx, "Truffle", 160) {
+        return text;
+    }
+    if f.dryad && ctx.next(6) == 0 {
+        return crate::lang::dialog(232);
+    }
+    if f.clothier && ctx.next(6) == 0 {
+        return crate::lang::dialog(236);
+    }
+    match num8 {
+        0 => crate::lang::dialog(231),
+        1 => crate::lang::dialog(233),
+        2 => crate::lang::dialog(234),
+        3 => crate::lang::dialog(235),
+        4 => crate::lang::dialog(240),
+        _ => crate::lang::dialog(241),
+    }
+}
+
 // ---- the chat dialog's minimal renderer (task wire-npc-chat) -----------
 
 /// The chat dialog's screen box — `NPCChatPanel.Draw`'s rectangle
@@ -1711,5 +1775,101 @@ mod tests {
         // the 14x14 box on the player centre; the 1-px x-shift is the
         // recorded port convention, `world_sim/items.rs`).
         assert_eq!(app.items[0].pos, glam::Vec2::new(cx + 1.0, cy));
+    }
+
+    // ---- W4-d120: the claimed kinds' arms (batch 1: 37/142/160) --------
+
+    /// `NPC.cs:94017-94037` — the Old Man: NO event text, the night/remix
+    /// stat band (`statLifeMax < 300 || statDefense < 10` → 85-88, else
+    /// 89-92), the plain day's 82-84 trio. The kind rides the d34 lane —
+    /// the arm is driven directly until it merges.
+    #[test]
+    fn the_old_man_stat_band_splits_night_from_day() {
+        init_lang();
+        let guide = npc(NpcKind::Guide); // any live shell — the arm is type-keyed
+        let npcs = [guide];
+        let mut log = Vec::new();
+        let mut rng = census(&[2], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.day_time = false; // night: the stat band
+        assert_eq!(old_man(&mut ctx), crate::lang::dialog(87), "weak band 85+2");
+        assert_eq!(log, vec![4], "one Next(4), no event roll");
+        // The strong band: life >= 300 AND defense >= 10.
+        let mut log = Vec::new();
+        let mut rng = census(&[0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.day_time = false;
+        ctx.player_base_life_max = 300;
+        ctx.player_defense = 10;
+        assert_eq!(old_man(&mut ctx), crate::lang::dialog(89), "strong band 89+0");
+        // The plain day: the trio.
+        let mut log = Vec::new();
+        let mut rng = census(&[1], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(old_man(&mut ctx), crate::lang::dialog(83), "day 82+1");
+        assert_eq!(log, vec![3]);
+        // Remix answers the night band even by day (`:94019`).
+        let mut log = Vec::new();
+        let mut rng = census(&[3], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.remix_world = true;
+        assert_eq!(old_man(&mut ctx), crate::lang::dialog(88));
+        assert_eq!(log, vec![4]);
+    }
+
+    /// `NPC.cs:94279-94301` — Santa: `Next(3)` UP FRONT (before the event
+    /// text), then the three fixed lines 224/225/226.
+    #[test]
+    fn the_santa_rolls_three_up_front() {
+        init_lang();
+        let santa = npc(NpcKind::SantaClaus);
+        let npcs = [santa];
+        let mut log = Vec::new();
+        let mut rng = census(&[1], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(
+            get_chat(&npcs[0], &mut ctx),
+            "Care to bake me some cookies?",
+            "index 1 answers dialog 225"
+        );
+        assert_eq!(log, vec![3], "the up-front draw only");
+    }
+
+    /// `NPC.cs:94302-94341` — the Truffle: `Next(6)` UP FRONT, the event
+    /// text, the Dryad/Clothier gates (each `Next(6)`), then the six fixed
+    /// lines 231/233/234/235/240/241 — 232/236 are the neighbour lines.
+    #[test]
+    fn the_truffle_rolls_six_up_front_and_gates_the_neighbours() {
+        init_lang();
+        let truffle = npc(NpcKind::Truffle);
+        let npcs = [truffle];
+        let mut log = Vec::new();
+        let mut rng = census(&[4], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(240), "arm 4");
+        assert_eq!(log, vec![6], "no neighbours — no gate draws");
+        // With a Dryad next door: the gate's Next(6) fires; a 0 answers 232.
+        let dryad = npc(NpcKind::Dryad);
+        let npcs = [npc(NpcKind::Truffle), dryad];
+        let mut log = Vec::new();
+        let mut rng = census(&[0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        assert_eq!(get_chat(&npcs[0], &mut ctx), crate::lang::dialog(232));
+        assert_eq!(log, vec![6, 6], "the up-front draw + the Dryad gate");
+        // A passed event roll short-circuits the gates but NOT the up-front
+        // draw (`:94304` precedes `HasSpecialEventText`).
+        let npcs = [npc(NpcKind::Truffle)];
+        let mut log = Vec::new();
+        let mut rng = census(&[5, 0, 0], &mut log);
+        let mut ctx = context(&npcs, &mut rng);
+        ctx.party_is_up = true;
+        let text = get_chat(&npcs[0], &mut ctx);
+        assert_eq!(
+            text,
+            crate::lang::select_dialog("TruffleSpecialText.Party", 0),
+            "the event text wins over the fixed arm 5"
+        );
+        assert_eq!(log[0], 6, "the up-front draw precedes the event roll");
+        assert_eq!(log[1], 3, "the 1/3 event roll");
     }
 }
