@@ -1086,6 +1086,30 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.BlackDragonfly` (595, `NPCID.cs:11867`) — the darting
+    /// critter (`aiStyle 114`, the shared 595-601 row `NPC.cs:16720-16738`):
+    /// 10x10, dmg 0, def 0, 5 HP, kb 1 (the head default — the row writes
+    /// none), npcSlots 0.25, noGravity, catchItem 4334. WIRED (W4-d33):
+    /// the axis' 114 arm rides `npc_ai_style114::style114_step`. The
+    /// bestiary credit folds onto RedDragonfly 599 (Hide=true,
+    /// `ContentSamples.cs:1043`); debuff-immune to Confused 31
+    /// (`NPCID.cs:9473-9479`).
+    BlackDragonfly,
+    /// `NPCID.BlueDragonfly` (596, `NPCID.cs:11869`) — the 595 row,
+    /// catchItem 4335; the same 599 credit fold + 31 immunity.
+    BlueDragonfly,
+    /// `NPCID.GreenDragonfly` (597, `NPCID.cs:11871`) — the 595 row,
+    /// catchItem 4336; the same 599 credit fold + 31 immunity.
+    GreenDragonfly,
+    /// `NPCID.OrangeDragonfly` (598, `NPCID.cs:11873`) — the 595 row,
+    /// catchItem 4337; the same 599 credit fold + 31 immunity.
+    OrangeDragonfly,
+    /// `NPCID.RedDragonfly` (599, `NPCID.cs:11875`) — the 595 row,
+    /// catchItem 4338. The family's bestiary CREDIT: 595/596/597/598/600
+    /// are Hide=true (`NPCID.cs:510-543`) and fold here
+    /// (`ContentSamples.cs:1043-1047`); 599's own entry is the visible
+    /// "Dragonfly" card (`NPCs.json:637`).
+    RedDragonfly,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1725,6 +1749,14 @@ pub struct Npc {
     /// tick (the Plantera hook-anchor carrier precedent); outside the
     /// sim it stays empty.
     pub twin_time_lefts: Vec<i32>,
+    /// The aiStyle-114 dragonflies' threat-scan pool (W4-d33): every
+    /// `Main.npc[k]` slot as `AI_114_Dragonflies`' scan sees it
+    /// (`NPC.cs:47817-47825` — active, damage > 0, !friendly, the hitbox).
+    /// `Npc::update_rng` cannot see its siblings, so the sim's pre-pass
+    /// stamps this in slot order before each tick (the `twin_time_lefts`
+    /// precedent); outside the sim it stays empty (the solo path scans
+    /// no NPCs, only the session player — the module's `neighbors`).
+    pub dragonfly_neighbors: Vec<crate::npc_ai_style114::DragonflyNeighbor>,
     /// The NPC's slot index in the sim's NPC vec — the C#'s `NPC.whoAmI`
     /// (`NPC.cs:6355`). The port's vec is compacted (the dead are culled
     /// every tick), so the index is the sim's current one; the sim writes it
@@ -3105,6 +3137,7 @@ impl Npc {
             wants_fishron_bolts: Vec::new(),
             wind_speed_current: 0.0,
             twin_time_lefts: Vec::new(),
+            dragonfly_neighbors: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
             wants_event_stop: false,
@@ -3547,6 +3580,14 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // The dragonflies (W4-d33): the shared 595-601 row writes NO
+            // knockBackResist (`NPC.cs:16720-16738`), so the head's 1f
+            // stands (`NPC.cs:8533` — the ForceBubble / W4-e26 precedent).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => 1.0,
             _ => 0.4,
         }
     }
@@ -3927,6 +3968,12 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // The dragonflies (W4-d33): defense 0 each (`NPC.cs:16727`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4299,6 +4346,13 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // The dragonflies (W4-d33): the row writes no value — the
+            // head's 0f stands (`NPC.cs:8544`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4948,6 +5002,16 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
+            // `else if (this.aiStyle == 114) { this.AI_114_Dragonflies(); }`
+            // (`NPC.cs:41076-41079`; the machine `:47716-47886`) — the
+            // dragonfly family 595-601, the style's only users. W4-d33:
+            // the faithful `npc_ai_style114::style114_step` claims the
+            // arm; the threat scan's NPC pool reads the sim-stamped
+            // `dragonfly_neighbors` (the `Npc::update_rng` signature
+            // cannot see the siblings — the twin_time_lefts convention).
+            // The noGravity + tile-collide integration tail rides
+            // `integrate_flyer_collision` (the Goldfish/ladybug shape).
+            114 => self.ai_114_dragonfly(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5690,6 +5754,51 @@ impl Npc {
         }
     }
 
+    /// W4-d33 — the aiStyle-114 adapter: the dragonflies (595-601) ride
+    /// the faithful `npc_ai_style114::style114_step` (`AI_114_Dragonflies`,
+    /// `NPC.cs:47716-47886`). The session player is the one
+    /// `DragonflyPlayer` slot (the port is single-player, the
+    /// `npc_target::session_candidate` convention); the threat scan's NPC
+    /// pool reads the sim-stamped `dragonfly_neighbors` (the
+    /// `twin_time_lefts` carrier precedent — empty on the solo path);
+    /// `net_mode` 0 (the host fold, the style-112/113 adapters' precedent)
+    /// and `world.world_surface` the DOUBLE ground-search floor. The arm
+    /// draws `Main.rand` on the caller's `UpdateNPCs` stream (the launch,
+    /// the re-dart, the re-perch — the module's witnesses pin the order).
+    ///
+    /// The dragonflies are noGravity (`NPC.cs:16732`) but tile-collide
+    /// (the row writes no noTileCollide), so the integration tail is the
+    /// no-gravity `UpdateCollision` (`integrate_flyer_collision`, the
+    /// Goldfish / W4-e26 ladybug convention) — NOT the raw noTileCollide
+    /// add. The wet flag refresh rides the same `is_wet` seam the ladybug
+    /// adapter uses (the C#'s `NPC.UpdateNPC` CheckFacetedLiquid write).
+    fn ai_114_dragonfly(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let p = crate::npc_target::session_candidate(player);
+        let players = [crate::npc_ai_style114::DragonflyPlayer {
+            active: p.active,
+            x: p.x,
+            y: p.y,
+            width: p.width,
+            height: p.height,
+        }];
+        // The pool is cloned out of `self` first — the env borrows it
+        // while the machine takes `self` mutably (the Twins' carrier
+        // convention).
+        let neighbors = self.dragonfly_neighbors.clone();
+        let mut env = crate::npc_ai_style114::Style114Env {
+            world,
+            rng,
+            neighbors: &neighbors,
+            players: &players,
+            net_mode: 0,
+            world_surface: world.world_surface,
+        };
+        crate::npc_ai_style114::style114_step(self, &mut env);
+        self.integrate_flyer_collision(world);
+    }
+
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
     /// for every style the axis has not claimed yet. D-3 migrates one family
     /// at a time into the axis above; this match shrinks as they land.
@@ -6305,6 +6414,15 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // The dragonflies (W4-d33): claimed by the aiStyle-114 axis
+            // above — these arms keep the kind match exhaustive and route
+            // direct-kind callers to the same machine (the fishron /
+            // W4-e26 ladybug precedent).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => self.ai_114_dragonfly(world, player, rng),
         }
     }
 
@@ -6667,6 +6785,24 @@ impl Npc {
                 if self.frame >= 3 {
                     self.frame = 0;
                 }
+            }
+            // The dragonflies' `case 595..601` (`NPC.cs:72722-72738`):
+            // spriteDirection = direction; the counter wraps at
+            // num190 * npcFrameCount = 12, the row is (int)counter / 3
+            // over the 4-row strip (`Main.npcFrameCount[595..601]` = 4,
+            // `Main.cs:67141-67142`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => {
+                self.sprite_dir = self.facing;
+                let (row, counter) = crate::npc_ai_style114::dragonfly_find_frame(
+                    self.frame,
+                    self.frame_counter,
+                );
+                self.frame = row;
+                self.frame_counter = counter;
             }
             // The ForceBubble has NO `FindFrame` case (`NPC.cs:66684-
             // 77370` has no `case 384`; the post-switch tail is aiStyle-39
@@ -18609,6 +18745,13 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
+            // The dragonflies (W4-d33): the vanilla ids — unused by every
+            // arm above (the G6 key stays injective).
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
             // (`to_u16`'s 223-228 band) — the vanilla 87-92 collide with the
             // Scutlix/saucer arms above, so the hash rides the port band
@@ -23687,7 +23830,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23966,6 +24109,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // The dragonflies (W4-d33).
+        NpcKind::BlackDragonfly,
+        NpcKind::BlueDragonfly,
+        NpcKind::GreenDragonfly,
+        NpcKind::OrangeDragonfly,
+        NpcKind::RedDragonfly,
     ];
 
     #[test]
@@ -27577,8 +27726,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            275,
+            "every decodable kind resolves (the wire roster's size - 275 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d33's five dragonflies, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31220,6 +31369,13 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody2, 6),
         (NpcKind::WyvernBody3, 6),
         (NpcKind::WyvernTail, 6),
+        // The dragonflies (W4-d33): aiStyle 114 (`NPC.cs:16725`, the
+        // shared 595-601 row).
+        (NpcKind::BlackDragonfly, 114),
+        (NpcKind::BlueDragonfly, 114),
+        (NpcKind::GreenDragonfly, 114),
+        (NpcKind::OrangeDragonfly, 114),
+        (NpcKind::RedDragonfly, 114),
     ];
 
     #[test]
@@ -33650,7 +33806,9 @@ mod w4_d33_axis_census_tests {
     /// in the roster.
     #[test]
     fn w4_d33_the_missing_styles_have_no_kind() {
-        for style in [98u8, 99, 100, 101, 102, 103, 104, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 124, 125, 126, 127] {
+        // 114 left the list with the dragonfly roster (W4-d33's wiring:
+        // the five 595-599 kinds claim the style; 600/601 follow).
+        for style in [98u8, 99, 100, 101, 102, 103, 104, 111, 112, 113, 115, 116, 117, 118, 119, 120, 121, 122, 124, 125, 126, 127] {
             assert!(
                 !ALL_KINDS.iter().any(|k| k.ai_style() == style),
                 "no kind claims aiStyle {style} until the roster wave"
@@ -33681,5 +33839,186 @@ mod w4_d33_axis_census_tests {
         }
         assert_eq!(cell.kind, NpcKind::StardustCellBig, "the 300-tick Transform(405)");
         assert_eq!(rng.peek(), UnifiedRandom::new(95).peek(), "the 95 arm is draw-free");
+    }
+}
+
+#[cfg(test)]
+mod w4_d33_dragonfly_tests {
+    //! W4-d33 — the dragonfly roster wiring (595-599). Every row pins
+    //! verbatim to the C# (`NPC.cs:16720-16738`, the shared 595-601
+    //! `SetDefaults` row). WRITTEN, NOT RUN (code-only mode); the W4-e26
+    //! luck-critter stat-pin precedent.
+    use super::*;
+    use super::tests::ground;
+
+    /// The five kinds' `SetDefaults` row through the port's tables.
+    #[test]
+    fn w4_d33_the_dragonfly_setdefaults_rows_match_the_csharp() {
+        // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BlackDragonfly, 595u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::BlueDragonfly, 596, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::GreenDragonfly, 597, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::OrangeDragonfly, 598, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+            (NpcKind::RedDragonfly, 599, 114, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb (head 1f)");
+            assert_eq!(shell.value(), value, "{kind:?} value (head 0f)");
+            assert_eq!(shell.scale, 1.0, "{kind:?} scale (no row)");
+            assert_eq!(shell.alpha, 0, "{kind:?} alpha (no row)");
+            assert!(kind.no_gravity(), "{kind:?} noGravity (`:16732`)");
+            assert!(!shell.behind_tiles, "{kind:?} no behindTiles row");
+        }
+        // The sounds: NPCHit1 / NPCDeath1 each (`:16729-16730`).
+        for kind in [
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+        ] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+    }
+
+    /// The protocol ids keep their vanilla slots (free in the port-local
+    /// space) and round-trip; the render key stays injective.
+    #[test]
+    fn w4_d33_the_dragonfly_protocol_ids_round_trip() {
+        for (kind, id) in [
+            (NpcKind::BlackDragonfly, 595u16),
+            (NpcKind::BlueDragonfly, 596),
+            (NpcKind::GreenDragonfly, 597),
+            (NpcKind::OrangeDragonfly, 598),
+            (NpcKind::RedDragonfly, 599),
+        ] {
+            assert_eq!(kind.to_u16(), id, "{kind:?} proto");
+            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decode");
+            assert_eq!(
+                crate::npc::kind_from_net_id(id as i32).map(|(k, _)| k),
+                Some(kind),
+                "{kind:?} net-id resolution (the catch/release chain)"
+            );
+            assert_eq!(
+                crate::render::entities::texture_net_id(kind),
+                id,
+                "{kind:?} draw sheet is its own NPC_<id>"
+            );
+        }
+    }
+
+    /// The catch/convert chain: the baits 4334-4338 (`NPC.cs:16737`'s
+    /// `type - 595 + 4334`) and the makeNPC release items resolve back
+    /// to the kinds; the release plan keeps the type (no variant roll).
+    #[test]
+    fn w4_d33_the_dragonfly_catch_and_release_chain_resolves() {
+        for ty in 595..=599 {
+            assert_eq!(crate::bug_net::catch_item(ty, 0.0), ty - 595 + 4334, "{ty}");
+            assert!(crate::bug_net::npc_catchable(ty), "{ty} catchable");
+            assert_eq!(crate::registry::make_npc((ty - 595 + 4334) as u16), ty as u16);
+        }
+        let mut rng = UnifiedRandom::new(7);
+        for ty in 595..=599 {
+            let plan = crate::bug_net::release_plan(ty, 0, 1, &mut rng);
+            assert_eq!(plan.spawn_type, ty, "{ty} release keeps its type");
+        }
+        // The wild-critter friendly window: the catchable arm
+        // (`NPC.cs:17851-17855`) spawns friendly with 90 ticks.
+        let n = Npc::new(NpcKind::BlackDragonfly, 0.0, 0.0, 1, 0.0);
+        assert!(n.friendly, "the catchable spawn is friendly");
+        assert_eq!(n.catchable_immunity, 90);
+        assert_eq!(n.release_owner, 255);
+    }
+
+    /// The bestiary: the four Hide=true colours fold their kill credit
+    /// onto the visible Red 599 "Dragonfly" card
+    /// (`ContentSamples.cs:1043-1047`); each keeps its own net id for
+    /// the catch/release chain.
+    #[test]
+    fn w4_d33_the_dragonfly_bestiary_credits_fold_onto_599() {
+        for kind in [
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.credit_id, "RedDragonfly", "{kind:?} credit");
+            assert_eq!(e.net_id, 599, "{kind:?} the visible card");
+            assert_eq!(e.name, "Dragonfly", "{kind:?} display name");
+            assert!(!e.quick_unlock, "{kind:?} rides the kill ladder");
+        }
+        // The visible card's sheet slot exists (the 599 strip).
+        assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&599));
+        // The hidden colours take NO grid sheet slot of their own.
+        for id in [595u16, 596, 597, 598] {
+            assert!(!crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
+        }
+    }
+
+    /// The debuff-immunity rows: all five carry the Confused-31
+    /// immunity (`NPCID.cs:9473-9507`), nothing else.
+    #[test]
+    fn w4_d33_the_dragonflies_are_confused_immune_only() {
+        for kind in [
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+        ] {
+            let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(buffs.buff_immune[31], "{kind:?} Confused-immune");
+            assert!(!buffs.buff_immune[20], "{kind:?} not poison-immune");
+            assert!(!buffs.buff_immune[24], "{kind:?} not on-fire-immune");
+        }
+    }
+
+    /// The wired axis: a full `update` tick steps each kind without
+    /// panicking, stays inside the 4-row strip, and the first tick
+    /// latches the centre anchor + the launch (`NPC.cs:47718-47728`).
+    #[test]
+    fn w4_d33_the_dragonflies_ride_the_wired_114_axis() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(595);
+        for kind in [
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            // The session player is far (>150 px) — no threat flee on
+            // the first tick, so the launch + dart run clean. The scan
+            // cooldown is armed (the module's `fly()` convention) so the
+            // first tick's re-perch roll cannot move the anchor.
+            player.x = 60.0 * TILE_PX;
+            n.local_ai[1] = 5.0;
+            n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+            assert_eq!(n.local_ai[0], 1.0, "{kind:?} the first-tick latch");
+            assert_eq!(n.ai[0], 1.0, "{kind:?} the dart state");
+            assert_eq!(n.ai[2], 20.0 * TILE_PX + 5.0, "{kind:?} anchor X");
+            assert_eq!(n.ai[3], 10.0 * TILE_PX + 5.0, "{kind:?} anchor Y");
+            assert!(n.net_update, "{kind:?} the launch nets");
+            for _ in 0..120 {
+                n.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+                assert!(n.frame < 4, "{kind:?} row {} of 4", n.frame);
+            }
+        }
     }
 }

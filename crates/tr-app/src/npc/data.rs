@@ -586,6 +586,15 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // The dragonflies (W4-d33): the vanilla ids 595-599 are free
+            // protocol slots (the to_u16 scan: no arm above rides them),
+            // so they keep their vanilla ids — the W4-e26 ladybug
+            // precedent. The 600/601 pair lands with its own commit.
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
         }
     }
 
@@ -916,6 +925,13 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // The dragonflies (W4-d33): the vanilla ids kept (`to_u16`
+            // above).
+            595 => NpcKind::BlackDragonfly,
+            596 => NpcKind::BlueDragonfly,
+            597 => NpcKind::GreenDragonfly,
+            598 => NpcKind::OrangeDragonfly,
+            599 => NpcKind::RedDragonfly,
             _ => return None,
         })
     }
@@ -1796,6 +1812,13 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // The dragonflies (W4-d33): NPCHit1 each (`NPC.cs:16729`,
+            // the shared 595-601 row).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2100,6 +2123,12 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // The dragonflies (W4-d33): NPCDeath1 each (`NPC.cs:16730`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2200,6 +2229,15 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // The dragonflies (W4-d33): the `SetDefaults` noGravity row
+            // (`NPC.cs:16732`). kb 1 (the head default — the row writes
+            // none), so a strike can push them; the aiStyle-114 arm owns
+            // the flight.
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => true,
             _ => false,
         }
     }
@@ -2451,6 +2489,14 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // The dragonflies (W4-d33) — aiStyle 114 (`NPC.cs:16725`, the
+            // shared 595-601 row): `AI_114_Dragonflies`
+            // (`NPC.cs:47716-47886`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => 114,
         }
     }
 
@@ -2981,6 +3027,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // The dragonflies (W4-d33): 10x10 each (`NPC.cs:16723-16724`,
+            // the shared 595-601 row).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => (10.0, 10.0),
         }
     }
 
@@ -3083,6 +3136,18 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // The dragonflies (W4-d33): the vanilla `NPC.type` ids — the
+            // bug-net catch tables (`bug_net::catch_item`'s 595-601 row),
+            // the AI arms' type gates and the statue rosters read them
+            // (`NPCID.cs:11867-11875`). The four Hide=true colours fold
+            // their bestiary CREDIT onto 599 (`entry_for_npc`), but each
+            // keeps its own type here — the e26 ladybug / c8 crawler
+            // precedent.
+            NpcKind::BlackDragonfly => 595,
+            NpcKind::BlueDragonfly => 596,
+            NpcKind::GreenDragonfly => 597,
+            NpcKind::OrangeDragonfly => 598,
+            NpcKind::RedDragonfly => 599,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3622,6 +3687,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // The dragonflies (W4-d33): lifeMax 5 each (`NPC.cs:16728`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => 5,
         }
     }
 
@@ -3986,6 +4057,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // The dragonflies (W4-d33): damage 0 each (`NPC.cs:16726`).
+            NpcKind::BlackDragonfly
+            | NpcKind::BlueDragonfly
+            | NpcKind::GreenDragonfly
+            | NpcKind::OrangeDragonfly
+            | NpcKind::RedDragonfly => 0,
         }
     }
 }

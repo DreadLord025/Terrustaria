@@ -4268,6 +4268,39 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 crate::npc_ai_style30::twin_time_left_scan(&app.npcs, i, is_twin);
         }
     }
+    // The aiStyle-114 dragonflies' threat-scan pre-pass (W4-d33,
+    // `NPC.cs:47817-47825`): the arm scans every `Main.npc[k]` slot
+    // (active, damage > 0, !friendly) inside its own AI tick; the port
+    // stamps the pool once per tick in slot order (the twin_time_lefts
+    // carrier precedent). The scan has NO self skip — the dragonfly's
+    // own damage 0 excludes it, exactly like the C#. The snapshot is
+    // tick-start state (the carrier one-tick-lag family; RNG-free).
+    {
+        let is_dragonfly = |n: &Npc| n.kind.ai_style() == 114 && n.hp > 0;
+        if app.npcs.iter().any(is_dragonfly) {
+            let pool: Vec<crate::npc_ai_style114::DragonflyNeighbor> = app
+                .npcs
+                .iter()
+                .map(|m| {
+                    let (mw, mh) = m.size();
+                    crate::npc_ai_style114::DragonflyNeighbor {
+                        active: m.hp > 0,
+                        damage: m.damage_override.unwrap_or(m.kind.contact_damage()),
+                        friendly: m.friendly,
+                        x: m.x,
+                        y: m.y,
+                        width: mw as i32,
+                        height: mh as i32,
+                    }
+                })
+                .collect();
+            for n in app.npcs.iter_mut() {
+                if is_dragonfly(n) {
+                    n.dragonfly_neighbors = pool.clone();
+                }
+            }
+        }
+    }
     let player = &mut app.player;
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
     // DungeonSpirit's arm (`npc_ai_style56::style56_step`) needs the
@@ -18274,5 +18307,82 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+}
+
+/// W4-d33 — the dragonfly threat-scan pre-pass + the wired aiStyle-114
+/// axis through the LIVE sim (`NPC.cs:47817-47851`). The pre-pass stamps
+/// every dragonfly's `dragonfly_neighbors` pool in slot order; a nearby
+/// hostile NPC kicks the velocity away and re-anchors at Center+kick*10
+/// (`ai[1] = -10`, `ai[0] = 1`). WRITTEN, NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d33_dragonfly_sim_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::player::Player;
+
+    fn air_world() -> World {
+        let mut w = World::new("t".into(), 300, 200);
+        w.world_surface = 120.0;
+        w.compute_column_surface();
+        w
+    }
+
+    /// The pre-pass feeds the sibling pool; the threat scan flees the
+    /// hostile neighbour (the module's `w4_d33_s114_the_threat_flee`
+    /// witness, end-to-end through the sim).
+    #[test]
+    fn w4_d33_the_sim_feeds_the_dragonfly_threat_pool() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = air_world();
+        let mut player = Player::spawn(&app.world);
+        // The player far away (>150 px) — only the hostile NPC threatens.
+        player.x = 250.0 * TILE_PX;
+        player.y = 10.0 * TILE_PX;
+        app.player = Some(player);
+        let mut fly = Npc::new(NpcKind::BlackDragonfly, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        fly.hp = fly.max_hp;
+        // Skip the first-tick launch + arm the scan for this tick.
+        fly.local_ai[0] = 1.0;
+        fly.local_ai[1] = 0.0;
+        fly.ai[0] = 1.0;
+        fly.ai[2] = 20.0 * TILE_PX + 5.0;
+        fly.ai[3] = 10.0 * TILE_PX + 5.0;
+        // A hostile zombie 40 px to the right — inside the 100-px scan.
+        let mut threat = Npc::new(NpcKind::Zombie, 20.0 * TILE_PX + 40.0, 10.0 * TILE_PX, 1, 0.0);
+        threat.hp = threat.max_hp;
+        threat.friendly = false;
+        app.npcs.push(fly);
+        app.npcs.push(threat);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let fly = &app.npcs[0];
+        assert_eq!(fly.dragonfly_neighbors.len(), 2, "the pool carries both slots");
+        assert!(fly.dragonfly_neighbors[1].damage > 0, "the zombie is a threat");
+        assert!(!fly.dragonfly_neighbors[1].friendly);
+        assert_eq!(fly.ai[1], -10.0, "the flee kick (`:47846`)");
+        assert_eq!(fly.ai[0], 1.0, "the dart re-arm");
+        assert!(fly.vx < 0.0, "flees the right-side zombie");
+        assert!(fly.ai[2] < 20.0 * TILE_PX + 5.0, "the anchor moved left");
+        assert!(fly.net_update, "the flee nets");
+    }
+
+    /// The kill credit: a Black dragonfly death registers the visible
+    /// Red 599 card's credit (`ContentSamples.cs:1043`'s fold through
+    /// `entry_for_npc` at the death pass).
+    #[test]
+    fn w4_d33_the_dragonfly_death_credits_the_red_card() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = air_world();
+        app.player = Some(Player::spawn(&app.world));
+        let mut fly = Npc::new(NpcKind::BlueDragonfly, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        fly.hp = 0;
+        app.npcs.push(fly);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.bestiary.kills.get_kill_count("RedDragonfly"),
+            1,
+            "the Blue kill credits the visible Dragonfly card"
+        );
+        assert_eq!(app.bestiary.kills.get_kill_count("BlueDragonfly"), 0);
     }
 }

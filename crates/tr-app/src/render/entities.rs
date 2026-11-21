@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(DRAGONFLY_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1113,6 +1114,14 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-d33 — the dragonflies' bestiary credits fold onto the Red
+        // 599 card (`entry_for_npc`), but their DRAW sheets are their own
+        // `TextureAssets.Npc[type]` (595-598) — the fishron-hazard /
+        // wyvern-segment precedent.
+        NpcKind::BlackDragonfly => 595,
+        NpcKind::BlueDragonfly => 596,
+        NpcKind::GreenDragonfly => 597,
+        NpcKind::OrangeDragonfly => 598,
         _ => kind.net_id() as u16,
     }
 }
@@ -1246,6 +1255,14 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// W4-d33 — the dragonfly sheets: one sheet per colour, exactly as the
+/// vanilla's `TextureAssets.Npc[type]` — the Black (595), Blue (596),
+/// Green (597), Orange (598) and Red (599) Dragonflies each draw their
+/// own `NPC_<id>` art (the Yellow 600 / Gold 601 land with their commit).
+/// Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
+/// [`NpcAssets::npc_sheet`].
+pub(crate) const DRAGONFLY_SHEETS: &[u32] = &[595, 596, 597, 598, 599];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3169,6 +3186,27 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d33 — the dragonflies draw their own sheets
+            // (`DRAGONFLY_SHEETS`) at `SetFrameSize`'s integer-division
+            // row height over `Main.npcFrameCount[type]` = 4
+            // (`Main.cs:67141-67142`). Scale stays 1 (the row writes no
+            // scale) and none rotates (the aiStyle-114 arm writes no
+            // rotation) — the generic centred anchor.
+            NpcKind::BlackDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(595), npc_rows(595), n, w, h)
+            }
+            NpcKind::BlueDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(596), npc_rows(596), n, w, h)
+            }
+            NpcKind::GreenDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(597), npc_rows(597), n, w, h)
+            }
+            NpcKind::OrangeDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(598), npc_rows(598), n, w, h)
+            }
+            NpcKind::RedDragonfly => {
+                pumpkin_moon_draw(assets.npc_sheet(599), npc_rows(599), n, w, h)
             }
         };
         let Some(tex) = tex else {

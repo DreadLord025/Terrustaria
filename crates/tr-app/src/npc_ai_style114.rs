@@ -9,8 +9,11 @@
 //! Red/Yellow/Gold Dragonflies 595-601 (`ID/NPCID.cs:11867-11879`; the
 //! shared `SetDefaults` row `NPC.cs:16720-16738`). The census of
 //! `this.aiStyle = 114;` returns exactly that one row (`:16725`) — no
-//! projectile-space user. The port's roster has no dragonfly kind —
-//! the module lands UNWIRED (the `npc_ai_style73.rs` precedent).
+//! projectile-space user. WIRED by W4-d33 (the 595-599 kinds + the
+//! axis' 114 arm; the Yellow 600 / Gold 601 land with their commit):
+//! `Npc::ai_114_dragonfly` feeds the session player + the sim-stamped
+//! `dragonfly_neighbors` pool, the integration tail is the no-gravity
+//! `integrate_flyer_collision` (the row is noGravity but tile-collide).
 //!
 //! ## The machine
 //!
@@ -65,7 +68,7 @@
 //! wraps at `frameCount * 3` (12), the row is `(int)counter / 3` over
 //! the 4-row sheet (`Main.npcFrameCount[595..601] = 4`).
 //! [`dragonfly_find_frame`] ports the counter pair.
-#![allow(dead_code)] // wiring deferred — the kind + dispatch arm land with the roster wave
+#![allow(dead_code)] // WIRED by W4-d33 (axis 114 → style114_step); the defaults row + witnesses stay as the audit cross-check
 
 use crate::bow_launch::safe_normalize;
 use crate::npc::Npc;

@@ -1583,6 +1583,23 @@ fn portrait_data(
                 .unwrap_or(46.0);
             (sheet_i, h, 22.0, h, white)
         }
+        // W4-d33 — the dragonfly family's portrait: the visible Red 599
+        // card's sheet row height over `Main.npcFrameCount[599]` = 4
+        // (`Main.cs:67141`), the frame width the sheet's own — the
+        // small-kinds rows' shape. The four Hide=true colours never
+        // reach the grid through their own cards (the catalog folds
+        // them onto 599); the arms keep the match exhaustive at the
+        // shared 10x10 box (the wyvern-segment precedent).
+        (NpcKind::RedDragonfly, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
+        (NpcKind::BlackDragonfly, _)
+        | (NpcKind::BlueDragonfly, _)
+        | (NpcKind::GreenDragonfly, _)
+        | (NpcKind::OrangeDragonfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
         // S1-D-3z — the holiday zombies' portrait rests the same 18x40
         // `SetDefaults` box (`NPC.cs:13035-13036`/`:13206-13207`).
         (NpcKind::ZombieDoctor

@@ -3566,6 +3566,17 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // The dragonflies (W4-d33): the noGravity flyers' net seed rides
+        // the hover ctor (the net state overwrites the position below;
+        // the aiStyle-114 machine takes over on the first tick).
+        crate::npc::NpcKind::BlackDragonfly
+        | crate::npc::NpcKind::BlueDragonfly
+        | crate::npc::NpcKind::GreenDragonfly
+        | crate::npc::NpcKind::OrangeDragonfly
+        | crate::npc::NpcKind::RedDragonfly => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

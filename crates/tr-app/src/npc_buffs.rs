@@ -484,6 +484,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // The dragonflies (W4-d33): all seven share the
+        // `SpecificallyImmuneTo = [31]` (Confused) rows
+        // (`NPCID.cs:9473-9521` — 595 through 601 each carry one; the
+        // c8 crawlers' same-band precedent).
+        NpcKind::BlackDragonfly
+        | NpcKind::BlueDragonfly
+        | NpcKind::GreenDragonfly
+        | NpcKind::OrangeDragonfly
+        | NpcKind::RedDragonfly => &[31],
     }
 }
 
