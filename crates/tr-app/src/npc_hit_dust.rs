@@ -362,6 +362,20 @@
 //! - 86196 — 688 (`:86190-86197`): ×20 dust 45.
 //! - 86223 — the scorpions 366/367 (`:86217-86224`): ×20 dust 203.
 //! - 86250 — the ducks 362-365 (`:86244-86251`): ×20 dust 5.
+//! Batch 26 (the bird/holiday/antlion live arms):
+//! - 86277 — the seagulls 602/603 (`:86271-86278`): ×20 dust 5.
+//! - 86297 — the grebes 608/609 (`:86291-86298`): ×20 dust 5.
+//! - 86318 — the Nutcrackers 348/349 (`:86312-86319`): ×20 dust 5.
+//! - 86338 — Krampus 351 (`:86332-86339`): ×20 dust 5.
+//! - 86358 — the Elf Archer 350 (`:86352-86359`): ×20 dust 5.
+//! - 86377 — 47/57/58/464/465 (`:86371-86378`): ×20 dust 5.
+//! - 86415 — 173/174/181/182/268 (`:86409-86416`): ×100 dust 5,
+//!   this.alpha.
+//! - 86510 — 157 (`:86504-86511`): ×100 dust 5.
+//! - 86558 — the antlions 69/581/580/508/509 (`:86545-86559`): ×100
+//!   dust 250.
+//! - 86564 — the Larvae Antlion 582 (`:86549-86552`): ×30 dust 250
+//!   (the num513 override).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1696,6 +1710,34 @@ pub fn replay_hit_dust(
         366 | 367 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
                 live_dust(s, 203, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86271-86378` — the ×20 dust-5 groups: the seagulls, grebes,
+        // Nutcrackers, Krampus, Elf Archer, the corruption critters
+        // (47/57/58/464/465).
+        602 | 603 | 608 | 609 | 348 | 349 | 351 | 350 | 47 | 57 | 58 | 464 | 465 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86409-86416` — the spectral group: ×100 dust 5, this.alpha.
+        173 | 174 | 181 | 182 | 268 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, s.alpha, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86504-86511` — 157: ×100 dust 5.
+        157 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86545-86559` — the antlions: dust 250; the Larvae (582)
+        // overrides the live multiplier to 30 (`:86549-86552`).
+        69 | 581 | 580 | 508 | 509 | 582 => {
+            let mult = if s.npc_type == 582 { 30.0 } else { 100.0 };
+            for _ in 0..hit_count(s.dmg, s.life_max, mult) {
+                live_dust(s, 250, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -3282,6 +3324,38 @@ mod tests {
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 5, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 26 — the antlion multiplier override (`NPC.cs:86549-
+    /// 86552`): 582 rides ×30, the rest ×100; the spectral group passes
+    /// this.alpha.
+    #[test]
+    fn w4_g62_the_antlion_override_and_spectral_alpha() {
+        let world = air();
+        let ctx = ctx();
+        for (t, want) in [(69, 10u32), (582, 3)] {
+            let s = snap(t, 100, 100, 10.0);
+            let mut r = UnifiedRandom::new(223);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == 250), "type {t}");
+        }
+        let mut s = snap(173, 100, 100, 5.0);
+        s.alpha = 77;
+        let mut r = UnifiedRandom::new(223);
+        let mut p = DustPool::new();
+        replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+        assert!(p.slots().iter().filter(|d| d.active).all(|d| d.alpha == 77 && d.dust_type == 5));
+        // The bird/holiday ×20 rows.
+        for t in [602, 608, 348, 351, 350, 47, 464] {
+            let s2 = snap(t, 100, 100, 25.0);
+            let mut r2 = UnifiedRandom::new(223);
+            let mut p2 = DustPool::new();
+            replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
+            assert_eq!(p2.slots().iter().filter(|d| d.active).count(), 5, "type {t}");
         }
     }
 }
