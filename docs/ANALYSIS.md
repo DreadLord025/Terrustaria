@@ -39399,6 +39399,11 @@ Deviations (recorded):
 * **Drop box**: the port's universal 14×14 `ItemDrop` centred on the death
   centre stands in for the per-texture `WorldItem` box (the bug-net catch
   deviation).
+* **Death-centre timing**: the pool's death hook reads the slot AFTER the
+  sub-step's dead-tick integrate (the C# `Kill()` captures `base.Center`
+  mid-AI, before `UpdatePosition`); the refund centre therefore carries the
+  dead tick's move (the beach ball's +0.1 dry-gravity Y, witness-pinned) —
+  the pool-wide hook timing deviation, same seam as every other Kill arm.
 
 **The chain placement preview — geometry landed, EMIT deferred (g82b).**
 `is_coil`/`coil_chain_sheets`/`coil_chain_segments`/`draw_coil_chain`
