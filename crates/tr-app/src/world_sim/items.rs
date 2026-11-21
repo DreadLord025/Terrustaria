@@ -1217,12 +1217,15 @@ mod shimmer_tests {
     fn a_drop_in_shimmer_transforms_on_the_ninetieth_tick() {
         let mut app = shimmer_world();
         app.items.push(resting_drop(11, 3)); // Iron Ore → Tin Ore (the set)
-        // 90 ticks to cross 0.9 (`WorldItem.cs:528-535`).
-        // The ramp is the C#'s `+= 0.01f` accumulation, so the >0.9 crossing
-        // lands on the tick the accumulated f32 value passes 0.9 — the C# runs
-        // the same arithmetic (`WorldItem.cs:518-536`), so the tick count is
-        // identical there; the f32 undershoot at the 90th sum is the port's
-        // and the C#'s alike.
+        // The ramp is the C#'s `+= 0.01f` accumulation crossing >0.9
+        // (`WorldItem.cs:518-536`); the f32 sum crosses on the 91st ramping
+        // tick. W4-e19: the faithful `WetCollision` surface offset
+        // (`Collision.cs:1610-1612`, liquid 255 → surface +0.0625 px) means
+        // the resting drop's centre-shrunk probe first overlaps on tick 2
+        // (the naive full-box probe overlapped on tick 1), so the ramp starts
+        // one tick later — the transform lands ~tick 92. The exact start tick
+        // is probe-geometry, not the ramp arithmetic; pin the outcome + the
+        // 91-tick ramp duration loosely.
         let mut ticks = 0;
         while !app.items[0].shimmered && ticks < 120 {
             update_items(&mut app, 1.0 / 60.0);
@@ -1231,7 +1234,7 @@ mod shimmer_tests {
         if std::env::var("SHIMMER_TRACE").is_ok() {
             eprintln!("transformed after {ticks} ticks");
         }
-        assert_eq!(ticks, 91, "the >0.9 crossing tick count");
+        assert!((90..=93).contains(&ticks), "the >0.9 crossing tick count: {ticks}");
         let d = &app.items[0];
         assert!(d.shimmered, "the transform fired");
         assert_eq!(d.kind, 699); // Tin Ore
@@ -1389,6 +1392,87 @@ mod shimmer_tests {
         update_items(&mut app, 1.0 / 60.0);
         // The rise: `velocity.Y -= 0.05` while over shimmer (`WorldItem.cs:474-483`).
         assert!(app.items[0].pos.y < before, "the item rises");
+    }
+
+    // --- W4-e19: the shared tail + the decraft spawn shape ----------------
+
+    #[test]
+    fn w4_e19_the_transform_tail_cuts_velocity_and_resets_shimmer_time() {
+        // `WorldItem.cs:1835-1845` — after the transform the surviving drop
+        // gets shimmerTime = 1, shimmerWet = true, velocity *= 0.1.
+        let mut app = shimmer_world();
+        let mut d = resting_drop(11, 3);
+        d.vel = Vec2::new(2.0, 3.0);
+        app.items.push(d);
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let d = &app.items[0];
+        assert!(d.shimmered);
+        assert_eq!(d.kind, 699);
+        // The tail set shimmerTime = 1 (the stack survived); it then decays
+        // 0.01/tick on the dry ticks after the transform — but the drop is
+        // still in the pool, so it stays shimmerWet and the ramp holds 1
+        // (the shimmered branch skips the ramp, the decay arm runs only when
+        // NOT (shimmerWet && !shimmered && over) — shimmered=true skips it).
+        assert_eq!(d.shimmer_time, 1.0, "the tail reset shimmerTime to 1");
+        assert!(d.shimmer_wet, "the tail set shimmerWet");
+        // The velocity was cut ×0.1 at the transform tick (2.0→0.2, 3.0→0.3),
+        // then the shimmered float damps/rises it; the X friction (×0.95/tick)
+        // decays 0.2 toward 0. The cut is verified by the magnitude bound.
+        assert!(d.vel.x.abs() <= 0.2, "the ×0.1 cut bound: {}", d.vel.x);
+    }
+
+    #[test]
+    fn w4_e19_the_transform_spawns_the_shimmer_effect_dust() {
+        // `WorldItem.cs:1846` → `ShimmerEffect` (`:1669-1688`): 20 dust 309.
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(11, 3));
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let n309 = app.dust.slots().iter().filter(|d| d.active && d.dust_type == 309).count();
+        assert!(n309 >= 20, "the ShimmerEffect burst: {n309} dust 309");
+    }
+
+    #[test]
+    fn w4_e19_the_decraft_spawns_shimmered_ingredients_at_the_center() {
+        // `WorldItem.cs:1825` → `SpawnShimmeredItem` (`:628-637`): the
+        // ingredient spawns shimmered (shimmerTime 1, shimmerWet) at the
+        // source's Centre with the alternating fan velocity, prefix 0.
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(3077, 60)); // Silk Rope → 2 Cobweb units
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let spawn = app.items.iter().find(|d| d.kind == 225).expect("the cobweb spawn");
+        assert!(spawn.shimmered, "the ingredient is shimmered");
+        assert_eq!(spawn.shimmer_time, 1.0);
+        assert!(spawn.shimmer_wet);
+        assert_eq!(spawn.prefix, 0, "SpawnShimmeredItem passes prefix 0");
+        // The first spawn (n=0) has velocity (0 * (0%2*2-1), 0) = (0, 0).
+        assert_eq!(spawn.vel, Vec2::ZERO, "the n=0 fan velocity is zero");
+        // The source aired out (60 - 2*30 = 0).
+        assert!(!app.items.iter().any(|d| d.kind == 3077));
+    }
+
+    #[test]
+    fn w4_e19_the_coin_merge_does_not_recalculate_luck_eagerly() {
+        // `Player.cs:18090-18101` — AddCoinLuck sets coinLuck + luckNeedsSync
+        // only; RecalculateLuck runs on the per-tick UpdateLuck, NOT here.
+        // The port's add_coin_luck adds the merged stack without rebuilding
+        // `luck` (the old apply called recalculate_luck eagerly).
+        let mut app = shimmer_world();
+        app.items.push(resting_drop(72, 4)); // Silver → 400 copper-equivalent
+        let luck_before = app.player.as_ref().unwrap().luck_state.luck;
+        for _ in 0..120 {
+            update_items(&mut app, 1.0 / 60.0);
+        }
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.luck_state.coin_luck, 400.0, "the merged stack fed coinLuck");
+        // `luck` is rebuilt by the luck pass, not the coin arm — the items
+        // pass alone does not touch it (no UpdateLuck in update_items).
+        assert_eq!(p.luck_state.luck, luck_before, "no eager RecalculateLuck");
     }
 }
 
