@@ -3815,7 +3815,42 @@ impl Projectile {
     ///
     /// Deviations: the dust arms (229/240/5, the `ai[1] == 1f` burst) are
     /// unmodelled; the late-stage clone spawn rides the 580's own machine.
-    fn ai_vortex_ritual(&mut self, player: (f32, f32), rng: &mut dyn tr_core::loot::DropRng) {
+    fn ai_vortex_ritual(
+        &mut self,
+        world: &World,
+        player: (f32, f32),
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
+        // The scratch-pool wrapper (the g63/g64 `update`/`update_dust`
+        // seam): the machine's AI-level draws ride the caller's stream, the
+        // dissolve-twin dust internals land on a scratch pool. The live
+        // path calls [`Self::ai_vortex_ritual_dust`] with `app.dust`.
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(3200.0, 3200.0),
+            max_dust_to_draw: 6000,
+        };
+        self.ai_vortex_ritual_dust(world, player, rng, &mut dust, &ctx);
+    }
+
+    /// The dust-threaded aiStyle-108 marker machine (W4-e3 AI-inline
+    /// window): the 578/579 dissolve twin switch (`:33984-34016`, sites
+    /// `:33993`/`:34005`) is RE-ARMED here — the g64 remainder-2 census
+    /// left it "the co-lane's unmodelled skip"; this is that co-lane port.
+    /// The wind-up/charge/full dust arms stay the g64 lane's (their kind
+    /// gate is the 813, disjoint); the 813 opacity tail (:34018) is g64's.
+    fn ai_vortex_ritual_dust(
+        &mut self,
+        world: &World,
+        player: (f32, f32),
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:33696-33700`'s first-tick sound latch.
         if self.local_ai[1] == 0.0 {
             self.local_ai[1] = 1.0;
@@ -3834,7 +3869,7 @@ impl Projectile {
         self.ai[0] += 1.0;
         let scale;
         if self.ai[0] <= 50.0 {
-            // The wind-up: the dust arms (unmodelled).
+            // The wind-up: the dust arms are the g64 lane's (the 813 kind).
             scale = 0.0;
         } else if self.ai[0] <= 90.0 {
             // `:33797-33799`'s charge.
@@ -3847,14 +3882,32 @@ impl Projectile {
             self.alpha = 0;
             self.rot -= std::f32::consts::PI / 60.0;
         } else {
-            // `:33944-33950`'s dissolve.
+            // `:33944-33950`'s dissolve. The C# `Kill()` does NOT return —
+            // the 578/579 twin switch below rolls on the death tick too
+            // (the g64 remainder-2 census left those rolls "the co-lane's
+            // unmodelled skip"; this port re-arms them, so the early return
+            // is dropped — the ai[0]==90 payload cannot fire past 120).
             scale = 1.0 - (self.ai[0] - 120.0) / 60.0;
             self.alpha = 255 - (255.0 * scale) as i32;
             self.rot -= std::f32::consts::PI / 30.0;
             if self.alpha >= 255 {
                 self.active = false;
-                return;
             }
+            // `:33984-34016` — the 578/579 dissolve twin switch (the two
+            // Next(3) rings). The 813's scale-premultiplied twin + opacity
+            // tail are g64's; the 578/579 kinds take THIS arm.
+            let (cx, cy) = self.center();
+            let mut d = crate::projectile_dust::ProjDust {
+                pool: dust,
+                ctx: dust_ctx,
+                rng,
+            };
+            crate::projectile_dust::vortex_dissolve_twin_578_579(
+                world,
+                &mut d,
+                glam::Vec2::new(cx, cy),
+                scale,
+            );
         }
         self.scale = scale;
         // The 90th tick's payloads.
@@ -18394,12 +18447,14 @@ impl ProjectilePool {
                             self.slots[i].ai_vortex_bolt(world, rng);
                         }
                         108 => {
-                            // `AI()`'s aiStyle-108 block (`Projectile.cs:33679-33988`):
+                            // `AI()`'s aiStyle-108 block (`Projectile.cs:33679-34025`):
                             // the Vortex ritual markers (578 lightning / 579 portal).
+                            // W4-e3: the dust-threaded variant re-arms the
+                            // 578/579 dissolve twin switch (`:33984-34016`).
                             let player_pos = owner
                                 .or(inputs.aim)
                                 .unwrap_or((self.slots[i].pos.x, self.slots[i].pos.y));
-                            self.slots[i].ai_vortex_ritual(player_pos, rng);
+                            self.slots[i].ai_vortex_ritual_dust(world, player_pos, rng, dust, dust_ctx);
                         }
                         99 => {
                             // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
@@ -31417,9 +31472,10 @@ mod ritual_projectile_tests {
         // `AI_108`'s 579 arm (`Projectile.cs:33844-33856`): the 90th tick
         // spawns two VortexAliens at the portal's centre.
         let mut p = rspawn(VORTEX_PORTAL, 200.0, 200.0);
+        let w = surface_world();
         let mut rng = tr_core::tile_light::FastRandom::new(3);
         for t in 0..90 {
-            p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+            p.ai_vortex_ritual(&w, (300.0, 300.0), &mut rng);
             if t == 88 {
                 assert_eq!(p.ai[0], 89.0, "one tick under the burst");
             }
@@ -31481,7 +31537,7 @@ mod ritual_projectile_tests {
             ints: [(4, 9, 4), (4, 9, 8)].into_iter().collect(),
             log: Vec::new(),
         };
-        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        p.ai_vortex_ritual(&surface_world(), (300.0, 300.0), &mut rng);
         assert_eq!(
             rng.log,
             ["float", "float", "int", "float", "float", "int"],
@@ -31502,11 +31558,12 @@ mod ritual_projectile_tests {
         // `AI_108`'s 578 arm: the aim rotation on the first tick, the
         // scale/alpha ramp over the charge, and the 580 spawn at 90.
         let mut p = rspawn(VORTEX_LIGHTNING, 200.0, 200.0);
+        let w = surface_world();
         let mut rng = tr_core::tile_light::FastRandom::new(5);
-        p.ai_vortex_ritual((260.0, 200.0), &mut rng);
+        p.ai_vortex_ritual(&w, (260.0, 200.0), &mut rng);
         assert!((p.ai[1]).abs() < 0.01, "the aim is +X: {}", p.ai[1]);
         for _ in 0..89 {
-            p.ai_vortex_ritual((260.0, 200.0), &mut rng);
+            p.ai_vortex_ritual(&w, (260.0, 200.0), &mut rng);
         }
         assert_eq!(p.ai[0], 90.0);
         assert!(p.wants_ritual_bolt.is_some(), "the 580 spawns");
@@ -31524,9 +31581,10 @@ mod ritual_projectile_tests {
         // `:33944-33950`'s dissolve: the scale shrinks, the alpha climbs and
         // the marker dies at the end.
         let mut p = rspawn(VORTEX_PORTAL, 200.0, 200.0);
+        let w = surface_world();
         let mut rng = tr_core::tile_light::FastRandom::new(9);
         for _ in 0..185 {
-            p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+            p.ai_vortex_ritual(&w, (300.0, 300.0), &mut rng);
         }
         assert!(!p.active, "the marker dies");
     }

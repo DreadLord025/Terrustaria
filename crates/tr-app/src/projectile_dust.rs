@@ -2035,6 +2035,156 @@ pub(crate) fn style94_coin_portal_spark_518(p: &Projectile, world: &World, d: &m
     dust.velocity = Vec2::ZERO;
 }
 
+/// `:33011-33026` — the 524 IchorSplash's two 2-in-3 dust-170 puffs
+/// (aiStyle-96, STAGED — the d10 `projectile_ai_91_100` machine's skip).
+/// Per iteration: the Next(3)!=0 gate; type 170 alpha 100; position =
+/// (pos + Centre)/2, noGravity, vel×0.1; i=1 adds vel/2 to the position;
+/// scale ×= (800−ai[0])/800 + 0.1 (the C# age read AFTER the +=0.6 and the
+/// >500 kill — the caller owns both; the kill does NOT return).
+pub(crate) fn style96_ichor_puffs_524(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    for i in 0..2 {
+        if d.rng.next_range(0, 3) != 0 {
+            let idx = d.new_dust(
+                world,
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                170,
+                0.0,
+                0.0,
+                100,
+                Color::default(),
+                1.0,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.position = (dust.position + Vec2::new(cx, cy)) / 2.0;
+            dust.no_gravity = true;
+            dust.velocity *= 0.1;
+            if i == 1 {
+                dust.position += p.vel / 2.0;
+            }
+            dust.scale *= (800.0 - p.ai[0]) / 800.0 + 0.1;
+        }
+    }
+}
+
+/// `:33145-33151` — the 526 CultistBossParticle's two Centre dust-228s
+/// (aiStyle-98, STAGED — the d10 machine's skip; the caller owns the
+/// arrival kill's early return). Per dust: 0×0 box at Centre, alpha 100,
+/// noGravity, position += (4,4), scale += NextFloat.
+pub(crate) fn style98_cultist_particle_pair_526(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    for _ in 0..2 {
+        let idx = d.new_dust(
+            world,
+            Vec2::new(cx, cy),
+            0,
+            0,
+            228,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.position += Vec2::splat(4.0);
+        dust.scale += d.rng.next_float();
+    }
+}
+
+/// ONE 578/579 dissolve-ring dust (`:33986-34014`'s two case bodies share
+/// the shape): the UnitY.RotatedByRandom(2π)·scale spin (TWO NextDouble
+/// draws), the spawn at Centre − spin·30, noGravity; `reroll` selects the
+/// case-0 body (position re-rolled to Centre − spin·Next(10,21), velocity
+/// spin.RotatedBy(+π/2)·6) vs case-1 (position kept, velocity
+/// spin.RotatedBy(−π/2)·3); then scale = 0.5 + NextFloat, fadeIn 0.5. The
+/// `customData = Centre` write is the pool's dropped field.
+fn vortex_dissolve_dust(
+    world: &World,
+    d: &mut ProjDust,
+    center: Vec2,
+    scale: f32,
+    dust_type: i32,
+    reroll: bool,
+) {
+    let spin = rotated_by_random(Vec2::Y, 6.2831854820251465, d.rng) * scale;
+    let idx = d.new_dust(
+        world,
+        center - spin * 30.0,
+        0,
+        0,
+        dust_type,
+        0.0,
+        0.0,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.no_gravity = true;
+    if reroll {
+        dust.position = center - spin * d.rng.next_range(10, 21) as f32;
+        dust.velocity = crate::bow_launch::rotated_by(spin, 1.5707963705062866) * 6.0;
+    } else {
+        dust.position = center - spin * 30.0;
+        dust.velocity = crate::bow_launch::rotated_by(spin, -1.5707963705062866) * 3.0;
+    }
+    dust.scale = 0.5 + d.rng.next_float();
+    dust.fade_in = 0.5;
+}
+
+/// `:33984-34016` — the 578/579 Vortex markers' dissolve twin switch
+/// (WIRED on this base — `ai_vortex_ritual`'s dissolve arm; the g64
+/// remainder-2 census explicitly leaves ":33984-34016 the co-lane's
+/// unmodelled skip" — THIS is that co-lane port). TWO iterations, each a
+/// Next(3) switch: case 0 → dust 229 with the Next(10,21) position
+/// re-roll, case 1 → dust 240 at the ×30 keep, case 2 → nothing (the
+/// switch draw is consumed regardless). The 813's scale-premultiplied
+/// twin (:33951-33983) is g64's `trail_813_dissolve` — the kind gates are
+/// disjoint; the 813 opacity tail (:34018-34024) is g64's too.
+pub(crate) fn vortex_dissolve_twin_578_579(
+    world: &World,
+    d: &mut ProjDust,
+    center: Vec2,
+    scale: f32,
+) {
+    for _ in 0..2 {
+        match d.rng.next_range(0, 3) {
+            0 => vortex_dissolve_dust(world, d, center, scale, 229, true),
+            1 => vortex_dissolve_dust(world, d, center, scale, 240, false),
+            _ => {} // `:34014` — case 2 draws nothing further.
+        }
+    }
+}
+
+/// `:34118-34127` — the 836 DandelionSeed's first-tick 3× dust-31 burst
+/// (aiStyle-112's `type == 836` head, STAGED — no row/machine on this base;
+/// the g64 deferred ledger cites it as the latch-burst co-lane remainder).
+/// The caller owns the localAI[0] latch. Per dust: type 31, alpha 50,
+/// Color.White, scale 1.2, vel×0.3, noGravity.
+pub(crate) fn style112_dandelion_burst_836(p: &Projectile, world: &World, d: &mut ProjDust) {
+    for _ in 0..3 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            31,
+            0.0,
+            0.0,
+            50,
+            Color::WHITE,
+            1.2,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= 0.3;
+        dust.no_gravity = true;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
@@ -3936,8 +4086,152 @@ mod tests {
         assert_eq!(active(&pool2).len(), 1);
         assert_eq!(pool2.slot(0).position, at);
         assert_eq!(pool2.slot(0).velocity, Vec2::ZERO);
-        assert_eq!(pool2.slot(0).dust_type, 246);
+    /// W4-e3 AI-inline window — `:33011-33026` (the 524's two Next(3)!=0
+    /// puffs, i=1's +vel/2, the (800−ai[0])/800+0.1 scale) +
+    /// `:33145-33151` (the 526's two Centre 228s, +(4,4), NextFloat scale)
+    /// + `:34118-34127` (the 836's 3×31 White alpha-50 ×0.3 burst).
+    /// Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style96_puffs524_style98_pair526_style112_burst836_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(524);
+        p.ai[0] = 100.6;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(71);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(71);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style96_ichor_puffs_524(&p, &w, &mut d);
+        let (cx, cy) = p.center();
+        for i in 0..2 {
+            if mirror.next_range(0, 3) != 0 {
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, p.pos, 10, 10, 170,
+                    0.0, 0.0, 100, Color::default(), 1.0,
+                );
+                let md = mpool.slot_mut(idx);
+                md.position = (md.position + Vec2::new(cx, cy)) / 2.0;
+                md.no_gravity = true;
+                md.velocity *= 0.1;
+                if i == 1 {
+                    md.position += p.vel / 2.0;
+                }
+                md.scale *= (800.0 - 100.6) / 800.0 + 0.1;
+            }
+        }
+        assert_eq!(active(&pool).len(), active(&mpool).len());
+        for &i in &active(&pool) {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The 526 pair.
+        let q = proj(526);
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(72);
+        let mut mpool2 = DustPool::new();
+        let mut mirror2 = UnifiedRandom::new(72);
+        let mut d2 = ProjDust { pool: &mut pool2, ctx: &c, rng: &mut rng2 };
+        style98_cultist_particle_pair_526(&q, &w, &mut d2);
+        let (qx, qy) = q.center();
+        for _ in 0..2 {
+            let idx = mpool2.new_dust(
+                &mut mirror2, &c, &w, Vec2::new(qx, qy), 0, 0, 228,
+                0.0, 0.0, 100, Color::default(), 1.0,
+            );
+            let md = mpool2.slot_mut(idx);
+            md.no_gravity = true;
+            md.position += Vec2::splat(4.0);
+            md.scale += mirror2.next_float();
+        }
+        assert_eq!(active(&pool2).len(), 2);
+        for j in 0..2 {
+            assert_eq!(pool2.slot(j).position, mpool2.slot(j).position);
+            assert_eq!(pool2.slot(j).scale, mpool2.slot(j).scale);
+        }
         assert_eq!(rng2.next_range(0, 1000), mirror2.next_range(0, 1000));
+        // The 836 burst.
+        let r = proj(836);
+        let mut pool3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(73);
+        let mut mpool3 = DustPool::new();
+        let mut mirror3 = UnifiedRandom::new(73);
+        let mut d3 = ProjDust { pool: &mut pool3, ctx: &c, rng: &mut rng3 };
+        style112_dandelion_burst_836(&r, &w, &mut d3);
+        for _ in 0..3 {
+            let idx = mpool3.new_dust(
+                &mut mirror3, &c, &w, r.pos, 10, 10, 31,
+                0.0, 0.0, 50, Color::WHITE, 1.2,
+            );
+            let md = mpool3.slot_mut(idx);
+            md.velocity *= 0.3;
+            md.no_gravity = true;
+        }
+        assert_eq!(active(&pool3).len(), 3);
+        for j in 0..3 {
+            assert_eq!(pool3.slot(j).color, Color::WHITE);
+            assert_eq!(pool3.slot(j).velocity, mpool3.slot(j).velocity);
+        }
+        assert_eq!(rng3.next_range(0, 1000), mirror3.next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:33984-34016`: the 578/579 dissolve twin
+    /// switch. TWO Next(3) draws per tick regardless of outcome; case 0 =
+    /// 229 + Next(10,21) re-roll + rot(+π/2)·6, case 1 = 240 at ×30 +
+    /// rot(−π/2)·3, case 2 = nothing; each taken dust: the spin's TWO
+    /// NextDouble draws FIRST, internals, then NextFloat scale + fadeIn
+    /// 0.5. Mirrored over 30 dissolve ticks. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_vortex_dissolve_twin_578_579_mirror() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(1016.0, 905.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(79);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(79);
+        for t in 0..30 {
+            let scale = 1.0 - (t as f32 + 1.0) / 60.0;
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            vortex_dissolve_twin_578_579(&w, &mut d, center, scale);
+            for _ in 0..2 {
+                let pick = mirror.next_range(0, 3);
+                if pick == 2 {
+                    continue;
+                }
+                let angle = mirror.next_double() * 6.2831854820251465
+                    - mirror.next_double() * 6.2831854820251465;
+                let spin = crate::bow_launch::rotated_by(Vec2::Y, angle) * scale;
+                let ty = if pick == 0 { 229 } else { 240 };
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, center - spin * 30.0, 0, 0, ty,
+                    0.0, 0.0, 0, Color::default(), 1.0,
+                );
+                let md = mpool.slot_mut(idx);
+                md.no_gravity = true;
+                if pick == 0 {
+                    md.position = center - spin * mirror.next_range(10, 21) as f32;
+                    md.velocity = crate::bow_launch::rotated_by(spin, 1.5707963705062866) * 6.0;
+                } else {
+                    md.position = center - spin * 30.0;
+                    md.velocity = crate::bow_launch::rotated_by(spin, -1.5707963705062866) * 3.0;
+                }
+                md.scale = 0.5 + mirror.next_float();
+                md.fade_in = 0.5;
+            }
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        assert!(!act.is_empty());
+        for &i in &act {
+            assert!([229, 240].contains(&pool.slot(i).dust_type));
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+            assert_eq!(pool.slot(i).fade_in, 0.5);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 
 }
