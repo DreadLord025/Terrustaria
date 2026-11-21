@@ -36373,6 +36373,24 @@ sickness, the stream isolation).
 
 5 new/re-targeted witnesses WRITTEN, NOT RUN (code-only).
 
+### The W4-f49 MANA RETIRE (2026-11-21, after cded6714)
+
+The retire receipts live in `docs/research/85-doc-sweep-mana.md` (RETIRE
+RT1-RT4). **RT1 — the f12 mutual bridge receipt:** f12's RETIRE (tip
+22ce2a41) receipt 2 said "R3-exec STILL NOT landed" — STALE, written
+against f49 tip 6c0ee2aa2; the execution landed at **8eb20d8b** (the scan
+arms + helper deleted, the `fold_orb_nebula_bridge` ASSIGN stub, the
+`update_survival` lift — all re-verified at cded6714). The mutual record:
+f12-writer-canonical (g27 `apply_orb_arm`, blob c6bcb017b identical at
+f12 22ce2a41 and g27 1cd7ac36) + f49-bridge-stub + lift-EXECUTED. The
+published `fold_orb` hunk compiles as-is (`p.orb_scan.nebula_level_mana`
+— `fold_orb(p, e)` has no scan-state parameter); the three-line stub
+call is the equivalent all-tiers form. The merger-remainder-list FINAL:
+the wiring at the marked seam, the bridge in the SAME commit, `items.rs`
+to f49 wholesale, the `extra_regen` sum kept from f12 (`player.rs:11492`
+— f49's lifted read at :11345 lacks the `buff_life_regen` term), the
+94-drink one-line resolution, the post-merge sweep + anchors verify.
+
 ## The magic guns + tomes use arms (S1-P-i22)
 
 `Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:

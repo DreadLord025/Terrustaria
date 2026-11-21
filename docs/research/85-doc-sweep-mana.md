@@ -626,3 +626,114 @@ receipt above).
 | `docs/research/85-doc-sweep-mana.md` | this FINAL-STATUS + the f12d/f49-contract receipt |
 | `docs/ANALYSIS.md` | the MANA FINAL section (the R3 execution + the lift as the ordering fix) |
 | `docs/PORT_MAP.md` | the nebula row's R3-executed update + the mana row's d-lane census |
+
+---
+
+# RETIRE — the MANA receipts (W4-f49 continuation, 2026-11-21, after cded6714)
+
+The retire phase. Code-only doc work; no compiler invoked. Tip reads at
+retire time (`git fetch` of the sibling refs):
+
+| Branch | Tip read | Role here |
+| --- | --- | --- |
+| `task/W4-f49-mana-regen-2` (THIS) | cded6714 (start) | the mana lane + the R3 executed half |
+| `task/W4-f12-buff-frame-wiring` | **22ce2a41** (its RETIRE) | the buff-frame canonical + the published bridge hunk |
+| `task/W4-d117-mana-regen-full` | 0dbcb013 (ancestor of THIS branch) | the regen-engine read side |
+| `task/W4-g27-orb-keep-one-prep` | 1cd7ac36 | the canonical orbs module (blob-pinned below) |
+
+## RT1. The f12 mutual bridge receipt + the merger-remainder-list FINAL
+
+**Their RETIRE receipt 2 is STALE — superseded here, mutually.** f12's
+22ce2a41 receipt 2 ("f49d-bridge monitor: R3-exec STILL NOT landed") was
+written against f49 tip **6c0ee2aa2**. The R3 execution landed AFTER that
+read: **8eb20d8b** ("MANA FINAL item 1: EXECUTE the R3 one-writer
+contract"), recorded in FINAL-STATUS F1 above. The evidence at THIS
+tree's tip cded6714 (all re-verified at retire time):
+
+* The three inline scan arms are GONE — `player.rs:6874-6888` carries
+  only the R3-EXECUTED tombstone comment inside the buff loop's `_ => {}`
+  tail; `update_buffs_nebula_buffs` no longer exists (the doc-tombstone
+  at `player.rs:3523-3531` cites the g27 home).
+* The bridge stub LANDED — `Player::fold_orb_nebula_bridge(mana, life,
+  damage)` at `player.rs:3547-3551`, the three ASSIGNs f12's `fold_orb`
+  carries verbatim at the merge.
+* The lift LANDED — `update_survival` runs at the wiring seam
+  (`world_sim/player.rs:1204`, after `update_summon_buff_arms` :1185,
+  the seam comment :1186-1203), NOT inside `update_with_grapple`; the
+  standalone `Player::update` wrapper re-adds it (`player.rs:5763`).
+  The seam witness `w4_f49_the_lifted_regen_tick_runs_after_the_wiring_seam`
+  (`world_sim/player.rs:1867`) pins it.
+* Kept per the contract: `nebula_levelup` (`player.rs:3492`), both
+  ResetEffects zeros (`player.rs:6182-6184`, the `:18755` chained
+  clear), `items.rs` wholesale (the gate removal + the nebula/4143 arms
+  + the 12/5 pull).
+
+**The mutual receipt:** f12-writer-canonical (the g27
+`buff_effects_orbs.rs::apply_orb_arm` → `nebula_buffs`, dispatched
+EXCLUSIVELY by `buff_frame_wiring::update_buff_frame`; blob **c6bcb017b**
+re-verified IDENTICAL at f12 tip 22ce2a41 and g27 tip 1cd7ac36) +
+f49-bridge-stub (`fold_orb_nebula_bridge`, THIS tree) + lift-EXECUTED
+(8eb20d8b). Both halves of the contract are now on record from both
+sides; f12's monitor note needs no re-run — this receipt is the
+correction.
+
+**The bridge hunk — f12's published form, with one signature note.**
+f12's item-1 hunk (closeout doc, verbatim):
+
+```diff
+ fn fold_orb(p: &mut Player, e: &OrbEffects) {
+     p.beetle_buff |= e.beetle_buff;
++    // R3 bridge (f49 research/85): the ONE tier writer is `nebula_buffs`
++    // inside `apply_orb_arm` (OrbScanState, zero-seeded every tick); the
++    // regen read side reads the d117 Player field — ASSIGN, never +=.
++    p.nebula_level_mana = p.orb_scan.nebula_level_mana; // `:12072`
+     p.melee_damage += e.melee_damage;
+```
+
+The published line reads `p.orb_scan` directly because `fold_orb`'s
+signature at f12 tip is `(p: &mut Player, e: &OrbEffects)`
+(`buff_frame_wiring.rs:457`, the call site :299 passes `&orb_e` only —
+`apply_orb_arm` wrote `&mut p.orb_scan` at :255). It compiles as
+published. The R3/F1 prose ("`= s.nebula_level_*`") assumed a
+scan-state parameter that does not exist; the merger either applies the
+hunk verbatim (mana line only — f12's item-1 note permits leaving the
+Life/Damage Player twins unbridged, their consumers are `fold_orb`'s own
+`e.life_regen`/four-class adds) or bridges all three via the stub:
+`p.fold_orb_nebula_bridge(p.orb_scan.nebula_level_mana,
+p.orb_scan.nebula_level_life, p.orb_scan.nebula_level_damage);` — three
+sequential field reads then the `&mut p` call, borrow-clean. Both forms
+are ASSIGN-shaped (the `:12072` assign-derivation + the `OrbScanState`
+zero-seed via `orb_scan.reset_effects()` at f12 `player.rs:6199` make a
+stale tier impossible; f12's witness
+`w4_f12_closeout_orb_scan_is_assign_shaped`, `buff_frame_wiring.rs:649`,
+pins it).
+
+**The merger-remainder-list FINAL (what the f12/f49 merge still owes —
+nothing else):**
+
+1. Land `buff_frame_wiring::update_buff_frame` at the marked seam
+   (`world_sim/player.rs:1186-1203`, after `update_summon_buff_arms`,
+   BEFORE the lifted `update_survival` at :1204 — the C# scan `:25566` →
+   regen `:25977`/`:25995` order).
+2. Apply the bridge in `fold_orb` (the hunk above, one form or the
+   other) — SAME commit as the wiring landing; bridge-without-writer
+   strands the regen at 0, writer-without-bridge strands it too (the
+   scan-local twin has no consumer).
+3. Resolve `world_sim/items.rs` to THIS branch's version wholesale (R3
+   step 5) — the d79 three-way (RT2, next retire item) adds the
+   pool-facade rewire + the skip-gate note to that resolution.
+4. The f12-side `extra_regen` feed already reads
+   `self.accessory_life_regen + self.buff_life_regen` (f12
+   `player.rs:11492`); THIS tree's lifted `update_survival` reads
+   `extra_regen: self.accessory_life_regen` only (`player.rs:11345`) —
+   the merge keeps f12's summed form (the lift makes the fold visible to
+   the read; without the sum the Nebula Life add still never lands).
+5. The 94-drink one-line resolution (f12 `potions.rs:216` = THIS tree's
+   `apply_life_and_or_mana` AddBuff(94, 300), `:51938`) — ONE grant.
+6. Post-merge verify: the f12 sweep script
+   (`tools/w4_f12_closeout_sweep.py`) set-diff EMPTY + the anchors
+   canary (`anchors.txt:904` already cites the g27 home).
+
+The f12 RETIRE's other receipts (f50 dup drop-hunks, d73 co-lane, the
+BUFF merger paragraph) are f12's lane record — unchanged, not re-ruled
+here.
