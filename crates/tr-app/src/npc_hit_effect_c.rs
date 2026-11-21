@@ -245,6 +245,7 @@
 //! | 1250-1259 | `:88581-88594` | the 202/451 MisassembledSkeleton + 203/452 PantlessSkeleton death (5 gores each) |
 //! | 1260-1268 | `:88599-88611` | the 322 SkeletonTopHat (5 gores) + 323 SkeletonAstonaut (4 gores) death |
 //! | 1269-1273 | `:88616-88620` | the 324 SkeletonAlien death (5 gores 466/467/467/468/468) |
+//! | 1274-1281 | `:88623-88639` | the skeleton fall-through (head 42 + 77/110 extras + shared 43/43/44/44) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7398,6 +7399,54 @@ fn skeleton_alien_death(
     gore.new_gore(rng, world, low, vel, 468, s); // :88620
 }
 
+/// The skeleton fall-through death (`NPC.cs:88623-88639`, sites 1274-1281):
+/// the 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
+/// the head 42 at position, the per-type extras (77 ArmoredSkeleton → 106,
+/// 110 SkeletonArcher → 130), the shared 43/43 at +20, the 110-only 131 at
+/// +34, and the shared 44/44 at +34 — all at `this.scale`. This is the
+/// `else` tail of the skeleton block (the types not handled by the explicit
+/// per-type arms above).
+fn skeleton_fallthrough_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 42, s); // :88623
+    // `:88624-88626` — the 77 extra.
+    if npc_type == 77 {
+        gore.new_gore(rng, world, pos, vel, 106, s); // :88626
+    }
+    // `:88628-88630` — the 110 extra.
+    if npc_type == 110 {
+        gore.new_gore(rng, world, pos, vel, 130, s); // :88630
+    }
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88632
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88633
+    // `:88634-88636` — the 110-only +34 extra.
+    if npc_type == 110 {
+        gore.new_gore(rng, world, low, vel, 131, s); // :88636
+    }
+    gore.new_gore(rng, world, low, vel, 44, s); // :88638
+    gore.new_gore(rng, world, low, vel, 44, s); // :88639
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8298,6 +8347,17 @@ pub fn hit_effect_c(
     // `:88614-88621` — the 324 SkeletonAlien arm (sites 1269-1273).
     if npc_type == 324 && npc.hp <= 0 {
         skeleton_alien_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88623-88639` — the skeleton fall-through arm (sites 1274-1281): the
+    // remaining skeleton-block types (21/31/294/295/296/32/44/45/77/110/
+    // 287/291/292/293/449/693).
+    if (npc_type == 21 || npc_type == 31 || npc_type == 294 || npc_type == 295 || npc_type == 296
+        || npc_type == 32 || npc_type == 44 || npc_type == 45 || npc_type == 77
+        || npc_type == 110 || npc_type == 287 || npc_type == 291 || npc_type == 292
+        || npc_type == 293 || npc_type == 449 || npc_type == 693)
+        && npc.hp <= 0
+    {
+        skeleton_fallthrough_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -13018,6 +13078,35 @@ mod tests {
         skeleton_alien_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![466, 467, 467, 468, 468]);
+    }
+
+    /// `NPC.cs:88623-88639` — the skeleton fall-through: the head 42 + the
+    /// shared 43/43/44/44, the 77 extra 106, the 110 extras 130/131.
+    #[test]
+    fn w4_f10_the_skeleton_fallthrough_spawns_the_head_and_extras() {
+        let w = air();
+        // The generic Skeleton 21: 42/43/43/44/44.
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1303);
+        skeleton_fallthrough_death(&n, 21, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![42, 43, 43, 44, 44]);
+        // The ArmoredSkeleton 77: 42/106/43/43/44/44.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1303);
+        skeleton_fallthrough_death(&n, 77, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![42, 106, 43, 43, 44, 44]);
+        // The SkeletonArcher 110: 42/130/43/43/131/44/44.
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(1303);
+        skeleton_fallthrough_death(&n, 110, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        let types3: Vec<i32> = gore3.slots()[..7].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types3, vec![42, 130, 43, 43, 131, 44, 44]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
