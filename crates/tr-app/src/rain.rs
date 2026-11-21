@@ -1,16 +1,18 @@
 //! Rain: `Rain.MakeRain` / `Rain.Update` / `Main.DrawRain`.
 //!
-//! **DEPRECATED-BY-UNION (W4-g67 retire, research/146 FINAL-FINAL):** the
+//! **DEPRECATED-BY-UNION (W4-g67 retire, research/247 FINAL-FINAL):** the
 //! weather union keeps d130's `rain.rs` core wholesale (research/83 §3,
 //! `task/W4-d130-weather-ambience`); this file's sim/draw halves drop at the
 //! merge. d130 `16a792d5` already folded R1–R4 (+ the gameMenu arm + the
 //! snow-lane cull); the ONLY live fold-source left here is R5 (skyblock
 //! snow threshold), R6's Eyebrella caller (in player.rs), R7 (umbrella, in
 //! player.rs/player_layers.rs) and the A2 light-tile witness re-pin — see
-//! the per-fn banners below and research/146's fold-addendum (A1: d130's
+//! the per-fn banners below and research/247's fold-addendum (A1: d130's
 //! `rain_tint` alpha handling is the correct one; this file's tint witness
 //! assertions drop with the copy). The report was numbered 134 through the
-//! retire phase — RENAMED to 146 at the seal (f11 owns 134 on origin).
+//! retire phase — RENAMED to 146 at the seal (f11 owns 134 on origin), then
+//! to 247 at the seal-verification (146 four-way claimed, g24d first-pushed
+//! wins — registry-150b refresh, research/247's 146-collision section).
 //!
 //! Weather follows the original's shape: a target intensity (`Main.maxRaining`) that
 //! `cloudAlpha` ramps toward at `0.0005 * max(1, dayRate)` per 60 Hz tick, a countdown
@@ -328,7 +330,7 @@ impl Rain {
     ///
     /// DEPRECATED-BY-UNION: d130-canonical (`rain.rs:316` at tip `97ed44f5`,
     /// folded `16a792d5` = R1 EXECUTED, all five consumers re-fed). This
-    /// copy drops at the merge — research/146.
+    /// copy drops at the merge — research/247.
     pub fn is_it_raining(&self) -> bool {
         self.intensity > 0.0
     }
@@ -341,7 +343,7 @@ impl Rain {
     ///
     /// DEPRECATED-BY-UNION: d130-canonical (`rain.rs:325` fixed-slot
     /// deactivate-all + `saveglue.rs:366` call, folded `16a792d5` = R2
-    /// EXECUTED). This compacted-Vec copy drops — research/146.
+    /// EXECUTED). This compacted-Vec copy drops — research/247.
     pub(crate) fn clear_rain(&mut self) {
         self.drops.clear();
     }
@@ -358,7 +360,7 @@ impl Rain {
     /// scan, folded `16a792d5` = R4 EXECUTED, `#[allow(dead_code)]` until
     /// the caller lands). This copy drops; the R6 Eyebrella CALLER in
     /// player.rs/world_sim/player.rs STAYS LIVE as the d130f fold-source —
-    /// research/146.
+    /// research/247.
     pub(crate) fn new_rain_forced(
         &mut self,
         world: &World,
@@ -498,7 +500,7 @@ impl Rain {
     /// DEPRECATED-BY-UNION: d130's `update`/tick is canonical (fixed-750-slot
     /// pool, spawn-then-update order, `RainInputs` shape — research/83 §3).
     /// This accumulator wrapper + the update-then-spawn `tick` order drop
-    /// at the merge — research/146 KEEP-d130-CANONICAL.
+    /// at the merge — research/247 KEEP-d130-CANONICAL.
     pub fn update(
         &mut self,
         world: &World,
@@ -781,7 +783,7 @@ impl Rain {
     /// DEPRECATED-BY-UNION: d130's `update_time` is canonical (the f39
     /// `cf4574e9` slots — the three sampled flags + the `:64868-64871`
     /// lanterns-up StopRain arm; g67's `start_gates_open` bool is the same
-    /// `:64890` gate, superseded). This copy drops — research/146.
+    /// `:64890` gate, superseded). This copy drops — research/247.
     pub(crate) fn update_time(
         &mut self,
         day_rate: i32,
@@ -1005,7 +1007,7 @@ impl Rain {
     ///
     /// DEPRECATED-BY-UNION: d130's `update_drops` is canonical (the
     /// `50c845e5` impact-gate reconcile + the `16a792d5` gameMenu arm,
-    /// fixed-slot order). This compacted-Vec copy drops — research/146.
+    /// fixed-slot order). This compacted-Vec copy drops — research/247.
     fn update_drops(
         &mut self,
         world: &World,
@@ -1096,7 +1098,7 @@ impl Rain {
     /// folded. This copy drops; the R5 skyblock threshold read below
     /// (`snow_tile_threshold(world.skyblock_low_tiles)`) STAYS LIVE as the
     /// d130f fold-source (d130 still reads the unconditional 1500 at its
-    /// `:1088`) — research/146.
+    /// `:1088`) — research/247.
     fn spawn(
         &mut self,
         world: &World,
@@ -1242,7 +1244,7 @@ impl Rain {
     /// the `:13092` raining branch included) is canonical; this biome-gated
     /// flake stand-in (with `update_snow` above + the `snow_mode` gate in
     /// `tick`) is the retired approximation — ANALYSIS "visual-overlap
-    /// census", research/83 §2. Drops at the merge — research/146.
+    /// census", research/83 §2. Drops at the merge — research/247.
     fn spawn_snow(&mut self, world: &World, camera: Vec2, screen: Vec2, zoom: f32) {
         let px = tr_core::TILE_PX;
         let half = screen * 0.5 / zoom;
@@ -1291,7 +1293,7 @@ impl Rain {
     ///
     /// DEPRECATED-BY-UNION: this IS the transplanted lane — d130 carries it
     /// verbatim (`rain.rs::spawn_splash`, union-exec `88cfbf38`). d130's
-    /// copy is canonical; this one drops — research/146.
+    /// copy is canonical; this one drops — research/247.
     fn spawn_splash(
         &mut self,
         pool: &mut tr_core::particles::DustPool,
@@ -1348,7 +1350,7 @@ impl Rain {
     /// witness below is the one salvage (re-pin onto d130's closure).
     /// A1: d130's tint dims ALPHA too (the correct XNA read) — this file's
     /// tint witness alpha assertions are WRONG and drop with the copy —
-    /// research/146 fold-addendum.
+    /// research/247 fold-addendum.
     pub fn draw(
         &self,
         r: &mut SpriteRenderer,
@@ -1464,7 +1466,7 @@ pub(crate) fn is_splash_type(t: i32) -> bool {
 ///
 /// DEPRECATED-BY-UNION: this IS the transplanted lane — d130 carries it
 /// verbatim (`rain.rs::water_splash_arm` + the `minecart.rs` hook via
-/// `88cfbf38`). d130's copy is canonical; this one drops — research/146.
+/// `88cfbf38`). d130's copy is canonical; this one drops — research/247.
 pub(crate) fn water_splash_arm(d: &mut tr_core::particles::Dust, world: &World) -> bool {
     if !matches!(
         d.dust_type,
@@ -1534,7 +1536,7 @@ pub(crate) fn water_splash_arm(d: &mut tr_core::particles::Dust, world: &World) 
 /// DEPRECATED-BY-UNION: this IS the transplanted lane — d130 carries it
 /// (`rain.rs::draw_splashes` via `88cfbf38`, the cull fix folded in place at
 /// `16a792d5` = R3 EXECUTED, extended to `snow::draw`). d130's copy is
-/// canonical; this one drops — research/146.
+/// canonical; this one drops — research/247.
 pub(crate) fn draw_splashes(
     pool: &mut tr_core::particles::DustPool,
     r: &mut SpriteRenderer,
@@ -1635,7 +1637,7 @@ pub(crate) fn draw_splashes(
 /// zoom term. Returns `(x, y, w, h)`.
 ///
 /// DEPRECATED-BY-UNION: d130-canonical (`rain.rs:1500` at tip `97ed44f5`,
-/// folded `16a792d5` = R3 EXECUTED). This copy drops — research/146.
+/// folded `16a792d5` = R3 EXECUTED). This copy drops — research/247.
 pub(crate) fn splash_cull_rect(screen_pos: Vec2, screen: Vec2) -> (i32, i32, i32, i32) {
     (
         screen_pos.x as i32 - 1000,
@@ -1650,7 +1652,7 @@ pub(crate) fn splash_cull_rect(screen_pos: Vec2, screen: Vec2) -> (i32, i32, i32
 /// convention). A miss means the `:39020-39022` else arm deactivates the dust.
 ///
 /// DEPRECATED-BY-UNION: d130-canonical (`rain.rs:1512`, folded `16a792d5`
-/// = R3 EXECUTED). This copy drops — research/146.
+/// = R3 EXECUTED). This copy drops — research/247.
 pub(crate) fn dust_in_cull_rect(position: Vec2, rect: (i32, i32, i32, i32)) -> bool {
     let (rx, ry, rw, rh) = rect;
     let sx = position.x as i32;
@@ -1668,7 +1670,7 @@ pub(crate) fn dust_in_cull_rect(position: Vec2, rect: (i32, i32, i32, i32)) -> b
 /// as its `draw`'s `light_tile` closure (`rain.rs:1250-1256`, landed in its
 /// own phase-2a `ea4863d9` BEFORE g67's `7aaf66f0`). No code delta — the
 /// A2 fold-addendum re-pins this file's geometry witness onto d130's
-/// closure; the helper itself drops — research/146.
+/// closure; the helper itself drops — research/247.
 pub(crate) fn rain_light_tile(p: Vec2) -> (i32, i32) {
     (((p.x + 4.0) as i32) >> 4, ((p.y + 4.0) as i32) >> 4)
 }
@@ -1685,7 +1687,7 @@ pub(crate) fn rain_light_tile(p: Vec2) -> (i32, i32) {
 /// below asserts alpha stays 255 — WRONG (XNA `Color * 0.85f` dims A too:
 /// 216 at full light, 162 under shimmer 0.25; d130's witness pins the
 /// correct values). The fn body computes alpha correctly; only the
-/// assertions are wrong — both drop with this copy — research/146
+/// assertions are wrong — both drop with this copy — research/247
 /// fold-addendum.
 pub(crate) fn rain_drop_tint(light: [f32; 3], shimmer_alpha: f32) -> [f32; 4] {
     let byte = |v: f32| (v.min(255.0) as i32) as u8;
@@ -3303,7 +3305,7 @@ mod tests {
     /// dust convention's bare `pos/16`: in the 12..15 px band of a cell the
     /// `+4` crosses into the NEXT tile. Pure geometry, WRITTEN NOT RUN.
     ///
-    /// **LIVE FOLD-SOURCE (A2, research/146 fold-addendum):** this witness
+    /// **LIVE FOLD-SOURCE (A2, research/247 fold-addendum):** this witness
     /// survives the wholesale drop — d130f re-pins these geometry arms onto
     /// its `draw`'s inline `light_tile` closure (`rain.rs:1250-1256`).
     #[test]
@@ -3326,7 +3328,7 @@ mod tests {
     /// again. Full light → 216/255 (255*0.85 = 216.75 → 216), NOT the f32
     /// 0.85 the old draw fed the pipeline. WRITTEN NOT RUN.
     ///
-    /// **DEPRECATED-BY-UNION + KNOWN-WRONG (A1, research/146):** the
+    /// **DEPRECATED-BY-UNION + KNOWN-WRONG (A1, research/247):** the
     /// alpha-stays-255 assertions below CONTRADICT this fn's own body and
     /// the C# — XNA `Color * 0.85f` dims A too (full light → alpha 216,
     /// shimmer 0.25 → 162). d130's `the_draw_tint_is_the_xna_byte_chain`

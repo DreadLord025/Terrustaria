@@ -1,25 +1,91 @@
-# 146 — W4-g67 post-union fold-list (for W4-d130f)
+# 247 — W4-g67 post-union fold-list (for W4-d130f)
 
-*(was numbered 134 — RENAMED at the seal phase: origin registry sweep found
-f11's `134-light-family-unification.md` already claims 134; 145 is
-double-claimed (c10 waterfowl + g89 rod-teleport); d54 has NOT pushed a
-research/150. 146 = max-on-origin 145 + 1, unclaimed by any pushed branch —
-the provisional assignment, re-verify at merge. Full registry evidence in
-the seal section below.)*
+*(numbered 134 through the retire phase → RENAMED 146 at the seal phase (f11
+owns 134; registry evidence in the seal sections below) → RENAMED AGAIN to
+247 at the seal-verification phase: the 146 slot turned out FOUR-way claimed
+(g24d `146-wg-sounds-final.md` 10:02:44 wins, e20f `146-c42-repick-critical.md`
+10:22:27 second, g67 10:32:09 third, e19 `146-aether-biome-census.md` 12:08:42
+fourth) — see the 146-collision section below for the full registry-150b
+refresh. The lineage of every `research/134` / `research/146` citation in the
+older seal/retire records on this branch and on d130 is THIS doc.)*
 
-**STATUS: FINAL-FINAL / RETIRED / SEALED — R1–R4/R6-partial EXECUTED BY d130
-`16a792d5`; R5/R6-caller/R7 + the 2-hunk fold-addendum + the c39 2-hunk graft
-OPEN for d130f** (code-only, `task/W4-g67-weather-rain-splash`, fold-source
+**STATUS: FINAL-FINAL / RETIRED / SEALED + RECEIPT-CLOSED — R1–R4/R6-partial
+EXECUTED BY d130 `16a792d5`; R5/R6-caller/R7 + A2 FOLDED BY d130
+`10ee539da`/`df28ea1ac` (receipts `af3ebc1a`/`b8f655708`); A1 NO-OP
+keep-d130-verbatim; the c39 2-hunk graft DISCHARGED by d130 `ec27d8cfd` —
+every OPEN row of the original d130f work-list is now CLOSED** (code-only, `task/W4-g67-weather-rain-splash`, fold-source
 tip `e777b3e2` + the retire commits `9159c15a` (re-check) / `5afdb38b` (the
 rain.rs DEPRECATED-BY-UNION banners, comments-only) + the seal commits
 recorded below). The g67 branch is DONE — no further rain.rs code lands
 here; the dup-halves carry per-fn banners, the uniques (R5 threshold read,
 the Eyebrella/umbrella player lanes, the A2 witness) stay live as the d130f
-fold-source. Merger: g67's `rain.rs` drops WHOLESALE EXCEPT those folded
-hunks — see KEEP-d130-CANONICAL FINAL-FINAL below and the SEAL section (the
-FINAL hash-list + the g67-drop-wholesale FINAL instruction).
+fold-source — and d130 has now taken ALL of them (the SEALED receipt below).
+Merger: g67's `rain.rs` drops WHOLESALE — every fold is landed on d130,
+nothing is owed; see KEEP-d130-CANONICAL FINAL-FINAL below and the SEAL
+sections (the FINAL hash-list + the g67-drop-wholesale FINAL instruction +
+the receipt-closure).
+
+## SEAL-VERIFY — the 146-collision renumber + registry-150b refresh (2026-11-21)
+
+The seal-phase rename 134 → 146 was provisional ("renumber at merge if the
+registry assigns differently"). It now executes on THIS branch per the d54
+registry's own rule ("losers rename on their OWN branch", first-pushed
+timestamp wins):
+
+* **d54's registry IS pushed**: `origin/task/W4-d54-dust-sites-world` tip
+  `38bfd1d22` carries `docs/research/150-research-number-registry.md`
+  (first-add 10:22:14+02). Its §3 has NO row for this lane — the 355-tip scan
+  ran BEFORE the 146 wave; its key-134 row names g67 the WINNER of 134
+  (`30b39fceb` 07:50:35 vs f11 08:33:23, f11 → 233 — f11's rename is visible
+  at its tip). The provisional 134 → 146 move stands as executed; the
+  registry's 134-winner status is superseded-in-fact by g67's own vacate.
+* **Fresh 150b refresh** (this lane, 360 `task/W4-*` tips, `git ls-tree
+  <tip>:docs/research` per tip, first-add `%cI` via `git log --diff-filter=A`):
+  key **146 is FOUR-way claimed** — g24d `146-wg-sounds-final.md`
+  (`2678cfae4` **10:02:44**, WINS), e20f `146-c42-repick-critical.md`
+  (`e47e1399f` 10:22:27), g67 `146-g67-post-union-folds.md` (`c38d42d32`
+  10:32:09), e19 `146-aether-biome-census.md` (`6627efd6b` 12:08:42).
+  g67 is third of four → LOSER → renumbers.
+* **247 is the assignment**: the registry's free block 151–236 is consumed
+  (§1), 237+ is free-for-future-lanes; the live 237–246 claims at the 360-tip
+  scan are 237 (e23), 238 (c8/d42/g61 — triple), 239 (d42/g48/f21/g56),
+  240 (c42/g58/d53/g63), 241/242/243 (g58), 244 (g48/f39), 245 (g48),
+  246 (d10) — **247 is claimed by NO tip**. g67 takes 247; the e20f/e19
+  losers of 146 (and the 238/239/240/244 collisions) renumber on THEIR OWN
+  branches — this lane touches neither the registry nor any sibling.
+* Refs renamed in the same commit: this doc's header, INDEX row 247,
+  PORT_MAP rain row, ANALYSIS ×4 + the seal paragraph, the rain.rs banners
+  ×20 + the module-head rename note (comments-only, zero code change).
+
+## SEAL-VERIFY — the d130g mutual receipt CLOSED (d130 tip `b8f655708`)
+
+Re-fetched: `origin/task/W4-d130-weather-ambience` tip advanced
+`97ed44f5d` → **`b8f655708`** ("W4-d130 seal docs: research/83 s9 SEALED").
+Its s9 records THIS branch's seal tip `8b9a1ff46c4a4e795c51ea96f9c13568665ca16b`
+verbatim — the mutual receipt is CLOSED from BOTH sides: the g67f-146(now
+247) drop-wholesale-FINAL and d130's s8.5 d130-canonical-keeps-wholesale are
+the SAME keep-one, ONE fn owner per body. Per-obligation closure:
+
+| original d130f work-list row | d130 landing | verdict NOW |
+| --- | --- | --- |
+| R5 skyblock threshold | `10ee539da` (World.skyblock_low_tiles + scan + scene thresholds + RainInputs.skyblock_low_tiles, g67's 3 witnesses adapted) | **FOLDED — CLOSED** |
+| R6 Eyebrella caller | `df28ea1ac` (UpdateEquips 5101 arm + do_eyebrella_rain_effect + eyebrellaCloud + the pending drain into new_rain_forced, 3 witnesses adapted) | **FOLDED — CLOSED** |
+| R7 umbrella | `df28ea1ac` (umbrella_hold_slow_fall + the holdStyle-2 overhead placement, witnesses adapted) | **FOLDED — CLOSED** |
+| A1 tint alpha | keep d130's `rain_tint` + witness verbatim (confirmed in s9) | **NO-OP — CLOSED** |
+| A2 light-tile witness | s9: every OPEN row closed (`af3ebc1a` receipts + the s9 per-row table); the geometry witness rides the `rain_light_tile` extraction d130 made at its own draw compose | **CLOSED per d130's receipt** |
+| c39 graft hunk 1 (storm-deck head clamp) | `ec27d8cfd` — the :64825-64831 lanterns-up clamp + c39's witness ported VERBATIM per the 114 §13 spec (`8e0946ff`) | **DISCHARGED — CLOSED** |
+| c39 graft hunk 2 (LanternsCanPersist) | `ec27d8cfd` — the full LanternNight.cs:49-56 gate + the lanterns_can_start pub(crate) rider + the tick witness | **DISCHARGED — CLOSED** |
+
+The d130f-monitor section below is thereby a HISTORICAL record (written
+against `97ed44f5d`); every OPEN verdict in it is superseded by this table.
+The 4-commit hash-list stands unchanged as the fold provenance — d130 has
+consumed it; the merger owes NOTHING from g67 except dropping this branch's
+rain.rs + draw.rs census wiring wholesale.
 
 ## SEAL — d130f-monitor (g67 seal phase, 2026-11-21, d130 tip STILL `97ed44f5d`)
+
+*(HISTORICAL — every OPEN row below is CLOSED at d130 tip `b8f655708`; see
+the SEAL-VERIFY mutual-receipt table above.)*
 
 Re-fetched (`git fetch origin --prune`): `origin/task/W4-d130-weather-ambience`
 tip is STILL `97ed44f5d` (09:05:15) — **d130f has NOT landed anything**. The
@@ -44,22 +110,28 @@ c39 `rain.rs:1878`). **g67 folds: NONE of the c39 hunks** — they are c39's
 fold-source, listed here so the d130f work-list is complete in one place.
 The g67-unique folds are exactly R5/R6/R7 + A2 (hash-list below).
 
-## SEAL — the WEATHER-FAMILY bible (one paragraph, for the merger)
+## SEAL — the WEATHER-FAMILY bible FINAL (one paragraph, for the merger)
+
+*(FINAL at the seal-verification phase — composed with d130's s9.4 bible at
+tip `b8f655708`; both sides state the SAME ownership map.)*
 
 The weather family unions as ONE composed lane with d130 canonical for the
-rain/snow core: **d130** (`task/W4-d130-weather-ambience`, tip `97ed44f5d` +
-the d130f folds) owns `Rain.cs` verbatim (fall/draw/splash, fixed-750-slot
+rain/snow core: **d130** (`task/W4-d130-weather-ambience`, tip `b8f655708`)
+owns `Rain.cs` verbatim (fall/draw/splash, fixed-750-slot
 pool, `RainInputs`, the two-arm cloudAlpha ramp, the ambient tracks 28/45
 lifecycle) and `Main.snowing()` on the GLOBAL bare-`Main.rand` stream (F1
-adjudicated `099df89e`), with g67's four unique folds grafted in (R5/R6/R7/A2,
-hash-list above) and g67's rain.rs dropped wholesale; **f39**
-(`task/W4-f39-weather-slimerain`) owns the slime-rain event half
+adjudicated `099df89e`), with g67's four unique folds NOW GRAFTED
+(R5 `10ee539da` / R6+R7 `df28ea1ac` / A2 receipt `af3ebc1a`+s9; A1 keep-d130
+verbatim) and g67's rain.rs dropped wholesale; **f39**
+(`task/W4-f39-weather-slimerain`, tip `bd5a5a24a`) owns the slime-rain event half
 (`StartSlimeRain`/`StopSlimeRain`, the slime clock, the sky-fall/kill-counter/
 menu-return lanes — d130 already re-shaped its `update_time` to f39's
 C#-faithful slot order at `cf4574e9`: the `:64846` surface gate, decay-before-
 rain, the once-sampled ladder flags, the `:64868-64871` lanterns-up StopRain
 arm, the `:64890` `!slimeRain` start gate — the mutual exclusion is witnessed
-both ways); **c40** (`task/W4-c40-sandstorm`) owns `Sandstorm.cs`
+both ways; d130 made ZERO edits to `world_sim/npcs.rs`/`render/sky.rs` since
+the merge-base, f39's season bodies stay f39's, the six shared files dedupe
+at merge — d130 s9 receipt); **c40** (`task/W4-c40-sandstorm`) owns `Sandstorm.cs`
 (the wind-only severity machine + the flying-sand 268 emit) and the gate is
 ONE-WAY — `ZoneSandstorm` clears `ZoneRain` (`SceneMetrics.cs:698-703`), rain
 NEVER gates the storm (`Sandstorm.cs:32-77` reads only wind, d130 `703370e6`
@@ -69,14 +141,15 @@ convention, `98067533`) — the `cloudAlpha`/`cloudBG` VALUES it reads come from
 d130's rain state, g69 keeps its draw bodies; **g68**
 (`task/W4-g68-weather-wind-leaves`) owns the wind sim + leaf cadence
 (`UpdateLeafFrequency` band-for-band, `3ccd49e6`) — the LIVE `windSpeedCurrent`
-it integrates feeds d130's `GetRainFallVelocity` (`wind*18,14`) and g67's
-Eyebrella drip (`wind*3,9`) and c40's storm severity, so the wind flag has ONE
-owner (g68) with read-only consumers; and **c39**
-(`task/W4-c39-lantern-birthday`) touches the family only through the two
-owed graft hunks into d130's body (the `:64825-64831` storm-deck head clamp +
-the full `LanternsCanPersist` gate, c39 research/114 §13) — both verified
-STILL MISSING at the d130 tip at this seal. No two family branches own the
-same fn body; the only cross-branch writes are the enumerated grafts.
+it integrates feeds d130's `GetRainFallVelocity` (`wind*18,14`) and the
+Eyebrella drip (`wind*3,9`, now d130's via R6) and c40's storm severity, so
+the wind flag has ONE owner (g68) with read-only consumers; and **c39**
+(`task/W4-c39-lantern-birthday`) touched the family only through the two
+graft hunks into d130's body (the `:64825-64831` storm-deck head clamp +
+the full `LanternsCanPersist` gate, c39 research/114 §13) — both NOW LANDED
+at d130 `ec27d8cfd`, verbatim per the spec. No two family branches own the
+same fn body; the only cross-branch writes were the enumerated grafts, all
+discharged.
 
 ## SEAL — registry-150-wave check + the g67-drop-wholesale FINAL instruction
 
@@ -93,6 +166,9 @@ any pushed branch) — provisional per-assignment: if d54's 150-wave or the
 merger's registry assigns differently, renumber at merge (the file is
 self-contained; the cross-refs are this doc + INDEX + PORT_MAP + ANALYSIS +
 the rain.rs banners, all renamed in the same seal commit).
+**SUPERSEDED by the SEAL-VERIFY 146-collision section above**: 146 was
+claimed by g24d/e20f BEFORE this rename landed and by e19 after; g67 loses
+the key and takes **247** (registry-150b refresh, 360-tip scan).
 
 **g67-drop-wholesale FINAL (the merger's one-paragraph instruction):** DROP
 g67's `crates/tr-app/src/rain.rs` WHOLESALE at the weather union — every
