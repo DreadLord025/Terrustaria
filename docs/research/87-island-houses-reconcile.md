@@ -431,3 +431,89 @@ table/chair/door flags).
   `is_house_wall` subset copies + the claim scopes).
 - This branch: `998b7a0c` (desert witness), `582fa094` (sky-lake witness),
   `8e791809` (the housing fix + 2 witnesses).
+
+## RETIRE §5 — the wall_house dedupe: EXACT hunks per branch (2026-11-21)
+
+Re-read at the LATEST origin tips (fetch at retire): **d118 `91db266ea`**,
+**d119 `04d7f9fd2`** — unchanged since the closeout read. Blob census (the
+merge-safety facts):
+
+| File | d118 blob | d119 blob | g44 base (origin/main) | verdict |
+| --- | --- | --- | --- | --- |
+| `tr-core/src/housing.rs` | `2ecd7924e` | `2ecd7924e` (IDENTICAL pair) | `f2a7c31af` | d118 rewrote `solid_tiles_in_box` (:110+, the `Collision.cs:3455-3488` port) + the occupancy fns; the `is_house_wall` block (:18-27) is byte-identical to main's. **Never take g44's housing.rs wholesale** — apply ONLY the hunk below. |
+| `tr-core/src/edit/wall.rs` | `9f39cbde8` | `9f39cbde8` | = g44's pre-retire blob | `edit::wall_house` (the FULL 279-entry table, `:386`) exists IDENTICALLY at both peer tips — the delegation target compiles with zero extra edits. |
+| `tr-core/src/edit/hammer.rs` | `5ef3e5d9c` | `5ef3e5d9c` | = g44's pre-retire blob | the i31→i33 gate note is identical; g44's retire commit refreshes its two stale "narrower subset" comments (comment-only, no marker change — the `pub fn wall_house` anchors row is untouched). |
+
+### THE hunk (apply verbatim to BOTH d118 and d119 `crates/tr-core/src/housing.rs`)
+
+Replace lines **18-27** at both tips (the 2-line doc + the 8-line narrow fn):
+
+```rust
+/// `Main.wallHouse` (`Main.cs:10403-10470` + `:9741-9860`): the walls a
+/// house may be enclosed by.
+pub fn is_house_wall(wall: u16) -> bool {
+    matches!(
+        wall,
+        23..=27 | 29..=39 | 41..=47 | 60 | 66..=68 | 72..=74 | 84 | 85 | 88..=93 | 100..=128
+            | 173 | 179 | 181 | 183 | 184 | 186 | 224..=227 | 231..=235 | 237..=241 | 245
+            | 312 | 313 | 315..=317 | 323..=346
+    )
+}
+```
+
+with g44's landed block (g44 `housing.rs:18-33`, commit `8e791809a`):
+
+```rust
+/// `Main.wallHouse` (`Main.cs:9741-9860` + `:10353-10577`, the FULL
+/// 279-entry table): the walls a house may be enclosed by. `CheckRoom`'s
+/// ±2 scan reads `Main.wallHouse` directly (`WorldGen.cs:6204`/`:6212`)
+/// — the SAME table the wall-edit gates read, so this delegates to
+/// [`crate::edit::wall_house`] (the S1-P-i33 faithful copy, verified
+/// member-for-member against the C# incl. the `153..167` loop). The old
+/// narrower subset (missing 1/4-6/…/75-78/**82**/129-169/…) refused the
+/// sky-island houses' disc wall 82 (`WallID.DiscWall`, `Main.cs:10384`
+/// sets it true) — the W4-g44 island-house housing fix: a generated
+/// IslandHouse interior is a valid NPC room exactly as vanilla. The
+/// d118/d119 housing lanes keep their own copies of the subset at their
+/// tips — the merge dedupes onto this full-table read (research/87
+/// closeout §3).
+pub fn is_house_wall(wall: u16) -> bool {
+    crate::edit::wall_house(wall)
+}
+```
+
+(The doc's last sentence describes the pre-dedupe state; the merger may
+trim it to "— deduped per research/87 RETIRE §5" — the fn body is the
+load-bearing part. The anchors canary marker is the body line
+`crate::edit::wall_house(wall)`, g44's `anchors.txt:904` row — keep that
+row through the merge.)
+
+### Per-branch notes
+
+- **d118 (`91db266ea`, scorer/QuickFindHome lane):** the hunk is the ONLY
+  edit needed. Its `TooManyUnsafeWalls` witness (peer `housing.rs:817-828`)
+  uses the unsafe dirt wall 3 — absent from the FULL table too (`wall_house`
+  admits 1/4-6/10-12/16-27/29-39/…, never 3), so the witness stays green
+  under the widening. No peer test pins the narrow subset (full grep for
+  `is_house_wall(82)` / `!is_house_wall` at both tips: zero hits). The
+  widening is a pure predicate change — zero RNG draws — so d118's stream
+  witnesses are unaffected.
+- **d119 (`04d7f9fd2`, relocation lane):** same single hunk, PLUS a free
+  correctness gain: `town_spawn.rs:463` (`spawn_town_npc`'s sticky-flag arm)
+  calls `tr_core::housing::is_house_wall(wall)` where the C# reads
+  `Main.wallHouse[Main.tile[x, y].wall]` DIRECTLY (`WorldGen.cs:5411`,
+  re-read at retire). Under the narrow copy a disc-wall-82 anchor tile
+  failed to arm `canSpawn`; the delegation makes that call site C#-correct
+  with NO d119-side edit. d119's own witnesses (the msg-60 apply legs, the
+  60-witness framed-body decode) never read the wall table.
+- **Optional additive (both branches):** g44's two housing witnesses —
+  `w4_g44_the_disc_wall_is_a_house_wall_and_the_sky_room_scores`
+  (g44 `housing.rs:1005-1035`, append inside `mod tests`) and
+  `w4_g44_the_generated_island_house_ships_open_flanks_and_no_torch`
+  (g44 `islands.rs:2387`, rides the islands KEEP anyway). Written-not-run;
+  they pin wall 82/73 admission + the unsafe 2/3 refusal on the merged
+  predicate.
+- **Merge order:** the hunk is independent of FINAL-KEEP items 1-5 (the
+  islands/buried-chest family) — it can land with either housing lane's
+  merge; whichever lands SECOND sees the delegation already present and
+  resolves the identical-block conflict by keeping ONE copy.
