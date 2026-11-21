@@ -39272,10 +39272,11 @@ module docs:
 3. **Gore siblings** (PaladinsHammerShockwave :871, StormLightning :1102,
    DeadCellsFlint :1850, DownDash :2190, Digestion :2341, ElderSlime
    :2565) are g16/g17's; their argument draws are consumed here in order.
-4. **Tile sweeps delegate** to this branch's `world_dust_tile::
-   make_tile_dust` (the same function g14 landed in tr-core as
-   `worldgen_dust_tile`); the merger keeps one copy and re-points the
-   call. The DownDash scan keeps its OWN gate variant (solidTop skips
+4. **Tile sweeps delegate** to `collision::tile_dust_amount`
+   (kind-first) + `tr_core::worldgen_dust_tile::kill_tile_make_tile_dust`
+   (g14's canonical body; the re-point LANDED in the research/66 union
+   exec, `e41a90f0` - d54's duplicate ladder/amount copies dropped).
+   The DownDash scan keeps its OWN gate variant (solidTop skips
    only when frameY != 0; frameImportant skips unless solidTop,
    `ParticleOrchestrator.cs:2159`) - distinct from the Flint gate.
 5. **Overlap reconciliation (merger).** d54 batches 1-4 ported the

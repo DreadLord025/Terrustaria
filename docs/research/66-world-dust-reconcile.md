@@ -157,7 +157,7 @@ wave, not a fidelity issue. Two wiring-wave reconciles to record:
 | Module | Verdict |
 | ------ | ------- |
 | g13 `main_dust.rs` (sites 17-23) | **KEEP whole** — no overlap with anyone (the dead flag8 tentacle puff, Tavernkeep ale pair, DrawItem sparkle, retro oldDrawWater trio; 14 witnesses, offline-pinned seeds). |
-| g11 `main_dust.rs` snowing | **KEEP with one fix** (§4). |
+| g11 `main_dust.rs` snowing | **KEEP with one fix** (§4). **SUPERSEDED by research/83/131: d130's snow.rs is canonical; g11's body retires, the F1-F7 folds land on d130.** |
 | g11 `main_dust.rs` teleport_effect (styles 0-7) | **DROP** — g61's is wider and byte-exacter (§4). Keep its witnesses as supplements. |
 | d54 `world_dust_main.rs` | **DROP both bodies** (§4), keep the 9 witnesses as supplements. |
 | g61 `npc_spawn_visuals.rs` | **KEEP whole** — the widest teleport port (§4) + the spawn family (PoofOfSmoke, BigMimicSpawnSmoke, TransformVisuals, NPC.Teleport driver, UpdateNPC_TeleportVisuals, alt-texture transitions). 18 witnesses. |
@@ -168,7 +168,10 @@ wave, not a fidelity issue. Two wiring-wave reconciles to record:
 `crates/tr-app/src/main_dust.rs` with different contents (968 vs 976
 lines) and both add `mod main_dust;` to main.rs at different spots.
 The merge resolves to ONE file: g13's six bodies + g11's snowing (with
-the §4 fix); one `mod` declaration.
+the §4 fix); one `mod` declaration. **(Crosslane update, research/131:
+the snowing half retires to d130 per research/83; the one file is
+g13's bodies + g11's teleport SEAMS dispatcher over g61's body, per
+research/116.)**
 
 ### Mount lane (e4 1-19 vs f6 all-27) — flagged overlap
 
@@ -192,6 +195,12 @@ Keep e4's 10 mount witnesses as supplements where they pin draws f6's
 SpawnInWorldDust` (:390) are already ported by g61 (`poof_of_smoke`,
 `pylon_spawn_in_world_dust`) — **g61's landed bodies win; f6's follow-up
 must skip those two rows** (claim reconcile, no code conflict today).
+**(Crosslane update, research/131 §2: f6's batch 4 LANDED at `680ac9d8`
+— world_dust.rs, 13 sites, 8 witnesses — and it DID port the poof +
+pylon rows plus a rain_splash that duplicates d130's EXECUTED splash
+union; the keep-one stands: g61's poof/pylon + d130's splash win, f6's
+unique six fold. The double-atan2 drill fix is STILL owed at f6 tip
+`5daa1d70`.)**
 
 ## 3. Witness-supplement union lists
 
@@ -377,6 +386,14 @@ the reconcile tip). Landed hashes, in order:
   THIS branch pending the main-lane resolve — the DROP lands when
   g11's fixed snowing + g61's teleport merge (the §2 filename-collision
   resolve: one main_dust.rs = g13's bodies + g11's snowing).
+  **SUPERSEDED (crosslane round, research/131 §5 row 2):** research/83
+  (d130 EXECUTED `88cfbf38` + the g11 addendum `d892d8d4`) rules d130's
+  `snow.rs` the snowing canonical — g11's snowing body RETIRES whole,
+  so the hoist target is d130's once-per-call counter param (fold F4),
+  not g11's loop; the §4 "KEEP g11's body" decision and the
+  g13+g11-snowing merge shape above yield to 83/131. The g11c owed
+  work is the F1-F7 fold list (global stream / HiDef 4096 / pause
+  gate / counter / int loop / env re-point / witness re-pins).
 - **Step 5 — Main 12-16**: VERIFIED covered — g12 `665cd1e8`
   main_dust_b.rs EXISTS (817 lines, sites 9-16, 7 witnesses). The
   matrix's claim-only row was stale (g12 pushed 02:47, after the
