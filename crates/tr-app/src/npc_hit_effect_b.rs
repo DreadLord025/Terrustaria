@@ -1,5 +1,5 @@
-//! `NPC.HitEffect` — the per-NPC gore/dust table, wave B: the NEXT 40
-//! `Gore.NewGore*` death sites in source order (`NPC.cs:81942-82240`),
+//! `NPC.HitEffect` — the per-NPC gore/dust table, wave B: the 40-site
+//! `:81942-82205` window (the f5 seal's e5 claim, research/111 §5.2),
 //! continuing wave A (`npc_hit_effect_a.rs`, W4-d55, ec78d152).
 //!
 //! Wave B is appended to wave A's dispatch: [`hit_effect_b`] runs right
@@ -8,7 +8,7 @@
 //! strike caller's stream (the `StrikeNPC_Inner` `:81488` swap), every
 //! draw cited per site.
 //!
-//! ## Scope — sites 31-91 (source order)
+//! ## Scope — sites 31-76 (source order, the `:81942-82205` window)
 //!
 //! | # | C# site | arm |
 //! | --- | --- | --- |
@@ -20,19 +20,37 @@
 //! | 57-63 | `:82134`-`:82140` | the 561/562/563 DD2 javeliner death (7) |
 //! | 64-66 | `:82167`-`:82169` | the 555/556/557 DD2 kobold death (3) |
 //! | 67-76 | `:82193`-`:82202` | the 551 crystal death, `spriteDirection != -1` (10) |
-//! | 77-86 | `:82206`-`:82215` | the 551 `-1` mirrored twin (10) |
 //!
-//! Everything after `:82218` (572/573 onward, the 566/567 `Next(2)` gates,
-//! the 576/577 pair, …) is wave C (`W4-f10-gore-sites-3`).
+//! KEEP-ONE (research/304): the 551 `-1` mirrored twin (`:82206-82215`,
+//! this wave's old sites 77-86) is DROPPED — it is f10's claim
+//! (`npc_hit_effect_c.rs::betsy_flipped_death`, its sites 71-80, the legit
+//! 385 the f5 seal §5.2/§8 keeps). The wave-B dispatch gates the crystal
+//! death on `sprite_dir != -1`, the exact complement of f10's gate.
+//! NAMING: NPCID 551 = `DD2Betsy` (`NPCID.cs`); this module's `dd2_crystal_*`
+//! fn names + "DD2 crystal" label are an internal misnomer for the SAME
+//! kind f10 calls "Betsy" (the Eternia Crystal is 548/522, a different
+//! arm) — the names are kept for API stability, the kind is Betsy.
+//! Everything from `:82206` (the flipped twin, 572/573 onward, the
+//! 566/567 `Next(2)` gates, the 576/577 pair, …) is wave C
+//! (`W4-f10-gore-sites-3`). The 667 HIT arm's 3-gore twin (`:82045`, the
+//! window's one hit-half site) is a wiring hand-off (research/304 §4 —
+//! the seal §7 pattern, the FIFTH hit-half): g62's live 667 arm
+//! (`npc_hit_dust.rs`) draws the 3×(Next(1,10)+Next(4)) velocity-overwrite
+//! pairs but NOT the 3×2 NewGore kicks — the emit-at-wiring must insert
+//! the kicks BEFORE each overwrite pair (g62's discard census + witness
+//! gain +6 draws; the C# :82045 NewGore draws kicks pool-side, then :82046
+//! overwrites). The body is g62 EMIT-AT-WIRING, not a window-lane port.
 //!
 //! ## Documented drops / stand-ins (this wave)
 //!
 //! * The hit halves (`life > 0`): the dmg-scaled dust loops
 //!   (`dmg / lifeMax * 20`, the 657 12-dust loop, the 658-660/667 7-dust
-//!   loops) have NO gore sites and stay with the wiring wave's dust pass
-//!   — wave A's convention. Exception: the 551 `DD2Event.CheckProgress`
-//!   gate (`:82174-82177`) fires on the HIT path and is RETURNED
-//!   (`HitEffectOutcome::dd2_crystal_check_progress`).
+//!   loops) stay with the wiring wave's dust pass — wave A's convention.
+//!   The 667 hit arm ALSO carries a 3-gore twin (`:82045`, the window's
+//!   one hit-half gore site) — its body is the g62 emit-at-wiring hand-off
+//!   (research/304 §4), not ported here. Exception: the 551
+//!   `DD2Event.CheckProgress` gate (`:82174-82177`) fires on the HIT path
+//!   and is RETURNED (`HitEffectOutcome::dd2_crystal_check_progress`).
 //! * The death dust loops that share an arm with gore sites RUN here on
 //!   the pool (the 657 150-loop, the 658-660/667 count loops, the DD2
 //!   20-dust type-5 loops) — the C# order: 657 gores BEFORE the dust,
@@ -178,12 +196,14 @@ fn crystal_658_660(
     }
 }
 
-/// The 667 (Dark Caster?) death/hit (`NPC.cs:82025-82057`, sites 44-51):
+/// The 667 GoldenSlime death/hit (`NPC.cs:82025-82057`, sites 44-51;
+/// `NPCID.cs` GoldenSlime = 667):
 /// the death arm spawns 8×1218 at `(position.X, Center.Y-10)` with
 /// velocity Zero, then OVERWRITES the slot velocity — `Next(1,10)*0.3*
 /// 2.5*hitDirection` X, `-(3+Next(4)*0.3)` Y (the kicks are drawn inside
 /// `NewGore` first, then discarded by the overwrite). The hit arm is the
-/// 3-gore twin (`×2`, `-(2.5+…)`, `:82045-82046`) — wave C. The dust loop
+/// 3-gore twin (`×2`, `-(2.5+…)`, `:82045-82046`) — the g62 emit-at-wiring
+/// hand-off (research/304 §4), NOT wave C. The dust loop
 /// (7 hit / 40 death, type 10, default colour, alpha 80, scale 1.1/1.5,
 /// `Next(3)!=0` noGravity) runs AFTER the gores.
 fn skeleton_667_death(
@@ -350,11 +370,20 @@ pub fn dd2_crystal_crossed_percent(life: i32, life_max: i32, dmg: f64) -> bool {
     before != after && life > 0
 }
 
-/// The 551 DD2 crystal death (`NPC.cs:82185-82217`, sites 67-86): the
-/// 20-dust type-5 preamble then the 10-gore body — the
-/// `spriteDirection != -1` arm (types 1079/1080/1080/1081/1082/1083/
-/// 1084/1085/1085/1086 at the cited offsets) or the `-1` mirrored twin
-/// (`:82206-82215`, the same type sequence at the mirrored offsets).
+/// The 551 DD2 crystal death, `spriteDirection != -1` arm
+/// (`NPC.cs:82185-82203`, sites 67-76): the 20-dust type-5 preamble then
+/// the 10-gore body (types 1079/1080/1080/1081/1082/1083/1084/1085/1085/
+/// 1086 at the cited offsets).
+///
+/// KEEP-ONE (research/304, the e5-vs-f10 HitEffect overlap): the `-1`
+/// mirrored twin (`:82204-82216`, the same type sequence at the mirrored
+/// offsets) is f10's claim (`npc_hit_effect_c.rs::betsy_flipped_death`,
+/// its sites 71-80, window `:82206-85559` — the legit 385 the f5 seal
+/// §5.2/§8 and f10's own overrun-delete `afea4c0fc` KEEP). e5's window is
+/// `:81942-82205` (40 census sites), so e5 DROPS the flipped else-arm.
+/// The dispatch gates this whole body on `sprite_dir != -1` so the shared
+/// 20-dust preamble runs exactly ONCE per death: e5 owns it for `!= -1`,
+/// f10's `betsy_flipped_death` owns it for `== -1` (its own preamble copy).
 fn dd2_crystal_death(
     npc: &Npc,
     hit_direction: i32,
@@ -368,31 +397,18 @@ fn dd2_crystal_death(
     let p = Vec2::new(npc.x, npc.y);
     let vel = Vec2::new(npc.vx, npc.vy);
     let s = npc.scale;
-    if npc.sprite_dir != -1 {
-        // `:82191-82203` — the spriteDirection != -1 arm (sites 67-76).
-        gore.new_gore(rng, world, p + Vec2::new(0.0, 54.0), vel, 1079, s); // :82193
-        gore.new_gore(rng, world, p + Vec2::new(72.0, 90.0), vel, 1080, s); // :82194
-        gore.new_gore(rng, world, p + Vec2::new(102.0, 94.0), vel, 1080, s); // :82195
-        gore.new_gore(rng, world, p + Vec2::new(178.0, 0.0), vel, 1081, s); // :82196
-        gore.new_gore(rng, world, p + Vec2::new(136.0, 12.0), vel, 1082, s); // :82197
-        gore.new_gore(rng, world, p + Vec2::new(82.0, 18.0), vel, 1083, s); // :82198
-        gore.new_gore(rng, world, p + Vec2::new(100.0, 26.0), vel, 1084, s); // :82199
-        gore.new_gore(rng, world, p + Vec2::new(170.0, 16.0), vel, 1085, s); // :82200
-        gore.new_gore(rng, world, p + Vec2::new(190.0, 10.0), vel, 1085, s); // :82201
-        gore.new_gore(rng, world, p + Vec2::new(100.0, 36.0), vel, 1086, s); // :82202
-    } else {
-        // `:82204-82216` — the -1 mirrored twin (sites 77-86).
-        gore.new_gore(rng, world, p + Vec2::new(176.0, 54.0), vel, 1079, s); // :82206
-        gore.new_gore(rng, world, p + Vec2::new(158.0, 90.0), vel, 1080, s); // :82207
-        gore.new_gore(rng, world, p + Vec2::new(128.0, 94.0), vel, 1080, s); // :82208
-        gore.new_gore(rng, world, p, vel, 1081, s); // :82209
-        gore.new_gore(rng, world, p + Vec2::new(60.0, 12.0), vel, 1082, s); // :82210
-        gore.new_gore(rng, world, p + Vec2::new(88.0, 18.0), vel, 1083, s); // :82211
-        gore.new_gore(rng, world, p + Vec2::new(86.0, 26.0), vel, 1084, s); // :82212
-        gore.new_gore(rng, world, p + Vec2::new(40.0, 16.0), vel, 1085, s); // :82213
-        gore.new_gore(rng, world, p + Vec2::new(20.0, 10.0), vel, 1085, s); // :82214
-        gore.new_gore(rng, world, p + Vec2::new(142.0, 36.0), vel, 1086, s); // :82215
-    }
+    // `:82191-82203` — the spriteDirection != -1 arm (sites 67-76). The
+    // `-1` twin (`:82206-82215`) is f10's — the caller gates on != -1.
+    gore.new_gore(rng, world, p + Vec2::new(0.0, 54.0), vel, 1079, s); // :82193
+    gore.new_gore(rng, world, p + Vec2::new(72.0, 90.0), vel, 1080, s); // :82194
+    gore.new_gore(rng, world, p + Vec2::new(102.0, 94.0), vel, 1080, s); // :82195
+    gore.new_gore(rng, world, p + Vec2::new(178.0, 0.0), vel, 1081, s); // :82196
+    gore.new_gore(rng, world, p + Vec2::new(136.0, 12.0), vel, 1082, s); // :82197
+    gore.new_gore(rng, world, p + Vec2::new(82.0, 18.0), vel, 1083, s); // :82198
+    gore.new_gore(rng, world, p + Vec2::new(100.0, 26.0), vel, 1084, s); // :82199
+    gore.new_gore(rng, world, p + Vec2::new(170.0, 16.0), vel, 1085, s); // :82200
+    gore.new_gore(rng, world, p + Vec2::new(190.0, 10.0), vel, 1085, s); // :82201
+    gore.new_gore(rng, world, p + Vec2::new(100.0, 36.0), vel, 1086, s); // :82202
 }
 
 /// The wave-B dispatch tail — appended to wave A's `hit_effect` in source
@@ -420,7 +436,8 @@ pub(crate) fn hit_effect_b(
         crystal_658_660(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world);
     }
     // `:82025-82057` — the 667 death (sites 44-51); the hit arm's 3-gore
-    // twin is wave C, its dust loop rides the wiring wave's dust pass.
+    // twin (`:82045`) is the g62 emit-at-wiring hand-off (research/304 §4),
+    // its dust loop rides the wiring wave's dust pass.
     if npc_type == 667 && npc.hp <= 0 {
         skeleton_667_death(npc, hit_direction, gore, dust, dust_ctx, rng, world);
     }
@@ -438,13 +455,17 @@ pub(crate) fn hit_effect_b(
         dd2_kobold_death(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world);
     }
     // `:82172-82218` — the 551 DD2 crystal: the CheckProgress gate on the
-    // HIT path (returned), the death arm's 10-gore body (sites 67-86).
+    // HIT path (returned), the death arm's 10-gore body (sites 67-76, the
+    // `spriteDirection != -1` arm ONLY). KEEP-ONE (research/304): the `-1`
+    // flipped twin (`:82206-82215`) is f10's `betsy_flipped_death` — its
+    // gate (`npc_type == 551 && hp <= 0 && sprite_dir == -1`) is the exact
+    // complement, so the shared 20-dust preamble runs exactly once.
     if npc_type == 551 {
         // `:82174-82177` — the percent-crossing gate (netMode != 1 runs).
         if dd2_crystal_crossed_percent(npc.hp, npc.max_hp, dmg) {
             outcome.dd2_crystal_check_progress = true;
         }
-        if npc.hp <= 0 {
+        if npc.hp <= 0 && npc.sprite_dir != -1 {
             dd2_crystal_death(npc, hit_direction, gore, dust, dust_ctx, rng, world);
         }
     }
@@ -806,44 +827,52 @@ mod tests {
         assert_eq!(rng.peek(), twin.peek(), "the crystal mirrors the C# draws");
     }
 
-    /// `NPC.cs:82204-82216` — the 551 `-1` mirrored twin: the same type
-    /// sequence, the mirrored offsets, the same draw census.
+    /// KEEP-ONE (research/304): the 551 `-1` flipped death (`NPC.cs:82204-
+    /// 82216`) is f10's `betsy_flipped_death` — e5's dispatch spawns
+    /// NOTHING for it (no gores AND no dust: the shared 20-dust preamble
+    /// rides f10's copy for `== -1`, so the merge runs it exactly once).
     #[test]
-    fn w4_e5_the_crystal_minus_one_twin_mirrors_the_offsets() {
+    fn w4_e5_the_flipped_crystal_death_is_f10s_claim() {
         let w = air();
         let mut n = boss(100.0, 100.0, 200.0, 120.0);
         n.sprite_dir = -1;
         let mut gore = GorePool::new();
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(43);
-        dd2_crystal_death(&n, -1, &mut gore, &mut dust, &ctx(), &mut rng, &w);
-        let types: Vec<i32> = gore.slots()[..10].iter().map(|g| g.gore_type).collect();
-        assert_eq!(
-            types,
-            vec![1079, 1080, 1080, 1081, 1082, 1083, 1084, 1085, 1085, 1086]
+        let out = crate::npc_hit_effect_a::hit_effect(
+            &mut n, 551, &crate::npc_hit_effect_a::HitEffectInputs::default(),
+            -1, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w,
         );
-        let offsets = [
-            (176.0, 54.0), (158.0, 90.0), (128.0, 94.0), (0.0, 0.0),
-            (60.0, 12.0), (88.0, 18.0), (86.0, 26.0), (40.0, 16.0),
-            (20.0, 10.0), (142.0, 36.0),
-        ];
-        for (g, (dx, dy)) in gore.slots()[..10].iter().zip(offsets) {
-            assert_eq!(g.position, Vec2::new(100.0 + dx, 100.0 + dy));
-        }
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 0);
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 0);
+        assert!(!out.dd2_crystal_check_progress); // the death path
         let mut twin = UnifiedRandom::new(43);
+        assert_eq!(rng.peek(), twin.peek(), "the -1 death draws nothing in e5");
+        // The != -1 twin still runs e5's full body (10 gores + 20 dusts).
+        let mut n2 = boss(100.0, 100.0, 200.0, 120.0);
+        n2.sprite_dir = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(43);
+        crate::npc_hit_effect_a::hit_effect(
+            &mut n2, 551, &crate::npc_hit_effect_a::HitEffectInputs::default(),
+            -1, 10.0, &mut gore2, &mut dust2, &ctx(), &mut rng2, &w,
+        );
+        assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 10);
+        let mut twin2 = UnifiedRandom::new(43);
         for _ in 0..20 {
-            let _px = twin.next_max(196);
-            let _py = twin.next_max(116);
-            let _vx = twin.next_range(-20, 21);
-            let _vy = twin.next_range(-20, 21);
-            let _row = twin.next_max(3);
-            let _scale = twin.next_range(-20, 21);
+            let _px = twin2.next_max(196);
+            let _py = twin2.next_max(116);
+            let _vx = twin2.next_range(-20, 21);
+            let _vy = twin2.next_range(-20, 21);
+            let _row = twin2.next_max(3);
+            let _scale = twin2.next_range(-20, 21);
         }
         for _ in 0..10 {
-            let _ky = twin.next_range(10, 31);
-            let _kx = twin.next_range(-20, 21);
+            let _ky = twin2.next_range(10, 31);
+            let _kx = twin2.next_range(-20, 21);
         }
-        assert_eq!(rng.peek(), twin.peek(), "the -1 twin mirrors the C# draws");
+        assert_eq!(rng2.peek(), twin2.peek(), "the != -1 body keeps its census");
     }
 
     /// The wave-B dispatch on a dead 553 goblin through wave A's
