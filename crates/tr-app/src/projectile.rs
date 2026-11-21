@@ -17935,6 +17935,27 @@ impl ProjectilePool {
                             );
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d11 — aiStyle 105 (`AI()` `:33512-33515` ->
+                        // `AI_105_SporeSac` `:40043-40192`): the 567/568
+                        // Spore Sac traps. `IndexForVisuals` is the slot
+                        // index (`key.Index`, `:552`); the owner centre +
+                        // the sporeSac flag ride the player. 105 is not on
+                        // the `UpdatePosition` skip list — `kill_step`
+                        // integrates the drift.
+                        105 => {
+                            let sac_owner = player.as_deref().map(|pl| pl.center()).or(owner);
+                            let sac_flag =
+                                player.as_deref().is_some_and(|pl| pl.spore_sac);
+                            crate::projectile_ai_101_110::ai_spore_sac(
+                                &mut self.slots[i],
+                                npcs,
+                                sac_owner,
+                                sac_flag,
+                                i,
+                                local_owner,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
                         122 => {
                             // `:34927-34929`'s homing run, then the contact's
                             // shield spend — `Projectile.Kill()`'s type-629

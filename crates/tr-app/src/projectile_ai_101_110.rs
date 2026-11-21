@@ -395,6 +395,150 @@ pub(crate) fn ai_brain_of_confusion(p: &mut Projectile) {
     p.vel.x *= 0.97;
 }
 
+/// `AI()`'s aiStyle-105 block (`Projectile.cs:33512-33515`) ->
+/// `AI_105_SporeSac` (`:40043-40192`) — the 567/568 Spore Sac traps: the
+/// breathing scale (the ±90-tick `localAI[0]` flip, ±0.003/tick), the
+/// `IndexForVisuals % 6` drift-direction table, the 240-tick drift cycle
+/// (`localAI[1]`: -180..60, the sign flips at -60), the 5400-tick age
+/// with the owner-distance penalty ladder (the unequipped-sac +100),
+/// and the 340-Manhattan nearest-chaseable homing (the 4/41 blend) or
+/// the 0.98 drag above 0.2 speed.
+///
+/// `index_for_visuals` is the slot index (the C# `key.Index`,
+/// `Projectile.cs:552` — the port's slots ARE the identity). `owner` is
+/// the owner player's centre; `spore_sac` the equipped flag
+/// (`Player.cs:1990`). The `Lighting.AddLight` (`:40046`) feeds the
+/// render light layer only — skipped. ZERO `Main.rand` draws.
+pub(crate) fn ai_spore_sac(
+    p: &mut Projectile,
+    npcs: &[Npc],
+    owner: Option<(f32, f32)>,
+    spore_sac: bool,
+    index_for_visuals: usize,
+    local_owner: u8,
+) {
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    // `:40047` — the sac-trap flag (both rowed kinds are traps).
+    let flag = p.kind == 567 || p.kind == 568;
+    // `:40048-40060` — the breathing scale.
+    p.local_ai[0] += 1.0;
+    if p.local_ai[0] >= 90.0 {
+        p.local_ai[0] *= -1.0;
+    }
+    if p.local_ai[0] >= 0.0 {
+        p.scale += 0.003;
+    } else {
+        p.scale -= 0.003;
+    }
+    // `:40061` — the slow spin.
+    p.rot += 0.0025 * p.scale;
+    // `:40062-40084` — the drift-direction table.
+    let mut num2 = 1.0f32;
+    let mut num3 = 1.0f32;
+    match index_for_visuals % 6 {
+        0 => num3 *= -1.0,
+        1 => num2 *= -1.0,
+        2 => {
+            num3 *= -1.0;
+            num2 *= -1.0;
+        }
+        3 => num3 = 0.0,
+        4 => num2 = 0.0,
+        _ => {}
+    }
+    // `:40085-40099` — the 240-tick drift cycle.
+    p.local_ai[1] += 1.0;
+    if p.local_ai[1] > 60.0 {
+        p.local_ai[1] = -180.0;
+    }
+    if p.local_ai[1] >= -60.0 {
+        p.vel.x += 0.002 * num3;
+        p.vel.y += 0.002 * num2;
+    } else {
+        p.vel.x -= 0.002 * num3;
+        p.vel.y -= 0.002 * num2;
+    }
+    // `:40100-40162` — the age + the fade legs.
+    p.ai[0] += 1.0;
+    if p.ai[0] > 5400.0 {
+        p.damage = 0;
+        p.ai[1] = 1.0;
+        if p.alpha < 255 {
+            p.alpha += 5;
+            if p.alpha > 255 {
+                p.alpha = 255;
+            }
+        } else if p.owner == local_owner {
+            kill(p);
+            return;
+        }
+    } else {
+        // `:40120-40153` — the owner-distance penalty ladder.
+        let (ox, oy) = owner.unwrap_or((center.x, center.y));
+        let mut num4 = (center - Vec2::new(ox, oy)).length() / 100.0;
+        if num4 > 4.0 {
+            num4 *= 1.1;
+        }
+        if num4 > 5.0 {
+            num4 *= 1.2;
+        }
+        if num4 > 6.0 {
+            num4 *= 1.3;
+        }
+        if num4 > 7.0 {
+            num4 *= 1.4;
+        }
+        if num4 > 8.0 {
+            num4 *= 1.5;
+        }
+        if num4 > 9.0 {
+            num4 *= 1.6;
+        }
+        if num4 > 10.0 {
+            num4 *= 1.7;
+        }
+        if flag && !spore_sac {
+            num4 += 100.0;
+        }
+        p.ai[0] += num4;
+        // `:40154-40161` — the fade-in to 50.
+        if p.alpha > 50 {
+            p.alpha -= 10;
+            if p.alpha < 50 {
+                p.alpha = 50;
+            }
+        }
+    }
+    // `:40163-40191` — the nearest-chaseable homing (the Manhattan 340
+    // scan, the `CanBeChasedBy` gate) or the drag.
+    let mut flag2 = false;
+    let mut vector = Vec2::ZERO;
+    let mut num5 = 340.0f32;
+    for n in npcs {
+        if !crate::projectile::chaseable(n) {
+            continue;
+        }
+        let (nw, nh) = n.size();
+        let num6 = n.x + (nw as i32 / 2) as f32;
+        let num7 = n.y + (nh as i32 / 2) as f32;
+        let num8 = (p.pos.x + (p.w as i32 / 2) as f32 - num6).abs()
+            + (p.pos.y + (p.h as i32 / 2) as f32 - num7).abs();
+        if num8 < num5 {
+            num5 = num8;
+            vector = crate::projectile::npc_center(n);
+            flag2 = true;
+        }
+    }
+    if flag2 {
+        let mut vector2 = vector - center;
+        vector2 = safe_normalize(vector2);
+        vector2 *= 4.0;
+        p.vel = (p.vel * 40.0 + vector2) / 41.0;
+    } else if p.vel.length() > 0.2 {
+        p.vel *= 0.98;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (W4-d11 code-only round — WRITTEN NOT RUN).
 
@@ -759,5 +903,121 @@ mod tests {
             ai_brain_of_confusion(&mut p);
         }
         assert_eq!(p.frame, 0, "three more cycles wrap 3 -> 0");
+    }
+
+    /// The 567/568 rows (`Projectile.cs:6185-6205`) + the shared 567
+    /// immunity identity (`UseGroupStaticImmunity(567)`, `:6204`).
+    #[test]
+    fn w4_d11_105_the_trap_rows_carry_their_styles() {
+        let d = proj_data(567).unwrap();
+        assert_eq!((d.ai_style, d.w, d.h, d.penetrate), (105, 14.0, 14.0, 1));
+        assert_eq!((d.alpha, d.time_left), (255, 3600));
+        assert!(!d.tile_collide, ":6202");
+        assert!(d.uses_id_static_immunity, ":6204");
+        assert_eq!(d.id_static_hit_cooldown, 10, ":10679");
+        assert_eq!(d.immunity_identity, 567, "the shared group");
+        let d = proj_data(568).unwrap();
+        assert_eq!((d.ai_style, d.w, d.h), (105, 16.0, 16.0));
+        assert_eq!(d.immunity_identity, 567, "both traps share 567");
+    }
+
+    /// `:40048-40061` — the breathing scale: +0.003 while localAI[0] >= 0,
+    /// the flip at 90 (localAI[0] = -90), then -0.003; the spin rides the
+    /// CURRENT scale.
+    #[test]
+    fn w4_d11_105_the_scale_breathes_over_180_ticks() {
+        let mut p = proj(567);
+        let npcs: Vec<Npc> = Vec::new();
+        for _ in 0..89 {
+            ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+        }
+        assert_eq!(p.local_ai[0], 89.0);
+        assert!((p.scale - (1.0 + 0.003 * 89.0)).abs() < 1e-4);
+        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+        assert_eq!(p.local_ai[0], -90.0, "the 90-tick flip");
+        assert!((p.scale - (1.0 + 0.003 * 89.0 - 0.003)).abs() < 1e-4, "the shrink leg");
+    }
+
+    /// `:40062-40099` — the IndexForVisuals % 6 drift table + the
+    /// localAI[1] cycle: index 3 zeroes num3 (no X drift), index 4 zeroes
+    /// num2 (no Y drift); the cycle wraps 61 -> -180.
+    #[test]
+    fn w4_d11_105_the_drift_table_and_cycle() {
+        let npcs: Vec<Npc> = Vec::new();
+        let mut p = proj(567);
+        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 3, 0);
+        assert_eq!(p.vel.x, 0.0, "index 3: num3 = 0");
+        assert!((p.vel.y - 0.002).abs() < 1e-6, "num2 = 1");
+        let mut p = proj(567);
+        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 4, 0);
+        assert!((p.vel.x - 0.002).abs() < 1e-6);
+        assert_eq!(p.vel.y, 0.0, "index 4: num2 = 0");
+        // The cycle: 60 ticks reach 60, tick 61 wraps to -180 (the
+        // negative leg subtracts).
+        let mut p = proj(567);
+        for _ in 0..61 {
+            ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+        }
+        assert_eq!(p.local_ai[1], -180.0, ":40088");
+    }
+
+    /// `:40149-40153` — the unequipped sac's +100 age penalty; the
+    /// equipped sac ages by 1 + the distance ladder only.
+    #[test]
+    fn w4_d11_105_the_unequipped_sac_ages_100_per_tick() {
+        let npcs: Vec<Npc> = Vec::new();
+        let mut p = proj(567);
+        let c = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        ai_spore_sac(&mut p, &npcs, Some((c.x, c.y)), false, 5, 0);
+        assert_eq!(p.ai[0], 101.0, "1 + 0 distance + 100 penalty");
+        let mut p = proj(567);
+        ai_spore_sac(&mut p, &npcs, Some((c.x, c.y)), true, 5, 0);
+        assert_eq!(p.ai[0], 1.0, "equipped: no penalty");
+        // The fade-in: alpha 255 -> 245 on the first tick.
+        assert_eq!(p.alpha, 245, ":40156");
+    }
+
+    /// `:40100-40117` — past 5400 the trap zeroes damage, latches ai[1],
+    /// fades +5/tick and dies at 255 (the owner gate).
+    #[test]
+    fn w4_d11_105_the_old_trap_fades_and_dies() {
+        let npcs: Vec<Npc> = Vec::new();
+        let mut p = proj(567);
+        p.ai[0] = 5400.0;
+        p.alpha = 250;
+        p.damage = 30;
+        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+        assert_eq!(p.ai[0], 5401.0);
+        assert_eq!(p.damage, 0, ":40103");
+        assert_eq!(p.ai[1], 1.0, ":40104");
+        assert_eq!(p.alpha, 255, "the +5 clamp");
+        assert!(p.active, "the fade leg does not kill");
+        ai_spore_sac(&mut p, &npcs, Some(p.pos), true, 5, 0);
+        assert!(!p.active, "alpha 255 + owner -> Kill");
+    }
+
+    /// `:40163-40191` — the nearest-chaseable homing: the Manhattan 340
+    /// scan picks the closest, the velocity blends (v*40 + dir*4)/41;
+    /// with no target the 0.98 drag runs above 0.2 speed.
+    #[test]
+    fn w4_d11_105_the_trap_homes_the_nearest_chaseable() {
+        let mut p = proj(567);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.vel = Vec2::ZERO;
+        let mut n = host_npc(crate::npc::NpcKind::Zombie, 1100.0, 1000.0);
+        n.max_hp = 40;
+        n.hp = 40;
+        let npcs = vec![n];
+        ai_spore_sac(&mut p, &npcs, Some((1000.0, 1000.0)), true, 5, 0);
+        // The drift added (0.002, 0.002) first; the homing blend pulls
+        // toward +X: vel = (drift*40 + (4,0))/41.
+        let want = (Vec2::new(0.002, 0.002) * 40.0 + Vec2::new(4.0, 0.0)) / 41.0;
+        assert!((p.vel - want).length() < 1e-4, "the 4/41 blend: {:?}", p.vel);
+        // No chaseable: the drag.
+        let mut p = proj(567);
+        p.vel = Vec2::new(1.0, 0.0);
+        ai_spore_sac(&mut p, &[], Some(p.pos), true, 5, 0);
+        // The drift adds 0.002 then the 0.98 drag: (1.002)*0.98.
+        assert!((p.vel.x - 1.002 * 0.98).abs() < 1e-5, ":40190");
     }
 }

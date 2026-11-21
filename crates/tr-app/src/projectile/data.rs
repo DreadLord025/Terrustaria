@@ -321,6 +321,12 @@ pub const NEBULA_LASER: u16 = 576;
 /// penetrate -1, tileCollide false, ignoreWater, alpha 255, scale 0.8).
 /// W4-d11.
 pub const BRAIN_OF_CONFUSION: u16 = 565;
+/// `ProjectileID.SporeTrap` (567) / `SporeTrap2` (568) — the Spore Sac
+/// accessory's traps, aiStyle 105 (`Projectile.cs:6185-6205`: 14x14 /
+/// 16x16, friendly, penetrate 1, alpha 255, timeLeft 3600, tileCollide
+/// false, ignoreWater, `UseGroupStaticImmunity(567)`). W4-d11.
+pub const SPORE_TRAP: u16 = 567;
+pub const SPORE_TRAP_2: u16 = 568;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
@@ -2489,6 +2495,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             BRAIN_OF_CONFUSION => {
                 (28.0, 28.0, 104, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 0.8))
             }
+            // W4-d11 — `Projectile.cs:6185-6205` (567/568, the Spore
+            // Sac traps): 14x14 / 16x16, aiStyle 105, penetrate 1,
+            // alpha 255, timeLeft 3600, tileCollide false; the shared
+            // `UseGroupStaticImmunity(567)` rides the idStatic overlay
+            // below.
+            SPORE_TRAP => {
+                (14.0, 14.0, 105, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 255, 1.0))
+            }
+            SPORE_TRAP_2 => {
+                (16.0, 16.0, 105, 1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, true, 10, 255, 1.0))
+            }
             // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
             // 10x10, aiStyle 101, penetrate -1, tileCollide false;
             // drawLayer 7 / usesOwnerLight are render-side (dropped).
@@ -4141,7 +4158,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
         // Bee Gun's bee 181 and giant bee 566 share the identity 181, so the
         // id-static table keys both under one cooldown. Every other row keeps
         // 0 = "use the kind" (the `:782` reset `immunityIdentity = type`).
-        immunity_identity: if matches!(kind, BEE | GIANT_BEE) { BEE } else { 0 },
+        // W4-d11: the Spore Sac traps share 567 (`UseGroupStaticImmunity
+        // (567)`, `Projectile.cs:6204`).
+        immunity_identity: if matches!(kind, BEE | GIANT_BEE) {
+            BEE
+        } else if matches!(kind, SPORE_TRAP | SPORE_TRAP_2) {
+            SPORE_TRAP
+        } else {
+            0
+        },
         alpha,
         // the yoyo family's per-kind scale ladder (`DefaultToYoyo`); every
         // other row carries its own scale in the state group.
@@ -4276,6 +4301,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d11 — the 565 BrainOfConfusion sets `ignoreWater`
             // (`Projectile.cs:6168`).
             || kind == BRAIN_OF_CONFUSION
+            // W4-d11 — the Spore Sac traps set `ignoreWater`
+            // (`Projectile.cs:6203`).
+            || matches!(kind, SPORE_TRAP | SPORE_TRAP_2)
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,

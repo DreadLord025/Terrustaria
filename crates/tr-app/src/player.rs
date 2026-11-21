@@ -723,6 +723,13 @@ pub struct Player {
     /// `Player.DeadlySphereMinion` (`Player.cs:1288`) — buff 161's flag, the
     /// chain's last arm (`:10957-10972`).
     pub deadly_sphere_minion: bool,
+    /// `Player.sporeSac` (`Player.cs:1990`) — the Spore Sac accessory's
+    /// equipped flag (`ApplyEquipFunctional`'s item-3336 arm, `:14776-
+    /// 14780`); `ResetEffects` clears it (`:18453`). `AI_105_SporeSac`'s
+    /// distance penalty reads it (`Projectile.cs:40149-40152`): an
+    /// unequipped sac's traps age +100/tick. The grant side (the
+    /// accessory pass) is unported — the flag stays false until it lands.
+    pub spore_sac: bool,
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
@@ -2495,6 +2502,7 @@ impl Player {
         };
         Self {
             dead: false,
+            spore_sac: false,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -6045,6 +6053,9 @@ impl Player {
         // re-arm them per tick (S1-P-i52).
         self.mana_magnet = false;
         self.life_magnet = false;
+        // `ResetEffects`' `sporeSac = false` (`Player.cs:18453`, W4-d11):
+        // the Spore Sac accessory row re-arms it per tick (`:14779`).
+        self.spore_sac = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
