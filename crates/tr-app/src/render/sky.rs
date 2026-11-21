@@ -950,7 +950,7 @@ pub(crate) fn draw_sky(
     // `[minDepth, last)` band (`LanternSky.cs:169-187`'s own cull). The
     // tracker mirrors `amb_last`; the final flush draws the remainder.
     let mut lantern_last = f32::INFINITY;
-    let mut draw_lantern_band = |r: &mut SpriteRenderer, min_depth: f32, last: &mut f32| {
+    let draw_lantern_band = |r: &mut SpriteRenderer, min_depth: f32, last: &mut f32| {
         if *last <= min_depth {
             return;
         }

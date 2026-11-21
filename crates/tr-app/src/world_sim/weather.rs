@@ -215,7 +215,7 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         // `SkyManager.Activate/Deactivate("Lantern")`; the port drives the
         // sky's own activate/deactivate. The activate reads the live view
         // band (`Main.screenPosition.Y`/`screenHeight`, `LanternSky.cs:93`).
-        let (sw, sh) = app.screen_size();
+        let (_sw, sh) = app.screen_size();
         match lantern_edge {
             Some(true) => app.lantern_sky.activate(
                 world.width,
