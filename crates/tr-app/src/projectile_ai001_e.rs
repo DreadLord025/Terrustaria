@@ -59,6 +59,7 @@
 use glam::Vec2;
 use tr_core::World;
 
+use crate::npc::Npc;
 use crate::projectile::Projectile;
 
 /// `ProjectileID.MartianTurretBolt` (435) — the W4-c11 row's kind
@@ -89,7 +90,10 @@ pub(crate) fn covers(kind: u16) -> bool {
 }
 
 /// `AI_001`'s slice-E body for one slot, in the C#'s own block order.
-pub(crate) fn step(p: &mut Projectile, world: &World) {
+/// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`)
+/// in `finish` — the slice-E kinds are not arrows (the producer's `arrow`
+/// gate never charms them), so the tail is the two-bit no-op for them.
+pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i32]) {
     match p.kind {
         MARTIAN_TURRET_BOLT => {
             // `:54909-54933` — the head block. `:54911-54915`: the
@@ -131,7 +135,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             // `flag3 = false` (`:55992`): the counter rests, the generic
             // gravity never fires — a straight bolt. The rotation tail
             // is the 435/459/682/709 arm (`:57642-57648`).
-            finish(p, world, true);
+            finish(p, world, true, npcs, immune);
         }
         NEBULA_LASER => {
             // `:55361-55365` — the `ai[1] == 0f` one-shot latch: the C#
@@ -163,7 +167,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             // `flag3 = false` (`:56008`): the counter rests, the generic
             // gravity never fires — a straight laser. The rotation tail
             // is the DEFAULT (`:57750` — 576 is not in the :57642 arm).
-            finish(p, world, false);
+            finish(p, world, false, npcs, immune);
         }
         MONK_STAFF_T3_ALT_SHOT => {
             // `:54696-54725` — the head block. `:54698-54702`:
@@ -216,7 +220,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             // `flag3 = false` (`:56025`): the counter rests, the generic
             // gravity never fires — a straight shot. The rotation tail
             // is the 435/459/682/709 arm (`:57642-57648`).
-            finish(p, world, true);
+            finish(p, world, true, npcs, immune);
         }
         _ => unreachable!("the dispatch gates on SLICE_E_KINDS"),
     }
@@ -229,7 +233,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
 /// (`:57753-57768` — the exact C# +16 bound, module doc), then the
 /// movement stand-in. `dir_split_rot` selects the `:57642-57648` arm
 /// (435/709) over the `:57750` default (576).
-fn finish(p: &mut Projectile, world: &World, dir_split_rot: bool) {
+fn finish(p: &mut Projectile, world: &World, dir_split_rot: bool, npcs: &[Npc], immune: &[i32]) {
     if dir_split_rot {
         // `Projectile.cs:57642-57648` — `rotation =
         // velocity.ToRotation()`; `if (direction == -1) rotation += π`.
@@ -248,6 +252,8 @@ fn finish(p: &mut Projectile, world: &World, dir_split_rot: bool) {
     if p.vel.y > 16.0 {
         p.vel.y = 16.0;
     }
+    // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7).
+    crate::projectile_harpy_charm::charm_tail(p, world, npcs, immune);
     move_only(p, world);
 }
 
@@ -394,7 +400,7 @@ mod tests {
     fn w4_f20e_the_turret_bolt_latches_frames_and_flies_straight() {
         let w = world();
         let mut p = bolt(2.0, 0.0);
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.ai[1], 1.0, "the one-shot latch (`:54913`)");
         assert_eq!(
             p.wants_sound,
@@ -403,7 +409,7 @@ mod tests {
         );
         p.wants_sound = None; // the drain consumed it (the pass tail)
         for _ in 0..29 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.ai[1], 1.0, "the latch never re-arms");
         assert_eq!(p.wants_sound, None, "one cue per life");
@@ -423,7 +429,7 @@ mod tests {
     fn w4_f20e_the_turret_bolt_adds_pi_when_left_facing() {
         let w = world();
         let mut p = bolt(-2.0, 0.0);
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.sprite_direction, -1, "vx < 0 (`:54921`)");
         let want = p.vel.y.atan2(p.vel.x) + std::f32::consts::PI;
         assert!((p.rot - want).abs() < 1e-6, "(`:57646`)");
@@ -438,10 +444,10 @@ mod tests {
         let mut p = bolt(2.0, 0.0);
         p.alpha = 255;
         for _ in 0..7 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.alpha, 0, "255 - 40×7 clamps at 0 (`:54918`)");
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.alpha, 0, "the clamp holds");
     }
 
@@ -454,7 +460,7 @@ mod tests {
     fn w4_f20e_the_nebula_laser_latches_and_fades_after_two() {
         let w = world();
         let mut p = laser(3.0, 0.0);
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.ai[1], 1.0, "the one-shot latch (`:55363`)");
         assert_eq!(
             p.wants_sound,
@@ -462,12 +468,12 @@ mod tests {
             "the Item12 cue at base.position (`:55364`)"
         );
         p.wants_sound = None; // the drain consumed it (the pass tail)
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.local_ai[1], 2.0, "the counter (`:55637`)");
         assert_eq!(p.alpha, 255, "the fade gate is > 2 (`:55638`)");
         assert_eq!(p.wants_sound, None, "one cue per life");
         for _ in 0..17 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.local_ai[1], 19.0);
         assert_eq!(p.alpha, 0, "255 - 15×17 clamps at 0 (`:55642`)");
@@ -484,7 +490,7 @@ mod tests {
     fn w4_f20e_the_nebula_laser_keeps_the_default_rotation() {
         let w = world();
         let mut p = laser(-3.0, 0.0);
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         let want = p.vel.y.atan2(p.vel.x) + 1.57;
         assert!((p.rot - want).abs() < 1e-6, "(`:57750`)");
     }
@@ -499,7 +505,7 @@ mod tests {
         let w = world();
         let mut p = shot(4.0, 0.0);
         for _ in 0..29 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert!(p.active, "alive at ai[1] = 29 (`:54720`)");
         assert_eq!(p.ai[1], 29.0, "the age counter (`:54719`)");
@@ -523,11 +529,11 @@ mod tests {
         let w = world();
         let mut p = shot(4.0, 0.0);
         for _ in 0..29 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         let x_before = p.pos.x;
         let life_before = p.time_left;
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert!(!p.active, "the 30-tick kill (`:54722`)");
         assert_eq!(p.time_left, 0, "the death convention");
         assert_eq!(p.ai[1], 30.0, "the increment precedes the kill");
@@ -541,7 +547,7 @@ mod tests {
     fn w4_f20e_the_monk_shot_adds_pi_when_left_facing() {
         let w = world();
         let mut p = shot(-4.0, 0.0);
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.sprite_direction, -1, "vx < 0 (`:54703`)");
         let want = p.vel.y.atan2(p.vel.x) + std::f32::consts::PI;
         assert!((p.rot - want).abs() < 1e-6, "(`:57646`)");

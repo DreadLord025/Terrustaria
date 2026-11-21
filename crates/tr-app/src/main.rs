@@ -201,6 +201,11 @@ mod projectile_ai001_d;
 // until c11/d11/d15 merge (the d7 unwired precedent). Code-only mode —
 // witness tests written not run.
 mod projectile_ai001_e;
+// W4-f20 F7 — the Harpy-charm chain: the ai[2]-bits producer
+// (Player.Update_HarpyCharm, Player.cs:28436-28490) + ApplyHarpyCharm
+// (Projectile.cs:57796-57824) + the AI_001 charm tail (:57769-57793);
+// census research/26f F7. Code-only mode — witness tests written not run.
+mod projectile_harpy_charm;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;

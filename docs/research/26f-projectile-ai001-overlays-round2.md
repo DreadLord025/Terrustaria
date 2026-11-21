@@ -120,8 +120,8 @@ the C# tail, matched against the port:
 | wet clear | `:16786-16789` (`242/302/638 → wet = false`) | 242, 302 (unrowed), 638 | NOT ported pool-wide (the wet probe is per-arm, the 16-style bomb stand-in `:17276`); the 242/638 arms read no wet state, so inert — recorded |
 | shimmer lift | `:22361-22530` (`Shimmer()`, the `:17009-17011` gate) | the aiStyle-1/16/40 family `:22403` + the arrow list `:22380` | NOT ported pool-wide — the projectile shimmer layer is a separate system (ANALYSIS `:27666`, the g2 `26d` recorded gap "the Shimmer() family"); the 1006 flag4 inversion is the AI_001-internal half, ported. The `Shimmer()` bounce/lift is the f47/e19 item-side lane's sibling, deferred for projectiles |
 | magicQuiver extraUpdates | `:17032-17035` (`extraUpdates < 1 → 1`) | the arrow-flag kinds | PORTED (this round, F6): the pool's per-sub-step tail between the movement and `damage_pve` — `friendly && arrow && extra_updates < 1 && owner == local_owner && player.magic_quiver` → `extra_updates = 1`; the `numUpdates` read-once (`:16675`) means the bump lands from the NEXT update. The ×1.1 shoot-speed fuse stays the `ammo.rs` half (f28/e16) |
-| Harpy-charm tail | `:57769-57793` + `ApplyHarpyCharm` `:57796-57824` + `AI_001_Features` `:239-289` | the arrow kinds (ai[2] bits) | NOT ported — no charm feature in the port (the slice-B doc `:48` records the skip); the `accHarpyCharm`/`accSeraphNecklace`/`hasPhoenixQuiver` player flags + `HarpyCharmEffect` (`Player.cs:28447-28490`) are unported. The ai[2] bits stay 0, so the tail's `!HarpyCharmed` early-return (`:57769`) makes it inert — recorded, deferred with the accessory lane |
-| PhoenixQuivered dust | `:54005-54011` | the charmed arrows | dust-only + the ai[2] bit gate (inert, no charm) — skipped |
+| Harpy-charm tail | `:57769-57793` + `ApplyHarpyCharm` `:57796-57824` + `AI_001_Features` `:239-289` | the arrow kinds (ai[2] bits) | PORTED (this round, F7): the producer is the per-tick `Player.Update_HarpyCharm` accessory scan (`Player.cs:24565` → `:28436-28490`), NOT item-use — `projectile_harpy_charm.rs` ports the producer + `ApplyHarpyCharm` + the tail; the `accHarpyCharm`/`accSeraphNecklace`/`hasPhoenixQuiver` flags + the 90/72 cooldown land in `player.rs` (the equip grants `:14490-14493`/`:14588-14598`, the ResetEffects clears `:18471-18472`/`:18609`); the tail rides every aiStyle-1 flight body's end (after the clamp, before the movement) |
+| PhoenixQuivered dust | `:54005-54011` | the charmed arrows | SKIPPED with the dust layer (the ai001 convention) — the bit-2 write is state-only; the `Next(3)` + `NextVector2Circular(3,3)` pair + `NextFloat` scale draws ride with the skipped body |
 
 **The generic `ai_arrow` is CORRECT for every rowed style-1 kind that
 falls through to it.** After slices A-E + the riders + the special
@@ -199,13 +199,36 @@ the alias, this round's resolves it).
   to `owner == local_owner` + the local player's flag. RNG-free (the
   bump draws nothing). 5 witnesses in `w4_f20_f6_quiver_tests`, WRITTEN
   NOT RUN.
-- **F7 (the Harpy-charm tail is inert-unported).** The `:57769-57793`
-  tail + `ApplyHarpyCharm` + `AI_001_Features` (ai[2] bits) are unported
-  (no charm feature, the slice-B doc skip). The ai[2] bits stay 0, so the
-  tail's `!HarpyCharmed` early-return makes it inert — the port is
-  behaviour-correct for the no-accessory case. Deferred with the
-  accessory lane (the `accHarpyCharm`/`accSeraphNecklace`/
-  `hasPhoenixQuiver` flags + `HarpyCharmEffect`).
+- **F7 (the Harpy-charm chain — PORTED this round, producer + tail).**
+  The `:57769-57793` tail + `ApplyHarpyCharm` (`:57796-57824`) +
+  `AI_001_Features` (ai[2] bits, `:239-290`) were recorded inert-unported
+  in the first pass ("the ai[2] bits stay 0"). This round censused the
+  WRITER: the producer is NOT item-use — it is the per-tick
+  `Player.Update_HarpyCharm` accessory scan (`Player.cs:24565` →
+  `:28436-28490`), unclaimed-small, so the whole chain ports together
+  (the F3 "row+arm together" pattern applied to producer+tail).
+  `projectile_harpy_charm.rs` carries: the `AI_001_Features` bit consts
+  (the FloatIntUnion's low four mantissa bits), `update_harpy_charm`
+  (the cooldown decrement + the effect gate), `harpy_charm_effect` (the
+  1000-slot nearest-arrow scan: 400..1200 px window, 1600-px LOS target,
+  the 90/72-tick cooldown, the Phoenix>Seraph>plain itemID pick),
+  `apply_harpy_charm` (the π turn, the bit writes, the 300-tick life cap,
+  the SendData→net_update fold, the particle-layer skip) and `charm_tail`
+  (the per-sub-step π steer + the <1 normalize + the <12 ×1.05 accel, the
+  Consumed-bit on a lost target). The player flags
+  (`acc_harpy_charm`/`acc_seraph_necklace`/`has_phoenix_quiver` + the
+  persistent cooldown) land in `player.rs` with the equip grants
+  (`:14490-14493`/`:14588-14598`) and the ResetEffects clears
+  (`:18471-18472`/`:18609`). The tail rides the END of every aiStyle-1
+  flight body (the generic `ai_style1_flight`, the slice-A/D/E `finish`,
+  `special_arrows::step`, the moonlord `finish_flight`/640 arm, the darts
+  step) — after the `flag8` clamp, before the movement, the C#'s `:57769`
+  slot; the early-return kill paths skip it as the C# `return` does. The
+  producer rides `update_player` after `update_snake_band` (the C#
+  `:24565` < `:24567` order, the split-frame fold). RNG-free by
+  construction (the scan + the trig draw nothing); the PhoenixQuivered
+  dust gate (`:54005-54011`) stays the dust-layer skip. 6 witnesses in
+  `projectile_harpy_charm::tests`, WRITTEN NOT RUN.
 
 ## Verification
 

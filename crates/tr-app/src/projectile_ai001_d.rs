@@ -54,6 +54,7 @@
 use glam::Vec2;
 use tr_core::World;
 
+use crate::npc::Npc;
 use crate::projectile::{
     Projectile, BETSY_ARROW, BLOOD_ARROW, HELLWING, ONYX_BLACK_BOLT, PULSE_BOLT, QUEEN_BEE_STINGER,
     STAKE,
@@ -96,7 +97,10 @@ enum Gravity {
 }
 
 /// `AI_001`'s slice-D body for one slot, in the C#'s own block order.
-pub(crate) fn step(p: &mut Projectile, world: &World) {
+/// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`)
+/// in `finish` — the 485/710/819 arrows ARE charm-eligible (the producer's
+/// `arrow` gate), the rest are not.
+pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i32]) {
     match p.kind {
         STAKE => {
             // `:54142-54149` — `alpha -= 50`, clamp 0 (the row seeds
@@ -104,7 +108,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             fade_alpha(p, 50);
             // `flag3 = false` (`:55983`): the counter rests, the generic
             // gravity never fires — a straight stake.
-            finish(p, world, false, Gravity::None);
+            finish(p, world, false, Gravity::None, npcs, immune);
         }
         PULSE_BOLT => {
             // `:56753-56777` — the chain-head fade: the `< 170` trail
@@ -120,13 +124,13 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             // 357 is NOT on the flag3 skip list — the counter counts, but
             // the fade head consumed the gravity chain (census F7): NO
             // gravity, the bolt flies straight until its 600-tick life.
-            finish(p, world, true, Gravity::None);
+            finish(p, world, true, Gravity::None, npcs, immune);
         }
         HELLWING => {
             // No head hook: the only per-type block is the rotation tail
             // (`:57708-57736`), ported in `finish`'s Hellwing arm.
             // `flag3 = false` (`:56006`): the counter rests.
-            finish(p, world, false, Gravity::None);
+            finish(p, world, false, Gravity::None, npcs, immune);
         }
         ONYX_BLACK_BOLT => {
             // `:55734-55766` — the `alpha <= 0` dust-240 trio
@@ -143,7 +147,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
                 }
             }
             // `flag3 = false` (`:56021`): the counter rests, straight.
-            finish(p, world, false, Gravity::None);
+            finish(p, world, false, Gravity::None, npcs, immune);
         }
         BETSY_ARROW => {
             // `:55382-55414` — `alpha -= 25`, clamp 0 (the row seeds 255,
@@ -153,7 +157,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             fade_alpha(p, 25);
             // `flag3 = false` (`:56026`): the flag3 counter rests; the
             // 710 gravity arm (`:57549`) does its own increment.
-            finish(p, world, false, Gravity::Betsy);
+            finish(p, world, false, Gravity::Betsy, npcs, immune);
         }
         QUEEN_BEE_STINGER => {
             // `:55495-55517` — the Next(2) trail dust (`:55497-55500`)
@@ -164,7 +168,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             }
             // 719 is NOT on the flag3 skip list — it counts into the
             // generic 15-tick gravity.
-            finish(p, world, true, Gravity::Generic);
+            finish(p, world, true, Gravity::Generic, npcs, immune);
         }
         BLOOD_ARROW => {
             // `:56388-56422` — the localAI[0] one-shot's 8-dust burst
@@ -179,7 +183,7 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             fade_alpha(p, 20);
             // 819 is NOT on the flag3 skip list — it counts into the
             // generic 15-tick gravity (the S1-P-i17 deferral closed).
-            finish(p, world, true, Gravity::Generic);
+            finish(p, world, true, Gravity::Generic, npcs, immune);
         }
         _ => unreachable!("the dispatch gates on SLICE_D_KINDS"),
     }
@@ -197,8 +201,16 @@ fn fade_alpha(p: &mut Projectile, n: i32) {
 /// The shared tail: the `flag3` counter (`:56038-56041`), the per-kind
 /// gravity arm, the rotation tail (`:57582-57752`), the `flag8` clamp
 /// (`:57753-57768` — the exact C# +16 bound, module doc), then the
-/// movement stand-in.
-fn finish(p: &mut Projectile, world: &World, count_flight: bool, gravity: Gravity) {
+/// movement stand-in. W4-f20 F7: the Harpy-charm tail (`:57769-57793`)
+/// runs after the clamp, before the movement.
+fn finish(
+    p: &mut Projectile,
+    world: &World,
+    count_flight: bool,
+    gravity: Gravity,
+    npcs: &[Npc],
+    immune: &[i32],
+) {
     // `Projectile.cs:56038-56041` — `if (flag3) ai[0]++`.
     if count_flight {
         p.ai[0] += 1.0;
@@ -265,6 +277,8 @@ fn finish(p: &mut Projectile, world: &World, count_flight: bool, gravity: Gravit
     if p.vel.y > 16.0 {
         p.vel.y = 16.0;
     }
+    // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7).
+    crate::projectile_harpy_charm::charm_tail(p, world, npcs, immune);
     move_only(p, world);
 }
 
@@ -386,7 +400,7 @@ mod tests {
         let w = world();
         let mut p = proj(STAKE, 2.0, 0.0);
         for _ in 0..30 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.ai[0], 0.0, "flag3 = false (`:55983`)");
         assert_eq!(p.alpha, 0, "255 - 50/tick clamps at 0 (`:54144`)");
@@ -404,7 +418,7 @@ mod tests {
         let w = world();
         let mut p = proj(PULSE_BOLT, 2.0, 0.0);
         for _ in 0..30 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.ai[0], 30.0, "357 is off the flag3 skip list, no pin");
         assert_eq!(p.vel.y, 0.0, "the fade head (`:56753`) takes no gravity");
@@ -424,14 +438,14 @@ mod tests {
         let mut p = proj(HELLWING, 8.0, 0.0);
         p.ai[0] = 0.0;
         p.ai[1] = -4.0;
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert!((p.vel.x - 7.8).abs() < 1e-5, "8 × 39/40 (`:57711`)");
         assert!((p.vel.y - (-0.1)).abs() < 1e-6, "-4/40 (`:57711`)");
         assert_eq!(p.ai[0], 0.0, "flag3 = false — the blend reads, never writes ai");
         assert_eq!(p.sprite_direction, 1, "vx > 0 (`:57733`)");
         assert!((p.rot - p.vel.y.atan2(p.vel.x)).abs() < 1e-6, "(`:57734`)");
         for _ in 0..29 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.frame, 0, "30 ticks / 2 = 15 advances mod 5 (`:57721`)");
         assert_eq!(p.frame_counter, 0, "the 2-tick cadence (`:57717`)");
@@ -449,7 +463,7 @@ mod tests {
         let w = world();
         let mut p = proj(HELLWING, -8.0, 0.0);
         p.ai[1] = -4.0;
-        step(&mut p, &w);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.sprite_direction, -1, "vx < 0 (`:57728`)");
         let want = (0.0 - p.vel.y).atan2(0.0 - p.vel.x);
         assert!((p.rot - want).abs() < 1e-6, "(`:57729`)");
@@ -463,7 +477,7 @@ mod tests {
         let w = world();
         let mut p = proj(ONYX_BLACK_BOLT, 2.0, 0.0);
         for _ in 0..30 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.alpha, 0, "255 - 55/tick clamps at 0 (`:55748`)");
         assert!((p.scale - 1.3).abs() < 1e-6, "the scale write (`:55749`)");
@@ -481,7 +495,7 @@ mod tests {
         let w = world();
         let mut p = proj(BETSY_ARROW, 10.0, 0.0);
         for _ in 0..25 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.ai[0], 25.0, "the arm's own increment (`:57553`)");
         assert!((p.vel.y - 1.2).abs() < 1e-5, "6 fall ticks × 0.2 (`:57556`)");
@@ -498,7 +512,7 @@ mod tests {
         let w = world();
         let mut p = proj(BETSY_ARROW, 10.0, 0.0);
         for _ in 0..80 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.ai[0], 80.0);
         assert!((p.vel.y - 12.0).abs() < 1e-5, "the 12 cap (`:57563`)");
@@ -512,7 +526,7 @@ mod tests {
         let w = world();
         let mut p = proj(QUEEN_BEE_STINGER, 2.0, 0.0);
         for _ in 0..20 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.local_ai[0], 1.0, "the one-shot (`:55503`)");
         assert_eq!(p.ai[0], 15.0, "the generic pin (`:57570`)");
@@ -527,7 +541,7 @@ mod tests {
         let w = world();
         let mut p = proj(BLOOD_ARROW, 2.0, 0.0);
         for _ in 0..20 {
-            step(&mut p, &w);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.local_ai[0], 1.0, "the one-shot (`:56392`)");
         assert_eq!(p.alpha, 0, "255 - 20/tick (`:56402`)");

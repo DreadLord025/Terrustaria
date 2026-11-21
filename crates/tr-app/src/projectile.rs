@@ -5265,8 +5265,8 @@ impl Projectile {
     /// Phase 3 extracted it so the aiStyle-1 riders can wrap the same
     /// generic flight instead of duplicating it) — the delegation is
     /// behaviour-identical, pinned by the arrow tests below.
-    fn ai_arrow(&mut self, world: &World) {
-        self.ai_style1_flight(world, true);
+    fn ai_arrow(&mut self, world: &World, npcs: &[Npc], immune: &[i32]) {
+        self.ai_style1_flight(world, true, npcs, immune);
     }
 
     /// The aiStyle-14 core (`Projectile()`'s `else if (this.aiStyle == 14)`
@@ -6728,7 +6728,17 @@ impl Projectile {
     /// (`:55947-56032`) that holds the flight counter at rest. The plain
     /// arrows pass `true`; the M4-PROJ-6 riders 20/88/355/660 are all on that
     /// list, so they never reach the gravity at all.
-    fn ai_style1_flight(&mut self, world: &World, count_flight: bool) {
+    ///
+    /// W4-f20 F7: `npcs`/`immune` feed the Harpy-charm tail (`:57769-57793`)
+    /// that runs after the clamp, before the movement — the C#'s own slot.
+    /// The no-charm case (ai[2] bits 0) is a two-bit test, no scan.
+    fn ai_style1_flight(
+        &mut self,
+        world: &World,
+        count_flight: bool,
+        npcs: &[Npc],
+        immune: &[i32],
+    ) {
         if count_flight {
             self.ai[0] += 1.0;
         }
@@ -6737,6 +6747,8 @@ impl Projectile {
         }
         self.vel.y = self.vel.y.clamp(-16.0, 16.0);
         self.rot = self.vel.y.atan2(self.vel.x) + 1.57;
+        // `Projectile.cs:57769-57793` — the Harpy-charm tail (W4-f20 F7).
+        crate::projectile_harpy_charm::charm_tail(self, world, npcs, immune);
         if self.tile_collide {
             let nx = self.pos.x + self.vel.x;
             let ny = self.pos.y + self.vel.y;
@@ -6765,7 +6777,7 @@ impl Projectile {
     /// resting counter and no gravity: a laser or a fang flies exactly
     /// straight, as in the vanilla game. S1-D-3q's BulletSnowman 110 joins
     /// the same list (`:55962`) with its latch + fade hooks above.
-    fn ai_style1_rider(&mut self, world: &World) {
+    fn ai_style1_rider(&mut self, world: &World, npcs: &[Npc], immune: &[i32]) {
         // The PurpleLaser (`:54021-54045`): the `extraUpdates` remap off
         // `ai[0]`, then the scale growth to 4 with the owner-only knockback
         // and the 8-tick counter. W4-f20 F4 census correction: the remap
@@ -6851,8 +6863,11 @@ impl Projectile {
         }
         // The generic flight, then the per-kind rotation tail the C# order
         // below it: SkyFracture's `velocity.ToRotation() + π/4`
-        // (`:57650-57652`).
-        self.ai_style1_flight(world, false);
+        // (`:57650-57652`). W4-f20 F7: the flight carries the Harpy-charm
+        // tail (`:57769-57793`) — the rider kinds are not arrows (the
+        // producer's `arrow` gate never charms them), so the tail is the
+        // two-bit no-op for them; the slice keeps the C# shape.
+        self.ai_style1_flight(world, false, npcs, immune);
         if self.kind == SKY_FRACTURE {
             self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_4;
         }
@@ -7302,7 +7317,9 @@ impl Projectile {
         }
         // 837 is off the `flag3` skip list, so the flight counter and the
         // gravity run for the skull exactly as they do for an arrow.
-        self.ai_style1_flight(world, true);
+        // W4-f20 F7: the skull is not an arrow (the producer never charms
+        // it) — the empty immune slice keeps the charm tail a no-op.
+        self.ai_style1_flight(world, true, npcs, &[]);
         // The per-kind rotation tail (`:57597-57602`): the skull's sprite
         // faces its flight direction without the generic +π/2 offset. The
         // C#'s `base.direction` field has no slot counterpart; it tracks
@@ -14305,8 +14322,9 @@ fn aura_solid_at(world: &World, x: i32, y: i32) -> bool {
 /// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`) with an
 /// explicit fallback — the Ballista's aim and the aura's arc read the C#'s
 /// `SafeNormalize(Vector2.UnitY)` form, where a zero delta keeps the unit-Y
-/// default instead of collapsing to zero.
-fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
+/// default instead of collapsing to zero. `pub(crate)`: W4-f20 F7's
+/// Harpy-charm tail reads the same form (`Projectile.cs:57781`).
+pub(crate) fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         default_value
     } else {
@@ -14422,8 +14440,10 @@ fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
 
 /// `Utils.rotateTowards(currentPosition, currentVelocity, targetPosition,
 /// maxChange)` (`Utils.cs:1934-1939`): the velocity turned by at most
-/// `max_change` toward the target, its length preserved.
-fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
+/// `max_change` toward the target, its length preserved. `pub(crate)`:
+/// W4-f20 F7's Harpy-charm producer/tail read it (`Projectile.cs:57778`/
+/// `:57801`).
+pub(crate) fn rotate_towards(from: Vec2, vel: Vec2, to: Vec2, max_change: f32) -> Vec2 {
     let len = vel.length();
     // `vel.ToRotation()` and `position.AngleTo(target)` (`Entity.cs:186-190`).
     let angle = angle_towards(
@@ -15442,6 +15462,14 @@ impl ProjectilePool {
 
     pub fn slots(&self) -> &[Projectile] {
         &self.slots
+    }
+
+    /// W4-f20 F7 — the slot's local-NPC-immunity slice (the C#
+    /// `projectile.localNPCImmunity`, `Projectile.cs:45645`): the
+    /// Harpy-charm producer's `FindTargetWithLineOfSight` scan reads it
+    /// per arrow (`Player.cs:28475`).
+    pub fn local_immunity_slice(&self, slot: usize) -> &[i32] {
+        &self.local_immunity[slot * 256..(slot + 1) * 256]
     }
 
     /// The mutable slot array — the golf family's pool-side resolvers
@@ -16766,15 +16794,25 @@ impl ProjectilePool {
                             // (the straight flight, `flag3 = false` `:55973`).
                             ELECTROSPHERE_MISSILE => self.slots[i].ai_electrosphere_missile(world),
                             CHARGED_BLASTER_ORB => self.slots[i].ai_charged_blaster_orb(world),
-                            POISON_FANG => self.slots[i].ai_style1_rider(world),
+                            POISON_FANG => self.slots[i].ai_style1_rider(
+                                world,
+                                npcs,
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                            ),
                             kind if AI_STYLE_1_RIDERS.contains(&kind) => {
-                                self.slots[i].ai_style1_rider(world)
+                                self.slots[i].ai_style1_rider(
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
                             }
                             kind if crate::projectile_ai001_a::handles(kind) => {
                                 crate::projectile_ai001_a::ai001_slice_a(
                                     &mut self.slots[i],
                                     world,
                                     owner,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
                                 )
                             }
                             // S1-D-5 slice B — the higher-id rowed kinds'
@@ -16818,7 +16856,12 @@ impl ProjectilePool {
                             // gravity (the chain heads at its fade block,
                             // F7); the 485 blends toward its launch vector.
                             kind if crate::projectile_ai001_d::covers(kind) => {
-                                crate::projectile_ai001_d::step(&mut self.slots[i], world)
+                                crate::projectile_ai001_d::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
                             }
                             // W4-f20 slice E — the aiStyle-1 kinds the
                             // round-b row branches ROWED but left on the
@@ -16832,7 +16875,12 @@ impl ProjectilePool {
                             // None for these kinds here, so this arm never
                             // routes them yet (the d7 unwired precedent).
                             kind if crate::projectile_ai001_e::covers(kind) => {
-                                crate::projectile_ai001_e::step(&mut self.slots[i], world)
+                                crate::projectile_ai001_e::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
                             }
                             // S1-D-4 — the Frost Moon family's four
                             // aiStyle-1 kinds (345/348/349/350,
@@ -16852,7 +16900,12 @@ impl ProjectilePool {
                             // every other kind keeps the generic `ai_arrow`
                             // flight byte-identical.
                             kind if crate::projectile_ai_moonlord::covers(kind) => {
-                                crate::projectile_ai_moonlord::step(&mut self.slots[i], world)
+                                crate::projectile_ai_moonlord::step(
+                                    &mut self.slots[i],
+                                    world,
+                                    npcs,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
+                                )
                             }
                             // S1-P-i06 — the North Pole's falling flake (344,
                             // `AI_001`'s type hook `Projectile.cs:57062-57114`):
@@ -16893,6 +16946,7 @@ impl ProjectilePool {
                                     &npcs[..],
                                     rng,
                                     local_owner,
+                                    &self.local_immunity[i * 256..(i + 1) * 256],
                                 )
                             }
                             // S1-P-i17 — the special arrows' per-type
@@ -16920,6 +16974,7 @@ impl ProjectilePool {
                                         &mut self.slots[i],
                                         world,
                                         npcs,
+                                        &self.local_immunity[i * 256..(i + 1) * 256],
                                     )
                                 }
                             }
@@ -16949,7 +17004,11 @@ impl ProjectilePool {
                                     world,
                                 )
                             }
-                            _ => self.slots[i].ai_arrow(world),
+                            _ => self.slots[i].ai_arrow(
+                                world,
+                                npcs,
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                            ),
                         },
                         3 => {
                             // `AI_003_Boomerang` (S1-P-i08): the meleeSpeed
@@ -23620,7 +23679,7 @@ mod s1_e_21h_sound_tests {
                 tile_collide: false,
                 ..Default::default()
             };
-            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
             assert_eq!(p.ai[1], 1.0, "kind {kind}: the latch");
             // The C# plays BEFORE the movement tail — the payload carries
             // the pre-movement position (48, 48).
@@ -23630,7 +23689,7 @@ mod s1_e_21h_sound_tests {
                 "kind {kind}'s cue at the play-time position"
             );
             p.wants_sound = None;
-            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+            crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
             assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
         }
         // The Flaming Wood's Item42 trackable is DEFERRED — the latch
@@ -23643,7 +23702,7 @@ mod s1_e_21h_sound_tests {
             tile_collide: false,
             ..Default::default()
         };
-        crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None);
+        crate::projectile_ai001_a::ai001_slice_a(&mut p, &w, None, &[], &[]);
         assert_eq!(p.ai[1], 1.0);
         assert_eq!(p.wants_sound, None, "the Item42 trackable is deferred");
     }

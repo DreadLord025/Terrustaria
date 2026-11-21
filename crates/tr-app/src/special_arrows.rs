@@ -147,8 +147,10 @@ fn gravity_of(kind: u16) -> Gravity {
 
 /// `AI_001` for one special-arrow kind, in the C#'s own block order.
 /// The 225's bounce needs the NPC scan, so the whole step takes `npcs`
-/// (the ai001_c precedent); no other kind reads it.
-pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
+/// (the ai001_c precedent); no other kind reads it. W4-f20 F7: `immune`
+/// feeds the Harpy-charm tail (`:57769-57793`) — the special arrows ARE
+/// charm-eligible (the producer's `arrow` gate).
+pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc], immune: &[i32]) {
     // ---- 1. The hook group above the counter ------------------------------
     // `:55197-55208` — the Bee Arrow (469): `localAI[1]++`, then from the
     // 3rd sub-step the alpha loses 50 with the 0 floor (the row seeds
@@ -242,6 +244,10 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
     if p.vel.y > 16.0 {
         p.vel.y = 16.0;
     }
+
+    // ---- 5b. The Harpy-charm tail (`:57769-57793`, W4-f20 F7) -----------
+    // After the clamp, before the movement — the C#'s own slot.
+    crate::projectile_harpy_charm::charm_tail(p, world, npcs, immune);
 
     // ---- 6. Movement -------------------------------------------------------
     if p.kind == CHLOROPHYTE_ARROW {
@@ -815,7 +821,7 @@ mod tests {
         for kind in [JESTERS_ARROW, BEE_ARROW] {
             let mut p = shot(kind);
             for _ in 0..30 {
-                step(&mut p, &w, &[]);
+                step(&mut p, &w, &[], &[]);
             }
             assert_eq!(p.ai[0], 0.0, "kind {kind}: the counter rests");
             assert_eq!(p.vel.y, 0.0, "kind {kind}: no gravity");
@@ -830,13 +836,13 @@ mod tests {
         let w = air();
         let mut p = shot(HOLY_ARROW);
         for _ in 0..19 {
-            step(&mut p, &w, &[]);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.vel.y, 0.0, "19 ticks: below the 20 gate");
-        step(&mut p, &w, &[]); // tick 20: ai[0] = 20 → pin + 0.07
+        step(&mut p, &w, &[], &[]); // tick 20: ai[0] = 20 → pin + 0.07
         assert_eq!(p.ai[0], 20.0);
         assert!((p.vel.y - 0.07).abs() < 1e-6);
-        step(&mut p, &w, &[]);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.ai[0], 20.0, "the pin holds");
         assert!((p.vel.y - 0.14).abs() < 1e-6);
     }
@@ -859,10 +865,10 @@ mod tests {
             let mut p = shot(kind);
             let ticks = pin as usize;
             for _ in 0..ticks - 1 {
-                step(&mut p, &w, &[]);
+                step(&mut p, &w, &[], &[]);
             }
             assert_eq!(p.vel.y, 0.0, "kind {kind}: below the pin");
-            step(&mut p, &w, &[]);
+            step(&mut p, &w, &[], &[]);
             assert_eq!(p.ai[0], pin, "kind {kind}");
             assert!((p.vel.y - grav).abs() < 1e-6, "kind {kind}");
         }
@@ -875,12 +881,12 @@ mod tests {
         let w = air();
         let mut p = shot(SHIMMER_ARROW);
         for _ in 0..15 {
-            step(&mut p, &w, &[]);
+            step(&mut p, &w, &[], &[]);
         }
         assert!((p.vel.y - (-0.1)).abs() < 1e-6, "tick 15: −0.1");
         // Drive it past the −16 bound.
         for _ in 0..200 {
-            step(&mut p, &w, &[]);
+            step(&mut p, &w, &[], &[]);
         }
         assert!(p.vel.y >= -16.0, "the flag4 −16 clamp holds");
         // A NON-flag4 arrow keeps the C#'s +16-only clamp — its upward
@@ -889,7 +895,7 @@ mod tests {
         let mut q = shot(UNHOLY_ARROW);
         q.vel.y = -20.0;
         q.ai[0] = 0.0;
-        step(&mut q, &w, &[]);
+        step(&mut q, &w, &[], &[]);
         assert_eq!(q.vel.y, -20.0, "no −16 clamp without flag4");
     }
 
@@ -899,20 +905,20 @@ mod tests {
     fn the_bee_arrow_fades_from_the_third_tick() {
         let w = air();
         let mut p = shot(BEE_ARROW);
-        step(&mut p, &w, &[]);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.alpha, 255, "tick 1: no fade");
-        step(&mut p, &w, &[]);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.alpha, 255, "tick 2: no fade");
-        step(&mut p, &w, &[]);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.alpha, 205, "tick 3: −50");
         for _ in 0..5 {
-            step(&mut p, &w, &[]);
+            step(&mut p, &w, &[], &[]);
         }
         assert_eq!(p.alpha, 0, "the floor holds");
         // `:57671-57683` — the spriteDirection flips by the velocity sign.
         assert_eq!(p.sprite_direction, -1, "flying right → −1");
         p.vel.x = -10.0;
-        step(&mut p, &w, &[]);
+        step(&mut p, &w, &[], &[]);
         assert_eq!(p.sprite_direction, 1);
     }
 
@@ -1116,7 +1122,7 @@ mod tests {
         p.damage = 100;
         let mut n = npc_at(1400.0, 700.0); // up-left of the bounce
         n.max_hp = 100;
-        step(&mut p, &w, &[n]);
+        step(&mut p, &w, &[n], &[]);
         assert_eq!(p.ai[1], 1.0, "first bounce");
         assert_eq!(p.damage, 66, "(int)(100 * 0.66)");
         assert!(p.active);
@@ -1136,7 +1142,7 @@ mod tests {
             // Re-arm the collision: put the arrow back against the tile.
             p.pos = Vec2::new(1600.0, 800.0);
             p.vel = Vec2::new(10.0, 0.0);
-            step(&mut p, &w, &[]);
+            step(&mut p, &w, &[], &[]);
         }
         assert!(!p.active, "the 4th bounce kills");
         assert_eq!(p.ai[1], 4.0);
