@@ -662,6 +662,86 @@ mod tests {
     }
 
     #[test]
+    fn the_crimson_heart_lights_a_fixed_red() {
+        // `:49464` — (0.9, 0.1, 0.3), unconditional.
+        assert_eq!(
+            proj_lights_a(&slot(CRIMSON_HEART), None)[0].2,
+            [0.9, 0.1, 0.3]
+        );
+    }
+
+    #[test]
+    fn the_antigravity_hook_lights_the_mounted_centre_only() {
+        // `:52606` — (0, 0.4, 0.3) at mountedCenter, NOT the hook centre.
+        let p = slot(ANTI_GRAVITY_HOOK);
+        // No owner anchor → no light (the feed's None fold).
+        assert!(proj_lights_a(&p, None).is_empty());
+        // mountedCenter (320, 480) → tile (20, 30); the hook's own centre
+        // (168, 184) → (10, 11) must NOT appear.
+        let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)));
+        assert_eq!(got, vec![(20, 30, [0.0, 0.4, 0.3])]);
+    }
+
+    #[test]
+    fn the_lunar_hooks_light_the_mounted_centre_then_the_centre() {
+        // `:52641`/`:52642` — the pair, mounted first then centre, same
+        // per-kind colour. 646 (0.7,0.5,0.1), 647 (0,0.6,0.7),
+        // 648 (0.6,0.2,0.6), 649 (0.6,0.6,0.9).
+        let cases = [
+            (LUNAR_HOOK_SOLAR, [0.7, 0.5, 0.1]),
+            (LUNAR_HOOK_VORTEX, [0.0, 0.6, 0.7]),
+            (LUNAR_HOOK_NEBULA, [0.6, 0.2, 0.6]),
+            (LUNAR_HOOK_STARDUST, [0.6, 0.6, 0.9]),
+        ];
+        for (kind, rgb) in cases {
+            let p = slot(kind);
+            let got = proj_lights_a(&p, Some(Vec2::new(320.0, 480.0)));
+            assert_eq!(got, vec![(20, 30, rgb), (10, 11, rgb)], "kind {kind}");
+            // Without the owner anchor only the centre half lands.
+            assert_eq!(proj_lights_a(&p, None), vec![(10, 11, rgb)]);
+        }
+    }
+
+    #[test]
+    fn the_celeb2_rockets_take_the_ai0_palette() {
+        // `:52890` — GetCeleb2Color()/255 · 0.5. State 0 Red → (0.5, 0, 0);
+        // state 6 HotPink; the default Transparent → a zeroed light.
+        let mut p = slot(715);
+        p.ai[0] = 0.0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.0, 0.0]);
+        p.ai[0] = 6.0;
+        assert_eq!(
+            proj_lights_a(&p, None)[0].2,
+            [255.0 / 255.0 * 0.5, 105.0 / 255.0 * 0.5, 180.0 / 255.0 * 0.5]
+        );
+        p.ai[0] = 9.0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn the_portal_bolt_lights_the_lead_anchor_in_the_portal_hue() {
+        // `:54071` — Center + velocity*3, GetPortalColor(owner, ai[0])·0.5.
+        // The 16x16 box at (160,176) centres (168,184); velocity (2,0) →
+        // lead (174,184) → tile (10,11). ai[0]=0 → orange hsl(0.12,1,0.5)
+        // = (255,184,0); ai[0]=1 → blue hsl(0.52,1,0.6) = (51,231,255).
+        let mut p = slot(CANNON_EXPLOSIVE);
+        p.vel = Vec2::new(2.0, 0.0);
+        p.ai[0] = 0.0;
+        let got = proj_lights_a(&p, None);
+        assert_eq!(got[0].0, 10);
+        assert_eq!(got[0].1, 11);
+        assert_eq!(
+            got[0].2,
+            [255.0 / 255.0 * 0.5, 184.0 / 255.0 * 0.5, 0.0]
+        );
+        p.ai[0] = 1.0;
+        assert_eq!(
+            proj_lights_a(&p, None)[0].2,
+            [51.0 / 255.0 * 0.5, 231.0 / 255.0 * 0.5, 255.0 / 255.0 * 0.5]
+        );
+    }
+
+    #[test]
     fn every_ported_kind_has_a_proj_data_row() {
         // The absent-wholesale rule's invariant: every kind this feed serves
         // resolves a `proj_data` row (the spawn gate).
@@ -687,6 +767,17 @@ mod tests {
             STORM_TIGER_1,
             STORM_TIGER_2,
             STORM_TIGER_3,
+            CRIMSON_HEART,
+            ANTI_GRAVITY_HOOK,
+            LUNAR_HOOK_SOLAR,
+            LUNAR_HOOK_VORTEX,
+            LUNAR_HOOK_NEBULA,
+            LUNAR_HOOK_STARDUST,
+            715,
+            716,
+            717,
+            718,
+            CANNON_EXPLOSIVE,
         ] {
             assert!(
                 proj_data(kind).is_some(),
