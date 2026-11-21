@@ -20164,6 +20164,16 @@ impl ProjectilePool {
             // (`:72016`); the resize/Damage/dust burst is the unported
             // state remainder (the cue precedes every write).
             634 | 635 => Some((2, 14, pos.x, pos.y, 1.0)),
+            // `:72234` — the Onyx Black Bolt's Item14 AFTER the 160×160
+            // recentre + penetration open + `Damage()` (d78's
+            // `magic_death_blast` / g3's `nebula_spirit_onyx_kill` own the
+            // writes, no restore): the play position is `centre − 80`.
+            661 => Some((2, 14, center.x - 80.0, center.y - 80.0, 1.0)),
+            // `:72512` — the Spirit Flame's Item14 AFTER the 80×80
+            // recentre + `Damage()` (g3's `nebula_spirit_onyx_kill` owns
+            // the writes), gated `ai[0] >= 0` (`:72505` — a spent flame
+            // dies silent): the play position is `centre − 40`.
+            659 if p.ai[0] >= 0.0 => Some((2, 14, center.x - 40.0, center.y - 40.0, 1.0)),
             // `:72716` — the Blood Arrow's Dig thud.
             819 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:72851` — the Flairon bubble's Item54 pop.
@@ -20176,6 +20186,11 @@ impl ProjectilePool {
             // (`:72990-73012`), so the read is the pre-hook position (the
             // façade truncates).
             452 => Some((29, 103, pos.x, pos.y, 1.0)),
+            // `:73016` — the Phantasmal Sphere's `PlaySound(4, (int)X,
+            // (int)Y, 6)` NPCDeath cry (the id-4 int façade). CUE-FIRST:
+            // the play precedes the 208×208 recentre + `Damage()`
+            // (`:73017-73044`).
+            454 => Some((4, 6, pos.x, pos.y, 1.0)),
             // `:73294` — the Crystal Pulse's Item110 (the 522 shard ring
             // `:73324` is the unported state remainder).
             521 => Some((2, 110, pos.x, pos.y, 1.0)),
@@ -20345,6 +20360,14 @@ impl ProjectilePool {
             121..=126 | 597 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:77153` — the Night Beam's Item10 (the :77138 family's tail).
             157 => Some((2, 10, pos.x, pos.y, 1.0)),
+            // `:78505` — the acorn's Dig thud at Center (`PlaySound(0,
+            // base.Center)` — the Vector2 int overload truncates in the
+            // case-0 façade). The `Kill()` tail's final else arm: the
+            // aiStyle-16 head skips the acorn's bomb prep (`:70664`), so
+            // the cue is its ONLY death play; the 10× dust-2 burst
+            // (`:78506-78510`) is the visual skip. Rowed at M3-ITEM-6
+            // (`proj_data(1088)`, the no-consume ammo window).
+            1088 => Some((0, 0, center.x, center.y, 1.0)),
             _ => None,
         };
         if let Some((id, style, x, y, volume)) = cue {
@@ -24532,34 +24555,46 @@ mod s1_e_21h_sound_tests {
         }
     }
 
-    /// S1-E-21h d77 deferred-arm wave, part 1 — the arms whose state writes
-    /// NOW exist on the pushed branches: the 79/16/34 aimed spells (d78
-    /// `5fe6d940` / g3 `778573ca`), the 681 goblin bomb's 0.5-volume centre
-    /// cue (the queue's sixth term) and the 452 cue-first Phantasmal Eye
-    /// moan (int id 29). The position reads are DERIVED from the pre-hook
+    /// S1-E-21h d77 deferred-arm wave — the arms whose state writes NOW
+    /// exist on the pushed branches: the 79/16/34 aimed spells (d78
+    /// `5fe6d940` / g3 `778573ca`), the 661/659 recentre blasts (same), the
+    /// 681 goblin bomb's 0.5-volume centre cue (the queue's sixth term),
+    /// the 452/454 cue-first Phantasmal plays (int ids 29/4) and the 1088
+    /// acorn's Centre Dig. The position reads are DERIVED from the pre-hook
     /// box exactly as the C# play points resolve (`Resize` keeps the
     /// centre, `:22353-22359`). WRITTEN NOT RUN (code-only).
     #[test]
     fn s1_e_21h_d77_the_deferred_arms_whose_writes_landed() {
         let mut pool = ProjectilePool::new();
         // (kind, (id, style), position mode, volumeScale): mode 0 = pos,
-        // 1 = centre.
-        let cases: [(u16, (u16, i32), u8, f32); 5] = [
+        // 1 = centre, 2 = centre − 80 (the 661 blast box), 3 = centre − 40
+        // (the 659 blast box).
+        let cases: [(u16, (u16, i32), u8, f32); 9] = [
             (79, (2, 10), 1, 1.0),
             (16, (2, 10), 1, 1.0),
             (34, (2, 10), 0, 1.0),
             (681, (2, 14), 1, 0.5),
+            (661, (2, 14), 2, 1.0),
+            (659, (2, 14), 3, 1.0),
             (452, (29, 103), 0, 1.0),
+            (454, (4, 6), 0, 1.0),
+            (1088, (0, 0), 1, 1.0),
         ];
         for (kind, want, mode, volume) in cases {
             let slot = pool
                 .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .expect("the row spawns");
+            // The spirit flame needs a live target index for its gate.
+            if kind == 659 {
+                pool.slots_mut()[slot].ai[0] = 0.0;
+            }
             let p = &pool.slots()[slot];
-            let (x, y) = if mode == 1 {
-                (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
-            } else {
-                (p.pos.x, p.pos.y)
+            let center = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            let (x, y) = match mode {
+                1 => center,
+                2 => (center.0 - 80.0, center.1 - 80.0),
+                3 => (center.0 - 40.0, center.1 - 40.0),
+                _ => (p.pos.x, p.pos.y),
             };
             pool.kill_tail_cue(slot);
             let queued = pool.drain_proj_sounds();
@@ -24571,6 +24606,13 @@ mod s1_e_21h_sound_tests {
             );
             pool.kill(slot);
         }
+        // The 659 gate: a spent flame (`ai[0] < 0`, `:72505`) dies silent.
+        let slot = pool
+            .spawn_with_data_ai_owned(659, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, -1.0, 0.0)
+            .expect("the spirit row spawns");
+        pool.kill_tail_cue(slot);
+        assert!(pool.drain_proj_sounds().is_empty(), "the spent flame is silent");
+        pool.kill(slot);
         // The 710/617 bursts stay DEFERRED: their Kill resize+Damage writes
         // are unported on every pushed branch (f20's slice-D ports are the
         // AI_001 flight overlays `:57549`/`:55734`, not the Kill arms).
