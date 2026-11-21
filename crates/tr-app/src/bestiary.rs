@@ -2427,6 +2427,32 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Blood Squid",
     },
+    // W4-d42 - the NPCID 620-624 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "GoblinShark",
+        net_id: 620,
+        kind: NpcKind::GoblinShark,
+        variant: None,
+        quick_unlock: false,
+        name: "Hemogoblin Shark",
+    },
+    BestiaryEntryDef {
+        credit_id: "BloodEelHead",
+        net_id: 621,
+        kind: NpcKind::BloodEelHead,
+        variant: None,
+        quick_unlock: false,
+        name: "Blood Eel",
+    },
+    BestiaryEntryDef {
+        credit_id: "Gnome",
+        net_id: 624,
+        kind: NpcKind::Gnome,
+        variant: None,
+        quick_unlock: false,
+        name: "Gnome",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2639,6 +2665,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
         // one credit per family (the SleepingGolfer precedent).
         NpcKind::Grebe2 => NpcKind::Grebe,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::BloodEelBody => NpcKind::BloodEelHead,
+        NpcKind::BloodEelTail => NpcKind::BloodEelHead,
         other => other,
     };
     ENTRIES

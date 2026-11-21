@@ -541,6 +541,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::TurtleJungle
         | NpcKind::BloodNautilus
         | NpcKind::BloodSquid => &[31],
+        // W4-d42 - the NPCID 620-624 immunity rows (`NPCID.cs:9395+`).
+        NpcKind::GoblinShark
+        | NpcKind::BloodEelHead
+        | NpcKind::BloodEelBody
+        | NpcKind::BloodEelTail
+        | NpcKind::Gnome => &[31],
     }
 }
 

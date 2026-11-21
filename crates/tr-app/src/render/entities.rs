@@ -1122,6 +1122,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // W4-d42 - the folded kinds keep their OWN draw sheets (the
         // ForceBubble precedent - the bestiary credit folds, the
         // sheet does not).
+        NpcKind::BloodEelBody => 622,
+        NpcKind::BloodEelTail => 623,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
         NpcKind::Grebe2 => 609,
         // W4-d42 - the folded kinds keep their OWN draw sheets (the
         // ForceBubble precedent - the bestiary credit folds, the
@@ -2171,6 +2176,8 @@ fn npc_health_bar_scale(kind: NpcKind) -> f32 {
         | DukeFishron
         // `Main.cs:45911-45914` — `if (type == 87) scale = 1.5f`.
         | WyvernHead
+        // W4-d42 - `Main.cs:45915`: 510/454/621 ride the 1.5 bar.
+        | BloodEelHead
         | AncientCultist => 1.5,
         _ => 1.0,
     }
@@ -3200,6 +3207,25 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::GoblinShark => {
+                generic_anchor(assets.npc_sheet(620), npc_rows(620), n, w, h)
+            }
+            NpcKind::BloodEelHead => {
+                generic_anchor(assets.npc_sheet(621), npc_rows(621), n, w, h)
+            }
+            NpcKind::BloodEelBody => {
+                generic_anchor(assets.npc_sheet(622), npc_rows(622), n, w, h)
+            }
+            NpcKind::BloodEelTail => {
+                generic_anchor(assets.npc_sheet(623), npc_rows(623), n, w, h)
+            }
+            NpcKind::Gnome => {
+                generic_anchor(assets.npc_sheet(624), npc_rows(624), n, w, h)
             }
             // W4-d42 - the roster's draw arms ride the generic anchor over
             // their own NPC_<id> sheets. The sheets are NOT packed yet

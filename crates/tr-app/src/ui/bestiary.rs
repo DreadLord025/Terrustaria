@@ -1649,6 +1649,12 @@ fn portrait_data(
         (NpcKind::TurtleJungle, _) => (sheet_i, 20.0, 22.0, 20.0, white),
         (NpcKind::BloodNautilus, _) => (sheet_i, 100.0, 100.0, 100.0, white),
         (NpcKind::BloodSquid, _) => (sheet_i, 44.0, 44.0, 44.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::GoblinShark, _) => (sheet_i, 58.0, 34.0, 58.0, white),
+        (NpcKind::BloodEelHead, _) => (sheet_i, 28.0, 28.0, 28.0, white),
+        (NpcKind::Gnome, _) => (sheet_i, 30.0, 14.0, 30.0, white),
     }
 }
 

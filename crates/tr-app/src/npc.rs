@@ -1259,6 +1259,26 @@ pub enum NpcKind {
     /// 44x44, aiStyle 5, dmg 60, def 16,
     /// 750 HP, kb 0.0, value 500.
     BloodSquid,
+    /// `NPCID.GoblinShark` (620) - `NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961)`:
+    /// 34x58, aiStyle 107, dmg 70, def 30,
+    /// 5000 HP, kb 0.0, value 7500.
+    GoblinShark,
+    /// `NPCID.BloodEelHead` (621) - `NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984)`:
+    /// 28x28, aiStyle 6, dmg 90, def 0,
+    /// 6000 HP, kb 0.0, value 7500.
+    BloodEelHead,
+    /// `NPCID.BloodEelBody` (622) - `NPC.cs:16988-17006`:
+    /// 28x28, aiStyle 6, dmg 60, def 30,
+    /// 6000 HP, kb 0.0, value 0.
+    BloodEelBody,
+    /// `NPCID.BloodEelTail` (623) - `NPC.cs:17007-17025`:
+    /// 28x28, aiStyle 6, dmg 50, def 40,
+    /// 6000 HP, kb 0.0, value 0.
+    BloodEelTail,
+    /// `NPCID.Gnome` (624) - `NPC.cs:17026-17038`:
+    /// 14x30, aiStyle 3, dmg 10, def 0,
+    /// 25 HP, kb 1.0, value 0.
+    Gnome,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3304,10 +3324,15 @@ impl Npc {
                     } else {
                         match kind {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2
+                            | NpcKind::Sharkron
+                            | NpcKind::Sharkron2
                             | NpcKind::ZombieMerman
                             | NpcKind::EyeballFlyingFish
-                           
                             | NpcKind::BloodSquid
+                            | NpcKind::GoblinShark
+                            | NpcKind::BloodEelHead
+                            | NpcKind::BloodEelBody
+                            | NpcKind::BloodEelTail
                             => {
                                 255
                             }
@@ -3759,6 +3784,12 @@ impl Npc {
             NpcKind::TurtleJungle => 0.5,
             NpcKind::BloodNautilus => 0.0,
             NpcKind::BloodSquid => 0.0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 0.0,
+            NpcKind::BloodEelHead => 0.0,
+            NpcKind::BloodEelBody => 0.0,
+            NpcKind::BloodEelTail => 0.0,
+            NpcKind::Gnome => 1.0,
             _ => 0.4,
         }
     }
@@ -4187,6 +4218,12 @@ impl Npc {
             NpcKind::TurtleJungle => 0,
             NpcKind::BloodNautilus => 24,
             NpcKind::BloodSquid => 16,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 30,
+            NpcKind::BloodEelHead => 0,
+            NpcKind::BloodEelBody => 30,
+            NpcKind::BloodEelTail => 40,
+            NpcKind::Gnome => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4607,6 +4644,12 @@ impl Npc {
             NpcKind::TurtleJungle => 0.0,
             NpcKind::BloodNautilus => 20000.0,
             NpcKind::BloodSquid => 500.0,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 7500.0,
+            NpcKind::BloodEelHead => 7500.0,
+            NpcKind::BloodEelBody => 0.0,
+            NpcKind::BloodEelTail => 0.0,
+            NpcKind::Gnome => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6621,6 +6664,37 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d42 batch 9: the NPCID 620-624 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961)` - aiStyle 107 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoblinShark => {}
+            // `NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984)` - aiStyle 6 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::BloodEelHead => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:16988-17006` - aiStyle 6 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::BloodEelBody => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:17007-17025` - aiStyle 6 is UNWIRED (the
+            // wyvern precedent); the noGravity/noTileCollide raw
+            // integration tail (`NPC.cs:90494-90498`) runs so the
+            // spawn velocity carries (the style-56 arm's shape).
+            NpcKind::BloodEelTail => {
+                self.integrate_no_tile_collide();
+            }
+            // `NPC.cs:17026-17038` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::Gnome => self.update_zombie(world, player, dt),
             // ---- W4-d42 batch 8: the NPCID 615-619 roster
             // (data-only join). Unwired styles idle in place (the
             // wyvern precedent); walkers ride the aiStyle-3 family,
@@ -10192,6 +10266,125 @@ impl Npc {
                     self.frame += 1;
                     if self.frame >= 6 {
                         self.frame = 0;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 620 (`NPC.cs:68423-68542`): the
+            // attack rows 14..20 (the ai[0]/ai[1] gate, the 16/17
+            // 3-tick pair, the 18->16 loop), the wet swim rows 8..13
+            // with the atan2 turn, the dry walk rows 2..7 (|vx|+1 at
+            // >9), the air row 1.
+            NpcKind::GoblinShark => {
+                if self.ai[1] > 0.0 && self.ai[0] > 0.0 {
+                    self.sprite_dir = self.facing;
+                    if self.frame < 14 || self.frame > 20 || self.ai[1] == 59.0 {
+                        self.frame = 14;
+                        self.frame_counter = 0.0;
+                    }
+                    let num42 = if self.frame == 17 || self.frame == 16 { 3.0 } else { 5.0 };
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= num42 && self.frame < 20 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.ai[1] > 0.0 && self.frame == 18 {
+                            self.frame = 16;
+                        }
+                    }
+                } else if self.wet {
+                    if self.vx < 0.0 {
+                        self.facing = -1;
+                    }
+                    if self.vx > 0.0 {
+                        self.facing = 1;
+                    }
+                    if self.sprite_dir != self.facing {
+                        self.rotation *= -1.0;
+                        self.sprite_dir = self.facing;
+                    }
+                    let num43 = (self.vy * self.facing as f32)
+                        .atan2(self.vx * self.facing as f32);
+                    if (self.rotation - num43).abs() >= std::f32::consts::PI {
+                        if num43 < self.rotation {
+                            self.rotation -= std::f32::consts::PI * 2.0;
+                        } else {
+                            self.rotation += std::f32::consts::PI * 2.0;
+                        }
+                    }
+                    self.rotation = (self.rotation * 4.0 + num43) / 5.0;
+                    self.frame_counter += (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 13 {
+                        self.frame = 8;
+                    } else if self.frame < 8 {
+                        self.frame = 13;
+                    }
+                } else {
+                    if (self.rotation as f64) > 3.14 {
+                        self.rotation -= 6.28;
+                    }
+                    if (self.rotation as f64) > -0.01 && (self.rotation as f64) < 0.01 {
+                        self.rotation = 0.0;
+                    } else {
+                        self.rotation *= 0.9;
+                    }
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                        if self.vx == 0.0 {
+                            self.frame = 0;
+                            self.frame_counter = 0.0;
+                        } else {
+                            if self.frame < 2 {
+                                self.frame = 2;
+                            }
+                            self.frame_counter += self.vx.abs();
+                            self.frame_counter += 1.0;
+                            if self.frame_counter > 9.0 {
+                                self.frame += 1;
+                                self.frame_counter = 0.0;
+                            }
+                            if self.frame > 7 {
+                                self.frame = 2;
+                            }
+                        }
+                    } else {
+                        self.frame_counter = 0.0;
+                        self.frame = 1;
+                    }
+                }
+            }
+            // W4-d42 - no per-kind animation: 621 `NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984)`, 622 `NPC.cs:16988-17006`, 623 `NPC.cs:17007-17025` - row 0 holds
+            // (the ForceBubble/wyvern-segment precedent).
+            NpcKind::BloodEelHead | NpcKind::BloodEelBody | NpcKind::BloodEelTail => {
+                self.frame = 0;
+            }
+            // W4-d42 - `FindFrame` case 624 (`NPC.cs:77067-77102`): the
+            // stand row 0, the rise row 9, the fall row 10, the walk
+            // rows 1..8 on the |vx| accumulator (>8, subtractive).
+            NpcKind::Gnome => {
+                if self.vy == 0.0 {
+                    self.sprite_dir = self.facing;
+                }
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 9;
+                } else if self.vy > 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 10;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter > 8.0 {
+                        self.frame_counter -= 8.0;
+                        self.frame += 1;
+                        if self.frame > 8 {
+                            self.frame = 1;
+                        }
                     }
                 }
             }
@@ -19804,6 +19997,12 @@ impl Npc {
             NpcKind::TurtleJungle => 617,
             NpcKind::BloodNautilus => 618,
             NpcKind::BloodSquid => 619,
+            // W4-d42 - the vanilla ids 620-624 are free render keys.
+            NpcKind::GoblinShark => 620,
+            NpcKind::BloodEelHead => 621,
+            NpcKind::BloodEelBody => 622,
+            NpcKind::BloodEelTail => 623,
+            NpcKind::Gnome => 624,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24872,7 +25071,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 310] = [
+    pub(super) const ALL_KINDS: [NpcKind; 315] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25199,6 +25398,12 @@ mod tests {
         NpcKind::TurtleJungle,
         NpcKind::BloodNautilus,
         NpcKind::BloodSquid,
+        // W4-d42 - the NPCID 620-624 roster.
+        NpcKind::GoblinShark,
+        NpcKind::BloodEelHead,
+        NpcKind::BloodEelBody,
+        NpcKind::BloodEelTail,
+        NpcKind::Gnome,
     ];
 
     #[test]
@@ -25581,6 +25786,42 @@ mod tests {
         assert_eq!(NpcKind::BloodNautilus.to_u16(), 392u16);
         assert_eq!(NpcKind::BloodSquid.to_u16(), 393u16);
         assert_eq!(ALL_KINDS.len(), 310);
+    }
+
+    /// W4-d42 batch 9 - the NPCID 620-624 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16950-16968 (value Item.buyPrice(0,0,75)=7500 :16961), NPC.cs:16969-16987 (value Item.buyPrice(0,0,75)=7500 :16984), NPC.cs:16988-17006, NPC.cs:17007-17025, NPC.cs:17026-17038), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b9_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::GoblinShark, 620u16, 107u8, 34.0, 58.0, 70, 30, 5000, 0.0f32, 7500.0f32),
+            (NpcKind::BloodEelHead, 621u16, 6u8, 28.0, 28.0, 90, 0, 6000, 0.0f32, 7500.0f32),
+            (NpcKind::BloodEelBody, 622u16, 6u8, 28.0, 28.0, 60, 30, 6000, 0.0f32, 0.0f32),
+            (NpcKind::BloodEelTail, 623u16, 6u8, 28.0, 28.0, 50, 40, 6000, 0.0f32, 0.0f32),
+            (NpcKind::Gnome, 624u16, 3u8, 14.0, 30.0, 10, 0, 25, 1.0f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The port-local wire band (the vanilla types ride cs_id/net_id).
+        assert_eq!(NpcKind::GoblinShark.to_u16(), 394u16);
+        assert_eq!(NpcKind::BloodEelHead.to_u16(), 395u16);
+        assert_eq!(NpcKind::BloodEelBody.to_u16(), 396u16);
+        assert_eq!(NpcKind::BloodEelTail.to_u16(), 397u16);
+        assert_eq!(NpcKind::Gnome.to_u16(), 398u16);
+        assert_eq!(ALL_KINDS.len(), 315);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -29098,7 +29339,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            310,
+            315,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

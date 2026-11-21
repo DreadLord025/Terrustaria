@@ -631,6 +631,11 @@ impl NpcKind {
             NpcKind::TurtleJungle => 391,
             NpcKind::BloodNautilus => 392,
             NpcKind::BloodSquid => 393,
+            NpcKind::GoblinShark => 394,
+            NpcKind::BloodEelHead => 395,
+            NpcKind::BloodEelBody => 396,
+            NpcKind::BloodEelTail => 397,
+            NpcKind::Gnome => 398,
         }
     }
 
@@ -1003,6 +1008,11 @@ impl NpcKind {
             391 => NpcKind::TurtleJungle,
             392 => NpcKind::BloodNautilus,
             393 => NpcKind::BloodSquid,
+            394 => NpcKind::GoblinShark,
+            395 => NpcKind::BloodEelHead,
+            396 => NpcKind::BloodEelBody,
+            397 => NpcKind::BloodEelTail,
+            398 => NpcKind::Gnome,
             _ => return None,
         })
     }
@@ -1930,6 +1940,12 @@ impl NpcKind {
             NpcKind::TurtleJungle => "NPC_Hit_1",
             NpcKind::BloodNautilus => "NPC_Hit_1",
             NpcKind::BloodSquid => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::GoblinShark => "dd2_drakin_hurt_0",
+            NpcKind::BloodEelHead => "NPC_Hit_1",
+            NpcKind::BloodEelBody => "NPC_Hit_1",
+            NpcKind::BloodEelTail => "NPC_Hit_1",
+            NpcKind::Gnome => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2289,6 +2305,13 @@ impl NpcKind {
             NpcKind::TurtleJungle => "NPC_Killed_1",
             NpcKind::BloodNautilus => "NPC_Killed_1",
             NpcKind::BloodSquid => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::GoblinShark => "dd2_drakin_death_0",
+            NpcKind::BloodEelHead => "NPC_Killed_1",
+            NpcKind::BloodEelBody => "NPC_Killed_1",
+            NpcKind::BloodEelTail => "NPC_Killed_1",
+            NpcKind::Gnome => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2420,6 +2443,11 @@ impl NpcKind {
             NpcKind::Dolphin
             | NpcKind::BloodNautilus
             | NpcKind::BloodSquid
+            => true,
+            // W4-d42 - the noGravity rows.
+            NpcKind::BloodEelHead
+            | NpcKind::BloodEelBody
+            | NpcKind::BloodEelTail
             => true,
             NpcKind::AngryNimbus => true,
             _ => false,
@@ -2721,6 +2749,12 @@ impl NpcKind {
             NpcKind::TurtleJungle => 7,
             NpcKind::BloodNautilus => 117,
             NpcKind::BloodSquid => 5,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 107,
+            NpcKind::BloodEelHead => 6,
+            NpcKind::BloodEelBody => 6,
+            NpcKind::BloodEelTail => 6,
+            NpcKind::Gnome => 3,
         }
     }
 
@@ -2829,6 +2863,9 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-d42 - the ladder's per-type caps (`npc_ai3_speeds.rs`;
+            // 586's row is the full-life base of the life-scaled cap).
+            NpcKind::Gnome => 2.5,
             // W4-d42 - the ladder's per-type caps (`npc_ai3_speeds.rs`;
             // 586's row is the full-life base of the life-scaled cap).
             NpcKind::WalkingAntlion => 2.5,
@@ -3310,6 +3347,12 @@ impl NpcKind {
             NpcKind::TurtleJungle => (22.0, 20.0),
             NpcKind::BloodNautilus => (100.0, 100.0),
             NpcKind::BloodSquid => (44.0, 44.0),
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => (34.0, 58.0),
+            NpcKind::BloodEelHead => (28.0, 28.0),
+            NpcKind::BloodEelBody => (28.0, 28.0),
+            NpcKind::BloodEelTail => (28.0, 28.0),
+            NpcKind::Gnome => (14.0, 30.0),
         }
     }
 
@@ -3476,6 +3519,14 @@ impl NpcKind {
             NpcKind::TurtleJungle => 617,
             NpcKind::BloodNautilus => 618,
             NpcKind::BloodSquid => 619,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::GoblinShark => 620,
+            NpcKind::BloodEelHead => 621,
+            NpcKind::BloodEelBody => 622,
+            NpcKind::BloodEelTail => 623,
+            NpcKind::Gnome => 624,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3594,6 +3645,10 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // W4-d42 - the Blood Eel's behindTiles rows (`NPC.cs:16983` etc.).
+                | NpcKind::BloodEelHead
+                | NpcKind::BloodEelBody
+                | NpcKind::BloodEelTail
         )
     }
 
@@ -4063,6 +4118,12 @@ impl NpcKind {
             NpcKind::TurtleJungle => 5,
             NpcKind::BloodNautilus => 7000,
             NpcKind::BloodSquid => 750,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 5000,
+            NpcKind::BloodEelHead => 6000,
+            NpcKind::BloodEelBody => 6000,
+            NpcKind::BloodEelTail => 6000,
+            NpcKind::Gnome => 25,
         }
     }
 
@@ -4475,6 +4536,12 @@ impl NpcKind {
             NpcKind::TurtleJungle => 0,
             NpcKind::BloodNautilus => 55,
             NpcKind::BloodSquid => 60,
+            // W4-d42 - the NPCID 620-624 SetDefaults rows.
+            NpcKind::GoblinShark => 70,
+            NpcKind::BloodEelHead => 90,
+            NpcKind::BloodEelBody => 60,
+            NpcKind::BloodEelTail => 50,
+            NpcKind::Gnome => 10,
         }
     }
 }
