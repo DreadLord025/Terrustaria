@@ -942,8 +942,10 @@ pub(crate) fn rocket_fixed_self_damage(kind: u16) -> Option<i32> {
 
 /// `AI_062`'s attack-shot request — the shot rides back to the pool (the AI
 /// runs on one slot and cannot reach the pool's array, the `YoyoBeamRequest`
-/// pattern). The spawn drops when the shot family (374/376/408/433/614) has no
-/// `proj_data` row yet; `target` is the scan's NPC index (the Cell's `ai1`).
+/// pattern). The Cell's 614 shot HAS a `proj_data` row (W4-d12 F1) and spawns
+/// live; the other shot families (374/376/408/433) drop until their rows land.
+/// `target` is the scan's NPC index — the Cell seats it in `ai1` (the dispatch),
+/// the C#'s `ai1 = num13` (`Projectile.cs:66088`).
 pub(crate) struct MinionShot {
     pub kind: u16,
     pub vx: f32,
@@ -1664,9 +1666,11 @@ impl Projectile {
             return None;
         }
         // `:66010-66059` — the attack shot: the per-type speed/kind and the
-        // fire arms. The shot families (374/376/408/433/614) are unported
-        // `proj_data` rows, so the pool's spawn drops until those land — the
-        // state machine above runs either way.
+        // fire arms. The Cell's 614 shot HAS a `proj_data` row (W4-d12 F1,
+        // `:6611-6619`) and spawns live — the target rides ai1 (the dispatch's
+        // per-kind seating). The OTHER shot families (374/376/408/433) are
+        // still unported rows, so their pool spawn drops until those land —
+        // the state machine above runs either way.
         let (num41, num42) = match self.kind {
             HORNET => (10.0, 374u16),
             FLYING_IMP => (11.0, 376),
@@ -20189,6 +20193,22 @@ impl ProjectilePool {
                                         p.owner,
                                     )
                                 };
+                                // W4-d12 DOC-SWEEP item 1 — the shot's ai seating
+                                // is PER-KIND, not a shared `ai0 = target`: the
+                                // Cell's fire (`Projectile.cs:66088`) passes
+                                // `ai0 = 0f, ai1 = num13` (the scan's target),
+                                // while the UFO (`:66072`) and the generic fire
+                                // (`:66122`) pass NO ai args (0, 0). The 614
+                                // chase reads `(int)ai[1]` as the target index
+                                // (`:40594`) and the stick-pin / debuff gates
+                                // read `ai[1] == victim`, so the target MUST ride
+                                // ai1. The old shared `ai0 = target, ai1 = 0`
+                                // mis-seated it (the chase always read NPC 0).
+                                let shot_ai1 = if s.kind == STARDUST_CELL_MINION_SHOT {
+                                    s.target as f32
+                                } else {
+                                    0.0
+                                };
                                 if let Some(slot) = self.spawn_with_data_ai_owned(
                                     s.kind,
                                     owner,
@@ -20198,10 +20218,10 @@ impl ProjectilePool {
                                     s.vy,
                                     damage,
                                     kb,
-                                    s.target as f32,
                                     0.0,
+                                    shot_ai1,
                                 ) {
-                                    // `Projectile.cs:66124` — the generic fire
+                                    // `Projectile.cs:66089`/`:66123` — the fire
                                     // arms set the shot's `timeLeft = 300`.
                                     self.slots[slot].time_left = 300;
                                 }
@@ -38115,6 +38135,48 @@ mod minion_ai_tests {
             after_far < 380.0,
             "the unchaseable whip target is ignored: {after_far}"
         );
+    }
+
+    /// W4-d12 DOC-SWEEP item 1 — the Cell's 614 shot seats its target in `ai1`,
+    /// not `ai0` (`Projectile.cs:66088`: `ai0 = 0f, ai1 = num13`). The 614 chase
+    /// reads `(int)ai[1]` (`:40594`) and the stick/debuff gates read
+    /// `ai[1] == victim`, so a mis-seated target (the old shared `ai0 = target`)
+    /// always chased NPC 0. A friendly NPC at index 0 is skipped by the scan,
+    /// the chaseable target lands at index 1 — the shot must carry `ai1 = 1`,
+    /// `ai0 = 0`, and the fire arm's `timeLeft = 300` (`:66089`).
+    #[test]
+    fn w4_d12_doc_sweep_the_cell_shot_seats_the_target_in_ai1() {
+        let mut w = world();
+        let mut p = player(&w);
+        p.stardust_minion = true;
+        p.max_minions = 5;
+        let (cx, cy) = p.center();
+        // Index 0: a friendly town NPC (unchaseable — the scan skips it).
+        let mut town = npc_at(NpcKind::Guide, cx + 60.0, cy);
+        town.max_hp = 250;
+        town.hp = 250;
+        // Index 1: the chaseable target, inside the 500-px fire window.
+        let target = npc_at(NpcKind::Zombie, cx + 120.0, cy);
+        let mut npcs = vec![town, target];
+        let mut pool = ProjectilePool::new();
+        // The Cell parked on the owner's centre so the target is ~120 px away.
+        let cell = spawn_at(&mut pool, STARDUST_CELL, cx - 12.0, cy - 12.0);
+        tick_with(&mut pool, &mut w, &mut p, &mut npcs);
+        assert!(pool.slots[cell].active, "the Cell lives (the summon flag pins it)");
+        let shot = pool
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == STARDUST_CELL_MINION_SHOT)
+            .expect("the Cell fires its 614 shot at the in-range target");
+        assert_eq!(shot.ai[0], 0.0, "the fire passes ai0 = 0 (:66088)");
+        assert_eq!(
+            shot.ai[1], 1.0,
+            "the target index rides ai1 (the scan picked NPC 1, not 0)"
+        );
+        // The 300-tick life minus the pool tail's one decrement (`:17201`).
+        assert_eq!(shot.time_left, 299, "the fire arm's timeLeft = 300 (:66089)");
+        // The shot flies toward the target (+x), speed 14 (`num41`).
+        assert!(shot.vel.x > 0.0, "the shot aims at the +x target: {:?}", shot.vel);
     }
 
     /// DW-4.3 — the despawn: clearing the summon flag stops the pin and the
