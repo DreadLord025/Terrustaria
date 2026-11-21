@@ -39326,9 +39326,18 @@ re-verified FIRST: both are already on main (`npc.rs::contact` /
   `solar_flare_blast_draws` census keeps the explicit `Main.rand` draws
   on the stream in the C# order; the `NewDust`/`NewGore` internal draws
   + spawns ride the dust-pool task, the `celeb2_explosion` precedent).
-- **The stealth-decay machine** (`:25733-25898`) is unported; the
-  `stealth = 1f` hurt write is the seam (the field exists, the
-  shroomite-stealth knockback scale reads it).
+- **The stealth-decay machine** (`:25733-25898`): **f3-canonical keep-one**.
+  `task/W4-f3-dust-player-3` `4d820f7d` landed the FULL machine
+  (`update_stealth`: the Psycho-Knife 3106 / Shroomite / Vortex if-else-if
+  chain + the `stealth = 1f` fallback, the two ring dust sites
+  `:25877`/`:25887`, the grants/clears/toggle/dash/mount cancels, the
+  `GetWeaponKnockback` vortex arm) and the field default fix 0.0 → C# 1f
+  (`:1562`), plus the SAME `stealth = 1f` hurt write at the post-dodge
+  site. This branch's hurt write composes 1:1 with that machine (same
+  value, same site, unconditional — verified by reading `4d820f7d`'s
+  `player.rs`): at merge keep ONE copy of the write; the machine and the
+  default fix are f3's, no dup-machine here. Until f3 merges, this
+  branch's `stealth` default stays 0.0 (f3 owns the fix).
 
 ### Verification
 

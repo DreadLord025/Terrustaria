@@ -4769,8 +4769,15 @@ impl Player {
         // Necklace family's buff 63 (`AddBuff(63, 480)`, `:38237-38240`) and
         // the Squire T2 set's Ballista Panic buff 205 (`AddBuff(205, 300)`,
         // `:38241-38244`), then the stealth break (`stealth = 1f`, `:38245` —
-        // a hit always breaks the shroomite stealth; the stealth-decay
-        // machine itself is unported, the field write is the seam).
+        // a hit always breaks the stealth). CROSS-NOTE (keep-one,
+        // f3-canonical): `task/W4-f3-dust-player-3` `4d820f7d` landed the
+        // FULL stealth-decay machine (`update_stealth`, `Player.cs:25733-
+        // 25899`: the Psycho-Knife/Shroomite/Vortex chain + the `stealth = 1f`
+        // fallback) and the SAME hurt write at this site, plus the field
+        // default fix 0.0 → C# 1f (`:1562`). This write composes 1:1 with
+        // that machine (same value, same post-dodge site, unconditional) —
+        // at merge keep ONE copy; the machine + the default fix are f3's,
+        // this branch does not duplicate them.
         if self.panic {
             self.buffs.add_buff(63, 480);
         }

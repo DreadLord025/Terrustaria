@@ -225,7 +225,7 @@ Determinism: items 1, 2, 9 and 10 all change RNG draw counts / results on the sh
 | --- | --- | --- |
 | `Player.cs:38237-38240` | `panic` → `AddBuff(63, 480)` | **NEW** — `hurt_inner`'s head, the `panic` field (1290/1578/6187 arms, `ResetEffects` `:18616`); the buff-63 `moveSpeed++` reader (`:10130-10133`) wired live |
 | `:38241-38244` | `setSquireT2` → `AddBuff(205, 300)` | **NEW** — `hurt_inner`'s head (the T2 triple arms the flag) |
-| `:38245` | `stealth = 1f` | **NEW** — the hurt breaks the shroomite stealth (the decay machine `:25733-25898` unported, the field write is the seam) |
+| `:38245` | `stealth = 1f` | **NEW** — the hurt breaks the stealth. CROSS-NOTE keep-one (f3-canonical): `task/W4-f3-dust-player-3` `4d820f7d` landed the full `update_stealth` machine (`:25733-25899`) + the same hurt write + the default fix 0.0→1f; this write composes 1:1, keep ONE at merge |
 | `:38255-38269` | `hasFootball` → the 861 return + slot clear | **NEW** — queues `pending_football` (hit dir); the drain scans the inventory, spawns 861 `(-hitDir*4, -6)` ai1=1 ai2=stack, clears the slot. The `hasFootball` equip scan (`:12906-12918`) + clear (`:18345`) |
 | `:38271-38280` | the held jousting lance → kill owned 877/878/879 | **NEW** — queues `pending_golf_club_kill`; the drain checks the held kind (4788/4789/4790) + kills the owned lances |
 | `:38281-38290` | the invis strip (`DelBuff(10)`) | **NEW** — `clear_buff(10)`, the no-rescan quirk |
