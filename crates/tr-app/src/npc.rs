@@ -35119,4 +35119,61 @@ mod s1_f_13d_tests {
         b.find_frame();
         assert_eq!(b.frame, 6, "the bunny fall row 6");
     }
+
+    /// W4-d38 FINAL sheet 2 (research/125 §7) — the 7 humanoid-group
+    /// `humanoid_town_frame` stand-ins are the wiring-round gap list.
+    /// The C# fighter group (`NPC.cs:68647-69655`) flips spriteDirection
+    /// grounded, walks with the |vx|*2+1 accumulator, and pins the air
+    /// row 1 (`:69642-69645`) then the `:69647` pin list snaps 294/295/296
+    /// to row 0. The stand-in (`npc.rs:6600-6626`) has NO grounded flip
+    /// and NO air tail — this witness pins that CURRENT behavior so the
+    /// wiring round's replacement is a deliberate, witnessed edit (the
+    /// d44 master table's keep-one: 287/295 → extra6 WIRED(d44),
+    /// 294/296 → the wave-B module, 322/323/324 → extra7; the module
+    /// hook precedes the body match at merge). The dedicated 27 arms'
+    /// faithfulness is witnessed per batch (b1-b7 above); the 328 row-0
+    /// pin is correct by construction (NO FindFrame case, count 1).
+    #[test]
+    fn w4_d38_final_the_seven_town_standins_are_the_wiring_gap() {
+        for kind in [
+            NpcKind::BoneLee,            // 287 — extra6 (WIRED d44)
+            NpcKind::AngryBonesBig,      // 294 — wave-B module
+            NpcKind::AngryBonesBigMuscle,// 295 — extra6 (WIRED d44)
+            NpcKind::AngryBonesBigHelmet,// 296 — wave-B module
+            NpcKind::SkeletonTopHat,     // 322 — extra7 (MODULE-LANDED)
+            NpcKind::SkeletonAstonaut,   // 323 — extra7
+            NpcKind::SkeletonAlien,      // 324 — extra7
+        ] {
+            // The air tail is MISSING: the C# pins row 1 (then 0 for
+            // 294/295/296); the stand-in leaves the row untouched.
+            let mut n = bare(kind);
+            n.frame = 5;
+            n.frame_counter = 3.0;
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!(n.frame, 5, "{kind:?}: the stand-in has no air tail");
+            assert_eq!(n.frame_counter, 3.0, "{kind:?}: counter untouched in air");
+            // The grounded flip is MISSING: the C# copies direction ±1
+            // (`:68649-68656`); the stand-in never writes sprite_dir.
+            let mut g = bare(kind);
+            g.facing = -1;
+            g.sprite_dir = 1;
+            g.vx = -2.0;
+            g.vy = 0.0;
+            g.find_frame();
+            assert_eq!(g.sprite_dir, 1, "{kind:?}: the stand-in has no grounded flip");
+            // The walk band itself IS right (extra_frames_count 0 for all
+            // seven — the wrap rides the full npcFrameCount).
+            assert_eq!(kind.extra_frames_count(), 0, "{kind:?}");
+            assert!(g.frame >= 2, "{kind:?}: the walk lifts to row 2+");
+        }
+        // The 328 no-case pin: FindFrame has no case 328 (the :77828
+        // label is DoesntDespawnToInactivity), npcFrameCount[328] = 1.
+        let mut blade = bare(NpcKind::PumpkingBlade);
+        blade.frame = 0;
+        blade.frame_counter = 9.0;
+        blade.find_frame();
+        assert_eq!(blade.frame, 0);
+        assert_eq!(blade.frame_counter, 0.0);
+    }
 }

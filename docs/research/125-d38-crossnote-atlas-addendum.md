@@ -228,3 +228,58 @@ does not contradict them, it re-partitions the INPUT:
   56-id forecast stands verbatim; L91 above measures it as the NPC-page
   slice, the dagger rows in 113's union table retire when d40b pushes.
 
+## 7. FINAL: the 35 kinds' FindFrame status (script-check vs the findframe lanes)
+
+Mechanical census (`tools/_d38_final_census.py` + `tools/_d38_final_ff.py`,
+RUN, outputs committed): the C# `NPC.FindFrame` switch
+(`NPC.cs:66705-77370`) carries a case for **34 of the 35**; the one
+NO-CASE kind is 328 PumpkingBlade (`npcFrameCount[328]` = 1, the row-0
+pin correct by construction — the `case 328` at `:77828` is
+`DoesntDespawnToInactivity`, NOT FindFrame). The port's `find_frame`
+(`npc.rs:6874-9705`) has an arm for **all 35** — zero coverage gaps.
+The sibling-lane claims at the CURRENT pushed tips (f26 `7f38fd345`,
+f27 `1a24a133c`, d44 `7c430def6` — whose research/68 refresh 2 rebuilt
+the master 1-697 table; the f26 7f / f27 slice-10 waves are all 531+
+ids, ZERO new claims inside 281-337, re-probed by
+`tools/_d38_final_ff.py`):
+
+| d38 ids | C# case | port arm today | lane state (d44 master table) | wiring-round verdict |
+|---|---|---|---|---|
+| 281-286 casters | `:77023-77028` | inline pose group (faithful: flip + row0/air2/windup1, counter untouched) | **WIRED(d44)** `extra6` (`59b798dc`) | keep-one: the extra6 machine is the same pose group; either side faithful, hook precedes the body match |
+| 287 BoneLee | `:68590` humanoid group | `humanoid_town_frame()` **stand-in** | **WIRED(d44)** `extra6` (wave-B `humanoid_fighter_frame` delegate) | **module wins** — the stand-in lacks the grounded flip + air tail (the f27 Nailhead three-way gap class) |
+| 289 GiantCursedSkull | `:72652` | inline bands + ai[3] dash (faithful; the dead `>12` re-zero not carried, C# itself resets to 0 first) | INLINE-ARM wave-B claim | keep the port arm (faithful twin) |
+| 290 Paladin | `:75963` | inline hammer ladder + \|vx\| walk + strict >8 wrap (faithful) | **WIRED(d44)** `extra6` | keep-one, both faithful |
+| 291/292 Sniper/Tactical | `:76139-76140` | inline aim row (int)ai[2]-1 + \|vx\|*3.3 walk rows 7.. + air 6 (faithful) | **WIRED(d44)** `extra6` | keep-one, both faithful |
+| 293 Commando | `:76021` archer group | inline aim row (int)ai[2] + \|vx\|*3 walk rows 6.. + air 0 (faithful) | **WIRED(d44)** `extra6` (SkeletonArcher delegate) | keep-one, both faithful |
+| 294/296 AngryBonesBig/Helmet | `:68591/:68593` | `humanoid_town_frame()` **stand-in** | INLINE-ARM wave-B (`npc_findframe_b` fighter machine, air-row-0 pin) | **wave-B module wins** — same stand-in gap as 287 |
+| 295 AngryBonesBigMuscle | `:68592` | `humanoid_town_frame()` **stand-in** | **WIRED(d44)** `extra6` (fighter delegate, air pin 0) | **module wins** |
+| 297/298 birds | `:73629-73630` | inline perched row 4 + 4-tick flap + vx*0.1 tilt (faithful) | INLINE-ARM d38 (68 §2 rows cite npc.rs:9399/:9413) | keep d38 arms |
+| 299 Squirrel | `:76458` | inline \|vx\|*0.5+1 walk + air 2/4 (faithful; the aiStyle-3 turn gate unreachable for aiStyle 7) | INLINE-ARM d38 | keep d38 arm |
+| 300 Mouse | `:76513` | inline idle 2-row blink + walk/air same (faithful) | INLINE-ARM d38 | keep d38 arm |
+| 301 Raven | `:73559` | inline -direction flip + >4 flap rows 1..4 (faithful) | INLINE-ARM d38 | keep d38 arm |
+| 302/304 SlimeMasked/HoppinJack | `:70812-70813` | inline slime strip + the 302/304 sprite snap `:70824` (faithful) | INLINE-ARM d38 | keep d38 arms |
+| 303/337 bunnies | `:76853/:76854` | inline \|vx\|+1 hop + air 4/6 (faithful) | MODULE-LANDED(f27) `extra7` | keep-one: faithful twins (68 §5 wire note), module wins at merge per the hook order |
+| 316 Ghost | `:74834` floater group | inline vx*0.1 tilt + 6-tick flap over 4 rows (faithful) | MODULE-LANDED(f27) `extra7` | keep-one: faithful twin |
+| 317/318 eyes | `:74003-74004` | inline atan2 (+3.14 left) + 8-tick flap over 2 rows (faithful) | MODULE-LANDED(f27) `extra7` | keep-one: faithful twins |
+| 322/323/324 costume skeletons | `:68599-68601` | `humanoid_town_frame()` **stand-in** | MODULE-LANDED(f27) `extra7` (fighter delegate) | **module wins** (68 §3: "the d38 287/295/322/323/324 town stand-ins are superseded") |
+| 328 PumpkingBlade | NO CASE | row-0 pin (correct; count 1) | NO-CASE (68 §2) | nothing to wire |
+| 333-336 ribbon slimes | `:70814-70817` | inline slime strip (faithful) | MODULE-LANDED(f27) `extra7` | keep-one: faithful twins |
+
+**The gap list for the wiring round is exactly 7 stand-ins**: 287/295
+(extra6, WIRED(d44)), 294/296 (wave-B module, unwired on any tip —
+`npc_findframe_b` has NO cs_id hook anywhere yet), 322/323/324 (extra7,
+MODULE-LANDED unwired). The stand-in gap is the f27 Nailhead class:
+`humanoid_town_frame` has no grounded sprite flip, no air tail, and its
+walk wraps at `count - extra_frames_count` (extra=0 for these kinds, so
+the wrap band is right) — but the C# fighter group (`NPC.cs:68647-69655`)
+flips spriteDirection grounded, pins air row 1 (then the `:69647` pin
+list snaps 294/295/296 to row 0), and idles row 0 with the counter
+zeroed. The 27 dedicated arms are faithful twins of their C# cases
+(line-for-line read this phase; the two dead-code branches — the 289
+`>12` re-zero and the 299 aiStyle-3 turn gate — are unreachable for
+these kinds and documented, not carried). **No d38 code change**: the
+68 §3 keep-one plan resolves every stand-in at the merge (the module
+hook precedes the body match); d38's arms stay as the parity references.
+The 8-IN rotation whitelist (s9/crossnote) is unaffected — none of the
+7 stand-in kinds writes rotation in either form.
+
