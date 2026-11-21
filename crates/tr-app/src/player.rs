@@ -23833,7 +23833,8 @@ mod w4_f3_pulley_tests {
 
     /// `:19656-19668` — a LONE rope cell (no rope-kind neighbour above or
     /// below) hangs the player at `row*16 + 22` and captures the old-Y delta
-    /// in gfxOffY.
+    /// in gfxOffY. The player sits at y = 50*16+8 so the `(y-8)/16` probe
+    /// lands on row 50 (the rope cell).
     #[test]
     fn w4_f3_find_pulley_lone_cell_snaps_the_hang_row() {
         let mut w = ground_world();
@@ -23841,10 +23842,15 @@ mod w4_f3_pulley_tests {
         w.tiles[i] = Tile { kind: 213, ..Default::default() };
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut p = on_rope(&w);
+        p.y = 50.0 * 16.0 + 8.0; // the probe row ((y-8)/16) is 50
         p.find_pulley(&w);
         assert!(p.pulley);
         assert_eq!(p.y, (50 * 16 + 22) as f32, "the lone-cell hang (:19667)");
-        assert_eq!(p.gfx_off_y, 50.0 * 16.0 - (50 * 16 + 22) as f32, "(:19710)");
+        assert_eq!(
+            p.gfx_off_y,
+            50.0 * 16.0 + 8.0 - (50 * 16 + 22) as f32,
+            "(:19710)"
+        );
     }
 
     /// `:26281-26286` — the jump-off: controlJump clears the pulley and sets
@@ -23887,7 +23893,9 @@ mod w4_f3_pulley_tests {
 
     /// `:26442-26447` — at the rope END (no rope above/below the hang row)
     /// holding DOWN drops off with the 10-tick re-attach lockout and a 1
-    /// px/tick start. `:26116-26119` — the lockout decays per tick.
+    /// px/tick start. `:26116-26119` — the lockout decays per tick. The lone
+    /// cell at row 50 snaps the hang to y = 822, so the ride's `num36` probe
+    /// row is 50 and `flag16` (rows 49/51) is false.
     #[test]
     fn w4_f3_the_rope_end_down_drop_sets_the_lockout() {
         let mut w = ground_world();
@@ -23895,8 +23903,10 @@ mod w4_f3_pulley_tests {
         w.tiles[i] = Tile { kind: 213, ..Default::default() };
         w.tiles[i].flags |= FLAG_ACTIVE;
         let mut p = on_rope(&w);
+        p.y = 50.0 * 16.0 + 8.0; // the attach probe row is 50
         p.find_pulley(&w);
         assert!(p.pulley);
+        assert_eq!(p.y, (50 * 16 + 22) as f32, "the lone-cell hang snap");
         p.control_up = false;
         p.control_down = true;
         p.pulley_ride(&w, MAX_FALL);
