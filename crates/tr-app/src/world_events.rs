@@ -170,16 +170,23 @@ pub(crate) fn check_morning_lanterns(ev: &mut WorldEvents) {
 /// this only on the flag's false→true edge, so the caller passes `first` =
 /// "the downed flag was false before this kill". The switch sets
 /// `NextNightIsLanternNight = true` for the default arm and cases 10
-/// (Moon Lord) / 16/17/18 (the mech trio); ONLY cases 4 (Pumpking), 21
-/// (Everscream) and 22 (SantaNK1) — the moon-event bosses — skip it. The
-/// case-10 credits roll and the case-16/17/18 Plantera-bulb generation are
-/// separate systems (the bulb pass is unported; recorded). The port's
-/// `game_event_id` is the C# `gameEventId` the death arms already cite.
+/// (Moon Lord) / 16/17/18 (the mech trio); ONLY cases 4 (Mourning Wood), 21
+/// (Everscream) and 22 (SantaNK1) skip it. NOTE (c39 research/114 §0.1,
+/// re-read `NPC.cs:79210-79237`): case 4 is Mourning Wood (type 325,
+/// `downedHalloweenTree`), NOT Pumpking — Pumpking (type 327) is case 5
+/// (`downedHalloweenKing`), the DEFAULT arm, so it ARMS the night; Ice
+/// Queen (345) is case 20 (default, arms). The id table is the C#'s; only
+/// the earlier "Pumpking" label was wrong. The case-10 credits roll and
+/// the case-16/17/18 Plantera-bulb generation are separate systems (the
+/// bulb pass is unported; recorded). The port's `game_event_id` is the C#
+/// `gameEventId` the death arms already cite.
 pub(crate) fn on_game_event_cleared(ev: &mut WorldEvents, game_event_id: i32, first: bool) {
     if !first {
         return;
     }
-    // `NPC.cs:78789-78792`: the three moon-event bosses never arm it.
+    // `NPC.cs:78789-78792`: the three skip ids never arm it — 4 Mourning
+    // Wood / 21 Everscream / 22 SantaNK1 (NOT Pumpking, which is id 5, the
+    // default arm; c39 research/114 §0.1).
     if matches!(game_event_id, 4 | 21 | 22) {
         return;
     }
@@ -394,17 +401,20 @@ mod tests {
 
     /// W4-f40 — `NPC.OnGameEventClearedForTheFirstTime`'s lantern half
     /// (`NPC.cs:78769-78793`): the first clear of a boss/event arms the next
-    /// lantern night, EXCEPT the three moon-event bosses (cases 4/21/22),
-    /// and only on the flag's false→true edge (`SetEventFlagCleared`).
+    /// lantern night, EXCEPT the three skip ids (4 Mourning Wood / 21
+    /// Everscream / 22 SantaNK1 — c39 research/114 §0.1: Pumpking is id 5,
+    /// the default arm, so it ARMS), and only on the flag's false→true edge
+    /// (`SetEventFlagCleared`).
     #[test]
     fn w4_f40_the_first_event_clear_arms_the_next_lantern_night() {
         // The default arm + the mech/Moon-Lord cases all set the flag.
-        for id in [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 23, 24, 25] {
+        // Id 5 (Pumpking) and id 20 (Ice Queen) are default-arm — they arm.
+        for id in [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 23, 24, 25] {
             let mut ev = WorldEvents::default();
             on_game_event_cleared(&mut ev, id, true);
             assert!(ev.next_night_is_lantern_night, "event {id} arms the night");
         }
-        // The moon-event bosses (Pumpking 4 / Everscream 21 / SantaNK1 22)
+        // The skip ids (Mourning Wood 4 / Everscream 21 / SantaNK1 22)
         // never arm it (`NPC.cs:78789-78792`).
         for id in [4, 21, 22] {
             let mut ev = WorldEvents::default();

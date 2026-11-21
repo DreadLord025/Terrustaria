@@ -39267,11 +39267,14 @@ cargo/rustc/tests invoked).
   `world_events::on_game_event_cleared` ports
   `OnGameEventClearedForTheFirstTime`'s lantern half вЂ” the first boss/event
   clear arms `NextNightIsLanternNight` (the default arm + cases
-  10/16/17/18), the moon-event bosses (cases 4/21/22) skip. It fires only on
-  the downed flag's false->true edge (`SetEventFlagCleared`'s gate), wired
-  into the 16 ported boss-death arms. The case-10 credits roll and the
-  case-16/17/18 Plantera-bulb generation are separate unported systems
-  (recorded); the dual-dungeon wall clears (`:78794+`) are unported.
+  10/16/17/18), the skip ids 4/21/22 (Mourning Wood / Everscream / SantaNK1
+  — c39 research/114 §0.1: Pumpking is id 5, the DEFAULT arm, so it arms;
+  the earlier "Pumpking 4" label was wrong, the id table is the C#'s) skip.
+  It fires only on the downed flag's false->true edge (`SetEventFlagCleared`'s
+  gate), wired into the 16 ported boss-death arms AND the four invasion
+  clears (ids 0/1/2/3, `Main.cs:64335-64354`, DOC-SWEEP). The case-10 credits
+  roll and the case-16/17/18 Plantera-bulb generation are separate unported
+  systems (recorded); the dual-dungeon wall clears (`:78794+`) are unported.
 - **The visuals** (`LanternSky.cs` whole): `render/lantern_sky.rs` ports
   the background lantern field вЂ” `GenerateLanterns` (the `maxTilesY/4`
   array + the view-band position draws), `ResetLantern` (the depth ladder
