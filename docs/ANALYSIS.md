@@ -7833,10 +7833,11 @@ Deviations:
   app spawn drops them вЂ” `proj_data` has no row): the fireworks rockets
   167-174 and 415-418 (aiStyle 34), the fountains 419-422 (aiStyle 73), the
   cannonball 162 (aiStyle 2), the bunny 281 (aiStyle 49), the snowball 166
-  (aiStyle 2), the geyser 654 (aiStyle 126), the toilet 733 (aiStyle 153),
-  the boulder 99 (aiStyle 25) and the flame jet 187 (aiStyle 38). Landed
+  (aiStyle 2), the geyser 654 (aiStyle 126), the toilet 733 (aiStyle 153)
+  and the flame jet 187 (aiStyle 38). Landed
   rows: 108/164 (the aiStyle-16 blast family, the explosives/mine), 178 and
-  601 (the cannon's aiStyle-1 ammo) and 980 (the venom dart, aiStyle 1).
+  601 (the cannon's aiStyle-1 ammo), 980 (the venom dart, aiStyle 1) and
+  99 (the boulder statue, aiStyle 25 — W4-d3, "The boulder family").
 - **The cap/dedupe gates run app-side (decision D1)**: the spear's
   proximity scan, `BunnyCannonCanFire` and the fountain's anchored-projectile
   dedupe read the app's pools, so the engine emits the request with its roll
@@ -8876,6 +8877,76 @@ skipped for the unported kinds (the 682 pull still raises
 `unlockedSlimeRedSpawn`); the Duke Fishron (370) IS ported and spawns. The
 catch fill uses the port's `slot_for_pickup` seam and the overflow drop
 rides the pinned velocity-triplet-then-prefix order (`spawn_item_drop_px`).
+
+### The boulder family (W4-d3)
+
+The aiStyle-25 boulder family (`Projectile.cs:26015-26415` + HandleMovement's
+bounce ladder `:18941-19277` + the RainbowBoulder machine `:20024-20315` +
+the Shimmer arm `:22504-22515` + the Kill hooks) is ported in
+`crates/tr-app/src/projectile_ai_boulder.rs` (the slice-module precedent).
+The 13 kinds' rows land in `projectile/data.rs` (99/727/1013/1014/1053/1054/
+1055/1057/1005/1021/655/1047/1048) plus the 727's bounce child 763
+RollingCactusSpike (aiStyle 1). The dispatch arm, the death-hook drain, the
+world-sim drains and the boulder-statue wiring (`world_sim/wiring.rs`, the
+`StatueSpawn::Boulder` arm) are wired. The module doc carries the per-kind
+RNG census; the deliberate deviations:
+
+- **The wet flags probe at the arm head** (the bobber tick-head convention,
+  one-tick lag vs the C#'s post-AI `Update` probe `:16790-17007`). The 1047's
+  `ignoreWater` skips the probe.
+- **The 1047 trail ring is the port's fixed 10 entries** vs the C#'s
+  `TrailCacheLength[1047] = 25` (`ProjectileID.cs:522`) — the kill-arm draw
+  census walks the port ring (the 640 moonlord-trail precedent). The 1047/
+  1055 `TrailingMode` is 0 (`ProjectileID.cs:521`).
+- **The 1054 spider spawn drops** (`Kill_SpiderBoulder_SpawnSpider`
+  `:70618-70639`): the WallCreeper 164/165 are unported NPC kinds (the statue
+  precedent); the arm's own reads are RNG-free, so the drop is draw-safe.
+- **The bee-hive slot cap folds** `GetAvailableAmountOfNPCsToSpawnUpToSlot`
+  (`NPC.cs:80635-80654`) onto `100 - npcs.len()` (the port's Vec roster has
+  no 200-slot array). The bees spawn through `Npc::new`'s Bottom placement
+  (the Queen-Bee volley precedent); `CanBeReplacedByOtherNPCs` has no port
+  field — dropped.
+- **The player-contact lane** (`projectile_ai_boulder::player_contact`) is
+  the `damage_player` stand-in WITHOUT the single-hit kill (the boulders are
+  penetrate −1; `Damage_EVP` `:14773-14900` never kills the shot). The 12
+  friendly+hostile traps keep `friendly = true` (the PVE walk hits NPCs), so
+  the generic `!friendly` proxy cannot serve them — the `hurts_player` kind
+  set carries the `hostile` gate. The 1021 MoonBoulder is hostile-only
+  (`friendly = false`, the arm holds it) and is exempted from the kill-on-hit
+  proxy, routed through the no-kill lane; its PVE refusal is the kind-gated
+  `MOON_BOULDER && !friendly` continue (the DUNGEON_DEBRIS precedent). The
+  ×2 / hostileDamageScaling / deadMansSweater modifiers ride the port's
+  existing hurt lane unported, like `damage_player`.
+- **The 1057/1014/655 item drops park on the pool** and drain on the
+  `UpdateItems` stream (the bobber-catch precedent); the C# rolls them inline
+  under `UpdateProjectiles` — the stack rolls themselves stay on the arm's
+  stream. The bee spawns park and drain into the NPC vec.
+- **The `Collision.SwitchTiles` calls park as requests** (the `:17087`
+  objType-3 plate scan, the `:19863`/`:17790` objType-4 pad calls) and drain
+  through `crate::collision::switch_tiles` in the world-sim pass (the wiring
+  borrow). The hoik loop's per-step scans fold to the parked requests in
+  step order. The plate scan reads LAST sub-step's `oldPosition` latch (the
+  one-tick-lag convention).
+- **The dust/gore/particle BODIES skip** but every explicit `Main.rand`
+  gate/settings draw stays in C# order (the G3 census): the 1053 ember gates,
+  the 1054 cobweb `Next(7)`, the 1047 `Next(4)`/`Next(180)` smart-bounce
+  gates + the ShimmerBlock settings float, the kill-arm `Next(2)` scale
+  gates, the gore type picks + `NewGore` kicks, the bee count/velocity rolls.
+  The sounds park on `wants_sound` (the AI cues) / push straight into
+  `pending_proj_sounds` (the death cues — the hook runs after the sub-step
+  loop's forward); the id-3/4/42 styles the `play_proj_sound` façade does not
+  serve drop at the drain (the sound-layer census).
+- **Verbatim quirks kept**: the 1054 `localAI[0]` never ages (the `:26022`
+  arm names only 1013/1048); the rainbow enemy pick keeps the FARTHEST
+  chaseable NPC (`num <= num3`); `JumpToPlayer` passes `player.position` as
+  the intercept lead (`targetVelocity`); the kill dust loops compound the
+  corpse velocity ×1.9/×1.6 per dust; the hoik path's slope pass keeps
+  `base.position` stationary via the `vector12 = base.position - vector`
+  offset trick (`UpdatePosition` integrates once at the tail).
+
+CODE-ONLY MODE: the module's 16 witnesses are WRITTEN NOT RUN (no compiler
+invoked on this branch); every expected value is hand-derived from the cited
+C# lines.
 
 ## Growth ticks (M7-GROWTH-1)
 
