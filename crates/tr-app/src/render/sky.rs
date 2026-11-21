@@ -126,10 +126,14 @@ pub(crate) fn rain_dim_sky(sky: [f32; 3], cloud_alpha: f32, atmo: f32, remix: bo
         return sky;
     }
     let num3 = 1.0 - cloud_alpha * 0.9 * atmo;
+    // `(byte)((float)(int)ch * num3)` — the XNA byte cast. In the C#'s
+    // unchecked context a negative product wraps through the low byte
+    // (`as i32 as u8`, the `cloud_color` convention); only a >1.11 cloudAlpha
+    // pin reaches it (vanilla maxRaining ≤ 1 keeps num3 ≥ 0.1).
     [
-        ((sky[0] * 255.0) as i32 as f32 * num3) as i32 as f32 / 255.0,
-        ((sky[1] * 255.0) as i32 as f32 * num3) as i32 as f32 / 255.0,
-        ((sky[2] * 255.0) as i32 as f32 * num3) as i32 as f32 / 255.0,
+        ((sky[0] * 255.0) as i32 as f32 * num3) as i32 as u8 as f32 / 255.0,
+        ((sky[1] * 255.0) as i32 as f32 * num3) as i32 as u8 as f32 / 255.0,
+        ((sky[2] * 255.0) as i32 as f32 * num3) as i32 as u8 as f32 / 255.0,
     ]
 }
 
@@ -1709,9 +1713,11 @@ mod cloud_star_tests {
         // remixWorld: the C# never dims (`:63546`'s `!Main.remixWorld`).
         assert_eq!(rain_dim_sky(white, 1.0, 1.0, true), white);
         // The RAW alpha can exceed 1 (the port's TR_RAIN pin): num3 goes
-        // NEGATIVE and the byte cast saturates at 0 — the retired 0.1 floor
-        // would have kept 25; the C# blacks the sky out.
-        assert_eq!(rain_dim_sky(white, 1.5, 1.0, false), [0.0; 3]);
+        // NEGATIVE and the unchecked byte cast wraps through the low byte
+        // (the C# `(byte)` in unchecked context, `as i32 as u8`): num3 =
+        // 1 - 1.5*0.9 = -0.35, (int)(255 * -0.35) = -89 -> (byte)167.
+        // Vanilla maxRaining ≤ 1 keeps num3 ≥ 0.1, so only pins reach it.
+        assert_eq!(rain_dim_sky(white, 1.5, 1.0, false), [167.0 / 255.0; 3]);
         // A non-white channel truncates independently: (byte)(200 * 0.55)
         // = 110, (byte)(100 * 0.55) = 55, (byte)(50 * 0.55) = 27.
         let tinted = [200.0 / 255.0, 100.0 / 255.0, 50.0 / 255.0];
