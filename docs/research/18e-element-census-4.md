@@ -85,8 +85,8 @@ consumers and wired what has them:
 | --- | --- | --- |
 | `state_root.rs` | **WIRED (keep-one)** — the nine landed full-screen root rects adopt `root_rect`: achievements/bestiary/emotes `panel_rect`, keyboard/char_creation/world_creation `layout`, world_load's bar+header resolves, char_select's `root_rect` parent (world_select delegates to it). Identity proven by `the_root_fills_its_parent_exactly`; zero pixel change. `StateRoot`/`no_gamepad_blocks_navigation` stay parked: the only `NoGamepadSupport` setter is `UIWorldGenDebug`'s ctor (`:883`, d86 scope-out) and the navigator is unported. | commit `fadad2be` |
 | `crafting_grid.rs` | **WIRED** — `NewCraftingUI` IS landed (`ui/crafting.rs`, live draw `ui/mod.rs`, clicks `app/clicks.rs`, `App.focus_recipe`): the grid loop builds `RecipeEntry` per shown recipe, `draw_slot` picks the overlay+tint (mouse arm), `slot_hovering` gates hover AND `hit_test` (exclusive edges — the old inclusive `<=` accepted the exact edge pixel), `slot_tint` rides `Available`, `grid_selection_highlight` draws the new `ui_back24` sheet in `Main.inventoryBack`. Selection = `available[focus_recipe]` (`OnActivate` `:904`). Deviation pass (same lane): `available_position` ports `:610`'s RAW-list mapping (the click path stores the raw position into `focus_recipe`, `:510` — filter-active divergence fixed), the cells are the C# 44×44 hitboxes centred on the UIList rect (`GetGridParameters` `:85-86`) with the `Inventory_Back18` background at `inventoryScale = 3465/4095` (exactly 44 px, no stretch), and `ui/inv_pulse.rs` ports the exact `invAlpha` curve (`Main.cs:45697-45708`) — the 210 midpoint stand-in retired. Gamepad arm still parked (ANALYSIS "Crafting panel"). | commits `92a05687` + deviation pass |
-| `worldgen_debug_elements.rs` | **DEBUG-DEFERRED** — no driver: `UIWorldGenDebug` unported (the `UIWorldLoad.cs:50-53` F5 arm parked at `app/flow.rs`, research-19 L1); the F3 workbench (`debug_panel.rs`, the e18 unlockMap precedent) has no pass-list tab; the loading screen draws only bar+message. | module-header census note |
-| `worldgen_pass_icons.rs` | **DEBUG-DEFERRED** with its element half — the name-mapping half IS ported (deviation pass): `tr_core::worldgen::pipeline::pass_name_id` maps `EXECUTED_PIPELINE` display names → `Step::vanilla` (the `GenPassNameID` keys), and `get_step_icon` composes it with `get_pass_icon` — the loading screen CAN look the table up now; the screen itself stays deferred (no driver). | module-header census note + `get_step_icon` |
+| `worldgen_debug_elements.rs` | **WIRED (closeout C1)** — the `UIWorldGenDebug` DRIVER landed (`ui/worldgen_debug.rs`, commit `3bc74aeb`): the F5 arm (`UIWorldLoad.cs:50-53`) toggles the pass-list overlay over `FrontScreen::WorldLoad`, feeding `PassState` per executed step from the live job (`pipeline::executed_steps` + the `WorkerHook`'s `current_step`/`completed_steps`). The colour machine, title/description builders and icon factories draw live. The controller actions (pause/step/snapshots) stay d86 scope; the drunk-world RNG arms stay deferred. | commit `3bc74aeb` |
+| `worldgen_pass_icons.rs` | **WIRED (closeout C1)** with its element half — the driver's `step_icon` rides `pass_name_id` → `get_step_icon` (the 108-row table + bestiary-64 fallback), and the `Icon_Tags_Shadow` sheet is newly packed (`assets.rs`). The `FromImageFrame` specs (the Grass row's Tiles_3) fall back to the bestiary cell (the port packs no such UI sheet — documented). | commit `3bc74aeb` |
 | `text_wrapping_test.rs` | **DEBUG-DEFERRED** — the `TR_UI` preset was evaluated and is not cheap: `UITextWrappingTest` is a whole screen (UIList + mode/scale/lang labels + cycling, `:110-336`), needing a new `FrontScreen` variant with exhaustive draw/click/key arms — d86 scope, not a wiring pass. | module-header census note |
 
 ## Closure verdict
@@ -109,3 +109,18 @@ wired (S1-E-17 — the deferred half is the `UIWorldGenDebug` DRIVER,
 contract in research/126 §5), and the closure verdict re-verified: no
 small unclaimed row remained. Commits `beb2af45` / `d2bbd976` / `3720a75b`
 + the research/126 doc; 10 witnesses written not run (code-only).
+
+## CLOSEOUT addendum (2026-11-21, research/126 closeout)
+
+The five residuals the doc-sweep parked are now closed: the
+`UIWorldGenDebug` DRIVER landed (C1, `3bc74aeb` — the
+`worldgen_debug_elements`/`worldgen_pass_icons` rows above move from
+DEBUG-DEFERRED to WIRED), the classic pip-list `UpdateRecipeList` arm
+landed (C2, `1c352a95` — the closed-panel deviation retired), the craft
+sound cue landed (C3, `f63ee0e2` — `CraftingEffects.OnCraft`'s
+unconditional `PlaySound(7)`), the nearby-chests toggle's full semantics
+landed (C4, `c79e95c3` — the live frame + the click cue + the hover-enter
+`DoStatefulTickSound`; no chest-range indicator draw exists in the C#),
+and the closure verdict re-verified (C5). `text_wrapping_test` stays
+DEBUG-DEFERRED (a whole screen, d86 scope). No small unclaimed element
+remains. 13 closeout witnesses written not run (code-only).

@@ -432,6 +432,11 @@ source's child order:
 * the detail area — craft slot (`Inventory_Back18` context 42) plus the
   `Images/UI/Craft` arrow at 0.8 scale — and the grid/nearby-chests toggles at
   `(42, 285)` / `(82, 285)` with the `DrawSelectedCraftingBarIndicator` bars.
+  The nearby-chests toggle's frame reads the LIVE setting (W4-f23 closeout):
+  `num = 2 − CraftFromNearbyChests·2 + hover` (`CraftingUI.cs:340`) — ON draws
+  the open chest (`ChestCraft_0/1`), OFF the closed chest (`ChestCraft_2/3`);
+  the LEFT click flips the setting + plays sound 12 + `Main.SaveSettings`
+  (`:346-351`), and the hover-enter cue rides `DoStatefulTickSound` (`:354`).
 
 Deviations: no search interaction (the filter strip IS live, S1-H-7; the grid
 scroll IS live, W4-f23 doc-sweep), the detail area renders without a selected
@@ -439,7 +444,11 @@ recipe, the cancel button never hides. Clicking a recipe cell crafts it with
 EITHER mouse button (select edge `HandleCraftSlot` `:505`, craft gate
 `Main.cs:42254-42255` — no craft-max exists; bulk is Shift ×10), and after a
 craft the focus follows the recipe across the rebuild
-(`Recipe.TryRefocusingRecipe` `:477-495`, W4-f23 doc-sweep) — the full list is
+(`Recipe.TryRefocusingRecipe` `:477-495`, W4-f23 doc-sweep). The rebuild runs
+whenever the inventory is open (W4-f23 closeout — the classic pip-list arm
+`Main.cs:41712` collapses onto the one grid), and the craft cue is
+`CraftingEffects.OnCraft`'s unconditional `PlaySound(7)`
+(`CraftingRequests.cs:119`, even on a no-op attempt) — the full list is
 in `docs/ANALYSIS.md` → "Crafting panel".
 
 ### Chest panel (`ui/chest.rs`, `Terraria/UI/ChestUI.cs`)

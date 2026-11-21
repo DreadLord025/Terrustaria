@@ -177,3 +177,77 @@ unclaimed element remained to take.
 "Crafting panel" (the scrollbar bullet retired, three new bullets),
 UI.md "Crafting panel" (the scroll + click paragraphs), PORT_MAP lane-4
 row, anchors.txt (3 rows).
+
+## CLOSEOUT (2026-11-21, the five residuals the doc-sweep left)
+
+The closeout took the five items the doc-sweep's verify-only rows and the
+wiring census parked. Four landed code; the fifth is the closure re-verify.
+
+### C1. The `UIWorldGenDebug` DRIVER — LANDED (`3bc74aeb`)
+
+The §5 contract's deferred half is now ported: the F5 arm
+(`UIWorldLoad.cs:50-53`) toggles `App.worldgen_debug_open`, and
+`ui/worldgen_debug.rs` draws the pass-list overlay over
+`FrontScreen::WorldLoad`. The driver feeds `PassState` per executed step
+from the live job (`pipeline::executed_steps` + the `WorkerHook`'s
+`current_step`/`completed_steps`), looks the icon up through
+`pass_name_id` → `get_step_icon`, and wires the parked element halves
+(the colour machine, the title/description builders, the icon factories,
+the 108-row table). The `Icon_Tags_Shadow` sheet is newly packed. The
+controller actions (pause/step/snapshots) stay d86 scope; the drunk-world
+`Main.rand` arms stay deferred (the driver draws no RNG). The d85
+dev-screens co-lane owns the full screen — this is the read-only overlay,
+not a new `FrontScreen` variant. 5 witnesses (4 in `worldgen_debug.rs`,
+1 in `flow.rs`) + the `worldgen_job.rs` feed witness.
+
+### C2. The classic pip-list `UpdateRecipeList` arm — LANDED (`1c352a95`)
+
+The §1 deviation is retired: the C# rebuilds the RAW list from TWO draw
+sites (the modern grid `:585` while Visible, AND the classic pip-list arm
+`Main.cs:41712` while the inventory is open and the grid is NOT visible).
+The port collapses both onto the one grid — the rebuild + refocus tail
+run whenever `inventory_open` (extracted to `App::craft_raw_list`), so the
+snapshot tracks every inventory change while closed-but-inventory-open.
+The classic pip-list DRAW (`CraftingUI.DrawRecipesList`, `:41715`) stays
+unported — the modern grid replaces it (documented, not a gap). 2 witnesses.
+
+### C3. The craft SOUND cue — LANDED (`f63ee0e2`)
+
+The craft-success cue is `CraftingEffects.OnCraft`'s `PlaySound(7)`
+(`CraftingEffects.cs:51`), run UNCONDITIONALLY after
+`CraftingRequests.CraftItem`'s loop (`:119`) — even when the loop crafted
+nothing. The port played it only inside the grant gate; the closeout moved
+it to the craft-attempt tail. The select cue (12) was already landed
+(`HandleCraftSlot` `:516`, `HoverOverCraftingItemButton` `:42299`). 1 witness.
+
+### C4. The nearby-chests toggle — LANDED (`c79e95c3`)
+
+The toggle's full semantics: the frame reads the LIVE setting
+(`num = 2 − CraftFromNearbyChests·2 + hover`, `:340`), the click plays
+sound 12 (`:350`) + `Main.SaveSettings` (`:351`), and the hover-enter cue
+rides `DoStatefulTickSound` (`:354`, `Main.cs:3237-3247`). The toggle stays
+LEFT-only (`:346`). Census: NO chest-range indicator draw exists in the C#
+(`NearbyChests` feeds only the ingredient scan + QuickStacking). 4 witnesses.
+
+### C5. research/126 FINAL + 18e closure — VERIFIED
+
+The closure verdict stands: every transitive `UIElement` class is accounted
+for, and the five closeout residuals are now landed or documented. The
+`worldgen_debug_elements`/`worldgen_pass_icons` modules move from
+DEBUG-DEFERRED to WIRED (the driver consumes them); `text_wrapping_test`
+stays DEBUG-DEFERRED (a whole screen, d86 scope). No small unclaimed row
+remains.
+
+### Closeout commits
+
+| Hash | Item |
+| --- | --- |
+| `1c352a95` | C2 — the classic pip-list `UpdateRecipeList` arm (2 witnesses) |
+| `c79e95c3` | C4 — the nearby-chests toggle full semantics (4 witnesses) |
+| `f63ee0e2` | C3 — the craft sound cue (1 witness) |
+| `3bc74aeb` | C1 — the `UIWorldGenDebug` driver (6 witnesses) |
+
+13 closeout witnesses written, not run (code-only). Docs updated: ANALYSIS
+"Crafting panel" (the closed-panel deviation retired, the craft-cue +
+nearby-toggle bullets) + "The loading screen" (the driver bullet),
+research/18e (the wiring-census rows), PORT_MAP, anchors.txt.
