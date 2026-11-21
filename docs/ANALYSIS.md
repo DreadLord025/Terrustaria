@@ -39322,3 +39322,42 @@ fields, `Player` fields, `MountState::is_active/kind`,
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (user directive). The
 witnesses pin the per-site draw census against a scripted-RNG oracle (the
 d52 `burst_block` shape) plus the post-field writes and the queue half.
+### Batch 2 (2 sites, both LightDisc callers)
+
+* **The Sword Beam impact burst** (`Projectile.cs:19809-19814`, site 19811):
+  the aiStyle-27 `unholy_step` bounce arm's first-three-impacts block — the
+  Item10 cue (`:19808`) queues ahead of the 30 type-64 puffs (alpha 100,
+  `Color.White`, scale 1.8), each noGravity + `velocity *= Next(1,7)`. Both
+  captured at the PRE-reflect position (the C# plays/draws before the
+  velocity reverse). Type 64 is in the `:214-219` tweak family.
+* **The Light Disc bounce sparks** (`LightDisc_Bounce` `:20317-20329`, site
+  20322): `spinningpoint = Reflect(velocity, normal)` (XNA's
+  `v - 2*Dot(v,n)*n`, no normalization), then 4 iterations — each a type-306
+  `NewDustPerfect` at the hit point whose velocity is the spinningpoint
+  rotated by `π/4 * NextFloatDirection()` then scaled by `0.6 * NextFloat()`
+  (alpha 200, scale 1.6), the colour a `NextFloat`-lerp of (219,253,0)→Cyan;
+  then a `CloneDust` (a fresh `NewDust` + the field copy) overwritten White /
+  scale 1 / alpha 50. **Both callers wired:** the NPC-hit reverse (`:13074`,
+  hitPoint = Center + SafeNormalize(vel, UnitX) * 8, NO scale factor, normal
+  = SafeNormalize(-vel, UnitX)) and the tile bounce (`:19518`, hitPoint ×
+  scale, normal = per-changed-axis -Sign(lastVelocity)). Captured PRE-reverse
+  in `damage_pve` / `ai_boomerang`. Per-iteration census: 15 draws
+  (NextFloatDirection + NextFloat + the Perfect's 6 + the colour NextFloat +
+  the CloneDust's 6).
+
+**The remaining first-40 sites with unported hosts** (cited skips, the d52
+unported-kind convention — none has a `proj_data` row / AI arm): Meowmere
+502 (`:18231`), LavaBoulder 1053 (`:18949`/`:18952`), Poo 1048 (`:19245`),
+the phaseblades (`:19392`/`:19401`/`:19468`), BoulderOfEarth 261 (`:20423`)
+and the SuperStar family 728/977/1045 (`:22161`/`:22297`/`:22308`). They
+land with their kinds.
+
+### Verification (batch 2)
+
+Code-only: the SwordBeam / LightDisc arms re-read against the cited C#
+windows; the seam signatures checked by read/grep (`Projectile` fields,
+`bow_launch::safe_normalize/rotated_by`, `DustPool::new_dust_perfect/
+clone_dust`, `UnifiedRandom::next_float_direction`). The 4 new witness tests
+(`projectile_dust.rs`: the SwordBeam census, the LightDisc 4×15 census, the
+Reflect math, the queue half) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (user directive).

@@ -18,6 +18,11 @@
 //! `EmitEnchantmentVisualsAt` `:17320-17467`, sites 17325/17332/17346/17368/
 //! 17377/17387/17397/17408/17418/17428/17443/17462).
 //!
+//! W4-d53 batch 2 scope: the Sword Beam's impact burst (`:19809-19814`, site
+//! 19811) and the Light Disc's bounce sparks (`LightDisc_Bounce`
+//! `:20317-20329`, site 20322 — both callers, the NPC-hit reverse `:13074`
+//! and the tile bounce `:19518`).
+//!
 //! Cited skips (the d52 unported-arm convention):
 //! * The wet entry/exit splash lane (`:16843-16996`, sites 16851-16987) —
 //!   the generic `Update` wet block (`:16790-17007`) is unported (the
@@ -34,6 +39,12 @@
 //!   ChildSafety re-type arm draws nothing.
 //! * `Lighting.AddLight` (the mount arm `:17343`) — the S1-E-5 light-feed
 //!   column (`proj_lights.rs`), no RNG.
+//! * The remaining first-40 sites with unported hosts: Meowmere 502
+//!   (`:18231`), LavaBoulder 1053 (`:18949`/`:18952`), Poo 1048 (`:19245`),
+//!   the phaseblades (`:19392`/`:19401`/`:19468`), BoulderOfEarth 261
+//!   (`:20423`) and the SuperStar family 728/977/1045 (`:22161`/`:22297`/
+//!   `:22308`) — none has a `proj_data` row / AI arm; they land with their
+//!   kinds (the d52 unported-kind convention).
 //!
 //! `npcProj` folds to `owner == 255` (the hostile-shot proxy, the
 //! `damage_pve` `ownedBySomeone` convention); `noEnchantmentVisuals` /
@@ -86,6 +97,12 @@ pub(crate) enum DustBurst {
     ArrowTrail { kind: u16, pos: Vec2, w: i32, h: i32, vel: Vec2 },
     /// The stationary Vortex-bolt 229 puff (`:17117-17125`).
     StationaryTrail { at: Vec2, rot: f32 },
+    /// The Sword Beam's 30-puff impact burst (`:19809-19814`).
+    SwordBeam { pos: Vec2, w: i32, h: i32 },
+    /// The Light Disc's bounce sparks (`LightDisc_Bounce` `:20317-20329`):
+    /// the hit point, the surface normal and the PRE-bounce velocity (the
+    /// reflect reads it). Both callers (`:13074` NPC-hit, `:19518` tile).
+    LightDiscBounce { hit_point: Vec2, normal: Vec2, vel: Vec2 },
 }
 
 /// The enchantment-visuals snapshot — everything `EmitEnchantmentVisualsAt`
@@ -233,6 +250,81 @@ pub(crate) fn drain_burst(
             arrow_trail(rng, dust, ctx, world, kind, pos, w, h, vel)
         }
         DustBurst::StationaryTrail { at, rot } => stationary_trail(rng, dust, ctx, world, at, rot),
+        DustBurst::SwordBeam { pos, w, h } => sword_beam_burst(rng, dust, ctx, world, pos, w, h),
+        DustBurst::LightDiscBounce { hit_point, normal, vel } => {
+            light_disc_bounce(rng, dust, ctx, world, hit_point, normal, vel)
+        }
+    }
+}
+
+/// The Sword Beam's impact burst (`Projectile.cs:19809-19814`): 30 type-64
+/// puffs at the impact position, box = the beam's own, alpha 100,
+/// `Color.White`, scale 1.8; each noGravity + `velocity *= Next(1,7)` (the
+/// kick draw rides AFTER the pool's own rolls). Type 64 is in the `:214-219`
+/// tweak family (one extra `Next(-10,6)` per dust).
+fn sword_beam_burst(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    pos: Vec2,
+    w: i32,
+    h: i32,
+) {
+    for _ in 0..30 {
+        let idx = nd(rng, dust, ctx, world, pos, w, h, 64, 0.0, 0.0, 100, Color::WHITE, 1.8);
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= rng.next_range(1, 7) as f32;
+    }
+}
+
+/// `Vector2.Reflect(vector, normal)` (XNA): `vector - 2 * Dot(vector, normal)
+/// * normal` — NO normalization (the C# passes the raw normal).
+fn reflect(v: Vec2, n: Vec2) -> Vec2 {
+    v - 2.0 * v.dot(n) * n
+}
+
+/// `LightDisc_Bounce` (`Projectile.cs:20317-20329`): the reflected velocity
+/// `spinningpoint = Reflect(velocity, normal)`, then 4 iterations — each a
+/// type-306 `NewDustPerfect` at the hit point whose velocity is the
+/// spinningpoint rotated by `π/4 * NextFloatDirection()` then scaled by
+/// `0.6 * NextFloat()` (alpha 200, scale 1.6), the colour a
+/// `NextFloat`-lerp of (219,253,0)→Cyan; then a `CloneDust` (a fresh
+/// `NewDust` of the source's type/position) overwritten White / scale 1 /
+/// alpha 50. The draw order per iteration: NextFloatDirection (1),
+/// NextFloat (1), the Perfect's NewDust (6), the colour NextFloat (1), the
+/// CloneDust's NewDust (6) = 15.
+fn light_disc_bounce(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    hit_point: Vec2,
+    normal: Vec2,
+    vel: Vec2,
+) {
+    let spinningpoint = reflect(vel, normal);
+    for _ in 0..4 {
+        // `:20322` — the rotate angle (NextFloatDirection) THEN the radius
+        // scale (NextFloat), both argument draws ahead of the NewDust.
+        let angle = std::f32::consts::FRAC_PI_4 * rng.next_float_direction();
+        let speed = 0.6 * rng.next_float();
+        let v = crate::bow_launch::rotated_by(spinningpoint, angle as f64) * speed;
+        let idx = dust.new_dust_perfect(
+            rng, ctx, world, hit_point, 306, Some(v), 200, Color::default(), 1.6,
+        );
+        // `:20323` — the colour lerp draw, then the write.
+        let t = rng.next_float();
+        dust.slot_mut(idx).color =
+            lerp_color(Color::new(219, 253, 0, 255), Color::new(0, 255, 255, 255), t);
+        // `:20324-20327` — the CloneDust (a fresh NewDust + the field copy),
+        // then the White / scale-1 / alpha-50 overwrite.
+        let clone = dust.clone_dust(rng, ctx, world, idx);
+        let c = dust.slot_mut(clone);
+        c.color = Color::WHITE;
+        c.scale = 1.0;
+        c.alpha = 50;
     }
 }
 
@@ -716,7 +808,10 @@ mod tests {
             let d = dust.slot(0);
             assert!(d.no_gravity);
             assert_eq!(d.scale, 1.7);
-            assert_eq!(d.position, at, "the oldest-ring-entry anchor");
+            // The 0×0 box clamps to 5×5 (`Dust.cs:155-162`), so the default
+            // block's position is `at + Next(1) + 4` = `at + 4` per axis
+            // (`:170-171`) — the anchor plus the inset, NOT the exact anchor.
+            assert_eq!(d.position, at + Vec2::splat(4.0), "the oldest-ring-entry anchor + inset");
             for s in dust.slots_mut() {
                 s.active = false;
             }
@@ -1000,6 +1095,129 @@ mod tests {
         assert!(
             !bursts2.iter().any(|b| matches!(b, DustBurst::Enchantment(_))),
             "owner 255 folds the npcProj gate"
+        );
+    }
+
+    /// W4-d53 — `Projectile.cs:19809-19814`: the Sword Beam's 30 type-64
+    /// puffs, each the six default rolls + the type-64 tweak draw, then the
+    /// `Next(1,7)` velocity kick. The post-arms write noGravity + White +
+    /// alpha 100 + scale 1.8 (the pool's jitter rides the scale).
+    #[test]
+    fn w4_d53_sword_beam_burst_draws_and_writes() {
+        let w = ground_air();
+        let c = ctx(&w);
+        let pos = Vec2::new(60.0 * 16.0, 100.0 * 16.0);
+        let mut rng = UnifiedRandom::new(53);
+        let mut probe = UnifiedRandom::new(53);
+        let mut dust = DustPool::new();
+        drain_burst(&mut rng, &mut dust, &c, &w, DustBurst::SwordBeam { pos, w: 16, h: 16 });
+        for _ in 0..30 {
+            burst_block(&mut probe, 64, 16, 16);
+            probe.next_range(1, 7);
+        }
+        assert_eq!(rng.peek(), probe.peek(), "the 30-puff census");
+        assert_eq!(dust.slots().iter().filter(|s| s.active).count(), 30);
+        let d = dust.slot(0);
+        assert!(d.no_gravity);
+        assert_eq!(d.dust_type, 64);
+        assert_eq!(d.color, Color::WHITE);
+        assert_eq!(d.alpha, 100);
+    }
+
+    /// W4-d53 — `Projectile.cs:20317-20329`: the Light Disc bounce's 4
+    /// iterations, each 15 draws (NextFloatDirection + NextFloat + the
+    /// Perfect's 6 + the colour NextFloat + the CloneDust's 6). The source
+    /// is type 306 alpha 200 scale 1.6 with the (219,253,0)→Cyan lerp; the
+    /// clone is White / scale 1 / alpha 50 at the same hit point.
+    #[test]
+    fn w4_d53_light_disc_bounce_draws_and_writes() {
+        let w = ground_air();
+        let c = ctx(&w);
+        let hit_point = Vec2::new(60.0 * 16.0, 100.0 * 16.0);
+        let normal = Vec2::new(-1.0, 0.0);
+        let vel = Vec2::new(8.0, 3.0);
+        let mut rng = UnifiedRandom::new(53);
+        let mut probe = UnifiedRandom::new(53);
+        let mut dust = DustPool::new();
+        drain_burst(
+            &mut rng, &mut dust, &c, &w,
+            DustBurst::LightDiscBounce { hit_point, normal, vel },
+        );
+        for _ in 0..4 {
+            probe.next_float_direction();
+            probe.next_float();
+            burst_block(&mut probe, 306, 0, 0);
+            probe.next_float();
+            burst_block(&mut probe, 306, 0, 0);
+        }
+        assert_eq!(rng.peek(), probe.peek(), "the 4x15 bounce census");
+        // 8 active slots: 4 sources + 4 clones.
+        assert_eq!(dust.slots().iter().filter(|s| s.active).count(), 8);
+        let src = dust.slot(0);
+        assert_eq!(src.dust_type, 306);
+        assert_eq!(src.alpha, 200);
+        assert_eq!(src.position, hit_point, "the Perfect anchors the hit point");
+        let clone = dust.slot(1);
+        assert_eq!(clone.color, Color::WHITE);
+        assert_eq!(clone.scale, 1.0);
+        assert_eq!(clone.alpha, 50);
+        assert_eq!(clone.position, hit_point, "the clone copies the position");
+    }
+
+    /// W4-d53 — `Vector2.Reflect` is `v - 2*Dot(v,n)*n` (no normalization):
+    /// a head-on x-bounce flips x, keeps y; a zero normal leaves v unchanged.
+    #[test]
+    fn w4_d53_reflect_matches_xna() {
+        let v = Vec2::new(8.0, 3.0);
+        assert_eq!(reflect(v, Vec2::new(-1.0, 0.0)), Vec2::new(-8.0, 3.0));
+        assert_eq!(reflect(v, Vec2::new(0.0, -1.0)), Vec2::new(8.0, -3.0));
+        assert_eq!(reflect(v, Vec2::ZERO), v);
+    }
+
+    /// W4-d53 — the queue half: a Sword Beam (116) driven into a wall queues
+    /// the impact burst (and the Item10 cue); a Light Disc (106) driven into
+    /// a wall queues the bounce sparks. Both ride the per-slot intent fields
+    /// the dispatch forwards into `pending_dust_bursts`.
+    #[test]
+    fn w4_d53_the_tick_queues_sword_beam_and_light_disc() {
+        use crate::projectile::{FlailInputs, ProjectilePool, YoyoInputs};
+        // A solid wall at x >= 100 tiles; the shots fly right into it.
+        let mut w = ground_air();
+        for x in 100..200 {
+            for y in 0..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        // The Sword Beam: spawn just left of the wall, fly right.
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data_owned(116, 0, 98.0 * 16.0, 100.0 * 16.0, 20.0, 0.0, 10, 4.0, 0.0, 0.0);
+        let mut rng = UnifiedRandom::new(53);
+        for _ in 0..4 {
+            pool.update(
+                &mut w.clone(), &mut [], None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+            );
+        }
+        assert!(
+            pool.drain_dust_bursts().iter().any(|b| matches!(b, DustBurst::SwordBeam { .. })),
+            "the Sword Beam impact burst queued"
+        );
+        // The Light Disc: same wall, outbound (ai0 = 0).
+        let mut pool2 = ProjectilePool::new();
+        pool2.spawn_with_data_owned(106, 0, 98.0 * 16.0, 100.0 * 16.0, 20.0, 0.0, 10, 4.0, 0.0, 0.0);
+        let mut rng2 = UnifiedRandom::new(53);
+        for _ in 0..4 {
+            pool2.update(
+                &mut w.clone(), &mut [], None, None, None,
+                YoyoInputs::default(), FlailInputs::default(), &mut rng2, 0, false,
+            );
+        }
+        assert!(
+            pool2.drain_dust_bursts().iter().any(|b| matches!(b, DustBurst::LightDiscBounce { .. })),
+            "the Light Disc bounce sparks queued"
         );
     }
 }

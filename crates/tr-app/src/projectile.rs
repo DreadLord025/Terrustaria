@@ -768,6 +768,17 @@ pub struct Projectile {
     /// the dispatch forwards it into `pending_dust_bursts` (the
     /// `wants_sound` pattern). `None` for every slot that drew nothing.
     pub(crate) wants_stationary_trail: Option<(Vec2, f32)>,
+    /// W4-d53 — the Sword Beam's impact-burst intent (`Projectile.cs:
+    /// 19809-19814`): `(position, width, height)` captured in `unholy_step`
+    /// on each of the first three tile impacts; the dispatch forwards it
+    /// into `pending_dust_bursts`. `None` when no impact fired.
+    pub(crate) wants_sword_beam_burst: Option<(Vec2, i32, i32)>,
+    /// W4-d53 — the Light Disc's bounce-spark intent (`Projectile.cs:
+    /// 20317-20329`): `(hitPoint, normal, velocity-at-bounce)` captured at
+    /// the NPC-hit reverse (`:13074`) and the tile bounce (`:19518`); the
+    /// dispatch forwards it into `pending_dust_bursts`. `None` when no
+    /// bounce fired.
+    pub(crate) wants_light_disc_bounce: Option<(Vec2, Vec2, Vec2)>,
     /// S1-P-i35 — the pull's enemy spawn (`Player.cs:52415-52437`):
     /// `(npc_type, x, y)` the world sim resolves into the NPC vec (the
     /// `wants_mark_spawn` pattern). The Blood Nautilus 618 drops 64 px lower.
@@ -860,6 +871,8 @@ impl Default for Projectile {
             shimmer_wet: false,
             wants_splash: None,
             wants_stationary_trail: None,
+            wants_sword_beam_burst: None,
+            wants_light_disc_bounce: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
         }
@@ -4102,11 +4115,22 @@ impl Projectile {
                     return;
                 }
                 // `:19803-19827` — the Sword Beam reflects full-axis for three
-                // impacts (`ai[2] < 4f`) and dies on the fourth; its sound and
-                // 30-dust burst are skipped.
+                // impacts (`ai[2] < 4f`) and dies on the fourth. W4-d53 wires
+                // the Item10 cue + the 30-dust burst (`:19808-19814`): the
+                // sound queues ahead of the dust snapshot, both at the
+                // PRE-reflect position (the C# plays/draws before the
+                // velocity reverse).
                 SWORD_BEAM => {
                     self.ai[2] += 1.0;
                     if self.ai[2] < 4.0 {
+                        // `:19808` — `PlaySound(SoundID.Item10, position)`.
+                        if self.wants_sound.is_none() {
+                            self.wants_sound = Some((2, 10, self.pos.x, self.pos.y, 0.0));
+                        }
+                        // `:19809-19814` — the 30 type-64 puffs (the drain
+                        // replays the per-dust `Next(1,7)` velocity kick).
+                        self.wants_sword_beam_burst =
+                            Some((self.pos, self.w as i32, self.h as i32));
                         if hit_x {
                             self.vel.x = -last.x;
                         }
@@ -5527,6 +5551,24 @@ impl Projectile {
             hit_y |= self.pos.y <= 0.0 || self.pos.y + self.h >= world.height as f32 * 16.0;
             if hit_x || hit_y {
                 if matches!(self.kind, 33 | LIGHT_DISC | 866) {
+                    // W4-d53 — `:19514-19518`: the Light Disc's bounce sparks
+                    // fire BEFORE the reverse. hitPoint = Center +
+                    // SafeNormalize(pre-bounce vel, UnitX) * 8 * scale; the
+                    // normal's per-axis component is -Sign(lastVelocity) on
+                    // the changed axis (the port's hit_x/hit_y stand-in for
+                    // the C# `velocity != lastVelocity` test). The drain
+                    // reflects the PRE-bounce velocity about that normal.
+                    if self.kind == LIGHT_DISC {
+                        let last = self.vel;
+                        let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                        let dir = crate::bow_launch::safe_normalize(last, Vec2::X);
+                        let hit_point = center + dir * 8.0 * self.scale;
+                        let normal = Vec2::new(
+                            if hit_x { -(last.x.signum()) } else { 0.0 },
+                            if hit_y { -(last.y.signum()) } else { 0.0 },
+                        );
+                        self.wants_light_disc_bounce = Some((hit_point, normal, last));
+                    }
                     // `:19550-19560`: the 33/106/866 trio reverses only the
                     // changed axis and does NOT arm the return — the Light
                     // Disc keeps bouncing outbound until its 45-tick timer.
@@ -20012,6 +20054,20 @@ impl ProjectilePool {
                 self.pending_dust_bursts
                     .push(crate::projectile_dust::DustBurst::StationaryTrail { at, rot });
             }
+            // W4-d53 — the Sword Beam impact burst (`:19809-19814`) and the
+            // Light Disc bounce sparks (`:13074`/`:19518` → `:20317-20329`),
+            // captured in `unholy_step` / `ai_boomerang` / `damage_pve`.
+            if let Some((pos, w, h)) = self.slots[i].wants_sword_beam_burst.take() {
+                self.pending_dust_bursts
+                    .push(crate::projectile_dust::DustBurst::SwordBeam { pos, w, h });
+            }
+            if let Some((hit_point, normal, vel)) = self.slots[i].wants_light_disc_bounce.take() {
+                self.pending_dust_bursts.push(crate::projectile_dust::DustBurst::LightDiscBounce {
+                    hit_point,
+                    normal,
+                    vel,
+                });
+            }
             // The lifetime block (`:17197-17209`) moved inside the sub-step
             // loop (S1-A-9) — see the block at the loop body's end.
             // `Kill()`'s type-295 arm (`:74341-74350`): the Inferno Fork
@@ -23011,16 +23067,25 @@ impl ProjectilePool {
             // 13068-13080`, S1-P-i08): the outbound hit reverses BOTH axes
             // and arms the return; a returning boomerang's hit only re-arms
             // `ai[0] = 1` (the `ai[0] == 0` gate guards the reverse alone).
-            // The 301/866/902 + phaseblade exclusions are the C#'s; the 106's
-            // `LightDisc_Bounce` dust (`:13072-13075`, `:20317-20329`) is the
-            // skipped cosmetic layer — its rolls go with it (the volcano/
-            // yoyo precedent). Runs BEFORE the strike, as the C# orders it.
+            // The 301/866/902 + phaseblade exclusions are the C#'s. W4-d53
+            // wires the 106's `LightDisc_Bounce` sparks (`:13072-13075`,
+            // `:20317-20329`): hitPoint = Center + SafeNormalize(vel, UnitX)
+            // * 8 (NO scale factor on this caller), normal =
+            // SafeNormalize(-vel, UnitX), captured PRE-reverse. Runs BEFORE
+            // the strike, as the C# orders it.
             if proj_data(self.slots[slot].kind).is_some_and(|d| d.ai_style == 3)
                 && !matches!(self.slots[slot].kind, 301 | 866 | 902)
                 && !is_a_phaseblade(self.slots[slot].kind)
             {
                 let p = &mut self.slots[slot];
                 if p.ai[0] == 0.0 {
+                    if p.kind == LIGHT_DISC {
+                        let center = p.pos + Vec2::new(p.w * 0.5, p.h * 0.5);
+                        let dir = crate::bow_launch::safe_normalize(p.vel, Vec2::X);
+                        let hit_point = center + dir * 8.0;
+                        let normal = crate::bow_launch::safe_normalize(-p.vel, Vec2::X);
+                        p.wants_light_disc_bounce = Some((hit_point, normal, p.vel));
+                    }
                     p.vel = -p.vel;
                 }
                 p.ai[0] = 1.0;
@@ -30519,6 +30584,8 @@ mod phasmal_projectile_tests {
             shimmer_wet: false,
             wants_splash: None,
             wants_stationary_trail: None,
+            wants_sword_beam_burst: None,
+            wants_light_disc_bounce: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
         }
@@ -30929,6 +30996,8 @@ mod ritual_projectile_tests {
             shimmer_wet: false,
             wants_splash: None,
             wants_stationary_trail: None,
+            wants_sword_beam_burst: None,
+            wants_light_disc_bounce: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
         }
