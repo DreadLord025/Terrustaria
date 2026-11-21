@@ -239,6 +239,7 @@
 //! | 1200-1209 | `:88464-88476` | the 212 PirateDeckhand + 213 PirateCorsair death (5 gores each) |
 //! | 1210-1219 | `:88480-88492` | the 214 PirateDeadeye + 215 PirateCrossbower death (5 gores each) |
 //! | 1220-1227 | `:88496-88524` | the 216 PirateCaptain (5 gores) + 220/221 SeaSnail/Squid death (type-151 dust) |
+//! | 1228-1233 | `:88543-88548` | the 167 UndeadViking death (6 gores, type-26 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7105,6 +7106,39 @@ fn squid_death(
     }
 }
 
+/// The 167 UndeadViking death (`NPC.cs:88537-88548`, sites 1228-1233): the
+/// 20-dust type-26 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 6 gores at `this.scale` — 213/214 at position, 43/43 at +20, 212/212 at
+/// +34.
+fn undead_viking_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, 213, s); // :88543
+    gore.new_gore(rng, world, pos, vel, 214, s); // :88544
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88545
+    gore.new_gore(rng, world, mid, vel, 43, s); // :88546
+    gore.new_gore(rng, world, low, vel, 212, s); // :88547
+    gore.new_gore(rng, world, low, vel, 212, s); // :88548
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7968,6 +8002,11 @@ pub fn hit_effect_c(
     // `:88503-88526` — the 220/221 SeaSnail/Squid arm (sites 1225-1227).
     if (npc_type == 220 || npc_type == 221) && npc.hp <= 0 {
         squid_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88527-88640` — the skeleton family arm; this commit owns the 167
+    // UndeadViking (sites 1228-1233); the rest lands with the next batches.
+    if npc_type == 167 && npc.hp <= 0 {
+        undead_viking_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -12558,6 +12597,22 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "squid {ty}");
         }
+    }
+
+    /// `NPC.cs:88543-88548` — the UndeadViking death: the 6 gores
+    /// 213/214 at position, 43/43 at +20, 212/212 at +34.
+    #[test]
+    fn w4_f10_the_undead_viking_death_spawns_the_six_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1249);
+        undead_viking_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![213, 214, 43, 43, 212, 212]);
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(4).position, Vec2::new(100.0, 134.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
