@@ -153,6 +153,6 @@ The ROWED inline-machine kinds ≤400 are RE-ARMED end-to-end (batches
 per-kind trailing/ambient dust now spawns through the live `DustPool`
 on the `UpdateProjectiles` stream, wired from
 `world_sim/projectiles.rs` via the `update_dust` seam. The no-dust
-rowed kinds are censused closed (batch 4). 21 draw-mirror witnesses
+rowed kinds are censused closed (batch 4). 19 draw-mirror witnesses
 WRITTEN NOT RUN (code-only). The unrowed-kind emitters + the `AI_001`
 slice arms are the documented remainder above.
