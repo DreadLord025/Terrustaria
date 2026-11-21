@@ -1027,6 +1027,17 @@ pub struct Player {
     /// (`Main.cs:47458`), but the auto-paint-on-build pass is not ported
     /// (ANALYSIS "Tile paint use paths (W4-g79)").
     pub auto_paint: bool,
+    /// `Player.cursorItemIconEnabled` (`Player.cs:1850`): the cursor
+    /// item-icon pass's gate — `Main.MouseOversClear` clears it at every
+    /// update head (`Main.cs:46507`), the tile-interaction arms and the
+    /// paint-tool gates set it (`Player.cs:41828`/`:41877`/`:41901`/
+    /// `:41919`, W4-g79 phase 4c). The draw site
+    /// (`Main.DrawInterface_40_InteractItemIcon`, `Main.cs:45038-45115`) is
+    /// the phase-5 port; the flag rides ready like the other cursor-icon
+    /// arms. The `cursorItemIconID`/`Text`/`Push`/`Reversed` companions
+    /// (`:1852-1858`) stay with that draw port — no ported setter writes
+    /// them yet.
+    pub cursor_item_icon_enabled: bool,
     /// `Player.builderAccStatus` (`Player.cs:814`, `BuilderAccToggleIDs.Count
     /// = 12` at `:77`): the info-accessory toggle states. Slots 4/5/6/7 are
     /// the red/blue/green/yellow wire visibility, 9 the actuator visibility
@@ -2648,6 +2659,7 @@ impl Player {
             info_acc_mech_show_wires: false,
             auto_actuator: false,
             auto_paint: false,
+            cursor_item_icon_enabled: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
             // (`:56092`): the ruler-line toggle starts off, the rest on.
             builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
