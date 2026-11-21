@@ -475,6 +475,12 @@ pub(crate) struct DeathSnapshot {
     pub wet: bool,
     /// `this.damage` — the 12's `< 100` extra-burst gate (`:75736`).
     pub damage: i32,
+    /// `this.oldPos` (`Projectile.cs:388`, a `[10]` ring) — the trail-death
+    /// arms (931/1039/1047/79/16/34) walk it, breaking on the first ZERO
+    /// entry. The pool arms it via `shift_trailing_history` for the
+    /// `trailing_mode >= 0` kinds; an un trailed kind's ring stays ZERO, so
+    /// its trail loop spawns nothing (the C#'s own "no entry" break).
+    pub old_pos_ring: [Vec2; 10],
 }
 
 impl DeathSnapshot {
@@ -501,6 +507,7 @@ impl DeathSnapshot {
             ai2: p.ai[2],
             wet: p.wet,
             damage: p.damage,
+            old_pos_ring: p.old_pos,
         }
     }
 }
@@ -3962,6 +3969,213 @@ fn death_bursts(
             let _ = rng.next_range(-1, 2);
             let _ = rng.next_range(-1, 2);
         }
+        // `:71149-71191` — the 931/1039 fairy-queen/constellation trail:
+        // colour GetFairyQueenWeaponsColor (931) / GetConstellationColor
+        // (1039) — both hsl((ai1+0.5)%1,1,0.5)×Opacity on the default
+        // (non-dev-name) path; one head NextFloat; walk the ring (break on
+        // ZERO), count Next(1,3) with the 0.3/0.75 decrements, ramp
+        // Lerp(0.3,1,lerp); per dust a dust-267 colour vel×=NextFloat×0.8
+        // noGravity scale 0.9+NextFloat×1.2 fadeIn NextFloat×1.2×ramp
+        // scale×=ramp + a CloneDust (scale/2, fadeIn×0.85, White).
+        931 | 1039 => {
+            let opacity = 1.0 - s.alpha as f32 / 255.0;
+            let h = (s.ai1 + 0.5) % 1.0;
+            let c = crate::ui::color::hsl_to_rgb(h as f64, 1.0, 0.5, 255);
+            let m = crate::ui::color::mul(c, opacity);
+            let color = Color::new(m[0], m[1], m[2], m[3]);
+            let mut target = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let _ = rng.next_float(); // the head draw (`:71154`)
+            for i in 0..10 {
+                let ring = s.old_pos_ring[i];
+                if ring == Vec2::ZERO {
+                    break;
+                }
+                let mut count = rng.next_range(1, 3);
+                let lerp = crate::projectile::get_lerp_value(10.0, 0.0, i as f32);
+                let ramp = lerp_f32(0.3, 1.0, lerp);
+                if i as f32 >= 10.0 * 0.3 {
+                    count -= 1;
+                }
+                if i as f32 >= 10.0 * 0.75 {
+                    count -= 2;
+                }
+                let _ = safe_normalize(target - ring); // the discarded DirectionTo
+                target = ring;
+                for _ in 0..count.max(0) {
+                    let idx = dust.new_dust(rng, ctx, world, ring, s.w, s.h, 267, 0.0, 0.0, 0, color, 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.velocity *= rng.next_float() * 0.8;
+                    d.no_gravity = true;
+                    d.scale = 0.9 + rng.next_float() * 1.2;
+                    d.fade_in = rng.next_float() * 1.2 * ramp;
+                    d.scale *= ramp;
+                    let clone = dust.clone_dust(rng, ctx, world, idx);
+                    let cl = dust.slot_mut(clone);
+                    cl.scale /= 2.0;
+                    cl.fade_in *= 0.85;
+                    cl.color = Color::WHITE;
+                }
+            }
+        }
+        // `:71192-71256` / `:71257-71327` — the 1047/79 rainbow trail-ring
+        // (see `rainbow_trail_ring`). The 79's 128-resize + Damage +
+        // restore precedes the dust (the box returns to original).
+        1047 | 79 => rainbow_trail_ring(s, dust, rng, ctx, world),
+        // `:71329-71408` — the 16: the 128-resize+Damage+restore; walk the
+        // ring, per entry colour hsl(4/9+NextFloat×2/9,1,0.65), count
+        // Next(1,4) 0.3/0.75 decrements, ramp; per iteration a Next(3)==0
+        // gate → dust-267 (scale NextFloat×0.8, fadeIn NextFloat×1.2×ramp,
+        // vel+=dir×6, CloneDust fadeIn/2) ELSE dust-15 Direct speed −vel×0.2
+        // alpha 100 (a DISCARDED Next(2), noGravity vel×2 += dir×9 scale×=
+        // ramp fadeIn (0.6+NextFloat×0.4)×ramp noLight). Then 20 PAIRS
+        // dust-15 Direct (the first vel=Circular(1,1)×1.5 scale 1.2+
+        // NextFloat×0.5 noLight += vel×0.01 position+=vel×Next(1,16); the
+        // second alpha 100 vel×1.2 noLight += vel×0.01 scale×=0.8+
+        // NextFloat×0.2 position+=vel×Next(1,16)).
+        16 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let mut target = center;
+            for i in 0..10 {
+                let ring = s.old_pos_ring[i];
+                if ring == Vec2::ZERO {
+                    break;
+                }
+                let h = 4.0 / 9.0 + rng.next_float() * (2.0 / 9.0);
+                let c = crate::ui::color::hsl_to_rgb(h as f64, 1.0, 0.65, 255);
+                let color = Color::new(c[0], c[1], c[2], c[3]);
+                let mut count = rng.next_range(1, 4);
+                let lerp = crate::projectile::get_lerp_value(10.0, 0.0, i as f32);
+                let ramp = lerp_f32(0.3, 1.0, lerp);
+                if i as f32 >= 10.0 * 0.3 {
+                    count -= 1;
+                }
+                if i as f32 >= 10.0 * 0.75 {
+                    count -= 2;
+                }
+                let dir = safe_normalize(target - ring);
+                target = ring;
+                for _ in 0..count.max(0) {
+                    if rng.next_max(3) == 0 {
+                        let idx = dust.new_dust(rng, ctx, world, ring, s.w, s.h, 267, 0.0, 0.0, 0, color, 1.0);
+                        let d = dust.slot_mut(idx);
+                        d.velocity *= rng.next_float() * 0.8;
+                        d.no_gravity = true;
+                        d.scale = rng.next_float() * 0.8;
+                        d.fade_in = rng.next_float() * 1.2 * ramp;
+                        d.velocity += dir * 6.0;
+                        d.scale *= ramp;
+                        let clone = dust.clone_dust(rng, ctx, world, idx);
+                        let cl = dust.slot_mut(clone);
+                        cl.scale /= 2.0;
+                        cl.fade_in /= 2.0;
+                        cl.color = Color::WHITE;
+                    } else {
+                        let idx = dust.new_dust_direct(rng, ctx, world, ring, s.w, s.h, 15, -s.vel.x * 0.2, -s.vel.y * 0.2, 100, Color::default(), 1.0);
+                        let d = dust.slot_mut(idx);
+                        let _ = rng.next_max(2); // the discarded draw (`:71382`)
+                        d.no_gravity = true;
+                        d.velocity *= 2.0;
+                        d.velocity += dir * 9.0;
+                        d.scale *= ramp;
+                        d.fade_in = (0.6 + rng.next_float() * 0.4) * ramp;
+                        d.no_light = true;
+                    }
+                }
+            }
+            for _ in 0..20 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 15, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity = next_vector2_circular(rng, 1.0, 1.0) * 1.5;
+                d.scale = 1.2 + rng.next_float() * 0.5;
+                d.no_light = true;
+                d.velocity += s.vel * 0.01;
+                d.position += d.velocity * rng.next_range(1, 16) as f32;
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 15, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.2;
+                d.no_light = true;
+                d.velocity += s.vel * 0.01;
+                d.scale *= 0.8 + rng.next_float() * 0.2;
+                d.position += d.velocity * rng.next_range(1, 16) as f32;
+            }
+        }
+        // `:71409-71488` — the 34: the 96-resize+Damage+restore; walk the
+        // ring, per entry colour hsl(NextFloat×1/9,1,0.5), count Next(1,5)
+        // 0.3/0.75 decrements, ramp; per iteration a Next(3)==0 gate →
+        // dust-267 (scale NextFloat×1, fadeIn NextFloat×2, vel+=dir×8,
+        // CloneDust fadeIn/2) ELSE dust-6 Direct speed −vel×0.2 alpha 100
+        // (a Next(2)==0 → noGravity scale×2.5, vel×2 += dir×6 scale×=ramp
+        // noLight). Then 20 PAIRS dust-6 Direct speed −vel×0.2 alpha 100
+        // (the first noGravity vel=Circular(1,1)×6 scale 1.6 fadeIn 1.3+
+        // NextFloat noLight += vel×0.1; the second vel×2 noLight += vel×0.1).
+        34 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let mut target = center;
+            for i in 0..10 {
+                let ring = s.old_pos_ring[i];
+                if ring == Vec2::ZERO {
+                    break;
+                }
+                let h = rng.next_float() * (1.0 / 9.0);
+                let c = crate::ui::color::hsl_to_rgb(h as f64, 1.0, 0.5, 255);
+                let color = Color::new(c[0], c[1], c[2], c[3]);
+                let mut count = rng.next_range(1, 5);
+                let lerp = crate::projectile::get_lerp_value(10.0, 0.0, i as f32);
+                let ramp = lerp_f32(0.3, 1.0, lerp);
+                if i as f32 >= 10.0 * 0.3 {
+                    count -= 1;
+                }
+                if i as f32 >= 10.0 * 0.75 {
+                    count -= 2;
+                }
+                let dir = safe_normalize(target - ring);
+                target = ring;
+                for _ in 0..count.max(0) {
+                    if rng.next_max(3) == 0 {
+                        let idx = dust.new_dust(rng, ctx, world, ring, s.w, s.h, 267, 0.0, 0.0, 0, color, 1.0);
+                        let d = dust.slot_mut(idx);
+                        d.velocity *= rng.next_float() * 0.8;
+                        d.no_gravity = true;
+                        d.scale = rng.next_float();
+                        d.fade_in = rng.next_float() * 2.0;
+                        d.velocity += dir * 8.0;
+                        d.scale *= ramp;
+                        let clone = dust.clone_dust(rng, ctx, world, idx);
+                        let cl = dust.slot_mut(clone);
+                        cl.scale /= 2.0;
+                        cl.fade_in /= 2.0;
+                        cl.color = Color::WHITE;
+                    } else {
+                        let idx = dust.new_dust_direct(rng, ctx, world, ring, s.w, s.h, 6, -s.vel.x * 0.2, -s.vel.y * 0.2, 100, Color::default(), 1.0);
+                        let d = dust.slot_mut(idx);
+                        if rng.next_max(2) == 0 {
+                            d.no_gravity = true;
+                            d.scale *= 2.5;
+                        }
+                        d.velocity *= 2.0;
+                        d.velocity += dir * 6.0;
+                        d.scale *= ramp;
+                        d.no_light = true;
+                    }
+                }
+            }
+            for _ in 0..20 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 6, -s.vel.x * 0.2, -s.vel.y * 0.2, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity = next_vector2_circular(rng, 1.0, 1.0) * 6.0;
+                d.scale = 1.6;
+                d.fade_in = 1.3 + rng.next_float();
+                d.no_light = true;
+                d.velocity += s.vel * 0.1;
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 6, -s.vel.x * 0.2, -s.vel.y * 0.2, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_light = true;
+                d.velocity += s.vel * 0.1;
+            }
+        }
         _ => {}
     }
 }
@@ -4544,6 +4758,78 @@ fn trail_walk_burst(
     }
 }
 
+/// `Kill()`'s 1047/79 rainbow trail-ring (`:71192-71256` / `:71257-71327`):
+/// one head NextFloat hue base; walk the oldPos ring (break on ZERO), per
+/// entry colour hslToRgb((base+GetLerpValue(10,0,i))%1, 1, 0.65), count
+/// Next(1,4) with the 0.3/0.65/0.85 decrements (−1/−2/−3), scale-ramp
+/// Lerp(0.3,1,lerp); per dust (count iterations, negative → none) a
+/// dust-267 at the ring point colour, vel×=NextFloat×0.8 noGravity scale
+/// 0.9+NextFloat×1.2 fadeIn NextFloat×1.2×ramp vel+=dir×6 scale×=ramp
+/// position=Lerp(ring+Size/2, own, lerp), then a CloneDust (scale/2,
+/// fadeIn×0.85, White). Then 14× dust-66 alpha 100 hsl(NextFloat,1,0.5)
+/// scale 1.7 noGravity vel×3. The 79's 128-resize+Damage+restore precedes
+/// the dust (the box returns to original); the ParticleOrchestrator draws
+/// nothing.
+fn rainbow_trail_ring(
+    s: &DeathSnapshot,
+    dust: &mut DustPool,
+    rng: &mut UnifiedRandom,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+    let size_half = Vec2::new(s.w as f32 * 0.5, s.h as f32 * 0.5);
+    let mut target = center;
+    let base_hue = rng.next_float();
+    for i in 0..10 {
+        let ring = s.old_pos_ring[i];
+        if ring == Vec2::ZERO {
+            break;
+        }
+        let lerp = crate::projectile::get_lerp_value(10.0, 0.0, i as f32);
+        let h = (base_hue + lerp) % 1.0;
+        let c = crate::ui::color::hsl_to_rgb(h as f64, 1.0, 0.65, 255);
+        let color = Color::new(c[0], c[1], c[2], c[3]);
+        let mut count = rng.next_range(1, 4);
+        let ramp = lerp_f32(0.3, 1.0, lerp);
+        if i as f32 >= 10.0 * 0.3 {
+            count -= 1;
+        }
+        if i as f32 >= 10.0 * 0.65 {
+            count -= 2;
+        }
+        if i as f32 >= 10.0 * 0.85 {
+            count -= 3;
+        }
+        let dir = safe_normalize(target - ring);
+        target = ring;
+        for _ in 0..count.max(0) {
+            let idx = dust.new_dust(rng, ctx, world, ring, s.w, s.h, 267, 0.0, 0.0, 0, color, 1.0);
+            let d = dust.slot_mut(idx);
+            d.velocity *= rng.next_float() * 0.8;
+            d.no_gravity = true;
+            d.scale = 0.9 + rng.next_float() * 1.2;
+            d.fade_in = rng.next_float() * 1.2 * ramp;
+            d.velocity += dir * 6.0;
+            d.scale *= ramp;
+            d.position = lerp_vec(ring + size_half, d.position, lerp);
+            let clone = dust.clone_dust(rng, ctx, world, idx);
+            let cl = dust.slot_mut(clone);
+            cl.scale /= 2.0;
+            cl.fade_in *= 0.85;
+            cl.color = Color::WHITE;
+        }
+    }
+    for _ in 0..14 {
+        let c = crate::ui::color::hsl_to_rgb(rng.next_float() as f64, 1.0, 0.5, 255);
+        let color = Color::new(c[0], c[1], c[2], c[3]);
+        let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 66, 0.0, 0.0, 100, color, 1.7);
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 3.0;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4569,6 +4855,7 @@ mod tests {
             ai2: 0.0,
             wet: false,
             damage: 0,
+            old_pos_ring: [Vec2::ZERO; 10],
         }
     }
 
@@ -6779,5 +7066,60 @@ mod tests {
             drain(&[snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
             assert_eq!(rng, rng2);
         }
+    }
+
+    /// A snapshot with a filled 10-entry oldPos trail (the trail-death
+    /// arms walk it; the default snap's ZERO ring spawns nothing).
+    fn trail_snap(kind: u16) -> DeathSnapshot {
+        let mut s = snap(kind);
+        for i in 0..10 {
+            s.old_pos_ring[i] = Vec2::new(100.0 - i as f32 * 4.0, 100.0);
+        }
+        s
+    }
+
+    /// The trail-ring arms with a ZERO ring spawn nothing (the C#'s break
+    /// on the first empty entry); with a filled ring they spawn dust-267
+    /// (+ clones) and the tail bursts.
+    #[test]
+    fn w4_g65_the_trail_rings() {
+        let w = world();
+        for kind in [931u16, 1039, 1047, 79, 16, 34] {
+            // The empty ring: nothing.
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            assert!(dust.slots().iter().all(|d| !d.active), "kind {kind} empty");
+            // The filled ring: dust spawns, determinism holds.
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[trail_snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert!(!active.is_empty(), "kind {kind} filled");
+            assert!(active.iter().any(|d| d.dust_type == 267), "kind {kind} has 267");
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[trail_snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(dust.slots(), dust2.slots());
+            assert_eq!(rng, rng2);
+        }
+    }
+
+    /// The 1047/79 rainbow ring's 14-dust-66 tail; the 16's 40-dust-15
+    /// tail; the 34's 40-dust-6 tail (the ring entries add more).
+    #[test]
+    fn w4_g65_the_trail_tails() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[trail_snap(1047)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.iter().filter(|d| d.dust_type == 66).count(), 14);
+        let mut dust = DustPool::new();
+        drain(&[trail_snap(16)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert!(active.iter().filter(|d| d.dust_type == 15).count() >= 40);
+        let mut dust = DustPool::new();
+        drain(&[trail_snap(34)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert!(active.iter().filter(|d| d.dust_type == 6).count() >= 40);
     }
 }

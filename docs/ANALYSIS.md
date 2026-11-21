@@ -39905,6 +39905,41 @@ Witnesses: the 283 30-count, the 284 confetti, the 286 13-count, the 41
 20-count, the 955 19-count, the 1116 8-count + clones, the 246/249
 counts + determinism — WRITTEN NOT RUN.
 
+### Batch 28 (6 kinds, the oldPos trail-ring family `:71149-71488`)
+
+The `DeathSnapshot` gains `old_pos_ring: [Vec2; 10]` (the C# `oldPos`
+`Projectile.cs:388` is a `[10]` ring; the pool arms it via
+`shift_trailing_history` for `trailing_mode >= 0` kinds — an un trailed
+kind's ring stays ZERO so its trail loop breaks immediately, the C#'s own
+"no entry" shape). 931/1039 (the fairy-queen/constellation trail: colour
+hsl((ai1+0.5)%1,1,0.5)×Opacity — the default non-dev-name path of
+GetFairyQueenWeaponsColor/GetConstellationColor; one head NextFloat; walk
+the ring break-on-ZERO, count Next(1,3) with the 0.3/0.75 decrements,
+ramp Lerp(0.3,1,GetLerpValue(10,0,i)); per dust a dust-267 colour
+vel×=NextFloat×0.8 noGravity scale 0.9+NextFloat×1.2 fadeIn NextFloat×1.2×
+ramp scale×=ramp + a CloneDust scale/2 fadeIn×0.85 White; the discarded
+DirectionTo draws nothing), 1047/79 (the rainbow trail-ring — shared
+`rainbow_trail_ring` helper: one head NextFloat hue base, per entry
+hsl((base+lerp)%1,1,0.65), count Next(1,4) with the 0.3/0.65/0.85
+decrements −1/−2/−3, per dust dust-267 vel+=dir×6 position=Lerp(ring+
+Size/2,own,lerp) + CloneDust fadeIn×0.85; then 14× dust-66 hsl(NextFloat,
+1,0.5) scale 1.7 noGravity vel×3; the 79's 128-resize+Damage+restore
+precedes the dust, the ParticleOrchestrator draws nothing), 16 (the
+128-resize trail: per entry hsl(4/9+NextFloat×2/9,1,0.65), count Next(1,4)
+0.3/0.75; per iteration Next(3)==0 → dust-267 scale NextFloat×0.8 +
+CloneDust fadeIn/2 ELSE dust-15 Direct speed −vel×0.2 alpha 100 with a
+DISCARDED Next(2), noGravity vel×2+=dir×9 fadeIn (0.6+NextFloat×0.4)×ramp
+noLight; then 20 pairs dust-15 Direct), 34 (the 96-resize trail: per entry
+hsl(NextFloat×1/9,1,0.5), count Next(1,5) 0.3/0.75; Next(3)==0 → dust-267
+scale NextFloat fadeIn NextFloat×2 vel+=dir×8 + CloneDust fadeIn/2 ELSE
+dust-6 Direct speed −vel×0.2 alpha 100 Next(2)==0 → noGravity scale×2.5,
+vel×2+=dir×6 noLight; then 20 pairs dust-6 Direct). The 932 stays
+`fairy_queen_death_draws`' census (porting its body needs that census
+deduped — deferred). The 711/636/686/502 oldPos arms (different shapes)
+stay deferred. Witnesses: the ZERO-ring emptiness + filled-ring dust-267
++ determinism for all six, the 1047 14-dust-66 tail, the 16/34 40-dust
+tails — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
