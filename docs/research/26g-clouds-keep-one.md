@@ -187,6 +187,47 @@ f33's fn — the belt assertion holds for both) and d19's 949 row (equal
 values; one copy). The contract-note in ANALYSIS is updated to record
 the verified compose + this adjudication.
 
+## §3a — RETIRE receipt: the f33/93a §2 drop-hunks re-verified at THIS tip
+
+93a §2 (`docs/research/93-torch-god-fold-input-addendum.md` on
+`task/W4-f33-torch-god-favor`, LATEST tip **`83387628b`** — the retire
+FINAL) published the exact d19 949 drop-hunks at the then-tip
+`1054c396a`. This pass re-read EVERY hunk at this branch's FINAL tip
+`6b56e27c`. **Drift census** (`git diff 1054c396a..6b56e27c`):
+`projectile_ai_sword_styles.rs` changed ONLY at `@@ -1614,4 +1614,37 @@`
+(the appended terra-chain witness — AFTER every §2a hunk);
+`projectile.rs` ONLY at `@@ -14141,8 +14141,9 @@` (the `remap`
+`pub(crate)` doc + visibility — net **+1 line** near :14145, BEFORE the
+§2b hunk: pin I shifts +1); `anchors.txt` ONLY at `@@ -898,3 +898,4 @@`
+(the appended collision row — row 899 UNCHANGED); `data.rs` UNTOUCHED.
+Per-hunk verdict at `6b56e27c` (each range re-read WHOLE):
+
+| 93a hunk | pin at `1054c396a` | at `6b56e27c` | re-read |
+|---|---|---|---|
+| A | sword_styles 392–481 | **392–481 EXACT** | banner :392–394, `torch_god_self_hurt` doc :396–404 + fn :405–434, `ai_bad_torch_luck` doc :436–442 + fn :443–481 — verbatim |
+| B | sword_styles 1457–1482 | **1457–1482 EXACT** | the WRONG drain-tick witness (doc :1457–1459, `#[test]` :1460, fn :1461–1482; the bad same-tick `tile_collide` assert :1481) — still DROP |
+| C | sword_styles 1484–1525 | **1484–1525 EXACT** | the dodge witness (doc :1484–1494, `#[test]` :1495, fn :1496–1525) — DROP the copy; the contract survives on f33's `hurt_with_source(…, true, 949)` |
+| D | sword_styles 17–19 | **17–19 EXACT** | the module-header 184 census bullet — REPOINT |
+| E | sword_styles 50–52 | **50–52 EXACT** | the RNG-contract 184 bullet — REPOINT (f33's 32-draw census) |
+| F | sword_styles 72–74 | **72–74 EXACT** | the movement paragraph's 184 sentence — KEEP fact, repoint |
+| G | sword_styles 107–111 | **107–111 EXACT** | the `SelfHurtPlayers` deviations bullet — MOVE/repoint |
+| H | sword_styles 1309–1312 | **1309–1312 EXACT** | the row witness's `let torch = proj_data(949)` block — KEEP |
+| I | projectile.rs 17398–17410 | **17399–17411 (+1)** | the ONE shifted pin (the remap doc line): comment :17399–17402, `184 =>` :17403, arm tail `}` :17411 — content verbatim |
+| J | the death hook | unchanged | d19 still has NO 949 Kill wiring; ADD f33's hook — f33-side re-read at `83387628b`: comment :20015–20022 + the `kind == TORCH_GOD && !died_out_of_world` gate/`kill_census` :20023–20029 EXACT |
+| K | data.rs 1137–1139 | **1137–1139 EXACT** | the `TORCH_GOD` const + doc; f33's `data.rs:79–81` survives (re-read EXACT at f33 tip) |
+| L | data.rs 3684–3687 | **3684–3687 EXACT** | the 949 row — tuple IDENTICAL to f33's `data.rs:3675–3682` (re-read at f33 tip; merge both comment halves) |
+
+f33-side dispatch pin re-read at `83387628b`: the 184 arm
+`projectile.rs:17554–17572` (comment :17554–17561, `184 =>` :17562, the
+active-gated `kill_step` :17569–17571) — 93a §2b's pin EXACT. The 93a
+§2d stale-doc notes are ALREADY CONSUMED on this branch: the ANALYSIS
+f33 paragraph (:39401–39431) reads "NOW on origin at `8a000407f`" and
+the PORT_MAP row (:758) carries the same update — nothing owed.
+`anchors.txt:899` still names the 184 clause (repoint at merge; its
+marker `pub(crate) fn ai_nights_edge` survives the dedupe).
+**93a §2 stands as published with the single I +1 correction — this
+receipt is the update the f33 side reads.**
+
 ## §4 — FINAL drop-hunks (published for merger/d10b; keep-ours = d19)
 
 **Re-pinned to the d10 LATEST tip `732d3480b`** (the doc-sweep `732d3480b`
