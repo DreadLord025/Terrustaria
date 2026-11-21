@@ -102,12 +102,14 @@ impl ResearchTracker {
 /// the version latch (the C# static `_lastResearchVersion`, `:17`) and routes
 /// `fired` through `notify_progression_net(45)`.
 ///
-/// Wiring: the C# calls this from `Player.UpdateArmorSets`' per-tick tail
-/// (`Player.cs:25703`) and `Player.Hooks.EnterWorld` (`:325`, forced). The
-/// port's live sacrifice UI is unported (the `ResearchTracker` has no App
-/// field or consumer yet), so the tracker never edits in play and the check
-/// is inert — the helper + the count are the landed prep, the call sites stay
-/// cited until the Journey research UI lands (the census, W4-f30).
+/// Wiring (W4-f30): the C# calls this from `Player.UpdateArmorSets`' per-tick
+/// tail (`Player.cs:25703`) and `Player.Hooks.EnterWorld` (`:325`, forced).
+/// Both call sites are wired — the per-tick check rides `world_sim/player.rs`'s
+/// armor tail, the forced check rides `App::enter_loaded_world`. The tracker
+/// is `App.research` (the `LastEditId` latch is `App.last_research_version`).
+/// The live sacrifice UI is unported, so the tracker never edits in play and
+/// the check is inert until the Journey research UI lands — the helper, the
+/// count, the App field and both call sites are the landed prep.
 pub fn check_research_achievement(
     tracker: &ResearchTracker,
     last_research_version: i32,
@@ -219,5 +221,33 @@ mod tests {
         assert_eq!(fully, all, "every row researched");
         let (fired, _) = check_research_achievement(&t, 0, false);
         assert!(fired, "the whole catalogue is past half");
+    }
+
+    /// W4-f30 — the EnterWorld forced check (`Player.cs:325` →
+    /// `CheckResearchAchievement(forced: true)`): a world whose tracker is
+    /// already past half fires 45 on entry; an empty tracker does not. The
+    /// `enter_loaded_world` call site reads `App.research`. WRITTEN NOT RUN.
+    #[test]
+    fn f30_the_enter_world_forced_check_fires_45() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // An empty tracker: the forced check does not fire.
+        app.enter_loaded_world();
+        let row = app.achievements.list.iter().find(|a| a.name == "TRASH_COMPACTOR").unwrap();
+        assert!(!row.completed, "an empty catalogue never fires 45");
+        // Fill the tracker past half, then re-enter: the forced check fires.
+        let (_, all) = app.research.count_fully_researched();
+        let mut filled = 0u32;
+        for id in 0..crate::itemdata::ITEMS.len() as u16 {
+            if let Some(cap) = sacrifice_cap(id) {
+                app.research.register_sacrifice(id, cap);
+                filled += 1;
+                if filled >= all / 2 + 1 {
+                    break;
+                }
+            }
+        }
+        app.enter_loaded_world();
+        let row = app.achievements.list.iter().find(|a| a.name == "TRASH_COMPACTOR").unwrap();
+        assert!(row.completed, "the past-half catalogue fires 45 on entry");
     }
 }

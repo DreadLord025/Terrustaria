@@ -284,6 +284,18 @@ pub(crate) struct App {
     /// for the native `.trwld` the kills ride the sidecar's v5 line, which the
     /// sights/chats have no equivalent for (they stay empty).
     pub(crate) bestiary: tr_core::bestiary::WorldBestiary,
+    /// W4-f30 — `CreativeItemSacrificesCatalog`'s per-world sacrificed counts
+    /// (`ItemsSacrificedUnlocksTracker`, the Journey research). The live
+    /// sacrifice UI is unported, so the tracker never edits in play yet; the
+    /// `CheckResearchAchievement` call sites (the per-tick armor tail +
+    /// EnterWorld) read it through `check_research_achievement` (the prep
+    /// landed with the f30 tail census). The save rides M6-SAVE's world
+    /// sections when the UI lands.
+    pub(crate) research: crate::research::ResearchTracker,
+    /// `AchievementsHelper._lastResearchVersion` (`AchievementsHelper.cs:17`):
+    /// the static latch `CheckResearchAchievement` compares the tracker's
+    /// `LastEditId` against to skip unchanged frames.
+    pub(crate) last_research_version: i32,
     /// `WorldGen.TownManager` (`TownRoomManager.cs`): one room per town NPC,
     /// loaded from world-file section 9 (`SaveTownManager`'s list) and rebuilt
     /// by the load fix-ups.
@@ -2325,6 +2337,18 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // W4-f30 — `Player.Hooks.EnterWorld`'s forced research check
+        // (`Player.cs:325` → `AchievementsHelper.CheckResearchAchievement(
+        // forced: true)`): the world-entry re-count fires 45 (TRASH_COMPACTOR)
+        // if half the researchable catalogue is already complete. The tracker
+        // loads empty until the Journey sacrifice UI lands (M6-SAVE's world
+        // section), so this is inert in play but the call site is wired.
+        let (fired, version) =
+            crate::research::check_research_achievement(&self.research, self.last_research_version, true);
+        self.last_research_version = version;
+        if fired {
+            let _ = self.notify_progression_net(45);
+        }
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -3721,6 +3745,8 @@ impl App {
             craft_filter: None,
             craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: app_bestiary,
+            research: crate::research::ResearchTracker::default(),
+            last_research_version: 0,
             town_rooms,
             shimmered_npcs: crate::town::ShimmeredTownNpcs::from_wld_indices(
                 &sections.data.npcs.shimmered,

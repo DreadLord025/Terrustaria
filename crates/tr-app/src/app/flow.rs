@@ -2138,6 +2138,8 @@ pub(crate) mod front_flow_tests {
             craft_filter: None,
             craft_filters: crate::craft_filter::FilterBoard::default(),
             bestiary: tr_core::bestiary::WorldBestiary::new(),
+            research: crate::research::ResearchTracker::default(),
+            last_research_version: 0,
             town_rooms: crate::town::TownRooms::new(),
             shimmered_npcs: crate::town::ShimmeredTownNpcs::new(),
             bestiary_open: false,

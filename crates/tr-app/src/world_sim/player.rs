@@ -1725,6 +1725,24 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 let _ = app.notify_progression_net(41);
             }
         }
+        // W4-f30 — `Player.UpdateArmorSets`' research tail (`Player.cs:25703`):
+        // `AchievementsHelper.CheckResearchAchievement()` per tick. The tracker
+        // (App.research) never edits in play yet (the live sacrifice UI is
+        // unported), so the LastEditId latch skips unchanged frames; the check
+        // is wired and fires 45 (TRASH_COMPACTOR) once half the researchable
+        // catalogue is complete. The forced EnterWorld call rides
+        // `enter_loaded_world` (`Player.Hooks.EnterWorld`, `:325`).
+        {
+            let (fired, version) = crate::research::check_research_achievement(
+                &app.research,
+                app.last_research_version,
+                false,
+            );
+            app.last_research_version = version;
+            if fired {
+                let _ = app.notify_progression_net(45);
+            }
+        }
         // `RemoveAllGrapplingHooks` (`Player.cs:33562-33574`): the jump-off
         // kills every aiStyle-7 slot this player owns, clears the owner's
         // refused-tile set and drops the registration — the pool helper carries
