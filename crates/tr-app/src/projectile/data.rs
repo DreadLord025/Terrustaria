@@ -1187,6 +1187,12 @@ pub const MONK_STAFF_T2: u16 = 699;
 /// summons (`SummonMonkGhast` `:15155-15184`), aiStyle 143
 /// (`Projectile.cs:7419-7432`).
 pub const MONK_STAFF_T2_GHAST: u16 = 700;
+/// `ProjectileID.MonkStaffT3` (707) — the Monk Staff T3's normal swing,
+/// aiStyle 140 (`Projectile.cs:7474-7490`). The aiStyle-140 machine
+/// (`AI_140_MonkStaffT1`, `:69416+`) is OUTSIDE the W4-d15 141-150 slice
+/// — the row lands so the 3858's normal use arm spawns (the free
+/// integrate holds the slot until the 140 port lands).
+pub const MONK_STAFF_T3: u16 = 707;
 /// `ProjectileID.MonkStaffT3_Alt` (708) — the T3-alt swing ghost,
 /// aiStyle 142 (`Projectile.cs:7491-7507`).
 pub const MONK_STAFF_T3_ALT: u16 = 708;
@@ -4045,6 +4051,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 40.0, 40.0, 143, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
                 (true, -1, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:7474-7490`: the T3 normal swing (707):
+            // 16x16, aiStyle 140 (the AI_140 machine is outside the
+            // 141-150 slice — the row rides the free integrate until it
+            // lands), penetrate -1, alpha 255, tileCollide false,
+            // ignoreWater, local immunity 6, melee (the overlay).
+            // drawLayer 7 / usesOwnerLight / ownerHitCheck are draw/
+            // hit-check seams — no port fields.
+            MONK_STAFF_T3 => (
+                16.0, 16.0, 140, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (true, 6, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:7491-7507`: the T3-alt swing ghost (708) —
             // the 699 box with LOCAL immunity 6 instead of idStatic 10.
             MONK_STAFF_T3_ALT => (
@@ -4352,11 +4369,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == GOLF_CLUB_HELPER
             // W4-d15 — the DD2 slice's `ignoreWater = true` rows: the 698
             // (`Projectile.cs:7392`), the 699 (`:7414`), the 700 (`:7430`),
-            // the 708 (`:7503`) and the 709 (`:7516`).
+            // the 707 (`:7486`), the 708 (`:7503`) and the 709 (`:7516`).
             || matches!(
                 kind,
                 MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T2_GHAST
-                    | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
+                    | MONK_STAFF_T3 | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
             )
             // W4-d15 — the DD2 pets' `ignoreWater = true`
             // (`Projectile.cs:7443`/`:7875`/`:9963`).
@@ -4402,10 +4419,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
                     // W4-d15 — the Sleepy Octopod's blast (`:7398`), the
-                    // Monk Staff swings (`:7408`/`:7497`), the ghast
+                    // Monk Staff swings (`:7408`/`:7480`/`:7497`), the ghast
                     // (`:7427`) and the volley shot (`:7514`).
                     | MONK_STAFF_T1_EXPLOSION | MONK_STAFF_T2 | MONK_STAFF_T2_GHAST
-                    | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
+                    | MONK_STAFF_T3 | MONK_STAFF_T3_ALT | MONK_STAFF_T3_ALT_SHOT
             ),
         ranged: matches!(
             kind,

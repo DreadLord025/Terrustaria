@@ -307,6 +307,16 @@ pub(crate) struct App {
     /// `Player.reuseDelay` (`Player.cs:1444`): the post-swing reuse lock in
     /// seconds (`Item.reuseDelay` ticks, `Item.cs:317`); M3-ITEM-5.
     pub(crate) reuse_delay: f32,
+    /// W4-d15 — `Player.altFunctionUse` (`Player.cs:1822`): the right-click
+    /// feature latch. `ItemCheck_ManageRightClickFeatures` (`:31646-31650`)
+    /// arms 1 on the right-button press for the repeated-right-click items
+    /// (`ItemID.Sets.ItemsThatAllowRepeatedRightClick`, `ItemID.cs:342` —
+    /// the port's member is the Monk Staff T3 3858); the use-start gate
+    /// converts 1 → 2 (`:42735-42738`), the animation-zero head clears 2
+    /// (`:42673-42676`) and a released left button clears 1 (`:31691-31694`).
+    /// The 3858's `ItemCheck_Shoot` arm (`:48736-48747`) reads 2 to fire the
+    /// 708 alt swing (the aiStyle-142 709 volley) instead of the 707.
+    pub(crate) alt_function_use: i32,
     /// `Main.Achievements` — the achievement registry (M6-ACH-1, the full
     /// 137-row initializer table with M6-ACH-2).
     pub(crate) achievements: achievements::AchievementManager,
@@ -3770,6 +3780,7 @@ impl App {
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             reuse_delay: 0.0,
+            alt_function_use: 0,
             // The panel ships open with the inventory (`Main.cs:41706-41709`);
             // `TR_NOCRAFT=1` turns it off and `TR_CRAFT=1` forces it back on
             // (the `TR_INV` presence pattern). An open chest closes it
