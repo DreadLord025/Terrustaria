@@ -143,6 +143,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "settle liquids again" => PassMessage::Gen(27),
         // WorldGen.cs:21314.
         "cacti" => PassMessage::Gen(38),
+        // WorldGen.cs:21525 — `Lang.gen[84]`.
+        "tile cleanup" => PassMessage::Gen(84),
         // WorldGen.cs:21977.
         "water plants" => PassMessage::Gen(88),
         // WorldGen.cs:22489 — the GenerateWorld tail's own message

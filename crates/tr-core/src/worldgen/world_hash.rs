@@ -258,6 +258,13 @@ mod tests {
     // the pin moves BY DESIGN wherever a liquid cell settles/re-types/
     // merges (the lake, the ocean shelves, the lava puddles, the honey).
     // Re-pin DEFERRED to the merge gate; a == b stays green.
+    // W4-d106 R3 (2026-11-21, code-only): the `Tile Cleanup` pass
+    // (`WorldGen.cs:21520-21942`) lands between `cacti` and `lihzahrd altar`
+    // on a fresh `pass_rng("Tile Cleanup")` stream — the whole-world slope
+    // clear, the half-brick conversions, the water-death kills, the drip
+    // placement and the object frame normalisation all move tile bytes BY
+    // DESIGN. The pass draws only its own stream, so no other step's ledger
+    // shifts; a == b stays green. Re-pin DEFERRED to the merge gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -311,6 +318,10 @@ mod tests {
     // lake, ocean shelves and lava puddles, so this pin moves BY DESIGN.
     // No RNG draw is added (the engine is deterministic over tile state),
     // so a == b stays green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R3 (code-only): `Tile Cleanup` (see SEED42_512 above) — the
+    // slope clear / drip placement / object normalisation move this pin BY
+    // DESIGN on the fresh `pass_rng("Tile Cleanup")` stream; a == b stays
+    // green. Re-pin DEFERRED to the merge gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

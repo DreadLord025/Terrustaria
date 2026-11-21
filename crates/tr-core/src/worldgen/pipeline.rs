@@ -32,6 +32,7 @@
 use super::biome_detail;
 use super::biomes::{self, BiomeSpans};
 use super::caves;
+use super::cleanup;
 use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
@@ -1398,6 +1399,11 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // no other step's ledger.
     step!("settle liquids again", "Settle Liquids Again", step_settle_liquids_again),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
+    // The vanilla Tile Cleanup slot (`WorldGen.cs:21520`): after Cactus
+    // (`:21310`) and before Lihzahrd Altars (`:21943`) — W4-d106 R3. The
+    // pass draws only its own `pass_rng("Tile Cleanup")` stream (the drip
+    // block), so the insertion shifts no other step's ledger.
+    step!("tile cleanup", "Tile Cleanup", step_tile_cleanup),
     // The vanilla Water Plants slot (`WorldGen.cs:21973`): after the
     // vegetation family, before the world tail — the M5-OCEAN phase-4
     // insertion (the seaweed arm of the pass).
@@ -2718,6 +2724,20 @@ fn step_settle_liquids_again(
     liquids::settle_liquids_again(world, gv, opts);
 }
 
+/// The vanilla Tile Cleanup slot (`WorldGen.cs:21520-21942`) — W4-d106 R3:
+/// the slope clear, the tidy sweep and the object frame normalisation, on
+/// the pass's own stream (the drip block's draws).
+fn step_tile_cleanup(
+    world: &mut World,
+    _gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    cleanup::tile_cleanup(world, &mut streams.pass_rng("Tile Cleanup"), opts);
+}
+
 fn step_cacti(
     world: &mut World,
     gv: &mut GenVars,
@@ -3200,7 +3220,9 @@ mod tests {
         // `WorldGen.cs:19589`) between `living trees` and `trees`.
         // W4-d106 R2: + `settle liquids again` (vanilla "Settle Liquids
         // Again", `WorldGen.cs:21246`) before `cacti`.
-        assert_eq!(names.len(), 68);
+        // W4-d106 R3: + `tile cleanup` (vanilla "Tile Cleanup",
+        // `WorldGen.cs:21520`) between `cacti` and `lihzahrd altar`.
+        assert_eq!(names.len(), 69);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3296,6 +3318,7 @@ mod tests {
                 "surface flora",
                 "settle liquids again",
                 "cacti",
+                "tile cleanup",
                 "lihzahrd altar",
                 "water plants",
                 "world tail",
