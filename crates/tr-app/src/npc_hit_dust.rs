@@ -337,6 +337,19 @@
 //! - 82734 — 513-515 (`:82728-82735`): ×100 dust 250, NPC rows.
 //! - 82753 — 510-512 (`:82747-82754`): ×100 dust 250, NPC rows.
 //! - 82772 — 621-623 (`:82766-82773`): ×100 dust 5, NPC rows.
+//! Batch 24 (the ×30/×20 critter groups):
+//! - 85710 — 153 (`:85704-85711`): ×30 dust 5.
+//! - 85729 — 177 (`:85723-85730`): ×30 dust 5.
+//! - 85748 — 494/495 (`:85742-85749`): ×30 dust 5.
+//! - 85766 — 496/497 (`:85760-85767`): ×30 dust 5.
+//! - 85784 — 498-506 (`:85778-85785`): ×30 dust 5.
+//! - 85848 — 611/689 (`:85842-85849`): ×30 dust 5.
+//! - 85866 — 624 (`:85860-85867`): ×20 dust 5.
+//! - 85885 — 628 (`:85879-85886`): ×20 dust 3.
+//! - 85909 — 646-652 (`:85898-85910`): ×20, dust 86+(type-646) below
+//!   652, else 138.
+//! - 85933 — 639-645 (`:85921-85934`): ×20, dust 86+(type-639) below
+//!   645, else 138.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1610,6 +1623,37 @@ pub fn replay_hit_dust(
             let t = if s.npc_type >= 621 { 5 } else { 250 };
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, t, dir, -1.0, s.alpha, s.color, s.scale, rng, dust, ctx, world);
+            }
+        }
+        // `:85704-85849` — the ×30 dust-5 critter groups: 153, 177,
+        // 494/495, 496/497, 498-506, 611/689.
+        153 | 177 | 494 | 495 | 496 | 497 | 498..=506 | 611 | 689 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 30.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85860-85867` — 624: ×20 dust 5.
+        624 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85879-85886` — 628: ×20 dust 3.
+        628 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 3, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85898-85934` — the butterfly/moth groups: ×20, the per-type
+        // dust 86+offset below the group's last id, else 138.
+        646..=652 | 639..=645 => {
+            let t = match s.npc_type {
+                646..=651 => 86 + (s.npc_type - 646), // `:85901-85904`
+                639..=644 => 86 + (s.npc_type - 639), // `:85924-85927`
+                _ => 138, // 652 / 645
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, t, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -3147,6 +3191,34 @@ mod tests {
             let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt && d.no_gravity), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 24 — the butterfly offset rows (`NPC.cs:85901-
+    /// 85904`/`:85924-85927`): 86+(type-base) below the last id, 138 at
+    /// it; the ×30/×20 bounds.
+    #[test]
+    fn w4_g62_the_butterfly_offsets_and_critter_bounds() {
+        let world = air();
+        let ctx = ctx();
+        for (t, dt) in [(646, 86), (647, 87), (651, 91), (652, 138), (639, 86), (644, 91), (645, 138)] {
+            let s = snap(t, 100, 100, 10.0); // ×20 → 2
+            let mut r = UnifiedRandom::new(199);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 2, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
+        }
+        for (t, dt, mult) in [(153, 5, 30.0), (177, 5, 30.0), (494, 5, 30.0), (498, 5, 30.0), (611, 5, 30.0), (624, 5, 20.0), (628, 3, 20.0)] {
+            let s = snap(t, 100, 100, 10.0);
+            let want = hit_count(10.0, 100, mult);
+            let mut r = UnifiedRandom::new(199);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
         }
     }
 }
