@@ -601,7 +601,7 @@ unblocks, `:47-65`); `C` toggles (`Player.ToggleCreativeMenu`,
 `Player.cs:5091-5105`). The window lives at Left 80 / Top 314, 480 wide
 (`UICreativePowersMenu.cs:151-158`); the main strip (Left 20, 48 wide, 44 px
 pitch, `PowerStripUIElement.cs:17-40`) carries the duplication/research/
-time/weather/personal category buttons + StopBiomeSpread + the (unported)
+time/weather/personal category buttons + StopBiomeSpread + the
 difficulty slider.
 
 * **Research page** (`UICreativeInfiniteItemsDisplay.cs:207-287`): the
@@ -628,12 +628,40 @@ difficulty slider.
   `CreativePowers.cs:877-880`), Godmode + Far Placement Range, and the
   weather strip's chrome. The counts/positions ride
   `UICreativePowersMenu.cs:314-369`.
+* **Weather sliders** (wiring pass): the wind panel (132×180,
+  `CreativePowers.cs:1179-1309`) — the slider sets current+target at once
+  (`Lerp(-0.8, 0.8, cache)`), the read-back is the unclamped target lerp;
+  the West/None/East hover texts (`CreativePowers.WindWest/WindNone/
+  WindEast`) + the mph E/W labels (`GameUI.EastWind`/`WestWind`). The
+  rain panel (132×180, `:1311-1439`) reads the live `cloudAlpha`, sets
+  `StartRain`/`StopRain` instant with the strength override; the
+  Monsoon/Drizzle/ClearSky hover texts. FreezeRain/FreezeWind toggles
+  gate `UpdateTime`'s rain arms / the wind target walk.
+* **Spawn-rate slider** (77×180, `SpawnRateSliderPerPlayerPower`,
+  `:1573-1737`): the x0.1..10 remap (no rounding), the exact-zero
+  "Disabled" state (`NPCSpawnRateSliderEnemySpawnsDisabled`) gating both
+  spawn paths, the `GetSpawnRate` Journey arm after the caps.
+* **Difficulty slider** (82×180, `DifficultySliderPower`, `:1002-1177`):
+  the four indication icons (Master/Expert/Normal/Creative,
+  `wc_difficulty_icons`, clicks force caches 1/0.66/0.33/0 + sound 12),
+  the two-segment remap + banker's 1/20 steps → the NPC `ScaleStats`
+  one-shot scale at the first sim tick (`npc.rs`).
+* **Search bar** (`UISearchBar.cs`/`UIWrappedSearchBar.cs`): the
+  duplication page's text field is live — click writes (the chat-style
+  `event.text` seam, 50-char cap), Enter/Escape stop, Backspace pops,
+  right-click/outside-click cancel; the grid filters by the `BySearch`
+  tooltip-line scan.
+* **Tracker save**: the research counts + the per-player powers
+  (godmode/far-placement/spawn-rate) persist to the `.plr` through the
+  W4-f44 seam (`player_file.rs`'s research/powers tail,
+  `research.rs::save_pairs`/`load_pairs`, `app/saveglue.rs::
+  save_player_plr`); CharPlay hydrates them (`app/flow.rs`).
 
 Deviations (docs/ANALYSIS.md): the `ByCreativeSortingId` middle sort step
-falls through to alphabetical (no generated group table); the wind/rain/
-spawn-rate/difficulty sliders and the teammate-unlock notification are
-unported; the research counts are in-memory (the world-section save rides
-M6-SAVE); the search box keeps no text (no keyboard field wired).
+falls through to alphabetical (no generated group table); the
+teammate-unlock notification is unported; the difficulty scale's
+expert-hardmode/money/getGood/defense arms are documented skips; the
+search text rides the event seam, not the c25 keyboard bindings.
 
 ## Deviations
 

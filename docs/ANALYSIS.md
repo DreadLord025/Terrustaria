@@ -39257,22 +39257,95 @@ tests are WRITTEN, NOT RUN.** Deliberate deviations:
   group/order table the port does not carry. The grid sorts
   newly-researched → fully-researched (`ByUnlockStatus`, `:84-113`) then
   alphabetical (`:136-147`); the group step is inert until the table lands.
-- **The unported powers draw as chrome**: the wind/rain sliders + freezes
+- **The weather/spawn/difficulty sliders are LANDED** (2026-11-21 wiring
+  pass, same branch): the wind/rain sliders + freezes
   (`ModifyWindDirectionAndStrength`/`ModifyRainPower`/`Freeze*`,
-  `CreativePowers.cs:1474-1539`), the enemy-spawn-rate slider
-  (`SpawnRateSliderPerPlayerPower`) and the difficulty slider
-  (`DifficultySliderPower`, `:1002`) are outside `creative.rs`'s v1
-  registry. Their strip buttons draw + play the click cue; the subcategory
-  buttons open an empty slider slot; the toggles do not flip a state.
-- **The research counts are in-memory**: `ItemsSacrificedUnlocksTracker`'s
-  `Save`/`Load` (`:157-196`, the persistent-id string map) rides the
-  M6-SAVE world-section pass; `App.research` resets per session. The
-  teammate-credit half (`_unlockedByTeammate`/`AnyNewUnlocksFromTeammates`,
-  the toggle button's notification icon `CreativeUI.cs:172-175`) is
-  single-player inert and unported.
-- **The duplication search box keeps no text** — the same recorded deviation
-  as crafting's (no keyboard text field wired to the in-game UI); the
-  `BySearch` tooltip scan (`ItemFilters.cs:28-48`) stays unported.
+  `CreativePowers.cs:1179-1539`), the enemy-spawn-rate slider
+  (`SpawnRateSliderPerPlayerPower`, `:1573-1737`) and the difficulty slider
+  (`DifficultySliderPower`, `:1002-1177`) ride `creative.rs`'s registry
+  (`PowerId::WindStrength/RainStrength/FreezeRain/FreezeWind/Difficulty/
+  SpawnRate`) with real consumers:
+  - **Wind** (`app/journey_clicks.rs` → `App.wind`): the slider sets
+    `windSpeedCurrent = windSpeedTarget = Lerp(-0.8, 0.8, cache)` at once
+    (`CreativePowers.cs:1190`); the read-back is the UNCLAMPED
+    `GetLerpValue(-0.8, 0.8, windSpeedTarget)` (`:1193-1196`), so the
+    target walk's ±0.85 draws (`Main.cs:58935`) read past the slider ends
+    exactly like the C#. `FreezeWind` gates the target walk
+    (`Main.cs:58854`) through `world_sim/weather.rs`'s tick copy.
+  - **Rain** (`rain.rs::set_rain_power`): cache 0 → `StopRain(instant:
+    true)`, else `StartRain(instant: true, strengthOverride: cache)`
+    (`CreativePowers.cs:1311-1439` → `Main.cs:64644-64740`); the slider
+    state reads the live `cloudAlpha` (`:1332-1335`). The full `rainTime`
+    ladder still rolls — the override skips the strength draws only.
+    `FreezeRain` gates the two `UpdateTime` arms (`Main.cs:64866`/
+    `:64893`).
+  - **Spawn rate** (`spawner.rs` + `world_sim/npcs.rs`): the remap
+    `<0.5 → [0,0.5]→[0.1,1], else [0.5,1]→[1,10]` with NO rounding
+    (`:1601-1608`); the exact-zero cache disables spawns
+    (`GetShouldDisableSpawnsFor`, `:1584-1595`) at
+    `CanSpawnEnemiesNear` (`NPC.cs:350-357`) — the gate wraps BOTH the
+    slime-rain pre-roll and the regular spawner. `GetSpawnRate`'s Journey
+    arm (`NPC.cs:762-770`) divides the rate / multiplies the max AFTER
+    the caps; the slime-rain denominator divides by the factor
+    (`:5906-5913`). The Journey-mode stand-in is
+    `active_player_difficulty() == 3` (the session draft, the
+    `journey_available` convention).
+  - **Difficulty** (`npc.rs::scale_stats_by_difficulty` +
+    `world_sim/npcs.rs`'s pre-pass): the two-segment remap + banker's
+    1/20 quantisation (`:1018-1028`) lives in the tr-core codec
+    (`creative_powers::difficulty_strength_from_cache`, pub; the app
+    delegates) so the wire and the UI derive the same strength; the
+    codec's id-12 inverse picks the canonical cache (strength 1.0 →
+    0.33, `Click_Normal`'s value). The strength feeds
+    `App.game_mode_difficulty_override`
+    (`Main.UpdateCreativeGameModeOverride`, `Main.cs:17294-17305`,
+    re-derived at the world-step head) → the NPC `ScaleStats` port
+    (`NPC.cs:18146-18181`, the `GameDifficultyData` curves `:83-86`, the
+    per-kind tweaks `:18183-18475` with the C#'s f64 num2/num3/num
+    products). The port's stats are kind-level constants, so the scale
+    lands ONCE per NPC at its first sim tick (the `difficulty_scaled`
+    latch — the C# scales inside `NewNPC`, `:80796`); the scaled life
+    writes `max_hp`/`hp`, the damage/knockback ride the
+    `difficulty_damage`/`difficulty_kb` Option seams (the AI's
+    `damage_override`/`kb_resist_override` writes still win). The
+    classic 1.0 strength skips the scale entirely (the determinism
+    invariant — a non-Journey world stays byte-identical). Documented
+    skips inside the scale: `ScaleStats_ForExpertHardmode`
+    (`:18151-18154`), the money-curve value scale (`:18176`), the
+    getGoodWorld tweaks arms (`:18188-18216`), the >= Expert
+    defense/scale arms (the bee defense ×0.8 Remap `:18222`, the EoW
+    +2/WoF +6 defense, the ×1.05/×1.2 draw scales);
+    `ScaleStats_ByPlayerCount` is the identity at the port's single
+    player (`GetStatScalingFactors`' loop never runs, `:18722-18739`).
+- **The research counts SAVE to the .plr** (the W4-f44 serialization
+  seam): `PlayerFile.research: Vec<(String, i32)>` +
+  `PlayerFileWrite.research` carry the persistent-id string map
+  (`ItemsSacrificedUnlocksTracker.Save`/`Load`, `:157-196` — the id is
+  the `ItemID` const name, the `itemdata::NAMES` row).
+  `research.rs::save_pairs`/`load_pairs` do the name↔id fold: an
+  unknown name DROPS (the C#'s `TryGetValue` miss), a negative count
+  clamps to 0 on load (the tracker's own cap-clamp convention).
+  `CreativePowersSave { godmode, far_placement, spawn_rate }` rides the
+  same tail (the per-player powers, `CreativePowerManager.cs:211-214`:
+  a non-Journey load RESETS them — Default (false, true, 0.5) vs the
+  written_fresh (false, false, 0.0) distinction). `app/flow.rs`'s
+  CharPlay hydrates research/favorites/powers/spawn-rate cache/session
+  difficulty from the file; `app/saveglue.rs::save_player_plr` refreshes
+  research/powers from the live state on every world save, preserving
+  the existing file's stat halves (the f44 branch owns those). The
+  teammate-credit half (`_unlockedByTeammate`/
+  `AnyNewUnlocksFromTeammates`, the toggle button's notification icon
+  `CreativeUI.cs:172-175`) is single-player inert and unported.
+- **The duplication search box is WIRED** (`ui/journey.rs` +
+  `app/loop.rs`): the text rides the port's chat-style `event.text`
+  seam, NOT the c25 keyboard bindings branch (pure bindings, unwired,
+  not on main). The 50-char cap (`UISearchBar.cs:63`), Enter/Escape
+  stop (`:156-164`), Backspace pop, the cancel/right-click/outside-stop
+  arms (`UIWrappedSearchBar.cs:153-164`/`:222-246`) and the `BySearch`
+  tooltip-line scan (`ItemFilters.cs:28-48` + `EntryFilterer.cs:30-35`/
+  `:85-94`, the 30-line cap) are ported. The IME/composition half of
+  `Main.GetInputText` is outside the port's event seam (the chat
+  precedent).
 - **The sacrifice slot's right-click pickup** drains the slot (context 30 is
   not 29, `ItemSlot.cs:1739-1742`) at the port's press-edge pacing; the
   held-frame `superFastStack` multiplier is not applied (the port's
