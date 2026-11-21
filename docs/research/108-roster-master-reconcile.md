@@ -1225,3 +1225,242 @@ in R9 re-derived by `_d37_receipts_counts.py` + `_d37_slot_account.py`
 from the R0 tips (git-show, no working-tree reads, no junction
 recursion). No code was changed on this branch; this extension is the
 deliverable.
+
+# SEAL — the broadcast-receipt round (supersedes E8/R9 where they conflict)
+
+Status: RESEARCH / SEAL — still no code changes on this branch (empty
+`git diff 750d8e44 HEAD -- crates anchors.txt` re-verified this round).
+Author lane: W4-d37 (executor, seal phase). This round (S1) reads every
+E8-addressed lane's CURRENT origin tip and receipts which lanes CONSUMED
+their renumber tables, (S2) publishes the exact c9 ALL_KINDS fix-hunk
+(the bonus finding — still missing at c9's tip), (S3) re-items the
+portrait-slot gaps at current tips with fill ownership, and (S4) seals
+the merger bible with the amended count pins. All numbers re-derived by
+`tools/_d37_seal_*.py` (git-show only, direct paths, no junction
+recursion); witnesses `_d37_seal_census.json`, `_d37_seal_final.json`,
+`_d37_seal_receipts.json`, `_d37_seal_gapfinal.json`.
+
+## S0. Tips read (this round; changes vs R0 in bold)
+
+The Lead's phase aliases (d42c/d35f/g8b-R3/c4e/d36e/d39r/c9b) are NOT
+separate branches — `git branch -a` shows no such refs (E6-R's finding
+stands); each is the successor phase ON the same lane branch, read below.
+d120-done = its RETIRE tip; d125-done is UNDONE on origin (regression).
+
+| Lane | R0 tip | SEAL tip | Delta |
+|---|---|---|---|
+| c3 | `9299046f7` | **`9ea0ee90d`** | origin tip is BEHIND R0's read: `9299046f7` (gap-1 witness) + `cb5cef764` (gaps 2+3 dungeon spawn band) are LOCAL-ONLY again — unpushed; kinds unchanged either way (3 new) |
+| c4 | `17a241f6a` | **`0df6964be`** | EXECUTED a renumber (`91293a3d2`): CorruptGoldfish 229→405, Arapaima 237→**406**, FlyingFish 354→359 (adopts d37's id); then WITHDREW its fish-five verdicts (`ff8026327`, after d42's drop) and retired (`0df6964be`, research/148) |
+| c10 | `9641e20db` | **`5d8387955`** | +12 roster-tail kinds PUSHED (`d7f422049` + flip-site wiring `1e336ee93` + FINAL docs): Worm@357, GoldBird..GoldMouse@442-447, GoldWorm@448, EnchantedNightcrawler/Grubby/Sluggy/Buggy@484-487 — ALL duplicate ports of d40/c8 rows (see S1) |
+| d23 | `19109424` | **`43091b01c`** | +3 kinds: SolarFlare@408, VileSpitEoW@411 (new, free), VileSpit@455 (dup of d35's row — d23 ADOPTED d35's pushed id, same compose as c4's FlyingFish) |
+| d120 | `c5e68a80` | **`2408233da`** | RETIRE docs (research/143 hand-offs) — kinds unchanged (5) |
+| d125 | `cd2b1b1e` | **`d8047a109`** | origin REGRESSED to the phase-5-docs tip: `2dfe026d2` sheets + `cd2b1b1e3` draw + `86e3adfd3` hitbox are LOCAL-ONLY (3 ahead, 0 behind; `merge-base --is-ancestor cd2b1b1e3 origin/...` exit 1). R0's "PUSHED" receipt is UNDONE on origin — the local tip carries everything; **push before merge** |
+| d35 | `6a2a155a` | **`e5558b0a9`** | ATLAS FINAL docs (research/113 §10-12 + Appendix B); local ahead `189c04aab` (RETIRE §15, docs) — kinds unchanged (33), renumber NOT executed |
+| d38 | `6f9dd02d` | **`1ba0395c7`** | FINAL sheets 1-4 (research/125 §7-10, unlock census, 108 cross-ref) — kinds unchanged (35) |
+| d42 | `9b22c091` | **`2d7ac08c3`** | **RENUMBER EXECUTED** (`49346dba6`) + ANALYSIS note + SHEETS census (research/143): 36 moves to 578-630 landed, 8 kinds dropped (see S1 — ownership flips vs E8), 7 dragonfly drops NOT executed |
+| d36 | claim | **`bcf4ac551`** | supersede-note: E4 band 762-789, 28 kinds — R7 re-pin (767-816) NOT yet absorbed; exec branch `d36x` at `396a35ceb` carries the same stale E4 band |
+| d39 | `024c9877f` | **`907234441`** | batch 3 PUSHED: 7 kinds at 781-787 (Butterfly/ScorpionBlack/Scorpion/Grasshopper/ChatteringTeethBomb/CultistArcherBlue/CultistArcherWhite) — OFF-PLAN vs R7's 817-826 re-pin, but collision-free (scripted) |
+| d41 | claim | **`5d036721d`** | batches 1-2 PUSHED: 13 kinds at 494-506 (crawdads/shellies/salamanders), vanilla-free, collision-free |
+| g10 | local | **local `5dee28650`** | NOW COMMITTED locally (2 commits: 10 pets + TownSlimeCopper@684 — grew to ELEVEN), still unpushed; cs==proto, zero clash |
+| c6/c7/c8/c9/d33/d34/d37/d40/e26/g8 | as R0 | unchanged | c9 `2042d77f1`, g8 `82c93cecf`, d40 `8fe1d6d31`, e26 `048cca6cf` — none executed their E8 tables |
+
+## S1. E8-broadcast receipts — who CONSUMED their tables
+
+Measured per kind at each lane's current tip against the amended plan
+(`_d37_seal_receipts.py` → `_d37_seal_receipts.json`). "Consumed" = every
+owned kind at its final id AND every non-owned kind absent.
+
+| Lane | E8 work order | Receipt status | Remaining |
+|---|---|---|---|
+| **d42** | 44 moves + 7 drops | **PARTIAL-EXECUTED** `49346dba6` — 36/36 owned moves DONE (578-630, bijection 313/313, ALL_KINDS 313 correct); it ALSO dropped 8 kinds E8 had assigned to it (see adjudication below) | **7 dragonfly drops** (595-601, keeper d33) — R3's rows still present |
+| **c4** | 1 move (Arapaima→762) + 8 drops | **PARTIAL-EXECUTED, own variant** `91293a3d2` — Arapaima→**406** (not 762; free, collision-free — ACCEPTED, see S4), CorruptGoldfish→405 (still owed as a DROP to d34@277), FlyingFish→359 (identical-arm splice ready); fish-five verdicts WITHDRAWN `ff8026327` after d42's drop — c4 now KEEPS them (ownership flip accepted) | **3 drops**: BloodFeeder@241→d37@373, CorruptGoldfish@405→d34@277, FlyingFish@359→d37@359 |
+| d33 | KEEP receipt | **CONSUMED** (7/7 at 595-601) | none |
+| d34 | KEEP receipt | **CONSUMED** (15/15 at 266-280) | none |
+| d37 | KEEP receipt (R8) | **CONSUMED** (46/46 at 354-399, zero-move re-verified) | none |
+| d38 | KEEP receipt | **CONSUMED** (35/35 at 281-337) | none |
+| d40 | 1 drop (CrimsonGoldfish) | **NOT EXECUTED** — 55/55 keeps intact | 1 drop (CrimsonGoldfish@465, keeper c4 — c4's research/143 `90fd242d9` publishes the exact hunk) |
+| d35 | 33 moves +269 | **NOT EXECUTED** (by design — E7 orders it LAST) | 33 moves 429-461→698-730 |
+| **g8** | 17 moves + 17 drops | **NOT EXECUTED — LAGGARD** (tip unchanged since E0; ALL_KINDS decl still stale 270/304) | 17 moves 354-387→745-761, 17 drops, decl fix |
+| **c9** | 2 moves + 1 drop + ALL_KINDS fix | **NOT EXECUTED — LAGGARD** (tip unchanged; array still missing all 4 snails — S2) | Snail 359→740, GlowingSnail 360→741, Shimmerfly drop, S2 hunk |
+| c10 | 4 moves + 4 drops | **NOT EXECUTED — GREW** (+12 dup ports pushed instead) | 4 Duck moves→731-734, **16 drops** (4 waterfowl + 12 new roster-tail dups) |
+| c3 | 2 drops | **NOT EXECUTED** (local-ahead work is spawn-band, not kinds) | CursedSkull@355, GiantCursedSkull@289 drops |
+| c6 | 1 drop | **NOT EXECUTED** | PumpkingBlade@328 drop |
+| c7 | 2 moves | **NOT EXECUTED** | Firefly 355→735, LightningBug 358→736 |
+| c8 | 3 moves + 6 drops | **NOT EXECUTED** | 3 moves→737-739; 5 drops to d40 (Maggot@606 drop RETIRED — d42 dropped its row, c8 now KEEPS Maggot, ownership flip) |
+| d23 | 1 move + 5 drops | **NOT EXECUTED — GREW** (+3 kinds: 2 new free, 1 dup) | AngryTrapper 357→743; **6 drops** (5 + VileSpit@455→d35@724) |
+| d120 | 4 moves + 1 drop | **NOT EXECUTED** (retired with the work order unexecuted) | 241-244→763-766, BartenderUnconscious@245 drop |
+| d125 | 2 moves + decl fix | **NOT EXECUTED** (and origin regressed — S0) | EmpressOfLight 229→636, PrismaticLacewing 237→742, decl 270→272, PUSH the 3 local commits |
+| e26 | 1 move + 3 drops | **NOT EXECUTED** | Frog 361→744; 1 drop (Duck@362→c10@731); LadyBug/GoldLadyBug drops RETIRED — d42 dropped its rows, e26 now KEEPS them at 604/605 (ownership flip) |
+
+**The d42 ownership-flip adjudication (E8 amendment).** d42's executed
+reconcile (`49346dba6`) dropped EIGHT kinds E8 had assigned to it:
+FlyingAntlion/EyeballFlyingFish/GoldGoldfish/Pupfish/Dolphin (to c4's
+pushed rows at 581/587/592/607/615), LadyBug/GoldLadyBug (to e26's pushed
+rows at 604/605), Maggot (to c8's row at 606). E8's rule was "kinds-lane
+owns, wiring-lane drops" — d42 executed the INVERSE for these eight,
+citing c4's original verdicts. c4 then withdrew its five fish verdicts
+(`ff8026327`) and retired, so the rows now exist on exactly ONE tip each.
+**The seal ACCEPTS the executed state** (re-opening it would force 8
+re-ports + 3 lanes' re-drops for zero wire difference — the final ids are
+identical either way): owners flip to c4×5, e26×2, c8×1; the E8 c4/e26/c8
+drop lists shrink accordingly (receipts table above). d42's interim
+GoldGoldfishWalker@593 OWN entry stays until the merge re-points its fold
+onto c4's GoldGoldfish@592 (d42's commit message already schedules this).
+The 7 dragonfly drops are NOT covered by this flip — d33's fully-wired
+superset stands (R3), d42 still owes those rows' removal.
+
+**Laggards flagged: g8, c9** (zero movement since E0, both with stale
+ALL_KINDS declarations — g8 270/304, c9's array missing 4 kinds entirely),
+plus **d120/d125 retired/regressed with work orders unexecuted** (their
+E8 hunks transfer to the merge wave), and **c10/d23 grew NEW duplicate
+ports** instead of executing (their drop lists grew 4→16 and 5→6).
+
+## S2. c9's ALL_KINDS array — STILL missing all 4 snails; exact fix-hunk
+
+Re-read at c9's current tip `2042d77f1` (unchanged since R0): the array
+declares `[NpcKind; 270]` and lists exactly 270 rows, but `to_u16`/
+`from_u16` carry **274** bijective arms — Snail/GlowingSnail/MagmaSnail/
+Shimmerfly are absent from the array. This is not a cosmetic stale decl:
+`the_protocol_id_space_round_trips_every_kind` (npc.rs:24254) asserts
+`decodable == ALL_KINDS.len()` — **274 != 270, the test FAILS on c9's own
+tip**; `s1_f_3` (npc.rs:27828) pins `covered + sentinel == 270` — also
+fails (274 decodable). No `c9b` branch exists (local or origin); c9's
+successor phase is the same branch.
+
+**Fix-hunk published: `tools/_d37_c9_allkinds_fix.patch`** — a unified
+diff against `2042d77f1:crates/tr-app/src/npc.rs`, three sites:
+1. npc.rs:23972 — decl `[NpcKind; 270]` → `[NpcKind; 274]`;
+2. npc.rs:24250 (after `NpcKind::WyvernTail,`, before `];`) — insert the
+   four rows `NpcKind::Snail, NpcKind::GlowingSnail, NpcKind::MagmaSnail,
+   NpcKind::Shimmerfly,` with a citation comment;
+3. npc.rs:27862 — the s1_f_3 literal pin `270,` → `274,`.
+
+Verified: `git apply --check` exit 0 against the byte-exact tip blob;
+post-apply scripted census: decl 274, rows 274, array-set == to_u16-set,
+all four snails present. Apply with
+`git apply tools/_d37_c9_allkinds_fix.patch` from the c9 worktree. At the
+108 merge the Shimmerfly row drops (keeper c7) and the union reconcile
+re-pins to the S4 value; c9 should land the hunk NOW so its own witnesses
+run green.
+
+## S3. The portrait-slot gaps, re-itemized at current tips
+
+R9's "88 gaps / 323 deduped / 411 target" was derived at the R0 tips.
+Re-derived at the SEAL tips (`_d37_seal_gapfinal.py` →
+`_d37_seal_gapfinal.json`), with the S1 ownership flips applied and the
+slot-survival rule made explicit: **a pushed slot survives iff its id is
+the canonical net_id of an owned kind** (the grid is net-keyed; a slot
+pushed on a duplicate port still serves the canonical kind when the net
+ids agree — e.g. d23's VileSpit slot 112 survives for d35's VileSpit).
+
+- Naive append at current tips: **376** (was 361 — c10 +12, d23 +3).
+- Surviving distinct slots: **347** (base 181 + 166 distinct net-covered
+  adds; of the 195 adds, 27 are intra-union duplicates of nets already
+  slotted and only d34's 40/41 adds are net-orphaned — BoneSerpentBody/
+  Tail segments whose credit folds; they ride the fold rule, not the gap
+  list).
+- Deliberate non-gaps: **5 Hide folds** (d33's five hidden dragonfly
+  colours) + **8 d35 deferrals still open** (DarkMummy/LightMummy/
+  Unicorn/Werewolf/Clown/SkeletonArcher/ChaosElemental/PossessedArmor —
+  EnchantedSword/Mimic/GreenJellyfish/Gastropod slots now arrive via g8's
+  pushed rows at 84/85/103/122, so those 4 deferrals are slot-covered
+  though their draw sheets stay deferred).
+- **REAL gaps: 72**, itemized with fill ownership:
+
+| Owner lane | Count | Kinds (canonical net id) | Fill vehicle |
+|---|---|---|---|
+| c4 | 10 | GiantFlyingAntlion 509, Arapaima 157, CrimsonGoldfish 465, Pufferfish 688, Orca 692 + the five flipped fish: FlyingAntlion 581, EyeballFlyingFish 587, GoldGoldfish 592, Pupfish 607, Dolphin 615 | c4 packed STYLE16/44 sheets but never appended grid slots; the five fish gaps were d42's in R9 — they FOLLOW THE OWNERSHIP FLIP to c4 (or the merge wave appends all 10 in one hunk) |
+| c7 | 3 | Firefly 355, LightningBug 358, Lavafly 654 | FIREFLY_SHEETS packed, no grid slots (Shimmerfly 677's slot arrives via c9's pushed row — net-covered) |
+| c8 | 1 | TruffleWormDigger 375 | CRAWLER_SHEETS packed, no grid slot |
+| d120 | 4 | SantaClaus 142, Truffle 160, Steampunker 178, Cyborg 209 | lane RETIRED without slots — merge-wave append |
+| d40 | 26 | CultistTablet 437, CultistDevote 438, CultistBossClone 440, SkeletonMerchant 453, CultistDragonHead 454, Butcher 460, CreatureFromTheDeep 461, Fritz 462, Nailhead 463, CrimsonBunny 464, Psycho 466, DeadlySphere 467, DrManFly 468, ThePossessed 469, CrimsonPenguin 470, ShadowFlameApparition 472, BigMimic{Corruption,Crimson,Hallow,Jungle} 473-476, Mothron 477, MothronSpawn 479, Medusa 480, GreekSkeleton 481, GraniteGolem 482, GraniteFlyer 483 | **d40b's 38-entry half-open question ANSWERED**: d40's tip has 38 new ENTRIES rows but 0 slot adds; 11 of the 38 are now net-covered by c10's pushed roster-tail slots (GoldBird..GoldMouse 442-447, GoldWorm 448, EnchantedNightcrawler/Grubby/Sluggy/Buggy 484-487) and CrimsonGoldfish 465's slot rides c4's gap row — leaving 26. The 38-entry roster is COMPLETE; only the grid append is open. Merge-wave append (d40's lane is data-only by design) |
+| d42 | 28 | DD2LightningBug 578, WalkingAntlion 580, LarvaeAntlion 582, FairyCritter{Pink,Green,Blue} 583-585, ZombieMerman 586, TorchZombie 590, GoldGoldfishWalker 593 (interim entry), WindyBalloon 594, Seagull 602, Grebe 608, Rat 610, Owl 611, WaterStrider 612, GoldWaterStrider 613, ExplosiveBunny 614, Turtle 616, TurtleJungle 617, BloodNautilus 618, BloodSquid 619, GoblinShark 620, BloodEelHead 621, Gnome 624, SeaTurtle 625, Seahorse 626, GoldSeahorse 627, Dandelion 628, IceMimic 629, BloodMummy 630 | d42's SHEETS phase (`2d7ac08c3`, research/143) inventoried all 43 dims but ruled NO-PACK (8382 > 8192) — slots ride d35's lazy-load wave (research/113 §10); the 8 dropped kinds' gaps left with the ownership flip; Seagull2/Grebe2 stay deliberate folds |
+
+- **Core slot target: 347 + 72 = 419** (R9's 411 re-derived: c10's 12
+  pushed adds net-cover 11 of d40's 37 gaps, Shimmerfly 677's slot
+  arrives via c9's row, 4 of d35's 12 deferrals are net-covered by g8's
+  pushed slots, the ownership flip moves 5 fish gaps from d42 to c4 and
+  GoldGoldfishWalker's interim entry adds 1; every delta scripted).
+  Grand union adds d39's 6 pushed slots (356/366/367/377/378/
+  379), g10's 11 local pet slots (637-684), d41's 3 entry-nets needing
+  slots (494/496/499) → **grand target ≈ 439** when those lanes merge.
+
+## S4. The SEAL — amended canonical plan + merger bible
+
+**Amendments to the receipts plan** (all scripted-verified,
+`_d37_seal_verify.py` → `_d37_seal_final.json`):
+1. S1's ownership flips: c4 owns the fish five at 581/587/592/607/615,
+   e26 owns LadyBug/GoldLadyBug at 604/605, c8 owns Maggot at 606.
+2. **Arapaima final id 406, not 762** — c4 executed 406 (`91293a3d2`),
+   verified free on every current tip AND in the final plan (405/406 sit
+   in the 400-428 corridor above d37's frozen band, below d35/d40; cs
+   405/406 are base-owned StardustCellBig/Small under other protocol ids
+   — the 108 §2b constraint class, not a reserved hole). Accepting the
+   executed id avoids a second renumber of a retired lane. CorruptGoldfish
+   @405 still DROPS to d34@277, so 405 frees at merge.
+3. d23's SolarFlare@408 + VileSpitEoW@411 are NEW owned kinds (free,
+   collision-free); VileSpit@455 is a dup port dropping to d35@724.
+4. c10's 12 roster-tail kinds are ALL dup ports (d40 owns the gold
+   critters + the four d40 crawlers; c8 owns Worm) — drop list 4→16.
+5. Future-lane reality: d39 pushed 7 at **781-787** and d41 pushed 13 at
+   **494-506**, both collision-free with the core plan and each other —
+   ACCEPTED as-pushed (R7's 817-826 guidance is superseded for these 7;
+   d39's remaining 3 unclaimed kinds take 788-790). d36's E4 band
+   762-789 is now HALF-SQUATTED (763-766 = d120's towns per R6, 781-787
+   = d39's pushed seven; only 762 and 788-789 remain free in it) —
+   **d36 re-pins to 767-780 + 791-804**
+   (28 kinds, both sub-bands verified free); its `d36x` exec branch must
+   absorb this before porting. g10's ELEVEN pets (637/638/656/670/
+   678-684) stay cs==proto, zero clash — push.
+
+**Count pins (SEAL, supersede R9):**
+
+| Pin | R9 | SEAL core | Grand (d39/d41/g10 in) |
+|---|---|---|---|
+| owned kinds | 280 | **282** (+SolarFlare/VileSpitEoW) | **313** (+7 d39, +13 d41, +11 g10) |
+| `ALL_KINDS` / `to_u16` / `from_u16` / `s1_f_3` | 550 | **552** | **583** |
+| bestiary `ENTRIES` | 486 | **489** (241 base + 248 owned; all 489 positive nets DISTINCT, scripted) | **509** |
+| owned kinds w/o entry | 35 | **34** (VileSpit's d23 row now counted; GoldGoldfishWalker interim entry in) | — |
+| `STATIC_SHEET_NAMES` NPC rows | 455 | **463** (+6 c10 gold-critter sheets, +2 d23 NPC_516/666) | **494** (+7 d39, +13 d41, +11 g10) |
+| `BESTIARY_NPC_SHEET_IDS` | 323/411 | **347 surviving / 419 target** (S3) | **≈439** |
+| `SFX_CUES` NPC cues | 103 | **103** (unchanged) | **109** (+6 d41) |
+| max protocol id | 766 | **766** | **787** (grand guidance max 804 with d36) |
+| renumber owed | 114 | **69** (d42's 36 + c4's 1 executed, 8 E8 moves retired by the ownership flip; d35 33, g8 17, c10 4, d120 4, c8 3, c7 2, c9 2, d125 2, d23 1, e26 1 remain; 61 drops owed) | — |
+
+Stale ALL_KINDS declarations at merge: **c9 array-missing-4 (S2 hunk,
+test-breaking)**, d125 270→272, g8 270→304. d42's 313 is correct.
+
+**Merger bible (one paragraph).** Merge in the order **d34 → d38 → d37 →
+d40 → d42 → d35-renumber-last → small lanes**, per E7: the first four are
+pairwise-clean keep-receipts (d34 266-280, d38 281-337, d37 354-399
+zero-move, d40 430-488 minus the CrimsonGoldfish row c4's research/143
+hunk retires); d42's executed 578-630 band splices in clean once its 7
+dragonfly rows drop to d33's pushed superset; d35 executes its +269
+renumber (429-461→698-730) LAST against the settled roster with ENTRIES
+wholesale from its splice-repaired tip; then the small lanes splice with
+their S1 receipt tables — c4 keeps its ten at 406/465/509/581/587/592/
+607/615/688/692 and drops three, e26 keeps LadyBug/GoldLadyBug and moves
+Frog→744, c8 keeps Maggot and moves three→737-739, c9 applies the S2
+patch then moves two→740/741 and drops Shimmerfly, c10 moves four ducks
+→731-734 and drops SIXTEEN, d23 moves AngryTrapper→743 and drops six,
+d120's four towns→763-766 and d125's Empress→636/Lacewing→742 ride the
+merge wave (both lanes closed), g8 moves seventeen→745-761 and drops
+seventeen; every splice is guarded by the **bijection gate** — the
+round-trip test (`decodable == ALL_KINDS.len()`, i16-safe) plus the
+s1_f_3 coverage pin must equal **552** (core) after each lane lands and
+**583** after d39/d41/g10, with the count pins **ENTRIES 489/509, sheets
+463/494, slots 419/≈439, cues 103/109** re-asserted at each step; the
+atlas union (494 NPC sheets) exceeds one 8192 page, so d35's research/113
+lazy-load contract (NPC rows leave STATIC_SHEET_NAMES, per-world
+resident+spawnable packing, texture_net_id keying) is MANDATORY at the
+merge, and the S3 gap appends ride it.
+
+### SEAL witness
+
+`_d37_seal_census.py` (28 tips incl. local probes, bijection + ALL_KINDS
+per tip), `_d37_seal_receipts.py` (per-lane consumption), `_d37_seal_
+verify.py` (amended plan: 282 owned / 282 distinct ids / zero base clash
+/ max 766; grand 313 / 583 / max 787 zero clash), `_d37_seal_gapfinal.py`
+(347 surviving / 72 gaps / 419 target), `_d37_seal_c9patch.py` (the S2
+hunk, `git apply --check` exit 0 + post-apply set-equality). No code was
+changed on this branch; this seal is the deliverable.
