@@ -1083,4 +1083,81 @@ mod tests {
         assert!(n.net_update);
         assert_eq!(n.target, 0, "the init TargetClosest (:25338)");
     }
+
+    /// W4-d127 chain-verify — the 317 completion contract: the module's
+    /// `transform_core` applies the FULL observable Transform subset
+    /// in-place (`NPC.cs:81092-81110`), so the sim's drain must be
+    /// completion-ONLY (the kind swap via `kind_from_net_id(317)`, the
+    /// override clear) — a second `transform_to_kind` would reposition
+    /// and rescale twice. Pins the exact post-core state the drain
+    /// receives: +2 net reposition, the 30x32 override, 75 lifeMax, the
+    /// integer rescale floored at 1, the zeroed ai/localAI + re-armed
+    /// owl init, netUpdate true, target re-picked. WRITTEN NOT RUN.
+    #[test]
+    fn the_transform_core_state_is_the_drains_whole_input() {
+        let w = air();
+        let players = [player(1000.0, 1000.0, 0.0, false)];
+        let mut c = ctx(&players, &[]);
+        c.day_time = false;
+        let mut n = bird(689, 1000.0, 1000.0);
+        n.ai[0] = 1.0;
+        n.local_ai[0] = 1.0;
+        n.hp = 1; // the floor: 1 * 75 / 5 = 15 (no floor needed)
+        let out = ai_style_24(&mut n, 689, &w, &c, &mut UnifiedRandom::new(1));
+        assert_eq!(out.transform, Some(317), "the drain request");
+        // The drain's completion writes are exactly: kind swap +
+        // override clear. Everything else is ALREADY C#-faithful:
+        assert_eq!(n.y, 1002.0, "the ±height reposition ran ONCE (:81094/:81099)");
+        assert_eq!(n.size_override, Some((30.0, 32.0)));
+        assert_eq!(n.max_hp, 75, "the 317 row (:13014)");
+        assert_eq!(n.hp, 15, "1 * 75 / 5 — integer (:81106)");
+        assert_eq!(n.local_ai, [1.0, 0.0, 0.0, 0.0], "reset then owl init re-arm");
+        assert!(n.net_update);
+        assert_eq!(n.target, 0, "the Transform TargetClosest (:81101)");
+        // The life floor: hp 0 cannot occur (life > 0 gate), but the
+        // rescale of a 1-hp 5-max slot into a 5-max target floors at 1
+        // (`:81108-81109`) — the core's `.max(1)` mirrors it.
+        let mut m = bird(689, 1000.0, 1000.0);
+        m.ai[0] = 1.0;
+        m.local_ai[0] = 1.0;
+        m.hp = 1;
+        m.max_hp = 500; // synthetic: 1 * 75 / 500 = 0 → floor 1
+        transform_core(&mut m, &w, &cands_of(&players), 7);
+        assert_eq!(m.hp, 1, "the rescale floors at 1 (:81108-81109)");
+    }
+
+    fn cands_of(players: &[Style24Player]) -> Vec<TargetCandidate> {
+        players.iter().map(|p| p.candidate).collect()
+    }
+
+    /// W4-d127 chain-verify — the 317 row census (the d38 tip's rows,
+    /// `NPC.cs:13007-13019`): DemonEyeOwl is ROWED on the pushed
+    /// `task/W4-d38-npc-kinds-281-350` tip (data.rs:590/:969 cs_id both
+    /// ways, ai_style 2, bestiary net_id 317) and routes to the eye
+    /// machine (its `update_kind_ai` arm `DemonEyeOwl => update_eye`;
+    /// the b2 tip claims the `2 => ai_002_eye_family` axis). The port's
+    /// own roster (this branch) has no 317 row — the chain's merge gate
+    /// is the d38 landing, NOT a re-row here (one row per kind, the
+    /// census ownership rule). Pins the ROW the transform targets so a
+    /// d38 drift breaks THIS lane's witness too. WRITTEN NOT RUN.
+    #[test]
+    fn the_demon_eye_owl_row_matches_the_d38_census() {
+        // NPC.cs:13007-13019 — 30x32, aiStyle 2, dmg 16, def 6, 75 HP,
+        // kb 0.7, value 100, NPCHit1/NPCDeath1. The transform_core's
+        // observable subset reads exactly these two stat rows:
+        let (w, h) = (30.0f32, 32.0f32); // :13009-13010
+        let life_max = 75; // :13014
+        let mut n = bird(689, 0.0, 0.0);
+        n.hp = 5;
+        let players: [Style24Player; 0] = [];
+        transform_core(&mut n, &air(), &cands_of(&players), 0);
+        assert_eq!(n.size(), (w, h));
+        assert_eq!(n.max_hp, life_max);
+        // The mimic keeps NO catchItem (STYLE24_BIRDS row 689) — the
+        // reveal is combat-only; 317 is not npcCatchable either
+        // (`Main.cs:9326-9418` has no 317), so the friendly refresh
+        // the c8 head added reads false on both sides.
+        assert!(!crate::bug_net::npc_catchable(317));
+        assert!(!crate::bug_net::npc_catchable(689));
+    }
 }

@@ -6242,6 +6242,31 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         if let Some(player) = player_ref {
             for i in 0..npcs.len() {
                 if let Some(ty) = npcs[i].wants_transform {
+                    // W4-d127 — the OwlMimic's `Transform(317)`
+                    // (`NPC.cs:25333`): the style-24 module ALREADY ran
+                    // `transform_core` in-place mid-arm (the ±height
+                    // reposition, the ai/localAI reset, the 30x32
+                    // override, lifeMax 75, the integer life rescale —
+                    // `NPC.cs:81092-81110`), so this drain is
+                    // COMPLETION-ONLY: the kind swap that makes the NEXT
+                    // tick dispatch on DemonEyeOwl's aiStyle 2 (the b2
+                    // eye axis arm). NO second `transform_to_kind` — it
+                    // would reposition (+2) and rescale the life twice.
+                    // `kind_from_net_id` resolves through the bestiary
+                    // row: `None` until the d38 roster merge lands
+                    // net_id 317 (`bestiary.rs:2310` on its tip); the
+                    // observable subset the core applied keeps the slot
+                    // faithful meanwhile (the merge gate, ANALYSIS).
+                    if ty == 317 {
+                        if let Some((kind, _)) = crate::npc::kind_from_net_id(317) {
+                            npcs[i].kind = kind;
+                            // The kind's own 30x32 box (`NPC.cs:13009-
+                            // 13010`) replaces the core's override.
+                            npcs[i].size_override = None;
+                        }
+                        npcs[i].wants_transform = None;
+                        continue;
+                    }
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
