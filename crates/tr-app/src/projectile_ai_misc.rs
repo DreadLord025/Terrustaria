@@ -1065,6 +1065,201 @@ pub(crate) fn ai_jumino(
     }
 }
 
+/// `AI_195_JimsDrone` (`Projectile.cs:40923-41067`) — Jim's Drone (1020),
+/// the RC drone the player steers with the run/up/down keys. The owner block
+/// packs the input bits into `ai[0]` (the grav-flip XOR on left/right), the
+/// altitude/held-item kill gates, the tilt machine (`ai[1]` = rotation), the
+/// thrust/drag/cap physics, the `timeLeft = 2` keep-alive and the ground-probe
+/// dust.
+///
+/// The port keeps `gravDir = 1` (no gravity-flip system — the `mounted_top`
+/// precedent), so `flag2` is false and the input XOR folds to the raw keys.
+/// `Main.DroneCameraTracker.Track` (`:40955`) and
+/// `CheckSectionsInCaseOwnerIsWatching` (`:41066`) are camera/section
+/// bookkeeping — skipped. The tracked-loop sound (`SoundID.JimsDrone`,
+/// `:40986-40997`) is a continuous volume/pitch tracker, not a one-shot cue —
+/// skipped (no tracked-sound layer in the pool); `localAI[2]` (the sound slot)
+/// stays 0.
+///
+/// RNG: the ground-probe dust (`:41050-41063`) runs only when airborne
+/// (`!flag6`) and the 3-step probe found a floor within 48 px (`num7 != 48`).
+/// TWO iterations, each a `NextFloat` gate; on the taken branch
+/// (`!(NextFloat < 0.66)`) a `NextVector2CircularEdge(2.5, 1)` (one float,
+/// `Utils.cs:1271-1273`) then a `Next(2)` dust-type pick. The dust body skips.
+///
+/// The row keeps stock `tileCollide = true`; the blocked-move arm
+/// (`:18057-18067`) reverses the blocked axis at ×0.25 when |last| > 1 —
+/// [`drone_move`] ports that (the `ai_music_note` per-axis probe stand-in).
+pub(crate) fn ai_jims_drone(
+    p: &mut Projectile,
+    world: &World,
+    player: Option<&crate::player::Player>,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) {
+    // `:40925-40930` — the dead-owner kill flag.
+    let mut flag = player.map(|pl| pl.dead).unwrap_or(false);
+    // `:40931-40956` — the owner-only block: the altitude kill, the held-item
+    // gate and the input-bit pack. The port's single player rides slot 0.
+    if p.owner == local_owner {
+        // `position.Y - height <= 640` → kill (the drone flew too high).
+        if p.pos.y - p.h <= 640.0 {
+            p.kill_time_left = p.time_left;
+            p.active = false;
+            p.time_left = 0;
+            return;
+        }
+        // `HeldItem.type != 5451` (the RC transmitter) → the kill flag.
+        if player.map(|pl| pl.held_item_kind).unwrap_or(0) != 5451 {
+            flag = true;
+        }
+        // `gravDir == -1` folds false (the port keeps gravDir = 1).
+        let flag2 = false;
+        let (cl, cr, cu, cd) = player
+            .map(|pl| (pl.control_left, pl.control_right, pl.control_up, pl.control_down))
+            .unwrap_or((false, false, false, false));
+        // BitsByte: bit0 = left ^ flag2, bit1 = right ^ flag2, bit2 = up,
+        // bit3 = down.
+        let mut bits = 0u8;
+        if cl ^ flag2 {
+            bits |= 1;
+        }
+        if cr ^ flag2 {
+            bits |= 2;
+        }
+        if cu {
+            bits |= 4;
+        }
+        if cd {
+            bits |= 8;
+        }
+        let num = bits as f32;
+        if p.ai[0] != num {
+            p.ai[0] = num;
+            p.net_update = true;
+        }
+        // Main.DroneCameraTracker.Track — skipped (camera bookkeeping).
+    }
+    // `:40957-40961` — the kill flag (dead owner / wrong held item).
+    if flag {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:40962-40967` — unpack the input bits; rotation = ai[1].
+    let bits = p.ai[0] as u8;
+    p.rot = p.ai[1];
+    let flag3 = bits & 1 != 0; // left
+    let flag4 = bits & 2 != 0; // right
+    let flag5 = bits & 4 != 0; // up (thrust)
+    // `:40968-40972` — the steer-age counter (resets when neither left/right).
+    p.local_ai[0] += 1.0;
+    if !flag3 && !flag4 {
+        p.local_ai[0] = 0.0;
+    }
+    // `:40973-40983` — the throttle target: 0 grounded, 10 airborne, 100
+    // thrusting; localAI[1] lerps toward it at 0.2.
+    let flag6 = p.vel.y == 0.0;
+    let mut num2 = if flag6 { 0.0f32 } else { 10.0 };
+    if flag5 {
+        num2 = 100.0;
+    }
+    p.local_ai[1] += (num2 - p.local_ai[1]) * 0.2;
+    // `:40984-40997` — the sound volume/pitch envelope feeds only the skipped
+    // tracked-loop sound (num3/num4 are draw-free). localAI[2] stays 0.
+    // `:40998-41020` — the tilt/thrust machine.
+    let mut num5 = 0.15f32;
+    if flag6 {
+        // Grounded: damp the tilt ×0.7, drag X ×0.97; thrust adds the
+        // rotation-vector kick at 0.5 and lowers gravity to 0.05.
+        p.rot = wrap_angle(p.rot) * 0.7;
+        p.vel.x *= 0.97;
+        if flag5 {
+            p.vel += rotation_vector(p.rot - std::f32::consts::FRAC_PI_2) * 0.5;
+            num5 = 0.05;
+        }
+    } else {
+        // Airborne: the turn rate ramps 0.1×→1× over the first 10 steer ticks.
+        let mut num6 = std::f32::consts::PI / 15.0;
+        num6 = remap(p.local_ai[0], 0.0, 10.0, num6 * 0.1, num6);
+        p.rot += (flag4 as i32 - flag3 as i32) as f32 * num6;
+        if flag5 {
+            let vector = rotation_vector(p.rot - std::f32::consts::FRAC_PI_2);
+            p.vel.x *= 0.97;
+            p.vel += vector * 0.5;
+        }
+    }
+    // `:41021-41030` — gravity, the ai[1] rotation latch, the fall drag and
+    // the 16 speed cap.
+    p.vel.y += num5;
+    p.ai[1] = p.rot;
+    if !flag5 && p.vel.y > 12.0 {
+        p.vel.y *= 0.95;
+    }
+    let len = p.vel.length();
+    if len > 16.0 {
+        p.vel *= 16.0 / len;
+    }
+    // `:41031-41032` — AddLight skipped; the timeLeft = 2 keep-alive.
+    p.time_left = 2;
+    // `:41033-41065` — the airborne ground-probe dust. The 3-step (16 px)
+    // TileCollision probe accumulates the free-fall distance; a floor within
+    // 48 px opens the two-dust window.
+    if !flag6 {
+        let vector2 = p.pos;
+        let mut num7 = 0.0f32;
+        let num8 = 3;
+        let num9 = 16 * num8;
+        for i in 0..num8 {
+            let vector3 = Vec2::new(0.0, 16.0);
+            let probe_pos = vector2 + vector3 * i as f32;
+            let tc = crate::collision::tile_collision(
+                world,
+                [probe_pos.x, probe_pos.y],
+                [vector3.x, vector3.y],
+                p.w,
+                p.h,
+                false,
+                false,
+            );
+            num7 += tc.vel[1];
+            if tc.vel != [vector3.x, vector3.y] {
+                break;
+            }
+        }
+        if num7 != num9 as f32 {
+            for _ in 0..2 {
+                if !(rng.next_float() < 0.66) {
+                    let _ = rng.next_float(); // NextVector2CircularEdge(2.5, 1)
+                    let _ = rng.next_range(0, 2); // the dust-type pick (31 / 16)
+                }
+            }
+        }
+    }
+    // CheckSectionsInCaseOwnerIsWatching — skipped (section bookkeeping).
+}
+
+/// The 1020 drone's blocked-move arm (`HandleMovement`
+/// `Projectile.cs:18057-18067`): the blocked axis reverses at ×0.25 of the
+/// pre-collision velocity, but ONLY when |last axis| > 1 (the speed gate the
+/// 1116 petal lacks). The port's per-axis destination-box probe stands in for
+/// the swept `TileCollision` (the `ai_music_note` precedent).
+pub(crate) fn drone_move(p: &mut Projectile, world: &World) {
+    let last = p.vel;
+    let nx = p.pos.x + p.vel.x;
+    let ny = p.pos.y + p.vel.y;
+    let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
+    let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
+    if hit_x && last.x.abs() > 1.0 {
+        p.vel.x = -last.x * 0.25;
+    }
+    if hit_y && last.y.abs() > 1.0 {
+        p.vel.y = -last.y * 0.25;
+    }
+    p.pos += p.vel;
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
@@ -1991,5 +2186,130 @@ mod tests {
             false,
         );
         assert_eq!(pool.slots()[s].ai[0], 1.0, "the counter advanced");
+    }
+
+    // ---- W4-d20 aiStyle 195 (JimsDrone) — WRITTEN NOT RUN ----
+
+    /// The row carries the census slice (`Projectile.cs:9659-9666`): 12x12,
+    /// aiStyle 195, penetrate -1, stock tileCollide true.
+    #[test]
+    fn w4_d20_the_drone_row_carries_style_195() {
+        let d = proj_data(1020).unwrap();
+        assert_eq!(d.ai_style, 195);
+        assert_eq!((d.w, d.h), (12.0, 12.0), "`:9661-9662`");
+        assert_eq!(d.penetrate, -1, "`:9665`");
+        assert!(d.tile_collide, "the stock true");
+    }
+
+    /// The altitude kill (`:40933-40937`): position.Y - height <= 640 kills
+    /// the drone (owner-gated).
+    #[test]
+    fn w4_d20_the_drone_altitude_kill() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.held_item_kind = 5451;
+        let mut p = proj(1020);
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 600.0); // 600 - 12 = 588 <= 640
+        ai_jims_drone(&mut p, &w, Some(&pl), 0, &mut census());
+        assert!(!p.active, "the altitude kill (`:40933`)");
+    }
+
+    /// The held-item gate (`:40938-40941`): not holding the 5451 transmitter
+    /// sets the kill flag (after the altitude check passes).
+    #[test]
+    fn w4_d20_the_drone_wrong_held_item_kills() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.held_item_kind = 0; // not the transmitter
+        let mut p = proj(1020);
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 2000.0); // well below 640
+        ai_jims_drone(&mut p, &w, Some(&pl), 0, &mut census());
+        assert!(!p.active, "the wrong-held-item kill (`:40938`)");
+    }
+
+    /// The input-bit pack (`:40942-40954`): left=bit0, right=bit1, up=bit2,
+    /// down=bit3 (gravDir=1 folds the XOR off). The keep-alive sets timeLeft=2.
+    #[test]
+    fn w4_d20_the_drone_packs_the_input_bits() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.held_item_kind = 5451;
+        pl.control_right = true;
+        pl.control_up = true;
+        let mut p = proj(1020);
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 2000.0);
+        p.vel = Vec2::new(0.0, 1.0); // airborne (flag6 false)
+        ai_jims_drone(&mut p, &w, Some(&pl), 0, &mut census());
+        assert!(p.active);
+        assert_eq!(p.ai[0], 2.0 + 4.0, "right(bit1) + up(bit2)");
+        assert!(p.net_update, "the input change dirties the slot");
+        assert_eq!(p.time_left, 2, "the keep-alive (`:41032`)");
+    }
+
+    /// The grounded tilt damp (`:40999-41008`): vel.Y == 0 wraps the rotation
+    /// ×0.7 and drags X ×0.97; gravity is 0.15 (no thrust).
+    #[test]
+    fn w4_d20_the_drone_grounded_damps_the_tilt() {
+        let w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.held_item_kind = 5451;
+        let mut p = proj(1020);
+        p.owner = 0;
+        p.pos = Vec2::new(1600.0, 2000.0);
+        p.vel = Vec2::new(4.0, 0.0); // grounded (flag6 true)
+        p.ai[1] = 1.0; // rotation
+        ai_jims_drone(&mut p, &w, Some(&pl), 0, &mut census());
+        assert!((p.vel.x - 4.0 * 0.97).abs() < 1e-6, "the X drag");
+        assert!((p.vel.y - 0.15).abs() < 1e-6, "the 0.15 gravity");
+        // rotation = wrap(1.0) * 0.7, then ai[1] latches it.
+        assert!((p.ai[1] - wrap_angle(1.0) * 0.7).abs() < 1e-6, "the tilt damp");
+    }
+
+    /// The drone bounce (`:18057-18067`): the blocked axis reverses at ×0.25
+    /// only when |last| > 1; a slow axis keeps its velocity.
+    #[test]
+    fn w4_d20_the_drone_bounce_speed_gate() {
+        let mut w = world();
+        put(&mut w, 102, 50, 1); // wall at x 1632..1648
+        let mut p = proj(1020);
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.vel = Vec2::new(20.0, 0.0); // fast → reverses
+        drone_move(&mut p, &w);
+        assert!((p.vel.x - (-20.0 * 0.25)).abs() < 1e-6, "the ×0.25 reversal");
+        // A slow blocked axis (|last| <= 1) does NOT reverse.
+        let mut q = proj(1020);
+        q.pos = Vec2::new(1620.0, 800.0); // right edge 1632, +0.5 overlaps wall
+        q.vel = Vec2::new(0.5, 0.0);
+        drone_move(&mut q, &w);
+        assert!((q.vel.x - 0.5).abs() < 1e-6, "the speed gate keeps the slow axis");
+    }
+
+    /// The dispatch wires style 195: one pool update packs the input and
+    /// keeps the drone alive (timeLeft = 2).
+    #[test]
+    fn w4_d20_the_dispatch_arms_style_195() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.held_item_kind = 5451;
+        let s = pool.spawn_with_data(1020, 1600.0, 2000.0, 0.0, 1.0, 0, 0.0).unwrap();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert!(pool.slots()[s].active, "the drone keeps alive");
+        assert_eq!(pool.slots()[s].time_left, 1, "timeLeft=2 then the tick decrement");
     }
 }

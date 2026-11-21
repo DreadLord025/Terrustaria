@@ -3630,6 +3630,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // animation): 240x104, aiStyle 192, penetrate -1, tileCollide
             // false, ignoreWater, timeLeft = 3600 * 5 = 18000.
             JUMINO_STARDROP_ANIMATION => (240.0, 104.0, 192, -1, 18000, 0, false, false, false, RESET_STATE),
+            // W4-d20 — `Projectile.cs:9659-9666` (1020, Jim's drone): 12x12,
+            // aiStyle 195, penetrate -1, stock tileCollide true (the
+            // blocked-move bounce :18057-18067). friendly rides the pool
+            // default; the drone damages nothing (no melee/ranged/magic).
+            JIMS_DRONE => (12.0, 12.0, 195, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -4515,6 +4520,9 @@ pub const PETALSTORM_SHOT: u16 = 1116;
 /// `ProjectileID.JuminoStardropAnimation` (995) — the jumino stardrop
 /// animation, aiStyle 192 (`Projectile.cs:9446-9457`). W4-d20.
 pub const JUMINO_STARDROP_ANIMATION: u16 = 995;
+/// `ProjectileID.JimsDrone` (1020) — Jim's RC drone, aiStyle 195
+/// (`Projectile.cs:9659-9666`). W4-d20.
+pub const JIMS_DRONE: u16 = 1020;
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,

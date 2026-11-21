@@ -17427,6 +17427,24 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d20 — aiStyle 195, Jim's drone
+                        // (`AI_195_JimsDrone` `:40923-41067`): the input-bit
+                        // pack, the altitude/held-item kill gates, the
+                        // tilt/thrust physics, the timeLeft=2 keep-alive and
+                        // the ground-probe dust. The row keeps tileCollide
+                        // true; the blocked-move arm (`:18057-18067`) reverses
+                        // the blocked axis ×0.25 when |last| > 1.
+                        195 => {
+                            crate::projectile_ai_misc::ai_jims_drone(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                local_owner,
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            crate::projectile_ai_misc::drone_move(&mut self.slots[i], world);
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
