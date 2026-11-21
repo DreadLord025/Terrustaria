@@ -12345,17 +12345,22 @@ The envelope and the ported bodies are 1:1; the deviations:
   divided the direction by the manhattan sum, shrinking every diagonal
   beam.
 - **The counterweights are the other family.** 556-561/1079 ride
-  `AI_099_1_Counterweights` (`:67380-67731`) and stay with M3-EQUIP-3's
-  accessory grants (`Player.counterWeight`/`yoyoGlove` are unported -
+  `AI_099_1_Counterweights` (`:67380-67731`); their rows + sub-arm landed
+  W4-d10 (`7ccca71c`) and the accessory grants + spawn lane followed the
+  same wave (`Player.counterWeight`/`yoyoGlove`/`vanityCounterWeight` -
   `Player.cs:14714-14766`'s Yoyo Bag / Magic Yoyo Bag / Strung
-  Counterweight / counterweight rows, `:18434-18439`'s resets); the
-  yoyo arm's `flag2` guard (`:67819-67823`) is now carried verbatim
-  (S1-P-i09) but never sees them - no `proj_data` row exists for the
-  seven kinds. The on-hit `Player.Counterweight` call
+  Counterweight / counterweight rows, `:18434-18439`'s resets, the vanity
+  loop `:13009-13015`). The yoyo arm's `flag2` guard (`:67819-67823`) is
+  carried verbatim (S1-P-i09) but never sees them - the kind gate routes
+  them to the sub-arm. The on-hit `Player.Counterweight` call
   (`Projectile.cs:13272` + the 604 beam's `:12826`,
   `Player.cs:12356-12415` - the glove's second yoyo / the counterweight
-  spawn scan) folds out with the same unported grants (ANALYSIS "Yoyo
-  on-hit effects").
+  spawn scan) is LIVE (W4-d10, `projectile_ai_91_100::counterweight_spawn`
+  + the pool's `counterweight_on_hit` seam). The bags' kind roll
+  (`Next(7)` then `Next(6)`) rides the `UpdatePlayers` stage stream in
+  `apply_equip_functional` - ResetEffects clears `counterWeight` every
+  tick, so the roll re-draws per tick while a bag is worn (the C#
+  behaviour); the spawn lane itself draws ZERO.
 - **The aiStyle-99 hit arm is ported (S1-P-i09).** `Damage_PVE_Inner`'s
   `:13256-13300` block: the dropped twin squashes its velocity to
   len/5 and takes the `Next(50, 81) * 0.1` lift clamped at -16
@@ -16105,10 +16110,11 @@ fade lifecycle of 1130/1135: the 0.92 velocity decay, the
 owner-local `Kill`.
 
 Deviations: the counterweight on-hit spawn path (`Player.Counterweight`,
-`Player.cs:12356-12415` - the yoyo-glove/counterweight scan) folds out
-with the unported `yoyoGlove`/`counterWeight` grants (S1-P-i09 re-read:
-the gate `!yoyoGlove && counterWeight <= 0` returns early, so the call
-is a no-op until M3-EQUIP-3 lands the accessory rows); the aiStyle-99
+`Player.cs:12356-12415` - the yoyo-glove/counterweight scan) is LIVE since
+W4-d10 (`counterweight_spawn` + the `counterweight_on_hit` pool seam; the
+`yoyoGlove`/`counterWeight` grants ride `apply_equip_functional`, the
+gate `!yoyoGlove && counterWeight <= 0` returns early when nothing is
+worn); the aiStyle-99
 hit arm AROUND that call (the recoil / facing / clock age / no-LOS cut
 / the dropped twin's squash+lift, `Projectile.cs:13256-13300`) IS
 ported now (S1-P-i09, "The yoyo family" above); `AI_210`'s one-shot

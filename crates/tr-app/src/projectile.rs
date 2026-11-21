@@ -16494,6 +16494,45 @@ impl ProjectilePool {
             _ => {}
         }
     }
+    /// W4-d10 — the `Player.Counterweight` spawn lane's pool side
+    /// (`Player.cs:12356-12415`): the pure scan/decision lives in
+    /// `projectile_ai_91_100::counterweight_spawn`; the request spawns at
+    /// the owner's Centre (`NewProjectile` re-centres the child's box —
+    /// the ghost-twin dispatch convention). Draw-free, `InheritSource`
+    /// is the spawn-source layer skip. The C# calls it with
+    /// `Main.player[this.owner]`; the port's single player is the owner
+    /// (the pool's owner-simulation gate).
+    fn counterweight_on_hit(
+        &mut self,
+        slot: usize,
+        hit_pos: (f32, f32),
+        player: Option<&crate::player::Player>,
+    ) {
+        let Some(pl) = player else { return };
+        let (owner, damage, kb) = {
+            let p = &self.slots[slot];
+            (p.owner, p.damage, p.knock_back)
+        };
+        let Some(req) = crate::projectile_ai_91_100::counterweight_spawn(
+            &self.slots, owner, pl, hit_pos, damage, kb,
+        ) else {
+            return;
+        };
+        let (hw, hh) =
+            proj_data(req.kind).map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+        self.spawn_with_data_ai_owned(
+            req.kind,
+            owner,
+            req.x - hw,
+            req.y - hh,
+            req.vx,
+            req.vy,
+            req.damage,
+            req.knock_back,
+            req.ai0,
+            0.0,
+        );
+    }
     fn tag_on_hit(
         &mut self,
         slot: usize,
@@ -23188,6 +23227,16 @@ impl ProjectilePool {
                 continue;
             }
             let hit = center;
+            // W4-d10 — `Damage_PVE_Inner`'s type-604 arm
+            // (`Projectile.cs:12824-12827`): every landed Terrarian-beam
+            // hit calls `Player.Counterweight(targetNPC.Center, damage,
+            // knockBack)` — BEFORE the crit block's rolls (`:12829`).
+            // The lane is draw-free (the scan + spawn), so the stream
+            // position holds either way.
+            if self.slots[slot].kind == TERRARIAN_BEAM {
+                let (ncx, ncy) = n.center();
+                self.counterweight_on_hit(slot, (ncx, ncy), player.as_deref());
+            }
             // `Damage_PVE_Inner`'s per-hit crit block (`Projectile.cs:12829`,
             // `:12883-12917`): `crit` starts false and each set class flag
             // rolls an independent `Next(1, 101) <= classCrit + bonus` on the
@@ -23297,9 +23346,9 @@ impl ProjectilePool {
             // Kraken's 4), ages its lifetime clock 20 ticks — plus 40 more
             // and a ×0.75 damage cut when the owner has no line of sight
             // (`Collision.CanHit` box walk). The `Player.Counterweight`
-            // call (`:13272`, `Player.cs:12356-12415`) is the accessory
-            // arm — yoyoGlove/counterWeight are unported grants
-            // (M3-EQUIP-3), so the call folds out (ANALYSIS).
+            // call (`:13272`, `Player.cs:12356-12415`) is LIVE (W4-d10):
+            // the glove's second yoyo / the accessory counterweight spawn
+            // ahead of the facing write, draw-free.
             if proj_data(pkind).is_some_and(|d| d.ai_style == 99) {
                 // The slot scalars were copied out above (the `p` borrow
                 // ended at the Hellfire clamp).
@@ -23325,6 +23374,11 @@ impl ProjectilePool {
                     }
                     self.slots[slot].net_update = true; // `:13268`
                 } else {
+                    // `:13272` — the accessory spawn lane (W4-d10), ahead
+                    // of the facing write. The C# reads the live slot
+                    // damage/knockBack (pre-DamageVar — the walk's `dmg`
+                    // local is separate).
+                    self.counterweight_on_hit(slot, (ncx, ncy), player.as_deref());
                     // `:13273-13280` — the facing against the OWNER's
                     // center (the orphan guard keeps the stock direction).
                     if let Some((ox, _)) = owner {
@@ -29890,6 +29944,59 @@ mod s1_p_i09_yoyo_tests {
             p.vel
         );
         assert_eq!(p.local_ai[0], 20.0, "the +20 clock age, no LOS penalty");
+    }
+
+    /// W4-d10 — the wired spawn lane (`Projectile.cs:13272` →
+    /// `Player.Counterweight` `Player.cs:12394-12414`): a landed yoyo hit
+    /// with `counterWeight` granted spawns the weight at the owner's
+    /// Centre, aimed at the NPC centre at 16, the HIT's damage and
+    /// `(kb+6)/2` knockback — and the lane draws NOTHING (the crit +
+    /// DamageVar rolls stay aligned: same-seed runs with/without the
+    /// grant deal identical yoyo damage).
+    #[test]
+    fn w4_d10_the_landed_yoyo_hit_spawns_the_counterweight() {
+        let run = |grant: bool| {
+            let w = big_world();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(WOOD_YOYO, 516.0, 501.0, 4.0, 0.0, 20, 4.0, 0.0, 0.0)
+                .unwrap();
+            let mut npc = Npc::new(NpcKind::Slime, 500.0, 500.0, 1, 0.0);
+            npc.hp = 500;
+            npc.max_hp = 500;
+            let mut player = crate::player::Player::spawn(&w);
+            player.x = 300.0;
+            player.y = 490.0;
+            if grant {
+                player.counter_weight = 559;
+            }
+            let before = npc.hp;
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                Some((400.0, 509.0)),
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            let weight = pool.slots().iter().find(|p| p.active && p.kind == 559).cloned();
+            (before - npc.hp, weight, player.center())
+        };
+        let (plain_drop, none, _) = run(false);
+        let (grant_drop, weight, (pcx, pcy)) = run(true);
+        assert!(none.is_none(), "no grant, no weight");
+        assert_eq!(plain_drop, grant_drop, "the lane is stream-neutral");
+        let cw = weight.expect("the granted hit spawns the weight");
+        // The Centre anchor: pos = ownerCentre − box/2 (the 10×10 row).
+        assert_eq!(cw.pos, Vec2::new(pcx - 5.0, pcy - 5.0));
+        assert_eq!(cw.damage, 20, "the hit's damage");
+        assert_eq!(cw.knock_back, 5.0, "(4+6)/2");
+        assert_eq!(cw.ai[0], 0.0, "the first weight");
+        assert!((cw.vel.length() - 16.0).abs() < 1e-4, "the 16-speed aim");
+        // Aimed at the NPC centre (512, 509) from the owner (pcx, pcy).
+        let want = (Vec2::new(512.0, 509.0) - Vec2::new(pcx, pcy)).normalize() * 16.0;
+        assert!((cw.vel - want).length() < 1e-3);
     }
 
     /// `:13294-13298` — the no-LOS arm: a solid column between the yoyo

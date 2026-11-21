@@ -74,9 +74,12 @@
 //!   M3-EQUIP-3 yoyo lane: `Player.yoyo_string`/`magic_string` ride
 //!   `YoyoInputs`; the counterweight radius +25%+10 `:67408-67411` and the
 //!   ghost split `:67635-67643` read them). The `counterWeight`/`yoyoGlove`
-//!   equip-gate SPAWN lane (`Player.Counterweight` `Player.cs:12356-12415`,
-//!   the bag's kind roll `:14716-14726`) stays unported — the roll's stream
-//!   position belongs to that lane.
+//!   equip-gate SPAWN lane is LIVE too (W4-d10 — `Player.Counterweight`
+//!   `Player.cs:12356-12415` as `counterweight_spawn`, called from the
+//!   PVE walk's `:13272` yoyo arm + the `:12826` 604-beam arm; the bag's
+//!   kind roll `:14716-14726`/`:14740-14750` rides the `UpdatePlayers`
+//!   stage stream in `player.rs::apply_equip_functional`, the ResetEffects
+//!   clears re-roll it per tick — the spawn lane itself draws ZERO).
 //! - `Main.player[owner].deadMansSweater` (`ApplyBuffTo` `:12393-12396`)
 //!   is unported — the gas trap's buff time never halves.
 //! - `CurrentFrameFlags.HadAnActiveInteractableProjectile` (`:33070`) and
@@ -1431,6 +1434,126 @@ pub(crate) fn counterweight_move(
     p.pos += p.vel;
 }
 
+/// One `Player.Counterweight` spawn request (`Player.cs:12391`/`:12408`/
+/// `:12412`) — the glove's second yoyo or the accessory counterweight.
+/// `x`/`y` is the owner's Centre (`NewProjectile` re-centres the child's
+/// box, `Projectile.cs:10876-10877` — the `GhostTwinRequest` convention);
+/// `ai0` is the C# trailing argument (1f for the second yoyo / the
+/// follow-up counterweight, the 0f default for the first counterweight).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CounterweightSpawnRequest {
+    pub kind: u16,
+    pub x: f32,
+    pub y: f32,
+    pub vx: f32,
+    pub vy: f32,
+    pub damage: i32,
+    pub knock_back: f32,
+    pub ai0: f32,
+}
+
+/// `Player.Counterweight` (`Player.cs:12356-12415`) — the yoyo-accessory
+/// spawn lane, called from `Damage_PVE_Inner` on every landed yoyo hit
+/// (`Projectile.cs:13272`, the non-dropped aiStyle-99 arm) and every
+/// landed Terrarian-beam hit (`:12826`, type 604). The cadence is
+/// PER-HIT, not per-tick: no roll lives in the yoyo AI itself.
+///
+/// The machine: the `!yoyoGlove && counterWeight <= 0` early return
+/// (`:12358-12361`), the 1000-slot same-owner scan (`:12365-12383`) —
+/// `num3` counts the live counterweights (`ai[0] != -2`, the dropped
+/// twins excluded), `num2` the live NON-counterweight style-99 yoyos and
+/// `num` keeps the LAST such slot — then the two arms:
+/// - the glove's second yoyo (`:12384-12393`): `yoyoGlove && num2 < 2`
+///   and a live yoyo exists → clone `Main.projectile[num]`'s
+///   type/damage/knockBack at the owner's Centre, velocity
+///   `(hitPos - Center).Normalize() * 16`, `ai0 = 1f` (the flight-state-1
+///   doubled yoyo).
+/// - the counterweight (`:12394-12414`): `counterWeight > 0 &&
+///   num3 < num2` → the `counterWeight` kind (the `vanityCounterWeight`
+///   override `:12402-12405`), the HIT's damage, `(kb + 6) / 2`
+///   knockback, `ai0 = 1f` when a counterweight already orbits
+///   (`num3 > 0`) else the 0f default.
+///
+/// ZERO draws — the machine is a scan + pure maths; both `NewProjectile`
+/// calls are stream-neutral (the equip-pass kind roll
+/// `Player.cs:14716-14726` lives on the `UpdatePlayers` stream in
+/// `player.rs`, NOT here). The zero-length `Normalize` is the port's
+/// safe no-op (the house `safe_normalize` convention — the C# XNA
+/// instance method NaNs; the hit point on the owner's centre is
+/// unreachable in game).
+pub(crate) fn counterweight_spawn(
+    slots: &[Projectile],
+    who_am_i: u8,
+    pl: &crate::player::Player,
+    hit_pos: (f32, f32),
+    dmg: i32,
+    kb: f32,
+) -> Option<CounterweightSpawnRequest> {
+    // `:12358-12361` — the equip gate.
+    if !pl.yoyo_glove && pl.counter_weight <= 0 {
+        return None;
+    }
+    // `:12362-12383` — the scan. The C# `counterweight` flag is the
+    // `SetDefaults` bit only the 556-561/1079 rows set (`:6092`) — the
+    // port's `is_counterweight` kind test.
+    let mut num: i32 = -1;
+    let mut num2 = 0;
+    let mut num3 = 0;
+    for (i, p) in slots.iter().enumerate() {
+        if !p.active || p.owner != who_am_i {
+            continue;
+        }
+        if crate::projectile::is_counterweight(p.kind) {
+            if p.ai[0] != -2.0 {
+                num3 += 1;
+            }
+        } else if crate::projectile::proj_data(p.kind).is_some_and(|d| d.ai_style == 99)
+            && p.ai[0] != -2.0
+        {
+            num2 += 1;
+            num = i as i32;
+        }
+    }
+    let (cx, cy) = pl.center();
+    // `:12388-12390`/`:12396-12398` — the 16-speed aim at the hit point.
+    let v = safe_normalize(Vec2::new(hit_pos.0 - cx, hit_pos.1 - cy)) * 16.0;
+    if pl.yoyo_glove && num2 < 2 {
+        // `:12384-12393` — the glove's second yoyo.
+        if num >= 0 {
+            let src = &slots[num as usize];
+            return Some(CounterweightSpawnRequest {
+                kind: src.kind,
+                x: cx,
+                y: cy,
+                vx: v.x,
+                vy: v.y,
+                damage: src.damage,
+                knock_back: src.knock_back,
+                ai0: 1.0,
+            });
+        }
+        None
+    } else if pl.counter_weight > 0 && num3 < num2 {
+        // `:12394-12414` — the accessory counterweight.
+        let mut kind = pl.counter_weight;
+        if pl.vanity_counter_weight != 0 {
+            kind = pl.vanity_counter_weight;
+        }
+        Some(CounterweightSpawnRequest {
+            kind: kind as u16,
+            x: cx,
+            y: cy,
+            vx: v.x,
+            vy: v.y,
+            damage: dmg,
+            knock_back: (kb + 6.0) / 2.0,
+            ai0: if num3 > 0 { 1.0 } else { 0.0 },
+        })
+    } else {
+        None
+    }
+}
+
 /// `Main.OffsetsPlayerOnhand` (`Main.cs:66615-66637`) — the 20-row hand
 /// offset table the aiStyle-100 anchor reads (`bodyFrame.Y / 56` — the
 /// port's `body_frame` IS the row).
@@ -2760,6 +2883,94 @@ mod tests {
         // len 7.55 > 6 → the whole velocity halves.
         assert!(p.vel.x < 0.0, "the reverse");
         assert!(p.vel.length() <= 6.0, "the over-6 halving");
+    }
+
+    /// W4-d10 — `Player.Counterweight`'s equip gate + counterweight arm
+    /// (`Player.cs:12358-12361`/`:12394-12414`): no grants → no request;
+    /// `counterWeight > 0` with one live yoyo and no counterweight → the
+    /// rolled kind at the owner's Centre, the 16-speed aim at the hit
+    /// point, the HIT's damage, `(kb+6)/2` knockback, ai0 = 0 (the first).
+    #[test]
+    fn w4_d10_s99_the_counterweight_lane_spawns_the_first_weight() {
+        let w = World::new("t".into(), 300, 200);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.x = 1600.0 - crate::player::WIDTH * 0.5;
+        pl.y = 800.0 - pl.height * 0.5; // centre (1600, 800)
+        let slots = vec![proj(541)]; // the Wood Yoyo, ai0 = 0 (flying)
+        // The gate: no grants.
+        assert!(counterweight_spawn(&slots, 0, &pl, (1700.0, 800.0), 20, 4.0).is_none());
+        pl.counter_weight = 559;
+        let req = counterweight_spawn(&slots, 0, &pl, (1700.0, 800.0), 20, 4.0)
+            .expect("the counterweight arm");
+        assert_eq!(req.kind, 559);
+        assert_eq!((req.x, req.y), (1600.0, 800.0), "the owner Centre");
+        assert_eq!((req.vx, req.vy), (16.0, 0.0), "the 16-speed aim");
+        assert_eq!(req.damage, 20, "the HIT's damage");
+        assert_eq!(req.knock_back, 5.0, "(4+6)/2");
+        assert_eq!(req.ai0, 0.0, "the first counterweight's 0f default");
+        // The vanity override (`:12402-12405`).
+        pl.vanity_counter_weight = 557;
+        let req2 = counterweight_spawn(&slots, 0, &pl, (1700.0, 800.0), 20, 4.0).unwrap();
+        assert_eq!(req2.kind, 557, "the vanity kind wins");
+    }
+
+    /// W4-d10 — the scan's counts (`Player.cs:12365-12383`): the dropped
+    /// twins (ai0 = −2) count for NEITHER side; a second live counterweight
+    /// blocks the spawn (`num3 < num2` fails); the follow-up weight seeds
+    /// ai0 = 1 (`num3 > 0`).
+    #[test]
+    fn w4_d10_s99_the_scan_counts_and_the_followup_seeds_one() {
+        let w = World::new("t".into(), 300, 200);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.counter_weight = 559;
+        // One yoyo + one dropped yoyo + one dropped weight: num2 = 1,
+        // num3 = 0 → the spawn fires at ai0 = 0.
+        let mut dropped_yoyo = proj(541);
+        dropped_yoyo.ai[0] = -2.0;
+        let mut dropped_cw = proj(556);
+        dropped_cw.ai[0] = -2.0;
+        let slots = vec![proj(541), dropped_yoyo, dropped_cw];
+        let req = counterweight_spawn(&slots, 0, &pl, (1700.0, 800.0), 20, 4.0).unwrap();
+        assert_eq!(req.ai0, 0.0, "the dropped slots count for neither side");
+        // A LIVE weight: num3 = 1 = num2 → no spawn.
+        let slots2 = vec![proj(541), proj(556)];
+        assert!(counterweight_spawn(&slots2, 0, &pl, (1700.0, 800.0), 20, 4.0).is_none());
+        // Two yoyos + one live weight: num3 = 1 < num2 = 2 → ai0 = 1.
+        let slots3 = vec![proj(541), proj(541), proj(556)];
+        let req3 = counterweight_spawn(&slots3, 0, &pl, (1700.0, 800.0), 20, 4.0).unwrap();
+        assert_eq!(req3.ai0, 1.0, "the follow-up state");
+        // A foreign owner's yoyo never counts.
+        let mut foreign = proj(541);
+        foreign.owner = 1;
+        assert!(counterweight_spawn(&[foreign], 0, &pl, (1700.0, 800.0), 20, 4.0).is_none());
+    }
+
+    /// W4-d10 — the glove's second yoyo (`Player.cs:12384-12393`): with
+    /// `yoyoGlove` and num2 < 2 the LAST live yoyo's type/damage/knockBack
+    /// clone at the owner's Centre, ai0 = 1; two live yoyos block it (and
+    /// without a counterweight grant nothing else fires).
+    #[test]
+    fn w4_d10_s99_the_glove_clones_the_last_yoyo() {
+        let w = World::new("t".into(), 300, 200);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.yoyo_glove = true;
+        let mut first = proj(541);
+        first.damage = 9;
+        first.knock_back = 2.5;
+        let mut last = proj(555); // The Eye of Cthulhu
+        last.damage = 30;
+        last.knock_back = 5.0;
+        let slots = vec![first, last];
+        let req = counterweight_spawn(&slots, 0, &pl, (1700.0, 800.0), 99, 9.0).unwrap();
+        assert_eq!(req.kind, 555, "the LAST live yoyo (`num = i`)");
+        assert_eq!(req.damage, 30, "the source slot's damage, not the hit's");
+        assert_eq!(req.knock_back, 5.0);
+        assert_eq!(req.ai0, 1.0, "the doubled-yoyo flight state");
+        // num2 = 2 → the glove arm blocks; no counterWeight → nothing.
+        let two = vec![proj(541), proj(541)];
+        assert!(counterweight_spawn(&two, 0, &pl, (1700.0, 800.0), 20, 4.0).is_none());
+        // The glove with NO live yoyo (`num < 0`) spawns nothing.
+        assert!(counterweight_spawn(&[], 0, &pl, (1700.0, 800.0), 20, 4.0).is_none());
     }
 
     /// The 535 row (`Projectile.cs:6094-6106`): 18×18, aiStyle 100,

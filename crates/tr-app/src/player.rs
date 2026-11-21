@@ -2124,8 +2124,9 @@ pub struct Player {
     /// ×1.25+30 (`Projectile.cs:67882-67885`), the lifetime ×1.5 (`:67752-
     /// 67755`) and the counterweight radius +25%+10 (`:67408-67411`).
     /// `ResetEffects` clears it (`:18439`). W4-d10 (the M3-EQUIP-3 yoyo
-    /// lane — the flag + the AI reads; the equip-gate spawn lane stays
-    /// with the `Player.Counterweight` port).
+    /// lane — the flag + the AI reads; the equip-gate spawn lane landed
+    /// with the `Player.Counterweight` port, `counter_weight`/`yoyo_glove`
+    /// below).
     pub yoyo_string: bool,
     /// `Player.magicString` (`Player.cs:880`): the Magic String 5540
     /// (`:14734-14737`) and the Magic Yoyo Bag 5541 (`:14753`) — the
@@ -2133,6 +2134,26 @@ pub struct Player {
     /// (`Projectile.cs:67635-67643` counterweight / `:68023-68031` yoyo).
     /// `ResetEffects` clears it (`:18435`). W4-d10.
     pub magic_string: bool,
+    /// `Player.counterWeight` (`Player.cs:876`): the counterweight
+    /// projectile kind the bag roll picks — the Yoyo Bag 3366 / Magic
+    /// Yoyo Bag 5541 roll `Next(7) == 0 → 1079` else `556 + Next(6)`
+    /// (`:14716-14726`/`:14740-14750`), the Strung Counterweight 5547
+    /// pins 1079 (`:14755-14758`), the plain counterweights 3309-3314
+    /// pin `556 + type - 3309` (`:14759-14762`). `ResetEffects` clears it
+    /// (`:18436`). The spawn lane `Player.Counterweight`
+    /// (`:12356-12415`) reads it. W4-d10.
+    pub counter_weight: i32,
+    /// `Player.vanityCounterWeight` (`Player.cs:878`): the vanity-slot
+    /// override — `ApplyEquipVanity` (`:14220-14223`) maps a social
+    /// 3309-3314 to `556 + type - 3309`; `Counterweight` spawns the
+    /// vanity kind over the functional one (`:12402-12405`).
+    /// `ResetEffects` clears it (`:18437`). W4-d10.
+    pub vanity_counter_weight: i32,
+    /// `Player.yoyoGlove` (`Player.cs:884`): the Yoyo Bag 3366 / Magic
+    /// Yoyo Bag 5541 / Yoyo Glove 3334 grant (`:14727`/`:14751`/
+    /// `:14763-14766`) — `Counterweight`'s second-yoyo arm
+    /// (`:12384-12393`). `ResetEffects` clears it (`:18434`). W4-d10.
+    pub yoyo_glove: bool,
     /// `Player.overrideFishingBobber` (`Player.cs:1106`): the glow-bobber
     /// accessory's projectile override (`UpdateFishingBobber`, `:36673-
     /// 36702`: items 5139-5146 → 986-993), read by `ItemCheck_Shoot`
@@ -2945,6 +2966,9 @@ impl Player {
             // bool fields default false; ResetEffects re-clears per tick).
             yoyo_string: false,
             magic_string: false,
+            counter_weight: 0,
+            vanity_counter_weight: 0,
+            yoyo_glove: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
             acc_sentry_backpack: false,
@@ -4912,7 +4936,7 @@ impl Player {
     /// (`:12924-12927`). The `expertOnly` gate (`:14370-14373`) is unmodelled:
     /// `ItemDef` carries no `expert_only` and every ported grant kind is
     /// classic (deviation, docs/ANALYSIS.md "The UpdateEquip seam").
-    fn update_equips(&mut self) {
+    fn update_equips(&mut self, rng: &mut dyn tr_core::loot::DropRng) {
         for m in 3..10 {
             if !self.is_item_slot_unlocked_and_usable(m) {
                 continue;
@@ -4925,7 +4949,24 @@ impl Player {
                 continue;
             }
             crate::prefix::grant_prefix_benefits(self.equipped_prefix[m], self);
-            self.apply_equip_functional(m, kind);
+            self.apply_equip_functional(m, kind, rng);
+        }
+        // W4-d10 — `UpdateEquips`' vanity loop (`Player.cs:13009-13015`,
+        // slots 13..20): `ApplyEquipVanity`'s counterweight row
+        // (`:14220-14223`): a social 3309-3314 maps to
+        // `vanityCounterWeight = 556 + type - 3309` — the spawn lane's
+        // visual override (`Counterweight` `:12402-12405`). Draw-free;
+        // the loop's other rows (info accs / shaders / werewolf) are
+        // unported families. The C# `type >= 3309 && currentItem.type
+        // <= 3314` reads the same field twice — kept as one range test.
+        for n in 13..20 {
+            if !self.is_item_slot_unlocked_and_usable(n) {
+                continue;
+            }
+            let kind = self.equipped[n];
+            if (3309..=3314).contains(&kind) {
+                self.vanity_counter_weight = 556 + kind as i32 - 3309;
+            }
         }
         // `UpdateEquips`' luck tail (`Player.cs:13066-13069`): ONE +0.05
         // `equipmentBasedLuckBonus` add when `hasLuck_LuckyCoin` — the flag
@@ -4985,7 +5026,12 @@ impl Player {
     /// voice, `:14378-14390`) and the `hideVisibleAccessory` gate are draw
     /// seams, out of scope. `_item_slot` is the C# `itemSlot` (the visibility
     /// lookups only).
-    fn apply_equip_functional(&mut self, _item_slot: usize, kind: u16) {
+    fn apply_equip_functional(
+        &mut self,
+        _item_slot: usize,
+        kind: u16,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) {
         // S1-C-12 wave E — the combat/damage family has ONE grant path:
         // `accessory_combat::apply_combat_accessory` claims its kinds here
         // and the former inline arms (489/490/491/2998/935/897/936/1343/
@@ -5050,27 +5096,51 @@ impl Player {
                 self.acc_lava_fishing = true;
             }
             // W4-d10 — `ApplyEquipFunctional`'s yoyo-string rows
-            // (`Player.cs:14710-14754`), in the C#'s order: the
+            // (`Player.cs:14710-14766`), in the C#'s order: the
             // string-colour accessories (`currentItem.stringColor > 0` —
             // the 3293-3308 strings + the 43716, the `yoyo_string` module's
             // `string_color_for_item` table `Item.cs:30220-30255`), the
-            // Yoyo Bag 3366 (`yoyoString` + the `yoyoGlove`/`counterWeight`
-            // halves), the Magic String 5540 (`magicString`) and the Magic
-            // Yoyo Bag 5541 (all three). The `counterWeight` kind roll
-            // (`:14716-14726`/`:14740-14750`: `Next(7)` → 1079 else
-            // `556 + Next(6)`) and the `yoyoGlove` flag stay with the
-            // equip-gate spawn lane (`Player.Counterweight` `:12356-12415`,
-            // unported — the roll is NOT consumed here, the lane owns its
-            // stream position when it lands).
+            // Yoyo Bag 3366, the Magic String 5540, the Magic Yoyo Bag
+            // 5541, the Strung Counterweight 5547, the plain
+            // counterweights 3309-3314 and the Yoyo Glove 3334. The bags
+            // roll the counterweight kind ONCE per equip pass while none
+            // is set (`:14716-14726`/`:14740-14750`): `Next(7) == 0` →
+            // 1079 (pink) else `556 + Next(6)` — TWO draws on the non-pink
+            // arm, ONE on the pink, ZERO once `counterWeight != 0` (an
+            // earlier slot's grant this tick holds). The draws ride the
+            // caller's `UpdatePlayers` stage stream (`Main.rand` at the
+            // equip pass), in slot order — the spawn lane
+            // (`Player.Counterweight` `:12356-12415`) consumes none.
             k if crate::yoyo_string::string_color_for_item(k).is_some_and(|c| c > 0) => {
                 self.yoyo_string = true;
             }
-            3366 => self.yoyo_string = true,
+            3366 => {
+                if self.counter_weight == 0 {
+                    if rng.next_range(0, 7) == 0 {
+                        self.counter_weight = 1079;
+                    } else {
+                        self.counter_weight = 556 + rng.next_range(0, 6);
+                    }
+                }
+                self.yoyo_glove = true;
+                self.yoyo_string = true;
+            }
             5540 => self.magic_string = true,
             5541 => {
+                if self.counter_weight == 0 {
+                    if rng.next_range(0, 7) == 0 {
+                        self.counter_weight = 1079;
+                    } else {
+                        self.counter_weight = 556 + rng.next_range(0, 6);
+                    }
+                }
+                self.yoyo_glove = true;
                 self.yoyo_string = true;
                 self.magic_string = true;
             }
+            5547 => self.counter_weight = 1079,
+            3309..=3314 => self.counter_weight = 556 + kind as i32 - 3309,
+            3334 => self.yoyo_glove = true,
             // The bottles (`Player.cs:14997-15001`, :14793-14811, :15001):
             53 => self.has_jump_options[ExtraJump::Cloud.index()] = true,
             857 => self.has_jump_options[ExtraJump::Sandstorm.index()] = true,
@@ -6173,12 +6243,15 @@ impl Player {
         self.acc_fishing_bobber = false;
         self.acc_fishing_line = false;
         self.acc_lava_fishing = false;
-        // W4-d10 — `ResetEffects`' yoyo-string clears (`Player.cs:18435`/
-        // `:18439`): the equip grants below re-derive both per tick. The
-        // `yoyoGlove`/`counterWeight`/`vanityCounterWeight`/`stringColor`
-        // siblings (`:18434`/`:18436-18438`) stay with the equip-gate
-        // spawn lane (`Player.Counterweight`, unported).
+        // W4-d10 — `ResetEffects`' yoyo clears (`Player.cs:18434-18439`):
+        // the equip grants below re-derive all five per tick (the bags'
+        // kind roll re-rolls every tick the counterweight is unset). The
+        // `stringColor` sibling (`:18438`) is the item-table read, no
+        // player field (the `yoyo_string` module's table).
+        self.yoyo_glove = false;
         self.magic_string = false;
+        self.counter_weight = 0;
+        self.vanity_counter_weight = 0;
         self.yoyo_string = false;
         self.override_fishing_bobber = -1;
         // (Gate merge i35 ⨉ i41: the `canFloatInWater`/`noItems` clears run
@@ -6828,7 +6901,8 @@ impl Player {
         self.accessory_life_regen = 0;
         // `UpdateEquips`' second loop (`Player.cs:12946-12952`): the functional
         // accessory pass over the slots 3..10, gated per slot - the seam below.
-        self.update_equips();
+        // The bags' counterweight kind roll draws the caller's stage stream.
+        self.update_equips(rng);
         // `UpdateEquips`' whip-accessory tail (`Player.cs:12970-12984`): the
         // Silver Bracer adds `tagEffectDuration += 2f` and `maxTagEffects++`
         // (`minionDamage += 0f` is a no-op), the Mobius Strip adds
@@ -19737,16 +19811,95 @@ mod tests {
         p.equipped[3] = 5541;
         p.update(&w, PlayerInput::default());
         assert!(p.yoyo_string && p.magic_string, "the bag grants both");
-        // The Yoyo Bag 3366 grants yoyoString (the counterWeight/yoyoGlove
-        // halves stay with the unported spawn lane).
+        // The Yoyo Bag 3366 grants yoyoString + yoyoGlove + the rolled
+        // counterWeight kind (the spawn lane landed W4-d10).
         p.equipped[3] = 3366;
         p.update(&w, PlayerInput::default());
         assert!(p.yoyo_string, "the Yoyo Bag grants yoyoString");
         assert!(!p.magic_string, "the Yoyo Bag has no magicString");
+        assert!(p.yoyo_glove, "the bag grants the glove");
+        assert!(
+            p.counter_weight == 1079 || (556..=561).contains(&p.counter_weight),
+            "the bag rolled a kind: {}",
+            p.counter_weight
+        );
         // Unequipped: ResetEffects clears both.
         p.equipped[3] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.yoyo_string && !p.magic_string, "the tick clears");
+        assert!(!p.yoyo_glove && p.counter_weight == 0, "the lane clears too");
+    }
+
+    /// W4-d10 — the bag's counterweight kind roll (`Player.cs:14716-14726`/
+    /// `:14740-14750`): `Next(7) == 0` → 1079 (ONE draw), else
+    /// `556 + Next(6)` (TWO draws, in that order); the `counterWeight == 0`
+    /// gate means a second bag in the same pass draws NOTHING. The
+    /// scripted stream pins the order (the DodgeRng fixture).
+    #[test]
+    fn w4_d10_the_bag_rolls_the_counterweight_kind_in_order() {
+        let w = ground_world();
+        // The pink arm: Next(7) == 0 → 1079, one draw.
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 3366;
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        p.update_equips(&mut rng);
+        assert_eq!(p.counter_weight, 1079);
+        assert_eq!(rng.draws, vec![(0, 7)], "ONE draw on the pink arm");
+        // The colour arm: Next(7) = 1, Next(6) = 3 → 559, two draws.
+        let mut p2 = Player::spawn(&w);
+        p2.equipped[3] = 5541;
+        let mut rng2 = DodgeRng::with_rolls(&[1, 3]);
+        p2.update_equips(&mut rng2);
+        assert_eq!(p2.counter_weight, 559);
+        assert_eq!(rng2.draws, vec![(0, 7), (0, 6)], "the C# operand order");
+        assert!(p2.yoyo_glove && p2.yoyo_string && p2.magic_string, "5541 grants all");
+        // Two bags: the first roll holds, the second draws nothing
+        // (`counterWeight == 0` gate, `:14740`).
+        let mut p3 = Player::spawn(&w);
+        p3.equipped[3] = 3366;
+        p3.equipped[4] = 5541;
+        let mut rng3 = DodgeRng::with_rolls(&[0]);
+        p3.update_equips(&mut rng3);
+        assert_eq!(p3.counter_weight, 1079);
+        assert_eq!(rng3.draws, vec![(0, 7)], "the second bag skips the roll");
+        assert!(p3.magic_string, "the second bag still grants magicString");
+    }
+
+    /// W4-d10 — the pin rows + the vanity override: the Strung
+    /// Counterweight 5547 pins 1079 with NO draw (`:14755-14758`), the
+    /// plain 3309-3314 pin `556 + type - 3309` (`:14759-14762`), the Yoyo
+    /// Glove 3334 grants the glove alone (`:14763-14766`); the vanity
+    /// loop (`:13009-13015` → `ApplyEquipVanity` `:14220-14223`) maps a
+    /// social 3309-3314 to `vanityCounterWeight`.
+    #[test]
+    fn w4_d10_the_counterweight_pins_and_the_vanity_override() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.equipped[3] = 5547;
+        let mut rng = DodgeRng::with_rolls(&[]);
+        p.update_equips(&mut rng);
+        assert_eq!(p.counter_weight, 1079, "the Strung Counterweight pin");
+        assert!(rng.draws.is_empty(), "the pin draws nothing");
+        assert!(!p.yoyo_glove, "5547 is no glove");
+        // The Red Counterweight 3313 → 560.
+        let mut p2 = Player::spawn(&w);
+        p2.equipped[3] = 3313;
+        p2.update_equips(&mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p2.counter_weight, 560);
+        // The glove alone.
+        let mut p3 = Player::spawn(&w);
+        p3.equipped[3] = 3334;
+        p3.update_equips(&mut DodgeRng::with_rolls(&[]));
+        assert!(p3.yoyo_glove);
+        assert_eq!(p3.counter_weight, 0, "the glove rolls no kind");
+        assert!(!p3.yoyo_string, "the glove grants no string");
+        // The vanity slot 13's Blue Counterweight 3310 → 557.
+        let mut p4 = Player::spawn(&w);
+        p4.equipped[3] = 5547;
+        p4.equipped[13] = 3310;
+        p4.update_equips(&mut DodgeRng::with_rolls(&[]));
+        assert_eq!(p4.counter_weight, 1079);
+        assert_eq!(p4.vanity_counter_weight, 557, "the vanity override");
     }
 
     #[test]
@@ -19764,12 +19917,12 @@ mod tests {
         // worn wings (1866, slot 22) re-derive the budget from the slot.
         assert!(p.set_mount(54, false));
         p.equipped[4] = 1866;
-        p.update_equips();
+        p.update_equips(&mut tr_core::UnifiedRandom::default());
         let budget = p.wing_time_max;
         assert!(budget > 0, "the worn wings set the budget");
         p.mount.reset_flight_time(0.0, budget);
         p.mount.flight();
-        p.update_equips();
+        p.update_equips(&mut tr_core::UnifiedRandom::default());
         assert_eq!(p.mount.fly_time(), budget, "the brooch refills the raptor");
         // Unequipped: the flag clears and the refill stops (the wing slot
         // still holds the budget; only the brooch flag went away). The tail
@@ -19779,7 +19932,7 @@ mod tests {
         assert!(!p.empress_brooch);
         p.mount.reset_flight_time(0.0, p.wing_time_max);
         p.mount.flight();
-        p.update_equips();
+        p.update_equips(&mut tr_core::UnifiedRandom::default());
         assert_eq!(
             p.mount.fly_time(),
             p.wing_time_max - 1,
