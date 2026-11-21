@@ -33,6 +33,7 @@ pub mod select_hit;
 pub mod slot;
 pub mod text;
 pub mod tooltip;
+pub mod tooltip_lines2;
 pub mod uistate;
 pub mod world_creation;
 pub(crate) mod world_load;
@@ -716,6 +717,11 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // W4-f28 — the tooltip's world/session gates (`Main.expertMode`, the
+    // downed latches, the seed flags, `Main.npcShop`, the master/disco
+    // colour animators): the second-half rows read them through
+    // `TooltipContext.world`.
+    tooltip_world: tooltip_lines2::TooltipWorld,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1027,6 +1033,10 @@ pub fn draw_hud(
                     pulse,
                     tooltip::TooltipContext {
                         player,
+                        world: tooltip_lines2::TooltipWorld {
+                            npc_shop: shop.is_some(),
+                            ..tooltip_world
+                        },
                         ..Default::default()
                     },
                     // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` — the
@@ -1178,6 +1188,36 @@ pub fn draw_hud(
     // held item's own crit, which the tooltip's crit row subtracts
     // (`Main.cs:20701`).
     let held_crit = crate::registry::get(inventory[selected].kind).map_or(0, |d| d.crit);
+    // W4-f28 — the hovered instance's `ItemSlot.MouseHover` stamps
+    // (`ItemSlot.cs:3183-3198`): context 8 (the worn armour column's first
+    // three rows) sets wornArmor, contexts 9/11 (the vanity column) set
+    // social; the grid favourite rides `App.favorite_slots`.
+    let hover_flags = {
+        let mut f = tooltip_lines2::HoverFlags::default();
+        if inventory_open {
+            match open_hover {
+                Some(inventory::HoverRef::Grid(i)) => f.favorited = favorites.contains(&i),
+                Some(inventory::HoverRef::Armor(i)) => {
+                    // `ui/inventory.rs:709-785`: armor[0..3) draws at context
+                    // 8 (wornArmor), armor[3..10) at 10 (no MouseHover case —
+                    // the accessories keep the default); the vanity column
+                    // armor[10..20) draws at contexts 9/11, both stamping
+                    // social (`ItemSlot.cs:3191-3193`).
+                    if i < 3 {
+                        f.worn_armor = true;
+                    } else if (10..20).contains(&i) {
+                        f.social = true;
+                    }
+                }
+                _ => {}
+            }
+        } else if let Some(i) =
+            tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
+        {
+            f.favorited = favorites.contains(&i);
+        }
+        f
+    };
     tooltip::draw_item_tooltip(
         r,
         lookups,
@@ -1189,6 +1229,14 @@ pub fn draw_hud(
             prefix: hover_item.map_or(0, |h| h.prefix),
             player,
             held_crit,
+            flags: hover_flags,
+            world: tooltip_lines2::TooltipWorld {
+                npc_shop: shop.is_some(),
+                ..tooltip_world
+            },
+            inventory: Some(&inventory[..]),
+            held_kind: inventory[selected].kind,
+            open_chest: chest_panel.chest,
             ..Default::default()
         },
         ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),

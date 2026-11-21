@@ -839,6 +839,12 @@ pub(crate) struct App {
     /// `Main.DiscoR/G/B` and the `Main.DiscoStyle` cycle (`DoUpdate_AnimateDiscoRGB`).
     pub(crate) disco: [u8; 3],
     pub(crate) disco_style: u8,
+    /// `Main.masterColor` / `Main.masterColorDir` (`Main.cs:1235-1237`,
+    /// `DoUpdate_AnimateCursorColors` `:18225-18235`): the master-rarity
+    /// name pulse the tooltip's −13 colour reads (W4-f28). Init 1f / 1
+    /// (`Main.Initialize`, `:66833-66834`).
+    pub(crate) master_color: f32,
+    pub(crate) master_color_dir: i32,
     /// `TileLightScanner._random` seed; advanced once per frame like `NextSeed()`.
     pub(crate) light_rng_seed: u64,
     pub(crate) anim_time: f32,
@@ -3978,6 +3984,10 @@ impl App {
             // `Main.DiscoR = 255` (Main.Initialize); G/B and the style start at 0.
             disco: [255, 0, 0],
             disco_style: 0,
+            // `Main.masterColor = 1f; Main.masterColorDir = 1`
+            // (Main.Initialize, `Main.cs:66833-66834`).
+            master_color: 1.0,
+            master_color_dir: 1,
             light_rng_seed: world_seed | 1,
             anim_time: 0.0,
             has_liquids,
