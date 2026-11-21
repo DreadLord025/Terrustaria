@@ -10129,6 +10129,30 @@ impl Projectile {
         false
     }
 
+    /// `Projectile.GetCollisionParams` (`Projectile.cs:19867-20022`) — the
+    /// **tile-collision** box (`colWidth`/`colHeight`) and its `resizeAnchor`,
+    /// distinct from the damage box ([`Self::damage_hitbox`],
+    /// `Damage_GetHitbox` `:14959-15023`, which keeps the FULL row box). The
+    /// C# `HandleMovement` (`:17588-17589`) centres the collision box on
+    /// `Center - colSize * resizeAnchor`; every arm here uses the symmetric
+    /// `(0.5, 0.5)` anchor, so the probe origin is
+    /// `Center - colSize/2 = pos + (rowSize - colSize)/2` — a 10 px inset per
+    /// axis for the −20 arm. W4-g2 ports the **−20 shrink arm** (`:19977-19981`,
+    /// kinds 182/190/33/229/237/243/866) for its ROWED kinds (229/237/243 —
+    /// the 33/182/190/866 siblings are rowless and ride `ai_boomerang`/no row).
+    /// The other `GetCollisionParams` arms (the −8/−12/−36 shrinks, the fixed
+    /// 1/2/4/6/10/14 boxes, the golf-ball/phaseblade arms) are unported — they
+    /// belong to families outside this task's kinds; the stock `(w, h, 0)`
+    /// stands for them. RNG-neutral: no draws, pure geometry.
+    fn collision_params(&self) -> (f32, f32, f32, f32) {
+        // `:19977-19981`: `colWidth = width - 20; colHeight = height - 20`.
+        if matches!(self.kind, CHLOROPHYTE_ORB | RAIN_CLOUD_MOVING | BLOOD_CLOUD_MOVING) {
+            (self.w - 20.0, self.h - 20.0, 10.0, 10.0)
+        } else {
+            (self.w, self.h, 0.0, 0.0)
+        }
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -10138,16 +10162,22 @@ impl Projectile {
     /// test is the per-axis destination-box probe the arrow/bomb arms use,
     /// standing in for the C#'s swept `TileCollision` (which zeroes the blocked
     /// axis, `Collision.cs:299-330`), so a dying projectile's exact death pixel
-    /// can differ by the swept span while the kill does not.
+    /// can differ by the swept span while the kill does not. The probe rides
+    /// [`Self::collision_params`] (`GetCollisionParams` `:17588`): the −20
+    /// kinds (229/237/243) collide on a 10 px-inset box, NOT the full row box —
+    /// the damage box stays full ([`Self::damage_hitbox`]).
     fn kill_step(&mut self, world: &World) {
         if !self.tile_collide {
             self.pos += self.vel;
             return;
         }
-        let nx = self.pos.x + self.vel.x;
-        let ny = self.pos.y + self.vel.y;
-        let hit_x = crate::player::collides_rect(world, nx, self.pos.y, self.w, self.h);
-        let hit_y = crate::player::collides_rect(world, self.pos.x, ny, self.w, self.h);
+        let (cw, ch, ox, oy) = self.collision_params();
+        let cx = self.pos.x + ox;
+        let cy = self.pos.y + oy;
+        let nx = cx + self.vel.x;
+        let ny = cy + self.vel.y;
+        let hit_x = crate::player::collides_rect(world, nx, cy, cw, ch);
+        let hit_y = crate::player::collides_rect(world, cx, ny, cw, ch);
         self.pos += self.vel;
         if hit_x || hit_y {
             self.kill_time_left = self.time_left;
@@ -44884,12 +44914,17 @@ mod w4_g2_rowless_tests {
         }
         let mut pool = ProjectilePool::new();
         let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 0.0, 30, 0.0).unwrap();
-        // Kill it on contact: a wall one tile ahead of the 30-wide box.
+        // Kill it on contact: the wall sits one tile ahead of the orb's
+        // COLLISION box — the −20 shrink (`GetCollisionParams` `:19977`) makes
+        // it 10×10 at pos + (10, 10), NOT the full 30-wide row box. The right
+        // edge must pass the wall (240) after the +2 step: pos.x + 10 + 10 + 2
+        // > 240 → pos.x = 219 (edge 241). The full-box probe (edge 251) would
+        // also hit, but the witness pins the SHRUNK geometry.
         let mut w = world();
         for y in 12..=14 {
             put_tile(&mut w, 15, y, 1);
         }
-        pool.slots_mut()[slot].pos.x = 15.0 * 16.0 - 30.0 - 1.0;
+        pool.slots_mut()[slot].pos.x = 219.0;
         let mut rng = DrawLog(Vec::new());
         pool.update(
             &mut w, &mut [], None, None, None,
@@ -44906,5 +44941,55 @@ mod w4_g2_rowless_tests {
         }
         // The rowless 1128 declined — no child slots.
         assert!(!pool.slots().iter().any(|p| p.active && p.kind == 1128), "the 1128 row is a follow-up");
+    }
+
+    /// W4-g2 reconciliation — `GetCollisionParams`'s −20 arm
+    /// (`Projectile.cs:19977-19981`) shrinks the TILE-COLLISION box, not the
+    /// damage box. The 229/237/243 kinds collide on a 10 px-inset box; a wall
+    /// that the full row box would touch but the shrunk box clears does NOT
+    /// kill. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_g2_the_minus20_shrink_clears_a_full_box_wall() {
+        // The orb 229 (30×30): collision box 10×10 at pos + (10, 10).
+        // Place the orb so its FULL box right edge (pos.x + 30) is inside the
+        // wall tile but its SHRUNK right edge (pos.x + 20) clears it.
+        // Wall at tile x=15 (px 240..256). pos.x = 215: full edge 245 (inside),
+        // shrunk edge 235 + step 2 = 237 < 240 (clears). The orb survives.
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 215.0, 200.0, 2.0, 0.0, 30, 0.0).unwrap();
+        let mut w = world();
+        for y in 12..=14 {
+            put_tile(&mut w, 15, y, 1);
+        }
+        tick(&mut pool, &mut w);
+        assert!(pool.slots()[slot].active, "the shrunk collision box clears the wall the full box touches");
+        // The damage box stays FULL: damage_hitbox reads the 30-wide row box.
+        let rect = pool.damage_hitbox(slot);
+        assert_eq!(rect.w, 30, "the damage box is NOT shrunk (Damage_GetHitbox :14961)");
+        assert_eq!(rect.h, 30);
+    }
+
+    /// The −20 shrink's collision geometry pins the inset origin: the orb's
+    /// 10×10 collision box sits at pos + (10, 10) (`Center - colSize * 0.5`),
+    /// so a wall the shrunk box reaches DOES kill. The 237/243 moving clouds
+    /// (28×28 → 8×8) share the arm. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g2_the_minus20_shrink_kills_on_the_inset_box() {
+        // The moving rain cloud 237 (28×28): collision box 8×8 at pos+(10,10).
+        // Wall at tile x=15 (240). pos.x = 221: shrunk right edge 221+10+8 = 239,
+        // + step 2 = 241 > 240 → hit. The cloud dies (kill_step).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(RAIN_CLOUD_MOVING, 221.0, 200.0, 2.0, 0.0, 30, 0.0, 1000.0, 200.0)
+            .unwrap();
+        let mut w = world();
+        for y in 12..=14 {
+            put_tile(&mut w, 15, y, 1);
+        }
+        tick(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "the inset collision box reaches the wall -> kill");
+        // The 237's death hook spawns the 238 raining cloud (the kill ran).
+        assert!(pool.slots().iter().any(|p| p.active && p.kind == RAIN_CLOUD_RAINING),
+            "the kill hook fired (:74535-74538)");
     }
 }
