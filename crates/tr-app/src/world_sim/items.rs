@@ -137,6 +137,14 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let day_time = app.world.day_time;
     let remix_world = app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
     let dd2_ongoing = app.world.dd2_event_ongoing;
+    // W4-g15 lane 5 — the TryFillBucket gates (`WorldItem.cs:550-563`): the
+    // rain toggle + intensity, the world-surface presence (`Main.cs:2788`'s
+    // `worldSurface > 50`), the remix flag and the day rate. Captured once
+    // per tick (they cannot change mid-tick).
+    let raining = app.rain.is_raining();
+    let max_raining = app.rain.max_raining();
+    let has_world_surface = app.world.world_surface > 50.0;
+    let day_rate = app.world.day_rate();
     app.item_step.tick(dt.min(0.25), |step| {
         // --- `Player.GrabItems` (`Player.cs:34905-34976`, S1-P-i47) ---------
         // The C# runs it from `Player.Update` (`:27428`) BEFORE the item
@@ -702,6 +710,28 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 continue;
             }
             let was_grabbed = drop.being_grabbed;
+            // W4-g15 lane 5 — `TryFillBucket` (`WorldItem.cs:399-402`,
+            // `:548-571`): an empty bucket (205) resting in the rain on a
+            // wind-allowing wall at the surface fills into a water bucket
+            // (206), keeping its stack. The C# runs it BEFORE UpdateShimmer
+            // and MoveInWorld; the two draws (`Next(num3)`, `NextFloat`) ride
+            // the `UpdateItems` stream. The gate reads the drop's pre-move
+            // position (the C# checks before MoveInWorld).
+            if !was_grabbed && drop.kind == 205 && !reserved_elsewhere {
+                // The kind swaps to 206 in place; the stack is kept. The drop
+                // continues through the rest of the update as a water bucket
+                // (the C# mutates `this.inner` in place).
+                try_fill_bucket(
+                    app,
+                    &mut drop,
+                    world,
+                    raining,
+                    max_raining,
+                    has_world_surface,
+                    remix_world,
+                    day_rate,
+                );
+            }
             // W4-g15 — `WorldItem.UpdateShimmer`'s shimmered sparkle
             // (`WorldItem.cs:459-481`) draws `Main.rand` INSIDE UpdateShimmer
             // (`:403`), BEFORE MoveInWorld's splash. The port's `update` is
@@ -996,6 +1026,69 @@ fn try_granting_make_a_wish_set(app: &mut App) {
         app.audio.play_rainbow_boulder(center.x, center.y);
         // The swap brought a new drop into slot i — re-check it (do not
         // advance). The appended pieces sit beyond the original length n.
+    }
+}
+
+/// `WorldItem.TryFillBucket` (`WorldItem.cs:548-571`, W4-g15 lane 5): an
+/// empty bucket (205) resting in the rain on a wind-allowing wall at the
+/// surface fills into a water bucket (206), keeping its stack. The gate
+/// (`:550`): the reservation (the caller passes it), `Main.raining`,
+/// `Main.isThereAWorldSurface || Main.remixWorld`, and
+/// `WorldGen.IsSurfaceForAtmospherics(position.ToTileCoordinates())`. The
+/// cell (`:554-556`) is the drop's CENTRE tile, and its wall must ride
+/// `WallID.Sets.AllowsWind`. The fill chance (`:558-563`): `num3 = 600`,
+/// divided by `dayRate` when `0 < dayRate < 600`; then `Next(num3) == 0 &&
+/// NextFloat() < maxRaining`. Both draws ride the `UpdateItems` stream (the
+/// C# runs TryFillBucket inside UpdateItem under the `Main.cs:18024` swap).
+/// The fill is `SetDefaults(206)` + the stack kept (`:565-567`) — the port
+/// swaps the kind in place (the bucket's other stats are not modelled on a
+/// drop, the kind is the whole observable identity).
+#[allow(clippy::too_many_arguments)]
+fn try_fill_bucket(
+    app: &mut App,
+    drop: &mut ItemDrop,
+    world: &tr_core::world::World,
+    raining: bool,
+    max_raining: f32,
+    has_world_surface: bool,
+    remix_world: bool,
+    day_rate: i32,
+) {
+    // `:550` — the gate row (the reservation is the caller's).
+    if !raining || (!has_world_surface && !remix_world) {
+        return;
+    }
+    // `WorldGen.IsSurfaceForAtmospherics` (`WorldGen.cs:10976-10987`): the
+    // remix branch reads the rock layer + the maxTilesY-350 floor, else the
+    // world surface. The position is the drop's top-left (`base.position`).
+    let ptx = (drop.pos.x as i32) >> 4;
+    let pty = (drop.pos.y as i32) >> 4;
+    let surface = if remix_world {
+        (pty as f64) > world.rock_layer && pty < world.height - 350
+    } else {
+        (pty as f64) <= world.world_surface
+    };
+    if !surface {
+        return;
+    }
+    // `:554-556` — the CENTRE tile's wall must allow wind.
+    let cx = (drop.center().x as i32) / 16;
+    let cy = (drop.center().y as i32) / 16;
+    let Some(tile) = world.tile(cx, cy) else {
+        return;
+    };
+    if !tr_core::wind::wall_allows_wind(tile.wall) {
+        return;
+    }
+    // `:558-563` — the two draws, in order, on the UpdateItems stream.
+    let mut num3 = 600;
+    if day_rate > 0 && day_rate < num3 {
+        num3 /= day_rate;
+    }
+    let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
+    if rng.next_max(num3) == 0 && rng.next_float() < max_raining {
+        // `:565-567` — SetDefaults(206), the stack kept.
+        drop.kind = 206;
     }
 }
 
@@ -2251,6 +2344,111 @@ mod check_in_world_tests {
         app.items.push(ItemDrop::new(2, 1, 0, 25.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0));
         update_items(&mut app, 1.0 / 60.0);
         assert!(app.items.iter().any(|it| it.kind == 2), "the in-bounds drop survives");
+    }
+}
+
+#[cfg(test)]
+mod fill_bucket_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::item::ItemDrop;
+
+    /// A surface world (worldSurface 60 > 50) with a wind-allowing wall (0)
+    /// at the bucket's centre cell; the rain is on at full intensity.
+    fn rain_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut w = tr_core::world::World::new("rain".into(), 100, 100);
+        w.world_surface = 60.0;
+        w.compute_column_surface();
+        app.world = w;
+        app
+    }
+
+    /// `TryFillBucket` (`WorldItem.cs:548-571`): the gate refuses when it is
+    /// not raining, when there is no world surface (and no remix), when the
+    /// drop is below the surface, or when the centre wall blocks wind. The
+    /// draws are NOT consumed on a refused gate (the C# returns before them).
+    #[test]
+    fn w4_g15_the_fill_bucket_gate_refuses_the_wrong_states() {
+        // Not raining.
+        let mut app = rain_app();
+        let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        try_fill_bucket(&mut app, &mut b, &app.world.clone(), false, 1.0, true, false, 1);
+        assert_eq!(b.kind, 205, "no rain refuses");
+        // No world surface, no remix.
+        let mut app = rain_app();
+        let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        try_fill_bucket(&mut app, &mut b, &app.world.clone(), true, 1.0, false, false, 1);
+        assert_eq!(b.kind, 205, "no surface refuses");
+        // Below the surface (tile y 70 > worldSurface 60).
+        let mut app = rain_app();
+        let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 70.0 * TILE_PX, 0.0, 0.0, 0.0);
+        try_fill_bucket(&mut app, &mut b, &app.world.clone(), true, 1.0, true, false, 1);
+        assert_eq!(b.kind, 205, "below surface refuses");
+        // A wind-blocking wall (1) at the centre cell.
+        let mut app = rain_app();
+        let cx = (50.0 * TILE_PX + crate::item::SIZE * 0.5) as i32 / 16;
+        let cy = (30.0 * TILE_PX + crate::item::SIZE * 0.5) as i32 / 16;
+        let idx = app.world.index(cx, cy);
+        app.world.tiles[idx].wall = 1;
+        let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(&mut app, &mut b, &w, true, 1.0, true, false, 1);
+        assert_eq!(b.kind, 205, "a blocking wall refuses");
+    }
+
+    /// A passing gate consumes the two draws in order (`Next(num3)` then
+    /// `NextFloat`) and fills the bucket to 206 keeping the stack when both
+    /// hit. The day-rate divisor scales num3 (600 / dayRate). A refused
+    /// gate consumes NO draws (the C# returns before them).
+    #[test]
+    fn w4_g15_a_passing_gate_fills_the_bucket_and_keeps_the_stack() {
+        // Find a seed whose first Next(600) == 0 (the dayRate-1 num3) so the
+        // gate fires; maxRaining 1.0 makes the NextFloat arm always pass.
+        let mut seed = 0;
+        while tr_core::UnifiedRandom::new(seed).next_max(600) != 0 {
+            seed += 1;
+        }
+        let mut app = rain_app();
+        app.rngs.reset(seed);
+        let mut b = ItemDrop::new(205, 7, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(&mut app, &mut b, &w, true, 1.0, true, false, 1);
+        assert_eq!(b.kind, 206, "the bucket filled");
+        assert_eq!(b.count, 7, "the stack kept (SetDefaults(206) + stack restore)");
+        // The two draws ran in order: Next(600) then NextFloat. Replay them
+        // on a witness seeded identically and confirm the stream advanced
+        // by exactly those two (the next draw matches the witness's third).
+        let mut witness = tr_core::UnifiedRandom::new(seed);
+        let _ = witness.next_max(600);
+        let _ = witness.next_float();
+        let want_next = witness.next_max(1000);
+        let got_next = app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(1000);
+        assert_eq!(got_next, want_next, "exactly two draws consumed, in order");
+        // The day-rate divisor: dayRate 2 → num3 = 300. A seed whose first
+        // Next(300) == 0 fires; the SAME seed's Next(600) may differ — the
+        // divisor is load-bearing.
+        let mut seed300 = 0;
+        while tr_core::UnifiedRandom::new(seed300).next_max(300) != 0 {
+            seed300 += 1;
+        }
+        let mut app = rain_app();
+        app.rngs.reset(seed300);
+        let mut b = ItemDrop::new(205, 1, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(&mut app, &mut b, &w, true, 1.0, true, false, 2);
+        assert_eq!(b.kind, 206, "dayRate 2 → num3 300 fills on the 300-seed");
+        // A refused gate (no rain) consumes NO draws.
+        let mut app = rain_app();
+        app.rngs.reset(seed);
+        let mut b = ItemDrop::new(205, 1, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
+        let w = app.world.clone();
+        try_fill_bucket(&mut app, &mut b, &w, false, 1.0, true, false, 1);
+        assert_eq!(b.kind, 205);
+        let mut witness = tr_core::UnifiedRandom::new(seed);
+        let want = witness.next_max(1000);
+        let got = app.rngs.stream(crate::app::RngKey::UpdateItems).next_max(1000);
+        assert_eq!(got, want, "a refused gate draws nothing");
     }
 }
 
