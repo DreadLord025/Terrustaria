@@ -39627,3 +39627,59 @@ The f26 7d/7e/7f + f27 extra10 port slices claim 24 distinct ids
 twin-claimed) — 106 UNCLAIMED at the current tips (~7 port slices);
 their wire rounds (~4 batches) come next. The §2/§6 rows for those
 24 are stale until the next mechanical refresh.
+
+## W4-d44 FindFrame wire round 5 - the wave-B residual 294/296 + census refresh 5 (2026-11-21, code-only mode)
+
+**The last two stand-ins.** The refresh-4 "ZERO real wire work"
+verdict did NOT cover the wave-B module (`npc_findframe_b.rs`, on
+this branch since S1-D-3): NO cs_id mapper, NO hook on any pushed
+tip. The d38 RETIRE census named 294 AngryBonesBig / 296
+AngryBonesBigHelmet as the residual of its 7-town-stand-in gap list
+(5 of 7 hook-wired at refresh 3/4); its SEAL-RECEIPT (research/293
+§14, d38 `72b1092e7`) published the exact 3-hunk seed, executed here
+by the d44g-wire-final dispatch at **`f4a7074bc`**: the
+`find_frame_kind_b` in-module mapper {294,296} (289 EXCLUDED per the
+E3 dedupe — the d38 inline arm is the kept twin; the other 22 module
+kinds await their roster lanes), the `find_frame_wave_b` FOUR-field
+bridge (row/counter/sprite_dir/rotation both ways; vx/vy/facing/wet/
+ai[4] fed, NO ai_action — the module header's skip), and the cs_id
+hook at the END of the world-free chain (c → 5 → 6 → 7 → 7b → 7c →
+8 → wave-b). NO `find_frame_world` arm — the fall-through rides.
+
+**No cs_id hand rows** (the §14 answer): `NpcKind::AngryBonesBig`/
+`BigHelmet` do not exist on this tip; they arrive with the d38 merge
+where the S1-F-3 bestiary fallback resolves both through the d38
+ENTRIES rows (net_id 294/296, re-read at d38 `b888a9575`). The
+stand-in drops (`npc.rs:9514-9515`/`:9518-9519` on the d38 tip) +
+the FINAL-witness re-pin are the d38-MERGE edits — nothing to drop
+here (zero `NpcKind::AngryBonesBig*` hits in this branch's npc.rs,
+mechanically verified).
+
+**Faithfulness + the frame-count diff** (the verification batch
+`925423511`): the case labels `NPC.cs:68591/:68593`, the `:69647`
+air-pin-0 list carries BOTH, the idle row-0 else-branch
+`:69515-69519` (the 140/489 row-1 quirk excludes both), num57 = 0
+(neither `isLikeATownNPC`), the |vx|*2 THEN ++ accumulator + the >6
+stride + the wrap-to-row-2. The mechanical 697-slot
+`Main.cs:67082-67153` text-parse vs `NPC_FRAME_COUNT` = ZERO
+mismatches (294 = 16, 296 = 15). Every witness vector re-derived by
+a mechanical f32 Python replay of `humanoid_fighter_frame` (7/7
+match). 4 witnesses WRITTEN NOT RUN: the `f4a7074bc` residual-pair
+bridge + the batch's module-mapper exclusion sweep, the ALL_KINDS
+inertness sweep and the 23-id claim complement. Stream-inert (57
+hand rows + 241 net-id literals + 8 loot_db consts = ZERO hits; the
+fighter delegate draws no RNG — the town pose zones are the
+documented skip — and reads no world).
+
+**Census refresh 5** (research/68): 198 WIRED (+2). The re-probe at
+the IN-FLIGHT tips (f26 `a2e43ef77` adds 7g-7k claiming
+435/436/631/632/635/636/639-655/657-662; f27 `01888909a` adds
+extra11 435/436/550/552-563 [the DD2 fixes self-wired] + extra12
+551): 53 of the refresh-2 UNCLAIMED 130 are module-claimed, the
+remaining 77 ALL carry roster arms (38 d42 `adb304ab8` + 31 d43
+`31310b652` + 8 c4/e26/c8 per the d42 research/239 §3
+re-adjudication) — **ZERO true no-coverage ids**. The remaining port
+work is faithfulness adjudication (the 13 d43 row-0 stubs
+637/638/656/670/678-684 + the d42 arm-quality verdicts), not
+port-from-scratch. **No cargo/rustc/tests/rustfmt/graphify invoked**
+(code-only mode).
