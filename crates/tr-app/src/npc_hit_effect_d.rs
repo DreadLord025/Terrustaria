@@ -3186,6 +3186,60 @@ fn tax_collector_town_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87693
 }
 
+/// The 86 Unicorn death (`NPC.cs:87695-87716`, sites 455-461): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then SEVEN gores ALL at position —
+/// 101/102/103/103/104/104/105, scale 1f.
+fn unicorn_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87705-87708` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for t in [101, 102, 103, 103, 104, 104, 105] {
+        gore.new_gore(rng, world, pos, vel, t, 1.0); // :87709-87715
+    }
+}
+
+/// The 155 Wolf death (`NPC.cs:87717-87734`, sites 462-464): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 181/182/183 at position, scale
+/// 1f.
+fn wolf_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87727-87730` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 181, 1.0); // :87731
+    gore.new_gore(rng, world, pos, vel, 182, 1.0); // :87732
+    gore.new_gore(rng, world, pos, vel, 183, 1.0); // :87733
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3557,6 +3611,14 @@ pub fn hit_effect_d(
     // shimmer mid/legs swap).
     else if npc_type == 441 {
         tax_collector_town_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87695-87716` — the 86 Unicorn arm (sites 455-461).
+    else if npc_type == 86 {
+        unicorn_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87717-87734` — the 155 Wolf arm (sites 462-464).
+    else if npc_type == 155 {
+        wolf_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6270,6 +6332,42 @@ mod tests {
                 twin.peek(),
                 "tax collector shimmer={shimmer} mirrors the C# draws"
             );
+        }
+    }
+
+    /// `NPC.cs:87709-87715` — the Unicorn SEVEN all at position;
+    /// `:87731-87733` — the Wolf triple 181/182/183.
+    #[test]
+    fn w4_f5d_the_unicorn_seven_and_the_wolf_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 36.0);
+        for (kind, want) in [
+            (86, vec![101, 102, 103, 103, 104, 104, 105]),
+            (155, vec![181, 182, 183]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(491);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "kind {kind}");
+            for i in 0..want.len() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+            }
+            let mut twin = UnifiedRandom::new(491);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 40, 36);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
     }
 }
