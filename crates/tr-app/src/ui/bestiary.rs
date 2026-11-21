@@ -273,6 +273,96 @@ pub fn first_display_index(info_display_indices: &[Option<i32>]) -> Option<i32> 
     info_display_indices.iter().find_map(|x| *x) // `FirstOrDefault` (`:134`)
 }
 
+// --- the biome portrait backdrops (W4-e23 remainder) ----------------------------
+
+/// The world-evil preference rows (`BestiaryDatabaseNPCsPopulator.cs:634`/
+/// `:636`): the Desert Djinn 533 and the Tomb Crawler 529 wrap a
+/// `BestiaryPortraitBackgroundBasedOnWorldEvilProviderPreferenceInfoElement`
+/// (CorruptUndergroundDesert, CrimsonUndergroundDesert) instead of the plain
+/// preference wrap. `Matches` picks the corrupt provider when
+/// `!WorldGen.crimson`, the crimson one otherwise
+/// (`BestiaryPortraitBackgroundBasedOnWorldEvilProviderPreferenceInfoElement.cs:22-29`).
+/// The port persists no world-evil type (the `shop.rs`/`loot.rs` gap), so
+/// the pick reads the corrupt arm — `WorldGen.crimson == false`, the same
+/// default the fresh `Main` the C# samples carries.
+const WORLD_EVIL_PREFERENCE: &[(i32, u32, u32)] = &[
+    (533, 30, 35), // CorruptUndergroundDesert / CrimsonUndergroundDesert
+    (529, 30, 35),
+];
+
+/// The Moon Lord's own background provider
+/// (`MoonLordPortraitBackgroundProviderBestiaryInfoElement.cs:10-18`, added
+/// at `BestiaryDatabaseNPCsPopulator.cs:639`): `MapBG1` at `Color.Black`.
+/// It is a plain (non-preferred) provider appended last, so it supplies the
+/// portrait COLOR even when a preferred tag won the image
+/// (`NPCPortraitInfoElement.cs:71-75`).
+const MOON_LORD_NET_ID: i32 = 398;
+
+/// The portrait backdrop pick (`NPCPortraitInfoElement.ProvideUIElement`,
+/// `NPCPortraitInfoElement.cs:36-84`): the first PREFERENCE-matched provider
+/// with a background image wins the image (`:43-57`); failing that the first
+/// provider with one in entry order (`:58-70`). The portrait COLOR is the
+/// LAST provider (in entry order) that carries a `GetBackgroundColor`,
+/// regardless of which image won (`:71-75`) — White when none does.
+/// Returns `(sheet_name, tint)`; `None` when the entry draws no backdrop
+/// (the `Slot_Back` alone, the pre-remainder state).
+///
+/// The port's providers are the entry's tag rows (the generated
+/// `bestiary_tags` bg/bg_color data) plus the Moon Lord's own provider; the
+/// preference wraps are the `preferred` flags (and the two world-evil rows).
+/// The decorative overlays (`Visuals.*`) and the `SpawnConditionBestiaryOverlayInfoElement`
+/// rows carry no background image and are skipped here (the overlay draw is
+/// a separate, still-deferred layer — `UIBestiaryNPCEntryPortrait.cs:42-55`).
+pub fn portrait_backdrop(net_id: i32) -> Option<(&'static str, [u8; 4])> {
+    let tags = crate::bestiary_tags::entry_tags(net_id);
+    // The preference-matched tag ids, in entry order. A plain `preferred`
+    // row matches its own tag; a world-evil row matches the corrupt arm
+    // (the port's `WorldGen.crimson == false` default).
+    let evil = WORLD_EVIL_PREFERENCE.iter().find(|&&(id, _, _)| id == net_id);
+    let matched = |t: &crate::bestiary_tags::EntryTag| -> bool {
+        if let Some(&(_, corrupt, _crimson)) = evil {
+            // The world-evil wrap is a `preferred` row too; it matches only
+            // its corrupt provider tag.
+            t.preferred && t.tag == corrupt
+        } else {
+            t.preferred
+        }
+    };
+    // Pass 1: the first matched provider with an image (`:43-57`).
+    let mut image: Option<&'static str> = None;
+    for t in tags {
+        if matched(t) {
+            if let Some(bg) = crate::bestiary_tags::TAGS[t.tag as usize].bg {
+                image = Some(bg);
+                break;
+            }
+        }
+    }
+    let matched_won = image.is_some();
+    // Pass 2: every provider in entry order — the first image when no
+    // matched one won (`:67-70`), and the LAST background color (`:71-75`).
+    let mut color: Option<[u8; 4]> = None;
+    for t in tags {
+        let def = &crate::bestiary_tags::TAGS[t.tag as usize];
+        if let Some(bg) = def.bg {
+            if !matched_won && image.is_none() {
+                image = Some(bg);
+            }
+            if let Some(c) = def.bg_color {
+                color = Some(c);
+            }
+        }
+    }
+    // The Moon Lord's own provider (appended last, `:639`): MapBG1 + Black.
+    if net_id == MOON_LORD_NET_ID {
+        if !matched_won && image.is_none() {
+            image = Some("MapBG1");
+        }
+        color = Some([0, 0, 0, 255]); // `GetBackgroundColor` = Color.Black
+    }
+    image.map(|sheet| (sheet, color.unwrap_or([255, 255, 255, 255])))
+}
+
 /// `UIBestiaryEntryIcon`'s hover gate (`UIBestiaryEntryIcon.cs:38`, `:52`):
 /// `IsMouseHovering || ForceHover` — the button's `MouseOver` sets
 /// `ForceHover` on its icon (`UIBestiaryEntryButton.cs:158`/`:168`) because
@@ -2480,6 +2570,14 @@ fn draw_info_row(
             if let Some(back) = lookups.ui_bestiary_slot_back {
                 push_whole(r, lookups, &back, inner, [1.0; 4]);
             }
+            // The biome backdrop (`UIBestiaryNPCEntryPortrait.cs:30-41`):
+            // the preference-picked provider's image, `ScaleToFit` over the
+            // inner box, tinted by the portrait color. W4-e23 remainder.
+            if let Some((sheet_name, tint)) = portrait_backdrop(entry.net_id) {
+                if let Some(sheet) = lookups.map_bg_sheet(sheet_name) {
+                    push_whole(r, lookups, &sheet, inner, super::color::tint(tint));
+                }
+            }
             if state.known() {
                 draw_portrait(r, lookups, entry, inner, true);
             } else if let Some(locked) = lookups.ui_bestiary_locked {
@@ -3713,6 +3811,63 @@ mod tests {
         assert_eq!(jump.unwrap().1, None);
         // Off the bar: no press.
         assert_eq!(info_page_scrollbar_press(bar, 100.0, 1000.0, 0.0, Vec2::new(100.0, 300.0)), None);
+    }
+
+    // ---- W4-e23 remainder: the biome portrait backdrops. Written in
+    // code-only mode — NOT RUN here.
+
+    #[test]
+    fn the_backdrop_prefers_the_matched_provider() {
+        // `NPCPortraitInfoElement.cs:43-57`: the first preference-matched
+        // provider with an image wins. The Eater of Worlds head (6) carries
+        // TheCorruption (tag 26, MapBG6) plain + preferred and
+        // UndergroundCorruption (tag 27, MapBG23) plain — the preferred
+        // TheCorruption wins both image and color (200, 200, 200).
+        assert_eq!(portrait_backdrop(6), Some(("MapBG6", [200, 200, 200, 255])));
+    }
+
+    #[test]
+    fn the_backdrop_falls_back_to_the_first_image_in_entry_order() {
+        // `:58-70`: no matched image → the first provider with one. The
+        // Guide (22) carries only Surface (tag 0, MapBG1, no color) → White.
+        assert_eq!(portrait_backdrop(22), Some(("MapBG1", [255, 255, 255, 255])));
+        // The Demon Eye (2) carries only NightTime (tag 5, MapBG1, the
+        // (35, 40, 40) night tint).
+        assert_eq!(portrait_backdrop(2), Some(("MapBG1", [35, 40, 40, 255])));
+        // The Hornet (48) carries UndergroundMushroom (tag 25, MapBG21).
+        assert_eq!(portrait_backdrop(48), Some(("MapBG21", [255, 255, 255, 255])));
+    }
+
+    #[test]
+    fn the_world_evil_preference_picks_the_corrupt_arm() {
+        // `BestiaryPortraitBackgroundBasedOnWorldEvilProviderPreferenceInfoElement.cs:22-29`:
+        // the Desert Djinn (533) / Tomb Crawler (529) wrap the corrupt +
+        // crimson underground-desert providers; the port's
+        // `WorldGen.crimson == false` default picks the corrupt arm
+        // (tag 30, MapBG40) over the plain crimson row (tag 35, MapBG41).
+        assert_eq!(portrait_backdrop(533), Some(("MapBG40", [255, 255, 255, 255])));
+        assert_eq!(portrait_backdrop(529), Some(("MapBG40", [255, 255, 255, 255])));
+    }
+
+    #[test]
+    fn the_moon_lord_provider_paints_black() {
+        // `MoonLordPortraitBackgroundProviderBestiaryInfoElement.cs:10-18`
+        // (added at `BestiaryDatabaseNPCsPopulator.cs:639`): MapBG1 at
+        // Color.Black. The Moon Lord (398) carries no tag rows, so its own
+        // provider supplies both image and color.
+        assert_eq!(portrait_backdrop(398), Some(("MapBG1", [0, 0, 0, 255])));
+    }
+
+    #[test]
+    fn an_entry_without_providers_draws_no_backdrop() {
+        // An id the populator tags with no background provider (the Rain
+        // overlay element carries no image) — the pick is None and the
+        // portrait rests on Slot_Back alone. The Goldfish (55) carries
+        // Surface, so it DOES draw; a tagless id draws nothing.
+        assert_eq!(portrait_backdrop(55), Some(("MapBG1", [255, 255, 255, 255])));
+        // The Moon Lord's tagless roster neighbours: an id with no tag row
+        // and no own provider (e.g. 999, outside the catalog) → None.
+        assert_eq!(portrait_backdrop(999), None);
     }
 }
 

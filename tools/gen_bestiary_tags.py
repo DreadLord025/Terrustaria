@@ -45,6 +45,31 @@ for m in re.finditer(
     tags[f"{fam}.{name}"] = (key, int(frame), lineno(m.start()))
 assert len(tags) >= 60, f"tag catalog too small: {len(tags)}"
 
+# --- the portrait background providers (W4-e23 remainder) --------------------
+# `SpawnConditionBestiaryInfoElement`'s optional backgroundImagePath /
+# backgroundColor ctor args (SpawnConditionBestiaryInfoElement.cs:15-20):
+# the biome backdrop the info-page portrait draws
+# (UIBestiaryNPCEntryPortrait.cs:30-41). Overlay elements
+# (SpawnConditionBestiaryOverlayInfoElement) carry an OVERLAY path, not a
+# background — they are not background providers, so they stay None here.
+tag_bg = {}  # "Biomes.Surface" -> (path_or_None, color_or_None)
+for m in re.finditer(
+    r"(Biomes|Events|Invasions|Times)\.(\w+) = new (SpawnCondition\w+)\("
+    r"\"([^\"]+)\", (\d+)"
+    r"(?:, \"([^\"]+)\")?"
+    r"(?:, new Color\((\d+), (\d+), (\d+)\))?",
+    text,
+):
+    fam, name, cls, key, frame, path, cr, cg, cb = m.groups()
+    full = f"{fam}.{name}"
+    if cls != "SpawnConditionBestiaryInfoElement":
+        tag_bg[full] = (None, None)  # overlay elements: no background image
+        continue
+    # Strip the "Images/" prefix — the atlas sheet names are bare ("MapBG1").
+    sheet = path[len("Images/"):] if path else None
+    color = f"[{cr}, {cg}, {cb}, 255]" if cr is not None else None
+    tag_bg[full] = (sheet, color)
+
 # --- the filter order (GetCommonInfoElementsForFilters) ---------------------
 m = re.search(r"GetCommonInfoElementsForFilters\(\)\s*\{.*?return new List<IBestiaryInfoElement>\s*\{(.*?)\};", text, re.S)
 assert m, "filter list not found"
@@ -171,11 +196,19 @@ w("")
 w("/// One `SpawnConditionBestiaryInfoElement` tag")
 w("/// (`FilterProviderInfoElement.cs:24-29`): the language key + the")
 w("/// `Icon_Tags_Shadow` frame index (`frame % 16`, `frame / 16` on the")
-w("/// 16x5 sheet).")
+w("/// 16x5 sheet), plus the portrait background provider's image sheet +")
+w("/// tint (`SpawnConditionBestiaryInfoElement.cs:15-20` — the optional")
+w("/// `backgroundImagePath`/`backgroundColor` ctor args; overlay elements")
+w("/// carry no background). W4-e23 remainder: the biome portrait backdrops.")
 w("#[derive(Clone, Copy, Debug, PartialEq, Eq)]")
 w("pub struct TagDef {")
 w("    pub key: &'static str,")
 w("    pub frame: u32,")
+w("    /// `GetBackgroundImage`'s sheet name (the `Images/` prefix stripped),")
+w("    /// `None` when the tag draws no backdrop.")
+w("    pub bg: Option<&'static str>,")
+w("    /// `GetBackgroundColor`'s tint, `None` = `Color.White`.")
+w("    pub bg_color: Option<[u8; 4]>,")
 w("}")
 w("")
 w(f"/// The tag catalog in id order. Ids 0..{len(filter_order)-1} are the")
@@ -186,7 +219,10 @@ w("/// SlimeRain, Blizzard), ctor order.")
 w("pub const TAGS: &[TagDef] = &[")
 for t in tag_names:
     key, frame, ln = tags[t]
-    w(f'    TagDef {{ key: "{key}", frame: {frame} }}, // {t} (:{ln})')
+    bg, bg_color = tag_bg.get(t, (None, None))
+    bg_lit = f'Some("{bg}")' if bg else "None"
+    color_lit = f"Some({bg_color})" if bg_color else "None"
+    w(f'    TagDef {{ key: "{key}", frame: {frame}, bg: {bg_lit}, bg_color: {color_lit} }}, // {t} (:{ln})')
 w("];")
 w("")
 w(f"/// The filter-list length — `AvailableFilters` carries the three named")

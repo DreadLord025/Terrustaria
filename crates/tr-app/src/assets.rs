@@ -1031,6 +1031,36 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "MapBG19", // 18 Spider wall (WallID 62/263)
         "MapBG32", // 31 rock layer
         "MapBG33", // 32 space
+        // W4-e23 remainder: the bestiary portrait backdrops — the
+        // `CommonTags.SpawnConditions` `backgroundImagePath` rows the map's
+        // `map_bg_index` never selects (`BestiaryDatabaseNPCsPopulator.cs`
+        // :32-246, drawn by `UIBestiaryNPCEntryPortrait.cs:30-41`).
+        "MapBG5",  // dungeon
+        "MapBG6",  // corruption
+        "MapBG7",  // crimson
+        "MapBG8",  // hallow
+        "MapBG9",  // jungle
+        "MapBG13", // underground jungle
+        "MapBG20", // surface mushroom
+        "MapBG21", // underground mushroom
+        "MapBG22", // underground hallow
+        "MapBG23", // underground corruption
+        "MapBG24", // underground crimson
+        "MapBG26", // blood moon
+        "MapBG27", // graveyard
+        "MapBG28", // nebula pillar
+        "MapBG29", // solar pillar
+        "MapBG30", // vortex pillar
+        "MapBG31", // stardust pillar
+        "MapBG34", // corrupt ice
+        "MapBG35", // crimson ice
+        "MapBG36", // hallow ice
+        "MapBG37", // corrupt desert
+        "MapBG38", // crimson desert
+        "MapBG39", // hallow desert
+        "MapBG40", // corrupt underground desert
+        "MapBG41", // crimson underground desert
+        "MapBG42", // hallow underground desert
         // P5 settings sliders (`AssetInitializer.cs:345-349`): the
         // `IngameOptions.DrawValueBar` chrome and the `Main.DrawMenu` HSL colour
         // sliders. `ColorHighlight` is `Images/UI/Slider_Highlight`, NOT
@@ -2158,6 +2188,12 @@ pub struct Lookups {
     /// of `NPCID.Sets.NPCBestiaryDrawOffset` (`UnlockableNPCEntryIcon.cs:74-81`),
     /// keyed by vanilla net id (`UI/Bestiary/NPCs/NPC_<id>`).
     pub bestiary_custom_portraits: std::collections::HashMap<i32, tr_render::SheetRect>,
+    /// W4-e23 remainder: the biome portrait backdrops — the `MapBG*` sheets
+    /// the `CommonTags.SpawnConditions` background providers reference
+    /// (`BestiaryDatabaseNPCsPopulator.cs:32-246`), keyed by bare sheet name
+    /// (`MapBG1` etc.). The info-page portrait draws the preference-picked
+    /// one (`UIBestiaryNPCEntryPortrait.cs:30-41`).
+    pub bestiary_backdrops: std::collections::HashMap<&'static str, tr_render::SheetRect>,
     /// The info page's stat icons (`UIBestiaryInfoItemLine`'s
     /// `Stat_HP`/`Stat_Attack`/`Stat_Defense`/`Stat_Knockback`/
     /// `Stat_Copper` sheets).
@@ -2337,6 +2373,12 @@ impl Lookups {
     pub fn bestiary_sheet_index(&self, net_id: u16) -> Option<usize> {
         let slot = BESTIARY_NPC_SHEET_IDS.iter().position(|&id| id == net_id)?;
         self.bestiary_npc_sheets.get(slot).and_then(|s| s.as_ref().map(|_| slot))
+    }
+
+    /// The biome portrait backdrop sheet for a bare `MapBG*` name (the
+    /// `portrait_backdrop` pick's output). W4-e23 remainder.
+    pub fn map_bg_sheet(&self, name: &str) -> Option<&tr_render::SheetRect> {
+        self.bestiary_backdrops.get(name)
     }
 
     pub fn build(
@@ -2532,6 +2574,12 @@ impl Lookups {
                     .map(|s| (id, s))
             })
             .collect(),
+            bestiary_backdrops: crate::bestiary_tags::TAGS
+                .iter()
+                .filter_map(|t| t.bg)
+                .chain(std::iter::once("MapBG1")) // the Moon Lord provider
+                .filter_map(|name| atlas.sheet(name).copied().map(|s| (name, s)))
+                .collect(),
             ui_bestiary_stat_hp: atlas.sheet("UI/Bestiary/Stat_HP").copied(),
             ui_bestiary_stat_attack: atlas.sheet("UI/Bestiary/Stat_Attack").copied(),
             ui_bestiary_stat_defense: atlas.sheet("UI/Bestiary/Stat_Defense").copied(),
