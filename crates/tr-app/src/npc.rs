@@ -19877,8 +19877,13 @@ mod s1_d_3_moonlord_rng_witnesses {
 
     /// W4-f4 — the core's FindFrame open burst (`NPC.cs:71935-71939`,
     /// site 71938): 50× type-209 over the full box at the defaults,
-    /// ZERO explicit draws; fires once (the row leaves 0), the 30-tick
-    /// cycle then runs; `ai[0] <= 0` holds row 0 and draws nothing.
+    /// ZERO explicit draws. The vanilla quirk: the row recompute
+    /// (`frameCounter % 30 / 6`) reads 0 for frameCounter 1..5, so the
+    /// `frame.Y == 0` gate RE-FIRES the burst on those ticks — six
+    /// bursts before frameCounter reaches 6 (row 1) and the gate closes.
+    /// This witness parks frameCounter at 5 so ONE burst lands row 1
+    /// and the next tick is silent (isolating a single 50-dust ledger);
+    /// `ai[0] <= 0` holds row 0 and draws nothing.
     #[test]
     fn w4_f4_the_core_open_burst_mirrors_site_71938() {
         let w = world();
@@ -19886,6 +19891,8 @@ mod s1_d_3_moonlord_rng_witnesses {
         let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
         core.hp = core.max_hp;
         core.ai[0] = 1.0; // the vulnerable phase — the open arm
+        core.frame = 0;
+        core.frame_counter = 5.0; // one burst -> 6 -> row 1 (the gate closes)
         let mut rng = UnifiedRandom::new(3);
         let mut witness = rng.clone();
         let mut dust = tr_core::particles::DustPool::new();
@@ -19900,6 +19907,7 @@ mod s1_d_3_moonlord_rng_witnesses {
         }
         core.find_frame_dust(&w, &mut rng, &mut dust, &dctx);
         assert_eq!(rng, witness, "the 50x6 internals, zero explicit");
+        assert_eq!(core.frame, 1, "frameCounter 6 -> row 1");
         let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
         assert_eq!(act.len(), 50, "the 50-dust burst");
         for (j, &i) in act.iter().enumerate() {
@@ -19910,16 +19918,45 @@ mod s1_d_3_moonlord_rng_witnesses {
             assert_eq!(d.velocity, m.velocity);
             assert_eq!(d.scale, m.scale);
         }
-        // The next tick: the row left 0 — no second burst.
+        // The next tick: row 1 — the gate closed, no second burst.
         let before = rng.peek();
         core.find_frame_dust(&w, &mut rng, &mut dust, &dctx);
-        assert_eq!(rng.peek(), before, "the burst fires once per open");
+        assert_eq!(rng.peek(), before, "the row-1 tick draws nothing");
         // ai[0] <= 0: row 0, no draws.
         core.ai[0] = 0.0;
         core.frame = 0;
         core.find_frame_dust(&w, &mut rng, &mut dust, &dctx);
         assert_eq!(rng.peek(), before, "the closed core draws nothing");
         assert_eq!(core.frame, 0);
+    }
+
+    /// W4-f4 — the case-398 re-fire quirk (`NPC.cs:71929-71947`): from a
+    /// fresh open (frameCounter 0) the burst fires SIX times — the row
+    /// recompute reads 0 for frameCounter 1..5, so the `frame.Y == 0`
+    /// gate re-opens each of those ticks; frameCounter 6 lands row 1 and
+    /// the gate closes. 6×50 = 300 dust, then silence.
+    #[test]
+    fn w4_f4_the_core_open_burst_refires_six_times() {
+        let w = world();
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 1.0;
+        core.frame = 0;
+        core.frame_counter = 0.0;
+        let mut rng = UnifiedRandom::new(3);
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut bursts = 0;
+        for _ in 0..8 {
+            let before = (0..6000).filter(|&i| dust.slot(i).active).count();
+            core.find_frame_dust(&w, &mut rng, &mut dust, &dctx);
+            let after = (0..6000).filter(|&i| dust.slot(i).active).count();
+            if after - before == 50 {
+                bursts += 1;
+            }
+        }
+        assert_eq!(bursts, 6, "the row-0 recompute re-fires the burst six times");
+        assert_eq!(core.frame_counter, 8.0, "the counter kept climbing past 6");
     }
 }
 
