@@ -406,6 +406,20 @@ const CONVERSION_NEW_WALLS: [[u16; 10]; 4] = [
 ];
 /// `TileID.Sets.SpreadsHallow` (`TileID.cs:584`): the hallow-source tiles.
 const SPREADS_HALLOW: [u16; 10] = [109, 492, 117, 116, 402, 403, 164, 115, 110, 113];
+
+/// W4-f25 C4 seam: the type-7 purify cell's `:55465` dirt arm reads the
+/// HardenedSand/Snow wall unions the shared `convert_wall_by_case(7)` ladder
+/// does not carry — the spray cell pre-gates them through these membership
+/// tests (order-equivalent: both unions are disjoint from the natural
+/// Stone/Ice/Sandstone arm, the 262/274 switch and the NewWall sets).
+pub(crate) fn conversion_hardened_sand_walls_contains(wall: u16) -> bool {
+    CONVERSION_HARDENED_SAND_WALLS.contains(&wall)
+}
+
+/// W4-f25 C4 seam — the Snow half of the same `:55465` union.
+pub(crate) fn conversion_snow_walls_contains(wall: u16) -> bool {
+    CONVERSION_SNOW_WALLS.contains(&wall)
+}
 /// `TileID.Sets.SpreadUnderground` (`TileID.cs:622`) — the underground tiles
 /// the growth pass runs the grass arm over.
 pub(super) const SPREAD_UNDERGROUND: [u16; 9] = [23, 661, 109, 199, 662, 60, 70, 633, 226];

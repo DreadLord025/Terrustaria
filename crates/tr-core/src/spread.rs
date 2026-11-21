@@ -773,6 +773,183 @@ pub fn convert_hallow_cell(world: &mut World, x: i32, y: i32) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the spray cells (W4-f25 helper C4, conversion types
+// 5/6/7: desertify / snow / purify). The consumers: the aiStyle-31
+// Clentaminator's 1015 Sand / 1016 Snow / 1017 Purple Solution sprays
+// (`Projectile.cs:26813-26823`, the d4 dispatch). UNWIRED.
+
+/// `WorldGen.Convert(i, j, conversionType, size)` for the spray types 5/6/7
+/// (`WorldGen.cs:55067-55083` walk): the square walk with the Manhattan
+/// `< 6` gate, each cell through [`convert_spray_cell`].
+pub fn convert_sized_spray(world: &mut World, i: i32, j: i32, conversion_type: u8, size: i32) {
+    if !matches!(conversion_type, 5 | 6 | 7) {
+        return;
+    }
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_spray_cell(world, k, l, conversion_type);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-5/6/7 cell arms (`WorldGen.cs:55363-55408` desertify,
+/// `:55409-55445` snow, `:55446-55526` purify): the wall chain, then the
+/// torch / tile ladder in source order.
+///
+/// Deviations (the `convert_cleanse_cell` / d1 precedent): the wall halves
+/// ride the shared `convert_wall_by_case` (types 5/6 verbatim; type 7's
+/// `:55465` dirt arm there carries only the Dirt set — the HardenedSand/Snow
+/// union half is pre-gated here, order-equivalent: the union is disjoint from
+/// the natural Stone/Ice/Sandstone arm, the 262/274 switch and the NewWall
+/// sets). The `RainbowSandAndBlackSandWalls` paint arms are the documented
+/// skip; the re-frame is the `reframe_area` superset.
+pub fn convert_spray_cell(world: &mut World, x: i32, y: i32, conversion_type: u8) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `:55087-55097` — the empty cell converts nothing.
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half. Type 7's `:55465` union pre-gate (see the fn doc).
+    let new_wall = if conversion_type == 7
+        && (crate::growth::conversion_hardened_sand_walls_contains(wall)
+            || crate::growth::conversion_snow_walls_contains(wall))
+        && wall != 2
+    {
+        Some(2u16)
+    } else {
+        crate::growth::convert_wall_by_case(wall, conversion_type, y, world.world_surface, None)
+    };
+    if let Some(new_wall) = new_wall {
+        // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
+        if wall != 0 && wall != new_wall {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.wall = new_wall;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+    // The torch arm (`:55379`/`:55425`/`:55493`): the default style set,
+    // styles 16 / 9 / 0 per type.
+    if active && kind == 4 && torch_convertible_default(t.frame_y as i32 / 22) {
+        let style = match conversion_type {
+            5 => 16i16,
+            6 => 9,
+            _ => 0,
+        };
+        let cur = t.frame_y as i32 / 22;
+        if cur != style as i32 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_y = style * 22;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+        return;
+    }
+    // The tile ladders in source order. `Conversion.Dirt` = {0}
+    // (`TileID.cs:88`), `Conversion.Snow` = {147} (`:89`).
+    let dirt = kind == 0;
+    let snow = CONV_SNOW.contains(&kind);
+    let moss_or = |k: u16| crate::tiledata::TILE_MOSS.has(k);
+    let new_kind: Option<u16> = match conversion_type {
+        // Desertify (`:55383-55399`): grass/sand/snow/dirt → 53 (397 over a
+        // hardening floor), hardened sand → 397, moss/stone/ice/sandstone →
+        // 396.
+        5 => {
+            if (CONV_GRASS.contains(&kind)
+                || crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                || snow
+                || dirt)
+                && kind != 53
+            {
+                Some(if block_below_makes_sand_convert_into_hardened_sand(world, x, y) {
+                    397
+                } else {
+                    53
+                })
+            } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind) && kind != 397 {
+                Some(397)
+            } else if (moss_or(kind)
+                || crate::tiledata::SET_CONVERSION_STONE.has(kind)
+                || crate::tiledata::SET_ICE.has(kind)
+                || crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind))
+                && kind != 396
+            {
+                Some(396)
+            } else {
+                None
+            }
+        }
+        // Snow (`:55429-55436`): grass/sand/hardened/snow/dirt → 147,
+        // moss/stone/ice/sandstone → 161.
+        6 => {
+            if (CONV_GRASS.contains(&kind)
+                || crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                || crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind)
+                || snow
+                || dirt)
+                && kind != 147
+            {
+                Some(147)
+            } else if (moss_or(kind)
+                || crate::tiledata::SET_CONVERSION_STONE.has(kind)
+                || crate::tiledata::SET_ICE.has(kind)
+                || crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind))
+                && kind != 161
+            {
+                Some(161)
+            } else {
+                None
+            }
+        }
+        // Purify (`:55497-55517`): stone/ice/sandstone → 1 (NO moss arm),
+        // golf grass → 477, grass → 2, sand/hardened/snow/dirt → 0 (2 when
+        // exposed to air).
+        _ => {
+            if (crate::tiledata::SET_CONVERSION_STONE.has(kind)
+                || crate::tiledata::SET_ICE.has(kind)
+                || crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind))
+                && kind != 1
+            {
+                Some(1)
+            } else if crate::tiledata::SET_GOLF_GRASS.has(kind) && kind != 477 {
+                Some(477)
+            } else if CONV_GRASS.contains(&kind) && kind != 2 && kind != 477 {
+                Some(2)
+            } else if (crate::tiledata::SET_CONVERSION_SAND.has(kind)
+                || crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind)
+                || snow
+                || dirt)
+                && kind != 0
+            {
+                Some(if tile_is_exposed_to_air(world, x, y) { 2 } else { 0 })
+            } else {
+                None
+            }
+        }
+    };
+    if let Some(new_kind) = new_kind {
+        // `Convert_ActuallyConvertTile` (`:56312-56327`).
+        if active && kind != new_kind {
+            try_kill_invalid_tree_above(world, x, y, new_kind);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = new_kind;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    } else if CONV_THORN.contains(&kind) && kind != 69 {
+        // `:55400-55407`/`:55437-55444`/`:55518-55525` — the thorn kill
+        // (the 69 corrupt-thorn exemption is the C#'s own; the netMode arm
+        // is MP-only).
+        let _ = crate::edit::kill_tile(world, x, y, false);
+    }
+}
+
 /// `GERunner`'s wall arms (`:76244-76260`): the sandstone wall 187 → the
 /// hallowed sandstone wall 222; the ebonstone/crimstone walls 3/83 → the
 /// hallowed stone wall 28.
@@ -1465,5 +1642,176 @@ mod tests {
         assert_eq!(w.tile(100, 197).unwrap().kind, 109, "Manhattan 3");
         assert_eq!(w.tile(97, 197).unwrap().kind, 2, "Manhattan 6 skips");
         assert_eq!(w.tile(103, 203).unwrap().kind, 2, "the far corner skips");
+    }
+
+    // W4-f25 helper C4 — the Convert spray cells, types 5/6/7
+    // (`WorldGen.cs:55363-55526`). WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c4_the_desertify_ladder_and_the_hardening_floor() {
+        let mut w = World::new("t".into(), 600, 400);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let idx = w.index(x, y);
+            w.tiles[idx] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        };
+        // Grass over OPEN AIR below → hardened 397 (`:55386`).
+        put(&mut w, 100, 200, 2);
+        convert_spray_cell(&mut w, 100, 200, 5);
+        assert_eq!(w.tile(100, 200).unwrap().kind, 397);
+        // Grass over solid stone below → loose sand 53.
+        put(&mut w, 101, 200, 2);
+        put(&mut w, 101, 201, 1);
+        convert_spray_cell(&mut w, 101, 200, 5);
+        assert_eq!(w.tile(101, 200).unwrap().kind, 53);
+        // The already-sand cell stays (`type != 53` gate); hardened → 397
+        // stays; stone/ice/sandstone/moss → 396.
+        for (x, src, dst) in [
+            (102i32, 53u16, 53u16),
+            (103, 398, 397),
+            (104, 1, 396),
+            (105, 161, 396),
+            (106, 396, 396),
+            (107, 179, 396),
+            (108, 147, 397), // snow over air hardens too (the union arm)
+        ] {
+            put(&mut w, x, 200, src);
+            convert_spray_cell(&mut w, x, 200, 5);
+            assert_eq!(w.tile(x, 200).unwrap().kind, dst, "{src} desertify");
+        }
+        // The wall ladder (`:55366-55373`): stone-side → 187, dirt-side → 216.
+        for (x, wall, want) in [(120i32, 1u16, 187u16), (121, 2, 216)] {
+            put(&mut w, x, 200, 0); // an inactive-kind tile: dirt 0 active
+            w.tile_mut(x, 200).unwrap().wall = wall;
+            convert_spray_cell(&mut w, x, 200, 5);
+            assert_eq!(w.tile(x, 200).unwrap().wall, want, "wall {wall}");
+        }
+    }
+
+    #[test]
+    fn w4_f25_c4_the_snow_ladder() {
+        let mut w = World::new("t".into(), 600, 400);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let idx = w.index(x, y);
+            w.tiles[idx] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        };
+        for (x, src, dst) in [
+            (100i32, 2u16, 147u16),
+            (101, 53, 147),
+            (102, 397, 147), // hardened sand rides the FIRST union
+            (103, 147, 147), // already snow stays
+            (104, 0, 147),   // dirt 0 is in the union
+            (105, 1, 161),
+            (106, 161, 161),
+            (107, 396, 161),
+            (108, 182, 161), // moss → ice
+        ] {
+            put(&mut w, x, 200, src);
+            convert_spray_cell(&mut w, x, 200, 6);
+            assert_eq!(w.tile(x, 200).unwrap().kind, dst, "{src} snow");
+        }
+        // The wall ladder (`:55412-55419`): stone-side → 71, dirt-side → 40.
+        put(&mut w, 120, 200, 1);
+        w.tile_mut(120, 200).unwrap().wall = 1;
+        convert_spray_cell(&mut w, 120, 200, 6);
+        assert_eq!(w.tile(120, 200).unwrap().wall, 71);
+        assert_eq!(w.tile(120, 200).unwrap().kind, 161);
+    }
+
+    #[test]
+    fn w4_f25_c4_the_purify_ladder_and_the_air_exposure() {
+        let mut w = World::new("t".into(), 600, 400);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let idx = w.index(x, y);
+            w.tiles[idx] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        };
+        // Stone/ice/sandstone → 1; NO moss arm (the moss 179 stays).
+        for (x, src, dst) in [
+            (100i32, 25u16, 1u16),
+            (101, 163, 1),
+            (102, 400, 1),
+            (103, 179, 179),
+            (104, 492, 477), // golf grass first
+            (105, 23, 2),
+            (106, 199, 2),
+        ] {
+            put(&mut w, x, 200, src);
+            convert_spray_cell(&mut w, x, 200, 7);
+            assert_eq!(w.tile(x, 200).unwrap().kind, dst, "{src} purify");
+        }
+        // Sand in a sealed solid box → dirt 0 (`TileIsExposedToAir` false).
+        for x in 109..=111 {
+            for y in 199..=201 {
+                put(&mut w, x, y, 1);
+            }
+        }
+        put(&mut w, 110, 200, 112);
+        convert_spray_cell(&mut w, 110, 200, 7);
+        assert_eq!(w.tile(110, 200).unwrap().kind, 0, "the sealed sand → dirt");
+        // Sand with an open neighbour → grass 2.
+        put(&mut w, 120, 200, 112);
+        convert_spray_cell(&mut w, 120, 200, 7);
+        assert_eq!(w.tile(120, 200).unwrap().kind, 2, "the exposed sand → grass");
+        // The thorn kill with the 69 exemption (`:55518`).
+        put(&mut w, 130, 200, 32);
+        convert_spray_cell(&mut w, 130, 200, 7);
+        assert!(!w.tile(130, 200).unwrap().active(), "the thorn dies");
+        put(&mut w, 131, 200, 69);
+        convert_spray_cell(&mut w, 131, 200, 7);
+        assert!(w.tile(131, 200).unwrap().active(), "the 69 corrupt thorn stays");
+        // The `:55465` union pre-gate: a hardened-sand wall 216 → 2.
+        put(&mut w, 140, 200, 1);
+        w.tile_mut(140, 200).unwrap().wall = 216;
+        convert_spray_cell(&mut w, 140, 200, 7);
+        assert_eq!(w.tile(140, 200).unwrap().wall, 2, "the hardened wall purifies");
+        // The natural arm: a stone wall 1 → 349 (`:55450`).
+        put(&mut w, 141, 200, 1);
+        w.tile_mut(141, 200).unwrap().wall = 1;
+        convert_spray_cell(&mut w, 141, 200, 7);
+        assert_eq!(w.tile(141, 200).unwrap().wall, 349);
+    }
+
+    #[test]
+    fn w4_f25_c4_the_spray_torch_styles_and_the_walk_gate() {
+        let mut w = World::new("t".into(), 600, 400);
+        for (x, ty, want) in [(100i32, 5u8, 16i16), (101, 6, 9), (102, 7, 0)] {
+            let idx = w.index(x, 200);
+            w.tiles[idx] = crate::tile::Tile {
+                kind: 4,
+                frame_y: 18 * 22,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+            convert_spray_cell(&mut w, x, 200, ty);
+            assert_eq!(w.tile(x, 200).unwrap().frame_y, want * 22, "type {ty}");
+        }
+        // The sized walk's Manhattan gate + the type filter.
+        for x in 197..=203 {
+            for y in 197..=203 {
+                let idx = w.index(x, y);
+                w.tiles[idx] = crate::tile::Tile {
+                    kind: 2,
+                    ..Default::default()
+                };
+                w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        convert_sized_spray(&mut w, 200, 200, 6, 3);
+        assert_eq!(w.tile(200, 197).unwrap().kind, 147, "Manhattan 3");
+        assert_eq!(w.tile(197, 197).unwrap().kind, 2, "Manhattan 6 skips");
+        // An unported type is a no-op, not a mis-conversion.
+        convert_sized_spray(&mut w, 200, 200, 9, 0);
+        assert_eq!(w.tile(200, 200).unwrap().kind, 147);
     }
 }
