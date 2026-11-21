@@ -20092,6 +20092,21 @@ impl ProjectilePool {
                 if self.slots[i].kind == 932 {
                     crate::projectile_ai_misc::fairy_queen_death_draws(rng);
                 }
+                // W4-d8 DOC-SWEEP (2) — `Kill()`'s Bubble-family pop
+                // (`Projectile.cs:72849-72873` the 405 Flairon bubble,
+                // `:72919-72943` the 410 Bubble Gun bubble): the Item54
+                // cue + the dust-212 ring's hue-draw census. The C# body
+                // order puts both arms ABOVE the 444 Xenopopper arm
+                // (`:73398`) below; the kinds are disjoint, so the order
+                // between the families is unobservable. The cue intent
+                // lands after the sub-step drain, so the hook forwards it
+                // into the pool queue here (the golf strike-cue pattern).
+                if matches!(self.slots[i].kind, FLAIRON_BUBBLE | BUBBLE) {
+                    crate::projectile_ai_misc::bubble_pop_kill(&mut self.slots[i], rng);
+                    if let Some(req) = self.slots[i].wants_sound.take() {
+                        self.pending_proj_sounds.push(req);
+                    }
+                }
                 self.celeb2_death(
                     i,
                     world,

@@ -63,7 +63,8 @@ use tr_core::loot::DropRng;
 use crate::npc::Npc;
 use crate::projectile::{
     Projectile, can_hit, chaseable, chaseable_held, get_lerp_value, rotate, safe_normalize,
-    DRILL_MOUNT_CROSSHAIR, SCUTLIX_LASER_CROSSHAIR, SCUTLIX_LASER_FRIENDLY,
+    BUBBLE, DRILL_MOUNT_CROSSHAIR, FLAIRON_BUBBLE, SCUTLIX_LASER_CROSSHAIR,
+    SCUTLIX_LASER_FRIENDLY,
 };
 
 /// `AI()`'s aiStyle-31 arm (`Projectile.cs:26786-26886`) — the Clentaminator
@@ -456,6 +457,35 @@ pub(crate) fn fairy_queen_death_draws(rng: &mut dyn DropRng) {
             let _ = rng.next_float();
             let _ = rng.next_float();
         }
+    }
+}
+
+/// The Bubble family's `Kill()` pop (`Projectile.cs:72849-72873` the
+/// Flairon bubble 405, `:72919-72943` the Bubble Gun's bubble 410): the
+/// `SoundID.Item54` pop at `base.position` (the legacy style (2, 54),
+/// `SoundID.cs:1437`), then the dust-212 ring census. W4-d8 DOC-SWEEP (2):
+/// the 405 arm is the d7 Flairon lane's pop (the same cue + the 20-dust
+/// ring); the 410 arm is this lane's — 10 dusts on the `(int)(10f * ai[1])`
+/// box (`:72925`), the `num294 < 30` velocity arm ALWAYS taken (the loop
+/// caps at 10, so the `Next(45, 91)` else at `:72936` is dead code), one
+/// `NextDouble` colour-hue draw per dust (`:72938`). The dust BODIES and
+/// the `Dust.NewDust` internals go with the dust pool (the module's RNG
+/// note); the cue rides the slot's `wants_sound` intent (the S1-E-21h
+/// pattern — the death hook runs after the sub-step drain, so the pool
+/// forwards it at the hook itself).
+pub(crate) fn bubble_pop_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
+    let count = match p.kind {
+        FLAIRON_BUBBLE => 20, // `:72853` — the fixed 10-px ring box
+        BUBBLE => 10,         // `:72923` — the ai[1]-scaled ring box
+        _ => return,
+    };
+    // `:72851`/`:72921` — `SoundEngine.PlaySound(SoundID.Item54,
+    // base.position)`: the legacy (2, 54) at the slot's top-left.
+    p.wants_sound = Some((2, 54, p.pos.x, p.pos.y, 0.0));
+    for _ in 0..count {
+        // `:72868`/`:72938` — the hslToRgb hue draw (0.4 + NextDouble *
+        // 0.2); the colour body is the dust layer's.
+        let _ = rng.next_double();
     }
 }
 
@@ -1812,5 +1842,40 @@ mod tests {
         ai_mount_crosshair(&mut s, 5, None, Some(&mut pl), 0);
         assert!(s.active, "the remote follow never releases");
         assert_eq!(s.pos, Vec2::new(1050.0, 560.0), "pl.pos + ai (`:30656-30657`)");
+    }
+
+    /// W4-d8 DOC-SWEEP (2) — the Bubble family's `Kill()` pop
+    /// (`:72849-72873` the 405, `:72919-72943` the 410): the Item54 cue
+    /// (2, 54) at the slot position, then the ring's per-dust hue draw —
+    /// 20 for the Flairon bubble, 10 for the Bubble Gun's. The
+    /// `num < 30` velocity arm is always taken (both loops cap below 30),
+    /// so NO `Next(45, 91)` range draw ever fires.
+    #[test]
+    fn w4_d8_the_bubble_pop_cue_and_hue_census() {
+        // The 410: 10 hue doubles, the cue at the top-left position.
+        let mut p = proj(BUBBLE);
+        p.pos = Vec2::new(300.0, 200.0);
+        let mut rng = census();
+        bubble_pop_kill(&mut p, &mut rng);
+        assert_eq!(p.wants_sound, Some((2, 54, 300.0, 200.0, 0.0)),
+            "the Item54 pop (`:72921`, SoundID.cs:1437)");
+        assert_eq!(rng.doubles, 10, "the 410's ten hue draws (`:72923/72938`)");
+        assert!(rng.ranges.is_empty(), "the Next(45,91) else is dead (`:72930`)");
+        assert!(rng.floats == 0, "no float draws in the pop");
+        // The 405 (the d7 Flairon lane's twin arm): 20 hue doubles.
+        let mut q = proj(FLAIRON_BUBBLE);
+        q.pos = Vec2::new(400.0, 100.0);
+        let mut rng2 = census();
+        bubble_pop_kill(&mut q, &mut rng2);
+        assert_eq!(q.wants_sound, Some((2, 54, 400.0, 100.0, 0.0)),
+            "the 405's Item54 pop (`:72851`)");
+        assert_eq!(rng2.doubles, 20, "the 405's twenty hue draws (`:72853/72868`)");
+        assert!(rng2.ranges.is_empty(), "the 405's else is dead too (`:72860`)");
+        // A non-bubble kind: no cue, no draws.
+        let mut r = proj(SCUTLIX_LASER_FRIENDLY);
+        let mut rng3 = census();
+        bubble_pop_kill(&mut r, &mut rng3);
+        assert_eq!(r.wants_sound, None);
+        assert_eq!(rng3.doubles, 0);
     }
 }
