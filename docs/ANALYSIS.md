@@ -39476,6 +39476,45 @@ Witnesses: the 167/168/170 counts/bands, the 169 spoke-count formula, the
 415/416/418 counts, the 417 150-count/bands + determinism, the 1024 colour,
 the 873 centre/scale bands — WRITTEN NOT RUN.
 
+### Batch 12 (10 kinds, the spoke/queen-slime/sparkle/terraspark RINGS)
+
+659 (the Spirit Flame ring, gated ai[0]>=0: resize 80×80 centred, 30×
+dust-27 scale 2+NextFloat×0.5 noGravity — first 15 the RING at Centre vel =
+UnitY.RotatedBy((i+1)/15×τ)×(5+NextFloat×1.5) fadeIn 1.5+NextFloat×0.5,
+last 15 scatter UnitY.RotatedByRandom(π)×NextFloat×w/3 fadeIn 0.5+NextFloat
+×0.5 vel×2; + 10× dust-31 scatter UnitX.RotatedByRandom(π).RotatedBy(vel
+rot)×w/3 fadeIn 0.5+NextFloat×0.5 noGravity vel×1.5), 1012 (the First
+Fractal: 40× UnitY.RotatedBy(i×τ)×(2+NextFloat×0.5)+vel×NextFloat spoke,
+Next(3) gate 0 → dust-284 Direct colour Next(3) 3-way scale NextFloat+1
+position−=vel fadeIn 1, else spoke×0.3 → dust-138 Direct scale NextFloat×
+0.3+0.6 position−=vel), 920 (6× dust-4 box 4×4 pos+Size×NextVector2Square
+spoke UnitY.RotatedBy(i×τ+NextFloat×τ×0.5)×(2+NextFloat×0.5) alpha 80
+(78,136,255,150) scale 1.5 noGravity), 921 (12× dust-243 box 6×6 the 920
+shape speed 3+NextFloat×0.5), 926 (22× dust-31 pos−(8,8) box (w+16)×(h+16)
+the 921 spoke alpha 40 QueenSlime_GetDustColor scale 1.5 noGravity), 937
+(12× the 926 shape), 818 (the Stellar Tune: TWO f32-step rings num+=0.34,
+dust-278 Perfect pos+Size×NextVector2Square spoke UnitY.RotatedBy(num×τ+
+NextFloat×τ×0.5)×(2+NextFloat×0.5)/(1+NextFloat×0.5) alpha 150 Lerp(White,
+Gold/OurFavoriteColor,NextFloat) scale 0.4/0.7 noGravity), 856 (the Sparkle
+Guitar: 6× dust-58 alpha 150 scale 0.8 + TWO num+=0.34 rings dust-278
+Perfect at Centre spoke×(4+NextFloat×2)/(2+NextFloat×1) alpha 150 Lerp
+(White,HotPink/Orange,NextFloat×0.5+0.5) noGravity), 728 (the Star Veil: 7×
+dust-58 speed vel×0.1 alpha 150 scale 0.8 + num+=0.125 ring dust-278 Perfect
+spoke×(4+NextFloat×4) CornflowerBlue + num+=0.25 ring spoke×(2+NextFloat×3)
+Gold alpha 150 noGravity), 985 (the Terraspark fan, gated localAI[1]!=1:
+THREE passes 20/10/10 dust-107 Perfect, NextFloatDirection → 1−|dir|, angle
+= rot+dir×(π/2)×0.9, pos = Center+angle vec×Remap(NextFloat,0,1,rmin,rmax)×
+scale − rot vec×pull×70×scale, DISCARDED colour NextFloat, vel = baseVel.
+RotatedBy(dir×π/4)×0.2×NextFloat alpha 100 scale 1.4×(1−|dir|), position−=
+vel×NextFloat×3, scale×=1−pull; pass pulls NextFloat / 0.2+NextFloat×0.25 /
+0.5+NextFloat×0.25, radii 60/85, 70/85, 60/75). The `DeathSnapshot` gains
+`ai0` (the 659 gate) + `local_ai1` (the 985 gate); the module gains
+`next_vector2_square`/`rotated_by_random`/`queen_slime_dust_color`/`remap_f32`
+helpers. The 659/856 resize + Damage stay unported state; the 856/728 gore
+stays the gore lane's. Witnesses: the 659 gate + ring/scatter split, the
+1012 40-count, the queen-slime counts/types, the sparkle f32-step counts,
+the 985 gate + 40-count — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,

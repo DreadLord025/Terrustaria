@@ -106,6 +106,13 @@ fn lerp_f32(a: f32, b: f32, t: f32) -> f32 {
     a + (b - a) * t
 }
 
+/// `Utils.Remap(fromValue, fromMin, fromMax, toMin, toMax)` (`Utils.cs:345-
+/// 348`, clamped): `Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax,
+/// fromValue, clamped))` — the 985 fan's radius ramp.
+fn remap_f32(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+    lerp_f32(to_min, to_max, crate::projectile::get_lerp_value(from_min, from_max, from_value))
+}
+
 /// `MathHelper.SmoothStep(v1, v2, t)` — the zero-tangent Hermite
 /// `(2v1-2v2)t³ + (3v2-3v1)t² + v1` with the clamped amount and the
 /// near-zero/one guards (the `projectile_ai_empress::smooth_step` form).
@@ -146,6 +153,37 @@ fn ring_kick(d: &mut tr_core::particles::Dust, speed: f32, damp: f32, xmul: f32,
     d.velocity *= damp;
     d.velocity.x += sx;
     d.velocity.y += sy;
+}
+
+/// `Utils.NextVector2Square(min, max)` (`Utils.cs:1251-1254`): TWO
+/// `NextDouble` draws, `(max-min)*NextDouble()+min` per axis — the
+/// queen-slime/sparkle rings' position jitter.
+fn next_vector2_square(rng: &mut UnifiedRandom, min: f32, max: f32) -> Vec2 {
+    let x = (max - min) * rng.next_double() as f32 + min;
+    let y = (max - min) * rng.next_double() as f32 + min;
+    Vec2::new(x, y)
+}
+
+/// `Utils.RotatedByRandom(maxRadians)` (`Utils.cs:1697-1700`): TWO
+/// `NextDouble` draws, `RotatedBy(NextDouble()*max − NextDouble()*max)` —
+/// the 659 spirit-flame ring's position scatter. Returns the rotated vector
+/// (the double-angle [`rotated_by`] precision).
+fn rotated_by_random(rng: &mut UnifiedRandom, v: Vec2, max_radians: f32) -> Vec2 {
+    let a = rng.next_double() * max_radians as f64 - rng.next_double() * max_radians as f64;
+    let c = a.cos() as f32;
+    let s = a.sin() as f32;
+    Vec2::new(v.x * c - v.y * s, v.x * s + v.y * c)
+}
+
+/// `NPC.AI_121_QueenSlime_GetDustColor` (`NPC.cs:45121-45124`): TWO
+/// `NextFloat` draws — `Lerp((0,160,255), Lerp((200,200,200),(255,80,255),
+/// NextFloat), NextFloat)`. The inner lerp's float draws FIRST (the C#
+/// argument evaluation order: the inner `Color.Lerp` is `value2`).
+fn queen_slime_dust_color(rng: &mut UnifiedRandom) -> Color {
+    let inner_t = rng.next_float();
+    let outer_t = rng.next_float();
+    let inner = lerp_color(Color::new(200, 200, 200, 255), Color::new(255, 80, 255, 255), inner_t);
+    lerp_color(Color::new(0, 160, 255, 255), inner, outer_t)
 }
 
 /// The trail-position dust PAIR (`:77064-77073`): for `i in start..end`, two
@@ -321,6 +359,8 @@ pub(crate) struct DeathSnapshot {
     pub old_vel: Vec2,
     /// `base.ai[1]` — the 346/335/589 colour/type picks read it.
     pub ai1: f32,
+    /// `base.ai[0]` — the 659 spirit-flame death gate reads it (`ai[0] >= 0`).
+    pub ai0: f32,
     /// `base.rotation` — the 598/971 walking-position arms read it.
     pub rot: f32,
     /// `base.direction` — the 384/386 speed argument reads it.
@@ -332,6 +372,9 @@ pub(crate) struct DeathSnapshot {
     /// slot's current position as the stand-in (the resting kinds' oldPosition
     /// == position at death). Kinds needing the true latch are deferred.
     pub old_pos: Vec2,
+    /// `base.localAI[1]` — the 985 Terraspark death gate reads it
+    /// (`localAI[1] != 1f` suppresses the fan).
+    pub local_ai1: f32,
 }
 
 impl DeathSnapshot {
@@ -347,10 +390,12 @@ impl DeathSnapshot {
             scale: p.scale,
             old_vel: p.vel,
             ai1: p.ai[1],
+            ai0: p.ai[0],
             rot: p.rot,
             direction: p.direction,
             alpha: p.alpha,
             old_pos: p.pos,
+            local_ai1: p.local_ai[1],
         }
     }
 }
@@ -1423,6 +1468,284 @@ fn death_bursts(
                 d.velocity += s.vel * rng.next_float() * 0.5;
             }
         }
+        // `:72503-72541` — the 659 Spirit Flame ring (gated ai[0] >= 0):
+        // resize to 80×80 centred (the dust reads the resized box), 30×
+        // dust-27 scale 2+NextFloat×0.5 noGravity; the first 15 are the
+        // RING (fadeIn 1.5+NextFloat×0.5, position=Center, vel =
+        // UnitY.RotatedBy((i+1)/15×τ)×(5+NextFloat×1.5)); the last 15
+        // scatter (position = Center + UnitY.RotatedByRandom(π)×NextFloat×
+        // w/3, fadeIn 0.5+NextFloat×0.5, vel×2); then 10× dust-31 scale 1.5
+        // (position = Center + UnitX.RotatedByRandom(π).RotatedBy(vel rot)×
+        // w/3, fadeIn 0.5+NextFloat×0.5, noGravity, vel×1.5). The resize +
+        // Damage stay unported state (the pool's PVE walk already ran).
+        659 => {
+            if s.ai0 >= 0.0 {
+                let tau = std::f32::consts::PI * 2.0;
+                let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+                let pos = center - Vec2::splat(40.0);
+                let w = 80;
+                for i in 0..30 {
+                    let scale = 2.0 + rng.next_float() * 0.5;
+                    let idx = dust.new_dust(rng, ctx, world, pos, w, w, 27, 0.0, 0.0, 0, Color::default(), scale);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    if i < 15 {
+                        let angle = (i + 1) as f32 / 15.0 * tau;
+                        d.fade_in = 1.5 + rng.next_float() * 0.5;
+                        d.position = center;
+                        d.velocity = rotated_by(Vec2::Y, angle) * (5.0 + rng.next_float() * 1.5);
+                    } else {
+                        let scatter = rotated_by_random(rng, Vec2::Y, std::f32::consts::PI);
+                        d.position = center + scatter * rng.next_float() * w as f32 / 3.0;
+                        d.fade_in = 0.5 + rng.next_float() * 0.5;
+                        d.velocity *= 2.0;
+                    }
+                }
+                for _ in 0..10 {
+                    let idx = dust.new_dust(rng, ctx, world, pos, w, w, 31, 0.0, 0.0, 0, Color::default(), 1.5);
+                    let d = dust.slot_mut(idx);
+                    let scatter = rotated_by_random(rng, Vec2::X, std::f32::consts::PI);
+                    d.position = center + rotated_by(scatter, to_rotation(s.vel)) * w as f32 / 3.0;
+                    d.fade_in = 0.5 + rng.next_float() * 0.5;
+                    d.no_gravity = true;
+                    d.velocity *= 1.5;
+                }
+            }
+        }
+        // `:71524-71549` — the 1012 First Fractal: 40×, each a UnitY.
+        // RotatedBy(i×τ)×(2+NextFloat×0.5) + vel×NextFloat spoke; a Next(3)
+        // gate: 0 → dust-284 (Direct) colour Next(3){(226,116,56),(243,175,
+        // 93),(254,210,146)}, position pos+NextVector2Circular(18,18)×scale,
+        // 2×2, speed spoke, scale NextFloat+1, position −= vel, fadeIn 1;
+        // else spoke×0.3 → dust-138 (Direct) scale NextFloat×0.3+0.6,
+        // position −= vel.
+        1012 => {
+            let tau = std::f32::consts::PI * 2.0;
+            for i in 0..40 {
+                let mut spoke = rotated_by(Vec2::Y, i as f32 * tau) * (2.0 + rng.next_float() * 0.5);
+                spoke += s.vel * rng.next_float();
+                if rng.next_max(3) == 0 {
+                    let color = match rng.next_max(3) {
+                        0 => Color::new(226, 116, 56, 255),
+                        1 => Color::new(243, 175, 93, 255),
+                        _ => Color::new(254, 210, 146, 255),
+                    };
+                    let pos = s.pos + next_vector2_circular(rng, 18.0, 18.0) * s.scale;
+                    let scale = rng.next_float() + 1.0;
+                    let idx = dust.new_dust_direct(rng, ctx, world, pos, 2, 2, 284, spoke.x, spoke.y, 0, color, scale);
+                    let d = dust.slot_mut(idx);
+                    d.position -= s.vel;
+                    d.fade_in = 1.0;
+                } else {
+                    spoke *= 0.3;
+                    let pos = s.pos + next_vector2_circular(rng, 18.0, 18.0) * s.scale;
+                    let scale = rng.next_float() * 0.3 + 0.6;
+                    let idx = dust.new_dust_direct(rng, ctx, world, pos, 2, 2, 138, spoke.x, spoke.y, 0, Color::default(), scale);
+                    dust.slot_mut(idx).position -= s.vel;
+                }
+            }
+        }
+        // `:71551-71558` — the 920 Queen Slime gel: 6× dust-4, position
+        // pos + Size×NextVector2Square(0,1) box 4×4, vel = UnitY.RotatedBy
+        // (i×τ + NextFloat×τ×0.5)×(2+NextFloat×0.5), alpha 80 colour
+        // (78,136,255,150) scale 1.5, noGravity.
+        920 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let size = Vec2::new(s.w as f32, s.h as f32);
+            for i in 0..6 {
+                let jitter = next_vector2_square(rng, 0.0, 1.0);
+                let angle = i as f32 * tau + rng.next_float() * tau * 0.5;
+                let speed = 2.0 + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let pos = s.pos + size * jitter;
+                let idx = dust.new_dust(rng, ctx, world, pos, 4, 4, 4, vel.x, vel.y, 80, Color::new(78, 136, 255, 150), 1.5);
+                dust.slot_mut(idx).no_gravity = true;
+            }
+        }
+        // `:71560-71567` — the 921: 12× dust-243 box 6×6, the 920 shape at
+        // speed 3+NextFloat×0.5, alpha 80 default colour scale 1.5.
+        921 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let size = Vec2::new(s.w as f32, s.h as f32);
+            for i in 0..12 {
+                let jitter = next_vector2_square(rng, 0.0, 1.0);
+                let angle = i as f32 * tau + rng.next_float() * tau * 0.5;
+                let speed = 3.0 + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let pos = s.pos + size * jitter;
+                let idx = dust.new_dust(rng, ctx, world, pos, 6, 6, 243, vel.x, vel.y, 80, Color::default(), 1.5);
+                dust.slot_mut(idx).no_gravity = true;
+            }
+        }
+        // `:71569-71576` — the 926: 22× dust-31 at pos−(8,8) box (w+16)×
+        // (h+16), the 921 spoke shape, alpha 40 QueenSlime_GetDustColor
+        // (TWO NextFloat) scale 1.5, noGravity.
+        926 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let pos = s.pos - Vec2::splat(8.0);
+            for i in 0..22 {
+                let angle = i as f32 * tau + rng.next_float() * tau * 0.5;
+                let speed = 3.0 + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let color = queen_slime_dust_color(rng);
+                let idx = dust.new_dust(rng, ctx, world, pos, s.w + 16, s.h + 16, 31, vel.x, vel.y, 40, color, 1.5);
+                dust.slot_mut(idx).no_gravity = true;
+            }
+        }
+        // `:71578-71585` — the 937: 12× dust-31, the 926 shape.
+        937 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let pos = s.pos - Vec2::splat(8.0);
+            for i in 0..12 {
+                let angle = i as f32 * tau + rng.next_float() * tau * 0.5;
+                let speed = 3.0 + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let color = queen_slime_dust_color(rng);
+                let idx = dust.new_dust(rng, ctx, world, pos, s.w + 16, s.h + 16, 31, vel.x, vel.y, 40, color, 1.5);
+                dust.slot_mut(idx).no_gravity = true;
+            }
+        }
+        // `:71587-71596` — the 818 Stellar Tune: TWO f32-step rings
+        // (num += 0.34, 3 iterations each), dust-278 NewDustPerfect at
+        // pos + Size×NextVector2Square(0,1), vel = UnitY.RotatedBy(num×τ +
+        // NextFloat×τ×0.5)×(2+NextFloat×0.5) [ring 1] / (1+NextFloat×0.5)
+        // [ring 2], alpha 150, colour Lerp(White, Gold, NextFloat) scale 0.4
+        // [ring 1] / Lerp(White, OurFavoriteColor, NextFloat) scale 0.7
+        // [ring 2], noGravity.
+        818 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let size = Vec2::new(s.w as f32, s.h as f32);
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let jitter = next_vector2_square(rng, 0.0, 1.0);
+                let angle = num * tau + rng.next_float() * tau * 0.5;
+                let speed = 2.0 + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let color = lerp_color(Color::WHITE, Color::new(255, 215, 0, 255), rng.next_float());
+                let pos = s.pos + size * jitter;
+                let idx = dust.new_dust_perfect(rng, ctx, world, pos, 278, Some(vel), 150, color, 0.4);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.34;
+            }
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let jitter = next_vector2_square(rng, 0.0, 1.0);
+                let angle = num * tau + rng.next_float() * tau * 0.5;
+                let speed = 1.0 + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let color = lerp_color(Color::WHITE, Color::new(255, 231, 69, 255), rng.next_float());
+                let pos = s.pos + size * jitter;
+                let idx = dust.new_dust_perfect(rng, ctx, world, pos, 278, Some(vel), 150, color, 0.7);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.34;
+            }
+        }
+        // `:71598-71611` — the 856 Sparkle Guitar: 6× dust-58 alpha 150
+        // scale 0.8; then TWO f32-step rings (num += 0.34) of dust-278
+        // NewDustPerfect at Center, vel = UnitY.RotatedBy(num×τ + NextFloat×
+        // τ×0.5)×(4+NextFloat×2) [ring 1] / (2+NextFloat×1) [ring 2], alpha
+        // 150, colour Lerp(White, HotPink, NextFloat×0.5+0.5) [ring 1] /
+        // Lerp(White, Orange, NextFloat×0.5+0.5) [ring 2], noGravity. (The
+        // gore + resize + Damage stay the gore lane's / unported state.)
+        856 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..6 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 58, 0.0, 0.0, 150, Color::default(), 0.8);
+            }
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let angle = num * tau + rng.next_float() * tau * 0.5;
+                let speed = 4.0 + rng.next_float() * 2.0;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let color = lerp_color(Color::WHITE, Color::new(255, 105, 180, 255), rng.next_float() * 0.5 + 0.5);
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 278, Some(vel), 150, color, 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.34;
+            }
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let angle = num * tau + rng.next_float() * tau * 0.5;
+                let speed = 2.0 + rng.next_float() * 1.0;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let color = lerp_color(Color::WHITE, Color::new(255, 165, 0, 255), rng.next_float() * 0.5 + 0.5);
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 278, Some(vel), 150, color, 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.34;
+            }
+        }
+        // `:75125-75139` — the 728 Star Veil: 7× dust-58 speed vel×0.1
+        // alpha 150 scale 0.8; then a f32-step ring (num += 0.125, 8 iters)
+        // of dust-278 NewDustPerfect at Center, vel = UnitY.RotatedBy(num×τ
+        // + NextFloat×0.5)×(4+NextFloat×4), alpha 150 CornflowerBlue,
+        // noGravity; then a ring (num += 0.25, 4 iters) vel×(2+NextFloat×3)
+        // Gold. (The gore stays the gore lane's.)
+        728 => {
+            let tau = std::f32::consts::PI * 2.0;
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..7 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 58, s.vel.x * 0.1, s.vel.y * 0.1, 150, Color::default(), 0.8);
+            }
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let angle = num * tau + rng.next_float() * 0.5;
+                let speed = 4.0 + rng.next_float() * 4.0;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 278, Some(vel), 150, Color::new(100, 149, 237, 255), 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.125;
+            }
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let angle = num * tau + rng.next_float() * 0.5;
+                let speed = 2.0 + rng.next_float() * 3.0;
+                let vel = rotated_by(Vec2::Y, angle) * speed;
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 278, Some(vel), 150, Color::new(255, 215, 0, 255), 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.25;
+            }
+        }
+        // `:70996-71041` — the 985 Terraspark fan (gated localAI[1] != 1):
+        // THREE passes (20/10/10) of dust-107 NewDustPerfect. Per dust:
+        // NextFloatDirection → num26 = 1−|dir|, angle = rot + dir×(π/2)×0.9,
+        // position = Center + angle.ToRotationVector2()×Remap(NextFloat,0,1,
+        // rmin,rmax)×scale − rot.ToRotationVector2()×pull×70×scale; a
+        // DISCARDED colour NextFloat; vel = baseVel.RotatedBy(dir×π/4)×0.2×
+        // NextFloat, alpha 100 scale 1.4×num26; position −= vel×NextFloat×3;
+        // scale ×= 1−pull. Pass 1 pull=NextFloat rmin/rmax 60/85; pass 2
+        // pull=0.2+NextFloat×0.25 70/85; pass 3 pull=0.5+NextFloat×0.25
+        // 60/75.
+        985 => {
+            if s.local_ai1 != 1.0 {
+                let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+                let rot_vec = rotation_vector(s.rot);
+                for (count, rmin, rmax, pull_base, pull_mul) in [
+                    (20, 60.0f32, 85.0f32, 0.0f32, 1.0f32),
+                    (10, 70.0, 85.0, 0.2, 0.25),
+                    (10, 60.0, 75.0, 0.5, 0.25),
+                ] {
+                    for _ in 0..count {
+                        let dir = rng.next_float_direction();
+                        let num26 = 1.0 - dir.abs();
+                        let angle = s.rot + dir * (std::f32::consts::FRAC_PI_2) * 0.9;
+                        let radius = remap_f32(rng.next_float(), 0.0, 1.0, rmin, rmax);
+                        let pull = if pull_base == 0.0 && pull_mul == 1.0 {
+                            rng.next_float()
+                        } else {
+                            pull_base + rng.next_float() * pull_mul
+                        };
+                        let mut pos = center + rotation_vector(angle) * radius * s.scale;
+                        pos -= rot_vec * pull * 70.0 * s.scale;
+                        let _ = rng.next_float(); // the discarded colour lerp
+                        let vel = rotated_by(s.vel, dir * (std::f32::consts::FRAC_PI_4)) * 0.2 * rng.next_float();
+                        let idx = dust.new_dust_perfect(rng, ctx, world, pos, 107, Some(vel), 100, Color::default(), 1.4 * num26);
+                        let d = dust.slot_mut(idx);
+                        d.position -= d.velocity * rng.next_float() * 3.0;
+                        d.scale *= 1.0 - pull;
+                    }
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -1681,10 +2004,12 @@ mod tests {
             scale: 1.0,
             old_vel: Vec2::new(4.0, -2.0),
             ai1: 0.0,
+            ai0: 0.0,
             rot: 0.0,
             direction: 1,
             alpha: 0,
             old_pos: Vec2::new(100.0, 100.0),
+            local_ai1: 0.0,
         }
     }
 
@@ -2461,5 +2786,98 @@ mod tests {
         // (NewDustPerfect overwrites the position).
         let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
         assert!(active.iter().all(|d| d.position == center));
+    }
+
+    /// The 659 spirit-flame ring: gated ai[0] >= 0; 30 dust-27 (15 ring at
+    /// the centre + 15 scatter) + 10 dust-31, all noGravity. ai[0] < 0 →
+    /// nothing.
+    #[test]
+    fn w4_g65_the_659_spirit_flame_ring() {
+        let w = world();
+        let mut s = snap(659);
+        s.ai0 = 3.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 40);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 27).count(), 30);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 10);
+        assert!(active.iter().all(|d| d.no_gravity));
+        // The first 15 sit exactly at the corpse centre (the ring).
+        let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+        assert!(active[..15].iter().all(|d| d.position == center));
+        // The gate: ai[0] < 0 spawns nothing.
+        let mut s2 = snap(659);
+        s2.ai0 = -1.0;
+        let mut dust2 = DustPool::new();
+        drain(&[s2], &mut dust2, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert!(dust2.slots().iter().all(|d| !d.active));
+    }
+
+    /// The 1012 First Fractal: 40 dust, each 284 or 138 by the Next(3) gate.
+    #[test]
+    fn w4_g65_the_1012_first_fractal() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(1012)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 40);
+        assert!(active.iter().all(|d| matches!(d.dust_type, 284 | 138)));
+    }
+
+    /// The 920/921/926/937 queen-slime rings: 6/12/22/12 dust, all
+    /// noGravity, the right types.
+    #[test]
+    fn w4_g65_the_queen_slime_rings() {
+        let w = world();
+        for (kind, count, dust_type) in [(920u16, 6, 4), (921, 12, 243), (926, 22, 31), (937, 12, 31)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind} count");
+            assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity), "kind {kind}");
+        }
+    }
+
+    /// The 818/856/728 sparkle rings: 818 = 3+3 dust-278; 856 = 6 dust-58 +
+    /// 3+3 dust-278; 728 = 7 dust-58 + 8+4 dust-278. The f32-step loops run
+    /// 3 (0.34), 8 (0.125), 4 (0.25) iterations.
+    #[test]
+    fn w4_g65_the_sparkle_rings() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(818)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 6);
+        assert!(active.iter().all(|d| d.dust_type == 278 && d.no_gravity));
+        let mut dust = DustPool::new();
+        drain(&[snap(856)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 12);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 58).count(), 6);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 278).count(), 6);
+        let mut dust = DustPool::new();
+        drain(&[snap(728)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 19);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 58).count(), 7);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 278).count(), 12);
+    }
+
+    /// The 985 Terraspark fan: gated localAI[1] != 1; 20+10+10 = 40 dust-107.
+    /// localAI[1] == 1 → nothing.
+    #[test]
+    fn w4_g65_the_985_terraspark_fan() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(985)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 40);
+        assert!(active.iter().all(|d| d.dust_type == 107));
+        let mut s = snap(985);
+        s.local_ai1 = 1.0;
+        let mut dust2 = DustPool::new();
+        drain(&[s], &mut dust2, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert!(dust2.slots().iter().all(|d| !d.active));
     }
 }
