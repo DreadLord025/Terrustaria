@@ -98,6 +98,37 @@ pub fn pylon_view_fit(
     (pos, scale)
 }
 
+/// `Main.cs:55361-55385`'s pan-target step, pure: while
+/// `PanTargetMapFullscreen` is armed, a left press cancels it; else the map
+/// position lerps toward the target by 0.15 (or snaps when within 1 tile,
+/// or when `dist*0.15 < 1` the amount is `1/dist`). Returns the new
+/// position and whether the pan finished. The C# runs this once per frame
+/// in `DrawMap`'s fullscreen branch, BEFORE the scale/pos clamps.
+/// W4-f29 fix F6 (research/140 §3) — relocated from the retired
+/// `map_pylons.rs`; `WorldMap::prepare`'s inline block delegates here.
+pub fn pan_target_step(pos: [f32; 2], target: [f32; 2], left_press: bool) -> ([f32; 2], bool) {
+    // `:55363-55366`: a press cancels the pan.
+    if left_press {
+        return (pos, true);
+    }
+    let dx = target[0] - pos[0];
+    let dy = target[1] - pos[1];
+    let dist = (dx * dx + dy * dy).sqrt();
+    // `:55369-55374`: within 1 tile snaps.
+    if dist < 1.0 {
+        return (target, true);
+    }
+    // `:55377-55382`: the lerp amount.
+    let mut amount = 0.15f32;
+    if dist * 0.15 < 1.0 {
+        amount = 1.0 / dist;
+    }
+    (
+        [pos[0] + dx * amount, pos[1] + dy * amount],
+        false,
+    )
+}
+
 /// One map quad: `dest` is a screen rect `[x, y, w, h]`, `uv` the texture subrect
 /// `[u0, v0, u1, v1]` (normalised over the world-sized texture).
 pub struct MapQuad {
@@ -840,25 +871,14 @@ impl WorldMap {
         // `Main.cs:55361-55385`: the offscreen-pylon pan runs BEFORE the
         // scale/position clamps. A held left press cancels it; otherwise the
         // position lerps toward the target at 0.15 (or `1/dist` when that
-        // would overshoot), snapping when within 1 tile.
+        // would overshoot), snapping when within 1 tile. The step itself is
+        // the pure `pan_target_step` (W4-f29 fix F6, research/140 §3).
         if self.pan_target {
-            if self.pan_cancel_press {
+            let (pos, done) =
+                pan_target_step(self.pos, self.pan_target_end, self.pan_cancel_press);
+            self.pos = pos;
+            if done {
                 self.pan_target = false;
-            } else {
-                let dx = self.pan_target_end[0] - self.pos[0];
-                let dy = self.pan_target_end[1] - self.pos[1];
-                let dist = (dx * dx + dy * dy).sqrt();
-                if dist < 1.0 {
-                    self.pos = self.pan_target_end;
-                    self.pan_target = false;
-                } else {
-                    let mut amount = 0.15f32;
-                    if dist * 0.15 < 1.0 {
-                        amount = 1.0 / dist;
-                    }
-                    self.pos[0] += dx * amount;
-                    self.pos[1] += dy * amount;
-                }
             }
         }
         // `Main.cs:55387-55395`.
@@ -1310,6 +1330,29 @@ mod tests {
         // No revealed pylons: the rect is just the anchor inflated.
         let (pos, _) = pylon_view_fit((50, 60), &[], screen, 2.5);
         assert_eq!(pos, [50.0, 60.0]);
+    }
+
+    /// W4-f29 fix F6 — `Main.cs:55361-55385`: the pan step — a press
+    /// cancels, within 1 tile snaps, far lerps by 0.15, and `dist*0.15 < 1`
+    /// takes the `1/dist` amount (a 1-tile step).
+    #[test]
+    fn w4_f29_pan_target_step() {
+        // A press cancels.
+        let (pos, done) = pan_target_step([0.0, 0.0], [100.0, 0.0], true);
+        assert_eq!(pos, [0.0, 0.0]);
+        assert!(done);
+        // Within 1 tile snaps.
+        let (pos, done) = pan_target_step([99.5, 0.0], [100.0, 0.0], false);
+        assert_eq!(pos, [100.0, 0.0]);
+        assert!(done);
+        // Far: lerp by 0.15.
+        let (pos, done) = pan_target_step([0.0, 0.0], [100.0, 0.0], false);
+        assert_eq!(pos, [15.0, 0.0]);
+        assert!(!done);
+        // dist*0.15 < 1 -> amount = 1/dist (a 1-tile step).
+        let (pos, done) = pan_target_step([0.0, 0.0], [5.0, 0.0], false);
+        assert_eq!(pos, [1.0, 0.0]);
+        assert!(!done);
     }
 
     /// W4-e17 — `set_open(true)` clears `Main.MapPylonTile`
