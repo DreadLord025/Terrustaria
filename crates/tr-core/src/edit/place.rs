@@ -997,4 +997,33 @@ mod tests {
         assert!(!place_item_tile(&mut w, 10, 19, 4, 0, 1));
         assert_eq!(before, w.tiles, "the occupied cell is untouched");
     }
+
+    /// W4-g78 DOC-SWEEP lane 4 — the Echo Monolith (tile 657, item 5345)
+    /// placement route. `Item.cs:42406-42414` `DefaultToPlaceableTile(657, 0)`
+    /// + `TileObjectData.addTile(657)` (`TileObjectData.cs:2907-2912`,
+    /// Style2xX height 3, origin (1,2), `UsesCustomCanPlace`) routes the
+    /// place through `TileObject.CanPlace`/`Place` — NOT the legacy
+    /// single-tile write. The 2x3 body lands with frameX 0/18 and frameY
+    /// 0/18/36 (the unlit row the `SceneMetrics` 657 scan reads as < 54).
+    #[test]
+    fn w4_g78_doc_sweep_the_echo_monolith_places_through_the_registry() {
+        let mut w = object_world();
+        // Click the bottom-right cell (11, 19): origin (1,2) → top-left
+        // (10, 17), the 2x3 body rows 17..=19, cols 10..=11.
+        assert!(place_item_tile(&mut w, 11, 19, 657, 0, 1));
+        for dx in 0..2 {
+            for dy in 0..3 {
+                let t = w.tile(10 + dx, 17 + dy).unwrap();
+                assert!(t.active() && t.kind == 657, "cell ({}, {})", 10 + dx, 17 + dy);
+                assert_eq!(t.frame_x, (dx * 18) as i16);
+                assert_eq!(t.frame_y, (dy * 18) as i16);
+            }
+        }
+        // The unlit row: the SceneMetrics scan grants no EchoMonolith yet.
+        let mut m = crate::scene::SceneMetrics::new();
+        m.scan_on_screen_tiles(&w, (0, 0, 40, 40));
+        assert!(!m.echo_monolith, "frameY < 54: the placed monolith is unlit");
+        // The registry def is the CustomPlace route (not the legacy write).
+        assert!(crate::tileobject::routes_through_tile_object(657, 0));
+    }
 }

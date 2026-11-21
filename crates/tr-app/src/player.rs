@@ -21754,4 +21754,39 @@ mod s1_p_i27_tests {
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
     }
+
+    /// W4-g78 DOC-SWEEP lane 4 — the Spectre Goggles (4409) slot-split
+    /// verification. C# grants `CanSeeInvisibleBlocks` for 4409 ONLY in
+    /// `ApplyEquipFunctional` case 4409 (`Player.cs:14548-14550`, the
+    /// 3..10 functional loop `:12946-12952`); `ApplyEquipVanity`
+    /// (`:14197-14218`) has NO 4409 case and `RefreshInfoAccsFromItemType`
+    /// (`:12721-12797`) has no 4409 row — so a vanity-worn goggles grants
+    /// NOTHING. The Echo Monolith (5345) is the mirror: its ONLY grant is
+    /// the vanity case 5345 (`:14215-14217`); a functional-worn monolith
+    /// grants nothing (witnessed above). The g78 port matches this split.
+    #[test]
+    fn w4_g78_doc_sweep_the_goggles_grant_is_functional_only() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Vanity slot 13: the 13..20 loop runs ApplyEquipVanity, whose
+        // switch has no 4409 arm — no sight.
+        p.equipped[13] = 4409;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            !p.can_see_invisible_blocks,
+            "a vanity-worn Spectre Goggles grants nothing (no ApplyEquipVanity 4409 case)"
+        );
+        // Functional slot 3: ApplyEquipFunctional case 4409 grants.
+        p.equipped[13] = 0;
+        p.equipped[3] = 4409;
+        p.update(&w, PlayerInput::default());
+        assert!(p.can_see_invisible_blocks, "the functional goggles grant");
+        // The item row itself: 4409 is a plain accessory (vanity false),
+        // 5345 is accessory + vanity (`Item.cs:37391-37395` / `:42406-42414`).
+        let goggles = crate::registry::get(4409).unwrap();
+        assert!(goggles.accessory && !goggles.vanity, "4409 DefaultToAccessory(28)");
+        let monolith = crate::registry::get(5345).unwrap();
+        assert!(monolith.accessory && monolith.vanity, "5345 accessory + vanity");
+        assert_eq!(monolith.tile, Some(657), "5345 places the Echo Monolith 657");
+    }
 }
