@@ -190,8 +190,9 @@ the E6 pass must read: **163 no-entry** (bestiary) and **198->199**.
    never rolls its C# moan — a per-tick UpdateNPCs stream shortfall.
    The gap types WITH moan draws (the extension list):
    **31, 77, 78, 79, 80, 110, 159, 162 (DOUBLE-arm), 167, 181, 197,
-   201, 202, 203, 269-280, 291, 292, 293, 449-452, 481, 586 (the 800
-   arm), 590, 591, 630, 632, 635, 691**. The moan position is the
+   201, 202, 203, 269-280, 291, 292, 293, 294-296 (the SEAL correction
+   — the `:57340` list rows them, `fighter_ambient_moans` :910-912),
+   449-452, 481, 586 (the 800 arm), 590, 591, 630, 632, 635, 691**. The moan position is the
    PRE-SLOT head block (R1 `fb99a047`, the C# `:57338` order — BEFORE
    the machine's draws); the emitter table itself
    (`fighter_ambient_moans`) already names every id above, so the

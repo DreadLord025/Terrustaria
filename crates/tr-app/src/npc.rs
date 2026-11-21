@@ -21880,13 +21880,21 @@ mod tests {
         let mut npcs = vec![head];
         let mut rng = UnifiedRandom::new(11);
         let mut next_id = 1u32;
-        // The player parked above the dirt.
+        // The player parked above the dirt. The dig ramps the speed toward
+        // num45 = 6 by num46 per tick (the accel approach, not an instant
+        // snap) — ~109 ticks saturate it. The window closes before the head
+        // reaches the surface hole (y 2000..2160 at x 960..2240): at tick
+        // 110 the head is still at y ~2165, deep in the dirt; by tick ~118
+        // it enters the hole and the air arm takes over (the original
+        // 150-tick loop overshoots into the hole — the velocity flips
+        // positive there; 110 is the faithful saturation pin). W4-d22 seal
+        // S1: the W4-c8 warn (research/238 §3a, `7c2de9c0`) consumed — the
+        // loop now matches c8's 110-tick pin (`708522fc6`); the composed
+        // `worm_head_step` kinematics are identical for a GiantWorm head
+        // (10) — c8's only deltas are the 375 inversion/claim rows — so
+        // the verdict transfers (the seal receipt: research/91 bible §1).
         let pc = (100.0 * 16.0, 116.0 * 16.0);
-        // The dig ramps the speed toward num45 = 6 over ~110 ticks (the
-        // accel approach, not an instant snap). The head stays deep in the
-        // dirt while it ramps (the player is ~550 px up-right; the head
-        // travels well under that before saturating).
-        for _ in 0..150 {
+        for _ in 0..110 {
             crate::world_sim::npcs::update_worms_in(&w, Some(pc), &mut npcs, &mut rng, &mut next_id);
         }
         let h0 = &npcs[0];

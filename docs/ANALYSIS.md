@@ -39448,6 +39448,53 @@ wave-E/wave-G/reconcile ANALYSIS notes carry the new position.
 Verification: code-only — the C# head window re-read (`:57030-57401`),
 the sim block moved wholesale (no gate/arm change); brace-balance
 delta-checked (0/0 on all three touched .rs files).
+
+### The SEAL — the c8 saturation pin + the fighter-family bible
+
+S1 — the W4-c8 cross-warn (research/238 §3a, `7c2de9c0`) CONSUMED:
+`npc.rs::the_worm_head_digs_and_stumbles`' saturation loop is now
+`0..110`, matching c8's live fix (`708522fc6`). The verdict transfers:
+the c8 `worm_head_step` was diff-read against d22's at the seal — the
+kinematics are identical for a GiantWorm head (10); c8's only deltas
+are the TruffleWormDigger (375) inversion/claim rows + comment
+rewording, none of which type 10 touches. On the `ground_air` fixture
+(hole x 60..140 / y 125..134) the head enters the hole at ~tick 118 —
+the old 150-tick loop overshoots (speed 5.50 / vy +1.02, both asserts
+fail on the composed machine); at 110 ticks speed 5.955 / vy −2.5 /
+y 2165, saturated within 0.1 (the c8 f32-rounded numeric mirror). The
+far-player override's 150-tick loop STAYS (empty 2000×800 world, no
+hole — speed 6.005 verified, consistent with the "~110 ticks saturate
+it" comment). Merger: keep-one for the content-identical
+`w4_c8_compose_*` / `w4_d22_the_*` single-tick witnesses (238 §6).
+
+S2 — the `fighter_walker_kind` extension obligation published as an
+EXACT HUNK (`research/91-fighter-walker-kind-obligation.md`, the
+d37e-E8-seal input): the append point (`ambient_sound.rs:664`, after
+`| SolarSpearman`), the ai[3]-free precondition, the per-lane variant
+names probed at the pushed tips, the witness obligation. Seal
+correction to the R2 table §2.1: **294-296 join the extension list**
+(the `:57340` 1000-roll list rows them — emitter :910-912; the R2
+prose list had dropped them though the table rows cite the arm).
+
+S3 — the R3 KEEP/DROP symbol table confirmed FINAL: the g4 tip
+re-probed after fetch (`a9369ec38`, no delta); the KEEP samples
+re-grepped at the seal tip (all present, cites unchanged). The
+kind-wire lanes re-probed: g8 `e1d9578a` (two NEW commits since the
+phase-4 probe — the Harpy/RedDevil aiStyle-14 machine ports, disjoint
+from every style-3 symbol), g9 `5d08fdf2` (unchanged), g10 `5dee2865`
+(town pets 637+, the aiStyle-7 lane — disjoint). The compose verdict
+holds: keep both sides, no re-fold.
+
+S4 — the fighter-family bible (`research/91-fighter-family-bible.md`):
+the single merger-facing record — d22 canonical styles 3-6, g4
+DEPRECATED (merge d22 only, NEVER g4-after; the Lead retires the g4
+branch post-verify), g8/g9/g10 compose disjoint, d34-d43 take the R2
+roster table + the S2 obligation.
+
+Verification: code-only — brace-balance delta 0/0 on the touched
+npc.rs; the loop edit is the fixture pin only (no machine change);
+no cargo/tests/rustfmt/graphify invoked. The witnesses stay
+written-not-run — the merge gate runs them.
 ## W4-d22 — the aiStyle-4 EoC RNG census + fix (code-only)
 
 The Eye of Cthulhu (`NPC.cs:19960-20801`) rode the kind-match arm
