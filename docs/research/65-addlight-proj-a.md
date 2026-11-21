@@ -100,3 +100,55 @@ The four blockers the first wave left, re-censused against the pushed d-lanes:
 21 absent** (the still-unrowed kinds + the rand-gated 409/590/849/912). 12 new
 witnesses written not run (30 total: the mount gate/census/swings + the
 per-lane activations + the conditional row invariant).
+
+## Round 3 — lights-final (2026-11-21, commits `0f8c1c077`…`fb58e88aa`)
+
+The four rand-gated sites ARM IN THE SIM (the `item_lights.rs` named-stream
+precedent — the e6 pure-feed rule's documented exception): the AI arms take
+their gate draws on the pass's `UpdateProjectiles` stream and queue
+`(tile x, tile y, rgb)` intents into `ProjectilePool::pending_ai_lights`; the
+world-sim pass drains them into the ONE `EntityLights` pair
+(`world_sim/projectiles.rs`, `drain_ai_lights`). The draw-pass feed stays pure.
+
+1. **409 Typhoon (`:30378`, site 11).** `ai_typhoon` now takes the
+   `localAI[1] > 10 && Next(3) == 0` gate (`:30358`); the taken branch runs the
+   fade/spin/frame block + the light, and censuses the six-dust ring's 6 ×
+   (`NextDouble`, `Next(3,8)`) draws (`:30364`). The unconditional-fade
+   deviation is RETIRED; the DW-6.1 frame witness re-derived on an always-0
+   gate twin.
+2. **590 TruffleSpore (`:34226`, site 22).** New `ai_truffle_spore`
+   (aiStyle-112 type arm, `:34194-34233`): the 4-tick frame machine (the
+   `ai[2]==1` grown strip 3-5), the 15/tick fade, the `Next(28,42)` flicker
+   (`n = draw·0.005 + (270−mouseTextColor)/500`, the 0.35-scaled teal), the
+   sine hover with the 180 wrap. `Main.mouseTextColor` rides a pool snapshot
+   (`set_mouse_text_color`, the `set_disco` precedent). The 590 row is d12's
+   (keep-one — the dispatch + seam witness are conditional on it).
+3. **849/912 whips (`:47846`/`:48011`, sites 56-57).** New `whip_dust_lights`
+   (the AI_165 dust-switch tail): the 849's `t > 0.4 && Next(9) != 0` gate +
+   the `Next(2)` particle draw; the 912's `num28 > 0.1 && NextFloat() <
+   num28/2` gate + the three `Next(2)` dust-261 draws. The light anchor is the
+   curve tip's `CenteredRectangle(p, 30).Center` (truncate `p−15`, add 15,
+   truncate /16); the curve is `fill_whip_control_points` with the slot's
+   `ai[1]` spin seed (the dust cases call the default overload, NOT the
+   collision sweep's forced 1f). Every other whip type's dust case stays
+   draw-skipped wholesale — the dust pass's lane (the inter-case stream
+   deviation, ANALYSIS).
+
+**The d9/d10/d11 activations (10 sites / 11 contributions).** The pushed
+d-lanes rowed nine more absent kinds: d9 451/464/490/492, d10 518/535, d11
+567/568/575. Their arms activate in `proj_lights_a` (the collector matches
+`p.kind`; the rows stay the lanes' to merge): the 451 alpha-scaled
+truncate-first light, the 464 spin/ring pair (the spawn `ai[1]==0` reads the
+6-point ring), the 490 ritual (the `flag43` NPC gate folds to the `ai[1]>=0`
+slot-state half), the 492 lantern's top-left anchor, the 518 coin portal, the
+535 medusa head (the channel-Kill gate folds live), the 567/568 spore-sac head
+(`(1−alpha/255)·scale`, dark at the alpha-255 spawn), the 575 nebula sphere.
+The 978 Volcano's d12 row is aiStyle 189, NOT the `:34487` trio's 117 — the
+third term stays unreachable (a style mismatch, not a missing row).
+
+**Round-3 accounting: 58 ported sites (54 feed + 4 sim) / 64 light
+contributions, 2 audit-landed, 7 absent** (502, 1092, 465, 466, 731, the
+phaseblade pair, 756 — all still unrowed on every pushed lane). 12 new
+witnesses written not run (42 total): the typhoon gate census/fade/seam, the
+spore flicker/frames/conditional seam, the whip gate censuses + seam, the
+world-sim drain witness, the d9/d10/d11 activation colours.

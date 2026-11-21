@@ -23235,6 +23235,66 @@ The 21 still-absent sites: 502 (`:24307`), 1092 (`:25394`), 451 (`:31212`),
 term), 731 (`:37821`), the phaseblades (`:39020`/`:39021`), 567/568 (`:40046`),
 535 (`:44612`), 756 (`:51492`) — all still unrowed; plus the rand-gated 409
 (`:30378`), 590 (`:34226`), 849 (`:47846`), 912 (`:48011`).
+
+**Round 3 — lights-final (2026-11-21, `0f8c1c077`…`fb58e88aa`).** The four
+rand-gated sites arm IN THE SIM — the `item_lights.rs` named-stream precedent,
+the e6 pure-feed rule's documented exception. The AI arms take their gate
+draws on the pass's `UpdateProjectiles` stream and queue `(tile x, tile y,
+rgb)` intents into `ProjectilePool::pending_ai_lights`; the world-sim pass
+drains them into the ONE `EntityLights` pair (`drain_ai_lights`, after the
+step, in slot + sub-step order). The draw-pass feed stays pure.
+
+* **409 Typhoon (`:30378`).** `ai_typhoon` takes the `localAI[1] > 10 &&
+  Next(3) == 0` gate (`:30358`); the taken branch runs the fade/spin/frame +
+  the light and censuses the ring's 6 × (`NextDouble`, `Next(3,8)`) draws
+  (`:30364`; the `NewDust` internal rolls go with the dust pool). The
+  unconditional-fade deviation is RETIRED — the fade/frame now advance only
+  on taken gates, the C#'s cadence. The DW-6.1 frame witness re-derived on an
+  always-0 gate twin.
+* **590 TruffleSpore (`:34226`).** New `ai_truffle_spore` (`:34194-34233`):
+  the 4-tick frame machine (the `ai[2]==1` grown strip reads 3-5), the
+  15/tick fade, the `Next(28,42)` flicker (`n = draw·0.005 +
+  (270−mouseTextColor)/500`, the 0.35-scaled (0.1, 0.3+n/2, 0.6+n) teal), the
+  `(0, sin(2π·ai[0]/180)·0.15)` hover with the 180 wrap (the C# casts the f32
+  phase to double for `Math.Sin`, back to f32, THEN ×0.15f).
+  `Main.mouseTextColor` rides a pool snapshot (`set_mouse_text_color`, the
+  `set_disco` precedent — the step reads what the last draw left). The 590
+  row is W4-d12's (keep-one-dedupe; the dispatch + seam witness conditional).
+* **849/912 whips (`:47846`/`:48011`).** New `whip_dust_lights` (the AI_165
+  dust-switch tail, after the swing state; a killed swing skips it): the
+  849's `t > 0.4 && Next(9) != 0` gate + the `Next(2)` BlackLightning particle
+  draw; the 912's `num28 > 0.1 && NextFloat() < num28/2` gate + the three
+  `Next(2)` dust-261 draws. The anchor: the curve tip's
+  `Utils.CenteredRectangle(p, 30).Center` (`Utils.cs:947-950` — truncate
+  `p−15` per axis, add 15 back) through the `AddLight(Vector2, Vector3)`
+  quotient truncation. The curve is `fill_whip_control_points` with the
+  slot's `ai[1]` spin seed — the dust cases call the DEFAULT overload
+  (`:47832`/`:47988`), not the collision sweep's forced 1f.
+  `whipRangeMultiplier` folds 1f (the arm carries no player; the golf-context
+  seam is the follow-up). **The inter-case stream deviation:** every OTHER
+  whip type's dust case (848/847/915/914/952/1034/1035/1028/913/1033/1029/
+  1030/1031/1032/1104) stays draw-skipped wholesale — their explicit rolls
+  belong to the dust pass's lane; until it lands, a mixed whip field's
+  stream interleaving differs from the C#'s (the same recorded shape as the
+  S1-E-21c sound-tail batch).
+* **The d9/d10/d11 activations (10 sites / 11 contributions).** d9 rowed
+  451/464/490/492, d10 518/535, d11 567/568/575 — their arms activate in
+  `proj_lights_a` (the rows stay the lanes' to merge). The state-driven
+  folds, each the tiger/601 precedent: the 451 reads its spawn alpha 255
+  (full-bright); the 464's spawn `ai[1]==0` reads the 6-point ring (the
+  `RotatedBy` doubles kept); the 490's `flag43` NPC-active/type gate folds to
+  the `ai[1] >= 0` slot-state half (the feed carries no NPC slice); the 535's
+  local-owner channel-Kill gate folds live; the 567/568 head reads
+  `(1−alpha/255)·scale` — dark at the alpha-255 spawn until the AI arm's
+  fade runs (the e6 ported-but-dark precedent). The 978 Volcano's d12 row is
+  aiStyle 189, NOT the `:34487` trio's 117 — the third term stays unreachable
+  (a style mismatch, not a missing row).
+
+**Round-3 accounting: 58 ported sites (54 feed + 4 sim) / 64 light
+contributions, 2 audit-landed, 7 absent** — 502 (`:24307`), 1092 (`:25394`),
+465/466 (`:31998`/`:32049`), 731 (`:37821`), the phaseblades
+(`:39020`/`:39021`), 756 (`:51492`), all still unrowed on every pushed lane.
+12 new witnesses written not run (42 total).
 ### The Player family (S1-E-5, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/player_lights.rs::player_lights` ports **32 of Player.cs's
