@@ -1262,6 +1262,8 @@ mod tests {
     /// `NPC.cs:6729-6753` — the name accessors.
     #[test]
     fn w4_f29_npc_names_follow_given_or_type() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
         let mut guide = npc(NpcKind::Guide, 0.0, 0.0);
         let type_name = crate::lang::npc_name(22);
         assert_eq!(npc_given_or_type_name(&guide), type_name);
@@ -1332,6 +1334,7 @@ mod tests {
     /// `Lang.cs:1158-1205` — LocalizedDuration's largest-unit + round-up.
     #[test]
     fn w4_f29_localized_duration_largest_unit() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         crate::lang::init(tr_core::localization::GameCulture::English);
         // Under a minute: seconds.
         assert_eq!(crate::lang::localized_duration(45.0, false, false), "45 seconds");
@@ -1350,6 +1353,7 @@ mod tests {
     /// `Main.cs:56631-56643` — the chest name append.
     #[test]
     fn w4_f29_find_chest_name_appends_the_stored_name() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         crate::lang::init(tr_core::localization::GameCulture::English);
         let mut chest = crate::chest::WorldChest::default();
         chest.tile = (10, 20);
