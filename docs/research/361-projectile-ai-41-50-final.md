@@ -1,16 +1,23 @@
-# 360 — Projectile aiStyles 41-50 FINAL + SEALED (W4-d5 RETIRE)
+# 361 — Projectile aiStyles 41-50 FINAL + SEALED (W4-d5 RETIRE)
+
+> (Number: was research/360; renumbered 360 → **361** per the d54
+> research/150 UNIFIED FINAL registry §9.2 row 361 (tip `b4c94432c`) —
+> g10's `360-g10-pets-final` (`7414ba339`, 17:31) first-add KEEPS 360,
+> this doc (`fd69c1167`) is the third 360 claimant and loses the key.)
 
 Status: FINAL / SEALED (W4-d5, 2026-11-21, worktree TR-W4-d5, branch
 `task/W4-d5-proj-ai-41-50`). Code-only — no cargo/rustc/tests/rustfmt/
 graphify invoked; every witness WRITTEN NOT RUN. C# cites are
 `decompiled/Terraria/Projectile.cs` (stable), read in ≤100-line windows.
 
-Research number **360** per registry-150 (`origin/task/W4-d54-dust-sites-world`
-`docs/research/150-research-number-registry.md`, FROZEN §8.7 at tip
-`9dddb32b4`/`06aea22e0`): new docs take ≥360 after a registry check — a
-fresh `git ls-tree docs/research/` sweep of all origin refs finds NOTHING
-≥350 filed (highest live keys 308/309/312, all §8-assigned); **360 is the
-first new-doc key**. The census doc's own renumber 26d→**156** is EXECUTED
+Research number **361** per registry-150 (`origin/task/W4-d54-dust-sites-world`
+`docs/research/150-research-number-registry.md`, UNIFIED FINAL §9.2 at tip
+`b4c94432c`). The original self-pick **360** followed the then-FROZEN §8.7
+new-doc rule (tips `9dddb32b4`/`06aea22e0`): new docs take ≥360 after a
+registry check — a fresh `git ls-tree docs/research/` sweep of all origin
+refs found NOTHING ≥350 filed (highest live keys 308/309/312, all
+§8-assigned); §9's post-wave table gives 360 to g10 (first-add) and
+assigns this doc **361**. The census doc's own renumber 26d→**156** is EXECUTED
 on this branch (registry §3 row: d12's 26d pushed 00:06:06 first, d5's
 00:24:13 loses the key; refs-to-update "(none)" per the registry — the
 five module headers, `main.rs:198` and the five anchors rows re-pointed

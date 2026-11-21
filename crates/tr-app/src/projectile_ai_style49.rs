@@ -61,7 +61,7 @@
 //! intent). The sounds ride `wants_sound` (single slot — the last cue
 //! wins on a multi-cue tick, the boomerang precedent).
 //!
-//! ## The g65-Kill-309 compose (research/360 §3)
+//! ## The g65-Kill-309 compose (research/361 §3)
 //!
 //! The dust BODIES of BOTH 281 blocks are W4-g65/g63's, superseded here
 //! (the g65-Kill-309 owed pool, `Kill-remainder-309-distinct-kinds-ALL-
@@ -74,7 +74,7 @@
 //!   `tombstone_head_gores`/`corner_gores` bodies are the gore lane's).
 //!   This module keeps the cues + the gore-draw census + the resize/Damage
 //!   state; at the merge the gore census drops from ONE side only
-//!   (research/360's drop-hunk), never both.
+//!   (research/361's drop-hunk), never both.
 //! * The tick-3 fuse spark's 10× dust-31 + 5×2 dust-6 (`:28290-28305`)
 //!   ride g63's `projectile_trail_dust.rs::bunny_burst` (STAGED, its
 //!   activation contract cites this module). The ONE gore
@@ -149,7 +149,7 @@ pub fn bunny_step(p: &mut Projectile, rng: &mut dyn DropRng) {
         }
         p.alpha = 0;
         // `:28288-28314` — the tick-3 fuse spark: the dust loops' bodies
-        // are g63's STAGED `bunny_burst` (research/360 §3 — activation
+        // are g63's STAGED `bunny_burst` (research/361 §3 — activation
         // adds the pool internals, no explicit dust draws exist here);
         // the ONE gore draws Next(61,64) + its kicks (g16's body seam).
         if p.ai[0] == 3.0 {
@@ -241,7 +241,7 @@ pub fn bunny_kill(p: &mut Projectile, rng: &mut dyn DropRng) -> BunnyKill {
         // `:75758` — the explosion blast (the last cue wins the slot).
         p.wants_sound = Some((2, 14, p.pos.x, p.pos.y, 0.0));
         // `:75759-75771` — the dust loops: bodies + internals are the g65
-        // drain's 281 arm (research/360 §3, the g65-Kill-309 compose); the
+        // drain's 281 arm (research/361 §3, the g65-Kill-309 compose); the
         // loops roll no explicit draws, so nothing stays on this stream.
         // `:75772-75787` — the 4 cardinal gibs.
         for _ in 0..4 {
@@ -438,7 +438,7 @@ mod tests {
         assert_eq!(rng.next_range(0, 999), oracle.next_range(0, 999));
     }
 
-    /// The g65-Kill-309 compose (research/360 §3): g65's 281 drain arm
+    /// The g65-Kill-309 compose (research/361 §3): g65's 281 drain arm
     /// (`projectile_death_dust.rs:3295` @ b0842907c) keeps the SAME 20-draw
     /// gore census this hook keeps — replaying its census shape (2×
     /// [(-20,21),(-20,21),(10,31),(-20,21)] then 4× [(61,64),(10,31),

@@ -39245,7 +39245,7 @@ cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
 
-## The projectile aiStyles 41-50 band (W4-d5, research/156 + 360)
+## The projectile aiStyles 41-50 band (W4-d5, research/156 + 361)
 
 Five MISSING styles ported as UNWIRED pure modules (the `npc_ai_style25`
 pre-wiring precedent — module consts, NOT `proj_data` rows, so the
@@ -39261,7 +39261,7 @@ scan, the `GetChaseResults(2160)` interception, RNG-free),
 The verify-only five (44/45/47/48/50) are ARMED on main; their nine
 rowless kinds (F1/F4/F5/F6) are rowed + armed on g2's pushed lane.
 
-Deliberate deviations / compose decisions (research/360):
+Deliberate deviations / compose decisions (research/361):
 
 - **The style-43 dust census is SUPERSEDED, not kept** — the W4-e3
   STAGED emitter contract (research/231 §7 row d5) executed on this
@@ -39295,4 +39295,4 @@ Deliberate deviations / compose decisions (research/360):
 
 Code-only: 31 witnesses WRITTEN NOT RUN (no cargo/rustc/tests/rustfmt/
 graphify invoked); C# re-read in ≤100-line windows, streams hand-derived
-on cloned `UnifiedRandom`. research/360 SEALED.
+on cloned `UnifiedRandom`. research/361 SEALED.

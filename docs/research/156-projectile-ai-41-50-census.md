@@ -138,10 +138,11 @@ Witnesses: per-module tests WRITTEN NOT RUN (no compiler/tests on this
 branch, the task contract); verified by re-reading the cited C# blocks and
 hand arithmetic.
 
-## The RETIRE round (2026-11-21, research/360)
+## The RETIRE round (2026-11-21, research/361)
 
 The band's landing census, the style-43 STAGED-emitter activation, the
 all-styles-armed/kinds-rowed sweep, the g65-Kill-309 compose and the FINAL
-band declaration live in `360-projectile-ai-41-50-final.md` (this doc's
-companion; number per registry-150 §8.7's new-doc rule, ≥360 after the
-360-ref check). This census doc's rows stay as the port-time record.
+band declaration live in `361-projectile-ai-41-50-final.md` (this doc's
+companion; originally self-picked 360 per registry-150 §8.7's new-doc
+rule, renumbered 360 → 361 per the registry's UNIFIED FINAL §9.2 — g10's
+360 first-add KEEPS). This census doc's rows stay as the port-time record.
