@@ -1097,6 +1097,54 @@ mod tests {
         );
     }
 
+    /// W4-g24 FINAL — the b3 co-lane adoption contract: the b3 phase-1
+    /// wiring (`origin/task/W4-b3-npc-ai-town-wire` @ `96a5d88f`,
+    /// `npc.rs::ai_007_town_family`) passes `NoOpTownDoors` into
+    /// `town_npc_ai`; adopting `AppTownDoors` is a ONE-LINE swap
+    /// (`let mut doors = NoOpTownDoors;` → `let mut doors = AppTownDoors
+    /// { app };` — the arm's `world`/`player` borrows must move into the
+    /// adapter's `&mut App` first, the b3 phase-2 caller re-shape). This
+    /// witness pins the CONTRACT the swap relies on: the adapter satisfies
+    /// the SAME `&mut dyn TownDoorOps` object-safety the arm's signature
+    /// demands (`npc_ai_town.rs:1520`), and one dyn-dispatched open/close
+    /// pair plays exactly one cue each on `UpdateNpcs` — the same stream
+    /// the b3 caller passes (`world_sim/npcs.rs`'s `RngKey::UpdateNpcs`).
+    #[test]
+    fn w4_g24_the_b3_adoption_contract_is_dyn_compatible() {
+        use crate::npc_ai_town::TownDoorOps;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        for (row, fy) in [(17, 0i16), (18, 18), (19, 36)] {
+            let i = app.world.index(10, row);
+            app.world.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[10] = true;
+        app.world.frame_important[11] = true;
+        let mut player = Player::spawn(&app.world);
+        player.x = 4.0 * 16.0;
+        player.y = 18.0 * 16.0;
+        app.player = Some(player);
+        // The dyn coercion the town arm's `doors: &mut dyn TownDoorOps`
+        // parameter takes — NoOpTownDoors and AppTownDoors are drop-in
+        // interchangeable at that seam (b3 phase 2 swaps the binding).
+        let mut adapter = AppTownDoors { app: &mut app };
+        let doors: &mut dyn TownDoorOps = &mut adapter;
+        let before = app.audio.played_count();
+        assert!(doors.open_door(10, 18, 1), "the dyn open lands");
+        assert!(doors.close_door(10, 18), "the dyn close lands");
+        assert_eq!(
+            app.audio.played_count(),
+            before + 2,
+            "one pitched cue per success through the dyn seam"
+        );
+    }
+
     #[test]
     fn the_bed_sleep_half_snaps_within_96_px_and_toggles_off() {
         // DW-1.3/DW-1.6 — `Player.cs:32669-32677`: the 96-px gate wraps

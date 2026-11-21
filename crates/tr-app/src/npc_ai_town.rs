@@ -737,6 +737,17 @@ pub enum SavedState {
 /// The REAL sound-complete adapter is `world_sim::editing::doors::
 /// AppTownDoors` (W4-g24 doc-sweep — the W4-b3 phase-2 seam): it plays
 /// the pitched 8/9 cues on `UpdateNpcs` and spawns the cleanup drops.
+///
+/// ADOPTION STATUS (W4-g24 FINAL, re-read of b3 @ `96a5d88f`): b3 phase 2
+/// has NOT landed — `npc.rs::ai_007_town_family` still passes its
+/// branch-local `NoOpTownDoors` (every attempt false). Keep-one verdict:
+/// `AppTownDoors` is the survivor (b3's NoOp is a placeholder, not a
+/// competing door-sound impl — no cue overlap to reconcile). The adoption
+/// is a one-binding swap at the b3 call site plus the caller re-shape
+/// (the arm's `world`/`player` snapshot borrows fold into the adapter's
+/// `&mut App`); the `&mut dyn TownDoorOps` object-safety + the one-cue-
+/// per-success `UpdateNpcs` contract are pinned by
+/// `doors.rs::w4_g24_the_b3_adoption_contract_is_dyn_compatible`.
 pub trait TownDoorOps {
     /// `WorldGen.OpenDoor(x, y, direction)` (`WorldGen.cs:37630`).
     fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool;
