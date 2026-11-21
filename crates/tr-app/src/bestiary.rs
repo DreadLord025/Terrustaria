@@ -2229,6 +2229,38 @@ fn eval_gate(
                 UnlockState::NotKnownAtAll
             }
         }
+        Gate::GoldCritter { credit_net, peers } => {
+            // `GoldCritterUICollectionInfoProvider.cs:21-75` (the W4-c8
+            // census, folded onto the c37 gate table by the e23 compose):
+            // max(own sight, the normal peers' sights) (`:23-37`), then
+            // the any-gold-seen collection gate (`:42-52`).
+            let sight = |net: i32| {
+                // `GetUnlockStateForCritter` (`:68-75`).
+                if tracker.was_seen_near_player(credit_id_for_net(net)) {
+                    UnlockState::CanShowDropsWithDropRates
+                } else {
+                    UnlockState::NotKnownAtAll
+                }
+            };
+            let mut state = sight(credit_net);
+            for &peer in peers {
+                state = state.max(sight(peer));
+            }
+            if state == UnlockState::NotKnownAtAll {
+                return state; // `:42-45`
+            }
+            // `TryFindingOneGoldCritterThatIsAlreadyUnlocked` (`:56-66`):
+            // any `NPCID.Sets.GoldCrittersCollection` member seen opens
+            // the display; else the whole entry reads tier 0 (`:46-52`).
+            let any_gold = crate::bestiary_data::GOLD_CRITTERS_COLLECTION
+                .iter()
+                .any(|&net| sight(net) > UnlockState::NotKnownAtAll);
+            if any_gold {
+                state
+            } else {
+                UnlockState::NotKnownAtAll
+            }
+        }
         Gate::Highest(gates) => {
             // `HighestOfMultipleUICollectionInfoProvider.cs:17-31`: the
             // max over the sub-providers (the entry flag rides each
@@ -2272,6 +2304,61 @@ pub fn completion_percent(tracker: &WorldBestiary) -> f32 {
         .filter(|e| unlock_state(e, tracker).known())
         .count();
     seen as f32 / ENTRIES.len() as f32
+}
+
+/// `NPCWasNearPlayerTracker.ScanWorldForFinds`
+/// (`NPCWasNearPlayerTracker.cs:102-130`, called from `Main.cs:17914`
+/// under `netMode != 1` every update, BEFORE the `UpdateNPC` loop — the
+/// W4-c8 sweep census, composed onto the c37 gate dispatch by W4-e23):
+/// every ACTIVE `CountsAsACritter` NPC whose hitbox intersects a player's
+/// `HitboxForBestiaryNearbyCheck` (the player box inflated 300×200,
+/// `Player.cs:3313-3321`) registers its credit id once
+/// (`_wasSeenNearPlayerByNetId` dedups the scan; the port's BTreeSet
+/// insert is idempotent — the same result). `CountsAsACritter`
+/// (`NPC.cs:6887-6897`): `lifeMax <= 5 && damage == 0 && type != 594
+/// && type != 686` — the port reads the kind's SetDefaults contact
+/// damage + the live max_hp (the 594/686 exclusions are unported
+/// kinds). The session player is the one hitbox (the S1-D-3p
+/// convention); a dead player still counts (the C# scan has no dead
+/// gate — only `player.active`). RNG-free.
+pub(crate) fn scan_world_for_critter_sights(app: &mut crate::app::App) {
+    let Some(p) = app.player.as_ref() else {
+        return;
+    };
+    // `HitboxForBestiaryNearbyCheck`: `Rectangle.Inflate(300, 200)` grows
+    // the box 300 px per horizontal side, 200 per vertical side.
+    let (px, py) = (p.x as i32 - 300, p.y as i32 - 200);
+    let (pw, ph) = (
+        crate::player::WIDTH as i32 + 600,
+        crate::player::HEIGHT as i32 + 400,
+    );
+    let mut found: Vec<&'static str> = Vec::new();
+    for n in &app.npcs {
+        if n.hp <= 0 {
+            continue;
+        }
+        // `CountsAsACritter` — the live lifeMax + the kind's contact
+        // damage (the SetDefaults row; no ported kind overrides damage).
+        if n.max_hp > 5 || n.kind.contact_damage() != 0 {
+            continue;
+        }
+        let (nw, nh) = n.size();
+        let (nx, ny) = (n.x as i32, n.y as i32);
+        // XNA `Rectangle.Intersects` — half-open on both axes.
+        if !(nx < px + pw && nx + nw as i32 > px && ny < py + ph && ny + nh as i32 > py) {
+            continue;
+        }
+        let entry = crate::bestiary::entry_for_npc(n.kind, n.slime);
+        if !app.bestiary.was_seen_near_player(entry.credit_id) {
+            found.push(entry.credit_id);
+        }
+    }
+    for id in found {
+        // `RegisterWasNearby` (`:32-41`) → `SetWasSeenDirectly`
+        // (`:43-52`): the set insert + the 100 % achievement hook.
+        app.bestiary.set_was_seen_directly(id);
+        let _ = app.try_grant_bestiary_100_net();
+    }
 }
 
 /// `Main.cs:65944`'s flag9: every other town NPC present — the C#'s 24
@@ -2595,6 +2682,85 @@ mod tests {
             unlock_state(fish, &tracker),
             UnlockState::CanShowDropsWithDropRates
         );
+    }
+
+    /// W4-e23 final 3 (the W4-c8 census compose) — the GoldWorm's gold
+    /// provider (`GoldCritterUICollectionInfoProvider.cs:21-75`) folded
+    /// onto the c37 gate table: the state is max(own sight, the 357
+    /// peer's sight) — the populator's peer list `{448: [357]}`
+    /// (`BestiaryDatabaseNPCsPopulator.cs:715`) — but the entry stays
+    /// tier 0 until ANY gold-critter-collection member has been seen
+    /// (`:46-52`). The 448 row awaits the c8 roster wave; the gate eval
+    /// is exercised directly. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_e23_the_gold_worm_gate_gates_on_any_gold_critter_seen() {
+        use crate::bestiary_data::Gate;
+        let gate = crate::bestiary_data::gate(448);
+        assert_eq!(
+            gate,
+            Gate::GoldCritter { credit_net: 448, peers: &[357] },
+            "the populator's dictionary row"
+        );
+        let mut tracker = WorldBestiary::new();
+        // Nothing seen: locked.
+        assert_eq!(eval_gate(gate, false, &tracker), UnlockState::NotKnownAtAll);
+        // The NORMAL peer's sight alone is not enough — the collection
+        // gate holds the entry at 0 (the C# :46-52 early return). The
+        // 357 credit resolves through ENTRIES once the c8 row lands;
+        // today credit_id_for_net(357) is "" so the peer arm is inert —
+        // the OWN sight carries the same max path.
+        tracker.set_was_seen_directly("GoldWorm");
+        assert_eq!(
+            eval_gate(gate, false, &tracker),
+            UnlockState::CanShowDropsWithDropRates,
+            "the own sight + any gold seen (itself) = tier 4"
+        );
+        // A non-peer gold member's sight does NOT carry the state — the
+        // gate opens but max(own, 357) is still 0.
+        let mut t3 = WorldBestiary::new();
+        t3.set_was_seen_directly("GoldFrog");
+        assert_eq!(
+            eval_gate(gate, false, &t3),
+            UnlockState::NotKnownAtAll,
+            "the gate opens but neither 448 nor 357 was seen"
+        );
+        // The collection table is the C#'s 14 ids in order.
+        assert_eq!(
+            crate::bestiary_data::GOLD_CRITTERS_COLLECTION,
+            &[443, 442, 592, 593, 444, 601, 445, 446, 605, 447, 627, 613, 448, 539]
+        );
+        // The 539 row carries TWO peers (`:716`).
+        assert_eq!(
+            crate::bestiary_data::gate(539),
+            Gate::GoldCritter { credit_net: 539, peers: &[299, 538] }
+        );
+        // The critter-twin folds read HighestOfMultiple over two sights.
+        assert!(matches!(crate::bestiary_data::gate(362), Gate::Highest(_)));
+    }
+
+    /// W4-e23 final 3 — the UI dispatch compose-verify: the screen's
+    /// unlock reads (`unlock_state`) and the completion bar
+    /// (`completion_percent`) both ride the WorldBestiary through the
+    /// c37 gate dispatch, so a critter SIGHT moves the bar exactly like
+    /// a kill of a non-critter entry (the c8 sweep's
+    /// `completion_percent_world` semantics, already the port's shape).
+    /// WRITTEN, NOT RUN.
+    #[test]
+    fn w4_e23_the_completion_counts_critter_sights() {
+        let mut tracker = WorldBestiary::new();
+        assert_eq!(completion_percent(&tracker), 0.0);
+        tracker.set_was_seen_directly("Goldfish");
+        assert_eq!(
+            completion_percent(&tracker),
+            1.0 / ENTRIES.len() as f32,
+            "one critter sight moves the bar"
+        );
+        // Kills of the critter credit do NOT move it (the sight provider).
+        let mut t2 = WorldBestiary::new();
+        for _ in 0..50 {
+            t2.kills.register_kill("Goldfish");
+        }
+        assert_eq!(completion_percent(&t2), 0.0);
     }
 
     /// W4-c37: the minion folds read the BOSS's credit with quick-unlock

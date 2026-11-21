@@ -33,6 +33,16 @@ pub enum Gate {
     /// `CritterUICollectionInfoProvider` (`:14-20`): sighted → tier 4,
     /// else unknown.
     Critter { credit_net: i32 },
+    /// `GoldCritterUICollectionInfoProvider` (`:21-75`): the max of the
+    /// gold credit's own sight and its normal-critter peers' sights
+    /// (`:23-37`), held at tier 0 until ANY `GoldCrittersCollection`
+    /// member has been seen (`TryFindingOneGoldCritterThatIsAlreadyUnlocked`,
+    /// `:46-52`/`:56-66`). The W4-c8 census's provider, folded onto the
+    /// c37 gate table by the W4-e23 final compose.
+    GoldCritter {
+        credit_net: i32,
+        peers: &'static [i32],
+    },
     /// `HighestOfMultipleUICollectionInfoProvider` (`:17-31`): the max of
     /// the sub-providers' states.
     Highest(&'static [Gate]),
@@ -66,7 +76,40 @@ const TOWN_NET_IDS: &[i32] = &[
 /// the Etherian Portal 549 (`NPC.cs:16033-16040`: 5 HP, 0 damage,
 /// dontTakeDamage) qualify — the automated pass registers both through
 /// `BestiaryEntry.Critter` (`BestiaryDatabaseNPCsPopulator.cs:858-861`).
+/// The W4-c8 wave's nine crawler kinds (357/374/375/448/484-486/606/661)
+/// join this list when their ENTRIES rows land on the union — the c8
+/// census's `is_critter_entry` set, recorded here for the compose.
 const CRITTER_NET_IDS: &[i32] = &[55, 549];
+
+/// `NPCID.Sets.GoldCrittersCollection` (`NPCID.cs:10121-10125`), verbatim
+/// order — the gold provider's any-seen gate
+/// (`GoldCritterUICollectionInfoProvider.cs:56-66`).
+pub const GOLD_CRITTERS_COLLECTION: &[i32] = &[
+    443, 442, 592, 593, 444, 601, 445, 446, 605, 447, 627, 613, 448, 539,
+];
+
+/// The gold-critter override dictionary
+/// (`BestiaryDatabaseNPCsPopulator.cs:703-720`), verbatim: the gold entry's
+/// normal-critter peer list (the 539 row carries TWO peers). The provider
+/// is `GoldCritterUICollectionInfoProvider(peers, ownCredit)` (`:719`).
+const GOLD_CRITTER_PEERS: &[(i32, &[i32])] = &[
+    (443, &[46]),
+    (442, &[74]),
+    (592, &[55]),
+    (444, &[356]),
+    (601, &[599]),
+    (445, &[361]),
+    (446, &[377]),
+    (605, &[604]),
+    (447, &[300]),
+    (627, &[626]),
+    (613, &[612]),
+    (448, &[357]),
+    (539, &[299, 538]),
+];
+
+/// The four critter-twin folds (`:721-730`) are the match arms in `gate`
+/// below — the dictionary verbatim: {362:363, 364:365, 602:603, 608:609}.
 
 /// The entry's provider — the populator's override walk
 /// (`ModifyEntriesThatNeedIt`) over the factory defaults.
@@ -74,11 +117,10 @@ const CRITTER_NET_IDS: &[i32] = &[55, 549];
 /// Unported override families (no `ENTRIES` row rides them, recorded for
 /// the roster waves): the Salamander/Shelly/Dad 494-506 world-roster gate
 /// (`:649-652`, `SalamanderShellyDadUICollectionInfoProvider.cs:18-66`),
-/// the Tortured Soul 534 (`:653`), the Skeletron hand 68 / Old Man 37
-/// triples (`:676`/`:678`), the gold-critter collection gate
-/// (`:703-720`, `GoldCritterUICollectionInfoProvider.cs:21-75` — none of
-/// the 14 gold ids 442-448/539/592/601/605/613/627 has a port entry) and
-/// the four critter-twin folds 362/364/602/608 (`:721-730`).
+/// the Tortured Soul 534 (`:653`) and the Skeletron hand 68 / Old Man 37
+/// triples (`:676`/`:678`). The gold-critter collection gate (`:703-720`)
+/// and the four critter-twin folds (`:721-730`) are TABLED below (the
+/// W4-c8 census compose) — their ids await the c8/d42 roster waves.
 pub fn gate(net_id: i32) -> Gate {
     // The DD2 mini-boss quick rows (`BestiaryDatabaseNPCsPopulator.cs:679-682`):
     // quickUnlock on the provider even though the factory flag is false
@@ -140,6 +182,43 @@ pub fn gate(net_id: i32) -> Gate {
             };
         } // Cultist minions -> AncientCultist
         35 => return Gate::Highest(SKELETRON_GATES),
+        _ => {}
+    }
+    // The gold-critter dictionary (`:703-720`): the max(own, peers) sight
+    // provider behind the any-gold-seen collection gate.
+    if let Some(&(_, peers)) = GOLD_CRITTER_PEERS.iter().find(|&&(id, _)| id == net_id) {
+        return Gate::GoldCritter {
+            credit_net: net_id,
+            peers,
+        };
+    }
+    // The critter-twin folds (`:721-730`): HighestOfMultiple over the two
+    // sight providers (the C# builds both from the dictionary's pair).
+    match net_id {
+        362 => {
+            return Gate::Highest(&[
+                Gate::Critter { credit_net: 362 },
+                Gate::Critter { credit_net: 363 },
+            ]);
+        }
+        364 => {
+            return Gate::Highest(&[
+                Gate::Critter { credit_net: 364 },
+                Gate::Critter { credit_net: 365 },
+            ]);
+        }
+        602 => {
+            return Gate::Highest(&[
+                Gate::Critter { credit_net: 602 },
+                Gate::Critter { credit_net: 603 },
+            ]);
+        }
+        608 => {
+            return Gate::Highest(&[
+                Gate::Critter { credit_net: 608 },
+                Gate::Critter { credit_net: 609 },
+            ]);
+        }
         _ => {}
     }
     if TOWN_NET_IDS.contains(&net_id) {
