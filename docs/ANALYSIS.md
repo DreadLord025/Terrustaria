@@ -39550,3 +39550,63 @@ replay of the ported machines (a Python transcription of the C#
 order), not by hand alone. Frame counts cross-checked
 entry-by-entry: `Main.cs:67082`'s 697-entry initializer vs
 `render/entities.rs::NPC_FRAME_COUNT` — all 15 agree.
+
+## W4-f27 FindFrame extra wave 8 (slice 8 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-7 (9c1cfba9). The census re-derived
+mechanically against this branch's tree + the pushed roster lane
+`origin/task/W4-d40-npc-kinds-421-490` (8fe1d6d3, its `npc.rs::find_frame`
+arms + cs_id hand rows read via `git show`): every C# top-level case
+label of the switch on this.type (NPC.cs:66705, two-tab indent - the
+nested switches excluded) = 602 ids; the port's find_frame arms mapped
+through the cs_id hand rows + the bestiary net ids + the wave-A/B/e4/e7
+module rosters + the folded segments (135/246/249/371/373) cover 278
+(the slice-7 claim's 263 counted before the extra-7 seam landed); the
+d44-d49 claims subtract 72 more (disjoint - the wire-census research/68
+tables) = 252 e13-base; minus the deduped e13/e14/f26(3+5+6)/f27(4+7)
+claims = **200 unclaimed**. The f26 co-lane's pushed tip (9a4e3512)
+declares its slice 6 done (278..295) and the in-band remainder
+297..304 + the 351-365 band ride its slice 7 (f26d) - the band is
+RESERVED for f26d, untouched here (the 351..365 ids are d48 wave-C
+claimed anyway).
+
+The 443+ window: d40's roster lane adds NpcKind variants + SetDefaults
+rows for 443-454/460-463 but its find_frame arms split: the seven gold
+critters 443-448 + the clone 440 ride ROW-0 STUBS (`self.frame = 0`,
+d40 npc.rs:9527-9540 - the faithful machines still missing), the bone
+throwers 449-452 + the Creature 461 carry faithful inline arms, and
+453/460/462 ride `humanoid_town_frame` (the town-walk stand-in: the
+453 ExtraFramesCount-9 wrap is right, the 460/462 fighter wraps + the
+462 air rows 1/2 + the air row-1 pin are WRONG for them - d40's own
+merger note). **This wave (f27 slice 8) claims the FIRST 15 unclaimed
+ascending from 443: 443/444/445/446/447/448/449/450/451/452/453/454/
+460/461/462** - the six gold critters, the four bone-throwing
+skeletons, the Skeleton Merchant, the Cultist Dragon Head, the
+Butcher, the Creature From The Deep and Fritz. The keep-one twins for
+the merger: 443 = d44's 46/47 + f27's 337 bunny hop; 444/445/446/448 =
+d48 wave-C's 356/361/377/357 group machines (the C# groups the cases;
+444/448's ai[2]-bank / 444's colour shift are type-gated OFF); 447 =
+f26d's 300 mouse pair; 449-452/461 = d40's faithful inline arms
+(re-derived here as pure machines, the f26 keep-one shape); 453/460/
+462 = the humanoid-group walk (the 453 town wrap vs the 460/462
+fighter wraps split); 454 = d40's counter/2 head arm.
+
+ALSO this slice: the 439 stub FIX - `npc.rs:7135`'s AncientCultist
+1-frame pin (cs_id 439 via the bestiary net_id, `bestiary.rs:1714`) is
+WRONG vs the C#'s `case 439/440` shared pose ladder
+(`NPC.cs:72017-72101` - the case list carries BOTH ids; the slice-7
+440 machine is the same arm). The stub delegates to
+`npc_findframe_extra7`'s CultistBossClone ladder (the localAI[2] pose
+selector, the counter++ AFTER the switch), the towers keep their
+row-0 pin (422/493/507/517 have no FindFrame case - npcFrameCount 1).
+
+Shape (the extra-4/extra-7 precedent): pure machines over FrameState/
+FrameInput in crates/tr-app/src/npc_findframe_extra8.rs, the
+find_frame_kind_extra8 vanilla-id seam, no npc.rs hook for the 15 new
+kinds (the roster wave owns them; the 439 fix is the ONE npc.rs edit).
+5 kinds per commit, 3 batches. Zero RNG (verified mechanically per
+arm - a Main.rand/.Next(/NextFloat grep over all cited body ranges =
+ZERO; the humanoid group's town pose zones with their chat-bubble
+draws are the documented skip). Frame counts vs Main.cs:67082
+entry-by-entry AND render/entities.rs NPC_FRAME_COUNT.
