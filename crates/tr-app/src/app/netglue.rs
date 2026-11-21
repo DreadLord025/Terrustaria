@@ -6668,16 +6668,20 @@ mod g48_apply_tests {
     /// relays; the receiving client shifts its own copy. The 5-tall column
     /// 388 → 389, the frames survive (`WorldGen.cs:51763-51766`); the hit
     /// cell is mid-column so the row walk's anchor adjustment is exercised.
+    /// The gate rows sit at y 6..10 — inside the handler's fluff-3 box AND
+    /// past the kill cascade's 5-tile edge guard (`kill.rs`'s
+    /// `square_tile_frame`, the C# `TileFrame` `:81330` margin), so the
+    /// validate's reframes cannot pop the column mid-test.
     /// WRITTEN NOT RUN (code-only).
     #[test]
     fn g48_19_tall_gate_open_toggle_replicates() {
         let (mut host_app, mut client_app) = in_world_pair();
-        // The closed gate column x=3, rows 2..6 — the real placement grid
+        // The closed gate column x=3, rows 6..10 — the real placement grid
         // (D_388 coordinate_heights [18,16,16,16,18] + 2px padding → frameY
         // 0/20/38/56/74, the c42 23411fa7 fixture derivation).
         for app in [&mut host_app, &mut client_app] {
             for (row, fy) in [(0i32, 0i16), (1, 20), (2, 38), (3, 56), (4, 74)] {
-                let i = app.world.index(3, 2 + row);
+                let i = app.world.index(3, 6 + row);
                 app.world.tiles[i] = tr_core::Tile {
                     kind: 388,
                     frame_x: 0,
@@ -6691,7 +6695,7 @@ mod g48_apply_tests {
             client.send(&C2s::DoorToggle(net::DoorToggle {
                 action: 4, // ShiftTallGate(closing: false, forced: true)
                 x: 3,
-                y: 3, // mid-column: frameY 20 → the walk steps one row up
+                y: 7, // mid-column: frameY 20 → the walk steps one row up
                 direction: 0,
             }));
         }
@@ -6701,8 +6705,8 @@ mod g48_apply_tests {
             client_app.net_tick(1.0 / 60.0);
             host_app.poll_net();
             client_app.poll_net();
-            opened = host_app.world.tile(3, 2).is_some_and(|t| t.kind == 389)
-                && client_app.world.tile(3, 2).is_some_and(|t| t.kind == 389);
+            opened = host_app.world.tile(3, 6).is_some_and(|t| t.kind == 389)
+                && client_app.world.tile(3, 6).is_some_and(|t| t.kind == 389);
             if opened {
                 break;
             }
@@ -6711,7 +6715,7 @@ mod g48_apply_tests {
         assert!(opened, "the tall gate opened on both sides");
         for app in [&host_app, &client_app] {
             for (row, fy) in [(0i32, 0i16), (1, 20), (2, 38), (3, 56), (4, 74)] {
-                let t = app.world.tile(3, 2 + row).unwrap();
+                let t = app.world.tile(3, 6 + row).unwrap();
                 assert_eq!(t.kind, 389, "row {row} opened");
                 assert_eq!((t.frame_x, t.frame_y), (0, fy), "frames survive");
             }
