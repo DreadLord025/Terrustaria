@@ -59,6 +59,13 @@ const BANNED_IN_INVENTORY: &[u16] = &[
     58, 184, 1734, 1735, 1867, 1868, 3453, 3454, 3455, 4143, 5013, 6135, 6136,
 ];
 
+/// `ItemID.Sets.ItemsThatShouldNotBeInInventory` (`ID/ItemID.cs:345`) — the
+/// public predicate the hopper-range scan reads (`Wiring.IsHopperInRangeOf`
+/// `Wiring.cs:2612`). W4-g15 lane 5.
+pub(crate) fn banned_in_inventory(kind: u16) -> bool {
+    BANNED_IN_INVENTORY.contains(&kind)
+}
+
 /// `Main.tileContainer` (`Main.cs:10076-10080`): the tile kinds whose 2×2 a
 /// chest anchor stands on. `SaveChests:1617-1632`'s pre-pass destroys every
 /// chest whose four anchor cells are not active tiles from this set.

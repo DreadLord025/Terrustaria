@@ -108,6 +108,16 @@ impl WireState {
         }
     }
 
+    /// `Tile.anyWire()` (`Tile.cs:659-662`): any of the four channels at the
+    /// cell. W4-g15 lane 5 — the hopper-range scan (`Wiring.IsHopperInRangeOf`
+    /// `Wiring.cs:2628`) reads it.
+    pub fn any_at(&self, x: i32, y: i32) -> bool {
+        self.red.contains(&(x, y))
+            || self.blue.contains(&(x, y))
+            || self.green.contains(&(x, y))
+            || self.yellow.contains(&(x, y))
+    }
+
     pub fn set(&mut self, x: i32, y: i32, color: WireColor, on: bool) {
         let set = match color {
             WireColor::Red => &mut self.red,
