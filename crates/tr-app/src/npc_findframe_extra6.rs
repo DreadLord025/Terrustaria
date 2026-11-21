@@ -92,6 +92,21 @@ pub enum FindFrameExtra6Kind {
     /// `NPCID.RaggedCasterOpenCoat` = 282 (`NPCID.cs:11241`) — the
     /// same caster group (`NPC.cs:77024`).
     RaggedCasterOpenCoat,
+    /// `NPCID.Necromancer` = 283 (`NPCID.cs:11243`) — the same caster
+    /// group (`NPC.cs:77025`).
+    Necromancer,
+    /// `NPCID.NecromancerArmored` = 284 (`NPCID.cs:11245`) — the same
+    /// caster group (`NPC.cs:77026`).
+    NecromancerArmored,
+    /// `NPCID.DiabolistRed` = 285 (`NPCID.cs:11247`) — the same
+    /// caster group (`NPC.cs:77027`).
+    DiabolistRed,
+    /// `NPCID.DiabolistWhite` = 286 (`NPCID.cs:11249`) — the same
+    /// caster group (`NPC.cs:77028`).
+    DiabolistWhite,
+    /// `NPCID.BoneLee` = 287 (`NPCID.cs:11251`) — the humanoid-group
+    /// fighter walk (`NPC.cs:68590`, the wave-B keep-one delegate).
+    BoneLee,
 }
 
 impl FindFrameExtra6Kind {
@@ -103,6 +118,11 @@ impl FindFrameExtra6Kind {
             Self::HellArmoredBonesSword => 280,
             Self::RaggedCaster => 281,
             Self::RaggedCasterOpenCoat => 282,
+            Self::Necromancer => 283,
+            Self::NecromancerArmored => 284,
+            Self::DiabolistRed => 285,
+            Self::DiabolistWhite => 286,
+            Self::BoneLee => 287,
         }
     }
 
@@ -115,9 +135,16 @@ impl FindFrameExtra6Kind {
             Self::HellArmoredBonesSpikeShield => 15,
             Self::HellArmoredBonesMace => 15,
             Self::HellArmoredBonesSword => 15,
-            // Main.cs:67112 (entries 281/282): 3, 3.
+            // Main.cs:67112 (entries 281..286): 3, 3, 3, 3, 3, 3.
             Self::RaggedCaster => 3,
             Self::RaggedCasterOpenCoat => 3,
+            Self::Necromancer => 3,
+            Self::NecromancerArmored => 3,
+            Self::DiabolistRed => 3,
+            Self::DiabolistWhite => 3,
+            // Main.cs:67112 (entry 287): 16 — the ONE 16-row sheet in
+            // this slice's humanoid pair (295 is 15).
+            Self::BoneLee => 16,
         }
     }
 }
@@ -131,6 +158,11 @@ pub fn find_frame_kind_extra6(vanilla_type: i16) -> Option<FindFrameExtra6Kind> 
         280 => FindFrameExtra6Kind::HellArmoredBonesSword,
         281 => FindFrameExtra6Kind::RaggedCaster,
         282 => FindFrameExtra6Kind::RaggedCasterOpenCoat,
+        283 => FindFrameExtra6Kind::Necromancer,
+        284 => FindFrameExtra6Kind::NecromancerArmored,
+        285 => FindFrameExtra6Kind::DiabolistRed,
+        286 => FindFrameExtra6Kind::DiabolistWhite,
+        287 => FindFrameExtra6Kind::BoneLee,
         _ => return None,
     })
 }
@@ -233,7 +265,12 @@ pub fn find_frame_extra6(kind: FindFrameExtra6Kind, s: &mut FrameState, i: &Fram
         // +3-row bank (`:77050-77053`) is DEAD inside this case list
         // (the header's skip). The counter is NEVER touched; no
         // rotation write.
-        FindFrameExtra6Kind::RaggedCaster | FindFrameExtra6Kind::RaggedCasterOpenCoat => {
+        FindFrameExtra6Kind::RaggedCaster
+        | FindFrameExtra6Kind::RaggedCasterOpenCoat
+        | FindFrameExtra6Kind::Necromancer
+        | FindFrameExtra6Kind::NecromancerArmored
+        | FindFrameExtra6Kind::DiabolistRed
+        | FindFrameExtra6Kind::DiabolistWhite => {
             // `:77030-77040`.
             if i.vy == 0.0 {
                 if i.direction == 1 {
@@ -250,6 +287,42 @@ pub fn find_frame_extra6(kind: FindFrameExtra6Kind, s: &mut FrameState, i: &Fram
             } else if i.ai[1] > 0.0 {
                 s.row = 1;
             }
+        }
+        // The humanoid-group case list (`NPC.cs:68590` carries 287)
+        // → the shared fighter walk (`NPC.cs:68647-69655`) via the
+        // wave-B keep-one helper (the extra-3 SnowFlinx/Nymph/
+        // Lihzahrd delegate precedent). Bone Lee is NOT
+        // `isLikeATownNPC` (`NPC.cs:6856-6866` — only 453 + the town
+        // flag; its SetDefaults arm `:12724-12737` sets aiStyle 3, no
+        // townNPC), so `num57` = 0 and the walk wraps at the FULL
+        // `npcFrameCount` = 16; not a town slime, so `num108` = 6 and
+        // `num109` = row 2. NOT in the airborne pin list (`:69647` —
+        // the air holds row 1), NOT the 140/489 idle-row-1 pair (the
+        // idle snaps row 0, `:69510-69518`).
+        FindFrameExtra6Kind::BoneLee => {
+            let bi = crate::npc_findframe_b::FrameInput {
+                vx: i.vx,
+                vy: i.vy,
+                direction: i.direction,
+                wet: false,
+                ai: i.ai,
+            };
+            let mut bs = crate::npc_findframe_b::FrameState {
+                row: s.row,
+                counter: s.counter,
+                sprite_dir: s.sprite_dir,
+                rotation: 0.0,
+            };
+            crate::npc_findframe_b::humanoid_fighter_frame(
+                &mut bs,
+                &bi,
+                kind.frame_count(),
+                false,
+                false,
+            );
+            s.row = bs.row;
+            s.counter = bs.counter;
+            s.sprite_dir = bs.sprite_dir;
         }
     }
 }
@@ -283,6 +356,11 @@ mod tests {
             FindFrameExtra6Kind::HellArmoredBonesSword,
             FindFrameExtra6Kind::RaggedCaster,
             FindFrameExtra6Kind::RaggedCasterOpenCoat,
+            FindFrameExtra6Kind::Necromancer,
+            FindFrameExtra6Kind::NecromancerArmored,
+            FindFrameExtra6Kind::DiabolistRed,
+            FindFrameExtra6Kind::DiabolistWhite,
+            FindFrameExtra6Kind::BoneLee,
         ] {
             assert_eq!(
                 k.frame_count(),
@@ -337,7 +415,14 @@ mod tests {
     /// air wins over the windup); the counter is NEVER touched.
     #[test]
     fn f26s6_the_casters_pose_ladder_keeps_the_counter() {
-        for k in [FindFrameExtra6Kind::RaggedCaster, FindFrameExtra6Kind::RaggedCasterOpenCoat] {
+        for k in [
+            FindFrameExtra6Kind::RaggedCaster,
+            FindFrameExtra6Kind::RaggedCasterOpenCoat,
+            FindFrameExtra6Kind::Necromancer,
+            FindFrameExtra6Kind::NecromancerArmored,
+            FindFrameExtra6Kind::DiabolistRed,
+            FindFrameExtra6Kind::DiabolistWhite,
+        ] {
             let mut s = FrameState { row: 2, counter: 7.0, sprite_dir: 1 };
             find_frame_extra6(k, &mut s, &input(3.0, 0.0));
             assert_eq!((s.row, s.counter), (0, 7.0), "{k:?} stand");
@@ -354,6 +439,29 @@ mod tests {
         }
     }
 
+    /// The Bone Lee rides the wave-B humanoid fighter walk on the
+    /// 16-row sheet (`NPC.cs:69521-69585`): vx 3 steps every tick
+    /// (3*2+1 = 7 > 6), the stride lifts idle row 0 to 2 then steps
+    /// to 3, reaches row 15 and the 14th tick wraps 16 → 2; the air
+    /// holds row 1 (287 is NOT in the `:69647` pin list); the idle
+    /// snaps row 0 (not the 140/489 pair).
+    #[test]
+    fn f26s6_the_bone_lee_walks_the_16_row_sheet() {
+        let k = FindFrameExtra6Kind::BoneLee;
+        assert_eq!(
+            rows_over(k, input(3.0, 0.0), 14),
+            vec![3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 2]
+        );
+        let mut s = FrameState { row: 9, counter: 4.0, sprite_dir: 1 };
+        find_frame_extra6(k, &mut s, &input(2.0, -1.0));
+        assert_eq!((s.row, s.counter), (1, 0.0), "air row 1, not 0");
+        find_frame_extra6(k, &mut s, &input(0.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0), "idle row 0");
+        // The slow walk keeps the accumulator: vx 1 → +3/tick, the
+        // step fires on ticks 3/6 (9 > 6, remainder zeroed).
+        assert_eq!(rows_over(k, input(1.0, 0.0), 7), vec![2, 2, 3, 3, 3, 4, 4]);
+    }
+
     /// The seam maps exactly this slice's ids — the covered 288 and
     /// the slice-5 277 stay `None`.
     #[test]
@@ -364,11 +472,16 @@ mod tests {
             (280, FindFrameExtra6Kind::HellArmoredBonesSword),
             (281, FindFrameExtra6Kind::RaggedCaster),
             (282, FindFrameExtra6Kind::RaggedCasterOpenCoat),
+            (283, FindFrameExtra6Kind::Necromancer),
+            (284, FindFrameExtra6Kind::NecromancerArmored),
+            (285, FindFrameExtra6Kind::DiabolistRed),
+            (286, FindFrameExtra6Kind::DiabolistWhite),
+            (287, FindFrameExtra6Kind::BoneLee),
         ] {
             assert_eq!(find_frame_kind_extra6(id), Some(k));
             assert_eq!(k.vanilla_type(), id);
         }
-        for id in [277, 283, 288, 305] {
+        for id in [277, 288, 290, 305] {
             assert_eq!(find_frame_kind_extra6(id), None, "{id}");
         }
     }
