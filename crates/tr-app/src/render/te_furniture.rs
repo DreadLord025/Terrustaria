@@ -1169,8 +1169,11 @@ fn item_display(
 /// Deferrals (ANALYSIS "The TE furniture draw"): the deep per-type centre
 /// nudges of the aiStyle-2/3 boomerang families and the aiStyle-75/161
 /// minion frame machines are ported for the kinds the doll actually
-/// previews; the `ownedProjectileCounts[902]` write (`:22799-22802`) is a
-/// sim-side effect the pure draw omits.
+/// previews; the sim-side AI state writes (`ai[0] = -1000` for 301
+/// `:22726-22729`, `ai[0] = 1000` for 26 `:22956`, `ai[0]/ai[1]` for 165
+/// `:23165-23166`, `ai[0]` for 714 `:23000`, the
+/// `ownedProjectileCounts[902]` write `:22799-22802`) are omitted — the
+/// preview dummy never ticks its AI.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ai_display_doll(
     kind: u16,
