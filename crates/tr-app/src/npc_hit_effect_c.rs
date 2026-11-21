@@ -111,6 +111,7 @@
 //! | 464-465 | `:84530-84531` | the 399 MartianProbe death (2 gores 898/899, same rotation-vector shape) |
 //! | 466-468 | `:84549-84551` | the 391 Scutlix death (3 gores 607/608/609, width/2 X offset) |
 //! | 469-476 | `:84575-84588` | the 392/393/394/395 Martian Saucer family death (395 core 6 gores, 393/394 one each; 392 none) |
+//! | 477-480 | `:84609-84612` | the 482 GraniteGolem death (4 gores 718-721; 483 in gate but none) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2896,6 +2897,41 @@ fn martian_saucer_death(
     }
 }
 
+/// The 482 GraniteGolem death (`NPC.cs:84603-84612`, sites 477-480): the
+/// 30-dust type-240 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 4 gores 718/719/720/721 at the +0/+10/+20/+40 Y ladder. The 483
+/// GraniteFlyer shares the gate but spawns NO gore (the C# `if (type==482)`
+/// inside).
+fn granite_golem_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84603-84606` — the 30-dust type-240 burst.
+    for _ in 0..30 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 240, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:84607-84613` — only the 482 spawns gores.
+    if npc_type == 482 {
+        let vel = Vec2::new(npc.vx, npc.vy);
+        let s = npc.scale;
+        gore.new_gore(rng, world, pos, vel, 718, s); // :84609
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 10.0), vel, 719, s); // :84610
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 720, s); // :84611
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 40.0), vel, 721, s); // :84612
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3228,6 +3264,11 @@ pub fn hit_effect_c(
     // (sites 469-476; the 392 saucer spawns no gore).
     if (npc_type == 392 || npc_type == 393 || npc_type == 394 || npc_type == 395) && npc.hp <= 0 {
         martian_saucer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84592-84615` — the 482/483 GraniteGolem/Flyer arm (sites 477-480;
+    // the 483 flyer spawns no gore).
+    if (npc_type == 482 || npc_type == 483) && npc.hp <= 0 {
+        granite_golem_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5158,6 +5199,30 @@ mod tests {
         let mut rng4 = UnifiedRandom::new(383);
         martian_saucer_death(&n, 392, &mut dust4, &ctx(), &mut gore4, &mut rng4, &w, 1.0);
         assert_eq!(gore4.slots().iter().filter(|g| g.active).count(), 0);
+    }
+
+    /// `NPC.cs:84609-84612` — the GraniteGolem death: the 4 gores
+    /// 718/719/720/721 at +0/+10/+20/+40 Y; the 483 flyer spawns none.
+    #[test]
+    fn w4_f10_the_granite_golem_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(389);
+        granite_golem_death(&n, 482, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![718, 719, 720, 721]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 110.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 140.0));
+        // The 483 flyer: no gore.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(389);
+        granite_golem_death(&n, 483, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
