@@ -1127,8 +1127,10 @@ pub struct Player {
     /// `Player.hideMisc` (`Player.cs:1710` — a `BitsByte`; only bits 0/1
     /// have writers, the pet/light-pet hides `:17344`/`:17353` and the
     /// buff-bar cancel `Main.cs:43401`). The port models the two live bits
-    /// as a bool pair; the pet-grant arms (`:17303`/`:17318`) are unported,
-    /// so no consumer re-shows the visual yet (ANALYSIS).
+    /// as a bool pair; the pet-grant arms (`:17303`/`:17318`, W4-e10 gap
+    /// census — `update_pet_grants`) READ them, but the `TogglePet`/
+    /// `ToggleLight` re-show halves (`:17342-17363`) stay unported, so
+    /// nothing clears a hide once set (ANALYSIS).
     pub hide_misc: [bool; 2],
     /// `UpdateDyes`' `c*` cache (`Player.cs:9587-9757`) — the dye pass each
     /// draw layer applies (the `DrawData.shader` source, 0 = plain). The port
@@ -4199,6 +4201,78 @@ impl Player {
                 self.hide_misc[slot] = true;
             }
         }
+    }
+
+    /// `Player.UpdatePet` (`Player.cs:17298-17309`, called at `:25573`
+    /// right after `UpdateBuffs` in the `myPlayer` block): the equipped
+    /// vanity pet's buff re-grants (3600 ticks) whenever it is absent —
+    /// the `vanityPet || lightPet` table gate, the `hideMisc[0]` refusal
+    /// and the Carrot-603 collector's-edition gate (`:17303`). Returns
+    /// the item's `UseSound` style index to play at `base.position`
+    /// (`:17306`, the position overload's `pitchOffset` default 0 —
+    /// NOT `useSoundPitch`); `None` when no grant fired. The sound plays
+    /// even when `AddBuff` itself refused (immune) — the C# call order.
+    /// `Main.runningCollectorsEdition` folds TRUE (the retail copy ships
+    /// the CE content; the port has no `CheckBunny` registry probe —
+    /// ANALYSIS, the W4-e10 gap-census phase).
+    pub fn update_pet_grant(&mut self, pet: &ItemSlot) -> Option<u16> {
+        let d = registry::get(pet.kind)?;
+        if pet.count < 1 || d.buff_type < 1 {
+            return None; // `:17300`
+        }
+        let num = d.buff_type;
+        // `:17303` — the table gate, the hide refusal, the 603 CE gate
+        // (folded true) and the absent-buff test.
+        if !(crate::buffs::is_vanity_pet(num) || crate::buffs::is_light_pet(num))
+            || self.hide_misc[0]
+            || self.buffs.find_buff_index(num).is_some()
+        {
+            return None;
+        }
+        self.buffs.add_buff(num, 3600); // `:17305`
+        d.use_sound // `:17306` — PlaySound(item.UseSound, base.position)
+    }
+
+    /// `Player.UpdatePetLight` (`Player.cs:17311-17340`, called at
+    /// `:25574` right after `UpdatePet`): the light-pet twin, plus the
+    /// Fairy Bell's legacy `buffType == 27` alias — an existing 102/101
+    /// fairy counts as the buff (`:17323-17330`), and a fresh grant picks
+    /// one of {27, 102, 101} via `Utils.SelectRandom` (`:17335`, ONE
+    /// `Next(3)` on the caller's stream — `Player.Update` runs under the
+    /// `Main.cs:17754` `UpdatePlayers` swap). Returns the `UseSound`
+    /// style index for `base.position` (`:17338`); `None` when silent.
+    pub fn update_light_pet_grant(
+        &mut self,
+        pet: &ItemSlot,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<u16> {
+        let d = registry::get(pet.kind)?;
+        if pet.count < 1 || d.buff_type < 1 {
+            return None; // `:17313`
+        }
+        let mut num = d.buff_type;
+        if !(crate::buffs::is_vanity_pet(num) || crate::buffs::is_light_pet(num))
+            || self.hide_misc[1]
+        {
+            return None; // `:17318` (the 603 CE gate folds true)
+        }
+        // `:17322-17330` — the fairy alias ladder.
+        let mut found = self.buffs.find_buff_index(num).is_some();
+        if num == 27 && !found {
+            found = self.buffs.find_buff_index(102).is_some();
+        }
+        if num == 27 && !found {
+            found = self.buffs.find_buff_index(101).is_some();
+        }
+        if found {
+            return None;
+        }
+        if num == 27 {
+            // `:17335` — Utils.SelectRandom(Main.rand, 27, 102, 101).
+            num = [27, 102, 101][rng.next_range(0, 3) as usize];
+        }
+        self.buffs.add_buff(num, 3600); // `:17337`
+        d.use_sound // `:17338`
     }
 
     /// `GetNurseHealCost`'s slot count (`Main.cs:40058-40065`): a debuff

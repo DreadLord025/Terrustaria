@@ -1197,6 +1197,29 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // draw order are unchanged.
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
+            // W4-e10 gap census — `Player.Update`'s myPlayer block right
+            // after `UpdateBuffs` (`Player.cs:25567-25574`): `UpdatePet`
+            // then `UpdatePetLight` re-grant the equipped pet's absent
+            // buff (3600) and play the item's `UseSound` at
+            // `base.position` (`:17306`/`:17338`). The style façade's
+            // case-2 pitch rides `UpdatePlayers` after the attenuation
+            // gate (the S1-E-21f precedent); the fairy-27 pick's one
+            // `Next(3)` (`:17335`) rides the same stream BEFORE the
+            // sound's draws — the C# call order.
+            let pet_sound = p.update_pet_grant(&app.equip.misc_equips[0]);
+            let light_sound = p.update_light_pet_grant(
+                &app.equip.misc_equips[1],
+                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            );
+            for idx in [pet_sound, light_sound].into_iter().flatten() {
+                app.audio.play_use_sound(
+                    idx,
+                    p.x,
+                    p.y,
+                    0.0,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+            }
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port
@@ -3800,6 +3823,132 @@ mod tests {
         assert!(
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
+        );
+    }
+
+    // ---- W4-e10 gap census: the pet-grant arms (WRITTEN NOT RUN) ------------
+
+    /// A slot helper for the pet rigs.
+    fn pet_slot(kind: u16) -> crate::item::ItemSlot {
+        crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        }
+    }
+
+    /// W4-e10 — `Player.UpdatePet` (`Player.cs:17298-17309`): an equipped
+    /// pet with no live buff re-grants it at 3600 ticks and plays the
+    /// item's UseSound once (`:17305-17306`); a live buff refuses both;
+    /// `hideMisc[0]` refuses the whole arm. The Carrot 603 grants (the CE
+    /// gate folds true — the retail copy ships the CE content).
+    #[test]
+    fn w4_e10_the_pet_grant_rebuffs_and_plays_the_use_sound_once() {
+        let mut app = ammo_app();
+        app.equip.misc_equips[0] = pet_slot(603); // the Carrot, buff 40
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.buffs.find_buff_index(40).is_some(), "`:17305` AddBuff");
+        assert!(
+            (3590..=3600).contains(&p.buffs.buff_time[p.buffs.find_buff_index(40).unwrap()]),
+            "the 3600 grant (the tick's timers may spend a few)"
+        );
+        assert_eq!(app.audio.played_count(), before + 1, "`:17306` once");
+        // A live buff: no re-grant, no second cue.
+        let mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), mid, "`FindBuffIndex != -1`");
+        // The hide refusal (`:17303` !hideMisc[0]): clear the buff, hide,
+        // and the arm stays silent.
+        app.player.as_mut().unwrap().buffs.clear_buff(40);
+        app.player.as_mut().unwrap().hide_misc[0] = true;
+        tick_ammo(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.buffs.find_buff_index(40), None, "the hide refused");
+        assert_eq!(app.audio.played_count(), mid, "no cue while hidden");
+    }
+
+    /// W4-e10 — `Player.UpdatePetLight` (`Player.cs:17311-17340`): the
+    /// Fairy Bell's legacy buff 27 picks ONE of {27, 102, 101} via one
+    /// `Next(3)` on `UpdatePlayers` (`:17335`), then the UseSound's case-2
+    /// pitch draw follows on the SAME stream; an existing 102/101 fairy
+    /// counts as the buff (the `:17323-17330` alias ladder) — no pick, no
+    /// cue, and the stream stays pristine bar the tick's own draws.
+    #[test]
+    fn w4_e10_the_fairy_grant_picks_one_of_three_then_plays() {
+        let mut app = ammo_app();
+        app.equip.misc_equips[1] = pet_slot(425); // the Fairy Bell, buff 27
+        // The twin: same rig, but the 102 fairy already lives — the alias
+        // refuses the grant, so its stream shows what the tick draws
+        // WITHOUT the pet arm.
+        let mut twin = ammo_app();
+        twin.equip.misc_equips[1] = pet_slot(425);
+        twin.player.as_mut().unwrap().buffs.add_buff(102, 3600);
+        tick_ammo(&mut app);
+        tick_ammo(&mut twin);
+        let p = app.player.as_ref().unwrap();
+        let granted = [27, 102, 101]
+            .iter()
+            .find(|&&b| p.buffs.find_buff_index(b).is_some())
+            .copied();
+        assert!(granted.is_some(), "one of the fairy trio landed");
+        // The stream twin: the pick's Next(3) + the style-25 case-2 pitch
+        // (one Next(-6,7)) sit between the twin's position and ours.
+        let mut expect = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let pick = expect.next_range(0, 3);
+        assert_eq!(granted, Some([27, 102, 101][pick as usize]), "the pick");
+        let _pitch = expect.next_range(-6, 7);
+        // The twin's stream + the two draws == ours (the fairy-102 buff
+        // arm spawns a projectile with no rolls, so the twins agree).
+        let mut want = twin.rngs.stream(RngKey::UpdatePlayers).clone();
+        let _ = want.next_range(0, 3);
+        let _ = want.next_range(-6, 7);
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            want,
+            "the pick + the pitch ride UpdatePlayers, nothing else"
+        );
+        // The alias refusal: a second tick plays no cue and draws no
+        // pick — its stream spend equals a live-fairy rig's tick seeded
+        // at the SAME stream position (the pet arm adds nothing).
+        let mid = app.audio.played_count();
+        let pos = app.rngs.stream(RngKey::UpdatePlayers).clone();
+        let mut plain = ammo_app();
+        plain.equip.misc_equips[1] = pet_slot(425);
+        plain.player.as_mut().unwrap().buffs.add_buff(102, 3600);
+        *plain.rngs.stream(RngKey::UpdatePlayers) = pos;
+        tick_ammo(&mut app);
+        tick_ammo(&mut plain);
+        assert_eq!(app.audio.played_count(), mid, "the live fairy refuses");
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            *plain.rngs.stream(RngKey::UpdatePlayers),
+            "no second pick while the fairy lives"
+        );
+    }
+
+    /// W4-e10 — the plain light-pet grant (no 27 alias): the Magic Lantern
+    /// (3043, buff 152) re-grants at 3600 and plays UseSound; the grant
+    /// draws NO pick (the `Next(3)` is the 27-only arm) — exactly the one
+    /// case-2 pitch draw rides `UpdatePlayers` beyond the no-pet twin.
+    #[test]
+    fn w4_e10_the_plain_light_pet_grant_draws_only_the_pitch() {
+        let mut app = ammo_app();
+        app.equip.misc_equips[1] = pet_slot(3043); // buff 152
+        let mut twin = ammo_app();
+        twin.equip.misc_equips[1] = pet_slot(3043);
+        twin.player.as_mut().unwrap().buffs.add_buff(152, 3600);
+        tick_ammo(&mut app);
+        tick_ammo(&mut twin);
+        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(152).is_some());
+        let mut want = twin.rngs.stream(RngKey::UpdatePlayers).clone();
+        let _ = want.next_range(-6, 7); // style 25's default pitch window
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            want,
+            "one pitch draw, no fairy pick (`:17333` is the 27-only arm)"
         );
     }
 }
