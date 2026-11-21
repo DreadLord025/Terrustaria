@@ -36117,13 +36117,16 @@ never consume.
   Success leg (`RerollVariationForNPCType` → `RollVariation` +
   `Misc.PetExchangeSuccess`, `:80910-80912`) is the remaining merge
   debt — it lands WITH `TownNPCProfiles`. **Activation contract
-  published (seal pass, research/138 §12.2):** d43's kinds (no `net_id`
-  arm for 637/638/656 exists on main `a725acb04`) → f43's arrival splice
-  (`town_arrival_pets.rs` at `79a037f5e`, UNWIRED, ports the whole
-  exchange chain incl. the profiles/rosters/names) → f43's live-Npc
-  profile wiring (variation roll on `Main.rand`, name on
-  `WorldGen.genRand`) → the one-line Success/Fail chat dispatch in the
-  merged use arm. Witnesses:
+  UPDATED (D5 correction pass, research/138 §12.2):** the kinds leg is
+  DONE — g10 `5dee28650` landed ALL-11 town pets WIRED (637/638/656/
+  670/678-684, `npc/data.rs` vanilla-id arms + bestiary `net_id`s; the
+  seal-era d43 premise was stale — d43 carries zero commits, main
+  `a725acb04` still has no arms) → f43's splice (f43b lane:
+  `town_arrival_pets.rs` at `79a037f5e`, UNWIRED whole-chain, ports the
+  arrival gates + the exchange chain incl. the profiles/rosters/names;
+  variation roll on `Main.rand`, name on `WorldGen.genRand`) → the
+  one-line Success/Fail chat dispatch in the merged use arm (the exact
+  hunk published in 138 §12.2). Witnesses:
   `a_bought_license_without_a_resident_pet_refuses` +
   `a_resident_non_pet_does_not_open_the_exchange` (the net-id scan, not
   mere liveness); the positive path is unwitnessable until the pets land.
@@ -36141,9 +36144,10 @@ never consume.
   fields are f44's L1-only `.plr` lane). Both minecart ports are
   NO-flag-gate ALWAYS-spawn (`:45204` has no `!unlockedSuperCart` leg).
   g87's `.wld` pet flips dedup onto f45; its `.trwld` 3-byte pet tail
-  rides the SEALED 107-byte-head v18 union at offsets 59-61 (138 §12.1 —
-  g71d f2d8c2c67 research/92 §1-FULL authority; §11.2's 101-head/51-53
-  seats and the five-way 68-byte table §5a are superseded).
+  rides the SEALED 107-byte-head v18 union at offsets 57-59 (138 §12.1's
+  D5-RE-PIN — g88h fc5cf11a research/103 §L3-DEFINITIVE D3 authority;
+  the seal's g71d 59-61 seats, §11.2's 101-head/51-53 seats and the
+  five-way 68-byte table §5a are superseded).
 - **QuickSpawnItem (the minecart powerup's 3353 grant)**: the `GetItem`
   deposit walk with the per-slot chime + `NotifyItemPickup`, the void
   vault as the LAST resort and the overflow world drop at the player
