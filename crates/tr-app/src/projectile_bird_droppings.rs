@@ -26,6 +26,25 @@
 //!   `Kill()` only deactivates (the drop's `damage` is 0 from the spawn
 //!   call, `NPC.cs:34632` — `Damage_PVP` refuses it, `:14775`).
 //!
+//! The DEATH hook (`Kill()`'s type-1080 arm, `Projectile.cs:70926-70954`,
+//! W4-c10 sweep): EVERY death path that goes through `Kill()` — the
+//! player-intersect kill above (`:40014`), the `HandleMovement` splat
+//! (`:18926`), the lifetime/penetrate expiries (`:17204`/`:17208`) — runs
+//! it: the Stinky buff 120 for 600 ticks on the local player while alive
+//! whose int-truncated rect intersects the drop's (`ApplyBuffTo`,
+//! `:12391-12398` — the `trap && deadMansSweater` halve never fires: the
+//! row's `trap` is false), the `SoundID.Item177` cue at the int-truncated
+//! CENTRE (`:70936` — the call passes `(int)base.Center.X/Y`), and the
+//! 30-dust burst's DRAW census (`:70937-70951`:
+//! per iteration ONE `NextFloat` (the Y lift, drawn UNCONDITIONALLY) then
+//! ONE `Next(2)` gate then ONE `NextFloat` (the scale) — three draws ×
+//! 30). The dust bodies are the documented visual skip; the cue rides
+//! `wants_sound` and the pool forwards it at the death hook (the cue
+//! drain sits ahead of the AI, so a hook-set intent needs the forward at
+//! the hook — the `moonlord_arrow_kill` once-per-death seam). The
+//! out-of-world guard's direct deactivate (`:16696`) never calls `Kill()`
+//! and skips the hook — the pool's `died_out_of_world` gate carries that.
+//!
 //! Movement is NOT in the arm — `HandleMovement`'s type-1080 branch
 //! (`Projectile.cs:18921-18928`): after the tile collision, `if
 //! (velocity != lastVelocity) { position += velocity; Kill(); }` — the
@@ -78,7 +97,8 @@ pub(crate) fn bird_droppings_step(
     // rects, XNA Rectangle.Intersects' strict edges). `Kill()`'s
     // observable subset: timeLeft 0 + active false (`:70650`, the
     // port's `kill` shape; the channel-cancel head is a no-op for the
-    // NPC-owned drop).
+    // NPC-owned drop). The Kill arm's buff/cue/census ride the pool's
+    // death hook (`bird_droppings_kill_draws` + the 1080 hook there).
     if let Some((px, py, pw, ph)) = player_rect {
         let (bx, by) = (p.pos.x as i32, p.pos.y as i32);
         let (bw, bh) = (p.w as i32, p.h as i32);
@@ -86,6 +106,14 @@ pub(crate) fn bird_droppings_step(
             p.kill_time_left = p.time_left;
             p.active = false;
             p.time_left = 0;
+            // The corpse drift (the W4-d20 compare, sweep): the C#'s
+            // `HandleMovement` + `UpdatePosition` (`:17015`/`:19858` →
+            // `:20445`) run BEFORE the `!active` return (`:17027`), so
+            // the killed drop still integrates one velocity step (the
+            // air case: `velocity == lastVelocity`, the `:18923` splat
+            // arm is a no-op). The blocked-tile double-step granularity
+            // stays the documented probe stand-in.
+            p.pos += p.vel;
             return;
         }
     }
@@ -104,6 +132,24 @@ pub(crate) fn bird_droppings_step(
         p.kill_time_left = p.time_left;
         p.active = false;
         p.time_left = 0;
+    }
+}
+
+/// The `Kill()` type-1080 arm's draw census (`Projectile.cs:70937-70951`):
+/// THIRTY dust-329 iterations, each drawing — in the C#'s statement order
+/// — the Y-lift `NextFloat()` (`:70942`, UNCONDITIONAL, ahead of the
+/// gate), then the `Next(2)` branch pick (`:70943`), then the branch's
+/// one `NextFloat()` scale (`:70946` hit / `:70950` miss — both branches
+/// draw exactly one). 90 draws per death, on the pool's
+/// `UpdateProjectiles` stream. The dust bodies (`velocity *= 0.8`, the
+/// `Y *= 0.2` squash, the lift, noGravity, the scales) are the documented
+/// visual skip. The buff + the Item177 cue are the pool hook's (they need
+/// the player seam / the sound queue).
+pub(crate) fn bird_droppings_kill_draws(rng: &mut dyn DropRng) {
+    for _ in 0..30 {
+        let _ = rng.next_float(); // velocity.Y -= NextFloat() * 3f
+        let _ = rng.next_range(0, 2); // the noGravity gate
+        let _ = rng.next_float(); // scale = NextFloat() * 0.6 + 0.6 / * 0.5 + 0.5
     }
 }
 
@@ -212,12 +258,17 @@ mod tests {
     fn the_drop_kills_on_the_player_rect() {
         let w = world();
         // The drop at (1000, 1000) 10x10 vs the player (1005, 1005)
-        // 20x42: overlap → kill BEFORE the movement.
+        // 20x42: overlap → kill, then the corpse drift (the C#'s
+        // UpdatePosition runs ahead of the `!active` return, `:17027`).
         let mut p = drop_shot(1000.0, 1000.0, 1.0);
         bird_droppings_step(&mut p, &w, Some((1005, 1005, 20, 42)), &mut Recorder::new(0));
         assert!(!p.active, "the intersect kill (:40014)");
         assert_eq!(p.time_left, 0);
-        assert_eq!(p.pos, Vec2::new(1000.0, 1000.0), "no movement after the kill");
+        assert_eq!(
+            p.pos,
+            Vec2::new(1000.0, 1001.3),
+            "the corpse drift: one gravity-stepped integrate (:20445)"
+        );
         // The strict edge: the player's left at 1010 = the drop's right
         // — NO intersect (XNA's half-open compare).
         let mut p2 = drop_shot(1000.0, 1000.0, 1.0);
@@ -253,5 +304,106 @@ mod tests {
         bird_droppings_step(&mut p2, &w, None, &mut Recorder::new(0));
         assert!(p2.active);
         assert_eq!(p2.pos.y, 901.3);
+    }
+
+    /// `Projectile.cs:70937-70951` — the Kill arm's 30-dust census: per
+    /// iteration the UNCONDITIONAL Y-lift NextFloat FIRST, then the
+    /// Next(2) gate, then the branch's one NextFloat scale — 90 draws in
+    /// that exact order, both gate outcomes.
+    #[test]
+    fn the_kill_burst_censuses_thirty_dust_rows() {
+        for gate in [0, 1] {
+            let mut rng = Recorder::new(gate);
+            bird_droppings_kill_draws(&mut rng);
+            assert_eq!(rng.draws.len(), 90, "30 × (float, range, float)");
+            assert_eq!(rng.ranges.len(), 30);
+            assert!(rng.ranges.iter().all(|&r| r == (0, 2)));
+            for i in 0..30 {
+                assert_eq!(rng.draws[i * 3], "float", "the Y lift draws first (:70942)");
+                assert_eq!(rng.draws[i * 3 + 1], "range", "the gate (:70943)");
+                assert_eq!(rng.draws[i * 3 + 2], "float", "the scale (:70946/:70950)");
+            }
+        }
+    }
+
+    /// `Projectile.cs:70926-70936` + `:12391-12398` — the pool's death
+    /// hook: a drop dying ON the living player grants Stinky 120 for 600
+    /// ticks and queues Item177 at the int centre; a death away from the
+    /// player grants nothing but still plays + censuses.
+    #[test]
+    fn the_kill_hook_grants_stinky_and_queues_item177() {
+        use crate::projectile::{FlailInputs, ProjectilePool, YoyoInputs};
+        let mut w = world();
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.x = 1000.0;
+        pl.y = 1000.0;
+        let mut pool = ProjectilePool::new();
+        // time_left 1: the lifetime expiry (`:17204`) is the Kill() path.
+        let s = pool.spawn_hostile(BIRD_DROPPINGS, Vec2::new(1005.0, 1005.0), Vec2::ZERO, 0, 0.0).unwrap();
+        pool.set_time_left(s, 1);
+        let mut npcs = Vec::new();
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut Recorder::new(0),
+            0,
+            true,
+        );
+        assert!(!pool.slots()[s].active, "the expiry killed the drop");
+        let stink = pl.buffs.buff_type.iter().position(|&b| b == 120);
+        assert!(stink.is_some(), "Stinky 120 granted (:70933)");
+        assert_eq!(pl.buffs.buff_time[stink.unwrap()], 600);
+        let cues = pool.drain_proj_sounds();
+        assert!(
+            cues.contains(&(2, 177, 1010.0, 1010.0, 0.0)),
+            "Item177 at the int centre (:70936); got {cues:?}"
+        );
+        // A death AWAY from the player: no buff, but the cue stands.
+        let mut pl2 = crate::player::Player::spawn(&w);
+        pl2.x = 1000.0;
+        pl2.y = 1000.0;
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2.spawn_hostile(BIRD_DROPPINGS, Vec2::new(1500.0, 900.0), Vec2::ZERO, 0, 0.0).unwrap();
+        pool2.set_time_left(s2, 1);
+        pool2.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl2),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut Recorder::new(0),
+            0,
+            true,
+        );
+        assert!(!pl2.buffs.buff_type.contains(&120), "no intersect, no buff");
+        assert!(pool2.drain_proj_sounds().contains(&(2, 177, 1505.0, 905.0, 0.0)));
+        // A DEAD player never gains the buff (`:70928`'s gate).
+        let mut pl3 = crate::player::Player::spawn(&w);
+        pl3.x = 1000.0;
+        pl3.y = 1000.0;
+        pl3.dead = true;
+        let mut pool3 = ProjectilePool::new();
+        let s3 = pool3.spawn_hostile(BIRD_DROPPINGS, Vec2::new(1005.0, 1005.0), Vec2::ZERO, 0, 0.0).unwrap();
+        pool3.set_time_left(s3, 1);
+        pool3.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            Some(&mut pl3),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut Recorder::new(0),
+            0,
+            true,
+        );
+        assert!(!pl3.buffs.buff_type.contains(&120), "the dead player is skipped");
     }
 }

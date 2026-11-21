@@ -36053,6 +36053,35 @@ The 1080 `Kill()` hook's Stinky 120/600 (`Projectile.cs:70926-70935`),
 the Item177 cue and the 30-dust splat stay folded (the module's
 documented kill = deactivate; the buff/sound/dust tails are the
 projectile-effects waves' rows). ROADMAP's aiStyle-68 row flips to WIRED.
+(Sweep update: the Kill hook LANDED — see "The waterfowl sweep (W4-c10
+phase 4)" below.)
+
+## The waterfowl sweep (W4-c10 phase 4, 2026-11-21, code-only mode)
+
+### The Kill hook (item 2 — LANDED)
+
+`Kill()`'s type-1080 arm (`Projectile.cs:70926-70954`) lands on the
+pool's death hook (after `moonlord_arrow_kill`; the C# arm sits at
+`:70926`, above the wave-3 arms, but the kinds are disjoint so the
+between-hook order is unobservable): (a) the living local player's
+int-truncated rect intersect → `buffs.add_buff(120, 600)` (Stinky;
+`ApplyBuffTo` `:12391-12398`'s `trap && deadMansSweater` halve never
+fires — the row's trap is false); (b) `SoundID.Item177` =
+`LegacySoundStyle(2, 177)` (`SoundID.cs:1561`) at the int-truncated
+CENTRE, pushed straight into `pending_proj_sounds` (the generic
+`wants_sound` forward runs ahead of the AI, so a hook-set intent needs
+the direct push — the death-hook cue convention); (c) the 30-dust draw
+census: per iteration the UNCONDITIONAL Y-lift `NextFloat` FIRST
+(`:70942`), then `Next(2)` (`:70943`), then the branch's one `NextFloat`
+scale — 90 draws, both gate outcomes (the c10 module's
+`bird_droppings_kill_draws`). The dust bodies stay the documented visual
+skip. The out-of-world deactivate (`:16696`) never calls `Kill()` — the
+`died_out_of_world` gate carries that. The AI-arm intersect kill also
+gained the corpse drift (`pos += vel` after the kill: the C#
+`UpdatePosition` runs ahead of the `!active` return). 2 new witnesses +
+the drift re-pin. The Stinky consumer chain: the town arm's flee-target
+gate reads buff 120 (`npc_ai_town.rs`'s `TownPlayer::stinky`), so the
+drop now feeds the town flee behaviour end-to-end.
 
 ## The mana machinery (S1-P-i19)
 
