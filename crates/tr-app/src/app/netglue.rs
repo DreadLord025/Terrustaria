@@ -305,6 +305,9 @@ impl App {
                 // (`MessageBuffer.cs:355`, W4-g90) — the server keeps its
                 // own copy of the permanent unlock.
                 server.set_slot_artisan_bread(id, pi.flags3.get(6));
+                // `player18.usedAegisCrystal = bitsByte34[0]` etc.
+                // (`MessageBuffer.cs:349-354`, W4-g90 lane 7).
+                server.set_slot_shimmer_unlocks(id, pi.flags3);
                 log::info!("slot {id} announced as {}", pi.name);
             }
             // `case 5` — one inventory slot (`MessageBuffer.cs:399-462`).
@@ -1117,6 +1120,15 @@ impl App {
                 6,
                 self.player.as_ref().is_some_and(|p| p.ate_artisan_bread),
             );
+            // `bitsByte17[0/2/3/4/5]` (`NetMessage.cs:189-194`, W4-g90
+            // lane 7) — the five shimmer unlocks (bit 1 is g89's fruit).
+            if let Some(p) = self.player.as_ref() {
+                pi.flags3.set(0, p.used_aegis_crystal);
+                pi.flags3.set(2, p.used_arcane_crystal);
+                pi.flags3.set(3, p.used_galaxy_pearl);
+                pi.flags3.set(4, p.used_gummy_worm);
+                pi.flags3.set(5, p.used_ambrosia);
+            }
             server.send(id, &S2c::PlayerInfo(pi));
         }
         let name = server.slot_name(id);
@@ -1344,6 +1356,13 @@ impl App {
                         p.name = pi.name.clone();
                         // `bitsByte34[6]` (`MessageBuffer.cs:355`, W4-g90).
                         p.ate_artisan_bread = pi.flags3.get(6);
+                        // `bitsByte34[0/2/3/4/5]` (`MessageBuffer.cs:349-
+                        // 354`, W4-g90 lane 7).
+                        p.used_aegis_crystal = pi.flags3.get(0);
+                        p.used_arcane_crystal = pi.flags3.get(2);
+                        p.used_galaxy_pearl = pi.flags3.get(3);
+                        p.used_gummy_worm = pi.flags3.get(4);
+                        p.used_ambrosia = pi.flags3.get(5);
                     }
                 }
             }
@@ -1884,6 +1903,16 @@ impl App {
             6,
             self.player.as_ref().is_some_and(|p| p.ate_artisan_bread),
         );
+        // `bitsByte17[0/2/3/4/5]` (`NetMessage.cs:189-194`, W4-g90 lane 7):
+        // the five shimmer unlocks ride the same identity push — each use's
+        // `SendData(4)` (`Player.cs:45391` etc.) re-announces them.
+        if let Some(p) = self.player.as_ref() {
+            pi.flags3.set(0, p.used_aegis_crystal);
+            pi.flags3.set(2, p.used_arcane_crystal);
+            pi.flags3.set(3, p.used_galaxy_pearl);
+            pi.flags3.set(4, p.used_gummy_worm);
+            pi.flags3.set(5, p.used_ambrosia);
+        }
         client.send(&C2s::PlayerInfo(pi));
         // The health (`Main.cs`'s 16 in the same push).
         let (hp, max_hp) = self
@@ -2000,6 +2029,15 @@ impl App {
         world.blood_moon = info.blood_moon;
         world.sundial_cooldown = info.sundial_cooldown;
         world.moondial_cooldown = info.moondial_cooldown;
+        // `MessageBuffer.cs:582` / `:606-607` (W4-g90 lane 7): the client's
+        // world-flag copies — bitsByte12[0] (the 9th group) and
+        // bitsByte14[6/7] (the 11th). The C# reads them into the NPC
+        // statics during case 7 (before `clearWorld`, which never touches
+        // them); the port's world rebuild applies them here so the install
+        // keeps them.
+        world.combat_book_was_used = info.world_flags[8].get(0);
+        world.combat_book_volume_two_was_used = info.world_flags[10].get(6);
+        world.peddlers_satchel_was_used = info.world_flags[10].get(7);
         if info.world_surface > 0 {
             world.world_surface = info.world_surface as f64;
         }
@@ -2084,7 +2122,18 @@ impl App {
             cave_back_style: [0; 4],
             tree_tops: [0; net::TREE_TOPS_BYTES],
             max_raining: 0.0,
-            world_flags: [net::BitsByte::new(); 14],
+            world_flags: {
+                // W4-g90 lane 7 — the three world-flag bits the lane owns:
+                // bitsByte9[0] = combatBookWasUsed (`NetMessage.cs:334`),
+                // bitsByte11[6/7] = combatBookVolumeTwoWasUsed /
+                // peddlersSatchelWasUsed (`:360-361`). The other bits stay
+                // 0 (their systems are unported or other lanes').
+                let mut flags = [net::BitsByte::new(); 14];
+                flags[8].set(0, w.combat_book_was_used);
+                flags[10].set(6, w.combat_book_volume_two_was_used);
+                flags[10].set(7, w.peddlers_satchel_was_used);
+                flags
+            },
             sundial_cooldown: w.sundial_cooldown,
             moondial_cooldown: w.moondial_cooldown,
             saved_ore_tiers: [0; 7],
@@ -3699,6 +3748,49 @@ mod handshake_tests {
         // else (the host itself only shows through the 10 Hz snapshots).
         assert_eq!(host_app.remote_players.len(), 1);
         assert!(client_app.remote_players.is_empty());
+    }
+
+    /// W4-g90 lane 7: the client's shimmer unlocks ride the identity push
+    /// (`NetMessage.cs:189-194`'s bitsByte17) — the server keeps its slot
+    /// copy (`MessageBuffer.cs:349-354`). The world-flag trio rides the
+    /// WorldInfo push (`NetMessage.cs:334`/`:360-361`) into the client's
+    /// world (`MessageBuffer.cs:582`/`:606-607`).
+    #[test]
+    fn w4_g90_the_shimmer_unlocks_and_world_flags_ride_the_join() {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        // The three world flags up BEFORE the join — the WorldInfo push
+        // carries them to the client's world.
+        host_app.world.combat_book_was_used = true;
+        host_app.world.combat_book_volume_two_was_used = true;
+        host_app.world.peddlers_satchel_was_used = true;
+        client_app.player_name = "client".into();
+        // The client's unlocks up BEFORE the identity push.
+        let mut p = player::Player::spawn(&client_app.world);
+        p.used_aegis_crystal = true;
+        p.used_gummy_worm = true;
+        p.used_ambrosia = true;
+        client_app.player = Some(p);
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        // The server's slot copy of the client's five bits.
+        if let NetRole::Host(server) = &host_app.net {
+            assert_eq!(
+                server.slot_shimmer_unlocks(1),
+                [true, false, false, true, true],
+                "crystal/gummy/ambrosia up, arcane/pearl down"
+            );
+        } else {
+            panic!("host lost its role");
+        }
+        // The client's world-flag copies from the WorldInfo push.
+        assert!(client_app.world.combat_book_was_used, "bitsByte12[0]");
+        assert!(client_app.world.combat_book_volume_two_was_used, "bitsByte14[6]");
+        assert!(client_app.world.peddlers_satchel_was_used, "bitsByte14[7]");
     }
 
     #[test]

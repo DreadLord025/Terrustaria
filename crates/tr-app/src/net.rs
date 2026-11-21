@@ -580,6 +580,17 @@ pub struct PlayerNet {
     /// locally in the C# (`Chest.cs:2958` reads `Main.myPlayer`); the port
     /// carries it for parity with the wire.
     pub ate_artisan_bread: bool,
+    /// `Player.usedAegisCrystal` — fed by `4 PlayerInfo`'s bitsByte17 bit 0
+    /// (`MessageBuffer.cs:349`, W4-g90 lane 7).
+    pub used_aegis_crystal: bool,
+    /// `Player.usedArcaneCrystal` — bitsByte17 bit 2 (`MessageBuffer.cs:351`).
+    pub used_arcane_crystal: bool,
+    /// `Player.usedGalaxyPearl` — bitsByte17 bit 3 (`MessageBuffer.cs:352`).
+    pub used_galaxy_pearl: bool,
+    /// `Player.usedGummyWorm` — bitsByte17 bit 4 (`MessageBuffer.cs:353`).
+    pub used_gummy_worm: bool,
+    /// `Player.usedAmbrosia` — bitsByte17 bit 5 (`MessageBuffer.cs:354`).
+    pub used_ambrosia: bool,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -3422,6 +3433,11 @@ pub struct Slot {
     /// `Main.player[id].ateArtisanBread` — the server's copy, fed by
     /// `4 PlayerInfo`'s bitsByte34 bit 6 (`MessageBuffer.cs:355`, W4-g90).
     pub ate_artisan_bread: bool,
+    /// The five shimmer unlocks — the server's copies, fed by bitsByte34
+    /// bits 0/2/3/4/5 (`MessageBuffer.cs:349-354`, W4-g90 lane 7):
+    /// `(crystal, arcane, pearl, gummy, ambrosia)` — bit 1 (the Aegis
+    /// Fruit) is W4-g89's lane.
+    pub shimmer_unlocks: [bool; 5],
 }
 
 type Slots = Arc<Mutex<HashMap<u32, Slot>>>;
@@ -3493,6 +3509,7 @@ impl Server {
                         sections: Vec::new(),
                         sections_w: 0,
                         ate_artisan_bread: false,
+                        shimmer_unlocks: [false; 5],
                     },
                 );
                 let Ok(mut reader) = stream.try_clone() else {
@@ -3609,6 +3626,32 @@ impl Server {
             .ok()
             .and_then(|s| s.get(&id).map(|c| c.ate_artisan_bread))
             .unwrap_or(false)
+    }
+
+    /// The server's `Main.player[id].usedAegisCrystal` etc. writes
+    /// (`MessageBuffer.cs:349-354`, W4-g90 lane 7) — bitsByte34 bits
+    /// 0/2/3/4/5, in the `(crystal, arcane, pearl, gummy, ambrosia)` order.
+    pub fn set_slot_shimmer_unlocks(&self, id: u32, flags3: BitsByte) {
+        if let Ok(mut s) = self.slots.lock() {
+            if let Some(c) = s.get_mut(&id) {
+                c.shimmer_unlocks = [
+                    flags3.get(0),
+                    flags3.get(2),
+                    flags3.get(3),
+                    flags3.get(4),
+                    flags3.get(5),
+                ];
+            }
+        }
+    }
+
+    /// The server's copy of the peer's shimmer unlocks.
+    pub fn slot_shimmer_unlocks(&self, id: u32) -> [bool; 5] {
+        self.slots
+            .lock()
+            .ok()
+            .and_then(|s| s.get(&id).map(|c| c.shimmer_unlocks))
+            .unwrap_or([false; 5])
     }
 
     /// Stores one peer inventory slot — `Main.player[id].inventory[slot]`
@@ -3907,6 +3950,36 @@ mod tests {
         let mut r = NetReader::new(&body[3..]);
         let back = PlayerInfo::read_from(&mut r).expect("player info");
         assert_eq!(back, pi);
+    }
+
+    /// W4-g90 lane 7: the five shimmer-unlock bits ride flags3 at their C#
+    /// positions (`NetMessage.cs:189-194` write / `MessageBuffer.cs:349-354`
+    /// read): 0 crystal, 2 arcane, 3 pearl, 4 gummy, 5 ambrosia (bit 1 is
+    /// the g89-owned fruit, bit 6 the g90 bread). The wire round-trips the
+    /// whole byte; the slot copy keeps the five in the read order.
+    #[test]
+    fn w4_g90_the_shimmer_unlock_bits_ride_flags3() {
+        let mut pi = PlayerInfo::with_name(2, "Sandy");
+        pi.flags3.set(0, true); // usedAegisCrystal
+        pi.flags3.set(3, true); // usedGalaxyPearl
+        pi.flags3.set(5, true); // usedAmbrosia
+        let w = NetWriter::open(id::PLAYER_INFO);
+        let body = pi.write_to(w).finish();
+        let mut r = NetReader::new(&body[3..]);
+        let back = PlayerInfo::read_from(&mut r).expect("player info");
+        assert!(back.flags3.get(0), "bit 0 (`NetMessage.cs:189`)");
+        assert!(!back.flags3.get(1), "bit 1 stays the fruit lane's");
+        assert!(!back.flags3.get(2));
+        assert!(back.flags3.get(3), "bit 3 (`:192`)");
+        assert!(!back.flags3.get(4));
+        assert!(back.flags3.get(5), "bit 5 (`:194`)");
+        // The server slot copy (`MessageBuffer.cs:349-354`'s five reads):
+        // an unknown id is a no-op setter / all-false getter (the fresh-slot
+        // state); the live-slot path rides the identity dispatch.
+        let server = Server::start(0, String::new()).expect("the loopback server");
+        assert_eq!(server.slot_shimmer_unlocks(99), [false; 5]);
+        server.set_slot_shimmer_unlocks(99, back.flags3); // unknown id: no-op
+        assert_eq!(server.slot_shimmer_unlocks(99), [false; 5]);
     }
 
     #[test]

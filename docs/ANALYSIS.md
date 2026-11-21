@@ -39261,3 +39261,120 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-g90 DOC-SWEEP lane 7 — the permanent boosters/consumables census (2026-11-21, code-only)
+
+The census of the once-use permanent items beside the Artisan Loaf (the
+branch's first commit). **The brief's guessed ids were wrong; the C#
+`ItemCheck_UseShimmerPermanentItems` switch (`Player.cs:45385-45423`) is
+the source of truth:**
+
+| item | id | flag | consumer |
+| --- | --- | --- | --- |
+| Aegis Crystal | 5337 | `Player.usedAegisCrystal` (`:852`) | `UpdateLifeRegen` `:19113-19116` — `lifeRegenTime += 0.2f` |
+| Aegis Fruit | 5338 | `usedAegisFruit` | **W4-g89's lane** (pushed `920014cb`) — skipped |
+| Arcane Crystal | 5339 | `usedArcaneCrystal` (`:856`) | `UpdateManaRegen` `:19430-19433` (delay −0.05) + `:19453-19456` (regen +statManaMax2/50) |
+| Galaxy Pearl | 5340 | `usedGalaxyPearl` (`:858`) | `RecalculateLuck` `:29142-29145` — luck +0.03 |
+| Gummy Worm | 5341 | `usedGummyWorm` (`:860`) | `UpdatePermanentBoosters` `:12857-12860` — fishingSkill +3 (the i35 row existed; the USE path was missing) |
+| Ambrosia | 5342 | `usedAmbrosia` (`:862`) | `UpdatePermanentBoosters` `:12861-12866` — pickSpeed −0.05, tileSpeed +0.05, wallSpeed +0.05. **NOT a minion slot** — the Demon Heart 3335 owns that (g87's lane, branch exists) |
+| Combat Book | 4382 | `NPC.combatBookWasUsed` (WORLD, `NPC.cs:6339`) | the town-NPC stat ladder `NPC.cs:53018-53024` (+250 lifeMax, +8 def, ×0.8 cd, +0.25 dmg) |
+| Combat Book Volume Two | 5336 | `NPC.combatBookVolumeTwoWasUsed` (`:6341`) | the same ladder's second row `:53025-53031` |
+| Peddler's Satchel | 5343 | `NPC.peddlersSatchelWasUsed` (`:6343`) | `Chest.SetupTravelShop` `:1303-1306` — +1 stock slot (a plain +1, NO RNG draw) |
+
+(4383 is a torch, not a book; 5337 is the Aegis Crystal, not the satchel;
+5339 is the Arcane Crystal, not the gummy worm — the brief's ids were
+re-derived from the C# switch. The Torch God's Favor 5043 is f33's lane
+(branch `task/W4-f33-torch-god-favor` exists at main tip, zero pushed
+claims — claimed, skipped). No g88b/g89b branches exist; g88's pushed
+claims (`f1eb9b60`) cover the Life Fruit + the v7 life-maxima sidecar pair
+line only.)
+
+- **The use paths**: `world_sim/editing.rs::use_shimmer_permanent_item`
+  (the five non-g89 arms), `use_combat_book` (4382/5336) and
+  `use_peddlers_satchel` (5343), all under the i37 `use_press_edge`
+  consumable block beside the loaf. Same folds as the loaf: the mid-swing
+  `ItemTimeIsZero && itemAnimation > 0` window onto the press tick,
+  `ApplyItemTime` re-arms the 45-tick cadence (the books/satchel/shimmer
+  rows are all useTime 45), the generic consumable tail pays one
+  (`:43280-43326`), TurnToAir on the last item. The books/satchel post
+  their `Misc.*Used` world text (`ChatColors.World`; VolumeTwo's key is
+  the localization alias `{$Misc.CombatBookUsed}` — the same line). The
+  `SendData(61, -11/-17/-18)` book/satchel syncs have no port message;
+  the world flags ride the WorldInfo push + the world saves instead.
+- **The flags**: `Player.used_aegis_crystal/used_arcane_crystal/
+  used_galaxy_pearl/used_ambrosia` (ctor false `:56078-56083`, never
+  cleared by ResetEffects); `used_gummy_worm` existed (i35). The
+  consumers: the Ambrosia triple joins the booster pass after the gummy
+  row (the C#'s own order); the aegis +0.2 rides `RegenInputs.aegis_crystal`
+  BETWEEN the base +1 and the crimson extra_time (the f32 accumulation
+  order `:19112-19120`); the arcane rows ride `RegenInputs.arcane_crystal`
+  (the delay −0.05 inside the positive-delay block, the +max/50 after the
+  still/grapple doubling, before the num10 scale); the pearl mirrors into
+  `LuckState.used_galaxy_pearl` in `update_luck` before every
+  `recalculate_luck` (the persistence owner is the Player field).
+- **The world flags**: `World.combat_book_volume_two_was_used` /
+  `peddlers_satchel_was_used` (the `combat_book_was_used` standing-in's
+  shape, i35). The .wld halves: write `flags.rs` (the two `false`
+  literals now write the fields), read gates 259/260 (`WorldFile.cs:
+  2404-2405`); the v326 tail bytes 2036/2037. The .trwld: **v18** appends
+  the two-byte pair (the v15 queen-slime byte's shape); pre-v18 loads
+  false. Book ONE's .trwld carrier stays the recorded remainder (its
+  .wld half is owned since i35; the fishing context reads the loaded
+  field).
+- **The .plr persistence**: the 260+ six-unlock block's bools 1/3/4/5/6
+  (`:55255-55260`) now read into `PlayerFile`; bool 2 (`usedAegisFruit`
+  `:55256`) stays consumed-and-dropped (g89's lane). The writer emits the
+  five at `:54781-54786` (the fruit slot stays false). The legacy-279
+  subset keeps indices 4/6/7/8/9. The golden fixture is unaffected (the
+  harness player used nothing).
+- **The sidecar**: `.trplayer` v7 appends the five 0/1 lines after the
+  bread line, in the .plr write order; each reads its own OPTIONAL line
+  (a bread-only v7 from the branch's first pass loads all five false).
+  The g88 superset contract: g88's life-maxima pair line sits AHEAD of
+  the bread line at the merge (g88 writes it directly after the dye
+  line; this branch's block follows the bread line — the merge keeps
+  both, pair first). `App`'s sidecar restore seeds the five Player
+  fields.
+- **The consumers landed**: the travel-shop +1 (`shop.rs`, no RNG draw —
+  the seed-7 stock's 7 rows become 8); the TRAINING_DAY achievement
+  (progression 40, `Player.cs:25695-25698` — both books up fires every
+  tick, idempotent once completed; the row exists in
+  `achievements_data.rs`); the town-NPC book-two row already existed in
+  `npc_ai_town.rs::town_stat_bonuses` (the env input was never fed — the
+  module is the b3 lane's unwired seam, the witness feeds it directly).
+- **The net sync**: flags3 bits 0/2/3/4/5 (`NetMessage.cs:189-194` /
+  `MessageBuffer.cs:349-354`) ride the identity push, the server slot
+  copy (`Slot.shimmer_unlocks`) and the remote-player snapshot; the
+  world-flag trio rides WorldInfo's bitsByte9[0] + bitsByte11[6/7]
+  (`NetMessage.cs:334`/`:360-361`) into the client's world at the
+  install (the C# reads them into the NPC statics during case 7, before
+  `clearWorld` — the port's world rebuild applies them in
+  `client_install_world`).
+
+Deviations: none beyond the standing folds (press-tick window, TurnToAir,
+the SendData(61) book/satchel syncs folded onto the WorldInfo push). The
+expert-mode travel-shop `RollLuck(2)` row (`Chest.cs:1299`) stays
+constants-off (single-difficulty port) — the satchel +1 sits after it in
+the C# order, a plain increment with no draw, so the stream is unchanged.
+
+### Verification (W4-g90 lane 7)
+
+Code-only: every arm re-read against the cited C# windows (`Player.cs`
+`:45322-45423`, `:12851-12867`, `:19108-19120`, `:19424-19460`,
+`:29137-29148`, `:25690-25700`, `:54776-54787`, `:55235-55262`,
+`:56076-56083`; `NPC.cs:53014-53035`, `:6339-6343`; `Chest.cs:1275-1314`;
+`NetMessage.cs:183-196`, `:331-362`; `MessageBuffer.cs:344-355`;
+`WorldFile.cs` gates 259/260; `AchievementInitializer.cs:414-415`); **no
+cargo/rustc/rustfmt/tests/graphify invoked**. 17 witness tests WRITTEN,
+NOT RUN: `editing.rs` ×6 (the five-arm flag/consume/cadence sweep, the
+second-item refusal, the hold-LMB one-use, the book world-gate +
+once-per-world, volume-two's own flag + TurnToAir, the satchel use + the
+shop +1), `player.rs` ×3 (the Ambrosia triple per tick, the pearl luck
+mirror, the crystal regen rows), `persist.rs` ×2 (the five-flag round
+trip, the bread-only v7 back-compat), `player_file.rs` ×1 (the :54781-
+54786 bool round trip + walk alignment), `save.rs` ×1 (the v18 pair round
+trip + pre-v18 false + the mixed state), `wld/mod.rs` (the gate witness
+extended: v258/259/260 + the 2036/2037 byte pins), `npc_ai_town.rs` ×1
+(both books stack), `achievements.rs` (the TRAINING_DAY dispatch),
+`net.rs` ×1 (the flags3 bit positions + the slot copy), `netglue.rs` ×1
+(the join carries the unlocks + the world flags).
