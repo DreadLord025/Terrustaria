@@ -1287,6 +1287,42 @@ d130's core wholesale, research/83 §3). The `spawn_acc` cadence and the
 budget-before-attempts early-out are the recorded g67 divergences (research/134
 "Deliberate divergences") — d130's float attempt loop is canonical.
 
+**W4-g67 FINAL visual-overlap census (2026-11-21)** — rain × blizzard ×
+sandstorm, per the C# and both ports:
+
+* **Blizzard.** Vanilla has NO biome gate on `MakeRain` — in a snow biome the
+  rain event still spawns `Rain` drops (the budget only shrinks via the
+  `(1-(snow/threshold)²)` suppression, `Rain.cs:181-182`), while
+  `Main.snowing()` (`:13032-13116`) runs on its own gates (`SnowTileCount > 0 &&
+  SurfaceAtmospherics`, NOT `ZoneRain`) — during a rain event the flake recipe
+  branches on `Main.raining` (`:13092`): the storm drift
+  `sqrt(|wind|)·sign(wind)·(cloudAlpha+0.5)·10` and the fall ×0.5
+  (`:13099-13100`). The blizzard visual is the raw `ZoneRain && ZoneSnow` pair
+  (`SceneState.cs:78`, ported at `scene_scan.rs:532` / `filters.rs:318`).
+  **d130 is canonical** (its `crate::snow` carries the verbatim `:13092` branch,
+  re-read at the tip `snow.rs:213-238`); g67's `snow_mode` biome gate
+  (`rain.rs` tick — snow REPLACES the drops, the `is_snow_biome` surface-kind
+  probe) is the recorded first-pass approximation, retired by the union
+  (research/83 §2 KEEP d130). No g67 code change — the divergence stays written
+  down, not folded.
+* **Sandstorm.** The zone gate is ONE-WAY: `ZoneSandstorm` clears `ZoneRain`
+  (`SceneMetrics.cs:698-703`, ported verbatim at `scene.rs:831-837` with the
+  `zone_sandstorm_suppresses_zone_rain` witness); rain never gates the storm
+  (`Sandstorm.cs` reads only wind — d130's `703370e6` census, re-confirmed).
+  g67's `spawn` reads `zone_rain` (`weather.rs:38`), so a happening storm stops
+  the drop spawns while the event flag/intensity ramp survive — the C# shape.
+* **Wind-slant draw angle.** The drop rotation is
+  `atan2(velocity.X, -velocity.Y)` (`Rain.cs:204`/`:161`) over the LIVE
+  `GetRainFallVelocity` (`wind*18, 14`, `:93`) — the slant IS the wind, no
+  separate draw-angle term; both ports compute it at spawn
+  (`rain.rs` `rot: vel.x.atan2(-vel.y)`) and the WGSL rotates about the
+  top-left origin exactly like XNA's `Vector2.Zero` (`sprite.wgsl:92-97`).
+  Dust rotation is a different lane: `dust.rotation += velocity.X * 0.5`
+  (`Dust.cs:2081`, the 79/268/304 exclusion) — the splash family rotates with
+  its own velocity in the shared tick, and the flying-sand 268 draw pins
+  rotation 0 (`GetVisualRotation`, `sand.rs:367` — the 268 exclusion means the
+  spawn-time 0 never advances). No wind-slant residual on either draw side.
+
 ## Biomes
 
 The generator has three surface biomes plus beaches. The forest fills the centre, the snow
