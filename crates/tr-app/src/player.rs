@@ -321,6 +321,34 @@ fn solid_tile(world: &World, x: i32, y: i32) -> bool {
         && !t.inactive()
 }
 
+/// `GameShaders.Hair.GetShaderIdFromItemId(type)` (`Item.cs:48716`): the
+/// 1-based hair-shader bind order (`DyeInitializer.cs:147-410`): 3259→1,
+/// 1977→2, 1978→3, 1979→4, 1980→5, 1981→6, 1982→7, 1983→8, 1984→9, 1985→10,
+/// 1986→11, 2863→12; unbound → −1. `Player.hairDye` stores this index; the
+/// team-dye puff gate (`:24270`) compares against `TeamDyeShaderIndex` = 9
+/// (the Party Hair Dye 1984 bind, `ContentSamples.cs:19`).
+pub(crate) fn hair_dye_shader_index(kind: u16) -> i32 {
+    match kind {
+        3259 => 1,
+        1977 => 2,
+        1978 => 3,
+        1979 => 4,
+        1980 => 5,
+        1981 => 6,
+        1982 => 7,
+        1983 => 8,
+        1984 => 9,
+        1985 => 10,
+        1986 => 11,
+        2863 => 12,
+        _ => -1,
+    }
+}
+
+/// `ContentSamples.DyeShaderIDs.TeamDyeShaderIndex` (`ContentSamples.cs:19`):
+/// `GameShaders.Hair.GetShaderIdFromItemId(1984)` = 9 (the 9th hair bind).
+pub(crate) const TEAM_DYE_SHADER_INDEX: i32 = 9;
+
 /// `Player.cs:47371-47378`: the shooting styles' `itemRotation` —
 /// `atan2(aimY * direction, aimX * direction) - fullRotation`. The port keeps
 /// the aim as an angle, so the mirrored `atan2` is the angle + PI when the
@@ -2034,6 +2062,19 @@ pub struct Player {
     pending_mow_lawn_dust: Option<crate::player_dust2::MowLawnDust>,
     pending_wall_cling_dust: Option<crate::player_dust2::WallClingDust>,
     pending_double_jump_visual_dust: Option<crate::player_dust2::DoubleJumpVisualDust>,
+    /// W4-e1 batch 3 — the drowning bubble (23316), the floor dust (23983),
+    /// the hair-dye puff (24274), the manaHeat ambient (24641/24654) and the
+    /// stoned-transition burst (25228).
+    pending_drown_bubble_dust: Option<crate::player_dust2::DrownBubbleDust>,
+    pending_floor_dust: Option<crate::player_dust2::FloorDust>,
+    pending_hair_dye_dust: Option<crate::player_dust2::HairDyeDust>,
+    pending_mana_heat_dust: Option<crate::player_dust2::ManaHeatDust>,
+    pending_stoned_burst_dust: Option<crate::player_dust2::StonedBurstDust>,
+    /// W4-e1 — `Player.hairDye` (`Player.cs:2546`): the applied hair-dye shader
+    /// index (`ItemCheck` `:42863` grants `item.hairDye`, the post-processed
+    /// shader id). The team-dye puff gate (`:24270`) reads it against
+    /// `TeamDyeShaderIndex` (9, the Party Hair Dye 1984 shader).
+    pub hair_dye: i32,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -2985,6 +3026,12 @@ impl Player {
             pending_mow_lawn_dust: None,
             pending_wall_cling_dust: None,
             pending_double_jump_visual_dust: None,
+            pending_drown_bubble_dust: None,
+            pending_floor_dust: None,
+            pending_hair_dye_dust: None,
+            pending_mana_heat_dust: None,
+            pending_stoned_burst_dust: None,
+            hair_dye: -1,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3608,6 +3655,21 @@ impl Player {
         &mut self,
     ) -> Option<crate::player_dust2::DoubleJumpVisualDust> {
         self.pending_double_jump_visual_dust.take()
+    }
+    pub(crate) fn take_drown_bubble_dust(&mut self) -> Option<crate::player_dust2::DrownBubbleDust> {
+        self.pending_drown_bubble_dust.take()
+    }
+    pub(crate) fn take_floor_dust(&mut self) -> Option<crate::player_dust2::FloorDust> {
+        self.pending_floor_dust.take()
+    }
+    pub(crate) fn take_hair_dye_dust(&mut self) -> Option<crate::player_dust2::HairDyeDust> {
+        self.pending_hair_dye_dust.take()
+    }
+    pub(crate) fn take_mana_heat_dust(&mut self) -> Option<crate::player_dust2::ManaHeatDust> {
+        self.pending_mana_heat_dust.take()
+    }
+    pub(crate) fn take_stoned_burst_dust(&mut self) -> Option<crate::player_dust2::StonedBurstDust> {
+        self.pending_stoned_burst_dust.take()
     }
 
     /// `PlayerSittingHelper.UpdateSitting` (`PlayerSittingHelper.cs:50-87`):
@@ -6936,6 +6998,11 @@ impl Player {
         }
         self.update_social_shadow();
         self.update_teleport_visuals();
+        // W4-e1 — `Player.Update`'s hair-dye puff (`:24593`, site 24274) and
+        // the manaHeat ambient (`:24630-24662`, sites 24641/24654). Both queue
+        // dust for the drain; the hair-dye gate reads the live buff state.
+        self.update_hair_dye_dust();
+        self.mana_heat_ambient();
         // `ResetEffects`' equipment-flag clears (`Player.cs:18348-18788`) and
         // the accessory grant pass - `UpdateEquips` -> `ApplyEquipFunctional`
         // (`Player.cs:12892`/`:14368`, the slots 3..10 loop :12946-12952):
@@ -7750,6 +7817,16 @@ impl Player {
         if stoned && !self.last_stoned {
             let cx = self.x + self.width * 0.5;
             self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            // W4-e1 — `:25225-25233`: the stoned-transition burst (site 25228)
+            // — the Item0 dig sound (no Main.rand draw in the int overload,
+            // the sound lane's) + 20 type-1 puffs with the per-puff Next(2)
+            // noGravity gate. The dust queues for the drain.
+            self.pending_stoned_burst_dust = Some(crate::player_dust2::StonedBurstDust {
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+            });
         }
         self.last_stoned = stoned;
 
@@ -7838,9 +7915,13 @@ impl Player {
         }
 
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
-        // the movement block reads the flags next tick (one tick stale).
+        // the movement block reads the flags next tick (one tick stale). The
+        // `falling` flag (`:28073-28081`) is |vy| > gravity at the movement
+        // head; on the grounded call site vy==0, so it folds false (the
+        // 20-dust landing burst fires from the airborne FloorVisuals callers
+        // the port does not reach yet — documented).
         if self.vy == 0.0 && !grappling {
-            self.floor_visuals(world);
+            self.floor_visuals(world, false);
         }
 
         self.update_survival(world, rng);
@@ -10141,6 +10222,49 @@ impl Player {
         });
     }
 
+    /// W4-e1 — `Player.UpdateHairDyeDust` (`Player.cs:24268-24295`, site
+    /// 24274): the team-dye puff. The gate is the team-dye shader state +
+    /// alive/not-stoned/not-frozen/not-ghost; the drain rolls the Next(45) +
+    /// the type roll + the jitter chain (and the gore sibling's gate draws).
+    fn update_hair_dye_dust(&mut self) {
+        if self.dead
+            || self.ghost_like()
+            || self.buffs.find_buff_index(156).is_some()
+            || self.frozen
+            || self.hair_dye != TEAM_DYE_SHADER_INDEX
+        {
+            return;
+        }
+        self.pending_hair_dye_dust = Some(crate::player_dust2::HairDyeDust {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            vx: self.vx,
+            vy: self.vy,
+        });
+    }
+
+    /// W4-e1 — the manaHeat ambient (`Player.Update :24630-24662`, sites
+    /// 24641/24654): the heat != 1 gate + the Remap-derived probability. The
+    /// drain rolls the two NextFloat*6 gates + the spawn/clone chain.
+    fn mana_heat_ambient(&mut self) {
+        if self.mana_heat == 1.0 {
+            return;
+        }
+        // `:24635` — num4 = Remap(manaHeat, 1.3, 1, 1, 0), clamped (the
+        // local-player arm; the port is single-player). Utils.Remap clamps
+        // the lerp t to [0,1] by default.
+        let t = ((self.mana_heat - 1.3) / (1.0 - 1.3)).clamp(0.0, 1.0);
+        let num4 = 1.0 + (0.0 - 1.0) * t;
+        self.pending_mana_heat_dust = Some(crate::player_dust2::ManaHeatDust {
+            x: self.x,
+            y: self.y,
+            width: self.width,
+            height: self.height,
+            num4,
+        });
+    }
+
     /// `Player.Teleport` (`Player.cs:37414-37496`) — the movement-relevant
     /// core: `RemoveAllGrapplingHooks` (style != 10), `StopVanityActions`,
     /// the shimmer strip, the position write, the fall-origin reset and the
@@ -11231,18 +11355,23 @@ impl Player {
 
     /// `Player.FloorVisuals` (`Player.cs:23708-23743`) + `GetFloorTile`
     /// (`:23755-23783`): the tile row at the feet, center column first, then
-    /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
-    /// the slope dust carve-out stay with the particle tasks.
-    fn floor_visuals(&mut self, world: &World) {
+    /// the neighbors, solid tiles only. W4-e1: the MakeFloorDust footstep
+    /// dust (site 23983) queues for the drain; the slope carve-out
+    /// (`:23736-23739`) and the wet/cart gate (`:23740`) match the C#.
+    fn floor_visuals(&mut self, world: &World, falling: bool) {
         let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
         // the live hitbox height (the mount framework's equip; the cart's 52).
         let y = ((self.y + self.body_height()) / TILE_PX) as i32;
         let mut kind = None;
+        let mut floor_frame_y = 0i32;
+        let mut floor_paint = 0i32;
         for tx in [x, x - 1, x + 1] {
             if let Some(t) = world.tile(tx, y) {
                 if t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind) {
                     kind = Some(t.kind);
+                    floor_frame_y = t.frame_y as i32;
+                    floor_paint = t.paint() as i32;
                     break;
                 }
             }
@@ -11265,6 +11394,27 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+        // W4-e1 — `:23732-23743`: the 666/712 shimmer buff (the buff lane's),
+        // the slope carve-out (a sloped floor tile suppresses the dust), and
+        // the `!wet && !mount.Cart` gate before MakeFloorDust.
+        let sloped = [x - 1, x, x + 1].iter().any(|&tx| {
+            world.tile(tx, y).is_some_and(|t| t.slope() != 0)
+        });
+        let dust_kind = if sloped { -1 } else { kind as i32 };
+        if !self.wet && !self.cart_mounted && dust_kind >= 0 {
+            self.pending_floor_dust = Some(crate::player_dust2::FloorDust {
+                tile: dust_kind,
+                frame_y: floor_frame_y,
+                paint: floor_paint,
+                falling,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+            });
+        }
     }
 
     /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read
@@ -11697,6 +11847,22 @@ impl Player {
         } else {
             self.breath = (self.breath + 3).min(BREATH_MAX);
             self.breath_cd = 0;
+        }
+        // W4-e1 — `:23283-23316`: the breath bubble (site 23316). The gate is
+        // `drowning && Next(20)==0 && !lavaWet && !honeyWet`; the drain rolls
+        // the Next(20). The mouth anchor: direction*12 + the gravDir-1 fold
+        // (num4=0, +4); the breathing-reed / mount-mouth adjustments are the
+        // accessory/mount lanes' (no port fields — documented skip, the base
+        // anchor stands).
+        if drowning && !self.lava_wet && !self.honey_wet {
+            let pos = Vec2::new(
+                self.x + 12.0 * self.facing as f32,
+                self.y + 4.0,
+            );
+            self.pending_drown_bubble_dust = Some(crate::player_dust2::DrownBubbleDust {
+                pos,
+                width: self.width,
+            });
         }
     }
 

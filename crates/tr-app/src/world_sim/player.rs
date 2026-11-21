@@ -1496,6 +1496,56 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &b,
                 );
             }
+            // W4-e1 batch 3 — the drowning bubble (23316), the floor dust
+            // (23983), the hair-dye puff (24274), the manaHeat ambient
+            // (24641/24654) and the stoned burst (25228). Same disjoint-field
+            // borrow pattern; C# site order.
+            if let Some(b) = p.take_drown_bubble_dust() {
+                crate::player_dust2::drown_bubble(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                    true, // the host already gated drowning/lava/honey
+                );
+            }
+            if let Some(b) = p.take_floor_dust() {
+                crate::player_dust2::make_floor_dust(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_hair_dye_dust() {
+                crate::player_dust2::hair_dye_puff(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_mana_heat_dust() {
+                crate::player_dust2::mana_heat_ambient(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
+            if let Some(b) = p.take_stoned_burst_dust() {
+                crate::player_dust2::stoned_burst(
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &mut app.dust,
+                    &spawn_ctx,
+                    &app.world,
+                    &b,
+                );
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)

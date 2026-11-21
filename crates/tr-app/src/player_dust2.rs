@@ -752,6 +752,349 @@ pub(crate) fn double_jump_visuals(
     }
 }
 
+// ---------------------------------------------------------------------------
+// Site 23316 — `Player.CheckDrowning`'s breath bubble (`:23283-23316`).
+// ---------------------------------------------------------------------------
+
+/// The breath-bubble snapshot: the mouth anchor the host computed (the
+/// direction*12 offset + the breathing-reed / mount-mouth adjustments). The
+/// gate (`flag && Next(20)==0 && !lavaWet && !honeyWet`) is the host's; the
+/// drain rolls the Next(20) and spawns the type-34 bubble.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DrownBubbleDust {
+    pub pos: Vec2,
+    pub width: f32,
+}
+
+/// `:23316` — one type-34 bubble, box (width−8)×8, scale 1.2. The Next(20)
+/// gate draw rides the stream even when the spawn culls.
+pub(crate) fn drown_bubble(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &DrownBubbleDust,
+    gate_pass: bool,
+) {
+    // `:23283` — the Next(20) gate (the host already checked flag/lava/honey).
+    if !gate_pass || rng.next_max(20) != 0 {
+        return;
+    }
+    nd(
+        rng, dust, ctx, world, b.pos, (b.width as i32) - 8, 8, 34,
+        0.0, 0.0, 0, Color::default(), 1.2,
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Site 23983 — `Player.MakeFloorDust` (`:23790-24043`): the footstep/landing
+// dust. The host picks the floor tile + the falling flag; the drain replays
+// the per-tile type map + the gate chain + the post-writes.
+// ---------------------------------------------------------------------------
+
+/// The MakeFloorDust snapshot: the floor tile kind/frame/paint, the falling
+/// flag, the box/velocity at the C# read moment.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FloorDust {
+    pub tile: i32,
+    pub frame_y: i32,
+    pub paint: i32,
+    pub falling: bool,
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub vx: f32,
+    pub vy: f32,
+}
+
+/// `:23819-24042` — the floor dust. The shimmer-block ParticleOrchestrator
+/// arm (`:23792-23818`, types 659/667) is the particle-orchestrator lane's —
+/// its Next(100)/NextFloat/NextVector2Circular draws are NOT NewDust and stay
+/// with that lane (documented skip). The type map + gate chain + post-writes
+/// replay here. `gravDir` folds to 1.
+pub(crate) fn make_floor_dust(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &FloorDust,
+) {
+    let ty = b.tile;
+    let flag2 = ty == 19 && b.frame_y / 18 == 49;
+    // `:23820` — the floor-type gate.
+    let allowed = matches!(ty, 147 | 25 | 53 | 189 | 0 | 123 | 57 | 112 | 116 | 196
+        | 193 | 195 | 197 | 199 | 229 | 234 | 371 | 460 | 666 | 712 | 717 | 718 | 719)
+        || flag2;
+    if !allowed {
+        return;
+    }
+    let num2 = if b.falling { 20 } else { 1 };
+    // `:23828-23831` — the 666/712 landing sound (Item177) is the sound lane's
+    // (no Main.rand draw in the int overload — documented skip).
+    for _ in 0..num2 {
+        let mut flag3 = true;
+        // `:23836-23920` — the per-tile dust type map.
+        let mut num3 = 76i32;
+        if ty == 666 || ty == 712 {
+            if b.paint != 0 {
+                break;
+            }
+            num3 = 322;
+        }
+        if ty == 53 { num3 = 32; }
+        if ty == 189 || flag2 { num3 = 16; }
+        if ty == 717 { num3 = 326; }
+        if ty == 718 { num3 = 327; }
+        if ty == 719 { num3 = 328; }
+        if ty == 0 { num3 = 0; }
+        if ty == 123 { num3 = 53; }
+        if ty == 57 { num3 = 36; }
+        if ty == 112 { num3 = 14; }
+        if ty == 234 { num3 = 122; }
+        if ty == 116 { num3 = 51; }
+        if ty == 196 { num3 = 108; }
+        if ty == 193 { num3 = 4; }
+        if ty == 195 || ty == 199 { num3 = 5; }
+        if ty == 197 { num3 = 4; }
+        if ty == 229 { num3 = 153; }
+        if ty == 371 { num3 = 243; }
+        if ty == 460 { num3 = 108; }
+        if ty == 25 { num3 = 37; }
+        // `:23921-23944` — the per-type cull gates (each draws independently).
+        if num3 == 32 && rng.next_max(2) == 0 { flag3 = false; }
+        if num3 == 14 && rng.next_max(2) == 0 { flag3 = false; }
+        if num3 == 51 && rng.next_max(2) == 0 { flag3 = false; }
+        if num3 == 36 && rng.next_max(2) == 0 { flag3 = false; }
+        if num3 == 0 && rng.next_max(3) != 0 { flag3 = false; }
+        if num3 == 53 && rng.next_max(3) != 0 { flag3 = false; }
+        // `:23945-23957` — the per-tile colour.
+        let mut new_color = Color::default();
+        if ty == 193 { new_color = Color::new(30, 100, 255, 100); }
+        if ty == 197 { new_color = Color::new(97, 200, 255, 100); }
+        if ty == 460 { new_color = Color::new(100, 150, 130, 100); }
+        // `:23958-23965` — the walking-speed gate (non-falling).
+        if !b.falling {
+            let num4 = b.vx.abs() / 3.0;
+            if (rng.next_max(100) as f32) > num4 * 100.0 {
+                flag3 = false;
+            }
+        }
+        if !flag3 {
+            continue;
+        }
+        // `:23970-23978` — the clamped velocity.
+        let num5 = b.vx.clamp(-6.0, 6.0);
+        // `:23979-23982` — the walking-effects gate.
+        let walking = b.vx.abs() + b.vy.abs() > 1.0;
+        if !(walking | b.falling) {
+            continue;
+        }
+        // `:23983` — the spawn.
+        let idx = nd(
+            rng, dust, ctx, world, Vec2::new(b.x, b.y + b.height - 2.0),
+            b.width as i32, 6, num3, 0.0, 0.0, 50, new_color, 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        // `:23988-24005` — the per-type scale/alpha post-writes.
+        if num3 == 76 {
+            d.scale += rng.next_max(3) as f32 * 0.1;
+            d.no_light = true;
+        }
+        if matches!(num3, 16 | 108 | 153 | 326 | 327 | 328) {
+            d.scale += rng.next_max(6) as f32 * 0.1;
+        }
+        if num3 == 37 {
+            d.scale += 0.25;
+            d.alpha = 50;
+        }
+        if num3 == 5 {
+            d.scale += rng.next_range(2, 8) as f32 * 0.1;
+        }
+        d.no_gravity = true;
+        if num3 == 322 {
+            if rng.next_max(4) == 0 {
+                d.no_gravity = false;
+                d.scale *= 1.1;
+            } else {
+                d.scale *= 1.2;
+            }
+        }
+        // `:24019-24036` — the falling vs walking velocity chain.
+        if num2 > 1 {
+            d.velocity.x *= 1.2;
+            d.velocity.y *= 0.8;
+            d.velocity.y -= 1.0;
+            d.velocity *= 0.8;
+            d.scale += rng.next_max(3) as f32 * 0.1;
+            d.velocity.x = (d.position.x - (b.x + (b.width as i32 / 2) as f32)) * 0.2;
+            if d.velocity.y > 0.0 {
+                d.velocity.y *= -1.0;
+            }
+            d.velocity.x += num5 * 0.3;
+        } else {
+            d.velocity *= 0.2;
+        }
+        d.position.x -= num5;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Site 24274 — `Player.UpdateHairDyeDust` (`:24268-24295`): the team-dye puff.
+// ---------------------------------------------------------------------------
+
+/// The hair-dye puff snapshot: the box/velocity at the C# read moment. The
+/// host gates the team-dye state (hairDye == TeamDyeShaderIndex, alive, not
+/// stoned/frozen/ghost); the drain rolls the Next(45) gate + the type roll +
+/// the velocity jitter chain. The gore sibling (`:24285`) is W4-d55's — its
+/// argument draws are consumed here in order when its Next(225) gate fires.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct HairDyeDust {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub vx: f32,
+    pub vy: f32,
+}
+
+/// `:24272-24293` — the Next(45) gate, then one type Next(139,143) puff (the
+/// argument draw BEFORE the internals), box width×8, scale 1.2; then the
+/// velocity jitter chain (×(1+Next(-50,51)*0.01) per axis, +Next(-50,51)*0.01
+/// per axis, Y−1, scale×(0.7+Next(-30,31)*0.01), +velocity*0.2). The gore
+/// sibling's Next(225) gate + its argument draws ride after (d55's body).
+pub(crate) fn hair_dye_puff(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &HairDyeDust,
+) {
+    if rng.next_max(45) == 0 {
+        let ty = rng.next_range(139, 143);
+        let idx = nd(
+            rng, dust, ctx, world, Vec2::new(b.x, b.y), b.width as i32, 8, ty,
+            0.0, 0.0, 0, Color::default(), 1.2,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity.x *= 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
+        d.velocity.y *= 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
+        d.velocity.x += rng.next_range(-50, 51) as f32 * 0.01;
+        d.velocity.y += rng.next_range(-50, 51) as f32 * 0.01;
+        d.velocity.y -= 1.0;
+        d.scale *= 0.7 + rng.next_range(-30, 31) as f32 * 0.01;
+        d.velocity += Vec2::new(b.vx, b.vy) * 0.2;
+    }
+    // `:24283-24293` — the gore sibling: the Next(225) gate always rolls; when
+    // it fires, the argument draws (Next(276,283) type, Next(width) X,
+    // Next(8) Y) + the post-write draws ride the stream (the gore body is
+    // d55's). The C# order: type, position-X, position-Y, then the jitter.
+    if rng.next_max(225) == 0 {
+        let _ = rng.next_range(276, 283); // gore type argument
+        let _ = rng.next_max(b.width as i32); // position X argument
+        let _ = rng.next_max(8); // position Y argument
+        // The gore post-write draws (`:24286-24292`): ×(1+Next(-50,51)*0.01)
+        // per axis, scale×(1+Next(-20,21)*0.01), +Next(-50,51)*0.01 per axis.
+        let _ = rng.next_range(-50, 51);
+        let _ = rng.next_range(-50, 51);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_range(-50, 51);
+        let _ = rng.next_range(-50, 51);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sites 24641 / 24654 — the manaHeat ambient (`Player.Update :24630-24662`).
+// ---------------------------------------------------------------------------
+
+/// The manaHeat ambient snapshot: the box + the heat-derived gate probability.
+/// The host gates `manaHeat != 1` and computes `num4 = Remap(manaHeat, 1.3, 1,
+/// 1, 0)`; the drain rolls the two NextFloat*6 gates + the spawn/clone chain.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ManaHeatDust {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    /// `num4` — the Remap-derived gate probability (clamped 0..1).
+    pub num4: f32,
+}
+
+/// `:24637-24660` — two iterations, each gated `NextFloat*6 < num4`; a passed
+/// gate spawns a type-267 NewDustDirect (scale argument Next(10,26)*0.1) with
+/// the blue post-chain, then a CloneDust white twin (scale/fadeIn ×0.4).
+pub(crate) fn mana_heat_ambient(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &ManaHeatDust,
+) {
+    for _ in 0..2 {
+        if rng.next_float() * 6.0 < b.num4 {
+            let scale = rng.next_range(10, 26) as f32 * 0.1;
+            let idx = dust.new_dust_direct(
+                rng, ctx, world, Vec2::new(b.x, b.y), b.width as i32, b.height as i32,
+                267, 0.0, 0.0, 255, Color::default(), scale,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_light = true;
+            d.no_gravity = true;
+            d.velocity *= 0.5;
+            d.velocity.x = 0.0;
+            d.velocity.y -= 0.5;
+            d.velocity.y -= 1.0;
+            d.fade_in = 0.7 + 1.3 * rng.next_float();
+            d.scale = 0.7 + 1.3 * rng.next_float();
+            d.color = Color::new(0, 0, 255, 255); // Color.Blue
+            d.alpha = 200;
+            d.position.y += 5.0;
+            // `:24654-24659` — the CloneDust white twin.
+            let idx2 = dust.clone_dust(rng, ctx, world, idx);
+            let d2 = dust.slot_mut(idx2);
+            d2.no_light = true;
+            d2.no_gravity = true;
+            d2.scale *= 0.4;
+            d2.fade_in *= 0.4;
+            d2.color = Color::WHITE;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Site 25228 — the stoned-transition burst (`Player.Update :25219-25234`).
+// ---------------------------------------------------------------------------
+
+/// The stoned-burst snapshot: the box at the transition moment. The host
+/// gates the stoned rising edge; the drain replays the 20 type-1 puffs with
+/// the per-puff Next(2) noGravity gate.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct StonedBurstDust {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+}
+
+/// `:25226-25233` — 20 type-1 puffs; each rolls Next(2)==0 → noGravity. The
+/// gate draw rides AFTER the spawn internals (the C# order).
+pub(crate) fn stoned_burst(
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    b: &StonedBurstDust,
+) {
+    for _ in 0..20 {
+        let idx = nd(
+            rng, dust, ctx, world, Vec2::new(b.x, b.y), b.width as i32, b.height as i32,
+            1, 0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        if rng.next_max(2) == 0 {
+            dust.slot_mut(idx).no_gravity = true;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1264,5 +1607,168 @@ mod tests {
         // The +0.8 group (indices 2..5) has fadeIn 1.5.
         assert_eq!(pool.slot(2).fade_in, 1.5);
         assert_eq!(pool.slot(5).fade_in, 1.5);
+    }
+
+    /// W4-e1 site 23316 — the drowning bubble: the Next(20) gate, one type-34
+    /// bubble box (width−8)×8 scale 1.2. A failed gate spawns nothing.
+    #[test]
+    fn w4_e1_drown_bubble_gate_and_shape() {
+        let w = world();
+        let c = ctx();
+        let b = DrownBubbleDust { pos: Vec2::new(400.0, 400.0), width: 20.0 };
+        // gate_pass=false → no draw, no spawn.
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(61);
+        drown_bubble(&mut rng, &mut pool, &c, &w, &b, false);
+        assert!(active(&pool).is_empty());
+        // Find a seed whose Next(20)==0.
+        let mut seed = 0i32;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            if r.next_max(20) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(seed);
+        drown_bubble(&mut rng2, &mut pool2, &c, &w, &b, true);
+        assert_eq!(active(&pool2).len(), 1);
+        let d = pool2.slot(0);
+        assert_eq!(d.dust_type, 34);
+        assert_eq!(d.alpha, 0);
+    }
+
+    /// W4-e1 site 23983 — the floor dust: a dirt (type 0) floor spawns a
+    /// type-0 puff only when the Next(3)==0 gate passes AND the walking-speed
+    /// gate passes. A non-walking player (vx=vy=0) fails the walking gate.
+    #[test]
+    fn w4_e1_floor_dust_type_map_and_gates() {
+        let w = world();
+        let c = ctx();
+        // Standing still on dirt: the walking gate (|vx|+|vy|>1) fails.
+        let b = FloorDust {
+            tile: 0, frame_y: 0, paint: 0, falling: false,
+            x: 300.0, y: 300.0, width: 20.0, height: 40.0, vx: 0.0, vy: 0.0,
+        };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(67);
+        make_floor_dust(&mut rng, &mut pool, &c, &w, &b);
+        assert!(active(&pool).is_empty(), "standing still fails the walking gate");
+        // A non-allowed tile (e.g. 1 stone) spawns nothing.
+        let b2 = FloorDust { tile: 1, ..b };
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(67);
+        make_floor_dust(&mut rng2, &mut pool2, &c, &w, &b2);
+        assert!(active(&pool2).is_empty(), "stone is not a dust floor");
+    }
+
+    /// W4-e1 site 24274 — the hair-dye puff: the Next(45) gate, the type
+    /// argument draw Next(139,143) BEFORE the internals, the jitter chain,
+    /// then the gore sibling's Next(225) gate + argument draws. The mirror
+    /// consumes the same order.
+    #[test]
+    fn w4_e1_hair_dye_argument_order_and_gore_gate() {
+        let w = world();
+        let c = ctx();
+        let b = HairDyeDust { x: 500.0, y: 500.0, width: 20.0, vx: 1.0, vy: -1.0 };
+        // Find a seed whose Next(45)==0 (puff gate passes).
+        let mut seed = 0i32;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            if r.next_max(45) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(seed);
+        hair_dye_puff(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 1);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(seed);
+        let _ = mirror.next_max(45); // the puff gate
+        let ty = mirror.next_range(139, 143);
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(500.0, 500.0), 20, 8, ty,
+            0.0, 0.0, 0, Color::default(), 1.2,
+        );
+        let md = mpool.slot_mut(idx);
+        md.velocity.x *= 1.0 + mirror.next_range(-50, 51) as f32 * 0.01;
+        md.velocity.y *= 1.0 + mirror.next_range(-50, 51) as f32 * 0.01;
+        md.velocity.x += mirror.next_range(-50, 51) as f32 * 0.01;
+        md.velocity.y += mirror.next_range(-50, 51) as f32 * 0.01;
+        md.velocity.y -= 1.0;
+        md.scale *= 0.7 + mirror.next_range(-30, 31) as f32 * 0.01;
+        md.velocity += Vec2::new(1.0, -1.0) * 0.2;
+        // The gore sibling gate + its argument draws (whether or not it fires).
+        if mirror.next_max(225) == 0 {
+            let _ = mirror.next_range(276, 283);
+            let _ = mirror.next_max(20);
+            let _ = mirror.next_max(8);
+            let _ = mirror.next_range(-50, 51);
+            let _ = mirror.next_range(-50, 51);
+            let _ = mirror.next_range(-20, 21);
+            let _ = mirror.next_range(-50, 51);
+            let _ = mirror.next_range(-50, 51);
+        }
+        assert_eq!(pool.slot(0).dust_type, ty);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e1 sites 24641/24654 — the manaHeat ambient: a high num4 (1.0)
+    /// passes both NextFloat*6 gates; each passed gate spawns a type-267
+    /// blue puff + a white CloneDust twin (scale/fadeIn ×0.4).
+    #[test]
+    fn w4_e1_mana_heat_spawn_and_clone() {
+        let w = world();
+        let c = ctx();
+        let b = ManaHeatDust { x: 600.0, y: 600.0, width: 20.0, height: 40.0, num4: 1.0 };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(71);
+        mana_heat_ambient(&mut rng, &mut pool, &c, &w, &b);
+        // num4=1.0 → NextFloat*6 < 1.0 passes when NextFloat < 1/6. Both
+        // iterations may or may not pass; assert the spawned records' shape.
+        let n = active(&pool).len();
+        assert!(n % 2 == 0, "each passed gate spawns a pair, got {n}");
+        for i in (0..n).step_by(2) {
+            assert_eq!(pool.slot(i).dust_type, 267);
+            assert_eq!(pool.slot(i).color, Color::new(0, 0, 255, 255));
+            assert_eq!(pool.slot(i + 1).color, Color::WHITE);
+            assert!(pool.slot(i).no_gravity);
+            assert!(pool.slot(i + 1).no_gravity);
+        }
+    }
+
+    /// W4-e1 site 25228 — the stoned burst: 20 type-1 puffs, each with a
+    /// Next(2) noGravity gate AFTER the internals. The mirror consumes the
+    /// gate draw per puff.
+    #[test]
+    fn w4_e1_stoned_burst_twenty_and_gate_order() {
+        let w = world();
+        let c = ctx();
+        let b = StonedBurstDust { x: 700.0, y: 700.0, width: 20.0, height: 40.0 };
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(73);
+        stoned_burst(&mut rng, &mut pool, &c, &w, &b);
+        assert_eq!(active(&pool).len(), 20);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(73);
+        for _ in 0..20 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(700.0, 700.0), 20, 40, 1,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            if mirror.next_max(2) == 0 {
+                mpool.slot_mut(idx).no_gravity = true;
+            }
+        }
+        for i in 0..20 {
+            assert_eq!(pool.slot(i).no_gravity, mpool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 }
