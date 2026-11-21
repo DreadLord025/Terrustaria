@@ -6150,7 +6150,7 @@ impl Npc {
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
-            NpcKind::KingSlime => self.update_king_slime(world, player, rng),
+            NpcKind::KingSlime => self.update_king_slime(world, player, rng, dust, dust_ctx),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
@@ -9823,7 +9823,14 @@ impl Npc {
     ///
     /// The dust and the gore are SKIPPED — no dust/gore layer. The MP-only
     /// branches use the single-player values.
-    fn update_king_slime(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
+    fn update_king_slime(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:43123-43133` — the flags and the getGood world's scale factor.
         // `num2` stays 1.0 (the getGood `num3 = 2f` scale row `:43128-43131`
         // is constants-off, the classic solo env — ANALYSIS).
@@ -9952,6 +9959,27 @@ impl Npc {
                 self.ai[1] = 6.0;
                 self.ai[0] = 0.0;
             }
+            // W4-f4 — site 43251 (`NPC.cs:43247-43255`): the shrink dust,
+            // gated `!flag3` (the teleport tick sets flag3 and skips it).
+            // 10× type-4 `NewDust(position + UnitX*-20, width+40, height,
+            // vx, vy, 150, Color(78,136,255,80), 2f)`; post noGravity +
+            // velocity *= 0.5. ZERO explicit rand draws — only the pool
+            // internals roll (type 4 hits no per-type tweak). The gore
+            // crown at `:43233` is the gore lane's (E4), not this dust.
+            if !flag3 {
+                for _ in 0..10 {
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world,
+                        Vec2::new(self.x - 20.0, self.y),
+                        w as i32 + 40, h as i32, 4,
+                        self.vx, self.vy, 150,
+                        tr_core::particles::Color::new(78, 136, 255, 80), 2.0,
+                    );
+                    let dd = dust.slot_mut(idx);
+                    dd.no_gravity = true;
+                    dd.velocity *= 0.5;
+                }
+            }
         } else if self.ai[1] == 6.0 {
             // `:43257-43282` — the grow-back: 30 ticks at the same ramp.
             flag2 = true;
@@ -9965,6 +9993,21 @@ impl Npc {
                 // `:43268` — `TargetClosest()` at grow-end (K-4).
                 let cand = crate::npc_target::session_candidate(player);
                 crate::npc_target::target_closest(self, world, &[cand], true, 15, 0);
+            }
+            // W4-f4 — site 43278 (`NPC.cs:43276-43281`): the grow-back dust,
+            // EVERY grow tick (no flag gate). 10× type-4, the same box/color
+            // as the shrink, but velocity *= 2 (the C#'s only difference).
+            for _ in 0..10 {
+                let idx = dust.new_dust(
+                    rng, dust_ctx, world,
+                    Vec2::new(self.x - 20.0, self.y),
+                    w as i32 + 40, h as i32, 4,
+                    self.vx, self.vy, 150,
+                    tr_core::particles::Color::new(78, 136, 255, 80), 2.0,
+                );
+                let dd = dust.slot_mut(idx);
+                dd.no_gravity = true;
+                dd.velocity *= 2.0;
             }
         }
         // `:43283` — `this.dontTakeDamage = (this.hide = flag3)`: the
@@ -10038,6 +10081,23 @@ impl Npc {
                     self.vx *= 0.93;
                 }
             }
+        }
+        // W4-f4 — site 43365 (`NPC.cs:43365-43367`): the per-tick body
+        // dust, BEFORE the `life <= 0` return (the C# spawns it even on
+        // the death tick). One type-4 `NewDust(position, width, height,
+        // vx, vy, 255, Color(0,80,255,80), scale*1.2)`; post noGravity +
+        // velocity *= 0.5. ZERO explicit rand draws.
+        {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world,
+                Vec2::new(self.x, self.y),
+                w as i32, h as i32, 4,
+                self.vx, self.vy, 255,
+                tr_core::particles::Color::new(0, 80, 255, 80), self.scale * 1.2,
+            );
+            let dd = dust.slot_mut(idx);
+            dd.no_gravity = true;
+            dd.velocity *= 0.5;
         }
         // `:43365-43382` — the body scale: the hp drives the size (the
         // C#'s `num9`). `:43368-43371` — `life <= 0` returns BEFORE the
@@ -28432,7 +28492,7 @@ mod s1_d_3g_tests {
         player.y = 200.0;
         let mut k = king();
         let mut rng = UnifiedRandom::new(12345);
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         // The full-hp scale: 0.5 + 0.75 = 1.25.
         assert!(
             (k.scale - 1.25).abs() < 0.001,
@@ -28444,7 +28504,7 @@ mod s1_d_3g_tests {
         assert_eq!(k.size_override, Some((122.0, 115.0)));
         // At half the hp the scale drops to 1.0.
         k.hp = k.max_hp / 2;
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert!(
             (k.scale - 1.0).abs() < 0.001,
             "the half-hp scale ({})",
@@ -28463,21 +28523,98 @@ mod s1_d_3g_tests {
         let mut k = king();
         let mut rng = UnifiedRandom::new(12345);
         // The first tick: the `ai[3]` latch is set to the full hp — no batch.
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert!(!k.wants_minion, "no batch at the full hp");
         // A hair of damage is not enough (the 5 % window).
         k.hp = k.max_hp - 1;
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert!(!k.wants_minion, "no batch inside the 5 % window");
         // A 5 % loss spawns the batch.
         k.hp = k.max_hp - (k.max_hp / 20) - 1;
-        k.update_king_slime(&w, &mut player, &mut rng);
+        k.update_king_slime(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert!(k.wants_minion, "the 5 % batch");
         assert!(
             (1..=3).contains(&k.wants_minion_batch),
             "the batch is 1-3 ({})",
             k.wants_minion_batch
         );
+    }
+
+    /// W4-f4 — sites 43251/43278/43365 (`NPC.cs:43247-43281`/`:43365-43367`):
+    /// the King Slime's three type-4 dusts. The shrink (ai[1]=5, !flag3)
+    /// spawns 10 with velocity×0.5, the grow-back (ai[1]=6) 10 with
+    /// velocity×2, and every tick one body dust (alpha 255, scale×1.2,
+    /// velocity×0.5). ZERO explicit rand draws — a mirrored stream rolling
+    /// new_dust with the same arguments lands identical records. The
+    /// teleport tick (flag3) skips the shrink dust. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f4_the_king_slime_dust_mirrors_the_three_sites() {
+        let w = world();
+        let mut player = Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 200.0;
+        let ctx = crate::npc::permissive_dust_ctx(&w);
+        // The shrink arm: ai[1]=5, ai[0]=30 (not the teleport tick).
+        let mut k = king();
+        k.king_slime_local[3] = 1.0; // skip the one-shot init
+        k.ai[1] = 5.0;
+        k.ai[0] = 30.0;
+        k.vx = 2.0;
+        k.vy = -1.0;
+        let (kw, kh) = k.size();
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(17);
+        let mut mpool = tr_core::particles::DustPool::new();
+        let mut mirror = UnifiedRandom::new(17);
+        // Mirror: 10 shrink (×0.5) + 1 body, at the pre-tick position.
+        for _ in 0..10 {
+            let idx = mpool.new_dust(
+                &mut mirror, &ctx, &w, glam::Vec2::new(k.x - 20.0, k.y),
+                kw as i32 + 40, kh as i32, 4, k.vx, k.vy, 150,
+                tr_core::particles::Color::new(78, 136, 255, 80), 2.0,
+            );
+            let dd = mpool.slot_mut(idx);
+            dd.no_gravity = true;
+            dd.velocity *= 0.5;
+        }
+        let idx = mpool.new_dust(
+            &mut mirror, &ctx, &w, glam::Vec2::new(k.x, k.y),
+            kw as i32, kh as i32, 4, k.vx, k.vy, 255,
+            tr_core::particles::Color::new(0, 80, 255, 80), k.scale * 1.2,
+        );
+        let dd = mpool.slot_mut(idx);
+        dd.no_gravity = true;
+        dd.velocity *= 0.5;
+        k.update_king_slime(&w, &mut player, &mut rng, &mut pool, &ctx);
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        assert_eq!(act.len(), 11, "10 shrink + 1 body");
+        for (j, &i) in act.iter().enumerate() {
+            assert_eq!(pool.slot(i).dust_type, 4);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).position, mpool.slot(j).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(j).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The grow-back arm: ai[1]=6 spawns 10 with velocity×2 + 1 body.
+        let mut g = king();
+        g.king_slime_local[3] = 1.0;
+        g.ai[1] = 6.0;
+        g.ai[0] = 10.0;
+        g.vx = 2.0;
+        g.vy = -1.0;
+        let mut gpool = tr_core::particles::DustPool::new();
+        let mut grng = UnifiedRandom::new(19);
+        g.update_king_slime(&w, &mut player, &mut grng, &mut gpool, &ctx);
+        let gact: Vec<usize> = (0..6000).filter(|&i| gpool.slot(i).active).collect();
+        assert_eq!(gact.len(), 11, "10 grow + 1 body");
+        for &i in &gact {
+            assert_eq!(gpool.slot(i).dust_type, 4);
+            assert!(gpool.slot(i).no_gravity);
+        }
+        // The grow dusts (first 10) carry alpha 150, the body dust alpha
+        // 255 — the C#'s two NewDust alpha arguments (`:43278`/`:43365`).
+        assert_eq!(gpool.slot(gact[0]).alpha, 150, "the grow dust alpha");
+        assert_eq!(gpool.slot(gact[10]).alpha, 255, "the body dust alpha");
     }
 
     /// A-1 audit K-1 (`NPC.cs:43164`): the far-player state write is gated
@@ -28509,7 +28646,30 @@ mod s1_d_3g_tests {
         player.y = 100.0;
         let mut rng = UnifiedRandom::new(9);
         let before = rng.clone();
-        k.update_king_slime(&w, &mut player, &mut rng);
+        // W4-f4: the dust sites (43251 shrink 10× + 43365 body 1×) now roll
+        // the pool internals on this stream. Mirror them on the `before`
+        // clone so the parity check still proves the gated state write
+        // consumes no draw BEYOND the dust (the teleport-spot search is
+        // skipped: ai[2] < 300). Type 4 hits no per-type tweak; the fresh
+        // pool's d_count 0 takes the no-pressure-band path (7 draws each).
+        {
+            let mut mpool = tr_core::particles::DustPool::new();
+            let mctx = crate::npc::permissive_dust_ctx(&w);
+            let (kw, kh) = k.size();
+            for _ in 0..10 {
+                mpool.new_dust(
+                    &mut before, &mctx, &w, glam::Vec2::new(k.x - 20.0, k.y),
+                    kw as i32 + 40, kh as i32, 4, k.vx, k.vy, 150,
+                    tr_core::particles::Color::new(78, 136, 255, 80), 2.0,
+                );
+            }
+            mpool.new_dust(
+                &mut before, &mctx, &w, glam::Vec2::new(k.x, k.y),
+                kw as i32, kh as i32, 4, k.vx, k.vy, 255,
+                tr_core::particles::Color::new(0, 80, 255, 80), k.scale * 1.2,
+            );
+        }
+        k.update_king_slime(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         // The guard skipped the state write: the timer ADVANCED, not reset.
         assert_eq!(k.ai[0], 31.0, "the shrink timer advances (guard held)");
         assert_eq!(k.ai[1], 5.0, "still shrinking");
@@ -28517,8 +28677,9 @@ mod s1_d_3g_tests {
         assert_eq!(k.king_slime_local[2], 888.0, "teleport target preserved");
         // EncourageDespawn(10) armed the despawn window (`:43155`).
         assert_eq!(k.despawn_timer, 10, "the boss is encouraged to despawn");
-        // No teleport-spot search this tick (ai[2] < 300): zero draws.
-        assert_eq!(rng, before, "the gated write consumes no draw");
+        // No teleport-spot search this tick (ai[2] < 300): the only draws
+        // are the dust pool internals (mirrored above).
+        assert_eq!(rng, before, "the gated write consumes no draw beyond the dust");
     }
 }
 
