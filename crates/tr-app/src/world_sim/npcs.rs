@@ -3074,9 +3074,10 @@ pub(crate) fn update_dd2_event(app: &mut App, _dt: f32) {
     // crystal survives into the loss scene. The scene's first-tick arm
     // (`NPC.cs:40868-40885`, `ai[0] == 0`) rides the same resolve: every
     // active portal (549) flips to its fade (`ai[1] = 1`, `ai[0] = 0`),
-    // then `DD2Event.ReportLoss` (`:40882`). The 672 defeat-scene
-    // projectile (`:40883`, aiStyle 132's filters/sound/gore drama) is
-    // deferred — the port carries no scene filters yet (ANALYSIS).
+    // then `DD2Event.ReportLoss` (`:40882`). The 672 defeat-scene marker
+    // (`:40883`) IS spawned below (W4-d14, aiStyle 132) — only the scene
+    // filters/sound/gore drama stay skipped (no scene-filter layer,
+    // ANALYSIS).
     // The win scene's shield (`NPC.cs:40760-40761`: `life = lifeMax` every
     // tick) keeps the crystal's hp positive, so the `hp <= 0` gate below
     // never sees a winning crystal — the C#'s intercept (`:78087`,
@@ -12252,6 +12253,46 @@ mod dd2_loss_tests {
             .expect("the portal survives — only its fade arm opens");
         assert_eq!(g.ai[1], 1.0, "the portal mark (`NPC.cs:40875`)");
         assert_eq!(g.ai[0], 0.0, "the fade arm starts at 0");
+    }
+
+    /// W4-d14 doc-sweep item 2 — the loss scene's 672 defeat marker
+    /// (`NPC.cs:40883`): `NewProjectile(Center - UnitY * 40, Zero, 672, 0,
+    /// 0f, Main.myPlayer)` fires ONCE on the scene entry, local-owned (the
+    /// aiStyle-132 arm simulates on a client too) with the C# centre
+    /// converted to the top-left. The scene's later ticks do not re-spawn
+    /// it (the entry gate is the `hp <= 0` intercept, not the scene ride).
+    #[test]
+    fn the_loss_scene_spawns_the_672_defeat_marker_once() {
+        let mut app = base_app();
+        crystal(&mut app);
+        app.npcs[0].hp = 0; // the killing blow
+        update_npcs(&mut app, 1.0 / 60.0);
+        let marker = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|s| s.active && s.kind == 672)
+            .expect("the defeat marker drains on the scene entry");
+        assert_eq!(marker.owner, app.local_id as u8, "Main.myPlayer");
+        // The crystal's centre (2420, 1812) minus UnitY * 40 = (2420,
+        // 1772); the 10x10 row's half-box subtraction lands (2415, 1767).
+        assert_eq!((marker.pos.x, marker.pos.y), (2415.0, 1767.0));
+        assert_eq!(marker.damage, 0, "the marker deals no damage");
+        assert_eq!((marker.vel.x, marker.vel.y), (0.0, 0.0), "Vector2.Zero");
+        // The scene's next ticks keep the crystal alive (hp = lifeMax), so
+        // the intercept cannot re-fire — exactly one marker.
+        for _ in 0..5 {
+            update_npcs(&mut app, 1.0 / 60.0);
+        }
+        assert_eq!(
+            app.projectiles
+                .slots()
+                .iter()
+                .filter(|s| s.active && s.kind == 672)
+                .count(),
+            1,
+            "the entry fires once"
+        );
     }
 
     #[test]
