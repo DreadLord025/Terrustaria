@@ -1792,6 +1792,249 @@ pub(crate) fn style81_influx_spark_451(
     }
 }
 
+/// `:31889-31899` — the 464 CultistBossIceMist's six-spoke expanding ring
+/// (aiStyle-86's mist form, STAGED — the d9 `projectile_ai_style86` machine
+/// body-skips the dust). The caller gates `ai[1] != 1` + the pre-dust
+/// machine walk (the 45-tick kill RETURNS before any dust). Per tick: the
+/// (0,−720) spin rotated by the velocity's rotation, scaled by
+/// `ai[0]%45/45`; 6 spokes × 2 dusts each at spoke + RandomVector2(−8,8)/2
+/// (TWO NextDouble-cast draws per dust), 8×8 box, type 197, alpha 100,
+/// Color.Transparent, noGravity. The AddLight per spoke is the light
+/// lane's (c19/e6).
+pub(crate) fn style86_ice_mist_ring_464(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    let spin = crate::bow_launch::rotated_by(
+        Vec2::new(0.0, -720.0),
+        p.vel.y.atan2(p.vel.x) as f64,
+    ) * (p.ai[0] % 45.0 / 45.0);
+    for k in 0..6 {
+        let spoke = Vec2::new(cx, cy)
+            + crate::bow_launch::rotated_by(
+                spin,
+                k as f64 * (std::f64::consts::PI * 2.0) / 6.0,
+            );
+        for _ in 0..2 {
+            let jitter = random_vector2(d.rng, -8.0, 8.0) / 2.0;
+            let idx = d.new_dust(
+                world,
+                spoke + jitter,
+                8,
+                8,
+                197,
+                0.0,
+                0.0,
+                100,
+                Color::TRANSPARENT,
+                1.0,
+            );
+            d.pool.slot_mut(idx).no_gravity = true;
+        }
+    }
+}
+
+/// `:31925-31935` — the 482 ClingerStaff's wall curtain (aiStyle-87,
+/// STAGED — the d9 `projectile_ai_style87` machine keeps ZERO explicit
+/// draws; the pool internals are the whole stream cost). Count =
+/// `(width*height)*0.0045` (the C# float loop bound); per dust: type 75,
+/// alpha 100, noGravity, vel×0.5, vel.Y −0.5, scale 1.4, pos.X +6,
+/// pos.Y −2. The caller owns the keep-one sibling kill's early return.
+pub(crate) fn style87_clinger_curtain_482(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let count = p.w * p.h * 0.0045;
+    let mut i = 0.0f32;
+    while i < count {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            75,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 0.5;
+        dust.velocity.y -= 0.5;
+        dust.scale = 1.4;
+        dust.position.x += 6.0;
+        dust.position.y -= 2.0;
+        i += 1.0;
+    }
+}
+
+/// `:32292-32319` — the 490 CultistRitual's alpha-0 two-dust ring (aiStyle-
+/// 89, STAGED — the d9 `projectile_ai_style89` machine keeps the explicit
+/// draws, bodies skipped; this emitter REPLACES that census at merge).
+/// Per dust (i=0,1): speed = Next(2,4) as float, i=1 flips it ×−0.75 and
+/// scales ×0.42; direction = Normalize(Next(-10,11), Next(-10,11)) — the
+/// UNGUARDED XNA normalize (zero → NaN, the empress convention); type 228,
+/// alpha 100, scale 2, noGravity + noLight, position = Centre + dir·204·
+/// scale; the Next(8) gate doubles the inward velocity + scale +0.5.
+pub(crate) fn style89_ritual_ring_490(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    for i in 0..2 {
+        let mut speed = d.rng.next_range(2, 4) as f32;
+        let mut sc = p.scale;
+        if i == 1 {
+            sc *= 0.42;
+            speed *= -0.75;
+        }
+        let mut dir = Vec2::new(
+            d.rng.next_range(-10, 11) as f32,
+            d.rng.next_range(-10, 11) as f32,
+        );
+        dir = xna_normalize(dir);
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            228,
+            0.0,
+            0.0,
+            100,
+            Color::default(),
+            2.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.no_light = true;
+        dust.position = Vec2::new(cx, cy) + dir * 204.0 * sc;
+        if d.rng.next_range(0, 8) == 0 {
+            dust.velocity = dir * (0.0 - speed) * 2.0;
+            dust.scale += 0.5;
+        } else {
+            dust.velocity = dir * (0.0 - speed);
+        }
+    }
+}
+
+/// `:32320-32344` — the 490's post-60 per-tick centre puff (the caller
+/// gates `ai[0] >= 60` AFTER the increment): speed = Next(1,3), the same
+/// normalized Next(-10,11)² direction, type 228 scale 2, noGravity +
+/// noLight, position = Centre, the Next(2) gate doubles + scale +0.5,
+/// fadeIn 2.
+pub(crate) fn style89_ritual_puff_490(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let speed = d.rng.next_range(1, 3) as f32;
+    let dir = xna_normalize(Vec2::new(
+        d.rng.next_range(-10, 11) as f32,
+        d.rng.next_range(-10, 11) as f32,
+    ));
+    let (cx, cy) = p.center();
+    let idx = d.new_dust(
+        world,
+        p.pos,
+        p.w as i32,
+        p.h as i32,
+        228,
+        0.0,
+        0.0,
+        100,
+        Color::default(),
+        2.0,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.no_gravity = true;
+    dust.no_light = true;
+    dust.position = Vec2::new(cx, cy);
+    if d.rng.next_range(0, 2) == 0 {
+        dust.velocity = dir * speed * 2.0;
+        dust.scale += 0.5;
+    } else {
+        dust.velocity = dir * speed;
+    }
+    dust.fade_in = 2.0;
+}
+
+/// `Vector2.Normalize()` (`Vector2.cs`) — XNA divides UNGUARDED: a zero
+/// vector yields NaN (the `npc_ai_empress` convention documents the
+/// divergence; the C# behaviour is kept here — the (0,0) direction pick
+/// propagates NaN into the position/velocity exactly as the original).
+fn xna_normalize(v: Vec2) -> Vec2 {
+    let len = (v.x * v.x + v.y * v.y).sqrt();
+    Vec2::new(v.x / len, v.y / len)
+}
+
+/// `:32424-32430` — ONE spelunkable cell's dust-204 (the 492 MagicLantern's
+/// 10-tick scan body, STAGED — the d9 `projectile_ai_style90` machine keeps
+/// the per-cell Next(4) head draws and skips the body; the scan walk +
+/// `is_tile_spelunkable` are that machine's, this emitter is the per-hit
+/// drop-in at its :32426 slot). Type 204 at the tile's 16×16 box, alpha
+/// 150, scale 0.3, fadeIn 0.75, vel×0.1, noLight. NO explicit draws — the
+/// Next(4) is the caller's && head, consumed for EVERY cell.
+pub(crate) fn style90_lantern_spark_492(world: &World, d: &mut ProjDust, tx: i32, ty: i32) {
+    let idx = d.new_dust(
+        world,
+        Vec2::new(tx as f32 * 16.0, ty as f32 * 16.0),
+        16,
+        16,
+        204,
+        0.0,
+        0.0,
+        150,
+        Color::default(),
+        0.3,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.fade_in = 0.75;
+    dust.velocity *= 0.1;
+    dust.no_light = true;
+}
+
+/// `:32544-32556` — the 496 ShadowFlame's scale-shrinking dust-27 tail
+/// (aiStyle-91, STAGED — the d10 `projectile_ai_91_100` machine's skip).
+/// The caller gates `scale < 1`; count = the C# float loop `i < scale*10`.
+/// Per dust: type 27 with the VELOCITY args (speedX/Y = base.velocity),
+/// alpha 100, scale 1.1; position = (pos + Centre)/2, noGravity, vel×0.1,
+/// vel −= base.vel·(1.3−scale), fadeIn = 100 + owner (the C# owner-tagged
+/// fadeIn), scale += scale·0.75.
+pub(crate) fn style91_shadowflame_tail_496(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    let mut i = 0.0f32;
+    while i < p.scale * 10.0 {
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            27,
+            p.vel.x,
+            p.vel.y,
+            100,
+            Color::default(),
+            1.1,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.position = (dust.position + Vec2::new(cx, cy)) / 2.0;
+        dust.no_gravity = true;
+        dust.velocity *= 0.1;
+        dust.velocity -= p.vel * (1.3 - p.scale);
+        dust.fade_in = 100.0 + p.owner as f32;
+        dust.scale += p.scale * 0.75;
+        i += 1.0;
+    }
+}
+
+/// `:32953-32961` — the 518 CoinPortal's 1-in-3 orbiting dust-246 (aiStyle-
+/// 94, STAGED — the d10 machine's skip). The caller gates `alpha < 90`
+/// BEFORE the Next(3) (the C# && order). The point: (w,h)·scale·0.85/2,
+/// UnitY.RotatedByRandom(2π) scaled — TWO NextDouble draws; the dust spawns
+/// at Centre+point with a 0×0 box then BOTH position and velocity are
+/// overwritten (position = Centre+point exactly, velocity = Zero).
+pub(crate) fn style94_coin_portal_spark_518(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let half = Vec2::new(p.w, p.h) * p.scale * 0.85 / 2.0;
+    let point = rotated_by_random(Vec2::Y, 6.2831854820251465, d.rng) * half;
+    let (cx, cy) = p.center();
+    let at = Vec2::new(cx, cy) + point;
+    let idx = d.new_dust(world, at, 0, 0, 246, 0.0, 0.0, 0, Color::default(), 1.0);
+    let dust = d.pool.slot_mut(idx);
+    dust.position = at;
+    dust.velocity = Vec2::ZERO;
+}
+
 // ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
@@ -3432,8 +3675,269 @@ mod tests {
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
             assert_eq!(pool.slot(i).no_gravity, mpool.slot(i).no_gravity);
         }
-        assert!(pool.slot(2).no_gravity, "the strike arm writes noGravity unconditionally");
+    /// W4-e3 AI-inline window — `:31889-31899`: the 464's 6×2 spoke ring
+    /// (the velocity-rotated (0,−720) spin scaled by ai[0]%45/45, the
+    /// RandomVector2(−8,8)/2 jitter = TWO NextDouble-cast draws per dust,
+    /// 197 alpha-100 Transparent noGravity). Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style86_ice_mist_464_ring_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(464);
+        p.ai[0] = 20.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(53);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style86_ice_mist_ring_464(&p, &w, &mut d);
+        let (cx, cy) = p.center();
+        let spin = crate::bow_launch::rotated_by(
+            Vec2::new(0.0, -720.0), p.vel.y.atan2(p.vel.x) as f64,
+        ) * (20.0f32 % 45.0 / 45.0);
+        for k in 0..6 {
+            let spoke = Vec2::new(cx, cy) + crate::bow_launch::rotated_by(
+                spin, k as f64 * (std::f64::consts::PI * 2.0) / 6.0,
+            );
+            for _ in 0..2 {
+                let jx = 16.0 * mirror.next_double() as f32 - 8.0;
+                let jy = 16.0 * mirror.next_double() as f32 - 8.0;
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, spoke + Vec2::new(jx, jy) / 2.0,
+                    8, 8, 197, 0.0, 0.0, 100, Color::TRANSPARENT, 1.0,
+                );
+                mpool.slot_mut(idx).no_gravity = true;
+            }
+        }
+        assert_eq!(active(&pool).len(), 12);
+        for i in 0..12 {
+            assert_eq!(pool.slot(i).dust_type, 197);
+            assert_eq!(pool.slot(i).color, Color::TRANSPARENT);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+        }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:31925-31935` (the 482 curtain: the
+    /// (w·h)·0.0045 float count, the +6/−2 position nudge) +
+    /// `:32544-32556` (the 496 tail: the scale·10 count, the velocity args,
+    /// the (pos+Centre)/2 rewrite, fadeIn = 100+owner). Mirrored.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style87_curtain482_and_style91_tail496_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(482);
+        p.w = 16.0;
+        p.h = 200.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(57);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(57);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style87_clinger_curtain_482(&p, &w, &mut d);
+        // 16*200*0.0045 = 14.4 → 15 iterations (i = 0..14 < 14.4).
+        let count = 16.0f32 * 200.0 * 0.0045;
+        let mut n = 0;
+        let mut i = 0.0f32;
+        while i < count {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 16, 200, 75,
+                0.0, 0.0, 100, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity *= 0.5;
+            md.velocity.y -= 0.5;
+            md.scale = 1.4;
+            md.position.x += 6.0;
+            md.position.y -= 2.0;
+            n += 1;
+            i += 1.0;
+        }
+        assert_eq!(active(&pool).len(), n);
+        assert_eq!(n, 15, "the float bound admits i=14 (< 14.4)");
+        for j in 0..n {
+            assert_eq!(pool.slot(j).scale, 1.4);
+            assert_eq!(pool.slot(j).position, mpool.slot(j).position);
+            assert_eq!(pool.slot(j).velocity, mpool.slot(j).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The 496 tail at scale 0.6: 6 dusts, fadeIn 100+owner.
+        let mut q = proj(496);
+        q.scale = 0.6;
+        q.owner = 3;
+        q.w = 40.0;
+        q.h = 40.0;
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(58);
+        let mut mpool2 = DustPool::new();
+        let mut mirror2 = UnifiedRandom::new(58);
+        let mut d2 = ProjDust { pool: &mut pool2, ctx: &c, rng: &mut rng2 };
+        style91_shadowflame_tail_496(&q, &w, &mut d2);
+        let (qx, qy) = q.center();
+        let mut i = 0.0f32;
+        while i < 0.6 * 10.0 {
+            let idx = mpool2.new_dust(
+                &mut mirror2, &c, &w, q.pos, 40, 40, 27,
+                q.vel.x, q.vel.y, 100, Color::default(), 1.1,
+            );
+            let md = mpool2.slot_mut(idx);
+            md.position = (md.position + Vec2::new(qx, qy)) / 2.0;
+            md.no_gravity = true;
+            md.velocity *= 0.1;
+            md.velocity -= q.vel * (1.3 - 0.6);
+            md.fade_in = 103.0;
+            md.scale += 0.6 * 0.75;
+            i += 1.0;
+        }
+        assert_eq!(active(&pool2).len(), 6);
+        for j in 0..6 {
+            assert_eq!(pool2.slot(j).fade_in, 103.0);
+            assert_eq!(pool2.slot(j).position, mpool2.slot(j).position);
+            assert_eq!(pool2.slot(j).velocity, mpool2.slot(j).velocity);
+            assert_eq!(pool2.slot(j).scale, mpool2.slot(j).scale);
+        }
+        assert_eq!(rng2.next_range(0, 1000), mirror2.next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:32292-32344`: the 490's alpha-0 ring
+    /// (Next(2,4) speed, i=1's ×−0.75/×0.42, the UNGUARDED normalize of the
+    /// Next(-10,11)² pick, the Next(8) variant) + the post-60 puff
+    /// (Next(1,3), Next(2), fadeIn 2). Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style89_ritual_490_ring_and_puff_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(490);
+        p.scale = 0.5;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(61);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(61);
+        let norm = |v: Vec2| {
+            let len = (v.x * v.x + v.y * v.y).sqrt();
+            Vec2::new(v.x / len, v.y / len)
+        };
+        {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style89_ritual_ring_490(&p, &w, &mut d);
+        }
+        let (cx, cy) = p.center();
+        for i in 0..2 {
+            let mut speed = mirror.next_range(2, 4) as f32;
+            let mut sc = 0.5f32;
+            if i == 1 {
+                sc *= 0.42;
+                speed *= -0.75;
+            }
+            let dir = norm(Vec2::new(
+                mirror.next_range(-10, 11) as f32,
+                mirror.next_range(-10, 11) as f32,
+            ));
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 14, 14, 228,
+                0.0, 0.0, 100, Color::default(), 2.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.no_light = true;
+            md.position = Vec2::new(cx, cy) + dir * 204.0 * sc;
+            if mirror.next_range(0, 8) == 0 {
+                md.velocity = dir * -speed * 2.0;
+                md.scale += 0.5;
+            } else {
+                md.velocity = dir * -speed;
+            }
+        }
+        {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style89_ritual_puff_490(&p, &w, &mut d);
+        }
+        let speed = mirror.next_range(1, 3) as f32;
+        let dir = norm(Vec2::new(
+            mirror.next_range(-10, 11) as f32,
+            mirror.next_range(-10, 11) as f32,
+        ));
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, p.pos, 14, 14, 228,
+            0.0, 0.0, 100, Color::default(), 2.0,
+        );
+        let md = mpool.slot_mut(idx);
+        md.no_gravity = true;
+        md.no_light = true;
+        md.position = Vec2::new(cx, cy);
+        if mirror.next_range(0, 2) == 0 {
+            md.velocity = dir * speed * 2.0;
+            md.scale += 0.5;
+        } else {
+            md.velocity = dir * speed;
+        }
+        md.fade_in = 2.0;
+        assert_eq!(active(&pool).len(), 3);
+        for j in 0..3 {
+            assert_eq!(pool.slot(j).position, mpool.slot(j).position);
+            assert_eq!(pool.slot(j).velocity, mpool.slot(j).velocity);
+            assert_eq!(pool.slot(j).scale, mpool.slot(j).scale);
+        }
+        assert_eq!(pool.slot(2).fade_in, 2.0);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:32424-32430` (the 492's per-cell 204:
+    /// fadeIn 0.75, ×0.1, noLight, ZERO explicit draws) + `:32953-32961`
+    /// (the 518's RotatedByRandom orbit point, the 0×0 spawn then the
+    /// position/velocity overwrites). Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_style90_spark492_and_style94_orbit518_mirror() {
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(67);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(67);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style90_lantern_spark_492(&w, &mut d, 63, 57);
+        let idx = mpool.new_dust(
+            &mut mirror, &c, &w, Vec2::new(63.0 * 16.0, 57.0 * 16.0),
+            16, 16, 204, 0.0, 0.0, 150, Color::default(), 0.3,
+        );
+        let md = mpool.slot_mut(idx);
+        md.fade_in = 0.75;
+        md.velocity *= 0.1;
+        md.no_light = true;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).fade_in, 0.75);
+        assert!(pool.slot(0).no_light);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        // The 518 orbit spark.
+        let mut p = proj(518);
+        p.scale = 0.8;
+        p.w = 32.0;
+        p.h = 32.0;
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(68);
+        let mut mpool2 = DustPool::new();
+        let mut mirror2 = UnifiedRandom::new(68);
+        let mut d2 = ProjDust { pool: &mut pool2, ctx: &c, rng: &mut rng2 };
+        style94_coin_portal_spark_518(&p, &w, &mut d2);
+        let half = Vec2::new(32.0, 32.0) * 0.8 * 0.85 / 2.0;
+        let angle = mirror2.next_double() * 6.2831854820251465
+            - mirror2.next_double() * 6.2831854820251465;
+        let point = crate::bow_launch::rotated_by(Vec2::Y, angle) * half;
+        let (cx, cy) = p.center();
+        let at = Vec2::new(cx, cy) + point;
+        let idx = mpool2.new_dust(&mut mirror2, &c, &w, at, 0, 0, 246, 0.0, 0.0, 0, Color::default(), 1.0);
+        let md = mpool2.slot_mut(idx);
+        md.position = at;
+        md.velocity = Vec2::ZERO;
+        assert_eq!(active(&pool2).len(), 1);
+        assert_eq!(pool2.slot(0).position, at);
+        assert_eq!(pool2.slot(0).velocity, Vec2::ZERO);
+        assert_eq!(pool2.slot(0).dust_type, 246);
+        assert_eq!(rng2.next_range(0, 1000), mirror2.next_range(0, 1000));
     }
 
 }
