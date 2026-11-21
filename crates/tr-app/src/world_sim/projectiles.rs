@@ -517,6 +517,21 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             app.rngs.stream(crate::app::RngKey::UpdateProjectiles),
         );
     }
+    // W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup proc
+    // (`Projectile.cs:13826-13830`): the hit-site rolls (the Next(3) gate,
+    // the SelectRandom pick, the two velocity draws) already ran on the
+    // `UpdateProjectiles` stream inside `damage_pve`; the drop spawn itself
+    // is DRAW-FREE (the explicit-velocity arm, `Item.cs:49738-49741`). The
+    // world sim resolves the intent into the item vec here (the pool cannot
+    // grow it — the `drain_mark_spawns` shape).
+    for (kind, cx, cy, vx, vy) in app.projectiles.drain_nebula_pickups() {
+        crate::world_sim::items::spawn_nebula_pickup(
+            &mut app.items,
+            kind,
+            Vec2::new(cx, cy),
+            Vec2::new(vx, vy),
+        );
+    }
     // `AI_108`'s 578 bolt spawn (`Projectile.cs:33838-33841`): the lightning
     // marker resolves into the ritual bolt (580) with the marker's payload.
     for (owner, damage, kb, x, y, vx, vy, ai0) in app.projectiles.drain_ritual_bolts() {

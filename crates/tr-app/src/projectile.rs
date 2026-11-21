@@ -16231,6 +16231,24 @@ impl ProjectilePool {
         out
     }
 
+    /// W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup proc
+    /// (`Projectile.cs:13826-13830`): the (kind, cx, cy, vx, vy) the world
+    /// sim resolves into a world drop (`Item.RequestNewItem`, the
+    /// `drain_mark_spawns` shape — the pool cannot grow the item vec). The
+    /// four rolls (the Next(3) gate, the SelectRandom pick, the two velocity
+    /// draws) already ran at the hit site in C# order; the spawn itself is
+    /// DRAW-FREE (the explicit-velocity arm, `Item.cs:49738-49741`, prefix 0
+    /// `:511-514`, ownership None → no grab delay in SP).
+    pub fn drain_nebula_pickups(&mut self) -> Vec<(u16, f32, f32, f32, f32)> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(req) = p.wants_nebula_pickup.take() {
+                out.push(req);
+            }
+        }
+        out
+    }
+
     /// S1-D-3 W-9 fishron wiring — the aiStyle-64 cloud's shark spawn
     /// (`Projectile.cs:29509-29516`): the (npc_type, x, y, vx, vy, ai2,
     /// ai3) the world sim resolves into the NPC vec (the mark-spawn
@@ -23529,10 +23547,16 @@ impl ProjectilePool {
                 // direction (`:13598`'s base.direction; the port's
                 // `from_x`-derived sign — the strike's knockback side).
                 // flag9 (the target-dummy debug override) is constants-off.
+                // `flag10` (`:13659`) also carries `!hostile && aiStyle != 59`:
+                // the port folds `hostile` into `!friendly` (the player-contact
+                // pass), but the aiStyle-59 exclusion is live — the Spectre
+                // Wrath 356 flips `friendly = true` past its 60-tick hostile
+                // window (`:28943`) yet must NOT proc the set bonus.
                 let nebula_gate = !npc_immortal
                     && strike_dmg > 0
                     && npc_life_max_gt5
                     && self.slots[slot].friendly
+                    && proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) != 59
                     && npcs[idx].can_ghost_heal();
                 if nebula_gate {
                     if let Some(pl) = player.as_deref_mut() {
@@ -24934,6 +24958,145 @@ mod tests {
             pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
             assert!(npc.hp < 10_000, "kind {kind} lands");
             assert_eq!(npc.immune[0], 5, "kind {kind}: the 5-tick per-type arm");
+        }
+    }
+
+    /// W4-d11 DOC-SWEEP — the Nebula set's magic on-hit pickup proc
+    /// (`Projectile.cs:13826-13830`): a magic shot, the owner wearing the set
+    /// (`setNebula`), the 30-tick cooldown at 0 and a 1/3 gate spawn one of
+    /// the three pickups at the victim's centre. The C# draw order: the
+    /// Next(3) gate FIRST (the `&&` short-circuit — magic/set/cooldown draw
+    /// nothing), then the SelectRandom pick (one Next(3)), then the two
+    /// velocity draws (Next(10,31) and Next(-20,1)). The crit Next(1,101) and
+    /// DamageVar Next(-15,16) precede them on the same stream. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d11_the_nebula_set_procs_a_pickup_on_a_magic_hit() {
+        // A recording stream that returns `min` (the CensusRng shape): the
+        // Next(3) gate returns 0 (proc fires), the pick returns 0 (3453), the
+        // velocity draws return 10 and -20.
+        struct CensusRng {
+            ranges: Vec<(i32, i32)>,
+        }
+        impl DropRng for CensusRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let w = ground();
+        let mut pool = ProjectilePool::new();
+        let mut npc = one_npc(&w);
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let mut player = crate::player::Player::spawn(&w);
+        player.set_nebula = true;
+        player.nebula_cd = 0;
+        // The Water Bolt (27): magic, friendly, aiStyle 8 (not 59).
+        let slot = pool
+            .spawn_with_data_ai(WATER_BOLT, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { ranges: Vec::new() };
+        pool.damage_pve(
+            &w,
+            slot,
+            std::slice::from_mut(&mut npc),
+            None,
+            None,
+            Some(&mut player),
+            &mut rng,
+        );
+        assert!(npc.hp < 10_000, "the magic hit lands");
+        assert_eq!(player.nebula_cd, 30, ":13828 the cooldown arms");
+        // The draw order: crit, DamageVar, then the four nebula rolls.
+        assert_eq!(
+            rng.ranges,
+            vec![(1, 101), (-15, 16), (0, 3), (0, 3), (10, 31), (-20, 1)],
+            "the gate draw precedes the pick and the two velocity draws"
+        );
+        // The payload: kind 3453 (pick index 0), the victim's centre, the
+        // hit-direction-scaled velocity. num23 is the from_x sign relative to
+        // the victim's centre (the strike's knockback side).
+        let (ncx, ncy) = npc.center();
+        let from_x = npc.x + SIZE * 0.5; // the proj centre (spawned at npc.x)
+        let num23 = if from_x < ncx { 1.0 } else { -1.0 };
+        let req = pool.slots()[slot].wants_nebula_pickup.expect("the proc queued");
+        assert_eq!(req.0, 3453, "SelectRandom index 0");
+        assert_eq!((req.1, req.2), (ncx, ncy), "the victim's centre");
+        assert_eq!(req.3, 10.0 * 0.2 * num23, "Next(10,31)*0.2*num23");
+        assert_eq!(req.4, -20.0 * 0.2, "Next(-20,1)*0.2");
+        // The drain takes the intent (the world sim spawns the drop).
+        let drained = pool.drain_nebula_pickups();
+        assert_eq!(drained, vec![req], "the drain carries the payload");
+        assert!(pool.slots()[slot].wants_nebula_pickup.is_none(), "taken");
+    }
+
+    /// W4-d11 DOC-SWEEP — the proc's gates: no set bonus (`setNebula` false),
+    /// a live cooldown, or the aiStyle-59 exclusion (the Spectre Wrath 356
+    /// flips friendly past its hostile window but must NOT proc, `:13659`'s
+    /// `aiStyle != 59`) each refuse the proc and draw NOTHING for it.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d11_the_nebula_proc_gates_refuse_without_drawing() {
+        struct NoDrawRng {
+            ranges: Vec<(i32, i32)>,
+        }
+        impl DropRng for NoDrawRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+        }
+        let w = ground();
+        // Case 1: no set bonus. Case 2: cooldown live. Case 3: aiStyle 59.
+        for (case, kind, set, cd) in [
+            (1u8, WATER_BOLT, false, 0),
+            (2, WATER_BOLT, true, 5),
+            (3, SPECTRE_WRATH, true, 0),
+        ] {
+            let mut pool = ProjectilePool::new();
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            let mut player = crate::player::Player::spawn(&w);
+            player.set_nebula = set;
+            player.nebula_cd = cd;
+            let slot = pool
+                .spawn_with_data_ai(kind, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            // The 356 spawns friendly (the pool default); its aiStyle-59 row
+            // is the exclusion under test (the hostile-window flip is the
+            // AI's, not the spawn's).
+            pool.slots_mut()[slot].friendly = true;
+            let mut rng = NoDrawRng { ranges: Vec::new() };
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                None,
+                Some(&mut player),
+                &mut rng,
+            );
+            assert!(
+                pool.slots()[slot].wants_nebula_pickup.is_none(),
+                "case {case}: no proc"
+            );
+            assert_eq!(player.nebula_cd, cd, "case {case}: the cooldown unchanged");
+            // Only the crit + DamageVar draws ran — no nebula Next(3)/velocity.
+            assert!(
+                !rng.ranges.contains(&(0, 3)) && !rng.ranges.contains(&(10, 31)),
+                "case {case}: the proc drew nothing"
+            );
         }
     }
 
