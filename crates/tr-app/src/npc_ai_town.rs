@@ -36,7 +36,12 @@
 //!   pet gates are ported as pure fns, unreachable until the pets land;
 //! * the SHIMMER state 25 (`:53187-53277`) + the shimmer teleport scan
 //!   (`:55563-55641`, `ShimmerHelper.FindSpotWithoutShimmer`): the state
-//!   is a cited skip (returns, draws shimmer dust — the dust task's);
+//!   is a cited skip (returns, draws shimmer dust — the dust task's).
+//!   The RNG-free DECISION CORE (the ai[2] hold, the climb, the transparency
+//!   decay, the completion variant-flip + the progression-43 gate) is ported
+//!   as `crate::town_shimmer::town_shimmer_step` (W4-f30) — the wiring calls
+//!   it here once the shimmer trigger lands (f47's buff-353 ramp →
+//!   `GetShimmered` town-set arm); the visuals/teleport stay f47's seam;
 //! * the Old Man 37 / Clothier 54 / Santa 142 / the bound-NPC Transform
 //!   rows 362/364/602/608 (`:53158-53184`), the Mechanic's owned-proj
 //!   latch (`:53166-53179`) and the Angler's wet edge rescue
