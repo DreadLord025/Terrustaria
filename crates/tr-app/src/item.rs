@@ -1537,11 +1537,13 @@ pub(crate) fn shimmer_fade_color(lit: [f32; 3], shimmered: bool, shimmer_time: f
 /// per-channel byte truncation (`:38724`). Returns (colour, scale).
 pub(crate) fn mana_crystal_pulse(mouse_text_color: u8, shimmer_time: f32) -> ([f32; 4], f32) {
     let v = 250.0 / 255.0;
-    let a = (mouse_text_color / 2) as f32 / 255.0;
+    // `Main.mouseTextColor / 2` — INTEGER division (`:38724`).
+    let half = (mouse_text_color / 2) as f32;
+    let a = half / 255.0;
     let col = if shimmer_time > 0.0 {
         let f = 1.0 - shimmer_time;
         let vb = (250.0 * f) as u8 as f32 / 255.0;
-        let ab = ((mouse_text_color as f32 / 2.0) * f) as u8 as f32 / 255.0;
+        let ab = (half * f) as u8 as f32 / 255.0;
         [vb, vb, vb, ab]
     } else {
         [v, v, v, a]
