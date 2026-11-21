@@ -322,6 +322,21 @@
 //! - 81786 — 690 (`:81782-81787`): EVERY strike, FLAT 10 dust 1, scale
 //!   1.2.
 //! - 82661 — 378 (`:82655-82662`): ×50 dust 7 at (0,0).
+//! Batch 23 (the cultist/fairy live arms):
+//! - 84113 — 379/438 (`:84107-84114`): the martian divisor
+//!   `dmg/(lifeMax·50)`, dust 5.
+//! - 84133 — the Cultist 439 (`:84127-84136`): ×100 dust 5, (0,0),
+//!   scale 1.5, velocity ×1.5 + noGravity.
+//! - 84186 — 454-459 (`:84180-84189`): ×50 dust 16, (0,0), scale 1.5,
+//!   velocity ×1.5 + noGravity.
+//! - 82715 — the fairies 583-585 (`:82696-82716`): ×50 dust 278
+//!   NewDustDirect in the (num96+4) centre box, alpha 200,
+//!   Color.Lerp(value, value2, NextFloat()) arg, scale 0.65, noGravity;
+//!   the per-type HotPink/LightPink, LimeGreen/LightSeaGreen,
+//!   RoyalBlue/LightBlue pairs.
+//! - 82734 — 513-515 (`:82728-82735`): ×100 dust 250, NPC rows.
+//! - 82753 — 510-512 (`:82747-82754`): ×100 dust 250, NPC rows.
+//! - 82772 — 621-623 (`:82766-82773`): ×100 dust 5, NPC rows.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1531,6 +1546,70 @@ pub fn replay_hit_dust(
         378 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
                 live_dust(s, 7, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:84107-84114` — 379/438: the martian divisor bound, dust 5.
+        379 | 438 => {
+            let bound = s.dmg / (s.life_max * 50) as f64;
+            let mut count = 0u32;
+            while (count as f64) < bound {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                count += 1;
+            }
+        }
+        // `:84127-84136` — the Cultist: ×100 dust 5, (0,0), scale 1.5,
+        // velocity ×1.5 + noGravity.
+        439 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                let idx = live_dust(s, 5, 0.0, 0.0, 0, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.5;
+                d.no_gravity = true;
+            }
+        }
+        // `:84180-84189` — 454-459: ×50 dust 16, the same shape.
+        454..=459 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 16, 0.0, 0.0, 0, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.5;
+                d.no_gravity = true;
+            }
+        }
+        // `:82696-82716` — the fairies: ×50 dust 278 NewDustDirect in the
+        // (4+4) centre box, alpha 200, the Lerp(arg NextFloat) tint,
+        // scale 0.65, noGravity. The colour pairs are the MonoGame named
+        // colours (`:82698-82709`).
+        583 | 584 | 585 => {
+            let (value, value2) = match s.npc_type {
+                584 => (Color::new(50, 205, 50, 255), Color::new(32, 178, 170, 255)),
+                585 => (Color::new(65, 105, 225, 255), Color::new(173, 216, 230, 255)),
+                _ => (Color::new(255, 105, 180, 255), Color::new(255, 182, 193, 255)),
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                // The Lerp amount draws BEFORE the spawn (argument order).
+                let t = rng.next_float();
+                let ch = |x: u8, y: u8| {
+                    (x as f32 + (y as f32 - x as f32) * t) as u8
+                };
+                let tint = Color::new(
+                    ch(value.r, value2.r), ch(value.g, value2.g),
+                    ch(value.b, value2.b), ch(value.a, value2.a),
+                );
+                let idx = dust.new_dust_direct(
+                    rng, ctx, world,
+                    Vec2::new(s.cx - 2.0, s.cy - 2.0), 8, 8, 278,
+                    0.0, 0.0, 200, tint, 0.65,
+                );
+                dust.slot_mut(idx).no_gravity = true; // `:82715`
+            }
+        }
+        // `:82728-82773` — the blood-critter groups: ×100 with the NPC
+        // rows (513-515/510-512 → dust 250, 621-623 → dust 5).
+        513..=515 | 510..=512 | 621..=623 => {
+            let t = if s.npc_type >= 621 { 5 } else { 250 };
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, t, dir, -1.0, s.alpha, s.color, s.scale, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -3031,5 +3110,43 @@ mod tests {
         let live: Vec<_> = p3.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 10);
         assert!(live.iter().all(|d| d.dust_type == 1));
+    }
+
+    /// W4-g62 batch 23 — the fairy Lerp-arg draw (`NPC.cs:82715`): the
+    /// NextFloat rides BEFORE the spawn internals, the tint is the
+    /// per-type named-colour lerp, the box is the 8×8 centre box.
+    #[test]
+    fn w4_g62_the_fairy_lerp_arg_precedes_the_spawn() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(583, 100, 100, 2.0); // ×50 → 1
+        let mut rng = UnifiedRandom::new(197);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(197);
+        let mut twin = DustPool::new();
+        let t = twin_rng.next_float();
+        let ch = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+        let tint = Color::new(
+            ch(255, 255), ch(105, 182), ch(180, 193), ch(255, 255),
+        );
+        let idx = twin.new_dust_direct(
+            &mut twin_rng, &ctx, &world, Vec2::new(112.0 - 2.0, 109.0 - 2.0), 8, 8, 278,
+            0.0, 0.0, 200, tint, 0.65,
+        );
+        twin.slot_mut(idx).no_gravity = true;
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        // The Cultist: dust 5 scale 1.5 ×1.5 noGravity; 454-459 dust 16.
+        for (t, dt, mult) in [(439, 5, 100.0), (454, 16, 50.0)] {
+            let s2 = snap(t, 100, 100, 10.0);
+            let want = hit_count(10.0, 100, mult);
+            let mut r2 = UnifiedRandom::new(197);
+            let mut p2 = DustPool::new();
+            replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
+            let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt && d.no_gravity), "type {t}");
+        }
     }
 }
