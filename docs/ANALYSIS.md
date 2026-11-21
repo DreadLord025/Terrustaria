@@ -39288,9 +39288,21 @@ half):
 - **Apply** (`ScenarioTestLoadout.cs:88-106`): the clock (off-client
   only), life/mana stats, the selection request, the four item groups
   (inventory / ammo 54..57 / armor / misc equips), the owned-minion kill
-  and the direct buff-slot writes. **Deviation**:
-  `MinionRespawner.RestoreMinionsFor` has no port — the recorded minions
-  are not respawned (the kill half runs).
+  and the direct buff-slot writes. **The minion-respawn half landed
+  2026-11-21 (DOC-SWEEP lane 30)**: `MinionRespawner.RestoreMinionsFor`
+  (`MinionRespawner.cs:34-47`) + `MinionSpawnFromInventoryItem.TryRespawn`
+  (`:30-47`) port as `loadout::respawn_minions` — the first inventory
+  0..49 slot matching type AND prefix, the `buffType > 0` grant
+  (`buffTime == 0` → 3600) through `BuffSlots::add_buff`, then the
+  silent summon-staff shot (`SilentlyShootItem` → `ItemCheck_Shoot`'s
+  `SpawnMinionOnCursor` arms, weaponDamage 0, the minionKB knockback
+  fold, the per-staff ai seeds + kind picks on the `UpdatePlayers`
+  stream; the Stardust Dragon's fresh-chain arm included). The cursor
+  is the camera (`RestoreMinionsFor` parks the mouse at the screen
+  centre). Remaining deviation: the non-summon per-item tail of
+  `ItemCheck_Shoot` stays on the use path — a loadout's `Minions`
+  records are `TrackMinionSpawnFromItemUse` spawns (summon staffs
+  only, `ProjectileID.cs:550`), so the tail is unreachable here.
 - **Geometry**: the commands list's container/panel/search chain
   byte-for-byte (`BuildPage` `:34-83`); rows 70+5; the four
   `PositionItems` icon groups at (0.1-0.3, 0.75), (0.35-0.45, 0.75),

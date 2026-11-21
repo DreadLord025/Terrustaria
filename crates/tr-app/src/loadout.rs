@@ -6,9 +6,9 @@
 //! Deviations (docs/ANALYSIS.md "Debug lists (W4-d85)"): the JSON reader is
 //! `serde_json::Value` walks rather than Newtonsoft's
 //! `EasyDeserializationJsonContractResolver` (the shipped files carry the
-//! plain PascalCase field names); `MinionRespawner.RestoreMinionsFor` has no
-//! port yet, so `apply` kills the live minions (`ScenarioTestLoadout.cs:
-//! 126-133`) but does not respawn the recorded ones.
+//! plain PascalCase field names); the minion-respawn half's silent shot
+//! ports the summon-staff spawn arms only (`respawn_minions`) — the full
+//! `ItemCheck_Shoot` per-item tail stays on the use path.
 
 use std::path::{Path, PathBuf};
 
@@ -236,8 +236,14 @@ pub fn apply_items_sparse(
 /// `ScenarioTestLoadout.Apply(Player)` (`:88-106`) over the port's state:
 /// the clock (single-player arm — `Main.netMode != 1`), the life/mana
 /// stats, the selection request, then the four item groups, the minion
-/// kill and the buffs. `inventory`/`equip` are the App's arrays (the
-/// player's own `Player.inventory` in the C#); `world` carries the clock.
+/// kill + respawn and the buffs. `inventory`/`equip` are the App's arrays
+/// (the player's own `Player.inventory` in the C#); `world` carries the
+/// clock. `cursor_world` is the screen-centre world point
+/// (`MinionRespawner.RestoreMinionsFor` parks the mouse at
+/// `screenWidth/2, screenHeight/2`, `MinionRespawner.cs:36-39` — the App
+/// passes its camera, which IS that point); `rng` feeds the staff arms'
+/// kind picks (the use path's `UpdatePlayers` stream convention).
+#[allow(clippy::too_many_arguments)]
 pub fn apply(
     loadout: &ScenarioTestLoadout,
     player: &mut Player,
@@ -249,6 +255,8 @@ pub fn apply(
     selection: &mut crate::hotbar::SelectionState,
     selected: usize,
     is_client: bool,
+    cursor_world: glam::Vec2,
+    rng: &mut tr_core::UnifiedRandom,
 ) {
     // `:90-94`: the clock writes only off-client.
     if !is_client {
@@ -269,20 +277,255 @@ pub fn apply(
     apply_items(&mut equip.ammo, &loadout.items_ammo, 54);
     apply_items(&mut equip.armor, &loadout.items_armor, 0);
     apply_items(&mut equip.misc_equips, &loadout.items_equipment, 0);
-    // `Apply(player, Minions)` (`:124-137`): every owned minion dies;
-    // `MinionRespawner.RestoreMinionsFor` has no port (deviation).
+    // `Apply(player, Minions)` (`:124-137`): every owned minion dies, then
+    // `MinionRespawner.Replace` + `RestoreMinionsFor` respawns the recorded
+    // ones from the matching inventory items.
     for i in 0..projectiles.slots().len() {
         let p = &projectiles.slots()[i];
         if p.active && p.owner == my_player && p.minion_slots > 0.0 {
             projectiles.kill(i);
         }
     }
+    respawn_minions(
+        &loadout.minions,
+        player,
+        inventory,
+        world,
+        projectiles,
+        my_player,
+        cursor_world,
+        rng,
+    );
     // `Apply(player, Buffs)` (`:155-162`): direct slot writes, no AddBuff.
     for record in &loadout.buffs {
         if record.index < player.buffs.buff_type.len() {
             player.buffs.buff_type[record.index] = buff_id_for_name(&record.kind_name);
             player.buffs.buff_time[record.index] = record.time;
         }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn respawn_minions(
+    records: &[MinionRecord],
+    player: &mut Player,
+    inventory: &[ItemSlot; crate::item::INV],
+    world: &tr_core::World,
+    projectiles: &mut crate::projectile::ProjectilePool,
+    my_player: u8,
+    cursor_world: glam::Vec2,
+    rng: &mut tr_core::UnifiedRandom,
+) {
+    for record in records {
+        try_respawn(
+            record,
+            player,
+            inventory,
+            world,
+            projectiles,
+            my_player,
+            cursor_world,
+            rng,
+        );
+    }
+}
+
+/// `MinionSpawnFromInventoryItem.TryRespawn` (`MinionSpawnFromInventoryItem.
+/// cs:30-47`): the FIRST inventory 0..49 slot whose type AND prefix match
+/// (`FindMatchingItem` `:49-61`, `ItemMatches` `:21-28`); no match returns
+/// silently. A matching item with `buffType > 0` grants `AddBuff(buffType,
+/// buffTime == 0 ? 3600 : buffTime)` (`:37-45`), then `SilentlyShootItem`
+/// (`Player.cs:47051-47054` — `ItemCheck_Shoot(whoAmI, item, 0,
+/// withAudioVisualFeedback: false)`). The port routes the shot through
+/// [`silently_shoot_summon`]; the non-summon per-item tail of
+/// `ItemCheck_Shoot` stays on the use path (a loadout's `Minions` records
+/// are `TrackMinionSpawnFromItemUse` spawns — summon staffs only).
+#[allow(clippy::too_many_arguments)]
+fn try_respawn(
+    record: &MinionRecord,
+    player: &mut Player,
+    inventory: &[ItemSlot; crate::item::INV],
+    world: &tr_core::World,
+    projectiles: &mut crate::projectile::ProjectilePool,
+    my_player: u8,
+    cursor_world: glam::Vec2,
+    rng: &mut tr_core::UnifiedRandom,
+) {
+    // `FindMatchingItem` (`:49-61`): inventory[0..50], type + prefix.
+    let Some(item) = inventory[..50]
+        .iter()
+        .find(|s| s.kind == record.item_type && s.prefix == record.item_prefix)
+        .copied()
+    else {
+        return;
+    };
+    let Some(def) = crate::registry::item(item.kind) else {
+        return;
+    };
+    // `:37-45`: the buff grant — `num = item.buffTime; if (num == 0) num =
+    // 3600; player.AddBuff(item.buffType, num)`.
+    if def.buff_type > 0 {
+        let time = if def.buff_time == 0 { 3600 } else { def.buff_time };
+        player.buffs.add_buff(def.buff_type, time);
+    }
+    silently_shoot_summon(
+        &item,
+        def,
+        player,
+        world,
+        projectiles,
+        my_player,
+        cursor_world,
+        rng,
+    );
+}
+
+/// `Player.SilentlyShootItem`'s summon-staff half — `ItemCheck_Shoot(i,
+/// sItem, 0, withAudioVisualFeedback: false)` (`Player.cs:47051-47054`)
+/// over the `SpawnMinionOnCursor` arms (`:48436-48559`, the i25 use-path
+/// census): weaponDamage 0 (`Damage` stays 0 through the arms — the
+/// minion's own damage is the UNSCALED prefixed `sItem.damage`, the C#
+/// local `damage` `:47060`), `GetWeaponKnockback`'s minionKB fold
+/// (`:47151`), no `ApplyItemTime` (the false flag, `:47185`), the cursor
+/// point + reach clamp (`SpawnMinionOnCursor` `:49575-49577`) and the
+/// per-staff ai seeds (`:49582-49598`). The `Main.rand` kind picks draw
+/// from the caller's stream (the use path's `UpdatePlayers` convention).
+/// The Stardust Dragon chain (`:48498-48554`) respawns head+body+body+tail
+/// fresh at the cursor when no chain lives (the Apply kill just emptied
+/// it) — the grow-existing-chain arm is unreachable from a loadout apply.
+#[allow(clippy::too_many_arguments)]
+fn silently_shoot_summon(
+    item: &ItemSlot,
+    def: &'static crate::registry::ItemDef,
+    player: &mut Player,
+    world: &tr_core::World,
+    projectiles: &mut crate::projectile::ProjectilePool,
+    my_player: u8,
+    cursor_world: glam::Vec2,
+    rng: &mut tr_core::UnifiedRandom,
+) {
+    let Some(proj) = def.projectile else {
+        return; // `canShoot` false arm (`:47147`) — nothing to shoot
+    };
+    if !def.summon || item.kind == 6161 {
+        return; // the Clay Pot rides the generic tail (the i25 gate)
+    }
+    let Some(row) = crate::projectile::proj_data(proj) else {
+        return;
+    };
+    if !row.minion {
+        return; // sentries/whips are not `Minions` records
+    }
+    let fx = crate::prefix::prefixed_stats(item.kind, item.prefix);
+    let unscaled = fx.map_or(def.damage, |s| s.damage); // `damage` (`:47060`)
+    let kb = fx.map_or(def.knock_back, |s| s.knock_back);
+    let fx_kb = player.weapon_knockback(def, kb); // `:47151`
+    let (pcx, pcy) = player.center();
+    let cursor = crate::world_sim::editing::limit_point_to_player_reachable_area(
+        glam::Vec2::new(pcx, pcy),
+        cursor_world,
+        world,
+    );
+    // `NewProjectile` centres the box; the port's seam takes the top-left.
+    let spawn_minion = |projectiles: &mut crate::projectile::ProjectilePool,
+                        kind: u16,
+                        ai0: f32,
+                        ai1: f32|
+     -> Option<usize> {
+        let row = crate::projectile::proj_data(kind)?;
+        projectiles.spawn_with_data_ai_owned(
+            kind,
+            my_player,
+            cursor.x - row.w * 0.5,
+            cursor.y - row.h * 0.5,
+            0.0,
+            0.0,
+            unscaled,
+            fx_kb,
+            ai0,
+            ai1,
+        )
+    };
+    if item.kind == 3531 {
+        // The Stardust Dragon's fresh-chain arm (`:48520-48536`): head
+        // 625 + bodies 626/627 + tail 628 at the RAW cursor point (no reach
+        // clamp — `:48524-48525` reads `Main.MouseWorld` directly), zero
+        // velocity, the key chain through `localAI[1]`, `originalDamage`
+        // on all four. The Apply kill guarantees no live chain. The spawn
+        // damage is `Damage` — the weaponDamage parameter, 0 for the silent
+        // shot (`:47053`); only `originalDamage` carries the item damage.
+        let mut slots = [usize::MAX; 4];
+        for (k, kind) in [proj, proj + 1, proj + 2, proj + 3].iter().enumerate() {
+            let Some(row) = crate::projectile::proj_data(*kind) else {
+                return;
+            };
+            let Some(slot) = projectiles.spawn_with_data_ai_owned(
+                *kind,
+                my_player,
+                cursor_world.x - row.w * 0.5,
+                cursor_world.y - row.h * 0.5,
+                0.0,
+                0.0,
+                0,
+                fx_kb,
+                0.0,
+                0.0,
+            ) else {
+                return;
+            };
+            slots[k] = slot;
+            // `ai0` carries the PARENT's key (`:48527-48529` — the head's
+            // ai0 stays 0).
+            if k > 0 {
+                let key = projectiles.key_of(slots[k - 1]);
+                projectiles.set_ai0(slot, f32::from_bits(key as u32));
+            }
+        }
+        // `:48530-48531` — the backlinks are raw SLOT INDICES.
+        projectiles.set_local_ai1(slots[1], slots[2] as f32);
+        projectiles.set_local_ai1(slots[2], slots[3] as f32);
+        for slot in slots {
+            projectiles.set_original_damage(slot, unscaled);
+        }
+    } else if item.kind == 1157 {
+        // `:48436-48440` — the Pygmy Staff: one `Main.rand.Next(191, 195)`
+        // kind pick, ai1 = 60 (`:49584-49585`), then `localAI[0] = 30`.
+        let kind = rng.next_range(191, 195) as u16;
+        if let Some(slot) = spawn_minion(projectiles, kind, 0.0, 60.0) {
+            projectiles.set_local_ai0(slot, 30.0);
+        }
+    } else if item.kind == 2535 {
+        // `:48468-48474` — the Optic Staff spawns BOTH twins (387 + 388),
+        // zero velocity (the `RotatedBy` of a zero vector), ai1 = 1.
+        for k in [proj, proj + 1] {
+            let _ = spawn_minion(projectiles, k, 0.0, 1.0);
+        }
+    } else if item.kind == 2551 {
+        // `:48476-48481` — the Spider Staff cycles 390/391/392 via
+        // `nextCycledSpiderMinionType` (never reset), then increments mod 3.
+        let kind = (proj as i32 + player.next_cycled_spider_minion_type) as u16;
+        let _ = spawn_minion(projectiles, kind, 0.0, 0.0);
+        player.next_cycled_spider_minion_type += 1;
+        player.next_cycled_spider_minion_type %= 3;
+    } else if item.kind == 2584 {
+        // `:48483-48486` — the Pirate Staff: `Main.rand.Next(3)` onto
+        // 393/394/395.
+        let kind = proj + rng.next_range(0, 3) as u16;
+        let _ = spawn_minion(projectiles, kind, 0.0, 0.0);
+    } else if item.kind == 5664 || item.kind == 6149 {
+        // `:48452-48456` — the Foxsparks staves: spawn, `localAI[0] = 30`.
+        if let Some(slot) = spawn_minion(projectiles, proj, 0.0, 0.0) {
+            projectiles.set_local_ai0(slot, 30.0);
+        }
+    } else {
+        // The plain `SpawnMinionOnCursor` staves (`:49587-49596`): ai1 = 1
+        // for 2364/2365/2535/2621/2749/3474, ai0 = 45 for 6164.
+        let (ai0, ai1) = match item.kind {
+            2364 | 2365 | 2535 | 2621 | 2749 | 3474 => (0.0, 1.0),
+            6164 => (45.0, 0.0),
+            _ => (0.0, 0.0),
+        };
+        let _ = spawn_minion(projectiles, proj, ai0, ai1);
     }
 }
 
@@ -344,5 +587,160 @@ mod tests {
     fn the_buff_name_reverse_matches_the_table() {
         assert_eq!(buff_id_for_name("WellFed"), 26);
         assert_eq!(buff_id_for_name("NotABuff"), 0);
+    }
+
+    /// A staged player + world for the respawn witnesses — the
+    /// `use_loop_tests::app_with_staff` shape without the App: the cursor
+    /// beside the player makes the reach clamp the identity.
+    fn respawn_fixture(kind: u16, prefix: u16) -> (Player, [ItemSlot; crate::item::INV], tr_core::World) {
+        let mut w = tr_core::World::new("t".into(), 64, 800);
+        for x in 0..64 {
+            let i = w.index(x, 300);
+            w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        let mut player = Player::spawn(&w);
+        player.x = 33.0 * 16.0;
+        player.y = 297.0 * 16.0;
+        player.max_minions = 5;
+        let mut inventory = [crate::item::EMPTY_SLOT; crate::item::INV];
+        inventory[0] = ItemSlot { kind, name: crate::registry::name(kind), count: 1, prefix };
+        (player, inventory, w)
+    }
+
+    /// `TryRespawn` (`MinionSpawnFromInventoryItem.cs:30-47`): the matching
+    /// inventory item's buff grants (`buffTime == 0` → 3600) and the
+    /// `SpawnMinionOnCursor` spawn lands at the cursor with the UNSCALED
+    /// prefixed damage + the minionKB knockback fold; no matching item
+    /// answers silently.
+    #[test]
+    fn the_respawn_grants_the_buff_and_spawns_at_the_cursor() {
+        // The Slime Staff 1309 — shoot 266, buff 64, buffTime 0.
+        let (mut player, inventory, w) = respawn_fixture(1309, 0);
+        let mut projectiles = crate::projectile::ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let (pcx, pcy) = player.center();
+        let cursor = glam::Vec2::new(pcx + 32.0, pcy);
+        respawn_minions(
+            &[MinionRecord { item_type: 1309, item_prefix: 0 }],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        let slot = projectiles
+            .slots()
+            .iter()
+            .position(|s| s.active && s.kind == 266)
+            .expect("the Slime minion respawned");
+        let p = &projectiles.slots()[slot];
+        let def = crate::registry::item(1309).unwrap();
+        assert_eq!(p.damage, def.damage, "the UNSCALED item damage");
+        assert_eq!((p.vel.x, p.vel.y), (0.0, 0.0), "zero spawn velocity");
+        // The buff grant: buffTime 0 → 3600 (`:40-43`).
+        let b = player.buffs.find_buff_index(64).expect("buff 64 granted");
+        assert!(player.buffs.buff_time[b] >= 3600, "the 3600 default grant");
+        // A record with no matching item answers silently (`:33-36`).
+        let before = projectiles.slots().iter().filter(|s| s.active).count();
+        respawn_minions(
+            &[MinionRecord { item_type: 2364, item_prefix: 0 }],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        assert_eq!(
+            projectiles.slots().iter().filter(|s| s.active).count(),
+            before,
+            "no Hornet Staff in the inventory — no spawn"
+        );
+        // A prefix mismatch also fails `ItemMatches` (`:21-28`).
+        respawn_minions(
+            &[MinionRecord { item_type: 1309, item_prefix: 81 }],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        assert_eq!(
+            projectiles.slots().iter().filter(|s| s.active).count(),
+            before,
+            "the prefix must match too"
+        );
+    }
+
+    /// The Optic Staff's record respawns BOTH twins (`:48468-48474`), the
+    /// Spider Staff's cycle advances mod 3 (`:48476-48481`), and the
+    /// Pygmy's kind pick draws the caller's stream (`:48436-48440`).
+    #[test]
+    fn the_staff_arms_respawn_their_kinds() {
+        // Optic 2535 — shoot 387, both twins.
+        let (mut player, inventory, w) = respawn_fixture(2535, 0);
+        let mut projectiles = crate::projectile::ProjectilePool::new();
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let (pcx, pcy) = player.center();
+        let cursor = glam::Vec2::new(pcx + 32.0, pcy);
+        respawn_minions(
+            &[MinionRecord { item_type: 2535, item_prefix: 0 }],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        let kinds: Vec<u16> = projectiles.slots().iter().filter(|s| s.active).map(|s| s.kind).collect();
+        assert_eq!(kinds, vec![387, 388], "both twins, ai1 = 1");
+        assert!(projectiles.slots().iter().filter(|s| s.active).all(|s| s.ai[1] == 1.0));
+        // Spider 2551 — the cycle counter advances on every respawn.
+        let (mut player, inventory, w) = respawn_fixture(2551, 0);
+        let mut projectiles = crate::projectile::ProjectilePool::new();
+        respawn_minions(
+            &[
+                MinionRecord { item_type: 2551, item_prefix: 0 },
+                MinionRecord { item_type: 2551, item_prefix: 0 },
+                MinionRecord { item_type: 2551, item_prefix: 0 },
+                MinionRecord { item_type: 2551, item_prefix: 0 },
+            ],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        let kinds: Vec<u16> = projectiles.slots().iter().filter(|s| s.active).map(|s| s.kind).collect();
+        assert_eq!(kinds, vec![390, 391, 392, 390], "the mod-3 cycle");
+        assert_eq!(player.next_cycled_spider_minion_type, 1);
+        // Pygmy 1157 — the kind pick is a stream draw in [191, 195).
+        let (mut player, inventory, w) = respawn_fixture(1157, 0);
+        let mut projectiles = crate::projectile::ProjectilePool::new();
+        let mut probe = tr_core::UnifiedRandom::new(7);
+        let want = probe.next_range(191, 195) as u16;
+        respawn_minions(
+            &[MinionRecord { item_type: 1157, item_prefix: 0 }],
+            &mut player,
+            &inventory,
+            &w,
+            &mut projectiles,
+            0,
+            cursor,
+            &mut rng,
+        );
+        let p = projectiles.slots().iter().find(|s| s.active).expect("a pygmy");
+        assert_eq!(p.kind, want, "the stream's kind pick");
+        assert_eq!(p.ai[1], 60.0, "the Pygmy ai1 seed");
+        assert_eq!(p.local_ai[0], 30.0, "the localAI[0] = 30 payload");
     }
 }

@@ -1340,7 +1340,11 @@ impl App {
 
     /// `ScenarioTestLoadout.Apply(Main.LocalPlayer)` through the App's
     /// split state (the player, the inventory/equip arrays, the clock, the
-    /// projectile pool and the selection request).
+    /// projectile pool and the selection request). The minion respawn's
+    /// cursor is the camera — `RestoreMinionsFor` parks the mouse at the
+    /// screen centre (`MinionRespawner.cs:36-39`), whose world point IS the
+    /// camera; the staff arms' kind picks draw the `UpdatePlayers` stream
+    /// (the use-path convention).
     pub(crate) fn apply_loadout(&mut self, loadout: &crate::loadout::ScenarioTestLoadout) {
         let Some(mut player) = self.player.take() else {
             return;
@@ -1348,6 +1352,7 @@ impl App {
         let selected = self.selected;
         let my_player = self.local_id as u8;
         let is_client = self.is_client();
+        let cursor_world = self.camera;
         crate::loadout::apply(
             loadout,
             &mut player,
@@ -1359,6 +1364,8 @@ impl App {
             &mut self.selection,
             selected,
             is_client,
+            cursor_world,
+            self.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
         self.player = Some(player);
     }
