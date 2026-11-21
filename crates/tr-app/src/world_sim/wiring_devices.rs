@@ -411,13 +411,16 @@ fn consume_one(inventory: &mut [ItemSlot], equip: &mut crate::inv::EquipSlots, k
 /// the port is single-player, so the `ConsumeItem` loops (`:445-452`) run
 /// directly (the i51 netMode-0 fold). The cut half's cached `Kill*` drops
 /// (`Item.DropCache`, `:3325-3326`) spawn at `master.Center` with zero
-/// spread on the caller's stage stream — the use path rides
-/// `UpdatePlayers` (the `world_sim/editing/wiring.rs` cutter precedent).
+/// spread on the CALLER's stage stream (`drop_rng` — the 3625 use path
+/// rides `UpdatePlayers`, the Grand Design's kite Kill rides
+/// `UpdateProjectiles`; the d13 activation contract's stream note,
+/// research/136).
 pub(crate) fn mass_wire_operation(
     app: &mut App,
     ps: (i32, i32),
     pe: (i32, i32),
     mode: u8,
+    drop_rng: crate::app::RngKey,
 ) {
     // `:423-433` — the stock census over the 58 carry slots.
     let mut wire_count: i32 = 0;
@@ -467,7 +470,7 @@ pub(crate) fn mass_wire_operation(
     // (`:3325-3326`): the cached kills drop in `maxStack` chunks
     // (`Item.cs:466-475`). The port's `spawn_item_drop_px` carries the
     // `Item.NewItem` velocity rolls (the zero-spread C# call still draws
-    // them) on the use path's `UpdatePlayers` stream.
+    // them) on the CALLER's stage stream (`drop_rng`).
     for (kind, total) in [(530u16, cut_cache.0), (849u16, cut_cache.1)] {
         let mut left = total;
         while left > 0 {
@@ -475,7 +478,7 @@ pub(crate) fn mass_wire_operation(
             left -= chunk;
             crate::world_sim::items::spawn_item_drop_px(
                 &mut app.items,
-                app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                app.rngs.stream(drop_rng),
                 kind,
                 chunk as u32,
                 Vec2::new(drop_point.0, drop_point.1),
@@ -563,9 +566,38 @@ mod tests {
         app.inventory[0] = ItemSlot { kind: 530, name: "", count: 10, prefix: 0 };
         let mode = tr_core::smart_cursor::multi_tool_mode::RED
             | tr_core::smart_cursor::multi_tool_mode::BLUE;
-        mass_wire_operation(&mut app, (10, 19), (10, 19), mode);
+        mass_wire_operation(&mut app, (10, 19), (10, 19), mode, crate::app::RngKey::UpdatePlayers);
         assert!(app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
         assert!(app.world.wires.get(10, 19, tr_core::wiring::WireColor::Blue));
         assert_eq!(app.inventory[0].count, 8, "two channels billed two wires");
+    }
+
+    /// W4-f11 — the d13 activation contract's composition (research/136):
+    /// the Grand Design's kite Kill passes the RAW ToolMode (the Actuator
+    /// bit NOT stripped — `Wiring.cs:3241`; only the 3625 click arm masks,
+    /// `Player.cs:46908`) and the `UpdateProjectiles` stage stream (the
+    /// Kill runs inside that swap, `Main.cs:17775`). The apply places the
+    /// actuator alongside the wire and bills both stocks. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f11_the_kite_apply_keeps_the_actuator_bit_and_the_proj_stream() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.world = tr_core::world::World::new("t".into(), 40, 40);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        for x in 5..=15 {
+            let i = app.world.index(x, 19);
+            app.world.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        app.inventory[0] = ItemSlot { kind: 530, name: "", count: 10, prefix: 0 };
+        app.inventory[1] = ItemSlot { kind: 849, name: "", count: 10, prefix: 0 };
+        // The RAW mode: Red + Actuator (the wrench arm would strip it).
+        let mode = tr_core::smart_cursor::multi_tool_mode::RED
+            | tr_core::smart_cursor::multi_tool_mode::ACTUATOR;
+        mass_wire_operation(&mut app, (10, 19), (10, 19), mode, crate::app::RngKey::UpdateProjectiles);
+        assert!(app.world.wires.get(10, 19, tr_core::wiring::WireColor::Red));
+        let t = app.world.tile(10, 19).unwrap();
+        assert!(t.flags & tr_core::tile::FLAG_ACTUATOR != 0, "the actuator landed unmasked");
+        assert_eq!(app.inventory[0].count, 9, "one wire billed");
+        assert_eq!(app.inventory[1].count, 9, "one actuator billed");
     }
 }

@@ -204,7 +204,13 @@ pub(crate) fn use_wiring_tool(app: &mut App, tx: i32, ty: i32) -> bool {
             // `ApplyItemTime(sItem)` (`:46906`) rides the caller's plain
             // wiring-tool cadence (`editing.rs:5262-5273` — the wrench's
             // 5-tick useTime, `Item.cs:32673`), like the other arms.
-            crate::world_sim::wiring_devices::mass_wire_operation(app, (tx, ty), (tx, ty), mode);
+            crate::world_sim::wiring_devices::mass_wire_operation(
+                app,
+                (tx, ty),
+                (tx, ty),
+                mode,
+                crate::app::RngKey::UpdatePlayers,
+            );
             true
         }
         WiringTool::Actuator => {

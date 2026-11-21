@@ -420,6 +420,26 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         app.swing = secs;
         app.item_time = secs;
     }
+    // W4-f11 — the Grand Design's release-death mass-wire apply
+    // (`Projectile.cs:72051-72067` → `Wiring.MassWireOperation`): the
+    // ACTIVATION CONTRACT for the d13 union (research/136). d13's pool
+    // Kill hook queues `(owner, ps, pe)` (`take_mass_wire_ops`) and parks
+    // them on `app.pending_mass_wire_ops` at THIS seam; the merge wave
+    // drains them right here through the f11 apply:
+    //   for (owner, psx, psy, pex, pey) in app.projectiles.take_mass_wire_ops() {
+    //       if owner as u32 != app.local_id { continue; } // the Kill gate
+    //       crate::world_sim::wiring_devices::mass_wire_operation(
+    //           app, (psx, psy), (pex, pey),
+    //           app.wire_tool_mode,                  // RAW ToolMode (:3241)
+    //           crate::app::RngKey::UpdateProjectiles, // the Kill's stage
+    //       );
+    //   }
+    // The f11 half is READY: `mass_wire_operation` now takes the caller's
+    // stage stream (`drop_rng` — the d13 stream note closed); the mode is
+    // UNMASKED (the kite does not strip the Actuator bit — only the 3625
+    // click arm masks, `Player.cs:46908`); no cooldown gate (the Kill hook
+    // has none). The pool seam itself is d13's unmerged code — nothing
+    // drains on this branch yet (the documented deferral, both sides).
     // S1-C-7 wave B — the hostile-shot lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517` via `Projectile.Damage` `Projectile.cs:14868`): the
     // accepted shot queued its retaliate request and possibly a dismount-on-

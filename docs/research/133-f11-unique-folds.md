@@ -155,8 +155,9 @@ the sixth, `wiring_devices.rs`, receives ONLY the mass-wire append.
 - C#: `WiresUI.cs:23` (the field), `:94` (the static ctor default Red).
 - Hunks: `app/mod.rs:878-882` (field + doc), `:4002` (ctor init
   `multi_tool_mode::RED`), `app/flow.rs:2420` (the test-ctor init).
-  The WiresRadial UI owns the setting (unported — the field keeps the
-  default until it lands).
+  The WiresRadial UI owns the setting — its LOGIC half landed W4-f11
+  (`ui/wires_radial.rs`, research/135; the draw passes are the contract
+  remainder).
 
 ### 2b. `Player.wire_operations_cooldown` + ResetEffects decrement
 - C#: `Player.cs:2868` (field), `:18798-18800` (decrement),
