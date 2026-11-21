@@ -5353,6 +5353,88 @@ fn goblin_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, s); // :89605
 }
 
+/// The 471 Goblin Summoner death (`NPC.cs:89607-89626`, sites 826-830):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then 675 at position, 676/677
+/// at Y+20, TWO 678 at Y+34 — `this.scale` carried.
+fn goblin_summoner_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89617-89620` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 675, s); // :89621
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 676, s); // :89622
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 677, s); // :89623
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 678, s); // :89624
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 678, s); // :89625
+}
+
+/// The 472 Shadowflame Apparition death (`NPC.cs:89627-89653`, sites
+/// 831-832): the 50x dust-5 burst at (2.5·hd, −2.5) with a per-dust
+/// `Next(3)` gate (2-in-3 noGravity) + alpha 100 post-write, then 679/680
+/// at position — `this.scale` carried.
+fn shadowflame_apparition_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89642-89650` — the 50x gated dust-5 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        let idx = dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            5,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+        if rng.next_range(0, 3) != 0 {
+            dust.slot_mut(idx).no_gravity = true;
+        }
+        dust.slot_mut(idx).alpha = 100;
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 679, s); // :89651
+    gore.new_gore(rng, world, pos, vel, 680, s); // :89652
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -6004,6 +6086,14 @@ pub fn hit_effect_d(
     // 820-825).
     else if matches!(npc_type, 26 | 27 | 28 | 29 | 73 | 111) {
         goblin_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89607-89626` — the 471 Goblin Summoner arm (sites 826-830).
+    else if npc_type == 471 {
+        goblin_summoner_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89627-89653` — the 472 Shadowflame Apparition arm (sites 831-832).
+    else if npc_type == 472 {
+        shadowflame_apparition_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10440,5 +10530,58 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "goblin {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:89621-89625` — the Goblin Summoner ladder 675/676/677/678+678;
+    /// `:89642-89652` — the Shadowflame Apparition's gated dust census (a
+    /// Next(3) AFTER each dust) then 679/680 at position.
+    #[test]
+    fn w4_f5d_the_summoner_ladder_and_the_apparition_gate() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.25;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(839);
+        let _ = hit_effect_d(&n, 471, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![675, 676, 677, 678, 678]);
+        let offsets = [0.0, 20.0, 20.0, 34.0, 34.0];
+        for (i, dy) in offsets.iter().enumerate() {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy), "gore {i}");
+            assert_eq!(gore.slot(i).scale, 1.25, "gore {i} scale");
+        }
+        assert!(!gore.slot(5).active, "exactly five gores");
+        let mut twin = UnifiedRandom::new(839);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the summoner mirrors the C# draws");
+
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(853);
+        let _ = hit_effect_d(&n, 472, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![679, 680]);
+        for i in 0..2 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0), "gore {i}");
+            assert_eq!(gore.slot(i).scale, 1.25, "gore {i} scale");
+        }
+        assert!(!gore.slot(2).active, "exactly two gores");
+        let mut twin = UnifiedRandom::new(853);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+            let _gate = twin.next_max(3);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the apparition mirrors the C# draws");
     }
 }
