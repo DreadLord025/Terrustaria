@@ -287,3 +287,354 @@ Rationale:
 No code was changed on this branch; this document is the deliverable.
 Witness: extraction scripts ran against the exact tips in §0 (git-show,
 no working-tree reads); all counts are reproducible from those tips.
+
+---
+
+# EXTEND — the full-wave re-census (supersedes §§0-7 where they conflict)
+
+Status: RESEARCH / MERGE PLAN EXTENSION — still no code changes on this
+branch. The 6-tip read above (§0) missed **every kind-claimant outside the
+five d3x kinds lanes**. A scripted sweep of **all 354 `task/W4-*` refs**
+(`git diff --name-only <merge-base> <tip> -- npc/data.rs npc.rs`, then
+per-tip `to_u16`/`from_u16`/`cs_id`/`ALL_KINDS`/`ENTRIES`/
+`BESTIARY_NPC_SHEET_IDS`/`STATIC_SHEET_NAMES`/`SFX_CUES` extraction) found
+**18 pushed kind-claimants** plus **4 local-only (unpushed) kind-claimants**
+(d33/g10 with uncommitted kinds, d39 with a squatting WIP, d125 with an
+unpushed sheets tip) and several claim-only/wiring-only lanes (E0/E6).
+The §2a "ONE hard collision" verdict is **wrong at wave scope**: there are
+**77 contested protocol ids involving 184 kind-ports**, and the §3
+"renumber ONLY d35" plan no longer clears the matrix.
+
+## E0. Tips read (the extend census, all merge-base `a725acb0`)
+
+Pushed kind-claimants (tip → new kinds, protocol band as pushed):
+
+| Lane | Tip read | New kinds | Pushed protocol band | Notes |
+|---|---|---|---|---|
+| c3 | `9ea0ee90` | +3 | 289 / 355 / 694 | GiantCursedSkull 289, CursedSkull 355 (cs 34), WaterBoltMimic 694 |
+| c4 | `22cec16f` | +13 | 229-692 scattered | FlyingFish 354 (cs 224); CorruptGoldfish 229 (cs 57), Arapaima 237 (cs 157), BloodFeeder 241; the rest vanilla-free |
+| c6 | `5de68021` | +1 | 328 | PumpkingBlade (dup of d38) |
+| c7 | `c2cc6ec6` | +4 | 355 / 358 / 654 / 677 | Firefly 355, LightningBug 358; Lavafly/Shimmerfly vanilla-free |
+| c8 | `3705670d` | +9 | 357-606 scattered | Worm 357, TruffleWorm 374, TruffleWormDigger 375; GoldWorm/crawlers dup d40; Maggot 606 |
+| c9 | `2042d77f` | +4 | 359 / 360 / 655 / 677 | Snail 359, GlowingSnail 360; MagmaSnail 655; Shimmerfly 677 dup c7. **ALL_KINDS decl 270 but 4 arms — stale pin** |
+| c10 | `c48bbb1e` | +8 | 362-365 / 602-609 | Duck family 362-365; Seagull/Grebe 602-609 (dup d42) |
+| d23 | `19109424` | +6 | 259 / 260 / 354-357 | FungiBulb 259, GiantFungiBulb 260; ManEater 354, Snatcher 355, Clinger 356, AngryTrapper 357 |
+| d120 | `4b17a2cf` | +5 | 241-245 | SantaClaus/Truffle/Steampunker/Cyborg 241-244; BartenderUnconscious 245 (dup d42) |
+| d125 | `d8047a10` | +2 | 229 / 237 | EmpressOfLight 229 (cs 636), PrismaticLacewing 237 (cs 661). **ALL_KINDS decl 270 but 272 arms — stale pin** |
+| d34 | `5f3435a8` | +15 | 266-280 | phase 3 added Snatcher/CorruptGoldfish/Vulture/Demon/BlueJellyfish 276-280 (supersedes §0's +10) |
+| d35 | `6a2a155a` | +33 | 429-461 | unchanged ids; atlas-repack doc phases on top |
+| d37 | `08f7d25c` | +46 | 354-399 | this lane, unchanged |
+| d38 | `6f9dd02d` | +35 | 281-337 | **portrait gap CLOSED** (slots 181→216, crossnote phase B) — §5's d38 half is done |
+| d40 | `8fe1d6d3` | +56 | 430-488 | unchanged |
+| d42 | `9b22c091` | +51 | **354-404** | band 561-630 ported PORT-LOCAL 354-404 (cs 578-630). **Squats d37's whole 354-399 corridor + 400-404** |
+| e26 | `048cca6c` | +4 | 361 / 362 / 604 / 605 | Frog 361, Duck 362 (dup c10); LadyBug/GoldLadyBug 604-605 (dup d42) |
+| g8 | `82c93cec` | +34 | **354-387** | the ≤230 machine-wiring lane ports 34 kinds port-local 354-387. **ALL_KINDS decl 270 but 304 arms — stale pin** |
+
+Local-only (unpushed) claimants — probed read-only via `git -C <worktree>`,
+NO file recursion (see E6):
+
+| Lane | Worktree HEAD | Local state | Kinds / band |
+|---|---|---|---|
+| d33 | `dcb59b7f` (pushed) | **uncommitted** npc.rs+data.rs | +5 dragonflies 595-599 (vanilla-free, cs==proto) |
+| d36 | `65e481f9` (pushed CLAIM) | clean | claim-only: port-local 731-780, skip c4b 157 / d23b 175 |
+| d39 | `8e4b87c9` (pushed census) | **uncommitted WIP** 7 files | concurrent writer squats 355-359 (Firefly/Butterfly/Worm/LightningBug/Snail) — violates 108 + c7/c8/c9; census commit owns 10 unclaimed 351-420 → port-local 781-790 |
+| d41 | `4ed22f0b` (pushed claim) | clean | claim-only: band 491-560, skip 521/541-545/547 |
+| d43 | `a725acb0` (base) | clean | no work |
+| g10 | `a725acb0` (base) | **uncommitted** 4 files | +10 town pets 637/638/656/670/678-683 (vanilla-free, cs==proto) |
+| c10 | `c48bbb1e` (pushed) | **uncommitted** npc.rs+projectile + 2 untracked modules | style65/critter wiring (no new kinds) |
+| d125 | `d8047a10` (pushed) | **uncommitted local tip `2dfe026d2`** sheets phase + empress_draw.rs | NPC_636/661 sheets, slots 181→183 (NOT pushed) |
+
+f26 (`63417edd`, forced-update) / f27 (`0b8e225d`) are FindFrame-only —
+**no new kinds**, but they own the `find_frame` seams for 463-509 and carry
+keep-one verdicts against d40's inline arms (E5).
+
+## E1. The corrected collision matrix (protocol space)
+
+Pairwise scan of all 18 pushed claimants' new-kind id maps (base's 270-id
+map subtracted; every lane verified `to_u16`↔`from_u16` bijective, zero
+duplicate arms within a lane). **77 distinct protocol ids are contested by
+2+ lanes; 184 kind-ports sit on them.** The hard (different-kind) pairs:
+
+| Pair | Contested ids | Verdict |
+|---|---|---|
+| **d37 × d42** | **46: 354-399 (whole corridor)** | **HARD — d42 squats d37's entire band** |
+| **d37 × g8** | **34: 354-387** | **HARD — g8 squats 354-387** |
+| d37 × c10 | 4: 362-365 | HARD (Duck family ↔ GoldfishWalker/Hornets) |
+| d37 × c8 | 3: 357/374/375 | HARD |
+| d37 × c7 | 2: 355/358 | HARD |
+| d37 × c9 | 2: 359/360 | HARD |
+| d37 × e26 | 2: 361/362 | HARD |
+| d37 × c3/c4/d23 | 1 each: 355/354/354-357 | HARD (d23 = 4 ids 354-357) |
+| **d35 × d40** | **30: 430-461** | **HARD — the §2a collision, still present** |
+| d42 × g8 | 34: 354-387 | HARD (both squat the same corridor) |
+| d42 × c10/c7/c8/c9/e26/c3/c4/d23 | 1-4 each | HARD (all squat 354-404) |
+| g8 × c10/c7/c8/c9/e26/c3/c4/d23 | 1-4 each | HARD (all squat 354-387) |
+| c4 × d125 | 2: 229/237 | HARD (CorruptGoldfish↔Empress, Arapaima↔Lacewing) |
+| c4 × d120 | 1: 241 | HARD (BloodFeeder↔SantaClaus) |
+| c8 × d35 | 1: 448 | HARD (GoldWorm↔SeekerTail) |
+
+Same-kind duplicate ports (49 ports across 48 kind-names — the same vanilla
+type ported by 2+ lanes; these are NOT wire collisions but **merge dedupes**,
+one canonical owner kept, the rest dropped): CursedSkull (c3/d34/g8),
+ManEater+Snatcher (d23/d34), Clinger (d23/d35), FungiBulb+GiantFungiBulb
+(d23/d37), FlyingFish (c4/d37), BloodFeeder (c4/d37), Squid+FlyingSnake
+(d37/g8), the 17 g8↔d35 kinds (Pixie/Wraith/CursedHammer/EnchantedSword/
+Mimic/GreenJellyfish/Gastropod/GiantBat/Slimer/IlluminantBat/…), the 5
+c8↔d40 crawlers, the c10↔d42 waterfowl, the c4↔d42 fish, the e26↔d42
+ladybugs, Duck (c10/e26), Shimmerfly (c7/c9), GiantCursedSkull (c3/d38),
+PumpkingBlade (c6/d38), BartenderUnconscious (d120/d42), CorruptGoldfish
+(c4/d34), BlueJellyfish/Vulture/Demon/Harpy (d34/g8), CrimsonGoldfish
+(c4/d40). Full keep/drop table in E3.
+
+**The §2a "d37 × any = 0, clean" row is false**: d37's 354-399 is the
+single most-squatted corridor in the wave (d42 all 46, g8 34, plus 7 small
+lanes). The 6-tip read never saw d42/g8/c3/c4/c7/c8/c9/c10/d23/d120/d125/e26.
+
+## E2. Adjudication — d37 band-shift vs small-lanes-shift
+
+Three candidate plans were computed and collision-checked (scripted, zero
+dups, zero base-clash in all three). Renumber cost = owned kinds whose
+final id ≠ pushed id:
+
+| Plan | Kinds moved | Max id | d37 corridor | Verdict |
+|---|---|---|---|---|
+| (a) naive minimal (keep largest lane per id) | 107 | 804 | **broken** (46 moved, interleaved) | rejected — shatters d37 AND d42, non-contiguous |
+| (b) principled 698+ (all port-local → 698+) | 184 | 881 | broken (46 moved) | rejected — moves d37/d42 wholesale, max id 881 |
+| **(c) CANONICAL: keep d37/d38/d40/d34, d35→698-730, d42→vanilla-free, small lanes→698+** | **110** | **761** | **INTACT (354-399)** | **CHOSEN** |
+
+**Why (c) — the 698+ principle applied to the REAL matrix:**
+
+1. **d37 keeps 354-399.** This lane's band is the named anchor of the
+   reconcile, it is contiguous, bijective, and already witness-pinned
+   (`750d8e44`). Moving it (plans a/b) costs 46 renumbers AND breaks the
+   one corridor the merger can verify against a landed tip. The task's
+   "d37 band-shift vs small-lanes-shift" resolves to **small-lanes-shift**:
+   d42 and g8 are the squatters, not d37.
+2. **d42 returns to vanilla-free 578-630.** d42's pushed 354-404 is
+   port-local, but its cs ids 578-630 are **entirely free in base protocol
+   space** (base max 353; 491-697 unoccupied). So d42's 51 kinds move
+   354-404 → 578-630 (protocol==vanilla, the d38/d40 invariant) — this
+   clears the whole d37×d42 collision AND restores d42's own invariant.
+   d42's WIP commit message already says the 354-363 numbering is
+   "SUPERSEDED … by the 108 union plan's vanilla-free band" — this is that
+   band, extended to the full 51.
+3. **d35 → 698-730** (the §3 decision, unchanged): clears d35×d40's 30 ids
+   and the g8↔d35 duplicates' corridor. d35 is already port-local, so the
+   move breaks no invariant; 698+ is above NPCID.Count 697, future-proof.
+4. **g8's 17 owned kinds → 745-761.** g8 ports 34 kinds but 17 are
+   duplicates of d34/d35/d37 (dropped, E3); its 17 unique kinds (the
+   164-226 machine-wiring set: WallCreeper/IceElemental/Herpling/Derpling/
+   CrimsonAxe/FloatyGross/LostGirl/Nymph/IceBat/Lavabat/GiantFlyingFox/
+   VampireBat/RedDevil/PinkJellyfish/Antlion/SpikeBall) squat 354-387 and
+   move to 745-761.
+5. **The small critter/town lanes shift only their contested kinds** to
+   731-744: c10 Duck family 362-365→731-734, c7 Firefly/LightningBug
+   355/358→735-736, c8 Worm/TruffleWorm/TruffleWormDigger 357/374/375→
+   737-739, c9 Snail/GlowingSnail 359/360→740-741, d125 PrismaticLacewing
+   237→742, d23 AngryTrapper 357→743, e26 Frog 361→744. Their vanilla-free
+   kinds (Lavafly 654, MagmaSnail 655, Shimmerfly 677, Seagull/Grebe
+   602-609→owned by d42, etc.) keep protocol==cs.
+6. **d34/d38/d40 keep pushed** (266-280 / 281-337 / 430-488): pairwise
+   clean once d35 moves out and d42 returns to 578-630.
+
+Total: **110 owned kinds renumber, 170 keep pushed, 49 duplicate ports
+dropped.** Final max id **761** (i16-safe; grand union with the unpushed
+d33/g10 vanilla-free pets+dragonflies stays ≤697, d36/d39 port-local
+731-790 overlaps the small-lane band — see E4 guidance).
+
+Rejected: moving d37 (the anchor) to satisfy squatters that have NOT landed
+a witness-pinned corridor; the naive per-id greedy (shatters two bands into
+non-contiguous interleaves, harder to review than 5 clean block moves).
+
+## E3. Canonical final numbering + dedupe table
+
+Per-lane final id ranges (owned kinds only; duplicates dropped):
+
+| Lane | Owned kinds | Final ids | Changed |
+|---|---|---|---|
+| d34 | 15 | 266-280 | 0 |
+| d38 | 35 | 281-337 | 0 |
+| d37 | 46 | 354-399 | 0 |
+| d40 | 56 | 430-488 | 0 |
+| d42 | 51 | **578-630** (vanilla-free) | 51 |
+| d35 | 33 | **698-730** | 33 |
+| c10 | 4 | 731-734 | 4 |
+| c7 | 4 | 654/677 + 735-736 | 2 |
+| c8 | 3 | 737-739 | 3 |
+| c9 | 3 | 655 + 740-741 | 2 |
+| d125 | 2 | 229 + 742 | 1 |
+| d23 | 1 | 743 | 1 |
+| e26 | 1 | 744 | 1 |
+| g8 | 17 | 745-761 | 17 |
+| c3 | 1 | 694 | 0 |
+| c4 | 4 | 237/241/509/688/692 (vanilla-free) | 0 |
+| d120 | 4 | 241-244 | 0 |
+| c6 | 0 | (PumpkingBlade deduped to d38) | — |
+
+**Duplicate ports to DROP at merge** (keep canonical owner@final id):
+
+```
+BartenderUnconscious  keep d42@579   drop d120@245
+BloodFeeder           keep d37@373   drop c4@241
+BlueJellyfish         keep d34@280   drop g8@355
+Buggy                 keep d40@487   drop c8@487
+Clinger               keep d35@718   drop d23@356
+CorruptGoldfish       keep d34@277   drop c4@229
+CrimsonGoldfish       keep d40@465   drop c4@465
+CursedHammer          keep d35@706   drop g8@361
+CursedSkull           keep d34@267   drop c3@355, g8@375
+Demon                 keep d34@279   drop g8@376
+Dolphin               keep d42@615   drop c4@615
+Duck                  keep c10@731   drop e26@362
+EnchantedNightcrawler keep d40@484   drop c8@484
+EnchantedSword        keep d35@707   drop g8@362
+EyeballFlyingFish     keep d42@587   drop c4@587
+FlyingAntlion         keep d42@581   drop c4@581
+FlyingFish            keep d37@359   drop c4@354
+FlyingSnake           keep d37@360   drop g8@384
+FungiBulb             keep d37@385   drop d23@259
+Gastropod             keep d35@728   drop g8@365
+GiantBat              keep d35@710   drop g8@377
+GiantCursedSkull      keep d38@289   drop c3@289
+GiantFungiBulb        keep d37@386   drop d23@260
+GoldGoldfish          keep d42@592   drop c4@592
+GoldLadyBug           keep d42@605   drop e26@605
+GoldWorm              keep d40@448   drop c8@448
+Grebe / Grebe2        keep d42@608/609  drop c10@608/609
+GreenJellyfish        keep d35@720   drop g8@364
+Grubby                keep d40@485   drop c8@485
+Harpy                 keep d34@275   drop g8@386
+IlluminantBat         keep d35@729   drop g8@379
+LadyBug               keep d42@604   drop e26@604
+Maggot                keep d42@606   drop c8@606
+ManEater              keep d34@269   drop d23@354
+Mimic                 keep d35@708   drop g8@363
+Pixie                 keep d35@700   drop g8@359
+PumpkingBlade         keep d38@328   drop c6@328
+Pupfish               keep d42@607   drop c4@607
+Seagull / Seagull2    keep d42@602/603  drop c10@602/603
+Shimmerfly            keep c7@677    drop c9@677
+Slimer                keep d35@727   drop g8@378
+Sluggy                keep d40@486   drop c8@486
+Snatcher              keep d34@276   drop d23@355
+Squid                 keep d37@358   drop g8@385
+Vulture               keep d34@278   drop g8@354
+Wraith                keep d35@705   drop g8@360
+```
+
+Ownership rule: a kinds-lane (d3x/d4x) that ports the kind owns it over a
+wiring lane (c*/g8/e26/d120/d125); among kinds-lanes the lower band number
+owns (d34<d35<d37<d38<d40<d42). The dropped lane keeps its AI/draw/sound
+wiring keyed on the canonical kind — only the duplicate `NpcKind` variant +
+`to_u16`/`from_u16`/`ALL_KINDS`/`ENTRIES` row is removed.
+
+## E4. Count-pins (post-merge, post-renumber, deduped) — SUPERSEDES §6
+
+| Pin | Final value | Derivation |
+|---|---|---|
+| `ALL_KINDS` len | **550** | 270 base + 280 distinct new kinds (329 ports − 49 dupes) |
+| `to_u16`/`from_u16` arms | **550** each | bijection, 0 dups (deny-unreachable guards) |
+| `s1_f_3` coverage pin | **550** | covered + sentinel walk |
+| bestiary `ENTRIES` rows | **489** | 249 base + 240 new credits (287 new rows − 47 dup-credit rows; all net ids distinct) |
+| `BESTIARY_NPC_SHEET_IDS` | **≤357** upper bound | 181 + 176 naive per-lane slot sum; dedupe to the 240 visible-entry kinds at merge (d38's +35 already landed; d40's +38 still a gap, §5) |
+| `STATIC_SHEET_NAMES` NPC rows | **446** | 270 base + 176 packed-sheet-name union |
+| `SFX_CUES` NPC hit/death cues | **103 unique** | 55 base + 48 new (naive append 151 rows; dedupe to 103) |
+| max protocol id | **761** | i16-safe; round-trip test guards |
+
+The §6 pins (450/393/323/360/98) were computed from the 6-tip read and are
+**superseded**. The 40 union kinds WITHOUT a new bestiary entry (Hide folds,
+segments, no-entry fixtures): the 7 ArmedZombies, 5 BoneThrowers, 5
+CultistDragon bodies+tail, Digger/Seeker/BoneSerpent body+tail (6), VileSpit,
+MothronEgg, TargetDummy, GoldfishWalker, GoldGoldfishWalker, JungleCreeper,
+BloodCrawler, BartenderUnconscious, the 4 dragonflies (d33 local), Seagull2,
+Grebe2, ArmedTorchZombie — these fold onto a visible twin or keep no entry.
+
+**Stale ALL_KINDS declarations to fix at merge** (decl ≠ actual arms):
+c9 `270`→274, d125 `270`→272, g8 `270`→304, d42 WIP `270`→321 (the
+`9b22c091` tip already declares 321 correctly). These are compile-time
+`[NpcKind; N]` length mismatches — the merge must reconcile each to the
+550 union, not trust the pushed decl.
+
+Future-lane guidance (unpushed): d33 dragonflies 595-599 + g10 town pets
+637/638/656/670/678-683 are **vanilla-free, keep cs==proto** (no clash with
+the canonical plan — all ≤697 and free). d36 port-local 731-780 and d39
+port-local 781-790 **overlap the small-lane 731-761 band** — re-pin d36 to
+**762-811** and d39 to **812-821** (above the canonical max 761) when they
+land; d41/d43 vanilla-free 491-560 / 631-697 (skip the g10/d33 cs ids).
+
+## E5. Exhaustive-match + wildcard union checklist additions
+
+§4's checklist stands, plus the new claimants' sites:
+
+- [ ] `to_u16`/`from_u16` — 550 arms; d35 block 698-730, d42 block 578-630,
+      g8 block 745-761, small-lane blocks 731-744 (E3)
+- [ ] `ALL_KINDS` — 550 entries; fix the 4 stale decls (E4)
+- [ ] `cs_id` — d42's 51 kinds now protocol==cs (578-630); g8's 17 moved
+      kinds keep their cs hand rows (61-226), only proto changes
+- [ ] `bestiary.rs` `entry_for_npc`/`try_entry_for_npc` — the 49 dedupe
+      folds (E3) plus d42's new folds (Seagull2/Grebe2/GoldGoldfishWalker/
+      ArmedTorchZombie → visible twin)
+- [ ] `find_frame` — f26 (`63417edd`) owns 494-509, f27 (`0b8e225d`) owns
+      463-472/489-493 keep-one verdicts vs d40's inline arms (480/481/482
+      keep d40 INLINE; 473-477/479/483-488 keep the extra7b MODULE arms;
+      463/467/471/472/492 are f27 FIX kinds). g8's 34 machine-wiring kinds
+      claim the style axis — their `update_kind_ai` arms retire to
+      `unreachable!` markers (the d23/g9 precedent)
+- [ ] `npc_ai.rs` / `main.rs` — c10's untracked `npc_ai_critter.rs` +
+      `npc_ai_style65.rs`, d39's untracked `npc_ai_style65.rs` (SAME module
+      name — a merge conflict; keep one, the c10 version is the waterfowl
+      lane's, d39's is the concurrent-writer WIP), d125's untracked
+      `render/empress_draw.rs`
+- [ ] `render/entities.rs` `npc_sheets` chain — add `D125_SHEETS` (local
+      tip `2dfe026d2`), the c3/c4/c7/c8/c9/c10/d23/d120/e26/g8 sheet chains;
+      every branch edited the same `.chain(...)` site (§4 warning stands)
+- [ ] `world_sim/npcs.rs` — d42's BloodEel worm family (621-623), the
+      c8 TruffleWormDigger Transform chain
+
+## E6. Local-only work — resume-dispatch list (read-only probe)
+
+Probed via `git -C C:\Users\DreadLord\Desktop\TR-W4-<lane> log/status/diff`,
+NO file recursion, NO writes. These lanes have work that is NOT on origin
+and must be resumed/pushed before the merge wave can see it:
+
+| Lane | Worktree | Unpushed work | Resume action |
+|---|---|---|---|
+| **d33** | TR-W4-d33 | uncommitted +5 dragonflies 595-599 (npc.rs/data.rs) | commit + push; vanilla-free, no renumber |
+| **d39** | TR-W4-d39 | census `8e4b87c9` pushed; uncommitted WIP squats 355-359 (concurrent writer, violates 108) | **discard the 355-359 WIP** (c7/c8/c9 own those kinds); port the 10 unclaimed 351-420 to 812-821 (E4) |
+| **d41** | TR-W4-d41 | claim `4ed22f0b` pushed, no code | resume band 491-560 vanilla-free |
+| **d43** | TR-W4-d43 | base, no work | resume band 631-697 vanilla-free (skip g10 pets) |
+| **g10** | TR-W4-g10 | uncommitted +10 town pets 637-683 (npc.rs/data.rs/saveglue/clock) | commit + push; vanilla-free, no renumber |
+| **c10** | TR-W4-c10 | uncommitted style65/critter wiring + 2 untracked modules | commit + push (no new kinds) |
+| **d125** | TR-W4-d125 | local tip `2dfe026d2` sheets phase (NPC_636/661, slots 181→183) + untracked empress_draw.rs | **push `2dfe026d2`** — the sheets/slots are NOT on origin tip `d8047a10` |
+| d36 | TR-W4-d36 | claim `65e481f9` pushed, clean | resume port-local 762-811 (E4 re-pin) |
+| d40 | TR-W4-d40 | 13 untracked atlas-sim tools (no code) | junk/scratch — leave |
+| c8 | TR-W4-c8 | uncommitted npc.rs (sweep 6 in flight) | let the lane finish + push |
+| c3/c4 | TR-W4-c3/c4 | uncommitted spawner.rs / npc_ai_style16.rs | let the lanes finish + push |
+
+d36/d39/d43 are NOT "zero-push" anymore (d36/d39 pushed claims/census);
+d41/d42 are NOT "no-branch" anymore (both exist; d42 pushed 51 kinds).
+The §0 rows for these lanes are superseded by E0.
+
+## E7. Merge ORDER (extend) — SUPERSEDES §7
+
+**d34 → d38 → d37 → d40 → d42(vanilla-free 578-630) → d35(698-730, last) →
+the small lanes (c3/c4/c6/c7/c8/c9/c10/d23/d120/d125/e26/g8) with their
+731-761 shifts + dedupe drops.**
+
+Rationale: the first four are pairwise clean and keep pushed ids; d42
+returns to its vanilla-free invariant (clearing the d37 squat); d35 goes
+last-with-renumber against the final roster (§7 rule 2 stands); the small
+lanes merge after, each dropping its duplicate ports (E3) and shifting only
+its contested kinds. The unpushed lanes (E6) must push first. Atlas-repack
+wave still owns the cumulative sheet overflow (§5; the union is now 446 NPC
+sheets, worse than the §5 360 estimate — research/113's two-page form is
+mandatory, d38's crossnote `6f9dd02d` confirms BAF-alone dies at 8278).
+
+No code was changed on this branch; this extension is the deliverable.
+Witness: the extend census ran against the exact tips in E0 (git-show +
+`git -C` worktree probes, no working-tree writes, no junction recursion);
+the collision matrix, all three adjudication plans, and the canonical
+id-map are reproducible from those tips (scripted extraction, zero-dup
+verified). Counts: 354 refs swept, 77 touched npc.rs/data.rs, 18 pushed
+kind-claimants, 280 distinct new kinds, 77 contested ids / 184 ports,
+49 duplicate ports, canonical max id 761.
