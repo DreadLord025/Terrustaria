@@ -7210,8 +7210,12 @@ Deviations:
 - **Death from a DoT drain clamps at 0 hp** вЂ” resolved by M2-BUFF-3: the
   `KillMe` reasons (`:19361-19385`) now flow through `regen.rs`'s `DotDeath`
   (see "DoT debuffs (M2-BUFF-3)" below).
-- **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) are
-  deferred to M6-AUDIO; `update_mana_regen` returns the refill trigger.
+- **The full-mana sound + dust** (`SoundEngine.PlaySound(25)`, `:19550`) —
+  LANDED by W4-d79 phase 6: `update_mana_regen`'s refill trigger queues
+  `Player::pending_mana_refill` at the live box; the `UpdatePlayers` drain
+  plays the unpositioned case-25 `MaxMana` chime (no draws, no Stop) + the
+  5× dust-45 burst (each `Next(20,26)*0.1` scale drawn BEFORE its
+  `NewDust`). See "The sound pitch/pool census rewire (W4-d79)" below.
 - **The `DebugOptions.ManaV2` block is the SHIPPED mana machine** — S1-P-i19
   corrected the earlier "debug cheat, not ported" reading: the static ctor
   sets `ManaV2 = true` (`Testing/DebugOptions.cs:85`) and nothing in the
@@ -36077,8 +36081,11 @@ Mana Sickness (buff 94) — **not for weapons**:
 ### RNG order
 No new RNG draws. `check_mana`, `apply_mana_regen_delay` and
 `update_mana_regen` are pure arithmetic; the full-bar dust's 5×
-`Main.rand.Next(20,26)` (`:19555`) stays deferred to M6-AUDIO (the trigger
-is returned, not drawn). The potion drink's `ManaEffect` combat text draws
+`Main.rand.Next(20,26)` (`:19555`) was deferred to M6-AUDIO (the trigger
+is returned, not drawn) — **W4-d79 phase 6 landed it**: the engine stays
+draw-free, the `UpdatePlayers` drain rolls the 5×(1 scale + 6 `NewDust`)
+draws at the C#'s update position (before the sticky-dust drain,
+`:25995` < `:27654`). The potion drink's `ManaEffect` combat text draws
 ride the existing `UpdatePlayers` stream through the cuffs' drain
 convention — no new stream, no reorder. The weapon pay's crit/spawn rolls
 are unchanged (the pay now always succeeds, so the downstream rolls run on
@@ -39244,3 +39251,100 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The sound pitch/pool census rewire (W4-d79, phases 6-7, 2026-11-21, code-only mode)
+
+The MAXMANA case-25 escalation + the orphaned-emitter census pickups, on
+`task/W4-d79-sound-pitch-pool` (continuing phases 1-5).
+
+### Phase 6 — the full-mana refill emitter (Player.cs:19550-19560)
+
+`update_mana_regen` already returned the flag4-gated refill trigger;
+`player.rs`'s `update_survival` call DISCARDED it (the M6-AUDIO
+deferral). Now the return queues `Player::pending_mana_refill` —
+`(position.X, position.Y, width, height)` captured at the regen point
+(`:25995` — the C# reads the live box there, before the movement tail);
+the `world_sim/player.rs` drain (BEFORE the sticky-dust drain — the C#'s
+`UpdateManaRegen` precedes `StickyMovement` `:27654`) plays:
+
+- the UNPOSITIONED `PlaySound(25)` — case 25
+  (`LegacySoundPlayer.cs:963-968`): Volume/Pan only, NO `Main.rand`
+  draw, NO Stop (the `SoundInstanceMaxMana` slot overwrites — the
+  Coins/Chat no-Stop family). `MaxMana` joins `SFX_CUES` (id 25) and
+  `SINGLE_SLOT_CUES` (false flag); the single-slot array grows 16→17.
+  `Sounds/MaxMana.xnb` verified on disk.
+- the 5× dust-45 loop: EACH iteration rolls `Next(20, 26) * 0.1` as the
+  `NewDust` SCALE ARGUMENT (`:19555` — the draw precedes the spawn's
+  own six rolls: pos X/Y `Next(w−4)`/`Next(h−4)`, vel X/Y
+  `Next(-20,21)*0.1`, frame `Next(3)`, scale jitter
+  `(1+Next(-20,21)*0.01)*scale`), alpha 255, default colour, then
+  `noLight`/`noGravity`/`velocity *= 0.5` (`:19556-19558`) on the
+  returned slot (the sentinel included — the C#'s own shape). Dust 45
+  rides no ChildSafety/per-type draw arm. The dust draws are NOT gated on
+  the sound gate — the C# loops regardless of the play's refusal.
+
+All 35 burst draws ride `UpdatePlayers` (the `Main.cs:17754` swap
+covers `Player.Update`). The ManaV2 animation gate (`:19542-19545`)
+already suppresses the trigger mid-swing inside the engine — the queue
+never arms, no draws. The `whoAmI == Main.myPlayer` gate collapses to
+the port's single local player.
+
+**Witness census (which pins cross the regen path).** Every exact-stream
+`UpdatePlayers` pin on this branch was re-read: the dw_4_1 spike rig and
+the i54 Strange Brew rigs spawn FULL-mana players (flag4 false — no
+refill); the i37 QuickMana rig's pinned ticks never cross a 120-chunk at
+max (mana 50-ish of 200, regen ≤ 14/tick); the editing/items/npcs-pass
+witnesses never run `update_survival` at all. NO re-pins needed. The
+W4-d117 sibling's 8 curve witnesses (branch `task/W4-d117-mana-regen-full`,
+not an ancestor) drive `update_survival`/`Player::update` directly —
+the engine stays draw-free and the queue is only drained by
+`update_player`, so they need no +5-draw updates by construction; when
+the branches merge, any d117 witness that asserts an exact
+`UpdatePlayers` stream through `update_player` at a refill tick must
+add the 35-draw burst (none of the 8 do).
+
+### Phase 7 — the orphaned-emitter census (E21 class)
+
+The bank/pool rows with ZERO callers, and the deferred consume arms whose
+seams now exist:
+
+- **Chat (case 24)** — in `SFX_CUES` + `SINGLE_SLOT_CUES` since wave F
+  but never played. Two of the three C# sites have ported seams: the talk
+  open (`Main.cs:43083` — after `SetTalkNPC`, before `GetChat`;
+  `world_sim/npcs.rs::talk_to_npc`) and the Angler turn-in (`:40243` —
+  between the stack decrement and the counter++;
+  `world_sim/npcs.rs::angler_turn_in`). Both unpositioned, draw-free —
+  the `GetChat`/reward rolls keep their stream positions. The DyeTrader
+  site (`:40016`) stays deferred (no ported turn-in seam); the
+  UIWorldCreation `:834` site is front-end (out of the sim census).
+- **The 4143 Mana Cloak Star** (`Player.cs:35080-35097`) — the star
+  arm's 50-mana twin: case-7 Grab pitch (one `Next(-10,11)` on
+  `UpdatePlayers` after the gate), `statMana += 50`,
+  `TryApplyManaHeat(0.2f, 2f)`, `ManaEffect(50)` (the `num2 != 0`
+  gate always true), the cap AFTER the text, `TurnToAir`. NOT in
+  `STAR_KINDS` — the `:34942` flag2 list excludes it, so the full-mana
+  pull gate and the Mana Magnet row never apply; the +12 grab margin was
+  already unconditional (`:35141-35144`). The `IsAPickup` skip gate
+  (`world_sim/items.rs`) now admits it; the nebula trio 3453-3455 stays
+  deferred (no `NebulaLevelup` port).
+
+**Witnesses (WRITTEN, NOT RUN — no compiler invoked).** Phase 6:
+`w4_d79_the_mana_refill_queues_once_at_the_fill` (player.rs — the
+queue-once/live-box/idle-no-refire/animation-gate contract),
+`w4_d79_the_mana_refill_drains_the_chime_and_five_dust_draws`
+(world_sim/player.rs — the exact 35+1-draw twin, the five slots'
+alpha/flags/scale/velocity, the pristine other-stream isolation, the
+no-re-fire), `w4_d79_the_refill_gate_and_the_muted_dust_loop` (the
+mid-swing suppression + the muted-chime dust-still-draws). The
+single-voice stream-neutral test extends to Chat/MaxMana; the bank test
+pins `sound_type("MaxMana") == 25`. Phase 7:
+`w4_d79_the_talk_and_the_angler_turn_in_play_the_chat_cue` (play-once,
+named-stream isolation, the silent re-click/refusal),
+`w4_d79_the_mana_cloak_star_restores_fifty_and_arms_mana_heat` (the
+restore/heat/text/consume contract + the full-mana touch),
+`w4_d79_the_mana_cloak_star_draws_ride_update_players_in_order` (the
+three-draw twin). Verification = whole-block C# re-reads
+(`Player.cs:19418-19563`/`:25977-26003`/`:35043-35110`,
+`LegacySoundPlayer.cs:963-968`/`:957-962`/`:717-727`,
+`Main.cs:43060-43086`/`:40227-40263`, `Dust.cs` via the ported
+`particles.rs` allocator) + hand arithmetic on the chunk crossings.
