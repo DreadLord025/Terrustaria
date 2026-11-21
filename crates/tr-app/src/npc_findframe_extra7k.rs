@@ -30,8 +30,8 @@
 //!   10). The `frame.Width = 180` write (`:66851`) is DRAW-side —
 //!   the 668 Deerclops precedent (`npc.rs:8207`: "vestigial ... the
 //!   draw builds its own rect"); the frame machine carries rows
-//!   only. `Main.npcFrameCount[657]` = **27** (`Main.cs:67149`
-//!   entry 7) — the sheet is the 27-row boss grid, rows are NOT
+//!   only. `Main.npcFrameCount[657]` = **16** (`Main.cs:67149`
+//!   entry 8) — the sheet is the 2x16 boss grid, rows are NOT
 //!   wrapped by the count (the arm's own 4/7/10/13/20/24 bounds
 //!   rule).
 //! * 658/659 QueenSlimeMinionBlue/Pink — the slime strip group
@@ -46,8 +46,7 @@
 //!   stride walks the FULL sheet wrapping to 0 (`:70842-70845`).
 //!   The `type == 302 || type == 304` spriteDirection snap
 //!   (`:70824-70827`) is the town slimes' — 658/659 write no flip.
-//!   Counts **16** and **2** (`Main.cs:67149` entry 8 / `:67150`
-//!   entry 1).
+//!   Counts **2** and **2** (`Main.cs:67149` entries 9-10).
 //! * 660 QueenSlimeMinionPurple — the eye group `case 2/23/121/
 //!   169/190-194/317/318/660` (`NPC.cs:73994-74059`, our label
 //!   `:74005`): the `localAI[0] == 0f` one-time init LATCH
@@ -61,7 +60,7 @@
 //!   override at `:74046-74049`, NOT the group's 8), the FULL-count
 //!   wrap to 0 (`:74055-74058`). The `type == 23` dust block
 //!   (`:74007-74013`) is the Cursed Eye's — NOT 660's. Count **4**
-//!   (`Main.cs:67150` entry 3).
+//!   (`Main.cs:67150` entry 1).
 //! * 661 EmpressButterfly — the butterfly group `case 356/444/653/
 //!   661` (`NPC.cs:72739-72773`, our label `:72742`): the VERBATIM
 //!   7j HellButterfly machine copy (the 7j/7i ONE-group precedent;
@@ -72,7 +71,7 @@
 //!   at `7*4-1 = 27` (`:72763-72766`), and NO colour-bank offset —
 //!   the `:72768` gate (`type != 444 && type != 653 && type !=
 //!   661`) EXCLUDES 661 (356-only; aiStyle 65's prismatic dye is
-//!   draw-side). Count **3** (`Main.cs:67150` entry 4).
+//!   draw-side). Count **3** (`Main.cs:67150` entry 2).
 //! * 662 PirateGhost — the floater group `case 48/49/51/60/82/93/
 //!   137/182/210/211/253/316/634/662/664` (`NPC.cs:74823-74884`,
 //!   our label `:74836`): the extra-3 FloatyGross machine shape —
@@ -82,7 +81,7 @@
 //!   the type-48 `num291 = 5` override does NOT apply) and the
 //!   FULL-count wrap (`:74880-74883` — the `:74867` decrement gate
 //!   `type == 49 || 51 || 60 || 634` EXCLUDES 662: the ghost walks
-//!   all **4** rows, `Main.cs:67150` entry 5, unlike its 634
+//!   all **4** rows, `Main.cs:67150` entry 3, unlike its 634
 //!   sibling's count−1 flap). ZERO RNG: the `:74844`
 //!   `Main.rand.Next(10)` draw short-circuits on `type == 634` —
 //!   662 draws NOTHING (the 7h-published SporeBat seam contract's
@@ -106,13 +105,18 @@
 //!
 //! Row convention: frame ROW indices, not pixels (the C#'s `num`
 //! cancels). Frame counts `Main.npcFrameCount` (`Main.cs:67082`'s
-//! 697-entry initializer): 657 = **27** (`:67149` entry 7), 658 =
-//! **16** (entry 8), 659 = **2** (`:67150` entry 1), 660 = **4**
-//! (entry 3), 661 = **3** (entry 4), 662 = **4** (entry 5) —
-//! counted entry-by-entry in [`FindFrameExtra7kKind::frame_count`]
-//! and cross-checked against `render/entities.rs::NPC_FRAME_COUNT`
-//! (all 697 slots re-diffed = ZERO mismatches, a mechanical
-//! text-parse diff).
+//! 697-entry initializer, 10 entries per line from `:67084` = ids
+//! 0-9, so `:67149` = ids 650-659 and `:67150` = ids 660-669):
+//! 657 = **16** (`:67149` entry 8), 658 = **2** (entry 9), 659 =
+//! **2** (entry 10), 660 = **4** (`:67150` entry 1), 661 = **3**
+//! (entry 2), 662 = **4** (entry 3) — counted entry-by-entry in
+//! [`FindFrameExtra7kKind::frame_count`] and cross-checked against
+//! `render/entities.rs::NPC_FRAME_COUNT` (all 697 slots re-diffed =
+//! ZERO mismatches, a mechanical text-parse diff). The boss arm
+//! still walks rows up to 23 (the enraged band) on its 16-count
+//! sheet — the C# does the same (`num284` is bounded by the arm's
+//! own 4/7/10/13/20/24 rules, NOT by the count; the 2x16 grid draw
+//! decodes the cell, the Deerclops precedent).
 
 // The wiring is a later round (the kinds are not in `NpcKind` yet) —
 // the `npc_findframe_extra7j.rs` precedent.
@@ -156,13 +160,14 @@ impl FindFrameExtra7kKind {
     }
 
     /// `Main.npcFrameCount[type]` (`Main.cs:67082`'s initializer,
-    /// counted entry-by-entry): 657 = 27 (`:67149` entry 7), 658 =
-    /// 16 (entry 8), 659 = 2 (`:67150` entry 1), 660 = 4 (entry 3),
-    /// 661 = 3 (entry 4), 662 = 4 (entry 5).
+    /// counted entry-by-entry, 10 per line from `:67084`): 657 = 16
+    /// (`:67149` entry 8), 658 = 2 (entry 9), 659 = 2 (entry 10),
+    /// 660 = 4 (`:67150` entry 1), 661 = 3 (entry 2), 662 = 4
+    /// (entry 3).
     pub fn frame_count(self) -> u32 {
         match self {
-            Self::QueenSlimeBoss => 27,
-            Self::QueenSlimeMinionBlue => 16,
+            Self::QueenSlimeBoss => 16,
+            Self::QueenSlimeMinionBlue => 2,
             Self::QueenSlimeMinionPink => 2,
             Self::QueenSlimeMinionPurple => 4,
             Self::EmpressButterfly => 3,
@@ -507,8 +512,8 @@ mod tests {
 
     /// The frame-count table agrees with the port's verbatim
     /// `NPC_FRAME_COUNT` (`Main.cs:67082` initializer cross-check:
-    /// 657=27 :67149 entry 7, 658=16 entry 8, 659=2 :67150 entry 1,
-    /// 660=4 entry 3, 661=3 entry 4, 662=4 entry 5).
+    /// 657=16 :67149 entry 8, 658=2 entry 9, 659=2 entry 10,
+    /// 660=4 :67150 entry 1, 661=3 entry 2, 662=4 entry 3).
     #[test]
     fn f26s7k_frame_counts_match_the_port_table() {
         let table = crate::render::entities::NPC_FRAME_COUNT;
@@ -680,25 +685,25 @@ mod tests {
         assert_eq!((s.row, s.counter), (1, 9.0));
     }
 
-    /// The minion strip: still (num2 = 0) feeds +1 — the Blue's
-    /// 16-row sheet steps every 8th tick and wraps at row 16; the
-    /// Pink's 2-row sheet cycles 0×8 / 1×8. Moving (vx ≠ 0, num2 =
-    /// 1) feeds +2 (step every 4th), airborne rising (num2 = 2)
-    /// also +2, falling (num2 = 3) +2, attacking (aiAction 1,
-    /// num2 = 4) +3 — the 7f vectors verbatim. NO sprite flip
-    /// (the 302/304 snap excludes them).
+    /// The minion strip: still (num2 = 0) feeds +1 — BOTH minions
+    /// are 2-row sheets (`Main.cs:67149` entries 9-10), cycling
+    /// 0×8 / 1×8. Moving (vx ≠ 0, num2 = 1) feeds +2 (step every
+    /// 4th), airborne rising (num2 = 2) also +2, falling (num2 = 3)
+    /// +2, attacking (aiAction 1, num2 = 4) +3 — the 7f vectors
+    /// verbatim. NO sprite flip (the 302/304 snap excludes them).
     #[test]
     fn f26s7k_the_minion_strip_num2_feeds() {
         let blue = FindFrameExtra7kKind::QueenSlimeMinionBlue;
         let pink = FindFrameExtra7kKind::QueenSlimeMinionPink;
-        // The Pink still cycle: 0 ticks 1-8, 1 ticks 9-16, 0 at 17.
+        // The Pink still cycle: >= 8 steps at tick 8 — 0 ticks
+        // 1-7, 1 ticks 8-15, the wrap at tick 16, 0 at 16-17.
         assert_eq!(
             rows_over(pink, input(0.0, 0.0), 17),
-            vec![0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0]
+            vec![0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0]
         );
-        // The Blue wrap edge: row 15 counter 7 → ++ = 8 → row 16
-        // → >= 16 → 0.
-        let mut s = FrameState { row: 15, counter: 7.0, sprite_dir: -1, ..Default::default() };
+        // The Blue wrap edge: row 1 counter 7 → ++ = 8 → row 2
+        // → >= 2 → 0.
+        let mut s = FrameState { row: 1, counter: 7.0, sprite_dir: -1, ..Default::default() };
         find_frame_extra7k(blue, &mut s, &input(0.0, 0.0));
         assert_eq!((s.row, s.counter, s.sprite_dir), (0, 0.0, -1));
         // The num2 feeds on the Pink: moving +2 steps tick 4;
@@ -712,22 +717,25 @@ mod tests {
         // aiAction 2 (neither 0 nor 1) → num2 0 (+1).
         let other = FrameInput { ai_action: 2, vx: 5.0, ..Default::default() };
         assert_eq!(rows_over(pink, other, 8), vec![0, 0, 0, 0, 0, 0, 0, 1]);
-        // Both minions share the machine tick-for-tick.
+        // Both minions share the machine tick-for-tick: 6 attack
+        // ticks = two >= 8 steps (tick 3 → row 1, tick 6 → row 2
+        // → wrap 0), counter 0.
         for k in MINIONS {
             let mut s = FrameState::default();
-            for _ in 0..8 {
+            for _ in 0..6 {
                 find_frame_extra7k(k, &mut s, &attack);
             }
-            assert_eq!(s.counter, 0.0);
+            assert_eq!((s.row, s.counter), (0, 0.0));
         }
     }
 
     /// The Purple minion latch: localAI[0] == 0 pins row 2 AND
     /// sets the slot to 1 in the SAME tick (the wiring copies it
-    /// back); the counter still runs — the latch tick's ++ makes
-    /// counter 1. Once latched (slot 1) the row walks freely at
-    /// the >= 6 stride over the FULL 4 rows; vx signs flip the
-    /// sprite, vx == 0 leaves it; the tilt is vx * 0.1.
+    /// back); the counter still runs — the latch tick's ++ lands
+    /// ON TOP of the carried counter. Once latched (slot 1) the
+    /// row walks freely at the >= 6 stride over the FULL 4 rows;
+    /// vx signs flip the sprite, vx == 0 leaves it; the tilt is
+    /// vx * 0.1.
     #[test]
     fn f26s7k_the_purple_minion_latch_and_six_stride() {
         let k = FindFrameExtra7kKind::QueenSlimeMinionPurple;
@@ -821,9 +829,10 @@ mod tests {
     /// The PirateGhost walk: the vx-sign gates + the vx * 0.1 tilt,
     /// the bare ++ and the >= 6 stride over the FULL 4 rows (the
     /// `:74867` decrement excludes 662 — row 3 IS walked, unlike
-    /// the 634 SporeBat's count−1 flap): rows 0 ticks 1-6, 1 ticks
-    /// 7-12, 2 ticks 13-18, 3 ticks 19-24, the wrap at tick 25.
-    /// ZERO draws — the machine has no RNG seam at all.
+    /// the 634 SporeBat's count−1 flap): the step lands tick 6 —
+    /// rows 0 ticks 1-5, 1 ticks 6-11, 2 ticks 12-17, 3 ticks
+    /// 18-23, the wrap at tick 24, 0 at 24-25. ZERO draws — the
+    /// machine has no RNG seam at all.
     #[test]
     fn f26s7k_the_pirate_ghost_full_count_walk() {
         let k = FindFrameExtra7kKind::PirateGhost;
@@ -837,14 +846,14 @@ mod tests {
         assert_eq!(
             rows,
             vec![
-                0, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0,
                 1, 1, 1, 1, 1, 1,
                 2, 2, 2, 2, 2, 2,
                 3, 3, 3, 3, 3, 3,
-                0,
+                0, 0,
             ]
         );
-        assert_eq!((s.counter, s.sprite_dir, s.rotation), (0.0, 1, 2.0f32 * 0.1));
+        assert_eq!((s.counter, s.sprite_dir, s.rotation), (1.0, 1, 2.0f32 * 0.1));
         // The wrap edge: row 3 counter 5 → ++ = 6 → row 4 → >= 4
         // → 0 (the FULL count, NOT count−1).
         let mut s = FrameState { row: 3, counter: 5.0, sprite_dir: 1, ..Default::default() };
@@ -876,14 +885,22 @@ mod tests {
         }
     }
 
-    /// The 6-kind strip sweep: every kind ticks 72 input combos
+    /// The 6-kind strip sweep: every kind ticks 48 input combos
     /// (vx 0/2 × vy 0/-2/2 × ai_action 0/1 × half_life false/true ×
     /// no_gravity false/true) for 60 ticks each from a fresh state
-    /// — every row stays inside its own sheet (the boss's 27-row
-    /// grid included: the flap/fall/idle bounds never escape).
+    /// — every row stays inside its own bound. The boss's bound is
+    /// **24** (its own arm rules — the C# walks the enraged band
+    /// 20..23 on the 16-count sheet too; the count never bounds
+    /// `num284`, the 2x16 grid draw decodes the cell); every other
+    /// kind's bound is its frame count.
     #[test]
     fn f26s7k_the_6_kind_strip_sweep_stays_in_sheet() {
         for k in ALL {
+            let bound = if k == FindFrameExtra7kKind::QueenSlimeBoss {
+                24
+            } else {
+                k.frame_count()
+            };
             let mut combo = 0;
             for vx in [0.0f32, 2.0] {
                 for vy in [0.0f32, -2.0, 2.0] {
@@ -902,10 +919,9 @@ mod tests {
                                 for _ in 0..60 {
                                     find_frame_extra7k(k, &mut s, &i);
                                     assert!(
-                                        s.row < k.frame_count(),
-                                        "{k:?} combo {combo} row {} escapes the {}-row sheet",
-                                        s.row,
-                                        k.frame_count()
+                                        s.row < bound,
+                                        "{k:?} combo {combo} row {} escapes the {bound}-row bound",
+                                        s.row
                                     );
                                 }
                                 combo += 1;
