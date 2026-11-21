@@ -715,6 +715,25 @@ pub(crate) struct WingAirDust {
     pub(crate) facing: i32,
 }
 
+/// W4-g66 — one queued wing-glide dust call (`Player.cs:27040-27315`, the
+/// jump-held falling arm). The wings-4 arm's frame machine and the per-wing
+/// frame pins stay in the tick (`wing_glide_frames`); only the dust rolls
+/// replay in the drain (`player_wing_dust::drain_wing_glide`).
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WingGlideDust {
+    pub(crate) wings: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+    /// `ShouldDrawWingsThatAreAlwaysAnimated()` at the C# read moment
+    /// (`:27054`, the wings-34 gate).
+    pub(crate) always_animated: bool,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2124,6 +2143,8 @@ pub struct Player {
     pending_floor_dust: Option<FloorDust>,
     /// W4-g66 — the tick's queued `WingAirVisuals` call (`Player.cs:26817`).
     pending_wing_air_dust: Option<WingAirDust>,
+    /// W4-g66 — the tick's queued wing-glide dust (`Player.cs:27040-27315`).
+    pending_wing_glide_dust: Option<WingGlideDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3066,6 +3087,7 @@ impl Player {
             pending_double_jump_dust: None,
             pending_floor_dust: None,
             pending_wing_air_dust: None,
+            pending_wing_glide_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3695,6 +3717,12 @@ impl Player {
         self.pending_wing_air_dust.take()
     }
 
+    /// W4-g66 — takes the wing-glide dust snapshot (`Player.cs:27040-27315`);
+    /// drained on `UpdatePlayers` (`player_wing_dust::drain_wing_glide`).
+    pub(crate) fn take_wing_glide_dust(&mut self) -> Option<WingGlideDust> {
+        self.pending_wing_glide_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3886,6 +3914,7 @@ impl Player {
         self.pending_double_jump_dust = None;
         self.pending_floor_dust = None;
         self.pending_wing_air_dust = None;
+        self.pending_wing_glide_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -10330,15 +10359,33 @@ impl Player {
             }
             // `:27034-27350`: the wing glide — jump held while falling: the
             // fall origin refreshes per tick (`:27037`, no fall damage
-            // accrues), the per-wing glide dust rolls (`:27040-27337`) are
-            // visual seams, then gravity / 3 and the fall cap / 3 — the cap
-            // SKIPS while hover-down (`:27342`, the dampening owns the float).
+            // accrues), W4-g66 queues the per-wing glide dust rolls
+            // (`:27040-27315`, drained by `player_wing_dust::drain_wing_glide`),
+            // then gravity / 3 and the fall cap / 3 — the cap SKIPS while
+            // hover-down (`:27342`, the dampening owns the float).
             if self.wings_logic > 0
                 && self.control_jump
                 && self.vy > 0.0
                 && !self.is_performing_down_dash()
             {
                 self.fall_start = (self.y / TILE_PX) as i32;
+                self.pending_wing_glide_dust = Some(WingGlideDust {
+                    wings: self.wings_logic,
+                    x: self.x,
+                    y: self.y,
+                    width: self.width,
+                    height: self.height,
+                    vx: self.vx,
+                    vy: self.vy,
+                    facing: self.facing,
+                    always_animated: self.should_draw_wings_that_are_always_animated(),
+                });
+                // `:27149-27190`: the wings-4 glide flame's own frame machine
+                // and the `:27194-27333` per-wing frame pins — tick-side
+                // state, the dust rolls ride the drain. The wings-4 Item13
+                // cadence (`:27151-27156`) is an audio seam (the S1-E-21
+                // family owns the rocket cues).
+                self.wing_glide_frames();
                 self.vy += gravity / 3.0;
                 if self.vy > fall_cap / 3.0 && !self.trying_to_hover_down() {
                     self.vy = fall_cap / 3.0;
@@ -10348,6 +10395,66 @@ impl Player {
             return false;
         }
         true
+    }
+
+    /// W4-g66 — the wing-glide frame pins (`Player.cs:27181-27333`): the
+    /// wings-4 flame machine (counter > 4 wraps 0..2) and the per-wing rest
+    /// frames the glide arm owns. No draws — the dust rolls ride
+    /// `player_wing_dust::drain_wing_glide`; the wings-30/34/39 counters
+    /// advance here exactly as the source (their `WingFrame` arms are
+    /// separate).
+    fn wing_glide_frames(&mut self) {
+        match self.wings_logic {
+            // `:27181-27190`: counter > 4 → frame++ wrap at 3.
+            4 => {
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter > 4 {
+                    self.wing_frame += 1;
+                    self.wing_frame_counter = 0;
+                    if self.wing_frame >= 3 {
+                        self.wing_frame = 0;
+                    }
+                }
+            }
+            // `:27194-27203`: 5-tick rows 1..3.
+            30 => {
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter >= 15 {
+                    self.wing_frame_counter = 0;
+                }
+                self.wing_frame = 1 + self.wing_frame_counter / 5;
+            }
+            // `:27204-27213`: 7-tick rows 0..5.
+            34 => {
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter >= 42 {
+                    self.wing_frame_counter = 0;
+                }
+                self.wing_frame = self.wing_frame_counter / 7;
+            }
+            48 => self.wing_frame = 3,   // `:27216-27219`
+            40 => self.wing_frame = 0,   // `:27222-27225`
+            44 => self.wing_frame = 2,   // `:27226-27229`
+            // `:27230-27239`: 12-tick rows 0..5.
+            39 => {
+                self.wing_frame_counter += 1;
+                if self.wing_frame_counter >= 72 {
+                    self.wing_frame_counter = 0;
+                }
+                self.wing_frame = self.wing_frame_counter / 12;
+            }
+            // `:27240-27273` / `:27274-27316`: the Beetle/Festive glide dust
+            // arms pin frame 2 after their rolls.
+            26 | 37 => self.wing_frame = 2,
+            43 => self.wing_frame = 1,   // `:27319-27322`
+            12 => self.wing_frame = 3,   // `:27325-27328`
+            // `:27329-27332`: the default glide rest frame — 22/28/51/47/45/
+            // 24/49/50 keep theirs (the else-if chain's exclusion gates).
+            w if !matches!(w, 22 | 28 | 51 | 47 | 45 | 24 | 49 | 50) => {
+                self.wing_frame = 2;
+            }
+            _ => {}
+        }
     }
 
     /// `Player.WingMovement` (`Player.cs:22023-22243`): the ascent physics —

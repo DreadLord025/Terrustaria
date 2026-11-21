@@ -1534,6 +1534,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_wing_air_dust() {
                 crate::player_wing_dust::drain_wing_air(app, burst);
             }
+            // W4-g66 — the wing-glide dust (`Player.cs:27040-27315`): the
+            // jump-held falling arm's per-wing rolls; the frame machines ran
+            // in the tick (`wing_glide_frames`).
+            if let Some(burst) = p.take_wing_glide_dust() {
+                crate::player_wing_dust::drain_wing_glide(app, burst);
+            }
             // W4-g66 — `FloorVisuals` → `MakeFloorDust` (`Player.cs:28271`,
             // `:23790-24043`): the landing burst / running puffs after the
             // movement block, before `PlayerFrame`'s draws (`:28286`). The

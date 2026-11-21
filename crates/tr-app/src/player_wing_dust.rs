@@ -15,7 +15,7 @@
 //! truncates the f32 hitbox first.
 
 use crate::app::App;
-use crate::player::WingAirDust;
+use crate::player::{WingAirDust, WingGlideDust};
 use crate::player_dust::nd;
 use glam::Vec2;
 use tr_core::particles::Color;
@@ -254,6 +254,107 @@ fn nebula_trail(app: &mut App, b: &WingAirDust) {
         d.scale = 1.2;
         d.velocity *= 0.2;
         d.alpha = 200;
+    }
+}
+
+/// Drain the wing-glide dust (`Player.cs:27040-27315`). The tick ran the
+/// frame machines (`wing_glide_frames`); this replays the rolls in source
+/// order. The wings-4 Item13 cadence (`:27151-27156`) is an audio seam.
+pub(crate) fn drain_wing_glide(app: &mut App, b: WingGlideDust) {
+    let cx = b.x + (b.width as i32 / 2) as f32;
+    let mid_y = b.y + (b.height as i32 / 2) as f32 - 15.0;
+    // `:27040-27053`: wings 10 — 1/3 type-76 (the WingAirVisuals shape).
+    if b.wings == 10 && roll(app, 3) {
+        let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 76, 0.0, 0.0, 50, Color::default(), 0.6);
+        let d = app.dust.slot_mut(idx);
+        d.fade_in = 1.1;
+        d.no_gravity = true;
+        d.no_light = true;
+        d.velocity *= 0.3;
+    }
+    // `:27054-27068`: wings 34 — the always-animated gate BEFORE the roll.
+    if b.wings == 34 && b.always_animated && roll(app, 3) {
+        let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 261, 0.0, 0.0, 50, Color::default(), 0.6);
+        let d = app.dust.slot_mut(idx);
+        d.fade_in = 1.1;
+        d.no_gravity = true;
+        d.no_light = true;
+        d.no_light_emittance = false;
+        d.velocity *= 0.3;
+    }
+    // `:27069-27083`: wings 51 — 1/5, the tinted 261.
+    if b.wings == 51 && roll(app, 5) {
+        let idx = nd(app, Vec2::new(cx + back_off(b.facing), mid_y), 30, 30, 261, 0.0, 0.0, 50, Color::new(230, 130, 55, 255), 0.6);
+        let d = app.dust.slot_mut(idx);
+        d.fade_in = 1.1;
+        d.no_gravity = true;
+        d.no_light = true;
+        d.no_light_emittance = false;
+        d.velocity *= 0.3;
+    }
+    // `:27092-27104`: wings 9 — 1/3 type-6, offset 8/−40 (NOT 4).
+    if b.wings == 9 && roll(app, 3) {
+        let off = if b.facing == 1 { -40.0 } else { 8.0 };
+        let idx = nd(app, Vec2::new(cx + off, mid_y), 30, 30, 6, 0.0, 0.0, 200, Color::default(), 2.0);
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 0.3;
+        d.no_light_emittance = false;
+    }
+    // `:27105-27121`: wings 29 — 1/3 type-6 scale 2.4, offset 8/−40.
+    if b.wings == 29 && roll(app, 3) {
+        let off = if b.facing == 1 { -40.0 } else { 8.0 };
+        let idx = nd(app, Vec2::new(cx + off, mid_y), 30, 30, 6, 0.0, 0.0, 100, Color::default(), 2.4);
+        let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let d = app.dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 0.3;
+        d.no_light_emittance = false;
+        if rng.next_max(10) == 0 {
+            d.fade_in = 2.0;
+        }
+    }
+    // `:27122-27148`: wings 6 → 1/10 type-55 at mid−12; ELSE wings 5 → 1/6
+    // type-58 (the else-if chain — 6 never reaches the 5 arm).
+    if b.wings == 6 {
+        if roll(app, 10) {
+            let idx = nd(app, Vec2::new(cx + back_off(b.facing), b.y + (b.height as i32 / 2) as f32 - 12.0), 30, 20, 55, 0.0, 0.0, 200, Color::default(), 1.0);
+            let d = app.dust.slot_mut(idx);
+            d.no_light_emittance = false;
+            d.velocity *= 0.3;
+        }
+    } else if b.wings == 5 && roll(app, 6) {
+        let idx = nd(app, Vec2::new(cx + low_off(b.facing), b.y), 18, b.height as i32, 58, 0.0, 0.0, 255, Color::default(), 1.2);
+        let d = app.dust.slot_mut(idx);
+        d.velocity *= 0.3;
+        d.no_light_emittance = false;
+    }
+    // `:27149-27191`: wings 4 — the jetpack glide flame. The 1/2 side roll
+    // picks the inner box (+8/−20, y+6); post: `velocity.X *= 0.3`,
+    // `velocity.Y += 10`, noGravity.
+    if b.wings == 4 {
+        let mut x = cx + 16.0;
+        if b.facing > 0 {
+            x = cx - 26.0;
+        }
+        let mut y = b.y + b.height - 18.0;
+        let side = {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            rng.next_max(2)
+        };
+        if side == 1 {
+            x = cx + 8.0;
+            if b.facing > 0 {
+                x = cx - 20.0;
+            }
+            y += 6.0;
+        }
+        let idx = nd(app, Vec2::new(x, y), 8, 8, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+        let d = app.dust.slot_mut(idx);
+        d.velocity.x *= 0.3;
+        d.velocity.y += 10.0;
+        d.no_gravity = true;
+        d.no_light_emittance = false;
     }
 }#[cfg(test)]
 mod tests {
@@ -567,5 +668,168 @@ mod tests {
             assert!(d.no_gravity);
         }
         assert_eq!(stream_of(&mut app), rng);
+    }
+    /// The glide snapshot helper.
+    fn glide(wings: i32) -> WingGlideDust {
+        WingGlideDust {
+            wings,
+            x: 300.0,
+            y: 600.0,
+            width: 20.0,
+            height: 42.0,
+            vx: 3.0,
+            vy: 2.0,
+            facing: 1,
+            always_animated: true,
+        }
+    }
+
+    /// `:27040-27083` вЂ” the glide 10/34/51 arms: 1/3, 1/3 (always-animated
+    /// gated), 1/5 gates; the 34 gate refuses WITHOUT a roll when grounded.
+    #[test]
+    fn w4_g66_the_glide_mid_arms_gate_per_wing() {
+        for (wings, gate, ty) in [(10, 3, 76), (34, 3, 261), (51, 5, 261)] {
+            let mut seed = 1;
+            while UnifiedRandom::new(seed).next_max(gate) != 0 {
+                seed += 1;
+            }
+            let mut app = rig(seed);
+            drain_wing_glide(&mut app, glide(wings));
+            let slots = live(&app);
+            assert_eq!(slots.len(), 1, "wings {wings}");
+            assert_eq!(slots[0].dust_type, ty);
+            assert_eq!(slots[0].fade_in, 1.1);
+            let mut rng = UnifiedRandom::new(seed);
+            let _ = rng.next_max(gate);
+            let (pos, vel, sc) = default_block(
+                &mut rng,
+                Vec2::new(310.0 - 40.0, 600.0 + 21.0 - 15.0),
+                30,
+                30,
+                0.6,
+            );
+            assert_eq!(slots[0].position, pos);
+            assert_eq!(slots[0].velocity, vel * 0.3);
+            assert_eq!(slots[0].scale, sc);
+            assert_eq!(stream_of(&mut app), rng);
+        }
+        // The 34 always-animated gate refuses before the roll.
+        let mut app = rig(0x5EED);
+        let mut g = glide(34);
+        g.always_animated = false;
+        drain_wing_glide(&mut app, g);
+        assert_eq!(live(&app).len(), 0);
+        assert_eq!(stream_of(&mut app), UnifiedRandom::new(0x5EED));
+    }
+
+    /// `:27122-27148` вЂ” the 6/5 else-if: wings 6 rolls 1/10 at midв€’12; wings
+    /// 5 rolls 1/6 at the lower box. The 6 arm never reaches the 5 roll.
+    #[test]
+    fn w4_g66_the_glide_bone_and_fairy_arms_are_exclusive() {
+        let mut seed = 1;
+        while UnifiedRandom::new(seed).next_max(10) != 0 {
+            seed += 1;
+        }
+        let mut app = rig(seed);
+        drain_wing_glide(&mut app, glide(6));
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].dust_type, 55);
+        let mut rng = UnifiedRandom::new(seed);
+        let _ = rng.next_max(10);
+        let (pos, vel, sc) = default_block(
+            &mut rng,
+            Vec2::new(310.0 - 40.0, 600.0 + 21.0 - 12.0),
+            30,
+            20,
+            1.0,
+        );
+        assert_eq!(slots[0].position, pos);
+        assert_eq!(slots[0].velocity, vel * 0.3);
+        assert_eq!(slots[0].scale, sc);
+        assert_eq!(stream_of(&mut app), rng);
+        // Wings 5: the 1/6 gate.
+        let mut seed = 1;
+        while UnifiedRandom::new(seed).next_max(6) != 0 {
+            seed += 1;
+        }
+        let mut app = rig(seed);
+        drain_wing_glide(&mut app, glide(5));
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        assert_eq!(slots[0].dust_type, 58);
+        let mut rng = UnifiedRandom::new(seed);
+        let _ = rng.next_max(6);
+        let (pos, vel, sc) =
+            default_block(&mut rng, Vec2::new(310.0 - 30.0, 600.0), 18, 42, 1.2);
+        assert_eq!(slots[0].position, pos);
+        assert_eq!(slots[0].velocity, vel * 0.3);
+        assert_eq!(slots[0].scale, sc);
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    /// `:27149-27191` вЂ” the jetpack glide flame: the 1/2 side roll picks the
+    /// box, the type-6 tweak chain rides new_dust, then X Г—0.3 / Y += 10.
+    #[test]
+    fn w4_g66_the_jetpack_glide_flame_picks_a_side() {
+        for side in [0, 1] {
+            let mut seed = 1;
+            while UnifiedRandom::new(seed).next_max(2) != side {
+                seed += 1;
+            }
+            let mut app = rig(seed);
+            let g = glide(4);
+            drain_wing_glide(&mut app, g);
+            let slots = live(&app);
+            assert_eq!(slots.len(), 1);
+            let d = slots[0];
+            assert_eq!(d.dust_type, 6);
+            let mut rng = UnifiedRandom::new(seed);
+            let _ = rng.next_max(2);
+            let (x, y) = if side == 1 {
+                (310.0 - 20.0, 600.0 + 42.0 - 18.0 + 6.0)
+            } else {
+                (310.0 - 26.0, 600.0 + 42.0 - 18.0)
+            };
+            let (pos, vel, mut sc) =
+                default_block(&mut rng, Vec2::new(x, y), 8, 8, 1.5);
+            let vy = rng.next_range(-10, 6) as f32 * 0.1;
+            sc *= 0.7;
+            assert_eq!(d.position, pos);
+            assert_eq!(d.velocity, Vec2::new(vel.x * 0.3 * 0.3, vy + 10.0));
+            assert_eq!(d.scale, sc);
+            assert!(d.no_gravity);
+            assert_eq!(stream_of(&mut app), rng);
+        }
+    }
+
+    /// The tick side: the glide arm queues the snapshot and runs the frame
+    /// pins вЂ” the wings-26/37 glide pins frame 2, the default arm too.
+    #[test]
+    fn w4_g66_the_glide_tick_queues_and_pins_the_frame() {
+        let w = World::new("t".into(), 64, 128);
+        let mut p = crate::player::Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, crate::player::PlayerInput::default());
+        }
+        p.equipped[3] = 2609; // Beetle Wings вЂ” wings_logic 26
+        p.update(&w, crate::player::PlayerInput::default());
+        assert_eq!(p.wings_logic, 26);
+        // Airborne, falling, jump held, no wing budget: the glide arm.
+        p.y -= 200.0;
+        p.vy = 2.0;
+        p.wing_time = 0.0;
+        p.jump = 0;
+        p.update(
+            &w,
+            crate::player::PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let g = p.take_wing_glide_dust().expect("the glide queues");
+        assert_eq!(g.wings, 26);
+        assert!(g.vy > 0.0, "the pre-integration velocity");
+        assert_eq!(p.wing_frame, 2, "the Beetle glide pin");
     }
 }
