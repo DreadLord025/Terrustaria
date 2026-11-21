@@ -1717,6 +1717,15 @@ pub struct Npc {
     /// Bubble's wind blend reads it (`NPC.cs:34903`). The AI's `&World`
     /// borrow cannot reach `app.wind`; 0 until the sim stamps it.
     pub wind_speed_current: f32,
+    /// `Main.player[target].ZoneGraveyard` pre-stamped by the sim before the
+    /// update (the `wind_speed_current` pre-pass convention) — the fighter
+    /// bash gate (`NPC.cs:59997`) and the despawn-discouragement chain
+    /// (`:60302`) read it. The port is single-player, so the session
+    /// player's `scene_metrics.zone_graveyard` (the d120 biome pass) stands
+    /// in for the target's zone; the AI's `&World` borrow cannot reach
+    /// `app.scene_metrics`. False until the sim stamps it (the solo/test
+    /// path keeps the legacy zero-draw short-circuit).
+    pub target_zone_graveyard: bool,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -3086,6 +3095,7 @@ impl Npc {
             wants_fishron_trail: Vec::new(),
             wants_fishron_bolts: Vec::new(),
             wind_speed_current: 0.0,
+            target_zone_graveyard: false,
             twin_time_lefts: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
@@ -5728,7 +5738,7 @@ impl Npc {
             // S1-D-3z — the Blood Zombie (489) rides the same aiStyle-3
             // walker (`NPC.cs:14609`); its `num107` cap is the
             // distance-scaled 489 row (`npc_ai3_speeds.rs:550`).
-            | NpcKind::BloodZombie => self.update_zombie(world, player, dt),
+            | NpcKind::BloodZombie => self.update_zombie(world, player, dt, rng),
             NpcKind::Guide
             | NpcKind::DD2Bartender
             | NpcKind::Merchant
@@ -9178,7 +9188,13 @@ impl Npc {
     }
 
     /// `AI_003_Fighters`: walk toward the player and jump when the path is blocked.
-    fn update_zombie(&mut self, world: &World, player: &mut Player, _dt: f32) {
+    fn update_zombie(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        _dt: f32,
+        rng: &mut UnifiedRandom,
+    ) {
         // S1-D-3ff: the ten zombie variants share the 18x40 box; read it
         // off the kind like the C# arm does (`kind.size()` keeps the
         // base Zombie's behaviour byte-identical).
@@ -9197,12 +9213,14 @@ impl Npc {
         // under the `DespawnEncouragement_AIStyle3_Fighters_NotDiscouraged`
         // gate (`:57336`, `:60300-60330`). For the zombie (type 3) that
         // gate is false only on a non-eclipse day above the surface
-        // (`!Main.eclipse && IsItDay() && !SpawnedFromStatue &&
-        // !(position.Y > worldSurface * 16)`); the graveyard/invasion/
-        // event terms cannot fire for this kind in the port. The walker
-        // migration batch 1 ported the FULL gate as
-        // `npc_ai::fighters_not_discouraged`; the zombie's own fold stays
-        // until its arm joins a batch.
+        // outside a graveyard (`!Main.eclipse && IsItDay() &&
+        // !SpawnedFromStatue && !(position.Y > worldSurface * 16) &&
+        // !ZoneGraveyard`); the invasion/event terms cannot fire for this
+        // kind in the port. The walker migration batch 1 ported the FULL
+        // gate as `npc_ai::fighters_not_discouraged`; the zombie's own
+        // fold stays until its arm joins a batch. W4-g4 lane 15: the
+        // graveyard term rides the sim's pre-stamp
+        // (`target_zone_graveyard` ← `scene_metrics.zone_graveyard`).
         // The candidate rides the shared seam (the batch-1 convention):
         // the player's live `aggro`/`npcTypeNoAggro` fields (stock 0 /
         // all-false until the stealth/calm systems land), the tank-pet
@@ -9211,7 +9229,8 @@ impl Npc {
         let discouraged = !world.eclipse
             && world.day_time
             && !self.spawned_from_statue
-            && !((self.y as f64) > world.world_surface * 16.0);
+            && !((self.y as f64) > world.world_surface * 16.0)
+            && !self.target_zone_graveyard;
         // S1-D-3z (zombie fighter audit) — the chase gate's MISSING idle
         // term: `NPC.cs:57336` is `ai[3] < num57 && NotDiscouraged(...)`,
         // and `num57` is 60 for the zombie family (the type-120 row's 180,
@@ -9297,10 +9316,11 @@ impl Npc {
         // request, drained in `world_sim/npcs.rs`) and the probe jump
         // ladder (-8/-7/-6/-5 tiers + the gap leap). Runs at the C#'s
         // position — after the chase/despawn arms and the num107 ladder,
-        // BEFORE the gravity + collision integration. The scan draws
-        // zero rand (the bash's Next(60) short-circuits on the unported
-        // graveyard zone — the module's RNG census).
-        crate::npc_ai_fighter_scan::fighter_obstacle_scan(self, world);
+        // BEFORE the gravity + collision integration. W4-g4 lane 15: the
+        // scan takes the caller's stream — its only draw is the graveyard
+        // bash gate's Next(60) (`:59997`); outside a graveyard the zone
+        // short-circuit keeps it zero-draw (the module's RNG census).
+        crate::npc_ai_fighter_scan::fighter_obstacle_scan(self, world, rng);
         self.vy = (self.vy + GRAVITY).min(MAX_FALL);
 
         let nx = self.x + self.vx;

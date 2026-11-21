@@ -4249,6 +4249,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-g4 lane 15 — `Main.player[target].ZoneGraveyard` pre-stamp (the
+    // wind pre-pass convention above): the fighter bash gate
+    // (`NPC.cs:59997`) and the despawn-discouragement chain (`:60302`)
+    // read the TARGET player's zone; the port is single-player, so the
+    // session player's `scene_metrics.zone_graveyard` (the d120 biome
+    // pass, captured above for the moan gate) stands in. Stamped on every
+    // slot — any kind's `TargetClosest` may pick the session player.
+    {
+        for n in app.npcs.iter_mut() {
+            n.target_zone_graveyard = zone_graveyard;
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding
@@ -17594,9 +17606,10 @@ mod dw3_tests {
     /// `KillTile(fail: true)` thud and opens nothing; with `open = true`
     /// on a closed door it calls `edit::open_door` (the cell turns to the
     /// open door, tile 11) and plays the `Door_Opened` cue. The request
-    /// drains either way. (The scan itself draws nothing — the bash's
-    /// `Next(60)` short-circuits on the unported graveyard zone; the door
-    /// cue's one pitch draw rides `UpdateNPCs`, `WorldGen.cs:37732`.)
+    /// drains either way. (W4-g4 lane 15: the scan's only draw is the
+    /// graveyard bash gate's `Next(60)` — outside a graveyard the zone
+    /// guard short-circuits it; the door cue's one pitch draw rides
+    /// `UpdateNPCs`, `WorldGen.cs:37732`.)
     #[test]
     fn s1_d_3z_the_door_bash_drain_opens_the_door() {
         use tr_core::tile::{Tile, FLAG_ACTIVE};
@@ -17686,6 +17699,84 @@ mod dw3_tests {
             Some(389),
             "the tall gate shifted to its open kind (389)"
         );
+    }
+
+    /// W4-g4 lane 15 — the graveyard bash wiring end to end: the sim
+    /// pre-stamps `target_zone_graveyard` from `scene_metrics.zone_graveyard`
+    /// (the d120 biome pass), and a 60-tick bash inside the zone spends
+    /// exactly one `Next(60)` on the `UpdateNPCs` stream (`NPC.cs:59997`).
+    /// The twin replays the scan draw + the sim-tail moan roll (the
+    /// S1-E-21e position convention); outside the zone the same fixture
+    /// is draw-free apart from the moan (the legacy census).
+    #[test]
+    fn w4_g4_the_graveyard_bash_draws_on_the_update_npcs_stream() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let build = |graveyard: bool| {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let mut world = crate::test_world_helpers::ground();
+            world.compute_column_surface();
+            world.day_time = false;
+            world.blood_moon = true; // flag27 false either way
+            app.world = world;
+            let mut player = crate::player::Player::spawn(&app.world);
+            player.x = 150.0 * 16.0;
+            player.y = 110.0 * 16.0;
+            app.player = Some(player);
+            app.scene_metrics.zone_graveyard = graveyard;
+            // A closed door (10) at the zombie's probe cell (21, 118):
+            // the zombie at x = 319 (centre 328 + 15 → col 21), feet on
+            // row 120's top (y = 1880), probe row (1880+40-15)/16 = 119,
+            // the door at 119 - 1 = 118 (the 1x3 door rows 117-119).
+            for (dy, frame_y) in [(117i32, 0i16), (118, 18), (119, 36)] {
+                let i = app.world.index(21, dy);
+                app.world.tiles[i] =
+                    Tile { kind: 10, frame_x: 0, frame_y, ..Default::default() };
+                app.world.tiles[i].flags |= FLAG_ACTIVE;
+            }
+            let mut zombie = Npc::new(NpcKind::Zombie, 319.0, 1880.0, 1, 0.0);
+            zombie.hp = zombie.max_hp;
+            zombie.vx = 1.0;
+            zombie.sprite_dir = 1;
+            zombie.ai[2] = 59.0; // the next scan hits 60 → the bash fires
+            app.npcs.push(zombie);
+            app.rngs = crate::app::rng::NamedRngs::new(app.world.seed as i32);
+            app
+        };
+        // Inside the graveyard: one Next(60) ahead of the moan roll.
+        let mut a = build(true);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert!(a.npcs[0].target_zone_graveyard, "the pre-stamp landed");
+        assert!(a.npcs[0].wants_door_bash.is_none(), "the bash drained");
+        let after = a.rngs.stream(RngKey::UpdateNpcs).clone();
+        let mut twin_rng = UnifiedRandom::new(a.world.seed as i32);
+        let _bash = twin_rng.next_max(60); // the scan's ONE draw (:59997)
+        // The sim-tail moan (the DW-3.1 replay shape): the night gate
+        // passes, the type-3 arm spends its Next(1000).
+        crate::ambient_sound::fighter_ambient_moans(
+            3,
+            a.npcs[0].ai[3],
+            true,
+            a.npcs[0].shimmer_transparency,
+            &mut twin_rng,
+            &mut |_, _, _| {},
+        );
+        assert_eq!(after, twin_rng, "bash Next(60) + moan Next(1000), in order");
+        // Outside the graveyard: the zone guard short-circuits — the
+        // stream carries ONLY the moan roll (the legacy zero-draw bash).
+        let mut b = build(false);
+        update_npcs(&mut b, 1.0 / 60.0);
+        assert!(!b.npcs[0].target_zone_graveyard);
+        let after_b = b.rngs.stream(RngKey::UpdateNpcs).clone();
+        let mut twin_b = UnifiedRandom::new(b.world.seed as i32);
+        crate::ambient_sound::fighter_ambient_moans(
+            3,
+            b.npcs[0].ai[3],
+            true,
+            b.npcs[0].shimmer_transparency,
+            &mut twin_b,
+            &mut |_, _, _| {},
+        );
+        assert_eq!(after_b, twin_b, "no bash draw outside the graveyard");
     }
 }
 

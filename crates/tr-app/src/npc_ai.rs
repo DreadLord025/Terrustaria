@@ -270,14 +270,17 @@ pub fn run_ai3_ladder(
 /// true — every fighter chases.
 ///
 /// Stock stand-ins (documented, ANALYSIS "The shared target selection"):
-/// `Main.player[target].ZoneGraveyard` and `Main.dontStarveWorld` have no
-/// port fields — both read false, so their chain terms pass; the
-/// `Main.remixWorld` half of `IsItDay` (`Main.cs:62825-62832`) is unported
-/// (`world.day_time` stands in).
+/// `Main.dontStarveWorld` has no port field — it reads false, so its chain
+/// term passes; the `Main.remixWorld` half of `IsItDay`
+/// (`Main.cs:62825-62832`) is unported (`world.day_time` stands in).
+/// `Main.player[target].ZoneGraveyard` rides the sim's pre-stamp
+/// (`Npc::target_zone_graveyard` ← `scene_metrics.zone_graveyard`, W4-g4
+/// lane 15 — the d120 biome pass); false outside the sim (the solo/test
+/// convention).
 pub fn fighters_not_discouraged(npc: &Npc, world: &World) -> bool {
     let id = npc.kind.cs_id();
-    // `Main.player[npcInstance.target].ZoneGraveyard` — unported, false.
-    let zone_graveyard = false;
+    // `Main.player[npcInstance.target].ZoneGraveyard` — the pre-stamp.
+    let zone_graveyard = npc.target_zone_graveyard;
     let chain = !world.eclipse
         && world.day_time // `Main.IsItDay()` (`Main.cs:62825-62832`)
         && !npc.spawned_from_statue
@@ -1089,6 +1092,23 @@ mod tests {
         sk.y = 1880.0;
         w.eclipse = true;
         assert!(fighters_not_discouraged(&sk, &w));
+    }
+
+    /// W4-g4 lane 15 — the graveyard term of the chain (`NPC.cs:60302`'s
+    /// `!Main.player[target].ZoneGraveyard`): a day-discouraged skeleton
+    /// above the surface chases again when the target's zone pre-stamp
+    /// is set (the sim feeds `scene_metrics.zone_graveyard`).
+    #[test]
+    fn w4_g4_the_graveyard_stamp_cancels_the_day_discouragement() {
+        let mut w = ground(); // day
+        w.world_surface = 130.0;
+        let mut sk = Npc::new(NpcKind::Skeleton, 1600.0, 1880.0, 1, 0.0);
+        assert!(!fighters_not_discouraged(&sk, &w), "the day gate holds");
+        sk.target_zone_graveyard = true;
+        assert!(
+            fighters_not_discouraged(&sk, &w),
+            "the graveyard zone breaks the chain (:60302)"
+        );
     }
 
     #[test]
