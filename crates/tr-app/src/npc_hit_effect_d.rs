@@ -4160,12 +4160,12 @@ fn cyborg_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88446
 }
 
-/// The 212-216 pirate crew death (`NPC.cs:88448-88502`): the 50x dust-5
-/// burst at (2.5·hd, −2.5), then the per-kind ladder, scale 1f, NO
-/// shimmer (the invasion pirates have no town variants). The live
-/// kinds: 212 Deckhand → 336/337x2/338x2 (`:88464-88468`, sites
-/// 620-624), 213 Corsair → 339/340x2/341x2 (`:88472-88476`, sites
-/// 625-629); the 214/215/216 tails land next batch.
+/// The 212-216 pirate crew death (`NPC.cs:88448-88502`, sites 620-644):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then the per-kind ladder,
+/// scale 1f, NO shimmer (the invasion pirates have no town variants):
+/// 212 Deckhand → 336/337x2/338x2, 213 Corsair → 339/340x2/341x2, 214
+/// Deadeye → 342/343x2/344x2, 215 Crossbower → 345/346x2/347x2; the 216
+/// Captain tail (348/349x2/350x2) lands next batch.
 fn pirate_crew_death(
     npc: &Npc,
     npc_type: i32,
@@ -4189,7 +4189,9 @@ fn pirate_crew_death(
     let (head, mid, legs) = match npc_type {
         212 => (336, 337, 338), // :88464-88468
         213 => (339, 340, 341), // :88472-88476
-        _ => return,            // the 214/215/216 tails land next batch
+        214 => (342, 343, 344), // :88480-88484
+        215 => (345, 346, 347), // :88488-88492
+        _ => return,            // the 216 Captain tail lands next batch
     };
     gore.new_gore(rng, world, pos, vel, head, 1.0);
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0);
@@ -4700,8 +4702,8 @@ pub fn hit_effect_d(
     else if npc_type == 209 {
         cyborg_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:88448-88502` — the 212-216 pirate crew arm; the 212/213 ladders
-    // are live (sites 620-629), the 214/215/216 tails land next batch.
+    // `:88448-88502` — the 212-216 pirate crew arm; the 212-215 ladders
+    // are live (sites 620-639), the 216 Captain tail lands next batch.
     else if (212..=216).contains(&npc_type) {
         pirate_crew_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
@@ -8118,6 +8120,34 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, want, "pirate {kind}");
             let mut twin = UnifiedRandom::new(619);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "pirate {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88480-88492` — the pirate crew tails: 214 Deadeye
+    /// 342/343x2/344x2, 215 Crossbower 345/346x2/347x2.
+    #[test]
+    fn w4_f5d_the_pirate_crew_tails() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (214, vec![342, 343, 343, 344, 344]),
+            (215, vec![345, 346, 346, 347, 347]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(631);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "pirate {kind}");
+            let mut twin = UnifiedRandom::new(631);
             for _ in 0..50 {
                 twin_dust(&mut twin, 30, 44);
             }
