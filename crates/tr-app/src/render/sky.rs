@@ -1036,8 +1036,9 @@ pub(crate) fn draw_sky(
     //
     // `DrawSurfaceBG_BackMountainsStep1`: far mountains, parallax 0.15, scale 2.0,
     // each biome at its `bgAlphaFarBackLayer` value. Vanilla order is 0, 1 (desert),
-    // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4`; our
-    // generator never uses that style.
+    // then 4 (snow). `Background_22/23` are skipped for `desertBG == 4` (the
+    // oasis style, `Main.cs:59850`/`:59906`); the snow mountains come from the
+    // world's `setBG(3)` style and carry their `GetLayerYOffset`.
     // Step1's first act is `DrawToDepth(1f/0.15)` (`Main.cs:59812`): the
     // closest entities (EOC slices above depth 6.667) draw behind the
     // mountains.
@@ -1140,8 +1141,8 @@ pub(crate) fn draw_sky(
     }
 
     // `DrawSurfaceBG_BackMountainsStep2`: near mountains, parallax 0.20, scale 2.3,
-    // in vanilla order: forest (0), desert (1), ocean (`Main.oceanBG`,
-    // `Background_28`, 3), snow (4).
+    // in vanilla order: forest (0), desert (1), ocean (`Main.oceanBG` from
+    // `setBG(7)`, far slot 3), snow (4, `Main.snowMntBG[1]`).
     if show_bg {
         if far_forest > 0.0 {
             if let Some(near) = sky.near {

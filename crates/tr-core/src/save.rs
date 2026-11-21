@@ -55,6 +55,9 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// / `jungleBG` / `hallowBG` / `crimsonBG` at `WorldFile.cs:1319-1323` and
 /// `mushroomBG` at `:1375`) that the `DrawSurfaceBG_*` variants resolve their
 /// `Background_<id>` sheets from; a pre-v16 file loads the `setBG` defaults.
+/// v18 appended the three remaining surface style bytes (`snowBG`/`desertBG`/
+/// `oceanBG`, `WorldFile.cs:1321`/`:1324-1325`, the W4-g71 lane); a pre-v18
+/// file loads those three at the slot-0 defaults.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats

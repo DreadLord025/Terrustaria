@@ -1305,6 +1305,30 @@ biome (`corrupt_bg_style`, вЂ¦), and `surface_bg_texture_ids` resolves it to 
 no atlas rebuild вЂ” but the world-dependent sheets are packed at load
 (`assets::load_world_sheets`), hence a world's session must see one style set.
 
+**W4-g71 (2026-11-20, code-only)** adopted the three remaining surface `setBG` slots:
+snow (3, `WorldGen.cs:7317-7423` — the 16-arm style table incl the `-1` triplets of
+styles 2/3/4 and the `snowMntBG` mountain pair), desert (6, `:7501-7546` — the four
+`BackgroundVariantSet` rows Pure/Corrupt/Crimson/Hallow, `HasAny` per
+`BackgroundVariant.cs:9-19`) and ocean (7, `:7548-7576` — a single far-layer id).
+`World` gained `snow_bg_style`/`desert_bg_style`/`ocean_bg_style` (persisted in the
+`.wld` setBG bytes at tail 91/94/95 and the `.trwld` v18 tail; pre-v18 files load the
+slot-0 defaults). The draw side: `bg_offsets` carries the snow 258-268/298/299 and
+desert 248-250/207/303-318 arms of `SetBackgroundOffsets`, `layer_y_offset` is now the
+**complete** `GetLayerYOffset` switch (`Main.cs:59740-59797`), Step1/2 skip the desert
+mountains 23/22 for `desertBG == 4` and apply the snow/ocean mountain Y offsets,
+`DrawSurfaceBG_Desert` runs on `Pure.Backgrounds` (the oasis style 4 adds the third row
+250), and `DrawSurfaceBG_GoodEvilDesert` (`:60868-60926`) dispatches front styles
+5/13/14 to the variant sets or the 26/27 fallback dunes. The cross-fade arm
+(`UpdateBGVisibility_FrontLayer_IsDesertVariantSwap`, `:64120-64143`) holds the outgoing
+variant's alpha until the incoming one reaches 1 (`:64109`) when both sets `HasAny`;
+the far-side twin (`:64268`) is kept verbatim and is inert by construction (the far
+target of every desert variant is slot 2, which is never an outgoing variant slot).
+`GetPreferredBGStyleForPlayer`'s desert branch (`:64225`) now selects 5/14/2/13 through
+the pure `desert_preferred_style` helper. `UpdateOceanWaterLineForAmbience`'s geometry
+(`:59965-59984`) is ported as `ocean_water_line_offset`; the ambience ocean-line
+**opacity** term stays the documented Q4 constant-1 deviation. 15 witnesses written
+not run (no compiler invoked, code-only mode).
+
 Every row goes through `FrontLayer` + `front_layers`, which is a literal port of each
 `DrawSurfaceBG_*` row: the caller's `(scale, parallax, magicВ·k + top)` magic numbers,
 then `SetBackgroundOffsets` (`Main.cs:60384-60775`) overriding `bgScale`/`bgParallax` and,
@@ -1319,8 +1343,11 @@ The per-row quirks are applied *after* the offsets, exactly like the source: cor
 `DrawSurfaceBG_GetLayerYOffset` on every row (`:59740`, `:60944-61008`); crimson nudges
 row 0 by `+50` for `105` and `-350` for `174`, and row 2's `175` by `-1000` in X, `-400` in
 Y plus one extra tile (`:60206-60291`); hallow's first `SkyManager` boundary is
-`1.2f / parallax` after the offset override (`:60788`); snow and mushroom close with
-`DrawToDepth(1f)` (`:60386`, `:60186`). Row 1 of corrupt/jungle/forest is mirrored
+`1.2f / parallax` after the offset override (`:60788`); mushroom closes with
+`DrawToDepth(1f)` (`:60186`). (The snow close the earlier port carried was a
+deviation — `DrawSurfaceBG_Snow` has **no** trailing `DrawToDepth`, its stratum
+waits for the `DrawRemainingDepth` flush like the other biomes; fixed by
+W4-g71.) Row 1 of corrupt/jungle/forest is mirrored
 (`SpriteEffects.FlipHorizontally`), mushroom's three rows each replace the tint with the
 glow colour (`:60001/60065/60127`), clamped at or above the base colour's byte.
 
