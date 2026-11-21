@@ -2913,6 +2913,159 @@ fn eater_family_death(
     }
 }
 
+/// The 101 Clinger death (`NPC.cs:87537-87555`, sites 432-435): the 50x
+/// dust-18 dye burst (same contract), then 110/114/114/115 at position,
+/// `this.scale` carried.
+fn clinger_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87547-87550` — the 50x dust-18 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 110, s); // :87551
+    gore.new_gore(rng, world, pos, vel, 114, s); // :87552
+    gore.new_gore(rng, world, pos, vel, 114, s); // :87553
+    gore.new_gore(rng, world, pos, vel, 115, s); // :87554
+}
+
+/// The 7/8/9 Devourer death (`NPC.cs:87556-87572`, site 436): the 50x
+/// dust-18 dye burst, then ONE gore `type - 7 + 18` (18/19/20) with the
+/// post `alpha = this.alpha` write, scale 1f (no this.scale argument).
+fn devourer_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87566-87569` — the 50x dust-18 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let idx = gore.new_gore(rng, world, pos, vel, npc_type - 7 + 18, 1.0); // :87570
+    gore.slot_mut(idx).alpha = npc.alpha as i32; // :87571
+}
+
+/// The 98/99/100 Bone Serpent death (`NPC.cs:87573-87589`, site 437):
+/// the 50x dust-18 dye burst, then ONE gore 110 with the post
+/// `alpha = this.alpha` write, scale 1f.
+fn bone_serpent_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87583-87586` — the 50x dust-18 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0,
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let idx = gore.new_gore(rng, world, pos, vel, 110, 1.0); // :87587
+    gore.slot_mut(idx).alpha = npc.alpha as i32; // :87588
+}
+
+/// The 10/11/12 Giant Worm death (`NPC.cs:87590-87605`, site 438): the
+/// 10x dust-5 burst at (2.5·hd, −2.5), then ONE gore `type - 7 + 18`
+/// (21/22/23 — the SAME arithmetic as the Devourer, different base
+/// types), scale 1f.
+fn giant_worm_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87600-87603` — the 10x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 7 + 18, 1.0); // :87604
+}
+
+/// The 95/96/97 Digger death (`NPC.cs:87606-87621`, site 439): the 10x
+/// dust-5 burst at (2.5·hd, −2.5), then ONE gore `type - 95 + 111`
+/// (111/112/113), scale 1f.
+fn digger_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87616-87619` — the 10x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 95 + 111, 1.0); // :87620
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3247,9 +3400,29 @@ pub fn hit_effect_d(
     else if npc_type == 222 {
         queen_bee_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:87502-87536` — the 6/94/166 Eater family arm (sites 423-432).
+    // `:87502-87536` — the 6/94/166 Eater family arm (sites 423-431).
     else if matches!(npc_type, 6 | 94 | 166) {
         eater_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87537-87555` — the 101 Clinger arm (sites 432-435).
+    else if npc_type == 101 {
+        clinger_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87556-87572` — the 7/8/9 Devourer arm (site 436).
+    else if matches!(npc_type, 7 | 8 | 9) {
+        devourer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87573-87589` — the 98/99/100 Bone Serpent arm (site 437).
+    else if matches!(npc_type, 98 | 99 | 100) {
+        bone_serpent_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87590-87605` — the 10/11/12 Giant Worm arm (site 438).
+    else if matches!(npc_type, 10 | 11 | 12) {
+        giant_worm_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87606-87621` — the 95/96/97 Digger arm (site 439).
+    else if matches!(npc_type, 95 | 96 | 97) {
+        digger_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5805,6 +5978,70 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "eater family {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87551-87554` — the Clinger four 110/114/114/115.
+    #[test]
+    fn w4_f5d_the_clinger_spawns_the_four() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(461);
+        let _ = hit_effect_d(&n, 101, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![110, 114, 114, 115]);
+        let mut twin = UnifiedRandom::new(461);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 40);
+        }
+        for _ in 0..4 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the clinger mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87570-87620` — the worm singles: Devourer 18/19/20 (alpha
+    /// post write), Bone Serpent 110 (alpha post write), Giant Worm
+    /// 21/22/23, Digger 111/112/113 — the per-segment arithmetic pinned.
+    #[test]
+    fn w4_f5d_the_worm_singles_pick_the_segment_types() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 26.0, 26.0);
+        n.alpha = 60;
+        for (kind, want, dye) in [
+            (7, 18, true),
+            (8, 19, true),
+            (9, 20, true),
+            (98, 110, true),
+            (99, 110, true),
+            (100, 110, true),
+            (10, 21, false),
+            (11, 22, false),
+            (12, 23, false),
+            (95, 111, false),
+            (96, 112, false),
+            (97, 113, false),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(463);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "worm {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+            if dye {
+                assert_eq!(gore.slot(0).alpha, 60, "the dye worm carries this.alpha");
+            }
+            let mut twin = UnifiedRandom::new(463);
+            let count = if dye { 50 } else { 10 };
+            for _ in 0..count {
+                twin_dust(&mut twin, 26, 26);
+            }
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(rng.peek(), twin.peek(), "worm {kind} mirrors the C# draws");
         }
     }
 }
