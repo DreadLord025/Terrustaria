@@ -253,3 +253,51 @@ of the folds checked by reading: `DustPool::slots()` (`particles.rs:258`),
 `Default` (`:180-181`), `Splash` field set (`item.rs:890`), the
 `ItemDrop::splash` signature (`:1457-1465`) — all match the folded
 calls.
+
+## § FINAL v2 — the SPLASH seal consumed (e19 `0fb0ac4ad`), verdict STANDS
+
+Cross-receipt to the e19 seal (`docs/research/144-splash-keep-one.md`
+at e19 tip `0fb0ac4ad`, read via `git show`, seal section + its 8-row
+f47-drop table). This f47 lane acknowledges the seal and answers it:
+
+1. **e19 entry-gate fix ACKNOWLEDGED — the objection is MOOT.** The
+   e19 tip now parks `let lava_now = player::lava_collision(...)` and
+   the ENTRY `ItemSplash` latches `lava: lava_now` (the C# `:886`
+   `!flag2` local), exit keeps the sticky `lava_wet` (`:965`), pinned
+   by `w4_e19_the_entry_splash_gate_reads_the_local_lava_probe`. The
+   grounds-1 fidelity gap cited above is closed on the e19 half. Both
+   halves now run the identical 16-box and behaviourally identical
+   gates — the tie is total on behaviour.
+2. **KEEP f47 — the `18fe75f2e` verdict STANDS on the superset
+   rationale.** With behaviour tied, the keeper is the strict
+   superset: the f47 half carries the latch-lifecycle unit twins
+   (`w4_f47ds_the_entry_splash_latches_with_the_sticky_flags` /
+   `..._exit_splash_snapshots_the_pre_clear_flags`) and the 71/31
+   draw-count twins with no e19 twin; the e19 half carries no unique
+   behaviour the f47 half lacks. The verbatim-local entry read is now
+   on both, so grounds 1-3 are ties; grounds 4 (fold completeness)
+   decides, unchanged.
+3. **The e19 8-row drop table is REVERSED.** The e19 seal published
+   f47-drop hunks; the keeper verdict inverts them — **e19 drops its
+   half, not f47**. The e19-side drop hunks, from its own table
+   inverted (the KEEP/split exceptions in the drop-hunk list above
+   still apply):
+
+   | # | e19 hunk (tip `0fb0ac4ad`) | Fate at merge |
+   | --- | --- | --- |
+   | 1 | `ItemSplash` + `pending_splash` field + the two `Some(ItemSplash{..})` sites + `take_splash` + free-fn `item_splash` | DROP — f47 `Splash`/`splash_due`/`ItemDrop::splash` survive |
+   | 2 | census trio (`..._draws_71_at_the_16_box`, `..._draws_31_and_wins_the_gate`, `..._the_minus_8`) + the new local-probe gate witness | DROP — folded/covered by the f47 71/31 draw twins, the −8 twin and the entry-latch twin. EXCEPTION (per the list above): `w4_e19_the_wet_flags_latch_and_clear` + `w4_e19_the_grabbed_arm_clears_every_wet_flag` KEEP — no f47 pass-level twin |
+   | 3 | e19 pass-level splash quartet (`world_sim/items.rs:1615/:1654/:1678/:1696`) | DROP — the f47 `w4_f47k1_*` re-drives are the same four assertions on the keeper drain |
+   | 4 | `w4_e19_the_wet_landing_keeps_the_flush_residual` + the landing/rest halves of `w4_e19_the_dry_drop_integrates_at_full_velocity` | DROP only where the f47 flush pair covers the pins — the full-velocity half KEEP (split, per the list above) |
+   | 5 | `w4_e19_the_wet_probe_uses_the_liquid_surface_offset` | DROP — byte-identical body to the f47 `w4_f47ds_*` fold |
+   | 6 | the two folded probe twins `w4_e19_the_wet_probe_is_the_centre_inset_box` / `..._respects_the_liquid_surface_drop` | DROP the e19 copies — the f47 originals (`w4_f47ds_*`, `item.rs:1990/:2013`) **KEEP as f47 witnesses**; they are the f47-unique probe geometry the e19 seal folded, and the keeper half retains its own |
+   | 7 | anchors row `crates/tr-app/src/world_sim/items.rs\|fn item_splash\|W4-e19 round 2 …` | RETIRE with hunk 1 — the f47 row `crates/tr-app/src/item.rs\|pub fn splash` survives |
+   | 8 | wiring literals + `box_is_wet` + SIZE-16 const/quad/light re-pins | KEEP whichever side lands first — identical values both lanes; trivial dedupe (unchanged, NOT a drop) |
+
+4. **Cross-receipt e19.** The e19 seal doc is received and its
+   entry-gate/water-style/16-box parity claims verified against its
+   tip; its keep-e19 verdict and its f47-drop table are OVERRULED by
+   this FINAL (v1 keeper pick + this v2 inversion). The e19 doc stays
+   as the lane record; the merge reads THIS verdict. No code changes
+   this round — docs only, code-only lane contract honoured (no
+   cargo/tests/rustfmt/graphify).
