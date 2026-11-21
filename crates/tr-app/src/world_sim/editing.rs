@@ -2013,7 +2013,8 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let held = app.inventory[app.selected];
         let is_summon = matches!(
             held.kind,
-            43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556 | 557
+            43 | 361 | 602 | 1844 | 1958 | 2767 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544
+                | 556 | 557
         );
         if is_summon && held.count > 0 {
             if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
@@ -2060,6 +2061,15 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             return;
         }
         if held.kind == 1958 && held.count > 0 && use_naughty_present(app) {
+            return;
+        }
+        // `ItemCheck_UseEventItems`' Solar Tablet arm (`Player.cs:43988-
+        // 44008`): the 2767 use gates on `Main.dayTime && !Main.eclipse`
+        // (the action gate; `ItemCheck_CheckCanUse_Inner` `:52269-52272`
+        // additionally refuses the USE START while `!hardMode`) — the roar,
+        // `ApplyItemTime`, then `Main.eclipse = true` + the `Lang.misc[20]`
+        // row (the remix `Lang.misc[106]` variant). W4-g43 doc-sweep.
+        if held.kind == 2767 && held.count > 0 && use_solar_tablet(app) {
             return;
         }
         // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
@@ -15949,10 +15959,10 @@ fn summon_item_check(app: &App, item: u16) -> bool {
 /// The pre-hardmode boss spawners (`ItemCheck_UseBossSpawners`,
 /// `Player.cs:43751-43900`): the Worm Food 70 (`ZoneCorrupt` -> the EoW
 /// head 13), the Slime Crown 560 (ungated -> the King 50), the
-/// Abeemination 1133 (ungated -> the Queen Bee 222; the vanilla's
-/// Item173 sound rides the roar — the port's bank holds the one), the
-/// Bloody Spine 1331 (`ZoneCrimson` -> the Brain 266). The mech trio
-/// 544/556/557 and the later
+/// Abeemination 1133 (`ZoneJungle` USE-START gate `:52253-52256` -> the
+/// Queen Bee 222; the vanilla's Item173 sound rides the roar — the port's
+/// bank holds the one), the Bloody Spine 1331 (`ZoneCrimson` -> the Brain
+/// 266). The mech trio 544/556/557 and the later
 /// 4988/5120/5334 = the follow-ups. `NPC.SpawnOnPlayer` puts the boss at
 /// the player; the EoW rides the worm engine (the chain assembles in the
 /// worm pass); the Brain arrives alone (the Creepers' orbit = the
@@ -15967,11 +15977,16 @@ pub(crate) fn use_boss_summon_item(app: &mut App) -> bool {
         return false;
     }
     // The biome gates (`:43775`'s ZoneCorrupt arm, `:43889`'s ZoneCrimson;
-    // 560/1133 run ungated). The mech trio swaps the biome for the clock:
+    // 560 runs ungated). The mech trio swaps the biome for the clock:
     // `!Main.IsItDay()` (`:43838`/`:43849`/`:43860`); the 1.4.5 item
     // variant's DisabledBossSummonVariant folds out (no variant system).
+    // W4-g43 doc-sweep: the Abeemination 1133's USE-START gate
+    // `ItemCheck_CheckCanUse_Inner` (`:52253-52256`) refuses outside the
+    // jungle — the old "1133 ungated" comment described the action arm
+    // (`:43861-43873` has no zone check), not the start gate.
     let zone_ok = match item {
         70 => app.scene_metrics.zone_corrupt,
+        1133 => app.scene_metrics.zone_jungle,
         1331 => app.scene_metrics.zone_crimson,
         544 | 556 | 557 => !app.world.day_time,
         _ => true,
@@ -16208,6 +16223,35 @@ pub(crate) fn use_naughty_present(app: &mut App) -> bool {
     true
 }
 
+/// The Solar Tablet 2767 (`ItemCheck_UseEventItems`, `Player.cs:43988-44008`,
+/// W4-g43 doc-sweep): the action gate is `Main.dayTime && !Main.eclipse`
+/// (`:43988`); the USE-START gate `ItemCheck_CheckCanUse_Inner`
+/// (`:52269-52272`) additionally refuses while `!Main.hardMode` — the port
+/// folds both into the arm (the moon items' precedent). On fire:
+/// `SoundEngine.PlaySound(15)` (the roar), `ApplyItemTime(sItem)` (`:43991`,
+/// BEFORE the flag write — the shared moon-item consume/re-arm shape), then
+/// `Main.eclipse = true` and the `Lang.misc[20]` "A solar eclipse is
+/// happening!" row (`ChatColors.World`); the remix seed swaps the text for
+/// `Lang.misc[106]` (`:43995-44002`). No boss spawns — the eclipse's own
+/// spawn table rides the spawner's `Main.eclipse` reads.
+pub(crate) fn use_solar_tablet(app: &mut App) -> bool {
+    if !app.world.day_time || app.world.eclipse || !app.world.hard_mode {
+        return false;
+    }
+    // `:43990-43991` — the roar FIRST, then `ApplyItemTime` + the consume
+    // (the C# arm plays before re-arming; `apply_moon_item`'s order matches).
+    apply_moon_item(app, 2767);
+    app.world.eclipse = true;
+    // `:43995-44002` — the remix text variant (`Main.remixWorld`).
+    let text = if app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        crate::lang::misc(106)
+    } else {
+        crate::lang::misc(20)
+    };
+    crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_WORLD);
+    true
+}
+
 pub(crate) fn use_suspicious_looking_eye(app: &mut App) -> bool {
     let eye_alive = app
         .npcs
@@ -16306,6 +16350,27 @@ mod loot_summon_tests {
             app.npcs
                 .iter()
                 .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+        );
+        // W4-g43 doc-sweep — the Abeemination 1133's ZoneJungle USE-START
+        // gate (`Player.cs:52253-52256`): outside the jungle the use refuses
+        // free; inside, the Queen Bee spawns.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 1133,
+            name: "Abeemination".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(
+            !use_boss_summon_item(&mut app),
+            "the jungle gate holds (:52253)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        app.scene_metrics.zone_jungle = true;
+        assert!(use_boss_summon_item(&mut app));
+        assert!(
+            app.npcs
+                .iter()
+                .any(|n| n.kind == NpcKind::QueenBee && n.hp > 0)
         );
     }
 
@@ -17676,6 +17741,55 @@ mod moon_item_tests {
         let mut app = night_app(1958);
         app.world.dd2_event_ongoing = true;
         assert!(!use_naughty_present(&mut app));
+    }
+
+    /// W4-g43 doc-sweep — the Solar Tablet 2767 (`Player.cs:43988-44008`):
+    /// by day, hardmode, no eclipse up: the use pays one, arms `Main.eclipse`
+    /// and re-arms the action cadence (`ApplyItemTime`, useTime 45 —
+    /// `Item.cs`'s 2767 row). No boss spawns — the eclipse flag alone.
+    #[test]
+    fn the_solar_tablet_by_day_starts_the_eclipse() {
+        let mut app = night_app(2767);
+        app.world.day_time = true;
+        app.world.hard_mode = true;
+        assert!(use_solar_tablet(&mut app));
+        assert!(app.world.eclipse, "Main.eclipse = true (:43994)");
+        assert_eq!(app.inventory[app.selected].count, 0, "the use paid one");
+        assert!(
+            (app.item_time - 45.0 / 60.0).abs() < 1e-6,
+            "ApplyItemTime armed the cadence (itemTime = {})",
+            app.item_time
+        );
+        assert!(
+            app.npcs.iter().all(|n| n.hp <= 0),
+            "the tablet summons no boss — the eclipse's spawner owns the roster"
+        );
+    }
+
+    /// W4-g43 — the tablet's refusals are free (`:43988`'s day/eclipse gates
+    /// + `:52269-52272`'s hardmode USE-START gate): night, a running eclipse
+    /// or pre-hardmode each leave the stack intact and the flag untouched.
+    #[test]
+    fn the_solar_tablet_refuses_at_night_over_an_eclipse_or_pre_hardmode() {
+        // Night: refused free.
+        let mut app = night_app(2767);
+        app.world.hard_mode = true;
+        assert!(!use_solar_tablet(&mut app));
+        assert!(!app.world.eclipse);
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal is free");
+        // A running eclipse refuses the re-use.
+        let mut app = night_app(2767);
+        app.world.day_time = true;
+        app.world.hard_mode = true;
+        app.world.eclipse = true;
+        assert!(!use_solar_tablet(&mut app));
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // Pre-hardmode refuses (`:52269`'s `!Main.hardMode`).
+        let mut app = night_app(2767);
+        app.world.day_time = true;
+        assert!(!use_solar_tablet(&mut app));
+        assert!(!app.world.eclipse);
+        assert_eq!(app.inventory[app.selected].count, 1);
     }
 }
 /// The item-mechanics slice: the three player-facing flows the port keeps
