@@ -73,10 +73,23 @@ written not run.
 
 ## Landing ledger (one phase per commit+push)
 
-| phase | scope | status |
-| --- | --- | --- |
-| 1 | census + claim (this doc) | this commit |
-| 2 | G7 Convert type-3 cell + G6 DoSurfaceIsMushrooms verbatim (spread.rs + micro_surface.rs) | pending |
-| 3 | G1-G3 pass_mushroom/ShroomPatch verbatim + desert veto (biomes.rs + pipeline.rs) | pending |
-| 4 | G5 GrowTree case-5 dispatch + 70-clearance + WorldGenRand generic + GrowShroom port (growth/trees.rs) | pending |
-| 5 | G5 plants-pass mushroom arm verbatim + PlaceTile-71 (biome_detail.rs) + witnesses + docs/anchors | pending |
+| phase | scope | commit | status |
+| --- | --- | --- | --- |
+| 1 | census + claim (this doc) | 65009957 | landed |
+| 2 | G7 Convert type-3 cell + G6 DoSurfaceIsMushrooms verbatim (spread.rs + micro_surface.rs) | e2707f2d | landed |
+| 3 | G1-G4 pass_mushroom/ShroomPatch verbatim + desert veto + tidy re-mud (biomes.rs + pipeline.rs) | 67040975 | landed |
+| 4 | G5 GrowTree verbatim rewrite + case-5 dispatch + WorldGenRand generic + GrowShroom + EmptyTileCheck (growth/trees.rs) | b44db327 | landed |
+| 5 | G5 plants-pass mushroom arm verbatim + PlaceTile-71 (biome_detail.rs) + witnesses + hash notes + docs/anchors | (this commit) | landed |
+
+All phases code-only (no cargo/tests/graphify invoked). 18 witnesses WRITTEN
+NOT RUN across spread.rs (2), micro_surface.rs (3 incl. the seed-world a==b),
+biomes.rs (4), growth/trees.rs (5), biome_detail.rs (4 incl. the re-derived
+DW-5.2 ledger). Both world-hash pins carry stale-by-design notes; the `a == b`
+determinism halves are untouched; re-pin values deferred to the merge gate.
+
+Extra deltas found during the port (beyond the census): the ShroomPatch `py`
+advance was missing entirely (G3), the tidy vertical re-mud read the wrong
+column/row (G4), the cluster bound truncation differs at width 6400 (G1),
+the cap-gate accept retried instead of exiting (G1), and `GrowTree`'s port
+was a batch-write refactor with reversed trunk draw order + missing branch
+else-arms + missing top `Next(13)` gate (G5 — full verbatim rewrite).

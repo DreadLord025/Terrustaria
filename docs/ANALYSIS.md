@@ -12937,7 +12937,90 @@ The three micro-biome passes are 1:1 ports; the deviations:
   The pass's own isolated stream keeps the move RNG-neutral for the other
   steps; the world contract's per-step pins hold.
 - The three passes draw from their own `pass_rng` streams; the shared
-  `streams.rng` is untouched by them.- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
+  `streams.rng` is untouched by them.
+
+### The glowing mushroom biome lane (W4-g42, code-only)
+
+The five glowing-mushroom C# units re-derived and ported verbatim
+(`docs/research/12j-g42-biome-mushroom.md` is the census of record):
+
+- **`GlowingMushroomPatches`** (`WorldGen.cs:12544-12756`,
+  `biomes.rs::pass_mushroom`): the cluster bound is the DOUBLE comparison
+  `(double)k < num` (a fractional count runs its ceiling — width 6400 →
+  10 clusters, not the truncated 9); the cap-gate accept exits the while
+  without retry and records the position AFTER the six `ShroomPatch`
+  calls; the 100-box rejection scan gains the underground-desert rect veto
+  (`GenVars.UndergroundDesertLocation.Contains`, `:12630-12634`, threaded
+  from `gv.underground_desert`). The remix/errorWorld/dualDungeons cluster
+  arms stay flag-gated documented skips (no remix-mushroom-layer producer,
+  no potential-dungeon-bounds model).
+- **`ShroomPatch`** (`:79862-79982`, `biomes.rs::shroom_patch`): the vy
+  draw is `Next(-200, -100)` (exclusive hi — the old `-99` was a one-off);
+  the mud write activates ONLY the first ring's lower half
+  (`num2 == num4 && l > py`, `num2--` runs at the loop top so the guard
+  holds on the first iteration only — the old port activated every write);
+  the walk advances BOTH axes (`vector2D += vector2D2`) then X again (the
+  vanilla quirk — the old port never advanced py). The tidy sweep's
+  vertical re-mud reads the INNER column / OUTER row ±1
+  (`tile[num16, num15 ± 1]`, `:12731-12738` — the old port read the outer
+  column / inner row).
+- **The plants-pass mushroom arm** (`:20133-20147`,
+  `biome_detail.rs::pass_mushroom_and_jungle_plants`): verbatim — the
+  triple `TryGrowingTreeByType(5, i, j)` retry (each gated on the
+  above-cell still free) then `PlaceTile(i, j-1, 71)`. The old shape-level
+  arm collapsed the retry to a direct 71 write and never grew the giant
+  tile-5 trees. `PlaceTile(71)`'s cattail branch (`j > worldSurface` →
+  `PlaceCatTail`, `:59656`) is **c33's claimed helper** — documented out;
+  the plain arm (`active/type/frameX = Next(5)*18`) runs.
+- **`GrowTree`** (`:29767-29980`, `growth/trees.rs::grow_tree`): verbatim
+  rewrite generic over `WorldGenRand` (the worldgen xorshift `Rng` and the
+  runtime `UnifiedRandom` drive the same draw sequence) — the STREAMING
+  trunk loop (`num4 = Next(3)` BEFORE `num5 = Next(10)`, both drawn on the
+  forced-0 end rows, top→bottom), the branch else-arms with their second
+  `Next(3)` + the remix `flag3` variant, the tile-70 split-box clearance
+  (`:29803-29806`), the `DefaultTreeWallTest` wall arm OR'd with the
+  remix/bees/wall-0 disjunction, the `!notTheBees` liquid bypass, the
+  errorWorld/extraLivingTrees height arms, the `Next(13)` top canopy gate,
+  field-mutation writes (the wall/liquid behind the tree survive). The
+  tenthAnniversary paint roll parks (gated on `!isGeneratingOrLoadingWorld`,
+  no runtime genRand here). `TryGrowingTreeByType` gains the case-5 dispatch
+  (`:30348-30350`, was absent); `EmptyTileCheck` gains the full 11/71 +
+  plant-exemption arms (`:31453-31535`).
+- **`GrowShroom`** (`:31301-31362`, `growth/trees.rs::grow_shroom`):
+  verbatim, UNWIRED — the giant tile-72 mushroom tree on the 18 px grid.
+  Census fact: `GrowShroom` has ZERO callers in the whole decompile (a
+  dead-code vanilla helper in 1.4.5.8); the gen-time mushroom "trees" are
+  tile-5 trunks on grass 70 (`GrowTree`), tile 72 arises from the runtime
+  framer. The `i-1`-twice lava-gate typo is kept. Ported + witnessed, wired
+  into nothing (the faithful state).
+- **`DoSurfaceIsMushrooms`** (`:2087-2173`,
+  `micro_surface.rs::surface_is_mushrooms`): verbatim — the band draw is in
+  the inner `for` CONDITION (`l < worldSurface + Next(3)` re-evaluated
+  every iteration: one draw per visited row plus one failing draw per
+  column, NOT the old one global band); the two `Convert(k, l, 3, 0)` arms
+  ride the new mushroom conversion cell (60 → 70, wall-15 → 80 — the old
+  `set_kind(59)` stand-ins were wrong); the skyblock early-out; the
+  `FinalizeSecretSeeds` double-call dispatch (`:607-613`, one continuing
+  stream). The noSurface arm + the mid-pipeline third call
+  (`MudCavesToJungleGrass :12474`) stay documented follow-ups.
+- **`Convert` type-3 cell** (`:55336-55359`,
+  `spread.rs::convert_cell_mushroom`): the {64,67,15,247}→80 wall arm
+  (`WallID.cs:88`), the torch default-switch styles→22 (`TileID.cs:63-77`),
+  60→70 with the tree-above kill, the {32,352,69,655} thorn kill
+  (`TileID.cs:95`). RNG-free.
+
+**RNG / hash discipline**: every changed draw rides its own `pass_rng`
+stream (`GlowingMushroomPatches`, `Glowing Mushrooms and Jungle Plants`,
+`DoSurfaceIsMushrooms`) — no other step's ledger shifts. Both world-hash
+pins move BY DESIGN (the mushroom patches + the giant trees change every
+world with a patch); the re-pin values are DEFERRED to the merge gate
+(code-only mode), the `a == b` determinism halves stay untouched. The
+surfaceIsMushrooms seed world has its own a == b witness. Out of scope
+(owned elsewhere): the `Mushrooms` surface-decoration pass `:20599`
+(d105 lane 5), `PlaceCatTail`/`GrowCatTail` + the PlaceTile-71 cattail
+consumer (c33 pass 4).
+
+- **The 406's aiStyle-95 growth** (`NPC.cs:39384-39429`): the preferred
   velocity damps to 0.95 above 4 px/tick then drifts by the flat 0.99;
   `scale = 1 + 0.3 * clamp(ai[0]/300, 0, 1)` rides the counter, and at
   300 the vanilla `Transform(405)` вЂ” the port swaps `kind` in place (the

@@ -667,6 +667,41 @@ mod tests {
         assert!(hard.hard_mode, "the world starts in hardmode");
     }
 
+    /// W4-g42: the surfaceIsMushrooms seed world is deterministic (a == b)
+    /// across two full generations — the verbatim `DoSurfaceIsMushrooms`
+    /// (the per-row condition draws + the double-call dispatch) and the
+    /// mushroom-biome lane's tile changes replay byte-identically. The
+    /// classic control stays a == b too (the flag-gated arm draws nothing).
+    #[test]
+    fn w4_g42_the_mushroom_seed_world_is_deterministic() {
+        let mk = |micro: MicroSeedFlags| {
+            crate::worldgen::generate(&GenOptions {
+                micro_flags: micro,
+                seed: 42,
+                ..Default::default()
+            })
+        };
+        let a = mk(MicroSeedFlags::from(MicroSeedFlags::SURFACE_IS_MUSHROOMS));
+        let b = mk(MicroSeedFlags::from(MicroSeedFlags::SURFACE_IS_MUSHROOMS));
+        assert_eq!(a.tiles.len(), b.tiles.len());
+        for (x, y) in a.tiles.iter().zip(&b.tiles) {
+            assert_eq!(
+                (x.kind, x.wall, x.frame_x, x.frame_y, x.liquid, x.flags, x.meta),
+                (y.kind, y.wall, y.frame_x, y.frame_y, y.liquid, y.flags, y.meta),
+                "the mushroom seed world replays"
+            );
+        }
+        // The seed arm actually fired: the mushroom grass 70 grew over the
+        // classic (the Convert 60 → 70 + the surface conversions).
+        let classic = mk(MicroSeedFlags::none());
+        assert!(
+            count(&a, 70) > count(&classic, 70),
+            "the mushroom grass grew: {} vs {}",
+            count(&a, 70),
+            count(&classic, 70)
+        );
+    }
+
     /// The count gate reads the classic flags too (the `Variations`
     /// threshold's `activeSecretSeedCount`).
     #[test]
