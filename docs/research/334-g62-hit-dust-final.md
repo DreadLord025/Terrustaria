@@ -1,10 +1,18 @@
-# 240 — W4-g62 hit-dust FINAL + the hit-dust-family declaration (code-only)
+# 334 — W4-g62 hit-dust FINAL + the hit-dust-family declaration (code-only)
 
-**Number:** 240 — first-free per registry-150 (`150-research-number-registry.md`,
-d54's scan: free block 237+; a fresh `git ls-tree` sweep over EVERY origin tip
-2026-11-21 found 237 double-claimed e23/g48/g61, 238 double-claimed c8/d42,
-239 taken d42 — **240 is the first number no tip carries**). Renumber at merge
-if the registry assigns differently.
+> **Chain-banner: 240 → 334.** Originally numbered 240 (first-free sweep below);
+> key 240 belongs to **g58 WINS** (`240-happiness-final.md`, rename `cdfe3d108`
+> 12:16:37, registry §6/§7 CONFIRMED). Registry-150 **§9 UNIFIED FINAL**
+> (d54 tip `b243c7086`) assigns g62's `240-g62-hit-dust` → **334** — this
+> rename executes that row. All `research/240` citations to THIS doc now
+> read `research/334`.
+
+**Number:** 334 — per registry-150 §9 (`150-research-number-registry.md`,
+d54 tip `b243c7086`, row 334: g62 `240-g62-hit-dust` → 334). The original
+first-free scan (kept as chain history): free block 237+; a fresh `git ls-tree`
+sweep over EVERY origin tip 2026-11-21 found 237 double-claimed e23/g48/g61,
+238 double-claimed c8/d42, 239 taken d42 — 240 was then first-free but later
+lost to g58's earlier executed rename.
 
 **Status:** ✅ FINAL (code-only; witnesses WRITTEN NOT RUN).
 **Lane:** W4-g62 (`task/W4-g62-npc-hit-dust`, base tip `32af98b44`).

@@ -39273,7 +39273,7 @@ in the ledger (exact line or range) or classified death-half.
 - The gore BODIES are the gore lanes' (d55/e5/f10/f5) EXCEPT the FOUR
   hit-half bodies batch 35 owns (`:86532`/`:86947`/`:86951`/`:88648` —
   the f5 research/111 hand-off, unowned after the f10-overrun delete;
-  research/240 §1). Where another lane's gore call sits between dust
+  research/334 §1, renamed 240→334 per registry-150 §9 — g58 WINS 240). Where another lane's gore call sits between dust
   draws, its ARGUMENT draws are consumed here in C# order (the W4-e2
   split precedent): the confetti slime's 5 (`:84738`, f10's LEGIT
   window) and the Queen minion 667's 3 (`:82043-82047`, f10's legit
@@ -39576,7 +39576,7 @@ Transform re-length to the MAX) +
 SetDefaults pin, the protocol round-trip, the noGravity/alpha/debuff
 rows) — written, not run (code-only).
 
-### Batch 35 — the FOUR hit-half gore bodies + the 133 eye-pop latch (research/240)
+### Batch 35 — the FOUR hit-half gore bodies + the 133 eye-pop latch (research/334, chain 240→334 per registry-150 §9 — g58 WINS 240)
 
 The f5 FINAL receipt (research/111) split its 853-site recount into 849
 death-half + **4 hit-half** (`:86532`/`:86947`/`:86951`/`:88648`) — g60's
@@ -39606,7 +39606,7 @@ g60's own `g60_verify_widen.py` (pure-text Python) against g60 tip
 Transform 7/7, witnesses 105/105, table 19/19 — **ALL BYTE-IDENTICAL**. The
 6-hunk contract is CONSUMED; the merge dedupes the shared `Npc` surface.
 
-**HIT-DUST-FAMILY COMPLETE** (research/240): 629 live dust sites zero
+**HIT-DUST-FAMILY COMPLETE** (research/334, chain 240→334 per registry-150 §9): 629 live dust sites zero
 missed + the 4 hit-half gore bodies owned + the 133 latch owned + the
 TrailCache widening landed and mutually receipted.
 
