@@ -17672,10 +17672,16 @@ mod dw3_tests {
         player.y = 110.0 * 16.0;
         app.player = Some(player);
         // A closed tall gate (388) at column 30, rows 115-119 (the 1×5
-        // style-0 object, frameY the coordinate-heights prefix).
+        // style-0 object). Re-derived to the REAL placement frames for the
+        // c42 canonical alternate-0 decode: frameY = the coordinate-heights
+        // prefix WITH the 2px sheet padding ([18,16,16,16,18]+2 →
+        // 0/20/38/56/74, the c42 wiring witness's steps). g4's padding-free
+        // fixture (0/18/34/50/66) also resolves its hit cell under the
+        // kept body's heights-only row walk, but it is not a frame the
+        // game ever writes — pinned to the true grid here.
         for (k, y) in (115..=119).enumerate() {
             let i = app.world.index(30, y);
-            let fy = [0i16, 18, 34, 50, 66][k];
+            let fy = [0i16, 20, 38, 56, 74][k];
             app.world.tiles[i] = Tile { kind: 388, frame_x: 0, frame_y: fy, ..Default::default() };
             app.world.tiles[i].flags |= FLAG_ACTIVE;
         }

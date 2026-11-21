@@ -1500,6 +1500,57 @@ mod tests {
         false
     }
 
+    /// W4-g4 — `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`): the
+    /// zombie door-bash drain's gate-388 open, re-pointed at the c42
+    /// canonical body (research/95 §3 witness union — the richest unit
+    /// pin: open/close round-trip + blocked refusal + forced bypass +
+    /// non-gate refusal). The 1×5 style-0 object at column 10, rows
+    /// 14..18; frameY on the real placement grid (the [18,16,16,16,18]
+    /// coordinate-heights prefix + 2px padding → 0/20/38/56/74).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g4_shift_tall_gate_opens_the_closed_gate() {
+        let mut w = doorway_world();
+        for (k, y) in (14..=18).enumerate() {
+            set_active(&mut w, 10, y, 388);
+            let fy = [0i16, 20, 38, 56, 74][k];
+            w.tile_mut(10, y).unwrap().frame_y = fy;
+        }
+        let mut drops = Vec::new();
+        let mut cues = Vec::new();
+        assert!(shift_tall_gate(
+            &mut w, 10, 18, false, false, &no_blocker, &mut drops, None, &mut cues
+        ));
+        for y in 14..=18 {
+            let t = w.tile(10, y).unwrap();
+            assert!(t.active() && t.kind == 389, "gate row {y} opens to 389");
+        }
+        // The cue queues at the ADJUSTED top centre (`:51762`).
+        assert_eq!(cues, vec![(true, 10 * 16 + 16, 14 * 16 + 16)]);
+        // The open gate shifts back to closed (388) with `closing: true`.
+        assert!(shift_tall_gate(
+            &mut w, 10, 18, true, false, &no_blocker, &mut drops, None, &mut cues
+        ));
+        for y in 14..=18 {
+            assert_eq!(w.tile(10, y).unwrap().kind, 388, "gate row {y} closes");
+        }
+        // A blocked cell refuses the shift (the occupancy gate).
+        let blocked = |_: i32, _: i32| true;
+        assert!(!shift_tall_gate(
+            &mut w, 10, 18, false, false, &blocked, &mut drops, None, &mut cues
+        ));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 388, "the blocked shift leaves the gate");
+        // `forced` skips the occupancy gate.
+        assert!(shift_tall_gate(
+            &mut w, 10, 18, false, true, &blocked, &mut drops, None, &mut cues
+        ));
+        assert_eq!(w.tile(10, 18).unwrap().kind, 389, "the forced shift opens");
+        // A non-gate cell refuses outright.
+        assert!(!shift_tall_gate(
+            &mut w, 12, 18, false, false, &no_blocker, &mut drops, None, &mut cues
+        ));
+    }
+
     #[test]
     fn test_DW_4_2_open_door_right_leaf_frames() {
         // `WorldGen.OpenDoor` direction +1 (`WorldGen.cs:37733-37776`): the
