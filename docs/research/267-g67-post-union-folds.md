@@ -1,13 +1,20 @@
-# 247 — W4-g67 post-union fold-list (for W4-d130f)
+# 267 — W4-g67 post-union fold-list (for W4-d130f)
+
+**FULL RENAME CHAIN: 134 → 146 → 247 → 267 (FINAL per d54 REGISTRY-ROUND-3).**
 
 *(numbered 134 through the retire phase → RENAMED 146 at the seal phase (f11
 owns 134; registry evidence in the seal sections below) → RENAMED AGAIN to
 247 at the seal-verification phase: the 146 slot turned out FOUR-way claimed
 (g24d `146-wg-sounds-final.md` 10:02:44 wins, e20f `146-c42-repick-critical.md`
 10:22:27 second, g67 10:32:09 third, e19 `146-aether-biome-census.md` 12:08:42
-fourth) — see the 146-collision section below for the full registry-150b
-refresh. The lineage of every `research/134` / `research/146` citation in the
-older seal/retire records on this branch and on d130 is THIS doc.)*
+fourth) → RENAMED to **267** at the registry-round-3 reconciliation: d54's
+REGISTRY-ROUND-3-FINAL (research/150 §7, commit `51a28d09e`) §6.2/§6.3 pins
+the g67 chain **134 → 146 → 267** — 247 was RE-ISSUED to d10 (d10's post-
+publish 246 take lost to e23's reservation → d10 re-issued to 247), so g67's
+146-loser assignment moves to the registry's round-2/3 target **267**; see
+the 146-collision section below for the registry-150b refresh history. The
+lineage of every 134- / 146- / 247-numbered citation in
+the older seal/retire records on this branch and on d130 is THIS doc.)*
 
 **STATUS: FINAL-FINAL / RETIRED / SEALED + RECEIPT-CLOSED — R1–R4/R6-partial
 EXECUTED BY d130 `16a792d5`; R5/R6-caller/R7 + A2 FOLDED BY d130
@@ -46,14 +53,21 @@ timestamp wins):
   (`e47e1399f` 10:22:27), g67 `146-g67-post-union-folds.md` (`c38d42d32`
   10:32:09), e19 `146-aether-biome-census.md` (`6627efd6b` 12:08:42).
   g67 is third of four → LOSER → renumbers.
-* **247 is the assignment**: the registry's free block 151–236 is consumed
-  (§1), 237+ is free-for-future-lanes; the live 237–246 claims at the 360-tip
-  scan are 237 (e23), 238 (c8/d42/g61 — triple), 239 (d42/g48/f21/g56),
+* **247 was the provisional assignment; 267 is FINAL (registry round 3)**:
+  at the 360-tip registry-150b refresh the free block 151–236 was consumed
+  (§1) and 237+ was free-for-future-lanes; the live 237–246 claims were
+  237 (e23), 238 (c8/d42/g61 — triple), 239 (d42/g48/f21/g56),
   240 (c42/g58/d53/g63), 241/242/243 (g58), 244 (g48/f39), 245 (g48),
-  246 (d10) — **247 is claimed by NO tip**. g67 takes 247; the e20f/e19
+  246 (d10) — 247 was claimed by NO tip, so g67 took 247 provisionally.
+  **SUPERSEDED**: d54's REGISTRY-ROUND-3-FINAL (research/150 §7,
+  `51a28d09e`) re-issued 247 to d10 and assigns the g67 chain
+  **134 → 146 → 267** (§6.2 self-rename reconciliation + §6.3 rename table:
+  `146-g67-post-union-folds.md` → `267-g67-post-union-folds.md`, 146's
+  third claimant → 267). This doc now rides **267**; the e20f/e19
   losers of 146 (and the 238/239/240/244 collisions) renumber on THEIR OWN
-  branches — this lane touches neither the registry nor any sibling.
-* Refs renamed in the same commit: this doc's header, INDEX row 247,
+  branches per the same registry — this lane touches neither the registry
+  nor any sibling.
+* Refs renamed in the same commit: this doc's header, INDEX row 267,
   PORT_MAP rain row, ANALYSIS ×4 + the seal paragraph, the rain.rs banners
   ×20 + the module-head rename note (comments-only, zero code change).
 
@@ -63,7 +77,7 @@ Re-fetched: `origin/task/W4-d130-weather-ambience` tip advanced
 `97ed44f5d` → **`b8f655708`** ("W4-d130 seal docs: research/83 s9 SEALED").
 Its s9 records THIS branch's seal tip `8b9a1ff46c4a4e795c51ea96f9c13568665ca16b`
 verbatim — the mutual receipt is CLOSED from BOTH sides: the g67f-146(now
-247) drop-wholesale-FINAL and d130's s8.5 d130-canonical-keeps-wholesale are
+267) drop-wholesale-FINAL and d130's s8.5 d130-canonical-keeps-wholesale are
 the SAME keep-one, ONE fn owner per body. Per-obligation closure:
 
 | original d130f work-list row | d130 landing | verdict NOW |
@@ -168,7 +182,9 @@ self-contained; the cross-refs are this doc + INDEX + PORT_MAP + ANALYSIS +
 the rain.rs banners, all renamed in the same seal commit).
 **SUPERSEDED by the SEAL-VERIFY 146-collision section above**: 146 was
 claimed by g24d/e20f BEFORE this rename landed and by e19 after; g67 loses
-the key and takes **247** (registry-150b refresh, 360-tip scan).
+the key and takes **267** FINAL (registry-150b 360-tip refresh provisionally
+picked 247; d54's REGISTRY-ROUND-3-FINAL §7 `51a28d09e` re-issued 247 to d10
+and pinned the g67 chain 134 → 146 → 267).
 
 **g67-drop-wholesale FINAL (the merger's one-paragraph instruction):** DROP
 g67's `crates/tr-app/src/rain.rs` WHOLESALE at the weather union — every

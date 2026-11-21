@@ -1244,7 +1244,7 @@ band) through the XNA byte chain `*0.85` then shimmer `*(1-shimmerAlpha)`
 (`rain_drop_tint`, the d130 `rain_tint` shape; W4-g67 final render census — the earlier
 f32 `light_at(pos)*0.85` tint was two deviations: the wrong sample tile and no byte
 casts / no shimmer arm; the byte chain dims ALPHA too — g67's tint witness
-wrongly pinned alpha at 255, d130's witness is the correct one, research/247
+wrongly pinned alpha at 255, d130's witness is the correct one, research/267
 fold-addendum A1). `DrawRain` has NO cull rect and NO black-kill (unlike
 `DrawDust`); the per-drop `Update` inside the draw loop (`:38819-38822`,
 `FocusHelper.AllowRain`-gated) rides the port's 60 Hz weather tick (the recorded
@@ -1286,7 +1286,7 @@ cloudAlpha > 0`) and moves the drops in `DrawRain` (`:38819-38822`) — net
 spawn-then-move per cycle; d130's tick keeps that order (`spawn` then
 `update_drops`), g67's tick runs update-then-spawn (superseded — the union keeps
 d130's core wholesale, research/83 §3). The `spawn_acc` cadence and the
-budget-before-attempts early-out are the recorded g67 divergences (research/247
+budget-before-attempts early-out are the recorded g67 divergences (research/267
 "Deliberate divergences") — d130's float attempt loop is canonical.
 
 **W4-g67 FINAL visual-overlap census (2026-11-21)** — rain × blizzard ×
@@ -1329,7 +1329,7 @@ sandstorm, per the C# and both ports:
 The g67 branch is DONE (fold-source tip `e777b3e2`, retire commits
 `9159c15a`/`5afdb38b`/`52b2ef92`). The union decision stands: **the merger keeps
 d130's `rain.rs` core wholesale; g67's `rain.rs` drops wholesale EXCEPT the
-folded hunks** (research/247 FINAL-FINAL, re-checked at d130 tip `97ed44f5`).
+folded hunks** (research/267 FINAL-FINAL, re-checked at d130 tip `97ed44f5`).
 d130 `16a792d5` already executed R1–R4 (`is_it_raining` + the five consumers,
 `clear_rain` + the save-and-quit call, the cull rect + else-kill — extended to
 `snow::draw` — and the `new_rain_forced` seam) plus the gameMenu kill-only arm
@@ -1353,19 +1353,25 @@ the FINAL fold-source hash-list (R5 `f8c4b659c` / R6 `356a1ac0e` / R7
 134 on origin; 145 double-claimed; d54 has no pushed research/150; 146 =
 max+1 provisional) and added the WEATHER-FAMILY bible (d130 canonical rain/
 snow + f39 slime-rain + c40 sandstorm one-way gate + g69 cloud draw +
-g68 wind/leaves single-owner + the c39 grafts) — all in research/247 (then
+g68 wind/leaves single-owner + the c39 grafts) — all in research/267 (then
 numbered 146).
 
 **W4-g67 SEAL-VERIFY — the 146-collision renumber + the CLOSED mutual receipt
-(2026-11-21).** The report is renamed AGAIN 146 → **247**
-(`247-g67-post-union-folds.md`): d54's registry-150 IS now pushed
+(2026-11-21).** The report is renamed AGAIN 146 → 247 → **267 FINAL**
+(`267-g67-post-union-folds.md`, full chain 134 → 146 → 247 → 267): d54's
+registry-150 IS now pushed
 (`38bfd1d22`, its §3 predates the 146 wave and has no g67 row), and a fresh
 360-tip registry-150b refresh finds key 146 FOUR-way claimed — g24d
 `146-wg-sounds-final.md` (10:02:44, first-pushed WINS), e20f
 `146-c42-repick-critical.md` (10:22:27), g67 (10:32:09), e19
 `146-aether-biome-census.md` (12:08:42); g67 is the third claimant → loser →
-renames on its own branch to 247, the lowest number ≥237 claimed by no tip
-(237–246 all taken: e23/c8/d42/g61/g48/f21/g56/c42/g58/d53/g63/f39/d10).
+renames on its own branch (the 150b refresh provisionally took 247, then the
+lowest number ≥237 claimed by no tip — 237–246 all taken: e23/c8/d42/g61/
+g48/f21/g56/c42/g58/d53/g63/f39/d10). d54's REGISTRY-ROUND-3-FINAL
+(research/150 §7, `51a28d09e`) then re-issued 247 to d10 (its post-publish
+246 take lost to e23's reservation) and pinned the g67 chain
+134 → 146 → **267** (§6.2 self-rename reconciliation + §6.3 rename table) —
+267 is the FINAL number; every older 247-numbered citation means this doc.
 The d130 tip advanced `97ed44f5d` → `b8f655708` (research/83 s9 SEALED): its
 s9 records g67's seal tip `8b9a1ff46` verbatim — the mutual receipt is CLOSED
 from BOTH sides, ONE fn owner per body. Every d130f work-list row is closed:
@@ -1374,7 +1380,7 @@ A1 NO-OP keep-d130-verbatim, and the c39 2-hunk graft DISCHARGED at
 `ec27d8cfd` (storm-deck head clamp + the full LanternsCanPersist gate, both
 verbatim per c39 research/114 §13). The 4-fold hash-list is CONSUMED — the
 merger drops g67's rain.rs + draw.rs census wiring wholesale and owes
-nothing further; the WEATHER-FAMILY bible FINAL (research/247 + d130 s9.4)
+nothing further; the WEATHER-FAMILY bible FINAL (research/267 + d130 s9.4)
 stands as the family's one ownership map.
 
 ## Biomes
