@@ -20391,30 +20391,57 @@ impl ProjectilePool {
                 // item back (985/3005/3079/3080); 0 < ai[1] < 10 drops
                 // `10−ai[1]` ROPE items (965/2996/3077/3078) — the placed
                 // links stay in the world; ai[1] >= 10 drops nothing. The
-                // g82-extras union (research/26e): the ladder itself is
-                // g82's `coil_death_drop` (`67c9a740`), drained here at the
-                // pool's once-per-death seam (every kill path — placement
-                // `:27290`, expiry, penetrate — reaches it). NO owner gate:
-                // the C# `Item.RequestNewItem` runs for every coil death
-                // (`ReserveForLocalPlayer` is a grab reservation, not a
-                // spawn gate). The out-of-world guard (`:16696`) returns
-                // WITHOUT `Kill()` — its deaths never refund.
+                // ladder is g82's `coil_death_drop` (`67c9a740`), drained
+                // here at the pool's once-per-death seam (every kill path —
+                // placement `:27290`, expiry, penetrate — reaches it).
+                // RETIRE fix (26e FINAL-FINAL, C# re-read): the ladder sits
+                // INSIDE `Kill_ExplodeTiles`, behind its owner refusal
+                // (`:77267` `owner != Main.myPlayer` return) AND the
+                // `!noDropItem` head (`:77367`) — a foreign coil's death or
+                // a noDropItem coil refunds NOTHING (the g82 `coil_kill`
+                // shape; the earlier "NO owner gate" reading confused the
+                // `ReserveForLocalPlayer` grab reservation with a spawn
+                // gate). The out-of-world guard (`:16696`) returns WITHOUT
+                // `Kill()` — its deaths never cue or refund.
                 if !died_out_of_world {
-                    if let Some((item, stack)) = crate::projectile_rope_coil::coil_death_drop(
-                        self.slots[i].kind,
-                        self.slots[i].ai[1],
-                    ) {
-                        let (cx, cy) = self.slots[i].center();
-                        self.pending_death_drops.push((item, stack, cx, cy));
+                    // The ai[1]==0 Dig cue (`Projectile.cs:74617-74620` for
+                    // 475/505/506, `:74681-74684` for 171 —
+                    // `SoundEngine.PlaySound(0, (int)position.X,
+                    // (int)position.Y)`, the int overload's LEGACY id 0 =
+                    // Dig, NOT Item1; the dust walks sharing the chain
+                    // geometry stay skipped). Inside `Kill()`'s dust chain,
+                    // UNGATED by owner/noDropItem, position truncated. The
+                    // hook runs after the sub-step's `wants_sound` forward
+                    // (the d77 kill_tail_cue convention).
+                    if crate::projectile_rope_coil::is_coil(self.slots[i].kind)
+                        && self.slots[i].ai[1] == 0.0
+                    {
+                        let p = &self.slots[i];
+                        self.pending_proj_sounds
+                            .push((0, 0, p.pos.x.trunc(), p.pos.y.trunc(), 0.0));
                     }
-                    // `Kill()`'s beach-ball return (`:77620-77623`): the
-                    // 155's death drops ONE Beach Ball item (859) at
-                    // `base.Center` — same ladder block, no owner gate,
-                    // `NewItemOwnership.None` (no grab reservation either
-                    // way in netMode 0).
-                    if self.slots[i].kind == BEACH_BALL {
-                        let (cx, cy) = self.slots[i].center();
-                        self.pending_death_drops.push((859, 1, cx, cy));
+                    // The refund ladder AND the beach-ball return share the
+                    // enclosing `Kill_ExplodeTiles` gates: the `:77267`
+                    // owner refusal returns BEFORE any of the type arms,
+                    // and the `:77367` `!noDropItem` head wraps them all —
+                    // a foreign death or a noDropItem death refunds NOTHING
+                    // (retire fix; the cue above stays ungated).
+                    if self.slots[i].owner == local_owner && !self.slots[i].no_drop_item {
+                        if let Some((item, stack)) = crate::projectile_rope_coil::coil_death_drop(
+                            self.slots[i].kind,
+                            self.slots[i].ai[1],
+                        ) {
+                            let (cx, cy) = self.slots[i].center();
+                            self.pending_death_drops.push((item, stack, cx, cy));
+                        }
+                        // `Kill()`'s beach-ball return (`:77620-77623`): the
+                        // 155's death drops ONE Beach Ball item (859) at
+                        // `base.Center`, `NewItemOwnership.None` (no grab
+                        // reservation in netMode 0) — the same gates.
+                        if self.slots[i].kind == BEACH_BALL {
+                            let (cx, cy) = self.slots[i].center();
+                            self.pending_death_drops.push((859, 1, cx, cy));
+                        }
                     }
                 }
             }
@@ -27081,6 +27108,74 @@ mod arrow_tests {
         // timing deviation): the dry gravity tail gave the dead ball
         // vy = 0.1, so the centre is (1622, 422.1).
         assert!((cx - 1622.0).abs() < 1e-3 && (cy - 422.1).abs() < 1e-3);
+    }
+
+    /// W4-d4 RETIRE — the refund's enclosing `Kill_ExplodeTiles` gates
+    /// (`Projectile.cs:77267` owner refusal + `:77367` `!noDropItem` head)
+    /// and the ai[1]==0 Dig cue (`:74617-74620`/`:74681-74684`, the int
+    /// overload's legacy id 0, UNGATED). Written NOT run (code-only).
+    #[test]
+    fn w4_d4_retire_the_refund_gates_and_the_dig_cue() {
+        let mut w = World::new("t".into(), 300, 200);
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut tick = |pool: &mut ProjectilePool, w: &mut World| {
+            pool.update(
+                w,
+                &mut npcs,
+                None,
+                None,
+                None,
+                YoyoInputs::default(),
+                FlailInputs::default(),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+                true,
+            );
+        };
+        // The local unplaced expiry: ONE coil item back AND the Dig cue —
+        // (0, 0) legacy id, the truncated position (ai0 = 1 ≤ 30, no
+        // gravity yet, so the dead-tick integrate moves nothing).
+        let mut pool = ProjectilePool::new();
+        let s = pool
+            .spawn_with_data_ai(ROPE_COIL, 160.5, 100.25, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[s].time_left = 1;
+        tick(&mut pool, &mut w);
+        assert_eq!(pool.drain_death_drops(), vec![(985, 1, 167.5, 107.25)]);
+        assert_eq!(
+            pool.drain_proj_sounds(),
+            vec![(0, 0, 160.0, 100.0, 0.0)],
+            "the legacy-id-0 Dig cue at the truncated position"
+        );
+        // The FOREIGN coil's expiry: the cue STILL plays (Kill()'s dust
+        // chain is ungated) but the refund refuses (`:77267`).
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data_ai_owned(VINE_ROPE_COIL, 1, 160.5, 100.25, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool2.slots_mut()[s2].time_left = 1;
+        tick(&mut pool2, &mut w);
+        assert!(pool2.drain_death_drops().is_empty(), "the :77267 owner refusal");
+        assert_eq!(pool2.drain_proj_sounds().len(), 1, "the cue is ungated");
+        // The noDropItem coil: no cue (ai1 = 3 > 0), no refund (`:77367`).
+        let mut pool3 = ProjectilePool::new();
+        let s3 = pool3
+            .spawn_with_data_ai(SILK_ROPE_COIL, 160.5, 100.25, 0.0, 0.0, 0, 0.0, 0.0, 3.0)
+            .unwrap();
+        pool3.slots_mut()[s3].time_left = 1;
+        pool3.set_no_drop_item(s3, true);
+        tick(&mut pool3, &mut w);
+        assert!(pool3.drain_death_drops().is_empty(), "the :77367 head");
+        assert!(pool3.drain_proj_sounds().is_empty(), "ai1 > 0 → no cue");
+        // The FOREIGN beach ball: no return either — the `:77267` refusal
+        // precedes the whole `!noDropItem` block, the 155 arm included.
+        let mut pool4 = ProjectilePool::new();
+        let s4 = pool4
+            .spawn_with_data_ai_owned(BEACH_BALL, 1, 1600.0, 400.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        tick(&mut pool4, &mut w);
+        assert!(!pool4.slots()[s4].active);
+        assert!(pool4.drain_death_drops().is_empty(), "the foreign ball never returns");
     }
 
     /// The owner gate (`:27202-27205`): a foreign coil flies through the

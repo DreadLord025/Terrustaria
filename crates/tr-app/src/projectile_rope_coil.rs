@@ -33,8 +33,16 @@
 //!
 //! Deviations (docs/ANALYSIS.md): the dust walks sharing the chain
 //! geometry (`Projectile.cs:74615-74731`) skip with the dust layer; the
-//! `ai[1] == 0` sound cue (`:74617-74620`/`:74681-74684`) rides the draw
-//! wiring's `wants_sound`; the refund drop's `ReserveForLocalPlayer`
+//! `ai[1] == 0` sound cue (`:74617-74620`/`:74681-74684`) is WIRED at the
+//! pool's death hook (retire phase): the int overload's LEGACY id 0 = Dig
+//! (NOT Item1 — the g82 `3258189cb` correction), queued `(0, 0)` into
+//! `pending_proj_sounds` and drained through the `play_place_sound`
+//! facade's id-0 arm, UNGATED by owner/noDropItem (it sits in `Kill()`'s
+//! dust chain); the refund ladder + the beach-ball return sit INSIDE
+//! `Kill_ExplodeTiles` behind the `:77267` owner refusal + the `:77367`
+//! `!noDropItem` head (the retire fix — the earlier no-gate reading
+//! confused the grab reservation with a spawn gate); the refund drop's
+//! `ReserveForLocalPlayer`
 //! ownership sets only `enemyGrabDelayTime` in netMode 0
 //! (`Item.cs:49757-49760`, `WorldItem.cs:295-305`) — the port's enemy-grab
 //! clock is unported, so the drop is player-grabbable immediately (the
@@ -50,8 +58,8 @@ use crate::projectile::{ROPE_COIL, SILK_ROPE_COIL, VINE_ROPE_COIL, WEB_ROPE_COIL
 use crate::projectile::Projectile;
 
 /// The `DrawProjDirect` chain-draw gate (`Main.cs:28499`/`:28549`/`:28610`).
-/// The g82b draw wiring gates `draw_with_hand` on it (module doc).
-#[allow(dead_code)] // the draw wiring (g82b) consumes the gate
+/// The death hook's ai1==0 Dig cue gates on it (wired); the g82b draw
+/// wiring gates `draw_with_hand` on it too (module doc).
 #[inline]
 pub(crate) fn is_coil(kind: u16) -> bool {
     matches!(kind, ROPE_COIL | VINE_ROPE_COIL | SILK_ROPE_COIL | WEB_ROPE_COIL)
