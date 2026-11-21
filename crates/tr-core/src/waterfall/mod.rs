@@ -768,6 +768,28 @@ mod tests {
         assert_eq!(mgr.entries(), vec![(13, 9, 11)]);
     }
 
+    /// `WaterfallManager.cs:236-251`: the lava fountain (tile 717) spawns a
+    /// type-26 fall one row below when the cell underneath is open — the
+    /// third cloud arm (196 → 11, 460 → 22, 717 → 26). Type 26 IS in the
+    /// water ambience scan (`:708` excludes 11/12/22, NOT 26).
+    /// (W4-g75 final sweep `f4e3071f`, folded; supersedes the closeout's
+    /// duplicate `lava_cloud_tile_717_drops_below`.)
+    #[test]
+    fn lava_fountain_tile_717_drops_below() {
+        let mut w = world_with_air();
+        put(&mut w, 12, 8, stone(717));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert_eq!(mgr.entries(), vec![(12, 9, 26)]);
+        // A solid cell underneath blocks the spawn (`:244`).
+        let mut w2 = world_with_air();
+        put(&mut w2, 12, 8, stone(717));
+        put(&mut w2, 12, 9, stone(1));
+        let mut mgr2 = WaterfallManager::new();
+        mgr2.find_waterfalls(&w2, [5, 5, 20, 20], true);
+        assert!(mgr2.entries().is_empty());
+    }
+
     #[test]
     fn frame_counters_match_the_original_rates() {
         let mut mgr = WaterfallManager::new();
@@ -1964,73 +1986,72 @@ mod tests {
         assert_eq!(mgr.snow_frame_foreground, 2);
     }
 
-    /// `WaterfallManager.cs:236-251`: the lava cloud (tile 717) spawns a
-    /// type-26 fall one row below when the cell underneath is open — the
-    /// census's third cloud row (196 → 11, 460 → 22, 717 → 26).
+    /// The lava-fountain draw arm (`WaterfallManager.cs:481-484`): type 26
+    /// draws TWO sheets — the background texture 27 at 0.4 × the fade and the
+    /// foreground texture 26 at 0.9 × the fade, both with the flat
+    /// `Color(255,255,255,127)` tint (`:463`), and every cell seeds `AddLight`
+    /// case 26 (`:464`/`:1077-1081`: `(0.55 + (270-mouseText)/900) * 0.6`).
+    /// Even columns lead the lava-rain frames by 3/2 (`:398-408`), odd columns
+    /// ride them raw (`:431-433`). (W4-g75 final sweep `f4e3071f`, folded;
+    /// replaces the closeout's duplicate draft.)
+    ///
+    /// FOLD CORRECTION (C# re-verification): `f4e3071f`'s draft asserted
+    /// `water_scan.strength > 0` for this fixture, but the type-26 arm
+    /// `continue`s at `:525` BEFORE the typed-walk scan block (`:685-729`) —
+    /// the rain-arm falls (11/22/26 alike) feed NEITHER ambience triple from
+    /// their own draw arm. The `:708` list's omission of 26 only matters for
+    /// a fall CONVERTED to a non-excluded type mid-walk (`:663-677`). The
+    /// corrected assertions keep every other hand-replay; recorded in
+    /// ANALYSIS "W4-g73 FALLS CLOSEOUT".
     #[test]
-    fn lava_cloud_tile_717_drops_below() {
-        let mut w = world_with_air();
-        put(&mut w, 10, 10, stone(717));
-        let mut mgr = WaterfallManager::new();
-        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
-        assert_eq!(mgr.entries(), vec![(10, 11, 26)]);
-        // A solid cell underneath blocks the spawn (`:244`).
-        let mut w2 = world_with_air();
-        put(&mut w2, 10, 10, stone(717));
-        put(&mut w2, 10, 11, stone(1));
-        let mut mgr2 = WaterfallManager::new();
-        mgr2.find_waterfalls(&w2, [5, 5, 20, 20], true);
-        assert!(mgr2.entries().is_empty());
-    }
-
-    /// The lava-fountain draw arm (`WaterfallManager.cs:461-484`): type 26
-    /// draws TWO sheets per step — the background `waterfallTexture[27]`
-    /// first, then the foreground `[26]` — with the FIXED white
-    /// `Color(255,255,255,127)` tint (not the light colour), 0.9/0.4 scales,
-    /// an `AddLight` per cell, and the last-8-steps fade. The even column
-    /// leads fg by 3 / bg by 2 on the lava-rain counters (`:398-408`).
-    #[test]
-    fn lava_fountain_draws_two_white_sheets_and_lights_every_cell() {
-        // A tall world so the walk reaches its full num22 = 100/4 = 25 steps.
+    fn lava_fountain_draws_the_two_sheet_pair_and_lights_every_cell() {
         let mut w = World::new("test".into(), 80, 200);
         w.world_surface = 30.0;
         put(&mut w, 10, 10, stone(717));
         let mut mgr = WaterfallManager::new();
         mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
-        // 4 ticks: lavaRain fg 2, bg 7 (the counter trace above).
+        // 4 ticks: lavaRainFrameCounter cycles 1,2,3,0 → foreground advances
+        // on 1 and 3 → 2; background decrements once → 7.
         for _ in 0..4 {
             mgr.update_tick();
         }
         let light = LightMap::new();
         let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
-        let (lights, water_scan, lava_scan) =
-            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let (lights, water_scan, lava_scan) = mgr.draw(
+            &w, &light, &style, 0.0, &active_alpha(), 255, 0, screen_at(0.0, 0.0), false,
+        );
         let out = mgr.take_quads();
-        assert_eq!(out.len(), 50, "25 steps x two sheets");
-        // Even column 10: num23 = 2+3 = 5 → x = 5*18; num24 = 7+2 = 9 → 1.
-        // The background quad comes FIRST (`:482` before `:483`).
+        let fg: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 26).collect();
+        let bg: Vec<&WaterfallDraw> = out.iter().filter(|d| d.texture == 27).collect();
+        assert!(!fg.is_empty() && fg.len() == bg.len(), "the pair draws together");
+        // Even column 10: num23 = 2 + 3 = 5 → x = 90; num24 = 7 + 2 = 9 > 7
+        // → 1 → x = 18.
+        assert_eq!(fg[0].source, [5 * 18, 0, 16, 16]);
+        assert_eq!(bg[0].source, [18, 0, 16, 16]);
+        // The background quad comes FIRST (`:482` before `:483`); head row
+        // 11 is odd → pos = (x*16+8, y*16+8) - origin (8,8).
         assert_eq!(out[0].texture, 27);
-        assert_eq!(out[0].source, [18, 0, 16, 16]);
-        assert_eq!(out[1].texture, 26);
-        assert_eq!(out[1].source, [5 * 18, 0, 16, 16]);
-        // Head row 11 is odd → pos = (x*16+8, y*16+8) - origin (8,8).
         assert_eq!(out[0].pos, [160.0, 176.0]);
-        // Fixed white alpha-127 tint: fg (int)(255*0.9) = 229,
-        // (int)(127*0.9) = 114; bg (int)(255*0.4) = 102, (int)(127*0.4) = 50.
-        assert_eq!(out[1].color, [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.0, 114.0 / 255.0]);
-        assert_eq!(out[0].color, [102.0 / 255.0, 102.0 / 255.0, 102.0 / 255.0, 50.0 / 255.0]);
+        // The flat white-127 tint scaled by 0.9 / 0.4 (`:459-475`): the head
+        // cell (j = 0, no fade) keeps RGB (int)(255*0.9) = 229 / 102 and
+        // alpha (int)(127*0.9) = 114 / 50 — the XNA byte multiply truncates
+        // each channel independently.
+        assert_eq!(fg[0].color, [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.0, 114.0 / 255.0]);
+        assert_eq!(bg[0].color, [102.0 / 255.0, 102.0 / 255.0, 102.0 / 255.0, 50.0 / 255.0]);
         // The last step (j = 24) fades by (25-24)/8 = 0.125:
         // (int)(255*0.9*0.125) = 28, (int)(127*0.9*0.125) = 14.
-        let tail = &out[49];
-        assert_eq!(tail.color[0], 28.0 / 255.0);
-        assert_eq!(tail.color[3], 14.0 / 255.0);
-        // `AddLight(26, ...)` per cell (`:464`): n = (0.55+80/900)*0.6.
+        assert_eq!(fg.last().unwrap().color[0], 28.0 / 255.0);
+        assert_eq!(fg.last().unwrap().color[3], 14.0 / 255.0);
+        // AddLight case 26 on every walked cell: (0.55 + 15/900) * 0.6.
         assert_eq!(lights.len(), 25);
-        let n = (0.55 + (270.0 - 190.0) / 900.0) * 0.6;
-        assert_eq!(lights[0].rgb, [n, n * 0.3, n * 0.1]);
-        assert_eq!((lights[0].x, lights[0].y), (10, 11));
-        // The rain arms feed NEITHER ambience triple (no scan accumulation).
-        assert_eq!(water_scan, AmbientScan::default());
+        let n = (0.55 + 15.0 / 900.0) * 0.6;
+        assert!(lights.iter().any(|l| l.x == 10 && l.y == 11
+            && (l.rgb[0] - n).abs() < 1e-6
+            && (l.rgb[1] - n * 0.3).abs() < 1e-6
+            && (l.rgb[2] - n * 0.1).abs() < 1e-6));
+        // The rain arm `continue`s at `:525` before the typed-walk scan
+        // (`:685-729`): type 26 feeds NEITHER triple from its own draw arm.
+        assert_eq!(water_scan, AmbientScan::default(), "the rain arm never reaches the scan");
         assert_eq!(lava_scan, AmbientScan::default());
     }
 
@@ -2114,9 +2135,15 @@ mod tests {
         assert!((disco.color[0] - 153.0 / 255.0).abs() < 1e-6);
         assert_eq!(disco.color[1], 0.0);
         assert_eq!(disco.color[2], 0.0);
-        // AddLight case 2 (`:1084`): DiscoR/255 * 0.2 on the converted cell.
+        // AddLight case 2 (`:1084`): DiscoR/255 * 0.2. FOLD CORRECTION: the
+        // C# `AddLight` runs at the TOP of the step (`:548`), BEFORE the
+        // `:663-677` conversion — so the converted cell (9, 11) lights with
+        // its OLD type 0 (black, no source); the disco light lands on the
+        // NEXT step's cell (9, 12), the ball's own cell (kind 160 is not
+        // solid, the walk continues through it). `d118f7ba`'s draft asserted
+        // (9, 11) — corrected here against the statement order.
         assert!(
-            lights.iter().any(|l| l.x == 9 && l.y == 11
+            lights.iter().any(|l| l.x == 9 && l.y == 12
                 && (l.rgb[0] - 0.2).abs() < 1e-6 && l.rgb[1] == 0.0 && l.rgb[2] == 0.0),
             "the disco cell lights with the latched colour"
         );
