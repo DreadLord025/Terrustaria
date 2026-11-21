@@ -209,3 +209,34 @@ handlers stay census-only. The contract for whoever ports the preview:
 - The seed-icon click degrades to the plain seed keyboard (Advanced tab
   unported) but keeps the button's own 12.
 - The secret-seed trackable `MenuAccept` sound stays with the Advanced tab.
+- MENU-FINAL music census-only rows: `playOldTile` title 6 (the sun/moon
+  grab is unported), the async-load intro 50 (synchronous loads), the
+  `TitleMusicStyle` Console/Old/Random switch (the config setting is
+  unported — the port pins the `default:` 51), netMode-2 silence
+  (single-player).
+
+## MENU-FINAL close-out
+
+Lane 14 is COMPLETE at 57 sites + the final-phase census corrections:
+
+1. **g23 re-fold** — `docs/research/91-g23-refold-g22-doc-sweep.md`
+   (commit `0cdc6084`): g23's `945391e3` union merged only `e0f81135`;
+   the 16-commit fold-list, the pending_cue shape and the
+   disjoint-population compose-check are published for g23d. The
+   contract holds: no doc-sweep site writes `pending_ticks`; the HSL
+   draw-time cues ride the front-end `FrontDraw.audio` seam, not the
+   menu queues.
+2. **EquipArmor census** (commit `13fb0904`) — corrected to the five
+   LIVE handlers, the layout→handler map and the Swimming accessory;
+   the activation contract is published (equip state unlanded on the
+   d85/e10 co-lanes — verified by reading their tips).
+3. **Menu music** (commit `544d8781`) — the three missing track-arms
+   (72/75/89) + the title no-cross-fade jump ported; the rest of the
+   :12455-12532 ladder censused above.
+
+MENU-FINAL witnesses (written, not run — code-only lane):
+`char_creation.rs::doc_sweep_armor_voice_and_gamepad_back_census`
+(extended: `ARMOR_LAYOUT_HANDLERS` + `armor_assignment_accessory`),
+`audio.rs::menu_final_the_missing_title_arms_land` (the three arms,
+their ladder order, the property gates, the fade jump). All 19
+doc-sweep witnesses from the 57-site pass stay as listed above.
