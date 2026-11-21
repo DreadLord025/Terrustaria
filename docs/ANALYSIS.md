@@ -7956,6 +7956,52 @@ the mode-−1 no-op). The b=0 rule and the i34 seams (`destroy_plate`,
 `wire_view`, `mine_released`) were already correct (S1-L-6 / S1-P-i34) — this
 slice pins the former and leaves the latter untouched.
 
+**Follow-up round (research-71 §6, tip `0055ac801`).** The §3b.4
+hammer-placement half EXECUTED (`0cea13365`): the FULL `Minecart.FrameTrack`
+body (`Minecart.cs:943-1168`) on the kept seam — the non-pound placement-refit
+branch (`:976-1038`), the no-options reset (`:966-975`, C#-defensive: the
+option table is total over all 64 masks), the `flag4` change census
+(`:1110-1142`) and the `(pound & flag4) && !mute` fail-kill condition
+(`:1163-1166`). The hammer caller (`Player.cs:46058`) passes mute FALSE, so
+the fail-kill IS reachable there (the wiring caller's mute:true suppresses
+it): the new core `PoundOutcome::TrackHammer` arm (314 leaves `Consumed`; 470
+keeps it) drives the app drain's Item52 fail cue (`WorldGen.cs:66531-66533`,
+one `Next(-6,7)` pitch draw on UpdatePlayers) + the `SquareTileFrame` wake
+(`:63735`) + the case-314 `TileFrameImportant` refit (`:85290-85294`). The e20
+assert-on-front-absent convention is kept (NOT f11's `.max(0)` clamp — C#
+throws `IndexOutOfRangeException`, `:1085`). Deliberate deviation:
+`HandleRopeEndFraming` (`:85293`) is unported (the rope draw module reads the
+frames live).
+
+The track-piece census (`865e9d83f`, unclaimed by f11): `Minecart.PlaceTrack`
+(`:1486-1506`) → `edit::place_track` (style fronts −1/20/31/30, `frameY = -1`;
+the track items 2340/2492/2739 carry placeStyles 0/1/2 — **3183 is the Golden
+Bug Net, NOT a track item**; style 3 has no item), the placement wake
+`refit_tracks_around` (the 3×3 `SquareTileFrame` walk's case-314 slice refits
+the placed −1 front AND its neighbours), `Minecart.GetTrackItem`
+(`:1508-1517`) → `minecart::track_item` + the `cell_drops` 314 arm (the break
+drop follows the FRONT type, fixing the `by_tile` fallback's blanket-2340
+leak).
+
+The hopper INPUT side VERIFIED COMPLETE (`f74384e97`): C# `Wiring.Hopper`
+(`Wiring.cs:2638-2678`) has NO chest-above/container-input arm — its sole
+input is the `Main.item[400]` grab-box walk (`:2663-2673`), which
+`hopper_pull` ports verbatim. `IsHopperInRangeOf` (`:2610-2636`, the
+`WireState::any` consumer) is the MP-only reservation gate
+(`WorldItem.cs:237-247`, `netMode != 0`) — SP-discarded.
+
+The extractinator consume is draw-independent for ALL input kinds
+(`0055ac801`): every mode ends in an unconditional yield (modes 0/1 fall
+through the miss chain into the ore `else`, `ExtractinatorHelper.cs:460-487`),
+so the wired `--stack` consume (`Wiring.cs:2573-2578`) never depends on the
+roll — the Poop-Block mode-4 note generalises.
+
+**c42 cross-note (research-71 §6a):** the local c42 union-exec cherry-picked
+the OLD `8791f07f` (as `f1c24c381`); its `e8e6b159c` re-port LOST the
+`a2d6cdad` slot-Vec fix (slice signatures + `slots.resize` = latent compile
+error) and lacks the §3b.4 hammer half. The merger re-picks the device-arm
+reconcile from `cf0b8f9c`/`0055ac801`, NOT from `8791f07f`.
+
 ## Falling blocks (M7-FALL-1)
 
 `tr-core/src/falling.rs` ports the trigger half of

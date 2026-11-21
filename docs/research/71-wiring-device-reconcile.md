@@ -19,6 +19,18 @@
 > f11 win merged in; the merger drops f11's duplicate halves per §5 with
 > nothing left to salvage except the §3b.4 hammer-placement follow-up note.
 > Witnesses WRITTEN NOT RUN (code-only lane).
+>
+> **ADDENDUM §6 (post-`cf0b8f9c`, tip `0055ac801`):** the §3b.4
+> hammer-placement follow-up EXECUTED (`0cea13365` — the FULL FrameTrack body
+> + the TrackHammer arm), the unclaimed track-piece census ported
+> (`865e9d83f` — PlaceTrack/GetTrackItem/the placement wake; 3183 is the
+> Golden Bug Net, NOT a track item), the hopper INPUT side verified complete
+> (`f74384e97` — no chest-above arm exists in C#), the consume
+> draw-independence sweep generalised to ALL input kinds (`0055ac801`).
+> **c42 cross-note (§6a): the local c42 union-exec cherry-picked the OLD
+> `8791f07f` (as `f1c24c381`) and its `e8e6b159c` re-port LOST the `a2d6cdad`
+> slot-Vec fix (slice + `resize` = latent compile error) — re-pick the
+> device-arm reconcile from `cf0b8f9c`/`0055ac801`, NOT from `8791f07f`.**
 
 > Merger assist · 2026-11-21 · code-only (no cargo/tests run) ·
 > sources: `decompiled/Terraria/Minecart.cs`, `Wiring.cs`, `Utils.cs`, `Item.cs`,
@@ -160,12 +172,15 @@ are NOT duplicated by e20 and land untouched.
    `w4_f11_the_hopper_cooldown_gates_the_rehit`,
    `w4_f11_the_extractinator_cooldown_gates_the_rehit` — e20 pins the refusal
    but not the post-expiry re-fire).
-4. **Follow-up note (not wiring code):** f11's non-pound `FrameTrack` branch
-   (`:976-1038`), the no-options reset (`:966-975`) and `flag4` +
-   `KillTile(fail: true)` (`:1110-1166`) are the hammer-placement half
-   (`edit/hammer.rs`'s `Consumed` seam). Record as the future task; when it
-   lands, use the e20 assert-on-front-absent convention, NOT f11's `.max(0)`
-   clamp (C# throws `IndexOutOfRangeException`, `:1085`).
+4. **Follow-up note — EXECUTED (`0cea13365`, §6):** f11's non-pound
+   `FrameTrack` branch (`:976-1038`), the no-options reset (`:966-975`) and
+   `flag4` + `KillTile(fail: true)` (`:1110-1166`) are the hammer-placement
+   half. Landed on the e20 `frame_track_pound` seam as the FULL `frame_track`
+   body with the e20 assert-on-front-absent convention, NOT f11's `.max(0)`
+   clamp (C# throws `IndexOutOfRangeException`, `:1085`). The hammer caller
+   (`Player.cs:46058`) passes mute FALSE — the fail-kill tail IS reachable
+   there (the wiring caller's mute:true suppresses it); the new
+   `PoundOutcome::TrackHammer` arm drives the Item52 cue + the wake refit.
 
 ### 3c. Witness union (dedupe overlap)
 
@@ -218,6 +233,123 @@ unaffected by it.
    f11 row naming `tr-core::minecart`/`wiring_devices.rs`. ANALYSIS: keep the
    e20 "W4-e20 — the second device-arm slice" section; add the §3b.1 sound
    note when ported.
+
+## 6. Addendum — the follow-up census round (2026-11-21, post-`cf0b8f9c`)
+
+> **The e20 branch tip for this round: `0055ac801`** (on `cf0b8f9c`, the FULL
+> canonical superset). Four commits: `0cea13365` (§3b.4 hammer-placement),
+> `865e9d83f` (the track-piece census port), `f74384e97` (the hopper
+> input-side census), `0055ac801` (the consume-draw-independence sweep).
+> All witnesses WRITTEN NOT RUN (code-only lane).
+
+### 6a. c42 cross-note — the union-exec cherry-picked the OLD `8791f07f`; re-pick from `cf0b8f9c`
+
+The local `task/W4-c42-wiring-device-arms` union-exec lane carries
+`f1c24c381` — a cherry-pick of the OLD research-71 commit `8791f07f` (the
+pre-merge-IN doc; `git diff 8791f07f:…71….md f1c24c381:…71….md` is EMPTY,
+byte-identical). Its follow-up `e8e6b159c` ("union-exec item 4 finish") then
+re-ported the §3b wins from that stale base. **`cf0b8f9c` is NOT an ancestor
+of the c42 tip** (`git merge-base --is-ancestor cf0b8f9c
+task/W4-c42-wiring-device-arms` → exit 1). Two regressions ride the stale
+re-port:
+
+1. **The `a2d6cdad` slot-Vec fix is LOST.** `e8e6b159c`'s
+   `try_move_coins_in_chest` (`wiring.rs:627`) and `try_put_item_in_chest`
+   (`:726`) take `slots: &mut [crate::item::ItemSlot]` — a SLICE — while
+   their bodies still call `slots.resize(...)` (`:674`/`:748`, the
+   `Chest.Resize` write-back). A slice has no `resize`: **latent compile
+   error**, the exact defect `a2d6cdad` fixed on the e20 branch. Its
+   `hopper_pull` also re-routes through `chest_slots_mut` (which returns
+   `Option<&mut [ItemSlot]>`, `chest.rs:228`) instead of the direct
+   `&mut app.world_chests[idx].slots` Vec.
+2. **The §3b.4 hammer half is absent.** `e8e6b159c`'s `minecart.rs` keeps the
+   pound-only `frame_track_pound` (the `:976-1039` non-pound branch still
+   documented "not ported"), and its `edit/hammer.rs` still returns
+   `PoundOutcome::Consumed` for 314 (`:417`) — the pre-follow-up seam.
+
+**Merger instruction: re-pick the device-arm reconcile from `cf0b8f9c` (now
+`0055ac801`), NOT from `8791f07f`/`f1c24c381`.** The e20 branch is the
+canonical superset: every §3a fix, every §3b win INCLUDING the `a2d6cdad`
+Vec signatures, and the §6 follow-ups. Taking c42's `e8e6b159c` halves
+re-introduces the slice compile error and drops the hammer arm. The c42
+union-exec's OTHER items (doors/trapdoors/tall-gates/light unification,
+`f982f1d4f`/`ed88ec3de`/`552a0a44a`/`6381b52d1`) are independent of the
+device arms and merge on their own terms.
+
+### 6b. §3b.4 EXECUTED — the hammer-placement half (`0cea13365`)
+
+The FULL `Minecart.FrameTrack` body (`Minecart.cs:943-1168`) now lives on the
+kept seam as `frame_track(world, i, j, pound, mute) -> (reframed, fail_kill)`:
+
+- the non-pound placement-refit branch (`:976-1038`): the through-option
+  preference (`num7`, `:1017-1023`), the dead-end fallback (`num6`), the
+  pressure/booster refusal (`:1028-1034`);
+- the no-options reset (`:966-975`) — C#-defensive: the option table is TOTAL
+  over all 64 masks (every single-bit mask matches a dead-end ramp), pinned
+  by `dw_e20_the_switch_options_table_is_total_over_all_64_masks`;
+- the `flag4` change census (`:1110-1142`) + the `(pound & flag4) && !mute`
+  fail-kill condition (`:1163-1166`) returned to the app.
+
+Three slices: `frame_track_pound` (wiring, pound:true/mute:true — unchanged
+behaviour), `frame_track_hammer` (the hammer, `Player.cs:46058` passes mute
+FALSE — the fail-kill IS reachable), `frame_track_place` (the refit,
+`WorldGen.cs:85292`). The core `edit::hammer` 314 arm leaves `Consumed` for
+the new `PoundOutcome::TrackHammer`; the app drain plays the Item52 fail cue
+(`WorldGen.cs:66531-66533`, one `Next(-6,7)` pitch draw on UpdatePlayers) +
+the `SquareTileFrame` wake (`:63735`) + the case-314 refit. The e20
+assert-on-front-absent convention is kept (NOT f11's `.max(0)` clamp).
+`HandleRopeEndFraming` (`:85293`) is documented as the rope-framing seam
+(the rope draw module reads the frames live).
+
+### 6c. Track-piece census — PlaceTrack/GetTrackItem (`865e9d83f`, unclaimed by f11)
+
+The f11 `tr-core/src/minecart.rs` ported only `nearby_tiles_set_lookup_index`
+/ `track_switch_options` / `frame_track` / `flip_switch_track` — it NEVER
+ported `PlaceTrack`/`GetTrackItem`. This round lands them:
+
+- **`Minecart.PlaceTrack`** (`Minecart.cs:1486-1506`, `WorldGen.cs:60231-60233`)
+  → `edit::place_track`: active, type 314, `frameY = -1`, the style's front —
+  0 → −1, 1 → 20 (`_firstPressureFrame`), 2 → 31 (`_firstLeftBoostFrame`),
+  3 → 30 (`_firstRightBoostFrame`). **The track items are 2340/2492/2739**
+  (placeStyles 0/1/2, `Item.cs:23502`/`:24197`/`:26148`); **3183 is the Golden
+  Bug Net, NOT a track item** (the census prompt's "3183?" resolved against
+  `Item.cs`/`itemdata.rs`). Style 3 has no placing item.
+- **The placement wake** (`WorldGen.cs:60261` → `TileFrameImportant` case 314
+  `:85290-85294`): `minecart::refit_tracks_around` walks the 3×3
+  `SQUARE_FRAME_ORDER` and refits EVERY active track through
+  `FrameTrack(pound:false)` — the placed −1 front takes its neighbourhood
+  frame AND the neighbours re-fit against the new piece. The hammer fail-kill
+  wake rides the same walk.
+- **`Minecart.GetTrackItem`** (`Minecart.cs:1508-1517`,
+  `WorldGen.cs:64582-64584`) → `minecart::track_item` + the `cell_drops` 314
+  arm: the break drop follows the FRONT frame's type (0 → 2340, 1 → 2492,
+  2 → 2739), fixing the `by_tile` fallback's blanket-2340 leak (a pressure or
+  booster piece used to drop the plain track item).
+
+### 6d. Hopper INPUT side — VERIFIED COMPLETE (`f74384e97`)
+
+C# `Wiring.Hopper` (`Wiring.cs:2638-2678`) has **NO chest-above /
+container-input arm**. Its sole input is the `Main.item[400]` ground-item
+walk inside the 192×192 grab box (`:2663-2673`), which `hopper_pull` ports
+verbatim. The "hopper pulls from a chest above" premise is a misreading —
+the input is the grab BOX (a drop resting above the chest, inside the box,
+is pulled; a stacked chest contributes nothing). `IsHopperInRangeOf`
+(`:2610-2636`, the `WireState::any` consumer) is the MP-only reservation gate
+(`WorldItem.cs:237-247`: `Main.netMode != 0` guards the whole arm) —
+SP-discarded, recorded. Witness:
+`dw_e20_the_hopper_input_is_the_grab_box_not_chest_adjacency`.
+
+### 6e. Extractinator consume — draw-independent for ALL kinds (`0055ac801`)
+
+The Poop-Block mode-4 note GENERALISES: every extractable input kind always
+yields (`item_type > 0`), so the wired `--stack` consume
+(`Wiring.cs:2573-2578`) never depends on the roll. Modes 2/3/5/6 end in
+unconditional fallbacks (bait/moss/honey/sand); mode 4 in the dirt fallback
+(`ExtractinatorHelper.cs:285-288`); modes 0/1 fall through the whole miss
+chain into the UNCONDITIONAL ore `else` (`:460-487`). Only mode −1 returns −1
+(the non-input skip). Witness
+`every_extractable_kind_always_yields_the_consume_is_draw_independent` sweeps
+all 16 input kinds × 219/642 × both hardmode states × 300 seeds.
 
 *All comparisons hand-verified against the decompiled source at the cited
 lines; no cargo/tests/graphify run (code-only lane).*
