@@ -1465,6 +1465,87 @@ pub(super) mod tests {
         assert!(converted, "the grass arm runs underground");
     }
 
+    /// W4-d103 POST FINAL item 1: the OVERGROUND dispatcher's hardUpdateWorld
+    /// call-site is LIVE (`WorldGen.cs:72216-72218` — the `else if (nactive())`
+    /// arm calls `hardUpdateWorld(i, j)` on every active overground pick). The
+    /// port's `update_world_overground_tile` runs `hard_update_world_gated`
+    /// ahead of the type arms (`growth.rs:722`); in hardmode an ebonstone 25
+    /// source corrupts the grass box around it, pre-hardmode the
+    /// `hardModeWorldUpdates` gate (`:69602`/`:71501`) freezes it. This pins
+    /// the WIRING (the dispatcher reaches the infection arm), not just the
+    /// ported body.
+    #[test]
+    fn w4_d103_post_the_overground_dispatcher_runs_hard_update_world() {
+        let build = || {
+            let mut w = world();
+            // The ±3 pick box (`spread_loop`) filled with grass 2, the
+            // ebonstone 25 source at the centre. Every non-centre pick is a
+            // convertible grass, so the infection arm fires on the first
+            // non-centre draw.
+            for x in 1997..=2003 {
+                for y in 47..=53 {
+                    put(&mut w, x, y, 2, 0);
+                }
+            }
+            put(&mut w, 2000, 50, 25, 0);
+            w
+        };
+        let any_corrupt = |w: &World| {
+            (1997..=2003).any(|x| (47..=53).any(|y| w.tile(x, y).is_some_and(|t| t.kind == 23)))
+        };
+        // Hardmode: the dispatcher's hard_update arm corrupts the box.
+        let mut w = build();
+        w.hard_mode = true;
+        let mut rng = UnifiedRandom::new(11);
+        for _ in 0..100 {
+            update_world_overground_tile(&mut w, 2000, 50, true, false, 0.0, 0.0, &mut rng);
+        }
+        assert!(any_corrupt(&w), "the overground dispatcher's hardUpdateWorld arm spreads");
+        // Pre-hardmode control: the gate freezes the infection (the box stays
+        // grass on every pick — the dispatcher's other arms never convert it).
+        let mut w2 = build();
+        let mut rng2 = UnifiedRandom::new(11);
+        for _ in 0..100 {
+            update_world_overground_tile(&mut w2, 2000, 50, true, false, 0.0, 0.0, &mut rng2);
+        }
+        assert!(!any_corrupt(&w2), "the pre-hardmode gate freezes the overground arm");
+    }
+
+    /// W4-d103 POST FINAL item 1: the UNDERGROUND dispatcher's hardUpdateWorld
+    /// call-site is LIVE (`WorldGen.cs:73252-73254` — the `else if (nactive())`
+    /// arm). The port's `update_world_underground_tile` runs
+    /// `hard_update_world_gated` on every active pick (`growth.rs:1733`); the
+    /// same ebonstone/grass box corrupts in hardmode and freezes pre-hardmode.
+    #[test]
+    fn w4_d103_post_the_underground_dispatcher_runs_hard_update_world() {
+        let build = || {
+            let mut w = world();
+            for x in 1997..=2003 {
+                for y in 197..=203 {
+                    put(&mut w, x, y, 2, 0);
+                }
+            }
+            put(&mut w, 2000, 200, 25, 0);
+            w
+        };
+        let any_corrupt = |w: &World| {
+            (1997..=2003).any(|x| (197..=203).any(|y| w.tile(x, y).is_some_and(|t| t.kind == 23)))
+        };
+        let mut w = build();
+        w.hard_mode = true;
+        let mut rng = UnifiedRandom::new(12);
+        for _ in 0..100 {
+            update_world_underground_tile(&mut w, 2000, 200, 3, true, true, false, &mut rng);
+        }
+        assert!(any_corrupt(&w), "the underground dispatcher's hardUpdateWorld arm spreads");
+        let mut w2 = build();
+        let mut rng2 = UnifiedRandom::new(12);
+        for _ in 0..100 {
+            update_world_underground_tile(&mut w2, 2000, 200, 3, true, true, false, &mut rng2);
+        }
+        assert!(!any_corrupt(&w2), "the pre-hardmode gate freezes the underground arm");
+    }
+
     #[test]
     fn the_beach_shells_arm_places_the_pile() {
         // The beach-shells arm (`:72073-72135`): a dry empty beach cell under
