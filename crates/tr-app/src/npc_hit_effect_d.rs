@@ -968,11 +968,11 @@ fn duck_death(
     }
 }
 
-/// The 602/603 maggot death (`NPC.cs:86271-86290`, sites 122-123): the
+/// The 602/603 seagull death (`NPC.cs:86271-86290`, sites 122-123): the
 /// 10x dust-5 burst, then 1150/1151 at position, scale 1f. The C#
 /// re-checks `type == 602 || type == 603` inside the arm (`:86285`) —
 /// always true here, ported flat.
-fn maggot_death(
+fn seagull_death(
     npc: &Npc,
     dust: &mut DustPool,
     dust_ctx: &SpawnCtx,
@@ -1031,6 +1031,74 @@ fn pupfish_death(
     let vel = Vec2::new(npc.vx, npc.vy);
     gore.new_gore(rng, world, pos, vel, 1152, 1.0); // :86187
     gore.new_gore(rng, world, pos, vel, 1153, 1.0); // :86188
+}
+
+/// The 608/609 grebe death (`NPC.cs:86291-86311`, sites 124-126): the
+/// 10x dust-5 burst, then 1154/1155/1156 at position, scale 1f (the
+/// inner type re-check always true, ported flat).
+fn grebe_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86301-86304` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1154, 1.0); // :86307
+    gore.new_gore(rng, world, pos, vel, 1155, 1.0); // :86308
+    gore.new_gore(rng, world, pos, vel, 1156, 1.0); // :86309
+}
+
+/// The 348/349 Nutcracker death (`NPC.cs:86312-86331`, sites 127-131):
+/// the 10x dust-5 burst, then the five gores 528/529/530/531/532 at
+/// position, scale 1f.
+fn nutcracker_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86322-86325` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 528, 1.0); // :86326
+    gore.new_gore(rng, world, pos, vel, 529, 1.0); // :86327
+    gore.new_gore(rng, world, pos, vel, 530, 1.0); // :86328
+    gore.new_gore(rng, world, pos, vel, 531, 1.0); // :86329
+    gore.new_gore(rng, world, pos, vel, 532, 1.0); // :86330
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -1172,9 +1240,17 @@ pub fn hit_effect_d(
     else if (362..=365).contains(&npc_type) {
         duck_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86271-86290` — the 602/603 maggot arm (sites 122-123).
+    // `:86271-86290` — the 602/603 seagull arm (sites 122-123).
     else if npc_type == 602 || npc_type == 603 {
-        maggot_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+        seagull_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86291-86311` — the 608/609 grebe arm (sites 124-126).
+    else if npc_type == 608 || npc_type == 609 {
+        grebe_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86312-86331` — the 348/349 Nutcracker arm (sites 127-131).
+    else if npc_type == 348 || npc_type == 349 {
+        nutcracker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2110,10 +2186,10 @@ mod tests {
         }
     }
 
-    /// `NPC.cs:86287-86288` — the maggot pair 1150/1151 after the 10x
+    /// `NPC.cs:86287-86288` — the seagull pair 1150/1151 after the 10x
     /// dust-5 burst (both kinds share the row).
     #[test]
-    fn w4_f5d_the_maggot_deaths_spawn_the_pair() {
+    fn w4_f5d_the_seagull_deaths_spawn_the_pair() {
         let w = air();
         let n = mob(100.0, 100.0, 22.0, 16.0);
         for kind in [602, 603] {
@@ -2122,7 +2198,7 @@ mod tests {
             let mut rng = UnifiedRandom::new(139);
             let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
             let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
-            assert_eq!(types, vec![1150, 1151], "maggot {kind}");
+            assert_eq!(types, vec![1150, 1151], "seagull {kind}");
             assert!(!gore.slot(2).active, "exactly two gores");
             let mut twin = UnifiedRandom::new(139);
             for _ in 0..10 {
@@ -2132,7 +2208,59 @@ mod tests {
                 let _ky = twin.next_range(10, 31);
                 let _kx = twin.next_range(-20, 21);
             }
-            assert_eq!(rng.peek(), twin.peek(), "maggot {kind} mirrors the C# draws");
+            assert_eq!(rng.peek(), twin.peek(), "seagull {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86307-86309` — the grebe triple 1154/1155/1156 after the
+    /// 10x dust-5 burst (both kinds share the row).
+    #[test]
+    fn w4_f5d_the_grebe_deaths_spawn_the_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 22.0);
+        for kind in [608, 609] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(149);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![1154, 1155, 1156], "grebe {kind}");
+            assert!(!gore.slot(3).active, "exactly three gores");
+            let mut twin = UnifiedRandom::new(149);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 26, 22);
+            }
+            for _ in 0..3 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "grebe {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86326-86330` — the Nutcracker five: 528/529/530/531/532
+    /// after the 10x dust-5 burst (both kinds share the row).
+    #[test]
+    fn w4_f5d_the_nutcracker_deaths_spawn_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 40.0);
+        for kind in [348, 349] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(151);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![528, 529, 530, 531, 532], "nutcracker {kind}");
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(151);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 30, 40);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "nutcracker {kind} mirrors the C# draws");
         }
     }
 }
