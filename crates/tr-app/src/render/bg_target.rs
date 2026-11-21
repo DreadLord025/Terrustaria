@@ -172,6 +172,13 @@ pub(crate) fn sky_screen_composite_order() -> [&'static str; 2] {
 /// `Lighting.GetColor` bytes, multiplies by `backgroundColor` (0.9) then by
 /// `ugBackTransition`, casting to byte each step. The port keeps the engine's
 /// 0..1 light and folds the same truncation: `(byte)(c*255*t)/255`.
+///
+/// LIVE since the W4-g72 closeout: `bg.rs::push_cave_cell`'s fade arm and the
+/// surface-row second loop call this with the base cell's already-lit colour;
+/// the dirt corner-lit overlay (`Main.cs:53681-53687`) instead scales the
+/// corner sum by the transition inside `GetCornerColors` (`Lighting.cs:299`)
+/// and sets the alpha to `(byte)(255*transition)` — that arm folds the scale
+/// itself and does NOT route through this helper (the truncation seat differs).
 pub(crate) fn ug_crossfade_tint(base: [f32; 4], transition: f32) -> [f32; 4] {
     let byte = |c: f32| ((c * 255.0) as u8 as f32 * transition) as u8 as f32 / 255.0;
     [byte(base[0]), byte(base[1]), byte(base[2]), byte(base[3])]

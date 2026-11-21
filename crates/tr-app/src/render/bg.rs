@@ -2,6 +2,18 @@
 //! surface transition row, the dirt sheet, the underworld black box, the rock
 //! bands, the magma field and the screen-space parallax layer helpers the sky
 //! pass shares.
+//!
+//! The `ugBackTransition` cross-fade overlays are WIRED (W4-g72 closeout):
+//! `UgOld` resolves the old-style sheet table once per frame
+//! (`Main.cs:53804-53810`'s second switch run) and every pass draws its
+//! overlay while `transition > 0` — the per-cell twins through
+//! `push_cave_cell`'s fade arm (tint via `bg_target::ug_crossfade_tint`,
+//! row pitch `backgroundHeight[oldBackTexture[slot]]`), the surface row and
+//! the dirt sheet as SECOND whole loops re-phased against the OLD sheet's
+//! width (`Main.cs:53768-53797` / `:53651-53694`, the dirt one corner-lit).
+//! The magma FIELD (slot 5) never fades in the C# — census in
+//! `draw_background_draw_magma_layer`. Non-classic old sheets are
+//! atlas-blocked (d35 research/113 §8.4) and their overlays skip.
 use super::BgTex;
 use super::sky::SkyAssets;
 use glam::Vec2;
@@ -40,6 +52,52 @@ fn round_half_even(v: f32) -> f32 {
     }
 }
 
+/// The `ugBackTransition` cross-fade inputs (`Main.cs:53075-53082` and its six
+/// twins — W4-g72 closeout WIRED). `sheet` is the OLD style's resolved slot
+/// sheet (`None` while the per-biome sheets are atlas-blocked, d35 research/113
+/// §8.4 — the overlay skips, never a wrong sheet).
+#[derive(Clone, Copy)]
+struct UgFade<'a> {
+    sheet: Option<&'a BgTex>,
+    transition: f32,
+    /// The OLD sheet's row pitch (`Main.backgroundHeight[oldBackTexture[slot]]`);
+    /// the NEW pass's pitch when the old sheet is unresolved — the overlay
+    /// skips then, so the pitch never matters.
+    old_pitch: f32,
+}
+
+/// The OLD-style sheet table + fade, resolved once per `DrawBackground` frame
+/// (`Main.DrawBackground_UpdateBackgroundStyles` runs its switch twice,
+/// `Main.cs:53804-53810` — `undergroundBackground` then
+/// `oldUndergroundBackground`). `h[slot]` is the resolved OLD sheet's
+/// `backgroundHeight`: the dirt/rock overlay draws carry
+/// `backgroundHeight[oldBackTexture[slot]] * j` (`Main.cs:53632`, `:53313`),
+/// so an UNRESOLVED old sheet (atlas-blocked) falls back to the NEW pass's
+/// pitch — the overlay skips anyway, the pitch never matters then. The
+/// single-row passes (surface row, rock band, magma band, hell floor) have no
+/// `j` term at all.
+struct UgOld<'a> {
+    sheets: [Option<&'a BgTex>; 7],
+    h: [f32; 7],
+    transition: f32,
+}
+
+impl<'a> UgOld<'a> {
+    fn fade(&self, slot: usize, fallback_h: f32) -> UgFade<'a> {
+        UgFade {
+            sheet: self.sheets[slot],
+            transition: self.transition,
+            old_pitch: self.pitch(slot, fallback_h),
+        }
+    }
+
+    /// The OLD sheet's row pitch for slot `slot`, the NEW pass's `new_h` when
+    /// the old sheet is unresolved (`Main.backgroundHeight[oldBackTexture]`).
+    fn pitch(&self, slot: usize, new_h: f32) -> f32 {
+        if self.sheets[slot].is_some() { self.h[slot] } else { new_h }
+    }
+}
+
 /// One 16x16 cell of the underground backdrop, lit by the world tile behind it.
 ///
 /// `pos` is the screen-space top-left of the cell (C#'s
@@ -60,6 +118,8 @@ fn push_cave_cell(
     sample: [f32; 2],
     light: &LightMap,
     bg_brightness: f32,
+    fade: UgFade<'_>,
+    row_j: i32,
 ) {
     if pos[0] >= screen.x || pos[1] >= screen.y || pos[0] + 16.0 <= 0.0 || pos[1] + 16.0 <= 0.0 {
         return;
@@ -76,12 +136,14 @@ fn push_cave_cell(
     let du = (tex.uv[2] - tex.uv[0]) / tex.w;
     let dv = (tex.uv[3] - tex.uv[1]) / tex.h;
     let k = bg_brightness * 0.9;
+    let wpos = [
+        camera.x + (pos[0] - screen.x * 0.5) / zoom,
+        camera.y + (pos[1] - screen.y * 0.5) / zoom,
+    ];
+    let size = [16.0 / zoom, 16.0 / zoom];
     r.push_back_sprite(
-        [
-            camera.x + (pos[0] - screen.x * 0.5) / zoom,
-            camera.y + (pos[1] - screen.y * 0.5) / zoom,
-        ],
-        [16.0 / zoom, 16.0 / zoom],
+        wpos,
+        size,
         [
             tex.uv[0] + du * sx,
             tex.uv[1] + dv * sy,
@@ -90,6 +152,32 @@ fn push_cave_cell(
         ],
         [c[0] * k, c[1] * k, c[2] * k, 1.0],
     );
+    // `Main.cs:53075-53082`: the OLD style's sheet draws over the new one while
+    // `ugBackTransition > 0`, every channel (incl. alpha) byte-truncated by the
+    // transition. The tint is the same lit colour the base cell just drew
+    // (`color7 = color6` AFTER the 0.9 multiply), so the port folds it through
+    // the landed `bg_target::ug_crossfade_tint`. The row pitch is the OLD
+    // sheet's (`backgroundHeight[oldBackTexture[slot]] * j`); the source rect,
+    // jitter and sample point stay the NEW pass's.
+    if fade.transition > 0.0 && let Some(old) = fade.sheet {
+        let pos_y = pos[1] + (fade.old_pitch - tex.h) * row_j as f32;
+        if pos_y < screen.y && pos_y + 16.0 > 0.0 {
+            let ou = (old.uv[2] - old.uv[0]) / old.w;
+            let ov = (old.uv[3] - old.uv[1]) / old.h;
+            let osx = cave_cell_sx(old, sx);
+            r.push_back_sprite(
+                [wpos[0], camera.y + (pos_y - screen.y * 0.5) / zoom],
+                size,
+                [
+                    old.uv[0] + ou * osx,
+                    old.uv[1] + ov * sy,
+                    old.uv[0] + ou * (osx + 16.0),
+                    old.uv[1] + ov * (sy + 16.0),
+                ],
+                super::bg_target::ug_crossfade_tint([c[0] * k, c[1] * k, c[2] * k, 1.0], fade.transition),
+            );
+        }
+    }
 }
 
 /// `Main.GetRockTransitionPoint`: first rock-backdrop row, in **world** pixels.
@@ -446,11 +534,12 @@ pub(crate) fn draw_background(
     // `Main.cs:52823-52840`: `PickUndergroundBackgroundStyle` + the `ugBackTransition`
     // cross-fade — LIVE since W4-g72 final: the pick reads the World's rolled cave
     // arrays + the frame's SceneMetrics (`bg_style_pick_input`), the latch/decay
-    // runs `ug_back_step`. The cross-fade OVERLAY draws
-    // (`_drawBackground_oldBackTexture`) stay unwired — the per-biome sheets are
-    // atlas-blocked (d35 research/113 §8.4), so the old-style table would resolve
-    // to missing sheets anyway; the state machine still tracks the fade for the
-    // wiring lane.
+    // runs `ug_back_step`. W4-g72 closeout: the cross-fade OVERLAY draws
+    // (`_drawBackground_oldBackTexture`) are WIRED too — the old-style table
+    // resolves below and every pass draws its overlay while `transition > 0`.
+    // The per-biome sheets are atlas-blocked (d35 research/113 §8.4), so a
+    // non-classic old slot resolves `None` and its overlay skips (graceful
+    // degradation — never a wrong sheet); the classic↔classic fades draw today.
     let picked = super::bg_styles::pick_underground_background_style(
         &super::bg_styles::bg_style_pick_input(
             world,
@@ -462,6 +551,15 @@ pub(crate) fn draw_background(
     );
     super::bg_styles::ug_back_step(ug_back, picked, shimmer_alpha);
     let back = draw_background_update_background_styles(ug_back.style, world);
+    // `Main.DrawBackground_UpdateBackgroundStyles`' second switch run
+    // (`Main.cs:53804-53810`): the OLD style's table, resolved once per frame.
+    let old_back = draw_background_update_background_styles(ug_back.old_style, world);
+    let old_sheets: [Option<&BgTex>; 7] = old_back.map(|id| back_texture(sky, id));
+    let old = UgOld {
+        sheets: old_sheets,
+        h: old_sheets.map(|t| t.map_or(0.0, |t| t.h)),
+        transition: ug_back.transition,
+    };
     // W4-g72 final: the dirt pass draws `back[1]` (the picked style's dirt
     // sheet), not the pinned `Background_2`. The per-biome sheets are
     // atlas-blocked (d35 research/113 §8.4), so `back_texture` resolves only
@@ -486,6 +584,7 @@ pub(crate) fn draw_background(
         &layout,
         cave_parallax,
         bg_brightness,
+        &old,
     );
     draw_background_dirt_background(
         r,
@@ -502,6 +601,7 @@ pub(crate) fn draw_background(
         bg_brightness,
         &dirt,
         dirt_sheet,
+        &old,
     );
     draw_background_draw_underworld_black_box(
         r,
@@ -538,6 +638,7 @@ pub(crate) fn draw_background(
         cave_parallax,
         frame,
         show_invisible_walls,
+        &old,
     );
     draw_background_draw_magma_layer(
         r,
@@ -559,6 +660,7 @@ pub(crate) fn draw_background(
         frame,
         hell_black_box_bottom,
         show_invisible_walls,
+        &old,
     );
 }
 
@@ -576,6 +678,7 @@ fn draw_background_surface_transition_background(
     layout: &UndergroundBgLayout,
     cave_parallax: f32,
     bg_brightness: f32,
+    old: &UgOld<'_>,
 ) {
     let Some(transition) = back_texture(sky, back[0]) else {
         return;
@@ -591,6 +694,10 @@ fn draw_background_surface_transition_background(
         loops,
         jitter: n2,
     } = pass_prologue(screen, screen_pos, num, cave_parallax);
+    // The surface row's overlay is NOT a per-cell twin — the C# runs a second
+    // whole loop below (`Main.cs:53768-53797`), so the base cells draw with the
+    // fade disabled.
+    let no_fade = UgFade { sheet: None, transition: 0.0, old_pitch: 0.0 };
     for i in 0..loops {
         for j in 0..(num as i32 / 16) {
             let cell_x = start_x + num * i as f32 + 16.0 * j as f32;
@@ -606,6 +713,59 @@ fn draw_background_surface_transition_background(
                 [cell_x + 8.0, surface_screen],
                 light,
                 bg_brightness,
+                no_fade,
+                0,
+            );
+        }
+    }
+    // `Main.cs:53768-53797`: the surface row's overlay is a SECOND whole loop,
+    // re-phased against the OLD sheet's own width (`num = old.Width() - 32`,
+    // `bgStartX`/`bgLoops` recomputed, the jitter re-derived) — not a per-cell
+    // twin. The light is re-read at the OLD loop's sample points; the fade
+    // tint truncates every channel incl. alpha (`:53790-53794`).
+    if old.transition <= 0.0 {
+        return;
+    }
+    let Some(old_tex) = old.sheets[0] else {
+        return;
+    };
+    let num = old_tex.w - 32.0;
+    if num < 16.0 {
+        return;
+    }
+    let PassPrologue {
+        start_x,
+        loops,
+        jitter: n5,
+    } = pass_prologue(screen, screen_pos, num, cave_parallax);
+    for i in 0..loops {
+        for j in 0..(num as i32 / 16) {
+            let cell_x = start_x + num * i as f32 + 16.0 * j as f32;
+            let sp = screen_pos;
+            let wx = ((cell_x + 8.0 + sp.x) / TILE_PX).floor() as i32;
+            let wy = ((surface_screen + sp.y) / TILE_PX).floor() as i32;
+            let c = light.get(wx, wy);
+            let k = bg_brightness * 0.9;
+            let color = super::bg_target::ug_crossfade_tint(
+                [c[0] * k, c[1] * k, c[2] * k, 1.0],
+                old.transition,
+            );
+            let du = (old_tex.uv[2] - old_tex.uv[0]) / old_tex.w;
+            let sx = 16.0 * j as f32 + n5 + 16.0;
+            push_screen(
+                r,
+                camera,
+                zoom,
+                screen,
+                [cell_x + n5, surface_screen],
+                [16.0, 16.0],
+                [
+                    old_tex.uv[0] + du * sx,
+                    old_tex.uv[1],
+                    old_tex.uv[0] + du * (sx + 16.0),
+                    old_tex.uv[1] + (old_tex.uv[3] - old_tex.uv[1]) / old_tex.h * 16.0,
+                ],
+                color,
             );
         }
     }
@@ -633,6 +793,7 @@ fn draw_background_dirt_background(
     // per-biome sheets are atlas-blocked — the cells skip, the band below
     // still draws like the C#'s own missing-texture arm).
     dirt_sheet: Option<&BgTex>,
+    old: &UgOld<'_>,
 ) {
     let screen_pos = layout.screen_pos;
     let surface_screen = layout.transition_top;
@@ -681,6 +842,14 @@ fn draw_background_dirt_background(
     }
     // The band below still draws when the row count collapses (`Main.cs:53707` gates on
     // its own top), so the cells run under an `if`, not an early return.
+    //
+    // The dirt cells' per-cell overlay twins (`Main.cs:53560-53567` /
+    // `:53608-53615` / `:53625-53632`) live ONLY inside the 9-slice/4-slice
+    // arms, which the port collapses to the plain cell (`Main.cs:53636-53645`
+    // — the plain arm draws NO overlay). The dirt overlay is instead the
+    // SECOND whole corner-lit loop after the cells (`Main.cs:53651-53694`),
+    // ported below — so the base cells draw with the fade disabled.
+    let no_fade = UgFade { sheet: None, transition: 0.0, old_pitch: 0.0 };
     if loops_y > 0 {
         if let Some(dirt_tex) = dirt_sheet {
             let rows = (dirt.h as i32 / 16).max(1);
@@ -702,7 +871,78 @@ fn draw_background_dirt_background(
                                 [cell_x + 8.0, cell_y + 8.0],
                                 light,
                                 bg_brightness,
+                                no_fade,
+                                j,
                             );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    // `Main.cs:53651-53694`: the dirt overlay — a SECOND whole loop over the
+    // OLD sheet's own width, corner-lit (`GetCornerColors(.., ugBackTransition)`
+    // scales the corner sum by the transition, `Lighting.cs:299`), every
+    // corner's alpha `(byte)(255 * transition)` (`:53682-53686`). The port's
+    // quad pipeline has no per-vertex colours, so each cell takes the bilinear
+    // corner sample at its centre (the same approximation `push_wall_lit`
+    // documents) — the transition rides the sample AND the alpha. The light
+    // gate is `InWorld` + any-channel-nonzero (`:53672-53679`), NOT the base
+    // pass's wall-light gate; the row count is the base pass's `bgLoopsY`.
+    if old.transition > 0.0 && loops_y > 0 {
+        if let Some(old_tex) = old.sheets[1] {
+            let onum = old_tex.w - 32.0;
+            if onum >= 16.0 {
+                let PassPrologue {
+                    start_x: osx,
+                    loops: oloops,
+                    jitter: on2,
+                } = pass_prologue(screen, screen_pos, onum, cave_parallax);
+                let a = ((255.0 * old.transition) as u8) as f32 / 255.0;
+                for i in 0..oloops {
+                    for j in 0..loops_y {
+                        for k in 0..(onum as i32 / 16) {
+                            for l in 0..6 {
+                                let sample_y = start_y + j as f32 * 96.0 + l as f32 * 16.0 + 8.0;
+                                let cell_x = osx + onum * i as f32 + 16.0 * k as f32;
+                                let tx = ((cell_x + 8.0 + screen_pos.x) / TILE_PX) as i32;
+                                let ty = ((sample_y + screen_pos.y) / TILE_PX) as i32;
+                                // Main.cs:53672: InWorld WITHOUT the 1 margin.
+                                if tx < 0 || tx >= world.width || ty < 0 || ty >= world.height {
+                                    continue;
+                                }
+                                let c = light.get(tx, ty);
+                                if !light_any_nonzero(c, bg_brightness) {
+                                    continue; // Main.cs:53679
+                                }
+                                let corners = light.corner4(tx, ty);
+                                let cc = super::tiles::bilerp_corners(corners, 0.5, 0.5);
+                                let k2 = bg_brightness * old.transition;
+                                let cell_y = start_y + old_tex.h * j as f32 + 16.0 * l as f32;
+                                let du = (old_tex.uv[2] - old_tex.uv[0]) / old_tex.w;
+                                let dv = (old_tex.uv[3] - old_tex.uv[1]) / old_tex.h;
+                                let sx = cave_cell_sx(old_tex, 16.0 * k as f32 + on2 + 16.0);
+                                push_screen(
+                                    r,
+                                    camera,
+                                    zoom,
+                                    screen,
+                                    [cell_x + on2, cell_y],
+                                    [16.0, 16.0],
+                                    [
+                                        old_tex.uv[0] + du * sx,
+                                        old_tex.uv[1] + dv * 16.0 * l as f32,
+                                        old_tex.uv[0] + du * (sx + 16.0),
+                                        old_tex.uv[1] + dv * (16.0 * l as f32 + 16.0),
+                                    ],
+                                    [
+                                        (cc[0] * k2).min(1.0),
+                                        (cc[1] * k2).min(1.0),
+                                        (cc[2] * k2).min(1.0),
+                                        a,
+                                    ],
+                                );
+                            }
                         }
                     }
                 }
@@ -727,6 +967,9 @@ fn draw_background_dirt_background(
     if !(band_top > -32.0) {
         return; // Main.cs:53707-53709
     }
+    // Single-row pass: the overlay twin (`Main.cs:53723-53730`) has no `j`
+    // row term — the fade's pitch never applies.
+    let band_fade = old.fade(2, band.h);
     for i in 0..loops {
         for j in 0..(num as i32 / 16) {
             let cell_x = start_x + num * i as f32 + 16.0 * j as f32;
@@ -742,6 +985,8 @@ fn draw_background_dirt_background(
                 [cell_x + 8.0, band_top],
                 light,
                 bg_brightness,
+                band_fade,
+                0,
             );
         }
     }
@@ -832,10 +1077,13 @@ fn draw_background_draw_rock_layer(
     cave_parallax: f32,
     magma_bg_frame: usize,
     show_invisible_walls: bool,
+    old: &UgOld<'_>,
 ) {
     let _ = (q1, q2, local_shimmer_alpha, draw_offset);
     // The 9-slice/4-slice smoothing branches (`Main.cs:53156-53320`) are collapsed to
-    // the plain cell, like the dirt pass (see ANALYSIS.md).
+    // the plain cell, like the dirt pass (see ANALYSIS.md). The rock overlay twins
+    // (`:53249-53256` / `:53289-53296` / `:53306-53313` / `:53327-53334`) cover ALL
+    // four arms incl. the plain one — the collapsed cell keeps the overlay.
     let Some(tex) = back_texture(sky, back[3]) else {
         return;
     };
@@ -900,6 +1148,9 @@ fn draw_background_draw_rock_layer(
                         continue; // Main.cs:53152-53159
                     }
                     let cell_y = state.start_y + tex.h * j as f32 + 16.0 * l as f32;
+                    // `Main.cs:53305-53313`: the overlay's row pitch is
+                    // `backgroundHeight[oldBackTexture[3]] * j` — the OLD
+                    // sheet's height, not the new one's.
                     push_cave_cell(
                         r,
                         camera,
@@ -912,6 +1163,8 @@ fn draw_background_draw_rock_layer(
                         [sample_x, sample_y],
                         light,
                         bg_brightness,
+                        old.fade(3, tex.h),
+                        j,
                     );
                 }
             }
@@ -933,6 +1186,7 @@ fn draw_background_draw_rock_layer(
         num4,
         cave_parallax,
         magma_bg_frame,
+        old,
     );
 }
 
@@ -957,6 +1211,7 @@ fn draw_background_draw_magma_transition(
     diff: f32,
     cave_parallax: f32,
     magma_bg_frame: usize,
+    old: &UgOld<'_>,
 ) {
     let background_width: f32 = 128.0; // Main.cs:53349
     if !magma_transition {
@@ -973,6 +1228,9 @@ fn draw_background_draw_magma_transition(
     state.start_x = start_x;
     state.loops = loops;
     state.top_y = state.start_y + state.loops_y as f32 * block_h; // Main.cs:53357
+    // Single-row band (`Main.cs:53369-53376`): the overlay twin has no `j`
+    // row term — the fade's pitch never applies.
+    let band_fade = old.fade(4, tex.h);
     for i in 0..state.loops {
         for j in 0..(background_width as i32 / 16) {
             let cell_x = state.start_x + background_width * i as f32 + 16.0 * j as f32;
@@ -988,6 +1246,8 @@ fn draw_background_draw_magma_transition(
                 [cell_x + 8.0, state.top_y],
                 light,
                 bg_brightness,
+                band_fade,
+                0,
             );
         }
     }
@@ -1018,10 +1278,14 @@ fn draw_background_draw_magma_layer(
     magma_bg_frame: usize,
     hell_black_box_bottom: &mut f32,
     show_invisible_walls: bool,
+    old: &UgOld<'_>,
 ) {
     let _ = (q1, q2, draw_offset);
     // The 9-slice/4-slice smoothing branches (`Main.cs:52910-53049`) are collapsed to
-    // the plain cell, like the dirt pass (see ANALYSIS.md).
+    // the plain cell, like the dirt pass (see ANALYSIS.md). The magma FIELD has NO
+    // overlay twin in ANY arm (`backTexture[5]` draws at `:53002/:53033/:53041/:53049`
+    // never pair with `oldBackTexture[5]` — the C# never fades the animated hell
+    // field itself); only the hell FLOOR row (slot 6) fades (`:53075-53082`).
     let Some(tex) = back_texture(sky, back[5]) else {
         return;
     };
@@ -1085,6 +1349,8 @@ fn draw_background_draw_magma_layer(
                         continue; // Main.cs:52907
                     }
                     let cell_y = state.start_y + block_h * j as f32 + 16.0 * l as f32;
+                    // The magma field never fades (the slot-5 census above).
+                    let no_fade = UgFade { sheet: None, transition: 0.0, old_pitch: 0.0 };
                     push_cave_cell(
                         r,
                         camera,
@@ -1097,6 +1363,8 @@ fn draw_background_draw_magma_layer(
                         [sample_x, sample_y],
                         light,
                         bg_brightness,
+                        no_fade,
+                        j,
                     );
                 }
             }
@@ -1115,6 +1383,9 @@ fn draw_background_draw_magma_layer(
     let Some(bottom) = back_texture(sky, back[6]) else {
         return;
     };
+    // `Main.cs:53075-53082`: the hell floor row fades like the other single-row
+    // passes — no `j` row term, the fade's pitch never applies.
+    let floor_fade = old.fade(6, bottom.h);
     for i in 0..state.loops {
         for j in 0..(num as i32 / 16) {
             let cell_x = state.start_x + num * i as f32 + 16.0 * j as f32;
@@ -1130,6 +1401,8 @@ fn draw_background_draw_magma_layer(
                 [cell_x + 8.0, state.top_y],
                 light,
                 bg_brightness,
+                floor_fade,
+                0,
             );
         }
     }
@@ -1858,6 +2131,62 @@ mod underground_bg_tests {
         super::super::bg_styles::ug_back_step(&mut s, 5, 0.0);
         assert_eq!((s.style, s.old_style), (5, 8));
         assert_eq!(s.transition, 0.75);
+    }
+
+    /// W4-g72 closeout: the cross-fade overlay wiring — the OLD-style table
+    /// resolves through the same `back_texture` gate as the new one, the
+    /// fade carries the OLD sheet's row pitch, and an unresolved (atlas-
+    /// blocked) old slot degrades to a skipped overlay with the NEW pass's
+    /// pitch (`UgOld::pitch`'s fallback).
+    #[test]
+    fn w4_g72_the_crossfade_old_table_resolves_and_degrades() {
+        let w = world();
+        // Style 0 (classic) vs style 8 (per-biome): the old table's ids are
+        // the second switch run's output (`Main.cs:53804-53810`).
+        let old_back = draw_background_update_background_styles(0, &w);
+        assert_eq!(old_back, [1, 2, 4, 3, 6, 125, 185]);
+        let new_back = draw_background_update_background_styles(8, &w);
+        assert_eq!(new_back, [83, 84, 85, 86, 137, 125, 185]);
+        // The classic old slots all resolve through `back_texture`.
+        for id in old_back {
+            assert!(back_texture(&sky_stub(), id).is_some());
+        }
+        for id in [83usize, 84, 85, 86] {
+            assert!(back_texture(&sky_stub(), id).is_none());
+        }
+        // The fade's pitch: a resolved old sheet keeps its OWN height, an
+        // unresolved one falls back to the new pass's pitch.
+        let dirt = BgTex { uv: [0.0, 0.0, 0.1, 0.1], w: 128.0, h: 96.0 };
+        let old_dirt = BgTex { uv: [0.0, 0.0, 0.1, 0.1], w: 128.0, h: 120.0 };
+        let resolved = UgOld {
+            sheets: [None, Some(&old_dirt), None, None, None, None, None],
+            h: [0.0, 120.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            transition: 0.75,
+        };
+        assert_eq!(resolved.pitch(1, dirt.h), 120.0);
+        assert_eq!(resolved.fade(1, dirt.h).old_pitch, 120.0);
+        assert_eq!(resolved.fade(1, dirt.h).transition, 0.75);
+        // Unresolved slot 3: the overlay skips (sheet None), pitch = new.
+        assert_eq!(resolved.pitch(3, dirt.h), 96.0);
+        assert!(resolved.fade(3, dirt.h).sheet.is_none());
+        // transition 0 disables every overlay regardless of the sheet.
+        let dead = UgOld { transition: 0.0, ..resolved };
+        assert_eq!(dead.fade(1, dirt.h).transition, 0.0);
+    }
+
+    /// A `SkyAssets` stub carrying only the classic underground sheets — the
+    /// overlay-resolution witness needs no GPU, just the `back_texture` gate.
+    fn sky_stub() -> SkyAssets {
+        let mut sky = SkyAssets::default();
+        let tex = BgTex { uv: [0.0, 0.0, 0.1, 0.1], w: 128.0, h: 96.0 };
+        sky.underground_transition = Some(tex);
+        sky.underground = Some(tex);
+        sky.rock = Some(tex);
+        sky.rock_band = Some(tex);
+        sky.magma_transition = Some(tex);
+        sky.magma = [Some(tex), Some(tex), Some(tex)];
+        sky.hell_bottom = [Some(tex), Some(tex), Some(tex)];
+        sky
     }
 
     #[test]

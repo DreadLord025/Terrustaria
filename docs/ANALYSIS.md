@@ -1550,13 +1550,48 @@ draws `back[1]` (the picked style's sheet) instead of the pinned
 `backgroundHeight[2]`. DEVIATION (graceful degradation): the per-biome sheets
 are still atlas-blocked (d35 research/113 §8.4 per-world bg pages), so
 `back_texture` resolves only the classic-set ids — a non-classic pick skips
-the affected passes (never draws the WRONG biome's sheet), and the
-`_drawBackground_oldBackTexture` cross-fade overlay draws stay unwired (the
-latch state machine IS live). The G6 key needs no new input: the backdrop
-rides the always-rebuilt back range, and the style inputs are per-world
-constants or the per-frame metrics scan. 3 witnesses WRITTEN NOT RUN
-(the rolled-array pick + table ids, the latch/decay steps, the classic-set
-regression).
+the affected passes (never draws the WRONG biome's sheet). The G6 key needs
+no new input: the backdrop rides the always-rebuilt back range, and the
+style inputs are per-world constants or the per-frame metrics scan.
+3 witnesses WRITTEN NOT RUN (the rolled-array pick + table ids, the
+latch/decay steps, the classic-set regression).
+
+### The cross-fade overlay draws LIVE (W4-g72 closeout)
+
+The `_drawBackground_oldBackTexture` overlays are now WIRED into the same
+live chain (`bg.rs::UgOld` resolves the old-style table once per frame —
+`Main.DrawBackground_UpdateBackgroundStyles`' second switch run,
+`Main.cs:53804-53810` — and every pass draws its overlay while
+`ugBackTransition > 0`). The C# census of the seven overlay families:
+
+| Slot / pass | C# overlay seat | Shape |
+| --- | --- | --- |
+| 0 surface row | `:53768-53797` | SECOND whole loop, re-phased against the OLD sheet's width (`old.Width()-32`), light re-read at the old loop's samples |
+| 1 dirt sheet | `:53651-53694` | SECOND whole corner-lit loop (`GetCornerColors(.., ugBackTransition)` scales the corner sum, `Lighting.cs:299`; alpha `(byte)(255*t)`); the per-cell twins (`:53560/:53608/:53625`) live ONLY in the collapsed slice arms — the plain arm (`:53636-53645`) draws none |
+| 2 rock band | `:53723-53730` | per-cell twin, single row (no `j` pitch) |
+| 3 rock field | `:53249/:53289/:53306/:53327` | per-cell twin in ALL four arms incl. the plain one; row pitch `backgroundHeight[oldBackTexture[3]] * j` |
+| 4 magma band | `:53369-53376` | per-cell twin, single row |
+| 5 magma FIELD | — | **NO overlay in any arm** (`backTexture[5]` at `:53002/:53033/:53041/:53049` never pairs with `oldBackTexture[5]`) — the animated hell field itself never fades |
+| 6 hell floor | `:53075-53082` | per-cell twin, single row |
+
+The per-cell twins route through `push_cave_cell`'s fade arm: the tint is
+the base cell's already-lit colour folded through the landed
+`bg_target::ug_crossfade_tint` (every channel incl. alpha byte-truncated by
+the transition), the row pitch is the OLD sheet's height
+(`backgroundHeight[oldBackTexture[slot]] * j` — the port's `UgOld::pitch`,
+falling back to the NEW pass's pitch when the old sheet is unresolved),
+and the source rect/jitter/sample point stay the NEW pass's. The dirt
+corner-lit overlay does NOT route through `ug_crossfade_tint` — its
+truncation seat is inside `GetCornerColors`' scaled corner sum
+(`Lighting.cs:299`'s `GlobalBrightness * scale * 63.75`), so the port folds
+`bg_brightness * transition` into the bilinear corner sample itself (the
+same per-vertex→quad-centre approximation `push_wall_lit` documents) and
+sets the alpha to `(byte)(255*transition)/255`. Its light gate is `InWorld`
+(no 1-margin) + any-channel-nonzero (`:53672-53679`), NOT the base pass's
+wall-light gate. DEVIATION (unchanged graceful degradation): a non-classic
+old slot resolves `None` and its overlay skips — classic↔classic fades draw
+today, the rest close when d35's per-world bg pages land. 1 witness
+WRITTEN NOT RUN (the old-table resolution + pitch fallback + degradation).
 
 The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
 `worldSurface = (int)(max(surfaceY) + 25.0)` вЂ” the *deepest* column, not the mean вЂ” with

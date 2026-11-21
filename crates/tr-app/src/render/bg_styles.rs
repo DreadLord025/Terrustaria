@@ -20,8 +20,13 @@
 //! appended after the union pages; until that lands, `bg.rs::back_texture`
 //! resolves only the classic-set ids and a non-classic pick gracefully
 //! degrades (missing sheet → pass skipped, never a wrong sheet). The
-//! cross-fade overlay draws (`_drawBackground_oldBackTexture`) stay unwired
-//! for the same reason; the latch/decay state machine IS live.
+//! cross-fade overlay draws (`_drawBackground_oldBackTexture`) are WIRED
+//! since the W4-g72 closeout (`bg.rs::UgOld` + `push_cave_cell`'s fade arm,
+//! the tint through `bg_target::ug_crossfade_tint`): the old-style table
+//! resolves per frame and every pass draws its overlay while
+//! `ugBackTransition > 0` — a non-classic old slot resolves `None` and its
+//! overlay skips (the same graceful degradation), so classic↔classic fades
+//! draw today and the rest close when d35's pages land.
 //!
 //! Everything here is pure (no RNG draws anywhere in the three C# functions)
 //! and witnessed against the source line-by-line.
