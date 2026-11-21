@@ -14520,6 +14520,12 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// W4-g82 — the coil death hook's refund drops
+    /// (`Projectile.cs:77572-77615` → `Item.RequestNewItem` at
+    /// `base.Center`): `(item, stack, cx, cy)` the world sim spawns as
+    /// item drops on the `UpdateProjectiles` stream (NOT the bobber's
+    /// inventory fill — `RequestNewItem` is `Item.NewItem`, a world drop).
+    pending_coil_drops: Vec<(u16, i32, f32, f32)>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -14919,6 +14925,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            pending_coil_drops: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -20087,6 +20094,17 @@ impl ProjectilePool {
                 // bursts spawn through the pool (the arm cannot see the slot
                 // array); the water conversion writes tiles directly.
                 self.thrown_consumable_death(i, world, player.as_deref(), rng);
+                // W4-g82 — the coils' Kill() arms: the ai1==0 Dig cue
+                // (`Projectile.cs:74617-74620`/`:74681-74684`, the dust
+                // walks' head — the dust bodies stay skipped) + the
+                // refund ladder (`:77572-77615`, inside
+                // `Kill_ExplodeTiles`: the owner gate `:77267` + the
+                // `!noDropItem` gate `:77367`). Both ride the death hook
+                // (the d77 kill_tail_cue pattern — the C# plays/drops
+                // inside Kill(); the out-of-world guard never reaches
+                // it). Kinds disjoint from every other death arm, so the
+                // position in the hook chain is unobservable.
+                self.coil_kill(i, local_owner);
 
                 // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
                 // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides
@@ -21132,6 +21150,51 @@ impl ProjectilePool {
             }
             _ => {}
         }
+    }
+
+    /// W4-g82 — the coils' `Kill()` arms, kind-gated, once per death:
+    /// * the `ai[1] == 0` Dig cue (`Projectile.cs:74617-74620` for
+    ///   475/505/506, `:74681-74684` for 171 — `SoundEngine.PlaySound(0,
+    ///   (int)position.X, (int)position.Y)`, the int overload's truncated
+    ///   position; the dust walks sharing the chain geometry stay
+    ///   skipped). Queued straight into the pool's sound queue — the
+    ///   death hook runs AFTER the sub-step loop's `wants_sound` forward
+    ///   (the d77 kill_tail_cue convention).
+    /// * the refund ladder (`:77572-77615`, `coil_death_drop`): one coil
+    ///   item back at ai1==0, `10-ai1` rope items at ai1<10, nothing at
+    ///   ai1>=10. `Item.RequestNewItem` at `base.Center` — a world DROP
+    ///   (not the bobber's inventory fill), queued for the world sim's
+    ///   `UpdateProjectiles`-stream spawn. The enclosing C# gates:
+    ///   `Kill_ExplodeTiles`'s owner refusal (`:77267`) + the
+    ///   `!noDropItem` head (`:77367`); the cue is UNGATED by both (it
+    ///   sits in Kill()'s dust chain, ahead of `active = false`).
+    fn coil_kill(&mut self, slot: usize, local_owner: u8) {
+        let p = &self.slots[slot];
+        if !crate::projectile_rope_coil::is_coil(p.kind) {
+            return;
+        }
+        // :74617-74620/:74681-74684 — the cue, position truncated.
+        if p.ai[1] == 0.0 {
+            self.pending_proj_sounds
+                .push((0, 0, p.pos.x.trunc(), p.pos.y.trunc(), 0.0));
+        }
+        // :77267/:77367 — the refund's owner + noDropItem gates.
+        if p.owner != local_owner || p.no_drop_item {
+            return;
+        }
+        if let Some((item, count)) = crate::projectile_rope_coil::coil_death_drop(p.kind, p.ai[1]) {
+            let center = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            self.pending_coil_drops.push((item, count, center.0, center.1));
+        }
+    }
+
+    /// W4-g82 — the coil refund drain (`Projectile.cs:77572-77615`):
+    /// `(item, stack, cx, cy)` the world sim spawns through
+    /// `spawn_item_drop_px` on the `UpdateProjectiles` stream (the C#
+    /// `Item.NewItem` runs inside `Kill()` under the `Main.cs:17775`
+    /// swap; the port drains at the pass tail, the S1-E-21c convention).
+    pub fn drain_coil_drops(&mut self) -> Vec<(u16, i32, f32, f32)> {
+        std::mem::take(&mut self.pending_coil_drops)
     }
 
     /// The 283 VenomBullet's debuff-spread burst (`Projectile.cs:75940-75973`):
@@ -25716,6 +25779,57 @@ mod w4_g82_coil_dispatch_tests {
         assert_eq!(p.ai[1], 0.0);
         assert!((p.rot - 0.14).abs() < 1e-6, "(3+4)*1*0.02");
         assert!((p.pos.x - 303.0).abs() < 1e-6 && (p.pos.y - 304.0).abs() < 1e-6);
+    }
+
+    // W4-g82 seam 3 — the death hook's Kill() arms: an unplaced coil
+    // (ai1==0) queues the truncated-position Dig cue (`:74681-74684`,
+    // id 0 = the port's Dig façade) + ONE coil item back at the Centre
+    // (`:77576`); a partially placed one (ai1=3) drops 7 rope items and
+    // NO cue (`:77580`); a fully placed one (ai1=10) drops nothing
+    // (`:77578`'s `< 10f`). The lifetime kill (`:17201-17205`) rides the
+    // same hook.
+    #[test]
+    fn w4_g82_the_kill_hook_queues_the_cue_and_the_refund() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(171, 0, 300.25, 300.75, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 1; // the lifetime kill this tick
+        step(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active);
+        let sounds = pool.drain_proj_sounds();
+        assert_eq!(sounds, vec![(0, 0, 300.0, 300.0, 0.0)], "the truncated Dig cue");
+        // Centre = pos + half-box; the arm's free move added vel 0.
+        let drops = pool.drain_coil_drops();
+        assert_eq!(drops, vec![(985, 1, 307.25, 307.75)], "one coil item at Centre");
+        // ai1 = 3: 7 rope items, no cue.
+        let slot = pool
+            .spawn_with_data_ai_owned(475, 0, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 3.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 1;
+        step(&mut pool, &mut w);
+        assert!(pool.drain_proj_sounds().is_empty(), "ai1 != 0 keeps the cue silent");
+        assert_eq!(pool.drain_coil_drops(), vec![(2996, 7, 307.0, 307.0)]);
+        // ai1 = 10: nothing drops, no cue.
+        let slot = pool
+            .spawn_with_data_ai_owned(505, 0, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 10.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].time_left = 1;
+        step(&mut pool, &mut w);
+        assert!(pool.drain_proj_sounds().is_empty());
+        assert!(pool.drain_coil_drops().is_empty());
+        // The owner gate (`:77267`): a foreign coil's death still cues
+        // (the cue sits ahead of the gate in Kill()) but never refunds.
+        // The pool never simulates foreign slots (`:17210`), so the hook
+        // is pinned directly on a dead foreign slot.
+        let slot = pool
+            .spawn_with_data_ai_owned(506, 1, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool.slots_mut()[slot].active = false;
+        pool.coil_kill(slot, 0);
+        assert_eq!(pool.drain_proj_sounds(), vec![(0, 0, 300.0, 300.0, 0.0)]);
+        assert!(pool.drain_coil_drops().is_empty(), "the :77267 owner refusal");
     }
 }
 
