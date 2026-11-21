@@ -31,6 +31,20 @@ impl AffectionLevel {
             AffectionLevel::Hate => 1.12,
         }
     }
+
+    /// The enum's numeric value (`AffectionLevel.cs:5-8`: Love 100, Like
+    /// 50, Dislike -50, Hate -100) — `BiomePreferenceListTrait.
+    /// ModifyShopPrice` (`:44`) picks the HIGHEST among the biomes the
+    /// judge is in (`biomePreference.Affection < biomePreference2.Affection`),
+    /// so the ordering, not the price factor, drives the pick.
+    pub fn affection_value(self) -> i32 {
+        match self {
+            AffectionLevel::Love => 100,
+            AffectionLevel::Like => 50,
+            AffectionLevel::Dislike => -50,
+            AffectionLevel::Hate => -100,
+        }
+    }
 }
 
 /// The shopping biomes (`GameContent/Personalities/*Biome.cs`) — the
@@ -434,18 +448,34 @@ pub fn process_mood(
         adjustment *= 0.95;
     }
 
-    // `:152-168`: the personality traits — the biome prefs judge the home
-    // anchor's scene (`ShopHelper` reads `info.npc`'s surroundings through
-    // the HelperInfo rows; the biome traits test the NPC's position).
+    // `:152-168`: the personality traits. `BiomePreferenceListTrait.
+    // ModifyShopPrice` (`:38-53`) tests the PLAYER's zones (`info.player`,
+    // `:44`) and picks the HIGHEST affection among the matching biomes,
+    // applying ONE row (`ApplyPreference`, `:55-73`) — NOT the home tile
+    // and NOT every matching row. The neighbor prefs + the universal
+    // LikePrincess row (`AllPersonalitiesModifier`, `:168`) follow.
     if adjustment < 1000.0 {
-        let home_center = [home_x * 16.0, home_y * 16.0];
-        let pm = scan_scene_at(world, home_center, raining, false, false);
-        let home_biome = classify_biome(&pm);
+        let pm = scan_scene_at(
+            world,
+            [player_center.0, player_center.1],
+            raining,
+            false,
+            false,
+        );
+        // `:41-48` — the highest-affection pick among the biomes the player
+        // is in; the first row wins a tie (the `<` compare keeps the
+        // earlier row on equal affection).
+        let mut best: Option<&BiomePreference> = None;
         for pref in biome_preferences(npc.kind) {
-            if pref.biome == home_biome {
-                flags.push(MoodFlag::BiomeAffection(pref.level, pref.biome));
-                adjustment *= pref.level.multiplier();
+            if biome_is_in(pref.biome, &pm)
+                && best.is_none_or(|b| b.level.affection_value() < pref.level.affection_value())
+            {
+                best = Some(pref);
             }
+        }
+        if let Some(pref) = best {
+            flags.push(MoodFlag::BiomeAffection(pref.level, pref.biome));
+            adjustment *= pref.level.multiplier();
         }
         // The neighbor prefs (`AllPersonalitiesModifier`, `:168`): the
         // full switch table; the NpcAffection flags feed the report UI
@@ -477,30 +507,43 @@ pub fn process_mood(
     Mood { multiplier, flags }
 }
 
-/// The shopping-biome classification at a scene centre — the vanilla
-/// biome traits test the player/NPC zone flags (`AShoppingBiome.IsInBiome`):
-/// the Forest row is the fallthrough (`ForestBiome.cs`'s
-/// `IsInBiome = !any other zone`). The first matching non-Forest zone wins;
-/// the scan's zone flags carry the truth.
-fn classify_biome(pm: &tr_core::scene::SceneMetrics) -> BiomeKind {
-    if pm.zone_corrupt {
-        BiomeKind::Corruption
-    } else if pm.zone_crimson {
-        BiomeKind::Crimson
-    } else if pm.zone_dungeon {
-        BiomeKind::Dungeon
-    } else if pm.zone_beach {
-        BiomeKind::Ocean
-    } else if pm.zone_snow {
-        BiomeKind::Snow
-    } else if pm.zone_desert {
-        BiomeKind::Desert
-    } else if pm.zone_jungle {
-        BiomeKind::Jungle
-    } else if pm.zone_hallow {
-        BiomeKind::Hallow
-    } else {
-        BiomeKind::Forest
+/// `AShoppingBiome.IsInBiome(player)` per biome — each reads one player
+/// zone flag (`Player.Zone*` = `SceneMetrics.Zone*`, `Player.cs:16705-
+/// 16713`), except the two shopping-zone properties:
+/// * Forest (`ForestBiome.cs:10-13`): `ShoppingZone_Forest` =
+///   `!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`
+///   (`Player.cs:3837-3847`); `ShoppingZone_AnyBiome` (`:3823-3833`) is
+///   the nine-zone OR (Dungeon/Corrupt/Crimson/Glowshroom/Hallow/Jungle/
+///   Snow/Beach/Desert).
+/// * Underground (`UndergroundBiome.cs:10-13`): `ShoppingZone_BelowSurface`
+///   = `Center.ToTileCoordinates().Y > Main.worldSurface`
+///   (`Player.cs:3835`) — the scan's `below_surface`.
+/// * Mushroom (`MushroomBiome.cs:10-13`): `ZoneGlowshroom` =
+///   `EnoughTilesForGlowingMushroom` (`SceneMetrics.cs:677`).
+fn biome_is_in(biome: BiomeKind, pm: &tr_core::scene::SceneMetrics) -> bool {
+    match biome {
+        BiomeKind::Forest => {
+            let any_biome = pm.zone_dungeon
+                || pm.zone_corrupt
+                || pm.zone_crimson
+                || pm.enough_tiles_for_glowing_mushroom()
+                || pm.zone_hallow
+                || pm.zone_jungle
+                || pm.zone_snow
+                || pm.zone_beach
+                || pm.zone_desert;
+            !any_biome && !pm.below_surface
+        }
+        BiomeKind::Ocean => pm.zone_beach,
+        BiomeKind::Snow => pm.zone_snow,
+        BiomeKind::Desert => pm.zone_desert,
+        BiomeKind::Jungle => pm.zone_jungle,
+        BiomeKind::Underground => pm.below_surface,
+        BiomeKind::Hallow => pm.zone_hallow,
+        BiomeKind::Mushroom => pm.enough_tiles_for_glowing_mushroom(),
+        BiomeKind::Corruption => pm.zone_corrupt,
+        BiomeKind::Crimson => pm.zone_crimson,
+        BiomeKind::Dungeon => pm.zone_dungeon,
     }
 }
 
@@ -748,6 +791,27 @@ mod tests {
         g.home = Some(home);
         g.hp = g.max_hp;
         g
+    }
+
+    /// A hallow patch around (cx, cy) on the forest ground — pearlstone
+    /// (109) counts toward `HolyTileCount` (`SceneMetrics.cs:589`); 125+
+    /// tiles in the scan window raise `ZoneHallow` (`:673`, threshold
+    /// `HallowTileThreshold` = 125). The patch sits ABOVE the surface so
+    /// `below_surface` stays false (the Forest/Underground rows stay out).
+    fn hallow_patch(w: &mut World, cx: i32, cy: i32) {
+        for x in (cx - 8)..(cx + 8) {
+            for y in (cy - 8)..(cy + 8) {
+                if x < 0 || y < 0 || x >= w.width || y >= w.height {
+                    continue;
+                }
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: 109,
+                    ..Default::default()
+                };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
     }
 
 
@@ -1114,6 +1178,110 @@ mod tests {
                 "the multiplier {}",
                 mood.multiplier
             );
+        }
+
+        /// `BiomePreferenceListTrait.ModifyShopPrice` (`:38-53`) tests the
+        /// PLAYER's zones (`info.player`, `:44`), NOT the NPC's home tile.
+        /// A Guide housed in the forest but with the PLAYER standing in the
+        /// hallow gets no Forest Like (the player is not in the forest) —
+        /// the Guide's rows are Like Forest / Dislike Ocean, neither matches
+        /// the hallow, so no biome factor lands.
+        #[test]
+        fn the_biome_judge_reads_the_player_not_the_home() {
+            let mut w = forest_world();
+            // The hallow around the PLAYER's centre (60, 110), above the
+            // surface; the Guide's home (60, 120) stays forest dirt.
+            hallow_patch(&mut w, 60, 110);
+            let guide = housed_guide(&w, (60, 120));
+            let mood = process_mood(
+                &w,
+                std::slice::from_ref(&guide),
+                &guide,
+                (60.0 * 16.0, 110.0 * 16.0),
+                false,
+            );
+            // The player is in the hallow → no Forest Like, no Ocean
+            // Dislike; the Guide has no hallow row. LoveSpace ×0.95 alone.
+            assert!(
+                !mood
+                    .flags
+                    .iter()
+                    .any(|f| matches!(f, MoodFlag::BiomeAffection(..))),
+                "no biome row matches the hallow: {:?}",
+                mood.flags
+            );
+            assert!(mood.flags.contains(&MoodFlag::LoveSpace));
+            assert!(
+                (mood.multiplier - 0.95).abs() < 0.001,
+                "the multiplier {}",
+                mood.multiplier
+            );
+        }
+
+        /// The same Guide, player back in the forest: the Forest Like lands
+        /// (the judge follows the player, not the home — the home never
+        /// moved). The companion to the hallow witness above.
+        #[test]
+        fn the_biome_judge_forest_when_the_player_is_forest() {
+            let mut w = forest_world();
+            hallow_patch(&mut w, 60, 110);
+            let guide = housed_guide(&w, (60, 120));
+            // The player stands far from the hallow patch, in plain forest.
+            let mood = process_mood(
+                &w,
+                std::slice::from_ref(&guide),
+                &guide,
+                (150.0 * 16.0, 110.0 * 16.0),
+                false,
+            );
+            assert!(mood.flags.contains(&MoodFlag::BiomeAffection(
+                AffectionLevel::Like,
+                BiomeKind::Forest
+            )));
+            // Forest Like ×0.94 × LoveSpace 0.95 = 0.893 → 0.89.
+            assert!(
+                (mood.multiplier - 0.89).abs() < 0.001,
+                "the multiplier {}",
+                mood.multiplier
+            );
+        }
+
+        /// `BiomePreferenceListTrait.ModifyShopPrice` (`:41-48`) picks the
+        /// HIGHEST affection among the matching biomes and applies ONE row
+        /// (`ApplyPreference`). Santa's rows are Love Snow / Hate Desert
+        /// (`PersonalityDatabasePopulator.cs:62-66`); a player in BOTH the
+        /// snow and the desert takes the Love Snow alone (×0.88), NOT
+        /// 0.88 × 1.12. The `AffectionLevel` ordering (Love 100 > Hate -100)
+        /// drives the pick.
+        #[test]
+        fn the_biome_pick_is_the_highest_affection_single_row() {
+            // The ordering values (`AffectionLevel.cs:5-8`).
+            assert!(AffectionLevel::Love.affection_value() > AffectionLevel::Like.affection_value());
+            assert!(AffectionLevel::Like.affection_value() > AffectionLevel::Dislike.affection_value());
+            assert!(AffectionLevel::Dislike.affection_value() > AffectionLevel::Hate.affection_value());
+            // Santa's two rows: Love Snow, Hate Desert.
+            let santa = biome_preferences_by_id(142);
+            assert_eq!(santa.len(), 2);
+            assert_eq!(santa[0].level, AffectionLevel::Love);
+            assert_eq!(santa[0].biome, BiomeKind::Snow);
+            assert_eq!(santa[1].level, AffectionLevel::Hate);
+            assert_eq!(santa[1].biome, BiomeKind::Desert);
+            // A scene that is BOTH snow and desert: the pick is Love Snow.
+            let mut pm = tr_core::scene::SceneMetrics::new();
+            pm.zone_snow = true;
+            pm.zone_desert = true;
+            let mut best: Option<&BiomePreference> = None;
+            for pref in santa {
+                if biome_is_in(pref.biome, &pm)
+                    && best.is_none_or(|b| b.level.affection_value() < pref.level.affection_value())
+                {
+                    best = Some(pref);
+                }
+            }
+            let pick = best.expect("a row matches");
+            assert_eq!(pick.level, AffectionLevel::Love);
+            assert_eq!(pick.biome, BiomeKind::Snow);
+            assert_eq!(pick.level.multiplier(), 0.88, "ONE row, not 0.88×1.12");
         }
 
         /// `AffectionLevel.cs:5-8` + `ShopHelper.cs:35-42` — the four
