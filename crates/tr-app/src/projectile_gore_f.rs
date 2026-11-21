@@ -146,8 +146,11 @@ pub fn goblin_bomb_gores(
 }
 
 /// Site 58 — `Kill()`'s 645 gore (`Projectile.cs:72118-72124`): the wave-C
-/// celeb2 row ×1, keep-one. The caller ran `Resize(144, 144)` (`:72990`'s
-/// twin at `:72120`'s arm — the box is 144×144 at the call).
+/// celeb2 row ×1, keep-one. The 645 Kill arm runs NO resize and NO `Damage()`
+/// (`:72094-72125`) — the gore reads the CURRENT box: the placed cloud's
+/// 140×140 (`:56983`) or the flight's 10×10 (`:6955-6956`). (The earlier
+/// "Resize(144)" note was the 452 arm's `:72990`, not this one — corrected
+/// at wiring against the source.)
 pub fn kill645_gore(
     p: &Projectile,
     gore: &mut GorePool,

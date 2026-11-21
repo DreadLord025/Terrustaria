@@ -20219,6 +20219,28 @@ impl ProjectilePool {
                 // called from `Kill()` `:77258-77261`): the trio's death
                 // crack roll on the tile below its centre.
                 self.debris_death_crack(i, world, rng, local_owner);
+                // W4-g16 wiring batch 3 — `Kill()`'s gore death arms in the
+                // C# body order, all BELOW the gem arm (`:75425`) and ABOVE
+                // the floating-turret arms (`:72068`): the 856 Stellar Tune
+                // (`:71598`), the 664/666/668 DD2 loop (`:71821`), the 681
+                // goblin bomb (`:71902`), the 645 Lunar Flare (`:72094`), the
+                // 617 Nebula Arcanum (`:72278`), the 452/454 phantasmal pair
+                // (`:72987`/`:73014`), the 459 Charged Blaster Orb (`:73338`)
+                // and the 448 saucer missile (`:73603`). Kind-disjoint, so the
+                // order between them is unobservable; the gore pool is
+                // threaded (`None` = the kinds had no landed census, nothing
+                // spawns). The dust loops interleaved are the dust lanes'
+                // documented skip; the caller-side resizes / `Damage()` walks
+                // ride each arm in the C#'s order.
+                self.gore_death_arms(
+                    i,
+                    world,
+                    npcs,
+                    player.as_deref(),
+                    rng,
+                    luck,
+                    local_owner,
+                );
                 // `Kill()`'s floating-turret arms (`Projectile.cs:72068-72093`/
                 // `:72155-72176`, S1-D-4b-3): the turret/crystal sweep their
                 // shots, the shard runs its death burst.
@@ -21391,6 +21413,217 @@ impl ProjectilePool {
                         f.kind, owner, f.x - hw, f.y - hh, f.vx, f.vy, f.damage, 0.0, 0.0, 0.0,
                     );
                 }
+            }
+            _ => {}
+        }
+    }
+
+    /// W4-g16 wiring batch 3 — `Kill()`'s gore death arms, in the C# body
+    /// order (`Projectile.cs`): the 856 Stellar Tune (`:71598-71630`), the
+    /// 664/666/668 DD2 explosion loop (`:71821-71900`), the 681 goblin bomb
+    /// (`:71902-71951`), the 645 Lunar Flare (`:72094-72125`), the 617 Nebula
+    /// Arcanum (`:72278-72372`), the 452/454 phantasmal pair
+    /// (`:72987-73045`), the 459 Charged Blaster Orb (`:73338-73389`) and the
+    /// 448 saucer missile (`:73603-73631`). Kind-gated, once per death (a dead
+    /// slot never returns to `active`). The gore pool is threaded — `None`
+    /// (the pool-only tests) spawns nothing (these kinds had no landed census,
+    /// so there is no draw pin to keep); the caller-side resizes / `Damage()`
+    /// walks still run, exactly as the C# leaves them. The dust loops
+    /// interleaved with the gore rows are the dust lanes' documented skip
+    /// (their draws are NOT consumed here — the module RNG contract).
+    ///
+    /// Cited deferrals (unrowed hosts — no `proj_data` row, so the kind never
+    /// spawns and the arm cannot fire): the 1020/1105 rocket corners
+    /// (`:70888`), the 1085 mirror (`:70912`), the 608 Solar Counter
+    /// (`:72219`), the 590 Truffle Spore (`:72634`), the 676 Ogre Spit coin
+    /// pile (`:72758`), the 501 cursed flame (`:72890`), the 467/468/483
+    /// (`:73086`/`:73133`/`:73242`), the 709 Sky Dragon's Fury (`:73367`'s
+    /// twin — the 459 arm is wired, the 709 keeps the same row shape), the
+    /// 616/424-426 (`:73668`/`:73843`), the 510 Star Cannon (`:73691`), the
+    /// 408 phoenix (`:73754`) and the 1037/1049 nebula bolts (`:73895`).
+    /// Their site fns stay landed in `projectile_gore_e.rs` .. `_h.rs`; the
+    /// wiring rides the host's row when it lands (the `npc_hit_effect_a.rs`
+    /// precedent). The 617's 620 death-burst spawn (`:72336-72371`) is ALSO
+    /// deferred — the 620 has no row; the 618 sweep (`:72327-72335`) IS wired
+    /// (the subshot is rowed).
+    fn gore_death_arms(
+        &mut self,
+        slot: usize,
+        world: &World,
+        npcs: &mut [Npc],
+        player: Option<&crate::player::Player>,
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        let kind = self.slots[slot].kind;
+        let dolls = doll_flags(player);
+        // The recentred resize (`Projectile.Resize`, `:22353-22359`): the box
+        // grows about the old centre, the position re-derives from it.
+        let resize = |p: &mut Projectile, side: f32| {
+            let cx = p.pos.x + p.w * 0.5;
+            let cy = p.pos.y + p.h * 0.5;
+            p.w = side;
+            p.h = side;
+            p.pos = Vec2::new(cx - side * 0.5, cy - side * 0.5);
+        };
+        match kind {
+            // `:71598-71630` — the 856 Stellar Tune: the screen-gated gore
+            // (`:71612-71619`, NO Next gate — the padded-screen intersect),
+            // then the 128×128 recentre + penetrate/maxPenetrate −1 + the box
+            // `Damage()` (`:71624-71629`). The dust loops before are the dust
+            // lane's.
+            SPARKLE_GUITAR => {
+                if self.trail_on_screen(&self.slots[slot]) {
+                    if let Some(g) = self.gore_pool.as_mut() {
+                        crate::projectile_gore_f::stellar_tune_gore(
+                            &self.slots[slot], g, rng, world,
+                        );
+                    }
+                }
+                resize(&mut self.slots[slot], 128.0);
+                self.slots[slot].max_penetrate = -1;
+                self.slots[slot].penetrate = -1;
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+            }
+            // `:71821-71900` — the 664/666/668 DD2 explosion: the
+            // `setApprenticeT3` flag lifts the gore count 4 → 8 and the box
+            // side 6 → 13 (`:71832-71843`), the 16·num129 recentre + the box
+            // `Damage()` (`:71844-71847`), then the num127-gore loop
+            // (`:71888-71900`, the fire-explosion row + the Next(2) Y-drop).
+            // The five dust loops between are the dust lane's.
+            FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3 => {
+                let t3 = player.is_some_and(|p| p.set_apprentice_t3);
+                let count = if t3 { 8 } else { 4 };
+                let side = if t3 { 16.0 * 13.0 } else { 16.0 * 6.0 };
+                resize(&mut self.slots[slot], side);
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_f::dd2_explosion_gores(
+                        &self.slots[slot], count, g, rng, world,
+                    );
+                }
+            }
+            // `:71902-71951` — the 681 goblin bomb: the 22×22 recentre
+            // (`:71904-71910`), the four corner gores at the RESIZED position
+            // (`:71928-71943`), then the 80×80 recentre + the box `Damage()`
+            // (`:71944-71950`). The two dust loops between are the dust
+            // lane's. This is the Kill TYPE-ARM chain (`:71902`), distinct
+            // from the aiStyle-16 head's `PrepareBombToBlow`/`Damage`
+            // (`:70666-70671`, the bomb lane's frozen zero-rng `explode_bomb`
+            // path — the 681 is not in its kind set, so that walk is a
+            // documented no-op deferral, the wave-O bomb-family decision).
+            // `Kill_Bombs_DoUsualKillCode` has no 681 arm — the gore lives
+            // here, in the type chain.
+            DD2_BOMB => {
+                resize(&mut self.slots[slot], 22.0);
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_f::goblin_bomb_gores(
+                        &self.slots[slot], g, rng, world,
+                    );
+                }
+                resize(&mut self.slots[slot], 80.0);
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+            }
+            // `:72094-72125` — the 645 Lunar Flare: ONE celeb2-row gore at the
+            // CURRENT box (the placed cloud's 140×140 `:56983` or the flight's
+            // 10×10 `:6955`), NO resize and NO `Damage()` (the arm runs
+            // neither). The dust loops before are the dust lane's.
+            POISON_DART => {
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_f::kill645_gore(
+                        &self.slots[slot], g, rng, world,
+                    );
+                }
+            }
+            // `:72278-72372` — the 617 Nebula Arcanum: the 176×176 recentre +
+            // penetrate/maxPenetrate −1 + the box `Damage()`
+            // (`:72280-72285`), the two fire-explosion gores (`:72319-72326`),
+            // then the owner-gated 618 sweep (`:72327-72335`). The four dust
+            // loops between are the dust lane's. The 620 death-burst spawn
+            // (`:72336-72371`) is DEFERRED — the 620 has no row (cited above).
+            NEBULA_ARCANUM => {
+                resize(&mut self.slots[slot], 176.0);
+                self.slots[slot].max_penetrate = -1;
+                self.slots[slot].penetrate = -1;
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_f::kill608_617_gores(
+                        &self.slots[slot], g, rng, world,
+                    );
+                }
+                // `:72327-72335` — the owner-gated 618 sweep: every active
+                // subshot whose `ai[1]` carries THIS slot's key dies (the
+                // `key_of` bit pattern the spawn stamped, `:34753-34758`).
+                if self.slots[slot].owner == local_owner {
+                    let key = f32::from_bits(self.key_of(slot) as u32);
+                    for j in 0..self.slots.len() {
+                        if self.slots[j].active
+                            && self.slots[j].kind == NEBULA_ARCANUM_SUBSHOT
+                            && self.slots[j].ai[1] == key
+                        {
+                            self.kill(j);
+                        }
+                    }
+                }
+            }
+            // `:72987-73013` — the 452 phantasmal eye: the 144×144 recentre
+            // (`Resize(144,144)` `:72990`), ONE celeb2-row gore
+            // (`:73004-73010`), then the trailing `Resize(30,30)` + the box
+            // `Damage()` (`:73011-73012`). The dust loops between are the dust
+            // lane's.
+            PHANTASMAL_EYE => {
+                resize(&mut self.slots[slot], 144.0);
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_g::kill_row_gores(
+                        &self.slots[slot], 1, g, rng, world,
+                    );
+                }
+                resize(&mut self.slots[slot], 30.0);
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+            }
+            // `:73014-73045` — the 454 phantasmal sphere: the 208×208 recentre
+            // (`:73017-73020`), THREE celeb2-row gores (`:73037-73043`), then
+            // the box `Damage()` (`:73044`). The dust loops between are the
+            // dust lane's.
+            PHANTASMAL_SPHERE => {
+                resize(&mut self.slots[slot], 208.0);
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_g::kill_row_gores(
+                        &self.slots[slot], 3, g, rng, world,
+                    );
+                }
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+            }
+            // `:73338-73389` — the 459 Charged Blaster Orb: at scale ≥ 1 the
+            // 144×144 recentre + the box `Damage()` (`:73343-73352`) and TWO
+            // celeb2-row gores (`:73365-73371`, num362 = 2); below scale 1 the
+            // count is 0 (no gore, no resize, no Damage). The dust loops
+            // between are the dust lane's. The 709 twin's 1110 sweep
+            // (`:73372-73388`) is DEFERRED — the 709/1110 have no rows.
+            CHARGED_BLASTER_ORB => {
+                if self.slots[slot].scale >= 1.0 {
+                    resize(&mut self.slots[slot], 144.0);
+                    self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+                    if let Some(g) = self.gore_pool.as_mut() {
+                        crate::projectile_gore_g::kill_row_gores(
+                            &self.slots[slot], 2, g, rng, world,
+                        );
+                    }
+                }
+            }
+            // `:73603-73631` — the 448 saucer missile: the 112×112 recentre
+            // (`:73606-73609`), ONE celeb2-row gore (`:73623-73629`), then the
+            // box `Damage()` (`:73630`). The dust loops between are the dust
+            // lane's.
+            SAUCER_MISSILE => {
+                resize(&mut self.slots[slot], 112.0);
+                if let Some(g) = self.gore_pool.as_mut() {
+                    crate::projectile_gore_h::kill448_616_424_gores(
+                        &self.slots[slot], 1, g, rng, world,
+                    );
+                }
+                self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
             }
             _ => {}
         }
@@ -44744,5 +44977,287 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+/// W4-g16 wiring batch 3 — the `Kill()` gore death arms' stream-parity
+/// witnesses (WRITTEN, NOT RUN — code-only mode). Each drives a rowed host
+/// through the pool's death hook with the gore pool threaded and an EMPTY NPC
+/// slice (so the caller-side `Damage()` walk draws nothing — the gore row is
+/// the only stream consumer), then replays the C# draw order on a twin
+/// `UnifiedRandom` and asserts the streams agree (`peek`). The caller-side
+/// resizes / penetration writes are pinned alongside. The dust loops are the
+/// dust lanes' skip — they draw nothing here (the module RNG contract).
+#[cfg(test)]
+mod w4_g16_batch3_kill_gore_tests {
+    use super::*;
+    use tr_core::gore::GorePool;
+    use tr_core::UnifiedRandom;
+
+    fn world() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    /// One update with the gore pool threaded + an empty NPC slice (the
+    /// `Damage()` walk draws nothing). The slot is pre-killed (`time_left`
+    /// drives the lifetime kill at the sub-step tail) so the death hook fires.
+    fn kill_tick(pool: &mut ProjectilePool, w: &mut World, rng: &mut UnifiedRandom) {
+        let mut npcs: Vec<Npc> = Vec::new();
+        pool.update(
+            w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            rng,
+            0,
+            true,
+        );
+    }
+
+    /// The 645 Lunar Flare (`:72094-72125`): ONE celeb2-row gore at the
+    /// CURRENT box (no resize, no Damage). The row is Next(100)×2 + Next(61,64)
+    /// + the two kicks + Next(-10,11)×2 — seven ranges.
+    #[test]
+    fn w4_g16_b3_the_645_gore_draws_the_celeb2_row_once() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(POISON_DART, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 645 row spawns");
+        // The flight box (10×10) — the arm reads it unchanged.
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(41);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(41);
+        let _ = twin.next_range(0, 100);
+        let _ = twin.next_range(0, 100);
+        let _ = twin.next_range(61, 64);
+        let _ = twin.next_range(10, 31);
+        let _ = twin.next_range(-20, 21);
+        let _ = twin.next_range(-10, 11);
+        let _ = twin.next_range(-10, 11);
+        assert_eq!(rng.peek(), twin.peek(), "the 645 celeb2 row");
+        let gore = pool.take_gore_pool().unwrap();
+        let active = gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(active, 1, "one gore");
+        assert!((pool.slots()[slot].w - 10.0).abs() < 1e-6, "no resize (the flight box)");
+    }
+
+    /// The 664 DD2 shot (`:71821-71900`): the 96×96 recentre (num129 = 6, no
+    /// T3), then FOUR dd2 gores — each the fire-explosion argument row
+    /// (Next(100)×2 + Next(61,64) + kicks) + THREE doubles (RotatedByRandom +
+    /// radius) + the Next(2) Y-drop + Next(-10,11)×2.
+    #[test]
+    fn w4_g16_b3_the_dd2_loop_draws_four_rows_and_resizes_96() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(FLAME_BURST_SHOT_1, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 664 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(43);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(43);
+        for _ in 0..4 {
+            let _ = twin.next_range(0, 100);
+            let _ = twin.next_range(0, 100);
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_double();
+            let _ = twin.next_double();
+            let _ = twin.next_double();
+            let _ = twin.next_range(0, 2);
+            let _ = twin.next_range(-10, 11);
+            let _ = twin.next_range(-10, 11);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the DD2 four-gore loop");
+        let gore = pool.take_gore_pool().unwrap();
+        let active = gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(active, 4, "four gores (no T3)");
+        assert!((pool.slots()[slot].w - 96.0).abs() < 1e-6, "16·6 = 96");
+    }
+
+    /// The 681 goblin bomb (`:71902-71951`): the 22×22 recentre, FOUR corner
+    /// gores (Next(61,64) + kicks each), then the 80×80 recentre. The sign
+    /// pairs land in order (+,+ / -, + / +, - / -, -).
+    #[test]
+    fn w4_g16_b3_the_goblin_bomb_corners_and_the_80_resize() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(DD2_BOMB, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 681 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(45);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(45);
+        for _ in 0..4 {
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the four corner rows");
+        let gore = pool.take_gore_pool().unwrap();
+        let active = gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(active, 4, "four corners");
+        assert!((pool.slots()[slot].w - 80.0).abs() < 1e-6, "the trailing 80×80");
+    }
+
+    /// The 617 Nebula Arcanum (`:72278-72372`): the 176×176 recentre +
+    /// penetrate/maxPenetrate −1, TWO fire-explosion gores, then the 618 sweep.
+    /// The 620 burst is deferred (no row). The two gores' stream is the
+    /// fire-explosion pair (the wave-B witness pins it).
+    #[test]
+    fn w4_g16_b3_the_nebula_pair_resizes_176_and_sweeps_the_subshot() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(NEBULA_ARCANUM, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 617 row spawns");
+        // A linked subshot: ai[1] carries the parent's key bit pattern.
+        let key = f32::from_bits(pool.key_of(slot) as u32);
+        let sub = pool
+            .spawn_with_data_ai_owned(NEBULA_ARCANUM_SUBSHOT, 0, 120.0, 100.0, 0.0, 0.0, 25, 0.0, 0.0, key)
+            .expect("the 618 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(47);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(47);
+        for _ in 0..2 {
+            let _ = twin.next_range(0, 100);
+            let _ = twin.next_range(0, 100);
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_double();
+            let _ = twin.next_double();
+            let _ = twin.next_double();
+            let _ = twin.next_range(-10, 11);
+            let _ = twin.next_range(-10, 11);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the fire-explosion pair");
+        assert!((pool.slots()[slot].w - 176.0).abs() < 1e-6, "176×176");
+        assert_eq!(pool.slots()[slot].penetrate, -1, "penetrate −1");
+        assert_eq!(pool.slots()[slot].max_penetrate, -1, "maxPenetrate −1");
+        assert!(!pool.slots()[sub].active, "the 618 sweep kills the linked subshot");
+    }
+
+    /// The 452 phantasmal eye (`:72987-73013`): the 144×144 recentre, ONE
+    /// celeb2-row gore, then the trailing Resize(30,30). The gore reads the
+    /// 144 box; the slot ends at 30×30.
+    #[test]
+    fn w4_g16_b3_the_phantasmal_eye_gore_then_the_30_restore() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(PHANTASMAL_EYE, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 452 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(49);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(49);
+        let _ = twin.next_range(0, 100);
+        let _ = twin.next_range(0, 100);
+        let _ = twin.next_range(61, 64);
+        let _ = twin.next_range(10, 31);
+        let _ = twin.next_range(-20, 21);
+        let _ = twin.next_range(-10, 11);
+        let _ = twin.next_range(-10, 11);
+        assert_eq!(rng.peek(), twin.peek(), "the one celeb2 row");
+        assert!((pool.slots()[slot].w - 30.0).abs() < 1e-6, "the trailing Resize(30,30)");
+    }
+
+    /// The 459 Charged Blaster Orb (`:73338-73389`): at scale ≥ 1 the 144×144
+    /// recentre + TWO celeb2-row gores; below scale 1 NOTHING (count 0, no
+    /// resize). Both arms are pinned.
+    #[test]
+    fn w4_g16_b3_the_blaster_orb_gates_on_scale() {
+        // scale ≥ 1: two gores + the 144 resize.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CHARGED_BLASTER_ORB, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 1.3)
+            .expect("the 459 row spawns");
+        pool.slots_mut()[slot].scale = 1.3;
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(51);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(51);
+        for _ in 0..2 {
+            let _ = twin.next_range(0, 100);
+            let _ = twin.next_range(0, 100);
+            let _ = twin.next_range(61, 64);
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_range(-10, 11);
+            let _ = twin.next_range(-10, 11);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the two celeb2 rows");
+        assert!((pool.slots()[slot].w - 144.0).abs() < 1e-6, "144×144 at scale ≥ 1");
+        // scale < 1: no gore, no resize, no draw.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(CHARGED_BLASTER_ORB, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 0.8)
+            .expect("the 459 row spawns");
+        pool.slots_mut()[slot].scale = 0.8;
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(51);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let twin = UnifiedRandom::new(51);
+        assert_eq!(rng.peek(), twin.peek(), "count 0 draws nothing");
+        let gore = pool.take_gore_pool().unwrap();
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 0, "no gore below scale 1");
+    }
+
+    /// The 856 Stellar Tune (`:71598-71630`): the screen-gated gore (ONE
+    /// NextFloat edge unit + Next(1) SelectRandom + kicks), then the 128×128
+    /// recentre + penetrate/maxPenetrate −1. Off-screen the gore draws nothing
+    /// but the resize still runs.
+    #[test]
+    fn w4_g16_b3_the_stellar_tune_screen_gate_and_128_resize() {
+        // On-screen: the gore draws.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(SPARKLE_GUITAR, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 856 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        pool.set_trail_screen(Some((Vec2::ZERO, Vec2::new(800.0, 600.0))));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(53);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let mut twin = UnifiedRandom::new(53);
+        let _ = twin.next_float(); // CircularEdge unit
+        let _ = twin.next_range(0, 1); // SelectRandom(16)
+        let _ = twin.next_range(10, 31);
+        let _ = twin.next_range(-20, 21);
+        assert_eq!(rng.peek(), twin.peek(), "the stellar tune row");
+        assert!((pool.slots()[slot].w - 128.0).abs() < 1e-6, "128×128");
+        assert_eq!(pool.slots()[slot].penetrate, -1, "penetrate −1");
+        // Off-screen (no screen fed): the gore draws nothing, the resize runs.
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(SPARKLE_GUITAR, 0, 100.0, 100.0, 0.0, 0.0, 50, 0.0, 0.0, 0.0)
+            .expect("the 856 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng = UnifiedRandom::new(53);
+        kill_tick(&mut pool, &mut w, &mut rng);
+        let twin = UnifiedRandom::new(53);
+        assert_eq!(rng.peek(), twin.peek(), "off-screen draws nothing");
+        assert!((pool.slots()[slot].w - 128.0).abs() < 1e-6, "the resize still runs");
     }
 }
