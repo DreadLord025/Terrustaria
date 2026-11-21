@@ -43,6 +43,7 @@ mod proj_lights;
 mod eoc_fight;
 mod input_map;
 mod inv;
+mod house_banners;
 mod luck;
 mod wiring_stub;
 mod yoyo_string;

@@ -1409,6 +1409,29 @@ impl App {
                         screen,
                     );
 
+                    // `DrawInterface_7_TownNPCHouseBanners` (`Main.cs:46214-46222`,
+                    // `DrawNPCHousesInWorld` `:40711-40832`): the world housing
+                    // banners draw while `EquipPage == 1` (the housing tab). The
+                    // hover boxes park on the App for the right-click kick-out
+                    // (`Main.cs:40824-40829`, W4-g21 batch 4 host 53).
+                    if self.equip_page == 1 && !self.hide_ui {
+                        self.house_banners = crate::house_banners::draw_house_banners(
+                            renderer,
+                            lookups,
+                            world,
+                            npcs,
+                            &self.town_rooms,
+                            light,
+                            &style,
+                            anim_time,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                        );
+                    } else {
+                        self.house_banners.clear();
+                    }
+
                     let boss = npcs
                         .iter()
                         .find(|n| {

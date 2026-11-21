@@ -781,6 +781,11 @@ pub(crate) struct App {
     /// `Main.inventorySortMouseOver` (`Main.cs:1299`): the sort button's hover
     /// latch (`DoStatefulTickSound`, `Main.cs:41890`, W4-g21 batch 3).
     pub(crate) inventory_sort_hover: bool,
+    /// The world housing banners' hover boxes (`DrawNPCHousesInWorld`,
+    /// `Main.cs:40711-40832`), rebuilt each draw while `EquipPage == 1` — the
+    /// right-click kick-out hit-tests them (`Main.cs:40824-40829`, W4-g21
+    /// batch 4 host 53).
+    pub(crate) house_banners: Vec<crate::house_banners::Banner>,
     pub(crate) keys: HashSet<KeyCode>,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the live gameplay
     /// bind table, mirrored from `settings.keybinds` so a rebind in the
@@ -3996,6 +4001,7 @@ impl App {
             frame_release: false,
             all_chest_stack_hover: false,
             inventory_sort_hover: false,
+            house_banners: Vec::new(),
             keys: HashSet::new(),
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),

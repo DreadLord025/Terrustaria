@@ -845,6 +845,10 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/ChestStack_3",
         "UI/Sort_0",
         "UI/Sort_1",
+        // `UI/House_Banner` — the world housing banner (`Main.cs:40783`,
+        // `TextureAssets.HouseBanner`, `AssetInitializer.cs:265`, W4-g21
+        // batch 4 host 53).
+        "UI/House_Banner",
         "UI/DisplaySlots_0",
         "UI/DisplaySlots_1",
         "UI/DisplaySlots_2",
@@ -2081,6 +2085,9 @@ pub struct Lookups {
     /// `UI/Sort_0..1`: the sort-inventory button's idle/hover frames
     /// (`Main.cs:41891`, W4-g21 batch 3 host 64).
     pub inventory_sort: [Option<tr_render::SheetRect>; 2],
+    /// `UI/House_Banner`: the world housing banner (`Main.cs:40783`,
+    /// W4-g21 batch 4 host 53).
+    pub house_banner: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
@@ -2458,6 +2465,7 @@ impl Lookups {
             inventory_sort: std::array::from_fn(|i| {
                 atlas.sheet(&format!("UI/Sort_{i}")).copied()
             }),
+            house_banner: atlas.sheet("UI/House_Banner").copied(),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),

@@ -1292,6 +1292,27 @@ impl App {
             (self.achievements_scroll - delta * (ui::achievements::ROW_H + 5.0)).clamp(0.0, max);
     }
 
+    /// `DrawNPCHousesInWorld`'s right-click kick-out (`Main.cs:40824-40829`,
+    /// W4-g21 batch 4 host 53): while the housing tab is up, a right press on
+    /// a banner's hover box runs `WorldGen.kickOut(num)` (`WorldGen.cs:4869-4879`)
+    /// and plays `SoundEngine.PlaySound(12)` (`:40828`). The banner boxes are
+    /// rebuilt each draw (`house_banners`); the press is consumed.
+    fn handle_house_banner_clicks(&mut self) {
+        if !self.ui_right_press || self.equip_page != 1 || self.house_banners.is_empty() {
+            return;
+        }
+        let Some(npc_idx) = crate::house_banners::banner_at(&self.house_banners, self.mouse_pos) else {
+            return;
+        };
+        self.ui_right_press = false; // `Main.mouseRightRelease = false` (`:40826`)
+        // `WorldGen.kickOut` (`WorldGen.cs:4869-4879`): the NPC goes homeless,
+        // the look-for-home timer arms (3600), the registered room drops.
+        if let Some(npc) = self.npcs.get_mut(npc_idx) {
+            crate::town::kick_out(&mut self.town_rooms, npc);
+        }
+        self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)` (`:40828`)
+    }
+
     /// `DrawInterface_38_MouseCarriedObject`'s click tail
     /// (`Main.cs:45217-45246`): with a housing head on the cursor, the right
     /// release drops it (sound 12) and the left release runs the query or
@@ -6030,6 +6051,34 @@ mod housing_query_tests {
             (wx - app.camera.x) * app.zoom + sw * 0.5,
             (wy - app.camera.y) * app.zoom + sh * 0.5,
         );
+    }
+
+    /// W4-g21 batch 4 host 53 — `DrawNPCHousesInWorld`'s right-click kick-out
+    /// (`Main.cs:40824-40829`): a right press on a banner's hover box runs
+    /// `WorldGen.kickOut` (the NPC goes homeless, the room drops) + sound 12.
+    #[test]
+    fn w4_g21_the_banner_right_click_kicks_the_npc_out() {
+        let mut app = housing_app();
+        // Park a banner box over the Guide (the draw rebuilds these each frame;
+        // the test stands one in directly).
+        app.house_banners = vec![crate::house_banners::Banner {
+            npc: 0,
+            rect: [100.0, 100.0, 30.0, 30.0],
+            reserved: 1,
+        }];
+        app.mouse_pos = Vec2::new(110.0, 110.0);
+        let before = app.audio.played_count();
+        app.ui_right_press = true;
+        app.handle_house_banner_clicks();
+        assert!(app.npcs[0].home.is_none(), "the Guide went homeless");
+        assert_eq!(
+            app.npcs[0].look_for_home_timeout,
+            crate::town::KICK_OUT_LOOK_FOR_HOME_TIMEOUT,
+            "the 3600-tick timer armed"
+        );
+        assert!(!app.town_rooms.has_room_quick(22), "the registered room dropped");
+        assert_eq!(app.audio.played_count(), before + 1, "`PlaySound(12)` (`:40828`)");
+        assert!(!app.ui_right_press, "the press is consumed");
     }
 
     #[test]
