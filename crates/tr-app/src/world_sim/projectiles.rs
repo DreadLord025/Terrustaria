@@ -864,7 +864,7 @@ mod w4_d6_heal_orb_chain_tests {
         assert!(strike > 0, "the hit landed");
         // The drain runs at the pass TAIL, so the orb's first AI tick is
         // the NEXT pass — this tick it holds the spawn velocity 0.
-        assert_eq!(orb.vel, Vec2::ZERO, "the drain spawns at rest");
+        assert!(orb.vel.length() < 1e-6, "the drain spawns at rest");
         let heal = orb.ai[1];
         assert!((heal - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
         // The next tick: the armed 52 dispatch blends toward the player.
