@@ -370,10 +370,6 @@ pub(crate) fn paladins_hammer_shockwave(
     }
 }
 
-/// `safe_normalize` re-export for the sibling batches (the C#
-/// `MovementVector.SafeNormalize(Vector2.Zero)` head draws).
-pub(crate) use crate::bow_launch::safe_normalize as movement_normalize;
-
 #[cfg(test)]
 mod tests {
     use super::*;
