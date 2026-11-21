@@ -89,7 +89,7 @@ still open items in ROADMAP §3.
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
 | Statics & constants (`maxLiquid`, `maxLiquidBuffer`, `cycles`) | PORTED | `liquid.rs:15-19` | 25000 / 50000 / 10 — matches `Liquid.cs:1671-1673` exactly |
-| `AddWater` queue + `checkingLiquid` dedupe | PARTIAL | `liquid.rs:93-109` | Dedupe + cap → buffer ported; the 5-tile border guard, `type != 546` carve-out and the `CheckWaterDeath/CheckLavaDeath` kill are gone (`Liquid.cs:1163`, `:1188-1206`) |
+| `AddWater` queue + `checkingLiquid` dedupe | PORTED | `liquid.rs::add_water` | W4-g45 round 2 landed the missing guards: the 5-tile border exclusion + `type != 546` carve-out (`Liquid.cs:1163`) and the `CheckWaterDeath/CheckLavaDeath` → inline `KillTile` (`:1183-1206`, the Tile overloads ride W4-e11's `tileobject::check_water_death/check_lava_death` seam — merge-order dependency, e11 not in main yet). No shimmer AddWater exists: honey/shimmer ride the water-death else-arm. `&mut World` ripple through `wake_around`/`refill_from_buffer` + the app callers; the promotion loop's extra cap guard removed (the C# `num8` is pinned pre-loop). Witnesses `liquid_addwater_guards` written not run; every liquid fixture embedded (+6,+6) past the border |
 | Pass driver (`UpdateLiquid`) | PARTIAL | `liquid.rs::update`/`end_pass` | Fixed `curMaxLiquid/cycles` stride + the `numLiquid` clamp (S1-A-8); `tilesIgnoreWater`/Bubble-379 (S1-L-14); W4-g45 landed the `DelWater` retirement sweep + 254→255 promotion (`Liquid.cs:1109-1119`), the buffer `checkingLiquid` promotion (`:1125-1130`) and the stuck window (`:1131-1149`). No panic/quick-settle, no net broadcast (`Liquid.cs:983-1158`) |
 | Per-cell update (`Liquid.Update`) | PORTED | `liquid.rs::update_tile` | Fall + ±1/±2/±3 averaging ported 1:1 including banker's rounding; `kill` bookkeeping matches; R-11-5 landed the reaction block + `delay` gate; W4-c34 landed the underworld evaporation (`Liquid.cs:466-474`); W4-g45 landed the `genRand` 254→255 nudge (`:892-895`), the extra wake calls (`:748-771`/`:821-836`) and the `DelWater` retirement lifecycle. `quickSettle` (`:588-591`/`:944-948`) rides W4-g47 |
 | `skipLiquid` skip flag | PORTED | `liquid.rs` (`skip` bitvec, `set_skip`/`is_skip`) | The two writes after a down-transfer (`Liquid.cs:586-587`) + the pass-loop gate (`:1096-1104`) + the quickFall clear (`:1089`); anchors.txt row `set_skip` |
@@ -121,6 +121,17 @@ still open items in ROADMAP §3.
 - No tests exist for: stuck/panic, kill thresholds, or a `.wld` liquid-byte
   round-trip (`chest.rs:3393`'s DW-3.4 covers the whole-file cycle, not the
   liquid bytes specifically).
+- `crates/tr-core/src/liquid.rs::liquid_addwater_guards` (W4-g45 round 2,
+  written NOT run — code-only mode): the 5-tile border refusal on all four
+  sides + the inner-edge pass (`Liquid.cs:1163`), the grate-546 carve-out
+  vs the stone refusal, the inline torch death in water (`:1195-1201`),
+  the lava-vs-water flag discriminators (torch style 0 vs the water-torch
+  sub-tile 8 frame decode; plant 3's global-table split; pile 372's
+  def-beats-global `water_death: false`), the honey/shimmer water-arm
+  ride, the open-cell and generation early returns (`:1183-1186`), the
+  promotion's death check (`:1127-1128`), the pre-loop `num8` pin + the
+  DelBuffer swap quirk (`:1120-1129`), and the RNG census (AddWater draws
+  nothing; the isolated death's reframe has no active centre to re-roll).
 - `crates/tr-core/src/liquid.rs::liquid_delwater` + `liquid_nudge_wakes`
   (W4-g45, written NOT run — code-only mode): the delay-inheriting swap-remove
   (`Liquid.cs:1577-1579`), the 254→255 sweep promotion (`:1113-1116`), the
@@ -182,10 +193,17 @@ still open items in ROADMAP §3.
    neighbour *or the centre* changed (`Liquid.cs:748-771`, `:821-836`); the
    port now runs the same centre-diff wake pass before the conditional centre
    write, re-queueing an already-settled neighbour `set_level` left unqueued.
-7. **`AddWater` guards (behavioural, low-med).** The 5-tile world-border exclusion
-   (`Liquid.cs:1163`), the `tile.type != 546` carve-out, and the
-   `CheckWaterDeath/CheckLavaDeath` → `KillTile` of plants/breakables submerged in liquid
-   (`:1183-1206`) are all absent; Rust's `is_solid` reads the static `TILE_SOLID` table only.
+7. **`AddWater` guards (behavioural, low-med).** — **FIXED (W4-g45 round
+   2).** The 5-tile world-border exclusion + the `tile.type != 546`
+   carve-out (`Liquid.cs:1163`) and the `CheckWaterDeath/CheckLavaDeath` →
+   inline `KillTile` of submerged objects (`:1183-1206`) are ported; the
+   death checks ride W4-e11's Tile-overload seam
+   (`tileobject::check_water_death`/`check_lava_death`, merge-order
+   dependency). There is no shimmer-specific AddWater — honey/shimmer read
+   the water-death else-arm. The liquid fixtures are embedded (+6,+6) past
+   the border (the g47 co-lane's documented precondition); the promotion
+   loop lost its extra `active.len() < cap` guard (the C# `num8` is pinned
+   before the loop, `:1120-1129`).
 8. **`tilesIgnoreWater` (behavioural, low).** `Liquid.cs:69-73/986/1157` flips
    `Main.tileSolid[546]` (+ boulder solidity) for the whole pass; `Liquid.Update:451` also
    forces `tileSolid[379] = true` per cell. The port has a static table, so liquid vs those
@@ -222,8 +240,8 @@ still open items in ROADMAP §3.
   `num >= 24` threshold, `tileCut` kills, the `tileSolid[546]` swap) and wire the three
   `*Check` calls into `update_tile`. Depends on `edit.rs`'s `KillTile`/`PlaceTile`/
   `SquareTileFrame` being callable from tr-core (new seam or an out-param).
-- **M** — Port `AddWater`'s missing guards: 5-tile border, `type != 546`, and
-  `CheckWaterDeath/CheckLavaDeath` → kill.
+- **M** — ~~Port `AddWater`'s missing guards: 5-tile border, `type != 546`, and
+  `CheckWaterDeath/CheckLavaDeath` → kill.~~ DONE (W4-g45 round 2).
 - **L** — Port the force-settle family: `QuickWater`/`SettleWaterAt`/
   `AttemptToMoveHoney|Lava|Shimmer`, the world-load settle (`WorldFile.cs:735-760`,
   `quickSettle`), stuck detection and panic mode. Depends on M above (merge tiles share

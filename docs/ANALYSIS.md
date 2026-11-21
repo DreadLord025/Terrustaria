@@ -18380,10 +18380,89 @@ per-entry `delay` counter lives in — re-verified against `Liquid.cs:1106-1150`
   buffer `checkingLiquid` promotion, the stuck force-clear, the nudge
   promote/keep/stream-advance pins and the extra-wake re-queue.
 - **Still out of scope (own task seeds):** `quickSettle` (the force-settle
-  family, R-11-7 / W4-g47), the `AddWater` 5-tile border + `type != 546`
-  carve-out + `CheckWaterDeath/CheckLavaDeath` kill (research/11 deviation 7),
-  panic mode + `QuickWater`/`SettleWaterAt` (R-11-7), and the MP cycle/kill
-  scaling + `_netChangeSet` (module 17).
+  family, R-11-7 / W4-g47), panic mode + `QuickWater`/`SettleWaterAt`
+  (R-11-7), and the MP cycle/kill scaling + `_netChangeSet` (module 17).
+  (The `AddWater` guards — research/11 deviation 7 — landed in round 2
+  below.)
+
+### W4-g45 round 2 addendum (2026-11-21, code-only mode) — the AddWater death-guards
+
+The deferred seed above (research/11 deviation 7) is closed: the
+`Liquid.AddWater` census against the landed port found exactly three
+missing pieces — the 5-tile border guard, the `type != 546` carve-out
+(both `Liquid.cs:1163`) and the death-check block (`:1183-1206`). The
+settle-vs-buffer promotion (`:1125-1130`), the `LiquidBuffer.AddBuffer`
+overflow semantics (`LiquidBuffer.cs:11-20`, the `maxLiquidBuffer - 2`
+cap + the `checkingLiquid` mark) and the `DelBuffer` swap-remove were
+already landed (phase 1); there is NO shimmer-specific AddWater — the one
+function serves all four kinds, honey/shimmer riding the `CheckWaterDeath`
+else-arm and lava the `CheckLavaDeath` arm.
+
+- **The guards** (`Liquid.cs:1163`): `x < 5 || y < 5 || x >= maxTilesX - 5
+  || y >= maxTilesY - 5` refuses the outer band before the queue; the
+  solid refusal now reads `tile_is_solid(&t) && t.kind != 546` — the grate
+  is exempt EVEN outside the pass (the stock `Main.tileSolid[546] = true`,
+  `Main.cs:10124`), while the pass-scoped boulder/bubble toggles stay with
+  `tile_is_solid` (S1-L-14). The C# guard reads the stock table at the
+  call site; the port's `ignore_solids` is down only inside `update`, so
+  the two agree at every runtime call.
+- **The death check** (`:1183-1206`): after the queue, an inactive tile or
+  `generating` returns; otherwise lava reads `CheckLavaDeath(tile)`, every
+  other liquid reads `CheckWaterDeath(tile)` — the Tile overloads
+  (`TileObjectData.cs:5083-5119`) that resolve the def from the cell's
+  frames. **Co-lane seam:** those symbols are W4-e11's claim (pushed
+  `1f5a01dd`, NOT in main; its commit names "the `Liquid.cs:1190`
+  settlement kill wiring is the liquid task's seam"); this branch
+  references `tileobject::check_water_death`/`check_lava_death` and rides
+  e11's merge order (the `npc_ai_plantera` union precedent). W4-d114's
+  style-indexed twins (`:5073-5105`) and W4-g47's duplicate draft are NOT
+  touched — at the merge the duplicate definitions dedupe to e11's. A
+  death runs `edit::kill_tile(world, x, y, false)` INLINE (the C# kills
+  before AddWater returns); the cell keeps its liquid (`remove_tile`
+  preserves it) and the queued entry settles on. The drops ride the
+  discarded `TileKill` record — the engine-pure deviation, same as
+  `liquid_check`'s `tileCut` burns. The MP `NetSendLiquid`/`SendData(17)`
+  arms stay unported.
+- **The `&mut World` ripple:** `add_water`/`wake_around`/
+  `refill_from_buffer` take `&mut World` (the inline kill mutates); the
+  four `world_sim/editing.rs` wake sites + the `app/frame.rs` witness call
+  pass `&mut app.world`. The internal `update_tile`/`del_water`/`set_level`
+  callers already held `&mut World`.
+- **The promotion overflow fix** (`:1120-1129`): the C# pins
+  `num8 = min(numLiquid, numLiquidBuffer)` BEFORE the loop and runs it
+  unconditionally — an AddWater that overflows straight back into the
+  buffer still consumes a promotion slot, and the next slot promotes too
+  (the DelBuffer swap can duplicate a buffered cell — the
+  `the_promotion_count_is_pinned_before_the_loop` witness pins the [B, A]
+  quirk). The port's extra `active.len() < cur_max_liquid - 1` loop guard
+  stopped early in that case; removed.
+- **The fixture widening** (the g47 co-lane's documented precondition —
+  its ANALYSIS defers these guards because "the border guard excludes
+  every cell of the 9-wide test fixtures"): every liquid fixture is
+  embedded at (+6,+6) in a world +12/+12 (the `basin`/`floor_world`/
+  `shaft` helpers + the dam/static-row/inline worlds), with containment
+  walls where the original world edges held the pools. The pinned
+  numbers (levels, cadences, mass ledgers, the nudge draws) are unchanged
+  — only the coordinates moved. The DelWater alch witness gained a stone
+  pillar under the herb: in the widened world an open cell below would
+  trigger the >=20 keep-alive (`:1506`) and the tail never ran.
+- **RNG census:** AddWater itself draws NOTHING — the guards, the queue
+  and the death check are RNG-free. The kill cascade consumes
+  `World.frame_rng` (the genRand stand-in) only where the C# rolls:
+  `reframe_area`'s centre reset needs an ACTIVE centre, and the killed
+  cell is inactive — an isolated torch death in an empty neighbourhood
+  advances no draw (witnessed). The `Next(30)` nudge contract is
+  unchanged: still the only draw in the settle engine, still only on a
+  254 (`:892-895`, the phase-2 census).
+- **Witnesses** (`liquid.rs::liquid_addwater_guards`, written NOT run):
+  the border refusal + inner-edge pass, the grate carve-out, the inline
+  torch death, the flag discriminators (torch style 0 vs the water-torch
+  sub-tile 8 at frameY 176 — D_4_S8_A3's false/false beats the base's
+  true/true through the frame decode; plant 3's global-table water/lava
+  split; pile 372's def-beats-global `water_death: false`), the
+  honey/shimmer water-arm ride, the open-cell/generation early returns,
+  the promotion death check, the pre-loop `num8` pin + swap quirk, and
+  the RNG-free census.
 
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
