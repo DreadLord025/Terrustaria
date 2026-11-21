@@ -14402,7 +14402,8 @@ fn laser_ray_len(world: &World, from: Vec2, dir: Vec2, max: f32) -> f32 {
 
 /// `Vector2.MoveTowards(this Vector2, Vector2, float)` (`Utils.cs:1772-1786`):
 /// `from` walks toward `target` by at most `max`, snapping on arrival.
-fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
+/// `pub(crate)` since W4-d33 style 122: the Pirate Ghost's hover rides it.
+pub(crate) fn move_towards(from: Vec2, target: Vec2, max: f32) -> Vec2 {
     let delta = target - from;
     if delta.length() < max {
         return target;
