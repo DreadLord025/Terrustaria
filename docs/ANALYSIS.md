@@ -7820,15 +7820,17 @@ damage, knock_back, ai0, ai1}`.
 Deviations:
 
 - **The ported statue kinds**: the app spawns the statue NPC styles whose C#
-  id has a ported `NpcKind` вЂ” 1 BlueSlime, 2 DemonEye, 6 EaterofSouls,
-  21 Zombie, 24 FireImp, 42 Hornet, 49 CaveBat, 55 Goldfish, 58 Piranha,
-  65 Shark вЂ” at the verbatim bottom-center anchor (`NPC.NewNPC`'s
-  `Bottom = (X, Y)`, `NPC.cs:80770`). The rest (the critters 51-62, the
-  birds 74/297/298, the WallCreeper 164/165, the Bunny 46/540, the Crab 67,
+  id has a ported `NpcKind` — 1 BlueSlime, 2 DemonEye, 6 EaterofSouls,
+  21 Zombie, 24 FireImp, 42 Hornet, 46 Bunny, 540 PartyBunny, 49 CaveBat,
+  55 Goldfish, 58 Piranha, 65 Shark — at the verbatim bottom-center anchor
+  (`NPC.NewNPC`'s `Bottom = (X, Y)`, `NPC.cs:80770`). The rest (the critters
+  51-62, the birds 74/297/298, the WallCreeper 164/165, the Crab 67,
   the BlueJellyfish 63, the Mimic 85, the dragonflies, the macaws,
-  UndeadViking 167, Pigrons 170/171/180, Medusa 480, GraniteGolem 482, вЂ¦ )
+  UndeadViking 167, Pigrons 170/171/180, Medusa 480, GraniteGolem 482, … )
   emit their id and drop at the drain with one note; each kind's family
-  lands the arm.
+  lands the arm. **W4-e21**: the Bunny 46 / PartyBunny 540 pair landed
+  (the bunny statue's style-9 arm, `Wiring.cs:2301-2313`) — see "The bunny
+  statue's pair" below.
 - **The projectile families that dropped** (requests emitted verbatim, the
   app spawn drops them вЂ” `proj_data` has no row): the fireworks rockets
   167-174 and 415-418 (aiStyle 34), the fountains 419-422 (aiStyle 73), the
@@ -7873,9 +7875,14 @@ Deviations:
   AnyInteractions tracking lands). The C#'s other three flags
   (`value = 0`, `npcSlots = 0`, `CanBeReplacedByOtherNPCs`) have no port
   field yet.
-- **`PartyIsUp` and `getGoodWorld` are unmodelled**: style 9 always drops the
-  plain Bunny (46, `Wiring.cs:2303-2307`) and `NewNPC`'s 46в†’614/62в†’66
-  getGoodWorld remap never fires (`NPC.cs:80752-80762`).
+- **`PartyIsUp` is now modelled for the bunny statue (W4-e21)**: style 9 picks
+  540 while `BirthdayParty.PartyIsUp` (`Wiring.cs:2301-2313`) — the engine
+  reads a `party_is_up` snapshot the app mirrors in before the wiring step
+  (`Wiring::set_party_is_up` ← `world_events::party_is_up`); the pick runs
+  BEFORE `CheckMech`/`MechSpawn`, so the party bunny's cap rides the request
+  id through the bunny group {46, 540, 303, 337} (`NPC.cs:7443-7449`).
+  `getGoodWorld` stays unmodelled: `NewNPC`'s 46→614/62→66 remap never fires
+  (`NPC.cs:80752-80762`).
 - **The traps' spec is now complete but 187 waits on aiStyle 38**: the trap
   table (98/184/187/185/186/980 вЂ” `ProjectileID.cs:750/922/926/928/924/2514`;
   the WIRE-1 const names 185 "TRAP_SPEAR"/980 "TRAP_SPIKY" were wrong
@@ -7889,6 +7896,75 @@ Deviations:
 - **`HitSwitch`'s 132/411 lever arm** (the lever flip + `CheckMech(60)` + the
   2Г—2 detonator lamp flip, `Wiring.cs:335-372`) is still unported вЂ” a WIRE-1
   gap outside this row's scope.
+
+### The bunny statue's pair (W4-e21)
+
+The bunny statue (style 9, `Wiring.cs:2301-2313`) spawned nothing before this
+round — its C# ids 46/540 had no ported `NpcKind`, so the drain dropped them
+(the roster-gap note above). W4-e21 lands the pair:
+
+- **The kinds**: `NpcKind::Bunny` (46) and `NpcKind::PartyBunny` (540) share
+  the C#'s ONE `SetDefaults` row (`NPC.cs:9336-9347`): 18x20, aiStyle 7,
+  dmg 0, def 0, 5 HP, catchItem 2019, NPCHit1/NPCDeath1; no value row (the
+  head's `value = 0f`, `:8544`) and no knockBackResist row (the head's 1f,
+  `:8533` — the stock `_ => 0.4` never sees them). `npcFrameCount[46/540]`
+  = 7 (`Main.cs:67088`/`:67138`); each draws its own NPC_46/NPC_540 sheet
+  (`SMALL_KIND_SHEETS` + `BESTIARY_NPC_SHEET_IDS`, appended last so the
+  earlier slots keep their indexes). The protocol ids ride the port-local
+  229/237 holes (the vanilla 46 is the WallOfFlesh's `to_u16` slot); the G6
+  `render_key` terms ride the same 229/237 (the vanilla 46 is the
+  WallOfFlesh's key — the wyvern renumber's precedent); `cs_id` keeps the
+  real 46/540 for the `MechSpawn` caps.
+- **The party pick**: the engine's style-9 arm reads a `party_is_up`
+  snapshot (`Wiring::set_party_is_up`) the app mirrors in from
+  `world_events::party_is_up` before the wiring step — the pick happens at
+  the C#'s `HitWireSingle` site, BEFORE `CheckMech(30)`/`MechSpawn`
+  (`:2308`), so the request id (and the bunny-group cap) follows the party
+  state. The `WorldEvents` book stays app-side.
+- **The AI stand-in**: the pair rides the port's aiStyle-7 walker
+  (`update_guide`, the Guide precedent) — `update_guide` now reads
+  `self.kind.size()` (a no-op for the 18x40 town NPCs, the bunny's 18x20
+  box). The faithful `AI_007_TownEntities` TownCritter arm
+  (`NPC.cs:53730-53760`/`:54191-54194` — the walk/idle timers, the
+  `Next(200,400)` extra idle, the ×1.2 rising-hop boost) is the M4-NPC
+  critter wave's, NOT this round's.
+- **The FindFrame**: the `case 46 : case 540` group (`NPC.cs:76851-76904`)
+  is ported verbatim — grounded latches the sprite direction, the idle
+  snaps to row 0, the hop walks the `|vx| + 1` accumulator advancing every
+  >6 and wrapping at 7; the air pins row 4 rising / row 6 falling.
+- **The bestiary**: `BestiaryEntry.Critter(46)`/`Critter(540)` (the
+  automated populator, `BestiaryDatabaseNPCsPopulator.cs:851-868`); no
+  `Hide`/draw-offset rows (`NPCID.cs`'s `NPCBestiaryDrawOffset` carries no
+  46/540 keys), so both keep their own entries (no fold). The 540 name
+  rides `Lang.GetNPCName` ("Party Bunny").
+- **The witnesses** (WRITTEN, NOT RUN — code-only): the engine's party pick
+  (`w4_e21_the_bunny_statue_picks_540_while_the_party_is_up`), the app's
+  plain/party spawns + the bunny-group cap
+  (`w4_e21_the_bunny_statue_spawns_the_plain_bunny` /
+  `..._the_party_bunny_while_the_party_is_up` /
+  `..._the_bunny_group_cap_counts_both_bunny_kinds`), the SetDefaults rows
+  + protocol round-trip (`w4_e21_the_bunny_pair_rows_match_setdefaults`)
+  and the FindFrame hop/air pins
+  (`w4_e21_the_bunny_find_frame_hops_and_pins_the_air_rows`). The roster
+  pins (`ALL_KINDS` 270→272, the `s1_f_3` decodable count) are updated.
+
+### The HitWireSingle census (W4-e21, the wiring tail)
+
+The full C# `HitWireSingle` (`Wiring.cs:996-2554`) top-level tile-case list
+— 66 cases — plus the non-case arms (the 255..268 type-pair swap, the
+`TileID.Sets.Torches`/`Campfires` gates, 130/131, doors 10/11, trapdoors
+386/387, tall gates 388/389, 216, 497/15) — is **fully claimed** across the
+four co-lanes at the e21 tip: the S1-L-6 baseline arms are in every lane;
+314/21/467/219/642 are e20's (f11 duplicates dropped per the devices-family
+bible, research-149); the torch/campfire/slab/doors/trapdoors/tall-gates are
+f11's originals folded into c42's union-exec; the 144/421/422 wakes +
+actuator guard, 235/226 `downedPlantBoss` and the 506 shared validator are
+c42's `de176ccd` fix round; the pump `XferWater` gate, the monolith
+nine-kinds gate, the grate 546/557 wakes and the boulder-statue 99 seam are
+e21's (`12fb1a2e`). **No still-unclaimed arm remains.** The boulder
+aiStyle-25 projectile family rows are d3's (`task/W4-d3-proj-ai-21-30`,
+census 26b — the pushed branch is census-only, the rows are in flight in
+its worktree); e21's boulder-statue seam auto-spawns once they land.
 
 ## Falling blocks (M7-FALL-1)
 
