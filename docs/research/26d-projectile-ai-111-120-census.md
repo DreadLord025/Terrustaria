@@ -26,7 +26,7 @@ P = ported (dispatch arm), M = missing, part = family partial.
 | --- | --- | --- | --- | --- |
 | 111 | M | `AI_111_DryadsWard` :41134-41240 (dispatch :34110-34113) | 586 (:6358-6366) | — |
 | 112 | part | inline :34114-34363 | 836 (:8060-8065), 590 (:6385-6396), 644 (:6941-6952) | :18803 (644 only, `ai_rainbow_crystal_shard`) |
-| 113 | P | `AI_113_TargetSticker` :40562-40899 (dispatch :34364-34367) | 598 (:6470-6480); 614/636/971/975/1024 unrowed | :17584 (`projectile_ai_thrown::bone_javelin_step`) |
+| 113 | P | `AI_113_TargetSticker` :40562-40899 (dispatch :34364-34367) | 598 (:6470-6480), 614 (:6611-6619), 636 (:6838-6849), 971 (:9197-9206), 975 (:9287-9296), 1024 (:9693-9706) — ALL ROWED (F1 round) | `projectile_ai_thrown::target_sticker_step` (the whole census) |
 | 114 | M | inline :34368-34413 | 602 (:6511-6520) | — |
 | 115 | P | inline :34414-34437 | 604 (:6071-6083) | :17807 (`ai_yoyo_beam`) |
 | 116 | M | inline :34438-34458 | 607 (:6542-6553) | — |
@@ -48,18 +48,37 @@ with the 117 commit. Witnesses WRITTEN NOT RUN (code-only round).
 
 ## Findings
 
-- **F1 (113 partial kinds).** `AI_113_TargetSticker` serves 598/614/636/971/
-  975/1024, but only 598 has a `proj_data` row + the ported arm. 614
-  (StardustCellMinionShot), 636 (Daybreak), 971 (TentacleSpike), 975
-  (BloodButcherer), 1024 (DeadCellsKillingDeckCard) are UNROWED — their
-  per-type sub-arms (the 614 homing, the 636/971/975 stick-life ladders, the
-  1024 return-to-owner state) are out of this decade's arm scope (they are
-  minion/butcher/deck-card lanes). Recorded, not ported here.
+- **F1 (113 partial kinds) — RESOLVED, the whole census ported.** The EXACT
+  SetDefaults census (`this.aiStyle = 113`, six writes): 598 BoneJavelin
+  (:6474), 614 StardustCellMinionShot (:6615), 636 Daybreak (:6842), 971
+  TentacleSpike (:9201), 975 BloodButcherer (:9291), 1024
+  DeadCellsKillingDeckCard (:9697). The shadowflame-family guess is WRONG:
+  495 ShadowFlameArrow is aiStyle **1** (:5681, rowed), 496 ShadowFlame is
+  aiStyle **91** (:5692, W4-d10's decade), 659 SpiritFlame is aiStyle **129**
+  (:7083, rowed) — none rides 113. The five missing rows ported verbatim
+  (`928e6bbf`); `bone_javelin_step` generalized into `target_sticker_step`
+  serving all six (`719ffb76`): the 614 chase lerp + 63-fade, the 636
+  0.995/0.15 fall + 5·MaxUpdates stick, the 971/975 9·MaxUpdates sticks +
+  pulse censuses + rotation latches, the 1024 three-state machine (frames,
+  sine flutter, the 4×4 tile-stick probe, the return at 16 with the inline
+  ResetLocalNPCHitImmunity+Damage, the +6 hitbox + ×1.5 return multiplier).
+  Pool: the pin/caps (6/8/10)/debuffs (189/337/344/183) generalize, the
+  `Damage_CanDealDamage` stuck gate (:12448), the 614/636 Colliding 1/8
+  shrink. Kill paths (`85054785`): the 636 spawns the 953 (:72126-72145),
+  the 1024 Item8 + ring (:74817-74829); the spawn rotation latch
+  (:22049-22056) landed (`9a493123`). The 612/953 Daybroken grants
+  (:11355-11366) ride both damage walks. Witnesses WRITTEN NOT RUN.
 - **F2 (117's 978 is style 189).** The AI's `flag58 = type==612 || type==953
   || type==978` (:34461) names 978 (Volcano), but 978's SetDefaults row is
-  aiStyle **189** (:9253-9267), so it rides the 189 arm (`ai_volcano`), NOT
-  117. The 117 arm's flag58 keeps the 978 branch verbatim for source fidelity
-  but no 117-rowed kind is 978. The 117 rows are 608/612/624/953/1044.
+  aiStyle **189** (:9253-9268), so it rides the 189 arm (`AI_189_Volcano`
+  :42264), NOT 117. The 117 arm's flag58 keeps the 978 branch verbatim for
+  source fidelity but no 117-rowed kind is 978. The 117 rows are
+  608/612/624/953/1044. **F1-round census: 978 has NO `proj_data` row on
+  this branch.** Style 189 is W4-d19's decade (181-190); at the census both
+  `task/W4-d19-proj-ai-181-190` and `task/W4-d20-proj-ai-191-200` sat at
+  `a725acb0` (= origin/main, ZERO pushed commits — no claims read), so the
+  978 row + the Volcano arm stay d19's to land. The 978 StatusNPC term
+  (OnFire 24/180, :11359-11362) ports verbatim with the explosion grants.
 - **F3 (117 hide / 1044 hide).** 608 and 1044 set `hide = true` at SetDefaults
   (:6565/:9885); the 117 AI sets `hide = true` on the frame wrap (:34477).
   The port's `Projectile` has no `hide` field (draw-layer flag) — documented
@@ -92,3 +111,12 @@ internal `NewDust` rolls go with the dust layer (the `projectile_ai_misc`
 precedent, ANALYSIS "Dust & gore"). `Lighting.AddLight` / `hide` /
 `ParticleOrchestrator` are the render/particle layer's documented skips.
 Witnesses are WRITTEN NOT RUN (code-only round; no cargo per task contract).
+
+## F1 follow-up round — the explosion-row audit
+
+All six explosion kinds the decade armed carry `proj_data` rows (the
+`spawn_with_data` rowless-decline audit, pinned by
+`w4_d12_f1_the_explosion_kinds_all_have_rows`): 612/624/953/1044 (aiStyle
+117, data.rs), 608 (117, the Kill-path counter), 644 (112, the crystal
+shard). NONE is rowless. The 978 flag58 term is the only style-117-adjacent
+kind without a row — deliberately, it is d19's 189 (see F2).
