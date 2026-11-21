@@ -45435,10 +45435,13 @@ mod w4_g16_batch3_kill_gore_tests {
 
     /// The 955 Star Cannon star (`:75704-75711`): the screen-gated star row
     /// ×7 — each ONE NextFloat (CircularEdge unit) + Next(8) (SelectRandom
-    /// 16,17×7) + the two kicks. Off-screen the row draws nothing.
+    /// 16,17×7) + the two kicks. Off-screen the row draws nothing. On-screen
+    /// the AI's `falling_star_trail` (`:23973`, site 7) draws its Next(6) gate
+    /// FIRST (and a trail gore when taken) — the twin replays it before the
+    /// kill row (the C# AI-before-Kill order).
     #[test]
     fn w4_g16_b4_the_955_star_row_screen_gate() {
-        // On-screen: seven star gores.
+        // On-screen: the trail gate + seven star gores.
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data_ai_owned(STAR_CANNON_STAR, 0, 100.0, 100.0, 3.0, -2.0, 50, 0.0, 0.0, 0.0)
@@ -45450,15 +45453,25 @@ mod w4_g16_batch3_kill_gore_tests {
         let mut rng = UnifiedRandom::new(63);
         kill_tick(&mut pool, &mut w, &mut rng);
         let mut twin = UnifiedRandom::new(63);
+        // The AI trail (site 7): the Next(6) gate, then the taken branch's
+        // Next(4) pick + kicks (the anniversary flag is off — one pick).
+        let trail_taken = twin.next_range(0, 6) == 0;
+        if trail_taken {
+            let _ = twin.next_range(0, 4); // SelectRandom(16,17,17,17)
+            let _ = twin.next_range(10, 31);
+            let _ = twin.next_range(-20, 21);
+        }
+        // The kill row (site 97): seven star gores.
         for _ in 0..7 {
             let _ = twin.next_float(); // CircularEdge unit
             let _ = twin.next_range(0, 8); // SelectRandom(16,17×7)
             let _ = twin.next_range(10, 31);
             let _ = twin.next_range(-20, 21);
         }
-        assert_eq!(rng.peek(), twin.peek(), "the seven star rows");
+        assert_eq!(rng.peek(), twin.peek(), "the trail gate + the seven star rows");
         let gore = pool.take_gore_pool().unwrap();
-        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 7, "seven gores");
+        let expected = 7 + if trail_taken { 1 } else { 0 };
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), expected, "seven kill gores (+ the trail when taken)");
         // Off-screen (no screen fed): the kill row draws nothing (the trail
         // is off-screen too — the AI draws nothing).
         let mut pool = ProjectilePool::new();
