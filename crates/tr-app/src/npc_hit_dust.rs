@@ -4310,7 +4310,8 @@ mod tests {
         let world = air();
         let ctx = ctx();
         // A filled ring with fractional slots: the (int) cast truncates.
-        let mut s = snap(519, 1, 1, 9999.0); // the goop's lifeMax 1; dead
+        // life < 0 — a KILLING blow still fires (no life gate).
+        let mut s = snap(519, -1, 1, 9999.0); // the goop's lifeMax 1
         s.old_pos = [
             Vec2::new(100.9, 200.9),
             Vec2::new(1.0, 1.0),
