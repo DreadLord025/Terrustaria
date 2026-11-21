@@ -1528,6 +1528,12 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_double_jump_dust() {
                 crate::player_trail_dust::drain_double_jump_visuals(app, burst);
             }
+            // W4-g66 — `WingAirVisuals` (`Player.cs:26817`, `:30750-31013`):
+            // the flag19 flying tick's per-wing rolls, snapshotted BEFORE
+            // `WingMovement` shaped the velocity.
+            if let Some(burst) = p.take_wing_air_dust() {
+                crate::player_wing_dust::drain_wing_air(app, burst);
+            }
             // W4-g66 — `FloorVisuals` → `MakeFloorDust` (`Player.cs:28271`,
             // `:23790-24043`): the landing burst / running puffs after the
             // movement block, before `PlayerFrame`'s draws (`:28286`). The

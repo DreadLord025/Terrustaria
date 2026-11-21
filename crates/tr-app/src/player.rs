@@ -699,6 +699,22 @@ pub(crate) struct FloorDust {
     pub(crate) vy: f32,
 }
 
+/// W4-g66 — one queued `WingAirVisuals` call (`Player.cs:30750-31013`, the
+/// flag19 flying tick). `wings` is the look id (the port folds it into
+/// `wings_logic`, the wing grant's note); `vx`/`vy` feed the 26/37 trails'
+/// velocity folds.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct WingAirDust {
+    pub(crate) wings: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) facing: i32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2106,6 +2122,8 @@ pub struct Player {
     /// (`Player.cs:23740-23743`): drained after the jump/dash bursts, before
     /// the flight section's draws (`:28271` runs after the movement block).
     pending_floor_dust: Option<FloorDust>,
+    /// W4-g66 — the tick's queued `WingAirVisuals` call (`Player.cs:26817`).
+    pending_wing_air_dust: Option<WingAirDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3047,6 +3065,7 @@ impl Player {
             pending_fast_run_dust: None,
             pending_double_jump_dust: None,
             pending_floor_dust: None,
+            pending_wing_air_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3670,6 +3689,12 @@ impl Player {
         self.pending_floor_dust.take()
     }
 
+    /// W4-g66 — takes the `WingAirVisuals` snapshot (`Player.cs:30750-31013`);
+    /// drained on `UpdatePlayers` (`player_wing_dust::drain_wing_air`).
+    pub(crate) fn take_wing_air_dust(&mut self) -> Option<WingAirDust> {
+        self.pending_wing_air_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3860,6 +3885,7 @@ impl Player {
         self.pending_fast_run_dust = None;
         self.pending_double_jump_dust = None;
         self.pending_floor_dust = None;
+        self.pending_wing_air_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -10088,11 +10114,21 @@ impl Player {
             }
             return true;
         }
-        // `:26815-26818`: the flying tick — `WingAirVisuals` (the per-wing
-        // dust rolls, `:30750-30963`) is a visual seam the port defers (its
-        // `Main.rand` draws would ride the UpdatePlayers stream; see
-        // docs/ANALYSIS.md "The wings/flight accessory block").
+        // `:26815-26818`: the flying tick — W4-g66: `WingAirVisuals`' dust
+        // rolls (`:30750-31013`) queue one snapshot BEFORE `WingMovement`
+        // shapes the velocity (the C# call order); the drain replays them on
+        // the `UpdatePlayers` stream (`player_wing_dust::drain_wing_air`).
         if flag19 {
+            self.pending_wing_air_dust = Some(WingAirDust {
+                wings: self.wings_logic,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+                facing: self.facing,
+            });
             self.wing_movement();
         }
         // S1-E-21f — `WingFrame(flag19)` (`Player.cs:26820`, `:29468-30527`).

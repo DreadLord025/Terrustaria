@@ -246,6 +246,7 @@ mod player_dust;
 // floor-dust chains first. Same snapshot-then-replay convention as
 // `player_dust`.
 mod player_trail_dust;
+mod player_wing_dust;
 mod regen;
 mod research;
 mod sand;
