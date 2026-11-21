@@ -4186,6 +4186,12 @@ mod tests {
         assert_eq!(gv.right_beach_start, 0);
         assert_eq!(gv.water_line, 0);
         assert_eq!(gv.lava_line, 0);
+        // W4-d105 lane 5: the fallen-log anchor resets to −1
+        // (`WorldGen.cs:11210`) and the larva ledger to empty
+        // (`GenVars.numLarva = 0`, `WorldGen.cs:11245`).
+        assert_eq!(gv.log_x, -1);
+        assert_eq!(gv.log_y, 0);
+        assert!(gv.larva.is_empty());
     }
 
     // --- Phase 6: temple stub -------------------------------------------------
