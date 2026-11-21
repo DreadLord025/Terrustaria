@@ -228,6 +228,7 @@
 //! | 1099-1108 | `:87956-87983` | the 550 Bartender + 588/589 Golfer death (5 gores each, +8 X offsets, shimmer) |
 //! | 1109-1114 | `:88016-88021` | the 633 BestiaryGirl death (6 gores, altTexture/shimmer head variants) |
 //! | 1115-1124 | `:88039-88097` | the 368 TravellingMerchant + 227 Painter death (5 gores each, shimmer) |
+//! | 1125-1129 | `:88113-88117` | the 228 WitchDoctor death (5 gores, shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6510,6 +6511,39 @@ fn painter_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1332 } else { 323 }, 1.0); // :88097
 }
 
+/// The 228 WitchDoctor death (`NPC.cs:88109-88117`, sites 1125-1129): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder with shimmer variants — 324 (1369 shimmer) head, 325
+/// (1370) / 326 (1372) at +20 (the DISTINCT pair), 327/327 (1371) at +34.
+/// Scale defaults to 1.
+fn witch_doctor_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(228);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1369 } else { 324 }, 1.0); // :88113
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1370 } else { 325 }, 1.0); // :88114
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1372 } else { 326 }, 1.0); // :88115
+    gore.new_gore(rng, world, low, vel, if shimmer { 1371 } else { 327 }, 1.0); // :88116
+    gore.new_gore(rng, world, low, vel, if shimmer { 1371 } else { 327 }, 1.0); // :88117
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7304,6 +7338,10 @@ pub fn hit_effect_c(
     // `:88076-88098` — the 227 Painter arm (sites 1120-1124).
     if npc_type == 227 && npc.hp <= 0 {
         painter_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88099-88118` — the 228 WitchDoctor arm (sites 1125-1129).
+    if npc_type == 228 && npc.hp <= 0 {
+        witch_doctor_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -11506,6 +11544,30 @@ mod tests {
         painter_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1331, 1334, 1333, 1332, 1332]);
+    }
+
+    /// `NPC.cs:88113-88117` — the WitchDoctor death: the 5-gore ladder
+    /// 324/325/326/327 (normal, distinct +20 pair) or 1369/1370/1372/1371
+    /// (shimmer).
+    #[test]
+    fn w4_f10_the_witch_doctor_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1117);
+        witch_doctor_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![324, 325, 326, 327, 327]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1117);
+        witch_doctor_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1369, 1370, 1372, 1371, 1371]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
