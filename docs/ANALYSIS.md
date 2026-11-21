@@ -36055,6 +36055,83 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The deferred bucket drains (W4-g31 pass 4)
+
+C#'s `Draw` classifies each cell and registers a special point instead of
+drawing it inline (the g30 switch, `TileDrawing.cs:534-723`);
+`PostDrawTiles(false)` (`:414-442`) then drains the eleven `TileCounterType`
+buckets in a fixed order. The pass family split the work: g28 (pass 1) the
+quality-light tiers, g29 (pass 2) the `Draw` orchestration structure, g30
+(pass 3) the classification switch + registry, g32 (pass 5) the orchestration
++ the `PostDrawTiles` ORDER. g29's module doc assigns the deferred bucket
+drains to "g31/g32 (passes 4-5)"; g32 took the order/structure, so **g31
+(pass 4) owns the drain BODIES** — `render/tile_drains.rs`, UNWIRED (the
+`special_tiles.rs:35` pattern; the `draw_tiles` seam is contested by g28-g32
++ d56-d60).
+
+The five MISSING drains ported (research/09 rows 10-12):
+* `DrawGrass` (`:8326-8381`) — the WindyGrass bucket; the wall/place wind
+  gates (`:8360-8367`) zero the cycle, the `GetWindGridPush(20, 0.35)` grid
+  push still adds; the sprite anchors at `(x*16+8, y*16+16)`, rotates
+  `num3*0.1` about `(tileWidth/2, 16-half-tileTop)`.
+* `DrawAnyDirectionalGrass` (`:8383-8479`) — tile 184; the four-direction
+  switch on `tileFrameY/54` (`:8429-8467`) picks the origin + position nudges
+  + the wind-lean sign; the 2-axis grid push projects onto `(num4, num5)`.
+* `DrawRisingVineStrip` (`:9134-9193`) — the reverse-vine (549) strip walks
+  UP from the root (`num7 > 10`), the anchor advances along `(rot - PI/2)`,
+  the grid push is `(40, -0.004)`, the rotation `num2*(0-num4)*windCycle`;
+  the exposure gate has NO remix arm (unlike the forward strip).
+* `DrawMultiTileGrass(InWind)` (`:8738-9032`) + `ClimbCatTail` (`:8807-8827`)
+  — the 519 campfire's height crawl + anchor shift (`num3 -= num4 - 1`), the
+  sunflower's +74 px glow latch, the 493 golf-flag wind-sign flip (±6 px), the
+  521-527 crystal-shard freeze (`num = 0`, `flag = false`).
+* `DrawMultiTileVines(InWind)` (`:8829-9603`) — the platform lift
+  (`IsBelowANonHammeredPlatform`, `WorldGen.cs:38289-38301`; the 465/591/592
+  family checks both columns), the 34/126 + 42 style tables verbatim (incl.
+  the `:9404-9405` dead-write `num3 = 0f; num3 = null;` — the second wins),
+  the 660 fairy-jar `Extra_260` white+HSL pair, the 698 dead-cells-jar lid
+  rows + rarity colour + rotated item icon, the shared-seed flame tail.
+
+The five already-ported bodies (Trees / Vines / Pylons / Trophies /
+VoidLenses) drain through the `PortedBodyDrain` seam — the driver walks the
+bucket points in C# order and hands each to the existing
+`foliage.rs`/`vines.rs`/`pylons.rs` pass at the family merge.
+
+Deviations:
+* **The 660 fairy-jar draws THREE sprites on its bottom row** (`:9505-9519`):
+  an `Extra_260` white copy BEFORE the tile draw, the tile draw itself
+  (`:9512`, which runs for EVERY cell), then the `Extra_260` HSL glow (A=127)
+  AFTER. The port models the pair as a `DrainFairyJar` plan + the normal
+  `DrainSprite`; the discarded `% 1f` at `:9508` is dead (the glow re-derives
+  the hue at `:9516`).
+* **The shared flame seed** (`:9590-9594`): the first non-zero `flameSeed`
+  across the object's cells latches and is reused for every flame quad. The
+  270/271/581 jar types return a ZERO seed from `GetTileFlameData`
+  (`:1851-1871`), so they never latch it — the next real-seed cell wins.
+* **The `_rand` stream is one `UnifiedRandom` per `TileDrawing`** (`:104`,
+  `:191`): the drains consume the per-cell `Next(4)` dust flags in pass order
+  (the stream-order rule). Dust EMISSION is the d60 lane — the drains record
+  the flag and spawn nothing; the per-cell light chain
+  (`DrawAnimatedTile_AdjustForVisionChangers` `:8481-8552` +
+  `DrawTiles_GetLightOverride` `:6624-6686`) is seamed to d56's
+  `tr-render::animated_tiles` (`DrainCellLight`).
+* **The 698 jar's TE item carries no rare/expert** — the port's `TeItem`
+  payload is `(kind, prefix, stack)`; rare/expert are fed 0/false (the d57
+  TeItem-runtime deferral), so a filled jar draws the white-rarity lid until
+  the runtime item lands. The TE lookup is at the ANCHOR (`:9520`), not the
+  per-cell position.
+* `GetTileDrawData`'s `Main.tileFrame[type]` animator row is fed 0 (the
+  `vines.rs` convention — S1-G-1f binds it at the merge); the LitNature
+  shader + `SideFlags` seams are unported (the `vines.rs` deviation); the C#
+  null-tile arms have no port counterpart (the dense tile array).
+* `IsVisible` (`:1411-1432`) is re-ported here (the `pylons.rs` copy is
+  private); the family merge keep-ones one. The `TileCounterType` bucket
+  indices mirror g30's enum as constants (import-free); the merge binds
+  `DrainBuckets` to `SpecialPoints::buckets`.
+
+20 witnesses (`tile_drains::tests::*`) WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
