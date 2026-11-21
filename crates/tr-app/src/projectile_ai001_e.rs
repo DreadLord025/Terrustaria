@@ -65,12 +65,17 @@ use crate::projectile::Projectile;
 /// (`Projectile.cs:5056-5063`). Module-private: the `data.rs` const lands
 /// with the c11 merge (no import until then — the row-gated inertness).
 const MARTIAN_TURRET_BOLT: u16 = 435;
+/// `ProjectileID.NebulaLaser` (576) — the W4-d11 row's kind
+/// (`Projectile.cs:6258-6269`). Module-private: the `data.rs` const lands
+/// with the d11 merge (no import until then — the row-gated inertness).
+const NEBULA_LASER: u16 = 576;
 
 /// The slice-E kind set — kind-disjoint from `projectile_ai001_a/b/c/d`,
 /// the riders, the frostmoon/moonlord/darts/special-arrow/special-bullet
 /// gates, the javelin and the Book of Skulls (the seam chains E after D).
-pub(crate) const SLICE_E_KINDS: [u16; 1] = [
+pub(crate) const SLICE_E_KINDS: [u16; 2] = [
     MARTIAN_TURRET_BOLT, // 435
+    NEBULA_LASER,        // 576
 ];
 
 /// Whether this module owns the kind's aiStyle-1 arm.
@@ -122,6 +127,38 @@ pub(crate) fn step(p: &mut Projectile, world: &World) {
             // gravity never fires — a straight bolt. The rotation tail
             // is the 435/459/682/709 arm (`:57642-57648`).
             finish(p, world, true);
+        }
+        NEBULA_LASER => {
+            // `:55361-55365` — the `ai[1] == 0f` one-shot latch: the C#
+            // sets `ai[1] = 1f` THEN plays `SoundID.Item12` at
+            // `base.position`; the cue rides `wants_sound` (the S1-E-21h
+            // drain — the slice-A `latch_ai1` convention).
+            if p.ai[1] == 0.0 {
+                p.ai[1] = 1.0;
+                p.wants_sound = Some((2, 12, p.pos.x, p.pos.y, 0.0));
+            }
+            // `:55635-55649` — the per-type alpha switch's case 576/577:
+            // `localAI[1]++`; while `> 2f`, `alpha -= 15` clamp 0. The
+            // d11 row seeds alpha 255 (`:6265`): ticks 1-2 count only,
+            // the fade fires from tick 3 (255 − 15×17 → 0 at tick 19).
+            p.local_ai[1] += 1.0;
+            if p.local_ai[1] > 2.0 {
+                if p.alpha > 0 {
+                    p.alpha -= 15;
+                }
+                if p.alpha < 0 {
+                    p.alpha = 0;
+                }
+            }
+            // `:56296-56308` — the light (0.4, 0.2, 0.4) SKIPPED (the
+            // proj_lights layer's census) + the 5-dust-242 trail
+            // (`:56299-56307`, the plain `NewDust` overload — the
+            // internal draws ride with the skipped body, the module-doc
+            // convention). NO state reads either.
+            // `flag3 = false` (`:56008`): the counter rests, the generic
+            // gravity never fires — a straight laser. The rotation tail
+            // is the DEFAULT (`:57750` — 576 is not in the :57642 arm).
+            finish(p, world, false);
         }
         _ => unreachable!("the dispatch gates on SLICE_E_KINDS"),
     }
@@ -218,6 +255,28 @@ mod tests {
         p
     }
 
+    /// A slot carrying the 576 row slice BY HAND (`Projectile.cs:6258-
+    /// 6269` — the d11 row): 4x4, hostile, penetrate −1, alpha 255,
+    /// extraUpdates 2, scale 1.2, timeLeft 600, the stock tileCollide
+    /// true (`:775`).
+    fn laser(vx: f32, vy: f32) -> Projectile {
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = NEBULA_LASER;
+        p.owner = 255; // the hostile shot (the 574 eye's release)
+        p.pos = Vec2::new(10.0 * TILE_PX, 10.0 * TILE_PX);
+        p.vel = Vec2::new(vx, vy);
+        p.w = 4.0;
+        p.h = 4.0;
+        p.tile_collide = true;
+        p.alpha = 255;
+        p.scale = 1.2;
+        p.time_left = 600;
+        p.penetrate = -1;
+        p.extra_updates = 2;
+        p
+    }
+
     /// The gate is disjoint from A/B/C/D's kind lists and the generic
     /// arrows — `covers` is the seam's whole contract.
     #[test]
@@ -238,6 +297,7 @@ mod tests {
         assert!(!covers(2)); // the flame arrow
         assert!(!covers(436)); // the Scrambler keeps slice A
         assert!(!covers(459)); // the Charged Blaster keeps its rider
+        assert!(!covers(577)); // the 577 sibling stays unrowed (d11)
         for k in SLICE_E_KINDS {
             assert!(covers(k));
         }
@@ -301,5 +361,49 @@ mod tests {
         assert_eq!(p.alpha, 0, "255 - 40×7 clamps at 0 (`:54918`)");
         step(&mut p, &w);
         assert_eq!(p.alpha, 0, "the clamp holds");
+    }
+
+    /// 576 (`:55361-55365` latch, `:55635-55649` fade, `:56008` flag3 =
+    /// false): the latch fires on tick 1 with ONE Item12 cue; localAI[1]
+    /// counts every tick; the fade starts at tick 3 (localAI[1] > 2).
+    /// After 2 ticks: alpha still 255, localAI[1] = 2. After 19 ticks:
+    /// 17 fade ticks × 15 = 255 → alpha 0, localAI[1] = 19.
+    #[test]
+    fn w4_f20e_the_nebula_laser_latches_and_fades_after_two() {
+        let w = world();
+        let mut p = laser(3.0, 0.0);
+        step(&mut p, &w);
+        assert_eq!(p.ai[1], 1.0, "the one-shot latch (`:55363`)");
+        assert_eq!(
+            p.wants_sound,
+            Some((2, 12, 160.0, 160.0, 0.0)),
+            "the Item12 cue at base.position (`:55364`)"
+        );
+        p.wants_sound = None; // the drain consumed it (the pass tail)
+        step(&mut p, &w);
+        assert_eq!(p.local_ai[1], 2.0, "the counter (`:55637`)");
+        assert_eq!(p.alpha, 255, "the fade gate is > 2 (`:55638`)");
+        assert_eq!(p.wants_sound, None, "one cue per life");
+        for _ in 0..17 {
+            step(&mut p, &w);
+        }
+        assert_eq!(p.local_ai[1], 19.0);
+        assert_eq!(p.alpha, 0, "255 - 15×17 clamps at 0 (`:55642`)");
+        assert_eq!(p.ai[0], 0.0, "flag3 = false (`:56008`)");
+        assert_eq!(p.vel.y, 0.0, "no gravity — the counter rests");
+        // The DEFAULT rotation tail (`:57750`): atan2(0, 3) + 1.57.
+        assert!((p.rot - 1.57).abs() < 1e-6);
+        assert!((p.pos.x - (160.0 + 57.0)).abs() < 1e-4, "3 px/tick × 19");
+    }
+
+    /// 576's left-facing default tail (`:57750` — NOT the :57642 arm):
+    /// from (−3, 0) → rot = atan2(0, −3) + 1.57 = π + 1.57, NO extra π.
+    #[test]
+    fn w4_f20e_the_nebula_laser_keeps_the_default_rotation() {
+        let w = world();
+        let mut p = laser(-3.0, 0.0);
+        step(&mut p, &w);
+        let want = p.vel.y.atan2(p.vel.x) + 1.57;
+        assert!((p.rot - want).abs() < 1e-6, "(`:57750`)");
     }
 }
