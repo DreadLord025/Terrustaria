@@ -12002,7 +12002,10 @@ mod tests {
         input.right = true;
         p.update(&w, input);
         assert_eq!(p.afk_counter, 0, "controlRight zeroes");
-        // The torch key zeroes too (`controlTorch`, `:25497`).
+        // The torch key zeroes too (`controlTorch`, `:25497`) — the
+        // run tick's velocity is cleared first so the torch term is
+        // the ONLY zeroing cause.
+        p.vx = 0.0;
         p.afk_counter = 5;
         p.control_torch = true;
         p.update(&w, PlayerInput::default());
