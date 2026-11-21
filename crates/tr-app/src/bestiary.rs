@@ -2196,6 +2196,47 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Lunatic Cultist",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "GoldBird",
+        net_id: 442,
+        kind: NpcKind::GoldBird,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bird",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldBunny",
+        net_id: 443,
+        kind: NpcKind::GoldBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldButterfly",
+        net_id: 444,
+        kind: NpcKind::GoldButterfly,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Butterfly",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldFrog",
+        net_id: 445,
+        kind: NpcKind::GoldFrog,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Frog",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGrasshopper",
+        net_id: 446,
+        kind: NpcKind::GoldGrasshopper,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Grasshopper",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper.
+    /// `NPCID.GoldBird` (442): 14x14, aiStyle 24, dmg 0, def 0, 5 HP,
+    /// kb 0.8, value 0 (`NPC.cs` SetDefaults arm).
+    GoldBird,
+    /// `NPCID.GoldBunny` (443): 18x20, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    GoldBunny,
+    /// `NPCID.GoldButterfly` (444): 10x10, aiStyle 65, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    GoldButterfly,
+    /// `NPCID.GoldFrog` (445): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    GoldFrog,
+    /// `NPCID.GoldGrasshopper` (446): 14x10, aiStyle 1, dmg 0, def 0, 5 HP,
+    /// kb 1.0, value 0 (`NPC.cs` SetDefaults arm).
+    GoldGrasshopper,
     // W4-d40 (NPCID 421-490 roster wave): ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone.
     /// `NPCID.ArmedZombieTwiggy` (435): 18x40, aiStyle 3, dmg 16, def 4, 45 HP,
     /// kb 0.55, value 70 (`NPC.cs` SetDefaults arm).
@@ -3083,6 +3099,9 @@ impl Npc {
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
                 // 90-tick window (S1-P-i36).
+                // W4-d40: the explicit `friendly = true` SetDefaults rows
+                // (`NPC.cs:14313`/`:14344`/`:14401`/`:14588`).
+                || matches!(kind, NpcKind::GoldGrasshopper)
                 || crate::bug_net::npc_catchable(kind.cs_id() as i32),
             // `NPC.releaseOwner = 255` (`NPC.cs:8445`'s SetDefaults reset).
             release_owner: 255,
@@ -3575,6 +3594,12 @@ impl Npc {
             NpcKind::CultistTablet => 0.0,
             NpcKind::CultistDevote => 0.0,
             NpcKind::CultistBossClone => 0.0,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::GoldBird => 0.8,
+            NpcKind::GoldBunny => 1.0,
+            NpcKind::GoldButterfly => 1.0,
+            NpcKind::GoldFrog => 1.0,
+            NpcKind::GoldGrasshopper => 1.0,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -3967,6 +3992,12 @@ impl Npc {
             NpcKind::CultistTablet => 0,
             NpcKind::CultistDevote => 0,
             NpcKind::CultistBossClone => 35,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::GoldBird => 0,
+            NpcKind::GoldBunny => 0,
+            NpcKind::GoldButterfly => 0,
+            NpcKind::GoldFrog => 0,
+            NpcKind::GoldGrasshopper => 0,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4351,6 +4382,12 @@ impl Npc {
             NpcKind::CultistTablet => 0.0,
             NpcKind::CultistDevote => 0.0,
             NpcKind::CultistBossClone => 0.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::GoldBird => 0.0,
+            NpcKind::GoldBunny => 0.0,
+            NpcKind::GoldButterfly => 0.0,
+            NpcKind::GoldFrog => 0.0,
+            NpcKind::GoldGrasshopper => 0.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6370,6 +6407,14 @@ impl Npc {
             | NpcKind::CultistDevote => {}
             // W4-d40: CultistBossClone ride the family machine.
             NpcKind::CultistBossClone => self.update_lunatic_cultist(world, player, rng),
+            // W4-d40: GoldBird, GoldBunny, GoldButterfly, GoldFrog - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog => {}
+            // W4-d40: GoldGrasshopper ride the family machine.
+            NpcKind::GoldGrasshopper => self.update_slime(world, player, dt),
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9112,6 +9157,13 @@ impl Npc {
                 self.frame = n11;
             }
             NpcKind::CultistBossClone => {
+                self.frame = 0;
+            }
+            NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper => {
                 self.frame = 0;
             }
             NpcKind::DukeFishron => {
@@ -18748,6 +18800,12 @@ impl Npc {
             NpcKind::CultistTablet => 437,
             NpcKind::CultistDevote => 438,
             NpcKind::CultistBossClone => 440,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::GoldBird => 442,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldButterfly => 444,
+            NpcKind::GoldFrog => 445,
+            NpcKind::GoldGrasshopper => 446,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23817,7 +23875,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 280] = [
+    pub(super) const ALL_KINDS: [NpcKind; 285] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24096,6 +24154,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper.
+        NpcKind::GoldBird,
+        NpcKind::GoldBunny,
+        NpcKind::GoldButterfly,
+        NpcKind::GoldFrog,
+        NpcKind::GoldGrasshopper,
         // W4-d40: ArmedZombieTwiggy, ArmedZombieCenx, CultistTablet, CultistDevote, CultistBossClone.
         NpcKind::ArmedZombieTwiggy,
         NpcKind::ArmedZombieCenx,
@@ -27719,7 +27783,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            280,
+            285,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -33834,5 +33898,69 @@ mod w4_d40_armedzombietwiggy_armedzombiecenx_tests {
         assert!(!Npc::new(NpcKind::CultistTablet, 0.0, 0.0, 1, 0.0).chaseable);
         assert!(!Npc::new(NpcKind::CultistDevote, 0.0, 0.0, 1, 0.0).chaseable);
         assert!(!Npc::new(NpcKind::CultistBossClone, 0.0, 0.0, 1, 0.0).chaseable);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_goldbird_goldbunny_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::GoldBird, 442u16, 24u8, 14.0, 14.0, 0, 0, 5, 0.8f32, 0.0),
+            (NpcKind::GoldBunny, 443u16, 7u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0),
+            (NpcKind::GoldButterfly, 444u16, 65u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0),
+            (NpcKind::GoldFrog, 445u16, 7u8, 12.0, 10.0, 0, 0, 5, 1.0f32, 0.0),
+            (NpcKind::GoldGrasshopper, 446u16, 1u8, 14.0, 10.0, 0, 0, 5, 1.0f32, 0.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::GoldBird.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::GoldBird.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::GoldBunny.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::GoldBunny.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::GoldButterfly.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::GoldButterfly.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::GoldFrog.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::GoldFrog.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::GoldGrasshopper.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::GoldGrasshopper.death_sound(), Some("NPC_Killed_1"));
+        // The noGravity rows.
+        assert!(NpcKind::GoldButterfly.no_gravity());
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::GoldBird.to_u16(), 442);
+        assert_eq!(NpcKind::from_u16(442), Some(NpcKind::GoldBird));
+        assert_eq!(NpcKind::GoldBunny.to_u16(), 443);
+        assert_eq!(NpcKind::from_u16(443), Some(NpcKind::GoldBunny));
+        assert_eq!(NpcKind::GoldButterfly.to_u16(), 444);
+        assert_eq!(NpcKind::from_u16(444), Some(NpcKind::GoldButterfly));
+        assert_eq!(NpcKind::GoldFrog.to_u16(), 445);
+        assert_eq!(NpcKind::from_u16(445), Some(NpcKind::GoldFrog));
+        assert_eq!(NpcKind::GoldGrasshopper.to_u16(), 446);
+        assert_eq!(NpcKind::from_u16(446), Some(NpcKind::GoldGrasshopper));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldBird, SlimeVariant::Blue).net_id, 442);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldBunny, SlimeVariant::Blue).net_id, 443);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldButterfly, SlimeVariant::Blue).net_id, 444);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldFrog, SlimeVariant::Blue).net_id, 445);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::GoldGrasshopper, SlimeVariant::Blue).net_id, 446);
+        assert!(Npc::new(NpcKind::GoldGrasshopper, 0.0, 0.0, 1, 0.0).friendly);
     }
 }

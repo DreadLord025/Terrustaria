@@ -1606,6 +1606,12 @@ fn portrait_data(
         (NpcKind::CultistTablet, _) => (sheet_i, 54.0, 54.0, 54.0, white),
         (NpcKind::CultistDevote, _) => (sheet_i, 40.0, 22.0, 40.0, white),
         (NpcKind::CultistBossClone, _) => (sheet_i, 50.0, 24.0, 50.0, white),
+        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::GoldBird, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::GoldBunny, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        (NpcKind::GoldButterfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
+        (NpcKind::GoldFrog, _) => (sheet_i, 10.0, 12.0, 10.0, white),
+        (NpcKind::GoldGrasshopper, _) => (sheet_i, 10.0, 14.0, 10.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

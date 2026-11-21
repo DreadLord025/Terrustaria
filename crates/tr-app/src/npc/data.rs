@@ -597,6 +597,12 @@ impl NpcKind {
             NpcKind::CultistTablet => 437,
             NpcKind::CultistDevote => 438,
             NpcKind::CultistBossClone => 440,
+            // W4-d40: GoldBird, GoldBunny, GoldButterfly, GoldFrog, GoldGrasshopper keep their vanilla ids (free in the protocol space).
+            NpcKind::GoldBird => 442,
+            NpcKind::GoldBunny => 443,
+            NpcKind::GoldButterfly => 444,
+            NpcKind::GoldFrog => 445,
+            NpcKind::GoldGrasshopper => 446,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -939,6 +945,12 @@ impl NpcKind {
             437 => NpcKind::CultistTablet,
             438 => NpcKind::CultistDevote,
             440 => NpcKind::CultistBossClone,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            442 => NpcKind::GoldBird,
+            443 => NpcKind::GoldBunny,
+            444 => NpcKind::GoldButterfly,
+            445 => NpcKind::GoldFrog,
+            446 => NpcKind::GoldGrasshopper,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1824,6 +1836,12 @@ impl NpcKind {
             | NpcKind::CultistDevote => "NPC_Hit_1",
             NpcKind::CultistTablet => "NPC_Hit_4",
             NpcKind::CultistBossClone => "NPC_Hit_2",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2140,6 +2158,12 @@ impl NpcKind {
             | NpcKind::CultistBossClone => "NPC_Killed_2",
             NpcKind::CultistTablet => "NPC_Killed_14",
             NpcKind::CultistDevote => "NPC_Killed_1",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::GoldBird
+            | NpcKind::GoldBunny
+            | NpcKind::GoldButterfly
+            | NpcKind::GoldFrog
+            | NpcKind::GoldGrasshopper => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2250,6 +2274,8 @@ impl NpcKind {
             // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
             NpcKind::CultistTablet
             | NpcKind::CultistBossClone => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::GoldButterfly => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2513,6 +2539,12 @@ impl NpcKind {
             NpcKind::CultistTablet
             | NpcKind::CultistDevote => 83,
             NpcKind::CultistBossClone => 84,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::GoldBird => 24,
+            NpcKind::GoldBunny
+            | NpcKind::GoldFrog => 7,
+            NpcKind::GoldButterfly => 65,
+            NpcKind::GoldGrasshopper => 1,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3055,6 +3087,12 @@ impl NpcKind {
             NpcKind::CultistTablet => (54.0, 54.0),
             NpcKind::CultistDevote => (22.0, 40.0),
             NpcKind::CultistBossClone => (24.0, 50.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::GoldBird => (14.0, 14.0),
+            NpcKind::GoldBunny => (18.0, 20.0),
+            NpcKind::GoldButterfly => (10.0, 10.0),
+            NpcKind::GoldFrog => (12.0, 10.0),
+            NpcKind::GoldGrasshopper => (14.0, 10.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3708,6 +3746,12 @@ impl NpcKind {
             NpcKind::CultistTablet => 400,
             NpcKind::CultistDevote => 400,
             NpcKind::CultistBossClone => 10000,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::GoldBird => 5,
+            NpcKind::GoldBunny => 5,
+            NpcKind::GoldButterfly => 5,
+            NpcKind::GoldFrog => 5,
+            NpcKind::GoldGrasshopper => 5,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4084,6 +4128,12 @@ impl NpcKind {
             NpcKind::CultistTablet => 0,
             NpcKind::CultistDevote => 0,
             NpcKind::CultistBossClone => 0,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::GoldBird => 0,
+            NpcKind::GoldBunny => 0,
+            NpcKind::GoldButterfly => 0,
+            NpcKind::GoldFrog => 0,
+            NpcKind::GoldGrasshopper => 0,
             NpcKind::DungeonSpirit => 70,
         }
     }
