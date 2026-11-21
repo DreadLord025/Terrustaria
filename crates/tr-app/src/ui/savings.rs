@@ -129,11 +129,16 @@ pub(crate) fn money_coin_pos(
 }
 
 /// The stack-count text's top-left — `DrawMoney`'s horizontal arm
-/// (`ItemSlot.cs:3682`): `(vector.X - 11, vector.Y + LineSpacing*0.75)` with
-/// origin `(0, LineSpacing)` → net `(vector.X - 11, vector.Y - 0.25*ls)`;
-/// the vertical arm (`:3700`): `(shopx + 24*j + num2, shopy + 75 + ls*0.75)`
-/// with the same origin → net `(shopx + 24*j + num2, shopy + 75 - 0.25*ls)`,
-/// `num2 = -6` when the platinum cell's count exceeds 99 (`:3689`).
+/// (`ItemSlot.cs:3682`): `(vector.X - 11, vector.Y + LineSpacing*0.75)`
+/// with origin `(0, LineSpacing)` and scale `0.75 * stackTextScale`; the
+/// vertical arm (`:3700`): `(shopx + 24*j + num2, shopy + 75 + ls*0.75)`,
+/// same origin/scale, `num2 = -6` when the platinum cell's RAW count
+/// exceeds 99 (`:3689`). `DrawString` SCALES the origin
+/// (`DynamicSpriteFont.InternalDrawFast`, `DynamicSpriteFont.cs:194`:
+/// `position -= origin * scale`), so the net top-left is
+/// `y + ls*0.75 - ls*scale` — at rest (scale 0.75) the ls terms cancel;
+/// during the text pulse the count lifts (research/142, the g58b arm).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn money_text_pos(
     horizontal: bool,
     i: usize,
@@ -143,12 +148,19 @@ pub(crate) fn money_text_pos(
     coin_x: f32,
     coin_y: f32,
     line_spacing: f32,
+    scale: f32,
 ) -> (f32, f32) {
     if horizontal {
-        (coin_x - 11.0, coin_y - 0.25 * line_spacing)
+        (
+            coin_x - 11.0,
+            coin_y + line_spacing * 0.75 - line_spacing * scale,
+        )
     } else {
         let num2 = if i == 0 && count > 99 { -6.0 } else { 0.0 };
-        (shopx + 24.0 * i as f32 + num2, shopy + 75.0 - 0.25 * line_spacing)
+        (
+            shopx + 24.0 * i as f32 + num2,
+            shopy + 75.0 + line_spacing * 0.75 - line_spacing * scale,
+        )
     }
 }
 
@@ -236,7 +248,8 @@ fn draw_money(
             1.0,
             1024.0,
         );
-        let (tx, ty) = money_text_pos(horizontal, i, raw, shopx, shopy, cx, cy, ls);
+        let scale = 0.75 * d.stack_text_scale;
+        let (tx, ty) = money_text_pos(horizontal, i, raw, shopx, shopy, cx, cy, ls, scale);
         // `:3682`/`:3700`: the count text, ItemStack, scale
         // `0.75 * stackTextScale`, four-way black border.
         draw_border_string(
@@ -245,7 +258,7 @@ fn draw_money(
             BorderFont::Item,
             tx,
             ty,
-            0.75 * d.stack_text_scale,
+            scale,
             &[[-2.0, 0.0], [2.0, 0.0], [0.0, -2.0], [0.0, 2.0]],
             [1.0; 4],
             &num.to_string(),
@@ -368,33 +381,49 @@ mod tests {
 
     /// `DrawMoney`'s cell + text positions — the horizontal arm rides the
     /// label width (`Main.cs:41637`'s reforge call), the vertical arm the
-    /// fixed (+11, +75) grid with the >99 platinum text nudge.
+    /// fixed (+11, +75) grid with the >99 platinum text nudge. The text's
+    /// origin `(0, LineSpacing)` is SCALED by the draw scale
+    /// (`DynamicSpriteFont.cs:194`), so at rest (scale 0.75) the ls terms
+    /// cancel and the pulse lifts the text (research/142).
     #[test]
     fn the_money_positions_match_the_two_arms() {
         // Horizontal: cell i at shopx + text_w + 24i + 45, shopy + 50.
         assert_eq!(money_coin_pos(true, 0, 180.0, 258.0, 60.0), (285.0, 308.0));
         assert_eq!(money_coin_pos(true, 3, 180.0, 258.0, 60.0), (357.0, 308.0));
-        // The text: (cell.X - 11, cell.Y - 0.25*ls).
+        // The text at rest: (cell.X - 11, cell.Y + ls*0.75 - ls*0.75) =
+        // (cell.X - 11, cell.Y) — the ls terms cancel at scale 0.75.
         assert_eq!(
-            money_text_pos(true, 0, 5, 180.0, 258.0, 285.0, 308.0, 20.0),
-            (274.0, 303.0)
+            money_text_pos(true, 0, 5, 180.0, 258.0, 285.0, 308.0, 20.0, 0.75),
+            (274.0, 308.0)
+        );
+        // The pulse (stackTextScale 1.25 → scale 0.9375): the text lifts
+        // ls*(0.9375 - 0.75) = 3.75 px.
+        assert_eq!(
+            money_text_pos(true, 0, 5, 180.0, 258.0, 285.0, 308.0, 20.0, 0.9375),
+            (274.0, 304.25)
         );
         // Vertical: cell j at shopx + 11 + 24j, shopy + 75.
         assert_eq!(money_coin_pos(false, 0, 504.0, 258.0, 0.0), (515.0, 333.0));
         assert_eq!(money_coin_pos(false, 3, 504.0, 258.0, 0.0), (587.0, 333.0));
-        // The platinum (>99) text nudge: -6 on the first cell only.
+        // The platinum (>99) text nudge: -6 on the first cell only; at
+        // rest the net y is shopy + 75 exactly.
         assert_eq!(
-            money_text_pos(false, 0, 100, 504.0, 258.0, 515.0, 333.0, 20.0),
-            (498.0, 328.0)
+            money_text_pos(false, 0, 100, 504.0, 258.0, 515.0, 333.0, 20.0, 0.75),
+            (498.0, 333.0)
         );
         assert_eq!(
-            money_text_pos(false, 0, 99, 504.0, 258.0, 515.0, 333.0, 20.0),
-            (504.0, 328.0)
+            money_text_pos(false, 0, 99, 504.0, 258.0, 515.0, 333.0, 20.0, 0.75),
+            (504.0, 333.0)
         );
         assert_eq!(
-            money_text_pos(false, 1, 100, 504.0, 258.0, 539.0, 333.0, 20.0),
-            (528.0, 328.0),
+            money_text_pos(false, 1, 100, 504.0, 258.0, 539.0, 333.0, 20.0, 0.75),
+            (528.0, 333.0),
             "the nudge is platinum-cell-only"
+        );
+        // The vertical pulse lifts the same way.
+        assert_eq!(
+            money_text_pos(false, 0, 100, 504.0, 258.0, 515.0, 333.0, 20.0, 0.9375),
+            (498.0, 329.25)
         );
     }
 
