@@ -2965,6 +2965,15 @@ impl App {
                 // below builds from.
                 loaded_kills = saved.kills;
             }
+            // W4-g56 — the void-vault favorites restore from the `.trvault`
+            // sidecar (the `.plr` bank4-favourited rows are f44's lane; the
+            // contract is in ANALYSIS). A fresh world (no sidecar) keeps the
+            // all-false default.
+            if let Some(favs) = persist::load_vault_favorites(&world_path) {
+                if let Some(p) = player.as_mut() {
+                    p.vault_favorites = favs;
+                }
+            }
         }
         if let Some(n) = crate::env::coins() {
             coins = n;
