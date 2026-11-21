@@ -776,6 +776,28 @@ pub struct Player {
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
+    /// `Player._funkytownAchievementCheckCooldown` (`Player.cs:16752-16775`,
+    /// W4-c36): alive ticks decrement it, a dead tick re-arms 100 — the
+    /// FUNKYTOWN/FOUND_GRAVEYARD reach rows wait out the death respawn.
+    pub funkytown_achievement_check_cooldown: i32,
+    /// `Player._framesLeftEligibleForDeadmansChestDeathAchievement`
+    /// (`Player.cs:1360`, W4-c36): the rigged-chest open arms 600
+    /// (`:33114`/`:33257`), the per-tick decay floors at 0 (`:24617-24620`),
+    /// and `KillMe`'s window test (`:38826-38828`) fires
+    /// DIE_TO_DEAD_MANS_CHEST while it runs.
+    pub deadmans_chest_death_frames: i32,
+    /// `Player.trapDebuffSource` (`Player.cs:2414`, W4-c36): a trap
+    /// projectile's player hit arms it (`Projectile.cs:14874`/`:15056`),
+    /// `UpdateBuffs`' tail clears it when neither OnFire nor Poisoned runs
+    /// (`:25569-25572`), and `KillMe` fires WATCH_YOUR_STEP on a trap death
+    /// (`:38822-38825`).
+    pub trap_debuff_source: bool,
+    /// W4-c36 — the fall-damage LUCKY_BREAK hook (`Player.cs:25354-25357`/
+    /// `:25371-25374`): a damaging fall that leaves the player alive at
+    /// `statLife <= statLifeMax2 / 10` queues the event-8 completion; the
+    /// world-sim pass drains it into the manager (the `pending_mana_effect`
+    /// convention — the bare player tick carries no manager).
+    pub pending_lucky_break: bool,
     /// `Player.anglerQuestsFinished` (`Player.cs:1910`): the count
     /// the Angler's reward table reads (`GetAnglerReward_MainReward`'s
     /// milestone switch, `Player.cs:56323`).
@@ -2511,6 +2533,10 @@ impl Player {
             team: 0,
             hide_visible_accessory: [false; 10],
             dead_time: 0,
+            funkytown_achievement_check_cooldown: 0,
+            deadmans_chest_death_frames: 0,
+            trap_debuff_source: false,
+            pending_lucky_break: false,
             respawn_timer: 0,
             immune: false,
             immune_time: 0,
@@ -5696,6 +5722,12 @@ impl Player {
         if self.time_since_last_dash_started >= 300 {
             self.time_since_last_dash_started = 300;
         }
+        // W4-c36 — `Player.cs:24617-24620`: the rigged-chest death window
+        // decays one per tick, floored at 0 (`KillMe`'s `> 0` test reads it).
+        self.deadmans_chest_death_frames -= 1;
+        if self.deadmans_chest_death_frames < 0 {
+            self.deadmans_chest_death_frames = 0;
+        }
         // `Player.cs:24761-24764`: every resting tick recovers 2 hover
         // fatigue — the read is the PREVIOUS tick's velocity (the head runs
         // before this tick's movement).
@@ -7581,6 +7613,13 @@ impl Player {
                     let cx = self.x + self.width * 0.5;
                     self.hurt_inner(dmg, cx, false, rng, true, false, None, true);
                     self.hurt_cd = 0.0;
+                    // W4-c36 — `:25354-25357`: alive at ≤ statLifeMax2/10
+                    // after the hit → LUCKY_BREAK ("Hit"). The port's
+                    // `max_hp` is the statLifeMax2 stand-in (the per-tick
+                    // rebase convention).
+                    if !self.dead && self.hp <= self.max_hp / 10 {
+                        self.pending_lucky_break = true;
+                    }
                 }
             } else if (fell > threshold) && !self.no_fall_dmg && !self.has_wings {
                 // `Player.cs:25360-25374`: `(fell - threshold) * 10` damage with
@@ -7595,6 +7634,11 @@ impl Player {
                     (fell - threshold) * 10
                 };
                 self.hurt_fall(dmg, rng);
+                // W4-c36 — `:25371-25374`: the same LUCKY_BREAK test on the
+                // normal fall arm.
+                if !self.dead && self.hp <= self.max_hp / 10 {
+                    self.pending_lucky_break = true;
+                }
             }
             self.fall_start = (self.y / TILE_PX) as i32;
         }

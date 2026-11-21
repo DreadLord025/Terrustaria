@@ -23440,6 +23440,14 @@ impl ProjectilePool {
         // The single-hit kill below runs after `Hurt` regardless of the
         // dodge (the C# `Damage()`'s kill block follows the `Hurt` arm).
         player.hurt_with_source(p.damage, cx, rng, p.is_damage_dodgeable(), p.kind);
+        // W4-c36 — `Projectile.cs:14872-14879`: a trap projectile's player
+        // hit arms `trapDebuffSource` (the `KillMe` WATCH_YOUR_STEP test,
+        // `Player.cs:38822-38825`); the death itself fires the event 4 hook
+        // there too — the port's death seam (`death.rs::on_player_death`)
+        // reads the flag, so the immediate-death arm needs no second site.
+        if proj_data(p.kind).is_some_and(|d| d.trap) {
+            player.trap_debuff_source = true;
+        }
         self.slots[slot].active = false;
         self.slots[slot].time_left = 0;
     }

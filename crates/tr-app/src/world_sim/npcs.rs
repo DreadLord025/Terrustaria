@@ -5018,8 +5018,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // moon-event waves, and neither draws the RNG), so the moon walks
         // ride right behind it; each walk self-gates on its own flag, so a
         // single running event walks alone.
-        app.world.report_frost_moon_kill(npc.kind.to_u16());
-        app.world.report_pumpkin_moon_kill(npc.kind.to_u16());
+        // W4-c36 — the wave-15 hooks (`NPC.cs:78569-78572` frost → progression
+        // 14 ICE_SCREAM, `:78703-78706` pumpkin → 15 BALEFUL_HARVEST): the
+        // walk returns true when the advance lands on wave 15.
+        if app.world.report_frost_moon_kill(npc.kind.to_u16()) {
+            let _ = app.notify_progression_net(14);
+        }
+        if app.world.report_pumpkin_moon_kill(npc.kind.to_u16()) {
+            let _ = app.notify_progression_net(15);
+        }
         // `NPC.checkDead` plays `this.DeathSound` at `base.position`
         // (`NPC.cs:78186-78194`) — the kind's own death cue through the
         // faithful case-4 path (S1-E-21 wave C): the volume arms + the

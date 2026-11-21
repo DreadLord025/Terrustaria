@@ -1135,6 +1135,13 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
                 }
                 play_menu_sound(app, 11); // `:33108`
             } else {
+                // W4-c36 — `:33112-33115`: the client's open request arms
+                // the rigged-chest death window before the `31` send.
+                if crate::app::netglue::is_rigged(&app.world, ox, oy) {
+                    if let Some(p) = app.player.as_mut() {
+                        p.deadmans_chest_death_frames = 600;
+                    }
+                }
                 client.send(&crate::net::C2s::ChestOpenRequest(
                     crate::net::ChestOpenRequest {
                         x: ox as i16,
@@ -1157,12 +1164,17 @@ pub(crate) fn try_open_chest_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
         // (`WorldGen.IsChestRigged`, `WorldGen.cs:35746-35753`: tile 467,
         // `frameX / 36 == 4`) trips `Wiring.HitSwitch` at the CLICKED cell
         // (`myX, myY`, not the origin) and announces `59` — after the
-        // open/close branch, on every resolved container (S1-P-i43). The
-        // `_framesLeftEligibleForDeadmansChestDeathAchievement = 600`
-        // death-achievement window has no port tracker (the achievement
-        // needs the player-death wiring; recorded deviation).
+        // open/close branch, on every resolved container (S1-P-i43).
+        // W4-c36: the 600-tick death-achievement window (`:33257`) arms on
+        // the trip; `KillMe`'s test fires DIE_TO_DEAD_MANS_CHEST (`death.rs`).
         if crate::app::netglue::is_rigged(&app.world, ox, oy) {
             app.wiring.hit_switch(&mut app.world, x, y);
+            // W4-c36 — `:33257`: the 600-tick death-achievement window arms
+            // on the trip; `KillMe`'s test (`:38826-38828`) fires
+            // DIE_TO_DEAD_MANS_CHEST while it runs (`death.rs`).
+            if let Some(p) = app.player.as_mut() {
+                p.deadmans_chest_death_frames = 600;
+            }
             // The Mech-28 click the trip queues (`Wiring.cs:339`) rides the
             // `UpdatePlayers` stream — the tile use runs in
             // `Player.ItemCheck` (`Main.cs:17754`), the doors.rs precedent.

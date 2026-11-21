@@ -179,6 +179,73 @@ pub(crate) fn on_player_entered_world(app: &mut App) {
     // `App::try_grant_bestiary_100_net`) — not re-fired here.
 }
 
+/// W4-c36 — the per-tick reach/biome checks: `Player.UpdateBiomes`' tail
+/// (`Player.cs:16732-16776`) + `BordersMovement`'s two achievement reads
+/// (`:24066-24126`). Returns the `(row, condition)` pairs to complete — the
+/// caller fires them after the player borrow releases the manager. The
+/// funkytown cooldown (`_funkytownAchievementCheckCooldown`, `:16752-16775`)
+/// rides the player: alive ticks decrement it, a dead tick re-arms 100.
+pub(crate) fn reach_check(
+    p: &mut Player,
+    world: &tr_core::World,
+    zone_graveyard: bool,
+) -> Vec<(&'static str, &'static str)> {
+    let mut out = Vec::new();
+    if p.dead {
+        // `:16773-16776`: the dead arm re-arms the cooldown.
+        p.funkytown_achievement_check_cooldown = 100;
+        return out;
+    }
+    // `:16734-16751`: the centre tile's wall — 86 (hive) fires event 12,
+    // 62 (spider) event 13.
+    let (cx, cy) = p.center();
+    let (tx, ty) = ((cx / 16.0) as i32, (cy / 16.0) as i32);
+    if world.in_bounds(tx, ty) {
+        let wall = world.tile(tx, ty).map_or(0, |t| t.wall);
+        match wall {
+            86 => out.push(("WHERES_MY_HONEY", "Reach")),
+            62 => out.push(("JEEPERS_CREEPERS", "Reach")),
+            _ => {}
+        }
+    }
+    // `:16752-16755`: the cooldown tick.
+    if p.funkytown_achievement_check_cooldown > 0 {
+        p.funkytown_achievement_check_cooldown -= 1;
+    }
+    // `:16756-16759`: `Main.specialSeedWorld` (`Main.cs:2650-2660`) — any of
+    // the nine secret-seed bits.
+    if world.seeds.bits() != 0 {
+        out.push(("PLAY_ON_A_SPECIAL_SEED", "Do"));
+    }
+    // `:16760-16771`: the underworld / surface-glowshroom / graveyard ladder
+    // (the `else if` chain — one arm per tick). `Main.UnderworldLayer` is the
+    // port's `height - 200` convention (`worldgen/biomes.rs:468`).
+    let y_tiles = p.y / 16.0;
+    let underworld_layer = (world.height - 200) as f32;
+    if y_tiles > underworld_layer {
+        out.push(("ITS_GETTING_HOT_IN_HERE", "Reach"));
+    } else if p.funkytown_achievement_check_cooldown == 0
+        && (y_tiles as f64) < world.world_surface
+        && p.zones.glowshroom
+    {
+        out.push(("FUNKYTOWN", "Reach"));
+    } else if p.funkytown_achievement_check_cooldown == 0 && zone_graveyard {
+        out.push(("FOUND_GRAVEYARD", "Reach"));
+    }
+    // `BordersMovement` (`:24066-24099`): the top border (topWorld + 640)
+    // fires event 11; `:24123-24126`: the bottom band (bottomWorld - 640 -
+    // 118 - height) fires event 10. The port carries no 640-px border clamp
+    // (its own bounds seam, `player.rs`), but the achievement reads are the
+    // same position tests.
+    if p.y < 640.0 {
+        out.push(("INTO_ORBIT", "Reach"));
+    }
+    if p.y > world.height as f32 * 16.0 - 640.0 - 118.0 - p.height {
+        out.push(("ROCK_BOTTOM", "Reach"));
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,6 +325,72 @@ mod tests {
         }
         handle_on_equip(&mut app, slot(1120), 33);
         assert!(!done(&app, "DYE_HARD"), "the misc dyes are empty");
+    }
+
+    /// W4-c36 — `UpdateBiomes`' reach tail (`Player.cs:16732-16776`): the
+    /// wall/zone/depth ladder, the special-seed read and the death cooldown.
+    #[test]
+    fn the_reach_check_fires_the_wall_zone_and_depth_rows() {
+        let mut world = tr_core::World::new("t".into(), 200, 800);
+        world.world_surface = 200.0;
+        let mut p = Player::spawn(&world);
+        // A hive wall (86) under the centre fires WHERES_MY_HONEY.
+        let (cx, cy) = p.center();
+        let (tx, ty) = ((cx / 16.0) as i32, (cy / 16.0) as i32);
+        if let Some(t) = world.tile_mut(tx, ty) {
+            t.wall = 86;
+        }
+        let rows = reach_check(&mut p, &world, false);
+        assert!(rows.contains(&("WHERES_MY_HONEY", "Reach")));
+        // The spider wall (62) fires JEEPERS_CREEPERS instead.
+        if let Some(t) = world.tile_mut(tx, ty) {
+            t.wall = 62;
+        }
+        let rows = reach_check(&mut p, &world, false);
+        assert!(rows.contains(&("JEEPERS_CREEPERS", "Reach")));
+        assert!(!rows.contains(&("WHERES_MY_HONEY", "Reach")));
+        // The underworld depth fires ITS_GETTING_HOT_IN_HERE (height-200).
+        p.y = 700.0 * 16.0;
+        let rows = reach_check(&mut p, &world, false);
+        assert!(rows.contains(&("ITS_GETTING_HOT_IN_HERE", "Reach")));
+        // A surface glowshroom fires FUNKYTOWN; a graveyard fires
+        // FOUND_GRAVEYARD — the else-if chain, one arm per tick.
+        p.y = 100.0 * 16.0;
+        p.zones.glowshroom = true;
+        let rows = reach_check(&mut p, &world, true);
+        assert!(rows.contains(&("FUNKYTOWN", "Reach")));
+        assert!(!rows.contains(&("FOUND_GRAVEYARD", "Reach")));
+        p.zones.glowshroom = false;
+        let rows = reach_check(&mut p, &world, true);
+        assert!(rows.contains(&("FOUND_GRAVEYARD", "Reach")));
+        // A dead tick re-arms the 100-tick cooldown and fires nothing.
+        p.dead = true;
+        let rows = reach_check(&mut p, &world, true);
+        assert!(rows.is_empty());
+        assert_eq!(p.funkytown_achievement_check_cooldown, 100);
+        // The cooldown blocks FUNKYTOWN/FOUND_GRAVEYARD while it runs.
+        p.dead = false;
+        let rows = reach_check(&mut p, &world, true);
+        assert!(!rows.contains(&("FOUND_GRAVEYARD", "Reach")));
+        assert_eq!(p.funkytown_achievement_check_cooldown, 99);
+        // A secret seed fires PLAY_ON_A_SPECIAL_SEED.
+        world.seeds |= tr_core::seeds::SeedFlags::DRUNK;
+        let rows = reach_check(&mut p, &world, false);
+        assert!(rows.contains(&("PLAY_ON_A_SPECIAL_SEED", "Do")));
+    }
+
+    /// W4-c36 — `BordersMovement`'s reads (`Player.cs:24099`/`:24125`): the
+    /// top border fires INTO_ORBIT, the bottom band ROCK_BOTTOM.
+    #[test]
+    fn the_border_reads_fire_the_orbit_and_rock_bottom_rows() {
+        let world = tr_core::World::new("t".into(), 200, 800);
+        let mut p = Player::spawn(&world);
+        p.y = 100.0;
+        let rows = reach_check(&mut p, &world, false);
+        assert!(rows.contains(&("INTO_ORBIT", "Reach")));
+        p.y = 800.0 * 16.0 - 640.0 - 118.0 - p.height + 1.0;
+        let rows = reach_check(&mut p, &world, false);
+        assert!(rows.contains(&("ROCK_BOTTOM", "Reach")));
     }
 
     /// `:148-195` — the enter-world sweep completes the stat/equip rows off

@@ -1197,6 +1197,18 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 // draw order are unchanged.
                 app.rngs.stream(crate::app::RngKey::UpdatePlayers),
             );
+            // W4-c36 — `Player.cs:25567-25572` (`UpdateBuffs`' tail, the
+            // myPlayer arm): with neither OnFire (24) nor Poisoned (20)
+            // running, the trap-debuff source clears — a trap death only
+            // counts while its debuff lingers.
+            let burning_or_poisoned = p
+                .buffs
+                .active_types()
+                .iter()
+                .any(|&b| b == 20 || b == 24);
+            if !burning_or_poisoned {
+                p.trap_debuff_source = false;
+            }
             // DW-3.3/DW-3.4 — the ammo-mastery half of `Player.Update`
             // (`Player.UpdateBuffs` → `UpdateEquips` → … → `Update_AmmoCycler` →
             // `ItemCheck`, `:25566`/`:25633`/`:24566`/`:31827`), which the port
@@ -1617,6 +1629,27 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             }
         });
         app.player_step.drop_backlog();
+        // W4-c36 — `Player.UpdateBiomes`' reach/biome tail (`Player.cs:
+        // 16732-16776`) + `BordersMovement`'s reads (`:24099`/`:24125`):
+        // the per-tick wall/zone/depth checks fire the named reach rows.
+        // The pairs resolve after the player borrow releases the manager.
+        let reach_rows = if let Some(p) = app.player.as_mut() {
+            crate::app::achievement_hooks::reach_check(
+                p,
+                &app.world,
+                app.scene_metrics.zone_graveyard,
+            )
+        } else {
+            Vec::new()
+        };
+        for (row, cond) in reach_rows {
+            let _ = app.achievements.complete_condition(row, cond);
+        }
+        // W4-c36 — the fall-damage LUCKY_BREAK drain (`Player.cs:25354-25357`/
+        // `:25371-25374`): the bare player tick queued the event-8 test.
+        if app.player.as_mut().is_some_and(|p| std::mem::take(&mut p.pending_lucky_break)) {
+            let _ = app.achievements.complete_condition("LUCKY_BREAK", "Hit");
+        }
         if run_pixels > 0.0 {
             // `Player.cs:28233-28236` -> `AchievementsHelper.HandleRunning`
             // (`AchievementsHelper.cs:420-423`): grounded, unmounted running
