@@ -841,6 +841,14 @@ pub struct Player {
     /// tick from the scene scan; the buff grants and the regen inputs read
     /// it (`M2-BUFF-5`).
     pub auras: tr_core::scene::Auras,
+    /// `Player.SceneMetrics.NPCBannerBuff` (`SceneMetrics.cs:134`,
+    /// `Player.HasNPCBannerBuff` `:44197-44199`) — the per-banner strength
+    /// flags the strike lanes read through `GetBannerBuffEffect`
+    /// (`Player.cs:20483-20492`). The app refreshes it per tick from the
+    /// scene scan beside `auras` (the `M2-BUFF-8` tile-91 decode); the
+    /// melee/contact/projectile banner arms (`banners::banner_buff_for`)
+    /// consume this snapshot, exactly the C#'s `Player.SceneMetrics` read.
+    pub npc_banner_buff: Vec<bool>,
     /// `Player.manaRegenBonus` — the star-in-bottle's +10 per slot
     /// (`Player.cs:9933`), zeroed by `ResetEffects` (`:18655`).
     pub mana_regen_bonus: i32,
@@ -2538,6 +2546,10 @@ impl Player {
             repeat_whips_reset_cooldown: 0,
             prev_jump_input: false,
             auras: tr_core::scene::Auras::default(),
+            // `SceneMetrics.NPCBannerBuff`'s `new bool[MaxBannerTypes]`
+            // (`SceneMetrics.cs:134`) — the port's 320-slot mirror
+            // (`tr_core::scene::SceneMetrics::new`).
+            npc_banner_buff: vec![false; 320],
             mana_regen_bonus: 0,
             stat_defense: 0,
             well_fed: false,
@@ -4868,6 +4880,30 @@ impl Player {
         (worn(267), worn(1307))
     }
 
+    /// `Player.GetBannerBuffEffect(NPC, out effect)` (`Player.cs:20478-20492`)
+    /// for the port's single player: the banner strength pair
+    /// `(DamageDealt, DamageReceived)` when the NPC's banner stands in the
+    /// scene window, `None` otherwise. Reads the per-tick
+    /// `npc_banner_buff` snapshot (`Player.SceneMetrics.NPCBannerBuff`,
+    /// `:44197-44199`); the classic `BannerEffect(1f)` sample is the port's
+    /// 1.5/0.75 pair (`tr_core::bestiary`, the `ItemID.cs:23-32` ctor).
+    pub fn banner_buff_for_npc(&self, net_id: i32) -> Option<(f32, f32)> {
+        let banner = tr_core::bestiary::npc_to_banner(net_id);
+        if banner <= 0 {
+            return None;
+        }
+        self.npc_banner_buff
+            .get(banner as usize)
+            .copied()
+            .filter(|b| *b)
+            .map(|_| {
+                (
+                    tr_core::bestiary::BANNER_DAMAGE_DEALT,
+                    tr_core::bestiary::BANNER_DAMAGE_RECEIVED,
+                )
+            })
+    }
+
     /// `Player.IsItemSlotUnlockedAndUsable` (`Player.cs:12579-12604`): the
     /// slot 8 needs the Demon Heart's `extraAccessory` AND expert mode, the
     /// slot 9 needs master mode. Deviations: the `Main.gameMenu` escape arms
@@ -6991,6 +7027,12 @@ impl Player {
         }
         if self.auras.sunflower {
             self.buffs.add_buff(146, 2);
+        }
+        // `Player.cs:25552-25555` — `if (Player.SceneMetrics.hasBanner)
+        // AddBuff(147, 2)`: the MonsterBanner indicator refreshes from the
+        // scan's strength-enabled banner flag (the M2-BUFF-8 tile-91 arm).
+        if self.auras.banner {
+            self.buffs.add_buff(147, 2);
         }
         // `Player.Update` → `UpdateLuck` (`Player.cs:25645` → `:29041`): the
         // decay timers + `RecalculateLuck`, after the buff effects derived
@@ -13192,6 +13234,26 @@ mod tests {
         assert!((p.move_speed - 1.0).abs() < 1e-4);
         p.update(&World::new("t".into(), 64, 800), PlayerInput::default());
         assert!((p.move_speed - 1.21).abs() < 1e-4);
+    }
+
+    /// W4-g4 — the MonsterBanner (147) indicator grant (`Player.cs:25552-25555`):
+    /// `SceneMetrics.hasBanner` refreshes the 2-tick buff from the scan, like
+    /// the campfire/sunflower arms beside it.
+    #[test]
+    fn w4_g4_the_banner_aura_grants_the_monster_banner_buff() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.auras.banner = true;
+        p.update(&w, PlayerInput::default());
+        assert!(
+            p.buffs.active_types().contains(&147),
+            "the hasBanner aura grants MonsterBanner (147)"
+        );
+        // No banner → no grant (the indicator decays with its 2-tick window).
+        let mut q = Player::spawn(&w);
+        q.auras.banner = false;
+        q.update(&w, PlayerInput::default());
+        assert!(!q.buffs.active_types().contains(&147));
     }
 
     #[test]

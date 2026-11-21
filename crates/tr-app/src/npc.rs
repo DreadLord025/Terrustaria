@@ -18237,6 +18237,15 @@ impl Npc {
                 } else {
                     0
                 };
+                // `Player.cs:31388-31391` — `if (this.GetBannerBuffEffect(
+                // Main.npc[i], out var effect)) num3 = (int)(num3 *
+                // effect.DamageReceived.Sample(Main.Difficulty))`: the placed
+                // banner cuts the contact damage AFTER DamageVar and BEFORE
+                // the thorns reflect / Hurt (the C# order). RNG-free.
+                let dmg = match player.banner_buff_for_npc(self.kind.cs_id() as i32) {
+                    Some((_, received)) => (dmg as f32 * received) as i32,
+                    None => dmg,
+                };
                 // `Player.cs:31390` — `flag4 = !this.immune`: the PRE-hit
                 // immunity gates the thorns arms (`:31397-31418`), so a
                 // contact that dodges (`Hurt` runs after, `:31423`) still
@@ -19514,6 +19523,57 @@ mod tests {
         assert!(
             total_good <= total_bad,
             "S1-C-5: positive player luck must not increase contact damage (good {total_good} > bad {total_bad})"
+        );
+    }
+
+    /// W4-g4 — the contact banner-buff arm (`Player.cs:31388-31391`): a placed
+    /// banner cuts the contact damage by `DamageReceived` (classic 0.75)
+    /// AFTER DamageVar. Differential witness: the banner and no-banner rigs
+    /// share the seed, so the DamageVar draw is identical — the banner's
+    /// stream equals the baseline's (the arm is RNG-free) and the hit deals
+    /// strictly less.
+    #[test]
+    fn w4_g4_the_contact_banner_buff_cuts_the_damage_rng_free() {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.compute_column_surface();
+        let mut bat = Npc::new(NpcKind::CaveBat, 32.0, 16.0, 1, 0.0);
+        bat.damage_override = Some(100);
+        // The cave bat's banner (7, `BannerSystem.NPCtoBanner(49)`).
+        let banner = tr_core::bestiary::npc_to_banner(bat.kind.cs_id() as i32);
+        assert!(banner > 0, "the cave bat carries a banner");
+
+        let mut rng_base = UnifiedRandom::new(11);
+        let mut base_player = crate::player::Player::spawn(&w);
+        base_player.x = bat.x;
+        base_player.y = bat.y;
+        base_player.hurt_cd = 0.0;
+        let hp0 = base_player.hp;
+        bat.contact(&mut base_player, &mut rng_base);
+        let base_dealt = hp0 - base_player.hp;
+        assert!(base_dealt > 0, "the baseline contact lands");
+
+        let mut rng_banner = UnifiedRandom::new(11);
+        let mut banner_player = crate::player::Player::spawn(&w);
+        banner_player.x = bat.x;
+        banner_player.y = bat.y;
+        banner_player.hurt_cd = 0.0;
+        banner_player.npc_banner_buff[banner as usize] = true;
+        bat.contact(&mut banner_player, &mut rng_banner);
+        let banner_dealt = hp0 - banner_player.hp;
+        assert!(
+            banner_dealt < base_dealt,
+            "the banner's ×0.75 lands less ({banner_dealt} vs {base_dealt})"
+        );
+        assert_eq!(
+            rng_banner, rng_base,
+            "the banner arm draws nothing — the stream matches the baseline"
         );
     }
 

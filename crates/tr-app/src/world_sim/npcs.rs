@@ -5866,17 +5866,23 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut ai_shots = Vec::new();
     let mut gallop_dust = Vec::new();
     for (i, n) in app.npcs.iter_mut().enumerate() {
+        // `FindBannerToAssociateTo` (`Projectile.cs:11104-11117`): the
+        // hostile shot spawned from an NPC (`EntitySource_Parent`) carries
+        // the spawner's `BannerSystem.NPCtoBanner(nPC.BannerID())` — the
+        // banner its `Damage_EVP` strength reads (`:14832`). Captured per
+        // requester before the drains (the `wants_hostile_shot` owner slot).
+        let banner = tr_core::bestiary::npc_to_banner(n.kind.cs_id() as i32);
         for shot in n.wants_hostile_shot.drain(..) {
-            shots.push((i, shot));
+            shots.push((i, banner, shot));
         }
         for shot in n.wants_hostile_shot_ai.drain(..) {
-            ai_shots.push(shot);
+            ai_shots.push((banner, shot));
         }
         for d in n.wants_gallop_dust.drain(..) {
             gallop_dust.push(d);
         }
     }
-    for (owner_slot, (kind, sx, sy, svx, svy, dmg)) in shots {
+    for (owner_slot, banner, (kind, sx, sy, svx, svy, dmg)) in shots {
         #[cfg(test)]
         eprintln!(
             "[spawn-dbg] pool slots active: {}",
@@ -5919,7 +5925,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         } else {
             0.0
         };
-        if time_left > 0 {
+        let spawned = if time_left > 0 {
             app.projectiles.spawn_hostile_timed(
                 kind,
                 Vec2::new(sx, sy),
@@ -5928,10 +5934,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 0.0,
                 time_left,
                 ai0,
-            );
+            )
         } else {
             app.projectiles
-                .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0);
+                .spawn_hostile(kind, Vec2::new(sx, sy), Vec2::new(svx, svy), dmg, 0.0)
+        };
+        // `FindBannerToAssociateTo` (`Projectile.cs:11114`): stamp the
+        // spawner's banner onto the fresh slot (the `set_scale` precedent).
+        if let Some(slot) = spawned {
+            app.projectiles.slots_mut()[slot].banner_id_to_respond_to = banner;
         }
         #[cfg(test)]
         eprintln!(
@@ -5944,7 +5955,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // trailing arguments, `Projectile.cs:10862-10863`): the deathray's owner
     // slot + 1, the missile's 20-tick arming delay, the Deerclops' ice
     // spike's scale factor and the Insanity Shadow's variation age + angle.
-    for shot in ai_shots {
+    for (banner, shot) in ai_shots {
         let slot = app.projectiles.spawn_hostile_ai(
             shot.kind,
             Vec2::new(shot.x, shot.y),
@@ -5959,6 +5970,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`unicorn_step`'s fourth draw); apply it to the spawned slot.
         if let (Some(slot), Some(scale)) = (slot, shot.scale) {
             app.projectiles.set_scale(slot, scale);
+        }
+        // `FindBannerToAssociateTo` (`Projectile.cs:11114`): the spawner's
+        // banner rides the ai-payload shots too (the deathray/missile).
+        if let Some(slot) = slot {
+            app.projectiles.slots_mut()[slot].banner_id_to_respond_to = banner;
         }
     }
     // The Horseman's gallop dust (`NPC.cs:62431-62437`, S1-D-4 W-10):
