@@ -39323,11 +39323,67 @@ reordered.
   life gate): the spheres 25/33/30/665, 690, 374/375, 112/666, 516 and
   the crystal 522.
 
-### Deferred (documented remainders)
+### Resolved deferrals — the oldPos trails (the g60 ring landed)
 
-- The 519 oldPos trail (`:83008-83022`) and the Stardust Worm 402's
-  oldPos trail (`:83579-83596`) need the NPC oldPos ring the port does
-  not carry yet — they land with that field.
+The 519 oldPos trail (`:83008-83023`) and the Stardust Worm 402's LIVE
+arm (`:83565-83598`) now ride `Npc.old_pos`/`old_rot` — the **W4-g60
+field shapes adopted VERBATIM** (0e0fbd6c7: `[Vec2; 10]` + `[f32; 10]`,
+`NPC.cs:6119-6121`'s `new Vector2[10]` init) plus `Npc::update_trails`
+(the `UpdateNPC_UpdateTrails` mode-7 shift, `NPC.cs:90863-90872`, called
+at `:90512` after `FindFrame` — both the solo `update_rng_dust` tail and
+the pooled aiStyle-75 path in `world_sim/npcs.rs`).
+
+**Mode census** (`NPCID.cs:10430`, `Sets.TrailingMode`): **519 → 7, the
+SAME row as 402 → 7** (shift both rings every tick). The full mode-7
+band: 402/417/418/419/519/521/522/546/551/558-560/574/575/620/636/677/
+685. The gate stays **402-only** until each kind's wiring lane lands
+(the SolarGoop 519 KIND is unported — `npc_ai_pillar.rs` emits only the
+spawn request; the 519 dust arm is wired on the snapshot's `npc_type`,
+so it fires the day the kind exists).
+
+**Recorded deviation — the TrailCacheLength under-carry**
+(`NPCID.cs:10450` + `SetDefaults`' resize, `NPC.cs:8453-8468`): the C#
+resizes `oldPos`/`oldRot` per type — **402 → 36, 519 → 20** (522/620 →
+20, 677 → 60, 685 → 10; default 10). Both lanes carry the g60 10-slot
+shape verbatim (the merge-composes instruction), so the 402 arms walk
+10 of the C#'s 36 slots and the 519 arm walks slots 0/3/6/9 of the C#'s
+0/3/…/18. The draw-count consequence: the 402 per-slot `Next(4)` gates
+and the 519 stride-3 groups are proportionally short. The fix is ONE
+widening at merge (a per-kind `trail_len` or a 60-slot ring + length —
+685's row is the largest); until then the 10-slot shape is the recorded
+stand-in for BOTH lanes (g60's death loop has the same under-carry).
+
+**Keep-one contract (g60 `update_trails` vs g62's):** the fn, the two
+fields, the field-init lines, the `update_rng_dust` tail call and the
+two `npc.rs` witnesses are **byte-identical adoptions of g60 0e0fbd6c7**
+— the merge keeps ONE copy of each (trivial dedupe, identical shape).
+g62's ONLY additions to the shared surface: the doc-comment census
+notes, the pooled-path tail call in `world_sim/npcs.rs` (g60 did not
+touch that path), and the `HitDustSnapshot.old_pos` field (g62's own
+struct — g60's twin lives in `DeathFx`, different type, no collision).
+The 402 sites are disjoint: g60 owns the DEATH arm (`:83599-83632`,
+site :83611), g62 the HIT arm (`:83565-83598`, site :83579) — the giant
+else-if's two halves, both replay in their own lanes.
+
+### Re-sweep — the other oldPos readers (none left in this lane)
+
+A full `oldPos` sweep of `NPC.cs` after the two ports: inside the
+HitEffect range (`:81654-89834`) the ONLY readers are `:83011-83014`
+(519) and `:83579-83596`/`:83611-83630` (402 live/death) — all now
+ported. Outside it, two dust-adjacent readers remain, both OTHER lanes'
+(and unported kinds' arms):
+- `:57046-57062` — the Chaos Elemental 120's teleport-arrival burst in
+  `AI_003_Fighters` (`ai[3] == -120` latch): 20 dust 71 at the head +
+  20 AT `oldPos[2]` with the normalized offset velocity. An AI-side
+  arm (the g61/AI wiring lanes), NOT a HitEffect site.
+- `:67939`/`:67957-67967` — the DD2 Kobold Flyers 574/575's FindFrame
+  spark (`oldPos[3]` anchors the Lerp'd aim point, 2 gated dust 6).
+  The port's FindFrame stand-in latches the row-9 burst through
+  `caster_counter` (`npc.rs:7101`) without the dust; the faithful arm
+  is the DD2 FindFrame lane's. Both kinds map mode 7 (`NPCID.cs:10430`)
+  — when their arms land, the `update_trails` gate widens with them.
+- `:49584-49586`/`:49708-49710` — Duke Fishron's ring RESETS (writers,
+  no dust); the Main.cs readers are render-only (the trail draw).
 
 ### Verification
 
@@ -39335,9 +39391,10 @@ Code-only: every arm re-read against the cited C# windows (≤100-line
 reads); the seam call sites checked by read/grep (`DustPool::new_dust`/
 `new_dust_direct` signatures, `SpawnCtx`, `RngKey::UpdateNpcs`,
 `bow_launch::rotated_by`, `tile_light::palette::hsl_to_rgb` for the
-rainbow slime 661). The 59 witness tests in `npc_hit_dust.rs` plus the
+rainbow slime 661). The 61 witness tests in `npc_hit_dust.rs` plus the
 `npc.rs` seam witness (`w4_g62_every_landed_strike_queues_one_hit_dust_
-capture`) are WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
+capture`) and the two g60-adopted trail witnesses in `npc.rs` are
+WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
 graphify invoked**. Witness convention: twin `UnifiedRandom` + twin
 `DustPool` replaying the exact draw sequence,
 `assert_eq!(rng, twin_rng)` + `assert_eq!(dust.slots(), twin.slots())`.

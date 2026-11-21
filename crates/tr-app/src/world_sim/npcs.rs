@@ -4480,7 +4480,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // live) — it runs here, in slot order, on the
                     // `UpdateNPCs` stream, ahead of the solo `update_rng`
                     // axis (which would only see a one-slot pool). The
-                    // preamble + find_frame + contact tail match `update_rng`.
+                    // preamble + find_frame + contact tail match `update_rng`
+                    // (W4-g62: the tail also carries `update_trails`,
+                    // `NPC.cs:90512` after FindFrame — g60's wave lands
+                    // the SAME call; keep one at merge).
                     // S1-F-13c wiring: the non-75 kinds ride `update_rng_dust`
                     // so the Everscream/Santa dust arms reach the live pool.
                     let is_style75 = npcs[i].kind.ai_style() == 75;
@@ -4529,6 +4532,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // `out.died`: hp is already 0 — the death pass owns
                         // the HitEffect + deactivation pair.
                         npcs[i].find_frame();
+                        // `NPC.cs:90512` — the trail shift rides after
+                        // FindFrame on the pooled path too (W4-g62; the
+                        // mode-7 census includes the 416 rider — today's
+                        // 402-only gate makes this a no-op for the family,
+                        // the call keeps the C# order for the widening).
+                        npcs[i].update_trails();
                         npcs[i].contact(player, npcs_rng);
                     }
                     let n = &mut npcs[i];
