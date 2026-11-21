@@ -267,6 +267,7 @@
 //! | 1415-1422 | `:89651-89688` | the 472 ShadowFlameApparition (679/680) + 480 Medusa ladder + 185 SnowFlinx 240 |
 //! | 1423-1431 | `:89718-89757` | the hornet/moth block (205 quad, 176 pair, 70/1384/1385 + 71) + 43/56 ManEater 72 pair |
 //! | 1432-1438 | `:89773-89809` | the 175 AngryTrapper (227/228) + 48 Harpy (80/81) + 62/66 Demon (93/94/94) |
+//! | 1439-1441 | `:89829-89831` | the 156 RedDevil terminal-else death (184/185/185) — the HitEffect chain ENDS at :89832 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8841,6 +8842,35 @@ fn demon_death(
     gore.new_gore(rng, world, pos, vel, 94, 1.0); // :89809
 }
 
+/// The 156 RedDevil death (`NPC.cs:89811-89832`, sites 1439-1441): the
+/// TERMINAL `else` of the HitEffect chain — `type != 156` returns early
+/// (`:89813-89815`), so only the RedDevil reaches it. The 50-dust type-5
+/// burst (SpeedX `2*hitDirection`, SpeedY -2), then the 184 head + 185/185
+/// pair at position with `base.velocity`. Scale defaults to 1. This is the
+/// LAST gore arm of `NPC.HitEffect` — the chain closes at `:89832-89834`.
+fn red_devil_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 184, 1.0); // :89829
+    gore.new_gore(rng, world, pos, vel, 185, 1.0); // :89830
+    gore.new_gore(rng, world, pos, vel, 185, 1.0); // :89831
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9927,6 +9957,12 @@ pub fn hit_effect_c(
     // `:89793-89810` — the 62/66 Demon/VoodooDemon arm (sites 1436-1438).
     if (npc_type == 62 || npc_type == 66) && npc.hp <= 0 {
         demon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89811-89832` — the 156 RedDevil terminal-else arm (sites
+    // 1439-1441). The LAST gore arm of NPC.HitEffect — the C# chain closes
+    // at :89832; the wave-C gore table is COMPLETE.
+    if npc_type == 156 && npc.hp <= 0 {
+        red_devil_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -15579,6 +15615,21 @@ mod tests {
         demon_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![93, 94, 94]);
+    }
+
+    /// `NPC.cs:89829-89831` — the RedDevil death: the 184 head + 185/185
+    /// pair — the LAST arm of the HitEffect chain.
+    #[test]
+    fn w4_f10_the_red_devil_death_spawns_the_trio() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1583);
+        red_devil_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![184, 185, 185]);
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 3);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
