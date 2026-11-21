@@ -182,6 +182,17 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
 /// 16 px) plays here and `NotifyProgressionEvent(22)` (`:37627`,
 /// TEMPLE_RAIDER — `AchievementInitializer.cs:112-114`) fires once per
 /// unlock. The 12 dusts (`:37622-37625`) are the unported dust layer.
+///
+/// Temple-FINAL keep-one (the c36 co-land): the W4-c36 `ec832b440` +
+/// `5f4032d02` `try_unlock_temple_door`/app-level `unlock_door` pair is the
+/// duplicate half — this arm is the superset (the shared
+/// `edit::is_locked_door` predicate over the inline frame window, the
+/// `edit::unlock_door` Option-anchor refusal gate so the cue/progression
+/// fire only on a real shift, the `world_key` clear, the next-click-open
+/// witness). Both feed the SAME `notify_progression_net(22)` seam and the
+/// registry's `Cond::Progression(22)` TEMPLE_RAIDER row
+/// (`achievements_data.rs`, `AchievementInitializer.cs:112-114`) — one
+/// receipt, no double-wire: the c36 pair drops at the merge.
 fn unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
     const TEMPLE_KEY: u16 = 1141; // ItemID.cs:3965
     let mut unlocked = false;
@@ -1324,10 +1335,14 @@ mod tests {
     #[test]
     fn the_temple_key_unlocks_the_door_then_the_next_click_opens_it() {
         let mut app = temple_door_app();
-        // No key: consumed, locked, no open.
+        // No key: consumed, locked, no open, no TEMPLE_RAIDER credit.
         assert!(interact_tile(&mut app, 10, 20), "the locked click consumes");
         assert_eq!(app.world.tile(10, 19).unwrap().frame_y, 594, "still locked");
         assert_eq!(app.world.tile(10, 20).unwrap().kind, 10, "no open");
+        assert!(
+            !app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "no key, no unlock, no progression 22"
+        );
         // One key in the inventory: paid, the frames shift, still closed.
         app.inventory[0] = ItemSlot {
             kind: 1141,
@@ -1346,6 +1361,14 @@ mod tests {
             );
             assert_eq!(app.world.tile(10, row).unwrap().kind, 10, "still closed");
         }
+        // The keep-one receipt (the c36 co-land): progression 22 completes
+        // the registry's TEMPLE_RAIDER row (`Cond::Progression(22)`,
+        // `AchievementInitializer.cs:112-114`) — the SAME seam the c36
+        // `try_unlock_temple_door` pair feeds, one credit not two.
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "the unlock fires NotifyProgressionEvent(22) → TEMPLE_RAIDER"
+        );
         // The next click opens the door (the player faces right, the open
         // column lands at 10-11 — the entity gate is free of the player at
         // x 8*16 .. 8*16+20, the column 10 starts at 160 > 148).
@@ -1390,6 +1413,12 @@ mod tests {
             app.player.as_ref().unwrap().banks[3][0].count,
             0,
             "the bank key paid"
+        );
+        // The fallback fires the SAME progression 22 receipt (the c36
+        // co-land's keep-one seam — one TEMPLE_RAIDER credit).
+        assert!(
+            app.achievements.list.iter().any(|a| a.name == "TEMPLE_RAIDER" && a.completed),
+            "the void-bag unlock fires progression 22 too"
         );
     }
 }
