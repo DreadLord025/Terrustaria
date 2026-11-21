@@ -157,12 +157,24 @@ continuation; 659's twin CONTINUES (wired).
   d12/d13/f19/f20 carry no 813 const). The 13 sites span four `ai[0]` phase
   windows of the style-108 machine (`:33760/33858/33894/33951/34018`) — a
   whole-machine port, and the port's `ai_vortex_ritual` covers 578/579 only.
-- **957 — still deferred.** The d13 branch (`task/W4-d13-proj-ai-121-130`,
-  UNMERGED) carries the `GLOMMER_PET` row, but the dust sites
-  (`:35601/35681`) sit inside the style-124 pet machine's standing branch
-  behind the `SolidTileAllowBottomSlope` 5-tile column scan
-  (`:35483-35497`) — behaviour-coupled world reads the port's pet arm does
-  not model; the row alone does not unblock the trail.
+- **957 — UNBLOCKED, PORTED + WIRED (remainder wave, the d13 read).** The
+  d13 branch (`task/W4-d13-proj-ai-121-130`, tip `314fa6cd`, UNMERGED) rows
+  were read via `git show`: the `GLOMMER_PET` row (20x20, aiStyle 124,
+  penetrate -1, 18000, ignoreWater/netImportant) + `projFrames` 12 landed
+  here for the three trail kinds (895/898/957; the 650/882/888/896 rows stay
+  d13's — the merge keep-one). The whole `ai_pets_style124` machine
+  (`projectile_ai_pets124.rs`, the d13 port) landed dust-wired: the 957's
+  behaviour-coupled half is the `SolidTileAllowBottomSlope` 5-cell column
+  scan (`:35483-35497`, the shared `projectile_ai026_c` helper) gating the
+  grounded bounce cycle — the 957 draws NO dust itself; its stream draw is
+  the cycle-end `200 + Next(150)` rest roll (`:35519`), witnessed in scan
+  order. The style-124 dust sites (`:35231`/`:35295` the 895/898 flight
+  sparkles, `:35601`/`:35681` the 650's 204 pair — d13 skipped the bodies
+  whole) are RE-ARMED: `trail_895`/`trail_898` on the frame-reset tick,
+  `trail_650_scan_sparkle`/`trail_650_point_sparkle` new. The `screen_width`
+  seam (`set_screen_width`, the d13 `set_disco` pattern) feeds the 650 scan
+  gate. The buff-spawn seam (`spawn_pet_if_needed`) takes d13's
+  rowed-kind `spawn_with_data_ai_owned` drop-in.
 - **670 — still deferred.** The d13 branch carries the `OGRE_STOMP` row
   (aiStyle 126), but the style-126 dust sites (`:35852-35859` the 3-dust
   rise, `:35909-35927` the 60-dust latch burst, `:35928-35944` the 9-dust

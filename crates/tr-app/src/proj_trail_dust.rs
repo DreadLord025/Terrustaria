@@ -1512,6 +1512,51 @@ pub fn trail_723(
     }
 }
 
+/// The 650 ore-scan sparkle (`AI()` aiStyle 124, `Projectile.cs:35599-35604`,
+/// inside the 35×35 window's `num914 < 4 && in_radius && spelunkable` block —
+/// the caller's gates): on `num914 < 2` ONE type-204 dust at the tile's
+/// top-left (16×16 box, alpha 150, scale 0.3), fadeIn 0.75, velocity ×0.1.
+/// ZERO explicit draws (the gate draw is the caller's per-tile Next(8)).
+pub fn trail_650_scan_sparkle(
+    tile_top_left: Vec2,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:35601-35603`
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, tile_top_left, 16, 16, 204, 0.0, 0.0, 150, Color::default(), 0.3);
+    let d = dust.slot_mut(idx);
+    d.fade_in = 0.75; // `:35602`
+    d.velocity *= 0.1; // `:35603`
+}
+
+/// The 650 point-at-ore sparkle (`Projectile.cs:35679-35684`, the steering
+/// tail's `ai[0] > 0` ladder branch behind the caller's `Next(10) == 0`
+/// gate): ONE type-204 dust at `Center + f.ToRotationVector2()*6*num917 −
+/// One*4` (8×8 box, alpha 150, scale 0.3), fadeIn 0.75, velocity ×0.1. `f`
+/// is the DECODED localAI[0] angle (`localAI[0] % 2π − π`, pre-lerp) and
+/// `num917` the POST-step extension — the caller passes both at the C# read
+/// moment. `ToRotationVector2` is the f32 sin_cos (XNA), NOT the double
+/// `Utils.ToRotationVector2` — the C# calls the Vector2 method here.
+pub fn trail_650_point_sparkle(
+    center: Vec2,
+    f: f32,
+    num917: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:35681` — XNA ToRotationVector2: (cos, sin) in f32.
+    let (s, c) = f.sin_cos();
+    let pos = center + Vec2::new(c, s) * 6.0 * num917 - Vec2::ONE * 4.0;
+    let idx = dust.new_dust(&mut DustDraw(rng), ctx, world, pos, 8, 8, 204, 0.0, 0.0, 150, Color::default(), 0.3);
+    let d = dust.slot_mut(idx);
+    d.fade_in = 0.75; // `:35682`
+    d.velocity *= 0.1; // `:35683`
+}
+
 /// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — one `NextFloat`; the
 /// angle is FLOAT arithmetic (`0 + (float)π*2 * NextFloat()`), then
 /// `ToRotationVector2` (`Utils.cs:1665-1668`) cos/sin in double of the

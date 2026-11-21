@@ -332,6 +332,10 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     // it (`Projectile.cs:37262`); the clock's `advance_disco` owns the cycle.
     let disco = app.disco;
     app.projectiles.set_disco(disco);
+    // W4-g64 (the d13 seam) — `Main.screenWidth` for the aiStyle-124
+    // tentacle's ore-scan distance gate (`Projectile.cs:35577`); the same
+    // swapchain width the dust cull reads (`App::spawn_ctx`).
+    app.projectiles.set_screen_width(sw);
     // S1-P-i55 — the golf context (`Main.LocalGolfState` + `Main.MouseWorld`
     // + the mouse-right pair + the player snapshot). The C# reads the live
     // state mid-walk; the port clones it into the pool for the tick and

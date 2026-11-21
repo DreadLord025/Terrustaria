@@ -1003,6 +1003,39 @@ pub const PINK_DUNGEON_DEBRIS: u16 = 738;
 /// `:57942`, `:58073`, `:77369`).
 pub const DUNGEON_DEBRIS: [u16; 3] =
     [BLUE_DUNGEON_DEBRIS, GREEN_DUNGEON_DEBRIS, PINK_DUNGEON_DEBRIS];
+// W4-g64 (the d13 314fa6cd row port) — the aiStyle-124 pet rows. Only the
+// kinds this lane's trail arms ride are rowed here (895/898 the flight
+// sparkles, 957 the column-scan bounce); the 650/882/888/896 rows stay
+// d13's (the machine's home-spot ladder covers all seven regardless).
+/// `ProjectileID.FairyQueenPet` (895) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2517`).
+pub const FAIRY_QUEEN_PET: u16 = 895;
+/// `ProjectileID.PumpkingPet` (896) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2520`); d13's row, named here for the ladder's reads.
+pub const PUMPKING_PET: u16 = 896;
+/// `ProjectileID.IceQueenPet` (898) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2526`).
+pub const ICE_QUEEN_PET: u16 = 898;
+/// `ProjectileID.GlommerPet` (957) — the aiStyle-124 pet row
+/// (`ProjectileID.cs:2703`).
+pub const GLOMMER_PET: u16 = 957;
+/// `ProjectileID.SuspiciousTentacle` (650) — the light pet
+/// (`ProjectileID.cs:1698`); the home-spot ladder's count read.
+pub const SUSPICIOUS_TENTACLE: u16 = 650;
+/// `ProjectileID.TwinsPet` (888) — the ladder's count read
+/// (`ProjectileID.cs:2496`).
+pub const TWINS_PET: u16 = 888;
+/// `ProjectileID.EyeOfCthulhuPet` (882) — the ladder's count read
+/// (`ProjectileID.cs:2478`).
+pub const EOC_PET: u16 = 882;
+/// The seven aiStyle-124 rows — `AI()`'s `else if (this.aiStyle == 124)`
+/// (`Projectile.cs:34970-35696`): the 650 light pet + the six flying pets
+/// (the d13 `STYLE124_PETS` set; only 895/898/957 are `proj_data`-rowed on
+/// this branch, the rest arrive with d13's merge).
+pub const STYLE124_PETS: [u16; 7] = [
+    SUSPICIOUS_TENTACLE, EOC_PET, TWINS_PET, FAIRY_QUEEN_PET, PUMPKING_PET,
+    ICE_QUEEN_PET, GLOMMER_PET,
+];
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -3502,6 +3535,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DD2_BETSY_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9908-9917` (1046 Pufferfish): 26x26.
             PUFFERFISH => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // W4-g64 (the d13 314fa6cd row port) — the aiStyle-124 pets this
+            // lane's trail arms ride (`AI()` `Projectile.cs:34970-35696`):
+            // the Fairy Queen pet (`:8553-8565`), the Ice Queen pet
+            // (`:8576-8588`) and the Glommer pet (`:9034-9046`). Every row:
+            // 20x20, `penetrate = -1`, `netImportant`, `timeLeft *= 5`
+            // (3600 → 18000), `friendly = true` (the pool default),
+            // `ignoreWater`, `tileCollide = false`; `manualDirectionChange`
+            // is a draw-side field with no pool consumer (the arm writes
+            // `direction`/`spriteDirection` itself, `:35007`). The 650/882/
+            // 888/896 rows stay d13's (the ladder consts are named above).
+            FAIRY_QUEEN_PET | ICE_QUEEN_PET | GLOMMER_PET => {
+                (20.0, 20.0, 124, -1, 18000, 0, false, false, false, RESET_STATE)
+            }
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -4122,6 +4168,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
+            // W4-g64 (d13) — the aiStyle-124 pets set `netImportant`
+            // themselves (`Projectile.cs:8559`/`:8582`/`:9036` for the
+            // three rowed kinds; d13's arm covers all seven).
+            || matches!(kind, FAIRY_QUEEN_PET | ICE_QUEEN_PET | GLOMMER_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -4165,6 +4215,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
+            // W4-g64 (d13) — the aiStyle-124 pets set `ignoreWater`
+            // themselves (`Projectile.cs:8562`/`:8584`/`:9043`).
+            || matches!(kind, FAIRY_QUEEN_PET | ICE_QUEEN_PET | GLOMMER_PET)
             // `Projectile.cs:9244`: the Light's Bane slash ignores water.
             || kind == LIGHTS_BANE
             // `Projectile.cs:6949`: the crystal shard's `ignoreWater = true`.
@@ -4605,6 +4658,14 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
         CRIMSON_HEART => 4,
+        // W4-g64 (the d13 314fa6cd row port) — the rowed aiStyle-124 pets'
+        // sheets (`Main.cs:8683` 895 → 6, `:8686` 898 → 16, `:8697` 957 →
+        // 12). The flight/idle frame machines (`Projectile.cs:35204-35565`)
+        // wrap at these; the 957's ground bounce reads `projFrames * 2` /
+        // `* 3`. The 650/882/888/896 sheets arrive with d13's rows.
+        FAIRY_QUEEN_PET => 6,
+        ICE_QUEEN_PET => 16,
+        GLOMMER_PET => 12,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap

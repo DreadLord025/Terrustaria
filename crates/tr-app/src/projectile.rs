@@ -14834,6 +14834,11 @@ pub struct ProjectilePool {
     /// [`ProjectilePool::set_disco`]; the default is `Main.Initialize`'s
     /// `DiscoR = 255` with G/B at 0.
     disco: [u8; 3],
+    /// W4-g64 (the d13 seam) — `Main.screenWidth` for the aiStyle-124
+    /// tentacle's ore-scan gate (`Projectile.cs:35577`); the world sim feeds
+    /// it per tick (`set_screen_width`, the `set_disco` pattern). The
+    /// default is the headless 1280 fallback (`App::screen_size`).
+    screen_width: f32,
     /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
     /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
@@ -15273,6 +15278,7 @@ impl ProjectilePool {
             wind_speed: 0.0,
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
+            screen_width: 1280.0,
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
@@ -15356,6 +15362,14 @@ impl ProjectilePool {
     /// (`world_sim/clock.rs`) owns the value; the pool only reads it.
     pub fn set_disco(&mut self, disco: [u8; 3]) {
         self.disco = disco;
+    }
+
+    /// W4-g64 (the d13 seam) — `Main.screenWidth` as the aiStyle-124
+    /// tentacle's ore-scan distance gate reads it (`Projectile.cs:35577`).
+    /// The world-sim pass feeds the swapchain width per tick (the
+    /// `set_disco` pattern); the default mirrors the headless 1280 fallback.
+    pub fn set_screen_width(&mut self, screen_width: f32) {
+        self.screen_width = screen_width;
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -18358,6 +18372,34 @@ impl ProjectilePool {
                                 .or(inputs.aim)
                                 .unwrap_or((self.slots[i].pos.x, self.slots[i].pos.y));
                             self.slots[i].ai_vortex_ritual(player_pos, rng, dust, dust_ctx, world);
+                        }
+                        // W4-g64 (the d13 machine port, dust-wired) — `AI()`'s
+                        // `else if (this.aiStyle == 124)` (`Projectile.cs:
+                        // 34970-35696`): the seven pet rows (650 + 882/888/
+                        // 895/896/898/957, `STYLE124_PETS`; only 895/898/957
+                        // rowed on this branch). The keep-alive pins, the
+                        // home-spot ladder, the frame machines, the 957
+                        // ground bounce (the column scan) and the 650 ore
+                        // scan + steering tail live in
+                        // `projectile_ai_pets124` (the module's RNG census).
+                        124 => {
+                            let screen_width = self.screen_width;
+                            self.slots[i].ai_pets_style124(
+                                world,
+                                &npcs[..],
+                                player.as_deref(),
+                                rng,
+                                screen_width,
+                                dust,
+                                dust_ctx,
+                            );
+                            // `HandleMovement`: `tileCollide = false`
+                            // (every row) and 124 is not in `UpdatePosition`'s
+                            // skip list (`:20435`) — the free integrate runs
+                            // every sub-step, dead slots included (the C#
+                            // moves before the `!active` return, `:17027`).
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
                         }
                         99 => {
                             // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an

@@ -220,6 +220,11 @@ mod projectile_special_bullets;
 // the on-hit debuffs. The dispatch claim + the death-hook drain are wired in
 // projectile.rs (module doc + docs/ANALYSIS.md "The thrown consumables").
 mod projectile_ai_thrown;
+// W4-g64 (the d13 machine port, dust-wired) — the aiStyle-124 pet machine
+// (`Projectile.cs:34970-35696`): the home-spot ladder, the frame machines,
+// the 957 ground-bounce column scan and the 650 ore scan + steering tail;
+// the 895/898 flight sparkles + the 650's 204 pair ride proj_trail_dust.
+mod projectile_ai_pets124;
 // S1-D-4 empress proj: the Empress of Light's five projectile AIs
 // (872/873/874/919/923 — AI_173/171/none/179/180), pure per-kind fns behind
 // a kind gate, UNWIRED spawner (code-only mode). R7's npc_ai_empress.rs
