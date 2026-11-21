@@ -1270,6 +1270,61 @@ fn crimson_mob_death(
     }
 }
 
+/// The demon-eye variant arm (`NPC.cs:86449-86503`): the 50x dust-5
+/// burst, then the per-kind pair — head gore at position + the second at
+/// `position.X + 14`, BOTH carrying `this.scale` (unlike the critter
+/// rows). The live sub-branches: 190 Cataract Eye → 249/2
+/// (`:86465-86466`, sites 159-160), 191 Sleepy Eye → 248/2
+/// (`:86470-86471`, sites 161-162), 192 Dilated Eye → 247/2
+/// (`:86475-86476`, sites 163-164), 193 Green Eye → 252/253
+/// (`:86480-86481`, sites 165-166), 194 Purple Eye → 250/251
+/// (`:86485-86486`, sites 167-168); the 317/318/2 tail lands next batch.
+fn demon_eye_variant_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86459-86462` — the 50x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        50,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let pos14 = Vec2::new(npc.x + 14.0, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 190 {
+        gore.new_gore(rng, world, pos, vel, 249, s); // :86465
+        gore.new_gore(rng, world, pos14, vel, 2, s); // :86466
+    } else if npc_type == 191 {
+        gore.new_gore(rng, world, pos, vel, 248, s); // :86470
+        gore.new_gore(rng, world, pos14, vel, 2, s); // :86471
+    } else if npc_type == 192 {
+        gore.new_gore(rng, world, pos, vel, 247, s); // :86475
+        gore.new_gore(rng, world, pos14, vel, 2, s); // :86476
+    } else if npc_type == 193 {
+        gore.new_gore(rng, world, pos, vel, 252, s); // :86480
+        gore.new_gore(rng, world, pos14, vel, 253, s); // :86481
+    } else if npc_type == 194 {
+        gore.new_gore(rng, world, pos, vel, 250, s); // :86485
+        gore.new_gore(rng, world, pos14, vel, 251, s); // :86486
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1438,6 +1493,12 @@ pub fn hit_effect_d(
     // 149-158, the alpha-carrying 50x dust burst).
     else if matches!(npc_type, 173 | 174 | 181 | 182 | 268) {
         crimson_mob_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86449-86503` — the demon-eye variant arm (2/190-194/317/318);
+    // the 190-194 sub-branches are live (sites 159-168), the 317/318/2
+    // tail lands next batch.
+    else if matches!(npc_type, 2 | 190 | 191 | 192 | 193 | 194 | 317 | 318) {
+        demon_eye_variant_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2558,6 +2619,44 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "crimson mob {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86465-86486` — the demon-eye variant pairs: 190→249/2,
+    /// 191→248/2, 192→247/2, 193→252/253, 194→250/251; the second gore at
+    /// +14 X, BOTH carrying this.scale.
+    #[test]
+    fn w4_f5d_the_demon_eye_variants_carry_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 30.0);
+        n.scale = 1.25;
+        for (kind, want) in [
+            (190, vec![249, 2]),
+            (191, vec![248, 2]),
+            (192, vec![247, 2]),
+            (193, vec![252, 253]),
+            (194, vec![250, 251]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(173);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "demon eye {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+            assert_eq!(gore.slot(0).scale, 1.25, "the head carries this.scale");
+            assert_eq!(gore.slot(1).scale, 1.25, "the second carries this.scale");
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let mut twin = UnifiedRandom::new(173);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "demon eye {kind} mirrors the C# draws");
         }
     }
 }
