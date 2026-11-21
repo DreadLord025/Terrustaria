@@ -97,6 +97,7 @@ pub struct SpawnFlags {
 /// * the jungle MUD tile gate `tileType == 60 && dayTime &&
 ///   Next(3) != 0` (`:2336-2361`, the water-ladder mud-critter scan):
 ///   ONE Next(5) pick 671-675; else SpawnFrog.
+#[derive(Clone, Copy)]
 pub struct BirdSpawnGates {
     /// `this.surfaceSpawn` (`NPC.cs:1202`).
     pub surface: bool,
@@ -4829,7 +4830,9 @@ mod tests {
         // 689 pick fires exactly when that draw is 0.
         let mut owls = 0;
         let mut mimics = 0;
-        for seed in 0..200u64 {
+        // 20000 seeds: the mimic path is 1/5 * 1/100 per seed (~40
+        // expected hits) — the both-forms assertion is stream-safe.
+        for seed in 0..20000u64 {
             let mut rng = UnifiedRandom::new(seed);
             let mut mirror = UnifiedRandom::new(seed);
             match bird_spawn_owl_pick(&night_clear, &mut rng) {
@@ -4858,7 +4861,9 @@ mod tests {
         // RollLuck(400) is a plain Next(400), 0 promotes).
         let morning = BirdSpawnGates { day_time: true, time: 0.0, ..night_clear };
         let mut picks = std::collections::BTreeSet::new();
-        for seed in 0..400u64 {
+        // 20000 seeds: the gold promotion is 2/3 * 1/400 per seed
+        // (~33 expected hits).
+        for seed in 0..20000u64 {
             let mut rng = UnifiedRandom::new(seed);
             if let Some(ty) = bird_spawn_day_pick(&morning, &mut rng) {
                 picks.insert(ty);
@@ -4872,7 +4877,9 @@ mod tests {
             zone_jungle: true, day_time: true, time: 0.0, ..night_clear
         };
         let mut jpick = std::collections::BTreeSet::new();
-        for seed in 0..600u64 {
+        // 20000 seeds: each macaw is 1/7 * 2/3 * 1/5 per seed (~380
+        // expected hits each) — the exactly-five assertion is safe.
+        for seed in 0..20000u64 {
             let mut rng = UnifiedRandom::new(seed);
             if let Some(ty) = bird_spawn_jungle_pick(&jungle, &mut rng) {
                 jpick.insert(ty);
@@ -4897,7 +4904,7 @@ mod tests {
         // — time just under it still spawns, at/after it falls to frog.
         let late = BirdSpawnGates { time: 43200.0, ..jungle };
         let mut hit = false;
-        for seed in 0..600u64 {
+        for seed in 0..2000u64 {
             if bird_spawn_jungle_pick(&late, &mut UnifiedRandom::new(seed)).is_some() {
                 hit = true;
                 break;

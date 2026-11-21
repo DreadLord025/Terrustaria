@@ -29160,6 +29160,53 @@ style-axis arm, the 1080 projectile, the full Transform) is the merge step.
   W4-d40, Owl 611 = W4-d42, the jungle five 671-675 + OwlMimic 689 = W4-d43; the
   1080 BirdDroppings projectile machine = W4-d20. This lane adds no `NpcKind` (the
   g8-g10 kind-wire co-lanes carry no style-24 row вЂ” verified on their tips).
+- **W4-d127 chain-verify (2026-11-21, code-only)**: the four chain gaps audited
+  against the pushed co-lane tips; two closed with code, two census-complete.
+  (1) **Owl 317**: ROWED on the d38 tip (`data.rs:590`/`:969` cs_id both ways,
+  ai_style 2, the `NPC.cs:13007-13019` stats verbatim - 30x32/dmg 16/def 6/75 HP/
+  kb 0.7/value 100, bestiary `net_id: 317`, `update_kind_ai` routes
+  `DemonEyeOwl => update_eye`; the b2 tip owns the `2 => ai_002_eye_family`
+  axis) - NO re-row here. The MISSING piece was the completion seam: the sim's
+  Transform drain (`world_sim/npcs.rs`) now handles 317 COMPLETION-ONLY (the
+  `kind_from_net_id(317)` swap + `size_override` clear) because the module's
+  `transform_core` already applied the full observable `NPC.cs:81092-81110`
+  subset in-place mid-arm - a second `transform_to_kind` would reposition (+2)
+  and rescale the life TWICE. `kind_from_net_id` reads `None` until the d38
+  roster merge lands the bestiary row (the merge gate; the core's observable
+  subset keeps the slot faithful meanwhile). OwlMimic 689: NO catchItem
+  (`:17667-17679`), not npcCatchable - the reveal is the night <80px LoS
+  `Transform(317)` (`:25328-25335`), chain closed.
+  (2) **Axis-24**: NO pushed branch claims ai_style 24 in `update_rng_dust`'s
+  style axis (the only `ai_style_24` caller anywhere is d38's kind-keyed
+  `update_bird`, 297/298 only, ignoring `out.transform`/`out.no_gravity`).
+  This lane lands the claim (the c8 pattern): `24 => ai_024_bird_family`
+  covers ALL 11 kinds incl the owl roost/perch states; new `Npc` fields
+  `cloud_alpha`/`style24_neighbors` (the `wind_speed_current`/`twin_time_lefts`
+  pre-stamp convention, the any-bird-gated sim pre-pass), live `player.luck()`,
+  `is_cenx` false (the sim player has no name field - the d38 convention),
+  the 1080 poop + 317 transform drains. The integration tail is the C#
+  `UpdateNPC` own: the depth-scaled 0.3/10 gravity (`body_gravity`,
+  `:90877-90955`) gated by the arm's LAST noGravity write, the wet 0.2/7 row
+  reading the PREVIOUS tick's wet (the `:92525` stamp runs after the `:90465`
+  gravity), the dead-band X snap `:90473-90476`, the oldVelocity latch
+  `:92538`, the ground X-then-Y stand-in + the pre-move wet re-stamp. At the
+  merge the axis arm wins FIRST-match and d38's kind arm retires (S1-D-4c
+  one-live-arm; the merge resolves it, NOT a duplicate here).
+  (3) **Catch chain**: census-COMPLETE on this branch - the `catch_item` rows
+  (74/297/298/442/611/671-675), all 10 `itemdata` rows with the `make_npc`
+  round-trip + tile 724, the `npc_catchable` whitelist, and all 10
+  Terrarium+critter->cage recipes (station-free) verified; 2 witnesses pin it.
+  (4) **Spawn gates**: g61 owns spawn DUST only (its tip touches
+  `npc_spawn_visuals.rs`, not the pool ladder); NO branch wires the bird
+  spawn gates. The census lands as pure merge-ready helpers in `spawner.rs`
+  (`bird_spawn_owl_pick` `NPC.cs:2437-2447`, `bird_spawn_day_pick`
+  `:2449-2470` - the Next(4) pick BEFORE the gold RollLuck(400),
+  `bird_spawn_jungle_pick` `:3801-3829` - the 43200.00064373016 double
+  cutoff, the SpawnFrog fallback NOT a bird; the mud-tile twin `:2336-2361`)
+  plus the full `Luck.RollLuck`/`RollBadLuckExtreme` ports (`Luck.cs:5-16`/
+  `:40-51`, the nested inner-before-outer draw order). The ladder wiring is
+  the roster co-lanes' merge step. 9 witnesses WRITTEN NOT RUN across the
+  four items.
 ## The WoF Eye's aiStyle-28 arm (S1-D-3 aiStyle-28, 2026-11-18, code-only mode)
 `crates/tr-app/src/npc_ai_style28.rs` ports `NPC.AI()`'s
 `else if (this.aiStyle == 28)` block (`NPC.cs:26053-26208`) as a pure

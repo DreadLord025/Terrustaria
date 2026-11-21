@@ -1243,7 +1243,8 @@ mod tests {
     #[test]
     fn the_perched_bird_lands_under_the_depth_scaled_gravity() {
         let mut w = air();
-        // A floor at row 70 (y 1120): the bird at y 1100 falls 6 px.
+        // A floor at row 70 (top y 1120): the bird at y 1110 (feet
+        // 1124, INSIDE the floor row) snaps out on the first tail pass.
         for c in 0..200 {
             let i = w.index(c, 70);
             w.tiles[i] = Tile { kind: 1, ..Default::default() };
@@ -1252,7 +1253,7 @@ mod tests {
         w.world_surface = 60.0;
         let players = [player(2000.0, 1000.0, 0.0, false)];
         let c = ctx(&players, &[]);
-        let mut n = bird(74, 100.0, 1100.0);
+        let mut n = bird(74, 100.0, 1110.0);
         n.ai[0] = 0.0; // perched
         n.local_ai[0] = 1.0;
         let out = ai_style_24(&mut n, 74, &w, &c, &mut UnifiedRandom::new(1));
@@ -1272,11 +1273,13 @@ mod tests {
         let blocked = w
             .tile((n.x / 16.0) as i32, feet_row)
             .map_or(false, |t| t.active() && !t.inactive() && TILE_SOLID.has(t.kind));
+        assert!(blocked, "the feet cross the floor row");
         if blocked && n.vy > 0.0 {
             n.y = feet_row as f32 * 16.0 - 14.0;
             n.vy = 0.0;
         }
-        // Either it landed exactly on the floor top or is still above.
-        assert!(n.y + 14.0 <= 1120.0 + 0.001, "never inside the floor");
+        // The snap landed the bird EXACTLY on the floor top.
+        assert_eq!(n.y + 14.0, 1120.0, "the ground snap anchors the feet");
+        assert_eq!(n.vy, 0.0, "the landing zeroes vy");
     }
 }
