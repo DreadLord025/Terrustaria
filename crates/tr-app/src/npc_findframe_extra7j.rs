@@ -63,6 +63,12 @@
 //!   `7*4-1 = 27` (`:72763-72766`), and NO colour-bank offset —
 //!   the `:72768` gate EXCLUDES 653 (356-only, the d44 wave-C
 //!   Butterfly arm keeps it; aiStyle 65 `:17254`).
+//! * 661 EmpressButterfly (`NPCID.cs:11999`) — the SAME butterfly
+//!   group, its own case label `:72742`: ONE machine, the claim is
+//!   the id-keyed seam row (the 655 delegation precedent). The
+//!   `:72768` gate EXCLUDES 661 EXACTLY like 653
+//!   (`this.type != 444 && this.type != 653 && this.type != 661`),
+//!   so no colour bank either.
 //! * 654 Lavafly — its own `case 654` (`NPC.cs:72690-72709`): the
 //!   UNCONDITIONAL sprite copy (`:72691`), the bare `++` (`:72692`),
 //!   the <4 row-0 / else row-1 blink with the `>= 7` reset
@@ -105,7 +111,8 @@
 //! 6) — counted entry-by-entry in
 //! [`FindFrameExtra7jKind::frame_count`] and cross-checked against
 //! `render/entities.rs::NPC_FRAME_COUNT` (all 697 slots re-diffed =
-//! ZERO mismatches, a mechanical text-parse diff).
+//! ZERO mismatches, a mechanical text-parse diff). 661's add-on:
+//! **3** (`Main.cs:67150` entry 2, the same 3-row sheet as 653).
 
 // The wiring is a later round (the kinds are not in `NpcKind` yet) —
 // the `npc_findframe_extra7i.rs` precedent.
@@ -134,6 +141,10 @@ pub enum FindFrameExtra7jKind {
     /// (`NPC.cs:72240`), DELEGATED to
     /// `npc_ai_style67::snail_find_frame` (no second copy).
     MagmaSnail,
+    /// `NPCID.EmpressButterfly` = 661 (`NPCID.cs:11999`) — the SAME
+    /// butterfly group as 653 (`NPC.cs:72742`), no colour bank (the
+    /// `:72768` gate excludes 661 exactly like 653).
+    EmpressButterfly,
 }
 
 impl FindFrameExtra7jKind {
@@ -146,16 +157,18 @@ impl FindFrameExtra7jKind {
             Self::HellButterfly => 653,
             Self::Lavafly => 654,
             Self::MagmaSnail => 655,
+            Self::EmpressButterfly => 661,
         }
     }
 
     /// `Main.npcFrameCount[type]` (`Main.cs:67082`'s initializer,
     /// counted entry-by-entry): 650-652 = 7 (`:67149` entries 1-3),
-    /// 653 = 3 (entry 4), 654 = 4 (entry 5), 655 = 6 (entry 6).
+    /// 653 = 3 (entry 4), 654 = 4 (entry 5), 655 = 6 (entry 6);
+    /// 661 = 3 (`:67150` entry 2).
     pub fn frame_count(self) -> u32 {
         match self {
             Self::GemBunnyRuby | Self::GemBunnyDiamond | Self::GemBunnyAmber => 7,
-            Self::HellButterfly => 3,
+            Self::HellButterfly | Self::EmpressButterfly => 3,
             Self::Lavafly => 4,
             Self::MagmaSnail => 6,
         }
@@ -176,6 +189,7 @@ pub fn find_frame_kind_extra7j(vanilla_type: i16) -> Option<FindFrameExtra7jKind
         653 => FindFrameExtra7jKind::HellButterfly,
         654 => FindFrameExtra7jKind::Lavafly,
         655 => FindFrameExtra7jKind::MagmaSnail,
+        661 => FindFrameExtra7jKind::EmpressButterfly,
         _ => return None,
     })
 }
@@ -270,9 +284,11 @@ pub fn find_frame_extra7j(kind: FindFrameExtra7jKind, s: &mut FrameState, i: &Fr
                 s.row = 6;
             }
         }
-        // The butterfly group (`NPC.cs:72743-72772`), 653's slice —
-        // NO colour bank (the `:72768` gate excludes 444/653/661).
-        FindFrameExtra7jKind::HellButterfly => {
+        // The butterfly group (`NPC.cs:72743-72772`), 653/661's
+        // slice — NO colour bank (the `:72768` gate excludes
+        // 444/653/661). ONE machine, two claim rows (the 655
+        // delegation precedent).
+        FindFrameExtra7jKind::HellButterfly | FindFrameExtra7jKind::EmpressButterfly => {
             let num143 = 7.0f32;
             // `:72745-72746` — the tilt + the UNCONDITIONAL copy.
             s.rotation = i.vx * 0.3;
@@ -337,13 +353,14 @@ mod tests {
         FindFrameExtra7jKind::GemBunnyAmber,
     ];
 
-    const ALL: [FindFrameExtra7jKind; 6] = [
+    const ALL: [FindFrameExtra7jKind; 7] = [
         FindFrameExtra7jKind::GemBunnyRuby,
         FindFrameExtra7jKind::GemBunnyDiamond,
         FindFrameExtra7jKind::GemBunnyAmber,
         FindFrameExtra7jKind::HellButterfly,
         FindFrameExtra7jKind::Lavafly,
         FindFrameExtra7jKind::MagmaSnail,
+        FindFrameExtra7jKind::EmpressButterfly,
     ];
 
     fn input(vx: f32, vy: f32) -> FrameInput {
@@ -583,10 +600,10 @@ mod tests {
         }
     }
 
-    /// The seam maps exactly this wave's 6 ids — the hop group's
+    /// The seam maps exactly this wave's 7 ids — the hop group's
     /// other members 46/47/303/337/443/464/540/614, the 7i-claimed
     /// 646-649, the snail siblings 359/360 (the twin's own kinds),
-    /// the butterfly-group siblings 356/444/661 and the firefly
+    /// the butterfly-group siblings 356/444 and the firefly
     /// siblings 355/358 stay `None`.
     #[test]
     fn f26s7j_the_seam_maps_exactly_the_slice() {
@@ -594,19 +611,61 @@ mod tests {
             let id = k.vanilla_type();
             assert_eq!(find_frame_kind_extra7j(id), Some(k));
         }
-        for id in [46, 47, 303, 337, 443, 464, 540, 614, 646, 647, 648, 649, 359, 360, 355, 356, 358, 444, 661] {
+        for id in [46, 47, 303, 337, 443, 464, 540, 614, 646, 647, 648, 649, 359, 360, 355, 356, 358, 444] {
             assert_eq!(find_frame_kind_extra7j(id), None, "type {id}");
         }
     }
 
-    /// The 6-kind strip sweep: every kind ticks 54 input combos
+    /// The EmpressButterfly witness: 661 rides the SAME butterfly
+    /// machine as 653 (one machine, the claim-row add-on). The still
+    /// flap walks the verbatim 653 vector — rows 0/1/2/1 with the
+    /// reset tick 27 still showing row 1 — and the velocity-fed
+    /// tilt + the reset edge match the 653 twins exactly; no colour
+    /// bank (the `:72768` gate excludes 661), so the row never
+    /// leaves 0..2 on the 3-row sheet even at high feed.
+    #[test]
+    fn f26s7j_the_empress_butterfly_rides_the_hell_butterfly_machine() {
+        let k = FindFrameExtra7jKind::EmpressButterfly;
+        assert_eq!(
+            rows_over(k, input(0.0, 0.0), 28),
+            vec![
+                0, 0, 0, 0, 0, 0, // ticks 1-6
+                1, 1, 1, 1, 1, 1, 1, // 7-13
+                2, 2, 2, 2, 2, 2, 2, // 14-20
+                1, 1, 1, 1, 1, 1, // 21-26
+                1, // 27 — the reset tick still shows row 1
+                0, // 28
+            ]
+        );
+        // The velocity feed: vx 2, vy 2 feeds +3.0 a tick — the same
+        // 653 vector; the tilt is vx*0.3; no colour bank escape.
+        let mut s = FrameState::default();
+        let i = input(2.0, 2.0);
+        let mut rows = Vec::new();
+        for _ in 0..9 {
+            find_frame_extra7j(k, &mut s, &i);
+            rows.push(s.row);
+        }
+        assert_eq!(rows, vec![0, 0, 1, 1, 2, 2, 1, 1, 1]);
+        assert_eq!(s.counter, 0.0);
+        assert_eq!(s.rotation, 2.0f32 * 0.3);
+        // One machine: state-for-state identical to the 653 twin.
+        let mut a = FrameState { row: 2, counter: 26.0, ..Default::default() };
+        let mut b = a;
+        find_frame_extra7j(k, &mut a, &input(0.0, 0.0));
+        find_frame_extra7j(FindFrameExtra7jKind::HellButterfly, &mut b, &input(0.0, 0.0));
+        assert_eq!(a, b);
+        assert_eq!((a.row, a.counter), (1, 0.0));
+    }
+
+    /// The 7-kind strip sweep: every kind ticks 54 input combos
     /// (vx 0/1/3 × vy 0/-2/2 × direction 1/-1/0 × local_ai2 0/10)
     /// for 40 ticks each from a fresh state — every row stays inside
     /// its own sheet (the 7i sweep shape widened by the glow axis;
     /// the butterfly's 27-reset and the blink's 7-reset both cycle
     /// inside the window).
     #[test]
-    fn f26s7j_the_6_kind_strip_sweep_stays_in_sheet() {
+    fn f26s7j_the_7_kind_strip_sweep_stays_in_sheet() {
         for k in ALL {
             let mut combo = 0;
             for vx in [0.0f32, 1.0, 3.0] {
