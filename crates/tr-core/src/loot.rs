@@ -122,9 +122,10 @@ pub struct LootFlags {
     pub downed_mech3: bool,
     /// `NPC.downedMechBossAny`.
     pub downed_mech_any: bool,
-    /// `NPC.downedPlantera`.
-    pub downed_plantera: bool,
-    /// `NPC.downedPlantBoss` (`Conditions.FirstTimeKillingPlantera` inverts it).
+    /// `NPC.downedPlantBoss` (`Conditions.DownedPlantera` reads it directly
+    /// `Conditions.cs:322`; `FirstTimeKillingPlantera` inverts it). One flag,
+    /// two conditions — the pre-f35 `downed_plantera` second flag was a
+    /// misread (nothing ever set it, so the 460/466/468 rows stayed dead).
     pub downed_plant_boss: bool,
     /// `NPC.downedMechdusa`.
     pub downed_mechdusa: bool,
@@ -1585,10 +1586,29 @@ pub fn drop_nothing() -> Box<dyn ItemDropRule> {
 // variant's `can_drop` is the verbatim `Conditions.<Name>.CanDrop` body over
 // [`LootFlags`]/[`LootNpc`] (the caller snapshots the world/player/NPC state).
 
-/// `Conditions.SoulOfWhateverConditionCanDrop` (`Conditions.cs:805-855`): the
-/// depth band below the cavern layer, shared by the two soul conditions.
+/// `Conditions.SoulOfWhateverConditionCanDrop` (`Conditions.cs:1579-1612`):
+/// the shared soul gate — NOT a boss, not the `DontDropDungeonKeysOrSouls`
+/// set (the caller folds it into `dont_drop_keys`, `NPCID.cs:10115` = {23}),
+/// not the six exempt types, then hardmode + lifeMax > 1 + !friendly +
+/// value >= 1; the classic world adds the depth band
+/// (`position.Y > rockLayer * 16`), the remix world drops it.
+/// `soul_depth_ok` carries the caller's depth snapshot; on a remix world
+/// the depth term is IGNORED (`:1599-1605`).
 fn soul_of_whatever_can_drop(info: &DropAttemptInfo) -> bool {
-    info.flags.soul_depth_ok
+    let f = &info.flags;
+    let n = &info.npc;
+    if n.is_boss || n.dont_drop_keys {
+        return false;
+    }
+    // The type switch (`:1589-1597`) — the slime 1, the EoW segments
+    // 13/14/15, the Slimer 121, the Spiked Slime 535 never drop souls.
+    if matches!(n.kind, 1 | 13 | 14 | 15 | 121 | 535) {
+        return false;
+    }
+    if !f.hard_mode || n.life_max <= 1 || n.friendly || n.value < 1.0 {
+        return false;
+    }
+    f.remix_seed || f.soul_depth_ok
 }
 
 /// The pumpkin/frost moon gates' wave-scaled chance denominator
@@ -1738,7 +1758,10 @@ impl DropCondition for Cond {
             Cond::MechdusaKill => f.mechdusa && n.mechdusa_parts_cleared,
             Cond::BeatAnyMechBoss => f.downed_mech_any,
             Cond::DownedAllMechBosses => f.downed_mech1 && f.downed_mech2 && f.downed_mech3,
-            Cond::DownedPlantera => f.downed_plantera,
+            // `Conditions.DownedPlantera` (`Conditions.cs:318-326`) reads
+            // `NPC.downedPlantBoss` — the SAME flag FirstTimeKillingPlantera
+            // inverts (`:354-362`), not a second flag.
+            Cond::DownedPlantera => f.downed_plant_boss,
             Cond::FirstTimeKillingPlantera => !f.downed_plant_boss,
             Cond::MissingTwin => n.twin_missing,
             Cond::LegacyHack_IsABoss => n.is_boss,
@@ -2833,6 +2856,134 @@ mod tests {
         assert!(out.is_empty());
         drop(i);
         assert!(rng.ranges.is_empty(), "the classic arm draws nothing");
+    }
+
+    /// W4-f35 LOOT FINAL: `SoulOfWhateverConditionCanDrop`
+    /// (`Conditions.cs:1579-1612`) is a FULL gate, not a depth flag — the
+    /// boss / DontDropDungeonKeysOrSouls / six-type refusals, the hardmode
+    /// + lifeMax + friendly + value terms, then the classic depth band;
+    /// the remix world IGNORES the depth term. Both soul conditions AND
+    /// the gate (`SoulOfLight` `:856-865`, `SoulOfNight` `:830-843`).
+    /// The gate draws NOTHING (an empty script proves it).
+    #[test]
+    fn w4_f35_soul_gate_is_the_full_condition_not_a_depth_flag() {
+        // The healthy hardmode underground hallow kill: kind 6 (value 150,
+        // lifeMax > 1), depth ok, hallow zone — SoulOfLight passes.
+        let soul_npc = LootNpc {
+            kind: 6,
+            value: 150.0,
+            life_max: 200,
+            ..Default::default()
+        };
+        let soul_flags = LootFlags {
+            hard_mode: true,
+            soul_depth_ok: true,
+            zone_hallow: true,
+            zone_corrupt: true,
+            ..Default::default()
+        };
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = DropAttemptInfo {
+            flags: soul_flags,
+            ..info_npc(&mut rng, soul_npc)
+        };
+        assert!(Cond::SoulOfLight.can_drop(&mut i));
+        assert!(Cond::SoulOfNight.can_drop(&mut i));
+        drop(i);
+        assert!(rng.ranges.is_empty(), "the gate draws nothing");
+
+        // Each refusal term kills BOTH soul conditions on its own.
+        type Mut = fn(&mut LootFlags, &mut LootNpc);
+        let refusals: &[Mut] = &[
+            |_, n| n.is_boss = true,                    // :1581
+            |_, n| n.dont_drop_keys = true,             // :1585 (type 23)
+            |_, n| n.kind = 1,                          // :1591 the slime
+            |_, n| n.kind = 13,                         // the EoW head
+            |_, n| n.kind = 121,                        // the Slimer
+            |_, n| n.kind = 535,                        // the Spiked Slime
+            |f, _| f.hard_mode = false,                 // :1601/:1606
+            |_, n| n.life_max = 1,                      // lifeMax <= 1
+            |_, n| n.friendly = true,                   // friendly
+            |_, n| n.value = 0.5,                       // value < 1
+            |f, _| f.soul_depth_ok = false,             // above rockLayer
+        ];
+        for (idx, mutate) in refusals.iter().enumerate() {
+            let mut f = soul_flags;
+            let mut n = soul_npc;
+            mutate(&mut f, &mut n);
+            let mut rng = ScriptRng::new(&[], &[]);
+            let mut i = DropAttemptInfo {
+                flags: f,
+                ..info_npc(&mut rng, n)
+            };
+            assert!(!Cond::SoulOfLight.can_drop(&mut i), "refusal {idx}");
+            assert!(!Cond::SoulOfNight.can_drop(&mut i), "refusal {idx}");
+        }
+
+        // The remix world drops the DEPTH term only (`:1599-1605`): the
+        // surface kill (depth false) passes; a pre-hardmode remix kill
+        // still refuses.
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = DropAttemptInfo {
+            flags: LootFlags {
+                remix_seed: true,
+                soul_depth_ok: false,
+                ..soul_flags
+            },
+            ..info_npc(&mut rng, soul_npc)
+        };
+        assert!(Cond::SoulOfLight.can_drop(&mut i), "remix ignores depth");
+        drop(i);
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = DropAttemptInfo {
+            flags: LootFlags {
+                remix_seed: true,
+                soul_depth_ok: false,
+                hard_mode: false,
+                ..soul_flags
+            },
+            ..info_npc(&mut rng, soul_npc)
+        };
+        assert!(!Cond::SoulOfLight.can_drop(&mut i), "remix keeps hardmode");
+        drop(i);
+
+        // The zones AND the gate: hallow-only drops light, evil-only night.
+        let mut rng = ScriptRng::new(&[], &[]);
+        let mut i = DropAttemptInfo {
+            flags: LootFlags {
+                zone_corrupt: false,
+                ..soul_flags
+            },
+            ..info_npc(&mut rng, soul_npc)
+        };
+        assert!(Cond::SoulOfLight.can_drop(&mut i));
+        assert!(!Cond::SoulOfNight.can_drop(&mut i));
+        drop(i);
+    }
+
+    /// W4-f35 LOOT FINAL: `Conditions.DownedPlantera` (`Conditions.cs:322`)
+    /// reads `NPC.downedPlantBoss` — the SAME flag FirstTimeKillingPlantera
+    /// (`:358`) inverts. The pre-final port read a second `downed_plantera`
+    /// flag nothing ever set, so the 460/463/466/467/468 rows stayed dead
+    /// after the first Plantera kill.
+    #[test]
+    fn w4_f35_downed_plantera_is_the_plant_boss_flag() {
+        for downed in [false, true] {
+            let mut rng = ScriptRng::new(&[], &[]);
+            let mut i = DropAttemptInfo {
+                flags: LootFlags {
+                    downed_plant_boss: downed,
+                    ..Default::default()
+                },
+                ..info_npc(&mut rng, LootNpc::default())
+            };
+            assert_eq!(Cond::DownedPlantera.can_drop(&mut i), downed);
+            assert_eq!(
+                Cond::FirstTimeKillingPlantera.can_drop(&mut i),
+                !downed,
+                "the two conditions are exact complements"
+            );
+        }
     }
 
     #[test]
