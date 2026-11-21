@@ -245,6 +245,18 @@ mod tests {
     // roll on its own fresh `pass_rng("Micro Biomes")` copy (no tile
     // writes, no other step's ledger shifts). The 138 frame-important
     // boot bit is inert without the kind.
+    // W4-c29 gem-moss fidelity (2026-11-21, code-only): `Spread.Gem`'s
+    // duplicate-visit redraw + the 178 anchor gate/frame-row draw, the
+    // `neonMossBiome` clamp fixes and the moss arm A/F changes all ride
+    // the EXISTING `pass_rng("Gem Caves")` / `pass_rng("Moss")` slots —
+    // no new stream, but the draw COUNTS and the painted tiles change, so
+    // this pin moves BY DESIGN on any world whose gem/moss passes place
+    // content. The 512 world's gem-cave band (`rockLayer+30 .. height-230`)
+    // and moss bands collapse on the compact terrain, so the placement may
+    // be nil — but the neon-moss arm A runs on every world (`width/2100`
+    // rounds to 0 on 512, so arm A is skipped there too). Whether the pin
+    // moves depends on the 512 terrain's pockets; the re-pin is DEFERRED
+    // to the gate (no compiler on this branch). The a==b halves stay green.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -297,6 +309,18 @@ mod tests {
     // retype, the 137/138/141 traps, the red wires); that moves the
     // APP-side world, not this tr-core pin. The S1-P-i33 deferral above
     // still stands; the gate re-pins sequentially.
+    // W4-c29 gem-moss fidelity (2026-11-21, code-only): the gem/moss
+    // fidelity fixes (the `Spread.Gem` duplicate-visit redraw, the 178
+    // anchor gate + `Next(3)*18` frame-row draw, the `neonMossBiome`
+    // clamp/step/loop fixes, the moss arm A reject ledger + dungeon
+    // exclusion, the arm F live column-major `Main.tileMoss` sweep) change
+    // the gem-cave and moss-pass tiles and draw counts on the DEFAULT
+    // 4200x1200 world — arm A places `4200/2100 = 2` neon biomes and the
+    // gem/moss cave passes find pockets, so this pin moves BY DESIGN. The
+    // re-pin is DEFERRED to the merge gate (no compiler on this branch);
+    // the `a == b` determinism halves stay green. The 178/184
+    // frame-important boot bits (`Main.cs:7413-7414`) keep the stored gem
+    // frames through the load-time framer.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

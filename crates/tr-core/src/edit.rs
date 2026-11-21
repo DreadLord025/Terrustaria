@@ -31,7 +31,9 @@ pub use kill::{
     SoundCue, TileKill, TreeDropEvent,
 };
 pub(crate) use kill::{
-    remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,
+    remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope,
+    solid_tile_allow_left_slope, solid_tile_allow_right_slope, solid_tile_allow_top_slope,
+    square_tile_frame_gen,
 };
 
 /// `WallID.UnbreakableBlockWall` / `WallID.Count - 1` region used by the dungeon

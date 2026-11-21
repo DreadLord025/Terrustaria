@@ -2829,6 +2829,12 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
+    // The exposed gems 178 and the long moss 184 (`Main.cs:7413-7414`,
+    // W4-c29): frame-important — the framer keeps the stored frames the gem
+    // pass's 178 arm writes (`frameX = style*18`, `frameY = Next(3)*18`,
+    // `WorldGen.cs:59698-59699`) instead of autotiling them.
+    world.frame_important[178] = true;
+    world.frame_important[184] = true;
     world.frame_important[380] = true;
     // The ocean tiles the ocean passes write — the palm trunk 323, the
     // coral 81, the beach piles 324, the shell piles 495, the sea oats 529
