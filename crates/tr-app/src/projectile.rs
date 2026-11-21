@@ -21299,6 +21299,22 @@ impl ProjectilePool {
     /// note); the cue itself is draw-free at the queue site — its case draw
     /// rides the drain. Kinds whose death arm is unported (no row) are
     /// absent here, exactly as the census records.
+    ///
+    /// DEPRECATED-BY-UNION (S1-E-21h f1 RETIRE): d77's `kill_tail_cue`
+    /// (pushed tip `5f10560b2`, `projectile.rs:20211` — the Kill-host wave
+    /// `0573b70f2` on top of `d61e6362`) is the CANONICAL survivor — a
+    /// strict superset of this fn's part-4/5 base-rowed map (the 88 kinds,
+    /// ANALYSIS part 7's per-arm diff) AND of the part-6 owed wave (the
+    /// Kill-host wave's 15 re-probe cues absorbed 949/590/539/the rope
+    /// coils/728/729/1120/1115/576 + the second wave's 523/12/321, with
+    /// the `NPC_Killed_7` bank row + style-7 route). At merge: DROP the
+    /// part-4/5 block below + the absorbed part-6 arms (the 410 too —
+    /// keep-one d8's `bubble_pop_kill`) + `rocket_kill_census`'s cue
+    /// pushes + the `play_proj_sound` int-match; FOLD the f1-UNIQUE arms
+    /// (the part-7 second owed wave minus 523/12/321, the Flame Burst
+    /// derived recentre incl. the 706 sibling) into d77c per the
+    /// part-7/8 fold-hunks. This fn stays LIVE until then — it is the
+    /// fold SOURCE; comments-only retirement, no behaviour change.
     fn kill_sound_cue(&mut self, slot: usize, apprentice_t3: bool) {
         let p = &self.slots[slot];
         let (x, y) = (p.pos.x, p.pos.y);
@@ -21306,6 +21322,7 @@ impl ProjectilePool {
         // plays at `base.position` except the 932's `base.Center` (and
         // the Flame Burst shots' derived post-recentre read).
         let cue: Option<(u16, i32, f32, f32, f32)> = match p.kind {
+            // ===== f1-UNIQUE fold-source head (KEEP at merge) =====
             // `:71848` — the Flame Burst Tower shots' Item100 (S1-E-21h
             // f1 final-phase remainder: the one rowed kind in the range
             // neither d77's map nor any pushed sibling arms). The C#
@@ -21316,12 +21333,26 @@ impl ProjectilePool {
             // `:71841`). `Resize` keeps the centre, so the play point is
             // the OLD centre minus the blast box's half (the 539 jellyfish
             // precedent); the resize/Damage/dust state halves stay
-            // deferred (the S1-D-4b-9 kill-dust deferral stands). The
-            // unrowed 706 sibling stays out (the PART-arm convention).
-            FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3 => {
+            // deferred (the S1-D-4b-9 kill-dust deferral stands).
+            // S1-E-21h f1 RETIRE phase — the 706 Phantom Phoenix joins
+            // the SAME C# gate (`:71821` names 664/666/668/706): its row
+            // landed on d80's pushed tip `c10fda594` (`PHANTOM_PHOENIX`,
+            // 66x66 aiStyle 1, `Projectile.cs:7461-7473`) AFTER the
+            // part-7 census — the final-inert-wave arm, NUMERIC literal
+            // (INERT until the merge lands d80's row, the owed-phase
+            // convention; d80 arms no `:71848` cue itself — its DD2
+            // one-shots are the tracked shot/impact sounds).
+            FLAME_BURST_SHOT_1 | FLAME_BURST_SHOT_2 | FLAME_BURST_SHOT_3 | 706 => {
                 let half = if apprentice_t3 { 104.0 } else { 48.0 };
                 Some((2, 100, x + p.w * 0.5 - half, y + p.h * 0.5 - half, 0.0))
             }
+            // ===== DEPRECATED-BY-UNION: the part-4/5 block (88 kinds) =====
+            // Every arm from here to the owed-wave head below appears
+            // VERBATIM in d77 `kill_tail_cue` (`d61e6362`, id/style/
+            // position semantics identical — the part-7 per-arm diff).
+            // DROP this whole block at merge (the 454 duplicate plays
+            // once through d77's cue-first arm); the owed-wave head above
+            // and tail below are the f1-UNIQUE fold-source.
             // `:71112` — the 932 FairyQueenRangedItemShot's Item10 at
             // `base.Center` (the ONE Center-positioned cue of the batch).
             932 => Some((2, 10, x + p.w * 0.5, y + p.h * 0.5, 0.0)),
@@ -21490,6 +21521,16 @@ impl ProjectilePool {
             LIGHT_BEAM => Some((2, 10, x, y, 0.0)),
             // `:77153` — the Night Beam's Item10.
             NIGHT_BEAM => Some((2, 10, x, y, 0.0)),
+            // ===== part-6 owed-wave tail: DEPRECATED-BY-UNION (RETIRE
+            // re-probe) — d77's Kill-host wave (`0573b70f2`, tip
+            // `5f10560b2`) armed the 15 re-probe cues on `kill_tail_cue`:
+            // the 949/590/539/rope-coil/728/729/1120/1115/576 arms below
+            // are now d77 DUPLICATES (payload-identical, the part-8
+            // per-arm diff) — DROP at merge, no fold owed. The 410 is
+            // NOT in d77's map but d8 SELF-ARMS it (`bubble_pop_kill`,
+            // `projectile.rs:20114` at the d8 tip) — keep-one d8, DROP
+            // this arm too. The arms stay LIVE here until the merge (the
+            // fold-source convention). =====
             // S1-E-21h f1 owed-arm phase — the NONE-site kinds whose
             // `proj_data` rows landed on the PUSHED sibling branches (the
             // part-5 re-census vs the current tips). The rows stay on their
@@ -21564,6 +21605,13 @@ impl ProjectilePool {
             // rides d11's pushed tip e0395afc, `Projectile.cs:6258-6269`:
             // 4x4, aiStyle 1.
             576 => Some((2, 10, x, y, 0.0)),
+            // ===== f1-UNIQUE fold-source tail (KEEP at merge): the
+            // part-7 second owed wave, MINUS the three arms d77's
+            // Kill-host wave (`0573b70f2`) absorbed — the 523/12/321
+            // below are DEPRECATED-BY-UNION duplicates (d77 arms
+            // 523 @ pos / 9|12|955 @ pos / 15|321 @ pos), DROP at merge;
+            // every OTHER arm here is absent from d77 `5f10560b2`'s map
+            // (the part-8 per-arm diff) and FOLDS into d77c. =====
             // S1-E-21h f1 FINAL phase — the second owed wave: the part-6
             // "still rowless everywhere" kinds whose rows landed on the
             // sibling tips AFTER the part-6 sweep (the final re-census
@@ -22600,6 +22648,16 @@ impl ProjectilePool {
     /// are the documented liquid-layer follow-up (ANALYSIS "Rocket & dart
     /// ammo") — the fills draw nothing, so the census is complete without
     /// them.
+    ///
+    /// DEPRECATED-BY-UNION (S1-E-21h f1 RETIRE, the CUE PUSHES only): d77's
+    /// rocket census (tip `5f10560b2`, `projectile.rs:22787`; unchanged
+    /// from `d61e6362`'s copy at `:22478`) covers all 16 f1 cue sites AND
+    /// the 133/136 Item62 picks f1 gated out (the 139 Item62 f1 DOES cue —
+    /// d77 carries it too, the witness's `(139, 62)` row; both copies
+    /// agree) — DROP every `pending_proj_sounds.push` below at merge
+    /// (keep-one d77). The DRAW CENSUS itself (the rng walks + resizes)
+    /// is NOT retired here — the merge owner reconciles it against d77's
+    /// copy separately.
     fn rocket_kill_census(&mut self, slot: usize, rng: &mut dyn tr_core::loot::DropRng, local_owner: u8) {
         // One gore's draw row: the type pick + the two NewGore kicks.
         fn gore(rng: &mut dyn tr_core::loot::DropRng) {
@@ -24590,9 +24648,11 @@ mod s1_e_21h_sound_tests {
     /// site): the C# recentres to `16 * num129` (96, or 208 under the
     /// owner's `setApprenticeT3`, `:71832-71846`) BEFORE the play, so the
     /// cue reads the OLD centre minus the blast half (48 / 104 — the 539
-    /// jellyfish derived-read precedent). The unrowed 706 sibling queues
-    /// NOTHING (the PART-arm convention; a constructed slot proves the
-    /// gate). Written, NOT run — code-only mode.
+    /// jellyfish derived-read precedent). RETIRE-phase re-pin: the 706
+    /// Phantom Phoenix NOW rides the same arm (its row landed on d80
+    /// `c10fda594`, 66×66 — the arm is INERT on this base until the merge;
+    /// a constructed slot proves the payload). Written, NOT run —
+    /// code-only mode.
     #[test]
     fn s1_e_21h_f1_final_the_flame_burst_shots_play_at_the_derived_recentre() {
         let mut pool = ProjectilePool::new();
@@ -24611,18 +24671,31 @@ mod s1_e_21h_sound_tests {
             assert_eq!(queued, vec![(2, 100, -32.0, -32.0, 0.0, 1.0)], "kind {kind} T3");
             pool.kill(slot);
         }
-        // The unrowed 706 sibling: no arm (the row guard declines it).
+        // The 706 Phantom Phoenix (d80 `c10fda594` row, 66×66): the SAME
+        // derived-recentre arm — centre (97, 97), base play (49, 49),
+        // T3 play (−7, −7). CONSTRUCTED (the row is not on this base —
+        // the arm is inert until the merge, the owed-phase convention).
         pool.slots_mut()[0] = Projectile {
             active: true,
             kind: 706,
             owner: 0,
             pos: Vec2::new(64.0, 64.0),
-            w: 16.0,
-            h: 16.0,
+            w: 66.0,
+            h: 66.0,
             ..Default::default()
         };
         pool.kill_sound_cue(0, false);
-        assert!(pool.drain_proj_sounds().is_empty(), "706 is unrowed — no cue");
+        assert_eq!(
+            pool.drain_proj_sounds(),
+            vec![(2, 100, 49.0, 49.0, 0.0, 1.0)],
+            "706 base: centre 97 − 48"
+        );
+        pool.kill_sound_cue(0, true);
+        assert_eq!(
+            pool.drain_proj_sounds(),
+            vec![(2, 100, -7.0, -7.0, 0.0, 1.0)],
+            "706 T3: centre 97 − 104"
+        );
     }
 
     /// S1-E-21h f1 FINAL phase — the second owed wave's cue table: the
@@ -24717,10 +24790,12 @@ mod s1_e_21h_sound_tests {
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued, vec![(id, style, 64.0, 64.0, 0.0, 1.0)], "kind {kind}");
         }
-        // The still-rowless siblings stay OUT (the PART-arm convention):
-        // the 907 cloak sibling (its :75183 Item27 arm) and the 706
-        // FlameBurst sibling ride cue-less.
-        for kind in [907u16, 706] {
+        // The still-rowless sibling stays OUT (the PART-arm convention):
+        // the 907 cloak sibling (its :75183 Item27 arm) rides cue-less.
+        // (RETIRE re-probe: the 706 moved to the Flame Burst arm — its
+        // row landed on d80 `c10fda594`; the payload witness lives in
+        // `s1_e_21h_f1_final_the_flame_burst_shots_play_at_the_derived_recentre`.)
+        for kind in [907u16] {
             pool.slots_mut()[0] = Projectile {
                 active: true,
                 kind,

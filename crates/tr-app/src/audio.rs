@@ -2082,6 +2082,14 @@ impl Audio {
         volume_scale: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        // DEPRECATED-BY-UNION (S1-E-21h f1 RETIRE): the id-0/13/4 match
+        // below — d77's drain routes 0/13/6/4/29 BEFORE this call
+        // (`world_sim/projectiles.rs:468-485`, unchanged at the moved tip
+        // `5f10560b2`), so at merge this match DROPS (at scale 1.0 both
+        // shapes play identically). The `(3, 29)` / `(42, 274)` routes
+        // BELOW the match are f1-UNIQUE (d77's drain has no id-3/id-42
+        // arm — re-grepped at `5f10560b2`) — FOLD them into d77c (either
+        // drain-side or here, the part-7 fold companions).
         // S1-E-21h f1 — the `Kill()` tail's int-overload families ride the
         // same queue: id 0 (the Dig thud, `PlaySound(0, pos)` — the int
         // overload's default Style 1 is unused by case 0), id 13 (the
