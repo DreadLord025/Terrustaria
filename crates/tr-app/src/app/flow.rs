@@ -2222,6 +2222,7 @@ pub(crate) mod front_flow_tests {
             // back into `equip_page` every frame.
             equip_page_selected: 0,
             dye_swap_counter: 0,
+            equip_share_flags: 0,
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
