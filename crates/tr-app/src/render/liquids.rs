@@ -34,6 +34,10 @@ pub(crate) fn draw_waters(
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
+    // `LiquidRenderer.Update`'s two integer frames (`_animationFrame`,
+    // `_waterfallAnimationFrame` — the wind-driven clock,
+    // `LiquidRenderer.cs:844-845`), ticked by the app frame head.
+    liquid_frames: (i32, i32),
     draws: &[tr_core::liquid_draw::LiquidDraw],
     pass: LiquidPass,
     water_style: usize,
@@ -51,7 +55,19 @@ pub(crate) fn draw_waters(
         } else {
             liquid_alpha[j]
         };
-        quads += draw_liquids(r, lookups, light, style, anim_time, draws, pass, j, alpha, true);
+        quads += draw_liquids(
+            r,
+            lookups,
+            light,
+            style,
+            anim_time,
+            liquid_frames,
+            draws,
+            pass,
+            j,
+            alpha,
+            true,
+        );
         fading = true;
     }
     // `this.DrawLiquid(isBackground, Main.waterStyle, flag ? liquidAlpha[style] : 1f)`.
@@ -62,6 +78,7 @@ pub(crate) fn draw_waters(
         light,
         style,
         anim_time,
+        liquid_frames,
         draws,
         pass,
         water_style,
@@ -69,7 +86,7 @@ pub(crate) fn draw_waters(
         false,
     );
     // `if (!waterOnly) { LiquidRenderer.Instance.DrawShimmer(...); }`.
-    quads += draw_shimmer(r, lookups, anim_time, draws, pass);
+    quads += draw_shimmer(r, lookups, anim_time, liquid_frames.0, draws, pass);
     quads
 }
 
@@ -88,16 +105,18 @@ pub(crate) fn draw_liquids(
     light: &LightMap,
     style: &LightStyle,
     anim_time: f32,
+    liquid_frames: (i32, i32),
     draws: &[tr_core::liquid_draw::LiquidDraw],
     pass: LiquidPass,
     water_style: usize,
     global_alpha: f32,
     water_only: bool,
 ) -> u32 {
-    // `LiquidRenderer.Update`: body/edge frames advance with the (wind-driven)
-    // animation clock, interior frames with the slower waterfall clock.
-    let anim_frame = ((anim_time * 8.0) as i32) & 15;
-    let waterfall_frame = ((anim_time * 0.5) as i32) & 15;
+    // `LiquidRenderer.Update` (`LiquidRenderer.cs:831-847`): body/edge rows
+    // advance with the WIND-driven `_animationFrame`, interior rows with the
+    // wind-independent `_waterfallAnimationFrame` — both ticked by the app
+    // frame head (`LiquidAnimClock`), not derived from `anim_time`.
+    let (anim_frame, waterfall_frame) = liquid_frames;
     let mut quads = 0;
     for d in draws {
         if !d.visible || d.src_w <= 0 || d.src_h <= 0 {
@@ -200,10 +219,10 @@ pub(crate) fn draw_shimmer(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     anim_time: f32,
+    anim_frame: i32,
     draws: &[tr_core::liquid_draw::LiquidDraw],
     pass: LiquidPass,
 ) -> u32 {
-    let anim_frame = ((anim_time * 8.0) as i32) & 15;
     // `Main.timeForVisualEffects` (`Main.cs:19751`-shaped wrap at 216000).
     let tve = (anim_time * 60.0) % 216000.0;
     let mut quads = 0;
@@ -647,6 +666,9 @@ mod tests {
             liquid_type: 0,
             has_wall: false,
             visible,
+            is_solid: false,
+            is_half_brick: false,
+            has_visible_liquid: visible,
         }
     }
 

@@ -18732,6 +18732,76 @@ twins). The lava six-visit pin rides the union's
 `lava_falls_once_every_six_visits` (g46d carries it; the g47 machinery
 it pins is identical).
 
+### The liquid render-gaps closure (W4-g47 retire, 2026-11-21)
+
+The FULL-FN census's four draw-side follow-ups, each re-censused against
+the source and closed (code-only — witnesses written, NOT run):
+
+- **`HasFullWater` (`LiquidRenderer.cs:799-813`)** — ported as
+  `liquid_draw::has_full_water` over the prepared records (visible +
+  non-surface = full water; out-of-area = the C# out-of-cache `true`).
+  The consumer census: its ONLY caller is `Main.DrawBlack`'s run-break
+  (`Main.cs:58008`), and `DrawBlack` early-returns whenever
+  `TileDrawingBase.DrawOwnBlacks` is true (`:57943`) — the static ctor
+  sets it true (`TileDrawingBase.cs:54`) and the only writer is the dev
+  A/B tooling (`TimeLogger.ABTestFlag`, `TimeLogger.cs:443-453/:712`).
+  The port's merged wall+black path in `render/tiles.rs` IS the
+  DrawOwnBlacks=true default path (per-cell blacks in
+  `DrawSingleTile`/`WallDrawing`), so the gate has NO runtime consumer
+  in the shipped configuration — the query is ported for surface
+  completeness, cited unwired. NOT a sim-merger blocker (unchanged).
+- **`GetVisibleLiquid` (`:815-829`)** — re-grepped `decompiled/` AND
+  `decompiled-libs/`: zero callers. Dead surface, cited-dropped (the
+  research/02 pipeline row's stand-in verdict stands).
+- **`SetWaveMaskData` (`:854-880`) + the viscosity chain** — the data
+  census: `WAVE_MASK_STRENGTH = new byte[5]` (`:891`) is NEVER assigned
+  anywhere in the decompile, so the mask's R/G/A strength channels are
+  all-zero in 1.4.5.8; the only live byte is `VISCOSITY_MASK`
+  (`:892` = {0, 200, 240, 0, 0}) on B. Ported as
+  `liquid_draw::{VISCOSITY_MASK, WAVE_MASK_STRENGTH, WaveMaskCell,
+  wave_mask}` — the `:499-549` fill over the records (the fill gate is
+  `HasVisibleLiquid`, wider than the sprite pass's `IsVisible`; the
+  above-copy `:529-531` runs in the same column-major order; the
+  slot-3/slot-4 rows are byte-identical so the no-solidity distinction
+  cannot change a byte). `LiquidDraw` grows
+  `is_solid`/`is_half_brick`/`has_visible_liquid` for the probes. The
+  GPU consumer (`WaterShaderData.StepLiquids`' viscosity-filter chain,
+  `WaterShaderData.cs:164-182`, WaveQuality >= 3) stays shader-infra
+  scope: the port's `water_mask.rs` coverage mask (M1.4-BG-18 phase 4)
+  is the WaterDistortion input the port models; the per-cell viscosity
+  FILTER is the remaining infra step, cited — the data half is now
+  ported and witnessed.
+- **The wind-driven `_frameState` (`Update`, `:831-847`)** — PORTED and
+  WIRED: `liquid_draw::LiquidAnimClock` (`wind*25 ± 6` frames/s body
+  clock, wind-independent 0.5 frames/s waterfall clock, the single
+  +16 negative wrap then `%16` — a west wind below -0.24 leaves a
+  NEGATIVE frame, `(int)` truncation kept), ticked once per client
+  update in the frame head beside the sway counters
+  (`Main.cs:17043`'s site), stored on `App::liquid_clock`. The two
+  integer frames feed `draw_waters`/`draw_liquids`/`draw_shimmer`
+  (the `src_x == 16` interior rows ride the waterfall frame —
+  `LiquidRenderer.cs:634-641` — the shimmer pass the body frame only,
+  `:697`) and ride the G6 key's existing `anim` slot packed
+  (body frame low byte — the two's-complement cast keeps -15..15
+  injective — waterfall frame byte 1), gated on `has_liquids` exactly
+  as before. The old `anim_time*8`/`anim_time*0.5` derivations are
+  retired: **deliberate behaviour change** (the render-cadence
+  deviation the census cited is fixed): calm air now animates liquid
+  at 6 fps (was 8), wind accelerates/reverses it. Determinism holds:
+  the clock is a pure function of (dt, windSpeedCurrent), both
+  already G6-keyed inputs (`TR_WIND_FORCE` pins it for A/B shots);
+  liquid-free worlds keep the old cache behaviour bit-for-bit.
+  `FocusHelper.PauseLiquidRenderer` (the unfocused pause) has no port
+  analogue — the port has no unfocused-update path.
+
+New witnesses (written, NOT run — `liquid_draw::tests`):
+`the_wave_mask_carries_only_the_viscosity_channel` (the four kinds +
+the above-copy + the solid no-copy), `has_full_water_reads_the_visible_non_surface_records`
+(interior true / surface false / dry false / out-of-area true),
+`the_liquid_clock_is_wind_driven_and_wraps_at_sixteen` (calm 6 fps,
+storm 37, the negative west remainder, the wind-independent waterfall
+clock).
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as

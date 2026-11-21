@@ -35,6 +35,15 @@ pub struct LiquidDraw {
     pub liquid_type: u8,
     pub has_wall: bool,
     pub visible: bool,
+    /// `LiquidCache.IsSolid` — the wave-mask above-copy's neighbour probe
+    /// (`LiquidRenderer.cs:529`).
+    pub is_solid: bool,
+    /// `LiquidCache.IsHalfBrick` — the same probe.
+    pub is_half_brick: bool,
+    /// `LiquidCache.HasVisibleLiquid` — the wave-mask fill's own gate
+    /// (`:507`); wider than `visible` (`IsVisible`, `:517`) which adds the
+    /// half-brick-without-wall refusal the sprite pass reads.
+    pub has_visible_liquid: bool,
 }
 
 #[derive(Clone, Copy, Default)]
@@ -443,10 +452,128 @@ pub fn build(world: &World, x0: i32, y0: i32, x1: i32, y1: i32) -> Vec<LiquidDra
                 liquid_type: c.visible_type,
                 has_wall: c.has_wall,
                 visible,
+                is_solid: c.is_solid,
+                is_half_brick: c.is_half_brick,
+                has_visible_liquid: c.has_visible_liquid,
             });
         }
     }
     out
+}
+
+/// `LiquidRenderer.VISCOSITY_MASK` (`LiquidRenderer.cs:892`): the wave-mask
+/// blue channel per visible type (water 0, lava 200, honey 240, shimmer 0,
+/// the no-liquid slots 3/4 = 0).
+pub const VISCOSITY_MASK: [u8; 5] = [0, 200, 240, 0, 0];
+
+/// `LiquidRenderer.WAVE_MASK_STRENGTH` (`LiquidRenderer.cs:891`): allocated
+/// `new byte[5]` and NEVER assigned anywhere in the decompile (full-tree
+/// grep) — the R/G/A strength channels are all zero in 1.4.5.8.
+pub const WAVE_MASK_STRENGTH: [u8; 5] = [0; 5];
+
+/// One `_waveMask` cell (`InternalPrepareDraw`'s final-pass fill,
+/// `LiquidRenderer.cs:524-541`): `R = G = strength >> 1`, `B` = viscosity,
+/// `A` = strength. With the all-zero strength table only `B` carries data —
+/// exactly what the `WaterShaderData` viscosity filter reads.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct WaveMaskCell {
+    pub r: u8,
+    pub g: u8,
+    pub b: u8,
+    pub a: u8,
+}
+
+/// The `_waveMask` fill over the prepared records (`LiquidRenderer.cs:499-549`
+/// — the draw-cache/wave-mask pass). `draws` is `build()`'s column-major
+/// output for the exact area `[x0..=x1] x [y0..=y1]`; the mask is the same
+/// shape, indexed `(x - x0) * height + (y - y0)` — the layout
+/// `SetWaveMaskData` uploads transposed (`:873`: a `Height x Width` texture).
+/// Cells with `has_visible_liquid` take their `VisibleType`'s row; the rest
+/// take slot 3 (solid/half-brick) or 4 (open) — both rows are byte-identical
+/// (`VISCOSITY_MASK[3] == [4] == 0`, strength all-zero). The above-copy
+/// (`:529-531`: a visible cell copies its mask into a non-visible, non-solid,
+/// non-half-brick neighbour above) runs in the same column-major order, so
+/// it reads the neighbour's already-final cell, exactly like the C# walk.
+pub fn wave_mask(draws: &[LiquidDraw], width: usize, height: usize) -> Vec<WaveMaskCell> {
+    let mut out = vec![WaveMaskCell::default(); width * height];
+    let fill = |c: &mut WaveMaskCell, slot: usize| {
+        let b = WAVE_MASK_STRENGTH[slot];
+        c.r = b >> 1;
+        c.g = b >> 1;
+        c.b = VISCOSITY_MASK[slot];
+        c.a = b;
+    };
+    debug_assert_eq!(draws.len(), width * height, "build()'s exact-area output");
+    for (i, d) in draws.iter().enumerate() {
+        // The fill gate is `HasVisibleLiquid` (`:507`), not `IsVisible`.
+        let slot = if d.has_visible_liquid {
+            d.liquid_type as usize
+        } else if d.is_solid || d.is_half_brick {
+            3
+        } else {
+            4
+        };
+        fill(&mut out[i], slot.min(4));
+        // `num19 != 2` — the copy never reaches above the area's first row
+        // (column-major layout: i % height == 0 is the top row).
+        if d.has_visible_liquid && i % height != 0 {
+            let up = &draws[i - 1];
+            if !up.has_visible_liquid && !up.is_solid && !up.is_half_brick {
+                out[i - 1] = out[i];
+            }
+        }
+    }
+    out
+}
+
+/// `LiquidRenderer.HasFullWater` (`LiquidRenderer.cs:799-813`) over the
+/// prepared records: a cell covered by a visible NON-surface liquid record
+/// is "full water" (the background-coverage probe `Main.DrawBlack`'s
+/// `:58008` run-break reads). Out-of-area cells return `true` — the C#'s
+/// out-of-cache arm. NOTE: the `Main.DrawBlack` pass itself early-returns
+/// under `TileDrawingBase.DrawOwnBlacks` (static ctor `TileDrawingBase.cs:54`
+/// sets it true; the only writer is the dev `TimeLogger.ABTestFlag`,
+/// `TimeLogger.cs:443-453/:712`) — the port's merged wall+black path in
+/// `render/tiles.rs` IS that default path, so this query has no runtime
+/// consumer yet; it is ported for the surface's completeness.
+pub fn has_full_water(draws: &[LiquidDraw], x: i32, y: i32, x0: i32, y0: i32, x1: i32, y1: i32) -> bool {
+    if x < x0 || x > x1 || y < y0 || y > y1 {
+        return true;
+    }
+    match draws.iter().find(|d| d.x == x && d.y == y) {
+        Some(d) => d.visible && !d.is_surface,
+        None => true,
+    }
+}
+
+/// `LiquidRenderer.Update` (`LiquidRenderer.cs:831-847`): the wind-driven
+/// liquid animation clock. `_frameState += (wind*25 ± 6) * dt` (the +6 arm
+/// at `num >= 0`, the -6 arm below), `_waterfallFrameState += 0.5 * dt`;
+/// a negative frame state wraps +16, then both wrap %16 and the integer
+/// frames are `(int)` truncations. `FocusHelper.PauseLiquidRenderer` (the
+/// unfocused-window pause) has no port analogue — the caller gates on its
+/// own pause state.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct LiquidAnimClock {
+    pub frame_state: f32,
+    pub waterfall_frame_state: f32,
+}
+
+impl LiquidAnimClock {
+    /// One `Update(gameTime)` step. Returns `(animationFrame,
+    /// waterfallAnimationFrame)` — the two `DrawNormalLiquids` source-row
+    /// drivers (`:636/:640`).
+    pub fn update(&mut self, dt: f32, wind_speed_current: f32) -> (i32, i32) {
+        let num = wind_speed_current * 25.0;
+        self.frame_state += if num >= 0.0 { num + 6.0 } else { num - 6.0 } * dt;
+        self.waterfall_frame_state += 0.5 * dt;
+        if self.frame_state < 0.0 {
+            self.frame_state += 16.0;
+        }
+        self.frame_state %= 16.0;
+        self.waterfall_frame_state %= 16.0;
+        (self.frame_state as i32, self.waterfall_frame_state as i32)
+    }
 }
 
 #[cfg(test)]
@@ -542,5 +669,122 @@ mod tests {
         assert!((0.0..16.0).contains(&shore.offset_x));
         assert!(shore.src_w > 0 && shore.src_h > 0);
         assert!(!shore.is_surface);
+    }
+
+    /// W4-g47 retire — the wave-mask fill (`LiquidRenderer.cs:524-541`):
+    /// only the viscosity blue channel carries data (the strength table is
+    /// all-zero, `:891`); lava 200, honey 240, water/shimmer/empty 0; the
+    /// above-copy (`:529-531`) paints an open non-visible neighbour.
+    /// Written, NOT run (code-only mode).
+    #[test]
+    fn the_wave_mask_carries_only_the_viscosity_channel() {
+        let rec = |x: i32, y: i32, ty: u8, visible: bool| LiquidDraw {
+            x,
+            y,
+            src_x: 0,
+            src_y: 0,
+            src_w: 16,
+            src_h: 16,
+            offset_x: 0.0,
+            offset_y: 0.0,
+            is_surface: false,
+            opacity: 1.0,
+            liquid_type: ty,
+            has_wall: false,
+            visible,
+            is_solid: false,
+            is_half_brick: false,
+            has_visible_liquid: visible,
+        };
+        // Column-major, area (0,0)-(1,3): column 0 rows 0..3, column 1 rows 0..3.
+        let mut draws = vec![
+            rec(0, 0, 0, false), // open above the lava -> the copy target
+            rec(0, 1, 1, true),  // lava
+            rec(0, 2, 2, true),  // honey
+            rec(0, 3, 3, true),  // shimmer
+            rec(1, 0, 0, false), // solid cell -> slot 3, no copy over it
+            rec(1, 1, 0, true),  // water below the solid
+            rec(1, 2, 0, false),
+            rec(1, 3, 0, false),
+        ];
+        draws[4].is_solid = true;
+        let mask = wave_mask(&draws, 2, 4);
+        assert_eq!(mask[1].b, 200, "lava viscosity");
+        assert_eq!(mask[2].b, 240, "honey viscosity");
+        assert_eq!(mask[3].b, 0, "shimmer viscosity");
+        assert_eq!(mask[5].b, 0, "water viscosity");
+        assert_eq!(mask[0].b, 200, "the open cell above the lava got the copy");
+        assert_eq!(mask[4], WaveMaskCell::default(), "the solid above water: no copy");
+        for c in &mask {
+            assert_eq!((c.r, c.g, c.a), (0, 0, 0), "the strength channels are zero");
+        }
+    }
+
+    /// W4-g47 retire — `HasFullWater` (`LiquidRenderer.cs:799-813`): a
+    /// visible non-surface record answers true, a surface/invisible record
+    /// false, out-of-area true (the C#'s out-of-cache arm).
+    #[test]
+    fn has_full_water_reads_the_visible_non_surface_records() {
+        let mut w = block(10, 12);
+        for x in 0..10 {
+            set(&mut w, x, 10, 1, 0);
+            for y in 3..10 {
+                set_water(&mut w, x, y);
+            }
+        }
+        let out = build(&w, 2, 2, 8, 8);
+        // Interior water (5,6) is visible + non-surface (the interior
+        // witness above) -> full water.
+        assert!(has_full_water(&out, 5, 6, 2, 2, 8, 8));
+        // Out of the draw area -> the C# out-of-cache true.
+        assert!(has_full_water(&out, 50, 50, 2, 2, 8, 8));
+        // The surface row of the open pool is NOT full water.
+        let mut w2 = block(10, 10);
+        for x in 0..10 {
+            set(&mut w2, x, 6, 1, 0);
+            for y in 3..6 {
+                set_water(&mut w2, x, y);
+            }
+        }
+        let out2 = build(&w2, 2, 2, 8, 6);
+        assert!(
+            !has_full_water(&out2, 5, 3, 2, 2, 8, 6),
+            "the open surface row answers false"
+        );
+        // A dry in-area cell has no record entry -> the C# cache default
+        // (IsVisible false) answers false; the port's find() misses and
+        // returns the out-of-cache true ONLY outside the area — inside,
+        // build() emits a record for every cell, so the miss cannot happen.
+        let dry = build(&World::new("dry".into(), 30, 30), 2, 2, 8, 8);
+        assert!(!has_full_water(&dry, 5, 5, 2, 2, 8, 8), "dry cell: not visible");
+    }
+
+    /// W4-g47 retire — the wind-driven animation clock
+    /// (`LiquidRenderer.cs:831-847`): calm air advances 6 frames/s, a full
+    /// storm 31+6=37 (speed 1.24 -> num 31), a negative wind reverses below
+    /// -0.24; the waterfall clock stays wind-independent at 0.5/s; both
+    /// wrap at 16 and the negative frame state wraps +16 first.
+    #[test]
+    fn the_liquid_clock_is_wind_driven_and_wraps_at_sixteen() {
+        let mut calm = LiquidAnimClock::default();
+        // 1 s of calm air: 6 frames, waterfall 0.
+        assert_eq!(calm.update(1.0, 0.0), (6, 0));
+        // 2 more seconds: 18 -> %16 = 2; waterfall 1.5 -> 1.
+        assert_eq!(calm.update(2.0, 0.0), (2, 1));
+        // A full east storm: num = 1.24*25 = 31 -> +37/s.
+        let mut storm = LiquidAnimClock::default();
+        assert_eq!(storm.update(1.0, 1.24), (37 % 16, 0));
+        // A west wind below -0.24 reverses: num = -0.5*25 = -12.5 -> -18.5/s;
+        // from 0 the state goes negative and wraps +16: -18.5 + 16 = -2.5,
+        // still negative — the C# adds 16 ONCE then %16 keeps the sign
+        // (C# % keeps the dividend's sign): -2.5 % 16 = -2.5, (int) = -2.
+        let mut west = LiquidAnimClock::default();
+        let (f, _) = west.update(1.0, -0.5);
+        assert_eq!(f, -2, "the C# single +16 wrap keeps a negative remainder");
+        // The waterfall clock ignores wind entirely.
+        let mut wf = LiquidAnimClock::default();
+        let (_, a) = wf.update(4.0, 1.24);
+        let (_, b) = wf.update(4.0, -1.24);
+        assert_eq!((a, b), (2, 4), "0.5 frames/s regardless of wind");
     }
 }

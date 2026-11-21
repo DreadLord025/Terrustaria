@@ -279,6 +279,10 @@ pub(crate) fn draw_tiles(
     style: &LightStyle,
     entity_lights: &crate::entity_lights::EntityLights,
     anim_time: f32,
+    // `LiquidRenderer.Update`'s two integer frames (the wind-driven liquid
+    // texture clock, `LiquidRenderer.cs:844-845`) — ticked by the app frame
+    // head, consumed by both liquid passes.
+    liquid_frames: (i32, i32),
     waterfall: &mut tr_core::waterfall::WaterfallManager,
     player: Option<&Player>,
     player_assets: &PlayerAssets,
@@ -477,6 +481,7 @@ pub(crate) fn draw_tiles(
             light,
             style,
             anim_time,
+            liquid_frames,
             &liquid_draws,
             LiquidPass::Background,
             water_style,
@@ -1286,6 +1291,7 @@ pub(crate) fn draw_tiles(
             light,
             style,
             anim_time,
+            liquid_frames,
             &liquid_draws,
             LiquidPass::Foreground,
             water_style,
