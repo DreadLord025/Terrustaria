@@ -1083,35 +1083,42 @@ pub fn draw_hud(
         // itself runs in `app::frame` (`Main.cs:43604-43611`); `draw_slot` derives
         // the `(255,255,255,(int)(75+150*scale))` tint (`Main.cs:43615`) and the
         // context-13 background (`ItemSlot.cs:2232-2242`).
-        let mut x = 20.0;
-        for i in 0..HOTBAR {
-            let scale = hotbar_scales[i].clamp(0.75, 1.0);
-            let (y, advance, _) = slot::closed_hotbar_metrics(scale);
-            slot::draw_slot(
-                r,
-                lookups,
-                &inventory[i],
-                x,
-                y,
-                13,
-                i as i32,
-                i == selected,
-                scale,
-                [1.0; 4],
-            );
-            x += advance;
+        // W4-c46 final — the ghost early-return (`Main.cs:43588`:
+        // `playerInventory || LocalPlayer.ghost || spectating >= 0`): the
+        // hardcore ghost draws NO hotbar row and NO selected-item name (the
+        // name draw sits inside the same function). `spectating` has no port
+        // field; the open-inventory arm is the outer `if`.
+        if !player.is_some_and(|p| p.ghost) {
+            let mut x = 20.0;
+            for i in 0..HOTBAR {
+                let scale = hotbar_scales[i].clamp(0.75, 1.0);
+                let (y, advance, _) = slot::closed_hotbar_metrics(scale);
+                slot::draw_slot(
+                    r,
+                    lookups,
+                    &inventory[i],
+                    x,
+                    y,
+                    13,
+                    i as i32,
+                    i == selected,
+                    scale,
+                    [1.0; 4],
+                );
+                x += advance;
+            }
+            // Selected item name, centred on x=236 at y=0 like the original
+            // (`GUIHotbarDrawInner`, `Main.cs:43593-43595`): `FontAssets.MouseText`
+            // at scale 1, tinted `Color(Main.mouseTextColor x4)` — no shadow pass.
+            let item = &inventory[selected.min(HOTBAR - 1)];
+            if item.count > 0 {
+                // `Lang.GetItemNameValue` via the `ItemName.<const>` key.
+                let label = crate::lang::item_name(item.kind);
+                let tw = text::hud_text_width(r, lookups, &label, 1.0);
+                let t = pulse.text;
+                text::hud_text(r, lookups, 236.0 - tw * 0.5, 0.0, 1.0, [t, t, t, t], &label);
+            }
         }
-    }
-    // Selected item name, centred on x=236 at y=0 like the original
-    // (`GUIHotbarDrawInner`, `Main.cs:43593-43595`): `FontAssets.MouseText` at
-    // scale 1, tinted `Color(Main.mouseTextColor x4)` — no shadow pass.
-    let item = &inventory[selected.min(HOTBAR - 1)];
-    if item.count > 0 && !inventory_open {
-        // `Lang.GetItemNameValue` via the `ItemName.<const>` key.
-        let label = crate::lang::item_name(item.kind);
-        let tw = text::hud_text_width(r, lookups, &label, 1.0);
-        let t = pulse.text;
-        text::hud_text(r, lookups, 236.0 - tw * 0.5, 0.0, 1.0, [t, t, t, t], &label);
     }
 
     // `Main.mouseItem`: `DrawInterface_38_MouseCarriedObject` (`Main.cs:45173-45195`)
@@ -1211,8 +1218,16 @@ pub fn draw_hud(
             other => other.and_then(|h| hover_item_for(equip, inventory, h, bank.map(|b| b.0))),
         }
     } else {
-        tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
-            .map(|i| &inventory[i])
+        // W4-c46 final — `GUIHotbarDrawInner`'s ghost early-return
+        // (`Main.cs:43588`): the closed hotbar draws nothing for the ghost,
+        // so its slots are not hoverable either (the tooltip's hover reads
+        // the same row the draw pass skipped).
+        if player.is_some_and(|p| p.ghost) {
+            None
+        } else {
+            tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory)
+                .map(|i| &inventory[i])
+        }
     };
     // `Main.LocalPlayer.inventory[Main.LocalPlayer.selectedItem].crit` — the
     // held item's own crit, which the tooltip's crit row subtracts

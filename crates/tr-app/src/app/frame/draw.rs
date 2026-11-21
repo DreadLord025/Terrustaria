@@ -1997,15 +1997,22 @@ impl App {
                                     let center_px = [cx, cy + p.gfx_off_y];
                                     let icon_pos =
                                         map::head_icon_pos(center_px, map.pos, map.scale, screen);
-                                    // `Main.GetPlayerHeadBordersColor` (`Main.cs:56616-56618`)
-                                    // → `Main.teamColor[0]` = White (singleplayer).
+                                    // `Main.GetPlayerHeadBordersColor` (`Main.cs:56610-56618`):
+                                    // ghost/dead → `Color.Transparent` (`:56612-56615`),
+                                    // else `Main.teamColor[0]` = White (singleplayer,
+                                    // `:56616-56618`). W4-c46 final: the ghost/dead arm.
+                                    let border = if p.ghost || p.dead {
+                                        [0.0; 4]
+                                    } else {
+                                        [1.0; 4]
+                                    };
                                     draw_player_map_icon(
                                         renderer,
                                         player_assets,
                                         p,
                                         icon_pos,
                                         self.settings.applied_ui_scale(screen.x, screen.y),
-                                        [1.0; 4],
+                                        border,
                                     );
                                 }
                             }
