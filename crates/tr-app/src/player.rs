@@ -1861,6 +1861,23 @@ pub struct Player {
     /// wave-A style façade draws its `GetRandomPitch` NextFloat on the
     /// audio-only stream, the case-2 pitch on `UpdatePlayers`.
     pending_fart_sound: Option<(u16, f32, f32)>,
+    /// W4-g17 wiring — the extra-jump visual tail request (`Player.cs:
+    /// 20849-20863` Fart / `:20960-20994` Santank / `:21007-21021` Cloud):
+    /// the arm queues the committed jump; the world-sim drain runs
+    /// `player_gore_a`'s burst on the `UpdatePlayers` stream with the
+    /// POST-jump velocity snapshot (the `pending_sticky_dust`
+    /// convention — the Player carries no pools).
+    pending_jump_gores: Option<ExtraJump>,
+    /// W4-g17 wiring — the dash==1 launch visual request (`Player.cs:
+    /// 21419-21434`): the dash start queues it; the drain runs
+    /// `player_gore_b::dash_launch_gores` with the POST-launch snapshot.
+    pending_dash_gores: bool,
+    /// W4-g17 wiring — the dodge burst request (`Player.cs:38060-38112`
+    /// sash / `:38122-38160` ninja): the dodge handlers queue the kind;
+    /// the drain runs `player_gore_c` on the `UpdatePlayers` stream (the
+    /// C# bursts draw from `Main.rand` inside `Hurt`, the S1-A-10 swap).
+    /// `true` = Mystic Sash, `false` = Ninja.
+    pending_dodge_gores: Option<bool>,
     /// S1-E-21f — the liquid entry/exit splash play (`Player.cs:27806`/
     /// `:27819`/`:27832`/`:27846` entry, `:27900`/`:27913`/`:27926`/`:27940`
     /// exit): `(Style, position.X, position.Y)`. The style is the C#'s third
@@ -2866,6 +2883,9 @@ impl Player {
             pending_step_sound: None,
             pending_double_jump_sound: None,
             pending_fart_sound: None,
+            pending_jump_gores: None,
+            pending_dash_gores: false,
+            pending_dodge_gores: None,
             pending_splash_sound: None,
             wet_count: 0,
             pending_drown_sound: false,
@@ -3345,6 +3365,24 @@ impl Player {
         self.pending_fart_sound.take()
     }
 
+    /// W4-g17 wiring — takes the extra-jump visual tail request (the
+    /// committed jump kind; the drain reads the CURRENT post-jump state).
+    pub(crate) fn take_jump_gores(&mut self) -> Option<ExtraJump> {
+        self.pending_jump_gores.take()
+    }
+
+    /// W4-g17 wiring — takes the dash==1 launch visual request
+    /// (`Player.cs:21419-21434`).
+    pub(crate) fn take_dash_gores(&mut self) -> bool {
+        std::mem::take(&mut self.pending_dash_gores)
+    }
+
+    /// W4-g17 wiring — takes the dodge burst request (`true` = Mystic
+    /// Sash, `false` = Ninja; `Player.cs:38060-38160`).
+    pub(crate) fn take_dodge_gores(&mut self) -> Option<bool> {
+        self.pending_dodge_gores.take()
+    }
+
     /// S1-E-21f — takes the liquid entry/exit splash play
     /// (`Player.cs:27774-27944`) — `(Style, position.X, position.Y)`.
     pub(crate) fn take_splash_sound(&mut self) -> Option<(i32, f32, f32)> {
@@ -3648,6 +3686,9 @@ impl Player {
         self.pending_retaliate = None;
         self.pending_double_jump_sound = None;
         self.pending_fart_sound = None;
+        self.pending_jump_gores = None;
+        self.pending_dash_gores = false;
+        self.pending_dodge_gores = None;
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
         self.pending_flap_sound = None;
@@ -4233,16 +4274,21 @@ impl Player {
         self.buffs.add_buff(321, 240);
     }
 
-    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38059`): the 120/80
-    /// immunity; the 50x dust + gore burst is deferred to S1-E-1.
+    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38112`): the 120/80
+    /// immunity; the 50x dust + 5-gore burst queues for the world-sim
+    /// drain (W4-g17 wiring — `player_gore_c::mystic_sash_dodge_gores`,
+    /// the `UpdatePlayers` stream, the C# `Hurt`-internal order).
     fn do_mystic_sash_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
+        self.pending_dodge_gores = Some(true);
     }
 
-    /// `Player.NinjaDodge` (`Player.cs:38119-38121`): the 120/80 immunity; the
-    /// 100x dust + gore burst is deferred to S1-E-1.
+    /// `Player.NinjaDodge` (`Player.cs:38119-38160`): the 120/80 immunity;
+    /// the 100x dust + 5-gore burst queues for the world-sim drain
+    /// (W4-g17 wiring — `player_gore_c::ninja_dodge_gores`).
     fn ninja_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
+        self.pending_dodge_gores = Some(false);
     }
 
     /// `Player.UpdateImmunity` (`Player.cs:18856-18869`): the i-frame
@@ -7265,6 +7311,18 @@ impl Player {
                     }
                     self.vy = -self.jump_speed;
                     self.jump = (self.jump_height as f32 * j.hold_multiplier()) as i32;
+                    // W4-g17 wiring — the extra-jump visual tails
+                    // (`Player.cs:20849-20863` Fart / `:20960-20994`
+                    // Santank / `:21007-21021` Cloud): the bursts run
+                    // INSIDE the arm, AFTER the velocity/jump writes —
+                    // the POST-jump velocity rides the state (the
+                    // `player_gore_a.rs` contract). The port's Player
+                    // carries no pools, so the tick queues the request
+                    // and the world-sim drain runs it on the SAME
+                    // `UpdatePlayers` stream at the tick tail (the
+                    // sticky-dust convention; the sound cues above
+                    // already ride that drain).
+                    self.pending_jump_gores = Some(j);
                 } else {
                     // `:20746`: the Cloud fall-through consumed even when
                     // unarmed — the can flag clears all the same.
@@ -8800,6 +8858,14 @@ impl Player {
         self.dash_delay = -1;
         if self.dash == 2 {
             self.eoc_dash = 15;
+        }
+        // W4-g17 wiring — the dash==1 visual tail (`Player.cs:21419-21434`):
+        // the 20 jitter dusts + the 2-gore fan run AFTER the launch writes
+        // (the C# order); the tick queues the request, the world-sim drain
+        // runs `player_gore_b::dash_launch_gores` on the `UpdatePlayers`
+        // stream with the POST-launch snapshot.
+        if self.dash == 1 {
+            self.pending_dash_gores = true;
         }
     }
 

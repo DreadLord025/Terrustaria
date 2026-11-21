@@ -1,8 +1,10 @@
 //! Player-side `Gore.NewGore*` sites, wave C: the dodge bursts —
 //! `DoMysticSashDodge` + `NinjaDodge` (`Player.cs:38057-38165`).
-//! W4-g17 (code-only mode): the module + witnesses land first; the
-//! dispatch claims (the `player.rs` dodge ports, `:4236-4244`) are
-//! the wiring wave — the `npc_hit_effect_a.rs` (W4-d55) precedent.
+//! WIRED (W4-g17 wiring wave): the `player.rs` dodge handlers queue
+//! `pending_dodge_gores` (the immunity write stays inline, the C#
+//! order); `world_sim::player`'s drain runs the burst on the
+//! `UpdatePlayers` stream — the dodge roll already drew from it, the
+//! burst follows (the `npc_hit_effect_a.rs` precedent).
 //!
 //! ## Scope — this commit's sites (source order)
 //!
@@ -50,7 +52,7 @@
 //!   `dust_table.rs` helper (private there).
 //!
 //! See docs/ANALYSIS.md "The player gore sites (W4-g17, wave C)".
-#![allow(dead_code)] // wiring deferred (code-only mode) — the dodge dispatch claims are the follow-up round
+// W4-g17 wiring: both dodge bursts are live (world_sim::player's drain).
 
 use glam::Vec2;
 use tr_core::gore::GorePool;

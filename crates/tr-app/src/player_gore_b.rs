@@ -1,9 +1,14 @@
 //! Player-side `Gore.NewGore*` sites, wave B: the dash launch + the
 //! sandstorm hold visuals + the team-hair-dye sparkle
-//! (`Player.cs:21034-24294`). W4-g17 (code-only mode): the module +
-//! witnesses land first; the dispatch claims (the `player.rs` dash
-//! lifecycle / `DoubleJumpVisuals` / `UpdateHairDyeDust` ports) are
-//! the wiring wave — the `npc_hit_effect_a.rs` (W4-d55) precedent.
+//! (`Player.cs:21034-24294`). W4-g17 wiring wave: the dash==1 tail is
+//! LIVE — the `player.rs` dash start queues `pending_dash_gores` and
+//! `world_sim::player`'s drain runs [`dash_launch_gores`] on the
+//! `UpdatePlayers` stream. The sandstorm hold ([`sandstorm_jump_gore`])
+//! and the hair-dye arms stay unwired: the port has no
+//! `DoubleJumpVisuals` dispatch yet and no team-dye state
+//! (`Player.hairDye` is unported — the dye cache's recorded deviation),
+//! so their claims wait for those seams (the `npc_hit_effect_a.rs`
+//! precedent).
 //!
 //! ## Scope — this commit's sites (source order)
 //!
@@ -57,7 +62,7 @@
 //!   both arms on one stream in C# order.
 //!
 //! See docs/ANALYSIS.md "The player gore sites (W4-g17, wave B)".
-#![allow(dead_code)] // wiring deferred (code-only mode) — the dash/sandstorm/hair-dye claims are the follow-up round
+#![allow(dead_code)] // the sandstorm/hair-dye arms wait for their dispatch seams; the dash tail is live
 
 use glam::Vec2;
 use tr_core::gore::GorePool;

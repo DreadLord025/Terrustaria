@@ -1,8 +1,10 @@
 //! Player-side `Gore.NewGore*` sites, wave A: the extra-jump visual
-//! bursts (`Player.JumpMovement`, `Player.cs:20531-21032`). W4-g17
-//! (code-only mode): the module + witnesses land first; the dispatch
-//! claim (the `player.rs` extra-jump chain, `:7233-7267`'s port) is
-//! the wiring wave — the `npc_hit_effect_a.rs` (W4-d55) precedent.
+//! bursts (`Player.JumpMovement`, `Player.cs:20531-21032`). WIRED
+//! (W4-g17 wiring wave): the `player.rs` extra-jump chain queues the
+//! committed jump (`pending_jump_gores`) AFTER the velocity/jump
+//! writes; `world_sim::player`'s tick-tail drain runs the burst on the
+//! `UpdatePlayers` stream with the POST-jump snapshot — the
+//! `npc_hit_effect_a.rs` (W4-d55) precedent.
 //!
 //! ## Scope — this commit's sites (source order)
 //!
@@ -56,7 +58,8 @@
 //! * netMode: single-player port, the pool's own convention.
 //!
 //! See docs/ANALYSIS.md "The player gore sites (W4-g17, wave A)".
-#![allow(dead_code)] // wiring deferred (code-only mode) — the extra-jump chain claim is the follow-up round
+// W4-g17 wiring: the jump tails are live (world_sim::player's drain);
+// the module's own witnesses keep the pure-fn contracts pinned.
 
 use glam::Vec2;
 use tr_core::gore::GorePool;
