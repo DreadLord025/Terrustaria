@@ -3463,6 +3463,78 @@ fn town_ladder_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
 }
 
+/// The 550 DD2 Bartender death (`NPC.cs:87942-87961`, sites 515-519):
+/// the 50x dust-5 burst at (2.5·hd, −2.5), then the shimmer ladder with
+/// the +8 X second-column offsets — 967 at +0, 968 at (+0,+20) and
+/// (+8,+20), 969 at (+0,+34) and (+8,+34) (shimmer 1355/1356/1357),
+/// scale 1f.
+fn bartender_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87952-87955` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if shimmer { (1355, 1356, 1357) } else { (967, 968, 969) };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :87956
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87957
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, mid, 1.0); // :87958
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87959
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, legs, 1.0); // :87960
+}
+
+/// The 588/589 Golfer death (`NPC.cs:87962-87984`, sites 520-524): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head
+/// 1109 (shimmer 1311, default-0 stand-in keeps it) + the +8 X column
+/// ladder 1110x2 at +20 Y, 1111x2 at +34 Y (shimmer 1312/1313), scale
+/// 1f.
+fn golfer_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87972-87975` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:87976-87979` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1311 } else { 1109 }, 1.0); // :87978
+    let mid = if shimmer { 1312 } else { 1110 };
+    let legs = if shimmer { 1313 } else { 1111 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87980
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, mid, 1.0); // :87981
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87982
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, legs, 1.0); // :87983
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3872,6 +3944,14 @@ pub fn hit_effect_d(
     // 505-514, the shared shimmer ladder).
     else if matches!(npc_type, 123 | 124 | 22) {
         town_ladder_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87942-87961` — the 550 DD2 Bartender arm (sites 515-519).
+    else if npc_type == 550 {
+        bartender_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87962-87984` — the 588/589 Golfer arm (sites 520-524).
+    else if npc_type == 588 || npc_type == 589 {
+        golfer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6810,6 +6890,44 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, want, "town {kind} shimmer={shimmer}");
             let mut twin = UnifiedRandom::new(541);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:87956-87960`/`:87978-87983` — the Bartender ladder
+    /// 967/968x2/969x2 (shimmer 1355/1356/1357) and the Golfer ladder
+    /// 1109/1110x2/1111x2 (shimmer 1311/1312/1313), both with the +8 X
+    /// second-column offsets.
+    #[test]
+    fn w4_f5d_the_bartender_and_golfer_ladders_use_the_plus_eight_column() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (550, false, vec![967, 968, 968, 969, 969]),
+            (550, true, vec![1355, 1356, 1356, 1357, 1357]),
+            (588, false, vec![1109, 1110, 1110, 1111, 1111]),
+            (588, true, vec![1311, 1312, 1312, 1313, 1313]),
+            // The 589 GolferRescue is NOT in ShimmerTownTransform
+            // (NPCID.cs Sets.Factory) — variation 1 keeps the normal row.
+            (589, true, vec![1109, 1110, 1110, 1111, 1111]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(547);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            assert_eq!(gore.slot(2).position, Vec2::new(108.0, 120.0));
+            assert_eq!(gore.slot(4).position, Vec2::new(108.0, 134.0));
+            let mut twin = UnifiedRandom::new(547);
             for _ in 0..50 {
                 twin_dust(&mut twin, 30, 44);
             }
