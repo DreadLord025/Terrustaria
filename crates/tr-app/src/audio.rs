@@ -287,8 +287,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     // S1-E-21h d75 part 4 — the Meowmere star's case-37 variation pair
     // (`LegacySoundPlayer.cs:1326-1336`: `Next(57, 59)` picks the
     // SoundItem slot; `Sounds/Item_57.xnb`/`Item_58.xnb` verified on
-    // disk). The 502 row is unported (STILL DEFERRED) — the bank rows
-    // close the gap ahead of the kind's port.
+    // disk). The 502 row landed with d75 part 5 (`:5732-5742`) — the
+    // owed bounce gate is live through `spawn_with_data`.
     ("Item_57", 2),
     ("Item_58", 2),
     ("Item_59", 2),

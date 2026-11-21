@@ -7565,10 +7565,20 @@ impl Projectile {
         if self.ai[1] >= 20.0 {
             self.vel.y += 0.2;
         }
-        // `:24346-24357`: the 502 velocity rotation has no ported row; the
-        // default is `rotation += 0.3f * direction` and nothing in this arm
-        // writes `direction` (its Entity default 1 carries the flight).
-        self.rot += 0.3;
+        // `:24346-24357`: the 502 Meowmere star's velocity rotation (the
+        // d75 part-5 row arms it): `rotation = velocity.ToRotation() + π/2`
+        // and `spriteDirection = direction = Sign(velocity.X)` on a non-zero
+        // X; every other kind keeps `rotation += 0.3f * direction` (nothing
+        // in this arm writes `direction` — the Entity default 1 carries it).
+        if self.kind == MEOWMERE {
+            self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_2;
+            if self.vel.x != 0.0 {
+                self.direction = self.vel.x.signum() as i32;
+                self.sprite_direction = self.direction;
+            }
+        } else {
+            self.rot += 0.3;
+        }
         // `:24358-24361`: the fall clamp.
         if self.vel.y > 16.0 {
             self.vel.y = 16.0;
@@ -7589,11 +7599,11 @@ impl Projectile {
                 // Next(-40,41) pitch ride the drain), the fifth bounce
                 // steps into the wall and kills, else the blocked axes
                 // reverse from the incoming velocity. The 502 row
-                // (`:5732-5741`) is unrowed on every pushed tip — the
-                // gate stays inert until d1's lane lands it (the owed-arm
-                // convention). The hue dust ring's draws
-                // (`:18226-18237`) and the owner-gated Damage resize
-                // (`:18238-18253`) are the row-porter's half (recorded).
+                // (`:5732-5742`) LANDED HERE (d75 part 5) — the gate is
+                // live through `spawn_with_data`'s row guard. The hue dust
+                // ring's draws (`:18226-18237`) and the owner-gated Damage
+                // resize (`:18238-18253`) stay skipped effects (the pool's
+                // dust/effect census, ANALYSIS Part 5 (d75)).
                 if self.kind == 502 {
                     self.ai[0] = (self.ai[0] + 1.0).clamp(1.0, 5.0);
                     self.wants_sound =
@@ -24500,8 +24510,9 @@ mod s1_e_21h_sound_tests {
     /// S1-E-21h d75 part 4 — the 502 Meowmere star's own bounce arm
     /// (`Projectile.cs:18206-18225`): the clamp-1..5 bump THEN the
     /// `PlaySound(37, x, y, 5 + ai[0])` chime (styles 6..10), the fifth
-    /// bounce steps into the wall and dies. The row is unrowed — the
-    /// slot is built by hand (the owed-arm convention).
+    /// bounce steps into the wall and dies. The slot is built by hand to
+    /// isolate the arm; the part-5 row (`:5732-5742`) arms the live spawn
+    /// path (`s1_e_21h_d75_p5_the_meowmere_spawn_rides_the_row`).
     #[test]
     fn s1_e_21h_d75_p4_the_meowmere_star_chimes_five_bounces() {
         let mut w = air();
@@ -24543,6 +24554,73 @@ mod s1_e_21h_sound_tests {
         assert_eq!(p.wants_sound, Some((37, 10, 72.0, 64.0, 0.0)));
         assert!(!p.active, "the fifth bounce kills");
         assert_eq!(p.pos.x, 80.0, "the last step into the wall");
+    }
+
+    /// S1-E-21h d75 part 5 — the 502 row arms the live spawn path:
+    /// `spawn_with_data` resolves (`:5732-5742` — 16x16, pen 5, melee,
+    /// local-10), the first blocked tick chimes style 6 through the owed
+    /// gate, and the `:24346-24352` rotation faces the PRE-bounce velocity
+    /// (`ToRotation() + π/2`), the direction pair taking `Sign(velocity.X)`.
+    #[test]
+    fn s1_e_21h_d75_p5_the_meowmere_spawn_rides_the_row() {
+        let mut w = air();
+        let i = w.index(5, 4);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut pool = ProjectilePool::new();
+        // 16-box at x 64..80: clear of the tile (80..96); the +8 step
+        // reaches 72..88 — X-blocked only.
+        let slot = pool
+            .spawn_with_data(MEOWMERE, 64.0, 64.0, 8.0, 0.0, 100, 5.0)
+            .expect("the row arms the gate (None before part 5)");
+        let p = &mut pool.slots[slot];
+        assert_eq!((p.w, p.h), (16.0, 16.0));
+        assert_eq!(p.penetrate, 5);
+        assert!(p.melee && p.uses_local_immunity);
+        assert_eq!(p.local_hit_cooldown, 10);
+        assert_eq!(p.time_left, 3600);
+        assert!(p.tile_collide);
+        p.ai_ball_of_fire(&w);
+        assert_eq!(p.wants_sound, Some((37, 6, 64.0, 64.0, 0.0)));
+        assert_eq!(p.ai[0], 1.0);
+        assert!(p.active);
+        assert_eq!(p.vel.x, -8.0);
+        // The rotation ran AHEAD of the bounce (the pre-reversal +X):
+        // atan2(0, 8) = 0, + π/2.
+        assert_eq!(p.rot, std::f32::consts::FRAC_PI_2);
+        assert_eq!((p.direction, p.sprite_direction), (1, 1));
+    }
+
+    /// S1-E-21h d75 part 5 — the rotation's negative-X arm: a leftward
+    /// star faces `atan2(0, −8) + π/2` and the direction pair flips to −1;
+    /// a zero-X tick keeps the previous direction (`:24349`'s gate).
+    #[test]
+    fn s1_e_21h_d75_p5_the_meowmere_rotation_tracks_the_velocity_sign() {
+        let w = air();
+        let mut p = Projectile {
+            active: true,
+            kind: MEOWMERE,
+            owner: 0,
+            pos: Vec2::new(64.0, 64.0),
+            w: 16.0,
+            h: 16.0,
+            vel: Vec2::new(-8.0, 0.0),
+            tile_collide: false,
+            ..Default::default()
+        };
+        p.ai_ball_of_fire(&w);
+        // atan2(0, −8) is exactly π; π + π/2 is exact in f32 (2s + s).
+        assert_eq!(
+            p.rot,
+            std::f32::consts::PI + std::f32::consts::FRAC_PI_2
+        );
+        assert_eq!((p.direction, p.sprite_direction), (-1, -1));
+        // Zero X: the rotation still re-aims (straight down: π/2 + π/2),
+        // the direction pair holds the last sign.
+        p.vel = Vec2::new(0.0, 4.0);
+        p.ai_ball_of_fire(&w);
+        assert_eq!(p.rot, std::f32::consts::PI);
+        assert_eq!((p.direction, p.sprite_direction), (-1, -1));
     }
 
     /// S1-E-21h d75 — the turret's blocked-move pair (`:40249`/`:40256`):
@@ -32704,18 +32782,22 @@ mod magic_data_tests {
         // 632/633, 634/635) now carry rows, so the rowless set is the plan's
         // documented OUT list — the 75/84 gun riders (439/595/600/611/735/
         // 927; 615/630/705/714 already ride the ammo-resolution row) and
-        // the hostile laser 537, plus the flame jet 187 and 502. The 642
+        // the hostile laser 537, plus the flame jet 187. The 642
         // left the list with S1-D-4b-3 (the turret beam's row). S1-P-i22
         // added the Charged Blaster Cannon 460 + Laser 461 rows, and
         // S1-P-i29 the Laser Drill 445 (the channel beam's aiStyle-75 row —
         // the full AI_075 laser is the follow-up, the row is the spawn/hold
-        // seam), so all three left the list. The unported-kind spawn must
+        // seam), so all three left the list. S1-E-21h d75 part 5 rows the
+        // 502 Meowmere star (`:5732-5742`, the owed bounce gate's row), so
+        // it left the list too. The unported-kind spawn must
         // still reach the caller as `None`, never an inert slot.
         for kind in [
-            439u16, 595, 600, 611, 735, 927, 537, 187, 502,
+            439u16, 595, 600, 611, 735, 927, 537, 187,
         ] {
             assert!(proj_data(kind).is_none(), "kind {kind} must stay rowless");
         }
+        // S1-E-21h d75 part 5 — the Meowmere star carries its row now.
+        assert_eq!(proj_data(502).unwrap().ai_style, 8);
         // S1-P-i29: the Laser Drill's beam carries its row now.
         assert_eq!(proj_data(445).unwrap().ai_style, 75);
         // The Golem's fireball 258 already rides a pre-existing row, the

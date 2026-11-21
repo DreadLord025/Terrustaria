@@ -135,6 +135,12 @@ pub const BONE_JAVELIN: u16 = 598;
 /// spear, the `AI_001` 507/508/662/680/685 gravity group (`Projectile.cs:5770-5778`,
 /// `:57471-57478`).
 pub const JAVELIN: u16 = 507;
+/// `ProjectileID.Meowmere` (502, `ProjectileID.cs:1558`) — the Meowmere
+/// sword's bouncing star: aiStyle 8 with its OWN kind-first bounce arm
+/// (`Projectile.cs:18206-18254`, the five-bounce chime ladder the d75
+/// part-4 owed gate serves), `penetrate = 5`, melee, local immunity 10
+/// (`:5732-5742`). S1-E-21h d75 part 5 — the row that arms the gate.
+pub const MEOWMERE: u16 = 502;
 /// `ProjectileID.Glowstick` (50) — the thrown light, aiStyle 14
 /// (`Projectile.cs:1326-1336`). S1-P-i42.
 pub const GLOWSTICK: u16 = 50;
@@ -1794,6 +1800,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // `Projectile.cs:5732-5742` — the Meowmere star (502): 16x16,
+            // aiStyle 8, friendly (the pool's stock true), melee,
+            // `penetrate = 5`, `usesLocalNPCImmunity = true` +
+            // `localNPCHitCooldown = 10`. The stock `timeLeft = 3600`
+            // (`:787`), `tileCollide` (`:775`), `extraUpdates = 0`, alpha 0
+            // and scale 1 stand — the arm writes NO override. The bounce
+            // ladder + chime ride the kind-first arm in `ai_ball_of_fire`
+            // (`:18206-18254`, the d75 part-4 owed gate this row arms);
+            // the `:24346-24352` velocity rotation is ported beside it.
+            // S1-E-21h d75 part 5.
+            MEOWMERE => (16.0, 16.0, 8, 5, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 10, false, -1, 0, 1.0)),
             // `Projectile.cs:5770-5778` — the Javelin (507): 16x16, aiStyle 1,
             // `penetrate = 3`, friendly+ranged; the stock `timeLeft = 3600`
             // (`:787`) and `tileCollide` (`:775`). The flight is the `AI_001`
@@ -4241,9 +4258,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // yoyo on-hit shots (1125/1130/1134/1135,
                 // `:10535`/`:10605`/`:10648`/`:10661`), the flail helpers
                 // (248/405/928, `:3312`/`:4866`/`:8801`).
+                // S1-E-21h d75 part 5 — the Meowmere star (502, `:5738`).
                 ENCHANTED_BOOMERANG | WOODEN_BOOMERANG | ICE_BOOMERANG
                     | SWORD_BEAM | TERRA_BEAM | LIGHT_BEAM | NIGHT_BEAM | ENCHANTED_BEAM
-                    | LIGHTS_BANE | TERRARIAN_BEAM
+                    | LIGHTS_BANE | TERRARIAN_BEAM | MEOWMERE
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
             ),
@@ -4780,6 +4798,34 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    /// S1-E-21h d75 part 5 — the 502 Meowmere row (`Projectile.cs:5732-5742`):
+    /// the verbatim `SetDefaults` arm — 16x16, aiStyle 8, `penetrate = 5`,
+    /// melee, local immunity 10; everything else keeps the stock reset.
+    #[test]
+    fn s1_e_21h_d75_p5_the_meowmere_row_is_the_verbatim_arm() {
+        let d = proj_data(MEOWMERE).expect("the 502 row arms the owed gate");
+        assert_eq!((d.w, d.h), (16.0, 16.0));
+        assert_eq!(d.ai_style, 8);
+        assert_eq!(d.penetrate, 5);
+        assert!(d.melee, "`:5738`");
+        assert!(!d.ranged && !d.magic);
+        assert!(d.uses_local_immunity, "`:5740`");
+        assert_eq!(d.local_hit_cooldown, 10, "`:5741`");
+        assert!(!d.uses_id_static_immunity);
+        // The stock reset the arm never overrides.
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert_eq!(d.extra_updates, 0);
+        assert!(d.tile_collide);
+        assert_eq!(d.alpha, 0);
+        assert_eq!(d.scale, 1.0);
+        assert_eq!(d.light, 0.0, "no `this.light` line — ProjLight stays off");
+        assert!(!d.arrow && !d.trap && !d.minion && !d.sentry);
+        assert!(!d.ignore_water && !d.net_important);
+        assert!(!d.applies_immunity_time_on_single_hits);
+        // The sheet packs (`spawnable_kinds` feeds the atlas walk).
+        assert!(spawnable_kinds().contains(&MEOWMERE));
     }
 
     #[test]
