@@ -742,3 +742,78 @@ superseded): `Main.cs:55548-55578` + `:55609` + `:55615-55625` + the shared
   `map::tests::w4_e18_the_overlay_quad_is_screen_centred_and_unscaled`,
   `app::w4_e18_minimap_key_tests::w4_e18_the_style_two_keys_step_the_overlay_axes`;
   1 anchor row (`map.rs::draw_overlay`).
+
+## W4-e18 MAP-FINAL census FINAL (2026-11-21, code-only) — every e18 fn vs the union keep-table
+
+Method: `git grep "fn w4_e18"` on BOTH trees (this branch @ the MAP-FINAL
+tip vs `origin/task/W4-f46-minimap-reveal-2` @ `6fb5e01e8`), sorted +
+`Compare-Object`; every non-witness e18 fn from the `c6cf86bf..HEAD` diff
+checked by symbol against the union tree. **Result: exactly 7 witness fns
+are e18-only; every other e18 fn is on the union (folded or keep-oned).**
+No e18 piece is missing from the union-keep-table.
+
+**The 7 e18-only witnesses, each accounted:**
+
+| e18-only fn | Disposition |
+| --- | --- |
+| `w4_e18_minimap_key_zoom_matches_vanilla` | DROPS with `minimap_key_scale` per the union §10.1 keep-one — the union's `w4_f46_key_zoom_matches_the_button_constants_and_order` pins the same constants through `apply_key_zoom`. |
+| `w4_e18_minimap_alpha_steps_and_clamps` | DROPS with `minimap_alpha_step`/`clamp_minimap_axes` — the union's `w4_f46_alpha_keys_step_the_minimap_alpha_with_the_clamp` + `w4_f46_alpha_and_overlay_clamps_match_the_draw_side` cover the step + both clamps. |
+| `w4_e18_the_minimap_zoom_and_alpha_keys_step_while_held` | DROPS with `update_minimap_keys` — the union's `w4_f46_held_zoom_in_scales_the_minimap_by_the_button_constant` + `w4_f46_zoom_keys_gate_on_style_one_and_not_fullscreen` + the alpha witness cover the same arms on `update_minimap_zoom_keys`. |
+| `w4_e18_the_style_key_cycles_on_the_press_edge_only` | DROPS with the `map_style_prev` latch — the union's `w4_f46_the_style_key_cycles_zero_one_two` + `w4_f46_the_style_key_is_dead_while_the_map_is_fullscreen` pin the `world_key` press-edge arm (the union's recorded auto-repeat deviation, §10.7 row 6, stays the merger's call). |
+| `w4_e18_the_style_two_keys_step_the_overlay_axes` | NEW (MAP-FINAL P2) — folds per research/84 §10.10's recipe: DROPS at the union (its `w4_f46_style_two_keys_step_the_overlay_scale_and_alpha` already pins the identical arms on the union fn). |
+| `w4_e18_the_overlay_clamps_match_the_draw_side` | NEW (MAP-FINAL P2) — FOLDS (the union lacks `clamp_overlay_axes`; its `w4_f46_alpha_and_overlay_clamps_match_the_draw_side` pins the free helpers, this one pins the WorldMap method + the seeds). |
+| `w4_e18_the_overlay_quad_is_screen_centred_and_unscaled` | NEW (MAP-FINAL P2) — FOLDS (the union lacks `map_overlay_quad` entirely). |
+
+**Non-witness e18 fns — all present on the union (verified by grep):**
+`map_sections.rs` (`MapSections`/`get_next_map_draw` + the 8 witnesses),
+`map.rs` (`section_rect` in tr-core, `clear_map` statics, `unlock_map`
+(the union's flag-path body — this branch's bulk ceil-loop is the
+banner-marked dup), `draw_to_map_queues`, `add_ping`/`age_pings`/
+`ping_outbox`, `map_delay`/`reset_map_delay`, `load`'s catch arm,
+`minimap_alpha` + the tinted `draw_minimap`), `app/frame/world.rs`
+(the driver — the union's `map_reveal_draw`/`map_reveal_sweep_fields`
+keep-one; this branch's `map_reveal_driver`/`map_reveal_sweep` are the
+banner-marked dups), `ui/chrome.rs` (`fullmap_close_button_pos`/
+`_appearance`/`draw_fullmap_close_button`), `ui/cursor.rs` (`draw_thick`/
+`thick_cursor_bonus`/`draw_with_bonus`), `assets.rs` (`Cursor_11`),
+`app/loop.rs` (`try_open_fullscreen_map` + the close cues),
+`app/clicks.rs` (`handle_fullmap_close` + the icon-row routing),
+`app/frame/draw.rs` (`close_dialog_behind_fullmap` at the head),
+`ui/mod.rs` (`draw_chat` pub + the fullscreen tail call).
+
+**The MAP-FINAL additions (past the union's `75289a2db` fold-source):**
+`map_overlay_quad`/`draw_overlay`/`clamp_overlay_axes` + the
+`overlay_scale`/`overlay_alpha` fields (byte-identical to the union's —
+skip at fold) + the 3 helpers (byte-identical — skip) + the style-2 key
+rows (drop at fold, the union fn carries them) + the draw branch + the
+pylon-gate widening + 2 folding witnesses + 1 anchor row. The exact
+recipe is research/84 §10.10. **Census verdict: COMPLETE — nothing e18
+is unaccounted for.**
+
+## W4-e18 MAP-FINAL receipts (2026-11-21) — 84 + 14 FINAL-FINAL
+
+- **research/84**: §10.10 added — the f46g re-fold monitor LANDED
+  (`6fb5e01e8`, chain `aed75d0b`→`6fb5e01e`), per-hunk verified against
+  this branch (all 10 §10.6 rows ✓, the §10.7 zoom keep-one applied
+  e18-correct-shape: no mapEnabled gate, corrected RenderZoom clamp,
+  two-ifs order, live backdrop + layer alpha, ONE input fn, both
+  tick-latch variants gone), the `44749457` witness re-derivation
+  mirrored here (`4cc600a97`), the `099beeba5` re-fold recipe published,
+  §10.6/10.7/10.9 marked superseded-by-execution.
+- **research/14** (this file): the MAP-FINAL phase section (D18's draw
+  arm), the census FINAL above, the D18 rows updated (draw arm landed,
+  icon block with the overlay pick), the style-switcher port-status row
+  now PORTED.
+- **Branch commits (this phase)**: `099beeba5` (P2 draw arm + state +
+  keys + 3 witnesses + anchor + docs), `4cc600a97` (P1a witness
+  re-derivation), + this census/receipt commit.
+- **Verification**: code-only as tasked — no cargo/tests/rustfmt/graphify.
+  Evidence: `git ls-remote` (union tip `6fb5e01e8`), both trees grepped
+  + `Compare-Object` on the witness sets, the folded bodies read from
+  git objects and compared hunk-by-hunk (§10.10's table), the C#
+  windows re-read directly (`Main.cs:55279-55330`/`:55548-55694`/
+  `:56046-56049`/`:62231-62235`, `Player.cs:24930-24947` via the union's
+  published anchors). All witnesses written-not-run.
+- **Owed at merge (not this branch's to run)**: the catalog command on
+  the merged state (the union's checklist item 5), the f29-tip landing
+  (their §10.3 step 2), the `099beeba5` re-fold (§10.10's recipe).

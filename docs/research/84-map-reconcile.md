@@ -587,3 +587,69 @@ The merger's contract, in order:
    — every witness on both branches is written-not-run; the e18 sets
    to watch are §10.6's per-commit witnesses plus the re-pinned five
    (`map_delay = 0`).
+
+### 10.10 MAP-FINAL monitor — the f46g re-fold LANDED and VERIFIED (2026-11-21)
+
+**Monitor result: the §10.6 fold is EXECUTED on the union.** Re-fetched
+`origin/task/W4-f46-minimap-reveal-2`: tip **`6fb5e01e8`** (past the
+`05a9f7b6` this note's brief named). The chain since `c50e1b00`:
+`aed75d0b`/`3f858937` (the two shared pan gaps) → `a352b16e` (the §10.1
+dup fold) → `175dd3a7` (§10.1 publish) → `05a9f7b6` (pan-cancel fixture
+fix) → `736c86ce`/`5566bf25`/`cd24857e`/`7d050b7c`/`b767ef91` (the
+per-commit re-folds) → `1e7eadaf` (docs re-fold) → `9b9d8f1c` (§10.3
+MAP-FAMILY declaration) → `44749457` (witness re-derivation) →
+`6fb5e01e` (FINAL-FINAL banner). Their §10.2 records the executed
+per-hunk table; their §10.3 declares the family merge order (f46 union
+first, f29 TIP `809d08238` second, e17 contained/dropped).
+
+**Per-hunk verification against this branch (read from git objects,
+both sides):**
+
+| §10.6 row | Union commit | Verified |
+| --- | --- | --- |
+| 1 keys (`249a0c1b`) | `a352b16e` | ✓ e18-correct-shape per §10.7: NO `mapEnabled` gate (`:24911`/`:24930` style-only, the g53 flaw corrected), `:24768` chat/menu/front gate + fullscreen guard, alpha ±0.015 + `minimap_alpha` seed 1, style-2 rows ×1.05/×0.95 + `overlay_scale`/`overlay_alpha` seeds 2.5/0.35, `overlay_scale_clamp` with the `RenderZoom = forced_minimum_zoom*zoom` correction + two-ifs C# order (cap wins inversion), tile tint `(255*alpha) as u8` (saturating vs e18's `as u32` — unreachable post-clamp, equivalent), backdrop + layer-walk alpha both live (`draw.rs:1473`/`:1527` — the g53 layer-alpha miss corrected). Zoom keep-one applied: ONE fn (`update_minimap_zoom_keys`, `app/mod.rs:1491`, called from `world_sim/player.rs:1694`), Tab stays `world_key`'s `MapAction::Style` press edge (`loop.rs:776`); e18's `update_minimap_keys`/`minimap_key_scale`/`minimap_alpha_step`/`map_style_prev`/`clamp_minimap_axes` + g53's `release_map_style` are ALL absent from the union tree (grep: 0 hits) — the §10.1 drop-wholesale ruling executed. The recorded deviations that remain the union's: input-side clamps (row 7, equivalence argued) + the auto-repeat Tab (row 6, the port's press-edge convention — the C# latch fires once per physical press; noted, merger's call). |
+| 2 `TryOpeningFullscreenMap` (`4ad0f041`) | `736c86ce` | ✓ `loop.rs::try_open_fullscreen_map` body identical to this branch's (mapEnabled gate, inventory close, talk-NPC clear, chat-text clear, Menu_Open cue, `set_open(true)`); the M-key/Escape closes play Menu_Close; the icon-row routing + style-icon Menu_Tick folded (`clicks.rs:1592` region). `:29113` MapPylonTile clear correctly deferred to the overlay pick's seam (the union's `set_open`→`recentre` clears `pan_target`). |
+| 3 docs addendum (`0bd346e7`) | their §10.2/§10.3 | ✓ blob-copy correctly NOT taken; the surviving facts recorded union-side. |
+| 4 Load catch (`029154fe`) | `5566bf25` | ✓ `load`'s `Ok(false)` arm splits on `path.exists()`: `.bad` copy + `clear()`; absent file neither; the union's `clear_edges` + staged-statics body untouched. |
+| 5 mapDelay (`2fa072d0`) | `cd24857e` | ✓ `map_delay` ctor 2 + `update` head gate + `map_delay()`/`reset_map_delay()` + `enter_loaded_world` re-arm beside the legacy engine's; **6** witnesses re-pinned (e18's 5 + the union-only empty-intersect witness — correct superset of this branch's 5-pin list). |
+| 6+7 draw-head close (`8ec77f0f`+`2e1f97c8`) | `7d050b7c` | ✓ `close_dialog_behind_fullmap` body identical; wired at `draw_region`'s head BEFORE the pylon scan (the fix's final position, `draw.rs:164`). |
+| 8 draw-tail chat (`0d99d968`) | `b767ef91` | ✓ `ui::draw_chat` pub + called at the fullscreen branch tail after the head icon (`draw.rs:2115`); the union's hover→close→cursor→head order kept, chat appends — the C# `:62160` order. |
+| 9+10 docs (`0002fa1f`/`75289a2d`) | `1e7eadaf` | ✓ union-named sections; the e18-named keys PORT_MAP row correctly not copied (the `a352b16e` row covers it). |
+
+**Witness re-derivation (`44749457`) applied to THIS branch too**
+(`4cc600a97`): the headless `flow_app` screen is 1280x720
+(`world_sim/camera.rs`'s no-gpu fallback), not the 1600x900 the e18
+close-button/icon-row witnesses assumed — close box centre (26, 695),
+corner (42, 710), icon row (840 + k*32, 40). Both sides now carry
+identical witness bodies; the merge sees no conflict there.
+
+**What the union still LACKS (this branch's MAP-FINAL additions, past
+their `75289a2db` fold-source tip):** the D18 style-2 overlay DRAW arm
+(`099beeba5`: `draw_overlay`/`map_overlay_quad`/`clamp_overlay_axes` +
+the style-2 key rows in the e18 input fn + the `:55625` layer walk at
+`num37` + the hover tail + 3 witnesses + 1 anchor row). Their §10.3
+family table still lists "D18 draw half — UNPORTED, recorded"; that row
+is now stale. **Fold recipe for the new commit** (their checklist item
+2's tip re-check fires): the `map.rs` helpers
+(`map_key_alpha`/`map_alpha_clamp`/`overlay_scale_clamp`) + the
+`overlay_scale`/`overlay_alpha` fields are ALREADY on the union
+byte-identical — skip those hunks; take `map_overlay_quad` +
+`WorldMap::draw_overlay` + `clamp_overlay_axes` + the 2 map witnesses +
+the anchor row wholesale; the style-2 key rows in `update_minimap_keys`
+DROP (the union's `update_minimap_zoom_keys` already carries the
+identical arms — but note the union clamps input-side there, so
+`clamp_overlay_axes` on the draw half is a benign double projection,
+keep it for the draw-side fidelity); the `frame/draw.rs` style-2 branch
++ the pylon-scan gate widening apply as additions (the union's draw
+region has no style-2 arm); the docs sections append per the
+keep-both rule. The `:55626-55694` icon block stays with the f29-tip
+landing (their §10.3 step 2) — at that merge the overlay pick's draws
+insert into this branch's style-2 branch the same way they insert into
+the fullscreen/minimap arms.
+
+**§10.6/§10.7/§10.9 status: SUPERSEDED by the executed fold** — the
+10-commit list is folded (their §10.2), the 3-way keep-one is resolved
+(their §10.1, verified e18-correct-shape above), the merger contract's
+steps 2/3 are closed. What remains owed: the merge-time catalog run
+(their checklist item 5) + the f29-tip landing (their §10.3) + the
+`099beeba5` re-fold (this note's recipe).
