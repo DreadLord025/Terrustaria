@@ -39641,3 +39641,59 @@ bodies (`git show origin/task/W4-g11-dust-main-sites-1:<path>`:
 **no cargo/rustc/rustfmt/tests/graphify invoked**. No code change to the rod
 machine — the module doc's §Scope citation updated + research/139 + the INDEX
 row + this section + the PORT_MAP cross-note.
+
+## W4-g89i — the Aegis Crystal 5337 permanent upgrade + the +0.2 consumer (2026-11-21, code-only)
+
+The 5337 Aegis Crystal (`ItemID.cs:12357`), the FIRST arm of
+`ItemCheck_UseShimmerPermanentItems` (`Player.cs:45387-45392`): the
+once-ever `!usedAegisCrystal` gate, `ApplyItemTime` (45 ticks), the flag
+latch, the consumable pay + TurnToAir fold — the SAME shared machine as the
+g89 fruit/gummy/ambrosia arms (`use_shimmer_permanent_item`). The consumer
+is `UpdateLifeRegen`'s `lifeRegenTime += 0.2f` (`Player.cs:19113-19116`).
+
+**The consumer shape is the g90 lane-7 slot, NOT a pre-summed fold**
+(research/138 §3.3, the a6 reconcile adjudication): the C# adds
+`lifeRegenTime++` (`:19112`), THEN `+= 0.2f` if `usedAegisCrystal`
+(`:19113-19116`), THEN `++` if `crimsonRegen` (`:19117-19120`). Pre-summing
+`0.2 + 1.0` into `extra_time` reorders the f32 accumulation. The port adds a
+`RegenInputs.aegis_crystal: bool` slot applied BETWEEN `+= 1.0` and
+`+= extra_time` (the crimson fold stays in `extra_time`); the feeder reads
+`self.used_aegis_crystal`. This matches g90's `e76ee133` and a6's post-138
+shape verbatim — the merge keep-one.
+
+**Persistence (both carriers):**
+- `.plr` (`player_file.rs`): the 260+ unlock block's FIRST bool
+  (`usedAegisCrystal`, write `:54781` / read `:55255`) — previously
+  hardcoded `false`/consumed-dropped, now read + written. The block walk
+  stays aligned (the fruit/gummy/ambrosia bools after it unchanged; the
+  arcane/pearl third/fourth stay consumed-dropped — a6/g90's).
+- `.trplayer` (`persist.rs`): the sidecar bumps v9→v10, widening the unlock
+  line to the SIX-token g88-v10 binding order (research/138 §6:
+  `aegisFruit gummyWorm ambrosia aegisCrystal arcaneCrystal galaxyPearl`).
+  This branch carries token 4 (the crystal); tokens 5/6 write `0`
+  placeholders (the arcane/pearl Player fields + consumers stay a6/g90's —
+  the g88 v10 superset reader hydrates them at the merge). The v7/v8/v9
+  short-line back-reads survive (a v9 three-token line loads the crystal
+  false). The App restore (`app/mod.rs`) reads `saved.used_aegis_crystal`.
+
+**Merge boundary (research/138):** the use arm dedups onto a6's
+`use_shimmer_permanent` machine (§1 — a6 owns the full cluster on one seam);
+the sidecar dedups onto g88 v10 (§2/§8.2 — g88 owns the superset writer);
+the `.plr` bool dedups onto f44's `used_upgrades[6]` array (§2 L1, index 0 =
+aegisCrystal). This branch's consumer shape (the regen slot) is the canonical
+one a6 adopted — no semantic conflict at the dedup.
+
+### Verification (W4-g89i)
+
+Code-only: re-read `Player.cs:45385-45423` (the cluster) / `:19112-19120`
+(the regen rows) / `:54781`/`:55255` (the .plr slot) / `:56078` (ctor);
+research/138 (the a6 adjudication, fetched tip `d7de8bd53`) + g88 v10
+(`c8985b534` persist.rs writer/reader) + g90 `e76ee133` (the regen slot).
+**No cargo/rustc/rustfmt/tests/graphify invoked.** Five witness tests
+WRITTEN, NOT RUN: `regen.rs` (the +0.2 between base and crimson, the f32
+order + the no-crystal control), `world_sim/editing.rs` (the 5337 use arm
+once-ever + consume + cadence + refusal), `player.rs` (the unlock survives
+ResetEffects), `player_file.rs` (the .plr :54781 round-trip + the four-bool
+block alignment), `persist.rs` (the .trplayer v10 token-4 round-trip + the
+v9 three-token back-read).
+ 

@@ -663,6 +663,7 @@ mod tests {
             used_aegis_fruit: false,
             used_gummy_worm: false,
             used_ambrosia: false,
+            used_aegis_crystal: false,
             last_saved_binary: 0,
         };
         crate::player_file::write_player_file(&dir.join("Belsin.plr"), &file).unwrap();
@@ -731,6 +732,7 @@ mod tests {
             used_aegis_fruit: false,
             used_gummy_worm: false,
             used_ambrosia: false,
+            used_aegis_crystal: false,
             last_saved_binary: 0,
         };
         crate::player_file::write_player_file(path, &file).unwrap();
@@ -1001,6 +1003,7 @@ mod tests {
                 used_aegis_fruit: false,
                 used_gummy_worm: false,
                 used_ambrosia: false,
+                used_aegis_crystal: false,
                 last_saved_binary: 0,
             },
         )

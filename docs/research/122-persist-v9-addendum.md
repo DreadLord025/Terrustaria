@@ -114,3 +114,23 @@ Reader rules for the merged writer (v10+):
   NOT a sidecar token — see `wld/sections/flags.rs`. Never put world globals on line 8.
 - g88 tip at probe: `717e0640`; g90 tip: `1f1b88f0`; a6 tip: `ea478936` (claims 5337/5339/5340
   consumed-dropped in g89's `.plr` reader — the a6 merger restores those three reads).
+
+## 6. Receipt — W4-g89i lands the crystal token (v10, 2026-11-21)
+
+The §3.1 crystal-token append landed on THIS branch (g89) as **v10**: the
+unlock line widens to the six-token g88-v10 binding order (research/138 §6
+adjudicated the written order crystal=4 / arcane=5 / pearl=6, overriding
+103 §2a's old pearl-first reservation). g89 carries **token 4 only**
+(`used_aegis_crystal`, the 5337 Aegis Crystal — its +0.2 lifeRegenTime
+consumer is the g90 lane-7 `regen.rs` `aegis_crystal` slot, research/138
+§3.3); tokens 5/6 (arcane/pearl) write `0` placeholders — their Player
+fields + consumers stay the a6/g90 lanes'. The v7/v8/v9 short-line
+back-reads are unchanged (a v9 three-token line loads the crystal false).
+The `.plr` FIRST unlock bool (`:54781`/`:55255`) is now read+written
+(previously consumed-dropped). At the merge: the sidecar dedups onto g88
+v10's superset writer (research/138 §2/§8.2 — g88 owns tokens 1-6 + the
+pairs + bread + loadouts; g89's token-4 reader/writer is the same shape,
+keep g88's), the `.plr` bool onto f44's `used_upgrades[6]` index 0, the use
+arm onto a6's `use_shimmer_permanent` machine. The §4.4 merge-order step
+"then a6/g87 crystal tokens" is satisfied for the crystal by this commit;
+arcane/pearl remain a6/g90's.

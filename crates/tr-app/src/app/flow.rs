@@ -2540,6 +2540,7 @@ pub(crate) mod front_flow_tests {
                 used_aegis_fruit: false,
                 used_gummy_worm: false,
                 used_ambrosia: false,
+                used_aegis_crystal: false,
                 last_saved_binary: 0,
             },
         )

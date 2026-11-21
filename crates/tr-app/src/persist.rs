@@ -41,6 +41,15 @@ pub struct SavedPlayer {
     /// the unlock line. The permanent mining/placement speed
     /// (`:12861-12866`).
     pub used_ambrosia: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`, save `:54781` / load
+    /// `:55255`) — version 10 of the sidecar (W4-g89i), the FOURTH token on
+    /// the unlock line (the binding g88-v10 order, research/138 §6:
+    /// crystal=4 / arcane=5 / pearl=6). The permanent +0.2 life-regen ramp
+    /// (`:19113-19116`). Older files load false (ctor `:56078`). The
+    /// arcane/pearl tokens 5/6 are written as `0` placeholders here — their
+    /// Player fields + consumers stay the a6/g90 lanes' (research/138 §2);
+    /// the g88 v10 superset reader hydrates them at the merge.
+    pub used_aegis_crystal: bool,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -63,7 +72,7 @@ pub fn save(
     dye: &[u16; 10],
     kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("9\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("10\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -86,12 +95,18 @@ pub fn save(
     // Version 7 (W4-g89): the permanent shimmer unlocks on their own line
     // — `Player.usedAegisFruit` (`Player.cs:54782`), 0/1. Version 8 appends
     // `Player.usedGummyWorm` (`:54785`); version 9 (W4-g89c) appends
-    // `Player.usedAmbrosia` (`:54786`) as the third token.
+    // `Player.usedAmbrosia` (`:54786`) as the third token. Version 10
+    // (W4-g89i) widens to the SIX-token g88-v10 unlock line (research/138
+    // §6, the binding written order): tokens 4/5/6 = the crystal trio in
+    // the vanilla `.plr` relative order (`:54781` crystal / `:54783` arcane
+    // / `:54784` pearl). This branch carries only the crystal flag (token
+    // 4); arcane/pearl write `0` placeholders (their fields are a6/g90's).
     s.push_str(&format!(
-        "{} {} {}\n",
+        "{} {} {} {} 0 0\n",
         u8::from(player.used_aegis_fruit),
         u8::from(player.used_gummy_worm),
-        u8::from(player.used_ambrosia)
+        u8::from(player.used_ambrosia),
+        u8::from(player.used_aegis_crystal)
     ));
     std::fs::write(player_path(world), s)
 }
@@ -103,10 +118,11 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
         // dye kinds; 7 the permanent shimmer unlocks (W4-g89); 8 the Gummy
-        // Worm token on that line; 9 the Ambrosia token (W4-g89c); 3 stores
-        // vanilla `ItemID`s; 1 and 2 stored the ad-hoc tile/wall/weapon/coin
-        // ranges and are converted on load.
-        "3" | "4" | "5" | "6" | "7" | "8" | "9" => false,
+        // Worm token on that line; 9 the Ambrosia token (W4-g89c); 10 the
+        // crystal trio tokens 4/5/6 (W4-g89i, the g88-v10 binding order);
+        // 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
+        // tile/wall/weapon/coin ranges and are converted on load.
+        "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -133,7 +149,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9") {
+    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9" | "10") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -141,7 +157,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if matches!(version, "5" | "6" | "7" | "8" | "9") {
+    if matches!(version, "5" | "6" | "7" | "8" | "9" | "10") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -156,7 +172,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if matches!(version, "6" | "7" | "8" | "9") {
+    if matches!(version, "6" | "7" | "8" | "9" | "10") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
@@ -164,19 +180,23 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 7 (W4-g89) adds the permanent shimmer unlock flags
     // (`Player.usedAegisFruit`, `Player.cs:55256`); version 8 appends
-    // `usedGummyWorm` (`:55259`), version 9 `usedAmbrosia` (`:55260`).
-    // Older files load with the unlocks absent; a v7 line has one token,
-    // a v8 line two.
-    let (used_aegis_fruit, used_gummy_worm, used_ambrosia) =
-        if matches!(version, "7" | "8" | "9") {
+    // `usedGummyWorm` (`:55259`), version 9 `usedAmbrosia` (`:55260`),
+    // version 10 (W4-g89i) the crystal trio tokens 4/5/6 (the g88-v10
+    // binding order, research/138 §6 — this branch reads token 4, the
+    // crystal; tokens 5/6 are the a6/g90 lanes'). Older files load with
+    // the unlocks absent; a v7 line has one token, a v8 line two, a v9
+    // line three (the crystal back-reads false).
+    let (used_aegis_fruit, used_gummy_worm, used_ambrosia, used_aegis_crystal) =
+        if matches!(version, "7" | "8" | "9" | "10") {
             let line = lines.next()?;
             let mut tokens = line.split_whitespace();
             let fruit = tokens.next().is_some_and(|t| t == "1");
             let worm = tokens.next().is_some_and(|t| t == "1");
             let ambrosia = tokens.next().is_some_and(|t| t == "1");
-            (fruit, worm, ambrosia)
+            let crystal = tokens.next().is_some_and(|t| t == "1");
+            (fruit, worm, ambrosia, crystal)
         } else {
-            (false, false, false)
+            (false, false, false, false)
         };
     Some(SavedPlayer {
         x,
@@ -190,6 +210,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         used_aegis_fruit,
         used_gummy_worm,
         used_ambrosia,
+        used_aegis_crystal,
     })
 }
 
@@ -321,6 +342,47 @@ mod tests {
         let s = load(&path).expect("the v8 sidecar still reads");
         assert!(!s.used_aegis_fruit && s.used_gummy_worm, "the v8 tokens read");
         assert!(!s.used_ambrosia, "a v8 line carries no ambrosia token");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g89i — the Aegis Crystal unlock rides the v10 unlock line's
+    /// FOURTH token (`Player.usedAegisCrystal`, save `Player.cs:54781` /
+    /// load `:55255`; the binding g88-v10 order crystal=4/arcane=5/pearl=6,
+    /// research/138 §6); a v9 three-token line loads with the crystal
+    /// absent while all three earlier halves still read.
+    #[test]
+    fn w4_g89i_the_aegis_crystal_unlock_round_trips_and_v9_back_reads() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.used_aegis_crystal = true;
+        let dir = crate::test_world_helpers::test_scratch("persist-aegis-crystal");
+        let path = dir.join("tr-persist-aegis-crystal.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("the v10 sidecar");
+        assert!(s.used_aegis_crystal, "the unlock persisted (token 4)");
+        assert!(!s.used_aegis_fruit && !s.used_gummy_worm && !s.used_ambrosia);
+        // All four flags round-trip independently.
+        p.used_aegis_fruit = true;
+        p.used_gummy_worm = true;
+        p.used_ambrosia = true;
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("the v10 sidecar");
+        assert!(
+            s.used_aegis_fruit && s.used_gummy_worm && s.used_ambrosia && s.used_aegis_crystal
+        );
+        // A v9 file: the unlock line carries three tokens (no crystal).
+        let mut line = String::from("9\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n0 \n1007 0 0 0 0 1015 0 0 0 0 \n1 1 1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the v9 sidecar still reads");
+        assert!(
+            s.used_aegis_fruit && s.used_gummy_worm && s.used_ambrosia,
+            "the v9 tokens read"
+        );
+        assert!(!s.used_aegis_crystal, "a v9 line carries no crystal token");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

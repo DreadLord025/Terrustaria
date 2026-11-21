@@ -1712,6 +1712,20 @@ fn use_aegis_fruit(app: &mut App, held: ItemSlot) -> bool {
     use_shimmer_permanent_item(app, held, 5338, already, |p| p.used_aegis_fruit = true)
 }
 
+/// W4-g89i — the 5337 Aegis Crystal arm (`Player.cs:45387-45392`): the
+/// permanent +0.2 lifeRegenTime per tick (`UpdateLifeRegen` `:19113-19116`,
+/// the `regen.rs` `aegis_crystal` slot). The FIRST arm of
+/// `ItemCheck_UseShimmerPermanentItems`; same shared machine as the fruit
+/// (the once-ever `!usedAegisCrystal` gate, ApplyItemTime 45, the
+/// consumable pay + TurnToAir fold). research/138 §1: a6's
+/// `use_shimmer_permanent` machine is the merge keep-one for the cluster —
+/// this arm dedups onto it (the consumer shape here is the canonical g90
+/// slot a6 adopted, §3.3).
+fn use_aegis_crystal(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_aegis_crystal);
+    use_shimmer_permanent_item(app, held, 5337, already, |p| p.used_aegis_crystal = true)
+}
+
 /// W4-g89 — the 5341 Gummy Worm arm (`Player.cs:45411-45416`): the
 /// permanent +3 fishing skill (`UpdatePermanentBoosters` `:12857-12860`,
 /// the i35 row). The flag landed with i35; this is its MISSING use path.
@@ -2487,6 +2501,13 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // per-kind delays (`ApplyPotionDelay` `:51853-51886`), the Mana
         // Sickness grant (`:51938`) and the stack consume all live there.
         if crate::potions::use_potion_item(app, held) {
+            return;
+        }
+        // W4-g89i — the 5337 Aegis Crystal arm (`Player.cs:45387-45392`,
+        // the FIRST arm of `ItemCheck_UseShimmerPermanentItems` `:43607`):
+        // the permanent +0.2 lifeRegenTime unlock (the `regen.rs`
+        // `aegis_crystal` slot). Same press-tick fold + once-ever gate.
+        if use_aegis_crystal(app, held) {
             return;
         }
         // W4-g89 — `ItemCheck_UseShimmerPermanentItems`' Aegis Fruit arm
@@ -16951,6 +16972,42 @@ mod use_loop_tests {
         let p = app.player.as_ref().unwrap();
         assert_eq!(p.num_minions, 1, "the slot booked");
         assert_eq!(p.slots_minions, 1.0);
+    }
+
+    /// W4-g89i — the 5337 Aegis Crystal use arm
+    /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45387-45392`, the
+    /// FIRST arm of the cluster): ONE press unlocks `usedAegisCrystal`
+    /// permanently, pays one from the stack and re-arms the 45-tick
+    /// cadence (`ApplyItemTime` `:45389`, `Item.cs:42337-42346`). A second
+    /// crystal is REFUSED — the `!usedAegisCrystal` gate (`:45387`) leaves
+    /// the stack intact, once ever. The consumer is the `regen.rs`
+    /// `aegis_crystal` slot (+0.2 lifeRegenTime, `:19113-19116`).
+    #[test]
+    fn w4_g89i_the_aegis_crystal_unlocks_once_and_consumes_one() {
+        let mut app = app_with_staff(5337);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.player.as_ref().unwrap().used_aegis_crystal,
+            "the unlock latched (`:45390`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45389`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second crystal: the permanent gate refuses — no consume, no
+        // re-arm (`!this.usedAegisCrystal`, `:45387`).
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_aegis_crystal(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
     }
 
     /// W4-g89 — the 5338 Aegis Fruit use arm

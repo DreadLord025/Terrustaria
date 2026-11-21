@@ -2140,6 +2140,14 @@ pub struct Player {
     /// cleared by ResetEffects — a permanent unlock (the player-file
     /// field, ctor `:56083` false, save `:54786` / load `:55260`).
     pub used_ambrosia: bool,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
+    /// permanent life-regen ramp +0.2/tick (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45387-45392`, `UpdateLifeRegen` `:19113-19116` — the `regen.rs`
+    /// `aegis_crystal` slot BETWEEN the base +1 and the crimson fold, the
+    /// g90 lane-7 shape per research/138 §3.3). NOT cleared by ResetEffects
+    /// — a permanent unlock (ctor `:56078` false, save `:54781` / load
+    /// `:55255`; the g88/g90 declaration spot — after `used_ambrosia`).
+    pub used_aegis_crystal: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2943,6 +2951,7 @@ impl Player {
             used_gummy_worm: false,
             used_aegis_fruit: false, // `Player.cs:56079`
             used_ambrosia: false,    // `Player.cs:56083`
+            used_aegis_crystal: false, // `Player.cs:56078` (the g88/g90 spot)
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -11207,6 +11216,11 @@ impl Player {
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
                 extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
+                // W4-g89i — the Aegis Crystal's permanent +0.2 time add
+                // (`Player.cs:19113-19116`) rides its OWN slot, applied
+                // BETWEEN the base +1 and the crimson fold (the g90 lane-7
+                // shape, research/138 §3.3 — the C#'s f32 order).
+                aegis_crystal: self.used_aegis_crystal,
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
                 ..RegenInputs::default()
             };
@@ -12414,6 +12428,25 @@ mod tests {
         assert!((p.tile_speed_bonus - 0.05).abs() < 1e-6);
         assert!((p.wall_speed_bonus - 0.05).abs() < 1e-6);
         assert!(p.used_ambrosia, "ResetEffects never clears the unlock");
+    }
+
+    /// W4-g89i — the Aegis Crystal unlock is a permanent bool: ctor false
+    /// (`Player.cs:56078`), `ResetEffects` never clears it (the C# clears
+    /// only the per-tick `chaosState`-style latches, not `usedAegisCrystal`
+    /// — it is absent from the `:18333-18810` reset block). The +0.2
+    /// consumer rides the `regen.rs` `aegis_crystal` slot (the feeder reads
+    /// `self.used_aegis_crystal` every tick); the f32-order witness lives in
+    /// `regen.rs` (`w4_g89i_the_aegis_crystal_adds_between_the_base_and_the_crimson`).
+    #[test]
+    fn w4_g89i_the_aegis_crystal_unlock_survives_reset_effects() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        assert!(!p.used_aegis_crystal, "ctor false (`Player.cs:56078`)");
+        p.used_aegis_crystal = true;
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_aegis_crystal, "ResetEffects never clears the unlock");
+        p.update(&w, PlayerInput::default());
+        assert!(p.used_aegis_crystal, "still set after a second tick");
     }
 
     /// M3-EQUIP-14 — the Celestial Stone bundle and the day/night stones.

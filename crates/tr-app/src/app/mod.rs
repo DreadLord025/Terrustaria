@@ -2948,6 +2948,9 @@ impl App {
                     // W4-g89c — the Ambrosia rides the third token (v9,
                     // `:55260`; the speed row `:12861-12866`).
                     p.used_ambrosia = saved.used_ambrosia;
+                    // W4-g89i — the Aegis Crystal rides the fourth token
+                    // (v10, `:55255`; the +0.2 regen row `:19113-19116`).
+                    p.used_aegis_crystal = saved.used_aegis_crystal;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
