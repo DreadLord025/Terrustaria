@@ -39528,9 +39528,19 @@ click buffers; the player tick applies).
   six-line rule LANDED + witness-verified against g90's actual pushed
   writer at tip `94d33f2ca`) and §9 the FULL merger persist-checklist
   (FINAL-FINAL) with the 132/135/138 cross-refs (L1 f44c base + the
-  named-bool dedups / L2 this superset / L3 the RECONCILED 100-byte
-  v18 head + dense — 132's 97 + g87's 3 pets, the two published
-  layouts' union). g89d's
+  named-bool dedups / L2 this superset / L3 **§L3-DEFINITIVE — the
+  SEAL-pass 107-byte v18 head + W×H dense**, re-derived from the C#
+  `WorldFile.cs` write order over the full 13-branch claimant census:
+  11 distinct blocks after the e19≡g69 / f39≡c39 / f45≡c43 dedups —
+  the c39⨉f39 moon quintets are byte-identical, ONE 5-byte block;
+  the g71 underworld seat FIRED (+1 vs c39's 106); the flag middle
+  rides STRICT C# row order (crimson → moon → underworld → pets →
+  empress → books), adjudicating the f44-RETIRE `d35876af9` and
+  g71-FINAL `f2d8c2c67` consolidations' two order inversions; the
+  old step-10 100-byte arithmetic superseded — it missed the quintet
+  + underworld and inherited f44-FINAL's 97-vs-98 slip; the
+  persist-family merger-bible paragraph seals L1/L2/L3 in one
+  place). g89d's
   `docs/research/122-persist-v9-addendum.md` (`4344bd50`, carried onto
   this branch with §6 + §7 fold receipts + the v11 post-receipt note)
   is the g89-lane view of the same
