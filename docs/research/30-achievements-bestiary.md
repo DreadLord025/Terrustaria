@@ -91,11 +91,11 @@ and one persistent store per world (the `.wld` section 10 triple).
 - `crates/tr-app/src/ui/achievements.rs` (913) — the menu.
 - `crates/tr-core/src/bestiary.rs` (499) — `UnlockState` (11),
   `get_unlock_state_by_kill_count` (31-54), `KillTracker` (65),
-  `WorldBestiary` (138), `npc_to_banner` (225), `kills_needed_for` (268),
-  `banner_to_item` (288).
+  `WorldBestiary` (138), `npc_to_banner` (215), `kills_needed_for` (979),
+  `banner_to_item` (1043).
 - `crates/tr-app/src/bestiary.rs` (1602) — `BestiaryEntryDef` (13),
-  `ENTRIES` (31-1422, 172 rows), `unlock_state` (1427), `completion_percent`
-  (1440), `entry_for_npc` (1482), `kill_progress` (1529).
+  `ENTRIES` (30-2173, 249 rows — W4-c36 re-probe), `unlock_state` (2179),
+  `completion_percent` (2192), `entry_for_npc` (2306), `kill_progress`.
 - `crates/tr-app/src/ui/bestiary.rs` (1520) — the screen; the drop lines read
   `crate::loot_db::drop_lines` (1203).
 - `crates/tr-core/src/wld/sections/bestiary.rs` (535) — the `.wld` section 10 codec.
@@ -133,20 +133,20 @@ and one persistent store per world (the `.wld` section 10 triple).
 | `AchievementTracker` / `ConditionsCompletedTracker` | PORTED (shape) | `achievements.rs::tracker_values` | Two tracker shapes; denominators now reflect the expanded 1:1 condition rows (S1-E-18). |
 | `CustomInt` / `CustomFloat` counters | PARTIAL | `achievements.rs::{notify_custom_int,notify_custom_float,notify_with}` | Wrappers + `Value`-setter semantics landed (S1-E-18). Wired: `Pick` (edit), `Finish` flag/int on angler turn-in (`npcs.rs`), `Do` on acorn plant (`editing.rs`), `Move` on grounded running (`world_sim/player.rs`). `Peek` custom flag wired (`chest.rs`). `Pay` and other custom counters remain without owning systems. |
 | Notify sites: NPC kill / pickup / craft / tile | PORTED | `world_sim/npcs.rs`, `items.rs`, `app/clicks.rs`, `editing.rs` | All four wired (single-player). |
-| Notify sites: progression event / custom flag | PARTIAL | `achievements.rs`, `world_sim/{clock,editing,npcs,weather}.rs`, `chest.rs` | S1-E-18 wires progression 1/3/5/6/8/9/16 and selected custom sites (`Finish`, `Peek`, `Do`, `Move`). Remaining progression/custom rows are blocked on missing systems (e.g. 17 partial, 18/19/20, nurse/service/chat/locked-chest paths) or S1-F-15 (29). |
-| `AchievementsHelper.TryGrantingBestiary100PercentAchievement` | PORTED | `achievements.rs::try_grant_bestiary_100` (378), `app/netglue.rs::try_grant_bestiary_100_net` | `NotifyProgressionEvent(29)` → `BOOK_WORM` is wired: the first-key hook fires from `set_kill_count_directly`, and S1-I-5 routes it over `98` on a host. The blocker (S1-F-15's `completion_percent` tier bug) is separate and still open — the hook fires but 100 % is reached too early. |
+| Notify sites: progression event / custom flag | PARTIAL | `achievements.rs`, `world_sim/{clock,editing,npcs,weather}.rs`, `chest.rs` | S1-E-18 wires progression 1/3/5/6/8/9/16 and selected custom sites (`Finish`, `Peek`, `Do`, `Move`); the c36 batches add the rest of the wired table below. Remaining progression/custom rows are blocked on missing systems (the 20-row gap list, re-probed below) — 19/20 and nurse `Pay` landed via S1-E-18b/nurse-pay. |
+| `AchievementsHelper.TryGrantingBestiary100PercentAchievement` | PORTED | `achievements.rs::try_grant_bestiary_100` (417), `app/netglue.rs::try_grant_bestiary_100_net` (2986) | `NotifyProgressionEvent(29)` → `BOOK_WORM` is wired: the kill hook fires from the death seam (`world_sim/npcs.rs:5274`), and S1-I-5 routes it over `98` on a host. W4-c36 re-probe: the S1-F-15 tier-4 denominator bug is FIXED on main (the ladder row below), so a fresh world reads 0% — the residual early-100% risk is the town/critter provider fold (the flat kill-ladder treats every entry as a Common enemy; c37's provider enum owns the fix), NOT the denominator. |
 | `AchievementManager.Save`/`Load` (Rijndael+BSON) | PARTIAL (documented) | `achievements.rs::{save,load}`, `app/{mod,saveglue}.rs` | Port still writes `achievements.trdat` (plain text), not the vanilla Rijndael-CBC+BSON blob. S1-E-18 binds a save path at bootstrap/world swap and saves on completion and from `save_world`; headless test apps have no bound path. |
 | Achievement unlock popup / advisor / chat tag | PARTIAL (popup DONE) | `ui/notifications.rs`, `app/mod.rs::drain_achievement_completions` | **S1-E-26 wave A**: `AchievementUnlockedPopup` (`UI/InGamePopups.cs:13-148`) + `InGameNotificationsTracker` (`:11-113`) ported — the 300-tick timer/curves/draw/click, the `netMode != 2` gate, the `AchievementInitializer.cs:728-735` chat line + tracked `AchievementComplete` cue, `OpenAchievementsAndGoto`'s scroll, `SaveAndQuit`'s `Clear`. `AchievementAdvisor` (`UI/AchievementAdvisor.cs`) and the chat tag's snippet rendering (`AchievementTagHandler`, `UI/Chat/`) still have no port (the line prints the raw `[a:NAME]` tag). |
 | `SocialAPI.Achievements` (Steam stats) | OUT OF SCOPE | — | `PORT_MAP.md:268` marks the platform hooks as out of scope. |
 | `BestiaryEntry` + the 4 factories | PORTED (simplified) | `tr-app/src/bestiary.rs::BestiaryEntryDef` (13) | One flat struct (credit id, net id, kind, variant, quick_unlock, name) instead of the C#'s `Info` list of `IBestiaryInfoElement`s (`BestiaryEntry.cs:24-30`). |
-| NPC → entry mapping | PARTIAL | `ENTRIES` (31-1422), `entry_for_npc` (1482) | 172 entries vs the C#'s "one per `ContentSamples.NpcsByNetId`" (the C# roster is the whole NPC id space). The sheet table `BESTIARY_NPC_SHEET_IDS` has 174 slots (`assets.rs:1319`) — 2 more than the entries. |
+| NPC → entry mapping | PARTIAL | `ENTRIES` (30-2173), `entry_for_npc` (2306) | 249 entries (W4-c36 re-probe count) vs the C#'s "one per `ContentSamples.NpcsByNetId`" (the C# roster is the whole NPC id space). The sheet table `BESTIARY_NPC_SHEET_IDS` has 181 slots (`assets.rs:1863`, W4-c36 re-probe) — the entries exceed the sheet (the DD2/moon families carry rows without sheet slots). |
 | `NPCKillsTracker` (counts + cap + save) | PORTED | `tr-core/src/bestiary.rs::KillTracker` (65) | The 999999999 cap (57, 84), `register_kill` (76), `set_kill_count_directly` (83), `pairs`/`load_pairs` (101/106). |
 | Kill-counter persistence (`.wld` section 10) | PORTED | `tr-core/src/wld/sections/bestiary.rs` (535) | All three sub-lists round-trip both ways; 17 tests. The sights/chats half stays empty (documented in `tr-core/src/bestiary.rs:124-130`). |
-| Unlock ladder (1 / ⅕ / ½ / full + boss quick-unlock) | **PARTIAL** | `get_unlock_state_by_kill_count` (31-54) | The ladder itself is a faithful port of `CommonEnemyUICollectionInfoProvider.cs:50-76`, but its denominator `kills_needed_for` (268) returns **0** for every net id outside the 11-pair banner table, and 0 means "≥ full" → 164 of 172 entries read as tier 4 with zero kills. The C#'s default is 50 (`ItemID.Sets.DefaultKillsForBannerNeeded`). |
-| `quickUnlock` per entry | PARTIAL | `BestiaryEntryDef.quick_unlock` | Only 5 entries carry it (KingSlime, EyeofCthulhu, Guide, Golem, Deerclops); the C# sets it on **every** boss (`BestiaryEntry.cs:37-41`) plus the 494-506 salamander and the `HighestOfMultiple` overrides. `Guide` is a **town** NPC and must not carry it. |
+| Unlock ladder (1 / ⅕ / ½ / full + boss quick-unlock) | **PORTED** (S1-F-15 landed; W4-c36 re-probe re-verified) | `get_unlock_state_by_kill_count` (31-54), `kills_needed_for` (979) | The ladder is a faithful port of `CommonEnemyUICollectionInfoProvider.cs:50-76` and the denominator is FIXED: `kills_needed_for` walks `npc_to_banner → banner_to_item → kills_to_banner_item`, whose default arm returns `ItemID_Sets_DefaultKillsForBannerNeeded` (50, `ItemID.cs:1303`) — bannerless ids read `BannerToItem(0)` = 1614 → the same 50. Pinned by `the_family_banner_chain` (`kills_needed_for(50/17) == 50`) + `kills_needed_for_honors_kills_to_banner_overrides`. The old "0 → tier 4 with zero kills" bug is gone. |
+| `quickUnlock` per entry | PARTIAL | `BestiaryEntryDef.quick_unlock` | 24 entries carry it (W4-c36 re-probe count: the boss family + Deerclops + EaterofWorldsHead); the C# sets it on **every** boss (`BestiaryEntry.cs:37-41`) plus the 494-506 salamander and the `HighestOfMultiple` overrides. `Guide` no longer carries it (the town rows read `quick_unlock: false`) — c37's provider-enum task owns the rest. |
 | Town-NPC / critter unlock providers | MISSING | — | `TownNPCUICollectionInfoProvider` (chat) and `CritterUICollectionInfoProvider` (sight) have no port; the `sights`/`chats` sets are never recorded. |
 | `BestiaryDatabase.Merge` → `ReportDroprates` | **MISSING** | — | No `report_droprates` anywhere in `crates/`. The bestiary's "Drops:" list reads `loot_db::drop_lines` (`ui/bestiary.rs:1203`), a hand-written 4-row table, so 168 of 172 entries print "(nothing recorded yet)". |
-| `GetBestiaryProgressReport` | PARTIAL | `completion_percent` (1440) | Same predicate (`unlock_state(...).known()`), but the denominator is the port's 172-entry roster, and the tier-4 bug inflates the value to ~95% at world start. The Zoologist gate (`Chest.cs:3265`) reads it. |
+| `GetBestiaryProgressReport` | PARTIAL | `completion_percent` (2192) | Same predicate (`unlock_state(...).known()`); the tier-4 inflation is FIXED (S1-F-15) — a fresh tracker reads 0.0 (pinned, `ui/bestiary.rs:2311`). The remaining deviation is the denominator: the port's 249-entry roster (W4-c36 re-probe count), not the C#'s full NPC id space, and the flat kill-ladder fold for town/critter entries. The Zoologist gate (`Chest.cs:3265`) reads it. |
 | Bestiary filters / sorting / flavour / spawn info | MISSING | — | `Filters.cs` (184), `SortingSteps.cs` (233), `FlavorTextBestiaryInfoElement`, `RareSpawnBestiaryInfoElement`, `SpawnConditionBestiaryInfoElement`, `HighestOfMultipleUICollectionInfoProvider`, `GoldCritterUICollectionInfoProvider`, `SalamanderShellyDadUICollectionInfoProvider` — none ported. |
 | `NetBestiaryModule` (kill-count sync) | PORTED (Kill half) | `app/netmodules.rs::BestiaryKill`, `app/netglue.rs::{broadcast_bestiary_kill,send_npc_killed,notify_progression_net}` | S1-I-5: module 4 carries `byte 0 + (short)npcNetId + Write7BitEncodedInt(killcount)` (`NetBestiaryModule.cs:16-23`), broadcast from `NPCKillsTracker.RegisterKill`'s `netMode == 2` arm (`NPCKillsTracker.cs:23-33`) and applied by `SetKillCountDirectly` (`:40-51`). `OnPlayerJoining` (`:98-107`, called at `MessageBuffer.cs:871`) sends the joining slot the whole snapshot. The `Sight`/`Chat` halves (`NetBestiaryModule.cs:25-39`) stay unported — those trackers are not net-synced yet. The `97`/`98` kill-credit and progression wires landed alongside (`MessageBuffer.cs:3558-3569`). |
 
@@ -161,7 +161,7 @@ and one persistent store per world (the `.wld` section 10 triple).
 | Rows that can ever complete | 137 | >50 (growing) | **PARTIAL** — additional progression/custom/int/float rows wired in S1-E-18; exact reachable count depends on ported systems |
 | Tracker shapes (`UseTracker*`) | 2 | 2 | **PASS** (shape and expanded denominators) |
 | Achievement save/load | 1 | 1 (text) | **PARTIAL** — different format (documented), but save is now wired (completion + `save_world`, path-bound bootstrap) |
-| Bestiary entry rows | whole NPC roster (1 per `NpcsByNetId`) + 44 manual | 172 | **PARTIAL** — port roster only; 2 sheet slots unmatched |
+| Bestiary entry rows | whole NPC roster (1 per `NpcsByNetId`) + 44 manual | 249 (W4-c36 re-probe) | **PARTIAL** — port roster only; the entries now exceed the 181-slot sheet |
 | Bestiary unlock tiers | 5 | 5 | **PASS** (the ladder's shape) |
 | Entry unlock providers | 6 (`Common`/`Town`/`Critter`/`Gold`/`HighestOfMultiple`/`Salamander`) | 1 (`quick_unlock` bool) | **FAIL** — 5 providers missing |
 | Kill counters (counts, cap, save) | 1 tracker | 1 tracker | **PASS** |
@@ -210,19 +210,19 @@ and one persistent store per world (the `.wld` section 10 triple).
 | --- | --- | --- | --- |
 | 1 | `CreateMany` rows expanded to 1:1 (S1-E-18): all 180 conditions present. | behavioural | Resolved (S1-E-18) |
 | 2 | Save is now wired (S1-E-18): path bound at bootstrap/world swap, saved on completion and from `save_world`; headless apps have no bound path. Format remains the port's plain-text `achievements.trdat` (not vanilla Rijndael+BSON). | behavioural / interop | Partial — call sites wired, format differs by design |
-| 3 | Notify wrappers and additional sites landed (S1-E-18), but many progression/custom rows remain unreachable because their owning systems/paths are not ported (e.g. 17 partial, 18, 19/20, nurse `Pay`, and most other progression/custom flags). Progression 29 is explicitly blocked on S1-F-15. | behavioural | Partly — expanded, not complete |
-| 4 | `kills_needed_for` returns 0 for net ids outside the 11-pair banner table; 0 means "≥ full", so 164 of 172 entries report tier 4 (`CanShowDropsWithDropRates`) with zero kills. The C# default is 50. | behavioural | **No** |
-| 5 | `quick_unlock` on 5 entries instead of every boss + the override rows; the town NPC `Guide` wrongly carries it (the C# uses the chat provider). | behavioural | **No** |
+| 3 | Notify wrappers and additional sites landed (S1-E-18), but many progression/custom rows remain unreachable because their owning systems/paths are not ported (e.g. 17 partial, 18, and the 20-row gap list below). Progression 29's hook FIRES (S1-E-18p29); the old S1-F-15 denominator blocker is fixed (see #4). | behavioural | Partly — expanded, not complete |
+| 4 | ~~`kills_needed_for` returns 0 for net ids outside the 11-pair banner table; 0 means "≥ full", so 164 of 172 entries report tier 4 with zero kills.~~ **FIXED (S1-F-15, re-verified W4-c36)** — the default arm returns 50 (`ItemID_Sets_DefaultKillsForBannerNeeded`), pinned by `the_family_banner_chain` + the override test. | behavioural | Resolved (S1-F-15) |
+| 5 | `quick_unlock` on 24 entries (W4-c36 re-probe count) instead of every boss + the override rows; the town `Guide` no longer carries it. The salamander/HighestOfMultiple overrides ride c37's provider enum. | behavioural | Partly — c37 owns the provider fold |
 | 6 | The town-NPC (chat) and critter (sight) unlock providers are absent, and the `sights`/`chats` sets are never recorded. | behavioural | Yes — `tr-core/src/bestiary.rs:124-130`, ANALYSIS "the sightings/chats stay empty until the recording behaviour lands" |
 | 7 | `ReportDroprates` / the drop-rate tables are absent: the bestiary's drop list is a 4-row hand-written table, so the tier-3/tier-4 drop lines are empty for 168 of 172 entries. | behavioural / pixel | Yes — ANALYSIS.md:2969 "not ported — M4-BEST-1 territory" |
-| 8 | `TryGrantingBestiary100PercentAchievement` (→ progression event 29 → `BOOK_WORM`) never fires. | behavioural | Yes — `tr-core/src/bestiary.rs:82` "no achievement hook (M6-ACH-1's)" |
+| 8 | ~~`TryGrantingBestiary100PercentAchievement` (→ progression event 29 → `BOOK_WORM`) never fires.~~ **FIRES (S1-E-18p29)** — the death-seam hook (`world_sim/npcs.rs:5274` → `try_grant_bestiary_100_net`) + the `98` MP wire; the gate is the completion fraction (see #12). | behavioural | Resolved (S1-E-18p29) |
 | 9 | The achievement save format is plain text (`achievements.trdat`), not the vanilla Rijndael-CBC+BSON `"RELOGIC-TERRARIA"`. | behavioural (interop) | Yes — `achievements.rs:390-394` |
 | 10 | ~~The unlock popup, `AchievementAdvisor` and the chat tag handler are missing.~~ **Popup DONE (S1-E-26 wave A)** — `ui/notifications.rs` + the drain seam; the advisor and the chat tag's snippet rendering remain open. | cosmetic / behavioural | Yes — ANALYSIS "The achievement unlock popup (S1-E-26 wave A)" |
 | 11 | ~~`notify` returns only the last completed achievement; the C# fires `OnCompleted` (and a save) for every one.~~ **FIXED (S1-E-26 wave A)** — `notify_with` queues every completing row into `completed_events` (save + event per row); the return value keeps the last-name shape for the existing callers. Pinned by `one_event_completing_two_rows_queues_both`. | behavioural (minor) | Resolved |
-| 12 | `completion_percent` divides by the port's 172-entry roster, not the C#'s full roster; combined with #4 it reads ~95% at start, which gates the Zoologist's shop (`Chest.cs:3265`). | behavioural | **No** |
-| 13 | `ENTRIES` (172) vs `BESTIARY_NPC_SHEET_IDS` (174) — 2 sheet slots have no entry row. | cosmetic | Partly — BUG-15 removed the literal drift, not the skew |
+| 12 | `completion_percent` divides by the port's 249-entry roster (W4-c36 re-probe), not the C#'s full roster; the #4 tier-4 inflation is FIXED so a fresh world reads 0% (pinned). The residual early-100% risk is the flat kill-ladder fold for town/critter entries (one kill = portrait tier where the C# needs a chat/sight) — c37's provider enum owns it. The Zoologist shop (`Chest.cs:3265`) reads the fraction. | behavioural | Partly — denominator documented, provider fold c37's |
+| 13 | `ENTRIES` (249) vs `BESTIARY_NPC_SHEET_IDS` (181) — W4-c36 re-probe: the entries now EXCEED the sheet (the DD2/moon families carry rows without sheet slots); the old "2 sheet slots have no entry" skew inverted. | cosmetic | Partly — BUG-15 removed the literal drift, not the skew |
 | 14 | The kill-count and sight/chat sets iterate in sorted order vs the C#'s unspecified `Dictionary`/`HashSet` order — deterministic, but a different byte order in the save. | determinism | Yes — documented in `tr-core/src/bestiary.rs:96-100, 132-136` |
-| 15 | `banner_to_item` keeps only 3 bands (276+/88+/default); the C# has the 292/291/290/289/273/251 specials and the 186-275 bands. It agrees on the port's 11 banners but is wrong on extension. | behavioural (latent) | Partly — `tr-core/src/bestiary.rs:286-287` |
+| 15 | ~~`banner_to_item` keeps only 3 bands (276+/88+/default).~~ **FIXED (re-verified W4-c36)** — the port now carries the 292/291/290/289 specials, the 276+/274-275/273/267+/257+/252+/251/249+/186+/88+ bands and the default (`tr-core/src/bestiary.rs:1043-1087`, the full `BannerSystem.cs:341-401` shape). | behavioural (latent) | Resolved |
 | 16 | ~~No MP sync of the bestiary kill counts (NetBestiaryModule).~~ **PORTED (S1-I-5)** - module 4 carries the kill count, the 97/98 wires carry the credit and the progression id; the Sight/Chat halves are still open. | behavioural (MP) | Yes - pp/netmodules.rs::BestiaryKill, pp/netglue.rs |
 | 17 | `Player.HasAchievement`, `Main.achievementTracker` and a `BossAchievement` type **do not exist** in the 1.4.5.8 decompile. The boss kill requirement is the bestiary's banner→`KillsToBanner` chain, and the achievement query is `Main.Achievements.GetAchievement(name).IsCompleted`. | n/a | n/a |
 | 18 | `Achievement.completed` (flag) vs `is_completed()` (derived) disagree for a zero-condition row before and after a load. | behavioural (minor) | **No** |
@@ -293,7 +293,8 @@ Witnesses: `save_world_writes_the_achievement_condition_state`,
   `achievement_hooks.rs::check_real_estate_and_town_slimes`, wired at the
   arrival (`:5609`), the fished-out 682 (`Player.cs:52435`) and the
   rainbow-slime release (`WorldItem.cs:1742`). UNREACHABLE in play: Truffle
-  160, Steampunker 178, Cyborg 209, Pirate 229, Bartender 550 and the eight
+  160, Steampunker 178, Cyborg 209, Pirate 229 (FOUR kinds — the W4-c36
+  re-probe: Bartender 550 IS ported, `DD2Bartender`) and the eight
   town slimes 670/678-684 have no NpcKind rows.
 - Progression 18 (Truffle arrival, `WorldGen.cs:5580`): no Truffle NpcKind.
 - ~~Progression 22 (`WorldGen.UnlockDoor`, `WorldGen.cs:37627`)~~ **PORTED
@@ -391,25 +392,134 @@ gap list, after c36+f30):**
 
 **Reachable-but-gated (the wire exists, the gate cannot pass in play):**
 REAL_ESTATE_AGENT 17 + ALL_TOWN_SLIMES 26 (the DOC-SWEEP roster check —
-5 town kinds + 8 slime kinds missing), BOOK_WORM 29 (S1-F-15's tier bug
-reaches 100% too early — the hook itself fires).
+4 town kinds + 8 slime kinds missing; the W4-c36 re-probe corrected the
+Bartender: 550 IS ported), BOOK_WORM 29 (the hook fires; the S1-F-15
+tier-4 denominator bug is FIXED on main — the residual gate is the
+town/critter provider fold, c37's task; see the re-probe below).
 
 Everything else in the 86 has a live notify site on this branch or f30's
 (the full wired table: the c36 site table above + f30's tail census).
+
+## W4-c36 RE-PROBE — the 20-row gap list vs the CURRENT pushed tips (2026-11-21)
+
+Method: `git fetch origin --prune`, then per-lane
+`git merge-base --is-ancestor origin/task/W4-<lane> origin/main` + a symbol
+grep of each tip's diff. **Result: every gap's owning system is still
+BRANCH-ONLY — none is in `origin/main` (`a725acb04`, this branch's base).**
+No gap can be wired in this tree without stacking unmerged lanes (banned by
+AGENTS.md), so this pass records the exact post-merge seams instead. The
+band lanes the lead expected to be porting are NOT porting yet: **d36
+`65e481f96` and d41 `4ed22f0b3` are CLAIM-only commits; d39/d43 tips equal
+main (zero port commits pushed); d42 `88df58090` is a non-compiling WIP
+checkpoint** (its own message: "Does not compile", superseded by the
+research/108 union plan). No `d41r/d42r/d43r/d36r/d39r` or `f30b` remote
+branches exist.
+
+### Per-row re-probe (tip hashes as of this fetch)
+
+| Row | Cond | Owning lane / tip | In main? | Post-merge seam |
+| --- | --- | --- | --- | --- |
+| IT_CAN_TALK | 18 | d36 `65e481f96` (CLAIM only); d119 `04d7f9fd2` adds the `unlocked_truffle_spawn` housing gate but NO Truffle kind and NO notify 18 | no | the arrival switch (`world_sim/npcs.rs:4949`'s cited comment) — `net_id() == 160` arm → 18 + `unlockedTruffleSpawn` (`WorldGen.cs:5579-5583`) |
+| TURN_GNOME_TO_STATUE | 24 | none — d40's 473 row is BigMimicCorruption, NOT the gnome | no | gnome AI (`NPC.cs:55896`) unowned |
+| QUEEN_MACHINE | 31 | f30 `f8cef8cb8` (seed gate + mecha_mayhem machine; 31 CITED) | no | Mechdusa summon 5334 + combined-boss death (`NPC.cs:78857-78869`) unowned |
+| FEAR_THE_SUN | 33 | f50 `ff56e6e51` does NOT port `UpdateSunScorch` (grep: no sun_scorch writer); the `vampire_burning_in_sunlight` flag still has no play writer (`armor_sets.rs:345`) | no | `Player.cs:28647` unowned |
+| ITS_SHALING_OUTSIDE | 34 | d15 ports `SpawnFallingObjects`' starfall loop ONLY — the boulder-rain arm folds false (its own comment); f45 carries the header fields | no | `WorldGen.cs:71694` boulder-rain start unowned |
+| EXTRA_LIFE | 35 | none (all-tip grep: no `surviveHardcoreDeath`/`HardcoreDeathPenalty`) | no | `Player.cs:38782` unowned |
+| GRAVE_MISTAKE | 36 | none — `death.rs` tombstones are the falling visual, not striking projectiles | no | `Player.cs:20473`/`:38836` unowned |
+| FORTUNE_FAVORS_THE_BOULD | 39 | none (all-tip grep: no rainbow-boulder music counter) | no | `Main.cs:61828` unowned |
+| TRAINING_DAY | 40 | **a6 `8ed96ee5d` ports `use_combat_book` 4382/5336 + `world.combat_book_volume_two_was_used`** — but fires NO notify 40 | no | after a6+f30 merge: the `update_player` armor tail (f30's 38/41 seam) reads `combat_book_was_used && combat_book_volume_two_was_used` → 40 (`Player.cs:25697`) |
+| NEW_DIGS | 43 | **f47 `507a0da5c` ports AI_007's shimmer state 25 completion + sets `out.shimmer_town_progression`** (`npc_ai_town.rs:1821`) — but NO consumer fires 43 | no | after f47 merge: the npcs-pass drain of `shimmer_town_progression` → `notify_progression_net(43)` (`NPC.cs:53273`) |
+| MY_PEOPLE_NEED_ME | 44 | none — no lane ports `BordersMovement`'s remix top-world kill | no | `Player.cs:24076` unowned |
+| TRASH_COMPACTOR | 45 | **c24 `e2e50a427` ports the Journey UI + the `register_sacrifice` consumer** (`journey_clicks.rs`) — no notify 45; f30 `f8cef8cb8` has the PREP (`LastEditId` + `count_fully_researched` + `check_research_achievement`) | no | after c24+f30 merge: the sacrifice click → `check_research_achievement` → 45 (`AchievementsHelper.cs:387-399`); the enter-world forced call (`Player.cs:325`) + the per-tick `:25703` |
+| INTERDIMENSIONAL_RECYCLING | 46 | none — `npc_chat.rs` has the cola REMINDER line only; no gift path (all-tip grep negative) | no | `Main.cs:40294` unowned |
+| SPICY_LICKS (partial) | 37 | f30 wires the 4715 arm; NO lane ports `ItemCheck_PlayInstruments` (a1 grep negative) — the 1305/4057/4372 arms stay cited | no | `Player.cs:46574`/`:46588` unowned (the instruments use system) |
+| VEHICULAR_MANSLAUGHTER | "Hit" | none (all-tip grep: no `GetMinecartDamage`); the prerequisites ARE in main (`mount::is_cart`, `damage_var`, `minecart.rs`) | no | `Player.cs:27585-27604` unowned |
+| PET_THE_PET | "Do" | none — the petting stop is cited-unported in `player.rs:9178` | no | `Player.cs:33350`/`:33397` unowned |
+| FIND_A_FAIRY | "Do" | d42 `88df58090` WIP adds the FairyCritter enum variants (non-compiling, superseded) | no | fairy kinds + the sight seam (`NPC.cs:48647`, HandleSpecialEvent 22) |
+| PURIFY_ENTIRE_WORLD | "Do" | f22 `e7756fa70` does NOT port the Dryad status dialog (grep negative) | no | `Main.cs:40276` unowned |
+| TO_INFINITY_AND_BEYOND | "Do" | **d20 `13de9ccf6` ports AI_195 Jim's Drone + the altitude/held-5451 kill gates** — but NO achievement wire, and main's `proj_data` has no 1020 row (the spawn drops) | no | after d20 merge: the 1020 kill arm → `complete_condition("TO_INFINITY_AND_BEYOND", "Do")` when `pos.y - height <= 640 && owner == myPlayer` (`Projectile.cs:70857-70862`) |
+| GOING_OLDSCHOOL | "Do" | none — the classic title screen is unported on every tip | no | `Main.cs:63018` → `AchievementsHelper.cs:382-385` unowned |
+
+**Net: 0 of 20 wireable in-tree today; 4 rows (40, 43, 45, TO_INFINITY) have
+their owning system + the exact notify seam identified on pushed tips** —
+c36 wires them the moment those lanes land in main (the next sync's
+re-probe). The other 16 stay cited.
+
+### (2) The 29 / S1-F-15 tier-bug census — VERIFIED FIXED, no bug to fix
+
+- Progression 29 = **BOOK_WORM** (`AchievementInitializer.cs:378-380`,
+  `Cond::Progression(29)` in `achievements_data.rs:1052-1057`). There is NO
+  "bullseye" achievement in the C# initializer (grep negative) — the lead's
+  note conflated rows; nothing to re-tier.
+- The tier condition is NOT wrong: `get_unlock_state_by_kill_count`
+  (`tr-core/src/bestiary.rs:31-54`) is line-for-line
+  `CommonEnemyUICollectionInfoProvider.cs:50-76` (quick>0 → 4, ≥full → 4,
+  ≥half → 3, ≥fifth → 2, ≥1 → 1, else 0).
+- The old denominator bug (0 → tier 4 at zero kills) is **already fixed on
+  main by S1-F-15**: `kills_needed_for` → `kills_to_banner_item`'s default
+  arm returns 50; `the_family_banner_chain` pins bannerless ids at 50 and
+  `completion_percent(&fresh) == 0.0` is pinned (`ui/bestiary.rs:2311`).
+  `banner_to_item` carries the full band table (deviation #15 resolved).
+- The RESIDUAL gate is the provider fold: main's `unlock_state` runs every
+  entry through the Common kill-ladder, so a town NPC's first kill reads
+  portrait-tier where the C# needs a CHAT (`TownNPCUICollectionInfoProvider`)
+  and a critter needs a SIGHT. **c37 `3e138525e` owns exactly this** (its
+  `bestiary_data::Gate` enum: Common/Town/Critter/Highest + the
+  `WorldBestiary`-based `completion_percent`). Not c36's to fix — recorded
+  as the dedupe below.
+
+### (3) The 17/26 roster no-op wires — automatic activation VERIFIED
+
+`check_real_estate_and_town_slimes` collects `n.kind.net_id()`, and
+`NpcKind::net_id()` (`npc/data.rs:1186`) resolves through
+`bestiary::entry_for_npc` → `ENTRIES` — **no hardcoded id list anywhere in
+the scan**. `kind_from_net_id` (`npc/data.rs:3996`) likewise scans
+`ENTRIES`. So when d36/d39/d41/d43 land their kinds + bestiary rows, the
+roster check activates with ZERO c36 edits. Re-probe corrections landed
+this pass: **Bartender 550 IS ported** (`DD2Bartender`, `ENTRIES` row +
+`dd2_pool_id`), so the missing roster is FOUR town kinds (160/178/209/229)
++ the eight slimes — the witness now carries the Bartender and pins
+`net_id() == 550`. The bands are not porting yet (claim-only tips above).
+
+### (4) f30 co-lane dedupe table (f30 `f8cef8cb8`, no f30b branch exists)
+
+f30's tail census (21/37-partial/38/41 WIRED, 45 PREP, 31/33/34/35/36/39/
+40/43/44/46 CITED) vs this gap list — the overlap is ENTIRELY inside f30's
+reserved tail, no double-wire:
+
+| Gap-list row | f30 verdict | Owner after merge |
+| --- | --- | --- |
+| 31, 33, 34, 35, 36, 39, 44, 46 | CITED (same missing systems) | f30's citation stands; c36 does not re-cite |
+| 40 | CITED (vol-2 flag never sets) | **a6 sets the flag** — the armor-tail wire is f30's seam (its 38/41 arms), c36 supplies the re-probe fact |
+| 43 | CITED (state 25 skip) | **f47 ports the transform + flag** — the drain wire lands with f47's merge |
+| 45 | PREP (`check_research_achievement`) | **c24 ports the consumer** — the click wire joins f30's prep at merge |
+| 37 partial (1305/4057/4372) | CITED (4715 wired by f30) | unowned — the instruments use system has no lane |
+| 18, 24, "Hit", "Do"×5, 17/26, 29 | outside f30's tail | c36 (this list) |
+
+Sibling-lane reads: **e22 `aae211f16`** adds the 180-condition pin test
+(the "S — data test pins every row's condition count" task seed below is
+DONE on its branch); **c37 `3e138525e`** owns the provider-enum fold (the
+"M — replace quick_unlock with a per-entry provider enum" seed) AND the
+`try_grant_bestiary_100` signature move to `WorldBestiary` — c36's
+`KillTracker`-based call sites (`netglue.rs:2987`, `netmodules.rs:467`)
+will need the one-line rebase at c37's merge, no semantic conflict (the
+gate predicate is identical).
 
 ## Task seeds
 
 - ~~**S** — Model `NPCKilledCondition.CreateMany` faithfully~~ — **done (S1-E-18)**.
 - ~~**S** — Call `achievements::save` from the autosave/F9 pass~~ — **done (S1-E-18)** (save on completion + `save_world`, path-bound bootstrap).
-- **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: 17 partial, 18, 19/20, nurse `Pay`, most progression/custom flags; 29 blocked on S1-F-15). Partially done (S1-E-18). Dep: owning systems.
-- **S** — Make `kills_needed_for` fall back to
+- **M** — Continue wiring notify sites for progression/custom rows as owning systems land (remaining: the 20-row gap list, re-probed below — every owning system is still branch-only; 17 partial, 18; 19/20 + nurse `Pay` landed). Partially done (S1-E-18). Dep: owning systems merging to main.
+- ~~**S** — Make `kills_needed_for` fall back to
   `ItemID_Sets_DefaultKillsForBannerNeeded` (50) instead of 0, and pin it with a
   regression test that a fresh tracker leaves a non-quick entry at
-  `NotKnownAtAll`. Fixes #4.
+  `NotKnownAtAll`. Fixes #4.~~ **DONE (S1-F-15, re-verified W4-c36)** —
+  `the_family_banner_chain` + `kills_needed_for_honors_kills_to_banner_overrides`.
 - **M** — Replace the `quick_unlock` bool with a per-entry provider enum
   (`CommonEnemy` / `TownNPC` / `Critter` / `HighestOfMultiple` / `GoldCritter` /
   `Salamander`) and record sightings and chats. Fixes #5, #6. Dep: the S task
-  above for the denominator.
+  above for the denominator. **OWNED by c37 `3e138525e`** (W4-c36 re-probe:
+  its `bestiary_data::Gate` enum + the `WorldBestiary` completion move).
 - **L** — Port `ReportDroprates`: add a `report_droprates` method to the drop-rule
   traits (`tr-core/src/loot.rs`) and feed the resulting `DropRateInfo` rows into
   the bestiary entries as the C#'s `ItemDropBestiaryInfoElement`. Fixes #7.
@@ -423,7 +533,7 @@ Everything else in the 86 has a live notify site on this branch or f30's
   completed achievement (not only the last). Fixes #10, #11.~~ **DONE
   (S1-E-26 wave A, 2026-11-18)** — the popup + the per-row event queue; the
   advisor / chat-tag rendering halves of #10 stay open.
-- **S** — Reconcile `ENTRIES` (172) with `BESTIARY_NPC_SHEET_IDS` (174) and add
+- **S** — Reconcile `ENTRIES` (249) with `BESTIARY_NPC_SHEET_IDS` (181) and add
   a test that every sheet slot has an entry and vice versa. Fixes #13.
 - **DONE (S1-I-5, 2026-11-16)** — `NetBestiaryModule` is ported: the host broadcasts
   `SerializeKillCount` on a kill (`NPCKillsTracker.cs:23-33`) and syncs the counts on
@@ -431,4 +541,5 @@ Everything else in the 86 has a live notify site on this branch or f30's
   (`MessageBuffer.cs:3558-3569`). Fixes #16. The `Sight`/`Chat` halves remain open.
 - **S** — Add a data test that pins every Rust row's condition count against
   `AchievementInitializer.cs` (137 rows / 180 conditions) so the `CreateMany`
-  class of bug cannot return. Dep: the first S task.
+  class of bug cannot return. Dep: the first S task. **DONE on e22
+  `aae211f16`** (W4-c36 re-probe: its `CONDITION_COUNTS` transcription test).
