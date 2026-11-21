@@ -1459,7 +1459,11 @@ impl App {
                         && !self.bestiary_open
                         && self.map_style == 1
                     {
-                        if let Some(m) = map.as_ref() {
+                        if let Some(m) = map.as_ref().filter(|m| m.map_ready) {
+                            // `Main.DrawMap`'s second gate (`Main.cs:55283`):
+                            // `!Main.mapEnabled || !Main.mapReady` — no map
+                            // pixels until the first `DrawToMap` completes
+                            // (`MapRenderer.cs:196`).
                             let pos = ui::minimap::draw_to_position(ui::minimap::minimap_origin_raw(
                                 screen, map_scale,
                             ));
@@ -1899,6 +1903,11 @@ impl App {
                             && menu.is_none()
                             && front.is_none()
                             && settings.map_enabled
+                            // `Main.DrawMap`'s second gate (`Main.cs:55283`):
+                            // `!Main.mapReady` returns before the fullscreen
+                            // branch too — no backdrop/frame until the first
+                            // `DrawToMap` completes (`MapRenderer.cs:196`).
+                            && map.map_ready
                         {
                             if map.open {
                                 // `Main.cs:55483`: the biome `MapBG` backdrop is

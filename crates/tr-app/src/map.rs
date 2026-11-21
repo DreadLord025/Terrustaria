@@ -449,6 +449,28 @@ pub struct WorldMap {
     /// (`Main.cs:61863`) reads it — cleared by the `DrawToMap` consume
     /// (`MapRenderer.cs:198`).
     pub load_map: bool,
+    /// `Main.clearMap` (`Main.cs:805`): wipe the map targets on the next
+    /// `DrawToMap` (`MapRenderer.cs:161-173`). Armed by the `.map` load
+    /// (`WorldMap.cs:211`), `/map` + `/clearmap`
+    /// (`ToolkitDebugCommands.cs:483`/`:499`) and the world clear
+    /// (`WorldGen.cs:6982`); the port's single texture clears with one
+    /// transparent bulk write.
+    pub clear_map: bool,
+    /// `Main.mapReady` (`Main.cs:797`): a `DrawToMap` has completed —
+    /// `Main.DrawMap`'s second gate (`Main.cs:55283`,
+    /// `!mapEnabled || !mapReady`). Set by the draw tail
+    /// (`MapRenderer.cs:196`); the world clear drops it
+    /// (`WorldGen.cs:6985`).
+    pub map_ready: bool,
+    /// `Main.loadMapLock` (`Main.cs:793`) + `Main.loadMapLastX`
+    /// (`Main.cs:791`): the staged-upload progress pair — armed by the
+    /// load (`WorldMap.cs:213`), read by the world-load wait loop
+    /// (`WorldGen.cs:6823-6825`) and the netplay connect status
+    /// (`Netplay.cs:506-508`), cleared by the draw tail
+    /// (`MapRenderer.cs:197-199`). The port's bulk write completes in one
+    /// frame, so `load_map_last_x` stays 0 (the tail's reset value).
+    pub load_map_lock: bool,
+    pub load_map_last_x: i32,
 }
 
 impl WorldMap {
@@ -474,6 +496,20 @@ impl WorldMap {
             // `MapRenderer.cs:62-77`: 5x2 targets, one change list each.
             change_queues: vec![Vec::new(); 5 * 2],
             load_map: false,
+            clear_map: false,
+            map_ready: false,
+            load_map_lock: false,
+            load_map_last_x: 0,
+        }
+    }
+
+    /// `WorldMap.Clear` (`WorldMap.cs:249-258`): every tile's
+    /// `MapTile.Clear` — type/light/extra zeroed. The callers are the world
+    /// clear (`WorldGen.cs:6971`, gated on `mapReady`) and `/clearmap`
+    /// (`ToolkitDebugCommands.cs:500`).
+    pub fn clear(&mut self) {
+        for t in self.tiles.iter_mut() {
+            t.clear();
         }
     }
 
@@ -661,13 +697,17 @@ impl WorldMap {
     /// already ran through the dirty list (`prepare`), so both paths end
     /// with empty lists. The `refreshMap` flag itself is consumed by the
     /// `Main.cs:61888-61892` arm, not here — the C# never clears it inside
-    /// `DrawToMap`.
+    /// `DrawToMap`. The tail (`MapRenderer.cs:196-199`) sets `mapReady`,
+    /// zeroes `loadMapLastX` and lifts `loadMap`/`loadMapLock`.
     pub fn draw_to_map_queues(&mut self) {
         for q in self.change_queues.iter_mut() {
             q.clear();
         }
         // `:196-199`: the draw completes the staged `.map` upload.
-        self.load_map = false;
+        self.map_ready = true; // `:196`
+        self.load_map_last_x = 0; // `:197`
+        self.load_map = false; // `:198`
+        self.load_map_lock = false; // `:199`
     }
 
     /// The edit-queue drain's push (the `MapRenderer.QueueChange` analog —
@@ -767,8 +807,10 @@ impl WorldMap {
         // loadMapLock = true; refreshMap = false`. The staged-upload gate
         // (`Main.cs:61863`'s `!Main.loadMap`) holds the reveal sweep until
         // the bulk upload completes (`MapRenderer.cs:198` clears it).
-        self.load_map = true;
-        self.refresh_map = false;
+        self.clear_map = true; // `:211`
+        self.load_map = true; // `:212`
+        self.load_map_lock = true; // `:213`
+        self.refresh_map = false; // `:214`
         true
     }
 
@@ -814,6 +856,16 @@ impl WorldMap {
         if !self.uploaded {
             r.ensure_map_texture(gpu, world.width as u32, world.height as u32);
             self.uploaded = true;
+        }
+        // `MapRenderer.DrawToMap`'s clear arm (`MapRenderer.cs:161-173`):
+        // `clearMap` wipes every target and clears itself (`:172`). The
+        // port's one texture takes the wipe as a full re-upload: revealed
+        // tiles rewrite their identical colour, unrevealed tiles write
+        // transparent — pixel-identical to clear-then-redraw-changed.
+        // Gated on `mapEnabled` like the whole `DrawToMap` (`:130-133`).
+        if self.clear_map && map_enabled {
+            self.clear_map = false; // `:172`
+            self.needs_full_upload = true;
         }
         // A loaded `.map`: one bulk upload of every revealed tile, matching the
         // first-frame `MapRenderer.DrawChangesToMap` sweep.
@@ -1798,6 +1850,59 @@ mod tests {
         assert!(!m.refresh_map, "`:214` clears any pending refresh");
         assert!(m.needs_full_upload);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// W4-e18 residual census (written, not run — code-only): the
+    /// `DrawToMap` tail (`MapRenderer.cs:196-199`) — `mapReady = true`,
+    /// `loadMapLastX = 0`, `loadMap = false`, `loadMapLock = false` — and
+    /// the load arms all three (`WorldMap.cs:211-213`).
+    #[test]
+    fn w4_e18_the_draw_tail_sets_ready_and_lifts_the_load_lock() {
+        let world = test_world();
+        let mut m = WorldMap::new(&world);
+        assert!(!m.map_ready, "Main.cs:797 starts false");
+        assert!(!m.load_map_lock);
+        m.load_map = true;
+        m.load_map_lock = true;
+        m.load_map_last_x = 17;
+        m.draw_to_map_queues();
+        assert!(m.map_ready, "`:196`");
+        assert_eq!(m.load_map_last_x, 0, "`:197`");
+        assert!(!m.load_map, "`:198`");
+        assert!(!m.load_map_lock, "`:199`");
+    }
+
+    /// W4-e18 residual census (written, not run — code-only): the `.map`
+    /// load arms `clearMap` + `loadMapLock` (`WorldMap.cs:211`/`:213`) on
+    /// top of the staged-upload gate.
+    #[test]
+    fn w4_e18_the_load_arms_clear_map_and_the_lock() {
+        let world = test_world();
+        let tiles = test_tiles(40, 40);
+        let dir = unique_dir("e18lock");
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("lock.map");
+        save_map_file(&world, &tiles, &path).unwrap();
+        let mut m = WorldMap::new(&world);
+        assert!(m.load(&world, &path));
+        assert!(m.clear_map, "`WorldMap.cs:211`");
+        assert!(m.load_map_lock, "`:213`");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// W4-e18 residual census (written, not run — code-only):
+    /// `WorldMap.Clear` (`WorldMap.cs:249-258`) zeroes every tile — the
+    /// `/clearmap` command's `Main.Map.Clear()` (`ToolkitDebugCommands.cs:500`).
+    #[test]
+    fn w4_e18_clear_zeroes_every_tile() {
+        let world = test_world();
+        let mut m = WorldMap::new(&world);
+        m.tiles = test_tiles(40, 40);
+        assert!(m.tiles.iter().any(|t| t.light > 0));
+        m.clear();
+        assert!(m.tiles.iter().all(|t| {
+            t.ty == 0 && t.light == 0 && !t.is_changed() && !t.update_queued() && t.color() == 0
+        }));
     }
 
     // ---- Task 6b: fullscreen zoom / pan / minimap geometry ----
