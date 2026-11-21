@@ -33027,6 +33027,27 @@ read/grep against the decompilation (no compiler invoked). 7
 in `world_sim/npcs.rs` WRITTEN, NOT RUN; the pure machines' 17+19
 witnesses stand unchanged.
 
+**Residual round (2026-11-21, the co-lane re-verification).** The
+catch chain (catchItem 2006/2007/4849/5350 — NOT the 2121 frog/duck
+range), the `EntityLights` snail feed and the Transform(677) chain
+were re-verified end-to-end against the pushed e26/c4/c7/f47/d37
+tips; the full record + the protocol-band collision matrix (d37/g8/
+d42 squat 359/360; 655/677 free everywhere; c7's identical Shimmerfly
+definition dedupes at merge) lives in
+`docs/research/109-snail-band-claims.md`. ONE code residual found and
+fixed: `NPC.cs:17838`'s unconditional `buffImmune[353] =
+NPCID.Sets.ShimmerImmunity[type]` write was unported — the set
+(`NPCID.cs:10467`, 131 ids, scripted zero-drift compare) now rides
+`npc_buffs.rs::shimmer_immune` keyed on `cs_id`, applied in
+`for_kind` after the derived rules. The Shimmerfly 677 is a set
+member (rejects buff 353 — never re-shimmers; the f47 transparency
+ramp reads the flag); the snail trio is NOT (their aiStyle-67 probe
+owns the transform). The f47 wet-contact pass exempts aiStyle 67
+(the C# `:93055` list), so the generic ramp never fires for the
+snails — the two shimmer lanes compose without double-transform.
+Witness `w4_c9_shimmer_immunity_write_keys_the_cs_type` WRITTEN NOT
+RUN.
+
 ## The Martian Drone / Solar Corite machine (S1-D-3 aiStyle-74, code-only)
 
 `crates/tr-app/src/npc_ai_style74.rs` ports `NPC.AI()`'s
