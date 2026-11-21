@@ -167,6 +167,8 @@
 //! | 705-712 | `:86387-86406` | the corrupt/crimson critter family 47/57/58/464/465 death (per-type) |
 //! | 713-722 | `:86425-86446` | the crimson monster family 173/174/181/182/268 death (per-type, alpha dust) |
 //! | 723-732 | `:86465-86486` | the zombie family 190/191/192/193/194 death (2 gores each, +14 X offset) |
+//! | 733-738 | `:86490-86501` | the demon-eye family 317/318/2 death (completes the block) |
+//! | 739-740 | `:86518-86519` | the 157 Arapaima death (2 gores 186/187, +14 X offset) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4496,13 +4498,13 @@ fn crimson_monster_death(
     }
 }
 
-/// The demon-eye family death (`NPC.cs:86459-86502`): the 50-dust type-5
-/// burst (SpeedX `2*hitDirection`, SpeedY -2), then 2 gores — the head at
-/// position and the tail at `position + (14, 0)`, both at `this.scale`.
-/// This commit ports the 190/191/192/193/194 variants (sites 723-732):
-/// 190 CataractEye → (249,2), 191 SleepyEye → (248,2), 192 DialatedEye →
-/// (247,2), 193 GreenEye → (252,253), 194 PurpleEye → (250,251). The
-/// 317/318/2 variants land with the next batch.
+/// The demon-eye family death (`NPC.cs:86459-86502`, sites 723-738): the
+/// 50-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then 2 gores —
+/// the head at position and the tail at `position + (14, 0)`, both at
+/// `this.scale`. The per-type (head, tail) pairs: 190 CataractEye → (249,2),
+/// 191 SleepyEye → (248,2), 192 DialatedEye → (247,2), 193 GreenEye →
+/// (252,253), 194 PurpleEye → (250,251), 317 DemonEyeOwl → (447,448),
+/// 318 DemonEyeSpaceship → (449,450), and the `else` (2 DemonEye) → (1,2).
 fn demon_eye_death(
     npc: &Npc,
     npc_type: i32,
@@ -4528,12 +4530,40 @@ fn demon_eye_death(
         191 => (248, 2),
         192 => (247, 2),
         193 => (252, 253),
-        _ => (250, 251), // 194 PurpleEye
+        194 => (250, 251),
+        317 => (447, 448),
+        318 => (449, 450),
+        _ => (1, 2), // 2 DemonEye (the else arm)
     };
     let vel = Vec2::new(npc.vx, npc.vy);
     let s = npc.scale;
     gore.new_gore(rng, world, pos, vel, head, s);
     gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, tail, s);
+}
+
+/// The 157 Arapaima death (`NPC.cs:86514-86519`, sites 739-740): the
+/// 50-dust type-5 burst, then the 2 gores 186 at position and 187 at
+/// `position + (14, 0)`. Scale defaults to 1.
+fn arapaima_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 186, 1.0); // :86518
+    gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, 187, 1.0); // :86519
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -5081,13 +5111,17 @@ pub fn hit_effect_c(
     {
         crimson_monster_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86449-86503` — the demon-eye family arm; this commit owns the
-    // 190/191/192/193/194 variants (sites 723-732); the 317/318/2 variants
-    // land with the next batch.
-    if (npc_type == 190 || npc_type == 191 || npc_type == 192 || npc_type == 193 || npc_type == 194)
+    // `:86449-86503` — the demon-eye family arm, COMPLETE (sites 723-738):
+    // the 190/191/192/193/194/317/318/2 variants.
+    if (npc_type == 2 || npc_type == 190 || npc_type == 191 || npc_type == 192 || npc_type == 193
+        || npc_type == 194 || npc_type == 317 || npc_type == 318)
         && npc.hp <= 0
     {
         demon_eye_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86504-86520` — the 157 Arapaima arm (sites 739-740).
+    if npc_type == 157 && npc.hp <= 0 {
+        arapaima_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8013,18 +8047,22 @@ mod tests {
         }
     }
 
-    /// `NPC.cs:86465-86486` — the demon-eye family: the (head, tail) pairs
+    /// `NPC.cs:86465-86501` — the demon-eye family: the (head, tail) pairs
     /// 190→(249,2), 191→(248,2), 192→(247,2), 193→(252,253), 194→(250,251),
-    /// the tail at position+(14,0), both at this.scale.
+    /// 317→(447,448), 318→(449,450), 2 else→(1,2), the tail at
+    /// position+(14,0), both at this.scale.
     #[test]
     fn w4_f10_the_demon_eye_death_uses_the_per_type_pair() {
         let w = air();
-        let cases: [(i32, i32, i32); 5] = [
+        let cases: [(i32, i32, i32); 8] = [
             (190, 249, 2),
             (191, 248, 2),
             (192, 247, 2),
             (193, 252, 253),
             (194, 250, 251),
+            (317, 447, 448),
+            (318, 449, 450),
+            (2, 1, 2),
         ];
         for (ty, head, tail) in cases {
             let mut n = boss(100.0, 100.0, 30.0, 30.0);
@@ -8039,6 +8077,21 @@ mod tests {
             assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
             assert_eq!(gore.slot(0).scale, 1.2);
         }
+    }
+
+    /// `NPC.cs:86518-86519` — the Arapaima death: the 2 gores 186/187, the
+    /// tail at position+(14,0).
+    #[test]
+    fn w4_f10_the_arapaima_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 24.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(701);
+        arapaima_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 186);
+        assert_eq!(gore.slot(1).gore_type, 187);
+        assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
