@@ -1,8 +1,16 @@
 //! The Journey research — `CreativeItemSacrificesCatalog.cs` +
 //! `ItemsSacrificedUnlocksTracker.cs`: the sacrifice caps (the generated
 //! `creative_sacrifices::SACRIFICES` table, the name → the count) and the
-//! per-item sacrificed counts (the world-persistent state — the save
-//! rides M6-SAVE's world sections).
+//! per-item sacrificed counts. The counts persist through the `.plr`
+//! `creativeTracker` block (`Player.cs:54911`/`:55696-55699` →
+//! `ItemsSacrificedUnlocksTracker.Save`/`Load`, `:157-196`): the
+//! `(persistentId, count)` string pairs the W4-f44 serialization seam
+//! carries (`player_file::PlayerFileWrite.research` /
+//! `PlayerFile.research`, the same `Vec<(String, i32)>` shape). The
+//! persistent id IS the ItemID const name (`ContentSamples.
+//! ItemPersistentIdsByNetIds`, the generated `ItemName` table's key) —
+//! the port's `itemdata::NAMES` row, the same string the sacrifice caps
+//! table keys on.
 
 use crate::creative_sacrifices::SACRIFICES;
 
@@ -110,6 +118,60 @@ impl ResearchTracker {
         self.counts.clear();
         self.newly.clear(); // `Reset` (`:208-216`)
     }
+
+    /// `ItemsSacrificedUnlocksTracker.Save` (`ItemsSacrificedUnlocksTracker.cs:
+    /// 157-169`): the `(persistentId, count)` pairs the `.plr`
+    /// `creativeTracker` block carries (`Player.cs:54911`). The persistent
+    /// id is the ItemID const name (`ContentSamples.ItemPersistentIdsByNetIds`
+    /// — the port's `itemdata::NAMES` row); only the positive counts ride
+    /// (the C#'s `_sacrificeCountByItemPersistentId` holds every registered
+    /// row, and `RegisterItemSacrifice` never writes a 0). The W4-f44 seam
+    /// (`player_file::PlayerFileWrite.research`) owns the byte write: the
+    /// literal `false` flag + the i32 count + the (string, i32) pairs.
+    pub fn save_pairs(&self) -> Vec<(String, i32)> {
+        self.counts
+            .iter()
+            .filter(|(_, count)| *count > 0)
+            .filter_map(|(id, count)| {
+                let name = crate::itemdata::NAMES.get(*id as usize)?;
+                Some(((*name).to_string(), *count as i32))
+            })
+            .collect()
+    }
+
+    /// `ItemsSacrificedUnlocksTracker.Load` (`:171-196`): the
+    /// `(persistentId, count)` pairs land on the net-id cache through the
+    /// persistent-id → net-id map (`ContentSamples.ItemNetIdsByPersistentIds`
+    /// — the port's `NAMES` reverse lookup). An unknown id keeps its string
+    /// row in the C# (the `_sacrificeCountByItemPersistentId` dictionary)
+    /// but never reaches the cache; the port's tracker is the cache, so an
+    /// unknown name is dropped (the count has no item to attach to — the
+    /// documented deviation, ANALYSIS). The `CreativeResearchItemPersistent
+    /// IdOverride` remap (`:184-187`) is a generated alias table the port
+    /// does not carry — the names map 1:1.
+    pub fn load_pairs(&mut self, pairs: &[(String, i32)]) {
+        for (name, count) in pairs {
+            // The net-id reverse lookup: the NAMES row whose string matches.
+            let Some(id) = crate::itemdata::NAMES
+                .iter()
+                .position(|n| *n == name.as_str())
+            else {
+                continue; // the unknown-id drop (the C# keeps the string row)
+            };
+            let count = (*count).max(0) as u32;
+            let mut found = false;
+            for (eid, c) in self.counts.iter_mut() {
+                if *eid == id as u16 {
+                    *c = count;
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                self.counts.push((id as u16, count));
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -165,5 +227,41 @@ mod tests {
         assert_eq!(t.items_with_progress().count(), 2);
         assert_eq!(t.sacrifice_numbers(97), Some((5, 99)));
         assert_eq!(t.sacrifice_numbers(6196), None);
+    }
+
+    /// `Save`/`Load` (`ItemsSacrificedUnlocksTracker.cs:157-196`): the
+    /// `(persistentId, count)` pairs round-trip through the ItemID const
+    /// names — the W4-f44 `.plr` seam's `Vec<(String, i32)>` shape.
+    #[test]
+    fn the_save_load_pairs_round_trip_through_the_names() {
+        let mut t = ResearchTracker::default();
+        t.register_sacrifice(8, 100); // Torch, fully
+        t.register_sacrifice(2, 37); // DirtBlock, partial
+        let pairs = t.save_pairs();
+        assert_eq!(
+            pairs,
+            vec![("Torch".to_string(), 100), ("DirtBlock".to_string(), 37)],
+            "the persistent ids are the ItemID const names"
+        );
+        // The load lands them on a fresh tracker.
+        let mut back = ResearchTracker::default();
+        back.load_pairs(&pairs);
+        assert_eq!(back.sacrificed(8), 100);
+        assert_eq!(back.sacrificed(2), 37);
+        assert!(back.is_fully_researched(8));
+        assert!(!back.is_fully_researched(2));
+        // The newly-unlocked set does NOT ride the save (the C#'s
+        // `_newlyUnlocked` is not persisted).
+        assert!(!back.is_newly_researched(8));
+        // An unknown name drops (the C# keeps the string row but the cache
+        // never sees it — the port's tracker IS the cache).
+        let mut unknown = ResearchTracker::default();
+        unknown.load_pairs(&[("NotAnItem".to_string(), 50)]);
+        assert_eq!(unknown.items_with_progress().count(), 0);
+        // A negative count clamps to 0 (the C#'s Load stores the raw int;
+        // the port's u32 cache floors at 0 — the documented deviation).
+        let mut neg = ResearchTracker::default();
+        neg.load_pairs(&[("Torch".to_string(), -5)]);
+        assert_eq!(neg.sacrificed(8), 0);
     }
 }

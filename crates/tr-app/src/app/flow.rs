@@ -1283,6 +1283,42 @@ impl App {
             FlowClick::CharDelete(i) | FlowClick::WorldDelete(i) => Some(i),
             _ => None,
         };
+        // `UICharacterListItem.PlayGame` (`:256-261`) → `SelectPlayer`: the
+        // card's `.plr` is the active player. The port's CharPlay was
+        // routing-only (spec §9.4); the Journey research counts ride the
+        // same file (`Player.cs:54911`'s creativeTracker block), so the
+        // card's file is read here and its research pairs hydrate the
+        // tracker — the W4-f44 seam's `PlayerFile.research` shape. The
+        // favourites hydrate too (BUG-03's card→session half).
+        if let FlowClick::CharPlay(i) = click {
+            if let Some(path) = self.players.get(i).and_then(|p| p.path.clone()) {
+                if let Ok(file) = crate::player_file::read_player_file(&path) {
+                    self.research.load_pairs(&file.research);
+                    self.hydrate_favorites(file.inv_favorites);
+                    self.player_name = file.name.clone();
+                    // The per-player powers hydrate the registry
+                    // (`CreativePowerManager.LoadToPlayer`'s effect).
+                    self.creative_powers.set(
+                        crate::creative::PowerId::Godmode,
+                        crate::creative::PowerState::Toggle(file.powers.godmode),
+                    );
+                    self.creative_powers.set(
+                        crate::creative::PowerId::FarPlacementRange,
+                        crate::creative::PowerState::Toggle(file.powers.far_placement),
+                    );
+                    self.creative_powers.set(
+                        crate::creative::PowerId::SpawnRate,
+                        crate::creative::PowerState::Slider(file.powers.spawn_rate),
+                    );
+                    self.journey.spawn_rate_cache = file.powers.spawn_rate;
+                    // The session difficulty stand-in follows the card
+                    // (`Main.ActivePlayerFileData.Player.difficulty`).
+                    if let Some(draft) = self.session_draft.as_mut() {
+                        draft.difficulty = file.difficulty;
+                    }
+                }
+            }
+        }
         // `UIWorldListItem.PlayGame` (`:360-374`) → `Main.LoadWorld`: the
         // card's file is parked on the App, and the flow's launch arm closes
         // both screens. The frame loop performs the swap at the next boundary
@@ -2205,6 +2241,7 @@ pub(crate) mod front_flow_tests {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers: crate::creative::CreativePowers::new(),
+            game_mode_difficulty_override: None,
             research: crate::research::ResearchTracker::default(),
             journey: ui::journey::JourneyMenu::default(),
             #[cfg(feature = "debug")]
@@ -2540,6 +2577,8 @@ pub(crate) mod front_flow_tests {
                 inventory,
                 inv_favorites: 0,
                 last_saved_binary: 0,
+                research: Vec::new(),
+                powers: crate::player_file::CreativePowersSave::written_fresh(),
             },
         )
         .unwrap();

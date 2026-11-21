@@ -267,6 +267,9 @@ fn save_created_character(draft: &ui::char_creation::NewPlayerDraft, favorites: 
         // `DateTime.UtcNow.ToBinary()` (`Player.cs:54909`) — the port tracks
         // no save clock; 0 is the documented "unknown" stamp (ANALYSIS).
         last_saved_binary: 0,
+        // The Journey research pairs: a fresh character has none.
+        research: Vec::new(),
+        powers: crate::player_file::CreativePowersSave::written_fresh(),
     };
     match tr_core::save::default_player_path(&draft.name) {
         Some(path) => {

@@ -90,6 +90,14 @@ impl App {
         // `Main.Achievements.Save()`. Achievements are global (one file, not
         // per-world), so every save route writes it before the format branch.
         self.achievements.save();
+        // `Player.SavePlayer` (`Player.cs:54700-54742`): the active
+        // character's `.plr` — the Journey research pairs ride its
+        // creativeTracker block (`:54911`), the per-player powers its
+        // SaveToPlayer block (`:54913`). The port's session character is
+        // the `session_draft` (the created character's name); a disk-backed
+        // card's file is re-saved under its own path. The W4-f44 seam's
+        // `PlayerFileWrite` carries the research/powers fields.
+        self.save_player_plr();
         // `SetTempToOngoing` (`WorldFile.cs:1053-1059`, called from
         // `InternalSaveWorld:913` before the write): the save snapshots the live
         // weather state into the world's file payload — `SetOngoingToTemps`
@@ -322,6 +330,63 @@ impl App {
         data
     }
 
+    /// `Player.SavePlayer` (`Player.cs:54700-54742`) — the active character's
+    /// `.plr` write. The Journey research pairs (`research::save_pairs`, the
+    /// `ItemsSacrificedUnlocksTracker.Save` shape) and the per-player powers
+    /// (the `CreativePowersSave` shape) ride the W4-f44 seam's
+    /// `PlayerFileWrite`. The session character's path is the
+    /// `default_player_path` (`Main.GetPlayerPathFromName`, `Main.cs:4820`);
+    /// a disk-backed card re-saves under its own path. The inventory/stats
+    /// halves stay the session's (the port's `.plr` writer is the
+    /// created-character one — the full live-state write is the W4-f44
+    /// lane's; this seam owns the research/powers fields).
+    fn save_player_plr(&self) {
+        let Some(draft) = self.session_draft.as_ref() else {
+            return; // no session character — nothing to save
+        };
+        let Some(path) = tr_core::save::default_player_path(&draft.name) else {
+            return;
+        };
+        // The existing file's stats/inventory halves are preserved (the
+        // port's writer is the created-character one); only the
+        // research/powers fields are refreshed from the live state.
+        let mut file = crate::player_file::read_player_file(&path)
+            .map(|f| crate::player_file::PlayerFileWrite {
+                name: f.name,
+                difficulty: f.difficulty,
+                skin_variant: f.skin_variant,
+                hair: f.hair,
+                life: f.life,
+                life_max: f.life_max,
+                mana: f.mana,
+                mana_max: f.mana_max,
+                hair_color: f.hair_color,
+                skin_color: f.skin_color,
+                eye_color: f.eye_color,
+                shirt_color: f.shirt_color,
+                undershirt_color: f.undershirt_color,
+                pants_color: f.pants_color,
+                shoe_color: f.shoe_color,
+                inventory: f.inventory,
+                inv_favorites: f.inv_favorites,
+                last_saved_binary: 0,
+                research: Vec::new(),
+                powers: crate::player_file::CreativePowersSave::written_fresh(),
+            })
+            .unwrap_or_default();
+        file.name = draft.name.clone();
+        file.difficulty = draft.difficulty;
+        file.research = self.research.save_pairs();
+        file.powers = crate::player_file::CreativePowersSave {
+            godmode: self.creative_powers.god_mode(),
+            far_placement: self.creative_powers.far_placement_range(),
+            spawn_rate: self.creative_powers.slider(crate::creative::PowerId::SpawnRate),
+        };
+        if let Err(e) = crate::player_file::write_player_file(&path, &file) {
+            log::warn!("player save failed: {e}");
+        }
+    }
+
     /// Binds `AchievementManager._savePath` (`AchievementManager.cs:25`,
     /// `:51`): the C# constructor resolves `Main.SavePath/achievements.dat`
     /// when the manager is created, so the port's production bootstrap
@@ -543,6 +608,17 @@ mod tests {
             crate::creative::PowerId::TimeRate,
             crate::creative::PowerState::Slider(12.0),
         );
+        // The weather freezes + the difficulty strength ride the section too
+        // (W4-c24 phase 4): the rain freeze on, the wind freeze off, the
+        // difficulty at the x1 seam (cache 0.33 → strength 1.0).
+        app.creative_powers.set(
+            crate::creative::PowerId::FreezeRain,
+            crate::creative::PowerState::Toggle(true),
+        );
+        app.creative_powers.set(
+            crate::creative::PowerId::Difficulty,
+            crate::creative::PowerState::Slider(1.0),
+        );
         app
     }
 
@@ -678,6 +754,23 @@ mod tests {
             Some(tr_core::wld::sections::WldCreativeValue::Bool(false)),
             "the biome-spread freeze"
         );
+        // The weather freezes + the difficulty strength (W4-c24 phase 4).
+        assert_eq!(
+            by_id(9),
+            Some(tr_core::wld::sections::WldCreativeValue::Bool(true)),
+            "the rain freeze"
+        );
+        assert_eq!(
+            by_id(10),
+            Some(tr_core::wld::sections::WldCreativeValue::Bool(false)),
+            "the wind freeze"
+        );
+        assert_eq!(
+            by_id(12),
+            Some(tr_core::wld::sections::WldCreativeValue::F32(1.0)),
+            "the difficulty strength — the bag holds the ported value, the
+             wire its [0,1] cache (the codec's canonical inverse)"
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -743,10 +836,8 @@ mod tests {
         assert!(loaded.sections.town_rooms.is_empty(), "no town rooms");
         assert!(loaded.sections.bestiary.is_empty(), "no bestiary state");
         // The creative section is never empty in the port: the registry holds
-        // the three ported persistent powers at their defaults, and the C#
-        // writes every `IPersistentPerWorldContent` power regardless
-        // (`SaveToWorld:127-136`) — the three unported ids (9/10/12) are the
-        // only records a vanilla file has that the port does not.
+        // the six per-world powers at their defaults, and the C# writes every
+        // `IPersistentPerWorldContent` power regardless (`SaveToWorld:127-136`).
         let ids: Vec<u16> = loaded
             .sections
             .creative_powers
@@ -754,7 +845,7 @@ mod tests {
             .iter()
             .map(|(id, _)| *id)
             .collect();
-        assert_eq!(ids, [0, 8, 13], "the ported three, ascending");
+        assert_eq!(ids, [0, 8, 9, 10, 12, 13], "the six per-world powers, ascending");
         let _ = std::fs::remove_dir_all(&dir);
     }
 
