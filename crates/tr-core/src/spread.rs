@@ -637,6 +637,142 @@ fn try_kill_invalid_tree_above(world: &mut World, x: i32, y: i32, new_floor: u16
     }
 }
 
+// ---------------------------------------------------------------------------
+// `WorldGen.Convert` — the hallow cell (W4-f25 helper C3, conversion type 2).
+// The consumers: SpreadGrass's 109 dispatch (`:75218`), DoHallowOnSurface
+// (`:1967-2011`), ConvertSkyIslands (`:24701`), initializeHardMode's hallow
+// runners (`:31630-31651`), the 146 Blue Solution spray / ChlorophyteBolt
+// death (`Projectile.cs:26803`/`:77635`). UNWIRED — the ported
+// `convert_cell_flavor(Hallow)` / `gerunner` maps stay as they are.
+
+/// `TileID.Sets.Conversion.Thorn` (`TileID.cs:95`). (d1's powder port carries
+/// the same constant on its branch; the merger dedupes.)
+const CONV_THORN: [u16; 4] = [32, 352, 69, 655];
+
+/// `TileID.Sets.Conversion.Torch(tile, conversionType)`'s default arm
+/// (`TileID.cs:63-77`): the styles every non-0/non-11 conversion type accepts.
+fn torch_convertible_default(style: i32) -> bool {
+    matches!(style, 0 | 9 | 16 | 18 | 19 | 20 | 21 | 22)
+}
+
+/// `WorldGen.Convert(i, j, 2, size)` (`WorldGen.cs:55067-55083` walk +
+/// `:55176-55260` cell): the square walk with the Manhattan `< 6` gate, each
+/// cell through [`convert_hallow_cell`]. The C# overload's `tiles`/`walls`
+/// halves both run (the callers that pass `tiles: false`/`walls: false` are
+/// the wall/tile sweeps — they ride the cell fn's halves directly when their
+/// consumer lands).
+pub fn convert_sized_hallow(world: &mut World, i: i32, j: i32, size: i32) {
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_hallow_cell(world, k, l);
+            }
+        }
+    }
+}
+
+/// `Convert`'s type-2 cell arm (`WorldGen.cs:55176-55260`): the wall chain
+/// (the flat Grass/Stone/HardenedSand/Sandstone/NewWall ladder → 70/28/219/
+/// 222/200-203, `:55179-55210`), then the torch → style 20 / moss-or-stone →
+/// 117 / golf grass → 492 / grass → 109 / ice → 164 / sand → 116 / hardened
+/// sand → 402 / sandstone → 403 / thorn-kill ladder in source order, then the
+/// INDEPENDENT mud arm (`:55256-55259`): a mud 59 cell with a hallow-grass
+/// 109 4-neighbour converts to dirt 0.
+/// `Convert_ActuallyConvertTile`/`Wall`/`Torch` (`:56287-56343`) write only
+/// when the cell differs and re-frame — the port's `reframe_area` superset
+/// (the `convert_cleanse_cell` deviation). The genRand-free wall ladder takes
+/// `None` (type 2 draws nothing); the `RainbowSandAndBlackSandWalls` paint
+/// arms are the d1-documented skip.
+pub fn convert_hallow_cell(world: &mut World, x: i32, y: i32) {
+    let Some(t) = world.tile(x, y) else {
+        return;
+    };
+    let (kind, wall, active) = (t.kind, t.wall, t.active());
+    // `:55087-55097` — the empty cell converts nothing.
+    if !active && wall == 0 {
+        return;
+    }
+    // The wall half (`:55177-55211`): the shared type-2 flat ladder.
+    if let Some(new_wall) =
+        crate::growth::convert_wall_by_case(wall, 2, y, world.world_surface, None)
+    {
+        // `Convert_ActuallyConvertWall` (`:56329-56343`): non-zero, different.
+        if wall != 0 && wall != new_wall {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.wall = new_wall;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+    // The tile half (`:55216-55255`) — the else-if ladder in source order.
+    if active && kind == 4 && torch_convertible_default(t.frame_y as i32 / 22) {
+        // `Convert_ActuallyConvertTorch(.., 20)` (`:55218`).
+        let cur = t.frame_y as i32 / 22;
+        if cur != 20 {
+            if let Some(t) = world.tile_mut(x, y) {
+                t.frame_y = 20 * 22;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    } else {
+        // `Main.tileMoss[type] || Conversion.Stone[type]` (`:55220`) — the
+        // generated TILE_MOSS set is Main.cs:7007-7047's eleven ids.
+        let new_kind: Option<u16> = if (crate::tiledata::TILE_MOSS.has(kind)
+            || crate::tiledata::SET_CONVERSION_STONE.has(kind))
+            && kind != 117
+        {
+            Some(117)
+        } else if crate::tiledata::SET_GOLF_GRASS.has(kind) && kind != 492 {
+            Some(492)
+        } else if CONV_GRASS.contains(&kind) && kind != 109 && kind != 492 {
+            Some(109)
+        } else if crate::tiledata::SET_ICE.has(kind) && kind != 164 {
+            Some(164)
+        } else if crate::tiledata::SET_CONVERSION_SAND.has(kind) && kind != 116 {
+            Some(116)
+        } else if crate::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind) && kind != 402 {
+            Some(402)
+        } else if crate::tiledata::SET_CONVERSION_SANDSTONE.has(kind) && kind != 403 {
+            Some(403)
+        } else {
+            None
+        };
+        if let Some(new_kind) = new_kind {
+            // `Convert_ActuallyConvertTile` (`:56312-56327`).
+            if active && kind != new_kind {
+                try_kill_invalid_tree_above(world, x, y, new_kind);
+                if let Some(t) = world.tile_mut(x, y) {
+                    t.kind = new_kind;
+                }
+                crate::framing::reframe_area(world, x, y, 1, false);
+            }
+        } else if CONV_THORN.contains(&kind) {
+            // `:55248-55255` — the thorn bushes die (the netMode arm is MP).
+            let _ = crate::edit::kill_tile(world, x, y, false);
+        }
+    }
+    // The independent mud arm (`:55256-55259`): the SNAPSHOT type 59 with a
+    // live 109 4-neighbour → dirt 0 through the same actually-convert shape.
+    if kind == 59
+        && [
+            world.tile(x - 1, y),
+            world.tile(x + 1, y),
+            world.tile(x, y - 1),
+            world.tile(x, y + 1),
+        ]
+        .iter()
+        .any(|t| t.is_some_and(|t| t.kind == 109))
+    {
+        if active && kind != 0 {
+            try_kill_invalid_tree_above(world, x, y, 0);
+            if let Some(t) = world.tile_mut(x, y) {
+                t.kind = 0;
+            }
+            crate::framing::reframe_area(world, x, y, 1, false);
+        }
+    }
+}
+
 /// `GERunner`'s wall arms (`:76244-76260`): the sandstone wall 187 → the
 /// hallowed sandstone wall 222; the ebonstone/crimstone walls 3/83 → the
 /// hallowed stone wall 28.
@@ -1168,5 +1304,166 @@ mod tests {
         assert!(block_below_makes_sand_convert_into_hardened_sand(&w, 30, 30));
         // The bottom row refuses (no cell below).
         assert!(!block_below_makes_sand_convert_into_hardened_sand(&w, 30, 59));
+    }
+
+    // W4-f25 helper C3 — the Convert type-2 hallow cell
+    // (`WorldGen.cs:55176-55260`). WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c3_the_hallow_ladder_is_verbatim() {
+        let mut w = World::new("t".into(), 600, 400);
+        let rows = [
+            (2u16, 109u16),
+            (23, 109),
+            (199, 109),
+            (477, 492), // the golf-grass arm BEFORE grass
+            (492, 492), // already golf — stays
+            (1, 117),
+            (25, 117),
+            (203, 117),
+            (179, 117), // the moss family rides the stone arm
+            (161, 164),
+            (163, 164),
+            (200, 164),
+            (53, 116),
+            (112, 116),
+            (234, 116),
+            (397, 402),
+            (398, 402),
+            (399, 402),
+            (396, 403),
+            (400, 403),
+            (401, 403),
+        ];
+        for (i, (src, _)) in rows.iter().enumerate() {
+            let x = 100 + i as i32;
+            let idx = w.index(x, 200);
+            w.tiles[idx] = crate::tile::Tile {
+                kind: *src,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        }
+        for (i, _) in rows.iter().enumerate() {
+            convert_hallow_cell(&mut w, 100 + i as i32, 200);
+        }
+        for (i, (src, dst)) in rows.iter().enumerate() {
+            assert_eq!(
+                w.tile(100 + i as i32, 200).unwrap().kind,
+                *dst,
+                "{src} hallowing"
+            );
+        }
+        // The already-hallow cells stay (the `!= target` gates).
+        for (x, kind) in [(200, 109u16), (201, 117), (202, 164), (203, 116)] {
+            let idx = w.index(x, 200);
+            w.tiles[idx] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+            convert_hallow_cell(&mut w, x, 200);
+            assert_eq!(w.tile(x, 200).unwrap().kind, kind);
+        }
+    }
+
+    #[test]
+    fn w4_f25_c3_the_mud_arm_reads_the_live_neighbours() {
+        let mut w = World::new("t".into(), 600, 400);
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let idx = w.index(x, y);
+            w.tiles[idx] = crate::tile::Tile {
+                kind,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        };
+        // A mud cell with NO 109 neighbour stays mud.
+        put(&mut w, 100, 200, 59);
+        convert_hallow_cell(&mut w, 100, 200);
+        assert_eq!(w.tile(100, 200).unwrap().kind, 59);
+        // The left neighbour converts to 109 in the SAME cell pass order —
+        // the mud arm reads the live tile (`Main.tile[i2-1, j2].type`).
+        put(&mut w, 110, 200, 59);
+        put(&mut w, 109, 200, 2);
+        convert_hallow_cell(&mut w, 109, 200); // the grass → 109 first
+        convert_hallow_cell(&mut w, 110, 200); // then the mud sees it
+        assert_eq!(w.tile(109, 200).unwrap().kind, 109);
+        assert_eq!(w.tile(110, 200).unwrap().kind, 0, "the mud → dirt");
+        // The thorn kill arm (`:55248-55255`).
+        put(&mut w, 120, 200, 32);
+        convert_hallow_cell(&mut w, 120, 200);
+        assert!(
+            !w.tile(120, 200).unwrap().active(),
+            "the thorn dies (no 109 neighbour, no mud arm)"
+        );
+    }
+
+    #[test]
+    fn w4_f25_c3_the_wall_chain_and_torch() {
+        let mut w = World::new("t".into(), 600, 400);
+        // The flat wall ladder (`:55179-55210` via convert_wall_by_case).
+        for (x, wall, want) in [
+            (100i32, 63u16, 70u16),
+            (101, 1, 28),
+            (102, 216, 219),
+            (103, 187, 222),
+            (104, 188, 200),
+            (105, 189, 201),
+            (106, 190, 202),
+            (107, 191, 203),
+        ] {
+            let idx = w.index(x, 200);
+            w.tiles[idx] = crate::tile::Tile {
+                kind: 1,
+                wall,
+                ..Default::default()
+            };
+            w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+            convert_hallow_cell(&mut w, x, 200);
+            assert_eq!(w.tile(x, 200).unwrap().wall, want, "wall {wall}");
+            // The stone tile hallowed alongside (kind 1 → 117).
+            assert_eq!(w.tile(x, 200).unwrap().kind, 117);
+        }
+        // The torch → style 20 (`:55216-55218`), the default style set.
+        let idx = w.index(110, 200);
+        w.tiles[idx] = crate::tile::Tile {
+            kind: 4,
+            frame_y: 9 * 22,
+            ..Default::default()
+        };
+        w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        convert_hallow_cell(&mut w, 110, 200);
+        assert_eq!(w.tile(110, 200).unwrap().frame_y, 20 * 22);
+        // A non-convertible style (e.g. 1) stays.
+        let idx = w.index(111, 200);
+        w.tiles[idx] = crate::tile::Tile {
+            kind: 4,
+            frame_y: 22,
+            ..Default::default()
+        };
+        w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+        convert_hallow_cell(&mut w, 111, 200);
+        assert_eq!(w.tile(111, 200).unwrap().frame_y, 22);
+    }
+
+    #[test]
+    fn w4_f25_c3_the_sized_walk_carries_the_manhattan_gate() {
+        let mut w = World::new("t".into(), 600, 400);
+        for x in 97..=103 {
+            for y in 197..=203 {
+                let idx = w.index(x, y);
+                w.tiles[idx] = crate::tile::Tile {
+                    kind: 2,
+                    ..Default::default()
+                };
+                w.tiles[idx].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        convert_sized_hallow(&mut w, 100, 200, 3);
+        assert_eq!(w.tile(100, 200).unwrap().kind, 109, "the centre");
+        assert_eq!(w.tile(100, 197).unwrap().kind, 109, "Manhattan 3");
+        assert_eq!(w.tile(97, 197).unwrap().kind, 2, "Manhattan 6 skips");
+        assert_eq!(w.tile(103, 203).unwrap().kind, 2, "the far corner skips");
     }
 }
