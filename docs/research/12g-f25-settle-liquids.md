@@ -93,5 +93,49 @@ insertion is ledger-neutral for every other step.
 
 | pass | commit | status |
 | --- | --- | --- |
-| census + orphan claim (this doc) | (this commit) | claimed |
-| Settle Liquids | — | pending |
+| census + orphan claim (this doc) | fd098528 | claimed |
+| Settle Liquids | (this commit) | landed |
+
+## Landing notes (Settle Liquids)
+
+Ported as `worldgen/settle_liquids.rs::settle_liquids` + the pipeline step
+`"settle liquids"` (`vanilla: "Settle Liquids"`) immediately before
+`remove water` (the port's chain groups the later carve/decor family between
+the vanilla Jungle Chests `:15977` and Remove Water From Sand `:16211` slots,
+so the step sits at the head of the M5-OCEAN phase-4 neighbourhood — every
+liquid-producing pass has already applied). The census test bumps 66 → 67
+executed steps; `progress.rs` carries `Lang.gen[27]` (`:16136`).
+
+The settle machinery rides the port's `LiquidSystem` (`liquid.rs`):
+
+- `quick_settle` / `gen_ignore_water` fields + the `UpdateLiquid`
+  `quickFall` derivation (`Liquid.cs:1056-1068`), the down-transfer >250
+  bump (`:588-591`) and the 254-from-255 tail (`:944-948`).
+- `water_check` (`WorldGen.cs:80415-80494`), `clear_pending_liquid`
+  (`:80496-80513`), the `tiles_ignore_water` / `world_gen_tiles_ignore_water`
+  / `set_bubble_solid` toggles and the `liquid_reaction_check` seam.
+- `tileobject.rs` gains `resolve_tile_def` (`GetTileData(Tile)`,
+  `TileObjectData.cs:5196-5261`) + `check_water_death` / `check_lava_death`
+  (the Tile overloads `:5083-5095` / `:5107-5119`) — the same bodies d112/d114
+  carry on their lanes (the merge reconciles; identical names/semantics).
+
+The pass body ports `QuickWater(3)` (`Liquid.cs:104-148`), `SettleWaterAt`
+(`:150-289`, the drop/fan + the water-line lava retype + the dungeon-wall
+water keep), the `AttemptToMove*` family (`:291-433`), `ShimmerRemoveWater`
+(`WorldGen.cs:34823-34851`) and `LiquidInteractionsCleanup` (`:23672-23799`,
+the `:23755` up-shimmer-counts-as-water quirk kept verbatim).
+
+Cross-lane seams (documented, classic no-ops until the owner merges):
+`GenVars.shimmer_position` (d102's Shimmer product — `None` until then, the
+C# `Vector2D.Zero` reset makes the circle off-world); the special-seed arms
+(`extraLiquid` / `notTheBees` / `noTraps` / skyblock) stay with d107/c30.
+`Main.tileSolid[484] = false` (`:16208`) is the load-order poke the port's
+static tables do not model (the `desert.rs` precedent) — recorded, not
+applied. No RNG draws in the whole pass; both world-hash pins move BY DESIGN
+(liquid fields), re-pin deferred to the merge gate, `a == b` kept.
+
+Inherited dependency gap (runtime liquid lane's, not this pass's): the port's
+`update_tile` does not carry `Liquid.Update`'s underworld evaporation arm
+(`Liquid.cs:466-474` — water below `Main.UnderworldLayer` loses 2 units per
+update). The settle loop rides the ported `UpdateLiquid` as-is; the arm's
+port belongs to the R-11-x runtime liquid work and is flagged here for it.

@@ -238,6 +238,16 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-f25 (2026-11-20, code-only): the `Settle Liquids` pass
+    // (`WorldGen.cs:16132-16210`, `settle_liquids.rs::settle_liquids`) lands
+    // immediately before `remove water` — the first real liquid-simulation
+    // pass. On a 512-wide world the Lakes/ocean water now drops, fans and
+    // levels through `QuickWater`/`SettleWaterAt` + the 10-round quickSettle
+    // loop, and the water-line lava retype fires below `GenVars.waterLine`,
+    // so the liquid fields move BY DESIGN. The pass draws NO RNG (the
+    // kill_tile drops ride deterministic position seeds), so every other
+    // step's stream is untouched. The re-pin is DEFERRED to the merge gate
+    // (no compiler on this branch); the a == b determinism assert stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +291,10 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-f25 (code-only): the `Settle Liquids` pass (see SEED42_512 above)
+    // settles the default world's lakes/ocean water and retypes the
+    // below-water-line falls to lava, so this pin moves BY DESIGN too —
+    // deferred to the gate with the SEED42_512 note. No RNG draw added.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

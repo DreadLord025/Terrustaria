@@ -18287,6 +18287,56 @@ Documented deviations, none reachable from the ported runtime surface:
   (both `false` вЂ” the exact runtime state) and
   `createMergeTilesDuringGen` rides the `WorldGen.cs:22480` caller.
 
+## The Settle Liquids pass (W4-f25, 2026-11-20 — code-only mode)
+
+The orphan-adopted `Settle Liquids` pass (`WorldGen.cs:16132-16210`,
+`docs/research/12g-f25-settle-liquids.md`) is ported as
+`worldgen/settle_liquids.rs::settle_liquids` + the pipeline step
+`"settle liquids"` immediately before `remove water` — the first real
+liquid-simulation pass of the generator (the R-12-5 settlement the note above
+anticipated). It rides the port's `LiquidSystem`: the ocean retype sweep,
+`QuickWater(3)` (`Liquid.cs:104-148`) with `SettleWaterAt` (`:150-289`, the
+drop/fan + the water-line lava retype + the dungeon-wall water keep) and the
+`AttemptToMove*` family (`:291-433`), `WaterCheck` (`WorldGen.cs:80415-80494`),
+the 10-round `quickSettle` budget loop (`:16159-16204`) and
+`ClearPendingLiquid` (`:80496-80513`). `liquid.rs` gains the `quick_settle` /
+`gen_ignore_water` fields, the `UpdateLiquid` `quickFall` derivation
+(`Liquid.cs:1056-1068`), the down-transfer >250 bump (`:588-591`) and the
+254-from-255 tail (`:944-948`); `tileobject.rs` gains `resolve_tile_def`
+(`GetTileData(Tile)`, `:5196-5261`) + `check_water_death`/`check_lava_death`
+(the Tile overloads `:5083-5095`/`:5107-5119`).
+
+Documented deviations (none reachable from a classic world's runtime surface):
+
+- **The per-pass `LiquidSystem` instance stands in for the C# statics.**
+  `ClearPendingLiquid` + the `numLiquid == 0` exit invariant
+  (`WorldGenerator.cs:508`) make the instance boundary equivalent — the pass
+  leaves no active liquid behind, so the next pass's fresh instance starts
+  from the same empty state the C# statics carry.
+- **The special-seed arms are deferred** to their lanes: `Skyblock.denyAllGeneration`
+  (`:16134`), `SecretSeed.extraLiquid` (`:16147-16151`, the round-bump
+  `:16173-16176`), `notTheBees` (`:16152-16155`) and the `noTraps` boulder
+  arms (`Liquid.cs:109-112`/`:139-142`) — d107/c30 own those bodies; a classic
+  world never enters them.
+- **`GenVars.shimmerPosition` is d102's Shimmer-pass product** (unmerged at
+  this landing): `ShimmerRemoveWater` (`WorldGen.cs:34823-34851`) reads the
+  port's `GenVars.shimmer_position` seam (`None` until d102's step writes it —
+  the C# `Vector2D.Zero` reset `:7039` puts the 150-radius circle off-world, a
+  classic no-op either way). The field name matches d102's for a clean merge.
+- **`Main.tileSolid[484] = false`** (`:16208`, the Gems-pass sand-slide
+  exemption made permanent) is a load-order poke the port's static tile
+  tables do not model (the `desert.rs` precedent) — recorded, not applied.
+- **`resolve_tile_def`/`check_*_death` duplicate d112/d114's bodies** (the
+  same `GetTileData(Tile)` resolution + Tile-overload death checks those lanes
+  carry); identical names and semantics, the merge reconciles to one copy.
+
+No RNG draws in the whole pass (`QuickWater`/`SettleWaterAt`/`WaterCheck`/
+`UpdateLiquid` draw nothing; the `kill_tile` drops ride the port's
+deterministic position seeds), so the insertion is ledger-neutral for every
+other step's stream. Both world-hash pins (`SEED42_512`, `DEFAULT_WORLD`) move
+BY DESIGN (the liquid fields settle/retype); the re-pin is deferred to the
+merge gate (no compiler on this branch), the `a == b` determinism halves stay.
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as

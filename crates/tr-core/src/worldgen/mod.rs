@@ -38,6 +38,7 @@ mod noise;
 mod ocean;
 pub mod pipeline;
 pub mod progress;
+mod settle_liquids;
 mod spider_gem_moss;
 mod structures;
 mod surface;
