@@ -21,6 +21,7 @@ pub mod chest_stock;
 pub mod dungeon;
 pub mod dungeon_features;
 mod caves;
+mod cave_bg;
 mod config;
 mod desert;
 mod desert_dunes;

@@ -238,6 +238,18 @@ mod tests {
     // S1-P-i33 (code-only): the wall-framing mask fix (see DEFAULT_WORLD
     // below) moves this pin too — glass & co. beside a wall change the
     // generated `wall_frame`. Stale-by-design; the gate re-pins it.
+    // W4-g72 lane 3 (2026-11-21, code-only): `step_world_tail` now draws the
+    // whole `RandomizeCaveBackgrounds` block (`WorldGen.cs:8192-8249`, via
+    // `worldgen/cave_bg.rs`) AHEAD of the moon `Next(9)` — the C# order
+    // (cave `:11339` before moon `:11341`). The 512-wide world takes arm C
+    // (512 ≠ 4200/6400): 3 band draws + 4 style draws + rejection draws +
+    // the ice/hell/jungle tail; the moon-type value shifts by design. The
+    // TILE hash is expected UNCHANGED: the tail is the LAST `streams.rng`
+    // consumer (the seed-finish steps draw on their own `pass_rng` streams)
+    // and the block writes no tiles — the same width-guard reasoning as
+    // S1-K-2 wave B. If the gate measures a shift anyway, re-pin here
+    // (stale-by-design); the `a == b` determinism assertion stays green
+    // either way (both runs draw identically). No compiler on this branch.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -281,6 +293,15 @@ mod tests {
     // move BY DESIGN; the re-pin is DEFERRED to the merge gate (no compiler
     // on this branch). The `a == b` determinism assertion stays green — the
     // mask is a pure function of the tile/wall state, no RNG draw added.
+    // W4-g72 lane 3 (2026-11-21, code-only): the cave block lands in the
+    // world tail ahead of the moon roll (see SEED42_512 above). The DEFAULT
+    // world (4200 wide) takes ARM A: 1 band draw + 2 style draws + the
+    // style[1] rejection loop + the ice/hell/jungle tail — the shared-rng
+    // tail advances by 6+ draws before the moon `Next(9)`. No tile-writing
+    // step draws after the tail (the seed-finish steps ride `pass_rng`), so
+    // the tile hash is expected UNCHANGED here too; if the gate measures a
+    // shift, re-pin (stale-by-design, after the S1-P-i33 mask fix re-pin).
+    // `a == b` stays green (both runs draw identically).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

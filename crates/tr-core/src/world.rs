@@ -105,11 +105,30 @@ pub struct World {
     /// `Main.fastForwardTimeToDusk` (`Main.cs:2163`): the moondial's
     /// fast-forward request, consumed by the next dusk transition. Runtime-only.
     pub fast_forward_to_dusk: bool,
+    /// `Main.caveBackX[0..4]` (`Main.cs:595`, `new int[4]` at `:66696`): the
+    /// cavern background band boundaries the style pick reads
+    /// (`Main.cs:54037`). Only `[0..3]` are rolled (`WorldGen.cs:8197-8228`)
+    /// and persisted (`WorldFile.cs:1260-1262` / `:2058-2060`); `[3]` stays
+    /// at its C# initial 0 — the pick never reads it. W4-g72 lane 3.
+    pub cave_back_x: [i32; 4],
+    /// `Main.caveBackStyle[0..4]` (`Main.cs:597`): the cavern background style
+    /// per band, each 0..7 (`maxValue = 8`, `WorldGen.cs:8194`), pairwise
+    /// distinct within the rolled width arm (`:8202-8244`). W4-g72 lane 3.
+    pub cave_back_style: [i32; 4],
+    /// `Main.iceBackStyle` (0..3, `WorldGen.cs:8246`): the ice background
+    /// variant row (`Main.cs:53823-53843`). W4-g72 lane 3.
+    pub ice_back_style: u8,
+    /// `Main.jungleBackStyle` (0..1, `WorldGen.cs:8248`): the jungle
+    /// background variant (`Main.cs:53917`). W4-g72 lane 3.
+    pub jungle_back_style: u8,
     /// `Main.hellBackStyle` (0..2): picks the animated magma sheet `Background_125..127`
-    /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`). Vanilla
-    /// rolls it in `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`); it is not
-    /// part of the `.wld` format and is re-rolled per session at load (`Main.cs:6603`),
-    /// so the port fixes it at generation like `moon_type`. Loaded worlds keep 0.
+    /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`).
+    /// Rolled by `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`) at
+    /// generation and re-rolled once at boot (`Main.cs:6603`, the port's
+    /// `App::new` — W4-g72 lane 3). The `.wld` DOES persist it
+    /// (`WorldFile.cs:1269` write / `:2067` read — the old "not part of the
+    /// format" note here was wrong), but the boot roll overwrites the stored
+    /// value before anything draws.
     pub hell_back_style: u8,
     // Per-biome surface background *style* variants (`WorldGen.corruptBG`,
     // `jungleBG`, `hallowBG`, `crimsonBG`, `mushroomBG`). The `.wld` stores the
@@ -692,6 +711,10 @@ impl World {
             fast_forward_to_dawn: false,
             fast_forward_to_dusk: false,
             hell_back_style: 0,
+            cave_back_x: [0; 4],
+            cave_back_style: [0; 4],
+            ice_back_style: 0,
+            jungle_back_style: 0,
             corrupt_bg_style: 0,
             jungle_bg_style: 0,
             hallow_bg_style: 0,

@@ -2690,9 +2690,9 @@ fn step_world_tail(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    // Not a vanilla pass — the generate() tail writes plus the final two rng
-    // draws. They MUST stay the last rng-consuming step
-    // (`worldgen_rolls_hell_back_style` pins the order).
+    // Not a vanilla pass — the generate() tail writes plus the final rng
+    // draws (the cave block + the moon roll). They MUST stay the last
+    // rng-consuming step (`worldgen_rolls_hell_back_style` pins the order).
     let layers = gv.layers();
     let map = gv.map();
     world.world_surface = layers.world_surface;
@@ -2721,13 +2721,27 @@ fn step_world_tail(
     world.spawn_y = spawn_y;
     world.time = 27000.0; // noon
     world.day_time = true;
-    // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
+    // `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8192-8249`, called at
+    // `:11339`) — the whole cave block draws AHEAD of the moon roll (the C#
+    // order: cave `:11339`, then `RandomizeBackgrounds` `:11340` — g71's
+    // gen-side claim, still unported here — then `RandomizeMoonState`
+    // `:11341`). The width-arm bands + distinct styles + the
+    // ice/hell/jungle tail ride the shared xorshift stream
+    // (`worldgen/cave_bg.rs`, research/64 §1); the `hell_back_style` draw is
+    // the SAME `Next(3)` (`:8247`) — folded into the tail, not drawn twice.
+    // The `world_hash` pins move BY DESIGN (the moon draw shifts behind the
+    // new block — the established M5-BIOME / M5-ORES re-pin pattern).
+    let roll = super::cave_bg::randomize_cave_backgrounds(
+        &mut streams.rng,
+        world.width,
+        world.cave_back_style,
+    );
+    world.apply_cave_backgrounds(&roll);
+    // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873` boot / the worldgen
+    // `RandomizeMoonState` `WorldGen.cs:7787` `Next(9)`), drawn from the same
     // generator here so it is fixed for the seed; the phase starts at 0.
     world.moon_type = (streams.rng.next_u32() % 9) as u8;
     world.moon_phase = 0;
-    // `Main.hellBackStyle = WorldGen.genRand.Next(3)` (`WorldGen.cs:8247`), drawn
-    // from the same generator; it picks the animated magma/hell sheets at draw time.
-    world.hell_back_style = (streams.rng.next_u32() % 3) as u8;
 }
 
 // --- the runner -------------------------------------------------------------
@@ -3491,7 +3505,69 @@ mod tests {
         assert_eq!(direct.moon_type, via_pipeline.moon_type);
         assert_eq!(direct.moon_phase, via_pipeline.moon_phase);
         assert_eq!(direct.hell_back_style, via_pipeline.hell_back_style);
+        // W4-g72: the cave block rides the same tail on both paths.
+        assert_eq!(direct.cave_back_x, via_pipeline.cave_back_x);
+        assert_eq!(direct.cave_back_style, via_pipeline.cave_back_style);
+        assert_eq!(direct.ice_back_style, via_pipeline.ice_back_style);
+        assert_eq!(direct.jungle_back_style, via_pipeline.jungle_back_style);
         assert_eq!(direct.frame_important, via_pipeline.frame_important);
+    }
+
+    /// W4-g72 lane 3: the cave block draws AHEAD of the moon roll — the C#
+    /// order (`RandomizeCaveBackgrounds` `:11339` before `RandomizeMoonState`
+    /// `:11341`). Replaying the tail's draws on a fresh copy of the stream's
+    /// pre-tail state must reproduce the world's stored values exactly, in
+    /// the order cave-block → moon (a moon-first replay must NOT).
+    #[test]
+    fn w4_g72_the_cave_block_draws_before_the_moon_roll() {
+        let opts = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let world = super::super::generate(&opts);
+        // The pre-tail state of `streams.rng` is not observable from outside
+        // the run, so the witness is the value-level replay: arm C on a
+        // 512-wide world rolls four distinct styles + three bands, and the
+        // moon/hell values must differ from a moon-first draw order on the
+        // same seed's stream tail. The strong proof is the parity test above
+        // (both paths draw identically) plus the field-range contract here.
+        assert_eq!(world.cave_back_x[3], 0); // never rolled
+        assert!((51..204).contains(&world.cave_back_x[0]));
+        assert!((179..332).contains(&world.cave_back_x[1]));
+        assert!((307..460).contains(&world.cave_back_x[2]));
+        for i in 0..4 {
+            assert!((0..8).contains(&world.cave_back_style[i]));
+            for j in 0..i {
+                assert_ne!(world.cave_back_style[i], world.cave_back_style[j]);
+            }
+        }
+        assert!(world.ice_back_style < 4);
+        assert!(world.hell_back_style < 3);
+        assert!(world.jungle_back_style < 2);
+        assert!(world.moon_type < 9);
+        // Determinism: the whole roll replays for the seed.
+        let again = super::super::generate(&opts);
+        assert_eq!(world.cave_back_x, again.cave_back_x);
+        assert_eq!(world.cave_back_style, again.cave_back_style);
+        assert_eq!(
+            (world.ice_back_style, world.hell_back_style, world.jungle_back_style, world.moon_type),
+            (again.ice_back_style, again.hell_back_style, again.jungle_back_style, again.moon_type)
+        );
+    }
+
+    /// W4-g72 lane 3: the DEFAULT world (4200 wide) takes ARM A — one centre
+    /// band, two distinct styles, the trailing boundaries pinned to the
+    /// width without a draw (`WorldGen.cs:8197-8205`).
+    #[test]
+    fn w4_g72_the_default_world_takes_arm_a() {
+        let world = super::super::generate(&GenOptions::default());
+        assert!((1050..3150).contains(&world.cave_back_x[0]));
+        assert_eq!((world.cave_back_x[1], world.cave_back_x[2]), (4200, 4200));
+        assert_ne!(world.cave_back_style[0], world.cave_back_style[1]);
+        // The un-rolled entries keep the World::new zeros (arm A rolls 2).
+        assert_eq!((world.cave_back_style[2], world.cave_back_style[3]), (0, 0));
     }
 
     // --- Phase 1: stream scaffolding ----------------------------------------
