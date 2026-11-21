@@ -39344,11 +39344,13 @@ recording witness stream through the same internals.
 
 **Drops (cited at the sites):** the `netMode==2` server relays, the
 `SoundEngine` pitch draws (the `play_sound` callback carries the cue
-request at the C# position for the wiring round's
-`play_use_sound`/case-2 pitch seam), the `TeleportationSide` parameter
+request AND the caller's stream at the C# position — the wiring round
+resolves it through `Audio::play_teleport_cue`/`play_npc_item_cue`, the
+case-2 pitch joining the same stream), the `TeleportationSide` parameter
 (unread in the C# body). The teleport fields ride a caller-owned
-`(teleportTime, teleportStyle, lastPortalColorIndex)` triple — the
-port's `Npc` has no teleport fields yet.
+`(teleportTime, teleportStyle, lastPortalColorIndex)` triple — the wiring
+round copies them in/out of the `Npc` fields (`teleport_time`,
+`teleport_style`, `last_portal_color_index`, `NPC.cs:6041`/`:6039`/`:6581`).
 
 **Verification:** code-only — every block re-read against the cited
 C# windows (≤100-line reads, direct file paths, no junction
@@ -39356,8 +39358,96 @@ recursion); 18 `w4_g61_*` witnesses with a `RecordingRng` that logs
 every `Next`/`NextFloat` call shape and pins the exact slot sequence
 per site (the argument-before-allocator order, the gate chains, the
 sentinel writes, the clone pairs, the overwrite-still-drawn rolls).
-WRITTEN NOT RUN — no cargo/rustc/tests per the lane directive. The
-wiring follow-up drains the poof at the bug-net/statue seams, the
-mimic smoke at the key-summon seam, TransformVisuals at
-`transform_to_kind`'s tail and the teleport family at the caster /
-town / frog teleport call sites.
+WRITTEN NOT RUN — no cargo/rustc/tests per the lane directive.
+
+## The NPC spawn / teleport-in dust WIRING (W4-g61, code-only)
+
+**2026-11-21, `task/W4-g61-npc-spawn-dust`, commits `1eedb9a3` →
+`8f545007` (six seams).** The pure module's callers are now live:
+
+* **Seam 1 (`1eedb9a3`) — the module seam:** the `play_sound` callback
+  gains the caller's stream (`&mut R`) so the pitch draws land at the C#
+  call position (a disjoint-field reborrow of `SpawnVisualsEnv::rng`);
+  the `Npc` teleport fields + ctor zero-init; the fade-order doc
+  corrected (`UpdateNPC_TeleportVisuals` `:90322` runs AFTER the cast
+  lights and BEFORE `AI()` `:90423`, not "after the AI").
+* **Seam 2 (`b4e40449`) — the bug-net poof:** `catch_npc`'s
+  `MysticFrog | StatuePoof` arm drains `poof_of_smoke` at
+  `Center - (20,20)` (`NPC.cs:79883`/`:79912`) on the `UpdatePlayers`
+  stream (the catch runs inside `ItemCheck`, `Main.cs:17754`). The
+  standing gore/dust skip notes retired. The frog's
+  `AI_AttemptToFindTeleportSpot` stays unported (kind 687 roster gap) —
+  both arms poof.
+* **Seam 3 (`31baa315`) — the statue/lamp poofs:** `StatueSpawn::Poof`
+  (the body-gated styles 64/71 first-table, 16/50 second-table — the
+  `CheckMech` cooldown consumed, the `NPC.MechSpawn` cap re-checked
+  app-side in queue order, the poof at `(x-14, y-32)` =
+  `(num140-4, num141-22)-(10,10)`); the lamp burn-out poof queue
+  (`Wiring.cs:824-826`, `(lampX,i)*16-(10,10)`, the `_GatesDone` re-poke).
+  Both drain through `poof_of_smoke` on the wiring stream. The core
+  tests updated (blocked spawns now emit `Poof`).
+* **Seam 4 (`c289d64f`) — the NPC.Teleport call sites + fade:** the
+  statue styles 40/41 ride `npc_teleport` style 14 (NO `TeleportEffect`
+  arm — zero dust, the fields latch); the pad NPC loop
+  (`Wiring.cs:3162-3173`) rides style 0 (the two-sided W*H/5 type-159
+  burst + Item6 on the wiring stream). `Audio::play_teleport_cue` (the
+  Item façade + the style-5 splash int overload). The pre-AI
+  `UpdateNPC_TeleportVisuals` drain in the sim preamble (the copy-in/out
+  triple, `time_for_visuals = anim_time*60 % 216000`, the head gate
+  `time <= 0` draws nothing). The caster's INLINE teleport bursts
+  (`NPC.cs:20867-20987`) are d52 batch3's claimed lane — NOT touched;
+  the town shimmer-state-25 teleport (`NPC.cs:53266`) is b3's cited skip
+  (the state is unported); the net-apply style-4 teleports
+  (`MessageBuffer.cs:3550`/`:3606`) are g48-g52's lanes.
+* **Seam 5 (`5852697a`) — the Transform tail:** `wants_transform_visuals`
+  stamped at the three live in-place swaps (406→405 cell, 428→427
+  headcrab, 427→426 alien — C# NPC-id space, NOT the port's net ids);
+  the gore pool threaded through `update_rng_dust` (the S1-F-13c
+  precedent, all callers updated); the drain after the AI before
+  `find_frame`/`contact` (`NPC.cs:81136` call position); the
+  `transform_to_kind` parity drain (390→382 / 416→518, zero-draw — no
+  arm matches). The 158/159 vampire + 478/479 mothron arms are
+  roster-gapped (the d35/d40 kind lanes) — their swaps never stamp yet.
+  The shimmer DECISION logic (`NPC.GetShimmered`, the e19/f47 co-lanes)
+  is unmerged — NOT duplicated; the visuals wire at the live transform
+  sites only.
+* **Seam 6 (`8f545007`) — the key-summon:** `Player.last_chest` +
+  `ChestChangeEvents` (`Player.cs:28760-28775` at `:25384`, the close
+  edge) at the player-tick tail; `chest.rs::big_mimic_summon_check`
+  (`NPC.cs:77517-77605`: the hardmode + `BasicChest{21,467}` gold-5-6-
+  excluded scan, the one-key gate `num4==0 && num2+num3==1`, the slot
+  clear + `DestroyChest` + `ClearTile` 2×2, the kind 475/473/474 by
+  `WorldGen.crimson` — constants-off false, the shop.rs/loot.rs
+  convention, so the Night Key picks the corrupt 473; `NewNPC` at the
+  bottom-center anchor `(x*16+16, y*16+32)` + `BigMimicSpawnSmoke` on
+  the `UpdatePlayers` stream). The big-mimic kinds 473-476 are
+  roster-gapped (the d40 kind lane) — the chest clears, the NPC + smoke
+  fire only once a kind row lands. `GasTrapCheck` (the gas-trap item
+  5346, `Projectile.cs:41242`) is a cited skip (no gas-trap family).
+
+**KEEP-ONE (the g11 merge):** this module's `teleport_effect` is the
+FULL eleven-arm `Main.TeleportEffect` port. W4-g11's
+`main_dust.rs::teleport_effect` (batch 1, styles 0-7 only, the
+`EffectRect` shape, UNMERGED) is SUPERSEDED at the merge: the g11
+styles 0/1/2/3/4/5/7 arms are DROPPED in favour of this module's (the
+NPC-side driver owns the whole family; g11b wires the player-side call
+sites THROUGH this module). The g11 `snowing` site and the
+`portal_color` helper keep their own lanes.
+
+**Stream-parity witnesses (WRITTEN NOT RUN):** the bug-net poof
+(scratch-pool replay ends where the live `UpdatePlayers` stream ends),
+the statue poof (the wiring-stream replay + the cap-blocked no-poof),
+the lamp burn-out (the queue draws nothing), the pad style-0 burst (the
+type-159 dust + the field latch), the headcrab fairy burst (the 20×
+SelectRandom step), the key-summon (the chest-clear half + the five
+refusal gates). The 18 pure-module `w4_g61_*` witnesses stay.
+
+**Deviations (cited):** the `WorldGen.crimson` constants-off (the Night
+Key picks 473, the crimson 474 arm pending a world-evil flag); the
+roster-gapped kinds (the big mimics 473-476, the vampire 158/159, the
+mothron 478/479, the frog 687 — the d34-d43 kind lanes); the town
+shimmer-state-25 teleport (b3's cited skip); the caster inline bursts
+(d52 batch3's claimed lane); the net-apply teleports (g48-g52); the
+`GasTrapCheck` (no gas-trap family); the `time_for_visuals` stand-in
+(`anim_time*60 % 216000`, the draw.rs:374 convention — the C#
+`Main.timeForVisualEffects` is a double ticks-since-start).
