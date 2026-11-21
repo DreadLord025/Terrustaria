@@ -878,6 +878,24 @@ pub fn frame_of_variant(world: &World, x: i32, y: i32, variant: usize) -> Option
         _ => {}
     }
 
+    // W4-g83 (contract §4): the thorn down-merge (`WorldGen.cs:82043-82066`)
+    // — cases 32/352/69/655 fold a matching grass neighbour BELOW into the
+    // thorn (`down = num`). These are DIRECT `down = num` assignments, not
+    // `TileMergeAttempt` calls, so the GenTileData merge parser never emits
+    // them and `td::merges` cannot carry them — the hand insertion is the
+    // correct home. AFTER the slope adjustments (`:81632-81700` precedes
+    // `:82043`): a sloped grass-below cell reads `down = -1` and does not
+    // merge. The thorn kinds are not stone/aliases, so `num` is the kind.
+    let grass_below: u16 = match me {
+        32 => 23,
+        352 => 199,
+        69 | 655 => 60,
+        _ => 0,
+    };
+    if grass_below != 0 && down == grass_below as i32 {
+        down = num;
+    }
+
     // Neighbour slots: up, down, left, right, then the four corners.
     let n = [
         up,
@@ -1820,5 +1838,37 @@ mod tests {
             "snow-facing edge framed as isolated: {:?}",
             (t.frame_x, t.frame_y)
         );
+    }
+
+    /// W4-g83 wiring witness (contract §4): the thorn down-merge
+    /// (`WorldGen.cs:82043-82066`) is the 4-line insertion AFTER the
+    /// own-slope match — a 69 thorn with the jungle grass 60 below folds the
+    /// down slot (`down = num`) and frames as the single-open-side-DOWN row
+    /// (108/126/144, 0), not the isolated tile; a TOP-SLOPED grass below
+    /// reads `down = -1` (the slope adjustments precede the merge) and does
+    /// NOT merge. The four pairs ride the same insertion.
+    #[test]
+    fn w4_g83_the_thorn_down_merge_folds_after_the_slope() {
+        let mut w = World::new("t".into(), 11, 11);
+        solid(&mut w, 5, 5, 69);
+        solid(&mut w, 5, 6, 60); // the jungle grass below
+        for v in 0..3 {
+            let f = frame_of_variant(&w, 5, 5, v).unwrap();
+            assert_eq!(f, ([(108, 0), (126, 0), (144, 0)][v]), "merged, variant {v}");
+        }
+        // The slope-before-merge order: a top-sloped grass below hides the
+        // down slot, so the thorn keeps the isolated frame.
+        let i = w.index(5, 6);
+        w.tiles[i].set_slope(1);
+        let f = frame_of_variant(&w, 5, 5, 0).unwrap();
+        assert_eq!(f, (162, 54), "sloped grass below: no merge");
+        // The four pairs: 32↔23, 352↔199, 69↔60, 655↔60.
+        for (thorn, grass) in [(32u16, 23u16), (352, 199), (69, 60), (655, 60)] {
+            let mut w = World::new("t".into(), 11, 11);
+            solid(&mut w, 5, 5, thorn);
+            solid(&mut w, 5, 6, grass);
+            let f = frame_of_variant(&w, 5, 5, 0).unwrap();
+            assert_eq!(f, (108, 0), "thorn {thorn} merges grass {grass}");
+        }
     }
 }

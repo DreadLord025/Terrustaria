@@ -20,8 +20,10 @@
 //!   down-merge — cases 32/352/69/655 fold a matching grass neighbour BELOW
 //!   into the thorn (`down = num`) before the generic block frameset runs.
 //!   These are direct `down = num` assignments, NOT `TileMergeAttempt` calls,
-//!   so `tools/GenTileData`'s merge parser never emits them and `framing.rs`
-//!   lacks them. The helper computes the thorn's frame with the merge applied.
+//!   so `tools/GenTileData`'s merge parser never emits them. WIRED as the
+//!   4-line insertion in `framing.rs::frame_of_variant` after the own-slope
+//!   match (contract §4); this name is the thin witness fixture delegating
+//!   to the canonical framer (the former standalone re-port dropped).
 //!
 //! WIRED (W4-g83 wire phase 2, `docs/research/123-vine-wire-contract.md`
 //! §3/§4): `grow_overground_vines` rides the END of
@@ -32,8 +34,9 @@
 //! step), and the thorn down-merge is the 4-line `frame_of_variant` insertion
 //! after the own-slope match. Both growth fns take the caller's ACTIVE
 //! `genRand` stream — the growth phase's `UpdateWorldGen` named stream, no
-//! new stream, no reseed. `thorn_down_merge_frame` stays as the witness
-//! fixture (contract §4 keep-one note: the witnesses assert frames).
+//! new stream, no reseed. `thorn_down_merge_frame` is the keep-one witness
+//! fixture: it delegates to `framing::frame_of_variant` (the standalone
+//! re-port + its private RULES copy dropped, contract §4).
 //!
 //! Deviations: the `Main.netMode == 2` `NetMessage.SendTileSquare` sides are
 //! MP scope; `SquareTileFrame` rides [`crate::edit::square_tile_frame_default`]
@@ -401,166 +404,20 @@ pub fn grow_underground_jungle_thorn(
 // (`grow_spike`'s own `SquareTileFrame` seam threads the same `rng` — the
 // spike write's framing dispatch runs on the caller's active stream.)
 
-/// `WorldGen.TileFrameCosmetic`'s thorn down-merge (`WorldGen.cs:82043-82066`):
-/// cases 32/352/69/655 fold a matching grass neighbour BELOW into the thorn
-/// (`down = num`) before the generic block frameset. Returns the thorn's
-/// `(frameX, frameY)` for the cell at `(x, y)` with the merge applied, or
-/// `None` when the cell is not an active thorn.
-///
-/// The merge pairs: 32↔23 (`:82043-82048`), 352↔199 (`:82049-82054`),
-/// 69↔60 (`:82055-82060`), 655↔60 (`:82061-82066`). The down slot becomes
-/// the thorn's own type when it holds the paired grass; the other seven
-/// slots keep their framing types. The generic frameset (`framing.rs::RULES`)
-/// then resolves the mask. `variant` is the cell's stored `frameNumber`.
+/// The thorn down-merge frame (`WorldGen.cs:82043-82066`) — the W4-g83
+/// keep-one (contract §4): after the 4-line `down = num` insertion landed in
+/// `framing.rs::frame_of_variant` (post-own-slope, the direct assignments the
+/// GenTileData merge parser never emits), the former standalone re-port
+/// became a duplicate and DROPPED; this thin witness fixture delegates to
+/// the canonical framer, keeping the thorn-kind gate (a non-thorn cell has
+/// no merge frame — `None`). The 4 down-merge witnesses below rebind here
+/// unchanged (they assert frames, not internals).
 pub fn thorn_down_merge_frame(world: &World, x: i32, y: i32, variant: usize) -> Option<(i16, i16)> {
     let tile = world.tile(x, y)?;
-    if !tile.active() {
+    if !tile.active() || !matches!(tile.kind, 32 | 352 | 69 | 655) {
         return None;
     }
-    let me = tile.kind;
-    let grass_below: u16 = match me {
-        32 => 23,
-        352 => 199,
-        69 | 655 => 60,
-        _ => return None,
-    };
-    let num = me as i32;
-    // The eight neighbour slots, mirroring `framing.rs::frame_of_variant`'s
-    // active-type reads (the thorn kinds are not stone/aliases, so the
-    // framing type is the kind itself).
-    let slot = |dx: i32, dy: i32| -> i32 {
-        world
-            .tile(x + dx, y + dy)
-            .map(|t| if t.active() { t.kind as i32 } else { -1 })
-            .unwrap_or(-1)
-    };
-    let mut up = slot(0, -1);
-    let mut down = slot(0, 1);
-    let mut left = slot(-1, 0);
-    let mut right = slot(1, 0);
-    let ul = slot(-1, -1);
-    let ur = slot(1, -1);
-    let dl = slot(-1, 1);
-    let dr = slot(1, 1);
-    // Sloped neighbours hide their open side (`framing.rs:840-859`,
-    // `WorldGen.cs:81440-81507`); the thorn's own slope hides two sides
-    // (`:81493-81507`). These run BEFORE the thorn down-merge in the C#
-    // (`:81632-81700` precedes `:82043-82066`).
-    if let Some(t) = world.tile(x - 1, y) {
-        if t.slope() == 1 || t.slope() == 3 {
-            left = -1;
-        }
-    }
-    if let Some(t) = world.tile(x + 1, y) {
-        if t.slope() == 2 || t.slope() == 4 {
-            right = -1;
-        }
-    }
-    if let Some(t) = world.tile(x, y - 1) {
-        if t.slope() == 3 || t.slope() == 4 {
-            up = -1;
-        }
-    }
-    if let Some(t) = world.tile(x, y + 1) {
-        if t.slope() == 1 || t.slope() == 2 {
-            down = -1;
-        }
-    }
-    match tile.slope() {
-        1 => {
-            up = -1;
-            right = -1;
-        }
-        2 => {
-            up = -1;
-            left = -1;
-        }
-        3 => {
-            down = -1;
-            right = -1;
-        }
-        4 => {
-            down = -1;
-            left = -1;
-        }
-        _ => {}
-    }
-    // The thorn down-merge (`:82043-82066`): `if (down == grass) down = num;`
-    // — AFTER the slope adjustments, so a sloped grass-below cell (down == -1)
-    // does not merge.
-    if down == grass_below as i32 {
-        down = num;
-    }
-    // The generic block frameset mask (`framing.rs:1009-1042`), in RULES
-    // order. The bits match `framing.rs`'s UP/DOWN/LEFT/RIGHT/corners.
-    const UP: u8 = 1;
-    const DOWN: u8 = 2;
-    const LEFT: u8 = 4;
-    const RIGHT: u8 = 8;
-    const UP_LEFT: u8 = 16;
-    const UP_RIGHT: u8 = 32;
-    const DOWN_LEFT: u8 = 64;
-    const DOWN_RIGHT: u8 = 128;
-    let mut mask = 0u8;
-    for (v, bit) in [
-        (up, UP),
-        (down, DOWN),
-        (left, LEFT),
-        (right, RIGHT),
-        (ul, UP_LEFT),
-        (ur, UP_RIGHT),
-        (dl, DOWN_LEFT),
-        (dr, DOWN_RIGHT),
-    ] {
-        if v == num {
-            mask |= bit;
-        }
-    }
-    let variant = variant.min(2);
-    Some(resolve_block_frame(mask, variant))
-}
-
-/// The generic block frameset (`framing.rs::RULES`, `WorldGen.cs:84403-84765`),
-/// first-match-wins. Re-ported here (the `RULES` table is private to the
-/// contested `framing.rs`); the frames sit on an 18 px grid.
-fn resolve_block_frame(mask: u8, variant: usize) -> (i16, i16) {
-    const UP: u8 = 1;
-    const DOWN: u8 = 2;
-    const LEFT: u8 = 4;
-    const RIGHT: u8 = 8;
-    const UL: u8 = 16;
-    const UR: u8 = 32;
-    const DL: u8 = 64;
-    const DR: u8 = 128;
-    // (need, want, frames[3]) — the `framing.rs::RULES` rows verbatim.
-    let rules: [(u8, u8, [(i16, i16); 3]); 20] = [
-        (UP | DOWN | LEFT | RIGHT | UL | UR, UP | DOWN | LEFT | RIGHT, [(108, 18), (126, 18), (144, 18)]),
-        (UP | DOWN | LEFT | RIGHT | DL | DR, UP | DOWN | LEFT | RIGHT, [(108, 36), (126, 36), (144, 36)]),
-        (UP | DOWN | LEFT | RIGHT | UL | DL, UP | DOWN | LEFT | RIGHT, [(180, 0), (180, 18), (180, 36)]),
-        (UP | DOWN | LEFT | RIGHT | UR | DR, UP | DOWN | LEFT | RIGHT, [(198, 0), (198, 18), (198, 36)]),
-        (UP | DOWN | LEFT | RIGHT, UP | DOWN | LEFT | RIGHT, [(18, 18), (36, 18), (54, 18)]),
-        (DOWN | LEFT | RIGHT, DOWN | LEFT | RIGHT, [(18, 0), (36, 0), (54, 0)]),
-        (UP | LEFT | RIGHT, UP | LEFT | RIGHT, [(18, 36), (36, 36), (54, 36)]),
-        (UP | DOWN | RIGHT, UP | DOWN | RIGHT, [(0, 0), (0, 18), (0, 36)]),
-        (UP | DOWN | LEFT, UP | DOWN | LEFT, [(72, 0), (72, 18), (72, 36)]),
-        (DOWN | RIGHT, DOWN | RIGHT, [(0, 54), (36, 54), (72, 54)]),
-        (DOWN | LEFT, DOWN | LEFT, [(18, 54), (54, 54), (90, 54)]),
-        (UP | RIGHT, UP | RIGHT, [(0, 72), (36, 72), (72, 72)]),
-        (UP | LEFT, UP | LEFT, [(18, 72), (54, 72), (90, 72)]),
-        (LEFT | RIGHT, LEFT | RIGHT, [(108, 72), (126, 72), (144, 72)]),
-        (UP | DOWN, UP | DOWN, [(90, 0), (90, 18), (90, 36)]),
-        (UP, UP, [(108, 54), (126, 54), (144, 54)]),
-        (DOWN, DOWN, [(108, 0), (126, 0), (144, 0)]),
-        (RIGHT, RIGHT, [(162, 0), (162, 18), (162, 36)]),
-        (LEFT, LEFT, [(216, 0), (216, 18), (216, 36)]),
-        (0, 0, [(162, 54), (180, 54), (198, 54)]),
-    ];
-    for (need, want, frames) in rules {
-        if mask & need == want {
-            return frames[variant];
-        }
-    }
-    ([18, 36, 54][variant], 18)
+    crate::framing::frame_of_variant(world, x, y, variant)
 }
 
 #[cfg(test)]
