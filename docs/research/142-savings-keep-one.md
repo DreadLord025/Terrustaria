@@ -147,12 +147,78 @@ coin path (`ItemSlot.cs:2349/:2515/:2697-2706`):
   tint × the fade overload — the pulse/fade the port's `draw_slot`
   comment (`slot.rs:437-439`) already records as unimplemented.
 
-The port draws static `Item_71..74` icons with `stackTextScale = 1` —
-the recorded deviation stands (the machine exists; the ctx-1/3/4 draws
-just don't consume it). Wiring `draw_slot` through `UpdateDrawState`
-touches every slot caller (grid/chest/bank/shop/crafting) — a dedicated
-follow-up, NOT this round. The fifth-round `coin_total` fix was the
+The dedicated follow-up LANDED in the final phase (W4-d122, commit
+`34686466`): `ui/slot.rs::draw_slot` now consumes `UpdateDrawState` on
+every mapped-context slot (grid 0 / coins 1 / ammo 2 / chest 3 / bank 4),
+threading `Option<&mut CoinSlotState>` + the vanilla slot index through
+every caller; the coin spin strip / medal jump / fading-coin flag4 /
+stack-text pulse+fade / dye-slot dim all land (ANALYSIS "The S1-H-9
+UpdateDrawState follow-up"). The neutral contexts (hotbar/mouse/shop/
+equip/trash/crafting) pass `None`. The fifth-round `coin_total` fix was the
 Stylist GATE arithmetic (`Chest.cs:2714-2746`), unrelated to this draw.
+
+## The hair window (caller 3) — the price core + the task-seed
+
+The third `DrawSavings` caller (`Main.cs:43862`, `DrawHairWindow`) is the
+Stylist's in-game hair-change UI (`Main.hairWindow` →
+`DrawInterface_21_HairWindow`, `Main.cs:45726-45732`; the trigger
+`NPCInteractions.cs:425-441`'s `StylistHairWindow` → `Main.OpenHairWindow`).
+g21c's sound census records hosts 80-90 (`Main.cs:43663-43936`,
+`OpenHairWindow`/`CancelHairWindow`/`BuyHairWindow`/`DrawHairWindow`) as
+unported — the hair window is deferred to the hair system.
+
+**The window is NOT self-contained.** `DrawHairWindow`
+(`Main.cs:43709-44138`, ~430 lines) needs:
+
+* the **hair-style grid** (`:44098-44137`): 15 cells (5×3) each drawing the
+  head (`Players[0,0]` skinColor), eye-whites (`[0,1]`), eyes (`[0,2]`
+  eyeColor) and the hair (`PlayerHair[num33]` selColor) — the port decodes
+  ONLY `Player_Hair_1` (`assets.rs:348`, the recorded char-creation
+  deviation, `char_creation.rs:1701`), so the 213-style grid cannot draw;
+* `Main.LoadHair` (`Main.cs:59146-59153`, the per-style `PlayerHair` +
+  `PlayerHairAlt` request) — unported;
+* `Player.GetHairDrawOffset` (`Player.cs:4549-4561`, the 163/164 nudges) —
+  unported;
+* the in-game `HairstyleUnlocksHelper.UpdateUnlocks` list
+  (`HairstyleUnlocksHelper.cs:19-113` — the char-creation 213 + the
+  Plantera 162/164/163/145 + the Martian 123-132 + the Moonlord 133) — the
+  port has only the char-creation `HAIRSTYLES` constant
+  (`char_creation.rs:264`);
+* the HSL colour sliders (`:43995-44092`) — the port HAS the shared
+  `sliders::draw_color_sliders`/`HslBars` (`menu/mod.rs:999`), reusable;
+* the window state (`hairWindow`/`oldHairStyle`/`oldHairColor`/`hairStart`/
+  `grabColorSlider`/`npcChatFocus1/2`) + the Stylist chat trigger + the
+  `DrawInterface_21` layer wiring — unported.
+
+**The self-contained price + savings-apply core IS ported** (the final
+phase, `ui/hair_window.rs`):
+
+* `hair_price` (`Main.cs:43786-43799`): style 100000 + colour 20000, the
+  Discount Card ×0.8 `(int)` truncation, then the happiness latch
+  `(int)Math.Round((float)(int)(num11 * PriceAdjustment) / 10000f) * 10000`
+  (the inner `(int)` truncates, `/10000f` float-divides, `Math.Round`
+  bankers via `shop::round_half_to_even`, `*10000` restores copper). The
+  price reads the TALK-OPEN latch (`currentShoppingSettings.
+  PriceAdjustment`, g58's census — like the reforge/nurse, NOT a fresh
+  mood);
+* `hair_price_text` (`:43800-43852`): the `CoinsSplit` platinum-first walk,
+  each non-zero denomination `"<count> <Lang.inter[15..18]> "` (platinum/
+  gold/silver/copper, lowercase), `GameUI.BuyWithValue` ("Buy ({0})") /
+  `GameUI.Buy` at zero;
+* `hair_savings_pos` (`:43857-43862`): `(screenW/2 − backW/2 + 18,
+  screenH/2 + 146)`, the horizontal `draw_savings` call gated on
+  `price > 0` — the module's horizontal arm already covers its shape.
+
+**Task-seed (the hair-system lane):** port `DrawHairWindow` once the
+213 `PlayerHair` textures decode (the char-creation grid's same blocker),
+`LoadHair`/`GetHairDrawOffset`/the in-game `UpdateUnlocks` land, and the
+Stylist chat trigger + the `DrawInterface_21` layer wire. The price core
+(`ui/hair_window.rs`) + the savings horizontal arm + the shared HSL sliders
+are ready; the buy rides `Player.BuyItem` (`Player.cs:35400`, the coin
+purse + banks spend, the shop-transaction lane's `buy_shop_item` cousin).
+The cancel restores `oldHairStyle`/`oldHairColor` (`CancelHairWindow`,
+`:43666-43683`); the buy plays sound 18 + `SetTalkNPC(-1)` (`BuyHairWindow`,
+`:43685-43693`).
 
 ## Witnesses
 
@@ -162,3 +228,10 @@ positions (jump-riding horizontal, nudged vertical), the latch
 dispatch, `update_custom`'s 3817 pulse + independent rank + step order,
 `count_savings`' per-bank/combined 999 caps, the shop chrome's bands /
 P0 / offsets (g58b's three, kept), the NPCHappiness strip packing.
+
+The final phase adds: the S1-H-9 consumption witnesses (the coin-row
+pulse/jump/fade, the dye dim, the neutral tail, the stack-text
+rest/pulse/ctx43 — `coin_slot.rs`/`slot.rs`), and the hair-window price
+core (the price ladder + banker's rounding, the coin-text denomination
+walk, the savings position — `ui/hair_window.rs`). The shop-FULL census
+is doc-only (the per-case witnesses already pin the d122 rows).

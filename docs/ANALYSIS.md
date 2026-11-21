@@ -7530,6 +7530,34 @@ existing per-case witnesses (shops 1-24, the currency round) already pin
 the d122 rows; no new code, no new witness. The merge cross-notes above are
 the deliverable (the keep-one resolutions for the f39b/f41d/d123 overlaps).
 
+## The hair window price core (W4-d122, final phase)
+
+The third `ItemSlot.DrawSavings` caller (`Main.cs:43862`,
+`DrawHairWindow`) — the Stylist's in-game hair-change UI. The full window
+is NOT self-contained (the 213-style hair grid needs all `PlayerHair`
+textures; the port decodes only `Player_Hair_1`, the recorded
+char-creation deviation; plus `LoadHair`/`GetHairDrawOffset`/the in-game
+`UpdateUnlocks`/the Stylist trigger — g21c's hosts 80-90 deferral). The
+task-seed lives in research/142 §hair-window. The SELF-CONTAINED price +
+savings-apply core lands in `ui/hair_window.rs`:
+
+* `hair_price` (`Main.cs:43786-43799`): style 100000 + colour 20000, the
+  Discount Card ×0.8 truncation, the happiness-latch scale + the
+  round-to-whole-gold (`(int)Math.Round((float)(int)(num11 *
+  PriceAdjustment)/10000f)*10000`, banker's via `shop::round_half_to_even`).
+  The price reads the TALK-OPEN latch (g58's census), not a fresh mood.
+* `hair_price_text` (`:43800-43852`): the `CoinsSplit` platinum-first walk
+  + `Lang.inter[15..18]` (platinum/gold/silver/copper) +
+  `GameUI.BuyWithValue`/`Buy`.
+* `hair_savings_pos` (`:43857-43862`): `(screenW/2 − backW/2 + 18,
+  screenH/2 + 146)`, the horizontal `draw_savings` call gated on
+  `price > 0` (the module's horizontal arm covers it).
+
+`coins_split` (savings.rs) + `round_half_to_even` (shop.rs) become
+`pub(crate)` for reuse. Witnesses written, not run: the price ladder +
+banker's boundary, the coin-text walk (lang test_lock + init), the savings
+position.
+
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
 Two late-roster town NPCs. Deviations: the Dye Trader's `item.dye > 0` scan

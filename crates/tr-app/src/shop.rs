@@ -2599,7 +2599,7 @@ pub fn can_bulk_buy(entry: &ShopEntry, shift_in_use: bool) -> bool {
 
 /// The C# `Math.Round`'s default = the banker's rounding (the damage.rs
 /// convention).
-fn round_half_to_even(v: f32) -> i32 {
+pub(crate) fn round_half_to_even(v: f32) -> i32 {
     let r = v.round();
     if (v - v.trunc()).abs() == 0.5 && r % 2.0 != 0.0 {
         let down = (v - 0.5).round();

@@ -15,11 +15,13 @@
 //! while the reforge slot holds an item (the C#'s `reforgeItem.type > 0`
 //! block, `Main.cs:41584`); the shop-panel call (`:41791`) rides
 //! `ui::shop_happiness::draw`. The third C# caller — `DrawHairWindow`
-//! (`Main.cs:43862`, horizontal, price-gated) — has no port consumer (the
-//! in-game hair window is unported). The `_customCurrencyForSavings`
-//! latch (`ItemSlot.cs:308/:363/:520/:3177`) is threaded in as `currency`
-//! and dispatches to the medal arm (`CustomCurrencyManager.DrawSavings`
-//! `:28-62` + `CustomCurrencySingleCoin.DrawSavingsMoney` `:76-101`).
+//! (`Main.cs:43862`, horizontal, price-gated) — has its price + position
+//! core in `ui::hair_window` (the final phase); the window itself is a
+//! task-seed (the 213-texture hair grid is unported). The
+//! `_customCurrencyForSavings` latch (`ItemSlot.cs:308/:363/:520/:3177`) is
+//! threaded in as `currency` and dispatches to the medal arm
+//! (`CustomCurrencyManager.DrawSavings` `:28-62` +
+//! `CustomCurrencySingleCoin.DrawSavingsMoney` `:76-101`).
 
 use tr_render::SpriteRenderer;
 
@@ -63,7 +65,7 @@ fn coins_combine(counts: &[i64]) -> i64 {
 /// `Utils.CoinsSplit` (`Utils.cs:1048-1060`): the four-denomination split,
 /// platinum first (`num2 = 1000000`, `num2 /= 100` per step) — index 0
 /// copper .. index 3 platinum.
-fn coins_split(count: i64) -> [i32; 4] {
+pub(crate) fn coins_split(count: i64) -> [i32; 4] {
     let mut array = [0i32; 4];
     let mut num = 0i64;
     let mut num2 = 1_000_000i64;
