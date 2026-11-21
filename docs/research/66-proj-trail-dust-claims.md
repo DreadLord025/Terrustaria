@@ -107,3 +107,78 @@ post-spawn writes (the sentinel slot takes the writes too). Lights
 gore bodies + their gate draws stay d55/g16; sounds stay d76.
 `customData` is the pool's documented dropped field. WRITTEN NOT RUN
 (code-only mode): the witnesses are compiled by the merge-verify wave.
+
+## W4-g64 wiring wave (2026-11-21, code-only)
+
+The g63 pushed claims (`origin/task/W4-g63-proj-trail-dust-1`, `34bf98b3` +
+`bdeedac0` + `708a4358`) were read: lane 1 wires its kinds-≤400 arms through
+the `update`/`update_dust` scratch-pool seam (`Npc::update_rng` precedent),
+`DustDraw` adapting the machines' `DropRng` to the pool's `DustRng`,
+`TrailSlot` snapshots at the call sites. This lane adopts the SAME seam
+shape (`ProjectilePool::update_dust` + the scratch `update` entry +
+`world_sim/projectiles.rs` threading `app.dust` + `app.spawn_ctx()`); the
+emitters keep their scalar-arg form and take `rng: &mut dyn DropRng`
+directly (the `DustDraw` wrap lives inside each pool call). The g63 branch
+is NOT merged into this one — the two `update_dust` seams reconcile at the
+merge wave (the co-lane rule).
+
+**Row census (the wiring gate — S1-F-9b):** of the 41 ported kinds, **15
+have `proj_data` rows** and are WIRED at their C# sites: 447 (79), 450 (14),
+455 (84), 461 (84), 509 (20, the behaviour-feeding jitter REPLACES the
+`ai_drill` skip), 533 (66 — the port's row; the dash ring at the ladder's
+`ai[0]==8` + the spin ring at the frame table's `ai[0]==2`, the C# 65
+machine rides the port's `ai_twins_minion`), 574 (102 host), 578/579 (108
+wind-up), 618 (119), 642 (84, the draws-kept skip REPLACED), 659 (129), 732
+(44), 967/1026 (28, the `localAI[0]` post-increment + cadence pins landed).
+The **954 SPARK rider** (rowed, aiStyle 2) shares the 504 arm — its spark
+window is wired kind-gated inside `ai_style2` (the 504/979 co-riders are
+unrowed, their draws stay off the stream). The other **26 kinds are
+UNROWED** (406/419/420/421/422/465/466/497/503/504/537/538/539/573/596/656/
+669/723/895/898/907/1048/1053/1092/1114/1133 + 979): their emitters stay
+cited + witnessed, the wiring waits on the AI lane's rows. The **596 bool
+seam** is pinned by a witness
+(`w4_g64_wire_596_bool_seam_gates_the_ai_continuation`): `false` = the C#
+`return` from AI() (`:33619-33622`) — the caller must abort the machine's
+continuation; 659's twin CONTINUES (wired).
+
+**Deferred-kind census (the wiring wave's re-probe):**
+- **644 — UNBLOCKED, PORTED + WIRED.** The original deferral cited
+  `GetLastPrismHue`/Disco; the actual C# (`:34239`) is
+  `Main.hslToRgb(ai[0], 1, 0.5)` — the byte-quantised palette port
+  (`tr_core::tile_light::hsl_to_rgb`) already exists, the `Opacity` is the
+  machine's `opacity_of(alpha)`, and the sparkle's `CloneDust` rides the
+  pool's verbatim `clone_dust` (`Dust.cs:263-286`). `trail_644` lands the
+  two orbit gates + the sparkle (the RandomVector2 pair is TWO
+  NextDouble-cast draws, `Utils.cs:2431-2434`), wired into
+  `ai_rainbow_crystal_shard` replacing the draws-kept skip. The pool's
+  `new_dust_perfect`/`new_dust_direct`/`clone_dust` became generic over
+  `DustRng` (the `new_dust` shape; concrete callers unchanged).
+- **813 — still deferred.** No row on any pushed branch (the d-lane probe:
+  d12/d13/f19/f20 carry no 813 const). The 13 sites span four `ai[0]` phase
+  windows of the style-108 machine (`:33760/33858/33894/33951/34018`) — a
+  whole-machine port, and the port's `ai_vortex_ritual` covers 578/579 only.
+- **957 — still deferred.** The d13 branch (`task/W4-d13-proj-ai-121-130`,
+  UNMERGED) carries the `GLOMMER_PET` row, but the dust sites
+  (`:35601/35681`) sit inside the style-124 pet machine's standing branch
+  behind the `SolidTileAllowBottomSlope` 5-tile column scan
+  (`:35483-35497`) — behaviour-coupled world reads the port's pet arm does
+  not model; the row alone does not unblock the trail.
+- **670 — still deferred.** The d13 branch carries the `OGRE_STOMP` row
+  (aiStyle 126), but the style-126 dust sites (`:35852-35859` the 3-dust
+  rise, `:35909-35927` the 60-dust latch burst, `:35928-35944` the 9-dust
+  arm, `:35952+` the 6-gate column) are style-GENERIC (no `type == 670`
+  gate; the 670-gated blocks at `:35870/35889` are the height trim + the
+  stomp spawn, no dust) — the style lane's, not a per-kind trail.
+- **590 — confirmed NOT a trail kind.** The `:34272+` census rows belong to
+  644 (the `type != 644` return at `:34235` precedes them); 590's own block
+  (`:34194-34234`) is the frame cycle + the alpha-gated `Lighting.AddLight`
+  (the `Next(28,42)` at `:34221` is a LIGHT-intensity draw, e6/f7's) + the
+  sine bob — zero dust. The d12 branch's `TRUFFLE_SPORE` row (unmerged)
+  changes nothing for this lane.
+
+**Witnesses:** the 40 port witnesses stand (the RNG-seam conversion kept
+their concrete `UnifiedRandom` streams); the wiring wave adds 5
+stream-parity witnesses (`w4_g64_wire_*`: the DropRng/DustDraw seam parity,
+the 509 jitter-replacement full-order mirror, the 644 orbit/sparkle/clone
+mirror, the 596 bool-seam contract, the 642 + 509 machine-side parity in
+`projectile.rs`). WRITTEN NOT RUN (code-only).

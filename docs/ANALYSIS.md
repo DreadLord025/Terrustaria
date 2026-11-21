@@ -39380,3 +39380,66 @@ Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
 invoked** (user directive). The 40 `w4_g64_*` draw-mirror witnesses are owed
 a compile window before merge.
 
+### The wiring wave (2026-11-21, code-only)
+
+The g63 pushed claims (`origin/task/W4-g63-proj-trail-dust-1`, `34bf98b3` →
+`708a4358`) were read; this lane adopts the same seam shape:
+`ProjectilePool::update` becomes a scratch-pool wrapper over the new
+`update_dust` (the live pool + `SpawnCtx` params), and
+`world_sim/projectiles.rs` threads `app.dust` + `app.spawn_ctx()` (captured
+before the step closure's field borrows). The emitters take
+`rng: &mut dyn DropRng` directly; the pool calls wrap it in `DustDraw`
+(the g63 adapter: `Next(max)` = `Next(0, max)`, one `Sample()` step). The
+g63 branch is NOT merged here — the two seams reconcile at the merge wave.
+
+**Wired (the rowed kinds, 16 call sites):** 447 (`ai_saucer_deathray`, after
+the column scan/trim, before the frame loop), 450 (`ai_spear`, after the
+rotation write + the 3-tick frame cycle), 455/461/642 (the three style-84
+arms, after the length lerp; the 642's draws-kept skip REPLACED), 509
+(`ai_drill`'s tail — the behaviour-feeding velocity-X jitter REPLACES the
+old skip, every channel tick), 533 (the dash ring at the ladder's post-wrap
+`ai[0]==8` + the spin ring at the frame table's `ai[0]==2`; the 533's own
+24-tick frame table landed — the old port ran the twins' 3-frame cycle for
+it, the C# gates that on 387/388), 574 (host window + the `frame = 1` pin),
+578/579 (the `ai[0] <= 50` wind-up), 618 (`ai_nebula_arm`, the Next(2) gate
+every tick incl. the kill tick), 659 (`ai_spirit_flame`, the post-increment
+`ai[1]` + the 4-frame cycle landed), 732 (`ai_spear_subshot_44`, between the
+kill and the rotation pin), 954 (the SPARK rider of the 504 arm, kind-gated
+inside `ai_style2` — the 504/979 co-riders are unrowed), 967/1026
+(`ai_frost_bolt`, the post-increment `localAI[0]` + cadence pins + the frame
+cycles; the `proj_frames` rows 967→8 / 1026→4 landed, `Main.cs:8705/8716`).
+
+**644 — the deferred kind UNBLOCKED, ported + wired.** The deferral cited
+`GetLastPrismHue`/Disco; the C# (`:34239`) is `Main.hslToRgb(ai[0], 1, 0.5)`
+— the byte-quantised `tr_core::tile_light::hsl_to_rgb` already exists, the
+Opacity is `opacity_of(alpha)`, the sparkle's `CloneDust` rides the pool's
+verbatim `clone_dust`. `trail_644` replaces the draws-kept skip in
+`ai_rainbow_crystal_shard`. The pool's `new_dust_perfect`/`new_dust_direct`/
+`clone_dust` became generic over `DustRng` (the `new_dust` shape; the
+concrete `UnifiedRandom` callers are unchanged — the NaN guard and the
+Perfect position/velocity overwrites kept verbatim).
+
+**Still deferred (the census re-probe):** 813 (no row on any pushed branch;
+the four-phase style-108 machine), 957 (the d13 row is UNMERGED; the dust
+sits behind the `SolidTileAllowBottomSlope` column scan the pet arm does not
+model), 670 (the d13 row is UNMERGED; the style-126 sites are style-generic,
+the 670-gated blocks are the height trim + the stomp spawn — no dust), 590
+(the `:34272+` rows belong to 644 behind the `type != 644` return; 590's own
+block is the frame cycle + a LIGHT-intensity `Next(28,42)` draw + the sine
+bob — zero dust, e6/f7's).
+
+**The 596 bool seam:** `trail_596` returns `false` on the `Next(3) != 0`
+gate — the C# `return` FROM AI() (`:33619-33622`), which skips the orbit's
+remaining dusts AND the `timeLeft < 4` death burst below it (g65's). The
+kind is UNWIRED (no row); the seam contract is pinned by
+`w4_g64_wire_596_bool_seam_gates_the_ai_continuation` for the wave that
+lands the row. The 659 twin CONTINUES (wired). The 26 unrowed kinds keep
+their emitters cited + witnessed (the S1-F-9b row gate).
+
+**Witnesses:** 5 new stream-parity witnesses (`w4_g64_wire_*`): the
+DropRng/DustDraw seam parity, the 509 jitter full-order mirror, the 644
+orbit/sparkle/clone mirror, the 596 bool contract, and the 642/509
+machine-side parity in `projectile.rs`. The `s1_d_4b_8` spark census
+updated: the 954's gate draws every tick past ai0 > 3 (≥56 range draws over
+59 ticks), the unrowed 504/979 stay draw-free. WRITTEN NOT RUN.
+

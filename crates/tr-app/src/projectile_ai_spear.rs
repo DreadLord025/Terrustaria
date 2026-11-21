@@ -546,10 +546,18 @@ pub(crate) fn ai_spore(p: &mut Projectile) {
 /// riders: the ChlorophytePartisan's spore cloud (228, `:27896-27904`) and the
 /// ThunderSpear's bolt (732, `:27905-27921`). The shared frame machine
 /// (`:27941-27948`) advances `frame` every `num321` ticks (6 for 228, 3 for
-/// 732), wrapping at `Main.projFrames`. The 732's `Next(5)` dust gate
-/// (`:27913`) is dust-only — skipped with its body; the light (`:27920`) is
-/// skipped. The 229 arm is another kind (unrowed).
-pub(crate) fn ai_spear_subshot_44(p: &mut Projectile) {
+/// 732), wrapping at `Main.projFrames`. W4-g64: the 732's `Next(5)` dust gate
+/// (`:27913-27918`) is RE-ARMED on the live pool (`trail_732`, the gate draw
+/// every tick, the kill tick included — the C# spawns after `Kill()` on the
+/// same tick); the light (`:27920`) stays the f7 lane's. The 229 arm is
+/// another kind (unrowed).
+pub(crate) fn ai_spear_subshot_44(
+    p: &mut Projectile,
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+    world: &World,
+) {
     let num321 = match p.kind {
         228 => {
             // `:27898-27903` — the fade: velocity * 0.96, alpha += 2, kill at
@@ -562,12 +570,22 @@ pub(crate) fn ai_spear_subshot_44(p: &mut Projectile) {
             6
         }
         732 => {
-            // `:27907-27920` — alpha += 12, kill at alpha > 255, the rotation
-            // follows the velocity. The Next(5) dust + light are skipped.
+            // `:27907-27920` — alpha += 12, kill at alpha > 255; the dust
+            // gate draws between the kill and the rotation pin (the C#
+            // order — the kill does not abort the arm); the light skipped.
             p.alpha += 12;
             if p.alpha > 255 {
                 kill(p);
             }
+            crate::proj_trail_dust::trail_732(
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                rng,
+                dust,
+                dust_ctx,
+                world,
+            );
             p.rot = p.vel.to_angle();
             3
         }

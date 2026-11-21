@@ -70,6 +70,27 @@ use data::{
     yoyo_top_speed,
 };
 
+/// W4-g64 — the scratch dust seam (the W4-g63 `scratch_dust` convention):
+/// a fresh pool + the permissive ctx (the whole world on-screen, the full
+/// budget), so the re-armed trail spawns always land in the witnesses and
+/// the dust-free `update` entry keeps its state census unchanged.
+#[cfg(test)]
+pub(crate) fn scratch_dust(
+    w: &World,
+) -> (tr_core::particles::DustPool, tr_core::particles::SpawnCtx) {
+    (
+        tr_core::particles::DustPool::new(),
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        },
+    )
+}
+
 /// The Moon Lord whip's extra-arm spawn request — `AI_165_Whip`'s
 /// `NewProjectile(this.type, ..., ai0 = 0, ai1 = Main.rand.NextFloatDirection(),
 /// ai2 = 10 + this.ai[2])` (`Projectile.cs:47710`). The pool spawns it.
@@ -1795,6 +1816,8 @@ impl Projectile {
         mut owner: Option<&mut crate::player::Player>,
         npcs: &[Npc],
         rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) -> Option<MinionShot> {
         use std::f32::consts::PI;
         // `:29606-29641` — the per-type parameter ladder.
@@ -1890,7 +1913,9 @@ impl Projectile {
             }
         }
         if self.kind == DEADLY_SPHERE && (6.0..=8.0).contains(&self.ai[0]) {
-            // `:29759-29813` — the 533's dash ladder (its dust ring skipped).
+            // `:29759-29813` — the 533's dash ladder. W4-g64: the ai[0]==8
+            // ring is RE-ARMED below (the C# draws it after the ladder's
+            // state writes, before the flag31 return).
             self.ai[1] += 1.0;
             self.extra_updates = 1; // `MaxUpdates = 2`
             if self.ai[0] == 7.0 {
@@ -1919,6 +1944,20 @@ impl Projectile {
                 self.extra_updates = 0;
             } else {
                 flag31 = true;
+            }
+            // `:29800-29812` — W4-g64: the dash ring RE-ARMED on the live
+            // pool: four dusts, the SelectRandom(226,228,75) argument draw
+            // BEFORE each spawn, the scale NextFloat after. The gate is
+            // the POST-ladder ai[0] (the wrap above may have dropped it).
+            if self.ai[0] == 8.0 {
+                crate::proj_trail_dust::trail_533_dash_ring(
+                    Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+                    self.rot,
+                    rng,
+                    dust,
+                    dust_ctx,
+                    world,
+                );
             }
         }
         if flag31 {
@@ -2084,8 +2123,7 @@ impl Projectile {
         if self.kind == DEADLY_SPHERE && (self.ai[0] < 3.0 || self.ai[0] >= 9.0) {
             self.rot += self.vel.x * 0.04;
         }
-        // `:30004-30016` — the twins' 3-frame cycle (the 533's frame table is
-        // above; its idle arm's `frameCounter` is the same counter).
+        // `:30004-30016` — the twins' 3-frame cycle.
         if flag29 {
             self.frame_counter += 1;
             if self.frame_counter > 3 {
@@ -2094,6 +2132,43 @@ impl Projectile {
             }
             if self.frame > 2 {
                 self.frame = 0;
+            }
+        } else if self.kind == DEADLY_SPHERE {
+            // `:30017-30066` — W4-g64: the 533's own frame table (the idle
+            // arm's 24-tick frameCounter cycle + the ai[0] switch) and the
+            // SPIN ring RE-ARMED on the live pool: the outer Next(2) draws
+            // only when ai[0]==2 (the C# `&&`), each of the four iterations
+            // draws its OWN Next(2) gate. The old port ran the twins' cycle
+            // for the sphere too — the C# gates it on 387/388 only.
+            if self.ai[0] < 3.0 || self.ai[0] >= 9.0 {
+                self.frame_counter += 1;
+                if self.frame_counter >= 24 {
+                    self.frame_counter = 0;
+                }
+                let mut num531 = self.frame_counter / 4;
+                self.frame = 4 + num531;
+                match self.ai[0] as i32 {
+                    0 | 9 => self.frame = 4 + num531,
+                    1 | 10 => self.frame = 14 + self.frame_counter / 8,
+                    2 | 11 => {
+                        num531 = self.frame_counter / 3;
+                        if num531 >= 4 {
+                            num531 -= 4;
+                        }
+                        self.frame = 17 + num531;
+                    }
+                    _ => {}
+                }
+            }
+            if self.ai[0] == 2.0 {
+                crate::proj_trail_dust::trail_533_spin_ring(
+                    Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+                    self.rot,
+                    rng,
+                    dust,
+                    dust_ctx,
+                    world,
+                );
             }
         }
         // `:30068-30090` — the `ai[1]` cooldown rolls.
@@ -2598,6 +2673,8 @@ impl Projectile {
         player: Option<&crate::player::Player>,
         rng: &mut dyn tr_core::loot::DropRng,
         wind: f32,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         // `:23207-23210` — `Main.windPhysics`'s head (the general tail at
         // `:16777` applies the same term again to every eligible style, and
@@ -2787,15 +2864,32 @@ impl Projectile {
             // `:23520-23556` — the spark family: the fade-out kill inside
             // the `ai[0] > 3f` window (`ai[0] - 20f >= 40f` = tick 60, the
             // kill does NOT return — the gravity tail still runs) and the
-            // `+0.1f`/`0.99` fall past tick 20. The dust window's 10×/40-tick
-            // fade ramps and the `Next(100)` gate are SKIPPED — no dust
-            // layer, the roll goes with them.
+            // `+0.1f`/`0.99` fall past tick 20. W4-g64: the 954's spark
+            // window is RE-ARMED on the live pool (the num19 probability
+            // ladder + the Next(100) gate draw every tick past ai0 > 3,
+            // the kill tick included — the C# spawns after Kill()); the
+            // 504/979 riders are UNROWED (the S1-F-9b gate), their kind
+            // gate keeps the arm's draws off the stream.
             504 | 954 | 979 => {
                 self.alpha = 255;
                 self.ai[0] += 1.0;
                 if self.ai[0] > 3.0 {
                     if self.ai[0] > 20.0 && self.ai[0] - 20.0 >= 40.0 {
                         self.kill();
+                    }
+                    if self.kind == SPARK {
+                        crate::proj_trail_dust::trail_504(
+                            self.kind,
+                            self.pos,
+                            self.w as i32,
+                            self.h as i32,
+                            self.vel,
+                            self.ai[0],
+                            rng,
+                            dust,
+                            dust_ctx,
+                            world,
+                        );
                     }
                 }
                 if self.ai[0] >= 20.0 {
@@ -3621,7 +3715,14 @@ impl Projectile {
     /// Deviations: the 3-sample LaserScan folds into the port's own tile
     /// ray (the beam length's lerp stays); the shade/light/dust tails are
     /// unmodelled.
-    fn ai_phasmal_deathray(&mut self, world: &World, npcs: &[Npc]) {
+    fn ai_phasmal_deathray(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let host_idx = self.host_by_kind(npcs, NpcKind::MoonLordHead)
             .or_else(|| self.host_by_kind(npcs, NpcKind::MoonLordFreeEye));
         let host = host_idx.map(|i| &npcs[i]);
@@ -3687,6 +3788,22 @@ impl Projectile {
         }
         let amount = 0.5;
         self.local_ai[1] += (hit - self.local_ai[1]) * amount;
+        // `:31619-31639` — W4-g64: the 455 tip pair RE-ARMED on the live
+        // pool, after the length lerp (the 14-px lead, the two side sparks
+        // + the Next(5) puff); the `PlotTileLine` light is the f7 lane's.
+        // The 537 EX arm is UNWIRED (no row — the S1-F-9b gate).
+        if self.kind == PHANTASMAL_DEATHRAY {
+            crate::proj_trail_dust::trail_455(
+                Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+                self.vel,
+                self.w as i32,
+                self.local_ai[1],
+                rng,
+                dust,
+                dust_ctx,
+                world,
+            );
+        }
         // The port's live length rides the smoothed field for the draw.
         let _ = world;
     }
@@ -3751,9 +3868,19 @@ impl Projectile {
     /// and the rotation decrements, the 578's aim rotation, the 580 bolt it
     /// fires at the 90th tick, and the 579's two VortexAliens.
     ///
-    /// Deviations: the dust arms (229/240/5, the `ai[1] == 1f` burst) are
-    /// unmodelled; the late-stage clone spawn rides the 580's own machine.
-    fn ai_vortex_ritual(&mut self, player: (f32, f32), rng: &mut dyn tr_core::loot::DropRng) {
+    /// W4-g64: the wind-up dust arms (the 579's 229/240 rings, the 578's
+    /// 229 streak pair) are RE-ARMED on the live pool (`trail_579` /
+    /// `trail_578`); the `ai[1] == 1f` 25-dust burst stays the co-lane's
+    /// one-shot, the 813 arm UNWIRED (no row); the late-stage clone spawn
+    /// rides the 580's own machine.
+    fn ai_vortex_ritual(
+        &mut self,
+        player: (f32, f32),
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+        world: &World,
+    ) {
         // `:33696-33700`'s first-tick sound latch.
         if self.local_ai[1] == 0.0 {
             self.local_ai[1] = 1.0;
@@ -3772,7 +3899,18 @@ impl Projectile {
         self.ai[0] += 1.0;
         let scale;
         if self.ai[0] <= 50.0 {
-            // The wind-up: the dust arms (unmodelled).
+            // `:33716-33759` — W4-g64: the wind-up dust RE-ARMED on the live
+            // pool: the 579's two independent Next(4) rings (229/240) and
+            // the 578's Next(2) streak pair. The `ai[1] == 1f` 25-dust burst
+            // (`:33682-33695`) is the co-lane's one-shot; the 813 arm is
+            // UNWIRED (no row — the four-phase machine, the deferred ledger).
+            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
+            if self.kind == VORTEX_PORTAL {
+                crate::proj_trail_dust::trail_579(center, rng, dust, dust_ctx, world);
+            }
+            if self.kind == VORTEX_LIGHTNING {
+                crate::proj_trail_dust::trail_578(center, self.ai[1], rng, dust, dust_ctx, world);
+            }
             scale = 0.0;
         } else if self.ai[0] <= 90.0 {
             // `:33797-33799`'s charge.
@@ -3911,8 +4049,18 @@ impl Projectile {
 
     /// `AI()`'s aiStyle-102 block's 574 arm (`Projectile.cs:33250-33299`) —
     /// the Nebula Eye: the host-locked position drag with the 0.15/0.075
-    /// homing accel over the 6-px clamp, the 180-tick release.
-    fn ai_nebula_eye(&mut self, npcs: &[Npc], player: (f32, f32)) {
+    /// homing accel over the 6-px clamp, the 180-tick release. W4-g64: the
+    /// host-phase Next(10) flame (`:33332-33341`) is RE-ARMED on the live
+    /// pool (`trail_574_host`); the 539/573 arms stay UNWIRED (no rows).
+    fn ai_nebula_eye(
+        &mut self,
+        npcs: &[Npc],
+        player: (f32, f32),
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+        world: &World,
+    ) {
         let host_idx = self.host_by_kind(npcs, NpcKind::NebulaFloater).unwrap_or(usize::MAX);
         let alive = npcs
             .get(host_idx)
@@ -3933,6 +4081,24 @@ impl Projectile {
             self.vel = if l > 6.0 { v * (6.0 / l) } else { v };
         } else {
             self.ai[0] = 180.0;
+        }
+        // `:33332-33341` — W4-g64: the 574 HOST-phase flame RE-ARMED on
+        // the live pool while `ai[0] < 180` (the Next(10) gate draws every
+        // host tick; the dust pins the centre and carries the slot
+        // velocity). The CanHitLine rotation lerp (`:33342-33351`) stays
+        // unmodelled (the host's target read); the `frame = 1` pin is
+        // state. The 539/573 host and flight arms are UNWIRED (no rows —
+        // the S1-F-9b gate).
+        if self.ai[0] < 180.0 {
+            crate::proj_trail_dust::trail_574_host(
+                Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+                self.vel,
+                rng,
+                dust,
+                dust_ctx,
+                world,
+            );
+            self.frame = 1; // `:33352`
         }
         self.pos += self.vel;
     }
@@ -4829,7 +4995,14 @@ impl Projectile {
     /// matches the C#'s per-tick movement exactly, but the first tick
     /// carries one tick of follow slack where the C# reads the parent's
     /// already-warm ring.
-    fn ai_nebula_arm(&mut self, parent: Option<(Vec2, Vec2)>, rng: &mut dyn tr_core::loot::DropRng) {
+    fn ai_nebula_arm(
+        &mut self,
+        parent: Option<(Vec2, Vec2)>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+        world: &World,
+    ) {
         // The 618 constants (`:34817-34822`): the parent type 617, the 420
         // window, the 0.15 per-axis accel. The C#'s `flag62`/`flag63` arms are
         // the decompiler's always-false locals — folded.
@@ -4899,12 +5072,18 @@ impl Projectile {
                 self.vel *= 6.0 / speed;
             }
         }
-        // `:34866-34875` — the dust roll (`Next(2)`) stays on the stream, the
-        // dust itself SKIPPED; the alpha latches at 255 every tick, the kill
-        // tick included.
-        if rng.next_range(0, 2) == 0 {
-            // The dust — SKIPPED.
-        }
+        // `:34867-34882` — W4-g64: the 618 tether flame RE-ARMED on the
+        // live pool (the Next(2) gate draws every tick, the kill tick
+        // included); the `customData = proj4` write is the pool's dropped
+        // field. The alpha latches at 255 every tick.
+        crate::proj_trail_dust::trail_618(
+            Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+            self.vel,
+            rng,
+            dust,
+            dust_ctx,
+            world,
+        );
         self.alpha = 255;
         // `HandleMovement`'s half for the tileCollide-false kind: the plain
         // integration after the AI body.
@@ -5074,6 +5253,10 @@ impl Projectile {
         owner: Option<(f32, f32)>,
         aim: Option<(f32, f32)>,
         player: Option<&crate::player::Player>,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+        world: &World,
     ) {
         // `:25483` — the life pin.
         self.time_left = 60;
@@ -5116,6 +5299,24 @@ impl Projectile {
         self.pos = Vec2::new(hand.0 - self.w * 0.5, hand.1 - self.h * 0.5);
         // `:25566` — the rotation follows the velocity (+π/2).
         self.rot = self.vel.y.atan2(self.vel.x) + std::f32::consts::FRAC_PI_2;
+        // `:25575-25583` — W4-g64: the 509 Butcher's chainsaw chip dust
+        // RE-ARMED. The `:25575` velocity-X jitter is BEHAVIOUR-FEEDING and
+        // always drawn — the old dust-layer skip dropped it; `trail_509`'s
+        // head replaces the skip (the draw order is the arm's tail, after
+        // the hand pin and the rotation writes). Every other drill kind
+        // keeps the C#'s no-dust tail.
+        if self.kind == CHAINSAW_BUTCHERS {
+            crate::proj_trail_dust::trail_509(
+                self.pos,
+                self.w as i32,
+                self.h as i32,
+                &mut self.vel,
+                rng,
+                dust,
+                dust_ctx,
+                world,
+            );
+        }
     }
 
     /// `AI()`'s aiStyle-84 block's Last Prism laser arm
@@ -5275,7 +5476,13 @@ impl Projectile {
     /// straight flight, `ai[0] > 5f` → `velocity.Y += 0.2f` with the 0.97
     /// ground-slide friction, `rotation += velocity.X * 0.1f`, and the
     /// center (+4, +8)-box vs solid-tile scan killing the projectile.
-    fn ai_spear(&mut self, world: &World) {
+    fn ai_spear(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         self.ai[0] += 1.0;
         if self.ai[0] > 5.0 {
             self.ai[0] = 5.0;
@@ -5288,6 +5495,31 @@ impl Projectile {
             self.vel.y += 0.2;
         }
         self.rot += self.vel.x * 0.1;
+        // `:25188-25219` — W4-g64: the 450 saucer-scrap bee smoke RE-ARMED
+        // on the live pool (the two independent gates draw every tick, at
+        // the C# position after the rotation write). The `ai[1] == 0` sound
+        // latch (`:25190-25194`) is d76's. The 538 rainbow-gun arm is
+        // UNWIRED (no row — the S1-F-9b gate).
+        if self.kind == SAUCER_SCRAP {
+            crate::proj_trail_dust::trail_450(
+                self.pos,
+                self.w as i32,
+                self.h as i32,
+                rng,
+                dust,
+                dust_ctx,
+                world,
+            );
+            // `:25213-25219` — the 3-tick frame cycle (wrap at 5).
+            self.frame_counter += 1;
+            if self.frame_counter >= 3 {
+                self.frame_counter = 0;
+                self.frame += 1;
+                if self.frame >= 5 {
+                    self.frame = 0;
+                }
+            }
+        }
         // S1-P-i28 — the greek fires' (400-402) per-kind overlay
         // (`Projectile.cs:25271-25302`, inside the aiStyle-14 arm, AFTER the
         // default gravity/rotation above): a wet kill, a friction arm
@@ -7115,8 +7347,17 @@ impl Projectile {
     /// its heading (`:31407-31409`), the sin scale ramp over 300 ticks
     /// (`:31488-31498`), the rotation re-normalise (`:31553-31559`) and the
     /// LaserScan length at the 0.5 lerp (`:31572-31618`). A missing holder
-    /// kills (`:31424-31427`). The dust/light writes are SKIPPED.
-    fn ai_charged_blaster_beam(&mut self, world: &World, parent: Option<(Vec2, Vec2)>) {
+    /// kills (`:31424-31427`). W4-g64: the tip dust (`:31661-31681`) is
+    /// RE-ARMED on the live pool (`trail_461`); the light stays the f7
+    /// lane's.
+    fn ai_charged_blaster_beam(
+        &mut self,
+        world: &World,
+        parent: Option<(Vec2, Vec2)>,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:31380-31383` — the NaN/zero guard.
         if self.vel.is_nan() || self.vel == Vec2::ZERO {
             self.vel = Vec2::new(0.0, -1.0);
@@ -7149,7 +7390,19 @@ impl Projectile {
         let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
         let len = laser_ray_len(world, center, self.vel, 2400.0);
         self.local_ai[1] += (len - self.local_ai[1]) * 0.5;
-        // `:31661-31681` — the dust/light writes are SKIPPED.
+        // `:31661-31681` — W4-g64: the 461 tip pair RE-ARMED on the live
+        // pool (the 8-px lead, the 1..1.8 speed band, type 226 at scale 1.2
+        // + the Next(5) puff); the `PlotTileLine` light is the f7 lane's.
+        crate::proj_trail_dust::trail_461(
+            center,
+            self.vel,
+            self.w as i32,
+            self.local_ai[1],
+            rng,
+            dust,
+            dust_ctx,
+            world,
+        );
         // NO movement integration: aiStyle 84 is on `UpdatePosition`'s skip
         // list (`:20435`) — the position is AI-set every tick (`:31408`).
     }
@@ -7853,16 +8106,89 @@ impl Projectile {
         self.kill_step(world);
     }
 
-    fn ai_frost_bolt(&mut self, world: &World) {
+    fn ai_frost_bolt(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         if self.ai[1] == 0.0 {
             self.ai[1] = 1.0;
             // `:26648-26674` — the first-tick cue: the Houndius Shootius
             // fireball 967 plays `SoundID.Item60`, the rest `SoundID.Item28`
-            // (`:26661`/`:26673`, S1-E-21h). The per-kind dust blocks
-            // (`:26572-26609`) stay SKIPPED — noted for ANALYSIS.
+            // (`:26661`/`:26673`, S1-E-21h).
             let style = if self.kind == HOUNDIUS_SHOOTIUS_FIREBALL { 60 } else { 28 };
             self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
         }
+        // `:26557-26580` — W4-g64: the 1026 barnacle shot's wake RE-ARMED:
+        // the POST-increment `localAI[0]`, the `>= 8 && timeLeft % 2 == 0`
+        // gate pins the counter to 8 on the taken tick, then the dust.
+        if self.kind == DEAD_CELLS_BARNACLE_SHOT {
+            self.local_ai[0] += 1.0;
+            if self.local_ai[0] >= 8.0 && self.time_left % 2 == 0 {
+                self.local_ai[0] = 8.0;
+                crate::proj_trail_dust::trail_1026(
+                    self.pos,
+                    self.w as i32,
+                    self.h as i32,
+                    self.vel,
+                    self.local_ai[0],
+                    self.time_left,
+                    rng,
+                    dust,
+                    dust_ctx,
+                    world,
+                );
+            }
+            // `:26569-26580` — the frame cycle + the facing/rotation tail
+            // (the slot carries the frame fields; the C# order is the dust
+            // block first, then the animation).
+            self.frame_counter += 1;
+            if self.frame_counter > 4 {
+                self.frame_counter = 0;
+                self.frame += 1;
+            }
+            let frames = proj_frames(self.kind) as i32;
+            if self.frame < 0 || self.frame >= frames {
+                self.frame = 0;
+            }
+            self.sprite_direction = if self.vel.x < 0.0 { -1 } else { 1 };
+            self.rot = self.vel.y.atan2(self.vel.x)
+                + if self.sprite_direction == -1 { -std::f32::consts::PI } else { 0.0 };
+        }
+        // `:26582-26600` — W4-g64: the 967 Houndius fireball's ember trail
+        // RE-ARMED: the POST-increment `localAI[0]`, the `>= 5 &&
+        // timeLeft % 3 == 0` gate pins the counter to 5 on the taken tick.
+        if self.kind == HOUNDIUS_SHOOTIUS_FIREBALL {
+            self.local_ai[0] += 1.0;
+            if self.local_ai[0] >= 5.0 && self.time_left % 3 == 0 {
+                self.local_ai[0] = 5.0;
+                crate::proj_trail_dust::trail_967(
+                    self.pos,
+                    self.w as i32,
+                    self.h as i32,
+                    self.vel,
+                    self.local_ai[0],
+                    self.time_left,
+                    rng,
+                    dust,
+                    dust_ctx,
+                    world,
+                );
+            }
+            // `:26592-26600` — the 6-tick frame cycle (`++frameCounter > 6`).
+            self.frame_counter += 1;
+            if self.frame_counter > 6 {
+                self.frame_counter = 0;
+                self.frame += 1;
+                if self.frame >= proj_frames(self.kind) as i32 {
+                    self.frame = 0;
+                }
+            }
+        }
+        // The remaining per-kind blocks (`:26602-26646`, the g63 kinds
+        // 177/118/119/128/129/309/359 and the unrowed) stay the co-lane's.
         self.kill_step(world);
     }
 
@@ -8813,15 +9139,19 @@ impl Projectile {
     /// — the steering weights, the retarget radius, the two timeLeft caps)
     /// override the defaults (10/5/40/300/180); the `ai[0]` slot is the NPC
     /// index (−1/−2 = the no-target states), `ai[1]` the orbit counter and
-    /// `localAI[0]` the retarget cooldown. The orbital dust
-    /// (`:36253-36276`), the sound and the frame animation are SKIPPED (no
-    /// RNG, sound or dust layer in the pool, no frame fields on the slot).
+    /// `localAI[0]` the retarget cooldown. W4-g64: the orbital dust
+    /// (`:36253-36276`) is RE-ARMED on the live pool (`trail_659`, the
+    /// continue-shaped Next(3) gates); the sound and the frame animation
+    /// stay SKIPPED (d76's cue, no frame fields on the slot).
     fn ai_spirit_flame(
         &mut self,
         world: &World,
         npcs: &[Npc],
         owner: Option<(f32, f32)>,
         player: Option<&crate::player::Player>,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         let _ = (owner, player);
         // The 659 override (`:36202-36208`); the other kinds ride the
@@ -8890,11 +9220,30 @@ impl Projectile {
                 self.alpha = 0;
             }
             // `:36245-36252`: the 4-frame animation (`frameCounter > 4` →
-            // `frame++`) — SKIPPED: no frame fields on the slot, no frame
-            // slicing in the projectile draw (render follow-up).
-            // `:36253-36276`: the orbital dust and its scale ramp — SKIPPED,
-            // while `ai[1]++` (the orbit angle) rides the skip.
+            // `frame++`, wrap at 4) — the slot carries the frame fields.
+            self.frame_counter += 1;
+            if self.frame_counter > 4 {
+                self.frame_counter = 0;
+                self.frame += 1;
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
+            }
+            // `:36253-36276` — W4-g64: the orbital ring RE-ARMED on the
+            // live pool: the POST-increment `ai[1]++` (the orbit angle),
+            // then the three OWN Next(3) gates (a fail CONTINUES — the 659
+            // twin of the 596's early return, which is UNWIRED: no row).
+            // The timeLeft scale ladder rides inside `trail_659`.
             self.ai[1] += 1.0;
+            crate::proj_trail_dust::trail_659(
+                Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+                self.ai[1],
+                self.time_left,
+                rng,
+                dust,
+                dust_ctx,
+                world,
+            );
         }
         // `:36278-36281`: the solid kill — the life drops to 2 inside a tile.
         if self.time_left > 2 && crate::player::collides_rect(world, self.pos.x, self.pos.y, self.w, self.h) {
@@ -9883,17 +10232,20 @@ impl Projectile {
     /// width-0 two-sample `LaserScan` fold (one ray, `laser_ray_len`)
     /// smoothed at 0.5.
     ///
-    /// RNG: the tip dust (`:31643-31657`) is SKIPPED but its draws stay on
-    /// the stream — two iterations of `Next(2)` + `NextDouble`
-    /// (`:31645-31646`), then the `Next(5)` gate and the taken branch's
-    /// `NextDouble` (`:31652-31654`). The `PlotTileLine` light and the
-    /// `CutTiles` arm (`:15206`) have no pool layer — skipped (ANALYSIS).
+    /// RNG: W4-g64 — the tip dust (`:31640-31659`) is RE-ARMED on the live
+    /// pool (`trail_642`, the 455 body verbatim), replacing the draws-kept
+    /// skip: two iterations of `Next(2)` + `NextDouble` + the internals,
+    /// then the `Next(5)` gate and the taken branch's `NextDouble`. The
+    /// `PlotTileLine` light stays the f7 lane's; the `CutTiles` arm
+    /// (`:15206`) has no pool layer — skipped (ANALYSIS).
     fn ai_moonlord_turret_laser(
         &mut self,
         world: &World,
         parent: Option<(Vec2, i32, bool)>,
         player: Option<&crate::player::Player>,
         rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         // `:31380-31383` — the aiStyle-84 head guard.
         if self.vel.is_nan() || self.vel == Vec2::ZERO {
@@ -9950,16 +10302,20 @@ impl Projectile {
         let num674 = laser_ray_len(world, center, self.vel, 2400.0);
         // `:31600`/`:31618` — amount 0.5 (the 632's 0.75 is its own arm).
         self.local_ai[1] += (num674 - self.local_ai[1]) * 0.5;
-        // `:31640-31659` — the tip dust: SKIPPED, the draws kept. Two
-        // iterations of `Next(2)` + `NextDouble`, then the `Next(5)` gate
-        // and the taken branch's `NextDouble`.
-        for _ in 0..2 {
-            let _ = rng.next_range(0, 2);
-            let _ = rng.next_float();
-        }
-        if rng.next_range(0, 5) == 0 {
-            let _ = rng.next_float();
-        }
+        // `:31640-31659` — W4-g64: the 642 tip pair RE-ARMED on the live
+        // pool, replacing the draws-kept skip (the 455 body verbatim: the
+        // 14-px lead, the type-229 pair, the Next(5) puff); the
+        // `PlotTileLine` light is the f7 lane's.
+        crate::proj_trail_dust::trail_642(
+            center,
+            self.vel,
+            self.w as i32,
+            self.local_ai[1],
+            rng,
+            dust,
+            dust_ctx,
+            world,
+        );
     }
 
     /// `AI()`'s aiStyle-112 type-644 arm (`Projectile.cs:34235-34362`): the
@@ -9972,14 +10328,15 @@ impl Projectile {
     ///
     /// RNG: the first tick draws `NextFloat` + `Next(2)`
     /// (`:34251-34252`); every tick the two 2-iteration `Next(10)` dust
-    /// gates (`:34269`/`:34282`, the taken branches spawn dust only — no
-    /// further explicit draws), then the `Next(10)` sparkle gate
+    /// gates (`:34269`/`:34282`), then the `Next(10)` sparkle gate
     /// (`:34293`): the taken branch draws three `NextFloat`s
     /// (`:34295-34297`), the `RandomVector2` pair (`:34298`), the radius
     /// `NextFloat` (`:34303`) and — only when the point is in-world and
-    /// non-solid — the velocity `NextFloat` (`:34320`). The dust spawns,
-    /// the `CloneDust` internal `NewDust` rolls (the dust precedent,
-    /// ANALYSIS) and the light casts (`:34246-34247`/`:34265`) are skipped.
+    /// non-solid — the velocity `NextFloat` (`:34320`). W4-g64: the dust
+    /// spawns + the `CloneDust` internal `NewDust` rolls are RE-ARMED on
+    /// the live pool (`trail_644`, the deferred prism-hue orbit UNBLOCKED
+    /// — the hue rides `hsl_to_rgb`, the clone the pool's `clone_dust`);
+    /// the light casts (`:34246-34247`/`:34265`) stay the e6/f7 lanes'.
     /// The tick-30 `DoRainbowCrystalStaffExplosion` draws ride
     /// [`rainbow_crystal_explosion_draws`].
     fn ai_rainbow_crystal_shard(
@@ -9987,6 +10344,8 @@ impl Projectile {
         world: &World,
         parent_center: Option<Vec2>,
         rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) -> bool {
         // `:34240-34248` — the `TryGetActive(643)` probe: a miss zeroes
         // `ai[1]`; the hit's `PlotTileLine` light is skipped.
@@ -10007,39 +10366,23 @@ impl Projectile {
         if self.alpha < 0 {
             self.alpha = 0;
         }
-        // `:34267-34292` — the two 2-iteration dust gates (draws only).
-        for _ in 0..2 {
-            let _ = rng.next_range(0, 10);
-        }
-        for _ in 0..2 {
-            let _ = rng.next_range(0, 10);
-        }
-        // `:34293-34332` — the sparkle gate.
-        if rng.next_range(0, 10) == 0 {
-            let _ = rng.next_float(); // num838 (`:34295`)
-            let _ = rng.next_float(); // fadeIn (`:34296`)
-            let _ = rng.next_float(); // num839 (`:34297`)
-            // `RandomVector2(-1, 1)` — two draws (`:34298`).
-            let vx = 2.0 * rng.next_float() - 1.0;
-            let vy = 2.0 * rng.next_float() - 1.0;
-            let mut vector141 = Vec2::new(vx, vy);
-            if vector141 != Vec2::ZERO {
-                vector141 = vector141.normalize();
-            }
-            vector141 *= 20.0 + rng.next_float() * 100.0; // `:34303`
-            let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
-            let vec = center + vector141;
-            // `:34305-34314` — `ToTileCoordinates` truncates; InWorld +
-            // SolidTile gate the spawn (and its velocity draw).
-            let (tx, ty) = (vec.x as i32 / 16, vec.y as i32 / 16);
-            let in_world = tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
-            let flag56 = in_world && !solid_tile(world, tx, ty);
-            if flag56 {
-                let _ = rng.next_float(); // `:34320` velocity
-                // The `CloneDust`'s internal `NewDust` rolls are skipped
-                // with the dust layer (ANALYSIS).
-            }
-        }
+        // `:34267-34332` — W4-g64: the prism-hue orbit + sparkle RE-ARMED
+        // on the live pool (the deferred kind UNBLOCKED: the hue rides the
+        // byte-quantised `hsl_to_rgb`, the Opacity the alpha fade above,
+        // the CloneDust the pool's verbatim `clone_dust`). The gate draws,
+        // the RandomVector2 pair and the conditional velocity draw keep
+        // their C# order inside `trail_644`.
+        crate::proj_trail_dust::trail_644(
+            Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5),
+            self.ai[0],
+            self.rot,
+            opacity_of(self.alpha),
+            self.local_ai[0],
+            rng,
+            dust,
+            dust_ctx,
+            world,
+        );
         // `:34333-34335` — the scale, the velocity pin, the age.
         self.scale = opacity_of(self.alpha) / 2.0 * self.local_ai[0];
         self.vel = Vec2::ZERO;
@@ -12856,6 +13199,9 @@ impl Projectile {
         world: &World,
         npcs: &[Npc],
         player: Option<&crate::player::Player>,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         // `:30793-30799` — the owner's slot: `ai[0] - 1`.
         let owner_index = self.ai[0] as i32 - 1;
@@ -12930,7 +13276,23 @@ impl Projectile {
         if solid_block(world, tile_x, bottom_px / 16) {
             self.h -= (bottom_px % 16) as f32 - 2.0;
         }
-        // `:30882-30887` — the 4-frame loop (every fifth tick).
+        // `:30884-30901` — W4-g64: the 447 column smoke RE-ARMED on the
+        // live pool, after the scan's placement/trim and BEFORE the frame
+        // loop: two type-228 base puffs + the Next(5) side puff; the X
+        // anchor reads the host's velocity.X (integer width/2, Math.Sign).
+        if self.kind == SAUCER_DEATHRAY {
+            crate::proj_trail_dust::trail_447(
+                self.pos,
+                self.w as i32,
+                self.h as i32,
+                owner.vx,
+                rng,
+                dust,
+                dust_ctx,
+                world,
+            );
+        }
+        // `:30902-30909` — the 4-frame loop (every fifth tick).
         self.frame_counter += 1;
         if self.frame_counter >= 5 {
             self.frame_counter = 0;
@@ -16556,12 +16918,59 @@ impl ProjectilePool {
         npcs: &mut [Npc],
         owner: Option<(f32, f32)>,
         aim: Option<Vec2>,
+        player: Option<&mut crate::player::Player>,
+        inputs: YoyoInputs,
+        flail_inputs: FlailInputs,
+        rng: &mut dyn tr_core::loot::DropRng,
+        local_owner: u8,
+        hostile_local: bool,
+    ) {
+        // W4-g64 — the trail-dust lane's scratch entry (the W4-g63 batch-1
+        // `Npc::update_rng` precedent): the dust-free callers run the walk
+        // on a scratch pool with a permissive ctx — the AI-level gate draws
+        // still ride the caller's stream, the pool's own rolls land on the
+        // scratch pool (the live sim threads the real pool through
+        // [`ProjectilePool::update_dust`]).
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(world.width as f32 * TILE_PX, world.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        self.update_dust(
+            world, npcs, owner, aim, player, inputs, flail_inputs, rng, local_owner,
+            hostile_local, &mut dust, &ctx,
+        );
+    }
+
+    /// W4-g64 — the full walk with the caller's RNG stream AND the live
+    /// dust pool + spawn ctx (the W4-g63 `Npc::update_rng_dust` precedent):
+    /// the per-kind trail arms (research/66, kinds 401+) roll `Main.rand`
+    /// through the verbatim `DustPool::new_dust` on the SAME
+    /// `UpdateProjectiles` stream the AI draws ride (`Main.cs:17775-17777`'s
+    /// `SwapRandom("UpdateProjectiles")` wraps `UpdateWorld_Projectiles`,
+    /// dust included). The live sim (`world_sim/projectiles.rs`) threads
+    /// `app.dust` + the frame's `spawn_ctx` here; every other kind ignores
+    /// the pool.
+    #[allow(clippy::too_many_arguments)]
+    #[deny(unreachable_patterns)]
+    pub fn update_dust(
+        &mut self,
+        world: &mut World,
+        npcs: &mut [Npc],
+        owner: Option<(f32, f32)>,
+        aim: Option<Vec2>,
         mut player: Option<&mut crate::player::Player>,
         inputs: YoyoInputs,
         flail_inputs: FlailInputs,
         rng: &mut dyn tr_core::loot::DropRng,
         local_owner: u8,
         hostile_local: bool,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         self.update_count += 1;
         // `Player.Update`'s clear (`Player.cs:28300-28301`): the C#
@@ -17142,7 +17551,7 @@ impl ProjectilePool {
                                 }
                                 _ => {}
                             }
-                            self.slots[i].ai_spear(world)
+                            self.slots[i].ai_spear(world, rng, dust, dust_ctx)
                             }
                         }
                         // S1-P-i42 — the flare family (163/310/1008-1011),
@@ -17223,7 +17632,7 @@ impl ProjectilePool {
                         }
                         44 => {
                             if matches!(self.slots[i].kind, CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT) {
-                                crate::projectile_ai_spear::ai_spear_subshot_44(&mut self.slots[i]);
+                                crate::projectile_ai_spear::ai_spear_subshot_44(&mut self.slots[i], rng, dust, dust_ctx, world);
                             }
                             self.slots[i].kill_step(world);
                         }
@@ -17408,7 +17817,7 @@ impl ProjectilePool {
                         // mouse while the channel holds; the release kills
                         // it. The position is AI-set (the hand pin), so no
                         // `kill_step` runs.
-                        20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
+                        20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref(), rng, dust, dust_ctx, world),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
                         // S1-P-i14 (V5 gate) — `AI_078`
@@ -17453,7 +17862,7 @@ impl ProjectilePool {
                                 p.time_left = 60;
                             }
                         }
-                        28 => self.slots[i].ai_frost_bolt(world),
+                        28 => self.slots[i].ai_frost_bolt(world, rng, dust, dust_ctx),
                         50 => self.slots[i].ai_inferno_fork(world),
                         // The aiStyle-27 followup caster family
                         // (`Projectile.cs:26420-26554`): the Unholy Trident
@@ -17485,7 +17894,7 @@ impl ProjectilePool {
                         // arm rides inside `ai_style2`'s per-kind ladder.
                         2 => {
                             let wind = self.wind_speed;
-                            self.slots[i].ai_style2(world, npcs, player.as_deref(), rng, wind);
+                            self.slots[i].ai_style2(world, npcs, player.as_deref(), rng, wind, dust, dust_ctx);
                         }
                         // S1-D-4 — `AI()`'s `else if (this.aiStyle == 58)`
                         // (`Projectile.cs:28906-28937`): SantaNK1's present
@@ -17536,7 +17945,7 @@ impl ProjectilePool {
                         // The aiStyle-79 Saucer deathray (`:30791-30910`):
                         // the owner check and the beam that hangs from the
                         // owner to the ground.
-                        79 => self.slots[i].ai_saucer_deathray(world, &npcs[..], player.as_deref()),
+                        79 => self.slots[i].ai_saucer_deathray(world, &npcs[..], player.as_deref(), rng, dust, dust_ctx),
                         // The aiStyle-80 Saucer missile (`:30911-31000`): the
                         // arming delay, the homing turn and the contact.
                         80 => self.slots[i].ai_saucer_missile(world, player.as_deref()),
@@ -17698,7 +18107,7 @@ impl ProjectilePool {
                         }
                         119 => {
                             let parent = self.nebula_parent(self.slots[i].ai[1]);
-                            self.slots[i].ai_nebula_arm(parent, rng);
+                            self.slots[i].ai_nebula_arm(parent, rng, dust, dust_ctx, world);
                         }
                         // The Last Prism holder (`:66539-66637`): the channel
                         // gate, the mana pay and the per-tick damage re-read
@@ -17721,7 +18130,7 @@ impl ProjectilePool {
                             // beam light — is a follow-up); the release kills
                             // it (`:66280-66283`).
                             } else if self.slots[i].kind == LASER_DRILL {
-                                self.slots[i].ai_drill(owner, inputs.aim, player.as_deref());
+                                self.slots[i].ai_drill(owner, inputs.aim, player.as_deref(), rng, dust, dust_ctx, world);
                             } else {
                                 let spawn =
                                     self.slots[i]
@@ -17790,7 +18199,7 @@ impl ProjectilePool {
                         // The aiStyle-129 spirit flame (`:36198-36309`): the
                         // retarget reads `Main.npc` and the owner gate.
                         129 => {
-                            self.slots[i].ai_spirit_flame(world, npcs, owner, player.as_deref())
+                            self.slots[i].ai_spirit_flame(world, npcs, owner, player.as_deref(), rng, dust, dust_ctx)
                         }
                         // S1-D-5: the duplicate `1 => ai_arrow`, `3 =>
                         // ai_boomerang`, `14 => ai_spear`, `16 => ai_bomb`
@@ -17841,7 +18250,7 @@ impl ProjectilePool {
                                             p.vel,
                                         )
                                     });
-                                self.slots[i].ai_charged_blaster_beam(&*world, parent);
+                                self.slots[i].ai_charged_blaster_beam(&*world, parent, rng, dust, dust_ctx);
                             }
                             // The Moon Lord turret's beam (642, S1-D-4b-3):
                             // the `:31411-31421` key-linked arm — the
@@ -17862,6 +18271,8 @@ impl ProjectilePool {
                                     parent,
                                     player.as_deref(),
                                     rng,
+                                    dust,
+                                    dust_ctx,
                                 );
                                 // `HandleMovement`: `tileCollide = false`
                                 // (`:6912`) — `UpdatePosition` integrates
@@ -17869,7 +18280,7 @@ impl ProjectilePool {
                                 let vel = self.slots[i].vel;
                                 self.slots[i].pos += vel;
                             }
-                            _ => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..]),
+                            _ => self.slots[i].ai_phasmal_deathray(&*world, &npcs[..], rng, dust, dust_ctx),
                         },
                         85 => {
                             if let Some(p) = player.as_deref_mut() {
@@ -17879,7 +18290,7 @@ impl ProjectilePool {
                         102 => {
                             let player = owner.unwrap_or((0.0, 0.0));
                             let npcs = &npcs[..];
-                            self.slots[i].ai_nebula_eye(npcs, player)
+                            self.slots[i].ai_nebula_eye(npcs, player, rng, dust, dust_ctx, world)
                         }
                         103 => {
                             let npcs = &npcs[..];
@@ -17946,7 +18357,7 @@ impl ProjectilePool {
                             let player_pos = owner
                                 .or(inputs.aim)
                                 .unwrap_or((self.slots[i].pos.x, self.slots[i].pos.y));
-                            self.slots[i].ai_vortex_ritual(player_pos, rng);
+                            self.slots[i].ai_vortex_ritual(player_pos, rng, dust, dust_ctx, world);
                         }
                         99 => {
                             // `AI_099_2_Yoyos`'s `flag` (`:67736-67742`): an
@@ -18809,7 +19220,7 @@ impl ProjectilePool {
                             let parent_center = self
                                 .key_parent(self.slots[i].ai[1], RAINBOW_CRYSTAL)
                                 .map(|p| Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5));
-                            let burst = self.slots[i].ai_rainbow_crystal_shard(world, parent_center, rng);
+                            let burst = self.slots[i].ai_rainbow_crystal_shard(world, parent_center, rng, dust, dust_ctx);
                             if burst && self.slots[i].owner == local_owner {
                                 let dolls = doll_flags(player.as_deref());
                                 let luck =
@@ -19430,6 +19841,8 @@ impl ProjectilePool {
                                 player.as_deref_mut(),
                                 npcs,
                                 rng,
+                                dust,
+                                dust_ctx,
                             );
                             // `HandleMovement`'s `UpdatePosition`
                             // (`:19858`/`:20433-20446`): aiStyle 66 is not in
@@ -23451,6 +23864,20 @@ mod s1_e_21h_sound_tests {
         World::new("t".into(), 64, 64)
     }
 
+    /// W4-g64 — the scratch dust ctx (the whole world on-screen, the full
+    /// budget): the re-armed trail arms thread it; the cue payloads are
+    /// unchanged.
+    fn scratch_dctx(w: &World) -> tr_core::particles::SpawnCtx {
+        tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        }
+    }
+
     /// The first-tick cue latches: one `(2, style, position, 0)` intent per
     /// arm, fired once (the latch flag holds), at the C#'s `base.position`.
     #[test]
@@ -23483,7 +23910,7 @@ mod s1_e_21h_sound_tests {
             match proj_data(kind).map(|d| d.ai_style) {
                 Some(8) => p.ai_ball_of_fire(&w),
                 Some(27) => p.ai_unholy_trident(&w),
-                Some(28) => p.ai_frost_bolt(&w),
+                Some(28) => p.ai_frost_bolt(&w, &mut tr_core::UnifiedRandom::new(7), &mut tr_core::particles::DustPool::new(), &scratch_dctx(&w)),
                 Some(50) => p.ai_inferno_fork(&w),
                 other => panic!("kind {kind}'s arm: {other:?}"),
             }
@@ -23497,7 +23924,7 @@ mod s1_e_21h_sound_tests {
             match proj_data(kind).map(|d| d.ai_style) {
                 Some(8) => p.ai_ball_of_fire(&w),
                 Some(27) => p.ai_unholy_trident(&w),
-                Some(28) => p.ai_frost_bolt(&w),
+                Some(28) => p.ai_frost_bolt(&w, &mut tr_core::UnifiedRandom::new(7), &mut tr_core::particles::DustPool::new(), &scratch_dctx(&w)),
                 Some(50) => p.ai_inferno_fork(&w),
                 _ => unreachable!(),
             }
@@ -30528,13 +30955,16 @@ mod phasmal_projectile_tests {
         npcs.push(head);
         let mut p = spawn(PHANTASMAL_DEATHRAY, 200.0, 100.0);
         p.ai[0] = 0.0116; // The ±2π/540 sweep.
+        let w = surface_world();
+        let (mut sd, sc) = scratch_dust(&w);
+        let mut rng = tr_core::UnifiedRandom::new(7);
         for _ in 0..90 {
-            p.ai_phasmal_deathray(&surface_world(), &npcs);
+            p.ai_phasmal_deathray(&w, &npcs, &mut rng, &mut sd, &sc);
         }
         assert_eq!(p.local_ai[0], 90.0, "the lifetime counter");
         assert!(p.active, "the ray lives past its half");
         for _ in 0..90 {
-            p.ai_phasmal_deathray(&surface_world(), &npcs);
+            p.ai_phasmal_deathray(&w, &npcs, &mut rng, &mut sd, &sc);
         }
         assert!(!p.active, "the ray dies at 180");
         assert!(p.scale > 0.0, "the scale curve");
@@ -30879,7 +31309,8 @@ mod ritual_projectile_tests {
         let mut p = rspawn(VORTEX_PORTAL, 200.0, 200.0);
         let mut rng = tr_core::tile_light::FastRandom::new(3);
         for t in 0..90 {
-            p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+            let (mut sd, sc) = scratch_dust(&surface_world());
+            p.ai_vortex_ritual((300.0, 300.0), &mut rng, &mut sd, &sc, &surface_world());
             if t == 88 {
                 assert_eq!(p.ai[0], 89.0, "one tick under the burst");
             }
@@ -30941,7 +31372,10 @@ mod ritual_projectile_tests {
             ints: [(4, 9, 4), (4, 9, 8)].into_iter().collect(),
             log: Vec::new(),
         };
-        p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+        // W4-g64: ai[0] = 89 → the post-increment 90 leaves the <= 50
+        // wind-up window, so the re-armed trail draws nothing here.
+        let (mut sd, sc) = scratch_dust(&surface_world());
+        p.ai_vortex_ritual((300.0, 300.0), &mut rng, &mut sd, &sc, &surface_world());
         assert_eq!(
             rng.log,
             ["float", "float", "int", "float", "float", "int"],
@@ -30963,10 +31397,12 @@ mod ritual_projectile_tests {
         // scale/alpha ramp over the charge, and the 580 spawn at 90.
         let mut p = rspawn(VORTEX_LIGHTNING, 200.0, 200.0);
         let mut rng = tr_core::tile_light::FastRandom::new(5);
-        p.ai_vortex_ritual((260.0, 200.0), &mut rng);
+        let w = surface_world();
+        let (mut sd, sc) = scratch_dust(&w);
+        p.ai_vortex_ritual((260.0, 200.0), &mut rng, &mut sd, &sc, &w);
         assert!((p.ai[1]).abs() < 0.01, "the aim is +X: {}", p.ai[1]);
         for _ in 0..89 {
-            p.ai_vortex_ritual((260.0, 200.0), &mut rng);
+            p.ai_vortex_ritual((260.0, 200.0), &mut rng, &mut sd, &sc, &w);
         }
         assert_eq!(p.ai[0], 90.0);
         assert!(p.wants_ritual_bolt.is_some(), "the 580 spawns");
@@ -30986,7 +31422,8 @@ mod ritual_projectile_tests {
         let mut p = rspawn(VORTEX_PORTAL, 200.0, 200.0);
         let mut rng = tr_core::tile_light::FastRandom::new(9);
         for _ in 0..185 {
-            p.ai_vortex_ritual((300.0, 300.0), &mut rng);
+            let (mut sd, sc) = scratch_dust(&surface_world());
+            p.ai_vortex_ritual((300.0, 300.0), &mut rng, &mut sd, &sc, &surface_world());
         }
         assert!(!p.active, "the marker dies");
     }
@@ -34536,7 +34973,8 @@ mod magic_ai_tests {
         pool.slots_mut()[child].local_ai[2] = 1.0;
         let nan = Vec2::new(f32::NAN, f32::NAN);
         let mut rng = tr_core::tile_light::FastRandom::new(7);
-        pool.slots_mut()[child].ai_nebula_arm(Some((nan, nan)), &mut rng);
+        let (mut sdust, sdctx) = scratch_dust(&w);
+        pool.slots_mut()[child].ai_nebula_arm(Some((nan, nan)), &mut rng, &mut sdust, &sdctx, &w);
         assert!(
             !pool.slots()[child].active,
             "the NaN shift kills (`:34848-34852`)"
@@ -40354,7 +40792,7 @@ mod s1_d_4b_4_tests {
             ..Default::default()
         };
         // Without a core the shell's ray dies (the C#'s `num594` gate).
-        p.ai_saucer_deathray(&w, &npcs, None);
+        p.ai_saucer_deathray(&w, &npcs, None, &mut tr_core::UnifiedRandom::new(7), &mut scratch_dust(&w).0, &scratch_dust(&w).1);
         assert!(!p.active, "the shell's ray needs a live core");
         // With the core the ray hangs from the owner.
         let mut core = saucer(NpcKind::MartianSaucerCore, 100.0, 50.0);
@@ -40373,7 +40811,7 @@ mod s1_d_4b_4_tests {
             time_left: 240,
             ..Default::default()
         };
-        p.ai_saucer_deathray(&w, &npcs, None);
+        p.ai_saucer_deathray(&w, &npcs, None, &mut tr_core::UnifiedRandom::new(7), &mut scratch_dust(&w).0, &scratch_dust(&w).1);
         assert!(p.active, "the ray lives with a core");
         assert_eq!(p.pos.x, 175.0 - 15.0, "the beam sits on the owner's column");
         assert_eq!(
@@ -40396,11 +40834,11 @@ mod s1_d_4b_4_tests {
         // The 4-frame loop: every fifth tick (the arm already ran once
         // above, so the counter stands at 1).
         for _ in 0..3 {
-            p.ai_saucer_deathray(&w, &npcs, None);
+            p.ai_saucer_deathray(&w, &npcs, None, &mut tr_core::UnifiedRandom::new(7), &mut scratch_dust(&w).0, &scratch_dust(&w).1);
         }
         assert_eq!(p.frame, 0, "the frame waits for the fifth tick");
         assert_eq!(p.frame_counter, 4);
-        p.ai_saucer_deathray(&w, &npcs, None);
+        p.ai_saucer_deathray(&w, &npcs, None, &mut tr_core::UnifiedRandom::new(7), &mut scratch_dust(&w).0, &scratch_dust(&w).1);
         assert_eq!(p.frame, 1, "the frame advances every fifth tick");
         assert_eq!(p.frame_counter, 0);
     }
@@ -40427,7 +40865,7 @@ mod s1_d_4b_4_tests {
             time_left: 240,
             ..Default::default()
         };
-        p.ai_saucer_deathray(&w, &npcs, None);
+        p.ai_saucer_deathray(&w, &npcs, None, &mut tr_core::UnifiedRandom::new(7), &mut scratch_dust(&w).0, &scratch_dust(&w).1);
         assert!(!p.active, "the core's phase gate kills the ray");
         // The core in its attack phase keeps the ray alive.
         let mut core = saucer(NpcKind::MartianSaucerCore, 100.0, 50.0);
@@ -40446,7 +40884,7 @@ mod s1_d_4b_4_tests {
             time_left: 240,
             ..Default::default()
         };
-        p.ai_saucer_deathray(&w, &npcs, None);
+        p.ai_saucer_deathray(&w, &npcs, None, &mut tr_core::UnifiedRandom::new(7), &mut scratch_dust(&w).0, &scratch_dust(&w).1);
         assert!(p.active, "the core's attack phase keeps the ray");
         // The owner's "no target" states kill the ray.
         let mut core = saucer(NpcKind::MartianSaucerCore, 100.0, 50.0);
@@ -40465,7 +40903,7 @@ mod s1_d_4b_4_tests {
             time_left: 240,
             ..Default::default()
         };
-        p.ai_saucer_deathray(&w, &npcs, None);
+        p.ai_saucer_deathray(&w, &npcs, None, &mut tr_core::UnifiedRandom::new(7), &mut scratch_dust(&w).0, &scratch_dust(&w).1);
         assert!(!p.active, "the owner's no-target state kills the ray");
     }
 }
@@ -40672,8 +41110,11 @@ mod s1_d_4b_8_tests {
     }
 
     /// One arm tick with no player and no NPCs — the plain-flight shape.
+    /// W4-g64: the arm threads the scratch dust seam; the RNG census now
+    /// counts the re-armed 954 gate draws too (the C# order, past ai0 > 3).
     fn tick(p: &mut Projectile, w: &World, rng: &mut CountingRng) {
-        p.ai_style2(w, &[], None, rng, 0.0);
+        let (mut dust, dctx) = scratch_dust(w);
+        p.ai_style2(w, &[], None, rng, 0.0, &mut dust, &dctx);
     }
 
     /// The dispatch test: every aiStyle-2 row the pool carries reaches the
@@ -40832,15 +41273,16 @@ mod s1_d_4b_8_tests {
         p.pos = Vec2::new(100.0, 100.0);
         p.vel = Vec2::new(2.0, 0.0);
         let mut rng = CountingRng::new();
+        let (mut dust, dctx) = scratch_dust(&w);
         for _ in 0..29 {
-            p.ai_style2(&w, &[], Some(&player), &mut rng, 0.0);
+            p.ai_style2(&w, &[], Some(&player), &mut rng, 0.0, &mut dust, &dctx);
             // Keep the stick on the player while it decelerates.
             p.pos = Vec2::new(100.0, 100.0);
             p.vel = Vec2::new(2.0, 0.0);
         }
         assert!(p.active, "the grace period holds");
         assert_eq!(p.local_ai[0], 29.0);
-        p.ai_style2(&w, &[], Some(&player), &mut rng, 0.0);
+        p.ai_style2(&w, &[], Some(&player), &mut rng, 0.0, &mut dust, &dctx);
         assert!(!p.active, "tick 30 picks the stick up");
         assert_eq!(p.local_ai[0], 30.0, "the cap");
     }
@@ -40893,29 +41335,32 @@ mod s1_d_4b_8_tests {
         p.pos = Vec2::new(104.0, 104.0);
         p.ai[1] = 1.0;
         let mut rng = CountingRng::new();
-        p.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        let (mut dust, dctx) = scratch_dust(&w);
+        p.ai_style2(&w, &npcs, None, &mut rng, 0.0, &mut dust, &dctx);
         assert!(!p.active, "the town-NPC overlap kills the egg");
         assert_eq!(p.ai[0], 0.0, "the return precedes the age counter");
         // The plain snowball (`ai[1] == 0`) passes the same NPC.
         let mut p2 = just(SNOWBALL);
         p2.pos = Vec2::new(104.0, 104.0);
         p2.vel = Vec2::new(4.0, 0.0);
-        p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        p2.ai_style2(&w, &npcs, None, &mut rng, 0.0, &mut dust, &dctx);
         assert!(p2.active);
         assert_eq!(p2.ai[0], 1.0);
         for _ in 0..18 {
-            p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+            p2.ai_style2(&w, &npcs, None, &mut rng, 0.0, &mut dust, &dctx);
         }
         assert_eq!(p2.vel.y, 0.0, "no gravity before tick 20");
-        p2.ai_style2(&w, &npcs, None, &mut rng, 0.0);
+        p2.ai_style2(&w, &npcs, None, &mut rng, 0.0, &mut dust, &dctx);
         assert!((p2.vel.y - 0.3).abs() < 1e-6);
         assert!((p2.vel.x - 4.0 * 0.98).abs() < 1e-6);
     }
 
     /// `:23520-23556` — the spark family: alpha pinned at 255, the fade-out
     /// kill at tick 60 (the kill does not return — the gravity tail runs),
-    /// the +0.1/0.99 fall past tick 20. The dust window's `Next(100)` roll
-    /// is skipped with the dust.
+    /// the +0.1/0.99 fall past tick 20. W4-g64: the 954's `Next(100)` gate
+    /// is RE-ARMED (one gate draw per tick past ai0 > 3, the taken branch's
+    /// pool internals on top); the 504/979 riders stay unrowed — their
+    /// kind gate keeps the draws off the stream.
     #[test]
     fn s1_d_4b_8_the_spark_fades_out_at_sixty() {
         let w = world();
@@ -40928,7 +41373,13 @@ mod s1_d_4b_8_tests {
             }
             assert!(p.active, "kind {kind}: alive at 59");
             assert_eq!(p.alpha, 255);
-            assert_eq!(rng.ranges, 0, "kind {kind}: the dust roll is skipped");
+            if kind == SPARK {
+                // Ticks 4..59 draw the gate (56 draws); the taken branches
+                // add the pool's internal range draws (the d50 contract).
+                assert!(rng.ranges >= 56, "kind {kind}: the gate draws every tick past ai0 > 3");
+            } else {
+                assert_eq!(rng.ranges, 0, "kind {kind}: unrowed, the dust roll stays skipped");
+            }
             tick(&mut p, &w, &mut rng);
             assert!(!p.active, "kind {kind}: the tick-60 kill");
             assert!(p.vel.y > 0.0, "kind {kind}: the gravity tail still ran");
@@ -40984,7 +41435,8 @@ mod s1_d_4b_8_tests {
         let mut p = just(SHURIKEN);
         p.vel = Vec2::new(0.0, 40.0);
         let mut rng = CountingRng::new();
-        p.ai_style2(&w, &[], None, &mut rng, 2.0);
+        let (mut dust, dctx) = scratch_dust(&w);
+        p.ai_style2(&w, &[], None, &mut rng, 2.0, &mut dust, &dctx);
         assert!((p.vel.x - 0.2).abs() < 1e-6, "the wind head");
         assert_eq!(p.vel.y, 32.0, "the clamp");
     }
@@ -44382,5 +44834,128 @@ mod s1_p_i25_dragon_tests {
         let cy = d.pos.y + d.h * 0.5;
         assert!((cx - 412.0).abs() < 0.01, "the centre kept: {cx}");
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
+    }
+}
+
+/// W4-g64 wiring wave — the stream-parity witnesses (WRITTEN NOT RUN,
+/// code-only mode): the re-armed trail calls keep the C# draw order on the
+/// `UpdateProjectiles` stream, and the 642's draws-kept skip is replaced
+/// 1:1 by the live `trail_642` call (same explicit draws, plus the pool
+/// internals the skip never rolled).
+#[cfg(test)]
+mod w4_g64_wiring_tests {
+    use super::*;
+
+    /// The 642 arm's tip-dust replacement: the re-armed arm is a pure
+    /// function of the stream — two identical runs land identical pools
+    /// and identical stream tails, and the tip pair carries the 455
+    /// body's shape (the 14-px lead, type 229 at scale 1.7, the gated
+    /// type-31 puff). The old draws-kept skip rolled only the explicit
+    /// draws; the live call adds the pool internals on the taken spawns
+    /// (the d50 contract).
+    #[test]
+    fn w4_g64_wire_642_replaces_the_draws_kept_skip() {
+        let w = World::new("g64wire".into(), 200, 200);
+        let parent = Some((Vec2::new(1009.0, 1009.0), 1, false));
+        let mk = || Projectile {
+            active: true,
+            kind: MOONLORD_TURRET_LASER,
+            owner: 0,
+            pos: Vec2::new(1000.0, 1000.0),
+            vel: Vec2::new(1.0, 0.0),
+            w: 18.0,
+            h: 18.0,
+            tile_collide: false,
+            time_left: 600,
+            ..Default::default()
+        };
+        let (mut dust, dctx) = scratch_dust(&w);
+        let mut p = mk();
+        let mut rng = tr_core::UnifiedRandom::new(307);
+        p.ai_moonlord_turret_laser(&w, parent, None, &mut rng, &mut dust, &dctx);
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let len = laser_ray_len(&w, center, p.vel, 2400.0);
+        assert_eq!(p.local_ai[1], len * 0.5, "the length lerp from 0");
+        let spawned: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert!(!spawned.is_empty(), "the tip pair spawns on the live pool");
+        for &i in &spawned {
+            let d = dust.slot(i);
+            assert!(d.dust_type == 229 || d.dust_type == 31, "type {}", d.dust_type);
+            if d.dust_type == 229 {
+                assert_eq!(d.scale, 1.7, "the 455 body's scale");
+                assert!(d.no_gravity);
+            }
+        }
+        // The determinism parity: a second identical run lands the
+        // identical pool + tail (no hidden state in the seam).
+        let (mut dust2, dctx2) = scratch_dust(&w);
+        let mut p2 = mk();
+        let mut rng2 = tr_core::UnifiedRandom::new(307);
+        p2.ai_moonlord_turret_laser(&w, parent, None, &mut rng2, &mut dust2, &dctx2);
+        for &i in &spawned {
+            assert_eq!(dust.slot(i), dust2.slot(i), "slot {i} deterministic");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), rng2.next_range(0, 1000), "stream tail");
+        }
+    }
+
+    /// The 509 drill arm's jitter replacement: the arm's tail draws the
+    /// behaviour-feeding velocity-X jitter EVERY channel tick, then the
+    /// chip gate — mirrored here against the full C# draw order (the
+    /// jitter, the gate, the taken branch's lead argument + the pool
+    /// internals + the post-write Y), the pool records and the stream
+    /// tail identical.
+    #[test]
+    fn w4_g64_wire_509_drill_tail_jitter_then_gate() {
+        let w = World::new("g64wire".into(), 200, 200);
+        let (mut dust, dctx) = scratch_dust(&w);
+        let mut mpool = tr_core::particles::DustPool::new();
+        let mut p = Projectile {
+            active: true,
+            kind: CHAINSAW_BUTCHERS,
+            owner: 0,
+            pos: Vec2::new(500.0, 500.0),
+            vel: Vec2::new(8.0, 0.0),
+            w: 22.0,
+            h: 22.0,
+            tile_collide: false,
+            time_left: 60,
+            ..Default::default()
+        };
+        let mut player = crate::player::Player::spawn(&w);
+        player.channel = true;
+        let mut rng = tr_core::UnifiedRandom::new(311);
+        let mut mirror = tr_core::UnifiedRandom::new(311);
+        let hand = Some((511.0, 511.0));
+        let mut mvel = p.vel;
+        for _ in 0..30 {
+            p.ai_drill(hand, None, Some(&player), &mut rng, &mut dust, &dctx, &w);
+            // The C# tail order (`:25575-25583`): the jitter first
+            // (always), then the gate; the taken branch's lead argument
+            // rides the JITTERED velocity, the internals roll, then the
+            // post-write Y draw.
+            mvel.x *= 1.0 + mirror.next_range(-3, 4) as f32 * 0.01;
+            assert_eq!(p.vel, mvel, "the behaviour-feeding jitter kept");
+            if mirror.next_range(0, 6) == 0 {
+                let lead = mirror.next_range(6, 10) as f32 * 0.1;
+                let idx = mpool.new_dust(&mut mirror, &dctx, &w, p.pos + mvel * lead, 22, 22, 31, 0.0, 0.0, 80, tr_core::particles::Color::default(), 1.4);
+                let d = mpool.slot_mut(idx);
+                d.position.x -= 4.0;
+                d.no_gravity = true;
+                d.velocity *= 0.2;
+                d.velocity.y = -(mirror.next_range(7, 13) as f32) * 0.15;
+            }
+        }
+        assert!(p.active, "the channel holds the drill");
+        let live: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mirrored: Vec<usize> = (0..6000).filter(|&i| mpool.slot(i).active).collect();
+        assert_eq!(live, mirrored);
+        for i in live {
+            assert_eq!(dust.slot(i), mpool.slot(i), "slot {i}");
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "stream tail");
+        }
     }
 }

@@ -4557,6 +4557,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         645 => 7,
         652 => 6,
         659 => 4,
+        // W4-g64 — the style-28 trail kinds' sheets (`Main.cs:8705`/`:8716`):
+        // the 967's 6-tick frame cycle wraps at 8 (`Projectile.cs:26596`),
+        // the 1026's 4-tick cycle at 4 (`:26575`).
+        967 => 8,
+        1026 => 4,
         837 => 3,
         1130 => 6,
         // The Flamelash's 6-frame sheet (`Main.cs:8454`). Its AI's
