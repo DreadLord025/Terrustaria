@@ -1501,6 +1501,62 @@ pub fn apply_player_template(
     true
 }
 
+// --- The census-only 888 sites (W4-g22 DOC-SWEEP) ---------------------------------
+
+/// The armor row's seven `EquipArmor*` handlers (`UICharacterCreation.cs:530-
+/// 613`) each play 12 before the assignment (`:532`/`:538`/`:549`/`:560`/
+/// `:571`/`:582`/`:599`). The port draws the row's chrome but keeps no armor
+/// state (`_maleArmor`/`_femaleArmor` are unported — the preview decodes no
+/// `Images/Item_*` sheets), so the assignments land here as the pure census
+/// and the cue answers 12 for every button. `(head, body, leg)` per gender;
+/// the Formal/Swimming pairs differ per gender, the other five share one
+/// assignment (`_femaleArmor = (_maleArmor = ...)`).
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_assignment(button: usize, male: bool) -> (i32, i32, i32) {
+    match button {
+        0 => (0, 0, 0),                                  // None (`:533`)
+        1 => (92, 83, 79),                               // Gold (`:541-543`)
+        2 => (91, 82, 78),                               // Silver (`:552-554`)
+        3 => (4704, 4705, 4706),                         // Funeral (`:563-565`)
+        4 => (5660, 551, 552),                           // Hallowed (`:574-576`)
+        5 if male => (239, 240, 241),                    // Formal (`:585-587`)
+        5 => (3478, 3479, 0),                            // Formal female (`:591-593`)
+        6 if male => (237, 3785, 5649),                  // Swimming (`:602-604`)
+        6 => (237, 5646, 5647),                          // Swimming female (`:608-610`)
+        _ => (0, 0, 0),
+    }
+}
+
+/// The armor row's cue — every `EquipArmor*` plays 12 (`:532-599`); the
+/// census answers it for all seven buttons (the state half is
+/// [`armor_assignment`], unwired with the armor preview).
+#[allow(dead_code)] // census-only - the armor preview state is unported
+pub fn armor_click_cue(_button: usize) -> u32 {
+    12
+}
+
+/// `Click_VoicePitch` (`:1040-1043`) plays 12 and nothing else — the pitch
+/// slider's drag chrome is the documented no-audio deviation, but the
+/// CLICK cue is its own site. Census-only (the voice state is unported).
+#[allow(dead_code)] // census-only - the voice state is unported
+pub fn voice_pitch_click_cue() -> u32 {
+    12
+}
+
+/// `HandleBackButtonUsage` (`:2366-2380`): the gamepad Back on a non-Info
+/// category plays 12 and re-selects CharInfo; on CharInfo it falls through
+/// to `GoBack` (11, `:1212`). Returns the cue id. Census-only — the gamepad
+/// snap points are out of scope (§J.3); the port's Escape/Back rides the
+/// mouse `Click_GoBack` path instead.
+#[allow(dead_code)] // census-only - the gamepad snap points are out of scope
+pub fn back_button_usage_cue(category: usize) -> u32 {
+    if category != 0 {
+        12 // `:2370`
+    } else {
+        11 // `GoBack` (`:1212`)
+    }
+}
+
 // --- Clicks ---------------------------------------------------------------------
 
 /// `UICharacterCreation.MAX_NAME_LENGTH` (`:142`) — the naming keyboard's cap
@@ -2941,6 +2997,31 @@ mod tests {
         s.hsl_hovered[1] = true;
         s.hsl_grab = 2;
         assert_eq!(hsl_slider_cues(&mut s, [true, true, false], true), 2);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the census-only 888 sites: the seven
+    /// armor handlers play 12 with their exact assignments (the
+    /// Formal/Swimming gender split), the voice-pitch click plays 12, the
+    /// gamepad Back plays 12 off-Info / 11 on Info.
+    #[test]
+    fn doc_sweep_armor_voice_and_gamepad_back_census() {
+        for b in 0..7 {
+            assert_eq!(armor_click_cue(b), 12, "armor button {b}");
+        }
+        assert_eq!(armor_assignment(0, true), (0, 0, 0));
+        assert_eq!(armor_assignment(1, true), (92, 83, 79));
+        assert_eq!(armor_assignment(2, false), (91, 82, 78));
+        assert_eq!(armor_assignment(3, true), (4704, 4705, 4706));
+        assert_eq!(armor_assignment(4, false), (5660, 551, 552));
+        assert_eq!(armor_assignment(5, true), (239, 240, 241));
+        assert_eq!(armor_assignment(5, false), (3478, 3479, 0));
+        assert_eq!(armor_assignment(6, true), (237, 3785, 5649));
+        assert_eq!(armor_assignment(6, false), (237, 5646, 5647));
+        assert_eq!(voice_pitch_click_cue(), 12);
+        assert_eq!(back_button_usage_cue(0), 11, "CharInfo falls to GoBack");
+        for c in 1..=9 {
+            assert_eq!(back_button_usage_cue(c), 12, "category {c}");
+        }
     }
 
     #[test]
