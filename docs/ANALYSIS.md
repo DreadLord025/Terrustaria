@@ -39493,3 +39493,25 @@ cargo/rustc/rustfmt/tests/graphify invoked (code-only wave); the
 verification is whole-range re-reads at the exact tips + `git diff`
 drift censuses + `merge-base --is-ancestor` checks (all quoted in the
 note).
+
+**SEAL-VERIFY (the post-SEAL monitor, §9 — the FINAL d19 word):**
+SEALED `61f7638a5` confirmed on origin (docs-only drift since
+`6b56e27c` — every d19 code pin frozen). d20 STILL `243f81672`, T5
+NOT landed (no spawner arm, no slash row — the slashes-ONLY-d19 HARD
+gate stands). f33 tip `83387628b` → `bffee350f` (campfire resume;
+`projectile.rs`/`data.rs` untouched) — A–H/K/L EXACT, pin I +1 at
+`projectile.rs:17399–17411` re-confirmed both sides. d18 tip
+`8248a54be` → `6e8083751`: **the §6a V1–V5 978 drop EXECUTED by d18
+itself (`f53de9c71`)** — verified site-by-site (the
+`proj_data(978).is_none()` witness pin, the 964-half kept, zero live
+VOLCANO consumers); the merger must NOT re-apply it. d12 tip
+`4ba56e660` → `c98bd8937`: the keep-d12c superset EXACT (row/frames/
+overlays/census witness) + NEW the item-121 Volcano spawn proc landed
+(`7cf1281c5`, `spawn_volcano_proc`) — the 189 lane resolves through
+d12 alone. d10 tip `732d3480b` → `e1519df75` (counterweight lane +
+the MEDUSA_HEAD_RAY keep-one executed): **§4's D1–D13 re-pinned in
+§9.5** (D1 121–454, D3 1981–2113, D4 18237–18258, D5 23072–23084,
+D6 23285–23292, D8 1719–1750, D9 4285–4286, D10 4463–4465, D11
+4531–4535, D12 4787; D2 118, D7/D13 unchanged) — keep-ours verdict
+unchanged, the const census re-run clean. The §8 SWORD-FAMILY bible
+stands with those tip updates; no further d19 rounds owed.

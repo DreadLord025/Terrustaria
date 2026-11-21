@@ -8,9 +8,15 @@
 > §7a (the d20c-T5 monitor — T5 NOT landed at d20 `243f81672`, the
 > slashes-ONLY-d19 rows-GATE re-confirmed, no row duplication) and §8
 > (THE SWORD-FAMILY merger-bible, one paragraph, five ordered steps).
-> No further d19 rounds are owed. The merger consumes §4 (d10 D1–D13)
-> + §3a/93a §2 (f33 A–L) + §6a (d18 V1–V5) + §7/§7a (T5's gate) in
-> §8's order — and nothing else.
+> No further d19 rounds are owed. The merger consumes §4 (d10 D1–D13,
+> **re-pinned to `e1519df75` by §9 — d10's tip MOVED**) + §3a/93a §2
+> (f33 A–L) + §6a (d18 V1–V5, **EXECUTED on d18 by `f53de9c71`, §9**)
+> + §7/§7a (T5's gate) in §8's order — and nothing else.
+> **SEAL-VERIFY (§9, this pass):** SEALED `61f7638a5` confirmed on
+> origin; d20 still `243f81672` (T5 NOT landed); f33 A–H/K/L EXACT +
+> pin I +1 (`17399–17411`) re-confirmed at f33 `bffee350f`; the d18
+> 978 drop verified executed at `6e8083751`; the §8 bible re-confirmed
+> with the two tip updates.
 
 **Round.** W4-d19 FINAL (PROJ-181, code-only, branch
 `task/W4-d19-proj-ai-181-190`). The earlier rounds (follow-up 2, base
@@ -551,6 +557,171 @@ sword-family arm, row or spawner; every dup is adjudicated in this
 note (§1–§4 clouds/d10, §3/§3a 949/f33, §5 1129/d21, §6/§6a 978/d12c,
 §7/§7a terra-chain/d20-T5) — the merger executes those instructions
 and nothing else.
+
+## §9 — SEAL-VERIFY receipt (the post-SEAL monitor pass, this branch's LAST word)
+
+The five-item seal check, re-run against origin's LATEST tips
+(`git fetch` + `ls-remote` this pass). **Verdict: the SEAL stands;
+two neighbour tips moved and are absorbed here — the merger reads
+THIS section's pins, not the stale ones.**
+
+### 9.1 The SEALED commit landed — CONFIRMED
+
+`git log` + `ls-remote`: `61f7638a5` ("W4-d19 SWORD RETIRE phase 5:
+26g SEALED…") IS the tip of `task/W4-d19-proj-ai-181-190` on origin
+(`61f7638a514d29b0467423f33bb43037191e0dcb`), working tree clean.
+Drift census `git diff 6b56e27c..61f7638a5` = docs ONLY (ANALYSIS +26,
+this note +167, INDEX +1) — every §3a d19-side code pin is frozen at
+the SEALED tree.
+
+### 9.2 The d20c-T5 monitor — T5 STILL NOT landed (unchanged)
+
+`ls-remote`: the ONLY d20 branch is `task/W4-d20-proj-ai-191-200` at
+**`243f81672`** (byte-identical to §7a's tip — no d20c branch exists).
+Re-read at that tip: `world_sim/editing.rs` has NO 48870/48914/48922/
+48930 citation and no 273/675/674/757 spawn arm (the only 973/985
+mention is the pre-existing deflection set `:3064–3071`); `data.rs`
+has NO 972/982/983/984/997/1126 row or const (full-file grep; only
+1040/1041/1043 + 973/985 of the sword set). The four C# arms re-read
+WHOLE again (`Player.cs:48870–48937`): 675's slash LITERAL 972
+`:48917` + beam dmg/2 `:48918`, 674's ghost LITERAL 982 dmg 0
+`:48926`, 757's slash LITERAL 984 `:48933` + beam vel×5 `:48934` —
+§7's table verbatim. The 1043 dup re-compared: d20 `data.rs:3651`
+`(16.0, 16.0, 190, 2, TIME_LEFT_DEFAULT, 0, false, false, false,
+(true, -1, false, -1, 0, 1.0))` = d19 `data.rs:3726–3729` — keep-ONE.
+The §7 envelope witness re-read intact at `61f7638a5`
+(`projectile_ai_sword_styles.rs:1625–1649`: the 972 row-gated spawn,
+`ai=[1,20,1,0]`, `num=1/20`, the `(1+num·0.2)·ai2` scale pin :1643,
+the progress-1 kill :1648). **§7a's HARD gate stands verbatim: when
+T5 pushes, slashes-ONLY-d19 (no 972/982/983/984 row duplication) +
+the §7 envelope witness against the merged pool.**
+
+### 9.3 The 949/f33 drop-hunks — A–H/K/L EXACT, pin I +1 STANDS
+
+f33 tip MOVED `83387628b` → **`bffee350f`** (+1: the W4-f33c campfire
+resume — BiomeCampfirePlaceStyle + the scanner ULP fix + the 93a §9
+census). Drift census `git diff 83387628b..bffee350f`: `editing.rs`,
+`scanner.rs`, `anchors.txt`, docs ONLY — **`projectile.rs` and
+`data.rs` UNTOUCHED**, so every f33 keep-side pin holds byte-exact
+(re-read at `bffee350f`): the 184 dispatch arm `projectile.rs:17554–
+17572` (comment :17554–17561, `184 =>` :17562, the active-gated
+`kill_step` :17569–17571), the Kill hook comment :20015–20022 + the
+`kind == TORCH_GOD && !died_out_of_world` gate :20023–20029, the
+`TORCH_GOD` const `data.rs:79–81`, the 949 row `data.rs:3675–3682`
+(tuple `(4.0, 4.0, 184, -1, TIME_LEFT_DEFAULT, 0, false, false,
+false, RESET_STATE)` IDENTICAL to d19's `data.rs:3684–3687`).
+d19-side at `61f7638a5` (code frozen, §9.1): A 392–481 / B 1457–1482
+/ C 1484–1525 / D 17–19 / E 50–52 / F 72–74 / G 107–111 / H 1309–1312
+/ K `data.rs` 1137–1139 / L 3684–3687 — every boundary re-read EXACT;
+**pin I at `projectile.rs:17399–17411`** (comment :17399–17402,
+`184 =>` :17403, tail `}` :17411) — the +1 correction STANDS.
+`anchors.txt:899` still names the 184 clause (repoint at merge).
+f33's own `bffee350f` message carries its d19e receipt confirming
+the same pins at `61f7638a5` — both sides agree. **93a §2 + §3a
+stand as published; nothing owed.**
+
+### 9.4 The d12c-978-keep — d18 EXECUTED the V1–V5 drop; d12c superset STANDS
+
+Both tips MOVED: d18 `8248a54be` → **`6e8083751`** (+4: the PROJ-171
+retire — rowless-conditionals `83600da0a`, **the 978 drop EXECUTED
+`f53de9c71`**, the 601 cross-note `dd7b1b0ad`, 26h SEALED
+`6e8083751`); d12 `4ba56e660` → **`c98bd8937`** (+5: the DOC-SWEEP
+FINAL — **the item-121 Volcano spawn proc LANDED `7cf1281c5`** +
+items 2–5). `9e668d0f0` ∈ d12 tip, `6e8083751` = d18 tip (ancestry
+exit 0 both).
+
+- **The executed drop verified site-by-site at `6e8083751`** (the
+  §6a V1–V5 instruction consumed by d18 itself): V1 the const gone —
+  `data.rs:825–830` is the retire comment (964 :824 / 1106 :835
+  survive); V2 the row gone — `:3975–3978` retire comment between
+  the 964 row (:3971–3974) and 1106 (:3984+); V3 the ignoreWater
+  term gone — `:4415–4417` comment, `|| kind ==
+  INSANITY_SHADOW_FRIENDLY` :4418 SURVIVES (the 964 half kept, as
+  §6a demanded); V4 the melee term gone — `:4489–4491` comment, the
+  match tail closes :4492; V5 the witness block replaced — the
+  `proj_data(978).is_none()` pin `projectile.rs:40979` inside
+  `w4_d18_the_residual_rows_carry_the_csharp_set_defaults` (fn
+  :40967), doc repointed :40964–40965, the 964/1106 blocks intact.
+  Full-tree `VOLCANO` census at the tip: ONLY the two retire
+  comments — zero live consumers. `proj_frames` (:4787) has NO 978
+  entry (d18 never had one). **The merger's step (3) d18-half is
+  ALREADY DONE — do not re-apply V1–V5.**
+- **The d12c superset re-read WHOLE at `c98bd8937`** — every keep
+  pin EXACT: the `VOLCANO` const `data.rs:780–788` (the spawn-site
+  doc updated by `7cf1281c5` to name the landed proc — the fuller
+  doc §6a keeps), the row `:2977–2995` (`(160.0, 160.0, 189, 3, 30,
+  0, false, false, false, (true, -1, false, -1, 255, 1.0))` — the
+  `:9268` second `timeLeft = 30` wins, `Projectile.cs:9253–9269`
+  re-read verbatim this pass), the ignoreWater term `:4375`, the
+  melee term `:4455`, `VOLCANO => 5` in `proj_frames` `:4882`
+  (`Main.cs:8493` re-read: `Main.projFrames[978] = 5;`), the census
+  witness `:5113–5119` (every field + the frames pin). Drift census
+  `git diff 4ba56e660..c98bd8937 -- data.rs` = the ONE doc-comment
+  edit at :786–787 — zero value drift.
+- **NEW composition fact:** `7cf1281c5` ports the 978 SPAWN SITE —
+  `spawn_volcano_proc` (`projectile.rs:22205–22237`, the
+  `Volcano_TrySpawningVolcano` `Player.cs:44150–44158` proc, ai0=0/
+  ai1=2, vel (0,−gravDir)) + the `_spawnVolcanoExplosion` latch. The
+  §6 residual "978 spawns decline until their row branches merge"
+  now resolves through d12 ALONE: d12 carries row + frames + proc;
+  the 189 arm is main's (`a4185f89`). Keep-d12c CONFIRMED — the
+  family's 189 lane needs NO d18 row at all.
+
+### 9.5 The §4 d10 drop-hunks — RE-PINNED to d10's NEW tip `e1519df75`
+
+d10 tip MOVED `732d3480b` → **`e1519df75`** (+4: the Counterweight
+spawn lane `6e0f1381e`, the CultistTablet activation contract
+`649b18aef`, the MEDUSA_HEAD_RAY keep-one EXECUTED `7ca50dada`, the
+band-table FINAL `e1519df75`). Drift census
+`git diff 732d3480b..e1519df75` per file, every §4 hunk re-read WHOLE
+at the new tip. **The keep-ours verdict is UNCHANGED; the pins shift
+as follows (supersedes §4's `732d3480b` line numbers):**
+
+| hunk | at `732d3480b` | at `e1519df75` | shift cause |
+|---|---|---|---|
+| D1 | ai_91_100 109–442 | **121–454** | module-doc +12 (:26/:80/:95 edits) |
+| D2 | ai_91_100 106 | **118** | same +12; `remap` still in the use-list, `proj_frames` consumer now :724 |
+| D3 | ai_91_100 1849–1981 | **1981–2113** | +12 doc +120 counterweight fn; keep boundary :2114 (the 514-row doc) |
+| D4 | projectile.rs 18198–18219 | **18237–18258** | +39 `counterweight_on_hit` |
+| D5 | projectile.rs 23027–23039 | **23072–23084** | +39 +6 (the 604-beam arm); MEDUSA_HEAD term :23081 MUST SURVIVE |
+| D6 | projectile.rs 23230–23237 | **23285–23292** | +39 +6 +10 (the yoyo-arm call); the 524 ichor arm :23293–23299 STAYS |
+| D7 | data.rs 714–727 | **714–727 UNCHANGED** | the 536-const drop is AFTER (:752) |
+| D8 | data.rs 1721–1752 | **1719–1750** | −2 (the 536 const+doc replaced by a shorter comment) |
+| D9 | data.rs 4287–4288 | **4285–4286** | −2; comment trim :4279–4280 |
+| D10 | data.rs 4465–4467 | **4463–4465** | −2; KEEP `\| ICHOR_SPLASH` :4465 |
+| D11 | data.rs 4533–4537 | **4531–4535** | −2; KEEP SHADOW_FLAME + MEDUSA_HEAD |
+| D12 | data.rs 4789 | **4787** | −2; KEEP 518/525/535 (:4784–4786), comment trim :4780–4783 |
+| D13 | anchors.txt 900 | **900 UNCHANGED** | the :883 edit is 1-for-1, appends at :906+ |
+
+Const-consumer census re-run at `e1519df75`
+(`TOXIC_CLOUD|GAS_TRAP|SPORE_CLOUD`, word-boundary): every live
+consumer sits inside D1–D12 (the `CHLOROPHYTE_SPORE_CLOUD` 228 hits
+— data.rs :696/:4095/:4927, projectile.rs :17369 — are the
+aiStyle-44 spear sub-shot, a DIFFERENT kind, untouched). The `remap`
+call-sites :254–424 die with D1 (the :2027 hit is a comment inside
+D3). **Two d10-side executed keep-ones the merger must NOT undo:**
+the `MEDUSA_HEAD_RAY` const is already dropped (the 535 dispatch
+spawns LITERAL 536, `projectile.rs:18374/:18410` — d11's const is
+the one definition at merge) and the Counterweight lane is d10's
+own (no d19 twin, survives whole).
+
+### 9.6 The SWORD-FAMILY bible — FINAL, re-confirmed with the tip updates
+
+§8's five ordered steps STAND; the only edits are status facts, not
+instructions: (1) d19 band + cloud keep-one — D1–D13 now at
+**`e1519df75`** per §9.5; (2) f33 949 event/machine at
+**`bffee350f`** + the d19 A–L drops (I at :17399–17411) — §9.3;
+(3) d18/d12c rows — **the d18 V1–V5 half is EXECUTED** (`f53de9c71`,
+verified §9.4), d12c's superset rides **`c98bd8937`** with the spawn
+proc landed; (4) d20 band at `243f81672` + the 1043 keep-one — the
+190-dispatch × 198-spawner flint canary unchanged; (5) T5 LAST
+against the merged rows — the four `Player.cs:48870–48937` spawner
+arms, slashes-ONLY-d19 NEVER duplicated, the §7 envelope witness
+(`w4_d19_the_terra_chain_payload_feeds_the_190_envelope`) must pass.
+Every dup adjudicated in-note (§1–§4 d10, §3/§3a f33, §5 d21 —
+tip `9fa9e9ba0` UNCHANGED, zero drift; §6/§6a d12c, §7/§7a d20-T5).
+**The merger executes those instructions and nothing else. This
+receipt is the FINAL d19 word — no further rounds owed.**
 
 ## Witnesses — the FINAL round (WRITTEN NOT RUN — code-only)
 
