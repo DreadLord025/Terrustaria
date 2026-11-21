@@ -605,7 +605,7 @@ impl App {
                         style.brightness = 1.0;
                     }
                     // The Dust `UpdateDust` SECOND-chain lights (S1-E-5,
-                    // W4-g13 — the research/68 flag-a orphan closure): the 52
+                    // W4-g13 — the research/202 flag-a orphan closure): the 52
                     // RNG-free AddLight arms `Dust.cs:1061-2312`
                     // (`dust_lights_b.rs`), fed immediately after the FIRST
                     // ladder in the same `Main.dust` slot order, reading the

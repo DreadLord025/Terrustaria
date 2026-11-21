@@ -29,13 +29,13 @@
 //! `< 1`, so the colour never changes but the three `NextFloat` draws still
 //! ride the stream.
 //!
-//! KEEP-ONE (W4-g13 retire phase, research/70 §6): this file is edited on
+//! KEEP-ONE (W4-g13 retire phase, research/210 §6): this file is edited on
 //! BOTH `task/W4-g13-dust-main-sites-3` and `task/W4-d54-dust-sites-world`;
 //! d54's single-seam shape (`DustDrawGlobals` + `get_alpha_with_globals`)
 //! is canonical and taken VERBATIM from d54 tip `1d16ef4e` (blob
 //! `58305d0a8`), retiring g13's two staged seams
 //! (`get_alpha_mouse_text`/`get_alpha_disco`, `daf7b780`). The merger
-//! resolves per-fn by the research/70 §6 dedupe table: every d54-canonical
+//! resolves per-fn by the research/210 §6 dedupe table: every d54-canonical
 //! item is byte-identical here; the g13-only census witnesses
 //! (`w4_g13_globals_seam_gate_census`, `w4_g13_draw_tint_census_pins`) are
 //! additive keeps with no d54 counterpart.
@@ -831,7 +831,7 @@ mod tests {
         assert_eq!(rng2.peek(), UnifiedRandom::new(9).peek());
     }
 
-    /// W4-g13 census supplement (research/70 §6 keep-one) — the arms'
+    /// W4-g13 census supplement (research/210 §6 keep-one) — the arms'
     /// NON-drawing gates over the canonical seam: non-157 / non-327 /
     /// fullBright delegate WITHOUT touching the stream, and zero disco
     /// still draws three at night (the count is disco-independent).
@@ -856,7 +856,7 @@ mod tests {
         assert_eq!(rng.draws, 3);
     }
 
-    /// W4-g13 (research/70) — the draw-tint census pins: GetColor's 284
+    /// W4-g13 (research/210) — the draw-tint census pins: GetColor's 284
     /// transparent arm and the packed-zero overlay gate (`Main.cs:39006-
     /// 39013`) compose; the generic 6/15/59-64 white-light override
     /// (`:38969-38972`) feeds GetAlpha WHITE, not the sampled light.

@@ -1,5 +1,5 @@
 //! The Dust `Lighting.AddLight` sources, SECOND chain (`S1-E-5`, W4-g13 —
-//! the research/68 flag-a orphan closure).
+//! the research/202 flag-a orphan closure).
 //!
 //! C# `Lighting.AddLight` funnels every overload into
 //! `Lighting.AddLight(int i, int j, float r, float g, float b)`
@@ -16,12 +16,12 @@
 //!
 //! Ported here: the **52** `AddLight` arms of `Dust.UpdateDust`'s SECOND
 //! chain — every site from `:1061` (the 159 glow) to `:2312` (the 272
-//! cursed-flame tail), 43 + 52 = the family's 94 sites. research/68 flag-a:
+//! cursed-flame tail), 42 + 52 = the family's 94 sites. research/202 flag-a:
 //! `dust_lights.rs` deferred these to "S1-E-3's chain port" while d50's
 //! `dust_physics` (`origin/task/W4-d50-dust-type-table`, `2e243a2d`) skipped
 //! them ALL as "S1-E-5 (`dust_lights`)" — the circular deferral this module
 //! closes. The FIRST ladder's 42 stay in `dust_lights.rs` (its 206/174
-//! local-decrement retire is research/68 flag-c, recorded in research/69).
+//! local-decrement retire is research/202 flag-c, recorded in research/206).
 //!
 //! # The collector contract (the e6/c19 `EntityLights` pattern)
 //!
@@ -34,7 +34,7 @@
 //! mutations on a local copy (the `dust_lights.rs` 206/174 compensation
 //! precedent, extended to the whole chain). Every replay cites its d50
 //! `type_chain` arm; when d50's chain is wired into the `type_arm` hook the
-//! replays retire arm-by-arm (research/69 §4 — the flag-c generalisation).
+//! replays retire arm-by-arm (research/206 §4 — the flag-c generalisation).
 //! The feed ([`feed_dust_chain_lights`]) runs in `app/frame/draw.rs`
 //! immediately after `feed_dust_lights`, in `Main.dust` slot order
 //! (`Dust.cs:431`), reading positions AFTER the move (d50 owns the move).
@@ -55,7 +55,7 @@
 //!   post-wet scale, so the 35 replay evaluates the wet probe and mirrors the
 //!   DRAW-INDEPENDENT kill (`alpha > 255`) on its LOCAL copy. The `alpha ==
 //!   255` boundary splits on the `Next(2)` draw (d50's) and stays with the
-//!   physics wiring (research/69 §4).
+//!   physics wiring (research/206 §4).
 //! * **The 43 dark-kill** (`:1435-1438`) reads the PRE-ramp terms and runs
 //!   BEFORE the light's `else` — the collector mirrors it exactly (a dark 43
 //!   emits nothing; the `active = false` write itself is d50's).
@@ -227,7 +227,7 @@ fn arm_27_45_scale(d: &Dust) -> f32 {
 /// `alpha == 255` splits on the `Next(2)` result. The `Next(2)` is d50's
 /// physics draw — the pure collector cannot take it, so it mirrors the
 /// draw-independent kill (`alpha > 255`) and leaves the `alpha == 255`
-/// boundary to the physics wiring (research/69 §4: d50's chain writes the
+/// boundary to the physics wiring (research/206 §4: d50's chain writes the
 /// post-kill scale, the replay retires). The alpha/velocity writes themselves
 /// are d50's physics column.
 #[inline]
@@ -299,7 +299,7 @@ fn light_position(d: &Dust, env: &ChainLightEnv<'_>) -> Vec2 {
 /// ladder's torch arms do; `env` carries the ambient-light sample, the player
 /// push and the wet probe. The scale/position replays ([`light_scale`] /
 /// [`light_position`]) recover the C#'s mid-arm values from the post-move
-/// record (the d50 wiring retires them arm-by-arm, research/69 §4).
+/// record (the d50 wiring retires them arm-by-arm, research/206 §4).
 pub(crate) fn dust_chain_light(
     d: &Dust,
     p: &LightParams,
@@ -1134,5 +1134,58 @@ mod tests {
         // The feed found the live 159 + 130 (the 227 was re-typed/killed).
         lights.end_frame();
         assert!(lights.visible().iter().any(|l| l.rgb == [1.0, 1.0, 0.1]));
+    }
+
+    /// SEAL census witness (research/308 §3, the 94/94 AddLight census):
+    /// every SECOND-chain C# `Lighting.AddLight` line (`Dust.cs`, the 52-line
+    /// register below from a fresh `Select-String` at the SEAL round) either
+    /// emits from [`dust_chain_light`] or is the ONE cited drop (`:2275`,
+    /// the 226 customData-Color second light — d54 G5 CORRECTED it LIVE via
+    /// ParticleOrchestrator.cs:1171/1184/1199; the port's field-drop absence
+    /// is a cited gap, not an uncounted site). WRITTEN NOT RUN.
+    #[test]
+    fn w4_g13_seal_the_52_line_census_covers_every_addlight_site() {
+        // (C# line, representative type) pairs in file order — the module-doc
+        // register, re-derived by Select-String at the SEAL round.
+        let sites: [(i32, i32); 52] = [
+            (1061, 159), (1099, 164), (1137, 173), (1208, 162), (1212, 160),
+            (1241, 168), (1399, 244), (1441, 43), (1470, 15), (1474, 57),
+            (1478, 58), (1501, 110), (1510, 111), (1519, 112), (1528, 113),
+            (1537, 114), (1546, 311), (1555, 312), (1564, 313), (1588, 66),
+            (1619, 267), (1635, 21), (1640, 231), (1644, 20), (1692, 27),
+            (1706, 55), (1714, 73), (1722, 74), (1731, 56), (1743, 71),
+            (1896, 35), (1926, 67), (1939, 185), (1950, 107), (1994, 35),
+            (2004, 68), (2013, 70), (2041, 41), (2069, 44), (2139, 130),
+            (2143, 131), (2147, 132), (2151, 133), (2182, 278), (2214, 219),
+            (2218, 220), (2222, 221), (2226, 222), (2254, 226), (2275, 226),
+            (2299, 331), (2312, 272),
+        ];
+        assert_eq!(sites.len(), 52, "the SECOND chain has exactly 52 sites");
+        assert_eq!(42 + sites.len(), 94, "42 FIRST-ladder + 52 = the family");
+        // Every site except the :2275 customData drop must emit with its
+        // gates open (bright ambient, dry player at rest, wet probe true).
+        let mut emitting = 0;
+        for (line, ty) in sites {
+            let mut d = dust(ty, 0.5, Vec2::new(32.0, 32.0));
+            d.color = tr_core::particles::Color::new(255, 255, 255, 255);
+            if line == 1896 {
+                d.no_gravity = true; // the ng arm; :1994 rides the wet replay
+            }
+            if line == 2275 {
+                // The ONE cited drop: the collector has no customData read,
+                // so the 226 contributes ONLY its :2254 light (checked below).
+                continue;
+            }
+            assert!(light(&d).is_some(), "site :{line} type {ty} must emit");
+            emitting += 1;
+        }
+        assert_eq!(emitting, 51, "52 minus the :2275 customData drop");
+        // The 226 emits ONLY the :2254 tint — the :2275 second light is
+        // absent wholesale (no customData field, particles.rs; the d54 G5
+        // reconstruction contract reads d.color at the merger).
+        let d = dust(226, 0.5, Vec2::new(32.0, 32.0));
+        let got = light(&d).unwrap();
+        let n = 0.5f32 - 0.01; // the post-ramp burn-out read
+        assert_eq!(got.2, [n * 0.2, n * 0.7, n], "the :2254 tint ONLY");
     }
 }

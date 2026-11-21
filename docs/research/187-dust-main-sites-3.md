@@ -1,4 +1,9 @@
-# 65 — Main.cs dust-site batch 3 (W4-g13): census completion + witnesses
+# 187 — Main.cs dust-site batch 3 (W4-g13): census completion + witnesses
+
+RENUMBERED 65→187 per the W4-d54 registry-150 §3 (first-pushed-timestamp
+wins: W4-f17's `65-kinds-coverage-1.md` 2026-11-20T20:49:39 keeps 65; this
+doc's first add `dca09bed9` 2026-11-21T01:04:48 takes 187). Content
+preserved; refs re-pointed on this branch (SEAL round, research/308).
 
 Status: DONE (W4-g13, batch 3 of 3, code-only mode — witnesses WRITTEN,
 NOT RUN). Completes the census `docs/research/64-dust-main-sites-claims.md`
@@ -123,7 +128,7 @@ probabilistic scans.
 - g11/g12's thirds (sites 1-16) — their branches; the boundary sites are
   owned whole per the claim doc (24752 g12's, 24756 g13's).
 
-## Sweep addendum (lane 41, `68-dust-main-residual-sweep.md`)
+## Sweep addendum (lane 41, `202-dust-main-residual-sweep.md`)
 
 The post-push re-probe (g11 `13a1c48e`/`d892d8d4`, g12 `665cd1e8`)
 confirms NO site collision: g12's `main_dust_b.rs` covers 9-16 only (the
@@ -134,4 +139,4 @@ owed by g11b. The Main.cs residual census closes with ZERO unclaimed
 spawn windows; the one non-spawn residual (the `DrawCapture` type-76
 snow cull, `Main.cs:56735-56744`) ports as `capture_snow_cull`
 (`1af79847`, staged behind S1-G-13, +2 witnesses). The Dust.cs internals
-audit + the lavaBubbles consumer census live in research/68 §3/§4.
+audit + the lavaBubbles consumer census live in research/202 §3/§4.

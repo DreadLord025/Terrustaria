@@ -1,10 +1,15 @@
-# 70 — Dust DRAW-tint census FINAL + the GetAlpha 157/327 drop closure (W4-g13 final phase; d54 research/131 §7.2 G3/G4)
+# 210 — Dust DRAW-tint census FINAL + the GetAlpha 157/327 drop closure (W4-g13 final phase; d54 research/131 §7.2 G3/G4)
+
+RENUMBERED 70→210 per the W4-d54 registry-150 §3 (W4-d53's
+`70-proj-dust-site-batches-claims.md` 03:49:21 keeps 70; this doc's first
+add `daf7b7804` 08:56:52 takes 210). Content preserved; refs re-pointed
+on this branch (SEAL round, research/308).
 
 Status: DONE (W4-g13 final phase, code-only — two seam fns + 3 witnesses
 WRITTEN NOT RUN in `dust_table.rs`; no cargo/rustc/rustfmt/tests/graphify
-invoked). Base `6a2f6830` (the research/69 §6 strip-contract receipt).
+invoked). Base `6a2f6830` (the research/206 §6 strip-contract receipt).
 Probed tips: d54 `c89aea9f` (research/131 §7.2 FINAL gap-table), d50
-`2e243a2d` (UNCHANGED, research/69 §6), g67 `30b39fceb` (the DrawDust
+`2e243a2d` (UNCHANGED, research/206 §6), g67 `30b39fceb` (the DrawDust
 cull `2c452edd` is an ancestor — `merge-base --is-ancestor` exit 0).
 
 The task brief's "d54g-G3/G4-157/327-drops co-lane": **no `task/W4-d54g`
@@ -22,7 +27,7 @@ grep, 8 hits, all inside `DrawDust` `:38828-39027`; `GetColor` likewise):
 
 | Consumer | C# | Tint shape | Port status |
 | -------- | -- | ---------- | ----------- |
-| 130-134 trail | `:38864-38878` | per-echo `GetAlpha(light@(pos+4)/16)`, scale ×(1−j/10), j < min((|vx|+|vy|)*3, 10) | dust DRAW lane remainder (research/68 §2) — the pure tint arms are table-complete (25-alpha family `:2584`, 131's lerp) |
+| 130-134 trail | `:38864-38878` | per-echo `GetAlpha(light@(pos+4)/16)`, scale ×(1−j/10), j < min((|vx|+|vy|)*3, 10) | dust DRAW lane remainder (research/202 §2) — the pure tint arms are table-complete (25-alpha family `:2584`, 131's lerp) |
 | 278 trail | `:38880-38895` | same shape, `(int)(pos+4f)/16` float cast (NOT the double form) | same lane; the `mul_rgb` arm `:2588` table-complete |
 | 219-223 trail | `:38897-38911` | `fadeIn == 0` gate, then the same echo loop | same lane; the halfway-white lerp `:2594` table-complete |
 | 264 trail | `:38913-38929` | ×10 speed (not ×3), origin (5,5), base `GetAlpha(light)*0.3f` THEN a second sprite `GetColor(base)` | same lane; the 263/264 arm `:2486` + GetColor table-complete, the composition pinned by witness `w4_g13_draw_tint_census_pins` |
@@ -38,7 +43,7 @@ per-type arm of GetAlpha/GetColor is in `dust_table.rs` (S1-E-2's 123-type
 mechanical diff, research/131 §7.2 — only 327 was absent, 157 documented);
 the two drops close BELOW; the remaining work is the generic all-type
 draw WALK (the trail loops + slot order + shader batches), which is the
-dust DRAW lane's remainder (research/68 §2), not a tint gap.
+dust DRAW lane's remainder (research/202 §2), not a tint gap.
 
 ## 2. G3 — GetAlpha type 157 (`Dust.cs:2627-2651`) CLOSED
 
@@ -105,16 +110,16 @@ behavioural delta on this branch).
 
 research/131 §7.2's gap-table rows G3/G4 flip to CLOSED (this doc +
 `dust_table.rs` at this branch's tip). G1 (the 52 lights) closed by
-`a234107a` (research/69). G2 (the 76-arm snowDust++ seam) stays d50×d130's
+`a234107a` (research/206). G2 (the 76-arm snowDust++ seam) stays d50×d130's
 resolve. G5/G6 are closure rows, unchanged. **The Dust.cs port-wide
 coverage now has NO open tint/physics/light gap — only wiring seams.**
 
 ## 5. FINAL cross-references (the three-doc closure set)
 
-- research/68 §5 — the Main.cs dust-family COMPLETE declaration (the
+- research/202 §5 — the Main.cs dust-family COMPLETE declaration (the
   spawn census + non-spawn machinery + the sibling re-probe at the final
   tips g11 `9a9ac1fd` / g12 `f24dd76a`).
-- research/69 §6-7 — the d50 strip-contract receipt (tip `2e243a2d`
+- research/206 §6-7 — the d50 strip-contract receipt (tip `2e243a2d`
   UNCHANGED, §4 stands) + the 94/94 light-family closure.
 - This doc — the tint column table-complete + G3/G4 CLOSED.
 - **For the d54f-131 master (research/131 §7.2): G1 CLOSED (`a234107a`),
@@ -201,7 +206,7 @@ immediately before the world-effect dust block — after the gore draw
 `draw_splashes` between `:1380` and the foliage draw):
 
 ```rust
-// `Main.DrawDust`'s globals (research/70 §7): sampled once per pass.
+// `Main.DrawDust`'s globals (research/210 §7): sampled once per pass.
 // mouseTextColor is the DoUpdate_AnimateCursorColors pulse already
 // ticked in this frame's update; dayTime is the world clock; Disco are
 // the DoUpdate_AnimateDiscoRGB bytes (C# ints clamped 0..=255).
@@ -234,7 +239,7 @@ with
 
 ```rust
         // `:38969-38973`: the WHITE override for 6/15/59-64, then the
-        // globals seam (research/70 §7 — the 157/327 arms ride here).
+        // globals seam (research/210 §7 — the 157/327 arms ride here).
         let new_color = if matches!(d.dust_type, 6 | 15 | 59..=64) {
             tr_core::particles::Color::WHITE
         } else {
@@ -266,7 +271,7 @@ both), BEFORE the end-of-Draw `DrawnThisUpdate` set (`:62478`, g13's
 relocation — the mark reads clear through the draw, `:1240`).
 
 **Hunk W4 — the generic all-type walk** (the DRAW lane's remainder,
-research/68 §2): the same two-line tint compose at the `:38973` position
+research/202 §2): the same two-line tint compose at the `:38973` position
 of its slot loop, `globals` sampled once (W1) and `rng` threaded as
 `&mut` through the walk. The trail arms (§1 rows 1-6) call `get_alpha`
 pure — 157/327 match no trail type, so no trail hunk needs the seam; the
@@ -303,10 +308,10 @@ The retire phase closes the loop the FINAL declaration (§5) opened:
 - **The wiring contract: PUBLISHED EXACT** (§7, `44eb86de`) — W1-W4 are
   apply-ready hunks against g67 tip `30b39fce`; the cull+else-kill is
   g67-owns and composes as-is.
-- **d50: DEAD-CLEAN, resume-ready** (research/69 §8, `f9566e5b`) — the
+- **d50: DEAD-CLEAN, resume-ready** (research/206 §8, `f9566e5b`) — the
   strip/wiring/retire contracts stand verbatim at `2e243a2d`.
-- research/68 §6 carries the family-level FINAL-FINAL verdict;
-  research/69 §9 the light-family one.
+- research/202 §6 carries the family-level FINAL-FINAL verdict;
+  research/206 §9 the light-family one.
 
 **FINAL-FINAL for the d54f-131 master: G1 CLOSED (`a234107a`), G3/G4
 CLOSED + keep-one landed (`8fd62bd7`), G2 the d50×d130 resolve with the

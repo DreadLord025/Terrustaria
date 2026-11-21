@@ -39249,7 +39249,7 @@ click buffers; the player tick applies).
 
 The last third of the 23-site Main.cs `Dust.NewDust*` census (the split is
 `docs/research/64-dust-main-sites-claims.md`, W4-g12's claim; the batch
-report is `docs/research/65-dust-main-sites-3.md`): sites 17-23
+report is `docs/research/187-dust-main-sites-3.md`): sites 17-23
 (`Main.cs:24756/27381/27384/38664/57766/57789/57793`) port into
 `crates/tr-app/src/main_dust.rs`. The pure emitters landed first (the d60
 code-only precedent); the draw-call wiring wave then landed the feeds
@@ -39320,7 +39320,7 @@ stream-parity witnesses (the item feed's per-drop walk, the dead Moon Lord
 arm, the ale edge latch, the retro rect machinery); WRITTEN, NOT RUN - no
 cargo/rustc/rustfmt/tests/graphify invoked (code-only mode).
 
-**Doc-sweep (lane 41, `docs/research/68-dust-main-residual-sweep.md`).**
+**Doc-sweep (lane 41, `docs/research/202-dust-main-residual-sweep.md`).**
 The post-push re-probe of g11 `13a1c48e` (+ docs-only tip `d892d8d4`) and
 g12 `665cd1e8` finds NO site collision with g13's 17-23 + feeds: g12's
 `main_dust_b.rs` stops at the flag8 trio (:24752), the Tavernkeep pair is
@@ -39351,7 +39351,7 @@ lake; wiring stays f6's). No unclaimed consumer remains.
 
 ## The 52 second-chain dust lights (W4-g13, flag-a closure)
 
-research/68 §3 flag-a found the 52 second-chain `AddLight` arms
+research/202 §3 flag-a found the 52 second-chain `AddLight` arms
 (`Dust.cs:1061-2312`) ORPHANED between `dust_lights.rs` ("lands with
 S1-E-3") and d50's `dust_physics` ("S1-E-5"). This lane closes the circular
 deferral: `crates/tr-app/src/dust_lights_b.rs` OWNS the 52, ports them as a
@@ -39359,7 +39359,7 @@ pure per-slot collector (`dust_chain_light`, the e6/c19 `EntityLights`
 pattern) and feeds them post-move (`feed_dust_chain_lights`, wired in
 `app/frame/draw.rs` immediately after the FIRST-ladder `feed_dust_lights`,
 `Main.dust` slot order). 42 + 52 = the dust family's 94 sites; the full
-per-arm census (type/colour/intensity/gate) is `docs/research/69`.
+per-arm census (type/colour/intensity/gate) is `docs/research/206`.
 
 - **The scale/position replays.** The C# computes each arm's colour MID-ARM
   from the scale/position of that moment; the port's pool runs the skeleton
@@ -39370,7 +39370,7 @@ per-arm census (type/colour/intensity/gate) is `docs/research/69`.
   35 ng (+0.03, the y+1 anchor), 35 wet (the wet probe + the alpha kill),
   and the second chain's fadeIn ramp (+0.03 / −0.01). Each cites its d50
   `type_chain` arm; the replays retire arm-by-arm when d50 wires (the flag-c
-  generalisation, research/69 §5).
+  generalisation, research/206 §5).
 - **Two fidelity subtleties** (witnessed): type 21 WITH `noLightEmittance`
   falls through to the ELSE arm (the 20 colour, `:1632-1644`) — it does NOT
   go dark; the 35 alpha kill is draw-dependent only at `alpha == 255`
@@ -39400,22 +39400,22 @@ would DOUBLE-COUNT, halving the `< 200` budget. The contract: KEEP the
 inline increment (canonical, landed + witnessed, at the C#'s `:473-476`
 position), STRIP the 35 arm from `pre_move` (which keeps the 299-305
 shrink/lift the skeleton lacks). g13 does not edit d50's staged module —
-the strip is d50's wiring wave (research/69 §4).
+the strip is d50's wiring wave (research/206 §4).
 
 **flag-c retire note.** Once d50's `type_chain` wires into the `type_arm`
 hook, the pool carries the POST-mutation scale, so `dust_lights.rs`'s
 compensating local decrements (206 `:381`, 174 `:419`, 230 `:309`, plus
 309/261) DOUBLE-COUNT and retire; the same retire applies to this module's
-replays arm-by-arm (research/69 §5).
+replays arm-by-arm (research/206 §5).
 
-**FINAL-phase receipt (research/69 §6).** The d50 tip re-probed at the
+**FINAL-phase receipt (research/206 §6).** The d50 tip re-probed at the
 final phase is STILL `2e243a2d` — `pre_move`'s type-35 arm present, no
 strip landed; the strip-contract and the retire note stand verbatim for
 the merger.
 
 ## The dust DRAW-tint census + the 157/327 GetAlpha closures (W4-g13 final)
 
-research/70 — the final-phase census of every `Dust.GetColor`/`GetAlpha`
+research/210 — the final-phase census of every `Dust.GetColor`/`GetAlpha`
 draw consumer (`Main.DrawDust` `Main.cs:38828-39027`, the full 8-hit
 grep) finds the SPRITE-tint column table-complete port-wide: every
 per-type arm lives in `dust_table.rs` (S1-E-2), the generic base+overlay
@@ -39453,22 +39453,22 @@ close here on main's `dust_table.rs` (empty diff on every sibling):
   6/15/59-64 WHITE override, the packed-0 overlay gate, the 264
   base×0.3→GetColor chain, the 331 GetColor(GetAlpha(WHITE)) trail tint).
 
-**The Main.cs dust-family FINAL declaration (research/68 §5, for the
+**The Main.cs dust-family FINAL declaration (research/202 §5, for the
 d54f-131 master).** Re-probed at the final sibling tips (g11 `9a9ac1fd`
 union-EXECUTED — its snowing body DEPRECATED for d130's `snow.rs`, the
 budget-hoist residual superseded; g12 `f24dd76a` — no dust-site change,
 the `:24756` boundary holds): the 23-site spawn census has ZERO
 unclaimed windows, the non-spawn machinery is closed (the DrawCapture
 cull `1af79847`, the DrawDust cull+else-kill g67 `2c452edd`), the light
-family is 94/94 (research/69 §7), the tint column table-complete
-(research/70). Everything remaining is WIRING — d50's strip/retire
-contracts (research/69 §4-6, tip UNCHANGED), the DRAW lane's generic
+family is 94/94 (research/206 §7), the tint column table-complete
+(research/210). Everything remaining is WIRING — d50's strip/retire
+contracts (research/206 §4-6, tip UNCHANGED), the DRAW lane's generic
 walk, the three-way `main_dust.rs` union — not porting.
 
 ## LIGHTS RETIRE (W4-g13 retire phase, 2026-11-21)
 
 The final-phase seams above are RETIRED into the d54-canonical shape and
-the wiring contracts published as exact hunks (research/70 §6-8):
+the wiring contracts published as exact hunks (research/210 §6-8):
 
 - **G3/G4 keep-one (the SAME-FILE collision).** After the FINAL
   declaration d54's own gap-closure landed the SAME two arms on ITS branch
@@ -39481,24 +39481,60 @@ the wiring contracts published as exact hunks (research/70 §6-8):
   census witnesses). The 157/327 behaviour is unchanged (same maths, same
   gates, same dead-raise quirk, same 190→a29 / 255→a94 boundaries — the
   d54 witnesses pin them under new names). The per-fn dedupe table for the
-  d54i-bible merger is research/70 §6.
-- **DrawDust tint wiring-contract.** research/70 §7 publishes the exact
+  d54i-bible merger is research/210 §6.
+- **DrawDust tint wiring-contract.** research/210 §7 publishes the exact
   wire-hunks for the draw lane: g67's `draw_splashes` (`rain.rs:1463`, tip
   `30b39fce`, cull+else-kill landed `2c452edd` ancestor-verified) swaps its
   `:1494` `get_alpha` call for `get_alpha_with_globals` with a globals
   struct sampled once per pass + `rngs.global()` threaded; the generic
   all-type walk uses the same feed at the `:38973` position.
-- **d50-session probe.** `TR-W4-d50` read-only re-probe (research/69 §8):
+- **d50-session probe.** `TR-W4-d50` read-only re-probe (research/206 §8):
   HEAD `2e243a2d` == origin tip, status CLEAN, index/HEAD-reflog mtime
   2026-11-20 21:10:02 — the session is dead-clean (>12h idle), NOT
   dead-dirty; nothing to salvage. The pre_move-35 strip + the wiring are
-  still owed (research/69 §4-6 contracts stand verbatim for the resume).
+  still owed (research/206 §4-6 contracts stand verbatim for the resume).
 
 **FINAL-FINAL (2026-11-21, the three-doc closure set retired).** The
 retire phase's own commits: keep-one `8fd62bd7`, wire-hunks `44eb86de`,
-d50 probe `f9566e5b`. research/68 §6 (family), research/69 §9 (lights),
-research/70 §8 (tint) carry the FINAL-FINAL verdicts: **the Dust.cs /
+d50 probe `f9566e5b`. research/202 §6 (family), research/206 §9 (lights),
+research/210 §8 (tint) carry the FINAL-FINAL verdicts: **the Dust.cs /
 Main.cs dust family is COMPLETE and RETIRED — no open port gap, no
 unpublished wiring seam; every remainder is a mechanical apply of a
-published contract (the d50 resume §4-6+8, the draw lane research/70 §7,
-the d54i-bible dedupe table research/70 §6).**
+published contract (the d50 resume §4-6+8, the draw lane research/210 §7,
+the d54i-bible dedupe table research/210 §6).**
+
+## SEAL (W4-g13, 2026-11-21 — research/308, the dust-main-family bible)
+
+The seal round re-verifies the FINAL-FINAL claims against live blobs/C#
+and executes the registry renames (research/308):
+
+- **Registry-150 renames EXECUTED on this branch**: 65→187, 68→202,
+  69→206, 70→210 (content-preserving `git mv` + header renumber; every
+  ref in ANALYSIS/PORT_MAP/ROADMAP/INDEX/anchors + the crate citations
+  re-pointed; the merger must NOT re-apply the registry §3 g13 rows).
+- **The git-log census**: 18 commits `dca09bed9`→`eef0202cc`; G1 CLOSED
+  (`a234107ac`/`441f6120f`), Main COMPLETE (`4444e1011`), FINAL-FINAL
+  (`eef0202cc`) — the three anchors hash+timestamp-verified.
+- **The AddLight census re-counted from C#**: 94 sites exactly (42
+  FIRST-ladder ≤`:1046` + 52 second-chain `:1061-2312`); new witness
+  `w4_g13_seal_the_52_line_census_covers_every_addlight_site` pins the
+  52-line register (WRITTEN NOT RUN). The `:2275` customData-Color light
+  is LIVE in C# (d54 G5 CORRECTED — ParticleOrchestrator.cs:1171/1184/
+  1199, no emittance gate) and stays a CITED port gap; the merger
+  reconstructs it as `num83 * d.color.rgb/255` gated
+  `!no_light_emittance` (customData == dust.color at every producer).
+- **The G3/G4 keep-one is third-party receipted**: d50's retire
+  (`7474ce3d9`, PUSHED — origin advanced past the dead-clean `2e243a2d`)
+  confirms the g13 blob `300c2647a` = d54 `58305d0a8` + 98 insertions /
+  0 deletions; the exact drop-hunks (`daf7b7804` :314-334/:336-382/
+  :743-776/:797-848) are published; d50's `dust_table.rs` is
+  merge-base-identical (uncontested).
+- **The d50 resume is EXECUTED**: flag-b strip `ea749c5ae` (pre_move-35
+  arm + param gone, 299-305 kept/wired, g13's inline increment
+  canonical), flag-c retire `807350de0` (206/174/230/309/261 arm-by-arm
+  re-read at the d50 HEAD), the G2 ONE-EDIT hunk applied; the lights_b
+  replay-retire keys re-pinned at d50's post-wiring line numbers
+  (research/308 §3) ride the g13×d50 merge.
+
+**SEAL verdict: the family needs no porting again; every remainder is a
+published mechanical contract (research/308 §6).**

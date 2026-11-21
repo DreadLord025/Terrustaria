@@ -1,13 +1,18 @@
-# 69 — The 52 orphaned second-chain dust lights (W4-g13, flag-a closure): census, collector port, wiring, the d50 strip-contract (flag-b) and the decrement retire (flag-c)
+# 206 — The 52 orphaned second-chain dust lights (W4-g13, flag-a closure): census, collector port, wiring, the d50 strip-contract (flag-b) and the decrement retire (flag-c)
+
+RENUMBERED 69→206 per the W4-d54 registry-150 §3 (W4-g46's
+`69-liquid-reconcile.md` 02:58:06 keeps 69; this doc's first add
+`441f6120f` 08:01:44 takes 206). Content preserved; refs re-pointed on
+this branch (SEAL round, research/308).
 
 Status: DONE + FINAL (W4-g13, code-only — `dust_lights_b.rs` ported +
 WIRED in `app/frame/draw.rs`; 23 witnesses WRITTEN NOT RUN; no cargo/
-rustc/rustfmt/tests/graphify invoked). Base `5ea44967` (research/68
+rustc/rustfmt/tests/graphify invoked). Base `5ea44967` (research/202
 sweep tip). Sibling probes (read-only): d50 `2e243a2d` (`dust_physics.rs`,
 2154 ln — re-verified UNCHANGED at the final phase, §6 receipt), c19
 `4eedcb32` (`proj_lights_a.rs`), e6 `c8b072b6` (`proj_ai_lights.rs`).
 
-research/68 §3 flag-a found the 52 second-chain `AddLight` arms
+research/202 §3 flag-a found the 52 second-chain `AddLight` arms
 (`Dust.cs:1061-2312`) ORPHANED: `dust_lights.rs:41-46` deferred them to
 "S1-E-3's chain port" while d50's `dust_physics` skipped them ALL as
 "S1-E-5 (`dust_lights`)". This lane closes the circular deferral: it OWNS
@@ -144,7 +149,7 @@ precedent — it mutates `entity_lights`, not the pool).
 
 ## 4. flag-b — the d50 pre_move strip-contract (lava_bubbles double-count)
 
-research/68 §3 flag-b: d50's `pre_move` (`dust_physics.rs:162-173`)
+research/202 §3 flag-b: d50's `pre_move` (`dust_physics.rs:162-173`)
 increments `lava_bubbles` for type 35 (`:170-172`), AND g13's landed inline
 increment (`particles.rs:359-361`, witnessed
 `w4_g13_lava_bubbles_counts_the_live_type35_population`) does the same
@@ -172,7 +177,7 @@ g13 inline increment stays untouched.
 
 ## 5. flag-c — the dust_lights local-decrement retire (206/174/230 + 309/261)
 
-research/68 §3 flag-c: `dust_lights.rs`'s FIRST-ladder feed compensates for
+research/202 §3 flag-c: `dust_lights.rs`'s FIRST-ladder feed compensates for
 the per-type scale mutations it does not run — 206 (`scale -= 0.1` then
 light, `:766-768`), 174 (`scale -= 0.01` then light, `:807-813`), 230
 (light reads PRE-increment scale, `:632-640`), 309 (`scale *= 0.97`,
@@ -215,7 +220,7 @@ pushed NOTHING since). `git show` of its `dust_physics.rs` re-read:
   inline increment (`particles.rs:359-361`, re-read present at this
   phase) exactly as §4 predicts.
 
-**Receipt verdict: research/69 §4 STANDS for the merger, verbatim.**
+**Receipt verdict: research/206 §4 STANDS for the merger, verbatim.**
 KEEP the inline `update_dust` increment (canonical, landed + witnessed);
 STRIP the `pre_move` 35 arm at the d50 wiring wave (the 299-305
 shrink/lift stays and must be wired — the skeleton lacks it); the
@@ -236,8 +241,8 @@ The two remaining light-adjacent items are CONTRACTS, not gaps: §4's
 strip (d50's wiring wave, receipt §6 — tip UNCHANGED) and §5's retire
 (the same wave, arm-by-arm). The 226 customData site stays absent
 wholesale (the field drop, research/131 G5). The Main.cs family
-declaration rides research/68 §5; the DRAW-tint closures ride
-research/70.
+declaration rides research/202 §5; the DRAW-tint closures ride
+research/210.
 
 ## Delivered this lane
 
@@ -293,10 +298,10 @@ remainders are now probe-verified and hunk-published, not open questions:
   resume applies the strip verbatim, no re-derivation owed.
 - The retire note (§5) stands arm-by-arm; the wiring wave's G2 seam has
   its ONE-EDIT hunk published by d54 (`84eb739b`, research/131 §7.2a).
-- The G3/G4 tint keep-one (research/70 §6) and the DRAW-lane wire-hunks
-  (research/70 §7) close the light-adjacent draw column; the Main.cs
-  family verdict rides research/68 §6.
+- The G3/G4 tint keep-one (research/210 §6) and the DRAW-lane wire-hunks
+  (research/210 §7) close the light-adjacent draw column; the Main.cs
+  family verdict rides research/202 §6.
 
 **FINAL-FINAL: the dust-light family is 94/94 CLOSED and its contracts
 are retire-ready — the d50 resume is a mechanical apply of §4-6+8, the
-draw lane a mechanical apply of research/70 §7. No light porting remains.**
+draw lane a mechanical apply of research/210 §7. No light porting remains.**

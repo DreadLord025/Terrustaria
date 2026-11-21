@@ -1,4 +1,9 @@
-# 68 — Main dust residuals doc-sweep (W4-g13, lane 41): sibling re-probe, residual census, Dust.cs internals audit, lavaBubbles consumers
+# 202 — Main dust residuals doc-sweep (W4-g13, lane 41): sibling re-probe, residual census, Dust.cs internals audit, lavaBubbles consumers
+
+RENUMBERED 68→202 per the W4-d54 registry-150 §3 (W4-f37's
+`68-mood-reconcile.md` 02:48:30 keeps 68; this doc's first add `5ea44967b`
+06:27:34 takes 202). Content preserved; refs re-pointed on this branch
+(SEAL round, research/308).
 
 Status: DONE + FINAL (W4-g13 sweep phase, code-only — one small port
 landed `1af79847`, 2 witnesses WRITTEN NOT RUN; the rest is census/flags;
@@ -181,9 +186,9 @@ the App dispatcher + 6 gap closures, research/116 executed + research/83
 F1-F7 published as exact patch-hunks for d130); g12 ADVANCED `665cd1e8` →
 `f24dd76a` (render-lane doc-sweep + the wave-A slime scales — NO dust-site
 change; the `:24756` g13 boundary comment still present at
-`main_dust_b.rs:18`/`:413`). d50 `2e243a2d` UNCHANGED (research/69 §6);
+`main_dust_b.rs:18`/`:413`). d50 `2e243a2d` UNCHANGED (research/206 §6);
 d54 `c89aea9f` (research/131 FINAL); g67 `30b39fceb` (the DrawDust cull
-`2c452edd` ancestor-verified, research/70 §1).
+`2c452edd` ancestor-verified, research/210 §1).
 
 **The family-complete declaration:**
 
@@ -192,9 +197,9 @@ d54 `c89aea9f` (research/131 FINAL); g67 `30b39fceb` (the DrawDust cull
 | Main.cs spawn windows | 23 NewDust-family + 1 CloneDust | g11 1-8 (`9a9ac1fd`, snowing body DEPRECATED for d130's snow.rs per research/83 keep-one; teleport rides the g61 body), g12 9-16 (`f24dd76a`), g13 17-23 (`main_dust.rs`, WIRED `35404f8a`+) | **ZERO unclaimed** (§2 stands; the g11/g12 advances touch no g13 site) |
 | Main.cs non-spawn machinery | pool init / UpdateWorld_Dust / DrawCapture cull / lavaBubbles read | S1-E-1 / S1-E-3 / g13 `1af79847` / g13 wired feed | CLOSED (§2 table) |
 | DrawDust cull + else-kill | `:38831-38847`, `:39020-39022` | g67 `2c452edd` (rain.rs, ancestor of `30b39fceb`); the d130 fold is research/134 R3 | PORTED |
-| DrawDust tint column | GetAlpha/GetColor all consumers | S1-E-2 table + g13's 157/327 closures (`daf7b780`, research/70); minecart/sand draws live | TABLE-COMPLETE (the trail walks = the DRAW lane's remainder, not a Main gap) |
-| Dust.UpdateDust lights | 94 = 42 + 52 | `dust_lights.rs` (S1-E-5) + g13 `dust_lights_b.rs` (`a234107a`, WIRED) | **94/94 CLOSED** (research/69) |
-| Dust.UpdateDust physics | every type-arm | d50 `dust_physics.rs` staged (3 wiring flags → contracts, research/69 §4-6) | PORTED, wiring owed to d50's wave |
+| DrawDust tint column | GetAlpha/GetColor all consumers | S1-E-2 table + g13's 157/327 closures (`daf7b780`, research/210); minecart/sand draws live | TABLE-COMPLETE (the trail walks = the DRAW lane's remainder, not a Main gap) |
+| Dust.UpdateDust lights | 94 = 42 + 52 | `dust_lights.rs` (S1-E-5) + g13 `dust_lights_b.rs` (`a234107a`, WIRED) | **94/94 CLOSED** (research/206) |
+| Dust.UpdateDust physics | every type-arm | d50 `dust_physics.rs` staged (3 wiring flags → contracts, research/206 §4-6) | PORTED, wiring owed to d50's wave |
 | lavaBubbles consumers | 2 readers | g13 retro (wired) + f6 modern (staged, `_random` seam f6's) | BOTH ACCOUNTED (§4) |
 
 **Residual notes refreshed at the final tips:**
@@ -218,7 +223,7 @@ d54 `c89aea9f` (research/131 FINAL); g67 `30b39fceb` (the DrawDust cull
 - `1af79847` — `main_dust::capture_snow_cull` (the §2 residual) + 2
   witnesses, staged (`#[allow(dead_code)]`, the S1-G-13 seam).
 - This doc + the ANALYSIS sweep section + the PORT_MAP/anchors/
-  research-65 touch-ups. No other code touched; g11/g12/d50/f6's files
+  research-187 touch-ups. No other code touched; g11/g12/d50/f6's files
   are READ-ONLY probes (their lanes own the fixes flagged above).
 
 ## 6. FINAL-FINAL (W4-g13 LIGHTS RETIRE, 2026-11-21) — the family verdict HOLDS
@@ -227,16 +232,16 @@ The retire phase re-probed the sibling tips and closed the last
 port-shaped remainders; §5's COMPLETE verdict stands with the wiring
 column now CONTRACT-PUBLISHED, not open:
 
-- **G3/G4 keep-one landed** (`8fd62bd7`, research/70 §6): d54's
+- **G3/G4 keep-one landed** (`8fd62bd7`, research/210 §6): d54's
   `1d16ef4e` landed the SAME 157/327 arms in the SAME `dust_table.rs`;
   this branch retired its two staged seams into the d54-canonical
   `get_alpha_with_globals` VERBATIM (strict-superset verified, the per-fn
   dedupe table published for the d54i-bible). No tint gap, no duplicate.
-- **The DRAW-lane wiring is hunk-exact** (`44eb86de`, research/70 §7):
+- **The DRAW-lane wiring is hunk-exact** (`44eb86de`, research/210 §7):
   W1-W4 (the globals sample, the `draw_splashes` tint swap, the
   `rngs.global()` thread, the generic-walk compose) — g67's cull+else-kill
   (`2c452edd`, ancestor of `30b39fce`) composes as-is, g67-owns.
-- **d50 is dead-clean** (`f9566e5b`, research/69 §8): tip `2e243a2d`
+- **d50 is dead-clean** (`f9566e5b`, research/206 §8): tip `2e243a2d`
   pushed, no in-flight work; the resume owes the §4-6 strip/wiring/retire
   contracts verbatim (the pre_move-35 arm re-read still present).
 - The `main_dust.rs` three-way union and the moon-lord double-feed fuse
@@ -245,5 +250,5 @@ column now CONTRACT-PUBLISHED, not open:
 **FINAL-FINAL verdict for the d54f-131 master: the Main.cs / Dust.cs dust
 family is COMPLETE and RETIRED — spawn census zero-unclaimed, non-spawn
 machinery closed, 94/94 lights, tint table-complete with the G3/G4
-keep-one landed, every remainder a published wiring contract (research/69
-§4-6+8, research/70 §6-7). Nothing in this family needs porting again.**
+keep-one landed, every remainder a published wiring contract (research/206
+§4-6+8, research/210 §6-7). Nothing in this family needs porting again.**
