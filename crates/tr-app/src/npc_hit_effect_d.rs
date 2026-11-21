@@ -4383,6 +4383,37 @@ fn skeleton_family_death(
     gore.new_gore(rng, world, p34, vel, 44, s); // :88639
 }
 
+/// The 694 Water Bolt Mimic death (`NPC.cs:88641-88660`, sites 702-709):
+/// NO dust — the death half's 5-iteration loop spawns 1008 each round +
+/// 1007 on the first three rounds (`num697 < 3`), each at
+/// `Center + ((-width + (int)(width*NextFloat))*0.5, (-height +
+/// (int)(height*NextFloat))*0.5)` — TWO NextFloat argument draws (X
+/// then Y, the int truncation BEFORE the ×0.5) BEFORE each NewGore,
+/// `this.scale` carried.
+fn water_bolt_mimic_death(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:88652-88659` — the five-round loop.
+    for i in 0..5 {
+        // The 1008 anchor: NextFloat X then Y, int-truncated, ×0.5.
+        let ox = (-w + (w * rng.next_float()) as i32 as f32) * 0.5;
+        let oy = (-h + (h * rng.next_float()) as i32 as f32) * 0.5;
+        gore.new_gore(rng, world, c + Vec2::new(ox, oy), vel, 1008, s); // :88654
+        if i < 3 {
+            let ox = (-w + (w * rng.next_float()) as i32 as f32) * 0.5;
+            let oy = (-h + (h * rng.next_float()) as i32 as f32) * 0.5;
+            gore.new_gore(rng, world, c + Vec2::new(ox, oy), vel, 1007, s); // :88657
+        }
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4900,6 +4931,11 @@ pub fn hit_effect_d(
     else if matches!(npc_type, 21 | 31 | 294 | 295 | 296 | 32 | 44 | 45 | 77 | 110 | 167 | 197 | 201 | 202 | 203 | 287 | 291 | 292 | 293 | 322 | 323 | 324 | 481 | 449 | 450 | 451 | 452 | 693)
     {
         skeleton_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88641-88660` — the 694 Water Bolt Mimic arm (sites 702-709, the
+    // NextFloat scatter anchors, no dust).
+    else if npc_type == 694 {
+        water_bolt_mimic_death(npc, gore, rng, world);
     }
     outcome
 }
@@ -8619,5 +8655,33 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:88654-88657` — the Water Bolt Mimic: 5x 1008 + 3x 1007
+    /// interleaved (1008/1007/1008/1007/1008/1007/1008/1008), each with
+    /// TWO NextFloat anchor draws (int-truncated, ×0.5) before the
+    /// NewGore; no dust.
+    #[test]
+    fn w4_f5d_the_water_bolt_mimic_scatters_the_float_anchors() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(691);
+        let mut dust = DustPool::new();
+        let _ = hit_effect_d(&n, 694, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..8].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1008, 1007, 1008, 1007, 1008, 1007, 1008, 1008]);
+        assert!(!gore.slot(8).active, "exactly eight gores");
+        assert!(!dust.slots()[0].active, "no dust in this arm");
+        let mut twin = UnifiedRandom::new(691);
+        let c = Vec2::new(115.0, 115.0);
+        for i in 0..8 {
+            let ox = (-30.0 + (30.0 * twin.next_float()) as i32 as f32) * 0.5;
+            let oy = (-30.0 + (30.0 * twin.next_float()) as i32 as f32) * 0.5;
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(gore.slot(i).position, c + Vec2::new(ox, oy), "gore {i} anchor");
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the water bolt mimic mirrors the C# draws");
     }
 }
