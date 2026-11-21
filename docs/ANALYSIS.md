@@ -40193,3 +40193,116 @@ transcriptions (the f32 round-trip replay verified identical to
 the double replay on every vector) + the 15-kind
 5x3x3x2x4 strip sweep (40 ticks per combo, every row asserted
 inside its own sheet — the Python sweep's 0 violations mirrored).
+
+## W4-f27 FindFrame extra wave 11 (slice 11 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-10 (1a24a133c). The brief's window: the
+550+ band (d41's roster claim) PLUS the LOWER-GAPS 435/436 (the
+d49-deferred armed-zombie tail). The census re-derived mechanically
+against this branch's tree + ALL pushed tips:
+
+* every C# top-level case label of the FindFrame switch (`NPC.cs:66705`,
+  the body :66684-77370, two-tab indent - the nested switches excluded)
+  = **602 ids** (the slice-8/9/10 figure re-confirmed mechanically);
+* **d41 tip 4ed22f0b3 is STILL CLAIM-only** - its npc.rs find_frame
+  region is the SAME 270-kind set as our tree (mechanical grep for the
+  550-563 ids + kind names = ZERO FindFrame arms; the roster rows it
+  adds are SetDefaults/AI, not frames). The 550-577 DD2 band's ARMS are
+  therefore NOT d41's - they are OUR tree's M4-EVENT-19 v1 stand-ins;
+* **d42 tip ADVANCED to 9b22c091** - the 578-630 roster landed WITH
+  FindFrame arms (its npc.rs find_frame carries ArmedTorchZombie 591,
+  the fairy/dragonfly/seagull/ladybug/maggot/grebe/rat/owl/
+  waterstrider/explosivebunny/dolphin/turtle/seahorse/dandelion/
+  icemimic/bloodmummy/goblinshark/bloodeel/gnome arms, `NPC.cs` cites
+  per kind). **EXCLUDE the whole 578-630 band** (49 case ids, minus
+  our-covered 588 Golfer + 589 SleepingGolfer = 47 d42-claimed);
+* **d49 tip dadfd8285** - its high2 seam owns 367/374/375/377/378/379/
+  380 + the armed zombies 430-434 ONLY (`find_frame_kind_high2` maps
+  exactly those 12); **435/436 are the d49-deferred tail** (its module
+  header: "The next gap (435 ArmedZombieTwiggy onward) rides a later
+  wave"), NO NpcKind for either on ANY pushed tip;
+* **f26's pushed 7f tip 7f38fd345** owns 531/532/534/535/536 - the SAME
+  five our extra-10 owns (the both-lanes dup, the keep-one note below);
+  its next-window note says 537-540 (our e10 already owns those).
+
+**The 550-577 ascending probe** (every id checked against the C# arm +
+our tree + the pushed tips). The DD2 band is PORT-COVERED by our own
+M4-EVENT-19 v1 stand-ins (`npc.rs:6986-7133` + `:7761` - the invented
+`(vx != 0) + 0.6 >= 8` free strips, identical to origin/main and d42's
+tree), so these are FIX candidates (the slice-9/10 471/492/549
+precedent), NOT new claims:
+
+| id | kind (`NPCID.cs`) | C# case | verdict |
+| --- | --- | --- | --- |
+| 550 | DD2Bartender (`:11777`) | `:68616` in the humanoid group | FIX - our v1 `|vx|+0.6 % 25` strip WRONG; the C# is the town walk (num57 = ExtraFramesCount[550] = 9, `NPCID.cs:10464`; townNPC true `:16263`, aiStyle 7; num108 = 6, num109 = row 2, the wrap at 25-9 = 16). The ai[0] pose zones `:68662-69488` the documented skip (the e8 SkeletonMerchant precedent). |
+| 551 | DD2Betsy (`:11779`) | `:67258-67450` | DEFER - the ai[0] 3/4/5/6 boss-phase ladder (the 60/40-tick breath cycles + the 8-tick fire ladder), a distinct large machine; our v1 `% 11` strip WRONG but the fix rides a later slice. |
+| 552/553/554 | DD2GoblinT1/T2/T3 (`:11781-11785`) | `:67452-67492` | FIX - our v1 `% 14` strip WRONG; the C# is the ai[0] > 0 attack ladder (rows 10-13, the ai[1] == 29 reset, the >= 6 step) + the grounded walk (air/backpedal row 8, idle row 9, the |vx| >= 64 reset + (int)(counter/8) row 0-7). |
+| 555/556/557 | DD2GoblinBomberT1/T2/T3 (`:11787-11791`) | `:67797-67837` | FIX - our v1 `% 14` strip WRONG; the ai[1] > 0 && ai[0] > 0 attack ladder (rows 10-16, the ai[1] == 41 reset, the >= 6 step) + the walk (air row 1, idle row 0, the |vx| >= 64 reset + (int)(counter/8)+2 row 2-9). |
+| 558/559/560 | DD2WyvernT1/T2/T3 (`:11793-11797`) | `:67838-67873` | FIX - our v1 dive-pin + `% 5` strip MISSES the sprite/rotation; the C# is the vx-sign sprite + the ToRotation aim (+PI when vx < 0, overridden to vx*0.1 when ai[0] != 2) + the ai[0] == 2 row-4 pin else the >= 6 step over rows 0-3. |
+| 561/562/563 | DD2JavelinstT1/T2/T3 (`:11799-11803`) | `:67756-67796` | FIX - our v1 `% 14` strip WRONG; the ai[1] > 0 && ai[0] > 0 attack ladder (rows 10-13, the ai[1] == 89 reset, the >= 6 step) + the walk (air row 8, idle row 9, the |vx| >= 64 reset + (int)(counter/8) row 0-7) - the goblin shape. |
+| 564/565 | DD2DarkMageT1/T3 (`:11805-11807`) | `:67998-68421` | DEFER - the ai[1] 0/1/2 attack ladders (rows 5-12 / 13-25 / 26-40, the 7/8-tick steps) + the |v|*0.1+1 hover walk; the frame.Width/Height = 80 override means the row indices run PAST npcFrameCount[564] = 9 (the sheet is 41 rows of 80px) - a distinct large machine, rides a later slice. |
+| 566/567 | DD2SkeletonT1/T3 (`:11809-11811`) | `:67559-67583` | DEFER - the grounded walk (air row 8, idle row 0, the |vx| >= 64 reset + (int)(counter/8) row 0-7); our v1 `% 14` strip WRONG but the materialize-cycle seam rides a later slice. |
+| 568/569 | DD2WitherBeastT2/T3 (`:11813-11815`) | `:67025-67257` | DEFER - the ai[0] > 0 aura ladder (rows 7-14, the 5-tick steps + the >= 270 counter-10 tail) + the walk (air row 4, idle row 6, the |vx| >= 56 reset); a distinct large machine. |
+| 570/571 | DD2DrakinT2/T3 (`:11817-11819`) | `:67711-67755` | DEFER - the ai[1] > 0 && ai[0] > 0 attack ladder (rows 10-15, the ai[1] == 59 reset, the row-14 num188 = 35 hold) + the walk (air row 1, idle row 9, the |vx| >= 64 reset + (int)(counter/8+2) row 2-9). |
+| 572/573 | DD2KoboldWalkerT2/T3 (`:11821-11823`) | `:67493-67558` | DEFER - the ai[0] > 0 && ai[1] == 0 lit-state row-8 pin carries an EmoteBubble.NewBubble side effect (`:67506`); the ai[1] == 1 sprint walk + the default walk; the emote seam rides a later slice. |
+| 574/575 | DD2KoboldFlyerT2/T3 (`:11825-11827`) | `:67887-67978` | DEFER - the AngleTowards rotation + the ai[0] != 0 altimeter walk (rows 2-9, the row-9 ignition dust burst `:67923-67931`) + the ai[0] >= 3 RNG dust (`Main.rand.Next(maxValue)` `:67959`); the dust/RNG seams ride a later slice. |
+| 576/577 | DD2OgreT2/T3 (`:11829-11831`) | `:67584-67709` | DEFER - the ai[1] 0/1/2 attack ladders (rows 11-20 / 21-38 / 37-47, the per-row variable strides) + the walk (air row 43, idle row 0, the |vx| >= 60 reset + 1+(int)(counter/6) row 1-10); a distinct large machine. |
+
+**The LOWER-GAPS probe (435/436):** the d49-deferred armed-zombie tail.
+`case 430..436/591` (`NPC.cs:70879-70951`) is ONE shared body; d49's
+high2 owns 430-434, **435/436 are unclaimed** (no NpcKind on any pushed
+tip, the d49 module header's own "rides a later wave" note). 591 is
+d42's (its ArmedTorchZombie arm, EXCLUDE). The machine is the VERBATIM
+d49 armed-zombie copy (the 7c ONE-group precedent): the ai[2] > 0 swing
+ladder rows 3/4/5/6 at the < 5/10/15 bands breaking BEFORE the flip, the
+grounded ±1 one-sided flips, the air-OR-counter-motion row-2 pin, the
+idle row-0 snap, the |vx| accumulator with the < 8/16/24/32 bands rows
+0/1/2/1 and the >= 32 reset-tick row-HOLD. The 7-row sheet
+(`Main.cs:67127`, 435/436 = 7). PORT both as pure machines (the extra-8
+precedent - no NpcKind, the wiring is the roster round).
+
+**THIS wave (f27 slice 11) claims:** the 2 NEW unclaimed ids **435/436**
+(pure machines) PLUS the 13 FIX kinds **550/552/553/554/555/556/557/
+558/559/560/561/562/563** (our own M4-EVENT-19 v1 stand-ins WRONG - the
+slice-9/10 471/492/549 precedent). 15 machines total, 5 kinds per
+commit, 3 batches. The 551/564-577 DD2 tail (14 ids) stays DEFERRED
+(the complex/RNG/emote/dust seams above, each cited). The 578-630 band
+is d42's (EXCLUDE). The claim SET is the 2 new ids + the 13 corrections.
+
+Census arithmetic: the slice-10 post-state was 127 unclaimed; f26's
+pushed 7e claims 526-530 (5 new) and its 7f claims 531/532/534/535/536
+(the SAME five our e10 already claimed - the both-lanes dup, the
+keep-one note below, NO new subtraction) = 127 - 5 = 122; d42's 578-630
+arms subtract 47 (49 case ids minus our-covered 588/589) = 75; this
+slice's 2 new claims (435/436) = **73 unclaimed after** (the 13 fixes
+change no claim count - those ids were port-covered with wrong arms).
+The d41 roster lane's 550-577 FindFrame arms are OURS to fix (its claim
+is roster-only, the arms ride this lane's corrections, the slice-10
+"next window starts at 550" note realized).
+
+**The f26h-dup dedupe note (531/532/534/535/536 both-lanes):** f26's
+pushed 7f tip 7f38fd345 (`npc_findframe_extra7f.rs`) and our extra-10
+(`npc_findframe_extra10.rs`) BOTH port 531/532/534/535/536. The machines
+are IDENTICAL (the 531 num194 = 0.4 wall-crawler bands + the >= 24
+reset-tick row-hold; the 532 counter-held air/idle pins + the sign-gated
+sprite + the 1+|vx|/2 lift-to-2 walk; the 534 num108 = 12 fighter stride;
+the 535 num2-fed slime strip; the 536 zombie-walker bands + the >= 32
+reset-tick row-hold) - the frame counts agree (4/8/8/2/3), the zero-RNG
+grep agrees. **KEEP-ONE at the merge: keep the f27 extra-10 arms** (the
+e10 module carries the 537-545 + 549 tail too, the wider claim; the f26
+7f module's five drop to parity references). The d44d master wire-status
+table records the dedupe (the 7c/7d/7e ONE-group precedent).
+
+Shape (the extra-10 precedent): pure machines over FrameState/
+FrameInput in `crates/tr-app/src/npc_findframe_extra11.rs`, the
+`find_frame_kind_extra11` vanilla-id seam; the 13 npc.rs edits are the
+DD2 v1-arm fixes (our own kinds - the 549-fix bridge shape: copy the
+fields out, run one tick, copy back). 435/436 land pure (no NpcKind, the
+roster round wires them). 5 kinds per commit, 3 batches. Zero RNG
+(verified mechanically per cited range - a Main.rand/.Next(/NextFloat/
+NextDouble grep over the 15 arm ranges = ZERO; the 574/575 RNG dust and
+the 572/573 emote are the DEFERRED kinds, not this wave's). Frame counts
+vs Main.cs:67082 entry-by-entry AND render/entities.rs NPC_FRAME_COUNT
+(435/436 = 7 `:67127`, 550 = 25 `:67139`, 552-554 = 14, 555-557 = 17,
+558-560 = 5, 561-563 = 14 `:67139-67140`).
