@@ -208,8 +208,8 @@ not mount sounds.
 | --- | --- | --- |
 | `:661` MeowcartLandingSound | `PlaySound(37, ..., 5)` | PORTED (W4-c14, `play_meowcart_sound`) |
 | `:666` MeowcartBumperSound | `PlaySound(37, ..., 3)` | PORTED (W4-c14) |
-| `:3300` Santank ability | `Item89.SoundId/Style, 0.2f` | M2-MOUNT-4 (ability unported) |
-| `:3311` Santank ability | `Item11.SoundId/Style, 0.2f` | M2-MOUNT-4 (ability unported) |
+| `:3300` Santank ability | `Item89.SoundId/Style, 0.2f` | PORTED (W4-c14 M2-MOUNT-4, `play_mount_ability_sound`) |
+| `:3311` Santank ability | `Item11.SoundId/Style, 0.2f` | PORTED (W4-c14 M2-MOUNT-4) |
 | `:6285` SetMount Chillet | `SoundID.PalChillet` | PORTED (S1-P-i41, `play_chillet_sound`) |
 
 The cart delegations (`:123-125` Jumping/Landing/Bumper + the fart trio
@@ -218,9 +218,15 @@ all ported. There is NO mount ambient LOOP in `Mount.cs` (no
 `PlayTrackedSound`, no looped `SoundEngine` call). The drill mount's
 `UpdateDrill` (`:3036-3057`) is pure beam-cooldown state — its sound is the
 aiStyle-20 projectile loop d80b ported. The Santank's two ability cues
-(`:3300`/`:3311`) ride `UseAbility` case 46, which is M2-MOUNT-4 (the
-ability consumers are unported — `mount.rs:19`/`:2850`); they are
-ability-lane gaps, not ambient loops. **No mount ambient loop beyond d80b
+(`:3300`/`:3311`) ride `UseAbility` case 46 — **PORTED (W4-c14 M2-MOUNT-4,
+research/83)**: the Scutlix/Santank auto-fire machine is ported whole
+(`mount.rs` aim/dead-zone/scan + `Player::update_mount_ability`), the cues
+play through `play_mount_ability_sound` — the INT overload
+(`SoundEngine.cs:102`, NO `GetRandomPitch` draw), volumeScale 0.2 after the
+case-2 tweak (`LegacySoundPlayer.cs:1411`), one `Next(-6,7)*0.01` pitch roll
+on the `UpdatePlayers` stream. `Item_89` joined the SFX bank (the 88/90 gap).
+The Drill (8) ability stays unported (the `UseDrill` mining consumer is the
+mount lane's — research/83 §2 contract). **No mount ambient loop beyond d80b
 exists to port.**
 
 ## 4. Other movement-window PlaySound sites (census completeness)

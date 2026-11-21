@@ -7470,6 +7470,77 @@ Deviations:
 - **`miscEquips[3]`** — the equipment mount slot is not ported (M3-EQUIP); the
   quick-mount scan walks the inventory only.
 
+### Mount projectile abilities (M2-MOUNT-4, W4-c14, code-only mode)
+
+**WRITTEN NOT RUN** (no cargo/rustc/rustfmt invoked on this lane); the witnesses
+were re-read against `Mount.cs`/`Projectile.cs` and hand arithmetic. The two
+projectile abilities — Scutlix (9) + Santank (46) — are ported whole (the
+smallest two `UseAbility` arms, research/83); the Drill (8) and the dash-contact
+/ slime-stomp combat abilities stay unported (the combat seam / the `UseDrill`
+mining consumer — research/83 §2 contract). What landed:
+
+- **The aim/fire machine** (`mount.rs`): `clamp_to_dead_zone` (`Mount.cs:5296-5333`,
+  the Scutlix 45×54 / Santank 23×2 half-boxes, the smaller-axis-ratio push, the
+  float divide-by-zero on an exact-0 axis reproduced), `aim_ability` cases 9/46
+  (`:5335-5465`, the 6-10 degree bands at ±22.5/±67.5/±112.5, the >90/<-90 facing
+  fold, the flipDraw), `stop_ability_charge` (`:2922-2931`), `reset_head_position`
+  (`:5283-5294`, the Santank band spared), the `scutlixEyePositions` table MINUS
+  (45,54) (`:1398-1421`). `Player::update_mount_ability` drives the scan
+  (`UpdateEffects` case 9/46, `:4879-4947`: the 850-px nearest-chaseable cone scan
+  + `CanHitLine`, the cooldown cadence 9 `==0` / 46 `%10==0`, the gift window
+  `<=10`) and `mount_use_ability` fires (`UseAbility` `:3254-3338`).
+- **The two Santank cues** (`audio.rs`): `play_mount_ability_sound` — the INT
+  overload (`SoundEngine.cs:102`, **no `GetRandomPitch` draw**, unlike the style
+  façade `:93` the cart cues use), volumeScale 0.2 rides `LegacySoundPlayer.cs:1411`
+  AFTER the case-2 tweak (the shared `play_item_style` body), one `Next(-6,7)*0.01`
+  pitch roll on the `UpdatePlayers` stream after the attenuation gate. `Item_89`
+  joined the SFX bank (the 88/90 gap; the asset verified present). The cues queue
+  on `pending_ability_sounds` and drain at the player-pass tail (the cart-cue batch
+  convention — the C# plays inline at the spawn).
+- **The consumers**: the 606 ScutlixLaser joins `projectile_ai001_b` as the 449
+  sibling (the SAME C# block `:54772-54828`, the 150/5 constants vs 449's 100/3);
+  the 930 SantankMountRocket joins `is_launcher_rocket`/`rocket_homing`/
+  `rockets_skip_self_damage` with the reach-650/speed-12 overrides
+  (`:47273-47276`/`:47305-47308`), the 128×128 kb8 PrepareBombToBlow arm
+  (`:46820`) and the plain-rocket kill census + Item14 blast cue (`:78088-78096`).
+  The 14 missile reuses the existing MUSKET_BALL row.
+
+Deliberate deviations (the standing conventions):
+- **The 606 tile contact keeps the port's kill-on-tile stand-in** — the C#
+  `HandleMovement` bounce latch (`:18278-18286`, `ai[1]=1` + the velocity restore)
+  and the `UpdatePosition` skip (`:20435`) are the slice-B deviation the 449
+  sibling already carries (ANALYSIS "aiStyle-1 per-type arms, slice B"); the 606
+  rides the same `finish_flight` for keep-one consistency. The fade-out countdown
+  (`localAI[0] -= 5`, the `Kill()` at ≤0) is ported; the latch that triggers it on
+  tile contact is the documented gap.
+- **The charge eye-glow lights dropped** — `AimAbility`'s `Lighting.AddLight`
+  heads (`:5413`/`:5457`) are the LIGHT lane's (the `ability_charge_ratio` accessor
+  keeps the seam discoverable). The 606 first-tick 4× dust-182 (`:54804-54812`) and
+  the kill dust (`:73563-73572`) are the pool's dust census skip (the 449 sibling's
+  convention — the `NewDust` args are constants, no explicit call-site draw).
+- **The 441/453 crosshairs + `StartAbilityCharge` are single-player-dead** — the
+  only caller is the aiStyle-76 remote-owner branch (`Projectile.cs:30662`); the
+  local `_abilityCharging` writer is the scan's else-arm (`:4939`), ported. The
+  Drill's 453 crosshair + `UseDrill` ride the mount-lane contract (research/83 §2).
+- **The scan order** — the C# runs `UpdateEffects` at `Player.cs:25658` (inside
+  `UpdateEquips`, before movement + the `:26664` AbilityRecovery); the port runs
+  `update_mount_ability` in the world-sim player pass right before
+  `update_with_grapple` (whose `update_mount` tail ticks `ability_recovery`), so
+  the fire reads the pre-recovery cooldown — the C#'s order. The fire's
+  `RotatedByRandom` draws (gift 2 + missile 2, left-first) ride the `UpdatePlayers`
+  stream inline; the cue pitch rolls drain at the pass tail (the batch convention).
+- **The dash-contact / slime-stomp damage stays unported** — the `CollideWithNPCs`
+  → `ApplyDamageToNPC` → `GiveImmuneTimeForCollisionAttack` combat seam
+  (`Player.cs:20108-20174`/`:20533-20564`/`:20381-20511`) is a combat lane, not a
+  sound lane (research/83 §2 table). The dash DUST is f6's staged batch 1.
+
+Verification (WRITTEN NOT RUN): the `mount.rs` dead-zone/aim-band/stop-charge/
+reset-head witnesses, the `audio.rs` int-overload RNG/volume witness (no style
+draw, one pitch roll, the bank join), the `player.rs` scan-cadence witnesses
+(Santank missile-every-10/gift-every-40 + the 4-draw order, Scutlix two-lasers-
+every-20, the no-target reset), the `projectile_ai001_b` 606 ramp witness, and the
+`minecart.rs` rattle speed-invariance witness (research/83 §3 — no pitch scaling).
+
 Verification: the unit tests across `mount.rs`/`player.rs`/`render/player_layers.rs`
 (the table constants, the set/dismount guards, the merge modes, the jump/fall
 interplay, the hitbox grow/restore, the buff lifecycle, the quick-mount toggle,
