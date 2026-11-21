@@ -1589,6 +1589,44 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if p.take_drown_sound() {
                 app.audio.play_drown_sound();
             }
+            // W4-e10 — the petrification transition (`Player.cs:25225-
+            // 25232`, between the drown check and `UpdateManaRegen`): the
+            // case-0 Dig play at the top-left (the `Next(3)` variation +
+            // the `Next(-10, 11)` pitch after the gate), then 20 type-1
+            // dust — each `NewDust`'s six internals, then the `Next(2)`
+            // noGravity roll. All on `UpdatePlayers`.
+            if p.take_stoned_transition() {
+                app.audio.play_no_space_sound(
+                    p.x,
+                    p.y,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                );
+                let (pos, w, h) = (glam::Vec2::new(p.x, p.y), crate::player::WIDTH as i32, p.height as i32);
+                for _ in 0..20 {
+                    let idx = app.dust.new_dust(
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                        &spawn_ctx,
+                        &app.world,
+                        pos,
+                        w,
+                        h,
+                        1,
+                        0.0,
+                        0.0,
+                        0,
+                        tr_core::particles::Color::default(),
+                        1.0,
+                    );
+                    let no_gravity = app
+                        .rngs
+                        .stream(crate::app::RngKey::UpdatePlayers)
+                        .next_range(0, 2)
+                        == 0;
+                    if no_gravity && idx != tr_core::particles::DUST_SENTINEL {
+                        app.dust.slot_mut(idx).no_gravity = true;
+                    }
+                }
+            }
             // W4-e10 — the full-bar mana trigger (`Player.cs:19550-19559`,
             // `UpdateManaRegen` at `:25995` — after the drown check, before
             // the wing/splash blocks): the unpositioned case-25 chime (no
@@ -2858,6 +2896,81 @@ mod tests {
         };
         run(true);
         run(false);
+    }
+
+    /// W4-e10 — the petrification transition's un-stone edge
+    /// (`Player.cs:25219-25233`): the buff clearing fires the case-0 Dig
+    /// at the top-left (the `Next(3)` variation + the `Next(-10, 11)`
+    /// pitch after the gate) and 20 type-1 dust — each `NewDust`'s six
+    /// internals then the `Next(2)` noGravity roll. The full draw chain
+    /// on `UpdatePlayers`: 2 + 20×7 = 142.
+    #[test]
+    fn w4_e10_the_unstone_edge_plays_dig_and_twenty_dust() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = crate::test_world_helpers::ground();
+        let mut p = Player::spawn(&app.world);
+        p.y = 120.0 * 16.0 - p.height;
+        p.vy = 0.0;
+        p.buffs.add_buff(156, 600);
+        app.camera = Vec2::new(p.x + 10.0, p.y + 20.0);
+        app.player = Some(p);
+        app.gfx_quality.max_dust_to_draw = 6000;
+        app.audio.set_listener(crate::sound::Listener {
+            camera_center: (app.camera.x, app.camera.y),
+            sound_volume: 1.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        // Tick 1: the stone edge (hurt + Dig + dust) — drains, latches
+        // last_stoned.
+        update_player(&mut app, 1.0 / 60.0);
+        // Clear the buff and the pool; re-seed so the un-stone tick's
+        // chain starts clean.
+        app.player.as_mut().unwrap().buffs.clear_buff(156);
+        app.dust = tr_core::particles::DustPool::new();
+        let seed = 0x5354_4F4Ei32;
+        *app.rngs.stream(RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut twin = UnifiedRandom::new(seed);
+        let before = app.audio.played_count();
+        update_player(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.audio.played_count(),
+            before + 1,
+            "the un-stone Dig (no hurt on this edge)"
+        );
+        let active: Vec<_> = (0..tr_core::particles::DUST_SENTINEL)
+            .filter(|&i| app.dust.slot(i).active && app.dust.slot(i).dust_type == 1)
+            .collect();
+        assert_eq!(active.len(), 20, "the twenty stone puffs");
+        // The twin: the Dig's variation + pitch, then per dust the six
+        // internals + the noGravity gate.
+        let _ = twin.next_range(0, 3);
+        let _ = twin.next_range(-10, 11);
+        let mut no_gravity = 0;
+        for _ in 0..20 {
+            let _ = twin.next_max(16);
+            let _ = twin.next_max(38);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_range(-20, 21);
+            let _ = twin.next_max(3);
+            let _ = twin.next_range(-20, 21);
+            if twin.next_range(0, 2) == 0 {
+                no_gravity += 1;
+            }
+        }
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            twin,
+            "2 + 20x7 draws, exact order"
+        );
+        let flagged = active
+            .iter()
+            .filter(|&&i| app.dust.slot(i).no_gravity)
+            .count();
+        assert_eq!(flagged, no_gravity, "the Next(2) arms landed");
     }
 
     #[test]

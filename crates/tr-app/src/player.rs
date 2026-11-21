@@ -1962,6 +1962,13 @@ pub struct Player {
     /// `MaxMana` and spawns the dust on `UpdatePlayers` (the
     /// `pending_drown_sound` convention).
     pending_mana_full: bool,
+    /// W4-e10 — the petrification transition (`Player.cs:25219-25233`):
+    /// `stoned != lastStoned` plays `PlaySound(0, position)` (case 0 Dig,
+    /// positioned at the top-left) and spawns 20 type-1 dust, each with a
+    /// `Next(2) == 0` noGravity roll. The flag carries the transition
+    /// EDGE (both directions — the C# plays on the un-stone too); the
+    /// drain owns the audio device, the dust pool and `UpdatePlayers`.
+    pending_stoned_transition: bool,
     /// S1-E-21f — the wing-flap latch `Player.flapSound` (`Player.cs:1128`):
     /// the `wingFrame == 3` edge plays `SoundID.Item32` once (`:26848-26852`),
     /// the off-frame clears it (`:26856`). The port's flap cadence is the
@@ -3020,6 +3027,7 @@ impl Player {
             wet_count: 0,
             pending_drown_sound: false,
             pending_mana_full: false,
+            pending_stoned_transition: false,
             flap_sound: false,
             wing_frame: 0,
             wing_frame_counter: 0,
@@ -3529,6 +3537,12 @@ impl Player {
         std::mem::take(&mut self.pending_mana_full)
     }
 
+    /// W4-e10 — takes the petrification-transition flag
+    /// (`Player.cs:25225`, `PlaySound(0, position)` + the 20-dust burst).
+    pub(crate) fn take_stoned_transition(&mut self) -> bool {
+        std::mem::take(&mut self.pending_stoned_transition)
+    }
+
     /// S1-E-21f — takes the wing-flap `SoundID.Item32` play
     /// (`Player.cs:26850`) — `(style_index, position.X, position.Y)`.
     pub(crate) fn take_flap_sound(&mut self) -> Option<(u16, f32, f32)> {
@@ -3931,6 +3945,7 @@ impl Player {
         self.pending_splash_sound = None;
         self.pending_drown_sound = false;
         self.pending_mana_full = false;
+        self.pending_stoned_transition = false;
         self.pending_flap_sound = None;
         self.pending_rocket_sound = None;
         self.pending_wing_rocket_sound = None;
@@ -7951,12 +7966,18 @@ impl Player {
             self.pending_switch_trip = Some(((m.x / 16.0) as i32, (m.y / 16.0) as i32));
         }
 
-        // `Player.cs:25219-25224`: the tick petrification lands, a flat hit —
+        // `Player.cs:25219-25233`: the tick petrification lands, a flat hit —
         // the difficulty multiplier is 1 (classic) until M6-CREATIVE lands.
+        // W4-e10: the transition EDGE (both directions) queues the case-0
+        // Dig play at the top-left + the 20-dust burst (`:25225-25232`)
+        // for the drain (the audio/dust/stream owner).
         let stoned = self.buffs.find_buff_index(156).is_some();
-        if stoned && !self.last_stoned {
-            let cx = self.x + self.width * 0.5;
-            self.hurt_inner(20, cx, false, rng, true, false, None, true);
+        if stoned != self.last_stoned {
+            if stoned {
+                let cx = self.x + self.width * 0.5;
+                self.hurt_inner(20, cx, false, rng, true, false, None, true);
+            }
+            self.pending_stoned_transition = true;
         }
         self.last_stoned = stoned;
 
