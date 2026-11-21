@@ -76,6 +76,23 @@
 //! - 84213 — Sharkron 372/373 (`:84207-84215`): ×100 dust 5.
 //! - 86527 — Wandering Eye 133 (`:86521-86534`): ×100 dust 5 (the
 //!   half-life gore latch `:86529-86533` is draw-free, d55's body).
+//! Batch 4 (the boss/worm live arms):
+//! - 87279 — Eye of Cthulhu 4 (`:87275-87284`, the 4/126/125 group):
+//!   ×100 dust 5.
+//! - 87345 — Servant of Cthulhu 5 (`:87341-87350`): ×50 dust 5.
+//! - 87594 — the Giant Worm 10/11/12 (`:87590-87599`): ×50 dust 5.
+//! - 87560 — the Devourer 7/8/9 (`:87556-87565`): ×100 dust 18,
+//!   alpha/color/scale ride the NPC.
+//! - 87626 — the Eater of Worlds 13/14/15 (`:87622-87631`): ×100 dust
+//!   18, alpha/color/scale.
+//! - 88913 — the Wyvern 87-92 (`:88909-88919`): ×50 dust 16, (0,0),
+//!   scale 1.5, velocity ×1.5, noGravity.
+//! - 87362 — the Wall of Flesh 113/114 (`:87358-87366`): FLAT 20 dust 5
+//!   (the every-segment death fan `:81476-81484` is g60's).
+//! - 87414 — the Hungry 115/116 (`:87410-87418`): FLAT 5 dust 5.
+//! - 87440 — the Leech 117-119 (`:87436-87444`): FLAT 5 dust 5.
+//! - 87485 — Queen Bee 222 (`:87481-87489`): ×100 dust 18,
+//!   alpha/color/scale.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -453,6 +470,76 @@ pub fn replay_hit_dust(
         133 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87275-87284` — the Eye of Cthulhu group (4/126/125 — the
+        // twins share the EoC blood arm): ×100 dust 5. The death half's
+        // 150-loop + the gore argument pairs are g60/d55's.
+        4 | 126 | 125 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87341-87350` — the Servant of Cthulhu: ×50 dust 5.
+        5 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87590-87599` — the Giant Worm segments: ×50 dust 5.
+        10 | 11 | 12 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87556-87565` — the Devourer segments: ×100 dust 18, the
+        // NPC's alpha/color/scale.
+        7 | 8 | 9 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 18, dir, -1.0, s.alpha, s.color, s.scale, rng, dust, ctx, world);
+            }
+        }
+        // `:87622-87631` — the Eater of Worlds segments: ×100 dust 18.
+        13 | 14 | 15 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 18, dir, -1.0, s.alpha, s.color, s.scale, rng, dust, ctx, world);
+            }
+        }
+        // `:88909-88919` — the Wyvern segments: ×50 dust 16 at (0,0),
+        // scale 1.5, post-spawn velocity ×1.5 + noGravity (the death
+        // half's ×2 + the Next(1,4) gore batch are g60/d55's).
+        87..=92 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                let idx = live_dust(s, 16, 0.0, 0.0, 0, Color::default(), 1.5, rng, dust, ctx, world);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.5; // `:88916`
+                d.no_gravity = true; // `:88917`
+            }
+        }
+        // `:87358-87366` — the Wall of Flesh + Eye: FLAT 20 dust 5 (no
+        // dmg bound). The killing blow's every-segment fan
+        // (`:81476-81484`) is g60's death lane.
+        113 | 114 => {
+            for _ in 0..20 {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87410-87418` — the Hungry: FLAT 5 dust 5.
+        115 | 116 => {
+            for _ in 0..5 {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87436-87444` — the Leech segments: FLAT 5 dust 5.
+        117..=119 => {
+            for _ in 0..5 {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:87481-87489` — Queen Bee: ×100 dust 18, alpha/color/scale.
+        222 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 18, dir, -1.0, s.alpha, s.color, s.scale, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -991,6 +1078,75 @@ mod tests {
             }
             assert_eq!(rng, twin_rng, "type {t}");
             assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 4 — the WoF/Hungry/Leech FLAT counts (`NPC.cs:87362`
+    /// 20, `:87414`/`:87440` 5): no dmg bound — a 1-damage hit and an
+    /// overkill hit draw the same count.
+    #[test]
+    fn w4_g62_the_wof_family_counts_are_flat() {
+        let world = air();
+        let ctx = ctx();
+        for (t, want) in [(113, 20), (114, 20), (115, 5), (116, 5), (117, 5), (118, 5), (119, 5)] {
+            for dmg in [1.0, 9999.0] {
+                let s = snap(t, 100, 8000, dmg);
+                let mut rng = UnifiedRandom::new(59);
+                let mut dust = DustPool::new();
+                replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+                assert_eq!(
+                    dust.slots().iter().filter(|d| d.active).count(),
+                    want,
+                    "type {t} dmg {dmg}"
+                );
+            }
+        }
+    }
+
+    /// W4-g62 batch 4 — the Wyvern's dust-16 post-writes (`NPC.cs:88915-
+    /// 88917`): scale 1.5 at spawn, velocity ×1.5, noGravity — the LIVE
+    /// multiplier is 1.5, not the death half's 2.
+    #[test]
+    fn w4_g62_the_wyvern_live_multiplier_is_1_5() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(87, 4000, 4000, 80.0); // ×50 → 1
+        let mut rng = UnifiedRandom::new(61);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(61);
+        let mut twin = DustPool::new();
+        let idx = twin.new_dust(
+            &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 16,
+            0.0, 0.0, 0, Color::default(), 1.5,
+        );
+        let d = twin.slot_mut(idx);
+        d.velocity *= 1.5;
+        d.no_gravity = true;
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 4 — the worm/boss dust-18 arms pass the NPC rows and
+    /// the ×100/×50 bounds (`NPC.cs:87560`/`:87626`/`:87485`/`:87594`/
+    /// `:87345`/`:87279`).
+    #[test]
+    fn w4_g62_the_worm_and_boss_bounds() {
+        let world = air();
+        let ctx = ctx();
+        // (type, mult, dust type)
+        for (t, mult, dt) in [
+            (4, 100.0, 5), (5, 50.0, 5), (10, 50.0, 5),
+            (7, 100.0, 18), (13, 100.0, 18), (222, 100.0, 18),
+        ] {
+            let s = snap(t, 100, 100, 4.0);
+            let want = hit_count(4.0, 100, mult);
+            let mut rng = UnifiedRandom::new(67);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
         }
     }
 }
