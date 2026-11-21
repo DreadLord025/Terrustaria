@@ -39287,3 +39287,27 @@ carried-flag feed is b1's one-line follow-up. The idle-loop census
 closes 32/32 arms; the seven rowed idle kinds (250/288/389/471/520/
 388/391) roll today, the rest are table-complete until the roster
 wave. Witnesses WRITTEN NOT RUN (code-only).
+
+**TAIL-ACTIVATION-2 addendum (research/141 §8, after the roster
+pushes):** the re-probe re-intersects the 27 tail sites against the
+landed rows + axes. d42 (`489308b5`, the vanilla-free reconcile —
+43 kinds, protocol == NPCID, the 8 sibling-owned drops) rowed the
+tail kinds 583-585/594/618 with `{}` style stand-ins; d33
+(`b08acf46`) wired ONLY the aiStyle-114 axis (dragonflies 595-601) —
+the machine has NO PlaySound site and neither ambient table names
+595-601, so the LIVE axis activates ZERO tail cues (the new witness
+`w4_e9_tail_activation_2_the_landed_roster_ambient_census` pins it).
+The ONE amendment: :24449 (Antlion 69) is machine-owned-LIVE on f42
+(`75f055fc`, the inline `antlion_ai` Item5 block) and g8 (`82c93cec`,
+the axis-19 → d24 module route) — a dup-port per f2's research/94
+§10, NOT an e9 activation; the f42-inline vs d24-module keep-one is
+the style-19 machine merge. The `allow(dead_code)` verdict stands
+(re-cited `a4cacbfc`); the per-kind activation contract for the
+rowed-but-unwired kinds is research/141 §8.2. The critter-key scan
+extended to TEN pushed tips (research/141 §8.3): beyond GolemHead 74,
+f42's WalkingAntlion/FlyingAntlion (361/362), g8's five 361-365 kinds
+and d37's five 361-365 kinds mis-enter the squirrel/bunny critter
+arms on their own tips — the SAME one-line `to_u16`→`cs_id` rekey
+fixes each (the exact f2 hunk published); d42's Seagull/Rat/Owl and
+d40's gold critters are correct-by-band (protocol == cs_id) and keep
+firing after the rekey — the positive control.

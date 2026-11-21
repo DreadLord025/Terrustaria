@@ -76,7 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 
-| 141 | NPC-sound FINAL census (W4-e9): the 27-tail activation census (all UNWIRED — d33b/d41r/d42r/d43r do not exist), the second 147-quirk + the critter cs_id key fixes, the f2/f47/d53/g2 co-lane keep-ones, the 32/32 idle-loop census | `141-npc-sound-final-census.md` | done (code-only) |
+| 141 | NPC-sound FINAL census (W4-e9): the 27-tail activation census (all UNWIRED — d33b/d41r/d42r/d43r do not exist), the second 147-quirk + the critter cs_id key fixes, the f2/f47/d53/g2 co-lane keep-ones, the 32/32 idle-loop census; §8 TAIL-ACTIVATION-2 re-probe after the roster pushes (d42 vanilla-free 43-kind row, d33's wired-114-only axis activates ZERO tail cues, :24449 machine-owned-LIVE on f42/g8, the per-kind activation contract + the ten-tip critter-rekey scan with the exact f2 hunk) | `141-npc-sound-final-census.md` | done (code-only) |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

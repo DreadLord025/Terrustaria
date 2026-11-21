@@ -1424,7 +1424,7 @@ mod tests {
         assert!(!called, "the guard precedes the draw");
     }
 
-    /// TAIL-ACTIVATION-2 (research/141 §8.3) — the landed roster lanes'
+    /// TAIL-ACTIVATION-2 (research/141 §8.1) — the landed roster lanes'
     /// ambient-key census witness, table-side (WRITTEN NOT RUN; the
     /// kinds live on d42/f42, not this base). The `IdleSounds` ladder
     /// names the antlion trio (580/581/582, `:90115-90126`) but NEVER the

@@ -33,6 +33,12 @@ SandShark branch f2's research/94 §7 looked for also does not exist
 
 ## 1. The 27-tail-sites activation census — ALL STAY UNWIRED (correctly)
 
+> **TAIL-ACTIVATION-2 update (§8):** this section's tip table pre-dated
+> the roster pushes — see §8 for the re-probe. The verdict survives
+> with ONE amendment: :24449 (Antlion 69) is now machine-owned-LIVE on
+> f42/g8 (a dup-port, not an e9 activation); d33's wired style-114
+> axis (595-601) activates ZERO tail cues (the machine is sound-free).
+
 `npc_sounds_tail.rs` (9b96eff4, `allow(dead_code)` a41b2b72) ports 27
 sites on 17 kinds. Per-kind activation status against every pushed tip:
 
@@ -254,3 +260,136 @@ Prior e9 ledger (unchanged): `4e14b51e` sites 1-2, `bdd12b3e` 3-12,
 35-42, `3793fef8` the cs_id comment, `d7a61594` water wiring,
 `9b96eff4` tail 43-69, `255d7ccf` fix round, `a41b2b72` dead_code
 allow.
+
+## 8. TAIL-ACTIVATION-2 — the re-probe after the roster pushes (SUPERSEDES §1's tip table)
+
+The §1 probe pre-dated the roster wave's pushes. Re-fetched
+(`git fetch origin --prune`, 2026-11-21, second pass) — the lanes the
+prompt named as `d33b`/`d42r` etc. are the SAME branches, advanced:
+
+| lane | tip NOW | what landed since §1 |
+| --- | --- | --- |
+| d33 `task/W4-d33-npc-ai-styles-95-127` | `b08acf46` | styles 99-104/111-119/121/122/125-127 ported UNWIRED (`dcb59b7f` and back), THEN **style 114 WIRED** (`ba8b9b5c`/`e71010d3`): the seven dragonfly kinds 595-601 + the axis' `114 => self.ai_114_dragonfly` arm (`npc.rs:5030`) + the kind-match routing (`:6443`). **114 is the ONLY wired style** — no `111/112/113/115-119/121/122/125-127 =>` axis arm exists (mechanical grep). |
+| d42 `task/W4-d42-npc-kinds-561-630` | `489308b5` | the 51-kind join (`9b22c091`) THEN the **vanilla-free reconcile** (`49346dba`): protocol == NPCID (the 354-404 band collided with d37's pushed 354-399), **43 kinds** — the 8 sibling-owned drops: 581/587 (c4 style-44), 592/607/615 (c4b style-16), 604/605 (e26b luck), 606 (c8 style-66). The unwired styles ride `{}` idle stand-ins (578/618 the raw `integrate_no_tile_collide` tail); the aiStyle-3 walkers (580/582/586/590/591/624/630) + aiStyle-16 swimmers + the BloodSquid 619 hover ARE wired. |
+| f42 `task/W4-f42-sandstorm-2` | `75f055fc` | phase 3: the nine desert kinds (546/61/**69**/78/79/630/80/580/581, protocol 354-362) + `npc_ai_desert::antlion_ai` — the **Antlion 69's style-19 machine LIVE**, its `:24445-24452` cooldown block queues the Item5 cue inline (`npc_ai_desert.rs:202-210`, f42's own `NpcSoundCue::Item5` variant, drained `world_sim/npcs.rs:1143`). |
+| d120 `task/W4-d120-town-chatter` | `2408233d` | **RETIRED** (research/143 FINAL): the four town kinds landed (Santa 142/Truffle 160/Steampunker 178/Cyborg 209 cs_id hand rows, protocol 241-244); the GetChat-40 census complete; the 579 spawn contract handed to the spawn lane. No tail-site consumer. |
+| d41 / d43 | `4ed22f0b` / `a725acb0` | UNCHANGED — claim-only / zero commits. |
+| f2 `task/W4-f2-npc-sounds-3` | `47738470` | closeout docs (research/94 FINAL §9-§11: the e9b re-adjudication + the 27-tail union census — 25 machine-owned DROP / 2 unclaimed staged). The critter `to_u16` bug STILL present (§8.3). |
+| g8 `task/W4-g8-npc-kind-wire-1` | `82c93cec` | the <=230 machine wiring complete — the Antlion 69 rides d24's `npc_ai_style19` module through the axis' `19 =>` arm (`npc.rs:5112`), the `fx.sounds` style-5 tuple → `NpcSoundCue::Item5` (`:5118-5127`). |
+| c4 `task/W4-c4-style44-flying-fish` | `479d70ad` | the style-44 axis arm LIVE (`npc.rs:4993`, the world-sim pre-pass `style44_step`); owns 581/587 (d42 dropped them). |
+
+### 8.1 The 27-tail re-intersection (kind-row × machine × axis)
+
+The prompt's activation rule: a tail cue activates only when its kind
+is rowed AND its machine dispatches (d42-kind + its ai_style → d33
+module IF wired). Re-run per site:
+
+| site(s) | kind(s) | row NOW | machine NOW | verdict |
+| --- | --- | --- | --- | --- |
+| :24449 Antlion spit | 69 | **f42 + g8** | **LIVE both** (f42 inline `antlion_ai`; g8 axis-19 → d24 module) | **ACTIVATED — machine-owned, NOT e9's.** The site is a dup-port: f2's research/94 §10 row 1 already adjudicated DROP (the machine owns the gate; the `Item5` variants fold onto `ItemCue(5)` at the merge). e9's `antlion_spit_cue` stays the citation-pinned reference; the f42-inline vs g8-module keep-one is the style-19 machine merge (ONE machine, the d24 module is the faithful superset — f42's inline block is the same :24445-24452 maths). |
+| :37268/:37321 teleport | 472/521 | 472 on d40 (`{}` stand-in); 521 nowhere (d9b no branch) | d32 `npc_ai_style86.rs` UNWIRED (the `sound_item8` out-field exists; NO `86 =>` axis arm on any tip) | UNWIRED stands |
+| :40632 SandShark cry | 542-545 | NO (d41 claim-only) | d33 style103 UNWIRED | UNWIRED stands |
+| :42983-43001 Pals | 695/696 | NO (d43 zero) | d33 style127 UNWIRED | UNWIRED stands |
+| :43562-43608 StatueMimic | 690 | NO (d43 zero) | d33 style126 UNWIRED | UNWIRED stands |
+| :43726 ClumsySlimeBalloon | 686 | NO (d43 zero) | d33 style125 UNWIRED | UNWIRED stands |
+| :47951/:48062 WindyBalloon pop | 594 | **d42** (`{}` stand-in, `npc.rs:6815`) | d33 style113 UNWIRED | UNWIRED stands — kind rowed, machine not |
+| :44848 PirateGhost | 662 | NO (d43 zero) | d33 style122 UNWIRED | UNWIRED stands |
+| :45558/:45759 QueenSlime | 657 | NO (d43 zero) | d33 style121 UNWIRED | UNWIRED stands |
+| :47263-47293 BloodNautilus | 618 | **d42** (raw `integrate_no_tile_collide`, `npc.rs:6730`) | d33 style117 UNWIRED | UNWIRED stands — kind rowed, machine not |
+| :48327/:48473/:48545/:48682 fairies | 583-585 | **d42** (`{}` stand-ins, `npc.rs:6822+`) | d33 style112 UNWIRED | UNWIRED stands — kind rowed, machine not |
+| :56403 Medusa gaze | 480 | d40 (`update_skeleton` family) | the gaze block (`num25`) unported port-wide | UNWIRED stands (f2 staged the helper, research/94 §10 row 14) |
+| :66429 BigMimic reflect | 473-476 | d40 (`{}` stand-ins) | d32 style87's `reflect_request` out-field exists; NO branch ports the `ReflectProjectile` body | UNWIRED stands (f2 staged, §10 row 15) |
+
+**The LIVE-axis check (595-601):** d33's wired style-114 machine
+activates **ZERO tail cues** — `AI_114_Dragonflies`
+(`NPC.cs:47716-47886`) contains NO `SoundEngine.PlaySound` site (the
+232-site census has no hit in the range; the module carries no
+`sounds` seam — mechanical grep), the `IdleSounds` ladder never names
+595-601, and the critter table never names them either (the new
+witness `w4_e9_tail_activation_2_the_landed_roster_ambient_census`
+pins all three). The dragonflies' only sound-adjacent seam is the
+`IsGoldCritter` sparkle (`:92345-92368`) — a DRAW-pass light, not a
+PlaySound site (d33's own commit names it the light-feed wave). So
+the §1 verdict stands with ONE amendment: **:24449 is now
+machine-owned-LIVE on f42/g8** (a dup-port, not an e9 activation);
+every other tail site still has no live consumer. The
+`allow(dead_code)` stays (re-cited at `a4cacbfc`).
+
+### 8.2 The activation contract (the merger's per-site map)
+
+For each rowed-but-unwired kind, the trigger + the seam + the keep-one
+(the §1 keep-one notes refined with the landed row citations):
+
+| kind (d42 row) | trigger | seam at the trigger | keep-one |
+| --- | --- | --- | --- |
+| WindyBalloon 594 | d33 style113 wires (the axis `113 =>` arm + the `{}` stand-in replaced) | the module's pop out-field `(4, 63)` at the wet/slave-wet/collide gate (`NPC.cs:47939-47952`/`:48051-48063`) | drain `(4,63)` → `NpcSoundCue::NpcDeath63` through `play_npc_sound_request`, OR call e9's `balloon_pop_cue(npc, pop)` at the gate and drop the push. The slave-wet term is the machine's (e9's helper takes the composed `pop` bool). |
+| FairyCritter 583-585 | d33 style112 wires | the module's `(27, 1)` entries (cases 3/4/5) + `fairy_effects`' `(2, 4)` | `(27,_)` → `NpcSoundCue::Pixie` (the `play_pixie` path), `(2,4)` → `ItemCue(4)`; OR e9's `fairy_circle_hum`/`fairy_far_hum`/`fairy_effects_cue` at the cited ticks. The far-hum's `Next(30)` roll stays on the caller's stream either way. |
+| BloodNautilus 618 | d33 style117 wires | the module's `(2, 170)`/`(2, 172)` entries (the case-0 volley pick + the case-1 `ai[1]==89` scream) | `(2,N)` → `ItemCue(N)`; OR e9's `blood_nautilus_volley_cue`/`scream_cue`. The `%7==3` no-sound arm is the gate maths both copies carry. |
+| DD2LightningBug 578 | d33 style111 wires | the `DD2_EtherianPortalSpawnEnemy` tracked cue at `localAI[1]==30` — NOT an e9 tail site (the 27 never claimed it; the d42 `dd2_lightning_bug_hurt_0/death_0` bank rows serve HitEffect/Kill) | no e9 keep-one — the module's own trackable seam. |
+| WaterStrider 612/613, Seahorse 626/627, Dandelion 628 | d33 styles 116/118/119 wire | NO sound sites in any of the three machines (the C# arms are draw-only/seed-spawn) | no e9 keep-one — roster context only. |
+| the d43 band (657/662/686/690/695/696) | d43 rows the kinds + d33 styles 121/122/125/126/127 wire | the §1 keep-one map unchanged (`(2,167)`/`(65,1)`/`(3,6)`/`(4,63)`/trackables/`PAL_SOUNDS`) | f2's research/94 §10 adjudicates DROP-helper + ADOPT-bank for these (the machine out-structs own the sites; the shared bank + dispatch serve them). e9's helpers stay the citation-pinned reference. |
+
+### 8.3 The f2-critter-rekey hunk (EXACT, for f2c/the merger)
+
+f2's tip `47738470` still keys the critter emitter on the protocol
+space. The one-line fix (`crates/tr-app/src/world_sim/npcs.rs:4765`,
+inside the `critter_sound_cue(` call at `:4764`):
+
+```diff
+-                        n.kind.to_u16() as i32,
++                        n.kind.cs_id() as i32,
+```
+
+plus the witness key-space consistency at `:7268`
+(`NpcKind::Zombie.to_u16() as i32,` → `NpcKind::Zombie.cs_id() as
+i32,` — both are 3 for the Zombie, no behaviour change; e9's
+`c7523984` re-keyed the same witness). f2's IDLE wiring already keys
+`cs_id` (`:4476`) — only the critter call needs the rekey. NOT
+applied on f2 per the never-touch-other-lanes rule.
+
+**The cross-lane extension (NEW this probe):** every lane that forked
+before e9's `c7523984` carries the same `to_u16` key, and the
+mechanical to_u16-table × critter-table scan (the 23 ids
+{74,297,298,300,361-365,442,445,447,602,603,610,611,671-675,687,689})
+run against TEN pushed tips finds the collision set is per-tip:
+
+| tip | the critter call | protocol-space collisions (kind⇒to_u16 → the C# arm it mis-enters) | after the cs_id rekey |
+| --- | --- | --- | --- |
+| e9 (this, FIXED) | `npcs.rs:4685` cs_id | — (GolemHead 74 was the only one; fixed `c7523984`) | zero draws |
+| f2 `47738470` | `:4765` to_u16 | GolemHead⇒74 → the Bird day arm | head folds to 245, silent |
+| f42 `75f055fc` | `:4650` to_u16 | GolemHead⇒74; **WalkingAntlion⇒361 → the squirrel/underground arm (`:92264`, Next(200) case 31); FlyingAntlion⇒362 → the bunny day arm (`:92257`, Next(200) case 30)** | cs_id 580/581 outside the table, silent |
+| g8 `82c93cec` | `:4643` to_u16 | GolemHead⇒74; **CursedHammer⇒361 (squirrel), EnchantedSword⇒362 / Mimic⇒363 / GreenJellyfish⇒364 / Gastropod⇒365 (bunny)** | cs_id 83/84/85/103/122 outside, silent |
+| d37 (211-280) | `:4614` to_u16 | GolemHead⇒74; **Pirate⇒361 (squirrel), GoldfishWalker⇒362 / HornetFatty⇒363 / HornetHoney⇒364 / HornetLeafy⇒365 (bunny)** | cs_id 229/230/231-233 outside, silent |
+| d42 `489308b5` | `:4614` to_u16 | GolemHead⇒74 ONLY — the vanilla-free band makes Seagull⇒602/Seagull2⇒603/Rat⇒610/Owl⇒611 **correct-by-band** (protocol == cs_id; those arms SHOULD fire) | the four keep firing (cs_id identical); the head goes silent |
+| d40 (421-490) | `:4614` to_u16 | GolemHead⇒74 ONLY — GoldBird⇒442/GoldFrog⇒445/GoldMouse⇒447 correct-by-band | the golds keep firing; the head silent |
+| d33 `b08acf46` | `:4647` to_u16 | GolemHead⇒74 (the dragonflies' 595-601 are outside the table in BOTH spaces) | silent |
+| c4 `479d70ad` | `:4662` to_u16 | GolemHead⇒74 (581/587 outside in both spaces post-reconcile) | silent |
+| d120 `2408233d` | `:4719` to_u16 | GolemHead⇒74 (the town four 142/160/178/209 outside) | silent |
+| d41/d43 | `:4614` to_u16 | GolemHead⇒74 (no new kinds) | silent |
+
+The merger applies the SAME one-line rekey on every lane that keeps
+its own critter wiring (or keeps e9's fixed wiring as the keep-one
+survivor — the e9/f2 union already names e9's wiring shape the
+winner). The f42/g8/d37 mis-routes are LIVE determinism drifts on
+those tips (a standing WalkingAntlion underground rolls the
+squirrel's Next(200); a Mimic rolls the bunny's day Next(200)) — the
+same MERGER-L7 class §3 pinned, now with a per-tip witness table.
+The d42/d40 correct-by-band hits are the POSITIVE control: after the
+rekey the Seagull/Rat/Owl/gold-critter arms still fire (their cs_id
+equals the protocol id), so the rekey is not a blanket silence.
+
+### 8.4 Verification (this round)
+
+Code-only: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked. The
+C# re-reads ≤100-line windows: `UpdateNPC_CritterSounds` whole
+(`:92244-92343`), `IdleSounds` whole (`:90075-90211`). The mechanical
+scans ran as read-only git/PowerShell: the ten-tip to_u16×critter
+collision walk (§8.3), the d33 axis-arm grep (114 only), the d42
+stand-in/wired-family reads, the f42/g8 style-19 route reads, the
+232-site range check for the dragonfly arm (no hit 47716-47886). The
+new witness
+`w4_e9_tail_activation_2_the_landed_roster_ambient_census`
+(`ambient_sound.rs`) is WRITTEN NOT RUN — table-side only (the named
+kinds live on d42/f42/c4, not this base). Commit `a4cacbfc` (code +
+1 anchors row); this doc refresh + the ANALYSIS/PORT_MAP/INDEX
+addenda ride the docs commit.
