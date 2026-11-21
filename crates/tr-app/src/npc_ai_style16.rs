@@ -20,8 +20,9 @@
 //! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
 //! `npc.rs::update_swimmer` routes the three kinds through [`ai_016_step`]
 //! (the `is_wet` pass + the session-player `Ai16Ctx`; `justHit` rides the
-//! established `hurt_cd > 0` stand-in — only the unported Pufferfish reads
-//! it) and integrates through the no-gravity `integrate_flyer_collision`
+//! one-tick `Npc::just_hit` strike flag — the c4e research/148 keeper fold;
+//! only the Pufferfish 688 reads it) and integrates through the no-gravity
+//! `integrate_flyer_collision`
 //! stand-in (`UpdateCollision`, `NPC.cs:92523-92580`; the wet halving is
 //! `waterMovementSpeed` 0.5, `:6015`/`:92561`). The bob phase rides the
 //! C#'s own `ai[0]` now — the port's `swim_phase` mirror and the
@@ -78,9 +79,10 @@ pub struct Ai16Ctx<'a> {
     /// `dead` but not `wet`; the caller folds the session player's flag.
     pub player_wet: bool,
     /// `NPC.justHit` (`:23502`/`:23518`) — the Pufferfish's puff latch. The
-    /// port's `Npc` has no `justHit` field yet (the strike path's `hurt_cd`
-    /// stand-in is a cooldown, not the one-tick flag) — the caller supplies
-    /// the flag at the wiring step.
+    /// caller supplies the ONE-TICK `Npc::just_hit` strike flag (set on the
+    /// strike tick, cleared at the `UpdateNPC` tail `:90516`) — NOT the
+    /// `hurt_cd` cooldown, which stays >0 for the whole hurt window and
+    /// would re-puff every tick (the c4e research/148 keeper fold).
     pub just_hit: bool,
     /// `Main.EverLastingTicker` for the `targetSetFrame` stamp
     /// (`NPC.cs:77780`) — 0 until the ticker is plumbed (the S1-D-3p

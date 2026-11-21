@@ -2867,6 +2867,15 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-d43 — the Owl Mimic 689 is Hide=true (`NPCID.cs:755-761`'s
+        // NPCBestiaryDrawModifiers) and its kill credit folds onto the
+        // visible Owl 611 (`ContentSamples.cs:1054`:
+        // `npcBestiaryCreditIdsByNpcNetIds[689] = ...[611]`). It keeps its
+        // OWN ENTRIES row + cs_id 689 for the catch/release chain (the
+        // d33 BlackDragonfly precedent); `try_entry_for_npc` stays
+        // unfolded so the s1_f_3 cs_id==net invariant holds. The Owl 611
+        // kind rides d42's band — the fold resolves at the merge.
+        NpcKind::OwlMimic => NpcKind::Owl,
         other => other,
     };
     ENTRIES
@@ -2925,6 +2934,34 @@ mod tests {
         ids.sort_unstable();
         ids.dedup();
         assert_eq!(ids.len(), ENTRIES.len());
+    }
+
+    /// W4-d43 retire — the Owl Mimic 689 is Hide=true and folds its kill
+    /// credit onto the visible Owl 611 (`ContentSamples.cs:1054`), the d33
+    /// hidden-dragonfly precedent: `entry_for_npc` folds, `try_entry_for_npc`
+    /// stays unfolded (the s1_f_3 cs_id==net invariant), the 689 entry keeps
+    /// its own row + cs_id for the catch/release chain, and 689 takes no
+    /// bestiary grid slot. The Owl 611 kind rides d42's band — the fold's
+    /// TARGET resolves at the merge (this witness pins the source side).
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_the_owl_mimic_folds_its_credit_and_takes_no_grid_slot() {
+        // The 689 entry keeps its OWN row (the catch/release chain keys it).
+        let own = try_entry_for_npc(NpcKind::OwlMimic, SlimeVariant::Blue)
+            .expect("the OwlMimic keeps its own unfolded entry");
+        assert_eq!(own.net_id, 689);
+        assert_eq!(own.credit_id, "OwlMimic");
+        assert_eq!(NpcKind::OwlMimic.cs_id(), 689);
+        // Hide=true (`NPCID.cs:755-761`) — no bestiary grid slot.
+        assert!(
+            !crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&689),
+            "the Hide=true OwlMimic takes no bestiary sheet slot"
+        );
+        // The world-draw sheet stays packed (only the grid slot drops).
+        assert!(
+            crate::assets::STATIC_SHEET_NAMES.contains(&"NPC_689"),
+            "the NPC_689 world sheet stays packed"
+        );
     }
 
     #[test]

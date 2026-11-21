@@ -998,7 +998,9 @@ fn boss_half_size(kind: NpcKind, frame_h: f32) -> f32 {
 /// chain overwrites it or adds `num46` for a dozen ids, and the
 /// `:23048` switch adds the last few. Only the ids the port models are
 /// listed; the rest of the switch (the DD2 support ring effects, the
-/// `694`-only offsets, the `469`/`357`/`467` ids) has no port kind.
+/// `469`/`357`/`467` ids) has no port kind. The `694` Water Bolt Mimic's
+/// `num45`/`num46` terms (`:23096-23113`) ride the c3 keeper at merge
+/// (research/244 §1 — d43's 694 variant retires onto c3's).
 fn npc_anchor_nudge(n: &Npc) -> f32 {
     use NpcKind::*;
     let mut num46 = 0.0;
@@ -1024,8 +1026,15 @@ fn npc_anchor_nudge(n: &Npc) -> f32 {
         // `:23038` — 612/613's `num46 -= 2` (the DD2 goblin T3 riders); the
         // port's T1/T2 pair is its stand-in.
         DD2GoblinT1 | DD2GoblinT2 => num46 = -2.0,
-        // `:23106` — 688's `num46 += 10`.
-        DD2GoblinT1 => num46 += 10.0,
+        // `:23114-23116` — the Pufferfish 688's `num46 += 10`. The base
+        // arm was mis-keyed `DD2GoblinT1` (a copy-paste of the -2 row
+        // above); the W4-d43 Pufferfish kind exposes it — re-keyed to the
+        // real kind (the c4e research/148 keeper fold).
+        Pufferfish => num46 += 10.0,
+        // `:23071-23073` — the Orca 692's wet-dependent anchor: `num46`
+        // 10 dry / 6 wet (the c4e research/148 keeper fold; the W4-d43
+        // Orca kind exposes it).
+        Orca => num46 = if n.wet { 6.0 } else { 10.0 },
         // `:23077-23091` — the `num47` adds of the same switch.
         Plantera => num47 += 26.0,
         BrainOfCthulhu => num47 += 50.0 * n.scale,
@@ -4266,6 +4275,29 @@ mod anchor_tests {
         for kind in [NpcKind::Slime, NpcKind::MartianSaucer, NpcKind::Deerclops] {
             assert_eq!(npc_anchor_nudge(&bare(kind)), 0.0, "{kind:?}");
         }
+    }
+
+    /// W4-d43 retire — the c4e research/148 keeper folds: the Pufferfish
+    /// 688's `num46 += 10` (`Main.cs:23114-23116`, the base arm was
+    /// mis-keyed `DD2GoblinT1`) and the Orca 692's wet-dependent anchor
+    /// (`:23071-23073`, `num46` 10 dry / 6 wet). WRITTEN, NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_d43_the_pufferfish_and_orca_anchor_nudges() {
+        // The Pufferfish: +10 regardless of wet (the C# `num46 += 10`
+        // has no wet gate).
+        let mut puff = bare(NpcKind::Pufferfish);
+        assert_eq!(npc_anchor_nudge(&puff), 10.0, "the Pufferfish dry +10");
+        puff.wet = true;
+        assert_eq!(npc_anchor_nudge(&puff), 10.0, "the Pufferfish wet +10");
+        // The mis-keyed base arm must NOT fire on the DD2 goblin anymore.
+        assert_eq!(npc_anchor_nudge(&bare(NpcKind::DD2GoblinT1)), -2.0,
+            "the DD2GoblinT1 keeps only its own -2 row");
+        // The Orca: 10 dry / 6 wet (the C# `!wet ? 10 : 6`).
+        let mut orca = bare(NpcKind::Orca);
+        assert_eq!(npc_anchor_nudge(&orca), 10.0, "the Orca dry 10");
+        orca.wet = true;
+        assert_eq!(npc_anchor_nudge(&orca), 6.0, "the Orca wet 6");
     }
 
     /// The `halfSize` override's effect on the anchor: the EoC's 107 over its

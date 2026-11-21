@@ -20141,9 +20141,9 @@ impl Npc {
     /// avoid `ai[0]` writes, inline integration inside the AI). The
     /// wrapper owns the seams: this tick's `Entity.wet` (the `is_wet`
     /// pass), the session-player candidate slice + `player_wet`
-    /// (`Ai16Ctx`), the `justHit` flag (the port's established
-    /// `hurt_cd > 0` stand-in — only the unported Pufferfish 688 reads
-    /// it), and the no-gravity `UpdateCollision` integration
+    /// (`Ai16Ctx`), the `justHit` flag (the one-tick `Npc::just_hit`
+    /// strike flag — the c4e research/148 keeper fold; only the
+    /// Pufferfish 688 reads it), and the no-gravity `UpdateCollision` integration
     /// (`integrate_flyer_collision`; `noGravity = true`,
     /// `SetDefaults` `:9462`/`:9505`/`:9611`). The bob phase now rides the
     /// C#'s own `ai[0]` (the `swim_phase` mirror is retired for the fish;
@@ -20160,11 +20160,14 @@ impl Npc {
         let ctx = crate::npc_ai_style16::Ai16Ctx {
             players: &players,
             player_wet: player.wet,
-            // `NPC.justHit` (`:23502`/`:23518`) — the port's strike path
-            // has no one-tick flag; `hurt_cd > 0` is the established
-            // stand-in (`world_sim/npcs.rs`'s fighter-idle wiring). Only
-            // the unported Pufferfish (688) reads it.
-            just_hit: self.hurt_cd > 0.0,
+            // `NPC.justHit` (`:23502`/`:23518`) — the Pufferfish's puff
+            // latch reads the ONE-TICK strike flag (`Npc::just_hit`, set
+            // on the strike tick / cleared at the `UpdateNPC` tail
+            // `:90516`), NOT the `hurt_cd > 0` cooldown stand-in: the
+            // cooldown stays >0 for the whole hurt window and would
+            // re-puff the fish on every tick of it (the c4e research/148
+            // keeper fold — the W4-d43 Pufferfish 688 is now rowed).
+            just_hit: self.just_hit,
             // The ticker is not plumbed (0 — the `npc_ai_bat` convention).
             ticker: 0,
         };
@@ -22885,6 +22888,37 @@ mod tests {
             let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
             assert_eq!(e.net_id, net);
         }
+    }
+
+    /// W4-d43 retire — the c4e research/148 keeper fold: the Pufferfish's
+    /// puff latch reads the ONE-TICK `Npc::just_hit` strike flag through
+    /// `update_swimmer`, NOT the `hurt_cd` cooldown stand-in (which stays
+    /// >0 for the whole hurt window and would re-puff every tick). The
+    /// flag is cleared at the `UpdateNPC` tail (`NPC.cs:90516`) after the
+    /// AI reads it. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_the_pufferfish_puff_reads_the_one_tick_flag_not_the_cooldown() {
+        let w = ground_air();
+        let mut player = surface_player(&w);
+        let mut puff = Npc::new(NpcKind::Pufferfish, 60.0 * 16.0, 110.0 * 16.0, 1, 0.0);
+        puff.hp = puff.max_hp;
+        let mut rng = UnifiedRandom::new(7);
+        // The strike tick: just_hit armed, hurt_cd ALSO >0 (the cooldown
+        // the old stand-in read). The puff fires (ai[2] 0 -> 1).
+        puff.just_hit = true;
+        puff.hurt_cd = 30.0;
+        puff.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(puff.ai[2], 1.0, "the strike tick puffs");
+        assert!(!puff.just_hit, "the UpdateNPC tail clears the one-tick flag");
+        // The NEXT tick: hurt_cd STILL >0 but just_hit cleared — the old
+        // hurt_cd stand-in would re-puff here; the one-tick flag does not.
+        // Deflate first so a re-puff would be observable (ai[2] back to 1).
+        puff.ai[2] = 0.0;
+        puff.local_ai[0] = 120.0;
+        puff.hurt_cd = 29.0;
+        assert!(puff.hurt_cd > 0.0, "the cooldown is still active");
+        puff.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(puff.ai[2], 0.0, "no re-puff while only the cooldown is >0");
     }
 
     /// The swim arena: the ground from y = 120 with a water pool (x
