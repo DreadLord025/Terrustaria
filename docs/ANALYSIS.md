@@ -36055,6 +36055,67 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The Main.cs dust sites, batch 2 (W4-g12)
+
+`crates/tr-app/src/main_dust_b.rs` ports the middle third of the
+research/64 census (sites 9-16; g11 owns 1-8, g13 owns 17-23 — the
+line-order split in `docs/research/64-dust-main-sites-claims.md`).
+CODE-ONLY: staged emitters + witnesses, not wired — none of the eight
+sites has a live ported machine yet (the e2-batch-1 / d50 lane pattern).
+
+* **Sites 9/10/11 — `Main.TeleportEffect` cases 10/11/13**
+  (`Main.cs:13381-13418`/`:13419-13446`/`:13447-13462`): the 267
+  sparkle lane (`NewDustDirect` + `CloneDust`), the 50×
+  `NewDustPerfect` burst, the 21× type-27 smoke. `TeleportEffect`
+  itself stays the recall doc's "separate follow-up"; the wiring wave
+  ports `Player.Teleport`/`NPC.Teleport` and calls the case arms at the
+  Entry/Exit sites with `dustCountMult = Clamp(1 - teleportTime*0.99,
+  0.01, 1)` (`Player.cs:37442`). RNG: the caller's pass stream
+  (`UpdatePlayers`/`UpdateNPCs` — the teleport executes inside that
+  `SwapRandom` block); argument draws before the pool internals (case
+  10's named arguments evaluate in written order — the hue float
+  first), post writes after, the sentinel takes them. The case-10
+  scale ladder (`Next(20,70)` + the n<10/n<5 bonuses) is DEAD — the
+  `scale = scale` local write overwrites it, the draws still ride the
+  stream. Case 10 plays Item8 AFTER the loop, case 13 BEFORE it (the
+  d52 `play_npc_item_cue` contract: façade NextFloat on the audio-only
+  stream, case-2 `Next(-6,7)` on the caller's); case 11 plays nothing.
+* **Sites 12/13 — `DrawNPCDirect`'s bone-arm chains**
+  (`Main.cs:22701-22748` type-36 hand / `:22786-22824` aiStyle-33..36
+  Prime limbs): the two-hop tether geometry is ported verbatim (the
+  head's INTEGER width/height halves, the f64 sqrt normaliser, the
+  j==0 half-hop / j==1 full-hop-minus-(16,6) advances); the dust is
+  the j/k==1 tip puff (type 5 scale 2 / type 6 scale 2.5, speeds =
+  pre-normalisation deltas × 0.02). The BoneArm/BoneArm2/BoneArm3
+  SPRITE draws are unported (render/entities.rs draws the sheets
+  only) — the wiring wave calls the emitters from the future bone-arm
+  draw. DRAW-PATH RNG: the C# runs outside every `SwapRandom`; the
+  port's draw-dust precedent (the Mushroom-glow/leaf/TrySparkling
+  frame-pinned streams) applies — the wiring feeds a frame-derived
+  stream, never a stage stream. The `FocusHelper.AllowMiscDustEffects`
+  gate (`FocusHelper.cs:39` = `!WorldUpdateStepper.DrawnThisUpdate`)
+  is the `allow_misc_dust` parameter (the port tracks the flag 1:1).
+* **Sites 14/15/16 — the Moon Lord core arm's flag8 puffs**
+  (`Main.cs:24736`/`:24748`/`:24752`; the fourth `:24756` is g13's).
+  **Dead-gate census finding:** `flag8` (`Main.cs:24703`) is
+  initialised `false` and NEVER assigned `true` in the type-398 block
+  — the only reads are the four `if (flag8)` gates. All four puffs are
+  dead code in 1.4.5.8; the port keeps the gate verbatim (the live
+  caller passes `false`) and the witness pins zero spawns AND zero
+  draws on the dead path. The shared enclosing-arm context (the
+  397-hand scan, `center2`, the `(220,-60)·side` anchor, the 0.5 pull)
+  is cited in both batches per the claim doc's boundary rule.
+
+### Verification
+
+Code-only: every site re-read against the cited C# windows (the
+case-10 named-argument order, the dead scale ladder, the case-11
+colour switch's always-overwritten `Color.Green` initial, the case-13
+sound-first order, the bone-arm integer head halves + f64 sqrt, the
+flag8 dead-gate census). The 7 witness tests (`main_dust_b.rs`) mirror
+the full draw sequences on same-seeded probe streams (WRITTEN, NOT
+RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

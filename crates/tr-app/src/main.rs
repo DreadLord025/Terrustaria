@@ -59,6 +59,7 @@ mod map_layers;
 mod melee_swing;
 mod menu;
 mod minecart;
+mod main_dust_b;
 mod mount;
 mod net;
 mod npc;
