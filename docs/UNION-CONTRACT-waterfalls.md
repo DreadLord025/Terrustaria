@@ -163,6 +163,28 @@ test-module hunks) and ZERO ladybug/visibility deltas. So the merge
 resolution is the same either way: THIS branch's `rain.rs` wins whole;
 nothing of yours is dropped.
 
+**SEAL-VERIFY re-fetch (2026-11-21, post-seal `34d80d0c`):** g47 advanced
+`776e6467` → **`ca76d68e`** (the LIQUID SEAL, `docs/research/70` only,
++93/−1 — the g46e monitor + delta-fold list + pin matrix + liquid-family
+bible). The receipt RE-VERIFIES at the new tip: `git log
+776e6467..ca76d68e -- biome.rs rain.rs` empty, the `biome.rs` blob still
+byte-identical to this branch's pre-port version (empty diff, head-arm fn
+grep-absent), the `rain.rs` diff still exactly FIVE water-style `@@`
+hunks, the stale "no consumer yet" note still at g47 ANALYSIS `:22594` —
+**their copies still LOSE, the cross-note above stands verbatim at
+`ca76d68e`.** g46 tip still `9bc722e5`, g24 tip still `eca0c736` (the
+`a0d046b7..eca0c736` file list re-confirmed: `debug_panel.rs` witness fix
++ the two comment re-points only), g74 `cd462c1a` (ancestor exit 0,
+log-after empty) and g75 `41b64b04` (log-after empty) unchanged. The
+seven keep-one fn bodies (`stop_waterfall_ambience`, `just_quit`,
+`save_and_quit`, `stop_tracked_sounds`, `menu_accept_style`,
+`tracked_count_for`, `insert_test_cue`) re-compared against `eca0c736`:
+ALL byte-identical; the corrected `..._sixteen_rows` witness matches
+assertion-for-assertion (only the comment wording differs); all 64 lane
+witnesses grep-present, the retired
+`the_quit_stop_kills_both_liquid_loop_channels` grep-absent. The seal
+holds; nothing to fold.
+
 ## §-census — the WaterfallManager.cs FINAL full-file fn census (SEAL phase)
 
 The retire contract's coverage claim was six fns (Update/Draw/
