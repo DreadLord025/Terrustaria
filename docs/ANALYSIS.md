@@ -39410,3 +39410,80 @@ noSurface/errorWorld y-arms, the pass gates, the house cap
 sunplate/disc-wall house shape + the chest cycle order, the `a == b`
 determinism over the flagged seeds. `pipeline.rs::tests`: the new
 step's slot + the 67-step count.
+### W4-g44 deferred-arms follow-up (variants A/B/C, code-only mode, 2026-11-21)
+
+The census's deferred list is now landed except the skyblock TERRAIN
+(f24's lane) and the chain-framing deviation:
+
+1. **Variant A (`cb5985c9`): the drunk variant islands + the full style
+   switch.** `SnowCloudIsland` (`WorldGen.cs:77346-77737`) and
+   `DesertCloudIsland` (`:77739-78130`) are line-identical bar four
+   constants (the underside/satellite kind 460 snow-cloud vs 196
+   rain-cloud, the surface kind 147 snow vs 53 sand — verified by a
+   line-by-line diff of the two bodies). ONE shared verbatim port
+   (`variant_cloud_island` + the six walk helpers): the
+   `Next(100,150)` ring budget shrinking `Next(4)` per ring over
+   `Next(20,30)` rings, the ragged per-column surface line, the drift
+   clamps (the C# writes −0.2 on BOTH y-drift bounds — kept), the
+   underside blobs (the `for`-increment reads `num17` only after the
+   first body pass assigns it — no primed draw), the `Next(80,95)`
+   surface-retype ring, the surface pockets (the exhausted-scan
+   `continue` re-tests the outer `while` and exits — the port's
+   `break` is the same hop), the bbox wall-73 flood,
+   `WillWaterPlacedHereStayPut` (`:78530-78537`) + the per-column
+   water pools, the satellite puffs, the `surfaceIsInSpace`
+   cloud-clear strip (`:77405-77423`). The `:13075-13087`
+   `Next(2)` split gates on drunk && !remix; the `:13090-13103`
+   num10 style table lands verbatim (remix+drunk crimsonLeft halves
+   5/4/5; getGood/remix 4/5 by `WorldGen.crimson` — the port's
+   `opts.crimson`; anniversary 6; notTheBees 0). The variant ledger y
+   keeps `num11` (the bodies hang down from j like the C#); the
+   compact discs keep the `a6412835` disc-top convention.
+   `IslandHouse` gains ALL arms: the drunk crimson half-split
+   (`:79217-79220`), the remix door 5/38 (`:79323-79332`), the
+   fountain scatter + `Place2xX(207)` + `SwitchFountain`
+   (`:79377-79392`, `:39663-39722`, `:51150-51197` — the
+   `Wiring.running`/`NetMessage` tail is moot at gen time), the
+   window/banner anniversary gates (`:79395`/`:79444`), the remix
+   table 14/5 + chairs 8 or 469/2 + chairs 38 (`:79421-79435` — 469
+   rides `PlaceTile` case 469 → `Place3x2`, `:60000-60003`), the
+   style-1 palms via the shared `ocean::grow_palm_tree`
+   (`:79462-79483` → `:30343-30353` → `:27116-27203`).
+2. **Variant B (`2b041eaf`): the skyblock island-side arms witness.**
+   The `/42` budget, the fixed `worldSurface/2 + 100` y anchor and
+   the ±150/±75 clear window were already in the phase-2 pass; the
+   dedicated witness pins them (the blocked-sky world places zero
+   islands). Claim boundary: f24 owns `GenerateSkyBlockWorld` /
+   `SkyblockIsland` / the deny-gate census (`9cbbf9de`/`a9eb3fc3`/
+   `372a4ec7` on `origin/task/W4-f24-worldgen-passes-7`); g44's
+   island-side gate is the same two-flag predicate as f24's
+   `skyblock_gates::deny_floating_islands` — the merge gate keeps ONE
+   copy (f24's shared helper) and re-points g44's two call sites.
+3. **Variant C: the 4-way IslandHouses reconcile.**
+   `docs/research/87-island-houses-reconcile.md` — the arm-by-arm
+   sunplate fidelity table (23 house arms + 14 pass arms) across g44 /
+   d103 `eb018138` / d104 `93b1938e` / g37 `3d74564e`. KEEP: g44's
+   `islands.rs` (the only port with verbatim pass mechanics + the
+   complete style switch + the verbatim variant bodies); drop the three
+   peer house modules at the merge; the ONE salvage candidate is the
+   `AddBuriedChest` core (d103's full `buried_chest` / d104's
+   larva+altar vetoes vs g44's compact `place_chest` seam — inert on a
+   fresh sunplate floor, recorded; re-point when the chest lane's core
+   lands).
+
+**Deviation (unchanged):** the classic/lake disc bodies stay the compact
+M1.4-WGEN-4 shape; `SquareTileFrame`/`SquareWallFrame` ride the
+chain-framing passes (the temple precedent). The variant bodies' raw
+writes (active+type only, no liquid/slope reset) are kept 1:1 — they
+differ from the compact `put_cloud` deliberately.
+
+**Witnesses (written, NOT run — code-only mode):** the drunk snow/desert
+split + the variant surface/blob kinds, the num10 style-table arms
+(5 flag cases + the remix+anniversary 6), the fountain 2×4 body +
+SwitchFountain +72 + style-3 frameX, the style-1 palms over sand, the
+remix evil-flavour furniture both sides + the window/banner skip, the
+drunk half-split + the anniversary classic-furniture override, the
+skyblock fixed-anchor/clear-window arms, the drunk-variant `a == b`
+world-hash replay. The classic pins stay STALE-BY-DESIGN (the merge gate
+re-pins; `world_hash.rs`'s note stands).
+
