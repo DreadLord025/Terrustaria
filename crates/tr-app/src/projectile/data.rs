@@ -1052,6 +1052,10 @@ pub const NEBULA_ARCANUM: u16 = 617;
 /// `ProjectileID.NebulaArcanumSubshot` (618) — the Arcanum's arm (aiStyle
 /// 119, 18x30, `timeLeft = 420`, local-immunity 20).
 pub const NEBULA_ARCANUM_SUBSHOT: u16 = 618;
+/// `ProjectileID.NebulaArcanumExplosionShotShard` (620) — the shard the
+/// Arcanum's death scatters (aiStyle 29's own 620 arm,
+/// `Projectile.cs:37672-37704`; S1-E-21h d77's Kill-host port).
+pub const NEBULA_ARCANUM_SHARD: u16 = 620;
 // S1-P-i22 — the magic guns + tomes' shots (`Player.ItemCheck_Shoot` census,
 // `Player.cs:47056-49468`). Every id is the verbatim `ProjectileID` value;
 // the `SetDefaults` arms are cited per row in [`proj_data`].
@@ -2821,6 +2825,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `tileCollide = false`, `penetrate = -1`, `timeLeft = 420`,
             // local-immunity 20; alpha at the 0 reset.
             NEBULA_ARCANUM_SUBSHOT => (18.0, 30.0, 119, -1, 420, 0, false, false, false, (true, 20, false, -1, 0, 1.0)),
+            // `:6681-6690` NebulaArcanumExplosionShotShard — 8x8, aiStyle 29
+            // (the per-kind shard arm), alpha 255, `penetrate = 1`, magic;
+            // the stock tileCollide true / 3600 life (the 40-tick ai[1]
+            // counter kills it first). S1-E-21h d77: the 617's Kill scatter
+            // (`:72354`/`:72370`) spawns it with `ai0` = the 86/90 dust pick.
+            NEBULA_ARCANUM_SHARD => (8.0, 8.0, 29, 1, TIME_LEFT_DEFAULT, 0, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:6793-6804` LastPrism — 14x18, aiStyle 75, `penetrate = -1`,
             // `tileCollide = false` (`drawLayer = 7`/`ignoreWater` dropped);
             // the channel keep-alive and the 6x laser spawn are Phase 4's.
@@ -4305,7 +4315,7 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | BALL_OF_FROST | MAGNET_SPHERE_BALL | MAGNET_SPHERE_BOLT
                 | INFERNO_FORK_BOLT | INFERNO_BLAST | LOST_SOUL | SPECTRE_WRATH
                 | VENOM_FANG | FROST_BOLT | TYPHOON | LEAF
-                | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
+                | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT | NEBULA_ARCANUM_SHARD
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
         ),

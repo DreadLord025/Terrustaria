@@ -7109,6 +7109,49 @@ impl Projectile {
         self.kill_step(world);
     }
 
+    /// S1-E-21h d77 — `AI_029_GemStaffs`'s 620 shard arm
+    /// (`Projectile.cs:37672-37704`): the Nebula Arcanum's death-scatter
+    /// shard. The `ai[1]` age counter kills past 40 (the C# `Kill()` has
+    /// NO early return — the velocity writes below land on the dead slot
+    /// too, the `ai_falling_star` daylight-kill precedent), then the
+    /// 0.2 gravity with the 18 cap and the ×0.98 X drag. The dust loops
+    /// (`:37687-37703`, the `(int)ai[0]` type + the `(60-ai[1])/60` fade)
+    /// are the plain `NewDust` overload — ZERO explicit draws, the bodies
+    /// skip with the dust pool. The movement is `HandleMovement`'s
+    /// 522/620 arm (`:18796-18806`): a blocked axis reflects at −1 (the
+    /// `ai_nebula_arcanum` probe shape, no restitution), then the
+    /// integrate. The shard's `Kill()` dust census rides the death hook
+    /// (`betsy_arcanum_kill`, `:72394-72417`).
+    fn ai_nebula_shard(&mut self, world: &World) {
+        // `:37675-37680` — the counter + the 40-tick kill.
+        self.ai[1] += 1.0;
+        if self.ai[1] > 40.0 {
+            self.kill();
+        }
+        // `:37681-37686` — the gravity, the 18 cap, the X drag.
+        self.vel.y += 0.2;
+        if self.vel.y > 18.0 {
+            self.vel.y = 18.0;
+        }
+        self.vel.x *= 0.98;
+        // `HandleMovement`'s 620 arm (`:18796-18806`): the blocked-axis
+        // reflection, then the post-reflection integrate (`:19858`).
+        if self.tile_collide {
+            let last = self.vel;
+            let hit_x =
+                crate::player::collides_rect(world, self.pos.x + self.vel.x, self.pos.y, self.w, self.h);
+            let hit_y =
+                crate::player::collides_rect(world, self.pos.x, self.pos.y + self.vel.y, self.w, self.h);
+            if hit_x {
+                self.vel.x = -last.x;
+            }
+            if hit_y {
+                self.vel.y = -last.y;
+            }
+        }
+        self.pos += self.vel;
+    }
+
     /// `AI()`'s aiStyle-84 Charged Blaster Laser 461 arm
     /// (`Projectile.cs:31405-31410` + `:31486-31499` + `:31553-31618`): the
     /// key-linked 460 rider. The beam hangs 16 px ahead of the holder along
@@ -8159,7 +8202,8 @@ impl Projectile {
     /// `AI_029_GemStaffs` (`Projectile.cs:37643-37827`) → the bolts'
     /// `AI_029_GemStaffs_ActuallyGemStaffs` (`:37829-38001`): the gem-staff
     /// family (kinds 121-126 and 597 — the C#'s `else` arm; the 521/522/619/
-    /// 620/731 rider kinds have no ported row and no arm here). The state —
+    /// 731 rider kinds have no ported row and no arm here; the 620 shard
+    /// gained its row + arm with S1-E-21h d77's Kill-host port). The state —
     /// the owner-only target refresh, the homing steering, the SwirlTwins
     /// sinusoid pair, the FastThenSlow shrink and the rotation — then the
     /// movement, which is `HandleMovement`'s gem branch (`:17996-18056`) in
@@ -17764,6 +17808,11 @@ impl ProjectilePool {
                             // is the `else` branch, `:37823-37826`).
                             if self.slots[i].kind == CRYSTAL_PULSE {
                                 self.slots[i].ai_crystal_pulse(world);
+                            // S1-E-21h d77 — the 620 Nebula shard's own arm
+                            // (`:37672-37704`): the 40-tick counter, the
+                            // gravity/drag, the blocked-axis reflection.
+                            } else if self.slots[i].kind == NEBULA_ARCANUM_SHARD {
+                                self.slots[i].ai_nebula_shard(world);
                             } else {
                                 self.slots[i].ai_gem_staff(world, npcs, owner, player.as_deref())
                             }
@@ -19983,10 +20032,41 @@ impl ProjectilePool {
                 // dropped — main's i16 `dart_electro_firework_kill` below
                 // owns the 442 arm (:73528-73552), keeping both would
                 // double-spawn the sphere.)
+                // S1-E-21h d77 — `Kill()`'s 710 Betsy Arrow burst
+                // (`Projectile.cs:71652-71679`): the ai[1] latch, the
+                // 40-box centre-snap, `Damage()` through it, the Item14
+                // cue at the post-resize position and the dust census.
+                // C# body order: ahead of the 634/635/661/617 blasts
+                // (d78's `magic_death_blast` / g3's `nebula_spirit_onyx_kill`
+                // land their hooks here at the merge) and the gem arm.
+                let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                if !died_out_of_world {
+                    self.betsy_arrow_kill(i, npcs, doll_flags(player.as_deref()), rng, luck);
+                }
+                // S1-E-21h d77 — `Kill()`'s 617 Nebula Arcanum burst
+                // (`Projectile.cs:72278-72373`): the 176-box centre-snap,
+                // the penetration open, `Damage()`, the Item14 cue at the
+                // post-resize position, the dust/gore census, then the
+                // owner-gated 618 sweep + the 620 shard scatter.
+                if !died_out_of_world {
+                    self.nebula_arcanum_kill(i, npcs, doll_flags(player.as_deref()), rng, luck, local_owner);
+                }
+                // S1-E-21h d77 — `Kill()`'s 618/620 Nebula subshot/shard
+                // dust census (`Projectile.cs:72394-72417`): the 618's
+                // `ai[0] = 86` latch (`:72398`) + the ten-dust `Next(3)`
+                // gate census. No cue — the arm is sound-free.
+                if !died_out_of_world
+                    && matches!(self.slots[i].kind, NEBULA_ARCANUM_SUBSHOT | NEBULA_ARCANUM_SHARD)
+                {
+                    if self.slots[i].kind == NEBULA_ARCANUM_SUBSHOT {
+                        self.slots[i].ai[0] = 86.0; // `:72398`
+                    }
+                    crate::projectile_ai_misc::nebula_shard_kill_draws(rng);
+                }
                 // `Kill()`'s gem arm (`:75425-75484`): the gem bolts' death
                 // burst — the AoeExplosion damage rides the dying slot, so it
-                // runs at the same death hook the blast does.
-                let luck = player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                // runs at the same death hook the blast does. (The luck read
+                // hoisted above the d77 Kill-host arms — same value.)
                 self.gem_bolt_aoe(i, npcs, doll_flags(player.as_deref()), rng, luck);
                 // `Kill()`'s debris arm (`Kill_ExplodeTiles` `:77369-77385`,
                 // called from `Kill()` `:77258-77261`): the trio's death
@@ -20123,11 +20203,11 @@ impl ProjectilePool {
     /// 661/659 no-restore recentres play at `centre − blast/2`. The 681
     /// goblin bomb's centre cue rides the queue's 0.5 volumeScale term; the
     /// 452/454 Phantasmal cues are cue-first (int ids 29/4); the 1088
-    /// acorn's Dig plays at Center. Still deferred: the 710/617 bursts
-    /// (their Kill resize+Damage writes are unported on every pushed
-    /// branch — the f20 slice-D ports are the AI_001 flight overlays, not
-    /// the Kill arms), listed in ANALYSIS "The projectile sound wave,
-    /// part 3".
+    /// acorn's Dig plays at Center. The 710/617 bursts NOW arm too —
+    /// their Kill resize+Damage hosts are ported on THIS branch
+    /// (`betsy_arrow_kill`/`nebula_arcanum_kill`, the d77 Kill-host
+    /// wave), so their cues ride those arms at the C# post-resize play
+    /// points, NOT this pre-hook map (the 661/659 derived-read shape).
     fn kill_tail_cue(&mut self, slot: usize) {
         let p = &self.slots[slot];
         let pos = p.pos;
@@ -20147,6 +20227,10 @@ impl ProjectilePool {
             // `:71112` — the Fairy Queen shot's Item10 at Center (the dust
             // census rides `fairy_queen_death_draws` below the hook).
             932 => Some((2, 10, center.x, center.y, 1.0)),
+            // `:70978` — the Torch God fireball's Item10 at Center (the
+            // 20× Next(3) dust-gate census is the g65 lane's; the row +
+            // AI_184 arm live on d19 `1054c396`).
+            949 => Some((2, 10, center.x, center.y, 1.0)),
             // `:71782`/`:71802` — the DD2 javelin/ballista Dig thud.
             662 | 685 | 680 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:71906` — the DD2 Goblin Bomb's 0.5-volume blast cue
@@ -20176,6 +20260,21 @@ impl ProjectilePool {
             659 if p.ai[0] >= 0.0 => Some((2, 14, center.x - 40.0, center.y - 40.0, 1.0)),
             // `:72716` — the Blood Arrow's Dig thud.
             819 => Some((0, 0, pos.x, pos.y, 1.0)),
+            // `:72616` — the Truffle Spore's Dig thud (the int overload's
+            // Style 27 is unused by case 0, kept for the census mapping;
+            // the 10-dust + NextFloat scale + 3-gore census is the g65/g16
+            // lanes'; the row + aiStyle-112 arm live on d12 `54cbe238`).
+            590 => Some((0, 27, pos.x, pos.y, 1.0)),
+            // `:72571` — the Stardust Jellyfish's `PlaySound(4, (int)X,
+            // (int)Y, 7)` NPCDeath cry. CUE-POSITION DERIVED: the C# plays
+            // AFTER the 80-box recentre + `Damage()` (`:72567-72570`), so
+            // the read is centre − 40 (the 661/659 no-restore shape — the
+            // resize+Damage host itself is the unported state remainder,
+            // d11's aiStyle-102 port is the flight machine only). The id-4
+            // int façade gains style 7 (`NPC_Killed_7`, asset verified on
+            // disk); the 4+20+20+10 dust census is the g65 lane's. The row
+            // lives on d11 `e0395afc`.
+            539 => Some((4, 7, center.x - 40.0, center.y - 40.0, 1.0)),
             // `:72851` — the Flairon bubble's Item54 pop.
             405 => Some((2, 54, pos.x, pos.y, 1.0)),
             // `:72989` — the Phantasmal Eye's death moan: the int overload
@@ -20191,6 +20290,10 @@ impl ProjectilePool {
             // the play precedes the 208×208 recentre + `Damage()`
             // (`:73017-73044`).
             454 => Some((4, 6, pos.x, pos.y, 1.0)),
+            // `:73259` — the Toxic Flask cloud's Item54 pop (the 25×
+            // velocity-roll dust census is the g65 lane's; the row +
+            // aiStyle-91 arm live on d10 `1f0b60e9`).
+            523 => Some((2, 54, pos.x, pos.y, 1.0)),
             // `:73294` — the Crystal Pulse's Item110 (the 522 shard ring
             // `:73324` is the unported state remainder).
             521 => Some((2, 110, pos.x, pos.y, 1.0)),
@@ -20245,11 +20348,21 @@ impl ProjectilePool {
             225 => Some((6, 0, pos.x, pos.y, 1.0)),
             // `:74545` — the Frost Arrow's Dig thud.
             120 => Some((0, 0, pos.x, pos.y, 1.0)),
+            // `:74619`/`:74683` — the rope coils' Dig thud, gated
+            // `ai[1] == 0` (a coil that placed any rope dies silent —
+            // the placement walk bumps ai[1] per tile, d4 `4fa74b3c`'s
+            // `ai_rope_coil`; the trail-dust census is the g65 lane's).
+            171 | 475 | 505 | 506 if p.ai[1] == 0.0 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74736` — the Bone Arrow's Dig thud (the 1124 bone-shard
             // spawn `:74748` is the unported state remainder).
             117 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74762` — the friendly Snowball's Item51 splat.
             166 => Some((2, 51, pos.x, pos.y, 1.0)),
+            // `:75127`/`:75151` — the Super Star / its slash's Item10 (the
+            // star-ring dust + the screen-gated 7-gore census is the
+            // g65/g16 lanes'; the rows + aiStyle-151/152 arms live on d16
+            // `d414afbc`).
+            728 | 729 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:75214` — the Holy Arrow / falling star's Item10 (the star
             // spawn rides `special_arrow_kill` below the hook).
             91 | 92 => Some((2, 10, pos.x, pos.y, 1.0)),
@@ -20265,8 +20378,18 @@ impl ProjectilePool {
             359 => Some((2, 27, pos.x, pos.y, 1.0)),
             // `:75350`/`:75365` — the Frost Blast / Frost Hydra's Item27.
             309 | 308 => Some((2, 27, pos.x, pos.y, 1.0)),
+            // `:75376` — the Forbidden Sign's shot Dig thud (the 15+30
+            // dust census is the g65 lane's; the 112-box burst resize +
+            // Damage rides a9 `8c4fded8`'s `gem_bolt_aoe` 1120 branch at
+            // the merge — the cue precedes every write, so the pre-hook
+            // read is exact).
+            1120 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75515` — the Blizzard's Item27.
             337 => Some((2, 27, pos.x, pos.y, 1.0)),
+            // `:75502` — the Glacier Fang shot's Item27 (the Remap-scaled
+            // dust census is the g65 lane's; the row + aiStyle-208 arm
+            // live on d21 `9fa9e9ba`).
+            1115 => Some((2, 27, pos.x, pos.y, 1.0)),
             // `:75537` — the Ice Block's Item27, gated `ai[0] >= 0`
             // (`:75535`); the gel-tile KillTile (`:75551`) is the unported
             // state remainder.
@@ -20291,10 +20414,12 @@ impl ProjectilePool {
             4 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75670` — the Jester's Arrow's Item10.
             5 => Some((2, 10, pos.x, pos.y, 1.0)),
-            // `:75683` — the Starfury / Star Cannon star's Item10 (the
-            // unrowed 12/503 siblings stay out; the 12/955 dust rings are
-            // the visual skip).
-            9 | 955 => Some((2, 10, pos.x, pos.y, 1.0)),
+            // `:75683` — the Starfury / natural Falling Star / Star Cannon
+            // star's Item10 (the 12's row + aiStyle-5 daylight-kill arm
+            // live on d15 `60731d50`; the unrowed 503 sibling stays out;
+            // the 12/955 dust rings + the screen-gated gores are the
+            // g65/g16 lanes').
+            9 | 12 | 955 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:75857` — the hostile Cannonball's Item14 BEFORE the 96×96
             // centre-snap (`:75887`); the resize/Damage burst is the
             // unported state remainder (the cue precedes every write).
@@ -20308,10 +20433,11 @@ impl ProjectilePool {
             // resize (`exploding_bullet_burst` runs below the hook).
             286 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:76038` — the common bullet arm's Item10 (the ported subset
-            // of the C#'s 24-kind list; the unrowed 257/302/576/577/876
-            // siblings stay out).
+            // of the C#'s 24-kind list plus the 576 NebulaLaser — its row
+            // + AI_001 overlay live on d11 `e0395afc` / f20 `7d6e2b72`;
+            // the unrowed 257/302/577/876 siblings stay out).
             14 | 20 | 36 | 83 | 84 | 88 | 100 | 104 | 110 | 180 | 207 | 242 | 259
-            | 279 | 285 | 287 | 357 | 389 | 968 => Some((2, 10, pos.x, pos.y, 1.0)),
+            | 279 | 285 | 287 | 357 | 389 | 576 | 968 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76053` — the Shimmer Arrow's Dig thud (the Vector2 int
             // overload `PlaySound(0, base.position)`).
             1006 => Some((0, 0, pos.x, pos.y, 1.0)),
@@ -20319,9 +20445,10 @@ impl ProjectilePool {
             660 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76122` — the Moonlord Bullet's Item10.
             638 => Some((2, 10, pos.x, pos.y, 1.0)),
-            // `:76136` — the Ball of Fire's Item10 (the unrowed 321
-            // sibling stays out).
-            15 => Some((2, 10, pos.x, pos.y, 1.0)),
+            // `:76136` — the Ball of Fire / Flaming Jack's Item10 (the
+            // 321's row + aiStyle-55 arm live on d6 `451cace1`; the
+            // 20×2 dust census is the g65 lane's).
+            15 | 321 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76148` — the Ball of Frost's Item10.
             253 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76160` — the friendly/hostile Cursed Flame's Item10.
@@ -20373,6 +20500,188 @@ impl ProjectilePool {
         if let Some((id, style, x, y, volume)) = cue {
             self.pending_proj_sounds.push((id, style, x, y, 0.0, volume));
         }
+    }
+
+    /// S1-E-21h d77 — `Kill()`'s 710 DD2BetsyArrow burst
+    /// (`Projectile.cs:71652-71679`): `ai[1] = -1` (the AI_001 overlay's
+    /// spent latch), the manual recentre `position = Center; width =
+    /// height = 40; Center = position` (the `Resize(40,40)` centre-keep,
+    /// `:22353-22359`), `Damage()` through the 40-box (the
+    /// `damage_pve_boxed` seam — the local-NPC-immunity −1 pair rides it),
+    /// then `SoundID.Item14` at the POST-resize `base.position`
+    /// (= centre − 20) and the 2+10+5 dust census (bodies skipped, draws
+    /// kept — [`crate::projectile_ai_misc::betsy_arrow_death_draws`]).
+    /// No penetration write, no restore, no owner gate in the C# arm —
+    /// the `Damage()` PVE half's `owner == Main.myPlayer` gate
+    /// (`:12504`) folds to the simulated-slot set (the pool only updates
+    /// local-owned friendly shots, the `moonlord_arrow_kill` precedent).
+    /// Kind-gated, one-shot per death (a dead slot never returns to
+    /// `active`).
+    fn betsy_arrow_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+    ) {
+        if self.slots[slot].kind != 710 {
+            return;
+        }
+        let center = {
+            let p = &self.slots[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        {
+            let p = &mut self.slots[slot];
+            p.ai[1] = -1.0; // `:71654`
+            // `:71655-71657` — the 40-box centre-snap.
+            p.w = 40.0;
+            p.h = 40.0;
+            p.pos = center - Vec2::splat(20.0);
+        }
+        // `:71658` — `Damage()` through the resized box.
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // `:71659` — the Item14 cue at the post-resize position.
+        let (sx, sy) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y)
+        };
+        self.pending_proj_sounds.push((2, 14, sx, sy, 0.0, 1.0));
+        // `:71660-71678` — the dust census.
+        crate::projectile_ai_misc::betsy_arrow_death_draws(rng);
+    }
+
+    /// S1-E-21h d77 — `Kill()`'s 617 NebulaArcanum burst
+    /// (`Projectile.cs:72278-72373`): the manual recentre to 176×176
+    /// (`:72280-72282`, the centre-keep), `maxPenetrate = penetrate = -1`
+    /// (`:72283-72284`), `Damage()` through the 176-box, then
+    /// `SoundID.Item14` at the POST-resize `base.position` (= centre − 88)
+    /// and the 4+30×2+10+10 dust + 2 gore census
+    /// ([`crate::projectile_ai_misc::nebula_arcanum_death_draws`]). The
+    /// owner-gated tail (`:72327-72372`): the 618-subshot sweep (every
+    /// active 618 whose `ai[1]` carries THIS slot's key bits dies — its
+    /// own `Kill()` runs inline: the `ai[0] = 86` latch + the ten-dust
+    /// census, the `floating_turret_kill` nested-order precedent), then
+    /// the two 620-shard scatter loops (`Next(5,9)` counts, the
+    /// `SelectRandom(86, 90)` dust-type pick + its complement, per shard
+    /// the `RandomVector2(-30,30)` position pair — two `NextDouble`s —
+    /// the `Next(-100,101)` velocity pair with the zero-redraw, the
+    /// normalize + the Y-flip gate (0.2 / 0.4) and the speed roll). The
+    /// shards spawn through `spawn_with_data_ai_owned` with `ai0` = the
+    /// dust pick; the C# `NewProjectile` takes the CENTRE — the port's
+    /// seam takes the top-left (the 8×8 shard's half-box subtracts). The
+    /// corpse-flag lift keeps the dying 617 out of the free-slot scan
+    /// (the `moonlord_arrow_kill` precedent). Kind-gated, one-shot per
+    /// death.
+    fn nebula_arcanum_kill(
+        &mut self,
+        slot: usize,
+        npcs: &mut [Npc],
+        dolls: (bool, bool),
+        rng: &mut dyn DropRng,
+        luck: f32,
+        local_owner: u8,
+    ) {
+        if self.slots[slot].kind != NEBULA_ARCANUM {
+            return;
+        }
+        let center = {
+            let p = &self.slots[slot];
+            Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        {
+            let p = &mut self.slots[slot];
+            // `:72280-72282` — the 176-box centre-snap.
+            p.w = 176.0;
+            p.h = 176.0;
+            p.pos = center - Vec2::splat(88.0);
+            // `:72283-72284` — the penetration open.
+            p.max_penetrate = -1;
+            p.penetrate = -1;
+        }
+        // `:72285` — `Damage()` through the resized box.
+        self.damage_pve_boxed(slot, npcs, dolls, rng, luck);
+        // `:72286` — the Item14 cue at the post-resize position.
+        let (sx, sy) = {
+            let p = &self.slots[slot];
+            (p.pos.x, p.pos.y)
+        };
+        self.pending_proj_sounds.push((2, 14, sx, sy, 0.0, 1.0));
+        // `:72287-72326` — the dust/gore census.
+        crate::projectile_ai_misc::nebula_arcanum_death_draws(rng);
+        // `:72327` — the owner gate (`Main.myPlayer == this.owner`).
+        if self.slots[slot].owner != local_owner {
+            return;
+        }
+        // `:72329-72335` — the 618 sweep: the key's raw bit pattern (the
+        // `ProjectileKey` float union, `DataStructures/ProjectileKey.cs`).
+        let key_bits = self.key_of(slot) as u32;
+        for j in 0..self.slots.len() {
+            if self.slots[j].active
+                && self.slots[j].kind == NEBULA_ARCANUM_SUBSHOT
+                && self.slots[j].ai[1].to_bits() == key_bits
+            {
+                self.kill(j);
+                // The swept 618's own `Kill()` (`:72394-72417`): the
+                // `ai[0] = 86` latch + the ten-dust census, inline (the
+                // swept slot never reaches its own death hook).
+                self.slots[j].ai[0] = 86.0;
+                crate::projectile_ai_misc::nebula_shard_kill_draws(rng);
+            }
+        }
+        // `:72336-72339` — the scatter counts + the dust-type pick.
+        let count_a = rng.next_range(5, 9);
+        let count_b = rng.next_range(5, 9);
+        let dust_a = if rng.next_range(0, 2) == 0 { 86.0 } else { 90.0 };
+        let dust_b = if dust_a == 86.0 { 90.0 } else { 86.0 };
+        let (damage, kb, owner) = {
+            let p = &self.slots[slot];
+            ((p.damage as f64 * 0.65) as i32, p.knock_back * 0.8, p.owner)
+        };
+        // The corpse-flag lift: the C# `GetNextSlot` ran while the 617
+        // was STILL active (`active = false` lands at `:77262`).
+        self.slots[slot].active = true;
+        // (count, the Y-flip gate, the speed roll range, the dust pick)
+        for (count, flip, lo, hi, dust) in [
+            (count_a, 0.2f32, 70, 101, dust_a),
+            (count_b, 0.4f32, 40, 81, dust_b),
+        ] {
+            for _ in 0..count {
+                // `:72342`/`:72358` — `Center + RandomVector2(-30, 30)`
+                // (two `NextDouble`s, X then Y — `Utils.cs:2431-2434`).
+                let px = center.x + (60.0 * rng.next_double() as f32 - 30.0);
+                let py = center.y + (60.0 * rng.next_double() as f32 - 30.0);
+                // `:72343-72347` — the velocity pair + the zero-redraw.
+                let mut vx = rng.next_range(-100, 101) as f32;
+                let mut vy = rng.next_range(-100, 101) as f32;
+                while vx == 0.0 && vy == 0.0 {
+                    vx = rng.next_range(-100, 101) as f32;
+                    vy = rng.next_range(-100, 101) as f32;
+                }
+                let mut v = Vec2::new(vx, vy).normalize();
+                // `:72349-72352`/`:72365-72368` — the downward flip.
+                if v.y > flip {
+                    v.y *= -1.0;
+                }
+                // `:72353`/`:72369` — the speed roll.
+                v *= rng.next_range(lo, hi) as f32 * 0.1;
+                // The 8×8 shard's half-box: the C# takes the centre.
+                self.spawn_with_data_ai_owned(
+                    NEBULA_ARCANUM_SHARD,
+                    owner,
+                    px - 4.0,
+                    py - 4.0,
+                    v.x,
+                    v.y,
+                    damage,
+                    kb,
+                    dust,
+                    0.0,
+                );
+            }
+        }
+        self.slots[slot].active = false;
     }
 
     /// S1-P-i16 — the dart/electrosphere/fireworks `Kill()` arms, in the
@@ -24613,17 +24922,365 @@ mod s1_e_21h_sound_tests {
         pool.kill_tail_cue(slot);
         assert!(pool.drain_proj_sounds().is_empty(), "the spent flame is silent");
         pool.kill(slot);
-        // The 710/617 bursts stay DEFERRED: their Kill resize+Damage writes
-        // are unported on every pushed branch (f20's slice-D ports are the
-        // AI_001 flight overlays `:57549`/`:55734`, not the Kill arms).
+        // The 710/617 bursts NOW arm — their Kill resize+Damage hosts are
+        // ported on this branch (`betsy_arrow_kill`/`nebula_arcanum_kill`),
+        // so their cues ride THOSE arms (post-resize reads), never this
+        // pre-hook map: the map stays silent for both kinds.
         for kind in [710u16, 617] {
             let slot = pool
                 .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
                 .expect("the row spawns");
             pool.kill_tail_cue(slot);
-            assert!(pool.drain_proj_sounds().is_empty(), "kind {kind} stays deferred");
+            assert!(
+                pool.drain_proj_sounds().is_empty(),
+                "kind {kind}'s cue rides its Kill-host arm, not the pre-hook map"
+            );
             pool.kill(slot);
         }
+    }
+
+    /// S1-E-21h d77 Kill-host wave — the 710 Betsy Arrow burst
+    /// (`Projectile.cs:71652-71679`): the ai[1] latch, the 40-box
+    /// centre-snap, the boxed Damage, the Item14 cue at centre − 20 and
+    /// the 2+10+5 dust census (12 RotatedByRandom pairs = 24 floats,
+    /// 12 NextDouble radii, zero ranges). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_betsy_arrow_kill_bursts_at_forty() {
+        struct CensusRng {
+            ranges: Vec<(i32, i32)>,
+            floats: usize,
+            doubles: usize,
+        }
+        impl DropRng for CensusRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0
+            }
+            fn next_double(&mut self) -> f64 {
+                self.doubles += 1;
+                0.0
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(710, 500.0, 500.0, 0.0, 0.0, 20, 2.0)
+            .expect("the betsy row");
+        let center = {
+            let p = &pool.slots()[slot];
+            (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        let mut rng = CensusRng { ranges: Vec::new(), floats: 0, doubles: 0 };
+        pool.betsy_arrow_kill(slot, &mut [], (false, false), &mut rng, 0.0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (40.0, 40.0), "the 40 box (`:71656`)");
+        assert_eq!(p.ai[1], -1.0, "the spent latch (`:71654`)");
+        assert_eq!(
+            (p.pos.x, p.pos.y),
+            (center.0 - 20.0, center.1 - 20.0),
+            "the centre-keep recentre (`:71655-71657`)"
+        );
+        let cues = pool.drain_proj_sounds();
+        assert_eq!(cues.len(), 1, "one Item14 per death");
+        assert_eq!(
+            (cues[0].0, cues[0].1, cues[0].2, cues[0].3, cues[0].5),
+            (2, 14, center.0 - 20.0, center.1 - 20.0, 1.0),
+            "the post-resize play point (`:71659`)"
+        );
+        assert_eq!(rng.floats, (2 + 10 + 5) * 2, "the 2+10+5 RotatedByRandom pairs");
+        assert_eq!(rng.doubles, 12, "the 2+10 NextDouble radii (the tail has none)");
+        assert!(rng.ranges.is_empty(), "the betsy census rolls no ranges");
+        // Kind-gated: a non-710 slot draws nothing.
+        let other = pool
+            .spawn_with_data(1, 100.0, 100.0, 0.0, 0.0, 5, 0.0)
+            .expect("the arrow row");
+        let mut rng2 = CensusRng { ranges: Vec::new(), floats: 0, doubles: 0 };
+        pool.betsy_arrow_kill(other, &mut [], (false, false), &mut rng2, 0.0);
+        assert_eq!((rng2.floats, rng2.doubles), (0, 0), "the kind gate refuses");
+        assert!(pool.drain_proj_sounds().is_empty(), "no cue on the refused kind");
+    }
+
+    /// S1-E-21h d77 Kill-host wave — the 617 Nebula Arcanum burst
+    /// (`Projectile.cs:72278-72373`): the 176-box centre-snap, the
+    /// penetration open, the Item14 cue at centre − 88, the dust/gore
+    /// census (54 pairs = 108 floats + 2×(pair) = 4 more, 64+2 doubles,
+    /// 2×7 = 14 ranges), the owner-gated 618 sweep (the key-matched
+    /// subshot dies with its ai[0]=86 latch + its own ten-dust census)
+    /// and the two shard scatter loops. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_nebula_arcanum_kill_bursts_at_176_and_scatters() {
+        struct ScatterRng {
+            ranges: Vec<(i32, i32)>,
+            floats: usize,
+            doubles: usize,
+        }
+        impl DropRng for ScatterRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.ranges.push((min, max));
+                // The velocity pair rolls (1, 0) — the min-0 roll would
+                // make (0, 0) and spin the C#'s zero-redraw forever.
+                if (min, max) == (-100, 101) {
+                    return if self.ranges.iter().filter(|r| **r == (-100, 101)).count() % 2 == 1 {
+                        1
+                    } else {
+                        0
+                    };
+                }
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                self.floats += 1;
+                0.0
+            }
+            fn next_double(&mut self) -> f64 {
+                self.doubles += 1;
+                0.5
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(NEBULA_ARCANUM, 500.0, 500.0, 0.0, 0.0, 100, 4.0)
+            .expect("the arcanum row");
+        let center = {
+            let p = &pool.slots()[slot];
+            (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+        };
+        // A key-linked 618 subshot (the ai[1] raw-bits convention).
+        let key = pool.key_of(slot) as u32;
+        pool.spawn_with_data_ai_owned(
+            NEBULA_ARCANUM_SUBSHOT, 0, 600.0, 500.0, 0.0, 0.0, 50, 0.0,
+            0.0, f32::from_bits(key),
+        )
+        .expect("the subshot row");
+        let mut rng = ScatterRng { ranges: Vec::new(), floats: 0, doubles: 0 };
+        pool.nebula_arcanum_kill(slot, &mut [], (false, false), &mut rng, 0.0, 0);
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h), (176.0, 176.0), "the 176 box (`:72281`)");
+        assert_eq!((p.penetrate, p.max_penetrate), (-1, -1), "the penetration open");
+        assert_eq!(
+            (p.pos.x, p.pos.y),
+            (center.0 - 88.0, center.1 - 88.0),
+            "the centre-keep recentre"
+        );
+        let cues = pool.drain_proj_sounds();
+        assert_eq!(cues.len(), 1, "one Item14 per death");
+        assert_eq!(
+            (cues[0].0, cues[0].1, cues[0].2, cues[0].3),
+            (2, 14, center.0 - 88.0, center.1 - 88.0),
+            "the post-resize play point (`:72286`)"
+        );
+        // The swept subshot: no live 618 remains (the sweep killed it and
+        // its slot is the FIRST free slot the scatter reuses — the C#
+        // `GetNextSlot` shape); its inline census drew the ten Next(3)
+        // gates (min-roll 0 takes the branch → +2 ranges each).
+        assert!(
+            pool.slots().iter().all(|p| !(p.active && p.kind == NEBULA_ARCANUM_SUBSHOT)),
+            "the key-matched 618 dies (`:72331-72334`)"
+        );
+        // The dust/gore census: 4+30×2+10+10 pairs + 2 gore pairs = 172
+        // floats; 4+60+2 doubles = 66 (+20 scatter RandomVector2); the
+        // gore rows 14 ranges + the 618's 10 gates + 20 branch ranges +
+        // the scatter's 2 counts + 1 pick + 10×(2 velocity + 1 speed).
+        assert_eq!(rng.floats, 4 * 2 + 30 * 4 + 10 * 2 + 10 * 2 + 2 * 2, "the census pairs");
+        assert_eq!(rng.doubles, 4 + 60 + 2 + 5 * 2 + 5 * 2, "the radii + the RandomVector2 pairs");
+        assert_eq!(rng.ranges.len(), 14 + 30 + 3 + 10 * 3, "gore + 618 + scatter ranges");
+        // The shards: min-roll counts 5+5, both loops spawn.
+        let shards: Vec<_> = pool
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == NEBULA_ARCANUM_SHARD)
+            .collect();
+        assert_eq!(shards.len(), 10, "the two Next(5,9) counts (min roll = 5 each)");
+        assert_eq!(shards[0].damage, 65, "(int)(100 * 0.65) (`:72354`)");
+        assert!((shards[0].knock_back - 3.2).abs() < 1e-5, "kb × 0.8");
+        // The dust picks: SelectRandom min-roll = 86, its complement 90.
+        assert!(shards[..5].iter().all(|p| p.ai[0] == 86.0), "loop A's pick");
+        assert!(shards[5..].iter().all(|p| p.ai[0] == 90.0), "loop B's complement");
+        // Loop A's velocity: the scripted (1, 0) pair normalized, no
+        // Y-flip (0 < 0.2), speed Next(70,101) min = 7.0 → (7, 0).
+        assert!(
+            (shards[0].vel.x - 7.0).abs() < 1e-4 && shards[0].vel.y.abs() < 1e-4,
+            "the normalized (1,0) velocity × 7.0"
+        );
+        // The corpse-flag lift restored: the dying 617 stays dead.
+        assert!(!pool.slots()[slot].active, "the 617 corpse stays dead");
+        // The zero-redraw gate (`:72344-72347`): a (0,0) velocity pair
+        // re-rolls BOTH axes until non-zero.
+        struct ZeroFirstRng {
+            velocity_rolls: usize,
+        }
+        impl DropRng for ZeroFirstRng {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (-100, 101) {
+                    self.velocity_rolls += 1;
+                    // Every group of 4: (0,0) → the redraw, then (1,0) →
+                    // escape. Both loops redraw once.
+                    return if self.velocity_rolls % 4 == 3 { 1 } else { 0 };
+                }
+                if (min, max) == (5, 9) {
+                    return 1; // one shard per loop
+                }
+                min
+            }
+            fn next_float(&mut self) -> f32 {
+                0.0
+            }
+            fn next_double(&mut self) -> f64 {
+                0.5
+            }
+        }
+        let mut pool2 = ProjectilePool::new();
+        let s2 = pool2
+            .spawn_with_data(NEBULA_ARCANUM, 500.0, 500.0, 0.0, 0.0, 100, 4.0)
+            .expect("the arcanum row");
+        let mut zr = ZeroFirstRng { velocity_rolls: 0 };
+        pool2.nebula_arcanum_kill(s2, &mut [], (false, false), &mut zr, 0.0, 0);
+        // Each loop: 2 zero rolls + 2 escape rolls = 8 total.
+        assert_eq!(zr.velocity_rolls, 8, "the (0,0) pair re-rolled in BOTH loops");
+        let n = pool2
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == NEBULA_ARCANUM_SHARD)
+            .count();
+        assert_eq!(n, 2, "both loops scatter one shard (the Next(5,9) scripted to 1)");
+    }
+
+    /// S1-E-21h d77 re-probe wave — the stay-deferred sites whose hosts
+    /// NOW live on the pushed d-lanes arm on `kill_tail_cue`: the 949
+    /// Torch God (d19), the rope coils' ai[1]==0 gate (d4), the 590
+    /// Truffle Spore (d12), the 539 jellyfish's derived centre−40 cry
+    /// (d11), the 523 flask (d10), the 12 natural star (d15), the 321
+    /// Flaming Jack (d6), the 576 NebulaLaser (d11/f20), the 728/729
+    /// Super Star pair (d16), the 1115 Glacier shot (d21), the 1120
+    /// Forbidden sign (a9). The rows are IN-FLIGHT (not on this base), so
+    /// the witness drives `kill_tail_cue` on hand-built slots — the map
+    /// is kind-keyed, the row only gates the spawn. WRITTEN NOT RUN.
+    #[test]
+    fn s1_e_21h_d77_the_reprobe_wave_arms_the_landed_hosts() {
+        // (kind, (id, style), position mode): 0 = pos, 1 = centre,
+        // 2 = centre − 40 (the 539's derived 80-box recentre).
+        let cases: [(u16, (u16, i32), u8); 13] = [
+            (949, (2, 10), 1),
+            (171, (0, 0), 0),
+            (475, (0, 0), 0),
+            (505, (0, 0), 0),
+            (506, (0, 0), 0),
+            (590, (0, 27), 0),
+            (539, (4, 7), 2),
+            (523, (2, 54), 0),
+            (12, (2, 10), 0),
+            (321, (2, 10), 0),
+            (576, (2, 10), 0),
+            (728, (2, 10), 0),
+            (729, (2, 10), 0),
+        ];
+        for (kind, want, mode) in cases {
+            let mut pool = ProjectilePool::new();
+            let slot = 0;
+            pool.slots_mut()[slot] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(80.0, 80.0),
+                w: 10.0,
+                h: 10.0,
+                ..Default::default()
+            };
+            let (x, y) = match mode {
+                1 => (85.0, 85.0),
+                2 => (45.0, 45.0),
+                _ => (80.0, 80.0),
+            };
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue per death");
+            assert_eq!(
+                (queued[0].0, queued[0].1, queued[0].2, queued[0].3, queued[0].5),
+                (want.0, want.1, x, y, 1.0),
+                "kind {kind}'s cue payload"
+            );
+        }
+        // The 1115/1120 pair (kept out of the array for its 13-slot shape).
+        for (kind, want) in [(1115u16, (2u16, 27i32)), (1120, (0, 0))] {
+            let mut pool = ProjectilePool::new();
+            pool.slots_mut()[0] = Projectile {
+                active: true,
+                kind,
+                owner: 0,
+                pos: Vec2::new(80.0, 80.0),
+                w: 10.0,
+                h: 10.0,
+                ..Default::default()
+            };
+            pool.kill_tail_cue(0);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue per death");
+            assert_eq!(
+                (queued[0].0, queued[0].1, queued[0].2, queued[0].3),
+                (want.0, want.1, 80.0, 80.0),
+                "kind {kind}'s cue payload"
+            );
+        }
+        // The rope-coil gate: a coil that placed rope (ai[1] > 0) dies
+        // silent (`:74617`/`:74681`).
+        let mut pool = ProjectilePool::new();
+        pool.slots_mut()[0] = Projectile {
+            active: true,
+            kind: 171,
+            owner: 0,
+            pos: Vec2::new(80.0, 80.0),
+            w: 14.0,
+            h: 14.0,
+            ai: [0.0, 3.0, 0.0, 0.0],
+            ..Default::default()
+        };
+        pool.kill_tail_cue(0);
+        assert!(pool.drain_proj_sounds().is_empty(), "the placed coil is silent");
+    }
+
+    /// S1-E-21h d77 Kill-host wave — the 620 shard row + AI arm
+    /// (`Projectile.cs:6681-6690` / `:37672-37704` / `:18796-18806`):
+    /// 8×8 aiStyle 29 alpha 255 penetrate 1 magic, the 40-tick counter
+    /// kill (no early return — the gravity lands on the dead slot), the
+    /// 0.2 gravity + 18 cap + ×0.98 drag, the blocked-axis −1 reflection.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_nebula_shard_row_and_forty_tick_fuse() {
+        let d = proj_data(NEBULA_ARCANUM_SHARD).expect("the shard row landed");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate, d.alpha), (8.0, 8.0, 29, 1, 255));
+        assert!(d.magic, "`magic = true` (`:6687`)");
+        assert!(d.tile_collide, "the stock tileCollide (`:775`)");
+        let mut w = World::new("t".into(), 64, 64);
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        let mut p = Projectile {
+            active: true,
+            kind: NEBULA_ARCANUM_SHARD,
+            owner: 0,
+            pos: Vec2::new(300.0, 100.0),
+            vel: Vec2::new(2.0, 0.0),
+            w: 8.0,
+            h: 8.0,
+            tile_collide: true,
+            ..Default::default()
+        };
+        // Tick 1: the counter 1, the gravity 0.2, the drag ×0.98.
+        p.ai_nebula_shard(&w);
+        assert_eq!(p.ai[1], 1.0);
+        assert!((p.vel.y - 0.2).abs() < 1e-6, "the 0.2 gravity");
+        assert!((p.vel.x - 2.0 * 0.98).abs() < 1e-6, "the ×0.98 drag");
+        assert!(p.active, "alive at 1");
+        // The 40-tick fuse: tick 41 kills (ai[1] > 40), the writes still
+        // land on the dead slot (no early return, `:37677-37686`).
+        for _ in 0..40 {
+            p.ai_nebula_shard(&w);
+        }
+        assert_eq!(p.ai[1], 41.0);
+        assert!(!p.active, "the >40 kill (`:37677-37680`)");
+        assert!(p.vel.y <= 18.0, "the 18 cap held");
     }
 }
 

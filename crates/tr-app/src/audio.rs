@@ -149,6 +149,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_4", 4),
     ("NPC_Killed_5", 4),
     ("NPC_Killed_6", 4),
+    // S1-E-21h d77 — the Stardust Jellyfish's death cry
+    // (`Projectile.cs:72571`'s `PlaySound(4, x, y, 7)`) — the
+    // `Sounds/NPC_Killed_7.xnb` asset verified on disk.
+    ("NPC_Killed_7", 4),
     // The Wyvern's death cue (`NPC.cs:9951`'s `NPCDeath8`, S1-D-3 wyvern)
     // — the `Sounds/NPC_Killed_8.xnb` asset ships with the content.
     ("NPC_Killed_8", 4),
@@ -1418,7 +1422,10 @@ impl Audio {
     /// (`NPC.cs:39059`) and the Moon parts' laser wind-up
     /// `PlaySound(4, pos, 6)` (`NPC.cs:41838`/`:42338`/`:42611`).
     /// S1-E-21h d77 adds style 19 — the Sharknado bolt's `Kill()` cry
-    /// (`Projectile.cs:73763`), drained on the `UpdateProjectiles` stream.
+    /// (`Projectile.cs:73763`), drained on the `UpdateProjectiles` stream —
+    /// and style 7, the Stardust Jellyfish's `Kill()` cry (`:72571`, the
+    /// re-probe wave: the row lives on d11, the cue's position is the
+    /// derived centre − 40 post-recentre read).
     pub fn play_npc_death_int(
         &mut self,
         style_num: i32,
@@ -1431,6 +1438,9 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             6 => "NPC_Killed_6",
+            // S1-E-21h d77 — the Stardust Jellyfish's style-7 cry
+            // (`Projectile.cs:72571`).
+            7 => "NPC_Killed_7",
             19 => "NPC_Killed_19",
             22 => "NPC_Killed_22",
             _ => return None,
@@ -3925,6 +3935,32 @@ mod tests {
         assert_eq!(cue, Some("Zombie_103"), "the eye's death moan slot");
         assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
         assert!(SFX_CUES.iter().any(|(n, t)| *n == "Zombie_103" && *t == 29));
+    }
+
+    /// S1-E-21h d77 re-probe wave — the id-4 int façade gains style 7 (the
+    /// Stardust Jellyfish's `Kill()` cry, `Projectile.cs:72571`): one
+    /// `Next(-10, 11)` pitch draw after the gate (the case-4 contract), the
+    /// `NPC_Killed_7` bank row present, the muted play draw-free. WRITTEN
+    /// NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_jellyfish_cry_rides_the_case4_int_facade() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11);
+        let cue = audio.play_npc_death_int(7, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("NPC_Killed_7"), "the jellyfish's style-7 cry");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
+        assert!(SFX_CUES.iter().any(|(n, t)| *n == "NPC_Killed_7" && *t == 4));
+        // Muted: the gate refuses BEFORE the draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_npc_death_int(7, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted cry is draw-free");
     }
 
     /// S1-E-21 wave C — the NPC death play's RNG contract
