@@ -87,7 +87,7 @@ fn rects_intersect(ax: f32, ay: f32, aw: f32, ah: f32, bx: f32, by: f32, bw: f32
 /// campfire-validate mismatch kills the slime walk produced (the pool
 /// drains them into item spawns). `old_velocity` is NOT read here — the
 /// death kick writes `velocity` itself and the death hook distinguishes
-/// the scale death by `scale <= 0` (see [`gun_stream_death_draws`]).
+/// the scale death by `scale <= 0` (see `projectile_gun_splash.rs`).
 pub(crate) fn gun_stream(
     p: &mut Projectile,
     world: &mut World,
