@@ -19149,6 +19149,72 @@ or minimap is actually drawing, so the TE walk stays off the hot path.
 the hover text feeds the map's text line through `ui::text::hud_text` (the C#
 `ref text`).
 
+## The map player pins / death markers / misc + revenge icons (W4-e17, code-only 2026-11-21)
+
+`crates/tr-app/src/map_player_icons.rs` ports the `Main.DrawMap` passes the
+icon layers and the NPC heads sit between, both branches wired in
+`app/frame/draw.rs`:
+
+- **The player pins** — the 255-player head loops (fullscreen
+  `Main.cs:55931-55976`, minimap `:55712-55766`) over
+  `DrawPlayerMapIcon_CanBeSeen` (`:56076-56097`) and
+  `GetPlayerHeadBordersColor` (`:56610-56629`, the `teamColor` table
+  `:6657-6662`). The local head rides the existing
+  `render/entities.rs::draw_player_map_icon` composite; the remote peers
+  draw the same composite through their `PlayerNet` snapshots (the
+  `render/tiles.rs:1218` convention — position + netOffset, facing,
+  frames; `gfxOffY` 0). The head hover writes the player name
+  (`:55959`/`:55738`); the minimap's two insets differ (heads
+  `(6,6)..(w-16,h-14)` `:55726`, deaths `(8,8)..(w-18,h-16)` `:55752`).
+- **The death markers** — `DrawPlayerDeathMarker` (`:56446-56464`): the
+  `MapDeath` sheet centred at `headScale`, the hover box the head box
+  shifted `(-4,-4)`. `Player.KillMe`'s stamp (`Player.cs:38846-38848`:
+  `lastDeathPostion = Center`, `lastDeathTime = DateTime.Now`,
+  `showLastDeath = true`) lands on `Player::start_death`; the hover reads
+  `Game.PlayerDeathTime` ("{0} died {1} ago") through
+  `Lang.LocalizedDuration(abbreviated: false, showAllAvailableUnits:
+  false)` — `ui/resources.rs::localized_duration_full` adds the
+  culture-driven abbreviation (`Lang.cs:1161`) and the English long unit
+  names to the existing abbreviated form.
+- **The misc icons** — `DrawMiscMapIcons` (`:56466-56539`): the
+  Potion-of-Return home/exit portals (`Extra_175`/`Extra_173`, the
+  `(pos + (0, -height/2))/16` transform FLOORED, `Rectangle.Contains`
+  clip, `Utils.CenteredRectangle` hover) and the last-hit golf ball
+  (`Extra_176` + the ball's own `Projectile[type]` frame 0; the hover rect
+  is the MARKER's, captured before the ball draw `:56528`).
+  `GolfState::last_hit_ball_for_draw` exposes `GetLastHitBall`'s four
+  guards (`GolfState.cs:102-109`) for the draw side; the caller resolves
+  the live pool slot by `who_am_i` (the `update_golf_state` convention).
+- **The revenge markers** — `RevengeMarker.DrawMapIcon`
+  (`CoinLossRevengeSystem.cs:252-266`): the coin tier picks the sheet
+  (`<100` copper, `<10000` silver, `>=1000000` platinum, else gold — the
+  `MapDeath` assignment at `:261` is dead), frame `(1,8)` row 0, centred;
+  `DrawMapIcons` (`:482-496`) keeps the LAST hovered marker;
+  `UseMouseOver` (`:268-273`) draws `ItemSlot.DrawMoney` horizontal
+  (`ItemSlot.cs:3652-3684`): four coin icons at `mouse/drawScale + (-24,
+  0) + (24*i + 45, 50)` with the 999-capped counts under them (the
+  `ItemStack` font, origin `(0, lineSpacing)`, scale 0.75, four-way black
+  border). `Utils.CoinsSplit` (`Utils.cs:1048-1060`) is ported verbatim.
+
+The `ref text` precedence chains are rebuilt per the C# write order:
+fullscreen tile name (`:55784-55913`) → revenge/misc (`:55922-55923`) →
+NPC heads (`:55926`) → player names (`:55959`) → icon layers (`:55996`) →
+the death duration (`:55984-55986`, `num19` wins over the revenge
+`UseMouseOver`); minimap layers (`:55703`) → revenge/misc
+(`:55705-55706`) → NPC heads (`:55709`) → peer names (`:55738`) → the
+death duration (`:55772-55774`).
+
+Documented drops: the wormhole-potion teleport hover
+(`:55960-55975`/`:55998-56005`) is MP-only and unported (`HasUnityPotion`,
+`UnityTeleport`); the remote peers carry no team/hostile/lastDeath sync
+(`PlayerNet`), so they read as team 0 / not hostile and draw no death
+markers; the `mapStyle == 2` overlay's own pin/death loops
+(`:55653-55692`) ride the overlay branch (unwired, the P4 plan's
+Uncertainty 7). The minimap passes fold the `MapScale` batch transform
+into the positions/sizes and compare the screen mouse against the scaled
+rects (the `minimap_origin_raw` convention, the same as the NPC head
+pass). 9 `w4_e17_*` witnesses WRITTEN NOT RUN (code-only mode).
+
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14; S1-E-3, 2026-11-17)
 
 `crates/tr-core/src/particles.rs` is the `Main.dust` analog: the C# keeps the pool as the static `Main.dust[6001]` array plus the three static pressure counters (`Dust.dCount`, `lavaBubbles`, `SandStormCount`, `Dust.cs:12-16`), and the port carries the same global-pool semantics вЂ” one pool the App owns, spawns addressed by slot, slot 6000 the refuse sentinel `NewDust` returns and never scans (`Main.cs:66985`, `Dust.cs:79`/`:103`). The spawn path is a 1:1 transcription of `Dust.cs:10-407`: the guard chain (`:77-101`), the off-screen cull with the `400*(1-dCount)` margin (`:89-97`), the first-inactive-slot scan and the five pressure bands (`:103-152`), the default block with the per-100 frame shift (`:153-193`), the `ChildSafety` re-type arm (`:194-213`, `ChildSafety.cs:33`) and the per-type tweak chain (`:214-252`). The pool draws from the caller-passed stream (the `DustRng` seam, the C# `Next`/`NextFloat` conversions `UnifiedRandom.cs:120-141`), so per-consumer streams are preserved: the pool's band rolls are the only added draws on the clients' streams. The sand spawn site additionally regained the C# `NewDust` velocity/scale rolls the stand-in had skipped (`Sandstorm.cs:226`; the final 0.9 scale pin unchanged), and `Settings::blood` arms `pool.child_safety` at spawn вЂ” blood on is the vanilla default (the gate skipped), blood off sets `ChildSafety.Disabled` false and the re-type fires.
