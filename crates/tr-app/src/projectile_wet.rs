@@ -35,8 +35,12 @@
 //! * The `try/catch` (`:16794-16815`) — the port's probes are infallible
 //!   (the tile grid is bounds-checked); the catch's `active = false` arm is
 //!   unreachable, dropped.
-//! * `Shimmer()` (`:17009-17012`) — the shimmer-transform lane (W4-e19/f47),
-//!   outside the claimed window.
+//! * `Shimmer()` (`:17009-17012`) — SUPERSEDED (W4-d53 FINAL): g2's STAGED
+//!   helper (`63a6db269`, `Projectile::shimmer`) is now ACTIVATED — the
+//!   dispatch runs the `:17011` caller-gate right after this machine (the
+//!   authoritative `shimmer_wet` writer), the g2d-active probe found no
+//!   pushed activation branch so the wiring lands here. The item-side
+//!   shimmer transforms stay e19/f47's lane.
 //! * `HandleMovement(wetVelocity)`'s wet velocity scaling (`:17612-17655`:
 //!   ×0.5 water / ×0.25 honey / ×0.375 shimmer) — the movement lane, outside
 //!   the window; the port's arms integrate movement inside the AI dispatch

@@ -702,6 +702,14 @@ pub const SPEAR_KINDS: [u16; 21] = [
 /// `:10316-10339`).
 pub const MUSHROOM_SPORE: u16 = 131;
 pub const CHLOROPHYTE_SPORE_CLOUD: u16 = 228;
+/// `ProjectileID.ChlorophyteOrb` (229, `ProjectileID.cs:1012`) — the
+/// Chlorophyte Orb staff's orb (aiStyle 44, `Projectile.cs:3151-3163`).
+/// W4-d53 FINAL: the Shimmer() activation's `:22403` kind arm names it;
+/// the ROW + AI machine are the pushed W4-g2 lane's (`81c4ab85`) — this
+/// constant is the merge keep-one (g2's data.rs carries the identical
+/// `pub const CHLOROPHYTE_ORB: u16 = 229;`, drop one at merge). The orb is
+/// rowless on THIS branch, so the kind arm is inert until g2's row lands.
+pub const CHLOROPHYTE_ORB: u16 = 229;
 pub const THUNDER_SPEAR_BOLT: u16 = 732;
 pub const NORTH_POLE_SNOWFLAKE: u16 = 343;
 pub const NORTH_POLE_FLAKE: u16 = 344;
