@@ -17514,6 +17514,19 @@ impl ProjectilePool {
                         // (aiStyle 167): the 856's CatmullRom arc back to the
                         // owner. The light write SKIPPED (no pool layer).
                         167 => self.slots[i].ai_sparkle_guitar(owner),
+                        // W4-c39 — `AI_166_Dove` (`Projectile.cs:47540-47610`,
+                        // the dispatch `:36627-36630`): the released dove (851)
+                        // and the lantern-night lantern (855). The arm's light
+                        // cast is the frame's entity-light feed (skipped); the
+                        // bounce rides `dove_movement` (HandleMovement's
+                        // per-type arm, `:18336-18361`).
+                        166 => {
+                            let wind = self.wind_speed;
+                            self.slots[i].ai_166_dove(rng, wind);
+                            if self.slots[i].active {
+                                self.slots[i].dove_movement(world);
+                            }
+                        }
                         // S1-P-i16 — the aiStyle-34 fireworks rockets
                         // (`AI()` `Projectile.cs:27136-27188`): the
                         // velocity-pointing rotation + the ai[1] launch

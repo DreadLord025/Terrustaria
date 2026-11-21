@@ -568,6 +568,21 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
+                        // W4-c39 — `AI_166_Dove`'s lantern light cast
+                        // (`Projectile.cs:47568-47569`): `(1, 0.6, 0.1) *
+                        // (1 - alpha/255)` at the lantern's centre. The AI
+                        // writes it per tick (not the SetDefaults `light`
+                        // slice), so it rides the feed directly.
+                        if p.kind == crate::projectile::RELEASE_LANTERN {
+                            let num2 = 1.0 - p.alpha as f32 / 255.0;
+                            let cx = (p.pos.x + p.w * 0.5) / TILE_PX;
+                            let cy = (p.pos.y + p.h * 0.5) / TILE_PX;
+                            self.entity_lights.add(
+                                cx as i32,
+                                cy as i32,
+                                [num2, 0.6 * num2, 0.1 * num2],
+                            );
+                        }
                     }
                     // The Dust `UpdateDust` lights (S1-E-5, dust family):
                     // the RNG-free AddLight arms of the FIRST ladder
