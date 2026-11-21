@@ -336,6 +336,87 @@ closure (the fire-seeded UpdateTime stream stays put this tick, fires the
 next), the mutual-exclusion pair (live rain blocks the slime roll; live
 slime rain blocks the fire-seeded start arms).
 
+## 7. Snow-stream conflict adjudication + the g67b-post-union fold (EXECUTED)
+
+The Lead's adjudication round: g11's research/83-addendum (`d892d8d4` on
+`task/W4-g11-dust-main-sites-1`) F1 claims `snowing()` rides the GLOBAL
+bare-`Main.rand`; this branch's §4 fold had kept the PRIVATE splitmix.
+**Verdict: g11 is RIGHT — the private stream is retired (F1 applied).**
+
+### The call-chain proof (Main.cs re-read in full, :16774-17292)
+
+* `Main.Update` (`:16774`) calls `Main.snowing()` at **`:17238`** — inside
+  the Update body itself, after `UpdateWeather` (`:17228-17231`) and
+  `Main.Ambience()` (`:17233`, waterfall/lava only — no swap), before
+  `Sandstorm.EmitDust` (`:17247`).
+* The world simulation runs LATER: `:17278-17281` gates
+  `this.DoUpdateInWorld()` (`:17726`), whose FIRST statement is
+  `using (Main.SwapRandom("DoUpdateInWorld"))` (`:17732`). Every other
+  swap scope in the game — the 13 nested wrappers of
+  `DoUpdateInWorld_Inner` (`:17749-17809`), `SpawnNPC` (`:17887`),
+  `UpdateLiquid` (`WorldGen.cs:71529`) — is nested INSIDE that block.
+  There is **no `SwapRandom("UpdateWorld")` key** (the 17-key census,
+  `app/rng.rs`, transcribed from those lines).
+* `RandomSwap.Swap`/`Dispose` (`Main.cs:103-120`) restore the previous
+  instance on scope exit, so at `:17238` NO swap is live: the instance is
+  the bare `Main.rand` seeded once at `Initialize` (`:6463`,
+  `DateTime.Now.Ticks` — the port's recorded world-seed deviation,
+  `NamedRngs::global()`).
+* Therefore snowing's draws interleave with the global stream's other
+  pre-swap consumers (the ambience scheduler `:17214-17216`, the
+  chest-eat cues, chat/menu rolls). The WEATHER-2 per-consumer convention
+  covers the rain rig's OWN consumers, not this site.
+
+### F1/F5/F7 applied (`099df89e`)
+
+* **F1**: `Snow` struct + its splitmix (`new`/`next_u64`/`rand01`/
+  `next_int`) + the `App.snow` field (both init sites) RETIRED.
+  `snow::snowing` is a free fn taking `rng: &mut UnifiedRandom`;
+  `scene_scan::update_scene` passes `app.rngs.global()`; the pool's
+  `NewDust` rides `DustRng for UnifiedRandom` (no `SplitmixRand` adapter).
+* **F5**: the int attempt-loop shape (`(attempt as f32) < num3`, the C#
+  `for (int i…)`), replacing the float accumulator.
+* **F7**: the 8 d130 snow witnesses re-pinned to `UnifiedRandom` (the
+  gates + budget breaks now also pin ZERO stream draws); g11's 3
+  draw-sequence mirrors ported (`w4_g11_snowing_mirrors_the_dry_arm_draw_sequence`,
+  `…_the_storm_arm_with_deerclops` — re-derived on the FROZEN F4 counter,
+  `w4_g11_snowing_breaks_on_the_counter_budget` — the 4096-pin cap 31.2).
+* F2 (4096 HiDef), F3 (in-body `gamePaused`), F4 (counter once per call),
+  F6 (env sourcing) were already folded in §4 — verified unchanged.
+
+### The g67b-post-union fold (`16a792d5`)
+
+The d130d union-exec report (`ec1d73c7`) censused g67 at `006bc04d`
+(docs-only tip claim) — but the g67 branch has FOUR MORE code commits
+(`d2dd8989` kill-arms, `5c9398ea` MakeRain/NewRain census, `2c452eddb`
+cull-kill, `112d1b20` docs+census). **research/134 does NOT exist** on
+`origin/task/W4-g67-weather-rain-splash` (tip `112d1b203`, no 134 file in
+`docs/research/` — re-fetched and verified); the fold-list is the commits
+themselves. Per-item verdicts:
+
+| g67b unique | d130 state at `560a02ea` | action |
+| --- | --- | --- |
+| menu +2000 kill-only arm (`d2dd8989`, `Rain.cs:103-109`) | MISSING ("gameMenu never holds in-world" fold) | FOLDED — `RainInputs.game_menu`, move-first/no-roll/no-probe arm |
+| remix +100 kill-only arm | present (d130 core) | verified, no change |
+| MakeRain AnyDanger 0.05 throttle + floor (`5c9398ea`) | present | verified, no change |
+| MakeRain rising-player window / wind+player drift / clamps / clamped probe | present | verified, no change |
+| MakeRain `:84` menu spawn-through-solids disjunct | MISSING | FOLDED |
+| NewRain gfx-cut `(1+q)/2 < 0.9` | present (real adaptive quality) | verified, no change |
+| NewRain live `GetRainFallVelocity` / scale / frame rolls | present | verified, no change |
+| `NewRainForced` Eyebrella seam (`Rain.cs:135-164`) | MISSING | FOLDED — fixed-slot scan, `maxRain` sentinel |
+| skyblock `SnowTileThreshold` gap note (`SceneMetrics.cs:154-163`) | MISSING | FOLDED (note; the port tracks no skyblock field) |
+| IsItRaining fix (`112d1b20`, `Main.cs:2597`) | MISSING — 5 feeds read the event flag | FOLDED — `Rain::is_it_raining()` feeds the ambience scheduler (frame + netmodules ctx), the music rain branches, the town quiet-sky gate, the storm-lightning relaxation; the fountain scanner (`TileLightScanner.cs:3030`) + `Lang.cs:141` KEEP `Main.raining` (verified) |
+| DrawDust cull-rect + else-kill (`2c452eddb`, `:38832`/`:38847`/`:39020-39022`) | MISSING ("documented widening") | FOLDED — `splash_cull_rect`/`dust_in_cull_rect` in `draw_splashes` AND `snow::draw` (the same loop covers 76) |
+| `ClearRain` (`5c9398ea`, `WorldGen.cs:6672`) | MISSING (cited visual-only, never called) | FOLDED — `Rain::clear_rain` wired into `save_and_quit` |
+| `:64890` start gate | present (§6 f39 fold) | verified, no change |
+
+Witnesses (WRITTEN NOT RUN): 4 g67b arms adapted to the fixed-slot pool +
+`RainInputs` shape (menu-arm census, forced-budget 375 cap,
+clear+IsItRaining semantics, cull-rect geometry) + the 3 g11 snow mirrors
+above. The g67 `spawn_acc` fractional-rate cadence is NOT taken — d130's
+per-tick float attempt loop is the C# `for (i < num)` shape (ceil
+attempts), the closer port.
+
 ## Verification
 
 Code-only mode (per the task brief): no cargo/tests/graphify run. The fix was

@@ -1264,7 +1264,8 @@ The ambient snowfall is `Main.snowing()` (`Main.cs:13032-13116`), ported verbati
 `crate::snow` (W4-d130) — NOT a rain mode: it spawns `Dust` type 76 into the shared pool
 wherever the scene metrics count snow tiles at the surface, storm or no storm. The
 intensity is `pow(count/6000, 4 - 3*cloudAlpha)`, the per-screen budget
-`(int)(500 * viewWidth/1920) * (1 + 2*cloudAlpha)`, the attempt count `1 + 50*cloudAlpha`,
+`(int)(500 * viewWidth/4096) * (1 + 2*cloudAlpha)` (the HiDef `maxScreenW`, see (b)
+below), the attempt count `1 + 50*cloudAlpha`,
 and the `Main.snowDust` population gates the loop (`:13057`, a BREAK not a skip). The
 Deerclops-near fades divide the intensity by 20 and the budget by 3 (`:13047-13052`) and
 drop each flake's scale 0.5. The flake recipe branches on `Main.raining`: dry drift is
@@ -1274,9 +1275,14 @@ drop each flake's scale 0.5. The flake recipe branches on `Main.raining`: dry dr
 second-chain tails (the `*0.99` drag `:2073`, the rotation rebuild `:2081`, the `-0.01`
 fade `:2127`) ride the shared `UpdateDust` tick; `Main.snowDust` lands on `DustPool`
 (head reset `:428`, `++` per live flake `:1747`). The draw is `DrawDust`'s generic path
-(`Main.cs:38968-39018`) with the 8x8 frame at the `(4,4)` origin and the full-dark kill.
-The old biome-gated rain-rig flake approximation (per-flake sine sway, `snow_cap`) is
-retired.
+(`Main.cs:38836-39023`) with the ±1000/±1050 cull rect + else-kill
+(`:38832`/`:38847`/`:39020-39022`, the g67b fix), the 8x8 frame at the `(4,4)` origin and
+the full-dark kill. The RNG is the GLOBAL bare-`Main.rand` stand-in
+(`NamedRngs::global()`): `:17238` sits in `Main.Update` BEFORE `DoUpdateInWorld`
+(`:17280` → the `SwapRandom` wrapper `:17732`), so no swap is live at the call — the
+g11 research/83-addendum F1 adjudication (`docs/research/83-weather-reconcile.md` §7);
+the earlier private snow splitmix was WRONG for this site and is retired. The old
+biome-gated rain-rig flake approximation (per-flake sine sway, `snow_cap`) is retired.
 
 First-pass simplifications, as updated by later tasks: the session-local weather
 schedule is **retired** — M1.4-BG-22 landed the vanilla `rainTime`/`maxRaining` pair
@@ -39378,15 +39384,38 @@ pool's walk, g67's compacted kill order adapted).
 
 **Deliberate deviations / drops (each cited at its site):**
 
-* The `gameMenu` (+2000 bound) kill-only arm (`Rain.cs:103-109`) has no port
-  seam — the drop sim runs in-world only (the frame's weather cluster is
-  pause-gated, the menu never ticks it). The `remixWorld` arm (`:110-116`) IS
-  kept — remix holds in-world (the REMIX seed); g67's fold of it was wrong for
-  the union (research/83 §1).
-* The `DrawDust` 4×4 on-screen cull rect (`Main.cs:38847`, the ±1000/±1050
-  slack box) is not modelled in `draw_splashes`: the spawn cull already dropped
-  off-screen dust and the shared loop kills below-view slots; the widening
-  only matters for dust dragged far off-screen by velocity within one tick.
+* The `gameMenu` (+2000 bound) kill-only arm (`Rain.cs:103-109`) IS ported
+  (g67b `d2dd8989` fold, research/83 §7): `RainInputs.game_menu` carries the
+  flag, the arm moves the drop then kills below `+2000` with NO gate roll,
+  NO splash and NO collision probes. The frame's weather cluster is
+  menu-gated, so production passes the front-state flag for shape — the
+  earlier "no port seam" drop is retired. The `remixWorld` arm (`:110-116`)
+  IS kept — remix holds in-world (the REMIX seed); g67's fold of it was
+  wrong for the union (research/83 §1).
+* The `DrawDust` 4×4 on-screen cull rect (`Main.cs:38832`/`:38847`, the
+  ±1000/±1050 slack box) IS ported (g67b `2c452eddb` fold, research/83 §7):
+  `splash_cull_rect`/`dust_in_cull_rect` carry the world-px geometry, and
+  BOTH draw loops (`draw_splashes` + `snow::draw` — the same `DrawDust`
+  loop covers type 76) apply the `:39020-39022` else-arm DEACTIVATION
+  before the draw. The earlier "documented widening" dropped that kill
+  and was WRONG.
+* `Main.IsItRaining` (`Main.cs:2597`, `cloudAlpha > 0`) — g67b `112d1b20`'s
+  census fix (research/83 §7): `Rain::is_it_raining()` feeds the ambience
+  scheduler's sunny/calm gates (`AmbienceServer.cs:32/:50` — the frame ctx
+  AND the netmodules ctx), the music rain branches
+  (`Main.cs:12859/:12880/:12932/:12973`), the town quiet-sky gate
+  (`:12670/:12674`) and the storm-lightning relaxation
+  (`WorldGen.cs:71871`). The event-flag feeds were wrong through the
+  post-`StopRain` cloud ramp. The fountain scanner
+  (`TileLightScanner.cs:3030`) and the `Lang` Rain substitution
+  (`Lang.cs:141`) read `Main.raining` itself — unchanged.
+* `Rain.ClearRain` (`Rain.cs:22-28`) is wired into `save_and_quit` at the
+  `WorldGen.cs:6672` slot (g67b `5c9398ea` fold): visual-only, the event
+  triple (`raining`/`rainTime`/`maxRaining`) is untouched. `NewRainForced`
+  (`Rain.cs:135-164`) lands as the Eyebrella seam (the
+  `Player.cs:14308-14331` caller is unported — `#[allow(dead_code)]`).
+  The skyblock `SnowTileThreshold` arm (`SceneMetrics.cs:154-163`, 300
+  low-tiles) is a cited gap — the port tracks no `World.skyblock_low_tiles`.
 * The water-surface ripple wording of the task row maps to the splash dust
   itself: the C# `QueueRipple` family (`WaterShaderData.cs:445-467`) has NO
   rain caller — its callers are Gore.cs:967 (drips), the player/NPC/projectile
@@ -39408,3 +39437,17 @@ witnesses keep their stream pins unchanged. The collision witnesses use
 row-30 floor invisible to the real probes. Code-only mode: **written NOT run,
 no cargo/rustc/rustfmt/tests/graphify invoked** (task directive) — the adapted
 witnesses are owed a compile window before merge.
+
+**g67b-post-union fold (research/83 §7, `16a792d5`).** The d130d union-exec
+censused g67 at `006bc04d`; the branch actually carries four more code
+commits (`d2dd8989`/`5c9398ea`/`2c452eddb`/`112d1b20` — tip `112d1b203`).
+research/134 does NOT exist on the g67 branch (re-fetched, verified); the
+fold-list is the commits themselves. Folded: the menu kill-only arm + the
+MakeRain `:84` menu disjunct, `NewRainForced`, the skyblock-threshold gap
+note, the IsItRaining feeds, the cull-rect + else-kill (both draw loops),
+`ClearRain`. Verified already-present: the AnyDanger throttle, the gfx-cut,
+the live-wind velocity, the clamped probe, the `:64890` start gate (§6).
+NOT taken: g67's `spawn_acc` fractional-rate cadence — d130's per-tick
+float attempt loop is the C# `for (i < num)` ceil-attempts shape. 4 new
+`w4_g67_*` witnesses (menu-arm census, forced-budget 375 cap,
+clear+IsItRaining semantics, cull-rect geometry) WRITTEN NOT RUN.
