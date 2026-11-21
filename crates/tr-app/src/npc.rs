@@ -35782,4 +35782,35 @@ mod w4_d44_wire_tests {
         n.find_frame_wave_extra5(K::HellArmoredBones);
         assert_eq!((n.frame, n.frame_counter), (2, 3.0));
     }
+
+    /// W4-d44 wire (wave-B residual) — the hook fires for NO current
+    /// kind: the inertness proof over ALL_KINDS (294/296 skip the hand
+    /// `cs_id` rows + the bestiary net-id fallback on this tip; the
+    /// d38 roster wave owns the kinds and its bestiary ENTRIES rows
+    /// resolve them at merge — research/125 §14). WRITTEN NOT RUN.
+    #[test]
+    fn w4_d44_the_wave_b_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                Npc::find_frame_kind_b_claimed(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the wave-B hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The wave-B claim set is EXACTLY {294,296} — the full exclusion
+    /// sweep: 289 NEVER (the E3 dedupe keeps the d38 inline arm), 295
+    /// is extra6's, and the module's OTHER 22 kinds are NOT claimed by
+    /// this batch (their lanes' coverage stands). Complements the
+    /// residual-pair bridge witness's 289/293/295/297 edge pins.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d44_the_wave_b_claim_excludes_the_other_module_kinds() {
+        for id in [31u16, 34, 75, 77, 78, 79, 80, 82, 85, 86, 104, 109,
+                   110, 122, 140, 155, 167, 174, 177, 197, 206, 289, 630] {
+            assert_eq!(Npc::find_frame_kind_b_claimed(id), None, "{id}");
+        }
+    }
 }

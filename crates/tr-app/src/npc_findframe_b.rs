@@ -37,8 +37,11 @@
 //! and the dust spawns of the case-48 group's OTHER members (60/634 —
 //! not this wave's kinds).
 
-// The `find_frame` wiring is a later wave (the kinds are not in
-// `NpcKind` yet) — the `ammo.rs`/`drawdata_anim.rs` precedent.
+// The `find_frame` wiring landed for the residual fighter pair 294/296
+// (the `find_frame_kind_b` mapper below + the npc.rs `find_frame_wave_b`
+// hook — research/125 §14); the module's OTHER kinds are not in
+// `NpcKind` on this branch yet — the `ammo.rs`/`drawdata_anim.rs`
+// precedent keeps the allow until their lanes' kinds land.
 #![allow(dead_code)]
 
 /// The 25 wave-B kinds, keyed by their VANILLA `NPC.type`
@@ -1120,5 +1123,28 @@ mod tests {
             rows_over(FindFrameKind::GiantCursedSkull, spin, 8),
             [3, 3, 3, 4, 4, 4, 4, 5]
         );
+    }
+
+    /// The wiring seam maps EXACTLY the two residual fighter ids
+    /// (294/296, `NPC.cs:68591/:68593` — research/125 §14); 289 is
+    /// EXCLUDED per the d38 E3 dedupe (the d38 inline arm is the kept
+    /// twin), the module's other 22 kinds are NOT claimed by this
+    /// batch, and the band edges stay outside. WRITTEN NOT RUN.
+    #[test]
+    fn the_wiring_seam_maps_only_the_two_residual_fighter_ids() {
+        assert_eq!(find_frame_kind_b(294), Some(FindFrameKind::AngryBonesBig));
+        assert_eq!(
+            find_frame_kind_b(296),
+            Some(FindFrameKind::AngryBonesBigHelmet)
+        );
+        // 289 NEVER (the E3 keep-inline verdict), 295 is extra6's.
+        assert_eq!(find_frame_kind_b(289), None);
+        assert_eq!(find_frame_kind_b(295), None);
+        // The band edges + the module's other kinds stay outside.
+        for id in [293i16, 297, 31, 34, 75, 77, 78, 79, 80, 82, 85, 86,
+                   104, 109, 110, 122, 140, 155, 167, 174, 177, 197, 206,
+                   630] {
+            assert_eq!(find_frame_kind_b(id), None, "{id}");
+        }
     }
 }
