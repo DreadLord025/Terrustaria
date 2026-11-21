@@ -954,3 +954,502 @@ pub(crate) fn style14_saucer_450(p: &Projectile, world: &World, d: &mut ProjDust
         dust.velocity *= 0.1;
     }
 }
+// =====================================================================
+// Witness tests - WRITTEN, NOT RUN (code-only mode: no cargo/rustc).
+// Every expected value is hand-derived from the cited C# lines; the RNG
+// order is asserted against a scripted stream (the d51/e2 draw-mirror
+// convention). The scratch pool + permissive ctx never cull, so the draw
+// count matches the live empty-pool path.
+// =====================================================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::projectile::{proj_data, Projectile};
+    use tr_core::TILE_PX;
+
+    /// A scripted stream: `ranges` is consumed in order (the gate / argument
+    /// / NewDust-internal draws), `floats` likewise; every draw is recorded.
+    struct Script {
+        ranges: Vec<i32>,
+        floats: Vec<f32>,
+        ri: usize,
+        fi: usize,
+        log: Vec<String>,
+    }
+    impl Script {
+        fn new(ranges: Vec<i32>, floats: Vec<f32>) -> Self {
+            Self { ranges, floats, ri: 0, fi: 0, log: Vec::new() }
+        }
+    }
+    impl DropRng for Script {
+        fn next_range(&mut self, min: i32, max: i32) -> i32 {
+            self.log.push(format!("range({min},{max})"));
+            let v = self.ranges[self.ri];
+            self.ri += 1;
+            v
+        }
+        fn next_float(&mut self) -> f32 {
+            self.log.push("float".to_string());
+            let v = self.floats[self.fi];
+            self.fi += 1;
+            v
+        }
+    }
+
+    fn world() -> World {
+        World::new("f5".into(), 512, 512)
+    }
+
+    fn proj(kind: u16, vx: f32, vy: f32) -> Projectile {
+        let dd = proj_data(kind).expect("the rowed kind");
+        let mut p = Projectile::default();
+        p.active = true;
+        p.kind = kind;
+        p.owner = 0;
+        p.pos = Vec2::new(10.0 * TILE_PX, 10.0 * TILE_PX);
+        p.vel = Vec2::new(vx, vy);
+        p.w = dd.w;
+        p.h = dd.h;
+        p.scale = dd.scale;
+        p.alpha = dd.alpha;
+        p.time_left = dd.time_left;
+        p
+    }
+
+    fn active(pool: &DustPool) -> usize {
+        (0..6000).filter(|&i| pool.slot(i).active).count()
+    }
+
+    /// `:24522-24540` - the Golden Shower trail: 3x dust-170 (inset 14,
+    /// noGravity, x0.1 vel + 0.5xvel, position backed off vel/3*i), then the
+    /// 1-in-8 sparkle (inset 16, scale 0.5, x0.25 vel + 0.5xvel). The gate
+    /// returns 0 (taken): 3 NewDust (6 draws each) + 1 gate + 1 NewDust.
+    #[test]
+    fn w4_f5_style12_golden_trail_spawns_three_plus_sparkle() {
+        let w = world();
+        let p = proj(crate::projectile::GOLDEN_SHOWER, 3.0, 1.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        // 3 trail NewDust (pos.x, pos.y, vel.x, vel.y, frame, scale) x3,
+        // the Next(8) gate = 0, the sparkle NewDust x6.
+        let ranges = vec![0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let mut s = Script::new(ranges, vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style12_golden_trail(&p, &w, &mut d);
+        assert_eq!(active(&pool), 4, "3 trail + 1 sparkle");
+        // The first trail dust: type 170, noGravity, velocity x0.1 + 0.5xvel.
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 170);
+        assert!(t.no_gravity);
+        assert!((t.velocity.x - (0.0 * 0.1 + 3.0 * 0.5)).abs() < 1e-5);
+        assert!((t.velocity.y - (0.0 * 0.1 + 1.0 * 0.5)).abs() < 1e-5);
+        // The sparkle (slot 3): scale 0.5 base, x0.25 vel + 0.5xvel.
+        let sp = pool.slot(3);
+        assert!((sp.scale - 0.5).abs() < 1e-5, "the sparkle scale arg 0.5");
+        assert!((sp.velocity.x - (0.0 * 0.25 + 3.0 * 0.5)).abs() < 1e-5);
+        // The gate draw is the 19th range (after 3x6 = 18 NewDust draws).
+        assert_eq!(s.log[18], "range(0,8)");
+    }
+
+    /// `:24575-24580` - the lava bounce: 4x dust-31 (scale 1.5, x0.6 vel,
+    /// Y -2). No gate draws.
+    #[test]
+    fn w4_f5_style12_lava_burst_spawns_four() {
+        let w = world();
+        let p = proj(crate::projectile::AQUA_SCEPTER, 2.0, 3.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 24], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style12_lava_burst(&p, &w, &mut d);
+        assert_eq!(active(&pool), 4);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 31);
+        assert!((t.scale - 1.5).abs() < 1e-5);
+        assert!((t.velocity.x - 0.0 * 0.6).abs() < 1e-5);
+        assert!((t.velocity.y - (0.0 * 0.6 - 2.0)).abs() < 1e-5);
+    }
+
+    /// `:24601-24602` - the bounced puff: one dust-31 at centre, scale 0.8,
+    /// x0.1 velocity.
+    #[test]
+    fn w4_f5_style12_bounced_puff_is_one_centre_dust() {
+        let w = world();
+        let p = proj(crate::projectile::AQUA_SCEPTER, 4.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 6], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style12_bounced_puff(&p, &w, &mut d);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 31);
+        assert!((t.scale - 0.8).abs() < 1e-5);
+        // NewDustPerfect-style: position = centre (the 0x0 box jitter is +4).
+        let (cx, cy) = p.center();
+        assert!((t.position.x - cx).abs() < 5.0);
+        assert!((t.position.y - cy).abs() < 5.0);
+    }
+
+    /// `:25230-25244` - the 480 flame: first dust-75 unconditional (scale
+    /// +Next(50)*0.01, Y -2), second 1-in-2 (scale +0.3+Next(50)*0.01, x0.1
+    /// vel). Gate returns 0 (taken). Type 75 carries the NewDust per-type
+    /// tweak (a 7th draw: velocity.y override, x0.3 vel.x, x0.7 scale).
+    #[test]
+    fn w4_f5_style14_flame_480_spawns_two_on_taken_gate() {
+        let w = world();
+        let p = proj(480, 1.0, 1.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        // first NewDust (6 + 1 tweak) + Next(50) scale + Next(2) gate=0 +
+        // second NewDust (6 + 1 tweak) + Next(50) scale.
+        let mut s = Script::new(vec![0,0,0,0,0,0,0, 25, 0, 0,0,0,0,0,0,0, 25], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style14_flame_480(&p, &w, &mut d);
+        assert_eq!(active(&pool), 2);
+        assert_eq!(pool.slot(0).dust_type, 75);
+        assert_eq!(pool.slot(1).dust_type, 75);
+        // first scale = (1 + 0)*0.7 + 25*0.01 = 0.95; second = 0.7 + 0.3 + 0.25 = 1.25.
+        assert!((pool.slot(0).scale - 0.95).abs() < 1e-5);
+        assert!((pool.slot(1).scale - 1.25).abs() < 1e-5);
+        assert!(pool.slot(0).no_gravity);
+        assert!(pool.slot(1).no_gravity);
+    }
+
+    /// `:25257-25264` - the Greek Fire: 2-in-3 dust-6 Direct (gate != 0),
+    /// scale +NextFloat*0.8+0.3, velocity +1xvel, Y -2. Type 6 carries the
+    /// NewDust per-type tweak (a 7th draw).
+    #[test]
+    fn w4_f5_style14_greek_fire_spawns_on_two_thirds() {
+        let w = world();
+        let p = proj(crate::projectile::GREEK_FIRE_1, 2.0, 0.5);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        // Next(3) gate = 1 (taken, != 0), NewDust (6 + 1 tweak), NextFloat scale.
+        let mut s = Script::new(vec![1, 0,0,0,0,0,0,0], vec![0.5]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style14_greek_fire(&p, &w, &mut d);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 6);
+        assert!(t.no_gravity);
+        // scale = (1 + 0)*0.7 + 0.5*0.8 + 0.3 = 1.4.
+        assert!((t.scale - 1.4).abs() < 1e-5);
+        // velocity: tweak vel.x = 0*0.3 = 0, vel.y = 0; post Y -2 then + vel:
+        // x = 0 + 2 = 2, y = (0 - 2) + 0.5 = -1.5.
+        assert!((t.velocity.x - 2.0).abs() < 1e-5);
+        assert!((t.velocity.y - (-1.5)).abs() < 1e-5);
+        // The gate is the first draw.
+        assert_eq!(s.log[0], "range(0,3)");
+    }
+
+    /// `:25257` - the Greek Fire gate miss (Next(3) == 0) spawns nothing.
+    #[test]
+    fn w4_f5_style14_greek_fire_misses_on_zero() {
+        let w = world();
+        let p = proj(crate::projectile::GREEK_FIRE_1, 2.0, 0.5);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style14_greek_fire(&p, &w, &mut d);
+        assert_eq!(active(&pool), 0);
+        assert_eq!(s.log.len(), 1, "only the gate draws");
+    }
+
+    /// `:25471-25475` - the Demon Sickle trail: 2x dust-27 (noGravity).
+    /// Type 27 has no per-type tweak (6 draws each).
+    #[test]
+    fn w4_f5_style18_scythe_trail_spawns_two() {
+        let w = world();
+        let p = proj(crate::projectile::DEMON_SICKLE, 3.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 12], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style18_scythe_trail(&p, &w, &mut d);
+        assert_eq!(active(&pool), 2);
+        assert_eq!(pool.slot(0).dust_type, 27);
+        assert!(pool.slot(0).no_gravity);
+        assert!(pool.slot(1).no_gravity);
+    }
+
+    /// `:25576-25583` - the drill spark: 1-in-6 gate, the position offset
+    /// Next(6,10) draws BEFORE NewDust, then the post-arms (X -4, noGravity,
+    /// x0.2 vel, Y = -Next(7,13)*0.15). Type 31 has no tweak.
+    #[test]
+    fn w4_f5_style20_drill_spark_on_taken_gate() {
+        let w = world();
+        let p = proj(crate::projectile::DRILL_COBALT, 5.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        // Next(6) gate=0, Next(6,10) offset=8, NewDust (6), Next(7,13)=10.
+        let mut s = Script::new(vec![0, 8, 0,0,0,0,0,0, 10], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style20_drill_spark(&p, &w, &mut d);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 31);
+        assert!(t.no_gravity);
+        assert!((t.scale - 1.4).abs() < 1e-5);
+        // velocity.Y = -10*0.15 = -1.5.
+        assert!((t.velocity.y - (-1.5)).abs() < 1e-5);
+        // The offset draw is the 2nd, the Y draw is the last.
+        assert_eq!(s.log[1], "range(6,10)");
+        assert_eq!(s.log[8], "range(7,13)");
+    }
+
+    /// `:25576` - the drill spark gate miss (Next(6) != 0) spawns nothing.
+    #[test]
+    fn w4_f5_style20_drill_spark_misses() {
+        let w = world();
+        let p = proj(crate::projectile::DRILL_COBALT, 5.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![1], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style20_drill_spark(&p, &w, &mut d);
+        assert_eq!(active(&pool), 0);
+        assert_eq!(s.log.len(), 1);
+    }
+
+    /// `:25594-25599` - the music note puff: 1-in-3 dust-27 (alpha 80,
+    /// noGravity, x0.2 vel).
+    #[test]
+    fn w4_f5_style21_note_puff_on_taken_gate() {
+        let w = world();
+        let p = proj(crate::projectile::QUARTER_NOTE, 2.0, 1.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0, 0,0,0,0,0,0], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style21_note_puff(&p, &w, &mut d);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 27);
+        assert_eq!(t.alpha, 80);
+        assert!(t.no_gravity);
+        assert!((t.velocity.x - 0.0 * 0.2).abs() < 1e-5);
+    }
+
+    /// `:25665-25667` - the Ice Rod standing dust-67 (noGravity, x0.3 vel).
+    #[test]
+    fn w4_f5_style22_standing_is_one_dust67() {
+        let w = world();
+        let p = proj(crate::projectile::ICE_BLOCK, 1.0, 1.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 6], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style22_standing(&p, &w, &mut d);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 67);
+        assert!(t.no_gravity);
+        assert!((t.velocity.x - 0.0 * 0.3).abs() < 1e-5);
+    }
+
+    /// `:25672-25679` - the Ice Rod placement tick (ai[0] == -1): 10x dust-67
+    /// burst (alpha 0, scale 1.1, noGravity, x1.3 vel).
+    #[test]
+    fn w4_f5_style22_placed_bursts_ten_on_minus_one() {
+        let w = world();
+        let mut p = proj(crate::projectile::ICE_BLOCK, 0.0, 0.0);
+        p.ai[0] = -1.0;
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 60], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style22_placed(&p, &w, &mut d);
+        assert_eq!(active(&pool), 10);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 67);
+        assert!((t.scale - 1.1).abs() < 1e-5);
+        assert!(t.no_gravity);
+    }
+
+    /// `:25681-25685` - the Ice Rod placed puff (ai[0] != -1): 1-in-30
+    /// dust-67 (alpha 100, x0.2 vel). Gate returns 0 (taken).
+    #[test]
+    fn w4_f5_style22_placed_puff_on_thirtieth() {
+        let w = world();
+        let mut p = proj(crate::projectile::ICE_BLOCK, 0.0, 0.0);
+        p.ai[0] = -5.0;
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0, 0,0,0,0,0,0], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style22_placed(&p, &w, &mut d);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.alpha, 100);
+        assert!((t.velocity.x - 0.0 * 0.2).abs() < 1e-5);
+        assert_eq!(s.log[0], "range(0,30)");
+    }
+
+    /// `:25945-25951` - the Crystal Shard first-tick burst: 6x dust-70
+    /// (noGravity, x2.5 vel, x0.9 scale).
+    #[test]
+    fn w4_f5_style24_shard_burst_spawns_six() {
+        let w = world();
+        let p = proj(crate::projectile::CRYSTAL_SHARD_MELEE, 2.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 36], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style24_shard_burst(&p, &w, &mut d);
+        assert_eq!(active(&pool), 6);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 70);
+        assert!(t.no_gravity);
+        assert!((t.scale - 0.9).abs() < 1e-5);
+        assert!((t.velocity.x - 0.0 * 2.5).abs() < 1e-5);
+    }
+
+    /// `:25958-25964` - the Crystal Storm 1-in-4 dust-70 puff (noGravity,
+    /// x0.5 vel, x0.9 scale).
+    #[test]
+    fn w4_f5_style24_storm_puff_on_fourth() {
+        let w = world();
+        let p = proj(crate::projectile::CRYSTAL_STORM, 2.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0, 0,0,0,0,0,0], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style24_storm_puff(&p, &w, &mut d);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 70);
+        assert!((t.scale - 0.9).abs() < 1e-5);
+        assert!((t.velocity.x - 0.0 * 0.5).abs() < 1e-5);
+        assert_eq!(s.log[0], "range(0,4)");
+    }
+
+    /// `:25896-25928` - the Eye Fire (101 -> dust-75, 1-in-2 gate) launch
+    /// dust at num191 = 1.0. The Next(2) gate=0 (taken), NewDust (6+1 tweak),
+    /// the Next(3) post-gate=1 (!= 0, taken: noGravity, x3 scale, x2 vel),
+    /// the x1.5 scale (non-188), x1.2 vel, x1.0 ramp, +vel (75).
+    #[test]
+    fn w4_f5_style23_eye_fire_seventy_five_on_taken_gates() {
+        let w = world();
+        let p = proj(crate::projectile::EYE_FIRE, 2.0, 1.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        // Next(2)=0, NewDust(7), Next(3)=1 (post-gate taken).
+        let mut s = Script::new(vec![0, 0,0,0,0,0,0,0, 1], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style23_eye_fire(&p, &w, &mut d, 1.0);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 75);
+        assert!(t.no_gravity, "the post-gate taken sets noGravity");
+        // scale: (1)*0.7 [tweak] *3 [post] *1.5 [non-188] *1.0 [ramp] = 3.15.
+        assert!((t.scale - 3.15).abs() < 1e-4);
+        // The first gate is Next(2), the post-gate is Next(3).
+        assert_eq!(s.log[0], "range(0,2)");
+        assert_eq!(s.log[8], "range(0,3)");
+    }
+
+    /// `:25896` - the Flames Trap (188 -> dust-6) always fires (num192 == 6,
+    /// no Next(2) gate). The post-gate Next(3)=0 with num192 != 75 means the
+    /// noGravity branch is NOT taken (0 != 0 is false, and the 75 clause is
+    /// false), so the dust keeps gravity.
+    #[test]
+    fn w4_f5_style23_flames_trap_six_always_fires() {
+        let w = world();
+        let p = proj(crate::projectile::FLAMES_TRAP, 2.0, 1.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        // No Next(2) gate (num192 == 6). NewDust(7), Next(3)=0 (post-gate
+        // NOT taken: 0 != 0 false, 75 clause false).
+        let mut s = Script::new(vec![0,0,0,0,0,0,0, 0], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style23_eye_fire(&p, &w, &mut d, 0.25);
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 6);
+        assert!(!t.no_gravity, "the post-gate missed keeps gravity");
+        // scale: (1)*0.7 [tweak] *1.25 [188] *0.25 [ramp] = 0.21875.
+        assert!((t.scale - 0.21875).abs() < 1e-4);
+        // The first draw is NewDust's pos.x (no Next(2) gate).
+        assert_eq!(s.log[0], "range(0,10)");
+    }
+
+    /// `:26461-26468` - the hostile Trident's 20-step dust-27 trail
+    /// (num213 = 5..25). Type 27 has no tweak (6 draws each = 120).
+    #[test]
+    fn w4_f5_style27_hostile_trail_spawns_twenty() {
+        let w = world();
+        let p = proj(crate::projectile::UNHOLY_TRIDENT_HOSTILE, 4.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 120], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style27_hostile_trail(&p, &w, &mut d, Vec2::new(4.0, 0.0));
+        assert_eq!(active(&pool), 20);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 27);
+        assert!((t.scale - 0.9).abs() < 1e-5);
+        // velocity = (oldVel + jitter)*0.25 - vel*5: x = (4+0)*0.25 - 4*5 = -19.
+        assert!((t.velocity.x - (-19.0)).abs() < 1e-4);
+    }
+
+    /// `:26470-26479` - the Enchanted Beam's Next(3) type pick (0->15,
+    /// 1->57, 2->58). The pick draws BEFORE NewDust.
+    #[test]
+    fn w4_f5_style27_enchanted_type_pick() {
+        let w = world();
+        let p = proj(crate::projectile::ENCHANTED_BEAM, 3.0, 0.0);
+        for (pick, want) in [(0, 15), (1, 57), (2, 58)] {
+            let mut pool = DustPool::new();
+            let ctx = test_dust_ctx(&w);
+            let mut s = Script::new(vec![pick, 0,0,0,0,0,0], vec![]);
+            let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+            style27_enchanted(&p, &w, &mut d);
+            assert_eq!(active(&pool), 1);
+            assert_eq!(pool.slot(0).dust_type, want, "pick {pick} -> {want}");
+            assert!((pool.slot(0).scale - 1.25).abs() < 1e-5);
+            assert_eq!(s.log[0], "range(0,3)");
+        }
+    }
+
+    /// `:26480-26487` - the Terra Beam's two dust-107 (x-0.25 vel, the
+    /// second also position -= vel*0.5).
+    #[test]
+    fn w4_f5_style27_terra_spawns_two() {
+        let w = world();
+        let p = proj(crate::projectile::TERRA_BEAM, 3.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 12], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style27_terra(&p, &w, &mut d, Vec2::new(3.0, 0.0));
+        assert_eq!(active(&pool), 2);
+        assert_eq!(pool.slot(0).dust_type, 107);
+        assert_eq!(pool.slot(1).dust_type, 107);
+        // Both x-0.25 vel: x = (3+0)*-0.25 = -0.75.
+        assert!((pool.slot(0).velocity.x - (-0.75)).abs() < 1e-5);
+        assert!((pool.slot(1).velocity.x - (-0.75)).abs() < 1e-5);
+    }
+
+    /// `:26499-26504` - the Sword Beam's pulse dust-64 (x-0.25 vel,
+    /// noGravity). Type 64 carries the NewDust tweak (59..=65, a 7th draw).
+    #[test]
+    fn w4_f5_style27_sword_pulse_is_dust64_nogravity() {
+        let w = world();
+        let p = proj(crate::projectile::SWORD_BEAM, 3.0, 0.0);
+        let mut pool = DustPool::new();
+        let ctx = test_dust_ctx(&w);
+        let mut s = Script::new(vec![0; 7], vec![]);
+        let mut d = ProjDust3 { pool: &mut pool, ctx: &ctx, rng: &mut s };
+        style27_sword_pulse(&p, &w, &mut d, Vec2::new(3.0, 0.0));
+        assert_eq!(active(&pool), 1);
+        let t = pool.slot(0);
+        assert_eq!(t.dust_type, 64);
+        assert!(t.no_gravity);
+        // scale = (1)*0.7 [tweak] *1.5 [arg] = 1.05.
+        assert!((t.scale - 1.05).abs() < 1e-5);
+        // velocity.x = (3*0.3 [tweak] + 0)*-0.25 = -0.225.
+        assert!((t.velocity.x - (-0.225)).abs() < 1e-5);
+    }
+}
