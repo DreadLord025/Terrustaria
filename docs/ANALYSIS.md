@@ -22399,11 +22399,11 @@ three aiStyle-14 bats (GiantBat 93, Slimer 121, IlluminantBat 137) carry
 CaveBat/JungleBat/Hellbat/VoodooDemon rows — NOT a `SetDefaults` row.
 
 **Documented deferrals** (the Wyvern precedent):
-1. **Sheet deferral**: `NPC_<id>` are NOT packed (the atlas stands at the
-   8192 strict-GPU bound); `npc_sheet` returns None and the draw skips.
-   `BESTIARY_NPC_SHEET_IDS` is unchanged; the `portrait_data` arms rest the
-   `SetDefaults` box (the wyvern portrait precedent). The packing +
-   draw-modifier overrides ride the atlas-repack wave.
+1. **Sheet deferral — PARTIALLY RETIRED by the sheets phase below**: 21 of
+   the 33 `NPC_<id>` sheets are now packed (`D35_SHEETS`); the other 12
+   (79/80/84/85/86/103/104/109/110/120/122/140) stay deferred — `npc_sheet`
+   returns None and the draw skips, their `portrait_data` arms rest the
+   `SetDefaults` box (the wyvern portrait precedent).
 2. **AI wiring**: `update_kind_ai`/`find_frame` are no-ops; the family
    machines, the worm chain assembly (`shares_carrier_life` IS extended,
    inert until wiring), the spawner gates and the `npcSlots`/`netAlways`/
@@ -22417,6 +22417,91 @@ CaveBat/JungleBat/Hellbat/VoodooDemon rows — NOT a `SetDefaults` row.
 **Batches (5 kinds/commit)**: A=73,74,75,77,78; B=79,80,82,83,84;
 C=85,86,93,94,95; D=96,97,98,99,100; E=101,102,103,104,109;
 F=110,112,116,120,121; G=122,137,140.
+
+## The W4-d35 sheets phase (2026-11-21 — code-only mode)
+
+The deferred sheets' packing, measured against the REAL retail `.xnb` dims
+through the c4 LZX harness (`tools/_d35_atlas_sim_pinned.js` — a copy of
+b4's `tools/atlas_sim.js`, whose pinned L-8b fallback survives the wave-2
+branch purge; the local harness predates that fix and cannot run).
+
+**Headroom re-measurement FIRST** (`tools/_d35_headroom.js`, the skyline
+waste tie-break packer over the real dims, `verify()` + double-run
+determinism on every scenario):
+- HEAD base (gore landed, no font): **8115 px** main / **8119 px** boot-font
+  — the c4 baseline's 7757/8143 numbers predate the E-4b gore enumeration
+  landing on main (the gore set is now in the DEFAULT loader path,
+  `assets.rs:1353`); the c4 "+46/+24" deltas were measured on the pre-gore
+  set. The wyvern precedent's "~71-px headroom" is stale the same way.
+- The in-flight sibling branches' PUSHED sheet additions (17 branches, 198
+  unique names — `tools/_d35_pushed_sheets.json`, extracted from each
+  branch's `assets.rs` diff vs the wave base `a725acb0`: c4/c6/c7/c9/c10/
+  c24/d34/d38/d84/d127/f15/f23/f29/g55/g57/g58/g71) pack the union at
+  **8530 px — ALREADY +338 OVER the 8192 bound without this wave**. No
+  pushed branch carries a headroom claim (only c4's stale 7757/8143). The
+  cumulative reconciliation belongs to the atlas-repack wave; this branch
+  measures SOLO against HEAD so its own contribution is provably in-bounds.
+
+**Prioritization** (`tools/_d35_idorder.js`): the id-order greedy — walk the
+33 ids ascending, keep a sheet iff BOTH the main and boot-font sets stay
+<= 8192 — packs **21 kinds at 8188 px main / 8188 px font** (4 px headroom;
+`tools/_d35_final_pack.js` re-verifies the exact final layout, deterministic,
+no overlaps). The 12 skipped sheets each overflow at their turn (the
+smallest, NPC_103 56x322, +8 main/+14 font; the largest, NPC_86 126x1312,
++65). A marginal-cost greedy (`tools/_d35_priority.js`) fits only 14 — the
+id order is both the natural batch order and the better pack. Packed:
+73/74/75/77/78/82/83/93/94/95/96/97/98/99/100/101/102/112/116/121/137.
+Deferred: 79/80/84/85/86/103/104/109/110/120/122/140.
+
+**What landed**:
+- `assets.rs`: the 21 `NPC_<id>` rows in `STATIC_SHEET_NAMES` (id order =
+  the packer's input-order tie-break); `BESTIARY_NPC_SHEET_IDS` 181 -> 197
+  (+16 VISIBLE packed kinds — the five Hide kinds 96/97/99/100/112 fold
+  onto the heads 95/98/94, whose rows already exist) + the parallel
+  `bestiary_npc_sheets` vec rows (order witness: `tools/_d35_tables_check.py`).
+- `render/entities.rs`: `D35_SHEETS` (the 21, chained into `npc_sheets`);
+  the draw arms' deferral comments updated per batch; the rotation
+  whitelist gains the ten FindFrame/AI tilt kinds the C# actually rotates
+  (74 Bird `NPC.cs:73634`, 75 Pixie `:74122`, 82 Wraith + 93 GiantBat +
+  137 IlluminantBat `:74858` — the bat-flap group's `velocity.X * 0.1`,
+  94 Corruptor `AI_005` `:50645` atan2-1.57, 102 AnglerFish `AI_016`
+  `:24010` ±0.2-clamped, 116 TheHungryII `:74095/:74100` atan2+3.14 flip,
+  121 Slimer `:74042`, 112 VileSpit `AI_009` `:21568` += 0.4*direction).
+  The data wave's 83/84/95/96-100/101 whitelist rows stand (the worm
+  chain `:51878/:52201`, the cursed weapons' `:25268/:25304` spin, the
+  Clinger's `:22743/:22748` aim). NOT whitelisted (no C# rotation write
+  for the type): 73/77/78/104/109/110/120/140 (the fighters' rotation
+  writes are gated to 471/427/185/428, `NPC.cs:56507/:58631/:58829/:58840`),
+  85 Mimic (aiStyle-25's rotation arm is the WoF's, `:25968`), 86 Unicorn
+  (aiStyle-26's only write is type-546-gated, `:62921`), 103 GreenJellyfish
+  (deferred sheet; its aiStyle-18 writes `:24291/:24334/:24390` land with
+  the sheet), 122 Gastropod (deferred; `:73609` velocity.X*0.05).
+- `ui/bestiary.rs`: the 16 visible packed kinds' `portrait_data` arms ride
+  the sheet's own row height over `Main.npcFrameCount[type]` + the sheet's
+  own width (the c4 swimmers' shape); the 12 deferred kinds keep the
+  SetDefaults-box rest. The draw-offset rows (`bestiary_draw_offsets.rs`)
+  were already verbatim from the data wave — re-verified against
+  `NPCID.cs`'s dictionaries (`tools/_d35_offsets_check.py`): all 21 match
+  (82 Wraith has NO C# row — the port's absence is correct).
+- **Frame-count witness** (`tools/_d35_frames.py`): all 697
+  `NPC_FRAME_COUNT` slots equal `Main.cs:67082-67154` verbatim; the 33
+  kinds' draw-arm literals match both (16/5/4/15/16/16/16/4/6/6/18/16/4/
+  3/1/1/1/1/1/1/5/6/7/16/12/20/1/6/15/4/11/4/15). The Rust witness
+  `the_d35_strips_divide_into_their_vanilla_rows` pins the 21 real-dim
+  strips to whole rows + the deferred-12 exclusion.
+- **ENTRIES repair** (phase 0, commit `d6e4f9b8`): the data wave's batch
+  splices had inserted each batch inside the previous batch's last entry,
+  orphaning six `name:` tails after PossessedArmor — the 28 visible rows
+  are re-emitted well-formed (names unchanged; "World Feeder" is
+  SeekerHead 98's display name, not Corruptor's). 277 heads = 277 closes.
+
+**Still deferred** (the atlas-repack wave): the 12 skipped sheets, the
+sibling-union overflow reconciliation (8530 px), the WraithEye/Chaos
+afterimage overlays (`Main.cs:25713/:25641` — extra textures, not the
+kind's own sheet), the 103 jellyfish `halfSize.Y += 4` anchor term
+(`Main.cs:23077`, pivot-only in the port's collapsed anchor), and the
+AI wiring itself (the rotation whitelist is inert until `find_frame`
+writes `n.rotation`).
 
 ## The Destroyer machine (aiStyle-37, S1-D-3, 2026-11-18 — code-only mode)
 

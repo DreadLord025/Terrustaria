@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(D35_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1254,6 +1255,41 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+];
+
+/// W4-d35 sheets phase: the 71-140 wave's 21 PACKED kinds' own sheets
+/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`. The wave's
+/// other 12 kinds (79/80/84/85/86/103/104/109/110/120/122/140) stay
+/// sheet-deferred (the wyvern precedent): the id-order greedy over the
+/// real `.xnb` dims (`tools/_d35_idorder.js`, the c4 LZX harness) packs
+/// these 21 at 8188 px main / 8188 px boot-font — 4 px under the 8192
+/// strict-GPU bound; every skipped sheet would overflow it. The Hide
+/// kinds 96/97/99/100/112 draw their OWN sheets here even though their
+/// bestiary credit folds onto the head — `texture_net_id`'s vanilla rows
+/// (the fishron-hazard precedent).
+pub(crate) const D35_SHEETS: &[u32] = &[
+    73,  // the Goblin Scout
+    74,  // the Bird
+    75,  // the Pixie
+    77,  // the Armored Skeleton
+    78,  // the Mummy
+    82,  // the Wraith
+    83,  // the Cursed Hammer
+    93,  // the Giant Bat
+    94,  // the Corruptor
+    95,  // the Digger Head
+    96,  // the Digger Body (Hide)
+    97,  // the Digger Tail (Hide)
+    98,  // the World Feeder head
+    99,  // the World Feeder body (Hide)
+    100, // the World Feeder tail (Hide)
+    101, // the Clinger
+    102, // the Angler Fish
+    112, // the Vile Spit (Hide)
+    116, // The Hungry II
+    121, // the Slimer
+    137, // the Illuminant Bat
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3176,64 +3212,64 @@ pub(crate) fn draw_npcs(
             NpcKind::AngryNimbus => {
                 pumpkin_moon_draw(assets.npc_sheet(250), npc_rows(250), n, w, h)
             }
-            // W4-d35 (A): the 73/74/75/77/78 draw arms. **Sheet deferral**:
-            // NPC_73/74/75/77/78 are NOT packed (the atlas stands at the 8192
-            // strict-GPU bound - the wyvern precedent); npc_sheet returns
-            // None and the draw skips. The packing rides the atlas-repack wave.
+            // W4-d35 (A): the 73/74/75/77/78 draw arms. Sheets phase: all
+            // five NPC_73/74/75/77/78 are PACKED (D35_SHEETS, 8188/8188 px
+            // main/font — tools/_d35_final_pack.js); the rows divide the
+            // real strips (40x896/30x120/54x136/40x840/40x896) at the
+            // Main.npcFrameCount counts (16/5/4/15/16, Main.cs:67091).
             NpcKind::GoblinScout => humanoid_draw(assets.npc_sheet(73), 16, n, w, h),
             NpcKind::Bird => generic_anchor(assets.npc_sheet(74), 5, n, w, h),
             NpcKind::Pixie => generic_anchor(assets.npc_sheet(75), 4, n, w, h),
             NpcKind::ArmoredSkeleton => humanoid_draw(assets.npc_sheet(77), 15, n, w, h),
             NpcKind::Mummy => humanoid_draw(assets.npc_sheet(78), 16, n, w, h),
-            // W4-d35 (B): the 79/80/82/83/84 draw arms. **Sheet deferral**:
-            // NPC_79/80/82/83/84 are NOT packed (the atlas stands at the 8192
-            // strict-GPU bound - the wyvern precedent); npc_sheet returns
-            // None and the draw skips. The packing rides the atlas-repack wave.
+            // W4-d35 (B): the 79/80/82/83/84 draw arms. Sheets phase:
+            // NPC_82/83 PACKED (26x200 four rows, 82x492 six rows);
+            // NPC_79/80/84 stay DEFERRED (the id-order greedy skips them:
+            // +23/+23/+18 px over the 8192 bound) — npc_sheet returns None
+            // and the draw skips, the wyvern precedent.
             NpcKind::DarkMummy => humanoid_draw(assets.npc_sheet(79), 16, n, w, h),
             NpcKind::LightMummy => humanoid_draw(assets.npc_sheet(80), 16, n, w, h),
             NpcKind::Wraith => generic_anchor(assets.npc_sheet(82), 4, n, w, h),
             NpcKind::CursedHammer => generic_anchor(assets.npc_sheet(83), 6, n, w, h),
             NpcKind::EnchantedSword => generic_anchor(assets.npc_sheet(84), 6, n, w, h),
-            // W4-d35 (C): the 85/86/93/94/95 draw arms. **Sheet deferral**:
-            // NPC_85/86/93/94/95 are NOT packed (the atlas stands at the 8192
-            // strict-GPU bound - the wyvern precedent); npc_sheet returns
-            // None and the draw skips. The packing rides the atlas-repack wave.
+            // W4-d35 (C): the 85/86/93/94/95 draw arms. Sheets phase:
+            // NPC_93/94/95 PACKED (44x128 four rows, 64x282 three rows,
+            // 30x48 one row); NPC_85/86 stay DEFERRED (the greedy skips
+            // them: +141/+65 px) — npc_sheet returns None, the draw skips.
             NpcKind::Mimic => generic_anchor(assets.npc_sheet(85), 18, n, w, h),
             NpcKind::Unicorn => generic_anchor(assets.npc_sheet(86), 16, n, w, h),
             NpcKind::GiantBat => generic_anchor(assets.npc_sheet(93), 4, n, w, h),
             NpcKind::Corruptor => generic_anchor(assets.npc_sheet(94), 3, n, w, h),
             NpcKind::DiggerHead => generic_anchor(assets.npc_sheet(95), 1, n, w, h),
-            // W4-d35 (D): the 96/97/98/99/100 draw arms. **Sheet deferral**:
-            // NPC_96/97/98/99/100 are NOT packed (the atlas stands at the 8192
-            // strict-GPU bound - the wyvern precedent); npc_sheet returns
-            // None and the draw skips. The packing rides the atlas-repack wave.
+            // W4-d35 (D): the 96/97/98/99/100 draw arms. Sheets phase: all
+            // five PACKED (30x48/30x48/34x48/34x48/34x48, one row each) —
+            // the Hide kinds draw their own sheets (texture_net_id's
+            // vanilla rows), the fishron-hazard precedent.
             NpcKind::DiggerBody => generic_anchor(assets.npc_sheet(96), 1, n, w, h),
             NpcKind::DiggerTail => generic_anchor(assets.npc_sheet(97), 1, n, w, h),
             NpcKind::SeekerHead => generic_anchor(assets.npc_sheet(98), 1, n, w, h),
             NpcKind::SeekerBody => generic_anchor(assets.npc_sheet(99), 1, n, w, h),
             NpcKind::SeekerTail => generic_anchor(assets.npc_sheet(100), 1, n, w, h),
-            // W4-d35 (E): the 101/102/103/104/109 draw arms. **Sheet deferral**:
-            // NPC_101/102/103/104/109 are NOT packed (the atlas stands at the 8192
-            // strict-GPU bound - the wyvern precedent); npc_sheet returns
-            // None and the draw skips. The packing rides the atlas-repack wave.
+            // W4-d35 (E): the 101/102/103/104/109 draw arms. Sheets phase:
+            // NPC_101/102 PACKED (62x210 five rows, 48x168 six rows);
+            // NPC_103/104/109 stay DEFERRED (+8/+54/+106 px) — the draw
+            // skips them, the wyvern precedent.
             NpcKind::Clinger => generic_anchor(assets.npc_sheet(101), 5, n, w, h),
             NpcKind::AnglerFish => generic_anchor(assets.npc_sheet(102), 6, n, w, h),
             NpcKind::GreenJellyfish => generic_anchor(assets.npc_sheet(103), 7, n, w, h),
             NpcKind::Werewolf => humanoid_draw(assets.npc_sheet(104), 16, n, w, h),
             NpcKind::Clown => humanoid_draw(assets.npc_sheet(109), 12, n, w, h),
-            // W4-d35 (F): the 110/112/116/120/121 draw arms. **Sheet deferral**:
-            // NPC_110/112/116/120/121 are NOT packed (the atlas stands at the 8192
-            // strict-GPU bound - the wyvern precedent); npc_sheet returns
-            // None and the draw skips. The packing rides the atlas-repack wave.
+            // W4-d35 (F): the 110/112/116/120/121 draw arms. Sheets phase:
+            // NPC_112/116/121 PACKED (16x16 one row, 110x300 six rows,
+            // 90x168 four rows); NPC_110/120 stay DEFERRED (+138/+40 px).
             NpcKind::SkeletonArcher => humanoid_draw(assets.npc_sheet(110), 20, n, w, h),
             NpcKind::VileSpit => generic_anchor(assets.npc_sheet(112), 1, n, w, h),
             NpcKind::TheHungryII => generic_anchor(assets.npc_sheet(116), 6, n, w, h),
             NpcKind::ChaosElemental => humanoid_draw(assets.npc_sheet(120), 15, n, w, h),
             NpcKind::Slimer => generic_anchor(assets.npc_sheet(121), 4, n, w, h),
-            // W4-d35 (G): the 122/137/140 draw arms. **Sheet deferral**:
-            // NPC_122/137/140 are NOT packed (the atlas stands at the 8192
-            // strict-GPU bound - the wyvern precedent); npc_sheet returns
-            // None and the draw skips. The packing rides the atlas-repack wave.
+            // W4-d35 (G): the 122/137/140 draw arms. Sheets phase: NPC_137
+            // PACKED (44x128 four rows); NPC_122/140 stay DEFERRED (+11/+45
+            // px) — the draw skips them, the wyvern precedent.
             NpcKind::Gastropod => generic_anchor(assets.npc_sheet(122), 11, n, w, h),
             NpcKind::IlluminantBat => generic_anchor(assets.npc_sheet(137), 4, n, w, h),
             NpcKind::PossessedArmor => humanoid_draw(assets.npc_sheet(140), 15, n, w, h),
@@ -3343,6 +3379,29 @@ pub(crate) fn draw_npcs(
                     | NpcKind::WyvernTail
                     // W4-d35 (E): the 101 chain/spin rotations.
                     | NpcKind::Clinger
+                    // W4-d35 sheets phase: the FindFrame velocity tilts —
+                    // 74 the Bird (`NPC.cs:73634`, the 297/298/442 group's
+                    // `velocity.X * 0.1`), 75 the Pixie (`:74122`), 82 the
+                    // Wraith + 93 the Giant Bat + 137 the Illuminant Bat
+                    // (`:74858`, the 48/49/51/60 bat-flap group), 94 the
+                    // Corruptor (`AI_005`'s `:50645` atan2 - 1.57 aim),
+                    // 102 the Angler Fish (`AI_016`'s `:24010` ±0.2-clamped
+                    // `velocity.Y * direction * 0.1`), 116 The Hungry II
+                    // (`:74095`/`:74100` atan2 + the 3.14 flip), 121 the
+                    // Slimer (`:74042`, the demon-eye group's
+                    // `velocity.X * 0.1`).
+                    | NpcKind::Bird
+                    | NpcKind::Pixie
+                    | NpcKind::Wraith
+                    | NpcKind::GiantBat
+                    | NpcKind::Corruptor
+                    | NpcKind::AnglerFish
+                    | NpcKind::TheHungryII
+                    | NpcKind::Slimer
+                    | NpcKind::IlluminantBat
+                    // W4-d35 (F): the 112 Vile Spit's aiStyle-9 spin
+                    // (`NPC.cs:21568`, `rotation += 0.4 * direction`).
+                    | NpcKind::VileSpit
                     // W4-d35 (D): the 96/97/98/99/100 chain/spin rotations.
                     | NpcKind::DiggerBody
                     | NpcKind::DiggerTail
@@ -3662,6 +3721,56 @@ mod anchor_tests {
         }
     }
 
+    /// W4-d35 sheets phase: the 21 packed strips divide into their
+    /// `Main.npcFrameCount[type]` rows (`Main.cs:67082-67154`) — the real
+    /// `.xnb` dims measured by the c4 LZX harness (`tools/_d35_dims.js`).
+    /// A wrong divisor shows as a fractional row here, a squashed sprite
+    /// in game (the boss-strips test's shape).
+    #[test]
+    fn the_d35_strips_divide_into_their_vanilla_rows() {
+        // (kind, sheet w, sheet h, npcFrameCount[type])
+        let cases: &[(NpcKind, f32, f32, u32)] = &[
+            (NpcKind::GoblinScout, 40.0, 896.0, 16),   // NPC_73
+            (NpcKind::Bird, 30.0, 120.0, 5),           // NPC_74
+            (NpcKind::Pixie, 54.0, 136.0, 4),          // NPC_75
+            (NpcKind::ArmoredSkeleton, 40.0, 840.0, 15), // NPC_77
+            (NpcKind::Mummy, 40.0, 896.0, 16),         // NPC_78
+            (NpcKind::Wraith, 26.0, 200.0, 4),         // NPC_82
+            (NpcKind::CursedHammer, 82.0, 492.0, 6),   // NPC_83
+            (NpcKind::GiantBat, 44.0, 128.0, 4),       // NPC_93
+            (NpcKind::Corruptor, 64.0, 282.0, 3),      // NPC_94
+            (NpcKind::DiggerHead, 30.0, 48.0, 1),      // NPC_95
+            (NpcKind::DiggerBody, 30.0, 48.0, 1),      // NPC_96
+            (NpcKind::DiggerTail, 30.0, 48.0, 1),      // NPC_97
+            (NpcKind::SeekerHead, 34.0, 48.0, 1),      // NPC_98
+            (NpcKind::SeekerBody, 34.0, 48.0, 1),      // NPC_99
+            (NpcKind::SeekerTail, 34.0, 48.0, 1),      // NPC_100
+            (NpcKind::Clinger, 62.0, 210.0, 5),        // NPC_101
+            (NpcKind::AnglerFish, 48.0, 168.0, 6),     // NPC_102
+            (NpcKind::VileSpit, 16.0, 16.0, 1),        // NPC_112
+            (NpcKind::TheHungryII, 110.0, 300.0, 6),   // NPC_116
+            (NpcKind::Slimer, 90.0, 168.0, 4),         // NPC_121
+            (NpcKind::IlluminantBat, 44.0, 128.0, 4),  // NPC_137
+        ];
+        for &(kind, w, h, rows) in cases {
+            let net = texture_net_id(kind);
+            assert_eq!(npc_rows(net), rows, "{kind:?}: NPC_{net} rows");
+            assert!(D35_SHEETS.contains(&(net as u32)), "{kind:?} packed");
+            let t = sheet(w, h);
+            let npc = bare(kind);
+            let (tex, fh, size, _) = generic_anchor(Some(&t), rows, &npc, 20.0, 40.0);
+            assert!(tex.is_some());
+            assert_eq!(fh, h / rows as f32, "{kind:?}: whole rows");
+            assert_eq!(size, [w, fh], "{kind:?}: the frame keeps the sheet width");
+            assert!(fh.fract() == 0.0, "{kind:?}: a fractional row means a wrong divisor");
+        }
+        // The 12 deferred kinds stay OUT of the packing list (the wyvern
+        // precedent): their draw arms ask npc_sheet, get None, and skip.
+        for id in [79u32, 80, 84, 85, 86, 103, 104, 109, 110, 120, 122, 140] {
+            assert!(!D35_SHEETS.contains(&id), "NPC_{id} must stay deferred");
+        }
+    }
+
     #[test]
     fn the_family_rows_match_between_the_draw_and_the_machine() {
         // The draw arm slices the sheet by its own row literal and `FindFrame`
@@ -3770,6 +3879,16 @@ mod anchor_tests {
         use crate::assets::STATIC_SHEET_NAMES;
         let packed = |name: &str| STATIC_SHEET_NAMES.contains(&name);
         for &id in PILLAR_SHEETS {
+            let name = format!("NPC_{id}");
+            assert!(
+                packed(&name),
+                "{name} is asked for by `npc_sheet({id})` but never packed"
+            );
+        }
+        // W4-d35 sheets phase: the 21 packed kinds' draw arms ask
+        // `npc_sheet(id)` too — the same audit (the deferred 12 are NOT in
+        // D35_SHEETS, so their None-returning arms stay out of this check).
+        for &id in D35_SHEETS {
             let name = format!("NPC_{id}");
             assert!(
                 packed(&name),

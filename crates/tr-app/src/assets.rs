@@ -1275,6 +1275,37 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        // W4-d35 sheets phase — the 21 packed kinds of the 71-140 wave
+        // (`render/entities.rs`'s D35_SHEETS). The wave's other 12 sheets
+        // (79/80/84/85/86/103/104/109/110/120/122/140) stay DEFERRED: the
+        // id-order greedy over the real .xnb dims (tools/_d35_idorder.js,
+        // the c4 LZX harness) packs these 21 at 8188 px main / 8188 px
+        // boot-font — 4 px under the 8192 strict-GPU bound; every skipped
+        // sheet would overflow (the smallest, NPC_103, +8/+14 px). The
+        // in-flight sibling branches' pushed additions already overflow
+        // the bound on their own (union 8530 px, tools/_d35_headroom.js)
+        // — the atlas-repack wave owns that reconciliation.
+        "NPC_73",
+        "NPC_74",
+        "NPC_75",
+        "NPC_77",
+        "NPC_78",
+        "NPC_82",
+        "NPC_83",
+        "NPC_93",
+        "NPC_94",
+        "NPC_95",
+        "NPC_96",
+        "NPC_97",
+        "NPC_98",
+        "NPC_99",
+        "NPC_100",
+        "NPC_101",
+        "NPC_102",
+        "NPC_112",
+        "NPC_116",
+        "NPC_121",
+        "NPC_137",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1860,7 +1891,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 197] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1895,6 +1926,14 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 181] = [
         // The small-kinds wiring wave (S1-D-3-wire-smallkinds) — appended
         // last so the earlier slots keep their indexes.
         72, 250, 288,
+        // W4-d35 sheets phase — the 16 visible packed kinds' portrait
+        // sheets, appended last so the earlier slots keep their indexes.
+        // The Hide kinds 96/97/99/100/112 are NOT here: their entries fold
+        // onto the head (95/98/94), whose own rows above carry the
+        // portrait; their DRAW sheets ride D35_SHEETS (the texture_net_id
+        // vanilla rows).
+        73, 74, 75, 77, 78, 82, 83, 93, 94, 95,
+        98, 101, 102, 116, 121, 137,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2657,6 +2696,25 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
+                // W4-d35 sheets phase — the 16 visible packed kinds' strips,
+                // in BESTIARY_NPC_SHEET_IDS' appended order (the Hide kinds
+                // 96/97/99/100/112 fold onto the heads' rows above).
+                atlas.sheet("NPC_73").copied(),
+                atlas.sheet("NPC_74").copied(),
+                atlas.sheet("NPC_75").copied(),
+                atlas.sheet("NPC_77").copied(),
+                atlas.sheet("NPC_78").copied(),
+                atlas.sheet("NPC_82").copied(),
+                atlas.sheet("NPC_83").copied(),
+                atlas.sheet("NPC_93").copied(),
+                atlas.sheet("NPC_94").copied(),
+                atlas.sheet("NPC_95").copied(),
+                atlas.sheet("NPC_98").copied(),
+                atlas.sheet("NPC_101").copied(),
+                atlas.sheet("NPC_102").copied(),
+                atlas.sheet("NPC_116").copied(),
+                atlas.sheet("NPC_121").copied(),
+                atlas.sheet("NPC_137").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

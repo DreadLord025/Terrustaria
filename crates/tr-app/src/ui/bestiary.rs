@@ -1594,45 +1594,139 @@ fn portrait_data(
         // `SetDefaults` box: 489 the 18x40 humanoid box (`NPC.cs:14607-
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        // W4-d35 (A): the 73/74/75/77/78 portraits rest the SetDefaults box.
-        (NpcKind::GoblinScout, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::Bird, _) => (sheet_i, 14.0, 14.0, 14.0, white),
-        (NpcKind::Pixie, _) => (sheet_i, 20.0, 20.0, 20.0, white),
-        (NpcKind::ArmoredSkeleton, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::Mummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        // W4-d35 (B): the 79/80/82/83/84 portraits rest the SetDefaults box.
+        // W4-d35 (A): the 73/74/75/77/78 portraits — the sheet's own row
+        // height over `Main.npcFrameCount[type]` (16/5/4/15/16,
+        // `Main.cs:67091`), the frame width the sheet's own (NPC_73 40x896,
+        // NPC_74 30x120, NPC_75 54x136, NPC_77 40x840, NPC_78 40x896 — the
+        // c4 swimmers' shape). The fallbacks rest the SetDefaults box.
+        (NpcKind::GoblinScout, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::Bird, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(14.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::Pixie, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 54.0, h, white)
+        }
+        (NpcKind::ArmoredSkeleton, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::Mummy, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 16.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        // W4-d35 (B): 82/83 packed — the sheet's row over the frame count
+        // (4/6); 79/80/84 stay sheet-deferred (the SetDefaults box rest).
         (NpcKind::DarkMummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::LightMummy, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::Wraith, _) => (sheet_i, 44.0, 24.0, 44.0, white),
-        (NpcKind::CursedHammer, _) => (sheet_i, 40.0, 40.0, 40.0, white),
+        (NpcKind::Wraith, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::CursedHammer, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 82.0, h, white)
+        }
         (NpcKind::EnchantedSword, _) => (sheet_i, 40.0, 40.0, 40.0, white),
-        // W4-d35 (C): the 85/86/93/94/95 portraits rest the SetDefaults box.
+        // W4-d35 (C): 93/94/95 packed — the sheet's row over the frame
+        // count (4/3/1); 85/86 stay sheet-deferred (the box rest). The 95
+        // head's portrait draws the CUSTOM NPC_95 texture (the draw-offset
+        // row), the sheet only sizes the frame.
         (NpcKind::Mimic, _) => (sheet_i, 24.0, 24.0, 24.0, white),
         (NpcKind::Unicorn, _) => (sheet_i, 42.0, 46.0, 42.0, white),
-        (NpcKind::GiantBat, _) => (sheet_i, 20.0, 26.0, 20.0, white),
-        (NpcKind::Corruptor, _) => (sheet_i, 44.0, 44.0, 44.0, white),
-        (NpcKind::DiggerHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
-        // W4-d35 (D): the 96/97/98/99/100 portraits rest the SetDefaults box.
+        (NpcKind::GiantBat, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 44.0, h, white)
+        }
+        (NpcKind::Corruptor, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(44.0);
+            (sheet_i, h, 64.0, h, white)
+        }
+        (NpcKind::DiggerHead, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(22.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        // W4-d35 (D): the 96/97/99/100 Hide kinds have no own entry (the
+        // credit folds onto the head); the 98 head's portrait draws the
+        // CUSTOM NPC_98 texture, the 34x48 sheet sizes the frame.
         (NpcKind::DiggerBody, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::DiggerTail, _) => (sheet_i, 22.0, 22.0, 22.0, white),
-        (NpcKind::SeekerHead, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::SeekerHead, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(22.0);
+            (sheet_i, h, 34.0, h, white)
+        }
         (NpcKind::SeekerBody, _) => (sheet_i, 22.0, 22.0, 22.0, white),
         (NpcKind::SeekerTail, _) => (sheet_i, 22.0, 22.0, 22.0, white),
-        // W4-d35 (E): the 101/102/103/104/109 portraits rest the SetDefaults box.
-        (NpcKind::Clinger, _) => (sheet_i, 30.0, 30.0, 30.0, white),
-        (NpcKind::AnglerFish, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        // W4-d35 (E): 101/102 packed — the sheet's row over the frame count
+        // (5/6); 103/104/109 stay sheet-deferred (the box rest).
+        (NpcKind::Clinger, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 5.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 62.0, h, white)
+        }
+        (NpcKind::AnglerFish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 48.0, h, white)
+        }
         (NpcKind::GreenJellyfish, _) => (sheet_i, 26.0, 26.0, 26.0, white),
         (NpcKind::Werewolf, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Clown, _) => (sheet_i, 78.0, 34.0, 78.0, white),
-        // W4-d35 (F): the 110/112/116/120/121 portraits rest the SetDefaults box.
+        // W4-d35 (F): 116/121 packed — the sheet's row over the frame count
+        // (6/4); 110/120 stay sheet-deferred; the 112 Vile Spit is Hide
+        // (no own entry — the Corruptor fold carries the portrait).
         (NpcKind::SkeletonArcher, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::VileSpit, _) => (sheet_i, 16.0, 16.0, 16.0, white),
-        (NpcKind::TheHungryII, _) => (sheet_i, 32.0, 30.0, 32.0, white),
+        (NpcKind::TheHungryII, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 110.0, h, white)
+        }
         (NpcKind::ChaosElemental, _) => (sheet_i, 40.0, 18.0, 40.0, white),
-        (NpcKind::Slimer, _) => (sheet_i, 30.0, 40.0, 30.0, white),
-        // W4-d35 (G): the 122/137/140 portraits rest the SetDefaults box.
+        (NpcKind::Slimer, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 90.0, h, white)
+        }
+        // W4-d35 (G): 137 packed — the sheet's row over the frame count
+        // (4); 122/140 stay sheet-deferred (the box rest).
         (NpcKind::Gastropod, _) => (sheet_i, 20.0, 20.0, 20.0, white),
-        (NpcKind::IlluminantBat, _) => (sheet_i, 20.0, 26.0, 20.0, white),
+        (NpcKind::IlluminantBat, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 44.0, h, white)
+        }
         (NpcKind::PossessedArmor, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
