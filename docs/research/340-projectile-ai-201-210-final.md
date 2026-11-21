@@ -254,6 +254,71 @@ dirty-2 T4a co-lane stayed unstaged): the fold-2 lane owns its commit.
 This SEAL commits ONLY the docs (this note + the 162 rename + INDEX +
 ANALYSIS + PORT_MAP + anchors).
 
+## S6 - the fold-2 keep-one adjudication (g10 canonical, DISJOINT HALVES)
+
+Post-landing addendum (the fold-2 work COMMITTED as `d3a7ff663`; S5's
+dirty-9 census is history). The player-side petting machine duplicates
+g10's canonical pets host (`origin/task/W4-g10-npc-kind-wire-3` tip
+`7414ba339`: `player_petting.rs` 664 ln / 10 witnesses, landed
+`91c8ed1eb`; the pets-family bible g10 research/360 §5 names
+`player_petting.rs` g10-owned). Both files re-read at their live tips.
+
+**VERDICT: DISJOINT HALVES — COMPOSE CONTRACT.** Not whole-drop: d21's
+player-machine core is a semantic subset of g10's wired superset (g10
+adds the NPC `GetPettingInfo` ladder, the talk gate, `PetMount`, the
+achievement queue, the net bits, the Chillemt 0.36 arm, `math_sign`),
+but d21 owns the whole PROJECTILE lane g10 explicitly scopes out
+(g10 module census: "The Pal Digtoise's joy cue (`Projectile.cs:38517`)
+is the projectile path's, out of this lane") plus three player seams
+g10 lacks (`change_dir`, the `sit_down` vanity stop, the
+`from_projectile` ctor).
+
+The canonical KEEP-ONE table lives in ANALYSIS "Fold-2 keep-one
+adjudication" (the pets-family convention — the bible paragraph is
+ANALYSIS-canonical). Summary:
+
+- **13 DROP hunks** onto g10 at the merge: the `PettingInfo` struct +
+  `Default` (`player.rs:587-625`), the `petting` field/init
+  (`:1190-1195`/`:2728`), the `sleep_down` strip (`:3201-3203`),
+  `stop_petting_animal` (`:3234-3237`), the `stop_vanity_actions`
+  helper (`:3239-3246` — g10 inlines all four sites, d21 ports only
+  two), `pet_animal` (`:3248-3313`), `update_petting_animal`
+  (`:3315-3355`), the `:26124` call site (`:5984-5991`), the inline
+  back-arm pose (`:8252-8277`), the 5 player-machine witnesses
+  (`:21908-22016`), the 4952-light gate (`player_lights.rs:484-495`),
+  the `petting_blocks_hold` refusals (`world_sim/player.rs:1012-1018`).
+- **10 UNIQUE-KEEP groups** (each verified absent from g10's tip): the
+  `from_projectile` ctor + the proj `TryGetTarget` feed
+  (`petting_target_bottom`), the `sit_down` petting stop (C#
+  `PlayerSittingHelper.cs:124` — g10's `sit_down` misses it),
+  `change_dir` (`Player.cs:42091-42116` — C# `PetAnimal:33390` calls
+  it; g10's bare facing assign misses the pulley-2 reposition + the
+  composite/itemRotation mirrors), the 4952-gate witness, the
+  `TryPetting` right-click seam + chain (`world_sim/editing.rs`,
+  `Main.cs:37925-37981`), the `BlockInteractionWithProjectiles`
+  decrement (`Main.cs:16849-16852`), the two App fields + test rig,
+  the `pal_digtoise_joy` id-42 trackable arm (`audio.rs`
+  `PROJ_CUSTOM_CUES` — g10's `play_proj_sound` refuses `id != 2`;
+  g10 `soundid.rs:492` already rows style 289, no row conflict), the
+  proj `get_petting_info` ladder + `is_interactable` + the 204 state-5
+  joy LIVE + the `who_am_i` dispatch arg + 3 witnesses.
+- **5 splices** (S1-S5, ANALYSIS): the ctor relocates into g10's impl;
+  g10's `pet_animal` gains the proj-bottom input + `change_dir`; its
+  `update_petting_animal` gains the proj `TryGetTarget` arm
+  (`PlayerPettingInfo.cs:70-75`); `try_petting` drains g10's
+  `PetAnimalOutcome` (the achievement fold retires onto g10's
+  `pending_pet_achievement`); d21's `signum` facing pick dies with the
+  dropped machine halves (g10's `math_sign` is the C#-faithful keeper
+  at offset 0).
+
+Adjudication evidence (code-only, no builds): `git show d3a7ff663`
+hunk-by-hunk vs `git show 7414ba339:crates/tr-app/src/player_petting.rs`
++ the g10-tip greps (`try_petting`/`from_projectile`/`change_dir`/
+`petting_target_bottom`/`block_interaction`/`PROJ_CUSTOM_CUES` — all
+zero on g10) + the C# re-reads (`Player.cs:33358-33399/:33470-33490`,
+`PlayerPettingInfo.cs:54-76`, `PlayerSittingHelper.cs:113-131`). No
+code changed; g10's file untouched. Drop-hunk count: 13.
+
 ## Verification (code-only contract)
 
 - No cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
