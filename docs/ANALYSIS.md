@@ -18775,6 +18775,81 @@ the Extra[91] glow trail) rides the tile-draw waves. 7
 `w4_f48_cloak_star_tests` witnesses + the strengthened star-spawn row
 assertions (written, NOT run вЂ” code-only mode).
 
+### The shields doc-sweep lands (W4-f48 lane 20, 2026-11-21)
+
+DOC-SWEEP lane 20 (shields/accessories) censused six items and ported the
+real gaps; the full per-item census + the commit ledger live in
+`docs/research/98-doc-sweep-shields.md`. Code-only mode: 15 witnesses
+written not run. The deliberate deviations:
+
+- **Raised-shield stats** (`player.rs`, `Player.cs:25714-25717`/
+  `:25955-25962`): the +20 `statDefense` lands after the equip pass before
+  the defense floor; the `strongestMoveSpeedDebuff = min(1/3)` rides beside
+  the slow/chilled arms before the run-speed merge, and the grounded
+  `|vx| > 3 → vx /= 2` runs pre-`HorizontalMovement`. The sibling
+  `slowOgreSpit`/`dazed`/`burned` 1/3-and-0.5 caps (`:25931-25946`) are
+  unported rows — only the shield arm lands.
+- **The shield draw** (`render/player_layers.rs::shield_layers`,
+  `PlayerDrawLayers.cs:2954-3024`): `Player.shield` derives from the
+  eleven `shieldSlot` ids (the registry carries no `shieldSlot` field —
+  the same id list as `hasRaisableShield`), the eocDash/raised fallbacks
+  fill an unset slot ahead of the visibility gate, and
+  `ItemIsVisuallyIncompatible`'s shield arms (an enabled composite back
+  arm or a held food) hide the worn row; the held 4760/no-live-866
+  overrides to slot 9. The −4y raised lift, the 4 alpha-0 orbiting ghosts
+  (radius `2.5 + 1.5·sin(2πt)`, tint `×(0.45 − 0.15·sin)`), the body sprite
+  and the parry echo (push/scale/fade, alpha `(1−t)²` from the C# double
+  multiply) all land; the cart's last-two reverse rides. DEVIATIONS:
+  `bodyPosition`/`bodyRotation` are stock zero for the alive player
+  (`PlayerDrawSet.cs:1706-1711`), the `cShield` dye has no port producer
+  (every copy draws plain), the vanity slots 13..20 have no port loadout.
+  CENSUS FINDING: the `sin(π·t)` pulse overlay (`:2995-3003`) builds a
+  `DrawData` but never `DrawDataCache.Add`s it — dead code in the source,
+  skipped faithfully (5 raised sprites, not 6).
+- **Proj 866 Bouncing Shield** (`projectile/data.rs` + `projectile.rs`,
+  `Projectile.cs:8312-8324`): the row (30×30, aiStyle 3, penetrate 5,
+  melee, extraUpdates 1, light 0.15, local-immunity −1) un-inerts the
+  thrown shield. `ai_boomerang`'s 866 arms: the outbound never counts
+  `ai[1]`, the `localAI[0]` ∈ [10,360] retarget window + the 30-tick
+  no-target return, the 12/len accel-0.25 sign-cross-double steer, the
+  16/1.2 return seek, rotation = velocity angle + the `Next(2)` dust-212
+  gate (the dust skipped, its gate draw kept). On-hit: the ×0.8 STORED
+  decay (pre-strike, this hit keeps full damage — the Shadowbeam
+  precedent), `immune[owner] = 0` + the local −1 stamp + `penetrate--`, at
+  0 the inert reset + retarget redirect; the generic `penetrate--` excludes
+  866 (`:14125`). `ai_boomerang` widened with `npcs`/`local_immunity`/`rng`
+  (the other kinds draw nothing). NAMING: 866 = Bouncing Shield (item
+  4760's shot), NOT a "squire bash"; 3823 = Brand of the Inferno.
+- **The projectile-lane parry** (`projectile.rs::damage_player`,
+  `Damage_EVP` `Projectile.cs:14822-14828`): `CanParryAgainst(player.Hitbox,
+  base.Hitbox, velocity)` skips the hurt block whole (no DamageVar draw /
+  Hurt / StatusPlayer) and the parried shot SURVIVES (the C# spends no
+  penetrate on a parry, `:14881-14899`). NO reflect/immunity/buff is
+  granted here — those live only in the contact lane's
+  `Update_NPCCollision` (already ported). The early return skips the
+  port's single-hit kill too (the faithful "the shield eats the hit, the
+  shot survives" shape).
+- **The ParryDamageBuff ×5 melee-PROJECTILE consumer**
+  (`projectile.rs::damage_pve`, `Projectile.cs:13573-13578`): an owned
+  melee projectile ×5s the rolled damage while buff 198's flag is live,
+  clears flag + `ClearBuff(198)`; `DontApplyParryDamageBuff` =
+  {524,321,181,566} (`ProjectileID.cs:187`) refuses. Post-DamageVar
+  pre-strike (the draw order untouched — a pure multiply). The projectile
+  twin of the already-ported melee-ITEM consumer
+  (`world_sim/editing.rs`, `Player.cs:44307-44312`).
+- **Census negatives** (no code): no `TriggersSet.ShieldRaise` trigger
+  exists (the input is MouseRight + the general check, already wired at
+  `world_sim/player.rs:1689-1787`); no panic speed-lines exist (buff-63's
+  only effect is `moveSpeed++`, already ported); the fast-run dust half of
+  `SpawnFastRunParticles` (`Player.cs:20205-20299`) is an unported visual
+  seam (the sound half is ported). The ManaCloak magic-hit star proc
+  (`Projectile.cs:13831-13852`, ai2 = 1 / dmg 100 / cooldown 300) is
+  unported — out of the hurt-retaliate lane's scope.
+- **StarVeil damage-lands witness** (`projectile.rs`): the drain spawns
+  kind 725 (dmg 75 classic / ×2 expert 150) and the star's contact lands
+  through `damage_pve` — the end-to-end "the star hurts" pin the spawn
+  seam + row + AI already implied but never witnessed.
+
 ## The respawn fidelity (R-03-5, 2026-11-13)
 
 `Player.Spawn`'s revive half (`Player.cs:37598-37668`) is ported into
