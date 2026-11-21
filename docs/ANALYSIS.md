@@ -39244,3 +39244,46 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The NPC-sound final round (W4-e9, research/141)
+
+The 232-site `NPC.cs` PlaySound census closes on this branch: the
+32-arm IdleSounds ladder + the 8-site water splash layer (wired), the
+VileSpit/Ghost extras, and the 27 tail decisions
+(`npc_sounds_tail.rs`, UNWIRED — every consumer kind is unrowed on
+every pushed tip; the prompt's d33b/d41r/d42r/d43r branches do not
+exist, d41 is claim-only, d42 a non-compiling WIP, d43 zero commits,
+d33's 15 style modules carry no `NpcKind`). Two fidelity fixes this
+round:
+
+1. **The second 147-quirk** (`712e3c54`): the exit-water gate
+   `NPC.cs:93250` drops `type != 147` while the entry `:93152` and the
+   shimmer/honey arms keep it — `water_splash_gate` gains the
+   `exit_water` selector (f2's `9d9c94fe` finding adopted). The 615
+   override's kind is the **Dolphin** (NPCID.cs:11913), not the
+   seahorse (626) — the comment corrected.
+2. **The critter-emitter key** (`c7523984`): the
+   `UpdateNPC_CritterSounds` wiring keyed `to_u16()` — GolemHead's
+   protocol 74 collides with the C# Bird 74's critter arm
+   (`NPC.cs:92271`), rolling the bird's `Next(400)`+`Next(3)` for every
+   attached Golem head (a live Golem-fight stream drift). The key is
+   now `cs_id()` (the head folds onto 245, outside the table). A
+   mechanical scan finds GolemHead 74 as the ONLY protocol-space
+   collision with the critter table; f2's pushed tip carries the same
+   bug at its critter wiring — the merger applies the same one-line
+   re-key there (cross-note, not duplicated).
+
+Co-lane verdicts (research/141 §5): d53's projectile wet host is LIVE
+and disjoint from the NPC layer; g2's STAGED `Shimmer()` composes at
+d53's wet-block tail (`:17009-17012`, g2's claimed follow-up); f47's
+`shimmer_wet_contact_pass` is a second writer of the same
+`Collision_WaterCollision` probe — keep-one e9's
+`collision_water_step` (the superset) and lift f47's buff-353
+`try_adding_repeated_buff(353, 100, 10)` into its shimmer arm; the
+`shimmer_wet` field dedupes (both citations kept). The slime
+wet-gravity consumer (`slime_gravity`'s shimmer 0.15/5.5 + honey
+0.1/4 merges) is live on b1's adapter via the at-site probe — the
+carried-flag feed is b1's one-line follow-up. The idle-loop census
+closes 32/32 arms; the seven rowed idle kinds (250/288/389/471/520/
+388/391) roll today, the rest are table-complete until the roster
+wave. Witnesses WRITTEN NOT RUN (code-only).
