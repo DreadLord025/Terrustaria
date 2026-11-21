@@ -22379,8 +22379,18 @@ id). The folded kinds keep their OWN draw sheets via `texture_net_id` hand rows
 `portrait_data` arm (the entry they render is the fold target's).
 
 **Deliberate deviations / deferrals** (the wyvern precedent):
-1. **Draw sheets deferred.** The atlas has ~71 px headroom (8121/8192); the 43
-   `NPC_<id>` sheets are NOT packed. The `draw_npcs` arms call
+1. **Draw sheets deferred (MEASURED — research/143).** All 43 `NPC_<id>.xnb`
+   decode (`tools/_d42_sheets.js`, the atlas_sim stub-reuse technique;
+   inventory `tools/_d42_sheet_inventory.json`): **0.807 Mpx padded**. The
+   full runtime set (HEAD + gore + font + the 43) measures skyline
+   **8382 > 8192 (+190 OVERFLOW)**; static-only fits at 8021 but the pack is
+   NOT taken — the sheets ride d35's research/113 §10 lazy-load wave (NPC
+   rows leave STATIC_SHEET_NAMES; the roster-43 solo page is 1768 px, one
+   per-world page). The stale "~71 px (8121)" headroom figure re-measures
+   as **77 px (8115)** on this base. The 39-name union-forecast delta (the
+   four c10-owned waterfowl sheets already union-rowed; the seven
+   dragonflies shared with d33's tip) is published in research/143 §5 for
+   the d35 merger. The `draw_npcs` arms call
    `generic_anchor(assets.npc_sheet(id), npc_rows(id), …)` — `npc_sheet` returns
    None for an unpacked name, so the arm no-draws (the wyvern deferral). The
    kinds are NOT added to `STATIC_SHEET_NAMES`/the sheet lists (the `npc_tex`
