@@ -2765,6 +2765,22 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 {
                     p.buffs.add_buff(def.buff_type, 3600);
                 }
+                // W4-d13 — the SAME `ItemCheck_ApplyPetBuffs` grant for the
+                // PET items (`Player.cs:53117-53120`'s 3577 arm + the
+                // `:53286-53341` 54-case vanity-pet switch): the six
+                // aiStyle-124 pet items (4798/4804/4811/4812/4814/5089) and
+                // the 3577 tentacle all carry `buffTime = 0`, so without
+                // this 3600 grant the `:42880` ghost below is swept and the
+                // keep-alive arm never pins — the pet despawns. The C#
+                // order composes: ApplyPetBuffs (`:42766`) runs BEFORE
+                // StartActualUse's `item.buffTime` grant (`:42880`), whose
+                // 0-time `AddBuff_TryUpdatingExistingBuffTime` keeps the
+                // 3600 (`buff_time < time` is false).
+                if crate::projectile::PET_ITEM_BUFF_GRANTS.contains(&held.kind)
+                    && def.buff_type > 0
+                {
+                    p.buffs.add_buff(def.buff_type, 3600);
+                }
                 // M4-PROJ-8 Phase 6 — the summon use-path, in the C#'s order:
                 // `Player.FreeUpPetsAndMinions` frees the budget at the use
                 // tick (`Player.cs:42780`) BEFORE the spawn, and the
@@ -16909,6 +16925,93 @@ mod use_loop_tests {
         let b = p.buffs.find_buff_index(125).expect("buff 125 kept");
         assert_eq!(p.buffs.buff_time[b], 18000, "the keep-alive refresh");
         assert!(p.hornet_minion, "the arm's flag");
+    }
+
+    /// W4-d13 — the Glommer pet item (5089, `Item.cs:40791-40795`
+    /// `DefaultToVanitypet(957, 328)`) use grants buff 328 at 3600 ticks
+    /// (`ItemCheck_ApplyPetBuffs`' vanity-pet switch, `Player.cs:53325` →
+    /// `:53340`): the `buffTime = 0` row's `:42880` grant is a ghost, the
+    /// 3600 grant is what the `UpdateBuffs` keep-alive arm
+    /// (`:11181-11184` → `BuffHandle_SpawnPetIfNeededAndSetTime`) pins at
+    /// 18000 while the 957 lives. NOT item 5117 — that is the Xenopopper
+    /// gun (`Item.cs:40997-41013`, shoot 968, no buff).
+    #[test]
+    fn w4_d13_the_glommer_item_use_grants_the_3600_pet_buff() {
+        let mut app = app_with_staff(5089); // the Glommer pet item — buff 328
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(328).expect("buff 328 granted");
+        assert_eq!(p.buffs.buff_time[b], 3600, "the ApplyPetBuffs 3600 grant");
+        // The keep-alive arm refreshes to 18000 and spawns the 957 pet.
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(328).expect("buff 328 kept");
+        assert_eq!(p.buffs.buff_time[b], 18000, "the keep-alive refresh");
+        assert!(p.pet_flags[957], "the Glommer pet flag");
+        assert!(
+            app.projectiles
+                .slots()
+                .iter()
+                .any(|s| s.active && s.kind == 957),
+            "the 957 pet spawned through the rowed seam"
+        );
+    }
+
+    /// W4-d13 — the 3577 Suspicious Looking Tentacle's own single-item arm
+    /// (`Player.cs:53117-53120`): the same 3600 grant for buff 190, the
+    /// light-pet keep-alive (`:11254-11267`) pins it and spawns the 650.
+    /// The `AddBuff` light-pet eviction (`:5377-5385`) drops any other
+    /// light-pet buff first — the one-light-pet rule.
+    #[test]
+    fn w4_d13_the_tentacle_item_use_grants_the_3600_light_pet_buff() {
+        let mut app = app_with_staff(3577); // buff 190 → the 650 light pet
+        // A rival light pet (the Shadow Orb, buff 19) must be evicted.
+        app.player.as_mut().unwrap().buffs.add_buff(19, 18000);
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.buffs.find_buff_index(19), None, "the light-pet eviction");
+        let b = p.buffs.find_buff_index(190).expect("buff 190 granted");
+        assert_eq!(p.buffs.buff_time[b], 3600, "the :53119 3600 grant");
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        let b = p.buffs.find_buff_index(190).expect("buff 190 kept");
+        assert_eq!(p.buffs.buff_time[b], 18000, "the keep-alive refresh");
+        assert!(p.pet_flags[650], "the tentacle pet flag");
+    }
+
+    /// W4-d13 — the six aiStyle-124 pet items' grant rows are the C# switch
+    /// members (`Player.cs:53286-53341`): 4798/4804/4811/4812/4814/5089 in,
+    /// the 5117 Xenopopper out; every rowed item's registry `buff_type`
+    /// matches the `UpdateBuffs` keep-alive arm's buff (the PET_BUFF_ARMS
+    /// pairs + the 190 special case).
+    #[test]
+    fn w4_d13_the_pet_item_grant_rows_match_the_keep_alive_buffs() {
+        let grants = crate::projectile::PET_ITEM_BUFF_GRANTS;
+        for kind in [4798u16, 4804, 4811, 4812, 4814, 5089, 3577] {
+            assert!(grants.contains(&kind), "item {kind} in the grant rows");
+        }
+        assert!(!grants.contains(&5117), "5117 is the Xenopopper, not a pet");
+        // (item, buff, pet projectile) — the Item.cs rows + the Player.cs
+        // keep-alive arms (`:11093`/`:11117`/`:11145`/`:11149`/`:11157`/
+        // `:11181`/`:11254`).
+        for (item, buff, pet) in [
+            (4798u16, 285i32, 882u16),
+            (4804, 291, 888),
+            (4811, 298, 895),
+            (4812, 299, 896),
+            (4814, 301, 898),
+            (5089, 328, 957),
+            (3577, 190, 650),
+        ] {
+            let def = crate::registry::get(item).expect("the item row");
+            assert_eq!(def.buff_type, buff, "item {item}'s buffType");
+            assert_eq!(def.buff_time, 0, "item {item}: the :42880 grant is a ghost");
+            assert_eq!(def.projectile, Some(pet), "item {item}'s shoot");
+        }
     }
 
     /// S1-P-i25 round 2 — the cursor minion spawn subtracts the half-box:

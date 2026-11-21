@@ -39482,6 +39482,55 @@ The seven aiStyle-124 pets contribute ZERO sites to that family:
   lands, the 650/895/896 casts are its rows (the colours/widths/anchors
   above), the retro ×0.8 gate rides `LightParams`. No c19/e6 gap to file.
 
+**(5) The pet item-use census — the 3600 grant gap FOUND and FIXED.** The
+brief's "pet item 5117?" is WRONG: 5117 is the Xenopopper gun
+(`Item.cs:40997-41013` — shoot 968, useAmmo Bullet, no buff). The Glommer
+pet item is **5089** (`:40791-40795`, `DefaultToVanitypet(957, 328)` —
+useStyle 1, useTime/Animation 20, UseSound Item2, buff 328). The full
+use-arm chain, censused end-to-end:
+
+* item row → `ItemCheck`'s use start (`Player.cs:42733-42785`):
+  `ItemCheck_ApplyPetBuffs` (`:42766` → `:53091-53344`) grants
+  `AddBuff(buffType, 3600)` — the 3577 tentacle has its OWN single-item
+  arm (`:53117-53120`), the six flyers ride the 54-case vanity-pet switch
+  (`:53286-53341`: 4798 EOC / 4804 Twins / 4811 Fairy Queen / 4812
+  Pumpking / 4814 Ice Queen / 5089 Glommer among them);
+* `FreeUpPetsAndMinions` (`:42778`, the `LightPet || projPet` gate) —
+  already ported (the i25 wave, `PROJ_PET`/`LIGHT_PET_PROJ`);
+* `ItemCheck_StartActualUse` → the `item.buffType > 0` grant (`:42876-
+  42883`, `AddBuff(buffType, item.buffTime)`) — already ported, but ALL
+  seven pet items carry `buffTime = 0` (the `DefaultToVanitypet` helper
+  `Item.cs:47936-47950` sets none; the 3577 case `:32257-32272` none
+  either), so this grant is the documented ghost;
+* `ItemCheck_Shoot`'s pet arm (`:48561-48583`: the same-kind kill sweep +
+  the zero-damage `NewProjectile`) — the port's generic shoot tail fires
+  the pet; the buff-side keep-alive is the persistence mechanism;
+* `UpdateBuffs`' keep-alive (`:11093`/`:11117`/`:11145`/`:11149`/
+  `:11157`/`:11181` → `BuffHandle_SpawnPetIfNeededAndSetTime` `:12227-
+  12258`: buffTime = 18000, the pet flag, the spawn-if-none) — already
+  ported (`PET_BUFF_ARMS` + the 190 special case,
+  `buff_effects_accessory.rs`).
+
+**The gap:** the port's use path granted ONLY the `:42880` ghost for the
+pet items — the `MINION_STAFF_PET_BUFF_ITEMS` 3600 grant (the i25 wave)
+covered the summon staves but NOT the 3577 arm or the vanity-pet switch.
+Without the 3600 grant the ghost is swept (`buffTime <= 0` skip + the
+expiry sweep) and the keep-alive arm never pins: every pet summoned
+through its item despawned. FIXED: `PET_ITEM_BUFF_GRANTS` (the 3577 +
+the 54 switch cases verbatim, `projectile/data.rs`) + the grant beside
+the staff grant in `world_sim/editing.rs`'s use-start block. The C#
+order composes: ApplyPetBuffs (`:42766`) runs BEFORE StartActualUse's
+ghost grant (`:42880`), whose 0-time `AddBuff_TryUpdatingExistingBuffTime`
+keeps the 3600 (`buff_time < time` false, `Player.cs:5399-5416`). The
+light-pet eviction (`AddBuff_RemoveOldPetBuffsOfMatchingType`,
+`:5377-5385`) already ported — the 3577 use drops any rival light-pet
+buff. d2 co-lane read: the fairy-bell 425's `Next(3)` buff pick
+(`:53121-53145`) is a DIFFERENT ApplyPetBuffs arm (the 27/101/102 fairy
+buffs, d2's light-pets lane) — not in this grant table, no overlap. 3
+witnesses (the 5089 use → 3600 → 18000 + the 957 spawn, the 3577 use →
+the eviction + 3600 → 18000 + the 650 flag, the grant-row/registry
+agreement incl. the 5117 exclusion) WRITTEN NOT RUN.
+
 ### Verification
 
 Code-only: every change re-read against the cited C# windows; the seam

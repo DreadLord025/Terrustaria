@@ -4609,6 +4609,25 @@ pub const MINION_STAFF_PET_BUFF_ITEMS: &[u16] = &[
     4281, 4607, 4758, 5005, 5069, 5114, 5456, 5663, 5664, 6148, 6149, 6161, 6164,
 ];
 
+/// W4-d13 — `ItemCheck_ApplyPetBuffs`' PET-item rows: the same use-start
+/// `AddBuff(sItem.buffType, 3600)` grant, for the pet/light-pet items whose
+/// `Item.buffTime` is 0 (the `:42880` grant is a ghost for them too — the
+/// 3600 grant is what the `UpdateBuffs` keep-alive arm's 18000 refresh
+/// pins). Verbatim: the 3577 Suspicious Looking Tentacle single-item arm
+/// (`Player.cs:53117-53120`) + the 54-case vanity-pet switch
+/// (`:53286-53341`). The six aiStyle-124 pet items are 4798 (EOC), 4804
+/// (Twins), 4811 (Fairy Queen), 4812 (Pumpking), 4814 (Ice Queen), 5089
+/// (Glommer — `Item.cs:40791-40795` `DefaultToVanitypet(957, 328)`; NOT
+/// 5117, the Xenopopper gun `:40997-41013`).
+pub const PET_ITEM_BUFF_GRANTS: &[u16] = &[
+    3577, // :53117 — the Suspicious Looking Tentacle (buff 190 → 650)
+    // :53286-53341 — the vanity-pet switch, verbatim order.
+    3855, 3856, 3857, 4365, 4366, 4425, 4550, 4551, 4603, 4604, 4605, 4701, 4735, 4736, 4737,
+    4777, 4797, 4798, 4799, 4800, 4801, 4802, 4803, 4804, 4805, 4806, 4807, 4808, 4809, 4810,
+    4811, 4812, 4813, 4814, 4815, 4816, 4817, 4960, 5088, 5089, 5090, 5091, 5098, 5131, 5276,
+    5297, 5332, 5333, 5400, 5466, 5513, 5517, 5523, 5654,
+];
+
 /// `ProjectileID.Sets.MinionShot` (`ProjectileID.cs:431`): the minion attack
 /// shot kinds — `WhipTagEffect.CanRunHitEffects`'s gate
 /// (`GameContent/Items/WhipTagEffect.cs:81-85`) treats them as summon shots
