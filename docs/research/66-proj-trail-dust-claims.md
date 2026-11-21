@@ -326,9 +326,12 @@ above). The activation checklist for the merger is **research/199**
 
 ## RETIRE (2026-11-21, FINAL — the lane closes here)
 
-The spawn-dust-family FINAL + declaration is **research/240** (the
-number per the d54 registry-150's free-block rule, the seal-scan
-adjudication recorded there). This claims doc stays the batch ledger;
+The spawn-dust-family FINAL + declaration is **research/298** (was
+240 at the seal; renumbered 240→298 per the d54 registry-150
+ROUND-3-FINAL §7.3 — g58's executed 143→240 self-rename `cdfe3d108`
+wins the 240 key; an unpushed round-2 281 draft was superseded when
+round 3 assigned 281 to f26's 7h addendum and g63 explicitly →298).
+This claims doc stays the batch ledger;
 research/199 stays the merger's activation checklist (REFRESHED at
 retire: the moved tips re-probed, the three newly-rowed kinds
 128/129/229 promoted to activation rows, the 357 f20 seam re-verified
@@ -339,4 +342,4 @@ renumbered → 196 on its own branch, landed `9d9d89ac1`). The
 research/67 → 199 rename per registry-150 §3 is EXECUTED on this
 branch (this doc's refs + the emitter comments updated). No further
 g63 commits are planned — merge execution belongs to the merge wave
-per research/199 + research/240's declaration.
+per research/199 + research/298's declaration.
