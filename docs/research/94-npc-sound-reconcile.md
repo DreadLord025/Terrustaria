@@ -570,3 +570,81 @@ doc-sweep (§8), the e9b re-adjudication (§9), the tail-census union
 (§10) and the activation reads (§11) are all landed; the union branch
 is f2, the DROP list (§4 + §9b) is exact, and the three staged helpers'
 activation points are named. No open questions remain for the merger.
+(The retire phase extends the note: §12 the exact d38 repoint hunk,
+§13 the 232-site FINAL declaration, §14 the e9d cross-receipt +
+FINAL-FINAL.)
+
+## 12. The d38 NpcDeath55 gap — the EXACT repoint hunk (for d38d/merger)
+
+Re-probed at d38's CURRENT pushed tip `1ba0395c7` (the FINAL sheet-4
+docs commit; the ghost module unchanged since `6f9dd02db`). The gap
+§11 named stands, now line-pinned:
+
+* **The push:** `crates/tr-app/src/npc_ai_ghost.rs:67` — inside
+  `ghost_ai`'s far/dead gate (`player.dead || dist > 3000.0`, `:60`),
+  the `ai[3] == 1.0` fade arm (`:61`), the `local_ai[3]` 0→1 one-shot
+  latch (`:64-65`) queues `NpcSoundCue::NpcDeath(55)` at `(cx, cy)` —
+  the CENTRE (`npc.center()` at the fn head), the position the C#
+  passes (`NPC.cs:24693`, `(int)base.Center.X/Y`). The latch + the
+  centre are faithful; only the cue spelling is wrong.
+* **The silent resolution:** d38's `audio.rs::play_npc_death_int`
+  (`:1366`) has ONLY the `6 => "NPC_Killed_6"` / `22 =>
+  "NPC_Killed_22"` arms (`:1377-1378`) — style 55 hits `_ => return
+  None` (`:1379`). d38's tree has NO `NpcDeath55` enum variant
+  (`npc.rs:1222-1255`: `NpcDeath(i32)`/`NpcDeath61`/`NpcDeath13`
+  only), NO `NPC_Killed_55` SFX_CUES row, and its
+  `play_npc_death_style` (`:1341`) has only the 13/61 arms. The cry
+  is a silent bank gap on d38's own branch.
+* **Why the repoint, not a dispatch re-route:** the C# site is
+  `SoundEngine.PlaySound(SoundID.NPCDeath55, ...)` — the STYLE façade
+  (`SoundEngine.cs:93-99`), which consumes the `GetRandomPitch`
+  NextFloat on the audio-only stream. `NpcDeath(i32)` is the port's
+  INT-overload spelling (`SoundEngine.cs:102-108`, NO NextFloat — the
+  tower/Moon-parts/VileSpit sites). Routing `NpcDeath(55)` to the
+  façade inside the dispatch would break the overload split for every
+  int caller; the faithful fix is the one-line cue re-key at the
+  push site.
+
+**The hunk (apply on the merged tree, or on d38d after f2's union
+lands — f2 supplies every symbol it names):**
+
+```diff
+--- a/crates/tr-app/src/npc_ai_ghost.rs   (d38 tip 1ba0395c7)
++++ b/crates/tr-app/src/npc_ai_ghost.rs   (post-merge, f2 union)
+@@ -64,7 +64,7 @@
+             if npc.local_ai[3] == 0.0 {
+                 npc.local_ai[3] = 1.0;
+                 npc.wants_sound.push(crate::npc::NpcSoundRequest {
+-                    cue: crate::npc::NpcSoundCue::NpcDeath(55),
++                    cue: crate::npc::NpcSoundCue::NpcDeath55,
+                     x: cx,
+                     y: cy,
+                 });
+```
+
+The symbols f2's union carries (all verified present on this branch):
+the `NpcSoundCue::NpcDeath55` variant (`npc.rs:1178`), the dispatch arm
+(`world_sim/npcs.rs:1158-1160` → `play_npc_death_style(55, ...)`), the
+`NPC_Killed_55` SFX_CUES row (`audio.rs:192`, case 4) and the style-55
+arm (`audio.rs:1470`, the façade NextFloat + the shared case-4 tail).
+The drain runs on the `UpdateNPCs` stream after `update_rng` (the
+E21g seam) — the same stream d38's `ghost_ai` draws on, so the cry's
+pitch draw lands in the C# position.
+
+**The retirement fold:** with the repoint applied, f2's staged
+`npc_ai_poltergeist.rs::ghost_flee_cry` retires as the duplicate —
+d38's `ghost_ai` owns the latch + the Opacity fade (the alpha-fold
+convention) + the flee drift. Its witness
+`w4_e9_the_ghost_flee_cry_latches_once_at_the_centre` retargets onto
+d38's machine (drive `ghost_ai` with a dead/far player, pin the ONE
+`NpcDeath55` push at the centre + the `local_ai[3]` latch); the
+`NPC_Killed_55` bank/overload contract stays covered by f2's
+`w4_f2_the_tail_bank_rows_follow_the_overload_split` + the audio-level
+style-55 witness (`audio.rs:4340-4352`).
+
+**Pre-merge local fix (d38d's option, NOT applied here — never touch
+other lanes):** if d38d wants the cry audible before the merge, the
+faithful local shape is the same façade spelling (add the `NpcDeath55`
+variant + dispatch + row + style-55 arm — f2's hunks verbatim); adding
+a `55` arm to `play_npc_death_int` would be the WRONG overload (it
+would drop the NextFloat the C# consumes).
