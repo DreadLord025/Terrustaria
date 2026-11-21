@@ -2014,7 +2014,7 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         let is_summon = matches!(
             held.kind,
             43 | 361 | 602 | 1844 | 1958 | 3601 | 1315 | 70 | 560 | 1133 | 1331 | 544 | 556
-                | 557 | 5120
+                | 557 | 5120 | 2767 | 4271
         );
         if is_summon && held.count > 0 {
             if app.attack_cd <= 0.0 && app.reuse_delay <= 0.0 && app.mine_released {
@@ -2061,6 +2061,16 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             return;
         }
         if held.kind == 1958 && held.count > 0 && use_naughty_present(app) {
+            return;
+        }
+        // W4-e10 — the Solar Tablet 2767 / Blood Moon Starter 4271
+        // (`Player.cs:43988-44027`): the day/eclipse and night/blood-moon
+        // gates, the roar BEFORE the action re-arm, the event flag and
+        // the chat row.
+        if held.kind == 2767 && held.count > 0 && use_solar_tablet(app) {
+            return;
+        }
+        if held.kind == 4271 && held.count > 0 && use_blood_moon_starter(app) {
             return;
         }
         // `ItemCheck_UseBossSpawners`' Celestial Sigil arm (`Player.cs`:
@@ -16267,7 +16277,7 @@ pub(crate) fn use_pumpkin_moon_medallion(app: &mut App) -> bool {
     true
 }
 
-/// The Naughty Present 1958 (`Player.cs:44041-44052`): the snow twin — same
+/// The Naughty Present 1958 (`Player.cs:44041-44052`): the snow twin - same
 /// gates, `Main.startSnowMoon`.
 pub(crate) fn use_naughty_present(app: &mut App) -> bool {
     if app.world.day_time
@@ -16279,6 +16289,81 @@ pub(crate) fn use_naughty_present(app: &mut App) -> bool {
     }
     apply_moon_item(app, 1958);
     app.world.start_snow_moon();
+    true
+}
+
+/// W4-e10 — the Solar Tablet 2767 (`ItemCheck_UseEventItems`,
+/// `Player.cs:43988-44008`): the `Main.dayTime && !Main.eclipse` gate,
+/// then the roar FIRST (`:43990`, before `ApplyItemTime` — the reverse
+/// of the invasion arms' order), the eclipse flag and the `NewText` row
+/// (the remix world reads `Lang.misc[106]`, every other `misc[20]`,
+/// `ChatColors.World`).
+pub(crate) fn use_solar_tablet(app: &mut App) -> bool {
+    if !app.world.day_time || app.world.eclipse {
+        return false;
+    }
+    // `:43990`: `PlaySound(15, (int)position.X, (int)position.Y, 0)` —
+    // case 15 slot 0 (the playing guard, no draws), at the top-left,
+    // BEFORE `ApplyItemTime` (`:43991`).
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.item_time = crate::item::use_time_secs(2767);
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    app.world.eclipse = true; // `:43994`
+    let key = if app.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX) {
+        "LegacyMisc.106" // `:43997`
+    } else {
+        "LegacyMisc.20" // `:44001`
+    };
+    crate::chat::broadcast_death_text(&mut app.chat, &crate::lang::text(key), crate::chat::COLOR_WORLD);
+    true
+}
+
+/// W4-e10 — the Blood Moon Starter 4271 (`ItemCheck_UseEventItems`,
+/// `Player.cs:44009-44027`): the `!Main.dayTime && !Main.bloodMoon` gate,
+/// the roar FIRST (`:44011`), then `NotifyProgressionEvent(4)` (`:44015`),
+/// the blood-moon flag, the new-moon phase bump (`GetMoonPhase() == Empty`
+/// → `moonPhase = 5`, `:44017-44020`) and the `Lang.misc[8]` row. The C#
+/// sets `Main.bloodMoon` directly — NOT `startBloodMoon` (no dial-cooldown
+/// reset on this path).
+pub(crate) fn use_blood_moon_starter(app: &mut App) -> bool {
+    if app.world.day_time || app.world.blood_moon {
+        return false;
+    }
+    // `:44011`: the case-15 slot-0 roar at the top-left, before the
+    // action-time re-arm.
+    let (plx, ply) = app
+        .player
+        .as_ref()
+        .map(|p| (p.x, p.y))
+        .unwrap_or((0.0, 0.0));
+    app.audio.play_roar(0, plx, ply);
+    app.inventory[app.selected].count = app.inventory[app.selected].count.saturating_sub(1);
+    if app.inventory[app.selected].count == 0 {
+        app.inventory[app.selected].kind = 0;
+    }
+    app.item_time = crate::item::use_time_secs(4271);
+    app.mine_target = None;
+    app.mine_timer = 0.0;
+    let _ = app.notify_progression_net(4); // `:44015`
+    app.world.blood_moon = true; // `:44016`
+    if app.world.moon_phase == 0 {
+        app.world.moon_phase = 5; // `:44017-44020` (MoonPhase.Empty)
+    }
+    crate::chat::broadcast_death_text(
+        &mut app.chat,
+        &crate::lang::text("LegacyMisc.8"),
+        crate::chat::COLOR_WORLD,
+    ); // `:44021`
     true
 }
 
@@ -16725,6 +16810,83 @@ mod loot_summon_tests {
         let before = app.audio.played_count();
         assert!(!use_pirate_map(&mut app), "the live invasion refuses");
         assert_eq!(app.audio.played_count(), before, "the refusal is silent");
+    }
+
+    /// W4-e10 — the Solar Tablet 2767 / Blood Moon Starter 4271
+    /// (`Player.cs:43988-44027`): the roar plays once per accepted use
+    /// (case 15, draw-free), the gates refuse silently, the flags land
+    /// and the starter's new-moon bump fires only on phase 0.
+    #[test]
+    fn w4_e10_the_celestial_starters_roar_and_gate() {
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 64.0;
+        player.y = 64.0;
+        app.player = Some(player);
+        // The Solar Tablet: day gate.
+        app.world.day_time = true;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 2767,
+            name: "Solar Tablet".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let before = app.audio.played_count();
+        assert!(use_solar_tablet(&mut app));
+        assert!(app.world.eclipse, "the eclipse arms");
+        assert_eq!(app.audio.played_count(), before + 1, "the tablet's roar");
+        assert_eq!(app.inventory[app.selected].count, 0);
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "case 15 draws nothing"
+        );
+        // The re-use refuses (eclipse up) — silent, stack intact.
+        app.inventory[app.selected] = ItemSlot {
+            kind: 2767,
+            name: "Solar Tablet".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(!use_solar_tablet(&mut app));
+        assert_eq!(app.audio.played_count(), before);
+        assert_eq!(app.inventory[app.selected].count, 1);
+        // The Blood Moon Starter: night gate, the phase-0 bump.
+        app.world.day_time = false;
+        app.world.moon_phase = 0;
+        app.inventory[app.selected] = ItemSlot {
+            kind: 4271,
+            name: "Blood Moon Starter".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(use_blood_moon_starter(&mut app));
+        assert!(app.world.blood_moon);
+        assert_eq!(app.world.moon_phase, 5, "the new-moon bump (:44019)");
+        assert_eq!(app.audio.played_count(), before + 1, "the starter's roar");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "still draw-free"
+        );
+        // The re-use refuses (blood moon up).
+        app.inventory[app.selected] = ItemSlot {
+            kind: 4271,
+            name: "Blood Moon Starter".into(),
+            count: 1,
+            prefix: 0,
+        };
+        let before = app.audio.played_count();
+        assert!(!use_blood_moon_starter(&mut app));
+        assert_eq!(app.audio.played_count(), before);
+        // A non-new moon keeps its phase.
+        app.world.blood_moon = false;
+        app.world.moon_phase = 3;
+        assert!(use_blood_moon_starter(&mut app));
+        assert_eq!(app.world.moon_phase, 3, "only Empty bumps");
     }
 
     #[test]
