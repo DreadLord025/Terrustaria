@@ -198,6 +198,14 @@ impl MapSections {
         self.frame_sections_left > 0
     }
 
+    /// `WorldSections.mapSectionsLeft` — the spiral's remaining budget
+    /// (`WorldSections.cs:33`), decremented per drawn section (`:353`) and
+    /// refilled by `ClearMapDraw` (`:156`). The C# field is private; the
+    /// accessor is the port's test seam (W4-f46 salvage, research/84 §2).
+    pub fn sections_left(&self) -> i32 {
+        self.map_sections_left
+    }
+
     /// `WorldSections.ClearMapDraw` (`WorldSections.cs:149-157`): every
     /// drawn bit clears, the spiral resets, the budget refills — the
     /// `Main.refreshMap` consume (`Main.cs:61888-61892`).
@@ -401,6 +409,7 @@ mod tests {
         }
         assert_eq!(seen.len(), 20);
         assert_eq!(s.map_sections_left, 0);
+        assert_eq!(s.sections_left(), 0, "the f46 accessor reads the same budget");
         assert_eq!(s.get_next_map_draw(pos), None, "`:220-225`");
         assert_eq!(s.get_next_map_draw(pos), None, "stays exhausted");
     }
@@ -434,6 +443,7 @@ mod tests {
         assert_eq!(s.map_sections_left, 0);
         s.clear_map_draw();
         assert_eq!(s.map_sections_left, 6);
+        assert_eq!(s.sections_left(), 6, "the f46 accessor reads the refill");
         assert_eq!(s.prev_map.center, [-3200.0, -2400.0]);
         for y in 0..2 {
             for x in 0..3 {
