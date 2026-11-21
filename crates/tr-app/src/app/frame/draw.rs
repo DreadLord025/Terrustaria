@@ -1905,11 +1905,12 @@ impl App {
                             (self.item_icon_cache_kind, self.item_icon_cache_time),
                         );
                         // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
-                        // (`Main.cs:45062` inside `DrawInterface_40`): the
-                        // linger's per-draw decay, after the icon pass read it.
-                        // Inlined over disjoint fields — the destructure holds
-                        // `renderer`, a whole-`self` method call would conflict
-                        // (the `App::item_icon_cache_verification` body verbatim).
+                        // (`Main.cs:45062` inside `DrawInterface_40`, the C#'s
+                        // only call site): the linger's per-draw decay, after
+                        // the icon pass read it. Inlined over disjoint fields —
+                        // the destructure holds `renderer`, a whole-`self`
+                        // method call would conflict (the `:46522-46540` body
+                        // verbatim).
                         if self.item_icon_cache_time > 0 {
                             let d = (self.item_icon_cache_pos - self.mouse_pos).length();
                             if d != 0.0 {

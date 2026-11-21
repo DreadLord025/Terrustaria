@@ -1339,23 +1339,12 @@ impl App {
         self.item_icon_cache_time = 10;
     }
 
-    /// `Main.ItemIconCacheVerification` (`Main.cs:46522-46540`): while the
-    /// linger runs, a non-zero mouse move decrements it, a >4 px move
-    /// zeroes it, and a selected-item switch zeroes it. S1-W4-g81.
-    pub(crate) fn item_icon_cache_verification(&mut self) {
-        if self.item_icon_cache_time > 0 {
-            let d = (self.item_icon_cache_pos - self.mouse_pos).length();
-            if d != 0.0 {
-                self.item_icon_cache_time -= 1;
-            }
-            if d > 4.0 {
-                self.item_icon_cache_time = 0;
-            }
-            if self.item_icon_cache_kind != self.inventory[self.selected].kind {
-                self.item_icon_cache_time = 0;
-            }
-        }
-    }
+    /// `Main.ItemIconCacheVerification` (`Main.cs:46522-46540`) lives
+    /// INLINE in the draw pass (`app/frame/draw.rs`, after the layer-40
+    /// icon draw — the C#'s only call site `:45062`): the field
+    /// destructure there holds `renderer`, so a whole-`self` method
+    /// would conflict; the body reads the cache triple + `mouse_pos` +
+    /// `inventory[selected]` verbatim (the S1-W4-g81 seal).
 
     /// `Main.mH` (`Main.cs:45771-45783`): 256 while the minimap HUD is live,
     /// clamped by the 600 px equipment push-up — the same value `frame()`
