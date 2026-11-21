@@ -318,14 +318,22 @@ fn stock_band(
     ctx: &Context,
     chest_style: i32,
     chest_kind: u16,
+    preset_main: bool,
     rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand,
 ) -> Vec<Row> {
     let mut out: Vec<Row> = Vec::with_capacity(16);
     // Row 0: the special slot/weapon (`flag*` extras follow the main item).
+    // W4-c33 flag5/pyramid verify: every band's weapon roll sits in the
+    // C#'s `num10 == 0` ELSE branch (`:36275`/`:36580`/`:36902`/`:37193`) —
+    // a caller-preset main (the water/jungle/sky/pyramid sites) skips it.
+    // The family-rolled mains (desert/ice/hell) keep the port's documented
+    // band-first order (the residual deviation, ADDENDUM 120).
     match band {
         Band::Surface => {
             // `:36222` flag23 arm: the special item or the surface weapon.
-            out.push(surface_weapon(rng));
+            if !preset_main {
+                out.push(surface_weapon(rng));
+            }
             // `:36334-36471`: the consumable rows.
             if next(rng, 6) == 0 {
                 out.push(Row::stacked(282, ranged(rng, 40, 76) as u32));
@@ -411,21 +419,21 @@ fn stock_band(
                     out.push(Row::plain(4460));
                 }
             }
-            if ctx.mahogany && next(rng, 2) == 0 {
-                if next(rng, 2) == 0 {
-                    out.push(Row::plain(4425));
-                } else {
-                    out.push(Row::plain(4460));
-                }
+            // W4-c33 flag5 verify: the old `ctx.mahogany`/`ctx.sky` 1/2
+            // either-or 4425/4460 rows had NO C# counterpart — the mid
+            // band's only pair is flag5 (`:36515-36525`, above): two
+            // INDEPENDENT halves, style-17 gated. Dropped.
+            // `flag12` `:36526-36532` (W4-c33 pyramid-loot census): the
+            // skyware family's mid-band 1/40 CreativeWings 4978 with the
+            // natural prefix — the island-house chests' rare accessory.
+            if ctx.sky && next(rng, 40) == 0 {
+                let mut wings = Row::plain(4978);
+                roll_prefix_on(rng, &mut wings);
+                out.push(wings);
             }
-            if ctx.sky && next(rng, 2) == 0 {
-                if next(rng, 2) == 0 {
-                    out.push(Row::plain(4425));
-                } else {
-                    out.push(Row::plain(4460));
-                }
+            if !preset_main {
+                out.push(deep_weapon(rng, false));
             }
-            out.push(deep_weapon(rng, false));
             if ctx.dungeon && next(rng, 2) == 0 {
                 out.push(Row::stacked(329, 1));
             }
@@ -435,43 +443,63 @@ fn stock_band(
             if ctx.dungeon && next(rng, 4) == 0 {
                 out.push(Row::stacked(6156, 1));
             }
-            if next(rng, 20) == 0 {
-                let mut muramasa = Row::plain(997);
-                roll_prefix_on(rng, &mut muramasa);
-                out.push(muramasa);
-            } else if next(rng, 20) == 0 {
-                let mut key = Row::plain(930);
-                roll_prefix_on(rng, &mut key);
-                out.push(key);
-                if next(rng, 2) == 0 {
-                    out.push(Row::stacked(931, ranged(rng, 26, 51) as u32));
+            // `:36630-36652`: the muramasa/key ladder is the num10 == 0
+            // ELSE branch (W4-c33: a preset main skips it).
+            if !preset_main {
+                if next(rng, 20) == 0 {
+                    let mut muramasa = Row::plain(997);
+                    roll_prefix_on(rng, &mut muramasa);
+                    out.push(muramasa);
+                } else if next(rng, 20) == 0 {
+                    let mut key = Row::plain(930);
+                    roll_prefix_on(rng, &mut key);
+                    out.push(key);
+                    if next(rng, 2) == 0 {
+                        out.push(Row::stacked(931, ranged(rng, 26, 51) as u32));
+                    }
                 }
             }
-            if next(rng, 2) == 0 {
-                out.push(Row::stacked(silver_bar(), ranged(rng, 3, 6) as u32));
+            // W4-c33 loot-row census: the mid band's COMMON rows
+            // (`:36668-36801`, both num10 branches) — the old port carried
+            // a phantom silver-bar 3-6 row, a Next(3) 52 gate (C# Next(5)),
+            // a 10-21 bar stack (C# Next(10)+5), a Next(3)!=0 arrow gate
+            // (C# Next(2)==0), 2-5 herb stacks (C# Next(1,3)), a Next(2)
+            // torch pick (C# flag2) and no 166/4423 + 2350 rows. Re-derived:
+            // `:36668-36682`: flag3 → the 1/3 FossilOre 4423 (10-19),
+            // else the 1/3 Bomb 166 (10-19).
+            if ctx.mahogany || ctx.desert {
+                if next(rng, 3) == 0 {
+                    out.push(Row::stacked(4423, ranged(rng, 10, 20) as u32));
+                }
+            } else if next(rng, 3) == 0 {
+                out.push(Row::stacked(166, ranged(rng, 10, 20) as u32));
             }
-            if next(rng, 3) == 0 {
+            // `:36683-36688`: the 1/5 CloudinaBottle 52.
+            if next(rng, 5) == 0 {
                 out.push(Row::stacked(52, 1));
             }
             if next(rng, 3) == 0 {
                 out.push(Row::stacked(965, ranged(rng, 50, 101) as u32));
             }
+            // `:36695-36709`: the 1/2 bar row — Next(2) pick, Next(10)+5.
             if next(rng, 2) == 0 {
                 let pick = next(rng, 2);
                 let bar = if pick == 0 { iron_bar() } else { silver_bar() };
-                out.push(Row::stacked(bar, ranged(rng, 10, 21) as u32));
+                out.push(Row::stacked(bar, ranged(rng, 5, 15) as u32));
             }
-            if next(rng, 3) != 0 {
+            // `:36710-36724`: the 1/2 arrow row — Next(2) pick, Next(25)+25.
+            if next(rng, 2) == 0 {
                 if next(rng, 2) == 0 {
-                    out.push(Row::stacked(40, ranged(rng, 25, 51) as u32));
+                    out.push(Row::stacked(40, ranged(rng, 25, 50) as u32));
                 } else {
-                    out.push(Row::stacked(42, ranged(rng, 25, 51) as u32));
+                    out.push(Row::stacked(42, ranged(rng, 25, 50) as u32));
                 }
             }
             if next(rng, 2) == 0 {
                 out.push(Row::stacked(28, ranged(rng, 3, 6) as u32));
             }
-            if next(rng, 3) != 0 {
+            // `:36732-36774`: the 2/3 herb row — Next(9) pick, Next(1,3).
+            if next(rng, 3) > 0 {
                 let herbs = match next(rng, 9) {
                     0 => 289,
                     1 => 298,
@@ -483,41 +511,33 @@ fn stock_band(
                     7 => 2322,
                     _ => 2329,
                 };
-                out.push(Row::stacked(herbs, ranged(rng, 2, 5) as u32));
+                out.push(Row::stacked(herbs, ranged(rng, 1, 3) as u32));
+            }
+            // `:36775-36781`: the 2/3 RecallPotion 2350 row (2-4).
+            if next(rng, 3) != 0 {
+                out.push(Row::stacked(2350, ranged(rng, 2, 5) as u32));
+            }
+            // `:36782-36795`: the 1/2 torch row — flag2 picks the IceTorch
+            // 974, else the Torch 8 (NO pick draw), Next(11)+10.
+            if next(rng, 2) == 0 {
+                let torch = if ctx.ice { 974 } else { 8 };
+                out.push(Row::stacked(torch, ranged(rng, 10, 21) as u32));
             }
             if next(rng, 2) == 0 {
-                if next(rng, 2) == 0 {
-                    out.push(Row::stacked(974, ranged(rng, 11, 21) as u32));
-                } else {
-                    out.push(Row::stacked(8, ranged(rng, 11, 21) as u32));
-                }
-            }
-            if next(rng, 2) == 0 {
-                out.push(Row::stacked(72, ranged(rng, 50, 91) as u32));
+                out.push(Row::stacked(72, ranged(rng, 50, 90) as u32));
             }
         }
         Band::Deep => {
             // `:36803` — mahogany/pyramid extras, the deep weapon.
-            if ctx.mahogany && next(rng, 2) == 0 {
-                if next(rng, 2) == 0 {
-                    out.push(Row::plain(4425));
-                } else {
-                    out.push(Row::plain(4460));
-                }
-            }
-            if ctx.pyramid && next(rng, 7) == 0 {
-                out.push(Row::plain(4346));
-            }
-            if ctx.pyramid && next(rng, 15) == 0 {
-                out.push(Row::plain(4066));
-            }
-            if ctx.mahogany && (next(rng, 5) == 0 || next(rng, 1) == 0) {
-                if next(rng, 1) == 0 {
-                    out.push(Row::plain(4426));
-                } else {
-                    out.push(Row::plain(5525));
-                }
-            }
+            // W4-c33 flag5 verify: the old `ctx.mahogany` either-or
+            // 4425/4460 row and the `(Next(5)==0 || Next(1)==0)` wand row
+            // had NO C# counterpart — the deep band's num10 > 0 arm
+            // (`:36806-36844`) rolls flag2 3199 (1/5), flag3 4346/4066
+            // (1/7 + 1/15), flag4's wands fairness + two INDEPENDENT 1/10
+            // rows (4426, 5525) and then flag5's pair. The flag2/3/4 rows
+            // live in `stock_chest`'s deep-arm block (once, not twice);
+            // the old `ctx.pyramid` 4346/4066 gate was mis-attributed —
+            // the pyramid chamber is flag11 and takes the SURFACE arm.
             // `flag5` `:36845-36855` (W4-c33): the deep band's water-chest
             // pair — the vanilla slot is after the flag4 jungle rows (the
             // port's `stock_chest` inserts the main ahead of the band).
@@ -529,25 +549,28 @@ fn stock_band(
                     out.push(Row::plain(4460));
                 }
             }
-            out.push(deep_weapon(rng, false));
-            if next(rng, 20) == 0 {
-                let mut lava = Row::plain(906);
-                roll_prefix_on(rng, &mut lava);
-                out.push(lava);
-            } else if next(rng, 15) == 0 {
-                let mut muramasa = Row::plain(997);
-                roll_prefix_on(rng, &mut muramasa);
-                out.push(muramasa);
-            } else {
-                let mut deep_pick = deep_weapon(rng, false);
-                roll_prefix_on(rng, &mut deep_pick);
-                out.push(deep_pick);
+            // `:36902-36995`: the whole lava/muramasa/weapon/key ladder is
+            // the `num10 == 0` ELSE branch — a preset main skips it.
+            if !preset_main {
                 if next(rng, 20) == 0 {
-                    let mut key = Row::plain(930);
-                    roll_prefix_on(rng, &mut key);
-                    out.push(key);
-                    if next(rng, 2) == 0 {
-                        out.push(Row::stacked(931, ranged(rng, 26, 51) as u32));
+                    let mut lava = Row::plain(906);
+                    roll_prefix_on(rng, &mut lava);
+                    out.push(lava);
+                } else if next(rng, 15) == 0 {
+                    let mut muramasa = Row::plain(997);
+                    roll_prefix_on(rng, &mut muramasa);
+                    out.push(muramasa);
+                } else {
+                    let mut deep_pick = deep_weapon(rng, false);
+                    roll_prefix_on(rng, &mut deep_pick);
+                    out.push(deep_pick);
+                    if next(rng, 20) == 0 {
+                        let mut key = Row::plain(930);
+                        roll_prefix_on(rng, &mut key);
+                        out.push(key);
+                        if next(rng, 2) == 0 {
+                            out.push(Row::stacked(931, ranged(rng, 26, 51) as u32));
+                        }
                     }
                 }
             }
@@ -633,7 +656,10 @@ fn stock_band(
                     out.push(Row::plain(4551));
                 }
             }
-            out.push(deep_weapon(rng, true));
+            // `:37193`: the deepest weapon roll is the num10 == 0 branch.
+            if !preset_main {
+                out.push(deep_weapon(rng, true));
+            }
             if next(rng, 3) == 0 {
                 out.push(Row::stacked(167, 1));
             }
@@ -821,11 +847,32 @@ fn stock_chest(
     rng: &mut dyn tr_core::worldgen::chest_stock::WorldGenRand,
 ) -> Vec<Row> {
     let ctx = ev.ctx;
-    let band = ev.band;
     let chest_style = ev.chest_style;
     let chest_kind = ev.chest_tile_type;
     let y = ev.y;
-    let mut rows = stock_band(band, &ctx, chest_style, chest_kind, rng);
+    // `flag11` (`:36172-36175`): a MAIN-based flag — `chestTileType == 21
+    // && num9 != 0 && (num10 == 848 || num10 == 857 || num10 == 934)`. The
+    // pyramid's chamber walls are SandstoneBrick 34 (`Pyramid :27726`), so
+    // the wall-187 `ctx.pyramid` probe alone misses the faithful chamber;
+    // the flag reads the caller's main (the Pharaoh double-roll), not the
+    // walls. `num9 != 0` holds: the Pyramid caller passes style 1.
+    let flag11 = chest_kind == 21
+        && chest_style != 0
+        && matches!(ev.main_item, 848 | 857 | 934);
+    // `:36222-36227`: `(flag23 && (flag | flag6)) | flag11` — the flag11
+    // disjunct FORCES the surface arm at any depth (the pyramid chamber
+    // sits deep in the sand; its band rows are the surface consumables).
+    let band = if flag11 { Band::Surface } else { ev.band };
+    // The caller-preset mains (the C# sites pass `mainItemInChest` before
+    // `AddBuriedChest`): the jungle cycle, the Pharaoh roll, the water
+    // list/cycle, the sky-house cycle. Their band weapon rolls skip — the
+    // `num10 > 0` branch has no weapon draw. The family-rolled mains
+    // (desert/ice/hell/939) roll inside the stocking block itself; the
+    // port keeps them band-first (the documented residual deviation).
+    let preset_main = ev.main_item != 0
+        && !ctx.dungeon
+        && (ctx.jungle || flag11 || chest_style == 17 || ctx.sky);
+    let mut rows = stock_band(band, &ctx, chest_style, chest_kind, preset_main, rng);
     if ctx.dungeon {
         // The dungeon-family chests cycle the fixed loot item
         // (`DungeonUtils.cs:342-355`); the shallow caves roll the plain
@@ -844,15 +891,21 @@ fn stock_chest(
         let mut row = Row::plain(ev.main_item);
         roll_prefix_on(rng, &mut row);
         rows.insert(0, row);
-    } else if ctx.pyramid && ev.main_item != 0 {
+    } else if flag11 {
         // The `Pyramid` structure's own chest (`:27853-27873`): its main is
         // pre-set by the CALLER (the Pharaoh double-roll, drawn at the site
         // since S1-A-4), so the vanilla's `flag3` arm never fires on it (its
-        // `num10 != 0` disjuncts all fail).
-        rows.insert(0, Row::plain(ev.main_item));
+        // `num10 != 0` disjuncts all fail). The `flag11` gate is main-based
+        // (`:36172`), not the wall probe — the chamber's wall is 34.
+        // `:36229-36231`: `SetDefaults(num10)` + `Prefix(-1)` — the mask is
+        // an accessory (rollable), the bottle/carpet roll through the same
+        // engine call (their `CanHavePrefixes` decides the draws).
+        let mut row = Row::plain(ev.main_item);
+        roll_prefix_on(rng, &mut row);
+        rows.insert(0, row);
         if ev.main_item == 848 {
             // `flag11`'s companion (`:36234-36239`) — slot 1, right after the
-            // mask's slot 0.
+            // mask's slot 0; the C# writes it with no `Prefix(-1)`.
             rows.insert(1, Row::plain(PHARAOHS_ROBE));
         }
     } else if chest_style == 17 && ev.main_item != 0 {
@@ -1491,8 +1544,16 @@ mod tests {
         let mut stock = ChestStock::new(42, false);
         let slots = stock_anchor(&mut stock, &w, 100, 198, 0, 21, 212);
         assert_eq!(slots[0].kind, 212, "slot 0 rides the site's cycle pick");
-        // The band weapon moved to slot 1 — the insert, not a replacement.
-        assert!(slots.len() >= 2, "the band rows follow ({:?})", slots.iter().map(|s| s.kind).collect::<Vec<_>>());
+        // W4-c33: a preset main skips the band weapon (`num10 > 0` branch),
+        // so the follow rows are the surface consumables — at least one
+        // lands across a seed sweep (the 13 coin-flip gates).
+        let follow = (1u64..40).any(|seed| {
+            let mut stock = ChestStock::new(seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            let rows = stock_chest_at(&mut stock, &w, 100, 198, false, 0, 21, 212, &mut rng);
+            rows[0].kind == 212 && rows.len() >= 2
+        });
+        assert!(follow, "the band consumable rows follow the cycle pick");
     }
 
     /// A rig tall enough for a real Deep band (`y < height - 250` past the
@@ -1955,14 +2016,17 @@ mod tests {
 
     /// `Pyramid`'s chest main (`:27853-27873`): the double-roll, so the
     /// Pharaoh'sMask 848 only on two zeros and the 857/934 otherwise, with
-    /// the `flag11` companion 866 in slot 1 right after the mask.
+    /// the `flag11` companion 866 in slot 1 right after the mask. W4-c33
+    /// sweep: the caller's style is 1 (`:27873`) and the chamber's wall is
+    /// SandstoneBrick 34 — `flag11` (`:36172`) is main-based, so the arm
+    /// fires without the wall-187 probe.
     #[test]
     fn the_pyramid_chest_stocks_the_pharaoh_roll_and_the_robe() {
         let mut w = rig();
         for dx in -2i32..=0 {
             for dy in -2i32..=0 {
                 let i = w.index(100 + dx, 198 + dy);
-                w.tiles[i].wall = 187; // the pyramid chamber's sandstone
+                w.tiles[i].wall = 34; // the faithful chamber's SandstoneBrick
             }
         }
         put_chest(&mut w, 100, 197);
@@ -1974,7 +2038,7 @@ mod tests {
         for main in [848u16, 857, 934] {
             let mut stock = ChestStock::new(42, false);
             let mut rng = tr_core::UnifiedRandom::new(42);
-            let rows = stock_chest_at(&mut stock, &w, 100, 197, false, 0, 21, main, &mut rng);
+            let rows = stock_chest_at(&mut stock, &w, 100, 197, false, 1, 21, main, &mut rng);
             assert_eq!(rows[0].kind, main, "slot 0 rides the site's pick ({main})");
             if main == 848 {
                 assert_eq!(rows[1].kind, PHARAOHS_ROBE, "the robe rides slot 1");
@@ -1986,6 +2050,145 @@ mod tests {
         }
         assert!(mask_with_robe > 0, "the mask+robe pair lands");
         assert!(pair_without_mask > 0, "and the 857/934 arms dominate");
+    }
+
+    /// W4-c33 sweep: `flag11` (`:36172-36175`) forces the SURFACE arm at any
+    /// depth (`:36227`'s `| flag11` disjunct) — a deep pyramid chamber's
+    /// chest takes the surface consumables, NOT the deep weapon/gem rows,
+    /// and the `num10 > 0` path skips the `Next(11)` surface-weapon roll
+    /// (`:36229`). A style-0 chest with the same main is NOT flag11
+    /// (`num9 != 0` fails): it keeps its natural band rows.
+    #[test]
+    fn the_flag11_pyramid_chest_takes_the_surface_rows_at_depth() {
+        let mut w = deep_rig(); // 200x600: y=340 is a real Deep band
+        put_chest(&mut w, 100, 340);
+        let deep_weapons = [49u16, 50, 53, 54, 5011, 975];
+        let surface_weapons = [280u16, 281, 284, 285, 953, 946, 3068, 3069, 3084, 4341, 6165];
+        let mut saw_surface_consumable = false;
+        for seed in 1u64..60 {
+            let mut stock = ChestStock::new(seed, false);
+            let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+            let rows = stock_chest_at(&mut stock, &w, 100, 340, false, 1, 21, 934, &mut rng);
+            assert_eq!(rows[0].kind, 934, "the carpet main leads ({seed})");
+            assert!(
+                !rows.iter().skip(1).any(|r| deep_weapons.contains(&r.kind)),
+                "no deep weapon row on a flag11 chest ({seed}): {:?}",
+                rows.iter().map(|r| r.kind).collect::<Vec<_>>()
+            );
+            assert!(
+                !rows.iter().any(|r| surface_weapons.contains(&r.kind)),
+                "the num10 > 0 path rolls no surface weapon ({seed})"
+            );
+            // The surface arm's consumables (282/279/3093/4345/168/bars/
+            // 965/40/42/28/2350/herbs/8/31/72/9) — at least one lands
+            // across the sweep.
+            if rows.iter().any(|r| matches!(r.kind, 282 | 279 | 3093 | 4345 | 168 | 965 | 2350)) {
+                saw_surface_consumable = true;
+            }
+        }
+        assert!(saw_surface_consumable, "the surface consumables roll at depth");
+        // The style-0 negative: no flag11, the deep band keeps its weapon.
+        let mut stock = ChestStock::new(42, false);
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        let rows = stock_chest_at(&mut stock, &w, 100, 340, false, 0, 21, 934, &mut rng);
+        assert!(
+            rows.iter().any(|r| deep_weapons.contains(&r.kind)),
+            "a style-0 chest keeps its natural deep rows"
+        );
+    }
+
+    /// W4-c33 flag5 verify (`:36515-36525` mid / `:36845-36855` deep): a
+    /// style-17 water chest with a pre-set main rolls TWO INDEPENDENT 1/2
+    /// rows — SharkBait 4425 and SandcastleBucket 4460 (both, either or
+    /// neither) — right after the main, ahead of the band's weapon row.
+    /// The style-0 negative takes neither. All five scatter mains walk it.
+    #[test]
+    fn the_flag5_water_pair_rolls_two_independent_halves() {
+        let mut both = 0u32;
+        let mut bait_only = 0u32;
+        let mut bucket_only = 0u32;
+        let mut neither = 0u32;
+        for seed in 1u64..400 {
+            for (band_y, rig) in [(230i32, rig()), (340, deep_rig())] {
+                let mut w = rig;
+                put_chest(&mut w, 100, band_y);
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                let rows =
+                    stock_chest_at(&mut stock, &w, 100, band_y, false, 17, 21, 186, &mut rng);
+                assert_eq!(rows[0].kind, 186, "the main leads ({seed}, y={band_y})");
+                let bait = rows.iter().any(|r| r.kind == 4425);
+                let bucket = rows.iter().any(|r| r.kind == 4460);
+                match (bait, bucket) {
+                    (true, true) => both += 1,
+                    (true, false) => bait_only += 1,
+                    (false, true) => bucket_only += 1,
+                    (false, false) => neither += 1,
+                }
+            }
+        }
+        assert!(both > 0, "the pair lands together ({both})");
+        assert!(bait_only > 0, "the bait lands alone ({bait_only})");
+        assert!(bucket_only > 0, "the bucket lands alone ({bucket_only})");
+        assert!(neither > 0, "and neither lands ({neither})");
+        // The style-0 negative: the flag5 gate is the style, not the main.
+        let mut w = deep_rig();
+        put_chest(&mut w, 100, 340);
+        let mut stock = ChestStock::new(42, false);
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        let rows = stock_chest_at(&mut stock, &w, 100, 340, false, 0, 21, 186, &mut rng);
+        assert!(
+            !rows.iter().any(|r| matches!(r.kind, 4425 | 4460)),
+            "a style-0 chest with the same main takes no flag5 pair"
+        );
+    }
+
+    /// W4-c33 flag5 census: every Water Chests main (the NextFromList five
+    /// 863/186/277/187/4404 + the extraLiquid 268) stocks as slot 0 with the
+    /// flag5 pair behind it — the ocean loot family is table-complete.
+    #[test]
+    fn every_water_chest_main_stocks_with_the_flag5_pair() {
+        let mut w = deep_rig();
+        put_chest(&mut w, 100, 340);
+        for main in [863u16, 186, 277, 187, 4404, 268] {
+            let hit = (1u64..200).any(|seed| {
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                let rows =
+                    stock_chest_at(&mut stock, &w, 100, 340, false, 17, 21, main, &mut rng);
+                rows[0].kind == main && rows.iter().any(|r| matches!(r.kind, 4425 | 4460))
+            });
+            assert!(hit, "main {main} stocks with a flag5 row on some stream");
+        }
+    }
+
+    /// W4-c33 pyramid-loot census (`flag12` `:36526-36532`): the skyware
+    /// family's mid-band 1/40 CreativeWings 4978 rolls with the natural
+    /// prefix; the surface/deep bands carry no such row.
+    #[test]
+    fn the_sky_mid_band_rolls_the_creative_wings() {
+        let mut w = World::new("t".into(), 200, 600);
+        w.world_surface = 200.0;
+        w.rock_layer = 400.0; // y=300 sits in the Mid band
+        w.seed = 42;
+        for dx in -2i32..=0 {
+            for dy in -2i32..=0 {
+                let i = w.index(100 + dx, 300 + dy);
+                w.tiles[i].wall = 73; // the skyware cloud wall
+            }
+        }
+        put_chest(&mut w, 100, 300);
+        let hits = (1u64..900)
+            .filter(|&seed| {
+                let mut stock = ChestStock::new(seed, false);
+                let mut rng = tr_core::UnifiedRandom::new(seed as i32);
+                stock_chest_at(&mut stock, &w, 100, 300, false, 13, 21, 159, &mut rng)
+                    .iter()
+                    .any(|r| r.kind == 4978)
+            })
+            .count();
+        assert!(hits > 0, "the 1/40 wings row fires ({hits}/900)");
+        assert!(hits < 120, "and stays rare ({hits}/900 ~ 1/40)");
     }
 
     /// `flag3`'s underground-desert arm (`:36023-36047`): the shallow four
