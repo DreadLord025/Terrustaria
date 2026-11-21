@@ -194,6 +194,7 @@
 //! | 863-872 | `:87011-87024` | the zombie block: 331 ZombieXmas + 332 ZombieSweater (5-gore ladders) |
 //! | 873-878 | `:87029-87034` | the zombie block: 109 Clown (6 gores, extra +46 Y gore 120) |
 //! | 879-888 | `:87039-87052` | the zombie block: 161/431 ZombieEskimo + 162 Frankenstein (5-gore ladders) |
+//! | 889-898 | `:87057-87070` | the zombie block: 188/434 SwampZombie + 200/436 FemaleZombie (5-gore ladders) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5110,7 +5111,9 @@ fn moss_zombie_death(
 /// 491/492/493) and the 109 Clown (sites 873-878: ladder 121/122/123 + the
 /// extra +46 Y gore 120), the 161/431 ZombieEskimo (sites 879-883: ladder
 /// 191/192/193) and the 162 Frankenstein (sites 884-888: ladder
-/// 194/195/196). The remaining zombie types land with the next batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
+/// 194/195/196), the 188/434 SwampZombie (sites 889-893: ladder
+/// 243/244/245) and the 200/436 FemaleZombie (sites 894-898: ladder
+/// 262/263/264). The remaining zombie types land with the next batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
 /// (the wiring wave's hit-half detail is noted per arm).
 fn zombie_block_death(
     npc: &Npc,
@@ -5201,6 +5204,24 @@ fn zombie_block_death(
         gore.new_gore(rng, world, mid, vel, 195, s); // :87050
         gore.new_gore(rng, world, low, vel, 196, s); // :87051
         gore.new_gore(rng, world, low, vel, 196, s); // :87052
+        return;
+    }
+    // `:87055-87062` — the 188/434 SwampZombie ladder.
+    if npc_type == 188 || npc_type == 434 {
+        gore.new_gore(rng, world, pos, vel, 243, s); // :87057
+        gore.new_gore(rng, world, mid, vel, 244, s); // :87058
+        gore.new_gore(rng, world, mid, vel, 244, s); // :87059
+        gore.new_gore(rng, world, low, vel, 245, s); // :87060
+        gore.new_gore(rng, world, low, vel, 245, s); // :87061
+        return;
+    }
+    // `:87064-87071` — the 200/436 FemaleZombie ladder.
+    if npc_type == 200 || npc_type == 436 {
+        gore.new_gore(rng, world, pos, vel, 262, s); // :87066
+        gore.new_gore(rng, world, mid, vel, 263, s); // :87067
+        gore.new_gore(rng, world, mid, vel, 263, s); // :87068
+        gore.new_gore(rng, world, low, vel, 264, s); // :87069
+        gore.new_gore(rng, world, low, vel, 264, s); // :87070
         return;
     }
 }
@@ -5840,9 +5861,11 @@ pub fn hit_effect_c(
         moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:86937-87139` — the big zombie block; the 104/632/331/332/109/161/
-    // 431/162 (sites 853-888); the rest lands with the next batches.
+    // 431/162/188/434/200/436 (sites 853-898); the rest lands with the next
+    // batches.
     if (npc_type == 104 || npc_type == 632 || npc_type == 331 || npc_type == 332 || npc_type == 109
-        || npc_type == 161 || npc_type == 431 || npc_type == 162)
+        || npc_type == 161 || npc_type == 431 || npc_type == 162 || npc_type == 188
+        || npc_type == 434 || npc_type == 200 || npc_type == 436)
         && npc.hp <= 0
     {
         zombie_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
@@ -9186,6 +9209,23 @@ mod tests {
             let mut gore = GorePool::new();
             let mut dust = DustPool::new();
             let mut rng = UnifiedRandom::new(823);
+            let mut out = HitEffectOutcomeC::default();
+            zombie_block_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "zombie {ty}");
+        }
+    }
+
+    /// `NPC.cs:87057-87070` — the zombie block: 188/434 SwampZombie
+    /// ladder 243/244/245, 200/436 FemaleZombie ladder 262/263/264.
+    #[test]
+    fn w4_f10_the_zombie_block_swamp_and_female() {
+        let w = air();
+        for (ty, gores) in [(188, [243, 244, 244, 245, 245]), (434, [243, 244, 244, 245, 245]), (200, [262, 263, 263, 264, 264]), (436, [262, 263, 263, 264, 264])] {
+            let n = boss(100.0, 100.0, 40.0, 56.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(827);
             let mut out = HitEffectOutcomeC::default();
             zombie_block_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
