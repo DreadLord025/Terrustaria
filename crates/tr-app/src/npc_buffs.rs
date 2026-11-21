@@ -490,6 +490,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // NotWhips mask is the documented unmodelled gap (`&[]` above),
         // the whip half rides `whip_immune`.
         NpcKind::DD2LanePortal => &[],
+        // W4-d41 — the cavern crawdads/shellies: `{ 494..497,
+        // SpecificallyImmuneTo: [31] }` (`NPCID.cs:8916-8943`) — the
+        // Confused debuff, all four.
+        NpcKind::Crawdad | NpcKind::Crawdad2 | NpcKind::GiantShelly | NpcKind::GiantShelly2 => &[31],
     }
 }
 

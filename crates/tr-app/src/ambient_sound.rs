@@ -649,6 +649,12 @@ pub fn fighter_walker_kind(kind: crate::npc::NpcKind) -> bool {
             | Scarecrow9
             | Scarecrow10
             | Splinterling
+            // W4-d41 — the cavern crawdads ride the same counter-only
+            // walker (the `:57072` flag8 list names 494-506; neither is
+            // in the `:57340` moan list — the counter runs, the moan
+            // arms stay silent).
+            | Crawdad
+            | Crawdad2
     )
 }
 

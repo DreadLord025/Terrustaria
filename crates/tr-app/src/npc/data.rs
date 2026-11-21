@@ -586,6 +586,13 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d41 — the cavern crawdads/shellies keep their vanilla ids
+            // (494-497 are free in the wire space; the pumpkin/frost
+            // precedent). `NPCID.cs:11661-11667`.
+            NpcKind::Crawdad => 494,
+            NpcKind::Crawdad2 => 495,
+            NpcKind::GiantShelly => 496,
+            NpcKind::GiantShelly2 => 497,
         }
     }
 
@@ -916,6 +923,11 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d41 — the cavern crawdads/shellies (`to_u16` above).
+            494 => NpcKind::Crawdad,
+            495 => NpcKind::Crawdad2,
+            496 => NpcKind::GiantShelly,
+            497 => NpcKind::GiantShelly2,
             _ => return None,
         })
     }
@@ -950,6 +962,10 @@ impl NpcKind {
                 | NpcKind::Princess
                 | NpcKind::DyeTrader
                 | NpcKind::PartyGirl
+                // W4-d41: the Tavernkeep's `townNPC = true` + `friendly =
+                // true` rows (`NPC.cs:16263-16264`, g58b) — the ctor's
+                // friendly seed and the save filter admit him.
+                | NpcKind::DD2Bartender
         )
     }
 
@@ -1128,6 +1144,9 @@ impl NpcKind {
                 | NpcKind::GoblinTinkerer
                 | NpcKind::Painter
                 | NpcKind::WitchDoctor
+                // W4-d41: the Tavernkeep IS a town NPC (`NPC.cs:16263`'s
+                // `townNPC = true`, g58b's census — no separate event twin).
+                | NpcKind::DD2Bartender
         )
     }
 
@@ -1788,6 +1807,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d41 — the cavern crawdads' `SoundID.NPCHit33`
+            // (`NPC.cs:14674`) and the shellies' `NPCHit38` (`:14686`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => "NPC_Hit_33",
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => "NPC_Hit_38",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2115,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d41 — the cavern crawdads' `SoundID.NPCDeath36`
+            // (`NPC.cs:14675`) and the shellies' `NPCDeath41` (`:14687`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => "NPC_Killed_36",
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => "NPC_Killed_41",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2451,6 +2478,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d41 — aiStyle 3, the crawdad pair (`NPC.cs:14670`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 3,
+            // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
     }
 
@@ -2559,6 +2590,11 @@ impl NpcKind {
             NpcKind::Nutcracker | NpcKind::Krampus => 2.0,
             NpcKind::NutcrackerSpinning => 6.0,
             NpcKind::ElfArcher => 1.0,
+            // W4-d41 — the cavern crawdads' charge-family cap
+            // (`NPC.cs:58267`: `num = 1f * (1f + (1f - scale))` — 1f at
+            // the 1f default scale). The ladder's charge arm owns the
+            // live walk; this row feeds the walker fallback + the pin.
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 1.0,
             _ => return None,
         })
     }
@@ -2981,6 +3017,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d41 — the cavern crawdads'/shellies' 28x22 boxes
+            // (`NPC.cs:14668-14669`/`:14680-14681`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => (28.0, 22.0),
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => (28.0, 22.0),
         }
     }
 
@@ -3059,6 +3099,17 @@ impl NpcKind {
             NpcKind::ForceBubble => 384,
             // `NPCID.DesertDjinn` (533)
             NpcKind::DesertDjinn => 533,
+            // W4-d41 — the cavern crawdads/shellies' vanilla types
+            // (`NPCID.cs:11661-11667`). The 1-variants keep hand rows; the
+            // 2-variants have NO hand row — like every folded segment
+            // family (the Destroyer body/tail precedent, the L-B gate fix)
+            // they fall through to the folded bestiary net id (494/496),
+            // keeping s1_f_3's cs_id==net_id invariant. The C# type gates
+            // still work: the ladder's charge family matches 494|495
+            // identically, and the shelly AI reads `Style39Type`, not
+            // cs_id. The REAL draw types ride render_key/texture_net_id.
+            NpcKind::Crawdad => 494,
+            NpcKind::GiantShelly => 496,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -3201,6 +3252,9 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // W4-d41: the lane portal's `behindTiles = true` row
+                // (`NPC.cs:16048`).
+                | NpcKind::DD2LanePortal
         )
     }
 
@@ -3622,6 +3676,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d41 — the cavern crawdads'/shellies' lifeMax 50
+            // (`NPC.cs:14673`/`:14685`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 50,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 50,
         }
     }
 
@@ -3986,6 +4044,10 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d41 — the cavern crawdads' damage 28 (`NPC.cs:14671`)
+            // and the shellies' 16 (`:14683`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 28,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 16,
         }
     }
 }

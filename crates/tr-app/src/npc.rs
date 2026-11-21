@@ -1086,6 +1086,30 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.Crawdad` (494, `NPCID.cs:11661`) — the cavern crab
+    /// (`aiStyle 3`, `NPC.cs:14666-14677`): 28x22, dmg 28, def 6, 50 HP,
+    /// kb 1 (the head default — the branch writes no row), value 120,
+    /// NPCHit33/NPCDeath36. The `AI_003_Fighters` charge family
+    /// (`NPC.cs:58262-58321`): the 42-px close-range stop into the
+    /// `ai[2]` charge, the ×1.5 charge damage. W4-d41.
+    Crawdad,
+    /// `NPCID.Crawdad2` (495, `NPCID.cs:11663`) — the second cavern crab
+    /// colour (`NPC.cs:14666-14677`'s `type >= 494 && <= 495` group —
+    /// identical stats). The bestiary credit folds onto 494
+    /// (`ContentSamples.cs:1020`); the draw sheet stays NPC_495. W4-d41.
+    Crawdad2,
+    /// `NPCID.GiantShelly` (496, `NPCID.cs:11665`) — the cavern snail
+    /// (`aiStyle 39`, `NPC.cs:14678-14690`): 28x22, dmg 16, def 12,
+    /// 50 HP, kb 0.75, value 120, NPCHit38/NPCDeath41. The style-39
+    /// machine's shelly branches (`npc_ai_style39.rs`: the 0.5 walk cap,
+    /// the +2/+4 aggro, the 0.5-tick wind-up, the ×1.5 lunge damage,
+    /// the ×0.75 lunge speed). W4-d41.
+    GiantShelly,
+    /// `NPCID.GiantShelly2` (497, `NPCID.cs:11667`) — the second cavern
+    /// snail colour (`NPC.cs:14678-14690`'s `type >= 496 && <= 497`
+    /// group — identical stats). The bestiary credit folds onto 496
+    /// (`ContentSamples.cs:1019`); the draw sheet stays NPC_497. W4-d41.
+    GiantShelly2,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3028,11 +3052,18 @@ impl Npc {
             // `dontTakeDamage = false`, `:36383`) and the BlazingWheel
             // (`NPC.cs:9729`, the small-kinds wave). The shell 392's row
             // (`:14008`) rides the aiStyle-75 family slice; the Brain's
-            // Creeper shield is written by the sim. Every other kind keeps
-            // the false default (`NPC.cs:8507`, the SetDefaults reset).
+            // Creeper shield is written by the sim. The lane portal 549's
+            // row (`:16049`, W4-d41) joins the list below. Every other kind
+            // keeps the false default (`NPC.cs:8507`, the SetDefaults reset).
             dont_take_damage: matches!(
                 kind,
-                NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+                NpcKind::PlanterasHook
+                    | NpcKind::MartianSaucerCore
+                    | NpcKind::BlazingWheel
+                    // W4-d41: the lane portal 549 spawns unkillable
+                    // (`NPC.cs:16049`); the aiStyle-106 fade's 550-tick end
+                    // drops the flag and zeroes the life (`:41040-41042`).
+                    | NpcKind::DD2LanePortal
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3529,6 +3560,11 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d41 — the crawdads keep the head's 1 (`NPC.cs:8533` —
+            // the `:14666-14677` branch writes no kb row); the shellies
+            // 0.75 (`:14688`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 1.0,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 0.75,
             _ => 0.4,
         }
     }
@@ -3909,6 +3945,10 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d41 — the cavern crawdads' defense 6 (`NPC.cs:14672`)
+            // and the shellies' 12 (`:14684`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 6,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 12,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4321,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d41 — the cavern crawdads'/shellies' value 120 copper
+            // (`NPC.cs:14676`/`:14689`).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => 120.0,
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => 120.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5856,6 +5900,12 @@ impl Npc {
             NpcKind::Deerclops => self.update_deerclops(world, player, rng),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
+            // W4-d41 — the cavern crawdads (494/495, aiStyle 3): the
+            // walker family; the `AI_003_Fighters` charge arm
+            // (`NPC.cs:58262-58321`, the 42-px stop + the ×1.5 charge
+            // damage) rides `npc_ai3_speeds::apply_ladder` through
+            // `run_ai3_ladder` (the type reads cs_id 494/495).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => self.update_skeleton(world, player, dt),
             // The goblin army's fighters (aiStyle 3, NPC.cs:15644/15658/
             // :15714 cases 26/27/111): the walker arm. (S1-D-3b: the
             // shadowing `update_goblin` arm that kept Thief/Warrior/Peon
@@ -6026,7 +6076,9 @@ impl Npc {
             NpcKind::SolarDrakomireRider => {
                 unreachable!("aiStyle 75 rides the style axis (S1-D-3-wire-saucer)")
             }
-            NpcKind::SolarSroller => self.update_solar_sroller(world, player, rng),
+            NpcKind::SolarSroller
+            | NpcKind::GiantShelly
+            | NpcKind::GiantShelly2 => self.update_solar_sroller(world, player, rng),
             NpcKind::SolarCorite => self.update_solar_corite(world, player, rng),
             NpcKind::SolarSelenian => self.update_solar_selenian(world, player),
             // The nebula trio: the floater's aiStyle-97 teleport cycle, the
@@ -7268,6 +7320,114 @@ impl Npc {
                 } else {
                     self.frame_counter = 0.0;
                     self.frame = 14.min(self.rows() - 1);
+                }
+            }
+            // W4-d41 — `case 496 : case 497` (`NPC.cs:69994-70066`): the
+            // shelly pair's OWN state machine over the 12-row strip (NOT
+            // the style-39 tail's tortoise bands, `:77292-77368` — the
+            // case breaks before it). The walk laps at 24 (the else
+            // resets the counter, leaves the row); the wind-up pins
+            // 4/5/6 off ai[1], the settle 10/11/3, any other state 7.
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => {
+                if self.ai[0] == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                    } else if self.vy < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame_counter += self.vx.abs() * 1.1;
+                    if self.frame_counter < 6.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 12.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 18.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 3;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                } else if self.ai[0] == 1.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.ai[1] < 10.0 {
+                        4
+                    } else if self.ai[1] < 20.0 {
+                        5
+                    } else {
+                        6
+                    };
+                } else if self.ai[0] == 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.ai[1] < 10.0 {
+                        10
+                    } else if self.ai[1] < 20.0 {
+                        11
+                    } else {
+                        3
+                    };
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 7;
+                }
+            }
+            // W4-d41 — `case 494 : case 495` (`NPC.cs:69657-69733`): the
+            // crawdads' charge bands (ai[2] 1..7/7..14/14..20 → rows
+            // 5/6/7), the air/turn row 2/3, the idle row 0, and the
+            // |vx| accumulator's 8/16/24/32/39 bands stepping rows
+            // 0/1/2/3/4 (the lap resets at 39).
+            NpcKind::Crawdad | NpcKind::Crawdad2 => {
+                if self.ai[2] > 0.0 {
+                    self.frame = if self.ai[2] < 7.0 {
+                        5
+                    } else if self.ai[2] < 14.0 {
+                        6
+                    } else if self.ai[2] < 20.0 {
+                        7
+                    } else {
+                        // `:69659-69674` — ai[2] >= 20 falls through the
+                        // three bands to the break: the row holds.
+                        return;
+                    };
+                    return;
+                }
+                if self.vy == 0.0 {
+                    // `:69677-69684` — the two ±1 writes (direction 0
+                    // leaves the sprite alone).
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                if self.vy != 0.0
+                    || (self.facing == -1 && self.vx > 0.0)
+                    || (self.facing == 1 && self.vx < 0.0)
+                {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.vy < 0.0 { 2 } else { 3 };
+                    return;
+                }
+                if self.vx == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                    return;
+                }
+                self.frame_counter += self.vx.abs();
+                if self.frame_counter < 8.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 16.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 24.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 32.0 {
+                    self.frame = 3;
+                } else if self.frame_counter < 39.0 {
+                    self.frame = 4;
+                } else {
+                    self.frame = 4;
+                    self.frame_counter = 0.0;
                 }
             }
             // 418 (the solar corite, `NPC.cs:70757-70803`): the idle/hover
@@ -14516,8 +14676,19 @@ impl Npc {
             npc_type_no_aggro: false,
             tank_pet: None,
         };
+        // W4-d41 — the shelly pair rides the SAME style-39 arm on its
+        // `Style39Type::GiantShelly` branches (the module's `is_shelly`
+        // axis: the 0.5 cap, the +2/+4 aggro, the 0.5-tick wind-up, the
+        // ×1.5/×0.75 lunge — `NPC.cs:29236-29499`). The ball states 5/6
+        // are 417-only, so the bounce tail below never fires for them.
+        let ty = match self.kind {
+            NpcKind::GiantShelly | NpcKind::GiantShelly2 => {
+                crate::npc_ai_style39::Style39Type::GiantShelly
+            }
+            _ => crate::npc_ai_style39::Style39Type::SolarSroller,
+        };
         let mut ctx = crate::npc_ai_style39::Style39Context {
-            kind: crate::npc_ai_style39::Style39Type::SolarSroller,
+            kind: ty,
             difficulty: 1.0, // Classic — the port's difficulty fold
             just_hit: self.hurt_cd > 0.0,
             ticker: 0, // the update_zombie stand-in (no ticker plumbed)
@@ -18221,6 +18392,9 @@ impl Npc {
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
+                    // W4-d41: the Tavernkeep's dmg 10 never reaches the
+                    // player (the aiStyle-7 town no-contact, `NPC.cs:16268`).
+                    | NpcKind::DD2Bartender
             ) {
                 let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -18601,6 +18775,13 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d41 — the cavern crawdads/shellies: the vanilla type ids
+            // (the same values `to_u16` rides) — unused by every arm
+            // above, so the G6 key stays injective.
+            NpcKind::Crawdad => 494,
+            NpcKind::Crawdad2 => 495,
+            NpcKind::GiantShelly => 496,
+            NpcKind::GiantShelly2 => 497,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +23850,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 274] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24129,11 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d41 — the cavern crawdads/shellies.
+        NpcKind::Crawdad,
+        NpcKind::Crawdad2,
+        NpcKind::GiantShelly,
+        NpcKind::GiantShelly2,
     ];
 
     #[test]
@@ -23994,6 +24180,229 @@ mod tests {
             ALL_KINDS.len(),
             "from_u16 decodes an id no kind encodes to"
         );
+    }
+
+    // ---- W4-d41 (npc-kinds band 491-560) — the cavern crawdads/shellies
+    // (494-497). Tests-as-code, WRITTEN NOT RUN (code-only mode — no
+    // compiler invoked). Every constant pins to its C# literal. ----
+
+    /// The cavern crawdads'/shellies' `SetDefaults` rows
+    /// (`NPC.cs:14666-14677` for 494/495, `:14678-14690` for 496/497):
+    /// size, aiStyle, lifeMax, damage, defense, value, knockBackResist —
+    /// the crawdads keep the head's kb 1 (`:8533`, the branch writes no
+    /// row), the shellies 0.75.
+    #[test]
+    fn w4_d41_the_cavern_crawdad_shelly_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::Crawdad, 494u16, 28.0, 22.0, 3u8, 50, 28, 6, 120.0, 1.0f32),
+            (NpcKind::Crawdad2, 495, 28.0, 22.0, 3, 50, 28, 6, 120.0, 1.0),
+            (NpcKind::GiantShelly, 496, 28.0, 22.0, 39, 50, 16, 12, 120.0, 0.75),
+            (NpcKind::GiantShelly2, 497, 28.0, 22.0, 39, 50, 16, 12, 120.0, 0.75),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            // The 1-variants keep their own cs_id; the 2-variants fold
+            // onto the 1-variant's bestiary net id (the L-B cs_id==net_id
+            // invariant — the Destroyer-segment precedent).
+            let cs = match kind {
+                NpcKind::Crawdad2 => 494,
+                NpcKind::GiantShelly2 => 496,
+                _ => vanilla,
+            };
+            assert_eq!(kind.cs_id(), cs, "{kind:?} cs_id");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            // The grounded walkers: no gravity/tile-collide/behind-tiles
+            // rows (the branch writes none).
+            assert!(!kind.no_gravity(), "{kind:?} noGravity");
+            assert!(!kind.behind_tiles(), "{kind:?} behindTiles");
+            assert_eq!(n.scale, 1.0, "{kind:?} scale");
+            // The protocol ids keep the vanilla slots (free in the wire
+            // space) and round-trip.
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The sound rows: the crawdads NPCHit33/NPCDeath36
+        // (`NPC.cs:14674-14675`), the shellies NPCHit38/NPCDeath41
+        // (`:14686-14687`).
+        assert_eq!(NpcKind::Crawdad.hit_sound(), Some("NPC_Hit_33"));
+        assert_eq!(NpcKind::Crawdad2.hit_sound(), Some("NPC_Hit_33"));
+        assert_eq!(NpcKind::Crawdad.death_sound(), Some("NPC_Killed_36"));
+        assert_eq!(NpcKind::Crawdad2.death_sound(), Some("NPC_Killed_36"));
+        assert_eq!(NpcKind::GiantShelly.hit_sound(), Some("NPC_Hit_38"));
+        assert_eq!(NpcKind::GiantShelly2.hit_sound(), Some("NPC_Hit_38"));
+        assert_eq!(NpcKind::GiantShelly.death_sound(), Some("NPC_Killed_41"));
+        assert_eq!(NpcKind::GiantShelly2.death_sound(), Some("NPC_Killed_41"));
+        // The Confused (31) immunity rows (`NPCID.cs:8916-8943`).
+        for kind in [
+            NpcKind::Crawdad,
+            NpcKind::Crawdad2,
+            NpcKind::GiantShelly,
+            NpcKind::GiantShelly2,
+        ] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+    }
+
+    /// The bestiary rows: ONE entry per pair — the 1-variants carry the
+    /// visible rows (`BestiaryDatabaseNPCsPopulator.cs:851-868`'s
+    /// automated populator), the 2-variants fold onto them
+    /// (`ContentSamples.cs:1019-1020`'s credit map; the redigit
+    /// dictionary's `Hide = true`). The draw sheets stay the variants'
+    /// own (`texture_net_id`).
+    #[test]
+    fn w4_d41_the_cavern_pairs_fold_their_bestiary_credits() {
+        let crawdad = crate::bestiary::entry_for_npc(NpcKind::Crawdad, SlimeVariant::Blue);
+        assert_eq!(crawdad.net_id, 494);
+        assert_eq!(crawdad.credit_id, "Crawdad");
+        assert_eq!(crawdad.name, "Crawdad");
+        let shelly = crate::bestiary::entry_for_npc(NpcKind::GiantShelly, SlimeVariant::Blue);
+        assert_eq!(shelly.net_id, 496);
+        assert_eq!(shelly.credit_id, "GiantShelly");
+        assert_eq!(shelly.name, "Giant Shelly");
+        // The folds.
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::Crawdad2, SlimeVariant::Blue).net_id,
+            494
+        );
+        assert_eq!(
+            crate::bestiary::entry_for_npc(NpcKind::GiantShelly2, SlimeVariant::Blue).net_id,
+            496
+        );
+        // The DRAW sheets keep the variants' own ids.
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::Crawdad), 494);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::Crawdad2), 495);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::GiantShelly), 496);
+        assert_eq!(crate::render::entities::texture_net_id(NpcKind::GiantShelly2), 497);
+        // The row counts (`Main.npcFrameCount`, `Main.cs:67082`): the
+        // crawdads 8, the shellies 12.
+        assert_eq!(crate::render::entities::npc_rows(494), 8);
+        assert_eq!(crate::render::entities::npc_rows(495), 8);
+        assert_eq!(crate::render::entities::npc_rows(496), 12);
+        assert_eq!(crate::render::entities::npc_rows(497), 12);
+    }
+
+    /// The crawdads' `FindFrame` case (`NPC.cs:69657-69733`): the charge
+    /// bands pin rows 5/6/7 off ai[2], the air/turn holds 2/3, the idle
+    /// snaps to 0, and the |vx| accumulator steps rows 0/1/2/3/4 over
+    /// the 8/16/24/32/39 bands.
+    #[test]
+    fn w4_d41_the_crawdads_find_frame_bands() {
+        let mut n = bare(NpcKind::Crawdad);
+        // The charge bands.
+        for (ai2, want) in [(1.0, 5), (6.9, 5), (7.0, 6), (13.9, 6), (14.0, 7), (19.9, 7)] {
+            n.ai[2] = ai2;
+            n.frame = 0;
+            n.find_frame();
+            assert_eq!(n.frame, want, "the charge band at ai[2] {ai2}");
+        }
+        // ai[2] >= 20 falls through the bands — the row holds.
+        n.ai[2] = 20.0;
+        n.frame = 3;
+        n.find_frame();
+        assert_eq!(n.frame, 3, "the past-20 hold");
+        n.ai[2] = 0.0;
+        // The idle.
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.frame = 4;
+        n.find_frame();
+        assert_eq!(n.frame, 0, "the idle row");
+        // The air: rising 2, falling 3.
+        n.vy = -1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 2, "the rising row");
+        n.vy = 1.0;
+        n.find_frame();
+        assert_eq!(n.frame, 3, "the falling row");
+        n.vy = 0.0;
+        // The walk: 4 px/tick steps a band every 2 ticks.
+        n.vx = 4.0;
+        n.facing = 1;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        let mut bands = Vec::new();
+        for _ in 0..10 {
+            n.find_frame();
+            bands.push(n.frame);
+        }
+        assert_eq!(&bands[..], &[0, 1, 1, 2, 2, 3, 3, 4, 4, 4], "the five bands");
+        assert!(bands.iter().all(|f| *f < 8), "no row past the strip");
+    }
+
+    /// The shellies' `FindFrame` case (`NPC.cs:69994-70066`): the state-0
+    /// walk laps at 24, the wind-up pins 4/5/6 off ai[1], the settle
+    /// 10/11/3, any other state 7.
+    #[test]
+    fn w4_d41_the_shellies_find_frame_states() {
+        let mut n = bare(NpcKind::GiantShelly);
+        // The wind-up bands.
+        n.ai[0] = 1.0;
+        for (ai1, want) in [(0.0, 4), (9.9, 4), (10.0, 5), (19.9, 5), (20.0, 6)] {
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!(n.frame, want, "the wind-up band at ai[1] {ai1}");
+        }
+        // The settle bands.
+        n.ai[0] = 5.0;
+        for (ai1, want) in [(0.0, 10), (10.0, 11), (20.0, 3)] {
+            n.ai[1] = ai1;
+            n.find_frame();
+            assert_eq!(n.frame, want, "the settle band at ai[1] {ai1}");
+        }
+        // Any other state pins 7.
+        n.ai[0] = 3.0;
+        n.find_frame();
+        assert_eq!(n.frame, 7, "the lunge row");
+        // The walk: the |vx|*1.1 accumulator's 6/12/18/24 bands.
+        n.ai[0] = 0.0;
+        n.vx = 6.0;
+        n.vy = 0.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 1, "6*1.1 = 6.6 → row 1");
+        n.frame_counter = 12.0;
+        n.find_frame();
+        assert_eq!(n.frame, 3, "12 + 6.6 = 18.6 → row 3");
+        n.frame_counter = 24.0;
+        n.find_frame();
+        assert_eq!(n.frame_counter, 0.0, "the 24 lap resets the counter");
+        assert_eq!(n.frame, 3, "the lap leaves the row");
+    }
+
+    /// The AI routing: the crawdads ride the aiStyle-3 walker (the
+    /// charge ladder fires through `run_ai3_ladder`), the shellies the
+    /// style-39 machine. Each kind steps without panicking, stays inside
+    /// its own strip, and keeps its `SetDefaults` HP.
+    #[test]
+    fn w4_d41_the_cavern_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::Crawdad,
+            NpcKind::Crawdad2,
+            NpcKind::GiantShelly,
+            NpcKind::GiantShelly2,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
     }
 
     /// The small-kinds wiring wave (S1-D-3-wire-smallkinds): the four wired
@@ -27559,8 +27968,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            274,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four)"
         );
         assert!(
             covered > 43,
@@ -33544,5 +33953,144 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+
+/// W4-d41 (NPCID 491-560 roster wave, DD2 band): the DD2EterniaCrystal (548),
+/// DD2LanePortal (549), DD2Bartender (550), DD2Betsy (551), DD2GoblinT1 (552)
+/// `SetDefaults` rows pin against the C# through the port's piecewise tables
+/// (the d40 ArmedZombie witness's shape). The five kinds landed with wave-3's
+/// summon lane — this census completes their NPCID data rows (the
+/// `DebuffImmunitySets` 31/24-31-323 rows, the portal's `ImmuneToWhips`, the
+/// Tavernkeep's townNPC/friendly flags, the portal's behindTiles +
+/// dontTakeDamage) and pins every stat row. WRITTEN, NOT RUN (code-only).
+///
+/// Recorded deviation: the crystal's `friendly = true` (`NPC.cs:16008`) is
+/// NOT carried — the C#'s hostile-shot damage rides `this.hostile & flag2`
+/// (`Projectile.cs:12606-12611`), which the port does not model (the hostile
+/// shots' NPC damage rides `damage_pve`'s `refuses_friendly` gate instead);
+/// raising the flag would make the crystal unkillable by the army.
+#[cfg(test)]
+mod w4_d41_dd2_crystal_portal_tavernkeep_betsy_goblin_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d41_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        // `NPC.cs:15998-16032` (548), `:16033-16053` (549), `:16261-16274`
+        // (550), `:16517-16535` (551), `:16054-16070` (552). The crystal's
+        // hardmode/post-Golem lifeMax bumps and the expert/master multipliers
+        // are world-state rows — the classic base 1000 pins here.
+        let rows = [
+            (NpcKind::DD2EterniaCrystal, 548u16, 105u8, 40.0, 40.0, 0, 14, 1000, 0.0f32, 0.0),
+            (NpcKind::DD2LanePortal, 549u16, 106u8, 78.0, 130.0, 0, 20, 5, 0.0f32, 0.0),
+            (NpcKind::DD2Bartender, 550u16, 7u8, 18.0, 40.0, 10, 15, 250, 0.5f32, 0.0),
+            (NpcKind::DD2Betsy, 551u16, 110u8, 190.0, 90.0, 80, 38, 50000, 0.0f32, 0.0),
+            (NpcKind::DD2GoblinT1, 552u16, 107u8, 18.0, 40.0, 18, 14, 30, 0.2f32, 0.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            // `Main.npcFrameCount` (`Main.cs:67082`) through the port's
+            // verbatim table: 548 = 1, 549 = 8, 550 = 25, 551 = 11, 552 = 14.
+            let frames = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            let expect = match kind {
+                NpcKind::DD2EterniaCrystal => 1,
+                NpcKind::DD2LanePortal => 8,
+                NpcKind::DD2Bartender => 25,
+                NpcKind::DD2Betsy => 11,
+                _ => 14,
+            };
+            assert_eq!(frames, expect, "{kind:?} npcFrameCount");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::DD2EterniaCrystal.hit_sound(), Some("dd2_crystal_cart_impact_0"));
+        assert_eq!(NpcKind::DD2EterniaCrystal.death_sound(), Some("NPC_Killed_15"));
+        assert_eq!(NpcKind::DD2LanePortal.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::DD2LanePortal.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::DD2Bartender.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::DD2Bartender.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::DD2Betsy.hit_sound(), Some("dd2_betsy_hurt_0"));
+        assert_eq!(NpcKind::DD2Betsy.death_sound(), Some("dd2_betsy_death_0"));
+        assert_eq!(NpcKind::DD2GoblinT1.hit_sound(), Some("dd2_goblin_hurt_0"));
+        assert_eq!(NpcKind::DD2GoblinT1.death_sound(), Some("dd2_goblin_death_0"));
+        // The protocol ids keep their wave-3 port-local slots (the vanilla
+        // 548-552 slots are occupied by the bestiary net ids, not the wire).
+        for (kind, wire) in [
+            (NpcKind::DD2EterniaCrystal, 110u16),
+            (NpcKind::DD2LanePortal, 147u16),
+            (NpcKind::DD2Bartender, 109u16),
+            (NpcKind::DD2Betsy, 107u16),
+            (NpcKind::DD2GoblinT1, 95u16),
+        ] {
+            assert_eq!(kind.to_u16(), wire, "{kind:?} to_u16");
+            assert_eq!(NpcKind::from_u16(wire), Some(kind), "{kind:?} from_u16");
+        }
+        // The bestiary credits: all five carry their OWN entries (the
+        // populator registers 548/549/550/551/552; no Hide-fold — the
+        // crystal/portal `Hide = true` draw mods are UI-only).
+        for (kind, net) in [
+            (NpcKind::DD2EterniaCrystal, 548),
+            (NpcKind::DD2LanePortal, 549),
+            (NpcKind::DD2Bartender, 550),
+            (NpcKind::DD2Betsy, 551),
+            (NpcKind::DD2GoblinT1, 552),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.kind, kind, "{kind:?} own bestiary entry");
+            assert_eq!(e.net_id, net, "{kind:?} bestiary net id");
+        }
+        // Betsy's quickUnlock (`BestiaryDatabaseNPCsPopulator.cs:681`).
+        assert!(
+            crate::bestiary::entry_for_npc(NpcKind::DD2Betsy, SlimeVariant::Blue).quick_unlock,
+            "the boss unlocks on first sight"
+        );
+    }
+
+    #[test]
+    fn w4_d41_the_npcid_data_and_flag_rows() {
+        // The `DebuffImmunitySets` rows (`NPCID.cs:9182-9217`): the crystal
+        // 548 / Tavernkeep 550 / goblin 552 each carry Confused (31); Betsy
+        // 551 carries {24, 31, 323}; the portal 549's NotWhips mask is the
+        // documented unmodelled gap (its whip half rides `whip_immune`).
+        fn immune(kind: NpcKind, id: usize) -> bool {
+            crate::npc_buffs::NpcBuffs::for_kind(kind).buff_immune[id]
+        }
+        for kind in [NpcKind::DD2EterniaCrystal, NpcKind::DD2Bartender, NpcKind::DD2GoblinT1] {
+            assert!(immune(kind, 31), "{kind:?} Confused (`NPCID.cs:9186/9201/9215`)");
+            assert!(!immune(kind, 20) && !immune(kind, 24), "{kind:?} no extras");
+        }
+        assert!(immune(NpcKind::DD2Betsy, 24) && immune(NpcKind::DD2Betsy, 31) && immune(NpcKind::DD2Betsy, 323));
+        assert!(!immune(NpcKind::DD2LanePortal, 31), "the NotWhips mask is unmodelled (&[])");
+        assert!(crate::npc_buffs::whip_immune(NpcKind::DD2LanePortal), "NPCID.cs:9194");
+        assert!(!crate::npc_buffs::whip_immune(NpcKind::DD2Betsy));
+        // The Tavernkeep's town rows (`NPC.cs:16263-16264`, g58b verified):
+        // townNPC + friendly, aiStyle 7 — the housing/talk/melee gates admit
+        // him and his dmg 10 never contacts the player.
+        assert!(NpcKind::DD2Bartender.is_town_npc());
+        assert!(NpcKind::DD2Bartender.is_town_npc_like());
+        assert!(NpcKind::DD2Bartender.is_friendly());
+        assert!(Npc::new(NpcKind::DD2Bartender, 0.0, 0.0, 1, 0.0).friendly);
+        // The portal's SetDefaults flags (`NPC.cs:16048-16049`): behindTiles
+        // + the spawn-time dontTakeDamage (the fade's 550-tick end drops it).
+        let portal = Npc::new(NpcKind::DD2LanePortal, 0.0, 0.0, 1, 0.0);
+        assert!(portal.behind_tiles, "NPC.cs:16048");
+        assert!(portal.dont_take_damage, "NPC.cs:16049");
+        // The crystal/portal/goblin/Betsy keep the hostile default (the
+        // crystal's friendly row is the recorded deviation above).
+        assert!(!NpcKind::DD2EterniaCrystal.is_friendly());
+        assert!(!NpcKind::DD2GoblinT1.is_friendly());
+        assert!(!NpcKind::DD2Betsy.is_friendly());
     }
 }

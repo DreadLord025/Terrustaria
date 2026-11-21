@@ -3566,6 +3566,16 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d41 — the cavern crawdads/shellies (aiStyle 3/39): the
+        // ground walkers plant their feet on the column surface (the
+        // scarecrow band's shape; `NPC.cs:14666-14690` writes no
+        // noGravity/noTileCollide).
+        crate::npc::NpcKind::Crawdad
+        | crate::npc::NpcKind::Crawdad2
+        | crate::npc::NpcKind::GiantShelly
+        | crate::npc::NpcKind::GiantShelly2 => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

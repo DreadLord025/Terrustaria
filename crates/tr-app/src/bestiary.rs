@@ -628,6 +628,29 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Desert Djinn",
     },
+    // W4-d41 — the cavern crawdads/shellies (`BestiaryEntry.Enemy`, the
+    // automated populator `BestiaryDatabaseNPCsPopulator.cs:851-868`;
+    // the Caverns tag `:1121-1122`/`:1148-1149`). ONE entry per pair:
+    // the 2-variants' draw modifiers hide them (`NPCID.cs`'s redigit
+    // dictionary, the merge's last word) and their credits fold onto
+    // the 1-variant (`ContentSamples.cs:1019-1020`, `entry_for_npc`).
+    // The name rides `Lang.GetNPCName` (en-US NPCs.json).
+    BestiaryEntryDef {
+        credit_id: "Crawdad",
+        net_id: 494,
+        kind: NpcKind::Crawdad,
+        variant: None,
+        quick_unlock: false,
+        name: "Crawdad",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantShelly",
+        net_id: 496,
+        kind: NpcKind::GiantShelly,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Shelly",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {
@@ -1569,7 +1592,9 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         net_id: 551,
         kind: NpcKind::DD2Betsy,
         variant: None,
-        quick_unlock: false,
+        // W4-d41: `BestiaryDatabaseNPCsPopulator.cs:681` — the boss's
+        // `CommonEnemyUICollectionInfoProvider(..., quickUnlock: true)`.
+        quick_unlock: true,
         name: "Betsy",
     },
     BestiaryEntryDef {
@@ -2292,6 +2317,11 @@ pub fn try_entry_for_npc(
         // kill credit is "Sharkron" — only the UI provider maps onto 370,
         // `BestiaryDatabaseNPCsPopulator.cs:691`).
         NpcKind::DetonatingBubble | NpcKind::Sharkron2 => NpcKind::DukeFishron,
+        // W4-d41 — the cavern 2-variants fold onto the 1-variants' credits
+        // (`ContentSamples.cs:1019-1020`: {495→494}, {497→496}); their
+        // draw modifiers hide them (the redigit dictionary's `Hide=true`).
+        NpcKind::Crawdad2 => NpcKind::Crawdad,
+        NpcKind::GiantShelly2 => NpcKind::GiantShelly,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2363,6 +2393,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-d41 — the cavern 2-variants ride the 1-variants' rows
+        // (`ContentSamples.cs:1019-1020`'s credit fold; the redigit
+        // dictionary's `Hide = true` keeps them out of the roster).
+        NpcKind::Crawdad2 => NpcKind::Crawdad,
+        NpcKind::GiantShelly2 => NpcKind::GiantShelly,
         other => other,
     };
     ENTRIES

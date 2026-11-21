@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(CAVERN_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -777,10 +778,10 @@ fn tower_draw<'a>(
 fn npc_add_height(n: &Npc) -> f32 {
     use NpcKind::*;
     // `n.townNPC` in the C# — the port's `is_town_npc` list is narrower
-    // than the vanilla's (it omits the Mechanic/the Wizard/the Tavernkeep
-    // and the rest of the post-1.1 arrivals), so the vanilla's own
-    // `townNPC = true` family is added here rather than in the enum
-    // helper the housing/town machine reads.
+    // than the vanilla's (it omits the Mechanic/the Wizard and the rest of
+    // the post-1.1 arrivals; the Tavernkeep joined it in W4-d41), so the
+    // vanilla's own `townNPC = true` family is added here rather than in
+    // the enum helper the housing/town machine reads.
     let town = n.kind.is_town_npc()
         || matches!(
             n.kind,
@@ -1113,6 +1114,12 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
         // fishron-hazard precedent. The turret has its own entry (387).
         NpcKind::ForceBubble => 384,
+        // W4-d41 — the cavern crawdads/shellies: the 2-variants' bestiary
+        // credits fold onto the 1-variants (`ContentSamples.cs:1019-1020`),
+        // but their DRAW sheets are their own NPC_495/NPC_497 — the
+        // fishron-hazard precedent.
+        NpcKind::Crawdad2 => 495,
+        NpcKind::GiantShelly2 => 497,
         _ => kind.net_id() as u16,
     }
 }
@@ -1246,6 +1253,13 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// W4-d41 — the cavern crawdads'/shellies' own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `WAVE_A_SHEETS`. The 2-variants
+/// draw their OWN NPC_495/NPC_497 art (the bestiary credit folds onto the
+/// 1-variant, the draw sheet does not — `texture_net_id`).
+pub(crate) const CAVERN_SHEETS: &[u32] = &[494, 495, 496, 497];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3169,6 +3183,14 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d41 — the cavern crawdads/shellies draw their OWN sheets
+            // (`CAVERN_SHEETS`) at `Main.npcFrameCount[type]` rows
+            // (`Main.cs:67082`: 494/495 eight frames, 496/497 twelve) with
+            // the generic centred anchor — the wave-A shape.
+            NpcKind::Crawdad | NpcKind::Crawdad2 | NpcKind::GiantShelly | NpcKind::GiantShelly2 => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
         };
         let Some(tex) = tex else {

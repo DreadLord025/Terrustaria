@@ -1225,6 +1225,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // BLOOD_MOON_SHEETS): 489 the Blood Zombie, 490 the Drippler.
         "NPC_489",
         "NPC_490",
+        // W4-d41 — the cavern crawdads'/shellies' sheets
+        // (`render/entities.rs`'s CAVERN_SHEETS), keyed by the vanilla
+        // net id in `NpcAssets::npc_sheets`.
+        "NPC_494",
+        "NPC_495",
+        "NPC_496",
+        "NPC_497",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in

@@ -139,6 +139,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_51", 3),
     ("NPC_Hit_55", 3),
     ("NPC_Hit_57", 3),
+    // W4-d41 — the cavern crawdads' NPCHit33 (`NPC.cs:14674`) and the
+    // shellies' NPCHit38 (`:14686`) — the bank-gap close.
+    ("NPC_Hit_33", 3),
+    ("NPC_Hit_38", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -181,6 +185,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_59", 4),
     ("NPC_Killed_62", 4),
     ("NPC_Killed_66", 4),
+    // W4-d41 — the cavern crawdads' NPCDeath36 (`NPC.cs:14675`) and the
+    // shellies' NPCDeath41 (`:14687`) — the bank-gap close.
+    ("NPC_Killed_36", 4),
+    ("NPC_Killed_41", 4),
     // The NPC death family (the sound id 4, `LegacySoundPlayer.cs:676`): the
     // per-kind death cues (`NPC.DeathSound`, `NPC.cs:6477`).
     ("Double_Jump", 16),
