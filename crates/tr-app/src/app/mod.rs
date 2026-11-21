@@ -716,7 +716,10 @@ pub(crate) struct App {
     /// special-tile pass's PRIVATE stream (the pylon crystal's dust gate,
     /// `:8669-8670`). Deviation: the C# parameterless ctor is clock-seeded;
     /// the port seeds the world seed (the `mine_crack_rng` determinism
-    /// convention). NOT a `SwapRandom` key.
+    /// convention). NOT a `SwapRandom` key. g68 collision keep-one
+    /// (research/67): g68's drip gates (`EmitLiquidDrops` :7609) read the
+    /// SAME C# field on the ONE `Main.TilesRenderer` (`Main.cs:2301/6541`)
+    /// — at merge keep ONE field, both consumers, drips-before-pylons.
     pub(crate) tile_draw_rand: tr_core::UnifiedRandom,
     /// W4-f6 wiring — `LiquidRenderer._random` (`LiquidRenderer.cs:132`):
     /// the lava-bubble PRIVATE stream (`InternalPrepareDraw` :558/:562).

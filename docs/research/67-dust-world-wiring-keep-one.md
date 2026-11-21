@@ -71,6 +71,50 @@ key. The pylon dust GATES draw `tile_draw_rand`; the pylon SPAWN + the
 void-lens draw the bare global (`NamedRngs::global()`); the lava bubbles
 draw `liquid_rand`.
 
+### The g68 `tile_draw_rand` same-name collision — KEEP ONE FIELD
+
+`origin/task/W4-g68-weather-wind-leaves` (tip `d247a1c9`, wiring-1
+`ea9e784f`) independently added `App.tile_draw_rand` for the
+`EmitLiquidDrops` per-draw gates (`foliage::emit_liquid_drops_area`,
+`TileDrawing.cs:7609` `_rand.Next(num*2)`). **The C# census says these are
+the SAME stream, not two:**
+
+- `TileDrawing._rand` is ONE private field (`TileDrawing.cs:104`, seeded
+  once `:191`) on the ONE `Main.TilesRenderer` instance (`Main.cs:2301`,
+  constructed once `Main.cs:6541`). The drip gate (:7609, inside
+  `Draw(solidLayer:false)`'s tile switch :693) and the pylon crystal gates
+  (:8669-8670, inside `PostDrawTiles(false)` → `DrawTeleportationPylons`
+  :424) both read `this._rand` on that instance — renderer-lifetime,
+  shared, no second field anywhere in the class.
+- `Mount.cs` has ZERO private RNG fields (grepped `private.*Random|new
+  UnifiedRandom|new FastRandom|_rand\b` — no hits): every Mount dust roll
+  rides `Main.rand` (the UpdatePlayers pass). The "two-fields rename"
+  alternative does not apply — there is no Mount draw stream to separate.
+- The distinct `LiquidRenderer._random` (f6's `App.liquid_rand`) stays a
+  SEPARATE field: different C# class, different instance, different seed
+  site (`LiquidRenderer.cs:132`). That two-field split is already correct.
+
+**Keep-one decision: ONE `App.tile_draw_rand`, BOTH consumers** (g68's
+drip gates + f6's pylon gates). Both branches declare the identical field
+(`pub(crate) tile_draw_rand: tr_core::UnifiedRandom`, seeded
+`UnifiedRandom::new(world_seed as i32)`), so the declaration conflict
+resolves by keeping ONE declaration with the union of the doc comments —
+NO rename, NO second field. Splitting into two streams would be a
+determinism break (the C# interleaves both consumers' draws on one
+stream).
+
+**Merge-order pin (the interleaving):** C# runs `Draw(solidLayer:false)`
+(the per-tile drip gates, row-major) BEFORE `PostDrawTiles(false)` (the
+per-visible-pylon gates). The port's two seams already sit in that order
+in `app/frame/draw.rs`: g68's `emit_liquid_drops_area` inserts right after
+the `tile_cracks` overlay (:1221 at f6 tip), f6's
+`draw_pylons_trophies_void` follows (:1243). The merger keeps drip-first,
+pylon-second, both drawing `&mut self.tile_draw_rand` in the same frame;
+neither call may move inside the G6-cached range (both are per-DRAW
+cadence, `WorldFrameKey` untouched). The d60 tile-pass-attach contract
+(g68's rescan stand-in) does not change this order — the attached cells
+replay the same row-major sequence.
+
 ## New player state (the wiring's fields)
 
 - `Player.basilisk_charge` (`Player.cs:842`) — PLAYER state, survives the
