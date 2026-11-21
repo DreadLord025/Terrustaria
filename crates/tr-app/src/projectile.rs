@@ -743,6 +743,14 @@ pub struct Projectile {
     /// them after the sub-steps. `time_left_delta` is subtracted from the
     /// spawned row's `timeLeft` (the cluster ring's `-= Next(30)`, `:78084`).
     pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32)>,
+    /// W4-d3 — the aiStyle-25 boulder arm's `Collision.SwitchTiles` requests
+    /// (`Projectile.cs:17089` objType 3 + `:19863`/`:17790` objType 4):
+    /// `(pos_x, pos_y, old_x, old_y, w, h, obj_type)`. The pool cannot borrow
+    /// the wiring mid-walk, so the arm parks them and the world-sim pass
+    /// drains through `crate::collision::switch_tiles` (the
+    /// `wants_mark_spawn` intent pattern, the `world_sim/npcs.rs` precedent).
+    pub(crate) wants_boulder_switches:
+        Vec<crate::projectile_ai_boulder::SwitchRequest>,
     // S1-P-i35 — the fishing bobber's liquid flags (`Projectile.cs:376-382`,
     // reset false `:756-760`). The generic `Update` wet block
     // (`:16790-17007`) writes them AFTER the AI; the port's bobber arm
@@ -848,6 +856,7 @@ impl Default for Projectile {
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
             wants_dart_spawns: Vec::new(),
+            wants_boulder_switches: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -13027,6 +13036,12 @@ impl Projectile {
         self.active = false;
         self.time_left = 0;
     }
+
+    /// `pub(crate)` view of the slot's `Kill()` stand-in — the slice modules'
+    /// early-kill paths (`projectile_ai_boulder`, W4-d3).
+    pub(crate) fn kill_now(&mut self) {
+        self.kill();
+    }
 }
 
 /// `Main.tile[x, y].nactive() && Main.tileSolid[type] && !Main.tileSolidTop[type]`
@@ -13408,6 +13423,11 @@ pub(crate) fn trailing_mode(kind: u16) -> i32 {
         CRYSTAL_STORM | TYPHOON | BRAIN_SCRAMBLER | RAY_GUNNER | PHANTASMAL_EYE
         | PHANTASMAL_BOLT | CANNON_EXPLOSIVE | NEBULA_ARCANUM | SKY_FRACTURE
         | DARK_MAGE_FLAME | SHADOW_HAND
+        // W4-d3 — the boulder family's mode-0 entries (`ProjectileID.cs:521`:
+        // 1047 → 0, 1055 → 0). The 1047's C# `TrailCacheLength` is 25
+        // (`:522`) — the port's fixed 10-ring is the recorded trail-density
+        // deviation (the 640 moonlord-trail precedent).
+        | RAINBOW_BOULDER | GHOULDER
         // `ProjectileID.cs:521` — the moon-lord drop shots' mode-0 entries
         // (638/639/640, S1-D-4). The 640's at-rest kill scan reads the ring
         // (`Projectile.cs:55441-55447`); its C# `TrailCacheLength` is 20
@@ -14135,8 +14155,9 @@ pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
 /// `Utils.Remap(fromValue, fromMin, fromMax, toMin, toMax)` (`Utils.cs:345-348`)
 /// — `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
 /// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
-/// uses it for the turn rate and the close-range pull.
-fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+/// uses it for the turn rate and the close-range pull. `pub(crate)`: the
+/// aiStyle-25 RainbowBoulder jump speed remap (W4-d3).
+pub(crate) fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
@@ -14198,8 +14219,9 @@ pub(crate) fn safe_normalize(v: Vec2) -> Vec2 {
 /// `[0, maxTilesX−1]` / `[0, maxTilesY−40]`), testing each active,
 /// non-actuated, solid, non-solidTop tile for a strict box overlap (the
 /// halfBrick shrinks the tile's top by 8). The falling star's `ai[1]` latch
-/// reads it (`Projectile.cs:23871`).
-fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
+/// reads it (`Projectile.cs:23871`). `pub(crate)`: the aiStyle-25
+/// RainbowBoulder `tileCollide` pin (W4-d3, `:26087`).
+pub(crate) fn solid_collision(world: &World, pos: Vec2, w: f32, h: f32) -> bool {
     let x0 = ((pos.x / 16.0) as i32 - 1).clamp(0, world.width - 1);
     let x1 = (((pos.x + w) / 16.0) as i32 + 2).clamp(0, world.width - 1);
     let y0 = ((pos.y / 16.0) as i32 - 1).clamp(0, (world.height - 40).max(0));
@@ -14303,16 +14325,26 @@ fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
     }
 }
 
+/// `Vector2.SafeNormalize(defaultValue)` — [`safe_normalize_or`] under the
+/// C# name's shape; `pub(crate)`: the aiStyle-25 RainbowBoulder jump
+/// (`Utils.cs`'s `SafeNormalize(Vector2.UnitY * -1f)`, W4-d3).
+pub(crate) fn safe_normalize_default(v: Vec2, default_value: Vec2) -> Vec2 {
+    safe_normalize_or(v, default_value)
+}
+
 /// `Utils.ChaseResults` (`Utils.cs:634-643`) — the intercept solve's output.
-struct ChaseResults {
-    interception_time: f32,
-    chaser_velocity: Vec2,
+/// `pub(crate)`: the aiStyle-25 RainbowBoulder smart-bounce jump reuses the
+/// solve (`projectile_ai_boulder`, W4-d3).
+pub(crate) struct ChaseResults {
+    pub(crate) interception_time: f32,
+    pub(crate) chaser_velocity: Vec2,
 }
 
 /// `Utils.GetChaseResults` (`Utils.cs:645-693`): the intercept solve the
 /// aiStyle-66 dash arms aim with. `None` is the C#'s `default` return
-/// (`interceptionHappens == false`).
-fn get_chase_results(
+/// (`interceptionHappens == false`). `pub(crate)`: the aiStyle-25
+/// RainbowBoulder jump reuses it (`projectile_ai_boulder`, W4-d3).
+pub(crate) fn get_chase_results(
     chaser_position: Vec2,
     chaser_speed: f32,
     runner_position: Vec2,
@@ -14532,6 +14564,21 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// W4-d3 — `Main.tileFrame[665]` (the life-crystal tile animation row)
+    /// the aiStyle-25 1014 LifeCrystalBoulder's `frame` pin reads
+    /// (`Projectile.cs:26028`). The world-sim pass feeds it through
+    /// [`ProjectilePool::set_tile_frame_665`] (the `set_disco` pattern);
+    /// the stock 0 is `Main.tileFrame`'s world-load reset.
+    tile_frame_665: i32,
+    /// W4-d3 — the boulder death hooks' parked item drops (`Item.NewItem`,
+    /// `Projectile.cs:74952`/`:74956`/`:75096`): `(item, stack, x, y)`,
+    /// drained by the world-sim pass on the `UpdateItems` stream (the
+    /// bobber-catch precedent).
+    pending_boulder_drops: Vec<crate::projectile_ai_boulder::BoulderDrop>,
+    /// W4-d3 — the 655 BeeHive death's parked bee spawns (`:75116`):
+    /// `(kind 210/211, x, y, vx, vy)`, drained into the NPC vec (the
+    /// Queen-Bee volley precedent).
+    pending_boulder_bees: Vec<crate::projectile_ai_boulder::BoulderBee>,
 }
 
 impl Default for ProjectilePool {
@@ -14921,6 +14968,9 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            tile_frame_665: 0,
+            pending_boulder_drops: Vec::new(),
+            pending_boulder_bees: Vec::new(),
         }
     }
 
@@ -15001,6 +15051,27 @@ impl ProjectilePool {
     /// builds it from the live player/world/scene state before the pass.
     pub fn set_bobber_inputs(&mut self, inputs: Option<crate::projectile_bobber::BobberInputs>) {
         self.bobber_inputs = inputs;
+    }
+
+    /// W4-d3 — `Main.tileFrame[665]` as the aiStyle-25 1014's frame pin
+    /// reads it (`Projectile.cs:26028`). The app's tile animator owns the
+    /// row (`app.tile_anim.tile_frame[665]`); the pool only reads it.
+    pub fn set_tile_frame_665(&mut self, frame: i32) {
+        self.tile_frame_665 = frame;
+    }
+
+    /// W4-d3 — the boulder death hooks' item-drop drain (`Item.NewItem`,
+    /// `Projectile.cs:74952`/`:74956`/`:75096`): the world sim spawns each
+    /// on the `UpdateItems` stream (the bobber-catch precedent).
+    pub fn drain_boulder_drops(&mut self) -> Vec<crate::projectile_ai_boulder::BoulderDrop> {
+        std::mem::take(&mut self.pending_boulder_drops)
+    }
+
+    /// W4-d3 — the 655 BeeHive death's bee-spawn drain (`:75116`): the
+    /// world sim resolves each into the NPC vec (the Queen-Bee volley
+    /// precedent — `NewNPC`'s Bottom placement).
+    pub fn drain_boulder_bees(&mut self) -> Vec<crate::projectile_ai_boulder::BoulderBee> {
+        std::mem::take(&mut self.pending_boulder_bees)
     }
 
     /// S1-P-i35 — the bobber `DoASplash` drain (`Projectile.cs:53893-53905`):
@@ -17411,6 +17482,56 @@ impl ProjectilePool {
                         20 => self.slots[i].ai_drill(owner, inputs.aim, player.as_deref()),
                         8 => self.slots[i].ai_ball_of_fire(world),
                         24 => self.slots[i].ai_crystal_storm(world),
+                        // W4-d3 — the aiStyle-25 boulder family
+                        // (`AI()`'s inline block `Projectile.cs:26015-
+                        // 26415`): the 13 kinds' AI + HandleMovement bounce
+                        // ladder + the RainbowBoulder smart bounce + the
+                        // Shimmer float (`projectile_ai_boulder`). The arm
+                        // owns its movement (the per-kind ladder replaces
+                        // `kill_step`); the 727's spike requests spawn here
+                        // with the corpse-flag lift (the electrosphere
+                        // precedent — the X-block arm kills BEFORE the
+                        // burst, so `GetNextSlot` must skip the dying slot).
+                        25 => {
+                            let spam = crate::projectile_ai_boulder::rainbow_spam_survives(
+                                &self.slots, i,
+                            );
+                            let spikes = crate::projectile_ai_boulder::boulder_step(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                                player.as_deref(),
+                                rng,
+                                local_owner,
+                                self.tile_frame_665,
+                                spam,
+                            );
+                            if !spikes.is_empty() {
+                                let owner_id = self.slots[i].owner;
+                                let was_active = self.slots[i].active;
+                                // The corpse lift: a dead 727's slot must
+                                // not be reused by its own spike.
+                                self.slots[i].active = true;
+                                for s in spikes {
+                                    let row = proj_data(ROLLING_CACTUS_SPIKE);
+                                    let (hw, hh) =
+                                        row.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                                    self.spawn_with_data_ai_owned(
+                                        ROLLING_CACTUS_SPIKE,
+                                        owner_id,
+                                        s.x - hw,
+                                        s.y - hh,
+                                        s.vx,
+                                        s.vy,
+                                        30,
+                                        2.0,
+                                        0.0,
+                                        0.0,
+                                    );
+                                }
+                                self.slots[i].active = was_active;
+                            }
+                        }
                         // S1-P-i14 (V5 gate) — `AI_078`
                         // (`Projectile.cs:30762-30790`): the Xenopopper
                         // bubble 444's steer-toward-`ai[0]` flight — the
@@ -19853,8 +19974,33 @@ impl ProjectilePool {
                     && !self.slots[i].friendly
                     && !DUNGEON_DEBRIS.contains(&self.slots[i].kind)
                     && self.slots[i].kind != SLIME_MINION
+                    // W4-d3 — the 1021 MoonBoulder is hostile-only
+                    // (`friendly = false`) but penetrate −1: the EVP arm
+                    // never kills it, so the no-kill boulder lane below
+                    // owns its contact (the kill-on-hit proxy would eat
+                    // the boulder on the first touch).
+                    && self.slots[i].kind != MOON_BOULDER
                 {
                     self.damage_player(i, player.as_deref_mut(), rng);
+                }
+                // W4-d3 — the hostile boulders' player contact
+                // (`Damage_EVP` `Projectile.cs:14773-14900`): the 12
+                // friendly+hostile traps keep `friendly = true` (the PVE
+                // walk hits NPCs), so the `!friendly` proxy above cannot
+                // serve them — the kind set carries the `hostile` gate
+                // (`:14775`). The contact does NOT kill the shot (penetrate
+                // −1; the EVP arm has no kill block). The 1021 MoonBoulder
+                // holds `friendly = false` and rides the generic lane above
+                // — but that lane KILLS on contact, so it is exempted here
+                // and routed through the no-kill boulder contact too.
+                if self.slots[i].active
+                    && crate::projectile_ai_boulder::hurts_player(self.slots[i].kind)
+                {
+                    crate::projectile_ai_boulder::player_contact(
+                        &mut self.slots[i],
+                        player.as_deref_mut(),
+                        rng,
+                    );
                 }
                 // `Projectile.cs:17197-17209` — the per-sub-step lifetime
                 // block (S1-A-9): the C# runs it inside the `numUpdates`
@@ -20064,6 +20210,19 @@ impl ProjectilePool {
                     {
                         self.pending_catches.push((self.slots[i].owner, item, stack));
                     }
+                }
+                // W4-d3 — `Kill()`'s boulder-family arms (`Projectile.cs:70688-
+                // 70702` the getGood 99 explosion, `:71192-71255` the 1047
+                // burst, `:74841-74968` the family arm, `:74970-74981` the
+                // 1005 arm, `:75080-75123` the 655 bee/honey arm). Kind-gated,
+                // one-shot per death. The out-of-world guard (`:16696`) never
+                // calls `Kill()`, so the arms skip that death (the channel-
+                // cancel gate precedent). The death cues push STRAIGHT into
+                // the sound queue — the `wants_sound` forward above rides the
+                // sub-step loop, and this hook runs after it (the golf-strike
+                // `pending_proj_sounds.push` precedent).
+                if !died_out_of_world {
+                    self.boulder_kill(i, world, npcs.len(), rng, local_owner);
                 }
             }
             // S1-P-i16 — the dart split / cluster ring spawn requests the
@@ -21093,6 +21252,158 @@ impl ProjectilePool {
                 }
             }
             _ => {}
+        }
+    }
+
+    /// W4-d3 — `Kill()`'s boulder-family arms (`Projectile.cs:70688-70702`,
+    /// `:71192-71255`, `:74841-74968`, `:74970-74981`, `:75080-75123`), in the
+    /// C# body order. Kind-gated, one-shot per death (a dead slot never returns
+    /// to `active`). The dust/gore/particle BODIES skip; every explicit
+    /// `Main.rand` gate/settings draw stays in order (the module's G3 census).
+    /// The death cues push straight into `pending_proj_sounds` (this hook runs
+    /// AFTER the sub-step loop's `wants_sound` forward — the golf-strike
+    /// precedent); the id-3/4/42 styles the `play_proj_sound` façade does not
+    /// serve drop at the drain (the sound-layer census). The item drops and
+    /// the bee spawns park on the pool for the world-sim pass.
+    fn boulder_kill(
+        &mut self,
+        slot: usize,
+        world: &mut World,
+        npc_count: usize,
+        rng: &mut dyn DropRng,
+        local_owner: u8,
+    ) {
+        use crate::projectile_ai_boulder as boulder;
+        let kind = self.slots[slot].kind;
+        // `:70688-70691` — the 1054 spider spawn DROPS (the WallCreeper 164/165
+        // are unported NPC kinds, the module-doc deviation); its reads are
+        // RNG-free, so the drop is draw-safe.
+        // `:70692-70702` — the getGoodWorld BoulderExplosion: the 99's death
+        // spawns `Next(2, 5)` MiniBoulder shards at the centre, damage
+        // `(int)(damage * 0.75)`, kb 0, timeLeft 300 (`:70563-70575`). The
+        // corpse-flag lift: the C# `Kill()` runs the arm while the boulder is
+        // STILL active (`active = false` lands at the tail), so `GetNextSlot`
+        // skips the dying slot.
+        if kind == BOULDER
+            && world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
+        {
+            let shards = boulder::boulder_explosion(&self.slots[slot], rng);
+            let owner = self.slots[slot].owner;
+            let was_active = self.slots[slot].active;
+            self.slots[slot].active = true;
+            for (x, y, vx, vy, damage) in shards {
+                let row = proj_data(MINI_BOULDER);
+                let (hw, hh) = row.map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                if let Some(s) = self.spawn_with_data_ai_owned(
+                    MINI_BOULDER, owner, x - hw, y - hh, vx, vy, damage, 0.0, 0.0, 0.0,
+                ) {
+                    self.slots[s].time_left = 300; // `:70573`
+                }
+            }
+            self.slots[slot].active = was_active;
+        }
+        // `:71192-71255` — the 1047 rainbow death burst: the RainbowBoulder
+        // cue (`SoundID.RainbowBoulder` = (42, 274)) at the centre, then the
+        // oldPos-ring dust census + the 14 hue floats (the bodies skip).
+        if kind == RAINBOW_BOULDER {
+            let c = {
+                let p = &self.slots[slot];
+                Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            };
+            self.pending_proj_sounds.push((42, 274, c.x, c.y, 0.0));
+            boulder::rainbow_boulder_death_draws(&self.slots[slot], rng);
+        }
+        // `:74841-74968` — the family arm (the 10 kinds).
+        if matches!(
+            kind,
+            BOULDER | BOUNCY_BOULDER | ROLLING_CACTUS | LIFE_CRYSTAL_BOULDER
+                | MOON_BOULDER | POULDER | LAVA_BOULDER | SPIDER_BOULDER | GHOULDER
+                | BOULDER_THAT_SPAWNS_PET
+        ) {
+            // `:74857-74876` — the per-kind death cue at `(int)position`:
+            // 1048 Item16 (2,16), 1053 Item14 (2,14), 1054 NPCHit29 (3,29),
+            // 1055 NPCDeath6 (4,6), the rest the Dig int play (0,0).
+            let (id, style) = match kind {
+                POULDER => (2, 16),
+                LAVA_BOULDER => (2, 14),
+                SPIDER_BOULDER => (3, 29),
+                GHOULDER => (4, 6),
+                _ => (0, 0),
+            };
+            let (px, py) = {
+                let p = &self.slots[slot];
+                (p.pos.x, p.pos.y)
+            };
+            self.pending_proj_sounds.push((id, style, px, py, 0.0));
+            // `:74877-74948` — the per-kind death dust/gore. The 1053's gore
+            // census stays (4 × the type pick + the NewGore kicks); the 1054/
+            // 1055 dust bodies skip (no explicit draws); the 1057 skips the
+            // loop entirely (`:74938` `type != 1057`); the rest run the 30×
+            // Next(2) scale gate + the ×1.9 corpse-velocity compound.
+            if kind == LAVA_BOULDER {
+                boulder::lava_death_gore_draws(rng);
+            } else if kind != SPIDER_BOULDER && kind != GHOULDER && kind != BOULDER_THAT_SPAWNS_PET {
+                boulder::family_dust_loop(&mut self.slots[slot], 30, 1.9, rng);
+            }
+            // `:74950-74957` — the owner-gated item drops: the 1057 drops the
+            // Boulder pet item 5523, the 1014 the Life Crystal 29.
+            if kind == BOULDER_THAT_SPAWNS_PET && self.slots[slot].owner == local_owner {
+                let c = {
+                    let p = &self.slots[slot];
+                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                };
+                self.pending_boulder_drops.push((5523, 1, c.x, c.y));
+            }
+            if kind == LIFE_CRYSTAL_BOULDER && self.slots[slot].owner == local_owner {
+                let c = {
+                    let p = &self.slots[slot];
+                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                };
+                self.pending_boulder_drops.push((29, 1, c.x, c.y));
+            }
+            // `:74958-74968` — the netMode != 1 tile effects (folds true): the
+            // 1048 poop pyramid and the 1053 lava flood.
+            if kind == POULDER {
+                boulder::poulder_spread(&self.slots[slot], world);
+            }
+            if kind == LAVA_BOULDER {
+                boulder::lava_boulder_explosion(&self.slots[slot], world);
+            }
+        }
+        // `:74970-74981` — the 1005 MiniBoulder arm: the Dig cue + the 10×
+        // Next(2) scale gate with the ×1.6 corpse-velocity compound.
+        if kind == MINI_BOULDER {
+            let (px, py) = {
+                let p = &self.slots[slot];
+                (p.pos.x, p.pos.y)
+            };
+            self.pending_proj_sounds.push((0, 0, px, py, 0.0));
+            boulder::family_dust_loop(&mut self.slots[slot], 10, 1.6, rng);
+        }
+        // `:75080-75123` — the 655 BeeHive arm: the NPCDeath int play (4, the
+        // stock style 1), the 30× Next(2) scale gate + ×1.9 compound, then the
+        // wet honey drop (stack `Next(2, 6)`) or the dry bee burst.
+        if kind == BEE_HIVE {
+            let (px, py) = {
+                let p = &self.slots[slot];
+                (p.pos.x, p.pos.y)
+            };
+            self.pending_proj_sounds.push((4, 1, px, py, 0.0));
+            boulder::family_dust_loop(&mut self.slots[slot], 30, 1.9, rng);
+            if self.slots[slot].wet {
+                // `:75096` — the honey drop, stack rolled on this stream.
+                let stack = rng.next_range(2, 6);
+                let c = {
+                    let p = &self.slots[slot];
+                    Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                };
+                self.pending_boulder_drops.push((1124, stack, c.x, c.y));
+            } else {
+                // `:75100-75121` — the bee burst (the slot-cap fold is the
+                // module's `100 - npc_count` deviation).
+                let bees = boulder::bee_hive_bees(&self.slots[slot], npc_count, rng);
+                self.pending_boulder_bees.extend(bees);
+            }
         }
     }
 
@@ -22660,6 +22971,15 @@ impl ProjectilePool {
             // holds the C# `friendly` state and this gate refuses the hit
             // (the port's PVE walk otherwise hits regardless of `friendly`).
             if DUNGEON_DEBRIS.contains(&p.kind) {
+                continue;
+            }
+            // W4-d3 — the 1021 MoonBoulder is hostile-ONLY (`:1866` sets no
+            // friendly flag — the `:788` stock false); the arm holds the
+            // slot's `friendly = false`, so `Damage_PVE_Inner`'s `!friendly`
+            // refusal (`:12611`) means it hits no NPC (the player-contact
+            // lane owns its damage). The other 12 boulders are
+            // friendly+hostile and hit NPCs normally.
+            if p.kind == MOON_BOULDER && !p.friendly {
                 continue;
             }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
@@ -30438,6 +30758,7 @@ mod phasmal_projectile_tests {
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
             wants_dart_spawns: Vec::new(),
+            wants_boulder_switches: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -30847,6 +31168,7 @@ mod ritual_projectile_tests {
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
             wants_dart_spawns: Vec::new(),
+            wants_boulder_switches: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
