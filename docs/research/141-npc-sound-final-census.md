@@ -1,13 +1,20 @@
 # 141 — W4-e9 NPC-sound FINAL: the 27-tail activation census, the f2/f47/d53/g2 co-lanes, the idle-loop census
 
-**Phase:** final census + two fidelity fixes (code-only, no
+> **🔒 SEALED — research/141 is CLOSED (§9).** The NPC-sound family's
+> union branch is **f2-canonical** (`b754bdcd`, research/94 §15);
+> **e9 is a wholesale DROP** at the merge (§9b accepts f2's §4 + §9b
+> items 1-12), its two fidelity fixes adopted both ways, the exit-LAVA
+> 147 fix-hunk **MOOT under the DROP** (§9c). The npc-sound-tail-family
+> bible is §9f. No further phases, no open questions.
+
+**Phase:** final census + two fidelity fixes + SEAL (code-only, no
 cargo/tests/rustfmt/graphify; witnesses WRITTEN NOT RUN). Branch
 `task/W4-e9-npc-sounds-2`, base `a725acb0` (main). Tips read at probe
 (2× `git fetch origin --prune`, 2026-11-21):
 
 | lane | pushed tip | state |
 | --- | --- | --- |
-| e9 (this) | `c7523984` (after this round) | 232-site claim complete; see §1 |
+| e9 (this) | `f78613cf` (seal base; after this round: §9's commit) | 232-site claim complete; see §1 |
 | f2 `task/W4-f2-npc-sounds-3` | `bcf4c299` | PUSHED, clean, **0 unpushed commits** |
 | d33 `task/W4-d33-npc-ai-styles-95-127` | `dcb59b7f` | 15 UNWIRED style modules, **no kind rows** |
 | d41 `task/W4-d41-npc-kinds-491-560` | `4ed22f0b` | **claim-only** (1 commit, zero code) |
@@ -393,3 +400,245 @@ new witness
 kinds live on d42/f42/c4, not this base). Commit `a4cacbfc` (code +
 1 anchors row); this doc refresh + the ANALYSIS/PORT_MAP/INDEX
 addenda ride the docs commit.
+
+## 9. SEAL — the npc-sound-tail-family bible (e9-DROP / f2-canonical)
+
+> **🔒 SEALED — research/141 is CLOSED. No further phases, no open
+> questions.** This section is the e9-side SEAL receipt consuming
+> f2's research/94 §15 (`b754bdcd`) and closing the family from this
+> lane. Re-probed 2026-11-21 (`git fetch origin --prune` +
+> `git ls-remote`): e9 HEAD == `origin/task/W4-e9-npc-sounds-2` ==
+> `f78613cf10755805dc0be47ab97a42f0ac374381`, clean tree, nothing
+> unpushed.
+
+### 9a. The tail-activation-2 landing receipt (item 1)
+
+Every piece the seal prompt names is verified LANDED on `f78613cf`
+(HEAD-line evidence, direct reads):
+
+| piece | commit | HEAD evidence |
+| --- | --- | --- |
+| e9d critter-rekey: `to_u16`→`cs_id` (GolemHead-74) | `c7523984` | the wiring key `n.kind.cs_id() as i32` at `world_sim/npcs.rs:4685` (inside the `critter_sound_cue(` call :4684); the seam witness re-keyed `NpcKind::Zombie.cs_id()` :7189; the GolemHead-74 census witness `w4_e9_the_critter_key_is_cs_id_not_the_protocol_golem_head_74` :7215 (keys `GolemHead.cs_id()` :7226) |
+| f42 361/362 + g8/d37 five 361-365 mis-routes: the ten-tip scan | `f78613cf` (docs §8.3) + `a4cacbfc` (witness) | the per-tip table §8.3; the mechanical scan RE-RUN this seal at the CURRENT tips (§9d) — every collision row still stands at the moved tips |
+| the landed-roster ambient census witness | `a4cacbfc` | `ambient_sound.rs:1440` + anchors row 903 (marker verified present) |
+| the docs refresh | `f78613cf` | §8 + the ANALYSIS addendum + the PORT_MAP/INDEX rows |
+
+**The one-line-fix-each contract (UNCHANGED, re-verified):** the
+mis-routed tips each need exactly ONE line — `n.kind.to_u16() as i32`
+→ `n.kind.cs_id() as i32` at their critter call (§9d's column 2 gives
+the current line numbers). NOT applied on any sibling lane per the
+never-touch-other-lanes rule; e9's own wiring is already fixed
+(`c7523984`), f2 applied its own (`c3e5b814`), c10 already keys
+`cs_id` (§9d — the third fixed lane). The d42/d40/c10/d43
+correct-by-band hits are the positive control: after the rekey those
+arms STILL fire (protocol == cs_id), so the rekey is not a blanket
+silence.
+
+### 9b. The f2-npc-sound-seal receipt (`b754bdcd`) — e9 wholesale DROP ACCEPTED
+
+f2's research/94 §15 SEALED (`b754bdcd`, pushed, read in full this
+seal) declares the family **f2-canonical**: f2's `ambient_sound.rs`
+bank/dispatch/32-arm idle ladder/critter key (`cs_id`, `c3e5b814`)
+and the `water_collision_sounds` pass — carrying BOTH exit-147-quirks
+verbatim (`water_exit_gate` :1375-1389, `lava_exit_gate` :1400-1406,
+re-read this seal) plus the shimmer-latch arm that absorbs f47's
+buff-353 add — are the keepers of every contested site. **e9 accepts
+the wholesale DROP** (f2 §4 items 1-7 + §9b items 8-12). The e9-side
+inventory, verified at HEAD `f78613cf`:
+
+| DROP item (f2 §4/§9b) | e9 artifact at HEAD | e9-side verification |
+| --- | --- | --- |
+| 1 the duplicate ladder | `ambient_sound.rs::idle_sound_cue` + `roll_range` | 32/32 arms verbatim (§4) — f2's §1 arm-by-arm table confirms MATCH; f2's seed-146 full-stream witness is the stronger keeper |
+| 2/3 the zombie bank rows | `zombie_asset` 24-86 + `audio.rs` `Zombie_24-86` | f2's 24-87 superset wins (the case-65 arm needs 115-117 + the 87 slot) |
+| 4 the water decision | `npc.rs::WaterSplashDecision` :53-61 + `water_splash_gate` :72 + `honey_splash_gate` :94 + `water_collision_splash` :106 | re-read :55-182 this seal; f2's pass carries the never-wet head + the 116 pin + BOTH quirks + the vx halving + the lava combat half |
+| 5 the idle wiring | `world_sim/npcs.rs:4501` block (`hp>0`-guarded, pre-AI, `cs_id` key) | f2's replaces it — the `hp>0` guard already ADOPTED by f2 (its :4475 wiring keys `cs_id`) |
+| 6/7 the 4 idle/water decision witnesses | `w4_e9_the_idle_arms_roll_once_then_pick_the_slot` / `..._idle_slots_resolve_through_case_29` / the entry+exit splash pair | f2's 32-arm seed-146 + case-29-all-64 + entry/exit/gates/quirk witnesses cover the same contracts |
+| 8 `npc_water_collision.rs` whole | the module: `wet_collision_probe` :45, `lava_collision_probe` :120, `never_wet` :147, `water_collision_kind` :167, `collision_water_step` :253 + the :4608 wiring call | fn list re-counted this seal (5 pub(crate) fns + 4 witnesses); the probes duplicate the landed shared fns, the census gate is superseded by f2's `no_tile_collide`; the `wet_prev` keying + vx halving ADOPTED not dropped |
+| 9 the 4 water-module witnesses | :371/:411/:430/:465 (the probe pair, never-wet/116, exit/churn) | present at HEAD; f2's adapted witnesses cover the same + quirks/combat/jump |
+| 10 the 25 machine-owned tail helpers | `npc_sounds_tail.rs` — **19 `pub(crate)` fns** :58-409 (two sites share `balloon_pop_cue`; 27 sites on 17 kinds) | fn list re-counted this seal; the d33/d24/d32 out-struct seams own the sites (§8.2's map = f2 §13's consumer map, verified against `b08acf463`) |
+| 11 the 10 tail witnesses | exactly **10 `#[test]` fns** in the module (re-counted this seal) | f2's bank/cue witnesses + the d-band modules' own gate witnesses cover the contracts |
+| 12 the field/cue/bank duplicates | the `Npc` wet quintet (`npc.rs:2010-2018`) + the `NpcSoundCue` tail variants (incl. `Splash(i32)`) | the union keeps f2's spellings; `Splash(i32)` retires with the decision fn (f2's pass plays inline) |
+
+**KEEP from e9 (already unioned into f2):** the VileSpit/Ghost extras
++ bank rows + cue/dispatch arms + their three tests (f2 adopted at
+`c6f74db1`, names kept for provenance), the `wet_prev` edge latch +
+the exit vx halving (f2 §9's two adoptions), and the TWO fidelity
+fixes adopted BOTH ways: the exit-water 147 on e9 (`712e3c54`), the
+critter `cs_id` key on f2 (`c3e5b814`). The e9 witnesses
+`w4_e9_the_nimbus_idle_roll_rides_the_stream_before_the_ai` + the
+GolemHead-74 census witness survive as f2's ADAPTED twins (f2 §5 /
+§14.3). **The anchors rows ride the DROP:** the merger deletes the
+rows naming dropped symbols WITH their fns (the 899-902 block),
+keeping the adapted-witness rows — a deliberate retire, never a
+lossy merge (the g4 tombstone precedent).
+
+### 9c. The exit-LAVA 147 fix-hunk — MOOT under the DROP (received, NOT applied)
+
+f2's §14.7 finding RE-CONFIRMED at HEAD `f78613cf` by direct read:
+`honey_splash_gate` (`npc.rs:94`) still carries `&& npc_type != 147`
+at :98, and the exit-LAVA caller :176 still calls it with no selector
+— the THIRD quirk-arm (f2's §2 exit-lava row) remains open on e9's
+decision fn. The four C# gate windows re-read this seal (≤18 lines
+each): `:93136` honey-entry / `:93169` lava-entry / `:93234`
+honey-exit ALL carry `this.type != 147`; **ONLY `:93267` (lava-exit)
+drops it** (its full term set: `aiStyle != 1 && type != 1 && type !=
+16 && type != 59 && type != 300 && aiStyle != 39 && !noGravity`).
+The quirk is latent — 147 is **IceSlime** (`NPCID.cs:10971`), aiStyle
+1, blocked by the style term in every arm. **Label correction to
+f2's seal text:** f2's `ambient_sound.rs` comments call 147 "Pinky" —
+wrong, Pinky is **-4** (`NPCID.cs:10669`); e9's IceSlime label is the
+correct one (a comment-only nit on f2's lane, cross-noted, not
+touchable here).
+
+**The verdict: MOOT.** Under §9b's adjudicated wholesale DROP the
+entire decision fn + both gates retire, and f2's pass already carries
+both quirks verbatim as distinct gates (`lava_entry_gate`
+:1392-1399 WITH 147 at :1395, `lava_exit_gate` :1400-1406 WITHOUT —
+re-read this seal at `b754bdcd`), witnessed by
+`w4_f2_water_collision_the_gates_block_and_the_lava_quirk`
+(:2663, the 147 entry-block/exit-play pair :2687-2699 + the
+exit-water pair :2701-2712). f2's exact `exit_lava`-flag hunk (§14.7)
+applies ONLY if e9's decision survives a partial merge — it does not
+under this seal. **One evidence correction to f2's §14.7:** its "no
+witness edit needed — e9 has no 147-gate test" claim is wrong since
+`712e3c54` — the entry/exit splash witnesses DO pin the 147 water
+arms (`npc.rs:19288-19294` entry-silent ×2, :19333-19343 exit-water
+plays / shimmer+honey silent; mechanical grep this seal). They pin
+the WATER gates only, not the honey/lava ones, and they DROP with
+item 7 anyway — the hunk stays MOOT either way.
+
+### 9d. The ten-tip scan re-run at the CURRENT tips + the TWO new lanes
+
+The §8.3 scan re-ran mechanically this seal (`git grep` the critter
+call + the `to_u16` table × the 23-id critter set
+{74,297,298,300,361-365,442,445,447,602,603,610,611,671-675,687,689}
+per tip). Every §8.3 collision row STANDS at the moved tips; the
+call sites moved on two lanes. **TWO lanes the ten-tip scan never
+covered are now probed: d43 (rowed!) and c10 (already fixed).**
+
+| lane | tip NOW | critter call | protocol-space collisions | after the cs_id rekey |
+| --- | --- | --- | --- | --- |
+| e9 (this, FIXED) | `f78613cf` | `npcs.rs:4685` cs_id | — (GolemHead 74 fixed `c7523984`; the to_u16 table's ONLY critter-set hit re-verified :403) | zero draws |
+| f2 (FIXED) | `b754bdcd` | `:4774` cs_id (`c3e5b814`; the witness key :7279 cs_id) | — | zero draws |
+| **c10 (FIXED — NEW)** | `15f93d134` | `:4740` **cs_id already** | its to_u16 hits are ALL correct-by-band: Duck/Duck2/DuckWhite/DuckWhite2 ⇒362-365 (:593-596), Seagull/Seagull2 ⇒602/603, GoldBird/GoldFrog/GoldMouse ⇒442/445/447 — cs_id identical (:3232-3251), the arms SHOULD fire | no rekey owed; the waterfowl/gold arms keep firing |
+| f42 | `425d4ff9d` | `:4650` to_u16 | GolemHead⇒74 (:403); WalkingAntlion⇒361 (:599), FlyingAntlion⇒362 (:600) | cs_id 580/581 (bestiary :691/:699) outside, silent |
+| g8 | `1752c70df` | `:4643` to_u16 | GolemHead⇒74; CursedHammer⇒361/EnchantedSword⇒362/Mimic⇒363/GreenJellyfish⇒364/Gastropod⇒365 (:601-606) | cs_id 83/84/85/103/122 (:3363-3370) outside, silent |
+| d37 | `2ea22ce3e` | `:4614` to_u16 | GolemHead⇒74; Pirate⇒361/GoldfishWalker⇒362/HornetFatty⇒363/HornetHoney⇒364/HornetLeafy⇒365 (:604-608) | cs_id 229/230/231-233 outside, silent (Pirate/Hornet bestiary :2187-2190; GoldfishWalker hand row :3448, the bestiary fold :2350 → Goldfish) |
+| d42 | `bac408be0` | `:4614` to_u16 | GolemHead⇒74 ONLY — Seagull⇒602/Seagull2⇒603/Rat⇒610/Owl⇒611 correct-by-band (:616-621, cs_id :3490-3501 identical) | the four keep firing; the head silent |
+| d40 | `8fe1d6d31` | `:4614` to_u16 | GolemHead⇒74 ONLY — GoldBird⇒442/GoldFrog⇒445/GoldMouse⇒447 correct-by-band (:601-607; bestiary net_id :2202/:2226/:2243) | the golds keep firing; the head silent |
+| d33 | `b08acf463` | `:4647` to_u16 | GolemHead⇒74 only (the dragonflies 595-601 outside in BOTH spaces) | silent |
+| c4 | `0df6964be` | `:4662` to_u16 | GolemHead⇒74 only (581/587 outside both spaces post-reconcile) | silent |
+| d120 | `2408233da` | `:4719` to_u16 | GolemHead⇒74 only (the town four 142/160/178/209 outside) | silent |
+| **d41 (NEW — rowed since §8.3)** | `c7159cf0b` | `:4656` to_u16 | GolemHead⇒74 ONLY — batches 1-5 rowed 494-506/508-516/519/522-526, NONE in the critter set (mechanical scan) | silent |
+| **d43 (NEW — rowed since §8.3)** | `0253bde90` | `:4614` to_u16 | GolemHead⇒74 the only MIS-route; the SEVEN new hits are correct-by-band: ScarletMacaw⇒671/BlueMacaw⇒672/Toucan⇒673 (:614-616), YellowCockatiel⇒674/GrayCockatiel⇒675 (:607-608), BoundTownSlimeYellow⇒687 (:600), OwlMimic⇒689 (:592) — cs_id hand rows identical (:3517-3526 + :3502/:3510) | the seven keep firing (the macaw/cockatiel day-bird arms :92303-92314, the 687 frog arm :92264, the 689 owl-night arm :92249); the head silent |
+
+**The C# arm labels corrected (§8.3's "squirrel/bunny" shorthand):**
+the `:92264` arm (`type == 361 || 445 || 687`, the |vx|<0.5 +
+night-or-underground gate, Next(200), style 31) is the **Frog** arm —
+361 is Frog (`NPCID.cs:11399`), NOT Squirrel (299, :11275); the
+`:92257` arm (362-365 day Next(200) style 30) is the **Duck** arm —
+NOT Bunny (46, :10769). The mis-route MECHANICS are unchanged (the
+f42/g8/d37 kinds enter those arms on their protocol tips and roll
+their draws); only the labels were wrong. The GolemHead⇒74 arm is
+the Bird day arm (:92271-92287, Next(400)+Next(3)) as §3 pinned.
+
+**The d43 activation delta (the tail census's one NEW row-state):**
+d43 pushed 13 batches (`0253bde90`) — the §1/§8 "d43 zero commits"
+state is SUPERSEDED. The tail kinds 657 QueenSlimeBoss / 662
+PirateGhost / 686 ClumsySlimeBalloon (the port's
+`BoundTownSlimePurple`, `npc.rs:1129`) / 690 StatueMimic / 695-696
+Pals ARE rowed now — but every one is an UNWIRED `{}` stand-in
+(`npc.rs:6806`/`:6793`/`:6757`/`:6751`/`:6742` at `0253bde90`), and
+d33's styles 121/122/125/126/127 are STILL unwired (§9e's axis
+re-grep). **ZERO tail activations change** — the §8.2 activation
+contract stands verbatim, now with the d43 rows as its trigger
+half. The d42 tip also moved (`bac408be0`: the BloodSquid-619 hover
+gap closed `33b3cfe07`, the rotation census `2f6b99947`, the
+research/239 11-kind drop-hunks PUBLISHED but rows still on-branch
+— the 595-601/602-609 merge-wave drops do not change any sound
+verdict). The d41 cs_id-fold idle caveat (f2 §13: Crawdad2→494
+mis-routes idle arm 15) is RECEIVED as the one open merge-time feed
+fix, cross-noted to the merger, not this lane's.
+
+### 9e. The style-114 ZERO-tail-cues verdict — re-verified at source
+
+The §8.1 LIVE-axis check re-ran this seal, whole-function C# re-read
+in ≤100-line windows: `AI_114_Dragonflies` (`NPC.cs:47716-47886`,
+three windows) contains **ZERO `SoundEngine.PlaySound` sites**
+(mechanical range scan: 0 hits in 47716-47886 of the 232); the
+`IdleSounds` ladder (`:90075-90208`, re-read whole in two windows)
+never names 595-601; the `UpdateNPC_CritterSounds` table
+(`:92244-92341`, re-read whole) never names them either. The
+dragonflies' only sound-adjacent seam is the `IsGoldCritter` sparkle
+(`:92345-92367` — a DRAW-pass dust/light feed with a Next(300) gate,
+not a PlaySound site). d33's axis re-grep at `b08acf463`: **114 is
+STILL the only wired style arm** (`npc.rs:5030`, mechanical grep —
+no 99-104/111-113/115-119/121/122/125-127 arm). The witness
+`w4_e9_tail_activation_2_the_landed_roster_ambient_census`
+(`ambient_sound.rs:1440`, anchors row 903) pins all three facts —
+WRITTEN NOT RUN, table-side. **The LIVE style-114 axis activates
+ZERO tail cues; the `allow(dead_code)` verdict
+(`npc_sounds_tail.rs:42`) stands** — and under §9b the whole module
+DROPs at the merge anyway, the two unclaimed helpers re-landed in
+f2's own module (f2 §10 rows 14/15).
+
+### 9f. The npc-sound-tail-family bible (the merger's one paragraph)
+
+**The NPC sound family is ONE bank, ONE dispatch, ONE census-gated
+water pass, ONE idle ladder, and a set of machine-owned tail sites —
+f2-canonical, e9 wholesale DROP.** Merge f2 (`b754bdcd` or its
+successor) whole; drop e9's §9b inventory (the ladder + wiring, the
+water module + decision + gates, the 19 tail fns + 10 witnesses, the
+4+4 decision witnesses, the wet quintet + tail-cue duplicates, the
+zombie bank subset) — the extras/adoptions/fixes are ALREADY unioned
+both ways, nothing to cherry-pick from e9 except the provenance
+citations. The d-band machines keep their SITES as one-call
+consumers of f2's bank: the §8.2 / f2-§13 keep-one map drains every
+`out.sounds` tuple (`(2,N)`→`ItemCue(N)`, `(4,63)`→`NpcDeath63`,
+`(3,6)`→`NpcHit6`, `(14,542)`→`SandSharkCry`, `(65,_)`→
+`QueenSlimeMoan`, `(27,_)`→`Pixie`, trackables→`Trackable` with
+laugh→`statuemimic_laugh_0`); d38's inline Ghost cry repoints to the
+`NpcDeath55` façade (f2 §12's one-line hunk) and f2's staged
+`ghost_flee_cry` retires; the :24449 Antlion is machine-owned-LIVE
+on f42/g8 (the style-19 keep-one: ONE machine, the d24 module the
+faithful superset, `Item5` folds onto `ItemCue(5)`); the two
+unclaimed sites (Medusa gaze :56403, BigMimic reflect :66429) stay
+staged in f2's `npc_sounds_tail.rs` until the gaze machine / the
+reflect body land; `vile_spit_queue_cry` + `water_exit_jump`
+activate at their named d-band waves (f2 §11). The critter emitter
+keys `cs_id()` on EVERY lane that keeps its own wiring — e9/f2/c10
+fixed, the §9d table gives the one-line hunk per remaining tip (the
+d42/d40/c10/d43 correct-by-band arms keep firing — the positive
+control). The f47 buff-353 add folds into f2's shimmer-latch arm
+(`:93068-93074` position), `shimmer_wet_contact_pass` drops whole
+(f2 §14.2 — the keeper retargeted from e9's step); the b1
+carried-flag feed + the d41 Crawdad2 idle feed are the two one-line
+merge-time cross-notes. The mechanical **232**-PlaySound count
+(re-run this seal: 232) is the family's final census — the ledger
+163 landed + 32 idle + 8 water + 2 extras + 27 tail (f2 §13); the
+620 exit jump + the lava strike/buff are NOT PlaySound sites. No
+NPC-sound site is unowned; no sound decision is duplicated after
+the fold. **SEALED.**
+
+### 9g. Verification (this seal phase)
+
+Code-only: **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
+Every claim re-verified by direct read at the fetched tips: e9's
+`npc.rs:55-189` (the gates + the four callers + the :98/:176 lava
+gap), the 147-witness halves :19288-19343, the water module's fn
+list, the tail module's 19 fns + 10 tests, the critter wiring/witness
+keys; f2's research/94 whole (883 lines) + its gate region
+:1280-1409 + the quirk witness :2663-2712 at `b754bdcd`; the §9d
+twelve-tip mechanical scans (the critter call + the to_u16×23-id
+walk + the cs_id/bestiary confirmations); the d43 stand-in arms +
+cs_id rows, the d42 moved-tip stand-ins, the d33 axis grep, the
+g8/f42 style-19 routes. C# windows ≤100 lines: `IdleSounds` whole
+(:90075-90211, 2 windows), `UpdateNPC_CritterSounds` whole
+(:92244-92343), `AI_114_Dragonflies` whole (:47716-47891, 3
+windows), the four lava/honey gate windows (:93136/:93169/:93234/
+:93256-93273), the exit-water gate :93247-93254, the IsGoldCritter
+sparkle :92344-92367, the Pixie hum :24850-24857; `NPCID.cs` the
+147/−4/361/299/46 labels + the 23 critter ids + the 679-696 band.
+The 232 count + the dragonfly-range scan ran as read-only
+`Select-String`. No code changed — this seal is docs + 1 anchors
+row (the §9 marker).

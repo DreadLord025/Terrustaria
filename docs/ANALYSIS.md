@@ -39311,3 +39311,33 @@ arms on their own tips — the SAME one-line `to_u16`→`cs_id` rekey
 fixes each (the exact f2 hunk published); d42's Seagull/Rat/Owl and
 d40's gold critters are correct-by-band (protocol == cs_id) and keep
 firing after the rekey — the positive control.
+
+**SEAL addendum (research/141 §9 — the family CLOSED, e9-DROP /
+f2-canonical):** f2's research/94 §15 (`b754bdcd`) declares the
+NPC-sound family f2-canonical; e9 ACCEPTS the wholesale DROP (§4 +
+§9b items 1-12 — the ladder/wiring, the water module + decision +
+gates, the 19 tail fns + 10 witnesses, the 4+4 decision witnesses,
+the wet quintet + tail-cue duplicates; the extras/adoptions/fixes
+already unioned both ways). The exit-LAVA 147 fix-hunk (f2 §14.7) is
+MOOT under the DROP — f2's pass carries both quirks verbatim
+(`lava_entry_gate`/`lava_exit_gate`); e9's `honey_splash_gate:98` +
+the :176 exit-lava caller still keep `type != 147` at `f78613cf`
+(re-confirmed; the C# :93267 drops it, 147 IceSlime is aiStyle-1
+latent). Two corrections to the prior rounds' text: the :92264/:92257
+critter arms are the **Frog** (361/445/687) and **Duck** (362-365)
+arms — NOT squirrel (299)/bunny (46) (NPCID.cs:11399/:11401-11407;
+the mis-route mechanics unchanged); and f2's "e9 has no 147-gate
+test" claim is stale — e9's entry/exit witnesses pin the 147 WATER
+arms since `712e3c54` (npc.rs:19288-19343), they DROP with item 7.
+The ten-tip scan RE-RAN at the current tips (§9d) and gained TWO
+lanes: **d43 rowed** (`0253bde90`, 13 batches — the tail kinds
+657/662/686/690/695/696 now `{}` stand-ins, ZERO activation change;
+its seven new critter-set hits 671-675/687/689 correct-by-band) and
+**c10 already keys cs_id** (`15f93d134`, the waterfowl/golds
+correct-by-band — no rekey owed); d41's rows 508-526 add no critter
+collision. The style-114 ZERO-tail-cues verdict re-verified at
+source (the whole AI_114_Dragonflies :47716-47886 re-read, 0
+PlaySound hits; neither ambient table names 595-601; d33's 114
+still the ONLY wired axis arm). The npc-sound-tail-family bible is
+research/141 §9f; the 232 count re-run = 232. Code-only, docs + 1
+anchors row.
