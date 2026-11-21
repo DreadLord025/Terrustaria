@@ -568,11 +568,15 @@ impl App {
                         ) {
                             self.entity_lights.add(x, y, rgb);
                         }
-                        // W4-c39 — `AI_166_Dove`'s lantern light cast
+                        // W4-c39 (the surviving graft, research/114 §1c) —
+                        // `AI_166_Dove`'s lantern light cast
                         // (`Projectile.cs:47568-47569`): `(1, 0.6, 0.1) *
                         // (1 - alpha/255)` at the lantern's centre. The AI
                         // writes it per tick (not the SetDefaults `light`
-                        // slice), so it rides the feed directly.
+                        // slice), so it rides the feed directly. d17's
+                        // in-file `ai_dove` machine skips the light (no pool
+                        // layer); this frame-side seam is c39's unique
+                        // contribution, grafted beside the canonical machine.
                         if p.kind == crate::projectile::RELEASE_LANTERN {
                             let num2 = 1.0 - p.alpha as f32 / 255.0;
                             let cx = (p.pos.x + p.w * 0.5) / TILE_PX;

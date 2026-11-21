@@ -4673,6 +4673,11 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // arm's 5-tick frame machine (`Projectile.cs:23477-23486`) wraps at
         // it, back to frame 1.
         861 => 4,
+        // W4-d17 (canonical, research/114 §1c) — the Release Doves (851) /
+        // Release Lantern (855) 4-frame sheets (`Main.cs:8657`/`:8660`):
+        // `AI_166_Dove`'s frame machine wraps at 4 (`Projectile.cs:47556`).
+        // c39's rows omitted the sheet count (the draw would use 1 frame).
+        RELEASE_DOVES | RELEASE_LANTERN => 4,
         // The 909's 6-frame sheet (`Main.cs:8691`) — the arm's
         // `1 + rand.Next(6)` frame roll (`Projectile.cs:23268-23274`) pins
         // one of its rows.
