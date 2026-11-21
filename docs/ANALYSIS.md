@@ -40116,3 +40116,40 @@ gained the `rotated_by`/`to_rotation`/`smooth_step`/`ring_kick`/
 `portal_color`/`double_angle_ring_pos`/`chlorophyte_ring`/`smoke_puff`/
 `cursed_flame_death`/`confetti_burst`/`trail_walk_burst`/`dd2_explosion_dust`/
 `rainbow_trail_ring` helpers. Every witness WRITTEN NOT RUN (code-only).
+
+### The FINAL seal (research/245, 2026-11-21)
+
+The lane is SEALED: `Kill-remainder-309-distinct-kinds-ALL-406-Dust.
+NewDust-sites-ported-or-accounted` landed (22 commits
+`7f0dc8649..b0842907c`, batches 11-31 + the accounting; the module
++6200/−656). **Number correction**: the FINAL drain carries **241 match
+arms → 316 distinct kinds** (mechanical scan, ranges expanded, zero
+duplicates) — the accounting's "309" was the batch-28 (`4dc2df3d9`)
+census, 26i's "317" a +1 miscount; batches 29-31 added the last 7 kinds
+(711/636/686/502/932/681/1120). The 406-site closure re-verified by
+independent scan at the seal: 393 drain-covered + 6 other-lane (442-i16,
+608-d12) + 7 documented-deferred = 406, **0 unclaimed**.
+
+The keep-one adjudication re-verified at CURRENT tips (research/245 §2):
+d78 moved `fd59c51a`→`7ea64ff75` (docs-only SEAL; the dust-free
+`damage_evp_boxed`/`hostile_death_blast` unchanged — g65's 452/454/448
+bodies KEEP); g1 moved `e43c62879`→`ef671cf2b` and EXECUTED the d78 fold
+itself (the three hostile hooks + `death_burst_player_hit` already
+dropped — the 26i g1-drop hunks CONSUMED); d77 `5f10560b` + g3 `8568ef37`
+unchanged, every pinned census call re-read line-exact. The FINAL merger
+drop-hunk table (14 hunks incl. the NEW g1 census drops: the 932 fairy
+census `projectile.rs:20047`, the 522/521/459|709/80 censuses) lives in
+research/245 §2a; the swept-618 INLINE census KEEPS until the sweep
+rewire (26i §3 hunk 4).
+
+The 7 deferred sites are task-seeded to owner lanes (research/245 §4):
+S1-P-i58 (1084/949 — the TorchID.Dust table + App disco feed), S1-P-i59
+(868/869/996 — the WorldGen randomizer lane), S1-P-i60 (655 — the
+NPC-spawn/item-drop seam); 89/91+92/183 fold as prefixes into the
+main-landed `special_bullet_kill`/`special_arrow_kill`/`beenade_death`
+(no new lane). The family declaration (g63/g64 trail ≤400/≥401, g65
+death CANONICAL for its 316-kind roster, d53→e3→f5 per-tick batches,
+i16/i17/i18/celeb2/floating-turret/d12 special hosts, g16 gore, the
+cue/state lanes) is research/245 §5. New seal witness
+`w4_g65_seal_the_deferred_kinds_are_inert` (the 10 deferred kinds draw
+nothing through the drain) — WRITTEN NOT RUN with the other 115.

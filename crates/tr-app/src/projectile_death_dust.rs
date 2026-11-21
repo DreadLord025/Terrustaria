@@ -7480,4 +7480,23 @@ mod tests {
         assert!(active.iter().all(|d| d.dust_type == 170));
         assert!(active[..15].iter().all(|d| d.no_gravity));
     }
+
+    /// The SEAL witness (research/245 §6): the ten documented-deferred
+    /// kinds — 89/91/92/183/655 (cross-seam spawn/split draws) and
+    /// 868/869/949/996/1084 (App-frame disco / WorldGen-randomizer state)
+    /// — have NO drain arm: each spawns nothing and draws NOTHING through
+    /// the drain (the deferred set is stream-inert until its owner lane
+    /// ports the prefix ahead of the state-bearing draws, 245 §4).
+    #[test]
+    fn w4_g65_seal_the_deferred_kinds_are_inert() {
+        let w = world();
+        for kind in [89u16, 91, 92, 183, 655, 868, 869, 949, 996, 1084] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            let before = rng.clone();
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            assert!(dust.slots().iter().all(|d| !d.active), "kind {kind}");
+            assert_eq!(rng, before, "kind {kind} drew on the stream");
+        }
+    }
 }
