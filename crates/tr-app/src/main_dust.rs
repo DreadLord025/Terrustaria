@@ -21,6 +21,11 @@
 //!   `FocusHelper.AllowMiscDustEffects && Dust.lavaBubbles < 200` gate
 //!   `:57785-57803`).
 //!
+//! Sweep addition (`docs/research/68-dust-main-residual-sweep.md`): the
+//! `DrawCapture` snow cull (`Main.cs:56735-56744`) — the one unclaimed
+//! Main.cs dust window outside the 23 spawn sites; `capture_snow_cull`,
+//! staged behind the S1-G-13 capture-render seam.
+//!
 //! ## RNG — one slot per C# pass (S1-A-10)
 //!
 //! Every site here executes on the DRAW path (`DrawNPCDirect` /

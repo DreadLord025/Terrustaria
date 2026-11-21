@@ -122,3 +122,16 @@ probabilistic scans.
   before the move (`:477`); the head reset (`:427`) was already there.
 - g11/g12's thirds (sites 1-16) — their branches; the boundary sites are
   owned whole per the claim doc (24752 g12's, 24756 g13's).
+
+## Sweep addendum (lane 41, `68-dust-main-residual-sweep.md`)
+
+The post-push re-probe (g11 `13a1c48e`/`d892d8d4`, g12 `665cd1e8`)
+confirms NO site collision: g12's `main_dust_b.rs` covers 9-16 only (the
+Tavernkeep pair is g13's, the flag8 trio cites `:24756` as g13's). The
+g11/g13 `main_dust.rs` filename collision + the union shape are recorded
+in research/66 §2/§4 and research/116; the snowing budget-hoist is still
+owed by g11b. The Main.cs residual census closes with ZERO unclaimed
+spawn windows; the one non-spawn residual (the `DrawCapture` type-76
+snow cull, `Main.cs:56735-56744`) ports as `capture_snow_cull`
+(`1af79847`, staged behind S1-G-13, +2 witnesses). The Dust.cs internals
+audit + the lavaBubbles consumer census live in research/68 §3/§4.

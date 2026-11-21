@@ -39319,3 +39319,32 @@ witnesses (the d51 pattern) pin the per-site draw census, plus 4 wiring
 stream-parity witnesses (the item feed's per-drop walk, the dead Moon Lord
 arm, the ale edge latch, the retro rect machinery); WRITTEN, NOT RUN - no
 cargo/rustc/rustfmt/tests/graphify invoked (code-only mode).
+
+**Doc-sweep (lane 41, `docs/research/68-dust-main-residual-sweep.md`).**
+The post-push re-probe of g11 `13a1c48e` (+ docs-only tip `d892d8d4`) and
+g12 `665cd1e8` finds NO site collision with g13's 17-23 + feeds: g12's
+`main_dust_b.rs` stops at the flag8 trio (:24752), the Tavernkeep pair is
+g13-only, and both modules cite the boundary. The g11/g13 `main_dust.rs`
+filename collision stands (research/66 §2's union: g13 bodies + g11's
+budget-hoisted snowing; the hoist is still owed at g11's tip,
+`main_dust.rs:140` reads live_type inside the loop). The full Main.cs
+`Dust.` census closes the 23-site spawn window with ZERO unclaimed
+remainders; the one non-spawn residual, the `DrawCapture` snow cull
+(`Main.cs:56735-56744`), ports as `main_dust::capture_snow_cull`
+(`1af79847`): the four-negation strict-containment OR verbatim (integer
+`*16` products, the saved PRE-capture view), the full 6001-slot walk
+killing live type-76 only, RNG-free, staged behind the S1-G-13
+`CaptureRenderer` seam; 2 witnesses written not run. The Dust.cs
+internals audit finds d50's `dust_physics` (`2e243a2d`) carries EVERY
+physics type-arm of `UpdateDust` (:468-2334) - no missing arm - but flags
+three wiring-wave items: the 52 second-chain light arms (:1099-2312) are
+orphaned between `dust_lights` ("lands with S1-E-3") and d50 ("S1-E-5");
+d50's `pre_move` 35-increment would DOUBLE-COUNT `lava_bubbles` against
+g13's landed inline increment (`particles.rs:359`) - keep the inline,
+strip the pre_move arm (which keeps the 299-305 shrink/lift the skeleton
+lacks); and the dust_lights 206/174/230 local-decrement retire. The
+`lavaBubbles` consumer census finds both C# readers accounted: the retro
+`Main.cs:57785` (g13, wired) and the modern `LiquidRenderer.cs:556`
+(f6 batch-4 `world_dust.rs::lava_bubbles`, STAGED, private `_random`
+`:132` stream - a per-visible-lava-cell spawner, not an Underworld bg
+lake; wiring stays f6's). No unclaimed consumer remains.
