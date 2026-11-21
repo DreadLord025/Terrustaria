@@ -146,6 +146,33 @@
 //! `:85942`), 104/109 (the zombie arm's NewNPC), 116 (NewNPC), 121
 //! (NewNPC), 112 (g62's every-hit).
 //!
+//! ## Scope — batch 11 (the d34 row-gated activations, 10 kinds)
+//!
+//! W4-d34's pushed tip `5f3435a8` (phases 1-3, kinds 1-70) landed the
+//! cs_id hand rows inside this lane's UNWIRED remainder. The sweep
+//! re-intersected the 83-kind row-gated set against EVERY pushed roster
+//! tip (d34/d35/d37/d38/d40/d41/d42 + the c4/c8/c10/e26/d23 kind-claims):
+//! d34 intersects 14 clean kinds, of which 31/34/37/39/40/41/43/47/48/56
+//! activate here (the 40/41 BoneSerpent segments ride d34's Hide-fold
+//! onto the head's cs_id 39 — the feed sees 39, the C# arm reads the RAW
+//! type, all three draw the same 20×26 burst); 57/61/62/63 follow in
+//! batch 12.
+//!
+//! | C# type(s) | death arm | shape |
+//! | --- | --- | --- |
+//! | 31 AngryBones | `:88537` | 20× type-26 (the big skeleton arm, 21/32's) |
+//! | 34 CursedSkull | `:89132-89141` | 15× (15 noGrav/noLight + 26 noLight) pairs, -vel×0.2, vel×1.3, dust-only |
+//! | 37 OldMan | `:88232-88235` | 50× type-5 2.5×dir (the town shape) |
+//! | 39/40/41 BoneSerpent | `:89109-89112` | 20× type-26 (40/41 fold onto 39) |
+//! | 43/56 ManEater/Snatcher | `:89752-89755` | 50× type-40 alpha/color scale-1.2 |
+//! | 47 CorruptBunny | `:86381-86384` | 10× type-5 (the piranha arm, 58's) |
+//! | 48 Harpy | `:89786-89789` | 50× type-5 2×dir |
+//!
+//! All batch-11 gore tails draw NO arguments (the skeleton ladder's
+//! generic 42/43/43/44/44 tail, the `this.type - 39 + 67` arithmetic, the
+//! 72/72 + 78/79 + 80/81 constants, the Old Man's shimmer field-read
+//! gates). The d34 kinds NOT activated: 46 Bunny (gore-first `:85942`).
+//!
 //! ## The lane's remainder (the census's absent kinds)
 //!
 //! The 173-kind dust-first clean census had 109 kinds with NO port kind
@@ -391,7 +418,11 @@ pub fn death_dust(
         // `NPC.cs:88537-88540` — the Skeleton (21) / Dark Caster (32): 20
         // type-26 bone puffs at 2.5×dir/-2.5 (the big skeleton arm's dust
         // head; the gore tail's types are constants, no argument draws).
-        21 | 32 => {
+        // 31 AngryBones rides the SAME arm (batch 11, the d34 row landing —
+        // `5f3435a8`'s hand row; its gore path falls through the ladder's
+        // per-kind gates to the generic 42/43/43/44/44 tail `:88623-88639`,
+        // all constants + `this.scale`).
+        21 | 31 | 32 => {
             for _ in 0..20 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 26, 2.5 * dir, -2.5, 0,
@@ -486,9 +517,12 @@ pub fn death_dust(
                 );
             }
         }
-        // `NPC.cs:86381-86384` — the Piranha (58): 10 type-5 puffs at
-        // 2×dir/-2 (the 47/57 siblings are unported kinds).
-        58 => {
+        // `NPC.cs:86381-86384` — the Piranha (58) / Corrupt Bunny (47):
+        // 10 type-5 puffs at 2×dir/-2 (the shared `:86371` arm; 47 rides
+        // the d34 row — batch 11, the 78/79 gore tail `:86403-86407` is
+        // constant types, no argument draws; the 464/465 siblings are
+        // g60's band).
+        47 | 58 => {
             for _ in 0..10 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
@@ -507,7 +541,9 @@ pub fn death_dust(
             }
         }
         // `NPC.cs:89803-89806` — the Voodoo Demon (66): 50 type-5 puffs
-        // at 2×dir/-2 (the 62 sibling is an unported kind).
+        // at 2×dir/-2 (the 62 Demon sibling joins in batch 12 — the shared
+        // `:89793` arm; the 93/94/94 gore tail `:89807-89809` is constant
+        // types, no argument draws).
         66 => {
             for _ in 0..50 {
                 dust.new_dust(
@@ -882,6 +918,84 @@ pub fn death_dust(
                 let d = dust.slot_mut(idx);
                 d.velocity *= 2.0;
                 d.no_gravity = true;
+            }
+        }
+        // ---- batch 11 (the d34 row-gated activations: the bone/caster/
+        // man-eater families). d34's pushed tip `5f3435a8` (phases 1-3)
+        // landed the cs_id hand rows 31/34/37/39/43/47/48/56 (+ the 40/41
+        // Hide-folds onto 39). 31/47 ride the extended shared arms above;
+        // the six new arms follow.
+        // `NPC.cs:89786-89789` — the Harpy (48): 50 type-5 puffs at
+        // 2×dir/-2 (the 80/81 gore tail `:89790-89791` is constant types,
+        // no argument draws).
+        48 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89132-89141` — the Cursed Skull (34): 15 × (type-15
+        // noGravity/noLight alpha 100 scale 1.8 + type-26 noLight scale
+        // 0.9) pairs at -velocity×0.2, each velocity×1.3. Dust-only,
+        // zero gore (the arm's hit half `:89119-89128` is g62's).
+        34 => {
+            for _ in 0..15 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 15,
+                    -npc.vx * 0.2, -npc.vy * 0.2, 100, Color::default(), 1.8,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_light = true;
+                d.no_gravity = true;
+                d.velocity *= 1.3;
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 26,
+                    -npc.vx * 0.2, -npc.vy * 0.2, 0, Color::default(), 0.9,
+                );
+                let d = dust.slot_mut(idx);
+                d.no_light = true;
+                d.velocity *= 1.3;
+            }
+        }
+        // `NPC.cs:88232-88235` — the Old Man (37): 50 type-5 puffs at
+        // 2.5×dir/-2.5 (the town shape; the shimmer-gated 58-60/1328-1330
+        // gore tail `:88236-88240` reads `IsShimmerVariant`, a field read
+        // — no argument draws).
+        37 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89109-89112` — the Bone Serpent head (39): 20 type-26
+        // bone puffs at 2.5×dir/-2.5 (the skeleton shape; the
+        // `this.type - 39 + 67` gore `:89113` is constant arithmetic, no
+        // argument draws). The 40/41 Hide-fold segments ride the head's
+        // cs_id (d34's fold — the feed sees 39; the C# arm reads the RAW
+        // type, all three draw the same burst).
+        39 => {
+            for _ in 0..20 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 26, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:89752-89755` — the Man Eater (43) / Snatcher (56): 50
+        // type-40 puffs at dir/-2, `this.alpha`/`this.color`, scale 1.2
+        // (the color stand-in is default — neither writes a color). The
+        // 72/72 gore tail `:89756-89757` is constant types, no argument
+        // draws.
+        43 | 56 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 40, dir, -2.0,
+                    npc.alpha as i32, Color::default(), 1.2,
+                );
             }
         }
         _ => return false,
@@ -1882,6 +1996,137 @@ mod tests {
             assert_eq!(d.dust_type, 4);
             assert_eq!(d.alpha, 0);
             assert_eq!(d.color, Color::new(70, 225, 140, 100));
+        }
+    }
+
+    // ---- batch 11 (the d34 row-gated activations). The d34 kinds
+    // (AngryBones 31 … BlueJellyfish 63) land with the d34 merge; the
+    // witnesses drive the RAW C# ids over a stand-in corpse shell (the
+    // batches-8-10 precedent — `death_dust` matches on the type argument,
+    // the shell only supplies the box/alpha/scale reads).
+
+    /// `NPC.cs:88537-88540` — Angry Bones (31) rides the big skeleton
+    /// arm's 20×26 census exactly (the d34 hand row; its gore path falls
+    /// to the generic constant tail — zero argument draws).
+    #[test]
+    fn w4_g59_the_angry_bones_death_rides_the_skeleton_census() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(191);
+        assert!(death_dust(&n, 31, &mut dust, &ctx(), &mut rng, &w));
+        let mut dust_b = DustPool::new();
+        let mut rng_b = UnifiedRandom::new(191);
+        assert!(death_dust(&n, 21, &mut dust_b, &ctx(), &mut rng_b, &w));
+        assert_eq!(rng, rng_b, "31 and 21 spend the same draws");
+        assert_eq!(dust.slots(), dust_b.slots());
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 20);
+        assert!(live.iter().all(|d| d.dust_type == 26));
+    }
+
+    /// `NPC.cs:89132-89141` — the Cursed Skull (34): 15 × (15 + 26) pairs
+    /// at -velocity×0.2, the 15s noGravity/noLight alpha 100 scale 1.8,
+    /// the 26s noLight scale 0.9, both velocity×1.3 — the twin pool pins
+    /// the exact writes (dust-only, zero gore, zero argument draws).
+    #[test]
+    fn w4_g59_the_cursed_skull_death_draws_fifteen_twin_pairs() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(193);
+        assert!(death_dust(&n, 34, &mut dust, &ctx(), &mut rng, &w));
+        let mut twin = DustPool::new();
+        let mut twin_rng = UnifiedRandom::new(193);
+        let (bw, bh) = n.size();
+        let pos = Vec2::new(n.x, n.y);
+        for _ in 0..15 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, pos, bw as i32, bh as i32,
+                15, -0.4, 0.2, 100, Color::default(), 1.8,
+            );
+            let d = twin.slot_mut(idx);
+            d.no_light = true;
+            d.no_gravity = true;
+            d.velocity *= 1.3;
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, pos, bw as i32, bh as i32,
+                26, -0.4, 0.2, 0, Color::default(), 0.9,
+            );
+            let d = twin.slot_mut(idx);
+            d.no_light = true;
+            d.velocity *= 1.3;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 30);
+        for pair in live.chunks(2) {
+            assert_eq!(pair[0].dust_type, 15);
+            assert!(pair[0].no_gravity && pair[0].no_light);
+            assert_eq!(pair[0].alpha, 100);
+            assert_eq!(pair[1].dust_type, 26);
+            assert!(pair[1].no_light && !pair[1].no_gravity);
+        }
+    }
+
+    /// `NPC.cs:88232-88235` / `:89109-89112` — the Old Man (37) 50×5 at
+    /// 2.5×dir/-2.5 and the Bone Serpent head (39) 20×26 at 2.5×dir/-2.5;
+    /// the 40/41 Hide-fold segments reach the feed as the head's cs_id 39
+    /// (d34's fold) — the same burst, verified by driving 39 thrice.
+    #[test]
+    fn w4_g59_the_old_man_and_bone_serpent_counts() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        for (ty, want_ty, count) in [(37, 5, 50), (39, 26, 20)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(197);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), count, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == want_ty));
+        }
+    }
+
+    /// `NPC.cs:89752-89755` — the Man Eater (43) / Snatcher (56): 50
+    /// type-40 puffs at dir/-2 reading the live alpha, scale 1.2 (the
+    /// pool's ±0.2 jitter over 1.2); both ids draw the same census.
+    #[test]
+    fn w4_g59_the_man_eater_pair_draws_fifty_type_forties() {
+        let w = air();
+        let mut n = corpse(NpcKind::Skeleton);
+        n.alpha = 70;
+        let mut states = Vec::new();
+        for ty in [43, 56] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(199);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50, "type {ty}");
+            for d in &live {
+                assert_eq!(d.dust_type, 40);
+                assert_eq!(d.alpha, 70);
+                assert!(d.scale >= 1.0 - 1e-6 && d.scale <= 1.4 + 1e-6);
+            }
+            states.push(rng.peek());
+        }
+        assert_eq!(states[0], states[1], "43 and 56 share the census");
+    }
+
+    /// `NPC.cs:86381-86384` / `:89786-89789` — the Corrupt Bunny (47)
+    /// 10×5 at 2×dir/-2 (the piranha arm) and the Harpy (48) 50×5 (the
+    /// voodoo arm); both gore tails are constant types.
+    #[test]
+    fn w4_g59_the_corrupt_bunny_and_harpy_counts() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        for (ty, count) in [(47, 10), (48, 50)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(211);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), count, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == 5));
         }
     }
 }
