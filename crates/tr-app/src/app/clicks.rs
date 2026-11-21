@@ -1065,39 +1065,65 @@ impl App {
 
     /// The town-chatter panel's clicks (`NPCChatPanel.DrawButtons`,
     /// `NPCChatPanel.cs:88-162`): the hover edge plays sound 12
-    /// (`:157-160`) and the Close button's press (`:150-154`) runs
-    /// `CloseChat.Interact` → `Main.CloseNPCChatOrSign`
-    /// (`NPCInteractions.cs:283-286`, `Main.cs:40680-40692`) — the talk
-    /// latch clears, `npcChatText` empties, sound 11 plays and
-    /// `NPCChatPanel.Close` resets `_lastHovered` (`:265-269`). The other
-    /// interaction buttons (shop/happiness/housing/…) are deferred —
+    /// (`:157-160`) and a button's press (`:150-154`) runs its
+    /// `interaction.Interact()`. The port's live interactions: index 0
+    /// `CloseChat` → `Main.CloseNPCChatOrSign` (`NPCInteractions.cs:
+    /// 283-286`, `Main.cs:40680-40692` — the sign half closes too, W4-f22)
+    /// and index 1 the sign's `OpenSign` toggle (`NPCInteractions.cs:
+    /// 31-41` — `Main.editSign` ? `SubmitSignText` :
+    /// `IngameFancyUI.OpenVirtualKeyboard(1)`). The other interaction
+    /// buttons (shop/happiness/housing/…) are deferred —
     /// docs/ANALYSIS.md "Town chatter UI (S1-E-10b)".
     pub(crate) fn handle_npc_chat_clicks(&mut self) {
-        if self.talk_npc.is_none() {
-            // `DrawButtons` only runs while the panel draws — `_lastHovered`
-            // keeps its value across a close (the next open's hover-change
-            // edge, `:157-160`, reads it).
+        let sign_open = self.player.as_ref().is_some_and(|p| p.sign >= 0);
+        if self.talk_npc.is_none() && !sign_open {
+            // `CanHoldConversation` (`NPCChatPanel.cs:276-283`): the panel
+            // only draws (and clicks) while talking OR a sign is open.
+            // `_lastHovered` keeps its value across a close (the next
+            // open's hover-change edge, `:157-160`, reads it).
             return;
         }
         let (sw, sh) = self.screen_size();
         let screen = Vec2::new(sw, sh);
-        let rect = ui::npc_chat::close_button_rect(&self.lookups, screen, &self.npc_chat_text);
-        let hovered = if ui::in_rect(self.mouse_pos, rect) { 0 } else { -1 };
+        let labels = ui::npc_chat::interactions(sign_open, self.sign_editing());
+        let rects =
+            ui::npc_chat::interaction_rects(&self.lookups, screen, &self.npc_chat_text, &labels);
+        let hovered = rects
+            .iter()
+            .position(|r| ui::in_rect(self.mouse_pos, *r))
+            .map_or(-1, |i| i as i32);
         // `:157-160` — the hover-change tick (no gamepad in the port, so
         // the `!UsingGamepad || num2 != -1` gate always passes).
         if self.npc_chat_last_hovered != hovered {
             crate::chest::play_menu_sound(self, 12);
         }
         self.npc_chat_last_hovered = hovered;
-        if hovered == 0 && self.ui_left_press {
+        if hovered >= 0 && self.ui_left_press {
             self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
-            // half is unported; `SetTalkNPC(-1)` + the text clear + sound
-            // 11 + the panel's `Close` reset.
-            self.talk_npc = None;
-            self.npc_chat_text.clear();
-            crate::chest::play_menu_sound(self, 11);
-            self.npc_chat_last_hovered = -1;
+            match hovered {
+                0 => {
+                    // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`):
+                    // `CloseSign(quiet: true)` + `SetTalkNPC(-1)` + the
+                    // text clear + sound 11 + the panel's `Close` reset
+                    // (`NPCChatPanel.cs:265-269`).
+                    crate::signs::close_sign(self, true); // `:40682`
+                    self.talk_npc = None; // `:40683`
+                    self.npc_chat_text.clear(); // `:40685`
+                    crate::chest::play_menu_sound(self, 11); // `:40688`
+                    self.npc_chat_last_hovered = -1;
+                }
+                1 => {
+                    // `Actions.OpenSign.Interact` (`NPCInteractions.cs:
+                    // 31-41`): the edit toggle.
+                    if self.sign_editing() {
+                        let text = self.sign_edit_text().to_string();
+                        crate::signs::submit_sign_text(self, &text); // `:35`
+                    } else {
+                        crate::signs::open_sign_keyboard(self); // `:39`
+                    }
+                }
+                _ => {}
+            }
         }
     }
 
@@ -2245,6 +2271,12 @@ impl App {
             // The dresser top-row storage open (`Player.cs:32864-32925`,
             // S1-P-i43): the same open-inventory right-click route.
             if chest::try_open_dresser_at_cursor(self, world_pos) {
+                self.ui_right_press = false;
+                return true;
+            }
+            // The sign read/edit open (`Player.cs:32693-32724`, W4-f22):
+            // the same open-inventory right-click route the chests ride.
+            if crate::signs::try_open_sign_at_cursor(self, world_pos) {
                 self.ui_right_press = false;
                 return true;
             }

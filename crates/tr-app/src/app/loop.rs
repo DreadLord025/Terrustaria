@@ -491,6 +491,25 @@ impl ApplicationHandler for App {
                             // the machine's `LastClicked` compares.
                             let hit = self.front_hit();
                             if pressed {
+                                // `IngameFancyUI.Draw`'s `GUIChatDraw` arm
+                                // (`:212-215`): the sign dialog keeps drawing
+                                // (and clicking — `DrawButtons`' inline
+                                // `mouseLeft && mouseLeftRelease`,
+                                // `NPCChatPanel.cs:150-154`) while the ctx-1
+                                // keyboard is up. The dialog's Save/Close
+                                // take the press before the keyboard's own
+                                // click table (the rects never overlap —
+                                // the dialog sits at y≈100, the keys at
+                                // y≈270+). W4-f22.
+                                if self.sign_editing() {
+                                    self.ui_left_press = true;
+                                    self.handle_npc_chat_clicks();
+                                    let consumed = !self.ui_left_press;
+                                    self.ui_left_press = false;
+                                    if consumed {
+                                        return;
+                                    }
+                                }
                                 if !self.pointer.clicks_disabled() {
                                     self.pointer_event = self.pointer.press(
                                         now,
@@ -704,6 +723,11 @@ impl App {
                     if let Some(m) = self.map.as_mut() {
                         m.set_open(false);
                     }
+                } else if self.player.as_ref().is_some_and(|p| p.sign >= 0) {
+                    // `Player.ToggleInv`'s sign arm (`Player.cs:5017-5020`):
+                    // `CloseSign()` — sound 11, the dialog closes, no
+                    // inventory toggle (W4-f22).
+                    crate::signs::close_sign(self, false);
                 } else {
                     self.inventory_open = !self.inventory_open;
                 }

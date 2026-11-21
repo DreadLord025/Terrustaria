@@ -1715,8 +1715,9 @@ impl App {
                 }
             }
             // `case 47` — a sign's text (`MessageBuffer.cs:2376-2405`): the
-            // record is rewritten and, when the sender is us, the editor
-            // opens (unported — S1-E-26 records the gap).
+            // record is rewritten and, when the sender byte is us and bit 0
+            // of the flags is clear, the sign opens (`:2400-2403` —
+            // `Main.LocalPlayer.OpenSign(num58)`, W4-f22).
             S2c::SignData(sd) => {
                 if sd.sign < 0 || sd.sign >= crate::signs::MAX_SIGNS {
                     return; // `:2384`
@@ -1728,6 +1729,15 @@ impl App {
                     sd.y as i32,
                     sd.text.clone(),
                 );
+                // `:2400-2403` — the client's open arm: sender == myPlayer,
+                // the record survived `TextSign` (a dead tile spliced it),
+                // and `!bitsByte5[0]`.
+                if sd.sender as u32 == self.local_id
+                    && (sd.sign as usize) < self.world.signs.len()
+                    && sd.flags & 1 == 0
+                {
+                    crate::signs::open_sign(self, sd.sign as i32);
+                }
             }
             // `case 50` — a player's buff ids (`MessageBuffer.cs:2454-2480`):
             // ours is skipped (`:2461-2464`), a peer's lands in its record

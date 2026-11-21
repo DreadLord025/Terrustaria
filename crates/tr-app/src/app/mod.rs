@@ -167,6 +167,15 @@ pub(crate) struct App {
     /// interaction index; the hover-change edge plays sound 12 (`:157-160`)
     /// and `Close` resets it to −1 (`:267`).
     pub(crate) npc_chat_last_hovered: i32,
+    /// `UIVirtualKeyboard._cancelCacheSign` (`UIVirtualKeyboard.cs:28`,
+    /// static ctor `:1084`): the sign editor's cancelled text —
+    /// `CacheCanceledInput(1)` parks it (`:1031-1037`), the restore key
+    /// spends it (`RestoreCanceledInput`, `:1039-1047`). W4-f22.
+    pub(crate) sign_cancel_cache: String,
+    /// `NPCChatPanel.textBlinkerCount/State` (`NPCChatPanel.cs:254-261`) —
+    /// the sign-edit caret's blinker, advanced only while the edit text
+    /// draws (the chest editor owns its own, `App.text_blinker`). W4-f22.
+    pub(crate) sign_text_blinker: ui::chest::TextBlinker,
     /// `Main.combatText[100]` (`CombatText.cs:65`): the floating damage
     /// numbers, indexed and updated like the C# pool.
     pub(crate) combat_texts: Vec<crate::combat_text::CombatText>,
@@ -2508,6 +2517,28 @@ impl App {
         }
     }
 
+    /// `Main.editSign` (`Main.cs:1745`) — the port's editor is exactly "the
+    /// sign keyboard session is open" (`IngameFancyUI.cs:95` sets it, the
+    /// submit/cancel closures clear it). W4-f22.
+    pub(crate) fn sign_editing(&self) -> bool {
+        matches!(
+            self.front.as_ref(),
+            Some(FrontScreen::Keyboard(s)) if s.tail == KeyboardTail::SignEdit
+        )
+    }
+
+    /// `CopyTextToSign` (`UIVirtualKeyboard.cs:1049-1059`) — the live
+    /// keyboard text while the sign editor is open (the per-tick
+    /// `Main.npcChatText` sync), "" otherwise.
+    pub(crate) fn sign_edit_text(&self) -> &str {
+        match self.front.as_ref() {
+            Some(FrontScreen::Keyboard(s)) if s.tail == KeyboardTail::SignEdit => {
+                s.state.text.as_str()
+            }
+            _ => "",
+        }
+    }
+
     /// The submit tail. The card-rename tails run `OnFinishedSettingName`
     /// (`UICharacterListItem.cs:208-214` / `UIWorldListItem.cs:427-432` —
     /// the `.plr`/world-file read-modify-write, research/19 M1); the
@@ -2524,8 +2555,10 @@ impl App {
         let name = session.state.text.trim().to_string();
         // The chest submit reads the live untrimmed text — the C# submit
         // closure ignores its trimmed argument (`UIVirtualKeyboard.cs:363`,
-        // `Main.npcChatText`'s sync `:1061-1067`).
-        let chest_text = session.state.text.clone();
+        // `Main.npcChatText`'s sync `:1061-1067`). The sign submit is the
+        // same shape (`CopyTextToSign`, `:1049-1059` — `Main.SubmitSignText`
+        // reads `Main.npcChatText`, not the closure's `s`).
+        let live_text = session.state.text.clone();
         let back = session.back.clone();
         // `RenameButtonClick`'s `this._data` — the card the keyboard belongs
         // to (`UICharacterListItem.cs:196-206`, `UIWorldListItem.cs:415-425`).
@@ -2608,7 +2641,14 @@ impl App {
             // (`IngameFancyUI.cs:148-156`) — the name lands, the keyboard
             // closes back into gameplay.
             KeyboardTail::ChestRename => {
-                crate::chest::rename_submit(self, &chest_text);
+                crate::chest::rename_submit(self, &live_text);
+            }
+            // `Main.SubmitSignText` + `Close(quiet: true)`
+            // (`IngameFancyUI.cs:137-140`) — the live text lands on the
+            // record, the netMode-1 client sends `47`, the keyboard closes
+            // back into gameplay (W4-f22).
+            KeyboardTail::SignEdit => {
+                crate::signs::submit_sign_text(self, &live_text);
             }
         }
     }
@@ -2624,6 +2664,8 @@ impl App {
             return;
         };
         let is_chest = session.tail == KeyboardTail::ChestRename;
+        let is_sign = session.tail == KeyboardTail::SignEdit;
+        let live_text = session.state.text.clone();
         let back = session.back.clone();
         // `Cancel`'s cue (`SoundEngine.PlaySound(11)`,
         // `UIVirtualKeyboard.cs:984`) — the C# cancels play it before the
@@ -2632,6 +2674,13 @@ impl App {
         self.audio.play("Menu_Close");
         if is_chest {
             crate::chest::rename_cancel(self);
+            return;
+        }
+        if is_sign {
+            // `Main.InputTextSignCancel` + `Close(quiet: true)`
+            // (`IngameFancyUI.cs:141-144`): the cancel cache parks the live
+            // text, `npcChatText` re-reads the stored record (W4-f22).
+            crate::signs::input_text_sign_cancel(self, &live_text);
             return;
         }
         self.enter_front(back.expect("the cancel tail is built with a back screen"));
@@ -2652,6 +2701,34 @@ impl App {
     pub(crate) fn keyboard_backspace(&mut self) {
         if let Some(FrontScreen::Keyboard(session)) = self.front.as_mut() {
             session.state.backspace();
+        }
+    }
+
+    /// `CopyTextToSign`/`CopyTextToChest` (`UIVirtualKeyboard.cs:789-796`,
+    /// `:1049-1067`): the DrawSelf tail syncs the live keyboard text into
+    /// `Main.npcChatText` every frame — the sign half only while the record
+    /// is live (`sign >= 0 && Main.sign[sign] != null`, `:1053-1057`). The
+    /// dialog draw reads `npcChatText`, so the edit shows through it.
+    pub(crate) fn keyboard_sync_chat_text(&mut self) {
+        let Some(FrontScreen::Keyboard(session)) = self.front.as_ref() else {
+            return;
+        };
+        let tail = session.tail;
+        let text = session.state.text.clone();
+        match tail {
+            KeyboardTail::SignEdit => {
+                let live = self
+                    .player
+                    .as_ref()
+                    .is_some_and(|p| p.sign >= 0 && (p.sign as usize) < self.world.signs.len());
+                if live {
+                    self.npc_chat_text = text; // `:1056`
+                }
+            }
+            KeyboardTail::ChestRename => {
+                self.npc_chat_text = text; // `:1065`
+            }
+            _ => {}
         }
     }
 
@@ -3562,6 +3639,8 @@ impl App {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            sign_cancel_cache: String::new(),
+            sign_text_blinker: ui::chest::TextBlinker::default(),
             gpu: None,
             renderer: None,
             post: None,

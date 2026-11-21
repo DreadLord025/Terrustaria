@@ -64,12 +64,28 @@ pub(crate) fn panel_lines(lookups: &Lookups, chat_text: &str) -> Vec<String> {
     rows
 }
 
-/// The interaction row count the port renders: only `CloseChat`
-/// (`NPCInteractions.cs:271-287`, `Condition() => true`) — the shop /
-/// happiness / housing / … buttons are deferred (module header), so
-/// `_neededInteractionLines = ceil(1 / 4) = 1` (`NPCChatPanel.cs:174`,
+/// The interaction row count the port renders: `CloseChat`
+/// (`NPCInteractions.cs:271-287`, `Condition() => true`) plus the sign
+/// context's `OpenSign` (`:15-42`, `Condition() => LocalPlayer.sign > -1`,
+/// registered AFTER CloseChat at `:515-516`) — the shop / happiness /
+/// housing / … buttons are deferred (module header), so
+/// `_neededInteractionLines = ceil(count / 4) = 1` (`NPCChatPanel.cs:174`,
 /// `AllowedInteractionsPerLine = 4` `:30`).
 const INTERACTION_LINES: usize = 1;
+
+/// The live interaction list (`PrepareInteractions`, `NPCChatPanel.cs:
+/// 164-175`): index 0 is always CloseChat, index 1 the sign's
+/// Close/Edit-Save toggle while a sign is open. The labels ride
+/// `Lang.inter[52]` (Close) and `Lang.inter[47]`/`[48]`
+/// (`OpenSign.GetText`, `NPCInteractions.cs:22-29` — 47 while
+/// `Main.editSign`, 48 otherwise).
+pub(crate) fn interactions(sign_open: bool, edit_sign: bool) -> Vec<String> {
+    let mut rows = vec![crate::lang::inter(52)];
+    if sign_open {
+        rows.push(crate::lang::inter(if edit_sign { 47 } else { 48 }));
+    }
+    rows
+}
 
 /// The panel's box (`NPCChatPanel.cs:65-68` via the selection half's
 /// `chat_box_rect`/`chat_box_height`): `[x, y, w, h]` in UI pixels.
@@ -83,17 +99,41 @@ pub(crate) fn panel_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f
 /// The Close button's hit rect (`NPCChatPanel.cs:93-117`): the row origin
 /// is `panelArea.BottomLeft() + (30, -22·lines + max(0, 2·(lines−1)) − 4)`,
 /// the rect 22 tall and as wide as the label measured at scale 0.9
-/// (shrunk to fit 260 px, `:113-117`).
+/// (shrunk to fit 260 px, `:113-117`). The Close-only convenience over
+/// [`interaction_rects`] — the sign-aware sites pass the full row.
 pub(crate) fn close_button_rect(lookups: &Lookups, screen: Vec2, chat_text: &str) -> [f32; 4] {
+    interaction_rects(lookups, screen, chat_text, &[crate::lang::inter(52)])[0]
+}
+
+/// The full interaction row's rects (`DrawButtons`' per-button walk,
+/// `NPCChatPanel.cs:93-135`): one rect per live label, the x advancing by
+/// each measured width + 30 (`:135`), the `num % 4 == 0` row reset
+/// (`:103-107`). The sign row joins while a sign is open
+/// ([`interactions`]).
+pub(crate) fn interaction_rects(
+    lookups: &Lookups,
+    screen: Vec2,
+    chat_text: &str,
+    labels: &[String],
+) -> Vec<[f32; 4]> {
     let panel = panel_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52); // `CloseChat.GetText` (`NPCInteractions.cs:280`)
-    let w0 = text::ui_font_width(lookups, &label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
-    let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
     let il = INTERACTION_LINES as f32;
-    let x = panel[0] + 30.0;
+    let base_x = panel[0] + 30.0;
     let y = panel[1] + panel[3] - 22.0 * il + (2.0 * (il - 1.0)).max(0.0) - 4.0;
-    // `:117` — `rectangle.Width = (int)(stringSize.X * num4)`.
-    [x, y, (w0 * shrink).trunc(), 22.0]
+    let mut x = base_x;
+    let mut out = Vec::with_capacity(labels.len());
+    for (i, label) in labels.iter().enumerate() {
+        if i % 4 == 0 {
+            x = base_x; // `:103-107`
+        }
+        let w0 = text::ui_font_width(lookups, label, 0.9)
+            .unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+        let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
+        let w = (w0 * shrink).trunc(); // `:117`
+        out.push([x, y, w, 22.0]);
+        x += w + 30.0; // `:135`
+    }
+    out
 }
 
 /// One crop of a sheet pushed at 1:1 — the panel's `ChatBack` splices draw
@@ -120,10 +160,15 @@ fn push_crop(
 /// the two `ChatBack` splices at `Color(200,200,200,200)` (`:62`, `:71-72`),
 /// the wrapped lines at `+(20,20)` stepping 30 px (`DrawText` `:217-235`)
 /// in `Color(num,num,num,num)` with `num = (mouseTextColor·2 + 255)/3`
-/// (`:63-64`), and the Close button row (`DrawButtons` `:88-162`).
-/// Returns whether the pointer is inside the panel — the C#'s
-/// `LocalPlayer.mouseInterface = true` arm (`:81-84`); the port has no
-/// mouseInterface field yet, so the caller records the flag (deferred).
+/// (`:63-64`), the sign-edit caret (`DrawText` `:236-262`, W4-f22) and the
+/// interaction row (`DrawButtons` `:88-162` — Close plus the sign's
+/// Edit/Save toggle). `sign_open`/`edit_sign` are `Player.sign >= 0` /
+/// `Main.editSign`; `blinker` is the panel's own
+/// `textBlinkerCount/State` (`:254-258`). Returns whether the pointer is
+/// inside the panel — the C#'s `LocalPlayer.mouseInterface = true` arm
+/// (`:81-84`); the port has no mouseInterface field yet, so the caller
+/// records the flag (deferred).
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_panel(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -131,6 +176,9 @@ pub(crate) fn draw_panel(
     chat_text: &str,
     pulse: UiPulse,
     mouse: Vec2,
+    sign_open: bool,
+    edit_sign: bool,
+    blinker: &mut super::chest::TextBlinker,
 ) -> bool {
     let lines = panel_lines(lookups, chat_text);
     let panel = panel_rect(lookups, screen, chat_text);
@@ -173,26 +221,71 @@ pub(crate) fn draw_panel(
             line,
         );
     }
-    draw_close_button(r, lookups, screen, chat_text, pulse, mouse);
+    // The sign-edit caret (`DrawText` `:236-262`, W4-f22): only while
+    // `Main.editSign` and the last line exists; the x rides the last
+    // line's measured width, the blinker is `++count >= 20` toggle
+    // (`:254-258` — the same 20-frame half-period as the chest editor's),
+    // the "|" draws at state 1 (`:259-261`). The IME composition half
+    // (`:242-253`) has no port route.
+    if edit_sign && !lines.is_empty() {
+        let last = &lines[lines.len() - 1];
+        let last_w = text::ui_font_width(lookups, last, 1.0)
+            .unwrap_or(last.chars().count() as f32 * 8.0);
+        let cx = x + 20.0 + last_w;
+        let cy = y + 20.0 + (lines.len() - 1) as f32 * 30.0;
+        blinker.advance();
+        if blinker.on {
+            text::draw_border_string(
+                r,
+                lookups,
+                text::BorderFont::Ui,
+                cx,
+                cy,
+                1.0,
+                &SHADOW_RING,
+                text_tint,
+                "|",
+            );
+        }
+    }
+    draw_interactions(r, lookups, screen, chat_text, pulse, mouse, sign_open, edit_sign);
     super::in_rect(mouse, panel)
 }
 
-/// The Close button (`DrawButtons`, `NPCChatPanel.cs:88-162`, one
-/// interaction): idle scale 0.9 / hover 1.2 (`:96`, `:119`), the label
-/// colour `(b, b/1.1, b/2, b)` (`:102`), the shadow Black idle / Brown
-/// hovered (`:121`), the origin `(0, stringSize.Y·0.5)` at the rect's
-/// left/centre-Y (`:120-122`) with the hover x-shift
-/// `−(1.2−0.9)·width·0.5` (`:125`).
-fn draw_close_button(
+/// The interaction row (`DrawButtons`, `NPCChatPanel.cs:88-162`): every
+/// live label at its [`interaction_rects`] rect — idle scale 0.9 / hover
+/// 1.2 (`:96`, `:119`), the label colour `(b, b/1.1, b/2, b)` (`:102`),
+/// the shadow Black idle / Brown hovered (`:121`), the origin
+/// `(0, stringSize.Y·0.5)` at the rect's left/centre-Y (`:120-122`) with
+/// the hover x-shift `−(1.2−0.9)·width·0.5` (`:125`).
+#[allow(clippy::too_many_arguments)]
+fn draw_interactions(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     screen: Vec2,
     chat_text: &str,
     pulse: UiPulse,
     mouse: Vec2,
+    sign_open: bool,
+    edit_sign: bool,
 ) {
-    let rect = close_button_rect(lookups, screen, chat_text);
-    let label = crate::lang::inter(52);
+    let labels = interactions(sign_open, edit_sign);
+    let rects = interaction_rects(lookups, screen, chat_text, &labels);
+    for (label, rect) in labels.iter().zip(rects.iter()) {
+        draw_interaction(r, lookups, *rect, label, pulse, mouse);
+    }
+}
+
+/// One interaction button's draw — the `DrawButtons` loop body
+/// (`NPCChatPanel.cs:108-135`).
+fn draw_interaction(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    rect: [f32; 4],
+    label: &str,
+    pulse: UiPulse,
+    mouse: Vec2,
+) {
     let hovered = super::in_rect(mouse, rect);
     let b = (pulse.text * 255.0) as i32;
     let chat_color = [
@@ -208,7 +301,7 @@ fn draw_close_button(
         [0.0, 0.0, 0.0, 1.0]
     };
     let scale = if hovered { 1.2 } else { 0.9 };
-    let w0 = text::ui_font_width(lookups, &label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
+    let w0 = text::ui_font_width(lookups, label, 0.9).unwrap_or(label.chars().count() as f32 * 8.0 * 0.9);
     let shrink = if w0 > 260.0 { 260.0 / w0 } else { 1.0 };
     let mut px = rect[0];
     if hovered {
@@ -234,7 +327,7 @@ fn draw_close_button(
             scale * shrink,
             &[],
             shadow,
-            &label,
+            label,
         );
     }
     text::draw_border_string(
@@ -246,7 +339,7 @@ fn draw_close_button(
         scale * shrink,
         &[],
         chat_color,
-        &label,
+        label,
     );
 }
 
@@ -433,5 +526,57 @@ mod tests {
         assert!(app.npc_chat_text.is_empty(), "npcChatText = \"\" (`:40685`)");
         assert!(!app.ui_left_press, "the press is consumed (`NPCChatPanel.cs:152`)");
         assert_eq!(app.npc_chat_last_hovered, -1, "Close resets _lastHovered (`:267`)");
+    }
+
+    /// W4-f22 — the sign interaction row (`NPCInteractions.cs:15-42`,
+    /// registered after CloseChat at `:515-516`): with a sign open the row
+    /// carries Close + Edit (inter 48) / Save (inter 47 while editing), the
+    /// second rect rides the first's width + 30 (`NPCChatPanel.cs:135`),
+    /// and the Edit click opens the ctx-1 keyboard while the Save click
+    /// submits (`OpenSign.Interact`, `:31-41`).
+    #[test]
+    fn the_sign_row_toggles_edit_and_save() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // A sign record + the open latch (the OpenSign state).
+        app.world.signs.push(tr_core::wld::sections::WldSign {
+            text: "stored".into(),
+            x: 2,
+            y: 2,
+        });
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        if let Some(p) = app.player.as_mut() {
+            p.sign = 0;
+        }
+        app.npc_chat_text = "stored".into();
+        let labels = interactions(true, false);
+        assert_eq!(labels.len(), 2, "Close + Edit");
+        assert_eq!(labels[0], crate::lang::inter(52));
+        assert_eq!(labels[1], crate::lang::inter(48));
+        assert_eq!(interactions(true, true)[1], crate::lang::inter(47), "Save while editing");
+        assert_eq!(interactions(false, false).len(), 1, "no sign, no row");
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let rects = interaction_rects(&app.lookups, screen, &app.npc_chat_text, &labels);
+        assert_eq!(rects[1][0], rects[0][0] + rects[0][2] + 30.0, "`:135`");
+        // The Edit click opens the keyboard (`OpenSign.Interact`'s else).
+        app.mouse_pos = Vec2::new(rects[1][0] + 2.0, rects[1][1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_npc_chat_clicks();
+        assert!(app.sign_editing(), "OpenVirtualKeyboard(1) ran");
+        assert!(!app.ui_left_press, "the press is consumed");
+        // The Save click submits the live text and closes the editor.
+        if let Some(crate::app::flow::FrontScreen::Keyboard(s)) = app.front.as_mut() {
+            s.state.text = "written".into();
+        }
+        let labels = interactions(true, true);
+        let rects = interaction_rects(&app.lookups, screen, "written", &labels);
+        app.mouse_pos = Vec2::new(rects[1][0] + 2.0, rects[1][1] + 2.0);
+        app.ui_left_press = true;
+        app.handle_npc_chat_clicks();
+        assert!(!app.sign_editing(), "SubmitSignText closed the editor");
+        assert_eq!(app.world.signs[0].text, "written");
+        assert_eq!(app.player.as_ref().unwrap().sign, 0, "the sign stays open");
     }
 }

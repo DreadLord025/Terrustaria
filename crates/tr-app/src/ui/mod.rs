@@ -716,6 +716,16 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // The sign dialog half (W4-f22): `GUIChatDraw`'s gate
+    // (`Main.cs:46713` — `(npcChatText != "" || sign != -1) && !editChest`),
+    // `CanHoldConversation`'s sign arm (`NPCChatPanel.cs:276-283`), the
+    // `OpenSign` interaction's `Main.editSign` label switch
+    // (`NPCInteractions.cs:22-29`) and the panel's own caret blinker
+    // (`NPCChatPanel.cs:254-261`).
+    sign_open: bool,
+    edit_sign: bool,
+    chest_editing: bool,
+    sign_blinker: &mut chest::TextBlinker,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -785,11 +795,24 @@ pub fn draw_hud(
     // `Main.cs:43135-43161`).
     npc_chat::draw_bubble(r, lookups, npcs, player, camera, zoom, screen, mouse_pos, pulse);
     // `DrawInterface_23_NPCSignsDialog` (`Main.cs:45713-45716`) →
-    // `GUIChatDraw` → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
-    // dialogue panel while `talkNPC >= 0` (`CanHoldConversation`,
-    // `:276-283`; the sign half is unported).
-    if talk_npc.is_some() {
-        npc_chat::draw_panel(r, lookups, screen, npc_chat_text, pulse, mouse_pos);
+    // `GUIChatDraw` (`:46709-46716`: `(npcChatText != "" || sign != -1) &&
+    // !editChest`) → `NPCChatPanel.Draw` (`NPCChatPanel.cs:52-86`): the
+    // dialogue panel while `CanHoldConversation` holds — `talkNPC >= 0`
+    // OR a sign is open (`:276-283`). W4-f22: the sign half draws through
+    // the same panel — the read display, the Edit/Save interaction and
+    // the edit caret.
+    if (talk_npc.is_some() || sign_open) && !chest_editing {
+        npc_chat::draw_panel(
+            r,
+            lookups,
+            screen,
+            npc_chat_text,
+            pulse,
+            mouse_pos,
+            sign_open,
+            edit_sign,
+            sign_blinker,
+        );
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides

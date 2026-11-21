@@ -118,6 +118,13 @@ pub(crate) enum KeyboardTail {
     /// `ChestUI.RenameChestCancel` + `Close(quiet: true)` — both tails land
     /// back in gameplay.
     ChestRename,
+    /// The sign editor (`IngameFancyUI.cs:136-145`): submit runs
+    /// `Main.SubmitSignText` + `Close(quiet: true)` (`Main.cs:40694-40704`
+    /// — sound 12, `Sign.TextSign`, the netMode-1 `47` send), cancel runs
+    /// `Main.InputTextSignCancel` + `Close(quiet: true)` (`:19817-19826` —
+    /// the cancel cache parks the live text, `npcChatText` re-reads the
+    /// stored record). Both tails land back in gameplay. W4-f22.
+    SignEdit,
 }
 
 /// One click into the front-end flow — the rows of the
@@ -322,6 +329,9 @@ pub(crate) struct FrontDraw<'a> {
     pub(crate) vk_grid: bool,
     /// The caret's `UITextBox._frameCount`.
     pub(crate) frame_count: u64,
+    /// `UIVirtualKeyboard._cancelCacheSign` (`App.sign_cancel_cache`) — the
+    /// sign context's `CanRestore` read (`:504-515`). W4-f22.
+    pub(crate) sign_cancel_cache: &'a str,
 }
 
 /// The five front screens' behaviour surface — the C# `UIState` shape: the
@@ -476,8 +486,12 @@ impl FrontScreenBehaviours for FrontScreen {
                 // layer by default (`ShowGamepadHints` is false without a
                 // gamepad), the 50-key grid under `TR_VK_GRID=1` (Review
                 // Focus 6). `frame_count` is the caret's
-                // `UITextBox._frameCount`.
-                let l = ui::keyboard::layout(d.screen, d.vk_grid);
+                // `UITextBox._frameCount`. The sign context parks the
+                // textbox/label off-screen (`:176`) and its bottom row
+                // follows the cancel cache (`CanRestore`, `:504-515`).
+                let can_restore = session.request.context.editing_sign()
+                    && !d.sign_cancel_cache.is_empty();
+                let l = ui::keyboard::layout(d.screen, d.vk_grid, session.request.context);
                 ui::keyboard::draw(
                     d.renderer,
                     d.lookups,
@@ -487,6 +501,7 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.vk_grid,
                     d.mouse,
                     d.frame_count,
+                    can_restore,
                 );
             }
             FrontScreen::WorldLoad(state) => {
@@ -1030,8 +1045,17 @@ impl FrontScreenBehaviours for FrontScreen {
                 let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() else {
                     return None;
                 };
-                let l = ui::keyboard::layout(screen, app.vk_grid);
-                match ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse) {
+                let can_restore = session.request.context.editing_sign()
+                    && !app.sign_cancel_cache.is_empty();
+                let l = ui::keyboard::layout(screen, app.vk_grid, session.request.context);
+                match ui::keyboard::click_at(
+                    &session.state,
+                    &l,
+                    app.vk_grid,
+                    mouse,
+                    session.request.context,
+                    can_restore,
+                ) {
                     ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
                     // The shift button: `(keyState != Shift) ? Shift : Default`
                     // (`:250-254`).
@@ -1055,6 +1079,19 @@ impl FrontScreenBehaviours for FrontScreen {
                     }
                     // `PressSpace` writes without the Shift unlatch (`:491-502`).
                     ui::keyboard::Click::Space => ui::keyboard::write_str(&mut session.state, " "),
+                    // The sign newline key (`:462-467`): sound 12 +
+                    // `_textBox.Write("\n")` — no Shift unlatch, no submit.
+                    ui::keyboard::Click::Newline => {
+                        app.audio.play("Menu_Tick");
+                        ui::keyboard::write_str(&mut session.state, "\n");
+                    }
+                    // The restore key (`:476-484`): sound 12 +
+                    // `RestoreCanceledInput(1)` — the cache returns to the
+                    // box and empties (the row rebuilds without it).
+                    ui::keyboard::Click::Restore => {
+                        app.audio.play("Menu_Tick");
+                        crate::signs::restore_canceled_sign_input(app);
+                    }
                     // The backspace key pops (`:392-397`).
                     ui::keyboard::Click::Backspace => session.state.backspace(),
                     // The desktop pair's handler checks the validation first
@@ -1090,7 +1127,10 @@ impl FrontScreenBehaviours for FrontScreen {
             // `Main.GetInputText` edits its text every frame
             // (`UIVirtualKeyboard.cs:750-788`), Enter submits through
             // `CanSubmit` (`:763-766`) and Escape runs the cancel
-            // (`:771-774`'s `TryEscapingMenu`).
+            // (`:771-774`'s `TryEscapingMenu`). The SIGN context's Enter
+            // appends a newline instead (`:751-754` — `text += "\n"`, the
+            // multi-line sign edit); the submit rides the Save button or
+            // the dialog's Save interaction.
             FrontScreen::Keyboard(_) => {
                 if let Some(text) = event.text.as_ref() {
                     for ch in text.chars() {
@@ -1103,7 +1143,11 @@ impl FrontScreenBehaviours for FrontScreen {
                     PhysicalKey::Code(KeyCode::Backspace) => app.keyboard_backspace(),
                     PhysicalKey::Code(KeyCode::Escape) => app.keyboard_cancel(),
                     PhysicalKey::Code(KeyCode::Enter | KeyCode::NumpadEnter) => {
-                        app.keyboard_enter()
+                        if app.sign_editing() {
+                            app.keyboard_character('\n'); // `:751-754`
+                        } else {
+                            app.keyboard_enter();
+                        }
                     }
                     _ => {}
                 }
@@ -2273,6 +2317,8 @@ pub(crate) mod front_flow_tests {
             talk_npc: None,
             npc_chat_text: String::new(),
             npc_chat_last_hovered: -1,
+            sign_cancel_cache: String::new(),
+            sign_text_blinker: crate::ui::chest::TextBlinker::default(),
             npc_assets: NpcAssets::default(),
             npc_timer: 0.0,
             next_worm_id: 1,
@@ -3228,7 +3274,7 @@ pub(crate) mod front_flow_tests {
         // `_cancelAction` -> `GoBackHere` (`:214-216`): the reopen, no notice.
         let mut app = keyboard_app();
         let (sw, sh) = app.screen_size();
-        let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
+        let l = ui::keyboard::layout(Vec2::new(sw, sh), false, ui::keyboard::Context::Text);
         app.mouse_pos = Vec2::new(
             l.cancel[0] + l.cancel[2] * 0.5,
             l.cancel[1] + l.cancel[3] * 0.5,
@@ -3368,7 +3414,7 @@ pub(crate) mod front_flow_tests {
             vec![],
         );
         let (sw, sh) = app.screen_size();
-        let l = ui::keyboard::layout(Vec2::new(sw, sh), false);
+        let l = ui::keyboard::layout(Vec2::new(sw, sh), false, ui::keyboard::Context::Chest);
         app.mouse_pos = Vec2::new(
             l.submit[0] + l.submit[2] * 0.5,
             l.submit[1] + l.submit[3] * 0.5,

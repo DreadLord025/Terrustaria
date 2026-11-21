@@ -1545,8 +1545,32 @@ impl App {
                             scroll: self.front_scroll,
                             vk_grid: self.vk_grid,
                             frame_count: *frame_count,
+                            sign_cancel_cache: &self.sign_cancel_cache,
                         };
                         front.draw(&mut d);
+                        // `IngameFancyUI.Draw`'s sign-dialog arm
+                        // (`IngameFancyUI.cs:212-215`): while the ctx-1
+                        // keyboard is up, `GUIChatDraw` still draws — the
+                        // sign text edits in the NPCChatPanel dialog (the
+                        // keyboard's own textbox is parked off-screen,
+                        // `UIVirtualKeyboard.cs:176`). W4-f22.
+                        if self.sign_editing() {
+                            let sign_open = self.player.as_ref().is_some_and(|p| p.sign >= 0);
+                            ui::npc_chat::draw_panel(
+                                renderer,
+                                lookups,
+                                screen,
+                                &self.npc_chat_text,
+                                ui::UiPulse {
+                                    text: self.mouse_text_color as f32 / 255.0,
+                                    cursor_scale: 1.0,
+                                },
+                                self.mouse_pos,
+                                sign_open,
+                                true,
+                                &mut self.sign_text_blinker,
+                            );
+                        }
                         // The port's not-ported notice for the front screens
                         // (ours, like `Menu.hint` — not in the original).
                         if let Some(hint) = front_hint {
@@ -1777,9 +1801,17 @@ impl App {
                                 ty: self.mouse_npc_type,
                             },
                             // The town-chatter UI (S1-E-10b) — the panel
-                            // draws while the talk latch holds.
+                            // draws while the talk latch holds; the sign
+                            // half (W4-f22) rides the same panel.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // `GUIChatDraw`'s sign gate + the panel's own
+                            // blinker (`Main.cs:46713`, `NPCChatPanel.cs:
+                            // 254-261`).
+                            self.player.as_ref().is_some_and(|p| p.sign >= 0),
+                            self.sign_editing(),
+                            chest_editing,
+                            &mut self.sign_text_blinker,
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
