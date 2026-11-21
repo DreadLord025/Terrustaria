@@ -155,6 +155,14 @@ pub mod id {
     /// (`NetMessage.cs:1088-1109`, `MessageBuffer.cs:2949-3035`). W4-g49
     /// (transplanted from W4-d99).
     pub const TELEPORT_ENTITY: u8 = 65;
+    /// `66 Unknown66` (`MessageID.cs:145`) — the Moon Leech Clot's owner heal
+    /// (`NetMessage.cs:1110-1113`, `MessageBuffer.cs:3036-3055`). W4-g49
+    /// (transplanted from W4-d94).
+    pub const HEAL_PLAYER: u8 = 66;
+    /// `68 Unknown68` (`MessageID.cs:149`) — the client's UUID string
+    /// (`NetMessage.cs:1114-1116`, `MessageBuffer.cs:3056-3058`). W4-g49
+    /// (transplanted from W4-d95).
+    pub const CLIENT_UUID: u8 = 68;
     pub const TRAVEL_SHOP: u8 = 72; // MessageID.cs:157 / NetMessage.cs:1134-1141 / MessageBuffer.cs:3118-3126
     pub const ANGLER_QUEST: u8 = 74; // MessageID.cs:161 / NetMessage.cs:1145-1148 / MessageBuffer.cs:3147-3153
     pub const REVENGE_MARKER: u8 = 126; // MessageID.cs:266 / NetMessage.cs:1515-1517 / MessageBuffer.cs:4043-4048
@@ -1554,6 +1562,28 @@ impl TeleportEntity {
     }
 }
 
+/// `msg 66 Unknown66`'s body (`NetMessage.cs:1110-1113`): the player id then
+/// the heal amount as a `short`. Sent by the Moon Leech Clot's contact arm
+/// (`Projectile.cs:28513-28524`); the host applies the same clamp and relays
+/// (`MessageBuffer.cs:3036-3055`, the `num71 > 0` gate lives in the apply arm,
+/// not the codec). W4-g49 (from W4-d94).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HealPlayer {
+    pub player_id: u8,
+    pub heal: i16,
+}
+
+/// `msg 68 Unknown68`'s body (`NetMessage.cs:1114-1116`): one
+/// `BinaryWriter.Write(string)` — `Main.clientUUID`, the client's
+/// `Guid.NewGuid().ToString()` (`Main.cs:10618`). Sent in the `3 PlayerId`
+/// join push right after `4 SyncPlayer` (`MessageBuffer.cs:248-249`); the
+/// host's arm reads the string and drops it (`:3056-3058`). The id is
+/// gate-whitelisted pre-spawn (`MessageBuffer.cs:165`). W4-g49 (from W4-d95).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ClientUuid {
+    pub uuid: String,
+}
+
 /// `msg 72 TravelMerchantItems`'s body (`NetMessage.cs:1134-1141`): the
 /// `Main.travelShop` array — `Main.TravelShopMaxSlots = 40` (`Main.cs:67029`)
 /// `short` item types (`MessageBuffer.cs:3118-3126`).
@@ -1749,6 +1779,12 @@ pub enum C2s {
     /// `65 TeleportEntity` - a client teleported (kind 0/2) or acks the
     /// host's teleport (kind 3). W4-g49.
     TeleportEntity(TeleportEntity),
+    /// `66 Unknown66` - this client's Moon Leech Clot healed its owner
+    /// (`Projectile.cs:28513-28524`). W4-g49.
+    HealPlayer(HealPlayer),
+    /// `68 Unknown68` — the client's UUID string, pushed right after
+    /// `4 PlayerInfo` in the `3 PlayerId` join arm. W4-g49.
+    ClientUuid(ClientUuid),
     /// `30 TogglePVP` - a client flipped its PvP flag
     /// (`Main.cs`'s PvP toggle; `MessageBuffer.cs:1851-1867` relays it).
     TogglePvp(TogglePvp),
@@ -1848,6 +1884,8 @@ pub enum S2c {
     WallPaint(TilePaint),
     /// `65 TeleportEntity` — the host's player/NPC teleport broadcast. W4-g49.
     TeleportEntity(TeleportEntity),
+    /// `66 Unknown66` - a peer's Moon Leech heal, relayed by the host. W4-g49.
+    HealPlayer(HealPlayer),
     /// `59 HitSwitch` - the switch a peer tripped, relayed
     /// (`MessageBuffer.cs:2691`).
     HitSwitch(HitSwitch),
@@ -1981,6 +2019,8 @@ impl C2s {
             Self::TilePaint(_) => id::TILE_PAINT,
             Self::WallPaint(_) => id::WALL_PAINT,
             Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
+            Self::HealPlayer(_) => id::HEAL_PLAYER,
+            Self::ClientUuid(_) => id::CLIENT_UUID,
             Self::PlayerChest(_) => id::PLAYER_CHEST,
             Self::PlayerBuffs(_) => id::PLAYER_BUFFS,
             Self::TogglePvp(_) => id::TOGGLE_PVP,
@@ -2076,6 +2116,10 @@ impl C2s {
                     None => w,
                 }
             }
+            // `NetMessage.cs:1110-1113`: (byte)player + (short)heal.
+            Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
+            // `NetMessage.cs:1114-1116`: the UUID string.
+            Self::ClientUuid(u) => w.str(&u.uuid),
             Self::TogglePvp(t) => w.u8(t.player_id).bool(t.hostile),
             Self::PlayerMana(m) => w.u8(m.player_id).i16(m.mana).i16(m.max_mana),
             Self::TeamChange(t) => w.u8(t.player_id).u8(t.team),
@@ -2208,6 +2252,13 @@ impl C2s {
             // `MessageBuffer.cs:2951-2978`: BitsByte + entity + Vector2 +
             // style + gated extraInfo.
             id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
+            // `MessageBuffer.cs:3038-3039`: (byte)player + (short)heal.
+            id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
+                player_id: r.u8()?,
+                heal: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3057`: the UUID string.
+            id::CLIENT_UUID => Self::ClientUuid(ClientUuid { uuid: r.str()? }),
             id::TOGGLE_PVP => Self::TogglePvp(TogglePvp {
                 player_id: r.u8()?,
                 hostile: r.bool()?,
@@ -2415,6 +2466,7 @@ impl S2c {
             Self::TilePaint(_) => id::TILE_PAINT,
             Self::WallPaint(_) => id::WALL_PAINT,
             Self::TeleportEntity(_) => id::TELEPORT_ENTITY,
+            Self::HealPlayer(_) => id::HEAL_PLAYER,
             Self::HitSwitch(_) => id::HIT_SWITCH,
             Self::PlayerChestIndex(_) => id::PLAYER_CHEST_INDEX,
             Self::ChestSize(_) => id::CHEST_SIZE,
@@ -2564,6 +2616,8 @@ impl S2c {
                     None => w,
                 }
             }
+            // `NetMessage.cs:1110-1113`: (byte)player + (short)heal.
+            Self::HealPlayer(h) => w.u8(h.player_id).i16(h.heal),
             Self::HitSwitch(h) => w.i16(h.x).i16(h.y),
             Self::PlayerChestIndex(c) => w.u8(c.player_id).i16(c.chest),
             Self::ChestSize(c) => w.i16(c.chest).i16(c.size),
@@ -2742,6 +2796,11 @@ impl S2c {
             // `MessageBuffer.cs:2951-2978`: BitsByte + entity + Vector2 +
             // style + gated extraInfo.
             id::TELEPORT_ENTITY => Self::TeleportEntity(read_teleport_entity(r)?),
+            // `MessageBuffer.cs:3038-3039`: (byte)player + (short)heal.
+            id::HEAL_PLAYER => Self::HealPlayer(HealPlayer {
+                player_id: r.u8()?,
+                heal: r.i16()?,
+            }),
             id::HIT_SWITCH => Self::HitSwitch(HitSwitch {
                 x: r.i16()?,
                 y: r.i16()?,
@@ -4978,6 +5037,74 @@ mod tests {
                 other => panic!("expected 65, got {:?}", other.msg_id()),
             }
         }
+    }
+
+    /// W4-g49 `66 Unknown66` (`NetMessage.cs:1110-1113`): (byte)number +
+    /// (short)number2 — the Moon Leech Clot's heal (`Projectile.cs:28524`).
+    /// Byte-verbatim from W4-d94.
+    #[test]
+    fn w4_g49_heal_player_round_trips() {
+        let h = HealPlayer {
+            player_id: 2,
+            heal: 37,
+        };
+        let f = S2c::HealPlayer(h).encode();
+        assert_eq!(f[2], 66);
+        let mut body = vec![2];
+        body.extend_from_slice(&37i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::HealPlayer(d) => assert_eq!(d, h),
+            other => panic!("expected 66, got {:?}", other.msg_id()),
+        }
+        let c = C2s::HealPlayer(h).encode();
+        assert_eq!(c[2], 66);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::HealPlayer(d) => assert_eq!(d, h),
+            other => panic!("expected 66, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g49 `68 Unknown68` (`NetMessage.cs:1114-1116`): one
+    /// BinaryWriter.Write(string) — Main.clientUUID, a Guid string, so the
+    /// wire is the 7-bit byte count (36 = 0x24) + the ASCII. Byte-verbatim
+    /// from W4-d95.
+    #[test]
+    fn w4_g49_client_uuid_round_trips() {
+        let uuid = "0f8fad5b-d9cb-469f-a165-70867728950e";
+        let u = ClientUuid {
+            uuid: uuid.to_string(),
+        };
+        let c = C2s::ClientUuid(u.clone()).encode();
+        assert_eq!(c[2], 68);
+        let mut body = vec![36];
+        body.extend_from_slice(uuid.as_bytes());
+        assert_eq!(&c[3..], &body);
+        assert_eq!(c.len(), 3 + 1 + 36);
+        let mut r = NetReader::new(&c[3..]);
+        match C2s::decode(c[2], &mut r).expect("decode") {
+            C2s::ClientUuid(d) => assert_eq!(d, u),
+            other => panic!("expected 68, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The length prefix counts UTF-8 BYTES, not chars (BinaryWriter).
+        let multi = ClientUuid {
+            uuid: "aé☃".to_string(), // 1 + 2 + 3 = 6 bytes
+        };
+        let c = C2s::ClientUuid(multi.clone()).encode();
+        assert_eq!(&c[3..4], &[6]);
+        match C2s::decode(68, &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::ClientUuid(d) => assert_eq!(d, multi),
+            other => panic!("expected 68, got {:?}", other.msg_id()),
+        }
+        // The empty string is a bare 0 length byte; a truncated payload
+        // must not decode (`MessageBuffer.cs:3056-3058` ReadString).
+        let empty = C2s::ClientUuid(ClientUuid {
+            uuid: String::new(),
+        })
+        .encode();
+        assert_eq!(&empty[3..], &[0]);
+        assert!(C2s::decode(68, &mut NetReader::new(&[36, b'a'])).is_none());
     }
 
     #[test]

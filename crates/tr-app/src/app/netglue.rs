@@ -1212,6 +1212,29 @@ impl App {
                     _ => {} // kind 3 ack (`:3029-3032`): the counter is S1-I-4
                 }
             }
+            // `case 66` — the Moon Leech Clot's owner heal
+            // (`MessageBuffer.cs:3036-3055`): a positive amount heals the
+            // subject (clamped to statLifeMax2), raises the HealEffect text
+            // and relays (`:3051`). The subject is NOT forced to the sender.
+            C2s::HealPlayer(h) => {
+                if h.heal > 0 {
+                    let slot = h.player_id as u32;
+                    if slot == 0 {
+                        if let Some(p) = self.player.as_mut() {
+                            p.hp = (p.hp + h.heal as i32).min(p.max_hp); // `:3043-3047`
+                        }
+                    } else if let Some(p) = self.remote_players.get_mut(&slot) {
+                        p.hp = (p.hp + h.heal as i32).min(p.max_hp);
+                    }
+                    // `HealEffect(num71, broadcast: false)` (`:3048`).
+                    spawn_player_amount_text(self, slot, crate::combat_text::HEAL_LIFE, h.heal as i32);
+                    server.broadcast_except(&S2c::HealPlayer(h), id); // `:3051`
+                }
+            }
+            // `case 68` — the client's UUID (`MessageBuffer.cs:3056-3058`):
+            // the host reads the string and drops it — the codec's read IS
+            // the whole arm; nothing to apply or relay.
+            C2s::ClientUuid(_) => {}
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:4282-4297`, `:4328-4343`) land
@@ -2244,6 +2267,21 @@ impl App {
                         }
                     }
                     _ => {} // kind 3 ack is host-only (`:3030`)
+                }
+            }
+            // `case 66` — a peer's Moon Leech heal (`MessageBuffer.cs:3036-3055`):
+            // the client heals the subject (clamped) and raises the HealEffect
+            // text; our own echo is skipped (the local sim owns our health).
+            S2c::HealPlayer(h) => {
+                if h.heal > 0 {
+                    let slot = h.player_id as u32;
+                    if slot == self.local_id {
+                        return;
+                    }
+                    if let Some(p) = self.remote_players.get_mut(&slot) {
+                        p.hp = (p.hp + h.heal as i32).min(p.max_hp);
+                    }
+                    spawn_player_amount_text(self, slot, crate::combat_text::HEAL_LIFE, h.heal as i32);
                 }
             }
             // `case 59` — a peer tripped a switch: replay it locally
@@ -4181,6 +4219,49 @@ fn paint_coat_wall(world: &mut World, x: i32, y: i32, coat: u8) {
     }
 }
 
+/// `CombatText.NewText(playerRect, color, amount)` for the `66`/`43` readers
+/// (`Player.HealEffect`/`ManaEffect`, `Player.cs:4522-4538`): the floating
+/// amount at the player's rect. The local player (slot 0) rides the host's
+/// player, a peer its `remote_players` record (the `PlayerNet` snapshot's
+/// position + the stock player box). The placement draws ride the bare
+/// `Main.rand` stand-in (the message handler runs outside every swap). W4-g49.
+fn spawn_player_amount_text(app: &mut App, slot: u32, color: [u8; 4], amount: i32) {
+    let (x, y, w, h) = if slot == 0 {
+        match app.player.as_ref() {
+            Some(p) => (p.x, p.y, p.width, p.height),
+            None => return,
+        }
+    } else {
+        match app.remote_players.get(&slot) {
+            Some(p) => (p.x, p.y, crate::player::WIDTH, crate::player::HEIGHT),
+            None => return,
+        }
+    };
+    let text = amount.to_string();
+    let size = match app.lookups.combat_text_font.as_ref() {
+        Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+        None => [text.chars().count() as f32 * 8.0, 10.0],
+    };
+    let location = crate::combat_text::Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
+    let rng = app.rngs.global();
+    crate::combat_text::spawn_amount(
+        &mut app.combat_texts,
+        location,
+        color,
+        amount,
+        false,
+        false,
+        size,
+        1.0,
+        rng,
+    );
+}
+
 fn npc_from_net(world: &World, n: &net::NpcInfo) -> Option<crate::npc::Npc> {
     let kind = crate::npc::NpcKind::from_u16(n.kind.max(0) as u16)?;
     let tx = (n.x / TILE_PX) as i32;
@@ -6052,5 +6133,42 @@ mod message_family_tests {
         let relayed = second.remote_players.get(&sender_slot).expect("second's sender peer");
         assert_eq!((relayed.x, relayed.y), (500.0, 300.0), "the relay moved the second client's copy");
         assert_eq!((relayed.off_x, relayed.off_y), (0.0, 0.0), "the netOffset zeroed (`:37447`)");
+    }
+
+    /// W4-g49 `66 Unknown66` (`MessageBuffer.cs:3036-3055`): a positive heal
+    /// raises the subject's life (clamped to the max) on the host and relays.
+    #[test]
+    fn w4_g49_heal_player_heals_the_subject_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Wound the host's player so the heal is observable.
+        host_app.player.as_mut().unwrap().hp = 50;
+        host_app.player.as_mut().unwrap().max_hp = 100;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::HealPlayer(net::HealPlayer {
+                player_id: 0, // the host's player
+                heal: 30,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(host_app.player.as_ref().unwrap().hp, 80, "the host healed 50+30 (`:3043`)");
+        // The HealEffect text spawned (`:3048`).
+        assert!(
+            host_app.combat_texts.iter().any(|t| t.active && t.text == "30"),
+            "the heal combat text spawned"
+        );
+    }
+
+    /// W4-g49 `68 Unknown68` (`MessageBuffer.cs:3056-3058`): the host reads
+    /// the UUID string and drops it — the connection survives (no kick).
+    #[test]
+    fn w4_g49_client_uuid_is_read_and_dropped() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ClientUuid(net::ClientUuid {
+                uuid: "0f8fad5b-d9cb-469f-a165-70867728950e".into(),
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(matches!(client_app.net, NetRole::Client(_)), "the UUID did not kick the client");
     }
 }
