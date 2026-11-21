@@ -186,7 +186,7 @@ plus a second call inside the options-window layer (:46169). The arm order:
 enabled latch + cache + held-kind draw; the merge keeps g81's bodies and
 ADDS the four fields + the override arm. Do NOT re-port g81's halves.
 
-### 4.1 State (one commit)
+### 4.1 State (one commit) — **LANDED** (the g81 carry `2174f0fbb` + the phase-1 completion)
 
 Add to App beside g81's `cursor_item_icon_enabled`:
 `cursor_item_icon_id: i32` (0), `cursor_item_icon_text: String` (""),
@@ -195,7 +195,25 @@ Extend the `frame.rs` :447 clear to the full MouseOversClear quad
 (ID=0/Text=""/Push=0) + the :16842 Reversed clear at the frame head.
 Witness: the clear quad + the Reversed-once-per-frame order.
 
-### 4.2 The layer-40 override draw (one commit)
+**Landing notes**: the g81 halves were carried first (`2174f0fbb`, the
+cherry-pick-no-commit of `18e53dd0f` — g81 is UNMERGED on origin/main, so
+the carry is the seed contract's "keep g81's bodies" prerequisite; the
+merge dedupes to one copy). The carry's `flow_app` full-App literal gained
+the four g81 rows; phase 1 adds the four new fields' rows to BOTH full
+literals (`App::new` + `flow_app` — g81's own branch never compiled its
+tests, the carry fixes that). The quad clear rides `frame()`'s world
+branch (g81's placement — DEVIATION: the C# `MouseOversClear` call
+`:17035` precedes the `gameMenu` return `:17166`, so vanilla clears under
+menus too; the port's world-gate is safe because no hover writer and no
+layer-40 draw runs behind a menu). The Reversed clear rides `frame_head`
+(the `DoUpdate` head, every frame including menus — `:16842` verbatim).
+Witnesses: `frame.rs::w4_g86_the_mouse_overs_clear_quad_runs_on_the_world_update`
++ `w4_g86_reversed_clears_every_frame_the_quad_only_in_world`,
+`app/mod.rs::w4_g86_icon_cache_tests` (4 — the g81 cache pair had none),
+`editing.rs::w4_g81_the_tool_in_reach_arms_the_icon_latch_and_cache`
+(the carry's latch had none). All WRITTEN NOT RUN, zero RNG.
+
+### 4.2 The layer-40 override draw (one commit) — **LANDED** (phase-1 draw)
 
 Extend g81's `ui/mod.rs` block with §3.3 steps 1-9: the ID override, the
 White/default color force, the Push offset, the Reversed flip, the Text
@@ -206,7 +224,37 @@ needs the wand system — document as deferred if unported). The
 over-UI state. Witnesses: the override-vs-held-kind precedence, the push
 offset, the reversed flip, the text arm.
 
-### 4.3 The tile-hover pass (the bulk, ≤10 arms/commit)
+**Landing notes**: `ui/mod.rs::interact_icon_kind` is the pure
+kind-selection arm (`:45057-45063` + the `:45067-45071` linger swap folded
+to a direct cached-kind read — the `:45111-45114` swap-back is net-zero)
++ the `num > 0` draw gate (`:45087`, the sign arm's -1 sentinel draws
+nothing). The draw block adds the `10 + Push` offset (`:45089`), the
+Reversed UV mirror (`:45083-45086`, the `[uv[2], uv[1], uv[0], uv[3]]`
+player_layers precedent), the Text `draw_mouse_text` arm (`:45102-45105`)
+and the head gate (`:45039`): `bubble_npc` (the `HoveringOverAnNPC`
+stand-in) OR `minimap_hover` OR the closed-hotbar `hovered_slot`. The
+`MouseDisplayItem.IsAir` gate folds to `mouse_item.kind == 0 ||
+count == 0` (`Item.cs:385`'s `type <= 0 || stack <= 0`; FakeCursorItem
+parked); the linger's OWN gate (`:45063`) is `mouseItem.type < 1` — kind
+only, so `interact_icon_kind` takes the two air flags separately (an
+empty stack of a real kind passes IsAir but refuses the linger).
+DEFERRED (documented at the block): the UsingBiomeTorches 8/966
+swap (`:45045-45056`), TryGetAmmo (`:45093-45100`/`:45117-45144`), the
+painted-held overlay (`:45106-45110` — no per-item color on the port's
+ItemSlot), GetItemLight (`:45081`) + the held-slot GetAlpha/GetColor
+(`:45072-45073` — plain white, the g81 stand-in). The open-panel slot
+hover has no pre-draw resolution (the panel hit-tests inside
+`inventory::draw`) — recorded deviation. The g81 carry's
+`item_icon_cache_verification()` call site was INLINED over the disjoint
+fields (`frame/draw.rs`): a whole-`self` method call cannot compile
+inside the `let App {…} = self` destructure's live field borrows; the
+method stays for the cache witnesses. Witnesses:
+`w4_g86_the_layer40_id_override_beats_the_held_kind` (10 asserts incl the
+linger-cached-kind, the two-air-gate split + the -1 refusal),
+`w4_g86_the_reversed_flag_mirrors_the_icon_uv`,
+`w4_g86_the_push_offsets_the_icon_base_10`. WRITTEN NOT RUN.
+
+### 4.3 The tile-hover pass (the bulk, ≤10 arms/commit) — **STARTED** (B1 wired)
 
 Port `TileInteractionsMouseOver` as a `cursor_item_icon.rs` scan driven from
 the right-click seam (`editing.rs`'s `interact_tile` neighbour — the C#
@@ -220,6 +268,32 @@ TEXT arms need the chest-name read (`Main.chest[num].name`) + the
 don't duplicate). The TileEntity arms need the TE item reads
 (`tile_entities.rs`). The `IsWithinSnappngRangeToTile` gate (79/15/102/89/
 487/497) is `Player.cs`'s snap-range helper — port it once.
+
+**Wiring-shape note (B1 landed)**: the hover decode runs at
+`update_editing`'s tile-hover head — AFTER the smart-cursor repoint +
+`smart_interact_lookup` (the POST-repoint target IS `tileTargetX/Y`, the
+`:33589` gate) and BEFORE the tool latches / the ItemCheck head. The C#
+order is `LookForTileInteractions` (`Player.cs:27430`) BEFORE `ItemCheck`
+(`:31827`) inside `Player.Update`; the port's fused `update_editing`
+keeps that relative order (hover → tool latch → head icons). DEVIATION:
+the port's seam sits behind `update_editing`'s map/minimap/HUD/reach
+early returns, so the hover icon only arms while the cursor is in the
+world reach — the C# `TileInteractionsMouseOver` runs inside
+`LookForTileInteractions`' own Simple-reach gate (`:31962-31965`) too,
+but the port's circular reach stand-in + the HUD-blocked returns are
+narrower; the long-distance pass (§4.4) covers the out-of-reach hover
+when it lands. B1's arms
+60+79 (237/26) are WIRED there (`noThrow=2` + `enabled` BEFORE the ID);
+the batch-2 head arms are WIRED after the tool latch with the
+`!enabled` gate keeping the hover icon. Witnesses:
+`editing.rs::w4_g86_the_altar_hover_wires_the_cursor_icon_id` +
+`w4_g86_the_pole_head_icon_wires_after_the_hover_pass`. The remaining
+~99 arms stay the ≤10/commit seed. The `tile_drop` family check: the
+port's `registry::tile_drop` is the style-0 slice ONLY — the styled
+`GetItemDrop_*` tables (Beds/Chests/Dressers/Doors/…) are NOT yet ported
+anywhere (the kill cascade defers them via `ObjectDrop.item: None`), so
+the styled arms port their tables fresh into `cursor_item_icon.rs`
+(the g34 lane's future decoders can re-home them).
 
 ### 4.4 The remaining feeds (small commits)
 
@@ -358,11 +432,38 @@ marks a row done per commit.)
 ## 6. This lane's landings (the self-contained batches)
 
 * **Batch 1** (`835e89a65`): `cursor_item_icon.rs::altar_hover_icon` — arms
-  60+79 (4 write sites), PORTED-UNWIRED, 3 witnesses.
+  60+79 (4 write sites), 3 witnesses. **WIRED** in the phase-1 draw commit
+  (the `update_editing` tile-hover head).
 * **Batch 2** (`90efad638`): `fishing_get_bait` + `item_check_head_icon` —
-  the ItemCheck head (9 write sites), PORTED-UNWIRED, 3 witnesses.
-* The rest of the system is the §4 seed — too large for this lane (the
-  fields + the draw override + ~150 hover arms need the g81 merge first).
+  the ItemCheck head (9 write sites), 3 witnesses. **WIRED** in the
+  phase-1 draw commit (the ItemCheck-head seam after the tool latch).
+* **The g81 carry** (`2174f0fbb`): the enabled latch + the 10-frame cache +
+  the layer-40 held-kind draw + the wiring/mining latches, cherry-picked
+  no-commit from `18e53dd0f` (g81 unmerged — the merge keeps one copy).
+* **Phase 1 (§4.1 + §4.2 + the B1/B2 wiring)**: the four
+  ID/Text/Push/Reversed fields + the full MouseOversClear quad + the
+  :16842 Reversed frame-head clear + the layer-40 ID-override draw
+  (`interact_icon_kind` + Push/Reversed/Text/head-gate) + both batches
+  wired at their C# call positions; 14 new witnesses (4 clear/defaults +
+  4 cache + 1 latch + 3 draw + 2 wiring).
+* The rest of the system is the §4 seed — the ~99 remaining hover arms
+  (§4.3, ≤10/commit) + the remaining feeds (§4.4).
+
+### 6.1 The g53c cross-note (the flagging lane)
+
+`task/W4-g53-ui-achievement-screen` (`ui/world_hover.rs:22`,
+`docs/research/81-doc-sweep-ui.md` §2's GAP row, ANALYSIS :36164-36169 on
+its branch) flagged the `cursorItemIcon`/`TileInteractionsMouseOver`
+interact-icon subsystem as "a whole subsystem, too large for this lane"
+and kept the `no_throw` field's check shape. **This lane (W4-g86
+cursor-item-icon) now owns the row**: the census + seed is research/244,
+the decode batches + the g81 carry + phase 1 are landed above. g53's
+`world_hover.rs` clears (`DrawMouseOver` :42897/:42923, `HoverOverNPCs`
+:43089 — the text-hover-wins `enabled=false` arms, §3.4's clears list)
+stay g53's own claim; when its branch merges, its draw-pass clear sites
+read the now-live `cursor_item_icon_enabled` field (the carry supplies
+it). The elder-slime 685 icon-327 arm (Main.cs:43024-43026) stays PARKED
+on both lanes — no `NpcKind` 685 row in the port's roster.
 
 ## 7. The altar-draw keep-one (the co-lane question)
 

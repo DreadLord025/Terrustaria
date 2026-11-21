@@ -722,6 +722,14 @@ pub fn draw_hud(
     // `icon_cache` the `(kind, time)` pair the verification left.
     icon_enabled: bool,
     icon_cache: (u16, i32),
+    // W4-g86 research/244 phase 1 — the layer-40 ID override's state:
+    // `Player.cursorItemIconID/Text/Push/Reversed` (`Player.cs:1852-1858`).
+    // `(id, push, reversed, text)` — the C# field order of the draw reads
+    // (:45057/:45089/:45083/:45102).
+    icon_override: (i32, i32, bool, &str),
+    // The layer-40 head gate's `Main.HoveringOverAnNPC || mouseInterface`
+    // (`Main.cs:45039`): the port's resolved NPC-hover / over-UI pair.
+    icon_suppressed: bool,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1206,36 +1214,68 @@ pub fn draw_hud(
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
-    // S1-W4-g81 residuals — `DrawInterface_40_InteractItemIcon`
-    // (`Main.cs:45037-45115`): the held-tool icon beside the cursor. The
-    // wiring/mining tools' latch (`Player.cs:46756-46760`/`:45620-45624`)
-    // arms `icon_enabled` in reach; the cache linger draws the last kind
-    // for 10 frames after the tool leaves reach (`:45063`'s
-    // `_itemIconCacheTime > 0 && mouseItem.type < 1`). The icon rides
-    // `ItemSlot.DrawItemIcon` at context 21, sizeLimit 9999 (no clamp),
-    // centred on `mouse + (10,10) + hitbox.Size()*cursorScale/2`
-    // (`:45089-45092`). The `cursorItemIconID != 0` override arm is
-    // unported (the tile-interaction icon system) — the wiring tools
-    // keep ID 0, so the held kind is the icon.
-    {
-        let held = &inventory[selected.min(INV - 1)];
-        let cache_live = icon_cache.1 > 0 && mouse_item.count == 0;
-        let kind = if icon_enabled && held.count > 0 {
-            held.kind
-        } else if cache_live {
-            icon_cache.0
-        } else {
-            0
-        };
-        if kind > 0 {
+    // S1-W4-g81 residuals + W4-g86 research/244 phase 1 —
+    // `DrawInterface_40_InteractItemIcon` (`Main.cs:45037-45115`): the
+    // cursor-side item icon. The wiring/mining tools' latch
+    // (`Player.cs:46756-46760`/`:45620-45624`) arms `icon_enabled` in reach;
+    // the cache linger draws the last kind for 10 frames after the tool
+    // leaves reach (`:45063`'s `_itemIconCacheTime > 0 && mouseItem.type < 1`).
+    // The icon rides `ItemSlot.DrawItemIcon` at context 21, sizeLimit 9999
+    // (no clamp), centred on `mouse + (10 + Push, 10 + Push) +
+    // hitbox.Size()*cursorScale/2` (`:45089-45092`).
+    //
+    // The ID-override arm (g81's declared gap, NOW PORTED — `:45057-45060`):
+    // `cursorItemIconID != 0` REPLACES the held kind (the tile-hover decode /
+    // the ItemCheck head's bait/solution id). The override forces
+    // `currentColor = White, color = default` (`:45074-45078`), Push offsets
+    // the icon (`:45089`), Reversed flips it (`:45083-45086`), Text draws
+    // `MouseText(Text, 0, 0)` (`:45102-45105`). The `!flag` linger path swaps
+    // the cached kind with the live ID around the draw (`:45067-45071`/
+    // `:45111-45114`) — the swap-back leaves the field unchanged, so the
+    // port draws the cached kind directly.
+    //
+    // DEFERRED halves (documented, no feed exists on this branch): the
+    // UsingBiomeTorches 8/966 swap (`:45045-45056` — needs the player's
+    // zones at draw, the light-feed precedent computes it sim-side), the
+    // TryGetAmmo sub-icon (`:45093-45100`/`:45117-45144` — FindPaintOrCoating
+    // + the FlexibleTileWand system), the painted-held overlay
+    // (`:45106-45110` — the port's ItemSlot carries no per-item color),
+    // ItemSlot.GetItemLight (`:45081`) and the held-slot GetAlpha/GetColor
+    // (`:45072-45073` — the port draws the icon plain white, the g81
+    // stand-in kept).
+    if !icon_suppressed {
+        let (icon_id, icon_push, icon_reversed, icon_text) = icon_override;
+        let held_kind = inventory[selected.min(INV - 1)].kind;
+        if let Some(kind) = interact_icon_kind(
+            icon_enabled,
+            icon_id,
+            held_kind,
+            // `MouseDisplayItem.IsAir` (`Main.cs:2955-2965` → `Item.cs:385`:
+            // `type <= 0 || stack <= 0`; the FakeCursorItem arm has no port
+            // — the gamepad stand-in cursor, parked).
+            mouse_item.kind == 0 || mouse_item.count == 0,
+            // The linger's own gate (`:45063`): `mouseItem.type < 1`.
+            mouse_item.kind < 1,
+            icon_cache,
+        ) {
             if let Some((uv, iw, ih)) = lookups.item_icon(kind) {
                 let s = pulse.cursor_scale;
+                // `:45089` — `num3 = 10 + cursorItemIconPush`.
+                let off = 10.0 + icon_push as f32;
                 let center = [
-                    mouse_pos.x + 10.0 + iw * s * 0.5,
-                    mouse_pos.y + 10.0 + ih * s * 0.5,
+                    mouse_pos.x + off + iw * s * 0.5,
+                    mouse_pos.y + off + ih * s * 0.5,
                 ];
                 let w = iw * s;
                 let h = ih * s;
+                // `:45083-45086` — Reversed mirrors the UV quad
+                // (`SpriteEffects.FlipHorizontally`, the player_layers.rs
+                // mirror precedent).
+                let uv = if icon_reversed {
+                    [uv[2], uv[1], uv[0], uv[3]]
+                } else {
+                    uv
+                };
                 r.push_ui_sprite(
                     [center[0] - w * 0.5, center[1] - h * 0.5],
                     [w, h],
@@ -1244,12 +1284,57 @@ pub fn draw_hud(
                 );
             }
         }
+        // `:45102-45105` — `cursorItemIconText != ""` → MouseText(Text, 0, 0)
+        // (the container/dresser hover NAME; no feed arms Text yet, the
+        // clear-quad keeps it "").
+        if !icon_text.is_empty() {
+            tooltip::draw_mouse_text(r, lookups, mouse_pos, icon_text, screen, pulse);
+        }
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
     // hidden while the vanilla `Cursor_0` is on screen.
     cursor::draw(r, lookups, cursor_state, mouse_pos);
+}
+
+/// `DrawInterface_40_InteractItemIcon`'s icon-kind selection
+/// (`Main.cs:45057-45092`, W4-g86 research/244 phase 1): the ID override
+/// (`:45057-45060`, `cursorItemIconID != 0` REPLACES the held kind —
+/// independent of the held stack, the C# reads `heldItem.type` which is 0
+/// for an empty slot), the live gate (`:45061`, `enabled && num != 0 &&
+/// MouseDisplayItem.IsAir`), the linger gate (`:45063`, `flag | (cacheTime
+/// > 0 && mouseItem.type < 1)`) and the `num > 0` draw gate (`:45087` —
+/// negative ids, the sign arm's -1 sentinel `Player.cs:34306`, draw
+/// nothing). The `!flag` linger path draws the CACHED kind (the `:45070`
+/// swap puts it in `cursorItemIconID` for the draw, the `:45113` swap-back
+/// restores the live field — net-zero, so the port reads the cache
+/// directly). `icon_cache` is `(cached kind, cache time)`. `mouse_air` is
+/// `MouseDisplayItem.IsAir` (`Item.cs:385`: `type <= 0 || stack <= 0`) for
+/// the live flag; `mouse_kind_air` is the linger's own `mouseItem.type < 1`
+/// (`:45063` — kind only, an empty stack of a real kind still lingers).
+pub(crate) fn interact_icon_kind(
+    icon_enabled: bool,
+    icon_id: i32,
+    held_kind: u16,
+    mouse_air: bool,
+    mouse_kind_air: bool,
+    icon_cache: (u16, i32),
+) -> Option<u16> {
+    // `:45057-45060` — the override.
+    let num = if icon_id != 0 { icon_id } else { i32::from(held_kind) };
+    // `:45061` — the live gate.
+    let flag = icon_enabled && num != 0 && mouse_air;
+    // `:45063` + `:45067-45071` — the linger draws the cached kind.
+    let kind = if flag {
+        num
+    } else if icon_cache.1 > 0 && mouse_kind_air {
+        i32::from(icon_cache.0)
+    } else {
+        0
+    };
+    // `:45087` — only positive ids draw.
+    (kind > 0).then_some(kind as u16)
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it
@@ -1282,6 +1367,84 @@ fn hover_item_for<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-g86 research/244 phase 1 — the layer-40 override precedence
+    /// (`Main.cs:45057-45092`): a lit `cursorItemIconID` REPLACES the held
+    /// kind even with an empty held slot; ID 0 falls back to the held kind
+    /// (the g81 arm); the live gate needs `enabled && num != 0 &&
+    /// MouseDisplayItem.IsAir`; the linger draws the CACHED kind, never the
+    /// live id; negative ids (the sign arm's -1 sentinel) draw nothing.
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_layer40_id_override_beats_the_held_kind() {
+        // The altar hover (ID 6135) overrides a held Copper Pickaxe (1).
+        assert_eq!(
+            interact_icon_kind(true, 6135, 1, true, true, (0, 0)),
+            Some(6135),
+            "the override replaces the held kind (:45057-45060)"
+        );
+        // The override fires with an EMPTY held slot — the C# num comes
+        // from the ID, not the stack.
+        assert_eq!(interact_icon_kind(true, 1293, 0, true, true, (0, 0)), Some(1293));
+        // ID 0: the held kind is the icon (the g81 held-kind arm).
+        assert_eq!(interact_icon_kind(true, 0, 509, true, true, (0, 0)), Some(509));
+        // The live gate: disabled → no live icon even with a lit ID…
+        assert_eq!(interact_icon_kind(false, 6135, 1, true, true, (0, 0)), None);
+        // …a carried cursor stack (MouseDisplayItem NOT air) → same.
+        assert_eq!(interact_icon_kind(true, 6135, 1, false, false, (0, 0)), None);
+        // An empty held slot with ID 0 draws nothing (num == 0).
+        assert_eq!(interact_icon_kind(true, 0, 0, true, true, (0, 0)), None);
+        // The linger (`cacheTime > 0`, mouse kind air, live gate shut) draws
+        // the CACHED kind — NOT the live override id (the :45070 swap).
+        assert_eq!(
+            interact_icon_kind(false, 6135, 1, true, true, (509, 7)),
+            Some(509),
+            "the linger draws the cached kind"
+        );
+        // The two air gates DIFFER: an empty stack of a real kind (kind 40,
+        // count 0) is `IsAir` (live flag true) AND `type < 1` false — the
+        // linger refuses (`mouseItem.type < 1` reads the kind only).
+        assert_eq!(interact_icon_kind(false, 0, 1, true, false, (509, 7)), None);
+        // A carried cursor stack kills the linger too.
+        assert_eq!(interact_icon_kind(false, 0, 1, false, false, (509, 7)), None);
+        // The sign arm's -1 sentinel: enabled, non-zero num — but `num > 0`
+        // (:45087) refuses the draw.
+        assert_eq!(interact_icon_kind(true, -1, 1, true, true, (0, 0)), None);
+    }
+
+    /// W4-g86 research/244 phase 1 — the Reversed UV mirror
+    /// (`Main.cs:45083-45086`, `SpriteEffects.FlipHorizontally`): the draw
+    /// block swaps the U pair exactly like `player_layers.rs`'s mirror
+    /// (`[uv[2], uv[1], uv[0], uv[3]]`) — the V pair and the quad size stay.
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_reversed_flag_mirrors_the_icon_uv() {
+        let uv = [0.1f32, 0.2, 0.3, 0.4];
+        let mirrored = [uv[2], uv[1], uv[0], uv[3]];
+        assert_eq!(mirrored, [0.3, 0.2, 0.1, 0.4]);
+        // A double mirror is the identity (the per-frame Reversed clear
+        // never lets a stale flip survive two frames).
+        let back = [mirrored[2], mirrored[1], mirrored[0], mirrored[3]];
+        assert_eq!(back, uv);
+    }
+
+    /// W4-g86 research/244 phase 1 — the Push offset (`Main.cs:45089`,
+    /// `num3 = 10 + cursorItemIconPush`): the icon centre rides
+    /// `mouse + (10 + Push) + hitbox*cursorScale/2` (`:45091-45092`). The
+    /// pole's bait arm pushes 6 → base 16; the solution arm pushes 10 →
+    /// base 20; the tool latch keeps Push 0 → base 10 (the g81 geometry).
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_push_offsets_the_icon_base_10() {
+        let mouse = Vec2::new(100.0, 200.0);
+        let (iw, ih, s) = (20.0f32, 20.0f32, 1.0f32);
+        for (push, base) in [(0i32, 10.0f32), (6, 16.0), (10, 20.0)] {
+            let off = 10.0 + push as f32;
+            assert_eq!(off, base, "10 + push {push}");
+            let center = [mouse.x + off + iw * s * 0.5, mouse.y + off + ih * s * 0.5];
+            assert_eq!(center, [100.0 + base + 10.0, 200.0 + base + 10.0]);
+        }
+    }
 
     /// The corner chat's row anchor (`RemadeChatMonitor.cs:83`):
     /// `(88, screenHeight - 30 - 28 - row*22)` — x=88, the newest row 58 px

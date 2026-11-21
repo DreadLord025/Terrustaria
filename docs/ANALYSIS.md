@@ -39643,3 +39643,89 @@ census + the exact 101-arm site-list + the owner contract:
   `frame/draw.rs` :1183-1220 interleave (g34's cage-key WorldFrameKey
   contribution + g86's post-pass outline hook — both survive) and taking
   g43's doors.rs wholesale. No duplicated body across the three lanes.
+
+### The cursorItemIcon phase 1 — the state fields + the two clears (W4-g86)
+
+research/244 §4.1 landed. The g81 halves were CARRIED first (`2174f0fbb`,
+the cherry-pick-no-commit of g81's `18e53dd0f` — g81 is unmerged on
+origin/main; the seed contract's "keep g81's bodies" needs its surface on
+this branch, the eventual merge dedupes): the layer-40 held-kind draw
+(`ui/mod.rs::draw_hud`, context-21 no-clamp icon at
+`mouse+(10,10)+hitbox*cursorScale/2`), `ItemIconCacheUpdate/Verification`
+(`Main.cs:46515-46540`), the enabled-only `MouseOversClear` clear, and the
+wiring+mining in-reach latches (`Player.cs:46752-46760`/`:45620-45624`,
+the `editing.rs` seam after the smart-interact lookup). The carry's
+compile gap (g81's own branch never compiled its tests): `flow_app` is a
+FULL App literal — both it and `App::new` gained the new field rows.
+
+Phase 1 adds the four remaining `Player.cursorItemIcon*` fields
+(`Player.cs:1852-1858`): `cursor_item_icon_id: i32` (the `-1` sign
+sentinel needs the signed type), `cursor_item_icon_text: String`,
+`cursor_item_icon_push: i32`, `cursor_item_icon_reversed: bool`. The
+clears ride TWO clocks, exactly like the C#:
+
+* **`Main.MouseOversClear`** (`Main.cs:46503-46513`, called `:17035`):
+  the full quad `enabled=false; ID=0; Text=""; Push=0` at `frame()`'s
+  world-branch head, ahead of the player pass that re-arms.
+  **Deviation**: the C# call precedes the `gameMenu` return (`:17166`),
+  so vanilla clears the quad under menus too — the port keeps g81's
+  world-branch gate; no hover writer and no layer-40 draw runs behind a
+  menu, so no stale icon can reach a frame. The `_mouseTextCache` pair
+  (`:46505-46506`) has no port cache; the `signHover/signBubble` pair
+  (`:46511-46512`) rides the unported sign-hover lane (f22's neighbour).
+* **`cursorItemIconReversed`** (`Main.cs:16842`): NOT part of
+  MouseOversClear — the `DoUpdate` head clears it ONCE per frame
+  INCLUDING menus/pauses, after the showSplash return (`:16832-16840`).
+  The port's `frame_head` runs it before every other frame work.
+
+Witnesses (WRITTEN NOT RUN, code-only lane, zero RNG): the field defaults
++ the clear quad + the menu-gated split (`frame.rs::w4_g86_*`, 4), the
+cache pair's four arms (`app/mod.rs::w4_g86_icon_cache_tests` — the
+still-mouse hold, the exactly-4-px decrement vs the >4 zero, the
+kind-switch zero, the re-arm pin), the tool latch
+(`editing.rs::w4_g81_the_tool_in_reach_arms_the_icon_latch_and_cache`
+— pickaxe + Wrench 509 + the non-tool refusal). The g53c cross-note (the
+flagging lane's handover) lives at research/244 §6.1.
+
+**The layer-40 override draw + the B1/B2 wiring (research/244 §4.2,
+landed with phase 1).** `ui/mod.rs::interact_icon_kind` is the pure
+kind-selection arm (`Main.cs:45057-45063`): a non-zero
+`cursorItemIconID` REPLACES the held kind (independent of the held
+stack), the live gate is `enabled && num != 0 && MouseDisplayItem.IsAir`
+(the port folds IsAir to `mouse_item.kind == 0 || count == 0`,
+`Item.cs:385`; the linger's OWN gate `:45063` is `mouseItem.type < 1` —
+kind only — so the fn takes the two air flags separately), the linger
+draws the CACHED kind (the `:45067-45071` /
+`:45111-45114` swap pair is net-zero on the field, so the port reads the
+cache directly), and only `num > 0` draws (`:45087` — the sign arm's -1
+sentinel draws nothing). The draw block adds the `10 + Push` offset
+(`:45089`), the Reversed UV mirror (`:45083-45086`), the Text
+`draw_mouse_text` arm (`:45102-45105`) and the head gate (`:45039`):
+`bubble_npc` (the `HoveringOverAnNPC` stand-in) OR `minimap_hover` OR the
+closed-hotbar `hovered_slot`. **Deferred halves** (documented at the
+block, no feed on this branch): the UsingBiomeTorches 8/966 swap
+(`:45045-45056`), TryGetAmmo (`:45093-45100`/`:45117-45144`), the
+painted-held overlay (`:45106-45110` — the port's ItemSlot has no
+per-item color), GetItemLight (`:45081`) + GetAlpha/GetColor
+(`:45072-45073` — plain white, the g81 stand-in). **Deviation**: the
+open-panel slot hover has no pre-draw resolution (the panel hit-tests
+inside `inventory::draw`), so the head gate covers the closed hotbar +
+minimap only. The g81 carry's per-draw
+`item_icon_cache_verification()` call was INLINED over the disjoint
+fields in `frame/draw.rs` (a whole-`self` method call cannot compile
+inside the `let App {…} = self` destructure's live field borrows; the
+method stays for the cache witnesses). The B1 altar arms (26/237) are WIRED at `update_editing`'s
+tile-hover head (after the repoint/smart-interact lookup — the
+POST-repoint target IS `tileTargetX/Y`, the `:33589` gate; `noThrow=2` +
+`enabled` BEFORE the ID), the B2 head arms after the tool latch with the
+`!enabled` gate keeping the hover icon — the C# order
+`LookForTileInteractions` (`Player.cs:27430`) before `ItemCheck`
+(`:31827`). **Deviation**: the wiring seam sits behind `update_editing`'s
+map/minimap/HUD/reach early returns, so the hover icon arms only inside
+the port's circular reach stand-in — the C# gates the same pass on its
+Simple reach rect (`Player.cs:31962-31965`); the long-distance pass
+(§4.4) covers the out-of-reach hover when it lands. 5 more witnesses
+(3 draw + 2 wiring). The remaining ~99
+hover arms stay the §4.3 ≤10/commit seed; the styled `GetItemDrop_*`
+tables are NOT in `registry::tile_drop` (style-0 slice only) — the
+styled arms port their tables fresh.

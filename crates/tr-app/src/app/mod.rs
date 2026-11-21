@@ -690,6 +690,32 @@ pub(crate) struct App {
     /// (`Player.cs:46756-46760`/`:45620-45624`), `MouseOversClear` clears
     /// it per update (`Main.cs:46503-46513`, `:17035`). S1-W4-g81.
     pub(crate) cursor_item_icon_enabled: bool,
+    /// `Player.cursorItemIconID` (`Player.cs:1854`): the tile-interaction
+    /// hover-icon override — `TileInteractionsMouseOver`'s arms decode the
+    /// hovered tile into an item id (the altar 6135/6136/1293,
+    /// `Player.cs:34524-34536`/`:34309-34314`), the `ItemCheck` head's
+    /// bait/solution arms write the carried kind (`:42615-42650`). Non-zero
+    /// REPLACES the held kind in `DrawInterface_40_InteractItemIcon`
+    /// (`Main.cs:45057-45060`). i32, NOT u16 — the sign arm's in-box clear
+    /// writes the `-1` sentinel (`Player.cs:34306`). W4-g86 research/244
+    /// phase 1.
+    pub(crate) cursor_item_icon_id: i32,
+    /// `Player.cursorItemIconText` (`Player.cs:1858`, default `""`): the
+    /// container/dresser hover NAME — layer 40 draws it through
+    /// `MouseText(Text, 0, 0)` (`Main.cs:45102-45105`). W4-g86 research/244
+    /// phase 1.
+    pub(crate) cursor_item_icon_text: String,
+    /// `Player.cursorItemIconPush` (`Player.cs:1856`): the icon's extra
+    /// offset — layer 40 draws at `mouse + (10 + Push, 10 + Push)`
+    /// (`Main.cs:45089`); the pole's bait arm pushes 6, the solution arm 10
+    /// (`Player.cs:42622`/`:42633`). W4-g86 research/244 phase 1.
+    pub(crate) cursor_item_icon_push: i32,
+    /// `Player.cursorItemIconReversed` (`Player.cs:1852`): layer 40's
+    /// `SpriteEffects.FlipHorizontally` (`Main.cs:45083-45086`). Cleared
+    /// ONCE per frame at the `DoUpdate` head (`Main.cs:16842`), NOT inside
+    /// `MouseOversClear` — the two clears ride different clocks
+    /// (research/244 §3.2). W4-g86 research/244 phase 1.
+    pub(crate) cursor_item_icon_reversed: bool,
     /// `Main._itemIconCacheScreenPosition`/`_itemIconCacheSelectedItemID`/
     /// `_itemIconCacheTime` (`Main.cs:2411-2415`): the 10-frame icon
     /// linger after the tool leaves reach (`ItemIconCacheUpdate`
@@ -3945,6 +3971,10 @@ impl App {
             },
             cursor: ui::cursor::CursorState::with_mouse_color(cursor_mouse_color),
             cursor_item_icon_enabled: false,
+            cursor_item_icon_id: 0,
+            cursor_item_icon_text: String::new(),
+            cursor_item_icon_push: 0,
+            cursor_item_icon_reversed: false,
             item_icon_cache_pos: Vec2::ZERO,
             item_icon_cache_kind: 0,
             item_icon_cache_time: 0,
@@ -5700,6 +5730,80 @@ mod s1_e_18_tests {
             .find(|a| a.name == "FREQUENT_FLYER")
             .and_then(|a| a.tracker_values())
             .map_or(0, |(v, _)| v)
+    }
+}
+
+#[cfg(test)]
+mod w4_g86_icon_cache_tests {
+    //! W4-g86 — the g81 carry's `ItemIconCacheUpdate`/`Verification` pair
+    //! (`Main.cs:46515-46540`), the 10-frame tool-icon linger. WRITTEN NOT
+    //! RUN (code-only lane). Zero RNG — the pair is distance/countdown
+    //! maths only.
+    use super::*;
+
+    fn cache_app() -> App {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // Hold the Iron Pickaxe so the kind-switch arm stays quiet.
+        app.inventory[app.selected].kind = 1;
+        app.inventory[app.selected].count = 1;
+        app.mouse_pos = Vec2::new(100.0, 100.0);
+        app
+    }
+
+    /// `ItemIconCacheUpdate` (`Main.cs:46515-46520`): the re-arm records the
+    /// CURRENT mouse position + the tool kind + exactly 10 frames.
+    #[test]
+    fn w4_g86_the_cache_update_pins_position_kind_and_ten_frames() {
+        let mut app = cache_app();
+        app.item_icon_cache_update(1);
+        assert_eq!(app.item_icon_cache_pos, Vec2::new(100.0, 100.0));
+        assert_eq!(app.item_icon_cache_kind, 1);
+        assert_eq!(app.item_icon_cache_time, 10);
+    }
+
+    /// `ItemIconCacheVerification` (`Main.cs:46522-46540`): a STILL mouse
+    /// (distance 0) never decrements — the linger holds its full 10 frames
+    /// while the tool stays selected and the pointer parks.
+    #[test]
+    fn w4_g86_a_still_mouse_holds_the_linger() {
+        let mut app = cache_app();
+        app.item_icon_cache_update(1);
+        for _ in 0..30 {
+            app.item_icon_cache_verification();
+        }
+        assert_eq!(app.item_icon_cache_time, 10, "num == 0 skips the decay");
+    }
+
+    /// A 1-4 px move decrements ONE frame per verification (`:46527-46530`),
+    /// a >4 px move zeroes outright (`:46531-46534` — strictly greater: a
+    /// move of exactly 4 only decrements).
+    #[test]
+    fn w4_g86_small_moves_decay_big_moves_zero() {
+        let mut app = cache_app();
+        app.item_icon_cache_update(1);
+        // Exactly 4 px: decrement only (`num > 4f` is false).
+        app.mouse_pos = Vec2::new(104.0, 100.0);
+        app.item_icon_cache_verification();
+        assert_eq!(app.item_icon_cache_time, 9);
+        // 4.01 px from the CACHE position: the >4 arm zeroes.
+        app.mouse_pos = Vec2::new(104.01, 100.0);
+        app.item_icon_cache_verification();
+        assert_eq!(app.item_icon_cache_time, 0);
+        // A dead linger never re-arms through verification alone.
+        app.item_icon_cache_verification();
+        assert_eq!(app.item_icon_cache_time, 0);
+    }
+
+    /// The selected-item switch zeroes the linger even with a still mouse
+    /// (`:46535-46538` — `_itemIconCacheSelectedItemID !=
+    /// inventory[selectedItem].type`).
+    #[test]
+    fn w4_g86_a_selected_item_switch_zeroes_the_linger() {
+        let mut app = cache_app();
+        app.item_icon_cache_update(1);
+        app.inventory[app.selected].kind = 3509; // the Copper Pickaxe
+        app.item_icon_cache_verification();
+        assert_eq!(app.item_icon_cache_time, 0);
     }
 }
 

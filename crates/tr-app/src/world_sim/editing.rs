@@ -2172,6 +2172,24 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         eprintln!("[trace] past the reach gate");
     }
     let held = app.inventory[app.selected];
+    // W4-g86 research/244 phase 1 — the tile-hover pass head
+    // (`Player.LookForTileInteractions` → `TileInteractionsCheck` →
+    // `TileInteractionsMouseOver`, `Player.cs:27430`/`:32039`/`:33587`,
+    // runs BEFORE `ItemCheck` `:31827` in `Player.Update`): the altar arms
+    // (batch 1, `:34524-34536` tile 26 / `:34309-34314` tile 237) decode the
+    // POST-repoint target cell every tick — the C# gates
+    // `myX/myY == tileTargetX/Y` (`:33589`), which the repointed (tx, ty)
+    // IS. On a hit: `noThrow = 2` + `enabled = true` BEFORE the ID write
+    // (both arms' order). The remaining ~99 arms are the research/244 §4.3
+    // seed (≤10 arms/commit); the long-distance pass + the minecart-track
+    // hover are §4.4.
+    if let Some(tile) = app.world.tile(tx, ty).filter(|t| t.active()) {
+        if let Some(id) = super::cursor_item_icon::altar_hover_icon(tile.kind, tile.frame_x) {
+            app.no_throw = 2;
+            app.cursor_item_icon_enabled = true;
+            app.cursor_item_icon_id = i32::from(id);
+        }
+    }
     // S1-W4-g81 residuals — the wiring tools' cursor-icon latch
     // (`Player.ItemCheck_UseWiringTools`, `Player.cs:46752-46760`): the
     // tool in reach arms `cursorItemIconEnabled` + `ItemIconCacheUpdate`
@@ -2195,6 +2213,32 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
                 app.cursor_item_icon_enabled = true;
                 app.item_icon_cache_update(tool_kind);
             }
+        }
+    }
+    // W4-g86 research/244 phase 1 — the `ItemCheck` head's bait/solution
+    // icon arms (`Player.cs:42615-42650`, the local-player block `:42608`):
+    // AFTER the CCed gate (`:42598`, the tick head above) and BEFORE
+    // `ItemCheck_HandleMount` (`:42652`, the port's early-dismount head
+    // below). The pure decode is batch 2's `item_check_head_icon`; on
+    // `Some((id, push))` the writes ride the C# order: `enabled = true`,
+    // `ID = id`, `Push = push` (`:42620-42622`/`:42631-42633`). NO
+    // `ItemIconCacheUpdate` — these arms never arm the linger (only the
+    // tool latches do). Both arms gate `!enabled` inside the fn: the
+    // tile-hover pass above (the C# `LookForTileInteractions`,
+    // `Player.cs:27430`, runs BEFORE `ItemCheck` `:31827`) and the tool
+    // latch win over an idle-cursor icon.
+    {
+        let held = app.inventory[app.selected];
+        if let Some((id, push)) = super::cursor_item_icon::item_check_head_icon(
+            held,
+            &app.inventory,
+            &app.equip.coins,
+            &app.equip.ammo,
+            app.cursor_item_icon_enabled,
+        ) {
+            app.cursor_item_icon_enabled = true;
+            app.cursor_item_icon_id = i32::from(id);
+            app.cursor_item_icon_push = push;
         }
     }
     #[cfg(test)]
@@ -11030,6 +11074,40 @@ mod tests {
         assert_eq!(live_mines, 20, "the cap holds at 20");
     }
 
+    /// The wiring/mining tools' cursor-icon latch (`Player.ItemCheck_UseWiringTools`
+    /// `Player.cs:46752-46760` + `ItemCheck_UseMiningTools` `:45620-45624`,
+    /// the g81 carry): a tool in reach arms `cursorItemIconEnabled` + the
+    /// 10-frame cache BEFORE the use gates — the icon shows while hovering,
+    /// not only while placing. WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g81_the_tool_in_reach_arms_the_icon_latch_and_cache() {
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        // The Iron Pickaxe (kind 1, pick 40) is the rig's held tool; the
+        // camera + screen-centre mouse point at (30, 260), inside the
+        // player's reach (the player stands at tile (33, 260)).
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(app.cursor_item_icon_enabled, "the mining latch (:45622)");
+        assert_eq!(app.item_icon_cache_kind, 1, "the cache tool kind");
+        assert_eq!(app.item_icon_cache_time, 10, "ItemIconCacheUpdate");
+        assert_eq!(app.item_icon_cache_pos, app.mouse_pos, "the cache pos");
+        // The wiring tools ride the same seam (:46756-46760): the Wrench
+        // 509 (tileBoost 20) latches the same way.
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        app.inventory[app.selected].kind = 509;
+        app.inventory[app.selected].count = 1;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(app.cursor_item_icon_enabled, "the wiring latch (:46758)");
+        assert_eq!(app.item_icon_cache_kind, 509);
+        // A non-tool held item never latches (the pick/axe/hammer + wiring
+        // kind gates): dirt blocks stay quiet.
+        let mut app = mining_app(World::new("t".into(), 64, 800), 30, 260);
+        app.inventory[app.selected].kind = 2;
+        app.inventory[app.selected].count = 50;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert!(!app.cursor_item_icon_enabled, "no tool, no latch");
+        assert_eq!(app.item_icon_cache_time, 0, "no cache re-arm");
+    }
+
     pub(super) fn mining_app(world: World, tx: i32, ty: i32) -> App {
         let mut app = flow_app(None, vec![], vec![]);
         app.world = world;
@@ -11103,6 +11181,82 @@ mod tests {
         w.tiles[i].flags |= FLAG_ACTIVE;
         w.compute_column_surface();
         mining_app(w, tx, ty)
+    }
+
+    /// W4-g86 research/244 phase 1 — the WIRED altar hover arm: the mouse
+    /// over a demon altar cell (26, frameX 0) arms `noThrow = 2` +
+    /// `cursorItemIconEnabled` + `cursorItemIconID = 6135`
+    /// (`Player.cs:34526-34535`) at the tile-hover head, every tick the
+    /// cursor stays; the Lihzahrd altar 237 arms 1293 (`:34311-34313`).
+    /// WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_g86_the_altar_hover_wires_the_cursor_icon_id() {
+        let mut app = pick_world_at(26, 30, 260);
+        // The pickaxe is a mining tool — swap to an empty hand so ONLY the
+        // hover arm can light the icon (the tool latch would also enable).
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 6135, "the demon altar's group-0 icon");
+        assert!(app.cursor_item_icon_enabled, ":34527 enabled before the ID");
+        assert_eq!(app.no_throw, 2, ":34526 noThrow = 2");
+        assert_eq!(app.cursor_item_icon_push, 0, "the altar arms never push");
+        // The Lihzahrd altar rides its own arm — always the Power Cell.
+        let mut app = pick_world_at(237, 30, 260);
+        app.inventory[app.selected] = crate::item::EMPTY_SLOT;
+        app.mine_down = false;
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 1293, ":34313");
+        assert!(app.cursor_item_icon_enabled);
+        assert_eq!(app.no_throw, 2, ":34311");
+    }
+
+    /// W4-g86 research/244 phase 1 — the WIRED ItemCheck-head arms: a held
+    /// Golden Fishing Rod 2294 with ammo-row bait draws the bait id with
+    /// push 6 (`Player.cs:42615-42624`); a hovered altar (the tile pass runs
+    /// FIRST, `Player.cs:27430` before `:31827`) blocks the head arm — the
+    /// `!cursorItemIconEnabled` gate keeps the hover icon. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g86_the_pole_head_icon_wires_after_the_hover_pass() {
+        // A plain stone cell under the cursor: no altar arm fires, so the
+        // idle cursor takes the pole's bait icon.
+        let mut app = pick_world_at(1, 30, 260);
+        app.mine_down = false;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 2294,
+            name: "Golden Fishing Rod",
+            count: 1,
+            prefix: 0,
+        };
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 2675,
+            name: "Journeyman Bait",
+            count: 5,
+            prefix: 0,
+        };
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 2675, "the bait id (:42621)");
+        assert_eq!(app.cursor_item_icon_push, 6, "the pole push (:42622)");
+        assert!(app.cursor_item_icon_enabled, ":42620");
+        assert_eq!(app.item_icon_cache_time, 0, "NO linger on the head arms");
+        // The altar under the cursor: the hover arm wins, the head refuses.
+        let mut app = pick_world_at(26, 30, 260);
+        app.mine_down = false;
+        app.inventory[app.selected] = crate::item::ItemSlot {
+            kind: 2294,
+            name: "Golden Fishing Rod",
+            count: 1,
+            prefix: 0,
+        };
+        app.equip.ammo[0] = crate::item::ItemSlot {
+            kind: 2675,
+            name: "Journeyman Bait",
+            count: 5,
+            prefix: 0,
+        };
+        update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
+        assert_eq!(app.cursor_item_icon_id, 6135, "the hover icon survives");
+        assert_eq!(app.cursor_item_icon_push, 0, "the head arm never fired");
     }
 
     /// The `HitTile` damage at a cell (0 when no slot tracks it).

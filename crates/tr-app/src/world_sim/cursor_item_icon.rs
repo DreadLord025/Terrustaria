@@ -3,28 +3,27 @@
 //! The full system census + owner contract lives in
 //! `docs/research/244-cursor-item-icon-seed.md`: 357 write sites across 7 C#
 //! files (Player.cs alone carries 326 writes / 169 `cursorItemIconID`
-//! writes — the ledger's "~170 sites"). The state fields
-//! (`cursorItemIconID/Text/Push/Reversed`), the per-update
-//! `MouseOversClear` (`Main.cs:46503-46513`) and the
-//! `DrawInterface_40_InteractItemIcon` ID-override draw arm
-//! (`Main.cs:45037-45115`) are the seeded system — the in-flight
-//! `task/W4-g81-wire-draw-overlay` (tip `ebb5308a0`) owns the layer-40
-//! held-kind arm + the 10-frame cache + the `cursorItemIconEnabled` latch
-//! and explicitly leaves the ID override unported (its `ui/mod.rs`
-//! comment). This module ports the SELF-CONTAINED pure decode arms in
-//! ≤10-site batches, PORTED-UNWIRED (the `IsHopperInRangeOf` precedent):
-//! each function is the exact C# arm maths, the wiring contract (which
-//! fields the caller arms, in which order) is documented per function and
-//! in research/244 §4. Zero RNG — every arm is integer maths.
+//! writes — the ledger's "~170 sites"). Phase 1 (this lane) landed the
+//! state fields (`cursorItemIconID/Text/Push/Reversed` on App beside g81's
+//! `cursor_item_icon_enabled`), the full `MouseOversClear` quad
+//! (`Main.cs:46503-46513`, `frame.rs`'s world-branch head) + the :16842
+//! once-per-frame Reversed clear (`frame_head`), the layer-40 ID-override
+//! draw arm (`DrawInterface_40_InteractItemIcon` `Main.cs:45057-45105`,
+//! `ui/mod.rs` — g81's declared gap) and WIRED both batches below at their
+//! C# call positions in `editing.rs`. This module holds the pure decode
+//! arms in ≤10-site batches; the wiring writes ride the C# field order per
+//! function. Zero RNG — every arm is integer maths.
 //!
-//! Batch 1 (this file's first landing): the altar hover icons —
-//! `TileInteractionsMouseOver`'s tile-26 (`Player.cs:34524-34536`) and
-//! tile-237 (`:34309-34314`) arms, 4 cursor write sites.
+//! Batch 1 (WIRED at `update_editing`'s tile-hover head): the altar hover
+//! icons — `TileInteractionsMouseOver`'s tile-26
+//! (`Player.cs:34524-34536`) and tile-237 (`:34309-34314`) arms, 4 cursor
+//! write sites.
 //!
-//! Batch 2: the `ItemCheck` head's held-item icon arms
-//! (`Player.cs:42615-42650`) — the fishing pole's bait icon (push 6) and
-//! the Clentaminator/Terraformer's solution icon (push 10), 9 cursor write
-//! sites + the `Fishing_GetBait` scan (`:42254-42280`) they read.
+//! Batch 2 (WIRED at `update_editing`'s ItemCheck head): the `ItemCheck`
+//! head's held-item icon arms (`Player.cs:42615-42650`) — the fishing
+//! pole's bait icon (push 6) and the Clentaminator/Terraformer's solution
+//! icon (push 10), 9 cursor write sites + the `Fishing_GetBait` scan
+//! (`:42254-42280`) they read.
 
 /// `Player.TileInteractionsMouseOver`'s altar arms (`Player.cs:34524-34536`
 /// tile 26, `:34309-34314` tile 237): the hover cursor icon for the
@@ -43,14 +42,13 @@
 /// item, matching the outline feed's `HasItem(1293)` gate
 /// (`world_sim/smart_interact.rs`, `FillPotentialTargetTiles` `:453-457`).
 ///
-/// Wiring contract (research/244 §4, UNWIRED): the caller runs inside the
-/// tile-hover pass (`TileInteractionsCheck` → `TileInteractionsMouseOver`,
-/// `Player.cs:32039`), sets `noThrow = 2` + `cursorItemIconEnabled = true`
-/// BEFORE the ID write (both arms, `:34526-34527`/`:34311-34312`), and the
-/// layer-40 ID override draws it. The g86 outline pass is the SELECTION
-/// feedback; this icon is the distinct hover overlay (ANALYSIS "The
-/// altar-26 SUMMON-USE chain — census").
-#[allow(dead_code)] // PORTED-UNWIRED: the tile-hover pass is the research/244 seed
+/// Wiring (research/244 phase 1, WIRED): `update_editing`'s tile-hover head
+/// (`editing.rs`, the `TileInteractionsCheck` → `TileInteractionsMouseOver`
+/// seam, `Player.cs:32039`) sets `noThrow = 2` + `cursorItemIconEnabled =
+/// true` BEFORE the ID write (both arms, `:34526-34527`/`:34311-34312`),
+/// and the layer-40 ID override draws it. The g86 outline pass is the
+/// SELECTION feedback; this icon is the distinct hover overlay (ANALYSIS
+/// "The altar-26 SUMMON-USE chain — census").
 pub(crate) fn altar_hover_icon(kind: u16, frame_x: i16) -> Option<u16> {
     match kind {
         // `Player.cs:34524-34536` — the demon/crimson altar.
@@ -76,8 +74,8 @@ pub(crate) fn altar_hover_icon(kind: u16, frame_x: i16) -> Option<u16> {
 /// First `stack > 0 && bait > 0` slot wins; returns `(baitPower, baitType)`
 /// with `(0, 0)` when no bait is carried. The scan is the SAME one
 /// `ConsumeBait` uses (`:52452-52470`, the `fishing_use` precedent) — this
-/// is the icon-side read, no consumption.
-#[allow(dead_code)] // PORTED-UNWIRED: the ItemCheck-head seam is the research/244 seed
+/// is the icon-side read, no consumption. WIRED (research/244 phase 1) via
+/// [`item_check_head_icon`] at `update_editing`'s head.
 pub(crate) fn fishing_get_bait(
     grid: &[crate::item::ItemSlot],
     ammo: &[crate::item::ItemSlot],
@@ -103,10 +101,8 @@ pub(crate) fn fishing_get_bait(
 /// the fishing pole's bait icon pushes 6 (`Player.cs:42622`), the
 /// Clentaminator's solution icon pushes 10 (`:42633`/`:42645`). The draw
 /// adds it to the base 10 (`Main.cs:45089`, `10 + cursorItemIconPush`).
-#[allow(dead_code)] // PORTED-UNWIRED (see item_check_head_icon)
 pub(crate) const BAIT_ICON_PUSH: i32 = 6;
 /// See [`BAIT_ICON_PUSH`] — the solution arm's push (`Player.cs:42633`).
-#[allow(dead_code)] // PORTED-UNWIRED (see item_check_head_icon)
 pub(crate) const SOLUTION_ICON_PUSH: i32 = 10;
 
 /// `Player.ItemCheck`'s head icon arms (`Player.cs:42615-42650`), the
@@ -130,13 +126,13 @@ pub(crate) const SOLUTION_ICON_PUSH: i32 = 10;
 /// splits the C# 58-slot array: `grid` = inventory[0..50], `coins` =
 /// inventory[50..54], `ammo` = inventory[54..58].
 ///
-/// Wiring contract (research/244 §4, UNWIRED): the caller runs at the
-/// `ItemCheck` head AFTER the CCed gate (`:42598`) and the fast-use arm,
-/// BEFORE `ItemCheck_HandleMount` (`:42652`); on `Some((id, push))` it
-/// writes `cursorItemIconEnabled = true`, `cursorItemIconID = id`,
+/// Wiring (research/244 phase 1, WIRED): `update_editing`'s head
+/// (`editing.rs`) runs this AFTER the CCed gate (`:42598`) and BEFORE the
+/// countdowns / the early-dismount head (the `ItemCheck_HandleMount`
+/// neighbour, `:42652`); on `Some((id, push))` it writes
+/// `cursorItemIconEnabled = true`, `cursorItemIconID = id`,
 /// `cursorItemIconPush = push` (the C# order). NO `ItemIconCacheUpdate`
 /// here — these arms do not arm the linger (only the tool latches do).
-#[allow(dead_code)] // PORTED-UNWIRED: the ItemCheck-head seam is the research/244 seed
 pub(crate) fn item_check_head_icon(
     held: crate::item::ItemSlot,
     grid: &[crate::item::ItemSlot],

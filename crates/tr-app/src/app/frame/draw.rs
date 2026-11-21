@@ -1822,11 +1822,67 @@ impl App {
                             &self.npc_chat_text,
                             self.cursor_item_icon_enabled,
                             (self.item_icon_cache_kind, self.item_icon_cache_time),
+                            // W4-g86 research/244 phase 1 — the layer-40 ID
+                            // override state (`Player.cs:1852-1858`).
+                            (
+                                self.cursor_item_icon_id,
+                                self.cursor_item_icon_push,
+                                self.cursor_item_icon_reversed,
+                                self.cursor_item_icon_text.as_str(),
+                            ),
+                            // The layer-40 head gate (`Main.cs:45039`): the
+                            // NPC-hover bubble pick (`Main.HoveringOverAnNPC`
+                            // via the port's `npc_chat::bubble_npc` stand-in)
+                            // OR the over-UI state — the minimap button
+                            // (`MinimapFrame.cs:164`), the closed hotbar
+                            // hover (`ItemSlot.Handle`'s `mouseInterface`,
+                            // the same read `update_editing`'s HUD gate
+                            // uses). The open-panel slot hover has no
+                            // pre-draw resolution on the port (the panel
+                            // hit-tests inside `inventory::draw`); recorded
+                            // deviation — the C# suppresses the icon there
+                            // too.
+                            {
+                                let mouse_world = Vec2::new(
+                                    (self.mouse_pos.x - screen.x * 0.5) / *zoom + camera.x,
+                                    (self.mouse_pos.y - screen.y * 0.5) / *zoom + camera.y,
+                                );
+                                ui::npc_chat::bubble_npc(&npcs[..], player.as_ref(), mouse_world)
+                                    .is_some()
+                                    || self.minimap_hover.is_some()
+                                    || (!self.inventory_open
+                                        && ui::tooltip::hovered_slot(
+                                            self.mouse_pos,
+                                            false,
+                                            *selected,
+                                            &self.hotbar_scales,
+                                            inventory,
+                                        )
+                                        .is_some())
+                            },
                         );
                         // S1-W4-g81 residuals — `Main.ItemIconCacheVerification`
                         // (`Main.cs:45062` inside `DrawInterface_40`): the
                         // linger's per-draw decay, after the icon pass read it.
-                        self.item_icon_cache_verification();
+                        // W4-g86 carry compile-fix: INLINED from
+                        // `App::item_icon_cache_verification` — a whole-`self`
+                        // method call cannot run inside the `let App {…} = self`
+                        // destructure's live field borrows (renderer/player/
+                        // inventory stay live across the interface pass); the
+                        // same maths rides the disjoint fields directly. The
+                        // method stays for the cache witnesses.
+                        if self.item_icon_cache_time > 0 {
+                            let d = (self.item_icon_cache_pos - self.mouse_pos).length();
+                            if d != 0.0 {
+                                self.item_icon_cache_time -= 1;
+                            }
+                            if d > 4.0 {
+                                self.item_icon_cache_time = 0;
+                            }
+                            if self.item_icon_cache_kind != inventory[*selected].kind {
+                                self.item_icon_cache_time = 0;
+                            }
+                        }
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
                         // the interface layers draw.
