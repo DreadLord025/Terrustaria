@@ -35341,7 +35341,7 @@ mod magic_ai_tests {
     fn the_typhoon_gate_draws_one_next3_per_substep_past_ten() {
         let mut pool = ProjectilePool::new();
         let slot = pool
-            .spawn_with_data(TYPHOON, 160.0, 176.0, 2.0, 0.0, 40, 5.0)
+            .spawn_with_data(TYPHOON, 160.0, 176.0, 0.0, 0.0, 40, 5.0)
             .unwrap();
         let w = world();
         let mut rng = tr_core::tile_light::FastRandom::new(4242);
@@ -35528,7 +35528,8 @@ mod magic_ai_tests {
     /// The 912's gate census (`Projectile.cs:47981-48011`): `num28 > 0.1`
     /// gates ONE `NextFloat` against `num28/2`; a taken gate adds the three
     /// `Next(2)` dust-261 draws and the (0.1, 0.1, 0.2) light. At t = 0.5,
-    /// num28 = (2/3)² = 4/9 → the float gate is `< 2/9`.
+    /// the first lerp reads 2/3 and the second CLAMPS to 1 (t < to = 0.7) —
+    /// num28 = 2/3, the float gate is `< 1/3`.
     #[test]
     fn the_cool_whip_gate_draws_nextfloat_then_three_next2() {
         let center = (300.0, 200.0);
@@ -35538,7 +35539,8 @@ mod magic_ai_tests {
         pool.slots[0].ai[1] = 1.0;
         let mut rng = tr_core::tile_light::FastRandom::new(4242);
         let mut twin = tr_core::tile_light::FastRandom::new(4242);
-        let num28 = (2.0f32 / 3.0) * (2.0f32 / 3.0);
+        let num28 = tr_core::scene::get_lerp_value(0.1, 0.7, 0.5, true)
+            * tr_core::scene::get_lerp_value(0.9, 0.7, 0.5, true);
         for _ in 0..30 {
             let got = pool.slots[0].whip_dust_lights(Some(center), &mut rng);
             let roll = twin.next_float();
@@ -35634,16 +35636,18 @@ mod magic_ai_tests {
                 "mtc {mtc}: the C# product order"
             );
         }
-        // The fade ticks draw NOTHING (alpha 255 → 240 → … → 0).
+        // The fade ticks draw NOTHING (alpha 255 → 240 → … → 15).
         p.alpha = 255;
         let before = rng.seed;
-        for _ in 0..17 {
+        for _ in 0..16 {
             assert!(p.ai_truffle_spore(225, &mut rng).is_none());
         }
         assert_eq!(rng.seed, before, "the fade is draw-free");
-        assert_eq!(p.alpha, 0, "255 - 17*15 clamps at 0");
-        // The 18th tick lights again.
+        assert_eq!(p.alpha, 15, "255 - 16*15");
+        // The 17th tick lands alpha 0 and lights on the SAME tick (the C#
+        // checks `alpha == 0` after the fade).
         assert!(p.ai_truffle_spore(225, &mut rng).is_some());
+        assert_eq!(p.alpha, 0);
     }
 
     /// The 590's frame machine + hover (`:34196-34210` / `:34228-34232`):
@@ -35671,10 +35675,14 @@ mod magic_ai_tests {
             let want = 3 + ((tick / 4) % 3) as i32;
             assert_eq!(p.frame, want, "grown tick {tick}");
         }
-        // The hover: ai[0] = 45 → sin(π/2)·0.15 = 0.15; the phase wraps.
+        // The hover: ai[0] = 45 → the f32 phase rounds just past π/2, so the
+        // double sine reads a hair under 1 — the C#'s cast order exactly.
         p.ai[0] = 45.0;
         p.ai_truffle_spore(225, &mut rng);
-        assert!((p.vel.y - 0.15).abs() < 1e-6, "the quarter-phase peak");
+        let phase = (std::f32::consts::PI * 2.0f32 * 45.0 / 180.0) as f64;
+        let want = phase.sin() as f32 * 0.15;
+        assert_eq!(p.vel.y, want, "the quarter-phase peak, the C# cast order");
+        assert!((p.vel.y - 0.15).abs() < 1e-6);
         assert_eq!(p.vel.x, 0.0);
         assert_eq!(p.ai[0], 46.0);
         p.ai[0] = 179.0;
