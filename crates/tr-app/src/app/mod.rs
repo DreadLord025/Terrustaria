@@ -6072,7 +6072,9 @@ mod w4_e18_map_drag_capture_tests {
     #[test]
     fn w4_f46_movement_keys_cancel_the_fullscreen_pan_target() {
         let mut app = flow_app(None, vec![], vec![]);
-        app.world = tr_core::World::new("pancancel".into(), 260, 200);
+        // Width 320 keeps map_scale_clamp's floor (1280/320*0.599 ≈ 2.396)
+        // under the 2.5 default, so the scale — and the step — stay fixed.
+        app.world = tr_core::World::new("pancancel".into(), 320, 200);
         app.map = Some(map::WorldMap::new(&app.world));
         let m = app.map.as_mut().unwrap();
         m.open = true;
