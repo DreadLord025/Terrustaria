@@ -67,15 +67,14 @@ impl MapOverlayContext<'_> {
         self.r
             .push_ui_sprite(pos, size, uv, [self.opacity; 4]);
         // `:57-58`: the hover rect is the draw box shifted by the aligned
-        // origin, sized by the draw scale.
-        let hx = pos[0] - origin[0] * self.draw_scale;
-        let hy = pos[1] - origin[1] * self.draw_scale;
-        let hw = size[0] * self.draw_scale;
-        let hh = size[1] * self.draw_scale;
-        self.mouse.x >= hx
-            && self.mouse.x <= hx + hw
-            && self.mouse.y >= hy
-            && self.mouse.y <= hy + hh
+        // origin, sized by the draw scale — `new Rectangle((int)…, (int)…)`
+        // then `.Contains(MouseScreen.ToPoint())`, the half-open integer
+        // test (W4-f29 fix F2, research/140 §3).
+        let hx = (pos[0] - origin[0] * self.draw_scale) as i32;
+        let hy = (pos[1] - origin[1] * self.draw_scale) as i32;
+        let hw = (size[0] * self.draw_scale) as i32;
+        let hh = (size[1] * self.draw_scale) as i32;
+        rect_contains_int(self.mouse.x as i32, self.mouse.y as i32, hx, hy, hw, hh)
     }
 
     /// `GetUnclampedDrawRegion`'s centre (`MapOverlayDrawContext.cs:60-70`) —
@@ -131,11 +130,17 @@ impl MapOverlayContext<'_> {
         let origin = [size[0] * alignment[0], size[1] * alignment[1]];
         let num = self.draw_scale * scale_if_not_selected;
         let top_left = [pos[0] - origin[0] * num, pos[1] - origin[1] * num];
-        let (hw, hh) = (size[0] * num, size[1] * num);
-        let hover = self.mouse.x >= top_left[0]
-            && self.mouse.x <= top_left[0] + hw
-            && self.mouse.y >= top_left[1]
-            && self.mouse.y <= top_left[1] + hh;
+        // `:234`: the hover rect is the C# `new Rectangle((int)…)` +
+        // `.Contains(MouseScreen.ToPoint())` — half-open integer (W4-f29
+        // fix F2, research/140 §3).
+        let hover = rect_contains_int(
+            self.mouse.x as i32,
+            self.mouse.y as i32,
+            top_left[0] as i32,
+            top_left[1] as i32,
+            (size[0] * num) as i32,
+            (size[1] * num) as i32,
+        );
         let scale = if hover {
             self.draw_scale * scale_if_selected
         } else {
@@ -191,11 +196,14 @@ impl MapOverlayContext<'_> {
         let rh = (size[1] * num) as i32;
         let (rx, ry, draw_pos, on_screen) =
             clamp_draw_region(rx, ry, rw, rh, pos, screen_border_region, screen);
-        // `:185`: the hover test is the CLAMPED rect vs the mouse.
-        let hover = self.mouse.x >= rx as f32
-            && self.mouse.x <= (rx + rw) as f32
-            && self.mouse.y >= ry as f32
-            && self.mouse.y <= (ry + rh) as f32;
+        // `:185`: the hover test is the CLAMPED rect vs the mouse —
+        // `rectangle.Contains(Main.MouseScreen.ToPoint())`, the HALF-OPEN
+        // integer test `[rx, rx+rw) × [ry, ry+rh)` with the mouse truncated
+        // to int first. W4-f29 fix F2 (research/140 §3): the float-inclusive
+        // compare claimed the far edge row/column the C# excludes.
+        let mx = self.mouse.x as i32;
+        let my = self.mouse.y as i32;
+        let hover = rect_contains_int(mx, my, rx, ry, rw, rh);
         // `:186-198`: the draw scale.
         let mut num23 = num;
         if !on_screen {
@@ -245,6 +253,15 @@ impl MapOverlayContext<'_> {
         );
         (hover, on_screen)
     }
+}
+
+/// XNA `Rectangle.Contains(Point)` — the HALF-OPEN integer test
+/// `[rx, rx+rw) × [ry, ry+rh)`; the point arrives already truncated
+/// (`MouseScreen.ToPoint()`). All three `MapOverlayDrawContext` hover rects
+/// ride it (`MapOverlayDrawContext.cs:58`/`:185`/`:234`). W4-f29 fix F2
+/// (research/140 §3).
+fn rect_contains_int(px: i32, py: i32, rx: i32, ry: i32, rw: i32, rh: i32) -> bool {
+    px >= rx && px < rx + rw && py >= ry && py < ry + rh
 }
 
 /// `GetUnclampedDrawRegion` (`MapOverlayDrawContext.cs:60-70`), pure — the
@@ -964,6 +981,44 @@ mod tests {
         // An off-bottom rect: y snaps so ry + rh == max_y (590).
         let (_, ry, _, on) = clamp_draw_region(100, 700, 28, 38, [114.0, 719.0], border, screen);
         assert_eq!(ry + 38, 590);
+        assert!(!on);
+        // W4-f29 fix F2 — `:185` `rectangle.Contains(MouseScreen.ToPoint())`
+        // is HALF-OPEN: the clamped rect (10, 213, 28, 38) hovers at the
+        // near edges but NOT at x+w / y+h; the mouse truncates to int first.
+        assert!(rect_contains_int(10, 213, 10, 213, 28, 38), "near corner");
+        assert!(rect_contains_int(37, 250, 10, 213, 28, 38), "last column/row");
+        assert!(!rect_contains_int(38, 213, 10, 213, 28, 38), "x+w excluded");
+        assert!(!rect_contains_int(10, 251, 10, 213, 28, 38), "y+h excluded");
+        assert!(!rect_contains_int(9, 213, 10, 213, 28, 38), "x-1 excluded");
+        // The float mouse (37.9, 250.9) truncates to (37, 250) — inside.
+        assert!(rect_contains_int(37.9f32 as i32, 250.9f32 as i32, 10, 213, 28, 38));
+    }
+
+    /// W4-f29 — `MapOverlayDrawContext.cs:67-116`: an on-screen rect is
+    /// unchanged (the pure pull-back's identity case, folded beside the
+    /// e17 witness above).
+    #[test]
+    fn w4_f29_clamped_region_on_screen_unchanged() {
+        let (rx, ry, dp, on) =
+            clamp_draw_region(189, 130, 22, 40, [200.0, 150.0], 10, [800.0, 600.0]);
+        assert_eq!((rx, ry), (189, 130));
+        assert_eq!(dp, [200.0, 150.0]);
+        assert!(on);
+    }
+
+    /// W4-f29 — `MapOverlayDrawContext.cs:79-87`: a left-overflow rect
+    /// clamps to the border and projects Y toward the centre with the
+    /// integer `(int)(over/d*other)` truncation.
+    #[test]
+    fn w4_f29_clamped_region_left_overflow() {
+        // top-left (-6, 280), w 22 h 40, screen 800x600, border 10:
+        // mid = (400, 300); dx = -6-400 = -406, dy = 280-300 = -20,
+        // over = -6-10 = -16, shift_y = (int)(-16/-406*-20) = (int)(-0.788)
+        // = 0 (truncation toward zero). x -= -16 -> 10; y -= 0 -> 280.
+        let (rx, ry, _, on) =
+            clamp_draw_region(-6, 280, 22, 40, [5.0, 300.0], 10, [800.0, 600.0]);
+        assert_eq!(rx, 10, "clamped to the left border");
+        assert_eq!(ry, 280);
         assert!(!on);
     }
 
