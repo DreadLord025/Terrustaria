@@ -114,6 +114,22 @@ pub(crate) fn in_smart_cursor_highlight_area(
     (false, actually_selected)
 }
 
+/// The `selection_mode` the pylon/void-lens passes read
+/// (`TileDrawing.cs:8687-8695` / `:8721-8729`): 0 outside the highlight
+/// area, 1 inside, 2 when `actuallySelected`. The C# computes it from
+/// `InSmartCursorHighlightArea(p.X, p.Y, out actuallySelected)` at the
+/// special point's ANCHOR cell — the same gate the outline pass uses.
+pub(crate) fn selection_mode(area: &HighlightArea<'_>, x: i32, y: i32) -> u8 {
+    let (in_area, selected) = in_smart_cursor_highlight_area(area, x, y);
+    if !in_area {
+        0
+    } else if selected {
+        2
+    } else {
+        1
+    }
+}
+
 /// `Colors.GetSelectionGlowColor` (`Colors.cs:89-92`): the integer
 /// halves/thirds of the average tile lighting, as XNA bytes. The pylon
 /// pass carries the f32 form (`pylons.rs:134`); this is the byte form the
@@ -428,6 +444,30 @@ mod w4_g86_tests {
     fn w4_g86_the_empty_feed_is_pixel_inert() {
         let a = area(&[], &[]);
         assert!(tile_outline_quad(26, 0, 0, 0, 0, 16, 18, [255, 255, 255], &a, 5, 5).is_none());
+    }
+
+    /// W4-g86 — the pylon/void-lens `selection_mode`
+    /// (`TileDrawing.cs:8687-8695`/`:8721-8729`): 0 outside the area, 1
+    /// inside-but-unselected, 2 when actuallySelected.
+    #[test]
+    fn w4_g86_the_selection_mode_follows_the_highlight_area() {
+        // (5,5) in coords AND selected → 2; (6,6) in coords only → 1;
+        // (200,200) outside the rect → 0.
+        let a = HighlightArea {
+            coords: &[(5, 5), (6, 6)],
+            selected: &[(5, 5)],
+            hide_ui: false,
+            lx: 0,
+            ly: 0,
+            hx: 100,
+            hy: 100,
+        };
+        assert_eq!(selection_mode(&a, 5, 5), 2);
+        assert_eq!(selection_mode(&a, 6, 6), 1);
+        assert_eq!(selection_mode(&a, 200, 200), 0);
+        // hideUI forces 0 even for a listed cell.
+        let a2 = HighlightArea { hide_ui: true, ..a };
+        assert_eq!(selection_mode(&a2, 5, 5), 0);
     }
 
     /// The byte tint's integer maths (`Colors.cs:89-92`): the selected

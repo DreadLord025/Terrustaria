@@ -1255,6 +1255,18 @@ impl App {
                             lens_counter: self.game_update_count % 40,
                             show_invisible: crate::env::show_invisible(),
                         };
+                        // W4-g86: the pylon/void-lens selection glow reads the
+                        // same smart-interact highlight area the outline pass
+                        // uses (`TileDrawing.cs:8687-8695`/`:8721-8729`).
+                        let highlight_area = crate::render::tile_outlines::HighlightArea {
+                            coords: &self.smart_interact.coords,
+                            selected: &self.smart_interact.selected,
+                            hide_ui: false,
+                            lx: self.smart_interact.lx,
+                            ly: self.smart_interact.ly,
+                            hx: self.smart_interact.hx,
+                            hy: self.smart_interact.hy,
+                        };
                         crate::render::pylons::draw_pylons_trophies_void(
                             renderer,
                             world,
@@ -1267,6 +1279,7 @@ impl App {
                             &special_env,
                             game_paused_for_specials,
                             &mut self.entity_lights,
+                            &highlight_area,
                         );
                     }
 

@@ -39395,8 +39395,9 @@ Cross-referenced against `FillPotentialTargetTiles`' feed arms and
   but draw no outline): 14 Tables, 469 Tables2, 491 VoidVault, 573
   TatteredWoodSign, 597 TeleportationPylon. 491/597 carry their own
   selection glow in the pylon/void-lens pass (`pylons.rs`, the
-  `selection_mode` seam — still fed 0 there; wiring THAT seam to the same
-  lists is a follow-up, the `Extra_93`/column-2 masks are already packed).
+  `selection_mode` seam — **NOW WIRED** in the follow-up:
+  `tile_outlines::selection_mode` reads the same highlight area, the
+  `Extra_93`/column-2 masks were already packed).
 * The content dir carries 97 `Tiles_*.xnb` files — the 95 set members plus
   the two non-set leftovers (14, 469); every set member has its file.
 
@@ -39505,3 +39506,18 @@ the non-zero-NPC win (lists filled + −1 rect), the closer-tile win (the
 double-padded rect), the potion-gate zero-break, the interactable-set
 switch; plus `npc_chat.rs`
 `w4_g86_the_smart_interact_npc_pick_opens_the_talk_outside_the_region`.
+
+### The selection_mode seam — WIRED (W4-g86 follow-up)
+
+The pylon/void-lens pass (`pylons.rs`) ported the selection-glow arms but
+fed `selection_mode = 0` (the highlight area was unported at the time).
+The follow-up wires it: `tile_outlines::selection_mode(area, x, y)`
+returns 0/1/2 from `InSmartCursorHighlightArea` at the special point's
+ANCHOR cell — exactly `TileDrawing.cs:8687-8695` (pylon) / `:8721-8729`
+(void lens). `draw_pylons_trophies_void` now takes the `HighlightArea`
+(the same `self.smart_interact` lists + rect the outline pass reads,
+`frame/draw.rs`), so the pylon's column-2 mask (`Extra_181`) and the void
+lens's `Extra_93` mask glow when the smart cursor selects them. The
+trophy pass has no selection arm (the C# `DrawMasterTrophies` has none).
+Witness: `tile_outlines.rs`
+`w4_g86_the_selection_mode_follows_the_highlight_area` (0/1/2 + hideUI).
