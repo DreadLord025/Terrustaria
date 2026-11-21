@@ -108,6 +108,15 @@
 //! - 82890/82893 — 415 (`:82884-82899`), Next(4)==0.
 //! - 82924/82927 — 417 (`:82918-82933`), Next(4)==0.
 //! - 82965/82968 — 418 (`:82959-82974`), Next(2)==0 (the tighter gate).
+//! Batch 7 (the Vortex pillar's gated-child live arms — dust 241 parent
+//! + the Next-gated dust-229 child, the same four post-writes):
+//! - 83045/83048 — Vortex Hornet Queen 426 (`:83039-83054`), ×50,
+//!   Next(4)==0.
+//! - 83092/83095 — Vortex Hornet 427 (`:83086-83101`), ×20, Next(2)==0.
+//! - 83131/83134 — Vortex Soldier 429 (`:83125-83140`), ×20, Next(4)==0.
+//! - 83213/83216 — Vortex Rifleman 425 (`:83207-83222`), ×20, Next(4)==0.
+//! - 83253 — Vortex Larva 428 (`:83247-83254`), ×20, NO child gate live
+//!   (the 229/240 selector is death-half only).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -588,22 +597,36 @@ pub fn replay_hit_dust(
                 d.scale = 0.5; // `:84350`
             }
         }
-        // `:82785-82974` — the solar pillar's gated-child arms: ×20 dust
-        // 241, then a Next(N)==0 gate per iteration spawning the dust-6
-        // child (noGravity, scale 1.5, fadeIn 1, velocity ×3). The gate
-        // is Next(4) for 518/416/419/415/417, Next(2) for 418 (`:82966`).
-        518 | 416 | 419 | 415 | 417 | 418 => {
-            let gate = if s.npc_type == 418 { 2 } else { 4 };
-            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+        // `:82785-82974`/`:83039-83222` — the solar/Vortex gated-child
+        // arms: the dust-241 parent, then a Next(N)==0 gate per iteration
+        // spawning the child (solar 6, Vortex 229) with noGravity, scale
+        // 1.5, fadeIn 1, velocity ×3. Gates: Next(4) default; Next(2) for
+        // 418 (`:82966`) and 427 (`:83093`); 426 rides ×50 (`:83043`).
+        518 | 416 | 419 | 415 | 417 | 418 | 426 | 427 | 429 | 425 => {
+            let (gate, child, mult) = match s.npc_type {
+                418 => (2, 6, 20.0),
+                426 => (4, 229, 50.0),
+                427 => (2, 229, 20.0),
+                429 | 425 => (4, 229, 20.0),
+                _ => (4, 6, 20.0),
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, mult) {
                 live_dust(s, 241, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
                 if rng.next_max(gate) == 0 {
-                    let idx = live_dust(s, 6, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                    let idx = live_dust(s, child, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
                     let d = dust.slot_mut(idx);
                     d.no_gravity = true;
                     d.scale = 1.5;
                     d.fade_in = 1.0;
                     d.velocity *= 3.0;
                 }
+            }
+        }
+        // `:83247-83254` — the Vortex Larva: ×20 dust 241, NO live child
+        // gate (the 229/240 selector lives in the death half only).
+        428 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 241, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -1311,5 +1334,58 @@ mod tests {
                 "type {t}"
             );
         }
+    }
+
+    /// W4-g62 batch 7 — the Vortex rows (`NPC.cs:83043-83053`/`:83090-
+    /// 83100`/`:83129-83139`/`:83211-83221`/`:83251-83254`): the 229
+    /// child, 426's ×50, 427's Next(2), and the Larva's gate-free live
+    /// loop (a full-life hit draws exactly the parent count).
+    #[test]
+    fn w4_g62_the_vortex_rows_and_the_gate_free_larva() {
+        let world = air();
+        let ctx = ctx();
+        for (t, gate, mult) in [(426, 4, 50.0), (427, 2, 20.0), (429, 4, 20.0), (425, 4, 20.0)] {
+            let s = snap(t, 100, 100, 50.0); // bound = 50/100·mult = mult/2 iterations
+            let iters = hit_count(s.dmg, s.life_max, mult);
+            let mut rng = UnifiedRandom::new(83);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(83);
+            let mut twin = DustPool::new();
+            for _ in 0..iters {
+                twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 241,
+                    1.0, -1.0, 0, Color::default(), 1.0,
+                );
+                if twin_rng.next_max(gate) == 0 {
+                    let idx = twin.new_dust(
+                        &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 229,
+                        0.0, 0.0, 0, Color::default(), 1.0,
+                    );
+                    let d = twin.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale = 1.5;
+                    d.fade_in = 1.0;
+                    d.velocity *= 3.0;
+                }
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
+        // The Larva: NO gate draw — the stream is exactly 10 parent spawns.
+        let larva = snap(428, 100, 100, 50.0); // ×20 → 10
+        let mut rng = UnifiedRandom::new(83);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&larva, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(83);
+        let mut twin = DustPool::new();
+        for _ in 0..10 {
+            twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 241,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
     }
 }
