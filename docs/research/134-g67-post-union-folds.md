@@ -212,3 +212,47 @@ rain union.
 R4 (`new_rain_forced` seam) → R5 (skyblock, coordinate f24) → R6 (Eyebrella,
 needs R4) → R7 (umbrella, independent). All g67 witnesses are WRITTEN NOT RUN
 (code-only mode) — re-pin them to d130's `RainInputs`/fixed-slot shape on fold.
+
+## KEEP-d130-CANONICAL instruction (refreshed, g67 final phase)
+
+The union-exec decision (research/83 §3, d130 `ec1d73c7`) stands: **the merger
+keeps d130's `rain.rs` core wholesale; g67's `rain.rs` drops wholesale.** The
+folds above are the ONLY g67 content that crosses the boundary, hunk by hunk —
+never take a g67 fn body over a d130 one. Concretely, d130d/e:
+
+1. **KEEP** d130's float attempt loop (`spawn:962-1030`), fixed-750-slot pool
+   in slot order, `RainInputs` shape, the menu fold-out, the spawn-then-update
+   tick order (the C# net order — `Main.Update:17220` spawns, `DrawRain:38819`
+   moves), the verbatim `new_rain` (`:1034-1081`), the `update_drops` impact
+   gate (`50c845e5` reconcile), and `crate::snow`'s `Main.snowing()` port
+   (the `:13092` raining branch included — g67's `snow_mode` biome gate is the
+   retired approximation, ANALYSIS "visual-overlap census").
+2. **FOLD** only R1–R7 as semantic residuals adapted to that shape (the
+   per-hunk table above). R3's rect/kill helpers and R1's `is_it_raining`
+   are pure additions; R2's `clear_rain` deactivates all 750 slots (NOT
+   `Vec::clear` — d130 keeps the array); R4's `new_rain_forced` scans the
+   first inactive slot within the gfx-cut budget.
+3. **RE-PIN** the g67 witnesses to the fixed-slot shape on fold (the
+   `pin_drop`/`RainInputs`/`drop_count` conventions d130 `88cfbf38` already
+   established for the splash lane).
+
+**Draw-side boundary (refreshed):** the falling-drop draw (`Main.DrawRain`,
+`Main.cs:38800-38826`) is d130's `draw`/`rain_tint` — already canonical at the
+tip (the `(pos+4)>>4` light tile + the XNA byte chain + the shimmer arm,
+`rain.rs:1167-1190/1215-1232`). g67's final phase re-pinned the SAME semantics
+on its own branch (`rain_light_tile`/`rain_drop_tint`, commit `7aaf66f0`) so
+the two copies agree hunk-for-hunk; the merger keeps d130's copy and drops
+g67's. The splash draw (`draw_splashes`, the `DrawDust` generic path) is the
+transplanted g67 lane d130 already carries — R3 fixes its cull rect in place.
+No d130-draw_splashes branch exists on origin (re-checked 2026-11-21); the
+splash draw is NOT unclaimed — it lives in d130's tip via `88cfbf38`.
+
+**Final-phase census additions (g67, for the merger's benefit):**
+* `Rain.cs` fn-census COMPLETE: 6/6 methods + 7/7 fields mapped; the `alpha`
+  field is dead in the C# (zero readers/writers) — no port gap (ANALYSIS
+  "FINAL fn-census").
+* `DrawRain` has NO cull rect and NO black-kill arm (unlike `DrawDust`) — the
+  drop draw needs neither; the per-drop `Update` cadence fold is recorded.
+* The wind-slant is `atan2(vx,-vy)` over the live `wind*18,14` at spawn — no
+  draw-angle term; the dust rotation lane (`Dust.cs:2081`) is separate and
+  already faithful on both branches (ANALYSIS "visual-overlap census").
