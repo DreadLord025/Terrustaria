@@ -39385,9 +39385,11 @@ Structural check: brace/bracket balance unchanged vs the base file, one
 The sibling-wave crossnote: read the d35 ATLAS-REPACK tips
 (`519c8035`/`7d131be3`, research/113) and the d40 data-only tip
 (`8fe1d6d3`), re-measure the cumulative projection with d40's REAL
-56-sheet set, publish the ADDENDUM (research/125), and close the two
+56-sheet set, publish the ADDENDUM (research/293, renumbered from 125 —
+registry round 3, research/150 §7: d125's empress ledger 06:07:29 predates
+this doc, round-1 win REVOKED), and close the two
 draw-side gaps the audit found. Full numbers + the merger notes live in
-`docs/research/125-d38-crossnote-atlas-addendum.md`; the summary:
+`docs/research/293-d38-crossnote-atlas-addendum.md`; the summary:
 
 1. **BAF-alone dies WITHIN ONE wave** (the s11 "within two waves" estimate
    was optimistic): HEAD + d35's 21 + d40's 56 packs maxrects 8278
@@ -39411,7 +39413,7 @@ draw-side gaps the audit found. Full numbers + the merger notes live in
    extracted verbatim into `npc_rotation_allowed` (55 kinds; membership
    + order proven identical vs the pre-edit list by
    `tools/_d38_crossnote_check.py`, RUN). All 8 IN writers reachable
-   (the style-10/style-59 dispatch sites cited in research/125 §4c); the
+   (the style-10/style-59 dispatch sites cited in research/293 §4c); the
    new witness runs the 6 FindFrame machines live with exact tilt
    values and pins the 27 OUT kinds against a forced rotation.
 4. **In-world draw arms: no None-skip left** — all 35 ids ride
@@ -39432,7 +39434,7 @@ NOT RUN — **no cargo/rustc/tests invoked**.
 
 ## W4-d38 FINAL phase (2026-11-21, code-only mode)
 
-The four-sheet FINAL close of the d38 lane (research/125 §§6-10, the
+The four-sheet FINAL close of the d38 lane (research/293 §§6-10, the
 sibling tips re-read at their CURRENT pushed states):
 
 1. **Atlas lazy-load alignment (sheet 1)**: d35's research/113 went
@@ -39498,7 +39500,7 @@ files. The anchors canary rows' markers verified present.
 
 ## W4-d38 RETIRE phase (2026-11-21, code-only mode) — the band SEALED
 
-The retire close of the d38 lane (research/125 §§11-13, the SAME
+The retire close of the d38 lane (research/293 §§11-13, the SAME
 branch continued past the FINAL tip `1ba0395c7`). No game-code change:
 the phase publishes the wiring-round merger's exact edits + the
 closure receipts, then declares the band complete.
@@ -39558,14 +39560,14 @@ closure receipts, then declares the band complete.
    wave-B cs_id hook/mapper, and the 68 §5 "ZERO real wire work left"
    verdict does NOT cover the wave-B module (not on its DONE rows nor
    its next-rounds line). The **task seed → d44** is now recorded in
-   research/125 §11 (the 2-id wave-B wiring batch on the extra6
+   research/293 §11 (the 2-id wave-B wiring batch on the extra6
    `pub(crate)` fighter-delegate precedent, 289 excluded per E3, the
    stand-in drop + witness re-pin at that batch). The RETIRE receipt's
    check count corrected 44/44 → **41/41** (the committed output and a
    fresh RUN both show 41 PASS lines, 0 FAIL — the 44 was a
    transcription error; the script and its output are unchanged).
 6. **SEAL-RECEIPT addendum (same day, the exact-hunk round,
-   research/125 §§14-18)**: the five receipts published as mechanical
+   research/293 §§14-18)**: the five receipts published as mechanical
    edits — (a) the {294,296} mapper-hook task-seed made EXACT for
    `d44f-wire-lane` (§14: the 3-hunk insertion — the
    `find_frame_kind_b` mapper {294,296}, the `find_frame_wave_b`

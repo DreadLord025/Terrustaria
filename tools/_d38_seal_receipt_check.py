@@ -1,5 +1,5 @@
 # W4-d38 SEAL-RECEIPT phase mechanical verification (RUN, code-only mode).
-# Five receipts (research/125 §§14-18):
+# Five receipts (research/293 §§14-18):
 #  S1: the {294,296} residual mapper-hook task-seed for d44f-wire-lane at
 #      the CURRENT d44 tip ce2c3a24a (wire round 4) — claim sets, the
 #      wave-B module arms, the cs_id resolution path, the hook boundary.
@@ -319,7 +319,7 @@ check("S4 the 328 card drop does NOT touch NPC_328's STATIC row (§12 item 7)",
       '"NPC_328",' in assets)
 
 # ---------------- S5: the §13b SEAL re-receipt ----------------
-doc = read("docs/research/125-d38-crossnote-atlas-addendum.md")
+doc = read("docs/research/293-d38-crossnote-atlas-addendum.md")
 check("S5 §13b SEAL declaration present", "### 13b. The SEAL declaration" in doc)
 i = assets.find("pub const BESTIARY_NPC_SHEET_IDS")
 seg = assets[i:assets.find("];", i)]

@@ -35120,7 +35120,7 @@ mod s1_f_13d_tests {
         assert_eq!(b.frame, 6, "the bunny fall row 6");
     }
 
-    /// W4-d38 FINAL sheet 2 (research/125 §7) — the 7 humanoid-group
+    /// W4-d38 FINAL sheet 2 (research/293 §7) — the 7 humanoid-group
     /// `humanoid_town_frame` stand-ins are the wiring-round gap list.
     /// The C# fighter group (`NPC.cs:68647-69655`) flips spriteDirection
     /// grounded, walks with the |vx|*2+1 accumulator, and pins the air

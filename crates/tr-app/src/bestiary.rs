@@ -2823,7 +2823,7 @@ mod tests {
         );
     }
 
-    /// W4-d38 FINAL (research/125 §8) — the 35 kinds' unlock ladders match
+    /// W4-d38 FINAL (research/293 §8) — the 35 kinds' unlock ladders match
     /// the C# banner chain: `GetKillCountNeeded`
     /// (`CommonEnemyUICollectionInfoProvider.cs:21-34`) =
     /// `KillsToBanner[BannerToItem(NPCtoBanner(BannerID()))]`
@@ -2833,7 +2833,7 @@ mod tests {
     /// 25 kills, tiers 1/5/12/25); every other kind rides the default 50
     /// (tiers 1/10/25/50). The 6 critters' COMPUTED ladder is pinned here
     /// too — their vanilla provider is sight-based
-    /// (`CritterUICollectionInfoProvider.cs:14-20`, GAP-1 in research/125
+    /// (`CritterUICollectionInfoProvider.cs:14-20`, GAP-1 in research/293
     /// §8, a pre-existing base-wide gap the wiring round owns), so this
     /// witness pins the port's CURRENT behavior, not the vanilla tier.
     #[test]
@@ -2855,7 +2855,7 @@ mod tests {
         assert_eq!(d38.len(), 35);
         for kind in d38 {
             let e = entry_for_npc(kind, SlimeVariant::Blue);
-            // protocol == vanilla (research/125 §9, the 108 corridor).
+            // protocol == vanilla (research/293 §9, the 108 corridor).
             assert_eq!(e.net_id, kind.cs_id() as i32, "{kind:?}");
             // No boss / ShouldBeCountedAsBossForBestiary member in the band
             // (`NPCID.cs:10481` = {517,422,507,493,13,664}).
@@ -2889,7 +2889,7 @@ mod tests {
         // 328 PumpkingBlade: the vanilla draw modifiers Hide it
         // (`NPCID.cs`'s row, ported verbatim) — the populator's
         // `GetExclusions` (`BestiaryDatabaseNPCsPopulator.cs:870-886`)
-        // gives it NO entry; the port's extra row is GAP-3 (research/125
+        // gives it NO entry; the port's extra row is GAP-3 (research/293
         // §8), pinned here so the wiring-round drop is a deliberate edit.
         assert!(crate::ui::bestiary_draw_offsets::get(328).unwrap().hide);
         assert!(ENTRIES.iter().any(|e| e.net_id == 328),

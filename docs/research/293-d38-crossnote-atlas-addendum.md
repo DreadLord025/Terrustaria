@@ -1,4 +1,14 @@
-# 125 — d38 crossnote ADDENDUM to the atlas-repack plan (research/113)
+# 293 — d38 crossnote ADDENDUM to the atlas-repack plan (research/113)
+
+> **CORRECTION (registry round 3, research/150 §7.1/§7.3 at
+> origin/task/W4-d54-dust-sites-world `51a28d09e`): this doc was RENUMBERED
+> 125 → 293.** Round 1 awarded key 125 to this doc (first-add 07:00:21
+> `d728002aa`), but d125's `125-empress-sheets-ledger.md` (06:07:29
+> `2dfe026d2`) predates it and was missed in round 1 — **d125 WINS 125;
+> d38's round-1 win is REVOKED → 293**. All internal research-doc
+> self-cites below now read `research/293`; external refs (INDEX,
+> ANALYSIS, PORT_MAP, anchors.txt, the bestiary.rs/npc.rs doc comments,
+> the tools scripts) re-pinned in the same commit. Content unchanged.
 
 Status: 🔒 SEALED (2026-11-21, RETIRE phase — §§11-13; SEAL-VERIFY
 §13c; SEAL-RECEIPT §§14-18) — the d38 lane is
@@ -742,7 +752,7 @@ already pins it.)
    ```rust
    /// W4-d44f wire — the wiring seam: the vanilla type → this module's
    /// kind (the `find_frame_kind_extra6` precedent). The d38 residual
-   /// pair ONLY (research/125 §14): 289 GiantCursedSkull is EXCLUDED
+   /// pair ONLY (research/293 §14): 289 GiantCursedSkull is EXCLUDED
    /// (the E3 dedupe keeps the d38 inline arm — the dropped twin), the
    /// other 22 wave-B kinds await their roster lanes. `None` outside.
    pub fn find_frame_kind_b(vanilla_type: i16) -> Option<FindFrameKind> {
@@ -798,7 +808,7 @@ already pins it.)
 
    ```rust
    /// W4-d44f wire — the wave-B claim set: the d38 residual pair
-   /// 294/296 ONLY (research/125 §14; 289 EXCLUDED — the E3 dedupe
+   /// 294/296 ONLY (research/293 §14; 289 EXCLUDED — the E3 dedupe
    /// keeps the d38 inline arm). The band edges stay outside.
    fn find_frame_kind_b_claimed(
        cs_id: u16,
@@ -822,7 +832,7 @@ already pins it.)
    // lands in the set on THIS branch (the d38 kinds merge later), so
    // this is stream-inert today; the arms draw no RNG and none reads
    // the world (the fighter delegate reads vx/vy/direction only).
-   // The extra8 hook precedent; research/125 §14.
+   // The extra8 hook precedent; research/293 §14.
    if let Some(kind) = Self::find_frame_kind_b_claimed(self.kind.cs_id()) {
        self.find_frame_wave_b(kind);
        return;
@@ -966,7 +976,7 @@ surface is **WIDER than the RETIRE record**: `entry_for_npc`'s
            }
    });
    // W4-d38 §15 — the Hide-kind credit stand-in (the card dropped,
-   // the credit stays; research/125 §12 item 7 keeps the in-world kind).
+   // the credit stays; research/293 §12 item 7 keeps the in-world kind).
    found.or(match kind {
        NpcKind::PumpkingBlade => Some(&PUMPKING_BLADE_CREDIT),
        _ => None,

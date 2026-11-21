@@ -1,7 +1,7 @@
 # W4-d38 FINAL sheet 3 - append the canary row (one-shot).
 import io
 row = ('crates/tr-app/src/bestiary.rs|w4_d38_final_the_unlock_ladders_match_the_banner_chain|'
-       'W4-d38 FINAL sheet 3 - the bestiary unlock census (research/125 s8): all 35 C# banner '
+       'W4-d38 FINAL sheet 3 - the bestiary unlock census (research/293 s8): all 35 C# banner '
        'chains agree with the port kills_needed_for (Paladin 25 the one non-default, the other '
        '34 default 50), the tier thresholds pinned at 1/fifth/half/full; GAP-1 the critter '
        'sight-provider (pre-existing, the base Goldfish 55 row inherits it), GAP-2 rarity stars '

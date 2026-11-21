@@ -10,7 +10,7 @@ row = ('| `NPC.FindFrame` (`NPC.cs:66684-77370`) + the bestiary unlock chain '
        '(all 35 banner chains agree; GAP-1 critter sight-provider, GAP-2 rarity stars, '
        'GAP-3 the 328 Hide extra card) + `tools/_d38_final_lazy.js` (the 113 §10 lazy '
        're-projection: E35 8115 / L91 1554 one page) | census FINAL (W4-d38 2026-11-21, '
-       'code-only — research/125 §§6-10; the census scripts RUN, the 2 witnesses '
+       'code-only — research/293 §§6-10; the census scripts RUN, the 2 witnesses '
        '`w4_d38_final_the_seven_town_standins_are_the_wiring_gap` + '
        '`w4_d38_final_the_unlock_ladders_match_the_banner_chain` WRITTEN NOT RUN) |\n')
 p = 'docs/PORT_MAP.md'

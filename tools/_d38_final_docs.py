@@ -4,7 +4,7 @@ import io
 section = """
 ## W4-d38 FINAL phase (2026-11-21, code-only mode)
 
-The four-sheet FINAL close of the d38 lane (research/125 §§6-10, the
+The four-sheet FINAL close of the d38 lane (research/293 §§6-10, the
 sibling tips re-read at their CURRENT pushed states):
 
 1. **Atlas lazy-load alignment (sheet 1)**: d35's research/113 went
@@ -72,8 +72,8 @@ p = 'docs/ANALYSIS.md'
 b = io.open(p, 'rb').read()
 assert b.endswith(b'\n')
 io.open(p, 'ab').write(section.replace('\r\n', '\n').encode('utf-8'))
-row = ('docs/research/125-d38-crossnote-atlas-addendum.md|FINAL: the 35 kinds\' FindFrame status|'
-       'W4-d38 FINAL - the four-sheet close (research/125 s6-10): the lazy-load alignment (E35 8115 / '
+row = ('docs/research/293-d38-crossnote-atlas-addendum.md|FINAL: the 35 kinds\' FindFrame status|'
+       'W4-d38 FINAL - the four-sheet close (research/293 s6-10): the lazy-load alignment (E35 8115 / '
        'L91 1554 one page), the 7-stand-in FindFrame gap list, the unlock census (Paladin 25, GAP-1/2/3), '
        'the 108-extend 281-337 vanilla-free confirmation')
 p2 = 'anchors.txt'
