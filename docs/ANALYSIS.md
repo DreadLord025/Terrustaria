@@ -39643,7 +39643,7 @@ in `find_pulley`, `player.rs:10191`), `:20768-20774` (the jump-off unboost +
 `cPortableStool` dye slot (`:2976`/`:9735`) is a third seam. A small-port would
 need the offset family FIRST; deferred with the seam, not dropped.
 **Retire-pass update:** the full census + the seam task's shape now live in
-`docs/research/65-heightoffset-stool-seam.md` (the movement-lane task seed —
+`docs/research/303-heightoffset-stool-seam.md` (the movement-lane task seed —
 the five getters, every fold-to-0 site, the consumers-list incl. the
 `mounted_center`/`mounted_top` accessor leverage and the duplicate
 `player_layers.rs` offset table).
@@ -39874,7 +39874,7 @@ the falling-flag head capture, the drain execution order, the Hair Dye
 Remover / Vortex set-loss fidelity fixes (the latter already f3's).
 
 **Deferred with the seam (NOT part of the family's merge):** portableStool +
-the HeightOffset family — `docs/research/65-heightoffset-stool-seam.md` (the
+the HeightOffset family — `docs/research/303-heightoffset-stool-seam.md` (the
 movement-lane task seed, retire item 3). The FindPulley stool gate stays
 folded false until that seam lands.
 
@@ -39997,7 +39997,7 @@ argument-draw (all adopted into f3), the Hair Dye Remover / Vortex set-loss fide
 fixes (the latter already f3's).
 
 **Deferred with the seam (NOT part of the family's merge):** portableStool + the
-HeightOffset family — `docs/research/65-heightoffset-stool-seam.md` (the
+HeightOffset family — `docs/research/303-heightoffset-stool-seam.md` (the
 movement-lane task seed, §5: the lane-owner recommendation + the 6-step task-seed
 for the merger/future-wave). The FindPulley stool gate stays folded false until
 that seam lands.

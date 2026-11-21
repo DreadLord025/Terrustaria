@@ -1,4 +1,13 @@
-# 65 — The HeightOffset family seam + the portableStool deferral (movement-lane task seed)
+# 303 — The HeightOffset family seam + the portableStool deferral (movement-lane task seed)
+
+> **RENUMBER-CHAIN 65 → 303** (registry-150 §7.3 round-1 owed rename, d54 tip `6339141a1`):
+> 65 belongs to W4-f17's round-1 winner (`65-kinds-coverage-1.md`,
+> 11-20T20:49:39) — f3's doc missed rounds 1–2 (claim `63fbeaa4f` 12:36:05)
+> and takes the §7.3-assigned number **303** (FROZEN §9.1 KEEPS: `303=f3`).
+> This doc now carries key **303**; refs updated on this branch:
+> `docs/research/INDEX.md` (row 303), `docs/ANALYSIS.md` (×3),
+> `docs/PORT_MAP.md` (×1). The 378-rename (67→378, §10.2) already landed at
+> `3980e0c5b` — unchanged.
 
 **Lane:** the player-move family (pulley / carpet / wallclimb / stealth — W4-f3
 canonical). **Status:** census + deferral record, code-only (no compiler invoked).
