@@ -39244,3 +39244,130 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Sandstorm sim halves (W4-c40, code-only)
+
+Branch `task/W4-c40-sandstorm`, base `a725acb0`. The claim + in-flight
+probe + RNG-slot map: `docs/research/W4-c40-sandstorm-claim.md`. The
+second-half VISUALS (dust emit/draw, filters, the 269 trail draw) are
+f42's lane; the 541-546/580/581 `NpcKind` rows are d41/d42's; the
+aiStyle-102 module is d33-co-claimed (KEEP-ONE at merge — this module is
+the kind-scoped 541 port).
+
+### What landed (the five sim gaps)
+
+1. **Severity — the hardMode start denominator** (`Sandstorm.cs:58-59`).
+   `scene.rs::Sandstorm::update_time` gains the `hard_mode` input:
+   `num = 21600 * (hardMode ? 2 : 3)` (was pinned `* 3`, "hardmode not
+   ported yet" — stale, `World.hard_mode` exists). The weather tick
+   (`world_sim/weather.rs`) feeds `world.hard_mode`. The roll slot
+   count/order is unchanged (one `Next(num)` per day-rate tick + the one
+   `Next(18000)` intention roll); the decay/intention arms are
+   hardmode-independent (witnessed). `Sandstorm::world_clear`
+   (`Sandstorm.cs:27-30`) added — clears ONLY `Happening` (the
+   timer/severity/intent survive, unlike `StopSandstorm`).
+
+2. **Desert override — the sandstorm spawn ladder** (`NPC.cs:3949-4019`).
+   `spawner.rs::sandstorm_desert_pick` ports the whole else-if arm:
+   the gate (`Happening && ZoneSandstorm && Conversion.Sand[tileType] &&
+   Spawning_SandstoneCheck`), the pre-EoC 546/61/69 two-Next(2) chain,
+   the hardmode 541-unique (Next(20), !AnyNPCs(541)) / 510 DuneSplicer
+   (!noWorms, Next(3), CountNPCS(510)<4, +10 tiles) / 542-545 sandshark
+   (the Corrupt/Crimson/Hallow tile swaps in the C# order) / the four
+   mummy Next(3) rows (53→78, 112→79, 234→630, 116→80) / the 546/580/581
+   tail. `spawning_sandstone_check` (`NPC.cs:5452-5491`) is the 8-row ×
+   (1+4+4) connected-sand scan, ≥40 (the remix ≥10 arm constants-off).
+   `SpawnFlags` gains `sandstorm_happening`/`downed_boss1`, wired off
+   `app.sandstorm.happening`/`world.downed_eoc` in `world_sim/npcs.rs`.
+   The arm sits after the moon/eclipse ladders, before the surfaceSpawn
+   probe — matching it is terminal. **The kinds are unported (d41/d42
+   own the rows): every outcome consumes its draws exactly where the C#
+   does and spawns through `kind_from_net_id` — None until the rows
+   land** (the Wyvern consume-and-return precedent). The roll ORDER is
+   the port; 5 witnesses incl per-seed C#-reference stream replays.
+
+3. **Sand elementals — the 541 machine** (`npc_ai_sand_elemental.rs`,
+   UNWIRED, the style73 precedent). `SetDefaults` row
+   (`NPC.cs:15898-15911`: 30×76, aiStyle 102, dmg 40, def 30, 5000 HP,
+   kb 0.05, value 10150 = buyPrice(0,1,50), rarity 2, NPCHit23/
+   NPCDeath39). The aiStyle-102 arm (`:40147-40542`): the hp-scaled
+   chase (speed 2+(1−life%)×2, accel 0.1+(1−life%)×0.02), the half-life
+   kb-zero (the `kb_resist_override` seam), the ai[0] 135→−300 attack
+   cycle, the ai[0]==54 sandnado volley (the 1000-roll
+   Next(point.X−30, point.X+31) column scan, ≥10 apart, the
+   ExpandVertically(1,51) bottom find + CanSpawnSandstormHostile(15,15)
+   span gate, 3 picks, the 900px −200 abort), the CatmullRom dust-269
+   trail plans (the per-dust RandomVector2 draws consumed IN-STEP, the
+   W-10 union convention — the lane replays without re-drawing), the
+   stuck window, the probe/bounce/accel movement core. **Two C# findings
+   pinned**: (a) `:40206` zeroes `localAI[2]` EVERY tick inside the 541
+   block, so the 30-tick ceiling-jump and 60-tick mirror thresholds are
+   DEAD for 541 (the counter only reaches 1) — the arms stay verbatim;
+   (b) `:40523` clamps the up-chase to `-num1385` (the HORIZONTAL cap,
+   not num1387) — a verbatim typo, kept. `FindFrame` case 541
+   (`:69734-69772`, the 13-row strip: the attack rows 4/5-8/9/10-12/1 +
+   the velocity-length walk cycle) as `sand_elemental_find_frame`. The
+   658 Sandnado projectile AI is the projectile family's obligation
+   (the spawn request rides `SandElementalOutcome::sandnados`). 8
+   witnesses.
+
+4. **Push — the windPushed chain**. `Auras.sandstorm_wind`
+   (`scene.rs`, `!behind_backwall && zone_sandstorm`) feeds the scene
+   grant `AddBuff(194, 2)` (`Player.cs:25556-25559`, the player.rs
+   scene-grant block); the live buff arm `194 → wind_pushed`
+   (`:11835-11838`); the `ResetEffects` clear (`:16970`);
+   `can_be_pushed_by_wind` (`:19751-19770`: isLockedToATile unported
+   constant-false, the roller-skates refusal, the mounted-grounded-
+   steering refusal); the `HorizontalMovement` push arm
+   (`:19795-19817`: sign×0.06, |wind|>0.5 ×1.37, airborne ×1.5, steering
+   ×0.8 + clamp ±0.072, the facing-opposed threshold −|num2|×40) + the
+   flag2 one-sided velocity tail (`:20089-20107`). Wind speed rides the
+   existing `wind: Option<&Wind>` channel (the `update_with_grapple`
+   seam); the plain `update` harness passes 0.0. The pure effect table
+   (`buff_effects_misc.rs:660`) already carried the 194 arm — the live
+   loop is the wired path (keep-one). 6 witnesses incl the zero-draw
+   census.
+
+5. **i12 sandStorm field reuse**. The run boost
+   (`Player.cs:26573-26577`: `sandStorm → runAcceleration ×1.5,
+   maxRunSpeed ×2`) lands after the floor-modifier chain, reusing the
+   LANDED i12 `sand_storm` field (the `:19837` direction lock + the
+   `:36298` leg pose already read it) — NO new field. The live
+   lifecycle: the `:26743` pre-JumpMovement clear, the
+   `DoubleJumpVisuals` sim seam re-arm (`:21905-21919`, the ascending
+   bottle re-arms every tick; the dust-124 trail + the 220-222 gore are
+   f42/dust-lane visuals — the gore's `Main.rand.Next(220,223)` draw on
+   the miscCounter%3 edge is RECORDED for that lane, this seam draws
+   nothing), the `:26753-26756` jump==0 cancel
+   (`CancelAllJumpVisualEffects` → `performing_jump = None`) + the CCed
+   cancel (`:26811`). 2 witnesses.
+
+### Deviations (deliberate, recorded)
+
+- The spawn ladder's kinds consume-and-await the d41/d42 roster rows
+  (the roll order is live; the spawn goes live through
+  `kind_from_net_id` without touching the draws when the rows land).
+- The 541 machine is UNWIRED (no `NpcKind::SandElemental`); the
+  `sandnado_centers` pool read is the wiring caller's obligation.
+- `isLockedToATile` has no port system (constant false in
+  `can_be_pushed_by_wind`).
+- The `DoubleJumpVisuals` dust/gore visuals + the 541 foot-dust pool
+  spawns + the 269 trail draw are the dust/f42 lanes' — the arm-level
+  draws are consumed in-step and carried in the outcome structs (the
+  gallop-dust/W-10 convention); the pool-internal draws ride the drain
+  (the recorded placement deviation).
+- The 658 Sandnado projectile AI is out of scope (the projectile lanes).
+- `Main.remixWorld` arms constants-off (the sandstone ≥10 arm, the
+  ladder's remix terms).
+
+### Verification
+
+Code-only: every port re-read against the cited C# windows; the seam
+call sites checked against the actual signatures by read/grep
+(`Npc`/`Player` fields, `UnifiedRandom::next_range/next_max/next_float/
+next_double/peek`, `target_closest`/`TargetCandidate`,
+`tr_core::stray::can_spawn_sandstorm_hostile`, the tile sets decoded
+from `sets.rs` — sand={53,112,116,234}, corrupt∋112, crimson∋234,
+hallow∋116). The witnesses (scene.rs 3, stray.rs 2, spawner.rs 5,
+player.rs 8, npc_ai_sand_elemental.rs 8) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.
