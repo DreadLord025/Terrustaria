@@ -2614,7 +2614,7 @@ impl Npc {
         Some(npc)
     }
 
-    /// `SlimeRainSpawns`' sky spawn (`NPC.cs:5958`'s `NewNPC(type)` at
+    /// `SlimeRainSpawns`' sky spawn (`NPC.cs:5954`'s `NewNPC(type)` at
     /// the random sky tile): the position is the caller's — the slime
     /// falls through the air under its own gravity. The seed-facing
     /// variation and the variant stats ride the ground ctor's shape.

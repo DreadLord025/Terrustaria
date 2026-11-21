@@ -3784,6 +3784,161 @@ fn king_slime_minion_batch(king: &Npc, count: u32, rng: &mut UnifiedRandom) -> V
     out
 }
 
+/// `Collision.SolidTiles(startX, endX, startY, endY)`
+/// (`Collision.cs:3455-3488`): out-of-bounds counts as SOLID, a null tile
+/// returns false, the per-tile test is
+/// `active && !inActive && tileSolid && !tileSolidTop`. The slime-fall
+/// validity scan's rect probe (the npc_ai_bat/town copies' shape).
+fn solid_tiles_rect(world: &World, x0: i32, x1: i32, y0: i32, y1: i32) -> bool {
+    if x0 < 0 || x1 >= world.width || y0 < 0 || y1 >= world.height - 40 {
+        return true;
+    }
+    for x in x0..=x1 {
+        for y in y0..=y1 {
+            let Some(t) = world.tile(x, y) else {
+                return false;
+            };
+            if t.active()
+                && !t.inactive()
+                && tr_core::tiledata::TILE_SOLID.has(t.kind)
+                && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
+            {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// `Spawner.SlimeRainSpawns(player)` (`NPC.cs:5892-5955`) — the Slime
+/// Rain's sky-fall spawn, called from `SpawnNPC` (`:296-299`) under the
+/// `SpawnNPC` swap BEFORE the regular spawner. W4-f39's faithful port:
+///
+/// * the depth gate reads `player.position.Y` (the TOP, not the centre)
+///   against `worldSurface*16 + MaxWorldViewSize.Y/2` (`:5897`), and the
+///   crowd gate reads `player.nearbyActiveNPCs > 15f`;
+/// * `nearbyActiveNPCs` is the `CheckActive` slot sum (`NPC.cs:77902-
+///   77924`): the screen-rect enemies, one `npcSlots` each, but a type-1
+///   slime during the rain counts `npcSlots * slimeRainNPCSlots` (0.65,
+///   `Main.cs:66803`) — the discount that lets the event crowd the screen;
+/// * the denominator is `45 + (int)(450f * (nearby/15))` (`:5901`, the
+///   INTEGER truncation), expert `×0.85` (`:5902-5905`, the port is
+///   single-difficulty so the arm folds);
+/// * the sky window: x in `[Center.X - 1920, Center.X + 1920)`, y in
+///   `[Center.Y - 1200*1.5, Center.Y - 1200*0.75)` (`:5918-5923`), then
+///   `/16` to tiles;
+/// * the validity scan (`:5926`): `xt < 10 || xt > maxTilesX + 10` (the
+///   UPPER bound is `+10`, not `-10`), the y band
+///   `[worldSurface*0.3, worldSurface]`, `Collision.SolidTiles(xt-3,
+///   xt+3, yt-5, yt+2)` and the house-wall refusal
+///   (`Main.wallHouse[tile.wall]`);
+/// * the kind chain (`:5930-5953`): `Next(200)==0` → Pinky(-4); else the
+///   classic `Next(10)==0` → Purple(-7), `Next(5)<2` → Green(-3), else
+///   Blue(1). (The expert `Next(7)`/`Next(3)` arms fold — single-
+///   difficulty.) `NewNPC` places the BOTTOM at `(xt*16+8, yt*16)`
+///   (`:5954`, `NPC.cs:80770`'s `nPC.Bottom`).
+///
+/// The `CanSpawnEnemiesNear` dead-player gate (`NPC.cs:344-363`) is the
+/// caller's (`SpawnNPC` checks it before both arms); the port folds it
+/// here as the `player.dead` refusal. The journey spawn-rate slider
+/// (`:5906-5913`) and the Moon Lord proximity gate are port-absent.
+fn slime_rain_spawns(app: &mut App, rng: &mut UnifiedRandom) {
+    let Some(player) = app.player.as_ref() else {
+        return;
+    };
+    if player.dead {
+        return;
+    }
+    let (pcx, pcy) = player.center();
+    let view_w = spawner::S_WIDTH; // `Main.MaxWorldViewSize.X` (1920)
+    let view_h = spawner::S_HEIGHT; // `Main.MaxWorldViewSize.Y` (1200)
+    // `player.nearbyActiveNPCs` (`NPC.cs:77902-77924`): the screen-rect
+    // slot sum. The rect is `sWidth/2 + width` / `sHeight/2 + height`
+    // around the NPC centre (`:77903`'s rectangle2); the port's
+    // half-screen fold is the regular spawner's convention. A type-1
+    // slime during the rain counts `npcSlots * 0.65` (`:77916-77918`);
+    // every other enemy counts its `npcSlots` (1 for the ported kinds).
+    let nearby: f32 = app
+        .npcs
+        .iter()
+        .filter(|n| {
+            let (cx, cy) = n.center();
+            (cx - pcx).abs() < view_w as f32 * 0.5 && (cy - pcy).abs() < view_h as f32 * 0.5
+        })
+        .map(|n| {
+            if n.kind == NpcKind::Slime {
+                // `slimeRainNPCSlots` (`Main.cs:66803`'s 0.65f) × the
+                // type-1 `npcSlots` (1f, `NPC.cs:8510`).
+                0.65
+            } else {
+                1.0
+            }
+        })
+        .sum();
+    // `:5897`: `position.Y > worldSurface*16 + y/2 || nearbyActiveNPCs >
+    // 15f` → return. `position.Y` is the player's TOP (`player.y`).
+    if (player.y as f64) > app.world.world_surface * 16.0 + (view_h / 2) as f64
+        || nearby > 15.0
+    {
+        return;
+    }
+    // `:5901`: `num2 = 45 + (int)(450f * (nearbyActiveNPCs / 15f))` — the
+    // f32 product truncates to int. The expert ×0.85 (`:5902-5905`) and
+    // the journey slider (`:5906-5913`) fold (single-difficulty, no
+    // creative powers).
+    let num2 = 45 + (450.0f32 * (nearby / 15.0)) as i32;
+    // `:5914`: `Main.rand.Next(num2) != 0 → return`.
+    if rng.next_max(num2) != 0 {
+        return;
+    }
+    // `:5918-5925`: the sky window in px, then `/16`.
+    let num3 = (pcx - view_w as f32) as i32;
+    let max_value = num3 + view_w * 2;
+    let min_value = (pcy as f64 - view_h as f64 * 1.5) as i32;
+    let max_value2 = (pcy as f64 - view_h as f64 * 0.75) as i32;
+    let xt = rng.next_range(num3, max_value) / TILE_PX as i32;
+    let yt = rng.next_range(min_value, max_value2) / TILE_PX as i32;
+    // `:5926`: the validity scan. The UPPER x bound is `maxTilesX + 10`
+    // (the C# lets the spawn sit past the right edge; the SolidTiles
+    // out-of-bounds arm then refuses it). The house-wall arm reads
+    // `Main.wallHouse[tile[xt, yt].wall]`.
+    if xt < 10
+        || xt > app.world.width + 10
+        || (yt as f64) < app.world.world_surface * 0.3
+        || (yt as f64) > app.world.world_surface
+        || solid_tiles_rect(&app.world, xt - 3, xt + 3, yt - 5, yt + 2)
+        || app
+            .world
+            .tile(xt, yt)
+            .is_some_and(|t| tr_core::housing::is_house_wall(t.wall))
+    {
+        return;
+    }
+    // `:5930-5953`: the kind chain. `Next(200)==0` → Pinky(-4); else the
+    // classic `Next(10)==0` → Purple(-7), `Next(5)<2` → Green(-3), else
+    // Blue. (The expert `Next(7)`/`Next(3)` arms fold.)
+    let variant = if rng.next_max(200) == 0 {
+        SlimeVariant::Pinky
+    } else if rng.next_max(10) == 0 {
+        SlimeVariant::Purple
+    } else if rng.next_max(5) < 2 {
+        SlimeVariant::Green
+    } else {
+        SlimeVariant::Blue
+    };
+    // `:5954`: `NewNPC(source, xt*16+8, yt*16, type)` — `NewNPC` sets
+    // `nPC.Bottom = (X, Y)` (`NPC.cs:80770`), so the slime's BOTTOM sits
+    // at the tile point; the port's `spawn_slime_sky` takes the top-left,
+    // hence the `-height` lift (the width centres on `xt*16+8`).
+    let scale = variant.stats().scale;
+    let (sw, sh) = NpcKind::Slime.size();
+    app.npcs.push(Npc::spawn_slime_sky(
+        xt as f32 * TILE_PX + 8.0 - sw * scale * 0.5,
+        yt as f32 * TILE_PX - sh * scale,
+        variant,
+    ));
+}
+
 pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // `Main.UpdateTime`'s Moon-Lord block (`Main.cs:64987-64994`): the
     // apocalypse's countdown ticks down and at zero the boss spawns.
@@ -6511,83 +6666,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     let mut spawned = None;
     if app.npcs.len() < 200 && app.npc_timer <= 0.0 {
         let mut rng = app.rngs.stream(RngKey::SpawnNpc);
-        // The Slime Rain sky spawns (`SlimeRainSpawns`, `NPC.cs:5892-5960`)
-        // — the pre-roll before the regular spawner (`:296-302`'s call
-        // order): the depth/crowd gates (the player below
-        // `worldSurface*16 + view/2` or the nearby count > 15 refuse),
-        // `Next(45 + 450 x (nearby/15))`, the sky window (x within +-1
-        // view width, y 0.75-1.5 view heights above), the validity scan
-        // (the bounds, the y band `[worldSurface x 0.3, worldSurface]`,
-        // the 7x8 solid-rect scan — the house-wall arm folds), the kind
-        // table (Blue; `Next(10)==0` Yellow; `Next(5) < 2` Green).
+        // The Slime Rain sky spawns (`Spawner.SlimeRainSpawns`,
+        // `NPC.cs:5892-5955`) — the pre-roll before the regular spawner
+        // (`SpawnNPC`'s `:296-299` call order, under the same `SpawnNPC`
+        // swap). W4-f39: the whole arm is the faithful port — the
+        // position.Y depth gate, the `nearbyActiveNPCs` slot sum (the
+        // 0.65 slime discount), the `45 + (int)(450f * (nearby/15))`
+        // denominator, the sky window, the `Collision.SolidTiles` +
+        // house-wall validity scan and the full four-arm kind chain
+        // (the `Next(200)` Pinky included).
         if app.world.slime_rain {
-            if let Some(player) = app.player.as_ref() {
-                let (pcx, pcy) = player.center();
-                let view_w = spawner::S_WIDTH as f32;
-                let view_h = spawner::S_HEIGHT as f32;
-                let nearby = app
-                    .npcs
-                    .iter()
-                    .filter(|n| {
-                        let (cx, cy) = n.center();
-                        (cx - pcx).abs() < view_w * 0.5 && (cy - pcy).abs() < view_h * 0.5
-                    })
-                    .count() as f32;
-                if !player.dead
-                    && (pcy as f64) <= app.world.world_surface * 16.0 + (view_h * 0.5) as f64
-                    && nearby <= 15.0
-                {
-                    let denom = 45.0 + 450.0 * (nearby / 15.0);
-                    // `Main.rand.Next(num2) != 0 → return` (`NPC.cs:5914`).
-                    if rng.next_max(denom as i32) == 0 {
-                        // `Next(num3, maxValue)` / `Next(minValue, maxValue2)`
-                        // in px, then `/ 16` (`NPC.cs:5922-5924`).
-                        let pcx_i = pcx as i32;
-                        let pcy_i = pcy as i32;
-                        let x_i = rng.next_range(pcx_i - view_w as i32, pcx_i + view_w as i32);
-                        let y_i = rng.next_range(
-                            pcy_i - (view_h * 1.5) as i32,
-                            pcy_i - (view_h * 0.75) as i32,
-                        );
-                        let xt = x_i / (TILE_PX as i32);
-                        let yt = y_i / (TILE_PX as i32);
-                        let solid = (0..7).any(|dx| {
-                            (0..8).any(|dy| {
-                                app.world
-                                    .tile(xt - 3 + dx as i32, yt - 5 + dy as i32)
-                                    .is_some_and(|t| {
-                                        t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind)
-                                    })
-                            })
-                        });
-                        if xt > 10
-                            && xt < app.world.width - 10
-                            && (yt as f64) >= app.world.world_surface * 0.3
-                            && (yt as f64) <= app.world.world_surface
-                            && !solid
-                        {
-                            // The classic chain (`NPC.cs:5944-5952`):
-                            // `Next(10) == 0` → Yellow(-7), `Next(5) < 2` →
-                            // Green(-3), else Blue. (The `Next(200) == 0`
-                            // -4 arm folds — the kind is unported.)
-                            let variant = if rng.next_max(10) == 0 {
-                                SlimeVariant::Yellow
-                            } else if rng.next_max(5) < 2 {
-                                SlimeVariant::Green
-                            } else {
-                                SlimeVariant::Blue
-                            };
-                            let scale = variant.stats().scale;
-                            let (sw, sh) = NpcKind::Slime.size();
-                            app.npcs.push(Npc::spawn_slime_sky(
-                                xt as f32 * TILE_PX + 8.0 - sw * scale * 0.5,
-                                yt as f32 * TILE_PX - sh * scale,
-                                variant,
-                            ));
-                        }
-                    }
-                }
-            }
+            slime_rain_spawns(app, &mut rng);
         }
         // `Spawner.CanSpawnEnemiesNear` (`NPC.cs:349-351`): a dead player
         // blocks the attempt (the journey and Moon Lord gates have no
@@ -6987,6 +7076,12 @@ mod tests {
     // + the negative-half hysteresis, and the King-death stop order.
     #[path = "npcs_w4_f39.rs"]
     mod npcs_w4_f39;
+
+    // W4-f39 census witnesses: the SlimeRainSpawns sky-fall arm — the
+    // depth/crowd gates, the 0.65 discount, the denominator, the kind
+    // chain and the validity scan.
+    #[path = "npcs_w4_f39_spawns.rs"]
+    mod npcs_w4_f39_spawns;
 
     use super::*;
     use tr_core::World;
