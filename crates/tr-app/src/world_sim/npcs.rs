@@ -194,15 +194,27 @@ pub fn talk_to_npc(app: &mut App, prev_place_down: bool) -> Option<String> {
         return None; // `:43068` — `flag3 && !player.dead`
     }
     let region = chat_world_region(p);
-    let i = app.npcs.iter().position(|n| {
+    // `Main.cs:43017` — `flag2 = mouse-over || (SmartInteractShowingGenuine
+    // && SmartInteractNPC == i)`; `:43048-43052` — `flag3` starts from the
+    // smart-interact pick and the town-NPC-in-region test ORs in. The
+    // smart-cursor NPC pick (the NPC provider's win, W4-g86) lets the talk
+    // arm reach an NPC the mouse is NOT directly over — the first such
+    // NPC in slot order, exactly the C#'s per-NPC loop order.
+    let smart_pick = if app.smart_interact.showing_genuine && app.smart_interact.npc >= 0 {
+        Some(app.smart_interact.npc as usize)
+    } else {
+        None
+    };
+    let i = app.npcs.iter().enumerate().position(|(idx, n)| {
         n.hp > 0
             && n.kind.is_town_npc_like()
-            && {
-                let (w, h) = n.size();
-                let (lx, ly, hx, hy) = region;
-                // `Rectangle.Intersects` of the region and the NPC box.
-                n.x < hx && n.x + w > lx && n.y < hy && n.y + h > ly
-            }
+            && (smart_pick == Some(idx)
+                || {
+                    let (w, h) = n.size();
+                    let (lx, ly, hx, hy) = region;
+                    // `Rectangle.Intersects` of the region and the NPC box.
+                    n.x < hx && n.x + w > lx && n.y < hy && n.y + h > ly
+                })
     })?;
     if app.talk_npc == Some(i) {
         return None; // `:43077` — the same NPC re-clicked falls through

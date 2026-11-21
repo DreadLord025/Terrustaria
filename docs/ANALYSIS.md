@@ -39348,10 +39348,8 @@ The two seams the first commit left open are now landed (60970eee feed,
   reach±10 interaction rect (`:52-55`).
   *Unported providers (documented):* the Potion-of-Return gate, the
   interactable-projectile list and the town-NPC scan
-  (`SmartInteractSystem.cs:15-17`) — only the tile provider runs, so its
-  candidate always wins the min-distance vote. The NPC/proj wins would set
-  `SmartInteractNPC/Proj` (no outline-list effect); the potion gate would
-  steal a win from a farther tile candidate. `UILinkPointNavigator`/gamepad
+  (`SmartInteractSystem.cs:15-17`) — **NOW PORTED** (the provider-chain
+  follow-up, see below). `UILinkPointNavigator`/gamepad
   hints are false (no gamepad UI), so `DemandOnlyZeroDistanceTargets` is
   false and the strict zero-distance arm never runs. `Main.hideUI` has no
   port state — the outline gate reads false.
@@ -39423,3 +39421,87 @@ repoint→feed call order) — all WRITTEN NOT RUN, same code-only mode. The
 feed census (95/95 covered, 33 recipe-only, 5 sized-not-outlined, 97 files
 vs 95 set members) was derived by a direct set decode over
 `recipes_gen.rs`'s station lists + the `TileCountsAs` pairs.
+
+### The provider chain — the vote re-verified (W4-g86 follow-up)
+
+The first feed commit ran ONLY the tile provider and noted "its candidate
+always wins". That was true only while the other three providers were
+unported. The follow-up ports all four and re-verifies the vote against
+`SmartInteractSystem.RunQuery` (`SmartInteractSystem.cs:31-61`):
+
+* **Priority order** (`:15-18`): Potion-of-Return → Projectile → NPC →
+  Tile. A provider returning NO candidate does NOT stop the chain
+  (`:43`'s `if`); only a `DistanceFromCursor == 0f` candidate BREAKS it
+  (`:46-49`). The vote (`:52-59`) is a STRICT `>` — the FIRST
+  (highest-priority) candidate wins ties.
+* **The NPC provider** (`NPCSmartInteractCandidateProvider.cs:34-78`):
+  the closest `townNPC` whose hitbox intersects the Simple WORLD region
+  (`TileReachCheckSettings.GetWorldRegion`, `:62-77` — the tile region
+  ×16 with the +15 Right/Bottom corrections, UNCLAMPED), distance =
+  `Rectangle.Distance(mouse)` (`Utils.cs:1507-1542`), a zero-distance hit
+  breaks the NPC scan (`:58-64`). The win sets `SmartInteractNPC` +
+  `SmartInteractShowingGenuine` (`:14-18`) and NEVER the interaction rect.
+  The port's `is_town_resident` set (`npc/data.rs:923-954`) is the
+  `npc.townNPC` flag. **Vote integration:** the talk open-arm
+  (`world_sim/npcs.rs::talk_to_npc`, `Main.cs:43017`/`:43048`) now reads
+  the pick — `SmartInteractShowingGenuine && SmartInteractNPC == i` lets
+  the talk reach an NPC the mouse is not directly over.
+* **The projectile provider**
+  (`ProjectileSmartInteractCandidateProvider.cs:34-79`): the closest
+  interactable projectile over
+  `Player.GetListOfProjectilesToInteractWithHack` (`:31908-31911`), the
+  list rebuilt per tick by `UpdateNearbyInteractableProjectilesList`
+  (`Player.cs:23135-23151`, the `Player.cs:25440` seam) gated by
+  `CurrentFrameFlags.HadAnActiveInteractableProjectile`. That flag is
+  raised by exactly three AI arms — aiStyle 97's flying piggy bank 525
+  (`Projectile.cs:33070`, the only `aiStyle = 97` kind `:5953-5961`),
+  `AI_154_VoidLens` 734 (`:52156`) and `AI_026`'s Chester 960 arm
+  (`:58182-58186`) — and reset every frame (`Main.cs:18000`); the port
+  derives it from the live pool (those AIs run every tick while active).
+  `IsInteractable` (`Projectile.cs:78828-78846`) is the 10-id switch
+  525/734/960/1093/1094/1098/1112/1113/1118/1123 — **NO grappling hook**
+  (the Palworld/ClayPot minions are interactable but raise no flag, the
+  C# quirk the derivation keeps). The interactable kinds have no ported
+  spawners yet, so the list is empty in practice — the scan is faithful
+  either way. The win sets `SmartInteractProj` (`:14-18`), never the rect.
+* **The potion provider**
+  (`PotionOfReturnSmartInteractCandidateProvider.cs:30-47`): the gate
+  hitbox (`PotionOfReturnHelper.TryGetGateHitbox`, `:7-17` — home +
+  (0,−21) centred 24×40, `Utils.CenteredRectangle` `:947-950`), the
+  closest point's distance + tile, refused when the tile leaves the scan
+  region. The win sets `SmartInteractPotionOfReturn` (`:11-15`). The
+  RETURN-leg interaction (`PotionOfReturnGateInteractionChecker` →
+  `DoPotionOfReturnReturnToOriginalUsePosition`, `Teleport` style 8) rides
+  the unported `Player.Teleport` system (the recall_teleport.rs
+  follow-up) — the gate + vote are ported, the teleport is not.
+* **The outline consequence (the corrected note):** a zero-distance
+  potion/proj/NPC win short-circuits the chain BEFORE the tile provider —
+  the lists stay EMPTY. A non-zero NPC/proj/potion win still lets the tile
+  provider fill the lists, but the winner's `WinCandidacy` never sets the
+  interaction rect (it stays −1 from `ClearSelfAndPrepareForCheck`), so
+  `InSmartCursorHighlightArea`'s rect gate refuses every cell — the
+  outlines are suppressed exactly as in the C#. The earlier "no
+  outline-list effect either way" was WRONG for the rect: the NPC/proj
+  wins DO suppress the outlines via the −1 rect.
+* **The double-pad correction:** the tile candidate's `Reuse` (`:352`)
+  passes `settings.LX-10`… and `WinCandidacy` (`:52-55`) subtracts/adds 10
+  AGAIN — the final interaction rect is the reach ± **20**, not ±10. The
+  single-provider port had folded the double-pad to one; the faithful
+  chain restores it (the altar witness now expects (10,17,61,65)).
+* **Gamepad arms PARKED** (no gamepad UI): the `UILinkPointNavigator`/
+  `UsingGamepad && HoveringOverAnNPC` selected-clear (`Player.cs:17377`),
+  `ShowGamepadHints` (`:17381`/`:17389`), the tile provider's strict
+  zero-distance arm (`:339-347`, `num3/num4` fed by `flag3` `:303-307`) +
+  its `SmartInteractShowingFake` win (`:44-47`), the NPC/proj
+  `DemandOnlyZeroDistanceTargets && !flag` refusals (`:67-70`/`:68-71`).
+* **`Main.DrawSmartInteract`** (`Main.cs:46660-46691`, the aimed-cell
+  MagicPixel marker) has NO call site in the 1.4.5.8 decompile — dead
+  code, deliberately not ported.
+* **RNG: ZERO draws** — every provider is integer/float maths.
+
+Witnesses (`smart_interact.rs` `w4_g86_feed_tests`, WRITTEN NOT RUN): the
+rect-distance maths, the closer-NPC zero-break (empty lists + −1 rect),
+the non-zero-NPC win (lists filled + −1 rect), the closer-tile win (the
+double-padded rect), the potion-gate zero-break, the interactable-set
+switch; plus `npc_chat.rs`
+`w4_g86_the_smart_interact_npc_pick_opens_the_talk_outside_the_region`.

@@ -1086,6 +1086,34 @@ mod tests {
         assert!(app.npc_chat_text.is_empty());
     }
 
+    /// W4-g86 — `Main.cs:43017`/`:43048`: the smart-interact NPC pick
+    /// (`SmartInteractShowingGenuine && SmartInteractNPC == i`) lets the
+    /// talk arm reach an NPC OUTSIDE the mouse's world region — the NPC
+    /// provider's win stands in for the mouse-over test.
+    #[test]
+    fn w4_g86_the_smart_interact_npc_pick_opens_the_talk_outside_the_region() {
+        init_lang();
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        let p = app.player.as_ref().unwrap();
+        let mut guide = npc(NpcKind::Guide);
+        // FAR outside the ±5-tile chat world region (the player's box).
+        guide.x = p.x + 40.0 * 16.0;
+        guide.y = p.y;
+        app.npcs.push(guide);
+        // No smart pick: the region test refuses the far NPC.
+        app.place_down = true;
+        assert!(crate::world_sim::npcs::talk_to_npc(&mut app, false).is_none());
+        assert_eq!(app.talk_npc, None);
+        // The NPC provider's win (W4-g86): the pick reaches the far NPC.
+        app.smart_interact.showing_genuine = true;
+        app.smart_interact.npc = 0;
+        app.place_down = true;
+        let text = crate::world_sim::npcs::talk_to_npc(&mut app, false);
+        assert!(text.is_some(), "the smart-interact pick opens the talk");
+        assert_eq!(app.talk_npc, Some(0));
+    }
+
     /// `NPCChatPanel.cs:65-68` — the panel's box: x = `screenWidth / 2 - 250`,
     /// y = 100, w = 500, h = 30 + 30·textLines + 30·interactionLines +
     /// max(0, 2·(interactionLines − 1)); the text origin is `+ (20, 20)`
