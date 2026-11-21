@@ -4610,6 +4610,82 @@ fn big_mimic_death(
     }
 }
 
+/// The 170/180 Pigron death (`NPC.cs:88838-88861`, sites 734-737): the
+/// 10x dust-54 burst (×2, noGravity, scale 1.5 arg), then FOUR gore-99
+/// at `(pos.X, pos.Y + height/2 - 10)` with velocity `(hitDirection,
+/// 0)` + the ×0.3 post, `this.scale` carried.
+fn pigron_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88850-88855` — the 10x dust-54 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 54, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    let anchor = Vec2::new(pos.x, pos.y + h / 2.0 - 10.0);
+    // `:88856-88860` — the four gore-99 + the ×0.3 post.
+    for _ in 0..4 {
+        let idx = gore.new_gore(rng, world, anchor, vel, 99, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 171 Hallowed Pigron death (`NPC.cs:88862-88890`, sites 738-741):
+/// the 10x dust-16 burst (×2, noGravity), then FOUR gores — the type
+/// `11 + i` for i in 0..4, but the FOURTH (14 > 13) re-rolls
+/// `Next(11,14)` (the argument draw BEFORE the NewGore, only on the
+/// fourth iteration), at the same anchor + velocity + ×0.3 post,
+/// `this.scale` carried.
+fn pigron_hallow_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88874-88879` — the 10x dust-16 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    let vel = Vec2::new(hit_direction, 0.0);
+    let anchor = Vec2::new(pos.x, pos.y + h / 2.0 - 10.0);
+    // `:88880-88889` — the four gores, the fourth re-rolled.
+    for i in 0..4 {
+        let mut num733 = 11 + i;
+        if num733 > 13 {
+            num733 = rng.next_range(11, 14); // :88885
+        }
+        let idx = gore.new_gore(rng, world, anchor, vel, num733, s); // :88887
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5156,6 +5232,17 @@ pub fn hit_effect_d(
     // `:88796-88817` — the 473-476 big mimic arm (sites 731-733).
     else if (473..=476).contains(&npc_type) {
         big_mimic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88818-88837` — the 169 Frost Legion snowman arm: NO gore sites
+    // (the 100x dust-92 census is the dust lanes'; recorded, not
+    // ported).
+    // `:88838-88861` — the 170/180 Pigron arm (sites 734-737).
+    else if npc_type == 170 || npc_type == 180 {
+        pigron_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88862-88890` — the 171 Hallowed Pigron arm (sites 738-741).
+    else if npc_type == 171 {
+        pigron_hallow_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9026,5 +9113,51 @@ mod tests {
             let puff = dust.slots().iter().find(|d| d.active).unwrap();
             assert_eq!(puff.dust_type, dt, "ai[3]={ai3}");
         }
+    }
+
+    /// `NPC.cs:88858-88859` — the Pigron four gore-99; `:88882-88888` —
+    /// the Hallowed Pigron's 11/12/13 + the fourth Next(11,14) re-roll
+    /// (the argument draw only on the fourth iteration).
+    #[test]
+    fn w4_f5d_the_pigron_fours_and_the_hallow_reroll() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        for kind in [170, 180] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(733);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![99, 99, 99, 99], "pigron {kind}");
+            let mut twin = UnifiedRandom::new(733);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "pigron {kind} mirrors the C# draws");
+        }
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(739);
+        let _ = hit_effect_d(&n, 171, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(&types[..3], &[11, 12, 13]);
+        assert!((11..14).contains(&types[3]), "the fourth re-roll: {}", types[3]);
+        let mut twin = UnifiedRandom::new(739);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        let t = twin.next_range(11, 14);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        assert_eq!(types[3], t, "the fourth matches the twin");
+        assert_eq!(rng.peek(), twin.peek(), "the hallow pigron mirrors the C# draws");
     }
 }
