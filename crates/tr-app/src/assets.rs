@@ -1450,6 +1450,24 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // S1-W4-g81 residuals: the wiring-UI sheets. `TextureAssets.WireUi[0..12]`
+    // loads as `Images/UI/Wires_<i>` (`AssetInitializer.cs:299-302`) — the
+    // multicolor wrench's radial petals (`WiresUI.WiresRadial`,
+    // `WiresUI.cs:266-281`/`:438-453`) and the kite ghost's actuator stamp
+    // (`WireUi[11]`, `Main.cs:31665+`); `TextureAssets.BuilderAcc` is
+    // `Images/UI/BuilderIcons` (`:303`) — the cursor-area channel badges
+    // (`WiresUI.cs:531-535`) and the builder-toggle column
+    // (`Main.DrawBuilderAccToggles`, `Main.cs:47384`).
+    for i in 0..12u16 {
+        let name = format!("UI/Wires_{i}");
+        if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+            images.push(img);
+        }
+    }
+    if let Ok(img) = load_png(dir, "UI/BuilderIcons", SheetLayout::Raw) {
+        images.push(img);
+    }
+
     // The tile-side glow sheets of `DrawSingleTile_Flames`
     // (`TileDrawing.cs:2684-2825`, `:3463-3491`): `TextureAssets.GlowMask`
     // loads as `Images/Glow_{id}` (`AssetInitializer.cs:352-354`) and the
@@ -2023,6 +2041,14 @@ pub struct Lookups {
     /// `Images/UI/Cursor_0` / `Cursor_1`: the vanilla mouse cursor
     /// (`Main.DrawCursor`; `[0]` normal, `[1]` smart).
     pub cursor: [Option<tr_render::SheetRect>; 2],
+    /// `Images/UI/Wires_0..11` (`TextureAssets.WireUi`,
+    /// `AssetInitializer.cs:299-302`): the wiring radial's petals/glyphs and
+    /// the kite ghost's actuator stamp (`[11]`). S1-W4-g81 residuals.
+    pub wire_ui: [Option<tr_render::SheetRect>; 12],
+    /// `Images/UI/BuilderIcons` (`TextureAssets.BuilderAcc`,
+    /// `AssetInitializer.cs:303`): the cursor-area channel badges + the
+    /// builder-toggle column. S1-W4-g81 residuals.
+    pub builder_acc: Option<tr_render::SheetRect>,
     /// `Images/Mana`: the mana stars (`ClassicPlayerResourcesDisplaySet.DrawMana`).
     pub ui_mana: Option<tr_render::SheetRect>,
     /// `Inventory_Back13`: the tooltip panel 9-slice (`Utils.DrawInvBG`).
@@ -2412,6 +2438,8 @@ impl Lookups {
             ui_boss_bar: atlas.sheet("UI/UI_BossBar").copied(),
             ui_boss_head: atlas.sheet("NPC_Head_Boss_7").copied(),
             cursor: [0, 1].map(|i| atlas.sheet(&format!("UI/Cursor_{i}")).copied()),
+            wire_ui: std::array::from_fn(|i| atlas.sheet(&format!("UI/Wires_{i}")).copied()),
+            builder_acc: atlas.sheet("UI/BuilderIcons").copied(),
             ui_mana: atlas.sheet("Mana").copied(),
             ui_inv_bg13: atlas.sheet("Inventory_Back13").copied(),
             ui_back3: atlas.sheet("Inventory_Back3").copied(),

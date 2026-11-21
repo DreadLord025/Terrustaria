@@ -1307,6 +1307,31 @@ impl App {
                             renderer, world, light, &style, draw_cam, world_zoom, screen, &view,
                         );
                     }
+                    // S1-W4-g81 residuals — the Wire Kite's placement ghost
+                    // (`Main.cs:31620-31907`, drawLayer 5): the over-wire
+                    // cached projectile draws right after `DrawWires`
+                    // (`Main.cs:62303` → `:62315`), before the generic
+                    // projectile pass. The generic pass below skips 651
+                    // (the C#'s CacheProjDraws routes it out of the main
+                    // walk).
+                    if let Some(pl) = player.as_ref() {
+                        for p in projectiles.slots().iter().filter(|p| p.active) {
+                            if p.kind == crate::projectile::WIRE_KITE {
+                                crate::render::wire_kite::draw_wire_kite(
+                                    renderer,
+                                    lookups,
+                                    p,
+                                    self.wire_tool_mode,
+                                    pl.facing == 1,
+                                    draw_cam,
+                                    world_zoom,
+                                    screen,
+                                    world.width,
+                                    world.height,
+                                );
+                            }
+                        }
+                    }
                     // `Main.cs:63276-63277` (`DoDraw_WallsTilesNPCs`): the Moon
                     // Lord's death drama pieces + blasts, after the walls and the
                     // WoF/back gore, under the non-solid tiles.

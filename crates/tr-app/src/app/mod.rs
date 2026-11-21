@@ -682,6 +682,16 @@ pub(crate) struct App {
     /// delegate delivery (`UserInterface.cs:55-70`) without a listener table.
     pub(crate) pointer_event: Option<ui::pointer::PointerEvent>,
     pub(crate) mouse_pos: Vec2,
+    /// `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`, the static ctor
+    /// seeds Red `:94`): the multicolor wrench's channel bitfield
+    /// (`MultiToolMode`, `:13-21`). The radial's petal clicks XOR it
+    /// (`ui/wires_ui.rs`), the smart-cursor lookup reads it
+    /// (`Lookup::tool_mode`) and the kite ghost's tint mixes from it
+    /// (`render/wire_kite.rs`). S1-W4-g81 residuals.
+    pub(crate) wire_tool_mode: u8,
+    /// `WiresUI.radial` (`WiresUI.cs:694-707`): the tool-mode radial's
+    /// flower/badge state machine (`ui/wires_ui.rs`).
+    pub(crate) wires_radial: ui::wires_ui::WiresRadial,
     /// `Main.cursorAlpha`/`cursorColorDirection`/`cursorScale`: the vanilla cursor
     /// pulse, advanced once per frame by `Main.CursorColor` (`Main.cs:52477`).
     pub(crate) cursor: ui::cursor::CursorState,
@@ -3900,6 +3910,8 @@ impl App {
                 crate::env::mouse_pin().unwrap_or(Vec2::ZERO)
             },
             cursor: ui::cursor::CursorState::with_mouse_color(cursor_mouse_color),
+            wire_tool_mode: ui::wires_ui::TOOL_MODE_DEFAULT,
+            wires_radial: ui::wires_ui::WiresRadial::default(),
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,

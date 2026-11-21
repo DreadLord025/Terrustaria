@@ -1175,6 +1175,10 @@ pub const GOLF_BALL: u16 = 721;
 /// S1-P-i55.
 pub const GOLF_CLUB_HELPER: u16 = 722;
 
+/// `ProjectileID.WireKite` (651, `Projectile.cs:6990-7000`) — the Wire
+/// Kite's placement ghost, aiStyle 125, drawLayer 5. S1-W4-g81 residuals.
+pub const WIRE_KITE: u16 = 651;
+
 /// `Main.projectile[1001]` — 1000 usable slots (`Projectile.cs:66992`,
 /// `GetNextSlot` returns 1000 when full, `:10793`).
 pub const MAX_PROJECTILES: usize = 1000;
@@ -3969,6 +3973,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
+            // S1-W4-g81 residuals — the Wire Kite (651,
+            // `Projectile.cs:6990-7000`): 10x10, aiStyle 125, friendly,
+            // ignoreWater, tileCollide false, penetrate -1, drawLayer 5
+            // (the over-wire cache, `Main.cs:38177-38178` — the port draws
+            // it in the wire-adjacent slot). The stock 3600 life; the
+            // channel-release Kill owns the death (`:35716-35723`).
+            WIRE_KITE => (10.0, 10.0, 125, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             _ => return None,
         };
     let (state_local, state_local_cooldown) = match kind {

@@ -37,6 +37,7 @@ pub mod uistate;
 pub mod world_creation;
 pub(crate) mod world_load;
 pub mod world_select;
+pub mod wires_ui;
 
 use glam::Vec2;
 use tr_render::{SheetRect, SpriteRenderer};
