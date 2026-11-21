@@ -2568,15 +2568,40 @@ impl App {
             // one. The port is stateless (no `seed.Enabled` session cache),
             // so every submit with a micro seed plays once — the
             // first-enable-per-entry semantics of a fresh creation screen.
-            // The classic-option 24 (`:834`) is a UIWorldCreation site, not
-            // this wave's (g21-g23 own Main.cs; the creation-screen cues
-            // stay open).
+            // W4-g24 FINAL — the classic-option arm's 24 (`:830-835`):
+            // `GetOptionFromSeedText` resolves the ELSE-branch text (the
+            // `TryApplyingCopiedSeed` join failed), `SelectOption` runs and
+            // `SoundEngine.PlaySound(24)` (`SoundID.Chat`, `SoundID.cs:70`,
+            // case 24 draw-free — `LegacySoundPlayer.cs:957-962`). Cue
+            // only: the `_isSpecialSeedText`/`SelectOption` draft-state
+            // half is the d85 Advanced-tab surface (its `WorldSeed` arm
+            // carries `option_for_seed_text` + `select_option`; the
+            // created world's flags already ride `resolve_seed_text`'s
+            // classic half) — keep-one note in research/107 §3.
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
                     draft.seed = name;
                     let (micro, _, _) = tr_core::seeds::resolve_seed_text(&draft.seed);
                     if micro.count() > 0 {
+                        self.audio
+                            .play_tracked_global(crate::audio::menu_accept_style());
+                    } else if tr_core::seeds::option_for_seed_text(&draft.seed).is_some() {
+                        // `:834` — the classic-option text plays Chat (24).
+                        // The else-if mirrors the C#'s branch exclusivity:
+                        // a joined micro-seed text took the `TryApplying-
+                        // CopiedSeed` success arm, never the 24.
+                        self.audio.play("Chat"); // `SoundEngine.PlaySound(24)`
+                    } else if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some() {
+                        // `:836-841` — the SINGLE (unjoined) micro-seed
+                        // text: `CheckInputForSecretSeed` resolves it and
+                        // `Enable(secretSeed)` plays the same tracked
+                        // MenuAccept (`WorldGen.cs:539`). The joined form
+                        // took the first arm above; this one covers the
+                        // plain "pumpkinseason" submit the batch-1 arm
+                        // missed (`resolve_seed_text` counts only the
+                        // `|`-prefixed parts). Stateless once-per-submit,
+                        // the batch-1 convention.
                         self.audio
                             .play_tracked_global(crate::audio::menu_accept_style());
                     }

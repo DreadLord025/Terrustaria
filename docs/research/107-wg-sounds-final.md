@@ -113,3 +113,53 @@ round landed):
 + the landed prior waves cover all 79.
 
 ---
+
+## §3 — the secret-seed menu cues vs the g23 menu union (item 3)
+
+**The g23 read** (`945391e3`, `origin/task/W4-g23-sounds-main-3`, the
+canonical menu-sounds union): g23 owns the **Main.cs legacy menu** windows
+only (g22 `:48489-49727` ∪ g23 `:49734-51052` + the `:52059`/`:51952`
+submit/cancel arms), unified onto `Menu::pending_cue` (one activation
+drain) with `pending_ticks` kept DRAW-TIME chrome only. Its scope note
+explicitly defers the **888 UIStates cues** (character/world creation incl.
+the size-row blanket, per-element plays) to **g22b** — no g22b branch was
+pushed at union time. **Zero queue overlap** with the secret-seed surface:
+the seed screens ride the 888 `FrontScreen` flow (`handle_front_click`'s
+blanket 10/11 + the per-arm plays), never the legacy `Menu` queues. The
+keep-one is structural, not a dedupe: one `menu_accept_style()` seam
+(`audio.rs:518`) serves every `SecretSeed.Enable` caller.
+
+**The secret-seed UI census** (every `PlaySound` on the seed surfaces):
+
+| C# site | cue | port status |
+| --- | --- | --- |
+| `WorldGen.cs:539` (`Enable`, tracked `SoundID.MenuAccept`) | MenuAccept | g24 batch 1 (seed-submit) + THIS round (the single-text arm); the d85 row-toggle adoption is the contract below |
+| `UIWorldCreation.cs:834` (`OnFinishedSettingSeed` classic-option `SelectOption`) | 24 Chat | **PORTED this round** (`app/mod.rs` WorldSeed arm — the batch-1 deferral closed; case 24 draw-free, `LegacySoundPlayer.cs:957-962`) |
+| `UIWorldCreation.cs:836-841` (the SINGLE unjoined micro text's `Enable`) | MenuAccept | **PORTED this round** (the batch-1 gate counted only `\|`-joined parts — a plain "pumpkinseason" submit was silent; now plays the tracked MenuAccept, the stateless once-per-submit convention) |
+| `UIWorldCreation.cs:672`/`:691`/`:704`/`:712` (GoBack 11, SetName 10, OpenSeedInputMenu 10, NamingAndCreating 10) | 11/10 | landed-by-equivalent (the flow blanket: `WorldCreateBack` → `Menu_Close`, the rest → `Menu_Open`, `flow.rs:1267`/:1269 — the g23 union verified the :672 row) |
+| `UIWorldCreation.cs:678` (`FadedMouseOver`) | 12 | the 888 hover gap — `front_hit` covers only the two select screens (`flow.rs:1213`), so the creation screens' hover edges are silent; **g22b-owned** per the g23 scope note (the standing blanket deviation's sibling) |
+| `UIWorldCreationAdvanced.cs:210` (`SecretSeedButton_OnLeftClick`) | 12 | d85 routes `Click::SecretSeeds` → `FlowClick::SecretSeedsOpen` → the blanket **10** — the 888 blanket deviation (g22b owns the faithful 12); recorded, not invented |
+| `UIWorldCreationAdvanced.cs:479`/`:485` (GoBack 11 / FadedMouseOver 12) | 11/12 | d85: the 11 landed (`WorldAdvancedBack` → `Menu_Close`); the 12 is the same g22b hover gap |
+| `UIWorldCreationAdvancedSecretSeedsList.cs:388`/`:395` (GoBack 11 / FadedMouseOver 12) | 11/12 | d85: the 11 landed (`SecretSeedsBack` → `Menu_Close`); the 12 is the hover gap |
+| `GroupOptionButton.cs:216`/`:255` (the seed-row hover / LeftMouseDown) | 12/12 | d85: the click 12 landed (`flow.rs` Row arm plays `Menu_Tick` before `toggle_row`); the DrawSelf hover 12 is the hover gap |
+
+**The d85 keep-one contract (the row-toggle MenuAccept)**: d85's
+`ClickSecretSeed` port (`ui/secret_seeds_list.rs::toggle_row` + the flow
+Row arm) plays ONLY the button's 12 — the C# `ClickSecretSeed`
+(`UIWorldCreationAdvancedSecretSeedsList.cs:232`) ALSO calls
+`WorldGen.SecretSeed.Enable(optionValue)` with the default
+`playSound: true`, so an ENABLE transition plays the tracked MenuAccept
+(`WorldGen.cs:539`) on top of the 12; a DISABLE is silent
+(`Disable` has no cue, `:544-551`). Adoption note for the d85/g24 merger:
+the Row arm's enable branch calls
+`app.audio.play_tracked_global(crate::audio::menu_accept_style())` — the
+SAME seam the submit arm uses (keep-one: one style fn, one bank row, no
+second MenuAccept impl). The C#'s `!seed.Enabled` session gate collapses
+to the enable-transition edge on d85's draft state (the port is stateless
+per-screen, the batch-1 convention). The particles
+(`SpawnParticles`, `:238-255`) stay d85's recorded visual skip.
+
+**Witness**: `flow.rs::w4_g24_the_classic_option_seed_plays_the_chat_cue`
+(the classic 24 + the arm exclusivity + the single-text MenuAccept).
+
+---
