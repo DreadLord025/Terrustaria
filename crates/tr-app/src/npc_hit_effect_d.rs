@@ -607,7 +607,10 @@ fn gem_squirrel_death(
 /// (`:85978-85982`), 615 Dolphin → 1198/1199/1200/1200 (`:85983-85989`),
 /// 74 Bird → 100 (`:85992`), 297 Blue Bird → 431 (`:85996`), 298 Red Bird
 /// → 432 (`:86000`), the 671/672/673 macaw/toucan triples — head at
-/// position + wing pair at Center ±(4,0) (`:86002-86019`). The remaining
+/// position + wing pair at Center ±(4,0) (`:86002-86019`), the 674/675
+/// cockatiel triples (same shape, `:86020-86031`), the 299 Squirrel → 433
+/// (`:86034`), 538 Red Squirrel → 897 (`:86038`), 300 Mouse → 434
+/// (`:86042`), 610 Rat → 1163 (`:86046`). The remaining
 /// sub-branches land in later batches; an unported kind in the arm spawns
 /// the dust burst only (the census note — the gores follow in source
 /// order).
@@ -696,6 +699,22 @@ fn critter_arm_death(
         gore.new_gore(rng, world, pos, vel, 1282, 1.0); // :86016
         gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1283, 1.0); // :86017
         gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1283, 1.0); // :86018
+    } else if npc_type == 674 {
+        gore.new_gore(rng, world, pos, vel, 1284, 1.0); // :86022
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1285, 1.0); // :86023
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1285, 1.0); // :86024
+    } else if npc_type == 675 {
+        gore.new_gore(rng, world, pos, vel, 1286, 1.0); // :86028
+        gore.new_gore(rng, world, center(npc) + Vec2::new(4.0, 0.0), vel, 1287, 1.0); // :86029
+        gore.new_gore(rng, world, center(npc) + Vec2::new(-4.0, 0.0), vel, 1287, 1.0); // :86030
+    } else if npc_type == 299 {
+        gore.new_gore(rng, world, pos, vel, 433, 1.0); // :86034
+    } else if npc_type == 538 {
+        gore.new_gore(rng, world, pos, vel, 897, 1.0); // :86038
+    } else if npc_type == 300 {
+        gore.new_gore(rng, world, pos, vel, 434, 1.0); // :86042
+    } else if npc_type == 610 {
+        gore.new_gore(rng, world, pos, vel, 1163, 1.0); // :86046
     }
 }
 
@@ -771,8 +790,8 @@ pub fn hit_effect_d(
         gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:85942-86091` — the 29-type critter arm; the 46/303/337/540, 67,
-    // 55/230, 615, 74, 297, 298, 671/672/673 sub-branches are live (sites
-    // 42-65), the rest land later.
+    // 55/230, 615, 74, 297, 298, 671-675, 299, 538, 300, 610 sub-branches
+    // are live (sites 42-75), the rest land later.
     else if matches!(
         npc_type,
         46 | 55
@@ -1410,6 +1429,48 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "macaw {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86022-86046` — the cockatiel triples (674→1284+1285x2,
+    /// 675→1286+1287x2) and the critter singles (299→433, 538→897,
+    /// 300→434, 610→1163); the draw census pinned per kind.
+    #[test]
+    fn w4_f5d_the_cockatiels_and_critter_singles_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (674, vec![1284, 1285, 1285]),
+            (675, vec![1286, 1287, 1287]),
+            (299, vec![433]),
+            (538, vec![897]),
+            (300, vec![434]),
+            (610, vec![1163]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(83);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "critter {kind}");
+            if want.len() == 3 {
+                assert_eq!(gore.slot(1).position, Vec2::new(116.0, 111.0));
+                assert_eq!(gore.slot(2).position, Vec2::new(108.0, 111.0));
+            }
+            let mut twin = UnifiedRandom::new(83);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "critter {kind} mirrors the C# draws");
         }
     }
 }
