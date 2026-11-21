@@ -39370,3 +39370,120 @@ re-derived, not copied from f9); the audit re-read the cited C# windows
 line by line; the oracle fixtures were derived by an exact-f32
 statement mirror (scratch computation, no compiler/test run). **No
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked.**
+
+## The AddLight-family SEAL (W4-g18, S1-E-5 wave 4, 2026-11-21, code-only)
+
+The g18 lane's SEAL round: the batch-1 claim/audit/oracle above is
+unchanged; this section records the family-wide census + the four
+cross-lane receipts + the bible. The full record is
+`docs/research/360-addlight-family-bible.md` (number 360 per registry-150
+§8.7 — "new docs take ≥360 after a registry check"; a fresh 362-tip
+ls-tree sweep finds no `docs/research/` file ≥352 at any tip, no
+`research/360` ref; the §8/§8.7 blocks consume 151–351). The family-census
+witness `crates/tr-app/tests/addlight_family_census.rs` (6 tests, WRITTEN
+NOT RUN) freezes the per-file counts + the Lighting.cs funnel + the
+gems-NEVER-emit-light boundary (the g19/f7 freeze precedent).
+
+**The git-log census (what landed).** The S1-E-5 wave-4 AddLight lanes, at
+their pushed tips: c19 `5400e0374` (proj 1-67, round-4 SEAL **61 ported /
+67 contributions / 2 audit-landed / 4 absent**, 45 witnesses), e6
+`c8b072b69` (proj 68-107, **20 ported / 23 contributions / 20 absent**, 15),
+f7 `67110ccfb` (the 107-site freeze, 5), c20 `7f68a69d1` (NPC 1-40, all 40
+landed FED/TWIN/DEDUP, 27), e7 `c59d68bf6` (NPC 41-80: 34 ported +
+Horseman-67 audit + 6 cited; Player 46: 32 landed + 10 gap + 3
+Snapping-Stone = 45 covered, wing-27 cited; 17+18+7+3 witnesses), f8
+`8ce3395b8` (the 2 NPC indirect PlotTileLine casts, `npc_lights_c.rs`, 8),
+e8 `58606f3a4` (Main.cs 5 + TileDrawing 6 + the 5 CastLight*/SpreadLight
+delegates, `tile_lights.rs`, 11), f9 `c27407842` (Main remainder EMPTY),
+g18 `22d529c5c` (the 332-chain audit + oracle, 5), g19 `9733c82a7` (the
+Main 5 freeze, 5), g20 `b43297746` (WorldItem `:482` shimmer, 2), d50
+`e84e6bd76` (the dust chain physics), g13 `3fe509158` (the 52 second-chain
+lights WIRED, 23+1). The pre-wave base on main `a725acb04`:
+entity_lights/proj_lights/npc_lights/player_lights/item_lights/dust_lights.
+
+**The d54-bible reconcile (research/131, tip `1c462c4fe`).** Dust.cs
+**94/94** (G1 CLOSED g13 `a234107ac`; 42 FIRST-ladder main + 52
+second-chain g13; g13 research/308 §3 re-counts FRESH 94 exactly; the
+`:2275` customData-Color light LIVE in C# per d54 G5 `c5a0e646`, a cited
+reconstruct-from-`d.color` gap). **Projectile.cs 107 = 86 covered / 21
+absent (rand-gated)** at the merge-state: c19 round-4 63 covered (61+2) /
+4 absent + e6 20 ported / 20 absent + **6 of e6's 19 unrowed kinds NOW
+ROWED** on pushed lanes (435→c11 `data.rs:1924`, 576→d11 `:2517`,
+606→d8 `:1772`, 707→d14 `:2664`/d15 `:4066`, 708→d15 `:4072`, 709→d15
+`:4081`) = 86 covered; 21 absent = 4 c19 task-seeds (465/731/phaseblade/
+756) + 13 e6 still-unrowed (467/468/440/593/592/585/577/682/684/312/324/
+595/735) + 1 e6 `:78556` rand-gated. The c19 round-4 activations
+(502→d75, 1092→g5, 466→d53) are already in c19's 63, not double-counted.
+**The e6 activation obligation:** e6's `proj_ai_lights` is an if-chain over
+the 20 ported consts ONLY — the 6 now-rowed kinds need their sub-ifs ADDED
+at the merge (the d8-606 contract research/97 §5 is the template), the f7
+census "absent" assertions flip to "present". NPC.cs 80 (74 covered + 1
+audit + 6 cited; the 3 CastLights flicker arms `:92382/:92395/:92404` draw
+`Next(28,42)` unconditionally — cited until a sim feed). Main.cs 5 (e8
+ports, g18 audits, g19 freezes, f9 closes; NO ambient/update-side AddLight).
+
+**The c29 gems-NEVER-emit-light premise — REFUTED (re-confirmed).** The c29
+SEAL (`f0643602d`, research/260 Item 1 + the gem-family bible) refutes the
+"gem tiles 63-68 emit light" premise; re-derived independently here: (1) a
+whole-tree grep for `Main.tileLighted[63..68/178/566/211]` returns ZERO
+writes; (2) the gem sparkle is DUST-43 (`TileDrawing.cs:7479`
+`Dust.NewDust(..., 43, ..., 0.5f)` + `velocity *= 0`, the 178 style-colour
+match `:7453-7482`), the `tileShine[178]=500`/`[63..68]=900`/`[566]=900`
+table (Main.cs:7516/7523-7529) is a sparkle CADENCE not a light; (3)
+`TileLightScanner.ApplyTileLight`'s top-level `switch (tile.type)` (`:347`)
+has NO gem case (the case-63-68 hits are NESTED frame-index sub-switches —
+chandelier/lantern styles; the outer gate `if (Main.tileLighted[tile.type])`
+`:345` never admits gems); (4) the generated `TILE_LIGHTED` bitset
+(sets.rs) decodes false for every gem id, `EMISSIVE` rows 63-68/178/566 all
+`[0,0,0]`. **The g18 negative census AGREES** — Main.cs has no ambient
+AddLight (the batch-1 seven-form negative census), so the gem sparkle
+cannot be an entity-list light either. The gem "glow" is d60's
+`tile_draw_particles.rs` dust (UNWIRED pending the wiring wave) + the
+tileShine cadence — NEVER a light-map source.
+
+**The e6-addlight-proj-2 compose (mutual receipt).** c19's research/189
+SEAL already publishes the e6-disjoint + g18-disjoint verdicts; re-verified
+at the current tips (both fork `a725acb04`): site-disjoint by the f7 freeze
+split (`:54071`/`:54173`), ZERO shared kind arms; the merge hunks are
+keep-both unions (main.rs adjacent mod lines, draw.rs both feed loops after
+the ProjLight feed at `@@ -569` — e6's first, anchors one row each); e6
+touches NONE of projectile.rs/world_sim/data.rs (c19's sim arms are
+c19-exclusive). **The craft.rs 340-line "deletion" in both branches'
+`origin/main..` diffs is NOT a deletion** — it is main's LATER S1-L-11g
+addition (`03711f456`, the craft freeze guards) absent from both fork
+trees; the merge keeps main's copy, neither branch touches craft.rs (the
+true diffs `git diff a725acb04..<tip>` list no craft.rs). g18 × e6/c19 are
+file-disjoint except the three append-union doc ledgers; Main.cs's 5 sites
+are outside Projectile.cs's 107.
+
+**The addlight-family bible (SEAL declaration).** ONE family — the
+per-frame `EntityLights` list pair (≈ `LightingEngine._perFrameLights`),
+fed by the C# `Lighting.AddLight` sites through the `Lighting.cs:157-163`
+funnel (`!gamePaused && netMode != 2`), max-merged one frame late. The core
+family: Projectile 107 (c19/e6/f7), NPC 80+2 (c20/e7/f8), Dust 94
+(main/g13/d50), Player 46 (main/e7), WorldItem 69 (main/g20), Main 5 +
+TileDrawing 6 (e8/g18/g19/f9); Item/TileObject/Wiring/NetMessage/WorldGen
+EMPTY. The two feed rules (no-row absent wholesale; rand-gated absent from
+the pure feed, the c19-round-3 sim-arm exception). The standing
+light-map-WRITE deferral (the 870 FloodFillTile / hooks' PlotTileLine /
+d13 pet casts / Player delegate lane / LaserDrill flood half — ONE task).
+The peripheral files (Mount 14, WaterfallManager 11, Gore 4,
+DelegateMethods 5, the particle/LeashedEntities/helper files) are censused
+in research/360 §5, owned by their own lanes. The gems-NEVER-emit-light
+verdict is a FAMILY boundary (the scanner-seeded ambience is the
+`tr-core/tile_light` lane, not this family). **SEAL**: no further
+census/arm/row work owed on the Main.cs batch-1 sites by g18 (e8 keeps the
+single port copy); the per-file authorities are c19 research/189, e6
+ANALYSIS, f7 proj_addlight_census.rs, g13 research/308, c29 research/260,
+g19 main_addlight_census.rs. The four proj task-seeds belong to the
+row-owning lanes; the light-map-write layer is its own task.
+
+**Verification (code-only).** Every lane tip re-fetched; the accountings
+quoted from each lane's final record; the witness counts machine-counted
+(`#[test]` grep); the proj 86/21 derived from the final registers + the 6
+row-activations (each `git grep '<CONST> =>'` verified); the gems refutation
+re-derived from the C# + the generated tables; the e6 compose re-verified
+(the true diffs, the craft.rs S1-L-11g provenance); the registry number 360
+per §8.7 + a fresh 362-tip sweep. **No cargo/rustc/rustfmt/tests/dotnet/
+graphify invoked.** The 6 family-census witnesses + g18's 5 oracle tests
+are WRITTEN, NOT RUN.
