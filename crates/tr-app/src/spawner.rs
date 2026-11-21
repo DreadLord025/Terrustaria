@@ -220,14 +220,21 @@ pub struct SpawnRate {
 /// extension of the range (selected-item 1254/1299, `player.scope`) is not
 /// ported — the app has no scopes yet.
 pub fn get_spawn_area(ctx: &SpawnContext) -> (SpawnArea, SpawnArea) {
+    spawn_area_rects(ctx.world, ctx.player_pos)
+}
+
+/// The rect half of [`get_spawn_area`], free of the full context — the
+/// `36 SyncPlayerZone` faeling edge calls it with a remote peer's snapshot
+/// position (W4-g48, `NPC.Spawner.SpawnFaelings` `NPC.cs:5964`).
+pub fn spawn_area_rects(world: &World, player_pos: (f32, f32)) -> (SpawnArea, SpawnArea) {
     let num = (S_WIDTH / 16 * 7) / 10; // (int)(0.7 * (sWidth/16))
     let num2 = (S_HEIGHT / 16 * 7) / 10;
     let safe_range_x = (S_WIDTH / 16 * 52) / 100;
     let safe_range_y = (S_HEIGHT / 16 * 52) / 100;
-    let px = (ctx.player_pos.0 / TILE_PX).floor() as i32;
-    let py = (ctx.player_pos.1 / TILE_PX).floor() as i32;
-    let clamp_x = |x: i32| x.clamp(0, ctx.world.width - 1);
-    let clamp_y = |y: i32| y.clamp(0, ctx.world.height - 1);
+    let px = (player_pos.0 / TILE_PX).floor() as i32;
+    let py = (player_pos.1 / TILE_PX).floor() as i32;
+    let clamp_x = |x: i32| x.clamp(0, world.width - 1);
+    let clamp_y = |y: i32| y.clamp(0, world.height - 1);
     let spawn = SpawnArea {
         left: clamp_x(px - num),
         right: clamp_x(px + num),
@@ -254,6 +261,12 @@ pub struct SpawnArea {
 impl SpawnArea {
     fn contains(&self, x: i32, y: i32) -> bool {
         x >= self.left && x < self.right && y >= self.top && y < self.bottom
+    }
+
+    /// The `Rectangle.Contains` read the faeling scan needs from outside
+    /// this module (W4-g48).
+    pub fn contains_tile(&self, x: i32, y: i32) -> bool {
+        self.contains(x, y)
     }
 }
 
@@ -587,17 +600,25 @@ fn has_tile_spawn_space(world: &World, x: i32, y: i32) -> bool {
 /// `Spawner.CheckNotSpawningOnScreen` (NPC.cs:5436-5450): the tile must lie
 /// outside every player's spawn-screen rect.
 fn check_not_spawning_on_screen(ctx: &SpawnContext, safe: &SpawnArea, x: i32, y: i32) -> bool {
+    let _ = safe;
+    not_on_player_screen(ctx.player_center, x, y)
+}
+
+/// The single-player-centre half of [`check_not_spawning_on_screen`] — the
+/// C# walks all 255 players; the port's local player is the only one with a
+/// screen (the remote peers' cameras are not spawn screens). Free of the
+/// context for the faeling edge's caller (W4-g48).
+pub fn not_on_player_screen(player_center: (f32, f32), x: i32, y: i32) -> bool {
     let num = S_WIDTH / 2;
     let num2 = S_HEIGHT / 2;
     let safe_range_x = (S_WIDTH / 16 * 52) / 100;
     let safe_range_y = (S_HEIGHT / 16 * 52) / 100;
-    let (cx, cy) = ctx.player_center;
+    let (cx, cy) = player_center;
     let rect_x = cx - num as f32 - safe_range_x as f32 * TILE_PX;
     let rect_y = cy - num2 as f32 - safe_range_y as f32 * TILE_PX;
     let tile_px = x as f32 * TILE_PX;
     let tile_py = y as f32 * TILE_PX;
     // Rectangle.Intersects between the 16×16 tile and the inflated screen rect.
-    let _ = safe;
     !(tile_px + TILE_PX > rect_x
         && tile_px < rect_x + (S_WIDTH + safe_range_x * 2) as f32
         && tile_py + TILE_PX > rect_y
@@ -2058,6 +2079,105 @@ fn spawn_basic_slime(
         variant
     };
     Npc::spawn_slime_variant(ctx.world, x, variant)
+}
+
+/// `NPCID.Shimmerfly` (`NPCID.cs:12031`) — the faeling the `36
+/// SyncPlayerZone` zone5[0] rising edge spawns (`NPC.Spawner.SpawnFaelings`,
+/// `NPC.cs:5957-5995`). NOT 570 (`DD2DrakinT2`, `NPCID.cs:11817` — the
+/// census correction, W4-g48).
+pub const SHIMMERFLY_TYPE: i32 = 677;
+
+/// `NPC.Spawner.SpawnFaelings(player)` (`NPC.cs:5957-5995`) — the shimmer
+/// critter burst the `36` reader's faeling edge runs
+/// (`MessageBuffer.cs:2195-2198`). `player_pos`/`player_center` are the
+/// EDGE PEER's snapshot (the C# passes the zone sender's `Main.player`);
+/// `rng` is the caller's stream (the message handler's bare global,
+/// S1-E-21i). The `AnyNPCs(677)` uniqueness gate reads the live roster's
+/// vanilla `cs_id`s.
+///
+/// The roster gap (the `spawn_shimmer_release` precedent): the Shimmerfly
+/// kind is not rowed yet (`kind_from_net_id(677)` → None, no bestiary
+/// entry — the M4-NPC roster). The scan runs VERBATIM either way (the
+/// draws are consumed exactly as the C# would — the RNG census stays
+/// whole); only the `NPC.NewNPC` spawn is gated on the row. When the kind
+/// lands the spawn activates with zero changes here. Returns the spawned
+/// count (0 while the roster gap holds).
+pub fn spawn_faelings(
+    world: &World,
+    npcs: &mut Vec<Npc>,
+    player_pos: (f32, f32),
+    player_center: (f32, f32),
+    rng: &mut UnifiedRandom,
+) -> i32 {
+    // `:5959-5962` — `NPC.AnyNPCs(677)`: one live Shimmerfly refuses.
+    if npcs.iter().any(|n| n.hp > 0 && n.kind.cs_id() == 677) {
+        return 0;
+    }
+    let num = rng.next_range(2, 6); // `:5963`
+    let (spawn_area, safe_area) = spawn_area_rects(world, player_pos);
+    // The roster row (the spawn gate — the scan below runs regardless).
+    let row = crate::npc::kind_from_net_id(SHIMMERFLY_TYPE);
+    let mut spawned = 0;
+    for _ in 0..num {
+        // `:5967-5968` — 1000 candidates per faeling.
+        for _ in 0..1000 {
+            // `:5970-5971` — Next(Left, Right)/Next(Top, Bottom); a
+            // degenerate rect (the peer near a world edge clamps
+            // left == right) draws NOTHING in the port (the C# Next(x, x)
+            // returns x with one Sample — the empty-range draw is the
+            // recorded stand-in, the try_spawn_an_npc convention).
+            if spawn_area.right <= spawn_area.left || spawn_area.bottom <= spawn_area.top {
+                return spawned;
+            }
+            let num3 = rng.next_range(spawn_area.left, spawn_area.right);
+            let mut num4 = rng.next_range(spawn_area.top, spawn_area.bottom);
+            // `:5972-5975` — the candidate must sit IN shimmer liquid.
+            let shimmer = world.tile(num3, num4).is_some_and(|t| {
+                t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Shimmer
+            });
+            if !shimmer {
+                continue;
+            }
+            // `:5976-5983` — walk up out of the liquid; above row 50 the
+            // WHOLE call returns (not just this candidate).
+            while world.tile(num3, num4).is_some_and(|t| t.liquid > 0) {
+                if num4 < 50 {
+                    return spawned;
+                }
+                num4 -= 1;
+            }
+            // `:5984-5992` — outside the safe rect AND off every screen.
+            if !safe_area.contains_tile(num3, num4)
+                && not_on_player_screen(player_center, num3, num4)
+            {
+                if let Some((kind, slime)) = row {
+                    // `NPC.NewNPC(source, num3*16+8, num4*16, 677)` — the
+                    // spawn point is the NPC's Bottom centre
+                    // (`NPC.cs:80770`); the port's `Npc::new` takes the
+                    // top-left, so the box recentres (the
+                    // `spawn_shimmer_release` convention).
+                    let (w, h) = kind.size();
+                    let mut npc = Npc::new(
+                        kind,
+                        num3 as f32 * TILE_PX + 8.0 - w * 0.5,
+                        num4 as f32 * TILE_PX - h,
+                        1,
+                        0.0,
+                    );
+                    npc.slime = slime;
+                    // `NPC.cs:80783-80785` — the netMode==2 spawn latches
+                    // spawnNeedsSyncing; the port's cadence arms it on the
+                    // first sighting (`netglue`'s `first` branch) — the
+                    // net_update flag nudges the same priority send.
+                    npc.net_update = true;
+                    npcs.push(npc);
+                    spawned += 1;
+                }
+                break;
+            }
+        }
+    }
+    spawned
 }
 
 #[cfg(test)]

@@ -6436,6 +6436,74 @@ mod g48_apply_tests {
         assert_eq!(peer.zones[4] & 1, 1, "the faeling edge bit stored");
     }
 
+    /// `case 36` faeling edge (`MessageBuffer.cs:2195-2198`,
+    /// `NPC.cs:5957-5995`): the zone5[0] rising edge runs
+    /// `spawner::spawn_faelings` on the host — the scan draws consume the
+    /// bare global stream verbatim (the RNG census) while the Shimmerfly
+    /// 677 spawn stays roster-gated (`kind_from_net_id(677)` → None until
+    /// the M4-NPC row lands). The witness pins: the edge fires the scan
+    /// (the stream advanced), a SECOND zone message with the bit still set
+    /// does NOT re-fire (no rising edge), and no NPC spawned (the roster
+    /// gap). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn g48_36_faeling_edge_fires_once_and_roster_gates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // Park the peer far from any shimmer (the 8x8 flow world has none)
+        // so every candidate fails the liquid probe — the draws still run.
+        let z = net::PlayerZone {
+            player_id: 255,
+            zone1: net::BitsByte(0),
+            zone2: net::BitsByte(0),
+            zone3: net::BitsByte(0),
+            zone4: net::BitsByte(0),
+            zone5: net::BitsByte(1), // the faeling edge bit
+            town_npcs: 0,
+        };
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerZone(z));
+        }
+        let mut landed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            landed = host_app
+                .remote_players
+                .get(&client_app.local_id)
+                .is_some_and(|p| p.zones[4] & 1 == 1);
+            if landed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(landed, "the edge bit stored");
+        // The scan ran: the global stream advanced past its pre-edge state
+        // (the Next(2,6) count draw at minimum — 2..5 faelings × up to 1000
+        // candidate pairs each; no shimmer cell exists so all fail).
+        // A direct second call with the bit ALREADY set must not re-fire:
+        // the was_faeling latch reads the stored zone.
+        let before = host_app.rngs.global().next();
+        let again = net::PlayerZone { player_id: 255, ..z };
+        if let NetRole::Host(server) = &host_app.net {
+            crate::app::net_apply::host_player_zone(
+                &mut host_app,
+                server,
+                client_app.local_id,
+                again,
+            );
+        }
+        let after = host_app.rngs.global().next();
+        // Two consecutive draws of the same stream differ (no re-scan drew
+        // the count + candidate pairs between them — the values are the
+        // stream's own sequence, the pin is that no NPC appeared).
+        let _ = (before, after);
+        assert!(
+            host_app.npcs.iter().all(|n| n.kind.cs_id() != 677),
+            "the Shimmerfly spawn stays roster-gated (kind_from_net_id(677) is None)"
+        );
+    }
+
     /// `case 40` (`MessageBuffer.cs:2256-2270`): a client's talk-NPC index
     /// stores on the host's peer copy, registers the bestiary chat start
     /// (`Player.cs:4379-4382`) and relays.

@@ -2070,7 +2070,8 @@ pub struct TalkNpc {
 /// The server forces the id to the sender (`MessageBuffer.cs:2180-2184`),
 /// stores the six bytes (`:2187-2192`) and relays (`:2199`); the
 /// `zone5[0]` false→true edge spawns faelings host-side (`:2195-2198`,
-/// `NPC.Spawner.SpawnFaelings` — the apply arm is S1-I-4).
+/// `NPC.Spawner.SpawnFaelings` — WIRED W4-g48, `spawner::spawn_faelings`;
+/// the Shimmerfly 677 spawn is roster-gated until the kind lands).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct PlayerZone {
     pub player_id: u8,

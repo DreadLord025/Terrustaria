@@ -1055,9 +1055,10 @@ fn heal_effect_at_peer(app: &mut App, peer: u32, amount: i16) {
 /// The `36 SyncPlayerZone` reader (`MessageBuffer.cs:2178-2201`): the host
 /// forces the id to the sender (`:2180-2184`), stores the six bytes
 /// (`:2187-2192`), latches the `zone5[0]` rising edge into
-/// `NPC.Spawner.SpawnFaelings` (`:2195-2198` — unported: the port has no
-/// faeling NPC/spawner, the edge is detected and cited-skipped) and relays
-/// (`:2199`).
+/// `NPC.Spawner.SpawnFaelings` (`:2195-2198` — the live
+/// `spawner::spawn_faelings` seam, W4-g48; the Shimmerfly 677 spawn is
+/// roster-gated inside until the kind lands, the scan draws run verbatim)
+/// and relays (`:2199`).
 pub(crate) fn host_player_zone(app: &mut App, server: &net::Server, id: u32, z: net::PlayerZone) {
     let was_faeling = app
         .remote_players
@@ -1067,12 +1068,25 @@ pub(crate) fn host_player_zone(app: &mut App, server: &net::Server, id: u32, z: 
         p.zones = [z.zone1.0, z.zone2.0, z.zone3.0, z.zone4.0, z.zone5.0];
         p.town_npcs = z.town_npcs;
     }
-    // `:2195-2198` — the faeling edge. `NPC.Spawner.SpawnFaelings` is
-    // unported (no faeling NPC kind / spawner in the port); the edge is
-    // detected here so the gate is 1:1 when the spawner lands (ANALYSIS).
+    // `:2195-2198` — the faeling edge: `NPC.Spawner.SpawnFaelings(player16)`
+    // on the zone5[0] rising edge (W4-g48 — the seam is live; the Shimmerfly
+    // 677 kind is roster-gated inside, the scan's draws run verbatim either
+    // way, `spawner::spawn_faelings`). The peer's snapshot position stands
+    // in for the C# `Main.player[num129]`; the draws ride the bare global
+    // stream (the message handler's S1-E-21i precedent).
     let now_faeling = z.zone5.0 & 1 != 0;
     if !was_faeling && now_faeling {
-        log::debug!("36: faeling edge for slot {id} (SpawnFaelings unported)");
+        if let Some(p) = app.remote_players.get(&id) {
+            let (px, py) = (p.x, p.y);
+            let center = (px + player::WIDTH * 0.5, py + player::HEIGHT * 0.5);
+            let world = &app.world;
+            let npcs = &mut app.npcs;
+            let rng = app.rngs.global();
+            let spawned = crate::spawner::spawn_faelings(world, npcs, (px, py), center, rng);
+            if spawned > 0 {
+                app.world_key = None;
+            }
+        }
     }
     server.broadcast_except(
         &S2c::PlayerZone(net::PlayerZone {
