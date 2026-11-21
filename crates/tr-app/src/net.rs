@@ -365,6 +365,21 @@ pub mod id {
     /// `MessageBuffer.cs:4147-4163` (host-only `TEFoodPlatter.TryPlacing`).
     /// Client send: `TEFoodPlatter.cs:133`. C2s-only.
     pub const FOOD_PLATTER_TRY_PLACING: u8 = 133;
+    /// `138 ClientSyncedInventory` (`MessageID.cs:290`) — NO writer case
+    /// (`SendData(138)` at `Main.cs:17700`, after the inventory-sync
+    /// sweep, writes a bare frame) and NO reader case: the frame falls to
+    /// the `default` arm (`MessageBuffer.cs:4477-4482`), which only boots
+    /// a State-0 sender and otherwise does nothing. research/17's
+    /// "never dispatched" claim re-verified: 138/145/148. C2s-only,
+    /// bodyless.
+    pub const CLIENT_SYNCED_INVENTORY: u8 = 138;
+    /// `139 SetCountsAsHostForGameplay` (`MessageID.cs:292`) — writer
+    /// `NetMessage.cs:1587-1590` (`(byte)player + (number2 == 1f)` bool),
+    /// reader `MessageBuffer.cs:4230-4237` (`netMode != 2` →
+    /// `Main.countsAsHostForGameplay[id] = flag`). Host send: the join
+    /// arm's `DoesPlayerSlotCountAsAHost` push (`MessageBuffer.cs:934`).
+    /// S2c-only.
+    pub const COUNTS_AS_HOST: u8 = 139;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2333,6 +2348,17 @@ pub struct HatRackItemSync {
     pub item: TeItem,
 }
 
+/// `msg 139 SetCountsAsHostForGameplay`'s body
+/// (`NetMessage.cs:1587-1590`): the player byte and `number2 == 1f` as a
+/// bool. The reader stores `Main.countsAsHostForGameplay[id]` when
+/// `netMode != 2` (`MessageBuffer.cs:4231-4236`) — the flag gates the
+/// host-side gameplay authority for a co-op peer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CountsAsHost {
+    pub player_id: u8,
+    pub counts_as_host: bool,
+}
+
 impl HatRackItemSync {
     /// The reader's unfold (`MessageBuffer.cs:4005-4009`): `>= 2` is a
     /// dye slot, the index is `wire_slot - 2`.
@@ -2529,6 +2555,10 @@ pub enum C2s {
     /// item on a food platter (`TEFoodPlatter.cs:133`; host `TryPlacing`,
     /// `MessageBuffer.cs:4147-4163`). C2s-only; the 89 body twin.
     FoodPlatterTryPlacing(TryPlacingItem),
+    /// `138 ClientSyncedInventory` — the client's "inventory sweep done"
+    /// notice, bodyless (`Main.cs:17700`); NO reader case — the default
+    /// arm drops it (`MessageBuffer.cs:4477-4482`). C2s-only.
+    ClientSyncedInventory,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2775,6 +2805,10 @@ pub enum S2c {
     /// re-push + UI-scale + preparation-state tail `:4075-4085`).
     /// S2c-only.
     FinishedConnecting,
+    /// `139 SetCountsAsHostForGameplay` — the join arm's host-authority
+    /// flag push (`MessageBuffer.cs:934`; client-only store
+    /// `:4230-4237`). S2c-only.
+    CountsAsHost(CountsAsHost),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2846,6 +2880,7 @@ impl C2s {
             Self::WeaponsRackTryPlacing(_) => id::WEAPONS_RACK_TRY_PLACING,
             Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
             Self::FoodPlatterTryPlacing(_) => id::FOOD_PLATTER_TRY_PLACING,
+            Self::ClientSyncedInventory => id::CLIENT_SYNCED_INVENTORY,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2977,6 +3012,8 @@ impl C2s {
             Self::FoodPlatterTryPlacing(p) => {
                 w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
             }
+            // No writer case for 138 — `SendData(138)` writes a bare frame.
+            Self::ClientSyncedInventory => w,
             // `NetMessage.cs:1489-1508`: (byte)player + int id + the
             // already-folded wire slot + WriteItem (or the air fallback,
             // which is the same 5 bytes as an air TeItem slot).
@@ -3216,6 +3253,9 @@ impl C2s {
                 prefix: r.u8()?,
                 stack: r.i16()?,
             }),
+            // 138 has NO reader case — the default arm reads nothing
+            // (`MessageBuffer.cs:4477-4482`); a bare frame decodes.
+            id::CLIENT_SYNCED_INVENTORY => Self::ClientSyncedInventory,
             // `MessageBuffer.cs:3997-4016`: byte + int + byte slot; the
             // dye unfold + the >= 2 refusal are the apply arm's — the
             // codec keeps the wire slot verbatim and reads the 5-byte
@@ -3457,6 +3497,7 @@ impl S2c {
             Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
             Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
             Self::FinishedConnecting => id::FINISHED_CONNECTING,
+            Self::CountsAsHost(_) => id::COUNTS_AS_HOST,
         }
     }
 
@@ -3652,6 +3693,8 @@ impl S2c {
             // No writer case for 129 — `TrySendData(129)` writes a bare
             // frame (`MessageBuffer.cs:937`).
             Self::FinishedConnecting => w,
+            // `NetMessage.cs:1587-1590`: (byte)player + (number2 == 1f).
+            Self::CountsAsHost(c) => w.u8(c.player_id).bool(c.counts_as_host),
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -4018,6 +4061,11 @@ impl S2c {
             }),
             // `MessageBuffer.cs:4075-4085`: the client reads NOTHING.
             id::FINISHED_CONNECTING => Self::FinishedConnecting,
+            // `MessageBuffer.cs:4233-4234`: ReadByte + ReadBoolean.
+            id::COUNTS_AS_HOST => Self::CountsAsHost(CountsAsHost {
+                player_id: r.u8()?,
+                counts_as_host: r.bool()?,
+            }),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
             id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
@@ -7419,6 +7467,46 @@ mod tests {
         assert_eq!(r.remaining(), 0);
         // C2s-only.
         assert!(S2c::decode(133, &mut NetReader::new(&f133[3..])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_client_synced_inventory_is_a_bodyless_default_drop() {
+        // `138` — NO writer case (`SendData(138)` at Main.cs:17700 writes
+        // a bare frame) and NO reader case: the default arm
+        // (`MessageBuffer.cs:4477-4482`) reads nothing.
+        let f = C2s::ClientSyncedInventory.encode();
+        assert_eq!(f[2], 138);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::ClientSyncedInventory => {}
+            other => panic!("expected 138, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(138, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_counts_as_host_round_trips() {
+        // `NetMessage.cs:1587-1590`: (byte)player + (number2 == 1f) bool;
+        // the join arm sends flag13.ToInt() (`MessageBuffer.cs:934`).
+        for flag in [true, false] {
+            let c = CountsAsHost { player_id: 3, counts_as_host: flag };
+            let f = S2c::CountsAsHost(c).encode();
+            assert_eq!(f[2], 139);
+            assert_eq!(&f[3..], &[3, u8::from(flag)]);
+            let mut r = NetReader::new(&f[3..]);
+            match S2c::decode(f[2], &mut r).expect("decode") {
+                S2c::CountsAsHost(d) => assert_eq!(d, c),
+                other => panic!("expected 139, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+        }
+        // S2c-only.
+        assert!(C2s::decode(139, &mut NetReader::new(&[3, 1])).is_none());
+        // A truncated bool must not decode.
+        assert!(S2c::decode(139, &mut NetReader::new(&[3])).is_none());
     }
 
     #[test]

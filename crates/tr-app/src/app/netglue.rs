@@ -872,6 +872,10 @@ impl App {
             // (`MessageBuffer.cs:4147-4163`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             C2s::FoodPlatterTryPlacing(_) => {}
+            // S1-I-1 W4-f21: `138` has NO reader case — the C# default arm
+            // (`MessageBuffer.cs:4477-4482`) drops it; the codec's
+            // bare-frame read IS the whole arm.
+            C2s::ClientSyncedInventory => {}
         }
     }
 
@@ -1982,6 +1986,10 @@ impl App {
             // join flow drives those transitions from its own state
             // machine today.
             S2c::FinishedConnecting => {}
+            // S1-I-1 W4-f21: `139`'s client countsAsHostForGameplay store
+            // (`MessageBuffer.cs:4230-4237`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::CountsAsHost(_) => {}
         }
     }
 
