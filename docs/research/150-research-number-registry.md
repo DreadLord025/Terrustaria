@@ -900,3 +900,11 @@ first-add order re-verify at execution; the block is reserved regardless.)
 - Machine-check owed at next full refresh (round 5) — §8 is the interim authority.
 - No cargo/tests/rustfmt/graphify (docs-only). Publication on
   `task/W4-d54-dust-sites-world` only.
+
+### §8.5 — AMENDMENT: g13-308 executed pre-§8 → HONORED
+
+g13's `308-dust-main-family-bible.md` (`3fe509158`, pushed ~16:31) landed BEFORE
+this §8 publication (`0a658c7b3`), under the then-valid §7.4 "308+ free" rule.
+Executed-push-before-authority-publication is honored (the g48-244 precedent):
+**g13 KEEPS 308; d30 (the §8.1 308 assignee) shifts to 338.** All other §8.1
+rows unchanged (d125 309 … g8 317). Free floor moves to **339+**.
