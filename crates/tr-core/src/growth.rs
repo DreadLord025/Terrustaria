@@ -79,7 +79,7 @@ use grass::{grow_moss_arm, SPREAD_UNDERGROUND};
 
 // S1-K-3: the decorations family lives in `growth/decorations.rs`; the public
 // seams stay on `growth` (verbatim move, behaviour frozen).
-pub use decorations::{check_cat_tail, grow_cat_tail, grow_check_seaweed, place_dye, plant_dye};
+pub use decorations::{check_cat_tail, grow_cat_tail, grow_check_seaweed, place_cat_tail, place_dye, plant_dye};
 use decorations::{grow_web, try_growing_abigails_flower};
 
 // S1-K-3d: the herbs family lives in `growth/herbs.rs`; the public seams

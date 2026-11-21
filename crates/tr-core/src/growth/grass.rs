@@ -12,11 +12,13 @@ use crate::world::World;
 
 use super::trees::kill_invalid_tree_above;
 
-/// `WorldGen.UpdateWorld_GrassGrowth` (:74269-74424), the slice: the
-/// per-type table (:74284-74356 - the infection rows gated by
+/// `WorldGen.UpdateWorld_GrassGrowth` (:74269-74508), the underground slice:
+/// the per-type table (:74284-74356 - the infection rows gated by
 /// `AllowedToSpreadInfections`, the jungle/mushroom/plant rows maxValue 10),
-/// the plant-above roll (:74368-74371), the 3x3 soil scan converting the
-/// neighbours via [`spread_grass`] (:74381-74404).
+/// the plant-above roll (:74356-74376), the 3x3 soil scan converting the
+/// neighbours via [`spread_grass`] (:74381-74404), and the case-60/70 tail
+/// (:74414-74506 — the hardmode life fruit / Plantera bulb / detritus growth
+/// and the mushroom cattail/tree, W4-c31 jungle residuals).
 pub fn update_world_grass_growth(
     world: &mut World,
     i: i32,
@@ -34,7 +36,8 @@ pub fn update_world_grass_growth(
     let Some(t) = world.tile(i, j) else {
         return;
     };
-    let (soil, soil2, grass, grass2, plant, max_value): (i16, i16, i16, i16, i16, i32) = match t.kind {
+    let kind = t.kind;
+    let (soil, soil2, grass, grass2, plant, max_value): (i16, i16, i16, i16, i16, i32) = match kind {
         2 => (0, -1, 2, -1, -1, 1),
         23 => (0, 59, 23, 661, 24, 2),
         199 => (0, 59, 199, 662, 201, 2),
@@ -46,25 +49,32 @@ pub fn update_world_grass_growth(
         226 => (-1, -1, 226, -1, 61, 10),
         _ => return,
     };
-    if matches!(t.kind, 23 | 199 | 661 | 662) && !allowed_to_spread {
+    if matches!(kind, 23 | 199 | 661 | 662) && !allowed_to_spread {
         return;
     }
-    // The plant-above roll (:74368-74371).
+    // The plant-above roll (:74356-74376). `flag` records a successful
+    // placement — the case-60 tail's `if (flag || ...)` gate reads it.
+    let mut flag = false;
     if plant != -1
         && min_j < world.height as i32
         && world.tile(i, min_j).is_none_or(|t| !t.active())
         && rng.next_max(max_value) == 0
     {
-        let idx = world.index(i, min_j);
-        world.tiles[idx] = crate::tile::Tile {
-            kind: plant as u16,
-            flags: FLAG_ACTIVE,
-            ..Default::default()
-        };
-        if world.frame_important.len() <= plant as usize {
-            world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+        // The 226 density veto (:74359-74362).
+        let veto = kind == 226 && too_many_jungle_plants_nearby(world, i, min_j, 2);
+        if !veto {
+            flag = true;
+            let idx = world.index(i, min_j);
+            world.tiles[idx] = crate::tile::Tile {
+                kind: plant as u16,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+            if world.frame_important.len() <= plant as usize {
+                world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+            }
+            world.frame_important[plant as usize] = true;
         }
-        world.frame_important[plant as usize] = true;
     }
     // The 3x3 soil scan (:74381-74404).
     if soil != -1 {
@@ -93,6 +103,141 @@ pub fn update_world_grass_growth(
                 }
             }
         }
+    }
+    // The case-60/70 tail (:74414-74506, W4-c31 jungle residuals).
+    match kind {
+        60 => jungle_grass_hardmode_tail(world, i, j, min_j, flag, rng),
+        70 => mushroom_grass_tail(world, i, j, rng),
+        _ => {}
+    }
+}
+
+/// `WorldGen.TooManyJunglePlantsNearby` (`WorldGen.cs:73164-73187`): the
+/// ±9×±5 box `Utils.Clamp`'d into `[10, max−1−10]`, counting active 61/74
+/// tiles; true once the count exceeds `max_count`.
+fn too_many_jungle_plants_nearby(world: &World, i: i32, j: i32, max_count: i32) -> bool {
+    let lo_x = (i - 9).clamp(10, world.width - 1 - 10);
+    let hi_x = (i + 9).clamp(10, world.width - 1 - 10);
+    let lo_y = (j - 5).clamp(10, world.height - 1 - 10);
+    let hi_y = (j + 5).clamp(10, world.height - 1 - 10);
+    let mut count = 0;
+    for x in lo_x..=hi_x {
+        for y in lo_y..=hi_y {
+            if world
+                .tile(x, y)
+                .is_some_and(|t| t.active() && (t.kind == 61 || t.kind == 74))
+            {
+                count += 1;
+                if count > max_count {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+/// The stride-2 density scan the bulb/fruit arms run (`:74426-74436` /
+/// `:74458-74468`): true when NO active `kind` tile sits in the
+/// `[i-radius, i+radius)` × `[j-radius, j+radius)` box (the `>1 && <max-2`
+/// bounds guard per cell).
+fn no_nearby_kind(world: &World, i: i32, j: i32, radius: i32, kind: u16) -> bool {
+    let mut m = i - radius;
+    while m < i + radius {
+        let mut n = j - radius;
+        while n < j + radius {
+            if m > 1
+                && m < world.width - 2
+                && n > 1
+                && n < world.height - 2
+                && world.tile(m, n).is_some_and(|t| t.active() && t.kind == kind)
+            {
+                return false;
+            }
+            n += 2;
+        }
+        m += 2;
+    }
+    true
+}
+
+/// The case-60 hardmode tail (`WorldGen.cs:74416-74496`): the `Next(25)`
+/// gate + liquid veto, the all-mechs `Next(60)` Plantera-bulb arm (150-radius
+/// stride-2 density), the any-mech `Next(30/40)` life-fruit arm (60/50-radius),
+/// and the 233 detritus fallback (`Next(8)` styleY 0, `Next(12)` styleY 1).
+/// `flag` is the plant-above placement flag (`:74355`/`:74365`).
+fn jungle_grass_hardmode_tail(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    min_j: i32,
+    flag: bool,
+    rng: &mut UnifiedRandom,
+) {
+    // `if (flag || genRand.Next(25) != 0 || tile[i, minJ].liquid != 0) break;`
+    // (`:74418`) — the `||` short-circuit: a placed plant skips the draw.
+    if flag || rng.next_max(25) != 0 {
+        return;
+    }
+    if world.tile(i, min_j).is_some_and(|t| t.liquid != 0) {
+        return;
+    }
+    let expert = false; // `Main.expertMode` constants-off (single-difficulty)
+    // The all-mechs bulb arm (`:74422-74448`).
+    if world.hard_mode
+        && world.downed_mech_boss1
+        && world.downed_mech_boss2
+        && world.downed_mech_boss3
+        && rng.next_max(60) == 0
+    {
+        if no_nearby_kind(world, i, j, 150, 238) {
+            super::jungle_plants::place_jungle_plant(world, i, min_j, 238, 0, 0);
+            crate::edit::square_tile_frame_gen(world, i, min_j);
+            crate::edit::square_tile_frame_gen(world, i + 2, min_j);
+            crate::edit::square_tile_frame_gen(world, i - 1, min_j);
+        }
+    }
+    // The any-mech life-fruit arm (`:74449-74480`).
+    let max_value2 = if expert { 30 } else { 40 };
+    let any_mech =
+        world.downed_mech_boss1 || world.downed_mech_boss2 || world.downed_mech_boss3;
+    if world.hard_mode && any_mech && rng.next_max(max_value2) == 0 {
+        let radius = if expert { 50 } else { 60 };
+        if no_nearby_kind(world, i, j, radius, 236) {
+            let style = rng.next_max(3);
+            super::jungle_plants::place_jungle_plant(world, i, min_j, 236, style, 0);
+            crate::edit::square_tile_frame_gen(world, i, min_j);
+            crate::edit::square_tile_frame_gen(world, i + 1, min_j + 1);
+        }
+        return;
+    }
+    // The 233 detritus fallback (`:74481-74494`): styleY 0 at `Next(8)`,
+    // retrying styleY 1 at `Next(12)` when the first left no 233.
+    let style0 = rng.next_max(8);
+    super::jungle_plants::place_jungle_plant(world, i, min_j, 233, style0, 0);
+    if world.tile(i, min_j).is_some_and(|t| t.kind == 233) {
+        return;
+    }
+    let style1 = rng.next_max(12);
+    super::jungle_plants::place_jungle_plant(world, i, min_j, 233, style1, 1);
+}
+
+/// The case-70 mushroom tail (`WorldGen.cs:74497-74506`): a liquid cell
+/// above grows a cattail; `Next(250)` grows a mushroom tree (the kind-5
+/// `GrowTree`) when a player is in LOS. The `TreeGrowFXCheck` leaf FX is a
+/// draw-side effect (the port's growth tick carries no FX channel).
+fn mushroom_grass_tail(world: &mut World, i: i32, j: i32, rng: &mut UnifiedRandom) {
+    if world.tile(i, j - 1).is_some_and(|t| t.liquid > 0) {
+        super::decorations::place_cat_tail(world, i, j - 1);
+    }
+    // `Next(250) == 0 && TryGrowingTreeByType(5, i, j) && PlayerLOS(i, j)`
+    // (`:74502`) — the `&&` short-circuit draws only after the roll passes.
+    // `TryGrowingTreeByType(5, ...)` dispatches to `GrowTree` (`:30348-30349`).
+    let grew = rng.next_max(250) == 0 && super::trees::grow_tree(world, i, j, rng);
+    if grew {
+        // `PlayerLOS` (`:69443-69454`) gates the `TreeGrowFXCheck` leaf FX
+        // only; the tree already grew. The FX is draw-side (no growth-tick
+        // channel in the port) — the LOS read parks with it.
     }
 }
 
@@ -1218,5 +1363,96 @@ mod tests {
         // The conversion leaves the moss source itself and the moss tile
         // unique-source intact.
         assert_eq!(w.tile(10, 20).unwrap().kind, 179);
+    }
+
+    // --- W4-c31 jungle residuals: the case-60 hardmode tail ---------------
+
+    /// A jungle-grass (60) cell at (i, j) with a grass floor below the
+    /// placement row min_j = j-1, hardmode + all three mechs downed.
+    fn jungle_growth_world() -> World {
+        let mut w = World::new("jg".into(), 400, 400);
+        w.world_surface = 100.0;
+        w.hard_mode = true;
+        w.downed_mech_boss1 = true;
+        w.downed_mech_boss2 = true;
+        w.downed_mech_boss3 = true;
+        // The grass floor row at y=201 (the placement ground for min_j=200).
+        for x in 0..400 {
+            let i = w.index(x, 201);
+            w.tiles[i] = Tile { kind: 60, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        // The jungle-grass source at (200, 200).
+        let i = w.index(200, 200);
+        w.tiles[i] = Tile { kind: 60, flags: FLAG_ACTIVE, ..Default::default() };
+        w
+    }
+
+    /// The hardmode tail places a life fruit (236) or bulb (238) or detritus
+    /// (233) above the jungle grass over many growth ticks.
+    #[test]
+    fn the_hardmode_tail_grows_fruit_bulb_or_detritus() {
+        let mut w = jungle_growth_world();
+        let mut rng = UnifiedRandom::new(42);
+        let mut grew = false;
+        for _ in 0..4000 {
+            update_world_grass_growth(&mut w, 200, 200, 199, 202, 199, 202, true, &mut rng);
+            if w.tile(200, 199).is_some_and(|t| t.active() && matches!(t.kind, 236 | 238 | 233)) {
+                grew = true;
+                break;
+            }
+            // Reset the source cell (the tail may have overwritten min_j).
+            let i = w.index(200, 200);
+            w.tiles[i] = Tile { kind: 60, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        assert!(grew, "the hardmode tail grows a 236/238/233 above the grass");
+    }
+
+    /// The a == b determinism witness: two identical growth runs draw
+    /// identical streams and write identical tiles.
+    #[test]
+    fn the_hardmode_tail_is_reproducible_for_a_seed() {
+        let run = || {
+            let mut w = jungle_growth_world();
+            let mut rng = UnifiedRandom::new(7);
+            for _ in 0..500 {
+                update_world_grass_growth(&mut w, 200, 200, 199, 202, 199, 202, true, &mut rng);
+            }
+            w
+        };
+        assert_eq!(run().tiles, run().tiles, "a == b — the full tile state");
+    }
+
+    /// Pre-hardmode: the tail only grows the 233 detritus (no fruit/bulb).
+    #[test]
+    fn the_pre_hardmode_tail_grows_only_detritus() {
+        let mut w = jungle_growth_world();
+        w.hard_mode = false;
+        let mut rng = UnifiedRandom::new(3);
+        let mut saw_fruit_or_bulb = false;
+        for _ in 0..2000 {
+            update_world_grass_growth(&mut w, 200, 200, 199, 202, 199, 202, true, &mut rng);
+            if w.tile(200, 199).is_some_and(|t| t.active() && matches!(t.kind, 236 | 238)) {
+                saw_fruit_or_bulb = true;
+            }
+            let i = w.index(200, 200);
+            w.tiles[i] = Tile { kind: 60, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        assert!(!saw_fruit_or_bulb, "no fruit/bulb before hardmode");
+    }
+
+    /// The liquid veto: a water cell at min_j blocks the tail.
+    #[test]
+    fn the_liquid_veto_blocks_the_tail() {
+        let mut w = jungle_growth_world();
+        let i = w.index(200, 199);
+        w.tiles[i].liquid = 200; // water at the placement row
+        let mut rng = UnifiedRandom::new(5);
+        for _ in 0..500 {
+            update_world_grass_growth(&mut w, 200, 200, 199, 202, 199, 202, true, &mut rng);
+        }
+        assert!(
+            !w.tile(200, 199).is_some_and(|t| t.active() && matches!(t.kind, 236 | 238 | 233)),
+            "the liquid veto blocks the placement"
+        );
     }
 }

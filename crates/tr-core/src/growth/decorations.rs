@@ -29,6 +29,111 @@ fn nactive(t: &crate::tile::Tile) -> bool {
     t.active() && !t.inactive()
 }
 
+/// `WorldGen.PlaceCatTail` (`WorldGen.cs:58629-58742`): the cattail (519)
+/// placement — the water-column walk up to the surface, the wall/density/
+/// ground gates, then the base write at `frameY = soil row` (W4-c31 jungle
+/// residuals — the case-70 mushroom tail calls it). Returns the placed
+/// cell, or `(-1, -1)` on refusal.
+pub fn place_cat_tail(world: &mut World, x: i32, j: i32) -> (i32, i32) {
+    let fail = (-1, -1);
+    let mut num = j;
+    if x < 50 || x > world.width - 50 || num < 50 || num > world.height - 50 {
+        return fail;
+    }
+    // `:58637`: the cell must be empty (or a 71 mushroom) with water.
+    let Some(t0) = cell(world, x, num) else { return fail };
+    if (t0.active() && t0.kind != 71) || t0.liquid == 0 || t0.liquid_kind() != crate::tile::LiquidKind::Water {
+        return fail;
+    }
+    // `:58641-58645`: up through the water, then one back down.
+    while num > 50 && cell(world, x, num).is_some_and(|t| t.liquid > 0) {
+        num -= 1;
+    }
+    num += 1;
+    // `:58646`: the surface cell and the one above must be empty water.
+    let Some(ts) = cell(world, x, num) else { return fail };
+    if ts.active()
+        || cell(world, x, num - 1).is_some_and(|t| t.active())
+        || ts.liquid == 0
+        || ts.liquid_kind() != crate::tile::LiquidKind::Water
+    {
+        return fail;
+    }
+    // `:58650`: the wall gate — 0/80/81/69/63-68 only.
+    let w = ts.wall;
+    if w != 0 && w != 80 && w != 81 && w != 69 && !(63..=68).contains(&w) {
+        return fail;
+    }
+    // `:58654-58670`: the ±7 density scan — >3 columns with a 519 refuse.
+    let mut count = 0;
+    for i in (x - 7)..=(x + 7) {
+        for k in (num - 7)..=(num + 7) {
+            if cell(world, i, k).is_some_and(|t| t.active() && t.kind == 519) {
+                count += 1;
+                break;
+            }
+        }
+    }
+    if count > 3 {
+        return fail;
+    }
+    // `:58671-58686`: down to the ground — the water depth must be 2..=8.
+    let mut l = num;
+    while l < world.height - 50
+        && !cell(world, x, l).is_some_and(|t| {
+            t.active()
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+        })
+    {
+        if let Some(t) = cell(world, x, l) {
+            if t.active() && t.kind != 71 {
+                return fail;
+            }
+        }
+        l += 1;
+    }
+    if l - num > CAT_TAIL_DISTANCE - 1 || l - num < 2 {
+        return fail;
+    }
+    let Some(ground) = cell(world, x, l) else { return fail };
+    if !nactive(&ground) {
+        return fail;
+    }
+    // `:58692-58723`: the soil → frameY row.
+    let frame_y: i16 = match ground.kind {
+        2 | 477 => 0,
+        53 => {
+            // `:58700`: the sand arm needs the beach distance (380).
+            if x < 380 || x > world.width - 380 {
+                return fail;
+            }
+            18
+        }
+        199 | 234 | 662 => 54,
+        23 | 112 | 661 => 72,
+        70 => 90,
+        _ => return fail,
+    };
+    // `:58724-58731`: the top-slope/half-brick gate (the gen-time slope
+    // flatten is worldgen-only — the growth tick refuses).
+    if ground.top_slope() || ground.half_brick() {
+        return fail;
+    }
+    // `:58732-58741`: the base write.
+    let base = l - 1;
+    if let Some(t) = world.tile_mut(x, base) {
+        t.flags |= FLAG_ACTIVE;
+        t.kind = 519;
+        t.frame_x = 0;
+        t.frame_y = frame_y;
+        t.set_slope(0);
+        t.flags &= !crate::tile::FLAG_HALF_BRICK;
+    }
+    crate::edit::square_tile_frame_gen(world, x, base);
+    (x, base)
+}
+
 /// `WorldGen.CheckCatTail` (`WorldGen.cs:58744-58930`): the cattail (519)
 /// validity sweep. It walks the stalk's column — down to the ground, back up
 /// through the water — and marks the run invalid when the water column is too
