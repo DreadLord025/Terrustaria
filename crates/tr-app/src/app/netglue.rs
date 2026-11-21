@@ -880,6 +880,11 @@ impl App {
             // (`MessageBuffer.cs:4304-4309`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             C2s::RequestQuestEffect => {}
+            // S1-I-1 W4-f21: `149`'s host TEDeadCellsDisplayJar.TryPlacing
+            // (`MessageBuffer.cs:4344-4360`) and `152`'s host id-force +
+            // relay (`:4386-4396`) land with the apply-wiring lanes
+            // (g48-g52) / S1-I-4.
+            C2s::DeadCellsJarTryPlacing(_) | C2s::ItemUseSound { .. } => {}
         }
     }
 
@@ -1999,6 +2004,10 @@ impl App {
             // lanes (g48-g52) / S1-I-4 — the FX dust/sound burst is the
             // shimmer lane's RNG census, not this codec's.
             S2c::ShimmerAction(_) => {}
+            // S1-I-1 W4-f21: `152`'s client UseSound play at the peer's
+            // Centre with useSoundPitch (`MessageBuffer.cs:4397-4405`)
+            // lands with the apply-wiring lanes (g48-g52) / S1-I-4.
+            S2c::ItemUseSound { .. } => {}
         }
     }
 

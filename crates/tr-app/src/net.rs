@@ -407,6 +407,18 @@ pub mod id {
     /// enemy-grab lock became the `21` bit-3 tail (d98's wave I).
     /// Constant + census doc only (the 24/145 precedent).
     pub const ITEM_ENEMY_LOCK_DEPRECATED: u8 = 148;
+    /// `149 DeadCellsDisplayJarTryPlacing` (`MessageID.cs:312`) — writer
+    /// `NetMessage.cs:1629-1638` (the exact 89 body), reader
+    /// `MessageBuffer.cs:4344-4360` (host-only
+    /// `TEDeadCellsDisplayJar.TryPlacing`). Client send:
+    /// `TEDeadCellsDisplayJar.cs:150`. C2s-only.
+    pub const DEAD_CELLS_JAR_TRY_PLACING: u8 = 149;
+    /// `152 ItemUseSound` (`MessageID.cs:318`) — writer
+    /// `NetMessage.cs:1643-1645` (`(byte)player` only), reader
+    /// `MessageBuffer.cs:4386-4407` (host id-force + relay; client plays
+    /// the peer's held item's `UseSound` at its Centre with
+    /// `useSoundPitch`). Client send: `Player.cs:51692`. Both directions.
+    pub const ITEM_USE_SOUND: u8 = 152;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2607,6 +2619,15 @@ pub enum C2s {
     /// bodyless (`Main.cs:40287`; host `HaveDryadDoStardewAnimation`,
     /// `MessageBuffer.cs:4304-4309`). C2s-only.
     RequestQuestEffect,
+    /// `149 DeadCellsDisplayJarTryPlacing` — a client tries to place its
+    /// held item in a Dead Cells display jar
+    /// (`TEDeadCellsDisplayJar.cs:150`; host `TryPlacing`,
+    /// `MessageBuffer.cs:4344-4360`). C2s-only; the 89 body twin.
+    DeadCellsJarTryPlacing(TryPlacingItem),
+    /// `152 ItemUseSound` — a client used an item with a sound
+    /// (`Player.cs:51692`; host id-force + relay
+    /// `MessageBuffer.cs:4386-4407`). Both directions.
+    ItemUseSound { player_id: u8 },
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2861,6 +2882,9 @@ pub enum S2c {
     /// (`WorldItem.cs:1665`/`:1716`; client-only reader
     /// `MessageBuffer.cs:4310-4327`). S2c-only.
     ShimmerAction(ShimmerAction),
+    /// `152 ItemUseSound` — a peer's item-use sound, host relay
+    /// (`MessageBuffer.cs:4395`). Both directions.
+    ItemUseSound { player_id: u8 },
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2934,6 +2958,8 @@ impl C2s {
             Self::FoodPlatterTryPlacing(_) => id::FOOD_PLATTER_TRY_PLACING,
             Self::ClientSyncedInventory => id::CLIENT_SYNCED_INVENTORY,
             Self::RequestQuestEffect => id::REQUEST_QUEST_EFFECT,
+            Self::DeadCellsJarTryPlacing(_) => id::DEAD_CELLS_JAR_TRY_PLACING,
+            Self::ItemUseSound { .. } => id::ITEM_USE_SOUND,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -3069,6 +3095,12 @@ impl C2s {
             Self::ClientSyncedInventory => w,
             // No writer case for 144 — `SendData(144)` writes a bare frame.
             Self::RequestQuestEffect => w,
+            // `NetMessage.cs:1629-1638` — the exact 89 body under id 149.
+            Self::DeadCellsJarTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1643-1645`: (byte)player only.
+            Self::ItemUseSound { player_id } => w.u8(*player_id),
             // `NetMessage.cs:1489-1508`: (byte)player + int id + the
             // already-folded wire slot + WriteItem (or the air fallback,
             // which is the same 5 bytes as an air TeItem slot).
@@ -3313,6 +3345,18 @@ impl C2s {
             id::CLIENT_SYNCED_INVENTORY => Self::ClientSyncedInventory,
             // `MessageBuffer.cs:4304-4309`: the host reads NOTHING.
             id::REQUEST_QUEST_EFFECT => Self::RequestQuestEffect,
+            // `MessageBuffer.cs:4350-4354` — the exact 89 read under 149.
+            id::DEAD_CELLS_JAR_TRY_PLACING => Self::DeadCellsJarTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4388`: ReadByte (the id force is apply-side).
+            id::ITEM_USE_SOUND => Self::ItemUseSound {
+                player_id: r.u8()?,
+            },
             // `MessageBuffer.cs:3997-4016`: byte + int + byte slot; the
             // dye unfold + the >= 2 refusal are the apply arm's — the
             // codec keeps the wire slot verbatim and reads the 5-byte
@@ -3556,6 +3600,7 @@ impl S2c {
             Self::FinishedConnecting => id::FINISHED_CONNECTING,
             Self::CountsAsHost(_) => id::COUNTS_AS_HOST,
             Self::ShimmerAction(_) => id::SHIMMER_ACTIONS,
+            Self::ItemUseSound { .. } => id::ITEM_USE_SOUND,
         }
     }
 
@@ -3761,6 +3806,8 @@ impl S2c {
                 }
                 ShimmerAction::Unknown(k) => w.u8(k),
             },
+            // `NetMessage.cs:1643-1645` — the shared one-byte body.
+            Self::ItemUseSound { player_id } => w.u8(*player_id),
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -4146,6 +4193,10 @@ impl S2c {
                 },
                 k => ShimmerAction::Unknown(k),
             }),
+            // `MessageBuffer.cs:4388` — the shared one-byte read.
+            id::ITEM_USE_SOUND => Self::ItemUseSound {
+                player_id: r.u8()?,
+            },
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
             id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
@@ -7667,6 +7718,54 @@ mod tests {
         assert_eq!(id::ITEM_ENEMY_LOCK_DEPRECATED, 148);
         assert!(C2s::decode(148, &mut NetReader::new(&[])).is_none());
         assert!(S2c::decode(148, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_dead_cells_jar_try_placing_is_the_89_twin() {
+        // `NetMessage.cs:1629-1638` — the exact 89 body under id 149.
+        let b = TryPlacingItem {
+            x: 60,
+            y: 400,
+            kind: 5335,
+            prefix: 0,
+            stack: 1,
+        };
+        let f149 = C2s::DeadCellsJarTryPlacing(b).encode();
+        let f89 = C2s::ItemFrameTryPlacing(b).encode();
+        assert_eq!(f149[2], 149);
+        assert_eq!(&f149[3..], &f89[3..]); // identical bodies
+        let mut r = NetReader::new(&f149[3..]);
+        match C2s::decode(f149[2], &mut r).expect("decode") {
+            C2s::DeadCellsJarTryPlacing(d) => assert_eq!(d, b),
+            other => panic!("expected 149, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(149, &mut NetReader::new(&f149[3..])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_item_use_sound_round_trips_both_directions() {
+        // `NetMessage.cs:1643-1645`: (byte)player only — the sound itself
+        // is re-derived from the peer's held item on the client
+        // (`MessageBuffer.cs:4399-4404`).
+        let f = C2s::ItemUseSound { player_id: 5 }.encode();
+        assert_eq!(f[2], 152);
+        assert_eq!(&f[3..], &[5]);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::ItemUseSound { player_id } => assert_eq!(player_id, 5),
+            other => panic!("expected 152, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::ItemUseSound { player_id: 5 }.encode();
+        assert_eq!(f[2], 152);
+        match S2c::decode(152, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::ItemUseSound { player_id } => assert_eq!(player_id, 5),
+            other => panic!("expected 152, got {:?}", other.msg_id()),
+        }
+        // A missing byte must not decode.
+        assert!(C2s::decode(152, &mut NetReader::new(&[])).is_none());
     }
 
     #[test]
