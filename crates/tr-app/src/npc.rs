@@ -9,6 +9,24 @@ use crate::projectile::angle_towards;
 use crate::npc_buffs::NpcBuffs;
 use crate::player::{Player, collides_rect};
 
+/// W4-f4: the permissive dust ctx shared by the direct-call entries and
+/// the test seams (the whole world on-screen, the full 6000 budget —
+/// the pool never culls, so the scratch spawns always land; the
+/// `update_rng` convention lifted to one home, the W4-e2 precedent).
+pub(crate) fn permissive_dust_ctx(world: &World) -> tr_core::particles::SpawnCtx {
+    tr_core::particles::SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: Vec2::ZERO,
+        screen_size: Vec2::new(
+            world.width as f32 * TILE_PX,
+            world.height as f32 * TILE_PX,
+        ),
+        max_dust_to_draw: 6000,
+    }
+}
+
 pub(crate) const GRAVITY: f32 = 0.4;
 pub(crate) const MAX_FALL: f32 = 8.0;
 
@@ -4894,7 +4912,7 @@ impl Npc {
             // the boss's tick makes is the trail bubble's scale
             // (`Main.rand.Next(80, 121)`, `NPC.cs:49481`) — the adapter
             // draws it at request time on the caller's stream.
-            69 => self.ai_069_fishron(world, player, rng),
+            69 => self.ai_069_fishron(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 70)` (`NPC.cs:34884-34957`) —
             // the Detonating Bubble 371, the style's only user. The
             // faithful `npc_ai_style70::ai_style70` arm (456a2366).
@@ -4930,7 +4948,7 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
-            _ => self.update_kind_ai(world, player, dt, rng),
+            _ => self.update_kind_ai(world, player, dt, rng, dust, dust_ctx),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
         // once per NPC update, AFTER the AI read it. The clear sits before
@@ -5474,7 +5492,14 @@ impl Npc {
     /// shape). The `EncourageDespawn(10)` rides the port's despawn window.
     /// The trail bubble's scale draw (`:49481`) happens HERE, at request
     /// time — the C# draws inside the boss's own tick.
-    fn ai_069_fishron(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn ai_069_fishron(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         use crate::npc_ai_fishron::{fishron_ai_step, FishronEnv, FishronRequest, FishronState};
         let cand = crate::npc_target::session_candidate(player);
         let (pcx, pcy) = player.center();
@@ -5536,6 +5561,19 @@ impl Npc {
             def_damage: crate::npc_ai_fishron::FISHRON_DEF_DAMAGE,
             def_defense: crate::npc_ai_fishron::FISHRON_DEF_DEFENSE,
         };
+        // W4-f4 — the four dust sites (49029/49181/49449/49661) run
+        // PRE-step on the live pool: each C# dust block sits at its
+        // state's head reading the pre-step state/velocity, and the
+        // arm's only other draw (the state-7 trail scale below) is
+        // disjoint from the dust states -1/1/6/11 — the stream order
+        // is the C#'s (`npc_ai_fishron::fishron_dust_sites`). The
+        // despawn arm (`:48854-48867`) rewrites ai0 → 0/5 (and vy -=
+        // 0.4) when the player is dead or > 5600 px away; neither 0 nor
+        // 5 is a dust state, so the seam is gated off exactly then
+        // (dist0 is the pre-step centre distance, `:48846-48848`).
+        if !player.dead && dist0 <= 5600.0 {
+            crate::npc_ai_fishron::fishron_dust_sites(&s, rng, dust, dust_ctx, world);
+        }
         let out = fishron_ai_step(&mut s, &env);
         // The state writes back (the C#'s field writes, `:48774-49754`).
         self.ai = [s.ai0, s.ai1, s.ai2, s.ai3];
@@ -5681,7 +5719,15 @@ impl Npc {
     // saucer trio duplicate were purged here). One live arm per kind: a
     // duplicate is a hard error, the `to_u16` guard's precedent (S1-F-1).
     #[deny(unreachable_patterns)]
-    fn update_kind_ai(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
+    fn update_kind_ai(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        dt: f32,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         match self.kind {
             // S1-D-3ff wave A: the nine LOW-id slimes ride the same
             // aiStyle-1 hop machine (the C#'s `AI_001_Slimes` is one arm
@@ -5853,7 +5899,7 @@ impl Npc {
             | NpcKind::GolemFistLeft
             | NpcKind::GolemFistRight
             | NpcKind::GolemHeadFree => self.update_golem_rng(world, player, rng),
-            NpcKind::Deerclops => self.update_deerclops(world, player, rng),
+            NpcKind::Deerclops => self.update_deerclops(world, player, rng, dust, dust_ctx),
             NpcKind::Skeleton => self.update_skeleton(world, player, dt),
             NpcKind::UndeadMiner => self.update_skeleton(world, player, dt),
             // The goblin army's fighters (aiStyle 3, NPC.cs:15644/15658/
@@ -5995,7 +6041,7 @@ impl Npc {
             // The pillar worms: the crawltipede chain rides the worm pass
             // (aiStyle 6) and the stardust worm head's own machine; the
             // spearman rides the walker.
-            NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng),
+            NpcKind::StardustWormHead => self.update_stardust_worm_head(world, player, rng, dust, dust_ctx),
             NpcKind::SolarSpearman => {
                 // S1-D-3p (walker migration): the shared selection at the
                 // C# position (`NPC.cs:57369`); S1-D-3's 518 carrier row
@@ -6074,7 +6120,7 @@ impl Npc {
             NpcKind::MoonLordFreeEye => self.update_true_eye(world, player, rng),
             NpcKind::MoonLordLeechBlob => self.update_moon_leech_blob(world, player),
             // The etherian crystal: aiStyle 105's machine.
-            NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player),
+            NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player, rng, dust, dust_ctx),
 
             // The pirates: aiStyle 3 rides the walker (the per-type speeds
             // fold into the walker params — the Captain's cannon and the
@@ -6284,7 +6330,7 @@ impl Npc {
             // claimed by the aiStyle-69/70/71 axis above (the Spazmatism
             // precedent — this arm keeps the kind match exhaustive and
             // routes to the same machines for direct-kind callers).
-            NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
+            NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng, dust, dust_ctx),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
         }
@@ -12562,7 +12608,14 @@ impl Npc {
     /// (S1-E-12c). The hp's tier is baked by the `SetDefaults` row (the
     /// 1000/3000/5000 difficulty arms ride the difficulty system); the
     /// lane spawning = the follow-up.
-    fn update_eternia_crystal(&mut self, world: &World, player: &Player) {
+    fn update_eternia_crystal(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `AI()`'s aiStyle-105 WIN-scene arm (`NPC.cs:40758-40857`,
         // `ai[1] == 2`): the crystal is shielded, bobs on a cosine for 120
         // ticks then holds, and at 600 runs `DD2Event.StopInvasion(win: true)`
@@ -12573,8 +12626,8 @@ impl Npc {
         // (the machine holds no `App`). Deferred presentation (ANALYSIS):
         // the `ai[0] == 3` `DD2_WinScene` cue + the 713 projectile + the
         // redundant portal re-mark (`:40762-40778` — `StartVictoryScene`
-        // already flipped every 549), the dust rings (`:40804-40856`) and
-        // the `MoonlordDeathDrama` light (`:40791-40795`).
+        // already flipped every 549) and the `MoonlordDeathDrama` light
+        // (`:40791-40795`). W4-f4 arms the dust rings (sites 40834/40851).
         if self.ai[1] == 2.0 {
             // `:40760-40761`: the hostile-only shield folds into the full
             // `dont_take_damage` (the loss arm's recorded deviation).
@@ -12598,6 +12651,97 @@ impl Npc {
                 self.wants_event_stop = true;
                 self.dont_take_damage = false;
                 self.hp = 0;
+            }
+            // W4-f4 — site 40834 (`NPC.cs:40804-40842`): the win-scene
+            // ambient ring. The `if (true)` block runs EVERY win tick.
+            // `vector222 = Center + (0, -20)`; the fade ladder num1418
+            // steps 0.99 → 0.79 (≥60) → 0.58 (≥120) → 0.43 (≥180) → 0.33
+            // (≥240) → 1 (≥540). Nine iterations: the gate
+            // `!(NextFloat() < num1418)` draws EVERY iteration; on a pass
+            // the angle `NextFloat() * 2π` and the radial `NextFloat()`
+            // draw, then `NewDustPerfect(vector222 + angle.ToRotationVector2()
+            // * (110 + 600 * radial), 264, (angle - π).ToRotationVector2()
+            // * (14 + 8 * radial))` — the velocity argument's `0f *
+            // NextFloat()` term STILL draws a NextFloat (C# evaluates it).
+            // Post: scale 0.9, fadeIn 1.15 + radial * 0.3, color
+            // `(1,1,1,num1418) * (1 - num1418)`, noGravity + noLight. The
+            // 264 type hits no per-type tweak (`Dust.cs:214-252`); the
+            // perfect spawn's 0×0 box rolls the pool internals.
+            {
+                let (cw, ch) = self.size();
+                let vector222 = Vec2::new(self.x + cw * 0.5, self.y + ch * 0.5 - 20.0);
+                let mut num1418 = 0.99f32;
+                if self.ai[0] >= 60.0 { num1418 = 0.79; }
+                if self.ai[0] >= 120.0 { num1418 = 0.58; }
+                if self.ai[0] >= 180.0 { num1418 = 0.43; }
+                if self.ai[0] >= 240.0 { num1418 = 0.33; }
+                if self.ai[0] >= 540.0 { num1418 = 1.0; }
+                for _ in 0..9 {
+                    if !(rng.next_float() < num1418) {
+                        let num1420 = rng.next_float() * std::f32::consts::TAU;
+                        let num1421 = rng.next_float();
+                        let r = 110.0 + 600.0 * num1421;
+                        let pos = vector222 + Vec2::new(num1420.cos() * r, num1420.sin() * r);
+                        let va = num1420 - std::f32::consts::PI;
+                        let _zero = rng.next_float(); // the `0f * NextFloat()` term
+                        let vmag = 14.0 + 0.0 * _zero + 8.0 * num1421;
+                        let vel = Vec2::new(va.cos() * vmag, va.sin() * vmag);
+                        let idx = dust.new_dust_perfect(
+                            rng, dust_ctx, world, pos, 264, Some(vel), 0,
+                            tr_core::particles::Color::default(), 1.0,
+                        );
+                        let dd = dust.slot_mut(idx);
+                        dd.scale = 0.9;
+                        dd.fade_in = 1.15 + num1421 * 0.3;
+                        // `new Color(1f,1f,1f,num1418) * (1f - num1418)` —
+                        // the float ctor truncates each channel to a byte
+                        // FIRST (A = (byte)(num1418*255)), then the XNA
+                        // multiply truncates again (the two-step order).
+                        let f = 1.0 - num1418;
+                        let base_a = (255.0 * num1418) as u8;
+                        dd.color = tr_core::particles::Color::new(
+                            (255.0 * f) as u8, (255.0 * f) as u8, (255.0 * f) as u8,
+                            (base_a as f32 * f) as u8,
+                        );
+                        dd.no_gravity = true;
+                        dd.no_light = true;
+                    }
+                }
+            }
+            // W4-f4 — site 40851 (`NPC.cs:40843-40858`): the win-scene
+            // pulse ring at the twelve listed ai[0] ticks. ONE angle
+            // `NextFloat() * 2π` draws, then 120 iterations each draw a
+            // radial `NextFloat()` and spawn `NewDustPerfect(Center +
+            // (0,-20) + (i/120*2π).ToRotationVector2() * (810 - ai[0]),
+            // 264, (i/120*2π - π).ToRotationVector2() * (14 + 5*(ai[0]/600)
+            // + 8*radial))`. Post: scale 0.9, fadeIn 1.15 + radial*0.3,
+            // color `(1,1,1,0)` (transparent), noGravity + noLight.
+            if matches!(self.ai[0] as i32, 100 | 160 | 220 | 280 | 340 | 370 | 400 | 430 | 460 | 500 | 520 | 540) {
+                let (cw, ch) = self.size();
+                let anchor = Vec2::new(self.x + cw * 0.5, self.y + ch * 0.5 - 20.0);
+                let _num1422 = rng.next_float() * std::f32::consts::TAU;
+                let num1423 = 120.0f32;
+                let mut num1424 = 0.0f32;
+                while num1424 < num1423 {
+                    let num1425 = num1424 / num1423 * std::f32::consts::TAU;
+                    let num1426 = rng.next_float();
+                    let r = 810.0 - self.ai[0];
+                    let pos = anchor + Vec2::new(num1425.cos() * r, num1425.sin() * r);
+                    let va = num1425 - std::f32::consts::PI;
+                    let vmag = 14.0 + 5.0 * (self.ai[0] / 600.0) + 8.0 * num1426;
+                    let vel = Vec2::new(va.cos() * vmag, va.sin() * vmag);
+                    let idx = dust.new_dust_perfect(
+                        rng, dust_ctx, world, pos, 264, Some(vel), 0,
+                        tr_core::particles::Color::default(), 1.0,
+                    );
+                    let dd = dust.slot_mut(idx);
+                    dd.scale = 0.9;
+                    dd.fade_in = 1.15 + num1426 * 0.3;
+                    dd.color = tr_core::particles::Color::new(255, 255, 255, 0);
+                    dd.no_gravity = true;
+                    dd.no_light = true;
+                    num1424 += 1.0;
+                }
             }
             self.y += self.vy;
             let _ = (world, player);
@@ -12638,10 +12782,60 @@ impl Npc {
                 self.dont_take_damage = false;
                 self.hp = 0;
             }
-            // The scene flight (the velocity the arm wrote; the dust
-            // `:40941-40952` and the `MoonlordDeathDrama.RequestLight`
-            // `:40887-40891` are unmodelled — they draw the C#'s dust RNG,
-            // the port draws nothing here).
+            // W4-f4 — site 40947 (`NPC.cs:40905-40953`): the loss-scene
+            // ambient ring. The `if (true)` block runs EVERY loss tick.
+            // `vector223 = Center + (0, Lerp(0, -70, GetLerpValue(0, 300,
+            // ai[0], clamped)))`; the fade ladder num1429 steps 0.99 →
+            // 0.79 (≥60) → 0.58 (≥120) → 0.23 (≥180) → 0.35 (≥240) → 0.6
+            // (≥300) → 0.98 (≥360) → 0.995 (≥420) → 1 (≥450). Twelve
+            // iterations: the gate `!(NextFloat() < num1429)` draws EVERY
+            // iteration; on a pass the angle `NextFloat() * 2π` and the
+            // radial `NextFloat()` draw, then `NewDustPerfect(vector223 +
+            // angle.ToRotationVector2() * (70 + 600 * radial), 240,
+            // (angle - π/2 - π/8).ToRotationVector2() * (12 + 9*NextFloat()
+            // + 4*radial))` — the velocity's middle term draws its OWN
+            // NextFloat. Post: scale 0.8, fadeIn 0.95 + radial*0.3,
+            // noGravity (NO color write — the default stays). The 240
+            // type hits no per-type tweak (`Dust.cs:214-252`).
+            {
+                let (cw, ch) = self.size();
+                let lv = ((self.ai[0] - 0.0) / (300.0 - 0.0)).clamp(0.0, 1.0);
+                let vector223 = Vec2::new(
+                    self.x + cw * 0.5,
+                    self.y + ch * 0.5 + (0.0 + (-70.0 - 0.0) * lv),
+                );
+                let mut num1429 = 0.99f32;
+                if self.ai[0] >= 60.0 { num1429 = 0.79; }
+                if self.ai[0] >= 120.0 { num1429 = 0.58; }
+                if self.ai[0] >= 180.0 { num1429 = 0.23; }
+                if self.ai[0] >= 240.0 { num1429 = 0.35; }
+                if self.ai[0] >= 300.0 { num1429 = 0.6; }
+                if self.ai[0] >= 360.0 { num1429 = 0.98; }
+                if self.ai[0] >= 420.0 { num1429 = 0.995; }
+                if self.ai[0] >= 450.0 { num1429 = 1.0; }
+                for _ in 0..12 {
+                    if !(rng.next_float() < num1429) {
+                        let num1431 = rng.next_float() * std::f32::consts::TAU;
+                        let num1432 = rng.next_float();
+                        let r = 70.0 + 600.0 * num1432;
+                        let pos = vector223 + Vec2::new(num1431.cos() * r, num1431.sin() * r);
+                        let va = num1431 - std::f32::consts::FRAC_PI_2 - std::f32::consts::FRAC_PI_8;
+                        let vmag = 12.0 + 9.0 * rng.next_float() + 4.0 * num1432;
+                        let vel = Vec2::new(va.cos() * vmag, va.sin() * vmag);
+                        let idx = dust.new_dust_perfect(
+                            rng, dust_ctx, world, pos, 240, Some(vel), 0,
+                            tr_core::particles::Color::default(), 1.0,
+                        );
+                        let dd = dust.slot_mut(idx);
+                        dd.scale = 0.8;
+                        dd.fade_in = 0.95 + num1432 * 0.3;
+                        dd.no_gravity = true;
+                    }
+                }
+            }
+            // The scene flight (the velocity the arm wrote; the
+            // `MoonlordDeathDrama.RequestLight` `:40887-40891` stays
+            // unmodelled — it draws no RNG).
             self.y += self.vy;
             let _ = (world, player);
             return;
@@ -12679,7 +12873,10 @@ impl Npc {
         }
         self.caster_counter += 1;
         self.dont_take_damage = self.caster_counter < 180;
-        let _ = (world, player);
+        // The spawn-in arm draws no dust (the C# `:40734-40757` has none);
+        // the win/loss arms above own the pool + rng. `player` is unread
+        // by every arm (the crystal scenes are player-independent).
+        let _ = player;
     }
 
     /// `AI()`'s aiStyle-94 block (`NPC.cs:38968-39400`) — the Ancient Cultist's
@@ -14705,7 +14902,14 @@ impl Npc {
     /// Deviations: the dust arm (`:51043-51054`) is unmodelled; the mark's
     /// 540 projectile hop folds into a direct spawn (the port has no 540
     /// AI) and the caps live in the sim's resolve.
-    fn update_stardust_worm_head(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
+    fn update_stardust_worm_head(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -14728,6 +14932,47 @@ impl Npc {
             self.vy *= f;
         }
         if self.ai[2] == 570.0 {
+            // W4-f4 — sites 51046/51054 (`NPC.cs:51039-51060`): the
+            // 50-iteration burst at the mark tick, BEFORE the mark spawn
+            // + the velocity renormalize (`:51063-51064`). Per iteration
+            // the shared `vector = NextVector2Circular(8, 8)` draws FIRST
+            // (NextVector2Unit's one NextFloat angle, THEN the radial
+            // NextFloat — `Utils.cs:1261-1268`), then the type-180 gate
+            // `Next(2) == 0` and the type-176 gate `Next(2) == 0` run in
+            // order. Each passed gate spawns `NewDust(position, w, h, T,
+            // 0, 0, 100)`; 180 adds `scale += Next(50) * 0.04`, 176 adds
+            // `scale += 0.3 + Next(50) * 0.01`; both then noGravity +
+            // `velocity = vector` + `fadeIn = NextFloat() * 1.5`. Neither
+            // 180 nor 176 hits a per-type tweak (`Dust.cs:214-252`).
+            for _ in 0..50 {
+                let ang = rng.next_float() * std::f32::consts::TAU;
+                let radial = rng.next_float();
+                let vector = Vec2::new(ang.cos() * 8.0 * radial, ang.sin() * 8.0 * radial);
+                if rng.next_max(2) == 0 {
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world, Vec2::new(self.x, self.y),
+                        w as i32, h as i32, 180, 0.0, 0.0, 100,
+                        tr_core::particles::Color::default(), 1.0,
+                    );
+                    let dd = dust.slot_mut(idx);
+                    dd.scale += rng.next_max(50) as f32 * 0.04; // `:51047`
+                    dd.no_gravity = true;
+                    dd.velocity = vector;
+                    dd.fade_in = rng.next_float() * 1.5;
+                }
+                if rng.next_max(2) == 0 {
+                    let idx = dust.new_dust(
+                        rng, dust_ctx, world, Vec2::new(self.x, self.y),
+                        w as i32, h as i32, 176, 0.0, 0.0, 100,
+                        tr_core::particles::Color::default(), 1.0,
+                    );
+                    let dd = dust.slot_mut(idx);
+                    dd.scale += 0.3 + rng.next_max(50) as f32 * 0.01; // `:51055`
+                    dd.no_gravity = true;
+                    dd.velocity = vector;
+                    dd.fade_in = rng.next_float() * 1.5;
+                }
+            }
             self.wants_stardust_mark = true;
             let sp = (self.vx * self.vx + self.vy * self.vy).sqrt().max(0.001);
             self.vx = self.vx / sp * 6.0;
@@ -16836,7 +17081,14 @@ impl Npc {
         }
     }
 
-    fn update_deerclops(&mut self, world: &World, player: &mut Player, rng: &mut UnifiedRandom) {
+    fn update_deerclops(
+        &mut self,
+        world: &World,
+        player: &mut Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         let (w, h) = self.size();
         let (pcx, pcy) = player.center();
         let cx = self.x + w * 0.5;
@@ -16848,6 +17100,38 @@ impl Npc {
         self.dont_take_damage = self.swim_phase >= 30.0;
         if self.ai[0] == -1.0 {
             self.swim_phase = -10.0;
+        }
+        // W4-f4 — site 44037 (`NPC.cs:44030-44039`): the damage-ramp
+        // dust. `num2 = Utils.Remap(localAI[3], 0, 30, 0, 1)` (the port's
+        // `swim_phase` stands in for localAI[3], the ramp above); on
+        // num2 > 0 the count draw `NextFloat() * num2 * 3` runs, then a
+        // `while (num3 > 0)` loop spawns one `NewDustDirect(position, w,
+        // h, 109, 0, -3, 0, default, 1.4).noGravity = true` per whole
+        // unit (num3-- BEFORE each spawn). The 109 type hits no per-type
+        // tweak (`Dust.cs:214-252`); NewDustDirect zeroes a NaN velocity
+        // (`Dust.cs:65-73`). The `ai[0] == -1` reset above is the port's
+        // pre-existing ramp stand-in — num2 reads the post-reset value.
+        let num2 = (self.swim_phase / 30.0).clamp(0.0, 1.0);
+        if num2 > 0.0 {
+            let mut num3 = rng.next_float() * num2 * 3.0;
+            while num3 > 0.0 {
+                num3 -= 1.0;
+                let idx = dust.new_dust_direct(
+                    rng,
+                    dust_ctx,
+                    world,
+                    Vec2::new(self.x, self.y),
+                    w as i32,
+                    h as i32,
+                    109,
+                    0.0,
+                    -3.0,
+                    0,
+                    tr_core::particles::Color::default(),
+                    1.4,
+                );
+                dust.slot_mut(idx).no_gravity = true;
+            }
         }
         // The walk (`AI_123_Deerclops_Movement`, `:44643-44726`).
         if self.ai[0] != 5.0 && self.ai[0] != 1.0 && self.ai[0] != 4.0 {
@@ -25734,7 +26018,7 @@ mod tests {
         // at 0 (vulnerable); the spawn state -1 pins it at -10.
         assert!(!d.dont_take_damage, "the fresh spawn is open");
         for _ in 0..31 {
-            d.update_deerclops(&w, &mut player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         }
         assert!(d.dont_take_damage, "the 450px ramp shields");
         // Tick the state 0 selection: the quiet close-range stall fires
@@ -25742,10 +26026,10 @@ mod tests {
         d.ai[1] = 200.0;
         d.vx = 0.0;
         d.on_ground = true;
-        d.update_deerclops(&w, &mut player, &mut rng);
+        d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(d.ai[0], 5.0, "the hand burst state");
         for _ in 0..60 {
-            d.update_deerclops(&w, &mut player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         }
         assert_eq!(d.ai[0], 0.0, "the burst ends back to the walk");
         let hands = d.wants_hostile_shot_ai.len();
@@ -25764,7 +26048,7 @@ mod tests {
         d.ai[0] = 1.0;
         d.ai[1] = 0.0;
         for _ in 0..40 {
-            d.update_deerclops(&w, &mut player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         }
         let spikes: Vec<_> = d
             .wants_hostile_shot_ai
@@ -25791,6 +26075,67 @@ mod tests {
         d.hp = d.max_hp / 2;
         let slow = 3.5 + 1.0 * (1.0 - d.hp as f32 / d.max_hp as f32);
         assert!((slow - 4.0).abs() < 0.01, "the half-body speed");
+    }
+
+    /// W4-f4 — site 44037 (`NPC.cs:44030-44039`): the damage-ramp dust.
+    /// At swim_phase 30 (num2 = 1) the count draw `NextFloat() * 3` runs;
+    /// the while loop spawns ceil(count) type-109 dusts (num3-- before
+    /// each), each noGravity, scale 1.4, vy-argument -3. A mirrored
+    /// stream re-derives the count and rolls new_dust_direct identically.
+    /// At swim_phase <= 0 (num2 = 0) NOTHING draws. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f4_the_deerclops_ramp_dust_mirrors_the_count_draw() {
+        let w = ground_air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 100.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        let mut d = Npc::new(NpcKind::Deerclops, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        d.hp = d.max_hp;
+        // Pin the ramp at 30 (num2 = 1) and the state at 2 (the rubble
+        // arm's first tick draws nothing — isolate the dust site). The
+        // player stays NEAR so the ramp clamps at 30 (the C# clamp).
+        d.swim_phase = 30.0;
+        d.ai[0] = 2.0;
+        let mut pool = tr_core::particles::DustPool::new();
+        let ctx = crate::npc::permissive_dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(11);
+        let mut mirror = UnifiedRandom::new(11);
+        let mut mpool = tr_core::particles::DustPool::new();
+        // The mirror's count draw (the machine draws it once per tick).
+        let count = mirror.next_float() * 1.0 * 3.0;
+        let expected = count.ceil() as usize;
+        let mut n = count;
+        while n > 0.0 {
+            n -= 1.0;
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &ctx, &w, Vec2::new(d.x, d.y),
+                d.size().0 as i32, d.size().1 as i32, 109, 0.0, -3.0, 0,
+                tr_core::particles::Color::default(), 1.4,
+            );
+            mpool.slot_mut(idx).no_gravity = true;
+        }
+        d.update_deerclops(&w, &mut player, &mut rng, &mut pool, &ctx);
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        assert_eq!(act.len(), expected, "ceil(NextFloat*3) dusts");
+        for (k, &i) in act.iter().enumerate() {
+            assert_eq!(pool.slot(i).dust_type, 109);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).position, mpool.slot(k).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(k).velocity);
+        }
+        // The num2 == 0 path spawns no dust: a fresh ramp at -10 clamps
+        // to -9 after the near-gate increment, still <= 0 → num2 = 0.
+        let mut d2 = Npc::new(NpcKind::Deerclops, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
+        d2.hp = d2.max_hp;
+        d2.swim_phase = -10.0;
+        d2.ai[0] = 2.0;
+        let mut pool2 = tr_core::particles::DustPool::new();
+        let mut rng2 = UnifiedRandom::new(11);
+        d2.update_deerclops(&w, &mut player, &mut rng2, &mut pool2, &ctx);
+        assert!(
+            (0..6000).all(|i| !pool2.slot(i).active),
+            "num2 == 0 spawns nothing"
+        );
     }
 
     #[test]
@@ -28219,7 +28564,7 @@ mod s1_d_4b_5b_tests {
         d.ai[0] = 1.0;
         d.ai[1] = 0.0;
         for _ in 0..36 {
-            d.update_deerclops(&w, &mut player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         }
         let spikes: Vec<_> = d
             .wants_hostile_shot_ai
@@ -28246,7 +28591,7 @@ mod s1_d_4b_5b_tests {
         // tick: the volleys land on the 36th, the 40th, ...).
         let before = d.wants_hostile_shot_ai.len();
         for _ in 0..3 {
-            d.update_deerclops(&w, &mut player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         }
         assert_eq!(
             d.wants_hostile_shot_ai.len(),
@@ -28254,7 +28599,7 @@ mod s1_d_4b_5b_tests {
             "the cadence waits four ticks"
         );
         // The fourth tick opens the second volley.
-        d.update_deerclops(&w, &mut player, &mut rng);
+        d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert_eq!(
             d.wants_hostile_shot_ai.len() - before,
             4,
@@ -28305,7 +28650,7 @@ mod s1_d_4b_5d_tests {
         d.ai[0] = 2.0;
         d.ai[1] = 0.0;
         for _ in 0..32 {
-            d.update_deerclops(&w, &mut player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         }
         let rocks: Vec<_> = d
             .wants_hostile_shot_ai
@@ -28322,7 +28667,7 @@ mod s1_d_4b_5d_tests {
         );
         assert_eq!(rocks[0].damage, 18, "the rock's damage");
         // The next tick makes the second rock (the cadence is one per tick).
-        d.update_deerclops(&w, &mut player, &mut rng);
+        d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         let rocks: Vec<_> = d
             .wants_hostile_shot_ai
             .iter()
@@ -28348,13 +28693,13 @@ mod s1_d_4b_5d_tests {
         d.ai[0] = 3.0;
         d.ai[1] = 0.0;
         for _ in 0..27 {
-            d.update_deerclops(&w, &mut player, &mut rng);
+            d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         }
         assert!(
             player.buffs.find_buff_index(32).is_none(),
             "the aura waits for its 28th tick"
         );
-        d.update_deerclops(&w, &mut player, &mut rng);
+        d.update_deerclops(&w, &mut player, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
         assert!(
             player.buffs.find_buff_index(32).is_some(),
             "the Slow buff lands on the 28th tick"
@@ -32337,7 +32682,7 @@ mod s1_f_13c_wire_tests {
         let mut p = night_player(&w);
         let mut n = Npc::new(NpcKind::Everscream, 0.0, 0.0, 1, 0.0);
         let mut rng = UnifiedRandom::new(0);
-        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng);
+        n.update_kind_ai(&w, &mut p, 1.0 / 60.0, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
     }
 
     /// The shot rows exist: the drained kinds resolve through `proj_data`
@@ -33536,7 +33881,7 @@ mod s1_f_13d_tests {
             n.hp = n.max_hp;
             let (x0, y0) = (n.x, n.y);
             for _ in 0..120 {
-                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng);
+                n.update_kind_ai(&w, &mut player, 1.0 / 60.0, &mut rng, &mut tr_core::particles::DustPool::new(), &crate::npc::permissive_dust_ctx(&w));
             }
             assert_eq!(n.x, x0, "{kind:?} stand-in holds its x");
             assert_eq!(n.y, y0, "{kind:?} stand-in holds its y");

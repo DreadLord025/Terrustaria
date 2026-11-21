@@ -11572,6 +11572,154 @@ mod dd2_goblin_tests {
         }
         assert!(!n.dont_take_damage, "the crystal opens at 180");
     }
+
+    /// W4-f4 — site 40834 (`NPC.cs:40804-40842`): the win-scene ambient
+    /// ring. At ai[0] = 30 (num1418 = 0.99) nine gate draws run; a pass
+    /// draws the angle + radial + the velocity's `0f*NextFloat()` term,
+    /// then rolls new_dust_perfect (type 264). A mirrored stream
+    /// re-derives every draw in order. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f4_the_crystal_win_ring_mirrors_the_nine_gates() {
+        let (_app, player) = app_with_player();
+        let world = surface_world();
+        let mut n = Npc::new(NpcKind::DD2EterniaCrystal, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 2.0; // the win scene
+        n.ai[0] = 29.0; // -> 30: num1418 = 0.99, no pulse tick
+        let ctx = crate::npc::permissive_dust_ctx(&world);
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(31);
+        let mut mirror = UnifiedRandom::new(31);
+        let mut mpool = tr_core::particles::DustPool::new();
+        // The mirror at ai[0] = 30 (post-increment), the pre-move centre.
+        let (cw, ch) = n.size();
+        let anchor = glam::Vec2::new(n.x + cw * 0.5, n.y + ch * 0.5 - 20.0);
+        let num1418 = 0.99f32;
+        let mut expected = 0usize;
+        for _ in 0..9 {
+            if !(mirror.next_float() < num1418) {
+                let a = mirror.next_float() * std::f32::consts::TAU;
+                let rad = mirror.next_float();
+                let r = 110.0 + 600.0 * rad;
+                let pos = anchor + glam::Vec2::new(a.cos() * r, a.sin() * r);
+                let va = a - std::f32::consts::PI;
+                let _z = mirror.next_float();
+                let vmag = 14.0 + 8.0 * rad;
+                let vel = glam::Vec2::new(va.cos() * vmag, va.sin() * vmag);
+                let idx = mpool.new_dust_perfect(
+                    &mut mirror, &ctx, &world, pos, 264, Some(vel), 0,
+                    tr_core::particles::Color::default(), 1.0,
+                );
+                let dd = mpool.slot_mut(idx);
+                dd.scale = 0.9;
+                dd.fade_in = 1.15 + rad * 0.3;
+                let f = 1.0 - num1418;
+                let base_a = (255.0 * num1418) as u8;
+                dd.color = tr_core::particles::Color::new(
+                    (255.0 * f) as u8, (255.0 * f) as u8, (255.0 * f) as u8,
+                    (base_a as f32 * f) as u8,
+                );
+                dd.no_gravity = true;
+                dd.no_light = true;
+                expected += 1;
+            }
+        }
+        n.update_eternia_crystal(&world, &player, &mut rng, &mut pool, &ctx);
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        assert_eq!(act.len(), expected, "the nine-gate ring count");
+        for (k, &i) in act.iter().enumerate() {
+            assert_eq!(pool.slot(i).dust_type, 264);
+            assert!(pool.slot(i).no_gravity && pool.slot(i).no_light);
+            assert_eq!(pool.slot(i).scale, 0.9);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(k).velocity);
+            assert_eq!(pool.slot(i).position, mpool.slot(k).position);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-f4 — site 40851 (`NPC.cs:40843-40858`): the win pulse ring at
+    /// ai[0] = 100 draws ONE angle then 120 radials + 120 perfect spawns
+    /// (type 264, transparent color). A non-pulse tick (ai[0] = 30) draws
+    /// only the nine ambient gates, no pulse. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f4_the_crystal_win_pulse_fires_120_at_the_listed_ticks() {
+        let (_app, player) = app_with_player();
+        let world = surface_world();
+        let mut n = Npc::new(NpcKind::DD2EterniaCrystal, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 2.0;
+        n.ai[0] = 99.0; // -> 100: a pulse tick (num1418 = 0.79 at >=60)
+        let ctx = crate::npc::permissive_dust_ctx(&world);
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(41);
+        n.update_eternia_crystal(&world, &player, &mut rng, &mut pool, &ctx);
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        // The pulse contributes exactly 120 type-264 transparent dusts;
+        // the ambient ring adds 0..9 more (also 264). Count the transparent
+        // ones (color.a == 0) — the pulse's signature.
+        let pulse = act.iter().filter(|&&i| pool.slot(i).color.a == 0).count();
+        assert_eq!(pulse, 120, "the 120-dust pulse ring");
+        for &i in &act {
+            assert_eq!(pool.slot(i).dust_type, 264);
+            assert!(pool.slot(i).no_gravity && pool.slot(i).no_light);
+        }
+    }
+
+    /// W4-f4 — site 40947 (`NPC.cs:40905-40953`): the loss-scene ambient
+    /// ring. At ai[0] = 200 (num1429 = 0.23, the ≥180 step) twelve gate
+    /// draws run; a pass draws the angle + radial + the velocity's own
+    /// NextFloat, then rolls new_dust_perfect (type 240, NO color write).
+    /// A mirrored stream re-derives every draw. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f4_the_crystal_loss_ring_mirrors_the_twelve_gates() {
+        let (_app, player) = app_with_player();
+        let world = surface_world();
+        let mut n = Npc::new(NpcKind::DD2EterniaCrystal, 150.0 * TILE_PX, 112.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[1] = 1.0; // the loss scene
+        n.ai[0] = 199.0; // -> 200: num1429 = 0.23 (>=180, <240)
+        let ctx = crate::npc::permissive_dust_ctx(&world);
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(51);
+        let mut mirror = UnifiedRandom::new(51);
+        let mut mpool = tr_core::particles::DustPool::new();
+        let (cw, ch) = n.size();
+        let lv = (200.0f32 / 300.0).clamp(0.0, 1.0);
+        let anchor = glam::Vec2::new(n.x + cw * 0.5, n.y + ch * 0.5 + (-70.0 * lv));
+        let num1429 = 0.23f32;
+        let mut expected = 0usize;
+        for _ in 0..12 {
+            if !(mirror.next_float() < num1429) {
+                let a = mirror.next_float() * std::f32::consts::TAU;
+                let rad = mirror.next_float();
+                let r = 70.0 + 600.0 * rad;
+                let pos = anchor + glam::Vec2::new(a.cos() * r, a.sin() * r);
+                let va = a - std::f32::consts::FRAC_PI_2 - std::f32::consts::FRAC_PI_8;
+                let vmag = 12.0 + 9.0 * mirror.next_float() + 4.0 * rad;
+                let vel = glam::Vec2::new(va.cos() * vmag, va.sin() * vmag);
+                let idx = mpool.new_dust_perfect(
+                    &mut mirror, &ctx, &world, pos, 240, Some(vel), 0,
+                    tr_core::particles::Color::default(), 1.0,
+                );
+                let dd = mpool.slot_mut(idx);
+                dd.scale = 0.8;
+                dd.fade_in = 0.95 + rad * 0.3;
+                dd.no_gravity = true;
+                expected += 1;
+            }
+        }
+        n.update_eternia_crystal(&world, &player, &mut rng, &mut pool, &ctx);
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        assert_eq!(act.len(), expected, "the twelve-gate ring count");
+        for (k, &i) in act.iter().enumerate() {
+            assert_eq!(pool.slot(i).dust_type, 240);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).scale, 0.8);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(k).velocity);
+            assert_eq!(pool.slot(i).position, mpool.slot(k).position);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
 }
 
 #[cfg(test)]
@@ -13683,6 +13831,76 @@ mod worm_tests {
         n.ai[2] = 599.0;
         n.update_rng(&world, &mut player, 1.0 / 60.0, &mut rng);
         assert_eq!(n.ai[2], 0.0, "the counter resets");
+    }
+
+    /// W4-f4 — sites 51046/51054 (`NPC.cs:51039-51060`): the 570th-tick
+    /// burst is 50 iterations; each draws the shared NextVector2Circular
+    /// (one NextFloat angle + one NextFloat radial), then the type-180
+    /// gate Next(2) and the type-176 gate Next(2). A passed gate rolls
+    /// new_dust (type 180/176, alpha 100) then the scale add (Next(50)),
+    /// noGravity, velocity = vector, fadeIn NextFloat*1.5. A mirrored
+    /// stream re-derives every draw in order. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f4_the_stardust_worm_burst_mirrors_the_fifty_iterations() {
+        let world = fixture();
+        let mut player = Player::spawn(&world);
+        player.x = 170.0 * TILE_PX;
+        player.y = 118.0 * TILE_PX;
+        let mut n = Npc::new(NpcKind::StardustWormHead, 150.0 * TILE_PX, 108.0 * TILE_PX, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai[2] = 569.0; // -> 570: the burst tick
+        let ctx = crate::npc::permissive_dust_ctx(&world);
+        let mut pool = tr_core::particles::DustPool::new();
+        let mut rng = UnifiedRandom::new(23);
+        let mut mirror = UnifiedRandom::new(23);
+        let mut mpool = tr_core::particles::DustPool::new();
+        // The mirror re-derives the burst at the PRE-renormalize position
+        // (the machine spawns before the velocity renormalize + the move).
+        let (px, py) = (n.x, n.y);
+        let (pw, ph) = n.size();
+        let mut expected = 0usize;
+        for _ in 0..50 {
+            let ang = mirror.next_float() * std::f32::consts::TAU;
+            let radial = mirror.next_float();
+            let vector = glam::Vec2::new(ang.cos() * 8.0 * radial, ang.sin() * 8.0 * radial);
+            if mirror.next_max(2) == 0 {
+                let idx = mpool.new_dust(
+                    &mut mirror, &ctx, &world, glam::Vec2::new(px, py),
+                    pw as i32, ph as i32, 180, 0.0, 0.0, 100,
+                    tr_core::particles::Color::default(), 1.0,
+                );
+                let dd = mpool.slot_mut(idx);
+                dd.scale += mirror.next_max(50) as f32 * 0.04;
+                dd.no_gravity = true;
+                dd.velocity = vector;
+                dd.fade_in = mirror.next_float() * 1.5;
+                expected += 1;
+            }
+            if mirror.next_max(2) == 0 {
+                let idx = mpool.new_dust(
+                    &mut mirror, &ctx, &world, glam::Vec2::new(px, py),
+                    pw as i32, ph as i32, 176, 0.0, 0.0, 100,
+                    tr_core::particles::Color::default(), 1.0,
+                );
+                let dd = mpool.slot_mut(idx);
+                dd.scale += 0.3 + mirror.next_max(50) as f32 * 0.01;
+                dd.no_gravity = true;
+                dd.velocity = vector;
+                dd.fade_in = mirror.next_float() * 1.5;
+                expected += 1;
+            }
+        }
+        n.update_stardust_worm_head(&world, &player, &mut rng, &mut pool, &ctx);
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        assert_eq!(act.len(), expected, "the 50-iteration burst count");
+        for (k, &i) in act.iter().enumerate() {
+            assert!(pool.slot(i).dust_type == 180 || pool.slot(i).dust_type == 176);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(k).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(k).scale);
+            assert_eq!(pool.slot(i).fade_in, mpool.slot(k).fade_in);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }
 
     // ---- W-A2-1 witnesses (audit 55, fix/worm-rng-placement) ----

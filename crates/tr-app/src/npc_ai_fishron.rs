@@ -27,20 +27,25 @@
 //! and swaps the bubble volley for the sharknado bolt (the aimed
 //! sharknado carries the flag as its third spawn arg).
 //!
-//! **RNG by construction**: `AI_069` itself draws ZERO `Main.rand`
-//! values — every draw in the arm is inside the charge dust loops
-//! (`:49180`, `:49448`, `:49660`: per dust j, `Main.rand.NextDouble()`
-//! THEN `Main.rand.Next(3, 8)`, 7 dust per charge tick). The port
-//! skips the dust (the documented deviation, below) and therefore
-//! consumes no stream at all; the bubble's scale draw
-//! `Main.rand.Next(80, 121)/100f` happens in the SPAWNED 371's own
-//! `AI()` (`:34889`) / the phase-2 trail spawn (`:49481`) — carried on
-//! the request, drawn by the wiring when it lands.
+//! **RNG by construction**: `AI_069`'s only `Main.rand` draws are the
+//! charge dust loops (`:49180`, `:49448`, `:49660`: per dust j,
+//! `Main.rand.NextDouble()` THEN `Main.rand.Next(3, 8)`, 7 dust per
+//! charge tick) and the materialize ring's pool internals (`:49029`,
+//! zero explicit draws). W4-f4 arms them: [`fishron_dust_sites`] runs
+//! the four sites on the caller's `UpdateNPCs` stream through the live
+//! `DustPool` (the adapter calls it PRE-step — the sites read only the
+//! pre-step state/velocity/position, and the arm's one other draw, the
+//! trail bubble's scale `Main.rand.Next(80, 121)/100f` at `:49481`,
+//! lives in state 7, disjoint from the dust states -1/1/6/11, so the
+//! stream order is identical; the scale draw itself happens in the
+//! SPAWNED 371's own `AI()` (`:34889`) / the phase-2 trail spawn —
+//! carried on the request, drawn by the wiring).
 //!
 //! Documented deviations (also in `docs/ANALYSIS.md`, S1-D-3 fishron):
-//! * the dust loops (172-water dust), the sounds (`SoundEngine` 29/4)
-//!   and the `oldPos` trail wipe (`:49584-49587`, `:49708-49711`) are
-//!   skipped — cosmetic;
+//! * the sounds (`SoundEngine` 29/4) and the `oldPos` trail wipe
+//!   (`:49584-49587`, `:49708-49711`) are skipped — cosmetic; the dust
+//!   loops are ARMED by W4-f4 ([`fishron_dust_sites`], the adapter runs
+//!   them pre-step on the live pool);
 //! * `EncourageDespawn(10)` (`:48857`, `NPC.cs:7249-7256`) has no port
 //!   `NPC.timeLeft` (the King Slime precedent) — the despawn request is
 //!   carried on the output, the timer stays for the wiring;
@@ -57,6 +62,10 @@
 #![allow(dead_code)] // the FishronState/Env field set is the pure-core seam; the wiring reads a subset
 
 use std::f32::consts::PI;
+
+use glam::Vec2;
+use tr_core::particles::{Color, DustPool, SpawnCtx};
+use tr_core::{UnifiedRandom, World};
 
 /// `NPC.SetDefaults` case 370 (`NPC.cs:13701-13718`): 150x100, aiStyle
 /// 69, damage 100, defense 50, lifeMax 60000, knockBackResist 0,
@@ -308,6 +317,146 @@ fn launch_charge(s: &mut FishronState, env: &FishronEnv, charge_speed: f32, faci
             s.rotation += PI;
         }
         s.sprite_direction = -s.direction;
+    }
+}
+
+/// W4-f4 — the materialize ring (`NPC.cs:49022-49033`, site 49029): at
+/// `ai[2] == num11 - 30` (60) of state -1, 36 type-172 dusts on the
+/// rotated ellipse `(Normalize(velocity) * (width/2, height) * 0.75 *
+/// 0.5).RotatedBy((i - 17) * 2π/36) + Center`, spawned at `vector +
+/// vector2` (a 0×0 box), speeds `vector2 * 2`, alpha 100, scale 1.4;
+/// post-spawn noGravity + noLight + `velocity = Normalize(vector2) * 3`.
+/// ZERO explicit rand draws — only the pool internals roll (the 172
+/// type hits no per-type tweak, `Dust.cs:214-252`). The sound 29 at
+/// `:49034` stays the machine's queue. `num24 / 2 - 1` is INTEGER
+/// division (36/2 - 1 = 17). The ring reads the velocity AFTER the
+/// state's own pre-ring writes (`:48998` ×0.98 damp, `:49007` the
+/// ai[2] > 20 rise pins vy = -2) — RNG-free writes, so the pre-step
+/// adapter placement re-derives them here (the stream is unchanged).
+fn fishron_materialize_ring(
+    s: &FishronState,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let (cx, cy) = center(s);
+    let vx = s.vx * 0.98;
+    let vy = if s.ai2 > 20.0 { -2.0 } else { s.vy * 0.98 };
+    let (nvx, nvy) = normalize(vx, vy);
+    let num24 = 36i32;
+    for i in 0..num24 {
+        // The C# angle is f32 (`(float)(i - 17) * ((float)Math.PI * 2f)
+        // / 36f`), promoted to f64 for `RotatedBy` — cos/sin in f64 then
+        // cast (`Utils.cs:1675-1684`).
+        let ang = ((i - (num24 / 2 - 1)) as f32 * (PI * 2.0) / num24 as f32) as f64;
+        let (c, sn) = (ang.cos() as f32, ang.sin() as f32);
+        let (ex, ey) = (
+            nvx * (FISHRON_WIDTH / 2.0) * 0.75 * 0.5,
+            nvy * FISHRON_HEIGHT * 0.75 * 0.5,
+        );
+        let vector = Vec2::new(ex * c - ey * sn + cx, ex * sn + ey * c + cy);
+        let vector2 = vector - Vec2::new(cx, cy);
+        let idx = dust.new_dust(
+            rng,
+            ctx,
+            world,
+            vector + vector2,
+            0,
+            0,
+            172,
+            vector2.x * 2.0,
+            vector2.y * 2.0,
+            100,
+            Color::default(),
+            1.4,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:49030`
+        d.no_light = true; // `:49031`
+        let (nx, ny) = normalize(vector2.x, vector2.y);
+        d.velocity = Vec2::new(nx * 3.0, ny * 3.0); // `:49032`
+    }
+}
+
+/// W4-f4 — the charge dust trail (`NPC.cs:49177-49186` / `:49445-49454`
+/// / `:49657-49666`, sites 49181/49449/49661 — three identical bodies):
+/// 7 type-172 dusts per charge tick. Per j the ARGUMENT draws run FIRST
+/// (C# evaluates arguments before the call): `NextDouble()` for the
+/// angle `(NextDouble * 3.1415927410125732 - π/2).ToRotationVector2()`,
+/// THEN `Next(3, 8)` for the radius; the spawn sits at `vector10 +
+/// vector11` where `vector10 = (Normalize(velocity) * ((width+50)/2,
+/// height) * 0.75).RotatedBy((j - 2) * π/7) + center` (a 0×0 box),
+/// speeds `vector11 * 2`, alpha 100, scale 1.4; post-spawn noGravity +
+/// noLight + `velocity /= 4` + `velocity -= base.velocity`. The C#'s
+/// `RotatedBy` takes the angle as f64 (`(double)(j - 2) * Math.PI /
+/// (double)(float)7`) — the port keeps the f64 angle then casts the
+/// cos/sin to f32 (the XNA matrix). `num28 / 2 - 1` is INTEGER division
+/// (7/2 - 1 = 2, so the offset is j - 2).
+fn fishron_charge_trail(
+    s: &FishronState,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let (cx, cy) = center(s);
+    let (nvx, nvy) = normalize(s.vx, s.vy);
+    let num28 = 7i32;
+    for j in 0..num28 {
+        // `vector10` — the rotated ellipse anchor (no rand).
+        let ang10 = (j - (num28 / 2 - 1)) as f64 * std::f64::consts::PI / num28 as f64;
+        let (c, sn) = (ang10.cos() as f32, ang10.sin() as f32);
+        let (ex, ey) = (
+            nvx * ((FISHRON_WIDTH + 50.0) / 2.0) * 0.75,
+            nvy * FISHRON_HEIGHT * 0.75,
+        );
+        let vector10 = Vec2::new(ex * c - ey * sn + cx, ex * sn + ey * c + cy);
+        // `vector11` — the ARGUMENT pair: NextDouble angle THEN Next(3,8).
+        let a = (rng.next_double() * 3.1415927410125732) as f32 - PI / 2.0;
+        let radius = rng.next_range(3, 8) as f32;
+        let vector11 = Vec2::new(a.cos() * radius, a.sin() * radius);
+        let idx = dust.new_dust(
+            rng,
+            ctx,
+            world,
+            vector10 + vector11,
+            0,
+            0,
+            172,
+            vector11.x * 2.0,
+            vector11.y * 2.0,
+            100,
+            Color::default(),
+            1.4,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.no_light = true;
+        d.velocity /= 4.0;
+        d.velocity -= Vec2::new(s.vx, s.vy);
+    }
+}
+
+/// W4-f4 — the four dust sites of `AI_069`, run by the adapter PRE-step
+/// on the live `UpdateNPCs` pool. Every site reads only the pre-step
+/// state/velocity/position (the arm's dust blocks sit at each state's
+/// head, before any velocity write), and the arm's one other draw (the
+/// trail bubble's scale, state 7) is disjoint from the dust states
+/// -1/1/6/11 — so the pre-step placement keeps the C# stream order.
+/// `num11` is the sharknado-bolt tick constant 90 (`:48839`); the
+/// materialize ring fires at `ai[2] == num11 - 30` (60).
+pub fn fishron_dust_sites(
+    s: &FishronState,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if s.ai0 == -1.0 && s.ai2 == 60.0 {
+        fishron_materialize_ring(s, rng, dust, ctx, world); // site 49029
+    } else if s.ai0 == 1.0 || s.ai0 == 6.0 || s.ai0 == 11.0 {
+        fishron_charge_trail(s, rng, dust, ctx, world); // sites 49181/49449/49661
     }
 }
 
@@ -1599,5 +1748,129 @@ mod tests {
         assert_eq!(a.vx, b.vx);
         assert_eq!(a.vy, b.vy);
         assert_eq!(a.rotation, b.rotation);
+    }
+
+    // ---- W4-f4 dust-site witnesses (WRITTEN NOT RUN, code-only) ----
+
+    fn dust_world() -> World {
+        World::new("f4-fishron".into(), 200, 200)
+    }
+
+    fn dust_ctx(w: &World) -> SpawnCtx {
+        SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+            max_dust_to_draw: 6000,
+        }
+    }
+
+    /// W4-f4 — sites 49181/49449/49661: the charge trail is 7 type-172
+    /// dusts; per j the ARGUMENT pair (NextDouble angle THEN Next(3,8)
+    /// radius) draws BEFORE the pool internals. A mirrored stream that
+    /// re-derives the geometry and rolls new_dust with the same pre-draws
+    /// lands identical records and leaves the streams equal.
+    #[test]
+    fn w4_f4_fishron_charge_trail_mirrors_the_argument_order() {
+        let w = dust_world();
+        let c = dust_ctx(&w);
+        let mut s = state_at(1000.0, 1000.0);
+        s.ai0 = 1.0;
+        s.vx = 6.0;
+        s.vy = -2.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(77);
+        fishron_dust_sites(&s, &mut rng, &mut pool, &c, &w);
+        // The mirror.
+        let (cx, cy) = (1000.0 + FISHRON_WIDTH / 2.0, 1000.0 + FISHRON_HEIGHT / 2.0);
+        let vl = (6.0f32 * 6.0 + (-2.0f32) * (-2.0)).sqrt();
+        let (nvx, nvy) = (6.0 / vl, -2.0 / vl);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(77);
+        for j in 0..7i32 {
+            let ang10 = (j - 2) as f64 * std::f64::consts::PI / 7.0;
+            let (cc, sn) = (ang10.cos() as f32, ang10.sin() as f32);
+            let ex = nvx * ((FISHRON_WIDTH + 50.0) / 2.0) * 0.75;
+            let ey = nvy * FISHRON_HEIGHT * 0.75;
+            let v10 = Vec2::new(ex * cc - ey * sn + cx, ex * sn + ey * cc + cy);
+            let a = (mirror.next_double() * 3.1415927410125732) as f32 - PI / 2.0;
+            let radius = mirror.next_range(3, 8) as f32;
+            let v11 = Vec2::new(a.cos() * radius, a.sin() * radius);
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, v10 + v11, 0, 0, 172,
+                v11.x * 2.0, v11.y * 2.0, 100, Color::default(), 1.4,
+            );
+            let d = mpool.slot_mut(idx);
+            d.no_gravity = true;
+            d.no_light = true;
+            d.velocity /= 4.0;
+            d.velocity -= Vec2::new(6.0, -2.0);
+        }
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        assert_eq!(act.len(), 7, "7 dusts per charge tick");
+        for (k, &i) in act.iter().enumerate() {
+            assert_eq!(pool.slot(i).dust_type, 172);
+            assert_eq!(pool.slot(i).position, mpool.slot(k).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(k).velocity);
+            assert!(pool.slot(i).no_gravity && pool.slot(i).no_light);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-f4 — site 49029: the materialize ring fires ONLY at ai[2]==60
+    /// of state -1, spawns 36 type-172 dusts with ZERO explicit draws
+    /// (the pool internals only), and reads the post-damp/rise velocity
+    /// (vy pinned -2 when ai[2] > 20). A non-60 tick spawns nothing.
+    #[test]
+    fn w4_f4_fishron_materialize_ring_gates_at_tick_60() {
+        let w = dust_world();
+        let c = dust_ctx(&w);
+        let mut s = state_at(1000.0, 1000.0);
+        s.ai0 = -1.0;
+        s.ai2 = 59.0;
+        s.vx = 4.0;
+        s.vy = 0.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(5);
+        fishron_dust_sites(&s, &mut rng, &mut pool, &c, &w);
+        assert!(
+            (0..6000).all(|i| !pool.slot(i).active),
+            "tick 59 spawns nothing"
+        );
+        s.ai2 = 60.0;
+        fishron_dust_sites(&s, &mut rng, &mut pool, &c, &w);
+        let act: Vec<usize> = (0..6000).filter(|&i| pool.slot(i).active).collect();
+        assert_eq!(act.len(), 36, "the 36-dust ring");
+        for &i in &act {
+            assert_eq!(pool.slot(i).dust_type, 172);
+            assert!(pool.slot(i).no_gravity && pool.slot(i).no_light);
+            // |velocity| == 3 (the Normalize(vector2) * 3 post-write).
+            assert!((pool.slot(i).velocity.length() - 3.0).abs() < 1e-4);
+        }
+    }
+
+    /// W4-f4 — the seam is state-gated: a hover tick (state 0) and a
+    /// state-7 spin tick draw NO dust (the trail bubble's scale is the
+    /// adapter's own draw, not this seam's).
+    #[test]
+    fn w4_f4_fishron_seam_is_state_gated() {
+        let w = dust_world();
+        let c = dust_ctx(&w);
+        for ai0 in [0.0f32, 2.0, 7.0, 10.0] {
+            let mut s = state_at(1000.0, 1000.0);
+            s.ai0 = ai0;
+            s.ai2 = 60.0;
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(9);
+            let before = rng.peek();
+            fishron_dust_sites(&s, &mut rng, &mut pool, &c, &w);
+            assert!(
+                (0..6000).all(|i| !pool.slot(i).active),
+                "state {ai0} spawns no dust"
+            );
+            assert_eq!(rng.peek(), before, "state {ai0} draws nothing");
+        }
     }
 }
