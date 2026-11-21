@@ -207,6 +207,76 @@ Determinism: items 1, 2, 9 and 10 all change RNG draw counts / results on the sh
   cloak/honeycomb), paladin share, beetle orbs, solar flare, combat text. Grouped
   because they share the same insertion point between the endurance step and the
   iframe set (`Player.cs:38305-38516`).
+
+---
+
+## W4-f50 addendum (2026-11-21) — the player hurt REACTIONS (the d116 deferred list)
+
+> Task W4-f50 (branch `task/W4-f50-hurt-reactions`, base a725acb0 = wave-3 complete).
+> The d116 pushed branch ported the `NPC.StrikeNPC_Inner` damage tail and deferred the
+> player-side `Hurt` reactions. This task ported that deferred list. The thorns reflect
+> (S1-C-5) and the bee/star-cloak + honeycomb + brain retaliate block (S1-C-7 wave B)
+> were re-verified FIRST: both already on main, unchanged. The M5-COMBAT-7 row above is
+> now DONE except the paladin share (single-player-unreachable).
+
+### The hurt pipeline, verbatim (C# → port)
+
+| C# site | Step | Port |
+| --- | --- | --- |
+| `Player.cs:38237-38240` | `panic` → `AddBuff(63, 480)` | **NEW** — `hurt_inner`'s head, the `panic` field (1290/1578/6187 arms, `ResetEffects` `:18616`); the buff-63 `moveSpeed++` reader (`:10130-10133`) wired live |
+| `:38241-38244` | `setSquireT2` → `AddBuff(205, 300)` | **NEW** — `hurt_inner`'s head (the T2 triple arms the flag) |
+| `:38245` | `stealth = 1f` | **NEW** — the hurt breaks the shroomite stealth (the decay machine `:25733-25898` unported, the field write is the seam) |
+| `:38255-38269` | `hasFootball` → the 861 return + slot clear | **NEW** — queues `pending_football` (hit dir); the drain scans the inventory, spawns 861 `(-hitDir*4, -6)` ai1=1 ai2=stack, clears the slot. The `hasFootball` equip scan (`:12906-12918`) + clear (`:18345`) |
+| `:38271-38280` | the held jousting lance → kill owned 877/878/879 | **NEW** — queues `pending_golf_club_kill`; the drain checks the held kind (4788/4789/4790) + kills the owned lances |
+| `:38281-38290` | the invis strip (`DelBuff(10)`) | **NEW** — `clear_buff(10)`, the no-rescan quirk |
+| `:38305-38320` | `Counter[cooldownCounter] && ConsumeSolarFlare()` → `num2 = (int)(0.8*num2)` + the 608 blast | **NEW** — `consume_solar_flare` (`:56742-56762`), gated on `retaliate_lane` (the Counter set = {General, BossNoCheese}); the 608 blast queues `pending_solar_blast`, the `ProjectilePool::solar_flare_blast` seam walks the 160×160 box + queues Item14 + the draw census |
+| `:38321-38337` | `beetleDefense && beetleOrbs > 0` → `num2 = (int)((1-0.15*orbs)*num2)`, orb--, the 95-97 ladder | **NEW** — `hurt_inner`, no cooldown gate (every lane) |
+| `:38338-38368` | the paladin team share | **UNPORTED** — single-player-unreachable (`defendedByPaladin` needs a second team player) |
+| `:38382` | `CombatText.NewText(playerRect, DamagedFriendly[Crit], num2, Crit)` | **NEW** — queues `pending_hurt_text`, the drain spawns BEFORE the retaliate block (the C# `:38382` < `:38401` order) |
+| `:38527-38553` | the hit-dust loop (`num2/statLifeMax2*100` particles) | **NEW** — queues `pending_hurt_dust` (hit dir, num2); the drain spawns stoned 1 / default 5 (the frost/bone texture-id keys are the visual lane). `num22` stays 0 (the C# never increments it; the NextFloat draw still consumed) |
+| `:10342-10443` | the Beetle/Solar buff-ladder re-derivation | **NEW** — `rederive_beetle_solar_buffs` (the slot-ordered `DelBuff(j); j--` rescan, the count assignment unconditional, the 98-100 melee rows) |
+| `:16366-16439` / `:16499-16527` / `:16529-16581` | `ApplySetBonus_Solar`/`BeetleDefense`/`BeetleDamage` | **NEW** — the recharge machines at the `UpdateArmorSets` seam (the shield/orb-orbit positions cosmetic, unported) |
+| `:16358-16364` / `:16441-16497` | the always-counter zeros | **NEW** — `update_armor_sets_always_solar`/`beetle` |
+
+### RNG order census (the hurt's new draws, per lane)
+
+The combat text's 2 (+1 crit) placement rolls draw BEFORE the retaliate block's
+rolls on every lane (the C# `:38382` < `:38401` order). The hit-dust loop's
+`NextFloat` per particle + the `NewDust` internal draws follow the hurt sound
+(`:38525` < `:38527`). The 608 blast's box-walk crit/DamageVar rolls + the
+`solar_flare_blast_draws` census (the RotatedByRandom/NextDouble/gore draws) ride
+the hitting lane's stream at the pass tail. The Solar grant-dust burst's 16
+`NewDust` chains ride the `UpdatePlayers` stream (the set machine runs in
+`Player.Update`). The set-bonus machines themselves draw NOTHING (the orb-orbit
+`Next(-100,101)` draws are the unported visual lane).
+
+### Deviations (ANALYSIS mirror)
+
+- The drain latency (the S1-E-21c batch convention, the `pending_retaliate`
+  precedent): the reactions queue + drain at the hitting pass's tail.
+- The paladin share is single-player-unreachable (NOT ported).
+- The frost/bone armor dust keys + the shader post-arms are the visual lane.
+- The Solar shield-orbit + Beetle orb-orbit positions are cosmetic (unported).
+- The 608 blast's dust/gore burst bodies are the visual lane (the draw census
+  keeps the explicit `Main.rand` draws on the stream).
+- The stealth-decay machine is unported (the `stealth = 1f` hurt write is the seam).
+
+### Witnesses (WRITTEN NOT RUN — code-only mode)
+
+- `player.rs`: `w4_f50_the_panic_necklace_grants_the_hurt_buff_and_arms_from_all_three_sources`,
+  `w4_f50_the_squire_t2_set_grants_ballista_panic_on_hurt`,
+  `w4_f50_the_hurt_breaks_stealth_and_strips_invisibility`,
+  `w4_f50_the_panic_buff_raises_the_move_speed`,
+  `w4_f50_the_solar_flare_shield_cuts_the_hurt_and_queues_the_blast`,
+  `w4_f50_the_beetle_orbs_cut_the_hurt_by_fifteen_percent_each`,
+  `w4_f50_the_solar_set_recharges_a_shield_every_180_ticks`,
+  `w4_f50_the_beetle_defense_set_recharges_an_orb_every_180_ticks`,
+  `w4_f50_the_beetle_solar_buff_ladder_rederives_the_counts`,
+  `w4_f50_the_hurt_queues_the_combat_text_and_hit_dust`,
+  `w4_f50_the_football_and_golf_club_hurt_arms_queue`.
+- `hurt_modifiers.rs`: `w4_f50_the_football_drain_spawns_the_return_and_clears_the_slot`,
+  `w4_f50_the_golf_club_drain_kills_the_owned_lances`,
+  `w4_f50_the_hit_dust_drain_spawns_the_burst`.
 - **DONE re-verification verdicts:** M2-COMBAT-1 — PARTIAL (the math is exact, the
   plumbing is not: no cooldown counters, no floor-1, no dodge). M2-COMBAT-2 —
   PARTIAL (crit/class accessors and the roll are ported and used; the ranged split

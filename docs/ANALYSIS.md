@@ -39244,3 +39244,103 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-f50 — the player hurt REACTIONS (the d116 deferred list, 2026-11-21)
+
+Branch `task/W4-f50-hurt-reactions`, base a725acb0 (wave-3 complete).
+The d116 pushed branch (`task/W4-d116-player-hurt-armor`) ported the
+`NPC.StrikeNPC_Inner` damage tail and DEFERRED the player-side `Hurt`
+reactions (ANALYSIS wave B "Deferred families": the panic buff 63;
+"paladin/beetle/solar ride a later wave"; research/04's MISSING rows).
+This task ported that deferred list. The thorns reflect (S1-C-5) and the
+bee/star-cloak + honeycomb + brain retaliate block (S1-C-7 wave B) were
+re-verified FIRST: both are already on main (`npc.rs::contact` /
+`hurt_modifiers.rs`), unchanged here.
+
+### What landed (three phases + a fidelity round)
+
+- **Phase 1 — the hurt-head reactions** (`Player.cs:38237-38290`): the
+  `panic` flag (the Panic Necklace 1290 `:14892-14895`, the Sweetheart
+  Necklace 1578 `:15076-15080`, the Crossed Heart Necklace 6187
+  `:14625-14628` + longInvince) grants buff 63 (Panic!, 480 ticks) on an
+  accepted hit; the Squire T2 set grants buff 205 (Ballista Panic, 300
+  ticks); `stealth = 1f` breaks the shroomite stealth; the invis strip
+  (`DelBuff(10)` on every slot, the no-rescan `clear_buff` quirk). The
+  buff-63 `moveSpeed++` reader (`:10130-10133`) wired into the live
+  buff scan. `ResetEffects` clears `panic` (`:18616`).
+- **Phase 2 — the Solar Flare + Beetle hurt reductions** (`:38305-38337`):
+  `ConsumeSolarFlare` (`:56742-56762`) consumes a shield charge, cuts
+  `num2` to `(int)(0.8 * num2)`, deletes the 170-172 rows + re-grants
+  the lower tier, zeroes the counter; the 608 blast (`(int)(150 *
+  meleeDamage)`, kb 15) queues for the world-sim drain (the
+  `ProjectilePool::solar_flare_blast` seam: the 160x160 box walk + the
+  Item14 cue + the `solar_flare_blast_draws` census). The Beetle Defense
+  orbs cut `num2` to `(int)((1 - 0.15 * orbs) * num2)`, one orb
+  consumed, the 95-97 ladder + counter zero. The set-bonus recharge
+  machines (`ApplySetBonus_Solar` `:16366-16439`,
+  `ApplySetBonus_BeetleDefense` `:16499-16527`,
+  `ApplySetBonus_BeetleDamage` `:16529-16581`) + the buff-ladder
+  re-derivation (`:10342-10443`) + the always-counter zeros
+  (`:16358-16364`/`:16441-16497`) run at the `UpdateArmorSets` seam.
+  The Solar cut gates on the Counter-set membership (`retaliate_lane`,
+  `ImmunityCooldownID.cs:50`); the Beetle cut has no gate (every lane).
+- **Phase 3 — the hurt text + hit-dust + football/golf-club** (`:38382`,
+  `:38527-38553`, `:38255-38280`): the player hurt combat text
+  (`DamagedFriendly[ Crit]`, the final `num2`, drawn BEFORE the
+  retaliate block); the hit-dust loop (`num2 / statLifeMax2 * 100`
+  particles, stoned 1 / default 5 — the frost/bone texture-id keys are the
+  visual lane); the football 861 return (`(-hitDirection * 4, -6)`, ai1
+  = 1, ai2 = stack, the slot clears) + the golf-club lance-kill (the held
+  4788/4789/4790 kills every owned 877/878/879). The `hasFootball` equip
+  scan (`:12906-12918`) + `ResetEffects` clear (`:18345`).
+- **Fidelity round**: the hit-dust `num22` stays 0 (the C# never
+  increments it; the `NextFloat` draw is still consumed each iteration);
+  the `beetleCountdown / 20` integer division; the buff-ladder count
+  assignment runs unconditionally + the `DelBuff(j); j--` net-index
+  rescan (the C# for-loop shape, the double-delete included).
+
+### Deliberate deviations (recorded)
+
+- **The drain latency**: the C# runs the reactions inline inside `Hurt`
+  (mid-pass); the port queues them (`pending_hurt_text`/`pending_hurt_dust`/
+  `pending_football`/`pending_golf_club_kill`/`pending_solar_blast`/
+  `pending_solar_grant_dust`) and drains at the hitting pass's tail (the
+  S1-E-21c batch convention, the `pending_retaliate` precedent). The
+  combat text drains BEFORE the retaliate block on every lane (the C#
+  `:38382` < `:38401` order); the hit-dust/football/golf drains follow.
+- **The paladin team share** (`:38338-38368`) is single-player-
+  unreachable (`defendedByPaladin` needs a second team player); the
+  `CanDefendWithPaladinsShield` gate (`:38188-38195`) has no port
+  caller. NOT ported (the research/04 row stays MISSING for MP).
+- **The frost/bone armor dust keys** (`:38538-38547`) need the
+  `ApplyArmorSoundAndDustChanges` texture-id scan (`:38167-38186`, the
+  visual lane); the stoned buff (156) is the only live key, the default 5
+  stands for the rest. The `shader` post-arms are the dye layer's.
+- **The Solar shield-orbit + Beetle orb-orbit positions**
+  (`solarShieldPos`/`Vel` `:16403-16428`, `beetlePos`/`Vel`
+  `:16458-16496`) are cosmetic and unported (their `Next(-100,101)`
+  draws ride the visual lane). The `solarDashing` dash machine is the
+  melee lane's (the `dashType = 3` grant lands, the dash-state disjunct
+  folds false).
+- **The 608 blast's dust/gore burst bodies** are the visual lane (the
+  `solar_flare_blast_draws` census keeps the explicit `Main.rand` draws
+  on the stream in the C# order; the `NewDust`/`NewGore` internal draws
+  + spawns ride the dust-pool task, the `celeb2_explosion` precedent).
+- **The stealth-decay machine** (`:25733-25898`) is unported; the
+  `stealth = 1f` hurt write is the seam (the field exists, the
+  shroomite-stealth knockback scale reads it).
+
+### Verification
+
+Code-only mode: **no cargo/rustc/tests invoked**. Every step re-read
+against the cited C# windows (`Player.cs:38197-38567`, `:10342-10443`,
+`:16304-16581`, `:56742-56762`, `:12906-12918`, `:14892-14895`,
+`:15076-15080`, `:14625-14628`, `ImmunityCooldownID.cs:47-53`,
+`Projectile.cs:6554-6566`/`:72177-72225`); the call sites checked by
+read/grep (the three hurt lanes' drains, the `UpdateArmorSets` seam, the
+`ProjectilePool` spawn/box-walk/kill seams, the dust-pool `new_dust`
+signature). 14 witnesses WRITTEN NOT RUN (`player.rs` x11,
+`hurt_modifiers.rs` x3 — the panic/squire/stealth/invis head, the solar
+cut + blast queue, the beetle cut, the set recharge machines, the buff
+ladder, the hurt text/dust queues, the football/golf drains, the hit-dust
+burst).
