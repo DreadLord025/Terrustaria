@@ -17270,14 +17270,14 @@ impl ProjectilePool {
                                 // builds — `:57956-57989`'s aim-steer).
                                 let channel =
                                     player.as_deref().is_some_and(|p| p.channel);
-                                let aim = inputs.aim.map(|(x, y)| Vec2::new(x, y));
+                                let mouse_world = inputs.aim.map(|(x, y)| Vec2::new(x, y));
                                 crate::projectile_ai_falling::step(
                                     &mut self.slots[i],
                                     world,
                                     rng,
                                     local_owner,
                                     channel,
-                                    aim,
+                                    mouse_world,
                                 );
                             }
                         }
