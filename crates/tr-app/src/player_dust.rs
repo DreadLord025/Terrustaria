@@ -29,7 +29,7 @@ use tr_core::particles::Color;
 
 /// One `Dust.NewDust` on the `UpdatePlayers` stream, returning the slot index
 /// (the sentinel included — the C# writes `Main.dust[6000]` on a refusal).
-fn nd(
+pub(crate) fn nd(
     app: &mut App,
     pos: Vec2,
     w: i32,

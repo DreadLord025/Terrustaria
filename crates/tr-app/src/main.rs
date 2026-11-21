@@ -242,6 +242,10 @@ mod recall_teleport;
 // (`Player.JumpMovement`, Player.cs:20818-21012) first; the tick queues the
 // box/velocity snapshot, this module replays on the `UpdatePlayers` stream.
 mod player_dust;
+// W4-g66: the movement-trail drain lanes — the DoubleJumpVisuals and
+// floor-dust chains first. Same snapshot-then-replay convention as
+// `player_dust`.
+mod player_trail_dust;
 mod regen;
 mod research;
 mod sand;

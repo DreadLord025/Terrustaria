@@ -663,6 +663,42 @@ pub(crate) enum FastRunArm {
     Plain,
 }
 
+/// W4-g66 — one queued `DoubleJumpVisuals` trail tick (`Player.cs:21892-22021`):
+/// the per-tick arms while an extra jump performs (distinct from the one-shot
+/// [`JumpDust`] start burst). `jump` is the hold-boost counter the Sandstorm
+/// scale and the Sail's two-puff arm read; the drain
+/// (`player_trail_dust::drain_double_jump_visuals`) replays on `UpdatePlayers`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DoubleJumpDust {
+    pub(crate) kind: ExtraJump,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+    pub(crate) jump: i32,
+}
+
+/// W4-g66 — one queued `MakeFloorDust` call (`Player.cs:23790-24043`): the
+/// floor tile's kind/frame/paint + the landing flag, snapshotted inside
+/// `FloorVisuals` after the slope carve-out (`:23736-23739` forces `kind=-1`).
+/// The drain (`player_trail_dust::drain_floor_dust`) rolls the per-puff gates
+/// and the spawn chain on `UpdatePlayers`.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct FloorDust {
+    pub(crate) falling: bool,
+    pub(crate) kind: i32,
+    pub(crate) frame_y: i32,
+    pub(crate) paint: i32,
+    pub(crate) x: f32,
+    pub(crate) y: f32,
+    pub(crate) width: f32,
+    pub(crate) height: f32,
+    pub(crate) vx: f32,
+    pub(crate) vy: f32,
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -2062,6 +2098,14 @@ pub struct Player {
     /// one snapshot per footstep tick, drained on the `UpdatePlayers` stream
     /// right after the footstep sound (`player_dust::drain_fast_run`).
     pending_fast_run_dust: Option<FastRunDust>,
+    /// W4-g66 — the tick's queued `DoubleJumpVisuals` trail
+    /// (`Player.cs:21892-22021`): one per performing extra jump while the
+    /// ascent lasts, drained after the dash burst (`:26767` order).
+    pending_double_jump_dust: Option<DoubleJumpDust>,
+    /// W4-g66 — the tick's queued `MakeFloorDust` call
+    /// (`Player.cs:23740-23743`): drained after the jump/dash bursts, before
+    /// the flight section's draws (`:28271` runs after the movement block).
+    pending_floor_dust: Option<FloorDust>,
     /// `Player.cs:22956` `WorldGen.KillTile(num3, num4)` — the caller owns
     /// `&mut World`, so the tick hands the web tile over (`tr_core::edit::kill_tile`).
     pending_sticky_kill: Option<(i32, i32)>,
@@ -3001,6 +3045,8 @@ impl Player {
             pending_jump_dust: None,
             pending_dash_dust: None,
             pending_fast_run_dust: None,
+            pending_double_jump_dust: None,
+            pending_floor_dust: None,
             pending_sticky_kill: None,
             // `Player.channel` is off until a `channel` item is held
             // (`Player.cs:52958-52968`).
@@ -3611,6 +3657,19 @@ impl Player {
         self.pending_fast_run_dust.take()
     }
 
+    /// W4-g66 — takes the `DoubleJumpVisuals` trail snapshot
+    /// (`Player.cs:21892-22021`); drained on `UpdatePlayers`
+    /// (`player_trail_dust::drain_double_jump_visuals`).
+    pub(crate) fn take_double_jump_dust(&mut self) -> Option<DoubleJumpDust> {
+        self.pending_double_jump_dust.take()
+    }
+
+    /// W4-g66 — takes the `MakeFloorDust` snapshot (`Player.cs:23790-24043`);
+    /// drained on `UpdatePlayers` (`player_trail_dust::drain_floor_dust`).
+    pub(crate) fn take_floor_dust(&mut self) -> Option<FloorDust> {
+        self.pending_floor_dust.take()
+    }
+
     /// W4-d51 — queues the dash dust snapshot at the C# read moment (the
     /// velocity writes above each site have already landed).
     fn queue_dash_dust(&mut self, active: bool) {
@@ -3799,6 +3858,8 @@ impl Player {
         self.pending_jump_dust = None;
         self.pending_dash_dust = None;
         self.pending_fast_run_dust = None;
+        self.pending_double_jump_dust = None;
+        self.pending_floor_dust = None;
         self.pending_sticky_kill = None;
         self.pending_mana_effect = None;
         self.pending_heal_effect = None;
@@ -7514,10 +7575,61 @@ impl Player {
         // `Player.cs:26061-26099`: the stale option clear while airborne.
         self.clear_stale_jumps();
 
+        // `Player.cs:26753-26756`: the hold-boost spent cancels the performing
+        // flag (`CancelAllJumpVisualEffects(includeDownDash: false)`,
+        // `:36649-36662`) BEFORE `DashMovement`/`DoubleJumpVisuals` read it.
+        // The C# clear list (`:36655-36661`) covers Cloud..Santank only — the
+        // Goat/Basilisk flags survive (they have no `DoubleJumpVisuals` arm).
+        if self.jump == 0
+            && matches!(
+                self.performing_jump,
+                Some(
+                    ExtraJump::Cloud
+                        | ExtraJump::Sandstorm
+                        | ExtraJump::Blizzard
+                        | ExtraJump::Fart
+                        | ExtraJump::Sail
+                        | ExtraJump::Unicorn
+                        | ExtraJump::Santank
+                )
+            )
+        {
+            self.performing_jump = None;
+        }
         // `Player.Update` → `DashMovement` (`Main` call order `:26757`): the
         // velocity-only dash pass before the collision step.
         if !grappling {
             self.dash_movement(world, input);
+        }
+        // W4-g66 — `Player.DoubleJumpVisuals` (`Player.cs:26767`,
+        // `:21892-22021`): the per-tick trail while an extra jump performs
+        // (the one-shot start burst is W4-d51's `pending_jump_dust`). The
+        // C# gates each arm on `isPerformingJump_X && hasJumpOption_X &&
+        // !canJumpAgain_X` + the ascent sign (the Sail widens to `vy < 1`);
+        // the port's `performing_jump` + option tables carry the same state.
+        // WallClimb/Wallslide/Carpet (`:26758-26766`) are unported movement
+        // seams — their type-31 wall dust rides those tasks.
+        if !grappling {
+            if let Some(j) = self.performing_jump {
+                let ascent = if j == ExtraJump::Sail { self.vy < 1.0 } else { self.vy < 0.0 };
+                if self.has_jump_options[j.index()] && !self.can_jump_again[j.index()] && ascent {
+                    // `:21919`: the Sandstorm arm re-arms the hover flag (the
+                    // wings/mount clear at `:26768-26771` runs right after).
+                    if j == ExtraJump::Sandstorm {
+                        self.sand_storm = true;
+                    }
+                    self.pending_double_jump_dust = Some(DoubleJumpDust {
+                        kind: j,
+                        x: self.x,
+                        y: self.y,
+                        width: self.width,
+                        height: self.height,
+                        vx: self.vx,
+                        vy: self.vy,
+                        jump: self.jump,
+                    });
+                }
+            }
         }
         // `Player.cs:26799-26812`: while CCed the mount dismounts and the
         // plain gravity takes over (the port's CC input zeroing and the
@@ -7730,6 +7842,10 @@ impl Player {
         // tell "moved onto the plate" from "stands on it".
         self.old_x = self.x;
         self.old_y = self.y;
+        // W4-g66 — `Player.cs:28073-28081`: `falling` reads the PRE-integration
+        // velocity outside ±gravity; `FloorVisuals(falling)` below spends it
+        // on the landing burst's 20-puff arm.
+        let falling = self.vy > gravity || self.vy < -gravity;
         self.move_vanilla(world, input.down, gravity);
         // `Player.cs:28237-28241` + `Minecart.HitTrackSwitch`
         // (`Minecart.cs:1281-1288`): the pressure-track trip fires at the
@@ -7838,9 +7954,10 @@ impl Player {
         }
 
         // `Player.cs:28269-28272`: `FloorVisuals` after this tick's movement —
-        // the movement block reads the flags next tick (one tick stale).
+        // the movement block reads the flags next tick (one tick stale). The
+        // `falling` snapshot (`:28073-28081`) was taken pre-integration above.
         if self.vy == 0.0 && !grappling {
-            self.floor_visuals(world);
+            self.floor_visuals(world, falling);
         }
 
         self.update_survival(world, rng);
@@ -10789,23 +10906,25 @@ impl Player {
 
     /// `Player.FloorVisuals` (`Player.cs:23708-23743`) + `GetFloorTile`
     /// (`:23755-23783`): the tile row at the feet, center column first, then
-    /// the neighbors, solid tiles only. The dust visuals (MakeFloorDust) and
-    /// the slope dust carve-out stay with the particle tasks.
-    fn floor_visuals(&mut self, world: &World) {
+    /// the neighbors, solid tiles only. W4-g66: the Stinky-tile buff grant
+    /// (`:23732-23735`), the slope dust carve-out (`:23736-23739`) and the
+    /// `MakeFloorDust` snapshot (`:23740-23743`) — the drain replays the
+    /// per-puff chain on `UpdatePlayers` (`player_trail_dust::drain_floor_dust`).
+    fn floor_visuals(&mut self, world: &World, falling: bool) {
         let x = ((self.x + self.width * 0.5) / TILE_PX) as i32;
         // `Player.GetFloorTile` (`Player.cs:23755-23783`) reads `base.height` —
         // the live hitbox height (the mount framework's equip; the cart's 52).
         let y = ((self.y + self.body_height()) / TILE_PX) as i32;
-        let mut kind = None;
+        let mut floor = None;
         for tx in [x, x - 1, x + 1] {
             if let Some(t) = world.tile(tx, y) {
                 if t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind) {
-                    kind = Some(t.kind);
+                    floor = Some(*t);
                     break;
                 }
             }
         }
-        let Some(kind) = kind else {
+        let Some(tile) = floor else {
             self.sticky = false;
             self.slippy = false;
             self.slippy2 = false;
@@ -10813,6 +10932,7 @@ impl Player {
             self.running_on_sand = false;
             return;
         };
+        let kind = tile.kind;
         // `Player.cs:23727-23731`: cobweb 229, the IceSkateSlippery set
         // (`TileID.cs:481`), FrozenSlimeBlock 197, Asphalt 198, and the sand
         // conversions (`TileID.cs:92-94`).
@@ -10823,6 +10943,37 @@ impl Player {
         self.running_on_sand = tr_core::tiledata::SET_CONVERSION_SAND.has(kind)
             || tr_core::tiledata::SET_CONVERSION_SANDSTONE.has(kind)
             || tr_core::tiledata::SET_CONVERSION_HARDENED_SAND.has(kind);
+        // `:23732-23735`: the Stinky tiles (666/712) grant buff 120 for 180
+        // ticks — `whoAmI == Main.myPlayer` is the port's single player.
+        if kind == 666 || kind == 712 {
+            self.buffs.add_buff(120, 180);
+        }
+        // `:23736-23739`: any sloped tile in the row kills the dust kind (the
+        // flags above keep the real tile).
+        let sloped = [x - 1, x, x + 1]
+            .iter()
+            .any(|&tx| world.tile(tx, y).is_some_and(|t| t.slope() != 0));
+        let dust_kind = if sloped { -1 } else { kind as i32 };
+        // `:23740-23743`: `!base.wet && !mount.Cart` — the port's water-only
+        // `wet` stand-in (docs/ANALYSIS.md Phase 4); the cart arm covers both
+        // the ride flag and the framework's cart rows.
+        let any_wet = self.wet || self.lava_wet || self.honey_wet || self.shimmer_wet;
+        let cart = self.cart_mounted
+            || (self.mount.is_active() && crate::mount::is_cart(self.mount.kind()));
+        if !any_wet && !cart {
+            self.pending_floor_dust = Some(FloorDust {
+                falling,
+                kind: dust_kind,
+                frame_y: tile.frame_y as i32,
+                paint: tile.paint() as i32,
+                x: self.x,
+                y: self.y,
+                width: self.width,
+                height: self.height,
+                vx: self.vx,
+                vy: self.vy,
+            });
+        }
     }
 
     /// `Player.luck` (`Player.cs:3086`) — the value the roll consumers read

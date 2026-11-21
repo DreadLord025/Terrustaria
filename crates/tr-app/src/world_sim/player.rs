@@ -1522,6 +1522,19 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_dash_dust() {
                 crate::player_dust::drain_dash_dust(app, burst);
             }
+            // W4-g66 — `DoubleJumpVisuals` (`Player.cs:26767`, `:21892-22021`):
+            // the per-tick performing-jump trail follows the dash burst in
+            // the C# call order, on the same `UpdatePlayers` stream.
+            if let Some(burst) = p.take_double_jump_dust() {
+                crate::player_trail_dust::drain_double_jump_visuals(app, burst);
+            }
+            // W4-g66 — `FloorVisuals` → `MakeFloorDust` (`Player.cs:28271`,
+            // `:23790-24043`): the landing burst / running puffs after the
+            // movement block, before `PlayerFrame`'s draws (`:28286`). The
+            // landing Item177 cue rides inside the drain, before the loop.
+            if let Some(burst) = p.take_floor_dust() {
+                crate::player_trail_dust::drain_floor_dust(app, burst);
+            }
             // S1-E-21f — the liquid entry/exit splash: case 19's playing
             // guard refuses BEFORE the one pitch draw
             // (`LegacySoundPlayer.cs:872-888`); the style picks the slot and
