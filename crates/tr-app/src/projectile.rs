@@ -769,6 +769,12 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// `Projectile.miscText` (`Projectile.cs:432`, reset "" `:792`): the
+    /// tombstone epitaph (`DropTombstone` writes it at the spawn,
+    /// `Player.cs:39135`); the aiStyle-17 placement lands it through
+    /// `Sign.TextSign` (`Projectile.cs:25361`). Every other kind keeps
+    /// the empty default. W4-d2.
+    pub misc_text: String,
 }
 
 impl Default for Projectile {
@@ -855,6 +861,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            misc_text: String::new(),
         }
     }
 }
@@ -13675,7 +13682,9 @@ const AI_STYLE_1_RIDERS: [u16; 5] = [
 /// bombs) keep their pre-existing no-wind behaviour; the rest (10/14/…) port
 /// in a later phase or not at all.
 fn uses_wind_physics(ai_style: u8) -> bool {
-    matches!(ai_style, 2 | 8 | 24 | 28 | 29)
+    // W4-d2 — aiStyle 17 joins the wind-eligible set
+    // (`ShouldUseWindPhysics` `Projectile.cs:22118`): the tombstones.
+    matches!(ai_style, 2 | 8 | 17 | 24 | 28 | 29)
 }
 
 /// `Terraria.Utilities.LCG32Random` (`Utilities/LCG32Random.cs:5-44`) — the
@@ -17035,6 +17044,28 @@ impl ProjectilePool {
                         // `AI_007_GrapplingHooks` — the grappling hooks.
                         // `AI()`'s `else if (this.aiStyle == 40)`
                         // (`Projectile.cs:27780-27783`) -> `AI_040_LeafBlower`.
+                        // W4-d2 — `AI()`'s `else if (this.aiStyle == 17)`
+                        // (`Projectile.cs:25316-25366`): the tombstones
+                        // (43/201-205/527-531). The grounded friction +
+                        // spin + gravity, the FTW dead-roll disarm, the
+                        // local-owner tile-85 placement (CanPlace/Place +
+                        // the Sign epitaph + the Dig thud + Kill), the
+                        // ×−0.75/×−0.7 bounce with the prologue Next(3).
+                        // The arm writes tiles, so it reborrows `world`
+                        // mutably (the ai_ice_block carve-out).
+                        17 => {
+                            if crate::projectile_ai_tombstone::TOMB_KINDS
+                                .contains(&self.slots[i].kind)
+                            {
+                                crate::projectile_ai_tombstone::tombstone_step(
+                                    &mut self.slots[i],
+                                    world,
+                                    rng,
+                                    local_owner,
+                                    world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                                );
+                            }
+                        }
                         40 => {
                             // The petal arm draws the pass's threaded stream
                             // (`AI_040_LeafBlower`'s `Main.rand` rolls under
@@ -30639,6 +30670,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            misc_text: String::new(),
         }
     }
 
@@ -31048,6 +31080,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            misc_text: String::new(),
         }
     }
 

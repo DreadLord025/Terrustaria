@@ -214,6 +214,13 @@ mod projectile_ai_light_pets;
 // (`Projectile.cs:24636-24829` + `:19512-19571`). The on-hit return +
 // StatusNPC debuffs ride projectile.rs::damage_pve. Code-only mode.
 mod projectile_ai_chain;
+// W4-d2 — the aiStyle-17 tombstones (43/201-205/527-531): the grounded
+// friction/spin/gravity, the FTW dead-roll disarm, the local-owner
+// tile-85 placement (CanPlace/Place + the Sign epitaph + Kill) and the
+// ×−0.75/×−0.7 bounce (`Projectile.cs:25316-25366` + `:19310-19320`).
+// The death spawn (DropTombstone's launch draws) is wired in death.rs.
+// Code-only mode.
+mod projectile_ai_tombstone;
 // S1-P-i55 golf: the two golf projectile AIs (721/739-752 aiStyle 149,
 // 722 aiStyle 150) + the club strike / tee placement / cup scoring,
 // reusing tr-core's golf.rs + golf_state.rs (code-only round — the

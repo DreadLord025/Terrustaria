@@ -1752,6 +1752,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (false, -2, false, -1, 255, 1.0),
             ),
+            // W4-d2 — the aiStyle-17 tombstones. `Projectile.cs:1258-
+            // 1270` (the Tombstone 43) / `:2872-2936` (the grave markers
+            // 201-205) / `:5971-5983` (the rich gravestones 527-531):
+            // 24x24, aiStyle 17, penetrate −1, the stock 3600 life and
+            // tileCollide. The `knockBack = 12f` line is the SPAWNER's
+            // input convention (the row carries no kb field — the
+            // DropTombstone spawn passes it); the classic-world rows
+            // set NO friendly/hostile (the stock false/false — the
+            // getGoodWorld arm flips both, the spawn seam's FTW gate).
+            43 | 201..=205 | 527..=531 => {
+                (24.0, 24.0, 17, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),

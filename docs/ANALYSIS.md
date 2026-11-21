@@ -39366,3 +39366,74 @@ Verification: code-only вЂ” no cargo/rustc/tests/graphify invoked. The
 `projectile.rs` (`w4_d2_the_chain_*`) are WRITTEN NOT RUN; every
 expected value hand-derived from the cited C# lines.
 
+## The aiStyle-17 tombstones (W4-d2, 2026-11-21, code-only вЂ” tests written NOT run)
+
+The third missing style of the 11-20 census: **aiStyle 17**
+(`Projectile.cs:25316-25366`) вЂ” the Tombstone (43), the five grave
+markers (201-205) and the five rich gravestones (527-531), in
+`projectile_ai_tombstone.rs` behind the dispatch's `17 =>` arm
+(kind-gated to `TOMB_KINDS`).
+
+**The census finding that shaped the slice**: the pre-existing
+`death.rs::TombFall` stand-in was DEAD CODE вЂ” `tick_tomb_falls` was
+never called from any pass, so tombstones rolled at death but NEVER
+placed (and their launch-velocity draws `Player.cs:39127` were never
+consumed). This slice replaces the stand-in's flight with the real
+aiStyle-17 projectile and wires the spawn.
+
+* **The AI head**: the grounded X friction (vy == 0 в†’ vx Г—0.98), the
+  spin (rot += vxВ·0.1, the POST-friction X), the gravity (vy += 0.2),
+  the FTW dead-roll disarm (|vx|+|vy| < 1 в†’ damage 0 / knockBack 0).
+* **The placement** (LOCAL OWNER only): the probe cell
+  `((x+w/2)/16, (y+hв€’4)/16)`; the tile-85 style ladder (201-205 в†’
+  1-5, 527-531 в†’ 6-10, the plain 43 в†’ 0); `TileObject.CanPlace` +
+  `Place` through the `place_rng` take/restore convention (tile 85
+  carries NO random styles вЂ” zero draws); the Dig thud at the TILE
+  corner; the epitaph through `Sign.ReadSign`/`TextSign` (tile 85 IS
+  a `tileSign` kind вЂ” the `misc_text` field, a real C# field `:432`,
+  lands the death text); `Kill()`.
+* **The movement**: the blocked-move prologue's ONE `Next(3)`
+  (`:17948`, the first operand вЂ” fires even when the cut gates fail);
+  the aiStyle-17 bounce (`:19310-19320`): the changed X Г—в€’0.75, the
+  changed Y Г—в€’0.7 ONLY when last.Y > 1.5; the post-bounce integrate.
+  The world-edge flag is aiStyle-3-ONLY (`:17900`) вЂ” the tombstones
+  bounce off tiles, not the edge. The direction follows the X sign
+  (`AutomaticallyChangesDirection` does not exclude 17).
+* **The wind tail**: aiStyle 17 joins `uses_wind_physics`
+  (`ShouldUseWindPhysics` `:22118` lists it) вЂ” the shared `wind_tail`
+  helper applies.
+* **The spawn** (`death.rs::on_player_death`, `Player.DropTombstone`
+  `:39108-39136`): the kind roll (`roll_tombstone`, unchanged) THEN
+  the launch draws вЂ” `Next(10,30)*0.1*hitDirection + scatter` X,
+  `Next(-40,-20)*0.1` Y (FTW Г—1.5 both, damage 70 / kb 10), the box
+  centred on the player centre, `misc_text = deathText`. The
+  `tomb_falls` bookkeeping record stays (the death-screen witness);
+  the FLIGHT rides the pool. The three death-pipeline RNG witnesses
+  gained the two launch draws (the stream census stays exact).
+* **Rows** (`data.rs`): all eleven в†’ 24Г—24, aiStyle 17, penetrate в€’1,
+  stock 3600/tileCollide; the classic rows keep the stock
+  friendly/hostile false (the FTW arm flips both at the spawn).
+
+RNG: the AI body draws ZERO; the placement draws ZERO for tile 85;
+the blocked move ONE `Next(3)` (mirrored against a same-seeded
+`UnifiedRandom`); the spawn's two launch draws ride `UpdatePlayers`
+after the kind roll (the death witnesses pin the order).
+
+Deliberate skips / deviations: the `NetMessage` wires (SP no-ops);
+the wet movement half (the generic Update wet block is unported for
+these kinds вЂ” the Shimmer buoyancy `:22504-22515` unreachable); the
+`DateTime.Now` date suffix on the epitaph (wall-clock,
+non-deterministic вЂ” the death text alone is stored); the
+`hitDirection` parameter (the port's death seam carries none вЂ” the
++1 stand-in, recorded here); the tile-cut bodies (the classic
+damage-0 fails the gate; the FTW cut is the unported layer, the roll
+still fires). The `TombFall`/`tick_tomb_falls` stand-in stays as the
+bookkeeping record (its tick remains uncalled вЂ” the pool flight
+replaces it).
+
+Verification: code-only вЂ” no cargo/rustc/tests/graphify invoked. The
+10 witness tests in `projectile_ai_tombstone.rs` are WRITTEN NOT RUN;
+every expected value hand-derived from the cited C# lines (the
+placement fixture's probe cell (20,29), the 2Г—2 object (20,28)-(21,29)
+and the floor-row-30 anchor verified against `can_place`'s scoring).
+

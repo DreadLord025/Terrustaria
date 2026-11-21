@@ -481,12 +481,71 @@ pub fn on_player_death(app: &mut App, x: f32, y: f32, death_text: &str) {
         }
     }
     app.death_text = death_text.to_string();
-    let mut tomb = {
+    // W4-d2 — `Player.DropTombstone` (`Player.cs:39108-39136`): the kind
+    // roll (`roll_tombstone` — the scatter retry + Next(6) + the rich
+    // gate) THEN the launch-velocity draws, all on the `UpdatePlayers`
+    // stream (`KillMe` runs inside `Player.Update`, `Main.cs:17754`).
+    // The aiStyle-17 projectile replaces the dead `TombFall` stand-in
+    // (`tick_tomb_falls` was never called — the tombstones never
+    // placed); the `tomb_falls` record stays for the death-screen
+    // bookkeeping witness, the FLIGHT rides the pool.
+    let get_good = app.world.seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY);
+    let (kind, launch_vx, launch_vy, damage, kb) = {
         let rng = app.rngs.stream(RngKey::UpdatePlayers);
-        roll_tombstone(rng, coins_owned)
+        let tomb = roll_tombstone(rng, coins_owned);
+        // `:39127` — `Next(10, 30) * 0.1f * hitDirection + num` X and
+        // `Next(-40, -20) * 0.1f` Y (getGoodWorld: both ×1.5f). The
+        // port's death seam carries no hitDirection (the KillMe
+        // parameter is unported) — the +1 stand-in is recorded in
+        // ANALYSIS.
+        let hit_direction = 1.0f32;
+        let mut lvx = rng.next_range(10, 30) as f32 * 0.1 * hit_direction + tomb.vel.x;
+        let mut lvy = rng.next_range(-40, -20) as f32 * 0.1;
+        if get_good {
+            lvx *= 1.5;
+            lvy *= 1.5;
+        }
+        // `:39119-39125` — damage 0 / knockback 0 classic; 70 / 10 FTW.
+        let (damage, kb) = if get_good { (70, 10.0) } else { (0, 0.0) };
+        (tomb.kind, lvx, lvy, damage, kb)
     };
-    tomb.pos = Vec2::new(x, y);
-    tomb.text = death_text.to_string();
+    // `NewProjectile` centres the box on the player centre
+    // (`Projectile.cs:10876-10877`): the death spot's top-left + the
+    // INTEGER player box halves (`:39127`'s `(float)(width / 2)`).
+    let cx = x + (crate::player::WIDTH as i32 / 2) as f32;
+    let cy = y + (crate::player::HEIGHT as i32 / 2) as f32;
+    let d = crate::projectile::proj_data(kind).expect("the tombstone row");
+    if let Some(slot) = app.projectiles.spawn_with_data_ai_owned(
+        kind,
+        app.local_id as u8,
+        cx - d.w * 0.5,
+        cy - d.h * 0.5,
+        launch_vx,
+        launch_vy,
+        damage,
+        kb,
+        0.0,
+        0.0,
+    ) {
+        // `:39134-39135` — `miscText = deathText + "\n" + date`; the
+        // wall-clock date suffix is the recorded deviation (ANALYSIS)
+        // — the resolved death text alone is stored.
+        app.projectiles.slots_mut()[slot].misc_text = death_text.to_string();
+        // The FTW tombstone is friendly AND hostile (`:1265-1269`);
+        // the classic row keeps the stock false/false.
+        if get_good {
+            app.projectiles.slots_mut()[slot].friendly = true;
+        }
+    }
+    // The death-screen bookkeeping record (the pre-W4-d2 stand-in's
+    // observable — the flight itself rides the pool above).
+    let tomb = crate::death::TombFall {
+        pos: Vec2::new(x, y),
+        vel: Vec2::new(launch_vx, launch_vy),
+        kind,
+        text: death_text.to_string(),
+        alive: true,
+    };
     app.tomb_falls.push(tomb);
 }
 
@@ -683,7 +742,9 @@ mod revenge_tests {
         assert_eq!(gems[0].pos.y, cy - crate::item::SIZE * 0.5);
         // The stream: the four gem draws then the tombstone roll's draws
         // (`roll_tombstone` — the |vx|>=2 retry loop, Next(6), the rich
-        // gate's Next(5) when coinsOwned > 100000; here 0 coins).
+        // gate's Next(5) when coinsOwned > 100000; here 0 coins) then the
+        // W4-d2 launch draws (`DropTombstone` `:39127` — Next(10,30) X,
+        // Next(-40,-20) Y; the classic world, no ×1.5).
         let mut expect = UnifiedRandom::new(777);
         for _ in 0..2 {
             expect.next_range(-20, 21);
@@ -694,10 +755,12 @@ mod revenge_tests {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         assert_eq!(
             *app.rngs.stream(RngKey::UpdatePlayers),
             expect,
-            "two draws per gem drop, then the tombstone roll"
+            "two draws per gem drop, then the tombstone roll + launch"
         );
     }
 
@@ -754,12 +817,15 @@ mod revenge_tests {
         let p0 = crate::prefix::roll_prefix(3507, -1, &mut expect);
         let p1 = crate::prefix::roll_prefix(3509, -1, &mut expect);
         let p2 = crate::prefix::roll_prefix(3506, -1, &mut expect);
-        // Then the tombstone roll (500 copper — no rich gate).
+        // Then the tombstone roll (500 copper — no rich gate) + the
+        // W4-d2 launch draws (`:39127`).
         let mut tvx = expect.next_range(-35, 36) as f32 * 0.1;
         while tvx >= -2.0 && tvx <= 2.0 {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
         // The drops: gem + block + armor + dye + silver + arrows + cursor
         // stone (the starter tool did NOT drop), no PURSE coin drop.
@@ -844,12 +910,14 @@ mod revenge_tests {
         app.coins = 0;
         let mut expect = app.rngs.stream(RngKey::UpdatePlayers).clone();
         let _ = expect.next_range(-10, 11); // the return fill's Grab chime
-        // Then the tombstone roll (0 coins).
+        // Then the tombstone roll (0 coins) + the W4-d2 launch draws.
         let mut tvx = expect.next_range(-35, 36) as f32 * 0.1;
         while tvx >= -2.0 && tvx <= 2.0 {
             tvx += expect.next_range(-30, 31) as f32 * 0.1;
         }
         expect.next_max(6);
+        expect.next_range(10, 30);
+        expect.next_range(-40, -20);
         on_player_death(&mut app, 100.0, 100.0, "Tester was slain...");
         assert!(app.items.is_empty(), "the cursor RETURNED, no world drop");
         assert_eq!(app.mouse_item.count, 0, "the cursor aired out");
