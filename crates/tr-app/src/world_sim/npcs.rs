@@ -75,15 +75,35 @@ pub(crate) const TAX_CAP: i32 = 250_000;
 
 /// `Main.NPCChatText_DoTaxCollector` (`Main.cs:40180-40225`): the Tax
 /// Collector's right-click pays the accrued tax purse out in coins — the
-/// platinum→gold→silver→copper split at the player's centre, then the
-/// purse empties. The happiness adjustment scales the payout
-/// (`:40184`); the port's town NPCs carry the plain 1.0.
+/// platinum→gold→silver→copper split at the PLAYER's centre
+/// (`Main.LocalPlayer.Center`, `:40192`/`:40199`/`:40206`/`:40215`), then
+/// the purse empties. The happiness adjustment DIVIDES the payout
+/// (`:40184`: `(int)((float)taxMoney / currentShoppingSettings.
+/// PriceAdjustment)`) — the TALK-OPEN LATCH (`Player.cs:4389`), the same
+/// value `GetCoinValueText_TaxCollector` displays (`:39933`, the <0→0
+/// clamp there is display-only). A happy collector (adjustment < 1) pays
+/// MORE than the accrued purse; an unhappy one pays less. His roster rows
+/// are live: the biome table (`PersonalityDatabasePopulator.cs:47-51`,
+/// Like Snow / Dislike Hallow) + the neighbor switch
+/// (`AllPersonalitiesModifier.cs:321-342`, Merchant love / PartyGirl like /
+/// Demolitionist + Mechanic dislike / Santa hate — the Santa row drops,
+/// 142 unported) + the rows that NAME him (the Merchant `:43-60`, the
+/// Angler `:141-158`, the PartyGirl `:119-140`, the Clothier `:285-302`).
 pub(crate) fn tax_collector_payout(app: &mut App, npc_idx: usize) -> bool {
     if app.world.tax_money <= 0 {
         return true;
     }
-    let mut num = app.world.tax_money;
-    let (px, py) = app.npcs[npc_idx].center();
+    // `:40184` — the latched-adjustment divide (float divide, int trunc).
+    let mut num =
+        (app.world.tax_money as f32 / app.shopping_settings.price_adjustment) as i32;
+    // The spawn origin: `Main.LocalPlayer.Center` (`:40192`), NOT the
+    // collector's box — the headless no-player tests fall back to his
+    // centre (the vanilla always has a local player).
+    let (px, py) = app
+        .player
+        .as_ref()
+        .map(|p| p.center())
+        .unwrap_or_else(|| app.npcs[npc_idx].center());
     while num > 0 {
         let (kind, stack) = if num > 1_000_000 {
             let stack = num / 1_000_000;
@@ -398,8 +418,17 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     }
     // The Tax Collector's right arm (`NPCInteractions.cs:221-244`'s
     // `TaxCollectorCollectTaxes`): he offers no shop — the click pays the
-    // tax purse out (`Main.NPCChatText_DoTaxCollector`).
+    // tax purse out (`Main.NPCChatText_DoTaxCollector`). The vanilla
+    // button exists only while TALKING (`Condition: TalkNPCType == 441`,
+    // `:223-226`), so the payout reads the talk-open latch
+    // (`Player.cs:4389`); the port's collapse latches on the first press
+    // (`talk_to_npc` ran ahead of this dispatch) and the same-NPC re-click
+    // falls through WITHOUT re-latching (`Main.cs:43077`). A direct call
+    // with no latch (the headless tests) keeps `NotInShop`'s 1.0.
     if let Some(i) = try_tax_collect_at_cursor(app, world_pos) {
+        if app.talk_npc != Some(i) {
+            app.set_talk_npc(Some(i)); // the collapsed first-press latch
+        }
         return tax_collector_payout(app, i);
     }
     // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
@@ -7481,6 +7510,53 @@ mod tests {
         assert!(kinds.contains(&72), "three silver coins");
         assert!(kinds.contains(&71), "the coppers");
         assert!(app.items.len() > before, "the drops spawn");
+    }
+
+    /// W4-g58: the payout DIVIDES by the TALK-OPEN LATCHED adjustment
+    /// (`Main.cs:40184` — `(int)((float)taxMoney / PriceAdjustment)`), the
+    /// same value `GetCoinValueText_TaxCollector` displays (`:39933`). A
+    /// happy collector pays MORE than the purse; the latch (not a fresh
+    /// mood) prices the payout; the coins spawn at the PLAYER's centre
+    /// (`Main.LocalPlayer.Center`, `:40192`).
+    #[test]
+    fn the_tax_payout_divides_by_the_talk_latch() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        // A HOMELESS collector: the NoHome sentinel rides the 1.5 ceiling.
+        let mut t = Npc::new(NpcKind::TaxCollector, 32.0, 100.0, 1, 0.0);
+        t.hp = t.max_hp;
+        t.home = None;
+        app.npcs.push(t);
+        app.set_talk_npc(Some(0)); // the latch (`Player.cs:4389`)
+        assert_eq!(app.shopping_settings.price_adjustment, 1.5);
+        app.world.tax_money = 300;
+        assert!(tax_collector_payout(&mut app, 0));
+        // 300 / 1.5 = 200 copper — LESS than the purse (the unhappy arm).
+        let copper: u32 = app.items.iter().filter(|d| d.kind == 71).map(|d| d.count).sum();
+        assert_eq!(copper, 200, "the latched 1.5 divides the payout");
+        assert_eq!(app.world.tax_money, 0);
+        // The spawn origin is the PLAYER's centre, not the collector's.
+        let pc = app.player.as_ref().unwrap().center();
+        for d in &app.items {
+            assert!(
+                (d.pos.x - pc.0).abs() < 32.0 && (d.pos.y - pc.1).abs() < 48.0,
+                "the coin spawns near the player ({:?} vs {:?})",
+                d.pos,
+                pc
+            );
+        }
+        // House him AFTER the latch (a fresh mood would drop the sentinel)
+        // and hand-latch the happy band: 300 / 0.75 = 400 — MORE than the
+        // purse. The payout reads the latch, so the housing change is inert.
+        app.npcs[0].home = Some((2, 6));
+        app.shopping_settings.price_adjustment = 0.75;
+        app.items.clear();
+        app.world.tax_money = 300;
+        assert!(tax_collector_payout(&mut app, 0));
+        let copper: u32 = app.items.iter().filter(|d| d.kind == 71).map(|d| d.count).sum();
+        assert_eq!(copper, 400, "the happy 0.75 divides UP");
     }
 
     /// `Player.CollectTaxes` (`Player.cs:24129-24155`) + the pump
