@@ -1243,7 +1243,9 @@ containing `pos+4`, one tile later than the dust convention in each cell's 12..1
 band) through the XNA byte chain `*0.85` then shimmer `*(1-shimmerAlpha)`
 (`rain_drop_tint`, the d130 `rain_tint` shape; W4-g67 final render census — the earlier
 f32 `light_at(pos)*0.85` tint was two deviations: the wrong sample tile and no byte
-casts / no shimmer arm). `DrawRain` has NO cull rect and NO black-kill (unlike
+casts / no shimmer arm; the byte chain dims ALPHA too — g67's tint witness
+wrongly pinned alpha at 255, d130's witness is the correct one, research/134
+fold-addendum A1). `DrawRain` has NO cull rect and NO black-kill (unlike
 `DrawDust`); the per-drop `Update` inside the draw loop (`:38819-38822`,
 `FocusHelper.AllowRain`-gated) rides the port's 60 Hz weather tick (the recorded
 draw-cadence fold).
@@ -1322,6 +1324,28 @@ sandstorm, per the C# and both ports:
   its own velocity in the shared tick, and the flying-sand 268 draw pins
   rotation 0 (`GetVisualRotation`, `sand.rs:367` — the 268 exclusion means the
   spawn-time 0 never advances). No wind-slant residual on either draw side.
+
+**W4-g67 RETIRE — the WEATHER merger instruction (2026-11-21, FINAL-FINAL).**
+The g67 branch is DONE (fold-source tip `e777b3e2`, retire commits
+`9159c15a`/`5afdb38b`/`52b2ef92`). The union decision stands: **the merger keeps
+d130's `rain.rs` core wholesale; g67's `rain.rs` drops wholesale EXCEPT the
+folded hunks** (research/134 FINAL-FINAL, re-checked at d130 tip `97ed44f5`).
+d130 `16a792d5` already executed R1–R4 (`is_it_raining` + the five consumers,
+`clear_rain` + the save-and-quit call, the cull rect + else-kill — extended to
+`snow::draw` — and the `new_rain_forced` seam) plus the gameMenu kill-only arm
+(the earlier fold-out divergence is retired). The remaining d130f work-list:
+R5 (the skyblock snow threshold — d130 still reads the unconditional 1500),
+R6's Eyebrella caller, R7 (umbrella), and the 2-hunk fold-addendum for the
+draw commits that POST-DATE the fold (g67 `7aaf66f0` 09:02 > d130 `16a792d5`
+08:55): **A1** — d130's own `ea4863d9` already carried both draw fixes and its
+`rain_tint` dims alpha correctly (XNA `Color * 0.85f` scales A: 216 at full
+light, 162 under shimmer 0.25); g67's `rain_drop_tint` fn body agrees but its
+witness wrongly asserts alpha stays 255 — keep d130's copy + witness verbatim,
+the g67 assertions drop. **A2** — re-pin g67's light-tile geometry witness
+(`w4_g67_draw_rain_light_tile_is_pos_plus_four_shifted`) onto d130's inline
+`light_tile` closure; no code delta. g67's dup-halves carry
+DEPRECATED-BY-UNION banners (`5afdb38b`, comments-only); the unique
+eyebrella/umbrella/skyblock/drop-draw-fix content stays live as fold-source.
 
 ## Biomes
 
