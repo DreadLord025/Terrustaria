@@ -39244,3 +39244,57 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+## The lantern-night second half (W4-f40)
+
+`task/W4-f40-lantern-night-2` lands the lantern night's remaining event-side
+pieces on top of the S1-F-14 schedulers (the c39 gates lane and the d17
+aiStyle-166 projectile lane are separate, in-flight claims вЂ” this lane does
+not duplicate them). Code-only mode: the witnesses are WRITTEN, NOT RUN (no
+cargo/rustc/tests invoked).
+
+- **The luck bonus** (`Player.cs:29146-29149`): `world_sim/player.rs`
+  snapshots `LanternNight.LanternsUp` into `LuckState.lantern_night`
+  beside the auras/zones each tick; `recalculate_luck`'s +0.3 add (already
+  present, the M4-EVENT-4 neutral-default input) is now live. The C# reads
+  the static live inside `UpdateLuck`; the port snapshots once per tick
+  (the flag only flips at the boundaries/UpdateTime, never mid-player-step).
+- **The wish interaction** (`Chest.cs:2309-2312`): the Party Girl's shop
+  (index 13) gains the Release Lantern (4702) row gated on
+  `StockWhen::LanternNight` (`ShopFlags.lanterns_up`, fed at the
+  shop-open seam from `world_events`). The row's `num` position is right
+  after 4681 (the graveyard 4682 row stays constants-off).
+- **The triggers** (`NPC.cs:78769-78793`):
+  `world_events::on_game_event_cleared` ports
+  `OnGameEventClearedForTheFirstTime`'s lantern half вЂ” the first boss/event
+  clear arms `NextNightIsLanternNight` (the default arm + cases
+  10/16/17/18), the moon-event bosses (cases 4/21/22) skip. It fires only on
+  the downed flag's false->true edge (`SetEventFlagCleared`'s gate), wired
+  into the 16 ported boss-death arms. The case-10 credits roll and the
+  case-16/17/18 Plantera-bulb generation are separate unported systems
+  (recorded); the dual-dungeon wall clears (`:78794+`) are unported.
+- **The visuals** (`LanternSky.cs` whole): `render/lantern_sky.rs` ports
+  the background lantern field вЂ” `GenerateLanterns` (the `maxTilesY/4`
+  array + the view-band position draws), `ResetLantern` (the depth ladder
+  `(1-i/len)*4.4+1.6`, the `-1.5-2.5*NextDouble` speed, the `Next(3)`
+  variant, the `(2000+Next(1200))*2` float timer), `Update` (the В±0.01
+  opacity walk, the sine bob + float + wind drift, the 300-px reset/leave)
+  and `Draw`/`DrawLantern` (the depth-band cull, the (250,120,60,120)
+  tint Г— depth ladder, the `(1/Depth,0.9/Depth)*1.2` parallax, the 4000-px
+  X wrap, the 3-copy alpha-0 glow + body). The activate/deactivate edges ride
+  `update_time_lanterns`' `Option<bool>`; the draw threads through the
+  `SkyManager` depth boundaries (the ambience's `AmbiencePass`).
+
+Deliberate folds (recorded):
+- The sky's `_random` is a PRIVATE `UnifiedRandom` (`LanternSky.cs:71`,
+  the time-seeded ctor) вЂ” NOT `Main.rand`, on no named port stream. The
+  port pins seed 0 for determinism (the C#'s time seed is unobservable in a
+  deterministic port). The draw ORDER is the C#'s (X then Y in Generate,
+  speed/variant/timer in Reset).
+- `FocusHelper.PauseSkies` folds into the step-gated ambience phase; the
+  `gameMenu` draw-clear folds into the in-world-only sky pass.
+- The `LanternNightActive` `InfoToSetBackColor` field (`Main.cs:216`)
+  is WRITE-ONLY in the C# (no reader) вЂ” a dead field, not ported.
+- The world-load clear (`WorldGen.cs:6996` `LanternNight.WorldClear` +
+  `SkyManager.Reset`) rides `enter_loaded_world`; the vanilla file
+  carries no lantern temps (S1-J-7), so they reset on load by design.
+
