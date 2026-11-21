@@ -1104,6 +1104,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             // App's swing/reuse timers (fed before the tick, the
             // `frame_inputs` convention).
             p.mana_regen_item_in_use = app.swing > 0.0 || app.reuse_delay > 0.0;
+            // W4-c46 — `Player.itemAnimation > 0` for the `breathCDMax`
+            // property and `CheckDrowning`'s reed probe (`Player.cs:3860`/
+            // `:23199`): the swing state with a held item, the sleeping
+            // gate's `item_in_use` above.
+            p.item_animation_active = item_in_use;
             p.update_with_grapple(
                 &app.world,
                 input,
@@ -1376,7 +1381,7 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     0.0,
                     if puff.post_arms { 50 } else { 0 },
                     tr_core::particles::Color::default(),
-                    1.0,
+                    puff.scale,
                 );
                 if !puff.post_arms {
                     continue;

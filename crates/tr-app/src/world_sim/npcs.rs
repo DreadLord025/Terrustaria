@@ -19,13 +19,20 @@ use tr_core::UnifiedRandom;
 /// `Lang.cs:1045-1127` variant roll — the C# rides `Main.rand`; the port
 /// draws it from the `UpdatePlayers` stream (the death runs in
 /// `Player.KillMe` under the `UpdatePlayers` swap)); every other death is
-/// the `DeathText.Slain` row.
+/// the `DeathText.Slain` row. The single-variant rows (`Poisoned`, `Slain`,
+/// `Spored`) carry no `_N` suffix — the C# switch draws NOTHING for them
+/// (`Lang.cs:1069`/`:1084`/`:1126`), so the port skips the draw too.
 fn dot_death_text(pending: Option<DotDeath>, player_name: &str, rng: &mut UnifiedRandom) -> String {
     match pending {
         Some(death) => {
-            // `Main.rand.Next(variants) + 1` (`Lang.cs:1057-1127`).
+            // `Main.rand.Next(variants) + 1` (`Lang.cs:1057-1127`) — only
+            // the multi-variant families roll.
             let (_, variants) = crate::death::death_text_key(death);
-            let variant = rng.next_max(variants as i32) + 1;
+            let variant = if variants <= 1 {
+                1
+            } else {
+                rng.next_max(variants as i32) + 1
+            };
             crate::death::death_message(death, variant, player_name)
         }
         None => crate::death::slain_message(player_name),
@@ -6467,6 +6474,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             // Height/2` centre (`Player.cs:54373`, `Item.cs:49651`).
             let (dx, dy) = (player.x, player.y);
             let boss_near = player.boss_hinders(&app.npcs);
+            // W4-c46 — `GetRespawnTime`'s boss arm gates on `Main.netMode !=
+            // 0 && !pvp` (`Player.cs:39064-39067`): single-player deaths get
+            // the plain 600 base (the expert ×1.5 still applies); the boss
+            // hindrance only lengthens the timer in multiplayer. The port's
+            // netMode is `NetRole::Off` ⇔ 0.
+            let boss_near = !matches!(app.net, crate::app::NetRole::Off) && boss_near;
             // `KillMe` → `GetDeathText` runs inside `Player.Update` — the
             // `UpdatePlayers` swap (`Main.cs:17754`). The C# variant roll is
             // `Main.rand.Next(n) + 1` (`Lang.cs:1057-1127`) — one integer
@@ -6477,6 +6490,10 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 app.rngs.stream(RngKey::UpdatePlayers),
             );
             player.dot_death = None;
+            // W4-c46 — `Main.expertMode` is the port's `buffs.expert_mode`
+            // mirror (the `world_sim/items.rs:176` convention): the ×1.5
+            // respawn timer (`Player.cs:39072-39075`) is reachable now.
+            let expert = player.buffs.expert_mode;
             drop(player);
             // `Player.KillMe`'s chat broadcast: the resolved message in
             // the Death color (`ChatColors.cs`); the ported monitor rides
@@ -6484,7 +6501,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             crate::chat::broadcast_death(&mut app.chat, &death_text);
             crate::death::on_player_death(app, dx, dy, &death_text);
             if let Some(player) = app.player.as_mut() {
-                player.start_death(&app.world, boss_near, false);
+                player.start_death(&app.world, boss_near, expert);
             }
             log::info!("player died; the respawn timer is running");
         }
@@ -7925,6 +7942,65 @@ mod tests {
             dot_death_text(Some(DotDeath::Burned), "Belsin", &mut UnifiedRandom::new(1)),
             "Belsin couldn't put the fire out."
         );
+    }
+
+    /// W4-c46 — the drowning death text: `ByOther(1)` rolls `Next(7) + 1`
+    /// (`Lang.cs:1060`), and the single-variant rows draw NOTHING (the C#
+    /// switch has no `Main.rand` call for them — the old port drew anyway).
+    #[test]
+    fn w4_c46_the_drowned_text_rolls_seven_and_single_rows_draw_nothing() {
+        let _guard = crate::lang::test_lock()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        // The drowned family: one Next(7) draw, variant = roll + 1.
+        let mut rng = UnifiedRandom::new(3);
+        let mut twin = UnifiedRandom::new(3);
+        let variant = twin.next_max(7) + 1;
+        let text = dot_death_text(Some(DotDeath::Drowned), "Belsin", &mut rng);
+        assert_eq!(text, crate::death::death_message(DotDeath::Drowned, variant, "Belsin"));
+        assert_eq!(rng, twin, "exactly one Next(7) draw");
+        // The single-variant rows consume NO draws.
+        for death in [DotDeath::Poison, DotDeath::ChlorophyteSpore] {
+            let mut rng = UnifiedRandom::new(9);
+            let _ = dot_death_text(Some(death), "Belsin", &mut rng);
+            assert_eq!(rng, UnifiedRandom::new(9), "{death:?} draws nothing");
+        }
+        // The multi-variant rows still draw exactly once.
+        let mut rng = UnifiedRandom::new(9);
+        let mut twin = UnifiedRandom::new(9);
+        twin.next_max(4);
+        let _ = dot_death_text(Some(DotDeath::Burned), "Belsin", &mut rng);
+        assert_eq!(rng, twin, "Burned draws one Next(4)");
+    }
+
+    /// W4-c46 — the respawn timer: the expert ×1.5 is reachable through the
+    /// `buffs.expert_mode` mirror, and the boss +600 gates on netMode != 0
+    /// (`Player.cs:39064-39067`) — single-player deaths keep the 600 base.
+    #[test]
+    fn w4_c46_the_expert_respawn_timer_and_the_sp_boss_gate() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut app = flow_app(None, vec![], vec![]);
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.hp = 0;
+        p.buffs.expert_mode = true;
+        app.player = Some(p);
+        // A boss-near death: the SP gate drops the +600, the expert ×1.5
+        // still applies → 900.
+        let boss = Npc::new(NpcKind::KingSlime, 100.0, 100.0, 1, 0.0);
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.dead, "the death pass fired");
+        assert_eq!(p.respawn_timer, 900, "expert ×1.5, no SP boss bonus");
+        // Classic: the plain 600.
+        let mut classic = flow_app(None, vec![], vec![]);
+        let mut q = crate::player::Player::spawn(&classic.world);
+        q.hp = 0;
+        classic.player = Some(q);
+        classic.npcs.push(Npc::new(NpcKind::KingSlime, 100.0, 100.0, 1, 0.0));
+        update_npcs(&mut classic, 1.0 / 60.0);
+        assert_eq!(classic.player.as_ref().unwrap().respawn_timer, 600);
     }
 
     #[test]

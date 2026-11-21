@@ -247,12 +247,19 @@ pub fn value_to_coins(value: u64) -> String {
 
 pub fn drop_coins(app: &mut App, x: f32, y: f32) -> u64 {
     // `:54270-54279`: `num2 = stack / 2` stays, `num3 = stack - num2` drops
-    // (classic; expert `/ 4`, master `0` — constants-off, the port's
-    // difficulty plumbing). The port's purse is a copper total, so the
-    // halving rides the total (the recorded fold — the C# halves each coin
-    // STACK); mediumcore/hardcore keep the whole purse (`KillMe`
-    // `:38925-38936` runs `DropCoins` for difficulty 0/3 only).
-    let dropped = app.coins - app.coins / 2;
+    // (classic); expert keeps `stack / 4` (`:54271-54274`), master keeps 0
+    // (`:54275-54278` — the unported difficulty). W4-c46: the expert arm is
+    // reachable through the `buffs.expert_mode` mirror. The port's purse is
+    // a copper total, so the division rides the total (the recorded fold —
+    // the C# divides each coin STACK); mediumcore/hardcore keep the whole
+    // purse (`KillMe` `:38925-38936` runs `DropCoins` for difficulty 0/3
+    // only).
+    let expert = app
+        .player
+        .as_ref()
+        .is_some_and(|p| p.buffs.expert_mode);
+    let kept = if expert { app.coins / 4 } else { app.coins / 2 };
+    let dropped = app.coins - kept;
     if dropped == 0 {
         return 0;
     }
@@ -372,6 +379,7 @@ pub fn tick_tomb_falls(app: &mut App, dt: f32) {
 /// roll the C# rides is passed in (`death_message`).
 pub fn death_text_key(death: DotDeath) -> (&'static str, u32) {
     match death {
+        DotDeath::Drowned => ("DeathText.Drowned", 7),
         DotDeath::Suffocation => ("DeathText.Suffocated", 2),
         DotDeath::Burned => ("DeathText.Burned", 4),
         DotDeath::Poison => ("DeathText.Poisoned", 1),
@@ -500,6 +508,7 @@ mod tests {
         // DW-1.2/DW-1.3 — Lang.cs:1073-1126: the ByOther(N) switch both drain
         // lanes feed (`Player.cs:19321-19331,19362-19385`); the variant counts
         // are the `Main.rand.Next(n) + 1` families.
+        assert_eq!(death_text_key(DotDeath::Drowned), ("DeathText.Drowned", 7)); // 1
         assert_eq!(death_text_key(DotDeath::Suffocation), ("DeathText.Suffocated", 2)); // 7
         assert_eq!(death_text_key(DotDeath::Burned), ("DeathText.Burned", 4)); // 8
         assert_eq!(death_text_key(DotDeath::Poison), ("DeathText.Poisoned", 1)); // 9
@@ -579,6 +588,27 @@ mod tests {
         assert_eq!(total, dropped);
         // 500 copper = 5 silver: no platinum/gold, one 5-stack of silver.
         assert_eq!(stacks, vec![(100, 5)]);
+    }
+
+    /// W4-c46 — `DropCoins`' expert arm (`Player.cs:54271-54274`): the kept
+    /// quarter means three quarters drop; the classic half still halves.
+    #[test]
+    fn w4_c46_the_expert_death_drops_three_quarters() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player_name = "Tester".into();
+        app.coins = 10_000;
+        let mut p = crate::player::Player::spawn(&app.world);
+        p.buffs.expert_mode = true;
+        app.player = Some(p);
+        let dropped = drop_coins(&mut app, 100.0, 100.0);
+        assert_eq!(dropped, 7_500, "expert keeps stack/4 (:54273)");
+        assert_eq!(app.coins, 2_500);
+        // Classic: the half stays.
+        let mut classic = flow_app(None, vec![], vec![]);
+        classic.coins = 10_000;
+        let dropped = drop_coins(&mut classic, 100.0, 100.0);
+        assert_eq!(dropped, 5_000);
+        assert_eq!(classic.coins, 5_000);
     }
 
 #[cfg(test)]
