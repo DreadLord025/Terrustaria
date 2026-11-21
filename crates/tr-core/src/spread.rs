@@ -435,6 +435,30 @@ pub fn tile_is_exposed_to_air(world: &World, x: i32, y: i32) -> bool {
     false
 }
 
+/// `WorldGen.BlockBelowMakesSandConvertIntoHardenedSand(i, j)`
+/// (`WorldGen.cs:86562-86583`, W4-f25 helper C2): the cell BELOW is inactive
+/// or a non-solid kind — sand converting over such a floor hardens (397)
+/// instead of staying loose (53). The bottom row refuses (no cell below).
+/// UNWIRED (the Convert 5/16 sand arms `:55386`/`:56064` and
+/// `BiomeDungeonRoom.cs:264/:280` are its consumers).
+pub fn block_below_makes_sand_convert_into_hardened_sand(
+    world: &World,
+    i: i32,
+    j: i32,
+) -> bool {
+    // `:86565-86568`: `j >= Main.maxTilesY - 1` → false.
+    if j >= world.height - 1 {
+        return false;
+    }
+    // `:86569-86573`: the null tile → false.
+    let Some(tile) = world.tile(i, j + 1) else {
+        return false;
+    };
+    // `:86574-86581`: `!tile.nactive()` → true; else the in-range non-solid
+    // kind → true (the generated TILE_SOLID set carries the range gate).
+    !tile.active() || !crate::tiledata::TILE_SOLID.has(tile.kind)
+}
+
 /// `WorldGen.Convert(i, j, conversionType, size)` (`WorldGen.cs:55067-55083`):
 /// the square walk with the Manhattan `< 6` gate. The port carries the type-0
 /// (cleanse) cell only — the spray's conversion type.
@@ -1117,5 +1141,32 @@ mod tests {
         assert!(!tile_is_exposed_to_air(&w, 30, 58));
         // Inside the band, open air reads exposed.
         assert!(tile_is_exposed_to_air(&w, 2, 30));
+    }
+
+    // W4-f25 helper C2 — `BlockBelowMakesSandConvertIntoHardenedSand`
+    // (`WorldGen.cs:86562-86583`). WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c2_the_floor_below_decides_the_hardening() {
+        let mut w = World::new("t".into(), 60, 60);
+        // Open air below (the default inactive cell): hardens.
+        assert!(block_below_makes_sand_convert_into_hardened_sand(&w, 30, 30));
+        // A solid stone below: stays loose.
+        let i = w.index(30, 31);
+        w.tiles[i] = crate::tile::Tile {
+            kind: 1,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        assert!(!block_below_makes_sand_convert_into_hardened_sand(&w, 30, 30));
+        // A non-solid active kind below (a torch 4): hardens.
+        w.tiles[i].kind = 4;
+        assert!(block_below_makes_sand_convert_into_hardened_sand(&w, 30, 30));
+        // An INACTIVE stone below: `!nactive()` wins over the kind.
+        w.tiles[i].kind = 1;
+        w.tiles[i].flags &= !crate::tile::FLAG_ACTIVE;
+        assert!(block_below_makes_sand_convert_into_hardened_sand(&w, 30, 30));
+        // The bottom row refuses (no cell below).
+        assert!(!block_below_makes_sand_convert_into_hardened_sand(&w, 30, 59));
     }
 }
