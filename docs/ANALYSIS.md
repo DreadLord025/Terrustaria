@@ -7381,6 +7381,83 @@ Deviations, all deliberate:
   `(double)coinLuck > 2.49` returns 0.075 at `coinLuck = 2.49f` (the
   widened float exceeds the f64 literal), pinned in the tier-matrix test.
 
+## The luck consumers (W4-f32)
+
+The e26 core (`loot.rs`'s five `Luck.cs` roll fns + `luck.rs`'s `LuckState`)
+and the e27 torch lane landed the VALUE; this wave ports the missing
+CONSUMER sites verbatim — the places the C# reads `player.luck` /
+`RollLuck` / `RollOnlyBadLuck*` that the port still ran as plain `Next(n)`
+or skipped. Every site keeps the exact RNG slot: at luck 0 each roll
+degenerates to the same single `Next(range)` the pre-luck port drew
+(byte-identical stream), and the bad-luck-only fns (`RollOnlyBadLuck*`)
+consume NOTHING at luck >= 0 (the `-1` return, `Luck.cs:53-60`). The
+`f32_*` witnesses pin both the luck-0 equality and the luck-fed draw
+shapes. Code-only mode: no compiler invoked, witnesses WRITTEN NOT RUN.
+
+Landed sites (C# → Rust):
+- **Spawner** (`spawner.rs`, `SpawnContext.luck` ← `NPC.cs:369`
+  `this.luck = player.luck`, fed in `world_sim/npcs.rs`): the
+  `GetSpawnRate` tail `RollOnlyBadLuckExtreme(50)` (`NPC.cs:924-928`,
+  rate ×0.85 / cap ×1.15, gated `!spawnFriendly`); the Pinky promotion
+  `RollLuck(180)` (`:5242`) + the anniversary second `RollLuck(180)`
+  (`:5246`, the 667 Golden Slime kind unported — the roll consumes, the
+  pick stands); the bound Goblin/Wizard `RollLuck(20)` (`:2084`/`:2088`);
+  the blood-moon `RollOnlyBadLuck(300)` pair (`:4618`/`:4623`).
+- **NPC loot** (`world_sim/npcs.rs`, `spawn_heals_and_death_events` on the
+  `UpdateNPCs` stream): `NPCLoot_DropCommonLifeAndMana` `RollLuck(6)` +
+  `RollLuck(2)` (`NPC.cs:79531-79557`, the 16/121/81 `num = 1` skip draws
+  NOTHING, the star-first `Next(2)` + the else-if re-roll); the
+  `NPCLoot_DropHeals` per-type hearts `RollLuck(4/6/5)` (`:79098-79195`);
+  `DoDeathEvents_SummonDungeonSpirit` `RollLuck(13/9)` (`:79064-79078`,
+  the wall check AFTER the draw, the 288 spawn at the dead NPC's centre).
+- **Pot Coin Portal** (`world_sim/editing.rs`, `DropCtx.luck`):
+  `SpawnThingsFromPot`'s `GetClosestRollLuck(range)` (`WorldGen.cs:57176`
+  → `Player.cs:18236-18239`) now rides `ctx.luck` instead of the plain
+  `Next(range)`.
+- **Classy Cane** (`world_sim/editing.rs` `resolve_melee_strike`): the
+  3351 coin shower `RollBadLuck(25)` (`Player.cs:44367-44374`, the
+  velocity NextFloat pair + the centre Next(width)/Next(height) + the
+  stack, pre-strike on the PRE-hit hp, `GrabDelayForAllPlayers`).
+- **TryToPoop** (`luck.rs::try_to_poop_stack` + `player.rs`
+  `update_survival` + the `pending_poop` drain): the toilet-sitting
+  digestion `RollOnlyBadLuckExtreme(10)` stack boost (`Player.cs:18896-
+  18940`, the 207/206/26 tier ladder, the max-first `Utils.Clamp`, the
+  ×1.2 f64 truncation); the `IsAToilet` seat flag
+  (`PlayerSittingHelper.cs:166-180`) set in `editing/doors.rs`.
+- **PlayGuitarChord** (`luck.rs::guitar_chord_cue` +
+  `editing.rs::play_guitar_chord`): the chord's `RollOnlyBadLuckExtreme(10)`
+  pitch draw (`Player.cs:46671-46703`, the six-range cue ladder); the
+  Sparkle 4715 fires through the use-start seam, the damage-less
+  Carbon/Ivy 4057/4372 through a dedicated press-edge arm (they never
+  start a swing in the port's use path).
+
+Deliberate deviations:
+- **The death tail is appended after the coins/loot batch.** The C#
+  `NPCLoot` order is DropItems → DoDeathEvents → DropMoney → DropHeals
+  (`NPC.cs:78855-78898`); the port's pre-existing batched death pass runs
+  coins → loot, and the new heals/spirit tail appends after it. The
+  coin/loot stream stays byte-identical to the landed port; the new draws
+  ride the same `UpdateNPCs` stream at the tail (the DW-3.2 twin replay
+  extends to cover it). A full NPCLoot re-order is a separate task.
+- **The heart/star scatter uses the port's ItemDrop triplet**, not the
+  C#'s `Next(-30,31)*0.1` / `Next(-40,-15)*0.1` defaults — the same
+  documented stand-in `spawn_loot` uses (the velocity model is the
+  port's, the COUNT and the luck rolls are verbatim).
+- **The goldCritterChance arms stay constants-off.** The ~40
+  `RollLuck(NPC.goldCritterChance)` sites (`NPC.cs:1588-4447`, the
+  `ShakeTree` critters `WorldGen.cs:63270/63306/63346`, the tile-break
+  gold critters `:66364/66382`) all spawn unported kinds (442/444/445/
+  446/448/539/592/613 etc.) behind documented constants-off arms; there
+  is no reachable consumer to port without inventing the spawn arm. The
+  `GetSpawnRate`/Pinky/bound-NPC/blood-moon sites above ARE reachable and
+  landed.
+- **The TryToPoop DelBuff folds after the roll.** The C# removes the fed
+  tier (`:18926`) before the clamp/luck roll; the slot clear draws
+  nothing, so the port folds it after (same stream). The Digestion
+  particle is a visual skip.
+- **The guitar `58` net-sync + progression-37 notify are skips** (the
+  port's single-player audio seam plays the cue only).
+
 ## Mounts framework (M2-MOUNT-1)
 
 `crates/tr-app/src/mount.rs` holds the `MountData` port (a 66-row table with the
