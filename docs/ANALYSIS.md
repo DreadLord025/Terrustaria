@@ -39244,3 +39244,59 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile OnHit/ModifyHit DOC-SWEEP (W4-g3 lane 13, 2026-11-21, code-only)
+
+**The Kill 16/34/79 keep-one (g3 vs d78).** d78's `5fe6d940` ("Kill death-effects
+part 1") ports the SAME friendly magic resize-blast family as g3's `9ee2a7a1`
+(aimed-spell 16/34/79) + `778573ca` (nebula/spirit/onyx 634/635/659/661).
+Arm-by-arm (research/89 §1): g3's `aimed_spell_kill` / `nebula_spirit_onyx_kill`
+are strict SUPERSETS of d78's `magic_death_blast` — same resize/penetrate/Damage/
+restore state PLUS the Item10/14 cue + the trail-death dust census. **Keep g3,
+drop d78's `magic_death_blast` at merge.** The 659 SpiritFlame arm is g3-unique
+(d78 never ported it). The hostile 452/454/448 EVP blasts are g1's claim
+(`26d`/`5bd68ce2`, in-flight `projectile_kill_hooks_a.rs`), NOT d78's — d78's
+"deferred" note names them as intent, but g1 already claimed and is porting them.
+
+**The 14 unclaimed OnHit/ModifyHit/CanDamage hooks.** After the d-wave aiStyle
+1-210 exhaustion, the `Damage_PVE_Inner` OnHit/modifier axis still had unclaimed
+rowed+armed kinds (research/89 §2-4). Ported into `damage_pve`'s existing seam:
+the per-NPC damage multipliers (968 Pew-matic's 24-case ai[1] table `:14470`,
+533 DeadlySphere's localAI[2]≥40 ×0.5 `:14549`), the post-DamageVar pre-strike
+state/damage writes (604 TerrarianBeam friendly=false+ai1=1000 `:13001`,
+400/401/402/1107/1108/1109 molotov/obsidian fire EoW ×0.65+pen-- `:13006`,
+710 BetsyArrow air ×1.5 `:13014`, 954 Spark hit-age jump `:13018`, 856
+SparkleGuitar stellar no-LOS ×0.75 `:13302`/`:15186`, the expert bee/grenade
+EoW ÷5 + 280 GoldenShower Destroyer ×0.75 `:13357-13367`), the 688/689/690
+LightningAura armorPenPercent=1 (`:13232`), the 317 Raven dive re-arm (`:13593`),
+the 1088 Acorn on-hit Kill (`:13959`), the 443 Electrosphere immune8 (`:14008`),
+the 645 PoisonDart cloud-place (`:14193`), the 34/79 aimed-spell target-drop
+(`:14219`/`:14227`), the 357 PulseBolt ×0.8 decay (`:14127`), and the 710
+BetsyArrow 5-shard sharpnel fan (`:14121`/`:53964`, RNG-free, copies the parent's
+localNPCImmunity). All RNG-free except the sharpnel fan's deterministic
+rotations; the dust/particle bodies skip (the sibling lanes').
+
+**Deliberate skips (recorded).** The 390-392 spiders' localAI[1]=20 (`:13963`)
+is rowed but UNARMED (aiStyle-26's ai026_c covers only SLIME_MINION) — deferred
+with its AI arm. The 323 Stake's vampire ×10 (`:13381`) needs NPC 158/159
+(Vampire/VampireBat, unported) — deferred. The 961/436/681 EVP tails
+(`:14850`/`:14887`/`:14891`) need `damage_player`'s unconditional-kill rework
+(the port kills every hostile shot on contact; the C# EVP writes penetrate/
+timeLeft instead) — deferred to the EVP lane. The rocket ×2 / mine ×3
+multipliers (`:14435`/`:14439`) and the 877-879 lance velocity mult (`:14466`)
+are unclaimed but deferred to the rocket/lane AI arms (the sets are large).
+
+**The penetrate-- deviation.** The port's `penetrate--` sits INSIDE the landed
+gate; the C# (`:14125`) runs it OUTSIDE (every contact). The 357 decay rides the
+port's landed block (reads pre-decrement penetrate); the 645/34/79 numHits++
+chain arms sit AFTER the landed block (outside it), matching the C#'s
+outside-landed placement. The 710 sharpnel fan sits after the immunity chain,
+outside landed (the C# `:14121` position).
+
+**Verification.** Code-only: every arm re-read against its C# block, the seam
+checked against the landed flail mult / immunity chain / post-strike arms, the
+14 kinds' rows + dispatch arms confirmed on main, the claim census grepped every
+pushed branch's projectile.rs for the C# line cites (zero matches = unclaimed).
+The 14 `w4_g3_ds_*` witnesses are WRITTEN, NOT RUN — no cargo/rustc/rustfmt/
+tests/graphify invoked (the Lead's constraint).
+
