@@ -39312,10 +39312,21 @@ re-verified FIRST: both are already on main (`npc.rs::contact` /
   unreachable (`defendedByPaladin` needs a second team player); the
   `CanDefendWithPaladinsShield` gate (`:38188-38195`) has no port
   caller. NOT ported (the research/04 row stays MISSING for MP).
-- **The frost/bone armor dust keys** (`:38538-38547`) need the
-  `ApplyArmorSoundAndDustChanges` texture-id scan (`:38167-38186`, the
-  visual lane); the stoned buff (156) is the only live key, the default 5
-  stands for the rest. The `shader` post-arms are the dye layer's.
+- **The frost/bone armor dust keys** (`:38538-38547`) — **PORTED**
+  (deviation 4). `apply_armor_sound_and_dust_changes`
+  (`Player.cs:38167-38186`) derives the `bone_armor`/`frost_armor` flags
+  from the effective armour texture ids (the vanity slot 10/11/12
+  overrides the functional 0/1/2 when its id >= 0; the Necro set head
+  7/75 + body 7 + legs 7, the Frost set head 46 + body 27 + legs 26), at
+  the `UpdateArmorSets` seam (`:16312`); `ResetEffects` clears both
+  (`:18350`/`:18352`). The hit-dust loop now keys stoned 1 / frost 135 /
+  bone 26 / default 5. The werewolf override (`:38172-38177`) folds false
+  — the `wereWolf`/`forceWerewolf`/`hideWolf` family (the Moon Charm 861 /
+  Celestial Shell 3110 / 485 grants + the buff-28 arm `:11893-11910`) is
+  unported; the `GetEffectiveArmor` loadout-share folds to the slot (no
+  loadouts). The `PlayHurtSound` frost/bone arms (`:38684-38693`) and the
+  death-burst keys (`:39041-39052`) are the future wires. The `shader`
+  post-arms stay the dye layer's.
 - **The Solar shield-orbit positions** (`solarShieldPos`/`Vel`
   `:16403-16428`) stay cosmetic/unported (the Solar shield draw is its own
   lane). The `solarDashing` dash machine is the melee lane's (the

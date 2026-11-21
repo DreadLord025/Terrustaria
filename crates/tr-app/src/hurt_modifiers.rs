@@ -263,10 +263,11 @@ pub fn drain_dismount(p: &mut Player, world: &tr_core::world::World) {
 /// hit queued `(hitDirection, num2)`; the caller owns the dust pool + the
 /// hit lane's stream. `num2 / statLifeMax2 * 100` particles burst from the
 /// player's box, keyed to the armor set (stoned 1 / frost 135 / bone 26 /
-/// default 5). Each particle's velocity is `2 * hitDirection + hitDirection
-/// * i * NextFloat()` on X, `-2` on Y (the C# `num21 + hitDirection * num22
-/// * NextFloat()`, `num22` the loop index). The `shader` post-arms are the
-/// dye layer's (unported).
+/// default 5 — deviation 4 wires the frost/bone texture-id keys). Each
+/// particle's velocity is `2 * hitDirection + hitDirection * num22 *
+/// NextFloat()` on X, `-2` on Y (the C# `num21 + hitDirection * num22 *
+/// NextFloat()`, `num22` stays 0). The `shader` post-arms are the dye
+/// layer's (unported).
 pub fn drain_hurt_dust(
     p: &mut Player,
     dust: &mut tr_core::particles::DustPool,
@@ -280,11 +281,20 @@ pub fn drain_hurt_dust(
     // `:38529`: `num20 = num2 / statLifeMax2 * 100.0` — the loop bound.
     let count = num2 as f64 / p.max_hp as f64 * 100.0;
     // The armor-set key (`:38534-38551`): stoned 1, frost 135, bone 26,
-    // default 5. The port's `frost_armor`/`bone_armor` flags are unported
-    // (the `ApplyArmorSoundAndDustChanges` texture-id scan `:38167-38186`
-    // is the visual lane), so the stoned buff (156) is the only live key.
+    // default 5. W4-f50 deviation 4: the `frost_armor`/`bone_armor` flags
+    // now derive from the `ApplyArmorSoundAndDustChanges` texture-id scan
+    // (`:38167-38186`) at the `UpdateArmorSets` seam; the stoned buff (156)
+    // takes priority, then frost, then bone, then the default.
     let stoned = p.buffs.find_buff_index(156).is_some();
-    let dust_type = if stoned { 1 } else { 5 };
+    let dust_type = if stoned {
+        1
+    } else if p.frost_armor {
+        135
+    } else if p.bone_armor {
+        26
+    } else {
+        5
+    };
     let num21 = 2.0 * hit_dir as f32;
     // `:38531`: `num22 = 0f` — NEVER incremented in the loop, so the X
     // velocity is just `num21`; the `NextFloat` draw is still consumed each
@@ -851,5 +861,78 @@ mod tests {
         let active = dust.slots().iter().filter(|d| d.active).count();
         assert_eq!(active, 10, "10 damage / 100 max * 100 = 10 particles");
         assert!(p.take_hurt_dust().is_none(), "the request is a one-shot");
+    }
+
+    #[test]
+    fn w4_f50_the_hit_dust_keys_on_the_frost_and_bone_armor_sets() {
+        // `Player.cs:38534-38551`: stoned 1, frost 135, bone 26, default 5.
+        // Deviation 4 wires the frost/bone texture-id keys.
+        let w = World::new("t".into(), 64, 800);
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: glam::Vec2::ZERO,
+            screen_size: glam::Vec2::new(4800.0, 3200.0),
+            max_dust_to_draw: 6000,
+        };
+        let key = |frost: bool, bone: bool, stoned: bool| -> i32 {
+            let mut p = Player::spawn(&w);
+            p.frost_armor = frost;
+            p.bone_armor = bone;
+            if stoned {
+                p.buffs.add_buff(156, 100);
+            }
+            p.hurt_cd = 0.0;
+            p.immune = false;
+            assert!(p.hurt(10, p.x + 100.0, &mut tr_core::UnifiedRandom::default(), true));
+            let mut dust = tr_core::particles::DustPool::new();
+            let mut rng = tr_core::UnifiedRandom::new(7);
+            drain_hurt_dust(&mut p, &mut dust, &ctx, &w, &mut rng);
+            dust.slots().iter().find(|d| d.active).unwrap().dust_type
+        };
+        assert_eq!(key(false, false, false), 5, "default");
+        assert_eq!(key(true, false, false), 135, "frost");
+        assert_eq!(key(false, true, false), 26, "bone");
+        assert_eq!(key(true, true, false), 135, "frost before bone");
+        assert_eq!(key(true, true, true), 1, "stoned before everything");
+    }
+
+    #[test]
+    fn w4_f50_the_armor_dust_scan_derives_the_necro_and_frost_sets() {
+        // `ApplyArmorSoundAndDustChanges` (`Player.cs:38167-38186`): the
+        // Necro set (head 7/75, body 7, legs 7) → boneArmor; the Frost set
+        // (head 46, body 27, legs 26) → frostArmor. Deviation 4.
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // Necro: 151 (head 7), 152 (body 7), 153 (legs 7).
+        p.equipped[0] = 151;
+        p.equipped[1] = 152;
+        p.equipped[2] = 153;
+        p.apply_armor_sound_and_dust_changes();
+        assert!(p.bone_armor, "the Necro set arms boneArmor");
+        assert!(!p.frost_armor);
+        // Ancient Necro Helmet 959 (head 75) also counts.
+        let mut q = Player::spawn(&w);
+        q.equipped[0] = 959;
+        q.equipped[1] = 152;
+        q.equipped[2] = 153;
+        q.apply_armor_sound_and_dust_changes();
+        assert!(q.bone_armor, "the Ancient Necro Helmet (75) counts");
+        // Frost: 684 (head 46), 685 (body 27), 686 (legs 26).
+        let mut r = Player::spawn(&w);
+        r.equipped[0] = 684;
+        r.equipped[1] = 685;
+        r.equipped[2] = 686;
+        r.apply_armor_sound_and_dust_changes();
+        assert!(r.frost_armor, "the Frost set arms frostArmor");
+        assert!(!r.bone_armor);
+        // A mixed set arms neither.
+        let mut s = Player::spawn(&w);
+        s.equipped[0] = 151;
+        s.equipped[1] = 685;
+        s.equipped[2] = 153;
+        s.apply_armor_sound_and_dust_changes();
+        assert!(!s.bone_armor && !s.frost_armor);
     }
 }

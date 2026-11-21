@@ -1527,6 +1527,15 @@ pub struct Player {
     /// hurt arm (`:38255-38269`) spawns the 861 return + clears the slot.
     /// W4-f50.
     pub has_football: bool,
+    /// W4-f50 deviation 4 — `Player.boneArmor`/`frostArmor` (`Player.cs:
+    /// 1376`/`:1378`): the Necro/Frost texture-id sets
+    /// `ApplyArmorSoundAndDustChanges` derives (`:38167-38186`);
+    /// `ResetEffects` clears both (`:18350`/`:18352`). The hit-dust loop
+    /// keys on them (`:38538-38547`: frost 135 / bone 26); the
+    /// `PlayHurtSound` arms (`:38684-38693`) and the death burst
+    /// (`:39041-39052`) are the future wires.
+    pub bone_armor: bool,
+    pub frost_armor: bool,
     /// `Player.shadowDodgeTimer` (`Player.cs:1184`): the Hallowed set-bonus
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
@@ -2859,6 +2868,8 @@ impl Player {
             beetle_frame: 0,
             beetle_frame_counter: 0,
             has_football: false,
+            bone_armor: false,
+            frost_armor: false,
             shadow_dodge_timer: 0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
@@ -4577,6 +4588,38 @@ impl Player {
         }
     }
 
+    /// W4-f50 deviation 4 — `Player.ApplyArmorSoundAndDustChanges`
+    /// (`Player.cs:38167-38186`): the effective armour texture ids (the
+    /// vanity slot 10/11/12 overrides the functional 0/1/2 when its slot
+    /// id is >= 0), the werewolf override (38/21/20), then the Necro
+    /// (head 75 or 7, body 7, legs 7) and Frost (head 46, body 27, legs 26)
+    /// set flags. The werewolf half reads `wereWolf || forceWerewolf` and
+    /// `!hideWolf` — those fields are the unported werewolf family (the
+    /// Moon Charm 861 / Celestial Shell 3110 / Moon Charm 485 grants,
+    /// `:15137`/`:15405`/`:15184` + the buff-28 arm `:11893-11910`), so the
+    /// override folds false here (documented). The `GetEffectiveArmor`
+    /// loadout-share (`:5690-5710`) folds to the slot itself (no loadouts).
+    pub fn apply_armor_sound_and_dust_changes(&mut self) {
+        let slot_id = |kind: u16, f: fn(&crate::itemdata::ItemDef) -> i16| {
+            crate::registry::get(kind).map_or(-1, f)
+        };
+        // The vanity slot's id overrides the functional one when >= 0.
+        let head_v = slot_id(self.equipped[10], |d| d.head_slot);
+        let body_v = slot_id(self.equipped[11], |d| d.body_slot);
+        let legs_v = slot_id(self.equipped[12], |d| d.leg_slot);
+        let num = if head_v >= 0 { head_v } else { slot_id(self.equipped[0], |d| d.head_slot) };
+        let num2 = if body_v >= 0 { body_v } else { slot_id(self.equipped[1], |d| d.body_slot) };
+        let num3 = if legs_v >= 0 { legs_v } else { slot_id(self.equipped[2], |d| d.leg_slot) };
+        // The werewolf override folds false (the family is unported).
+        // `:38178-38185` — the Necro and Frost texture-id sets.
+        if (num == 75 || num == 7) && num2 == 7 && num3 == 7 {
+            self.bone_armor = true;
+        }
+        if num2 == 27 && num == 46 && num3 == 26 {
+            self.frost_armor = true;
+        }
+    }
+
     /// `Player.UpdateArmorSets_Always_Solar` (`Player.cs:16358-16364`): the
     /// counter zero when the set is not worn. W4-f50.
     pub fn update_armor_sets_always_solar(&mut self) {
@@ -4608,6 +4651,9 @@ impl Player {
         }
         self.update_armor_sets_always_beetle(rng);
         self.update_armor_sets_always_solar();
+        // W4-f50 deviation 4 — `UpdateArmorSets`' tail
+        // (`Player.cs:16312`): the Necro/Frost texture-id scan.
+        self.apply_armor_sound_and_dust_changes();
     }
 
     /// `Player.UpdateArmorSets_Always_Beetle` (`Player.cs:16441-16497`):
@@ -6679,6 +6725,12 @@ impl Player {
         // the `UpdateEquips` inventory scan (`:12906-12918`) re-arms it from
         // the live Football (4743) slots.
         self.has_football = false;
+        // W4-f50 deviation 4 — `ResetEffects`' `boneArmor = false` /
+        // `frostArmor = false` (`Player.cs:18350`/`:18352`): the
+        // `ApplyArmorSoundAndDustChanges` texture-id scan re-derives them
+        // per tick at the `UpdateArmorSets` seam (`:16312`).
+        self.bone_armor = false;
+        self.frost_armor = false;
         self.well_fed = false;
         self.pick_speed_bonus = 0.0;
         self.melee_speed_bonus = 0.0;
