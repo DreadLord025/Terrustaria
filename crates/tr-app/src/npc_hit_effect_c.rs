@@ -235,6 +235,7 @@
 //! | 1160-1169 | `:88276-88303` | the 160 Truffle (type-26 dust) + 18 Nurse death (5 gores each, shimmer) |
 //! | 1170-1179 | `:88319-88346` | the 19 ArmsDealer + 38 Demolitionist death (5 gores each, shimmer) |
 //! | 1180-1189 | `:88362-88389` | the 20 Dryad + 207 DyeTrader death (5 gores each, shimmer) |
+//! | 1190-1199 | `:88405-88446` | the 208 PartyGirl + 209 Cyborg death (5 gores each, shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6963,6 +6964,70 @@ fn dye_trader_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1307 } else { 285 }, 1.0); // :88389
 }
 
+/// The 208 PartyGirl death (`NPC.cs:88401-88409`, sites 1190-1194): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder with shimmer variants — 286 (1335 shimmer) head, 287/287
+/// (1336) at +20, 288/288 (1337) at +34. Scale defaults to 1.
+fn party_girl_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(208);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1335 } else { 286 }, 1.0); // :88405
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1336 } else { 287 }, 1.0); // :88406
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1336 } else { 287 }, 1.0); // :88407
+    gore.new_gore(rng, world, low, vel, if shimmer { 1337 } else { 288 }, 1.0); // :88408
+    gore.new_gore(rng, world, low, vel, if shimmer { 1337 } else { 288 }, 1.0); // :88409
+}
+
+/// The 209 Cyborg death (`NPC.cs:88438-88446`, sites 1195-1199): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// 5-gore ladder with shimmer variants — 289 (1294 shimmer) head, 290/290
+/// (1295) at +20, 291/291 (1296) at +34. Scale defaults to 1.
+fn cyborg_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(209);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1294 } else { 289 }, 1.0); // :88442
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1295 } else { 290 }, 1.0); // :88443
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1295 } else { 290 }, 1.0); // :88444
+    gore.new_gore(rng, world, low, vel, if shimmer { 1296 } else { 291 }, 1.0); // :88445
+    gore.new_gore(rng, world, low, vel, if shimmer { 1296 } else { 291 }, 1.0); // :88446
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7809,6 +7874,14 @@ pub fn hit_effect_c(
     // `:88368-88390` — the 207 DyeTrader arm (sites 1185-1189).
     if npc_type == 207 && npc.hp <= 0 {
         dye_trader_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88391-88410` — the 208 PartyGirl arm (sites 1190-1194).
+    if npc_type == 208 && npc.hp <= 0 {
+        party_girl_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88428-88447` — the 209 Cyborg arm (sites 1195-1199).
+    if npc_type == 209 && npc.hp <= 0 {
+        cyborg_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -12313,6 +12386,52 @@ mod tests {
         dye_trader_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1304, 1306, 1306, 1307, 1307]);
+    }
+
+    /// `NPC.cs:88405-88409` — the PartyGirl death: the 5-gore ladder
+    /// 286/287/288 (normal) or 1335/1336/1337 (shimmer).
+    #[test]
+    fn w4_f10_the_party_girl_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1223);
+        party_girl_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![286, 287, 287, 288, 288]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1223);
+        party_girl_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1335, 1336, 1336, 1337, 1337]);
+    }
+
+    /// `NPC.cs:88442-88446` — the Cyborg death: the 5-gore ladder
+    /// 289/290/291 (normal) or 1294/1295/1296 (shimmer).
+    #[test]
+    fn w4_f10_the_cyborg_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1229);
+        cyborg_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![289, 290, 290, 291, 291]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1229);
+        cyborg_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1294, 1295, 1295, 1296, 1296]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
