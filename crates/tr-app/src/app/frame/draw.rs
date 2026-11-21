@@ -297,7 +297,12 @@ impl App {
                     // smoothly on the draw pass, but the light map and world range can
                     // be reused for a second.
                     let quantised = (natural_time / 60.0).floor() * 60.0;
-                    let sky_tint = color_of_the_skies(quantised, is_day, world.moon_phase);
+                    let sky_tint = color_of_the_skies(
+                        quantised,
+                        is_day,
+                        world.moon_phase,
+                        world.blood_moon,
+                    );
                     let clock_time = natural_time;
                     // `SetBackColor`: rain multiplies the sky (and therefore the surface
                     // sunlight) by `1 - cloudAlpha * 0.9`.

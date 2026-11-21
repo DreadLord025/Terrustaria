@@ -39305,3 +39305,38 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The blood-moon sky residuals (W4-g12 doc-sweep)
+
+`render/sky.rs:85` deferred the blood-moon night ramp and its floor of 25
+to "the blood-moon system (M4 events)" — but `World.blood_moon` has been
+live since the events port (`world.rs:156`, `start_blood_moon`), so the
+deferral was stale. Ported now:
+
+* `tr_core::sky::blood_moon_color` (`Main.cs:63495-63519`): the moon's
+  red ramp. BOTH night arms write the same colour — the `>= 16200` arm's
+  forest write (`:63510-63512`) is a C# dead-write, overwritten at
+  `:63513-63515`; the port shares the early-night formula and splits only
+  the ramp factor. `DrawSunAndMoon`'s moon tint (`render/sky.rs`) picks
+  it while `World.blood_moon`.
+* `tr_core::sky::blood_moon_sky` (`Main.cs:63503-63505`/`:63516-63518`):
+  the sky colour replacement (R 75→35, G/B 15→35), consumed by
+  `color_of_the_skies`' new `blood_moon` parameter (the caller passes
+  `world.blood_moon`; the sky tint feeds the light map, so a blood-moon
+  night lights the surface red exactly like vanilla).
+* The floor of 25 (`Main.cs:63830-63844`) applies AFTER the moon-phase
+  floor (`:63818-63829`), as a byte compare on the cast channels.
+
+**Deviations kept:** (1) the C# gate is `Main.bloodMoon ||
+SceneMetrics.BloodMoonMonolith` (`Main.cs:61979`) — the monolith is
+unported, only the world flag feeds. (2) Outside a blood moon the C#
+tail (`:63917-63920`) sets the moon tint to `Color.White`; the port keeps
+its pre-existing forest night tint (`tr_core::sky::moon_color`) for that
+arm — a documented stand-in, unchanged by this pass. (3) The
+`dontStarveWorld` night-colour hook (`:63541-63544`) stays unported with
+the rest of the secret-seed draw arms.
+
+Verification: code-only; 3 witnesses WRITTEN NOT RUN
+(`tr-core/src/sky.rs` 2 — the shared red ramp + the sky replacement;
+`render/sky.rs` 1 — the 25-floor dominance over every phase floor, the
+daylight no-op and the untouched forest arm).
