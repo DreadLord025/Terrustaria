@@ -39592,8 +39592,8 @@ merge; the c10 tail drops its duplicate variant/to/from/ALL_KINDS/
 ENTRIES rows but KEEPS its wiring (the 24/65/66 axis claims — d40 has
 none — the critter/style65 modules, the five sim fields, the cs_id
 sound-key fix), re-keyed on the canonical kinds. One bestiary/sheet/
-portrait copy per kind. Full verdict: research/149 §2.5 (renumbered
-from 145). The co-lane's uncommitted ROADMAP phase-5 row was left
+portrait copy per kind. Full verdict: research/270 §2.5 (renumber chain
+145→149→270). The co-lane's uncommitted ROADMAP phase-5 row was left
 UNSTAGED by every waterfowl commit — it is the co-lane's to commit.
 
 ## The waterfowl FINAL (W4-c10 final phase, task/W4-c10-style68-waterfowl, 2026-11-21, code-only mode)
@@ -39740,11 +39740,12 @@ transform-visuals + 2 ambient + 1 town-gate (8 sub-arms × 4 walkers)
 
 ### Item 5 — research FINAL
 
-`docs/research/149-waterfowl-band-final.md` (new, renumbered from 145 in
-the retire phase — g89's rod doc pushed first, 149 the lowest free key
-per the origin scan + the d54 150 registry): the band ledger,
+`docs/research/270-waterfowl-band-final.md` (new, renumber chain
+145→149→270 — g89's rod doc pushed first at 145, e20's devices bible
+pushed first at 149; 270 assigned by the d54 150 registry round 2 §6.3):
+the band ledger,
 the cross-lane contract table, the witness index and the merge
-checklist. INDEX row 149 added. The retire phase SEALED the report:
+checklist. INDEX row 270 added. The retire phase SEALED the report:
 the one-paragraph waterfowl bible (the band's whole shape in one
 paragraph) + the §6 seal block; all four retire items closed (the
 renumber, the roster-tail final status, the d76 keep-one below, the
@@ -39768,7 +39769,7 @@ untruncated and lets the id-2 façade truncate — identical drain
 payload), the full 90-draw 30-dust census in C# order (d76's skip
 would shift the shared Main.rand stream — the superset closes that
 deviation), and the died_out_of_world skip. KEEP-ONE (published in
-research/149 §2.6 + merge-checklist step 2): keep c10's module + hook
+research/270 §2.6 + merge-checklist step 2): keep c10's module + hook
 + row + const; keep d76's map for its OTHER four kinds; DROP d76's
 `BIRD_DROPPINGS =>` arm (both hooks fire on the same death seam —
 leaving it queues Item177 twice), its duplicate 1080 row + const

@@ -1,4 +1,13 @@
-# 149 — W4-c10 waterfowl band FINAL (aiStyle-68 + the walkers + the 1080 drop)
+# 270 — W4-c10 waterfowl band FINAL (aiStyle-68 + the walkers + the 1080 drop)
+
+> **RENUMBER CHAIN 145 → 149 → 270 (registry round 2, 2026-11-21):**
+> the interim key 149 collides with W4-e20's earlier
+> `149-devices-family-bible.md` (first-add `46fdcfd8e`, 10:31:10 < this
+> doc's 149 push 10:49:53 — e20 wins per the d54 registry's first-pushed
+> rule). The d54 registry round 2 (`research/150` §6.3, `72226e500` on
+> `origin/task/W4-d54`) assigns **270** to this doc; refs re-updated:
+> INDEX row, ANALYSIS Item 5 + the two §2.5/§2.6 cites, PORT_MAP row,
+> ROADMAP aiStyle-68 row, anchors row 906.
 
 > **Renumber note (retire phase, 2026-11-21):** this doc was first pushed
 > as `145-waterfowl-band-final.md` (`5d8387955`, 10:12:03 +02:00). The
@@ -11,8 +20,10 @@
 > `146-c42-repick-critical.md`), 147 e20, 148 c4/e20, 150 = the d54
 > collision registry (`150-research-number-registry.md` on
 > `origin/task/W4-d54-dust-sites-world`), 151–236 reserved by that
-> registry's rename block. **149 is the lowest number taken by NO tip** —
-> this doc takes it. Body content-preserving; refs updated: INDEX row,
+> registry's rename block. **149 was then the lowest number taken by NO
+> tip** — this doc took it (SUPERSEDED by the round-2 chain banner
+> above: e20's devices bible held 149 earlier; the final key is 270).
+> Body content-preserving; refs updated: INDEX row,
 > ANALYSIS Item 5, PORT_MAP row, ROADMAP aiStyle-68 row, anchors row 906.
 
 Branch: `task/W4-c10-style68-waterfowl`, final phase 2026-11-21,
@@ -47,7 +58,7 @@ BOTH the d20 `ai_bird_droppings` dup (agreed `e4eeae9b7`) and the d76
 `kill_tail_cue` 1080 arm (§2.6); 37 witnesses WRITTEN NOT RUN; the
 only standing skips are the dust/gore BODIES (draw streams kept) —
 the band is COMPLETE and this report is SEALED at the retire phase
-(renumber 145→149, roster-tail final status §2.5, d76 keep-one §2.6).
+(renumber 145→149→270, roster-tail final status §2.5, d76 keep-one §2.6).
 
 ## 1. Band-complete declaration
 
@@ -234,8 +245,10 @@ final flips: 3, plus the S1-D-3 module's 16).
 
 ## 6. SEAL (retire phase, 2026-11-21)
 
-**This report is SEALED as research/149** (renumbered from 145 — the
-g89 first-push win, the scan evidence in the header note). All four
+**This report is SEALED as research/270** (renumber chain 145→149→270 —
+the g89 first-push win took 145, e20's earlier devices-bible push took
+149; the scan evidence in the header notes, the round-2 assignment in
+the d54 registry `research/150` §6.3). All four
 retire items closed: (1) the renumber + every ref updated; (2) the
 roster-tail co-lane's final status + the d40/c8 keep-one (§2.5, the
 co-lane cross-note in ANALYSIS "The bug-net roster tail"); (3) the
