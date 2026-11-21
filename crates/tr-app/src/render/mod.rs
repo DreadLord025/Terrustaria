@@ -12,6 +12,7 @@ pub(crate) mod foliage;
 pub(crate) mod gore;
 pub(crate) mod liquids;
 pub(crate) mod multi_tile_grass;
+pub(crate) mod multi_tile_vines;
 pub(crate) mod player_layers;
 pub(crate) mod pylons;
 pub(crate) mod ropes;

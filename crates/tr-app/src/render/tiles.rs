@@ -1083,6 +1083,43 @@ pub(crate) fn draw_tiles(
                         tile.paint(),
                     );
                     stats.quads += 1;
+                } else if crate::render::multi_tile_vines::is_multi_tile_vine(tile.kind) {
+                    // W4-g84 follow-up: the hanging-object bucket never draws
+                    // through `DrawSingleTile` — C# registers the object's
+                    // top-left as a MultiTileVine special
+                    // (`TileDrawing.cs:549-599`) and
+                    // `DrawMultiTileVines`/`DrawMultiTileVinesInWind`
+                    // (`:8829-8888`, `:9238-9603`) draw it about the
+                    // TOP-centre anchor with the platform lift, the style
+                    // tables, the jar glow / lid / item-icon specials and the
+                    // shared-seed flame tail. The row-major loop draws each
+                    // cell inline with the same per-cell transform (the
+                    // sunflower / bulb documented z-order approximation).
+                    let (tlx, tly, sx, sy) = crate::render::multi_tile_vines::vine_top_left(
+                        tile.kind, tx, ty, tile.frame_x, tile.frame_y,
+                    );
+                    let sw = crate::render::multi_tile_vines::vine_sway(
+                        wind, world, tx, ty, tlx, tly, sx, sy, dd.top,
+                        sunflower_wind_counter,
+                    );
+                    // `tileLight = Lighting.GetColor(i, j)` (`:9486`) — the
+                    // special pass applies NO `GetFinalLight` actuation ghost;
+                    // `DrawTiles_GetLightOverride` (`:9488`, `:6626-6629`)
+                    // maps a Glow-coated cell to White. The vision-changer
+                    // chain (`:9487`) is identity without the unported
+                    // potions (the d56 lane).
+                    let vine_l = if tile.fullbright_block() { [1.0; 3] } else { raw_l };
+                    let tint = style.shade(vine_l, tx, ty, anim_time);
+                    // The shared flame seed (`:9590-9594`): the object's
+                    // first cell in the C#'s x-outer/y-inner walk is the
+                    // top-left; the inline pass derives it from that cell.
+                    let shared_seed = tr_core::flame::frame_seed_for(
+                        tr_core::flame::tile_frame_seed_at(anim_time), tlx, tly,
+                    );
+                    stats.quads += crate::render::multi_tile_vines::draw_vine_cell(
+                        r, lookups, atlas, world, tile, &dd, tf, &sw, tlx, tly, tx, ty,
+                        tint, anim_time, params, shared_seed,
+                    );
                 } else if sway != 0.0 {
                     // `DrawGrass`'s swaying sprite: shifted by `(cycle, |cycle|)`
                     // and rotated `cycle * 0.1` about
@@ -1233,8 +1270,14 @@ pub(crate) fn draw_tiles(
                 // (`TileDrawing.cs:1723`): the flame/glow overlays draw right
                 // after the tile sprite, in the same row-major order, with their
                 // own self-lit colours (the light map does not tint them).
-                stats.quads +=
-                    draw_tile_flames(r, lookups, world, tile, &dd, tx, ty, params, anim_time);
+                // The MultiTileVine bucket draws its OWN flame tail + glow in
+                // `draw_vine_cell` (`:9585-9600`) — C# never calls
+                // `DrawSingleTile_Flames` for a special-pass tile, so the
+                // inline overlay is skipped for those kinds (no double-draw).
+                if !crate::render::multi_tile_vines::is_multi_tile_vine(tile.kind) {
+                    stats.quads +=
+                        draw_tile_flames(r, lookups, world, tile, &dd, tx, ty, params, anim_time);
+                }
             }
         }
         if run_start >= 0 {
@@ -2001,6 +2044,55 @@ mod tests {
         // Exactly one family dispatch site.
         assert_eq!(body.matches("236 | 238 | 702 | 485").count(), 1);
         assert_eq!(body.matches("tile.kind == 238").count(), 0);
+    }
+
+    /// W4-g84 follow-up draw-order witness: the MultiTileVine arm sits AFTER
+    /// the MultiTileGrass family and BEFORE the generic raised arm — the
+    /// `PostDrawTiles` bucket order (`TileDrawing.cs:421-422`, MultiTileVines
+    /// bucket 3 drains before MultiTileGrass bucket 2, but both precede the
+    /// inline generic draw). The arm rides the sunflower counter (`:9240`),
+    /// the RAW cell light (`:9486`) + Glow override, and skips the inline
+    /// `draw_tile_flames` (the bucket draws its own flame tail, `:9589-9600`).
+    #[test]
+    fn w4_g84_the_vine_arm_draws_before_the_generic_raised_arm() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let grass = body
+            .find("236 | 238 | 702 | 485 | 490 | 652")
+            .expect("MultiTileGrass family arm");
+        let vine = body
+            .find("multi_tile_vines::is_multi_tile_vine(tile.kind)")
+            .expect("MultiTileVine arm");
+        let raised = body.find("} else if dd.top != 0").expect("generic raised arm");
+        assert!(grass < vine && vine < raised, "roster order grass → vine → generic");
+        let arm = &body[vine..raised];
+        assert!(
+            arm.contains("multi_tile_vines::vine_sway")
+                && arm.contains("multi_tile_vines::draw_vine_cell"),
+            "the bucket draws through the MultiTileVine transform + cell draw"
+        );
+        assert!(
+            arm.contains("sunflower_wind_counter"),
+            "the pass rides _sunflowerWindCounter (:9240)"
+        );
+        assert!(
+            arm.contains("raw_l") && arm.contains("fullbright_block"),
+            "raw Lighting.GetColor + the Glow-coating White override (:9486/:9488)"
+        );
+        // The inline flame overlay is gated off for the bucket (no double-draw).
+        let flame_gate = body
+            .find("if !crate::render::multi_tile_vines::is_multi_tile_vine(tile.kind) {")
+            .expect("the flame-overlay gate");
+        assert!(
+            body[flame_gate..].contains("draw_tile_flames"),
+            "the gate guards the inline DrawSingleTile_Flames call"
+        );
+        // Exactly one vine dispatch site.
+        assert_eq!(
+            body.matches("multi_tile_vines::is_multi_tile_vine(tile.kind)").count(),
+            2, // the dispatch arm + the flame-overlay gate
+        );
     }
 
     /// S1-G-1f draw-feed witness: the animator's rows/counters feed the
