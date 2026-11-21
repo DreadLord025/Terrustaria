@@ -1292,6 +1292,237 @@ pub(crate) fn big_bomb_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
 }
 
 // ---------------------------------------------------------------------------
+// Coverage batch B — the STAGED nine (the window's unrowed / host-gap half).
+// The e3 `star_slash_dust` precedent: emitters + draw-mirror witnesses land
+// now, the wiring rides the rows/host wave. Keep-one: g16 wave-O's
+// `scarab_bomb_gores`/`confetti_bomb_gores` replace the TYPE-only draws.
+// ---------------------------------------------------------------------------
+
+/// `GetScarabBombDigDirectionSnap8` (`Projectile.cs:70502-70515`) — the
+/// 8-way dig snap from the owner's centre: the sign pair (X/Y each −1 when
+/// the direction component is > 0, else +1), then the dominant-axis zeroing
+/// (|X| > 2|Y| → Y = 0; |Y| > 2|X| → X = 0). `dir` is
+/// `base.DirectionTo(player.Center)` — XNA Normalize, NO zero guard (the
+/// d50 convention); the caller resolves the player seam.
+pub(crate) fn scarab_dig_snap(dir: Vec2) -> Vec2 {
+    let mut snap = Vec2::new(
+        if dir.x > 0.0 { -1.0 } else { 1.0 },
+        if dir.y > 0.0 { -1.0 } else { 1.0 },
+    );
+    if dir.x.abs() > dir.y.abs() * 2.0 {
+        snap.y = 0.0;
+    } else if dir.y.abs() > dir.x.abs() * 2.0 {
+        snap.x = 0.0;
+    }
+    snap
+}
+
+/// `:78224-78284` — the 773 scarab bomb's dust (STAGED — 773 unrowed, the
+/// `GetScarabBombDigDirectionSnap8` player seam is the caller's). The caller
+/// ran `Resize(80, 80)` (`:78224`). `num70` = the snap's rotation + π/2
+/// (`:78215` — the `:78213` DirectionTo+π line is DEAD, overwritten before
+/// any read). Three blocks:
+/// 1. 60× dust-31 Direct scale 2: Y −0.5, ×1.2, Black×0.9; the `Next(2)`
+///    gate → scale 0.5 + fadeIn `1 + Next(10)·0.1` + Black×0.8.
+/// 2. 30× the dust-59 triple: the first noGravity + the BASE velocity-X
+///    clamp (`:78242-78245` — a behaviour write, kept per-iteration; after
+///    the first clamp |X| = 0.25 so the rest no-op), Y −0.5, fadeIn 1.2,
+///    ×8, RotatedBy(num70); the second scale 1.5 ×2 rotated Y −1.5; the
+///    third scale 1.5 noGravity Y−− fadeIn 2 ×4 rotated.
+/// 3. Three rings (`num73` 1..=3, the f32 `+= 1f/12f` accumulation — **13
+///    iterations**, the drift included: 1/12 rounds UP in f32, the 12th
+///    sum stays below 1.0; the cluster-ring convention, pinned by the
+///    witness): ONE `NextFloat` rotation per ring,
+///    then per dust the Perfect's velocity argument
+///    `(2π·t + rot).ToRotationVector2() · (0.7, 0.3)` (no draws), the
+///    internals, fadeIn 2 + noGravity, `vel *= num73 + NextFloat·0.6`,
+///    `Y -= num73·0.8`, rotated, then the dig push — the axis-aligned snap
+///    (|X|+|Y| == 1) takes `NextFloat·11 + 6`, the diagonal `NextFloat·7 + 5`.
+/// The four gore TYPE draws (`:78292`) stay; the `Resize(10,10)` + the
+/// owner-gated dig walk (`:78298-78327`) are the host wave's.
+// STAGED (773 unrowed) — the witnesses are the only caller until the row +
+// the player-centre seam land (the star_slash_dust precedent).
+#[allow(dead_code)]
+pub(crate) fn scarab_bomb_dust(
+    p: &mut Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    dig_snap: Vec2,
+) {
+    // `:78215` — num70 = snap.ToVector2().ToRotation() + π/2. ToRotation is
+    // the DOUBLE atan2 cast to f32 (`Utils.cs:1655-1658`).
+    let num70 = (dig_snap.y as f64).atan2(dig_snap.x as f64) as f32
+        + std::f32::consts::FRAC_PI_2;
+    let (cx, cy) = p.center();
+    let center = Vec2::new(cx, cy);
+    for _ in 0..60 {
+        let idx = d.new_dust_direct(
+            world, p.pos, p.w as i32, p.h as i32, 31,
+            0.0, 0.0, 100, Color::default(), 2.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity.y -= 0.5;
+        dust.velocity *= 1.2;
+        dust.color = Color::new(0, 0, 0, (255.0 * 0.9) as u8);
+        if d.rng.next_range(0, 2) == 0 {
+            let dust = d.pool.slot_mut(idx);
+            dust.scale = 0.5;
+            dust.fade_in = 1.0 + d.rng.next_range(0, 10) as f32 * 0.1;
+            dust.color = Color::new(0, 0, 0, (255.0 * 0.8) as u8);
+        }
+    }
+    for _ in 0..30 {
+        let idx = d.new_dust_direct(
+            world, p.pos, p.w as i32, p.h as i32, 59,
+            0.0, 0.0, 100, Color::default(), 1.0,
+        );
+        d.pool.slot_mut(idx).no_gravity = true;
+        // `:78242-78245` — the BASE velocity clamp (behaviour, per dust).
+        if p.vel.x.abs() > 0.25 {
+            p.vel.x *= 0.25 / p.vel.x.abs();
+        }
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity.y -= 0.5;
+        dust.fade_in = 1.2;
+        dust.velocity *= 8.0;
+        dust.velocity = crate::bow_launch::rotated_by(dust.velocity, num70 as f64);
+        let idx = d.new_dust_direct(
+            world, p.pos, p.w as i32, p.h as i32, 59,
+            0.0, 0.0, 100, Color::default(), 1.5,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= 2.0;
+        dust.velocity = crate::bow_launch::rotated_by(dust.velocity, num70 as f64);
+        dust.velocity.y -= 1.5;
+        let idx = d.new_dust_direct(
+            world, p.pos, p.w as i32, p.h as i32, 59,
+            0.0, 0.0, 100, Color::default(), 1.5,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity.y -= 1.0;
+        dust.fade_in = 2.0;
+        dust.velocity *= 4.0;
+        dust.velocity = crate::bow_launch::rotated_by(dust.velocity, num70 as f64);
+    }
+    // `:78261` — the axis-aligned flag for the dig push.
+    let flag = dig_snap.x.abs() + dig_snap.y.abs() == 1.0;
+    for num73 in 1..=3 {
+        let num74 = std::f32::consts::PI * 2.0 * d.rng.next_float();
+        // `:78265` — the C#'s f32 `num75 += 1f/12f` accumulation: 1/12
+        // rounds UP in f32, so the 12th sum stays below 1.0 — the loop runs
+        // THIRTEEN iterations (the drift included; the cluster-ring
+        // convention, the witness pins it).
+        let mut t = 0.0f32;
+        while t < 1.0 {
+            let angle = std::f32::consts::PI * 2.0 * t + num74;
+            let vel_arg = Vec2::new(
+                (angle as f64).cos() as f32 * 0.7,
+                (angle as f64).sin() as f32 * 0.3,
+            );
+            let idx = d.new_dust_perfect(
+                world, center, 59, Some(vel_arg), 0, Color::default(), 1.0,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.fade_in = 2.0;
+            dust.no_gravity = true;
+            dust.velocity *= num73 as f32 + d.rng.next_float() * 0.6;
+            dust.velocity.y -= num73 as f32 * 0.8;
+            dust.velocity = crate::bow_launch::rotated_by(dust.velocity, num70 as f64);
+            if flag {
+                dust.velocity += dig_snap * (d.rng.next_float() * 11.0 + 6.0);
+            } else {
+                dust.velocity += dig_snap * (d.rng.next_float() * 7.0 + 5.0);
+            }
+            t += 1.0f32 / 12.0f32;
+        }
+    }
+    // `:78292` — the four gores' TYPE arguments (g16 wave-O's
+    // `scarab_bomb_gores`, the keep-one; the dig-push vector3 is its seam).
+    for _ in 0..4 {
+        let _ = d.rng.next_range(61, 64);
+    }
+}
+
+/// `:78455-78469` — the 588 confetti bomb's dust (STAGED — 588 unrowed).
+/// The caller recentered (`position = Center; width = height = 22;
+/// Center = position`, `:78452-78454` — `p.pos` IS the pre-resize centre,
+/// the g16 wave-O note). 8× dust `219 + Next(5)` (the TYPE argument draw
+/// BEFORE the internals; ×1.4 velocity, fadeIn 1, noGravity), then 15× the
+/// pair `139 + Next(4)` (scale 1.6 noGravity ×5 / scale 1.9 ×3, alpha 0).
+/// The four INDEPENDENT `Next(2)` gore gates follow (`:78470-78497`), each
+/// taken → one `Next(276,283)` confetti TYPE draw (g16's
+/// `confetti_bomb_gores`, the keep-one — NOT the corner 61-64 range).
+// STAGED (588 unrowed) — see `scarab_bomb_dust`.
+#[allow(dead_code)]
+pub(crate) fn confetti_bomb_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
+    for _ in 0..8 {
+        let dust_type = 219 + d.rng.next_range(0, 5);
+        let idx = d.new_dust(
+            world, p.pos, p.w as i32, p.h as i32, dust_type,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= 1.4;
+        dust.fade_in = 1.0;
+        dust.no_gravity = true;
+    }
+    for _ in 0..15 {
+        let dust_type = 139 + d.rng.next_range(0, 4);
+        let idx = d.new_dust(
+            world, p.pos, p.w as i32, p.h as i32, dust_type,
+            0.0, 0.0, 0, Color::default(), 1.6,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 5.0;
+        let dust_type = 139 + d.rng.next_range(0, 4);
+        let idx = d.new_dust(
+            world, p.pos, p.w as i32, p.h as i32, dust_type,
+            0.0, 0.0, 0, Color::default(), 1.9,
+        );
+        d.pool.slot_mut(idx).velocity *= 3.0;
+    }
+    // `:78470-78497` — the four independent gates (the bodies are g16's).
+    for _ in 0..4 {
+        if d.rng.next_range(0, 2) == 0 {
+            let _ = d.rng.next_range(276, 283);
+        }
+    }
+}
+
+/// `:78506-78513` — the 1088 acorn's dust (STAGED — the row exists, but the
+/// port's generic `kill()` does not run the aiStyle-16 `Kill_Bombs` tail for
+/// non-detonated deaths: the host gap is the wiring wave's). 10× dust-2 at
+/// the Centre in a 10×10 box: noGravity, `vel ×2 −= oldVel·0.3`, then the
+/// POST-spawn scale draw `+= Next(150)·0.001`. `old_vel` is
+/// `base.oldVelocity` (the last sub-step's start velocity — the pass's
+/// `old_velocity` latch, the `special_arrow_kill` precedent). The
+/// `SoundEngine.PlaySound(0, Center)` cue (`:78505`) is the sound lane's
+/// skip; the owner-gated acorn plant (`:78514-78531`) is the host wave's.
+// STAGED (the host gap) — see `scarab_bomb_dust`.
+#[allow(dead_code)]
+pub(crate) fn acorn_bomb_dust(
+    p: &Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    old_vel: Vec2,
+) {
+    let (cx, cy) = p.center();
+    for _ in 0..10 {
+        let idx = d.new_dust(
+            world, Vec2::new(cx, cy), 10, 10, 2,
+            0.0, 0.0, 0, Color::default(), 1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.no_gravity = true;
+        dust.velocity *= 2.0;
+        dust.velocity -= old_vel * 0.3;
+        dust.scale += d.rng.next_range(0, 150) as f32 * 0.001;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
 // same pool call on a twin stream; run with
@@ -2420,6 +2651,245 @@ mod tests {
         for i in 50..210 {
             // The pair's first dust (even offset) carries noGravity.
             assert_eq!(pool.slot(i).no_gravity, (i - 50) % 2 == 0);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 coverage batch B — `:70502-70515`: the dig snap's sign pair +
+    /// the dominant-axis zeroing. The four axis cases + the four diagonals.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_cov_scarab_dig_snap_eight_ways() {
+        // Right-down dominant X: snap (-1, 0).
+        assert_eq!(scarab_dig_snap(Vec2::new(3.0, 1.0)), Vec2::new(-1.0, 0.0));
+        // Left-up dominant X: snap (1, 0).
+        assert_eq!(scarab_dig_snap(Vec2::new(-3.0, -1.0)), Vec2::new(1.0, 0.0));
+        // Down dominant Y: snap (0, -1).
+        assert_eq!(scarab_dig_snap(Vec2::new(1.0, 3.0)), Vec2::new(0.0, -1.0));
+        // Up dominant Y: snap (0, 1).
+        assert_eq!(scarab_dig_snap(Vec2::new(-1.0, -3.0)), Vec2::new(0.0, 1.0));
+        // The exact 2:1 boundary keeps BOTH (the strict >).
+        assert_eq!(scarab_dig_snap(Vec2::new(2.0, 1.0)), Vec2::new(-1.0, -1.0));
+        // The diagonal: both signs, no zeroing.
+        assert_eq!(scarab_dig_snap(Vec2::new(1.0, 1.0)), Vec2::new(-1.0, -1.0));
+        assert_eq!(scarab_dig_snap(Vec2::new(-1.0, 1.0)), Vec2::new(1.0, -1.0));
+    }
+
+    /// W4-e3 coverage batch B — `:78224-78284`: the scarab's 60 smoke +
+    /// 30×3 triple + 3×13 ring dusts (the f32 1/12 drift runs THIRTEEN per
+    /// ring) + the four gore TYPE draws. The base velocity-X clamp fires
+    /// once (|4| > 0.25 → 0.25, the rest no-op). Mirrored on a twin stream.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_cov_scarab_bomb_dust_full_sequence() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(773);
+        p.w = 80.0;
+        p.h = 80.0;
+        let snap = Vec2::new(-1.0, 0.0); // axis-aligned → the 11+6 push
+        let num70 = (snap.y as f64).atan2(snap.x as f64) as f32
+            + std::f32::consts::FRAC_PI_2;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(47);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(47);
+        let mut mp = p;
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        scarab_bomb_dust(&mut p, &w, &mut d, snap);
+        // Mirror block 1: the 60 smoke.
+        for _ in 0..60 {
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &c, &w, mp.pos, 80, 80, 31,
+                0.0, 0.0, 100, Color::default(), 2.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity.y -= 0.5;
+            md.velocity *= 1.2;
+            md.color = Color::new(0, 0, 0, 229);
+            if mirror.next_range(0, 2) == 0 {
+                let md = mpool.slot_mut(idx);
+                md.scale = 0.5;
+                md.fade_in = 1.0 + mirror.next_range(0, 10) as f32 * 0.1;
+                md.color = Color::new(0, 0, 0, 204);
+            }
+        }
+        // Mirror block 2: the 30 triples.
+        for _ in 0..30 {
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &c, &w, mp.pos, 80, 80, 59,
+                0.0, 0.0, 100, Color::default(), 1.0,
+            );
+            mpool.slot_mut(idx).no_gravity = true;
+            if mp.vel.x.abs() > 0.25 {
+                mp.vel.x *= 0.25 / mp.vel.x.abs();
+            }
+            let md = mpool.slot_mut(idx);
+            md.velocity.y -= 0.5;
+            md.fade_in = 1.2;
+            md.velocity *= 8.0;
+            md.velocity = crate::bow_launch::rotated_by(md.velocity, num70 as f64);
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &c, &w, mp.pos, 80, 80, 59,
+                0.0, 0.0, 100, Color::default(), 1.5,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity *= 2.0;
+            md.velocity = crate::bow_launch::rotated_by(md.velocity, num70 as f64);
+            md.velocity.y -= 1.5;
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &c, &w, mp.pos, 80, 80, 59,
+                0.0, 0.0, 100, Color::default(), 1.5,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity.y -= 1.0;
+            md.fade_in = 2.0;
+            md.velocity *= 4.0;
+            md.velocity = crate::bow_launch::rotated_by(md.velocity, num70 as f64);
+        }
+        // Mirror block 3: the three 13-step rings.
+        let (cx, cy) = mp.center();
+        let center = Vec2::new(cx, cy);
+        for num73 in 1..=3 {
+            let num74 = std::f32::consts::PI * 2.0 * mirror.next_float();
+            let mut t = 0.0f32;
+            let mut steps = 0;
+            while t < 1.0 {
+                steps += 1;
+                let angle = std::f32::consts::PI * 2.0 * t + num74;
+                let vel_arg = Vec2::new(
+                    (angle as f64).cos() as f32 * 0.7,
+                    (angle as f64).sin() as f32 * 0.3,
+                );
+                let idx = mpool.new_dust_perfect(
+                    &mut mirror, &c, &w, center, 59, Some(vel_arg), 0,
+                    Color::default(), 1.0,
+                );
+                let md = mpool.slot_mut(idx);
+                md.fade_in = 2.0;
+                md.no_gravity = true;
+                md.velocity *= num73 as f32 + mirror.next_float() * 0.6;
+                md.velocity.y -= num73 as f32 * 0.8;
+                md.velocity = crate::bow_launch::rotated_by(md.velocity, num70 as f64);
+                md.velocity += snap * (mirror.next_float() * 11.0 + 6.0);
+                t += 1.0f32 / 12.0f32;
+            }
+            assert_eq!(steps, 13, "the f32 1/12 drift runs thirteen");
+        }
+        for _ in 0..4 {
+            let _ = mirror.next_range(61, 64);
+        }
+        assert_eq!(active(&pool).len(), 60 + 90 + 39, "60 + 30×3 + 3×13");
+        for i in 0..active(&pool).len() {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).fade_in, mpool.slot(i).fade_in);
+            assert_eq!(pool.slot(i).color, mpool.slot(i).color);
+        }
+        // The behaviour clamp fired exactly once.
+        assert_eq!(p.vel.x, 0.25);
+        assert_eq!(mp.vel.x, 0.25);
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 coverage batch B — `:78455-78497`: the confetti's 8 type-rolled
+    /// (219+Next(5)) + 15×2 pair (139+Next(4)) dusts, the type arg BEFORE
+    /// the internals, then the four independent Next(2) gates each with a
+    /// Next(276,283) when taken. Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_cov_confetti_bomb_dust_type_rolls_and_gates() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(588);
+        p.w = 22.0;
+        p.h = 22.0;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(53);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        confetti_bomb_dust(&p, &w, &mut d);
+        for _ in 0..8 {
+            let ty = 219 + mirror.next_range(0, 5);
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 22, 22, ty,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.velocity *= 1.4;
+            md.fade_in = 1.0;
+            md.no_gravity = true;
+        }
+        for _ in 0..15 {
+            let ty = 139 + mirror.next_range(0, 4);
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 22, 22, ty,
+                0.0, 0.0, 0, Color::default(), 1.6,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity *= 5.0;
+            let ty = 139 + mirror.next_range(0, 4);
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, p.pos, 22, 22, ty,
+                0.0, 0.0, 0, Color::default(), 1.9,
+            );
+            mpool.slot_mut(idx).velocity *= 3.0;
+        }
+        for _ in 0..4 {
+            if mirror.next_range(0, 2) == 0 {
+                let _ = mirror.next_range(276, 283);
+            }
+        }
+        assert_eq!(active(&pool).len(), 38, "8 + 15×2");
+        for i in 0..8 {
+            assert!((219..224).contains(&pool.slot(i).dust_type));
+            assert_eq!(pool.slot(i).fade_in, 1.0);
+            assert!(pool.slot(i).no_gravity);
+        }
+        for i in 8..38 {
+            assert!((139..143).contains(&pool.slot(i).dust_type));
+        }
+        for i in 0..38 {
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 coverage batch B — `:78506-78513`: the acorn's 10× dust-2 at
+    /// the Centre (10×10 box), noGravity, ×2 − oldVel·0.3, the POST-spawn
+    /// Next(150)·0.001 scale bump. Mirrored. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_cov_acorn_bomb_dust_old_vel_and_scale_bump() {
+        let w = world();
+        let c = ctx();
+        let p = proj(1088);
+        let old_vel = Vec2::new(2.0, -3.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(59);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(59);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        acorn_bomb_dust(&p, &w, &mut d, old_vel);
+        let (cx, cy) = p.center();
+        for _ in 0..10 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, Vec2::new(cx, cy), 10, 10, 2,
+                0.0, 0.0, 0, Color::default(), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.no_gravity = true;
+            md.velocity *= 2.0;
+            md.velocity -= old_vel * 0.3;
+            md.scale += mirror.next_range(0, 150) as f32 * 0.001;
+        }
+        assert_eq!(active(&pool).len(), 10);
+        for i in 0..10 {
+            assert_eq!(pool.slot(i).dust_type, 2);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
         }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }

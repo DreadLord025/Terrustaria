@@ -39422,3 +39422,44 @@ cited: 108 rowed but refused, the rest unrowed).
 2 draw-mirror witnesses (`w4_e3_cov_bomb_family_dust_counts_and_gore_types`,
 `w4_e3_cov_big_bomb_dust_counts_and_pair_shape`) WRITTEN NOT RUN — the
 record-for-record twin-stream mirrors + the gore-type stream pins.
+
+### The `Kill_Bombs` dust tail window, batch B (the staged 9 sites)
+
+The window's other nine sites land as STAGED emitters (the e3
+`star_slash_dust` precedent — witnesses are the only caller until the
+rows/host wave):
+
+* **The 773 scarab five** (`:78227/78240/78250/78254/78269` — unrowed):
+  `scarab_bomb_dust` + the `scarab_dig_snap` helper
+  (`GetScarabBombDigDirectionSnap8` `:70502-70515`, the sign pair + the
+  dominant-axis zeroing; the player-centre `DirectionTo` is the caller's
+  seam). The 60 smoke (the `Next(2)` gate → scale 0.5 + fadeIn
+  `1 + Next(10)·0.1`, Black×0.9/0.8), the 30× dust-59 triple (the BASE
+  velocity-X clamp `:78242-78245` kept per-iteration — a behaviour write,
+  fires once then no-ops), the three rings. **The f32 `+= 1f/12f` drift runs
+  THIRTEEN iterations per ring** (1/12 rounds UP in f32, the 12th sum stays
+  below 1.0 — verified by exact-f32 accumulation, the witness pins it; the
+  cluster-ring `1f/6f` convention's mirror case). The axis-aligned snap
+  takes the `NextFloat·11 + 6` dig push, the diagonal the `·7 + 5`. The
+  `:78213` DirectionTo+π line is DEAD (overwritten at `:78215` before any
+  read). The four gore TYPE draws stay (g16 wave-O `scarab_bomb_gores`).
+* **The 588 confetti three** (`:78457/78464/78467` — unrowed):
+  `confetti_bomb_dust` — the 8× `219 + Next(5)` type-arg-BEFORE-internals
+  dusts + the 15× `139 + Next(4)` pairs, then the four INDEPENDENT `Next(2)`
+  gates each with a `Next(276,283)` confetti TYPE draw when taken (g16's
+  `confetti_bomb_gores` — NOT the corner 61-64 range). The caller's recenter
+  (`:78452-78454`) means `p.pos` IS the pre-resize centre (the g16 note).
+* **The 1088 acorn one** (`:78508` — rowed, host gap): `acorn_bomb_dust` —
+  the 10× dust-2 at the Centre, noGravity, `×2 − oldVel·0.3`, the POST-spawn
+  `Next(150)·0.001` scale bump. The port's generic `kill()` does not run the
+  aiStyle-16 `Kill_Bombs` tail for non-detonated deaths — the host gap is
+  the wiring wave's; `old_vel` rides the pass's `old_velocity` latch (the
+  `special_arrow_kill` precedent). The `PlaySound(0, Center)` cue is the
+  sound lane's skip; the owner-gated acorn plant (`:78514-78531`) the host
+  wave's.
+
+4 draw-mirror witnesses (`w4_e3_cov_scarab_dig_snap_eight_ways`,
+`w4_e3_cov_scarab_bomb_dust_full_sequence`,
+`w4_e3_cov_confetti_bomb_dust_type_rolls_and_gates`,
+`w4_e3_cov_acorn_bomb_dust_old_vel_and_scale_bump`) WRITTEN NOT RUN. The
+window is now 15-of-15 ported (6 wired + 9 staged), zero missed.
