@@ -737,6 +737,16 @@ pub const ICE_BOOMERANG: u16 = 113;
 /// the per-axis wall bounce that does NOT arm the return (`:19550-19560`)
 /// and the 0.3 spin (`:39556-39559`).
 pub const LIGHT_DISC: u16 = 106;
+/// `ProjectileID.BouncingShield` (866, `Projectile.cs:8312-8324`) — the
+/// Bouncing Shield item 4760's thrown shot (W4-f48 lane 20): 30×30,
+/// aiStyle 3, `penetrate = 5`, melee, `extraUpdates = 1`, `light = 0.15`,
+/// `usesLocalNPCImmunity` + `localNPCHitCooldown = -1`. The outbound leg
+/// never counts `ai[1]` (`:39027-39030`); the homing seek runs on
+/// `localAI[0]` ∈ [10, 360] (`:39220-39259`), the return seek is 16/1.2
+/// (`:39427-39431`), the rotation tracks the velocity (`:39560-39568`)
+/// and the on-hit store decays ×0.8 (`:13443-13445`) with its own
+/// penetrate spend (`:14077-14104`, the generic `:14125` excludes it).
+pub const BOUNCING_SHIELD: u16 = 866;
 /// The yoyo family (`Projectile.cs:6013-6093` + `:9483-9490` — every row is
 /// 16×16 with `DefaultToYoyo()`, aiStyle 99; the AI is `AI_099_2_Yoyos`
 /// `:67733-68105`). The counterweight projectiles 556-561/1079 share the style
@@ -1570,6 +1580,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         DESTROYER_LASER => 0.75,               // `:1878`
         ICE_BOOMERANG => 0.4,                  // `:2020`
         LIGHT_DISC => 0.4,                     // `:1944` (S1-P-i08)
+        BOUNCING_SHIELD => 0.15,               // `:8314` (W4-f48 lane 20)
         UNHOLY_TRIDENT => 0.5,                 // `:2029`
         UNHOLY_TRIDENT_HOSTILE => 0.5,         // `:2044`
         SWORD_BEAM => 0.5,                     // `:2054`
@@ -2347,6 +2358,24 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 RESET_STATE,
+            ),
+            // `:8312-8324` — the Bouncing Shield (866, W4-f48 lane 20):
+            // 30×30, aiStyle 3, friendly, `penetrate = 5`, melee (the
+            // census below), `extraUpdates = 1`, `usesLocalNPCImmunity` +
+            // `localNPCHitCooldown = -1` (one hit per NPC per throw); the
+            // stock 3600 life / tileCollide; `light = 0.15` rides
+            // `set_defaults_light`.
+            BOUNCING_SHIELD => (
+                30.0,
+                30.0,
+                3,
+                5,
+                TIME_LEFT_DEFAULT,
+                1,
+                true,
+                false,
+                false,
+                (true, -1, false, -1, 0, 1.0),
             ),
             // The flail family (`DefaultToFlail` `:10753-10762` — aiStyle 15,
             // `penetrate = -1`, melee, the local-immunity pair 10 via the
@@ -4288,6 +4317,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-f48 lane 20 — the Bouncing Shield (866, `:8320`).
+                    | BOUNCING_SHIELD
             ),
         ranged: matches!(
             kind,

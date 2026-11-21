@@ -5378,6 +5378,13 @@ impl Projectile {
         owner: Option<(f32, f32)>,
         melee_speed: f32,
         catch_allowed: bool,
+        // W4-f48 lane 20 — the 866's homing seek reads the NPC list + the
+        // slot's local-immunity slice (`FindTargetWithLineOfSight`
+        // `:45645`) and its rotation tail rolls the dust-212 gate on the
+        // pass stream (`:39563`). The other kinds draw nothing here.
+        npcs: &[Npc],
+        local_immunity: &[i32],
+        rng: &mut dyn DropRng,
     ) {
         // `AI_003_Boomerang`'s whoosh head (`Projectile.cs:38868-38891`,
         // S1-E-21h): every kind but the Phaseblade family (unported) and
@@ -5393,12 +5400,84 @@ impl Projectile {
         if self.ai[0] == 0.0 {
             // The outbound flight (`:39024-39034` + the generic tail
             // `:39335-39340`); the 106 Light Disc returns at 45 ticks
-            // (`:39035-39040`).
-            self.ai[1] += 1.0;
-            let limit = if self.kind == LIGHT_DISC { 45.0 } else { 30.0 };
-            if self.ai[1] >= limit {
-                self.ai[0] = 1.0;
-                self.ai[1] = 0.0;
+            // (`:39035-39040`). The 866 Bouncing Shield NEVER counts the
+            // outbound timer (`flag = false`, `:39027-39030`) — its own
+            // arm below owns the state machine.
+            if self.kind != BOUNCING_SHIELD {
+                self.ai[1] += 1.0;
+                let limit = if self.kind == LIGHT_DISC { 45.0 } else { 30.0 };
+                if self.ai[1] >= limit {
+                    self.ai[0] = 1.0;
+                    self.ai[1] = 0.0;
+                }
+            } else {
+                // `:39220-39299` — the Bouncing Shield's outbound homing.
+                // The retarget window (`:39222-39238`): local owner +
+                // damage > 0, `localAI[0]` ∈ [10, 360] re-acquires through
+                // `FindTargetWithLineOfSight` (the slot's local-immunity
+                // slice is the `:45645` gate), else `ai[1] = -1`.
+                if catch_allowed && self.damage > 0 {
+                    if self.local_ai[0] >= 10.0 && self.local_ai[0] <= 360.0 {
+                        self.ai[1] = find_target_with_line_of_sight(
+                            world, npcs, self.pos, self.w, self.h, 800.0, local_immunity,
+                        ) as f32;
+                    } else {
+                        self.ai[1] = -1.0;
+                    }
+                }
+                self.local_ai[0] += 1.0;
+                // `:39240-39259`: a chaseable lock steers at the NPC's
+                // centre; no lock aims 100 ticks down the velocity and
+                // arms the return at 30 ticks (60 for a remote owner).
+                let num20 = self.ai[1] as i32;
+                let target = if num20 >= 0 {
+                    npcs.get(num20 as usize).filter(|n| chaseable(n)).map(npc_center)
+                } else {
+                    None
+                };
+                let center = self.pos + Vec2::new(self.w * 0.5, self.h * 0.5);
+                let aim = match target {
+                    Some(c) => c,
+                    None => {
+                        let limit = if catch_allowed { 30.0 } else { 60.0 };
+                        if self.local_ai[0] >= limit {
+                            self.ai[0] = 1.0;
+                            self.ai[1] = 0.0;
+                        }
+                        center + self.vel * 100.0
+                    }
+                };
+                // `:39261-39299`: the 12/len seek at accel 0.25, the
+                // sign-crossing boost ×2 (the outbound arm doubles the
+                // accel on the cross — the return arm below adds it once).
+                let accel = 0.25;
+                let mut dx = aim.x - center.x;
+                let mut dy = aim.y - center.y;
+                let inv = 12.0 / (dx * dx + dy * dy).sqrt();
+                dx *= inv;
+                dy *= inv;
+                if self.vel.x < dx {
+                    self.vel.x += accel;
+                    if self.vel.x < 0.0 && dx > 0.0 {
+                        self.vel.x += accel * 2.0;
+                    }
+                } else if self.vel.x > dx {
+                    self.vel.x -= accel;
+                    if self.vel.x > 0.0 && dx < 0.0 {
+                        self.vel.x -= accel * 2.0;
+                    }
+                }
+                if self.vel.y < dy {
+                    self.vel.y += accel;
+                    if self.vel.y < 0.0 && dy > 0.0 {
+                        self.vel.y += accel * 2.0;
+                    }
+                } else if self.vel.y > dy {
+                    self.vel.y -= accel;
+                    if self.vel.y > 0.0 && dy < 0.0 {
+                        self.vel.y -= accel * 2.0;
+                    }
+                }
             }
         } else {
             // The return (`:39365-39555`): `tileCollide = false`, the owner
@@ -5409,8 +5488,9 @@ impl Projectile {
             };
             // The per-type speed/accel table (`:39399-39461`): the ported
             // kinds ride the defaults 9/0.4; the 106 overrides 16/1.2
-            // (`:39432-39436`). The other rows are the unported specials.
-            let (mut speed, mut accel) = if self.kind == LIGHT_DISC {
+            // (`:39432-39436`) and the 866 the same (`:39427-39431`). The
+            // other rows are the unported specials.
+            let (mut speed, mut accel) = if matches!(self.kind, LIGHT_DISC | BOUNCING_SHIELD) {
                 (16.0f32, 1.2f32)
             } else {
                 (9.0f32, 0.4f32)
@@ -5492,12 +5572,20 @@ impl Projectile {
                 }
             }
         }
-        // The rotation tail (`:39556-39638`): the 106 spins 0.3, every other
-        // non-phaseblade kind 0.4, both × `direction` (the direction the
-        // PREVIOUS sub-step's movement settled — the C# flips it after
-        // `HandleMovement`, below).
+        // The rotation tail (`:39556-39638`): the 106 spins 0.3, the 866
+        // points along its velocity (`:39560-39562`) and rolls the dust-212
+        // gate `Next(2)` on the pass stream (`:39563-39568` — the dust
+        // itself is the skipped cosmetic layer, its gate draw stays, the
+        // sentry/dust precedent); every other non-phaseblade kind spins
+        // 0.4 × `direction` (the direction the PREVIOUS sub-step's movement
+        // settled — the C# flips it after `HandleMovement`, below).
         if self.kind == LIGHT_DISC {
             self.rot += 0.3 * self.direction as f32;
+        } else if self.kind == BOUNCING_SHIELD {
+            self.rot = self.vel.y.atan2(self.vel.x);
+            // The gate draws even though the dust is skipped (the C#
+            // evaluates `Main.rand.Next(2)` before `Dust.NewDust`).
+            let _ = rng.next_range(0, 2);
         } else if !is_a_phaseblade(self.kind) {
             self.rot += 0.4 * self.direction as f32;
         }
@@ -16988,12 +17076,19 @@ impl ProjectilePool {
                             // 39464`; the flail inputs already carry it);
                             // the catch's `Main.myPlayer == owner` gate
                             // (`:39551`) rides the local-owner comparison.
+                            // W4-f48 lane 20: the 866's homing seek reads
+                            // the NPC list + the slot's local-immunity
+                            // slice, its dust gate rides the pass stream.
                             let catch_allowed = self.slots[i].owner == local_owner;
+                            let melee_speed = flail_inputs.melee_speed;
                             self.slots[i].ai_boomerang(
                                 world,
                                 owner,
-                                flail_inputs.melee_speed,
+                                melee_speed,
                                 catch_allowed,
+                                npcs,
+                                &self.local_immunity[i * 256..(i + 1) * 256],
+                                rng,
                             );
                         }
                         // S1-P-i17 — `AI()`'s `else if (this.aiStyle == 5)`
@@ -22887,6 +22982,17 @@ impl ProjectilePool {
             }
             // Projectile.cs:12938 — pre-defense variance on the hit damage.
             dmg = tr_core::damage::damage_var(rng, dmg as f32, luck);
+            // W4-f48 lane 20 — `Damage_PVE_Inner`'s type-866 arm
+            // (`Projectile.cs:13443-13445`): the Bouncing Shield's STORED
+            // damage decays ×0.8 (the `(int)((double)damage * 0.8)`
+            // truncation) on every contact — the switch runs after
+            // DamageVar (`:12938`) and before `StrikeNPC` (`:13649`), but
+            // the strike reads the local `dmg`, so this hit keeps full
+            // damage and the NEXT reads the decayed store (the Shadowbeam
+            // precedent, `:13411-13413`). The C# arm is NOT landed-gated.
+            if self.slots[slot].kind == BOUNCING_SHIELD {
+                self.slots[slot].damage = (self.slots[slot].damage as f64 * 0.8) as i32;
+            }
             // S1-P-i28 — `Damage_PVE_Inner`'s aiStyle-113 stick pin
             // (`Projectile.cs:13210-13217`): on the first hit (`ai[0] < 2`)
             // the bone javelin pins to this NPC — `ai[0]=1`, `ai[1]=victim`,
@@ -23153,6 +23259,47 @@ impl ProjectilePool {
             } else if p.kind == TYPHOON {
                 // `:14036-14039` — the Razorblade Typhoon (409): 6 ticks.
                 npcs[idx].immune[owner_idx] = 6;
+            } else if p.kind == BOUNCING_SHIELD {
+                // W4-f48 lane 20 — `:14077-14104`: the Bouncing Shield's
+                // own spend: the local −1 stamp (one hit per NPC per
+                // throw), `immune[owner] = 0`, `penetrate--`; at 0 the
+                // shield goes inert (`penetrate = 1`, `damage = 0`,
+                // `ai[1] = -1`) and the walk stops (`keepIterating =
+                // false` + return — the generic `:14125` decrement never
+                // runs for it). Otherwise the local owner re-acquires
+                // through `FindTargetWithLineOfSight` and redirects the
+                // velocity at the new target, keeping its speed.
+                npcs[idx].immune[owner_idx] = 0;
+                self.local_immunity[slot * 256 + idx] = p.local_hit_cooldown;
+                let p = &mut self.slots[slot];
+                p.penetrate -= 1;
+                if p.penetrate == 0 {
+                    p.penetrate = 1;
+                    p.damage = 0;
+                    p.ai[1] = -1.0;
+                    break;
+                }
+                if owner_idx < 255 {
+                    let target = find_target_with_line_of_sight(
+                        world,
+                        npcs,
+                        p.pos,
+                        p.w,
+                        p.h,
+                        800.0,
+                        &self.local_immunity[slot * 256..(slot + 1) * 256],
+                    );
+                    p.ai[1] = target as f32;
+                    if target != -1 {
+                        let speed = p.vel.length();
+                        let center = p.pos + Vec2::new(p.w * 0.5, p.h * 0.5);
+                        // `DirectionTo` = `Normalize(target − Center)`
+                        // (`Entity.cs:205-208`); the port's safe normalize
+                        // keeps the zero-distance case at zero velocity
+                        // (the house SafeNormalize convention).
+                        p.vel = safe_normalize(npc_center(&npcs[target as usize]) - center) * speed;
+                    }
+                }
             } else if uses_local && p.local_hit_cooldown != -2 {
                 // `:14111-14115` — the local pair.
                 npcs[idx].immune[owner_idx] = 0;
@@ -23328,9 +23475,17 @@ impl ProjectilePool {
                 if p.kind == SHADOWBEAM {
                     p.damage = (p.damage as f64 * 0.9) as i32;
                 }
-                p.penetrate -= 1;
-                if p.penetrate == 0 {
-                    break;
+                // W4-f48 lane 20 — the generic `:14125` decrement excludes
+                // the 866 (its own spend ran in the immunity chain above,
+                // `:14081`). The C# also excludes 317 (`type != 317`); the
+                // port's pre-existing blanket decrement already spent the
+                // Raven's penetrate, a recorded deviation outside this
+                // lane's scope — only the 866 term lands here.
+                if p.kind != BOUNCING_SHIELD {
+                    p.penetrate -= 1;
+                    if p.penetrate == 0 {
+                        break;
+                    }
                 }
             }
         }
@@ -23678,7 +23833,7 @@ mod s1_e_21h_sound_tests {
             tile_collide: false,
             ..Default::default()
         };
-        p.ai_boomerang(&w, None, 1.0, true);
+        p.ai_boomerang(&w, None, 1.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.wants_sound, Some((2, 7, 64.0, 64.0, 0.0)));
         assert_eq!(p.sound_delay, 8);
         // The pool decrements ahead of the AI (`:16768-16771`); while the
@@ -23686,7 +23841,7 @@ mod s1_e_21h_sound_tests {
         for _ in 0..7 {
             p.sound_delay -= 1;
             p.wants_sound = None;
-            p.ai_boomerang(&w, None, 1.0, true);
+            p.ai_boomerang(&w, None, 1.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
             assert_eq!(p.wants_sound, None, "the cooldown holds the cue");
         }
         assert_eq!(p.sound_delay, 1, "one tick left on the cooldown");
@@ -23694,7 +23849,7 @@ mod s1_e_21h_sound_tests {
         // re-arm 24, not 8, once the cooldown reaches 0.
         p.sound_delay = 0;
         p.extra_updates = 2;
-        p.ai_boomerang(&w, None, 1.0, true);
+        p.ai_boomerang(&w, None, 1.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.sound_delay, 24, "8 × (extraUpdates + 1)");
         assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 7)));
         // The Magic Missile: below the speed sum the gate refuses.
@@ -26436,7 +26591,7 @@ mod s1_p_i08_boomerang_tests {
             sound_delay: 100,
             ..Default::default()
         };
-        p.ai_boomerang(&w, Some((200.0, 311.0)), 2.0, true);
+        p.ai_boomerang(&w, Some((200.0, 311.0)), 2.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.vel.x, -0.4, "meleeSpeed 2 floors the factor at 1");
         let mut p = Projectile {
             active: true,
@@ -26450,7 +26605,7 @@ mod s1_p_i08_boomerang_tests {
             sound_delay: 100,
             ..Default::default()
         };
-        p.ai_boomerang(&w, Some((200.0, 311.0)), 0.5, true);
+        p.ai_boomerang(&w, Some((200.0, 311.0)), 0.5, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.vel.x, -1.0, "meleeSpeed 0.5 → ×2.5: accel 0.4 → 1.0");
         // The 106's own table: 16/1.2 (`:39432-39436`) × the same factor.
         let mut d = Projectile {
@@ -26465,7 +26620,7 @@ mod s1_p_i08_boomerang_tests {
             sound_delay: 100,
             ..Default::default()
         };
-        d.ai_boomerang(&w, Some((200.0, 316.0)), 1.0, true);
+        d.ai_boomerang(&w, Some((200.0, 316.0)), 1.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert_eq!(d.vel.x, -1.2, "the disc's accel 1.2 at ×1");
     }
 
@@ -26491,13 +26646,13 @@ mod s1_p_i08_boomerang_tests {
             sound_delay: 100,
             ..Default::default()
         };
-        p.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, true);
+        p.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert!(p.active, "the pre-move rects do not intersect");
         assert!(p.pos.x < 322.0, "the step still integrates");
         // The POST-move box (≈307..339) DOES overlap the owner rect
         // (290..310) — the old post-move catch would have killed here.
         // One tick later the pre-move box overlaps → the catch kills.
-        p.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, true);
+        p.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert!(!p.active, "the next tick catches");
         // The foreign-owner gate: the same overlap, catch_allowed false.
         let mut q = Projectile {
@@ -26512,7 +26667,7 @@ mod s1_p_i08_boomerang_tests {
             sound_delay: 100,
             ..Default::default()
         };
-        q.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, false);
+        q.ai_boomerang(&w, Some((300.0, 300.0)), 1.0, false, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert!(q.active, "a non-local owner never catches here");
     }
 
@@ -26534,7 +26689,7 @@ mod s1_p_i08_boomerang_tests {
             sound_delay: 100,
             ..Default::default()
         };
-        p.ai_boomerang(&w, None, 1.0, true);
+        p.ai_boomerang(&w, None, 1.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert_eq!(p.direction, -1, "the outbound sign latch (post-move)");
         // The rotation read the PRE-move direction (+1, the spawn default)
         // — the C# spins inside AI() ahead of HandleMovement's flip.
@@ -26554,7 +26709,7 @@ mod s1_p_i08_boomerang_tests {
             sound_delay: 100,
             ..Default::default()
         };
-        q.ai_boomerang(&w, Some((600.0, 316.0)), 1.0, true);
+        q.ai_boomerang(&w, Some((600.0, 316.0)), 1.0, true, &[], &[], &mut tr_core::UnifiedRandom::default());
         assert!(q.vel.x > -8.0, "the seek steers right");
         assert_eq!(q.direction, -1, "the return freezes the direction");
         assert!((q.rot - (-0.3)).abs() < 1e-6, "the disc spins 0.3 × −1");
@@ -26587,6 +26742,124 @@ mod s1_p_i08_boomerang_tests {
             tick(&mut pool, &mut w, Some((300.0, 900.0)), 1.0, &mut census);
         }
         assert_eq!(census.draws, 0, "the disc machine draws nothing either");
+    }
+
+    /// W4-f48 lane 20 — the 866 row (`Projectile.cs:8312-8324`): 30×30,
+    /// aiStyle 3, penetrate 5, extraUpdates 1, melee, local-immunity −1,
+    /// light 0.15; the item 4760 shoots it.
+    #[test]
+    fn w4_f48_the_bouncing_shield_row_is_verbatim() {
+        let d = proj_data(BOUNCING_SHIELD).expect("the 866 row");
+        assert_eq!((d.w, d.h), (30.0, 30.0), ":8315-8316");
+        assert_eq!(d.ai_style, 3, ":8317");
+        assert_eq!(d.penetrate, 5, ":8319");
+        assert_eq!(d.extra_updates, 1, ":8321");
+        assert!(d.melee, ":8320");
+        assert!(d.uses_local_immunity, ":8322");
+        assert_eq!(d.local_hit_cooldown, -1, ":8323");
+        assert!(d.tile_collide, "the stock :775");
+        assert_eq!(set_defaults_light(BOUNCING_SHIELD), 0.15, ":8314");
+        assert!(spawnable_kinds().contains(&BOUNCING_SHIELD), "the sheet packs");
+        let def = crate::registry::get(4760).unwrap();
+        assert_eq!(def.projectile, Some(BOUNCING_SHIELD));
+    }
+
+    /// W4-f48 lane 20 — the outbound never counts `ai[1]` (`:39027-39030`)
+    /// and the no-target return arms at `localAI[0] >= 30` (`:39249-39259`).
+    #[test]
+    fn w4_f48_the_bouncing_shield_outbound_skips_the_timer_and_returns_at_30() {
+        let mut pool = ProjectilePool::new();
+        pool.spawn_with_data(BOUNCING_SHIELD, 200.0, 200.0, 8.0, 0.0, 50, 5.0);
+        let mut w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        for _ in 0..4 {
+            tick(&mut pool, &mut w, Some((200.0, 900.0)), 1.0, &mut rng);
+        }
+        assert_eq!(pool.slots[0].ai[0], 0.0, "still outbound");
+        assert!(
+            pool.slots[0].ai[1] <= 0.0,
+            "ai[1] is the target index, not the outbound timer"
+        );
+        let mut returned = false;
+        for _ in 0..60 {
+            tick(&mut pool, &mut w, Some((200.0, 900.0)), 1.0, &mut rng);
+            if pool.slots[0].ai[0] == 1.0 {
+                returned = true;
+                break;
+            }
+        }
+        assert!(returned, "the 30-tick no-target return arms");
+    }
+
+    /// W4-f48 lane 20 — the on-hit spend (`:13443-13445` + `:14077-14104`):
+    /// the stored damage decays ×0.8, penetrate spends once, the local −1
+    /// stamp blocks the re-hit; at penetrate 0 the shield goes inert.
+    #[test]
+    fn w4_f48_the_bouncing_shield_on_hit_decays_spends_and_stamps() {
+        let w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npc = Npc::spawn_slime(&w, 20).unwrap();
+        npc.x = 20.0 * TILE_PX;
+        npc.y = 24.0 * TILE_PX;
+        npc.hp = 10_000;
+        npc.max_hp = 10_000;
+        let slot = pool
+            .spawn_with_data_ai(BOUNCING_SHIELD, npc.x, npc.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert!(npc.hp < 10_000, "the shield lands");
+        assert_eq!(pool.slots()[slot].damage, 80, "100 × 0.8 store decay");
+        assert_eq!(pool.slots()[slot].penetrate, 4, "5 → 4, one spend");
+        assert_eq!(pool.local_immunity[slot * 256], -1, "the −1 local stamp");
+        assert_eq!(npc.immune[0], 0, "the per-owner window clears");
+        let hp_after = npc.hp;
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, None, &mut rng);
+        assert_eq!(npc.hp, hp_after, "the −1 stamp blocks the re-hit");
+        // At penetrate 1 the spend hits 0 → inert (penetrate 1, damage 0,
+        // ai[1] −1), the walk stops.
+        let mut pool2 = ProjectilePool::new();
+        let mut npc2 = Npc::spawn_slime(&w, 20).unwrap();
+        npc2.x = 20.0 * TILE_PX;
+        npc2.y = 24.0 * TILE_PX;
+        npc2.hp = 10_000;
+        npc2.max_hp = 10_000;
+        let slot2 = pool2
+            .spawn_with_data_ai(BOUNCING_SHIELD, npc2.x, npc2.y, 0.0, 0.0, 100, 0.0, 0.0, 0.0)
+            .unwrap();
+        pool2.slots_mut()[slot2].penetrate = 1;
+        pool2.damage_pve(&w, slot2, std::slice::from_mut(&mut npc2), None, None, None, &mut rng);
+        assert!(npc2.hp < 10_000, "the last hit still lands");
+        assert_eq!(pool2.slots()[slot2].penetrate, 1, "reset to 1");
+        assert_eq!(pool2.slots()[slot2].damage, 0, "inert");
+        assert_eq!(pool2.slots()[slot2].ai[1], -1.0);
+    }
+
+    /// W4-f48 lane 20 — the rotation tail (`:39560-39568`): the 866 points
+    /// along its velocity and rolls the dust-212 `Next(2)` gate once (the
+    /// dust itself is the skipped cosmetic layer, its gate draw stays).
+    #[test]
+    fn w4_f48_the_bouncing_shield_rotation_tracks_velocity_and_draws_the_gate() {
+        let w = world();
+        let mut p = Projectile {
+            active: true,
+            kind: BOUNCING_SHIELD,
+            owner: 0,
+            w: 30.0,
+            h: 30.0,
+            pos: Vec2::new(400.0, 300.0),
+            vel: Vec2::new(0.0, -8.0),
+            ai: [1.0, 0.0, 0.0, 0.0],
+            sound_delay: 100,
+            ..Default::default()
+        };
+        let mut census = CountingRng::new();
+        p.ai_boomerang(&w, Some((200.0, 900.0)), 1.0, true, &[], &[], &mut census);
+        assert!(
+            (p.rot - p.vel.y.atan2(p.vel.x)).abs() < 1e-6,
+            "the rotation tracks the velocity"
+        );
+        assert_eq!(census.draws, 1, "the dust-212 Next(2) gate draws once");
     }
 }
 
