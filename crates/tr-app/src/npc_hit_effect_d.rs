@@ -3657,6 +3657,82 @@ fn town_pet_smoke_death(
     }
 }
 
+/// The 227 Painter death (`NPC.cs:88076-88098`, sites 540-544): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then the altTexture-gated head 320
+/// (shimmer 1331, default-0 stand-in) + the mid split 321/322 (shimmer
+/// 1334/1333 — the two +20 slots DIFFER) + 323x2 at +34 Y (shimmer
+/// 1332x2), scale 1f.
+fn painter_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88086-88089` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:88090-88093` — the head, altTexture==0 stand-in (always taken).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1331 } else { 320 }, 1.0); // :88092
+    let mid1 = if shimmer { 1334 } else { 321 };
+    let mid2 = if shimmer { 1333 } else { 322 };
+    let legs = if shimmer { 1332 } else { 323 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid1, 1.0); // :88094
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid2, 1.0); // :88095
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88096
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88097
+}
+
+/// The 228 Witch Doctor death (`NPC.cs:88099-88118`, sites 545-549): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then 324 head + the mid split
+/// 325/326 (shimmer 1370/1372 — the two +20 slots DIFFER) + 327x2 at
+/// +34 Y (shimmer 1371x2), scale 1f. NO altTexture gate here.
+fn witch_doctor_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88109-88112` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid1, mid2, legs) = if shimmer {
+        (1369, 1370, 1372, 1371)
+    } else {
+        (324, 325, 326, 327)
+    };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :88113
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid1, 1.0); // :88114
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid2, 1.0); // :88115
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88116
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88117
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4089,6 +4165,14 @@ pub fn hit_effect_d(
         || crate::npc_ai_town::is_town_pet(npc_type)
     {
         town_pet_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88076-88098` — the 227 Painter arm (sites 540-544).
+    else if npc_type == 227 {
+        painter_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88099-88118` — the 228 Witch Doctor arm (sites 545-549).
+    else if npc_type == 228 {
+        witch_doctor_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7174,6 +7258,39 @@ mod tests {
                 assert_eq!(gore.slot(i).velocity.y, -ky + dy);
             }
             assert_eq!(rng.peek(), twin.peek(), "pet {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88092-88097`/`:88113-88117` — the Painter ladder
+    /// 320/321/322/323x2 (shimmer 1331/1334/1333/1332x2) and the Witch
+    /// Doctor ladder 324/325/326/327x2 (shimmer 1369/1370/1372/1371x2) —
+    /// both split the two +20 slots.
+    #[test]
+    fn w4_f5d_the_painter_and_witch_doctor_split_the_mids() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (227, false, vec![320, 321, 322, 323, 323]),
+            (227, true, vec![1331, 1334, 1333, 1332, 1332]),
+            (228, false, vec![324, 325, 326, 327, 327]),
+            (228, true, vec![1369, 1370, 1372, 1371, 1371]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(571);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(571);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
         }
     }
 }
