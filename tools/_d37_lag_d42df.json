@@ -1,0 +1,1514 @@
+{
+ "crates/tr-app/src/npc.rs": [
+  {
+   "line": 1151,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "/// `NPCID.BlackDragonfly` (595) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:"
+  },
+  {
+   "line": 1154,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "BlackDragonfly,"
+  },
+  {
+   "line": 1155,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "/// `NPCID.BlueDragonfly` (596) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:"
+  },
+  {
+   "line": 1158,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "BlueDragonfly,"
+  },
+  {
+   "line": 1159,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "/// `NPCID.GreenDragonfly` (597) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:"
+  },
+  {
+   "line": 1162,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "GreenDragonfly,"
+  },
+  {
+   "line": 1163,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "/// `NPCID.OrangeDragonfly` (598) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:"
+  },
+  {
+   "line": 1166,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "OrangeDragonfly,"
+  },
+  {
+   "line": 1167,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "/// `NPCID.RedDragonfly` (599) - `NPC.cs:16720-16738 (catchItem type-595+4334 :16737)`:"
+  },
+  {
+   "line": 1170,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "RedDragonfly,"
+  },
+  {
+   "line": 1171,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "/// `NPCID.YellowDragonfly` (600) - `NPC.cs:16720-16738`:"
+  },
+  {
+   "line": 1174,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "YellowDragonfly,"
+  },
+  {
+   "line": 1175,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "/// `NPCID.GoldDragonfly` (601) - `NPC.cs:16720-16738 (rarity 3 :16735)`:"
+  },
+  {
+   "line": 1178,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "GoldDragonfly,"
+  },
+  {
+   "line": 3747,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 1.0,"
+  },
+  {
+   "line": 3748,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 1.0,"
+  },
+  {
+   "line": 3749,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 1.0,"
+  },
+  {
+   "line": 3750,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 1.0,"
+  },
+  {
+   "line": 3751,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 1.0,"
+  },
+  {
+   "line": 3753,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 1.0,"
+  },
+  {
+   "line": 3754,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 1.0,"
+  },
+  {
+   "line": 4181,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 0,"
+  },
+  {
+   "line": 4182,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 0,"
+  },
+  {
+   "line": 4183,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 0,"
+  },
+  {
+   "line": 4184,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 0,"
+  },
+  {
+   "line": 4185,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 0,"
+  },
+  {
+   "line": 4187,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 0,"
+  },
+  {
+   "line": 4188,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 0,"
+  },
+  {
+   "line": 4607,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 0.0,"
+  },
+  {
+   "line": 4608,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 0.0,"
+  },
+  {
+   "line": 4609,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 0.0,"
+  },
+  {
+   "line": 4610,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 0.0,"
+  },
+  {
+   "line": 4611,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 0.0,"
+  },
+  {
+   "line": 4613,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 0.0,"
+  },
+  {
+   "line": 4614,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 0.0,"
+  },
+  {
+   "line": 6771,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => {}"
+  },
+  {
+   "line": 6774,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => {}"
+  },
+  {
+   "line": 6787,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => {}"
+  },
+  {
+   "line": 6790,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => {}"
+  },
+  {
+   "line": 6793,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => {}"
+  },
+  {
+   "line": 6796,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => {}"
+  },
+  {
+   "line": 6799,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => {}"
+  },
+  {
+   "line": 9794,
+   "kinds": [
+    "BlackDragonfly",
+    "BlueDragonfly",
+    "GreenDragonfly",
+    "OrangeDragonfly",
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly | NpcKind::BlueDragonfly | NpcKind::GreenDragonfly | NpcKind::OrangeDrag"
+  },
+  {
+   "line": 9805,
+   "kinds": [
+    "YellowDragonfly",
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly | NpcKind::GoldDragonfly => {"
+  },
+  {
+   "line": 19960,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 595,"
+  },
+  {
+   "line": 19961,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 596,"
+  },
+  {
+   "line": 19962,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 597,"
+  },
+  {
+   "line": 19963,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 598,"
+  },
+  {
+   "line": 19964,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 599,"
+  },
+  {
+   "line": 19966,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 600,"
+  },
+  {
+   "line": 19967,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 601,"
+  },
+  {
+   "line": 25361,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly,"
+  },
+  {
+   "line": 25362,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly,"
+  },
+  {
+   "line": 25363,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly,"
+  },
+  {
+   "line": 25364,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly,"
+  },
+  {
+   "line": 25365,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly,"
+  },
+  {
+   "line": 25367,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly,"
+  },
+  {
+   "line": 25368,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly,"
+  },
+  {
+   "line": 25607,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::BlackDragonfly, 595u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),"
+  },
+  {
+   "line": 25608,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::BlueDragonfly, 596u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),"
+  },
+  {
+   "line": 25609,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::GreenDragonfly, 597u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),"
+  },
+  {
+   "line": 25610,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::OrangeDragonfly, 598u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),"
+  },
+  {
+   "line": 25611,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::RedDragonfly, 599u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),"
+  },
+  {
+   "line": 25628,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "assert_eq!(NpcKind::BlackDragonfly.to_u16(), 595u16);"
+  },
+  {
+   "line": 25629,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "assert_eq!(NpcKind::BlueDragonfly.to_u16(), 596u16);"
+  },
+  {
+   "line": 25630,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "assert_eq!(NpcKind::GreenDragonfly.to_u16(), 597u16);"
+  },
+  {
+   "line": 25631,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "assert_eq!(NpcKind::OrangeDragonfly.to_u16(), 598u16);"
+  },
+  {
+   "line": 25632,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "assert_eq!(NpcKind::RedDragonfly.to_u16(), 599u16);"
+  },
+  {
+   "line": 25644,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::YellowDragonfly, 600u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),"
+  },
+  {
+   "line": 25645,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::GoldDragonfly, 601u16, 114u8, 10.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),"
+  },
+  {
+   "line": 25664,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "assert_eq!(NpcKind::YellowDragonfly.to_u16(), 600u16);"
+  },
+  {
+   "line": 25665,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "assert_eq!(NpcKind::GoldDragonfly.to_u16(), 601u16);"
+  }
+ ],
+ "crates/tr-app/src/npc/data.rs": [
+  {
+   "line": 609,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 595,"
+  },
+  {
+   "line": 610,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 596,"
+  },
+  {
+   "line": 611,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 597,"
+  },
+  {
+   "line": 612,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 598,"
+  },
+  {
+   "line": 613,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 599,"
+  },
+  {
+   "line": 614,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 600,"
+  },
+  {
+   "line": 615,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 601,"
+  },
+  {
+   "line": 985,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "595 => NpcKind::BlackDragonfly,"
+  },
+  {
+   "line": 986,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "596 => NpcKind::BlueDragonfly,"
+  },
+  {
+   "line": 987,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "597 => NpcKind::GreenDragonfly,"
+  },
+  {
+   "line": 988,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "598 => NpcKind::OrangeDragonfly,"
+  },
+  {
+   "line": 989,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "599 => NpcKind::RedDragonfly,"
+  },
+  {
+   "line": 990,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "600 => NpcKind::YellowDragonfly,"
+  },
+  {
+   "line": 991,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "601 => NpcKind::GoldDragonfly,"
+  },
+  {
+   "line": 1911,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => \"NPC_Hit_1\","
+  },
+  {
+   "line": 1912,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => \"NPC_Hit_1\","
+  },
+  {
+   "line": 1913,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => \"NPC_Hit_1\","
+  },
+  {
+   "line": 1914,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => \"NPC_Hit_1\","
+  },
+  {
+   "line": 1915,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => \"NPC_Hit_1\","
+  },
+  {
+   "line": 1917,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => \"NPC_Hit_1\","
+  },
+  {
+   "line": 1918,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => \"NPC_Hit_1\","
+  },
+  {
+   "line": 2273,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => \"NPC_Killed_1\","
+  },
+  {
+   "line": 2274,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => \"NPC_Killed_1\","
+  },
+  {
+   "line": 2275,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => \"NPC_Killed_1\","
+  },
+  {
+   "line": 2276,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => \"NPC_Killed_1\","
+  },
+  {
+   "line": 2277,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => \"NPC_Killed_1\","
+  },
+  {
+   "line": 2280,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => \"NPC_Killed_1\","
+  },
+  {
+   "line": 2281,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => \"NPC_Killed_1\","
+  },
+  {
+   "line": 2428,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly"
+  },
+  {
+   "line": 2429,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::BlueDragonfly"
+  },
+  {
+   "line": 2430,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::GreenDragonfly"
+  },
+  {
+   "line": 2431,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::OrangeDragonfly"
+  },
+  {
+   "line": 2432,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::RedDragonfly"
+  },
+  {
+   "line": 2435,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly"
+  },
+  {
+   "line": 2436,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::GoldDragonfly"
+  },
+  {
+   "line": 2715,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 114,"
+  },
+  {
+   "line": 2716,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 114,"
+  },
+  {
+   "line": 2717,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 114,"
+  },
+  {
+   "line": 2718,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 114,"
+  },
+  {
+   "line": 2719,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 114,"
+  },
+  {
+   "line": 2721,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 114,"
+  },
+  {
+   "line": 2722,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 114,"
+  },
+  {
+   "line": 3316,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => (10.0, 10.0),"
+  },
+  {
+   "line": 3317,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => (10.0, 10.0),"
+  },
+  {
+   "line": 3318,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => (10.0, 10.0),"
+  },
+  {
+   "line": 3319,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => (10.0, 10.0),"
+  },
+  {
+   "line": 3320,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => (10.0, 10.0),"
+  },
+  {
+   "line": 3322,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => (10.0, 10.0),"
+  },
+  {
+   "line": 3323,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => (10.0, 10.0),"
+  },
+  {
+   "line": 3480,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 595,"
+  },
+  {
+   "line": 3481,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 596,"
+  },
+  {
+   "line": 3482,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 597,"
+  },
+  {
+   "line": 3483,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 598,"
+  },
+  {
+   "line": 3484,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 599,"
+  },
+  {
+   "line": 3488,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 600,"
+  },
+  {
+   "line": 3489,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 601,"
+  },
+  {
+   "line": 4094,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 5,"
+  },
+  {
+   "line": 4095,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 5,"
+  },
+  {
+   "line": 4096,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 5,"
+  },
+  {
+   "line": 4097,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 5,"
+  },
+  {
+   "line": 4098,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 5,"
+  },
+  {
+   "line": 4100,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 5,"
+  },
+  {
+   "line": 4101,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 5,"
+  },
+  {
+   "line": 4512,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 0,"
+  },
+  {
+   "line": 4513,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 0,"
+  },
+  {
+   "line": 4514,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 0,"
+  },
+  {
+   "line": 4515,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 0,"
+  },
+  {
+   "line": 4516,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => 0,"
+  },
+  {
+   "line": 4518,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 0,"
+  },
+  {
+   "line": 4519,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => 0,"
+  }
+ ],
+ "crates/tr-app/src/bestiary.rs": [
+  {
+   "line": 2268,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "credit_id: \"RedDragonfly\","
+  },
+  {
+   "line": 2270,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "kind: NpcKind::RedDragonfly,"
+  },
+  {
+   "line": 2278,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "credit_id: \"GoldDragonfly\","
+  },
+  {
+   "line": 2280,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "kind: NpcKind::GoldDragonfly,"
+  },
+  {
+   "line": 2662,
+   "kinds": [
+    "BlackDragonfly",
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => NpcKind::RedDragonfly,"
+  },
+  {
+   "line": 2663,
+   "kinds": [
+    "BlueDragonfly",
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => NpcKind::RedDragonfly,"
+  },
+  {
+   "line": 2664,
+   "kinds": [
+    "GreenDragonfly",
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => NpcKind::RedDragonfly,"
+  },
+  {
+   "line": 2665,
+   "kinds": [
+    "OrangeDragonfly",
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => NpcKind::RedDragonfly,"
+  },
+  {
+   "line": 2668,
+   "kinds": [
+    "RedDragonfly",
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => NpcKind::RedDragonfly,"
+  }
+ ],
+ "crates/tr-app/src/npc_buffs.rs": [
+  {
+   "line": 512,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly"
+  },
+  {
+   "line": 513,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::BlueDragonfly"
+  },
+  {
+   "line": 514,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::GreenDragonfly"
+  },
+  {
+   "line": 515,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::OrangeDragonfly"
+  },
+  {
+   "line": 516,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::RedDragonfly => &[31],"
+  },
+  {
+   "line": 518,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly"
+  },
+  {
+   "line": 519,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| NpcKind::GoldDragonfly"
+  }
+ ],
+ "crates/tr-app/src/app/netglue.rs": [
+  {
+   "line": 3645,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "crate::npc::NpcKind::YellowDragonfly"
+  },
+  {
+   "line": 3646,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| crate::npc::NpcKind::GoldDragonfly"
+  },
+  {
+   "line": 3654,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "crate::npc::NpcKind::BlackDragonfly"
+  },
+  {
+   "line": 3655,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| crate::npc::NpcKind::BlueDragonfly"
+  },
+  {
+   "line": 3656,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| crate::npc::NpcKind::GreenDragonfly"
+  },
+  {
+   "line": 3657,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| crate::npc::NpcKind::OrangeDragonfly"
+  },
+  {
+   "line": 3658,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "| crate::npc::NpcKind::RedDragonfly"
+  }
+ ],
+ "crates/tr-app/src/ui/bestiary.rs": [
+  {
+   "line": 1620,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::RedDragonfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),"
+  },
+  {
+   "line": 1624,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "(NpcKind::GoldDragonfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),"
+  }
+ ],
+ "crates/tr-app/src/render/entities.rs": [
+  {
+   "line": 1251,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => 600,"
+  },
+  {
+   "line": 1256,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => 595,"
+  },
+  {
+   "line": 1257,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => 596,"
+  },
+  {
+   "line": 1258,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => 597,"
+  },
+  {
+   "line": 1259,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => 598,"
+  },
+  {
+   "line": 3422,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly => {"
+  },
+  {
+   "line": 3425,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly => {"
+  },
+  {
+   "line": 3438,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly => {"
+  },
+  {
+   "line": 3441,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly => {"
+  },
+  {
+   "line": 3444,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly => {"
+  },
+  {
+   "line": 3447,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly => {"
+  },
+  {
+   "line": 3450,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly => {"
+  },
+  {
+   "line": 3792,
+   "kinds": [
+    "BlackDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlackDragonfly,"
+  },
+  {
+   "line": 3793,
+   "kinds": [
+    "BlueDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::BlueDragonfly,"
+  },
+  {
+   "line": 3794,
+   "kinds": [
+    "GreenDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GreenDragonfly,"
+  },
+  {
+   "line": 3795,
+   "kinds": [
+    "OrangeDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::OrangeDragonfly,"
+  },
+  {
+   "line": 3796,
+   "kinds": [
+    "RedDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::RedDragonfly,"
+  },
+  {
+   "line": 3797,
+   "kinds": [
+    "YellowDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::YellowDragonfly,"
+  },
+  {
+   "line": 3798,
+   "kinds": [
+    "GoldDragonfly"
+   ],
+   "mixed_wf": [],
+   "text": "NpcKind::GoldDragonfly,"
+  }
+ ]
+}

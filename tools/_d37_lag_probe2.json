@@ -1,0 +1,94 @@
+{
+ "c9_dirty_stat": " 8 files changed, 176 insertions(+), 26 deletions(-)",
+ "c9_local": {
+  "array_set_eq_to_set": true,
+  "decl": 277,
+  "kinds": {
+   "GlowingSnail": 360,
+   "GoldBird": 442,
+   "GoldGrasshopper": 446,
+   "GoldMouse": 447,
+   "MagmaSnail": 655,
+   "Shimmerfly": 677,
+   "Snail": 359
+  },
+  "rows": 277,
+  "snails_in_array": [
+   "Snail",
+   "GlowingSnail",
+   "MagmaSnail",
+   "GlowingSnail"
+  ],
+  "to_arms": 277
+ },
+ "c9_local_len_uses": [
+  "ALL_KINDS.len());\n        for &kind in ALL_KINDS.iter() {\n            let id = kind.to_u16();\n            assert_eq!(\n                N",
+  "ALL_KINDS.len(),\n            \"two kinds encode to the same protocol id\"\n        );\n        let decodable = (0..=u16::MAX)\n            .",
+  "ALL_KINDS.len(),\n            \"from_u16 decodes an id no kind encodes to\"\n        );\n    }\n\n    /// The small-kinds wiring wave (S1-D-3-"
+ ],
+ "c9_local_pins": [
+  "288"
+ ],
+ "c9_unpushed_files": [
+  "crates/tr-app/src/app/netglue.rs",
+  "crates/tr-app/src/assets.rs",
+  "crates/tr-app/src/bestiary.rs",
+  "crates/tr-app/src/main.rs",
+  "crates/tr-app/src/npc.rs",
+  "crates/tr-app/src/npc/data.rs",
+  "crates/tr-app/src/npc_ai_critter.rs",
+  "crates/tr-app/src/npc_buffs.rs",
+  "crates/tr-app/src/render/entities.rs",
+  "crates/tr-app/src/ui/bestiary.rs"
+ ],
+ "d125_tip": {
+  "decl": 270,
+  "kinds": {
+   "EmpressOfLight": 229,
+   "PrismaticLacewing": 237
+  },
+  "rows": 272,
+  "to_arms": 272
+ },
+ "d42_239_lines": 321,
+ "d42_dragonflies": {
+  "BlackDragonfly": 595,
+  "BlueDragonfly": 596,
+  "GoldDragonfly": 601,
+  "GreenDragonfly": 597,
+  "OrangeDragonfly": 598,
+  "RedDragonfly": 599,
+  "YellowDragonfly": 600
+ },
+ "d42_waterfowl": {
+  "Grebe": 608,
+  "Grebe2": 609,
+  "Seagull": 602,
+  "Seagull2": 603
+ },
+ "g8_dirty_stat": [],
+ "g8_worktree": {
+  "decl": 270,
+  "kinds": {
+   "Antlion": 357,
+   "CrimsonAxe": 371,
+   "Derpling": 370,
+   "FloatyGross": 372,
+   "GiantFlyingFox": 382,
+   "Herpling": 369,
+   "IceBat": 380,
+   "IceElemental": 368,
+   "Lavabat": 381,
+   "LostGirl": 373,
+   "Nymph": 374,
+   "PinkJellyfish": 356,
+   "RedDevil": 387,
+   "SpikeBall": 358,
+   "VampireBat": 383,
+   "WallCreeper": 366,
+   "WallCreeperWall": 367
+  },
+  "rows": 305,
+  "to_arms": 305
+ }
+}

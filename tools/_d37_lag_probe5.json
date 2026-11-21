@@ -1,0 +1,53 @@
+{
+ "d36_decl": [
+  23842,
+  275
+ ],
+ "d36_pin": [
+  27768,
+  "275,"
+ ],
+ "d36_ak_rows": {
+  "ToxicSludge": [
+   24122
+  ],
+  "Penguin": [
+   24123
+  ],
+  "PenguinBlack": [
+   24124
+  ],
+  "GiantTortoise": [
+   24125
+  ],
+  "IceTortoise": [
+   24126
+  ]
+ },
+ "g8_wip_vampire": [
+  [
+   634,
+   "NpcKind::Vampire => 388,"
+  ],
+  [
+   1005,
+   "388 => NpcKind::Vampire,"
+  ]
+ ],
+ "c9_gold_to": {
+  "GoldBird": [
+   602
+  ],
+  "GoldGrasshopper": [
+   603
+  ],
+  "GoldMouse": [
+   604
+  ]
+ },
+ "c9_gold_from": {
+  "GoldBird": [],
+  "GoldGrasshopper": [],
+  "GoldMouse": []
+ }
+}

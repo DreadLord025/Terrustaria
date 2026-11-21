@@ -1,0 +1,232 @@
+{
+ "d125_cs": {
+  "EmpressOfLight": null,
+  "PrismaticLacewing": null
+ },
+ "d36_five": {
+  "GiantTortoise": {
+   "cs": 153,
+   "from": [
+    934
+   ],
+   "id": 765,
+   "to": [
+    596
+   ]
+  },
+  "IceTortoise": {
+   "cs": 154,
+   "from": [
+    935
+   ],
+   "id": 766,
+   "to": [
+    597
+   ]
+  },
+  "Penguin": {
+   "cs": 148,
+   "from": [
+    932
+   ],
+   "id": 763,
+   "to": [
+    594
+   ]
+  },
+  "PenguinBlack": {
+   "cs": 149,
+   "from": [
+    933
+   ],
+   "id": 764,
+   "to": [
+    595
+   ]
+  },
+  "ToxicSludge": {
+   "cs": 141,
+   "from": [
+    931
+   ],
+   "id": 762,
+   "to": [
+    593
+   ]
+  }
+ },
+ "d41_new_all": {
+  "Crawdad": 494,
+  "Crawdad2": 495,
+  "DuneSplicerBody": 511,
+  "DuneSplicerHead": 510,
+  "DuneSplicerTail": 512,
+  "GiantFlyingAntlion": 509,
+  "GiantShelly": 496,
+  "GiantShelly2": 497,
+  "GiantWalkingAntlion": 508,
+  "Salamander": 498,
+  "Salamander2": 499,
+  "Salamander3": 500,
+  "Salamander4": 501,
+  "Salamander5": 502,
+  "Salamander6": 503,
+  "Salamander7": 504,
+  "Salamander8": 505,
+  "Salamander9": 506
+ },
+ "d43_alias_candidates": {
+  "EmpressButterfly": 661,
+  "HallowBoss": 636,
+  "VileSpitEaterOfWorlds": 666
+ },
+ "d43_dup_of_g10": {
+  "TownBunny": 656,
+  "TownCat": 637,
+  "TownDog": 638,
+  "TownSlimeBlue": 670,
+  "TownSlimeCopper": 684,
+  "TownSlimeGreen": 678,
+  "TownSlimeOld": 679,
+  "TownSlimePurple": 680,
+  "TownSlimeRainbow": 681,
+  "TownSlimeRed": 682,
+  "TownSlimeYellow": 683
+ },
+ "d43_free_new": {
+  "BlueMacaw": 672,
+  "BoundTownSlimeOld": 685,
+  "BoundTownSlimePurple": 686,
+  "BoundTownSlimeYellow": 687,
+  "ChaosBallTim": 665,
+  "EmpressButterfly": 661,
+  "GemBunnyAmber": 652,
+  "GemBunnyAmethyst": 646,
+  "GemBunnyDiamond": 651,
+  "GemBunnyEmerald": 649,
+  "GemBunnyRuby": 650,
+  "GemBunnySapphire": 648,
+  "GemBunnyTopaz": 647,
+  "GemSquirrelAmber": 645,
+  "GemSquirrelAmethyst": 639,
+  "GemSquirrelDiamond": 644,
+  "GemSquirrelEmerald": 642,
+  "GemSquirrelRuby": 643,
+  "GemSquirrelSapphire": 641,
+  "GemSquirrelTopaz": 640,
+  "GoldenSlime": 667,
+  "GrayCockatiel": 675,
+  "HellButterfly": 653,
+  "LibrarianSkeleton": 693,
+  "MaggotZombie": 632,
+  "MossZombie": 691,
+  "OwlMimic": 689,
+  "PalworldCattivaDistressed": 695,
+  "PalworldFoxsparksDistressed": 696,
+  "PirateGhost": 662,
+  "QueenSlimeBoss": 657,
+  "QueenSlimeMinionBlue": 658,
+  "QueenSlimeMinionPink": 659,
+  "QueenSlimeMinionPurple": 660,
+  "RockGolem": 631,
+  "ScarletMacaw": 671,
+  "ShimmerSlime": 676,
+  "SporeBat": 634,
+  "SporeSkeleton": 635,
+  "StatueMimic": 690,
+  "Stinkbug": 669,
+  "TorchGod": 664,
+  "Toucan": 673,
+  "VileSpitEaterOfWorlds": 666,
+  "YellowCockatiel": 674
+ },
+ "d43_same_id_other_kind": {
+  "HallowBoss": [
+   636,
+   "EmpressOfLight"
+  ]
+ },
+ "d43_same_kind_other_id": {},
+ "f18_base_clash": {},
+ "f18_new": {
+  "ArmedZombie": 258,
+  "Butterfly": 238,
+  "ChatteringTeethBomb": 255,
+  "CultistArcherBlue": 256,
+  "CultistArcherWhite": 257,
+  "Duck": 244,
+  "Duck2": 245,
+  "DuckWhite": 246,
+  "DuckWhite2": 247,
+  "Firefly": 237,
+  "Frog": 243,
+  "GlowingSnail": 242,
+  "Grasshopper": 254,
+  "LightningBug": 240,
+  "Scorpion": 249,
+  "ScorpionBlack": 248,
+  "Snail": 241,
+  "TruffleWorm": 252,
+  "TruffleWormDigger": 253,
+  "Worm": 239
+ },
+ "free_762_830": [
+  767,
+  768,
+  769,
+  770,
+  771,
+  772,
+  773,
+  774,
+  775,
+  776,
+  777,
+  778,
+  779,
+  780,
+  788,
+  789,
+  790,
+  791,
+  792,
+  793,
+  794,
+  795,
+  796,
+  797,
+  798,
+  799,
+  800,
+  801,
+  802,
+  803,
+  804,
+  805,
+  806,
+  807,
+  808,
+  809,
+  810,
+  811,
+  812,
+  813,
+  814,
+  815,
+  816,
+  817,
+  818,
+  819,
+  820,
+  821,
+  822,
+  823,
+  824,
+  825,
+  826,
+  827,
+  828,
+  829,
+  830
+ ]
+}

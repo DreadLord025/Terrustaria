@@ -1,0 +1,158 @@
+{
+ "c9": {
+  "date": "2026-11-21 15:57:35 +0200",
+  "new": {
+   "GlowingSnail": 360,
+   "GoldBird": 442,
+   "GoldBunny": 443,
+   "GoldFrog": 445,
+   "GoldGrasshopper": 446,
+   "GoldMouse": 447,
+   "MagmaSnail": 655,
+   "Shimmerfly": 677,
+   "Snail": 359
+  },
+  "tip": "9252d6f31"
+ },
+ "d125": {
+  "date": "2026-11-21 15:44:38 +0200",
+  "new": {
+   "EmpressOfLight": 636,
+   "PrismaticLacewing": 742
+  },
+  "tip": "5a26ae348"
+ },
+ "d23": {
+  "date": "2026-11-21 15:03:44 +0200",
+  "new": {
+   "AngryTrapper": 357,
+   "Clinger": 356,
+   "Demon": 400,
+   "FlyingSnake": 360,
+   "FungiBulb": 259,
+   "GiantBat": 441,
+   "GiantFlyingFox": 403,
+   "GiantFungiBulb": 260,
+   "Harpy": 275,
+   "IceBat": 401,
+   "IlluminantBat": 460,
+   "Lavabat": 402,
+   "ManEater": 354,
+   "QueenSlimeMinionPurple": 409,
+   "RedDevil": 404,
+   "Slimer": 458,
+   "Snatcher": 355,
+   "SolarFlare": 408,
+   "SporeBat": 407,
+   "Vampire": 406,
+   "VampireBat": 405,
+   "VileSpit": 455,
+   "VileSpitEoW": 411
+  },
+  "tip": "b00e7626f"
+ },
+ "d34": {
+  "date": "2026-11-21 15:17:07 +0200",
+  "new": {
+   "AngryBones": 266,
+   "Antlion": 284,
+   "BlueJellyfish": 280,
+   "BoneSerpentBody": 272,
+   "BoneSerpentHead": 271,
+   "BoneSerpentTail": 273,
+   "Bunny": 270,
+   "CorruptBunny": 274,
+   "CorruptGoldfish": 277,
+   "Crab": 282,
+   "CursedSkull": 267,
+   "Demon": 279,
+   "DungeonGuardian": 283,
+   "Harpy": 275,
+   "ManEater": 269,
+   "OldMan": 268,
+   "PinkJellyfish": 281,
+   "Snatcher": 276,
+   "SpikeBall": 285,
+   "Vulture": 278
+  },
+  "tip": "f0d92564e"
+ },
+ "d36": {
+  "date": "2026-11-21 14:28:17 +0200",
+  "new": {
+   "Crimera": 781,
+   "GiantTortoise": 770,
+   "IceTortoise": 771,
+   "MossHornet": 782,
+   "Moth": 793,
+   "Penguin": 768,
+   "PenguinBlack": 769,
+   "ToxicSludge": 767
+  },
+  "tip": "8c5839b03"
+ },
+ "d41": {
+  "date": "2026-11-21 15:39:26 +0200",
+  "new": {
+   "AncientDoom": 523,
+   "AncientLight": 522,
+   "Crawdad": 494,
+   "Crawdad2": 495,
+   "DesertGhoul": 524,
+   "DesertGhoulCorruption": 525,
+   "DesertGhoulCrimson": 526,
+   "DesertGhoulHallow": 527,
+   "DesertLamiaDark": 529,
+   "DesertLamiaLight": 528,
+   "DesertScorpionWalk": 530,
+   "DesertScorpionWall": 531,
+   "DuneSplicerBody": 511,
+   "DuneSplicerHead": 510,
+   "DuneSplicerTail": 512,
+   "GiantFlyingAntlion": 509,
+   "GiantShelly": 496,
+   "GiantShelly2": 497,
+   "GiantWalkingAntlion": 508,
+   "Salamander": 498,
+   "Salamander2": 499,
+   "Salamander3": 500,
+   "Salamander4": 501,
+   "Salamander5": 502,
+   "Salamander6": 503,
+   "Salamander7": 504,
+   "Salamander8": 505,
+   "Salamander9": 506,
+   "SolarFlare": 516,
+   "SolarGoop": 519,
+   "TombCrawlerBody": 514,
+   "TombCrawlerHead": 513,
+   "TombCrawlerTail": 515
+  },
+  "tip": "1a1b07ff2"
+ },
+ "e21": {
+  "date": "2026-11-21 14:19:35 +0200",
+  "new": {
+   "Bunny": 229,
+   "PartyBunny": 237
+  },
+  "tip": "4782d6631"
+ },
+ "e26": {
+  "date": "2026-11-21 15:56:52 +0200",
+  "new": {
+   "Frog": 744,
+   "GoldLadyBug": 605,
+   "LadyBug": 604
+  },
+  "tip": "a23c64933"
+ },
+ "g62": {
+  "date": "2026-11-21 15:56:44 +0200",
+  "new": {
+   "GoblinShark": 620,
+   "Shimmerfly": 677
+  },
+  "tip": "7ec3df62b"
+ }
+}

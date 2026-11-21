@@ -1,0 +1,52 @@
+{
+ "core": {
+  "all_kinds_pin": 553,
+  "entries": 249,
+  "kinds": 283,
+  "max_id": 766,
+  "owned_no_entry": 34
+ },
+ "core_no_entry_list": [
+  "ArmedTorchZombie",
+  "ArmedZombie",
+  "ArmedZombieCenx",
+  "ArmedZombieEskimo",
+  "ArmedZombiePincussion",
+  "ArmedZombieSlimed",
+  "ArmedZombieSwamp",
+  "ArmedZombieTwiggy",
+  "BartenderUnconscious",
+  "BloodCrawler",
+  "BloodEelBody",
+  "BloodEelTail",
+  "BoneSerpentBody",
+  "BoneSerpentTail",
+  "BoneThrowingSkeleton",
+  "BoneThrowingSkeleton2",
+  "BoneThrowingSkeleton3",
+  "BoneThrowingSkeleton4",
+  "CultistDragonBody1",
+  "CultistDragonBody2",
+  "CultistDragonBody3",
+  "CultistDragonBody4",
+  "CultistDragonTail",
+  "DiggerBody",
+  "DiggerTail",
+  "GoldfishWalker",
+  "Grebe2",
+  "JungleCreeper",
+  "MothronEgg",
+  "Seagull2",
+  "SeekerBody",
+  "SeekerTail",
+  "TargetDummy",
+  "VileSpit"
+ ],
+ "grand": {
+  "all_kinds_pin": 643,
+  "entries": 323,
+  "kinds": 373,
+  "max_id": 823,
+  "owned_no_entry": 50
+ }
+}
