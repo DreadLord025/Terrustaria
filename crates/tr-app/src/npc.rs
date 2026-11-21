@@ -6683,14 +6683,11 @@ impl Npc {
         self.sprite_dir = s.sprite_dir;
     }
 
-    /// W4-d44 wire — the extra-5 claim set, gated to the wired band
-    /// 254-258 + 268-272 (273-277 ride the next wire batch).
+    /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
+    /// 254-258 + 268-277, all 15 kinds (the in-module lookup verbatim).
     fn find_frame_kind_extra5_claimed(
         cs_id: u16,
     ) -> Option<crate::npc_findframe_extra5::FindFrameExtra5Kind> {
-        if !(254..=258).contains(&cs_id) && !(268..=272).contains(&cs_id) {
-            return None;
-        }
         crate::npc_findframe_extra5::find_frame_kind_extra5(cs_id as i16)
     }
 
@@ -6755,11 +6752,11 @@ impl Npc {
         }
         // W4-d44 wire (f26 slice 5) — the `cs_id`-keyed hook into the
         // extra-wave-5 pure machines (`npc_findframe_extra5.rs`) via
-        // `find_frame_kind_extra5_claimed`: the wired band 254-258 +
-        // 268-272 (the mushroom zombie pair, FungoFish, AnomuraFungus,
-        // MushiLadybug, IchorSticker, the first four Rusty Armored
-        // Bones); 273-277 ride the next batch. NO current kind's
-        // `cs_id` lands in the set (verified over the hand rows + the
+        // `find_frame_kind_extra5_claimed`: ALL 15 ids 254-258 +
+        // 268-277 (the mushroom zombie pair, FungoFish, AnomuraFungus,
+        // MushiLadybug, IchorSticker, the nine Armored Bones — 275
+        // NoPants the ONE 16-row sheet). NO current kind's `cs_id`
+        // lands in the set (verified over the hand rows + the
         // bestiary net ids), so this is stream-inert today; the arms
         // draw no RNG (256's pulse gate excludes it, the f26b census)
         // and none reads the world. The d45 hook precedent.
@@ -33792,8 +33789,8 @@ mod w4_d44_wire_tests {
         }
     }
 
-    /// The extra-5 claim set is the wired band 254-258 + 268-272;
-    /// 273-277 ride the next batch. The band edges stay outside.
+    /// The extra-5 claim set is the FULL slice-5 band 254-258 +
+    /// 268-277 — all 15 kinds; the band edges stay outside.
     #[test]
     fn w4_d44_the_extra5_claim_set_matches_the_batch_band() {
         use crate::npc_findframe_extra5::FindFrameExtra5Kind as K;
@@ -33808,12 +33805,14 @@ mod w4_d44_wire_tests {
             (270, K::RustyArmoredBonesFlail),
             (271, K::RustyArmoredBonesSword),
             (272, K::RustyArmoredBonesSwordNoArmor),
+            (273, K::BlueArmoredBones),
+            (274, K::BlueArmoredBonesMace),
+            (275, K::BlueArmoredBonesNoPants),
+            (276, K::BlueArmoredBonesSword),
+            (277, K::HellArmoredBones),
         ];
         for (id, k) in table {
             assert_eq!(Npc::find_frame_kind_extra5_claimed(id), Some(k), "{id}");
-        }
-        for id in 273u16..=277 {
-            assert_eq!(Npc::find_frame_kind_extra5_claimed(id), None, "{id} later batch");
         }
         assert_eq!(Npc::find_frame_kind_extra5_claimed(253), None);
         assert_eq!(Npc::find_frame_kind_extra5_claimed(259), None);
@@ -34090,5 +34089,31 @@ mod w4_d44_wire_tests {
         n.vy = 1.0;
         n.find_frame_wave_extra5(K::RustyArmoredBonesSwordNoArmor);
         assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The Blue/Hell Armored Bones ride the SAME group machine.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra5(K::BlueArmoredBones);
+        assert_eq!((n.frame, n.frame_counter), (2, 3.0));
+        n.frame = 14;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra5(K::BlueArmoredBonesMace);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0), "the 15-row wrap");
+        // The 275 NoPants 16-row variant: row 15 walks to 15+1 = 16
+        // → wraps to 2 (the 15-row twins wrap at 15 — row 15 is a
+        // WALK row only here, `Main.cs:67111` slot 5).
+        n.frame = 15;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra5(K::BlueArmoredBonesNoPants);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0), "the 16-row wrap");
+        n.frame = 14;
+        n.frame_counter = 5.0;
+        n.find_frame_wave_extra5(K::BlueArmoredBonesSword);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.find_frame_wave_extra5(K::HellArmoredBones);
+        assert_eq!((n.frame, n.frame_counter), (2, 3.0));
     }
 }
