@@ -40010,8 +40010,9 @@ receipts. d72 wave-F (cf96c8c1c) is an ANCESTOR of f12 with byte-identical
 blobs (`buff_effects_frame.rs` e7fe827bc, `potions.rs` 1dcc89c83), so the
 one merge composes both lanes. The full record — the landed census, the
 compose rulings, the buffFrame NONEXISTENT ledger and the family bible —
-lives in `docs/research/64-buff-hud-family.md` (registry number 64, the
-next free census slot; INDEX row added).
+lives in `docs/research/376-buff-hud-family.md` (registry number 376 per
+registry §10 — the original self-pick 64 lost to d64's round-1 winner,
+chain 64→376; INDEX row added).
 
 ### The compose rulings (the semantic conflicts, resolved by re-reading the C#)
 
@@ -40048,11 +40049,11 @@ Ice Barrier 62 (`Player.cs:10462-10485`: below-half gate, counter++ then
 composed d73 boosters arm; its draw consumer is the player-draw lane.
 The Rust port has no `buff_frame` icon symbol — the f12
 `BuffFrameInputs`/`update_buff_frame` names are the UpdateBuffs TICK
-pass. Ledger + family map: research/64 §3/§5.
+pass. Ledger + family map: research/376 §3/§5.
 
 ### The witnesses (written, NOT run)
 
-The composed `s1_e_6_tests` set (research/64 §6 lists all): the four
+The composed `s1_e_6_tests` set (research/376 §6 lists all): the four
 c26 witnesses (the percent one now on the retail Game.json fixture with
 both lanes' edges), the new
 `w4_c26_compose_the_percent_suffix_is_appended_exactly_once` (the
@@ -40068,5 +40069,5 @@ Every conflict resolved against the C# windows re-read on this tree
 (`Main.cs:43203-43404`, `:41325-41344`, `Player.cs:10458-10485`,
 `BuffID.cs:221/:315/:997`, `AssetInitializer.cs:418-420`, the en-US
 Game/Items json rows). The d72/f12 blob identity and the ancestry exit
-codes are quoted in research/64. RNG untouched (the compose adds no sim
+codes are quoted in research/376. RNG untouched (the compose adds no sim
 code beyond f12's own zero-draw waves; the HUD draws no gameplay RNG).

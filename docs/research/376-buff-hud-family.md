@@ -1,8 +1,16 @@
-# 64 — Buff-HUD family FINAL census + bible (W4-c26 compose, 2026-11-21)
+# 376 — Buff-HUD family FINAL census + bible (W4-c26 compose, 2026-11-21)
 
-Registry number **64** — the next free census slot (60-63 taken by the
-item-use / weapon-data / ammo-potion / special-bullet censuses; f49's
-doc-sweep lives at 85; the W4-f12 lane docs ride `W4-*` slugs, not numbers).
+> RENUMBERED 64→376 per research-number-registry §10 (§10.2 row c26-buff-hud,
+> d54 tip 08d21666e): 64 belongs to W4-d64's round-1 winner
+> (`64-buff-hud-family` loses the key); this doc keeps its slug at 376.
+> Chain: 64 → 376 (§10). All refs (INDEX/ANALYSIS/PORT_MAP/ROADMAP/anchors)
+> re-pointed in the rename commit.
+
+Registry number **376** — the §10 assignment (the original self-pick 64,
+"the next free census slot", lost to W4-d64's earlier round-1 claim;
+60-63 remain taken by the item-use / weapon-data / ammo-potion /
+special-bullet censuses; f49's doc-sweep lives at 85; the W4-f12 lane docs
+ride `W4-*` slugs, not numbers).
 Branch `task/W4-c26-buff-hud`, code-only: witnesses WRITTEN NOT RUN, no
 cargo/rustc/rustfmt/tests/graphify invoked.
 
