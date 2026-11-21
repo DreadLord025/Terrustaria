@@ -75,6 +75,9 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 66 | Projectile per-kind TRAIL dust claims + census (W4-g63, kinds ≤400 — batches 1-7, the row census + the corrected 60-style gun row per the e3 finding; registry-150 number winner) | `66-proj-trail-dust-claims.md` | 🟡 UNWIRED emitters await the merges |
+| 199 | Projectile TRAIL dust activation checklist (W4-g63, for the merger — which merge unlocks which emitter + the RNG-seam reconciliations; renumbered 67→199 per registry-150; refreshed at retire: the 128/129/229 promotions + the 357 f20 seam at tip 31386266) | `199-proj-trail-dust-activation.md` | 🟡 merge-wave input |
+| 240 | W4-g63 projectile TRAIL dust FINAL + the spawn-dust-family declaration (SEALED — the family boundaries, the e3 census-error consumption, the 12/955 anniversary three-copy fix contract, the gun Kill double-port keep-one, the residual debt; code-only, 50 witnesses WRITTEN NOT RUN) | `240-proj-trail-dust-family-final.md` | ✅ FINAL + SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

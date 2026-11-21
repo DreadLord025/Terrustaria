@@ -1641,12 +1641,19 @@ pub(crate) fn chlorophyte_bullet_trail(
 /// Site 56761 — the Pulse Bolt 357's `alpha < 170` 10-point trail
 /// (`Projectile.cs:56753-56768`): the 207 twin with dust 206. UNWIRED on
 /// this branch — the 357's flight arm is W4-f20 slice D
-/// (`projectile_ai001_d`, 4bd2f496; the f20 tip is now 5aa190e3, slice E
-/// added on top — D unchanged), not yet merged. CROSS-NOTE for f20c:
+/// (`projectile_ai001_d`, 4bd2f496; the f20 tip was 5aa190e3 at the
+/// first cross-note — slice E added on top, D unchanged), not yet
+/// merged. CROSS-NOTE for f20c:
 /// this emitter is READY for slice D — the row is already in main
 /// (`data.rs:3289`); the wiring is one `step_dust` variant + this call
 /// gated `alpha < 170` BEFORE the fade-25 (`:56769`, the trail copies
-/// the PRE-fade alpha onto every dust). The full seam is research/67.
+/// the PRE-fade alpha onto every dust). The full seam is research/199.
+/// RETIRE refresh: the f20 tip is now 31386266 (F4/F6/F7/F3/F5 past
+/// slice E) — slice D still unchanged underneath; F7 widened
+/// `step`/`finish` to `(p, world, npcs, immune)` + the RNG-free
+/// `charm_tail` AFTER the flag8 clamp, so the `step_dust` variant
+/// threads npcs+immune too and this call still seats BEFORE the
+/// fade-25 (C# order: trail < fade < charm tail — no stream collision).
 /// No explicit draws.
 #[allow(dead_code)]
 pub(crate) fn pulse_bolt_trail(
@@ -1828,7 +1835,10 @@ pub(crate) fn ice_bolt_trail(
 /// Site 26624 — the 119/128/359 frost trio's 3× dust 92 trail
 /// (`Projectile.cs:26620-26628`): the 118 shape with 3 dusts. The 359
 /// FrostBolt is rowed (batch 2's `frost_blast_trail` is the 309 twin);
-/// the 119 FrostBoltSword / 128 FrostBlastHostile are UNWIRED (no rows).
+/// the 119 FrostBoltSword stays UNWIRED (no row on any pushed tip);
+/// the 128 FrostBlastHostile is ROWED on W4-g8 `0a4b76e3f` (retire
+/// re-probe) — activates at g8's merge, the call in its
+/// `ai_frost_bolt` before the `ai[1]` latch (research/199).
 #[allow(dead_code)]
 pub(crate) fn frost_sword_trail(
     p: &TrailSlot,
@@ -1852,7 +1862,10 @@ pub(crate) fn frost_sword_trail(
 /// 26638-26647`): speeds = velocity, alpha 100; noGravity, then the
 /// velocity ×`(0.1 + Next(4)*0.1)` and scale ×`(1 + Next(5)*0.1)`
 /// post-spawn draws (one Next(4) + one Next(5) per dust, AFTER the spawn).
-/// UNWIRED (no 129 row — the 659 SpiritFlame is a different kind).
+/// UNWIRED on this branch — the 129 row landed on W4-g5 `96f074959`
+/// (retire re-probe); its `ai_frost_bolt` census block consumes the
+/// SAME 6×[Next(4)+Next(5)] draws (bodies skipped) — the merge
+/// REPLACES that block with this call (research/199).
 #[allow(dead_code)]
 pub(crate) fn rune_blast_trail(
     p: &TrailSlot,
@@ -1958,7 +1971,10 @@ pub(crate) fn boulder_staff_dust(
 /// `Center + NextVector2Square(-4,4)` (TWO NextDouble draws, the position
 /// argument), dust 157 Perfect, velocity = v×0.25, alpha 0, scale 0.4;
 /// noGravity, scale = 1.4 (the post-spawn write overrides the 0.4).
-/// UNWIRED (no 229 row).
+/// UNWIRED on this branch — the 229 row landed on W4-g2 `ee857a368`
+/// (retire re-probe); its `ai_spear_subshot_44` 229 arm skips the
+/// dust AND its draws — this emitter re-arms both at g2's merge
+/// (research/199).
 #[allow(dead_code)]
 pub(crate) fn chlorophyte_orb_trail(
     p: &TrailSlot,
@@ -2192,7 +2208,8 @@ pub(crate) fn water_gun_stream(
 // live on UNMERGED branches (55 on W4-d22 `204e0651`, 299 on W4-c3
 // `f6b0468d`) or nowhere yet (174/176/374/376 — the all-branch sweep) —
 // the row is the wiring gate (the S1-F-9b convention). The activation
-// checklist (research/67) names each merge + call site.
+// checklist (research/199, was 67 — the registry-150 rename) names
+// each merge + call site.
 // ---------------------------------------------------------------------------
 
 /// Site 55492 — the Hornet Stinger 55's per-tick dust (`Projectile.cs:

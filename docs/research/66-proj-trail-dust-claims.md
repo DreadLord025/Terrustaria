@@ -76,7 +76,7 @@ gated kinds ≤400 in `AI()` proper:
 | 51 | 297 (`:28411`), 293 (the else arm `:28426`) | spectre staff |
 | 52 | 298/305 (`:28539/28552`) | rainbow |
 | 30 | 335 (`:26754`), 907 (`:26689`, >400 → g64) | gem sparkles |
-| 60 | 358 (`:29167/29191/29205/29229/29245/29284`) | last prism |
+| 60 | 358 (`:29167/29191` ONLY — the `type == 358` block `:29158-29196`; CORRECTED per the e3 census: `:29205/29229` are the **406**'s (g64's, `:29197-29233`), `:29245/29284` the **1042 ShimmerGunStream**'s — the `:29234` `type != 1042` return precedes them; the e3 `style60_shimmer_gun_trail_1042` takes the two, e3 research/125 → 231 per registry-150) | gun streams (WaterGun 358) |
 | 36 | 307 (`:27327`), 181/189/316 (style-shared) | bees/bats |
 | 65/66/68 | 385/387/388/399 | hostile shots |
 
@@ -178,7 +178,7 @@ lands.
   174/176 emitters take `old_pos` explicitly — the slot's
   `old_position` latch (`Projectile.cs:17013`) is golf-gated at this
   tip (`projectile.rs:20308`); the activating merge must widen the
-  latch (research/67). 6 draw-mirror witnesses WRITTEN NOT RUN.
+  latch (research/199). 6 draw-mirror witnesses WRITTEN NOT RUN.
 - (following batches recorded in their commit messages + this table)
 
 Kinds with NO ported `proj_data` row keep their dust arm UNWIRED (the
@@ -196,10 +196,23 @@ The unrowed-kind emitters' rows were checked against the pushed d-lane
 - **87** GREEN_FAIRY (+72/86) — rowed on **d2** (`15e5448a`, aiStyle 11).
 - **305** VAMPIRE_HEAL / **298** SPIRIT_HEAL / **358** WATER_GUN — rowed
   on **d6** (`5ae2978c`, aiStyles 52/52/60).
-- **93/118/119/128/129/177/196/229/261/291/307/335** — NO row on any
+- **93/118/119/177/196/261/291/307/335** — NO row on any
   pushed tip (the 118/119/129 `proj_data` hits are ai_style false
   positives: NEBULA_ARCANUM 617 / NEBULA_ARCANUM_SUBSHOT 618 /
   SPIRIT_FLAME 659, different kinds).
+- **RETIRE re-probe (2026-11-21, the all-tip literal + const sweep):**
+  three batch-6 kinds gained rows on the moved tips — **128**
+  FROST_BLAST_HOSTILE on **g8** (`0a4b76e3f`, aiStyle 28; its
+  `ai_frost_bolt` body-skips the dust with NO draws), **129** RUNE_BLAST
+  on **g5** (`96f074959`, aiStyle 28; its `ai_frost_bolt` CONSUMES the
+  6×[Next(4)+Next(5)] gate draws, bodies skipped — REPLACE that block
+  with the emitter call, the 87 fairy precedent), **229**
+  CHLOROPHYTE_ORB on **g2** (`ee857a368`, aiStyle 44; its
+  `ai_spear_subshot_44` 229 arm skips the dust AND its draws — the
+  emitter re-arms both). The remaining 14 unrowed kinds
+  (93/118/119/174/176/177/196/261/281/291/307/335/374/376) stay unrowed
+  on EVERY pushed tip (the literal `NNN => (` row sweep + the const
+  sweep agree). Activation rows for the three: research/199.
 - **281** CANNON_BUNNY — the const exists (`data.rs:710`) but NO match
   arm on ANY branch (`git log --all -S 'CANNON_BUNNY =>'` empty; the
   2026-11-21 re-probe swept every pushed tip's `data.rs` for `281`
@@ -226,10 +239,10 @@ These rows live on UNMERGED d-lane branches; at this tip (main `a725acb0`)
 none is present, so every batch-6 emitter is correctly UNWIRED. They
 activate when the d-lanes merge (the wiring is a one-line dispatch gate
 per kind, cited at each emitter). The per-merge call sites + RNG-seam
-reconciliations are pinned in **research/67** (the activation checklist
+reconciliations are pinned in **research/199** (the activation checklist
 for the merger).
 
-### The 357 f20b cross-note (2026-11-21 re-probe)
+### The 357 f20b cross-note (2026-11-21 re-probe, REFRESHED at retire)
 
 The f20 branch advanced to `5aa190e3` (slice E: the 435/576/709
 row-gated-inert overlays + the round-2 census, research/26f) — slice D
@@ -239,8 +252,23 @@ The g63 `pulse_bolt_trail` emitter is READY for slice D's merge: one
 `step_dust` variant on `projectile_ai001_d` + the call gated
 `alpha < 170` BEFORE the fade-25 (`:56753` trail, `:56769` fade — the
 dust copies the PRE-fade alpha). No f20-side dust work is owed beyond
-that call; the seam row is in research/67. f20c: your slice-D merge
+that call; the seam row is in research/199. f20c: your slice-D merge
 unlocks this emitter as-is.
+
+**RETIRE refresh (2026-11-21):** the f20 tip advanced AGAIN to
+`31386266` (F4/F6/F7/F3/F5 past slice E — the 88 cap finalize, the
+magicQuiver extraUpdates bump, the Harpy-charm chain, the 709 Kill-hook
++ 1110 row, the Shimmer-layer cross-note). The seam STILL VALID:
+`git diff 5aa190e3..31386266 -- projectile_ai001_d.rs` shows F7 widened
+`step`/`finish` with `npcs`/`immune` params + the `charm_tail` call
+after the flag8 clamp — the 357 `PULSE_BOLT` arm's fade-25 block and
+its position (before `finish`, the trail slot) are UNCHANGED, and
+`charm_tail` draws nothing (RNG-free by construction, the F7 commit).
+The `step_dust` variant now threads `npcs`+`immune` alongside
+`rng`+`dust`+`ctx` (the F7 signature), and the emitter call still seats
+BEFORE the fade-25. The charm tail rides AFTER the emitter in C# order
+(`:56753` trail < `:57769` tail) — no stream collision. research/199's
+seam row carries the refreshed signature.
 
 ### AI_001 remainder census (the 20 kinds ≤400)
 
@@ -251,7 +279,7 @@ against every pushed tip):
 - **55** Stinger (`:55490-55494`, dust 18 noGravity) — ROWED on **d22**
   (`204e0651`, `HORNET_STINGER` + the `ai_hornet_stinger` resting-flight
   arm which body-skips the dust). Batch 7 emitter written; activates
-  with d22's merge (research/67).
+  with d22's merge (research/199).
 - **174** IceSpike (`:55032-55051`, alpha==0 dust 76 at oldPosition−v*3)
   — no row on any pushed tip. Batch 7 emitter written UNWIRED.
 - **176** JungleSpike (`:55109-55129`, alpha==0 dust 22 at oldPosition)
@@ -267,7 +295,7 @@ against every pushed tip):
   `SHADOWFLAMES` arm owns the counter + the Item8 cue, body-skips both
   dust loops). NOT the d2 tombstones (`61c47ed7`/`f430ccf8` rowed kinds
   43/201-205/527-531, aiStyle 17 — no 299). Batch 7 emitter written;
-  activates with c3's merge (research/67).
+  activates with c3's merge (research/199).
 - **374** HornetStinger (`:55544-55557`, 1-in-2 dust 18) — no row on
   any pushed tip. Batch 7 emitter written UNWIRED.
 - **376** ImpFireball (`:55558-55586`, post-3 1/2× dust 6) — no row on
@@ -276,7 +304,7 @@ against every pushed tip):
 The 267/275/276 closures are the batch-4 no-dust convention (the rowed
 kind whose C# arm draws nothing). The 55/174/176/299/374/376 emitters
 are batch 7 — all six written + witnessed; the rowed-on-unmerged ones
-(55→d22, 299→c3) activate per research/67's checklist, the rest wait
+(55→d22, 299→c3) activate per research/199's checklist, the rest wait
 on a d-lane row.
 
 ## Status (2026-11-21, the follow-up round)
@@ -293,5 +321,22 @@ emitters (55/174/176/299/374/376) UNWIRED. 50 draw-mirror witnesses
 WRITTEN NOT RUN (code-only, the actual `#[test]` tally): 19 (batches
 1-4) + 11 (batch 5) + 14 (batch 6) + 6 (batch 7). The 281 bunny stays
 UNWIRED (the machine is d5's, the row unclaimed — the corrected census
-above). The activation checklist for the merger is **research/67**
+above). The activation checklist for the merger is **research/199**
 (which merge unlocks which emitter, incl. the 357 f20-slice-D seam).
+
+## RETIRE (2026-11-21, FINAL — the lane closes here)
+
+The spawn-dust-family FINAL + declaration is **research/240** (the
+number per the d54 registry-150's free-block rule, the seal-scan
+adjudication recorded there). This claims doc stays the batch ledger;
+research/199 stays the merger's activation checklist (REFRESHED at
+retire: the moved tips re-probed, the three newly-rowed kinds
+128/129/229 promoted to activation rows, the 357 f20 seam re-verified
+at tip `31386266`, the 12-anniversary RE-PICK re-verified against the
+C# `:23975-23978` + BOTH co-ports). The doc-66 number is KEPT per
+registry-150 §1 (first-add `34bf98b39` 00:30:45 wins; the g64 fork
+renumbered → 196 on its own branch, landed `9d9d89ac1`). The
+research/67 → 199 rename per registry-150 §3 is EXECUTED on this
+branch (this doc's refs + the emitter comments updated). No further
+g63 commits are planned — merge execution belongs to the merge wave
+per research/199 + research/240's declaration.

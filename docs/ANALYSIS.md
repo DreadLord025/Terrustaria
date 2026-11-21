@@ -39244,3 +39244,48 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The projectile TRAIL dust family (W4-g63, kinds ≤400 — RETIRE SEALED)
+
+The per-kind trailing/ambient dust arms of `Projectile.AI()`/`AI_001`
+(kinds 1-400) live in `crates/tr-app/src/projectile_trail_dust.rs` —
+batches 1-4 re-armed the rowed inline-machine kinds end-to-end through
+the live `DustPool` on the `UpdateProjectiles` stream (the
+`update`/`update_dust` scratch-pool seam, `world_sim/projectiles.rs`);
+batch 5 threaded the ten rowed `AI_001` slice kinds via `step_dust`
+variants; batches 6-7 wrote the unrowed-kind emitters UNWIRED (the row
+is the wiring gate, the S1-F-9b convention). 50 draw-mirror witnesses
+WRITTEN NOT RUN. The claim/census record: research/66; the merger's
+activation checklist: research/199 (renumbered 67→199 per the d54
+registry-150); the lane-close declaration: research/240 (SEALED).
+
+The retire round's recorded adjudications (code-only, evidence in
+research/240 §3):
+
+- **The doc-66 census-ERROR consumed** (the e3 finding): `:29245/29284`
+  are the 1042 ShimmerGunStream's, NOT the 358's — the C# `type != 1042`
+  return at `:29234` precedes them; `:29205/29229` are the 406's. The
+  g63 `water_gun_stream` emitter always covered `:29167/29191` only, so
+  no port collision — the census row was corrected, the e3 staged
+  emitter owns the two sites.
+- **The 12/955 anniversary RE-PICK** (`Projectile.cs:23975-23978`): TWO
+  `Next(4)` draws, the second wins. g63 (fixed `036901a5e`) + g16
+  agree; e3's `style5_star_dust` 955 arm draws ONE — the surviving
+  merged arm must take the two-draw form (the stream-parity contract).
+- **The gun Kill smoke puffs double-ported**: d6 residual 8
+  (`projectile_gun_splash.rs`) AND g65 batch 18 (`smoke_puff`) both
+  port the 358/406/1042 `:74029-74147` arms — keep ONE at the merge
+  (research/199's 358 row).
+- **The 357 f20b seam re-verified at f20 tip `31386266`**: slice D
+  unchanged underneath F4-F7; F7's `(p, world, npcs, immune)` widening
+  + the RNG-free `charm_tail` ride AFTER the emitter's pre-fade slot —
+  the seam stands, the `step_dust` variant threads the new params.
+- **Three batch-6 kinds newly rowed** (the all-tip retire sweep):
+  128→g8 `0a4b76e3f`, 129→g5 `96f074959` (its census block REPLACED —
+  same draws), 229→g2 `ee857a368` (skip-with-draws re-armed). The
+  remaining 14 unrowed kinds' emitters wait on rows.
+
+Verification: code-only — the C# windows re-read (`:29150-29300`,
+`:23960-23990`, `:26638-26647`, `:27922-27941`), every unlock tip
+re-probed by direct git reads (research/199's Verification section
+lists the hashes). **No cargo/rustc/rustfmt/tests/graphify invoked.**
