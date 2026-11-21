@@ -1528,9 +1528,10 @@ pub struct Player {
     pub pulley_dir: u8,
     /// `Player.shieldRaised` (`Player.cs:36481`): body row 10.
     pub shield_raised: bool,
-    /// `Player.sliding` (`Player.cs`): the slope/ice slide pose (body row 3 in
-    /// the air). No port source sets it yet, so the arm is coded but
-    /// unreachable.
+    /// `Player.sliding` (`Player.cs:21614`/`:21705` et al.): the wall-cling
+    /// slide pose (body row 3 in the air). W4-g66 gap-fill:
+    /// `WallClimbMovement`/`WallslideMovement` set/clear it per tick
+    /// (`:21607-21840`); the wing/rocket rest refills read it (`:26777`).
     pub sliding: bool,
     /// `Player.sandStorm` (`Player.cs:36298`): the Sandstorm-in-a-Bottle dash
     /// pose (leg row 0, body row 6, a 4-tick turn cadence).
