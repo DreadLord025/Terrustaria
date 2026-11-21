@@ -12193,16 +12193,47 @@ Deferred, cited (the 128-salvage round closed the loadout head, the shop
 lines, the crafting row, the yoyo-logo draw, the diff colours and the
 rapid-attack use-site — see "The 128-salvage round" below):
 
-- **The loadout SharedFrom row** (`:20640-20643`): `GetSharedLoadoutItem`
-  unported (`ItemSlot.cs:3171-3174`) — unreachable while no loadout system
-  exists; the rest of the head IS live (the e16 salvage).
-- **The Journey research rows** (`:21318-21333`): no session sacrifice
-  tracker wired (`research.rs`'s `ResearchTracker` exists but no App field
-  feeds it; the `tooltipContext` whitelist now rides `HoverFlags.context`).
-- **The bestiary-notes rows** (`:21334-21342`): `Item.BestiaryNotes`' only
-  writer is `UIBestiaryInfoItemLine.SetBestiaryNotesOnItemCache`
-  (`UIBestiaryInfoItemLine.cs:137-156`), whose hover line is unported; the
-  field rides `HoverFlags.bestiary_notes` for that port.
+- **The loadout SharedFrom row** (`:20640-20643`): the row IS ported — it
+  reads `HoverFlags.shared_from_loadout` (the 0-based index, printed
+  1-based through `UI.ItemLoadoutSharedFrom`) and beats the favourited
+  arm, the C#'s if/else-if order. The FIELD's writer is the g55 loadout
+  port: `ItemSlot.GetSharedLoadoutItem` (`ItemSlot.cs:2839-2846`) →
+  `Player.GetEffectiveArmor`/`GetEffectiveDye` (`Player.cs:5690-5764`),
+  whose `sharedFromLoadout` output the g55 branch's
+  `Player::get_effective_armor` already returns (`Option<usize>`). Until
+  that branch merges, the hover sites leave the field `None` and the
+  favourited arm prints `UI.ItemLoadoutShared` directly. **Contract**:
+  the g55 merger fills `HoverFlags.shared_from_loadout` from the
+  effective-item scan at the armour/vanity/dye hover sites (contexts
+  8-12), the same scan `MouseHover` runs (`ItemSlot.cs:3171-3174`).
+- **The Journey research rows** (`:21318-21333`): the rows ARE ported —
+  `research::research_tooltip_rows` (the 17-context whitelist
+  `research_row_context`, the difficulty-3 gate, the
+  `CreativeSacrificeNeeded` remaining-count row in `Colors.JourneyMode`
+  (255,117,181), the context-29 `ItemUnlockedByTeammate` arm) fed by
+  `TooltipContext.difficulty`/`research`; `ResearchTracker.sacrifice_numbers`
+  (the c24 accessor, `ItemsSacrificedUnlocksTracker.cs:75-86`) landed with
+  them. The c24 branch's `App.research` field + `active_player_difficulty`
+  are the writers. Until that branch merges, the draw sites pass
+  `difficulty: 0`/`research: None` and no row fires. **Contract**: the c24
+  merger fills `TooltipContext { difficulty: app.active_player_difficulty(),
+  research: Some(&app.research), .. }` at the `draw_hud` tooltip sites.
+  The teammate-credit tracker (`_unlockedByTeammate`/
+  `TryGetTeammateUnlockCredit`) is multiplayer state the c24 port itself
+  documents as unported — `teammate_credit` stays `None` (single-player).
+- **The bestiary-notes rows** (`:21334-21342`): the rows ARE ported (the
+  `HoverFlags.bestiary_notes` split-on-`\n` tail, the
+  `IsNullOrWhiteSpace` gate). The e23 branch's writer
+  `ui::bestiary::bestiary_notes` (`SetBestiaryNotesOnItemCache`,
+  `UIBestiaryInfoItemLine.cs:137-156`) exists — the non-empty condition
+  descriptions joined with `\n`. What is missing is the hover WIRE: the
+  bestiary info page's drop-row hover (`UIBestiaryInfoItemLine.cs:112-126`)
+  must stamp the joined string onto the hovered item's
+  `HoverFlags.bestiary_notes`. **Contract**: the e23 merger calls
+  `bestiary_notes(&conditions)` at that hover and passes the result
+  through the tooltip context (the field is `Option<&'static str>` — the
+  conditions are the static language rows, so the join can leak or ride
+  a per-frame cache the merger chooses).
 - **The `diff` 1/2 name colours' hover source**: the colour arms landed
   (`tooltip_name_color(rare, expert, diff, world)`), but the item tooltip
   call always passes 0 (`Main.cs:45419`) — the mediumcore/hardcore colours
@@ -12255,6 +12286,15 @@ on the e16 branch):
   craftable rows only; `item_tooltip_rows` exposes the yoyoLogo index and
   `draw_item_tooltip` paints the 5-copy OneDropLogo pass; the mcColor/
   hcColor overrides ride `TooltipContext.diff`).
+- **The co-lane contracts** (the f28 lane's deferral round): the
+  SharedFrom/Journey/bestiary-notes rows are ported behind their contract
+  fields (`HoverFlags.shared_from_loadout`, `TooltipContext.difficulty`/
+  `research`, `HoverFlags.bestiary_notes`) — the g55/c24/e23 writers are
+  unmerged branches (`task/W4-g55-ui-loadout-save` cde865fc,
+  `task/W4-c24-journey-ui` e2e50a42, `task/W4-e23-bestiary-ui-grid`
+  6daf6d3d, none an ancestor of main at this writing); the deferred list
+  above carries each merger's exact fill. `ResearchTracker.sacrifice_numbers`
+  landed here so the c24 merge dedupes onto it.
 
 
 ## Tile sections (M6-NET-3)
