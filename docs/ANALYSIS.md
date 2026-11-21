@@ -39701,13 +39701,16 @@ directive).
 ### The RETIRE phase (W4-d53, 2026-11-21, code-only mode)
 
 The Lead's five-item PROJ-DUST RETIRE close-out; the full record is
-**research/240** (the number per the research/150 registry — the
-151–236 block consumed, 237/238/239 taken at pushed tips, 240 the first
-free at the RETIRE-tip scan). No new code: the census, the drop-hunk,
+**research/244** (originally numbered 240 per the research/150 registry
+— the 151–236 block consumed, 237/238/239 taken at pushed tips, 240 the
+first free at the RETIRE-tip scan; **renumbered 240→244 at the PROJ-DUST
+SEAL** — g58's happiness doc won 240 first-pushed on both metrics,
+241-243 also g58's, see 'The PROJ-DUST SEAL' below). No new code: the
+census, the drop-hunk,
 the confirmations and the declaration are doc-only; the landed code
 stands at `88094c4ce`.
 
-**Item 1 — the wetVelocity movement-gap census (research/240 §1).** The
+**Item 1 — the wetVelocity movement-gap census (research/244 §1).** The
 ledger's "~96 sites" resolves EXACTLY: **96 unclaimed integrate
 expressions** on this tip (103 `.pos +=` code lines minus the flail's 1
 ported, minus aiStyle-4's 1 skip-listed fold, minus 5 non-movement
@@ -39721,14 +39724,14 @@ skip-listed (`:20435` `IsAGolfBall` — NOT a gap). The 96 funnel through
 5 swap points (kill_step's 54 callers, ai_style1_flight,
 special_arrows' bounce, the thrown twin's 3 callers, the 12 dispatch
 mirrors) + the satellite free moves. Task-seeded **S1-P-i57** (ROADMAP
-+ research/90 R-240-1): the `wet_velocity` helper + the integrate swap
++ research/90 R-244-1, renumbered from R-240-1): the `wet_velocity` helper + the integrate swap
 + the skip-list gate + the flail keep-one. RNG-neutral — a physics
 deviation, not a stream one; the one-tick position lead compounds on
 the first wet tick (the bobber `probe_wet` lag family). The DEAD
 `AI_015_HandleMovementCollision_Old` (`:44171`, no caller) cited, not
 owed.
 
-**Item 2 — the g2 staged-copy drop-hunk (research/240 §2).** f20's F5
+**Item 2 — the g2 staged-copy drop-hunk (research/244 §2).** f20's F5
 cross-note (`31386266f`: g2 STAGED/unwired, "port + wiring stay g2's
 claim") is SUPERSEDED by this lane's ACTIVATION (`804ad571`). The
 published drop-hunk (g2 tip `81c4ab85a`): projectile.rs **:10189-10377**
@@ -39741,14 +39744,14 @@ arm loses coverage); data.rs **:917** `CHLOROPHYTE_ORB` keep-one either
 copy (g2's ROW/machine arms STAY g2's — d53 added only the const). The
 f20 F5 cross-note is CONSUMED; the 936 spawn arm stays g2's cited skip.
 
-**Item 3 — d53×e3 fn-sets DISJOINT CONFIRMED (research/240 §3).** The
+**Item 3 — d53×e3 fn-sets DISJOINT CONFIRMED (research/244 §3).** The
 d54 bible (research/131 §8.3 step 9) verified at the CURRENT tips (d53
 `88094c4ce` × e3 `ac6392cf2`): 46 vs 123 fn names, intersection =
 {`ctx`} (the test helper) exactly. The union hazards stay the two `mod
 tests` blocks + the shared `use` lines; the merger's naming call
 (union or rename) stands, no body contest.
 
-**Item 4 — the insurance patches SUPERSEDED (research/240 §4).** The
+**Item 4 — the insurance patches SUPERSEDED (research/244 §4).** The
 three temp `%TEMP%\opencode\d53-batch3-*.patch` files (the stood-down
 d53c session's insurance, 2026-11-21 06:16-06:17) are fully superseded
 by the landed batch-3 `6d09fe617`: every hunk grep-confirmed at this
@@ -39757,7 +39760,7 @@ projectile_dust.rs :186/:195/:836). DELETE-AT-CLEANUP, never apply
 (applying double-lands). Temp-dir scratch, outside the repo — nothing
 to commit; the receipt is the record.
 
-**Item 5 — the proj-dust-family declaration (research/240 §5).** ONE
+**Item 5 — the proj-dust-family declaration (research/244 §5).** ONE
 family: d53 (sites 1-40 + the wet-machine host + the Shimmer
 ACTIVATION) → e3 (41-80 + the :24328 pair) → f5 (81-120) in site order,
 g63/g64 composing by the per-kind axis; the d53×e3 filename collision
@@ -39776,3 +39779,66 @@ tip; the three patches read end-to-end, each hunk grep-confirmed landed.
 Witnesses stay WRITTEN NOT RUN (20+3 drain, 9+1 machine, 7 Shimmer — no
 new witnesses this phase, doc-only) — **no cargo/rustc/rustfmt/tests/
 dotnet/graphify invoked** (user directive).
+
+### The PROJ-DUST SEAL (W4-d53, 2026-11-21, code-only mode)
+
+The five-item seal over the RETIRE record — doc-only, published as
+**research/244 SEALED** (the renumbered retire doc; every item
+re-verified at the moved tips, the full evidence in 244's SEAL-round
+sections + its Verification (PROJ-DUST SEAL)):
+
+**Seal 1 — the 240 RENAME.** W4-g58 also claimed 240
+(`240-happiness-final.md`). Registry-150 first-pushed-wins: g58's
+first-add `cdfe3d108` **12:16:37** + pushed tip `c9af393dd` **14:08:18**
+beat d53's `df3355c36` **14:08:36** on BOTH metrics — **g58 keeps 240,
+d53 renumbers**. 241/242/243 are ALL g58's at `c9af393dd` (the 358-tip
+ls-tree scan, keys 230–299) → the first free number is **244**:
+`240-proj-dust-retire.md` → `244-proj-dust-retire.md` (git mv), refs
+updated (this section, INDEX, research/70's banner, research/90's
+R-240-1 → **R-244-1**, PORT_MAP ×2, ROADMAP S1-P-i57). g58's 243
+"SOLE claim" scan predated d53's push landing — superseded; the
+237/238/239 sibling collisions stay those lanes'/the merger's per
+g58's 243. No registry-150b anywhere (d54 still `38bfd1d22`).
+
+**Seal 2 — the g2 drop-hunk CONSUMPTION receipt.** g2 tip STILL
+`81c4ab85a` (ls-remote; the g2d-rowless resume active, unpushed). Both
+hunks re-read line-exact; the code bodies proven identical modulo
+`pub(crate)` (116 code lines each, comment-stripped Compare-Object;
+`shimmer_two_cell_kill` 0 diffs). The MUTUAL RECEIPT published in 244
+§2: d53's side done; g2d consumes the hunk at its next push (drop the
+2 ranges, keep the 229 row/machine, re-classify STAGED →
+ACTIVATED-BY-D53, CHLOROPHYTE_ORB keep-one either copy).
+
+**Seal 3 — d53×e3 DISJOINT at the moved tips + the merge-note.** e3
+advanced to `0b48616fa` (its AI-inline RETIRE, research/125 SEALED);
+the extraction re-run at `8d097b44a` × `0b48616fa`: **46 × 123 fn
+names, intersection {ctx} exactly**. The whole-union hazard pinned to
+lines: the two `mod tests` (d53 :950 / e3 :2654) + the `use` blocks
+(d53 :87-93 / e3 :38-43 — dedupe the exact-shared, union DustRng,
+normalize the World path). Merge-note published in 244 §3 for e3f +
+the merger; f5 already disjoint by filename (`projectile_dust3.rs`).
+
+**Seal 4 — the insurance patches DELETE-AT-CLEANUP.** The three
+`%TEMP%\opencode\d53-batch3-*.patch` files SHA256-pinned in 244 §4
+(b8b134f9… / 69b34cf6… / 2a6bc610…, 2089/4563/7876 B), all 11 hunk
+anchors re-confirmed landed at `8d097b44a` (superseded-by `6d09fe617`).
+The cleanup phase deletes exactly those three files; this lane never
+applies them and does not delete outside its window.
+
+**Seal 5 — 244 SEALED + the family bible FINAL.** 244 §5 is the final
+proj-dust-family paragraph: ONE family d53 → e3 → f5 in site order +
+g63/g64 by the per-kind axis (member tips re-pinned: e3 `0b48616fa`,
+f5 `b68eac297`, g63 `2ea3e7110`, g64 `3cdc64236`); the wet-machine
+host + the Shimmer ACTIVATION are d53's; the d3 REPLACE contracts +
+the d75 split clean; the ONE owed follow-up **S1-P-i57** (R-244-1)
+outside the family — **DISPATCHED same-branch** (the movement port
+runs on this branch after the seal; marker-filtered staging: the seal
+commits are docs-only, the port's `projectile_wet.rs` working-tree
+changes were NOT staged here).
+
+**Verification (SEAL).** Code-only: the timestamps via `git show -s` +
+`git log --diff-filter=A`; the 358-tip ls-tree scan; the g2 bounds +
+body identity at `81c4ab85a`; the fn-set re-extraction at both moved
+tips; the patch hashes + anchors at `8d097b44a`. **No cargo/rustc/
+rustfmt/tests/dotnet/graphify invoked**; no merge, no primary-checkout
+touch; own branch only, docs-only staged paths.

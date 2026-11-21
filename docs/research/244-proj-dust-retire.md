@@ -1,12 +1,33 @@
-# 240 — PROJ-DUST RETIRE (W4-d53): the wetVelocity movement-gap census, the g2 staged-copy drop-hunk, the d53×e3 disjointness confirmation, the insurance-patch receipt, the family declaration
+# 244 — PROJ-DUST RETIRE (W4-d53): the wetVelocity movement-gap census, the g2 staged-copy drop-hunk, the d53×e3 disjointness confirmation, the insurance-patch receipt, the family declaration
 
-Status: RETIRE record (W4-d53, 2026-11-21, code-only). Number per the
-research/150 collision registry (d54 `38bfd1d22`): the 151–236 renumber
-block is fully assigned, 237/238/239 are taken at pushed tips (237:
-e23+g48 both; 238: c8+d42+g61 three-way; 239: d42) — this doc takes
-**240**, the first free number at the RETIRE-tip scan (all `task/W4-*`
-remote tips, `git ls-tree docs/research`, keys ≥230 enumerated). d53's
-existing research/70 keeps its number (the registry's key-70 winner).
+Status: RETIRE record, **SEALED** (W4-d53, 2026-11-21, code-only; the
+PROJ-DUST SEAL round renumbered + re-verified every item at the moved
+tips). Original number per the research/150 collision registry (d54
+`38bfd1d22`): the 151–236 renumber block is fully assigned, 237/238/239
+taken at pushed tips — the RETIRE-tip scan took **240**, first free
+then. d53's existing research/70 keeps its number (the registry's
+key-70 winner).
+
+**RENUMBERED 240 → 244 (the PROJ-DUST SEAL, registry-150 rules).**
+COLLISION: W4-g58 ALSO took 240 (`240-happiness-final.md`). Per the
+registry's first-pushed-wins rule, **g58 keeps 240** on BOTH metrics:
+first-add `cdfe3d108` **12:16:37+02:00** vs d53's `df3355c36`
+**14:08:36+02:00**; pushed tips `c9af393dd` **14:08:18** vs `df3355c36`
+**14:08:36** — g58 wins by 1h52m on first-add and by 18s on push. The
+loser renumbers 241+ per the registry, but the SEAL-round 358-tip
+`git ls-tree docs/research/` scan (keys 230–299) finds **241/242/243
+ALL taken by g58** (`241-f37-latch-repoint-hunks.md`,
+`242-chat-portrait-seed-happiness-sealed.md`, `243-seal-verification.md`,
+tip `c9af393dd`) — the first FREE number is **244**, taken here.
+Taken-at-tips map: 237 e23+g48 (both), 238 c8+d42+g61 (three-way),
+239 d42+f21+g56 (three-way), 240 g58 (winner) + d53 (this loser),
+241–243 g58. g58's research/243 "240 g58's SOLE claim" scan ran before
+d53's `df3355c36` push landed at origin — superseded by this SEAL; the
+g58 rename stands untouched. No registry-150b at any tip (d54 still
+`38bfd1d22`; the 358-tip 150* scan re-confirmed). The R-240-1 seed ID
+renames with the doc → **R-244-1** (research/90 + ROADMAP S1-P-i57 +
+PORT_MAP refs updated; the S1-P-i57 task ID is unchanged). Content
+below is the RETIRE record with SEAL-round re-verifications inline.
 
 Inputs: this lane's tip `88094c4ce` (Shimmer ACTIVATED `804ad571` + the
 generic wet machine `fa7b331d3` landed), g2 `81c4ab85a`, f20 `31386266f`
@@ -138,6 +159,32 @@ the movement lane owns `HandleMovement` (`:17469+`).
 
 ## 2. The g2 staged-copy drop-hunk (f20 F5 cross-note consumed)
 
+**SEAL re-verification (g2d-rowless-resume ACTIVE on g2's branch):** g2's
+tip is STILL `81c4ab85a` (`git ls-remote`, the SEAL round) — the resume
+has not pushed; both drop-hunks re-read LINE-EXACT at that tip: `:10189`
+is the `/// Projectile.Shimmer()` doc head, `:10208` the
+`#[allow(dead_code)] // STAGED` marker, `:10209` `fn shimmer`, `:10366`
+`fn shimmer_two_cell_kill`, `:10377` the trailing blank; `:45185` the
+`// --- W4-g2 reconciliation: the Shimmer() family (STAGED, unwired)`
+banner, `:45293` the last witness's closing `}`, `:45294` g2's `mod
+tests` closing `}` (STAYS). The code-body identity re-proven by
+comment-stripped `Compare-Object`: g2 `:10209-10364` vs d53
+`:13129-13284` = **116 code lines each, the ONLY diff the visibility
+keyword** (`fn shimmer` → `pub(crate) fn shimmer` — the activation's
+cross-module call); `shimmer_two_cell_kill` bodies **0 diffs**. The
+DROP direction is therefore lossless on code.
+
+**Mutual receipt (for the g2d lane / merger):** d53's side is PUBLISHED
+(this section + PORT_MAP `:759`); g2's side at `81c4ab85a` still reads
+STAGED/unwired (ANALYSIS `:39275`, PORT_MAP `:758`, research/26d
+`:144-147` — "Shimmer UNWIRED until the generic wet block lands (d53's
+cited skip)"). The g2d resume CONSUMES this hunk: drop the two ranges
+at merge, keep g2's 229 row (`data.rs:4002`), light (`:1625`), frames
+(`:4830`) + machine arms, re-classify its STAGED docs
+ACTIVATED-BY-D53 (`804ad571`), and take either `CHLOROPHYTE_ORB` const
+copy (keep-one). d53 owes g2 nothing further; the receipt closes when
+g2's next push cites this section.
+
 f20's F5 (`31386266f`) cross-noted g2's Shimmer() as STAGED/unwired
 pending the generic wet block, "nothing owed by this lane — port +
 wiring stay g2's claim". **SUPERSEDED**: this lane's `804ad571`
@@ -169,6 +216,33 @@ f20 owes nothing further; the 936 rainbow-slime spawn arm stays g2's
 cited skip (rowless + the NPC-spawn/net/achievement layers).
 
 ## 3. The d53×e3 projectile_dust.rs fn-sets DISJOINT — CONFIRMED
+
+**SEAL re-verification at the MOVED tips (e3f-inline-seal ACTIVE):** e3
+advanced `ac6392cf2` → **`0b48616fa`** (the AI-inline RETIRE: research/125
+SEALED, the 34-STAGED contracts re-verified, the 321/836 flag flips,
+comment-only emitter fixes) and d53 sits at **`8d097b44a`** (the
+token-trio follow-up). The fn-set extraction re-run at these tips:
+d53 **46** fn names × e3 **123** fn names, `Compare-Object
+-IncludeEqual -ExcludeDifferent` intersection = **{`ctx`}** exactly —
+the DISJOINT verdict survives e3's seal round. (Extraction note: the
+declaration regex `^\s*(pub(..)? )?fn` — a loose `\bfn\s+` match adds a
+47th phantom "uses" from a doc-comment word at d53 `:1773`; 46 is the
+real count.) The whole-union hazard is EXACTLY two kinds of lines, both
+re-read at the current tips:
+
+| hazard | d53 `8d097b44a` | e3 `0b48616fa` | merger action |
+| ------ | --------------- | -------------- | ------------- |
+| the `mod tests` blocks | `projectile_dust.rs:950` (`mod tests`, incl the `w4_d53_*` witnesses) | `projectile_dust.rs:2654` (`mod tests`) | ONE `mod tests` per file — union the two blocks under one `mod` (the fn names inside are disjoint too, `ctx` the shared helper: keep ONE `ctx` — verify the two signatures match at merge, else rename one) |
+| the shared `use` lines | `:87-93` (`crate::app::App`, `crate::projectile::Projectile`, `crate::projectile_wet::SplashKind`, `glam::Vec2`, `tr_core::UnifiedRandom`, `tr_core::particles::{Color, DustPool, SpawnCtx}`, `tr_core::world::World`) | `:38-43` (`glam::Vec2`, `tr_core::loot::DropRng`, `tr_core::particles::{Color, DustPool, DustRng, SpawnCtx}`, `tr_core::World`, `crate::projectile::Projectile`) | dedupe the exact-shared (`Vec2`, `Projectile`, `Color`/`DustPool`/`SpawnCtx`), UNION the differing particle imports (`DustRng` e3-only), keep both World paths or normalize (`tr_core::world::World` ≡ `tr_core::World` re-export — one line) |
+
+**MERGE-NOTE (published for e3f + the merger):** union d53's module into
+e3's (or rename one module) — NO emitter body contest exists, no
+keep-one needed on any emitter; the two `mod tests` + the `use` lines
+are the WHOLE hazard. f5 is already disjoint by FILENAME
+(`projectile_dust3.rs` at f5 tip `b68eac297`, the GORE-SEAL round — no
+three-way file collision). e3's research/125 is still numbered 125 at
+`0b48616fa` (its registry-assigned 231 rename is e3's own owed step,
+not d53's to execute).
 
 The d54 bible (research/131 §8.3 step 9, tip `38bfd1d22`): "fn-name sets
 are DISJOINT (verified this round — only the test helper `ctx`
@@ -214,7 +288,39 @@ this receipt is the record. The worktree lifecycle rule (no stray
 `*.patch` on the Desktop) is satisfied: they live in
 `%TEMP%\opencode\`, outside the repo.
 
-## 5. The proj-dust-family declaration (the merger bible paragraph)
+**SEAL-round pin (DELETE-AT-CLEANUP executed by the cleanup phase, not
+this doc lane — the files still exist at seal time, identity pinned so
+the cleanup deletes exactly these three and nothing else):**
+
+| file (`%TEMP%\opencode\`) | bytes | SHA256 |
+| ------------------------- | ----- | ------ |
+| `d53-batch3-data.patch` | 2089 | `b8b134f9bbfa20ed138ec6d603da3b228136bff8cfa3f2d2c3a89160183f2f4c` |
+| `d53-batch3-projectile.patch` | 4563 | `69b34cf6f7f350278d74a3c63377f221316d84dd976a8c4a23a30a574ef2a8af` |
+| `d53-batch3-projectile_dust.patch` | 7876 | `2a6bc610794f95bd8fdf6800b575817d7d014aa92261c77105bb32d7163dff81` |
+
+Every landed anchor RE-confirmed at the SEAL tip `8d097b44a` (the
+follow-up touched only this doc — code unchanged since `88094c4ce`):
+data.rs `:309` const + `:2477` row; projectile.rs `:10189` the 466|580
+gate, `:13686` the trailing_mode arm, `:16978` the ring feed, `:18271`
+the aiStyle-88 kind-gate; projectile_dust.rs `:186` the
+`-> Vec<DustBurst>` signature, `:195` the ±FRAC_PI_4 pair, `:836`
+`super_star_dust`. Hunk counts re-read from the patch files themselves:
+2 + 5 + 4 = 11 hunks, all landed. **Superseded-by: `6d09fe617`.**
+
+## 5. The proj-dust-family declaration — **BIBLE FINAL** (the merger paragraph)
+
+**SEAL round: this paragraph is the FINAL proj-dust-family bible.** All
+member tips re-pinned at seal time: d53 `8d097b44a` (this branch), e3
+`0b48616fa` (AI-inline RETIRE, research/125 SEALED — the 34-STAGED
+activation contracts re-verified at the moved d-lane tips; the 321
+FlamingJack + 836 DandelionSeed emitters NOW rowed+machined on d6/d12 →
+ADD-shape at those merges; the g64 `clone_dust` keep-one CONFIRMED
+bodies-identical, prefer g64's docs; AI_019_Spears_Old dead-drop,
+AI_009_MagicMissiles_Old live-seeded d1), f5 `b68eac297` (GORE SEAL —
+its dust lane rides `projectile_dust3.rs`, no filename contest), g63
+`2ea3e7110` (the :29234 type!=1042 return receipt; the doc-66 :79 fix
+owed on g63's branch), g64 `3cdc64236` (FINAL 3/4: the g63d
+281/174/176 re-probe receipt + the per-kind coverage union-table).
 
 **ONE projectile-dust family, three site lanes + the wet host, merged
 in site order d53 → e3 → f5 with the per-kind trails g63/g64 composing
@@ -237,12 +343,26 @@ into d16's count-only gates; the 977/1045 keep-one is e3's
 the 1053 Dig + 1048 Item177 cues; the wet-splash case-19 plays are this
 lane's; d75's rows re-classify SIBLING-CUED at merge). **The ONE owed
 follow-up outside the family: the generic wetVelocity movement arm
-(§1, seed S1-P-i57) — the wet machine's flags are its ready input, the
-movement lane owns the integrate; 0 of the 96 movement sites ride the wet
-block, 96 integrate expressions unclaimed (the flail + d3 boulders
-ported, golf + aiStyle-4 skip-listed).** RNG-neutral throughout the owed arm; the
+(§1, seed S1-P-i57 / R-244-1) — the wet machine's flags are its ready
+input, the movement lane owns the integrate; 0 of the 96 movement sites
+ride the wet block, 96 integrate expressions unclaimed (the flail + d3
+boulders ported, golf + aiStyle-4 skip-listed).** **S1-P-i57 DISPATCHED
+same-branch at seal time** (the movement port runs on
+`task/W4-d53-dust-sites-projectile` after this seal; marker-filtered
+staging keeps the two rounds' commits disjoint — the seal commits touch
+docs only, the movement port owns `projectile_wet.rs`/`projectile.rs`
+code). When it lands, this paragraph's owed-follow-up clause closes and
+§1c's 96 becomes the ported count; until then the seed stands.
+RNG-neutral throughout the owed arm; the
 family's witnesses (20+3 drain, 9+1 machine, 7 Shimmer — all WRITTEN
 NOT RUN, code-only) ride the union.
+
+**Gate command for the family (merger):** d53 → e3 → f5 site-order
+merge, then g63/g64 by the per-kind axis (g64's clone_dust keep-one per
+e3's receipt), then the g2 drop-hunk (§2) + the d3 REPLACE contracts +
+the d75 SIBLING-CUED re-classification. Zero unowned dust sites in
+`:16851-24318` + f5's window after the union; the only movement debt is
+S1-P-i57, tracked outside the family.
 
 ## Verification (RETIRE)
 
@@ -256,3 +376,19 @@ drop-hunk bounds read at `81c4ab85a` directly; the registry free-number
 scan over every pushed `task/W4-*` tip; the three patches read end-to-end
 and each hunk grep-confirmed landed. **No cargo/rustc/rustfmt/tests/
 dotnet/graphify invoked** (user directive); witnesses WRITTEN NOT RUN.
+
+## Verification (PROJ-DUST SEAL, this round)
+
+Code-only, doc-only edits (the concurrent S1-P-i57 movement port's
+`projectile_wet.rs` working-tree changes NOT staged — marker-filtered
+staging, docs paths only): the 358-tip `git ls-tree` renumber scan
+(keys 230–299 + 150*), both collision timestamps read via `git show -s
+--format=%cI` + `git log --diff-filter=A` (`cdfe3d108`/`df3355c36`,
+pushed tips `c9af393dd`/`df3355c36`); g2 tip re-probed by `git
+ls-remote` (still `81c4ab85a`), both drop-hunk bounds + the
+comment-stripped body identity re-read at that tip; the fn-set
+extraction re-run at d53 `8d097b44a` × e3 `0b48616fa` (46 × 123,
+intersection {ctx}); the three patch files SHA256-pinned + all 11 hunk
+anchors re-confirmed at the seal tip; e3/f5/g63/g64 tips re-pinned by
+fetch. **No cargo/rustc/rustfmt/tests/dotnet/graphify invoked**; no
+merge, no primary-checkout touch; own branch only.
