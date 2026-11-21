@@ -48,11 +48,14 @@ const CAN_CONVERT_COPPER_SLIME: &[u16] = &[1, 302, 335, 336, 333, 334];
 /// for the roster). The `TownSlimeTransform` particle broadcast is the
 /// orchestrator lane's. Returns true when the drop was consumed
 /// (`TurnToAirAndSync`, `:1114`). RNG-free.
-fn copper_slime_pickup(app: &mut App, drop: &ItemDrop) -> bool {
+/// The disjoint-borrow shape (the `DustSink` convention): the scan reads the
+/// NPC list only; the caller raises `world.unlocked_slime_copper_spawn`
+/// post-tick (the closure holds `world = &app.world`).
+fn copper_slime_pickup(npcs: &[crate::npc::Npc], drop: &ItemDrop) -> bool {
     let (dx0, dy0) = (drop.pos.x as i32, drop.pos.y as i32);
     let dsz = crate::item::SIZE as i32;
     // `:1102-1110` — the first intersecting convertible NPC wins.
-    let hit = app.npcs.iter().any(|n| {
+    npcs.iter().any(|n| {
         let (nw, nh) = n.size();
         n.hp > 0
             && CAN_CONVERT_COPPER_SLIME.contains(&n.kind.cs_id())
@@ -60,14 +63,7 @@ fn copper_slime_pickup(app: &mut App, drop: &ItemDrop) -> bool {
             && dx0 + dsz > n.x as i32
             && dy0 < (n.y as i32) + nh as i32
             && dy0 + dsz > n.y as i32
-    });
-    if !hit {
-        return false;
-    }
-    // `NPC.TransformCopperSlime` (`NPC.cs:19171`): the flag raises. The
-    // `Transform(684)` is the roster gap (no 684 NpcKind row).
-    app.world.unlocked_slime_copper_spawn = true;
-    true
+    })
 }
 
 pub(crate) fn update_items(app: &mut App, dt: f32) {
@@ -165,6 +161,11 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
     let coin_rows = &mut app.equip.coins;
     let audio = &mut app.audio;
     let mut voodoo: Option<(Vec2, u32)> = None;
+    // W4-g15 lane 5 — the copper-slime unlock latch: the flag write rides
+    // the post-tick pass (the closure holds the world borrow); the latch
+    // makes a second coin this tick see the lock the C#'s in-loop write
+    // would show.
+    let mut copper_unlocked = false;
     // The drops whose shimmer ramp crossed 0.9 this step (the post-pass apply).
     let mut shimmer_due: Vec<u32> = Vec::new();
     // W4-g15 — the dust spawn ctx captured ONCE per tick, before the items
@@ -769,7 +770,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 // continues through the rest of the update as a water bucket
                 // (the C# mutates `this.inner` in place).
                 try_fill_bucket(
-                    app,
+                    app.rngs.stream(crate::app::RngKey::UpdateItems),
                     &mut drop,
                     world,
                     raining,
@@ -788,14 +789,19 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // Main.myPlayer`; the reservation is `reserved_elsewhere`. The
             // NPC-side `TransformCopperSlime` (684) is the roster gap — the
             // flag is the observable half (the `spawn_shimmer_release`
-            // precedent). The C# runs it BEFORE MoveInWorld.
+            // precedent). The flag write rides the post-tick pass (the
+            // closure holds `world = &app.world`); `copper_unlocked` carries
+            // the first-grant latch so a second coin this tick sees the lock
+            // the C#'s in-loop flag write would show.
             if !was_grabbed
                 && (drop.kind == 89 || drop.kind == 3507)
                 && !reserved_elsewhere
                 && drop.enemy_grab_delay_time == 0
+                && !copper_unlocked
                 && !app.world.unlocked_slime_copper_spawn
             {
-                if copper_slime_pickup(app, &drop) {
+                if copper_slime_pickup(&app.npcs, &drop) {
+                    copper_unlocked = true;
                     items.swap_remove(i);
                     continue;
                 }
@@ -983,23 +989,32 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         }
     });
     app.item_step.cap_backlog();
+    // W4-g15 lane 5 — the copper-slime unlock flag (`NPC.cs:19171`): the
+    // scan consumed the coin(s) inside the closure; the world write lands
+    // here (the `Transform(684)` target is the town-slime roster gap).
+    if copper_unlocked {
+        app.world.unlocked_slime_copper_spawn = true;
+    }
     // The voodoo sacrifice resolves after the items borrow drops (the
     // spawn/kill pass takes `app` wholesale).
     if let Some((pos, stack)) = voodoo {
         crate::world_sim::npcs::voodoo_doll_lava_death(app, pos, stack);
     }
+    // The shimmer transforms apply in the list order (the C#'s single-item
+    // `GetShimmered` per tick; a step fires at most one per drop). They run
+    // BEFORE the wish grant: the C#'s `UpdateShimmer` (`:403`) precedes
+    // `TryGrantingMakeAWishSet` (`:414`), and the grant's `swap_remove`
+    // would invalidate the `shimmer_due` indices.
+    crate::shimmer::apply_due_transforms(app, &shimmer_due);
     // W4-g15 lane 5 — the Heroicis-set grant (`TryGrantingMakeAWishSet`): the
     // gate + the five spawns take `app` wholesale, so they resolve here. The
     // C# runs the grant per-drop inside UpdateItem (`:414-417`); the port
     // scans the live list post-tick (the same observable outcome — a wet
     // desert platinum coin grants once; the grant is draw-free so the scan
-    // order does not move any RNG stream). The voodoo → wish → shimmer order
-    // keeps the wish coin clear of the shimmer transforms (a coin is never a
-    // shimmer-ramp drop).
+    // order does not move any RNG stream). A platinum coin in WATER never
+    // rides the shimmer ramp (`shimmerWet` refuses), so the two passes are
+    // disjoint on the grant's input.
     try_granting_make_a_wish_set(app);
-    // The shimmer transforms apply in the list order (the C#'s single-item
-    // `GetShimmered` per tick; a step fires at most one per drop).
-    crate::shimmer::apply_due_transforms(app, &shimmer_due);
 }
 
 /// `WorldItem.TryGrantingMakeAWishSet` (`WorldItem.cs:590-610`, W4-g15
@@ -1113,7 +1128,7 @@ fn try_granting_make_a_wish_set(app: &mut App) {
 /// drop, the kind is the whole observable identity).
 #[allow(clippy::too_many_arguments)]
 fn try_fill_bucket(
-    app: &mut App,
+    rng: &mut UnifiedRandom,
     drop: &mut ItemDrop,
     world: &tr_core::world::World,
     raining: bool,
@@ -1153,7 +1168,6 @@ fn try_fill_bucket(
     if day_rate > 0 && day_rate < num3 {
         num3 /= day_rate;
     }
-    let rng = app.rngs.stream(crate::app::RngKey::UpdateItems);
     if rng.next_max(num3) == 0 && rng.next_float() < max_raining {
         // `:565-567` — SetDefaults(206), the stack kept.
         drop.kind = 206;
@@ -2447,17 +2461,20 @@ mod fill_bucket_tests {
         // Not raining.
         let mut app = rain_app();
         let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
-        try_fill_bucket(&mut app, &mut b, &app.world.clone(), false, 1.0, true, false, 1);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, false, 1.0, true, false, 1);
         assert_eq!(b.kind, 205, "no rain refuses");
         // No world surface, no remix.
         let mut app = rain_app();
         let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
-        try_fill_bucket(&mut app, &mut b, &app.world.clone(), true, 1.0, false, false, 1);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, false, false, 1);
         assert_eq!(b.kind, 205, "no surface refuses");
         // Below the surface (tile y 70 > worldSurface 60).
         let mut app = rain_app();
         let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 70.0 * TILE_PX, 0.0, 0.0, 0.0);
-        try_fill_bucket(&mut app, &mut b, &app.world.clone(), true, 1.0, true, false, 1);
+        let w = app.world.clone();
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, true, false, 1);
         assert_eq!(b.kind, 205, "below surface refuses");
         // A wind-blocking wall (1) at the centre cell.
         let mut app = rain_app();
@@ -2467,7 +2484,7 @@ mod fill_bucket_tests {
         app.world.tiles[idx].wall = 1;
         let mut b = ItemDrop::new(205, 3, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
         let w = app.world.clone();
-        try_fill_bucket(&mut app, &mut b, &w, true, 1.0, true, false, 1);
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, true, false, 1);
         assert_eq!(b.kind, 205, "a blocking wall refuses");
     }
 
@@ -2487,7 +2504,7 @@ mod fill_bucket_tests {
         app.rngs.reset(seed);
         let mut b = ItemDrop::new(205, 7, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
         let w = app.world.clone();
-        try_fill_bucket(&mut app, &mut b, &w, true, 1.0, true, false, 1);
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, true, false, 1);
         assert_eq!(b.kind, 206, "the bucket filled");
         assert_eq!(b.count, 7, "the stack kept (SetDefaults(206) + stack restore)");
         // The two draws ran in order: Next(600) then NextFloat. Replay them
@@ -2510,14 +2527,14 @@ mod fill_bucket_tests {
         app.rngs.reset(seed300);
         let mut b = ItemDrop::new(205, 1, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
         let w = app.world.clone();
-        try_fill_bucket(&mut app, &mut b, &w, true, 1.0, true, false, 2);
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, true, 1.0, true, false, 2);
         assert_eq!(b.kind, 206, "dayRate 2 → num3 300 fills on the 300-seed");
         // A refused gate (no rain) consumes NO draws.
         let mut app = rain_app();
         app.rngs.reset(seed);
         let mut b = ItemDrop::new(205, 1, 0, 50.0 * TILE_PX, 30.0 * TILE_PX, 0.0, 0.0, 0.0);
         let w = app.world.clone();
-        try_fill_bucket(&mut app, &mut b, &w, false, 1.0, true, false, 1);
+        try_fill_bucket(app.rngs.stream(crate::app::RngKey::UpdateItems), &mut b, &w, false, 1.0, true, false, 1);
         assert_eq!(b.kind, 205);
         let mut witness = tr_core::UnifiedRandom::new(seed);
         let want = witness.next_max(1000);
@@ -2560,7 +2577,10 @@ mod copper_slime_tests {
         // The drop's box overlaps the slime's (both at tile 50).
         let d = ItemDrop::new(89, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
         assert!(!app.world.unlocked_slime_copper_spawn);
-        assert!(copper_slime_pickup(&mut app, &d), "the convertible slime consumed it");
+        assert!(copper_slime_pickup(&app.npcs, &d), "the convertible slime consumed it");
+        // The flag write is the caller's post-tick step (the closure holds
+        // the world borrow); the helper is the scan only.
+        app.world.unlocked_slime_copper_spawn = true;
         assert!(app.world.unlocked_slime_copper_spawn, "the flag raised");
         assert_eq!(app.npcs.len(), 1, "the NPC stays (the 684 roster gap)");
         // The Chain Knife (3507) is the other kind; a non-convertible NPC
@@ -2568,12 +2588,12 @@ mod copper_slime_tests {
         let mut app = slime_app();
         app.npcs[0].kind = NpcKind::Zombie;
         let d = ItemDrop::new(3507, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
-        assert!(!copper_slime_pickup(&mut app, &d), "a zombie is not convertible");
+        assert!(!copper_slime_pickup(&app.npcs, &d), "a zombie is not convertible");
         assert!(!app.world.unlocked_slime_copper_spawn);
         // A drop far from the slime refuses (no hitbox overlap).
-        let mut app = slime_app();
+        let app = slime_app();
         let d = ItemDrop::new(89, 1, 0, 80.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
-        assert!(!copper_slime_pickup(&mut app, &d), "no overlap refuses");
+        assert!(!copper_slime_pickup(&app.npcs, &d), "no overlap refuses");
     }
 
     /// W4-g15 lane 5 — the `enemyGrabDelayTime` clock (`WorldItem.cs:28`,
@@ -2593,15 +2613,21 @@ mod copper_slime_tests {
         d.update(&w, 1.0 / 60.0);
         assert_eq!(d.enemy_grab_delay_time, 99, "the clock decrements");
         // The gate: a positive clock refuses the monster pickup even with
-        // an overlapping convertible slime.
+        // an overlapping convertible slime — the gate is the update_items
+        // `:405` row (the scan helper itself does not read the clock).
         let mut app = slime_app();
-        let mut d = ItemDrop::new(89, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
-        d.enemy_grab_delay_time = 50;
-        // The gate is in update_items; assert the field is the gate's input
-        // (the copper_slime_pickup helper itself does not read it — the
-        // caller's `:405` row does). A zero clock allows the pickup.
-        d.enemy_grab_delay_time = 0;
-        assert!(copper_slime_pickup(&mut app, &d), "a zero clock allows the pickup");
+        let mut coin = ItemDrop::new(89, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        coin.enemy_grab_delay_time = 50;
+        app.items.push(coin);
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "the positive clock refused the monster grab");
+        assert!(!app.world.unlocked_slime_copper_spawn, "no unlock while delayed");
+        // A zero clock allows the pickup (the scan fires, the flag lands
+        // post-tick).
+        app.items[0].enemy_grab_delay_time = 0;
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the zero clock allowed the monster grab");
+        assert!(app.world.unlocked_slime_copper_spawn, "the unlock landed post-tick");
     }
 }
 
