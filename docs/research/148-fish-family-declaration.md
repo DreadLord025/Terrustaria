@@ -41,10 +41,14 @@ is merge dedupe + the Orca sheet admission, itemized below.
 | GoldGoldfish | 592 | **592** | c4 (d42 ceded) | STANDS (research/145); catchItem 4274; d42's GoldGoldfishWalker 593 interim bestiary entry re-points its fold onto this entry at merge (drop the interim row, ENTRIES pin −1) |
 | Pupfish | 607 | **607** | c4 (d42 ceded) | STANDS; catchItem 4373 |
 | Dolphin | 615 | **615** | c4 (d42 ceded) | STANDS; the leap-tilt + idle-timer `Next(300,1200)`/`Next(1,3)`/`Next(2)` RNG census on the caller's UpdateNPCs stream |
-| Pufferfish | 688 | **688** | c4 — GENUINELY UNCLAIMED (d43 conditional below) | STANDS; the puff one-tick `just_hit` fix `17a241f6a` + catchItem 5511 + the `num46 += 10` anchor |
-| Orca | 692 | **692** | c4 — GENUINELY UNCLAIMED (d43 conditional below) | STANDS; AI/stats/FindFrame/wet-anchor fully wired; the NPC_692 sheet (136×992) atlas-deferred — admission via **research/144** (d35e lazy NPC page, FINAL rank #16) |
+| Pufferfish | 688 | 688 → retire AT MERGE (d43 TRIGGERED) | c4 until merge; d43 `fd6a544fc` rows it | the puff one-tick `just_hit` fix `17a241f6a` + catchItem 5511 + the `num46 += 10` anchor are the keeper carry-list (receipt below) |
+| Orca | 692 | 692 → retire AT MERGE (d43 TRIGGERED) | c4 until merge; d43 `8fc608bcb` rows it | AI/stats/FindFrame/wet-anchor keepers carry over; the NPC_692 sheet (136×992) atlas-deferred — admission via **research/144** (d35e lazy NPC page, FINAL rank #16) |
 
 ## The d43 conditional (688/692 — the active band watch)
+
+**TRIGGERED (seal-verify pass, same day):** d43r resumed and pushed —
+see the receipt at the foot of this file. The conditional below is now
+the ACTIVE retire-at-merge contract for 688/692.
 
 Re-verified at retire time (2026-11-21): `origin/task/W4-d43-npc-kinds-631-697`
 tip == merge-base `a725acb04` (ZERO commits of its own); the `TR-W4-d43`
@@ -54,8 +58,10 @@ the BASE's "the unported Pufferfish 688" hurt_cd comments. g10's
 uncommitted town-pet work (637/638/656/670/678-683) touches neither id.
 **688/692 are genuinely unclaimed — c4's rows STAND.**
 
-**Conditional retire-at-merge note (for d43r + the merger):** 688/692
-sit INSIDE d43's assigned vanilla-free band (E4 guidance: "d41/d43
+**Conditional retire-at-merge note (for d43r + the merger):** — TRIGGERED
+at the seal-verify pass: `fd6a544fc` rows Pufferfish 688 and `8fc608bcb`
+rows Orca 692 (d43 tip `0253bde90`). The clause below is IN FORCE.
+688/692 sit INSIDE d43's assigned vanilla-free band (E4 guidance: "d41/d43
 vanilla-free 491-560 / 631-697, skip the g10/d33 cs ids"). d43r is
 ACTIVE. If d43r resumes and rows Pufferfish 688 / Orca 692 before the
 merge wave, the E3 ownership rule applies (kinds-lane d43 owns over
@@ -83,8 +89,10 @@ small lanes (c4 among them). At c4's merge:
    the kb-0.4 + vanilla_type-missing defects die there).
 3. FlyingFish@359: identical-arm dedupe vs d37; keep c4's world-sim
    pre-pass, drop d37's solo wrapper.
-4. 509/581/587/406/592/607/615/688/692: splice c4's rows as-is (d42
-   ceded the five; d43 conditional above for 688/692).
+4. 509/581/587/406/592/607/615: splice c4's rows as-is (d42
+   ceded the five). **688/692: the d43 conditional TRIGGERED — retire
+   c4's variants + wire arms + bestiary entries AT MERGE onto d43's
+   rows; the keeper carry-list below applies.**
 5. Re-point d42's GoldGoldfishWalker 593 bestiary fold onto c4's 592
    entry; drop the interim row (E4 ENTRIES pin re-derive: −1).
 6. Orca sheet: d35e admits NPC_692 per research/144 (the lazy NPC page,
@@ -118,3 +126,52 @@ Code-only: claims re-verified via git-show/git-grep at the named pushed
 tips (`49346dba6`, `bdd59afba`, `5f3435a87`, `e5558b0a9`, `a725acb04`);
 read-only worktree probes (d43/g10); no compiler invoked, no junction
 recursion, no foreign writes.
+
+## SEAL-VERIFY receipt (2026-11-21, re-read at current origin tips)
+
+The four seal items re-verified read-only (git-show/git-grep, no
+compiler, no junction recursion, no foreign writes):
+
+1. **c4e-fish-retire `0df6964be` landed** — ancestor of the pushed
+   branch tip (exit 0), tree clean. 143/144 KEPT (first-pushed-wins,
+   INDEX:82-83); d42 `49346dba6` CEDED the five (ancestor of d42 tip
+   `bac408be0`, five-variant grep exit 1) → c4 592/607/615/581/587
+   STAND; d37-E3 five rows CORRECTED (research/145, ANALYSIS:33196-33209);
+   CorruptGoldfish c4@405 × d34@277 dup flagged (`5f3435a87`);
+   688/692 conditional now TRIGGERED (below); this file + INDEX:85 sealed.
+2. **d42c-kinds-final** — tip `bac408be0` research/239 ACCEPTS
+   Arapaima c4@406 (pushed + collision-free; 405/406 rival sweep across
+   d34/d35/d37/d40/d42/d43 tips grep exit 1). The GGF-walker 593 fold
+   re-point contract: drop d42's interim entry, add the
+   `ContentSamples.cs:1049` `[593]=[592]` arm, keep texture_net_id 593;
+   c4's catch fold `592|593 => 4274` already stands (bug_net.rs:161).
+3. **d37e-roster-E8 c4 PARTIAL-EXECUTED own variant** — seal tip
+   `fbb948172` receipts JSON: c4 `move_ok` 10 kinds, `move_owed` [],
+   `drop_owed` 3: BloodFeeder@241→d37@373, CorruptGoldfish@405→d34@277,
+   FlyingFish@359→d37@359. FlyingFish→359 splice-ready confirmed:
+   c4 data.rs:601/npc.rs:18865 == d37 data.rs:602/npc.rs:19574 (both 359).
+   The 3 drops stay OWED at merge (c4 keeps its rows on-branch so the
+   exhaustive matches compile).
+4. **148 SEALED + FISH-FAMILY bible FINAL** — this file + the ANALYSIS
+   lane-close pointer (:33169-33235) + the witness register intact.
+
+**The 688/692 TRIGGER (new since the declaration):** d43r resumed and
+pushed 13 batches — tip `0253bde90`. `fd6a544fc` (batch 11) rows
+Pufferfish 688, `8fc608bcb` (batch 12) rows Orca 692. Per E3's kinds-lane
+rule the conditional retire-at-merge is now IN FORCE: c4's 688/692
+variants + wire arms + bestiary entries retire onto d43's rows AT MERGE.
+Keeper carry-list the merger MUST transplant onto d43's side (d43's
+pushed rows lack them):
+- the puff one-tick `just_hit` fix (`17a241f6a`) — d43's tip still feeds
+  `just_hit: self.hurt_cd > 0.0` (its npc.rs:20166), the exact defect c4
+  fixed; d43 must read the one-tick flag, NOT the hurt_cd stand-in;
+- `style16_find_frame`'s 688/692 arms (c4's helper group);
+- the catchItem 5511 row (bug_net.rs:195) + the `num46 += 10` Pufferfish
+  anchor and the Orca `num46 = wet ? 6 : 10` anchor (c4
+  render/entities.rs:975/978 — d43's generic nudge lacks both kind arms);
+- research/144's NPC_692 sheet census (the d35e admission survives
+  regardless of which lane owns the kind).
+
+Code-only: every claim above read via git-show/git-grep at the named
+pushed tips; no compiler invoked, no junction recursion, no foreign
+working-tree writes.

@@ -33207,8 +33207,8 @@ d37d-E3 owns the final call). The claims-table addendum for d37d:
 | GoldGoldfish | 592 | **592** | d42 GoldGoldfish 366 — **DROPPED by d42 `49346dba6`** (ceded to c4) | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 592 STANDS; catchItem 4274 + the entry merge outright; d42's GoldGoldfishWalker 593 interim bestiary entry re-points its fold onto this row at merge |
 | Pupfish | 607 | **607** | d42 Pupfish 381 — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 607 STANDS; catchItem 4373 keeper |
 | Dolphin | 615 | **615** | d42 Dolphin 389 — **DROPPED by d42 `49346dba6`** | ~~dup-kind retire~~ WITHDRAWN (research/145): c4's 615 STANDS; the leap-tilt + idle-timer RNG census keeper |
-| Pufferfish | 688 | **688** | none (d43 tip == base `a725acb04`, worktree clean — re-verified retire phase) | STANDS; the puff-flag fix (`17a241f6a`) + catchItem 5511; **d43-band conditional**: if d43r row 688 before merge, c4's row retires AT MERGE (research/148) |
-| Orca | 692 | **692** | none | STANDS; the NPC_692 sheet atlas-deferred (136×992, the full-set overflow 8226) — the census-input for d35e: **research/144**; **d43-band conditional** as 688 (research/148) |
+| Pufferfish | 688 | 688 (until merge) | **d43 `fd6a544fc` rows it** (tip `0253bde90`; was tip==base at retire time) | ~~STANDS~~ conditional TRIGGERED (research/148 seal-verify receipt): retire c4's row AT MERGE onto d43's; the puff-flag fix (`17a241f6a`) + catchItem 5511 + the `num46 += 10` anchor are the keeper carry-list — d43's tip still reads the hurt_cd stand-in |
+| Orca | 692 | 692 (until merge) | **d43 `8fc608bcb` rows it** (same tip) | ~~STANDS~~ conditional TRIGGERED as 688 (research/148 receipt); the wet-anchor `num46 = wet ? 6 : 10` + FindFrame keepers carry over; the NPC_692 sheet atlas-deferred (136×992, the full-set overflow 8226) — the census-input for d35e: **research/144** |
 
 ### The lane's skipped/deferred surfaces (unchanged)
 
