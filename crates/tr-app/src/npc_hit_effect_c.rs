@@ -147,6 +147,7 @@
 //! | 598-599 | `:85918-85919` | the 646-652 GemBunny death (2 gores, per-type offset (type-646)*2) |
 //! | 600 | `:85940` | the 639-645 GemSquirrel death (1 gore 1227+(type-639)) |
 //! | 601-610 | `:85958-85981` | the critter family: bunny group (46/303/337/540), crab 67, goldfish 55/230 |
+//! | 611-620 | `:85985-86006` | the critter family: dolphin 615, bird 74, birds 297/298, scarlet macaw 671 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3962,6 +3963,33 @@ fn critter_family_death(
         gore.new_gore(rng, world, pos, vel, 553, 1.0); // :85980
         gore.new_gore(rng, world, pos, vel, 554, 1.0); // :85981
     }
+    // `:85983-85989` — the dolphin 615.
+    else if npc_type == 615 {
+        gore.new_gore(rng, world, pos, vel, 1198, 1.0); // :85985
+        gore.new_gore(rng, world, pos, vel, 1199, 1.0); // :85986
+        gore.new_gore(rng, world, pos, vel, 1200, 1.0); // :85987
+        gore.new_gore(rng, world, pos, vel, 1200, 1.0); // :85988
+    }
+    // `:85990-85993` — the bird 74.
+    else if npc_type == 74 {
+        gore.new_gore(rng, world, pos, vel, 100, 1.0); // :85992
+    }
+    // `:85994-85997` — the blue bird 297.
+    else if npc_type == 297 {
+        gore.new_gore(rng, world, pos, vel, 431, 1.0); // :85996
+    }
+    // `:85998-86001` — the red bird 298.
+    else if npc_type == 298 {
+        gore.new_gore(rng, world, pos, vel, 432, 1.0); // :86000
+    }
+    // `:86002-86007` — the scarlet macaw 671 (the head at position, the
+    // wings at Center±4).
+    else if npc_type == 671 {
+        let c = center(npc);
+        gore.new_gore(rng, world, pos, vel, 1277, 1.0); // :86004
+        gore.new_gore(rng, world, c + Vec2::new(4.0, 0.0), vel, 1279, 1.0); // :86005
+        gore.new_gore(rng, world, c + Vec2::new(-4.0, 0.0), vel, 1279, 1.0); // :86006
+    }
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -4437,11 +4465,12 @@ pub fn hit_effect_c(
     if (639..=645).contains(&npc_type) && npc.hp <= 0 {
         gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:85942-86091` — the critter family arm; this commit owns the bunny
-    // group / crab / goldfish (sites 601-610); the rest lands with the next
-    // batches.
+    // `:85942-86091` — the critter family arm; the bunny group / crab /
+    // goldfish (sites 601-610) + dolphin / bird / birds / scarlet macaw
+    // (sites 611-620); the rest lands with the next batches.
     if (npc_type == 46 || npc_type == 303 || npc_type == 337 || npc_type == 540 || npc_type == 67
-        || npc_type == 55 || npc_type == 230)
+        || npc_type == 55 || npc_type == 230 || npc_type == 615 || npc_type == 74
+        || npc_type == 297 || npc_type == 298 || npc_type == 671)
         && npc.hp <= 0
     {
         critter_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
@@ -7021,6 +7050,38 @@ mod tests {
         critter_family_death(&n, 55, &mut dust4, &ctx(), &mut gore4, &mut rng4, &w, 1.0);
         let types4: Vec<i32> = gore4.slots()[..2].iter().map(|g| g.gore_type).collect();
         assert_eq!(types4, vec![553, 554]);
+    }
+
+    /// `NPC.cs:85985-86006` — the critter family: dolphin 615
+    /// (1198/1199/1200/1200), bird 74 (100), birds 297/298 (431/432),
+    /// scarlet macaw 671 (1277 at position + 1279 at Center±4).
+    #[test]
+    fn w4_f10_the_critter_family_dolphin_birds_macaw() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 24.0);
+        // The dolphin 615.
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(587);
+        critter_family_death(&n, 615, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1198, 1199, 1200, 1200]);
+        // The bird 74.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(587);
+        critter_family_death(&n, 74, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        assert_eq!(gore2.slot(0).gore_type, 100);
+        // The scarlet macaw 671: Center = (115,112).
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(587);
+        critter_family_death(&n, 671, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        let types3: Vec<i32> = gore3.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types3, vec![1277, 1279, 1279]);
+        assert_eq!(gore3.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore3.slot(1).position, Vec2::new(119.0, 112.0));
+        assert_eq!(gore3.slot(2).position, Vec2::new(111.0, 112.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
