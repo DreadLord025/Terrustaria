@@ -612,6 +612,35 @@ pub fn convert_cell_mushroom(world: &mut World, x: i32, y: i32) {
     }
 }
 
+/// `WorldGen.Convert(i, j, 3, size)` (`WorldGen.cs:55067-55083`) — the sized
+/// mushroom walk for the Clentaminator's DarkBlueSolution spray (W4-g42
+/// GROWTH SEAL: the FOURTH Convert(3) call site, `Projectile.cs:26834` —
+/// the aiStyle-31 ladder `:26805-26808` maps projectile 148 → type 3, the
+/// shoot math `Player.cs:53487-53490`: Clentaminator 779 shoot 145 +
+/// DarkBlueSolution 783 shoot 3 = 148). The SAME square walk + Manhattan
+/// `< 6` gate as [`convert_cleanse`] — only the per-cell arm differs
+/// ([`convert_cell_mushroom`], G7, RNG-free: the type-3 wall/torch/60→70/
+/// thorn ladder draws nothing).
+///
+/// MERGER CONTRACT (the projectile lane — d18 tip 8248a54b rowed the seven
+/// solution kinds 146-149/1015-1017; f25 tip d587b128d wired the `ai_spray`
+/// dispatch to `match conversion { 0 => convert_cleanse, 2 =>
+/// convert_sized_hallow, 5|6|7 => convert_sized_spray, _ => {} }`): the
+/// merger adds ONE arm — `3 => tr_core::spread::convert_sized_mushroom(
+/// world, tx, ty, size)` — into f25's match (types 1/4 stay d1's
+/// `convert_sized`). The 133 cap / `ai[0]++` / spin already run for every
+/// kind — this arm is the only missing piece. f25's 12g ledger already
+/// records "g42 owns 3".
+pub fn convert_sized_mushroom(world: &mut World, i: i32, j: i32, size: i32) {
+    for k in (i - size)..=(i + size) {
+        for l in (j - size)..=(j + size) {
+            if in_world(world, k, l, 1) && (k - i).abs() + (l - j).abs() < 6 {
+                convert_cell_mushroom(world, k, l);
+            }
+        }
+    }
+}
+
 /// `TryConvertingOrKillingTreesAboveIfTheyWouldBecomeInvalid`
 /// (`WorldGen.cs:54802-54899`): the tree trunk (or palm 323) directly above
 /// the converted cell dies when the new floor no longer fits its ground
@@ -1098,6 +1127,42 @@ mod tests {
         put(&mut w2, 50, 99, 5); // the vanilla tree trunk
         convert_cell_mushroom(&mut w2, 50, 100);
         assert!(w2.tile(50, 99).unwrap().active(), "the tree survives on 70");
+    }
+
+    /// W4-g42 GROWTH SEAL: the sized type-3 walk (`WorldGen.cs:55067-55083`,
+    /// the Clentaminator DarkBlueSolution 148 site `Projectile.cs:26834`) —
+    /// the SAME square + Manhattan `< 6` gate as the cleanse walk: at
+    /// size 2 every (±2, ±2) cell sits inside (max Manhattan 4); the gate
+    /// only bites at size 3 (the solution spray), where the (±3, ±3)
+    /// corners (Manhattan 6) refuse. Every 60 in the diamond becomes 70;
+    /// the out-of-diamond 60 stands. RNG-free — the a == b halves compare
+    /// the full tile state.
+    #[test]
+    fn w4_g42_seal_the_sized_mushroom_walk_matches_the_convert_gate() {
+        let run = |size: i32| {
+            let mut w = world();
+            for dx in -3..=3i32 {
+                for dy in -3..=3i32 {
+                    put(&mut w, 100 + dx, 100 + dy, 60);
+                }
+            }
+            convert_sized_mushroom(&mut w, 100, 100, size);
+            w
+        };
+        let w2 = run(2);
+        for dx in -2..=2i32 {
+            for dy in -2..=2i32 {
+                assert_eq!(w2.tile(100 + dx, 100 + dy).unwrap().kind, 70,
+                    "size 2: ({dx},{dy}) inside the walk");
+            }
+        }
+        assert_eq!(w2.tile(103, 100).unwrap().kind, 60, "size 2: the ring outside stands");
+        let w3 = run(3);
+        assert_eq!(w3.tile(103, 103).unwrap().kind, 60,
+            "size 3: the Manhattan-6 corner refuses");
+        assert_eq!(w3.tile(103, 102).unwrap().kind, 70,
+            "size 3: Manhattan 5 converts");
+        assert_eq!(run(3).tiles, run(3).tiles, "a == b — the full tile state");
     }
 
     #[test]

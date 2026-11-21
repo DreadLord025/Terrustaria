@@ -361,3 +361,83 @@ growth/overworld.rs (1 — the entry guards skip margin + actuated),
 growth/grass.rs (1 — the plain write keeps wall/liquid). Runtime-only — no
 worldgen pass stream touched, both world-hash pins stay; the `a == b`
 halves untouched. Co-lane boundaries unchanged (g83/c33/d102/d106/d105).
+
+## Phase 9 — GROWTH SEAL (the c31 DUP-RECONCILE + the sized-mushroom close)
+
+> **12j SEALED** — the growth family is closed on this lane. The in-flight
+> `spread.rs` hunk (the FOURTH Convert(3) site's sized walk) completed and
+> landed; its witness's call typo (`convert_mushroom` →
+> `convert_sized_mushroom`) fixed against the fn it tests. The c31 tail
+> duplicate is reconciled below — ONE keeper per fn, ONE drop-hunk set for
+> the merger.
+
+**GROWTH-FAMILY (one paragraph)**: the full grass-growth family now stands
+on one lane — the underground slice (`growth/grass.rs`, table + plant roll +
+soil scan) dispatches the tail switch (`growth/underground_tail.rs`: the
+case-60 Next(25)-gate / liquid veto / all-mechs Next(60) bulb / any-mech
+Next(40) fruit / Next(8)+Next(12) rose ladder, and the case-70 raw-`j-1`
+cattail branch + Next(250) kind-5 tree) over the D3 placement helper
+(`growth/jungle.rs::place_jungle_plant`, kill-sweep + paint-inherit +
+boot-frame, shared with the overworld rose arm `:74773-74791`); the runtime
+`PlaceCatTail` copy rides `UnifiedRandom` RNG-free beside c33's untouched
+worldgen copy; the mushroom CONVERT census closes at FOUR sites with
+`spread::convert_sized_mushroom` (`WorldGen.cs:55067-55083`, the same square
++ Manhattan-<6 walk as the cleanse) ready for f25's `ai_spray` one-arm
+wiring (`3 => convert_sized_mushroom`); the tree chain (registry → sapling →
+`try_growing_tree_by_type` → `grow_tree`/settings) verified complete in
+phase 8. No worldgen stream touched; both hash pins stay.
+
+### The c31 DUP-RECONCILE (origin branch `task/W4-c31-hive-rewrite` @ 57afc1ea)
+
+Both lanes ported the case-60/70 tails of `UpdateWorld_GrassGrowth`
+(`:74414-74506`): c31 as `grass.rs::jungle_grass_hardmode_tail` /
+`mushroom_grass_tail` + a new `growth/jungle_plants.rs` module; this lane as
+`growth/underground_tail.rs` + `growth/jungle.rs` (D3/D4). Per-fn
+byte-compare verdict — the g42 copy is the KEEPER of every runtime fn:
+
+| c31 fn (57afc1ea) | g42 keeper | verdict / delta |
+| --- | --- | --- |
+| `grass.rs::jungle_grass_hardmode_tail` | `underground_tail.rs` case-60 arm | same gates + draw order (Next(25) short-circuit, Next(60)/Next(40), rose Next(8)/Next(12)); g42 folds the expert constants off the same way; g42 places via the shared `jungle::place_jungle_plant` (paint+kill+boot) vs c31's placement + 3 `square_tile_frame_gen` calls (the T-3 framer deviation) |
+| `grass.rs::mushroom_grass_tail` | `underground_tail.rs` case-70 arm | same raw-`j-1` liquid gate + Next(250); g42 calls `try_growing_tree_by_type(5,…)` (case-5 → `grow_tree`, identical), c31 calls `grow_tree` direct — same draws |
+| `grass.rs::too_many_jungle_plants_nearby` | `jungle.rs::too_many_jungle_plants_nearby` | same ±9×±5 clamp + 61/74 count; g42 adds the OOB skip (the C# throws inside the tick's try/catch) |
+| `grass.rs::no_nearby_kind` | inline stride-2 scans in the tail arms | same `[i-r, i+r)` step-2 box + `>1 && <max-2` guard; inlined, not a helper — drop with the tail |
+| `jungle_plants.rs::place_jungle_plant` (+ `solid_tile`/`overlay_clear`/`write` helpers) | `jungle.rs::place_jungle_plant` | same boxes/frames/kind-set; g42 is the superset: real `edit::kill_tile` sweep (c31 collapses KillTile into the overwrite), `inherit_paint` copy (c31 no-op), `boot_frame`, the kept-verbatim 95/126 row bump + 98 liquid veto. c31's `solid_tile` dup drops — `edit::solid_tile` already exists |
+| `decorations.rs::place_cat_tail` (c31's added copy) | `underground_tail.rs::place_cat_tail` | same walk/gates/frame rows; g42 additionally ports the `CopyPaintAndCoating` (`:58738`) + boot-frame, c31 instead calls `square_tile_frame_gen` (framer deviation); g42 reuses `CAT_TAIL_DISTANCE`/`BEACH_DISTANCE` consts |
+| `grass.rs` table row `2 => (0,-1,2,-1,-1,1)` + the plain `Tile{}` plant write | g42 D1 table + per-kind plant arms | c31 is the OLDER slice: kind 2 is not in `SpreadUnderground` (`TileID.cs:622`), the plain write misses the flower ladder / 61 arm / 71 cattail-climb + Next(5) frame draws — g42 supersedes whole |
+| `plantera.rs` (worldgen bulb event, uses `jungle_plants::place_jungle_plant`) | NOT on this lane | c31-lane-only file; at merge its two call sites re-point to `jungle::place_jungle_plant(world, i, j, 238, 0, 0, false)` (visibility widened `pub(super)` → `pub(crate)` if needed) |
+| c31 witnesses `the_hardmode_tail_*` / `the_pre_hardmode_*` / `the_liquid_veto_*` (grass.rs) | g42 D4 stream witnesses | g42 pins the exact draw order per gate; c31's 4000-tick statistical grows drop with the fns — EXCEPT the liquid-veto witness's shape is uncovered: port it as ONE small witness on `underground_grass_tail` (liquid at min_j → no Next(25)-pass placement across seeds) if the merger wants it; the jungle_plants.rs placement witnesses drop (the D3/D4 witnesses + the overworld rose stream pins cover the boxes) |
+
+**THE ONE DROP-HUNK SET (publish for the merger — drop from the c31 side):**
+
+1. `growth/jungle_plants.rs` — DROP the whole module (+ its `mod`/`pub use`
+   lines in `growth.rs:57-58`); keep g42 `growth/jungle.rs`. Re-point
+   `plantera.rs`'s two calls with the extra `false` arg.
+2. `growth/grass.rs` — DROP c31's `jungle_grass_hardmode_tail`,
+   `mushroom_grass_tail`, `too_many_jungle_plants_nearby`, `no_nearby_kind`,
+   the tail `match kind` block, the kind-2 table row, the plain plant-write
+   body, and the four tail witnesses; KEEP g42's dispatcher + tail call.
+3. `growth/decorations.rs` — DROP c31's `place_cat_tail` copy (+ the
+   `place_cat_tail` re-export in `growth.rs:82`); keep g42
+   `underground_tail.rs::place_cat_tail` (widen to `pub` + re-export from
+   `growth` if an external consumer needs the seam). `check_cat_tail` /
+   `grow_cat_tail` are shared base — untouched both sides.
+
+No g42 hunks drop. The reconciliation is one-directional: c31's tails are
+the older, thinner slice of the same C#; every unique c31 shape (the
+statistical-grow witnesses, the direct-fn liquid-veto witness) is either
+covered by a g42 stream pin or noted above for a one-witness port.
+
+### Phase-9 landing ledger
+
+| phase | scope | status |
+| --- | --- | --- |
+| SEAL-1 | `spread.rs::convert_sized_mushroom` + witness (the in-flight hunk completed; the call-name typo fixed) | landed (this commit) |
+| SEAL-2 | the c31 DUP-RECONCILE — per-fn byte-compare, keeper table, ONE drop-hunk set (doc-only; no c31 file touched on this lane) | landed (this commit) |
+
+Witness WRITTEN NOT RUN (code-only mode): the sized-mushroom walk test
+(`w4_g42_seal_the_sized_mushroom_walk_matches_the_convert_gate`) — size-2
+full conversion, size-3 Manhattan-6 corner refusal, `a == b` full-tile
+compare. `Tile` derives `PartialEq` (`tile.rs:13`), the test's `world()`/
+`put()` helpers exist in the same test module (`spread.rs:970/976`); the
+walk is verbatim `:55067-55083` (square loop + `InWorld(…,1)` + Manhattan
+`< 6`, re-read against the decompile). No cargo/tests/rustfmt/graphify run.
