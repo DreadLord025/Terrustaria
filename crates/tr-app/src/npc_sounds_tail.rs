@@ -122,9 +122,11 @@ pub(crate) fn sand_shark_cry(
     if in_sand && chase {
         let range = if remix { 700.0 } else { 400.0 };
         // `Math.Sign(base.velocity.X) == base.direction` (`:40628`) —
-        // Math.Sign returns 0 at velocity.X == 0, so a zero velocity
-        // matches only a zero direction (the C#'s exact comparison).
-        let sign_match = (npc.vx.signum() as i32) == npc.facing;
+        // Math.Sign returns 0 at velocity.X == 0 (Rust's f32::signum
+        // returns +1 there — the explicit three-way keeps the C#'s zero
+        // case: a zero velocity matches only a zero direction).
+        let sign = if npc.vx > 0.0 { 1 } else if npc.vx < 0.0 { -1 } else { 0 };
+        let sign_match = sign == npc.facing;
         if !ahead_sand && sign_match && dist < range && (ai2 >= 30.0 || ai2 < 0.0) {
             if local0 == 0.0 {
                 let (cx, cy) = npc.center();

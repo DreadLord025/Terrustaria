@@ -387,8 +387,10 @@ mod tests {
         sw.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
         let (wet, honey, shimmer) = wet_collision_probe(&sw, 61.0 * 16.0, 62.0 * 16.0, 18, 40);
         assert!(wet && !honey && shimmer);
-        // The surface inset: liquid 1 drops the cell top by ~15.9 px;
-        // a box entirely above the inset surface misses.
+        // The surface inset: liquid 1 drops each cell's top by ~15.9 px
+        // and shrinks its height to 1. At y = 940 the probe spans
+        // 950..970: the FULL cell (61,60) surface (960.06..976.06)
+        // overlaps, the INSET surface (975.94..976.94) does not.
         let mut lw = water_world();
         for x in 60..64 {
             for y in 60..70 {
@@ -396,11 +398,11 @@ mod tests {
                 lw.tiles[i].liquid = 1;
             }
         }
-        // The box's centred probe spans y+10..y+30; at y = 62*16 the
-        // probe bottom (62*16+30) is above the inset surface
-        // (62*16+15.9) only when the box sits higher — park it so the
-        // probe bottom is 62*16+8: y = 62*16 - 22.
-        assert!(!wet_collision_probe(&lw, 61.0 * 16.0, 62.0 * 16.0 - 22.0, 18, 40).0);
+        assert!(wet_collision_probe(&w, 61.0 * 16.0, 940.0, 18, 40).0, "full cells hit");
+        assert!(
+            !wet_collision_probe(&lw, 61.0 * 16.0, 940.0, 18, 40).0,
+            "the inset surface sits below the probe"
+        );
     }
 
     /// `Collision.cs:1653-1684` — the lava probe reads the FULL box and
@@ -412,8 +414,9 @@ mod tests {
         let i = w.index(61, 62);
         w.tiles[i].set_liquid_kind(LiquidKind::Lava);
         assert!(lava_collision_probe(&w, 61.0 * 16.0, 62.0 * 16.0, 18, 40));
-        // The full box reaches a cell the centred probe would miss:
-        // the box's left edge at x = 61*16 - 12 still overlaps tile 60.
+        // The full box (not the centred one) reaches a lava cell left of
+        // the body: the box's left edge at x = 61*16 - 12 overlaps tile
+        // 60 even though the body's centre sits in tile 61.
         let mut w2 = water_world();
         let i = w2.index(60, 62);
         w2.tiles[i].set_liquid_kind(LiquidKind::Lava);

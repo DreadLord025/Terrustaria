@@ -4604,7 +4604,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // never wet). The decision queues its case-19 play
                     // on `wants_sound`; the drain below spends its one
                     // pitch on the `UpdateNPCs` stream.
-                    if water_collision_kind(n.kind) {
+                    if crate::npc_water_collision::water_collision_kind(n.kind) {
                         crate::npc_water_collision::collision_water_step(n, world);
                     }
                     // S1-E-21g — the AI machine's queued sound plays
