@@ -498,15 +498,16 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
     }
-    // W4-d12 DOC-SWEEP items 3/4 — `Player.ItemCheck_OwnerOnlyCode`'s
-    // use-start proc latches (`Player.cs:43468-43475`): the Tentacle Spike
-    // (5094) and the Blood Butcherer (795) arm their on-hit spawn flag on
-    // `ItemAnimationJustStarted` — the swing's first tick, which this seam
-    // is (every swing/shot/consume start calls it). The flag is consumed by
-    // the first landed melee hit (`resolve_melee_strike`'s
-    // `ApplyNPCOnHitEffects` tail). The 121 Volcano / 155 Muramasa /
-    // 5097 BatBat latches are the other `ItemCheck_OwnerOnlyCode` arms —
-    // their procs are the player-lane follow-ups, not this lane.
+    // W4-d12 DOC-SWEEP items 3/4 + FINAL item 1 — the
+    // `Player.ItemCheck_OwnerOnlyCode` use-start proc latches
+    // (`Player.cs:43468-43479`): the Tentacle Spike (5094), the Blood
+    // Butcherer (795) and the Fiery Greatsword / Volcano (121) arm their
+    // on-hit spawn flag on `ItemAnimationJustStarted` — the swing's first
+    // tick, which this seam is (every swing/shot/consume start calls it).
+    // The flag is consumed by the first landed melee hit
+    // (`resolve_melee_strike`'s `ApplyNPCOnHitEffects` tail). The 155
+    // Muramasa / 5097 BatBat latches are the other `ItemCheck_OwnerOnlyCode`
+    // arms — their procs are the player-lane follow-ups, not this lane.
     if held_kind == 5094 {
         if let Some(p) = app.player.as_mut() {
             p.spawn_tentacle_spikes = true;
@@ -515,6 +516,11 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
     if held_kind == 795 {
         if let Some(p) = app.player.as_mut() {
             p.spawn_blood_butcherer = true;
+        }
+    }
+    if held_kind == 121 {
+        if let Some(p) = app.player.as_mut() {
+            p.spawn_volcano_explosion = true;
         }
     }
 }
@@ -7862,14 +7868,18 @@ fn resolve_melee_strike(
                 // `UpdatePlayers` swap (`Main.cs:17754`).
                 let loot_rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
                 let crit = tr_core::damage::crit_roll(loot_rng, class_crit + item_crit);
-                // W4-d12 DOC-SWEEP items 3/4 — `ProcessHitAgainstNPC`'s `dmg`
-                // local (`Player.cs:44291`, `ApplyRapidAttackBonus`'s result;
-                // the 5094/795 are NOT in `RapidAttackBonusDamage` so it is the
-                // class-multiplied `raw`). `ApplyNPCOnHitEffects` receives THIS
-                // pre-DamageVar value as its `damage` arg (`:44404`), and the
-                // Tentacle Spike / Blood Butcherer procs spawn their sticker at
-                // it (`:44167`/`:44181`). Captured before DamageVar mutates it.
-                let proc_damage = dmg;
+                // W4-d12 DOC-SWEEP items 3/4 + FINAL item 1 — the
+                // `ProcessHitAgainstNPC` `dmg` local (`Player.cs:44291`,
+                // `ApplyRapidAttackBonus`'s result; the 5094/795/121 are NOT in
+                // `RapidAttackBonusDamage` — the set is {2608, 3349, 672},
+                // `ItemID.cs:344` — so it is the class-multiplied `raw`).
+                // `ApplyNPCOnHitEffects` receives THIS pre-DamageVar value as
+                // its `damage` arg (`:44404`); the 971/975 stickers spawn at it
+                // (`:44167`/`:44181`) and the 121 Volcano at its ×0.75
+                // (`:44487`). Captured before DamageVar mutates `dmg` below
+                // (FINAL-phase fix: the first pass read `dmg` here, BEFORE its
+                // declaration — an E0425; the C# value at this point is `raw`).
+                let proc_damage = raw as i32;
                 let mut dmg = tr_core::damage::damage_var(loot_rng, raw, luck);
                 // `if (sItem.type == 5129 && nPC.isLikeATownNPC)`
                 // (`Player.cs:44344-44353`): the Flymeal takes full armour
@@ -8023,6 +8033,37 @@ fn resolve_melee_strike(
                                         p.spawn_blood_butcherer = false;
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+                // W4-d12 FINAL item 1 — `ApplyNPCOnHitEffects`' 121 arm
+                // (`Player.cs:44485-44488`): `Volcano_TrySpawningVolcano(npc,
+                // sItem, (int)((float)damage * 0.75f), knockBack, ...)` — the
+                // SAME pre-DamageVar `proc_damage`, times 0.75 truncated.
+                // The gate is `HittableForOnHitRewards` (`:44152`,
+                // `NPC.cs:90043-90050`): `!CountsAsACritter && !immortal` —
+                // NO liveness term, so a KILLING blow still fires the
+                // explosion (the 971/975's `CanBeChasedBy` refuses it). The
+                // latch consumes INSIDE the gate (`:44156`). ZERO RNG draws.
+                // The 978's OnFire 24/180 rides its own damage walks
+                // (`Projectile.cs:11359-11362`) — no StatusNPC at spawn.
+                if landed && held.kind == 121 {
+                    let armed = app
+                        .player
+                        .as_ref()
+                        .is_some_and(|p| p.spawn_volcano_explosion);
+                    if armed && app.npcs[idx].hittable_for_on_hit_rewards() {
+                        let (ncx, ncy) = app.npcs[idx].center();
+                        let spawned = app.projectiles.spawn_volcano_proc(
+                            me,
+                            Vec2::new(ncx, ncy),
+                            (proc_damage as f32 * 0.75) as i32,
+                            kb,
+                        );
+                        if spawned.is_some() {
+                            if let Some(p) = app.player.as_mut() {
+                                p.spawn_volcano_explosion = false;
                             }
                         }
                     }
@@ -8643,7 +8684,12 @@ mod tests {
     /// StatusNPC TentacleSpike debuff 337/540 (`Projectile.cs:11343-11346`),
     /// and the latch consumes. The 971 draws NOTHING (the 975's rotation is
     /// the only draw in the pair). The rig's first swing lands the strike and
-    /// arms the latch; the second swing's hit fires the proc.
+    /// arms the latch; the second swing's hit fires the proc. FINAL-phase
+    /// rig fix: the 5094 is `autoReuse: false` and the rig never decays
+    /// `attack_cd`/`hurt_cd` (those passes live in `world_sim/npcs.rs`) —
+    /// the re-press needs the explicit release/press edge + timer clears
+    /// (the established `repress`/i05 convention), and the victim's life
+    /// parked so swing 2 lands on a live target.
     #[test]
     fn w4_d12_doc_sweep_the_tentacle_spike_procs_a_pinned_971() {
         let mut a = melee_app();
@@ -8660,8 +8706,14 @@ mod tests {
             0,
             "the first swing's strike precedes the latch arming — no proc yet"
         );
-        // Run the swing out so the next press starts a fresh use.
+        // Run the swing out, then re-press (release edge → press edge).
         mine_frames(&mut a, 30);
+        a.npcs[0].hp = a.npcs[0].max_hp;
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
         // Swing 2: the armed latch fires the proc on the landed hit.
         mine_frames(&mut a, 1);
         let spike = a
@@ -8686,6 +8738,8 @@ mod tests {
     /// the same shape as the 971 but the velocity rotates by
     /// `NextFloatDirection() * π/4` (ONE `NextDouble`, `Player.cs:44180`) and
     /// the StatusNPC grants BloodButcherer 344/540 (`Projectile.cs:11347-11350`).
+    /// The re-press rig is the 971's (FINAL-phase fix — the release/press
+    /// edge + the timer clears + the parked life).
     #[test]
     fn w4_d12_doc_sweep_the_blood_butcherer_procs_a_pinned_975() {
         let mut a = melee_app();
@@ -8697,6 +8751,12 @@ mod tests {
             "the use start arms the latch (:43474)"
         );
         mine_frames(&mut a, 30);
+        a.npcs[0].hp = a.npcs[0].max_hp;
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
         mine_frames(&mut a, 1);
         let butcher = a
             .projectiles
@@ -8713,6 +8773,118 @@ mod tests {
         let n = &a.npcs[0];
         let slot = n.buffs.find_buff_index(344).expect("the 344 debuff lands at spawn");
         assert_eq!(n.buffs.buff_time[slot], 540, "the fixed 540 (:11349)");
+    }
+
+    /// W4-d12 FINAL item 1 — the Fiery Greatsword / Volcano (121) melee
+    /// on-hit proc: the use start arms `_spawnVolcanoExplosion`
+    /// (`Player.cs:43476-43479`), the next swing's landed hit spawns the
+    /// 978 explosion at the victim's centre (`Volcano_TrySpawningVolcano`
+    /// `:44150-44158`): ai0=0 / ai1=2, velocity (0, -1·gravDir), damage
+    /// `(int)(dmg * 0.75)` = 30 on the sword's 40 (`:44487`). NO StatusNPC
+    /// at spawn (the OnFire rides the explosion's own walks) and NO cap.
+    /// The re-press rig is the 971's (the 121 is `autoReuse: false`,
+    /// 40-tick animation).
+    #[test]
+    fn w4_d12_final_the_volcano_procs_a_978_at_the_victim_centre() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 121; // Fiery Greatsword (melee, no shoot)
+        a.inventory[a.selected].count = 1;
+        // Swing 1: the strike lands, the use start arms the latch.
+        mine_frames(&mut a, 1);
+        assert!(
+            a.player.as_ref().unwrap().spawn_volcano_explosion,
+            "the use start arms the latch (:43478)"
+        );
+        assert_eq!(
+            a.projectiles.slots().iter().filter(|p| p.active && p.kind == 978).count(),
+            0,
+            "the first swing's strike precedes the latch arming — no proc yet"
+        );
+        // Run the 40-tick swing out, then re-press.
+        mine_frames(&mut a, 45);
+        a.npcs[0].hp = a.npcs[0].max_hp;
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
+        // Swing 2: the armed latch fires the proc on the landed hit.
+        let (ncx, ncy) = a.npcs[0].center();
+        mine_frames(&mut a, 1);
+        let boom = a
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 978)
+            .expect("the second swing's hit spawns the 978 explosion");
+        assert_eq!(boom.ai[0], 0.0, "ai0 = 0 (:44155)");
+        assert_eq!(boom.ai[1], 2.0, "ai1 = 2 (:44155)");
+        assert_eq!(boom.damage, 30, "(int)(40 * 0.75) (:44487)");
+        assert_eq!(boom.vel.x, 0.0, "velocity X = 0 (:44155)");
+        assert!(boom.vel.y <= -1.0, "velocity Y = -1·gravDir (:44155)");
+        // The centre→top-left recentre (`Projectile.cs:10876-10877`): the
+        // 160×160 box centres on the victim (± one tick of drift).
+        let (bx, by) = (boom.pos.x + boom.w * 0.5, boom.pos.y + boom.h * 0.5);
+        assert!((bx - ncx).abs() < 2.0 && (by - ncy).abs() < 2.0);
+        assert!(
+            !a.player.as_ref().unwrap().spawn_volcano_explosion,
+            "the proc consumes the latch (:44156)"
+        );
+        // NO StatusNPC at spawn — the OnFire 24 comes from the explosion's
+        // own damage walk, not the proc (:44155 has no StatusNPC call).
+        assert!(a.npcs[0].buffs.find_buff_index(24).is_none());
+    }
+
+    /// W4-d12 FINAL item 1 — the killing-blow contrast: the Volcano gate is
+    /// `HittableForOnHitRewards` (NO liveness term, `NPC.cs:90043-90050`),
+    /// so the strike that KILLS the victim still spawns the 978 — while the
+    /// 971's `CanBeChasedBy` gate refuses the same blow (`:44162`).
+    #[test]
+    fn w4_d12_final_the_killing_blow_still_fires_the_volcano_but_not_the_spike() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 121;
+        a.inventory[a.selected].count = 1;
+        mine_frames(&mut a, 1); // swing 1 arms the latch
+        mine_frames(&mut a, 45); // the 40-tick swing runs out
+        a.npcs[0].hp = 1; // swing 2's hit kills
+        a.npcs[0].hurt_cd = 0.0;
+        a.attack_cd = 0.0;
+        a.mine_down = false;
+        mine_frames(&mut a, 2);
+        a.mine_down = true;
+        mine_frames(&mut a, 1);
+        assert!(a.npcs[0].hp <= 0, "the second swing's hit kills the slime");
+        assert!(
+            a.projectiles.slots().iter().any(|p| p.active && p.kind == 978),
+            "the Volcano fires on the killing blow (:44152 — no active gate)"
+        );
+        assert!(
+            !a.player.as_ref().unwrap().spawn_volcano_explosion,
+            "the latch consumed inside the gate (:44156)"
+        );
+        // The contrast: the Tentacle Spike's CanBeChasedBy reads post-strike
+        // liveness — the same killing blow refuses the 971.
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 5094;
+        b.inventory[b.selected].count = 1;
+        mine_frames(&mut b, 1);
+        mine_frames(&mut b, 30);
+        b.npcs[0].hp = 1;
+        b.npcs[0].hurt_cd = 0.0;
+        b.attack_cd = 0.0;
+        b.mine_down = false;
+        mine_frames(&mut b, 2);
+        b.mine_down = true;
+        mine_frames(&mut b, 1);
+        assert!(b.npcs[0].hp <= 0);
+        assert!(
+            !b.projectiles.slots().iter().any(|p| p.active && p.kind == 971),
+            "the spike refuses the killing blow (CanBeChasedBy :44162)"
+        );
+        assert!(
+            b.player.as_ref().unwrap().spawn_tentacle_spikes,
+            "the refused proc leaves the latch armed (:44170 is inside the gate)"
+        );
     }
 
     /// S1-P-i10 — the Magma Stone's OnFire3 ALWAYS lands (the 360/240/120

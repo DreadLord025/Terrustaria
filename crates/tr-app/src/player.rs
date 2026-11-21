@@ -2046,6 +2046,14 @@ pub struct Player {
     /// (`:43472-43475`), consumed by `BloodButcherer_TryButchering`
     /// (`:44174-44186`). W4-d12 DOC-SWEEP item 4.
     pub spawn_blood_butcherer: bool,
+    /// `Player._spawnVolcanoExplosion` (`Player.cs:2900`): the Fiery
+    /// Greatsword / Volcano (item 121) melee on-hit proc latch — armed on
+    /// the use start (`ItemCheck_OwnerOnlyCode` `:43476-43479`), consumed
+    /// by `Volcano_TrySpawningVolcano` (`:44150-44158`) at
+    /// `ApplyNPCOnHitEffects` `:44485-44488` (damage ×0.75). The gate is
+    /// `HittableForOnHitRewards` — NO liveness term, so a killing blow
+    /// still fires the explosion. W4-d12 FINAL item 1.
+    pub spawn_volcano_explosion: bool,
     /// `Player.killingCardFireType` (`Player.cs:3188`): the Dead Cells Killing
     /// Deck (item 5461) card-draw cycle 0..3 — the four fire modes
     /// (`ItemCheck_Shoot`'s 5461 arm `:49190-49261`): 0 single, 1 forward+back,
@@ -2934,6 +2942,7 @@ impl Player {
             // (`Player.cs:2896`/`:2898`'s bool field defaults).
             spawn_tentacle_spikes: false,
             spawn_blood_butcherer: false,
+            spawn_volcano_explosion: false,
             // W4-d12 DOC-SWEEP item 5 — the card-draw cycle opens at 0
             // (`Player.cs:3188`'s int field default).
             killing_card_fire_type: 0,

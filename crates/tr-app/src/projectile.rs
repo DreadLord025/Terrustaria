@@ -22202,6 +22202,40 @@ impl ProjectilePool {
         Some(slot)
     }
 
+    /// W4-d12 FINAL item 1 — `Player.Volcano_TrySpawningVolcano`
+    /// (`Player.cs:44150-44158`, item 121): the 978 explosion spawns at the
+    /// victim's CENTRE with velocity `(0, -1 * gravDir)`, ai0 = 0 / ai1 = 2
+    /// (`:44155`), damage the caller's `(int)(dmg * 0.75)` (`:44487`).
+    /// UNLIKE the 971/975 stickers: NO `StatusNPC` at spawn (the OnFire
+    /// 24/180 rides the explosion's own damage walks, `:11359-11362`), NO
+    /// `KillOldestJavelin` cap, and the gate is `HittableForOnHitRewards`
+    /// (the caller's — NO liveness term, so a killing blow still fires).
+    /// `gravDir` folds to 1 (no gravity potion in the port, the
+    /// `bow_launch.rs` precedent). The `NewProjectile` centre→top-left
+    /// recentre (`Projectile.cs:10876-10877`) subtracts the half-box. The
+    /// latch consumes INSIDE the gate (`:44156`) — the caller's job.
+    pub(crate) fn spawn_volcano_proc(
+        &mut self,
+        owner: u8,
+        npc_center: Vec2,
+        damage: i32,
+        knock_back: f32,
+    ) -> Option<usize> {
+        let (w, h) = proj_data(VOLCANO).map_or((160.0, 160.0), |d| (d.w, d.h));
+        self.spawn_with_data_ai_owned(
+            VOLCANO,
+            owner,
+            npc_center.x - w * 0.5,
+            npc_center.y - h * 0.5,
+            0.0,
+            -1.0, // `-1f * this.gravDir`, gravDir folded to 1
+            damage,
+            knock_back,
+            0.0,
+            2.0,
+        )
+    }
+
     /// W4-d12 DOC-SWEEP item 5 — the Killing Deck card's state-3 recall:
     /// `ItemCheck_Shoot`'s 5461 arm, `case 3` (`Player.cs:49238-49253`): every
     /// active 1024 of this owner takes `velocity = Zero`, `ai[0] = 2`,

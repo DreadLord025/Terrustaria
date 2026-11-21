@@ -783,8 +783,8 @@ pub const LIGHTS_BANE: u16 = 974;
 /// a4185f89 landed the 189 ARM + the 182-186/190 rows but NOT this row, so it
 /// ports here (the row is the spawn's only gate — `spawn_with_data` declines
 /// rowless kinds). The spawn site is `Player.Volcano_TrySpawningVolcano`
-/// (`Player.cs:44150-44158`), the item-121 melee proc — the player-lane
-/// follow-up, not this row.
+/// (`Player.cs:44150-44158`), the item-121 melee proc — W4-d12 FINAL item 1
+/// ports it (`spawn_volcano_proc` + the `_spawnVolcanoExplosion` latch).
 pub const VOLCANO: u16 = 978;
 
 // ===== S1-D-4: the Empress of Light's projectile family =====
