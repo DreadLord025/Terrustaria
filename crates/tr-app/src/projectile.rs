@@ -14141,8 +14141,9 @@ pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
 /// `Utils.Remap(fromValue, fromMin, fromMax, toMin, toMax)` (`Utils.cs:345-348`)
 /// — `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
 /// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
-/// uses it for the turn rate and the close-range pull.
-fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+/// uses it for the turn rate and the close-range pull. `pub(crate)` for the
+/// W4-d10 wave — the aiStyle-92 clouds' ramps share it (keep-one).
+pub(crate) fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 

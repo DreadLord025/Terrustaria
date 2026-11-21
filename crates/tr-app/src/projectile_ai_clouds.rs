@@ -36,9 +36,24 @@
 //! the arm takes the whole slot slice plus its own index (the C# `whoAmI`
 //! — the rotation seed `:32625` and the zero-delta tie-break `:32655`).
 //!
+//! KEEP-ONE (research/26g-clouds-keep-one.md): W4-d10's `b34ad73c` ported
+//! the same arm into `projectile_ai_91_100.rs::ai_clouds`. This module is
+//! the surviving canonical copy (the faithful superset — the shared
+//! `collision::is_world_point_solid`, the 190 spore drain, the ungated
+//! gas player lane); the d10-only hunk folded here is the GasTrap
+//! broadcast's Item16 cue (`ParticleOrchestrator.cs:2913`). d10's private
+//! `world_point_solid` is superseded by `collision.rs` (its `(x/16) as
+//! i32` truncates toward zero vs the C# `ToTileCoordinates` floor,
+//! `Utils.cs:1807-1810` — unreachable under the fluff-1 gate, but the
+//! shared copy is structurally verbatim).
+//!
 //! Documented deviations (also `docs/ANALYSIS.md` "W4-d19 spore children"):
 //! * the 1007 `hide = true` (`:9568`) has no port field (the draw seam);
-//! * the 1007 GasTrap particle broadcast is the particle layer's skip;
+//! * the 1007 GasTrap particle broadcast is the particle layer's skip —
+//!   its `Spawn_GasTrap` body (`ParticleOrchestrator.cs:2911-2953`, the
+//!   12+10 particles' NextFloat/RotatedByRandom/Next draws) goes with the
+//!   unported particle pool (the dust-body convention); its Item16 cue
+//!   (`:2913`) queues through `wants_sound` (the W4-d10 keep-one fold);
 //! * `ApplyBuffTo`'s `trap && deadMansSweater` halving (`:12393-12396`):
 //!   the 1007 IS a trap, but `deadMansSweater` has no port field — the
 //!   halving folds out (the 949 self-hurt precedent);
@@ -65,18 +80,10 @@ use tr_core::loot::DropRng;
 use crate::npc::Npc;
 use crate::projectile::{Projectile, proj_data, proj_frames};
 
-/// `MathHelper.Lerp` — XNA's `a + (b - a) * amount`.
-fn lerp(a: f32, b: f32, t: f32) -> f32 {
-    a + (b - a) * t
-}
-
-/// `Utils.Remap` (`Utils.cs:345-348`) — the clamped lerp-of-lerp.
+/// `Utils.Remap` (`Utils.cs:345-348`) — the clamped lerp-of-lerp (the
+/// pool's helper, W4-d10 keep-one: no private twin).
 fn remap(v: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
-    lerp(
-        to_min,
-        to_max,
-        crate::projectile::get_lerp_value(from_min, from_max, v),
-    )
+    crate::projectile::remap(v, from_min, from_max, to_min, to_max)
 }
 
 /// `Projectile.Opacity`'s setter (`Projectile.cs:546-549`).
@@ -137,9 +144,18 @@ pub(crate) fn cloud_family_step(
     // `:32567` — the clouds never collide with tiles.
     slots[i].tile_collide = false;
     // `:32568-32579` — the 1007 first-tick facing + particle broadcast
-    // (the orchestrator is the particle layer's skip; no explicit draw).
-    if flag44 && slots[i].local_ai[0] == 0.0 && slots[i].direction == 0 {
-        slots[i].direction = 1;
+    // (the `netMode != 1` arm folds open in single-player). The C# gate
+    // is `localAI[0] == 0` ONLY — the direction fix is the INNER `if`
+    // (the stock spawn direction 1 must not suppress the broadcast).
+    // The orchestrator body is the particle layer's skip; its Item16
+    // cue (`ParticleOrchestrator.cs:2913`, at `PositionInWorld = Center`)
+    // queues through `wants_sound` (the W4-d10 keep-one fold).
+    if flag44 && slots[i].local_ai[0] == 0.0 {
+        if slots[i].direction == 0 {
+            slots[i].direction = 1;
+        }
+        let (cx, cy) = slots[i].center();
+        slots[i].wants_sound = Some((2, 16, cx, cy, 0.0));
     }
     // `:32580-32584` — the age; a hit cloud (ai[1] >= 1) ages triple.
     slots[i].ai[0] += 1.0;
@@ -156,7 +172,8 @@ pub(crate) fn cloud_family_step(
         num763 = if slots[i].ai[1] == 0.0 { 220.0 } else { slots[i].ai[1] };
     }
     // `:32594-32599` — the kill pins ai[0] AT the cap and returns (the
-    // post-arm kill_step still integrates, `:17015`).
+    // post-arm kill_step still integrates, `:17015`). The 1007 death has
+    // no Kill() dust arm (the census — the gas just expires).
     if slots[i].ai[0] > num763 {
         kill(&mut slots[i]);
         slots[i].ai[0] = num763;
@@ -523,6 +540,7 @@ mod tests {
         assert!(!spore.tile_collide, "`:10567`");
         assert!(spore.melee, "`:10572`");
         assert_eq!(spore.scale, 1.1);
+        assert_eq!(spore.penetrate, -1);
         assert!(spore.uses_id_static_immunity);
         assert_eq!(spore.id_static_hit_cooldown, 30, "`:10577`");
         // The 1128 sheet slices 5 frames (`Main.cs:8726`).
@@ -550,10 +568,17 @@ mod tests {
         assert_eq!(slots[0].frame, 0, "CensusRng returns min");
         assert_eq!(slots[0].ai[0], 1.0);
         assert!(!slots[0].tile_collide);
-        // scale = Remap(1/220, 0, 0.1, 0.25, 1.1) — inside the bloom ramp.
+        // scale = Remap(1/220, 0, 0.1, 0.25, 1.1) — the GetLerpValue
+        // CLAMPS below the ramp: 1/220 ≈ 0.0045 < 0.1... the from-range
+        // starts at 0, so the ramp is live; the d10 witness's "clamped
+        // 0.25 start" pin re-derived: GetLerpValue(0, 0.1, 0.0045) =
+        // 0.04545 → scale = 0.25 + 0.85·0.04545 ≈ 0.2886 (NOT 0.25 — d10's
+        // assert was wrong, the C# re-derivation wins; the box is
+        // (int)(30·0.2886/1.1) = 7).
         let fv = 1.0 / 220.0;
         let expected = remap(fv, 0.0, 0.1, 0.25, 1.1);
         assert!((slots[0].scale - expected).abs() < 1e-6);
+        assert!((slots[0].scale - 0.28863636).abs() < 1e-5, "the live ramp");
         // The box shrinks with the scale: (int)(30·scale/1.1).
         assert_eq!(slots[0].w, (30.0 * expected / 1.1) as i32 as f32);
         assert_eq!(slots[0].h, slots[0].w);
@@ -696,6 +721,10 @@ mod tests {
 
     /// The 1007 gas (`:32788-32819`): the 15-tick cadence, the radius
     /// ramp, the player + NPC Poisoned (20, 2940), the immunity gate.
+    /// The first tick ALSO queues the broadcast's Item16 cue at the
+    /// PRE-growth centre (the W4-d10 keep-one fold —
+    /// `ParticleOrchestrator.cs:2913`, `PositionInWorld = base.Center`
+    /// captured at `:32576` BEFORE the `:32605` resize).
     #[test]
     fn w4_d19_the_gas_poisons_on_the_15_tick_cadence() {
         let w = world();
@@ -713,8 +742,15 @@ mod tests {
         immune.buffs.buff_immune[20] = true;
         let mut npcs = vec![n, immune];
         let mut slots = slots_with(proj(1007));
+        let c0 = slots[0].center();
         let mut rng = census();
         cloud_family_step(&mut slots, 0, &w, Some(&mut pl), &mut npcs, &mut rng);
+        assert_eq!(
+            slots[0].wants_sound,
+            Some((2, 16, c0.0, c0.1, 0.0)),
+            "the broadcast cue at the pre-growth centre"
+        );
+        assert!(slots[0].scale > 1.0, "the 1→6 growth ramp (`:32603`)");
         assert_eq!(slots[0].local_ai[1], 15.0, "the cadence re-arms");
         assert!(pl.buffs.find_buff_index(20).is_some(), "the player poisoned");
         assert!(npcs[0].buffs.find_buff_index(20).is_some(), "the NPC poisoned");
@@ -726,6 +762,69 @@ mod tests {
         assert_eq!(slots[0].local_ai[1], 14.0);
         // The gas velocity is pinned zero every tick (`:32628`).
         assert_eq!(slots[0].vel, Vec2::ZERO);
+        // The cue is ONE-shot: the `localAI[0] == 0` gate re-reads the
+        // spin accumulator, which the first tick already advanced by
+        // `direction` (`:32624`) — tick 2 never re-broadcasts.
+        slots[0].wants_sound = None;
+        cloud_family_step(&mut slots, 0, &w, Some(&mut pl), &mut npcs, &mut rng);
+        assert_eq!(slots[0].wants_sound, None, "no second broadcast");
+    }
+
+    /// The toxic cloud's opacity ramp + the whoAmI rotation seed
+    /// (`:32622`, `:32624-32625`) — the d10 keep-one fold's numeric pins.
+    /// Tick 1 at index 2: fv = 1/260, opacity = Remap(fv,0,.3,0,1) ·
+    /// Remap(fv,.3,1,1,0) · 0.7 ≈ 0.008941 → alpha = (int)((1−o)·255) =
+    /// 252; rot = 2·0.4002029 + direction·2π/480. ZERO draws.
+    #[test]
+    fn w4_d19_the_toxic_cloud_fades_and_spins_from_its_index() {
+        let w = world();
+        let mut slots = vec![Projectile::default(); 4];
+        slots[2] = proj(511);
+        slots[2].vel = Vec2::new(2.0, 0.0);
+        let mut rng = census();
+        let mut npcs: Vec<Npc> = Vec::new();
+        cloud_family_step(&mut slots, 2, &w, None, &mut npcs, &mut rng);
+        assert_eq!(slots[2].ai[0], 1.0);
+        assert_eq!(slots[2].alpha, 252, "the tick-1 opacity truncation");
+        assert!((slots[2].vel.x - 2.0 * 0.96).abs() < 1e-6, "the 0.96 drag");
+        let expected_rot =
+            2.0 * 0.4002029 + 1.0 * (std::f32::consts::PI * 2.0) / 480.0;
+        assert!((slots[2].rot - expected_rot).abs() < 1e-5, "whoAmI seed");
+        assert!(rng.ranges.is_empty() && rng.floats == 0, "ZERO draws");
+        // The hit counter triples the age (`:32581-32584`): 1 → 4.
+        slots[2].ai[1] = 1.0;
+        cloud_family_step(&mut slots, 2, &w, None, &mut npcs, &mut rng);
+        assert_eq!(slots[2].ai[0], 4.0);
+    }
+
+    /// The TOXIC pair separation (`:32638-32670`) — the d10 keep-one
+    /// fold: the 0.005 UnitX push lerped 0.6 on BOTH slots, the
+    /// zero-delta index tie-break. (The 1128 scan is pinned above.)
+    #[test]
+    fn w4_d19_the_toxic_clouds_separate_symmetrically() {
+        let w = world();
+        let mut slots = slots_with(proj(511));
+        slots[1] = proj(511);
+        slots[1].pos = slots[0].pos + Vec2::new(8.0, 0.0);
+        let mut rng = census();
+        let mut npcs: Vec<Npc> = Vec::new();
+        cloud_family_step(&mut slots, 0, &w, None, &mut npcs, &mut rng);
+        // delta = (8,0) → push = (0.005, 0); self lerps toward −push,
+        // the sibling toward +push (both 0.6).
+        assert!((slots[0].vel.x - (-0.005 * 0.6)).abs() < 1e-6);
+        assert!((slots[1].vel.x - (0.005 * 0.6)).abs() < 1e-6);
+        // Exact overlap: j > i → the (+1,−1) tie-break delta; SELF lerps
+        // toward velocity − push, so it moves (−1,+1). (d10's witness
+        // asserted the opposite sign — a written-not-run defect, the
+        // C# `:32667` subtraction re-derived; research/26g §1.7.)
+        slots[1].pos = slots[0].pos;
+        slots[0].vel = Vec2::ZERO;
+        slots[1].vel = Vec2::ZERO;
+        cloud_family_step(&mut slots, 0, &w, None, &mut npcs, &mut rng);
+        let n = Vec2::new(1.0, -1.0).normalize();
+        assert!((slots[0].vel - (Vec2::ZERO.lerp(-n * 0.005, 0.6))).length() < 1e-6);
+        assert!(slots[0].vel.x < 0.0 && slots[0].vel.y > 0.0, "self takes −push");
+        assert!(slots[1].vel.x > 0.0 && slots[1].vel.y < 0.0, "sibling takes +push");
     }
 
     /// The drain (`:41944`/`:41967`/`:42172`): the clouds spawn as 1128
