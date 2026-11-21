@@ -377,7 +377,7 @@ gap list, after c36+f30):**
 | EXTRA_LIFE | 35 | `Player.cs:38782` | hardcore death penalty (f30 cited) |
 | GRAVE_MISTAKE | 36 | `Player.cs:20473`/`:38836` | striking gravestones + MP teammate deaths (f30 cited) |
 | FORTUNE_FAVORS_THE_BOULD | 39 | `Main.cs:61828` | rainbow boulder draw (f30 cited) |
-| TRAINING_DAY | 40 | `Player.cs:25697` | combat book vol. 2 use 5336 (f30 cited) |
+| TRAINING_DAY | 40 | `Player.cs:25697` | ~~combat book vol. 2 use 5336 (f30 cited)~~ **g90b WIRES it live** (`0316b4446`, tip `b3b82d071`) — see the NOTIFY-SYNC keep-one below |
 | NEW_DIGS | 43 | `NPC.cs:53273` | town shimmer transform (f30 cited) |
 | MY_PEOPLE_NEED_ME | 44 | `Player.cs:24076` | remix top-world death (f30 cited) |
 | TRASH_COMPACTOR | 45 | `AchievementsHelper.cs:396` | Journey sacrifice UI (f30 PREP) |
@@ -427,7 +427,7 @@ branches exist.
 | EXTRA_LIFE | 35 | none (all-tip grep: no `surviveHardcoreDeath`/`HardcoreDeathPenalty`) | no | `Player.cs:38782` unowned |
 | GRAVE_MISTAKE | 36 | none — `death.rs` tombstones are the falling visual, not striking projectiles | no | `Player.cs:20473`/`:38836` unowned |
 | FORTUNE_FAVORS_THE_BOULD | 39 | none (all-tip grep: no rainbow-boulder music counter) | no | `Main.cs:61828` unowned |
-| TRAINING_DAY | 40 | **a6 `8ed96ee5d` ports `use_combat_book` 4382/5336 + `world.combat_book_volume_two_was_used`** — but fires NO notify 40 | no | after a6+f30 merge: the `update_player` armor tail (f30's 38/41 seam) reads `combat_book_was_used && combat_book_volume_two_was_used` → 40 (`Player.cs:25697`) |
+| TRAINING_DAY | 40 | ~~a6 `8ed96ee5d` … fires NO notify 40~~ **SUPERSEDED — g90b `b3b82d071` WIRES 40 LIVE**: `world_sim/player.rs:1625-1627` (`drop_backlog` tail) reads `combat_book_was_used && combat_book_volume_two_was_used` → `notify_progression_net(40)` every tick the pair stands (`Player.cs:25695-25698`, idempotent — `notify_with` skips completed rows). g90's lane-7 `0316b4446` ports `use_combat_book` 4382/5336 itself (`editing.rs`, both world flags). **f12 `61724db38` has NO 40 wire** (grep: only the `achievements_data.rs` row + the `npc_ai_town` ladder's flag READS — no notify). **c36's owed armor-tail wire is RETIRED** (keep-one: g90b-live) | no | NONE — g90b owns it; at the a6×g90 merge keep ONE `use_combat_book` (both write the same flags; g90's carries the notify's producers) and ONE notify site (g90's `:1625`); f30's cited comment (`world_sim/player.rs:1631-1635`) retires with it |
 | NEW_DIGS | 43 | **f47 `507a0da5c` ports AI_007's shimmer state 25 completion + sets `out.shimmer_town_progression`** (`npc_ai_town.rs:1821`) — but NO consumer fires 43 | no | after f47 merge: the npcs-pass drain of `shimmer_town_progression` → `notify_progression_net(43)` (`NPC.cs:53273`) |
 | MY_PEOPLE_NEED_ME | 44 | none — no lane ports `BordersMovement`'s remix top-world kill | no | `Player.cs:24076` unowned |
 | TRASH_COMPACTOR | 45 | **c24 `e2e50a427` ports the Journey UI + the `register_sacrifice` consumer** (`journey_clicks.rs`) — no notify 45; f30 `f8cef8cb8` has the PREP (`LastEditId` + `count_fully_researched` + `check_research_achievement`) | no | after c24+f30 merge: the sacrifice click → `check_research_achievement` → 45 (`AchievementsHelper.cs:387-399`); the enter-world forced call (`Player.cs:325`) + the per-tick `:25703` |
@@ -490,7 +490,7 @@ reserved tail, no double-wire:
 | Gap-list row | f30 verdict | Owner after merge |
 | --- | --- | --- |
 | 31, 33, 34, 35, 36, 39, 44, 46 | CITED (same missing systems) | f30's citation stands; c36 does not re-cite |
-| 40 | CITED (vol-2 flag never sets) | **a6 sets the flag** — the armor-tail wire is f30's seam (its 38/41 arms), c36 supplies the re-probe fact |
+| 40 | CITED (vol-2 flag never sets) | **RETIRED — g90b-live** (`b3b82d071`: g90 ports BOTH book uses + the `world_sim/player.rs:1625` notify itself). f30's cited comment retires at merge; c36 owes nothing (the earlier "armor-tail wire is f30's seam" note is superseded — f30's tip `f8cef8cb8` still CITES 40, g90's tip WIRES it) |
 | 43 | CITED (state 25 skip) | **f47 ports the transform + flag** — the drain wire lands with f47's merge |
 | 45 | PREP (`check_research_achievement`) | **c24 ports the consumer** — the click wire joins f30's prep at merge |
 | 37 partial (1305/4057/4372) | CITED (4715 wired by f30) | unowned — the instruments use system has no lane |
@@ -504,6 +504,42 @@ DONE on its branch); **c37 `3e138525e`** owns the provider-enum fold (the
 `KillTracker`-based call sites (`netglue.rs:2987`, `netmodules.rs:467`)
 will need the one-line rebase at c37's merge, no semantic conflict (the
 gate predicate is identical).
+
+## W4-c36 NOTIFY-SYNC — the keep-one refresh (2026-11-21, second pass)
+
+Tips read this pass: g90 `b3b82d071`, f12 `61724db38`, f47 `a2561d6d9`
+(moved past the re-probe's `507a0da5c`), d20 `13de9ccf6`, d120 `4b17a2cf1`,
+d37 `08f7d25cf`, f43 `79a037f5e`, b3 `96a5d88f0`, f30 `f8cef8cb8`,
+a6 `8ed96ee5d`, d43 `a725acb04` (= main, zero commits). Main unchanged
+(`a725acb04`) — everything below is still branch-only.
+
+### (1) TRAINING_DAY 40 — WHO wires it: g90b. c36's owed-row RETIRED
+
+- **g90b-live**: lane-7 `0316b4446` ports `use_combat_book` (4382/5336,
+  `Player.cs:45322-45350`, both world flags) in `editing.rs` AND the
+  notify: `world_sim/player.rs:1625-1627` (tip `b3b82d071`), the
+  `drop_backlog` tail — `if app.world.combat_book_was_used &&
+  app.world.combat_book_volume_two_was_used { let _ =
+  app.notify_progression_net(40); }`, cited `Player.cs:25695-25698`,
+  every tick the pair stands (idempotent: `notify_with` skips completed
+  rows). g90's research/135 consumer census pins it (`:282`).
+- **f12 latest (`61724db38`)**: NO 40 wire — grep over its crates finds
+  only the `achievements_data.rs:1148` row and the `npc_ai_town.rs`
+  ladder's flag READS (`TownEnv.combat_book`/`combat_book_two`, the
+  NPC.cs:53025-53031 stat ladder — not an achievement site).
+- **a6 (`8ed96ee5d`)**: ports its own `use_combat_book`
+  (`powerups.rs:316`, both flags) but NO notify — the re-probe's a6 fact
+  stands; the merge keep-one is between a6's and g90's USE arms (same
+  flags, same once-ever gates — keep ONE; g90's is the notify's
+  producer, so keep g90's and drop a6's `powerups.rs:103` dispatch arm).
+- **f30 (`f8cef8cb8`)**: still CITES 40 (`world_sim/player.rs:1631-1635`
+  — "the volume-two use is unported"); that comment is stale against
+  g90/a6 and retires at merge.
+- **c36 verdict**: the re-probe's owed armor-tail wire (row 40's
+  post-merge seam) is **RETIRED — covered by g90b-live**. c36 adds NO
+  40 site. Witness: `w4_c36_training_day_keeps_one_notify_forty_site`
+  (the registry row is one `Progression(40)`; one notify completes;
+  the re-notify returns None — the every-tick shape is safe).
 
 ## Task seeds
 

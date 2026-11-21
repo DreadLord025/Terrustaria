@@ -532,4 +532,38 @@ mod tests {
         assert!(!done(&fresh, "STAR_POWER"));
         assert!(!done(&fresh, "TOPPED_OFF"));
     }
+
+    /// W4-c36 NOTIFY-SYNC (1) — the TRAINING_DAY keep-one contract: g90b
+    /// (`b3b82d071`, `world_sim/player.rs:1625-1627`) owns the ONLY notify-40
+    /// site — `notify_progression_net(40)` on `combat_book_was_used &&
+    /// combat_book_volume_two_was_used` (`Player.cs:25695-25698`). This
+    /// witness pins the CONSUMER half on this branch's base: the registry
+    /// row is a single `Progression(40)` condition, one notify completes
+    /// it, and a second notify (the every-tick pair-stands shape g90
+    /// wires) is idempotent — `notify_with` skips completed rows, so a
+    /// second wire at the merge would be harmless but is still RETIRED
+    /// (c36's owed armor-tail row, research/30 NOTIFY-SYNC). f12's tip has
+    /// no 40 notify; f30's tip cites it. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_c36_training_day_keeps_one_notify_forty_site() {
+        use crate::achievements::CondKind;
+        let mut app = app_with_player();
+        // The row is exactly one Progression(40) condition — the notify
+        // event id, not a flag broadcast (`AchievementInitializer.cs:414-416`).
+        let row = app
+            .achievements
+            .list
+            .iter()
+            .find(|a| a.name == "TRAINING_DAY")
+            .expect("the registry row");
+        assert_eq!(row.conditions.len(), 1);
+        assert!(matches!(row.conditions[0].kind, CondKind::ProgressionEvent(40)));
+        assert!(!done(&app, "TRAINING_DAY"));
+        // g90b's site shape: the both-books pair notify.
+        let _ = app.notify_progression_net(40);
+        assert!(done(&app, "TRAINING_DAY"));
+        // The every-tick re-notify is idempotent (the completed-row skip).
+        let second = app.notify_progression_net(40);
+        assert_eq!(second, None, "a completed row never re-fires");
+    }
 }
