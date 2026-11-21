@@ -770,8 +770,9 @@ mod tests {
 
     /// `WaterfallManager.cs:236-251`: the lava fountain (tile 717) spawns a
     /// type-26 fall one row below when the cell underneath is open — the
-    /// third cloud arm (196 → 11, 460 → 22, 717 → 26). Type 26 IS in the
-    /// water ambience scan (`:708` excludes 11/12/22, NOT 26).
+    /// third cloud arm (196 → 11, 460 → 22, 717 → 26). (The `:708` scan
+    /// list omits 26, but the rain arm `continue`s at `:525` before the
+    /// scan block — see the draw witness's fold correction.)
     /// (W4-g75 final sweep `f4e3071f`, folded; supersedes the closeout's
     /// duplicate `lava_cloud_tile_717_drops_below`.)
     #[test]

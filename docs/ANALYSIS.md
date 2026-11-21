@@ -1178,11 +1178,12 @@ five items, each re-verified against the cited C# windows:
    12+11, 22 draws texture 22 only, 26 draws 27+26 with the fixed
    `Color(255,255,255,127)` tint, 0.9/0.4 scales and per-cell `AddLight`)
    were already ported (`waterfall/draw.rs`'s rain arm + `rain_frames`).
-   The gap was WITNESSES: 4 new ones in `waterfall/mod.rs`
-   (`the_fountain_frame_counters_ride_their_own_rates`,
-   `lava_cloud_tile_717_drops_below`,
-   `lava_fountain_draws_two_white_sheets_and_lights_every_cell`,
-   `rain_fountain_draws_two_lit_sheets_with_the_even_column_lead`).
+   The gap was WITNESSES: the closeout drafted 4 in `waterfall/mod.rs`;
+   after the g75d fold's keep-one the survivors are
+   `the_fountain_frame_counters_ride_their_own_rates` +
+   `rain_fountain_draws_two_lit_sheets_with_the_even_column_lead` (the
+   two 717 drafts were replaced by the sweep's corrected pair — see the
+   fold record below).
 3. **The waterfall TILE-side chain — chain-status documented.** Two
    distinct chains share the "fountain" name; NEITHER ends in a waterfall
    quad:
