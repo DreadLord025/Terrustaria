@@ -41,12 +41,12 @@
 //!   `proj_lights.rs::proj_light` for every lit row. No new code.
 //! * `:17343` — site 3, `EmitEnchantmentVisualsAt`'s mount light (the
 //!   Chillet mounts 62-65, `(0.6,0.3,0.1)`/`(0.5,0.1,0.6)` × 0.5 at the
-//!   projectile centre). Absent: the Chillet `MountData` rows DO exist
-//!   (`mount.rs` 62-65), but the arm's `!this.hostile && !this.noEnchantments`
-//!   gate (`:17341`) reads two slot fields the port does not carry, so the
-//!   gate cannot be evaluated faithfully; the light lands with the
-//!   enchantment-visuals fields (the `npcProj`/`hostile` precedent,
-//!   `projectile.rs:22545`).
+//!   projectile centre). PORTED by [`chillet_mount_light`]: the gate's
+//!   `hostile` / `noEnchantments` / `noEnchantmentVisuals` fields land as
+//!   kind-derived `SetDefaults` census helpers (`data.rs` — the 179/4/21-kind
+//!   lists; the only runtime `hostile` writes are the two classless
+//!   bomb-death flips the `(melee || ranged)` gate already excludes). The
+//!   aiStyle-190/191 swords emit the two rotated swing rects (`:17299-17305`).
 //! * `:24307` — site 4, the 502 Meowmere's disco light
 //!   (`(0.5 + DiscoX/255)/2` per channel at `Center`, aiStyle-8 tail).
 //!   Absent: 502 has no `proj_data` row.
@@ -229,9 +229,10 @@ use glam::Vec2;
 
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
-    Projectile, ANTI_GRAVITY_HOOK, CANNON_EXPLOSIVE, CRIMSON_HEART, DEADLY_SPHERE,
-    GEM_BOLT_AMBER, GEM_BOLT_AMETHYST, GEM_BOLT_DIAMOND, GEM_BOLT_EMERALD, GEM_BOLT_RUBY,
-    GEM_BOLT_SAPPHIRE, GEM_BOLT_TOPAZ, LUNAR_HOOK_NEBULA, LUNAR_HOOK_SOLAR,
+    proj_data, set_defaults_hostile, set_defaults_no_enchantment_visuals,
+    set_defaults_no_enchantments, Projectile, ANTI_GRAVITY_HOOK, CANNON_EXPLOSIVE, CRIMSON_HEART,
+    DEADLY_SPHERE, GEM_BOLT_AMBER, GEM_BOLT_AMETHYST, GEM_BOLT_DIAMOND, GEM_BOLT_EMERALD,
+    GEM_BOLT_RUBY, GEM_BOLT_SAPPHIRE, GEM_BOLT_TOPAZ, LUNAR_HOOK_NEBULA, LUNAR_HOOK_SOLAR,
     LUNAR_HOOK_STARDUST, LUNAR_HOOK_VORTEX, MOONLORD_TURRET, NEBULA_ARCANUM, NORTH_POLE,
     ORNAMENT_HOSTILE, RAINBOW_CRYSTAL_EXPLOSION, SPARKLE_GUITAR, STARDUST_GUARDIAN,
     STORM_TIGER_1, STORM_TIGER_2, STORM_TIGER_3, TERRARIAN_BEAM, THUNDER_SPEAR_BOLT,
@@ -245,6 +246,80 @@ fn centre_tile(p: &Projectile) -> (i32, i32) {
         tile_x(p.pos, p.w, XAnchor::Center),
         tile_y(p.pos, p.h, XAnchor::Center),
     )
+}
+
+/// Site 3 (`:17343`) — `EmitEnchantmentVisualsAt`'s Chillet-mount light, the
+/// one first-wave site OUTSIDE the AI arms (`Update` calls
+/// `UpdateEnchantmentVisuals` at `:16702`, before the AI). Collected FIRST,
+/// ahead of [`proj_lights_a`]'s AI-arm lights, in the C# call order.
+///
+/// The gate chain, faithful to the slot state:
+/// * the outer `Update` gate `!noEnchantmentVisuals` (`:16700`) and the
+///   `npcProj` early-return (`:17292`) — `npcProj` has no port field (the
+///   hostile shots ride `friendly = false`, the `projectile.rs:22545`
+///   precedent), so it folds false;
+/// * the arm gate (`:17341`): `mount.Active && mount.Type in 62..=65 &&
+///   (melee || ranged) && friendly && !hostile && !noEnchantments`.
+///
+/// `hostile` / `noEnchantments` / `noEnchantmentVisuals` are `SetDefaults`
+/// facts derived from the kind (the `data.rs` census helpers): the only
+/// runtime `hostile` writes are the two classless bomb-death flips
+/// (`:28247` / `:75798`), which the `(melee || ranged)` gate already excludes,
+/// so the kind-derived flags are exact for this consumer. `melee` / `ranged` /
+/// `friendly` ride the slot's live flags.
+///
+/// `owner_mount` is the owner's `Mount.Type` when `Mount.Active` (the feed
+/// resolves `owner == 0` to the local player, the e6 single-player fold);
+/// `None` = no active mount / no owner, so the arm skips. Pure — no RNG.
+pub(crate) fn chillet_mount_light(
+    p: &Projectile,
+    owner_mount: Option<i32>,
+) -> Vec<(i32, i32, [f32; 3])> {
+    let mut out = Vec::new();
+    let Some(mount_type) = owner_mount else {
+        return out;
+    };
+    // `:17341` — the Chillet mounts 62-65, the class + friendly gates, and
+    // the three kind-derived enchantment flags.
+    if !matches!(mount_type, 62 | 63 | 64 | 65)
+        || !(p.melee || p.ranged)
+        || !p.friendly
+        || set_defaults_hostile(p.kind)
+        || set_defaults_no_enchantments(p.kind)
+        || set_defaults_no_enchantment_visuals(p.kind)
+    {
+        return out;
+    }
+    // `:17343` — `(type == 63 || type == 65) ? (0.6,0.3,0.1) : (0.5,0.1,0.6)`,
+    // then `* 0.5f`.
+    let rgb = if mount_type == 63 || mount_type == 65 {
+        [0.6 * 0.5, 0.3 * 0.5, 0.1 * 0.5]
+    } else {
+        [0.5 * 0.5, 0.1 * 0.5, 0.6 * 0.5]
+    };
+    let (cx, cy) = centre_tile(p);
+    let style = proj_data(p.kind).map_or(0, |d| d.ai_style);
+    if style == 190 || style == 191 {
+        // `:17299-17305` — the big-sword swings emit at TWO rotated rects
+        // (`num = -π/4` then `+π/4`); each rect's centre is
+        // `Center + (rotation + num).ToRotationVector2() * 70 * scale`, and
+        // `EmitEnchantmentVisualsAt(r.TopLeft, r.Width, r.Height)` anchors at
+        // `r.TopLeft + (r.Width/2, r.Height/2)` = that centre. The slot's
+        // `rot`/`scale` are the spawn state until the sword AI arms land (the
+        // state-driven deviation, ANALYSIS).
+        let centre = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        for num in [-std::f32::consts::FRAC_PI_4, std::f32::consts::FRAC_PI_4] {
+            let (s, c) = (p.rot + num).sin_cos();
+            let anchor = centre + Vec2::new(c, s) * 70.0 * p.scale;
+            out.push(((anchor.x / 16.0) as i32, (anchor.y / 16.0) as i32, rgb));
+        }
+    } else {
+        // `:17316` — the general box: `boxPosition + (boxWidth/2, boxHeight/2)`
+        // = `position + (w/2, h/2)` = the centre. (The whip branch `:17307`
+        // never reaches here — `DefaultToWhip` sets no melee/ranged flag.)
+        out.push((cx, cy, rgb));
+    }
+    out
 }
 
 /// The first-wave AI-arm `AddLight` sources this projectile contributes for
@@ -739,6 +814,66 @@ mod tests {
             proj_lights_a(&p, None)[0].2,
             [51.0 / 255.0 * 0.5, 231.0 / 255.0 * 0.5, 255.0 / 255.0 * 0.5]
         );
+    }
+
+    #[test]
+    fn the_chillet_mount_light_gates_and_pairs() {
+        // `:17341-17343` — mount 62/64 → (0.5,0.1,0.6)·0.5; 63/65 →
+        // (0.6,0.3,0.1)·0.5, at the centre for a general-box melee shot.
+        let mut p = slot(TERRARIAN_BEAM); // 604, aiStyle 115, melee, friendly
+        p.melee = true;
+        assert!(chillet_mount_light(&p, None).is_empty(), "no mount → dark");
+        assert!(chillet_mount_light(&p, Some(61)).is_empty(), "not a Chillet");
+        assert_eq!(
+            chillet_mount_light(&p, Some(62)),
+            vec![(10, 11, [0.25, 0.05, 0.3])]
+        );
+        assert_eq!(
+            chillet_mount_light(&p, Some(63))[0].2,
+            [0.3, 0.15, 0.05]
+        );
+        assert_eq!(
+            chillet_mount_light(&p, Some(65))[0].2,
+            [0.3, 0.15, 0.05]
+        );
+        // The friendly gate: a hostile-lane slot stays dark.
+        p.friendly = false;
+        assert!(chillet_mount_light(&p, Some(62)).is_empty());
+        p.friendly = true;
+        // The class gate: no melee/ranged → dark (the whip precedent).
+        p.melee = false;
+        assert!(chillet_mount_light(&p, Some(62)).is_empty());
+    }
+
+    #[test]
+    fn the_chillet_mount_light_respects_the_enchantment_census() {
+        // The kind-derived flags: a hostile SetDefaults kind (346 ornament,
+        // `:4366`) stays dark even with melee forced; a noEnchantmentVisuals
+        // kind (732 thunder spear, `:7171`) too.
+        let mut p = slot(ORNAMENT_HOSTILE);
+        p.melee = true;
+        assert!(chillet_mount_light(&p, Some(62)).is_empty(), "hostile census");
+        let mut p = slot(THUNDER_SPEAR_BOLT);
+        p.melee = true;
+        assert!(
+            chillet_mount_light(&p, Some(62)).is_empty(),
+            "noEnchantmentVisuals census"
+        );
+        // The census helpers themselves: the four noEnchantments kinds, the
+        // 21 noEnchantmentVisuals kinds, and a sample of the hostile list.
+        for k in [480u16, 1121, 1131, 1132] {
+            assert!(set_defaults_no_enchantments(k), "kind {k}");
+        }
+        assert!(!set_defaults_no_enchantments(604));
+        for k in [181u16, 732, 933, 1100, 1128, 1129] {
+            assert!(set_defaults_no_enchantment_visuals(k), "kind {k}");
+        }
+        assert!(!set_defaults_no_enchantment_visuals(604));
+        for k in [12u16, 346, 658, 1078, 1091, 1092] {
+            assert!(set_defaults_hostile(k), "kind {k}");
+        }
+        assert!(!set_defaults_hostile(604));
+        assert!(!set_defaults_hostile(342));
     }
 
     #[test]

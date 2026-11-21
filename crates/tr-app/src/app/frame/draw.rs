@@ -593,6 +593,21 @@ impl App {
                                 let (mx, my) = pl.mounted_center();
                                 Vec2::new(mx, my)
                             });
+                        // Site 3 (`:17343`) — the Chillet-mount enchantment
+                        // light runs in `Update` BEFORE the AI arms
+                        // (`:16702`), so it feeds first. The owner's active
+                        // mount type resolves for `owner == 0` (the same
+                        // single-player fold); `None` otherwise.
+                        let owner_mount = player
+                            .as_ref()
+                            .filter(|_| p.owner == 0)
+                            .filter(|pl| pl.mount.is_active())
+                            .map(|pl| pl.mount.kind());
+                        for (x, y, rgb) in
+                            crate::proj_lights_a::chillet_mount_light(p, owner_mount)
+                        {
+                            self.entity_lights.add(x, y, rgb);
+                        }
                         for (x, y, rgb) in
                             crate::proj_lights_a::proj_lights_a(p, mounted_center)
                         {
