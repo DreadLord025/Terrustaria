@@ -39437,3 +39437,85 @@ invoked** (code-only mode).
 slices** at the 15-kind cadence; 60 MODULE-LANDED-unwired ids
 (extra7/extra7b/extra7c/extra8) → the next wire rounds (extra7b/extra8
 need the `find_frame_world` slope/frame_x36 extension first).
+
+## W4-d44 FindFrame wire round 3 - the extra-7 + extra-7b gaps (2026-11-21, code-only mode)
+
+**The two modules.** `npc_findframe_extra7.rs` landed VERBATIM from
+`0e187428` (blob `a41abca3` hash-verified — the f27 tip moved past the
+census's `72448094`, extra9 rides it, the extra7 blob unchanged) and
+`npc_findframe_extra7b.rs` from `f1a0eaa9` (blob `3729faa4` — the f26
+tip moved past `a2e47596`, extra7d/7e ride it, the extra7b blob
+unchanged). The committed blobs re-verified via `git ls-tree HEAD`.
+The wave-B `humanoid_fighter_frame` was already `pub(crate)` (the
+extra6 lift) — the 322/323/324 costume-skeleton delegate needed no
+new lift. Commits `86791530` (extra7 module) / `96877ed2` (extra7b
+module).
+
+**The extra-7 wire (all 15 ids).** The hook
+`find_frame_kind_extra7_claimed` = the in-module lookup verbatim;
+the bridge `find_frame_wave_extra7` copies
+row/counter/sprite_dir/rotation both ways and feeds
+vx/vy/facing/ai[4]/ai_action/local_ai[2]. No slice-7 arm reads wet or
+the world (the floater draw `NPC.cs:74844` is 634-gated, the eye dust
+`:74007` is 23-gated), so the hook rides the world-free `find_frame`
+directly. Batches `a72b09ee` (the first 11: 316-318/322-324/333-337)
++ `5568fabf` (the last 4: 437/438/440/442). Per-machine pins: the
+Ghost the 6-tick full-4-row strip + vx*0.1 tilt; the costume eyes the
+atan2 aim with the LITERAL 3.14 left-turn + the vx==0 freeze; the
+costume skeletons the fighter delegate (the 323 astronaut ONE 15-row
+sheet wraps at 14); the ribbon slimes the num2-fed 8-tick strip
+(ai_action 1 = +3/tick); the BunnyXmas the |vx|+1 hop + air rows 4/6;
+the Tablet the 20-tick cycle with the reset BEFORE the band read;
+the Devote the 49-tick mirror + the ai[1]==1 chant; the Clone the
+localAI[2] pose ladder (unknown selector NO-write but still ticks);
+the GoldBird the UNCONDITIONAL direction copy + the row-4 perch. The
+439 boss keeps its own inline arm HERE — the f27 `d959c234` stub-fix
+rides f27's npc.rs; at merge the fix + this 440 claim are the same
+machine.
+
+**The extra-7b wire (the 12 stub kinds ONLY).** The hook
+`find_frame_kind_extra7b_claimed` = the module mapper MINUS the f26e
+keep-inline trio **480 Medusa / 481 GreekSkeleton / 482 GraniteGolem
+— NEVER claimed** (the d40 INLINE arms are FAITHFUL both sides; the
+module arms ride as parity references). Batches `0a19a13a` (the
+first 11: 473-477/479/483-487) + `d1d20450` (the last 1: 488). The
+bridge `find_frame_wave_extra7b` copies
+row/counter/sprite_dir/rotation/local_ai[0..1] both ways and feeds
+vx/vy/facing/ai[4] + the two RESOLVED world reads. The
+`find_frame_world` entry EXTENDED (the f26f-516 resolved-seams
+precedent): the crawler/grub kinds 484-487 reuse
+`find_frame_worm_slope` (the SAME two-tile probe,
+`NPC.cs:72807-72815`/`:72862-72869`); the NEW
+`find_frame_dummy_frame_x36` resolves
+`Framing.GetTileSafely((int)ai[0], (int)ai[1]).frameX >= 36`
+(`:70850`; out-of-world → `new Tile()` frameX 0 → false,
+`Framing.cs:426-439` + `Tile.cs:101`). The world-free lane passes
+slope 0 / frame_x36 false; both production call sites already ride
+`find_frame_world` — no call-site change. Per-machine pins: the Big
+Mimics the ai[0] state machine (0/7 snap, 1 windup ladder rows 1..6,
+8 the min/max strip, 2/6 hop cycle, 3 decay, 4/5 row-13 pin, 4.1
+landing ladder, dead states BREAK-no-write); Mothron the
+length()/4+1 stepper with the STRICT >5 wrap; the Spawn the 4-tick
+flutter with the >=15 reset-tick row-HOLD; the GraniteFlyer the two
+strips (normal tilt SNAP vx*0.1, charged ACCUMULATE vx*0.2 + the
+13/21 clamps); the nightcrawler/grubs the localAI[0]=-2 latch + the
+slope ±0.785 re-latch (the grubs' |vx*5| accumulator + the
+UNCONDITIONAL direction copy); the Dummy the recoil clock (the
+24-clamp, ceil/num135 banks, the +1-dir +5, the frameX probe flip).
+
+Stream-inert: a mechanical Python scan of the cs_id hand rows + the
+bestiary net-id literals + the loot_db constants over both claim
+bands = ZERO hits (the lone 475 token is a comment cite); no arm
+draws RNG. 8 seam witnesses (the two inertness sweeps, the two claim
+sets with the 480/481/482 NEVER-claim pins, the two bridge copy-backs,
+the dummy frameX probe, the extra7b world-entry resolution) + the
+modules' 11 + 12 frame witnesses ride verbatim. WRITTEN NOT RUN —
+**no cargo/rustc/rustfmt/tests/graphify invoked** (code-only mode).
+
+**Remaining work** (research/68 §5/§8, refresh 3): 30 real wire ids
+(extra7c 15 + extra8 15 — the extra7b trio is RESOLVED keep-inline)
+→ 4 wire batches; the extra8 GoldWorm slope probe rides the
+ALREADY-EXTENDED `find_frame_world` seam. The f26 7d/7e port slices
+(the pushed `f1a0eaa9`) claim 10 of the 130 UNCLAIMED — 120 remain
+(~8 port slices); the §2/§6 rows for those 10 are stale until the
+next mechanical refresh.

@@ -1,6 +1,9 @@
 # 68 — FindFrame master wire-census (W4-d44 census refresh, code-only)
 
-Audit date: 2026-11-21 (refresh 2). Branch `task/W4-d44-findframe-low-1`,
+Audit date: 2026-11-21 (refresh 3 — the extra7/extra7b wire round;
+the §2 table is the refresh-2 mechanical scan with this round's
+status cells updated, see the census-vintage note below §0).
+Branch `task/W4-d44-findframe-low-1`,
 worktree `TR-W4-d44`. **Code-only mode: no cargo/rustc/tests/rustfmt/
 graphify invoked** — every claim below is git/file-read evidence against
 the PUSHED remote tips (`git ls-remote origin` + `git show
@@ -18,7 +21,7 @@ per-kind 1-697 status, the per-module bridge shapes, the remaining
 UNCLAIMED kind list with C# case-line anchors, and the remaining-work
 estimate.
 
-## 0. The census arithmetic (refresh 2, mechanically re-derived)
+## 0. The census arithmetic (refresh 2 mechanically re-derived; refresh 3 wire-round delta applied)
 
 | step | count |
 | --- | --- |
@@ -26,8 +29,8 @@ estimate.
 | ids 1-697 with NO case label (the NO-CASE rows, §2) | 95 |
 | port-covered: an inline `find_frame` arm on main OR a pushed roster lane (d34/d35/d37/d38/d40) OR the wave-A/B module rosters | **273** |
 | module-claimed ids (deduped across the 16 pushed module mappers) | **199** |
-| — of those, WIRED (a pushed cs_id hook claims the id: g6/g7/d44/d45/d46/e13) | **139** |
-| — of those, MODULE-LANDED but UNWIRED (extra7/extra7b/extra7c/extra8) | **60** |
+| — of those, WIRED (a pushed cs_id hook claims the id: g6/g7/d44/d45/d46/e13) | **166** |
+| — of those, MODULE-LANDED but UNWIRED (extra7b keep-inline trio + extra7c/extra8) | **33** |
 | **UNCLAIMED** (no arm, no module claim on ANY pushed tip) | **130** |
 
 Check: 273 + 199 + 130 = 602. The f26 slice-7c addendum
@@ -36,6 +39,14 @@ the +3 delta is **435/436/591** — the d49 armed-zombie case-group tail
 (`NPC.cs:70884-70886` ride the `case 430..436/591` group body) which the
 d49 ANALYSIS explicitly defers ("435/436/591 ride the next wave") and
 the d49/g7 mapper does NOT list. They are UNCLAIMED here, not covered.
+
+The wire-round delta (refresh 3, THIS branch): +27 WIRED — extra7's 15
+(316-318/322-324/333-337/437/438/440/442, `5568fabf`) + extra7b's 12
+d40-stub kinds (473-477/479/483-488, `d1d20450`). The remaining 33
+MODULE-LANDED-unwired = the extra7b keep-inline trio 480/481/482 (the
+f26e verdict: the d40 INLINE arms win at merge — RESOLVED, not wiring
+work) + extra7c's 15 + extra8's 15 (the next-round wire worklist, 30
+ids).
 
 The roster-lane coverage note: d35's arms for 73-140 are `{}` row-0
 STUBS ("UNWIRED (data-only)", its own comment) — they count as
@@ -46,11 +57,22 @@ stand-in (the port's documented town-walk shape); d40's 443-448/473-477/
 479/483-488 are row-0 stubs. The MODULE-LANDED machines are the faithful
 upgrades for those — the keep-one verdicts are in §3.
 
+Census-vintage note (refresh 3): the §2 per-kind table below is the
+refresh-2 mechanical scan's output; THIS refresh updates ONLY the
+status cells this branch's wire round changes (the extra7 15 + the
+extra7b 12 → WIRED(d44)). The f26/f27 tips moved since refresh 2
+(f26 `a2e47596`→`f1a0eaa9` adds extra7d/extra7e claiming
+516/521/523/524/525/526/527/528/529/530; f27 `72448094`→`0e187428`
+adds extra9's fix set 463/467/471/472/492) — those 10 UNCLAIMED rows
+in §2/§6 are STALE (now module-claimed on the pushed f26 tip); the
+next full mechanical refresh re-derives them. The extra7/extra7b
+blobs are UNCHANGED across the tip moves (hash-verified, §7).
+
 ## 1. Branch census (all pushed tips, re-probed 2026-11-21 refresh 2)
 
 | lane | branch (`task/W4-…`) | pushed tip | module(s) | kinds | hook status |
 | --- | --- | --- | --- | --- | --- |
-| d44 | `d44-findframe-low-1` | `59b798dc` | `npc_findframe_low1.rs` + the wire round (`c`/`extra5`/`extra6`) | 12 + 11 + 15 + 15 | low1 wired by g6 (`5113ff18`); c/extra5/extra6 wired HERE (§7) |
+| d44 | `d44-findframe-low-1` | `d1d20450` | `npc_findframe_low1.rs` + the wire rounds (`c`/`extra5`/`extra6`/`extra7`/`extra7b`) | 12 + 11 + 15 + 15 + 15 + 12 | low1 wired by g6 (`5113ff18`); c/extra5/extra6/extra7/extra7b wired HERE (§7) |
 | d45 | `d45-findframe-low-2` | `aea0aebd` | `npc_findframe_low2.rs` | 12 | YES (self-wired) |
 | d46 | `d46-findframe-mid-1` | `055fcf8c` | `npc_findframe_mid1.rs` | 12 | YES (self-wired) |
 | d47 | `d47-findframe-mid-2` | `3d36f76c` | `npc_findframe_mid2.rs` | 12 | NO — wired by g6 (`2fe567f9`) |
@@ -58,8 +80,8 @@ upgrades for those — the keep-one verdicts are in §3.
 | d49 | `d49-findframe-high-2` | `dadfd828` | `npc_findframe_high2.rs` | 12 / 13 ids | NO — wired by g7 (`b6c9c05c`+`1b273055`) |
 | e13 | `e13-findframe-extra-1` | `9fbca588` | `npc_findframe_extra1.rs` | 15 | YES (self-wired) — fully twinned, DROP candidate (§3) |
 | e14 | `e14-findframe-extra-2` | `63bc2c9f` | `npc_findframe_extra2.rs` | 15 | NO — wired by g6 (`b58d8d2f`) AND g7 (`fbee59b3`, trimmed 7-id) |
-| f26 | `f26-findframe-extra-3` | `a2e47596` | `extra3` (s3) + `extra5` (s5) + `extra6` (s6) + `extra7b` (s7b) + `extra7c` (s7c) | 15×5 | s3: g6+g7; s5: **WIRED(d44)**; s6: **WIRED(d44 `59b798dc`)**; s7b/s7c: MODULE-LANDED, UNWIRED |
-| f27 | `f27-findframe-extra-4` | `72448094` | `extra4` (s4) + `extra7` (s7) + `extra8` (s8) | 15×3 | s4: g7; s7/s8: MODULE-LANDED, UNWIRED (the 439 stub-fix rides f27's own `npc.rs`) |
+| f26 | `f26-findframe-extra-3` | `f1a0eaa9` | `extra3` (s3) + `extra5` (s5) + `extra6` (s6) + `extra7b` (s7b) + `extra7c` (s7c) + `extra7d`/`extra7e` | 15×5 + 5×2 | s3: g6+g7; s5/s6: **WIRED(d44)**; s7b: **WIRED(d44 `d1d20450`, 12 stub kinds — 480/481/482 keep d40 inline)**; s7c: MODULE-LANDED, UNWIRED; 7d/7e: new port slices (516/521/523-530), UNWIRED — they SHRINK the §6 UNCLAIMED count by 10 at the next census refresh |
+| f27 | `f27-findframe-extra-4` | `0e187428` | `extra4` (s4) + `extra7` (s7) + `extra8` (s8) + `extra9` (s9) | 15×3 + 5 | s4: g7; s7: **WIRED(d44 `5568fabf`)**; s8: MODULE-LANDED, UNWIRED; s9: the d40-arm FIX set (463/467/471/472/492), self-wired on f27's own npc.rs (the 439 stub-fix rides it too) |
 | g6 | `g6-npc-findframe-wire-1` | `bf99e983` | wires low1 + mid2 + extra2 + extra3 | 54 ids / 4 hooks | the wire lane itself |
 | g7 | `g7-npc-findframe-wire-2` | `6ca3e668` | wires extra2(trim) + extra3 + extra4 + high2 | 50 ids / 4 hooks | the wire lane itself |
 
@@ -88,7 +110,10 @@ Status legend:
 * **WIRED(lane)** — a pushed cs_id hook claims the id (g6/g7 wire lanes,
   the d44 wire round, or the d45/d46/e13 self-wired branches).
 * **MODULE-LANDED(lane)** — a pushed module carries the faithful machine
-  but NO hook claims the id yet (the wiring worklist, §5).
+  but NO hook claims the id yet (the wiring worklist, §5). The
+  **KEEP-INLINE** suffix (refresh 3) marks the f26e keep-one verdict:
+  the d40 INLINE arm is faithful and wins at merge — the module arm
+  is a parity reference and NO hook will ever claim the id.
 * **INLINE-ARM** — a `find_frame` match arm exists on main or a pushed
   roster lane (faithful inline, the `humanoid_town_frame` stand-in, or a
   row-0 stub — the arm's source is cited).
@@ -418,15 +443,15 @@ The anchor is the FIRST top-level `case` line of the id's group.
 | 313 | Scarecrow9 | INLINE-ARM | npc.rs:Scarecrow9 | NPC.cs:68597 |
 | 314 | Scarecrow10 | INLINE-ARM | npc.rs:Scarecrow10 | NPC.cs:68598 |
 | 315 | HeadlessHorseman | INLINE-ARM | npc.rs:HeadlessHorseman | NPC.cs:74465 |
-| 316 | Ghost | MODULE-LANDED(f27) | `extra7` | NPC.cs:74834 |
-| 317 | DemonEyeOwl | MODULE-LANDED(f27) | `extra7` | NPC.cs:74003 |
-| 318 | DemonEyeSpaceship | MODULE-LANDED(f27) | `extra7` | NPC.cs:74004 |
+| 316 | Ghost | WIRED(d44 5568fabf) | `extra7` | NPC.cs:74834 |
+| 317 | DemonEyeOwl | WIRED(d44 5568fabf) | `extra7` | NPC.cs:74003 |
+| 318 | DemonEyeSpaceship | WIRED(d44 5568fabf) | `extra7` | NPC.cs:74004 |
 | 319 | ZombieDoctor | INLINE-ARM | npc.rs:ZombieDoctor | NPC.cs:76338 |
 | 320 | ZombieSuperman | INLINE-ARM | npc.rs:ZombieSuperman | NPC.cs:76339 |
 | 321 | ZombiePixie | INLINE-ARM | npc.rs:ZombiePixie | NPC.cs:76340 |
-| 322 | SkeletonTopHat | MODULE-LANDED(f27) | `extra7` | NPC.cs:68599 |
-| 323 | OnFire3 | MODULE-LANDED(f27) | `extra7` | NPC.cs:68600 |
-| 324 | Frostburn2 | MODULE-LANDED(f27) | `extra7` | NPC.cs:68601 |
+| 322 | SkeletonTopHat | WIRED(d44 5568fabf) | `extra7` | NPC.cs:68599 |
+| 323 | OnFire3 | WIRED(d44 5568fabf) | `extra7` | NPC.cs:68600 |
+| 324 | Frostburn2 | WIRED(d44 5568fabf) | `extra7` | NPC.cs:68601 |
 | 325 | MourningWood | INLINE-ARM | npc.rs:MourningWood | NPC.cs:72491 |
 | 326 | Splinterling | INLINE-ARM | npc.rs:Splinterling | NPC.cs:68602 |
 | 327 | Pumpking | INLINE-ARM | npc.rs:Pumpking | NPC.cs:72296 |
@@ -435,11 +460,11 @@ The anchor is the FIRST top-level `case` line of the id's group.
 | 330 | Poltergeist | INLINE-ARM | npc.rs:Poltergeist | NPC.cs:74886 |
 | 331 | ZombieXmas | INLINE-ARM | npc.rs:ZombieXmas | NPC.cs:76341 |
 | 332 | ZombieSweater | INLINE-ARM | npc.rs:ZombieSweater | NPC.cs:76342 |
-| 333 | SlimeRibbonWhite | MODULE-LANDED(f27) | `extra7` | NPC.cs:70814 |
-| 334 | SlimeRibbonYellow | MODULE-LANDED(f27) | `extra7` | NPC.cs:70815 |
-| 335 | SlimeRibbonGreen | MODULE-LANDED(f27) | `extra7` | NPC.cs:70816 |
-| 336 | SlimeRibbonRed | MODULE-LANDED(f27) | `extra7` | NPC.cs:70817 |
-| 337 | TentacleSpike | MODULE-LANDED(f27) | `extra7` | NPC.cs:76854 |
+| 333 | SlimeRibbonWhite | WIRED(d44 5568fabf) | `extra7` | NPC.cs:70814 |
+| 334 | SlimeRibbonYellow | WIRED(d44 5568fabf) | `extra7` | NPC.cs:70815 |
+| 335 | SlimeRibbonGreen | WIRED(d44 5568fabf) | `extra7` | NPC.cs:70816 |
+| 336 | SlimeRibbonRed | WIRED(d44 5568fabf) | `extra7` | NPC.cs:70817 |
+| 337 | TentacleSpike | WIRED(d44 5568fabf) | `extra7` | NPC.cs:76854 |
 | 338 | ZombieElf | INLINE-ARM | npc.rs:ZombieElf | NPC.cs:68603 |
 | 339 | ZombieElfBeard | INLINE-ARM | npc.rs:ZombieElfBeard | NPC.cs:68604 |
 | 340 | ZombieElfGirl | INLINE-ARM | npc.rs:ZombieElfGirl | NPC.cs:68605 |
@@ -539,12 +564,12 @@ The anchor is the FIRST top-level `case` line of the id's group.
 | 434 | ArmedZombieSwamp | WIRED(g7) | `high2` | NPC.cs:70883 |
 | 435 | ArmedZombieTwiggy | **UNCLAIMED** | — | NPC.cs:70884 |
 | 436 | ArmedZombieCenx | **UNCLAIMED** | — | NPC.cs:70885 |
-| 437 | CultistTablet | MODULE-LANDED(f27) | `extra7` | NPC.cs:71987 |
-| 438 | CultistDevote | MODULE-LANDED(f27) | `extra7` | NPC.cs:71998 |
+| 437 | CultistTablet | WIRED(d44 5568fabf) | `extra7` | NPC.cs:71987 |
+| 438 | CultistDevote | WIRED(d44 5568fabf) | `extra7` | NPC.cs:71998 |
 | 439 | CultistBoss | INLINE-ARM | npc.rs:AncientCultist | NPC.cs:72017 |
-| 440 | CultistBossClone | MODULE-LANDED(f27) | `extra7` | NPC.cs:72018 |
+| 440 | CultistBossClone | WIRED(d44 5568fabf) | `extra7` | NPC.cs:72018 |
 | 441 | TaxCollector | INLINE-ARM | npc.rs:TaxCollector | NPC.cs:68609 |
-| 442 | GoldBird | MODULE-LANDED(f27) | `extra7` | NPC.cs:73631 |
+| 442 | GoldBird | WIRED(d44 5568fabf) | `extra7` | NPC.cs:73631 |
 | 443 | GoldBunny | MODULE-LANDED(f27) | `extra8` | NPC.cs:76855 |
 | 444 | GoldButterfly | MODULE-LANDED(f27) | `extra8` | NPC.cs:72740 |
 | 445 | GoldFrog | MODULE-LANDED(f27) | `extra8` | NPC.cs:76619 |
@@ -575,22 +600,22 @@ The anchor is the FIRST top-level `case` line of the id's group.
 | 470 | CrimsonPenguin | INLINE-ARM | d40:CrimsonPenguin(npc.rs:9832) | NPC.cs:76395 |
 | 471 | GoblinSummoner | INLINE-ARM | npc.rs:GoblinSummoner | NPC.cs:75532 |
 | 472 | ShadowFlameApparition | INLINE-ARM | d40:ShadowFlameApparition(npc.rs:9761) | NPC.cs:71369 |
-| 473 | BigMimicCorruption | MODULE-LANDED(f26) | `extra7b` | NPC.cs:71159 |
-| 474 | BigMimicCrimson | MODULE-LANDED(f26) | `extra7b` | NPC.cs:71160 |
-| 475 | BigMimicHallow | MODULE-LANDED(f26) | `extra7b` | NPC.cs:71161 |
-| 476 | BigMimicJungle | MODULE-LANDED(f26) | `extra7b` | NPC.cs:71162 |
-| 477 | Mothron | MODULE-LANDED(f26) | `extra7b` | NPC.cs:71330 |
+| 473 | BigMimicCorruption | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:71159 |
+| 474 | BigMimicCrimson | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:71160 |
+| 475 | BigMimicHallow | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:71161 |
+| 476 | BigMimicJungle | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:71162 |
+| 477 | Mothron | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:71330 |
 | 478 | MothronEgg | NO-CASE | — | — |
-| 479 | MothronSpawn | MODULE-LANDED(f26) | `extra7b` | NPC.cs:71343 |
-| 480 | Medusa | MODULE-LANDED(f26) | `extra7b` | NPC.cs:75103 |
-| 481 | GreekSkeleton | MODULE-LANDED(f26) | `extra7b` | NPC.cs:71454 |
-| 482 | GraniteGolem | MODULE-LANDED(f26) | `extra7b` | NPC.cs:75202 |
-| 483 | GraniteFlyer | MODULE-LANDED(f26) | `extra7b` | NPC.cs:75168 |
-| 484 | EnchantedNightcrawler | MODULE-LANDED(f26) | `extra7b` | NPC.cs:72776 |
-| 485 | Grubby | MODULE-LANDED(f26) | `extra7b` | NPC.cs:72829 |
-| 486 | Sluggy | MODULE-LANDED(f26) | `extra7b` | NPC.cs:72830 |
-| 487 | Buggy | MODULE-LANDED(f26) | `extra7b` | NPC.cs:72831 |
-| 488 | TargetDummy | MODULE-LANDED(f26) | `extra7b` | NPC.cs:70847 |
+| 479 | MothronSpawn | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:71343 |
+| 480 | Medusa | MODULE-LANDED(f26) KEEP-INLINE | `extra7b` parity / d40 inline wins | NPC.cs:75103 |
+| 481 | GreekSkeleton | MODULE-LANDED(f26) KEEP-INLINE | `extra7b` parity / d40 inline wins | NPC.cs:71454 |
+| 482 | GraniteGolem | MODULE-LANDED(f26) KEEP-INLINE | `extra7b` parity / d40 inline wins | NPC.cs:75202 |
+| 483 | GraniteFlyer | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:75168 |
+| 484 | EnchantedNightcrawler | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:72776 |
+| 485 | Grubby | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:72829 |
+| 486 | Sluggy | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:72830 |
+| 487 | Buggy | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:72831 |
+| 488 | TargetDummy | WIRED(d44 d1d20450) | `extra7b` | NPC.cs:70847 |
 | 489 | BloodZombie | INLINE-ARM | npc.rs:BloodZombie | NPC.cs:68614 |
 | 490 | Drippler | INLINE-ARM | npc.rs:Drippler | NPC.cs:72521 |
 | 491 | PirateShip | NO-CASE | — | — |
@@ -862,23 +887,26 @@ The g6-vs-g7 twin-hook union (unchanged from refresh 1, still valid):
 
 ## 5. UNWIRED list — the MODULE-LANDED worklist (the wire rounds)
 
-60 ids across four modules, all landed on the pushed f26/f27 tips with
-NO cs_id hook anywhere:
+33 ids remaining (refresh 3), all landed on the pushed f26/f27 tips:
 
 | module | ids | count | bridge shape | wire note |
 | --- | --- | --- | --- | --- |
-| `extra7` (f27 s7) | 316/317/318/322/323/324/333/334/335/336/337/437/438/440/442 | 15 | 4-field + ai_action/local_ai2 | the d38 316-337 inline arms are faithful twins for 316/317/318/333-337; 322/323/324 town stand-ins superseded; the d40 437/438 faithful, 440/442 stubs |
-| `extra7b` (f26 s7b) | 473/474/475/476/477/479/480/481/482/483/484/485/486/487/488 | 15 | 5-field + slope/frame_x36 WORLD-READ | 480/481/482 keep the d40 INLINE arms (faithful both sides); the other 12 are d40 stubs → module wins; needs the world-read entry (the c-module precedent) |
-| `extra7c` (f26 s7c) | 494/495/496/497/498/499/500/501/502/503/504/505/506/508/509 | 15 | 4-field + rotation | NO roster kind exists on any tip → fully stream-inert, the cleanest wire |
-| `extra8` (f27 s8) | 443/444/445/446/447/448/449/450/451/452/453/454/460/461/462 | 15 | 5-field + slope WORLD-READ (GoldWorm) | the d40 443-448 stubs superseded; 449-452/461 faithful inline twins; 453/460/462 town stand-ins (460/462 WRONG) → module wins; needs the world-read entry |
+| `extra7b` keep-inline trio | 480/481/482 | 3 | — | RESOLVED, NOT wiring work: the f26e verdict keeps the d40 INLINE arms (faithful both sides); the d44 hook NEVER claims them (`d1d20450`), the module arms ride as parity references |
+| `extra7c` (f26 s7c) | 494/495/496/497/498/499/500/501/502/503/504/505/506/508/509 | 15 | 4-field + rotation | NO roster kind exists on any tip → fully stream-inert, the cleanest wire; NEXT ROUND |
+| `extra8` (f27 s8) | 443/444/445/446/447/448/449/450/451/452/453/454/460/461/462 | 15 | 5-field + slope WORLD-READ (GoldWorm) | the d40 443-448 stubs superseded; 449-452/461 faithful inline twins; 453/460/462 town stand-ins (460/462 WRONG) → module wins; the `find_frame_world` slope seam is ALREADY extended (the extra7b round) — the GoldWorm probe reuses `find_frame_worm_slope`; NEXT ROUND |
 
-**DONE this refresh (§7):** `extra6` (278-287/290-293/295, 15 ids) —
-was MODULE-LANDED, now **WIRED(d44 `59b798dc`)**.
+**DONE refresh 2 (§7):** `extra6` (278-287/290-293/295, 15 ids) —
+WIRED(d44 `59b798dc`).
 
-The remaining wire rounds: extra7/extra7b/extra7c/extra8 (60 ids). The
-extra7b/extra8 world-read seams (slope/frame_x36) need the
-`find_frame_world` entry extension (the c-module precedent); extra7/
-extra7c ride the world-free hook directly.
+**DONE refresh 3 (§7):** `extra7` (316-318/322-324/333-337/437/438/
+440/442, 15 ids) — WIRED(d44 `5568fabf`); `extra7b`'s 12 d40-stub kinds
+(473-477/479/483-488) — WIRED(d44 `d1d20450`, the world-read
+slope/frame_x36 extension landed with it).
+
+The remaining wire rounds: extra7c/extra8 (30 ids, 2 modules × the
+11+4 batch split = 4 wire batches). The extra8 GoldWorm slope probe
+rides the SAME `find_frame_world` entry the extra7b round extended —
+no new seam needed, only the claim + bridge.
 
 ## 6. UNCLAIMED worklist (the port rounds) — 130 kinds
 
@@ -1079,24 +1107,94 @@ The refresh-1 wire round (d48 wave C + f26 slice 5) is unchanged — see
 the §7 history in the prior tip `7cb3f8d0` (the worm slope world-read
 bridge at both production call sites, the minimal extra5 bridge).
 
+## 7b. Wire-round addendum (2026-11-21 refresh 3, this branch)
+
+**f27 slice 7 (`extra7`) — WIRED(d44)** on `task/W4-d44-findframe-low-1`:
+* `npc_findframe_extra7.rs` copied byte-exact from `0e187428` (the f27
+  tip moved past the census's `72448094` — extra9 rides it; blob
+  `a41abca3` hash-verified, `git hash-object` == the pushed tip's blob,
+  the committed blob re-verified via `git ls-tree`). The 15 machines +
+  the in-module `find_frame_kind_extra7` lookup + 11 frame witnesses
+  ride unchanged. Commit `86791530`. The wave-B
+  `humanoid_fighter_frame` was ALREADY `pub(crate)` (the `9d6baa89`
+  extra6 lift) — the 322/323/324 costume-skeleton delegate rides it,
+  no new lift.
+* The hook `find_frame_kind_extra7_claimed` = the in-module lookup
+  verbatim (all 15 ids). The bridge `find_frame_wave_extra7` copies
+  row/counter/sprite_dir/rotation both ways and feeds
+  vx/vy/facing/ai[4]/ai_action/local_ai[2] — no slice-7 arm reads wet
+  or the world (the floater draw `:74844` is 634-gated, the eye dust
+  `:74007` is 23-gated), so the hook sits in the world-free
+  `find_frame` directly. Batches `a72b09ee` (the first 11: the
+  316-337 band) + `5568fabf` (the last 4: 437/438/440/442).
+* The 439 boss keeps its own inline arm on THIS branch — the f27
+  `d959c234` stub-fix (the 439/440 shared ladder delegate) rides f27's
+  own `npc.rs`, not this wire round; at merge the f27 fix + this
+  hook's 440 claim are the same machine (keep-one trivially).
+
+**f26 slice 7b (`extra7b`) — WIRED(d44), the 12 stub kinds ONLY**:
+* `npc_findframe_extra7b.rs` copied byte-exact from `f1a0eaa9` (the
+  f26 tip moved past the census's `a2e47596` — extra7d/7e ride it;
+  blob `3729faa4` hash-verified equal). The 15 machines + lookup + 12
+  frame witnesses ride unchanged. Commit `96877ed2`.
+* The hook `find_frame_kind_extra7b_claimed` = the module mapper
+  MINUS the f26e keep-inline trio **480 Medusa / 481 GreekSkeleton /
+  482 GraniteGolem — NEVER claimed** (the d40 INLINE arms are
+  FAITHFUL both sides; the module arms ride as parity references).
+  The 12 d40-stub kinds 473-477/479/483-488 all claimed. Batches
+  `0a19a13a` (the first 11) + `d1d20450` (the last 1: 488).
+* The bridge `find_frame_wave_extra7b` copies
+  row/counter/sprite_dir/rotation/local_ai[0..1] both ways and feeds
+  vx/vy/facing/ai[4] + the two RESOLVED world reads. The
+  `find_frame_world` entry EXTENDED (the f26f-516 resolved-seams
+  precedent): the crawler/grub kinds 484-487 reuse
+  `find_frame_worm_slope` (the SAME two-tile probe,
+  `NPC.cs:72807-72815`/`:72862-72869`); the NEW
+  `find_frame_dummy_frame_x36` resolves
+  `Framing.GetTileSafely((int)ai[0], (int)ai[1]).frameX >= 36`
+  (`:70850`; out-of-world → `new Tile()` frameX 0 → false,
+  `Framing.cs:426-439` + `Tile.cs:101`). The world-free `find_frame`
+  lane passes slope 0 / frame_x36 false (the wave-C convention).
+  Both production call sites already ride `find_frame_world`
+  (`npc.rs` update_rng tail + `world_sim/npcs.rs` slot loop) — no
+  call-site change needed.
+* Stream-inert: a mechanical Python scan of the cs_id hand rows +
+  the bestiary net-id literals + the loot_db constants over both
+  claim bands = ZERO hits (the lone 475 token in loot_db is a
+  comment cite). No arm draws RNG (the f26/f27 mechanical greps).
+* **Witnesses**: 8 seam tests added to `npc.rs::w4_d44_wire_tests`
+  (the extra7/extra7b inertness sweeps over ALL_KINDS, the two
+  claim sets — the extra7b one pinning the 480/481/482 NEVER-claim —
+  the two bridge field copy-backs with per-machine frame pins, the
+  dummy frameX probe, the extra7b world-entry probe resolution) +
+  the modules' own 11 + 12 frame witnesses ride verbatim. Written
+  not run.
+
 ## 8. Remaining-work estimate
 
-* **UNCLAIMED kinds: 130** (§6). At the established 15-kind slice cadence
-  (d44-d49/e13/e14/f26/f27 all landed 12-15 per slice): **9 port slices**
-  (130 / 15 = 8.67 → 9). The keep-one families (§6 group notes) mean the
-  distinct-machine count is lower (~60-70 bodies), but the slice cadence
+* **UNCLAIMED kinds: 130 at refresh 2, 120 after the f26 7d/7e port
+  slices** (§6; the pushed `f1a0eaa9` claims 516/521/523-530 — the
+  §2/§6 rows for those 10 are stale until the next mechanical
+  refresh). At the established 15-kind slice cadence: **8 port
+  slices** (120 / 15 = 8). The keep-one families (§6 group notes)
+  mean the distinct-machine count is lower, but the slice cadence
   counts kinds, not bodies.
-* **MODULE-LANDED-but-UNWIRED: 60 ids** (§5) across extra7/extra7b/
-  extra7c/extra8. At the ≤11-kind wire cap per batch: **6 wire batches**
-  (extra7: 11+4, extra7b: 11+4, extra7c: 11+4, extra8: 11+4 = 8 batches
-  if each module splits 11+4; or 4 wire rounds if the cap is per-round
-  and the modules wire whole). The extra7b/extra8 world-read seams need
-  the `find_frame_world` extension first.
-* **Total remaining: ~9 port slices + ~4-8 wire batches.** The merger
-  lands g6 ∪ g7 (with §3's keep-one resolutions) + the d45/d46 self-wired
-  branches + THIS branch's three wire blocks (d48 c + extra5 + extra6) +
-  the roster lanes d34/d35/d37/d38/d40; the MODULE-LANDED modules wire
-  next, then the UNCLAIMED port rounds.
+* **MODULE-LANDED-but-UNWIRED: 30 real wire ids** (§5) across
+  extra7c/extra8 (the extra7b keep-inline trio 480/481/482 is
+  RESOLVED — the d40 inline arms win, no hook ever). At the ≤11-kind
+  wire cap per batch: **4 wire batches** (extra7c: 11+4, extra8:
+  11+4). The extra8 GoldWorm slope probe rides the ALREADY-EXTENDED
+  `find_frame_world` entry (the extra7b round landed the seam) —
+  only the claim + bridge remain. The f26 7d/7e modules (10 ids)
+  add 2 more wire batches when their round comes (the 7d SolarFlare
+  needs the two RESOLVED draw seams — the f26f-516 precedent this
+  round followed for slope/frame_x36).
+* **Total remaining: ~8 port slices + ~4-6 wire batches.** The
+  merger lands g6 ∪ g7 (with §3's keep-one resolutions) + the
+  d45/d46 self-wired branches + THIS branch's five wire blocks
+  (d48 c + extra5 + extra6 + extra7 + extra7b) + the roster lanes
+  d34/d35/d37/d38/d40; the extra7c/extra8 modules wire next, then
+  the UNCLAIMED port rounds.
 
 ## 9. Verification performed
 
@@ -1111,3 +1209,19 @@ cs_id/bestiary/fold mapping + the module mapper join — the §2 table is
 its output, not hand-counted). The extra6 wire witnesses are WRITTEN NOT
 RUN. All reads were direct file paths / git object reads; no junction
 recursion, ≤100-line windows.
+
+Refresh 3 (the extra7/extra7b wire round): `git cat-file blob
+a41abca3`/`3729faa4` extracted via cmd redirection (byte-exact, no
+PowerShell encoding mangling) + `git hash-object` == the pushed tips'
+blobs + `git ls-tree HEAD` re-verification of the COMMITTED blobs; a
+Python mechanical scan of the cs_id hand-row match arms + the
+bestiary/loot_db literals over both claim bands (ZERO hits — the lone
+475 token is a comment cite); the C# probe sites re-read
+(`NPC.cs:70847-70878` the dummy, `:72805-72826`/`:72856-72883` the
+crawler/grub slope, `Framing.cs:426-439` + `Tile.cs:101` the
+new-Tile defaults); every seam-witness expectation hand-re-derived
+against the module arms (the mimic state ladder, the mothron length
+stepper, the granite tilt modes, the grub slope latch, the dummy
+recoil banks, the cultist pose ladder, the devote mirror). The 8 new
+seam witnesses are WRITTEN NOT RUN — **no cargo/rustc/tests/rustfmt/
+graphify invoked** (code-only mode).
