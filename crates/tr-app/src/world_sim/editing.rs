@@ -5714,6 +5714,24 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             cell.frame_y = frame_y;
         }
     }
+    // `WorldGen.AttemptFossilShattering` (`WorldGen.cs:63484-63515`, the
+    // `KillTile` body `:63708`): a broken desert-fossil cell (404) shatters
+    // its 3×3 neighbourhood. The walk draws `genRand` and re-enters
+    // `KillTile`, so the core recorded the request and the app resolves it
+    // here (the `palm_frame_rolls` convention — one `UpdatePlayers` throw
+    // seeds the `FastRandom` stand-in per shatter). The nested kills drop no
+    // items (`noItem: true`) and the `fossilBreak` guard keeps them from
+    // shattering again. The port's break path is always `fail: false`.
+    for (fx, fy) in kill.fossil_shatters.clone() {
+        // `WorldGen.genRand => Main.rand` (`WorldGen.cs:4445`) is a
+        // `UnifiedRandom`; the port has no runtime genRand stream, so one
+        // `UpdatePlayers` throw seeds the stand-in (the `palm_frame_rolls`
+        // convention). `UnifiedRandom::next_max` is the C# `Next(maxValue)`
+        // (`sample() * max`), the shatter roll's exact shape.
+        let seed = app.rngs.stream(crate::app::RngKey::UpdatePlayers).next();
+        let mut rng = tr_core::UnifiedRandom::new(seed);
+        edit::attempt_fossil_shattering(&mut app.world, fx, fy, false, &mut rng);
+    }
     // The Coin Portal projectile of the pot loot (:57176-57182); the port
     // has no 518 family yet — `spawn_with_data` declines it and the break
     // still returns like the C# (recorded deviation, phase 5).

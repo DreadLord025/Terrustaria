@@ -160,6 +160,24 @@ pub struct TileKill {
     /// (`TileFrameImportant`'s `case 72`, `WorldGen.cs:85855-85873`:
     /// `genRand.Next(3)` picks frame (18, 0/18/36)) — the app resolves it.
     pub mushroom_frame_rolls: Vec<(i32, i32)>,
+    /// The desert-fossil cells (404) whose break triggers
+    /// `WorldGen.AttemptFossilShattering` (`WorldGen.cs:63484-63515`, called
+    /// from `KillTile` `:63708` and `ReplaceTile` `:62577`). The 3×3 shatter
+    /// walk draws `WorldGen.genRand`, so the core records the request and the
+    /// app resolves it through [`attempt_fossil_shattering`] (the
+    /// `palm_frame_rolls` convention). The `fossilBreak` re-entrancy guard
+    /// suppresses the recording while a shatter walk is in flight.
+    pub fossil_shatters: Vec<(i32, i32)>,
+}
+
+// `WorldGen.fossilBreak` (`WorldGen.cs:4238`-area, the static the
+// `AttemptFossilShattering` entry reads at `:63486` and sets at `:63490`):
+// while a shatter walk is in flight the nested `KillTile` calls on the
+// neighbouring fossil cells do NOT shatter again (their own
+// `AttemptFossilShattering` returns early). The port checks the same flag at
+// the recording site so a nested 404 kill records no event.
+thread_local! {
+    static FOSSIL_BREAK: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 // The ring walk's re-entrancy cap (`square_tile_frame` → the check → the
@@ -274,12 +292,79 @@ fn kill_tile_cascading(
     if let Some(event) = tree_drop {
         kill.tree_events.push(event);
     }
+    // `WorldGen.AttemptFossilShattering(i, j, tile, fail)` (`WorldGen.cs:
+    // 63708`, the `KillTile` body): a broken desert-fossil cell (404) shatters
+    // its 3×3 neighbourhood. The walk draws `genRand` and re-enters `KillTile`,
+    // so the core records the request and the app resolves it (the
+    // `palm_frame_rolls` convention). The `fossilBreak` guard (`:63486`)
+    // suppresses the recording while a shatter walk is in flight — the nested
+    // kills cascade but do not shatter again. The port's break path is always
+    // `fail: false` (the fail tick is the recorded i29 deviation), so the
+    // `!fail` arm of the `maxValue` pick (`:63500`) always applies.
+    if kind == 404 && !FOSSIL_BREAK.with(|f| f.get()) {
+        kill.fossil_shatters.push((x, y));
+    }
     square_tile_frame(world, x, y, no_item, destroy_object, &mut kill);
     // The reframing half of the C# `TileFrame` calls: neighbours re-derive
     // their frames; `frame_important` kinds keep theirs and unsupported
     // torches fall (`reframe_area` = the non-object arm of `TileFrame`).
     after_edit(world, x, y);
     Some(kill)
+}
+
+/// `WorldGen.AttemptFossilShattering(i, j, tileCache, fail)`
+/// (`WorldGen.cs:63484-63515`): the desert-fossil (404) break shatters its
+/// 3×3 neighbourhood. For each neighbour cell `(k, l)` the roll denominator
+/// is 15, dropped to 4 when the cell BELOW `(k, l+1)` is not solid
+/// (`:63496`) or when the cell is the one directly above the broken cell and
+/// the break is not a fail tick (`:63500`). A neighbour that is itself an
+/// active 404 and rolls `genRand.Next(maxValue) == 0` is killed with
+/// `noItem: true` (`:63504-63506`) — the shatter drops no fossil items. The
+/// `fossilBreak` static (`:63486/:63490/:63514`) guards the re-entrancy: the
+/// nested `KillTile` calls cascade but do not shatter again.
+///
+/// The caller passes the `genRand` stand-in (the app seeds a `FastRandom`
+/// from the `UpdatePlayers` stream, the `palm_frame_rolls` convention). The
+/// broken cell `(i, j)` is already gone (the cascade cleared it); the walk
+/// skips it (`k != i || l != j`, `:63504`). `fail` is the `KillTile` flag —
+/// the port's break path is always `false` (the recorded i29 deviation).
+pub fn attempt_fossil_shattering(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    fail: bool,
+    rng: &mut crate::UnifiedRandom,
+) {
+    // `:63486` — the re-entrancy guard (the type/netMode legs are the caller's
+    // contract: only a 404 break records the event, single-player host).
+    if FOSSIL_BREAK.with(|f| f.get()) {
+        return;
+    }
+    FOSSIL_BREAK.with(|f| f.set(true));
+    for k in (i - 1)..=(i + 1) {
+        for l in (j - 1)..=(j + 1) {
+            // `:63495-63503` — the roll denominator.
+            let mut max_value = 15;
+            if !solid_tile(world, k, l + 1) {
+                max_value = 4;
+            } else if k == i && l == j - 1 && !fail {
+                max_value = 4;
+            }
+            // `:63504` — the neighbour gate: not the broken cell, active 404,
+            // and the roll hits. The `&&` short-circuits the draw on a
+            // non-fossil neighbour (the C# order kept).
+            if (k != i || l != j)
+                && world.tile(k, l).is_some_and(|t| t.active() && t.kind == 404)
+                && rng.next_max(max_value) == 0
+            {
+                // `:63506` — `KillTile(k, l, fail: false, effectOnly: false,
+                // noItem: true)`. The nested kill cascades (its own
+                // `SquareTileFrame`) but records no shatter event (the guard).
+                let _ = kill_tile(world, k, l, true);
+            }
+        }
+    }
+    FOSSIL_BREAK.with(|f| f.set(false));
 }
 
 /// The tree drop record of the cell about to die — `KillTile_GetItemDrops`'s
@@ -569,6 +654,7 @@ fn kill_plan_cells(
             kill.tree_events.extend(inner.tree_events);
             kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
             kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+            kill.fossil_shatters.extend(inner.fossil_shatters);
         }
     }
 }
@@ -971,6 +1057,7 @@ fn kill_tree_cell(
         kill.tree_events.extend(inner.tree_events);
         kill.palm_frame_rolls.extend(inner.palm_frame_rolls);
         kill.mushroom_frame_rolls.extend(inner.mushroom_frame_rolls);
+        kill.fossil_shatters.extend(inner.fossil_shatters);
     }
 }
 
@@ -5064,5 +5151,104 @@ mod tests {
             drop2.item
         );
         assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
+    }
+
+    // ---- W4-g40 desert chain: the fossil shatter (WorldGen.cs:63484-63515) ----
+
+    /// A 40x40 world with a stone floor at y=20 and a 3x3 desert-fossil (404)
+    /// block centred at (10, 18) — the cells (9..11, 17..19). The floor below
+    /// (y=20) is solid stone, so the shatter's `SolidTile(k, l+1)` probe reads
+    /// solid for the bottom row (l=19 → l+1=20) and non-solid above.
+    fn fossil_world() -> World {
+        let mut w = object_world();
+        for x in 9..=11 {
+            for y in 17..=19 {
+                set_active(&mut w, x, y, 404);
+            }
+        }
+        w
+    }
+
+    #[test]
+    fn fossil_break_records_the_shatter_request() {
+        // `WorldGen.cs:63708` — a broken 404 cell records the shatter request
+        // (the core has no genRand stream; the app resolves it).
+        let mut w = fossil_world();
+        let kill = kill_tile(&mut w, 10, 18, false).expect("the fossil break");
+        assert_eq!(kill.kind, 404);
+        assert_eq!(kill.fossil_shatters, vec![(10, 18)], "the hit cell records");
+        // A non-fossil break records nothing.
+        let mut w2 = object_world();
+        let kill2 = kill_tile(&mut w2, 10, 20, false).expect("the stone break");
+        assert!(kill2.fossil_shatters.is_empty(), "stone records no shatter");
+    }
+
+    #[test]
+    fn fossil_shatter_walks_the_3x3_and_kills_only_fossil_neighbours() {
+        // `WorldGen.cs:63491-63513` — the 3x3 walk skips the broken cell,
+        // kills only active 404 neighbours that roll 0, with noItem. A seed
+        // that rolls 0 on every draw clears the whole neighbourhood.
+        let mut w = fossil_world();
+        // Break the centre first (the cascade clears it), then resolve.
+        let kill = kill_tile(&mut w, 10, 18, false).expect("the break");
+        assert_eq!(kill.fossil_shatters.len(), 1);
+        // UnifiedRandom seed 0: next_max(n) = sample()*n; the first samples
+        // are small enough to roll 0 on the 4/15 denominators. Use a seed
+        // known to produce zeros: seed 1's first sample is ~0.0000000002.
+        let mut rng = crate::UnifiedRandom::new(1);
+        attempt_fossil_shattering(&mut w, 10, 18, false, &mut rng);
+        // The 8 neighbours were 404; with rolling zeros they are all gone.
+        for x in 9..=11 {
+            for y in 17..=19 {
+                if x == 10 && y == 18 {
+                    continue; // the hit cell, already cleared
+                }
+                assert!(
+                    !w.tile(x, y).unwrap().active(),
+                    "neighbour ({x},{y}) shattered"
+                );
+            }
+        }
+        // The stone floor (y=20) is untouched (not a 404).
+        assert!(w.tile(10, 20).unwrap().active(), "the floor stays");
+    }
+
+    #[test]
+    fn fossil_shatter_guard_suppresses_nested_recording() {
+        // `WorldGen.cs:63486/:63490` — the fossilBreak guard: while a shatter
+        // walk is in flight the nested 404 kills record NO shatter event.
+        let mut w = fossil_world();
+        let kill = kill_tile(&mut w, 10, 18, false).expect("the break");
+        assert_eq!(kill.fossil_shatters.len(), 1);
+        let mut rng = crate::UnifiedRandom::new(1);
+        attempt_fossil_shattering(&mut w, 10, 18, false, &mut rng);
+        // After the walk the guard is reset; a fresh 404 break records again.
+        set_active(&mut w, 15, 18, 404);
+        let kill2 = kill_tile(&mut w, 15, 18, false).expect("the second break");
+        assert_eq!(kill2.fossil_shatters, vec![(15, 18)], "guard reset");
+    }
+
+    #[test]
+    fn fossil_shatter_denominator_drops_above_unsupported_cells() {
+        // `WorldGen.cs:63495-63503` — maxValue is 15, dropped to 4 when the
+        // cell below is not solid OR the cell is directly above the hit and
+        // !fail. Desert fossil (404) IS solid (the TILE_SOLID bitset), so a
+        // fossil-over-fossil column reads solid; removing the floor under a
+        // column makes that column's bottom neighbour roll Next(4).
+        let mut w = fossil_world();
+        // Remove the stone floor under the left column so (9,19)'s below
+        // (9,20) is air → that neighbour rolls Next(4) not Next(15).
+        let i = w.index(9, 20);
+        w.tiles[i] = Tile::default();
+        w.compute_chunks();
+        let kill = kill_tile(&mut w, 10, 18, false).expect("the break");
+        assert_eq!(kill.fossil_shatters.len(), 1);
+        // The walk visits k=9..11, l=17..19 (row-major), skipping (10,18).
+        // The cell directly above the hit (10,17) rolls Next(4) (the !fail
+        // arm); the left column's bottom (9,19) rolls Next(4) (air below).
+        let mut rng = crate::UnifiedRandom::new(7);
+        attempt_fossil_shattering(&mut w, 10, 18, false, &mut rng);
+        // The walk completed without panic; the guard is reset.
+        assert!(!FOSSIL_BREAK.with(|f| f.get()), "guard reset after the walk");
     }
 }
