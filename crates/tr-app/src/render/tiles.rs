@@ -618,7 +618,28 @@ pub(crate) fn draw_tiles(
                 let tile = &world.tiles[row_base + tx as usize];
                 let raw_l = light.get(tx, ty);
                 let inactive = tile.flags & tr_core::tile::FLAG_INACTIVE != 0;
-                let mut l = raw_l;
+                let active = tile.active();
+                // W4-g85 — the spelunker pre-entry arm (`TileDrawing.cs:920-937`),
+                // the orb-family slice. `findTreasure` (buff 9, landed S1-E-7a
+                // `player.rs:6464`) + `IsTileSpelunkable` admits 12/639 (the
+                // family's `tileSpelunker` members, `Main.cs:9424`/`:9651`);
+                // 31/696 are NOT in the set. The light lift (`:922-929`, R→200
+                // G→170, B untouched) runs on the RAW cell light BEFORE the
+                // actuation ghost — C# `GetFinalLight` (`:4380`) applies
+                // `actColor` AFTER the lift — and the lifted `tileLight` is what
+                // the emit battery receives (`:967`), so a buff-lit 12/639 cell
+                // is never dark to the shine arm. The `Next(60)` sparkle
+                // (`:930`) draws OUTSIDE the `:965` entry quarter-roll, once per
+                // admitted cell per unpaused frame, on the `_rand` stand-in.
+                let spelunk = active
+                    && player.is_some_and(|p| p.find_treasure)
+                    && crate::render::orb_draw::spelunker_family(tile.kind);
+                let tile_light = if spelunk {
+                    crate::render::orb_draw::spelunker_light_lift(raw_l)
+                } else {
+                    raw_l
+                };
+                let mut l = tile_light;
                 // `Tile.actColor` (`Tile.cs:272-290`) via
                 // `TileDrawing.GetFinalLight` (`TileDrawing.cs:4380-4397`):
                 // an actuated (inactive) tile draws ghosted — RGB × 0.4.
@@ -628,7 +649,6 @@ pub(crate) fn draw_tiles(
                 if inactive {
                     l = [l[0] * 0.4, l[1] * 0.4, l[2] * 0.4];
                 }
-                let active = tile.active();
                 // `TileDrawing.Draw`'s vine arm (`TileDrawing.cs:536-545`):
                 // a `VineThreads` cell never draws through `DrawSingleTile`
                 // — the crawl registers the strip's root as a special point
@@ -776,6 +796,27 @@ pub(crate) fn draw_tiles(
                         &dd,
                     );
                 }
+                // W4-g85 — the spelunker sparkle (`TileDrawing.cs:930-936`),
+                // drawn BEFORE the emit battery (the C# arm order: :920
+                // precedes :965). The `_rand.Next(60)` rides `leaf_rng` and
+                // is NOT gated by the entry quarter-roll; a paused frame
+                // draws nothing (`_isActiveAndNotPaused`). The light lift
+                // above already ran (it is draw-free and unconditional on
+                // the roll). Keep-one: d60's whole-prologue port owns the
+                // dangerSense `:911` / biomeSight `:955` siblings — the
+                // family kinds fail both sets (census §6/§7), so this slice
+                // draws nothing extra for them.
+                if spelunk && !game_paused {
+                    crate::render::orb_draw::spelunker_dust(
+                        &mut crate::render::orb_draw::GateRand(&mut leaf_rng),
+                        orb_main_rand,
+                        orb_dust,
+                        orb_ctx,
+                        world,
+                        tx,
+                        ty,
+                    );
+                }
                 // W4-g85 — `DrawSingleTile`'s `DrawTiles_EmitParticles` entry
                 // (`TileDrawing.cs:965-968`), the orb-family slice only. The
                 // C# slot is BEFORE the visibility/black gates (`:975-991`):
@@ -810,10 +851,12 @@ pub(crate) fn draw_tiles(
                         ty,
                     )
                 {
+                    // The battery receives `drawData.tileLight` (`:967`) —
+                    // the spelunker-lifted light, NOT the raw map colour.
                     let light_bytes = tr_core::particles::Color::new(
-                        (raw_l[0] * 255.0).min(255.0) as u8,
-                        (raw_l[1] * 255.0).min(255.0) as u8,
-                        (raw_l[2] * 255.0).min(255.0) as u8,
+                        (tile_light[0] * 255.0).min(255.0) as u8,
+                        (tile_light[1] * 255.0).min(255.0) as u8,
+                        (tile_light[2] * 255.0).min(255.0) as u8,
                         255,
                     );
                     // The `:7335` ambient arm — 31/696 only; the type test

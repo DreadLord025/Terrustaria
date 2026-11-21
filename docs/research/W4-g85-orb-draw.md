@@ -224,3 +224,64 @@ Code-only: every ported line re-read against the cited C# windows
 tests WRITTEN NOT RUN (2 entry-gate, 2 fail-tick/progression, 2
 loot-switch/gun-pair) — no cargo/rustc/rustfmt/tests/dotnet/graphify
 invoked. 18 witnesses total on the branch.
+
+## 7. Wiring round 2 (2026-11-21, same branch, code-only) — the four contract seams
+
+### 7.1 The spelunker :930 pre-entry draw — WIRED (family slice)
+
+**Claim census first.** The contract's "buff-11?" is a misread: the
+Spelunker Potion is **buff 9** (`Item.cs:4914-4927` — item 296,
+`buffType = 9`, `buffTime = 18000`; buff 11 is Shine, a player-light
+effect with no flag). The potion-use arm + the flag are ALREADY landed
+on main: `potions.rs::use_potion_item` grants `buff_type` generically
+(`Player.cs:42876-42883`), the UpdateBuffs arm 9 sets `find_treasure`
+(`player.rs:6464`, S1-E-7a wave A, `Player.cs:9981-9984`), and
+`ResetEffects` clears it (`player.rs:5980`, `:18367-18374`). The
+`tileSpelunker` bitset + `IsTileSpelunkable` are W4-d9's in-flight
+`projectile_ai_style90.rs` (`667e1f0c2` — the MagicLantern 10-tick scan,
+49 ids + the 185/186 frame exceptions) — claimed, NOT duplicated here.
+The DRAW GATE was the unclaimed half: d60's module doc explicitly defers
+the `DrawSingleTile` prologue arms `:911-962` ("also out of this body's
+scope").
+
+**The family verdict.** `Main.tileSpelunker[12] = true` (`Main.cs:9424`)
+and `[639] = true` (`:9651`); **31/696 are NOT in the set** — the shadow
+orbs themselves are not treasure-highlighted (only the Heart/LifeCrystal
+object 12 and the ManaCrystal 639 are). So the :930 seam activates for
+exactly 12/639, and the §6 contract note's "a findTreasure buff WOULD
+draw before the entry" applies to those two kinds only.
+
+**The port** (`orb_draw.rs`, three functions + 2 witnesses):
+
+* `spelunker_family(kind)` — `matches!(kind, 12 | 639)`, the family slice
+  of `IsTileSpelunkable` (`Main.cs:21783-21798`). Keep-one: d9's full-set
+  function at merge; the family verdict is identical either way.
+* `spelunker_light_lift(light)` — `:922-929`: `R = max(R, 200)`,
+  `G = max(G, 170)`, **B untouched** (no B clause — unlike dangerSense's
+  `:907-910` B≥50). The lift is draw-free and runs whether or not the
+  sparkle roll hits.
+* `spelunker_dust(...)` — `:930-936`: `_isActiveAndNotPaused &&
+  _rand.Next(60) == 0` → `Dust.NewDust(pos, 16, 16, 204, 0, 0, 150,
+  default, 0.3)` then `fadeIn = 1`, `velocity *= 0.1`, `noLight = true`.
+  **NO noGravity** — the dangerSense arm `:917` sets it, this one does
+  not (a witness pins the difference).
+
+**The wiring** (`render/tiles.rs`): per cell, `spelunk = active &&
+player.find_treasure && spelunker_family(kind)`; `tile_light =
+spelunker_light_lift(raw_l)` when admitted, else `raw_l`. The sprite
+light `l` ghosts `tile_light` (the C# `GetFinalLight` `:4380` applies
+`actColor` AFTER the potion lift); the emit battery receives
+`tile_light` (`:967` passes `tileDrawInfo.tileLight`) — so a buff-lit
+12/639 cell is never dark to the shine arm's `:7415` early return. The
+sparkle call sits BEFORE the `:965` entry block and is NOT gated by the
+quarter-roll (the C# arm order); it rides `leaf_rng` (the `_rand`
+stand-in) + `orb_main_rand` (the NewDust internals).
+
+**Stream order.** For 12/639 the preceding prologue arms draw nothing:
+dangerSense `:911 Next(30)` — the family is in no `IsTileDangerous` set
+(`:4437-4446`: the explicit ids, `Boulders`, `TouchDamageImmediate`,
+`TouchDamageHot`, the 483/482/481/51/229/162 tail all exclude 12/639);
+biomeSight `:955 Next(480)` — no BiomeSight set member (`TileID.cs:578/
+:582/:587`). So the `Next(60)` is the FIRST `_rand` draw for an admitted
+cell, then the battery's ambient type test fails (12/639 are not 31/696)
+and the shine `Next(300)` follows — stream-exact with the C#.

@@ -35,6 +35,16 @@
 //! `tileShine[type] > 0` never admits 665 — the colour row is dead code.
 //!
 //! **WIRING STATE (W4-g85 wiring round).**
+//! * The spelunker pre-entry arm (`TileDrawing.cs:920-937`) is WIRED for
+//!   the family slice ([`spelunker_family`] / [`spelunker_light_lift`] /
+//!   [`spelunker_dust`]): 12/639 are `tileSpelunker` (`Main.cs:9424`/
+//!   `:9651`), 31/696 are not. The light lift (R≥200, G≥170, B untouched)
+//!   runs before the actuation ghost and feeds the battery's `tileLight`;
+//!   the `Next(60)` sparkle draws before the `:965` entry gate, outside
+//!   its quarter-roll. The full 49-id set + the 185/186 frame exceptions
+//!   are W4-d9's in-flight `is_tile_spelunkable` (keep-one at merge); the
+//!   dangerSense `:911` / biomeSight `:955` siblings are d60's prologue
+//!   lane — the family fails both sets (zero draws).
 //! * The ambient/shine bodies are WIRED in `render/tiles.rs::draw_tiles`
 //!   at the `DrawSingleTile` entry slot ([`emit_entry_gate`] ports the
 //!   `TileDrawing.cs:965-968` quarter-roll: `_isActiveAndNotPaused &&
@@ -127,6 +137,71 @@ impl DustRng for GateRand<'_> {
     fn next_float(&mut self) -> f32 {
         self.0.next_float()
     }
+}
+
+/// The spelunker pre-entry arm's FAMILY gate — the orb-family slice of
+/// `Main.IsTileSpelunkable` (`Main.cs:21783-21798`): the `tileSpelunker`
+/// bitset carries 12 (`Main.cs:9424`) and 639 (`:9651`) but NOT 31/696
+/// (the orbs themselves are not treasure-highlighted), and the 185/186
+/// frame exceptions (`:21789-21796`) are outside the family. Keep-one:
+/// W4-d9's in-flight `projectile_ai_style90::is_tile_spelunkable` carries
+/// the FULL 49-id bitset + the frame exceptions (the MagicLantern scan);
+/// at merge this slice may delegate to it — the family verdict is the
+/// same either way (the witnesses pin it).
+pub(crate) fn spelunker_family(kind: u16) -> bool {
+    matches!(kind, 12 | 639)
+}
+
+/// The spelunker light lift (`TileDrawing.cs:922-929`): the buff-active
+/// cell's `tileLight.R` floors at 200 and `.G` at 170 — `.B` is NOT
+/// touched (the C# has no B clause, unlike the dangerSense arm's 50).
+/// Runs BEFORE the emit battery and the actuation ghost (`GetFinalLight`
+/// `:4380` applies `actColor` AFTER the lift), on the RAW cell light.
+/// The port's f32 light is the byte/255 scale; values already above the
+/// floor pass through unchanged (the C# `<` compare).
+pub(crate) fn spelunker_light_lift(light: [f32; 3]) -> [f32; 3] {
+    [
+        light[0].max(200.0 / 255.0),
+        light[1].max(170.0 / 255.0),
+        light[2],
+    ]
+}
+
+/// The spelunker sparkle (`TileDrawing.cs:930-936`), the family slice:
+/// `_isActiveAndNotPaused && _rand.Next(60) == 0` → dust 204 at the cell,
+/// alpha 150, scale 0.3, then `fadeIn = 1`, `velocity *= 0.1`,
+/// `noLight = true`. NO `noGravity` (the dangerSense arm `:917` sets it;
+/// this one does not). The `Next(60)` rides `TileDrawing._rand` and is
+/// drawn once per spelunkable cell per frame while the buff stands —
+/// OUTSIDE the `:965` emit entry gate (the arm precedes it in
+/// `DrawSingleTile`), so a paused frame draws nothing but an unpaused
+/// miss still consumes the draw. The caller gates on
+/// `findTreasure && spelunker_family(kind)` BEFORE calling (the C#
+/// `:920` test order: the flag first, the type test second — neither
+/// draws).
+pub(crate) fn spelunker_dust(
+    rand: &mut impl DustRng,
+    main_rand: &mut impl DustRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+    i: i32,
+    j: i32,
+) -> bool {
+    // `:930` — the gate draws exactly once per admitted cell.
+    if rand.next_max(60) != 0 {
+        return false;
+    }
+    // `:932-935` — dust 204, alpha 150, scale 0.3, then the three tweaks.
+    let pos = Vec2::new((i * 16) as f32, (j * 16) as f32);
+    let n = dust.new_dust(
+        main_rand, ctx, world, pos, 16, 16, 204, 0.0, 0.0, 150, Color::default(), 0.3,
+    );
+    let d = dust.slot_mut(n);
+    d.fade_in = 1.0;
+    d.velocity *= 0.1;
+    d.no_light = true;
+    true
 }
 
 /// The break-stage bit shared by all three sites: `Some(true)` = the
@@ -616,5 +691,65 @@ mod tests {
             })
             .count();
         assert!(differ > 0, "the TileFrameSeed advance re-rolls the set");
+    }
+
+    // ---- the spelunker :930 family slice (W4-g85 wiring round 2) ----
+
+    #[test]
+    fn w4_g85_spelunker_family_is_12_639_only_and_lift_floors_r_g_not_b() {
+        // Main.cs:9424 (tileSpelunker[12]) + :9651 (tileSpelunker[639]);
+        // 31/696 are NOT in the set (the orbs are not treasure-highlighted).
+        assert!(spelunker_family(12));
+        assert!(spelunker_family(639));
+        assert!(!spelunker_family(31));
+        assert!(!spelunker_family(696));
+        assert!(!spelunker_family(26));
+        assert!(!spelunker_family(695));
+        // :922-929 — R floors at 200, G at 170, B UNTOUCHED (no B clause).
+        let dark = spelunker_light_lift([0.0, 0.0, 0.0]);
+        assert_eq!(dark, [200.0 / 255.0, 170.0 / 255.0, 0.0]);
+        // Above the floor: pass-through (the C# `<` compare).
+        let lit = [220.0 / 255.0, 180.0 / 255.0, 90.0 / 255.0];
+        assert_eq!(spelunker_light_lift(lit), lit);
+        // Mixed: only the below-floor channels lift.
+        let mixed = spelunker_light_lift([100.0 / 255.0, 250.0 / 255.0, 30.0 / 255.0]);
+        assert_eq!(mixed, [200.0 / 255.0, 250.0 / 255.0, 30.0 / 255.0]);
+    }
+
+    #[test]
+    fn w4_g85_spelunker_dust_gate_miss_draws_once_hit_is_dust204_fadein_nolight() {
+        let w = world();
+        let mut pool = DustPool::new();
+        // A miss consumes exactly one Next(60) and spawns nothing.
+        let mut gate = ScriptRand::new(&[7]);
+        let mut main = UnifiedRandom::new(13);
+        let mirror = main.clone();
+        assert!(!spelunker_dust(&mut gate, &mut main, &mut pool, &ctx(), &w, 4, 4));
+        assert_eq!(gate.draws, vec![60], "exactly one Next(60)");
+        assert_eq!(main, mirror, "a gate miss draws zero Main.rand");
+        assert!(!pool.slot(0).active);
+        // A hit spawns dust 204 alpha 150 scale 0.3 with the three tweaks.
+        let mut gate2 = ScriptRand::new(&[0]);
+        let mut main2 = UnifiedRandom::new(13);
+        let mut mirror_pool = DustPool::new();
+        let mut mirror_rand = main2.clone();
+        mirror_pool.new_dust(
+            &mut mirror_rand, &ctx(), &w, Vec2::new(64.0, 64.0),
+            16, 16, 204, 0.0, 0.0, 150, Color::default(), 0.3,
+        );
+        let mut pool2 = DustPool::new();
+        assert!(spelunker_dust(&mut gate2, &mut main2, &mut pool2, &ctx(), &w, 4, 4));
+        assert_eq!(gate2.draws, vec![60]);
+        let d = pool2.slot(0);
+        let m = mirror_pool.slot(0);
+        assert_eq!(d.dust_type, 204);
+        assert_eq!(d.alpha, 150);
+        assert_eq!(d.fade_in, 1.0, ":933 fadeIn = 1");
+        assert_eq!(d.velocity, m.velocity * 0.1, ":934 velocity *= 0.1");
+        assert!(d.no_light, ":935 noLight = true");
+        assert!(!d.no_gravity, ":930-936 sets NO noGravity (unlike :917)");
+        assert_eq!(main2, mirror_rand, "the tweaks add no draws");
+        // scale 0.3: the base roll 1 + Next(-20,21)*0.01 times 0.3.
+        assert!(d.scale <= 0.37 && d.scale >= 0.23, "scale band ×0.3: {}", d.scale);
     }
 }

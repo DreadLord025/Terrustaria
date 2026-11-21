@@ -39319,8 +39319,10 @@ Three seams landed (census `docs/research/W4-g85-orb-draw.md` §6):
    frame path never binds the render-target family (S1-G-13
    allocation-only), so `RenderTargetsRequired` stands false even at
    zoom > 1. Contract notes: the pre-entry spelunker `:930 Next(60)`
-   draw (12/639 ARE `tileSpelunker`) is a constants-off potion seam —
-   when the potion draw arms land they draw BEFORE this block; the
+   draw (12/639 ARE `tileSpelunker`) was a constants-off potion seam —
+   NOW WIRED for the family slice in wiring round 2 (below); the
+   dangerSense `:911` / biomeSight `:955` siblings stay d60's prologue
+   lane (the family fails both sets — zero draws). The
    block is family-gated (zero draws for other kinds) so d60's
    whole-battery keep-one replaces it wholesale.
 2. **The hammer fail-tick dust WIRED** (`orb_hammer_fail_dust` in
@@ -39353,3 +39355,44 @@ Three seams landed (census `docs/research/W4-g85-orb-draw.md` §6):
 advance, fail-3 stage census + stream mirror, 3-hit progression,
 four-case switch + flag census, gun-pair + dead-range draw) — WRITTEN
 NOT RUN; 18 total on the branch.
+
+### Wiring round 2 — the spelunker pre-entry arm (same branch, 2026-11-21)
+
+The `:930` potion seam is now WIRED for the orb family. Census first:
+the `findTreasure` flag + the buff-9 grant + the `ResetEffects` clear
+ALREADY landed on main (S1-E-7a, `player.rs:6464`/`:5980`); the
+`tileSpelunker` bitset + `IsTileSpelunkable` are W4-d9's in-flight
+`projectile_ai_style90.rs` (`667e1f0c2`, the MagicLantern scan) — claimed,
+not duplicated. The DRAW GATE itself was unclaimed: d60's module doc
+explicitly defers the `DrawSingleTile` prologue arms `:911-962`.
+
+* `spelunker_family` — the family slice of `IsTileSpelunkable`: 12
+  (`Main.cs:9424`) and 639 (`:9651`) are `tileSpelunker`; 31/696 are NOT
+  (the orbs themselves are not treasure-highlighted — a common
+  misconception the census pins). Keep-one: at merge this may delegate to
+  d9's full-set function; the family verdict is identical.
+* `spelunker_light_lift` — `:922-929`: R floors at 200, G at 170, **B
+  untouched** (the C# has no B clause, unlike dangerSense's 50). Runs on
+  the RAW cell light BEFORE the actuation ghost (`GetFinalLight` `:4380`
+  applies `actColor` after the lift) and feeds the battery's `tileLight`
+  (`:967`) — so a buff-lit 12/639 cell is never dark to the shine arm.
+* `spelunker_dust` — `:930-936`: `_rand.Next(60)==0` → dust 204, alpha
+  150, scale 0.3, `fadeIn=1`, `velocity*=0.1`, `noLight=true`, **NO
+  noGravity** (the dangerSense arm `:917` sets it; this one does not).
+  Drawn BEFORE the `:965` entry gate, OUTSIDE its quarter-roll, once per
+  admitted cell per unpaused frame.
+* Wiring: `render/tiles.rs` computes `tile_light` (lifted or raw) per
+  cell, ghosts it into `l` for the sprite, and passes `tile_light` to the
+  battery; the sparkle call sits between the drawdata resolution and the
+  emit block. The `_rand.Next(60)` rides `leaf_rng` (the pinned stand-in),
+  the NewDust internals ride `orb_main_rand` (`frame_rng`).
+* Chain position: for 12/639 the dangerSense `:911 Next(30)` arm draws
+  NOTHING (the family is in no `IsTileDangerous` set — `:4437-4446`,
+  `TouchDamageImmediate`/`TouchDamageHot`/`Boulders` all exclude 12/639),
+  and biomeSight `:955 Next(480)` draws nothing (no BiomeSight set member).
+  So the spelunker `Next(60)` is the FIRST draw for an admitted cell, and
+  the ambient/shine arms follow with zero prior `_rand` draws — stream-exact.
+
+2 new witnesses (family gate + lift floors R/G not B; dust gate
+miss-draws-once / hit dust-204 fadeIn/noLight/no-noGravity + scale band +
+stream mirror) — WRITTEN NOT RUN; 20 total on the branch.
