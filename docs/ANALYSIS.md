@@ -39257,14 +39257,14 @@ local-owner drain). The five even styles (82/83/84/85/88 — the Moon Lord /
 pillar laser family) were already armed on main; d9 censused them and left
 them byte-identical. The full band table + the witness ledger (33 module +
 10 wiring = 43 WRITTEN NOT RUN) + the merge notes live in
-`docs/research/281-projectile-ai-81-90-final.md` (registry-number 281, the
-fresh all-tip sweep max 280).
+`docs/research/313-projectile-ai-81-90-final.md` (registry-number 313 per
+registry §8.1 row 6, chain 281→313).
 
 Deliberate deviations (the house skips, recorded per-module):
 * The dust bodies are the skipped visual layer; only the EXPLICIT
   `Main.rand` draws are consumed, in C# order (the style-81/86/89/90
   convention — `Dust.NewDust` internals are not drawn). The e3 STAGED
-  emitters activate at the d9 merge per the replace/add contract (281 §2):
+  emitters activate at the d9 merge per the replace/add contract (313 §2):
   81/86/89 REPLACE the kept draws, 87/90 ADD after the kept gates (the
   style-90 per-cell `Next(4)` head stays d9's).
 * The lights (`:31864` ice-mist, `:32410` lantern) are the ProjLight seam's;
@@ -39277,7 +39277,7 @@ Deliberate deviations (the house skips, recorded per-module):
   precedent — tiledata is GENERATED, never hand-edit). It is the CANONICAL
   `IsTileSpelunkable` form: g78's + d13's copies delete to re-exports at
   their merges, d56's tr-render copy is the crate-boundary exception
-  (281 §3, the g78 §4 keep-one verdict).
+  (313 §3, the g78 §4 keep-one verdict).
 
 The three unrowed kinds the even-style arms reference (537
 StardustSoldierLaser / 465 CultistBossLightningOrb / 466 its Arc) are

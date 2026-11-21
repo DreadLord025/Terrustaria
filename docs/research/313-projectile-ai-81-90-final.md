@@ -1,13 +1,13 @@
-# 281 — W4-d9 FINAL: the projectile aiStyles 81-90 band table
+# 313 — W4-d9 FINAL: the projectile aiStyles 81-90 band table
 
-> Numbered **281** per the research-number collision registry
-> (`150-research-number-registry.md`, W4-d54): the registry's round-2
-> assignment block ends at 280 and declares "Numbers 281+ are FREE … take
-> the next number ≥281 and re-check this registry AND a fresh all-tip sweep
-> first." A fresh `git ls-tree docs/research/` sweep of **all 358
-> `task/W4-*` remote tips + origin/main** (21 234 rows, this seal) found the
-> max number at any tip = **280** (`280-c42-wiring-seal.md`); 281 is
-> unclaimed. This FINAL takes 281.
+> Numbered **313** per the FROZEN research-number collision registry
+> (`150-research-number-registry.md`, W4-d54, origin/task/W4-d54
+> `a15cb634b`) §8.1 row 6: d9's `281-projectile-ai-81-90-final.md`
+> (add `88677f9de` 15:55:17) self-picked into f26's assigned 281
+> (addendum-7h) → re-issued **313**. Chain: 281→313. The original
+> self-pick rationale (round-2 block ended at 280, "Numbers 281+ are
+> FREE", a fresh all-tip sweep of 358 tips / 21 234 rows found max 280)
+> is SUPERSEDED by the §8.1 assignment.
 >
 > Branch `task/W4-d9-proj-ai-81-90`, base `a725acb0` (wave-3 complete),
 > 2026-11-21. CODE-ONLY round: every witness is WRITTEN NOT RUN (no
@@ -203,6 +203,7 @@ call sites checked against the actual signatures by read/grep
 house pattern (the mirrored-stream / literal-pin conventions) and marked
 WRITTEN NOT RUN in every commit. The merge wave runs `cargo test
 --workspace -- --skip migrates_version_2_kinds_to_item_ids` per AGENTS.md.
-The registry-number sweep (21 234 rows, max 280) is the 281 take's
-evidence; the all-tip `data.rs` scans (zero 537/465/466 rows, zero
+The registry-number sweep (21 234 rows, max 280) was the original 281
+self-pick's evidence (SUPERSEDED — registry §8.1 row 6 re-issued this
+doc to 313); the all-tip `data.rs` scans (zero 537/465/466 rows, zero
 d19/d20 451 projectile rows) are the remainder / keep-one evidence.
