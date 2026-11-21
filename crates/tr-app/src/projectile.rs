@@ -23248,6 +23248,16 @@ impl ProjectilePool {
         rng: &mut dyn tr_core::loot::DropRng,
     ) {
         let is_whip = tr_core::whip::is_whip(self.slots[slot].kind);
+        // W4-d17 — `Update`'s `!active` return (`Projectile.cs:17027-17030`):
+        // a slot the AI killed this sub-step skips the per-sub-step
+        // `Damage()` (`:17078`) — only the Kill re-Damage runs. The 818
+        // pounce's arc-completion kill (`ai[0] >= 1`) would otherwise pass
+        // the `:12448` refusal here AND re-damage in the Kill hook (a double
+        // hit). Kind-gated to the pounce (the RAINBOW_CRYSTAL friendly-gate
+        // precedent — the other arms keep their pre-existing behaviour).
+        if self.slots[slot].kind == WHITE_TIGER_POUNCE && !self.slots[slot].active {
+            return;
+        }
         let (damage, owner_idx, uses_local, uses_id_static, max_penetrate, kb, center) = {
             let p = &self.slots[slot];
             if p.damage <= 0 {
@@ -45408,10 +45418,10 @@ mod w4_d17_tiger_pounce_tests {
         // The arc at t = 0.2 between (400,300) and (410,300) with the
         // distance·1.5 = 15 sag: CatmullRom(value, vector, vector2, value2).
         // value = lerp(-0.1) + (0,15) = (399, 315); value2 = (411, 315).
-        // The port's catmull_rom at 0.2 → x = 402, y = 300 + 15·(the sag
-        // blend). Pin the X (the sag is symmetric, the Y rides the curve).
+        // X = 0.5·(800 + 12·0.2 − 12·0.04 + 2·0.008) = 401.568 (the sag is
+        // symmetric on Y, the X rides the curve).
         let cx = s.pos.x + 66.0;
-        assert!((cx - 402.0).abs() < 0.01, "the arc X at t=0.2: {cx}");
+        assert!((cx - 401.568).abs() < 0.01, "the arc X at t=0.2: {cx}");
         // No integrate: the centre is the arc, not arc + velocity.
         assert!(cx < 410.0, "the UpdatePosition skip (:20435)");
         // The missed-gate census: 3 gates x 4 sub-steps, no floats.
