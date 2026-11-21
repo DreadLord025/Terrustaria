@@ -1086,6 +1086,63 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // ---- W4-g8 NPC-kind axis wiring, lane 1 (kinds 1-230): the d22-d33
+    // UNWIRED machines' roster rows + the style-axis claims. Batch 1: the
+    // styles 17/18/19/20/22/23/25 members. The protocol ids are port-local
+    // 354-363 (every vanilla slot below 354 is taken — `to_u16`'s guard);
+    // the vanilla `NPC.type` rides `cs_id`/the bestiary `net_id`.
+    /// `NPCID.Vulture` (61, `NPCID.cs:10799`) — the desert perch-flyer
+    /// (`NPC.cs:9554-9566`): 36x36, aiStyle 17, dmg 15, def 4, 40 HP,
+    /// kb 0.8, NPCHit28/NPCDeath31, value 60. WIRED: the axis' 17 arm
+    /// rides `npc_ai_style17::ai_style17` (the perch/startle machine).
+    Vulture,
+    /// `NPCID.BlueJellyfish` (63, `NPCID.cs:10803`) — the cavern jelly
+    /// (`NPC.cs:9582-9595`): 26x26, aiStyle 18, dmg 25, def 4, 34 HP,
+    /// kb 1 (no row), NPCHit25/NPCDeath28, value 100, alpha 20, noGravity.
+    /// WIRED: the axis' 18 arm rides `npc_ai_style18::ai_018_arm`.
+    BlueJellyfish,
+    /// `NPCID.PinkJellyfish` (64, `NPCID.cs:10805`) — the pink jelly
+    /// (`NPC.cs:9596-9609`): 26x26, aiStyle 18, dmg 30, def 6, 70 HP,
+    /// kb 1 (no row), NPCHit25/NPCDeath28, value 100, alpha 20, noGravity.
+    /// WIRED: the axis' 18 arm rides `npc_ai_style18::ai_018_arm`.
+    PinkJellyfish,
+    /// `NPCID.Antlion` (69, `NPCID.cs:10815`) — the desert sand-spitter
+    /// (`NPC.cs:9666-9679`): 24x24, aiStyle 19, dmg 10, def 6, 45 HP,
+    /// kb 0, NPCHit31/NPCDeath34, value 60, behindTiles. WIRED: the axis'
+    /// 19 arm rides `npc_ai_style19::ai_style19` (the SandBall 31 shots).
+    Antlion,
+    /// `NPCID.SpikeBall` (70, `NPCID.cs:10817`) — the dungeon trap
+    /// (`NPC.cs:9680-9696`): 34x34, aiStyle 20, dmg 32, def 100, 100 HP,
+    /// kb 0, NPCHit1/NPCDeath1, noGravity + noTileCollide + dontTakeDamage,
+    /// scale 1.5, npcSlots 0.3, value 0 (no row). WIRED: the axis' 20 arm
+    /// rides `npc_ai_style20::ai_style20` (the away-launch bounce).
+    SpikeBall,
+    /// `NPCID.Pixie` (75, `NPCID.cs:10827`) — the hallow wisp
+    /// (`NPC.cs:9772-9785`): 20x20, aiStyle 22, dmg 55, def 20, 150 HP,
+    /// kb 0.6, NPCHit5/NPCDeath7, value 350, noGravity. WIRED: the axis'
+    /// 22 arm rides `npc_ai_style22::ai_022_arm` (the sparkle/chirp ghost).
+    Pixie,
+    /// `NPCID.Wraith` (82, `NPCID.cs:10841`) — the hardmode ghost
+    /// (`NPC.cs:9852-9878`): 24x44, aiStyle 22, dmg 65, def 16, 160 HP,
+    /// kb 0.7, NPCHit54/NPCDeath52, value 500, alpha 100, noGravity +
+    /// noTileCollide. WIRED: the axis' 22 arm rides `ai_022_arm`.
+    Wraith,
+    /// `NPCID.CursedHammer` (83, `NPCID.cs:10843`) — the possessed hammer
+    /// (`NPC.cs:9879-9891`): 40x40, aiStyle 23, dmg 80, def 18, 200 HP,
+    /// kb 0.4, NPCHit4/NPCDeath6, value 1000. WIRED: the axis' 23 arm
+    /// rides `npc_ai_style23::ai_style23` (the launch/drift/spin).
+    CursedHammer,
+    /// `NPCID.EnchantedSword` (84, `NPCID.cs:10845`) — the possessed sword
+    /// (`NPC.cs:9892-9904`): the 83 row verbatim (40x40, aiStyle 23,
+    /// dmg 80, def 18, 200 HP, kb 0.4, NPCHit4/NPCDeath6, value 1000).
+    /// WIRED: the axis' 23 arm rides `npc_ai_style23::ai_style23`.
+    EnchantedSword,
+    /// `NPCID.Mimic` (85, `NPCID.cs:10847`) — the chest trap
+    /// (`NPC.cs:9905-9925`): 24x24, aiStyle 25, dmg 80, def 30, 500 HP,
+    /// kb 0.3, NPCHit4/NPCDeath6, value 100000, rarity 4; the pre-hardmode
+    /// fold is dmg 30 / def 12 / 300 HP / value 200. WIRED: the axis' 25
+    /// arm rides `npc_ai_style25::ai_style25` (the disguise/hop machine).
+    Mimic,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1180,6 +1237,14 @@ pub enum NpcSoundCue {
     /// (`NPC.cs:51990`, the trackable façade, case 42 — no gameplay
     /// draws, the pinned variation like wave A).
     EowDig,
+    /// W4-g8 lane 1 — `PlaySound(SoundID.Item5, pos)` — the Antlion's spit
+    /// cue (`NPC.cs:24449`, the aiStyle-19 arm's ai[0]==200 tick); the
+    /// Item8/14/34 façade (case 2's one pitch draw on the caller's stream).
+    Item5,
+    /// W4-g8 lane 1 — `PlaySound(27, pos)` — the Pixie's wing-hum chirp
+    /// (`NPC.cs:24853-24856`, the aiStyle-22 arm's Next(40)==0 ambience);
+    /// case 27's live-instance pitch re-draw (`LegacySoundPlayer.cs:979-996`).
+    PixieChirp,
 }
 
 /// One queued play: the cue plus the C# call site's world-pixel position
@@ -1528,6 +1593,20 @@ pub struct Npc {
     /// final phase zeroes it, `NPC.cs`'s aiStyle-4 block; the expert rage
     /// makes it negative).
     pub defense_override: Option<i32>,
+    /// W4-g8 lane 1 — the `NPC.value` override the pre-hardmode Mimic fold
+    /// sets (`NPC.cs:9923`): the kind table carries the hardmode 100000,
+    /// the spawn resolver writes 200 (`Item.buyPrice(0, 2)`) on a
+    /// pre-hardmode world. `None` = the kind table's value (every other
+    /// kind). The `damage_override`/`defense_override` pair carries the
+    /// fold's dmg 30 / def 12; `max_hp` carries the 300.
+    pub value_override: Option<f32>,
+    /// W4-g8 lane 1 — the per-tick `Lighting.AddLight` the AI machine
+    /// computes (`(tileX, tileY, [r,g,b])`), fed draw-side by
+    /// `app/frame/draw.rs`. The jelly's glow scales with the zap-shield
+    /// state (`npc_ai_style18`'s num263), so it cannot ride the static
+    /// `npc_lights::npc_light` table — the machine writes it here each tick
+    /// (the `gfx_off_y` per-tick-field precedent). `None` = no AI light.
+    pub ai_light: Option<(i32, i32, [f32; 3])>,
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
@@ -2952,7 +3031,15 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
-                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
+                .unwrap_or(if kind == NpcKind::BlazingWheel {
+                    1.2
+                } else if kind == NpcKind::SpikeBall {
+                    // W4-g8 lane 1 batch 1 — the Spike Ball's `scale = 1.5f`
+                    // row (`NPC.cs:9695`).
+                    1.5
+                } else {
+                    1.0
+                }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -3020,6 +3107,8 @@ impl Npc {
             wants_servant: None,
             wants_bee: None,
             defense_override: None,
+            value_override: None,
+            ai_light: None,
             // `SetDefaults`' `dontTakeDamage = true` rows the port models
             // at construction: the Plantera hook 263 (`NPC.cs:12406` —
             // unkillable by damage, only the orphan strike ends it),
@@ -3033,6 +3122,10 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+                    // W4-g8 lane 1 batch 1 — the Spike Ball's
+                    // `dontTakeDamage = true` row (`NPC.cs:9694`): the
+                    // dungeon trap is unkillable by damage.
+                    | NpcKind::SpikeBall
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -3129,6 +3222,11 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-g8 lane 1 batch 1 — the jellies' `alpha = 20`
+                            // rows (`NPC.cs:9594`/`:9608`) and the Wraith's
+                            // `alpha = 100` (`:9864`).
+                            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => 20,
+                            NpcKind::Wraith => 100,
                             _ => 0,
                         }
                     }),
@@ -3529,6 +3627,17 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-g8 lane 1 batch 1 — the `knockBackResist` rows: 61 0.8
+            // (`NPC.cs:9562`), 69/70 0 (`:9676`/`:9691`), 75 0.6
+            // (`:9782`), 82 0.7 (`:9866`), 83/84 0.4 (`:9890`/`:9903`),
+            // 85 0.3 (`:9916`); 63/64 write no row (the head's 1, `:8533`).
+            NpcKind::Vulture => 0.8,
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => 1.0,
+            NpcKind::Antlion | NpcKind::SpikeBall => 0.0,
+            NpcKind::Pixie => 0.6,
+            NpcKind::Wraith => 0.7,
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => 0.4,
+            NpcKind::Mimic => 0.3,
             _ => 0.4,
         }
     }
@@ -3909,6 +4018,21 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-g8 lane 1 batch 1 — the `defense` rows: 61 4
+            // (`NPC.cs:9560`), 63 4 (`:9589`), 64 6 (`:9603`), 69 6
+            // (`:9672`), 70 100 (`:9687`), 75 20 (`:9779`), 82 16
+            // (`:9860`), 83/84 18 (`:9885`/`:9898`), 85 30 (`:9911`).
+            // The Mimic's pre-hardmode 12 fold (`:9921`) rides the spawn
+            // resolver (`world.hard_mode`).
+            NpcKind::Vulture => 4,
+            NpcKind::BlueJellyfish => 4,
+            NpcKind::PinkJellyfish => 6,
+            NpcKind::Antlion => 6,
+            NpcKind::SpikeBall => 100,
+            NpcKind::Pixie => 20,
+            NpcKind::Wraith => 16,
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => 18,
+            NpcKind::Mimic => 30,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -3917,6 +4041,11 @@ impl Npc {
     /// (blue `NPC.cs:8576` 25, demon eye 75, Wandering Eye 500, zombie 60,
     /// King Slime 10000).
     pub fn value(&self) -> f32 {
+        // W4-g8 lane 1 — the pre-hardmode Mimic fold's value override
+        // (`NPC.cs:9923`); every other kind keeps the kind table's value.
+        if let Some(v) = self.value_override {
+            return v;
+        }
         if self.kind == NpcKind::Slime {
             return self.slime.stats().value;
         }
@@ -4281,6 +4410,20 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-g8 lane 1 batch 1 — the `value` rows (copper): 61 60
+            // (`NPC.cs:9565`), 63/64 100 (`:9593`/`:9607`), 69 60
+            // (`:9677`), 75 350 (`:9784`), 82 500 (`:9865`), 83/84 1000
+            // (`:9889`/`:9902`), 85 100000 (`:9915`); 70 writes no value
+            // row (the head's 0, `:8544`). The Mimic's pre-hardmode 200
+            // fold (`:9923`, `Item.buyPrice(0, 2)`) rides the spawn resolver.
+            NpcKind::Vulture => 60.0,
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => 100.0,
+            NpcKind::Antlion => 60.0,
+            NpcKind::SpikeBall => 0.0,
+            NpcKind::Pixie => 350.0,
+            NpcKind::Wraith => 500.0,
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => 1000.0,
+            NpcKind::Mimic => 100000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4676,6 +4819,93 @@ impl Npc {
             // exemption. The axis claims the style now; the kind arm
             // becomes the unreachable marker, the machine unchanged.
             16 => self.update_swimmer(world, player, rng),
+            // W4-g8 lane 1 batch 1 — the d24 UNWIRED machines' axis claims.
+            // `if (this.aiStyle == 17)` (`NPC.cs:24022-24152`) — the
+            // perched-startle flyer: the Vulture 61 (`SetDefaults`
+            // `:9554-9566`). The machine writes velocity only; the returned
+            // noGravity splits the movement (the perch tick falls, the
+            // flight ticks fly — the style50 outcome convention). RNG-free.
+            17 => {
+                let cand = crate::npc_target::session_candidate(player);
+                let no_gravity = crate::npc_ai_style17::ai_style17(self, world, &[cand], 0);
+                if no_gravity {
+                    self.integrate_flyer_collision(world);
+                } else {
+                    crate::npc_ai::walker_integrate(
+                        self,
+                        world,
+                        crate::npc_ai::WalkerParams { speed: 0.0, jump: -6.2, aggro_x: 0.0, aggro_y: 0.0 },
+                        0.3,
+                        10.0,
+                    );
+                }
+            }
+            // `else if (this.aiStyle == 18)` (`NPC.cs:24153-24406`) — the
+            // jellyfish/swimmer family: the Blue 63 / Pink 64 jellies
+            // (`SetDefaults` `:9582-9609`). The machine writes velocity +
+            // the expert zap-shield; the glow rides the draw-side light
+            // feed (`npc_lights`). noGravity — the flyer integration tail.
+            // RNG-free by construction.
+            18 => {
+                let (w, h) = self.size();
+                self.wet = is_wet(world, self.x, self.y, w, h);
+                let cand = crate::npc_target::session_candidate(player);
+                let ctx = crate::npc_ai_style18::Ai18Ctx {
+                    players: &[cand],
+                    player_wet: player.wet,
+                    expert: player.buffs.expert_mode,
+                    ticker: 0,
+                };
+                let fx = crate::npc_ai_style18::ai_018_arm(self.kind.cs_id() as i32, self, world, &ctx);
+                // The glow rides the per-tick field (the shield-state
+                // multiplier) — fed draw-side (`app/frame/draw.rs`).
+                self.ai_light = fx.light;
+                self.integrate_flyer_collision(world);
+            }
+            // `else if (this.aiStyle == 19)` (`NPC.cs:24407-24536`) — the
+            // Antlion 69 (`SetDefaults` `:9666-9679`). The machine runs the
+            // sand-dust in-step on the caller's pool + stream, returns the
+            // movement flags + the SandBall 31 shots / the Item5 cue. The
+            // grounded tick phases through (noTileCollide); the airborne
+            // tick falls with gravity + collision.
+            19 => {
+                let cand = crate::npc_target::session_candidate(player);
+                let (outcome, fx) = crate::npc_ai_style19::ai_style19(
+                    self, world, &[cand], 0, rng, dust, dust_ctx,
+                );
+                self.wants_hostile_shot_ai.extend(fx.shots);
+                // The Item5 spit cue (`NPC.cs:24449`) rides the sound queue
+                // (the case-2 pitch draw drains on the UpdateNPCs stream).
+                for (style, sx, sy) in fx.sounds {
+                    if style == 5 {
+                        self.wants_sound.push(crate::npc::NpcSoundRequest {
+                            cue: crate::npc::NpcSoundCue::Item5,
+                            x: sx,
+                            y: sy,
+                        });
+                    }
+                }
+                if outcome.no_tile_collide {
+                    self.integrate_no_tile_collide();
+                } else {
+                    crate::npc_ai::walker_integrate(
+                        self,
+                        world,
+                        crate::npc_ai::WalkerParams { speed: 0.0, jump: -6.2, aggro_x: 0.0, aggro_y: 0.0 },
+                        0.3,
+                        10.0,
+                    );
+                }
+            }
+            // `else if (this.aiStyle == 20)` (`NPC.cs:24537-24614`) — the
+            // Spike Ball 70 (`SetDefaults` `:9680-9696`). The away-launch
+            // bounce: noGravity + noTileCollide, the ONE Next(15) speed roll
+            // on the init tick rides the caller's stream. Raw integration.
+            20 => {
+                let cand = crate::npc_target::session_candidate(player);
+                crate::npc_ai_style20::ai_style20(self, world, &[cand], 0, rng);
+                self.integrate_no_tile_collide();
+            }
             // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
             // BlazingWheel (72), the style's only user. The small-kinds
             // wiring wave: the ricochet machine rides `npc_ai_style21`
@@ -4711,6 +4941,59 @@ impl Npc {
                 }
                 NpcKind::Drippler => {
                     crate::npc_ai_drippler::drippler_ai(self, world, player, rng)
+                }
+                // W4-g8 lane 1 batch 1 — the Pixie 75 / Wraith 82 ghosts ride
+                // the d24 verbatim arm (`npc_ai_style22::ai_022_arm`,
+                // `NPC.cs:24666-25234`). The machine writes velocity + the
+                // dwell/dash state; the shots/sounds/lights/despawn ride the
+                // request seams. noGravity — the movement split mirrors the
+                // noTileCollide flag (the Wraith phases, the Pixie collides).
+                NpcKind::Pixie | NpcKind::Wraith => {
+                    let (w, h) = self.size();
+                    self.wet = is_wet(world, self.x, self.y, w, h);
+                    let cand = crate::npc_target::session_candidate(player);
+                    let ctx = crate::npc_ai_style22::Ai22Ctx {
+                        players: &[cand],
+                        just_hit: self.just_hit,
+                        confused: self.buffs.find_buff_index(31).is_some(),
+                        ticker: 0,
+                    };
+                    // The Ghost's `Opacity` seam — only the 316 arm reads it;
+                    // the Pixie/Wraith keep a parked 1.0 (the module doc).
+                    let mut opacity = 1.0f32;
+                    let fx = crate::npc_ai_style22::ai_022_arm(
+                        self.kind.cs_id() as i32, self, world, &ctx, rng, dust, dust_ctx, &mut opacity,
+                    );
+                    self.wants_hostile_shot_ai.extend(fx.shots);
+                    // The Pixie's wing-hum chirp (case 27, `NPC.cs:24853`)
+                    // rides the sound queue; the 316 NPCDeath55 is the
+                    // Ghost's (a later batch). The case-27 pitch re-draw
+                    // drains on the UpdateNPCs stream.
+                    for (style, sx, sy) in fx.sounds {
+                        if style == 27 {
+                            self.wants_sound.push(crate::npc::NpcSoundRequest {
+                                cue: crate::npc::NpcSoundCue::PixieChirp,
+                                x: sx,
+                                y: sy,
+                            });
+                        }
+                    }
+                    // The 122/169 glows ride the per-tick field; the Pixie/
+                    // Wraith produce none (their light is the static
+                    // `npc_lights` table's, fed draw-side).
+                    self.ai_light = fx.lights.first().copied();
+                    if let Some(t) = fx.encourage_despawn {
+                        self.encourage_despawn(t);
+                    }
+                    if fx.deactivate {
+                        self.hp = 0;
+                    }
+                    if self.kind == NpcKind::Wraith {
+                        // noTileCollide (`NPC.cs:9855`) — raw integration.
+                        self.integrate_no_tile_collide();
+                    } else {
+                        self.integrate_flyer_collision(world);
+                    }
                 }
                 _ => unreachable!("only the ported aiStyle-22 kinds reach the axis arm"),
             },
@@ -5075,6 +5358,38 @@ impl Npc {
             // kinds land — the kind guard keeps this arm scoped.
             25 if self.kind == NpcKind::PresentMimic => {
                 crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
+            }
+            // W4-g8 lane 1 batch 1 — the Mimic 85 rides the d25 verbatim
+            // arm (`npc_ai_style25::ai_style25`, `NPC.cs:25538-25630`): the
+            // disguise/wake/hop machine. A grounded walker (no noGravity/
+            // noTileCollide row, `:9905-9925`) — the shared gravity +
+            // tile-collision tail (the PresentMimic's `walker_integrate`
+            // precedent). RNG-free by construction. The pre-hardmode stat
+            // fold rides the sim's spawn resolver (`world.hard_mode`).
+            25 if self.kind == NpcKind::Mimic => {
+                let cand = crate::npc_target::session_candidate(player);
+                crate::npc_ai_style25::ai_style25(self.kind.cs_id() as i32, self, world, &[cand], 0);
+                crate::npc_ai::walker_integrate(
+                    self,
+                    world,
+                    crate::npc_ai::WalkerParams { speed: 3.5, jump: -6.2, aggro_x: 0.0, aggro_y: 0.0 },
+                    GRAVITY,
+                    MAX_FALL,
+                );
+            }
+            // W4-g8 lane 1 batch 1 — `else if (this.aiStyle == 23)`
+            // (`NPC.cs:25235-25312`) — the possessed-weapon family: the
+            // Cursed Hammer 83 / Enchanted Sword 84 (`SetDefaults`
+            // `:9879-9904`). The launch/drift/spin machine writes velocity +
+            // rotation; the per-type light rides the draw-side feed
+            // (`npc_lights`). noGravity + noTileCollide — raw integration.
+            // RNG-free by construction.
+            23 => {
+                let cand = crate::npc_target::session_candidate(player);
+                let _light = crate::npc_ai_style23::ai_style23(
+                    self.kind.cs_id() as i32, self, world, &[cand], 0,
+                );
+                self.integrate_no_tile_collide();
             }
             62 if self.kind == NpcKind::ElfCopter => {
                 crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
@@ -6486,6 +6801,30 @@ impl Npc {
             }
             NpcKind::DungeonSpirit => {
                 unreachable!("aiStyle 56 rides the style axis (S1-D-3-wire-smallkinds)")
+            }
+            // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds ride the
+            // style axis above (17/18/19/20/22/23/25) — these arms are
+            // unreachable through `update_rng` (the S1-D-2 axis precedent).
+            NpcKind::Vulture => {
+                unreachable!("aiStyle 17 rides the style axis (W4-g8)")
+            }
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => {
+                unreachable!("aiStyle 18 rides the style axis (W4-g8)")
+            }
+            NpcKind::Antlion => {
+                unreachable!("aiStyle 19 rides the style axis (W4-g8)")
+            }
+            NpcKind::SpikeBall => {
+                unreachable!("aiStyle 20 rides the style axis (W4-g8)")
+            }
+            NpcKind::Pixie | NpcKind::Wraith => {
+                unreachable!("aiStyle 22 rides the style axis (W4-g8)")
+            }
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => {
+                unreachable!("aiStyle 23 rides the style axis (W4-g8)")
+            }
+            NpcKind::Mimic => {
+                unreachable!("aiStyle 25 rides the style axis (W4-g8)")
             }
             // W4-d24 axis census: the fish trio (aiStyle 16) rides the
             // style axis above (`16 => update_swimmer`) — this arm is
@@ -9399,6 +9738,179 @@ impl Npc {
                             self.frame = 7;
                         }
                     }
+                }
+            }
+            // W4-g8 lane 1 batch 1 — the d22-d33 kinds' `FindFrame` cases.
+            // `case 61` (`NPC.cs:73537-73557`): the Vulture's perch/flap —
+            // spriteDirection follows direction, the vx*0.1 tilt, the still
+            // body pins row 0, else the 5-tick counter steps rows 1..5.
+            NpcKind::Vulture => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 25.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    self.frame = (self.frame_counter / 5.0) as u32 + 1;
+                }
+            }
+            // `case 63/64` (`NPC.cs:73916-73960`): the jellies' pulse — the
+            // expert zap-shield (ai[1]==1) cycles rows 4..6 on a >4 counter;
+            // else the 6/12/18/23-band pulse over rows 0..3.
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => {
+                if self.ai[1] == 1.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                    }
+                    if self.frame > 6 {
+                        self.frame = 4;
+                    }
+                    if self.frame < 4 {
+                        self.frame = 4;
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter < 6.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 12.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 18.0 {
+                        self.frame = 2;
+                    } else {
+                        self.frame = 3;
+                        if self.frame_counter >= 23.0 {
+                            self.frame_counter = 0.0;
+                        }
+                    }
+                }
+            }
+            // `case 69` (`NPC.cs:74291-74310`): the Antlion's spit — below
+            // ai[0] 190 the 6-tick counter steps rows 0..3 (the last frame
+            // is the spit pose); at/above 190 the last row pins.
+            NpcKind::Antlion => {
+                if self.ai[0] < 190.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 4 {
+                            self.frame = 0;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
+            }
+            // `case 70` — the Spike Ball has NO `FindFrame` case
+            // (`NPC.cs:66684-77370` carries no 70 arm) and
+            // `Main.npcFrameCount[70]` = 1: the single frame never advances.
+            NpcKind::SpikeBall => {
+                self.frame = 0;
+            }
+            // `case 75` (`NPC.cs:74113-74133`): the Pixie's flap —
+            // spriteDirection follows the velocity sign, the vx*0.1 tilt,
+            // the 4-tick counter over the 4-row strip.
+            NpcKind::Pixie => {
+                self.sprite_dir = if self.vx > 0.0 { 1 } else { -1 };
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 4.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
+            }
+            // `case 82` (`NPC.cs:74827-74884`): the Wraith's ghost flap —
+            // spriteDirection follows the velocity sign, the vx*0.1 tilt,
+            // the 6-tick counter over the 4-row strip.
+            NpcKind::Wraith => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 4 {
+                    self.frame = 0;
+                }
+            }
+            // `case 83/84` (`NPC.cs:74622-74641`): the possessed weapons'
+            // spin — the spin state (ai[0]==2) pins row 0; else the 4-tick
+            // counter over the 6-row strip.
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => {
+                if self.ai[0] == 2.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 6 {
+                            self.frame = 0;
+                        }
+                    }
+                }
+            }
+            // `case 85` (`NPC.cs:73443-73515`): the Mimic's hop — the
+            // disguised idle pins row 0; the awake body's frameCounter
+            // climbs airborne / falls grounded over the 3-tick bands, the
+            // layer offset (ai[3]==2 → +6 rows, ==3 → +12) selects the
+            // surface/cavern/underworld strip.
+            NpcKind::Mimic => {
+                if self.ai[0] == 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                } else {
+                    if self.vy == 0.0 {
+                        self.frame_counter -= 1.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                    }
+                    if self.frame_counter < 0.0 {
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame_counter > 12.0 {
+                        self.frame_counter = 12.0;
+                    }
+                    let row = if self.frame_counter < 3.0 {
+                        0
+                    } else if self.frame_counter < 6.0 {
+                        1
+                    } else if self.frame_counter < 9.0 {
+                        2
+                    } else if self.frame_counter < 12.0 {
+                        3
+                    } else {
+                        // The C#'s 12..21 bands are dead here (the clamp
+                        // caps the counter at 12); the else fold is row 2
+                        // with the >=24 reset (never reached).
+                        if self.frame_counter >= 24.0 {
+                            self.frame_counter = 3.0;
+                        }
+                        2
+                    };
+                    self.frame = row;
+                }
+                if self.ai[3] == 2.0 {
+                    self.frame += 6;
+                } else if self.ai[3] == 3.0 {
+                    self.frame += 12;
                 }
             }
         }
@@ -18962,6 +19474,18 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-g8 lane 1 batch 1 — the port-local protocol ids (the
+            // vanilla slots are all taken; the G6 key stays injective).
+            NpcKind::Vulture => 354,
+            NpcKind::BlueJellyfish => 355,
+            NpcKind::PinkJellyfish => 356,
+            NpcKind::Antlion => 357,
+            NpcKind::SpikeBall => 358,
+            NpcKind::Pixie => 359,
+            NpcKind::Wraith => 360,
+            NpcKind::CursedHammer => 361,
+            NpcKind::EnchantedSword => 362,
+            NpcKind::Mimic => 363,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24340,6 +24864,17 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds.
+        NpcKind::Vulture,
+        NpcKind::BlueJellyfish,
+        NpcKind::PinkJellyfish,
+        NpcKind::Antlion,
+        NpcKind::SpikeBall,
+        NpcKind::Pixie,
+        NpcKind::Wraith,
+        NpcKind::CursedHammer,
+        NpcKind::EnchantedSword,
+        NpcKind::Mimic,
     ];
 
     #[test]
@@ -35069,5 +35604,147 @@ mod w4_d33_axis_census_tests {
         }
         assert_eq!(cell.kind, NpcKind::StardustCellBig, "the 300-tick Transform(405)");
         assert_eq!(rng.peek(), UnifiedRandom::new(95).peek(), "the 95 arm is draw-free");
+    }
+}
+
+// =====================================================================
+// W4-g8 lane 1 batch 1 — the NPC-kind AXIS WIRING witnesses (the d22-d33
+// UNWIRED machines' ten kinds 1-230). WRITTEN, NOT RUN (code-only mode:
+// no cargo/rustc). The roster rows pin against the C# `SetDefaults`; the
+// axis claims route each kind to its machine (the kind arms are the
+// `unreachable!` markers); the FindFrame cases + the Mimic pre-hardmode
+// fold + the SandBall drain are pinned at their seams.
+// =====================================================================
+#[cfg(test)]
+mod w4_g8_kind_wire_1_tests {
+    use super::*;
+
+    /// The ten kinds' `SetDefaults` rows pin against the C# through the
+    /// port's tables — the small-kinds pin's shape
+    /// (`s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows`).
+    /// (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+    #[test]
+    fn w4_g8_b1_the_defaults_match_the_csharp_rows() {
+        let rows = [
+            // NPC.cs:9554-9566 (Vulture 61).
+            (NpcKind::Vulture, 61u16, 17u8, 36.0, 36.0, 15, 4, 40, 0.8f32, 60.0f32),
+            // NPC.cs:9582-9595 (BlueJellyfish 63) — kb 1 (no row).
+            (NpcKind::BlueJellyfish, 63, 18, 26.0, 26.0, 25, 4, 34, 1.0, 100.0),
+            // NPC.cs:9596-9609 (PinkJellyfish 64).
+            (NpcKind::PinkJellyfish, 64, 18, 26.0, 26.0, 30, 6, 70, 1.0, 100.0),
+            // NPC.cs:9666-9679 (Antlion 69).
+            (NpcKind::Antlion, 69, 19, 24.0, 24.0, 10, 6, 45, 0.0, 60.0),
+            // NPC.cs:9680-9696 (SpikeBall 70) — value 0 (no row).
+            (NpcKind::SpikeBall, 70, 20, 34.0, 34.0, 32, 100, 100, 0.0, 0.0),
+            // NPC.cs:9772-9785 (Pixie 75).
+            (NpcKind::Pixie, 75, 22, 20.0, 20.0, 55, 20, 150, 0.6, 350.0),
+            // NPC.cs:9852-9878 (Wraith 82).
+            (NpcKind::Wraith, 82, 22, 24.0, 44.0, 65, 16, 160, 0.7, 500.0),
+            // NPC.cs:9879-9891 (CursedHammer 83).
+            (NpcKind::CursedHammer, 83, 23, 40.0, 40.0, 80, 18, 200, 0.4, 1000.0),
+            // NPC.cs:9892-9904 (EnchantedSword 84).
+            (NpcKind::EnchantedSword, 84, 23, 40.0, 40.0, 80, 18, 200, 0.4, 1000.0),
+            // NPC.cs:9905-9925 (Mimic 85) — the hardmode row.
+            (NpcKind::Mimic, 85, 25, 24.0, 24.0, 80, 30, 500, 0.3, 100000.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The flag rows: the jellies' alpha 20 (`NPC.cs:9594`/`:9608`), the
+        // Wraith's alpha 100 (`:9864`), the Antlion's behindTiles (`:9678`),
+        // the Spike Ball's dontTakeDamage + scale 1.5 (`:9694-9695`).
+        assert_eq!(Npc::new(NpcKind::BlueJellyfish, 0.0, 0.0, 1, 0.0).alpha, 20);
+        assert_eq!(Npc::new(NpcKind::PinkJellyfish, 0.0, 0.0, 1, 0.0).alpha, 20);
+        assert_eq!(Npc::new(NpcKind::Wraith, 0.0, 0.0, 1, 0.0).alpha, 100);
+        assert!(Npc::new(NpcKind::Antlion, 0.0, 0.0, 1, 0.0).behind_tiles);
+        let spike = Npc::new(NpcKind::SpikeBall, 0.0, 0.0, 1, 0.0);
+        assert!(spike.dont_take_damage, "the Spike Ball is a trap — untouchable");
+        assert_eq!(spike.scale, 1.5, "the Spike Ball's scale row");
+        // The port-local protocol band 354-363 (the vanilla slots are taken).
+        assert_eq!(NpcKind::Vulture.to_u16(), 354);
+        assert_eq!(NpcKind::Mimic.to_u16(), 363);
+    }
+
+    /// The style axis claims 17/18/19/20/22/23/25 for the ten kinds, so
+    /// they never reach `update_kind_ai`'s retired arms (the `unreachable!`
+    /// markers). A source scan of the axis body counts each claim once.
+    #[test]
+    fn w4_g8_b1_the_axis_claims_the_seven_styles() {
+        let src = include_str!("npc.rs");
+        let start = src.find("match self.kind.ai_style() {").expect("the axis");
+        let rest = &src[start..];
+        let end = rest.find("\n        }").expect("the axis closing brace");
+        let body = &rest[..end];
+        for style in ["17", "18", "19", "20", "23"] {
+            let mut count = 0u32;
+            for line in body.lines() {
+                let t = line.trim_start();
+                let Some(head) = t.split("=>").next() else { continue };
+                let head = head.split(" if ").next().unwrap_or(head);
+                if !head.chars().all(|c| c.is_ascii_digit() || c == '|' || c == ' ') {
+                    continue;
+                }
+                for tok in head.split('|') {
+                    if tok.trim() == style {
+                        count += 1;
+                    }
+                }
+            }
+            assert_eq!(count, 1, "aiStyle {style} claimed once");
+        }
+        // 22 is the ghost family (the Poltergeist/Drippler/Pixie/Wraith
+        // match arm); 25 is kind-gated (PresentMimic + Mimic).
+        assert!(body.contains("22 => match self.kind {"), "the 22 ghost arm");
+        assert!(body.contains("25 if self.kind == NpcKind::Mimic"), "the 25 Mimic arm");
+        // The kind arms are the unreachable markers.
+        assert!(src.contains("aiStyle 17 rides the style axis (W4-g8)"));
+        assert!(src.contains("aiStyle 25 rides the style axis (W4-g8)"));
+    }
+
+    /// The Mimic's pre-hardmode `SetDefaults` fold (`NPC.cs:9918-9924`):
+    /// the kind table carries the hardmode 80/30/500/100000; the spawn
+    /// resolver writes the override seams on a pre-hardmode world. The
+    /// override accessors return the folded values.
+    #[test]
+    fn w4_g8_b1_the_mimic_pre_hardmode_fold_overrides() {
+        let mut m = Npc::new(NpcKind::Mimic, 0.0, 0.0, 1, 0.0);
+        // The hardmode table (the fresh ctor).
+        assert_eq!(m.defense(), 30);
+        assert_eq!(m.value(), 100000.0);
+        assert_eq!(m.max_hp, 500);
+        // The fold the sim's resolver applies (`world.hard_mode == false`).
+        let ratio = m.hp as f32 / m.max_hp as f32;
+        m.max_hp = 300;
+        m.hp = (300.0 * ratio) as i32;
+        m.damage_override = Some(30);
+        m.defense_override = Some(12);
+        m.value_override = Some(200.0);
+        assert_eq!(m.defense(), 12, "the folded defense");
+        assert_eq!(m.value(), 200.0, "the folded value (Item.buyPrice(0,2))");
+        assert_eq!(m.max_hp, 300, "the folded lifeMax");
+        assert_eq!(m.hp, 300, "the full-life rescale");
+        assert_eq!(m.damage_override, Some(30), "the folded damage");
+    }
+
+    /// The Antlion's SandBall 31 carries the C#'s `ai[0] = 2` + `timeLeft =
+    /// 300` overrides (`NPC.cs:24463-24464`); the proj_data row exists so
+    /// the shot spawns with data (the Javelin precedent).
+    #[test]
+    fn w4_g8_b1_the_sandball_proj_data_row_exists() {
+        let d = crate::projectile::proj_data(crate::projectile::SAND_BALL_FALLING)
+            .expect("the SandBall 31 row");
+        assert_eq!(crate::projectile::SAND_BALL_FALLING, 31);
+        assert_eq!(d.ai_style, 10, "the aiStyle-10 falling ball");
+        assert_eq!((d.w, d.h), (10.0, 10.0), "the 10x10 box");
     }
 }

@@ -492,7 +492,33 @@ impl App {
                                 );
                                 self.entity_lights.add(x, y, [0.1, 0.5, 0.7]);
                             }
+                            // W4-g8 lane 1 batch 1 — the Pixie's hallow glow
+                            // (`NPC.cs:24801`, the aiStyle-22 arm's 75 branch):
+                            // (0.9, 0.3+(270-mouseTextColor)/400, 0.2) at the
+                            // truncated centre — the BlazingWheel's pulsing
+                            // green-term shape. RNG-free.
+                            NpcKind::Pixie => {
+                                let x = crate::entity_lights::tile_x(
+                                    pos,
+                                    w,
+                                    crate::entity_lights::XAnchor::CenterTruncated,
+                                );
+                                let y = crate::entity_lights::tile_y(
+                                    pos,
+                                    h,
+                                    crate::entity_lights::XAnchor::CenterTruncated,
+                                );
+                                let g = 0.3 + (270 - self.mouse_text_color as i32) as f32 / 400.0;
+                                self.entity_lights.add(x, y, [0.9, g, 0.2]);
+                            }
                             _ => {}
+                        }
+                        // W4-g8 lane 1 batch 1 — the AI machine's per-tick
+                        // light (the jelly's shield-scaled glow, the ghost
+                        // family's 122/169 glows): the machine wrote it on
+                        // `ai_light`; feed it here (the npc_lights precedent).
+                        if let Some((x, y, rgb)) = n.ai_light {
+                            self.entity_lights.add(x, y, rgb);
                         }
                     }
                     // `Player.UpdateBuffs`' Shine arm (`Player.cs:9993-9996`,

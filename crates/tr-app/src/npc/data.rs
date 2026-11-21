@@ -586,6 +586,21 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-g8 lane 1 batch 1 — the d22-d33 UNWIRED machines' kinds.
+            // Every vanilla slot below 354 is taken by a landed kind
+            // (`to_u16`'s bijection guard), so the ten take the next-free
+            // port-local band 354-363; the vanilla `NPC.type` rides
+            // `cs_id`/the bestiary `net_id` (the BlazingWheel precedent).
+            NpcKind::Vulture => 354,
+            NpcKind::BlueJellyfish => 355,
+            NpcKind::PinkJellyfish => 356,
+            NpcKind::Antlion => 357,
+            NpcKind::SpikeBall => 358,
+            NpcKind::Pixie => 359,
+            NpcKind::Wraith => 360,
+            NpcKind::CursedHammer => 361,
+            NpcKind::EnchantedSword => 362,
+            NpcKind::Mimic => 363,
         }
     }
 
@@ -916,6 +931,18 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-g8 lane 1 batch 1 — the port-local 354-363 band
+            // (`to_u16` above; the vanilla slots are all taken).
+            354 => NpcKind::Vulture,
+            355 => NpcKind::BlueJellyfish,
+            356 => NpcKind::PinkJellyfish,
+            357 => NpcKind::Antlion,
+            358 => NpcKind::SpikeBall,
+            359 => NpcKind::Pixie,
+            360 => NpcKind::Wraith,
+            361 => NpcKind::CursedHammer,
+            362 => NpcKind::EnchantedSword,
+            363 => NpcKind::Mimic,
             _ => return None,
         })
     }
@@ -1796,6 +1823,17 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-g8 lane 1 batch 1 — the `HitSound` rows: 61 NPCHit28
+            // (`NPC.cs:9563`), 63/64 NPCHit25 (`:9591`/`:9605`), 69 NPCHit31
+            // (`:9674`), 70 NPCHit1 (`:9689`), 75 NPCHit5 (`:9781`), 82
+            // NPCHit54 (`:9862`), 83/84/85 NPCHit4 (`:9887`/`:9900`/`:9913`).
+            NpcKind::Vulture => "NPC_Hit_28",
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => "NPC_Hit_25",
+            NpcKind::Antlion => "NPC_Hit_31",
+            NpcKind::SpikeBall => "NPC_Hit_1",
+            NpcKind::Pixie => "NPC_Hit_5",
+            NpcKind::Wraith => "NPC_Hit_54",
+            NpcKind::CursedHammer | NpcKind::EnchantedSword | NpcKind::Mimic => "NPC_Hit_4",
             _ => return None,
         })
     }
@@ -2100,6 +2138,18 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-g8 lane 1 batch 1 — the `DeathSound` rows: 61 NPCDeath31
+            // (`NPC.cs:9564`), 63/64 NPCDeath28 (`:9592`/`:9606`), 69
+            // NPCDeath34 (`:9675`), 70 NPCDeath1 (`:9690`), 75 NPCDeath7
+            // (`:9783`), 82 NPCDeath52 (`:9863`), 83/84/85 NPCDeath6
+            // (`:9888`/`:9901`/`:9914`).
+            NpcKind::Vulture => "NPC_Killed_31",
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => "NPC_Killed_28",
+            NpcKind::Antlion => "NPC_Killed_34",
+            NpcKind::SpikeBall => "NPC_Killed_1",
+            NpcKind::Pixie => "NPC_Killed_7",
+            NpcKind::Wraith => "NPC_Killed_52",
+            NpcKind::CursedHammer | NpcKind::EnchantedSword | NpcKind::Mimic => "NPC_Killed_6",
             _ => return None,
         })
     }
@@ -2451,6 +2501,18 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-g8 lane 1 batch 1 — the d22-d33 machines' `SetDefaults`
+            // aiStyle rows: 61 17 (`NPC.cs:9558`), 63/64 18 (`:9587`/
+            // `:9601`), 69 19 (`:9670`), 70 20 (`:9685`), 75/82 22
+            // (`:9777`/`:9858`), 83/84 23 (`:9883`/`:9896`), 85 25
+            // (`:9909`).
+            NpcKind::Vulture => 17,
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => 18,
+            NpcKind::Antlion => 19,
+            NpcKind::SpikeBall => 20,
+            NpcKind::Pixie | NpcKind::Wraith => 22,
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => 23,
+            NpcKind::Mimic => 25,
         }
     }
 
@@ -2981,6 +3043,19 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-g8 lane 1 batch 1 — the `SetDefaults` boxes: 61 36x36
+            // (`NPC.cs:9556-9557`), 63/64 26x26 (`:9585-9586`/`:9599-9600`),
+            // 69 24x24 (`:9668-9669`), 70 34x34 (`:9683-9684`), 75 20x20
+            // (`:9775-9776`), 82 24x44 (`:9856-9857`), 83/84 40x40
+            // (`:9881-9882`/`:9894-9895`), 85 24x24 (`:9907-9908`).
+            NpcKind::Vulture => (36.0, 36.0),
+            NpcKind::BlueJellyfish | NpcKind::PinkJellyfish => (26.0, 26.0),
+            NpcKind::Antlion => (24.0, 24.0),
+            NpcKind::SpikeBall => (34.0, 34.0),
+            NpcKind::Pixie => (20.0, 20.0),
+            NpcKind::Wraith => (24.0, 44.0),
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => (40.0, 40.0),
+            NpcKind::Mimic => (24.0, 24.0),
         }
     }
 
@@ -3083,6 +3158,20 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // W4-g8 lane 1 batch 1 — the vanilla `NPC.type` ids the AI
+            // machines' type gates read (`NPCID.cs:10799`/`:10803`/
+            // `:10805`/`:10815`/`:10817`/`:10827`/`:10841`/`:10843`/
+            // `:10845`/`:10847`). The protocol ids are port-local 354-363.
+            NpcKind::Vulture => 61,
+            NpcKind::BlueJellyfish => 63,
+            NpcKind::PinkJellyfish => 64,
+            NpcKind::Antlion => 69,
+            NpcKind::SpikeBall => 70,
+            NpcKind::Pixie => 75,
+            NpcKind::Wraith => 82,
+            NpcKind::CursedHammer => 83,
+            NpcKind::EnchantedSword => 84,
+            NpcKind::Mimic => 85,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3201,6 +3290,9 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // W4-g8 lane 1 batch 1 — the Antlion's `behindTiles = true`
+                // row (`NPC.cs:9678`); it fires from behind the sand.
+                | NpcKind::Antlion
         )
     }
 
@@ -3622,6 +3714,21 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-g8 lane 1 batch 1 — the `lifeMax` rows: 61 40
+            // (`NPC.cs:9561`), 63 34 (`:9590`), 64 70 (`:9604`), 69 45
+            // (`:9673`), 70 100 (`:9688`), 75 150 (`:9780`), 82 160
+            // (`:9861`), 83/84 200 (`:9886`/`:9899`), 85 500 (`:9912`).
+            // The Mimic's pre-hardmode 300 fold (`:9922`) rides the spawn
+            // resolver (`world.hard_mode`), not this hardmode table.
+            NpcKind::Vulture => 40,
+            NpcKind::BlueJellyfish => 34,
+            NpcKind::PinkJellyfish => 70,
+            NpcKind::Antlion => 45,
+            NpcKind::SpikeBall => 100,
+            NpcKind::Pixie => 150,
+            NpcKind::Wraith => 160,
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => 200,
+            NpcKind::Mimic => 500,
         }
     }
 
@@ -3986,6 +4093,21 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-g8 lane 1 batch 1 — the `damage` rows: 61 15
+            // (`NPC.cs:9559`), 63 25 (`:9588`), 64 30 (`:9602`), 69 10
+            // (`:9671`), 70 32 (`:9686`), 75 55 (`:9778`), 82 65
+            // (`:9859`), 83/84 80 (`:9884`/`:9897`), 85 80 (`:9910`).
+            // The Mimic's pre-hardmode 30 fold (`:9920`) rides the spawn
+            // resolver (`world.hard_mode`).
+            NpcKind::Vulture => 15,
+            NpcKind::BlueJellyfish => 25,
+            NpcKind::PinkJellyfish => 30,
+            NpcKind::Antlion => 10,
+            NpcKind::SpikeBall => 32,
+            NpcKind::Pixie => 55,
+            NpcKind::Wraith => 65,
+            NpcKind::CursedHammer | NpcKind::EnchantedSword => 80,
+            NpcKind::Mimic => 80,
         }
     }
 }

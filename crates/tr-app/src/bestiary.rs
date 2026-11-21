@@ -2171,6 +2171,92 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds. The automated
+    // populator registers every non-town, non-Hide enemy by its vanilla
+    // net id (`BestiaryDatabaseNPCsPopulator.cs:851-868`); the Spike Ball
+    // 70 is `Hide = true` (`NPCID.cs:1711-1715`) so it folds onto no entry
+    // of its own — but `entry_for_npc` still needs a row to resolve, so it
+    // carries one here (the BlazingWheel 72 precedent, also Hide=true).
+    BestiaryEntryDef {
+        credit_id: "Vulture",
+        net_id: 61,
+        kind: NpcKind::Vulture,
+        variant: None,
+        quick_unlock: false,
+        name: "Vulture",
+    },
+    BestiaryEntryDef {
+        credit_id: "BlueJellyfish",
+        net_id: 63,
+        kind: NpcKind::BlueJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Blue Jellyfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "PinkJellyfish",
+        net_id: 64,
+        kind: NpcKind::PinkJellyfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Pink Jellyfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "Antlion",
+        net_id: 69,
+        kind: NpcKind::Antlion,
+        variant: None,
+        quick_unlock: false,
+        name: "Antlion",
+    },
+    BestiaryEntryDef {
+        credit_id: "SpikeBall",
+        net_id: 70,
+        kind: NpcKind::SpikeBall,
+        variant: None,
+        quick_unlock: false,
+        name: "Spike Ball",
+    },
+    BestiaryEntryDef {
+        credit_id: "Pixie",
+        net_id: 75,
+        kind: NpcKind::Pixie,
+        variant: None,
+        quick_unlock: false,
+        name: "Pixie",
+    },
+    BestiaryEntryDef {
+        credit_id: "Wraith",
+        net_id: 82,
+        kind: NpcKind::Wraith,
+        variant: None,
+        quick_unlock: false,
+        name: "Wraith",
+    },
+    BestiaryEntryDef {
+        credit_id: "CursedHammer",
+        net_id: 83,
+        kind: NpcKind::CursedHammer,
+        variant: None,
+        quick_unlock: false,
+        name: "Cursed Hammer",
+    },
+    BestiaryEntryDef {
+        credit_id: "EnchantedSword",
+        net_id: 84,
+        kind: NpcKind::EnchantedSword,
+        variant: None,
+        quick_unlock: false,
+        name: "Enchanted Sword",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mimic",
+        net_id: 85,
+        kind: NpcKind::Mimic,
+        variant: None,
+        quick_unlock: false,
+        name: "Mimic",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

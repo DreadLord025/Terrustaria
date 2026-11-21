@@ -861,6 +861,11 @@ pub const AQUA_SCEPTER: u16 = 22;
 pub const WATER_BOLT: u16 = 27;
 /// `ProjectileID.Flamelash` (34) — the channeled aimed spell.
 pub const FLAMELASH: u16 = 34;
+/// `ProjectileID.SandBallFalling` (31) — the Antlion's hostile sand spit
+/// (`NPC.cs:24462`/`:24477`), the aiStyle-10 falling ball the Antlion's
+/// ai[0]==2 override steers (`Projectile.cs:1131-1140`: 10x10, hostile,
+/// penetrate −1, knockBack 6). W4-g8 lane 1 batch 1.
+pub const SAND_BALL_FALLING: u16 = 31;
 /// `ProjectileID.DemonSickle` (44) — the Demon/VoodooDemon's hostile sickle
 /// (`NPC.cs:23449`), the aiStyle-18 twin of the friendly DemonScythe 45
 /// (`Projectile.cs:1271-1282`: hostile, penetrate −1).
@@ -3185,6 +3190,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // knockBack (8 / 6) is dropped — the spawner's input wins.
             42 => (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
             65 | 68 | 354 => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE),
+            // W4-g8 lane 1 batch 1 — the Antlion's SandBallFalling (31,
+            // `Projectile.cs:1131-1140`): 10x10, aiStyle 10, penetrate −1,
+            // the stock tileCollide; the `ai[0] = 2` + `timeLeft = 300`
+            // overrides ride the NPC shot drain (`NPC.cs:24463-24464`).
+            SAND_BALL_FALLING => (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
             // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
             // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
             // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever

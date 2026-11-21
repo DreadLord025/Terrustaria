@@ -3566,6 +3566,27 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds. The grounded
+        // walkers (the Antlion 69, the Mimic 85) plant their feet on the
+        // column surface (the cave-walker ctor); the noGravity flyers
+        // (Vulture 61, the jellies 63/64, the Spike Ball 70, the Pixie 75,
+        // the Wraith 82, the possessed weapons 83/84) ride the hover ctor
+        // (the Poltergeist/Drippler precedent — the machine takes over on
+        // the first tick).
+        crate::npc::NpcKind::Antlion | crate::npc::NpcKind::Mimic => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::Vulture
+        | crate::npc::NpcKind::BlueJellyfish
+        | crate::npc::NpcKind::PinkJellyfish
+        | crate::npc::NpcKind::SpikeBall
+        | crate::npc::NpcKind::Pixie
+        | crate::npc::NpcKind::Wraith
+        | crate::npc::NpcKind::CursedHammer
+        | crate::npc::NpcKind::EnchantedSword => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

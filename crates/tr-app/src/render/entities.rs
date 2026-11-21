@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(KIND_WIRE_1_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1245,6 +1246,22 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     250, // the Angry Nimbus
     288, // the Dungeon Spirit
     384, // the Force Bubble
+];
+
+/// W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds' own sheets
+/// (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `SMALL_KIND_SHEETS`.
+pub(crate) const KIND_WIRE_1_SHEETS: &[u32] = &[
+    61, // the Vulture
+    63, // the Blue Jellyfish
+    64, // the Pink Jellyfish
+    69, // the Antlion
+    70, // the Spike Ball
+    75, // the Pixie
+    82, // the Wraith
+    83, // the Cursed Hammer
+    84, // the Enchanted Sword
+    85, // the Mimic
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3170,6 +3187,27 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-g8 lane 1 batch 1 — the d22-d33 machines' kinds draw their
+            // OWN sheets (`KIND_WIRE_1_SHEETS`) at `SetFrameSize`'s integer-
+            // division row height over `Main.npcFrameCount[type]` with the
+            // generic centred anchor (`Main.cs:25511-25516`) — the small-
+            // kinds wave's shape. The Spike Ball's 1.5 scale rides
+            // `scaled_anchor` (the BlazingWheel convention).
+            NpcKind::Vulture
+            | NpcKind::BlueJellyfish
+            | NpcKind::PinkJellyfish
+            | NpcKind::Antlion
+            | NpcKind::Pixie
+            | NpcKind::Wraith
+            | NpcKind::CursedHammer
+            | NpcKind::EnchantedSword
+            | NpcKind::Mimic => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
+            NpcKind::SpikeBall => {
+                scaled_anchor(assets.npc_sheet(70), npc_rows(70), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3357,17 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-g8 lane 1 batch 1 — the kinds whose FindFrame/AI
+                    // writes a rotation: the Vulture/Pixie/Wraith's vx*0.1
+                    // tilt (`NPC.cs:73540`/`:74122`/`:74858`), the Antlion's
+                    // aim (`:24419`), the possessed weapons' spin (`:25268`/
+                    // `:25304`).
+                    | NpcKind::Vulture
+                    | NpcKind::Pixie
+                    | NpcKind::Wraith
+                    | NpcKind::Antlion
+                    | NpcKind::CursedHammer
+                    | NpcKind::EnchantedSword
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

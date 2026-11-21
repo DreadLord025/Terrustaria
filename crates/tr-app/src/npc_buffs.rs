@@ -484,6 +484,17 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-g8 lane 1 batch 1 — the `Sets.DebuffImmunitySets` rows
+        // (`NPCID.cs:6075+`): 61/63/64/69 `[31]`, 70 `[20, 24, 31, 39, 70,
+        // 395, 323]`, 83/84 `[20, 24, 31, 323]`, 75/85 `[20, 31]`. The
+        // Wraith 82's row is `ImmuneToAllBuffsThatAreNotWhips = true` — the
+        // mask loop is unmodelled, so it rides `&[]` (the Force Bubble /
+        // saucer family's documented gap above).
+        NpcKind::Vulture | NpcKind::BlueJellyfish | NpcKind::PinkJellyfish | NpcKind::Antlion => &[31],
+        NpcKind::SpikeBall => &[20, 24, 31, 39, 70, 395, 323],
+        NpcKind::CursedHammer | NpcKind::EnchantedSword => &[20, 24, 31, 323],
+        NpcKind::Pixie | NpcKind::Mimic => &[20, 31],
+        NpcKind::Wraith => &[],
     }
 }
 

@@ -1595,6 +1595,41 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-g8 lane 1 batch 1 — the d22-d33 kinds' portraits: the sheet's
+        // own row height over `Main.npcFrameCount[type]` (the frame width
+        // the sheet's own), the small-kinds wave's shape.
+        (NpcKind::Vulture, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 6.0).unwrap_or(60.0);
+            (sheet_i, h, 78.0, h, white)
+        }
+        (NpcKind::BlueJellyfish | NpcKind::PinkJellyfish, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 7.0).unwrap_or(46.0);
+            (sheet_i, h, 56.0, h, white)
+        }
+        (NpcKind::Antlion, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(40.0);
+            (sheet_i, h, 36.0, h, white)
+        }
+        (NpcKind::SpikeBall, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32).unwrap_or(34.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::Pixie, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(34.0);
+            (sheet_i, h, 54.0, h, white)
+        }
+        (NpcKind::Wraith, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(50.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::CursedHammer | NpcKind::EnchantedSword, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 6.0).unwrap_or(82.0);
+            (sheet_i, h, 82.0, h, white)
+        }
+        (NpcKind::Mimic, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 18.0).unwrap_or(46.0);
+            (sheet_i, h, 32.0, h, white)
+        }
     }
 }
 

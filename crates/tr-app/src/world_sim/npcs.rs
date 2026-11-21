@@ -1161,6 +1161,16 @@ fn play_npc_sound_request(
         NpcSoundCue::EowDig => {
             audio.play_eow_dig(req.x, req.y);
         }
+        // W4-g8 lane 1 — the Antlion's Item5 spit (`NPC.cs:24449`) and the
+        // Pixie's case-27 wing-hum chirp (`NPC.cs:24853`): the same façades
+        // as the Item8/14/34 cues above (the case-2 / case-27 pitch draws
+        // ride the caller's UpdateNPCs stream).
+        NpcSoundCue::Item5 => {
+            audio.play_npc_item_cue(5, req.x, req.y, rng);
+        }
+        NpcSoundCue::PixieChirp => {
+            audio.play_pixie(req.x, req.y, rng);
+        }
     }
 }
 
@@ -4268,6 +4278,25 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 crate::npc_ai_style30::twin_time_left_scan(&app.npcs, i, is_twin);
         }
     }
+    // W4-g8 lane 1 batch 1 — the Mimic's pre-hardmode `SetDefaults` fold
+    // (`NPC.cs:9918-9924`): on a pre-hardmode world the chest trap spawns
+    // dmg 30 / def 12 / 300 HP / value 200 (`Item.buyPrice(0, 2)`), not the
+    // hardmode 80/30/500/100000 the kind table carries. The fold is a
+    // SPAWN-time decision (the C# runs it inside `SetDefaults`); the port
+    // applies it once at the NPC's first tick (ai all-zero, the fresh
+    // `Npc::new` state) via the override seams + the hp rescale. RNG-free.
+    if !app.world.hard_mode {
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::Mimic && n.ai == [0.0; 4] && n.local_ai == [0.0; 4] {
+                let ratio = n.hp as f32 / n.max_hp as f32;
+                n.max_hp = 300;
+                n.hp = (300.0 * ratio) as i32;
+                n.damage_override = Some(30);
+                n.defense_override = Some(12);
+                n.value_override = Some(200.0);
+            }
+        }
+    }
     let player = &mut app.player;
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the
     // DungeonSpirit's arm (`npc_ai_style56::style56_step`) needs the
@@ -5959,6 +5988,15 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`unicorn_step`'s fourth draw); apply it to the spawned slot.
         if let (Some(slot), Some(scale)) = (slot, shot.scale) {
             app.projectiles.set_scale(slot, scale);
+        }
+        // W4-g8 lane 1 batch 1 — the Antlion's SandBall `timeLeft = 300`
+        // override (`NPC.cs:24464`/`:24479`): the ai[0]=2 payload already
+        // rode `spawn_hostile_ai`; the life override lands here (the
+        // Horseman scale's post-spawn-write shape).
+        if shot.kind == crate::projectile::SAND_BALL_FALLING {
+            if let Some(slot) = slot {
+                app.projectiles.slots_mut()[slot].time_left = 300;
+            }
         }
     }
     // The Horseman's gallop dust (`NPC.cs:62431-62437`, S1-D-4 W-10):
