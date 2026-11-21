@@ -39,6 +39,9 @@ impl App {
     if !self.handle_chest_clicks() && !self.handle_crafting_clicks() {
         self.handle_inventory_clicks();
     }
+    // `DrawInterface_9_WireSelection` (`Main.cs:46195-46203`) — the ToolMode
+    // radial's update runs after the inventory handlers (W4-f11 logic half).
+    self.handle_wires_radial();
     // `Main.cs:62466-62473` — the stack-split decay, after the
     // interface's MouseUI pass.
     self.decay_stack_split();

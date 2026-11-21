@@ -36218,9 +36218,14 @@ drains run at `world_sim/wiring.rs:362-367` inside the wiring tick
   `PlaySound(0)` inside `Place*`/`Kill*` stay the caller's seams (the
   port's `edit::place_wire` family is silent, the S1-K-4d precedent).
 - The Grand Design (3611) drag rides projectile 651
-  (`Projectile.cs:72053-72066`) — the projectile family is unported, so
-  only the 3625 click arm lands; the `WiresRadial` UI that sets ToolMode
-  is unported (the field keeps the Red default until it lands).
+  (`Projectile.cs:72053-72066`) — d13 landed the aiStyle-125 arm + the
+  Kill-hook request seam (`take_mass_wire_ops` →
+  `app.pending_mass_wire_ops`); the APPLY drain onto this lane's
+  `mass_wire_operation` is the union-merge follow-up (research/136).
+  The `WiresRadial` UI's LOGIC half landed W4-f11 (`ui/wires_radial.rs` —
+  the flower/line state machine + the six-slot ToolMode toggles write
+  `wire_tool_mode`); the ~450-line draw passes are the research/135
+  contract remainder.
 - The `CanDoWireStuffHere` dual-dungeons temple arm
   (`Player.cs:46934-46937`) has no ported seed — the wall-87 gate alone
   runs (the S1-D-3 precedent).

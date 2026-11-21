@@ -818,6 +818,53 @@ impl App {
         }
     }
 
+    /// `WiresUI.HandleWiresUI` (`WiresUI.cs:698-702` →
+    /// `DrawInterface_9_WireSelection`, `Main.cs:46195-46203`): the ToolMode
+    /// radial's per-frame update — the LOGIC half (W4-f11, research/135):
+    /// the flower/line state machine + the slot toggles write
+    /// `wire_tool_mode`; the DRAW passes are the contract remainder. Runs
+    /// after the inventory handlers (the C# DrawInterface_9 sits after
+    /// DrawInterface_4). A slot hover folds `player.mouseInterface = true`
+    /// into `block_mouse` (the port's use-suppression seam — no
+    /// mouseInterface field; the minimap-hover precedent).
+    pub(crate) fn handle_wires_radial(&mut self) {
+        let held = self.inventory[self.selected];
+        let held_kind = if held.count > 0 { held.kind } else { 0 };
+        let (sw, sh) = self.screen_size();
+        let input = ui::wires_radial::RadialInputs {
+            mouse_right: self.place_down,
+            mouse_right_release: self.ui_right_release_latch,
+            left_press: self.ui_left_press,
+            dead: self.player.as_ref().is_some_and(|p| p.dead),
+            mouse_item: self.mouse_item.count > 0 && self.mouse_item.kind > 0,
+            no_throw: self.no_throw != 0,
+            talking: self.talk_npc.is_some(),
+            chat_open: self.chat.open,
+            // The folded mouseInterface snapshot: the minimap hover is the
+            // port's one documented mirror (no unified field — research/135).
+            mouse_interface: self.minimap_hover.is_some(),
+            options_open: self.ingame_options.open
+                || self.achievements_open
+                || self.bestiary_open,
+            hovering_npc: false,
+            smart_interact_genuine: false,
+            cursor_icon_enabled: false,
+            cursor_icon_id: 0,
+        };
+        let hovered = self.wires_radial.update(
+            held_kind,
+            (self.mouse_pos.x, self.mouse_pos.y),
+            (sw, sh),
+            &input,
+            &mut self.wire_tool_mode,
+        );
+        if hovered {
+            // `Main.player[myPlayer].mouseInterface = true` (`:327-330`/
+            // `:499`) — the use suppression the mine/place gates read.
+            self.block_mouse = true;
+        }
+    }
+
     /// `Main.DrawMap`'s fullscreen ping (`Main.cs:55486-55495`): a second
     /// press within 0.5 s and 2 px of the previous one pins the tile under the
     /// pointer, converted back through the map's scale/offset

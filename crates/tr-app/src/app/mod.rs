@@ -878,8 +878,13 @@ pub(crate) struct App {
     /// `WiresUI.Settings.ToolMode` (`WiresUI.cs:23`): the multi-wrench's
     /// channel bitfield (`multi_tool_mode`). The static ctor starts at
     /// `MultiToolMode.Red` (`WiresUI.cs:94`); the WiresRadial UI owns the
-    /// setting (unported — the field keeps the default until it lands).
+    /// setting — its LOGIC half landed W4-f11 (`ui/wires_radial.rs`, the
+    /// flower/line state machine + the slot toggles); the DRAW passes are
+    /// the research/135 contract remainder.
     pub(crate) wire_tool_mode: u8,
+    /// `WiresUI.radial` (`WiresUI.cs:694`): the ToolMode radial's state
+    /// (the flower anchor/open flag, the line opacity, the actuator latch).
+    pub(crate) wires_radial: ui::wires_radial::WiresRadial,
     /// The tile-entity update pass (`TileEntity.PerformUpdates` — the
     /// logic sensors' per-tick scan, M7-TE-2).
     pub(crate) te_step: FixedStepper,
@@ -4000,6 +4005,7 @@ impl App {
             tile_anim_step: FixedStepper::new(1.0 / 60.0, 8),
             wiring: tr_core::wiring::Wiring::new(),
             wire_tool_mode: tr_core::smart_cursor::multi_tool_mode::RED,
+            wires_radial: ui::wires_radial::WiresRadial::default(),
             wiring_step: FixedStepper::new(1.0 / 60.0, 8),
             te_step: FixedStepper::new(1.0 / 60.0, 8),
             growth_step: FixedStepper::new(1.0 / 60.0, 8),
