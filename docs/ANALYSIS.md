@@ -3030,11 +3030,13 @@ keyboard, credits вЂ” commits `02182dc..043e11c`) is ported at the source
 geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
 "Front-end screens (P6)". The deviations and stand-ins:
 
-* **No `.plr` reader/writer** (spec В§9.4). Characters are the implicit
-  session entry plus optional `TR_FAKE_CHARS` fakes; Create records the
-  session draft instead of writing a character file. The `.plr` directory
-  scan stays so a future reader slots into the same shape (`Main.cs:4007`);
-  a scanned `.plr` is skipped like `Player.GetFileData`'s null return.
+* ~~**No `.plr` reader/writer**~~ **STALE — closed** (S1-J-5 + W4-f22):
+  `player_file.rs` reads and writes real `.plr`s (the full
+  Serialize/Deserialize walk), `save_list::list_players` scans them, and
+  `session.rs::save_created_character` writes the creation draft. The
+  card renames landed W4-f22 (`rename_player_file`/`rename_world`, the
+  keyboard tails). The implicit session entry + `TR_FAKE_CHARS` fakes
+  remain as the disk-less stand-ins.
 * **World metadata stand-ins.** Favourites are a `<world>.trfav` marker file
   (`Main.LocalFavoriteData` has no port); creation time is the file's mtime;
   the world writer stores no `GameMode`, so every real entry reads Classic
@@ -3053,14 +3055,21 @@ geometry; the screens, coordinates and flow are in `docs/UI.md` в†’
   `UIWorldListItem.cs:205`, have no port) and **no UI click sounds**: the
   `SoundEngine.PlaySound(10/11/12)` sites вЂ” the confirms' Yes/No included вЂ”
   stay silent, consistent with the P5 menus (`audio.rs:22-31`).
-* **Rename caps** 20 (character) / 27 (world); the world-creator's
-  `TrimDisplayIfOverElementDimensions(27)` display trim is not ported.
+* **Rename caps** 20 (character) / 27 (world); the creation plates'
+  `TrimDisplayIfOverElementDimensions` display trims **landed 2026-11-21**
+  (W4-d85 doc-sweep: `world_creation::trim_plate_display`, padding 27/40
+  on both creation screens); the keyboard's own textbox trim stays
+  unported (research/19 deviation 14).
 * **The keyboard draws the desktop layer only** (`ShowGamepadHints` false
   without a gamepad); the 50-key grid layer is kept behind `TR_VK_GRID=1`.
-* **The Advanced seed tab is out of scope** (spec В§9.4): the seed plate's
-  click degrades to the plain seed keyboard and the special-seed ring effect
-  is not drawn; `UIWorldLoad`/`UIWorldGenDebug`/`UIWorldCreationAdvanced`
-  have no counterpart yet.
+* ~~**The Advanced seed tab is out of scope**~~ **STALE — closed**: the
+  Advanced tab + secret-seeds list landed (W4-d85 rows 11-12,
+  `ui/world_creation_advanced.rs` + `ui/secret_seeds_list.rs`); the
+  special-seed ring effect stays unported (that section's deviation 1).
+  `UIWorldLoad` landed S1-E-17 ("The loading screen + capture mode"
+  below); `UIWorldGenDebug` is the d86-recorded dev-only scope-out;
+  `UIWorldCreationAdvanced` is ported. The seed plate's click opens the
+  Advanced tab — the degradation is gone.
 * **Credits** (`menuMode` 3000) is the world backdrop + the single Back row;
   the `SkyManager.Activate("CreditsRoll")` cinematic is not ported.
 * **The legacy create flows** (menuModes 2/3/7/8/16/17-24/222/в€’7/в€’71/5000)
