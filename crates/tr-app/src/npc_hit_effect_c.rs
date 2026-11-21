@@ -157,6 +157,8 @@
 //! | 666-667 | `:86187-86188` | the 607 Pupfish death (2 gores 1152/1153) |
 //! | 668-673 | `:86206-86214` | the 688 Pufferfish death (ai[2]==1 ? 4 gores : 2 gores) |
 //! | 674-675 | `:86287-86288` | the 602/603 Seagull death (2 gores 1150/1151) |
+//! | 676-681 | `:86233-86241` | the 366/367 Scorpion death (3 gores each, type-203 dust) |
+//! | 682-684 | `:86307-86309` | the 608/609 Grebe death (3 gores 1154/1155/1156) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4237,6 +4239,63 @@ fn seagull_death(
     gore.new_gore(rng, world, pos, vel, 1151, 1.0); // :86288
 }
 
+/// The 366/367 Scorpion death (`NPC.cs:86227-86241`, sites 676-681): the
+/// 10-dust type-203 burst (SpeedX `2*hitDirection`, SpeedY -2), then the
+/// per-type 3 gores — 366 ScorpionBlack → [561,562,563], 367 Scorpion →
+/// [564,565,566]. Scale defaults to 1.
+fn scorpion_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:86227-86230` — the 10-dust type-203 burst.
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 203, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:86231-86242` — the per-type gore list.
+    let gores: &[i32] = if npc_type == 366 { &[561, 562, 563] } else { &[564, 565, 566] };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for &ty in gores {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
+/// The 608/609 Grebe death (`NPC.cs:86301-86309`, sites 682-684): the
+/// 10-dust type-5 burst, then the 3 gores 1154/1155/1156 at position. Scale
+/// defaults to 1.
+fn grebe_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1154, 1.0); // :86307
+    gore.new_gore(rng, world, pos, vel, 1155, 1.0); // :86308
+    gore.new_gore(rng, world, pos, vel, 1156, 1.0); // :86309
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4744,6 +4803,14 @@ pub fn hit_effect_c(
     // `:86271-86290` — the 602/603 Seagull arm (sites 674-675).
     if (npc_type == 602 || npc_type == 603) && npc.hp <= 0 {
         seagull_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86217-86243` — the 366/367 Scorpion arm (sites 676-681).
+    if (npc_type == 366 || npc_type == 367) && npc.hp <= 0 {
+        scorpion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86291-86311` — the 608/609 Grebe arm (sites 682-684).
+    if (npc_type == 608 || npc_type == 609) && npc.hp <= 0 {
+        grebe_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7534,6 +7601,35 @@ mod tests {
         seagull_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![1150, 1151]);
+    }
+
+    /// `NPC.cs:86233-86241` — the Scorpion death: 366→[561,562,563],
+    /// 367→[564,565,566], after the 10-dust type-203 burst.
+    #[test]
+    fn w4_f10_the_scorpion_death_uses_the_per_type_list() {
+        let w = air();
+        for (ty, gores) in [(366, [561, 562, 563]), (367, [564, 565, 566])] {
+            let n = boss(100.0, 100.0, 36.0, 24.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(643);
+            scorpion_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "scorpion {ty}");
+        }
+    }
+
+    /// `NPC.cs:86307-86309` — the Grebe death: the 3 gores 1154/1155/1156.
+    #[test]
+    fn w4_f10_the_grebe_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 24.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(647);
+        grebe_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1154, 1155, 1156]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
