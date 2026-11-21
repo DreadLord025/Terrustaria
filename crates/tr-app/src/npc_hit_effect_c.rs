@@ -192,6 +192,7 @@
 //! | 848-852 | `:86931-86935` | the 691 MossZombie death (5 gores 1391/1392/1392/1393/1393) |
 //! | 853-862 | `:86982-86995` | the zombie block: 104 Werewolf + 632 MaggotZombie (5-gore ladders, 632 spawn seam) |
 //! | 863-872 | `:87011-87024` | the zombie block: 331 ZombieXmas + 332 ZombieSweater (5-gore ladders) |
+//! | 873-878 | `:87029-87034` | the zombie block: 109 Clown (6 gores, extra +46 Y gore 120) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5105,7 +5106,9 @@ fn moss_zombie_death(
 /// the 632 MaggotZombie (sites 858-862: ladder 1214/1215/1216 + the
 /// maggot-spawn seam RETURNED), the 331 ZombieXmas (sites 863-867: ladder
 /// 488/489/490) and the 332 ZombieSweater (sites 868-872: ladder
-/// 491/492/493). The remaining zombie types land with the next batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
+/// 491/492/493) and the 109 Clown (sites 873-878: ladder 121/122/123 + the
+/// extra +46 Y gore 120). The remaining zombie types land with the next
+/// batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
 /// (the wiring wave's hit-half detail is noted per arm).
 fn zombie_block_death(
     npc: &Npc,
@@ -5168,6 +5171,16 @@ fn zombie_block_death(
         gore.new_gore(rng, world, mid, vel, 492, s); // :87022
         gore.new_gore(rng, world, low, vel, 493, s); // :87023
         gore.new_gore(rng, world, low, vel, 493, s); // :87024
+        return;
+    }
+    // `:87027-87035` — the 109 Clown ladder + the extra +46 Y gore.
+    if npc_type == 109 {
+        gore.new_gore(rng, world, pos, vel, 121, s); // :87029
+        gore.new_gore(rng, world, mid, vel, 122, s); // :87030
+        gore.new_gore(rng, world, mid, vel, 122, s); // :87031
+        gore.new_gore(rng, world, low, vel, 123, s); // :87032
+        gore.new_gore(rng, world, low, vel, 123, s); // :87033
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 46.0), vel, 120, s); // :87034
         return;
     }
 }
@@ -5806,9 +5819,11 @@ pub fn hit_effect_c(
     if npc_type == 691 && npc.hp <= 0 {
         moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86937-87139` — the big zombie block; the 104/632/331/332 (sites
-    // 853-872); the rest lands with the next batches.
-    if (npc_type == 104 || npc_type == 632 || npc_type == 331 || npc_type == 332) && npc.hp <= 0 {
+    // `:86937-87139` — the big zombie block; the 104/632/331/332/109 (sites
+    // 853-878); the rest lands with the next batches.
+    if (npc_type == 104 || npc_type == 632 || npc_type == 331 || npc_type == 332 || npc_type == 109)
+        && npc.hp <= 0
+    {
         zombie_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
     }
     outcome
@@ -9122,6 +9137,22 @@ mod tests {
                 assert!(out.maggot_zombie_spawns.is_none());
             }
         }
+    }
+
+    /// `NPC.cs:87029-87034` — the Clown death: the 6 gores 121/122/122/
+    /// 123/123 + the extra 120 at +46 Y.
+    #[test]
+    fn w4_f10_the_zombie_block_clown_spawns_the_extra_gore() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(821);
+        let mut out = HitEffectOutcomeC::default();
+        zombie_block_death(&n, 109, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![121, 122, 122, 123, 123, 120]);
+        assert_eq!(gore.slot(5).position, Vec2::new(100.0, 146.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
