@@ -226,8 +226,10 @@ use glam::Vec2;
 
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
-    Projectile, DEADLY_SPHERE, MOONLORD_TURRET, NEBULA_ARCANUM, ORNAMENT_HOSTILE,
-    RAINBOW_CRYSTAL_EXPLOSION, TERRARIAN_BEAM, THUNDER_SPEAR_BOLT, VORTEX_RITUAL_BOLT,
+    Projectile, DEADLY_SPHERE, GEM_BOLT_AMBER, GEM_BOLT_AMETHYST, GEM_BOLT_DIAMOND,
+    GEM_BOLT_EMERALD, GEM_BOLT_RUBY, GEM_BOLT_SAPPHIRE, GEM_BOLT_TOPAZ, MOONLORD_TURRET,
+    NEBULA_ARCANUM, ORNAMENT_HOSTILE, RAINBOW_CRYSTAL_EXPLOSION, TERRARIAN_BEAM,
+    THUNDER_SPEAR_BOLT, VORTEX_RITUAL_BOLT,
 };
 
 /// The centre tile of a slot's post-step box, quotient-truncated (the
@@ -317,8 +319,39 @@ pub(crate) fn proj_lights_a(
         // pin before this read.
         let opacity = 1.0 - p.alpha as f32 / 255.0;
         out.push((cx, cy, [0.3 * opacity, 0.9 * opacity, 0.7 * opacity]));
+    } else if let Some(rgb) = gem_bolt_light(p.kind) {
+        // `:37954-38000` — AI_029_GemStaffs_ActuallyGemStaffs' tail:
+        // `num23 = 1f`, the per-gem switch on `num24 = (type - 121 + 86)
+        // - 85` (the 597 amber remaps `num = 262` first, `:37832-37834`),
+        // then `AddLight(Center, num23·num25, num23·num26, num23·num27)`.
+        // The 1120 ForbiddenMinionShot's default (1,1,1) has no row.
+        out.push((cx, cy, rgb));
     }
     out
+}
+
+/// The gem bolts' per-kind light tint (`Projectile.cs:37959-38000`): the
+/// switch arms on `num24 = num - 85` where `num = type - 121 + 86` (the 597
+/// amber is `num = 262`, `:37832-37834`), `num23 = 1f`. `None` for every
+/// non-gem kind (the 1120's `default` (1,1,1) arm has no row — absent).
+fn gem_bolt_light(kind: u16) -> Option<[f32; 3]> {
+    match kind {
+        // case 1 (`:37976-37980`): num25 *= 0.9, num26 *= 0, num27 *= 0.9.
+        GEM_BOLT_AMETHYST => Some([0.9, 0.0, 0.9]),
+        // case 2 (`:37986-37990`): 0.9 / 0.9 / 0.
+        GEM_BOLT_TOPAZ => Some([0.9, 0.9, 0.0]),
+        // case 3 (`:37961-37965`): 0 / 0.1 / 1.3.
+        GEM_BOLT_SAPPHIRE => Some([0.0, 0.1, 1.3]),
+        // case 4 (`:37971-37975`): 0 / 1 / 0.1.
+        GEM_BOLT_EMERALD => Some([0.0, 1.0, 0.1]),
+        // case 5 (`:37966-37970`): 1 / 0.1 / 0.1.
+        GEM_BOLT_RUBY => Some([1.0, 0.1, 0.1]),
+        // case 6 (`:37981-37985`): 1.3 on all three.
+        GEM_BOLT_DIAMOND => Some([1.3, 1.3, 1.3]),
+        // default with num == 262 (`:37991-37998`): 0.9 / 0.6 / 0.2.
+        GEM_BOLT_AMBER => Some([0.9, 0.6, 0.2]),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -425,6 +458,25 @@ mod tests {
     }
 
     #[test]
+    fn the_gem_bolts_take_their_per_kind_tints() {
+        // `:38000` — the switch on num24 = type − 120 (the 597 amber remaps
+        // to 262 → the default arm). Each tint at the centre.
+        let cases = [
+            (GEM_BOLT_AMETHYST, [0.9, 0.0, 0.9]),
+            (GEM_BOLT_TOPAZ, [0.9, 0.9, 0.0]),
+            (GEM_BOLT_SAPPHIRE, [0.0, 0.1, 1.3]),
+            (GEM_BOLT_EMERALD, [0.0, 1.0, 0.1]),
+            (GEM_BOLT_RUBY, [1.0, 0.1, 0.1]),
+            (GEM_BOLT_DIAMOND, [1.3, 1.3, 1.3]),
+            (GEM_BOLT_AMBER, [0.9, 0.6, 0.2]),
+        ];
+        for (kind, rgb) in cases {
+            let p = slot(kind);
+            assert_eq!(proj_lights_a(&p, None), vec![(10, 11, rgb)], "kind {kind}");
+        }
+    }
+
+    #[test]
     fn every_ported_kind_has_a_proj_data_row() {
         // The absent-wholesale rule's invariant: every kind this feed serves
         // resolves a `proj_data` row (the spawn gate).
@@ -437,6 +489,13 @@ mod tests {
             TERRARIAN_BEAM,
             NEBULA_ARCANUM,
             MOONLORD_TURRET,
+            GEM_BOLT_AMETHYST,
+            GEM_BOLT_TOPAZ,
+            GEM_BOLT_SAPPHIRE,
+            GEM_BOLT_EMERALD,
+            GEM_BOLT_RUBY,
+            GEM_BOLT_DIAMOND,
+            GEM_BOLT_AMBER,
         ] {
             assert!(
                 proj_data(kind).is_some(),
@@ -452,12 +511,18 @@ mod tests {
         // the 490 ritual (site 18), the 492 lantern (site 19), the 518
         // coin portal (site 20), the 575 nebula sphere (site 21), the 590
         // truffle spore (site 22), the 602 portal gate (site 24), the
-        // 612/953/978 trio (site 26), the 658 sandnado mark (site 28) and
-        // the 1115 glacier fang (site 29) have no rows; a slot carrying
-        // them (were one ever spawned) feeds no light.
+        // 612/953/978 trio (site 26), the 658 sandnado mark (site 28), the
+        // 1115 glacier fang (site 29), the 731 thunder staff (site 31), the
+        // 1105 RC car (site 33), the 1098 digtoise (site 34), the
+        // phaseblades (sites 35-36), the 1091/1117 storm lightning (site
+        // 37), the 1078 meteor ore (site 38), the 567/568 spore traps (site
+        // 39) have no rows; the rowed 248 FlowerPowPetal is aiStyle 1 and
+        // never reaches AI_196 (site 40). A slot carrying any of them feeds
+        // no light.
         for kind in [
             502u16, 1092, 451, 464, 465, 466, 490, 492, 518, 575, 590, 602, 612, 953,
-            978, 658, 1115,
+            978, 658, 1115, 731, 1105, 1098, 1059, 1074, 1091, 1117, 1078, 567, 568,
+            248, 1038,
         ] {
             let p = slot(kind);
             assert!(proj_lights_a(&p, None).is_empty());
