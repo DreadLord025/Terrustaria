@@ -3240,6 +3240,44 @@ fn wolf_death(
     gore.new_gore(rng, world, pos, vel, 183, 1.0); // :87733
 }
 
+/// The spider death shape shared by the 163/238, 164/165, 239/240,
+/// 236/237 rows: the 50x burst at (2.5·hd, −2.5), then five gores all at
+/// position, scale 1f. The 163/238 Black Recluse → dust-18 + 205/206x4
+/// (`:87767-87771`, sites 465-469); the 164/165 Wall Creeper → dust-18 +
+/// 207/208x4 (`:87787-87791`, sites 470-474); the 239/240 Blood Crawler
+/// → dust-5 + 351/352x2/353x2 and the 236/237 Crimera-adjacent → dust-18
+/// + 332/333/334/335x2 land in later batches.
+fn spider_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87763-87766`/`:87783-87786` — the 50x dust-18 burst at the wider
+    // velocity (both live rows puff 18).
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let types: [i32; 5] = if npc_type == 163 || npc_type == 238 {
+        [205, 206, 206, 206, 206] // :87767-87771
+    } else {
+        [207, 208, 208, 208, 208] // :87787-87791
+    };
+    for t in types {
+        gore.new_gore(rng, world, pos, vel, t, 1.0);
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3619,6 +3657,11 @@ pub fn hit_effect_d(
     // `:87717-87734` — the 155 Wolf arm (sites 462-464).
     else if npc_type == 155 {
         wolf_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87753-87792` — the 163/238 Black Recluse + 164/165 Wall Creeper
+    // arms (sites 465-474).
+    else if matches!(npc_type, 163 | 238 | 164 | 165) {
+        spider_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6368,6 +6411,40 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87767-87791` — the spider fives: 163/238 Black Recluse
+    /// 205/206x4, 164/165 Wall Creeper 207/208x4, all at position after
+    /// the 50x dust-18 burst.
+    #[test]
+    fn w4_f5d_the_spider_fives_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 22.0);
+        for (kind, want) in [
+            (163, vec![205, 206, 206, 206, 206]),
+            (238, vec![205, 206, 206, 206, 206]),
+            (164, vec![207, 208, 208, 208, 208]),
+            (165, vec![207, 208, 208, 208, 208]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(499);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "spider {kind}");
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let puff = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(puff.dust_type, 18);
+            let mut twin = UnifiedRandom::new(499);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 22);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "spider {kind} mirrors the C# draws");
         }
     }
 }
