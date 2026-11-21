@@ -148,7 +148,9 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
 /// - `Player.FindClosest` (`Player.cs:4942-4967`) folds to the port's one
 ///   player: a live player is index 0, no player reads the inactive
 ///   slot's default box (position (0,0), luck 0, `afkCounter` 0 — the
-///   `ai_star_spawner` inactive-slot fold).
+///   `ai_star_spawner` inactive-slot fold). A DEAD player keeps its
+///   position/luck (the first-active fallback) — the `:71842` gate has
+///   no dead term.
 /// - `afkCounter < AFKTimeNeededForNoLuckyStars` (`:71842`, 10800 —
 ///   `Player.cs:57103`): no port field (the hotbar census), folds 0.
 /// - `Main.isThereAWorldSurface` (`Main.cs:2788`: `worldSurface > 50`)
@@ -171,10 +173,14 @@ fn spawn_natural_starfall(
         return;
     }
     // The closest player's snapshot (`Player.FindClosest` — the one
-    // player): position, luck, dead. No player reads the inactive slot.
-    let (player_x, player_y, player_luck, player_dead) = player
-        .map(|p| (p.x, p.y, p.luck(), p.dead))
-        .unwrap_or((0.0, 0.0, 0.0, false));
+    // player): position + luck. No player reads the inactive slot
+    // (position (0,0), luck 0). A DEAD player keeps its position/luck —
+    // `FindClosest`'s first-active fallback (`Player.cs:4944-49452`)
+    // returns it and the `:71842` gate carries NO dead term (the
+    // meteor-shower arm's `!dead` at `:71755` is a different branch).
+    let (player_x, player_y, player_luck) = player
+        .map(|p| (p.x, p.y, p.luck()))
+        .unwrap_or((0.0, 0.0, 0.0));
     // `:71832` — `for (int i = 0; i < Main.dayRate; i++)`.
     for _ in 0..world.day_rate() {
         // `:71834-71835` — the boost-scaled gate roll. `starfallBoost`
@@ -198,10 +204,7 @@ fn spawn_natural_starfall(
         } else {
             tr_core::loot::roll_luck(rng, player_luck, 15)
         };
-        if luck_roll == 0
-            && (player_y as f64) < world.world_surface * 16.0
-            && !player_dead
-        {
+        if luck_roll == 0 && (player_y as f64) < world.world_surface * 16.0 {
             // `:71844-71846` — the lateral offset roll: `Next(1, 640)`
             // then `Next(-num20, num20 + 1)`.
             let num20 = rng.next_range(1, 640);
@@ -447,11 +450,11 @@ mod w4_d15_starfall_tests {
         let mut twin = UnifiedRandom::new(app.world.seed as i32);
         let mut twin_app = starfall_app();
         let world = &twin_app.world;
-        let (px, py, luck, dead) = twin_app
+        let (px, py, luck) = twin_app
             .player
             .as_ref()
-            .map(|p| (p.x, p.y, p.luck(), p.dead))
-            .unwrap_or((0.0, 0.0, 0.0, false));
+            .map(|p| (p.x, p.y, p.luck()))
+            .unwrap_or((0.0, 0.0, 0.0));
         for _ in 0..world.day_rate() {
             let num16 = world.width as f64 / 4200.0;
             if !((twin.next_max(8000) as f64) < 10.0 * num16) {
@@ -462,7 +465,7 @@ mod w4_d15_starfall_tests {
                 twin.next_max((world.height as f64 * 0.05) as i32) as f32 * 16.0,
             );
             let roll = tr_core::loot::roll_luck(&mut twin, luck, 15);
-            if roll == 0 && (py as f64) < world.world_surface * 16.0 && !dead {
+            if roll == 0 && (py as f64) < world.world_surface * 16.0 {
                 let num20 = twin.next_range(1, 640);
                 pos.x = px + twin.next_range(-num20, num20 + 1) as f32;
             }
