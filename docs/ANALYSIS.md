@@ -7358,9 +7358,13 @@ Deviations, all deliberate:
   the raw `ladyBugRainTime` add for the `rain.rs` writer instead of
   touching `Main.ladyBugRainBoost` (the C# applies the 18000 cap at the
   add site, `NPC.cs:81568-81572`).
-- **The Torch God event is out** вЂ” the `happyFunTorchTime` /
+- **The Torch God event rides f33 at merge** вЂ” the `happyFunTorchTime` /
   `torchGodCooldown` head of the scan and the `:18066-18086` trigger tail
-  are not ported; the `nearbyTorches` counter still runs.
+  are ported by W4-f33's `torch_scan_step_event` seam (`torch_god.rs`, the
+  5043 favor `:45226-45243` gates the trigger on `!unlockedBiomeTorches`);
+  the e26 `torch_scan_step` stays the no-event test entry, the
+  `nearbyTorches` counter still runs. (Was "not ported" pre-f33 вЂ” see
+  research/248 §2; the f33 merge composes the event entry.)
 - **The temple zone is unmodelled** вЂ” the skip gate
   `ZoneDungeon || ZoneLihzhardTemple` (`:17923`) runs on dungeon only.
 - **`ZoneLihzhardTemple`-free torch inputs** вЂ” the zones ride a per-tick
@@ -7522,6 +7526,64 @@ AI is the documented data-only deferral. RNG: the aiStyle-115 rearm
 draws ride the caller's `UpdateNPCs` stream in C# order (the witnesses
 mirror the cited `Next`/`NextFloat` calls on a cloned `UnifiedRandom`);
 the luck setters stay draw-free.
+
+### The W4-e26 RETIRE — the E8 keep-one execution + the FINAL census (research/248)
+
+The retire phase (`04dbdb0d2` + research/248) executes the d37-E8 keep-one work
+order on the roster and publishes the luck-family declaration. **The Duck 362
+variant DROPS to c10** (the waterfowl family's canonical owner, research/108
+E8/SEAL S1 — c10 lands its Duck@731 + the style-68 swim/Transform chain at
+merge); the drop runs through every exhaustive `NpcKind` match (enum / kb /
+defense / value / `update_kind_ai` / `find_frame` / `render_key` / `ALL_KINDS`
+274→273; `data.rs` `to_u16`/`from_u16`/`ai_style`/`size`/`max_hp`/
+`contact_damage`/hit+death sound/`cs_id`/`no_gravity`; `npc_buffs` null-rows;
+bestiary `ENTRIES` 252; netglue `npc_seed`; entities draw + `LUCK_CRITTER_SHEETS`;
+ui/bestiary portraits; assets `STATIC_SHEET_NAMES` + `BESTIARY_NPC_SHEET_IDS`
+185→184 + the `bestiary_npc_sheets` vec). **The Frog 361 wire id MOVES 361→744**
+(d37's Pirate owns proto 361, the E8 small-lane band; `cs_id`/`net_id` stay 361
+so the catch/release chain + bestiary resolve unchanged — branch-only id, no
+landed save wrote it, the S1-F-1 gate). **The ladybug pair 604/605 STAYS e26's**
+(the d42 ownership flip — d42 dropped its rows at `49346dba6`, SEAL S1 accepts;
+E8's original "drop e26@604/605 → keep d42" is RETIRED). Scripted pins
+re-verified (code-only, no cargo): `to_u16`/`from_u16` bijection 273/273 zero
+dups max 744 i16-safe, `ALL_KINDS` 273 rows, sheet tables 184/184, `ENTRIES` 252,
+Duck arms 0, Frog 744/744; the re-pinned protocol witness asserts
+`from_u16(362/731/361) == None` (the dropped/moved slots).
+
+**The sweep scope (research/248 §1)**: the c8 generic critter provider
+(`counts_as_a_critter`, the live `max_hp <= 5 && contact_damage() == 0` gate,
+research/238 §1/§7a verified at e26 tip) auto-covers the Frog + ladybug pair with
+**zero per-lane sight/provider wiring**; the GoldLadyBug 605→{604} row is
+pre-tabled in `GOLD_PEER_TABLE`. The Frog's wire-id move does not break the
+contract (the gate reads `cs_id`/`max_hp`/`contact_damage`, all unchanged). The
+ladybug-rain-boost seam: **g67 drops rain.rs wholesale, d130 is canonical**
+(research/146 SEAL) — d130's `rain.rs` already carries the field/setter/drain/
+gate (`add_lady_bug_rain_boost` clamped at `crate::luck::LADYBUG_RAIN_CAP`); the
+e26 kill/bait **callers** (`world_sim/npcs.rs:5083`, `editing.rs:2911`) compose
+onto d130's setter unchanged at merge. No e26 rain.rs edit owed.
+
+**The factor activation (research/248 §2)**: f33's torch-god event ports the
+torch-luck scan's **head/tail** (`torch_scan_step_event`, the `happyFunTorchTime`/
+`torchGodCooldown` head `Player.cs:17733-17742` + the `:18066-18086` trigger gated
+on `!unlockedBiomeTorches`, the 5043 favor `:45226-45243` setting it permanent) —
+it does **NOT** activate the three remaining-neutral factors (`usedGalaxyPearl`
+5340 `:45405-45410`, the broken-mirror writer projectile 1085
+`Projectile.cs:70919-70922`, the kite items `IsAKite`/buff 383 `:9920-9924`);
+those stay neutral until their own writers land. The garden-gnome `+0.2` term is
+**already live** (e26 phase 1, independent of f33). The "Torch God event is out"
+deviation bullet above is SUPERSEDED at merge by f33's event-carrying scan entry
+(the e26 `torch_scan_step` stays the no-event test entry; `player.rs::update_luck`
+routes through f33's `torch_scan_step_event`).
+
+**The claims-table (research/248 §3)**: Frog 361 — e26 keeps (wire 744), f18's
+duplicate (proto 243) drops at merge; Duck 362 — c10 keeps (wire 731), e26 + f18
+(proto 244) drop; LadyBug/GoldLadyBug 604/605 — e26 keeps (the d42 flip). d39 is
+census-only for 361/362 (research/125 defers to e26/c10, rows neither in code).
+**LUCK-FAMILY COMPLETE** (research/248 §4): the full `RecalculateLuck` formula
+runs in C# order, every term live or neutral-default; residual work is merge-time
+only (the c8 UI `unlock_state_world` fold, the d130 rain union, the f33 torch-scan
+compose, the c10 Duck@731 + style68 wiring, the d37 bijection re-pin). No further
+e26 commits planned.
 
 ## Mounts framework (M2-MOUNT-1)
 
