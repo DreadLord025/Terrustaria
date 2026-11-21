@@ -773,6 +773,15 @@ pub struct Player {
     /// (`Player.cs:9610`, `:14378`). Indices 0..2 are the armour slots and keep
     /// their ticks switched off, exactly like the vanilla's `num38 > 2` gate.
     pub hide_visible_accessory: [bool; 10],
+    /// `Player.Loadouts` (`Player.cs:3200-3204`): the three `EquipmentLoadout`
+    /// sets — the *inactive* armor/dye/hide arrays; the active set rides
+    /// `App.equip` + `hide_visible_accessory` above. W4-g88 superset fold
+    /// (g55 `e94dde87`'s exact declaration spot for the merge dedup): the
+    /// fields ride here for the v7 loadout-block round-trip; the swap
+    /// machine (`try_switching_loadout`) + the loadout UI stay g55's scope.
+    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`): 0..2, default 0.
+    pub current_loadout_index: usize,
     /// `Player.deadTime`: the ticks spent dead (`Player.cs:16923`); gates the
     /// respawn-skip (90-tick lockout, `Player.cs:57111`).
     pub dead_time: i32,
@@ -2534,6 +2543,9 @@ impl Player {
             hostile: false,
             team: 0,
             hide_visible_accessory: [false; 10],
+            // `Player.cs:3200-3207`: three fresh `EquipmentLoadout()`s, index 0.
+            loadouts: Default::default(),
+            current_loadout_index: 0,
             dead_time: 0,
             respawn_timer: 0,
             immune: false,

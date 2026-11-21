@@ -4,28 +4,34 @@
 //! small versioned text file. Loading validates that the saved position is not inside a
 //! solid tile.
 //!
-//! ## The FINAL v7 line contract (W4-g88 superset fold — g89/g90)
+//! ## The FINAL v7 line contract (W4-g88 superset fold — g89/g90/g55)
 //!
-//! Three lanes independently bumped the sidecar to version 7, each
-//! appending ONE line after the dye line: g89 (`920014cb`) the
+//! Four lanes independently bumped the sidecar to version 7, each
+//! appending a block after the dye line: g89 (`920014cb`) the
 //! `usedAegisFruit` flag, g88 (`f1eb9b60`) the life-maxima pair, g90
-//! (`1f1b88f0`) the `ateArtisanBread` flag. The reconciled SUPERSET v7
-//! order (this branch's writer) is:
+//! (`1f1b88f0`) the `ateArtisanBread` flag, g55 (`cde865fc`) the loadout
+//! block. The reconciled SUPERSET v7 order (this branch's writer) is:
 //!
 //! 1. the aegis flag line — `usedAegisFruit` 0/1 (g89's position, ONE token),
 //! 2. the life-maxima pair — `statLifeMax statLifeMax2` (TWO tokens),
 //! 3. the mana-maxima pair — `statManaMax statManaMax2` (TWO tokens),
 //! 4. the artisan-bread flag line — `ateArtisanBread` 0/1 (ONE token,
-//!    after the mana pair per the fold contract).
+//!    after the mana pair per the fold contract),
+//! 5. the loadout index line — `currentLoadoutIndex equipShareFlags`
+//!    (TWO tokens, g55's block after bread),
+//! 6. three stored-set lines — each 20 armor kinds + 10 dye kinds +
+//!    10 hide flags + the set's 30-bit share word (41 tokens each).
 //!
 //! The reader tolerates every predecessor: it walks the post-dye lines
-//! and dispatches on TOKEN COUNT — the FIRST one-token line is the aegis
-//! flag, the SECOND is the bread flag; the first two-token line is the
-//! life pair, the second is the mana pair. So g89's flag-only v7, g88's
-//! life-only v7, g90's bread-only v7, the three-line g88⨉g89 superset and
-//! this four-line superset all load; missing pieces keep their fresh
-//! defaults. Any merge of the lanes keeps this reader (the superset).
-//! The full layout + back-compat matrix: `docs/research/103-persist-v7-layout.md`.
+//! and dispatches on TOKEN COUNT/SHAPE — the FIRST one-token line is the
+//! aegis flag, the SECOND is the bread flag; the first two-token line is
+//! the life pair, the second the mana pair; the two-token line directly
+//! BEFORE the first 41-token set line is the loadout index line (g55's
+//! block self-identifies by its set lines). So every single-lane v7, the
+//! partial supersets and this full superset all load; missing pieces keep
+//! their fresh defaults. Any merge of the lanes keeps this reader (the
+//! superset). Full layout + back-compat matrix:
+//! `docs/research/103-persist-v7-layout.md`.
 
 use std::path::{Path, PathBuf};
 
@@ -58,6 +64,21 @@ pub struct SavedPlayer {
     /// gate 256); the port's live-session sidecar carries it so the
     /// permanent +4 crafting reach survives a `.trwld` reload.
     pub ate_artisan_bread: bool,
+    /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`) — version 7
+    /// (W4-g55 `cde865fc`, folded AFTER the bread line per the superset
+    /// contract); older files load on loadout 0. The active set rides the
+    /// `armor`/`dye` lines; this is which of the three sets is live.
+    pub current_loadout_index: usize,
+    /// `Player.Loadouts[3]` (`Player.cs:3200-3204`) — version 7 (W4-g55);
+    /// older files load three empty sets. Each stored set is 20 armor
+    /// kinds + 10 dye kinds + 10 hide flags + the 30-bit share word (the
+    /// sidecar keeps kinds, like the `armor`/`dye` lines — no
+    /// prefix/stack; `EquipmentLoadout.Serialize`,
+    /// `EquipmentLoadout.cs:31-45`).
+    pub loadouts: [crate::loadout::EquipmentLoadout; 3],
+    /// The LIVE equip set's share flags (`Item.favorited` over armor[0..20]
+    /// then dye[0..10]) — version 7 (W4-g55); older files load 0.
+    pub equip_share_flags: u32,
     pub inventory: [(u16, u32); 50],
     pub coins: u64,
     /// `Player.armor[0..3]` item ids — head, body, legs (0 = empty). Version 4
@@ -79,6 +100,22 @@ pub fn player_path(world: &Path) -> PathBuf {
     world.with_extension("trplayer")
 }
 
+/// One stored loadout slot from its kind: a single-stack item (the sidecar
+/// carries kinds only, like the `armor`/`dye` lines — no prefix/stack), or
+/// air for kind 0 (W4-g55 `d2210b91`'s helper, folded verbatim).
+fn loadout_item(kind: u16) -> crate::item::ItemSlot {
+    if kind == 0 {
+        crate::item::EMPTY_SLOT
+    } else {
+        crate::item::ItemSlot {
+            kind,
+            name: crate::registry::name(kind),
+            count: 1,
+            prefix: 0,
+        }
+    }
+}
+
 /// The explored-map sidecar (`<world>.map`) next to the world file. Vanilla names
 /// it `<worldName>.map` under the player directory (`MapHelper.cs:3038`); this
 /// engine keeps it beside the `.trwld` like the player sidecar.
@@ -94,6 +131,7 @@ pub fn save(
     armor: [u16; 3],
     dye: &[u16; 10],
     kills: &[(String, i32)],
+    equip_share_flags: u32,
 ) -> std::io::Result<()> {
     let mut s = format!("7\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
@@ -126,6 +164,24 @@ pub fn save(
     s.push_str(&format!("{} {}\n", player.life_max_base, player.max_hp));
     s.push_str(&format!("{} {}\n", player.mana_max_base, player.mana_max));
     s.push_str(&format!("{}\n", u8::from(player.ate_artisan_bread)));
+    // Version 7 SUPERSET, the g55 fold (`d2210b91`): the loadout block
+    // AFTER the bread line (`Player.cs:3200-3207`). The index, the live
+    // set's share word, then each stored set as 20 armor kinds + 10 dye
+    // kinds + 10 hide flags + its share word. Kinds only, like the
+    // armor/dye lines above (the sidecar carries no prefix/stack).
+    s.push_str(&format!("{} {}\n", player.current_loadout_index, equip_share_flags));
+    for loadout in &player.loadouts {
+        for item in loadout.armor {
+            s.push_str(&format!("{} ", item.kind));
+        }
+        for item in loadout.dye {
+            s.push_str(&format!("{} ", item.kind));
+        }
+        for hide in loadout.hide {
+            s.push_str(&format!("{} ", hide as u8));
+        }
+        s.push_str(&format!("{}\n", loadout.favorited));
+    }
     std::fs::write(player_path(world), s)
 }
 
@@ -201,37 +257,81 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // SECOND is the artisan-bread flag (g90's line, `:55245`); the FIRST
     // two-token line is the life pair (`:55220-55224`, permanent half
     // clamps to 500), the SECOND is the mana pair (`:55226-55229`,
-    // permanent half clamps to 200). This reads g89's flag-only v7, the
-    // pre-reconciliation life-only v7, g90's bread-only v7, the three-line
-    // g88⨉g89 superset AND the full four-line superset; missing pieces
-    // keep None/false and the loader keeps the fresh defaults.
+    // permanent half clamps to 200). The g55 loadout block (fold 2) adds
+    // a THIRD two-token shape — the index/share line — identified by the
+    // 41-token stored-set lines that follow it (20 armor + 10 dye + 10
+    // hide + the share word, `EquipmentLoadout.cs:31-45`): the two-token
+    // line directly BEFORE the first set line is the index line, NOT a
+    // maxima pair (`Utils.Clamp` index to 0..2, `Player.cs:55720-55727`).
+    // This reads g89's flag-only v7, the pre-reconciliation life-only v7,
+    // g90's bread-only v7, g55's loadout-only v7, the three/four-line
+    // g88⨉g89⨉g90 superset AND the full superset with loadouts; missing
+    // pieces keep None/false/empty and the loader keeps fresh defaults.
     let mut life_max = None;
     let mut mana_max = None;
     let mut used_aegis_fruit = false;
     let mut ate_artisan_bread = false;
-    let mut flag_seen = false;
+    let mut current_loadout_index = 0usize;
+    let mut loadouts = [crate::loadout::EquipmentLoadout::default(); 3];
+    let mut equip_share_flags = 0u32;
     if version == "7" {
-        while let Some(line) = lines.next() {
-            let mut toks = line.split_whitespace();
-            let Some(first) = toks.next() else { continue };
-            match toks.next() {
-                None => {
+        // One stored-set line: ARMOR + DYE + HIDE kinds/flags + the word.
+        const SET_TOKENS: usize = crate::inv::ARMOR + crate::inv::DYE + crate::loadout::HIDE + 1;
+        let post: Vec<Vec<&str>> = lines
+            .map(|l| l.split_whitespace().collect::<Vec<_>>())
+            .collect();
+        let set_start = post.iter().position(|t| t.len() == SET_TOKENS);
+        let idx_line = match set_start {
+            Some(i) if i > 0 && post[i - 1].len() == 2 => Some(i - 1),
+            _ => None,
+        };
+        let mut flag_seen = false;
+        let mut set_no = 0usize;
+        for (n, toks) in post.iter().enumerate() {
+            if Some(n) == idx_line {
+                current_loadout_index = toks[0].parse::<usize>().unwrap_or(0).min(2);
+                equip_share_flags = toks[1].parse().unwrap_or(0);
+                continue;
+            }
+            match toks.len() {
+                0 => continue,
+                1 => {
                     if flag_seen {
-                        ate_artisan_bread = first == "1";
+                        ate_artisan_bread = toks[0] == "1";
                     } else {
-                        used_aegis_fruit = first == "1";
+                        used_aegis_fruit = toks[0] == "1";
                         flag_seen = true;
                     }
                 }
-                Some(second) => {
-                    let base: i32 = first.parse().ok()?;
-                    let effective: i32 = second.parse().ok()?;
+                2 => {
+                    let base: i32 = toks[0].parse().ok()?;
+                    let effective: i32 = toks[1].parse().ok()?;
                     if life_max.is_none() {
                         life_max = Some((base.min(500), effective));
                     } else if mana_max.is_none() {
                         mana_max = Some((base.min(200), effective));
                     }
                 }
+                SET_TOKENS => {
+                    if set_no < loadouts.len() {
+                        let l = &mut loadouts[set_no];
+                        for (i, item) in l.armor.iter_mut().enumerate() {
+                            *item = loadout_item(toks[i].parse().unwrap_or(0));
+                        }
+                        for (j, item) in l.dye.iter_mut().enumerate() {
+                            *item = loadout_item(toks[crate::inv::ARMOR + j].parse().unwrap_or(0));
+                        }
+                        for (k, hide) in l.hide.iter_mut().enumerate() {
+                            *hide = toks[crate::inv::ARMOR + crate::inv::DYE + k]
+                                .parse::<u8>()
+                                .unwrap_or(0)
+                                != 0;
+                        }
+                        l.favorited = toks[SET_TOKENS - 1].parse().unwrap_or(0);
+                        set_no += 1;
+                    }
+                }
+                _ => {} // an unknown shape: tolerate, keep the defaults
             }
         }
     }
@@ -243,6 +343,9 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         mana_max,
         used_aegis_fruit,
         ate_artisan_bread,
+        current_loadout_index,
+        loadouts,
+        equip_share_flags,
         inventory,
         coins,
         armor,
@@ -290,6 +393,7 @@ mod tests {
             [89, 80, 76],
             &dye,
             &[("BlueSlime".into(), 7)],
+            0,
         )
         .unwrap();
         let s = load(&path).expect("sidecar");
@@ -496,11 +600,11 @@ mod tests {
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
-    /// The superset round-trip: all four post-dye lines survive a
+    /// The FULL superset round-trip: all post-dye lines survive a
     /// save/load, in the contract order (aegis flag, life pair, mana pair,
-    /// bread flag).
+    /// bread flag, loadout index + 3 stored sets).
     #[test]
-    fn the_v7_superset_round_trips_all_four_lines() {
+    fn the_v7_superset_round_trips_the_full_block() {
         let world = World::new("t".into(), 32, 32);
         let mut p = Player::spawn(&world);
         p.used_aegis_fruit = true;
@@ -509,17 +613,23 @@ mod tests {
         p.mana_max_base = 60;
         p.mana_max = 80; // an Arcane-inflated effective half rides verbatim
         p.ate_artisan_bread = true;
+        p.current_loadout_index = 1;
+        p.loadouts[2].armor[0] = loadout_item(90);
         let dir = crate::test_world_helpers::test_scratch("persist-v7-superset");
         let path = dir.join("tr-persist-v7-superset.trwld");
-        save(&path, &p, [(0, 0); 50], 0, [0; 3], &[0; 10], &[]).unwrap();
+        save(&path, &p, [(0, 0); 50], 0, [0; 3], &[0; 10], &[], 1 << 5).unwrap();
         let text = std::fs::read_to_string(player_path(&path)).unwrap();
         let post_dye: Vec<&str> = text.lines().skip(7).collect();
-        assert_eq!(post_dye, ["1", "420 420", "60 80", "1"], "the contract order");
+        assert_eq!(post_dye.len(), 8, "flag/life/mana/bread/index + 3 sets");
+        assert_eq!(&post_dye[..5], ["1", "420 420", "60 80", "1", "1 32"]);
         let s = load(&path).expect("the superset v7 sidecar");
         assert!(s.used_aegis_fruit);
         assert_eq!(s.life_max, Some((420, 420)));
         assert_eq!(s.mana_max, Some((60, 80)));
         assert!(s.ate_artisan_bread);
+        assert_eq!(s.current_loadout_index, 1);
+        assert_eq!(s.equip_share_flags, 1 << 5);
+        assert_eq!(s.loadouts[2].armor[0].kind, 90);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -532,13 +642,122 @@ mod tests {
         p.ate_artisan_bread = true;
         let dir = crate::test_world_helpers::test_scratch("persist-bread");
         let path = dir.join("tr-persist-bread.trwld");
-        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
         let s = load(&path).expect("v7 sidecar");
         assert!(s.ate_artisan_bread, "the flag survives the round trip");
         assert!(!s.used_aegis_fruit, "the aegis slot stays clear");
         let fresh = Player::spawn(&world);
-        save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
         assert!(!load(&path).expect("v7 sidecar").ate_artisan_bread);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g55 fold — the loadout block round-trips: the index, the live
+    /// share word, and each stored set's armor/dye kinds + hide flags +
+    /// share word (`d2210b91`'s witness, the superset's block order).
+    #[test]
+    fn w4_g55_the_loadout_block_round_trips() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.current_loadout_index = 1;
+        p.loadouts[2].armor[0] = loadout_item(90); // Iron Helmet stored in set 2
+        p.loadouts[2].dye[1] = loadout_item(1007); // Red Dye
+        p.loadouts[2].hide[4] = true;
+        p.loadouts[2].set_shared(0, true);
+        let dir = crate::test_world_helpers::test_scratch("persist-loadout");
+        let path = dir.join("tr-persist-loadout.trwld");
+        let inv = [(0u16, 0u32); 50];
+        save(&path, &p, inv, 0, [0, 0, 0], &[0; 10], &[], 1 << 5).unwrap();
+        let s = load(&path).expect("v7 sidecar");
+        assert_eq!(s.current_loadout_index, 1);
+        assert_eq!(s.equip_share_flags, 1 << 5);
+        assert_eq!(s.loadouts[2].armor[0].kind, 90);
+        assert_eq!(s.loadouts[2].dye[1].kind, 1007);
+        assert!(s.loadouts[2].hide[4]);
+        assert!(s.loadouts[2].is_shared(0));
+        assert_eq!(s.loadouts[0], crate::loadout::EquipmentLoadout::default());
+        assert_eq!(s.loadouts[1], crate::loadout::EquipmentLoadout::default());
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g55 fold — a v6 sidecar (no loadout block) loads on loadout 0
+    /// with three empty sets and no live shares — the v7 read is gated.
+    #[test]
+    fn w4_g55_a_v6_sidecar_loads_empty_loadouts() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v6-loadout");
+        let path = dir.join("tr-persist-v6-loadout.trwld");
+        let mut line = String::from("6\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n0 \n1007 0 0 0 0 0 0 0 0 0 \n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v6 sidecar");
+        assert_eq!(s.current_loadout_index, 0);
+        assert_eq!(s.equip_share_flags, 0);
+        assert_eq!(s.loadouts, [crate::loadout::EquipmentLoadout::default(); 3]);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The fold witness: g55's LOADOUT-ONLY v7 (`cde865fc`'s writer — the
+    /// index line + 3 set lines directly after dye, no flag/pair lines)
+    /// still loads: the index line is recognised by its set lines, NOT
+    /// misparsed as the life pair; the maxima keep None, flags false.
+    #[test]
+    fn g55s_loadout_only_v7_still_loads() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-g55");
+        let path = dir.join("tr-persist-v7-g55.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n2 4\n"); // g55's index/share line
+        for _ in 0..3 {
+            for _ in 0..41 {
+                line.push_str("0 ");
+            }
+            line.push('\n');
+        }
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("g55's v7 sidecar");
+        assert_eq!(s.current_loadout_index, 2, "the index rides, NOT the life pair");
+        assert_eq!(s.equip_share_flags, 4);
+        assert_eq!(s.life_max, None, "no maxima in g55's writer");
+        assert_eq!(s.mana_max, None);
+        assert!(!s.used_aegis_fruit);
+        assert!(!s.ate_artisan_bread);
+        assert_eq!(s.loadouts, [crate::loadout::EquipmentLoadout::default(); 3]);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The fold witness: the index read clamps to 0..2 (`Utils.Clamp`,
+    /// `Player.cs:55720-55727`'s .plr read) — a corrupt index 9 loads 2.
+    #[test]
+    fn the_loadout_index_clamps_on_read() {
+        let dir = crate::test_world_helpers::test_scratch("persist-loadout-clamp");
+        let path = dir.join("tr-persist-loadout-clamp.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n9 0\n");
+        for _ in 0..3 {
+            for _ in 0..41 {
+                line.push_str("0 ");
+            }
+            line.push('\n');
+        }
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v7 sidecar");
+        assert_eq!(s.current_loadout_index, 2, "the index clamps to 2");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 

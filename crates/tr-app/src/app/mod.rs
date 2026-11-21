@@ -254,6 +254,15 @@ pub(crate) struct App {
     /// `ItemSlot.dyeSwapCounter` (`ItemSlot.cs:3549-3564`): the round-robin
     /// slot `DyeSwap` starts its empty scan from and advances past.
     pub(crate) dye_swap_counter: usize,
+    /// The LIVE equip set's loadout-share flags — `Item.favorited` over
+    /// `Player.armor[0..20]` then `Player.dye[0..10]` (bit `i` = armor slot
+    /// `i`, bit `20 + j` = dye slot `j`). In the equip contexts the flag is
+    /// the share toggle (`ItemSlot.canLoadoutShareAt`, `ItemSlot.cs:395-399`),
+    /// not the grid favourite (`App.favorite_slots` owns those). W4-g88
+    /// superset fold (g55 `e94dde87`'s exact declaration spot): the word
+    /// rides here for the v7 loadout-block round-trip; the swap machine +
+    /// the share UI stay g55's scope.
+    pub(crate) equip_share_flags: u32,
     pub(crate) selected: usize,
     /// `Player.selectedItemState` (`Player.cs:414-568`) — the buffered /
     /// overridden halves of the selection machine (S1-P-i54); the live
@@ -2869,6 +2878,10 @@ impl App {
         let mut armor_kinds = [0u16; 3];
         // `Player.dye[0..10]`'s item kinds (sidecar v6), same restore path.
         let mut dye_kinds = [0u16; 10];
+        // The live equip set's share word (sidecar v7, the g55 fold); older
+        // sidecars load 0. The stored sets + index ride the Player directly
+        // in the restore below.
+        let mut loaded_share_flags = 0u32;
         let mut inventory: [ItemSlot; INV] = std::array::from_fn(|i| match i {
             0 => ItemSlot {
                 kind: 2, // ItemID.DirtBlock
@@ -2961,6 +2974,13 @@ impl App {
                     // sidecars load false. The +4 crafting reach consumer
                     // (`craft.rs::tile_reach`, `:35671`) reads the flag.
                     p.ate_artisan_bread = saved.ate_artisan_bread;
+                    // The loadout block (sidecar v7, the g55 fold
+                    // `d2210b91`): the stored sets + index ride the Player
+                    // (`Player.cs:3200-3207`); the live share word rides
+                    // the App below. Older sidecars load empty/0.
+                    p.loadouts = saved.loadouts;
+                    p.current_loadout_index = saved.current_loadout_index;
+                    loaded_share_flags = saved.equip_share_flags;
                     p.hp = saved.hp.clamp(1, p.max_hp);
                     coins = saved.coins;
                     armor_kinds = saved.armor;
@@ -3719,6 +3739,7 @@ impl App {
             // the per-frame `SelectEquipPage` resolution below.
             equip_page_selected: crate::env::parsed_raw("TR_EQUIPPAGE").unwrap_or(0),
             dye_swap_counter: 0,
+            equip_share_flags: loaded_share_flags,
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,

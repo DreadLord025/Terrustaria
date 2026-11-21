@@ -403,7 +403,7 @@ mod tests {
         let p = app.player.as_ref().unwrap();
         let inv: [(u16, u32); 50] =
             std::array::from_fn(|i| (app.inventory[i].kind, app.inventory[i].count));
-        crate::persist::save(&path, p, inv, 0, [0; 3], &[0; 10], &[]).unwrap();
+        crate::persist::save(&path, p, inv, 0, [0; 3], &[0; 10], &[], 0).unwrap();
         let saved = crate::persist::load(&path).expect("the v7 sidecar");
         assert_eq!(saved.life_max, Some((405, 405)), "the permanent +5 saved");
         assert_eq!(saved.hp, p.hp, "the raised life saved");
