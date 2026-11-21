@@ -33,8 +33,42 @@ pub fn map_wheel_scale(scale: f32, delta_y: f32) -> f32 {
 }
 
 /// `Player.cs:24898-24908`: `MapZoomIn` → `* 1.05`, `MapZoomOut` → `* 0.95`.
+/// The same pair steps `Main.mapOverlayScale` in the style-2 arm
+/// (`:24932-24939`).
 pub fn map_key_scale(scale: f32, zoom_in: bool) -> f32 {
     if zoom_in { scale * 1.05 } else { scale * 0.95 }
+}
+
+/// `Player.cs:24921-24928` / `:24940-24947`: MapAlphaUp/Down step the map
+/// alpha ±0.015 per update while held (style 1 → `mapMinimapAlpha`,
+/// style 2 → `mapOverlayAlpha`). Unclamped here — the C# clamps on the
+/// draw side (`map_alpha_clamp`). W4-g53 `a9774d2a` / W4-e18 `249a0c1b`.
+pub fn map_key_alpha(alpha: f32, up: bool) -> f32 {
+    if up { alpha + 0.015 } else { alpha - 0.015 }
+}
+
+/// `Main.cs:55523-55530` / `:55559-55566`: both map alphas clamp to
+/// `[0.01, 1]` at draw.
+pub fn map_alpha_clamp(alpha: f32) -> f32 {
+    alpha.clamp(0.01, 1.0)
+}
+
+/// `Main.cs:55550-55558`: the overlay scale clamps to
+/// `[screen_w / world_w, 16 * RenderZoom]`. `RenderZoom` is
+/// `GameViewMatrix.ZoomMatrix.M11` (`SpriteViewMatrix.cs:98`/`:149-154`,
+/// the zoom rounded to 1/128 steps) — `ForcedMinimumZoom * Clamp(
+/// GameZoomTarget, 1, 2)` (`Main.cs:61999`); the caller passes the port's
+/// `forced_minimum_zoom(screen) * zoom` product, not the bare settings
+/// zoom (the g53 arm's simplification, corrected here — W4-f46 dup pass).
+/// `world_w <= 0` cannot occur for a loaded world; the guard keeps the
+/// headless 0-width fixtures from dividing by zero. The two ifs run in
+/// the C# order (floor first, cap second — the cap wins if they invert;
+/// `f32::clamp` would panic there).
+pub fn overlay_scale_clamp(screen_w: f32, world_w: i32, render_zoom: f32, proposed: f32) -> f32 {
+    let floor = if world_w > 0 { screen_w / world_w as f32 } else { 0.0 };
+    let s = if proposed < floor { floor } else { proposed }; // `:55551-55554`
+    let cap = 16.0 * render_zoom;
+    if s > cap { cap } else { s } // `:55555-55558`
 }
 
 /// `Main.cs:55398-55413`: X into `10..=maxTilesX-10`, Y into `10..=maxTilesY-19`.
@@ -397,8 +431,27 @@ pub struct WorldMap {
     /// `Main.mapFullscreenScale` (px per tile) and `Main.mapFullscreenPos` (tiles).
     pub scale: f32,
     pub pos: [f32; 2],
-    /// `Main.mapMinimapScale` (`Main.cs:66751`), fixed at 1.05 (no minimap-zoom UI yet).
+    /// `Main.mapMinimapScale` (`Main.cs:66751-66752`, default 1.05): the
+    /// minimap zoom axis — the frame buttons (`MinimapFrame.cs:107-136`) and
+    /// the MapZoomIn/Out keys (`Player.cs:24913-24920`) multiply it, clamped
+    /// 0.2..3 (`Main.cs:55515-55522`, `ui::minimap::clamp_minimap_scale`).
     pub minimap_scale: f32,
+    /// `Main.mapMinimapAlpha` (`Main.cs:66753`, default 1): the minimap's
+    /// opacity — the MapAlphaUp/Down keys step it ±0.015
+    /// (`Player.cs:24921-24928`), clamped 0.01..1 (`Main.cs:55523-55530`);
+    /// it tints the backdrop AND the tile pass (`b = (byte)(255 * alpha)`,
+    /// `:55532`). State ported from W4-e18 `249a0c1b` (final sweep P1).
+    pub minimap_alpha: f32,
+    /// `Main.mapOverlayScale` (`Main.cs:66754`, default 2.5): the overlay's
+    /// zoom axis — keys ×1.05/×0.95 (`Player.cs:24932-24939`), clamped
+    /// `screen_w/world_w .. 16*RenderZoom` (`Main.cs:55550-55558`). The
+    /// overlay draw itself is D18 (out of scope); the state rides for the
+    /// keys. W4-g53 `a9774d2a`.
+    pub overlay_scale: f32,
+    /// `Main.mapOverlayAlpha` (`Main.cs:66755`, default 0.35): keys ±0.015
+    /// (`Player.cs:24940-24947`), clamped 0.01..1 (`Main.cs:55559-55566`).
+    /// W4-g53 `a9774d2a`.
+    pub overlay_alpha: f32,
     /// `Main.mapTime` (`Main.cs:803`) — the countdown that gates the
     /// lighting → map export (`LegacyLighting.cs:349`).
     map_time: i32,
@@ -494,6 +547,9 @@ impl WorldMap {
             scale: MAP_FULLSCREEN_SCALE_DEFAULT,
             pos: [0.0, 0.0],
             minimap_scale: 1.05,
+            minimap_alpha: 1.0, // `Main.cs:66753`
+            overlay_scale: 2.5, // `Main.cs:66754`
+            overlay_alpha: 0.35, // `Main.cs:66755`
             map_time: 0,
             map_time_max: 0,
             dirty: Vec::new(),
@@ -1036,11 +1092,15 @@ impl WorldMap {
         map_scale: f32,
     ) {
         let q = map_minimap_quad(center_tile, self.minimap_scale, map_scale, screen, world);
+        // `b = (byte)(255f * Main.mapMinimapAlpha)` (`Main.cs:55532`) →
+        // `MapRenderer.DrawMap(..., b)` tints the tile pass
+        // `new Color(alpha, alpha, alpha, alpha)` (`MapRenderer.cs:438`).
+        let a = (255.0 * self.minimap_alpha) as u8 as f32 / 255.0;
         r.push_map_sprite(
             [q.dest[0], q.dest[1]],
             [q.dest[2], q.dest[3]],
             q.uv,
-            [1.0; 4],
+            [a, a, a, a],
         );
     }
 
@@ -2141,6 +2201,27 @@ mod tests {
         // `Player.cs:24900-24907`.
         assert_eq!(map_key_scale(2.0, true), 2.1);
         assert_eq!(map_key_scale(2.0, false), 1.9);
+    }
+
+    /// W4-f46 dup fold (written, not run - code-only): the g53/e18 alpha
+    /// helpers — `map_key_alpha` steps ±0.015 (`Player.cs:24921-24928`/
+    /// `:24940-24947`), `map_alpha_clamp` is the draw-side 0.01..1
+    /// (`Main.cs:55523-55530`/`:55559-55566`), `overlay_scale_clamp` is
+    /// `[screen_w/world_w, 16*RenderZoom]` (`:55550-55558`) with the two
+    /// ifs in C# order (cap wins on an inverted range).
+    #[test]
+    fn w4_f46_alpha_and_overlay_clamps_match_the_draw_side() {
+        assert_eq!(map_key_alpha(0.5, true), 0.5 + 0.015);
+        assert_eq!(map_key_alpha(0.5, false), 0.5 - 0.015);
+        assert_eq!(map_alpha_clamp(0.0), 0.01);
+        assert_eq!(map_alpha_clamp(2.0), 1.0);
+        assert_eq!(map_alpha_clamp(0.35), 0.35);
+        // 1600/4200 floor ≈ 0.381, 16*1.0 = 16 cap.
+        assert_eq!(overlay_scale_clamp(1600.0, 4200, 1.0, 0.1), 1600.0 / 4200.0);
+        assert_eq!(overlay_scale_clamp(1600.0, 4200, 1.0, 100.0), 16.0);
+        assert_eq!(overlay_scale_clamp(1600.0, 4200, 2.0, 2.5), 2.5);
+        // Inverted range (tiny zoom): the cap if runs LAST (`:55555`).
+        assert_eq!(overlay_scale_clamp(1600.0, 100, 0.01, 2.5), 0.16);
     }
 
     /// W4-f46 shared-gap close (written, not run - code-only): the

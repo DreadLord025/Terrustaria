@@ -1471,20 +1471,38 @@ impl App {
         m.pos = map::map_clamp_pos(m.pos, &self.world);
     }
 
-    /// `Player.cs:24909-24928`: the not-fullscreen arm of the map-key input
+    /// `Player.cs:24909-24947`: the not-fullscreen arm of the map-key input
     /// block — while `Main.mapStyle == 1`, held `MapZoomIn`/`MapZoomOut`
     /// (`Main.cMapZoomIn`/`cMapZoomOut`, defaults `Add`/`Subtract`,
     /// `Main.cs:67190-67191`) scale `Main.mapMinimapScale` by 1.025/0.975 per
-    /// update (`ui::minimap::apply_key_zoom`). No `mapEnabled` gate — the C#
-    /// arm checks only the style (`:24911`); the draw side is what goes dark.
-    /// The `mapAlphaUp/Down` rows (`:24921-24928`) stay unported with the
-    /// alpha itself (research/14 D17); the `mapStyle == 2` arm
-    /// (`:24930-24947`) waits on the overlay draw (D18). The fullscreen half
+    /// update (`ui::minimap::apply_key_zoom`) and `MapAlphaUp`/`MapAlphaDown`
+    /// (`PageUp`/`PageDown`, `:67192-67193`) step `Main.mapMinimapAlpha`
+    /// ±0.015 (`:24921-24928`); while `Main.mapStyle == 2` the same rows step
+    /// `Main.mapOverlayScale` ×1.05/×0.95 + `Main.mapOverlayAlpha` ±0.015
+    /// (`:24930-24947`). No `mapEnabled` gate — the C# arms check only the
+    /// style (`:24911`/`:24930`); the draw side is what goes dark. The clamps
+    /// are the draw-side ones (`Main.cs:55515-55530`/`:55550-55566`), applied
+    /// per update like `apply_key_zoom` does for the chrome buttons. The
+    /// style-2 overlay DRAW stays D18; the state rides for the keys
+    /// (W4-g53 `a9774d2a` superset folded — research/84 §10 dup ruling).
+    /// The Tab style-cycle row (`:24949-24965`) is `world_key`'s
+    /// `MapAction::Style` arm (the port's press edge); the fullscreen half
     /// is `update_map_input` above.
     pub(crate) fn update_minimap_zoom_keys(&mut self) {
-        if self.map_style != 1 {
+        // `Player.cs:24768`: the whole input block sits behind the
+        // chat/sign/chest editors (`!drawingPlayerChat && !editSign &&
+        // !editChest && !blockInput`); the port's chat overlay is the live
+        // one (the e18 `249a0c1b` arm's gate, folded with the dup pass).
+        if self.chat.open || self.menu.is_some() || self.front.is_some() {
             return;
         }
+        if self.map_style != 1 && self.map_style != 2 {
+            return;
+        }
+        if self.map.as_ref().is_some_and(|m| m.open) {
+            return; // the fullscreen arm is `update_map_input`
+        }
+        let (sw, sh) = self.screen_size();
         let map_binds = self.map_binds.clone();
         let held = |action: crate::input_map::MapAction| {
             self.keys.iter().any(|k| {
@@ -1493,8 +1511,41 @@ impl App {
         };
         let zoom_in = held(crate::input_map::MapAction::ZoomIn);
         let zoom_out = held(crate::input_map::MapAction::ZoomOut);
-        if let Some(m) = self.map.as_mut() {
-            ui::minimap::apply_key_zoom(zoom_in, zoom_out, &mut m.minimap_scale);
+        let alpha_up = held(crate::input_map::MapAction::AlphaUp);
+        let alpha_down = held(crate::input_map::MapAction::AlphaDown);
+        if self.map_style == 1 {
+            if let Some(m) = self.map.as_mut() {
+                ui::minimap::apply_key_zoom(zoom_in, zoom_out, &mut m.minimap_scale);
+                // `:24921-24928` then the `:55523-55530` clamp.
+                if alpha_up {
+                    m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, true);
+                }
+                if alpha_down {
+                    m.minimap_alpha = map::map_key_alpha(m.minimap_alpha, false);
+                }
+                m.minimap_alpha = map::map_alpha_clamp(m.minimap_alpha);
+            }
+        } else if let Some(m) = self.map.as_mut() {
+            // `:24930-24947`: the overlay's rows — ×1.05/×0.95 (the same
+            // pair as the fullscreen zoom) + ±0.015.
+            if zoom_in {
+                m.overlay_scale = map::map_key_scale(m.overlay_scale, true);
+            }
+            if zoom_out {
+                m.overlay_scale = map::map_key_scale(m.overlay_scale, false);
+            }
+            if alpha_up {
+                m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, true);
+            }
+            if alpha_down {
+                m.overlay_alpha = map::map_key_alpha(m.overlay_alpha, false);
+            }
+            // `Main.cs:55550-55566`: RenderZoom = ForcedMinimumZoom *
+            // Clamp(GameZoomTarget, 1, 2) (`:61999`, the port's `zoom`).
+            let render_zoom = Self::forced_minimum_zoom((sw, sh)) * self.zoom;
+            m.overlay_scale =
+                map::overlay_scale_clamp(sw, self.world.width, render_zoom, m.overlay_scale);
+            m.overlay_alpha = map::map_alpha_clamp(m.overlay_alpha);
         }
     }
 
@@ -6120,5 +6171,92 @@ mod w4_f46_minimap_zoom_key_tests {
             app.map.as_ref().unwrap().minimap_scale,
             before * ui::minimap::ZOOM_IN_MULTIPLIER
         );
+    }
+
+    /// W4-f46 dup fold (written, not run - code-only): the style-1 alpha
+    /// rows (`Player.cs:24921-24928`) step `Main.mapMinimapAlpha` ±0.015 per
+    /// update while held (`cMapAlphaUp`/`cMapAlphaDown`, defaults
+    /// `PageUp`/`PageDown`, `Main.cs:67192-67193`), clamped 0.01..1
+    /// (`Main.cs:55523-55530`). The g53 `a9774d2a` / e18 `249a0c1b` arms
+    /// folded onto the union's `update_minimap_zoom_keys`; D17 closed.
+    #[test]
+    fn w4_f46_alpha_keys_step_the_minimap_alpha_with_the_clamp() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("alpha".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 1;
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 1.0, "`Main.cs:66753`");
+        // AlphaDown held: −0.015 per update.
+        app.keys.insert(KeyCode::PageDown);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().minimap_alpha - (1.0 - 0.015)).abs() < 1e-6);
+        // Held to the floor: 0.01 (`Main.cs:55523-55526`).
+        for _ in 0..200 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 0.01);
+        // AlphaUp: back up, capped at 1 (`:55527-55530`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        for _ in 0..200 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().minimap_alpha, 1.0);
+        // The zoom rows are untouched by the alpha keys (no cross-step).
+        assert_eq!(app.map.as_ref().unwrap().minimap_scale, 1.05);
+    }
+
+    /// W4-f46 dup fold: the style-2 arm (`Player.cs:24930-24947`) — held
+    /// zoom rows scale `Main.mapOverlayScale` ×1.05/×0.95 (the FULLSCREEN
+    /// pair, not the minimap's 1.025/0.975) and the alpha rows step
+    /// `Main.mapOverlayAlpha` ±0.015 from the 0.35 seed (`Main.cs:66755`),
+    /// clamped `screen_w/world_w .. 16*RenderZoom` / 0.01..1
+    /// (`Main.cs:55550-55566`). The overlay draw stays D18; the state rides.
+    #[test]
+    fn w4_f46_style_two_keys_step_the_overlay_scale_and_alpha() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("ovl".into(), 260, 200);
+        app.map = Some(map::WorldMap::new(&app.world));
+        app.settings.map_enabled = true;
+        app.map_style = 2;
+        assert_eq!(app.map.as_ref().unwrap().overlay_scale, 2.5, "`Main.cs:66754`");
+        assert_eq!(app.map.as_ref().unwrap().overlay_alpha, 0.35, "`:66755`");
+        // Park above the 1280/260 floor (~4.92) so the ×1.05/×0.95 steps
+        // are observable (the draw-side floor clamp would eat the 2.5 seed
+        // on this small fixture — `Main.cs:55551-55554`).
+        app.map.as_mut().unwrap().overlay_scale = 8.0;
+        app.keys.insert(KeyCode::NumpadAdd);
+        app.update_minimap_zoom_keys();
+        let m = app.map.as_ref().unwrap();
+        assert!((m.overlay_scale - 8.0 * 1.05).abs() < 1e-6, "×1.05");
+        assert_eq!(m.minimap_scale, 1.05, "the minimap axis stays put");
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadSubtract);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().overlay_scale - 8.0 * 1.05 * 0.95).abs() < 1e-6);
+        // Alpha up from 0.35 (`:24940-24943`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageUp);
+        app.update_minimap_zoom_keys();
+        assert!((app.map.as_ref().unwrap().overlay_alpha - (0.35 + 0.015)).abs() < 1e-6);
+        // The scale ceiling: 16 * RenderZoom = 16 * ForcedMinimumZoom *
+        // zoom (`Main.cs:55555-55557` + `:61999`), left-to-right like the
+        // clamp fn's `16.0 * render_zoom`.
+        let (sw, sh) = app.screen_size();
+        let cap = 16.0 * App::forced_minimum_zoom((sw, sh)) * app.zoom;
+        app.keys.clear();
+        app.keys.insert(KeyCode::NumpadAdd);
+        for _ in 0..300 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().overlay_scale, cap);
+        // Alpha down to the 0.01 floor (`:55559-55562`).
+        app.keys.clear();
+        app.keys.insert(KeyCode::PageDown);
+        for _ in 0..300 {
+            app.update_minimap_zoom_keys();
+        }
+        assert_eq!(app.map.as_ref().unwrap().overlay_alpha, 0.01);
     }
 }
