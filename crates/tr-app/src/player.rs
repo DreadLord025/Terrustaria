@@ -19256,6 +19256,113 @@ mod tests {
         assert_eq!(rng.draws, vec![(0, 10)]);
     }
 
+    /// W4-d115 lane 19 — the full four-source stacking order
+    /// (`Player.cs:38216-38235`): sash → belt → brain → shadow, each
+    /// `Next` drawn ONLY while its source is armed and no earlier
+    /// source dodged; shadow (the deterministic tail) draws nothing.
+    /// All four armed + a never-hitting stream draws exactly
+    /// `[(0,10), (0,10), (0,6)]` and the shadow fallback then catches
+    /// the hit with zero further draws.
+    #[test]
+    fn w4_d115_lane19_the_four_source_stack_rolls_sash_belt_brain_then_shadow_falls_back() {
+        let mut p = dodge_player_with(&[6189, 963, 3223]);
+        p.buffs.add_buff(59, 1800);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge, "buff 59 armed the shadow tail");
+        let hp = p.hp;
+        // Rolls 1,1,1 miss all three Nexts; the shadow tail dodges.
+        let mut rng = DodgeRng::with_rolls(&[1, 1, 1]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow fallback");
+        assert_eq!(
+            rng.draws,
+            vec![(0, 10), (0, 10), (0, 6)],
+            "sash Next(10) -> belt Next(10) -> brain Next(6), shadow draws none"
+        );
+        assert_eq!(p.hp, hp, "the shadow dodge kept the hp");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2 = ShadowDodge");
+        assert_eq!(p.shadow_dodge_timer, 1800, "the Hallowed cooldown armed");
+    }
+
+    /// W4-d115 lane 19 — the cumulative dodge chance the roll order
+    /// implies (`Player.cs:38216-38235`): each miss multiplies through,
+    /// so belt+brain alone is `1 − (9/10)(5/6) = 1/4`, the three rolled
+    /// sources `1 − (9/10)(9/10)(5/6) = 0.325`, and the shadow tail
+    /// makes the four-source stack 100% while buff 59 lives. Verified
+    /// on the port's actual gate chain by walking the roll tree.
+    #[test]
+    fn w4_d115_lane19_the_stacked_dodge_chance_is_cumulative_not_additive() {
+        // Belt alone: 1/10.
+        let mut hit = 0;
+        for roll in 0..10 {
+            let mut p = dodge_player_with(&[963]);
+            let mut rng = DodgeRng::with_rolls(&[roll]);
+            if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                hit += 1;
+            }
+        }
+        assert_eq!(hit, 9, "belt: 9/10 hits land");
+        // Belt + brain: the brain roll only happens on the belt miss.
+        let mut hit = 0;
+        for belt in 0..10 {
+            for brain in 0..6 {
+                let mut p = dodge_player_with(&[963, 3223]);
+                let mut rng = DodgeRng::with_rolls(&[belt, brain]);
+                if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                    hit += 1;
+                }
+            }
+        }
+        // 60 combinations, 45 land: 1 − 0.75 = the cumulative 25%.
+        assert_eq!(hit, 45, "belt+brain: 1 − (9/10)(5/6) = 1/4 dodge");
+        // Sash + belt + brain: 600 combinations, 405 land (0.675).
+        let mut hit = 0;
+        for sash in 0..10 {
+            for belt in 0..10 {
+                for brain in 0..6 {
+                    let mut p = dodge_player_with(&[6189, 963, 3223]);
+                    let mut rng = DodgeRng::with_rolls(&[sash, belt, brain]);
+                    if p.hurt(20, p.x + 100.0, &mut rng, true) {
+                        hit += 1;
+                    }
+                }
+            }
+        }
+        assert_eq!(hit, 405, "three sources: 1 − (9/10)^2(5/6) = 0.325 dodge");
+        // The shadow tail closes the gap: every miss dodges.
+        let mut p = dodge_player_with(&[6189, 963, 3223]);
+        p.buffs.add_buff(59, 1800);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        let mut rng = DodgeRng::with_rolls(&[9, 9, 5]);
+        assert!(
+            !p.hurt(20, p.x + 100.0, &mut rng, true),
+            "the four-source stack dodges 100% while buff 59 lives"
+        );
+    }
+
+    /// W4-d115 lane 19 — the brain's buff-321 gate sits AFTER its
+    /// `Next(6)` in the C# `&&` chain (`:38226`), so an armed brain
+    /// with 321 active still consumes the draw and the SHADOW tail
+    /// behind it still fires — the gate skips the brain dodge, not the
+    /// rest of the chain.
+    #[test]
+    fn w4_d115_lane19_the_brain_gate_skips_only_the_brain_not_the_shadow_tail() {
+        let mut p = dodge_player_with(&[3223]);
+        p.buffs.add_buff(59, 1800);
+        p.buffs.add_buff(321, 240);
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow tail dodges");
+        assert_eq!(rng.draws, vec![(0, 6)], "the brain draw still happened");
+        assert_eq!(p.take_dodge_sends(), vec![2], "kind 2, not 4");
+        // The 321 buff was NOT re-added (the gated dodge never ran).
+        let count = p.buffs.active_types().iter().filter(|&&b| b == 321).count();
+        assert_eq!(count, 1, "one 321 slot — the gated dodge added none");
+    }
+
     #[test]
     fn s1_c_1_dw_1_3_dodge_sets_the_80_tick_window_and_leaves_hp() {
         // The handlers' `SetImmuneTimeForAllTypes(longInvince ? 120 : 80)`
