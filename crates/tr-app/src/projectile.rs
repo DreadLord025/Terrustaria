@@ -22236,20 +22236,31 @@ impl ProjectilePool {
         )
     }
 
-    /// W4-d12 DOC-SWEEP item 5 — the Killing Deck card's state-3 recall:
-    /// `ItemCheck_Shoot`'s 5461 arm, `case 3` (`Player.cs:49238-49253`): every
-    /// active 1024 of this owner takes `velocity = Zero`, `ai[0] = 2`,
-    /// `netUpdate2 = true`, `ResetLocalNPCHitImmunity()` then `Damage()`. The
-    /// recall returns the slots that need the inline boxed damage walk (the
-    /// 113 dispatch's `damage_pve_boxed` convention — the card's stuck→return
-    /// transition `:40783-40784` runs the same pair). The C# scans all 1000
-    /// slots in order; the port walks its slot vec the same way. The ×1.5
-    /// return multiplier (`:14553`) and the +6 hitbox (`:14988`) ride the
-    /// boxed walk (already ported, `damage_pve_boxed`).
+    /// W4-d12 DOC-SWEEP item 5 + FINAL item 3 — the Killing Deck card's
+    /// state-3 recall: `ItemCheck_Shoot`'s 5461 arm, `case 3`
+    /// (`Player.cs:49238-49253`): every 1024 of this owner takes
+    /// `velocity = Zero`, `ai[0] = 2`, `netUpdate2 = true`,
+    /// `ResetLocalNPCHitImmunity()` then `Damage()`. The C# scan has NO
+    /// `active` gate (`:49243` reads only type + owner) and `Kill()` never
+    /// clears type/owner/ai/damage (`:77262` only flips `active`) — so a
+    /// DEAD stuck card (the victim died under it, `:40770-40773`) is
+    /// recalled too: its immunity reset + inline `Damage()` land one more
+    /// ×1.5 hit on whatever sits in its box, then the return-state kill
+    /// check re-kills it next tick (`:40866`). The port's dead slots keep
+    /// kind/owner/ai/damage until respawn (`spawn_with_data_ai_owned`
+    /// overwrites the whole slot), so the ungated scan is verbatim. The
+    /// recall returns the slots that need the inline boxed damage walk
+    /// (the 113 dispatch's `damage_pve_boxed` convention — the card's
+    /// stuck→return transition `:40783-40784` runs the same pair). The C#
+    /// scans all 1000 slots in order; the port walks its slot vec the same
+    /// way. The ×1.5 return multiplier (`:14553`) and the +6 hitbox
+    /// (`:14988`) ride the boxed walk (already ported, `damage_pve_boxed`).
     pub(crate) fn recall_killing_deck_cards(&mut self, owner: u8) -> Vec<usize> {
         let mut recalled = Vec::new();
         for (i, p) in self.slots.iter_mut().enumerate() {
-            if p.active && p.kind == DEAD_CELLS_KILLING_DECK_CARD && p.owner == owner {
+            // `:49243` — NO active gate (FINAL item 3 census fix: the first
+            // pass added one; the C# recalls dead stuck cards too).
+            if p.kind == DEAD_CELLS_KILLING_DECK_CARD && p.owner == owner {
                 // `:49245-49248` — the recall writes.
                 p.vel = Vec2::ZERO;
                 p.ai[0] = 2.0;
@@ -25027,6 +25038,83 @@ mod tests {
         const UNARMED_ROWED: [u8; 4] = [156, 164, 169, 206];
         for style in 111..=120u8 {
             assert!(!UNARMED_ROWED.contains(&style));
+        }
+    }
+
+    /// W4-d12 FINAL item 3 — the recall-all census: the C# state-3 scan
+    /// (`Player.cs:49243`) reads type + owner with NO `active` gate, and
+    /// `Kill()` never clears type/owner/ai/damage (`Projectile.cs:77262`
+    /// only flips `active`) — so a DEAD stuck card (the victim died under
+    /// it, `:40770-40773`) is recalled too and its inline `Damage()` lands
+    /// one more ×1.5 hit. The `KillOldestJavelin` interplay: the cap scan
+    /// counts only `ai[0]==1` stickers (`:15079`), so recalled cards
+    /// (ai0=2) NEVER count toward a cap — and the 1024 has no cap arm at
+    /// all (`:13979` names 598/636/614 only; the 971/975 caps are the
+    /// spawn-proc pair's, `Player.cs:44169/:44183`).
+    #[test]
+    fn w4_d12_final_the_recall_census_dead_cards_and_the_javelin_cap() {
+        let mut pool = ProjectilePool::new();
+        let mut npc = Npc::new(NpcKind::Zombie, 500.0, 500.0, 1, 0.0);
+        npc.hp = 500;
+        npc.max_hp = 500;
+        let mut npcs = vec![npc];
+        // Six cards pinned to NPC 0, inside its box.
+        let mut cards = Vec::new();
+        for k in 0..6 {
+            let s = pool
+                .spawn_with_data_ai_owned(
+                    DEAD_CELLS_KILLING_DECK_CARD,
+                    0,
+                    500.0 + k as f32,
+                    500.0,
+                    0.0,
+                    0.0,
+                    20,
+                    0.0,
+                    1.0,
+                    0.0,
+                )
+                .unwrap();
+            cards.push(s);
+        }
+        // Kill one — the victim died under it; the dead slot keeps
+        // kind/owner/ai/damage (the C# Kill() tail, :77262).
+        pool.kill(cards[0]);
+        let recalled = pool.recall_killing_deck_cards(0);
+        assert_eq!(recalled.len(), 6, "the scan has NO active gate (:49243)");
+        assert!(recalled.contains(&cards[0]), "the dead stuck card is recalled");
+        for &s in &cards {
+            assert_eq!(pool.slots[s].ai[0], 2.0, "ai0 = 2 (:49246)");
+            assert_eq!(pool.slots[s].vel, Vec2::ZERO, "velocity zero (:49245)");
+        }
+        assert!(!pool.slots[cards[0]].active, "the recall does not revive it");
+        // The dead card's inline Damage() still lands — the ×1.5 return
+        // multiplier (:14553) rides the boxed walk at ai0=2.
+        let mut rng = tr_core::UnifiedRandom::new(7);
+        let hp0 = npcs[0].hp;
+        pool.killing_deck_recall_damage(cards[0], &mut npcs, (false, false), &mut rng, 0.0);
+        assert!(npcs[0].hp < hp0, "the dead stuck card deals one more hit (:49249)");
+        // The cap interplay: re-pin five cards (ai0=1) with distinct lives.
+        for (j, &s) in cards[1..].iter().enumerate() {
+            pool.slots[s].ai[0] = 1.0;
+            pool.slots[s].ai[1] = 0.0;
+            pool.slots[s].time_left = 100 - j as i32 * 10;
+        }
+        // The scan counts the five pinned (the protected slot excluded,
+        // the recalled ai0=2 card invisible) and kills the oldest.
+        pool.kill_oldest_javelin(cards[0], 0, DEAD_CELLS_KILLING_DECK_CARD, 5);
+        assert!(!pool.slots[cards[5]].active, "the lowest timeLeft dies (:15095)");
+        assert!(pool.slots[cards[1]].active);
+        // Recall again: every surviving card takes ai0=2 — now the SAME
+        // cap scan counts ZERO (recalled cards never count toward a cap).
+        let again = pool.recall_killing_deck_cards(0);
+        assert!(!again.is_empty());
+        let active_before: Vec<usize> = (0..pool.slots.len())
+            .filter(|&i| pool.slots[i].active && pool.slots[i].kind == DEAD_CELLS_KILLING_DECK_CARD)
+            .collect();
+        pool.kill_oldest_javelin(cards[0], 0, DEAD_CELLS_KILLING_DECK_CARD, 5);
+        for i in active_before {
+            assert!(pool.slots[i].active, "the ai0==1 predicate (:15079) skips ai0=2");
         }
     }
 

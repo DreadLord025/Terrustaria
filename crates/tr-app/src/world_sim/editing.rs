@@ -4105,9 +4105,12 @@ fn fire_non_ammo_shot(
         let owner = app.local_id as u8;
         let mut fire_type = app.player.as_ref().map_or(0, |pl| pl.killing_card_fire_type);
         if fire_type == 3 {
+            // `:49195-49203` — the pre-check scans type + owner + ai0 != 2
+            // with NO active gate either (FINAL item 3: a dead stuck card
+            // still reads ai0=1, so it keeps the cycle at 3 until the
+            // recall seats ai0=2 on it too).
             let any_out = app.projectiles.slots().iter().any(|s| {
-                s.active
-                    && s.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD
+                s.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD
                     && s.owner == owner
                     && s.ai[0] != 2.0
             });
@@ -10810,6 +10813,50 @@ mod tests {
             .filter(|p| p.ai[0] == 2.0 && p.vel == Vec2::ZERO)
             .count();
         assert_eq!(returning, 9, "every card takes ai0=2 / velocity 0 (:49245-49246)");
+    }
+
+    /// W4-d12 FINAL item 3 — the state-3 pre-check's NO-active-gate census
+    /// (`Player.cs:49195-49203`): a DEAD stuck card (ai0=1, the victim died
+    /// under it) still counts as outbound, so the cycle stays at 3 and the
+    /// recall fires on it too — the dead card takes ai0=2 (and its inline
+    /// Damage lands one more ×1.5 hit, pinned at the pool level by
+    /// `w4_d12_final_the_recall_census_dead_cards_and_the_javelin_cap`).
+    /// Only after the recall seats ai0=2 on every card does the next
+    /// state-3 use reset the cycle to 0 and fire a fresh single.
+    #[test]
+    fn w4_d12_final_the_pre_check_counts_a_dead_stuck_card() {
+        let mut app = shooter_rig(5461, "Dead Cells Killing Deck", &[]);
+        let screen = app.screen_size().into();
+        let mut log = Vec::new();
+        // One card out (state 0 → 1), then park the cycle at 3.
+        hold(&mut app, screen, 1, &mut log);
+        let card = app
+            .projectiles
+            .slots()
+            .iter()
+            .position(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD)
+            .expect("the single card");
+        app.player.as_mut().unwrap().killing_card_fire_type = 3;
+        // The victim died under it: stuck, then dead — ai0 stays 1.
+        app.projectiles.slots_mut()[card].ai[0] = 1.0;
+        app.projectiles.kill(card);
+        hold(&mut app, screen, 20, &mut log);
+        // The dead stuck card counted as outbound: the recall ran, NOT a
+        // fresh single — the card is still dead, now seated ai0=2.
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD).count(),
+            0,
+            "no fresh card — the pre-check kept the cycle at 3 (:49198 no active gate)"
+        );
+        assert_eq!(app.projectiles.slots()[card].ai[0], 2.0, "the dead card was recalled (:49246)");
+        assert_eq!(app.player.as_ref().unwrap().killing_card_fire_type, 0, "3 → wrap 0");
+        // The next state-0 use fires the fresh single.
+        hold(&mut app, screen, 20, &mut log);
+        assert_eq!(
+            app.projectiles.slots().iter().filter(|p| p.active && p.kind == crate::projectile::DEAD_CELLS_KILLING_DECK_CARD).count(),
+            1,
+            "the cycle reset — state 0 fires one card (:49213)"
+        );
     }
 
     #[test]
