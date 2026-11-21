@@ -24099,6 +24099,70 @@ mod tests {
         assert!(missing.is_empty(), "unarmed rowed styles: {:?}", missing);
     }
 
+    /// W4-d15 final phase — the 141-150 band residual census: EVERY
+    /// style in the decade has a live dispatch arm on this branch (the
+    /// s1_d_4c pin above enforces it — none of 141..=150 sits in
+    /// UNARMED_ROWED, so a deleted band arm fails the coverage scan).
+    /// The band's full kind roster, straight from the C# `SetDefaults`
+    /// aiStyle assignments: 698→141 (:7389), 699/708→142 (:7406/:7495),
+    /// 700→143 (:7423), 701/702/703 (:7437) + 764 (:7870) + 1050
+    /// (:9957)→144, 704→145 (:7451), 713→146 (:7564), 715-718→147
+    /// (:7588/:7600), 720→148 (:7621), 721+739-752→149 (:7633),
+    /// 722→150 (:7640). The ONLY decade-adjacent deferral is 140
+    /// (outside the band — d14's `ai_monk_staff`, the cross-note on the
+    /// pin). WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d15_the_141_150_band_has_no_unarmed_residual() {
+        // The deferral list carries NO band style.
+        const UNARMED_ROWED: [u8; 5] = [140, 156, 164, 169, 206];
+        for style in 141..=150u8 {
+            assert!(
+                !UNARMED_ROWED.contains(&style),
+                "style {style} is in the decade — it must be armed"
+            );
+        }
+        // The kind roster: every band kind is rowed with its C# style.
+        let band: &[(u16, u8)] = &[
+            (698, 141),
+            (699, 142),
+            (708, 142),
+            (700, 143),
+            (701, 144),
+            (702, 144),
+            (703, 144),
+            (764, 144),
+            (1050, 144),
+            (704, 145),
+            (713, 146),
+            (715, 147),
+            (716, 147),
+            (717, 147),
+            (718, 147),
+            (720, 148),
+            (721, 149),
+            (722, 150),
+        ];
+        for &(kind, style) in band {
+            let d = proj_data(kind).unwrap_or_else(|| panic!("kind {kind} rowed"));
+            assert_eq!(d.ai_style, style, "kind {kind}'s C# aiStyle");
+        }
+        // The 14 dyed golf twins (739-752) share the 149 row.
+        for kind in 739..=752u16 {
+            assert_eq!(proj_data(kind).expect("the golf twin row").ai_style, 149);
+        }
+        // Every band style is reachable from at least one rowed kind
+        // (the coverage direction the s1_d_4c scan guards).
+        let mut seen = std::collections::BTreeSet::new();
+        for kind in 0..=2048u16 {
+            if let Some(d) = proj_data(kind) {
+                if (141..=150).contains(&d.ai_style) {
+                    seen.insert(d.ai_style);
+                }
+            }
+        }
+        assert_eq!(seen.len(), 10, "all ten band styles rowed: {:?}", seen);
+    }
+
     /// S1-D-4c — the 185 row pin: `SetDefaults` (`Projectile.cs:2717-2727`)
     /// says 14×14, aiStyle **14**, penetrate −1, timeLeft 900, trap — the
     /// spiky ball rides the style-14 `ai_spear` arm, not the plain-arrow

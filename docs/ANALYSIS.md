@@ -39554,3 +39554,20 @@ drain's dust draws land AFTER them, the recorded within-pass order
 deviation of the queue design). Until then the skip draws NOTHING
 (the census-only contract). 1 ownership witness (the shakeable set ×
 the ladder-arm facts). WRITTEN NOT RUN.
+
+**The 141-150 band residual census — NONE.** Every style in the decade
+has a live dispatch arm on this branch: 141/142/143/144/145/146/148
+(the DD2 slice, `projectile.rs:17380-17540`), 147 (the Celebration Mk2
+rockets 715-718, `projectile_ai_misc::ai_celeb2_rocket`, the
+`projectile.rs:17541` arm), 149/150 (the golf family,
+`projectile_ai_golf`, the `:19867`/`:19933` arms). The full kind roster
+is rowed: 698→141, 699/708→142, 700→143, 701/702/703/764/1050→144,
+704→145, 713→146, 715-718→147, 720→148, 721+739-752→149, 722→150 (the
+C# `SetDefaults` citations in the witness). The `s1_d_4c` coverage pin
+enforces the arm direction (no band style sits in `UNARMED_ROWED`, so
+a deleted band arm fails the scan); the new
+`w4_d15_the_141_150_band_has_no_unarmed_residual` witness pins the
+roster + the deferral-list exclusion + the ten-style reachability. The
+ONLY decade-adjacent deferral is 140 — OUTSIDE the band, d14's
+`ai_monk_staff` (the item-1 cross-note; the integrate drops it from
+this branch's pin). WRITTEN NOT RUN.
