@@ -10133,6 +10133,17 @@ impl Projectile {
     /// standing in for the C#'s swept `TileCollision` (which zeroes the blocked
     /// axis, `Collision.cs:299-330`), so a dying projectile's exact death pixel
     /// can differ by the swept span while the kill does not.
+    ///
+    /// W4-d53 RETIRE wetVelocity refine: the FREE-move branch (`tileCollide =
+    /// false`) is wet-faithful AS-IS — the C# wet-factor block (`:17612-17655`)
+    /// is gated inside `if (tileCollide)` (`:17476`), so a non-colliding wet slot
+    /// integrates the un-scaled `:16765` capture (`UpdatePosition` `:20439-
+    /// 20446`), NOT a dragged velocity; `pos += vel` matches (the capture-lag
+    /// deviation aside). The wet DRAG lives on the tile-collision path's
+    /// blocked/bounce integrate, which this stand-in approximates as kill-on-
+    /// contact — the movement-lane follow-up owns it via the shared
+    /// `projectile_wet::wet_factor` pick (ANALYSIS "The wetVelocity R-seed
+    /// refine"). No wet read is owed HERE.
     fn kill_step(&mut self, world: &World) {
         if !self.tile_collide {
             self.pos += self.vel;

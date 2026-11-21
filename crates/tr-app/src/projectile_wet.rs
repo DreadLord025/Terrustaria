@@ -50,11 +50,17 @@
 //!   item-side wetVelocity blend landed (e19 `a849b310d`/`939e45dc8`, f47
 //!   `8d11597b4` — WorldItem's ApplyMovement); the PROJECTILE side is
 //!   PORTED for the flail (`flail_wet_factor`, S1-P-i07) and the d3 boulder
-//!   family (`boulder_movement`'s wet arm, `2d01693ca`), but the GENERIC
-//!   integrate (`kill_step` + `ai_style1_flight` + the per-arm free moves)
-//!   still steps the FULL velocity while wet — a separate movement-lane
-//!   arm, censused in ANALYSIS "The wetVelocity census" (not this lane's
-//!   window; the wet machine's flags are its input, now authoritative).
+//!   family (`boulder_movement`'s wet arm, `2d01693ca`).
+//!   W4-d53 RETIRE refine (ANALYSIS "The wetVelocity R-seed refine"): the
+//!   factor block is gated INSIDE `if (tileCollide)` (`:17476`) → the `:17590`
+//!   gate → `else if (base.wet)` (`:17612`), so the FREE move (`tileCollide =
+//!   false`) NEVER drags — `UpdatePosition` (`:20439-20446`) integrates the
+//!   un-scaled `:16765` capture while wet. The port's `kill_step` free-move
+//!   branch (`pos += vel`) is therefore ALREADY faithful for the ~42 free-move
+//!   sites (the capture-lag deviation aside); the REAL gap is the tile-collision
+//!   path's blocked/bounce integrate, which the port's `kill_step` blocked
+//!   branch approximates as kill-on-contact. [`wet_factor`] below is the ONE
+//!   shared factor pick that path adopts (keep-one with the d3 boulder inline).
 //! * The two pre-AI wet substitutes stay as documented read-lag feeds: the
 //!   bobber's head `probe_wet` (the i35 one-tick-lag deviation) and the
 //!   aiStyle-16 dispatch's centre-cell `wet` write (the i16 stand-in). This
@@ -64,6 +70,36 @@
 
 use crate::projectile::Projectile;
 use tr_core::world::World;
+
+/// The liquid drag factor the generic `HandleMovement` wet arm applies to the
+/// velocity before `UpdatePosition` integrates it (`Projectile.cs:17612-17655`):
+/// shimmer ×0.375 (`:17618`), honey ×0.25 (`:17632`), else (water/lava) ×0.5
+/// (`:17646`). `None` when dry — the C# `else if (base.wet)` gate (`:17612`)
+/// never runs the factor on a dry slot. The factor pick reads the slot's wet
+/// flags (the batch-4 machine's authoritative writes), NOT a fresh world probe
+/// — the C# reads `base.shimmerWet`/`base.honeyWet`/`base.wet` the same way.
+///
+/// W4-d53 RETIRE: this is the ONE shared factor pick for the generic integrate
+/// (the d3 `boulder_movement` wet arm `2d01693ca` inlines the same three
+/// constants; keep-one at the movement-lane merge). The flail's
+/// `flail_wet_factor` (projectile.rs) is the mid-tile-probe variant — it folds
+/// into this flag-read shape when the flail adopts the authoritative flags.
+// STAGED (the movement lane owns the tile-collision integrate): the witnesses
+// are the only caller until the merge feeds the generic blocked/bounce path —
+// the super_star_dust/e3 precedent.
+#[allow(dead_code)]
+pub(crate) fn wet_factor(p: &Projectile) -> Option<f32> {
+    if !p.wet {
+        return None;
+    }
+    Some(if p.shimmer_wet {
+        0.375
+    } else if p.honey_wet {
+        0.25
+    } else {
+        0.5
+    })
+}
 
 /// The liquid kind a splash edge resolved to (`Projectile.cs:16845-16913`
 /// entry / `:16927-16995` exit): the entry reads the FRESH lava probe, the
@@ -410,5 +446,44 @@ mod tests {
         assert_eq!(p.wants_wet_splash.take(), Some((false, SplashKind::Honey)));
         assert!(!p.honey_wet, "the same tick's tail clears (wet now false)");
         assert!(!p.lava_wet && !p.shimmer_wet);
+    }
+
+    // --- W4-d53 RETIRE: the shared wet_factor pick (WRITTEN NOT RUN) --------
+
+    /// `:17612-17655` — the factor pick reads the slot's wet flags: shimmer
+    /// ×0.375, honey ×0.25, water/lava ×0.5, dry `None`. The pick is the ONE
+    /// shared shape the generic tile-collision integrate adopts (the d3
+    /// boulder arm inlines the same constants; keep-one at the movement merge).
+    #[test]
+    fn w4_d53_wet_factor_picks_the_liquid_constant() {
+        let mut p = shot(3);
+        assert_eq!(wet_factor(&p), None, "dry: the :17612 gate never runs");
+        p.wet = true;
+        assert_eq!(wet_factor(&p), Some(0.5), "water ×0.5 (:17646)");
+        p.lava_wet = true;
+        assert_eq!(wet_factor(&p), Some(0.5), "lava folds into the water factor");
+        p.honey_wet = true;
+        assert_eq!(wet_factor(&p), Some(0.25), "honey ×0.25 (:17632)");
+        p.shimmer_wet = true;
+        assert_eq!(wet_factor(&p), Some(0.375), "shimmer ×0.375 (:17618) wins");
+    }
+
+    /// The factor pick agrees with the d3 boulder arm's inline constants
+    /// (`boulder_movement` `2d01693ca`: shimmer 0.375 / honey 0.25 / else 0.5)
+    /// — the keep-one contract: one shared pick, no per-arm divergence.
+    #[test]
+    fn w4_d53_wet_factor_matches_the_boulder_inline() {
+        for (shimmer, honey, want) in [
+            (true, false, 0.375f32),
+            (false, true, 0.25),
+            (false, false, 0.5),
+            (true, true, 0.375), // shimmer precedes honey (:17614 before :17628)
+        ] {
+            let mut p = shot(3);
+            p.wet = true;
+            p.shimmer_wet = shimmer;
+            p.honey_wet = honey;
+            assert_eq!(wet_factor(&p), Some(want), "shimmer={shimmer} honey={honey}");
+        }
     }
 }

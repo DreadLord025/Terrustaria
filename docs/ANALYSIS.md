@@ -39842,3 +39842,57 @@ body identity at `81c4ab85a`; the fn-set re-extraction at both moved
 tips; the patch hashes + anchors at `8d097b44a`. **No cargo/rustc/
 rustfmt/tests/dotnet/graphify invoked**; no merge, no primary-checkout
 touch; own branch only, docs-only staged paths.
+
+### The wetVelocity R-seed refine (W4-d53 S1-P-i57 movement port, code-only)
+
+The S1-P-i57 movement port's first increment (the shared factor pick +
+the free-move faithfulness finding), refining the RETIRE census's
+"~54 kill_step + ~42 free moves" gap framing. **The C# wet-factor block
+is tile-collision-gated** — re-read in ≤100-line windows:
+`HandleMovement` `:17469` opens `if (this.tileCollide)` at `:17476`
+(closes `:19857`); inside it the `:17590` kind-gate wraps
+`if (aiStyle == 10) … else if (base.wet) { … }` (`:17612-17655`, the
+three factor arms). So the factor pick runs ONLY for a tile-colliding
+wet slot. `UpdatePosition` (`:19858` → `:20433-20446`) then integrates
+`base.wet ? wetVelocity : velocity` — but for a NON-colliding slot
+`wetVelocity` was never scaled (the `:17612` block never ran), so it
+stays the `:16765` capture (the pre-AI/pre-wind velocity) and the wet
+integrate adds that capture at FULL value. **The free move does not
+drag in C# either.**
+
+**Per-style owner-table (which lane owns the wet integrate):**
+
+| movement class | C# path | wet drag? | port site | owner |
+| -------------- | ------- | --------- | --------- | ----- |
+| free move (`tileCollide=false`) | `:17476` gate skips → `UpdatePosition` adds the un-scaled capture | NO | `kill_step` free branch `pos += vel` + the ~42 satellite free moves | ALREADY faithful (capture-lag aside) — no wet read owed |
+| tile-collision blocked/bounce | `:17612-17655` scales the post-`TileCollision` velocity, per-changed-axis full restore → `UpdatePosition` adds `wetVelocity` | YES (×0.375/0.25/0.5) | `kill_step` blocked branch (kill-on-contact stand-in) + `ai_style1_flight` + `special_arrows` bounce + the thrown twin | the movement-lane follow-up (the real gap) |
+| aiStyle-15 flail bounce | `:19323` → `AI_015_HandleMovementCollision` refreshes `wetVelocity = velocity` on a wet bounce (`:43713-43716`) | YES + refresh | `flail_move`/`flail_wet_factor` (mid-tile idiom, S1-P-i07) | flail keep-one (folds into the flag-read pick) |
+| aiStyle-25 boulder | the generic tile-collision path | YES | d3 `boulder_movement` wet arm (`2d01693ca`, verbatim) | d3 (ported on its tip) |
+| golf / aiStyle-4 / latch kinds | `UpdatePosition` `:20435` skip list returns early | NO (skip-listed) | golf engine / `ai_style4` fold | OUT of the owed pool |
+
+**The universal-integrate-hunk shape:** the C# has ONE factor site
+(`:17612-17655`) and ONE integrate consumer (`UpdatePosition`
+`:20439-20446`) — but the port fragments movement per-arm (the
+`kill_step`-in-arm idiom), so there is NO single `UpdatePosition` to
+patch. The one-place fix is the shared **`projectile_wet::wet_factor`**
+pick (landed this increment: shimmer 0.375 / honey 0.25 / else 0.5,
+`None` dry, reads the authoritative flags) that the tile-collision
+blocked/bounce path adopts at its 5 funnel points; the free-move path
+needs NO change (it is already faithful). The `wet_factor` pick is
+STAGED (`#[allow(dead_code)]`, the super_star_dust/e3 precedent) — the
+witnesses are its only caller until the movement lane wires the
+blocked/bounce integrate; keep-one with the d3 boulder inline constants
+(the `w4_d53_wet_factor_matches_the_boulder_inline` witness pins the
+agreement). The flail's `flail_wet_factor` mid-tile probe folds into
+this flag-read shape when the flail adopts the authoritative flags.
+
+**Landed this increment (code):** `projectile_wet::wet_factor` + 2
+witnesses (`w4_d53_wet_factor_picks_the_liquid_constant`,
+`w4_d53_wet_factor_matches_the_boulder_inline`); the `kill_step` doc
+note (the free-move branch is wet-faithful, no wet read owed); the
+`projectile_wet` module-doc refine. The blocked/bounce integrate swap
+(the 5 funnels + the skip-list gate + the flail keep-one) stays the
+S1-P-i57 follow-up — NOT landed here (the free-move finding shrinks its
+scope: the ~42 free moves drop out of the owed pool, leaving the
+tile-collision path). RNG-neutral (the drag has no draws). Witnesses
+WRITTEN NOT RUN (code-only — no cargo/rustc/rustfmt/tests/graphify).
