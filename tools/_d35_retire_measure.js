@@ -124,6 +124,11 @@ const fn = new Function('require', '__dirname', 'pushed', 'pushed339', 'census',
   const noNpcWorst = d125def.filter(s => !/^NPC_\\d+$/.test(s.name));
   const lazyWorst = measure('lazy-union-worst-no-npc', noNpcWorst,
     'the WORST base (504+d125full+deferred5) minus every NPC_<id> (lazy contract, worst union)');
+  // the g31 Glow_362 admission (research/136 §9.3: the 717 lava glowmask
+  // bind needs Glow_362, NOT in f15's GLOW_SHEET_NAMES - a new union claim).
+  const withGlow362 = addNew(noNpcWorst, ['Glow_362']);
+  measure('lazy-union-worst+Glow362', withGlow362,
+    'the lazy worst union + Glow_362 (288x270, the g31 table-pass load obligation, section 16.3)');
 
   // ---- the per-world NPC working sets (own pages after the lazy union).
   const netNames = nets => [...new Set(nets)].map(n => 'NPC_' + n);

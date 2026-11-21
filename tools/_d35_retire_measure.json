@@ -119,6 +119,23 @@
    "atlasMB": 239.4
   },
   {
+   "scenario": "lazy-union-worst+Glow362",
+   "note": "the lazy worst union + Glow_362 (288x270, the g31 table-pass load obligation, section 16.3)",
+   "sheets": 9551,
+   "missing": [],
+   "areaMpx": 56.38,
+   "areaBound": 6887,
+   "skyline": 7313,
+   "skyOver": 0,
+   "pages": [
+    {
+     "height": 7313,
+     "n": 9551
+    }
+   ],
+   "atlasMB": 239.6
+  },
+  {
    "scenario": "ownpage+town-ambient",
    "note": "fresh-world NPC set, own page(s)",
    "newSheets": 87,

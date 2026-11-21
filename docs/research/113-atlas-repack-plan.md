@@ -1393,6 +1393,157 @@ Restating §12's gate on the 562-name union, with the VRAM caps added:
   are ≤2566 (NPC) / ≤8135 (bg), one page each today, but the recursion is
   the contract, not the measurement.
 
+## 16. The cross-receipts (d38d / g72e / g31g atlas obligations)
+
+The three lanes that publish atlas obligations INTO this repack, re-read
+at their CURRENT tips (the retire re-fetch). Each receipt records what the
+lane owes the merger and what this plan owes the lane — the §11 cross-read
+extended to the retire tips.
+
+### 16.1 d38d (`task/W4-d38-npc-kinds-281-350`, tip `1ba0395c7`)
+
+d38 published `docs/research/125-d38-crossnote-atlas-addendum.md` (read at
+`6f9dd02db` in §11; the FINAL phase added §6-10). Its atlas obligations:
+
+- **The eager-form verdicts STAND** (§1-3): the BAF-promotion withdrawal
+  (maxrects dies WITHIN the d40b wave, 8278 +86 over), the boundary-split
+  skyline endorsement, the 8188-vs-8232 ledger reconciliation (different
+  bases, both correct). §11's "Inventory-current: YES" holds — d38's 35
+  sheets are in the union (Appendix A), no delta.
+- **The lazy alignment** (§6, `tools/_d38_final_lazy.js` RUN): d38
+  re-measured the lazy form independently — E35 (HEAD eager minus d38's 35
+  NPC rows) reproduces the pre-d38 baseline **8115 exactly** (the 35
+  sheets' eager contribution was the +121 that pushed HEAD to 8236); L91
+  (d38's 35 + d40's 56 forecast alone) packs **1554 px on its own page**,
+  inside §10.4's per-world budgets. **d38's draw path already resolves
+  every sheet by name** (§4a, `npc_sheet(texture_net_id(kind))`), so step 7
+  needs NO draw-side change on d38 — the rows simply leave
+  `STATIC_SHEET_NAMES` and ride the per-world NPC page.
+- **The count pins** (§9 E4): the union is 550 kinds / 489 ENTRIES / ≤357
+  slots / **446 static NPC sheets** / 103 cues / max proto 761. **The 446
+  pin is the EAGER-form count** — under §10.6 step 7 the NPC rows leave it
+  (the lazy union's NPC count is the per-world set, not 446). The merger's
+  packing audit (§12 step 4) must reconcile against the EAGER 446 if step 7
+  is skipped, or the per-world census sets if step 7 lands.
+- **The bestiary slot pin** (§4b/§6): 216 as-pushed (d38 closed its +35,
+  181→216) + 10 d34 + 16 d35 + 43 d37 + 38 d40 = **323 final**. Slots are a
+  LOOKUP table (`BESTIARY_NPC_SHEET_IDS`), NOT atlas input — the lazy form
+  does not change the pin. The 328 PumpkingBlade Hide=true exclusion
+  (§8 GAP-3) is a bestiary-populator question deferred to the wiring round,
+  not an atlas obligation.
+- **The two dedupes** (§9 E3): GiantCursedSkull keep d38@289 (drop c3@289),
+  PumpkingBlade keep d38@328 (drop c6@328) — the dropped lanes keep their
+  AI/draw/sound work; the union dedups by name so the atlas packs one rect
+  per id regardless.
+
+**This plan owes d38**: the step-7 contract (§13) keeps d38's by-name draw
+path unchanged; the per-world NPC page includes d38's 35 ids (they are
+spawnable kinds, in the census); the 323 slot pin rides §12's checklist.
+
+### 16.2 g72e (`task/W4-g72-bg-layers-3`, origin `4a75715ef`, local `6cb4e933f`)
+
+g72's atlas obligations (the underworld escape + the bg-roll order):
+
+- **The underworld screenTarget escape** (§9.1, re-confirmed at the local
+  closeout tip): the underworld stack draws through `Main.spriteBatch`
+  into **screenTarget** (NOT backgroundTarget — the bg_target census,
+  `Main.cs:62098-62100`/`:64049-64053`, `FilterManager.cs:146-152`). The
+  port's faithful shape draws the 5 rolled Underworld sheets as plain
+  textures into the d69/S1-G-13 `targets.rs` screenTarget family, NOT as
+  atlas pages — costing ≤49 MB instead of +1717 atlas px (§7.4). The
+  closeout item 1 (`ba6da402e`) wired the `ugBackTransition` cross-fade
+  overlays into the live draw chain (the old-style sheet table resolves
+  once per frame, `Main.cs:53804-53810`); the escape composes with the
+  cross-fade (the overlay draws into the same target family).
+- **The surface-bg draw ownership** (research/64c, closeout item 3
+  `6cb4e933f`): the five v16-owned variants (corrupt/jungle/hallow/
+  crimson/mushroom) READ the g71-shape `surface_bg_texture_ids` expansion
+  (`world.rs:1400`, the setBG slots 1/2/4/5/8) — LIVE, not style-0 pins,
+  g71-compatible (the merge keeps ONE table). The forest/desert/snow/ocean
+  chains are STYLE-0 PINNED on g72 (`[50,51,52]`/`[21,20,-1]`/`[37,38,39]`/
+  `Background_28`); their style tables are g70/g71's to port — the pins
+  lift to those lanes' reads at the merge. **Atlas consequence**: the
+  per-world bg page (§8.4) packs the rolled style set; the surface-bg
+  draw-table ownership (g70/g71) determines WHICH ids roll, not whether
+  they pack. The underground-desert cavern style stays g72's (no desert
+  arm in `PickUndergroundBackgroundStyle`).
+- **The :11340 ORDER-CONTRACT** (research/64 §6, origin tip `4a75715ef`):
+  g71c's `RandomizeBackgrounds` inserts BETWEEN g72's cave block
+  (`pipeline.rs:2746`) and the moon draw (`:2750`) — the C#
+  `:11339→:11340→:11341` sequence is contiguous on genRand. This is a
+  WORLDGEN RNG-order obligation, not an atlas one, but it determines the
+  rolled bg set the per-world page packs: the insert's internal draw order
+  (4 forest rolls + corrupt/jungle/snow/hallow/crimson/desert/ocean/
+  mushroom/underworld) is g71's `bg_rolls.rs` port. The underworld
+  `Next(3)` (`:8011`) feeds `underworldBG` (the v18 seat open, research/64b).
+- **The v18 claimant registry** (research/64b, closeout item 2): the
+  consolidated 106-byte fixed head (16+31+3+1+5+3+1+2+44) + d109 dense
+  LAST; g72's 31-byte cave claim is seated. This is SAVE-format, not
+  atlas — recorded for the merger's world-load seam (the rolled styles
+  persist in the v18 head, the per-world bg page reads them at load).
+
+**This plan owes g72**: the §9.1 escape is documented as the underworld
+path (no atlas pages for the 5 Underworld sheets); the §8.4 per-world bg
+page packs the rolled surface/cavern set (the g70/g71 draw-tables determine
+the ids); the screenTarget family is the d69 `targets.rs` (already in the
+§15.3 VRAM stack, no new allocation).
+
+### 16.3 g31g (`task/W4-g31-tile-draw-pass-4`, tip `9d1e331db`)
+
+g31's atlas obligations (the TILEPASS retire phase, research/136 §7-8):
+
+- **The Glow_362 load obligation** (§7/§9.3): the 717 lava glowmask bind
+  needs `Glow_362` (mask id 362, `Main.cs:10056`). The asset census
+  answered: **`Glow_362.xnb` EXISTS (288×270, 78.9 kpx padded) but is NOT
+  in f15's `GLOW_SHEET_NAMES` set** (the table-pass masks are a different
+  census from f15's flame/glow branches). **The load + push + `:971` gate
+  coupling + G6 clock keying stay the table-pass lane's obligations.**
+  Atlas consequence: `Glow_362` is a NEW union claim the repack must admit
+  (it is not in the 562-name union today — f15 never packed it). Measured:
+  adding it to the lazy worst union raises the skyline 7305 → **7313**
+  (+8 px, fits the 887 px headroom). The merger admits it via the
+  table-pass lane's `GLOW_SHEET_NAMES` append (or the union list), and the
+  `:971` dark-merge gate (`tile_draw_gate(glow_mask_id: 362)`) lands
+  together with the bind (C3, §8.2 — the two binds must land together or
+  the dark-cell pixels diverge).
+- **The g84 keep-one** (§8/§8.6): g84's grass/vines inline arms DROP at the
+  pixel merge (g31's drains own them); **KEEP from g84: the `Extra_260`/
+  `Glow_294` asset loads** (the drain plans need them). These are exactly
+  the two sheets g84b adds (§14.2, Appendix B-2 #7/#46) — the repack packs
+  them in the union, the g31 drains consume them. The two g84 render
+  modules DROP wholesale; their 19 witnesses re-pin onto the drain bodies.
+- **The C3/C4/C7 fold obligations** (§8.2, all OPEN at retire): C3 (f15's
+  fused `flame_tile || glow.is_some()` term → d56's `tile_draw_gate`
+  params, the 717 `glow_mask_id: 362` half binds with the table-pass),
+  C4 (f15's `neighbor()` rebinds to `FillNeighbor::from_world`), C7 (d58's
+  chest rewrite MOVE to CAD step 8). These are DRAW-ORDER obligations, not
+  atlas-input ones — they do not change the union list, but the Glow_362
+  load (C3's asset half) is the atlas-relevant piece.
+- **The 85-witness inventory** (§10.2, retire item 3): the g-family 70 +
+  tile_ctor 6 + tile_attach 6 + tile_visibility 3 = 85 witnesses pinned by
+  name. The `is_visible` keep-one (executed, `tr_render::tile_visibility`)
+  and the ONE-_rand invariant (§10.5) are merge obligations, not atlas.
+
+**This plan owes g31**: admit `Glow_362` to the union (the +8 px measured
+fits); keep g84's `Extra_260`/`Glow_294` packed (the drains consume them);
+the Glow_362 load couples with the `:971` gate (C3) at the table-pass bind.
+The TILEPASS draw-order folds (C3/C4/C7, the keep-ones, the ONE-_rand) are
+g31's merger checklist (research/136 §10), not this plan's — recorded here
+so the atlas merger and the tile-pass merger coordinate the Glow_362 bind.
+
+### 16.4 The retire cross-read verdict
+
+All three lanes are **inventory-current at their retire tips**: d38's 35
+sheets + the 446/323 pins stand (the lazy form re-partitions, no draw
+change); g72's underworld escape + surface-bg ownership + bg-roll order
+stand (the per-world bg page packs the rolled set, the underworld rides
+screenTarget); g31's Glow_362 load obligation is the ONE new atlas claim
+(+8 px, admitted) and the g84 Extra_260/Glow_294 keep is already in the
+union (§14). **No lane's obligation contradicts the §13 step-7 contract or
+the §15 budgets.** The merger executes §3 steps 1-7 + the Glow_362 admission
++ the g31 tile-pass folds (research/136 §10) + the g72 bg-roll wire
+(research/64 §6) as coordinated worklists.
+
 ## Appendix A - the original 407-name union list (priority order: padded area desc)
 
 Legend: branch slugs omit the W4- prefix; dagger = d40 FORECAST (data-only branch, sheets phase pending); double-dagger = d35 DEFERRED (admitted by the repack). Generated by tools/_d35_union_table.py from the REAL .xnb dims. **This is the §1-9 measurement base (26 branches / 339 pushed + 56 forecast + 12 deferred). The FINAL 490-name list lives in `tools/_d35_union_table.md` (regenerated); the 83-name delta is Appendix B below.**
