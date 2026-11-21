@@ -32963,6 +32963,43 @@ merge (the `deny(unreachable_patterns)` guard forces it). **No renumber
 executed on this branch** — the verdict is the deliverable; the witnesses
 below pin the corrected behaviour. Code-only: no compiler invoked.
 
+## The Orca sheet overflow — repack priority note (W4-c4 → d35c, 2026-11-21, code-only)
+
+The Orca's `NPC_692` is **136×992** (16 frames × 62 px; the widest/tallest
+fish strip in the wave). Re-measured with `tools/_w4c4_headroom.js` (the
+skyline packer over the real `.xnb` dims, current HEAD baseline):
+
+- baseline main **7762** / full gore+font **8150** (bound 8192);
+- the eight packed style-16 sheets (57/157/241/465/592/607/615/688) are
+  already in the baseline (+0 each — they fit the existing skyline);
+- adding **NPC_692 alone**: main 7762→**7844** (+82, fits) but full
+  8150→**8226** (+76, **OVERFLOW** by 34 px).
+
+So the Orca is the SINGLE sheet that tips the full set over the strict-GPU
+bound. Its AI + stats + FindFrame + anchor nudge (`num46 = wet?6:10`,
+`Main.cs:23072-23074`) are fully wired; only the draw is deferred —
+`STYLE16_SHEETS` omits 692, `npc_sheet(692)` returns None, the draw arm
+skips (the wyvern precedent). The bestiary portrait rides the same sheet,
+so it too is deferred until the repack.
+
+**Priority for the d35c repack lane** (the `docs/research/113-atlas-repack-plan.md`
+two-page form, tip `7d131be3`): NPC_692 is a **page-1 admission candidate**
+— its padded area (138×994 ≈ **137.2 kpx**, the 113 §4 union's unit) would
+rank **#10** in the padded-area-DESC merge-priority list — just above
+`NPC_109` (130.2 kpx) and below `NPC_243` (153.8 kpx, #9); a mid-upper
+consumer, well below the d70 sunflares (1052.7 kpx each). It is NOT in the
+113 407-name union list (that census predates this lane's sheets phase), so
+the repack must ADD it: owner `W4-c4-style44-flying-fish`, dims 136×992,
+page 1. The 113 §4 priority order step (4)/(5) ("the remaining branches'
+additions append to page 1 as they merge") covers it — the Orca joins the
+c4 sheet set (NPC_224/509/581/587 already listed) on page 1. No single-page
+packer fits it (the 113 §1 finding: the merged union's padded AREA alone
+exceeds 8192); the second page is mandatory. **Action for d35c:** admit
+NPC_692 to page 1 with the c4 set, then re-enable `STYLE16_SHEETS` 692 +
+the portrait slot (the draw arm already handles the Some/None seam — no
+code change needed beyond the sheet admission). Code-only: measurement
+re-run, no compiler invoked.
+
 ## The firefly family (S1-D-3 aiStyle-64, 2026-11-18/19, code-only mode)
 
 **Task row.** ROADMAP `🟡 S1-D-3 aiStyle-64`; module
