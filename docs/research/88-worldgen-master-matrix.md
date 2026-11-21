@@ -30,6 +30,19 @@
 > Final Cleanup), single owner each. §6.4 publishes the exact
 > ShimmerCleanUp compose-hunk; §7 is the one-paragraph merger bible.
 >
+> **SEAL 3/4 + 4/4 (2026-11-21, resume):** the g41 RETIRE tips re-read
+> (`2254f2e1`→`3c6da7a3f`, research/96) — the **stalactite-6-point-FINAL**
+> receipt `b8ee829b8` consumed into §3.2 (d106 `e2c2609c` owns its half:
+> `pass_stalac:774` + `pass_unified("Stalac")`; KEEP g41's internal
+> validator, the d106 Stalac sites DROP their explicit `check_stalactite`
+> calls — the double-validation trap); §2.23 gains the RETIRE delta
+> (QuickWater activation → g46 RE-FOLD union `9bc722e5f`, the id-agnostic
+> spawn-pool hunk); §6.3 gains the four g41 gate items; §6.4 re-verified
+> against the retire tips (gv already named, union seam line numbers).
+> §7 lands the merger bible + the **g36 family declaration**: ONE pass
+> (Shimmer) + ONE tail arm (ShimmerCleanUp) + the GenVars publications;
+> everything else DROP-listed with a named keeper. Matrix FINAL-FINAL.
+>
 > **This doc IS the merger playbook.** Every vanilla pass gets exactly ONE
 > owner branch below; every duplicate gets an explicit KEEP (with arm-count /
 > witness-count evidence) and DROP list.
@@ -46,7 +59,7 @@
 | d106 | `e2c2609c` | Grass Wall/Settle Liquids Again/Tile Cleanup/Stalac/Remove Broken Traps (R1–R5; R6 Final Cleanup yielded to g37's gap-fill `4ced188f9`) |
 | f24 | `9f2276d5` | the two GATED passes: Dither Snake (B1–B6) + Skyblock (A1–A4), review-fix round included |
 | f25 | `84b90360` | Settle Liquids (orphan adoption fd098528) + the Convert C1–C7 helper family + wiring closeouts (spray/tree/moss), ConvertSkyIslands `f0fe0f38`, solution-spray rows + powder census (§2.19/§3.6) |
-| g36 | `bf7b6bf5` + this seal | A1 Shimmer, A2 Clean Up Dirt, A3 Dirt Runner, A4 Wood Walls, A6 Wall Variety, A7 Life Crystals (A5 yielded to f25); gap-fill: ShimmerCleanUp arm (`shimmer.rs::shimmer_clean_up`, unwired); seal: matrix FINAL-FINAL + compose-hunk + merger bible |
+| g36 | `bf7b6bf5` + this seal | A1 Shimmer, A2 Clean Up Dirt, A3 Dirt Runner, A4 Wood Walls, A6 Wall Variety, A7 Life Crystals (A5 yielded to f25); gap-fill: ShimmerCleanUp arm (`shimmer.rs::shimmer_clean_up`, unwired); seal: matrix FINAL-FINAL + compose-hunk + g41e retire receipts + merger bible + family declaration (§7) |
 | g37 | `81fd1e0d` (PUSHED at the seal) | B1–B9 + FINAL CLEANUP gap-fill (`4ced188f9`→`81fd1e0d`, three witness fixes) + research/75 (§8 addendum) + research/124 hellforge graft-patch (superseded by d104's landed `574f1d58`); ShimmerCleanUp arm deferred back to g36 → compose-hunk §6.4 |
 | g38 | `8c9b7b60` | C1 Place Fallen Log only (rest of c-quarter claimed, not landed) |
 | g39 | `bab25558` | H1–H15 PlaceTile-wrapper helper family (`place_helpers.rs`, unwired) |
@@ -55,7 +68,7 @@
 | c31 | `d538536b` | faithful Hive rewrite + Larva step + larva-break→Queen Bee seam (§2.20 FINAL owner of row 100) |
 | c33 | `5479468c` | faithful Pyramids + UnderwaterChests + lily/cattail/bamboo `fd7fae0e` + underground-desert music `c7393225` + the chest_gen stocking superset `3ecb8b08`/`5479468c` + research/120 keep-one addendum (§2.9/§2.16/§3.7) |
 | g40 | `e367fb56` | Marble/Granite residual fidelity + the DesertBiome entrance family (`7bb5332e`/`a8150064`/`e367fb56`, research/94: 17-deviation residual closed verbatim — §2.22/§4) |
-| g41 | `2254f2e1` | spider-cave egg-sac validator chain + stalactite arms + webs/DST residuals + **the NTB host (`78b0cd15`, incl. the `:25608-25629` larva tail) + FinishNoTraps (`d267d43f`) + FinishRemixWorld (`6300aab6`) hosts WIRED at step_seed_finish** + spider spawn pool `c5523972` + PlacePot remix veto `d1892354` (research/93/94/95 — §2.23/§3.8) |
+| g41 | `3c6da7a3f` | spider-cave egg-sac validator chain + stalactite arms + webs/DST residuals + **the NTB host (`78b0cd15`, incl. the `:25608-25629` larva tail) + FinishNoTraps (`d267d43f`) + FinishRemixWorld (`6300aab6`) hosts WIRED at step_seed_finish** + spider spawn pool `c5523972` + PlacePot remix veto `d1892354` (research/93/94/95 — §2.23/§3.8); RETIRE phase `27ba76593`→`3c6da7a3f` (research/96: g47f liquid receipt + d36e hand-off + **stalactite-6-point-FINAL `b8ee829b8`** + FINAL declaration — §3.2/§7) |
 | g42 | `92f7eced` | mushroom-biome residuals + GrowTree rewrite + the tree-type tail deltas (`d13d05a1`), mushroom drops/runtime arm (`73a4e267`/`a964730f`), the grass-growth DISPATCHER D1–D6 (`dd659587`..`92f7eced`, research/12j — §2.23) |
 | g44 | `e1047c31` | verbatim FloatingIslands + IslandHouse + skyLakes + drunk variants (`cb5985c9`) + the FULL AddBuriedChest graft (`e172bc76`) + sky loot/spawn/housing closeouts (`0898f352`..`e1047c31`, research/87 FINAL-KEEP — §2.11 FINAL) |
 
@@ -610,6 +623,22 @@ is the body d106 R4's gem-trees and g36/d102's shimmer gem-tails should call.
 - All hosts flag-gated: classic pins unchanged on the lane; the egg-sac
   re-pin deferral stands (g41's closeout `2254f2e1` — 6-step merger
   checklist, the §3.2 stalactite keep-one restated).
+- **RETIRE phase (`27ba76593`→`3c6da7a3f`, research/96 — seal-3 receipt):**
+  the FINAL declaration lands — ALL g41 passes + hosts + pools LANDED
+  (9-piece table, 59 written-NOT-run witnesses = 14+17+7+11+1+9; both
+  classic pins stale-by-design untouched). The stalactite keep-one is
+  published EXACT (§3.2's 6-point FINAL INSTRUCTION, `b8ee829b8`); the
+  QuickWater activation owner MOVES to the g46 RE-FOLD union `9bc722e5f`
+  + the f25 dedupe (research/96 §1 — the API holds verbatim on both g47
+  `5c09a68b8` and the union; the g47-only closeout shimmer witness
+  `shimmer_falls_every_visit_ungated` must be carried per research/70
+  §11); the spawn-pool activation hunk is published id-agnostic
+  (research/96 §2 — `spawn_spider_walker` Bottom-placement alias on
+  `spawn_caster` math, NOT research/93's stale `spawn_cave_walker`
+  recipe; d36 163 unported, g8 164 landed `82c93cecf`, d37 238 landed
+  `a341daa12`; band re-pin R7 767-816 vs d36's own 762-811 note — the
+  hunk keys on NpcKind names and survives either). Retire verdict: no
+  unclaimed g41 work; every residual is a named cross-lane obligation.
 
 **SEAL delta — g42 tip `92f7eced` (research/12j tails + dispatcher):**
 - Tree-type tail (`d13d05a1`): GrowTreeWithSettings gains the profile
@@ -700,6 +729,54 @@ DROP g36's local chain (rewire shimmer's PlaceTight tail onto the canonical
 chain; if the draw schedule differs, keep g36's local copy and record the
 exception). Single home: `spider_gem_moss.rs` (or a new `stalactite.rs`
 extracted at the gate — cosmetic).
+
+**SEAL-3 receipt consumed — g41e `b8ee829b8` research/96 §3 (the
+stalactite-6-point-FINAL).** The keep-one above is VERIFIED against both
+owner tips and made EXACT; the gate applies the 6 points, not a fresh
+adjudication:
+
+- **d106 `e2c2609c5` still owns its half** (g41e re-read, symbol-level):
+  `pass_stalac` (`spider_gem_moss.rs:774`) + the `Stalac` slot
+  (`pipeline.rs:1152`/`:1428`, vanilla `:22038` after Water Plants) on ONE
+  name-seeded `Streams::pass_unified("Stalac")` (`pipeline.rs:235`, called
+  `:2800`); `place_tight` `pub(crate)` generic over
+  `chest_stock::WorldGenRand` (`:402-404`), `check_stalactite` `:528` /
+  `update_stalagtite_style` `:703` same bound. d106's `place_tight` does
+  NOT validate internally (caller-runs, `:396-401` doc): its Stalac sites
+  call `check_stalactite` explicitly (`:826-876`), its spider/webs sites
+  don't (`:1062`/`:1592`).
+- **The g41 body receipt:** chain at `spider_gem_moss.rs:441-660`
+  (`invalid_tile_for_piles_or_speleothems` `:441` … `check_stalactite`
+  `:566`), validator wired INSIDE `place_tight`'s tail (`:422-424`); moss
+  reads the GENERATED `tiledata::TILE_MOSS` (`sets.rs:44`, 627 included —
+  `Main.cs:7031` re-read, the 11 members 179/381/534/536/539/625/627/180/
+  181/182/183) vs d106's local `MOSS_TILES`+`NEON_MOSS`+381 lists (same
+  members — dedupe onto the generated set).
+
+The 6-point FINAL INSTRUCTION (research/96 §3, verbatim scope):
+1. KEEP g41's chain body + frame table + the 14 egg-sac witnesses + the
+   `place_tight`-INTERNAL validator call.
+2. GRAFT d106 R4's signatures over it: `rng: &mut impl
+   super::chest_stock::WorldGenRand` on `place_tight`/`check_stalactite`/
+   `update_stalagtite_style` (the trait + both impls already exist on g41,
+   `chest_stock.rs:185-213` — Xorshift64 AND UnifiedRandom); swap the two
+   `rng.range(0, n)` draws in `place_tight` for `rng.next(n)`; make
+   `place_tight`/`check_stalactite` `pub(crate)`. **Do NOT adopt d106's
+   caller-runs convention — the d106-double-validation-trap: the d106
+   Stalac sites DROP their explicit `check_stalactite` calls when g41's
+   internal validator is kept, or the `Next(3)` mismatch draws double**
+   (d106's sites were written against ITS unvalidated base).
+3. KEEP d106's `pass_stalac` + slot + `pass_unified("Stalac")` stream
+   wholesale; its gem-tree scatter calls g42's trees.rs (row 107).
+4. DROP g36's local `shimmer.rs` chain (`check_stalactite` `:699` + the
+   island-arm tail calls `:330`/`:335`); rewire onto the canonical
+   `place_tight` (draw-schedule exception clause stands).
+5. ONE moss set — `tiledata::TILE_MOSS` (generated, never hand-edit);
+   delete d106's local lists at the graft.
+6. Re-pin AFTER the graft, sequentially (research/93 §FINAL STATUS step 2;
+   d106 R1–R5 pins move by design, g41's egg-sac pins move at the same
+   gate). RNG-neutral for the spider pass by construction — same draws,
+   same order (d106 proved byte-identity).
 
 ### 3.3 Liquid-settle machinery: f25 core, d106 R2 pass re-based
 
@@ -1128,8 +1205,12 @@ follow-up lane is needed for the pass bodies:
 ### 6.2 Merge order (dependency-first)
 
 1. **Foundations**: g39 helpers (§3.1) → f24 A1 gate tables (§3.5) → the g47
-   liquid base + the research/70 graft (g46c/g46d union → g45b guards → f25
-   gen-module dedupe, §3.3) → g41+d106 stalactite chain (§3.2) → g42 trees.rs.
+   liquid base + the research/70 graft (the g46 RE-FOLD union `9bc722e5f` —
+   the re-base is DONE per research/96 §1, supersedes the stale-union read →
+   g45b guards already folded → f25 gen-module dedupe, §3.3) → g41+d106
+   stalactite chain (§3.2's 6-point FINAL INSTRUCTION — g41 body + internal
+   validator KEPT, d106 signatures grafted, the d106 Stalac sites DROP their
+   explicit check calls) → g42 trees.rs.
    These are the shared bodies every kept pass rewires onto.
 2. **Producers**: d101 (mCave/snow anchors, Granite row) → g36 A1 Shimmer
    (shimmer_position) → g44 islands ledger → d104 GenVars ore slots.
@@ -1212,9 +1293,207 @@ follow-up lane is needed for the pass bodies:
   the sky loot Prefix/CreativeWings arms verified once against c33's
   chest_gen superset (§3.7).
 - The §6.4 compose-hunk applied + its witnesses run.
+- The §3.2 stalactite graft per the 6-point FINAL INSTRUCTION (research/96
+  §3): d106 Stalac sites' explicit `check_stalactite` calls DROPPED (the
+  double-validation trap — double `Next(3)` mismatch draws), one generated
+  `tiledata::TILE_MOSS` set, g36 local chain dropped, re-pins sequential.
+- The g41 QuickWater activation (research/96 §1): against the g46 RE-FOLD
+  union `9bc722e5f`+, arm the gen context ONCE at the driver head, swap the
+  three `finish_remix.rs` seams (`:379`/`:405`/`:445`) for
+  `quick_water(world, -1, -1)`, restore the spawn-box while-flag shape,
+  re-derive the REMIX pins ONLY; carry the g47-only
+  `shimmer_falls_every_visit_ungated` witness + the research/70 §11 dedupes.
+- The g41 spawn-pool hunk (research/96 §2) applied when NpcKind 163 (d36) +
+  164 (g8) both exist on main — `spawn_spider_walker` Bottom alias, NOT
+  `spawn_cave_walker`; the two consume-and-None pins flip to kind/position
+  assertions, the draw-order pins hold.
+- The 5-row g41 anchors canary survives the merge (`anchors.txt:899-903`
+  region per research/96 §4 step 6: `fn check_stalactite`,
+  `finish_not_the_bees`, `finish_no_traps`, `finish_remix_world`,
+  `fn set_spawn_spider_flag`) — a failed marker = lossy merge, recover the
+  arm, never delete the row.
 - The unported Final Cleanup tail arms censused (§3.8): ShimmerifySide /
   RainbowSand / vampire / anniversary-paint-trees / ExtraSpawns / TownNPC
   cleanup / AnglerQuestSwap — flag at the gate, none blocks the classic chain.
+
+### 6.4 The ShimmerCleanUp compose-hunk (EXACT — for the g37 branch / the merger)
+
+The C# anchor (`WorldGen.cs:22468-22483`, re-read at the seal):
+
+```csharp
+if (Main.tenthAnniversaryWorld)
+{
+    WorldGen.FinishTenthAnniversaryWorldPaintTreesAndMushrooms();   // :22470 — UNPORTED (§3.8)
+}
+WorldGen.ShimmerCleanUp();                                          // :22472 — g36's arm
+for (int num21 = 0; num21 < Main.maxTilesY; num21++)                // :22473 — y OUTER
+{
+    for (int num22 = 0; num22 < Main.maxTilesX; num22++)            // :22475 — x INNER
+    {
+        Tile tile8 = Main.tile[num22, num21];
+        if (tile8.liquid > 0)
+        {
+            Liquid.LiquidCheck(num22, num21, tile8.liquidType(),
+                               createMergeTilesDuringGen: true);    // :22480
+        }
+    }
+}
+```
+
+**Where it lands.** The port splits the Final Cleanup tail across steps
+(§3.8): g37's `final cleanup` step carries `:22143-22422` (wall-hole fill +
+sweep + scatter); g41's `step_seed_finish` carries the `Finish*` hosts +
+the FinalizeSecretSeeds arms (`micro_finish::run` + `micro_surface::run`,
+`:22423-22467`). The `:22472` arm therefore composes at the **TAIL of
+`step_seed_finish`** — immediately after `micro_surface::run(world, streams,
+opts);` (g41 `pipeline.rs`, the last statement of the fn) — NOT inside
+`pass_final_cleanup` (whose `:22423-22488` deferral comment stays accurate
+for the pass body; update it to point here). The relative order then
+matches the C#: hosts → FinalizeSecretSeeds → ShimmerCleanUp → merge sweep.
+(`world tail` sits between the two steps in the port's grouped chain; its
+moon/hell draws are RNG-isolated — the recorded executed-order deviation,
+§3.8.) The unported `:22470` anniversary-paint call would sit immediately
+BEFORE this hunk if/when d107 lands it.
+
+**The hunk (append to `step_seed_finish`, g41's body — the tip `3c6da7a3f`
+signature already names `gv: &mut GenVars`, no rename needed; the tail
+statement is `micro_surface::run(world, streams, opts);` at `pipeline.rs:1472`):**
+
+```rust
+    // WorldGen.cs:22472 — ShimmerCleanUp (g36's gap-fill arm, composed here).
+    // Reads g36 A1's published GenVars.shimmerPosition (the zero-vector
+    // sentinel is handled inside: None / (0,0) → no-op). Draws on the Final
+    // Cleanup stream — the C# genRand at this point IS the Final Cleanup
+    // pass's re-seed (WorldGenerator.cs:497), the same stream the scatter
+    // drew on; pass_rng is name-mixed so the two calls share one sequence
+    // ONLY if the merger threads ONE Rng through — see the stream note.
+    shimmer::shimmer_clean_up(
+        world,
+        gv.shimmer_position,
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        &mut streams.pass_rng("Final Cleanup"),
+    );
+    // WorldGen.cs:22473-22483 — the Liquid.LiquidCheck merge sweep, y-outer
+    // x-inner, liquid>0 cells only, createMergeTilesDuringGen: true. Rides
+    // the g47 LiquidSystem (research/70 base): liquid_check is private on
+    // LiquidSystem — the merger adds the pub gen wrapper at the 70-graft:
+    //     pub fn gen_merge_sweep(&mut self, world: &mut World) {
+    //         for y in 0..self.height { for x in 0..self.width {
+    //             let t = world.tile(x, y).copied().unwrap_or_default();
+    //             if t.liquid > 0 {
+    //                 self.liquid_check(world, x, y, t.liquid_type(), true);
+    //             }
+    //         }}
+    //     }
+    // armed with set_gen_settle_context(water_line, lava_line, remix) +
+    // set_gen_shimmer_position(gv.shimmer_position) (the 70 graft step 7).
+    let mut sys = crate::liquid::LiquidSystem::new(world);
+    sys.set_gen_settle_context(
+        gv.water_line,
+        gv.lava_line,
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+    );
+    sys.set_gen_shimmer_position(gv.shimmer_position);
+    sys.gen_merge_sweep(world);
+    // edit_kills drain choice: RECORD it (research/70 §11) — the gen-time
+    // kills queue TileKill records; resolve-or-discard must be pinned once.
+```
+
+**Stream note (the one fidelity trap).** `Streams::pass_rng(name)` returns
+a FRESH `Rng(seed ^ fnv1a64(name))` per call (g41 tip `3c6da7a3f`
+pipeline.rs:226-228) — calling it
+twice for "Final Cleanup" (scatter in `step_final_cleanup`, jitter here)
+would REPLAY the scatter's draws instead of continuing the sequence. The
+C# `genRand` is ONE UnifiedRandom re-seeded per pass; the scatter
+(`:22379-22422`) and the ShimmerCleanUp outer-ellipse jitter (`:34753`)
+draw on the SAME pass instance. The merger must either (a) thread the
+scatter's `Rng` out of `pass_final_cleanup` (return it / stash it in
+GenVars) and hand the SAME instance to `shimmer_clean_up`, or (b) extend
+Streams with a checked-out per-pass stream (`pass_rng_continue`) — (a) is
+the minimal edit: `pass_final_cleanup` already owns `rng: &mut Rng`; change
+`step_final_cleanup` to stash it (`gv.final_cleanup_rng = Some(rng)`) and
+`step_seed_finish` to take it back. The hunk above shows the naive form
+for readability; **(a) is REQUIRED for stream fidelity** — flag it in the
+gate witness (below). On a classic world with no shimmer placed
+(`gv.shimmer_position == None`) the arm draws NOTHING (the sentinel
+returns before any draw), so the trap only bites shimmer worlds — the
+witness must place a shimmer.
+
+**Witnesses the hunk adds (write at the merge, run at the gate):**
+1. `the_seed_finish_tail_cleans_the_shimmer_pool` — a world with
+   `gv.shimmer_position = Some((cx,cy))` + evil ore 22/204 inside the
+   120-disc: after `step_seed_finish`, the cells read kind 1; the
+   `None`-position control is byte-identical to the pre-hunk chain.
+2. `the_shimmer_cleanup_continues_the_scatter_stream` — seed-pin: run
+   `step_final_cleanup` (scatter draws N rolls) then the hunk; assert the
+   first jitter draw equals the (N+1)-th draw of a single
+   `Rng(seed ^ fnv1a64("Final Cleanup"))` replay — FAILS under the naive
+   fresh-stream form, passes under (a).
+3. `the_merge_sweep_visits_y_outer_x_inner` — a two-type liquid adjacency
+   fixture; the merge result matches a manual y-outer/x-inner
+   `liquid_check(..., true)` replay (the visit order is load-bearing:
+   the side arm zeroes neighbours even when the merge gate refuses).
+4. The a==b halves: the full chain with the hunk replays byte-equal.
+
+**Composition preconditions (all already KEEP-owned, re-verified at the
+seal-3 tips):** g36's `shimmer.rs::shimmer_clean_up` (bf7b6bf5, `pub`
+`:965`, W:7 — drop its `#[allow(dead_code)]` when wired); g36 A1's
+`gv.shimmer_position` publication (pipeline.rs:2093); g41's
+`step_seed_finish` host body (`6300aab6`/`d267d43f`/`78b0cd15`, tail
+`micro_surface::run` at pipeline.rs:1472 on tip `3c6da7a3f`); the g47
+`LiquidSystem` + `set_gen_*` seams — now RE-FOLDED on the g46 union
+`9bc722e5f` (research/96 §1 receipt: `set_gen_settle_context` :1722,
+`set_gen_shimmer_position` :1737, `liquid_check` private :1347,
+`gen_settle_loop` :1838; `gv.water_line`/`gv.lava_line` published on that
+tip's pipeline.rs:285/:287). The `Liquid.tilesIgnoreWater`
+window (`:34767`/`:34810`) is a documented no-op for the arm (g36's
+gap-fill note — the Shimmerator flood carries its own
+`solid_tile_ignore_water` predicate); the `Convert(j,i,0,3)` cleanse
+reuses `spread::convert_cleanse` (its pre-existing genRand deviation
+stands, recorded).
+
+---
+
+## 7. The merger bible (one paragraph) + the g36 family declaration
+
+**The bible.** Merge dependency-first (§6.2): foundations (g39 helpers, f24
+gate tables, the g47→g46-union liquid graft, the §3.2 six-point stalactite
+keep-one, g42 trees) → producers (d101 anchors, g36 A1 `shimmer_position`,
+g44 islands ledger, d104 ore slots) → the pass waves in the §5a 120-step
+executed order, single owner each (§5 registration table is the vanilla
+anchor map, §5a is what the count/positional witnesses assert) → the §6.4
+compose-hunk at `seed finish`'s tail with the ONE threaded Final Cleanup
+Rng → execute the §6.2 DROP list surgically, per branch, never whole-branch
+reverts → at the gate run EVERY lane's written-not-run witnesses
+(`cargo test --workspace -- --skip migrates_version_2_kinds_to_item_ids`,
+judge by `test result:` lines), re-pin SEED42_512 + DEFAULT_WORLD ONCE on
+the merged chain (no lane's isolated "pins unchanged" argument composes),
+keep every a==b half green, re-pin sequentially per lane with the failing
+run recorded first, and let the anchors canary veto any lossy resolution —
+a missing marker means recover the arm, never delete the row.
+
+**g36 family declaration (seal 4/4, FINAL).** The g36 lane's contribution
+to the merged chain is exactly: **ONE pass — Shimmer** (A1 `702e1e75`,
+review-hardened through `7f848edd`; the surviving contested-pass verdict
+§2.1, DROP d102's copy) **+ ONE tail arm — `shimmer.rs::shimmer_clean_up`**
+(gap-fill `bf7b6bf5`, the Final Cleanup `:22472` arm, W:7, unwired by
+design, composed per §6.4) **+ the GenVars publications** it produces
+(`shimmer_position` + the 200×200 `SHIMMER_SAFETY_DISTANCE` rect — the ONE
+field every consumer rewires onto: d103 Wall Variety §2.5, f25/d106
+ShimmerRemoveWater §3.3, the §6.4 hunk). Everything else g36 landed is
+DROP-listed with a named keeper: A2 Clean Up Dirt → d102 (§2.2), A3 Dirt
+Runner → d102 (§2.3), A4 Wood Walls → d102 (§2.4), A6 Wall Variety → d103
+(§2.5, shimmer rewire owed), A7 Life Crystals → d103 (§2.6); A5 Settle
+Liquids yielded to f25's earlier claim (`f474adc1`); the local stalactite
+chain DROPs onto g41's canonical body (§3.2 point 4, the draw-schedule
+exception clause stands). The lane's 11 `shimmer.rs` witnesses (A1 W:4 +
+cleanup W:7) + the dropped blocks' witnesses travel per the §6.2 port-first
+rules; both hash pins are unchanged on the lane (the 512 width-guard keeps
+`shimmer_position` None; the unwired arm draws nothing) and re-pin at the
+gate with the whole chain. **This matrix is FINAL-FINAL: no g36 work
+remains unclaimed, every KEEP/DROP is decided, every cross-lane residual
+has a named owner and a published contract. The gate executes; it does not
+re-adjudicate.**
 
 ---
 *Produced by the g36 reconcile phase. No code changed; this document is the
