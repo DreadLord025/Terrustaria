@@ -296,7 +296,7 @@ pub fn get_chat(npc: &Npc, ctx: &mut ChatContext) -> String {
 /// (the rows are `Chatter_1/2/...` — the same no-trailing-dot shape the
 /// Angler's `BloodMoonFishing` filter uses).
 fn pet_chat(ctx: &mut ChatContext, pet: &str) -> String {
-    let ty = match pet {
+    let ty: u16 = match pet {
         "Cat" => 637,
         "Dog" => 638,
         _ => 656,

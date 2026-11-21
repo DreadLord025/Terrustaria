@@ -33758,6 +33758,7 @@ mod w4_d120_shop_button_witnesses {
     //! (`NPCInteractions.cs:488-512`) vs the port's kind→index map.
     //! WRITTEN NOT RUN.
     use super::*;
+    use crate::world_sim::npcs::shop_index_for_kind;
 
     /// The claimed kinds' registry rows: `Shop(142, 9)`/`Shop(160, 10)`/
     /// `Shop(178, 11)`/`Shop(209, 14)` (`:496-501`); the sibling lanes'
