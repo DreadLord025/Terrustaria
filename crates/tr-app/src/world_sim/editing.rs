@@ -19063,4 +19063,35 @@ mod w4_d15_monk_staff_use_tests {
         assert!(fired.len() >= 2, "the repeated right click re-fires");
         assert!(fired.iter().all(|p| p.kind == 708), "every repeat is the alt ghost");
     }
+
+    /// CROSS-NOTE witness (final phase): the 707/698 rows this branch
+    /// carries are FIELD-IDENTICAL to W4-d14 `eaa05ae9`'s rows (their
+    /// `the_monk_rows_match_set_defaults` pins the same C# values) — the
+    /// integrate's keep-one dedupe is lossless and the 3858 use arm's
+    /// spawn composes with their `ai_monk_staff` 140 machine (the 707
+    /// arm `Projectile.cs:69505-69591`, which spawns the 698 our 141
+    /// arm serves — the round trip closes across the two branches).
+    #[test]
+    fn the_707_and_698_rows_match_the_d14_landed_values() {
+        let t3 = crate::projectile::proj_data(crate::projectile::MONK_STAFF_T3)
+            .expect("the 707 row");
+        assert_eq!((t3.w, t3.h), (16.0, 16.0), ":7476-7477");
+        assert_eq!(t3.ai_style, 140, ":7478 — d14's arm");
+        assert_eq!(t3.penetrate, -1, ":7481");
+        assert_eq!(t3.alpha, 255, ":7482");
+        assert!(!t3.tile_collide, ":7485");
+        assert!(t3.ignore_water, ":7486");
+        assert!(t3.uses_local_immunity, ":7487");
+        assert_eq!(t3.local_hit_cooldown, 6, ":7488");
+        assert!(t3.melee, ":7480");
+        assert_eq!(t3.scale, 1.0, "no scale override");
+        let ex = crate::projectile::proj_data(crate::projectile::MONK_STAFF_T1_EXPLOSION)
+            .expect("the 698 row");
+        assert_eq!((ex.w, ex.h), (75.0, 200.0), ":7387-7388");
+        assert_eq!(ex.ai_style, 141, ":7389 — OUR arm (d14 deferred it)");
+        assert_eq!(ex.time_left, 5, ":7393");
+        assert!(ex.melee, ":7398");
+        assert_eq!(ex.local_hit_cooldown, -1, ":7397");
+        assert_eq!(ex.alpha, 255, ":7390");
+    }
 }

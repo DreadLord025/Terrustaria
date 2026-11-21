@@ -1177,8 +1177,9 @@ pub const GOLF_CLUB_HELPER: u16 = 722;
 
 // W4-d15 — the DD2 weapon/pet slice's kinds (`ProjectileID.cs`'s values,
 // the `SetDefaults` rows cited in [`proj_data`]).
-/// `ProjectileID.MonkStaffT1Explosion` (698) — the Sleepy Octopod's ground
-/// blast, aiStyle 141 (`Projectile.cs:7385-7401`).
+/// `ProjectileID.MonkStaffT1Explosion` (698) — the Brand of the Inferno's
+/// (T1, 697) ground blast, aiStyle 141 (`Projectile.cs:7385-7401`). The
+/// 140 arm's 697 branch spawns it (`:69500`); the 141 arm is this slice's.
 pub const MONK_STAFF_T1_EXPLOSION: u16 = 698;
 /// `ProjectileID.MonkStaffT2` (699) — the Monk Staff T2's swing ghost,
 /// aiStyle 142 (`Projectile.cs:7402-7418`).
@@ -1188,10 +1189,13 @@ pub const MONK_STAFF_T2: u16 = 699;
 /// (`Projectile.cs:7419-7432`).
 pub const MONK_STAFF_T2_GHAST: u16 = 700;
 /// `ProjectileID.MonkStaffT3` (707) — the Monk Staff T3's normal swing,
-/// aiStyle 140 (`Projectile.cs:7474-7490`). The aiStyle-140 machine
-/// (`AI_140_MonkStaffT1`, `:69416+`) is OUTSIDE the W4-d15 141-150 slice
-/// — the row lands so the 3858's normal use arm spawns (the free
-/// integrate holds the slot until the 140 port lands).
+/// aiStyle 140 (`Projectile.cs:7474-7490`). The row lands so the 3858's
+/// normal use arm spawns. CROSS-NOTE (W4-d15 final phase): W4-d14
+/// `eaa05ae9` landed `AI_140_MonkStaffT1` (`ai_monk_staff`, the 707 arm
+/// `:69505-69591`) with a FIELD-IDENTICAL 707 row (16×16, 140, pen −1,
+/// stock life, local immunity 6, alpha 255, scale 1) — the integrate is
+/// a keep-one dedupe of this row + const, and the use arm's spawn
+/// composes with their machine (no wiring gap).
 pub const MONK_STAFF_T3: u16 = 707;
 /// `ProjectileID.MonkStaffT3_Alt` (708) — the T3-alt swing ghost,
 /// aiStyle 142 (`Projectile.cs:7491-7507`).
@@ -4026,10 +4030,11 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             GOLF_CLUB_HELPER => {
                 (2.0, 2.0, 150, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE)
             }
-            // W4-d15 — `Projectile.cs:7385-7401`: the Sleepy Octopod's
-            // ground blast (698): 75x200, aiStyle 141, alpha 255,
+            // W4-d15 — `Projectile.cs:7385-7401`: the Brand of the
+            // Inferno's ground blast (698): 75x200, aiStyle 141, alpha 255,
             // tileCollide false, ignoreWater (the overlay), timeLeft 5,
             // penetrate -1, local immunity -1, melee (the overlay).
+            // W4-d14's row is field-identical (the integrate keep-one).
             MONK_STAFF_T1_EXPLOSION => (
                 75.0, 200.0, 141, -1, 5, 0, false, false, false,
                 (true, -1, false, -1, 255, 1.0),
@@ -4052,12 +4057,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 (true, -1, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:7474-7490`: the T3 normal swing (707):
-            // 16x16, aiStyle 140 (the AI_140 machine is outside the
-            // 141-150 slice — the row rides the free integrate until it
-            // lands), penetrate -1, alpha 255, tileCollide false,
-            // ignoreWater, local immunity 6, melee (the overlay).
+            // 16x16, aiStyle 140, penetrate -1, alpha 255, tileCollide
+            // false, ignoreWater, local immunity 6, melee (the overlay).
             // drawLayer 7 / usesOwnerLight / ownerHitCheck are draw/
-            // hit-check seams — no port fields.
+            // hit-check seams — no port fields. W4-d14's row is
+            // field-identical and its `ai_monk_staff` arm serves it
+            // (the integrate keep-one — the cross-note on the const).
             MONK_STAFF_T3 => (
                 16.0, 16.0, 140, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
                 (true, 6, false, -1, 255, 1.0),

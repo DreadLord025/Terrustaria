@@ -24070,7 +24070,14 @@ mod tests {
         // lands so the 3858's use arm spawns, but `AI_140_MonkStaffT1`
         // (`:69416+`) is OUTSIDE the 141-150 slice — the free integrate
         // holds the slot until the 140 port lands (the same row-keep
-        // decision as the four minion styles above).
+        // decision as the four minion styles above). CROSS-NOTE (final
+        // phase): W4-d14 `eaa05ae9` HAS landed the 140 arm
+        // (`ai_monk_staff`) plus field-identical 697/707/698 rows, and
+        // ITS pin lists 141 instead (the 698 arm was d15's claim — armed
+        // here). At the integrate, 140 leaves this list (their arm) and
+        // 141 leaves theirs (our arm): the merged pin is
+        // [156, 164, 169, 206]; the duplicate 707/698 rows dedupe
+        // keep-one (field-identical, verified).
         const UNARMED_ROWED: [u8; 5] = [140, 156, 164, 169, 206];
         // S1-F-13c: the Frost Moon bosses' seven hostile-shot kinds ride the
         // KIND-gated `projectile_frost_shots::handles` arm ahead of the

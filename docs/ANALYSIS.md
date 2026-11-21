@@ -39440,3 +39440,24 @@ in its C# slot (the use arms on `UpdatePlayers`, the shake drain + the
 starfall loop on their pass streams — `UpdateProjectiles` /
 `UpdateWorldGen` respectively, the `genRand == Main.rand` swap,
 `WorldGen.cs:4445`).
+
+### The W4-d15 final phase (the cross-lane folds, 2026-11-21, code-only)
+
+**The d14 composition (the 707-row deferral resolved).** W4-d14
+`eaa05ae9` (branch `task/W4-d14-proj-ai-131-140`, style-140 commit
+`6d7b1b9b`) landed `AI_140_MonkStaffT1` (`ai_monk_staff`,
+`Projectile.cs:69416-69600`) with 697/707 rows + the 698 explosion row
+(the 141 arm deferred to d15 — armed here). Verified against their
+tree: their 707 row (`16×16, 140, pen −1, stock life, local immunity 6,
+alpha 255, scale 1`) and 698 row (`75×200, 141, pen −1, life 5, local
+immunity −1, alpha 255`) are FIELD-IDENTICAL to this branch's rows —
+the integrate is a keep-one dedupe of the two row/const copies, and
+the wiring composes: the 3858 use arm's normal spawn (this branch,
+`editing.rs:4025-4035`) feeds their `ai_monk_staff` 707 arm
+(`:69505-69591`), whose 697 sibling's ground impact spawns the 698
+this branch's 141 arm serves. The dispatch pins reconcile at the
+integrate: this branch's `UNARMED_ROWED` keeps 140 (no local arm) and
+theirs keeps 141 (no local arm); the merged list is
+`[156, 164, 169, 206]`. No behaviour gap remains — cross-note comments
+on the 707/698 rows + the pin, one compose witness
+(`the_707_and_698_rows_match_the_d14_landed_values`).
