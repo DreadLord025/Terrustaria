@@ -36055,6 +36055,85 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The rope-coil lane (W4-g82, task/W4-g82-rope-coil-draw, 2026-11-21, code-only mode)
+
+The two unclaimed rope/coil residuals after S1-G-1b/f (the back-rope pass)
+and the d56 conventions branch (5d80b38a):
+
+1. **The rope variant draw residual** — `WorldGen.TileFrameCosmetic`'s
+   rope arm (`WorldGen.cs:81894-81931`), ported verbatim as
+   `render/ropes.rs::rope_frame_arm`. The port's generic framing carried
+   only the `!tileRope` blend-all gate (`:81731`, framing.rs:928); the
+   rope arm's seven writes were missing, so rope cells framed as plain
+   blocks. The arm: the 504 mystic-snake guards on the up-merge/solid-top
+   anchor/side merges (`:81896/:81904/:81912`), the 698 Dead Cells
+   display-jar bottom anchor (`:81900`), the `!solidTop` top anchor vs
+   the any-solid bottom anchor (`:81904/:81908`), the `up != num`
+   side-merge gate (`:81912`) and the two neighbour re-frame requests
+   (`:81923-81930`, returned as pure output — the probe never mutates).
+   UNWIRED: `framing.rs` is contested by W4-d109/d110; the intended call
+   site is `frame_of_variant`'s `else if td::TILE_ROPE.has(me)` arm
+   between the dirt branch and the generic switch, re-probing after the
+   requested neighbour re-frames (the C# runs them BEFORE the mask read).
+
+2. **The rope-coil lane** — `projectile_rope_coil.rs` (new module):
+   * the aiStyle-35 machine (`Projectile.cs:27189-27291`): the 30-tick
+     0.2/0.985 gravity + 14 vy cap, the `(|vx|+|vy|)*direction*0.02` spin,
+     the owner gate, the `fallThrough/fall2` collision probe + the
+     bottomSlope snap (`:27216-27221`), the `IsRope` column skip, the
+     10-link placement walk with the platform/track alternator
+     (`:27261-27264`, no budget spend) and the cut-tile/165 clears
+     (`:27265-27270`, returned as `TileKill` records for the editing
+     resolver). The four `SetDefaults` rows (171/475/505/506 → 14x14,
+     aiStyle 35, penetrate -1, tileCollide false, timeLeft 400;
+     `:2570-2578/:5496-5504`) + the rope-kind map (213/353/365/366).
+   * the coil's **placement preview** = the trailing chain draw
+     (`Main.DrawProjDirect` `Main.cs:28499-28669`): the coil items have
+     NO `createTile` so they never enter the `TileObject.objectPreview`
+     path — the chain of rope links IS the preview. The 17/30-tick
+     count/sag ramps, the 5.6-px normalize with the manhattan-<1 shrink
+     quirk, the reverse draw order and the draw-index sheet parity
+     (Chain16 for 171; Chain38/39 for 475; Chains_4/5 for 505; Chains_6/7
+     for 506), per-link `Lighting.GetColor` + 0.8 scale + half-sheet
+     origin.
+   * the `Kill()` refund ladder (`:77572-77615`): ai1==0 → one coil
+     item back; ai1<10 → `10-ai1` rope items; the per-kind item pairs.
+   * `PlaceThing_Tiles_CheckRopeUsability` (`Player.cs:41506-41545`):
+     the down-column walk with the 5-consecutive-platform cap, the 214
+     chain lava exemption, the header-bit lava test (no amount check).
+
+Deliberate deviations:
+
+* **UNWIRED, code-only** (the d56 convention): `projectile.rs`'s
+  dispatch, `projectile/data.rs`, `assets.rs`'s sheet list and
+  `main.rs`'s mod decl are ALL contested by in-flight siblings (the
+  d1..d20 proj-ai lanes, g35/g48/g65, c6/c11, d93, g5/g52). The intended
+  call sites are documented in the module header; the item rows already
+  exist (itemdata 985/3005/3079/3080).
+* The dust walks sharing the chain geometry (`Projectile.cs:74615-74731`,
+  4 dust per segment past ai1, types 3/30/239/129) are SKIPPED with the
+  dust layer — zero state (the ai_style2 precedent). The ai1==0 sound cue
+  rides `wants_sound` at the wiring step.
+* `NetMessage.SendData(17/159)` skipped (single-player);
+  `WorldGen.IsTileLoaded` always true.
+* **The 0/0 NaN quirk is kept**: a chain link whose adjusted step hits
+  exactly zero length (e.g. vel (0,10) at walk index 24) computes
+  `0/0` → NaN in BOTH the C# and the port (the manhattan shrink zeroes
+  the 5.6 step first). The witness avoids the degenerate axis on purpose
+  and pins the quirk's existence.
+* The `IsRope` probe is inlined in the coil module (the render-side
+  twin lives in `render/ropes.rs`) to keep the module free of the
+  render dependency — the d56 inlined-table convention; both copies are
+  verbatim `WorldGen.cs:70026-70104` incl. the no-top-end down-scan
+  degeneration.
+
+Verification: code-only, every arm re-read against the cited windows;
+17 witnesses WRITTEN, NOT RUN (6 framing + 11 coil: the rows/kinds, the
+flight/gravity/spin, the owner gate, the placement walk's solid stop /
+platform pass-through / 10-link cap, the chain's reverse order + ramps +
+sheet parity, the refund ladder, the usability walk + platform cap +
+lava gate). **No cargo/rustc/tests/graphify invoked.**
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
