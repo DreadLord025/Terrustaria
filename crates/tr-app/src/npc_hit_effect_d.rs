@@ -3535,6 +3535,51 @@ fn golfer_death(
     gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, legs, 1.0); // :87983
 }
 
+/// The 633 Zoologist death (`NPC.cs:87985-88022`, sites 525-530): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then the SIX-gore ladder with the
+/// altTexture/shimmer type matrix (`:87999-88015`): normal 1219/1220
+/// (altTexture==2 → 1223/1224), shimmer 1377/1379 (altTexture==2 →
+/// 1378/1380); the head at +0, the mid pair at (+0,+20)/(+8,+20), the
+/// legs 1221 (shimmer 1382) at (+0,+34) + 1222x2 (shimmer 1381x2) at
+/// (+0,+34)/(+8,+34) — NOTE the legs' first slot differs from the pair.
+/// The port's altTexture default-0 stand-in keeps the base matrix
+/// (documented drop). Scale 1f.
+fn zoologist_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87995-87998` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:87999-88015` — the type matrix (altTexture==0 stand-in).
+    let (num646, num647) = if shimmer { (1377, 1379) } else { (1219, 1220) };
+    gore.new_gore(rng, world, pos, vel, num646, 1.0); // :88016
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, num647, 1.0); // :88017
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 20.0), vel, num647, 1.0); // :88018
+    // `:88019-88021` — the legs: the first slot 1221/1382, the pair
+    // 1222/1381.
+    let leg1 = if shimmer { 1382 } else { 1221 };
+    let leg2 = if shimmer { 1381 } else { 1222 };
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg1, 1.0); // :88019
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, leg2, 1.0); // :88020
+    gore.new_gore(rng, world, Vec2::new(pos.x + 8.0, pos.y + 34.0), vel, leg2, 1.0); // :88021
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3952,6 +3997,10 @@ pub fn hit_effect_d(
     // `:87962-87984` — the 588/589 Golfer arm (sites 520-524).
     else if npc_type == 588 || npc_type == 589 {
         golfer_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87985-88022` — the 633 Zoologist arm (sites 525-530).
+    else if npc_type == 633 {
+        zoologist_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6936,6 +6985,39 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88016-88021` — the Zoologist SIX: normal
+    /// 1219/1220x2/1221/1222x2 vs shimmer 1377/1379x2/1382/1381x2 (the
+    /// legs' first slot differs from the pair).
+    #[test]
+    fn w4_f5d_the_zoologist_six_split_the_legs() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (shimmer, want) in [
+            (false, vec![1219, 1220, 1220, 1221, 1222, 1222]),
+            (true, vec![1377, 1379, 1379, 1382, 1381, 1381]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(557);
+            let _ = hit_effect_d(&n, 633, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "zoologist shimmer={shimmer}");
+            assert_eq!(gore.slot(2).position, Vec2::new(108.0, 120.0));
+            assert_eq!(gore.slot(5).position, Vec2::new(108.0, 134.0));
+            assert!(!gore.slot(6).active, "exactly six gores");
+            let mut twin = UnifiedRandom::new(557);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..6 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zoologist shimmer={shimmer} mirrors");
         }
     }
 }
