@@ -6195,6 +6195,23 @@ fn cell_drops(
         // and the cactus 80 (whose `tile_drop` row feeds the touch/plate
         // lanes) are suppressed here (the records carry their drops).
         5 | 72 | 80 | 323 | 583..=589 | 596 | 616 | 634 => Vec::new(),
+        // The exposed-gems tile 178 drops the gem of its style column
+        // (`KillTile_GetItemDrops`, `WorldGen.cs:65493-65518`:
+        // `switch (tileCache.frameX / 18)` → 0 Amethyst 181, 1 Topaz 180,
+        // 2 Sapphire 177, 3 Emerald 179, 4 Ruby 178, 5 Diamond 182,
+        // 6 Amber 999). The hit cell carries `frame_x` (the C# `tileCache`),
+        // so the per-cell arm reads it — `registry::tile_drop` is frame_y-only
+        // and refuses 178 (the style-0 cascade/record paths drop nothing).
+        178 => match i32::from(hit.frame_x) / 18 {
+            0 => vec![(181, 1)],
+            1 => vec![(180, 1)],
+            2 => vec![(177, 1)],
+            3 => vec![(179, 1)],
+            4 => vec![(178, 1)],
+            5 => vec![(182, 1)],
+            6 => vec![(999, 1)],
+            _ => Vec::new(),
+        },
         83 | 84 => herb_drops(
             hit.kind,
             i32::from(hit.frame_x) / 18,
@@ -9188,6 +9205,73 @@ mod tests {
         let (drops, portals) = drop_events(&kill, hit);
         assert!(portals.is_empty());
         assert_eq!(drops, vec![(3, 1, 7, 12)]);
+    }
+
+    // W4-c29 doc-sweep lane 40: the exposed-gems 178 per-cell break-drop slice
+    // (`KillTile_GetItemDrops`, `WorldGen.cs:65493-65518`) — the gem of the
+    // style column (`frameX / 18`), read from the hit cell's `frame_x`.
+    #[test]
+    fn test_w4_c29_break_drop_events_exposed_gems_drop_the_style_gem() {
+        // `switch (tileCache.frameX / 18)`: 0 Amethyst 181, 1 Topaz 180,
+        // 2 Sapphire 177, 3 Emerald 179, 4 Ruby 178, 5 Diamond 182, 6 Amber 999.
+        let expected = [181u16, 180, 177, 179, 178, 182, 999];
+        for (style, &gem) in expected.iter().enumerate() {
+            let kill = edit::TileKill {
+                kind: 178,
+                ..Default::default()
+            };
+            let hit = Some(HitCell {
+                x: 5,
+                y: 9,
+                kind: 178,
+                frame_x: (style * 18) as i16,
+                frame_y: 0,
+            });
+            let (drops, portals) = drop_events(&kill, hit);
+            assert!(portals.is_empty());
+            assert_eq!(drops, vec![(gem, 1, 5, 9)], "178 style {style}");
+        }
+        // An out-of-range column drops nothing (the C# `dropItem > 0` gate,
+        // `WorldGen.cs:63953` — the switch leaves `dropItem = 0`).
+        let kill = edit::TileKill {
+            kind: 178,
+            ..Default::default()
+        };
+        let hit = Some(HitCell {
+            x: 5,
+            y: 9,
+            kind: 178,
+            frame_x: 7 * 18,
+            frame_y: 0,
+        });
+        let (drops, _) = drop_events(&kill, hit);
+        assert!(drops.is_empty(), "178 column 7 drops nothing");
+    }
+
+    // W4-c29 doc-sweep lane 40: the gem-stone/moss per-cell break-drop slice
+    // rides `registry::tile_drop` through the generic `cell_drops` arm.
+    #[test]
+    fn test_w4_c29_break_drop_events_gem_stone_and_moss_drop_their_items() {
+        // The gem-stone block 63 drops the Sapphire 177 (`:64945-64952`).
+        let kill = edit::TileKill { kind: 63, ..Default::default() };
+        let hit = Some(HitCell { x: 3, y: 4, kind: 63, frame_x: 0, frame_y: 0 });
+        let (drops, _) = drop_events(&kill, hit);
+        assert_eq!(drops, vec![(177, 1, 3, 4)]);
+        // The moss tile 179 drops the Stone Block 3 (`:63999-64011`).
+        let kill = edit::TileKill { kind: 179, ..Default::default() };
+        let hit = Some(HitCell { x: 3, y: 4, kind: 179, frame_x: 0, frame_y: 0 });
+        let (drops, _) = drop_events(&kill, hit);
+        assert_eq!(drops, vec![(3, 1, 3, 4)]);
+        // The moss brick 512 drops the Gray Brick 129 (`:64012-64024`).
+        let kill = edit::TileKill { kind: 512, ..Default::default() };
+        let hit = Some(HitCell { x: 3, y: 4, kind: 512, frame_x: 0, frame_y: 0 });
+        let (drops, _) = drop_events(&kill, hit);
+        assert_eq!(drops, vec![(129, 1, 3, 4)]);
+        // The rainbow moss 627 drops the Stone Block 3 (`:64009-64011`).
+        let kill = edit::TileKill { kind: 627, ..Default::default() };
+        let hit = Some(HitCell { x: 3, y: 4, kind: 627, frame_x: 0, frame_y: 0 });
+        let (drops, _) = drop_events(&kill, hit);
+        assert_eq!(drops, vec![(3, 1, 3, 4)]);
     }
 
     #[test]
