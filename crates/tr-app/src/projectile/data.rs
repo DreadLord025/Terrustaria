@@ -304,6 +304,18 @@ pub const MEDUSA_HEAD_RAY: u16 = 536;
 /// laser, aiStyle 101 (`Projectile.cs:6397-6408`: 8x8, friendly,
 /// penetrate -1, tileCollide false, ignoreWater). W4-d11.
 pub const MINECART_MECH_LASER: u16 = 591;
+/// `ProjectileID.StardustJellyfishSmall` (539) — the stardust pillar's
+/// small jellyfish orb, aiStyle 102 (`Projectile.cs:6142-6150`: 18x30,
+/// hostile, penetrate -1, timeLeft 600). W4-d11.
+pub const STARDUST_JELLYFISH_SMALL: u16 = 539;
+/// `ProjectileID.NebulaBolt` (573) — the nebula soldier's bolt orb,
+/// aiStyle 102 (`Projectile.cs:6230-6238`: 18x30, hostile, penetrate -1,
+/// timeLeft 600). W4-d11.
+pub const NEBULA_BOLT: u16 = 573;
+/// `ProjectileID.NebulaLaser` (576) — the 574 eye's release laser,
+/// aiStyle 1 (`Projectile.cs:6258-6269`: 4x4, hostile, penetrate -1,
+/// alpha 255, extraUpdates 2, scale 1.2, timeLeft 600). W4-d11.
+pub const NEBULA_LASER: u16 = 576;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 pub const VORTEX_RITUAL_BOLT: u16 = 580;
@@ -2446,8 +2458,24 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 103, timeLeft 300, hostile.
             STARDUST_MARK => (20.0, 20.0, 103, -1, 300, 0, true, false, false, RESET_STATE),
             // `:6239-6247`'s NebulaEye (the 574): 18x18, aiStyle 102,
-            // timeLeft 600, tileCollide false.
-            NEBULA_EYE => (18.0, 18.0, 102, -1, 600, 0, false, false, false, RESET_STATE),
+            // timeLeft 600, tileCollide false. W4-d11 row fix: the stock
+            // penetrate 1 (`:774` — the arm sets none), NOT -1.
+            NEBULA_EYE => (18.0, 18.0, 102, 1, 600, 0, false, false, false, RESET_STATE),
+            // W4-d11 — `Projectile.cs:6142-6150` (539, the
+            // StardustJellyfishSmall): 18x30, aiStyle 102, penetrate -1,
+            // timeLeft 600, the stock tileCollide.
+            STARDUST_JELLYFISH_SMALL => {
+                (18.0, 30.0, 102, -1, 600, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d11 — `Projectile.cs:6230-6238` (573, the NebulaBolt):
+            // 18x30, aiStyle 102, penetrate -1, timeLeft 600.
+            NEBULA_BOLT => (18.0, 30.0, 102, -1, 600, 0, true, false, false, RESET_STATE),
+            // W4-d11 — `Projectile.cs:6258-6269` (576, the NebulaLaser):
+            // 4x4, aiStyle 1, penetrate -1, alpha 255, extraUpdates 2,
+            // scale 1.2, timeLeft 600.
+            NEBULA_LASER => {
+                (4.0, 4.0, 1, -1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.2))
+            }
             // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
             // 10x10, aiStyle 101, penetrate -1, tileCollide false;
             // drawLayer 7 / usesOwnerLight are render-side (dropped).
@@ -4730,6 +4758,12 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // wraps at it. The other glowsticks/flares keep the stock 1 (no
         // `projFrames` override in `Main.cs:8444-8727`).
         FAIRY_GLOWSTICK => 4,
+        // W4-d11 — the tower orbs' sheets (`Main.cs:8549-8551`): the 539
+        // jellyfish + the 575 sphere 4 rows, the 574 eye 2 rows (the
+        // aiStyle-102 machine's frame wraps + the 574's `frame = 1` pin,
+        // `Projectile.cs:33310-33317`/`:33352`/`:33410-33417`).
+        STARDUST_JELLYFISH_SMALL => 4,
+        NEBULA_EYE => 2,
         _ => 1,
     }
 }

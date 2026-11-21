@@ -3909,33 +3909,11 @@ impl Projectile {
         let _ = npcs;
     }
 
-    /// `AI()`'s aiStyle-102 block's 574 arm (`Projectile.cs:33250-33299`) —
-    /// the Nebula Eye: the host-locked position drag with the 0.15/0.075
-    /// homing accel over the 6-px clamp, the 180-tick release.
-    fn ai_nebula_eye(&mut self, npcs: &[Npc], player: (f32, f32)) {
-        let host_idx = self.host_by_kind(npcs, NpcKind::NebulaFloater).unwrap_or(usize::MAX);
-        let alive = npcs
-            .get(host_idx)
-            .map(|h| h.kind == NpcKind::NebulaFloater && h.hp > 0)
-            .unwrap_or(false);
-        self.time_left = 2;
-        self.ai[0] += 1.0;
-        if self.ai[0] < 180.0 {
-            if let Some(host) = npcs.get(host_idx) {
-                self.pos += Vec2::new(host.vx, host.vy);
-            }
-        }
-        if alive {
-            let (px, py) = player;
-            let (dx, dy) = ((px - self.pos.x).signum() * 0.15, (py - self.pos.y).signum() * 0.075);
-            let v = self.vel + Vec2::new(dx, dy);
-            let l = v.length();
-            self.vel = if l > 6.0 { v * (6.0 / l) } else { v };
-        } else {
-            self.ai[0] = 180.0;
-        }
-        self.pos += self.vel;
-    }
+    /// W4-d11 — the 574-only `ai_nebula_eye` stand-in that sat here is
+    /// REPLACED by the verbatim three-kind aiStyle-102 machine
+    /// (`projectile_ai_101_110::ai_tower_orb`, `Projectile.cs:33222-
+    /// 33447`): the stand-in lacked the release volley, the dust-gate
+    /// census, the frames and the 539/573 kinds entirely.
 
     /// `AI()`'s aiStyle-122 block (`Projectile.cs:34896-34931`) — the
     /// TowerDamageBolt: the host-homing 5-px bolt that dies when the host
@@ -17901,10 +17879,33 @@ impl ProjectilePool {
                             );
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d11 — aiStyle 102 (`AI()` `:33222-33447`):
+                        // the three tower orbs (539 jellyfish / 573 bolt /
+                        // 574 eye) — the verbatim machine replaces the
+                        // 574-only `ai_nebula_eye` stand-in (the host drag,
+                        // the release volley, the dust-gate census, the
+                        // frames). The host is the `ai[1]` NPC index (the
+                        // C# `Main.npc[(int)ai[1]]`); the single-player
+                        // target folds to the local player.
                         102 => {
-                            let player = owner.unwrap_or((0.0, 0.0));
-                            let npcs = &npcs[..];
-                            self.slots[i].ai_nebula_eye(npcs, player)
+                            let host_idx = self.slots[i].ai[1] as usize;
+                            let host = npcs.get(host_idx).map(|h| (host_idx, h));
+                            let target_player = player
+                                .as_deref()
+                                .map(|pl| pl.center())
+                                .or(owner);
+                            let expert =
+                                player.as_deref().is_some_and(|pl| pl.buffs.expert_mode);
+                            crate::projectile_ai_101_110::ai_tower_orb(
+                                &mut self.slots[i],
+                                world,
+                                host,
+                                target_player,
+                                expert,
+                                local_owner,
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
                         }
                         103 => {
                             let npcs = &npcs[..];
