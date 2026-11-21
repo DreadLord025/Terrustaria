@@ -378,7 +378,7 @@ impl App {
                     let show_invisible = crate::env::show_invisible()
                         || tr_core::scene::should_show_invisible_blocks_and_walls(
                             self.scene_metrics.echo_monolith,
-                            self.player
+                            player
                                 .as_ref()
                                 .is_some_and(|p| p.can_see_invisible_blocks),
                         );

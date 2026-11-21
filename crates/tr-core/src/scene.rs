@@ -362,6 +362,25 @@ pub fn tile_is_visible(
     true
 }
 
+/// `Main.WallLightAt(i, j, showInvisibleWalls)` (`Main.cs:55169-55181`),
+/// verbatim: a `Main.wallLight[wall]` wall always lights the background
+/// cell; otherwise a HIDDEN Echo-coated wall counts as light (the
+/// `!showInvisibleWalls → return tile.invisibleWall()` arm — the coating
+/// lets the cave backdrop show through), and a shown one does not.
+/// W4-g78: the pure predicate; the `render/bg.rs::wall_light_at` consumer
+/// (which reads only the `WALL_LIGHT` table today) is contested by the
+/// W4-g70 bg-layers lane — the wiring (thread the frame's sight value into
+/// `draw_rock`/`should_draw_background_tile_at`) lands with that merge.
+pub fn wall_light_at(wall_is_light: bool, invisible_wall: bool, show_invisible: bool) -> bool {
+    if !wall_is_light {
+        if !show_invisible {
+            return invisible_wall;
+        }
+        return false;
+    }
+    true
+}
+
 /// `Main.wallDungeon` (`Main.cs:10596-10607`): the brick/background walls
 /// the dungeon zone requires behind the scan centre.
 pub fn is_dungeon_wall(wall: u16) -> bool {
@@ -2595,6 +2614,23 @@ mod tests {
             assert!(tile_is_visible(k, 0, false, true));
             assert!(tile_is_visible(k, 0, true, true));
         }
+    }
+
+    /// `Main.WallLightAt(i, j, showInvisibleWalls)` (`Main.cs:55169-55181`):
+    /// the wallLight table wins; else the hidden coating bit counts as
+    /// light, the shown one does not.
+    #[test]
+    fn w4_g78_wall_light_at_census() {
+        // wallLight table true: always, coating/sight irrelevant.
+        assert!(wall_light_at(true, false, false));
+        assert!(wall_light_at(true, true, true));
+        // No table light, no coating: never.
+        assert!(!wall_light_at(false, false, false));
+        assert!(!wall_light_at(false, false, true));
+        // Coated + hidden: the backdrop shows through (true).
+        assert!(wall_light_at(false, true, false));
+        // Coated + shown: the wall draws, so no backdrop light (false).
+        assert!(!wall_light_at(false, true, true));
     }
 
     /// A metrics with only the given window counts set.
