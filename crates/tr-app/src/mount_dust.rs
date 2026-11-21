@@ -1,12 +1,16 @@
-//! W4-f6 batches 1-2 — the Mount.cs dust sites. Batch 1 (MOVEMENT, 10): the
-//! drill mount's beam puffs (`UseDrill`, `Mount.cs:3113`/`:3170`) and the
-//! `UpdateFrame` (`:3581`) per-type dash/gallop arms — the Unicorn/WoF-Goat
-//! ring + body (`:3878`/`:3896`), the Pirate Ship ring + run puff
-//! (`:3939`/`:3970`), the Spooky Wood ring + body (`:4000`/`:4023`) and the
-//! Basilisk run + charge dusts (`:4103`/`:4123`). Batch 2 (EFFECTS, 10): the
-//! golf-cart smoke (`:4626`, DEAD), the four minecart effects
+//! W4-f6 batches 1-3 — the Mount.cs dust sites (all 27). Batch 1 (MOVEMENT,
+//! 10): the drill mount's beam puffs (`UseDrill`, `Mount.cs:3113`/`:3170`)
+//! and the `UpdateFrame` (`:3581`) per-type dash/gallop arms — the
+//! Unicorn/WoF-Goat ring + body (`:3878`/`:3896`), the Pirate Ship ring +
+//! run puff (`:3939`/`:3970`), the Spooky Wood ring + body (`:4000`/`:4023`)
+//! and the Basilisk run + charge dusts (`:4103`/`:4123`). Batch 2 (EFFECTS,
+//! 10): the golf-cart smoke (`:4626`, DEAD), the four minecart effects
 //! (`:4703`/`:4719`/`:4750`/`:4782`) and the `UpdateEffects` broom/drill/lava
-//! arms (`:4824`/`:4849`/`:5061`/`:5071`/`:5099`).
+//! arms (`:4824`/`:4849`/`:5061`/`:5071`/`:5099`). Batch 3 (SPAWN/DISMOUNT,
+//! 7): the Pixie tail (`:5149`), the failed-dismount burst (`:6339`) and
+//! `DoSpawnDust` — the Wolf loop + clone (`:6382`/`:6391`), the Chillet loop
+//! + clone (`:6404`/`:6413`) and the generic tail (`:6493`); the shared
+//! `GetFairyQueenWeaponsColorFull` (`Projectile.cs:21665`) is ported here.
 //!
 //! Contract (the S1-E-1 pool, d50's `DustPool`): every draw rides the
 //! caller's `UpdatePlayers` stream in C# statement order — `Mount.UseDrill`
@@ -864,6 +868,692 @@ pub fn lava_cart_trail(
             }
         }
         num6 += 0.1; // `:5095` — the f32 loop step.
+    }
+}
+
+// ---------------------------------------------------------------------------
+// W4-f6 batch 3 — the Mount SPAWN/DISMOUNT dust sites (7): the Pixie tail
+// (`UpdateEffects` case 61, `Mount.cs:5149`), the failed-dismount burst
+// (`DoFailedDismountDust`, :6339) and `DoSpawnDust` (:6371) — the Wolf 52
+// loop + clone (:6382/:6391), the Chillet 62-65 loop + clone (:6404/:6413)
+// and the generic tail (:6493). The Pixie/Bat arms read
+// `Projectile.GetFairyQueenWeaponsColorFull` (:21665), ported here as
+// [`fairy_queen_weapons_color_full`] (the dev-name switch included).
+//
+// `DoSpawnDust` runs from `SetMount` (:6300, isDismounting false) and
+// `Dismount` (:6169, true) — both inside the player tick (`UpdatePlayers`).
+// `DoFailedDismountDust` runs from `Player.cs:6058` (the FailedNoSpace
+// 3-strike ladder, `FailedNoSpaceCount * 20` dusts). The `netMode == 2`
+// head guards (:6322/:6373) are the single-player drop. The cart
+// `Gore.NewGore` siblings (:6466/:6551/:6560) are W4-d55's lane — their
+// ARGUMENT draws are consumed here in order (the e2 spin hand-off split),
+// the `NewGore` bodies are d55's.
+// ---------------------------------------------------------------------------
+
+/// `MathHelper.Lerp(a, b, t)` — XNA's `a + (b - a) * t`.
+fn mh_lerp(a: f32, b: f32, t: f32) -> f32 {
+    a + (b - a) * t
+}
+
+/// `Utils.Turn01ToCyclic010` (`Utils.cs`): `1 - (cos(value*2π)*0.5 + 0.5)`,
+/// the DOUBLE cos of the f32 product cast back.
+fn turn_01_to_cyclic010(value: f32) -> f32 {
+    1.0 - (((value * (std::f32::consts::PI * 2.0)) as f64).cos() as f32 * 0.5 + 0.5)
+}
+
+/// `Utils.PingPongFrom01To010` (`Utils.cs`): the f32 `% 1` wrap, the < 0
+/// increment, then the >= 0.5 mirror.
+fn ping_pong_from01_to010(value: f32) -> f32 {
+    let mut v = value % 1.0;
+    if v < 0.0 {
+        v += 1.0;
+    }
+    if v >= 0.5 {
+        2.0 - v * 2.0
+    } else {
+        v * 2.0
+    }
+}
+
+/// `MathHelper.SmoothStep(value1, value2, amount)` — XNA's cubic Hermite
+/// over the clamped amount (the `Vector2.SmoothStep` scalar twin,
+/// `projectile_ai_empress.rs::smooth_step`).
+fn mh_smooth_step(v1: f32, v2: f32, amount: f32) -> f32 {
+    let amount = amount.clamp(0.0, 1.0);
+    let num = amount * amount * amount;
+    let num2 = amount * amount;
+    if amount.abs() <= f32::from_bits(1) {
+        return v1;
+    }
+    if amount == 1.0 {
+        return v2;
+    }
+    (2.0 * v1 - 2.0 * v2) * num + (3.0 * v2 - 3.0 * v1) * num2 + v1
+}
+
+/// `new Color(float, float, float[, float])` — XNA's `(byte)(v*255)` per
+/// channel (the `Color(Vector3)` ctor, the pylons `color_bytes` convention).
+fn color_f(r: f32, g: f32, b: f32, a: f32) -> Color {
+    Color::new(
+        (r * 255.0) as u8,
+        (g * 255.0) as u8,
+        (b * 255.0) as u8,
+        (a * 255.0) as u8,
+    )
+}
+
+/// `Color.Lerp(a, b, amount)` — XNA's per-channel BYTE lerp, truncated
+/// (the pylons `lerp_bytes` convention), alpha included.
+fn color_lerp(a: Color, b: Color, amount: f32) -> Color {
+    Color::new(
+        (a.r as f32 + (b.r as f32 - a.r as f32) * amount) as u8,
+        (a.g as f32 + (b.g as f32 - a.g as f32) * amount) as u8,
+        (a.b as f32 + (b.b as f32 - a.b as f32) * amount) as u8,
+        (a.a as f32 + (b.a as f32 - a.a as f32) * amount) as u8,
+    )
+}
+
+/// `Color * float` — XNA's `(byte)(c*scale)` per channel, alpha included
+/// (the pylons `scale_bytes` convention).
+fn color_scale(c: Color, scale: f32) -> Color {
+    Color::new(
+        (c.r as f32 * scale) as u8,
+        (c.g as f32 * scale) as u8,
+        (c.b as f32 * scale) as u8,
+        (c.a as f32 * scale) as u8,
+    )
+}
+
+/// `Projectile.GetFairyQueenWeaponsColorFull` (`Projectile.cs:21665-21889`):
+/// the Fairy Queen's weapon colour — the `(hueRaw + 0.5) % 1` hue, the
+/// dev-name switch (the early-return Cenx/Artyrian/Bame/Unit One arms
+/// included), then `hslToRgb(num, 1, luminance) * Opacity`, the optional
+/// white lerp and the alpha-channel multiply. `player_name` is the local
+/// player's name (`Main.player[playerIndex].name`; the port's
+/// `app.player_name`), `player_center` the jopojelly arm's offset anchor.
+/// `player_active` folds the `player.active` gate (true for the local
+/// player in the sim). ZERO rand draws — a pure colour function.
+#[allow(clippy::too_many_arguments)]
+pub fn fairy_queen_weapons_color_full(
+    player_name: &str,
+    player_active: bool,
+    player_center: Vec2,
+    center: Vec2,
+    hue_raw: f32,
+    alpha_channel_multiplier: f32,
+    lerp_to_white: f32,
+    opacity: f32,
+    luminance: f32,
+) -> Color {
+    let saturation = 1.0f32; // `:21667`
+    let mut num = (hue_raw + 0.5) % 1.0; // `:21668`
+    let mut luminance = luminance;
+    let mut alpha = alpha_channel_multiplier;
+    // The dev-name switch (`:21674-21878`), only for an active player.
+    if player_active {
+        // The cos(hueRaw*2π)*0.5+0.5 term several arms share.
+        let cos_term = ((hue_raw * (std::f32::consts::PI * 2.0)) as f64).cos() as f32 * 0.5 + 0.5;
+        match player_name {
+            "Cenx" => {
+                // `:21676-21685` — the double-SmoothStep PingPong lerp.
+                let amount = mh_smooth_step(
+                    0.0, 1.0,
+                    mh_smooth_step(0.0, 1.0, ping_pong_from01_to010(num)),
+                );
+                let mut c = color_lerp(color_f(0.3, 1.0, 0.2, 1.0), Color::new(255, 105, 180, 255), amount);
+                if lerp_to_white != 0.0 {
+                    c = color_lerp(c, Color::WHITE, lerp_to_white);
+                }
+                c.a = (c.a as f32 * alpha) as u8;
+                return c;
+            }
+            "Crowno" => {
+                luminance = mh_lerp(0.25, 0.4, turn_01_to_cyclic010(num));
+                num = mh_lerp(127.0 / 180.0, 47.0 / 60.0, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 0.5, 0.5);
+            }
+            "Yoraiz0r" => num = mh_lerp(0.9, 0.95, turn_01_to_cyclic010(num)),
+            "Jaxrud" => num = mh_lerp(13.0 / 72.0, 0.43611112, turn_01_to_cyclic010(num)),
+            "Lazure" => num = mh_lerp(8.0 / 15.0, 83.0 / 90.0, turn_01_to_cyclic010(num)),
+            "Leinfors" => num = mh_lerp(0.7, 0.77, turn_01_to_cyclic010(num)),
+            "Grox The Great" => {
+                num = mh_lerp(0.31, 0.5, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 1.0, 0.8);
+            }
+            "Acamaeda" => {
+                num = mh_lerp(0.06, 0.28, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 0.6, 0.5);
+            }
+            "Alchemystics" => {
+                num = mh_lerp(0.74, 0.96, turn_01_to_cyclic010(num));
+                luminance = 0.6;
+                alpha = mh_lerp(alpha, 0.6, 0.5);
+            }
+            "Antithesis" => {
+                num = 0.51;
+                luminance = mh_lerp(0.0, 0.5, cos_term);
+            }
+            "Artyrian" => {
+                let amount = mh_smooth_step(
+                    0.0, 1.0,
+                    mh_smooth_step(0.0, 1.0, ping_pong_from01_to010(num)),
+                );
+                let mut c = color_lerp(color_f(1.0, 0.31, 0.0, 1.0), color_f(0.7, 0.0, 1.0, 1.0), amount);
+                if lerp_to_white != 0.0 {
+                    c = color_lerp(c, Color::WHITE, lerp_to_white);
+                }
+                c.a = (c.a as f32 * alpha) as u8;
+                return c;
+            }
+            "Aurora3500" => {
+                num = mh_lerp(0.33, 0.8, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 0.5, 0.5);
+            }
+            "Bame" => {
+                let amount = mh_smooth_step(
+                    0.0, 1.0,
+                    mh_smooth_step(0.0, 1.0, ping_pong_from01_to010(num)),
+                );
+                let mut c = color_lerp(Color::new(255, 255, 0, 255), color_f(0.4, 0.0, 0.75, 1.0), amount);
+                if lerp_to_white != 0.0 {
+                    c = color_lerp(c, Color::WHITE, lerp_to_white);
+                }
+                c.a = (c.a as f32 * alpha) as u8;
+                return c;
+            }
+            "CheesyPaninie" => {
+                num = mh_lerp(0.88, 1.09, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 0.5, 0.5);
+            }
+            "Criddle" => {
+                num = mh_lerp(0.05, 0.15, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 0.5, 0.5);
+            }
+            "Darthkitten" => {
+                num = 1.0;
+                luminance = mh_lerp(1.0, 0.4, cos_term);
+            }
+            "darthmorf" => {
+                num = 0.0;
+                luminance = mh_lerp(0.0, 0.2, cos_term);
+            }
+            "Discipile" => {
+                num = 0.53;
+                luminance = mh_lerp(0.05, 0.5, cos_term);
+            }
+            "Doylee" => {
+                num = mh_lerp(0.68, 1.0, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 0.6, 0.5);
+            }
+            "Ghostar" => {
+                num = 0.66;
+                luminance = mh_lerp(0.15, 0.85, cos_term);
+            }
+            "GreyL1me" => {
+                num = 0.13;
+                luminance = mh_lerp(0.4, 0.6, cos_term);
+                alpha = 0.3;
+            }
+            "Jenosis" => {
+                num = mh_lerp(0.9, 1.13, turn_01_to_cyclic010(num)) % 1.0;
+                alpha = mh_lerp(alpha, 0.5, 0.5);
+            }
+            "jopojelly" | "Jopojelly" => {
+                // `:21781-21789` — the player-center X offset lerp.
+                let v = player_center - center;
+                let amount = turn_01_to_cyclic010(num);
+                let t = (v.x / 10.0).clamp(-1.0, 1.0) * 0.5 + 0.5;
+                num = mh_lerp(mh_lerp(0.072, 0.086, amount), mh_lerp(0.47, 0.55, amount), t);
+            }
+            "Kazzymodus" => {
+                num = 0.33;
+                luminance = mh_lerp(0.15, 0.4, cos_term);
+            }
+            "Khaios" => {
+                num = 0.33;
+                luminance = mh_lerp(0.0, 0.2, cos_term);
+            }
+            "Loki" => {
+                num = 0.0;
+                luminance = mh_lerp(0.0, 0.25, cos_term);
+            }
+            "Luna" => num = mh_lerp(0.49, 0.8, turn_01_to_cyclic010(num)),
+            "ManaUser" => num = mh_lerp(0.41, 0.57, turn_01_to_cyclic010(num)),
+            "Mid" => {
+                num = 0.0;
+                luminance = mh_lerp(0.0, 0.9, cos_term);
+            }
+            "Nimbus" => {
+                num = mh_lerp(0.75, 1.0, turn_01_to_cyclic010(num));
+                luminance = 1.0;
+                alpha = mh_lerp(alpha, 0.5, 0.8);
+            }
+            "Nike Leon" => {
+                num = mh_lerp(0.04, 0.1, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 0.5, 0.5);
+            }
+            "ppowersteef" => {
+                num = mh_lerp(0.0, 0.15, turn_01_to_cyclic010(num));
+                alpha = mh_lerp(alpha, 0.6, 0.5);
+            }
+            "RBrandon" => {
+                num = 0.03;
+                luminance = 0.3;
+                alpha = mh_lerp(alpha, 0.6, 0.5);
+            }
+            "Redigit" => num = 0.7,
+            "Serenity" => {
+                num = 0.85;
+                luminance = mh_lerp(1.0, 0.5, cos_term);
+            }
+            "Shadouette" => num = mh_lerp(0.91, 0.51, turn_01_to_cyclic010(num)),
+            "Sigma" => {
+                num = mh_lerp(0.0, 0.12, turn_01_to_cyclic010(num));
+                luminance = 0.5;
+                alpha = mh_lerp(alpha, 0.6, 0.5);
+            }
+            "teiull" => {
+                num = mh_lerp(0.66, 1.0, turn_01_to_cyclic010(num));
+                luminance = 0.5;
+            }
+            "Unit One" => {
+                let amount = mh_smooth_step(0.0, 1.0, ping_pong_from01_to010(num));
+                let mut c = color_lerp(Color::new(255, 255, 0, 255), Color::new(0, 0, 255, 255), amount);
+                if lerp_to_white != 0.0 {
+                    c = color_lerp(c, Color::WHITE, lerp_to_white);
+                }
+                c.a = (c.a as f32 * alpha) as u8;
+                return c;
+            }
+            "Vulpes Inculta" => {
+                num = mh_lerp(0.65, 0.75, turn_01_to_cyclic010(num));
+                luminance = 0.5;
+                alpha = mh_lerp(alpha, 0.5, 0.5);
+            }
+            "Waze3174" => {
+                num = mh_lerp(0.33, 0.0, turn_01_to_cyclic010(num));
+                luminance = 0.3;
+                alpha = mh_lerp(alpha, 0.6, 0.5);
+            }
+            "Xman101" => {
+                num = 0.06;
+                luminance = mh_lerp(0.0, 0.5, cos_term);
+            }
+            "Zoomo" => {
+                num = 0.77;
+                luminance = 0.5;
+                alpha = mh_lerp(alpha, 0.6, 0.5);
+            }
+            _ => {}
+        }
+    }
+    // `:21881-21888` — hslToRgb(num, 1, luminance) * Opacity, white lerp,
+    // alpha multiply. `ui::color::hsl_to_rgb` is the verbatim Main port.
+    let rgb = crate::ui::color::hsl_to_rgb(num as f64, saturation as f64, luminance as f64, 255);
+    let mut c = color_scale(Color::new(rgb[0], rgb[1], rgb[2], rgb[3]), opacity);
+    if lerp_to_white != 0.0 {
+        c = color_lerp(c, Color::WHITE, lerp_to_white);
+    }
+    c.a = (c.a as f32 * alpha) as u8;
+    c
+}
+
+/// Site 5149 — the Pixie mount's dust tail (`Mount.cs:5142-5164`, case 61):
+/// `flag = Next(15) == 0` EVERY tick; the spawn gate is
+/// `(int)timeForVisualEffects % 2 == 0 && (flag || (Next(6) + 1) <
+/// velocity.Length())` — the `Next(6)` draws ONLY when `flag` is false (the
+/// `||` short-circuit) AND the time gate passed. On a pass, ONE
+/// `NewDustDirect(Center, 0, 0, 278, 0, 0, 200, Color.Lerp(fairyA, fairyB,
+/// NextFloat()), 0.65)` where fairyA/fairyB are the two
+/// `GetFairyQueenWeaponsColorFull` calls (0.45 vs 0 lerpToWhite); then
+/// `position = Center + (0, -2)`, `flag` ? `velocity *= 0.4` :
+/// `velocity *= 0.04 * velocity.Length()`; `velocity += player.velocity *
+/// 0.3`, `position += player.velocity * 0.7`, `position +=
+/// (NextFloat()*2π).ToRotationVector2() * NextFloat() * 2`, `noGravity`,
+/// `noLight`. Returns whether the spawn fired.
+#[allow(clippy::too_many_arguments)]
+pub fn pixie_tail(
+    center: Vec2,
+    vel: Vec2,
+    time_for_visual_effects: f64,
+    player_name: &str,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) -> bool {
+    let flag = rng.next_max(15) == 0; // `:5146`
+    // `:5147` — the time gate first; the Next(6) only when !flag.
+    let time_gate = (time_for_visual_effects as i32) % 2 == 0;
+    if !time_gate {
+        return false;
+    }
+    let speed_gate = flag || (rng.next_max(6) + 1) as f32 < vel.length();
+    if !speed_gate {
+        return false;
+    }
+    // `:5149` — the two fairy colours + the NextFloat lerp ARGUMENT.
+    let fairy_a = fairy_queen_weapons_color_full(
+        player_name, true, center, center, 0.41, 1.0, 0.45, 1.0, 0.7,
+    );
+    let fairy_b = fairy_queen_weapons_color_full(
+        player_name, true, center, center, 0.41, 1.0, 0.0, 1.0, 0.7,
+    );
+    let color = color_lerp(fairy_a, fairy_b, rng.next_float());
+    let idx = dust.new_dust_direct(
+        rng, ctx, world, center, 0, 0, 278, 0.0, 0.0, 200, color, 0.65,
+    );
+    let d = dust.slot_mut(idx);
+    d.position = center + Vec2::new(0.0, -2.0); // `:5150`
+    if flag {
+        d.velocity *= 0.4; // `:5151-5154`
+    } else {
+        d.velocity *= 0.04 * vel.length(); // `:5155-5158`
+    }
+    d.velocity += vel * 0.3; // `:5159`
+    d.position += vel * 0.7; // `:5160`
+    // `:5161` — the (NextFloat*2π) unit vector * NextFloat * 2.
+    let angle = rng.next_float() * (std::f32::consts::PI * 2.0);
+    let unit = Vec2::new(
+        (angle as f64).cos() as f32,
+        (angle as f64).sin() as f32,
+    );
+    d.position += unit * rng.next_float() * 2.0;
+    d.no_gravity = true; // `:5162`
+    d.no_light = true; // `:5163`
+    true
+}
+
+/// Site 6339 — the failed-dismount burst (`Mount.cs:6320-6369`): the
+/// `netMode == 2` head is the SP drop. `newColor` is Transparent, Black for
+/// the Bat (56), the fairy colour for the Pixie (61). The hitbox inflates
+/// (10, 10); `dust_amount` dusts (the caller's `FailedNoSpaceCount * 20`),
+/// each `NewDust(hitbox.TopLeft(), hitbox.Width, hitbox.Height,
+/// spawnDust, 0, 0, 0, newColor)`; `scale += Next(-10, 21)*0.01`; the Bat
+/// pins `scale = 0.7`, `velocity *= 0.4`, `velocity.Y += gravDir*0.5`; the
+/// Pixie `scale *= 1 + 0.3*NextFloat()`, `velocity += player.velocity *
+/// NextFloat()`; `spawnDustNoGravity` ? `noGravity` : a `Next(2) == 0` ?
+/// (`scale *= 1.3`, `noGravity`) : `velocity *= 0.5`; then
+/// `velocity += player.velocity * 0.8`.
+#[allow(clippy::too_many_arguments)]
+pub fn failed_dismount_dust(
+    kind: i32,
+    spawn_dust: i32,
+    spawn_dust_no_gravity: bool,
+    hitbox_top_left: Vec2,
+    hitbox_w: i32,
+    hitbox_h: i32,
+    dust_amount: i32,
+    vel: Vec2,
+    player_name: &str,
+    center: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:6326-6334` — the colour pick.
+    let mut new_color = Color::TRANSPARENT;
+    if kind == 56 {
+        new_color = Color::new(0, 0, 0, 255); // Color.Black
+    }
+    if kind == 61 {
+        new_color = fairy_queen_weapons_color_full(
+            player_name, true, center, center, 0.27, 1.0, 0.15, 1.0, 0.7,
+        );
+    }
+    // `:6335-6336` — the inflated hitbox (the caller passes the inflated
+    // box; the TopLeft/Width/Height are the C#'s `hitbox` reads).
+    for _ in 0..dust_amount {
+        let idx = dust.new_dust(
+            rng, ctx, world, hitbox_top_left, hitbox_w, hitbox_h, spawn_dust,
+            0.0, 0.0, 0, new_color, 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.scale += rng.next_range(-10, 21) as f32 * 0.01; // `:6340`
+        if kind == 56 {
+            d.scale = 0.7; // `:6341-6347`
+            d.velocity *= 0.4;
+            d.velocity.y += 0.5; // gravDir = 1
+        }
+        if kind == 61 {
+            d.scale *= 1.0 + 0.3 * rng.next_float(); // `:6348-6353`
+            d.velocity += vel * rng.next_float();
+        }
+        if spawn_dust_no_gravity {
+            d.no_gravity = true; // `:6354-6357`
+        } else if rng.next_max(2) == 0 {
+            d.scale *= 1.3; // `:6358-6362`
+            d.no_gravity = true;
+        } else {
+            d.velocity *= 0.5; // `:6363-6366`
+        }
+        d.velocity += vel * 0.8; // `:6367`
+    }
+}
+
+/// Sites 6382/6391 — the Wolf's (52) spawn/dismount burst
+/// (`Mount.cs:6377-6397`): 100 dusts, each
+/// `NewDustDirect((position.X - 20, position.Y), width + 40, height, 267,
+/// 0, 0, 60, Color(130, 60, 255, 70))`; `scale += Next(-10, 21)*0.01`,
+/// `noGravity`, `velocity += player.velocity*0.8`, `velocity *= NextFloat()`,
+/// `velocity.Y += 2*NextFloatDirection()`, `noLight`; a `Next(3) == 0`
+/// clones (`CloneDust`, site 6391) with `color = White`, `scale *= 0.5`,
+/// `alpha = 0`. The `_ = spawnDust` read (:6381) is a no-op.
+#[allow(clippy::too_many_arguments)]
+pub fn wolf_spawn_dust(
+    pos: Vec2,
+    width: i32,
+    height: i32,
+    vel: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let anchor = Vec2::new(pos.x - 20.0, pos.y); // `:6382`
+    for _ in 0..100 {
+        let idx = dust.new_dust_direct(
+            rng, ctx, world, anchor, width + 40, height, 267, 0.0, 0.0, 60,
+            Color::new(130, 60, 255, 70), 1.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.scale += rng.next_range(-10, 21) as f32 * 0.01; // `:6383`
+        d.no_gravity = true; // `:6384`
+        d.velocity += vel * 0.8; // `:6385`
+        d.velocity *= rng.next_float(); // `:6386`
+        d.velocity.y += 2.0 * rng.next_float_direction(); // `:6387`
+        d.no_light = true; // `:6388`
+        if rng.next_max(3) == 0 {
+            // `:6389-6395` — the clone (site 6391).
+            let cidx = dust.clone_dust(rng, ctx, world, idx);
+            let cd = dust.slot_mut(cidx);
+            cd.color = Color::WHITE;
+            cd.scale *= 0.5;
+            cd.alpha = 0;
+        }
+    }
+}
+
+/// Sites 6404/6413 — the Chillet's (62-65) spawn/dismount burst
+/// (`Mount.cs:6399-6419`): 100 dusts, each
+/// `NewDustDirect((position.X - 20, position.Y), width + 40, height, 306,
+/// 0, 0, 60, Color(100, 227, 255, 127), 2)`; `scale += Next(-10, 21)*0.01`,
+/// `noGravity`, `velocity += player.velocity*0.8`, `velocity *= NextFloat()`,
+/// `velocity.Y += 4*NextFloatDirection()`, `noLight`; a `Next(3) == 0`
+/// clones (site 6413) with `color = White`, `scale *= 0.5`, `alpha = 0`.
+#[allow(clippy::too_many_arguments)]
+pub fn chillet_spawn_dust(
+    pos: Vec2,
+    width: i32,
+    height: i32,
+    vel: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let anchor = Vec2::new(pos.x - 20.0, pos.y); // `:6404`
+    for _ in 0..100 {
+        let idx = dust.new_dust_direct(
+            rng, ctx, world, anchor, width + 40, height, 306, 0.0, 0.0, 60,
+            Color::new(100, 227, 255, 127), 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.scale += rng.next_range(-10, 21) as f32 * 0.01; // `:6405`
+        d.no_gravity = true; // `:6406`
+        d.velocity += vel * 0.8; // `:6407`
+        d.velocity *= rng.next_float(); // `:6408`
+        d.velocity.y += 4.0 * rng.next_float_direction(); // `:6409`
+        d.no_light = true; // `:6410`
+        if rng.next_max(3) == 0 {
+            // `:6411-6417` — the clone (site 6413).
+            let cidx = dust.clone_dust(rng, ctx, world, idx);
+            let cd = dust.slot_mut(cidx);
+            cd.color = Color::WHITE;
+            cd.scale *= 0.5;
+            cd.alpha = 0;
+        }
+    }
+}
+
+/// Site 6493 — the generic `DoSpawnDust` tail (`Mount.cs:6420-6541`): the
+/// colour pick (Yellow for the Broom 23, Black for the Bat 56, fairy for
+/// the Pixie 61), the count (100, or 40 for the roller skates 57-60), the
+/// box `r` (the (position.X-20, position.Y, width+40, height) default; the
+/// Bat/Pixie use the inflated hitbox or the dismount bottom-box; the
+/// skates use the bottom strip). Per dust: the cart arm (the `Cart` set)
+/// spawns a gore every 10th iteration and CONTINUES (no dust — the gore
+/// ARGUMENT draws are consumed, d55's body); else the type/scale/alpha pick
+/// (the 40/41/42 bee arm: `Next(2) != 0` ? 16 : 31, scale 0.9, alpha 50,
+/// the 42 pins 31, the 41 pins 16), the Pixie's `Next(isDismounting ? 2 :
+/// 5) != 0` continue, then `NewDust(r.TopLeft(), r.Width, r.Height, type,
+/// 0, 0, alpha, newColor, scale)`; `scale += Next(-10, 21)*0.01`; the
+/// skates' velocity chain; the Bat/Pixie arms; the noGravity/Next(2) gate;
+/// `velocity += player.velocity*0.8`; the 40/41/42 `velocity *= NextFloat()`.
+/// The trailing 40/41/42 + 23 gore loops (:6542-6564) are d55's (their
+/// argument draws are consumed here). `r` is the caller's resolved box.
+#[allow(clippy::too_many_arguments)]
+pub fn generic_spawn_dust(
+    kind: i32,
+    spawn_dust: i32,
+    spawn_dust_no_gravity: bool,
+    is_cart: bool,
+    is_dismounting: bool,
+    r_top_left: Vec2,
+    r_w: i32,
+    r_h: i32,
+    vel: Vec2,
+    player_name: &str,
+    center: Vec2,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:6421-6433` — the colour pick.
+    let mut new_color = Color::TRANSPARENT;
+    if kind == 23 {
+        new_color = Color::new(255, 255, 0, 255);
+    }
+    if kind == 56 {
+        new_color = Color::new(0, 0, 0, 255);
+    }
+    if kind == 61 {
+        new_color = fairy_queen_weapons_color_full(
+            player_name, true, center, center, 0.27, 1.0, 0.15, 1.0, 0.7,
+        );
+    }
+    // `:6434-6438` — the count (the caller resolves the roller-skate 40).
+    let count = if crate::mount::is_roller_skates(kind) { 40 } else { 100 };
+    for k in 0..count {
+        if is_cart {
+            // `:6462-6471` — every 10th iteration a gore (d55's body), the
+            // ARGUMENT draws consumed: Next(61, 64) type + NextDouble angle.
+            if k % 10 == 0 {
+                let _gore_type = rng.next_range(61, 64); // `:6466`
+                let _angle = rng.next_double() * 6.2831854820251465; // `:6468`
+            }
+            continue;
+        }
+        // `:6472-6488` — the type/scale/alpha pick.
+        let mut ty = spawn_dust;
+        let mut scale = 1.0f32;
+        let mut alpha = 0i32;
+        if matches!(kind, 40 | 41 | 42) {
+            ty = if rng.next_max(2) != 0 { 16 } else { 31 }; // `:6477`
+            scale = 0.9;
+            alpha = 50;
+            if kind == 42 {
+                ty = 31; // `:6480-6483`
+            }
+            if kind == 41 {
+                ty = 16; // `:6484-6487`
+            }
+        }
+        // `:6489-6492` — the Pixie's continue gate.
+        if kind == 61 && rng.next_max(if is_dismounting { 2 } else { 5 }) != 0 {
+            continue;
+        }
+        let idx = dust.new_dust(
+            rng, ctx, world, r_top_left, r_w, r_h, ty, 0.0, 0.0, alpha, new_color, scale,
+        );
+        let d = dust.slot_mut(idx);
+        d.scale += rng.next_range(-10, 21) as f32 * 0.01; // `:6494`
+        if kind > 0 && crate::mount::is_roller_skates(kind) {
+            // `:6495-6503` — the skates' velocity chain.
+            d.velocity *= 0.8;
+            d.velocity.y *= 0.75;
+            d.velocity.y += 0.25; // gravDir = 1
+            d.no_light_emittance = true;
+            d.no_gravity = true;
+        }
+        if kind == 56 {
+            d.scale = 0.7; // `:6504-6510`
+            d.velocity *= 0.4;
+            d.velocity.y += 0.5;
+        }
+        if kind == 61 {
+            d.scale *= 1.0 + 0.3 * rng.next_float(); // `:6511-6522`
+            if !is_dismounting {
+                // `:6515-6520` — the lerp toward the box centre.
+                let r_center = r_top_left + Vec2::new(r_w as f32 * 0.5, r_h as f32 * 0.5);
+                d.position = d.position + (r_center - d.position) * 0.7;
+                d.velocity *= -2.0;
+                d.velocity.y -= 1.0;
+            }
+            d.velocity += vel * rng.next_float();
+        }
+        if spawn_dust_no_gravity {
+            d.no_gravity = true; // `:6523-6526`
+        } else if rng.next_max(2) == 0 {
+            d.scale *= 1.3; // `:6527-6531`
+            d.no_gravity = true;
+        } else {
+            d.velocity *= 0.5; // `:6532-6535`
+        }
+        d.velocity += vel * 0.8; // `:6536`
+        if matches!(kind, 40 | 41 | 42) {
+            d.velocity *= rng.next_float(); // `:6537-6540`
+        }
+    }
+    // `:6542-6564` — the trailing gore loops (d55's bodies); the ARGUMENT
+    // draws are consumed here in order.
+    if matches!(kind, 40 | 41 | 42) {
+        for _ in 0..5 {
+            let mut type2 = rng.next_range(61, 64); // `:6546`
+            if kind == 41 || (kind == 40 && rng.next_max(2) == 0) {
+                type2 = rng.next_range(11, 14); // `:6547-6550`
+            }
+            let _ = type2;
+            let _angle = rng.next_double() * 6.2831854820251465; // `:6553`
+        }
+    }
+    if kind == 23 {
+        for _ in 0..4 {
+            let _gore_type = rng.next_range(61, 64); // `:6560`
+            let _angle = rng.next_double() * 6.2831854820251465; // `:6562`
+        }
     }
 }
 
@@ -1741,5 +2431,302 @@ mod tests {
             assert!(pool.slot(i).no_gravity);
         }
         assert_eq!(rng.next(), mirror.next());
+    }
+
+    // ---- W4-f6 batch 3 witnesses (the Mount spawn/dismount sites) ----
+
+    /// W4-f6 — the fairy colour's generic path (no dev name): the
+    /// (hueRaw+0.5)%1 hue, hslToRgb * opacity, white lerp, alpha multiply.
+    /// The 0.41/0.15/0.7 Pixie arm lands a fixed colour (zero rand).
+    #[test]
+    fn w4_f6_fairy_color_generic_path_is_fixed() {
+        let c = fairy_queen_weapons_color_full(
+            "SomePlayer", true, Vec2::ZERO, Vec2::ZERO, 0.41, 1.0, 0.15, 1.0, 0.7,
+        );
+        // num = 0.91, hslToRgb(0.91, 1, 0.7) = (255, 102, 185), white-lerp
+        // 0.15 -> (255, 124, 195), alpha 255.
+        assert_eq!(c, Color::new(255, 124, 195, 255));
+        // The inactive-player gate skips the dev switch (same generic path).
+        let inactive = fairy_queen_weapons_color_full(
+            "Redigit", false, Vec2::ZERO, Vec2::ZERO, 0.41, 1.0, 0.15, 1.0, 0.7,
+        );
+        assert_eq!(inactive, c, "inactive skips the dev-name switch");
+        // A dev name with no early return (Redigit pins num 0.7) differs.
+        let redigit = fairy_queen_weapons_color_full(
+            "Redigit", true, Vec2::ZERO, Vec2::ZERO, 0.41, 1.0, 0.0, 1.0, 0.5,
+        );
+        let want = crate::ui::color::hsl_to_rgb(0.7, 1.0, 0.5, 255);
+        assert_eq!(redigit, Color::new(want[0], want[1], want[2], 255));
+    }
+
+    /// W4-f6 — site 5149: the Next(15) flag draws every tick; the time gate
+    /// (even timeForVisualEffects) precedes the Next(6) speed gate (which
+    /// draws only when !flag). A fired spawn mirrors the full chain.
+    #[test]
+    fn w4_f6_pixie_tail_gates_and_mirrors() {
+        let w = world();
+        let c = ctx();
+        let center = Vec2::new(500.0, 500.0);
+        let vel = Vec2::new(6.0, 0.0);
+        // Odd time: no spawn, only the Next(15) draws.
+        let mut odd = DustPool::new();
+        let mut orng = UnifiedRandom::new(3);
+        assert!(!pixie_tail(center, vel, 1.0, "Player", &mut orng, &mut odd, &c, &w));
+        assert!(active(&odd).is_empty());
+        let mut probe = UnifiedRandom::new(3);
+        let _ = probe.next_max(15);
+        assert_eq!(orng.next(), probe.next(), "only the Next(15) ran");
+        // Even time + fast speed: find a seed where the spawn fires.
+        let mut seed = 0;
+        loop {
+            let mut p = UnifiedRandom::new(seed);
+            let flag = p.next_max(15) == 0;
+            if flag || (p.next_max(6) + 1) as f32 < vel.length() {
+                break;
+            }
+            seed += 1;
+        }
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(seed);
+        assert!(pixie_tail(center, vel, 0.0, "Player", &mut rng, &mut pool, &c, &w));
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(seed);
+        let flag = mirror.next_max(15) == 0;
+        if !flag {
+            let _ = mirror.next_max(6);
+        }
+        let fa = fairy_queen_weapons_color_full("Player", true, center, center, 0.41, 1.0, 0.45, 1.0, 0.7);
+        let fb = fairy_queen_weapons_color_full("Player", true, center, center, 0.41, 1.0, 0.0, 1.0, 0.7);
+        let color = color_lerp(fa, fb, mirror.next_float());
+        let idx = mpool.new_dust_direct(
+            &mut mirror, &c, &w, center, 0, 0, 278, 0.0, 0.0, 200, color, 0.65,
+        );
+        let md = mpool.slot_mut(idx);
+        md.position = center + Vec2::new(0.0, -2.0);
+        if flag {
+            md.velocity *= 0.4;
+        } else {
+            md.velocity *= 0.04 * vel.length();
+        }
+        md.velocity += vel * 0.3;
+        md.position += vel * 0.7;
+        let angle = mirror.next_float() * (std::f32::consts::PI * 2.0);
+        let unit = Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32);
+        md.position += unit * mirror.next_float() * 2.0;
+        md.no_gravity = true;
+        md.no_light = true;
+        assert_eq!(active(&pool).len(), 1);
+        assert_eq!(pool.slot(0).position, mpool.slot(0).position);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).color, mpool.slot(0).color);
+        assert_eq!(pool.slot(0).dust_type, 278);
+        assert!(pool.slot(0).no_gravity && pool.slot(0).no_light);
+        assert_eq!(rng.next(), mirror.next());
+    }
+
+    /// W4-f6 — site 6339: the failed-dismount burst spawns dust_amount
+    /// dusts; the Bat (56) pins scale 0.7 + the velocity chain, the
+    /// noGravity/Next(2) gate draws per dust. The mirror replays the chain.
+    #[test]
+    fn w4_f6_failed_dismount_mirrors_the_bat_chain() {
+        let w = world();
+        let c = ctx();
+        let tl = Vec2::new(480.0, 480.0);
+        let vel = Vec2::new(3.0, -1.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(23);
+        // Bat 56, spawnDust 31, noGravity false, 3 dusts.
+        failed_dismount_dust(
+            56, 31, false, tl, 40, 62, 3, vel, "Player", Vec2::new(500.0, 500.0),
+            &mut rng, &mut pool, &c, &w,
+        );
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(23);
+        for _ in 0..3 {
+            let idx = mpool.new_dust(
+                &mut mirror, &c, &w, tl, 40, 62, 31, 0.0, 0.0, 0,
+                Color::new(0, 0, 0, 255), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.scale += mirror.next_range(-10, 21) as f32 * 0.01;
+            md.scale = 0.7;
+            md.velocity *= 0.4;
+            md.velocity.y += 0.5;
+            // spawnDustNoGravity false -> the Next(2) gate.
+            if mirror.next_max(2) == 0 {
+                md.scale *= 1.3;
+                md.no_gravity = true;
+            } else {
+                md.velocity *= 0.5;
+            }
+            md.velocity += vel * 0.8;
+        }
+        assert_eq!(active(&pool).len(), 3);
+        for i in 0..3 {
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+            assert_eq!(pool.slot(i).no_gravity, mpool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).color, Color::new(0, 0, 0, 255));
+        }
+        assert_eq!(rng.next(), mirror.next());
+    }
+
+    /// W4-f6 — sites 6382/6391: the Wolf burst spawns 100 type-267 dusts
+    /// plus a clone per Next(3) == 0. The mirror replays the per-dust chain
+    /// and the clone's white/half-scale/zero-alpha writes.
+    #[test]
+    fn w4_f6_wolf_burst_mirrors_the_clones() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(500.0, 500.0);
+        let vel = Vec2::new(2.0, 0.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(41);
+        wolf_spawn_dust(pos, 20, 42, vel, &mut rng, &mut pool, &c, &w);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(41);
+        let anchor = Vec2::new(pos.x - 20.0, pos.y);
+        let mut total = 0;
+        let mut clones = 0;
+        for _ in 0..100 {
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &c, &w, anchor, 60, 42, 267, 0.0, 0.0, 60,
+                Color::new(130, 60, 255, 70), 1.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.scale += mirror.next_range(-10, 21) as f32 * 0.01;
+            md.no_gravity = true;
+            md.velocity += vel * 0.8;
+            md.velocity *= mirror.next_float();
+            md.velocity.y += 2.0 * mirror.next_float_direction();
+            md.no_light = true;
+            total += 1;
+            if mirror.next_max(3) == 0 {
+                let cidx = mpool.clone_dust(&mut mirror, &c, &w, idx);
+                let cd = mpool.slot_mut(cidx);
+                cd.color = Color::WHITE;
+                cd.scale *= 0.5;
+                cd.alpha = 0;
+                clones += 1;
+                total += 1;
+            }
+        }
+        assert_eq!(active(&pool).len(), total);
+        assert!(clones > 0, "some Next(3) gates fire over 100 dusts");
+        // The first dust's record matches the mirror.
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert_eq!(pool.slot(0).dust_type, 267);
+        assert!(pool.slot(0).no_light);
+        assert_eq!(rng.next(), mirror.next());
+    }
+
+    /// W4-f6 — sites 6404/6413: the Chillet burst spawns 100 type-306 dusts
+    /// (scale 2 argument) plus clones; the Y kick is 4*NextFloatDirection.
+    #[test]
+    fn w4_f6_chillet_burst_mirrors_the_clones() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(600.0, 500.0);
+        let vel = Vec2::new(-2.0, 1.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(53);
+        chillet_spawn_dust(pos, 20, 42, vel, &mut rng, &mut pool, &c, &w);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(53);
+        let anchor = Vec2::new(pos.x - 20.0, pos.y);
+        let mut total = 0;
+        for _ in 0..100 {
+            let idx = mpool.new_dust_direct(
+                &mut mirror, &c, &w, anchor, 60, 42, 306, 0.0, 0.0, 60,
+                Color::new(100, 227, 255, 127), 2.0,
+            );
+            let md = mpool.slot_mut(idx);
+            md.scale += mirror.next_range(-10, 21) as f32 * 0.01;
+            md.no_gravity = true;
+            md.velocity += vel * 0.8;
+            md.velocity *= mirror.next_float();
+            md.velocity.y += 4.0 * mirror.next_float_direction();
+            md.no_light = true;
+            total += 1;
+            if mirror.next_max(3) == 0 {
+                let cidx = mpool.clone_dust(&mut mirror, &c, &w, idx);
+                let cd = mpool.slot_mut(cidx);
+                cd.color = Color::WHITE;
+                cd.scale *= 0.5;
+                cd.alpha = 0;
+                total += 1;
+            }
+        }
+        assert_eq!(active(&pool).len(), total);
+        assert_eq!(pool.slot(0).dust_type, 306);
+        assert_eq!(pool.slot(0).velocity, mpool.slot(0).velocity);
+        assert_eq!(pool.slot(0).scale, mpool.slot(0).scale);
+        assert_eq!(rng.next(), mirror.next());
+    }
+
+    /// W4-f6 — site 6493: the generic tail's cart arm spawns NO dust (the
+    /// gore argument draws only); the roller-skate count is 40; the Pixie
+    /// continue gate draws Next(5) per non-dismount iteration.
+    #[test]
+    fn w4_f6_generic_tail_cart_and_skates_and_pixie() {
+        let w = world();
+        let c = ctx();
+        let tl = Vec2::new(480.0, 480.0);
+        let vel = Vec2::new(2.0, 0.0);
+        let center = Vec2::new(500.0, 500.0);
+        // Cart: 100 iterations, every 10th a gore (2 draws), no dust.
+        let mut cart = DustPool::new();
+        let mut crng = UnifiedRandom::new(61);
+        generic_spawn_dust(
+            6, 213, false, true, false, tl, 60, 42, vel, "Player", center,
+            &mut crng, &mut cart, &c, &w,
+        );
+        assert!(active(&cart).is_empty(), "the cart arm spawns no dust");
+        let mut cprobe = UnifiedRandom::new(61);
+        for k in 0..100 {
+            if k % 10 == 0 {
+                let _ = cprobe.next_range(61, 64);
+                let _ = cprobe.next_double() * 6.2831854820251465;
+            }
+        }
+        assert_eq!(crng.next(), cprobe.next(), "10 gore argument pairs");
+        // Roller skates (57): 40 dusts, the velocity chain, no Next(2) gate
+        // (spawnDustNoGravity true for the skates' row? use false to exercise
+        // the gate). The mirror replays the 40-dust chain.
+        let mut skate = DustPool::new();
+        let mut srng = UnifiedRandom::new(61);
+        generic_spawn_dust(
+            57, 31, false, false, false, tl, 40, 10, vel, "Player", center,
+            &mut srng, &mut skate, &c, &w,
+        );
+        let mut smpool = DustPool::new();
+        let mut smirror = UnifiedRandom::new(61);
+        for _ in 0..40 {
+            let idx = smpool.new_dust(
+                &mut smirror, &c, &w, tl, 40, 10, 31, 0.0, 0.0, 0,
+                Color::TRANSPARENT, 1.0,
+            );
+            let md = smpool.slot_mut(idx);
+            md.scale += smirror.next_range(-10, 21) as f32 * 0.01;
+            md.velocity *= 0.8;
+            md.velocity.y *= 0.75;
+            md.velocity.y += 0.25;
+            md.no_light_emittance = true;
+            md.no_gravity = true;
+            if smirror.next_max(2) == 0 {
+                md.scale *= 1.3;
+                md.no_gravity = true;
+            } else {
+                md.velocity *= 0.5;
+            }
+            md.velocity += vel * 0.8;
+        }
+        assert_eq!(active(&skate).len(), 40, "the skates' count is 40");
+        for i in 0..40 {
+            assert_eq!(skate.slot(i).velocity, smpool.slot(i).velocity);
+            assert_eq!(skate.slot(i).scale, smpool.slot(i).scale);
+        }
+        assert_eq!(srng.next(), smirror.next());
     }
 }
