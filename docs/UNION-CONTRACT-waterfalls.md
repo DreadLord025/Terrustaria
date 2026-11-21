@@ -55,6 +55,11 @@ identical semantics — at the g24 merge keep THIS branch's copies (or
 g24's, byte-equivalent bodies); never land BOTH `:6704` call sites. The
 `menu_accept_style` fn merges cleanly (g24 adds the `SecretSeed.Enable`
 caller; drop this branch's `#[allow(dead_code)]` when that caller lands).
+Re-fetch at retire-push time: g24 advanced past `7ca8b087` to `a0d046b7`
+(the FINAL phase — `1dfd8d4d`/`c48f8005`/`dbb09fd5`/`60508137`/`5a770104`/
+`a0d046b7`); the diff touches NONE of the quit-stop files (`audio.rs`,
+`saveglue.rs`, `debug_panel.rs`, `tracked_sound.rs` all untouched), so the
+adjudication above stands unchanged.
 
 ## §-fountain — the CalculateWaterStyle head arm (RETIRE phase)
 
