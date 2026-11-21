@@ -1,5 +1,25 @@
 # 71 — Wiring device-arm duplicate reconcile (W4-e20 × W4-f11) + e21 census
 
+> **STATUS: SEALED (§8) — 2026-11-21, branch
+> `task/W4-e20-wiring-device-arms-2` (retire phase, post-`02ac64ab6`).**
+> This doc is CLOSED — no further rounds. The retire-phase publications
+> carry the live instructions forward: the §6a/§7a c42 re-pick evidence
+> is now STANDALONE in `146-c42-repick-critical.md` (`e47e1399f`, the
+> merger-BLOCKING warning + the exact `6d1754719`-chain re-pick list +
+> compile-error proof); the c42e session probe is
+> `147-c42e-session-probe.md` (`038af46cf` — **c42e ALIVE**, mid-flight on
+> research/95 §8, NOT consuming the re-pick; merger-side re-pick
+> recommended, no resume-kill); the §7c BrokenTrapCleanup residual is
+> censused + dedupe-checked in `148-brokentrapcleanup-wg-seed.md`
+> (`d818aee06` — **d106 R5 `e2c2609c5` ALREADY LANDED the same pass**;
+> the seed is the two fidelity VERIFY items + the IsPressurePlate seam,
+> NOT a re-port); the devices-family ownership map is
+> `149-devices-family-bible.md`. The §7a "176-line" figure for c42's
+> stale research-71 copy counted NON-BLANK lines — the raw file is 201
+> lines, byte-identical to `8791f07fe` v1 (0-byte diff, re-verified at
+> retire); this FINAL copy is 496 raw lines. Merger reads §5 + §6a + §7a
+> + research-146; nothing else on this branch changes after the seal.
+
 > **STATUS: FINAL-FINAL (§7) — 2026-11-21, branch
 > `task/W4-e20-wiring-device-arms-2`.** The four final censuses ran (§7):
 > the c42 re-pick monitor RE-FLAGS CRITICAL (tip `79b81ae77` still carries
