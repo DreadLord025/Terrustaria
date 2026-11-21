@@ -3,9 +3,13 @@
 //! `NPC.StrikeNPC_Inner`'s `HitEffect(hitDirection, num)` tail
 //! (`NPC.cs:81476-81489`). The DEATH halves of the same arms are
 //! W4-g59/g60's lane, the spawn-side dust g61's, the hit sounds c13's
-//! (`strike_hit_cue`/`queue_hit_effect_sound`), the gore BODIES d55's —
-//! where a gore call sits between dust draws its ARGUMENT draws are
-//! consumed here in C# order (the W4-e2 split precedent).
+//! (`strike_hit_cue`/`queue_hit_effect_sound`). The gore BODIES are
+//! the gore lanes' (d55/e5/f10/f5) EXCEPT the FOUR hit-half bodies
+//! batch 35 owns (`:86532`/`:86947`/`:86951`/`:88648` — the f5
+//! research/111 hand-off, unowned after the f10-overrun delete);
+//! where another lane's gore call sits between dust draws its
+//! ARGUMENT draws are consumed here in C# order (the W4-e2 split
+//! precedent).
 //!
 //! Contract (the S1-E-1 pool + d50's DustPool, `tr_core::particles`):
 //! the strike captures a [`HitDustSnapshot`] at the C# `HitEffect` call
@@ -32,7 +36,8 @@
 //! - 86455 — the demon-eye family (`:86449-86457`, types 2/190-194/
 //!   317/318): ×100 dust 5.
 //! - 86943 — the zombie/critter group (`:86937-86967`): ×100 dust 5,
-//!   then the 186/632 gore-gate `Next(5)` draws (bodies d55's), the
+//!   then the 186/632 gore-gate `Next(5)` draws + the GATED BODIES
+//!   242/1217 (batch 35), the
 //!   187 SlimedZombie extra loop and the 590/591 dry triple.
 //! - 86957 — the 187 extra ×200 dust 4 (alpha 125, blue, height 24).
 //! - 86964 — the 590/591 `!wet` 3 × dust 6 (same tint, height 24).
@@ -75,7 +80,8 @@
 //! - 84264 — Duke Fishron 370 (`:84258-84266`): ×100 dust 5.
 //! - 84213 — Sharkron 372/373 (`:84207-84215`): ×100 dust 5.
 //! - 86527 — Wandering Eye 133 (`:86521-86534`): ×100 dust 5 (the
-//!   half-life gore latch `:86529-86533` is draw-free, d55's body).
+//!   half-life eye-pop latch `:86529-86533` is draw-free — batch 35
+//!   owns the gore-1 body + the strike-time localAI[0] write).
 //! Batch 4 (the boss/worm live arms):
 //! - 87279 — Eye of Cthulhu 4 (`:87275-87284`, the 4/126/125 group):
 //!   ×100 dust 5.
@@ -219,7 +225,8 @@
 //!   the LIVE 10-dust burst (Next(139,143) type arg FIRST, scale
 //!   ×(1+Next(-30,31)·0.01), vel.X += Next(-50,51)·0.05) + the 5 gore
 //!   siblings' ARGUMENT/post-write draws (Next(276,283), Next(-20,21),
-//!   Next(-50,51) each — the bodies are d55's), BEFORE the gel loop.
+//!   Next(-50,51) each — the bodies are f10's LEGIT confetti window),
+//!   BEFORE the gel loop.
 //! - 84782 — 352 (`:84776-84784`): ×100 dust 67 noGravity.
 //! - 84801 — 305-314 (`:84795-84802`): ×100 dust 194, scale 1.1.
 //! - 84823 — Pumpking 327 (`:84817-84824`): ×100 dust 189, scale 1.1.
@@ -410,7 +417,7 @@
 //! - 82051 — 667 (`:82025-82056`): LIVE FLAT 7 dust 10, alpha 80, scale
 //!   1.1, the same gate; the LIVE 3-gore sibling's argument draws
 //!   (Next(1,10) + Next(4) each, `:82043-82047`) ride BEFORE the dust
-//!   loop (bodies d55's).
+//!   loop (bodies f10's legit DD2 window).
 //! - 82070 — 676 (`:82058-82077`): LIVE FLAT 8 dust 310, alpha 80,
 //!   scale 1.1, the gate, then velocity ×1.5 + base.velocity·0.1.
 //! Batch 29 (the Queen Slime herself + the crystal ring):
@@ -462,9 +469,9 @@
 //! - 89173 — the Skeletron hands 35/36/68 (`:89167-89174`): ×100 dust
 //!   26.
 //! - 88648 — the Deerclops 694 (`:88641-88650`): NO dust — the LIVE
-//!   arm's gore siblings' ARGUMENT draws ride here (the clamped
-//!   `max(1,min(5,(int)(dmg/lifeMax·3)))` count, 2 NextFloat per gore;
-//!   the bodies are d55's).
+//!   arm's clamped `max(1,min(5,(int)(dmg/lifeMax·3)))` count × gore
+//!   1008, 2 NextFloat per gore; batch 35 owns the BODIES (the f5
+//!   hand-off).
 //! Batch 33 (the unblocked oldPos trails — the g60 ring landed):
 //! - 83017 — the SolarGoop 519 (`:83008-83023`): EVERY strike (a
 //!   standalone if, NO life gate), the hitbox walks every 3rd oldPos
@@ -484,10 +491,39 @@
 //!   17/229 gated pair AT the slot (raw float position, no (int) cast).
 //!   TRAILCACHE WIDENING: the walk covers the RESIZED 36-slot ring
 //!   (`NPCID.cs:10450` 402→36) — up to 36 gate draws per iteration.
+//! Batch 35 (the FOUR HIT-HALF gore bodies — the f5 FINAL receipt's
+//! wiring hand-off, research/111: the 853-site wave-D recount = 849
+//! death-half f5-owned + 4 hit-half g62's; d55's pushed window
+//! :81660-81941 covers NONE of them, f10's copies are overrun-deleted
+//! per g60 research/110 §12.8.3):
+//! - 86532 — the WanderingEye 133 eye-pop latch (`:86529-86533`):
+//!   `life < lifeMax*0.5f && localAI[0] == 0` → the latch write FIRST,
+//!   then ONE gore 1 at position, velocity, Scale = 1f DEFAULT.
+//!   The gate rides the capture (strike-time state); the STRIKE ENTRY
+//!   writes `localAI[0] = 1` right after it (the C# `:86531` order —
+//!   before the body the drain replays).
+//! - 86947 — the PincushionZombie 186 gated gore 242 (`:86945-86948`):
+//!   the Next(5)==0 gate was ALREADY consumed here (batch 1); the body
+//!   now spawns INSIDE the gate, scale 1f default.
+//! - 86951 — the MaggotZombie 632 gated gore 1217 (`:86949-86952`):
+//!   the same shape, body 1217.
+//! - 88648 — the Deerclops 694 LIVE clamped gore burst (`:88645-88649`,
+//!   NO dust): max(1,min(5,(int)(dmg/lifeMax·3))) × gore 1008 at
+//!   Centre + ((-w + (int)(w·NextFloat))·0.5, (-h + (int)(h·NextFloat))
+//!   ·0.5), this.scale carried (f5's death twin :88654 shape).
+//! The gore bodies draw through the verbatim `GorePool::new_gore`
+//! (`tr_core::gore`, the S1-E-4 pool already on main) on the SAME
+//! UpdateNPCs stream, C# statement order. The OTHER hit-half gore
+//! siblings stay argument-consumed here + body-owned by their lanes:
+//! the confetti slime's 5 (`:84738`) = f10's LEGIT `party_slime_confetti`
+//! (its window ≤ :85559), the Queen minion 667's 3 (`:82043-82047`) =
+//! f10's legit DD2 window — their wiring strips the re-drawn dust AND
+//! the re-drawn argument picks (g60 §12.4 precedent).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
 use glam::Vec2;
+use tr_core::gore::GorePool;
 use tr_core::particles::{Color, DustPool, SpawnCtx};
 use tr_core::{UnifiedRandom, World};
 
@@ -546,6 +582,13 @@ pub struct HitDustSnapshot {
     /// the 519 walk visits ceil(20/3) = 7 slot groups (0,3,…,18), the
     /// 402 gate walks all 36 slots per iteration.
     pub trail_len: usize,
+    /// The 133 WanderingEye eye-pop latch FIRED on this strike
+    /// (`NPC.cs:86529-86533`): computed at CAPTURE (strike-time state
+    /// — `life < lifeMax*0.5f && localAI[0] == 0f`, the strike-time hp
+    /// and latch); the STRIKE ENTRY applies `localAI[0] = 1` right
+    /// after the capture (the C# write order, `:86531` — before the
+    /// NewGore body the drain replays). Every other kind keeps false.
+    pub eye_pop_latched: bool,
 }
 
 impl HitDustSnapshot {
@@ -576,6 +619,13 @@ impl HitDustSnapshot {
             ai1: n.ai[1],
             old_pos: n.old_pos,
             trail_len: n.trail_len,
+            // `:86529` — the latch gate reads STRIKE-time state: the
+            // f32 casts verbatim (`(float)this.life < (float)this.lifeMax
+            // * 0.5f`), the latch only when it is still 0.
+            eye_pop_latched: n.kind.cs_id() == 133
+                && n.hp > 0
+                && (n.hp as f32) < (n.max_hp as f32) * 0.5
+                && n.local_ai[0] == 0.0,
         }
     }
 }
@@ -667,10 +717,14 @@ fn live_dust(
 /// 89832`, plus the standalone slime `if` at `:84721`), so a per-type
 /// match is faithful. Types outside the ledger emit nothing — their
 /// arms land with the later g62 batches or the g59/g60 death lane.
+/// The FOUR hit-half gore bodies (batch 35: `:86532`/`:86947`/`:86951`/
+/// `:88648`) spawn through the verbatim `GorePool::new_gore` on the
+/// SAME stream, C# statement order (the f5 research/111 hand-off).
 pub fn replay_hit_dust(
     s: &HitDustSnapshot,
     rng: &mut UnifiedRandom,
     dust: &mut DustPool,
+    gore: &mut GorePool,
     ctx: &SpawnCtx,
     world: &World,
 ) {
@@ -794,7 +848,7 @@ pub fn replay_hit_dust(
     // noGravity). The death halves' 40-count bursts are g60's lane, so
     // this block gates on life > 0 (unlike the life-independent sphere/
     // flare arms above). 667's LIVE 3-gore siblings' ARGUMENT draws ride
-    // BEFORE the dust loop (`:82043-82047`, the bodies d55's).
+    // BEFORE the dust loop (`:82043-82047`, the bodies f10's legit window).
     if s.life > 0 && matches!(s.npc_type, 658..=660 | 667 | 676) {
         let (count, t, tint, sc) = match s.npc_type {
             658 => (7, 4, Color::new(78, 136, 255, 150), 1.0),
@@ -906,7 +960,8 @@ pub fn replay_hit_dust(
                 }
                 // `:84736-84741` — the 5 gore siblings: the ARGUMENT
                 // draw (Next(276,283)) + the two post-write draws ride
-                // here in order; the NewGore bodies are d55's.
+                // here in order; the NewGore bodies are f10's legit
+                // `party_slime_confetti` (its window ≤ :85559).
                 for _ in 0..5 {
                     let _ = rng.next_range(276, 283); // `:84738`
                     let _ = rng.next_range(-20, 21); // `:84739`
@@ -932,13 +987,14 @@ pub fn replay_hit_dust(
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
             // `:86945-86948` — the PincushionZombie's gore gate: the
-            // Next(5) ALWAYS draws for 186 (the gore body is d55's).
-            if s.npc_type == 186 {
-                let _ = rng.next_max(5);
+            // Next(5) ALWAYS draws for 186; on ==0 the body 242 spawns
+            // (batch 35 — the f5 hand-off, scale 1f DEFAULT).
+            if s.npc_type == 186 && rng.next_max(5) == 0 {
+                gore.new_gore(rng, world, Vec2::new(s.x, s.y), Vec2::new(s.vx, s.vy), 242, 1.0); // `:86947`
             }
-            // `:86949-86952` — the same gate for 632.
-            if s.npc_type == 632 {
-                let _ = rng.next_max(5);
+            // `:86949-86952` — the same gate for 632, body 1217.
+            if s.npc_type == 632 && rng.next_max(5) == 0 {
+                gore.new_gore(rng, world, Vec2::new(s.x, s.y), Vec2::new(s.vx, s.vy), 1217, 1.0); // `:86951`
             }
             // `:86953-86959` — the SlimedZombie's extra ×200 blue gel,
             // height 24 (NOT base.height).
@@ -1104,11 +1160,18 @@ pub fn replay_hit_dust(
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
-        // `:86521-86534` — the Wandering Eye: ×100 dust 5; the half-life
-        // gore latch (`:86529-86533`) draws NOTHING (the body is d55's).
+        // `:86521-86534` — the Wandering Eye: ×100 dust 5, then the
+        // half-life eye-pop latch (`:86529-86533`, batch 35 — the g60f
+        // hand-off after the f10-overrun delete): the gate reads the
+        // STRIKE-time latch flag (capture computed it; the drain wrote
+        // `localAI[0] = 1` before this replay), ONE gore 1 at position,
+        // velocity, scale 1f DEFAULT — zero argument draws.
         133 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+            if s.eye_pop_latched {
+                gore.new_gore(rng, world, Vec2::new(s.x, s.y), Vec2::new(s.vx, s.vy), 1, 1.0); // `:86532`
             }
         }
         // `:87275-87284` — the Eye of Cthulhu group (4/126/125 — the
@@ -1794,16 +1857,23 @@ pub fn replay_hit_dust(
                 live_dust(s, 26, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
-        // `:88641-88650` — the Deerclops: NO live dust; the gore
-        // siblings' ARGUMENT draws ride here — the clamped count
-        // max(1, min(5, (int)(dmg/lifeMax·3))), 2 NextFloat per gore
-        // (the position expression, `:88648`; the bodies are d55's).
+        // `:88641-88650` — the Deerclops: NO live dust; the clamped
+        // count max(1, min(5, (int)(dmg/lifeMax·3))) × gore 1008
+        // (batch 35 — the f5 hand-off). Each gore's position = Centre +
+        // ((-w + (int)(w·NextFloat))·0.5, (-h + (int)(h·NextFloat))·0.5)
+        // — TWO NextFloat argument draws (X then Y, int truncation
+        // BEFORE the ×0.5) BEFORE the spawn, this.scale carried (f5's
+        // death twin `:88654` shape, the :88648 site).
         694 => {
             let raw = (s.dmg / s.life_max as f64 * 3.0) as i32;
             let count = raw.clamp(1, 5);
             for _ in 0..count {
-                let _ = rng.next_float();
-                let _ = rng.next_float();
+                let ox = (-s.w + (s.w as f32 * rng.next_float()) as i32) as f32 * 0.5;
+                let oy = (-s.h + (s.h as f32 * rng.next_float()) as i32) as f32 * 0.5;
+                gore.new_gore(
+                    rng, world, Vec2::new(s.cx + ox, s.cy + oy),
+                    Vec2::new(s.vx, s.vy), 1008, s.scale,
+                ); // `:88648`
             }
         }
         // `:85027-85034` — 225: ×100 dust 4, alpha 100, the blue tint.
@@ -2327,6 +2397,9 @@ mod tests {
                 402 => 36,
                 _ => 10,
             },
+            // The latch witnesses arm the flag explicitly (the strike
+            // entries write localAI[0] — the npc.rs seam's job).
+            eye_pop_latched: false,
         }
     }
 
@@ -2354,12 +2427,13 @@ mod tests {
     fn w4_g62_a_dead_snapshot_draws_nothing() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for life in [0, -5] {
             let s = snap(1, life, 25, 10.0);
             let mut rng = UnifiedRandom::new(7);
             let twin = UnifiedRandom::new(7);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             assert_eq!(rng, twin, "no draws for life {life}");
             assert!(dust.slots().iter().all(|d| !d.active));
         }
@@ -2373,6 +2447,7 @@ mod tests {
     fn w4_g62_the_slime_live_arm_mirrors_the_pool_draws() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut n = Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0);
         n.slime = SlimeVariant::Blue;
         n.hp = 20;
@@ -2381,7 +2456,7 @@ mod tests {
         assert_eq!(s.color, Color::new(0, 80, 255, 100), "the blue row");
         let mut rng = UnifiedRandom::new(11);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         // The twin: 5/25 × 100 = 20 spawns, dust 4, (1, -1), alpha 0,
         // the blue tint, scale 1.
         let mut twin_rng = UnifiedRandom::new(11);
@@ -2398,31 +2473,38 @@ mod tests {
 
     /// W4-g62 — the zombie group's tail draws (`NPC.cs:86945-86966`):
     /// the 186 gore gate consumes exactly ONE Next(5) after the dust
-    /// loop (the body is d55's); a plain zombie draws none.
+    /// loop; on ==0 the body 242 spawns (batch 35 — the f5 hand-off),
+    /// otherwise nothing; a plain zombie draws none.
     #[test]
     fn w4_g62_the_pincushion_gore_gate_draws_once() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(186, 40, 40, 4.0); // ×100 → 10 dusts
         let mut rng = UnifiedRandom::new(3);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(3);
         let mut twin = DustPool::new();
+        let mut twin_gore = GorePool::new();
         for _ in 0..10 {
             twin.new_dust(
                 &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
                 1.0, -1.0, 0, Color::default(), 1.0,
             );
         }
-        let _ = twin_rng.next_max(5); // `:86945`
+        if twin_rng.next_max(5) == 0 {
+            // `:86947` — the gated body, scale 1f default, at position.
+            twin_gore.new_gore(&mut twin_rng, &world, Vec2::new(100.0, 100.0), Vec2::ZERO, 242, 1.0);
+        }
         assert_eq!(rng, twin_rng);
         assert_eq!(dust.slots(), twin.slots());
+        assert_eq!(gore.slots(), twin_gore.slots());
         // The plain zombie (3) has no gate draw.
         let p = snap(3, 40, 40, 4.0);
         let mut rng2 = UnifiedRandom::new(3);
         let mut dust2 = DustPool::new();
-        replay_hit_dust(&p, &mut rng2, &mut dust2, &ctx, &world);
+        replay_hit_dust(&p, &mut rng2, &mut dust2, &mut gore, &ctx, &world);
         let mut plain_rng = UnifiedRandom::new(3);
         let mut plain = DustPool::new();
         for _ in 0..10 {
@@ -2442,10 +2524,11 @@ mod tests {
     fn w4_g62_the_slimed_zombie_extra_loop_rides_height_24() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(187, 50, 50, 1.0); // main ×2, extra ×4
         let mut rng = UnifiedRandom::new(5);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(5);
         let mut twin = DustPool::new();
         for _ in 0..2 {
@@ -2471,16 +2554,17 @@ mod tests {
     fn w4_g62_the_zombie_goldfish_triple_is_wet_gated() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(590, 30, 30, 3.0); // main ×10
         let mut rng = UnifiedRandom::new(9);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let dry_count = dust.slots().iter().filter(|d| d.active).count();
         assert_eq!(dry_count, 13, "10 main + 3 dry dust 6");
         s.wet = true;
         let mut rng2 = UnifiedRandom::new(9);
         let mut dust2 = DustPool::new();
-        replay_hit_dust(&s, &mut rng2, &mut dust2, &ctx, &world);
+        replay_hit_dust(&s, &mut rng2, &mut dust2, &mut gore, &ctx, &world);
         assert_eq!(dust2.slots().iter().filter(|d| d.active).count(), 10);
         assert_ne!(rng, rng2, "the dry triple's internals drew");
     }
@@ -2491,13 +2575,14 @@ mod tests {
     fn w4_g62_the_eos_arm_passes_the_npc_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(6, 40, 40, 2.0); // ×5
         s.alpha = 55;
         s.color = Color::new(1, 2, 3, 4);
         s.scale = 1.1;
         let mut rng = UnifiedRandom::new(13);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(13);
         let mut twin = DustPool::new();
         for _ in 0..5 {
@@ -2512,7 +2597,7 @@ mod tests {
         let h = snap(42, 40, 40, 2.0);
         let mut rng3 = UnifiedRandom::new(13);
         let mut dust3 = DustPool::new();
-        replay_hit_dust(&h, &mut rng3, &mut dust3, &ctx, &world);
+        replay_hit_dust(&h, &mut rng3, &mut dust3, &mut gore, &ctx, &world);
         let live: Vec<_> = dust3.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 5);
         assert!(live.iter().all(|d| d.dust_type == 18));
@@ -2524,17 +2609,18 @@ mod tests {
     fn w4_g62_the_skeleton_and_bat_arms_match_their_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let sk = snap(21, 40, 40, 4.0); // ×50 → 5
         let mut rng = UnifiedRandom::new(17);
         let mut dust = DustPool::new();
-        replay_hit_dust(&sk, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&sk, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 5);
         assert!(live.iter().all(|d| d.dust_type == 26));
         let bat = snap(49, 45, 45, 3.0); // ×30 → 2
         let mut rng2 = UnifiedRandom::new(17);
         let mut dust2 = DustPool::new();
-        replay_hit_dust(&bat, &mut rng2, &mut dust2, &ctx, &world);
+        replay_hit_dust(&bat, &mut rng2, &mut dust2, &mut gore, &ctx, &world);
         assert_eq!(dust2.slots().iter().filter(|d| d.active).count(), 2);
     }
 
@@ -2564,6 +2650,7 @@ mod tests {
     fn w4_g62_the_jellyfish_tints_match_the_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, tint) in [
             (63, Color::new(50, 120, 255, 100)),
             (64, Color::new(225, 70, 140, 100)),
@@ -2572,7 +2659,7 @@ mod tests {
             let s = snap(t, 60, 60, 3.0); // ×50 → 2 (3/60·50 = 2.5 → 3? no: 2.5 → 3)
             let mut rng = UnifiedRandom::new(21);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(21);
             let mut twin = DustPool::new();
             for _ in 0..hit_count(3.0, 60, 50.0) {
@@ -2593,11 +2680,12 @@ mod tests {
     fn w4_g62_the_lava_arm_rolls_next8_after_each_spawn() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(59, 50, 50, 1.0); // ×80 → 1
         s.alpha = 50;
         let mut rng = UnifiedRandom::new(23);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(23);
         let mut twin = DustPool::new();
         for _ in 0..1 {
@@ -2620,10 +2708,11 @@ mod tests {
     fn w4_g62_the_ice_slime_pair_order_is_76_then_4() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(147, 30, 30, 1.0); // ×50 → 1 pair
         let mut rng = UnifiedRandom::new(29);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 2);
         assert_eq!(live[0].dust_type, 76);
@@ -2641,12 +2730,13 @@ mod tests {
     fn w4_g62_the_burning_sphere_bursts_even_on_death() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(25, -3, 30, 33.0);
         s.vx = 4.0;
         s.vy = -2.0;
         let mut rng = UnifiedRandom::new(31);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(31);
         let mut twin = DustPool::new();
         for _ in 0..20 {
@@ -2674,17 +2764,18 @@ mod tests {
     fn w4_g62_king_slime_and_hallow_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let ks = snap(50, 2000, 2000, 20.0); // ×300 → 3
         let mut rng = UnifiedRandom::new(37);
         let mut dust = DustPool::new();
-        replay_hit_dust(&ks, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&ks, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 3);
         assert!(live.iter().all(|d| d.dust_type == 4 && d.alpha == 175));
         let il = snap(138, 180, 180, 36.0); // ×50 → 10
         let mut rng2 = UnifiedRandom::new(37);
         let mut dust2 = DustPool::new();
-        replay_hit_dust(&il, &mut rng2, &mut dust2, &ctx, &world);
+        replay_hit_dust(&il, &mut rng2, &mut dust2, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(37);
         let mut twin = DustPool::new();
         for _ in 0..10 {
@@ -2705,13 +2796,14 @@ mod tests {
     fn w4_g62_the_water_and_chaos_sphere_pairs() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, dt, sa, sb) in [(33, 172, 1.2f32, 0.6f32), (30, 27, 2.0, 1.0), (665, 27, 2.0, 1.0)] {
             let mut s = snap(t, 1, 30, 30.0);
             s.vx = -3.0;
             s.vy = 1.5;
             let mut rng = UnifiedRandom::new(41);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(41);
             let mut twin = DustPool::new();
             for _ in 0..20 {
@@ -2740,12 +2832,13 @@ mod tests {
     fn w4_g62_the_meteor_head_selector_rides_before_the_spawn() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(23, 50, 50, 1.0); // ×100 → 2
         s.vx = 5.0;
         s.vy = 2.0;
         let mut rng = UnifiedRandom::new(43);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(43);
         let mut twin = DustPool::new();
         for _ in 0..2 {
@@ -2773,12 +2866,13 @@ mod tests {
     fn w4_g62_the_fire_imp_rides_its_own_velocity() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(24, 60, 60, 3.0); // ×100 → 5
         s.vx = -2.0;
         s.vy = 0.5;
         let mut rng = UnifiedRandom::new(47);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(47);
         let mut twin = DustPool::new();
         for _ in 0..5 {
@@ -2793,20 +2887,26 @@ mod tests {
     }
 
     /// W4-g62 batch 3 — the Fishron/Sharkron/WanderingEye live arms are
-    /// the plain ×100 dust-5 shape (`NPC.cs:84264`/`:84213`/`:86527`),
-    /// and the Wandering Eye's half-life gore latch draws NOTHING.
+    /// the plain ×100 dust-5 shape (`NPC.cs:84264`/`:84213`/`:86527`);
+    /// the Wandering Eye's eye-pop latch flag is FALSE here (the
+    /// capture computes the gate — the latched body's witness is
+    /// `w4_g62_the_eye_pop_latch_spawns_one_gore_once`).
     #[test]
     fn w4_g62_the_blood_arms_share_the_dust5_shape() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for t in [370, 372, 373, 133] {
             let mut s = snap(t, 20, 100, 10.0); // ×100 → 10
             if t == 133 {
-                s.life = 20; // below half — the gore latch arm, no draws
+                // Below half, but the latch flag stays FALSE (the
+                // capture computes it — this witness pins the dust
+                // shape only; the latch body has its own witness).
+                s.life = 20;
             }
             let mut rng = UnifiedRandom::new(53);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(53);
             let mut twin = DustPool::new();
             for _ in 0..10 {
@@ -2827,12 +2927,13 @@ mod tests {
     fn w4_g62_the_wof_family_counts_are_flat() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, want) in [(113, 20), (114, 20), (115, 5), (116, 5), (117, 5), (118, 5), (119, 5)] {
             for dmg in [1.0, 9999.0] {
                 let s = snap(t, 100, 8000, dmg);
                 let mut rng = UnifiedRandom::new(59);
                 let mut dust = DustPool::new();
-                replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+                replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
                 assert_eq!(
                     dust.slots().iter().filter(|d| d.active).count(),
                     want,
@@ -2849,10 +2950,11 @@ mod tests {
     fn w4_g62_the_wyvern_live_multiplier_is_1_5() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(87, 4000, 4000, 80.0); // ×50 → 1
         let mut rng = UnifiedRandom::new(61);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(61);
         let mut twin = DustPool::new();
         let idx = twin.new_dust(
@@ -2873,6 +2975,7 @@ mod tests {
     fn w4_g62_the_worm_and_boss_bounds() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         // (type, mult, dust type)
         for (t, mult, dt) in [
             (4, 100.0, 5), (5, 50.0, 5), (10, 50.0, 5),
@@ -2882,7 +2985,7 @@ mod tests {
             let want = hit_count(4.0, 100, mult);
             let mut rng = UnifiedRandom::new(67);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -2896,17 +2999,18 @@ mod tests {
     fn w4_g62_the_martian_bound_divides_by_lifemax_times_50() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for t in [382, 390, 383, 385, 386, 389, 388, 399] {
             let s = snap(t, 300, 300, 300.0); // 300/(300·50) = 0.02 → 0
             let mut rng = UnifiedRandom::new(71);
             let twin = UnifiedRandom::new(71);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             assert_eq!(rng, twin, "type {t}: a full-life hit draws nothing");
             let big = snap(t, 300, 300, 15000.0); // 15000/15000 = 1 → 1
             let mut rng2 = UnifiedRandom::new(71);
             let mut dust2 = DustPool::new();
-            replay_hit_dust(&big, &mut rng2, &mut dust2, &ctx, &world);
+            replay_hit_dust(&big, &mut rng2, &mut dust2, &mut gore, &ctx, &world);
             assert_eq!(dust2.slots().iter().filter(|d| d.active).count(), 1, "type {t}");
             assert!(dust2.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 227));
         }
@@ -2920,11 +3024,12 @@ mod tests {
     fn w4_g62_the_martian_lerp_arm_mirrors_the_post_writes() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, mult) in [(384, 50.0), (387, 20.0), (520, 20.0)] {
             let s = snap(t, 1000, 1000, 40.0 * mult); // → 40 dusts
             let mut rng = UnifiedRandom::new(73);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(73);
             let mut twin = DustPool::new();
             for _ in 0..40 {
@@ -2950,11 +3055,12 @@ mod tests {
     fn w4_g62_the_solar_child_gate_rides_after_the_parent() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, gate) in [(518, 4), (416, 4), (419, 4), (415, 4), (417, 4), (418, 2)] {
             let s = snap(t, 100, 100, 50.0); // ×20 → 10 iterations
             let mut rng = UnifiedRandom::new(79);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(79);
             let mut twin = DustPool::new();
             let mut children = 0;
@@ -2994,12 +3100,13 @@ mod tests {
     fn w4_g62_the_vortex_rows_and_the_gate_free_larva() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, gate, mult) in [(426, 4, 50.0), (427, 2, 20.0), (429, 4, 20.0), (425, 4, 20.0)] {
             let s = snap(t, 100, 100, 50.0); // bound = 50/100·mult = mult/2 iterations
             let iters = hit_count(s.dmg, s.life_max, mult);
             let mut rng = UnifiedRandom::new(83);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(83);
             let mut twin = DustPool::new();
             for _ in 0..iters {
@@ -3026,7 +3133,7 @@ mod tests {
         let larva = snap(428, 100, 100, 50.0); // ×20 → 10
         let mut rng = UnifiedRandom::new(83);
         let mut dust = DustPool::new();
-        replay_hit_dust(&larva, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&larva, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(83);
         let mut twin = DustPool::new();
         for _ in 0..10 {
@@ -3046,12 +3153,13 @@ mod tests {
     fn w4_g62_the_nebula_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, gate, mult) in [(424, 4, 20.0), (423, 4, 50.0), (421, 2, 20.0), (420, 2, 20.0)] {
             let s = snap(t, 100, 100, 50.0); // mult/2 iterations
             let iters = hit_count(s.dmg, s.life_max, mult);
             let mut rng = UnifiedRandom::new(89);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(89);
             let mut twin = DustPool::new();
             for _ in 0..iters {
@@ -3083,6 +3191,7 @@ mod tests {
     fn w4_g62_the_stardust_cell_ring_mirrors_the_dead_draws() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(405, 100, 100, 25.0); // bound 12.5 → 13 iterations
         s.w = 40;
         s.cx = 120.0;
@@ -3090,7 +3199,7 @@ mod tests {
         s.scale = 1.3;
         let mut rng = UnifiedRandom::new(97);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(97);
         let mut twin = DustPool::new();
         for i in 0..13u32 {
@@ -3126,6 +3235,7 @@ mod tests {
     fn w4_g62_the_stardust_17_arms() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, mult, gate, pscale) in
             [(409, 50.0, 4, 1.0f32), (410, 10.0, 4, 1.0), (407, 50.0, 2, 0.75), (411, 20.0, 4, 1.0)]
         {
@@ -3133,7 +3243,7 @@ mod tests {
             let iters = hit_count(s.dmg, s.life_max, mult);
             let mut rng = UnifiedRandom::new(101);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(101);
             let mut twin = DustPool::new();
             for _ in 0..iters {
@@ -3161,10 +3271,11 @@ mod tests {
     fn w4_g62_the_524_gate_draws_without_a_child() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(524, 100, 100, 50.0); // ×20 → 10
         let mut rng = UnifiedRandom::new(103);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(103);
         let mut twin = DustPool::new();
         for _ in 0..10 {
@@ -3181,7 +3292,7 @@ mod tests {
         let c = snap(525, 100, 100, 50.0);
         let mut rng2 = UnifiedRandom::new(103);
         let mut dust2 = DustPool::new();
-        replay_hit_dust(&c, &mut rng2, &mut dust2, &ctx, &world);
+        replay_hit_dust(&c, &mut rng2, &mut dust2, &mut gore, &ctx, &world);
         let mut twin_rng2 = UnifiedRandom::new(103);
         let mut twin2 = DustPool::new();
         for _ in 0..10 {
@@ -3212,10 +3323,11 @@ mod tests {
     fn w4_g62_the_djinn_shark_and_crawler_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let dj = snap(533, 100, 100, 4.0); // ×50 → 2
         let mut rng = UnifiedRandom::new(107);
         let mut dust = DustPool::new();
-        replay_hit_dust(&dj, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&dj, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(107);
         let mut twin = DustPool::new();
         for _ in 0..2 {
@@ -3234,7 +3346,7 @@ mod tests {
             let want = hit_count(10.0, 100, mult);
             let mut r = UnifiedRandom::new(109);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt && d.alpha == alpha), "type {t}");
@@ -3247,6 +3359,7 @@ mod tests {
     fn w4_g62_the_batch11_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, dt, mult) in [
             (252, 5, 100.0), (489, 5, 100.0), (534, 5, 100.0), (490, 5, 100.0),
             (65, 5, 150.0), (542, 5, 150.0), (692, 5, 150.0),
@@ -3257,7 +3370,7 @@ mod tests {
             let want = hit_count(10.0, 100, mult);
             let mut r = UnifiedRandom::new(113);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -3272,11 +3385,12 @@ mod tests {
     fn w4_g62_the_town_arms_share_the_dust5_shape() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for t in [17, 18, 19, 38, 20, 207, 208, 227, 228, 22] {
             let s = snap(t, 250, 250, 25.0); // ×100 → 10
             let mut r = UnifiedRandom::new(127);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 10, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
@@ -3290,12 +3404,13 @@ mod tests {
     fn w4_g62_the_mimic_selector_and_the_batch13_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (ai3, want) in [(0.0f32, 7), (2.0, 10), (3.0, 37), (1.0, 7)] {
             let mut s = snap(85, 500, 500, 20.0); // ×50 → 2
             s.ai3 = ai3;
             let mut r = UnifiedRandom::new(131);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 2, "ai3 {ai3}");
             assert!(live.iter().all(|d| d.dust_type == want), "ai3 {ai3}");
@@ -3304,7 +3419,7 @@ mod tests {
         let sk = snap(277, 100, 100, 10.0); // ×100 → 10
         let mut r = UnifiedRandom::new(131);
         let mut p = DustPool::new();
-        replay_hit_dust(&sk, &mut r, &mut p, &ctx, &world);
+        replay_hit_dust(&sk, &mut r, &mut p, &mut gore, &ctx, &world);
         let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 10);
         assert!(live.iter().all(|d| d.dust_type == 174 && d.scale == 1.1 && d.no_gravity));
@@ -3313,7 +3428,7 @@ mod tests {
             let s = snap(t, 100, 100, 10.0); // ×50 → 5
             let mut r2 = UnifiedRandom::new(131);
             let mut p2 = DustPool::new();
-            replay_hit_dust(&s, &mut r2, &mut p2, &ctx, &world);
+            replay_hit_dust(&s, &mut r2, &mut p2, &mut gore, &ctx, &world);
             let live2: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live2.len(), 5, "type {t}");
             assert!(live2.iter().all(|d| d.dust_type == dt && d.no_gravity), "type {t}");
@@ -3327,12 +3442,13 @@ mod tests {
     fn w4_g62_the_cursed_skull_pair_mirrors() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(34, 100, 100, 10.0 / 3.0); // ×30 → 1
         s.vx = 3.0;
         s.vy = -1.0;
         let mut rng = UnifiedRandom::new(137);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(137);
         let mut twin = DustPool::new();
         for _ in 0..1 {
@@ -3362,6 +3478,7 @@ mod tests {
     fn w4_g62_the_batch14_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, dt, mult, alpha) in [
             (78, 31, 50.0, 0), (82, 54, 50.0, 50), (250, 54, 50.0, 50),
             (315, 54, 50.0, 50), (254, 165, 50.0, 50), (261, 165, 50.0, 50),
@@ -3371,7 +3488,7 @@ mod tests {
             let want = hit_count(10.0, 100, mult);
             let mut r = UnifiedRandom::new(139);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt && d.alpha == alpha), "type {t}");
@@ -3385,7 +3502,7 @@ mod tests {
         s.vy = -0.5;
         let mut r = UnifiedRandom::new(139);
         let mut p = DustPool::new();
-        replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+        replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
         let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 5);
         assert!(live.iter().all(|d| d.dust_type == 180 && d.scale == 1.4 && d.no_gravity));
@@ -3398,12 +3515,13 @@ mod tests {
     fn w4_g62_the_confetti_burst_precedes_the_gel() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(1, 25, 25, 2.5); // gel ×100 → 10
         s.ai1 = 1345.0;
         s.color = Color::new(0, 80, 255, 100);
         let mut rng = UnifiedRandom::new(149);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(149);
         let mut twin = DustPool::new();
         for _ in 0..10 {
@@ -3433,7 +3551,7 @@ mod tests {
         let plain = snap(1, 25, 25, 2.5);
         let mut r2 = UnifiedRandom::new(149);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&plain, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&plain, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let mut t2 = UnifiedRandom::new(149);
         let mut q2 = DustPool::new();
         for _ in 0..10 {
@@ -3453,6 +3571,7 @@ mod tests {
     fn w4_g62_the_pillar_tints_and_moon_scales() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, tint) in [
             (333, Color::new(73, 147, 221, 200)),
             (334, Color::new(24, 146, 79, 200)),
@@ -3462,7 +3581,7 @@ mod tests {
             let s = snap(t, 100, 100, 5.0); // ×100 → 5
             let mut r = UnifiedRandom::new(151);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 5, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 4 && d.alpha == 150 && d.color == tint), "type {t}");
@@ -3472,7 +3591,7 @@ mod tests {
             let s = snap(t, 100, 100, 5.0);
             let mut r = UnifiedRandom::new(151);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 5, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -3490,11 +3609,12 @@ mod tests {
     fn w4_g62_the_plantera_hook_gate_is_half_life_integer() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         // Above half: the gate draws.
         let s = snap(262, 60, 100, 5.0); // ×100 → 5
         let mut rng = UnifiedRandom::new(157);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(157);
         let mut twin = DustPool::new();
         for _ in 0..5 {
@@ -3510,7 +3630,7 @@ mod tests {
         let half = snap(262, 50, 100, 5.0);
         let mut r2 = UnifiedRandom::new(157);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&half, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&half, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let mut t2 = UnifiedRandom::new(157);
         let mut q2 = DustPool::new();
         for _ in 0..5 {
@@ -3526,7 +3646,7 @@ mod tests {
             let s3 = snap(t, 90, 100, 5.0);
             let mut r3 = UnifiedRandom::new(157);
             let mut p3 = DustPool::new();
-            replay_hit_dust(&s3, &mut r3, &mut p3, &ctx, &world);
+            replay_hit_dust(&s3, &mut r3, &mut p3, &mut gore, &ctx, &world);
             assert_eq!(r3, t2, "type {t} draws no gate");
         }
     }
@@ -3536,6 +3656,7 @@ mod tests {
     fn w4_g62_the_batch16_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, dt, mult) in [
             (122, 72, 50.0), (75, 55, 50.0), (302, 192, 100.0),
             (245, 148, 100.0), (204, 4, 100.0), (225, 4, 100.0),
@@ -3545,7 +3666,7 @@ mod tests {
             let want = hit_count(10.0, 100, mult);
             let mut r = UnifiedRandom::new(163);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -3559,11 +3680,12 @@ mod tests {
     fn w4_g62_the_truffle_worm_and_154_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for life in [5, 0, -3] {
             let s = snap(374, life, 5, 1.0);
             let mut r = UnifiedRandom::new(167);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 6, "life {life}");
             assert!(live.iter().all(|d| d.dust_type == 165 && d.no_gravity && d.alpha == 50));
@@ -3573,7 +3695,7 @@ mod tests {
         s.vy = -1.0;
         let mut r = UnifiedRandom::new(167);
         let mut p = DustPool::new();
-        replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+        replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
         let mut tr = UnifiedRandom::new(167);
         let mut tp = DustPool::new();
         for _ in 0..5 {
@@ -3591,7 +3713,7 @@ mod tests {
         let me = snap(43, 100, 100, 5.0);
         let mut r2 = UnifiedRandom::new(167);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&me, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&me, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 5);
         assert!(live.iter().all(|d| d.dust_type == 40));
@@ -3604,10 +3726,11 @@ mod tests {
     fn w4_g62_the_472_gate_and_the_corruption_trio() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(472, 100, 100, 5.0); // ×100 → 5
         let mut rng = UnifiedRandom::new(173);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(173);
         let mut twin = DustPool::new();
         for _ in 0..5 {
@@ -3628,7 +3751,7 @@ mod tests {
         let c = snap(83, 100, 100, 10.0); // ×50 → 5
         let mut r2 = UnifiedRandom::new(173);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&c, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&c, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let mut t2 = UnifiedRandom::new(173);
         let mut q2 = DustPool::new();
         for _ in 0..5 {
@@ -3648,11 +3771,12 @@ mod tests {
     fn w4_g62_the_batch19_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for t in [239, 240, 241, 242, 105, 106, 107, 108, 123, 124, 550, 588, 589, 229, 142] {
             let s = snap(t, 250, 250, 25.0);
             let mut r = UnifiedRandom::new(179);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 10, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
@@ -3661,7 +3785,7 @@ mod tests {
             let s = snap(t, 250, 250, 25.0);
             let mut r = UnifiedRandom::new(179);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 10, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 18 && d.alpha == 0), "type {t}");
@@ -3674,11 +3798,12 @@ mod tests {
     fn w4_g62_the_batch20_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for t in [178, 353, 354, 37, 54, 209, 212, 216, 61, 301] {
             let s = snap(t, 250, 250, 25.0);
             let mut r = UnifiedRandom::new(181);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 10, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
@@ -3686,12 +3811,12 @@ mod tests {
         let s = snap(160, 250, 250, 25.0);
         let mut r = UnifiedRandom::new(181);
         let mut p = DustPool::new();
-        replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+        replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
         assert!(p.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 26));
         let s2 = snap(220, 100, 100, 10.0); // ×50 → 5
         let mut r2 = UnifiedRandom::new(181);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&s2, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 5);
         assert!(live.iter().all(|d| d.dust_type == 151));
@@ -3703,11 +3828,12 @@ mod tests {
     fn w4_g62_the_dd2_roster_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for t in [552, 561, 555, 551, 572, 574, 570, 568, 558, 564, 578] {
             let s = snap(t, 100, 100, 25.0); // ×20 → 5
             let mut r = UnifiedRandom::new(191);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 5, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
@@ -3716,7 +3842,7 @@ mod tests {
             let s = snap(t, 100, 100, 25.0);
             let mut r = UnifiedRandom::new(191);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 5, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -3731,10 +3857,11 @@ mod tests {
     fn w4_g62_the_ogre_pairs_and_the_empress_selector() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(541, 100, 100, 0.5); // ×200 → 1 iteration = 2 dusts
         let mut rng = UnifiedRandom::new(193);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(193);
         let mut twin = DustPool::new();
         for _ in 0..2 {
@@ -3755,7 +3882,7 @@ mod tests {
         let e = snap(636, 100, 100, 5.0); // ×100 → 5
         let mut r2 = UnifiedRandom::new(193);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&e, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&e, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let mut t2 = UnifiedRandom::new(193);
         let mut q2 = DustPool::new();
         for _ in 0..5 {
@@ -3771,7 +3898,7 @@ mod tests {
         let d690 = snap(690, -1, 10, 1.0);
         let mut r3 = UnifiedRandom::new(193);
         let mut p3 = DustPool::new();
-        replay_hit_dust(&d690, &mut r3, &mut p3, &ctx, &world);
+        replay_hit_dust(&d690, &mut r3, &mut p3, &mut gore, &ctx, &world);
         let live: Vec<_> = p3.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 10);
         assert!(live.iter().all(|d| d.dust_type == 1));
@@ -3784,10 +3911,11 @@ mod tests {
     fn w4_g62_the_fairy_lerp_arg_precedes_the_spawn() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(583, 100, 100, 2.0); // ×50 → 1
         let mut rng = UnifiedRandom::new(197);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(197);
         let mut twin = DustPool::new();
         let t = twin_rng.next_float();
@@ -3808,7 +3936,7 @@ mod tests {
             let want = hit_count(10.0, 100, mult);
             let mut r2 = UnifiedRandom::new(197);
             let mut p2 = DustPool::new();
-            replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
+            replay_hit_dust(&s2, &mut r2, &mut p2, &mut gore, &ctx, &world);
             let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt && d.no_gravity), "type {t}");
@@ -3822,11 +3950,12 @@ mod tests {
     fn w4_g62_the_butterfly_offsets_and_critter_bounds() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, dt) in [(646, 86), (647, 87), (651, 91), (652, 138), (639, 86), (644, 91), (645, 138)] {
             let s = snap(t, 100, 100, 10.0); // ×20 → 2
             let mut r = UnifiedRandom::new(199);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 2, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -3836,7 +3965,7 @@ mod tests {
             let want = hit_count(10.0, 100, mult);
             let mut r = UnifiedRandom::new(199);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -3849,6 +3978,7 @@ mod tests {
     fn w4_g62_the_batch25_rows() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, dt) in [
             (46, 5), (303, 5), (540, 5), (671, 5), (148, 5), (470, 5),
             (361, 5), (362, 5), (687, 16), (685, 0), (607, 45), (688, 45),
@@ -3857,7 +3987,7 @@ mod tests {
             let s = snap(t, 100, 100, 25.0); // ×20 → 5
             let mut r = UnifiedRandom::new(211);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), 5, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -3871,11 +4001,12 @@ mod tests {
     fn w4_g62_the_antlion_override_and_spectral_alpha() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, want) in [(69, 10u32), (582, 3)] {
             let s = snap(t, 100, 100, 10.0);
             let mut r = UnifiedRandom::new(223);
             let mut p = DustPool::new();
-            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == 250), "type {t}");
@@ -3884,14 +4015,14 @@ mod tests {
         s.alpha = 77;
         let mut r = UnifiedRandom::new(223);
         let mut p = DustPool::new();
-        replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+        replay_hit_dust(&s, &mut r, &mut p, &mut gore, &ctx, &world);
         assert!(p.slots().iter().filter(|d| d.active).all(|d| d.alpha == 77 && d.dust_type == 5));
         // The bird/holiday ×20 rows.
         for t in [602, 608, 348, 351, 350, 47, 464] {
             let s2 = snap(t, 100, 100, 25.0);
             let mut r2 = UnifiedRandom::new(223);
             let mut p2 = DustPool::new();
-            replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
+            replay_hit_dust(&s2, &mut r2, &mut p2, &mut gore, &ctx, &world);
             assert_eq!(p2.slots().iter().filter(|d| d.active).count(), 5, "type {t}");
         }
     }
@@ -3903,10 +4034,11 @@ mod tests {
     fn w4_g62_the_vile_spit_branch_mirrors() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(112, -5, 100, 10.0);
         let mut rng = UnifiedRandom::new(227);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(227);
         let mut twin = DustPool::new();
         for _ in 0..20 {
@@ -3928,14 +4060,14 @@ mod tests {
         let sc = snap(392, 100, 100, 50.0); // ×20 → 10
         let mut r2 = UnifiedRandom::new(227);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&sc, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&sc, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 10);
         assert!(live.iter().all(|d| d.dust_type == 228 && d.scale == 0.5));
         let sx = snap(391, 300, 300, 15000.0); // divisor → 1
         let mut r3 = UnifiedRandom::new(227);
         let mut p3 = DustPool::new();
-        replay_hit_dust(&sx, &mut r3, &mut p3, &ctx, &world);
+        replay_hit_dust(&sx, &mut r3, &mut p3, &mut gore, &ctx, &world);
         assert_eq!(p3.slots().iter().filter(|d| d.active).count(), 1);
         assert!(p3.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 227));
     }
@@ -3947,10 +4079,11 @@ mod tests {
     fn w4_g62_the_solar_flare_sequence_mirrors() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(516, -2, 100, 5.0);
         let mut rng = UnifiedRandom::new(229);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(229);
         let mut twin = DustPool::new();
         for _ in 0..20 {
@@ -3981,13 +4114,14 @@ mod tests {
     fn w4_g62_the_rainbow_slime_gated_shimmer() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         // One iteration: dmg/lifeMax·100 = 1.
         let s = snap(661, 100, 100, 1.0);
         // Find a seed whose first Next(5) == 0.
         let seed = (1..500).find(|&v| UnifiedRandom::new(v).next_max(5) == 0).unwrap();
         let mut rng = UnifiedRandom::new(seed);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(seed);
         let mut twin = DustPool::new();
         assert_eq!(twin_rng.next_max(5), 0);
@@ -4025,18 +4159,19 @@ mod tests {
     fn w4_g62_the_queen_minion_live_gate_and_667_draws() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let dead = snap(658, 0, 100, 10.0);
         let mut rng = UnifiedRandom::new(233);
         let twin = UnifiedRandom::new(233);
         let mut dust = DustPool::new();
-        replay_hit_dust(&dead, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&dead, &mut rng, &mut dust, &mut gore, &ctx, &world);
         assert_eq!(rng, twin, "the death halves are g60's");
         assert!(dust.slots().iter().all(|d| !d.active));
         // 667 live: 3 × 2 gore-arg draws then 7 × (spawn + Next(3)).
         let s = snap(667, 100, 100, 10.0);
         let mut r2 = UnifiedRandom::new(233);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&s, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&s, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let mut t2 = UnifiedRandom::new(233);
         let mut q2 = DustPool::new();
         for _ in 0..3 {
@@ -4060,7 +4195,7 @@ mod tests {
         s3.vy = -1.0;
         let mut r3 = UnifiedRandom::new(233);
         let mut p3 = DustPool::new();
-        replay_hit_dust(&s3, &mut r3, &mut p3, &ctx, &world);
+        replay_hit_dust(&s3, &mut r3, &mut p3, &mut gore, &ctx, &world);
         let live: Vec<_> = p3.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 8);
         assert!(live.iter().all(|d| d.dust_type == 310 && d.alpha == 80));
@@ -4072,11 +4207,12 @@ mod tests {
     fn w4_g62_the_521_direct_burst() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(521, 100, 100, 0.5); // ×200 → 1
         s.vy = 1.5;
         let mut rng = UnifiedRandom::new(239);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(239);
         let mut twin = DustPool::new();
         let idx = twin.new_dust_direct(
@@ -4097,12 +4233,13 @@ mod tests {
     fn w4_g62_the_queen_slime_live_shimmer() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(657, 100, 100, 10.0);
         s.vx = 1.0;
         s.vy = -2.0;
         let mut rng = UnifiedRandom::new(241);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(241);
         let mut twin = DustPool::new();
         for _ in 0..12 {
@@ -4130,7 +4267,7 @@ mod tests {
         let mut r2 = UnifiedRandom::new(241);
         let t2 = UnifiedRandom::new(241);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&dead, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&dead, &mut r2, &mut p2, &mut gore, &ctx, &world);
         assert_eq!(r2, t2);
     }
 
@@ -4141,10 +4278,11 @@ mod tests {
     fn w4_g62_the_crystal_ring_mirrors() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(522, -1, 1000, 5.0); // every strike
         let mut rng = UnifiedRandom::new(251);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut t2 = UnifiedRandom::new(251);
         let mut twin = DustPool::new();
         let max = std::f64::consts::PI;
@@ -4176,10 +4314,11 @@ mod tests {
     fn w4_g62_the_gold_critter_block_and_the_627_fallthrough() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let s = snap(442, 10, 10, 1.0);
         let mut rng = UnifiedRandom::new(257);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(257);
         let mut twin = DustPool::new();
         for _ in 0..10 {
@@ -4195,7 +4334,7 @@ mod tests {
         let g = snap(627, 100, 100, 10.0);
         let mut r2 = UnifiedRandom::new(257);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&g, &mut r2, &mut p2, &ctx, &world);
+        replay_hit_dust(&g, &mut r2, &mut p2, &mut gore, &ctx, &world);
         let mut t2 = UnifiedRandom::new(257);
         let mut q2 = DustPool::new();
         for _ in 0..10 {
@@ -4219,7 +4358,7 @@ mod tests {
             let want = hit_count(10.0, 100, mult);
             let mut r3 = UnifiedRandom::new(257);
             let mut p3 = DustPool::new();
-            replay_hit_dust(&s3, &mut r3, &mut p3, &ctx, &world);
+            replay_hit_dust(&s3, &mut r3, &mut p3, &mut gore, &ctx, &world);
             assert_eq!(p3.slots().iter().filter(|d| d.active).count() as u32, want, "type {t}");
         }
     }
@@ -4231,11 +4370,12 @@ mod tests {
     fn w4_g62_the_dd2_direct_bursts_and_the_tail() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         for (t, mult) in [(620, 150.0), (619, 150.0), (618, 200.0)] {
             let s = snap(t, 100, 100, 10.0 / mult * 100.0); // → 10 iterations
             let mut rng = UnifiedRandom::new(263);
             let mut dust = DustPool::new();
-            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
             let mut twin_rng = UnifiedRandom::new(263);
             let mut twin = DustPool::new();
             for _ in 0..10 {
@@ -4257,7 +4397,7 @@ mod tests {
         let f = snap(478, 100, 100, 1.0);
         let mut r = UnifiedRandom::new(263);
         let mut p = DustPool::new();
-        replay_hit_dust(&f, &mut r, &mut p, &ctx, &world);
+        replay_hit_dust(&f, &mut r, &mut p, &mut gore, &ctx, &world);
         let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 10);
         assert!(live.iter().all(|d| d.dust_type == 238 && d.no_gravity));
@@ -4267,45 +4407,61 @@ mod tests {
             let want = hit_count(10.0, 100, mult);
             let mut r2 = UnifiedRandom::new(263);
             let mut p2 = DustPool::new();
-            replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
+            replay_hit_dust(&s2, &mut r2, &mut p2, &mut gore, &ctx, &world);
             assert_eq!(p2.slots().iter().filter(|d| d.active).count() as u32, want, "type {t}");
         }
     }
 
-    /// W4-g62 batch 32 — the Deerclops live gore-arg clamp (`NPC.cs:
-    /// 88645-88648`): max(1,min(5,(int)(dmg/lifeMax·3))) × 2 NextFloat,
-    /// NO dust; the Skeletron hands ×100 dust 26; 381's martian divisor.
+    /// W4-g62 batch 32 + 35 — the Deerclops LIVE clamped gore burst
+    /// (`NPC.cs:88645-88649`): max(1,min(5,(int)(dmg/lifeMax·3))) × gore
+    /// 1008, NO dust; per gore TWO NextFloat argument draws (X then Y),
+    /// the int truncation BEFORE the ×0.5, position = Centre + offset,
+    /// this.scale carried (the f5 death-twin shape, the :88648 body —
+    /// the research/111 hand-off). Draw-for-draw + gore-slot twin.
+    /// Also: the Skeletron hands ×100 dust 26; 381's martian divisor.
     #[test]
     fn w4_g62_the_deerclops_clamp_and_the_final_tail() {
         let world = air();
         let ctx = ctx();
-        // A tiny hit still draws ONE gore's 2 floats (the max(1,..)).
+        let mut gore = GorePool::new();
+        // A tiny hit still spawns ONE gore (the max(1,..) clamp).
         let tiny = snap(694, 100, 100, 1.0);
         let mut rng = UnifiedRandom::new(269);
         let mut dust = DustPool::new();
-        replay_hit_dust(&tiny, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&tiny, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin = UnifiedRandom::new(269);
-        let _ = twin.next_float();
-        let _ = twin.next_float();
+        let mut twin_gore = GorePool::new();
+        // The twin anchor: (-24 + (int)(24·NextFloat))·0.5 etc., the
+        // snapshot's Centre (112, 109), scale 1.0.
+        let ox = (-24 + (24.0f32 * twin.next_float()) as i32) as f32 * 0.5;
+        let oy = (-18 + (18.0f32 * twin.next_float()) as i32) as f32 * 0.5;
+        twin_gore.new_gore(&mut twin, &world, Vec2::new(112.0 + ox, 109.0 + oy), Vec2::ZERO, 1008, 1.0);
         assert_eq!(rng, twin);
+        assert_eq!(gore.slots(), twin_gore.slots());
         assert!(dust.slots().iter().all(|d| !d.active), "no live dust");
-        // An overkill clamps at 5 gores = 10 floats.
+        // An overkill clamps at 5 gores = 10 argument floats + 5 spawns.
         let big = snap(694, 100, 100, 9999.0);
         let mut r2 = UnifiedRandom::new(269);
         let mut p2 = DustPool::new();
-        replay_hit_dust(&big, &mut r2, &mut p2, &ctx, &world);
+        let mut g2 = GorePool::new();
+        replay_hit_dust(&big, &mut r2, &mut p2, &mut g2, &ctx, &world);
         let mut t2 = UnifiedRandom::new(269);
-        for _ in 0..10 {
-            let _ = t2.next_float();
+        let mut q2 = GorePool::new();
+        for _ in 0..5 {
+            let ox = (-24 + (24.0f32 * t2.next_float()) as i32) as f32 * 0.5;
+            let oy = (-18 + (18.0f32 * t2.next_float()) as i32) as f32 * 0.5;
+            q2.new_gore(&mut t2, &world, Vec2::new(112.0 + ox, 109.0 + oy), Vec2::ZERO, 1008, 1.0);
         }
         assert_eq!(r2, t2);
+        assert_eq!(g2.slots(), q2.slots());
+        assert_eq!(g2.slots().iter().filter(|g| g.active).count(), 5);
         // The hands: ×100 dust 26; the EoW segments ×50 dust 5.
         for (t, dt, mult) in [(35, 26, 100.0), (36, 26, 100.0), (68, 26, 100.0), (95, 5, 50.0), (462, 5, 100.0)] {
             let s = snap(t, 100, 100, 10.0);
             let want = hit_count(10.0, 100, mult);
             let mut r3 = UnifiedRandom::new(269);
             let mut p3 = DustPool::new();
-            replay_hit_dust(&s, &mut r3, &mut p3, &ctx, &world);
+            replay_hit_dust(&s, &mut r3, &mut p3, &mut gore, &ctx, &world);
             let live: Vec<_> = p3.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
@@ -4313,7 +4469,7 @@ mod tests {
         let m = snap(381, 300, 300, 15000.0); // divisor → 1
         let mut r4 = UnifiedRandom::new(269);
         let mut p4 = DustPool::new();
-        replay_hit_dust(&m, &mut r4, &mut p4, &ctx, &world);
+        replay_hit_dust(&m, &mut r4, &mut p4, &mut gore, &ctx, &world);
         assert_eq!(p4.slots().iter().filter(|d| d.active).count(), 1);
         assert!(p4.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 227));
     }
@@ -4332,6 +4488,7 @@ mod tests {
     fn w4_g62_the_goop_trail_walks_every_third_slot_without_a_break() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         // A filled 20-ring with fractional visited slots: the (int)
         // cast truncates. life < 0 — a KILLING blow still fires.
         let mut s = snap(519, -1, 1, 9999.0); // the goop's lifeMax 1
@@ -4352,7 +4509,7 @@ mod tests {
         }
         let mut rng = UnifiedRandom::new(271);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(271);
         let mut twin = DustPool::new();
         for slot in [
@@ -4383,7 +4540,7 @@ mod tests {
         let z = snap(519, 1, 1, 0.0);
         let mut rz = UnifiedRandom::new(271);
         let mut pz = DustPool::new();
-        replay_hit_dust(&z, &mut rz, &mut pz, &ctx, &world);
+        replay_hit_dust(&z, &mut rz, &mut pz, &mut gore, &ctx, &world);
         let mut tz = UnifiedRandom::new(271);
         let mut qz = DustPool::new();
         for _ in 0..7 {
@@ -4416,6 +4573,7 @@ mod tests {
     fn w4_g62_the_worm_head_live_trail_gates_per_slot() {
         let world = air();
         let ctx = ctx();
+        let mut gore = GorePool::new();
         let mut s = snap(402, 700, 700, 700.0); // ×3 → 3 iterations
         assert_eq!(s.trail_len, 36, "the 402 TrailCacheLength row");
         s.old_pos[0] = Vec2::new(100.0, 100.0);
@@ -4424,7 +4582,7 @@ mod tests {
         // Slots 3..36 stay ZERO — the fresh-tail shape.
         let mut rng = UnifiedRandom::new(277);
         let mut dust = DustPool::new();
-        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
         let mut twin_rng = UnifiedRandom::new(277);
         let mut twin = DustPool::new();
         for _ in 0..3 {
@@ -4471,7 +4629,7 @@ mod tests {
         let z = snap(402, 700, 700, 700.0);
         let mut rz = UnifiedRandom::new(277);
         let mut pz = DustPool::new();
-        replay_hit_dust(&z, &mut rz, &mut pz, &ctx, &world);
+        replay_hit_dust(&z, &mut rz, &mut pz, &mut gore, &ctx, &world);
         let mut tz = UnifiedRandom::new(277);
         let mut qz = DustPool::new();
         for _ in 0..3 {
@@ -4502,8 +4660,128 @@ mod tests {
         let mut rd = UnifiedRandom::new(277);
         let peek = rd.clone();
         let mut pd = DustPool::new();
-        replay_hit_dust(&d, &mut rd, &mut pd, &ctx, &world);
+        replay_hit_dust(&d, &mut rd, &mut pd, &mut gore, &ctx, &world);
         assert_eq!(rd, peek, "no draws on the death side");
         assert!(pd.slots().iter().all(|x| !x.active));
+    }
+
+    /// W4-g62 batch 35 — the 133 WanderingEye eye-pop latch (`NPC.cs:
+    /// 86529-86533`, the g60f §12.8.3 hand-off after the f10-overrun
+    /// delete): the CAPTURE computes the gate on strike-time state
+    /// (`life < lifeMax*0.5f && localAI[0] == 0`, f32 casts); the
+    /// replay spawns ONE gore 1 at position/velocity, scale 1f
+    /// default, ZERO argument draws (only the pool's own 2 kicks).
+    /// A latched eye (localAI[0] == 1) or an at/above-half eye never
+    /// fires; a killing blow (life <= 0) never fires (the C# gate sits
+    /// INSIDE the `life > 0` half). The localAI write is the STRIKE
+    /// ENTRY's (npc.rs — the seam witness pins it).
+    #[test]
+    fn w4_g62_the_eye_pop_latch_spawns_one_gore_once() {
+        let world = air();
+        let ctx = ctx();
+        let mut gore = GorePool::new();
+        let mut n = Npc::new(NpcKind::WanderingEye, 100.0, 100.0, 1, 0.0);
+        n.max_hp = 100;
+        n.hp = 49; // below half, latch still 0
+        n.local_ai[0] = 0.0;
+        let s = HitDustSnapshot::capture(&n, 1, 1);
+        assert!(s.eye_pop_latched, "49 < 50 with latch 0 fires");
+        let mut rng = UnifiedRandom::new(281);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
+        // Twin: 1 dust 5 (1/100·100 = 1), then the gore — no gate draw.
+        let mut twin_rng = UnifiedRandom::new(281);
+        let mut twin = DustPool::new();
+        let mut twin_gore = GorePool::new();
+        twin.new_dust(
+            &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), n.size().0 as i32, n.size().1 as i32, 5,
+            1.0, -1.0, 0, Color::default(), 1.0,
+        );
+        twin_gore.new_gore(&mut twin_rng, &world, Vec2::new(100.0, 100.0), Vec2::new(n.vx, n.vy), 1, 1.0);
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        assert_eq!(gore.slots(), twin_gore.slots());
+        assert_eq!(gore.slots().iter().filter(|g| g.active).count(), 1);
+        // The capture does NOT write the latch (the strike ENTRY does,
+        // right after the push — the seam witness pins that order).
+        assert_eq!(n.local_ai[0], 0.0);
+        // At exactly half: NO latch (the C# `<` is strict).
+        n.hp = 50;
+        assert!(!HitDustSnapshot::capture(&n, 1, 1).eye_pop_latched);
+        // Already latched: NO second pop.
+        n.hp = 10;
+        n.local_ai[0] = 1.0;
+        assert!(!HitDustSnapshot::capture(&n, 1, 1).eye_pop_latched);
+        // A killing blow: NO latch (the gate sits under life > 0).
+        n.local_ai[0] = 0.0;
+        n.hp = 0;
+        assert!(!HitDustSnapshot::capture(&n, 1, 1).eye_pop_latched);
+        // An unlatched snapshot replays dust-only — zero gore draws.
+        let mut plain = snap(133, 20, 100, 10.0);
+        plain.eye_pop_latched = false;
+        let mut r2 = UnifiedRandom::new(281);
+        let mut p2 = DustPool::new();
+        let mut g2 = GorePool::new();
+        replay_hit_dust(&plain, &mut r2, &mut p2, &mut g2, &ctx, &world);
+        assert!(g2.slots().iter().all(|g| !g.active), "no body without the latch");
+    }
+
+    /// W4-g62 batch 35 — the 632 MaggotZombie gated body (`NPC.cs:
+    /// 86949-86952`): the Next(5) draws ALWAYS after the ×100 dust-5
+    /// loop; on ==0 ONE gore 1217 at position/velocity, scale 1f
+    /// default. A seed whose gate fails spawns nothing (the gate draw
+    /// still rides). Twin mirrors gate + conditional body.
+    #[test]
+    fn w4_g62_the_maggot_zombie_gore_gate_spawns_1217() {
+        let world = air();
+        let ctx = ctx();
+        let mut gore = GorePool::new();
+        let s = snap(632, 40, 40, 4.0); // ×100 → 10 dusts
+        let mut rng = UnifiedRandom::new(3);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &mut gore, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(3);
+        let mut twin = DustPool::new();
+        let mut twin_gore = GorePool::new();
+        for _ in 0..10 {
+            twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
+                1.0, -1.0, 0, Color::default(), 1.0,
+            );
+        }
+        if twin_rng.next_max(5) == 0 {
+            twin_gore.new_gore(&mut twin_rng, &world, Vec2::new(100.0, 100.0), Vec2::ZERO, 1217, 1.0);
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        assert_eq!(gore.slots(), twin_gore.slots());
+        // Sweep seeds until BOTH gate outcomes are witnessed (the
+        // deterministic stream guarantees both within a short walk).
+        let mut saw_pass = false;
+        let mut saw_fail = false;
+        for seed in 0..64u64 {
+            let mut r = UnifiedRandom::new(seed);
+            let mut p = DustPool::new();
+            let mut g = GorePool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &mut g, &ctx, &world);
+            let live = g.slots().iter().filter(|x| x.active).count();
+            let mut probe = UnifiedRandom::new(seed);
+            let mut probe_pool = DustPool::new();
+            for _ in 0..10 {
+                probe_pool.new_dust(
+                    &mut probe, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 5,
+                    1.0, -1.0, 0, Color::default(), 1.0,
+                );
+            }
+            if probe.next_max(5) == 0 {
+                assert_eq!(live, 1, "seed {seed}: the passing gate spawns 1217");
+                assert!(g.slots().iter().filter(|x| x.active).all(|x| x.gore_type == 1217));
+                saw_pass = true;
+            } else {
+                assert_eq!(live, 0, "seed {seed}: the failing gate spawns nothing");
+                saw_fail = true;
+            }
+        }
+        assert!(saw_pass && saw_fail, "both gate outcomes witnessed");
     }
 }

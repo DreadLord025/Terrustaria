@@ -75,6 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 240 | W4-g62 hit-dust FINAL + hit-dust-family declaration (number per registry-150: first-free sweep 237/238/239 taken at tips, 240 first no tip carries): the FOUR hit-half gore bodies :86532/:86947/:86951/:88648 OWNED+ported (the f5 research/111 hand-off, batch 35 — GorePool param, the 133 eye-pop latch capture-gate + strike-entry localAI[0] write + drain body), the g60f-widening MUTUAL RECEIPT re-verified by g62 itself (g60 30fea0fe1 vs g62 32af98b44: fields 34/34 init 8/8 update_trails 40/40 Transform 7/7 witnesses 105/105 table 19/19 ALL BYTE-IDENTICAL), 629 live sites zero missed — FAMILY COMPLETE; 69 witnesses written not run; code-only | `240-g62-hit-dust-final.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

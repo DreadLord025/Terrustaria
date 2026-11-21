@@ -4466,6 +4466,12 @@ impl Npc {
         // in the C#, `Player.cs:21049-21116`/`:31387`).
         self.wants_hit_dust
             .push(crate::npc_hit_dust::HitDustSnapshot::capture(self, amount, dir));
+        // `NPC.cs:86531` — the 133 eye-pop latch write at STRIKE time
+        // (batch 35: the capture computed the gate; the C# writes
+        // localAI[0] before the NewGore body the drain replays).
+        if self.wants_hit_dust.last().is_some_and(|s| s.eye_pop_latched) {
+            self.local_ai[0] = 1.0;
+        }
         true
     }
 
@@ -4517,6 +4523,10 @@ impl Npc {
         // W4-g62 — the `HitEffect` capture (the `hurt` twin above).
         self.wants_hit_dust
             .push(crate::npc_hit_dust::HitDustSnapshot::capture(self, amount, dir));
+        // `NPC.cs:86531` — the eye-pop latch write (the `hurt` twin).
+        if self.wants_hit_dust.last().is_some_and(|s| s.eye_pop_latched) {
+            self.local_ai[0] = 1.0;
+        }
         true
     }
 
@@ -4639,6 +4649,10 @@ impl Npc {
         // lane's (g60); the plain strike captures its own slot.
         n.wants_hit_dust
             .push(crate::npc_hit_dust::HitDustSnapshot::capture(n, amount, dir));
+        // `NPC.cs:86531` — the eye-pop latch write (the `hurt` twin).
+        if n.wants_hit_dust.last().is_some_and(|s| s.eye_pop_latched) {
+            n.local_ai[0] = 1.0;
+        }
         true
     }
 

@@ -39270,12 +39270,16 @@ in the ledger (exact line or range) or classified death-half.
 - Spawn-side dust is **g61**'s; hit sounds are **c13**'s
   (`strike_hit_cue`/`queue_hit_effect_sound` — landed 09a3accf, not on
   main; this lane does not depend on it).
-- The gore BODIES are **d55**'s. Where a gore call sits between dust
+- The gore BODIES are the gore lanes' (d55/e5/f10/f5) EXCEPT the FOUR
+  hit-half bodies batch 35 owns (`:86532`/`:86947`/`:86951`/`:88648` —
+  the f5 research/111 hand-off, unowned after the f10-overrun delete;
+  research/240 §1). Where another lane's gore call sits between dust
   draws, its ARGUMENT draws are consumed here in C# order (the W4-e2
-  split precedent): the zombie-group 186/632 `Next(5)` gates (`:86945`/
-  `:86949`), the Deerclops 694 LIVE arm (`:88645-88648` — NO live dust,
-  only the clamped `max(1,min(5,(int)(dmg/lifeMax·3)))` count × 2
-  NextFloat per gore).
+  split precedent): the confetti slime's 5 (`:84738`, f10's LEGIT
+  window) and the Queen minion 667's 3 (`:82043-82047`, f10's legit
+  DD2 window). The zombie-group 186/632 `Next(5)` gates (`:86945`/
+  `:86949`) and the Deerclops 694 LIVE arm (`:88645-88648`) now spawn
+  their BODIES here too (batch 35).
 
 ### Architecture — the strike-time capture + UpdateNPCs drain
 
@@ -39469,20 +39473,60 @@ ported. Outside it, two dust-adjacent readers remain, both OTHER lanes'
 - `:49584-49586`/`:49708-49710` — Duke Fishron's ring RESETS (writers,
   no dust); the Main.cs readers are render-only (the trail draw).
 
+### Batch 35 — the FOUR hit-half gore bodies + the 133 eye-pop latch (research/240)
+
+The f5 FINAL receipt (research/111) split its 853-site recount into 849
+death-half + **4 hit-half** (`:86532`/`:86947`/`:86951`/`:88648`) — g60's
+§12.8.3 confirmed them unowned after the f10-overrun delete (d55's window
+`:81660-81941` covers none). Batch 35 ports all four through the verbatim
+`GorePool::new_gore` (`tr_core::gore`, the S1-E-4 pool on main) on the SAME
+UpdateNPCs stream, C# statement order — `replay_hit_dust` gains the
+`&mut GorePool` parameter, the drain passes `app.gore`:
+- **133 eye-pop** (`:86529-86533`): the capture computes
+  `eye_pop_latched` on strike-time state (`hp > 0 && hp < max_hp*0.5f &&
+  localAI[0] == 0`, f32 casts, strict `<`); the STRIKE ENTRY writes
+  `localAI[0] = 1` right after the capture push (the C# `:86531` order —
+  before the body); the drain spawns ONE gore 1, scale 1f default, zero
+  argument draws. A killing blow never pops (the gate is under `life > 0`).
+- **186/632 gated bodies** (`:86947`/`:86951`): the Next(5) gates were
+  already consumed here (batch 1); the bodies 242/1217 now spawn INSIDE
+  the gates, scale 1f default.
+- **694 Deerclops LIVE burst** (`:88645-88649`): the clamped
+  `max(1,min(5,(int)(dmg/lifeMax·3)))` count × gore 1008 at Centre +
+  ((-w + (int)(w·NextFloat))·0.5, (-h + (int)(h·NextFloat))·0.5),
+  this.scale carried — the 2 NextFloat argument draws (batch 32) now feed
+  the position (f5's death-twin `:88654` shape; the death half stays f5's).
+
+**The g60f-widening MUTUAL RECEIPT (independently re-verified):** g62 re-ran
+g60's own `g60_verify_widen.py` (pure-text Python) against g60 tip
+`30fea0fe1` vs g62 `32af98b44`: fields 34/34, init 8/8, update_trails 40/40,
+Transform 7/7, witnesses 105/105, table 19/19 — **ALL BYTE-IDENTICAL**. The
+6-hunk contract is CONSUMED; the merge dedupes the shared `Npc` surface.
+
+**HIT-DUST-FAMILY COMPLETE** (research/240): 629 live dust sites zero
+missed + the 4 hit-half gore bodies owned + the 133 latch owned + the
+TrailCache widening landed and mutually receipted.
+
 ### Verification
 
 Code-only: every arm re-read against the cited C# windows (≤100-line
 reads); the seam call sites checked by read/grep (`DustPool::new_dust`/
 `new_dust_direct` signatures, `SpawnCtx`, `RngKey::UpdateNpcs`,
 `bow_launch::rotated_by`, `tile_light::palette::hsl_to_rgb` for the
-rainbow slime 661). The 61 witness tests in `npc_hit_dust.rs` (the
+rainbow slime 661). The 63 witness tests in `npc_hit_dust.rs` (the
 519/402 trail twins RE-DERIVED to the widened rings: 7×5 stride-3
-groups / 36-slot gate walks) plus the `npc.rs` seam witness
+groups / 36-slot gate walks; batch 35's pincushion/Deerclops twins
+RE-DERIVED to mirror the gore slots + the 2 new latch/632 witnesses)
+plus the `npc.rs` seam witness
 (`w4_g62_every_landed_strike_queues_one_hit_dust_capture`), the two
 g60-adopted trail witnesses (widened) and the two new widening
 witnesses (`w4_g62_the_trail_cache_census_and_resize`,
-`w4_g62_the_kobold_flyers_shift_the_mode_7_ring`) are
+`w4_g62_the_kobold_flyers_shift_the_mode_7_ring`) and the new
+`world_sim/npcs.rs` seam witness
+(`w4_g62_the_drain_latches_the_eye_and_spawns_one_pop`) are
 WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
 graphify invoked**. Witness convention: twin `UnifiedRandom` + twin
-`DustPool` replaying the exact draw sequence,
-`assert_eq!(rng, twin_rng)` + `assert_eq!(dust.slots(), twin.slots())`.
+`DustPool` (+ twin `GorePool` for the batch-35 bodies) replaying the
+exact draw sequence,
+`assert_eq!(rng, twin_rng)` + `assert_eq!(dust.slots(), twin.slots())`
+(+ `assert_eq!(gore.slots(), twin_gore.slots())`).

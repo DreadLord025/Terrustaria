@@ -3816,10 +3816,16 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             hits.append(&mut n.wants_hit_dust);
         }
         if !hits.is_empty() {
+            // W4-g62 batch 35 — the 133 eye-pop latch write
+            // (`NPC.cs:86531`) rode the STRIKE ENTRY (right after the
+            // capture, the C# write order); this drain replays only
+            // the dust + the FOUR hit-half gore bodies.
             let ctx = app.spawn_ctx();
             let rng = app.rngs.stream(RngKey::UpdateNpcs);
             for s in hits {
-                crate::npc_hit_dust::replay_hit_dust(&s, rng, &mut app.dust, &ctx, &app.world);
+                crate::npc_hit_dust::replay_hit_dust(
+                    &s, rng, &mut app.dust, &mut app.gore, &ctx, &app.world,
+                );
             }
         }
     }
@@ -18304,5 +18310,56 @@ mod king_slime_audit_tests {
             "the finder picks the witnessed candidate"
         );
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
+    }
+
+    /// W4-g62 batch 35 — the 133 eye-pop latch's STRIKE + DRAIN seam
+    /// (`NPC.cs:86529-86533`): the strike entry writes `localAI[0] = 1`
+    /// right after the latched capture (the C# `:86531` order); the
+    /// update_npcs drain spawns the ONE gore 1 through the shared
+    /// `app.gore` pool. A second below-half strike (latch now 1)
+    /// captures unlatched — no second pop.
+    #[test]
+    fn w4_g62_the_drain_latches_the_eye_and_spawns_one_pop() {
+        use crate::app::flow::front_flow_tests::flow_app;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = surface_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 100.0;
+        player.y = 100.0;
+        app.player = Some(player);
+        let mut eye = Npc::new(NpcKind::WanderingEye, 100.0, 100.0, 1, 0.0);
+        eye.max_hp = 100;
+        eye.hp = 50;
+        eye.local_ai[0] = 0.0;
+        app.npcs.push(eye);
+        // The strike leaves hp 49 (< 50), queues the latched capture
+        // and writes the latch AT STRIKE (the C# `:86531` order).
+        assert!(app.npcs[0].hurt(1, 0.0, 0.0, false, false));
+        assert_eq!(app.npcs[0].wants_hit_dust.len(), 1);
+        assert!(app.npcs[0].wants_hit_dust[0].eye_pop_latched);
+        assert_eq!(app.npcs[0].local_ai[0], 1.0, "the strike wrote the latch");
+        update_npcs(&mut app, 1.0 / 60.0);
+        let pops: Vec<_> = app
+            .gore
+            .slots()
+            .iter()
+            .filter(|g| g.active && g.gore_type == 1)
+            .collect();
+        assert_eq!(pops.len(), 1, "ONE eye-pop gore 1 (`:86532`)");
+        // A second below-half strike: latch already 1 — no second pop.
+        let idx = app
+            .npcs
+            .iter()
+            .position(|n| n.kind == NpcKind::WanderingEye)
+            .expect("the live eye survives the pass");
+        app.npcs[idx].hurt_cd = 0.0;
+        assert!(app.npcs[idx].hurt(1, 0.0, 0.0, false, false));
+        assert!(!app.npcs[idx].wants_hit_dust[0].eye_pop_latched);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.gore.slots().iter().filter(|g| g.active && g.gore_type == 1).count(),
+            1,
+            "the latch fires exactly once per eye"
+        );
     }
 }
