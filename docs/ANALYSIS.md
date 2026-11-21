@@ -36058,6 +36058,44 @@ phase 4)" below.)
 
 ## The waterfowl sweep (W4-c10 phase 4, 2026-11-21, code-only mode)
 
+### The 1080 BirdDroppings DUP — arm-by-arm vs W4-d20, keep-one recommendation
+
+**Cross-note to the d20b sweep (reads `origin/task/W4-d20-proj-ai-191-200`
+tip 13de9ccf).** Both branches independently landed the aiStyle-200 arm;
+the merge needs ONE survivor. Compared arm-by-arm against the C#
+(`Projectile.cs:39985-40017` AI / `:18921-18928` HandleMovement /
+`:70926-70954` Kill):
+
+| piece | W4-c10 (`projectile_bird_droppings.rs`) | W4-d20 (`projectile_ai_misc.rs::ai_bird_droppings`) | C# | verdict |
+| --- | --- | --- | --- | --- |
+| `proj_data` row | 10x10 / 200 / -1 / alpha 255 / ignoreWater overlay, stock tileCollide+timeLeft | identical fields (d20 `data.rs:3606` + the `:4275` overlay) | `:10078-10086` | EQUAL — either row stands; keep ONE const + ONE row + ONE overlay arm |
+| gravity + cap | `+0.3`, cap 16 | identical | `:39987-39991` | EQUAL |
+| dust census | 2 × (`Next(2)` then `NextFloat`) | identical (the if/else draws the same one float per branch) | `:39992-40008` | EQUAL — stream-identical |
+| player-intersect kill | `player_rect: Option<(i32,i32,i32,i32)>` seam, dead pre-filtered at the dispatch | `player: Option<&Player>` seam, `!pl.dead` gate inside | `:40009-40016` (`active && !dead`) | EQUAL behaviour — d20's Player-ref seam is the pool's native shape; c10's dispatch pre-filters dead |
+| post-kill drift | LANDED in the sweep: kill → `pos += vel` in-module (the C# UpdatePosition runs before the `!active` return, `:17015`/`:20445`/`:17027`) | the arm returns without integrating; the dispatch's unconditional `kill_step` tail integrates the corpse once | `:20445` | EQUAL net effect by different routes — c10's module owns the drift, d20's `kill_step` tail supplies it |
+| movement | in-module splat: blocked-axis probe → integrate → kill (`:18921-18928` shape, the frost-shot granularity) | dispatch tail calls `kill_step(world)` after the arm — the SAME probe shape in the pool | `:18921-18928` | EQUAL |
+| Kill hook (buff/cue/dust) | LANDED in the sweep: Stinky 120/600 + Item177 + the 90-draw census, pool death hook (commit 8bd6afeb) | ABSENT (d20 landed only the AI arm) | `:70926-70954` | c10 is the superset |
+| dispatch | `200 =>` passes the pre-built rect; module owns AI+movement | `200 =>` passes `player.as_deref()`, then `kill_step` | `:36763-36766` | both faithful |
+| witnesses | 6 (row, fall+census, strict-edge kill+drift, splat, kill census, pool hook) | 4 (row, fall+census, contact kill, dispatch) | — | c10 superset |
+
+**Recommendation: KEEP W4-c10's `projectile_bird_droppings.rs` as the
+survivor; DROP d20's `ai_bird_droppings` fn + its 4 witnesses + its
+`200 =>` dispatch arm + its duplicate `BIRD_DROPPINGS` const/row/overlay.**
+Rationale: (1) c10 carries the Kill hook (the Stinky debuff is gameplay —
+the town flee gate reads buff 120, `NPC.cs:53534`); (2) the module owns
+AI + movement + death together (the spear/frost-shot one-module shape),
+so the merge deletes one fn instead of reconciling two call graphs;
+(3) the census streams are draw-identical, so no RNG re-pin is needed on
+either side. If d20b prefers its Player-ref seam, the alternative is:
+keep d20's fn, move c10's `bird_droppings_kill_draws` + the pool hook
+beside it, and delete c10's module — but then d20's dispatch must ALSO
+gain the corpse-drift order check. The first form is the smaller diff.
+The `handles()` fn is c10-only (d20 dispatches on style directly) — it
+dies with whichever module loses. NOTE the const collision: both
+branches define `BIRD_DROPPINGS` (c10 in `projectile/data.rs:253`, d20
+in its `data.rs:4547`) — the merge keeps one; the pool's `1080` literals
+in d20's witnesses ride the surviving const either way.
+
 ### The Kill hook (item 2 — LANDED)
 
 `Kill()`'s type-1080 arm (`Projectile.cs:70926-70954`) lands on the
