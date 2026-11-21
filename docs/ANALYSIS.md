@@ -39323,47 +39323,117 @@ reordered.
   life gate): the spheres 25/33/30/665, 690, 374/375, 112/666, 516 and
   the crystal 522.
 
-### Resolved deferrals — the oldPos trails (the g60 ring landed)
+### Resolved deferrals — the oldPos trails (the g60 ring landed, g62 widened it)
 
 The 519 oldPos trail (`:83008-83023`) and the Stardust Worm 402's LIVE
-arm (`:83565-83598`) now ride `Npc.old_pos`/`old_rot` — the **W4-g60
-field shapes adopted VERBATIM** (0e0fbd6c7: `[Vec2; 10]` + `[f32; 10]`,
-`NPC.cs:6119-6121`'s `new Vector2[10]` init) plus `Npc::update_trails`
-(the `UpdateNPC_UpdateTrails` mode-7 shift, `NPC.cs:90863-90872`, called
-at `:90512` after `FindFrame` — both the solo `update_rng_dust` tail and
-the pooled aiStyle-75 path in `world_sim/npcs.rs`).
+arm (`:83565-83598`) now ride `Npc.old_pos`/`old_rot` — the W4-g60
+field shapes (0e0fbd6c7) adopted then **WIDENED by g62** (the
+TRAILCACHE WIDENING below: `[Vec2; 60]` + `[f32; 60]` storage +
+`trail_len`, the `SetDefaults` resize `NPC.cs:8453-8468` carried) plus
+`Npc::update_trails` (the `UpdateNPC_UpdateTrails` mode-7 shift,
+`NPC.cs:90863-90872`, called at `:90512` after `FindFrame` — both the
+solo `update_rng_dust` tail and the pooled aiStyle-75 path in
+`world_sim/npcs.rs`).
 
 **Mode census** (`NPCID.cs:10430`, `Sets.TrailingMode`): **519 → 7, the
 SAME row as 402 → 7** (shift both rings every tick). The full mode-7
 band: 402/417/418/419/519/521/522/546/551/558-560/574/575/620/636/677/
-685. The gate stays **402-only** until each kind's wiring lane lands
-(the SolarGoop 519 KIND is unported — `npc_ai_pillar.rs` emits only the
-spawn request; the 519 dust arm is wired on the snapshot's `npc_type`,
-so it fires the day the kind exists).
+685. The gate covers **402 + 574/575** (the rowed+wired kinds,
+945a6ea28); the rest wait on their wiring lanes (the SolarGoop 519
+KIND is unported — `npc_ai_pillar.rs` emits only the spawn request;
+the 519 dust arm is wired on the snapshot's `npc_type`, so it fires
+the day the kind exists).
 
-**Recorded deviation — the TrailCacheLength under-carry**
-(`NPCID.cs:10450` + `SetDefaults`' resize, `NPC.cs:8453-8468`): the C#
-resizes `oldPos`/`oldRot` per type — **402 → 36, 519 → 20** (522/620 →
-20, 677 → 60, 685 → 10; default 10). Both lanes carry the g60 10-slot
-shape verbatim (the merge-composes instruction), so the 402 arms walk
-10 of the C#'s 36 slots and the 519 arm walks slots 0/3/6/9 of the C#'s
-0/3/…/18. The draw-count consequence: the 402 per-slot `Next(4)` gates
-and the 519 stride-3 groups are proportionally short. The fix is ONE
-widening at merge (a per-kind `trail_len` or a 60-slot ring + length —
-685's row is the largest); until then the 10-slot shape is the recorded
-stand-in for BOTH lanes (g60's death loop has the same under-carry).
+**TRAILCACHE WIDENING — LANDED on g62 (d3b008c78 + 945a6ea28), the
+one-widening-at-merge item executed on this branch.** Full census
+(`NPCID.cs:10450`): `Sets.TrailCacheLength = CreateIntSet(10, 402, 36,
+519, 20, 522, 20, 620, 20, 677, 60, 685, 10)` — default **10**; the
+deviations are **402→36, 519→20, 522→20, 620→20, 677→60 (the MAX)**;
+685's explicit 10 IS the default. `SetDefaults` (`NPC.cs:8453-8468`)
+reads the row (`:8456`), `Array.Resize`s BOTH rings when the length
+differs (`:8458-8462`), then zeroes the whole array (`:8463-8468`).
+The field init is `new Vector2[10]`/`new float[10]` (`NPC.cs:6119-6121`)
+— the resize runs on EVERY `SetDefaults`, Transform included
+(`NPC.cs:81096`). **Loop-bound census: the HitEffect arms bound on
+`this.oldPos.Length` DIRECTLY — NO `Math.Min`, no TrailCacheLength
+re-read** (519 `:83011` `num123 < this.oldPos.Length; num123 += 3`;
+402 live `:83579` and death `:83611` `num177/num179 <
+this.oldPos.Length`). The mode-7 shift bounds on `oldPos.Length - 1`
+(`:90866`).
 
-**Keep-one contract (g60 `update_trails` vs g62's):** the fn, the two
-fields, the field-init lines, the `update_rng_dust` tail call and the
-two `npc.rs` witnesses are **byte-identical adoptions of g60 0e0fbd6c7**
-— the merge keeps ONE copy of each (trivial dedupe, identical shape).
-g62's ONLY additions to the shared surface: the doc-comment census
-notes, the pooled-path tail call in `world_sim/npcs.rs` (g60 did not
-touch that path), and the `HitDustSnapshot.old_pos` field (g62's own
-struct — g60's twin lives in `DeathFx`, different type, no collision).
-The 402 sites are disjoint: g60 owns the DEATH arm (`:83599-83632`,
-site :83611), g62 the HIT arm (`:83565-83598`, site :83579) — the giant
-else-if's two halves, both replay in their own lanes.
+**The port shape (both branches MUST carry it identically):**
+`[Vec2; 60]`/`[f32; 60]` max-size storage (677's row is the census max
+— NOT 64) + a `trail_len: usize` logical length; every loop that
+walked `oldPos.Length` walks `..trail_len`. Slots ≥ trail_len stay
+ZERO (the C# resize zero-fills growth; the `:8463-8468` loop zeroes
+everything). `NpcKind::trail_cache_length()` (npc/data.rs, after
+`cs_id`) carries the table; today only `StardustWormHead => 36` is
+rowed — 519/522/620/677/685 KINDS are unported on this base, their
+wiring lanes add the row (and widen the `update_trails` gate) when the
+kind lands. `Npc::new` sets `trail_len` (≈ SetDefaults at spawn);
+`transform_to_kind` re-lengths + re-zeroes both rings.
+
+**EXACT widening-hunk contract for g60 (byte-identical adoption — the
+merge dedupes):**
+1. **Fields** (npc.rs, the `old_pos`/`old_rot` pair): `pub old_pos:
+   [Vec2; 60]`, `pub old_rot: [f32; 60]`, plus the new `pub trail_len:
+   usize` immediately after (doc comments included — see d3b008c78).
+2. **Init** (`Npc::new`): `old_pos: [Vec2::ZERO; 60], old_rot: [0.0;
+   60], trail_len: kind.trail_cache_length(),`.
+3. **Table** (npc/data.rs): `pub fn trail_cache_length(self) -> usize
+   { match self { NpcKind::StardustWormHead => 36, _ => 10 } }` on
+   `impl NpcKind`.
+4. **update_trails stride**: `for i in (1..self.trail_len).rev()`
+   (was `self.old_pos.len()`); the gate is now `matches!(self.kind,
+   StardustWormHead | DD2KoboldFlyerT2 | DD2KoboldFlyerT3)` (945a6ea28
+   — the rowed+wired flyers, mode 7, default-10 rings; pure state, no
+   RNG). The shift body + `old_pos[0]`/`old_rot[0]` stamps unchanged.
+5. **Transform** (`transform_to_kind`, after `self.kind = new_kind`):
+   `self.trail_len = new_kind.trail_cache_length(); self.old_pos =
+   [Vec2::ZERO; 60]; self.old_rot = [0.0; 60];`.
+6. **The two npc.rs witnesses**: g60's
+   `w4_g60_the_worm_head_trail_shifts_mode_7` /
+   `w4_g60_other_kinds_do_not_shift_the_trail` are ADOPTED WIDENED
+   (d3b008c78's versions: 36 logical slots, 34+2 shifts to fill,
+   `[Vec2::ZERO; 60]` inits, the storage-past-trail_len zero asserts)
+   — g60 replaces its 10-slot versions with these byte-identically.
+
+**g60e / g60-death-loop cross-note (same widening, g60's own struct):**
+g60's `DeathFx.old_pos` (its `[Vec2; 10]` snapshot twin) must widen the
+SAME way — `[Vec2; 60]` + `trail_len` captured at strike — and its 402
+DEATH loop (`:83611-83631`, `num179 < this.oldPos.Length`) bounds on
+`..s.trail_len`: up to **36** per-slot Next(4) gates (was 10), the
+zero-break inside the gate unchanged, the passing-slot pair is 2×
+(Next(3) dust 17 + unconditional dust 229 ×3 noGravity). g60's
+fresh-ring death witness's gate loop widens `0..10` → `0..36` exactly
+like g62's live twin (d3b008c78). The `Npc`-side hunks 1-6 above are
+SHARED — one copy at merge; the `DeathFx`-side widening is g60's own
+file, no collision with `HitDustSnapshot` (g62's, already widened).
+
+**Draw-count consequences (re-derived, witnesses updated):**
+- 519 (`:83011`, stride 3 over 20): slots 0,3,6,9,12,15,18 — **FLAT 7
+  groups × 5 = 35 spawns** (was 4×5=20 on the 10-ring). No zero-break;
+  the fresh ring spawns all 35 at (0,0).
+- 402 LIVE (`:83579`, every slot of 36): up to **36 Next(4) gate
+  draws per ×3 iteration** (was 10); a passing gate on a zero slot
+  still BREAKS the walk (later slots draw nothing that iteration).
+- 402 DEATH (g60's `:83611`): same 36-gate bound, g60 re-derives.
+- The mode-7 shift: 402 shifts 35 slots down per tick (was 9); a
+  fresh 402 ring fills after **36** ticks (was 10).
+
+**Keep-one contract (g60 `update_trails` vs g62's):** the fn (widened
+gate + stride), the three fields, the field-init lines, the
+`trail_cache_length` table, the Transform hunk, the `update_rng_dust`
+tail call and the two widened `npc.rs` witnesses are **byte-identical
+adoptions** — the merge keeps ONE copy of each (trivial dedupe). g62's
+ONLY additions to the shared surface: the doc-comment census notes,
+the pooled-path tail call in `world_sim/npcs.rs` (g60 did not touch
+that path), the kobold gate widening + its witness (945a6ea28 — g60
+adopts), and the `HitDustSnapshot.old_pos`/`trail_len` fields (g62's
+own struct). The 402 sites are disjoint: g60 owns the DEATH arm
+(`:83599-83632`, site :83611), g62 the HIT arm (`:83565-83598`, site
+:83579) — the giant else-if's two halves, both replay in their own
+lanes.
 
 ### Re-sweep — the other oldPos readers (none left in this lane)
 
@@ -39375,13 +39445,27 @@ ported. Outside it, two dust-adjacent readers remain, both OTHER lanes'
 - `:57046-57062` — the Chaos Elemental 120's teleport-arrival burst in
   `AI_003_Fighters` (`ai[3] == -120` latch): 20 dust 71 at the head +
   20 AT `oldPos[2]` with the normalized offset velocity. An AI-side
-  arm (the g61/AI wiring lanes), NOT a HitEffect site.
+  arm (the g61/AI wiring lanes), NOT a HitEffect site. **Rowed? NO**
+  on this base — no `NpcKind` maps cs_id 120 (`lang_tables.rs:197` is
+  the name row only); the g8 ≤230 kind-wire lane owns it (its tip
+  82c93cecf completes the ≤230 machine wiring; d37's 211-280 range
+  excludes 120). TrailingMode 4 (`NPCID.cs:10430`), TrailCacheLength
+  default 10 — `oldPos[2]` fits either shape; when g8 rows the kind,
+  the mode-4 shift arm (`:90836-90845`, position-only + the per-slot
+  AddLight) joins `update_trails` and this burst arms with the AI
+  lane. NOT armed here (the kind does not exist to shift).
 - `:67939`/`:67957-67967` — the DD2 Kobold Flyers 574/575's FindFrame
-  spark (`oldPos[3]` anchors the Lerp'd aim point, 2 gated dust 6).
-  The port's FindFrame stand-in latches the row-9 burst through
-  `caster_counter` (`npc.rs:7101`) without the dust; the faithful arm
-  is the DD2 FindFrame lane's. Both kinds map mode 7 (`NPCID.cs:10430`)
-  — when their arms land, the `update_trails` gate widens with them.
+  spark (`oldPos[3]` anchors the Lerp'd aim point, 2 gated dust 6,
+  the Next(maxValue) gate ramps 5→1 by frameCounter). **Rowed? YES**
+  — `DD2KoboldFlyerT2/T3` are wired (`update_diving_flyer`,
+  `npc.rs:6047-6048`) with FindFrame stand-ins (`:7139-7162`). Both
+  map mode 7 (`NPCID.cs:10430`), default-10 rings. **ARMED (small,
+  945a6ea28):** the `update_trails` gate now includes both flyers —
+  the C# shifts their rings every tick, the port now does too (pure
+  state, ZERO RNG/draw change; the spark itself stays the DD2
+  FindFrame lane's arm, but its `oldPos[3]` anchor is LIVE from the
+  first ticks instead of all-zero). The row-9 ignition burst's
+  `caster_counter` latch (`npc.rs:7155`) is untouched.
 - `:49584-49586`/`:49708-49710` — Duke Fishron's ring RESETS (writers,
   no dust); the Main.cs readers are render-only (the trail draw).
 
@@ -39391,9 +39475,13 @@ Code-only: every arm re-read against the cited C# windows (≤100-line
 reads); the seam call sites checked by read/grep (`DustPool::new_dust`/
 `new_dust_direct` signatures, `SpawnCtx`, `RngKey::UpdateNpcs`,
 `bow_launch::rotated_by`, `tile_light::palette::hsl_to_rgb` for the
-rainbow slime 661). The 61 witness tests in `npc_hit_dust.rs` plus the
-`npc.rs` seam witness (`w4_g62_every_landed_strike_queues_one_hit_dust_
-capture`) and the two g60-adopted trail witnesses in `npc.rs` are
+rainbow slime 661). The 61 witness tests in `npc_hit_dust.rs` (the
+519/402 trail twins RE-DERIVED to the widened rings: 7×5 stride-3
+groups / 36-slot gate walks) plus the `npc.rs` seam witness
+(`w4_g62_every_landed_strike_queues_one_hit_dust_capture`), the two
+g60-adopted trail witnesses (widened) and the two new widening
+witnesses (`w4_g62_the_trail_cache_census_and_resize`,
+`w4_g62_the_kobold_flyers_shift_the_mode_7_ring`) are
 WRITTEN, NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/
 graphify invoked**. Witness convention: twin `UnifiedRandom` + twin
 `DustPool` replaying the exact draw sequence,
