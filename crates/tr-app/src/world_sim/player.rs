@@ -3870,85 +3870,151 @@ mod tests {
         assert_eq!(app.audio.played_count(), mid, "no cue while hidden");
     }
 
-    /// W4-e10 — `Player.UpdatePetLight` (`Player.cs:17311-17340`): the
-    /// Fairy Bell's legacy buff 27 picks ONE of {27, 102, 101} via one
-    /// `Next(3)` on `UpdatePlayers` (`:17335`), then the UseSound's case-2
-    /// pitch draw follows on the SAME stream; an existing 102/101 fairy
-    /// counts as the buff (the `:17323-17330` alias ladder) — no pick, no
-    /// cue, and the stream stays pristine bar the tick's own draws.
+    /// W4-e10 — `Player.UpdatePetLight`'s fairy pick (`Player.cs:17322-
+    /// 17338`) at the FUNCTION level: one `Next(3)` maps {27, 102, 101}
+    /// (`:17335` Utils.SelectRandom), the UseSound style comes back for
+    /// the caller's façade; a live 102 OR 101 fairy satisfies the alias
+    /// ladder (`:17323-17330`) — refused, DRAW-FREE; a plain non-27 buff
+    /// (152) grants with NO pick draw (`:17333` is the 27-only arm).
     #[test]
-    fn w4_e10_the_fairy_grant_picks_one_of_three_then_plays() {
-        let mut app = ammo_app();
-        app.equip.misc_equips[1] = pet_slot(425); // the Fairy Bell, buff 27
-        // The twin: same rig, but the 102 fairy already lives — the alias
-        // refuses the grant, so its stream shows what the tick draws
-        // WITHOUT the pet arm.
-        let mut twin = ammo_app();
-        twin.equip.misc_equips[1] = pet_slot(425);
-        twin.player.as_mut().unwrap().buffs.add_buff(102, 3600);
-        tick_ammo(&mut app);
-        tick_ammo(&mut twin);
-        let p = app.player.as_ref().unwrap();
-        let granted = [27, 102, 101]
-            .iter()
-            .find(|&&b| p.buffs.find_buff_index(b).is_some())
-            .copied();
-        assert!(granted.is_some(), "one of the fairy trio landed");
-        // The stream twin: the pick's Next(3) + the style-25 case-2 pitch
-        // (one Next(-6,7)) sit between the twin's position and ours.
-        let mut expect = app.rngs.stream(RngKey::UpdatePlayers).clone();
-        let pick = expect.next_range(0, 3);
-        assert_eq!(granted, Some([27, 102, 101][pick as usize]), "the pick");
-        let _pitch = expect.next_range(-6, 7);
-        // The twin's stream + the two draws == ours (the fairy-102 buff
-        // arm spawns a projectile with no rolls, so the twins agree).
-        let mut want = twin.rngs.stream(RngKey::UpdatePlayers).clone();
-        let _ = want.next_range(0, 3);
-        let _ = want.next_range(-6, 7);
-        assert_eq!(
-            *app.rngs.stream(RngKey::UpdatePlayers),
-            want,
-            "the pick + the pitch ride UpdatePlayers, nothing else"
+    fn w4_e10_the_fairy_pick_is_one_next3_and_the_alias_is_draw_free() {
+        let w = World::new("pet".into(), 8, 8);
+        // The pick: replay the stream by hand — the granted buff is the
+        // trio member the SAME Next(3) picks, and exactly one draw ran.
+        let mut p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let pick = witness.next_range(0, 3);
+        let idx = p.update_light_pet_grant(&pet_slot(425), &mut rng);
+        assert_eq!(idx, crate::registry::get(425).unwrap().use_sound);
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pick draw");
+        assert!(
+            p.buffs.find_buff_index([27, 102, 101][pick as usize]).is_some(),
+            "the pick's fairy landed"
         );
-        // The alias refusal: a second tick plays no cue and draws no
-        // pick — its stream spend equals a live-fairy rig's tick seeded
-        // at the SAME stream position (the pet arm adds nothing).
-        let mid = app.audio.played_count();
-        let pos = app.rngs.stream(RngKey::UpdatePlayers).clone();
-        let mut plain = ammo_app();
-        plain.equip.misc_equips[1] = pet_slot(425);
-        plain.player.as_mut().unwrap().buffs.add_buff(102, 3600);
-        *plain.rngs.stream(RngKey::UpdatePlayers) = pos;
-        tick_ammo(&mut app);
-        tick_ammo(&mut plain);
-        assert_eq!(app.audio.played_count(), mid, "the live fairy refuses");
+        // The alias refusals: 102 or 101 already live → no grant, no draw.
+        for live in [102, 101] {
+            let mut p = Player::spawn(&w);
+            p.buffs.add_buff(live, 3600);
+            let mut rng = UnifiedRandom::new(7);
+            let peek = rng.peek();
+            assert_eq!(p.update_light_pet_grant(&pet_slot(425), &mut rng), None);
+            assert_eq!(rng.peek(), peek, "the alias ladder is draw-free");
+        }
+        // The plain 152 grant: buff + style, ZERO draws (the pitch is the
+        // façade's, on the caller's stream — the wave-A contract).
+        let mut p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let idx = p.update_light_pet_grant(&pet_slot(3043), &mut rng);
+        assert_eq!(idx, crate::registry::get(3043).unwrap().use_sound);
+        assert!(p.buffs.find_buff_index(152).is_some());
+        assert_eq!(rng.peek(), peek, "no pick outside the 27 arm");
+        // The vanity twin is draw-free too (no 27 ladder at all).
+        let mut p = Player::spawn(&w);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
         assert_eq!(
-            *app.rngs.stream(RngKey::UpdatePlayers),
-            *plain.rngs.stream(RngKey::UpdatePlayers),
-            "no second pick while the fairy lives"
+            p.update_pet_grant(&pet_slot(603)),
+            crate::registry::get(603).unwrap().use_sound
         );
+        assert!(p.buffs.find_buff_index(40).is_some());
+        assert_eq!(rng.peek(), peek, "UpdatePet draws nothing itself");
     }
 
-    /// W4-e10 — the plain light-pet grant (no 27 alias): the Magic Lantern
-    /// (3043, buff 152) re-grants at 3600 and plays UseSound; the grant
-    /// draws NO pick (the `Next(3)` is the 27-only arm) — exactly the one
-    /// case-2 pitch draw rides `UpdatePlayers` beyond the no-pet twin.
+    /// W4-e10 — the fairy grant through the TICK (`Player.cs:25574` →
+    /// `:17338`): one of the trio lands, ONE cue plays, and the stream
+    /// replay is exact — the standing rig's only unconditional
+    /// `UpdatePlayers` draw is the tick-tail Revolver decay (the i14
+    /// census), so the grant tick spends pick `Next(3)` → the façade's
+    /// case-2 pitch `Next(-6,7)` → decay `Next(3)`, in that order, off
+    /// the pristine seed-0 stream. The muted twin proves the gate
+    /// precedes the pitch: `soundVolume = 0` spends pick → decay only.
     #[test]
-    fn w4_e10_the_plain_light_pet_grant_draws_only_the_pitch() {
+    fn w4_e10_the_fairy_grant_tick_spends_the_pick_then_the_pitch() {
         let mut app = ammo_app();
-        app.equip.misc_equips[1] = pet_slot(3043); // buff 152
-        let mut twin = ammo_app();
-        twin.equip.misc_equips[1] = pet_slot(3043);
-        twin.player.as_mut().unwrap().buffs.add_buff(152, 3600);
+        app.equip.misc_equips[1] = pet_slot(425);
+        let before = app.audio.played_count();
         tick_ammo(&mut app);
-        tick_ammo(&mut twin);
-        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(152).is_some());
-        let mut want = twin.rngs.stream(RngKey::UpdatePlayers).clone();
-        let _ = want.next_range(-6, 7); // style 25's default pitch window
+        let granted = [27, 102, 101]
+            .iter()
+            .find(|&&b| app.player.as_ref().unwrap().buffs.find_buff_index(b).is_some())
+            .copied();
+        assert!(granted.is_some(), "one of the fairy trio landed");
+        assert_eq!(app.audio.played_count(), before + 1, "one grant cue");
+        let mut replay = UnifiedRandom::new(0);
+        let pick = replay.next_range(0, 3);
+        assert_eq!(granted, Some([27, 102, 101][pick as usize]), "the pick");
+        let _pitch = replay.next_range(-6, 7); // style 25's default window
+        let _decay = replay.next_max(3); // the i14 tick-tail draw
         assert_eq!(
             *app.rngs.stream(RngKey::UpdatePlayers),
-            want,
-            "one pitch draw, no fairy pick (`:17333` is the 27-only arm)"
+            replay,
+            "pick → pitch → decay on UpdatePlayers, nothing else"
         );
+        // The muted twin: the gate refuses BEFORE the pitch draw.
+        let mut muted = ammo_app();
+        muted.audio.set_listener(crate::sound::Listener {
+            camera_center: (0.0, 0.0),
+            sound_volume: 0.0,
+            ambient_volume: 1.0,
+            quiet_ambient_sounds: false,
+            game_menu: false,
+            generating_or_loading: false,
+            server: false,
+        });
+        muted.equip.misc_equips[1] = pet_slot(425);
+        tick_ammo(&mut muted);
+        let mut m = UnifiedRandom::new(0);
+        let _ = m.next_range(0, 3); // the pick still runs (pre-façade)
+        let _ = m.next_max(3); // the decay; NO pitch
+        assert_eq!(
+            *muted.rngs.stream(RngKey::UpdatePlayers),
+            m,
+            "the muted grant is pick + decay only (the wave-A gate order)"
+        );
+        // Isolation: every other stage stream stays pristine.
+        for key in RngKey::ALL {
+            if key == RngKey::UpdatePlayers {
+                continue;
+            }
+            assert_eq!(
+                *app.rngs.stream(key),
+                UnifiedRandom::new(0),
+                "{} — the pet arm rides only UpdatePlayers",
+                key.name()
+            );
+        }
+        // The alias refusal through the tick: no second cue.
+        let mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), mid, "the live fairy refuses");
+    }
+
+    /// W4-e10 — the plain light-pet grant through the TICK: the Magic
+    /// Lantern (3043, buff 152) re-grants at 3600 and plays ONE UseSound
+    /// cue; the grant itself draws nothing (the function-level witness
+    /// pins that) — the tick's only extra spend is the façade's pitch.
+    #[test]
+    fn w4_e10_the_plain_light_pet_grant_rebuffs_and_plays_once() {
+        let mut app = ammo_app();
+        app.equip.misc_equips[1] = pet_slot(3043); // buff 152
+        let before = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert!(app.player.as_ref().unwrap().buffs.find_buff_index(152).is_some());
+        assert_eq!(app.audio.played_count(), before + 1, "`:17338` once");
+        let mid = app.audio.played_count();
+        tick_ammo(&mut app);
+        assert_eq!(app.audio.played_count(), mid, "the live buff refuses");
+        // hideMisc[1] refuses the whole arm.
+        app.player.as_mut().unwrap().buffs.clear_buff(152);
+        app.player.as_mut().unwrap().hide_misc[1] = true;
+        tick_ammo(&mut app);
+        assert_eq!(
+            app.player.as_ref().unwrap().buffs.find_buff_index(152),
+            None,
+            "the hide refused (`:17318`)"
+        );
+        assert_eq!(app.audio.played_count(), mid, "no cue while hidden");
     }
 }
