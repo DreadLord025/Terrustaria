@@ -14,10 +14,10 @@
 //! FlaironFlail, the aiStyle-15 flail BODY, data.rs:613): item 2611
 //! Flairon shoots **404** (`Item.cs:25528` — the port's itemdata row
 //! already carries `projectile: Some(404)`), item 5526 FlaironFlail shoots
-//! 1058 (`Item.cs:43534`). The port has no row and no arm for 404, so this
-//! module lands UNWIRED (the d5 / `npc_ai_style25` precedent): pure fns on
-//! the slot, reachable and testable before the row + dispatch arm land.
-//! The weapon fires 404 outbound; the FIRST NPC hit (or tile block)
+//! 1058 (`Item.cs:43534`). The module landed UNWIRED (the d5 /
+//! `npc_ai_style25` precedent) and is now WIRED (the W4-d7 rows+wiring
+//! round): the 404 `proj_data` row + the dispatch's aiStyle-69 arm route
+//! here. The weapon fires 404 outbound; the FIRST NPC hit (or tile block)
 //! latches `ai[0] = 1` and the head recalls to the owner, spawning 405
 //! bubbles on the way back.
 //!
@@ -59,7 +59,6 @@
 //! (the outbound flight, the recall, the kills, the latches) draws zero.
 //! The `Collision.HitTiles` dust + `PlaySound(0)` of the tile arm are the
 //! documented dust skip / the `wants_sound` cue.
-#![allow(dead_code)] // UNWIRED (W4-d7): the 404 row + the dispatch arm are the wiring step
 
 use crate::projectile::{safe_normalize, Projectile};
 use glam::Vec2;

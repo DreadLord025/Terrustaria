@@ -15,9 +15,11 @@
 //! The port has NO `proj_data` row for 379 (the DW-1.1 pin
 //! projectile.rs:36585 asserts it rowless; `SENTRY_SHOT` lists it,
 //! data.rs:4505, so the whip-tag gate already treats it as a summon shot).
-//! This module lands UNWIRED (the d5 / `npc_ai_style25` precedent): pure
-//! fns on the slot, reachable and testable before the row + dispatch arm
-//! land. 379 is NOT `Main.projPet` (no `projPet[379]` write,
+//! This module landed UNWIRED (the d5 / `npc_ai_style25` precedent) and is
+//! now WIRED (the W4-d7 rows+wiring round): the 379 `proj_data` row + the
+//! dispatch's aiStyle-63 arm route here; [`spider_movement`] is the
+//! `HandleMovement` half and [`spider_kill_draws`] the death-hook census.
+//! 379 is NOT `Main.projPet` (no `projPet[379]` write,
 //! `Main.cs:8728-8852`) — `correctSlopeCollision` is false and the
 //! fall-through is the arm's own `shouldFallThrough` (`:17583-17586`).
 //! `CanCutTiles` excludes 379 (`:15329`).
@@ -62,7 +64,6 @@
 //! - The egg hatch (`:77242-77251`): `Next(2,4)` count, `Next(5)` bonus
 //!   gate, then per spawn the X jitter `Next(-20,21)` BEFORE the Y jitter
 //!   (the C# named-argument list evaluates SpeedX then SpeedY).
-#![allow(dead_code)] // UNWIRED (W4-d7): the 379 row + the dispatch arm are the wiring step
 
 use crate::npc::Npc;
 use crate::projectile::{can_hit, chaseable, csign, npc_center, Projectile};
@@ -210,6 +211,61 @@ pub fn spider_bounce(p: &mut Projectile, last_vel: Vec2) {
     if p.vel.y != last_vel.y && last_vel.y > 2.0 {
         p.vel.y = last_vel.y * -0.6;
     }
+}
+
+/// `HandleMovement`'s half for the BabySpider (379): the dry collision pass
+/// (`Collision.TileCollision` with `flag6 = shouldFallThrough`,
+/// `decidesManualFallThrough` `:17583-17586`), the blocked-move type-379
+/// bounce ([`spider_bounce`], `:18453-18463`, reached through the
+/// `!correctSlopeCollision` gate `:18398` — 379 is not `projPet`), then
+/// `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`, 63 is not in
+/// the `:20435` skip list). The `gfxOffY` decay (`:16740-16764`) rides here
+/// per tick (the `pirate_movement` precedent). SKIPPED (ANALYSIS, the
+/// `pirate_movement`/sentry precedents): the `!correctSlopeCollision` slope
+/// passes (`:17656-17698`/`:17850-17892` — the port's `tile_collision` is
+/// slope-aware in one pass), the `SwitchTiles` plate presses, the
+/// `ignoreDoors`/hoik parameters, and the blocked-move tile-cut prologue
+/// (`CanCutTiles` excludes 379, `:15329`, so it draws nothing there).
+pub fn spider_movement(p: &mut Projectile, world: &World) {
+    // `:16740-16764` — the StepUp draw-lift decay.
+    let num = 1.0 + p.vel.x.abs() / 3.0;
+    if p.gfx_off_y > 0.0 {
+        p.gfx_off_y -= num * p.step_speed;
+        if p.gfx_off_y < 0.0 {
+            p.gfx_off_y = 0.0;
+        }
+    } else if p.gfx_off_y < 0.0 {
+        p.gfx_off_y += num * p.step_speed;
+        if p.gfx_off_y > 0.0 {
+            p.gfx_off_y = 0.0;
+        }
+    }
+    p.gfx_off_y = p.gfx_off_y.clamp(-16.0, 16.0);
+    if !p.tile_collide {
+        // `:17476`'s gate — no tile pass, just the integrate.
+        p.pos += p.vel;
+        return;
+    }
+    let last_velocity = p.vel;
+    let fall = p.should_fall_through;
+    // `:17609` — the generic single `TileCollision` pass (379's speed stays
+    // under the 16 px/tick hoik clamp, the `pirate_movement` convention).
+    let tc = crate::collision::tile_collision(
+        world,
+        [p.pos.x, p.pos.y],
+        [p.vel.x, p.vel.y],
+        p.w,
+        p.h,
+        fall,
+        fall,
+    );
+    p.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+    // `:17896-17898` + `:18398`/`:18453-18463` — a blocked move bounces.
+    if p.vel != last_velocity {
+        spider_bounce(p, last_velocity);
+    }
+    // `UpdatePosition` (`:20445`) — the dry integrate.
+    p.pos += p.vel;
 }
 
 /// `StatusNPC`'s type-379 arm (`Projectile.cs:11490-11493`): Venom (70)
@@ -422,6 +478,18 @@ mod tests {
         let mut r = spider(Vec2::new(100.0, 100.0), Vec2::new(6.0, 0.0));
         spider_bounce(&mut r, Vec2::new(6.0, 1.5));
         assert_eq!(r.vel.y, 0.0, "1.5 <= 2 keeps the zeroed Y");
+    }
+
+    /// W4-d7 wiring — `spider_movement`'s free integrate: a `tileCollide =
+    /// false` slot steps straight forward (the `:17476` gate), no bounce.
+    #[test]
+    fn w4_d7_s63_the_movement_free_integrate() {
+        let w = world();
+        let mut p = spider(Vec2::new(100.0, 100.0), Vec2::new(3.0, 1.0));
+        p.tile_collide = false;
+        spider_movement(&mut p, &w);
+        assert_eq!(p.pos, Vec2::new(103.0, 101.0));
+        assert_eq!(p.vel, Vec2::new(3.0, 1.0), "no tile pass — velocity holds");
     }
 
     /// `:11492` — the Venom roll: ONE Next(2,5), buff 70 at 60× the roll.

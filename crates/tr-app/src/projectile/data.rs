@@ -2416,6 +2416,22 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d7 wiring — `Projectile.cs:4847-4856` (404 Flairon, the recall
+            // HEAD): 26x26, aiStyle 69, friendly, `penetrate = -1`,
+            // `alpha = 255`, melee (the overlay below). The stock
+            // `timeLeft = 3600` / tileCollide true; NOT the 1058 flail body.
+            FLAIRON_HEAD => (
+                26.0,
+                26.0,
+                69,
+                -1,
+                TIME_LEFT_DEFAULT,
+                0,
+                true,
+                false,
+                false,
+                (false, -2, false, -1, 255, 1.0),
             ),            // The bombs (`:1106-1121`, `:1198-1205`, `:5862-5896`); the
             // fuse seeds ride `NewProjectileSetup` (`:10970-10993`): 180
             // ticks for the bombs, 300 for the dynamite. The sticky set
@@ -3521,6 +3537,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:4625` - the Queen Spider's egg: 16x16, aiStyle 14,
             // `penetrate = -1`, `timeLeft = 60`.
             SPIDER_EGG => (16.0, 16.0, 14, -1, 60, 0, true, false, false, RESET_STATE),
+            // W4-d7 wiring — `Projectile.cs:4635-4644` (379 BabySpider): 14x10,
+            // aiStyle 63, friendly, `timeLeft = 300`, `penetrate = 1`,
+            // `decidesManualFallThrough` (the overlay below). The stock
+            // tileCollide true / no immunity pair / no minion slice (379 is a
+            // SentryShot, NOT `minion`/`sentry` — `SENTRY_SHOT` lists it).
+            BABY_SPIDER => (14.0, 10.0, 63, 1, 300, 0, true, false, false, RESET_STATE),
             HOUNDIUS_SHOOTIUS => (18.0, 60.0, 53, 1, 36000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9153` — the Houndius' fireball: 14x14, aiStyle 28.
             HOUNDIUS_SHOOTIUS_FIREBALL => (14.0, 14.0, 28, 1, 3600, 0, true, false, false, RESET_STATE),
@@ -4219,6 +4241,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             kind,
             ONE_EYED_PIRATE | SOULSCOURGE_PIRATE | PIRATE_CAPTAIN | VAMPIRE_FROG
                 | STORM_TIGER_1 | STORM_TIGER_2 | STORM_TIGER_3
+                // W4-d7 wiring — the BabySpider's `decidesManualFallThrough`
+                // (`Projectile.cs:4643`); the aiStyle-63 arm drives
+                // `shouldFallThrough` (`:29345`/`:29349`).
+                | BABY_SPIDER
                 // S1-P-i25: the new aiStyle-67 rows' `decidesManualFallThrough`
                 // — the flinx (`:8980`), the mushroom boi (`:9679`), the
                 // cattivas (`:10207`/`:10374`) and the clay pot (`:10462`).
@@ -4246,6 +4272,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d7 wiring — the Flairon recall head's `melee = true`
+                    // (`Projectile.cs:4855`).
+                    | FLAIRON_HEAD
             ),
         ranged: matches!(
             kind,
@@ -4411,6 +4440,14 @@ pub const STORM_TIGER_3: u16 = 835;
 pub const ABIGAIL: u16 = 963;
 pub const QUEEN_SPIDER: u16 = 377;
 pub const SPIDER_EGG: u16 = 378;
+/// `ProjectileID.BabySpider` (`ProjectileID.cs:1312`) — the Queen Spider's
+/// aiStyle-63 minion shot (`Projectile.cs:4635-4644`), W4-d7 wiring.
+pub const BABY_SPIDER: u16 = 379;
+/// `ProjectileID.Flairon` (`ProjectileID.cs:1362`) — the Flairon's aiStyle-69
+/// recall HEAD (`Projectile.cs:4847-4856`), W4-d7 wiring. NOT [`FLAIRON`]
+/// (1058 = FlaironFlail, the aiStyle-15 flail BODY): item 2611 Flairon shoots
+/// 404 (`Item.cs:25528`), item 5526 FlaironFlail shoots 1058 (`Item.cs:43534`).
+pub const FLAIRON_HEAD: u16 = 404;
 pub const MOONLORD_TURRET: u16 = 641;
 /// `ProjectileID.MoonlordTurretLaser` (642) — the turret's beam
 /// (`Projectile.cs:6904-6915`: 18x18, aiStyle 84, `penetrate = -1`,
@@ -4600,6 +4637,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // 6/12-tick pulse wraps at it (`Projectile.cs:49473`). The 1018/1056
         // keep the init default 1 (no override in `Main.cs:8444-8727`).
         CRIMSON_HEART => 4,
+        // W4-d7 wiring — the BabySpider's 4-frame walk sheet (`Main.cs:8622`);
+        // the aiStyle-63 arm's frame machine (`Projectile.cs:29381-29407`)
+        // indexes it. The 404 Flairon head keeps the stock 1 (no override).
+        BABY_SPIDER => 4,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap

@@ -12392,6 +12392,41 @@ impl Projectile {
         self.pos += self.vel;
     }
 
+    /// `HandleMovement`'s half for the aiStyle-69 Flairon recall head (404):
+    /// the dry collision pass (`Collision.TileCollision`, `flag6 = true` —
+    /// 404 is not `projPet` and sets no `decidesManualFallThrough`), the
+    /// blocked-move aiStyle-3/13/69/109 group's 69 half ([`flairon_tile_hit`],
+    /// `:19512-19571` — the `ai[0] = 1` recall latch + netUpdate + sound 0,
+    /// NO velocity flip), then `UpdatePosition`'s `position += velocity`
+    /// (`:19858`/`:20445`, 69 is not in the `:20435` skip list). The recall
+    /// clears `tileCollide` (`:30280`), so a recalling head integrates freely.
+    /// SKIPPED (ANALYSIS, the `pirate_movement` precedent): the slope passes,
+    /// the `SwitchTiles` plate presses, the `HitTiles` dust (`:19548`).
+    fn flairon_head_movement(&mut self, world: &World) {
+        if !self.tile_collide {
+            // `:17476`'s gate — the recall's free integrate.
+            self.pos += self.vel;
+            return;
+        }
+        let last_velocity = self.vel;
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.pos.x, self.pos.y],
+            [self.vel.x, self.vel.y],
+            self.w,
+            self.h,
+            true,
+            true,
+        );
+        self.vel = Vec2::new(tc.vel[0], tc.vel[1]);
+        // `:17896-17898` + `:19512-19571` — a blocked move latches the recall.
+        if self.vel != last_velocity {
+            crate::projectile_ai_style69::flairon_tile_hit(self);
+        }
+        // `UpdatePosition` (`:20445`) — the dry integrate.
+        self.pos += self.vel;
+    }
+
     /// `Projectile.Minion_FindTargetInRange` (`Projectile.cs:48990-49027`) —
     /// the minion target walk: the owner's whip mark first (`respectOwnerTarget`)
     /// then the closest chaseable NPC whose distance to the minion *or* the
@@ -17544,6 +17579,88 @@ impl ProjectilePool {
                         // one-shot acquire scan, the homing blend, the
                         // no-target fade and the scale roll.
                         70 => self.slots[i].ai_flairon_bubble(world, &npcs[..], rng),
+                        // W4-d7 wiring — the aiStyle-63 BabySpider (379)
+                        // (`Projectile.cs:29318-29418`): the owner-inactive
+                        // direct deactivate, the closest-LOS anchor scan, the
+                        // grounded/airborne steering pair + StepUp + walk
+                        // frames + gravity tail. The `HandleMovement` half
+                        // (`spider_movement`) integrates with the manual
+                        // fall-through + the type-379 bounce (`:18453-18463`).
+                        63 => {
+                            let owner_active = player.is_some();
+                            crate::projectile_ai_style63::spider_step(
+                                &mut self.slots[i],
+                                world,
+                                &npcs[..],
+                                owner_active,
+                            );
+                            if self.slots[i].active {
+                                crate::projectile_ai_style63::spider_movement(
+                                    &mut self.slots[i],
+                                    world,
+                                );
+                            }
+                        }
+                        // W4-d7 wiring — the aiStyle-69 Flairon recall head
+                        // (404) (`Projectile.cs:30240-30303`): the owner-facing
+                        // rotation, the dead-owner kill, the player writes
+                        // (ChangeDir/itemRotation/SetDummyItemTime), the
+                        // 400/600/1500 recall ladder and the every-4th-tick
+                        // 405 bubble spawn. The blocked-move arm latches the
+                        // recall (`flairon_tile_hit`, `:19512-19571`'s 69 half).
+                        69 => {
+                            let owner_snap = crate::projectile_ai_style69::FlaironOwner {
+                                center: owner
+                                    .map(|(x, y)| Vec2::new(x, y))
+                                    .unwrap_or_else(|| {
+                                        let p = &self.slots[i];
+                                        Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+                                    }),
+                                dead: player.as_ref().is_some_and(|p| p.dead),
+                            };
+                            let tick = crate::projectile_ai_style69::flairon_step(
+                                &mut self.slots[i],
+                                &owner_snap,
+                                local_owner,
+                                rng,
+                            );
+                            // The player writes (`:30249-30262`) — the
+                            // `FlailTick.facing`/`item_rotation` + golf
+                            // `dummy_item_time` precedents.
+                            if let Some(w) = tick.writes {
+                                if let Some(p) = player.as_deref_mut() {
+                                    p.facing = w.facing;
+                                    p.item_rotation = w.item_rotation;
+                                }
+                                self.pending_spear_hold = Some(w.dummy_item_time);
+                            }
+                            // The 405 bubble spawn (`:30301`) — the flail
+                            // helper-spawn pattern; `ai0 = -10f`, the row's
+                            // `alpha = 255` already rides `proj_data`.
+                            if let Some(s) = tick.spawn {
+                                let owner_id = self.slots[i].owner;
+                                let (hw, hh) = proj_data(FLAIRON_BUBBLE)
+                                    .map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                                self.spawn_with_data_ai_owned(
+                                    FLAIRON_BUBBLE,
+                                    owner_id,
+                                    s.x - hw,
+                                    s.y - hh,
+                                    s.vx,
+                                    s.vy,
+                                    s.damage,
+                                    s.knock_back,
+                                    crate::projectile_ai_style69::FLAIRON_BUBBLE_AI0,
+                                    0.0,
+                                );
+                            }
+                            // The movement: the recall clears tileCollide, so
+                            // the head integrates freely; outbound it rides the
+                            // tile pass + the recall-latch blocked arm.
+                            if self.slots[i].active {
+                                self.flairon_head_movement(world);
+                            }
+                        }
                         // The aiStyle-133 Dark Mage raise marker
                         // (`:36435-36453`): the opacity ramp and the kill.
                         133 => self.slots[i].ai_dark_mage_raise(world),
@@ -20049,6 +20166,48 @@ impl ProjectilePool {
                 // bursts spawn through the pool (the arm cannot see the slot
                 // array); the water conversion writes tiles directly.
                 self.thrown_consumable_death(i, world, player.as_deref(), rng);
+                // W4-d7 wiring — `Kill()`'s 379/377 dust census
+                // (`Projectile.cs:75522-75532`): 5× dust 171, each ONE
+                // `Next(1,10)` scale draw (the bodies skipped). The 377
+                // SpiderHiver shares the arm.
+                if matches!(self.slots[i].kind, BABY_SPIDER | QUEEN_SPIDER) {
+                    crate::projectile_ai_style63::spider_kill_draws(rng);
+                }
+                // W4-d7 wiring — the 378 SpiderEgg's `Kill()` hatch producer
+                // (`Projectile.cs:77240-77253`): the owner-gated `Next(2,4)`
+                // count + `Next(5)` bonus, per-spawn X-then-Y jitter. The
+                // spawns ride the pool (the arm cannot see the slot array).
+                if self.slots[i].kind == SPIDER_EGG && self.slots[i].owner == local_owner {
+                    let spawns = crate::projectile_ai_style63::egg_hatch(
+                        &self.slots[i],
+                        local_owner,
+                        rng,
+                    );
+                    let (damage, kb, owner_id) = {
+                        let p = &self.slots[i];
+                        (p.damage, p.knock_back, p.owner)
+                    };
+                    let (hw, hh) = proj_data(BABY_SPIDER)
+                        .map_or((0.0, 0.0), |d| (d.w * 0.5, d.h * 0.5));
+                    // `GetNextSlot` ran while the egg was STILL active — lift
+                    // the corpse flag for the scan (the moonlord precedent).
+                    self.slots[i].active = true;
+                    for s in spawns {
+                        self.spawn_with_data_ai_owned(
+                            BABY_SPIDER,
+                            owner_id,
+                            s.x - hw,
+                            s.y - hh,
+                            s.vx,
+                            s.vy,
+                            damage,
+                            kb,
+                            0.0,
+                            0.0,
+                        );
+                    }
+                    self.slots[i].active = false;
+                }
 
                 // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
                 // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides
@@ -23098,6 +23257,13 @@ impl ProjectilePool {
                     let proj_cx = p.pos.x + p.w * 0.5;
                     p.direction = if npc_cx < proj_cx { -1 } else { 1 };
                 }
+                // W4-d7 wiring — `Damage_PVE_Inner`'s aiStyle-69 arm
+                // (`Projectile.cs:14166-14170`): the Flairon head's FIRST hit
+                // latches the recall (`ai[0] = 1` + netUpdate). The `penetrate
+                // = -1` row keeps it alive; the latch is idempotent.
+                if proj_data(self.slots[slot].kind).map_or(0, |d| d.ai_style) == 69 {
+                    crate::projectile_ai_style69::flairon_hit_latch(&mut self.slots[slot]);
+                }
                 // S1-P-i16 — `StatusNPC`'s dart debuffs
                 // (`Projectile.cs:11635-11645` the 267 Poison Dart,
                 // `:11482-11489` the 478/480 Cursed Flames + the 479
@@ -23173,6 +23339,12 @@ impl ProjectilePool {
                     idx as u16,
                     rng,
                 );
+                // W4-d7 wiring — `StatusNPC`'s type-379 arm
+                // (`Projectile.cs:11490-11493`): the BabySpider's Venom (70)
+                // for `60 * Next(2,5)` ticks — ONE kept draw, unconditional.
+                if self.slots[slot].kind == BABY_SPIDER {
+                    crate::projectile_ai_style63::spider_status_npc(&mut npcs[idx], rng);
+                }
                 // S1-P-i28 — `KillOldestJavelin` (`Projectile.cs:13979-13990`,
                 // `:15074-15101`): the bone javelin caps the sticks on one NPC
                 // at 6 — the 6th stick kills the oldest (lowest timeLeft).
@@ -36579,12 +36751,30 @@ mod summon_tests {
         assert!(!hydra.uses_id_static_immunity);
         // The shot families are NOT this phase's rows (the sentry shots land
         // with the later projectile-family tasks) — 374/376/614 the minion
-        // shots, 379 the Queen Spider's SentryShots. 378 landed with
-        // S1-D-4b-2's `AI_053_FrostHydra`; 389 with S1-D-4b-6 (the Twins'
-        // bolt, a minion arm not a sentry shot).
-        for kind in [374, 376, 614, 379] {
+        // shots. 378 landed with S1-D-4b-2's `AI_053_FrostHydra`; 389 with
+        // S1-D-4b-6 (the Twins' bolt, a minion arm not a sentry shot). 379
+        // (the Queen Spider's BabySpider SentryShot) landed with the W4-d7
+        // rows+wiring round — its aiStyle-63 row + arm now serve it.
+        for kind in [374, 376, 614] {
             assert!(proj_data(kind).is_none(), "kind {kind} has no row yet");
         }
+        // W4-d7 wiring — the BabySpider's row (the aiStyle-63 arm serves it).
+        let spider = proj_data(BABY_SPIDER).unwrap();
+        assert_eq!(spider.ai_style, 63);
+        assert_eq!((spider.w, spider.h), (14.0, 10.0));
+        assert_eq!(spider.time_left, 300);
+        assert_eq!(spider.penetrate, 1);
+        assert!(spider.decides_manual_fall_through);
+        assert!(!spider.minion && !spider.sentry, "379 is a SentryShot, not a summon slot");
+        assert!(SENTRY_SHOT.contains(&BABY_SPIDER));
+        // W4-d7 wiring — the Flairon recall head's row (NOT the 1058 body).
+        let head = proj_data(FLAIRON_HEAD).unwrap();
+        assert_eq!(head.ai_style, 69);
+        assert_eq!((head.w, head.h), (26.0, 26.0));
+        assert_eq!(head.penetrate, -1);
+        assert_eq!(head.alpha, 255);
+        assert!(head.melee);
+        assert_eq!(proj_data(FLAIRON).unwrap().ai_style, 15, "1058 stays the flail body");
     }
 
     /// DW-1.2: the spawned slot carries the identification slice, the
