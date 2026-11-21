@@ -534,4 +534,54 @@ mod tests {
         check_underwater_plant(&mut w, 549, 60, 60, &mut rng);
         assert!(!w.tile(60, 60).unwrap().active(), "the dry seaweed is killed");
     }
+
+    /// W4-g83 ROPE-interplay census pin: natural vines are NOT climbable —
+    /// `TileID.Sets.IsVine` (`TileID.cs:531`, the 8 kinds) and
+    /// `Main.tileRope` (`Main.cs:9313-9321`, the 9 rope kinds incl. the
+    /// crafted VineRope 353) are DISJOINT, and so are `ReverseVineThreads`
+    /// (549) and `tileRope`. `Player.cs`'s only `IsVine` read is the
+    /// placement-kill gate (`:41309`); the climbing movement
+    /// (`FindPulley` `:19644-19749` + `Update`'s rope block
+    /// `:26116-26470`) reads `WorldGen.IsRope`/`Main.tileRope` only —
+    /// see `docs/research/123-vine-wire-contract.md` §7 (NOT ported:
+    /// ~430 lines entangled with `Player.Update`, not self-contained).
+    #[test]
+    fn w4_g83_vines_and_ropes_are_disjoint_sets() {
+        for id in [52u16, 382, 62, 115, 205, 528, 636, 638, 549] {
+            assert!(
+                !td::TILE_ROPE.has(id),
+                "vine/seaweed {id} is not a rope — no pulley attach"
+            );
+        }
+        for id in [213u16, 214, 353, 365, 366, 504, 449, 450, 451] {
+            assert!(td::TILE_ROPE.has(id), "rope {id} climbs");
+            assert!(
+                !crate::tileobject::is_vine(id),
+                "rope {id} is not a natural vine — CheckVines never touches it"
+            );
+            assert!(!td::SET_REVERSE_VINE_THREADS.has(id));
+        }
+    }
+
+    /// W4-g83 census pin: the frame-important asymmetry that routes the two
+    /// checks — the seaweed 549 IS frame-important (`Main.cs:7373`, so
+    /// `TileFrame` dispatches `TileFrameImportant` case 549 →
+    /// `CheckUnderwaterPlant`, `WorldGen.cs:84972-84974`), while NONE of the
+    /// 8 vine kinds is (no `tileFrameImportant[52/62/…]` write exists in
+    /// `Main.cs` — they ride `TileFrame`'s non-solid `IsVine` arm,
+    /// `:81375-81378`). `vine_growth::plant_vine` sets the flag anyway
+    /// (documented deviation, contract §3).
+    #[test]
+    fn w4_g83_only_the_seaweed_is_frame_important() {
+        // The port's generated table has no frame-important set; the C#
+        // census is pinned here as data (Main.cs:7373 vs the absent writes).
+        const FRAME_IMPORTANT_549: bool = true; // Main.cs:7373
+        assert!(FRAME_IMPORTANT_549);
+        for id in [52u16, 382, 62, 115, 205, 528, 636, 638] {
+            assert!(
+                crate::tileobject::is_vine(id),
+                "vine {id} rides the non-solid TileFrame arm, not case dispatch"
+            );
+        }
+    }
 }
