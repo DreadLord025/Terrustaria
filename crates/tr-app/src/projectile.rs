@@ -6768,8 +6768,19 @@ impl Projectile {
     fn ai_style1_rider(&mut self, world: &World) {
         // The PurpleLaser (`:54021-54045`): the `extraUpdates` remap off
         // `ai[0]`, then the scale growth to 4 with the owner-only knockback
-        // and the 8-tick counter. `ai[0]` sits at rest on this kind, so the
-        // remap never fires — ported for its shape, pinned by the tests.
+        // and the 8-tick counter. W4-f20 F4 census correction: the remap
+        // DOES fire — the Laser Rifle's shoot path seeds `ai[0] =
+        // Main.rand.Next(3, 6)` (`Player.cs:49381`, the port's `editing.rs`
+        // ai0 arm), so the bolt remaps its row's 4 to 3..5 on the first AI
+        // tick (the flight counter itself rests — 88 is on the `flag3 =
+        // false` list `:55957`, so the seed never grows). The `.min(15.0)`
+        // cap the C# lacks is INERT for every reachable input: the seed is
+        // 3..5, a net-wire `ai[0]` payload would need ≥ 16 to diverge (no
+        // such writer exists — the hostile 88 spawns ride ai0 0), and the
+        // pre-remap row value 4 keeps the first tick's sub-step count
+        // identical either way. Kept as the u32-cast guard (a negative or
+        // huge float would wrap the bare `as u32`); recorded, not
+        // behaviour-visible (research/26f F4).
         if self.kind == PURPLE_LASER {
             if self.ai[0] != 0.0 {
                 self.extra_updates = self.ai[0].min(15.0) as u32;
@@ -32780,8 +32791,10 @@ mod magic_ai_tests {
     #[test]
     fn test_dw_3_2_the_purple_laser_grows_to_four_and_keeps_a_resting_flight_counter() {
         // `:54021-54045`: `scale += 0.053f` (cap 4), `knockBack *= 1.0045f`,
-        // the 8-tick counter, and the `extraUpdates = (int)ai[0]` remap that
-        // never fires because `flag3` holds `ai[0]` at rest for this kind.
+        // the 8-tick counter, and the `extraUpdates = (int)ai[0]` remap.
+        // THIS fixture spawns with ai0 = 0 (no shoot-path seed), so the
+        // remap never fires here; the seeded case (the Laser Rifle's
+        // `Next(3, 6)`, `Player.cs:49381`) is the F4 witness below.
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(
@@ -32821,6 +32834,64 @@ mod magic_ai_tests {
             4,
             "the row's extraUpdates rides untouched"
         );
+    }
+
+    /// W4-f20 F4 — the seeded remap: the Laser Rifle's shoot path seeds
+    /// `ai[0] = Main.rand.Next(3, 6)` (`Player.cs:49381`, the editing.rs
+    /// ai0 arm), so the `:54025` remap DOES fire — the row's extraUpdates 4
+    /// becomes the seed (3..5) on the first AI tick. The flight counter
+    /// rests (88 is `flag3 = false`, `:55957`), so the seed never grows and
+    /// the remap re-writes the same value every tick. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f20_f4_the_seeded_purple_laser_remaps_extra_updates_to_the_seed() {
+        for seed in [3.0f32, 4.0, 5.0] {
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(
+                    PURPLE_LASER,
+                    10.0 * TILE_PX,
+                    10.0 * TILE_PX,
+                    2.0,
+                    0.0,
+                    200,
+                    2.0,
+                    seed,
+                    0.0,
+                )
+                .unwrap();
+            assert_eq!(pool.slots()[slot].extra_updates, 4, "the row's 4 pre-AI");
+            let mut w = world();
+            step(&mut pool, &mut w);
+            assert_eq!(
+                pool.slots()[slot].extra_updates, seed as u32,
+                ":54025 — the remap takes the seed"
+            );
+            // The counter rests — the seed never grows, the remap is stable.
+            for _ in 0..30 {
+                step(&mut pool, &mut w);
+            }
+            assert_eq!(pool.slots()[slot].ai[0], seed, "flag3=false (:55957)");
+            assert_eq!(pool.slots()[slot].extra_updates, seed as u32);
+        }
+    }
+
+    /// W4-f20 F4 — the `.min(15.0)` cap the C# lacks is INERT for every
+    /// reachable input: the shoot seed is 3..5 (all < 15, so the cap never
+    /// binds), and the only writer that could exceed 15 would be a net-wire
+    /// ai[0] payload — no such writer exists (the hostile 88 spawns ride
+    /// ai0 0). The cap stays as the u32-cast guard; this witness pins that
+    /// the whole reachable seed range passes the cap unchanged. WRITTEN
+    /// NOT RUN (the finalize note, research/26f F4).
+    #[test]
+    fn w4_f20_f4_the_cap_is_inert_across_the_reachable_seed_range() {
+        // Every seed the shoot path can draw (Next(3, 6) = 3, 4, 5) maps
+        // through `.min(15.0)` unchanged — the C# `(int)ai[0]` and the
+        // port's capped cast agree on the whole producer range.
+        for seed in 3..6 {
+            let capped = (seed as f32).min(15.0) as u32;
+            let bare = seed as u32;
+            assert_eq!(capped, bare, "seed {seed}: the cap never binds");
+        }
     }
 
     #[test]

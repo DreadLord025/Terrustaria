@@ -104,7 +104,7 @@ the C# tail, matched against the port:
 
 | rider | C# | kinds | port status |
 | --- | --- | --- | --- |
-| extraUpdates remap | `:54025` (`extraUpdates = (int)ai[0]`) | 88 | PORTED `ai_style1_rider` (`:6775`) — the port adds a `.min(15.0)` the C# lacks (the ai[0] rests at 0 on 88, so the remap never fires; the cap is inert, recorded) |
+| extraUpdates remap | `:54025` (`extraUpdates = (int)ai[0]`) | 88 | PORTED `ai_style1_rider` (`:6775`) — the port adds a `.min(15.0)` the C# lacks. F4 census CORRECTION: the remap DOES fire — the Laser Rifle shoot path seeds `ai[0] = Next(3,6)` (`Player.cs:49381`, editing.rs), so the row's 4 remaps to 3..5 on the first AI tick; the flight counter rests (`flag3=false` `:55957`) so the seed never grows. The cap is inert across the whole reachable range (3..5 < 15; no ai[0]≥16 writer exists) — kept as the u32-cast guard, finalized |
 | extraUpdates row | SetDefaults | 576 (2), 709 (1), 357 (2), 485 (1) | the rows carry it; the sub-step loop (`:16597`) reads `extra_updates` — slice D/E faithful |
 | MaxUpdates kill | `:56159` (43×), `:56178` (23×) | 594 (unrowed), 622 | 622 PORTED slice B (`:316`, `23 * (1 + extra_updates)`); 594 unrowed, deferred |
 | MaxUpdates frame | `:54471`/`:54480` (4×/3×), `:56990`/`:56995` (3×) | 634/635, 645 | PORTED slice C (`:239`, `:392`, `:400`) |
@@ -160,11 +160,23 @@ the alias, this round's resolves it).
   1110 needs a row + arm + the hook together (the F3 "row+arm together"
   pattern). The 1110 spawn draws RNG (`Next(2,6)`), so it is NOT RNG-free
   and stays out of slice E (the module takes no rng). Recorded for g1.
-- **F4 (the 88 extraUpdates cap).** The port's `ai_style1_rider` adds
-  `.min(15.0)` to the 88's `extraUpdates = (int)ai[0]` remap (`:6775`)
-  that the C# (`:54025`) lacks. Inert (ai[0] rests at 0 on 88, the remap
-  never fires) but a shape deviation — recorded, not fixed (the generic
-  path is frozen).
+- **F4 (the 88 extraUpdates cap — FINALIZED, inert).** The port's
+  `ai_style1_rider` adds `.min(15.0)` to the 88's `extraUpdates =
+  (int)ai[0]` remap (`:6775`) that the C# (`:54025`) lacks. Census
+  CORRECTION to this note's first pass: the remap DOES fire — the Laser
+  Rifle's shoot path seeds `ai[0] = Main.rand.Next(3, 6)`
+  (`Player.cs:49381`, the port's `editing.rs` ai0 arm), so the bolt's
+  row extraUpdates 4 remaps to 3..5 on its first AI tick (the flight
+  counter rests — 88 is `flag3 = false` `:55957` — so the seed never
+  grows and the remap is stable). The cap is nonetheless INERT for
+  every reachable input: the producer range is 3..5 (all < 15), and no
+  writer can push ai[0] ≥ 16 (the hostile 88 spawns ride ai0 0; the
+  net-wire payload has no such producer). Not behaviour-visible → the
+  cap stays as the u32-cast guard (a negative/huge float would wrap the
+  bare `as u32`), the rider comment corrected, 2 witnesses added
+  (`w4_f20_f4_the_seeded_purple_laser_remaps_extra_updates_to_the_seed`,
+  `w4_f20_f4_the_cap_is_inert_across_the_reachable_seed_range`), WRITTEN
+  NOT RUN. No behaviour change.
 - **F5 (the projectile shimmer layer is unported).** The `Shimmer()`
   family (`:22361-22530`, the `:17009-17011` shimmerWet gate) has no
   projectile-side port — the AI_001-internal 1006 flag4 inversion is
