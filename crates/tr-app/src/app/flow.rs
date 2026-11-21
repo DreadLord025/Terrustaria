@@ -2424,6 +2424,7 @@ pub(crate) mod front_flow_tests {
             ore_tiers: tr_core::ores::SavedOreTiers::new(),
             rain: Rain::new(1),
             sand: crate::sand::Sand::new(1),
+            snow: crate::snow::Snow::new(1),
             dust: {
                 // The `Main.dust[6001]` init with the type-34 wet probe (see
                 // App::new — S1-E-1 phase 2).

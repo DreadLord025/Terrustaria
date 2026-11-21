@@ -241,6 +241,9 @@ mod recall_teleport;
 mod regen;
 mod research;
 mod sand;
+// W4-d130: the ambient snowfall (`Main.snowing()`, Main.cs:13032-13116) —
+// the type-76 dust spawn/AI/draw, the rain rig's flake approximation retired.
+mod snow;
 mod ambience;
 mod ambient_sound;
 mod capture;

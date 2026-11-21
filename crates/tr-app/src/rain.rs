@@ -292,6 +292,12 @@ impl Rain {
         self.intensity.clamp(0.0, 1.0)
     }
 
+    /// `Main.cloudAlpha` unclamped — the snowfall's intensity/budget reads
+    /// the raw value (`Main.cs:13044-13046`), not the sky-tint clamp.
+    pub fn cloud_alpha(&self) -> f32 {
+        self.intensity
+    }
+
     /// `Main.raining`: the toggle the tile-light scanner reads for the water
     /// fountain (`tile.frameX == 90`) case.
     pub fn is_raining(&self) -> bool {

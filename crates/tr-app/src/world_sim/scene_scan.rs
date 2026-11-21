@@ -396,6 +396,37 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
         *zoom,
         app.gfx_quality.max_dust_to_draw,
     );
+    // `Main.snowing()` (`Main.cs:17238`, body `:13032-13116`): the ambient
+    // snowfall spawns right BEFORE `Sandstorm.EmitDust` in the C# — the port
+    // runs both in this slot (the spawn order between the two dust families
+    // only matters for the shared pool's slot scan; the snow's own stream is
+    // separate). The budget reads the previous tick's `Main.snowDust`
+    // (`pool.snow_dust`, the shared tick's count). W4-d130.
+    let snow_inputs = crate::snow::SnowInputs {
+        scaled_position: *camera - screen * 0.5 / *zoom,
+        scaled_size: screen / *zoom,
+        cloud_alpha: rain.cloud_alpha(),
+        raining: rain.is_raining(),
+        wind_speed_current: wind.speed_current,
+        player_vy,
+        gfx_quality: app.gfx_quality.quality,
+        // `NPC.IsADeerclopsNearScreen()` (`NPC.cs:44534-44537`): the active
+        // 668 scan (`npcsFoundForCheckActive[668]`) — the destructure's npcs.
+        deerclops_near: npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::Deerclops),
+        remix_world: wind.remix_world,
+    };
+    let snow_dust = app.dust.snow_dust;
+    let snow_metrics = app.scene_metrics.clone();
+    app.snow.snowing(
+        &snow_metrics,
+        &snow_inputs,
+        snow_dust,
+        &ctx,
+        world,
+        &mut app.dust,
+    );
     app.sand.emit_dust(
         &app.scene_metrics,
         sandstorm.severity,
