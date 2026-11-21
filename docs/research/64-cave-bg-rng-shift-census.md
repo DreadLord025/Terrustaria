@@ -1,5 +1,12 @@
 # 64 — `RandomizeCaveBackgrounds` worldgen RNG-shift census (W4-g72 lane 3, phase 6)
 
+> **SEALED (W4-g72 retire, 2026-11-21).** The census verdict below was
+> superseded in-lane (phases 7-8 wired the roll); §6's order-contract was
+> CONSUMED by g71 (`fc76a48b3` composed the tail); §7 is the keep-one
+> receipt — OUR `cave_bg.rs` is canonical, g71 dropped its duplicate. No
+> further edits owed here; the BG-FAMILY bible lives in docs/ANALYSIS.md
+> "The BG-FAMILY bible".
+
 **Code-only census. NO wiring** — inserting these draws moves the frozen
 `world_hash` pins (`worldgen/world_hash.rs` `SEED42_512` / `DEFAULT_WORLD`), so
 the roll is a **worldgen lane's call**, not this one (the lane-3 style machine
@@ -267,7 +274,45 @@ The port's `step_world_tail` (`pipeline.rs:2685-2752`) draws, in order:
    (W4-g72 final item 3).
 6. **The underworld `Next(3)`** (`:8011`, the last draw of
    `RandomizeBackgrounds`) feeds `underworldBG` (`WorldFile.cs:1376`,
-   still skip-read at `flags.rs:573`). If g71c owns that byte, its v18 seat
-   is flagged in research/64a §3 (between g71's surface group and g69's
-   crimson); the underworld DRAW stack stays ours (UNWIRED, the d35 §9.1
+   still skip-read at `flags.rs:573`). **SEAT FIRED (retire, §7):** g71
+   owns that byte — rolled (`bg_rolls.rs:168`/`:311`) + `.wld`-persisted
+   (`flags.rs:186`/`:577`) at tip `f2d8c2c67`; its v18 seat is [58] in the
+   FINAL 107-byte union (research/64b §0/§2, 92 §1-FULL.2); the underworld
+   DRAW stack stays ours (UNWIRED, the d35 §9.1
    screenTarget escape).
+
+## 7. The keep-one RECEIPT (W4-g72 retire — g71 dropped ITS copy, kept OURS)
+
+**Executed on g71's branch, NOT ours.** `origin/task/W4-g71-bg-layers-2`
+commit **`fc76a48b3`** ("W4-g71 FINAL keep-one: adopt g72 cave_bg.rs
+VERBATIM, drop the bg_rolls cave duplicate") + docs **`f2d8c2c67`**
+(research/92 §2.1-FINAL) adjudicated the double-draw risk in OUR favour:
+
+- **KEPT (canonical): OUR `worldgen/cave_bg.rs`.** g71's copy of the file
+  differs from ours ONLY by the added keep-one header comment (verified:
+  the diff carries no non-comment line). Deciding deltas (92 §2.1-FINAL's
+  table): ours carries the PREVIOUS `caveBackStyle` values through the
+  un-rolled arm slots (C# `:8195-8223` keeps them; the g71 copy zeroed
+  them), returns the C# `new int[4]` shape (`[3]` never
+  rolled/persisted/sent), emits u8 ice/hell/jungle directly, and our LIVE
+  draw chain + `.wld`/`.trwld`/net persistence trio are typed against ITS
+  outcome.
+- **DROPPED on g71:** `bg_rolls.rs`'s `struct CaveBackgrounds` +
+  `fn randomize_cave_backgrounds` (verified absent at the tip); its 3 cave
+  witnesses re-point at the canonical driver; its
+  `boot_reroll_backgrounds` now calls
+  `cave_bg::randomize_cave_backgrounds` (`bg_rolls.rs:317`).
+- **Composed tail order (g71's pipeline, matching our §6 contract):**
+  `:11338` tree (pass_rng) → `:11339` OUR cave seat (`streams.rng`,
+  `pipeline.rs:2760`) → `:11340` surface (pass_rng) → `:11341` moon
+  (`streams.rng`). The tree/surface rolls ride isolated pass_rng slots, so
+  the shared-stream sequence stays cave→moon exactly — ONE cave draw,
+  never both.
+- **NO DEPRECATED-BY-KEEP-ONE banners on OUR branch:** the drop happened
+  on g71's side; our `cave_bg.rs` IS the canonical copy — nothing here is
+  deprecated, nothing to banner. This §7 is the g71-drop-receipt only.
+- **Merge-side residue (flagged, small):** our `step_world_tail` comment
+  block updates to the composed order (92 §2.1-FINAL drop-hunk 6 — our
+  code hunks land UNCHANGED); at merge keep ONE boot call site per process
+  (our `App::new` dead-store vs g71's menu-seam boot fn — complementary
+  today, must not both survive as live rolls on the same boot path).
