@@ -574,6 +574,14 @@ pub struct World {
     /// the save can carry it (M6-SAVE-1f — the vanilla writes it in the
     /// world-flags block, `WorldFile.cs:1315-1321` + `:1444-1450`).
     pub ore_tiers: crate::ores::SavedOreTiers,
+    /// `GenVars.lavaLine` (`TerrainPass.cs:211-236`, drawn at the terrain
+    /// step `pipeline.rs`): the chest-stocking deep band's lava-charm gate
+    /// (`WorldGen.cs:36882/:36892`) reads it through the `ChestSiteEvent`.
+    /// Runtime-only like the other `GenVars` reads — the vanilla never
+    /// saves it; `World::new`'s stock is the no-terrain estimate
+    /// `(rockLayer + maxTilesY)/2 + 65` (the C# `Next(-100,20)`/`Next(50,80)`
+    /// draws' midpoints), overwritten by the terrain step at generation.
+    pub lava_line: i32,
     /// `Main.chest[]` as it exists at the end of generation — the vanilla
     /// stocks every chest's inventory **inline with its placement** inside
     /// `AddBuriedChest` (`WorldGen.cs:35871-37580`), and the records save
@@ -623,6 +631,9 @@ impl World {
             pressure_plates: Vec::new(),
             frame_important: Vec::new(),
             ore_tiers: crate::ores::SavedOreTiers::new(),
+            // The no-terrain estimate (the field note): the terrain step
+            // overwrites it with the drawn `GenVars.lavaLine`.
+            lava_line: (height as f64 * 0.45 + height as f64) as i32 / 2 + 65,
             chests: Vec::new(),
             spawn_y: height / 4,
             bed_spawn: None,

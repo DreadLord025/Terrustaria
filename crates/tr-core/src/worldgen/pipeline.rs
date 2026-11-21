@@ -1641,6 +1641,9 @@ fn step_terrain_fill(
     };
     gv.water_line = water_line;
     gv.lava_line = lava_line;
+    // The chest-stocking seam reads it off the World (the `ChestSiteEvent`
+    // `lava_line` field, W4-c33) — publish the drawn value beside the tiers.
+    world.lava_line = lava_line;
     gv.layers = Some(layers);
 }
 

@@ -175,6 +175,18 @@ pub struct ChestSiteEvent {
     pub world_surface: f64,
     pub rock_layer: f64,
     pub height: i32,
+    /// `GenVars.lavaLine` (`TerrainPass.cs:211-236`) — the deep band's
+    /// lava-charm gate `flag24` (`WorldGen.cs:36882/:36892`). The site
+    /// threads the pipeline's drawn value; the load-time/test shims fall
+    /// back to the vanilla mid-world estimate (the documented residual).
+    pub lava_line: i32,
+    /// `SavedOreTiers.Silver == 168` (`WorldGen.cs:37246`) — the deepest
+    /// band's bullet row picks the TungstenBullet 4915 over the
+    /// SilverBullet 278 on a tungsten world.
+    pub silver_is_tungsten: bool,
+    /// The world's rolled ore tiers (`WorldGen.Reset` `:11266-11297`) —
+    /// the bar rows read the tier-aware `GenVars.*Bar` ids through it.
+    pub ore_tiers: crate::ores::SavedOreTiers,
 }
 
 /// The pass's stream, as the stocking sees it — the C#'s `genRand` draws
@@ -256,6 +268,9 @@ pub(crate) fn stock_placed_chest(
         world_surface: world.world_surface,
         rock_layer: world.rock_layer,
         height: world.height,
+        lava_line: world.lava_line,
+        silver_is_tungsten: world.ore_tiers.silver == 168,
+        ore_tiers: world.ore_tiers,
     };
     let rows = hook(&ev, rng);
     world.chests.push(crate::save::ChestRecord {
