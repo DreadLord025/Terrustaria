@@ -1706,6 +1706,19 @@ fn portrait_data(
             let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 4.0).unwrap_or(40.0);
             (sheet_i, h, 40.0, h, white)
         }
+        // W4-g8 lane 1 batch 4 — the last three kinds' portraits.
+        (NpcKind::Squid, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 8.0).unwrap_or(44.0);
+            (sheet_i, h, 40.0, h, white)
+        }
+        (NpcKind::Harpy, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 6.0).unwrap_or(86.0);
+            (sheet_i, h, 100.0, h, white)
+        }
+        (NpcKind::RedDevil, _) => {
+            let h = entry_sheet(lookups, entry).map(|s| s.height as f32 / 5.0).unwrap_or(100.0);
+            (sheet_i, h, 104.0, h, white)
+        }
     }
 }
 

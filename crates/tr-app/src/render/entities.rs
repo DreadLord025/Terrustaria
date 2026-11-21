@@ -518,6 +518,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(KIND_WIRE_1_SHEETS)
             .chain(KIND_WIRE_2_SHEETS)
             .chain(KIND_WIRE_3_SHEETS)
+            .chain(KIND_WIRE_4_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1297,6 +1298,15 @@ pub(crate) const KIND_WIRE_3_SHEETS: &[u32] = &[
     152, // the Giant Flying Fox
     158, // the Vampire Bat
     226, // the Flying Snake
+];
+
+/// W4-g8 lane 1 batch 4 — the last three ≤230 d22-d33 machine members'
+/// own sheets (`TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `KIND_WIRE_3_SHEETS`.
+pub(crate) const KIND_WIRE_4_SHEETS: &[u32] = &[
+    221, // the Squid
+    48,  // the Harpy
+    156, // the Red Devil
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3279,6 +3289,12 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-g8 lane 1 batch 4 — the last three kinds draw their OWN
+            // sheets (`KIND_WIRE_4_SHEETS`) at the generic centred anchor.
+            NpcKind::Squid | NpcKind::Harpy | NpcKind::RedDevil => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3459,6 +3475,10 @@ pub(crate) fn draw_npcs(
                     | NpcKind::GiantFlyingFox
                     | NpcKind::VampireBat
                     | NpcKind::FlyingSnake
+                    // W4-g8 lane 1 batch 4 — the Harpy/RedDevil's vx*0.1
+                    // tilt (`NPC.cs:74858`/`:73906`).
+                    | NpcKind::Harpy
+                    | NpcKind::RedDevil
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

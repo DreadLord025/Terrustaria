@@ -515,6 +515,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::IceBat => &[44, 324],
         NpcKind::Lavabat => &[24, 323],
         NpcKind::GiantBat | NpcKind::GiantFlyingFox | NpcKind::VampireBat | NpcKind::FlyingSnake => &[],
+        // W4-g8 lane 1 batch 4 — the `Sets.DebuffImmunitySets` rows: 48/221
+        // `[31]`, 156 `[24, 31, 153, 323]`.
+        NpcKind::Harpy | NpcKind::Squid => &[31],
+        NpcKind::RedDevil => &[24, 31, 153, 323],
     }
 }
 

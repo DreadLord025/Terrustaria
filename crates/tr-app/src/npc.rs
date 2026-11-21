@@ -1250,6 +1250,26 @@ pub enum NpcKind {
     /// kb 0.65, NPCHit23/NPCDeath26, value 400, npcSlots 0.5. The
     /// velocity-sign facing + the 4/2.5 approach are cited machine skips.
     FlyingSnake,
+    // ---- W4-g8 lane 1 batch 4: the last three ≤230 d22-d33 machine
+    // members — the Squid (style 18) + the Harpy/RedDevil (style 14).
+    // Protocol ids 385-387.
+    /// `NPCID.Squid` (221, `NPCID.cs:11119`) — the ocean squid
+    /// (`NPC.cs:11840-11854`): 26x26, aiStyle 18, dmg 20, def 2, 30 HP,
+    /// kb 1 (no row), NPCHit1/NPCDeath1, value 100, alpha 20, noGravity,
+    /// rarity 1. WIRED: the axis' 18 arm rides `npc_ai_style18::ai_018_arm`
+    /// (the ink-latch swimmer).
+    Squid,
+    /// `NPCID.Harpy` (48, `NPCID.cs:10773`) — the sky harpy
+    /// (`NPC.cs:9360-9372`): 24x34, aiStyle 14, dmg 25, def 8, 100 HP,
+    /// kb 0.6, NPCHit1/NPCDeath1, value 300. WIRED: the axis' 14 arm rides
+    /// `npc_ai_style14::bat_ai`; the wet arm + feather shot are cited skips.
+    Harpy,
+    /// `NPCID.RedDevil` (156, `NPCID.cs:10987`) — the underworld devil
+    /// (`NPC.cs:10974-10988`): 28x48, aiStyle 14, dmg 50, def 40, 600 HP,
+    /// kb 0.5, NPCHit21/NPCDeath24, value 1200, npcSlots 2, lavaImmune.
+    /// WIRED: the axis' 14 arm rides `bat_ai`; the trident shot is a cited
+    /// machine skip.
+    RedDevil,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3350,6 +3370,9 @@ impl Npc {
                             // W4-g8 lane 1 batch 3 — the Slimer's alpha 55
                             // (`NPC.cs:10475`).
                             NpcKind::Slimer => 55,
+                            // W4-g8 lane 1 batch 4 — the Squid's alpha 20
+                            // (`NPC.cs:11852`).
+                            NpcKind::Squid => 20,
                             _ => 0,
                         }
                     }),
@@ -3786,6 +3809,11 @@ impl Npc {
             NpcKind::Slimer | NpcKind::IceBat => 0.8,
             NpcKind::Lavabat => 0.6,
             NpcKind::GiantFlyingFox | NpcKind::FlyingSnake => 0.65,
+            // W4-g8 lane 1 batch 4 — the `knockBackResist` rows: 221 1 (no
+            // row, `NPC.cs:8533`), 48 0.6 (`:9369`), 156 0.5 (`:10984`).
+            NpcKind::Squid => 1.0,
+            NpcKind::Harpy => 0.6,
+            NpcKind::RedDevil => 0.5,
             _ => 0.4,
         }
     }
@@ -4210,6 +4238,11 @@ impl Npc {
             NpcKind::GiantFlyingFox => 24,
             NpcKind::VampireBat => 32,
             NpcKind::FlyingSnake => 28,
+            // W4-g8 lane 1 batch 4 — the `defense` rows: 221 2
+            // (`NPC.cs:11847`), 48 8 (`:9366`), 156 40 (`:10981`).
+            NpcKind::Squid => 2,
+            NpcKind::Harpy => 8,
+            NpcKind::RedDevil => 40,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4627,6 +4660,11 @@ impl Npc {
             NpcKind::IceBat => 250.0,
             NpcKind::Lavabat | NpcKind::GiantFlyingFox | NpcKind::FlyingSnake => 400.0,
             NpcKind::VampireBat => 5000.0,
+            // W4-g8 lane 1 batch 4 — the `value` rows (copper): 221 100
+            // (`NPC.cs:11851`), 48 300 (`:9371`), 156 1200 (`:10986`).
+            NpcKind::Squid => 100.0,
+            NpcKind::Harpy => 300.0,
+            NpcKind::RedDevil => 1200.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -7075,6 +7113,14 @@ impl Npc {
             NpcKind::Demon | NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
             | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
             | NpcKind::VampireBat | NpcKind::FlyingSnake => {
+                unreachable!("aiStyle 14 rides the style axis (W4-g8)")
+            }
+            // W4-g8 lane 1 batch 4 — the Squid (aiStyle 18) + the Harpy/
+            // RedDevil (aiStyle 14) ride the style axis above.
+            NpcKind::Squid => {
+                unreachable!("aiStyle 18 rides the style axis (W4-g8)")
+            }
+            NpcKind::Harpy | NpcKind::RedDevil => {
                 unreachable!("aiStyle 14 rides the style axis (W4-g8)")
             }
             // S1-D-2: the aiStyle-5 hover family (6/42/23/5) rides the
@@ -10526,6 +10572,68 @@ impl Npc {
                 if self.frame >= 4 {
                     self.frame = 0;
                 }
+            }
+            // W4-g8 lane 1 batch 4 — the last three kinds' `FindFrame`.
+            // `case 221` (`NPC.cs:73961-73993`): the Squid's swim — the
+            // ink-latch (localAI[2]==1) clamps at the last row on the
+            // 8-tick counter; else the 13-tick counter wraps the 8-row strip.
+            NpcKind::Squid => {
+                if self.local_ai[2] == 1.0 {
+                    if self.local_ai[0] == 1.0 {
+                        self.frame = 0;
+                        self.local_ai[0] = 0.0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 8 {
+                        self.frame = 7;
+                    }
+                } else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 13.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 8 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // `case 48` (`NPC.cs:74823-74884`, the ghost group): the
+            // Harpy's flap — spriteDirection follows the velocity sign, the
+            // vx*0.1 tilt, the 5-tick counter (num291=5 for 48) over the
+            // 6-row strip.
+            NpcKind::Harpy => {
+                if self.vx > 0.0 {
+                    self.sprite_dir = 1;
+                }
+                if self.vx < 0.0 {
+                    self.sprite_dir = -1;
+                }
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 5.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame >= 6 {
+                    self.frame = 0;
+                }
+            }
+            // `case 156` (`NPC.cs:73903-73915`): the RedDevil's flap —
+            // spriteDirection follows direction, the vx*0.1 tilt, the
+            // 20-tick counter stepping rows 0..4 (counter/4).
+            NpcKind::RedDevil => {
+                self.sprite_dir = self.facing;
+                self.rotation = self.vx * 0.1;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 20.0 {
+                    self.frame_counter = 0.0;
+                }
+                self.frame = (self.frame_counter as u32) / 4;
             }
         }
     }
@@ -20123,6 +20231,10 @@ impl Npc {
             NpcKind::GiantFlyingFox => 382,
             NpcKind::VampireBat => 383,
             NpcKind::FlyingSnake => 384,
+            // W4-g8 lane 1 batch 4 — the port-local 385-387 band.
+            NpcKind::Squid => 385,
+            NpcKind::Harpy => 386,
+            NpcKind::RedDevil => 387,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25535,6 +25647,10 @@ mod tests {
         NpcKind::GiantFlyingFox,
         NpcKind::VampireBat,
         NpcKind::FlyingSnake,
+        // W4-g8 lane 1 batch 4 — the last three ≤230 machine members.
+        NpcKind::Squid,
+        NpcKind::Harpy,
+        NpcKind::RedDevil,
     ];
 
     #[test]
@@ -36588,6 +36704,43 @@ mod w4_g8_kind_wire_1_tests {
             assert_eq!(count, 1, "aiStyle {style} claimed once");
         }
         assert!(src.contains("aiStyle 10 rides the style axis (W4-g8)"));
+        assert!(src.contains("aiStyle 14 rides the style axis (W4-g8)"));
+    }
+
+    /// W4-g8 lane 1 batch 4 — the last three kinds' `SetDefaults` rows pin
+    /// against the C# through the port's tables.
+    /// (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+    #[test]
+    fn w4_g8_b4_the_defaults_match_the_csharp_rows() {
+        let rows = [
+            // NPC.cs:11840-11854 (Squid 221) — kb 1 (no row).
+            (NpcKind::Squid, 221u16, 18u8, 26.0, 26.0, 20, 2, 30, 1.0f32, 100.0f32),
+            // NPC.cs:9360-9372 (Harpy 48).
+            (NpcKind::Harpy, 48, 14, 24.0, 34.0, 25, 8, 100, 0.6, 300.0),
+            // NPC.cs:10974-10988 (RedDevil 156).
+            (NpcKind::RedDevil, 156, 14, 28.0, 48.0, 50, 40, 600, 0.5, 1200.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The Squid's alpha 20 (`NPC.cs:11852`).
+        assert_eq!(Npc::new(NpcKind::Squid, 0.0, 0.0, 1, 0.0).alpha, 20);
+        // The port-local protocol band 385-387.
+        assert_eq!(NpcKind::Squid.to_u16(), 385);
+        assert_eq!(NpcKind::Harpy.to_u16(), 386);
+        assert_eq!(NpcKind::RedDevil.to_u16(), 387);
+        // The 18/14 axis claims route them (the kind arms are unreachable).
+        let src = include_str!("npc.rs");
+        assert!(src.contains("NpcKind::Squid => {\n                unreachable!(\"aiStyle 18 rides the style axis (W4-g8)\")"));
         assert!(src.contains("aiStyle 14 rides the style axis (W4-g8)"));
     }
 }

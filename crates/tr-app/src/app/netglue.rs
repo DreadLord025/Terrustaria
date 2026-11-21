@@ -3625,6 +3625,14 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-g8 lane 1 batch 4 — the Squid 221 (noGravity swimmer) + the
+        // Harpy 48 / RedDevil 156 (noGravity flyers) ride the hover ctor.
+        crate::npc::NpcKind::Squid
+        | crate::npc::NpcKind::Harpy
+        | crate::npc::NpcKind::RedDevil => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

@@ -2432,6 +2432,31 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Flying Snake",
     },
+    // W4-g8 lane 1 batch 4 — the last three ≤230 d22-d33 machine members.
+    BestiaryEntryDef {
+        credit_id: "Squid",
+        net_id: 221,
+        kind: NpcKind::Squid,
+        variant: None,
+        quick_unlock: false,
+        name: "Squid",
+    },
+    BestiaryEntryDef {
+        credit_id: "Harpy",
+        net_id: 48,
+        kind: NpcKind::Harpy,
+        variant: None,
+        quick_unlock: false,
+        name: "Harpy",
+    },
+    BestiaryEntryDef {
+        credit_id: "RedDevil",
+        net_id: 156,
+        kind: NpcKind::RedDevil,
+        variant: None,
+        quick_unlock: false,
+        name: "Red Devil",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

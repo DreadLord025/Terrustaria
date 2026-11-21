@@ -624,6 +624,10 @@ impl NpcKind {
             NpcKind::GiantFlyingFox => 382,
             NpcKind::VampireBat => 383,
             NpcKind::FlyingSnake => 384,
+            // W4-g8 lane 1 batch 4 — the next-free port-local band 385-387.
+            NpcKind::Squid => 385,
+            NpcKind::Harpy => 386,
+            NpcKind::RedDevil => 387,
         }
     }
 
@@ -989,6 +993,10 @@ impl NpcKind {
             382 => NpcKind::GiantFlyingFox,
             383 => NpcKind::VampireBat,
             384 => NpcKind::FlyingSnake,
+            // W4-g8 lane 1 batch 4 — the port-local 385-387 band.
+            385 => NpcKind::Squid,
+            386 => NpcKind::Harpy,
+            387 => NpcKind::RedDevil,
             _ => return None,
         })
     }
@@ -1902,6 +1910,10 @@ impl NpcKind {
             | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
             | NpcKind::VampireBat => "NPC_Hit_1",
             NpcKind::FlyingSnake => "NPC_Hit_23",
+            // W4-g8 lane 1 batch 4 — the `HitSound` rows: 221/48 NPCHit1
+            // (`NPC.cs:11849`/`:9368`), 156 NPCHit21 (`:10983`).
+            NpcKind::Squid | NpcKind::Harpy => "NPC_Hit_1",
+            NpcKind::RedDevil => "NPC_Hit_21",
             _ => return None,
         })
     }
@@ -2241,6 +2253,10 @@ impl NpcKind {
             NpcKind::Slimer => "NPC_Killed_1",
             NpcKind::IlluminantBat | NpcKind::VampireBat => "NPC_Killed_6",
             NpcKind::FlyingSnake => "NPC_Killed_26",
+            // W4-g8 lane 1 batch 4 — the `DeathSound` rows: 221/48
+            // NPCDeath1 (`NPC.cs:11850`/`:9370`), 156 NPCDeath24 (`:10985`).
+            NpcKind::Squid | NpcKind::Harpy => "NPC_Killed_1",
+            NpcKind::RedDevil => "NPC_Killed_24",
             _ => return None,
         })
     }
@@ -2625,6 +2641,10 @@ impl NpcKind {
             NpcKind::Demon | NpcKind::GiantBat | NpcKind::Slimer | NpcKind::IlluminantBat
             | NpcKind::IceBat | NpcKind::Lavabat | NpcKind::GiantFlyingFox
             | NpcKind::VampireBat | NpcKind::FlyingSnake => 14,
+            // W4-g8 lane 1 batch 4 — the `SetDefaults` aiStyle rows: 221 18
+            // (`NPC.cs:11845`), 48/156 14 (`:9364`/`:10979`).
+            NpcKind::Squid => 18,
+            NpcKind::Harpy | NpcKind::RedDevil => 14,
         }
     }
 
@@ -3199,6 +3219,12 @@ impl NpcKind {
             NpcKind::IceBat | NpcKind::Lavabat | NpcKind::VampireBat => (22.0, 22.0),
             NpcKind::GiantFlyingFox => (38.0, 34.0),
             NpcKind::FlyingSnake => (34.0, 50.0),
+            // W4-g8 lane 1 batch 4 — the `SetDefaults` boxes: 221 26x26
+            // (`NPC.cs:11843-11844`), 48 24x34 (`:9362-9363`), 156 28x48
+            // (`:10977-10978`).
+            NpcKind::Squid => (26.0, 26.0),
+            NpcKind::Harpy => (24.0, 34.0),
+            NpcKind::RedDevil => (28.0, 48.0),
         }
     }
 
@@ -3342,6 +3368,11 @@ impl NpcKind {
             NpcKind::GiantFlyingFox => 152,
             NpcKind::VampireBat => 158,
             NpcKind::FlyingSnake => 226,
+            // W4-g8 lane 1 batch 4 — the vanilla `NPC.type` ids
+            // (`NPCID.cs:11119`/`:10773`/`:10987`).
+            NpcKind::Squid => 221,
+            NpcKind::Harpy => 48,
+            NpcKind::RedDevil => 156,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3933,6 +3964,11 @@ impl NpcKind {
             NpcKind::GiantFlyingFox => 220,
             NpcKind::VampireBat => 750,
             NpcKind::FlyingSnake => 260,
+            // W4-g8 lane 1 batch 4 — the `lifeMax` rows: 221 30
+            // (`NPC.cs:11848`), 48 100 (`:9367`), 156 600 (`:10982`).
+            NpcKind::Squid => 30,
+            NpcKind::Harpy => 100,
+            NpcKind::RedDevil => 600,
         }
     }
 
@@ -4342,6 +4378,11 @@ impl NpcKind {
             NpcKind::GiantFlyingFox => 80,
             NpcKind::VampireBat => 60,
             NpcKind::FlyingSnake => 85,
+            // W4-g8 lane 1 batch 4 — the `damage` rows: 221 20
+            // (`NPC.cs:11846`), 48 25 (`:9365`), 156 50 (`:10980`).
+            NpcKind::Squid => 20,
+            NpcKind::Harpy => 25,
+            NpcKind::RedDevil => 50,
         }
     }
 }
