@@ -6653,6 +6653,47 @@ impl Npc {
         self.local_ai[0] = s.local_ai0;
     }
 
+    /// W4-d44 wire (f26 slice 5) — the bridge into
+    /// `npc_findframe_extra5`'s pure machines: copy the three
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_a` precedent). No slice-5 arm writes
+    /// `rotation` (the module does not carry the field). `direction`
+    /// is `facing` (the C#'s `Entity.direction`); the inputs are
+    /// vx/vy/direction ONLY — no slice-5 arm reads `wet`, the `ai`
+    /// slots or `aiAction` (256's pulse gate excludes it, the f26b
+    /// census), so no world read is needed and the bridge rides the
+    /// world-free `find_frame` hook directly.
+    fn find_frame_wave_extra5(
+        &mut self,
+        kind: crate::npc_findframe_extra5::FindFrameExtra5Kind,
+    ) {
+        let mut s = crate::npc_findframe_extra5::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+        };
+        let i = crate::npc_findframe_extra5::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+        };
+        crate::npc_findframe_extra5::find_frame_extra5(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+    }
+
+    /// W4-d44 wire — the extra-5 claim set, gated to the batch-1
+    /// five 254-258 (268-277 ride the next wire batches).
+    fn find_frame_kind_extra5_claimed(
+        cs_id: u16,
+    ) -> Option<crate::npc_findframe_extra5::FindFrameExtra5Kind> {
+        if !(254..=258).contains(&cs_id) {
+            return None;
+        }
+        crate::npc_findframe_extra5::find_frame_kind_extra5(cs_id as i16)
+    }
+
     /// W4-d44 wire (d48 wave C) — the WORLD-READ entry: the claimed
     /// wave-C kinds ride the world-read arm (the worm resolves its
     /// slope probe against the live world); every other kind falls
@@ -6710,6 +6751,20 @@ impl Npc {
         // precedent.
         if let Some(kind) = Self::find_frame_kind_c_claimed(self.kind.cs_id()) {
             self.find_frame_wave_c(kind, 0);
+            return;
+        }
+        // W4-d44 wire (f26 slice 5) — the `cs_id`-keyed hook into the
+        // extra-wave-5 pure machines (`npc_findframe_extra5.rs`) via
+        // `find_frame_kind_extra5_claimed`: batch 1 claims the first
+        // five 254/255/256/257/258 (the mushroom zombie pair,
+        // FungoFish, AnomuraFungus, MushiLadybug); 268-277 ride the
+        // next batches. NO current kind's `cs_id` lands in the set
+        // (verified over the hand rows + the bestiary net ids), so
+        // this is stream-inert today; the arms draw no RNG (256's
+        // pulse gate excludes it, the f26b census) and none reads
+        // the world. The d45 hook precedent.
+        if let Some(kind) = Self::find_frame_kind_extra5_claimed(self.kind.cs_id()) {
+            self.find_frame_wave_extra5(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -33723,6 +33778,42 @@ mod w4_d44_wire_tests {
         assert_eq!(Npc::find_frame_kind_c_claimed(354), None);
     }
 
+    /// The extra-5 hook fires for NO current kind — the inertness
+    /// proof (254-258/268-277 skip the hand rows + net ids).
+    #[test]
+    fn w4_d44_the_extra5_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                Npc::find_frame_kind_extra5_claimed(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-5 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The extra-5 claim set is the batch-1 five 254-258; 268-277
+    /// ride the next batches. The band edges stay outside.
+    #[test]
+    fn w4_d44_the_extra5_claim_set_matches_the_batch_band() {
+        use crate::npc_findframe_extra5::FindFrameExtra5Kind as K;
+        let table = [
+            (254u16, K::ZombieMushroom),
+            (255, K::ZombieMushroomHat),
+            (256, K::FungoFish),
+            (257, K::AnomuraFungus),
+            (258, K::MushiLadybug),
+        ];
+        for (id, k) in table {
+            assert_eq!(Npc::find_frame_kind_extra5_claimed(id), Some(k), "{id}");
+        }
+        for id in 268u16..=277 {
+            assert_eq!(Npc::find_frame_kind_extra5_claimed(id), None, "{id} later batch");
+        }
+        assert_eq!(Npc::find_frame_kind_extra5_claimed(253), None);
+        assert_eq!(Npc::find_frame_kind_extra5_claimed(259), None);
+    }
+
     /// The wave-C bridge copies the five fields both ways and feeds
     /// vx/vy/facing/wet/ai2/local_ai2/slope through — pinned on the
     /// firefly (the glow bank, `NPC.cs:72705-72708`), the worm (the
@@ -33903,5 +33994,59 @@ mod w4_d44_wire_tests {
         t.vy = 0.0;
         t.find_frame();
         assert_eq!((s.frame, s.frame_counter), (t.frame, t.frame_counter));
+    }
+
+    /// The extra-5 bridge copies the three fields both ways and feeds
+    /// vx/vy/facing through — pinned on the zombie walker (the air
+    /// pin, `NPC.cs:76358-76363`), the FungoFish idle band
+    /// (`:73939-73959`), the Anomura four-row cycle
+    /// (`:76203-76223`) and the Mushi air-branch counter-TICK
+    /// (`:76237-76249`).
+    #[test]
+    fn w4_d44_the_extra5_bridge_copies_the_three_fields_both_ways() {
+        use crate::npc_findframe_extra5::FindFrameExtra5Kind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // Zombie walker airborne: row 2 pin + counter zero; the flip
+        // does NOT ride facing in the air.
+        n.frame = 0;
+        n.frame_counter = 9.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vy = 1.0;
+        n.find_frame_wave_extra5(K::ZombieMushroom);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (2, 0.0, 1));
+        // Grounded walk: |vx| 9 lands the <16 band row 1; facing
+        // rides the grounded flip.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vy = 0.0;
+        n.vx = 9.0;
+        n.facing = -1;
+        n.find_frame_wave_extra5(K::ZombieMushroomHat);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 9.0, -1));
+        // FungoFish: counter 5 → 6 crosses into row 1; no sprite write.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.find_frame_wave_extra5(K::FungoFish);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 6.0, 1));
+        // AnomuraFungus walk: |vx| 25 lands the <32 band row 3 (the
+        // FOUR-row cycle — the zombie walker's would be row 1).
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 25.0;
+        n.vy = 0.0;
+        n.facing = 1;
+        n.find_frame_wave_extra5(K::AnomuraFungus);
+        assert_eq!((n.frame, n.frame_counter), (3, 25.0));
+        // MushiLadybug air: the counter TICKS (1 → 2 > 1 steps row
+        // 0 → 1) then the <3 clamp lifts it to 3.
+        n.frame = 0;
+        n.frame_counter = 1.0;
+        n.vx = 0.0;
+        n.vy = -1.0;
+        n.find_frame_wave_extra5(K::MushiLadybug);
+        assert_eq!((n.frame, n.frame_counter), (3, 0.0));
     }
 }
