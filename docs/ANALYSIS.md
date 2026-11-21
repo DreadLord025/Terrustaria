@@ -39593,7 +39593,9 @@ transform + the Moon-Lord lock).
 
 ## W4-g89h — the RoD teleport_style(1) ⨉ TeleportEffect-union composition (2026-11-21, code-only)
 
-Cross-note for the g11 union merger, published as **research/139** (the full
+Cross-note for the g11 union merger, published as **research/145** (first
+published as research/139, RENAMED at W4-g89j — g52c-net-master owns 139; the
+full
 derivation + the two merger actions). The g11 union is EXECUTED on its tip
 (`9a9ac1fd0`, the research/116 keep-one: g61's widest-11 body →
 `teleport_dust.rs` + g11's App-level `main_dust` dispatcher). Verdicts:
@@ -39628,7 +39630,7 @@ derivation + the two merger actions). The g11 union is EXECUTED on its tip
    this base, so retiring now would drop the camera).
 
 Both merger actions are WRITTEN, NOT APPLIED (the union code is not on g89's
-base `a725acb04`); research/139 §2/§3 carry the exact worklist + the
+base `a725acb04`); research/145 §2/§3 carry the exact worklist + the
 re-pinned chaos witness (the cloned-stream expectation gains the dust draws
 AHEAD of the Next(2)).
 
@@ -39639,7 +39641,7 @@ Code-only: re-read `Main.cs:13233-13274` / `Player.cs:37414-37496` /
 bodies (`git show origin/task/W4-g11-dust-main-sites-1:<path>`:
 `teleport_dust.rs`, `main_dust.rs`, `player.rs`, `world_sim/player.rs`);
 **no cargo/rustc/rustfmt/tests/graphify invoked**. No code change to the rod
-machine — the module doc's §Scope citation updated + research/139 + the INDEX
+machine — the module doc's §Scope citation updated + research/145 + the INDEX
 row + this section + the PORT_MAP cross-note.
 
 ## W4-g89i — the Aegis Crystal 5337 permanent upgrade + the +0.2 consumer (2026-11-21, code-only)

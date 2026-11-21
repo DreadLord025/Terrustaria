@@ -57,7 +57,9 @@
 //!   TeleportEffect union lands — the `teleport_style(…, 1)` call queues
 //!   the Entry/Exit pair and the union's style-1 arm (`teleport_dust.rs`,
 //!   the `0 | 1` shape: Item8 cue + type-164 dust) fires through the
-//!   replay, no rod-side dust code. TWO merger actions ride research/139:
+//!   replay, no rod-side dust code. TWO merger actions ride research/145
+//!   (first published as 139, renamed — g52c owns 139; §2a carries the
+//!   EXACT drain-move hunks):
 //!   the editing-phase drain (the rod fires in `update_editing`, AFTER the
 //!   player tick — the queue must drain at the editing tail on
 //!   `UpdatePlayers` or the chaos `Next(2)` roll swaps ahead of the dust
