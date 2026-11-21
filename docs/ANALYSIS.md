@@ -39353,3 +39353,82 @@ window before merge. The collision witnesses use a 128-tall world: the
 `maxTilesY - 40` scan clamp makes the 64-tall test worlds' row-30 floor
 invisible to the real probes (the old single-tile probe never clamped —
 part of why the stand-in existed).
+
+### Rain.cs full-file census + residuals (W4-g67 phases 3-5, 2026-11-21)
+
+The residual pass closed the rest of `Rain.cs` (208 lines) against the
+landed splash lane. Every function now has a port or a cited gap:
+
+* **`Update` (`:96-133`)** — the combined collision branch landed in phase
+  1; the `gameMenu` (+2000) and `remixWorld` (+100) kill-only arms
+  (`:103-116`) landed in phase 3 behind `DropSimInputs` (move first, no
+  gate roll, no splash). The `gamePaused` early-return (`:98-101`) is the
+  frame's pause gate on the weather cluster.
+* **`MakeRain` (`:30-89`)** — phase 4 ported the missing arms verbatim: the
+  `AnyDanger(quickBossNPCCheck)` 0.05 throttle with the floor-to-1
+  (`:37-45`), the rising-player `num3` window widening (`:50-53`), the
+  `windSpeedCurrent*15*40` + `player.velocity.X*40` drift (`:56-57`), the
+  world-X clamp (`:58-65`), the clamped tile probe (`:66-83`) and the
+  `WorldGen.SolidTile` + remix/menu spawn-through-solids arm (`:84`). The
+  `netMode==2 / gamePaused / gameMenu` early-return (`:32`) is the frame
+  gate. Cadence deviation: the C# loops `for(i<num)` (ceil(num) attempts);
+  the port accumulates the fractional rate (`spawn_acc`) — same average,
+  the live-count budget caps both.
+* **`NewRain` (`:166-207`)** — the `(1+gfxQuality)/2` budget cut when
+  q<0.9 (`:176-180`) now runs (gfxQuality is the real adaptive value, NOT
+  a pinned 1 — the old comment was wrong); the `Math.Max` depth term
+  (`:175`) is computed-and-discarded in the C# (dead, omitted); the live
+  `GetRainFallVelocity` (`:91-94`, `wind*18,14`) replaces the frozen
+  wind+sine stand-in; the `Next(-20,21)*0.01` scale and the
+  `waterStyle*3+Next(3)` type (`:202-205`). The snow threshold reads the
+  normal 1500 — `SceneMetrics.SnowTileThreshold` is skyblock-aware (300
+  low-tiles, `SceneMetrics.cs:154-163`) but the port tracks no
+  `World.skyblock_low_tiles` (a cited gap).
+* **`NewRainForced` (`:135-164`)** — landed as the Eyebrella vanity-drip
+  seam (`Player.DoEyebrellaRainEffect`, `Player.cs:14308-14331` — the
+  caller is unported, `#[allow(dead_code)]`). Budget = `maxRain` cut by
+  `(1+q)/2`, ignoring cloudAlpha/snow/atmo; returns `maxRain` when full.
+* **`ClearRain` (`:22-28`)** — wired into `save_and_quit`
+  (`WorldGen.cs:6672`); the gen-side call (`:6747`) is a no-op (a fresh
+  world boots a fresh empty `Rain`).
+* **`GetRainFallVelocity` (`:91-94`)** — used by `spawn`/`new_rain_forced`;
+  `WorldGen.IsSafeFromRain` (`:72960`) is its other consumer (housing,
+  unported).
+
+**Co-lane claim verification (f39 `task/W4-f39-weather-slimerain`):**
+
+* **"slime-rain rainType override" — DOES NOT EXIST.** `rainType` has zero
+  matches in the decompiled tree; `Rain.type` is set ONLY by
+  `NewRain`/`NewRainForced` (`waterStyle*3+Next(3)`). `SlimeSky.cs`
+  (`GameContent/Skies/SlimeSky.cs`) is a sky-overlay entity
+  (`Images/Misc/Sky_Slime_1..4`), NOT a rain-type override — it never
+  touches `Main.rain`. The slime rain is NPC spawns
+  (`SlimeRainSpawns`, `Main.cs:5892-5960`, ported in `world_sim/npcs.rs`)
+  plus the sky overlay; there is no rain-drop type to override. The claim
+  is rejected on source.
+* **"rain sound ambience volume consumers" — LANDED, one semantic fix.**
+  The rain ambience track 28 volume (`Main.cs:11543-11564`) is
+  `audio.rs::ambience_rain_volume` (`cloudAlpha/9*10*0.5+0.5`, shimmer
+  mute, `atmo^4`, `ZoneRain && !ZoneSnow` gate) — already ported. The
+  blizzard pair (`SceneState.cs:210-247`) is
+  `ambient_sound::blizzard_loop_volumes` + `scene_scan.rs`. The fix: the
+  ambience scheduler / music rain gates / storm-lightning gate read
+  `Main.IsItRaining` = `cloudAlpha > 0` (`Main.cs:2597`), NOT the
+  `Main.raining` event flag — the port now feeds them `is_it_raining()`
+  (they stayed "raining" through the post-StopRain cloud ramp before).
+  `Main.Ambience()` (`:13466`) is waterfall/lava only (no rain term).
+* **The `:64890` start gate** — `!slimeRain && !LanternsUp &&
+  !NextNightIsLanternNight` now gates the `UpdateTime` start arms (the
+  weather tick derives it from `World.slime_rain` + `WorldEvents`); a
+  vanilla Lantern-less slime-rain night cannot start a rain event
+  (research/16 item 13, closed).
+
+**DrawDust cull-rect widening (phase 5) — was WRONG, fixed.** The phase-2
+note claimed the 4×4 cull rect was deliberately dropped; verification
+against `Main.cs:38832/38847/39020-39022` shows the else arm DEACTIVATES
+off-rect dust (a kill, not a skip). `splash_cull_rect`/`dust_in_cull_rect`
+port the wide ±1000/±1050 box + strict-`<` 4×4 intersection, and
+`draw_splashes` applies the kill before the draw.
+
+8 new `w4_g67_*` witnesses (phases 3-5) join the original 7 — **15 total,
+written NOT run** (code-only mode).
