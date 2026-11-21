@@ -39332,7 +39332,7 @@ A's dispatch (`hit_effect_b` runs after wave A's last arm):
   OVERWRITE (`Next(1,10)*0.3*2.5*hitDirection`, `-(3+Next(4)*0.3)`)
   - the NewGore kicks draw first and are discarded; the 40-dust type-10
   loop runs after. The hit arm's 3-gore twin (`:82045-82046`) is the
-  g62 emit-at-wiring hand-off (research/304 §4), NOT wave C;
+  g62 emit-at-wiring hand-off (research/351 §4), NOT wave C;
 - the DD2 goblin/javeliner/kobold deaths (`:82079-82171`, sites 52-66):
   the shared 20-dust type-5 death preamble (`dd2_death_dust`) then the
   per-family gore rows - goblin 552-554 base 983/1067/1071 (+3/+2 at
@@ -39349,7 +39349,7 @@ A's dispatch (`hit_effect_b` runs after wave A's last arm):
   `dd2_crystal_*` names are an internal misnomer for the same kind f10
   calls "Betsy" (the Eternia Crystal is 548/522).
 
-KEEP-ONE (research/304, the e5-vs-f10 HitEffect overlap): e5's module
+KEEP-ONE (research/351, the e5-vs-f10 HitEffect overlap): e5's module
 originally ported BOTH spriteDirection arms of the 551 death (sites
 67-86, `:82193-82215`), but the f5 seal's window census (research/111
 §5.2) assigns e5 `:81942-82205` (40 sites) and f10 `:82206-85559` (the
@@ -39365,14 +39365,14 @@ e5's keeps both windows exact. The flipped-twin witness is replaced by
 `w4_e5_the_flipped_crystal_death_is_f10s_claim` (the -1 death draws NOTHING
 in e5 - no gores, no dust - while the != -1 body keeps its full census).
 
-CENSUS CORRECTION (research/304 §3): the seal's death/hit split
+CENSUS CORRECTION (research/351 §3): the seal's death/hit split
 (1300 death + 4 hit) walked only f5's window; the full-window brace-walk
 finds a FIFTH hit-half site, `:82045` (the 667 GoldenSlime hit arm's
 3-gore twin, `else` of `:82031 life <= 0`), inside e5's window. The
 NPC HitEffect split is 1299 death + 5 hit = 1304; e5's 40 = 39 death +
 1 hit. The `:82045` body is UNPORTED (g62 draws the 3x(Next(1,10)+Next(4))
 overwrite pairs only, NOT the NewGore kicks) - a g62 EMIT-AT-WIRING
-hand-off, the seal §7 pattern extended (research/304 §4): the emit must
+hand-off, the seal §7 pattern extended (research/351 §4): the emit must
 insert the 3x2 kicks BEFORE each overwrite pair (+6 draws to g62's
 discard census). The 1578 total and the zero-unowned verdict are
 unchanged - only the death/hit partition moves by one site.

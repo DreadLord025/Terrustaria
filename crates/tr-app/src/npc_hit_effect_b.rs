@@ -21,7 +21,7 @@
 //! | 64-66 | `:82167`-`:82169` | the 555/556/557 DD2 kobold death (3) |
 //! | 67-76 | `:82193`-`:82202` | the 551 crystal death, `spriteDirection != -1` (10) |
 //!
-//! KEEP-ONE (research/304): the 551 `-1` mirrored twin (`:82206-82215`,
+//! KEEP-ONE (research/351): the 551 `-1` mirrored twin (`:82206-82215`,
 //! this wave's old sites 77-86) is DROPPED — it is f10's claim
 //! (`npc_hit_effect_c.rs::betsy_flipped_death`, its sites 71-80, the legit
 //! 385 the f5 seal §5.2/§8 keeps). The wave-B dispatch gates the crystal
@@ -33,7 +33,7 @@
 //! Everything from `:82206` (the flipped twin, 572/573 onward, the
 //! 566/567 `Next(2)` gates, the 576/577 pair, …) is wave C
 //! (`W4-f10-gore-sites-3`). The 667 HIT arm's 3-gore twin (`:82045`, the
-//! window's one hit-half site) is a wiring hand-off (research/304 §4 —
+//! window's one hit-half site) is a wiring hand-off (research/351 §4 —
 //! the seal §7 pattern, the FIFTH hit-half): g62's live 667 arm
 //! (`npc_hit_dust.rs`) draws the 3×(Next(1,10)+Next(4)) velocity-overwrite
 //! pairs but NOT the 3×2 NewGore kicks — the emit-at-wiring must insert
@@ -48,7 +48,7 @@
 //!   loops) stay with the wiring wave's dust pass — wave A's convention.
 //!   The 667 hit arm ALSO carries a 3-gore twin (`:82045`, the window's
 //!   one hit-half gore site) — its body is the g62 emit-at-wiring hand-off
-//!   (research/304 §4), not ported here. Exception: the 551
+//!   (research/351 §4), not ported here. Exception: the 551
 //!   `DD2Event.CheckProgress` gate (`:82174-82177`) fires on the HIT path
 //!   and is RETURNED (`HitEffectOutcome::dd2_crystal_check_progress`).
 //! * The death dust loops that share an arm with gore sites RUN here on
@@ -203,7 +203,7 @@ fn crystal_658_660(
 /// 2.5*hitDirection` X, `-(3+Next(4)*0.3)` Y (the kicks are drawn inside
 /// `NewGore` first, then discarded by the overwrite). The hit arm is the
 /// 3-gore twin (`×2`, `-(2.5+…)`, `:82045-82046`) — the g62 emit-at-wiring
-/// hand-off (research/304 §4), NOT wave C. The dust loop
+/// hand-off (research/351 §4), NOT wave C. The dust loop
 /// (7 hit / 40 death, type 10, default colour, alpha 80, scale 1.1/1.5,
 /// `Next(3)!=0` noGravity) runs AFTER the gores.
 fn skeleton_667_death(
@@ -375,7 +375,7 @@ pub fn dd2_crystal_crossed_percent(life: i32, life_max: i32, dmg: f64) -> bool {
 /// the 10-gore body (types 1079/1080/1080/1081/1082/1083/1084/1085/1085/
 /// 1086 at the cited offsets).
 ///
-/// KEEP-ONE (research/304, the e5-vs-f10 HitEffect overlap): the `-1`
+/// KEEP-ONE (research/351, the e5-vs-f10 HitEffect overlap): the `-1`
 /// mirrored twin (`:82204-82216`, the same type sequence at the mirrored
 /// offsets) is f10's claim (`npc_hit_effect_c.rs::betsy_flipped_death`,
 /// its sites 71-80, window `:82206-85559` — the legit 385 the f5 seal
@@ -436,7 +436,7 @@ pub(crate) fn hit_effect_b(
         crystal_658_660(npc, npc_type, hit_direction, gore, dust, dust_ctx, rng, world);
     }
     // `:82025-82057` — the 667 death (sites 44-51); the hit arm's 3-gore
-    // twin (`:82045`) is the g62 emit-at-wiring hand-off (research/304 §4),
+    // twin (`:82045`) is the g62 emit-at-wiring hand-off (research/351 §4),
     // its dust loop rides the wiring wave's dust pass.
     if npc_type == 667 && npc.hp <= 0 {
         skeleton_667_death(npc, hit_direction, gore, dust, dust_ctx, rng, world);
@@ -456,7 +456,7 @@ pub(crate) fn hit_effect_b(
     }
     // `:82172-82218` — the 551 DD2 crystal: the CheckProgress gate on the
     // HIT path (returned), the death arm's 10-gore body (sites 67-76, the
-    // `spriteDirection != -1` arm ONLY). KEEP-ONE (research/304): the `-1`
+    // `spriteDirection != -1` arm ONLY). KEEP-ONE (research/351): the `-1`
     // flipped twin (`:82206-82215`) is f10's `betsy_flipped_death` — its
     // gate (`npc_type == 551 && hp <= 0 && sprite_dir == -1`) is the exact
     // complement, so the shared 20-dust preamble runs exactly once.
@@ -827,7 +827,7 @@ mod tests {
         assert_eq!(rng.peek(), twin.peek(), "the crystal mirrors the C# draws");
     }
 
-    /// KEEP-ONE (research/304): the 551 `-1` flipped death (`NPC.cs:82204-
+    /// KEEP-ONE (research/351): the 551 `-1` flipped death (`NPC.cs:82204-
     /// 82216`) is f10's `betsy_flipped_death` — e5's dispatch spawns
     /// NOTHING for it (no gores AND no dust: the shared 20-dust preamble
     /// rides f10's copy for `== -1`, so the merge runs it exactly once).

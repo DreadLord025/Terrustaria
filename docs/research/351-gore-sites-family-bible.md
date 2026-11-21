@@ -1,12 +1,17 @@
-# 304 — Gore-sites family bible + the e5-vs-f10 HitEffect keep-one (W4-e5, task/W4-e5-gore-sites-2, code-only)
+# 351 — Gore-sites family bible + the e5-vs-f10 HitEffect keep-one (W4-e5, task/W4-e5-gore-sites-2, code-only)
 
-Number take: **304**, per the d54 collision registry
+> **Chain: 304 → 351** — renumbered per the FROZEN registry-150 §8.7
+> (d54 `a15cb634b`): the original 304 self-pick was contested (§7.4's
+> d50 keeps 304); e5 → **351**. All refs re-pinned; no content change.
+
+Original number take (SUPERSEDED): **304**, per the d54 collision registry
 (`150-research-number-registry.md`, round 3 §7.3: "Numbers 304+ are FREE…
 check this registry AND a fresh all-tip sweep first"). A fresh all-tip
 sweep of every local + remote branch's `docs/research/` (this session)
-finds **no doc ≥304 at any tip** — 304 is single-claimant, this lane.
-(The registry's own round-3 block ends at 303; the post-cutoff f4 SEAL
-`26728bd87` took 283 and flagged 243/244 cascades — none reach 304.)
+found **no doc ≥304 at any tip** — but it missed §7.4's published 304
+reservation (d50); §8.7 re-issues this lane **351**.
+(The registry's own round-3 block ended at 303; the post-cutoff f4 SEAL
+`26728bd87` took 283 and flagged 243/244 cascades — none reached 304.)
 
 This doc is the **gore-sites-family bible** from e5's seat: it consumes
 the f5 GORE SEAL (`b68eac297`, research/111 §§5-10), the f10 wave-C
@@ -240,7 +245,8 @@ direct read/grep/brace-walk:
 * NPCID 551 = DD2Betsy, 667 = GoldenSlime, 548 = DD2EterniaCrystal
   (`NPCID.cs` direct grep).
 * The registry-150 round-3 free floor (304) + a fresh all-tip sweep
-  (no doc ≥304 at any tip) — 304 single-claimant.
+  (no doc ≥304 at any tip) — the original 304 take; SUPERSEDED by the
+  FROZEN §8.7 table (d54 `a15cb634b`): 304 = d50 (§7.4), e5 → **351**.
 
 Witnesses: the e5 module's 12 (the flipped-twin witness REPLACED by the
 keep-one witness, §2) remain WRITTEN NOT RUN. The g62 667-hit witness
