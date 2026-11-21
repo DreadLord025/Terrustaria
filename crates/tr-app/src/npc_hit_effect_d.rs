@@ -4244,8 +4244,11 @@ fn squid_snail_death(
 /// Skeleton → 265/267 + 43x2 + 44x2 (`:88571-88576`, sites 664-669),
 /// 202/451 Misassembled Skeleton → 268 + 43x2 + 44x2 (`:88581-88585`,
 /// sites 670-674), 203/452 Pantless Skeleton → 269 + 43x2 + 266x2
-/// (`:88590-88594`, sites 675-679, legs 266 NOT 44); the 322-324
-/// branches + the generic tail land in later batches.
+/// (`:88590-88594`, sites 675-679, legs 266 NOT 44), 322 Top Hat
+/// Skeleton → 460 + the interleaved 461/462/461/462 (`:88599-88603`,
+/// sites 680-684), 323 Astronaut Skeleton → 463/465/464x2
+/// (`:88608-88611`, sites 685-688, the FOUR shape); the 324 branch +
+/// the generic tail land in later batches.
 fn skeleton_family_death(
     npc: &Npc,
     npc_type: i32,
@@ -4325,6 +4328,26 @@ fn skeleton_family_death(
         gore.new_gore(rng, world, p20, vel, 43, s); // :88592
         gore.new_gore(rng, world, p34, vel, 266, s); // :88593
         gore.new_gore(rng, world, p34, vel, 266, s); // :88594
+        return;
+    }
+    if npc_type == 322 {
+        // `:88597-88605` — the Top Hat Skeleton five + return: NOTE the
+        // interleaved 461/462 pattern (461 at +20 first, 462 at +20
+        // second, 461 at +34 first, 462 at +34 second).
+        gore.new_gore(rng, world, pos, vel, 460, s); // :88599
+        gore.new_gore(rng, world, p20, vel, 461, s); // :88600
+        gore.new_gore(rng, world, p20, vel, 462, s); // :88601
+        gore.new_gore(rng, world, p34, vel, 461, s); // :88602
+        gore.new_gore(rng, world, p34, vel, 462, s); // :88603
+        return;
+    }
+    if npc_type == 323 {
+        // `:88606-88613` — the Astronaut Skeleton FOUR + return: 463
+        // head, 465 at +20 (single), 464x2 at +34.
+        gore.new_gore(rng, world, pos, vel, 463, s); // :88608
+        gore.new_gore(rng, world, p20, vel, 465, s); // :88609
+        gore.new_gore(rng, world, p34, vel, 464, s); // :88610
+        gore.new_gore(rng, world, p34, vel, 464, s); // :88611
         return;
     }
 }
@@ -4842,8 +4865,8 @@ pub fn hit_effect_d(
     }
     // `:88527-88640` — the skeleton-family arm (21/31/294-296/32/44/45/
     // 77/110/167/197/201-203/287/291-293/322-324/481/449-452/693); the
-    // 167/197/481/201/202/203 branches are live (sites 648-679), the
-    // rest land later.
+    // 167/197/481/201/202/203/322/323 branches are live (sites 648-688),
+    // the rest land later.
     else if matches!(npc_type, 21 | 31 | 294 | 295 | 296 | 32 | 44 | 45 | 77 | 110 | 167 | 197 | 201 | 202 | 203 | 287 | 291 | 292 | 293 | 322 | 323 | 324 | 481 | 449 | 450 | 451 | 452 | 693)
     {
         skeleton_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
@@ -8452,6 +8475,43 @@ mod tests {
                 twin_dust(&mut twin, 30, 44);
             }
             for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88599-88611` — the Top Hat five with the interleaved
+    /// 461/462 pattern and the Astronaut FOUR 463/465/464x2.
+    #[test]
+    fn w4_f5d_the_top_hat_interleave_and_the_astronaut_four() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (322, vec![460, 461, 462, 461, 462]),
+            (323, vec![463, 465, 464, 464]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(673);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            if kind == 322 {
+                assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+                assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            }
+            let mut twin = UnifiedRandom::new(673);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
                 let _ky = twin.next_range(10, 31);
                 let _kx = twin.next_range(-20, 21);
             }
