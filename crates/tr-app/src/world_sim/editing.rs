@@ -14776,6 +14776,47 @@ mod tests {
         );
     }
 
+    /// W4-d4 DOC-SWEEP item 2 — the Beach Ball ITEM use (859, `ItemID.cs
+    /// :3401`; NOT 3060 — that is the Bone Rattle). `Item.cs:11439-11450`:
+    /// useStyle 1, shoot 155, shootSpeed 6, consumable, noUseGraphic,
+    /// noMelee, useTime/useAnimation 20 — no channel, no useAmmo, no
+    /// per-item `ItemCheck_Shoot` arm (the C# has no `type == 859` block),
+    /// so the throw rides the GENERIC non-ammo tail (`Player.cs:49437`):
+    /// the aim normalized to 6, the centre+10 spawn, damage −1 through
+    /// `GetWeaponDamage`'s `damage <= 0` early return (`:53424-53427`),
+    /// then the consumable decrement (`:43280-43326` — no ranged flag, so
+    /// no not-consume rolls). The projectile side is d4's landed
+    /// `beach_ball_step` (aiStyle 32, `d9324e5f`).
+    #[test]
+    fn w4_d4_sweep_the_beach_ball_item_throws_the_155_and_consumes() {
+        let mut app = staff_app(859, "Beach Ball");
+        seed_stream(&mut app, 0x8A11);
+        fire_once(&mut app);
+        let balls: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 155)
+            .collect();
+        assert_eq!(balls.len(), 1, "one beach ball per throw");
+        let b = balls[0];
+        assert!((b.vel.length() - 6.0).abs() < 0.05, "shootSpeed 6 (`Item.cs:11441`)");
+        assert_eq!(b.damage, -1, "the −1 damage passes through (`:53424`)");
+        assert_eq!(
+            app.inventory[app.selected].count, 0,
+            "the consumable decrements (`:43317-43320`)"
+        );
+        assert!(
+            !app.player.as_ref().unwrap().channel,
+            "the ball is not a channel item"
+        );
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(0x8A11, 0),
+            "no spawn-time draw (the generic tail carries none; crit is per-hit)"
+        );
+    }
+
     // ---- S1-P-i21 (the i01 non-ammo volley tick): the ItemTimeIsZero re-fire ----
     // WRITTEN, NOT RUN (code-only mode). The C# fires `ItemCheck_Shoot` at every
     // `itemAnimation > 0 && ItemTimeIsZero` tick (`Player.cs:43544` → `:43568`),
