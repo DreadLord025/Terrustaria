@@ -15,11 +15,12 @@
 //! `git grep` sweep, research/94 §10): the Medusa stone-gaze cry
 //! (`NPC.cs:56403` — d22's style-3 core claims only the 22 plain
 //! walkers, the 480 gaze block is unported; d40's Medusa is data-only)
-//! and the Big Mimic's projectile-reflect tink (`NPC.cs:66429` — no
-//! branch ports `ReflectProjectile`). They land here as pure staged
-//! helpers (the `water_exit_jump`/`vile_spit_queue_cry` precedent): the
-//! gate maths + the `NpcSoundCue` queue pinned before the kinds'
-//! machines land, so each wiring is a one-call consumer.
+//! and the Big Mimic's projectile-reflect tink (`NPC.cs:66429` — d32's
+//! style-87 emits the `reflect_request` scan out-field, but no branch
+//! ports the `ReflectProjectile` body's sound). They land here as pure
+//! staged helpers (the `water_exit_jump`/`vile_spit_queue_cry`
+//! precedent): the gate maths + the `NpcSoundCue` queue pinned before
+//! the kinds' machines land, so each wiring is a one-call consumer.
 //!
 //! The cues drain through `world_sim/npcs.rs::play_npc_sound_request`
 //! on the `UpdateNPCs` stream. RNG: both helpers are draw-free — the
