@@ -39518,3 +39518,38 @@ heal_outside_the_ghost_gate`), the vampireHeal truncation/drain
 ghostDmg decay (`w4_d6_the_ghost_dmg_budget_decays_and_floors`), the
 knives volley's draw order (`w4_d6_the_vampire_knives_volley_rolls_the_
 count_then_the_spreads`).
+
+## W4-d6 residual 6 — the Spectre hood/mask head vanity (visual swap)
+
+**The census.** The hood-vs-mask visual difference is entirely the head
+sheet: `PlayerDrawLayers.DrawPlayer_21_Head`'s normal-hat branch draws
+`TextureAssets.ArmorHead[drawPlayer.head]` (`PlayerDrawLayers.cs:2267`)
+with the `bodyFrame.Height -= 4` crop (`:2254-2264`). The two heads are
+`ArmorIDs.Head.SpectreHood = 101` (item 1503) and `SpectreMask = 156`
+(item 2189) (`ArmorIDs.cs:249/:359`); the generated `itemdata.rs` rows
+already carry `head_slot: 101`/`156` (the registry resolution in
+`draw_player` reads them). Neither id sits in `GetHairSettings`'
+fullHair/hatHair lists (`Player.cs:16791-16904`) — both are plain normal
+hats, hair suppressed — nor in `HidesHead`/`UseSkinColor`/
+`DrawFaceMaskUnderHeadLayer` (`ArmorIDs.cs:36-42`), and neither has a
+`headGlowMask` row (`PlayerDrawSet.cs:461-601`) or an `Extra` overlay
+(the 292/109 arms, `:2282-2293`). `FrontToBackID` lists neither (`:35`)
+— no back-helmet layer. The ONLY missing piece was the sheets: the
+port's `armor_head` array packed slots 1..4 only, so both heads drew
+nothing.
+
+**What lands.** `Armor_Head_101`/`Armor_Head_156` join the static sheet
+list (`assets.rs`, both `.xnb` present); `PlayerAssets` gains the two
+`Option<BgTex>` fields; the helmet push resolves slot 101 → hood, 156 →
+mask, everything else through the packed array unchanged. The 52-px
+crop, the ARMOR_WHITE tint, the cHead dye and the hair suppression are
+the shared normal-hat path — no per-kind draw code.
+
+Co-lane note: d70b (screenfx) touches `render/entities.rs`'s NPC/pass
+regions and `player.rs` flags — disjoint from the `PlayerAssets` struct
++ helmet push here; no shared site.
+
+Witness (WRITTEN NOT RUN, code-only):
+`w4_d6_the_spectre_hood_and_mask_swap_the_helmet_sheet` — the registry
+slots, the per-slot sheet resolution (distinct UVs), the hair
+suppression under both, the unported-slot and missing-sheet skips.
