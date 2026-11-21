@@ -1,0 +1,784 @@
+{
+ "families": [
+  {
+   "family": "NPC",
+   "sheets": 697,
+   "missing": [],
+   "areaMpx": 29.619,
+   "cs": "DoNotLoad ALL",
+   "csRef": "AssetInitializer.cs:127-129; LoadNPC Main.cs:59084-59090 per drawn NPC (SetFrameSize NPC.cs:66661-66663 <- DrawNPCDirect Main.cs:22516)",
+   "port": "EAGER (STATIC_SHEET_NAMES rows)",
+   "portRef": "assets.rs STATIC_SHEET_NAMES + load_static_sheets"
+  },
+  {
+   "family": "Item",
+   "sheets": 6134,
+   "missing": [],
+   "areaMpx": 5.438,
+   "cs": "DoNotLoad ALL (TextureCopyLoad aliases share)",
+   "csRef": "AssetInitializer.cs:115-126; LoadItem Main.cs:59076-59082 per drawn item (DrawItem Main.cs:38608, slots :38539)",
+   "port": "EAGER (enumerate all)",
+   "portRef": "assets.rs:1353-1364 enumerate_item_icon_ids"
+  },
+  {
+   "family": "Projectile",
+   "sheets": 575,
+   "missing": [],
+   "areaMpx": 5.17,
+   "cs": "DoNotLoad ALL",
+   "csRef": "AssetInitializer.cs:131-133; LoadProjectile Main.cs:59092-59098 per drawn proj (DrawProjDirect Main.cs:27935)",
+   "port": "EAGER (spawnable_kinds + 734)",
+   "portRef": "assets.rs:1329-1343"
+  },
+  {
+   "family": "Gore",
+   "sheets": 1402,
+   "missing": [],
+   "areaMpx": 3.067,
+   "cs": "DoNotLoad ALL",
+   "csRef": "AssetInitializer.cs:135-137; LoadGore Main.cs:59100-59106 per active gore (DrawGore Main.cs:21888, DrawGoreBehind :21857)",
+   "port": "EAGER (enumerate all, E-4b)",
+   "portRef": "assets.rs:1384-1393 enumerate_gore_sheet_ids"
+  },
+  {
+   "family": "Buff",
+   "sheets": 400,
+   "missing": [],
+   "areaMpx": 0.462,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:418-420",
+   "port": "EAGER (enumerate all)",
+   "portRef": "assets.rs:1369-1378"
+  },
+  {
+   "family": "Wall",
+   "sheets": 366,
+   "missing": [],
+   "areaMpx": 40.123,
+   "cs": "DoNotLoad ALL",
+   "csRef": "AssetInitializer.cs:139-141; LoadWall Main.cs:59108-59114 per drawn wall (WallDrawing.cs:116, TileDrawing.cs:244)",
+   "port": "WORLD-SELECTIVE (usage scan)",
+   "portRef": "assets.rs load_world_sheets walls arm"
+  },
+  {
+   "family": "Tiles",
+   "sheets": 754,
+   "missing": [],
+   "areaMpx": 47.697,
+   "cs": "DoNotLoad ALL",
+   "csRef": "AssetInitializer.cs:143-145; LoadTiles Main.cs:59116-59122 per drawn tile (TileDrawing.cs:223/:1482)",
+   "port": "WORLD-SELECTIVE (usage scan)",
+   "portRef": "assets.rs load_world_sheets tiles arm"
+  },
+  {
+   "family": "Background",
+   "sheets": 344,
+   "missing": [],
+   "areaMpx": 176.055,
+   "cs": "DoNotLoad ALL; only 0/49 eager",
+   "csRef": "AssetInitializer.cs:239-242/:422-423; LoadBackground Main.cs:59039-59074 per drawn layer (49 sites)",
+   "port": "WORLD-SELECTIVE (5 owned families) + static defaults",
+   "portRef": "assets.rs:172-205 + STATIC_SHEET_NAMES bg rows"
+  },
+  {
+   "family": "Underworld",
+   "sheets": 14,
+   "missing": [],
+   "areaMpx": 24.647,
+   "cs": "DoNotLoad ALL",
+   "csRef": "AssetInitializer.cs:390-393; direct Request per drawn layer Main.cs:52687-52691",
+   "port": "UNWIRED (g72)",
+   "portRef": "render/underworld_bg.rs plan adapters"
+  },
+  {
+   "family": "NpcHead",
+   "sheets": 81,
+   "missing": [],
+   "areaMpx": 0.059,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:406-408 (minimap heads + bestiary)",
+   "port": "EAGER (named static rows)",
+   "portRef": "assets.rs:774+ STATIC_SHEET_NAMES NPC_Head_* rows; e17/f29 append the tail"
+  },
+  {
+   "family": "NpcHeadBoss",
+   "sheets": 40,
+   "missing": [],
+   "areaMpx": 0.041,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:410-412",
+   "port": "EAGER (named static rows)",
+   "portRef": "STATIC_SHEET_NAMES NPC_Head_Boss_* rows; e17/f29 append the tail"
+  },
+  {
+   "family": "Extra",
+   "sheets": 316,
+   "missing": [],
+   "areaMpx": 18.247,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:363-366",
+   "port": "EAGER (named static rows)",
+   "portRef": "STATIC_SHEET_NAMES Extra_* rows"
+  },
+  {
+   "family": "GlowMask",
+   "sheets": 384,
+   "missing": [],
+   "areaMpx": 13.109,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:352-355",
+   "port": "EAGER (GLOW_SHEET_NAMES)",
+   "portRef": "assets.rs GLOW_SHEET_NAMES"
+  },
+  {
+   "family": "Cloud",
+   "sheets": 42,
+   "missing": [],
+   "areaMpx": 0.894,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:459-462",
+   "port": "EAGER (0..42)",
+   "portRef": "assets.rs:1414-1419"
+  },
+  {
+   "family": "TreeTop/Branch",
+   "sheets": 64,
+   "missing": [],
+   "areaMpx": 1.902,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:524-531",
+   "port": "EAGER (0..32)",
+   "portRef": "assets.rs:1404-1411"
+  },
+  {
+   "family": "Liquid+LiquidSlope",
+   "sheets": 30,
+   "missing": [],
+   "areaMpx": 0.11,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:467-471",
+   "port": "EAGER (0..15)",
+   "portRef": "load_static_sheets liquid arm"
+  },
+  {
+   "family": "Misc/water",
+   "sheets": 15,
+   "missing": [],
+   "areaMpx": 1.152,
+   "cs": "EAGER (LiquidRenderer content)",
+   "csRef": "LiquidRenderer.cs LoadContent",
+   "port": "EAGER (0..15)",
+   "portRef": "assets.rs:1423-1428"
+  },
+  {
+   "family": "Waterfall",
+   "sheets": 28,
+   "missing": [],
+   "areaMpx": 0.554,
+   "cs": "EAGER (waterfallManager.LoadContent)",
+   "csRef": "AssetInitializer.cs:472",
+   "port": "EAGER (0..28)",
+   "portRef": "load_static_sheets waterfall arm"
+  },
+  {
+   "family": "Flame",
+   "sheets": 18,
+   "missing": [],
+   "areaMpx": 1.565,
+   "cs": "EAGER (mode)",
+   "csRef": "AssetInitializer.cs:382-385",
+   "port": "EAGER (0..18)",
+   "portRef": "load_static_sheets flame arm"
+  },
+  {
+   "family": "Fonts",
+   "sheets": 1,
+   "missing": [],
+   "areaMpx": 0.008,
+   "cs": "EAGER (mode, DynamicSpriteFont x5)",
+   "csRef": "AssetInitializer.cs:87-94",
+   "port": "EAGER (boot font atlas array)",
+   "portRef": "font_atlas.rs / load_fonts"
+  }
+ ],
+ "npcCorpus": {
+  "files": 697,
+  "missing": [],
+  "areaMpx": 29.62,
+  "areaBound": 3619
+ },
+ "scenarios": [
+  {
+   "scenario": "npc-corpus-alone",
+   "note": "every NPC_<id>.xnb file (the load-everything upper bound)",
+   "sheets": 697,
+   "missing": [],
+   "areaMpx": 29.62,
+   "areaBound": 3619,
+   "skyline": 3808,
+   "skyOver": 0,
+   "pages": [
+    {
+     "height": 3808,
+     "n": 697
+    }
+   ]
+  },
+  {
+   "scenario": "merged-407-base",
+   "note": "font + pushed(339) + d40(56) + d35deferred(12) - the section-7 base, re-witnessed",
+   "sheets": 9904,
+   "missing": [],
+   "areaMpx": 74.72,
+   "areaBound": 9125,
+   "skyline": 9478,
+   "skyOver": 1286,
+   "pages": [
+    {
+     "height": 8192,
+     "n": 963
+    },
+    {
+     "height": 1298,
+     "n": 8941
+    }
+   ]
+  },
+  {
+   "scenario": "merged-final-424",
+   "note": "the FINAL re-extraction (37 branches / 424 names, +85 new) on the 407 base - d125 NOT in it (local tip ahead of origin; +NPC_636/661 measured separately)",
+   "sheets": 9979,
+   "missing": [],
+   "areaMpx": 75.91,
+   "areaBound": 9271,
+   "skyline": 9601,
+   "skyOver": 1409,
+   "pages": [
+    {
+     "height": 8176,
+     "n": 910
+    },
+    {
+     "height": 1439,
+     "n": 9069
+    }
+   ]
+  },
+  {
+   "scenario": "merged-final-424+d125",
+   "note": "d125b sheets tip 2dfe026d (local, unpushed): +NPC_636/NPC_661",
+   "sheets": 9981,
+   "missing": [],
+   "areaMpx": 75.97,
+   "areaBound": 9278,
+   "skyline": 9665,
+   "skyOver": 1473,
+   "pages": [
+    {
+     "height": 8177,
+     "n": 886
+    },
+    {
+     "height": 1492,
+     "n": 9095
+    }
+   ]
+  },
+  {
+   "scenario": "merged-final-424+d125-full",
+   "note": "d125b full sheets+draw tip: +NPC_636/NPC_661/Extra_188",
+   "sheets": 9982,
+   "missing": [],
+   "areaMpx": 76,
+   "areaBound": 9282,
+   "skyline": 9687,
+   "skyOver": 1495,
+   "pages": [
+    {
+     "height": 8177,
+     "n": 892
+    },
+    {
+     "height": 1502,
+     "n": 9090
+    }
+   ]
+  },
+  {
+   "scenario": "merged-final-424+d125-full+deferred5",
+   "note": "d125 deferred overlay strips admitted by the repack (worst case)",
+   "sheets": 9987,
+   "missing": [],
+   "areaMpx": 77.17,
+   "areaBound": 9425,
+   "skyline": 9880,
+   "skyOver": 1688,
+   "pages": [
+    {
+     "height": 8152,
+     "n": 786
+    },
+    {
+     "height": 1720,
+     "n": 9201
+    }
+   ]
+  },
+  {
+   "scenario": "merged+town-ambient",
+   "note": "fresh world: 39 townNPC=true ids + 51 ambient spawner sheets (the port roster census)",
+   "sheets": 9922,
+   "missing": [],
+   "areaMpx": 75.54,
+   "areaBound": 9226,
+   "skyline": 9720,
+   "skyOver": 1528,
+   "pages": [
+    {
+     "height": 8144,
+     "n": 829
+    },
+    {
+     "height": 1562,
+     "n": 9093
+    }
+   ]
+  },
+  {
+   "scenario": "merged+long-lived",
+   "note": "long-lived world: town + 141 spawn-site sheets + 31 moon ladders + 10 cross-draw ids",
+   "sheets": 9936,
+   "missing": [],
+   "areaMpx": 78.51,
+   "areaBound": 9589,
+   "skyline": 9972,
+   "skyOver": 1780,
+   "pages": [
+    {
+     "height": 8192,
+     "n": 738
+    },
+    {
+     "height": 1850,
+     "n": 9198
+    }
+   ]
+  },
+  {
+   "scenario": "merged+bestiary-all",
+   "note": "bestiary opened: every ENTRIES net id hovers -> SetFrameSize -> LoadNPC (UnlockableNPCEntryIcon.cs:185)",
+   "sheets": 9928,
+   "missing": [],
+   "areaMpx": 78.02,
+   "areaBound": 9529,
+   "skyline": 9980,
+   "skyOver": 1788,
+   "pages": [
+    {
+     "height": 8160,
+     "n": 733
+    },
+    {
+     "height": 1812,
+     "n": 9195
+    }
+   ]
+  },
+  {
+   "scenario": "lazy-union-no-npc",
+   "note": "the 407 base minus every NPC_<id> sheet (the section-10 lazy contract: NPC sheets leave the union input)",
+   "sheets": 9463,
+   "missing": [],
+   "areaMpx": 54.17,
+   "areaBound": 6617,
+   "skyline": 7059,
+   "skyOver": 0,
+   "pages": [
+    {
+     "height": 7059,
+     "n": 9463
+    }
+   ]
+  },
+  {
+   "scenario": "ownpage+town-ambient",
+   "note": "fresh-world NPC set on its own page(s) after the lazy union",
+   "newSheets": 87,
+   "missing": [],
+   "areaMpx": 3.52,
+   "ownPages": [
+    {
+     "height": 1668,
+     "n": 87
+    }
+   ],
+   "totalMainPages": null
+  },
+  {
+   "scenario": "ownpage+long-lived",
+   "note": "long-lived NPC set on its own page(s)",
+   "newSheets": 195,
+   "missing": [],
+   "areaMpx": 15.51,
+   "ownPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "totalMainPages": null
+  },
+  {
+   "scenario": "ownpage+bestiary-all",
+   "note": "the bestiary-opened NPC set on its own page(s)",
+   "newSheets": 289,
+   "missing": [],
+   "areaMpx": 19.73,
+   "ownPages": [
+    {
+     "height": 2566,
+     "n": 289
+    }
+   ],
+   "totalMainPages": null
+  },
+  {
+   "scenario": "ownpage+npc-corpus",
+   "note": "the ALL-NPC upper bound on its own page(s) (NOT the contract)",
+   "newSheets": 697,
+   "missing": [],
+   "areaMpx": 29.62,
+   "ownPages": [
+    {
+     "height": 3808,
+     "n": 697
+    }
+   ],
+   "totalMainPages": null
+  },
+  {
+   "scenario": "TOTAL-fresh-seed42",
+   "unionPages": [
+    {
+     "height": 7059,
+     "n": 9463
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 1668,
+     "n": 87
+    }
+   ],
+   "totalPages": 3
+  },
+  {
+   "scenario": "TOTAL-longlived-seed42",
+   "unionPages": [
+    {
+     "height": 7059,
+     "n": 9463
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "totalPages": 3
+  },
+  {
+   "scenario": "TOTAL-bestiary-seed42",
+   "unionPages": [
+    {
+     "height": 7059,
+     "n": 9463
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2566,
+     "n": 289
+    }
+   ],
+   "totalPages": 3
+  },
+  {
+   "scenario": "TOTAL-longlived-worstbg",
+   "unionPages": [
+    {
+     "height": 7059,
+     "n": 9463
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "totalPages": 4
+  },
+  {
+   "scenario": "TOTAL-eager-seed42",
+   "unionPages": [
+    {
+     "height": 8192
+    },
+    {
+     "height": 1298
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [],
+   "totalPages": 3
+  },
+  {
+   "scenario": "TOTAL-eager-worstbg",
+   "unionPages": [
+    {
+     "height": 8192
+    },
+    {
+     "height": 1298
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [],
+   "totalPages": 4
+  },
+  {
+   "scenario": "TOTAL-final424-eager-seed42",
+   "unionPages": [
+    {
+     "height": 8176,
+     "n": 910
+    },
+    {
+     "height": 1439,
+     "n": 9069
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [],
+   "totalPages": 3
+  },
+  {
+   "scenario": "TOTAL-final424-eager-worstbg",
+   "unionPages": [
+    {
+     "height": 8176,
+     "n": 910
+    },
+    {
+     "height": 1439,
+     "n": 9069
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [],
+   "totalPages": 4
+  },
+  {
+   "scenario": "lazy-union-424-no-npc",
+   "note": "the FINAL 424 base minus every NPC_<id> sheet (the section-10 lazy contract on the current tips)",
+   "sheets": 9497,
+   "missing": [],
+   "areaMpx": 54.77,
+   "areaBound": 6690,
+   "skyline": 7162,
+   "skyOver": 0,
+   "pages": [
+    {
+     "height": 7162,
+     "n": 9497
+    }
+   ]
+  },
+  {
+   "scenario": "TOTAL-lazy424-fresh-seed42",
+   "unionPages": [
+    {
+     "height": 7162,
+     "n": 9497
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 1668,
+     "n": 87
+    }
+   ],
+   "newNpcSheets": 87,
+   "npcAreaMpx": 3.52,
+   "totalPages": 3
+  },
+  {
+   "scenario": "TOTAL-lazy424-longlived-seed42",
+   "unionPages": [
+    {
+     "height": 7162,
+     "n": 9497
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "newNpcSheets": 195,
+   "npcAreaMpx": 15.51,
+   "totalPages": 3
+  },
+  {
+   "scenario": "TOTAL-lazy424-bestiary-seed42",
+   "unionPages": [
+    {
+     "height": 7162,
+     "n": 9497
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 7448,
+     "n": 93
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2566,
+     "n": 289
+    }
+   ],
+   "newNpcSheets": 289,
+   "npcAreaMpx": 19.73,
+   "totalPages": 3
+  },
+  {
+   "scenario": "TOTAL-lazy424-longlived-worstbg",
+   "unionPages": [
+    {
+     "height": 7162,
+     "n": 9497
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2152,
+     "n": 195
+    }
+   ],
+   "newNpcSheets": 195,
+   "npcAreaMpx": 15.51,
+   "totalPages": 4
+  },
+  {
+   "scenario": "TOTAL-lazy424-bestiary-worstbg",
+   "unionPages": [
+    {
+     "height": 7162,
+     "n": 9497
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 8135,
+     "n": 79
+    },
+    {
+     "height": 2138,
+     "n": 22
+    }
+   ],
+   "npcPages": [
+    {
+     "height": 2566,
+     "n": 289
+    }
+   ],
+   "newNpcSheets": 289,
+   "npcAreaMpx": 19.73,
+   "totalPages": 4
+  }
+ ]
+}

@@ -22,6 +22,11 @@
   "UI/Creative/Research_Spark",
   "UI/Bestiary/Button_Search"
  ],
+ "origin/task/W4-c3-style10-cursed-skull": [
+  "NPC_34",
+  "NPC_289",
+  "NPC_694"
+ ],
  "origin/task/W4-c39-lantern-birthday": [
   "Extra_134",
   "Extra_69",
@@ -33,7 +38,15 @@
   "NPC_224",
   "NPC_509",
   "NPC_581",
-  "NPC_587"
+  "NPC_587",
+  "NPC_57",
+  "NPC_157",
+  "NPC_241",
+  "NPC_465",
+  "NPC_592",
+  "NPC_607",
+  "NPC_615",
+  "NPC_688"
  ],
  "origin/task/W4-c6-style59-pumpking-blade": [
   "PumpkingArm",
@@ -44,6 +57,17 @@
   "NPC_358",
   "NPC_654",
   "NPC_677"
+ ],
+ "origin/task/W4-c8-style66-crawling-critters": [
+  "NPC_357",
+  "NPC_374",
+  "NPC_375",
+  "NPC_448",
+  "NPC_484",
+  "NPC_485",
+  "NPC_486",
+  "NPC_487",
+  "NPC_606"
  ],
  "origin/task/W4-c9-style67-snails": [
   "NPC_359",
@@ -56,12 +80,47 @@
   "Chain12",
   "Chain4"
  ],
+ "origin/task/W4-d16-proj-ai-151-160": [
+  "Extra_103",
+  "Extra_104",
+  "Extra_132",
+  "Extra_133",
+  "Extra_135",
+  "Extra_136",
+  "Extra_137",
+  "Extra_138",
+  "Extra_139",
+  "Extra_140",
+  "Extra_144",
+  "Extra_145",
+  "Extra_146",
+  "Extra_147",
+  "Extra_148"
+ ],
+ "origin/task/W4-d23-npc-ai-styles-9-14": [
+  "NPC_43",
+  "NPC_56",
+  "NPC_101",
+  "NPC_175",
+  "NPC_259",
+  "NPC_260"
+ ],
  "origin/task/W4-d34-npc-kinds-1-70": [
   "NPC_31",
   "NPC_34",
   "NPC_37",
   "NPC_43",
-  "NPC_46"
+  "NPC_46",
+  "NPC_39",
+  "NPC_40",
+  "NPC_41",
+  "NPC_47",
+  "NPC_48",
+  "NPC_56",
+  "NPC_57",
+  "NPC_61",
+  "NPC_62",
+  "NPC_63"
  ],
  "origin/task/W4-d35-npc-kinds-71-140": [
   "NPC_73",
@@ -214,6 +273,10 @@
   "UI/WorldCreation/Seed_Everything",
   "UI/WorldCreation/Seed_Skyblock"
  ],
+ "origin/task/W4-e10-player-sounds-wave": [
+  "UI/TexturePackButtons",
+  "UI/TexturePackButtonsOutline"
+ ],
  "origin/task/W4-e17-map-overlay-layers": [
   "NPC_Head_0",
   "NPC_Head_12",
@@ -336,6 +399,12 @@
   "UI/Bestiary/Stat_Panel",
   "UI/Bestiary/Button_Search"
  ],
+ "origin/task/W4-e26-luck-system": [
+  "NPC_361",
+  "NPC_362",
+  "NPC_604",
+  "NPC_605"
+ ],
  "origin/task/W4-f15-glow-bind-tiledraw2": [
   "Glow_51",
   "Glow_52",
@@ -455,8 +524,25 @@
  "origin/task/W4-f40-lantern-night-2": [
   "Extra_134"
  ],
+ "origin/task/W4-f46-minimap-reveal-2": [
+  "UI/Cursor_11"
+ ],
+ "origin/task/W4-g21-sounds-main-1": [
+  "Extra_255",
+  "Extra_256",
+  "UI/ChestStack_0",
+  "UI/ChestStack_1",
+  "UI/ChestStack_2",
+  "UI/ChestStack_3",
+  "UI/Sort_0",
+  "UI/Sort_1",
+  "UI/House_Banner"
+ ],
  "origin/task/W4-g55-ui-loadout-save": [
   "Extra_259"
+ ],
+ "origin/task/W4-g56-ui-void-vault": [
+  "Inventory_Back19"
  ],
  "origin/task/W4-g57-ui-reforge-anim": [
   "UI/Reforge_0",
@@ -465,8 +551,54 @@
  "origin/task/W4-g58-ui-shop-happiness": [
   "UI/NPCHappiness"
  ],
+ "origin/task/W4-g70-bg-layers-1": [
+  "Sun2",
+  "Sun3",
+  "Extra_280",
+  "Moon_Smiley",
+  "Moon_Pumpkin",
+  "Moon_Snow",
+  "Misc/Sunflare/flare1",
+  "Misc/Sunflare/flare2"
+ ],
  "origin/task/W4-g71-bg-layers-2": [
   "Background_26",
   "Background_27"
+ ],
+ "origin/task/W4-g8-npc-kind-wire-1": [
+  "NPC_61",
+  "NPC_63",
+  "NPC_64",
+  "NPC_69",
+  "NPC_70",
+  "NPC_75",
+  "NPC_82",
+  "NPC_83",
+  "NPC_84",
+  "NPC_85",
+  "NPC_103",
+  "NPC_122",
+  "NPC_164",
+  "NPC_165",
+  "NPC_169",
+  "NPC_174",
+  "NPC_177",
+  "NPC_179",
+  "NPC_182",
+  "NPC_195",
+  "NPC_196",
+  "NPC_34",
+  "NPC_62",
+  "NPC_93",
+  "NPC_121",
+  "NPC_137",
+  "NPC_150",
+  "NPC_151",
+  "NPC_152",
+  "NPC_158",
+  "NPC_226",
+  "NPC_221",
+  "NPC_48",
+  "NPC_156"
  ]
 }
