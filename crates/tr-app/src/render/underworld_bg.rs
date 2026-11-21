@@ -12,6 +12,27 @@
 //! texture array first. The `underworldBG` style roll is also unowned (the
 //! `.wld` byte is skip-read, `wld/sections/flags.rs:566`).
 //!
+//! d35 ATLAS-REPACK cross-note (W4-g72 final, read on
+//! `origin/task/W4-d35-npc-kinds-71-140` tip `6a2a155a`, research/113 §7.4/§9.1
+//! — NOT touched): the 8424 number above is a SINGLE-PAGE artifact of the
+//! pre-wave 7530 baseline. On the merged base (9904 sheets, skyline worst
+//! 9478) d35 re-measured every underworld style: style 0 adds +929 (→10407),
+//! style 1 +1717 (→11195), style 2 +924 (→10402) — every style overflows
+//! page 0 but EVERY single style fits ONE extra page (≤3312 px mixed,
+//! ≤1904 px own-bg-page; style 1's three 2048×1716 sheets stack narrower-
+//! but-shorter than style 0's 2048×1900 giant). Our sheets ARE in d35's
+//! bg-inventory: `tools/_d35_bg_inventory.json` covers all 14
+//! `Backgrounds/Underworld 0..13` (0 missing, all decode; §7.1's 358-sheet
+//! corpus) with the three style rows measured as scenarios. The RECOMMENDED
+//! wiring shape is d35 §9.1's render-to-texture escape (our `bg_target.rs`
+//! census is its cited source): draw the 5 rolled sheets as plain textures
+//! into the d69 `RenderTargetFamily` screenTarget — NOT atlas pages — cost
+//! ≤12.33 Mpx ≈ 49 MB for style 1 + one composite pass, vs +1717 atlas px.
+//! `UnderworldLayerPlan` already carries src/scale/positions for exactly
+//! that binding; the alternative (d35 §8.4 per-world bg pages appended
+//! AFTER the union pages) also fits, but the escape is the faithful C#
+//! shape (the sheets never ride the tile atlas there either).
+//!
 //! The geometry here is pure — no RNG anywhere in the two C# functions; the
 //! only time input is `Main.GlobalTimeWrappedHourly` (the 4-frame animation
 //! cycle). Witnessed line-by-line against the source.

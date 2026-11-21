@@ -1449,6 +1449,21 @@ written not run. Wiring needs the sheets OUTSIDE the tile atlas (the C# draws th
 8192 strict-GPU bound, so a second texture array / target must land first; the `underworldBG`
 style byte is also still skip-read from the `.wld` (`wld/sections/flags.rs:566`).
 
+**d35 atlas-repack cross-note (W4-g72 final).** The 8424/7530 numbers above predate the
+merged W4 wave. d35's atlas-extension (`origin/task/W4-d35-npc-kinds-71-140`, tip
+`6a2a155a`, research/113 §7.4/§9.1 — read, not touched) re-measured on the merged base
+(9904 sheets, skyline worst 9478): style 0 → 10407 (+929), style 1 → 11195 (+1717),
+style 2 → 10402 (+924); EVERY single style overflows page 0 but fits ONE extra page
+(≤3312 px mixed, ≤1904 px own-bg-page) — the block is a single-page artifact. All 14
+`Underworld 0..13` sheets are in d35's bg-inventory (`tools/_d35_bg_inventory.json`,
+0 missing, three style-row scenarios measured + determinism-verified). The recommended
+wiring shape is d35 §9.1's render-to-texture escape, which cites OUR `bg_target.rs`
+screenTarget census: bind `UnderworldLayerPlan` to plain textures in the d69
+`RenderTargetFamily` (≤49 MB for style 1 + one composite pass), NOT atlas pages; the
+§8.4 per-world bg pages are the fallback. The escape is underworld-specific — the
+cavern/surface sheets keep the atlas path (they are tiny: ≤0.101 Mpx per cavern style,
+d35 §7.1) via the per-world bg pages appended after the union.
+
 **Routing correction (W4-g72 lane 3 phase 5, `render/bg_target.rs`).** The earlier "the
 S1-G-13 background-target family" wording above conflated two destinations. The C# census
 (`bg_target.rs` module docs) shows the underworld stack does NOT render into
