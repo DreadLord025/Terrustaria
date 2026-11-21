@@ -36142,6 +36142,77 @@ split, the field flow through `update_survival`/ResetEffects, the dead-
 player tail clamps) are WRITTEN, NOT RUN — code-only mode, no compiler
 invoked.
 
+### The W4-f49 mana-regen second half (i12/i19/i37/i52 leftovers)
+
+The continuation of the d117 census on `task/W4-f49-mana-regen-2` (branched
+on 0dbcb013). Four remaining pieces, each re-censused against the C#:
+
+- **Mana Sickness stacking — already faithful, witnessed.** The grant stacks
+  ADDITIVELY: `AddBuff_TryUpdatingExistingBuffTime` (`Player.cs:5410-5418`)
+  reads `BuffID.Sets.AddBuffTimeAdditivelyToCap[94] = 600` (`BuffID.cs:53`),
+  so a second drink inside the window lifts `buffTime` 300 → 600 (capped),
+  not a refresh. The reduction is one ASSIGN per scan tick (`:10326`,
+  `0.25 × buffTime/300`), so it can exceed 0.25 (up to 0.5 at the cap) but
+  never compounds across ticks. 94 is absent from
+  `BuffTimeIsExtendedWithGameDifficulty` (`BuffID.cs:50`) — expert worlds do
+  not extend it. The port's `buffs.rs` additive-cap + the `apply_mana_sickness_arm`
+  assign already matched; `w4_f49_mana_sickness_stacks_additively_to_the_six_hundred_cap`
+  pins it. The death buff-sweep (`UpdateDead` `:16995-17002`, 94 is not
+  `Main.persistentBuff`) stays the death-system lane's (recorded gap,
+  `world_sim/player.rs` DW-2 note).
+- **Mana-flower auto-potion — the `CheckMana` flower lane landed.** The pure
+  `regen::check_mana` (the pool-side pay) has no inventory reach; the new
+  `potions::check_mana_with_flower[_on]` is the App-level twin running the
+  WHOLE `CheckMana` (`Player.cs:52576-52617`): the entry clear (`:52578`),
+  the enough-mana pay (`:52579-52586`), then the flower arm (`:52588-52609`)
+  — `QuickMana()` (`:52592`) + the post-drink RE-CHECK/pay (`:52594-52601`);
+  a failed/absent drink falls to the SAME ManaV2 empty arm (`:52602-52606`).
+  The weapon use path (`world_sim/editing.rs`'s `ActuallyPayMana` site) now
+  calls it; the borrow restructure re-binds the player per site so the drink
+  can walk the inventory. The entry clear runs BEFORE the drink, so the
+  drink's `UndoSlowMagicUse` gate (`:51946`) sees `slowMagicUse == false` —
+  the mid-swing timer shrink never fires on the flower path (the C# order).
+  The Last Prism interval pay (`AI_075`, `Projectile.cs:66613`) runs pool-side
+  on `&mut Player`; it records a `wants_prism_flower_drink` intent on the
+  short+flower interval and the `world_sim/projectiles.rs` pass-tail drains it
+  through the same twin on the `UpdateProjectiles` stream (`Main.cs:17775`) —
+  the `pending_spear_hold`/`drain_npc_hit_sounds` convention. `quick_mana` /
+  `spawn_heal_text` grew `_on(key)` variants so the two callers keep their own
+  named streams. `blockQuickMana` (`:52576`'s third arg) is false at every
+  source call site; the parameter is kept for structure.
+- **Magnet pickup — the Treasure Magnet grant landed.** The `mana_magnet` /
+  `life_magnet` flags + their accessory/buff grants + the `GrabFlags` feed
+  were already live (S1-P-i52); the `treasure_magnet` flag had NO Player
+  field/grant/reset/feed. Added `Player.treasure_magnet` (`:936`), the
+  Treasure Magnet 5010 grant (`ApplyEquipFunctional` `:14551-14553`), the
+  Hand Of Creation 5126 `treasureMagnet` half (`:15292`, split off the shared
+  `4056 | 5126` chisel arm), the `ResetEffects` clear (`:18493`) and the
+  `world_sim/items.rs` `GrabFlags` feed. The +150 range row on EVERY kind
+  (`GetItemGrabRange` `:35149-35152`, `Item.treasureGrabRange = 150`) was
+  already in `item.rs::get_item_grab_range`. The nebula-trio / 4143 consume
+  arms (`PickupItem` `:35045-35058`/`:35080-35098`) stay out — their
+  `NebulaLevelup` buff-scan derivation is the c16/c17 buff-effects lane's
+  (in flight), and the mana-band tier write (`UpdateBuffs_NebulaBuffs`
+  `:12070-12079`) has no port writer yet; d117 landed the regen READ side.
+- **Arcane crystal 5339 USE arm — landed here (was the crystals/powerups
+  lane's).** `world_sim/editing.rs::use_arcane_crystal` ports
+  `ItemCheck_UseShimmerPermanentItems` (`Player.cs:45399-45404`): the
+  `!usedArcaneCrystal && ItemTimeIsZero && itemAnimation > 0` gate →
+  `ApplyItemTime` (useTime 45) + `usedArcaneCrystal = true` + the generic
+  consumable tail (stack--, the empty-slot `itemTime = itemAnimation` fold).
+  The flag is a permanent (no ResetEffects clear); d117's two regen read arms
+  (`:19430-19433` delay −0.05, `:19453-19456` regen +max/50) pick it up. The
+  five siblings (5337/5338/5340/5341/5342) stay the crystals/powerups lane's.
+  The 5339 kind joins the mid-swing `is_summon` gate (the same
+  `ItemTimeIsZero && itemAnimation > 0` precondition as the boss spawners).
+
+Witnesses (`potions.rs` ×7: the flower drink+repay, the no-potion V2 arm, the
+blockQuickMana skip, the enough-mana no-drink, the no-timer-shrink order pin,
+the sickness stacking, the stream-key routing; `player.rs` ×1: the treasure
+magnet grants + range feed; `editing.rs` ×3: the crystal use-once, the used
+refusal, the flower weapon drink+fire; `projectile.rs` ×1: the prism flower
+intent) are WRITTEN, NOT RUN — code-only mode, no compiler invoked.
+
 ## The magic guns + tomes use arms (S1-P-i22)
 
 `Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:

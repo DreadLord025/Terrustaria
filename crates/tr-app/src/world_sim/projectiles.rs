@@ -480,6 +480,22 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     if let Some(p) = app.player.as_mut() {
         app.projectiles.apply_channel_tracks(p);
     }
+    // W4-f49 — the Last Prism interval pay's mana-flower auto-drink
+    // (`Player.CheckMana` `:52588-52609` reached from `AI_075`'s
+    // `Projectile.cs:66613`): the pool-side pay took the ManaV2 empty arm on
+    // a short interval; the flower lane re-runs the FULL CheckMana (the
+    // QuickMana drink + the post-drink re-pay) here, where the inventory is
+    // reachable. The draws + the heal text ride `UpdateProjectiles`
+    // (`Main.cs:17775`, the AI_075 caller's swap) — the drain convention.
+    for amount in app.projectiles.drain_prism_flower_drinks() {
+        crate::potions::check_mana_with_flower_on(
+            app,
+            amount,
+            true,
+            false,
+            crate::app::RngKey::UpdateProjectiles,
+        );
+    }
     // `AI_103`'s mark spawn (`Projectile.cs:33467-33475`): the stardust
     // tower's mark resolves into the NPC vec here (the pool can't grow it).
     for (kind, x, y, vx, vy) in app.projectiles.drain_mark_spawns() {

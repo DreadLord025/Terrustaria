@@ -1464,6 +1464,15 @@ pub struct Player {
     /// heart family (`:35145-35148`, `Item.cs:49964`) and `GrabItems` pulls
     /// hearts at speed 15 / acc 5 (`:34949-34952`).
     pub life_magnet: bool,
+    /// `Player.treasureMagnet` (`Player.cs:936`): the Treasure Magnet 5010
+    /// (`ApplyEquipFunctional` `:14551-14553`) and the Hand Of Creation 5126
+    /// (`:15286-15294`, the `treasureMagnet` half of its six-flag row) arm it
+    /// per tick; `ResetEffects` clears it (`:18493`). `GetItemGrabRange` adds
+    /// `Item.treasureGrabRange = 150` to EVERY kind (`:35149-35152`,
+    /// `Item.cs:49965`) — unlike the mana/life magnets it is not kind-gated.
+    /// W4-f49: the field + the two grants + the reset + the `GrabFlags` feed
+    /// (the range row itself already lived in `item.rs::get_item_grab_range`).
+    pub treasure_magnet: bool,
     /// `Player.latestManaPotionDamageBonus` / `latestManaPotionDuration`
     /// (`Player.cs:982-984`): `TryApplyManaHeat` (`:52006-52014`) writes them
     /// on every mana-star pickup (`PickupItem` `:35071`) — power 0.2, time 2 s
@@ -2768,6 +2777,7 @@ impl Player {
             has_lucky_coin: false,
             mana_magnet: false,
             life_magnet: false,
+            treasure_magnet: false,
             latest_mana_potion_damage_bonus: 0.0,
             latest_mana_potion_duration: 0.0,
             star_cloak: false,
@@ -5014,8 +5024,18 @@ impl Player {
             // so the fold lands here directly — the same sum the C#
             // reaches, one grant path. The Architect's Gizmo Pack (5126)
             // carries the same `chiselSpeed` (`:15293`) plus the range
-            // flag the reach scan reads (`craft.rs`).
-            4056 | 5126 => self.pick_speed_bonus += 0.25,
+            // flag the reach scan reads (`craft.rs`). W4-f49 — the 5126
+            // row's `treasureMagnet` half (`:15292`) lands here too (the
+            // other four flags ride the tile/wall scans + `autoPaint`).
+            4056 => self.pick_speed_bonus += 0.25,
+            5126 => {
+                self.pick_speed_bonus += 0.25;
+                self.treasure_magnet = true;
+            }
+            // W4-f49 — the Treasure Magnet 5010 (`ApplyEquipFunctional`
+            // `Player.cs:14551-14553`): the bare `treasureMagnet` flag —
+            // the +150 grab range on EVERY kind (`:35149-35152`).
+            5010 => self.treasure_magnet = true,
             // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
             // (`Player.cs:14651-14683`), in the C#'s order: the High Test
             // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
@@ -6060,11 +6080,13 @@ impl Player {
         // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
         // accessory rows below re-arm it from the live items each tick.
         self.magic_cuffs = false;
-        // `ResetEffects`' `manaMagnet = false` / `lifeMagnet = false`
-        // (`Player.cs:18491-18492`): the magnet accessories and buff 105
-        // re-arm them per tick (S1-P-i52).
+        // `ResetEffects`' `manaMagnet = false` / `lifeMagnet = false` /
+        // `treasureMagnet = false` (`Player.cs:18491-18493`): the magnet
+        // accessories and buff 105 re-arm them per tick (S1-P-i52; the
+        // treasure half lands with W4-f49).
         self.mana_magnet = false;
         self.life_magnet = false;
+        self.treasure_magnet = false;
         // `ResetEffects`' retaliate-family clears (S1-C-7 wave B):
         // `strongBees = false` (`Player.cs:18322`), `honeyCombItem = null`
         // (`:18386`), `starCloakItem` + the four overrides = null
@@ -14914,6 +14936,38 @@ mod tests {
         p.buffs.clear_buff(105);
         p.update(&w, PlayerInput::default());
         assert!(!p.life_magnet, "the expiry cleared it");
+    }
+
+    /// W4-f49 — the Treasure Magnet 5010 (`ApplyEquipFunctional`
+    /// `Player.cs:14551-14553`) and the Hand Of Creation 5126 (`:15292`, the
+    /// `treasureMagnet` half of its six-flag row) arm `treasureMagnet` per
+    /// tick; `ResetEffects` (`:18493`) clears it. The grab-range row adds
+    /// `Item.treasureGrabRange = 150` to EVERY kind (`:35149-35152`) — the
+    /// `item.rs::get_item_grab_range` consumer was already live; this pins
+    /// the flag grant + the feed. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_treasure_magnet_accessories_arm_treasure_magnet() {
+        let p = player_with_accessory(5010);
+        assert!(p.treasure_magnet, "the Treasure Magnet");
+        let p = player_with_accessory(5126);
+        assert!(p.treasure_magnet, "the Hand Of Creation's magnet half");
+        assert!(
+            (p.pick_speed_bonus - 0.25).abs() < 1e-4,
+            "its chiselSpeed row still folds"
+        );
+        let p = player_with_accessory(0);
+        assert!(!p.treasure_magnet, "ResetEffects cleared it (:18493)");
+        // The range consumer: +150 on a NON-pickup kind (the treasure magnet
+        // is not kind-gated, unlike the mana/life magnets).
+        let flags = crate::item::GrabFlags {
+            treasure_magnet: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            crate::item::get_item_grab_range(1, flags),
+            42 + 150,
+            "the +150 rides every kind"
+        );
     }
 
     /// `Player.Heal` (`Player.cs:35112-35123`): the cap AFTER the queue —

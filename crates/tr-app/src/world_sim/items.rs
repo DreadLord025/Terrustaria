@@ -178,8 +178,11 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 gold_ring: pl.gold_ring,
                 mana_magnet: pl.mana_magnet,
                 life_magnet: pl.life_magnet,
+                // W4-f49 — the Treasure Magnet 5010 / Hand Of Creation 5126
+                // flag (`Player.cs:14551-14553`/`:15292`): +150 on EVERY kind
+                // (`:35149-35152`), the range row was already live.
+                treasure_magnet: pl.treasure_magnet,
                 journey_far_range: pl.far_placement_range,
-                ..Default::default()
             };
             let range = crate::item::get_item_grab_range(kind, flags) as f32;
             let drop_pos = items[i].pos;

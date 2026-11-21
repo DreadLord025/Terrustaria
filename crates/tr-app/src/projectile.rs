@@ -769,6 +769,16 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// W4-f49 — the Last Prism interval pay's mana-flower auto-drink
+    /// (`Player.CheckMana` `:52588-52609` reached from `AI_075`'s
+    /// `Projectile.cs:66613`): `Some(rawAmountToPay)` when the interval pay
+    /// was short AND `manaFlower` is armed — the pure pool-side pay already
+    /// took the ManaV2 empty arm; the world-sim pass re-runs the FULL
+    /// `CheckMana` (the QuickMana drink + the post-drink re-pay) through
+    /// `potions::check_mana_with_flower_on` on the `UpdateProjectiles`
+    /// stream (the pool cannot borrow the inventory). `None` = no flower
+    /// drink owed this tick.
+    pub(crate) wants_prism_flower_drink: Option<i32>,
 }
 
 impl Default for Projectile {
@@ -855,6 +865,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_prism_flower_drink: None,
         }
     }
 }
@@ -5015,13 +5026,27 @@ impl Projectile {
                 // V2, drains to 0 + arms the slow cast).
                 let mana_ok = !interval_tick
                     || match item {
-                        Some(item) => crate::regen::check_mana(
-                            &mut p.mana,
-                            &mut p.slow_magic_use,
-                            item.mana,
-                            p.mana_cost,
-                            true,
-                        ),
+                        Some(item) => {
+                            let ok = crate::regen::check_mana(
+                                &mut p.mana,
+                                &mut p.slow_magic_use,
+                                item.mana,
+                                p.mana_cost,
+                                true,
+                            );
+                            // W4-f49 — the mana-flower auto-drink lane
+                            // (`CheckMana` `:52588-52609`): the pure pay above
+                            // took the ManaV2 empty arm when short; if the
+                            // flower is armed, owe the pass-tail the FULL
+                            // re-check (the QuickMana drink + the post-drink
+                            // re-pay, `potions::check_mana_with_flower_on` on
+                            // `UpdateProjectiles`). The pool cannot borrow the
+                            // inventory, so the intent rides the slot.
+                            if p.slow_magic_use && p.mana_flower {
+                                self.wants_prism_flower_drink = Some(item.mana);
+                            }
+                            ok
+                        }
                         None => true,
                     };
                 if p.channel && mana_ok && !p.cced() {
@@ -16127,6 +16152,22 @@ impl ProjectilePool {
     /// `UpdateProjectiles` stream (`Main.cs:17775`).
     pub fn drain_npc_hit_sounds(&mut self) -> Vec<(&'static str, f32, f32)> {
         std::mem::take(&mut self.pending_npc_hit_sounds)
+    }
+
+    /// W4-f49 — the Last Prism interval pay's mana-flower auto-drink intents
+    /// (`Player.CheckMana` `:52588-52609` reached from `AI_075`'s
+    /// `Projectile.cs:66613`): the raw `item.mana` per short+flower interval.
+    /// The world sim re-runs the FULL `CheckMana` (the QuickMana drink + the
+    /// post-drink re-pay) through `potions::check_mana_with_flower_on` on the
+    /// `UpdateProjectiles` stream — the pool cannot borrow the inventory.
+    pub fn drain_prism_flower_drinks(&mut self) -> Vec<i32> {
+        let mut out = Vec::new();
+        for p in self.slots.iter_mut() {
+            if let Some(amount) = p.wants_prism_flower_drink.take() {
+                out.push(amount);
+            }
+        }
+        out
     }
 
     /// S1-E-21h — the projectile-family cue intents the AI arms and the
@@ -30445,6 +30486,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_prism_flower_drink: None,
         }
     }
 
@@ -30854,6 +30896,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_prism_flower_drink: None,
         }
     }
 
@@ -36126,6 +36169,59 @@ mod magic_ai_tests {
         );
         assert_eq!(player.mana, 0, "the bar drains to 0 (the V2 arm)");
         assert!(player.slow_magic_use, "DoRunOutOfManaEffect armed the slow cast");
+    }
+
+    /// W4-f49 — the Last Prism interval pay's mana-flower auto-drink intent
+    /// (`Player.CheckMana` `:52588-52609` reached from `AI_075`'s
+    /// `Projectile.cs:66613`): a short interval with `manaFlower` armed
+    /// records `wants_prism_flower_drink = Some(item.mana)` for the pass-tail
+    /// drain (the pool cannot borrow the inventory). The pure pay still took
+    /// the ManaV2 empty arm; the drain re-runs the FULL CheckMana on
+    /// `UpdateProjectiles`. A full-bar interval owes NO drink. WRITTEN NOT
+    /// RUN (code-only).
+    #[test]
+    fn w4_f49_the_prism_short_interval_owes_a_flower_drink() {
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana_cost = 0.5;
+        player.mana = 5; // short of the scaled 6
+        player.mana_flower = true;
+        for _ in 0..30 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(
+            pool.slots()[holder].wants_prism_flower_drink,
+            Some(12),
+            "the raw item.mana rides the intent"
+        );
+        assert_eq!(player.mana, 0, "the pure pay took the V2 empty arm");
+        // The drain takes the intent (the pass-tail re-runs CheckMana).
+        let drained = pool.drain_prism_flower_drinks();
+        assert_eq!(drained, vec![12]);
+        assert_eq!(pool.slots()[holder].wants_prism_flower_drink, None);
+        // A full-bar interval pays cleanly — no flower drink owed.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana_cost = 0.5;
+        player.mana = 120;
+        player.mana_flower = true;
+        for _ in 0..30 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(player.mana, 114);
+        assert_eq!(
+            pool.slots()[holder].wants_prism_flower_drink,
+            None,
+            "the enough-mana arm never drinks"
+        );
+        // No flower: a short interval drains to 0 but owes NO drink.
+        let (mut w, mut pool, mut player, holder) = prism_rig();
+        player.mana_cost = 0.5;
+        player.mana = 5;
+        player.mana_flower = false;
+        for _ in 0..30 {
+            step_player(&mut pool, &mut w, &mut player);
+        }
+        assert_eq!(player.mana, 0);
+        assert_eq!(pool.slots()[holder].wants_prism_flower_drink, None);
     }
 }
 #[cfg(test)]
