@@ -77,9 +77,29 @@ pub struct LiquidSystem {
     /// (`Liquid.cs:1447`); the R-12-5 plumbing owns it, `false` at runtime.
     remix_world_gen: bool,
     /// `WorldGen.isGeneratingOrLoadingWorld` — the merge-tile branch selector
-    /// (`Liquid.cs:1333`/`:1447`). The port's settlement pass never runs
-    /// during generation yet (R-12-5 plumbs it), so it stays `false`.
+    /// (`Liquid.cs:1333`/`:1447`) and the `SettleWaterAt` re-type gate
+    /// (`:178`). The port's settlement pass never runs during generation
+    /// yet (R-12-5 plumbs it), so it stays `false`.
     generating: bool,
+    /// `WorldGen.generatingWorld` — the STRICT generation flag (true only
+    /// during worldgen, false during the world-LOAD settle). It gates the
+    /// `SettleWaterAt` dungeon re-type arm (`Liquid.cs:188`), which the
+    /// load settle (`isGeneratingOrLoadingWorld` true, `generatingWorld`
+    /// false) must NOT run. Distinct from [`Self::generating`] above; the
+    /// dungeon arm itself is a recorded no-op (no ported
+    /// `InAnyPotentialDungeonBounds`), so the flag rides for R-12-5.
+    #[allow(dead_code)] // read by the dungeon arm when R-12-5 ports its predicates
+    generating_world: bool,
+    /// `GenVars.waterLine` (`GenVars.cs:62`) — the classic re-type boundary:
+    /// a settled drop landing BELOW it becomes lava (`Liquid.cs:184-187`).
+    /// The world-load settle pins it to `maxTilesY` (`WorldFile.cs:734`),
+    /// which makes the arm dead on load; the gen settle passes carry the
+    /// terrain-fill product. Read only while [`Self::generating`] is up.
+    gen_water_line: i32,
+    /// `GenVars.lavaLine` (`GenVars.cs:64`) — the remix re-type boundary
+    /// (`Liquid.cs:182`); read only while [`Self::generating`] and
+    /// [`Self::remix_world_gen`] are up.
+    gen_lava_line: i32,
     /// `Liquid.stuckCount` (`Liquid.cs:21`): consecutive full cycles whose
     /// active count stayed within ±50 of `stuck_amount` (`:1131-1148`).
     stuck_count: i32,
@@ -223,14 +243,48 @@ impl LiquidSystem {
     /// remainder. The generation-only `ShimmerRemoveWater`/boulder arms
     /// inside `QuickWater` stay with the unported gen passes.
     ///
-    /// NOT wired into the load path yet: running it changes every saved
-    /// world's liquid bytes, so the save/load round-trip pins need a
-    /// deliberate re-derivation first (ANALYSIS, W4-g47).
+    /// Wired into the load path at [`crate::app::App::new`] (the shared
+    /// boot + `swap_world` construction — the port's `WorldFile.LoadWorld`
+    /// tail). The C# `GenVars.waterLine = maxTilesY` pin (`:734`) makes the
+    /// `SettleWaterAt` re-type arm dead on load (`num2 > waterLine` never
+    /// holds); the port's `gen_water_line` carries the same pin, so even
+    /// with the load context armed below the re-type is inert — the two
+    /// reach the identical no-re-type result.
+    ///
+    /// The C# runs the whole settle under `isGeneratingOrLoadingWorld = true`
+    /// (`:733`/`:764`). The port's `generating` field stands in for that flag
+    /// in the merge selector (`create_liquid_merge_tile`, `Liquid.cs:1329`),
+    /// so it is armed for the drain: a load-time merge takes the
+    /// `LiquidOverwriteStrip` arm and stays silent, exactly as vanilla — not
+    /// the runtime tile-placement + sound arm. The STRICT `generatingWorld`
+    /// flag stays down (load is not generation), keeping the lava
+    /// underground-desert strip (`Liquid.cs:1447`) and the dungeon re-type
+    /// (`:188`) inert. Both context flags drop back at `:764`.
+    ///
+    /// RNG: the settle draws the caller-pinned `world.frame_rng` (the port's
+    /// `genRand` stand-in) ONLY through the `SquareTileFrame` reset rolls
+    /// inside the kill cascades (`DelWater`'s lava grass ring / lily-pad
+    /// reframe, `WaterCheck`'s liquid-death kills). A dry world consumes
+    /// zero draws, so the save/load round-trip pins do not move; a wet world
+    /// with objects near liquid re-pins `frame_rng` (ANALYSIS, W4-g47 — the
+    /// re-pin obligation).
     pub fn settle_loaded_world(&mut self, world: &mut World) {
         self.re_init();
+        // `:733` — the load context: the merge selector reads
+        // `isGeneratingOrLoadingWorld`, the re-type reads the `waterLine`
+        // pin. `generating_world` stays down (load ≠ generation).
+        self.generating = true;
+        self.gen_water_line = self.height;
         self.quick_water(world, -1, -1);
         self.water_check(world);
         self.quick_settle = true;
+        // The drain runs on the `ReInit` stock pair (cycles 10, the full
+        // window): the C# gfx block that would rewrite it
+        // (`Main.cs:17076-17091`) and the `quickSettle` override
+        // (`:17105-17113`) are BOTH gated on `!isGeneratingOrLoadingWorld`,
+        // which is `true` for the whole load (`WorldFile.cs:733`/`:764`).
+        // The runtime override consumer lives in `gfx_quality::apply`
+        // (W4-g47 census); it never fires during this drain.
         let mut calls = 0;
         while !self.active.is_empty() && calls < 100_000 {
             calls += 1;
@@ -238,6 +292,8 @@ impl LiquidSystem {
         }
         self.quick_settle = false;
         self.water_check(world);
+        // `:764` — the load context drops; the runtime sim resumes.
+        self.generating = false;
     }
 
     pub fn new(world: &World) -> Self {
@@ -256,6 +312,13 @@ impl LiquidSystem {
             quick_fall: false,
             quick_settle: false,
             generating: false,
+            generating_world: false,
+            // The load-settle pin (`WorldFile.cs:734`): `waterLine =
+            // maxTilesY` makes the classic re-type arm dead on load. The gen
+            // settle passes overwrite both from the terrain-fill products
+            // (R-12-5); the runtime never reads them (`generating` is down).
+            gen_water_line: world.height,
+            gen_lava_line: 0,
             stuck_count: 0,
             stuck_amount: 0,
             stuck: false,
@@ -555,6 +618,15 @@ impl LiquidSystem {
     /// the stuck self-clear is running. Then the wake/type bookkeeping,
     /// the lava reaction tail (the grass conversions + `HoneyCheck` /
     /// `ShimmerCheck`), the swap-remove and the herb / lily-pad checks.
+    ///
+    /// KEEP-ONE (W4-g47 vs W4-g45, ANALYSIS): this body is canonical — the
+    /// swap-remove runs INSIDE (the C# `:1575-1579` decrements `numLiquid`
+    /// then copies the last entry; g45's caller-side swap double-copies
+    /// when `l == last`), and the `Check*` kills ride `edit_kills` (g45's
+    /// `check_alch_tile`/`check_lily_pad` wrappers discard the drop
+    /// records). Adopted from g45: the live side re-reads (`:1519-1528`
+    /// reads the tile references AFTER the drain), the explicit lily-pad
+    /// arm order, and the grass ring's chunk-dirty marking.
     fn del_water(&mut self, world: &mut World, l: usize) {
         let (x, y) = (self.active[l].x, self.active[l].y);
         let i = world.index(x, y);
@@ -567,13 +639,15 @@ impl LiquidSystem {
             world.tiles[i].liquid = 0;
             world.mark_chunk(x, y);
             self.dirty = true;
-            for (nx, t) in [(x - 1, left), (x + 1, right)] {
+            for nx in [x - 1, x + 1] {
+                // The C#'s `Main.tile[nx, y]` is null at the world edge;
+                // probe through `tile` before indexing (g45's edge fix,
+                // `2249cf59` — the port's `index` would wrap a negative nx).
+                let Some(t) = world.tile(nx, y).copied() else { continue };
                 if t.liquid < 2 {
-                    if nx >= 0 && nx < self.width {
-                        let j = world.index(nx, y);
-                        world.tiles[j].liquid = 0;
-                        world.mark_chunk(nx, y);
-                    }
+                    let j = world.index(nx, y);
+                    world.tiles[j].liquid = 0;
+                    world.mark_chunk(nx, y);
                 } else {
                     self.add_water(world, nx, y);
                 }
@@ -608,8 +682,12 @@ impl LiquidSystem {
         if here.liquid == 0 {
             set_kind(&mut world.tiles[i], 0);
         } else {
-            // `Liquid.cs:1521-1528` — wake the unequal < 250 open sides.
-            for (nx, t) in [(x + 1, right), (x - 1, left)] {
+            // `Liquid.cs:1519-1528` — wake the unequal < 250 open sides.
+            // The C# reads the tile REFERENCES here (after the drain arms
+            // may have emptied a side), so re-read live rather than reuse
+            // the entry snapshots (g45's live-read form).
+            for nx in [x + 1, x - 1] {
+                let t = world.tile(nx, y).copied().unwrap_or_default();
                 if t.liquid > 0
                     && t.liquid < 250
                     && self.tile_open(&t)
@@ -634,9 +712,16 @@ impl LiquidSystem {
                         let j = world.index(gx, gy);
                         if matches!(t.kind, 2 | 23 | 109 | 199 | 477 | 492) {
                             world.tiles[j].kind = 0;
+                            // The kind write dirties the chunk for the draw
+                            // rebuild (g45's marking; `square_tile_frame`'s
+                            // `after_edit` reframes but does not mark).
+                            world.mark_chunk(gx, gy);
+                            self.dirty = true;
                             crate::edit::square_tile_frame_default(world, gx, gy);
                         } else if matches!(t.kind, 60 | 70 | 661 | 662) {
                             world.tiles[j].kind = 59;
+                            world.mark_chunk(gx, gy);
+                            self.dirty = true;
                             crate::edit::square_tile_frame_default(world, gx, gy);
                         }
                     }
@@ -667,16 +752,27 @@ impl LiquidSystem {
                 self.edit_kills.push(kill);
             }
         } else if tail_tile_kind == 518 {
-            let below_full = world.tile(x, y + 1).is_some_and(|t| t.liquid == 255);
-            let above_wet = world.tile(x, y - 1).is_some_and(|t| t.liquid > 0);
-            if self.quick_fall || (below_full && !above_wet) {
+            // `Liquid.cs:1586-1597` — the three arms in the C#'s order
+            // (g45's explicit form): quickFall → CheckLilyPad; else a
+            // non-full below OR a wet above → SquareTileFrame; else
+            // CheckLilyPad. The kills ride `edit_kills` (g47's seam — g45's
+            // `check_lily_pad` wrapper discards the drop record).
+            if self.quick_fall {
                 if let Some(kill) =
                     crate::edit::check_lily_pad(world, x, y, |k| self.kind_solid(k))
                 {
                     self.edit_kills.push(kill);
                 }
             } else {
-                crate::edit::square_tile_frame_default(world, x, y);
+                let below = world.tile(x, y + 1).copied().unwrap_or_default();
+                let above = world.tile(x, y - 1).copied().unwrap_or_default();
+                if below.liquid < 255 || above.liquid > 0 {
+                    crate::edit::square_tile_frame_default(world, x, y);
+                } else if let Some(kill) =
+                    crate::edit::check_lily_pad(world, x, y, |k| self.kind_solid(k))
+                {
+                    self.edit_kills.push(kill);
+                }
             }
         }
     }
@@ -1318,12 +1414,37 @@ fn set_kind(t: &mut Tile, code: u8) {
 const BOULDER_SOLIDS: [u16; 9] = [138, 484, 664, 711, 712, 713, 714, 715, 716];
 
 impl LiquidSystem {
+    /// The generation-settle context (R-12-5's plumbing seam): arm the
+    /// `SettleWaterAt` re-type (`Liquid.cs:178-192`) for a worldgen settle
+    /// pass. `water_line`/`lava_line` are the `GenVars` terrain-fill products
+    /// (`GenVars.cs:62-64`); `remix` selects the remix band (`:182`) over the
+    /// classic boundary (`:184`). The world-LOAD settle never calls this —
+    /// it leaves `generating` down and `gen_water_line` at the `maxTilesY`
+    /// pin (`WorldFile.cs:734`), so the re-type is inert exactly as the C#
+    /// load's `waterLine = maxTilesY` makes it. Runtime settles never arm it.
+    pub fn set_gen_settle_context(&mut self, water_line: i32, lava_line: i32, remix: bool) {
+        self.generating = true;
+        self.generating_world = true;
+        self.remix_world_gen = remix;
+        self.gen_water_line = water_line;
+        self.gen_lava_line = lava_line;
+    }
+
     /// `Liquid.QuickWater` (`Liquid.cs:104-148`) — the bulk "settle this
-    /// rectangle": walk the rows bottom-up and settle every wet cell. The
-    /// generation-only arms (`ShimmerRemoveWater`, the noTraps boulder
-    /// swap, `LiquidInteractionsCleanup`) stay with the unported gen
-    /// passes; the runtime/panic settle runs the solid core. `verbose` is
-    /// the progress-display parameter (no port consumer).
+    /// rectangle": walk the rows bottom-up and settle every wet cell.
+    /// `verbose` is the progress-display parameter (no port consumer).
+    ///
+    /// The outer generation arms are inert in the port, each for a recorded
+    /// reason (ANALYSIS W4-g47): `ShimmerRemoveWater` (`:108`/`:138`) early-
+    /// returns unless `generatingWorld` (`WorldGen.cs:34825`) and reads
+    /// `GenVars.shimmerPosition`, which the compact pipeline never places;
+    /// the noTraps `SetBoulderSolidity` swap (`:109-112`/`:139-142`) is
+    /// subsumed by the pass-scoped `tilesIgnoreWater(true)` (`:115`) the port
+    /// already raises (the same nine boulder kinds, [`BOULDER_SOLIDS`]);
+    /// `LiquidInteractionsCleanup` (`:144-147`) is `generatingWorld &&
+    /// !skyblock`-gated and strips the gen merge tiles 56/659 — it rides the
+    /// unported gen settle driver. The runtime/panic/load settle runs the
+    /// solid core below.
     pub fn quick_water(&mut self, world: &mut World, min_y: i32, max_y: i32) {
         self.bubble_solid = true;
         self.ignore_solids = true;
@@ -1341,10 +1462,15 @@ impl LiquidSystem {
 
     /// `Liquid.SettleWaterAt` (`Liquid.cs:150-289`) — drain one cell's
     /// liquid straight down, then spread it across the row it lands on,
-    /// repeating until the mass is placed. The generation-only re-type
-    /// arms (`:178-192`, the waterLine/lavaLine/dungeon reads) stay with
-    /// the unported gen passes — the runtime settle keeps the origin's
-    /// type. The landing cell's merge checks run through the three
+    /// repeating until the mass is placed. The generation-only re-type arm
+    /// (`:178-192`) runs while [`Self::generating`] is up: a dropped water
+    /// cell landing below `GenVars.waterLine` (classic) or the remix band
+    /// re-types to lava; the dungeon arm (`generatingWorld`-gated) is a
+    /// recorded no-op (no ported `InAnyPotentialDungeonBounds`). The runtime
+    /// settle keeps `generating` down (arm inert); the world-LOAD settle arms
+    /// `generating` but pins `gen_water_line = maxTilesY` (`WorldFile.cs:734`),
+    /// so the classic boundary never fires — both keep the origin's type.
+    /// The landing cell's merge checks run through the three
     /// `AttemptToMove*` helpers.
     fn settle_water_at(&mut self, world: &mut World, origin_x: i32, origin_y: i32) {
         self.ignore_solids = true;
@@ -1362,20 +1488,56 @@ impl LiquidSystem {
         let had_honey = origin.liquid_kind() == LiquidKind::Honey;
         let had_shimmer = origin.liquid_kind() == LiquidKind::Shimmer;
         let mut mass = origin.liquid as i32;
-        let kind = kind_code(origin.liquid_kind());
+        let mut kind = kind_code(origin.liquid_kind());
         let oi = world.index(origin_x, origin_y);
         world.tiles[oi].liquid = 0;
         let mut first_drop = true;
         loop {
-            // `:169-177` — fall through the empty open cells below.
+            // `:169-177` — fall through the empty open cells below. `flag4`
+            // is per-iteration in the C# (reset at `:170`), so track it here.
+            let mut fell = false;
             while y < self.height - 5 {
                 let below = world.tile(x, y + 1).copied().unwrap_or_default();
                 if below.liquid == 0 && self.tile_open(&below) {
                     y += 1;
                     first_drop = false;
+                    fell = true;
                 } else {
                     break;
                 }
+            }
+            // `:178-192` — the generation-only re-type. Honey/shimmer origins
+            // keep their type (`!flag && !flag2`); a dropped water cell
+            // re-types to lava below the boundary. The world-load settle
+            // pins `waterLine = maxTilesY` (`WorldFile.cs:734`), so the
+            // classic arm is dead there; the runtime never enters (`generating`
+            // down). The remix arm reads `lavaLine`/`rockLayer`/`oceanDepths`.
+            if self.generating && fell && !had_honey && !had_shimmer {
+                if self.remix_world_gen {
+                    // `:182` — the remix band: below lavaLine AND (above
+                    // rockLayer-80 OR near the bottom), outside the ocean.
+                    let rock = world.rock_layer;
+                    kind = if (y as f64) > self.gen_lava_line as f64
+                        && ((y as f64) < rock - 80.0 || y > self.height - 350)
+                        && !crate::scene::ocean_depths(
+                            world.world_surface,
+                            world.rock_layer,
+                            x,
+                            self.width,
+                            y,
+                        ) {
+                        1
+                    } else {
+                        0
+                    };
+                } else if y > self.gen_water_line {
+                    // `:184-187` — the classic waterLine boundary.
+                    kind = 1;
+                }
+                // `:188-191` — the dungeon re-type back to water is gated on
+                // `generatingWorld` AND `InAnyPotentialDungeonBounds` +
+                // `IsConsideredDungeonWall`; neither predicate is ported
+                // (ANALYSIS W4-g47), so the arm is a recorded no-op.
             }
             // `:193-272` — the row spread: alternate left/right from the
             // landing column, topping up same-type non-full cells below
@@ -3042,5 +3204,175 @@ mod liquid_force_settle {
         assert!(!sys.quick_settle(), ":760 drops the flag");
         let total: i32 = w.tiles.iter().map(|t| t.liquid as i32).sum();
         assert_eq!(total, 200, "the load settle conserves the mass");
+    }
+}
+
+/// W4-g47 settle-wiring witnesses: the load hook's dry-world no-op (the
+/// round-trip pin guarantee), the load context flags (`WorldFile.cs:733`/
+/// `:764`), the `SettleWaterAt` gen re-type arm (`Liquid.cs:178-192`) and the
+/// DelWater keep-one reconciliation (g47 canonical + g45's live reads / ring
+/// marking / explicit lily arm). Written, NOT run (code-only mode).
+#[cfg(test)]
+mod liquid_settle_wiring {
+    use super::*;
+    use crate::tile::FLAG_ACTIVE;
+
+    fn shaft(width: i32, height: i32, floor_y: i32, cx: i32) -> World {
+        let mut w = World::new("liquid_sw".into(), width, height);
+        for y in 0..=floor_y {
+            for x in [cx - 1, cx + 1] {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= FLAG_ACTIVE;
+            }
+        }
+        for x in 0..width {
+            let i = w.index(x, floor_y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        w
+    }
+
+    fn put_as(w: &mut World, x: i32, y: i32, amount: u8, kind: u8) {
+        let i = w.index(x, y);
+        w.tiles[i].liquid = amount;
+        set_kind(&mut w.tiles[i], kind);
+        w.mark_chunk(x, y);
+    }
+
+    #[test]
+    fn the_load_settle_on_a_dry_world_is_a_byte_and_rng_noop() {
+        // The round-trip pin guarantee (ANALYSIS W4-g47): a dry world's
+        // settle mutates zero tiles, bumps zero revisions and consumes zero
+        // `frame_rng` draws — so wiring it into `App::new` cannot move the
+        // save/load pins (`saveglue.rs`) or the framing RNG stream.
+        let mut w = shaft(9, 60, 50, 4);
+        w.seed_frame_rng();
+        let tiles_before = w.tiles.clone();
+        let rev_before = w.revision;
+        let rng_before = w.frame_rng.clone();
+        let mut sys = LiquidSystem::new(&w);
+        sys.settle_loaded_world(&mut w);
+        assert_eq!(w.tiles, tiles_before, "no tile mutated");
+        assert_eq!(w.revision, rev_before, "no revision bump");
+        assert_eq!(w.frame_rng, rng_before, "no genRand stand-in draw");
+        assert_eq!(sys.active_len(), 0, "nothing woke");
+        assert!(!sys.generating, ":764 drops the load context");
+    }
+
+    #[test]
+    fn the_load_settle_arms_and_drops_the_load_context() {
+        // `WorldFile.cs:733`/`:764`: the drain runs under
+        // `isGeneratingOrLoadingWorld` (the port's `generating`), with the
+        // STRICT `generatingWorld` down and `waterLine = maxTilesY`. After
+        // the settle the context drops back to the runtime state.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        assert!(!sys.generating, "runtime starts un-armed");
+        assert_eq!(sys.gen_water_line, w.height, "the maxTilesY load pin");
+        sys.settle_loaded_world(&mut w);
+        assert!(!sys.generating, ":764 clears isGeneratingOrLoadingWorld");
+        assert!(!sys.generating_world, "load is not generation");
+        assert!(!sys.quick_settle(), ":760 drops quickSettle");
+        // The blob settled as WATER — the re-type arm stayed dead on load.
+        assert_eq!(
+            w.tiles[w.index(4, 49)].liquid_kind(),
+            LiquidKind::Water,
+            "the waterLine pin keeps the load settle type-preserving"
+        );
+    }
+
+    #[test]
+    fn the_gen_settle_retypes_a_deep_water_drop_to_lava() {
+        // `Liquid.cs:184-187`: a gen-settle water drop landing below
+        // `GenVars.waterLine` re-types to lava. The context arms `generating`
+        // + a real waterLine (NOT the load's maxTilesY pin).
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_gen_settle_context(20, 30, false); // waterLine 20 < landing 49
+        sys.quick_water(&mut w, -1, -1);
+        assert_eq!(w.tiles[w.index(4, 49)].liquid, 200, "the mass landed");
+        assert_eq!(
+            w.tiles[w.index(4, 49)].liquid_kind(),
+            LiquidKind::Lava,
+            ":186 re-types below the waterLine"
+        );
+    }
+
+    #[test]
+    fn the_gen_settle_keeps_water_above_the_line_and_honey_everywhere() {
+        // `Liquid.cs:184` (`num2 > waterLine` false above the line) and
+        // `:178` (`!flag && !flag2` — honey/shimmer never re-type).
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.set_gen_settle_context(55, 60, false); // waterLine 55 > landing 49
+        sys.quick_water(&mut w, -1, -1);
+        assert_eq!(
+            w.tiles[w.index(4, 49)].liquid_kind(),
+            LiquidKind::Water,
+            "above the waterLine keeps water"
+        );
+
+        let mut w2 = shaft(9, 60, 50, 4);
+        put_as(&mut w2, 4, 10, 200, 2); // honey origin
+        let mut sys2 = LiquidSystem::new(&w2);
+        sys2.set_gen_settle_context(20, 30, false);
+        sys2.quick_water(&mut w2, -1, -1);
+        assert_eq!(
+            w2.tiles[w2.index(4, 49)].liquid_kind(),
+            LiquidKind::Honey,
+            ":178 honey keeps its type even below the line"
+        );
+    }
+
+    #[test]
+    fn delwater_sub2_dry_at_the_world_edge_does_not_panic() {
+        // g45's edge fix (`2249cf59`): the C#'s `Main.tile[nx, y]` is null
+        // at the edge; the port probes through `tile` before indexing so a
+        // negative `nx` cannot wrap. A sub-2 cell at x=0 retires cleanly.
+        let mut w = World::new("edge".into(), 9, 12);
+        for x in 0..9 {
+            let i = w.index(x, 10);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        w.frame_important = vec![false; td::TILE_COUNT];
+        w.compute_column_surface();
+        w.compute_chunks();
+        put_as(&mut w, 0, 9, 1, 0); // sub-2 at the left edge
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 0, 9);
+        sys.active[0].kill = KILL_PASSES;
+        sys.del_water(&mut w, 0); // must not panic on the x-1 probe
+        assert_eq!(w.tiles[w.index(0, 9)].liquid, 0, "the edge film dried");
+        assert_eq!(sys.active_len(), 0, "the entry retired");
+    }
+
+    #[test]
+    fn delwater_lava_grass_ring_converts_and_dirties_the_pass() {
+        // g45's ring marking: the grass→dirt conversion sets `dirty` so the
+        // pass bumps the world revision (and marks the converted chunk for
+        // the draw rebuild). A retired lava cell beside a grass tile flips
+        // it to dirt 0. The lava cell sits on the floor (solid below) so the
+        // >=20 keep-alive cannot rescue it and the reaction tail runs.
+        let mut w = shaft(9, 60, 50, 4);
+        // Grass 2 on the floor row beside the landing column.
+        let g = w.index(5, 49);
+        w.tiles[g] = Tile { kind: 2, ..Default::default() };
+        w.tiles[g].flags |= FLAG_ACTIVE;
+        put_as(&mut w, 4, 49, 100, 1); // lava on the floor
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 49);
+        sys.active[0].kill = KILL_PASSES;
+        sys.del_water(&mut w, 0);
+        assert_eq!(w.tiles[g].kind, 0, "the grass ring converted to dirt");
+        assert!(sys.dirty, "the ring write dirtied the pass (g45's marking)");
     }
 }

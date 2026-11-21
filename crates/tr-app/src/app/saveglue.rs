@@ -1744,4 +1744,52 @@ mod chest_save_tests {
         );
         crate::test_world_helpers::remove_scratch(&dir);
     }
+
+    /// W4-g47 — the world-load settle hook (`WorldFile.cs:733-764`) rides
+    /// `App::new` (the shared boot + `swap_world` construction). A suspended
+    /// water blob settles to the floor through the real constructor, and the
+    /// load context drops back to the runtime state. Written, NOT run
+    /// (code-only mode).
+    #[test]
+    fn w4_g47_app_new_settles_a_suspended_blob() {
+        let mut w = World::new("settle".into(), 40, 80);
+        w.frame_important = vec![false; tr_core::tiledata::TILE_COUNT];
+        // A floor row at y=70 and a suspended blob at (20, 10).
+        for x in 0..40 {
+            let i = w.index(x, 70);
+            w.tiles[i] = Tile { kind: 1, flags: FLAG_ACTIVE, ..Default::default() };
+        }
+        let b = w.index(20, 10);
+        w.tiles[b].liquid = 200;
+        w.compute_column_surface();
+        w.compute_chunks();
+        let app = app_for(
+            w,
+            WorldSections::native(tr_core::save::WorldSide::default()),
+            PathBuf::from("settle.trwld"),
+        );
+        assert_eq!(app.world.tiles[app.world.index(20, 10)].liquid, 0, "the origin drained");
+        assert_eq!(app.world.tiles[app.world.index(20, 69)].liquid, 200, "the blob landed");
+        assert!(!app.liquids.quick_settle(), "the load flag dropped");
+        let total: i32 = app.world.tiles.iter().map(|t| t.liquid as i32).sum();
+        assert_eq!(total, 200, "the load settle conserves the mass");
+    }
+
+    /// W4-g47 — the dry-world round-trip guarantee: a dry world's settle is a
+    /// byte no-op, so the save/load pins (`chest_rig` is dry) do not move when
+    /// the hook runs. The constructor leaves the tile grid and the caller-pinned
+    /// `frame_rng` exactly as loaded. Written, NOT run (code-only mode).
+    #[test]
+    fn w4_g47_app_new_on_a_dry_world_moves_no_liquid_bytes() {
+        let w = chest_rig(); // dry — the chest fixture carries no liquid
+        let tiles_before = w.tiles.clone();
+        let app = app_for(
+            w,
+            WorldSections::native(tr_core::save::WorldSide::default()),
+            PathBuf::from("dry.trwld"),
+        );
+        assert_eq!(app.world.tiles, tiles_before, "the dry settle mutated no tile");
+        assert_eq!(app.liquids.active_len(), 0, "nothing woke");
+        assert!(!app.liquids.quick_settle());
+    }
 }
