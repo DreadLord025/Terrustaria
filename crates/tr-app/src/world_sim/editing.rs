@@ -2592,6 +2592,30 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // folded into `potions::use_potion_item` — the i37 coordination
         // note's deferred i19 fold).)
     }
+    // W4-g17 wiring wave 2 — the hair-dye use arm (`Player.cs:42856-42866`):
+    // `ItemTimeIsZero && itemAnimation > 0 && item.hairDye >= 0` →
+    // `ApplyItemTime(item)` + `this.hairDye = (byte)item.hairDye`. The C#
+    // runs it MID-SWING (not on the press edge), independent of the
+    // consumable arms above; the port's `item_time <= 0` is ItemTimeIsZero
+    // and `swing > 0` is itemAnimation > 0. The hair dyes are useStyle 9
+    // (the eat/drink pose, `Item.cs:21254`), consumable, no heal/buff — so
+    // the potion/food arms above skip them and this arm applies the dye.
+    // The `NetMessage.SendData(4)` sync is MP-only (single-player drops it).
+    // The stack consume is the useStyle-9 consumable path's (the item lane
+    // owns the eat/drink consume; the dye application is this arm's).
+    if app.swing > 0.0 && app.item_time <= 0.0 && held.count > 0 {
+        if let Some(def) = registry::get(held.kind) {
+            if def.hair_dye >= 0 {
+                // `ApplyItemTime(item)` — itemTime = useTime (the prefixed
+                // instance, `Player.cs:4416-4419`).
+                let use_time = held_use_time_ticks(held);
+                app.item_time = use_time.max(0) as f32 * ONE_TICK_SECS;
+                if let Some(p) = app.player.as_mut() {
+                    p.hair_dye = def.hair_dye as u8;
+                }
+            }
+        }
+    }
     // The held item's prefixed stats (`Item.Prefix`'s application on a
     // fresh item, recomputed — see prefix.rs): the swing pacing, the mana
     // cost and the throw damage read the instance values. The throw's crit

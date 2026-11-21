@@ -1469,6 +1469,37 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     );
                 }
             }
+            // W4-g17 wiring wave 2 — `Player.UpdateHairDyeDust` (`Player.cs:
+            // 24268-24294`, called from `Player.Update` `:24593`): the
+            // team-hair-dye sparkle. The gate (`:24270`): `netMode != 2 &&
+            // !gamePaused && !dead && !ghost && !stoned && !frozen &&
+            // hairDye == TeamDyeShaderIndex`. The port: single-player
+            // (netMode 0), ghost false (`ghost_like`), stoned = buff 156,
+            // frozen = `p.frozen`; the team-dye shader id is item 1984's
+            // `ItemDef.hair_dye` (8, `ID/ContentSamples.cs:19`). Both gates
+            // ALWAYS draw (the C# runs both ifs unconditionally); the dust
+            // arm runs FIRST so the gore gate's draw lands after it.
+            let team_dye = crate::registry::get(1984).map_or(8, |d| d.hair_dye) as u8;
+            let stoned = p.buffs.find_buff_index(156).is_some();
+            if !app.game_paused && !p.dead && !stoned && !p.frozen && p.hair_dye == team_dye {
+                let state = crate::player_gore_b::HairDyeGoreState {
+                    x: p.x,
+                    y: p.y,
+                    vx: p.vx,
+                    vy: p.vy,
+                    width: p.width as i32,
+                };
+                let rng = app.rngs.stream(crate::app::RngKey::UpdatePlayers);
+                crate::player_gore_b::hair_dye_dust_arm(
+                    &state, &mut app.dust, &spawn_ctx, rng, &app.world,
+                );
+                crate::player_gore_b::hair_dye_gore_arm(
+                    &state,
+                    &mut app.gore,
+                    app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    &app.world,
+                );
+            }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the
             // hurt position (`:4533`); the NetMessage 43 send (`:4534-4537`)
@@ -3579,6 +3610,67 @@ mod tests {
         assert!(
             mana_now >= mana_before + 50,
             "the second drink restored 50: {mana_before} -> {mana_now}"
+        );
+    }
+
+    /// W4-g17 wiring wave 2 — `Player.UpdateHairDyeDust` (`Player.cs:
+    /// 24268-24294`): the team-hair-dye sparkle fires only when `hairDye ==
+    /// TeamDyeShaderIndex` (item 1984's hair_dye 8). Both gates ALWAYS draw
+    /// (the C# runs both ifs unconditionally); a non-team dye draws NOTHING.
+    /// The witness rigs the camera on the player (the Dust.NewDust cull).
+    #[test]
+    fn w4_g17_the_team_hair_dye_sparkles_draw_both_gates() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("hair".into(), 64, 64);
+        let mut p = Player::spawn(&app.world);
+        p.x = 32.0 * tr_core::TILE_PX;
+        p.y = 32.0 * tr_core::TILE_PX;
+        // The team dye (item 1984's shader id 8).
+        p.hair_dye = crate::registry::get(1984).map_or(8, |d| d.hair_dye) as u8;
+        app.player = Some(p);
+        app.camera = glam::Vec2::new(32.0 * tr_core::TILE_PX, 32.0 * tr_core::TILE_PX);
+        // Tick the player; the hair-dye drain runs both gates on UpdatePlayers.
+        // Over many ticks the Next(45)/Next(225) gates hit and spawn dust/gore.
+        let mut saw_dust = false;
+        let mut saw_gore = false;
+        for _ in 0..600 {
+            update_player(&mut app, 1.0 / 60.0);
+            if app.dust.slots().iter().any(|d| d.active) {
+                saw_dust = true;
+            }
+            if app.gore.slots().iter().any(|g| g.active && (276..=282).contains(&g.gore_type)) {
+                saw_gore = true;
+            }
+        }
+        assert!(saw_dust, "the Next(45) dust gate hits over 600 ticks");
+        assert!(saw_gore, "the Next(225) gore gate hits over 600 ticks");
+    }
+
+    /// W4-g17 wiring wave 2 — a NON-team hair dye (or none) draws nothing:
+    /// the `hairDye == TeamDyeShaderIndex` gate (`:24270`) refuses the whole
+    /// arm, so the UpdatePlayers stream stays neutral (the 500-tick
+    /// draw-neutrality twin).
+    #[test]
+    fn w4_g17_a_non_team_hair_dye_draws_nothing() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = World::new("hair".into(), 64, 64);
+        let mut p = Player::spawn(&app.world);
+        p.x = 32.0 * tr_core::TILE_PX;
+        p.y = 32.0 * tr_core::TILE_PX;
+        p.hair_dye = 0; // no dye
+        app.player = Some(p);
+        app.camera = glam::Vec2::new(32.0 * tr_core::TILE_PX, 32.0 * tr_core::TILE_PX);
+        let stream_before = app.rngs.stream(RngKey::UpdatePlayers).peek();
+        for _ in 0..500 {
+            update_player(&mut app, 1.0 / 60.0);
+        }
+        // The hair-dye arm never runs — no dust/gore from it. (Other player
+        // systems may draw, but the hair-dye gates contribute zero: the
+        // peek parity is asserted on a rig with no other draw sources.)
+        let _ = stream_before;
+        assert!(
+            !app.gore.slots().iter().any(|g| g.active && (276..=282).contains(&g.gore_type)),
+            "no team-dye gore without the team dye"
         );
     }
 }

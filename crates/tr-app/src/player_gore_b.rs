@@ -3,12 +3,15 @@
 //! (`Player.cs:21034-24294`). W4-g17 wiring wave: the dash==1 tail is
 //! LIVE — the `player.rs` dash start queues `pending_dash_gores` and
 //! `world_sim::player`'s drain runs [`dash_launch_gores`] on the
-//! `UpdatePlayers` stream. The sandstorm hold ([`sandstorm_jump_gore`])
-//! and the hair-dye arms stay unwired: the port has no
-//! `DoubleJumpVisuals` dispatch yet and no team-dye state
-//! (`Player.hairDye` is unported — the dye cache's recorded deviation),
-//! so their claims wait for those seams (the `npc_hit_effect_a.rs`
-//! precedent).
+//! `UpdatePlayers` stream. W4-g17 wiring wave 2: the hair-dye arms are
+//! LIVE — `Player.hair_dye` (the team-dye state) is ported, the use arm
+//! (`Player.cs:42858-42865`) applies it and `world_sim::player`'s tick-tail
+//! drain runs [`hair_dye_dust_arm`] + [`hair_dye_gore_arm`] behind the
+//! `hairDye == TeamDyeShaderIndex` gate (`:24270`). The sandstorm hold
+//! ([`sandstorm_jump_gore`]) is the UNWIRED twin of f42's live drain
+//! (`origin/task/W4-f42-sandstorm-2` `4bf7b2e88`: `pending_sandstorm_jump`
+//! + the `world_sim/player.rs` drain) — keep-one at merge, f42's survives
+//! (the `npc_ai_style73` unwired-module precedent).
 //!
 //! ## Scope — this commit's sites (source order)
 //!
@@ -62,7 +65,7 @@
 //!   both arms on one stream in C# order.
 //!
 //! See docs/ANALYSIS.md "The player gore sites (W4-g17, wave B)".
-#![allow(dead_code)] // the sandstorm/hair-dye arms wait for their dispatch seams; the dash tail is live
+#![allow(dead_code)] // the sandstorm arm is f42's keep-one twin; the dash + hair-dye arms are live
 
 use glam::Vec2;
 use tr_core::gore::GorePool;

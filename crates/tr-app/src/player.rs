@@ -1205,6 +1205,14 @@ pub struct Player {
     /// sandstorm leg pose turns the player every 4 ticks on it
     /// (`Player.cs:36302`).
     pub misc_counter: u32,
+    /// `Player.hairDye` (`Player.cs:2546`, a `byte`): the applied hair-dye
+    /// shader id. `UpdateHairDyeDust` (`:24268-24294`) sparkles only when it
+    /// equals `ContentSamples.DyeShaderIDs.TeamDyeShaderIndex` (item 1984's
+    /// hair shader, `ID/ContentSamples.cs:19` — the port's `ItemDef.hair_dye`
+    /// for 1984 is 8). The use arm (`Player.cs:42858-42865`) writes
+    /// `(byte)item.hairDye`; 0 = no dye (the fresh default). W4-g17 wiring
+    /// wave 2 — the team-dye state the gore lane's hair-dye arm reads.
+    pub hair_dye: u8,
     /// `Player.pulley` / `Player.pulleyDir` (`Player.cs:1070`): the rope
     /// pose — body rows 1 (dir 2) and 2 (dir 1).
     pub pulley: bool,
@@ -2659,6 +2667,7 @@ impl Player {
             body_frame_counter: 0.0,
             swim_time: 0,
             misc_counter: 0,
+            hair_dye: 0,
             pulley: false,
             pulley_dir: 0,
             shield_raised: false,

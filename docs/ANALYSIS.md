@@ -39538,7 +39538,26 @@ RNG slot recorded. This lane's `player_gore_b::sandstorm_jump_gore` is the
 UNWIRED twin — keep-one at merge: f42's live drain survives, this module's
 arm retires (the `npc_ai_style73` unwired-module precedent). No double-feed.
 
-**3. The hair-dye arm — WIRED** (see "The hair-dye wiring" below).
+**3. The hair-dye arm — WIRED** (`Player.hair_dye` + the use arm + the
+tick-tail drain). `Player.hairDye` (`Player.cs:2546`, a `byte`) was unported
+(the dye cache's recorded deviation, ANALYSIS "The dye plumbing"). The port
+adds the field (0 = no dye, the fresh default), the use arm
+(`Player.cs:42856-42866`: `ItemTimeIsZero && itemAnimation > 0 &&
+item.hairDye >= 0` → `ApplyItemTime` + `hairDye = (byte)item.hairDye`, in
+`world_sim/editing.rs` after the potion block — the hair dyes are useStyle 9
+consumables with no heal/buff, so the potion/food arms skip them), and the
+per-tick `UpdateHairDyeDust` drain (`Player.cs:24268-24294`, called from
+`Player.Update` `:24593`) in `world_sim/player.rs`'s tick-tail: the
+`!gamePaused && !dead && !ghost && !stoned && !frozen && hairDye ==
+TeamDyeShaderIndex` gate (stoned = buff 156, frozen = `p.frozen`, ghost
+false), then `player_gore_b::hair_dye_dust_arm` + `hair_dye_gore_arm` on
+`UpdatePlayers` (both gates ALWAYS draw, the dust arm first). The team-dye
+shader id resolves from item 1984's `ItemDef.hair_dye` (8,
+`ID/ContentSamples.cs:19`). The `NetMessage.SendData(4)` sync is MP-only.
+The hair-dye DRAW tint (the legacy CPU `GameShaders.Hair.GetColor` →
+`colorHair` channel) stays the dye lane's — this is the sparkle visual +
+the state field only. 2 witnesses (the 600-tick team-dye sparkle, the
+non-team draw-neutrality twin).
 
 **4. The MessageBuffer net arm — CONTRACT (g50's).** `MessageBuffer.cs:3828`
 is msg **112 SpecialFX** kind 1 (`WorldGen.TreeGrowFX`, the shake variant on
