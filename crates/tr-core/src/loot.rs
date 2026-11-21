@@ -1211,7 +1211,13 @@ impl ItemDropRule for DropLocalPerClientAndResetsMoney {
         info: &mut DropAttemptInfo,
         out: &mut Vec<DropRequest>,
     ) -> DropAttemptResult {
-        if roll_luck(info.rng, info.luck, self.chance_denominator) < 1 {
+        // `DropLocalPerClientAndResetsNPCMoneyTo0.TryDroppingItem`
+        // (`DropLocalPerClient...cs:22-36`): the gate is the PLAIN
+        // `info.rng.Next(chanceDenominator)` — NOT `RollLuck`. The C#
+        // class overrides the base `CommonDrop`'s luck roll away; the
+        // bag always drops in expert (denominator 1) and its stream
+        // consumption must not depend on the killer's luck.
+        if info.rng.next_range(0, self.chance_denominator) < 1 {
             let stack = info.rng.next_range(self.amount_min, self.amount_max + 1);
             out.push(DropRequest {
                 item: self.item,
@@ -2723,6 +2729,35 @@ mod tests {
         let mut out = Vec::new();
         resolve_rule(boss_bag(123).as_ref(), &mut info(&mut rng), &mut out);
         assert!(out.is_empty());
+    }
+
+    /// W4-f35 doc-sweep: the bag rule's gate is the PLAIN
+    /// `info.rng.Next(chanceDenominator)` (`DropLocalPerClient...cs:24`),
+    /// NOT `CommonDrop`'s `RollLuck` — the override drops the luck roll.
+    /// At luck 1.0 the bag's stream consumption is IDENTICAL to luck 0
+    /// (one gate draw + one stack draw), and the gate float is never read.
+    #[test]
+    fn w4_f35_boss_bag_gate_is_luck_free() {
+        for luck in [0.0f32, 1.0, -0.7] {
+            let mut rng = ScriptRng::new(&[], &[0, 1]);
+            let mut i = DropAttemptInfo {
+                luck,
+                is_expert: true,
+                ..info_npc(&mut rng, LootNpc::default())
+            };
+            let mut out = Vec::new();
+            let r = resolve_rule(boss_bag(3318).as_ref(), &mut i, &mut out);
+            assert_eq!(r.state, DropResultState::Success, "luck {luck}");
+            assert_eq!(out.len(), 1);
+            assert_eq!(out[0].item, 3318);
+            assert!(out[0].resets_money);
+            drop(i); // releases the rng borrow
+            // Exactly the gate Next(0,1) + the stack Next(1,2) — no luck
+            // float gate, no shrunk/widened extra draws. The ScriptRng's
+            // float script is EMPTY: any `next_float` (the RollLuck gate)
+            // would panic "script exhausted".
+            assert_eq!(rng.ranges, [(0, 1), (1, 2)], "luck {luck}");
+        }
     }
 
     #[test]
