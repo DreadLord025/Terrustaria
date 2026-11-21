@@ -1,5 +1,13 @@
 # 64-addendum — the W4-g72 31-byte v18 claim, input to the g71c UNION
 
+> **SUPERSEDED for the final union by research/64b** (the CONSOLIDATED
+> claimant registry, W4-g72 closeout): the five-claimant 53-byte layout
+> below grew to TEN distinct blocks / a 106-byte head once g87's pet trio,
+> the c39≡f39 seasonal five, d125's empress byte and the c43/f45 identity
+> block were seated. OUR 31-byte claim (§1) and its C# seating (§2) are
+> unchanged and carried verbatim into 64b; the §3 truncation moves now
+> target 106, not 53.
+
 **Branch:** `task/W4-g72-bg-layers-3` (final phase, continues DONE `2b02345c`).
 **Mode:** code-only — witnesses WRITTEN NOT RUN. **Audience:** the g71c
 bg-roll-wire lane extending `origin/task/W4-g71-bg-layers-2`'s research/92 §1
