@@ -29207,6 +29207,66 @@ style-axis arm, the 1080 projectile, the full Transform) is the merge step.
   `:40-51`, the nested inner-before-outer draw order). The ladder wiring is
   the roster co-lanes' merge step. 9 witnesses WRITTEN NOT RUN across the
   four items.
+- **W4-d127 FINAL (2026-11-21, code-only)**: the five-item final phase, each
+  committed separately. (1) **Spawn-ladder WIRING**: the g61 spawn-wiring tip
+  (`b4e40449`/origin `a96289284`) carries NO NPC-spawn ladder seam — its
+  `spawner.rs` diff vs main is EMPTY (its two seams are the bug-net catch poof
+  + the play_sound caller-stream/teleport fields, both `npc_spawn_visuals.rs`
+  dust-lane). So there is no g61 seam to attach to; the ATTACH-CONTRACT is
+  published in `spawner.rs`: the C# general surface else-if chain's
+  `spawnFriendly` block (`:2096-2322`) RETURNS before the bird bands; when
+  spawnFriendly is false the `switch(tileType)` case 2/109/477/492
+  (`:2372-2576`) carries FOUR bird bands — owl (`:2437`), day-bird (`:2449`),
+  stinkbug/butterfly/windy (`:2471`/`:2484`/`:2504`), and the ANYTIME band
+  (`:2532-2553`) the prior census MISSED. NEW `bird_spawn_anytime_pick` ports
+  the fourth band (Next(2) gate, no day/time/weather term; Next(4) pick THEN
+  gold RollLuck(400); the `& flag10` both-sides draw order — the pick+gold run
+  even on a non-surface roll). The jungle gate is a LATER else-if (`:3803`,
+  NOT `:3801` — that line is the preceding 359 arm; citations corrected). The
+  stream dependencies the merger must land first are pinned: `setFireFlyChance`
+  (`NPC.cs:93352-93399`, UNPORTED — `World.butterfly_chance` ctor-0 never
+  written, no firefly/stinkbug slot), the wind gates, the bird kinds. Until
+  those land the bands stay pure helpers (wiring now would shift the frozen
+  slime/zombie stream). (2) **Bird AMBIENT sounds**: census verdict CLAIMED BY
+  MAIN — the chirp idle arms (`NPC.cs:92249` owl night Next(700)→46,
+  `:92271-92335` the day family Next(400)→32/67/68/69 incl the 442 Next(5)
+  switch) are already `ambient_sound::critter_sound_cue`/`critter_legacy_voice`
+  on main, wired at the `NPC.cs:90323` seam; e9/f2 port a DIFFERENT table (the
+  IdleSounds ladder `:90079-90206` + water splash), NOT the chirps — no
+  unclaimed arm to port. The GAP fixed: the emitter keyed `to_u16()` (protocol)
+  not `cs_id()` (net id) — the MERGER-L7 mis-route made GolemHead (protocol 74)
+  chirp as Bird 74 by day; `cs_id` 245 (the Golem fold) is outside the table.
+  Re-keyed to `cs_id()` (the e9 idle-emitter convention). (3) **GoldBird-442
+  sparkle**: the c8 GoldWorm co-lane pattern — the `UpdateNPC_CastLights`
+  `IsGoldCritter` arm (`NPC.cs:92345-92368`, before AI() at `:90320`); the gate
+  `gold_worm_sparkle` is on main (kind-agnostic, unwired), the c8 tip adds the
+  dust-spawn half + wires it GoldWorm-448-only. The `IsGoldCritter` set
+  (`NPCID.cs:10126`, 14 ids) includes 442. PORTED `is_gold_critter` (the
+  membership predicate, generalises the c8 kind test) + `gold_worm_sparkle_dust`
+  (the c8 spawn half verbatim: ONE dust 43, netOffset position, alpha 254, pure
+  yellow, scale 0.5, velocity zeroed). The sim CastLights wiring is the c8/d40
+  merge step (442=d40, 448=c8); dormant until then. (4) **Owl-mimic 689
+  Transform-target VERIFY**: the target is **317 DemonEyeOwl** (aiStyle 2, the
+  eye family), NOT 473 BigMimicCorruption (`NPCID.cs:11311` vs `:11619`); the
+  C#'s only 689 Transform is `Transform(317)` (`:25333`), 473 is a corrupt-biome
+  SPAWN (`:3738`, 28×44/aiStyle87/3500HP `:14508-14520`), never a transform
+  target — the "mimic-473-band" premise does not apply. The chain is ROWED:
+  d38 (`6f9dd02db`) the 317 row (data.rs:590/:969 cs_id, ai_style 2 :2645,
+  30×32 :3231, 75HP :3924, bestiary net_id 317, `DemonEyeOwl => update_eye`),
+  b2 (`6f275c133`) the `2 => ai_002_eye_family` axis (npc.rs:4665); this lane's
+  `transform_core` + the 317 COMPLETION-ONLY drain close it at the merge.
+  (5) **Axis-24 vs d38-update_bird RETIRE-HUNK**: published on the axis arm in
+  `npc.rs` — at the d38 merge the axis wins FIRST-match, so d38's kind-keyed
+  path retires: hunk (A) the two `update_kind_ai` kind arms (d38 npc.rs:
+  6530-6533, BirdBlue/BirdRed => update_bird) — retire the arms, KEEP the kinds
+  + data rows; hunk (B) the whole `fn update_bird` (d38 npc.rs:12312-12376) —
+  retire wholesale, `ai_024_bird_family` is the SUPERSET (live luck vs d38's
+  0.0, the sim stamps vs 0.0/&[], the 317 drain d38 ignores, the gravity gate +
+  wet row + dead-band snap d38's bare tail lacks). MERGE ORDER: kinds+data
+  first, then retire (A)+(B) together (S1-D-4c one-live-arm; the s1_d_4c
+  one-arm-per-kind witness stays green). 6 witnesses WRITTEN NOT RUN across the
+  five items (the anytime band, the cs_id key mis-route, the gold-critter set +
+  the dust spawn, the 317-vs-473 target, the retire-contract pin).
 ## The WoF Eye's aiStyle-28 arm (S1-D-3 aiStyle-28, 2026-11-18, code-only mode)
 `crates/tr-app/src/npc_ai_style28.rs` ports `NPC.AI()`'s
 `else if (this.aiStyle == 28)` block (`NPC.cs:26053-26208`) as a pure
