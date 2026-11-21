@@ -35,6 +35,7 @@ use super::caves;
 use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
+use super::hive;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
