@@ -36055,6 +36055,120 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## W4-a6 — the permanent power-up consumables (Player.cs:45192-45423)
+
+The `powerups.rs` machine rides the boss-spawner/recall press-edge shape:
+the use START arms the swing on the press edge, the grant fires at
+`ItemTimeIsZero && itemAnimation > 0` mid-swing, `ApplyItemTime` re-arms
+the cadence and the generic consume tail (`:43280-43326`) pays ONE only
+when the grant fired. Refused arms keep re-checking each action tick and
+never consume.
+
+- **Achievement targeting (reconcile fix, research/138)**: the C#
+  `HandleSpecialEvent` completes ONE row's condition
+  (`GetCondition("STAR_POWER", "Use").Complete()`); the first a6 pass used
+  the `notify_custom("Use")` broadcast (every `Flag("Use")` row at once) —
+  LESS faithful than g88's `complete_named` / c36's `complete_condition`.
+  The reconcile adds the row-targeted `AchievementManager::
+  complete_condition` (c36's shape, the keep-one at the merge) and the
+  crystal/fruit/torch arms now call it: STAR_POWER / GET_A_LIFE /
+  TOPPED_OFF / GAIN_TORCH_GODS_FAVOR each complete ONLY their own row.
+  Life crystal's event 0 stays a NO-OP (no case 0,
+  `AchievementsHelper.cs:288-379`).
+- **Galaxy Pearl ownership (reconcile fix)**: the persistence owner is
+  `Player.used_galaxy_pearl` (the `.plr` slot `:54784`/`:55258` — the C#
+  `RecalculateLuck` reads the player field directly, `:29142-29145`);
+  `update_luck` mirrors it into the `LuckState.used_galaxy_pearl` consumer
+  before every recalculation (the g90 lane-7 shape). The first a6 pass
+  latched the LuckState copy directly — no Player field to persist.
+- **Aegis Crystal f32 order (reconcile fix)**: the +0.2 `lifeRegenTime`
+  add rides its OWN `RegenInputs.aegis_crystal` slot, applied BETWEEN the
+  base +1 (`:19112`) and the crimson +1 folded into `extra_time`
+  (`:19117-19120`) — the g90 lane-7 shape. Pre-summing `0.2 + 1.0` into
+  `extra_time` (the first a6 pass) reorders the C#'s f32 accumulation.
+- **Booster row order (reconcile fix)**: `UpdatePermanentBoosters`' rows
+  now run in the C#'s own order — Aegis Fruit +4, Gummy Worm +3, Ambrosia
+  triple LAST (`:12853-12866`; g89's verbatim order).
+- **TRAINING_DAY (reconcile addition)**: both world book flags standing
+  fires progression 40 every tick from the player pass
+  (`Player.cs:25695-25698`, the g90 lane-7 hook; idempotent once
+  completed).
+- **NPC statics as World fields**: `combatBookWasUsed` /
+  `combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed` /
+  `boughtCat/Dog/Bunny` are `Main`-global statics in the C#; the port
+  stores them on `World` (the S1-P-i35 `combat_book_was_used`
+  standing-in) and persists them in the wld flags block at their C# tail
+  offsets (1939 / 2036 / 2037 / 2021-2023) behind their version gates
+  (204 / 259 / 260 / 217). The golden fixture's bytes there are all 0, so
+  the pinned divergence set stays exactly killCount[1]/claimable[1]/
+  treeTop[0]/manifest.
+- **Pet licenses (4829/4830/4910)**: the port ships no TownCat/TownDog/
+  TownBunny `NpcKind` (637/638/656) and no `TownNPCProfiles.RollVariation`,
+  so the LIVE `AnyNPCs` scan never answers today — a bought license's use
+  is refused (no `ApplyItemTime`, no consume), exactly the C# verdict with
+  no resident pet. The purchase arm (flag + `Misc.License*Used` chat)
+  is ported; the town arrival gates (`Main.cs:65900-65911`) are the
+  deferred consumer of the bought flags. **Exchange-fail fold (retire
+  pass, research/138 §11.3 — the g87 closeout `26620538e` shape):** when
+  a town-pet kind lands and the scan answers, the arm now consumes one
+  and posts `Misc.PetExchangeFail` (`NPC.cs:80914-80917` —
+  `RerollVariation` returns false with no profile, `:80935-80938`),
+  never a silent consume; no flag re-raise, no license re-print. The
+  Success leg (`RerollVariationForNPCType` → `RollVariation` +
+  `Misc.PetExchangeSuccess`, `:80910-80912`) is the remaining merge
+  debt — it lands WITH `TownNPCProfiles`. **Activation contract
+  UPDATED (D5 correction pass, research/138 §12.2):** the kinds leg is
+  DONE — g10 `5dee28650` landed ALL-11 town pets WIRED (637/638/656/
+  670/678-684, `npc/data.rs` vanilla-id arms + bestiary `net_id`s; the
+  seal-era d43 premise was stale — d43 carries zero commits, main
+  `a725acb04` still has no arms) → f43's splice (f43b lane:
+  `town_arrival_pets.rs` at `79a037f5e`, UNWIRED whole-chain, ports the
+  arrival gates + the exchange chain incl. the profiles/rosters/names;
+  variation roll on `Main.rand`, name on `WorldGen.genRand`) → the
+  one-line Success/Fail chat dispatch in the merged use arm (the exact
+  hunk published in 138 §12.2). Witnesses:
+  `a_bought_license_without_a_resident_pet_refuses` +
+  `a_resident_non_pet_does_not_open_the_exchange` (the net-id scan, not
+  mere liveness); the positive Success witness is witnessable on g10's
+  tip (a 637/638/656 kind EXISTS) but lands WITH the f43b splice + the
+  hunk, not before (138 §12.2's updated boundary).
+- **g87 re-adjudication (research/138 §10 FINAL + §11.3 retire)**: g87
+  `dfbcaf94b` pushed the same three families (3335/5289/licenses); its
+  closeout `26620538e` (local over the pushed tip at the retire probe)
+  then FOLDED all three a6 deltas — the Demon Heart `CheckCanUse` start
+  refusal (`:52051-52054`), the full QuickSpawnItem walk (deposit +
+  chime/notify + void vault + prefix-preserved overflow, the roll on
+  UpdatePlayers), and the live license scan + `!bought` guard + the
+  PetExchangeFail line. The §10 keep-owns stand (a6's machine is the
+  single-seam cluster owner; g87's module dedups onto it at the merge —
+  now a shape-identical dedup, no semantic conflict). g87's `.trplayer`
+  v7 `dh` line still collides with the g88 superset's v7 (DROP — the
+  fields are f44's L1-only `.plr` lane). Both minecart ports are
+  NO-flag-gate ALWAYS-spawn (`:45204` has no `!unlockedSuperCart` leg).
+  g87's `.wld` pet flips dedup onto f45; its `.trwld` 3-byte pet tail
+  rides the SEALED 107-byte-head v18 union at offsets 57-59 (138 §12.1's
+  ARBITER receipt — g88 d09d7e10a research/103 §L3-ARBITER FINAL A3
+  authority, D3 restated verbatim; the seal's g71d 59-61 seats, §11.2's
+  101-head/51-53 seats and the five-way 68-byte table §5a are superseded).
+- **QuickSpawnItem (the minecart powerup's 3353 grant)**: the `GetItem`
+  deposit walk with the per-slot chime + `NotifyItemPickup`, the void
+  vault as the LAST resort and the overflow world drop at the player
+  centre with the prefix preserved (the reforge-return overflow
+  precedent). `newAndShiny`/`enemyGrabDelayTime` are UI/MP-only (the
+  SP `ApplySpawnOwnership` arm is a no-op, `WorldItem.cs:296-305`).
+- All `NetMessage.SendData(4/51/61)` sync rows are MP-only — the port is
+  single-player (netMode 0), so they fold out; the `Main.netMode == 0`
+  chat/flag arms are the ones ported.
+- **Drones (5451/5738)**: `ItemCheck_TryDestroyingDrones` is ported 1:1
+  (the mid-swing `controlUseItem && ItemTimeIsZero && !mouseInterface`
+  kill of the owner's 1020/1105 projectiles, `releaseUseItem = false`,
+  the `CheckCanUse_Inner` use-start refusal and the shoot suppression).
+  The 1020/1105 projectile AI is unported (no `proj_data` row — the spawn
+  seam returns `None`), so in live play the counts never rise and the arm
+  is dormant; the machine is ported against the pool state for when the
+  drone AI lands. `mouseInterface` folds to `!inventory_open` (the port's
+  standing-in — the UI-hover flag has no field).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

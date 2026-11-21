@@ -308,8 +308,28 @@ pub struct World {
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
-    /// (S1-P-i35).
+    /// (S1-P-i35). The 4382 use writes it (`powerups::use_combat_book`,
+    /// W4-a6, `Player.cs:45324-45331`).
     pub combat_book_was_used: bool,
+    /// `NPC.combatBookVolumeTwoWasUsed` (`WorldFile.cs:1407`, v259; the
+    /// town stat ladder's second +250/+8 row, `NPC.cs:53025-53031`) — the
+    /// same world-field standing-in. The 5336 use writes it
+    /// (`powerups::use_combat_book`, W4-a6, `Player.cs:45337-45344`).
+    pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`WorldFile.cs:1408`, v260; the travel
+    /// shop's extra stock slot, `Chest.SetupTravelShop`, `Chest.cs:1303-
+    /// 1306`) — the same world-field standing-in. The 5343 use writes it
+    /// (`powerups::use_peddlers_satchel`, W4-a6, `Player.cs:45368-45383`).
+    pub peddlers_satchel_was_used: bool,
+    /// `NPC.boughtCat` / `boughtDog` / `boughtBunny` (`WorldFile.cs:1392-
+    /// 1394`, v217; the town-pet arrival gates, `Main.cs:65900-65911`) —
+    /// the same world-field standing-in. The pet licenses 4829/4830/4910
+    /// write them (`powerups::use_pet_license`, W4-a6,
+    /// `Player.cs:45352-45365`). The arrival consumer is deferred: the port
+    /// ships no TownCat/TownDog/TownBunny `NpcKind` yet.
+    pub bought_cat: bool,
+    pub bought_dog: bool,
+    pub bought_bunny: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -682,6 +702,11 @@ impl World {
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
             combat_book_was_used: false,
+            combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
+            bought_cat: false,
+            bought_dog: false,
+            bought_bunny: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,

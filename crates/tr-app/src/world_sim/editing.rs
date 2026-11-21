@@ -1998,6 +1998,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
+    // W4-a6 — `ItemCheck_TryDestroyingDrones` (`Player.cs:45245-45272`,
+    // called at `:43592` ahead of the Use* cluster): the 5451/5738 remotes
+    // kill their owner's live drone mid-swing. Runs every tick (the gate is
+    // `controlUseItem && ItemTimeIsZero`, NOT the press edge) and never
+    // consumes the tick — the drones are weapons, the kill is not a use.
+    crate::powerups::drone_destroy_check(app);
+    // W4-a6 — the permanent power-up consumables (`ItemCheck_UseLifeCrystal`
+    // / `UseManaCrystal` and the sibling `Use*` arms, `Player.cs:45192-45423`):
+    // the same mid-swing `ItemTimeIsZero && itemAnimation > 0` shape as the
+    // boss spawners below. The machine starts the swing on the press edge and
+    // grants when `item_time` reads zero inside the running swing; a started
+    // use consumes the tick like the boss arms.
+    if crate::powerups::powerup_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
     // The boss spawners (`Player.ItemCheck_UseBossSpawners`,
     // `Player.cs:43751-43900`) and the event items (`ItemCheck_UseEventItems`,
     // `:43921-44055`) fire MID-SWING: their gate is `ItemTimeIsZero &&
@@ -2594,6 +2609,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
             // start, ahead of the mana pay (`ItemCheck_TryStartUse`
             // `:52023-52026`).
             if let Some(shoot) = registry::projectile(held.kind) {
+                // W4-a6 — `ItemCheck_CheckCanUse_Inner`'s drone refusals
+                // (`Player.cs:52067-52074`): the Jim's Drone 5451 / Remote
+                // Control Car 5738 refuse the use START while their
+                // projectile is out — no swing, no shot. The kill runs
+                // mid-swing instead (`powerups::drone_destroy_check`,
+                // `:45245-45272`); the shoot suppression (`:43519-43526`)
+                // is the same gate on the shot leg.
+                if matches!(held.kind, 5451 | 5738)
+                    && app
+                        .player
+                        .as_ref()
+                        .is_some_and(|p| p.owned_projectile_counts[usize::from(shoot)] > 0)
+                {
+                    return;
+                }
                 let limit = match shoot {
                     crate::projectile::LIGHT_DISC => Some(6usize),
                     crate::projectile::ENCHANTED_BOOMERANG
