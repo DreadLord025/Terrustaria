@@ -1806,6 +1806,8 @@ mod tests {
         world.unlocked_truffle_spawn = true;
         world.unlocked_arms_dealer_spawn = true;
         world.unlocked_nurse_spawn = true;
+        // W4-f45: the extra respawn anchors (the c46 lane's list).
+        world.extra_spawn_points = vec![(10, 20), (30, 40)];
         world
     }
 
@@ -2170,6 +2172,10 @@ mod tests {
             got.unlocked_nurse_spawn, want.unlocked_nurse_spawn,
             "{context}: unlockedNurseSpawn"
         );
+        assert_eq!(
+            got.extra_spawn_points, want.extra_spawn_points,
+            "{context}: extraSpawnPoints"
+        );
     }
 
     #[test]
@@ -2395,6 +2401,18 @@ mod tests {
         tail[2061 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)); // dualDungeonsSeed (`:1426`)
         tail[2062 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::MORE_LIGHTNING)); // moreLightningSeed (`:1427`)
         tail[2063 + d] = u8::from(ms.contains(crate::seeds::MicroSeedFlags::NO_LIGHTNING)); // noLightningSeed (`:1428`)
+        // W4-f45: the extra-spawn-point list is variable-length — the fixture
+        // table carries an empty one (the count byte at 2060), the world's list
+        // inserts `4 * n` pair bytes after it. The three seed bytes before it
+        // (2061..2063) are patched above; the manifest string follows the list.
+        let nspawn = world.extra_spawn_points.len();
+        tail[2060 + d] = nspawn as u8; // extraSpawnPoints.Length (`:1425`)
+        let mut spawn_bytes = Vec::with_capacity(4 * nspawn);
+        for &(x, y) in &world.extra_spawn_points {
+            spawn_bytes.extend_from_slice(&x.to_le_bytes());
+            spawn_bytes.extend_from_slice(&y.to_le_bytes());
+        }
+        tail.splice(2061 + d..2061 + d, spawn_bytes);
         b.extend(tail);
         b
     }
@@ -4600,6 +4618,45 @@ mod tests {
             1_200_000, "coinRain round-trips"
         );
         assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — `extraSpawnPoints` lands at tail 2060 (the count byte) + the
+    /// (i16, i16) pairs (`WorldFile.cs:1425`, `ExtraSpawnPointManager.cs:436-456`)
+    /// and follows the v297 read gate (`:2498-2507`). Variable-length, like the
+    /// angler list. Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_extra_spawn_points_land_and_gate() {
+        // A world with two anchors round-trips the list (the owned-world sweep
+        // pins the offsets; here the variable-length shape is the contract).
+        let mut world = World::new("Spawns".into(), 300, 200);
+        world.extra_spawn_points = vec![(10, 20), (30, 40)];
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the spawn world parses");
+        assert_eq!(back.extra_spawn_points, vec![(10, 20), (30, 40)]);
+        // The count byte + the pairs sit at the block's tail-2060 position; the
+        // independent table carries them (the sweep checks the whole block).
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the spawn block matches the table");
+        // An empty list round-trips too (the count byte 0, no pairs).
+        world.extra_spawn_points = Vec::new();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let back = parse(&buf).expect("the empty-spawn world parses");
+        assert!(back.extra_spawn_points.is_empty());
+        // v296: the list does not exist yet — stays empty.
+        let w = parse(&synthetic_file(296, &[2, 144], 160, 11)).expect("v296 loads");
+        assert!(w.extra_spawn_points.is_empty(), "below 297: extraSpawnPoints empty");
+        // v297: the count byte + pairs land. The 304/323 seed bytes come AFTER
+        // the spawn list, so the count byte stays at tail 2060 (the 289
+        // claimable array is present from 297, before it).
+        let mut data = synthetic_file(297, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 297);
+        data[tail_at + 2060] = 1; // one anchor
+        data[tail_at + 2061..tail_at + 2063].copy_from_slice(&7i16.to_le_bytes());
+        data[tail_at + 2063..tail_at + 2065].copy_from_slice(&9i16.to_le_bytes());
+        let w = parse(&data).expect("v297 loads");
+        assert_eq!(w.extra_spawn_points, vec![(7, 9)], "extraSpawnPoints reads from 297");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

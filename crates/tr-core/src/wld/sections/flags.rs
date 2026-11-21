@@ -277,7 +277,13 @@ pub fn write(w: &mut Writer, world: &World) {
               // list (`ExtraSpawnPointManager.Write`) — the spawn list is unowned,
               // so a zero count; the seed byte is the micro-seed mirror.
     w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS)); // teamBasedSpawnsSeed (`:563-566`)
-    w.u8(0); // extraSpawnPoints.Length
+    // `ExtraSpawnPointManager.Write` (`ExtraSpawnPointManager.cs:448-456`): a
+    // count byte then that many (i16 X, i16 Y) pairs (W4-f45, the c46 lane).
+    w.u8(world.extra_spawn_points.len() as u8); // extraSpawnPoints.Length (`:1425`)
+    for &(x, y) in &world.extra_spawn_points {
+        w.i16(x);
+        w.i16(y);
+    }
              // WorldFile.cs:1427-1429: the remaining secret seeds.
     w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS)); // dualDungeonsSeed (`:567-570`)
     w.boolean(world.micro_seeds.contains(crate::seeds::MicroSeedFlags::MORE_LIGHTNING)); // moreLightningSeed (`:579-582`)
@@ -765,8 +771,13 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         if r.bool()? {
             world.micro_seeds.insert(crate::seeds::MicroSeedFlags::TEAM_BASED_SPAWNS); // teamBasedSpawnsSeed
         }
+        // `ExtraSpawnPointManager.Read` (`ExtraSpawnPointManager.cs:436-446`):
+        // a count byte then that many (i16 X, i16 Y) pairs (W4-f45).
         let extra = r.u8()? as i32;
-        r.skip((extra.max(0) as usize) * 4)?; // ExtraSpawnPointManager.Read: (i16, i16) pairs
+        world.extra_spawn_points.clear();
+        for _ in 0..extra.max(0) {
+            world.extra_spawn_points.push((r.i16()?, r.i16()?));
+        }
     }
     if version >= 304 {
         if r.bool()? {

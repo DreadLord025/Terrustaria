@@ -800,6 +800,12 @@ pub struct World {
     pub unlocked_arms_dealer_spawn: bool,
     /// `NPC.unlockedNurseSpawn` (`WorldGen.cs:5591`, override `NPC.cs:7160`).
     pub unlocked_nurse_spawn: bool,
+    /// `ExtraSpawnPointManager.extraSpawnPoints` (`WorldFile.cs:1425` write /
+    /// `:2501` read, v297+; `ExtraSpawnPointManager.cs:436-456`): the team-based
+    /// extra respawn anchors as (X, Y) tile pairs — a count byte then that many
+    /// i16 pairs. The c46 respawn lane's consumer reads them; the file
+    /// round-trips the list (W4-f45).
+    pub extra_spawn_points: Vec<(i16, i16)>,
 }
 
 impl World {
@@ -1068,6 +1074,7 @@ impl World {
             unlocked_truffle_spawn: false,
             unlocked_arms_dealer_spawn: false,
             unlocked_nurse_spawn: false,
+            extra_spawn_points: Vec::new(),
         }
     }
 

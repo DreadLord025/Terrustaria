@@ -2083,7 +2083,9 @@ impl App {
             invasion_type: 0,
             lobby_id: 0,
             sandstorm_severity: 0.0,
-            extra_spawn_points: Vec::new(),
+            // W4-f45: the extra respawn anchors are World-owned
+            // (`ExtraSpawnPointManager.Write`, the c46 lane).
+            extra_spawn_points: w.extra_spawn_points.clone(),
             // W4-f45: the dungeon anchor is World-owned now (`WorldFile.cs:
             // 1279-1280`); the wire carries it as the C#'s i16 pair.
             dungeon_x: w.dungeon_x as i16,
