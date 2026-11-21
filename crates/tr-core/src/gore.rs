@@ -2253,21 +2253,22 @@ mod tests {
 
     /// The falling-leaf liquid probe (`Gore.cs:1180`) centres on
     /// `(Width, Height) * 0.5 + position`. Use a 1-column × 1-row sheet
-    /// (12×12, no padding cut) so the half-size is 6: pos.x 170 + 6 →
-    /// tile 11, while the 1f fallback's +0.5 stays in tile 10. The liquid
-    /// in THAT cell flips `velocity.Y` to −1 (the rest sentinel).
+    /// (12×12, no padding cut) so the half-size is 6: pos.x 170.1 − the
+    /// tick's −sin(π/180) drift + 6 ≈ 176.08 → tile 11, while the 1f
+    /// fallback's +0.5 stays in tile 10. The liquid in THAT cell flips
+    /// `velocity.Y` to −1 (the rest sentinel).
     #[test]
     fn w4_g68_the_fall_probe_uses_the_sheet_half_size() {
         let mut world = leaf_physics_world();
         // The probe box is `(vector.x, vector.y + 6, 4, 4)` with
-        // vector = pos + (4, −4) → (174, 302..306); tile 11 spans x
-        // 176..192 (overlap) and the liquid rect must reach y < 306:
+        // vector = pos + (4, 0) → (174, 306..310); tile 11 spans x
+        // 176..192 (overlap) and the liquid rect must reach y < 310:
         // liquid 16 → top 304 + 1 = 305 (the fd9415f3 fixture lesson).
         let i = world.index(11, 19);
         world.tiles[i].liquid = 16;
         let mut pool = GorePool::new();
         pool.set_texture_sizes(std::collections::HashMap::from([(910, (12, 12))]));
-        spawn_leaf(&mut pool, &world, Vec2::new(170.0, 300.0));
+        spawn_leaf(&mut pool, &world, Vec2::new(170.1, 300.0));
         // The leaf frame is 32×8; pin it to 1×1 for this probe witness (the
         // C# reads whatever frame the slot carries — a paint-swapped leaf
         // can ride any cell shape).
@@ -2280,7 +2281,7 @@ mod tests {
         );
         // Without the seam the probe reads tile 10 (dry) and keeps falling.
         let mut bare = GorePool::new();
-        spawn_leaf(&mut bare, &world, Vec2::new(170.0, 300.0));
+        spawn_leaf(&mut bare, &world, Vec2::new(170.1, 300.0));
         bare.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
         assert!(bare.slot(0).velocity.y > 0.0);
     }
