@@ -211,3 +211,93 @@
 //! 127, 134, 222, 245, 262, 266, 370, 395, 396, 397, 398, 439, 636,
 //! 657, 664, 668) + the EoW head 13's `DropEoWLoot` dynamic
 //! last-segment latch (`:78414-78429`).
+//!
+//! ## LOOT FINAL (2026-11-21): the full NPCLoot death census — the wiring
+//!
+//! The death-side `NPC.NPCLoot` (`NPC.cs:78830-78899`) is now FULLY wired
+//! in `world_sim/npcs.rs`'s death retain. The C# order is preserved:
+//! entry gate (`:78832`) → bestiary/banner credit (`:78839-78847`) →
+//! statue gate (`:78849`) → `DoDeathEvents_BeforeLoot` (`:78854`) →
+//! `NPCLoot_DropItems` (`:78855`) → `DoDeathEvents` (`:78856`, the
+//! Dungeon Spirit summon `:79200`) → `NPCLoot_DropMoney` (`:78897`) →
+//! `NPCLoot_DropHeals` (`:78898`). The pre-final port ran coins BEFORE
+//! loot (the recorded fold — retired).
+//!
+//! ### The death census table (every arm, C# lines, port, status)
+//!
+//! | Arm | C# | Port | Status |
+//! | --- | --- | --- | --- |
+//! | NPCLoot entry gate (netMode/type/no-surface dungeon/red-hat) | `:78832-78835` | `spawn_loot`'s entry gate (the no-surface `worldSurface<=50` pre-Skeletron nine-kind refusal + the red-hat Dark Caster `localAI[3]==1`; netMode==1/type>=Count dead in SP) | done (f35-final) |
+//! | bestiary/banner kill credit | `:78839-78847` | the death retain's `register_kill` + `add_npc_kill_by` (M2-BUFF-8) | done (pre-existing) |
+//! | statue loot gate (early-mode set + rarity float) | `:78849-78852` | `tr_core::loot::statue_loot_refused` + the two NPCID tables (`StatueSpawnedDropRarity` `:10445`, `NoEarlymodeLootWhenSpawnedFromStatue` `:10446`); refuses the WHOLE NPCLoot (None) | done (f35-final) |
+//! | DoDeathEvents_BeforeLoot (Twins value/boss zero) | `:78916-78923` | `spawn_loot`/`spawn_coins`/`spawn_heals`' `twin_first_death` (the first eye zeroes value + clears boss; only the last eye loots) | done (f35-final) |
+//! | NPCLoot_DropItems (the rule engine) | `:78925-78937` | `spawn_loot` → `tr_core::loot::try_dropping` over `loot_db_gen` (1599 registrations); returns `Some(resets_money)` | done (S1-E-14a + f35-final live feeds) |
+//! | DoDeathEvents_SummonDungeonSpirit | `:79064-79078` | `summon_dungeon_spirit` (the post-Plantera hardmode dungeon RollLuck(13) + dungeon-wall spawn 288) | done (f35-final) |
+//! | DoDeathEvents_AdvanceSlimeRain | `:79080-79095` | the death retain's slime-rain counter (BLUE slime only, `Main.slimeRainNPC[1]` `Main.cs:8864`) | done (f35-final fix) |
+//! | DoDeathEvents_DropBossPotionsAndHearts | `:78945-79016` | `npc_death_heals::drop_boss_potions_and_hearts` (the `this.boss` tail) | done (f35 widened) |
+//! | DoDeathEvents_CelebrateBossDeath | `:79018-79034` | `spawn_heals`' boss arm (the BossOrEvent announcement; NPCDamageTracker.BossKilled unported, no RNG) | done (f35-final) |
+//! | NPCLoot_DropMoney (the coin math) | `:79619-79750` | `spawn_coins` → `tr_core::loot::drop_money` (midas `has_buff(72)` + blood_moon live; the `resets_money`/`twin_first_death` value zero) | done (f35-final, the g4c stand-ins wired) |
+//! | NPCLoot_DropHeals / DropCommonLifeAndMana | `:79098-79195`/`:79531-79557` | `npc_death_heals::drop_heals`/`drop_common_life_and_mana` | done (f35 widened) |
+//! | the boss/tower/event downed flags (DoDeathEvents switch) | `:79205-79504` | the death retain's `match npc.kind` (Golem/Fishron/Deerclops/towers/MoonLord/Cultist/EoW-BoC/GolemHead + KingSlime/EoC/QueenBee/mechs/Plantera/Skeletron/WoF) | done (pre-existing; the seasonal-boss flags stay unowned — no live field, the wld glue writes false) |
+//! | the Skyblock recovery arms (DropAltar/DropDungeonStuff/DropHellforge/DropLihzahrdStuff/DropTempleTraps) | `:79559-79617` | — | OUT (the `WorldGen.Skyblock` latches have no port state — the Skyblock worldgen pass is unported, the gates are constants-off) |
+//!
+//! ### The rule-gate census fixes (f35-final)
+//!
+//! - `SoulOfWhateverConditionCanDrop` (`Conditions.cs:1579-1612`) is the
+//!   FULL gate, not a bare depth flag: the boss refusal, the
+//!   `DontDropDungeonKeysOrSouls` fold ({23}), the six exempt types
+//!   (1/13/14/15/121/535), hardmode + lifeMax>1 + !friendly + value>=1,
+//!   the classic depth band; the REMIX world drops ONLY the depth term.
+//!   The pre-final port returned `flags.soul_depth_ok` alone (nothing set
+//!   it — the SoulOfLight 520 / SoulOfNight 521 globals were dead).
+//! - `DownedPlantera` (`Conditions.cs:322`) reads `NPC.downedPlantBoss` —
+//!   the SAME flag `FirstTimeKillingPlantera` (`:358`) inverts. The phantom
+//!   `LootFlags.downed_plantera` second flag is retired (nothing set it —
+//!   the 460/463/466/467/468 post-Plantera rows stayed dead).
+//!
+//! ### The live LootFlags/LootNpc feeds (f35-final)
+//!
+//! `spawn_loot` now feeds every gate the registrations read: the biome-key
+//! zones (jungle/hallow/desert-minus-beach), the soul NPC-depth band,
+//! LivingFlames' underworld band, the yoyo depth bands, the pirate-map
+//! surface/ocean band, blood_moon/windy/moon-waves/downed_boss2/3/
+//! downed_plant_boss, the Skyblock sickle `HasItemInInventoryOrOpenVoidBag`
+//! (1786) scan, the Mechdusa remix+ftw gate + four-part AnyNPCs scan,
+//! MissingTwin's live sibling scan, the 23-kind boss table + EoW latch on
+//! `is_boss` (was KingSlime-only), `HasPlayerTarget`'s [0,255) read,
+//! damage/defense/friendly live (the holiday caps 500/40 classic).
+//!
+//! ### The coin math (f35-final, the g4c stand-ins wired)
+//!
+//! `spawn_coins`' two false stand-ins are LIVE (g4 `a9369ec38` cross-note
+//! claimed them for f35): `midas = npc.buffs.has_buff(72)` (the
+//! `UpdateNPC_BuffFlags` latch `NPC.cs:92017-92020`, reset `:92165`),
+//! `blood_moon = app.world.blood_moon`. The `drop_money` math itself
+//! (`tr_core::loot::drop_money`, `NPC.cs:79619-79750`) was already
+//! faithful: the |luck| double-roll keeping best/worst, the midas
+//! Next(30,51) bump, the ±20-75% spread, the six bonus chains
+//! (1/2,1/4,1/8,1/16,1/32,1/64), the blood-moon Next(101) bump, the
+//! extraValue add, the platinum/gold/silver/copper split with the >50
+//! shrink rolls (copper's second roll Next(4)+1) + the copper floor.
+//! The `resets_money` (boss bag / master pet CommonCode zero) and the
+//! `twin_first_death` zero feed the value before DropMoney reads it.
+//!
+//! ## LOOT-FAMILY DECLARATION (W4-f35 FINAL)
+//!
+//! The NPC death-loot family is COMPLETE for the port's single-player
+//! classic world: every `NPC.NPCLoot` arm is either ported+wired or
+//! recorded OUT (the Skyblock recovery arms — the worldgen pass is
+//! unported; the seasonal-boss downed flags — no live field, the wld glue
+//! writes false; the expert/master difficulty — the e25 constants-off
+//! seam). The death order is the C# sequence (loot → coins → heals), the
+//! coin math's live inputs are wired, the rule gates are the full C#
+//! bodies, and the statue/entry/Twins refusals skip the whole NPCLoot.
+//! The OPEN side (the 58-kind OpenableBag set) landed in the widened
+//! scope. Witnesses: 12 f35-final (the soul-gate refusal table, the
+//! DownedPlantera complement, the statue table/draw-shape, the midas/
+//! blood-moon stream deltas, the statue early-mode refusal, the
+//! loot-coins-heals order twin, the Twins first-death zero, the entry-gate
+//! table, the boss-death announcement, the Dungeon Spirit summon, the
+//! blue-slime-only rain counter) + the 45+ widened-scope family replays —
+//! all WRITTEN NOT RUN (code-only mode, no cargo/rustc/rustfmt/tests/
+//! dotnet/graphify invoked).
