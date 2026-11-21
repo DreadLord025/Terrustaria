@@ -157,20 +157,21 @@ impl Menu {
         let Some(item) = items.get(index) else {
             return Action::None;
         };
-        if item.header {
-            return Action::None;
-        }
-        self.hint = None;
         // W4-g22 DOC-SWEEP — while the connecting overlay is live the C#
         // draws ONLY the status + Cancel rows (`Main.cs:48602-48635`,
         // menuMode 14 / netMode 1): every click lands on Cancel, which
         // disconnects and plays 11 (`:48621`). The port keeps the page's
         // rows drawn under the overlay (deviation) but the click answers
-        // the same Cancel.
+        // the same Cancel — BEFORE the header gate, since the overlay's
+        // own rows replace the page's headers too.
         if self.connecting {
             self.pending_cue = Some("Menu_Close"); // `:48621`/`:48822`
             return Action::CancelConnect;
         }
+        if item.header {
+            return Action::None;
+        }
+        self.hint = None;
         // W4-g22 — every activation starts cue-less; the arms below queue
         // the C# site's own `PlaySound` (the g22 window `Main.cs:48489-
         // 49727`). The App drains `pending_cue` after the click/key.
