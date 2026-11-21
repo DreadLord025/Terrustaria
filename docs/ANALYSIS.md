@@ -39945,3 +39945,87 @@ cross-checked against `render/entities.rs::NPC_FRAME_COUNT` — all
 replay of line-for-line C# transcriptions + the 5-kind
 5x3x3x3 strip sweep (40 ticks per combo, every row asserted inside
 its own sheet).
+
+## W4-f27 FindFrame extra wave 10 (slice 10 claim, 2026-11-21, code-only mode)
+
+**BAND CLAIM (early, before the batches):** the f27 lane continues on
+the SAME branch after extra-9 (0e1874280). The brief's window: the NEXT
+unclaimed band ABOVE 530 (the f26g co-lane is active on 526-530 per its
+latest pushed claim read - origin/task/W4-f26-findframe-extra-3 tip
+63417edd7, its extra-7d slice DONE at 516/521/523/524/525; the 526/527
+ghoul twins + the 528/529/530 tail ride ITS next slice, this lane stays
+strictly above 530). The census re-derived mechanically against this
+branch's tree + ALL pushed tips:
+
+* every C# top-level case label of the FindFrame switch (`NPC.cs:66705`,
+  the body :66684-77370, two-tab indent - the nested switches excluded)
+  = **602 ids** (the slice-8/9 figure re-confirmed mechanically);
+* the pushed roster tips carry ZERO new arms: d41 tip 4ed22f0b3 is
+  CLAIM-only (its npc.rs find_frame region resolved through the cs_id
+  rows = the SAME 270-kind set as our tree, mechanical diff EMPTY),
+  d42 tip 88df58090 is the dead session's enum-only WIP checkpoint
+  (same 270-kind find_frame set, mechanical diff EMPTY), d43 tip =
+  a725acb04 (the wave-3 base, NO delta at all); d40 tip STILL 8fe1d6d3
+  (the slice-8/9 tip, no new batches); d33 tip dcb59b7f9 carries the
+  same 270-kind find_frame set (its style machines are AI, not frames);
+* the d44-d49 findframe lanes' seams re-read from their pushed tips
+  (low1 37-67 / low2 69-120 / mid1 150-165 / mid2 166-180 / c 2+355-366
+  / high2 367-434) = ZERO ids above 530;
+* our own module seams (a/b/e4/e7/e8/e9) + f26's pushed modules
+  (e3/e5/e6/e7b/e7c/e7d) = ZERO ids in [531..549] (mechanical grep).
+
+The >530 ascending probe (every id 531..549 checked against the C# arm
++ our tree + the pushed tips):
+
+| id | kind (`NPCID.cs`) | C# case | verdict |
+| --- | --- | --- | --- |
+| 531 | DesertScorpionWall (`:11739`) | `:73116` in the 165/237/238/240 wall-crawler group (`:73112-73145`) | UNCLAIMED - the e4 237/238/240 machine is the group twin but its `num194` is HARD-CODED 0.5 (e4 `:291-292`); 531's `type == 531` override sets **0.4** (`:73119-73122`) - a distinct machine, the e4 header itself flags "the 531-only 0.4 override is a later wave's" (e4 `:51-53`). CLAIM. |
+| 532 | DesertBeast (`:11741`) | `:70068` in the 508/580/582 walking-antlion group (`:70067-70103`) | UNCLAIMED - f26's 7c owns 508 (its seam has ONLY 508 of the group); 532/580/582 ride later slices per its own batch-3 note. CLAIM (532 only - 580/582 stay unclaimed for their lanes). |
+| 533 | DesertDjinn (`:11743`) | `:69978-69993` | EXCLUDE - OUR `npc.rs:8172` arm FAITHFUL: the `vy == 0 && direction != 0` sprite snap, the counter++ with the >= 48 reset, the `(int)(counter / 6)` row, the `ai[1] > 0` +8 bank (the port's `cast_windup` is the ai[1] mirror - `npc.rs:10804` `update_caster` folds it every tick). The 16-row sheet (`Main.cs:67136` slot 3) = 8 hover + 8 cast rows. |
+| 534 | DemonTaxCollector (`:11745`) | `:68615` in the humanoid group | UNCLAIMED - the C# walk has the **num108 = 12 override** (`:69528-69531`): the stride steps every > 12, NOT the wave-B fighter helper's hard-coded > 6 (the e8 Fritz num108 = 9 precedent - a distinct machine). aiStyle 3 (`:15817`), no townNPC -> num57 = 0, the FULL-8 wrap (`Main.cs:67137` slot 4). CLAIM. |
+| 535 | SlimeSpiked (`:11747`) | `:70818` in the num2-fed slime strip group (`:70801-70846`) | UNCLAIMED - the e7 ribbon-slime machine is the group twin (keep-one candidate at the wiring merge); the 2-row sheet (`Main.cs:67137` slot 5). CLAIM. |
+| 536 | TheBride (`:11749`) | `:76344` in the case-3 walker group (`:76324-76391`) | UNCLAIMED - the `npc.rs::walker_frame` / wave-A zombie machine is the group twin; the 3-row sheet (`:67137` slot 6). CLAIM. |
+| 537 | SandSlime (`:11751`) | `:70819` (the same slime strip group) | UNCLAIMED - the 3-row sheet (`:67137` slot 7). CLAIM. |
+| 538 | SquirrelRed (`:11753`) | `:76459` in the 299/639-645 squirrel group (`:76458-76512`) | UNCLAIMED - no pushed tip carries any squirrel-group arm (the d4x seams stop at 434, f26's at 525, our tree has no Squirrel kind). The aiStyle-3 backpedal branch (`:76478`) never fires for 538/539 (style 7, `:15877`/`:15889`) - carried as the documented dead branch. The 6-row sheet (`:67137` slot 8), the walk wraps at count-1 to row **1** (`:76497-76500`). CLAIM. |
+| 539 | SquirrelGold (`:11755`) | `:76460` (the same group) | UNCLAIMED - the 6-row twin (`:67137` slot 9). CLAIM. |
+| 540 | PartyBunny (`:11757`) | `:76857` in the 46/47/303/337/443/464 bunny group (`:76851-76904`) | UNCLAIMED - d44 owns 46/47, f26c 303, e7 337, e8 443, d40 464 (faithful); 540 rides none. The 7-row sheet (`:67138` slot 0). CLAIM. |
+| 541 | SandElemental (`:11759`) | `:69734-69772` | UNCLAIMED - the d33 claim row says "541-545 sand-elemental/sharks d33 rows" but that is its SETDEFAULTS/AI census (its pushed tip's find_frame = the same 270-kind set, NO SandElemental arm; the d41 claim's skip note refers to the same). The C# is the ai[0] attack ladder (rows 4 / 5-8 cycle / 9 / 10-12 / 1) + the `|velocity| * 0.1 + 1` double-promoted walk over rows 0..3. The 13-row sheet (`:67138` slot 1). CLAIM. |
+| 542 | SandShark (`:11761`) | `:74681-74692` (the 542-545 shark group) | UNCLAIMED (the same d33/d41 census-note situation). The unconditional direction copy + the counter++ with the >= 16 reset + the `(int)(counter / 4)` row over the 4-row sheet (`:67138` slot 2). CLAIM. |
+| 543 | SandsharkCorrupt (`:11763`) | `:74682` (the same group) | UNCLAIMED - the 4-row twin (`:67138` slot 3). CLAIM. |
+| 544 | SandsharkCrimson (`:11765`) | `:74683` (the same group) | UNCLAIMED - the 4-row twin (`:67138` slot 4). CLAIM. |
+| 545 | SandsharkHallow (`:11767`) | `:74684` (the same group) | UNCLAIMED - the 4-row twin (`:67138` slot 5). CLAIM (the 15th). |
+| 546 | Tumbleweed | NO case label in :66684-77370 | not a FindFrame kind (npcFrameCount 1, `Main.cs:67138` slot 6) - out of the probe. |
+| 547 | DD2AttackerTest | NO case label | the d41 claim's dd2-test skip; npcFrameCount 1 (`:67138` slot 7). |
+| 548 | DD2EterniaCrystal | NO case label | OUR `npc.rs:7724` row-0 pin correct-by-construction (npcFrameCount 1, `:67138` slot 8 - the 478 MothronEgg precedent). EXCLUDE. |
+| 549 | DD2LanePortal (`:11775`) | `:67980-67992` | **OUR npc.rs:7180 arm is a WRONG row-0 pin** - the comment claims "the machine here is 1-frame" but `Main.npcFrameCount[549]` = **8** (`:67138` slot 9) and the C# is the sprite=1 + rotation=0 snap + the `++counter >= 6` step over the FULL 8 rows. FIX (the 439/471/492 stub-fix precedent) - our own kind, our own arm, this lane's correction; rides the wiring commit (the slice-9 shape). |
+
+**THIS wave (f27 slice 10) claims the 14 unclaimed ids ascending from
+531: 531/532/534/535/536/537/538/539/540/541/542/543/544/545** plus
+**549** the lane-portal FIX as the 15th machine (its id is NOT
+unclaimed - our tree owns the kind - but its arm is WRONG and the fix
+is this lane's, the slice-9 471/492 precedent; the claim SET is the 14
+new ids + the 549 correction). The up-to-15 ceiling is reached exactly.
+533 excluded (faithful, cite above); 546/547/548 no-case 1-frame kinds.
+
+Census arithmetic: the slice-9 post-state was 146 unclaimed minus its
+5 fixes (463/467/472 were d40-covered, 471/492 our own - the unclaimed
+count unchanged at 146); f26's pushed 7d claims 5 more (516/521/523/
+524/525) = **141 unclaimed before this slice**; this slice's 14 new
+claims = **127 unclaimed after** (the 549 fix changes no claim count -
+the id was port-covered with a wrong arm).
+
+Shape (the extra-9 precedent): pure machines over FrameState/
+FrameInput in `crates/tr-app/src/npc_findframe_extra10.rs`, the
+`find_frame_kind_extra10` vanilla-id seam; the ONE npc.rs edit is the
+549 lane-portal fix (our own kind - the 439-fix shape: copy the fields
+out, run one tick, copy back; the arm writes sprite/rotation too).
+5 kinds per commit, 3 batches. Zero RNG (verified mechanically per
+cited range - a Main.rand/.Next(/NextFloat/NextDouble grep over ALL 11
+arm ranges = ZERO: :73116-73145, :70067-70103, :68634-68661 +
+:69489-69655, :70801-70846, :76324-76391, :76458-76512, :76851-76904,
+:69734-69772, :74681-74692, :67980-67992). Frame counts vs Main.cs:67082
+entry-by-entry AND render/entities.rs NPC_FRAME_COUNT (531=4 `:67137`
+slot 1, 532=8 slot 2, 534=8 slot 4, 535=2 slot 5, 536=3 slot 6, 537=3
+slot 7, 538/539=6 slots 8/9, 540=7 `:67138` slot 0, 541=13 slot 1,
+542-545=4 slots 2-5, 549=8 slot 9 - all fifteen agree with the port
+table, mechanical diff EMPTY over the full 697 entries).
