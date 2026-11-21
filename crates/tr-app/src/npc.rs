@@ -33782,3 +33782,80 @@ mod w4_d32_style93_census_tests {
     }
 }
 
+/// W4-d32 RETIRE/SEAL (research/284, code-only): the band 85-93 FINAL
+/// census pins. The band is CLAIM-COMPLETE — 85/93 axis-claimed here
+/// (machines frozen verify-only, the verbatim audits open), 86-92
+/// ported UNWIRED (`npc_ai_style86..92.rs`, zero call sites), the
+/// kinds rowed on d40 `8fe1d6d31` (467/472-479/483/488) + base
+/// (405/421/491/492); 521 unrowed. The merge fix-list: the wiring
+/// wave's 86-92 axis arms + the 467→85 panic-hazard match extension
+/// (d40 rows DeadlySphere onto the 85 arm whose `_` is `unreachable!`
+/// here). Cross-lane: d30 research/281 §3a mutual DISJOINT, d31
+/// keep-both frictions only, g65-Kill-309 compose (the 240 shell's
+/// death dust is g65's, the request is the inherited 75 seam).
+/// WRITTEN NOT RUN (code-only mode).
+#[cfg(test)]
+mod w4_d32_seal_tests {
+    use super::*;
+    use super::tests::ALL_KINDS;
+
+    /// SEAL (research/284 §2a/§4): the band's axis census is exact at
+    /// this tip — 85 carries exactly the two PARTIAL stand-in kinds,
+    /// 93 exactly the ship, the cannons ride 75, and NO kind carries
+    /// 86-92 (the d40 rows are the roster wave's, the modules UNWIRED).
+    #[test]
+    fn w4_d32_seal_the_band_axis_census_is_exact() {
+        let s85: Vec<_> = ALL_KINDS.iter().filter(|k| k.ai_style() == 85).collect();
+        assert_eq!(s85.len(), 2, "405 + 421 only (467 is d40's row)");
+        assert_eq!(NpcKind::StardustCellBig.ai_style(), 85);
+        assert_eq!(NpcKind::BrainSuckler.ai_style(), 85);
+        let s93: Vec<_> = ALL_KINDS.iter().filter(|k| k.ai_style() == 93).collect();
+        assert_eq!(s93.len(), 1, "the ship only");
+        assert_eq!(NpcKind::FlyingDutchman.cs_id(), 491);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.cs_id(), 492);
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+        for style in 86..=92u8 {
+            assert!(
+                !ALL_KINDS.iter().any(|k| k.ai_style() == style),
+                "style {style} stays unrowed until the d40 merge"
+            );
+        }
+    }
+
+    /// SEAL (research/284 §3c): the g65 "Kill-309" is projectile 309
+    /// FrostBlastFriendly (`Projectile.cs:75347-75361`, the drain arm
+    /// `projectile_death_dust.rs:1100`), NPC 309 is Scarecrow5 (aiStyle
+    /// 3) — three id spaces, zero overlap with the band. The band's
+    /// only projectile seam is the 492 cannon's 240 CannonballHostile
+    /// shell (`NPC.cs:35771-35785` → `style75_step`'s request); its
+    /// Kill dust is g65's 240 arm (`Projectile.cs:75855-75894`), not
+    /// d32's. Pin both consts so no future census folds the axes.
+    #[test]
+    fn w4_d32_seal_the_g65_kill_309_and_the_240_shell_are_other_id_spaces() {
+        assert_eq!(crate::projectile::FROST_BLAST_FRIENDLY, 309);
+        assert_eq!(NpcKind::Scarecrow5.cs_id(), 309);
+        assert_eq!(NpcKind::Scarecrow5.ai_style(), 3);
+        assert_ne!(NpcKind::Scarecrow5.ai_style(), 93);
+        assert_eq!(crate::projectile::DUTCHMAN_SHELL, 240);
+        // The shell's request rides the inherited aiStyle-75 seam
+        // (`npc_ai_style75.rs`'s 492 block pushes kind 240); the band
+        // claims no projectile style and pushes no Kill dust.
+        assert_eq!(NpcKind::FlyingDutchmanCannon.ai_style(), 75);
+    }
+
+    /// SEAL (research/284 §2b/G2/G4): the unwired band kinds stay
+    /// unrowed HERE — d40's 467/472-479/483/488 rows and the 521
+    /// roster gap are the merge-time census. The G2 hazard is pinned
+    /// by absence: no kind reaches the 85 arm's `unreachable!` at
+    /// this tip; the d40 merge MUST extend the match first.
+    #[test]
+    fn w4_d32_seal_the_unwired_band_kinds_stay_unrowed_here() {
+        for id in [467u16, 472, 473, 474, 475, 476, 477, 478, 479, 483, 488, 521] {
+            assert!(
+                !ALL_KINDS.iter().any(|k| k.cs_id() == id),
+                "cs_id {id} is the roster wave's row, not this tip's"
+            );
+        }
+    }
+}
+

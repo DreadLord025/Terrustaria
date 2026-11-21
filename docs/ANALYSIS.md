@@ -39244,3 +39244,49 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The RETIRE/SEAL round (W4-d32 band 85-93, 2026-11-21, code-only)
+
+`task/W4-d32-npc-ai-styles-85-93` tip `ac1d38e70` + this seal round:
+**research/284** (registry number per research/150 §4-REFRESH "281+
+FREE" — the retire-tip scan finds 281 claimed by eight lanes, 282 by
+three, 283/298 taken; 284 first free) publishes the band's FINAL
+census + declaration. The band is **CLAIM-COMPLETE**: 85/93
+axis-claimed here (the S1-D-2 migration step — the PARTIAL
+StardustCellBig/BrainSuckler stand-ins + the FlyingDutchman machine
+frozen verify-only, the row-85/93 verbatim audits OPEN), 86-92 ported
+verbatim as UNWIRED modules (`npc_ai_style86..92.rs`, zero call
+sites), the cannons 492 keep the base aiStyle-75 claim. The kinds are
+rowed on d40 `8fe1d6d31` (467/472-479/483/488) + base (405/421/491/
+492); 521 AncientCultistSquidhead is the one unrowed census member.
+
+The merge fix-list (research/284 §2c): **G1** the wiring wave's 86-92
+axis arms (86/90 pool-shaped — the style75 sim pre-pass precedent;
+87/88/89/91/92 solo adapters) + the brood-cap/Transform/Deactivate
+drains; **G2 the PANIC HAZARD** — d40 rows DeadlySphere 467 onto
+`ai_style() == 85` but this tip's 85 arm `unreachable!`s on any other
+kind (`npc.rs:4942-4946`): the d40 merge MUST extend the match (the
+faithful target is the C# 467 branch of `NPC.cs:36930-37220`, the
+row-85 audit's third member; an empty `{}` arm with the stand-in note
+keeps the match exhaustive until then).
+
+Cross-lane receipts (research/284 §3): the **d30 mutual DISJOINT**
+(its research/281 §3a pins this tip; the reciprocal holds — no
+style-65 copy, no butterfly kinds here); **d31 adjacent keep-both**
+(the main.rs mod-decl insert, the axis arms after `75 =>`, the EOF
+test modules, the doc rows — all append-shaped, disjoint kinds);
+**g65-Kill-309 COMPOSE** — the "309" is the drain's arm COUNT (317 at
+the 26i re-count) and projectile 309 FrostBlastFriendly
+(`projectile_death_dust.rs:1100`), NPC 309 is Scarecrow5 (style 3),
+three id spaces; the band's only projectile seam is the 492 cannon's
+240 CannonballHostile shell request (the inherited 75 seam,
+`npc_ai_style75.rs:630`), whose Kill dust is g65's 240 arm
+(`:3355`, `Projectile.cs:75855-75894`) — three disjoint owners, zero
+double-draw, no drop owed either direction. d33's band starts at 95
+(boundary confirmed).
+
+3 seal witnesses (`npc.rs::w4_d32_seal_tests`: the band axis census,
+the 309/240 id-space pins, the unrowed-kinds census) WRITTEN NOT RUN —
+the band's ledger is 67 total (57 module + 7 census + 3 seal). No
+cargo/tests/rustfmt/graphify invoked; the brace walk pins the seal
+module at depth 0 with the whole-file delta 0 vs HEAD.
