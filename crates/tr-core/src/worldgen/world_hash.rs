@@ -306,6 +306,14 @@ mod tests {
     // sits above the (surface+rock)/2 floor, so the pass runs; whether a
     // counted pocket qualifies is unmeasured (no compiler on this branch).
     // Stale-by-design if walls paint; the gate re-pins. a == b stays.
+    // W4-d103 pass 27 (2026-11-20, code-only): the `Floating Island Houses`
+    // pass (`WorldGen.cs:17859-17874` + IslandHouse `:79203-79484`) lands
+    // on a fresh `pass_rng("Floating Island Houses")` stream after `cave
+    // walls`, and the islands pass now DEFERS its house build to this slot
+    // (the vanilla ledger split — the inline shape-level plank box is
+    // retired for the faithful sunplate house). The 512 fixture's islands
+    // pass skips (the sky band is too thin), so the ledger is empty and
+    // this pin is UNCHANGED by the split itself. a == b stays.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -397,6 +405,13 @@ mod tests {
     // the Spread.Wall/Wall2 floods) moves this pin BY DESIGN. The re-pin
     // is DEFERRED to the merge gate (no compiler on this branch); a == b
     // stays green — the pass draws only its own fresh stream.
+    // W4-d103 pass 27 (code-only): the Floating Island Houses pass (the
+    // faithful sunplate-202 houses over the island ledger — the door, the
+    // skyware chest, the fountain, the table/chairs, the banners) replaces
+    // the islands pass's inline shape-level plank box, moving this pin BY
+    // DESIGN on the 4200-wide default. The re-pin is DEFERRED to the merge
+    // gate (no compiler on this branch); a == b stays green — the pass
+    // draws only its own fresh stream.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

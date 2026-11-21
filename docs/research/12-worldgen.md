@@ -154,7 +154,7 @@ rather than a port of all 45k lines".
 | Temple (`LihzahrdTemple` `:15834`, `makeTemple` `:33435`, `templePart2` `:34464`, `LihzahrdAltar` `:21943`) | PORTED (with follow-ups) | `temple.rs` (3 350 lines) | Placement search, rooms, corridors, sweeps, traps, chests, furniture, altar re-write — cargo row marks 🟡/🔄; loot tables / Golem gate / secret-seed arms remain |
 | Structures (shrines `:15977`, chests, altars `:15750`, pyramids `:15367`, pots `:17996`, hives `:15927`, hell forts `:32683`, mini-biomes) | PARTIAL | `structures.rs`, `mini_biomes.rs`, `crystals.rs` | Shape-level for several; `Statues`, `Traps`, `Piles`, `Larva` (bee larvae) passes have **no** step; `Life Crystals` landed 2026-11-20 (W4-d103 pass 22, `crystals.rs::pass_life_crystals`, code-only). S1-K-2 wave A (2026-11-18): `MahoganyTreeBiome` ported faithfully (`mini_biomes.rs::pass_mahogany_trees`, the Micro Biomes block `:21105-21123`); `DeadMansChestBiome`/`MiningExplosivesBiome` remain; `ThinIceBiome` is gated on the faithful `Generate Ice Biome` pass (its snow-dominance gate cannot pass in the compact terrain's one-row snow skin) |
 | Living trees (`:15476-15715`, `GrowLivingTree` `:27973`) | PORTED | `living_trees.rs` | Faithful, incl. the drunk/`extraLivingTrees` ladders; cargo row says done (ROADMAP's status table still says "parked") |
-| Floating islands (`:12924-13133`, houses `:17862`) | PARTIAL | `islands.rs` | Shape-level cloud disc + lake + house; snow/desert variants and furniture sets out |
+| Floating islands (`:12924-13133`, houses `:17859`) | PARTIAL | `islands.rs`, `island_houses.rs` | Shape-level cloud disc + lake; the houses landed 2026-11-20 (W4-d103 pass 27, `island_houses.rs::island_house` — the faithful sunplate build over the island ledger, the inline plank box retired); snow/desert island variants out |
 | Plants & surface dressing (`Planting Trees` `:20179`, `Herbs`, `Dye Plants`, `Weeds`, `Flowers`, `Mushrooms`, `Spreading Grass`, `Surface Ore and Stone`, `Place Fallen Log`, `Cactus…` `:21310`, `Water Plants` `:21973`) | PARTIAL | `surface.rs::plant_trees` (step `"trees"`→`"Planting Trees"`), `biome_detail`/`ocean` steps | Only the tree step, the weeds/flora step and the cacti/coral seaweed arms map to vanilla slots; `Herbs`, `Dye Plants`, `Flowers`, `Mushrooms`, `Moss Grass`, `Spreading Grass`, `Surface Ore and Stone`, `Place Fallen Log` are **MISSING** |
 | Liquids (`Settle Liquids` `:19620`, `Settle Liquids Again` `:22137`, `Lakes` `:14556`, `Waterfalls` `:16667`) | PARTIAL | `liquids.rs` (the `Lakes` step + `pass_waterfalls`, W4-d103 pass 20) | Static water/lava lakes; the `Waterfalls` half-brick sweeps landed 2026-11-20 (code-only, `:16610-16666`); **no liquid simulation pass** and therefore no equivalent of the `Invariant.Assert(Liquid.numLiquid == 0)` (`WorldGenerator.cs:508`); both `Settle Liquids` passes are missing |
 | Shimmer (`Shimmer` `:15195`) | MISSING | — | Not a worldgen liquid in the port (admitted in ANALYSIS M5-STRUCT-5's list) |
@@ -350,8 +350,10 @@ Landed: 19 Oasis (90b7eee6), 20 Waterfalls (`liquids.rs::pass_waterfalls`,
 code-only), 24 Surface Chests (`buried_chest.rs::pass_surface_chests` +
 the AddBuriedChest core, 2026-11-20, code-only), 25 Water Chests
 (`water_chests.rs::pass_water_chests`, 2026-11-20, code-only), 26 Cave
-Walls (`cave_walls.rs::pass_cave_walls`, 2026-11-20, code-only — pin
-re-pins deferred to the merge gate).
+Walls (`cave_walls.rs::pass_cave_walls`, 2026-11-20, code-only), 27
+Floating Island Houses (`island_houses.rs::pass_floating_island_houses` +
+the islands-pass ledger split, 2026-11-20, code-only — pin re-pins deferred
+to the merge gate). **d103 range complete (19-27).**
 28 Quick Cleanup :17875 · 29 Hellforge :18187 · 30 Spreading Grass :18237 ·
 31 Surface Ore and Stone :18447 · 32 Place Fallen Log :18513 · 33 Traps :18657 ·
 34 Piles :18788 · 35 Spawn Point :19460 · 36 Grass Wall :19589 —

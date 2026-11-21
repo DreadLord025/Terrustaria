@@ -41,6 +41,7 @@ use super::config::{ConfigSection, WorldGenConfig};
 use super::crystals;
 use super::dungeon;
 use super::evil;
+use super::island_houses;
 use super::islands;
 use super::liquids;
 use super::living_trees;
@@ -399,6 +400,17 @@ pub(crate) struct GenVars {
     /// hive-bounds publication tightens them.
     pub(crate) desert_hive_high: i32,
     pub(crate) desert_hive_low: i32,
+    /// `GenVars.numIslandHouses`/`skyLake`/`floatingIslandHouseX/Y`/
+    /// `floatingIslandStyle` (`GenVars.cs:216-226`, static ctor `:453-456`:
+    /// the 300-slot arrays) — the Floating Islands pass's island ledger
+    /// (`WorldGen.cs:13069-13111`), consumed by the Floating Island Houses
+    /// pass (`:17859-17874`). W4-d103 pass 27: the islands pass records the
+    /// anchors here and DEFERS the house build to its own vanilla slot.
+    pub(crate) num_island_houses: i32,
+    pub(crate) sky_lake: [bool; 300],
+    pub(crate) floating_island_house_x: [i32; 300],
+    pub(crate) floating_island_house_y: [i32; 300],
+    pub(crate) floating_island_style: [i32; 300],
 }
 
 impl Default for GenVars {
@@ -473,6 +485,13 @@ impl Default for GenVars {
             // (the run() head re-stamps the real height), Low = 0.
             desert_hive_high: i32::MAX,
             desert_hive_low: 0,
+            // The C# static ctor (`GenVars.cs:453-456`): the 300-slot
+            // arrays zero-filled, numIslandHouses 0.
+            num_island_houses: 0,
+            sky_lake: [false; 300],
+            floating_island_house_x: [0; 300],
+            floating_island_house_y: [0; 300],
+            floating_island_style: [0; 300],
         }
     }
 }
@@ -1453,6 +1472,15 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // jungle trees (`:17840`) — W4-d103 pass 26. The executed chain's
     // temple + jungle-trees steps sit earlier (the pre-scaffold order).
     step!("cave walls", "Cave Walls", step_cave_walls),
+    // The vanilla Floating Island Houses slot (`WorldGen.cs:17859`): after
+    // Cave Walls (`:17711`) and the underground jungle trees (`:17840`),
+    // before Quick Cleanup (`:17875`) — W4-d103 pass 27. The house build
+    // defers here from the islands pass (the vanilla ledger split).
+    step!(
+        "floating island houses",
+        "Floating Island Houses",
+        step_floating_island_houses
+    ),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2631,19 +2659,14 @@ fn step_floating_islands(
     world: &mut World,
     gv: &mut GenVars,
     streams: &mut Streams,
-    opts: &GenOptions,
+    _opts: &GenOptions,
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
     let heights = gv.map().heights.to_vec();
-    islands::pass_floating_islands(
-        world,
-        &heights,
-        &mut streams.drng,
-        streams.chest_stock.as_deref_mut(),
-        opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
-        &mut gv.sky_island_house_count,
-    );
+    // W4-d103 pass 27: the pass records the island ledger; the house build
+    // defers to the Floating Island Houses pass at its vanilla slot.
+    islands::pass_floating_islands(world, &heights, &mut streams.drng, gv);
 }
 
 fn step_slopes(
@@ -2902,6 +2925,52 @@ fn step_cave_walls(
         gv.lava_line,
         opts.flags.contains(crate::seeds::SeedFlags::REMIX),
         &mut streams.pass_rng("Cave Walls"),
+    );
+}
+
+/// The vanilla Floating Island Houses slot (`WorldGen.cs:17859`): one
+/// `IslandHouse` per non-lake ledger entry on a fresh
+/// `pass_rng("Floating Island Houses")` stream. The
+/// `Skyblock.denyFloatingIslands` gate (`:17861`) rides the skyblock flag
+/// (the extraFloatingIslands passthrough is the islands pass's arm).
+fn step_floating_island_houses(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if opts.flags.contains(crate::seeds::SeedFlags::SKYBLOCK)
+        && !opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::EXTRA_FLOATING_ISLANDS)
+    {
+        return;
+    }
+    let layers = *gv.layers();
+    let flags = buried_chest::ChestSeedFlags {
+        remix: opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        get_good: opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY),
+        drunk: opts.flags.contains(crate::seeds::SeedFlags::DRUNK),
+        anniversary: opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        not_the_bees: opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        dont_starve: opts.flags.contains(crate::seeds::SeedFlags::DONT_STARVE),
+        no_traps: opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS),
+        error_world: opts
+            .micro_flags
+            .contains(crate::seeds::MicroSeedFlags::ERROR_WORLD),
+        crimson: opts.crimson,
+        crimson_left: gv.crimson_left,
+    };
+    island_houses::pass_floating_island_houses(
+        world,
+        gv,
+        layers.world_surface,
+        layers.rock_layer,
+        flags,
+        &mut streams.pass_rng("Floating Island Houses"),
+        streams.chest_stock.as_deref_mut(),
     );
 }
 
@@ -3513,8 +3582,9 @@ mod tests {
         // + `surface chests` (vanilla "Surface Chests", `:17130`) after
         // `statues`; + `water chests` (vanilla "Water Chests", `:17245`)
         // after `surface chests`; + `cave walls` (vanilla "Cave Walls",
-        // `:17711`) after `water chests`.
-        assert_eq!(names.len(), 74);
+        // `:17711`) after `water chests`; + `floating island houses`
+        // (vanilla "Floating Island Houses", `:17859`) after `cave walls`.
+        assert_eq!(names.len(), 75);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3613,6 +3683,7 @@ mod tests {
                 "surface chests",
                 "water chests",
                 "cave walls",
+                "floating island houses",
                 "trees",
                 "surface flora",
                 "cacti",
@@ -3710,7 +3781,8 @@ mod tests {
         assert_eq!(names[pos("statues") + 1], "surface chests");
         assert_eq!(names[pos("surface chests") + 1], "water chests");
         assert_eq!(names[pos("water chests") + 1], "cave walls");
-        assert_eq!(names[pos("cave walls") + 1], "trees");
+        assert_eq!(names[pos("cave walls") + 1], "floating island houses");
+        assert_eq!(names[pos("floating island houses") + 1], "trees");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
         assert_eq!(names[pos("water plants") + 1], "world tail");
@@ -3756,6 +3828,11 @@ mod tests {
         // `:17711` Cave Walls → `:17840` Jungle Trees).
         assert!(cpos("Temple") < cpos("Cave Walls"));
         assert!(cpos("Cave Walls") < cpos("Jungle Trees"));
+        // W4-d103 pass 27: the vanilla Floating Island Houses pairs
+        // (`:17840` Jungle Trees → `:17859` Floating Island Houses →
+        // `:17875` Quick Cleanup).
+        assert!(cpos("Jungle Trees") < cpos("Floating Island Houses"));
+        assert!(cpos("Floating Island Houses") < cpos("Quick Cleanup"));
         assert!(cpos("Cactus, Palm Trees, & Coral") < cpos("Water Plants"));
     }
 

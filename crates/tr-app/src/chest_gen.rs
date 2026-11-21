@@ -2045,7 +2045,7 @@ mod tests {
             let _ = slot;
             put_chest(&mut w, *x, 199);
         }
-        // The cycle itself moved to the site (`islands.rs::build_house`,
+        // The cycle itself moved to the site (`island_houses.rs::island_house`,
         // `GenVars.skyIslandHouseCount`); the hook inserts the site's pick
         // (`main_item`) into slot 0 — the walk order rides the same table.
         let mut stock = ChestStock::new(0x5EED, false);

@@ -147,6 +147,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "water chests" => PassMessage::Gen(33),
         // WorldGen.cs:17718 (Cave Walls / CaveWallsInEnclosedSpaces).
         "cave walls" => PassMessage::Gen(63),
+        // WorldGen.cs:17863 (Floating Island Houses).
+        "floating island houses" => PassMessage::Key("WorldGeneration.FloatingIslandHouses"),
         // WorldGen.cs:15480.
         "living trees" => PassMessage::Key("WorldGeneration.LivingTrees"),
         // WorldGen.cs:19944.
