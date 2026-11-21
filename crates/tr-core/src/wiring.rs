@@ -820,10 +820,10 @@ impl Wiring {
     /// ball, ±18 spear). The wall-mounted negatives (−10 dart, −9 super
     /// dart, −8 flame) fire the same projectiles at the fixed +10/±2 px
     /// offset; −7 is the ceiling spiky ball (185, downward — and it fires
-    /// twice, F2) and −6 the ceiling spear (186, straight down). The spear
-    /// trap (186, aiStyle 37) and the flame jet (187, aiStyle 38) requests
-    /// are emitted verbatim; the app-side spawn drops them until their
-    /// families land (M4-PROJ follow-ups).
+    /// twice, F2) and −6 the ceiling spear (186, straight down). The flame
+    /// jet (187, aiStyle 38) spawns through the pool (W4-g43 doc-sweep — the
+    /// stationary emitter of the 188 children); the spear trap (186, aiStyle
+    /// 37) keeps its stand-in row until that family lands (M4-PROJ follow-up).
     fn trap_emit(&mut self, i: i32, j: i32, tile_frame_x: i16, tile_frame_y: i16) {
         let variant = tile_frame_y as i32 / 18;
         let frame_x = tile_frame_x;

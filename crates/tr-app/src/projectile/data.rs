@@ -263,6 +263,11 @@ pub const EYE_FIRE: u16 = 101;
 /// (`Projectile.cs:2752-2763`: 6x6, aiStyle 23, friendly + hostile, trap,
 /// penetrate -1, extraUpdates 2).
 pub const FLAMES_TRAP: u16 = 188;
+/// `ProjectileID.FlamethrowerTrap` (187) — the temple flame trap's jet
+/// (`Projectile.cs:2741-2751`: 6x6, aiStyle 38, alpha 255, tileCollide false,
+/// ignoreWater, timeLeft 60, trap). The stationary 6-tick emitter of the
+/// 188 FlamesTrap children (`AI()` `:27500-27512`, W4-g43 doc-sweep).
+pub const FLAMETHROWER_TRAP: u16 = 187;
 /// `ProjectileID.BrainScramblerBolt` (436) — the Scrambler's ray
 /// (`NPC.cs`'s `num412`/`:26640`).
 pub const BRAIN_SCRAMBLER: u16 = 436;
@@ -1579,9 +1584,9 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
 }
 
 /// The ported families' `SetDefaults` slice. The spear trap's spear (186,
-/// aiStyle 37) keeps a stand-in row (see its arm) and the flame jet (187,
-/// aiStyle 38) stays a passthrough — their AI families are M4-PROJ
-/// follow-ups. The magic (caster) families' (M4-PROJ-6) rows sit in
+/// aiStyle 37) keeps a stand-in row (see its arm) — the aiStyle-37 port is
+/// the M4-PROJ follow-up; the flame jet (187, aiStyle 38) is ported (W4-g43
+/// doc-sweep). The magic (caster) families' (M4-PROJ-6) rows sit in
 /// `ProjectileID` order at the end of the match: their `aiStyle` values
 /// declare the dispatch arm Phases 3-4 add.
 ///
@@ -1908,6 +1913,28 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 TIME_LEFT_DEFAULT,
                 2,
                 true,
+                false,
+                true,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-g43 doc-sweep — the FlamethrowerTrap (187, the temple flame
+            // trap's jet, `ProjectileID.cs:926`): `Projectile.cs:2741-2751`
+            // — 6x6, aiStyle 38, `alpha = 255`, `tileCollide = false`,
+            // `ignoreWater = true`, `timeLeft = 60`, `trap = true`. The
+            // stock penetrate 1 (`:774`) stands — the emitter never deals
+            // contact damage itself (the C# sets neither friendly nor
+            // hostile; the 188 children carry the damage). The aiStyle-38
+            // machine (`AI()` `:27500-27512`) is a stationary 6-tick emitter
+            // of the 188 FlamesTrap; `UpdatePosition`'s skip list (`:20435`)
+            // holds the jet in place.
+            FLAMETHROWER_TRAP => (
+                6.0,
+                6.0,
+                38,
+                1,
+                60,
+                0,
+                false,
                 false,
                 true,
                 (false, -2, false, -1, 255, 1.0),
@@ -4211,7 +4238,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == HIGH_VELOCITY_BULLET
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
-            || kind == GOLF_CLUB_HELPER,
+            || kind == GOLF_CLUB_HELPER
+            // W4-g43 doc-sweep — the FlamethrowerTrap (187) sets
+            // `ignoreWater = true` (`Projectile.cs:2748`).
+            || kind == FLAMETHROWER_TRAP,
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).

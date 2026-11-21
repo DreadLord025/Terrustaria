@@ -357,12 +357,12 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
         }
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with
-    // the knockback 2f, `Wiring.cs:1990-1992`). The flame jet 187 (aiStyle 38)
-    // requests drop until M4-PROJ ports that AI; the trap darts, the spiky
-    // ball 185 and the spear 186 (aiStyle 14) spawn through the pool. The
-    // ceiling −7 arm emits one identical `Spear` request twice: the C#
-    // evaluates its cap ONCE before both spawns, so identical requests share
-    // one cap decision (and therefore one pool scan).
+    // the knockback 2f, `Wiring.cs:1990-1992`). The trap darts, the spiky
+    // ball 185, the spear 186 (aiStyle 14) and the flame jet 187 (aiStyle 38,
+    // W4-g43 doc-sweep — the stationary emitter of the 188 children) spawn
+    // through the pool. The ceiling −7 arm emits one identical `Spear`
+    // request twice: the C# evaluates its cap ONCE before both spawns, so
+    // identical requests share one cap decision (and therefore one pool scan).
     let mut decided: Vec<tr_core::wiring::TrapRequest> = Vec::new();
     let mut blocked: Vec<tr_core::wiring::TrapRequest> = Vec::new();
     for req in trap_requests {
