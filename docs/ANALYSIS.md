@@ -39476,3 +39476,55 @@ gameplay stream touched.
 **Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
 4 `main_sounds` witnesses WRITTEN NOT RUN.
 
+## W4-g22 batch 6 (2026-11-21, code-only) — sites 166-180 (WINDOW COMPLETE)
+
+**Batch 6 (sites 166-180)** — the world-evil tail, the world-select scroll
+machine (with its PlayerList/WorldList clamp quirk), the mode-9 confirm, the
+credits Back, and the settings-page forward rows. With this batch the g22
+window (sites 91-180, `Main.cs:44118-49727`) is COMPLETE — all 90 sites
+ported, wired, or recorded as unported surfaces:
+
+| site | C# | port |
+| --- | --- | --- |
+| 166 `:49526` | mode -7 Master difficulty 10 | `world_difficulty_row_cue(4)` (batch 5) |
+| 167 `:49536` | mode -7 Back 11 | `world_difficulty_row_cue(5)` (batch 5) |
+| 168 `:49558` | mode -71 Corruption 10 | `world_evil_row_cue(0)` (batch 5) |
+| 169 `:49566` | mode -71 Crimson 10 | `world_evil_row_cue(1)` (batch 5) |
+| 170 `:49574` | mode -71 Random evil 10 | `world_evil_row_cue(2)` (batch 5) |
+| 171 `:49582` | mode -71 Back 11 | `world_evil_row_cue(3)` (batch 5) |
+| 172 `:49645` | mode-8 world-scroll up 12 | `world_select_scroll` (up edge) |
+| 173 `:49654` | mode-8 world-scroll down 12 | `world_select_scroll` (down edge, the PlayerList-guard/WorldList-clamp quirk `:49656-49658`) |
+| 174 `:49664` | mode-8 Back 11 | the 888 `UIWorldSelect` Back (the port's `FlowClick::WorldBack` plays `Menu_Close`, `app/flow.rs:1267`) |
+| 175 `:49670` | mode-8 world-card pick 10 | the 888 `UIWorldListItem` play (the port's `FlowClick::WorldPlay` plays `Menu_Open`, `app/flow.rs:1269`) |
+| 176 `:49684` | mode-9 confirm Yes 10 | LANDED batch 2 — `Act::Out(ConfirmYes)` |
+| 177 `:49689` | mode-9 confirm No 11 | LANDED batch 2 — `Act::Out(ConfirmNo)` |
+| 178 `:49702` | mode-3000 credits Back 11 | LANDED batch 2 — `Act::Nav(Credits -> Main)` parent relation |
+| 179 `:49720` | mode-112 General open 10 | LANDED batch 2 — `Act::Nav(Settings -> General)`; census pin `settings_page_row_cue(0)` |
+| 180 `:49727` | mode-112 Interface open 10 | LANDED batch 2 — `Act::Nav(Settings -> Interface)`; census pin `settings_page_row_cue(1)` |
+
+**The pure helpers** (`main_sounds.rs`): `world_select_scroll` (the mode-8
+up/down 5-step machine, the C# clamp quirk kept — the down-step's overflow
+guard reads `PlayerList.Count - 7` but clamps to `WorldList.Count - 7`,
+`:49656-49658`), `settings_page_row_cue` (the mode-112 forward rows 10, the
+Volume 11 quirk, Back 11).
+
+**RNG**: every batch-6 site is draw-free (ids 10/11/12 int overload). No
+gameplay stream touched.
+
+**Window summary (91-180)**: 90 sites — the live seams (the menu cue queue
+`Menu::pending_cue`/`take_cue` drained by `app/loop.rs`, the Settings-button
+hover tick in `app/frame.rs`, the case-20 female-hit `Audio` seam, the
+housing-head 12s already landed) plus the pure census helpers for the
+unwired legacy screens (hair/clothes windows, builder/info-acc toggles, the
+char-creation preview modes 2/17/20/222, the colour-picker Backs, the
+world-creation difficulty/evil rows, the world-select scroll). The unported
+surfaces (the connecting-cancel, the corrupt-world recovery modes 200/201,
+the Steam Workshop/ResourcePacks opens, the 889 Friends XOR rows) are
+recorded, not invented. The 888 `UICharacterCreation`/`UIWorldCreation`
+inline cues are a SEPARATE census (not re-ported here).
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+3 `main_sounds` witnesses WRITTEN NOT RUN. Total g22 witnesses: 15 (batch 1)
++ 7 (batch 2 menu) + 6 (batch 3) + 3 (batch 4) + 4 (batch 5) + 3 (batch 6)
+= 38 written, not run.
+

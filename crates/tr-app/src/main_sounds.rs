@@ -419,6 +419,62 @@ pub fn world_evil_row_cue(row: i32) -> Option<u32> {
     }
 }
 
+/// The menuMode 8 world-select scroll machine (`Main.cs:49643-49672`): the
+/// up-arrow row (`selectedMenu == 0`, drawn only at `menuSkip > 0`) plays
+/// 12 and steps `menuSkip -= 5`, clamping at 0 (`:49645-49650`); the
+/// down-arrow row (`selectedMenu == 6`, drawn only at
+/// `menuSkip < WorldList.Count - 7`) plays 12 and steps `menuSkip += 5`
+/// (`:49654-49659`). The C# clamp quirk: the down-step's overflow guard
+/// reads `PlayerList.Count - 7` (`:49556`) but clamps to
+/// `WorldList.Count - 7` (`:49658`) — a vanilla bug the port keeps (the
+/// two lists differ in length, so the guard can fire early/late). Returns
+/// `(new_skip, tick_count)` — the cue count is the number of `PlaySound(12)`
+/// sites hit (0 or 1; the rows are mutually exclusive `else if`).
+/// `up_edge`/`down_edge` are the row activations (the caller gates on the
+/// row's visibility); `world_count`/`player_count` are the two list lengths.
+pub fn world_select_scroll(
+    menu_skip: i32,
+    world_count: i32,
+    player_count: i32,
+    up_edge: bool,
+    down_edge: bool,
+) -> (i32, u32) {
+    let mut skip = menu_skip;
+    let mut ticks = 0u32;
+    if up_edge && skip > 0 {
+        ticks += 1; // `:49645`
+        skip -= 5; // `:49646`
+        if skip < 0 {
+            skip = 0; // `:49649`
+        }
+    } else if down_edge && skip < world_count - 7 {
+        ticks += 1; // `:49654`
+        skip += 5; // `:49655`
+        // The C# quirk: the guard reads PlayerList, the clamp writes WorldList.
+        if skip >= player_count - 7 {
+            skip = world_count - 7; // `:49658`
+        }
+    }
+    (skip, ticks)
+}
+
+/// The menuMode 112 settings-page forward rows (`Main.cs:49716-49764`):
+/// General (`:49720`), Interface (`:49727`), Video (`:49734`), Cursor
+/// (`:49748`), Keybindings (`:49755`), Language (`:49762`) all play 10 on
+/// the forward open; the Volume row (`:49741`) is the 11 quirk (a forward
+/// open with the close cue) and the Back row (`:49770`) plays 11. `row` is
+/// the C# `num20` walk (0 General, 1 Interface, 2 Video, 3 Volume, 4 Cursor,
+/// 5 Keybindings, 6 Language, 7 Back). The port's `Act::Nav` parent relation
+/// already wires these (batch 2); this pins the census ids.
+pub fn settings_page_row_cue(row: i32) -> Option<u32> {
+    match row {
+        0 | 1 | 2 | 4 | 5 | 6 => Some(10), // `:49720`/`:49727`/`:49734`/`:49748`/`:49755`/`:49762`
+        3 => Some(11),                     // `:49741` — the Volume quirk
+        7 => Some(11),                     // `:49770` — Back
+        _ => None,
+    }
+}
+
 /// `Main.DrawSettingButton`'s hover-enter cue (`Main.cs:45595-45616`): the
 /// pointer entering the label rect plays ONE sound 12 (`:45601`) on the
 /// `!mouseOver` edge, then latches `mouseOver = true`; leaving the rect
@@ -752,5 +808,42 @@ mod tests {
         // Back (row 3) plays 11 (:49582).
         assert_eq!(world_evil_row_cue(3), Some(11));
         assert_eq!(world_evil_row_cue(4), None);
+    }
+
+    // ---- world-select scroll + settings rows (166-180) -------------------
+
+    #[test]
+    fn g22_the_world_scroll_steps_five_and_clamps_at_zero() {
+        // Up-arrow at skip 10: -5 -> 5, one cue (:49645-49646).
+        assert_eq!(world_select_scroll(10, 20, 20, true, false), (5, 1));
+        // Up-arrow at skip 3: -5 -> -2 -> clamp 0 (:49647-49649).
+        assert_eq!(world_select_scroll(3, 20, 20, true, false), (0, 1));
+        // Up-arrow at skip 0: the row is not drawn (skip > 0 gate) — no cue.
+        assert_eq!(world_select_scroll(0, 20, 20, true, false), (0, 0));
+    }
+
+    #[test]
+    fn g22_the_world_scroll_down_keeps_the_playerlist_guard_quirk() {
+        // Down-arrow at skip 0 with 20 worlds: +5 -> 5, one cue (:49654-49655).
+        // The guard reads player_count - 7 = 13; 5 < 13, no clamp.
+        assert_eq!(world_select_scroll(0, 20, 20, false, true), (5, 1));
+        // The C# quirk (:49656-49658): the guard reads PlayerList.Count - 7
+        // but the clamp writes WorldList.Count - 7. With 20 worlds and only
+        // 10 players: skip 5 + 5 = 10 >= 10 - 7 = 3 -> clamp to 20 - 7 = 13.
+        assert_eq!(world_select_scroll(5, 20, 10, false, true), (13, 1));
+        // Down-arrow at the last page (skip >= world_count - 7): not drawn.
+        assert_eq!(world_select_scroll(13, 20, 20, false, true), (13, 0));
+    }
+
+    #[test]
+    fn g22_the_settings_forward_rows_cue_ten_and_volume_back_eleven() {
+        // General/Interface/Video/Cursor/Keybindings/Language play 10.
+        for row in [0, 1, 2, 4, 5, 6] {
+            assert_eq!(settings_page_row_cue(row), Some(10));
+        }
+        // The Volume quirk (row 3) plays 11 (:49741), Back (row 7) 11 (:49770).
+        assert_eq!(settings_page_row_cue(3), Some(11));
+        assert_eq!(settings_page_row_cue(7), Some(11));
+        assert_eq!(settings_page_row_cue(8), None);
     }
 }
