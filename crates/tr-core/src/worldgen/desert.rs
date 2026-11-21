@@ -19,14 +19,18 @@
 //! ```
 //!
 //! Deviations (documented per the golden rule): the special-seed arms
-//! (`remixWorldGen`, `tenthAnniversaryWorld`, `surfaceIsDesert`,
-//! `notTheBees`, `dualDungeons`, `extraLiquid`, `skyblock`) have no port
-//! model and are skipped, so their branches and extra draws never run; the
-//! C#'s per-tile `Tile.SmoothSlope` effect map (the `PostPlacementEffect.Smooth`
-//! flags) has no port equivalent — the carve's slopes are left as-is, and
-//! `CleanupArea`'s `SquareWallFrame`/`TileFrame` pair runs through
-//! [`crate::framing::reframe_area`]; the `Main.tileSolid[484] = false` poke is
-//! a load-order detail the port's tile data does not model.
+//! (`remixWorldGen`, `surfaceIsDesert`, `notTheBees`, `dualDungeons`,
+//! `skyblock`) have no port model and are skipped, so their branches and
+//! extra draws never run; the entrance gate's `tenthAnniversaryWorld` +
+//! `extraLiquid` halves ARE modelled (W4-g40 P2, `DesertBiome.cs:23` — the
+//! anniversary seed skips the entrance fraction draw entirely, extraLiquid
+//! draws it then skips); the C#'s per-tile `Tile.SmoothSlope` effect map (the
+//! `PostPlacementEffect.Smooth` flags) has no port equivalent in the HIVE
+//! carve — the carve's slopes are left as-is (the entrances' `Actions.Smooth`
+//! landed with W4-g40 P1), and `CleanupArea`'s `SquareWallFrame`/`TileFrame`
+//! pair runs through [`crate::framing::reframe_area`]; the
+//! `Main.tileSolid[484] = false` poke is a load-order detail the port's tile
+//! data does not model.
 
 use crate::framing::reframe_area;
 use crate::tile::{FLAG_ACTIVE, FLAG_HALF_BRICK, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA, FLAG_LIQUID_SHIMMER};
@@ -776,12 +780,15 @@ fn cleanup_area(world: &mut World, hive: Rect) {
 /// `Full Desert` (`WorldGen.cs:12500-12543` + `DesertBiome.Place`): one
 /// underground desert, placed opposite the dungeon with the vanilla retry
 /// loop. Writes `GenVars.UndergroundDesertLocation`/`HiveLocation` and the
-/// hive bounds through `gv`.
+/// hive bounds through `gv`. `chance_of_entrance` is the config-populated
+/// `DesertBiome.ChanceOfEntrance` (`DesertBiome.cs:10-11`, the embedded JSON
+/// `Biomes.DesertBiome` 0.5 — `CreateBiome<T>`, `WorldGenConfiguration.cs:27-34`).
 pub(crate) fn full_desert(
     world: &mut World,
     gv: &mut GenVars,
     dungeon_side: i32,
     world_surface: f64,
+    chance_of_entrance: f64,
     rng: &mut Rng,
 ) -> bool {
     let mut num = 0;
@@ -809,9 +816,20 @@ pub(crate) fn full_desert(
             sand_mound_place(world, &desc, rng);
             // `UpdateSurfaceMap` (`:22`).
             desc.update_surface(world);
-            // The entrance roll (`:23-40`): the JSON `ChanceOfEntrance` 0.5
-            // gate, then the `Next(4)` style pick.
-            if rng.next_f64() <= 0.5 {
+            // The entrance roll (`DesertBiome.cs:23-40`): the C# gate is
+            // `!Main.tenthAnniversaryWorld && GenBase._random.NextDouble()
+            // <= this.ChanceOfEntrance && !WorldGen.SecretSeed.extraLiquid
+            // .Enabled` — the anniversary seed short-circuits BEFORE the
+            // fraction draw (no entrance, no Next(4)); the extraLiquid seed
+            // still draws the fraction (the && order), then skips. The
+            // JSON `Biomes.DesertBiome.ChanceOfEntrance` is 0.5 (the C#
+            // field default 0.3333 only applies when the entry is absent).
+            if !world.seeds.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY)
+                && rng.next_f64() <= chance_of_entrance
+                && !world
+                    .micro_seeds
+                    .contains(crate::seeds::MicroSeedFlags::EXTRA_LIQUID)
+            {
                 let kind = rng.range(0, 4);
                 super::desert_entrances::place_entrance(
                     world,
@@ -976,5 +994,46 @@ mod tests {
                 assert_eq!(ba.y.to_bits(), bb.y.to_bits());
             }
         }
+    }
+
+    /// W4-g40 P2: the embedded config's `Biomes.DesertBiome.ChanceOfEntrance`
+    /// is 0.5 (`CreateBiome<DesertBiome>` populates the field; the C# 0.3333
+    /// default only applies when the entry is absent —
+    /// `WorldGenConfiguration.cs:27-34`).
+    #[test]
+    fn w4_g40_desert_entrance_chance_reads_the_json_half() {
+        let config = super::super::config::WorldGenConfig::parse();
+        let biome = config.biome("DesertBiome").expect("the JSON entry exists");
+        assert_eq!(biome.get_f64("ChanceOfEntrance"), Some(0.5));
+    }
+
+    /// W4-g40 P2: the anniversary seed short-circuits the entrance gate
+    /// BEFORE the fraction draw (`DesertBiome.cs:23` — `!tenthAnniversary &&
+    /// NextDouble() <= chance && !extraLiquid`): a celebrationmk10 world
+    /// consumes NO entrance draws, so the hive's stream position differs
+    /// from a classic world's by exactly the entrance ledger.
+    #[test]
+    fn w4_g40_anniversary_skips_the_entrance_draws() {
+        // Two identical worlds; one carries the anniversary bit. The
+        // entrance gate is the ONLY seed-sensitive arm in full_desert's
+        // classic path, so the post-pass stream states must differ (the
+        // classic world drew the fraction + maybe the entrance).
+        let mut classic = flat(4200, 1200);
+        classic.world_surface = 400.0;
+        let mut anniv = flat(4200, 1200);
+        anniv.world_surface = 400.0;
+        anniv.seeds = crate::seeds::SeedFlags::from(crate::seeds::SeedFlags::TENTH_ANNIVERSARY);
+        let mut gv_a = super::super::pipeline::GenVars::default();
+        let mut gv_b = super::super::pipeline::GenVars::default();
+        let mut ra = Rng(0x5EED);
+        let mut rb = Rng(0x5EED);
+        full_desert(&mut classic, &mut gv_a, -1, 400.0, 0.5, &mut ra);
+        full_desert(&mut anniv, &mut gv_b, -1, 400.0, 0.5, &mut rb);
+        // The anniversary world never draws the entrance fraction; the
+        // classic one always does — the streams diverge at that draw.
+        assert_ne!(ra.0, rb.0, "the entrance fraction draw separates the streams");
+        // The anniversary world has no entrance carve: its hive bounds
+        // still land (the hive runs unconditionally).
+        assert!(gv_b.desert_hive.is_some());
     }
 }
