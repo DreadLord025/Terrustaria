@@ -220,6 +220,15 @@ pub mod id {
     /// `BirthdayParty.cs:154`'s client ask, `MessageBuffer.cs:3809-3814`,
     /// client→host only).
     pub const TOGGLE_PARTY: u8 = 111;
+    /// `112 SpecialFX` (W4-g50, S1-I-4): `(byte)` effect, `(int)` x/y,
+    /// `(byte)` b4, `(short)` s5, `(byte)` b6 (`MessageID.cs:238`,
+    /// `NetMessage.cs:1424-1431`, `MessageBuffer.cs:3815-3840`,
+    /// host→client only).
+    pub const SPECIAL_FX: u8 = 112;
+    /// `113 CrystalInvasionStart` (W4-g50, S1-I-4): `(short)x, (short)y`
+    /// (`MessageID.cs:240`, `NetMessage.cs:1432-1435`,
+    /// `MessageBuffer.cs:3841-3854`, client→host only).
+    pub const CRYSTAL_INVASION_START: u8 = 113;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2302,6 +2311,37 @@ pub struct MassWireOperationPay {
     pub player: u8,
 }
 
+/// `msg 112 SpecialFX`'s body (`NetMessage.cs:1424-1431`): `(byte)` effect
+/// kind, `(int)` x, `(int)` y, `(byte)` number4, `(short)` number5,
+/// `(byte)` number6. Kind 1 = tree-grow FX (number4 = treeHeight,
+/// number5 = passStyle, number6 = the shake flag — `WorldGen.cs:29375`,
+/// the shake variant `:63412`); kind 2 = fairy critter effects (number5 =
+/// `type - 583`, `NPC.cs:48584`). The reader tests number6 `== 1`
+/// (`MessageBuffer.cs:3822`) and relays kind 1 verbatim (`:3832`).
+/// Server→client only — every send site is a `netMode == 2` arm; the
+/// reader's relay branch covers a host receiving one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpecialFx {
+    pub effect: u8,
+    pub x: i32,
+    pub y: i32,
+    pub b4: u8,
+    pub s5: i16,
+    pub b6: u8,
+}
+
+/// `msg 113 CrystalInvasionStart`'s body (`NetMessage.cs:1432-1435`):
+/// `(short)` x, `(short)` y — the crystal's tile coords. The client sends
+/// it when placing the eternia crystal (`DD2Event.SummonCrystal`,
+/// `DD2Event.cs:574-577`); the host checks `WouldFailSpawningHere` and
+/// summons on the sender (`MessageBuffer.cs:3841-3854`, gated on
+/// `!snowMoon && !pumpkinMoon`). Client→server only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CrystalInvasionStart {
+    pub x: i16,
+    pub y: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2462,6 +2502,10 @@ pub enum C2s {
     /// (`BirthdayParty.cs:154`); the host flips it (`MessageBuffer.cs:3809-
     /// 3814`; W4-g50). No body.
     ToggleParty,
+    /// `113 CrystalInvasionStart` — this client placed the eternia crystal
+    /// (`DD2Event.cs:574-577`); the host summons on the sender
+    /// (`MessageBuffer.cs:3841-3854`; W4-g50).
+    CrystalInvasionStart(CrystalInvasionStart),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2653,6 +2697,9 @@ pub enum S2c {
     /// `110 MassWireOperationPay` - the mass wire operation's bill
     /// (`Wiring.cs:441-442`; `MessageBuffer.cs:3789-3808`; W4-g50).
     MassWireOperationPay(MassWireOperationPay),
+    /// `112 SpecialFX` - a tree-grow / fairy effect burst
+    /// (`NetMessage.cs:1424-1431`; `MessageBuffer.cs:3815-3840`; W4-g50).
+    SpecialFx(SpecialFx),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2753,6 +2800,7 @@ impl C2s {
             Self::GemLockToggle(_) => id::GEM_LOCK_TOGGLE,
             Self::MassWireOperation(_) => id::MASS_WIRE_OPERATION,
             Self::ToggleParty => id::TOGGLE_PARTY,
+            Self::CrystalInvasionStart(_) => id::CRYSTAL_INVASION_START,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2863,6 +2911,8 @@ impl C2s {
                 .u8(m.tool_mode),
             // `BirthdayParty.cs:154` — no body.
             Self::ToggleParty => w,
+            // `NetMessage.cs:1432-1435`: (short)x + (short)y.
+            Self::CrystalInvasionStart(c) => w.i16(c.x).i16(c.y),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3063,6 +3113,11 @@ impl C2s {
             }),
             // `MessageBuffer.cs:3809-3814` — no body.
             id::TOGGLE_PARTY => Self::ToggleParty,
+            // `MessageBuffer.cs:3843-3844` — (short)x + (short)y.
+            id::CRYSTAL_INVASION_START => Self::CrystalInvasionStart(CrystalInvasionStart {
+                x: r.i16()?,
+                y: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3243,6 +3298,7 @@ impl S2c {
             Self::SmartText(_) => id::SMART_TEXT,
             Self::WiredCannonShot(_) => id::WIRED_CANNON_SHOT,
             Self::MassWireOperationPay(_) => id::MASS_WIRE_OPERATION_PAY,
+            Self::SpecialFx(_) => id::SPECIAL_FX,
         }
     }
 
@@ -3487,6 +3543,15 @@ impl S2c {
                 .u8(c.owner),
             // `NetMessage.cs:1419-1423`: short type, short count, byte player.
             Self::MassWireOperationPay(p) => w.i16(p.item_type).i16(p.count).u8(p.player),
+            // `NetMessage.cs:1424-1431`: (byte)effect + (int)x + (int)y +
+            // (byte)number4 + (short)number5 + (byte)number6.
+            Self::SpecialFx(f) => w
+                .u8(f.effect)
+                .i32(f.x)
+                .i32(f.y)
+                .u8(f.b4)
+                .i16(f.s5)
+                .u8(f.b6),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3847,6 +3912,16 @@ impl S2c {
                 item_type: r.i16()?,
                 count: r.i16()?,
                 player: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3817-3822` — byte effect, int x/y, byte b4,
+            // short s5, byte b6.
+            id::SPECIAL_FX => Self::SpecialFx(SpecialFx {
+                effect: r.u8()?,
+                x: r.i32()?,
+                y: r.i32()?,
+                b4: r.u8()?,
+                s5: r.i16()?,
+                b6: r.u8()?,
             }),
             _ => return None,
         })
@@ -6820,6 +6895,51 @@ mod tests {
         match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
             C2s::ToggleParty => {}
             other => panic!("expected 111, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `112 SpecialFX` (`NetMessage.cs:1424-1431`): byte effect, int x/y,
+    /// byte b4, short s5, byte b6. Host→client only
+    /// (`MessageBuffer.cs:3815-3840`).
+    #[test]
+    fn w4_g50_special_fx_round_trips() {
+        let f = SpecialFx {
+            effect: 1,
+            x: 120,
+            y: 340,
+            b4: 5,
+            s5: 1278,
+            b6: 1,
+        };
+        let frame = S2c::SpecialFx(f).encode();
+        assert_eq!(frame[2], 112);
+        let mut body = vec![1u8];
+        body.extend_from_slice(&120i32.to_le_bytes());
+        body.extend_from_slice(&340i32.to_le_bytes());
+        body.push(5);
+        body.extend_from_slice(&1278i16.to_le_bytes());
+        body.push(1);
+        assert_eq!(&frame[3..], &body);
+        match S2c::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode") {
+            S2c::SpecialFx(d) => assert_eq!(d, f),
+            other => panic!("expected 112, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `113 CrystalInvasionStart` (`NetMessage.cs:1432-1435`): short x,
+    /// short y. Client→host only (`MessageBuffer.cs:3841-3854`).
+    #[test]
+    fn w4_g50_crystal_invasion_start_round_trips() {
+        let c = CrystalInvasionStart { x: 120, y: 340 };
+        let frame = C2s::CrystalInvasionStart(c).encode();
+        assert_eq!(frame[2], 113);
+        let mut body = Vec::new();
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&340i16.to_le_bytes());
+        assert_eq!(&frame[3..], &body);
+        match C2s::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode") {
+            C2s::CrystalInvasionStart(d) => assert_eq!(d, c),
+            other => panic!("expected 113, got {:?}", other.msg_id()),
         }
     }
 }

@@ -1117,6 +1117,118 @@ impl App {
                     }
                 }
             }
+            // `case 113` — the eternia crystal placement (W4-g50,
+            // `MessageBuffer.cs:3841-3854`): gated on `!snowMoon &&
+            // !pumpkinMoon`; `WouldFailSpawningHere` warns the sender (the
+            // bartender text, `DD2Event.cs:615-627`) but does NOT block the
+            // summon (`:3847-3851` — no return), then `SummonCrystal(x, y,
+            // whoAmI)` runs `SummonCrystalDirect` (`DD2Event.cs:584-601`).
+            C2s::CrystalInvasionStart(c) => {
+                if self.world.snow_moon || self.world.pumpkin_moon {
+                    return; // `:3845`
+                }
+                let (x, y) = (c.x as i32, c.y as i32);
+                // `WouldFailSpawningHere` (`DD2Event.cs:603-613`): the arena
+                // walker must find >= 60 walkable tiles on EACH side.
+                let (left, right) = tr_core::stray::check_arena_score(
+                    &self.world,
+                    (x as f32 * 16.0 + 8.0, y as f32 * 16.0 + 8.0),
+                );
+                if right.0 - x < 60 || x - left.0 < 60 {
+                    // `FailureMessage(whoAmI)` — the yellow bartender warning
+                    // to the sender only (`ChatHelper.SendChatMessageToClient`).
+                    let sm = crate::app::netmodules::ServerMessage {
+                        author: 255,
+                        text: crate::lang::text("DungeonDefenders2.BartenderWarning"),
+                        color: net::Rgb(255, 255, 0),
+                    };
+                    server.send(
+                        id,
+                        &S2c::NetModule {
+                            module: crate::app::netmodules::module_id::TEXT,
+                            body: sm.encode(),
+                        },
+                    );
+                }
+                self.summon_crystal_direct(server, x, y);
+            }
+        }
+    }
+
+    /// `DD2Event.SummonCrystalDirect` (`DD2Event.cs:584-601`, W4-g50): no
+    /// live crystal (548) and an active stand tile (466) at the cell; the
+    /// spawn point is the stand's anchor `+ (40, 64)`, then `StartInvasion`
+    /// (`:253-291`), the crystal `NewNPC` and `DropStarterCrystals`
+    /// (`:929-942` — five 2-stacks of 3822 at the crystal's centre).
+    fn summon_crystal_direct(&mut self, server: &net::Server, x: i32, y: i32) {
+        // `!NPC.AnyNPCs(548)` (`:586`).
+        if self
+            .npcs
+            .iter()
+            .any(|n| n.hp > 0 && n.kind == crate::npc::NpcKind::DD2EterniaCrystal)
+        {
+            return;
+        }
+        let Some(tile) = self.world.tile(x, y) else {
+            return;
+        };
+        if !tile.active() || tile.kind != 466 {
+            return; // `:589`
+        }
+        let (fx, fy) = (tile.frame_x as i32, tile.frame_y as i32);
+        let sx = x * 16 - fx / 18 * 16 + 40;
+        let sy = y * 16 - fy / 18 * 16 + 64;
+        // `StartInvasion` (`:253-291`) — the counters/latches start clean,
+        // the 300-tick spawn hold arms and `WipeEntities` runs BEFORE the
+        // crystal's `NewNPC` (`:596-597`), so the wipe cannot eat it. The
+        // port's `use_etherian_crystal` keeps the same field set.
+        self.world.dd2_event_ongoing = true;
+        self.world.dd2_wave = 1;
+        self.world.dd2_wave_kills = 0.0;
+        self.world.dd2_lost = false;
+        self.world.dd2_won = false;
+        self.world.dd2_crystal_drops = tr_core::dd2_victory::CrystalDropState::default();
+        self.world.dd2_betsy_spawned = false;
+        self.world.dd2_latches = tr_core::dd2::DownedLatches::default();
+        self.world.dd2_spawn_hold = tr_core::dd2::SPAWN_HOLD_START;
+        crate::world_sim::npcs::wipe_dd2_entities(self);
+        // `BroadcastText(InvasionStart, INFO_START_INVASION_COLOR)` (`:278`)
+        // + `SendData(7)` (`:279`) — the chat line and the header re-push.
+        let sm = crate::app::netmodules::ServerMessage {
+            author: 255,
+            text: crate::lang::text("DungeonDefenders2.InvasionStart"),
+            color: net::Rgb(
+                tr_core::dd2::INFO_START_INVASION_COLOR[0],
+                tr_core::dd2::INFO_START_INVASION_COLOR[1],
+                tr_core::dd2::INFO_START_INVASION_COLOR[2],
+            ),
+        };
+        server.broadcast(&S2c::NetModule {
+            module: crate::app::netmodules::module_id::TEXT,
+            body: sm.encode(),
+        });
+        server.broadcast(&S2c::WorldInfo(Box::new(self.world_info())));
+        // The crystal `NewNPC` at the spawn point (`:597`).
+        let mut crystal = crate::npc::Npc::new(
+            crate::npc::NpcKind::DD2EterniaCrystal,
+            sx as f32 - 20.0,
+            sy as f32 - 20.0,
+            1,
+            0.0,
+        );
+        crystal.hp = crystal.max_hp;
+        let (cx, cy) = (crystal.x + crystal.size().0 * 0.5, crystal.y + crystal.size().1 * 0.5);
+        self.npcs.push(crystal);
+        // `DropStarterCrystals` (`:929-942`): five 2-stacks of 3822 at the
+        // crystal's centre.
+        for _ in 0..5 {
+            crate::world_sim::items::spawn_item_drop_px(
+                &mut self.items,
+                self.rngs.global(),
+                tr_core::dd2::ENERGY_CRYSTAL_ITEM,
+                2,
+                Vec2::new(cx, cy),
+            );
         }
     }
 
@@ -1238,6 +1350,208 @@ impl App {
             }
         }
         false
+    }
+
+    /// `Utils.RandomVector2(Main.rand, min, max)` (`Utils.cs:2431-2434`):
+    /// TWO `NextDouble` draws, X then Y.
+    fn random_vector2(rng: &mut tr_core::UnifiedRandom, min: f32, max: f32) -> Vec2 {
+        let x = (max - min) * rng.next_double() as f32 + min;
+        let y = (max - min) * rng.next_double() as f32 + min;
+        Vec2::new(x, y)
+    }
+
+    /// `Main.rand.NextVector2Circular(halfW, halfH)` (`Utils.cs:1266-1269`):
+    /// the unit-circle angle draw (`NextFloat() * 2π` → cos/sin) THEN a
+    /// second `NextFloat` radius scale.
+    fn next_vector2_circular(rng: &mut tr_core::UnifiedRandom, half_w: f32, half_h: f32) -> Vec2 {
+        let angle = rng.next_float() * std::f32::consts::TAU;
+        let unit = Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32);
+        let r = rng.next_float();
+        Vec2::new(unit.x * half_w * r, unit.y * half_h * r)
+    }
+
+    /// `WorldGen.TreeGrowFX` (`WorldGen.cs:29600-29637`, W4-g50): the
+    /// tree-grow gore burst — three gores per row down the trunk, the
+    /// top-row crown burst, each with the trunk's paint column. The 1278
+    /// ash variant routes to [`Self::tree_grow_fx_ash_shake`].
+    fn tree_grow_fx(&mut self, x: i32, y: i32, height: i32, tree_gore: i32, hit_tree: bool) {
+        let vector = Vec2::new(x as f32, y as f32) * 16.0 + Vec2::new(8.0, 8.0);
+        if tree_gore == 1278 {
+            self.tree_grow_fx_ash_shake(x, y, height, hit_tree);
+            return;
+        }
+        // `currentColumn` — the trunk tile's paint (`:29608-29616`).
+        let mut current_column = 0u8;
+        if let Some(tile) = self.world.tile(x, y) {
+            if tile.active()
+                && (tr_core::tileobject::is_a_tree_trunk(tile.kind) || tile.kind == 323)
+            {
+                current_column = tile.paint();
+            }
+        }
+        let mut num = 0i32;
+        while num > -height {
+            let num2 = 10.0f32;
+            let vector2 = Vec2::new(5.0, 7.0);
+            for dx in [-16.0f32, 0.0, 16.0] {
+                let rng = self.rngs.global();
+                let pos = vector + Vec2::new(dx, num as f32 * 16.0) - vector2;
+                let vel = Self::random_vector2(rng, -num2, num2);
+                let scale = 0.7 + rng.next_float() * 0.6;
+                let idx = self.gore.new_gore(rng, &self.world, pos, vel, tree_gore, scale);
+                if idx != tr_core::gore::GORE_SENTINEL {
+                    self.gore.slot_mut(idx).frame.current_column = current_column;
+                }
+            }
+            if num == -height + 1 {
+                let num3 = if hit_tree { 5 } else { 20 };
+                for _ in 0..num3 {
+                    let rng = self.rngs.global();
+                    let pos = vector
+                        + Vec2::new(0.0, num as f32 * 16.0 - 40.0)
+                        + Self::random_vector2(rng, -40.0, 40.0)
+                        - vector2;
+                    let vel = Self::random_vector2(rng, -10.0, 10.0);
+                    let scale = 0.7 + rng.next_float() * 0.6;
+                    let idx = self.gore.new_gore(rng, &self.world, pos, vel, tree_gore, scale);
+                    if idx != tr_core::gore::GORE_SENTINEL {
+                        self.gore.slot_mut(idx).frame.current_column = current_column;
+                    }
+                }
+            }
+            num -= 1;
+        }
+    }
+
+    /// `WorldGen.TreeGrowFX_AshShake` (`WorldGen.cs:29639-29672`, W4-g50):
+    /// the ash-tree shake — the type-31 dust rows, the type-6 leaf dust and
+    /// the 61..63 gore fall, each gated on the `Next(3) != 0` rolls.
+    fn tree_grow_fx_ash_shake(&mut self, x: i32, y: i32, height: i32, hit_tree: bool) {
+        let vector = Vec2::new(x as f32, y as f32) * 16.0 + Vec2::new(8.0, 8.0);
+        let ctx = self.spawn_ctx();
+        let mut num = 0i32;
+        while num > -height {
+            let rng = self.rngs.global();
+            if num >= -height / 2 && rng.next_max(3) != 0 {
+                let num2 = if hit_tree { 10 } else { 5 };
+                for _ in 0..num2 {
+                    let rng = self.rngs.global();
+                    let pos = vector
+                        + Vec2::new(-16.0, num as f32 * 16.0)
+                        + Self::random_vector2(rng, -30.0, 30.0);
+                    let idx = self.dust.new_dust_direct(
+                        rng, &ctx, &self.world, pos, 4, 4, 31, 0.0, -3.0, 100,
+                        tr_core::particles::Color::default(), 1.0,
+                    );
+                    let vel = Self::next_vector2_circular(rng, 2.0, 2.0) + Vec2::new(0.0, -0.6);
+                    if idx != tr_core::particles::DUST_SENTINEL {
+                        self.dust.slot_mut(idx).velocity = vel;
+                    }
+                }
+            }
+            let rng = self.rngs.global();
+            if num as f32 >= (-height as f32) * 0.7 && rng.next_max(3) != 0 {
+                let num3 = if hit_tree { 16 } else { 10 };
+                for _ in 0..num3 {
+                    let rng = self.rngs.global();
+                    let pos = vector
+                        + Vec2::new(-16.0, num as f32 * 16.0)
+                        + Self::random_vector2(rng, -30.0, 30.0);
+                    let scale = 1.0 + 0.7 * rng.next_float();
+                    let idx = self.dust.new_dust_direct(
+                        rng, &ctx, &self.world, pos, 4, 4, 6, 0.0, -4.0, 0,
+                        tr_core::particles::Color::default(), scale,
+                    );
+                    let mut vel = Self::next_vector2_circular(rng, 2.0, 2.0) + Vec2::new(0.0, -0.6);
+                    let no_grav = rng.next_max(2) == 0;
+                    if no_grav {
+                        vel *= 2.0;
+                    }
+                    vel += Vec2::new(0.0, if hit_tree { -1.0 } else { -2.0 });
+                    if idx != tr_core::particles::DUST_SENTINEL {
+                        let d = self.dust.slot_mut(idx);
+                        d.velocity = vel;
+                        if no_grav {
+                            d.no_gravity = true;
+                        }
+                    }
+                }
+            }
+            if !hit_tree {
+                let rng = self.rngs.global();
+                let pos = vector
+                    + Vec2::new(-16.0, num as f32 * 16.0 - 40.0)
+                    + Self::random_vector2(rng, -40.0, 40.0) * Vec2::new(0.5, 1.0);
+                let gore_type = 61 + rng.next_max(3);
+                let idx = self.gore.new_gore(rng, &self.world, pos, Vec2::ZERO, gore_type, 1.0);
+                if idx != tr_core::gore::GORE_SENTINEL {
+                    self.gore.slot_mut(idx).velocity *= 0.5;
+                }
+            }
+            num -= 1;
+        }
+    }
+
+    /// `NPC.FairyEffects` (`NPC.cs:48652-48683`, W4-g50): the 40-dust type-278
+    /// burst in the fairy's colour pair (pink / green / blue by type), the
+    /// velocity tiers (×1.5, ×2 at i>=20, ×3.5 at i>=30), the per-dust fade
+    /// roll and noGravity, then the Item4 cue.
+    fn fairy_effects(&mut self, position: Vec2, fairy_type: i32) {
+        use tr_core::particles::Color;
+        // `Color.Lerp(value, value2, NextFloat())` — the byte lerp.
+        let lerp = |a: Color, b: Color, t: f32| -> Color {
+            let mix = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+            Color::new(mix(a.r, b.r), mix(a.g, b.g), mix(a.b, b.b), 255)
+        };
+        let (value, value2) = match fairy_type {
+            1 => (
+                Color::new(50, 205, 50, 255),   // LimeGreen
+                Color::new(32, 178, 170, 255),  // LightSeaGreen
+            ),
+            2 => (
+                Color::new(65, 105, 225, 255),  // RoyalBlue
+                Color::new(173, 216, 230, 255), // LightBlue
+            ),
+            _ => (
+                Color::new(255, 105, 180, 255), // HotPink
+                Color::new(255, 182, 193, 255), // LightPink
+            ),
+        };
+        let num = 4;
+        let ctx = self.spawn_ctx();
+        for i in 0..40 {
+            let rng = self.rngs.global();
+            let color = lerp(value, value2, rng.next_float());
+            let idx = self.dust.new_dust_direct(
+                rng,
+                &ctx,
+                &self.world,
+                position - Vec2::new(num as f32, num as f32) * 0.5,
+                num + 4,
+                num + 4,
+                278,
+                0.0,
+                0.0,
+                200,
+                color,
+                0.65,
+            );
+            let fade = rng.next_range(0, 17) as f32 * 0.1;
+            if idx != tr_core::particles::DUST_SENTINEL {
+                let d = self.dust.slot_mut(idx);
+                d.velocity *= 1.5;
+                if i >= 30 {
+                    d.velocity *= 3.5;
+                } else if i >= 20 {
+                    d.velocity *= 2.0;
+                }
+                d.fade_in = fade;
+                d.no_gravity = true;
+            }
+        }
+        // `SoundEngine.PlaySound(SoundID.Item4, (int)X, (int)Y)` (`:48682`).
+        self.audio
+            .play_at("Item_4", position.x, position.y, 1.0);
     }
 
     /// `Utils.PoofOfSmoke` (`Utils.cs:1078-1093`, W4-g50): the gore burst
@@ -2478,6 +2792,16 @@ impl App {
                     }
                 }
             }
+            // `case 112` — the special FX burst (W4-g50,
+            // `MessageBuffer.cs:3815-3840`): kind 1 = tree-grow FX
+            // (`WorldGen.TreeGrowFX`, the shake variant on b6 == 1), kind 2
+            // = fairy critter effects (`NPC.FairyEffects`). The draws ride
+            // the bare `Main.rand` stream (the message-time replay).
+            S2c::SpecialFx(f) => match f.effect {
+                1 => self.tree_grow_fx(f.x, f.y, f.b4 as i32, f.s5 as i32, f.b6 == 1),
+                2 => self.fairy_effects(Vec2::new(f.x as f32, f.y as f32), f.s5 as i32),
+                _ => {}
+            },
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
                 self.net_items.remove(&slot);
@@ -7023,5 +7347,70 @@ mod message_family_tests {
         }
         pump(&mut host_app, &mut client_app, 15);
         assert!(!host_app.world_events.manual_party, "the party dropped");
+    }
+
+    /// `case 112` kind 2 (`MessageBuffer.cs:3835-3837`, `NPC.cs:48652-48683`):
+    /// the fairy burst spawns the type-278 dust ring.
+    #[test]
+    fn w4_g50_the_112_fairy_fx_spawns_the_dust_ring() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::SpecialFx(net::SpecialFx {
+                effect: 2,
+                x: 200,
+                y: 100,
+                b4: 0,
+                s5: 0,
+                b6: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        assert!(
+            client_app
+                .dust
+                .slots()
+                .iter()
+                .any(|d| d.active && d.dust_type == 278),
+            "the fairy type-278 dust spawned"
+        );
+    }
+
+    /// `case 113` (`MessageBuffer.cs:3841-3854`, `DD2Event.cs:584-601`): the
+    /// host summons the crystal on a valid stand and starts the invasion.
+    #[test]
+    fn w4_g50_the_113_crystal_summon_starts_the_invasion() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // An eternia crystal stand (466) at (30, 4) with a wide arena floor.
+        for app in [&mut host_app, &mut client_app] {
+            for x in 0..app.world.width {
+                let i = app.world.index(x, 6);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 1,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+            let i = app.world.index(30, 4);
+            app.world.tiles[i] = tr_core::Tile {
+                kind: 466,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::CrystalInvasionStart(net::CrystalInvasionStart {
+                x: 30,
+                y: 4,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(host_app.world.dd2_event_ongoing, "the invasion started");
+        assert!(
+            host_app
+                .npcs
+                .iter()
+                .any(|n| n.kind == crate::npc::NpcKind::DD2EterniaCrystal && n.hp > 0),
+            "the crystal spawned"
+        );
     }
 }
