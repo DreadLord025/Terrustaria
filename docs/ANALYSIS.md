@@ -11849,8 +11849,12 @@ the folded changes on THIS branch:
   merge seam — the faithful core + the drain are wired, the stand-in
   keeps its byte-identical behaviour). The `HitEffect` 676 arm
   (`NPC.cs:82058-82078`: 8/40 dust 310, the `Next(3)` noGravity gate,
-  vel ×1.5 + base.vel ×0.1) stays a cited skip (the HitEffect dust pass
-  is unported port-wide).
+  vel ×1.5 + base.vel ×0.1) is the DUST lanes' — g62 ports the LIVE
+  half (`npc_hit_dust.rs`, the 658-660/667/676 block), g60 owns the
+  death halves but its census missed the 676 row (the 669-685 band
+  read `--` pre-roster; the 40-count death half is a g60 task-seed).
+  The old "cited-unwired, the HitEffect dust pass unported port-wide"
+  note is superseded (the seal census, research/151 §2).
 - **The wiring.rs `ItemDrop` literals** gained the missing
   `honey_wet`/`lava_wet`/`wet_count`/`splash_due`/`repulsion_brake` fields
   (the phase-3 addition never updated them — a compile break the keep-one
@@ -11866,6 +11870,30 @@ and the wetVelocity blocked-axis refresh ordering (e19's hand-rolled
 TileCollision vs this lane's `tile_collision_opts` — the residual semantics
 agree). 12 new witnesses (3 gate + 1 light + 1 drain + 4 pass-level splash
 + 2 flush + 1 box_is_wet), WRITTEN NOT RUN.
+
+**The shimmer-family SEAL (research/151, 2026-11-21).** The five cross-lane
+compositions closed on top of the arbiter: (1) the e19 lights mutual-receipt
+— the 16-box fix folded both ways, `box_is_wet` the e19 name+body kept, the
+splash keeper f47 (144-ARBITER-FINAL-v2 definitive, the witness-superset
+ground at the e19 SHIMMER-SEAL tip `0fb0ac4ad`), the lights/AddLight scope
+DISJOINT (e19 touches no `npc_lights.rs`; its item-light hunks are the same
+16-box fixture re-pins; the 676 torch-23 NPC-source vs the item-sources share
+only the `XAnchor` vocabulary); the e19 lunar-brick RAW-enum fix
+(`cab982244`) FOLDED here (`lunar_brick_for_moon_phase` re-pinned to the
+`Enums/MoonPhase.cs` indices — the f47 table carried the same inverted
+stand-in; the other moon-phase readers censused already-RAW-correct).
+(2) The 676 HitEffect census — g62 owns the LIVE half (ported), g60 the
+death halves (the 676 row a census gap, seeded); f47 ports nothing there.
+(3) The b1 activation-contract — the f47 676 arm goes LIVE when b1's
+`ai_001_slime_family` adapter claims aiStyle 1 (the merge adds ShimmerSlime
+to b1's unreachable kind arm, retires the `update_slime` route). (4) The d6
+ShimmerImmunity-131 compose — d6's `for_kind` set write vs f47's
+flag/ramp/contact readers, DISJOINT (the 676/677 are in the set — immune to
+re-shimmering, faithful; the f47 per-tick arm ignores the buff). (5) The d43
+676-row keep-one — the f47 AI-arm superset kept, the d43 duplicate surfaces
+dedupe, the FindFrame group arm loses its 676 member to f47's dedicated
+count-read shape. The family bible (the single-owner map + the merge
+checklist) is research/151 §7.
 
 ## Ocean passes fidelity (M5-OCEAN)
 

@@ -1,5 +1,13 @@
 # 121 — the shimmer doc-sweep (W4-f47 lane 36, DOC-SWEEP phase) — FINAL
 
+> **SEALED (research/151, 2026-11-21)**: the shimmer-family cross-lane
+> seal (`151-shimmer-family-seal.md`) composes this lane's work with the
+> co-lanes — the e19 lights mutual-receipt, the 676 HitEffect census
+> (g62 hit / g60 death), the b1 activation-contract, the d6
+> ShimmerImmunity compose, the d43 676-row keep-one. The splash keeper
+> is definitive in `144-ARBITER-FINAL-v2.md`. The family bible
+> (single-owner map + merge checklist) is research/151 §7.
+
 > Coded 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (base `507a0da5`,
 > the DONE tip), the DOC-SWEEP lane 36 continuation. C# cites are
 > `decompiled/Terraria/*` (stable); Rust cites are this branch's tip.
@@ -212,8 +220,11 @@ The census (`NPCID.cs:12029`/`:12031`, `NPC.cs:17566-17593`):
   `wants_shimmer_slime_dust` → the sim drain, the torch-23 centre light
   via `npc_lights::shimmer_slime_light` (the draw-side feed). The live
   stand-in route draws nothing until b1's adapter lands (the merge
-  seam); the `HitEffect` 676 arm (`:82058-82078`) stays cited-unwired
-  (the HitEffect dust pass is unported port-wide).
+  seam, the activation contract research/151 §3); the `HitEffect` 676
+  arm (`:82058-82078`) is the DUST lanes' — g62 ports the LIVE half,
+  g60 the death halves (the 676 row a g60 census gap, the 40-count
+  death half seeded — research/151 §2; the old "cited-unwired, the
+  HitEffect dust pass unported port-wide" note is superseded).
 - **677 Shimmerfly**: NOT a town pet either — a 10x10 aiStyle-64
   critter, noGravity/noTileCollide, catchItem 5350, the
   `ShimmerTransformToNPC` target of **82** critter rows. **NOT landed

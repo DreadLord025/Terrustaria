@@ -1094,9 +1094,12 @@ pub enum NpcKind {
     /// NPCDeath1, the class-default kb 1 (the row writes none). The
     /// doc-sweep lane 36 row: the roster gap left every `-> 676`
     /// transform a no-op. The AI rides the shared aiStyle-1 stand-in
-    /// (`update_slime`, the b1 wiring's family); the 676 light/dust arm
-    /// (`NPC.cs:61128-61150`) stays the censused skip
-    /// (`npc_ai_slime.rs`'s module docs). The 677 Shimmerfly twin is
+    /// (`update_slime`) until b1's `ai_001_slime_family` adapter lands
+    /// (the activation contract, research/151 §3); the 676 light/dust
+    /// arm (`NPC.cs:61128-61150`) is WIRED in `npc_ai_slime` (keep-one
+    /// 144). The HitEffect arm (`:82058-82078`) is the dust lanes'
+    /// (g62 hit / g60 death, the 676 death-half census gap seeded —
+    /// research/151 §2). The 677 Shimmerfly twin is
     /// W4-c7/c9's pushed claim — NOT landed here (ANALYSIS 121).
     ShimmerSlime,
 }

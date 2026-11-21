@@ -6,6 +6,12 @@
 > witness SUPERSET COVERAGE and UPHELD this doc's keeper (the f47
 > `Splash` shape). Both prior FINALs are superseded; the merger reads
 > v2, not this receipt. (v1 record: `144-ARBITER-FINAL.md`.)
+>
+> **SEALED (research/151)**: the family-wide cross-lane compositions
+> (the lights mutual-receipt, the 676 HitEffect census, the b1
+> activation-contract, the d6 ShimmerImmunity compose, the d43 keep-one)
+> live in `151-shimmer-family-seal.md`; its §7 family bible is the
+> merge checklist this receipt feeds.
 
 > Coded 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (base `a2561d6d`).
 > Code-only: no cargo/tests/rustfmt/graphify invoked; every verdict is a
@@ -298,10 +304,14 @@ at its `:530`). **WIRED on f47** (the keep-one round):
   the drain are wired, the stand-in keeps its byte-identical behaviour
   (the documented merge seam; the b1 adapter reaches `ai_001_slimes`
   which now rolls the 676 gate live).
-- **Cited-unwired residuals**: the `HitEffect` 676 arm
+- **Cited-unwired residuals (SUPERSEDED by the seal census,
+  research/151 §2)**: the `HitEffect` 676 arm
   (`NPC.cs:82058-82078`: 8 dust 310 alive / 40 on death, scale
   1.1/1.5, the per-dust `Next(3) != 0` noGravity gate, vel ×1.5 +
-  base.vel ×0.1) — the HitEffect dust pass is unported port-wide;
+  base.vel ×0.1) — the HitEffect dust pass IS ported: g62 owns the
+  LIVE half (`npc_hit_dust.rs`), g60 the death halves (the 676 row a
+  g60 census gap, the 40-count death half seeded). f47 ports nothing
+  there;
   the `FindFrame` case-676 (`:70823`, the 8-tick hop strip) IS landed
   (the f47 roster row); the gore 676 (`:89622`) is the GORE id 676,
   not the NPC (a different namespace — no action).
