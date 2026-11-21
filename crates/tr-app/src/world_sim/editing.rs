@@ -7585,19 +7585,23 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 
 /// `Player.BiomeTorchPlaceStyle` (`Player.cs:40236-40289`): the biome torch
 /// style for a plain torch placed with the Torch God's favour. The arm order
-/// is the C#'s verbatim; `ZoneShimmer` (`:40240`) and `ZoneUndergroundDesert`
-/// (`:40280`) read fields the port's `Zones` does not carry and are skipped
-/// in place (the remaining arms keep their order, the
-/// `player_lights::biome_torch_hold_style` precedent). `ZoneLihzhardTemple`
-/// (`:40248`) rides `Zones.temple`; the remix desert arm (`:40284-40287`)
-/// reads the world's REMIX seed flag. The underworld arm reads
-/// `Main.UnderworldLayer * 16` = `(height - 200) * 16` (`Main.cs:2790`).
+/// is the C#'s verbatim — ALL twelve arms now live (W4-f33: `ZoneShimmer`
+/// `:40240` and `ZoneUndergroundDesert` `:40280` were skipped while the
+/// `Zones` snapshot dropped the flags; the snapshot carries them now,
+/// `scene.rs::zones`). `ZoneLihzhardTemple` (`:40248`) rides `Zones.temple`;
+/// the remix desert arm (`:40284-40287`) reads the world's REMIX seed flag.
+/// The underworld arm reads `Main.UnderworldLayer * 16` =
+/// `(height - 200) * 16` (`Main.cs:2790`).
 /// `pub(crate)`: the aiStyle-60 Shimmer stream's torch conversion calls it
 /// with `useWithoutTorchGodsFavor: true` (`Projectile.cs:29142`) — the same
 /// unconditional body (W4-d6 `5d81f2de`; the visibility lifted here so the
 /// d6 branch merges without a conflict, W4-f33).
 pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
     let z = p.zones;
+    // `:40240-40243` — the shimmer arm comes FIRST (the Aether torch).
+    if z.shimmer {
+        return 23;
+    }
     // `:40244-40247` — the dungeon arm comes before the underworld one.
     if z.dungeon {
         return 13;
@@ -7629,9 +7633,13 @@ pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) 
     if z.jungle {
         return 21; // `:40276-40279`
     }
-    // `:40280-40283` — the surface-desert half (the underground-desert half
-    // reads an unported `Zones` field — skipped).
-    if z.desert && (p.y as f64) < world.world_surface * TILE_PX as f64 {
+    // `:40280-40283` — `(ZoneDesert && position.Y < worldSurface * 16.0) ||
+    // ZoneUndergroundDesert`: the surface-desert half OR the underground
+    // desert zone (W4-f33: the second half restored — the `Zones` snapshot
+    // carries `underground_desert` now).
+    if (z.desert && (p.y as f64) < world.world_surface * TILE_PX as f64)
+        || z.underground_desert
+    {
         return 16;
     }
     // `:40284-40287` — `ZoneDesert && Main.remixWorld`: the remix seed's
@@ -17847,6 +17855,136 @@ mod item_mechanics {
         assert!(t.active() && t.kind == 4, "a torch stands on the floor");
         assert_eq!(app.inventory[app.selected].count, 4, "one torch consumed");
         assert_eq!(app.inventory[app.selected].kind, 8, "the stack stays torch");
+    }
+
+    // ---- W4-f33: the biome-torch conversion census -------------------------
+    // WRITTEN NOT RUN (code-only mode). `BiomeTorchPlaceStyle`
+    // (`Player.cs:40236-40289`) — every arm's style id + the C# arm order,
+    // the `UsingBiomeTorches` gate (the unlock AND the builder toggle), and
+    // the placement route's frameY write (`WorldGen.cs:59839`: 22 × style).
+    // The shimmer + underground-desert arms are RESTORED here (the `Zones`
+    // snapshot carries the flags now, `scene.rs::zones`).
+
+    /// The full arm table in the C#'s priority order — each zone alone maps
+    /// to its style, and the earlier arms shadow the later ones.
+    #[test]
+    fn w4_f33_the_place_style_arms_are_the_full_csharp_table() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.y = 100.0; // above the underworld line ((800-200)*16)
+        // The plain forest: style 0 (`:40288` falls through).
+        assert_eq!(biome_torch_place_style(&p, &w), 0);
+        // Each arm alone (the C# order: shimmer, dungeon, temple, underworld,
+        // glowshroom, hallow, corrupt, crimson, snow, jungle, desert, remix).
+        let cases: [(fn(&mut tr_core::scene::Zones), i32); 10] = [
+            (|z| z.shimmer = true, 23),       // `:40240-40243`
+            (|z| z.dungeon = true, 13),       // `:40244-40247`
+            (|z| z.temple = true, 21),        // `:40248-40251`
+            (|z| z.glowshroom = true, 22),    // `:40256-40259`
+            (|z| z.hallow = true, 20),        // `:40260-40263`
+            (|z| z.corrupt = true, 18),       // `:40264-40267`
+            (|z| z.crimson = true, 19),       // `:40268-40271`
+            (|z| z.snow = true, 9),           // `:40272-40275`
+            (|z| z.jungle = true, 21),        // `:40276-40279`
+            (|z| z.underground_desert = true, 16), // `:40280` second half
+        ];
+        for (set, style) in cases {
+            p.zones = tr_core::scene::Zones::default();
+            set(&mut p.zones);
+            assert_eq!(biome_torch_place_style(&p, &w), style);
+        }
+        // The underworld arm (`:40252-40255`): position.Y > (height-200)*16.
+        p.zones = tr_core::scene::Zones::default();
+        p.y = (w.height - 100) as f32 * TILE_PX;
+        assert_eq!(biome_torch_place_style(&p, &w), 7);
+        // The surface-desert half (`:40280` first half): ZoneDesert above the
+        // world-surface line (the 40x40 flat world's surface is height*0.25).
+        p.y = 100.0;
+        p.zones.desert = true;
+        assert_eq!(biome_torch_place_style(&p, &w), 16);
+        // The order pins: shimmer shadows dungeon; dungeon shadows the
+        // underworld; the underworld shadows snow; snow shadows jungle.
+        p.zones = tr_core::scene::Zones::default();
+        p.zones.shimmer = true;
+        p.zones.dungeon = true;
+        assert_eq!(biome_torch_place_style(&p, &w), 23);
+        p.zones.shimmer = false;
+        p.y = (w.height - 100) as f32 * TILE_PX;
+        assert_eq!(biome_torch_place_style(&p, &w), 13, "dungeon before underworld");
+        p.zones.dungeon = false;
+        p.zones.snow = true;
+        assert_eq!(biome_torch_place_style(&p, &w), 7, "underworld before snow");
+    }
+
+    /// The remix desert arm (`:40284-40287`): `ZoneDesert && Main.remixWorld`
+    /// converts BELOW the surface line too (the inverted world's desert).
+    #[test]
+    fn w4_f33_the_remix_desert_arm_converts_below_the_surface() {
+        let mut w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        p.zones.desert = true;
+        // Below the surface line, no remix: the surface gate refuses, the
+        // fall-through keeps style 0.
+        p.y = (w.world_surface * TILE_PX as f64 + 100.0) as f32;
+        assert_eq!(biome_torch_place_style(&p, &w), 0);
+        // The remix seed arms the second desert gate.
+        w.seeds |= tr_core::seeds::SeedFlags::REMIX;
+        assert_eq!(biome_torch_place_style(&p, &w), 16);
+    }
+
+    /// The placement route end-to-end: the 5043 unlock converts a plain
+    /// torch's frameY to 22 × the biome style (`WorldGen.cs:59839`), and the
+    /// builder toggle (`builderAccStatus[11] = 1`) refuses the conversion
+    /// (the `UsingBiomeTorches` property gate, `Player.cs:40129`).
+    #[test]
+    fn w4_f33_the_place_route_converts_the_plain_torch_and_the_toggle_gates() {
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(8, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19), "the placement succeeds");
+        let t = *app.world.tile(15, 19).unwrap();
+        assert!(t.active() && t.kind == 4);
+        assert_eq!(t.frame_y, 9 * 22, "the snow torch style (`:40272`)");
+        // The toggle OFF: the property reads false, the torch stays plain.
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(8, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.builder_acc_status[11] = 1;
+        p.zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 0, "plain torch");
+        // No unlock: plain even in the biome (the `:40129` gate).
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(8, 5);
+        app.player.as_mut().unwrap().zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 0);
+    }
+
+    /// A non-zero placeStyle never converts (`:40238`'s `style == 0` half):
+    /// the biome torch items place their OWN style verbatim. The campfire
+    /// (966 → tile 215) is a different conversion family
+    /// (`BiomeCampfirePlaceStyle`, `:40348-40401`) — the torch gate
+    /// (`tileToCreate == 4`) never touches it.
+    #[test]
+    fn w4_f33_the_conversion_is_plain_torch_only() {
+        // The ice torch item (974) carries placeStyle 9 — the gate's
+        // `style == 0` refuses the conversion, the style rides verbatim.
+        assert_eq!(registry::place_style(974), 9);
+        let mut app = flat_app();
+        app.inventory[app.selected] = slot(974, 5);
+        let p = app.player.as_mut().unwrap();
+        p.unlocked_biome_torches = true;
+        p.zones.snow = true;
+        assert!(use_tile_item(&mut app, 15, 19));
+        assert_eq!(app.world.tile(15, 19).unwrap().frame_y, 9 * 22);
+        // The campfire item places tile 215 — the torch conversion's
+        // `kind == 4` gate never fires for it (the campfire family is the
+        // `BiomeCampfirePlaceStyle` follow-up, recorded in ANALYSIS).
+        assert_eq!(registry::place_tile(966), Some(215));
     }
 
     /// t4 — `WorldItem.UpdateItem`'s air constants (`WorldItem.cs:363-364`:

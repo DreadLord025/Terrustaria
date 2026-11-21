@@ -99,10 +99,10 @@ const HELD_LIGHT_ALLOWED: bool = true;
 /// (`:3950-3959` — `unlockedBiomeTorches && builderAccStatus[11] == 0`;
 /// the caller passes `p.using_biome_torches()`, W4-f33 — the builder
 /// toggle click is unported so the slot stays 0/on, ANALYSIS deviation).
-/// The arm order is the C#'s verbatim;
-/// `ZoneShimmer` (`:40297`) and `ZoneUndergroundDesert` (`:40337`) read
-/// fields the port's `Zones` does not carry and are skipped in place (the
-/// remaining arms keep their order). `ZoneLihzhardTemple` (`:40305`) rides
+/// The arm order is the C#'s verbatim — ALL twelve arms now live (W4-f33:
+/// `ZoneShimmer` `:40297` and `ZoneUndergroundDesert` `:40337` were skipped
+/// while the `Zones` snapshot dropped the flags; the snapshot carries them
+/// now, `scene.rs::zones`). `ZoneLihzhardTemple` (`:40305`) rides
 /// `Zones.temple` and the remix-world desert arm (`:40341`) reads the
 /// world's REMIX seed flag (S1-P-i42: both restored — the pre-fix port
 /// dropped them, so a temple/remix torch held the wrong colour).
@@ -116,6 +116,10 @@ fn biome_torch_hold_style(
     // `:40293` — `!UsingBiomeTorches || itemType != 8` returns unchanged.
     if !using_biome_torches || kind != 8 {
         return kind;
+    }
+    // `:40297-40300` — the shimmer arm comes FIRST (the Aether torch 5353).
+    if zones.shimmer {
+        return 5353;
     }
     // `:40301-40304` — the dungeon arm comes BEFORE the temple/underworld.
     if zones.dungeon {
@@ -149,10 +153,12 @@ fn biome_torch_hold_style(
     if zones.jungle {
         return 4388; // `:40333-40336`
     }
-    // `:40337-40340` — the surface-desert half reads the zone flag and the
-    // world-surface line like the C#; `ZoneUndergroundDesert` is unported
-    // (the `Zones` struct carries no such flag — documented skip).
-    if zones.desert && pos_y < world.world_surface as f32 * TILE_PX {
+    // `:40337-40340` — `(ZoneDesert && position.Y < worldSurface * 16.0) ||
+    // ZoneUndergroundDesert` (W4-f33: the underground half restored — the
+    // `Zones` snapshot carries `underground_desert` now).
+    if (zones.desert && pos_y < world.world_surface as f32 * TILE_PX)
+        || zones.underground_desert
+    {
         return 4383;
     }
     // `:40341-40344` — `ZoneDesert && Main.remixWorld`: the remix seed's
@@ -561,6 +567,8 @@ mod tests {
             glowshroom: false,
             dungeon: false,
             temple: false,
+            shimmer: false,
+            underground_desert: false,
         }
     }
 
