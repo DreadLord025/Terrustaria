@@ -129,6 +129,18 @@ fn refuses_friendly(n: &Npc, kind: u16, kill_guide: bool, kill_clothier: bool) -
     true
 }
 
+/// `Projectile.Damage_CanDealDamage`'s 85/1106 fade-out gate
+/// (`Projectile.cs:12460-12467`): the flamethrower flames deal damage
+/// ONLY below `localAI[0] = 54` — the smoke tail (ticks 54..71 of the
+/// style-193 life, `AI_193_Flamethrower` `:41337-41401`) is harmless.
+/// The C# gate wraps `Damage()` whole (`:12497` — PVE, PVP and EVP
+/// alike); the port carries it per-kind in each damage walk (the
+/// d4-sweep 188 launch-ramp precedent). The `ai_flamethrower` arm
+/// counts `localAI[0]` per sub-step, so the gate closes mid-flight.
+fn flames_faded(p: &Projectile) -> bool {
+    matches!(p.kind, 85 | FOXSPARKS_FLAMES) && p.local_ai[0] >= 54.0
+}
+
 /// `Projectile.CanExplodeTile`'s guard set (`Projectile.cs:78640-78700`):
 /// the per-tile permission for the bomb crater. The hardmode gates (the
 /// ores 107/108/111/221-223, the chests 37/58, the altars 77) stay closed —
@@ -22839,6 +22851,13 @@ impl ProjectilePool {
             if DUNGEON_DEBRIS.contains(&p.kind) {
                 continue;
             }
+            // W4-d18 — `Damage_CanDealDamage` (`:12460-12467`): the 85/1106
+            // flames' smoke tail (localAI[0] >= 54) deals nothing. The C#
+            // gate wraps `Damage()` whole (`:12497`); carried per-kind in
+            // each walk (the d4-sweep 188 precedent).
+            if flames_faded(p) {
+                continue;
+            }
             // `:12620-12624`: the per-owner gate, bypassed by single-hitters.
             let single_hit = max_penetrate == 1 && !uses_local && !uses_id_static;
             if !single_hit && n.immune[owner_idx] != 0 {
@@ -23462,6 +23481,11 @@ impl ProjectilePool {
         // base-4 default is the player's; the death-burst callers pass no
         // player — the per-hit roll still rides the stream in the C# order).
         let owned_by_someone = owner < 255 && !self.slots[slot].trap;
+        // W4-d18 — the 85/1106 smoke-tail refusal (`Damage_CanDealDamage`
+        // `:12460-12467`), the boxed walk's copy.
+        if flames_faded(&self.slots[slot]) {
+            return;
+        }
         let (px, py, pw, ph) = {
             let p = &self.slots[slot];
             (p.pos.x, p.pos.y, p.w, p.h)
@@ -23592,6 +23616,12 @@ impl ProjectilePool {
         };
         let p = &self.slots[slot];
         if p.damage <= 0 {
+            return;
+        }
+        // W4-d18 — `Damage_CanDealDamage` (`:12460-12467`, the `Damage()`
+        // wrap `:12497` covers EVP too): the 85/1106 smoke tail hurts no
+        // player either (`localAI[0] >= 54`).
+        if flames_faded(p) {
             return;
         }
         let cx = p.pos.x + SIZE * 0.5;
@@ -24515,6 +24545,94 @@ mod tests {
         pool.damage_player(slot, Some(&mut player), &mut rng);
         assert!(player.hp < hp0, "the 9999 shot lands through the belt");
         assert!(rng.draws.is_empty(), "no dodge roll ran");
+    }
+
+    /// W4-d18 — the 85/1106 smoke-tail damage refusal
+    /// (`Damage_CanDealDamage` `Projectile.cs:12460-12467`: `type == 85 ||
+    /// type == 1106` with `localAI[0] >= 54` deals nothing). The
+    /// `ai_flamethrower` arm counts the counter per sub-step and kills at
+    /// 72 (`:41341-41344`) — the 54..71 window is pure smoke. All three
+    /// walks carry the gate: the plain PVE pass, the boxed `Damage()`
+    /// walk and the hostile player-contact pass. WRITTEN NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_d18_the_flames_smoke_tail_deals_no_damage() {
+        let w = ground();
+        for kind in [85u16, FOXSPARKS_FLAMES] {
+            // The plain PVE walk: fresh flames bite, the smoke tail does not.
+            for (counter, bites) in [(0.0, true), (53.0, true), (54.0, false), (71.0, false)] {
+                let mut pool = ProjectilePool::new();
+                let slot = pool
+                    .spawn_with_data_ai(kind, 300.0, 300.0, 8.0, 0.0, 40, 2.0, 0.0, 0.0)
+                    .expect("the flames row spawns");
+                pool.slots_mut()[slot].local_ai[0] = counter;
+                let mut npc = one_npc(&w);
+                npc.x = 300.0;
+                npc.y = 300.0;
+                npc.hp = 10_000;
+                npc.max_hp = 10_000;
+                pool.damage_pve(
+                    &w,
+                    slot,
+                    std::slice::from_mut(&mut npc),
+                    None,
+                    None,
+                    None,
+                    &mut tr_core::tile_light::FastRandom::new(7),
+                );
+                if bites {
+                    assert!(npc.hp < 10_000, "kind {kind} @ {counter}: the flame bites");
+                } else {
+                    assert_eq!(npc.hp, 10_000, "kind {kind} @ {counter}: smoke deals nothing (`:12460-12467`)");
+                }
+            }
+            // The boxed walk's copy.
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(kind, 300.0, 300.0, 8.0, 0.0, 40, 2.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots_mut()[slot].local_ai[0] = 54.0;
+            let mut npc = one_npc(&w);
+            npc.x = 300.0;
+            npc.y = 300.0;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            pool.damage_pve_boxed(
+                slot,
+                std::slice::from_mut(&mut npc),
+                (false, false),
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0.0,
+            );
+            assert_eq!(npc.hp, 10_000, "kind {kind}: the boxed walk refuses too");
+            // The player-contact walk's copy — a hostile-flagged slot inside
+            // the player: the smoke tail neither hurts nor consumes.
+            let mut player = crate::player::Player::spawn(&w);
+            let (pcx, pcy) = player.center();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(kind, pcx - 3.0, pcy - 3.0, 0.0, 0.0, 25, 0.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots_mut()[slot].friendly = false;
+            pool.slots_mut()[slot].local_ai[0] = 54.0;
+            let hp0 = player.hp;
+            pool.damage_player(
+                slot,
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            assert_eq!(player.hp, hp0, "kind {kind}: the smoke hurts no player");
+            assert!(pool.slots()[slot].active, "kind {kind}: the refused contact keeps the shot");
+            // Below the gate the contact lands and consumes the shot.
+            pool.slots_mut()[slot].local_ai[0] = 53.0;
+            pool.damage_player(
+                slot,
+                Some(&mut player),
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            assert!(player.hp < hp0, "kind {kind}: tick 53 still bites");
+            assert!(!pool.slots()[slot].active, "the landed contact consumes the shot");
+        }
     }
 
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
