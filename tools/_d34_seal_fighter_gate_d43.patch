@@ -1,0 +1,74 @@
+diff --git a/crates/tr-app/src/ambient_sound.rs b/crates/tr-app/src/ambient_sound.rs
+index 546b0b9..5ebc327 100644
+--- a/crates/tr-app/src/ambient_sound.rs
++++ b/crates/tr-app/src/ambient_sound.rs
+@@ -651,0 +652,14 @@
++            // W4-d43 SEAL (research/347 S3, the d34-lane receipt) - the
++            // kinds-631-697 wave's plain aiStyle-3 walkers ride the shared
++            // walker machines (update_zombie/update_skeleton ->
++            // walker_step_fighter, their ai[3] free for the idle
++            // counter). MossZombie 691 / MaggotZombie 632 / SporeSkeleton
++            // 635 ARE in the C#'s zombie/skeleton 1000-roll moan list
++            // (NPC.cs:57340, the 691/632/635 arms above) - they draw the
++            // family's one Next(1000) per qualifying tick; RockGolem 631
++            // is in NO moan list - a counter-only walker, draw-free (the
++            // d37 band block's convention).
++            | MossZombie
++            | RockGolem
++            | MaggotZombie
++            | SporeSkeleton
+@@ -1880,0 +1881,54 @@
++
++    /// W4-d43 SEAL (research/347 S3) - the kinds-631-697 wave's plain
++    /// walkers join the gate: MossZombie/MaggotZombie (`update_zombie`)
++    /// and RockGolem/SporeSkeleton (`update_skeleton`) ride
++    /// `walker_step_fighter` (aiStyle 3, `ai[3]` free); the Drippler
++    /// (aiStyle 22) does NOT. The moan lists key cs_id: 691/632/635 sit
++    /// in the family 1000-roll (`NPC.cs:57340`, the port's `| 691` /
++    /// `| 632` / `| 635` arms) - exactly ONE draw per qualifying tick;
++    /// RockGolem 631 is in NO moan arm - ZERO draws. WRITTEN NOT RUN
++    /// (code-only lane).
++    #[test]
++    fn w4_d43_seal_the_kinds_wave_walkers_are_gated() {
++        use crate::npc::NpcKind;
++        use tr_core::UnifiedRandom;
++        for kind in [
++            NpcKind::MossZombie,
++            NpcKind::RockGolem,
++            NpcKind::MaggotZombie,
++            NpcKind::SporeSkeleton,
++        ] {
++            assert!(fighter_walker_kind(kind), "{kind:?} is a plain walker");
++        }
++        assert!(!fighter_walker_kind(NpcKind::Drippler), "aiStyle 22 is not a walker");
++        // 691/632/635: the family's one Next(1000) (the s1_d_3z shape).
++        for npc_type in [691, 632, 635] {
++            let mut rng = UnifiedRandom::new(146);
++            let mut witness = UnifiedRandom::new(146);
++            let _ = witness.next_max(1000);
++            let mut plays: Vec<(u32, i32)> = Vec::new();
++            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
++                plays.push((c, s))
++            });
++            assert_eq!(plays, vec![(14, 1)], "type {npc_type} hits the family arm");
++            assert_eq!(rng.peek(), witness.peek(), "type {npc_type}: one roll");
++            let mut rng = UnifiedRandom::new(1);
++            let mut witness = UnifiedRandom::new(1);
++            let _ = witness.next_max(1000);
++            let mut plays: Vec<(u32, i32)> = Vec::new();
++            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
++                plays.push((c, s))
++            });
++            assert!(plays.is_empty(), "type {npc_type}: the failed roll plays nothing");
++            assert_eq!(rng.peek(), witness.peek(), "type {npc_type}: failed roll consumed");
++        }
++        // RockGolem 631: counter-only, no moan arm, no draw.
++        let mut rng = UnifiedRandom::new(146);
++        let witness = UnifiedRandom::new(146);
++        let mut plays: Vec<(u32, i32)> = Vec::new();
++        fighter_ambient_moans(631, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
++            plays.push((c, s))
++        });
++        assert!(plays.is_empty(), "RockGolem 631: no moan arm");
++        assert_eq!(rng.peek(), witness.peek(), "631: zero draws");
++    }

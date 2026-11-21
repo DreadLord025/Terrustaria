@@ -1,0 +1,66 @@
+diff --git a/crates/tr-app/src/ambient_sound.rs b/crates/tr-app/src/ambient_sound.rs
+index 546b0b9..edb0c3a 100644
+--- a/crates/tr-app/src/ambient_sound.rs
++++ b/crates/tr-app/src/ambient_sound.rs
+@@ -651,0 +652,11 @@
++            // W4-d34 SEAL (research/347 S3) - the kinds-1-70 wave's plain
++            // aiStyle-3 walkers ride the shared walker_step_fighter
++            // (update_skeleton, their ai[3] free for the idle counter).
++            // AngryBones 31 IS in the C#'s zombie/skeleton 1000-roll moan
++            // list (NPC.cs:57340, the | 31 arm above) - it draws the
++            // family's one Next(1000) per qualifying tick; CorruptBunny
++            // 47 / Crab 67 are in NO moan list - counter-only walkers,
++            // draw-free (the d37 band block's convention).
++            | AngryBones
++            | CorruptBunny
++            | Crab
+@@ -1880,0 +1881,49 @@
++
++    /// W4-d34 SEAL (research/347 S3) - the kinds-1-70 wave's skeleton
++    /// walkers join the gate: AngryBones/CorruptBunny/Crab ride
++    /// `update_skeleton` -> `walker_step_fighter` (aiStyle 3, `ai[3]`
++    /// free); the flyers Harpy/Demon (aiStyle 14) do NOT. AngryBones 31
++    /// sits in the C#'s 1000-roll moan list (`NPC.cs:57340`) - exactly
++    /// ONE draw per qualifying tick (seed 146 hits 0 -> case 14 style 1;
++    /// seed 1 fails -> still one draw). CorruptBunny 47 / Crab 67 are in
++    /// NO moan arm - ZERO draws. WRITTEN NOT RUN (code-only lane).
++    #[test]
++    fn w4_d34_seal_the_kinds_wave_walkers_are_gated() {
++        use crate::npc::NpcKind;
++        use tr_core::UnifiedRandom;
++        for kind in [NpcKind::AngryBones, NpcKind::CorruptBunny, NpcKind::Crab] {
++            assert!(fighter_walker_kind(kind), "{kind:?} is a plain walker");
++        }
++        assert!(!fighter_walker_kind(NpcKind::Harpy), "the flyer is not a walker");
++        assert!(!fighter_walker_kind(NpcKind::Demon), "the flyer is not a walker");
++        // AngryBones 31: the family's one Next(1000) (the s1_d_3z shape).
++        let mut rng = UnifiedRandom::new(146);
++        let mut witness = UnifiedRandom::new(146);
++        let _ = witness.next_max(1000);
++        let mut plays: Vec<(u32, i32)> = Vec::new();
++        fighter_ambient_moans(31, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
++            plays.push((c, s))
++        });
++        assert_eq!(plays, vec![(14, 1)], "AngryBones 31 hits the family arm");
++        assert_eq!(rng.peek(), witness.peek(), "31: one roll");
++        let mut rng = UnifiedRandom::new(1);
++        let mut witness = UnifiedRandom::new(1);
++        let _ = witness.next_max(1000);
++        let mut plays: Vec<(u32, i32)> = Vec::new();
++        fighter_ambient_moans(31, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
++            plays.push((c, s))
++        });
++        assert!(plays.is_empty(), "31: the failed roll plays nothing");
++        assert_eq!(rng.peek(), witness.peek(), "31: failed roll consumed");
++        // CorruptBunny 47 / Crab 67: counter-only, no moan arm, no draw.
++        for npc_type in [47, 67] {
++            let mut rng = UnifiedRandom::new(146);
++            let witness = UnifiedRandom::new(146);
++            let mut plays: Vec<(u32, i32)> = Vec::new();
++            fighter_ambient_moans(npc_type, 0.0, true, 0.0, &mut rng, &mut |c, s, _| {
++                plays.push((c, s))
++            });
++            assert!(plays.is_empty(), "type {npc_type}: no moan arm");
++            assert_eq!(rng.peek(), witness.peek(), "type {npc_type}: zero draws");
++        }
++    }
