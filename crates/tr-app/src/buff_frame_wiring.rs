@@ -748,6 +748,47 @@ mod tests {
         assert!(!p.ice_barrier);
     }
 
+    /// W4-f12 closeout item 2 — the buff-ANIMATION census (research/
+    /// W4-f12-closeout.md): `Main.buffFrame`/`buffFrameCounter` DO NOT EXIST
+    /// in the C# — the :43300 region (`DrawBuffIcon` :43315) draws the FULL
+    /// `Buff_<id>` sheet, all 400 icons static. The ONE buff-driven frame
+    /// animation is the Ice Barrier BODY overlay (62): `:10469-10478` steps
+    /// the counter every tick, the frame advances on tick 3 (counter++
+    /// BEFORE the >2 check), 12 frames wrap; the pair PERSISTS across ticks
+    /// (no ResetEffects clear — only the `iceBarrier` flag resets) and the
+    /// arm pauses above half life (the delete arm never touches the pair).
+    /// Consumer: `PlayerDrawLayers.DrawPlayer_35_IceBarrier` :3918-3923
+    /// (`sourceRect.Y = height/12 * iceBarrierFrame`) — the player-draw
+    /// layer, unported (recorded remainder). This witness pins the sim
+    /// half across wiring frames.
+    #[test]
+    fn w4_f12_closeout_ice_frame_persists_and_cycles_across_ticks() {
+        let mut p = player();
+        let mut pool = ProjectilePool::default();
+        p.stat_life_max2 = p.max_hp;
+        p.hp = p.max_hp / 2;
+        p.buffs.add_buff(62, 600);
+        // 36 below-half ticks: counter steps each tick, frame++ on tick 3,
+        // 12 frames * 3 ticks = 36 -> frame wraps to 0, counter back to 0.
+        for _ in 0..36 {
+            run(&mut p, &mut pool);
+        }
+        assert_eq!(p.ice_barrier_frame, 0, "12 frames wrap (:10474-10477)");
+        assert_eq!(p.ice_barrier_frame_counter, 0);
+        // Tick 37: the pair persisted (seeded from the live fields) — the
+        // counter resumes at 1, NOT reset by the frame head.
+        run(&mut p, &mut pool);
+        assert_eq!(p.ice_barrier_frame_counter, 1);
+        assert_eq!(p.ice_barrier_frame, 0);
+        // Above half life the arm deletes the buff and the pair FREEZES
+        // (the C# else-arm never touches the counters).
+        p.hp = p.max_hp;
+        let (f, c) = (p.ice_barrier_frame, p.ice_barrier_frame_counter);
+        run(&mut p, &mut pool);
+        assert!(p.buffs.find_buff_index(62).is_none(), "the delete arm");
+        assert_eq!((p.ice_barrier_frame, p.ice_barrier_frame_counter), (f, c));
+    }
+
     // ---- the debuff block -------------------------------------------------
 
     #[test]
