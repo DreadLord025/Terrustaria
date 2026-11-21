@@ -2687,12 +2687,12 @@ impl App {
     /// A failed load leaves the current world untouched and returns the error,
     /// so the menu stays alive with its own world rather than a black screen.
     pub(crate) fn swap_world(&mut self, path: &Path) -> anyhow::Result<()> {
-        let (world, sections) = load_world(path)?;
+        let (mut world, sections) = load_world(path)?;
         let content = assets::content_dir().context("no retail Content directory")?;
         let mut static_cache = self.static_sheets.take();
         let mut fonts_cache = self.fonts_cache.take();
         let built = build_atlas_reusing_static(
-            &world,
+            &mut world,
             &content.join("Images"),
             &mut static_cache,
             &mut fonts_cache,
@@ -4606,7 +4606,7 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
 /// sheets. A cached font build returns `None` for the page texture: the caller
 /// keeps the `FontAtlas` it already uploaded.
 pub(crate) fn build_atlas_reusing_static(
-    world: &World,
+    world: &mut World,
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
@@ -4620,7 +4620,7 @@ pub(crate) fn build_atlas_reusing_static(
 }
 
 fn build_atlas_inner(
-    world: &World,
+    world: &mut World,
     assets_dir: &Path,
     static_cache: &mut Option<Vec<tr_render::atlas::AtlasImage>>,
     fonts_cache: &mut Option<assets::FontTables>,
@@ -4696,7 +4696,7 @@ fn build_atlas_inner(
     // `build_ref` borrows the sheets, so the static half survives the packing:
     // the tail is split back off the packed list and refills the cache (the boot
     // path's too, so the first Play skips the re-decode as well).
-    let atlas = Atlas::build_ref(&images, 8192);
+    let mut atlas = Atlas::build_ref(&images, 8192);
     let tail: Vec<_> = images.drain(world_len..world_len + static_len).collect();
     *static_cache = Some(tail);
     log::info!(
@@ -4707,8 +4707,60 @@ fn build_atlas_inner(
         atlas.sheets.len(),
         t2.elapsed().as_secs_f32() * 1000.0
     );
+    // W4-g71 atlas budget guard: a rolled non-default surface style can overflow
+    // the 8192 px strict-GPU bound. Revert the offending biome styles to slot-0
+    // (deterministic, `assets::fit_bg_styles_to_atlas`) and rebuild. The static
+    // half + font are world-independent, so the candidate height is measured
+    // over `bg trial ++ static ++ font` through the cheap `packed_height` (no
+    // pixel copies). The C# avoids this by drawing surface bgs outside the tile
+    // atlas (S1-G-13); until that lands, the revert keeps the atlas in bounds.
     if atlas.height > 8192 {
-        log::warn!("atlas exceeds 8192 px in height; some sheets may be cut off on strict GPUs");
+        let static_sheets = static_cache.as_deref().unwrap_or(&[]);
+        let font_img = tr_render::atlas::font_sheet();
+        // Decode each candidate bg sheet once across the trials (the guard
+        // recomputes the set per revert; re-decoding the XNB each time would
+        // multiply the boot cost). Missing sheets decode to `None` and drop.
+        let mut bg_decode_cache: std::collections::HashMap<i32, Option<tr_render::atlas::AtlasImage>> =
+            std::collections::HashMap::new();
+        let reverted = assets::fit_bg_styles_to_atlas(
+            assets::BgStyleBytes::from_world(world),
+            |bg_ids| {
+                let mut trial: Vec<tr_render::atlas::AtlasImage> = Vec::new();
+                for &id in bg_ids {
+                    let entry = bg_decode_cache.entry(id).or_insert_with(|| {
+                        assets::load_png(
+                            assets_dir,
+                            &format!("Background_{id}"),
+                            tr_render::SheetLayout::Raw,
+                        )
+                        .ok()
+                    });
+                    if let Some(img) = entry {
+                        trial.push(img.clone());
+                    }
+                }
+                trial.extend(static_sheets.iter().cloned());
+                trial.push(font_img.0.clone());
+                Atlas::packed_height(&trial, 8192)
+            },
+            8192,
+        );
+        if !reverted.is_empty() {
+            for slot in &reverted {
+                world.set_surface_bg_style(*slot, 0);
+            }
+            log::warn!(
+                "atlas overflow: reverted background style slots {reverted:?} to slot-0 to fit 8192 px"
+            );
+            // Rebuild the world half with the reverted styles; the static half
+            // and font are unchanged, so re-pack the same decoded tail.
+            let mut rebuilt = assets::load_world_sheets(assets_dir, world, &tile_ids, &wall_ids)?;
+            rebuilt.extend(static_cache.as_deref().unwrap_or(&[]).iter().cloned());
+            rebuilt.push(font_img.0);
+            atlas = Atlas::build_ref(&rebuilt, 8192);
+        } else {
+            log::warn!("atlas exceeds 8192 px in height; some sheets may be cut off on strict GPUs");
+        }
     }
 
     let lookups = assets::Lookups::build(
@@ -5115,11 +5167,11 @@ pub(crate) mod tr_hooks {
 
         // The boot App over the first world, with the boot caches filled exactly
         // like `main` does.
-        let (world, sections) = load_world(&paths[0]).unwrap();
+        let (mut world, sections) = load_world(&paths[0]).unwrap();
         let mut boot_static = None;
         let mut boot_fonts = None;
         let (atlas, font_atlas, lookups, stats) =
-            build_atlas_reusing_static(&world, &assets_dir, &mut boot_static, &mut boot_fonts)
+            build_atlas_reusing_static(&mut world, &assets_dir, &mut boot_static, &mut boot_fonts)
                 .expect("boot atlas");
         let mut app = App::new(
             settings::Settings::default(),

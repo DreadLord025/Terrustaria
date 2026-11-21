@@ -2690,22 +2690,24 @@ fn step_world_tail(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
-    // Not a vanilla pass — the generate() tail writes plus the final two rng
-    // draws. They MUST stay the last rng-consuming step
+    // Not a vanilla pass — the generate() tail writes plus the background style
+    // rolls and the final moon draw. They MUST stay the last rng-consuming step
     // (`worldgen_rolls_hell_back_style` pins the order).
     //
-    // W4-g71 DOC-SWEEP pin-move note: the vanilla `WorldGen.Reset` runs
-    // `RandomizeTreeStyle` / `RandomizeCaveBackgrounds` / `RandomizeBackgrounds`
-    // / `RandomizeMoonState` here on the shared `genRand` (`WorldGen.cs:11338-
-    // 11341`), between the `WorldId` draw (`:11337`) and the dungeon-side +
-    // jungle-origin rolls (`:11344-11374`). The port's two tail draws below
-    // (moon type, hell back style) stand in for `RandomizeMoonState` +
-    // `RandomizeCaveBackgrounds`'s hell roll only. The full style rolls are
-    // ported UNWIRED in `bg_rolls.rs` (their own future `pass_rng` slots):
-    // inserting them here would shift every later `streams.rng` draw and move
-    // the frozen `world_hash` pins, and a rolled non-default surface style
-    // overflows the 8192 px atlas (style-0 baseline 7847 px, measured). Wiring
-    // is a worldgen lane's call — re-pin the tail + the atlas budget in one move.
+    // W4-g71 WIRING: the vanilla `WorldGen.Reset` runs `RandomizeTreeStyle` /
+    // `RandomizeCaveBackgrounds` / `RandomizeBackgrounds` / `RandomizeMoonState`
+    // here on the shared `genRand` (`WorldGen.cs:11338-11341`). The port wires
+    // the three style rolls in that C# order, each on its OWN `pass_rng` slot
+    // (the documented per-pass-stream deviation, `Streams::pass_rng`) — so they
+    // shift no other pass's draws and move no `world_hash` TILE pin (the rolls
+    // write only style/divider fields, never tiles, and the tail is already the
+    // last `streams.rng` consumer). The `hell_back_style` `Next(3)`
+    // (`WorldGen.cs:8247`) folds into the cave block — its VALUE moves
+    // (stale-by-design; the `a == b` determinism witness stays green). The moon
+    // draw keeps its historical `streams.rng` slot (`Main.cs:10873` stand-in).
+    // A rolled non-default surface style can overflow the 8192 px atlas; the
+    // app's pack-time budget guard (`assets::fit_bg_styles_to_atlas`) reverts the
+    // overflowing biome styles to slot-0 and rebuilds — see research/92 §2.
     let layers = gv.layers();
     let map = gv.map();
     world.world_surface = layers.world_surface;
@@ -2734,13 +2736,49 @@ fn step_world_tail(
     world.spawn_y = spawn_y;
     world.time = 27000.0; // noon
     world.day_time = true;
+    // The three background style rolls, in C# order (`WorldGen.cs:11338-11340`),
+    // each on its own `pass_rng` slot. `RandomizeTreeStyle` (`:8117-8190`): the
+    // treeX dividers + treeStyle variations.
+    let (tree_x, tree_style) =
+        super::bg_rolls::randomize_tree_style(&mut streams.pass_rng("RandomizeTreeStyle"), world.width);
+    world.tree_x = tree_x;
+    world.tree_style = tree_style;
+    // `RandomizeCaveBackgrounds` (`:8192-8249`): caveBackX/caveBackStyle + the
+    // ice/hell/jungle back styles. The hell `Next(3)` (`:8247`) is folded here —
+    // the former standalone tail draw is gone (its value moves by design).
+    let cave = super::bg_rolls::randomize_cave_backgrounds(
+        &mut streams.pass_rng("RandomizeCaveBackgrounds"),
+        world.width,
+    );
+    world.cave_back_x = cave.cave_back_x;
+    world.cave_back_style = cave.cave_back_style;
+    world.ice_back_style = cave.ice_back_style as u8;
+    world.hell_back_style = cave.hell_back_style as u8;
+    world.jungle_back_style = cave.jungle_back_style as u8;
+    // `RandomizeBackgrounds` (`:7947-8012`): the eleven setBG styles. The four
+    // forest styles + the eight surface variants + the underworld style write
+    // through `set_surface_bg_style` (the C#'s `setBG` calls, `:7965-8011`).
+    let styles =
+        super::bg_rolls::randomize_backgrounds(&mut streams.pass_rng("RandomizeBackgrounds"));
+    world.set_surface_bg_style(0, styles.forest[0]);
+    world.set_surface_bg_style(10, styles.forest[1]);
+    world.set_surface_bg_style(11, styles.forest[2]);
+    world.set_surface_bg_style(12, styles.forest[3]);
+    world.set_surface_bg_style(1, styles.corrupt);
+    world.set_surface_bg_style(2, styles.jungle);
+    world.set_surface_bg_style(3, styles.snow);
+    world.set_surface_bg_style(4, styles.hallow);
+    world.set_surface_bg_style(5, styles.crimson);
+    world.set_surface_bg_style(6, styles.desert);
+    world.set_surface_bg_style(7, styles.ocean);
+    world.set_surface_bg_style(8, styles.mushroom);
+    world.set_surface_bg_style(9, styles.underworld);
     // `Main.moonType = Main.rand.Next(9)` (`Main.cs:10873`), drawn from the same
-    // generator here so it is fixed for the seed; the phase starts at 0.
+    // generator here so it is fixed for the seed; the phase starts at 0. Kept on
+    // `streams.rng` (its historical slot) — the style rolls above ride isolated
+    // `pass_rng` slots, so this draw is unshifted.
     world.moon_type = (streams.rng.next_u32() % 9) as u8;
     world.moon_phase = 0;
-    // `Main.hellBackStyle = WorldGen.genRand.Next(3)` (`WorldGen.cs:8247`), drawn
-    // from the same generator; it picks the animated magma/hell sheets at draw time.
-    world.hell_back_style = (streams.rng.next_u32() % 3) as u8;
 }
 
 // --- the runner -------------------------------------------------------------
@@ -3504,7 +3542,63 @@ mod tests {
         assert_eq!(direct.moon_type, via_pipeline.moon_type);
         assert_eq!(direct.moon_phase, via_pipeline.moon_phase);
         assert_eq!(direct.hell_back_style, via_pipeline.hell_back_style);
+        // W4-g71 wiring: the rolled style/divider fields ride both paths too.
+        assert_eq!(direct.tree_x, via_pipeline.tree_x);
+        assert_eq!(direct.tree_style, via_pipeline.tree_style);
+        assert_eq!(direct.cave_back_x, via_pipeline.cave_back_x);
+        assert_eq!(direct.cave_back_style, via_pipeline.cave_back_style);
+        assert_eq!(direct.ice_back_style, via_pipeline.ice_back_style);
+        assert_eq!(direct.jungle_back_style, via_pipeline.jungle_back_style);
+        assert_eq!(direct.forest_bg_styles, via_pipeline.forest_bg_styles);
+        assert_eq!(direct.underworld_bg_style, via_pipeline.underworld_bg_style);
+        assert_eq!(direct.corrupt_bg_style, via_pipeline.corrupt_bg_style);
+        assert_eq!(direct.snow_bg_style, via_pipeline.snow_bg_style);
+        assert_eq!(direct.desert_bg_style, via_pipeline.desert_bg_style);
+        assert_eq!(direct.ocean_bg_style, via_pipeline.ocean_bg_style);
         assert_eq!(direct.frame_important, via_pipeline.frame_important);
+    }
+
+    /// W4-g71 wiring: the tail rolls land the style/divider fields, the rolls
+    /// are deterministic per seed, and — the load-bearing claim — they move NO
+    /// tile (the `world_hash` tile pins stay byte-identical; the rolls ride
+    /// isolated `pass_rng` slots and write only style fields).
+    #[test]
+    fn w4_g71_the_wired_tail_rolls_styles_without_moving_tiles() {
+        let opts = GenOptions {
+            width: 512,
+            height: 512,
+            seed: 42,
+            ..Default::default()
+        };
+        let a = super::super::generate(&opts);
+        let b = super::super::generate(&opts);
+        // Determinism: every rolled field matches across two runs.
+        assert_eq!(a.tree_x, b.tree_x);
+        assert_eq!(a.tree_style, b.tree_style);
+        assert_eq!(a.cave_back_x, b.cave_back_x);
+        assert_eq!(a.cave_back_style, b.cave_back_style);
+        assert_eq!(a.forest_bg_styles, b.forest_bg_styles);
+        assert_eq!(a.hell_back_style, b.hell_back_style);
+        // The rolls actually ran (non-default dividers — the reset pins treeX
+        // to maxTilesX; a rolled 512-wide world's treeX[0] sits in the ±15%
+        // band around the quartile, well below 512).
+        assert!(a.tree_x[0] < 512, "treeX[0] rolled off the reset pin");
+        assert!(a.cave_back_x[0] < 512, "caveBackX[0] rolled");
+        // The four forest styles are pairwise distinct (the while re-rolls).
+        for i in 0..4 {
+            for j in (i + 1)..4 {
+                assert_ne!(a.forest_bg_styles[i], a.forest_bg_styles[j]);
+            }
+        }
+        // The four cave styles are pairwise distinct.
+        for i in 0..4 {
+            for j in (i + 1)..4 {
+                assert_ne!(a.cave_back_style[i], a.cave_back_style[j]);
+            }
+        }
+        // The tile grid is byte-identical across runs (the rolls write no
+        // tiles) — the world_hash tile pin is unmoved by the wiring.
+        assert_eq!(a.tiles, b.tiles, "the rolls move no tile");
     }
 
     // --- Phase 1: stream scaffolding ----------------------------------------

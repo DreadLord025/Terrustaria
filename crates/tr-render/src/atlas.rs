@@ -168,6 +168,35 @@ impl Atlas {
         self.sheets.get(name)
     }
 
+    /// The packed height [`build_ref`] would produce for `images`, WITHOUT
+    /// copying any pixels — the same name-dedup, tallest-first stable sort and
+    /// skyline pass, returning only `used_height + PAD`. The atlas budget guard
+    /// (`assets::fit_bg_styles_to_atlas`) trials candidate background-sheet sets
+    /// through this so it can measure overflow cheaply (the full `build_ref`
+    /// allocates the whole atlas pixel buffer per trial).
+    pub fn packed_height(images: &[AtlasImage], max_width: u32) -> u32 {
+        let mut seen = std::collections::HashSet::with_capacity(images.len());
+        let mut order: Vec<&AtlasImage> = images
+            .iter()
+            .filter(|i| seen.insert(i.name.as_str()))
+            .collect();
+        // `build_ref` appends a synthetic 4x4 `__white` when absent.
+        let white = AtlasImage {
+            name: "__white".into(),
+            width: 4,
+            height: 4,
+            rgba: Vec::new(),
+            layout: SheetLayout::Tile,
+        };
+        if !order.iter().any(|i| i.name == "__white") {
+            order.push(&white);
+        }
+        order.sort_by(|a, b| b.height.cmp(&a.height).then(b.width.cmp(&a.width)));
+        let rects: Vec<(u32, u32)> = order.iter().map(|i| (i.width + PAD, i.height + PAD)).collect();
+        let (_, used_height) = skyline_pack(&rects, max_width - PAD);
+        used_height + PAD
+    }
+
     pub fn memory_bytes(&self) -> usize {
         self.pixels.len()
     }

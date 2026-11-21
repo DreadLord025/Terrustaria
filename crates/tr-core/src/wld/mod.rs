@@ -1688,6 +1688,17 @@ mod tests {
         world.snow_bg_style = 7;
         world.desert_bg_style = 51;
         world.ocean_bg_style = 6;
+        // W4-g71 wiring: the tree/cave arrays + back styles + the forest/
+        // underworld setBG bytes at non-default values (the wired tail rolls
+        // them; the round-trip must carry them).
+        world.tree_x = [17, 33, 49];
+        world.tree_style = [2, 3, 0, 5];
+        world.cave_back_x = [11, 22, 33];
+        world.cave_back_style = [1, 4, 3, 0];
+        world.ice_back_style = 3;
+        world.jungle_back_style = 1;
+        world.forest_bg_styles = [1, 11, 12, 13];
+        world.underworld_bg_style = 2;
         world
     }
 
@@ -1720,6 +1731,28 @@ mod tests {
         assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
+        );
+        // W4-g71 wiring: the tree/cave arrays + back styles + forest/underworld
+        // setBG bytes round-trip.
+        assert_eq!(got.tree_x, want.tree_x, "{context}: treeX");
+        assert_eq!(got.tree_style, want.tree_style, "{context}: treeStyle");
+        assert_eq!(got.cave_back_x, want.cave_back_x, "{context}: caveBackX");
+        assert_eq!(
+            got.cave_back_style, want.cave_back_style,
+            "{context}: caveBackStyle"
+        );
+        assert_eq!(got.ice_back_style, want.ice_back_style, "{context}: iceBackStyle");
+        assert_eq!(
+            got.jungle_back_style, want.jungle_back_style,
+            "{context}: jungleBackStyle"
+        );
+        assert_eq!(
+            got.forest_bg_styles, want.forest_bg_styles,
+            "{context}: forest_bg_styles"
+        );
+        assert_eq!(
+            got.underworld_bg_style, want.underworld_bg_style,
+            "{context}: underworld_bg_style"
         );
         assert_eq!(got.downed_eoc, want.downed_eoc, "{context}: downedBoss1");
         assert_eq!(got.downed_eow, want.downed_eow, "{context}: downedBoss2");
@@ -2026,8 +2059,9 @@ mod tests {
         tail[68..72].copy_from_slice(&world.rain_time.to_le_bytes());
         tail[72..76].copy_from_slice(&world.max_raining.to_le_bytes());
         // The owned background styles inside setBG 0..7 at 88..95
-        // (`:1318-1325`): corrupt@89, jungle@90, snow@91, hallow@92,
-        // crimson@93, desert@94, ocean@95.
+        // (`:1318-1325`): W4-g71 wiring — treeBG1@88, corrupt@89, jungle@90,
+        // snow@91, hallow@92, crimson@93, desert@94, ocean@95.
+        tail[88] = world.forest_bg_styles[0];
         tail[89] = world.corrupt_bg_style;
         tail[90] = world.jungle_bg_style;
         tail[91] = world.snow_bg_style;
@@ -2073,6 +2107,13 @@ mod tests {
         // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
         tail[2041] = u8::from(world.unlocked_slime_rainbow_spawn);
         tail[2042] = u8::from(world.unlocked_slime_red_spawn);
+        // W4-g71 wiring: the five remaining BG styles (mushroom/underworld/
+        // tree2-4) at tail 1934..1938, just before combatBookWasUsed@1939.
+        tail[1934] = world.mushroom_bg_style; // setBG(8) (`:1375`)
+        tail[1935] = world.underworld_bg_style; // setBG(9) (`:1374`)
+        tail[1936] = world.forest_bg_styles[1]; // treeBG2 (`:1376`)
+        tail[1937] = world.forest_bg_styles[2]; // treeBG3 (`:1377`)
+        tail[1938] = world.forest_bg_styles[3]; // treeBG4 (`:1378`)
         // combatBookWasUsed (`WorldFile.cs:1379`): trio-end 88 + 8 setBG +
         // 10 clouds/wind + 4 angler count + 8 saved-NPC/quest + 8 invasion/
         // cultist + 2+1172+2+586 banners + 1 dawn + 9+9 event/tower + 10
@@ -2085,12 +2126,26 @@ mod tests {
         b
     }
 
-    /// The owned middle of the flags table: the back styles (hell only), the
-    /// spawn/layers/time block — written between the 17 zero i32s of
-    /// `treeX`..`jungleBackStyle` and the `_tempBloodMoon` tail.
+    /// The owned middle of the flags table: the tree/cave arrays + the
+    /// ice/jungle/hell back styles (W4-g71 wiring: all owned now), then the
+    /// spawn/layers/time block — written between the moon-type byte and the
+    /// `_tempBloodMoon` tail.
     fn flags_tail_prefix(world: &World) -> Vec<u8> {
         let mut b = Vec::new();
-        b.resize(3 * 4 + 4 * 4 + 3 * 4 + 4 * 4 + 2 * 4, 0); // tree/cave arrays + ice/jungle
+        for x in world.tree_x {
+            b.extend_from_slice(&x.to_le_bytes()); // treeX
+        }
+        for s in world.tree_style {
+            b.extend_from_slice(&s.to_le_bytes()); // treeStyle
+        }
+        for x in world.cave_back_x {
+            b.extend_from_slice(&x.to_le_bytes()); // caveBackX
+        }
+        for s in world.cave_back_style {
+            b.extend_from_slice(&s.to_le_bytes()); // caveBackStyle
+        }
+        b.extend_from_slice(&(world.ice_back_style as i32).to_le_bytes());
+        b.extend_from_slice(&(world.jungle_back_style as i32).to_le_bytes());
         b.extend_from_slice(&(world.hell_back_style as i32).to_le_bytes());
         b.extend_from_slice(&world.spawn_x.to_le_bytes());
         b.extend_from_slice(&world.spawn_y.to_le_bytes());

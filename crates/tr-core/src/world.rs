@@ -107,10 +107,49 @@ pub struct World {
     pub fast_forward_to_dusk: bool,
     /// `Main.hellBackStyle` (0..2): picks the animated magma sheet `Background_125..127`
     /// and the hell floor row `Background_185..187` (`Main.cs:54000-54008`). Vanilla
-    /// rolls it in `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`); it is not
-    /// part of the `.wld` format and is re-rolled per session at load (`Main.cs:6603`),
-    /// so the port fixes it at generation like `moon_type`. Loaded worlds keep 0.
+    /// rolls it in `WorldGen.RandomizeCaveBackgrounds` (`WorldGen.cs:8247`); the port
+    /// draws it in the wired world tail (`bg_rolls::randomize_cave_backgrounds`, the
+    /// `Next(3)` folded into the cave block) and persists it in the `.wld` flags block
+    /// (`WorldFile.cs:1269`). Loaded worlds keep the file value.
     pub hell_back_style: u8,
+    /// `Main.caveBackX[0..3]` (`Main.cs:595`): the tile-x dividers between the four
+    /// cave background bands, rolled by `RandomizeCaveBackgrounds`
+    /// (`WorldGen.cs:8192-8249`) and consumed by g72's cave-style machine
+    /// (`render/bg_styles.rs::BgStylePickInput`). Persisted in the `.wld` flags block
+    /// (`WorldFile.cs:1260-1262`); the port owns them with the W4-g71 wiring.
+    pub cave_back_x: [i32; 3],
+    /// `Main.caveBackStyle[0..4]` (`Main.cs:597`): the four pairwise-distinct cave
+    /// band styles (`Next(8)` + rejection loops, `WorldGen.cs:8200-8244`). Persisted
+    /// (`WorldFile.cs:1263-1266`).
+    pub cave_back_style: [i32; 4],
+    /// `Main.iceBackStyle` (`Main.cs:599`, `Next(4)` `WorldGen.cs:8246`) and
+    /// `Main.jungleBackStyle` (`Main.cs:603`, `Next(2)` `:8248`): the ice/jungle
+    /// cavern back styles. Persisted (`WorldFile.cs:1267-1268`).
+    pub ice_back_style: u8,
+    pub jungle_back_style: u8,
+    /// `Main.treeX[0..3]` (`Main.cs:591`): the tile-x dividers between the four
+    /// forest sets, rolled by `RandomizeTreeStyle` (`WorldGen.cs:8117-8190`) and
+    /// consumed by `GetPreferredBGStyleForPlayer` (`Main.cs:64247-64254`) and the
+    /// tree-top area pick (`TreeTopsInfo.cs:141`). The vanilla reset pins all three
+    /// to `maxTilesX` (`WorldGen.cs:7125-7127`); the port keeps the reset values in
+    /// `World::new` and rolls them in the wired tail. Persisted (`WorldFile.cs:1253-1255`).
+    pub tree_x: [i32; 3],
+    /// `Main.treeStyle[0..4]` (`Main.cs:593`): the four tree-top variations
+    /// (`Next(6)` + rejection + the 0→4 promotion, `WorldGen.cs:8122-8189`), copied
+    /// into `TreeTops._variations[0..4]` (`TreeTopsInfo.cs:224-227`). Persisted
+    /// (`WorldFile.cs:1256-1259`). Distinct from `forest_bg_styles` (the treeBG1..4
+    /// setBG styles) — the C# keeps them as two separate arrays.
+    pub tree_style: [i32; 4],
+    /// `WorldGen.treeBG1..4` (`setBG` slots 0/10/11/12): the four pairwise-distinct
+    /// forest tree-set styles rolled by `RandomizeBackgrounds`
+    /// (`WorldGen.cs:7949-7968`). `SetForestBGSet` (`WorldGen.cs:7639-7768`) expands
+    /// each into its tree-line/hill ids — g70 owns that draw-side table; this lane
+    /// owns the roll + the style bytes. Persisted (`WorldFile.cs:1318`, `:1376-1379`).
+    pub forest_bg_styles: [u8; 4],
+    /// `WorldGen.underworldBG` (`setBG` slot 9, `Next(3)` `WorldGen.cs:8011`): the
+    /// underworld stack style — g72 owns the draw side (`render/underworld_bg.rs`);
+    /// this lane owns the roll + the byte. Persisted (`WorldFile.cs:1374`).
+    pub underworld_bg_style: u8,
     // Per-biome surface background *style* variants (`WorldGen.corruptBG`,
     // `jungleBG`, `hallowBG`, `crimsonBG`, `mushroomBG`). The `.wld` stores the
     // style byte (`IO/WorldFile.cs:1318-1325`, `:1375`) and `WorldGen.setBG`
@@ -700,6 +739,17 @@ impl World {
             fast_forward_to_dawn: false,
             fast_forward_to_dusk: false,
             hell_back_style: 0,
+            cave_back_x: [0; 3],
+            cave_back_style: [0; 4],
+            ice_back_style: 0,
+            jungle_back_style: 0,
+            // `WorldGen.Reset` pins the treeX dividers to maxTilesX
+            // (`WorldGen.cs:7125-7127`) — one forest set everywhere until the
+            // wired tail rolls them. treeStyle starts at 0 (`:7128-7131`).
+            tree_x: [width, width, width],
+            tree_style: [0; 4],
+            forest_bg_styles: [0; 4],
+            underworld_bg_style: 0,
             corrupt_bg_style: 0,
             jungle_bg_style: 0,
             hallow_bg_style: 0,
@@ -1517,13 +1567,16 @@ pub fn ocean_bg_texture_id(style: i32) -> i32 {
 }
 
 impl World {
-    /// `WorldGen.setBG(bg, style)` for the eight surface variants the port owns
+    /// `WorldGen.setBG(bg, style)` for the style slots the port owns
     /// (`WorldGen.cs:7235-7274`, `7276-7316`, `7317-7423`, `7424-7459`,
-    /// `7460-7500`, `7501-7546`, `7548-7576`, `7578-7608`). Unknown slots are
-    /// ignored — their tables are unported.
+    /// `7460-7500`, `7501-7546`, `7548-7576`, `7578-7608`, `7609-7635`, and the
+    /// forest `SetForestBGSet` slots 0/10/11/12 `:7639-7768`). The forest slots
+    /// store the style byte only — g70 owns the `SetForestBGSet` draw-side table.
+    /// Unknown slots are ignored — their tables are unported.
     pub fn set_surface_bg_style(&mut self, bg: i32, style: i32) {
         let style = style as u8;
         match bg {
+            0 => self.forest_bg_styles[0] = style,
             1 => self.corrupt_bg_style = style,
             2 => self.jungle_bg_style = style,
             3 => self.snow_bg_style = style,
@@ -1532,6 +1585,10 @@ impl World {
             6 => self.desert_bg_style = style,
             7 => self.ocean_bg_style = style,
             8 => self.mushroom_bg_style = style,
+            9 => self.underworld_bg_style = style,
+            10 => self.forest_bg_styles[1] = style,
+            11 => self.forest_bg_styles[2] = style,
+            12 => self.forest_bg_styles[3] = style,
             _ => {}
         }
     }
@@ -1598,8 +1655,21 @@ mod tests {
         w.set_surface_bg_style(5, 6);
         assert_eq!(w.crimson_bg(), [339, 338, 337]);
         assert_eq!(w.crimson_bg_style, 6);
-        w.set_surface_bg_style(0, 1); // unowned slot: unchanged
+        // W4-g71 wiring: slot 0 (treeBG1) is owned now — the forest roll writes
+        // it. The crimson style is untouched by a forest-slot write.
+        w.set_surface_bg_style(0, 1);
+        assert_eq!(w.forest_bg_styles[0], 1);
         assert_eq!(w.crimson_bg_style, 6);
+        // The other forest slots + the underworld slot route to their bytes.
+        w.set_surface_bg_style(10, 11);
+        w.set_surface_bg_style(11, 12);
+        w.set_surface_bg_style(12, 13);
+        w.set_surface_bg_style(9, 2);
+        assert_eq!(w.forest_bg_styles, [1, 11, 12, 13]);
+        assert_eq!(w.underworld_bg_style, 2);
+        // An unknown slot is still ignored.
+        w.set_surface_bg_style(99, 7);
+        assert_eq!(w.forest_bg_styles, [1, 11, 12, 13]);
     }
 
     #[test]
