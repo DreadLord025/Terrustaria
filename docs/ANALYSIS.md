@@ -7028,6 +7028,28 @@ against `crates/tr-app/src/npc_chat.rs` + the pushed f38/f41/g58 diffs):
   sign gate; d120's text-only panel keeps the rich-text branch (the
   talk case). VERIFIED consistent.
 
+**The shop-button chain (census complete)** — `GetChat` answers the
+talk line (`Main.cs:43081-43082`); the SHOP is a panel interaction
+(`OpenShop`, `NPCInteractions.cs:44-77`): label `Lang.inter[28]` =
+"Shop" (the Painter's second row `Shop(227, 25, "GameUI.PainterDecor")`
+`:512` labels "Decor"), `Interact` → `Main.OpenShop(shopIndex)`
+(`Main.cs:40459-40467`: playerInventory, stackSplit 9999, npcChatText
+CLEARED, SetNPCShopIndex, SetupShop, sound 12 — ZERO draws in the
+chain). d120 lands the claimed kinds' registry rows in
+`shop_index_for_kind` (Santa 9 / Truffle 10 / Steampunker 11 / Cyborg
+14, `:496-501`) + the cs_id-keyed Pirate 17 / SkeletonMerchant 20
+twins; the stock for 9/10/11/14 is d122's pushed `shop.rs` cases
+(`Chest.cs:2091-2135`/`:2360`), the Tavernkeep 21 row stays d122's
+(no duplicate). The port's `try_open_town_shop_at_cursor` drains the
+same OpenShop effects (the cursor-open stand-in); the BUTTON row is
+the panel lane's (f22's `interaction_rects` generalizes it). The
+no-shop set: Nurse 18 / OldMan 37 / Guide 22 / TaxCollector 441 /
+Angler 369 / the bound forms / the pets+slimes. The full 25-row
+registry (`Initialize`, `:488-512`): 17→1, 19→2, 20→3, 38→4, 54→5,
+107→6, 108→7, 124→8, 142→9, 160→10, 178→11, 207→12, 208→13, 209→14,
+227→15, 228→16, 229→17, 353→18, 368→19, 453→20, 550→21, 588→22,
+633→23, 663→24, 227→25 (decor).
+
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter вЂ”
