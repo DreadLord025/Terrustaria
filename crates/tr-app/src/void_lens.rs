@@ -171,11 +171,18 @@ pub(crate) fn try_interacting(app: &mut App, index: usize) -> u8 {
             }
             app.audio.play("Item_130");
         } else {
-            // `:37718-37734` — `disableVoidBag < 0` (the net-slot lock has
-            // no port mechanic — always open, the tr-core edit.rs note):
-            // stackSplit 600, chest −5, the tracker latch, the tile point
-            // off the lens CENTRE, the talk/shop clears, the inventory
-            // open, Item130.
+            // `:37718-37734` — `disableVoidBag < 0`: the net-slot lock refuses
+            // the open (W4-g56 — the flag is ported now, MP-only; SP keeps −1
+            // and always opens). stackSplit 600, chest −5, the tracker latch,
+            // the tile point off the lens CENTRE, the talk/shop clears, the
+            // inventory open, Item130.
+            let locked = app
+                .player
+                .as_ref()
+                .is_some_and(|p| p.disable_void_bag >= 0);
+            if locked {
+                return 0; // `:37718` — the `else if` falls through, no open
+            }
             app.stack_split = 600; // `:37720`
             let (pcx, pcy) = (proj.pos.x + proj.w * 0.5, proj.pos.y + proj.h * 0.5);
             let tx = (pcx / TILE_PX) as i32;
@@ -394,6 +401,38 @@ mod tests {
         try_interacting(&mut app, idx);
         assert_eq!(app.player.as_ref().unwrap().chest, -1);
         assert_eq!(app.audio.played_count(), before + 1);
+    }
+
+    /// W4-g56 — the lens open's `disableVoidBag` guard (`Main.cs:37718`):
+    /// a locked vault slot (`disable_void_bag >= 0`) refuses the open — no
+    /// chest −5, no stackSplit, no cue, no tracker latch. The press is still
+    /// consumed (`mouseRightRelease = false`, `:37709`, ahead of the branch).
+    /// The lock is MP-only; the witness arms it directly (the net producer is
+    /// unported). Clearing the lock re-opens.
+    #[test]
+    fn w4_g56_the_lens_open_refuses_while_the_vault_slot_is_locked() {
+        let mut app = lens_app();
+        let (px, py) = app.player.as_ref().unwrap().center();
+        let idx = spawn_lens(&mut app, px + 20.0, py);
+        aim(&mut app, Vec2::new(px + 20.0, py));
+        app.place_down = true;
+        app.place_prev_down = false;
+        app.player.as_mut().unwrap().lock_net_slot(3); // bank4 slot 3 locked
+        let before = app.audio.played_count();
+        let mode = try_interacting(&mut app, idx);
+        assert_eq!(mode, 0);
+        let p = app.player.as_ref().unwrap();
+        assert_eq!(p.chest, -1, "the locked vault never opens (:37718)");
+        assert_eq!(p.void_lens_chest, LensTracker::default(), "no tracker latch");
+        assert_eq!(app.stack_split, 0, "no stackSplit on the refused open");
+        assert_eq!(app.audio.played_count(), before, "no Item130");
+        assert!(!app.ui_right_press, "the press is still consumed (:37709)");
+        // The slot-5 echo clears the lock; the next press opens.
+        app.player.as_mut().unwrap().clear_void_bag_lock_on_echo(3);
+        assert_eq!(app.player.as_ref().unwrap().disable_void_bag, -1);
+        app.place_prev_down = false;
+        try_interacting(&mut app, idx);
+        assert_eq!(app.player.as_ref().unwrap().chest, -5, "the cleared lock opens");
     }
 
     /// `:37682-37695` — out of the Simple reach, or the pointer off the

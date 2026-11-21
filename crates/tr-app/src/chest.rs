@@ -911,6 +911,14 @@ pub(crate) fn toggle_open(app: &mut App, x: i32, y: i32, new_chest: i32) -> u32 
     let Some(current) = app.player.as_ref().map(|p| p.chest) else {
         return 0; // no player — no container state (the front screens park the routes)
     };
+    // W4-g56 — the tile-vault open's `disableVoidBag` guard (`Player.cs:33134-
+    // 33139`): `case 4: if (this.disableVoidBag < 0) num76 = -5;` — a locked
+    // vault slot leaves `num76 = -1`, so the shared open block (`:33230`)
+    // never runs (no stackSplit, no toggle, no cue). The net-slot lock is
+    // MP-only (`Player.disable_void_bag`); SP keeps −1 and always opens.
+    if new_chest == -5 && app.player.as_ref().is_some_and(|p| p.disable_void_bag >= 0) {
+        return 0;
+    }
     app.stack_split = 600; // `:33232` — `Main.stackSplit = 600`, before the branch
     if new_chest == current {
         if let Some(p) = app.player.as_mut() {
@@ -2716,6 +2724,28 @@ mod tests {
         assert_eq!(toggle_open(&mut app, 20, 19, -3), 10, "fresh again");
         assert_eq!(toggle_open(&mut app, 10, 19, -2), 12, "the switch");
         assert_eq!(app.player.as_ref().unwrap().chest, -2);
+    }
+
+    /// W4-g56 — the tile-vault open's `disableVoidBag` guard (`Player.cs:33134-
+    /// 33139`): a locked vault slot leaves `num76 = -1`, so the shared open
+    /// block never runs — `toggle_open(-5)` answers 0 (no cue), the chest stays
+    /// closed, no stackSplit. The other banks (−2..−4) ignore the lock. The
+    /// slot-5 echo clear re-opens the vault. MP-only; the witness arms the lock
+    /// directly (the quick-stack producer is unported).
+    #[test]
+    fn w4_g56_the_tile_vault_open_refuses_while_the_slot_is_locked() {
+        let mut app = interact_app(world());
+        app.player.as_mut().unwrap().lock_net_slot(0);
+        assert_eq!(toggle_open(&mut app, 10, 19, -5), 0, "the locked vault refuses");
+        assert_eq!(app.player.as_ref().unwrap().chest, -1, "stays closed");
+        assert_eq!(app.stack_split, 0, "no stackSplit on the refused open");
+        // The other banks ignore the vault lock.
+        assert_eq!(toggle_open(&mut app, 10, 19, -2), 10, "the piggy opens");
+        assert_eq!(app.player.as_ref().unwrap().chest, -2);
+        // The echo clears the lock; the vault opens.
+        app.player.as_mut().unwrap().clear_void_bag_lock_on_echo(0);
+        assert_eq!(toggle_open(&mut app, 10, 19, -5), 10, "the cleared lock opens");
+        assert_eq!(app.player.as_ref().unwrap().chest, -5);
     }
 
     /// DW-1.4 — the one open-container field carries the full C# index space

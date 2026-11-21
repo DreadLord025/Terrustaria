@@ -1104,6 +1104,19 @@ pub struct Player {
     /// per-tick range/death close reads it (`Player.cs:31051-31073`,
     /// W4-g56 `void_lens.rs`).
     pub void_lens_chest: crate::void_lens::LensTracker,
+    /// `Player.disableVoidBag` (`Player.cs:3100`, default −1): the net-slot
+    /// lock that refuses the void-vault open while a quick-stack-to-nearby-
+    /// chests transfer owns a bank4 slot. MP-ONLY — set solely by
+    /// `QuickStacking.SendQuickStackToNearbyChests` (`QuickStacking.cs:293`,
+    /// the `Main.netMode == 1` client gate `:258`) through `LockNetSlot`
+    /// (`Player.cs:23123-23133`: `slot >= Bank4_0` → `slot - Bank4_0`), and
+    /// cleared by the server's slot-5 echo (`MessageBuffer.cs:434-437`).
+    /// Readers: `IsStackingItems` (`:23116`, gates `QuickStackAllChests`),
+    /// the tile-vault open (`:33135`, `disableVoidBag < 0`) and the lens
+    /// open (`Main.cs:37718`). The port has no quick-stack-to-nearby-chests
+    /// producer yet, so the flag stays −1 in play (SP-inert); the two open
+    /// guards and the lock/clear seam are ported for when it lands. W4-g56.
+    pub disable_void_bag: i32,
     /// `bank4.item[i].favorited` (`Player.cs:55495`'s per-slot bools) —
     /// the void vault is the one bank whose slots CAN favorite
     /// (`ItemSlot.canFavoriteAt[32]`, `ItemSlot.cs:386-394`); the
@@ -2709,6 +2722,7 @@ impl Player {
             prev_synced_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,
             void_lens_chest: crate::void_lens::LensTracker::default(),
+            disable_void_bag: -1,
             vault_favorites: [false; crate::bank::BANK_SLOTS],
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
@@ -3842,6 +3856,35 @@ impl Player {
         self.dead_time = 0;
         self.respawn_timer = 0;
         self.respawn();
+    }
+
+    /// `Player.LockNetSlot` (`Player.cs:23123-23133`): the quick-stack-to-
+    /// nearby-chests transfer locks each source slot before the `5` send
+    /// (`QuickStacking.SendQuickStackToNearbyChests:293`). A bank4 slot
+    /// (`slot >= Bank4_0`) arms `disableVoidBag = slot - Bank4_0` (the vault
+    /// open refuses while the transfer owns it); an inventory slot
+    /// (`slot < Bank4_0`) arms `inventoryChestStack[slot]` — the port has no
+    /// `inventoryChestStack` array (the quick-stack producer is unported), so
+    /// that half is a documented no-op. `PlayerItemSlotID.Bank4_0` is the
+    /// bank4 base in the C# slot-id space; the port passes the bank4-relative
+    /// index directly (the caller maps it). MP-only — no SP producer. W4-g56.
+    pub fn lock_net_slot(&mut self, bank4_slot: i32) {
+        // `:23125-23128` — the bank4 arm. The inventory arm (`:23131`) has no
+        // port state; the caller only ever locks bank4 slots for the vault.
+        self.disable_void_bag = bank4_slot;
+    }
+
+    /// The slot-5 echo clear (`MessageBuffer.cs:432-438`): the server's
+    /// `SyncItem` for a bank4 slot clears `disableVoidBag` when it matches the
+    /// locked slot (`netMode == 1`, `slot >= Bank4_0 && slot <
+    /// Loadout1_Armor_0`). `bank4_slot` is the bank4-relative index the echo
+    /// addresses. MP-only — the port's net glue calls this when the slot-sync
+    /// producer lands. W4-g56.
+    pub fn clear_void_bag_lock_on_echo(&mut self, bank4_slot: i32) {
+        // `:434-437` — `if (disableVoidBag == num26 - Bank4_0) disableVoidBag = -1`.
+        if self.disable_void_bag == bank4_slot {
+            self.disable_void_bag = -1;
+        }
     }
 
 /// `Main.TryRemovingBuff` (`Main.cs:43370-43389`): the buff bar's
