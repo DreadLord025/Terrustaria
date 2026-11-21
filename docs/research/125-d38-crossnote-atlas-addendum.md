@@ -1,9 +1,17 @@
 # 125 — d38 crossnote ADDENDUM to the atlas-repack plan (research/113)
 
-Status: 📣 published INPUT for `task/W4-d35-npc-kinds-71-140`'s ATLAS-REPACK
-phase (d35c, tips `519c8035`/`7d131be3` read 2026-11-21) and the d40b sheets
+Status: ✅ FINAL (2026-11-21) — published INPUT for
+`task/W4-d35-npc-kinds-71-140`'s ATLAS-REPACK phase, read through d35's
+FINAL tip `e5558b0a9` (research/113 §10-12 + Appendix B). §§1-5 below
+stand as the eager-form record (both-agree supersession, §6 aligns them
+with the lazy-load FINAL contract); §§6-10 are the FINAL phase (the
+lazy-load re-projection, the FindFrame status census, the bestiary
+unlock census, the 108-extend roster cross-ref, the FINAL witnesses). Branch:
+`task/W4-d38-npc-kinds-281-350` (FINAL phase, base `6f9dd02d`).
+Original crossnote status: 📣 published INPUT (d35c, tips
+`519c8035`/`7d131be3` read 2026-11-21) and the d40b sheets
 phase (`task/W4-d40-npc-kinds-421-490`, data-only tip `8fe1d6d3` read same
-day). Branch: `task/W4-d38-npc-kinds-281-350` (crossnote phase). Base:
+day). Base:
 `a725acb0` + d38's 35 packed sheets (`c096bac9`). Code-only mode: no
 cargo/tests run; every number measured by `tools/_d38_crossnote.js` (the
 `_d38_atlas_cumulative.js` harness: `tools/atlas_sim.js`'s real-dims LZX
@@ -166,3 +174,57 @@ censuses), not a deferral.
   byte-identical; tail in ENTRIES order.
 - `tools/_d38_crossnote.js` (RUN, passed): 8 scenarios × verify() +
   determinism, outputs committed.
+
+## 6. FINAL alignment: the lazy-load census (research/113 §10-12, d35 tip `e5558b0a9`)
+
+d35's ATLAS FINAL extension re-read this addendum at `6f9dd02d` (its §11:
+"d38c … Inventory-current: YES … no delta to the union list") and then
+measured the NPC-sheet lazy-load census (§10). **Both lanes agree on the
+eager-form verdicts above** — the BAF withdrawal, the boundary-split
+endorsement, the 8188-vs-8232 ledger reconciliation — and the lazy form
+does not contradict them, it re-partitions the INPUT:
+
+- **The C# contract** (113 §10.1-10.2, re-verified here at the cited
+  lines): ALL 697 `TextureAssets.Npc` register `DoNotLoad`
+  (`AssetInitializer.cs:127-129`); `Main.LoadNPC` (`Main.cs:59084-59090`)
+  fires per DRAWN NPC from `NPC.SetFrameSize` (`NPC.cs:66661-66663`) and
+  per bestiary-icon hover (`UnlockableNPCEntryIcon.cs:185`). The port's
+  eager `STATIC_SHEET_NAMES` NPC rows are a documented superset deviation.
+- **The union shrinks**: pulling the NPC corpus out of the merged union
+  drops it from 9478 skyline (2 pages) to **7059 (ONE page, 1133 px
+  headroom)**; the FINAL 424-name re-extraction's lazy form is 7162
+  (113 §10.3). d38's 35 sheets are among the 441 NPC rows that move.
+- **d38's own re-projection** (`tools/_d38_final_lazy.js`, RUN, 4
+  scenarios × verify() + skyline double-run determinism, outputs
+  `tools/_d38_final_lazy.json` / `.txt` committed):
+
+| scenario | sheets | padded area | area bound | skyline | maxrects BAF |
+|---|---|---|---|---|---|
+| E35: HEAD eager MINUS d38's 35 NPC rows | 9497 | 64.24 Mpx | 7847 | **8115 fits (77 headroom)** | 7956 (236) |
+| E35 + boot font | 9498 | 64.25 Mpx | 7848 | 8119 (73) | 7956 (236) |
+| L91: d38's 35 + d40's 56 forecast ALONE (the NPC-page slice) | 91 | 2.43 Mpx | 299 | **1554 fits (6638 headroom)** | 1554 (6638) |
+| L91 + boot font | 92 | 2.43 Mpx | 300 | 1554 (6638) | 1554 (6638) |
+
+  Reading: (a) E35 reproduces s10's pre-d38 baseline **8115 exactly** —
+  the 35 sheets' eager contribution was precisely the +121 that pushed
+  HEAD to 8236; under the lazy contract that overflow evaporates from
+  the union page. (b) The 35+56 two-wave NPC slice packs **1554 px on
+  its own page** — inside 113 §10.4's per-world budgets (fresh 1668 /
+  long-lived 2152 / bestiary 2566), i.e. d38's wave adds ~0.9 Mpx of the
+  ~15.5 Mpx long-lived set and d40's forecast ~1.5 Mpx; neither wave
+  threatens the one-page NPC budget. (c) The §1-3 overflow tables above
+  remain the correct EAGER-form record (what the merger sees if step 7
+  is skipped); under the FINAL §10.6 step-7 contract the d38 rows leave
+  `STATIC_SHEET_NAMES` and ride the per-world NPC page via
+  `texture_net_id` — d38's draw path already resolves every sheet by
+  name (§4a), so no draw-side change is needed on this branch.
+- **The bestiary superset keeps the atlas immutable** (113 §10.6): d38's
+  35 portrait slots (§4b, the 181→216 close) are exactly the ids the
+  bestiary-hover lazy load can reach; packing them at world load is the
+  documented superset, still one page. The 323 slot merger pin (§4b)
+  is unchanged by the lazy form — slots are a LOOKUP table, not atlas
+  input.
+- **d40b stays data-only** at `8fe1d6d3` (113 §11 re-confirms): the
+  56-id forecast stands verbatim; L91 above measures it as the NPC-page
+  slice, the dagger rows in 113's union table retire when d40b pushes.
+

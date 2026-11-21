@@ -1,0 +1,19 @@
+d38: 35 on HEAD | d40 forecast: 56 decodable, not on HEAD
+
+E35: HEAD eager MINUS d38 35 (lazy union, d38 rows out): 9497 sheets, padded 64.24 Mpx, area bound 7847 fits(345 headroom)
+  skyline (waste): 8115 fits(77 headroom) (det:true, verified)
+  maxrects BAF:    7956 fits(236 headroom) (verified)
+
+L91: the d38 35 + d40 56 NPC-page candidate ALONE: 91 sheets, padded 2.43 Mpx, area bound 299 fits(7893 headroom)
+  skyline (waste): 1554 fits(6638 headroom) (det:true, verified)
+  maxrects BAF:    1554 fits(6638 headroom) (verified)
+
+E35: HEAD eager MINUS d38 35 (lazy union, d38 rows out) + boot font: 9498 sheets, padded 64.25 Mpx, area bound 7848 fits(344 headroom)
+  skyline (waste): 8119 fits(73 headroom) (det:true, verified)
+  maxrects BAF:    7956 fits(236 headroom) (verified)
+
+L91: the d38 35 + d40 56 NPC-page candidate ALONE + boot font: 92 sheets, padded 2.43 Mpx, area bound 300 fits(7892 headroom)
+  skyline (waste): 1554 fits(6638 headroom) (det:true, verified)
+  maxrects BAF:    1554 fits(6638 headroom) (verified)
+
+wrote tools/_d38_final_lazy.json (4 rows)

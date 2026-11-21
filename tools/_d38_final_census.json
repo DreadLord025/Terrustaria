@@ -1,0 +1,1189 @@
+{
+ "kinds": {
+  "SlimeRibbonWhite": 333,
+  "SlimeRibbonYellow": 334,
+  "SlimeRibbonGreen": 335,
+  "SlimeRibbonRed": 336,
+  "BunnyXmas": 337,
+  "DemonEyeSpaceship": 318,
+  "SkeletonTopHat": 322,
+  "SkeletonAstonaut": 323,
+  "SkeletonAlien": 324,
+  "PumpkingBlade": 328,
+  "SlimeMasked": 302,
+  "BunnySlimed": 303,
+  "HoppinJack": 304,
+  "Ghost": 316,
+  "DemonEyeOwl": 317,
+  "BirdBlue": 297,
+  "BirdRed": 298,
+  "Squirrel": 299,
+  "Mouse": 300,
+  "Raven": 301,
+  "TacticalSkeleton": 292,
+  "SkeletonCommando": 293,
+  "AngryBonesBig": 294,
+  "AngryBonesBigMuscle": 295,
+  "AngryBonesBigHelmet": 296,
+  "DiabolistWhite": 286,
+  "BoneLee": 287,
+  "GiantCursedSkull": 289,
+  "Paladin": 290,
+  "SkeletonSniper": 291,
+  "RaggedCaster": 281,
+  "RaggedCasterOpenCoat": 282,
+  "Necromancer": 283,
+  "NecromancerArmored": 284,
+  "DiabolistRed": 285
+ },
+ "band": [
+  281,
+  337
+ ],
+ "band_holes": [
+  288,
+  305,
+  306,
+  307,
+  308,
+  309,
+  310,
+  311,
+  312,
+  313,
+  314,
+  315,
+  319,
+  320,
+  321,
+  325,
+  326,
+  327,
+  329,
+  330,
+  331,
+  332
+ ],
+ "entries": [
+  {
+   "kind": "SlimeRibbonWhite",
+   "credit_id": "SlimeRibbonWhite",
+   "net_id": 333,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SlimeRibbonYellow",
+   "credit_id": "SlimeRibbonYellow",
+   "net_id": 334,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SlimeRibbonGreen",
+   "credit_id": "SlimeRibbonGreen",
+   "net_id": 335,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SlimeRibbonRed",
+   "credit_id": "SlimeRibbonRed",
+   "net_id": 336,
+   "quick_unlock": false
+  },
+  {
+   "kind": "BunnyXmas",
+   "credit_id": "BunnyXmas",
+   "net_id": 337,
+   "quick_unlock": false
+  },
+  {
+   "kind": "DemonEyeSpaceship",
+   "credit_id": "DemonEyeSpaceship",
+   "net_id": 318,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SkeletonTopHat",
+   "credit_id": "SkeletonTopHat",
+   "net_id": 322,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SkeletonAstonaut",
+   "credit_id": "SkeletonAstonaut",
+   "net_id": 323,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SkeletonAlien",
+   "credit_id": "SkeletonAlien",
+   "net_id": 324,
+   "quick_unlock": false
+  },
+  {
+   "kind": "PumpkingBlade",
+   "credit_id": "PumpkingBlade",
+   "net_id": 328,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SlimeMasked",
+   "credit_id": "SlimeMasked",
+   "net_id": 302,
+   "quick_unlock": false
+  },
+  {
+   "kind": "BunnySlimed",
+   "credit_id": "BunnySlimed",
+   "net_id": 303,
+   "quick_unlock": false
+  },
+  {
+   "kind": "HoppinJack",
+   "credit_id": "HoppinJack",
+   "net_id": 304,
+   "quick_unlock": false
+  },
+  {
+   "kind": "Ghost",
+   "credit_id": "Ghost",
+   "net_id": 316,
+   "quick_unlock": false
+  },
+  {
+   "kind": "DemonEyeOwl",
+   "credit_id": "DemonEyeOwl",
+   "net_id": 317,
+   "quick_unlock": false
+  },
+  {
+   "kind": "BirdBlue",
+   "credit_id": "BirdBlue",
+   "net_id": 297,
+   "quick_unlock": false
+  },
+  {
+   "kind": "BirdRed",
+   "credit_id": "BirdRed",
+   "net_id": 298,
+   "quick_unlock": false
+  },
+  {
+   "kind": "Squirrel",
+   "credit_id": "Squirrel",
+   "net_id": 299,
+   "quick_unlock": false
+  },
+  {
+   "kind": "Mouse",
+   "credit_id": "Mouse",
+   "net_id": 300,
+   "quick_unlock": false
+  },
+  {
+   "kind": "Raven",
+   "credit_id": "Raven",
+   "net_id": 301,
+   "quick_unlock": false
+  },
+  {
+   "kind": "TacticalSkeleton",
+   "credit_id": "TacticalSkeleton",
+   "net_id": 292,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SkeletonCommando",
+   "credit_id": "SkeletonCommando",
+   "net_id": 293,
+   "quick_unlock": false
+  },
+  {
+   "kind": "AngryBonesBig",
+   "credit_id": "AngryBonesBig",
+   "net_id": 294,
+   "quick_unlock": false
+  },
+  {
+   "kind": "AngryBonesBigMuscle",
+   "credit_id": "AngryBonesBigMuscle",
+   "net_id": 295,
+   "quick_unlock": false
+  },
+  {
+   "kind": "AngryBonesBigHelmet",
+   "credit_id": "AngryBonesBigHelmet",
+   "net_id": 296,
+   "quick_unlock": false
+  },
+  {
+   "kind": "DiabolistWhite",
+   "credit_id": "DiabolistWhite",
+   "net_id": 286,
+   "quick_unlock": false
+  },
+  {
+   "kind": "BoneLee",
+   "credit_id": "BoneLee",
+   "net_id": 287,
+   "quick_unlock": false
+  },
+  {
+   "kind": "GiantCursedSkull",
+   "credit_id": "GiantCursedSkull",
+   "net_id": 289,
+   "quick_unlock": false
+  },
+  {
+   "kind": "Paladin",
+   "credit_id": "Paladin",
+   "net_id": 290,
+   "quick_unlock": false
+  },
+  {
+   "kind": "SkeletonSniper",
+   "credit_id": "SkeletonSniper",
+   "net_id": 291,
+   "quick_unlock": false
+  },
+  {
+   "kind": "RaggedCaster",
+   "credit_id": "RaggedCaster",
+   "net_id": 281,
+   "quick_unlock": false
+  },
+  {
+   "kind": "RaggedCasterOpenCoat",
+   "credit_id": "RaggedCasterOpenCoat",
+   "net_id": 282,
+   "quick_unlock": false
+  },
+  {
+   "kind": "Necromancer",
+   "credit_id": "Necromancer",
+   "net_id": 283,
+   "quick_unlock": false
+  },
+  {
+   "kind": "NecromancerArmored",
+   "credit_id": "NecromancerArmored",
+   "net_id": 284,
+   "quick_unlock": false
+  },
+  {
+   "kind": "DiabolistRed",
+   "credit_id": "DiabolistRed",
+   "net_id": 285,
+   "quick_unlock": false
+  }
+ ],
+ "entries_count": 35,
+ "cs_id": {
+  "SlimeRibbonWhite": 333,
+  "SlimeRibbonYellow": 334,
+  "SlimeRibbonGreen": 335,
+  "SlimeRibbonRed": 336,
+  "BunnyXmas": 337,
+  "DemonEyeSpaceship": 318,
+  "SkeletonTopHat": 322,
+  "SkeletonAstonaut": 323,
+  "SkeletonAlien": 324,
+  "PumpkingBlade": 328,
+  "SlimeMasked": 302,
+  "BunnySlimed": 303,
+  "HoppinJack": 304,
+  "Ghost": 316,
+  "DemonEyeOwl": 317,
+  "BirdBlue": 297,
+  "BirdRed": 298,
+  "Squirrel": 299,
+  "Mouse": 300,
+  "Raven": 301,
+  "TacticalSkeleton": 292,
+  "SkeletonCommando": 293,
+  "AngryBonesBig": 294,
+  "AngryBonesBigMuscle": 295,
+  "AngryBonesBigHelmet": 296,
+  "DiabolistWhite": 286,
+  "BoneLee": 287,
+  "GiantCursedSkull": 289,
+  "Paladin": 290,
+  "SkeletonSniper": 291,
+  "RaggedCaster": 281,
+  "RaggedCasterOpenCoat": 282,
+  "Necromancer": 283,
+  "NecromancerArmored": 284,
+  "DiabolistRed": 285
+ },
+ "cs_id_fallback_kinds": [
+  "AngryBonesBig",
+  "AngryBonesBigHelmet",
+  "AngryBonesBigMuscle",
+  "BirdBlue",
+  "BirdRed",
+  "BoneLee",
+  "BunnySlimed",
+  "BunnyXmas",
+  "DemonEyeOwl",
+  "DemonEyeSpaceship",
+  "DiabolistRed",
+  "DiabolistWhite",
+  "Ghost",
+  "GiantCursedSkull",
+  "HoppinJack",
+  "Mouse",
+  "Necromancer",
+  "NecromancerArmored",
+  "Paladin",
+  "PumpkingBlade",
+  "RaggedCaster",
+  "RaggedCasterOpenCoat",
+  "Raven",
+  "SkeletonAlien",
+  "SkeletonAstonaut",
+  "SkeletonCommando",
+  "SkeletonSniper",
+  "SkeletonTopHat",
+  "SlimeMasked",
+  "SlimeRibbonGreen",
+  "SlimeRibbonRed",
+  "SlimeRibbonWhite",
+  "SlimeRibbonYellow",
+  "Squirrel",
+  "TacticalSkeleton"
+ ],
+ "protocol_equals_vanilla": true,
+ "setdefaults": {
+  "SlimeRibbonWhite": {
+   "id": 333,
+   "setdefaults_lines": [
+    13230,
+    13241
+   ],
+   "lifeMax": 25.0,
+   "damage": 7.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 1.0
+  },
+  "SlimeRibbonYellow": {
+   "id": 334,
+   "setdefaults_lines": [
+    13242,
+    13254
+   ],
+   "lifeMax": 23.0,
+   "damage": 6.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 1.0
+  },
+  "SlimeRibbonGreen": {
+   "id": 335,
+   "setdefaults_lines": [
+    13255,
+    13267
+   ],
+   "lifeMax": 29.0,
+   "damage": 8.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 1.0
+  },
+  "SlimeRibbonRed": {
+   "id": 336,
+   "setdefaults_lines": [
+    13268,
+    13280
+   ],
+   "lifeMax": 22.0,
+   "damage": 5.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 1.0
+  },
+  "BunnyXmas": {
+   "id": 337,
+   "setdefaults_lines": [
+    9336,
+    9347
+   ],
+   "lifeMax": 5.0,
+   "damage": 0.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 2019.0,
+   "noGravity": false,
+   "aiStyle": 7.0
+  },
+  "DemonEyeSpaceship": {
+   "id": 318,
+   "setdefaults_lines": [
+    13020,
+    13032
+   ],
+   "lifeMax": 60.0,
+   "damage": 20.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 2.0
+  },
+  "SkeletonTopHat": {
+   "id": 322,
+   "setdefaults_lines": [
+    13075,
+    13087
+   ],
+   "lifeMax": 115.0,
+   "damage": 23.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "SkeletonAstonaut": {
+   "id": 323,
+   "setdefaults_lines": [
+    13088,
+    13100
+   ],
+   "lifeMax": 65.0,
+   "damage": 18.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "SkeletonAlien": {
+   "id": 324,
+   "setdefaults_lines": [
+    13101,
+    13114
+   ],
+   "lifeMax": 70.0,
+   "damage": 22.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "PumpkingBlade": {
+   "id": 328,
+   "setdefaults_lines": [
+    13158,
+    13174
+   ],
+   "lifeMax": 5000.0,
+   "damage": 65.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": true,
+   "aiStyle": 59.0
+  },
+  "SlimeMasked": {
+   "id": 302,
+   "setdefaults_lines": [
+    12902,
+    12913
+   ],
+   "lifeMax": 25.0,
+   "damage": 7.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 1.0
+  },
+  "BunnySlimed": {
+   "id": 303,
+   "setdefaults_lines": [
+    9336,
+    9347
+   ],
+   "lifeMax": 5.0,
+   "damage": 0.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 2019.0,
+   "noGravity": false,
+   "aiStyle": 7.0
+  },
+  "HoppinJack": {
+   "id": 304,
+   "setdefaults_lines": [
+    12914,
+    12928
+   ],
+   "lifeMax": 175.0,
+   "damage": 80.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 1.0
+  },
+  "Ghost": {
+   "id": 316,
+   "setdefaults_lines": [
+    12991,
+    13006
+   ],
+   "lifeMax": 50.0,
+   "damage": 15.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": true,
+   "aiStyle": 22.0
+  },
+  "DemonEyeOwl": {
+   "id": 317,
+   "setdefaults_lines": [
+    13007,
+    13019
+   ],
+   "lifeMax": 75.0,
+   "damage": 16.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 2.0
+  },
+  "BirdBlue": {
+   "id": 297,
+   "setdefaults_lines": [
+    9747,
+    9765
+   ],
+   "lifeMax": 5.0,
+   "damage": 0.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 2016.0,
+   "noGravity": false,
+   "aiStyle": 24.0
+  },
+  "BirdRed": {
+   "id": 298,
+   "setdefaults_lines": [
+    9747,
+    9771
+   ],
+   "lifeMax": 5.0,
+   "damage": 0.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 2017.0,
+   "noGravity": false,
+   "aiStyle": 24.0
+  },
+  "Squirrel": {
+   "id": 299,
+   "setdefaults_lines": [
+    12864,
+    12875
+   ],
+   "lifeMax": 5.0,
+   "damage": 0.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 2018.0,
+   "noGravity": false,
+   "aiStyle": 7.0
+  },
+  "Mouse": {
+   "id": 300,
+   "setdefaults_lines": [
+    12876,
+    12888
+   ],
+   "lifeMax": 5.0,
+   "damage": 0.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 2003.0,
+   "noGravity": false,
+   "aiStyle": 7.0
+  },
+  "Raven": {
+   "id": 301,
+   "setdefaults_lines": [
+    12889,
+    12901
+   ],
+   "lifeMax": 35.0,
+   "damage": 12.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 17.0
+  },
+  "TacticalSkeleton": {
+   "id": 292,
+   "setdefaults_lines": [
+    12797,
+    12810
+   ],
+   "lifeMax": 400.0,
+   "damage": 60.0,
+   "rarity": 1.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "SkeletonCommando": {
+   "id": 293,
+   "setdefaults_lines": [
+    12811,
+    12824
+   ],
+   "lifeMax": 400.0,
+   "damage": 60.0,
+   "rarity": 1.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "AngryBonesBig": {
+   "id": 294,
+   "setdefaults_lines": [
+    12825,
+    12837
+   ],
+   "lifeMax": 70.0,
+   "damage": 34.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "AngryBonesBigMuscle": {
+   "id": 295,
+   "setdefaults_lines": [
+    12838,
+    12850
+   ],
+   "lifeMax": 70.0,
+   "damage": 28.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "AngryBonesBigHelmet": {
+   "id": 296,
+   "setdefaults_lines": [
+    12851,
+    12863
+   ],
+   "lifeMax": 120.0,
+   "damage": 24.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "DiabolistWhite": {
+   "id": 286,
+   "setdefaults_lines": [
+    12710,
+    12723
+   ],
+   "lifeMax": 250.0,
+   "damage": 60.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 8.0
+  },
+  "BoneLee": {
+   "id": 287,
+   "setdefaults_lines": [
+    12724,
+    12737
+   ],
+   "lifeMax": 1000.0,
+   "damage": 90.0,
+   "rarity": 1.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "GiantCursedSkull": {
+   "id": 289,
+   "setdefaults_lines": [
+    12753,
+    12768
+   ],
+   "lifeMax": 400.0,
+   "damage": 60.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": true,
+   "aiStyle": 10.0
+  },
+  "Paladin": {
+   "id": 290,
+   "setdefaults_lines": [
+    12769,
+    12782
+   ],
+   "lifeMax": 5000.0,
+   "damage": 100.0,
+   "rarity": 2.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "SkeletonSniper": {
+   "id": 291,
+   "setdefaults_lines": [
+    12783,
+    12796
+   ],
+   "lifeMax": 400.0,
+   "damage": 60.0,
+   "rarity": 1.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 3.0
+  },
+  "RaggedCaster": {
+   "id": 281,
+   "setdefaults_lines": [
+    12640,
+    12653
+   ],
+   "lifeMax": 400.0,
+   "damage": 40.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 8.0
+  },
+  "RaggedCasterOpenCoat": {
+   "id": 282,
+   "setdefaults_lines": [
+    12654,
+    12667
+   ],
+   "lifeMax": 450.0,
+   "damage": 35.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 8.0
+  },
+  "Necromancer": {
+   "id": 283,
+   "setdefaults_lines": [
+    12668,
+    12681
+   ],
+   "lifeMax": 300.0,
+   "damage": 50.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 8.0
+  },
+  "NecromancerArmored": {
+   "id": 284,
+   "setdefaults_lines": [
+    12682,
+    12695
+   ],
+   "lifeMax": 450.0,
+   "damage": 35.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 8.0
+  },
+  "DiabolistRed": {
+   "id": 285,
+   "setdefaults_lines": [
+    12696,
+    12709
+   ],
+   "lifeMax": 200.0,
+   "damage": 50.0,
+   "rarity": 0.0,
+   "boss": false,
+   "townNPC": false,
+   "catchItem": 0.0,
+   "noGravity": false,
+   "aiStyle": 8.0
+  }
+ },
+ "critters": [
+  "BunnyXmas",
+  "BunnySlimed",
+  "BirdBlue",
+  "BirdRed",
+  "Squirrel",
+  "Mouse"
+ ],
+ "rare_spawns": {
+  "TacticalSkeleton": 1.0,
+  "SkeletonCommando": 1.0,
+  "BoneLee": 1.0,
+  "Paladin": 2.0,
+  "SkeletonSniper": 1.0
+ },
+ "bosses": [],
+ "findframe_switch_range": [
+  66705,
+  77371
+ ],
+ "findframe_cases": {
+  "SlimeRibbonWhite": [
+   70814
+  ],
+  "SlimeRibbonYellow": [
+   70815
+  ],
+  "SlimeRibbonGreen": [
+   70816
+  ],
+  "SlimeRibbonRed": [
+   70817
+  ],
+  "BunnyXmas": [
+   76854
+  ],
+  "DemonEyeSpaceship": [
+   74004
+  ],
+  "SkeletonTopHat": [
+   68599
+  ],
+  "SkeletonAstonaut": [
+   68600
+  ],
+  "SkeletonAlien": [
+   68601
+  ],
+  "PumpkingBlade": [],
+  "SlimeMasked": [
+   70812
+  ],
+  "BunnySlimed": [
+   76853
+  ],
+  "HoppinJack": [
+   70813
+  ],
+  "Ghost": [
+   74834
+  ],
+  "DemonEyeOwl": [
+   74003
+  ],
+  "BirdBlue": [
+   73629
+  ],
+  "BirdRed": [
+   73630
+  ],
+  "Squirrel": [
+   76458
+  ],
+  "Mouse": [
+   76513
+  ],
+  "Raven": [
+   73559
+  ],
+  "TacticalSkeleton": [
+   76140
+  ],
+  "SkeletonCommando": [
+   76021
+  ],
+  "AngryBonesBig": [
+   68591
+  ],
+  "AngryBonesBigMuscle": [
+   68592
+  ],
+  "AngryBonesBigHelmet": [
+   68593
+  ],
+  "DiabolistWhite": [
+   77028
+  ],
+  "BoneLee": [
+   68590
+  ],
+  "GiantCursedSkull": [
+   72652
+  ],
+  "Paladin": [
+   75963
+  ],
+  "SkeletonSniper": [
+   76139
+  ],
+  "RaggedCaster": [
+   77023
+  ],
+  "RaggedCasterOpenCoat": [
+   77024
+  ],
+  "Necromancer": [
+   77025
+  ],
+  "NecromancerArmored": [
+   77026
+  ],
+  "DiabolistRed": [
+   77027
+  ]
+ },
+ "findframe_covered": [
+  "AngryBonesBig",
+  "AngryBonesBigHelmet",
+  "AngryBonesBigMuscle",
+  "BirdBlue",
+  "BirdRed",
+  "BoneLee",
+  "BunnySlimed",
+  "BunnyXmas",
+  "DemonEyeOwl",
+  "DemonEyeSpaceship",
+  "DiabolistRed",
+  "DiabolistWhite",
+  "Ghost",
+  "GiantCursedSkull",
+  "HoppinJack",
+  "Mouse",
+  "Necromancer",
+  "NecromancerArmored",
+  "Paladin",
+  "RaggedCaster",
+  "RaggedCasterOpenCoat",
+  "Raven",
+  "SkeletonAlien",
+  "SkeletonAstonaut",
+  "SkeletonCommando",
+  "SkeletonSniper",
+  "SkeletonTopHat",
+  "SlimeMasked",
+  "SlimeRibbonGreen",
+  "SlimeRibbonRed",
+  "SlimeRibbonWhite",
+  "SlimeRibbonYellow",
+  "Squirrel",
+  "TacticalSkeleton"
+ ],
+ "findframe_nocase": [
+  "PumpkingBlade"
+ ],
+ "npcFrameCount": {
+  "333": {
+   "count": 2,
+   "line": 67117
+  },
+  "334": {
+   "count": 2,
+   "line": 67117
+  },
+  "335": {
+   "count": 2,
+   "line": 67117
+  },
+  "336": {
+   "count": 2,
+   "line": 67117
+  },
+  "337": {
+   "count": 7,
+   "line": 67117
+  },
+  "318": {
+   "count": 2,
+   "line": 67115
+  },
+  "322": {
+   "count": 16,
+   "line": 67116
+  },
+  "323": {
+   "count": 15,
+   "line": 67116
+  },
+  "324": {
+   "count": 16,
+   "line": 67116
+  },
+  "328": {
+   "count": 1,
+   "line": 67116
+  },
+  "302": {
+   "count": 2,
+   "line": 67114
+  },
+  "303": {
+   "count": 7,
+   "line": 67114
+  },
+  "304": {
+   "count": 2,
+   "line": 67114
+  },
+  "316": {
+   "count": 4,
+   "line": 67115
+  },
+  "317": {
+   "count": 2,
+   "line": 67115
+  },
+  "297": {
+   "count": 5,
+   "line": 67113
+  },
+  "298": {
+   "count": 5,
+   "line": 67113
+  },
+  "299": {
+   "count": 6,
+   "line": 67113
+  },
+  "300": {
+   "count": 6,
+   "line": 67114
+  },
+  "301": {
+   "count": 5,
+   "line": 67114
+  },
+  "292": {
+   "count": 21,
+   "line": 67113
+  },
+  "293": {
+   "count": 20,
+   "line": 67113
+  },
+  "294": {
+   "count": 16,
+   "line": 67113
+  },
+  "295": {
+   "count": 15,
+   "line": 67113
+  },
+  "296": {
+   "count": 15,
+   "line": 67113
+  },
+  "286": {
+   "count": 3,
+   "line": 67112
+  },
+  "287": {
+   "count": 16,
+   "line": 67112
+  },
+  "289": {
+   "count": 6,
+   "line": 67112
+  },
+  "290": {
+   "count": 12,
+   "line": 67113
+  },
+  "291": {
+   "count": 21,
+   "line": 67113
+  },
+  "281": {
+   "count": 3,
+   "line": 67112
+  },
+  "282": {
+   "count": 3,
+   "line": 67112
+  },
+  "283": {
+   "count": 3,
+   "line": 67112
+  },
+  "284": {
+   "count": 3,
+   "line": 67112
+  },
+  "285": {
+   "count": 3,
+   "line": 67112
+  }
+ },
+ "npcFrameCount_literal_start": 67082
+}

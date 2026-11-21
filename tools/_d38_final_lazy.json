@@ -1,0 +1,38 @@
+[
+ {
+  "scenario": "E35: HEAD eager MINUS d38 35 (lazy union, d38 rows out)",
+  "sheets": 9497,
+  "areaMpx": 64.24,
+  "areaBound": 7847,
+  "skyline": 8115,
+  "maxrects": 7956,
+  "deterministic": true
+ },
+ {
+  "scenario": "L91: the d38 35 + d40 56 NPC-page candidate ALONE",
+  "sheets": 91,
+  "areaMpx": 2.43,
+  "areaBound": 299,
+  "skyline": 1554,
+  "maxrects": 1554,
+  "deterministic": true
+ },
+ {
+  "scenario": "E35: HEAD eager MINUS d38 35 (lazy union, d38 rows out) + boot font",
+  "sheets": 9498,
+  "areaMpx": 64.25,
+  "areaBound": 7848,
+  "skyline": 8119,
+  "maxrects": 7956,
+  "deterministic": true
+ },
+ {
+  "scenario": "L91: the d38 35 + d40 56 NPC-page candidate ALONE + boot font",
+  "sheets": 92,
+  "areaMpx": 2.43,
+  "areaBound": 300,
+  "skyline": 1554,
+  "maxrects": 1554,
+  "deterministic": true
+ }
+]
