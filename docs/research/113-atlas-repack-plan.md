@@ -1255,6 +1255,144 @@ realistic set still fits ONE own page with ≥5600 px headroom.** The
 realistic total budget is unchanged: 3 pages (~533-568 MB) / 4 adversarial
 (~647-660 MB), §15.
 
+## 15. The FINAL acceptance budgets (per-page VRAM caps + the min-spec)
+
+§12's acceptance numbers, re-measured on the 562-name union and extended
+with the GPU-limit check the brief asks for: is the ~530 MB realistic
+atlas OK against the GPU limit, and what is the minimum spec? Measured by
+`tools/_d35_retire_measure.js` → `_d35_retire_gpu.json` (the per-page
+caps + the total-VRAM stack) and `tools/_d35_font_vram.js` →
+`_d35_font_vram.json` (the font-array layer count).
+
+### 15.1 The per-page VRAM caps (the strict-GPU bound is per-texture)
+
+The atlas is a D2 ARRAY of RGBA8 pages (4 B/px). The strict-GPU limit is
+`max_texture_dimension_2d = 8192` (wgpu `Limits`, the target adapters) —
+a PER-TEXTURE dimension bound, so each page must be ≤8192×8192 =
+**268.4 MB**. The boundary-split form guarantees every page ≤8192 px
+tall (§3 step 1), so every page is under the cap BY CONSTRUCTION:
+
+| form | pages (px) | per-page MB | max page | under 268.4 cap? |
+|---|---|---|---|---|
+| lazy union (504) | 7140 | 234.0 | 234.0 | ✓ |
+| lazy union (worst) | 7305 | 239.4 | 239.4 | ✓ |
+| seed-42 bg page | 7448 | 244.1 | 244.1 | ✓ |
+| worst bg pages | 8135 / 2138 | 266.6 / 70.1 | 266.6 | ✓ |
+| NPC own page (bestiary) | 2566 | 84.1 | 84.1 | ✓ |
+| eager union page 0 | 8192 | 268.4 | 268.4 | ✓ (at the cap) |
+
+**Every page of every realistic/adversarial form is under the per-texture
+cap.** The eager union's page 0 sits AT 268.4 MB (8192 px pinned); the
+lazy union's single page is 234-239 MB (the headroom the lazy form buys).
+The worst bg page (8135 px = 266.6 MB) is the largest realistic page, still
+1.8 MB under the cap.
+
+### 15.2 The GPU-limit check: is ~530 MB OK?
+
+**wgpu exposes NO total-VRAM limit.** `Limits` carries
+`max_texture_dimension_2d` (8192), `max_texture_array_layers` (256), and
+per-binding size bounds — but no aggregate memory cap. The total atlas
+allocation is a budget the DRIVER must satisfy, not a hard API limit. So
+"530 MB OK?" has two answers:
+
+1. **Per-texture: YES, unconditionally.** Every page ≤8192² (268.4 MB),
+   the array layer count ≤4 (well under `max_texture_array_layers` 256).
+   No single texture exceeds any wgpu limit. The atlas binds as one
+   `texture_2d_array` with ≤4 layers — valid on every adapter that
+   supports 8192² textures at all.
+2. **Total allocation: YES on the target spec, with headroom.** The
+   realistic atlas is 533-568 MB; the adversarial worst is 647-660 MB.
+   Adding the font array (268.4 MB, §15.3) and the render-target family
+   (127.1 MB, §15.3) gives **928-963 MB realistic / 1042-1056 MB
+   adversarial** of GPU texture memory. A 2 GB adapter (the min-spec,
+   §15.4) holds this with ~1 GB spare; a 1 GB adapter does NOT (the
+   realistic stack alone is ~930 MB before the backbuffer/depth/misc).
+
+**The verdict**: the ~530 MB atlas is OK — it is not the binding
+constraint. The binding constraint is the TOTAL texture stack (~930 MB
+realistic), which sets the min-spec at 2 GB VRAM (§15.4). The lazy form's
+win is real but modest at the total level: it saves ~31 MB vs eager
+(533 vs 564 realistic) by freeing the NPC strips from page 0; the page
+COUNT is unchanged (3 realistic / 4 adversarial).
+
+### 15.3 The full GPU texture stack (atlas + font array + targets)
+
+The atlas is not the only GPU texture allocation. The complete stack:
+
+| component | size | source |
+|---|---|---|
+| main atlas (RGBA8 D2 array) | 533-660 MB | §15.1, the measured pages |
+| **font array (BC2 D2 array)** | **268.4 MB** | `font_atlas.rs`: 4 × 8192² layers, 1 B/px (BC2). Measured by `_d35_font_vram.js`: the five retail fonts ship 797 pages (159/159/159/160/160, matching the Rust pins), shelf-packed into **4 layers** |
+| render-target family (RGBA8) | 127.1 MB | `targets.rs`: 7 world-layer `WorldSceneLayerTarget` at 2304×1584 (1920×1200 view + 192 `offScreenRange` each side, HiDef) + 3 full-screen 1920×1080 |
+| **TOTAL realistic** | **928-963 MB** | atlas 533-568 + font 268.4 + targets 127.1 |
+| **TOTAL adversarial** | **1042-1056 MB** | atlas 647-660 + font 268.4 + targets 127.1 |
+
+The font array is a FIXED 268.4 MB cost (the retail fonts are
+locale-independent, always loaded — `load_fonts` `assets.rs:1627`). It is
+BC2 (1 B/px), NOT RGBA8 — the port uploads the shipped compressed surfaces
+verbatim like XNA (`font_atlas.rs:1-10`, the `Bc2RgbaUnormSrgb` sampling),
+so it is 4× cheaper than a decompressed font atlas would be (~900 MB). The
+render-target family is the d69/S1-G-13 `targets.rs` layout (the g72
+underworld screenTarget escape composites into this family, §9.1, adding
+no new allocation).
+
+### 15.4 The min-spec (the documented recommendation)
+
+**Minimum GPU: 2 GB VRAM, `max_texture_dimension_2d` ≥ 8192,
+`max_texture_array_layers` ≥ 4.** Reasoning:
+
+- The realistic texture stack is ~930 MB (§15.3); the adversarial worst is
+  ~1056 MB. A 2 GB adapter holds the worst case with ~990 MB spare for the
+  backbuffer, depth, the post-process targets, and driver overhead.
+- A 1 GB adapter FAILS the realistic stack (~930 MB + backbuffer/misc
+  exceeds 1 GB). It is below the min-spec.
+- The 8192² dimension bound is the strict-GPU floor (§1: the target
+  adapters' `max_texture_dimension_2d`); an adapter below 8192 cannot hold
+  ANY page and is unsupported (the atlas would need a smaller page width,
+  a different contract).
+- The array-layer bound (≥4) is trivially met (every modern adapter
+  supports ≥256 layers); it is listed for completeness.
+
+**Recommended GPU: 4 GB VRAM** — the adversarial stack (~1056 MB) plus a
+comfortable margin for higher resolutions (the render-target family scales
+with the backbuffer; a 4K backbuffer raises the 3 full-screen targets from
+1920×1080 to 3840×2160, +~75 MB) and future wave content. The page-0
+headroom (≥1000 px lazy, §12) absorbs the rest of wave 4 without a new
+page; the VRAM headroom absorbs the resolution scaling.
+
+**This is a RECOMMENDATION, not a hard gate**: wgpu does not expose a
+total-VRAM limit, so the port cannot refuse to run on a 1 GB adapter at
+the API level — the allocation would simply fail (or the driver would
+spill to system memory, a performance cliff). The merger should log the
+atlas + font + target budget at boot (`log_atlas_diagnostics`,
+`app/mod.rs`) and warn if the adapter's reported budget is below the
+realistic stack. The min-spec is the documented floor for a playable
+experience, not an API enforced bound.
+
+### 15.5 The acceptance numbers (the merger's gate, FINAL)
+
+Restating §12's gate on the 562-name union, with the VRAM caps added:
+
+- **Page count**: 3 realistic (lazy union 7140-7305 + bg 7448 + NPC
+  1668-2566), 4 adversarial (worst bg 8135+2138). UNCHANGED from §12.
+- **Per-page**: every page ≤8192 px (≤268.4 MB), the boundary-split
+  guarantee. The largest realistic page is the worst bg page (8135 px =
+  266.6 MB).
+- **Atlas VRAM**: ~533-568 MB realistic, ~647-660 MB adversarial.
+- **Total texture VRAM**: ~928-963 MB realistic, ~1042-1056 MB
+  adversarial (atlas + 268.4 MB font array + 127.1 MB targets).
+- **Page-0 headroom**: ≥1000 px lazy (7140 vs 8192 = 1052 px) for the rest
+  of wave 4.
+- **Min-spec**: 2 GB VRAM / 8192² / ≥4 array layers (§15.4); recommended
+  4 GB.
+- **Runtime uniform**: `MAIN_PAGE_COUNT = atlas.pages.len()` at every
+  font-offset site (the `push_font_glyph` chokepoint, `sprite.rs:1088`) —
+  REQUIRED, the count varies by world (§13.3 step 7d).
+- **Own-page thresholds**: a per-world set that ever exceeds 8192 recurses
+  the boundary split (the harness's `boundaryNPages`); the measured sets
+  are ≤2566 (NPC) / ≤8135 (bg), one page each today, but the recursion is
+  the contract, not the measurement.
+
 ## Appendix A - the original 407-name union list (priority order: padded area desc)
 
 Legend: branch slugs omit the W4- prefix; dagger = d40 FORECAST (data-only branch, sheets phase pending); double-dagger = d35 DEFERRED (admitted by the repack). Generated by tools/_d35_union_table.py from the REAL .xnb dims. **This is the §1-9 measurement base (26 branches / 339 pushed + 56 forecast + 12 deferred). The FINAL 490-name list lives in `tools/_d35_union_table.md` (regenerated); the 83-name delta is Appendix B below.**
