@@ -29,7 +29,7 @@
 //! `Main.rand` draw is a documented skip here.
 
 use crate::app::App;
-use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, SplashArm, SplashDust, StonedDust, WingGlideDust};
+use crate::player::{DashDust, DoubleJumpDust, ExtraJump, FastRunArm, FastRunDust, FloorDust, JumpDust, SplashArm, SplashDust, StonedDust, WallDust, WingGlideDust};
 use glam::Vec2;
 use tr_core::particles::Color;
 
@@ -937,6 +937,35 @@ fn dj_blizzard(app: &mut App, b: &DoubleJumpDust) {
 }
 
 // ---- W4-f3: the petrify-transition burst (`Player.cs:25226-25233`) ----------
+
+// ---- W4-f3: the wall-climb/wallslide dust (`Player.cs:21654-21826`) ---------
+
+/// Drain the wall-climb/wallslide puff (`Player.WallClimbMovement`
+/// `Player.cs:21654`/`:21678`/`:21729`, `WallslideMovement` `:21790`/`:21826` —
+/// all five sites share the same chain). One type-31 `Dust.NewDust`, box 8×8
+/// at the wall-side body corner `(x + width/2 + (width/2 - 4)*slideDir,
+/// y + height/2 + (height/2 - 4)*gravDir)` (gravDir 1). Post-arms in source
+/// order: `slideDir < 0 → position.X -= 10`, the `gravDir < 0 → Y -= 12` fold
+/// (dead, gravDir 1), `velocity *= 0.1`, `scale *= 1.2`, `noGravity`, the
+/// dropped `cShoe` shader, then the Rat's `scale *= 0.5` (`flag`). The
+/// suppression probe (the Rat climbing into a ceiling) ran on the tick side.
+pub(crate) fn drain_wall_dust(app: &mut App, b: WallDust) {
+    let pos = Vec2::new(
+        b.x + b.width / 2.0 + (b.width / 2.0 - 4.0) * b.slide_dir as f32,
+        b.y + b.height / 2.0 + (b.height / 2.0 - 4.0),
+    );
+    let idx = nd(app, pos, 8, 8, 31, 0.0, 0.0, 0, Color::default(), 1.0);
+    let d = app.dust.slot_mut(idx);
+    if b.slide_dir < 0 {
+        d.position.x -= 10.0;
+    }
+    d.velocity *= 0.1;
+    d.scale *= 1.2;
+    d.no_gravity = true;
+    if b.rat_mount {
+        d.scale *= 0.5;
+    }
+}
 
 /// Drain the petrify-transition burst (`Player.cs:25226-25233`): 20 type-1
 /// puffs over the player box, each followed by a `Next(2)` that sets
@@ -2737,6 +2766,68 @@ mod tests {
             vel.x *= 2.5;
             assert_eq!(d.velocity, vel);
         }
+        assert_eq!(stream_of(&mut app), rng);
+    }
+
+    // ---- W4-f3: wall-climb/wallslide dust witnesses -------------------------
+
+    fn wall_burst(slide_dir: i32, rat_mount: bool) -> WallDust {
+        WallDust {
+            x: 300.0,
+            y: 600.0,
+            width: 20.0,
+            height: 42.0,
+            slide_dir,
+            rat_mount,
+        }
+    }
+
+    /// `:21654`/`:21729`/`:21826` — the wall puff: one type-31, box 8×8 at the
+    /// wall-side corner, `velocity *= 0.1`, `scale *= 1.2`, `noGravity`. The
+    /// right wall (slideDir 1) keeps the X; 6 draws, no post-roll.
+    #[test]
+    fn w4_f3_the_wall_puff_mirrors_the_type_31_chain() {
+        let mut app = rig(0x5EED);
+        let b = wall_burst(1, false);
+        drain_wall_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let d = slots[0];
+        assert_eq!(d.dust_type, 31);
+        assert!(d.no_gravity);
+        let mut rng = UnifiedRandom::new(0x5EED);
+        let (v, scale) = default_six(&mut rng, 8, 8, 0.0, 0.0, 1.0);
+        assert_eq!(d.velocity, v * 0.1);
+        assert_eq!(d.scale, scale * 1.2);
+        // The right-wall corner: x + width/2 + (width/2 - 4)*1 = x + width - 4.
+        assert!(d.position.x >= b.x + b.width - 4.0 - 4.0);
+        assert_eq!(stream_of(&mut app), rng);
+        assert_eq!(stream_of(&mut app), draws_after(0x5EED, 6));
+    }
+
+    /// `:21655-21658` — the left wall (slideDir -1) shifts the puff X by -10
+    /// AFTER the NewDust; the Rat (`flag`) halves the scale (`:21669`).
+    #[test]
+    fn w4_f3_the_left_wall_shifts_x_and_the_rat_halves_scale() {
+        let mut app = rig(0x5EED);
+        let b = wall_burst(-1, true);
+        drain_wall_dust(&mut app, b);
+        let slots = live(&app);
+        assert_eq!(slots.len(), 1);
+        let d = slots[0];
+        let mut rng = UnifiedRandom::new(0x5EED);
+        // The default position draws land in the 8×8 box at the corner; the
+        // -10 shift is on top. Recompute the corner the drain used.
+        let corner_x = b.x + b.width / 2.0 + (b.width / 2.0 - 4.0) * -1.0;
+        let px = rng.next_max(8.max(5) - 4);
+        let _ = rng.next_max(8.max(5) - 4);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_range(-20, 21);
+        let _ = rng.next_max(3);
+        let scale = (1.0 + rng.next_range(-20, 21) as f32 * 0.01) * 1.0;
+        // The pool's default position is `corner + Next(w-4) + 4` (`Dust.cs:159`).
+        assert_eq!(d.position.x, corner_x + px as f32 + 4.0 - 10.0);
+        assert_eq!(d.scale, scale * 1.2 * 0.5, "the Rat halves the scale");
         assert_eq!(stream_of(&mut app), rng);
     }
 }

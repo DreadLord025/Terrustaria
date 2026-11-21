@@ -1530,6 +1530,15 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             if let Some(burst) = p.take_dash_dust() {
                 crate::player_dust::drain_dash_dust(app, burst);
             }
+            // W4-f3 — the wall-climb/wallslide puff (`Player.cs:21654-21826`,
+            // five sites): the wall machines run at `:26758-26765`, right
+            // after `DashMovement` (`:26757`) and before `DoubleJumpVisuals`
+            // (`:26767`); the drain follows the dash dust on the same
+            // `UpdatePlayers` stream. The suppression probe (the Rat climbing
+            // into a ceiling) ran on the tick side.
+            if let Some(burst) = p.take_wall_dust() {
+                crate::player_dust::drain_wall_dust(app, burst);
+            }
             // W4-f3 — the `DoubleJumpVisuals` trail (`Player.cs:21892-22021`):
             // the performing-jump arm's per-tick dust, snapshotted at the C#
             // read moment; the drain follows the dash dust on the same
