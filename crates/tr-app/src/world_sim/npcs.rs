@@ -5195,18 +5195,29 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // The Slime Rain kill counter (`DoDeathEvents_AdvanceSlimeRain`,
-    // `NPC.cs:79078-79095`): the slime kills count toward 150 (75 after
+    // `NPC.cs:79080-79096`): the slime kills count toward 150 (75 after
     // the first King) while no King lives (`!AnyNPCs(50)`); at the
     // threshold `SpawnOnPlayer(50)` — the King — and the counter flips
-    // negative (`-num / 2`) for the next climb.
-    if app.world.slime_rain
-        && !app
-            .npcs
-            .iter()
-            .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
-    {
+    // negative (`-num / 2`) for the next climb. W4-f39: the C# re-checks
+    // `Main.slimeRain && slimeRainNPC[type] && !AnyNPCs(50)` PER DEATH
+    // (`:79082`) — a King spawned by an earlier death in this same tick
+    // closes the gate for every later death, and a King's own death
+    // (which stops the rain, `:79406-79409`) closes it too. The
+    // `slimeRainNPC[1]` filter (`Main.cs:8864`) is the port's `Slime`
+    // kind — every colour variant shares vanilla type 1.
+    if app.world.slime_rain {
         for npc in &dead {
             if npc.kind != NpcKind::Slime {
+                continue;
+            }
+            // `:79082`'s per-death gate: the rain still up AND no King in
+            // the live roster (the one this loop may have just pushed).
+            if !app.world.slime_rain
+                || app
+                    .npcs
+                    .iter()
+                    .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
+            {
                 continue;
             }
             let threshold = if app.world.downed_slime_king { 75 } else { 150 };
@@ -6971,6 +6982,12 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
 
 #[cfg(test)]
 mod tests {
+    // W4-f39 census witnesses (written-not-run, code-only lane): the
+    // DoDeathEvents_AdvanceSlimeRain per-death gate, the 150/75 threshold
+    // + the negative-half hysteresis, and the King-death stop order.
+    #[path = "npcs_w4_f39.rs"]
+    mod npcs_w4_f39;
+
     use super::*;
     use tr_core::World;
 
