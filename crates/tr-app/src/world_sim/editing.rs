@@ -4110,6 +4110,25 @@ fn fire_non_ammo_shot(
             // PurpleLaser rides `ai0 = Main.rand.Next(3, 6)`
             // (the extraUpdates remap the rider reads).
             (loot_rng.next_range(3, 6) as f32, 0.0)
+        } else if proj == crate::projectile::WATER_GUN {
+            // W4-d6 residual — `NewProjectile`'s local-owner switch
+            // (`Projectile.cs:10914-10916`): `case 358: ai[1] =
+            // Main.rand.Next(10, 31) * 0.1f` — the aiStyle-60 accumulator's
+            // per-spawn step (1.0..3.0). The C# draw sits INSIDE
+            // NewProjectile on the same `UpdatePlayers` stream; the guns'
+            // generic tail carries no other draw (no spread/leaf/aqua
+            // seed), so the payload block is the exact stream position.
+            (0.0, loot_rng.next_range(10, 31) as f32 * 0.1)
+        } else if proj == crate::projectile::SLIME_GUN {
+            // `Projectile.cs:10917-10919`: `case 406: ai[1] =
+            // Main.rand.Next(10, 21) * 0.1f` (1.0..2.0).
+            (0.0, loot_rng.next_range(10, 21) as f32 * 0.1)
+        } else if held.kind == 5495 {
+            // `Player.cs:49124-49127` — the Shimmer Gun's per-item use arm
+            // passes `ai0: 0f, ai1: 1f` (the accumulator steps 1 per armed
+            // sub-tick); `NewProjectile`'s default arm assigns them
+            // verbatim (`:10920-10924` — 1042 has no spawn-roll case).
+            (0.0, 1.0)
         } else {
             (0.0, 0.0)
         };
@@ -15135,6 +15154,111 @@ mod tests {
         assert_eq!(a_seed, b_seed, "the seed is seed-stable");
         assert_eq!(a_stream, draws_after(seed, 1), "the LCG seed only (crit is per-hit)");
         assert_eq!(a_stream, b_stream, "the stream is seed-stable");
+    }
+
+    /// W4-d6 residual — the Water Gun (item 2272, `Item.cs:22876-22889`:
+    /// useStyle 5, useTime/useAnimation 20, damage 0, shoot 358, shootSpeed
+    /// 11, autoReuse, UseSound Item181) fires through the generic tail, and
+    /// `NewProjectile`'s local-owner switch rolls the accumulator step
+    /// `ai[1] = Next(10, 31) * 0.1f` (`Projectile.cs:10914-10916`). The roll
+    /// is the stream's FIRST and ONLY draw of the shot (no spread, no leaf
+    /// jitter, no aqua seed for the guns). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_water_gun_fires_with_the_newprojectile_ai1_roll() {
+        let mut app = staff_app(2272, "Water Gun");
+        let seed = 0x2A71;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1, "one stream per use");
+        assert_eq!(blobs[0].kind, crate::projectile::WATER_GUN, "Item.shoot 358");
+        assert!(
+            (blobs[0].vel.length() - 11.0).abs() < 0.05,
+            "shootSpeed 11 (|v|={})",
+            blobs[0].vel.length()
+        );
+        assert_eq!(blobs[0].damage, 0, "the :22882 damage 0");
+        // The roll: one Next(10, 31) draw, ai[1] = draw * 0.1 in [1.0, 3.0].
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let draw = probe.next_range(10, 31);
+        assert_eq!(blobs[0].ai[1], draw as f32 * 0.1, "the :10915 roll");
+        assert_eq!(blobs[0].ai[0], 0.0, "the case assigns no ai0");
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 1),
+            "exactly the one NewProjectile roll"
+        );
+    }
+
+    /// W4-d6 residual — the Slime Gun (item 2610, `Item.cs:25504-25517`:
+    /// useTime/useAnimation 12, damage 0, shoot 406, shootSpeed 8) rolls
+    /// `ai[1] = Next(10, 21) * 0.1f` (`Projectile.cs:10917-10919`).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_slime_gun_rolls_its_own_ai1_range() {
+        let mut app = staff_app(2610, "Slime Gun");
+        let seed = 0x51E7;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(blobs[0].kind, crate::projectile::SLIME_GUN, "Item.shoot 406");
+        assert!(
+            (blobs[0].vel.length() - 8.0).abs() < 0.05,
+            "shootSpeed 8 (|v|={})",
+            blobs[0].vel.length()
+        );
+        let mut probe = tr_core::UnifiedRandom::new(seed);
+        let draw = probe.next_range(10, 21);
+        assert_eq!(blobs[0].ai[1], draw as f32 * 0.1, "the :10918 roll");
+        assert_eq!(stream_of(&mut app), draws_after(seed, 1));
+    }
+
+    /// W4-d6 residual — the Shimmer Gun (item 5495, `Item.cs:43313-43325`:
+    /// useTime/useAnimation 20, damage 0, shoot 1042, shootSpeed 10) has a
+    /// per-item use arm passing `ai0: 0f, ai1: 1f` (`Player.cs:49124-49127`);
+    /// 1042 has NO NewProjectile spawn-roll case, so the payload lands
+    /// verbatim and the shot spends NO draw. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_d6_the_shimmer_gun_passes_ai1_one_and_spends_no_draw() {
+        let mut app = staff_app(5495, "Shimmer Gun");
+        let seed = 0x9D3;
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        let blobs: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active)
+            .collect();
+        assert_eq!(blobs.len(), 1);
+        assert_eq!(
+            blobs[0].kind,
+            crate::projectile::SHIMMER_GUN_STREAM,
+            "Item.shoot 1042"
+        );
+        assert!(
+            (blobs[0].vel.length() - 10.0).abs() < 0.05,
+            "shootSpeed 10 (|v|={})",
+            blobs[0].vel.length()
+        );
+        assert_eq!(blobs[0].ai[0], 0.0, "the :49126 ai0 0f");
+        assert_eq!(blobs[0].ai[1], 1.0, "the :49126 ai1 1f");
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 0),
+            "no spawn roll for 1042"
+        );
     }
 
     /// The Bee Gun (item 1121) fires 1-5 bees (`Player.cs:48309-48332`):

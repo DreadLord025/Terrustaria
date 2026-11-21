@@ -39300,3 +39300,44 @@ duplicates to delete blindly:
 No behaviour change lands with this note — it is the merge-time keep-one
 record for the three branches (read from the pushed tips: e20 at 2322af90,
 c42 at 6b68736a, this branch at 5ae2978c).
+
+## W4-d6 residual — the gun items use-path census (358/406/1042 shooters)
+
+**Item-id census (exact).** The three aiStyle-60 streams are shot by
+exactly three items — item **3059 is NOT a gun** (`ItemID.cs:7801`:
+`PaintingTheSeason`):
+
+| Item | C# row | shoot | speed | useTime/Anim | sound |
+| --- | --- | --- | --- | --- | --- |
+| WaterGun **2272** (`ItemID.cs:6227`) | `Item.cs:22876-22889` | 358 | 11 | 20/20 | Item181 |
+| SlimeGun **2610** (`ItemID.cs:6903`) | `Item.cs:25504-25517` | 406 | 8 | 12/12 | Item181 |
+| ShimmerGun **5495** (`ItemID.cs:12673`) | `Item.cs:43313-43325` | 1042 | 10 | 20/20 | Item181 |
+
+All three: useStyle 5, damage 0, autoReuse, no `channel` flag, no ammo,
+no mana. The port's generated `itemdata.rs` rows match field-for-field
+(2272 :2438, 2610 :2776, 5495 :5661; `use_sound: Some(307)` =
+`SOUND_STYLES[307]` = Item181, `SoundID.cs:1565`; the 5495 `value: 15000`
+is `SetShopValues(Pink5, sellPrice(0,0,30))` — 30 silver ×5 = 15000,
+`Item.cs:49422-49425`; `gen.py --check` passes: "check ok (6196 rows)").
+
+**Use mechanics (i20/i23 precedent).** The guns are NOT channel items —
+they ride the generic non-ammo `fire_non_ammo_shot` tail (the i20 seam)
+once per use start, autoReuse re-arming at `useTime` cadence; the i23
+channel latch never arms for them (`def_is_channel` false). No per-item
+`ItemCheck_Shoot` arm exists for 2272/2610; the ShimmerGun 5495 has one
+(`Player.cs:49124-49127`) that only passes `ai0: 0f, ai1: 1f` — the same
+spawn point/velocity as the generic tail, so the port folds it into the
+generic ai-payload block.
+
+**The residual gap (fixed in this slice).** `NewProjectile`'s local-owner
+switch (`Projectile.cs:10903-10926`) rolls the accumulator step per
+spawn: `case 358: ai[1] = Next(10, 31) * 0.1f` (`:10915`, 1.0..3.0),
+`case 406: ai[1] = Next(10, 21) * 0.1f` (`:10918`, 1.0..2.0); 1042 has no
+case (the default arm assigns the use-path payload). The d6 AI port
+(5d81f2de) reads `ai[1]` in the `ai[0] += ai[1]` accumulator
+(`:29153`) but no spawner ever wrote it — the streams would never
+gravitate past the >30 gate. The rolls now ride the generic tail's
+ai-payload block on the `UpdatePlayers` stream (the exact C# position
+for these kinds: no spread/leaf/aqua draws precede them), and the 5495
+arm passes `(0, 1)`. Three witnesses pin the rolls + the stream spend
+(WRITTEN NOT RUN, code-only).
