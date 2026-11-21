@@ -462,6 +462,17 @@ impl Wiring {
         true
     }
 
+    /// `Wiring.ClearAll` (`Wiring.cs:125-143`), the world-load reset
+    /// (`WorldGen.cs:6959`, inside `ClearWorld`): the pump queues and the
+    /// whole 999-slot mech queue empty — no armed timer or device cooldown
+    /// survives into the next world. The C# zeroes the fixed arrays; the
+    /// port's `Vec`s just clear (the zero rows are dead slots either way).
+    pub fn clear_all(&mut self) {
+        self.in_pumps.clear();
+        self.out_pumps.clear();
+        self.mechs.clear();
+    }
+
     /// `Wiring.UpdateMech` (`Wiring.cs:145-258`), run once per world update:
     /// the cannon cooldowns tick, every queued mech counts down, the tile-144
     /// timers re-`TripWire` themselves on their period and expire off the
@@ -478,8 +489,21 @@ impl Wiring {
             // `_mechTime[num]--` (`Wiring.cs:172`).
             self.mechs[num].time -= 1;
             let mech = self.mechs[num];
-            if !world.in_bounds(mech.x, mech.y) {
-                self.mechs.remove(num);
+            // W4-f11 census (research-23 D16): the C#'s out-of-world / null
+            // branches do `_numMechs--` WITHOUT shifting (`Wiring.cs:165-
+            // 175`) — the LAST slot is dropped and the dead entry survives
+            // at its index until the tail drains past it. `Vec::remove`
+            // (the port's old fold) shifted the tail and kept the last
+            // entry instead. `pop` is the verbatim count decrement; the
+            // loop never revisits index `num`, and the next iteration's
+            // `num - 1` is always < the new len. The gate is `InWorld(x, y,
+            // 1)` (`:165`) — fluff 1, one cell inside each edge.
+            let in_world = mech.x >= 1
+                && mech.y >= 1
+                && mech.x < world.width - 1
+                && mech.y < world.height - 1;
+            if !in_world || world.tile(mech.x, mech.y).is_none() {
+                self.mechs.pop();
                 continue;
             }
             let tile_kind = world.tile(mech.x, mech.y).map(|t| t.kind);
@@ -1624,7 +1648,8 @@ impl Wiring {
     /// `HitWireSingle`'s `if (type == 216)` block `:1489-1494`): the string
     /// rocket — the variant rides `frameY / 40`, the anchor moves up one cell
     /// when the sprite's `frameY % 40 == 18`, and both fixture tiles
-    /// deactivate after the launch.
+    /// deactivate after the launch. The `SkipWire(i, j)` runs AFTER the
+    /// launch (`Wiring.cs:1492` — W4-f11 census, the port used to drop it).
     fn launch_rocket(&mut self, world: &mut World, i: i32, j: i32) {
         let frame_y = world.tile_frame_y(i, j);
         // `:62163-62168`: the variant band and the anchor adjustment.
@@ -1656,6 +1681,9 @@ impl Wiring {
                 t.flags &= !crate::tile::FLAG_ACTIVE;
             }
         }
+        // `Wiring.SkipWire(i, j)` (`Wiring.cs:1492`) — AFTER the launch, and
+        // only the hit cell (the C# does not skip `j + 1`).
+        self.skip.insert((i, j));
     }
 
     /// `WorldGen.LaunchRocketSmall` (`WorldGen.cs:62181-62198`, from case 335
@@ -1663,11 +1691,15 @@ impl Wiring {
     /// shifts up/left when its own frame is the 18 column/row, and the rocket
     /// is `415 + Main.rand.Next(4)`.
     fn launch_rocket_small(&mut self, world: &World, i: i32, j: i32, frame_x: i16, frame_y: i16) {
-        // `:1510-1517`: the 2×2 anchor and the SkipWire.
+        // `:1510-1517`: the 2×2 anchor and the SkipWire — all FOUR cells
+        // (`Wiring.cs:1512-1515`; W4-f11 census, the port used to skip only
+        // the left column).
         let num72 = j - (frame_y as i32 / 18) as i32;
         let num73 = i - (frame_x as i32 / 18) as i32;
         self.skip.insert((num73, num72));
         self.skip.insert((num73, num72 + 1));
+        self.skip.insert((num73 + 1, num72));
+        self.skip.insert((num73 + 1, num72 + 1));
         if !self.check_mech(num73, num72, 30) {
             return;
         }
@@ -1704,7 +1736,9 @@ impl Wiring {
     /// reads the app's pool and runs there (decision D1); the roll therefore
     /// happens before the dedupe — the recorded deviation.
     fn firework_fountain(&mut self, i: i32, j: i32, frame_x: i16, frame_y: i16) {
-        // `:1524-1530`: the 2×2 anchor and the SkipWire.
+        // `:1524-1530`: the 1×2 anchor's two SkipWire calls (`:1526-1527` —
+        // the C# fountain skips exactly the left column, unlike the box's
+        // four; verified by the W4-f11 census).
         let num69 = j - (frame_y as i32 / 18) as i32;
         let num70 = i - (frame_x as i32 / 18) as i32;
         self.skip.insert((num70, num69));
@@ -1979,6 +2013,15 @@ impl Wiring {
             }
         }
         self.gates_done.clear();
+        // `Wiring.cs:714-717` (W4-f11 lifecycle census): the one-iteration
+        // teleport block clears at the END of the gate pass — the plate
+        // poke (`PressurePlateHelper.PokeLocation`) and the PlayerAbove
+        // sensor arm set it, and the C# drops it here after the chained
+        // trips ran. Without this the flag latched forever and every later
+        // teleporter pad refused to move the player.
+        if self.block_player_teleportation {
+            self.block_player_teleportation = false;
+        }
     }
 
     /// `Wiring.CheckLogicGate` (`Wiring.cs:733-830`): walk down from the lamp
@@ -2112,8 +2155,15 @@ impl Wiring {
     /// tile carries the running colour; `_toProcess` counts converging paths
     /// and silences re-entries.
     fn hit_wire(&mut self, world: &mut World, seeds: Vec<(i32, i32)>, color: WireColor) {
-        self.skip.clear();
-        self.to_process.clear();
+        // W4-f11 census: the C# clears ONLY `_wireDirectionList` at entry
+        // (`Wiring.cs:839`) — `_wireSkip`/`_toProcess` are cleared at the
+        // EXIT (`:977-978`), not the entry. On every standalone path the
+        // maps are already empty here (the previous pass exited clean), so
+        // the port's old entry clears were redundant; removing them makes
+        // the entry verbatim. (The C#'s nested gate-trip inside
+        // `LogicGatePass` shares the static maps and wipes the outer
+        // flood's state on its own exit — a re-entrancy quirk the port's
+        // per-call structure does not reproduce; recorded in ANALYSIS.)
         let mut next: VecDeque<((i32, i32), u8)> = seeds.iter().map(|&p| (p, 0)).collect();
         for &(x, y) in &seeds {
             self.skip.insert((x, y));
@@ -2204,6 +2254,14 @@ impl Wiring {
                 next.push_back((point, dx_y_to_dir(dx, dy)));
                 // `if (b > 0) _toProcess.Add(point2, b)` (`:971-974`).
                 if b > 0 {
+                    // W4-f11 census: the C# `Dictionary.Add` would throw on
+                    // a duplicate key, but the key is provably absent here:
+                    // an entry exists ⇔ the `TryGetValue` arm above ran and
+                    // `continue`d (no enqueue), and it is removed exactly
+                    // when the count hits zero — after which this fresh
+                    // enqueue re-Adds it. `insert` is the same write. Only
+                    // the `b == 0` junction neighbours (424/445) enqueue
+                    // without an entry and may re-enter freely.
                     self.to_process.insert(point, i32::from(b));
                 }
             }
@@ -3423,6 +3481,188 @@ fn dx_y_to_dir(dx: i32, dy: i32) -> u8 {
     }
 }
 
+/// One cell's outcome inside `MassWireOperationStep` (`Wiring.cs:3329-3421`):
+/// the C# `bool?` — `None` skips the cell (out of world / null tile / the
+/// `CanDoWireStuffHere` refusal), `Some(false)` halts the whole walk (the
+/// resource ran dry), `Some(true)` continues.
+pub type MassStepOutcome = Option<bool>;
+
+/// `Wiring.MassWireOperationStep` (`Wiring.cs:3329-3421`): one rectangle
+/// cell under the multi-tool mode bits (`crate::smart_cursor::multi_tool_mode`,
+/// the `WiresUI.Settings.MultiToolMode` flags). The placement half runs when
+/// the Cutter bit is OFF, in the C#'s Red → Green → Blue → Yellow → Actuator
+/// order (NOT the colour-pass order); each missing channel burns one wire
+/// (530) and a missing actuator one actuator (849), and a dry stock returns
+/// `Some(false)` — the walk stops there. The cut half runs when the Cutter
+/// bit is ON and never bills. `can_place` is the caller's
+/// `Player.CanDoWireStuffHere` (`Player.cs:46921-46943`) resolved over the
+/// world being edited (the port's gate reads the tile's wall +
+/// `World.downed_golem`). The `SendData(17, …)` per-edit broadcasts and the
+/// `PlaySound(0)` inside `Place*`/`Kill*` are the caller's seams (the port's
+/// `edit::place_wire` family is silent). `cut_cache` accumulates the C#'s
+/// `Item.StartCachingType`/`DropCache` counts (`Wiring.cs:3244-3245`/
+/// `:3325-3326`): every successful `Kill*`'s `Item.NewItem` (530/849,
+/// `WorldGen.cs:58130`/`:58030`) lands in the cache instead of the world;
+/// the caller drops the totals at the player's centre after the walk.
+pub fn mass_wire_operation_step(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    mode: u8,
+    wires_left: &mut i32,
+    actuators_left: &mut i32,
+    can_place: &dyn Fn(&World, i32, i32) -> bool,
+    cut_cache: &mut (i32, i32),
+) -> MassStepOutcome {
+    use crate::smart_cursor::multi_tool_mode as m;
+    // `InWorld(pt.X, pt.Y, 1)` (`:3331`) — fluff 1.
+    if x < 1 || y < 1 || x >= world.width - 1 || y >= world.height - 1 {
+        return None;
+    }
+    if world.tile(x, y).is_none() {
+        return None;
+    }
+    if !can_place(world, x, y) {
+        return None;
+    }
+    let colors = [
+        (m::RED, WireColor::Red),
+        (m::GREEN, WireColor::Green),
+        (m::BLUE, WireColor::Blue),
+        (m::YELLOW, WireColor::Yellow),
+    ];
+    if mode & m::CUTTER == 0 {
+        for (bit, color) in colors {
+            if mode & bit != 0 && !world.wires.get(x, y, color) {
+                if *wires_left <= 0 {
+                    return Some(false);
+                }
+                *wires_left -= 1;
+                crate::edit::place_wire(world, x, y, color); // `:3353` etc.
+            }
+        }
+        if mode & m::ACTUATOR != 0
+            && world
+                .tile(x, y)
+                .is_some_and(|t| t.flags & crate::tile::FLAG_ACTUATOR == 0)
+        {
+            if *actuators_left <= 0 {
+                return Some(false);
+            }
+            *actuators_left -= 1;
+            crate::edit::place_actuator(world, x, y); // `:3393`
+        }
+    }
+    if mode & m::CUTTER != 0 {
+        for (bit, color) in colors {
+            if mode & bit != 0
+                && world.wires.get(x, y, color)
+                && crate::edit::kill_wire(world, x, y, color)
+            {
+                cut_cache.0 += 1; // `KillWire`'s cached `NewItem(530)` (`:3399` etc.)
+            }
+        }
+        if mode & m::ACTUATOR != 0 && crate::edit::kill_actuator(world, x, y) {
+            cut_cache.1 += 1; // `KillActuator`'s cached `NewItem(849)` (`:3415`)
+        }
+    }
+    Some(true)
+}
+
+/// `Wiring.MassWireOperationInner` (`Wiring.cs:3235-3327`): the L-shaped
+/// rectangle walk — `dir` true walks the ps column first (ps.Y → pe.Y at
+/// ps.X), then the pe row (ps.X → pe.X at pe.Y); false mirrors it. The
+/// endpoint `pe` runs once more after both legs unless a dry stock halted
+/// the walk (`flag`). The corner `ps` is NOT re-walked (the legs are
+/// half-open `i != num4`), and a zero-length leg skips straight to the
+/// endpoint — the Multicolor Wrench's single-cell click. The caller bills
+/// the `wires_left`/`actuators_left` decrements and drops the `cut_cache`
+/// totals (`Item.DropCache`, `:3325-3326`).
+pub fn mass_wire_operation_inner(
+    world: &mut World,
+    ps: (i32, i32),
+    pe: (i32, i32),
+    dir: bool,
+    mode: u8,
+    wires_left: &mut i32,
+    actuators_left: &mut i32,
+    can_place: &dyn Fn(&World, i32, i32) -> bool,
+    cut_cache: &mut (i32, i32),
+) {
+    let num = (pe.0 - ps.0).signum();
+    let num2 = (pe.1 - ps.1).signum();
+    let mut pt = (0i32, 0i32);
+    let mut halted = false;
+    let step = |world: &mut World, pt: (i32, i32), halted: &mut bool| {
+        let outcome = mass_wire_operation_step(
+            world,
+            pt.0,
+            pt.1,
+            mode,
+            wires_left,
+            actuators_left,
+            can_place,
+            cut_cache,
+        );
+        if outcome == Some(false) {
+            *halted = true;
+        }
+    };
+    // The first leg (`:3250-3284`).
+    let (mut i, end, stride) = if dir {
+        pt.0 = ps.0;
+        (ps.1, pe.1, num2)
+    } else {
+        pt.1 = ps.1;
+        (ps.0, pe.0, num)
+    };
+    while i != end {
+        if halted {
+            break;
+        }
+        if dir {
+            pt.1 = i;
+        } else {
+            pt.0 = i;
+        }
+        step(world, pt, &mut halted);
+        i += stride;
+    }
+    // The second leg (`:3285-3319`).
+    let (mut i, end, stride) = if dir {
+        pt.1 = pe.1;
+        (ps.0, pe.0, num)
+    } else {
+        pt.0 = pe.0;
+        (ps.1, pe.1, num2)
+    };
+    while i != end {
+        if halted {
+            break;
+        }
+        if !dir {
+            pt.1 = i;
+        } else {
+            pt.0 = i;
+        }
+        step(world, pt, &mut halted);
+        i += stride;
+    }
+    // `if (!flag) MassWireOperationStep(user, pe, …)` (`:3320-3323`).
+    if !halted {
+        mass_wire_operation_step(
+            world,
+            pe.0,
+            pe.1,
+            mode,
+            wires_left,
+            actuators_left,
+            can_place,
+            cut_cache,
+        );
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -3477,11 +3717,20 @@ mod tests {
         // block arms for one iteration, `PokeLocation` `:160`).
         wiring.destroy_plate(&mut w, 10, 20);
         assert!(!wiring.plate_is_pressed(10, 20), "the plate released");
-        assert!(wiring.block_player_teleportation(), "the poke armed the block");
+        // W4-f11 lifecycle fix: the block cleared inside the poke's own
+        // `LogicGatePass` tail (`Wiring.cs:714-717`) — the C# flag lives for
+        // exactly that one iteration, not beyond it.
+        assert!(
+            !wiring.block_player_teleportation(),
+            "the gate pass cleared the one-iteration block"
+        );
         // An unpressed plate is a no-op (the `TryGetValue` gate).
-        wiring.set_block_player_teleportation(false);
+        wiring.set_block_player_teleportation(true);
         wiring.destroy_plate(&mut w, 10, 20);
-        assert!(!wiring.block_player_teleportation(), "no poke on an unpressed plate");
+        assert!(
+            wiring.block_player_teleportation(),
+            "no poke on an unpressed plate — the flag is untouched"
+        );
     }
 
     #[test]
@@ -6759,6 +7008,301 @@ mod w4_f11_hopper_extract_tests {
         assert_eq!(wiring.take_extractinator_requests().len(), 1);
         wiring.hit_wire_single(&mut w, 10, 20);
         assert!(wiring.take_extractinator_requests().is_empty());
+    }
+}
+
+#[cfg(test)]
+mod w4_f11_residual_tests {
+    //! W4-f11 device residuals — the Wiring.cs census beyond HitWireSingle:
+    //! (1) the HitWire multi-tile entry semantics, (2) the CheckMech cooldown
+    //! machinery, (3) the SkipWire/running lifecycle, (4) the mass-wire
+    //! rectangle walk + pay. Witnesses WRITTEN NOT RUN (code-only mode).
+
+    use super::*;
+    use crate::smart_cursor::multi_tool_mode as m;
+    use crate::tile::{FLAG_ACTIVE, FLAG_ACTUATOR, Tile};
+
+    fn world() -> World {
+        let mut w = World::new("t".into(), 64, 64);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w
+    }
+
+    fn put(w: &mut World, x: i32, y: i32, kind: u16, frame_x: i16, frame_y: i16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile {
+            kind,
+            frame_x,
+            frame_y,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    /// (3) `Wiring.ClearAll` (`Wiring.cs:125-143`, the `WorldGen.cs:6959`
+    /// world-load reset): the mech queue and both pump queues empty.
+    #[test]
+    fn w4_f11_clear_all_empties_the_mech_and_pump_queues() {
+        let mut w = world();
+        let mut wiring = Wiring::new();
+        assert!(wiring.check_mech(10, 20, 60));
+        assert!(wiring.check_mech(11, 20, 60));
+        wiring.in_pumps.push((1, 1));
+        wiring.out_pumps.push((2, 2));
+        wiring.clear_all();
+        assert!(wiring.mechs.is_empty(), "the mech queue emptied");
+        assert!(wiring.in_pumps.is_empty() && wiring.out_pumps.is_empty());
+        // A fresh CheckMech on the same tile succeeds again (the dedupe
+        // scan sees an empty queue).
+        assert!(wiring.check_mech(10, 20, 60));
+    }
+
+    /// (3) `LogicGatePass`'s tail clears the one-iteration teleport block
+    /// (`Wiring.cs:714-717`): the plate poke arms it, the pass drops it —
+    /// the flag never latches past the trip that set it.
+    #[test]
+    fn w4_f11_the_gate_pass_clears_the_teleport_block() {
+        let mut w = world();
+        put(&mut w, 10, 20, 428, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.press_plate(&mut w, 10, 20);
+        assert!(
+            !wiring.block_player_teleportation(),
+            "the pass cleared the block the poke armed"
+        );
+        // An empty pass still clears a manually-armed flag (the sensor
+        // path sets it around `hit_switch`, `tile_entities.rs:886`).
+        wiring.set_block_player_teleportation(true);
+        wiring.logic_gate_pass(&mut w);
+        assert!(!wiring.block_player_teleportation());
+    }
+
+    /// (2) `UpdateMech`'s out-of-world branch (`Wiring.cs:165-175`,
+    /// research-23 D16): `_numMechs--` WITHOUT shifting — the LAST entry
+    /// is dropped, the dead entry's slot survives until the tail drains.
+    /// Two mechs, the FIRST out of world: the pop drops the second, the
+    /// dead first entry is skipped by the descending loop.
+    #[test]
+    fn w4_f11_the_out_of_world_mech_drops_the_tail_not_the_dead_slot() {
+        let mut w = world();
+        let mut wiring = Wiring::new();
+        // (0, 0) is outside the fluff-1 `InWorld(x, y, 1)` gate.
+        assert!(wiring.check_mech(0, 0, 100));
+        assert!(wiring.check_mech(10, 20, 100));
+        wiring.update(&mut w);
+        // The C# decrements the count to 1; the surviving slot is index 0
+        // (the dead entry) — index 1 (the live one) was dropped by the
+        // count decrement. The next update drains the dead slot too.
+        assert_eq!(wiring.mechs.len(), 1, "the count decrement dropped the tail");
+        wiring.update(&mut w);
+        assert!(wiring.mechs.is_empty(), "the dead slot drained on the next tick");
+    }
+
+    /// (2) The fluff-1 gate (`Wiring.cs:165`): a mech on the world's edge
+    /// column (x = width − 1) is out of world even though `in_bounds`
+    /// passes — the port's old fluff-0 fold kept it alive.
+    #[test]
+    fn w4_f11_the_mech_gate_is_fluff_one() {
+        let mut w = world();
+        let mut wiring = Wiring::new();
+        assert!(wiring.check_mech(w.width - 1, 20, 100));
+        wiring.update(&mut w);
+        assert!(wiring.mechs.is_empty(), "the edge column is out of world");
+    }
+
+    /// (1) The multi-tile seed set: a 2×2 device trip seeds every wired
+    /// cell of its rect; each seed is SkipWire'd + counted 4 (`Wiring.cs:
+    /// 840-847`), so the seeded device cells do NOT run their own
+    /// HitWireSingle arm — only the line beyond the rect fires. A lamp at
+    /// the end of a line off a 2×2 detonator trip flips exactly once.
+    #[test]
+    fn w4_f11_a_multi_tile_trip_seeds_every_wired_cell_of_the_rect() {
+        let mut w = world();
+        // The detonator (411) 2×2 at (10, 20); wire on all four cells.
+        for x in 10..12 {
+            for y in 20..22 {
+                put(&mut w, x, y, 411, (x - 10) as i16 * 18, (y - 20) as i16 * 18);
+                w.wires.set(x, y, WireColor::Red, true);
+            }
+        }
+        // A wire line out to a lamp (422) at (15, 20).
+        for x in 12..=15 {
+            w.wires.set(x, 20, WireColor::Red, true);
+        }
+        put(&mut w, 15, 20, 422, 0, 0);
+        let mut wiring = Wiring::new();
+        wiring.trip_wire(&mut w, 10, 20, 2, 2);
+        assert_eq!(w.tile(15, 20).unwrap().kind, 421, "the lamp flipped once");
+        // The seeded detonator cells were SkipWire'd — their own 411 arm
+        // (the ±36 frame shift) did NOT run (`:843` + `:855-858`).
+        assert_eq!(w.tile_frame_x(10, 20), 0, "the seed cell stayed unshifted");
+        assert_eq!(w.tile_frame_x(11, 21), 18, "the far seed cell too");
+    }
+
+    /// (4) `MassWireOperationStep`'s placement order + bill
+    /// (`Wiring.cs:3344-3395`): Red → Green → Blue → Yellow → Actuator,
+    /// one wire per missing channel, one actuator per missing bit; an
+    /// existing channel costs nothing.
+    #[test]
+    fn w4_f11_the_mass_step_places_in_the_csharp_channel_order() {
+        let mut w = world();
+        put(&mut w, 10, 20, 1, 0, 0);
+        let mut wires = 10;
+        let mut actuators = 10;
+        let mut cache = (0, 0);
+        let ok = |_: &World, _: i32, _: i32| true;
+        let mode = m::RED | m::GREEN | m::BLUE | m::YELLOW | m::ACTUATOR;
+        let out = mass_wire_operation_step(
+            &mut w, 10, 20, mode, &mut wires, &mut actuators, &ok, &mut cache,
+        );
+        assert_eq!(out, Some(true));
+        assert_eq!(wires, 6, "four channels burned four wires");
+        assert_eq!(actuators, 9, "the actuator burned one");
+        for c in [WireColor::Red, WireColor::Green, WireColor::Blue, WireColor::Yellow] {
+            assert!(w.wires.get(10, 20, c), "every channel placed");
+        }
+        assert!(w.tile(10, 20).unwrap().flags & FLAG_ACTUATOR != 0);
+        // A second step on the fully-wired cell costs nothing.
+        let out = mass_wire_operation_step(
+            &mut w, 10, 20, mode, &mut wires, &mut actuators, &ok, &mut cache,
+        );
+        assert_eq!(out, Some(true));
+        assert_eq!((wires, actuators), (6, 9), "no re-bill on existing bits");
+    }
+
+    /// (4) The dry-stock halt (`Wiring.cs:3348-3351`): a missing channel
+    /// with zero wires returns `Some(false)` — the walk stops; the
+    /// channels before it in the order already placed.
+    #[test]
+    fn w4_f11_the_mass_step_halts_on_a_dry_stock() {
+        let mut w = world();
+        put(&mut w, 10, 20, 1, 0, 0);
+        let mut wires = 1;
+        let mut actuators = 10;
+        let mut cache = (0, 0);
+        let ok = |_: &World, _: i32, _: i32| true;
+        let mode = m::RED | m::GREEN;
+        let out = mass_wire_operation_step(
+            &mut w, 10, 20, mode, &mut wires, &mut actuators, &ok, &mut cache,
+        );
+        assert_eq!(out, Some(false), "the green channel ran the stock dry");
+        assert!(w.wires.get(10, 20, WireColor::Red), "red placed first");
+        assert!(!w.wires.get(10, 20, WireColor::Green), "green never placed");
+        assert_eq!(wires, 0);
+    }
+
+    /// (4) The cut half (`Wiring.cs:3397-3419`): the Cutter bit removes the
+    /// selected channels + actuator, never bills, and the kills accumulate
+    /// into the drop cache (`Item.StartCachingType`/`DropCache`).
+    #[test]
+    fn w4_f11_the_mass_cut_half_caches_the_kills_and_never_bills() {
+        let mut w = world();
+        put(&mut w, 10, 20, 1, 0, 0);
+        w.wires.set(10, 20, WireColor::Red, true);
+        w.wires.set(10, 20, WireColor::Blue, true);
+        let i = w.index(10, 20);
+        w.tiles[i].flags |= FLAG_ACTUATOR;
+        let mut wires = 0;
+        let mut actuators = 0;
+        let mut cache = (0, 0);
+        let ok = |_: &World, _: i32, _: i32| true;
+        let mode = m::CUTTER | m::RED | m::BLUE | m::ACTUATOR;
+        let out = mass_wire_operation_step(
+            &mut w, 10, 20, mode, &mut wires, &mut actuators, &ok, &mut cache,
+        );
+        assert_eq!(out, Some(true));
+        assert!(!w.wires.get(10, 20, WireColor::Red));
+        assert!(!w.wires.get(10, 20, WireColor::Blue));
+        assert!(w.tile(10, 20).unwrap().flags & FLAG_ACTUATOR == 0);
+        assert_eq!(cache, (2, 1), "two wires + one actuator cached");
+        assert_eq!((wires, actuators), (0, 0), "the cut never bills");
+    }
+
+    /// (4) `MassWireOperationInner`'s L-walk (`Wiring.cs:3235-3327`): dir
+    /// true walks the ps column then the pe row, the endpoint runs once
+    /// more, the ps corner is never re-walked. A 3×3 rect from (10, 20) to
+    /// (12, 22) places 5 cells (the L), not 9.
+    #[test]
+    fn w4_f11_the_mass_inner_walks_the_l_not_the_filled_rect() {
+        let mut w = world();
+        for x in 10..=12 {
+            for y in 20..=22 {
+                put(&mut w, x, y, 1, 0, 0);
+            }
+        }
+        let mut wires = 100;
+        let mut actuators = 0;
+        let mut cache = (0, 0);
+        let ok = |_: &World, _: i32, _: i32| true;
+        mass_wire_operation_inner(
+            &mut w,
+            (10, 20),
+            (12, 22),
+            true,
+            m::RED,
+            &mut wires,
+            &mut actuators,
+            &ok,
+            &mut cache,
+        );
+        // The L: column leg (10,20), (10,21); row leg (10,22) [the bend],
+        // (11,22); endpoint (12,22) [already wired by nothing — fresh]. Five
+        // unique cells; the endpoint is NOT a duplicate here (the row leg
+        // stops at j != pe.X, so (12,22) is first touched by the endpoint).
+        assert_eq!(wires, 95, "five unique cells burned five wires");
+        assert!(w.wires.get(10, 20, WireColor::Red));
+        assert!(w.wires.get(10, 21, WireColor::Red));
+        assert!(w.wires.get(10, 22, WireColor::Red), "the bend cell");
+        assert!(w.wires.get(11, 22, WireColor::Red));
+        assert!(w.wires.get(12, 22, WireColor::Red), "the endpoint");
+        // The interior and the off-L cells stay bare.
+        assert!(!w.wires.get(11, 21, WireColor::Red));
+        assert!(!w.wires.get(12, 20, WireColor::Red));
+        assert!(!w.wires.get(11, 20, WireColor::Red));
+    }
+
+    /// (4) The single-cell click (`ps == pe`, the Multicolor Wrench): both
+    /// legs are zero-length, the endpoint step runs once.
+    #[test]
+    fn w4_f11_the_mass_single_cell_click_places_once() {
+        let mut w = world();
+        put(&mut w, 10, 20, 1, 0, 0);
+        let mut wires = 5;
+        let mut actuators = 0;
+        let mut cache = (0, 0);
+        let ok = |_: &World, _: i32, _: i32| true;
+        mass_wire_operation_inner(
+            &mut w,
+            (10, 20),
+            (10, 20),
+            false,
+            m::RED,
+            &mut wires,
+            &mut actuators,
+            &ok,
+            &mut cache,
+        );
+        assert_eq!(wires, 4, "one cell, one wire");
+        assert!(w.wires.get(10, 20, WireColor::Red));
+    }
+
+    /// (4) The `CanDoWireStuffHere` refusal (`Wiring.cs:3340-3343`): a
+    /// refused cell returns `None` — the walk skips it without billing or
+    /// halting. The wall-350 gate is the caller's predicate.
+    #[test]
+    fn w4_f11_the_mass_step_skips_a_refused_cell() {
+        let mut w = world();
+        put(&mut w, 10, 20, 1, 0, 0);
+        let mut wires = 5;
+        let mut actuators = 0;
+        let mut cache = (0, 0);
+        let refuse = |_: &World, _: i32, _: i32| false;
+        let out = mass_wire_operation_step(
+            &mut w, 10, 20, m::RED, &mut wires, &mut actuators, &refuse, &mut cache,
+        );
+        assert_eq!(out, None);
+        assert_eq!(wires, 5, "the refusal billed nothing");
+        assert!(!w.wires.get(10, 20, WireColor::Red));
     }
 }
 
