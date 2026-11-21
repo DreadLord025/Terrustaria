@@ -75,6 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 131 | Dust cross-lane MASTER STATUS (W4-d54 crosslane: per-file keep-one FINAL table re-confirmed from fetched tips — WorldGen resolved on d54, main_dust g13+g11-seams/g61-body, mount f6-superset, trail g63/g64/e3 disjoint, snowing d130-canonical; merge order, 309-witness union census, outstanding folds g73e/g11c-F1-F7/f6-atan2/116-gaps/e3-contracts) | `131-dust-master-status.md` | crosslane status doc |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
