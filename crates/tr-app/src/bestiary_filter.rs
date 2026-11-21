@@ -607,6 +607,43 @@ mod tests {
         assert!(ids[0] >= 1);
     }
 
+    /// W4-e23 final 4 — the d42 roster join (NPCID 578-630, tip 9b22c091)
+    /// vs the full-vanilla sorting table: the generator replays the
+    /// DECOMPILED SetDefaults/NPCID sources, never the port roster, so the
+    /// 53-kind wave cannot drift it. Every band id either carries a
+    /// positive number or is a `NPCBestiaryDrawOffset.Hide` fold reading 0
+    /// (the 13 hidden band ids: 579/589/591/593/595-598/600/603/609/622/623
+    /// — the antlion larvae, the torch-zombie variant, the gold goldfish
+    /// walker, the four dragonfly colours, the grebe/turtle/seagull twins,
+    /// the blood eel body/tail). The table stays the 546-permutation.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn the_sorting_table_covers_the_d42_band_and_holds_the_hide_invariant() {
+        use crate::bestiary_sorting_ids::SORTING_IDS;
+        assert_eq!(SORTING_IDS.len(), 546);
+        // The numbering is a 1..=546 permutation (CreateBestiarySortingIds
+        // numbers the survivors from 1, ContentSamples.cs:1083-1092).
+        let mut nums: Vec<i32> = SORTING_IDS.iter().map(|&(_, n)| n).collect();
+        nums.sort_unstable();
+        assert_eq!(nums, (1..=546).collect::<Vec<_>>());
+        // The d42 band: every id resolves visible XOR Hide-folded.
+        const HIDDEN_BAND: &[i32] = &[579, 589, 591, 593, 595, 596, 597, 598, 600, 603, 609, 622, 623];
+        for net in 578..=630 {
+            let id = sorting_id(net);
+            if HIDDEN_BAND.contains(&net) {
+                assert_eq!(id, 0, "net {net} is a Hide fold");
+            } else {
+                assert!(id > 0, "net {net} carries a vanilla number");
+            }
+        }
+        // Spot rows from the band: the Maggot (606) and the Gnome (624)
+        // are visible critter/enemy rows; the GoldGoldfish (592) rides the
+        // gold-critter priority block ahead of the plain critters.
+        assert!(sorting_id(606) > 0);
+        assert!(sorting_id(624) > 0);
+        assert!(sorting_id(592) > 0 && sorting_id(592) < sorting_id(606));
+    }
+
     #[test]
     fn the_search_matches_names_aliases_and_known_tags_only() {
         let _guard = crate::lang::test_lock().lock().unwrap();
