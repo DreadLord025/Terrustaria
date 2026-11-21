@@ -575,6 +575,73 @@ fn spawn_device_kind(
     }
 }
 
+/// `WorldGen.ShootFromCannon`'s client replay (`WorldGen.cs:50586-50701`,
+/// the `108` reader's `fromWire: true` arm, `MessageBuffer.cs:3758-3773`,
+/// W4-g50): the ammo→kind/speed map, the angle 0..8 velocity table
+/// normalized to that speed, the `(x+2, y+2)*16` anchor with the ammo-4/5
+/// offsets, the bunny's `ai0=1` / cannonball's `ai1=owner+1`, the
+/// `BunnyCannonCanFire` gate, then the pool spawn owned by the local player.
+/// The engine's private `shoot_from_cannon` queues a `DeviceShot` for the
+/// wiring tick; this net replay spawns directly (the C# `NewProjectile`
+/// runs inside the message handler).
+pub(crate) fn replay_wired_cannon_shot(
+    app: &mut App,
+    x: i32,
+    y: i32,
+    angle: i32,
+    ammo: i32,
+    damage: i32,
+    knock_back: f32,
+) {
+    // `:50588-50609`: the projectile kind and the speed in units/tick.
+    let (kind, speed) = match ammo {
+        2 => (281u16, 14.0f32),
+        3 => (178, 14.0),
+        4 | 5 => (601, 3.0),
+        _ => (162, 14.0),
+    };
+    // `:50610-50619`: the bunny carries `ai0 = 1`, the cannonball
+    // `ai1 = owner + 1` (the local player's slot).
+    let ai0 = if ammo == 5 { 1.0 } else { 0.0 };
+    let ai1 = if ammo == 2 {
+        app.local_id as f32 + 1.0
+    } else {
+        0.0
+    };
+    // `:50620-50664`: the angle table (0..8), the fixed row of 9 values.
+    let (num2, num3): (f32, f32) = match angle {
+        1 => (7.5, -2.5),
+        2 => (5.0, -5.0),
+        3 => (2.75, -6.0),
+        4 => (0.0, -10.0),
+        5 => (-2.75, -6.0),
+        6 => (-5.0, -5.0),
+        7 => (-7.5, -2.5),
+        8 => (-10.0, 0.0),
+        _ => (10.0, 0.0),
+    };
+    let mut vx_pos = (x + 2) as f32 * 16.0;
+    let mut vy_pos = (y + 2) as f32 * 16.0;
+    // `:50669-50676`: the explosive variant's +5 offsets.
+    if ammo == 4 || ammo == 5 {
+        if angle == 4 {
+            vx_pos += 5.0;
+        }
+        vy_pos += 5.0;
+    }
+    // `:50677-50685`: the bunny cannon's spawn gate.
+    if ammo == 2 && !bunny_cannon_can_fire(app) {
+        return;
+    }
+    // `:50686-50688`: the direction normalized to `speed`.
+    let norm = (num2 * num2 + num3 * num3).sqrt();
+    let scale = speed / norm;
+    let (vx, vy) = (num2 * scale, num3 * scale);
+    // `:50699`: `NewProjectile` owned by the local player (`fromWire` folds
+    // `owner = Main.myPlayer`, `:50694-50697`).
+    spawn_device_kind(app, kind, vx_pos, vy_pos, vx, vy, damage, knock_back, ai0, ai1);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1091,6 +1091,14 @@ impl App {
             C2s::GemLockToggle(g) => {
                 self.toggle_gem_lock(server, g.x as i32, g.y as i32, g.on);
             }
+            // `case 109` — MassWireOperation (W4-g50,
+            // `MessageBuffer.cs:3774-3788`): the host would run
+            // `Wiring.MassWireOperation` under a temporary ToolMode swap
+            // (`:3783-3786`). The mass operation is unported
+            // (`world_sim/editing/wiring.rs:27-29` — the Multicolor Wrench /
+            // Grand Design multi-tool needs the `WiresUI` tool modes), so
+            // the apply is parked; the codec is byte-verbatim (`net.rs`).
+            C2s::MassWireOperation(_) => {}
         }
     }
 
@@ -2398,6 +2406,22 @@ impl App {
                 self.chat
                     .new_text(t.text.0.clone(), [t.color.0, t.color.1, t.color.2]);
                 self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
+            }
+            // `case 108` — the wire-fired cannon shot (W4-g50,
+            // `MessageBuffer.cs:3758-3773`): only the owning client replays
+            // it (`num75 == Main.myPlayer`, `:3768`), with `fromWire: true`.
+            S2c::WiredCannonShot(c) => {
+                if c.owner as u32 == self.local_id {
+                    crate::world_sim::wiring::replay_wired_cannon_shot(
+                        self,
+                        c.x as i32,
+                        c.y as i32,
+                        c.angle as i32,
+                        c.ammo as i32,
+                        c.damage as i32,
+                        c.knockback,
+                    );
+                }
             }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
@@ -6846,5 +6870,53 @@ mod message_family_tests {
             .find(|m| m.text == "A wave is approaching...")
             .expect("the chat line landed");
         assert_eq!(line.color, [255, 200, 150]);
+    }
+
+    /// `case 108` (`MessageBuffer.cs:3758-3773`): the owning client replays
+    /// the cannon shot; a non-owner ignores it.
+    #[test]
+    fn w4_g50_the_108_cannon_shot_replays_for_the_owner_only() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        // A non-owner shot spawns nothing on the client.
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::WiredCannonShot(net::WiredCannonShot {
+                damage: 300,
+                knockback: 8.0,
+                x: 10,
+                y: 4,
+                angle: 4,
+                ammo: 4,
+                owner: me.wrapping_add(1),
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let before = client_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 601)
+            .count();
+        // The owner's shot replays the 601 explosive.
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::WiredCannonShot(net::WiredCannonShot {
+                damage: 300,
+                knockback: 8.0,
+                x: 10,
+                y: 4,
+                angle: 4,
+                ammo: 4,
+                owner: me,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 10);
+        let after = client_app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 601)
+            .count();
+        assert_eq!(before, 0, "the non-owner shot spawned nothing");
+        assert!(after > 0, "the owner's shot replayed the 601");
     }
 }

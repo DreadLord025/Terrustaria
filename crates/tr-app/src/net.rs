@@ -202,6 +202,15 @@ pub mod id {
     /// `(short)` WidthLimit (`MessageID.cs:228`, `NetMessage.cs:769-774`,
     /// `MessageBuffer.cs:3752-3757`, host→client only).
     pub const SMART_TEXT: u8 = 107;
+    /// `108 WiredCannonShot` (W4-g50, S1-I-4): `(short)` damage, float
+    /// knockback, `(short)` x/y/angle/ammo, `(byte)` owner
+    /// (`MessageID.cs:230`, `NetMessage.cs:1403-1411`,
+    /// `MessageBuffer.cs:3758-3773`, host→client only, addressed to the owner).
+    pub const WIRED_CANNON_SHOT: u8 = 108;
+    /// `109 MassWireOperation` (W4-g50, S1-I-4): four `(short)`s + `(byte)`
+    /// tool mode (`MessageID.cs:232`, `NetMessage.cs:1412-1418`,
+    /// `MessageBuffer.cs:3774-3788`, client→host only).
+    pub const MASS_WIRE_OPERATION: u8 = 109;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -2235,6 +2244,42 @@ pub struct SmartText {
     pub width_limit: i16,
 }
 
+/// `msg 108 WiredCannonShot`'s body (`NetMessage.cs:1403-1411`):
+/// `(short)number` (damage), `number2` (knockback float), `(short)number3`
+/// (tile x), `(short)number4` (tile y), `(short)number5` (the cannon angle
+/// 0..8), `(short)number6` (the ammo id) then `(byte)number7` (the owner
+/// player). Sent by the host when a wire fires a cannon / bunny cannon
+/// (ammo 4/5) owned by a remote player — `WorldGen.ShootFromCannon`
+/// redirects instead of spawning (`WorldGen.cs:50689-50692`); the owning
+/// client checks `num75 == Main.myPlayer` and replays the shot locally with
+/// `fromWire: true` (`MessageBuffer.cs:3758-3773`). Server→client only,
+/// addressed to one owner (`remoteClient = owner`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WiredCannonShot {
+    pub damage: i16,
+    pub knockback: f32,
+    pub x: i16,
+    pub y: i16,
+    pub angle: i16,
+    pub ammo: i16,
+    pub owner: u8,
+}
+
+/// `msg 109 MassWireOperation`'s body (`NetMessage.cs:1412-1418`, S1-I-1
+/// W4-d93): the drag's start/end tile points as four `(short)`s, then the
+/// `(byte)` tool mode — the `WiresUI.Settings.MultiToolMode` flags
+/// (`WiresUI.cs:13-21`: Red 1 / Green 2 / Blue 4 / Yellow 8 / Actuator 0x10 /
+/// Cutter 0x20). The reader runs the operation under a temporary ToolMode
+/// swap and restores it (`MessageBuffer.cs:3781-3786`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MassWireOperation {
+    pub start_x: i16,
+    pub start_y: i16,
+    pub end_x: i16,
+    pub end_y: i16,
+    pub tool_mode: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2387,6 +2432,10 @@ pub enum C2s {
     /// (`Player.cs:32547`/`:32559`; `MessageBuffer.cs:3736-3741` runs
     /// `WorldGen.ToggleGemLock`; W4-g50).
     GemLockToggle(GemLockToggle),
+    /// `109 MassWireOperation` — this client's Grand Design / Multicolor
+    /// Wrench drag (`Projectile.cs:72060`, `Player.cs:46911`); the host runs
+    /// the operation for the sender (`MessageBuffer.cs:3774-3788`).
+    MassWireOperation(MassWireOperation),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2571,6 +2620,10 @@ pub enum S2c {
     /// `107 SmartTextMessage` - a multiline chat line + the sound-12 cue
     /// (`NetMessage.cs:769-774`; `MessageBuffer.cs:3752-3757`; W4-g50).
     SmartText(SmartText),
+    /// `108 WiredCannonShot` - a wire-fired cannon shot redirected to its
+    /// owner (`WorldGen.cs:50689-50692`; `MessageBuffer.cs:3758-3773`;
+    /// W4-g50).
+    WiredCannonShot(WiredCannonShot),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2669,6 +2722,7 @@ impl C2s {
             Self::MinionAttackTarget(_) => id::MINION_ATTACK_TARGET,
             Self::NebulaLevelupRequest(_) => id::NEBULA_LEVELUP_REQUEST,
             Self::GemLockToggle(_) => id::GEM_LOCK_TOGGLE,
+            Self::MassWireOperation(_) => id::MASS_WIRE_OPERATION,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2770,6 +2824,13 @@ impl C2s {
             }
             // `NetMessage.cs:1395-1399`: short x, short y, bool on.
             Self::GemLockToggle(g) => w.i16(g.x).i16(g.y).bool(g.on),
+            // `NetMessage.cs:1412-1418` — four (short)s, then the (byte) mode.
+            Self::MassWireOperation(m) => w
+                .i16(m.start_x)
+                .i16(m.start_y)
+                .i16(m.end_x)
+                .i16(m.end_y)
+                .u8(m.tool_mode),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2960,6 +3021,14 @@ impl C2s {
                 y: r.i16()?,
                 on: r.bool()?,
             }),
+            // `MessageBuffer.cs:3777-3781` — four (short)s + the (byte) mode.
+            id::MASS_WIRE_OPERATION => Self::MassWireOperation(MassWireOperation {
+                start_x: r.i16()?,
+                start_y: r.i16()?,
+                end_x: r.i16()?,
+                end_y: r.i16()?,
+                tool_mode: r.u8()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3138,6 +3207,7 @@ impl S2c {
             Self::ShopOverride(_) => id::SHOP_OVERRIDE,
             Self::PoofOfSmoke(_) => id::POOF_OF_SMOKE,
             Self::SmartText(_) => id::SMART_TEXT,
+            Self::WiredCannonShot(_) => id::WIRED_CANNON_SHOT,
         }
     }
 
@@ -3370,6 +3440,16 @@ impl S2c {
                 let w = t.text.clone().write_to(w);
                 w.i16(t.width_limit)
             }
+            // `NetMessage.cs:1403-1411`: (short)damage + float knockback +
+            // (short)x/y/angle/ammo + (byte)owner.
+            Self::WiredCannonShot(c) => w
+                .i16(c.damage)
+                .f32(c.knockback)
+                .i16(c.x)
+                .i16(c.y)
+                .i16(c.angle)
+                .i16(c.ammo)
+                .u8(c.owner),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3713,6 +3793,17 @@ impl S2c {
                 color: r.rgb()?,
                 text: NetText::read_from(r)?,
                 width_limit: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3761-3767` — short damage, float knockback,
+            // short x/y/angle/ammo, byte owner.
+            id::WIRED_CANNON_SHOT => Self::WiredCannonShot(WiredCannonShot {
+                damage: r.i16()?,
+                knockback: r.f32()?,
+                x: r.i16()?,
+                y: r.i16()?,
+                angle: r.i16()?,
+                ammo: r.i16()?,
+                owner: r.u8()?,
             }),
             _ => return None,
         })
@@ -6593,6 +6684,63 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::SmartText(d) => assert_eq!(d, t),
             other => panic!("expected 107, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `108 WiredCannonShot` (`NetMessage.cs:1403-1411`): short damage,
+    /// float knockback, short x/y/angle/ammo, byte owner. Host→client only,
+    /// addressed to the owner (`MessageBuffer.cs:3758-3773`).
+    #[test]
+    fn w4_g50_wired_cannon_shot_round_trips() {
+        let c = WiredCannonShot {
+            damage: 300,
+            knockback: 8.0,
+            x: 120,
+            y: 340,
+            angle: 4,
+            ammo: 4,
+            owner: 2,
+        };
+        let f = S2c::WiredCannonShot(c).encode();
+        assert_eq!(f[2], 108);
+        let mut body = Vec::new();
+        body.extend_from_slice(&300i16.to_le_bytes());
+        body.extend_from_slice(&8.0f32.to_le_bytes());
+        body.extend_from_slice(&120i16.to_le_bytes());
+        body.extend_from_slice(&340i16.to_le_bytes());
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.extend_from_slice(&4i16.to_le_bytes());
+        body.push(2);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::WiredCannonShot(d) => assert_eq!(d, c),
+            other => panic!("expected 108, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `109 MassWireOperation` (`NetMessage.cs:1412-1418`): four shorts
+    /// (start x/y, end x/y) + the byte tool mode. Client→host only
+    /// (`MessageBuffer.cs:3774-3788`).
+    #[test]
+    fn w4_g50_mass_wire_operation_round_trips() {
+        let m = MassWireOperation {
+            start_x: 10,
+            start_y: 20,
+            end_x: 30,
+            end_y: 40,
+            tool_mode: 0x21, // Red | Cutter
+        };
+        let c = C2s::MassWireOperation(m).encode();
+        assert_eq!(c[2], 109);
+        let mut body = Vec::new();
+        for v in [10i16, 20, 30, 40] {
+            body.extend_from_slice(&v.to_le_bytes());
+        }
+        body.push(0x21);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::MassWireOperation(d) => assert_eq!(d, m),
+            other => panic!("expected 109, got {:?}", other.msg_id()),
         }
     }
 }
