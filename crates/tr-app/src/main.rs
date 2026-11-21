@@ -205,6 +205,11 @@ mod projectile_ai_wire_kite;
 // the dust RNG census (`Projectile.cs:35834-35997`). Code-only — witnesses
 // written not run.
 mod projectile_ai_geyser;
+// W4-d13 — the aiStyle-127 sandnado column (656 friendly / 657 hostile): the
+// life cap, the 656 fade + owner sight test, the vertical-expand box and the
+// tail dust census (`Projectile.cs:35998-36085`). Code-only — witnesses
+// written not run.
+mod projectile_ai_sandnado;
 mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;

@@ -17539,6 +17539,23 @@ impl ProjectilePool {
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
                         }
+                        // W4-d13 — `AI()`'s `else if (this.aiStyle == 127)`
+                        // (`Projectile.cs:35998-36085`): the sandnado column
+                        // (656 friendly / 657 hostile). The box grows from
+                        // the vertical expand; the tail dust census rides
+                        // the pass's stream (the module doc).
+                        127 => {
+                            self.slots[i].ai_sandnado(
+                                world,
+                                player.as_deref(),
+                                rng,
+                                local_owner,
+                            );
+                            // `HandleMovement`: `tileCollide = false`
+                            // (`:7055`/`:7067`) — the free integrate.
+                            let v = self.slots[i].vel;
+                            self.slots[i].pos += v;
+                        }
                         // The carve-out of the arm-signature doc block above:
                         // aiStyle 22 writes tiles, so it reborrows `world`
                         // mutably at its own call site.
@@ -23383,6 +23400,13 @@ impl ProjectilePool {
                 // `numHits++` `:14199`).
                 if matches!(p.kind, MOONLORD_BULLET | MOONLORD_ARROW | MOONLORD_ARROW_TRAIL) {
                     p.damage = (p.damage as f64 * 0.96) as i32;
+                }
+                // W4-d13 — `Damage_PVE_Inner`'s type-656 arm
+                // (`Projectile.cs:14181-14184`): the friendly Sandnado's
+                // per-hit counter — every landed hit ticks `localAI[0]`,
+                // the 30-hit fade the aiStyle-127 arm reads (`:36015`).
+                if p.kind == SANDNADO_FRIENDLY {
+                    p.local_ai[0] += 1.0;
                 }
                 // S1-P-i21 — `Damage_PVE_Inner`'s type-294 arm
                 // (`Projectile.cs:13411-13413`): the Shadowbeam's stored damage

@@ -1039,6 +1039,12 @@ pub const GEYSER_TRAP: u16 = 654;
 /// `ProjectileID.DD2OgreStomp` (670) — the Ogre's stomp shockwave (aiStyle
 /// 126, `Projectile.cs:7174-7185`); the hostile-only row, the ±3 split.
 pub const OGRE_STOMP: u16 = 670;
+/// `ProjectileID.SandnadoFriendly` (656) — the Sand Elemental's friendly
+/// sandnado (aiStyle 127, `Projectile.cs:7048-7060`).
+pub const SANDNADO_FRIENDLY: u16 = 656;
+/// `ProjectileID.SandnadoHostile` (657) — the hostile sandnado (aiStyle 127,
+/// `Projectile.cs:7061-7070`).
+pub const SANDNADO_HOSTILE: u16 = 657;
 /// `ProjectileID.SpiritFlame` (659) — the Spirit Flame's shot (aiStyle 129).
 pub const SPIRIT_FLAME: u16 = 659;
 /// `ProjectileID.SkyFracture` (660) — the Sky Fracture's aiStyle-1 rider.
@@ -3566,6 +3572,15 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // W4-d13 — `Projectile.cs:7174-7185` (670, the Ogre Stomp): the
             // same 30x30 aiStyle-126 row MINUS friendly/trap — hostile only.
             OGRE_STOMP => (30.0, 30.0, 126, -1, 120, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d13 — `Projectile.cs:7048-7060` (656, the friendly Sandnado):
+            // 10x10, aiStyle 127, friendly, `magic = true` (the crit block's
+            // overlay below), `tileCollide = false`, `penetrate = -1`, the
+            // LOCAL immunity pair (8), `timeLeft = 1200`.
+            SANDNADO_FRIENDLY => (10.0, 10.0, 127, -1, 1200, 0, false, false, false, (true, 8, false, -1, 0, 1.0)),
+            // W4-d13 — `Projectile.cs:7061-7070` (657, the hostile Sandnado):
+            // 10x10, aiStyle 127, hostile, `tileCollide = false`,
+            // `penetrate = -1`, `timeLeft = 1200`, NO immunity pair.
+            SANDNADO_HOSTILE => (10.0, 10.0, 127, -1, 1200, 0, false, false, false, RESET_STATE),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -4381,6 +4396,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+            // W4-d13 — the friendly Sandnado's `magic = true`
+            // (`Projectile.cs:7054`).
+                | SANDNADO_FRIENDLY
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
