@@ -1533,6 +1533,31 @@ surface rolls) remains unported — g71 owns the surface setBG slots' PERSISTENC
 and draw tables, not that roll; inserting it later shifts the moon draw again
 (the same re-pin pattern). Witnesses WRITTEN NOT RUN (code-only).
 
+**The cave-style DRAW chain LIVE (W4-g72 final, `render/bg.rs` + `bg_styles.rs`).**
+The roll→persist→draw chain is closed on the logic side: `draw_background`
+builds `BgStylePickInput` from `World.cave_back_x`/`cave_back_style` (the
+rolled/persisted arrays — `.wld` flags, `.trwld` v18 tail and the `7 WorldInfo`
+header all land in the same fields) + the frame's `SceneMetrics`
+(`bg_style_pick_input`; the Skyblock snow-threshold 300 variant stays the
+documented normal-1500 deviation), runs the `ug_back_step` latch/decay on the
+new `App.ug_back` state (carried across frames like `hellBlackBoxBottom`,
+`Main.cs:52823-52841`), and feeds the picked style into the full 22-case
+`background_style_sheets` table (ice/jungle variants + worldID evil rows +
+hell tail). The `shimmerAlpha == 1` early return (`:52800-52805`) is ported;
+the port's shimmer ramp is unwired so the frame feeds 0.0. The dirt pass now
+draws `back[1]` (the picked style's sheet) instead of the pinned
+`Background_2`; the geometry dims keep reading `Background_2` like the C#'s
+`backgroundHeight[2]`. DEVIATION (graceful degradation): the per-biome sheets
+are still atlas-blocked (d35 research/113 §8.4 per-world bg pages), so
+`back_texture` resolves only the classic-set ids — a non-classic pick skips
+the affected passes (never draws the WRONG biome's sheet), and the
+`_drawBackground_oldBackTexture` cross-fade overlay draws stay unwired (the
+latch state machine IS live). The G6 key needs no new input: the backdrop
+rides the always-rebuilt back range, and the style inputs are per-world
+constants or the per-frame metrics scan. 3 witnesses WRITTEN NOT RUN
+(the rolled-array pick + table ids, the latch/decay steps, the classic-set
+regression).
+
 The sheet is anchored to `Main.worldSurface`, so its value must match `TerrainPass.ApplyPass`:
 `worldSurface = (int)(max(surfaceY) + 25.0)` вЂ” the *deepest* column, not the mean вЂ” with
 `rockLayer` snapped up to a multiple of 6 above it (BUG-019). An earlier generator used the

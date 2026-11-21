@@ -1091,6 +1091,11 @@ impl App {
                         self.atmo,
                         self.game_update_count,
                         self.mouse_text_color,
+                        &self.scene_metrics,
+                        &mut self.ug_back,
+                        // `Main.shimmerAlpha`: the port's shimmer ramp is not
+                        // wired (the liquid pass feeds 0.0, see :382).
+                        0.0,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.

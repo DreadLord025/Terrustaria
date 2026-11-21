@@ -1078,6 +1078,11 @@ pub(crate) struct App {
     /// written after the box draws, so the box always consumes the previous frame's
     /// value (0 on the first frame — a negative height draws nothing, like XNA).
     pub(crate) hell_black_box_bottom: f32,
+    /// `Main.undergroundBackground`/`oldUndergroundBackground`/`ugBackTransition`
+    /// (`Main.cs:52823-52841`): the cavern style latch + cross-fade, stepped once
+    /// per `DrawBackground` (W4-g72 final — the pick reads the rolled cave arrays
+    /// + `scene_metrics`; the fade overlay draws stay atlas-blocked).
+    pub(crate) ug_back: crate::render::bg_styles::UgBackState,
 }
 
 /// G6: everything the world instance range (sky strips, tiles, walls, dark rects)
@@ -4072,6 +4077,11 @@ impl App {
             summon_shot: crate::env::summon_shot(),
             world_key: None,
             hell_black_box_bottom: 0.0,
+            ug_back: crate::render::bg_styles::UgBackState {
+                style: 0,
+                old_style: 0,
+                transition: 0.0,
+            },
         };
         // The wiring RNG (`Main.rand` in the C#, `Wiring.cs:811-812`) seeds
         // from the world; vanilla seeds it from the clock (`Main.cs:6461-6463`).

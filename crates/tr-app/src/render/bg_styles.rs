@@ -1,23 +1,30 @@
 //! The cavern background STYLE machine (`Main.DrawBackground`'s pick + sheet
-//! tables + cross-fade), ported verbatim but UNWIRED (W4-g72 lane 3, code-only).
+//! tables + cross-fade), ported verbatim (W4-g72 lane 3, code-only).
 //!
-//! Why unwired: the live `render::bg::draw_background` pins
-//! `undergroundBackground = 0` (the classic dirt/rock set) because the per-biome
-//! sheet variety needs ~90 extra `Background_<id>` sheets and the single 8192 px
-//! atlas already packs the full static+gore set to 7530 px — even ONE extra
-//! biome set overflows the strict-GPU bound (measured with the
-//! `tools/atlas_sim.js` skyline twin). Wiring needs the C#'s separate
-//! background-target family (`Main.backgroundTarget`, S1-G-13) or an atlas
-//! re-budget; both are out of this lane's scope. The STYLE inputs
-//! (`caveBackX`/`caveBackStyle`/`iceBackStyle`/`jungleBackStyle`) were
-//! unowned at the time of writing; W4-g72 phases 7-8 own them now
-//! (`WorldGen.RandomizeCaveBackgrounds`, `WorldGen.cs:8192-8249`, ported in
-//! `worldgen/cave_bg.rs` and drawn in `step_world_tail` ahead of the moon
-//! roll — the `world_hash` pins carry stale-by-design notes).
+//! LIVE since W4-g72 final: `render::bg::draw_background` builds the pick
+//! input from the World's rolled/persisted cave arrays + the frame's
+//! `SceneMetrics` (`bg_style_pick_input`), steps the `ug_back_step` latch and
+//! feeds the picked style into `background_style_sheets` — the full
+//! roll→persist→draw chain. The style inputs
+//! (`caveBackX`/`caveBackStyle`/`iceBackStyle`/`jungleBackStyle`) are owned
+//! since phases 7-8 (`WorldGen.RandomizeCaveBackgrounds`,
+//! `WorldGen.cs:8192-8249`, ported in `worldgen/cave_bg.rs` and drawn in
+//! `step_world_tail` ahead of the moon roll — the `world_hash` pins carry
+//! stale-by-design notes).
+//!
+//! The remaining blocker is SHEET SUPPLY, not logic: the per-biome
+//! `Background_<id>` sheets overflow the single 8192 px atlas (the pre-wave
+//! static+gore set measured 7530 px with the `tools/atlas_sim.js` skyline
+//! twin). d35's atlas-repack (research/113 §7.1/§8.4) re-measured the cavern
+//! sets as CHEAP (≤0.101 Mpx per style) and contracts per-world bg pages
+//! appended after the union pages; until that lands, `bg.rs::back_texture`
+//! resolves only the classic-set ids and a non-classic pick gracefully
+//! degrades (missing sheet → pass skipped, never a wrong sheet). The
+//! cross-fade overlay draws (`_drawBackground_oldBackTexture`) stay unwired
+//! for the same reason; the latch/decay state machine IS live.
 //!
 //! Everything here is pure (no RNG draws anywhere in the three C# functions)
-//! and witnessed against the source line-by-line. The atlas overflow above
-//! is the only remaining wiring blocker.
+//! and witnessed against the source line-by-line.
 
 /// The style-pick inputs — the `Main` statics + `SceneMetrics` fields
 /// `DrawBackground_PickUndergroundBackgroundStyle` reads (`Main.cs:54033-54095`).
@@ -128,6 +135,43 @@ pub(crate) fn pick_underground_background_style(i: &BgStylePickInput) -> i32 {
         num2 = 2;
     }
     num2
+}
+
+/// The LIVE input adapter (W4-g72 final): builds `BgStylePickInput` from the
+/// World's rolled/persisted cave arrays (`World.cave_back_x`/`cave_back_style`,
+/// owned since phases 7-8) and the frame's `SceneMetrics` scan. `screen_pos`
+/// is `Main.screenPosition` (the caller's `camera - screen*0.5`, unscaled —
+/// the backdrop's identity `BackgroundViewMatrix`), `magma_layer` the
+/// `DrawBackground` local (`Main.cs:52812-52813`, `bg.rs::magma_layer_of`).
+/// The Skyblock snow-threshold variant (300, `SceneMetrics.cs:154-163`) is
+/// not ported — the normal 1500 always applies (the existing deviation).
+pub(crate) fn bg_style_pick_input(
+    world: &tr_core::World,
+    metrics: &tr_core::scene::SceneMetrics,
+    screen_pos: [f32; 2],
+    screen: [f32; 2],
+    magma_layer: f64,
+) -> BgStylePickInput {
+    BgStylePickInput {
+        screen_pos,
+        screen,
+        cave_back_x: world.cave_back_x,
+        cave_back_style: world.cave_back_style,
+        rock_layer: world.rock_layer,
+        max_tiles_y: world.height,
+        magma_layer,
+        snow_tile_count: metrics.snow_tile_count,
+        jungle_tile_count: metrics.jungle_tile_count,
+        snow_tile_threshold: tr_core::scene::thresholds::SNOW_TILE_NORMAL,
+        jungle_tile_threshold: tr_core::scene::thresholds::JUNGLE_TILE,
+        zone_beach: metrics.zone_beach,
+        zone_corrupt: metrics.zone_corrupt,
+        zone_crimson: metrics.zone_crimson,
+        zone_hallow: metrics.zone_hallow,
+        zone_snow: metrics.zone_snow,
+        // SceneMetrics.cs:677: ZoneGlowshroom = EnoughTilesForGlowingMushroom.
+        zone_glowshroom: metrics.enough_tiles_for_glowing_mushroom(),
+    }
 }
 
 /// One style's `_drawBackground_tempBack[0..7]` sheet table —

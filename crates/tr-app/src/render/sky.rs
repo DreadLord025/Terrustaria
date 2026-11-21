@@ -650,6 +650,12 @@ pub(crate) fn draw_sky(
     counter: u32,
     // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
     mouse_text_color: u8,
+    // `Main.SceneMetrics` + the underground style latch + `Main.shimmerAlpha`
+    // (W4-g72 final): threaded to `draw_background`'s live style pick
+    // (`Main.cs:52823-52841`). The shimmer ramp is unwired (0.0 in play).
+    metrics: &tr_core::scene::SceneMetrics,
+    ug_back: &mut super::bg_styles::UgBackState,
+    shimmer_alpha: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -1549,6 +1555,9 @@ pub(crate) fn draw_sky(
             // has no Echo Monolith / see-invisible accessory, so the wall-parallax
             // gate rides the `TR_SHOW_INVISIBLE` A/B pin (false in normal play).
             crate::env::show_invisible(),
+            metrics,
+            ug_back,
+            shimmer_alpha,
         );
     }
 }

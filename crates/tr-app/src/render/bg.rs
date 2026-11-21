@@ -198,25 +198,29 @@ fn pass_prologue(screen: Vec2, screen_pos: Vec2, block_w: f32, cave_parallax: f3
 }
 
 /// `Main.DrawBackground_UpdateBackgroundStyles` (`Main.cs:53802`): the
-/// `_drawBackground_backTexture[0..7]` sheet table. Only `undergroundBackground == 0`
-/// — the classic set (`Main.cs:53817-53824`) — is reachable in the port: the style
-/// pick (`DrawBackground_PickUndergroundBackgroundStyle`, `Main.cs:54033`) needs
-/// `Main.caveBackX`/`caveBackStyle` and the `SceneMetrics` zone counts, none of which
-/// the port models, so the per-biome `case` arms (`Main.cs:53825-53987`) stay dead.
-/// `hellBackStyle` (a per-world roll, `WorldGen.cs:8247`) still selects the animated
-/// magma sheets (`Main.cs:54000-54008`).
-fn draw_background_update_background_styles(hell_back_style: usize) -> [usize; 7] {
-    let mut back = [0usize; 7]; // Main.cs:53804
-    // `case 0:` (Main.cs:53817-53824).
-    back[0] = 1; // Background_1 — surface transition row
-    back[1] = 2; // Background_2 — dirt sheet
-    back[2] = 4; // Background_4 — rock-transition band
-    back[3] = 3; // Background_3 — rock bands
-    back[4] = 6; // Background_6 — magma transition
-    back[5] = 5; // dead store: always overridden below
-    back[5] = 125 + hell_back_style; // Main.cs:54000-54007
-    back[6] = 185 + hell_back_style; // Main.cs:54008
-    back
+/// `_drawBackground_backTexture[0..7]` sheet table. The style pick
+/// (`DrawBackground_PickUndergroundBackgroundStyle`, `Main.cs:54033`) is LIVE
+/// since W4-g72 final: `draw_background` builds a `BgStylePickInput` from the
+/// World's rolled/persisted cave arrays + the frame's `SceneMetrics` and the
+/// picked style feeds `bg_styles::background_style_sheets` (the full 22-case
+/// table). The per-biome SHEETS are still atlas-blocked (d35 research/113
+/// §8.4 per-world bg pages), so `back_texture` resolves only the classic-set
+/// ids and a non-classic pick gracefully degrades (missing sheet → pass
+/// skipped, never a wrong sheet). `hellBackStyle` (a per-world roll,
+/// `WorldGen.cs:8247`) still selects the animated magma sheets
+/// (`Main.cs:54000-54008`) — those three ARE loaded.
+fn draw_background_update_background_styles(
+    style: i32,
+    world: &World,
+) -> [usize; 7] {
+    let back = super::bg_styles::background_style_sheets(
+        style,
+        world.ice_back_style as i32,
+        world.jungle_back_style as i32,
+        world.hell_back_style as i32,
+        world.world_id,
+    );
+    back.map(|id| id as usize)
 }
 
 /// `_drawBackground_backTexture` id → the port's decoded sheet (`LoadBackground`,
@@ -392,7 +396,26 @@ pub(crate) fn draw_background(
     // coating's see-invisible gate the wall-parallax `WallLightAt` reads. The port
     // has no Echo Monolith / accessory yet, so it rides the `TR_SHOW_INVISIBLE` pin.
     show_invisible_walls: bool,
+    // `Main.SceneMetrics` (the frame's tile-window scan) — the style pick's
+    // snow/jungle counts + zone flags (`Main.cs:54038-54093`). W4-g72 final.
+    metrics: &tr_core::scene::SceneMetrics,
+    // `Main.undergroundBackground`/`oldUndergroundBackground`/`ugBackTransition`
+    // (`Main.cs:52823-52841`) — carried across frames like `hellBlackBoxBottom`.
+    ug_back: &mut super::bg_styles::UgBackState,
+    // `Main.shimmerAlpha` (`Main.cs:52800`): 1 skips the whole pass, >0 kills
+    // the cross-fade. The port's shimmer ramp is not wired yet (draw.rs feeds
+    // 0.0), so this stays 0 in normal play.
+    shimmer_alpha: f32,
 ) {
+    // `Main.cs:52800-52805`: full shimmer skips the pass and zeroes the fade.
+    if shimmer_alpha == 1.0 {
+        ug_back.transition = 0.0;
+        return;
+    }
+    // `Main.backgroundHeight[2]` / the rock-transition snap keep reading the
+    // DIRT sheet's dims even for non-classic styles (the C# loads
+    // `Background_2` at boot and `GetRockTransitionPoint` reads its height);
+    // the classic-set guard stays for that reason.
     let Some(dirt) = sky.underground else {
         return;
     };
@@ -421,10 +444,32 @@ pub(crate) fn draw_background(
     // re-applies its own 1.2 (established with the dirt pass), so only the backdrop
     // folds the ramp here.
     // `Main.cs:52823-52840`: `PickUndergroundBackgroundStyle` + the `ugBackTransition`
-    // cross-fade — `undergroundBackground` is pinned to 0 (see
-    // `draw_background_update_background_styles`), the style never swaps and every
-    // `_drawBackground_oldBackTexture` overlay draw is dead.
-    let back = draw_background_update_background_styles(world.hell_back_style as usize);
+    // cross-fade — LIVE since W4-g72 final: the pick reads the World's rolled cave
+    // arrays + the frame's SceneMetrics (`bg_style_pick_input`), the latch/decay
+    // runs `ug_back_step`. The cross-fade OVERLAY draws
+    // (`_drawBackground_oldBackTexture`) stay unwired — the per-biome sheets are
+    // atlas-blocked (d35 research/113 §8.4), so the old-style table would resolve
+    // to missing sheets anyway; the state machine still tracks the fade for the
+    // wiring lane.
+    let picked = super::bg_styles::pick_underground_background_style(
+        &super::bg_styles::bg_style_pick_input(
+            world,
+            metrics,
+            [screen_pos.x, screen_pos.y],
+            [screen.x, screen.y],
+            magma_layer,
+        ),
+    );
+    super::bg_styles::ug_back_step(ug_back, picked, shimmer_alpha);
+    let back = draw_background_update_background_styles(ug_back.style, world);
+    // W4-g72 final: the dirt pass draws `back[1]` (the picked style's dirt
+    // sheet), not the pinned `Background_2`. The per-biome sheets are
+    // atlas-blocked (d35 research/113 §8.4), so `back_texture` resolves only
+    // the classic id 2 today; a non-classic pick skips the dirt cells
+    // (graceful degradation — never the WRONG biome's sheet). The dims
+    // (`dirt.h` for the rock snap / row pitch) keep reading `Background_2`
+    // like the C#'s `backgroundHeight[2]`.
+    let dirt_sheet = back_texture(sky, back[1]);
     let rock_transition_point = get_rock_transition_point(world, dirt.h);
     let frame = magma_bg_frame(anim_time);
 
@@ -456,6 +501,7 @@ pub(crate) fn draw_background(
         cave_parallax,
         bg_brightness,
         &dirt,
+        dirt_sheet,
     );
     draw_background_draw_underworld_black_box(
         r,
@@ -583,6 +629,10 @@ fn draw_background_dirt_background(
     cave_parallax: f32,
     bg_brightness: f32,
     dirt: &BgTex,
+    // W4-g72 final: the picked style's `back[1]` sheet (`None` while the
+    // per-biome sheets are atlas-blocked — the cells skip, the band below
+    // still draws like the C#'s own missing-texture arm).
+    dirt_sheet: Option<&BgTex>,
 ) {
     let screen_pos = layout.screen_pos;
     let surface_screen = layout.transition_top;
@@ -593,6 +643,9 @@ fn draw_background_dirt_background(
     if surface_screen > screen.y + OFF_SCREEN_RANGE {
         return;
     }
+    // The C# reads `Background[backTexture[1]].Width()` for the tiling block;
+    // the port keeps `Background_2`'s dims for the geometry (all dirt-family
+    // sheets share the 128x96 shape) and draws the PICKED sheet's pixels.
     let num = dirt.w - 32.0;
     if num < 16.0 {
         return;
@@ -629,26 +682,28 @@ fn draw_background_dirt_background(
     // The band below still draws when the row count collapses (`Main.cs:53707` gates on
     // its own top), so the cells run under an `if`, not an early return.
     if loops_y > 0 {
-        let rows = (dirt.h as i32 / 16).max(1);
-        for i in 0..loops {
-            for j in 0..loops_y {
-                for k in 0..(num as i32 / 16) {
-                    for l in 0..rows {
-                        let cell_x = start_x + num * i as f32 + 16.0 * k as f32;
-                        let cell_y = start_y + dirt.h * j as f32 + 16.0 * l as f32;
-                        push_cave_cell(
-                            r,
-                            camera,
-                            zoom,
-                            screen,
-                            dirt,
-                            16.0 * k as f32 + n2 + 16.0,
-                            16.0 * l as f32,
-                            [cell_x + n2, cell_y],
-                            [cell_x + 8.0, cell_y + 8.0],
-                            light,
-                            bg_brightness,
-                        );
+        if let Some(dirt_tex) = dirt_sheet {
+            let rows = (dirt.h as i32 / 16).max(1);
+            for i in 0..loops {
+                for j in 0..loops_y {
+                    for k in 0..(num as i32 / 16) {
+                        for l in 0..rows {
+                            let cell_x = start_x + num * i as f32 + 16.0 * k as f32;
+                            let cell_y = start_y + dirt.h * j as f32 + 16.0 * l as f32;
+                            push_cave_cell(
+                                r,
+                                camera,
+                                zoom,
+                                screen,
+                                dirt_tex,
+                                16.0 * k as f32 + n2 + 16.0,
+                                16.0 * l as f32,
+                                [cell_x + n2, cell_y],
+                                [cell_x + 8.0, cell_y + 8.0],
+                                light,
+                                bg_brightness,
+                            );
+                        }
                     }
                 }
             }
@@ -1694,18 +1749,115 @@ mod underground_bg_tests {
     fn background_styles_follow_hell_back_style() {
         // `Main.cs:53817-53824` + `:54000-54008`: the classic set with the animated
         // magma sheet `125 + hellBackStyle` and the hell floor `185 + hellBackStyle`.
+        // W4-g72 final: the table now routes through the full 22-case
+        // `background_style_sheets`; style 0 + a fresh World reproduces the
+        // classic set for every hell roll.
+        let mut w = world();
+        w.hell_back_style = 0;
         assert_eq!(
-            draw_background_update_background_styles(0),
+            draw_background_update_background_styles(0, &w),
             [1, 2, 4, 3, 6, 125, 185]
         );
+        w.hell_back_style = 1;
         assert_eq!(
-            draw_background_update_background_styles(1),
+            draw_background_update_background_styles(0, &w),
             [1, 2, 4, 3, 6, 126, 186]
         );
+        w.hell_back_style = 2;
         assert_eq!(
-            draw_background_update_background_styles(2),
+            draw_background_update_background_styles(0, &w),
             [1, 2, 4, 3, 6, 127, 187]
         );
+    }
+
+    /// W4-g72 final: the LIVE roll→persist→draw chain. A world whose cave
+    /// arrays were rolled (or loaded from the `.wld`/`.trwld`/net header —
+    /// the same fields) picks a NON-zero style through the same
+    /// `BgStylePickInput` the frame builds, and the sheet table follows the
+    /// pick + the ice/jungle/hell variant bytes. The per-biome sheets are
+    /// atlas-blocked, so `back_texture` returns None for them (graceful
+    /// degradation, never a wrong sheet) — the ids themselves are pinned here.
+    #[test]
+    fn w4_g72_the_draw_side_reads_the_rolled_cave_arrays() {
+        let mut w = world();
+        // Arm-A shape: one centre band, styles [5, 2], trailing edges at width.
+        w.cave_back_x = [2100, 4200, 4200, 0];
+        w.cave_back_style = [5, 2, 0, 0];
+        w.ice_back_style = 2;
+        w.jungle_back_style = 1;
+        w.hell_back_style = 1;
+        w.world_id = 7;
+        let metrics = tr_core::scene::SceneMetrics::new();
+        // Probe column left of the band edge → style[0] = 5, +3 = 8.
+        let input = super::super::bg_styles::bg_style_pick_input(
+            &w,
+            &metrics,
+            [100.0 * TILE_PX, 700.0 * TILE_PX],
+            [1600.0, 900.0],
+            magma_layer_of(&w),
+        );
+        let picked = super::super::bg_styles::pick_underground_background_style(&input);
+        assert_eq!(picked, 8);
+        // Style 8's table (Main.cs:53895-53901): 83/84/85/86 + 137+hell.
+        assert_eq!(
+            draw_background_update_background_styles(picked, &w),
+            [83, 84, 85, 86, 138, 126, 186]
+        );
+        // Right of the band edge → style[1] = 2 (glowshroom), +3 = 5.
+        let input = super::super::bg_styles::bg_style_pick_input(
+            &w,
+            &metrics,
+            [3000.0 * TILE_PX, 700.0 * TILE_PX],
+            [1600.0, 900.0],
+            magma_layer_of(&w),
+        );
+        let picked = super::super::bg_styles::pick_underground_background_style(&input);
+        assert_eq!(picked, 5);
+        assert_eq!(
+            draw_background_update_background_styles(picked, &w),
+            [73, 74, 75, 76, 132, 126, 186]
+        );
+        // The glowshroom trump reads the metrics scan, not a World field.
+        let mut m = tr_core::scene::SceneMetrics::new();
+        m.mushroom_tile_count = tr_core::scene::thresholds::MUSHROOM_TILE;
+        let input = super::super::bg_styles::bg_style_pick_input(
+            &w,
+            &m,
+            [100.0 * TILE_PX, 700.0 * TILE_PX],
+            [1600.0, 900.0],
+            magma_layer_of(&w),
+        );
+        assert_eq!(
+            super::super::bg_styles::pick_underground_background_style(&input),
+            2
+        );
+        // Style 2 (Main.cs:53853-53859): 62/63/64/65 + 143+hell.
+        assert_eq!(
+            draw_background_update_background_styles(2, &w),
+            [62, 63, 64, 65, 144, 126, 186]
+        );
+    }
+
+    /// W4-g72 final: the latch/decay rides the draw — a style change arms the
+    /// fade at 1 then decays 0.25 per draw (`Main.cs:52823-52841`), and full
+    /// shimmer skips the pass outright (`:52800-52805`).
+    #[test]
+    fn w4_g72_the_ug_back_latch_steps_with_the_draw() {
+        let mut s = super::super::bg_styles::UgBackState {
+            style: 0,
+            old_style: 0,
+            transition: 0.0,
+        };
+        super::super::bg_styles::ug_back_step(&mut s, 8, 0.0);
+        assert_eq!((s.style, s.old_style), (8, 0));
+        assert_eq!(s.transition, 0.75); // armed 1, decayed once in the same step
+        super::super::bg_styles::ug_back_step(&mut s, 8, 0.0);
+        assert_eq!(s.transition, 0.5);
+        super::super::bg_styles::ug_back_step(&mut s, 8, 0.5);
+        assert_eq!(s.transition, 0.0); // any shimmer kills the fade
+        super::super::bg_styles::ug_back_step(&mut s, 5, 0.0);
+        assert_eq!((s.style, s.old_style), (5, 8));
+        assert_eq!(s.transition, 0.75);
     }
 
     #[test]
