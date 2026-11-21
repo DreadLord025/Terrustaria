@@ -700,8 +700,18 @@ impl App {
         };
         self.set_equip_cell(context, idx, item);
         // `:1999-2006` — the fifteen kinds play 22 (Unlock), the rest 7.
-        self.audio
-            .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+        // W4-d79 — case 22 is the draw-free single-voice pool, case 7 Grab
+        // one `Next(-10, 11) * 0.01` pitch + pool; both unpositioned, on the
+        // bare stream (the click handler runs outside every SwapRandom block).
+        match crate::app::equip_swap::after_item_swap_cue(new_kind) {
+            "Unlock" => {
+                self.audio.play_single_voice("Unlock", -1.0, -1.0);
+            }
+            _ => {
+                self.audio
+                    .play_grab_sound(-1.0, -1.0, self.rngs.global());
+            }
+        }
         self.stack_split = 30; // `:2007`
         self.ui_right_press = false; // `:2008`
     }
@@ -1945,9 +1955,17 @@ impl App {
             if right_edge {
                 if let Some(new_kind) = crate::app::equip_swap::try_item_swap(&mut target) {
                     self.inventory[slot] = target;
-                    // `AfterItemSwap` (`:1997-2009`).
-                    self.audio
-                        .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+                    // `AfterItemSwap` (`:1997-2009`). W4-d79 — case 22 Unlock
+                    // draw-free pool, case 7 Grab pitch + pool, bare stream.
+                    match crate::app::equip_swap::after_item_swap_cue(new_kind) {
+                        "Unlock" => {
+                            self.audio.play_single_voice("Unlock", -1.0, -1.0);
+                        }
+                        _ => {
+                            self.audio
+                                .play_grab_sound(-1.0, -1.0, self.rngs.global());
+                        }
+                    }
                     self.stack_split = 30; // `:2007`
                     self.ui_right_press = false; // `:2008`
                 }
@@ -2603,8 +2621,18 @@ impl App {
                         let mut item = target;
                         if let Some(new_kind) = crate::app::equip_swap::try_item_swap(&mut item) {
                             chest::set_chest_slot(&mut self.world_chests, chest_idx, abs, item);
-                            self.audio
-                                .play(crate::app::equip_swap::after_item_swap_cue(new_kind));
+                            // `AfterItemSwap` (`:1997-2009`). W4-d79 — case 22
+                            // Unlock draw-free pool, case 7 Grab pitch + pool,
+                            // bare stream.
+                            match crate::app::equip_swap::after_item_swap_cue(new_kind) {
+                                "Unlock" => {
+                                    self.audio.play_single_voice("Unlock", -1.0, -1.0);
+                                }
+                                _ => {
+                                    self.audio
+                                        .play_grab_sound(-1.0, -1.0, self.rngs.global());
+                                }
+                            }
                             self.stack_split = 30; // `:2007`
                             self.ui_right_press = false; // `:2008`
                         }
