@@ -2180,7 +2180,7 @@ pub(crate) mod front_flow_tests {
             forest_hills: [[7, 8]; 4],
             forest_bg_anim: Default::default(),
             bg_flash: Default::default(),
-            stars: Vec::new(),
+            stars: crate::star_field::StarField::new(0),
             player_assets: PlayerAssets::default(),
             player: None,
             follow_player: false,

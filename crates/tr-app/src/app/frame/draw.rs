@@ -301,11 +301,19 @@ impl App {
                     let quantised = (natural_time / 60.0).floor() * 60.0;
                     let clock_time = natural_time;
                     // `Main.UpdateAtmosphereTransparencyToSkyColor`'s input
-                    // (`Main.cs:61983`): the view centre in world pixels. The
-                    // atmo feeds SetBackColor's rain dim BEFORE the tile colour
-                    // is taken (`Main.cs:61971-61983` order).
+                    // (`Main.cs:61983`): `screenPosition.Y + screenHeight / 2`
+                    // — the view top edge plus half the backbuffer. The port's
+                    // `camera` is the view centre spanning `screen / zoom`
+                    // world pixels, so the input is
+                    // `camera.y - screen.y / (2 * zoom) + screen.y / 2` (the
+                    // same formula the `self.atmo` recompute below uses; the
+                    // zoom is the world chain's `bg_zoom * zoom`, computed
+                    // inline here because `world_zoom` is bound further down).
+                    // The atmo feeds SetBackColor's rain dim BEFORE the tile
+                    // colour is taken (`Main.cs:61971-61983` order).
+                    let atmo_zoom = App::forced_minimum_zoom((screen.x, screen.y)) * *zoom;
                     let atmo = crate::render::sky::atmosphere_factor(
-                        camera.y,
+                        camera.y - screen.y / (2.0 * atmo_zoom) + screen.y / 2.0,
                         world.world_surface,
                         world.width,
                     );
@@ -1122,7 +1130,7 @@ impl App {
                         world,
                         clouds,
                         sky,
-                        stars,
+                        &stars.stars,
                         surface_px,
                         is_day,
                         clock_time,
@@ -1162,6 +1170,8 @@ impl App {
                                     -1
                                 }
                             }),
+                        scene_state.graveyard_visual_intensity,
+                        scene_state.shimmer_alpha,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.

@@ -612,7 +612,14 @@ pub(crate) fn update_scene(app: &mut App, dt: f32, screen: Vec2) {
     // from the stored (last-scan) metrics, exactly like `Main.Draw` reads
     // `Main.SceneMetrics` before the next scan.
     let quantised = (world.time / 60.0).floor() * 60.0;
-    let atmo = crate::render::sky::atmosphere_factor(camera.y, world.world_surface, world.width);
+    // `Main.cs:61983`'s input: the view top edge + half the backbuffer (the
+    // same formula the draw pass uses; the zoom is the world chain's).
+    let atmo_zoom = App::forced_minimum_zoom((screen.x, screen.y)) * *zoom;
+    let atmo = crate::render::sky::atmosphere_factor(
+        camera.y - screen.y / (2.0 * atmo_zoom) + screen.y / 2.0,
+        world.world_surface,
+        world.width,
+    );
     let back = tr_core::sky_color::set_back_color(&tr_core::sky_color::inputs_from(
         world,
         &app.scene_metrics,

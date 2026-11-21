@@ -169,6 +169,21 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
         for _ in 0..day_rate {
             wind.update_rain(max_raining);
         }
+        // (2c) `Main.cs:17249-17254`: `Star.UpdateStars` — once per tick,
+        // gated on the view being above the surface line
+        // (`screenPosition.Y < worldSurface * 16 + 16`), ahead of
+        // `Cloud.UpdateClouds` (the C# order). W4-g70 lane 8: the live
+        // pool's twinkle/rotation/fadeIn/falling walk + the noon respawn
+        // scan. The screen size reads the gpu config directly (the
+        // closure holds disjoint field borrows).
+        let (_sw, sh) = app
+            .gpu
+            .as_ref()
+            .map_or((1280.0, 720.0), |g| (g.config.width as f32, g.config.height as f32));
+        let view_top = app.camera.y - sh * 0.5;
+        if view_top < world.world_surface as f32 * TILE_PX + 16.0 {
+            app.stars.update_stars(world.day_time, world.time, day_rate);
+        }
         // (3) `Main.cs:64833-64949`: Main.UpdateTime's rain section — the
         // `ladyBugRainBoost` drain, the `rainTime` drain + strength-change roll
         // while raining, the ×5.75/×4.25/ladybug start rolls when not (the

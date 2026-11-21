@@ -68,9 +68,7 @@ use crate::rain::Rain;
 use crate::registry;
 use crate::render::debug::{DebugCache, StatsAcc};
 use crate::render::entities::{NpcAssets, PlayerAssets, make_npc_assets, make_player_assets};
-use crate::render::sky::{
-    CloudSprite, SkyAssets, StarSprite, make_clouds, make_sky_assets, make_stars,
-};
+use crate::render::sky::{CloudSprite, SkyAssets, make_clouds, make_sky_assets};
 use crate::render::tiles::{DrawScratch, TileDrawStats};
 use crate::settings;
 use crate::ui;
@@ -161,7 +159,9 @@ pub(crate) struct App {
     /// `WorldGen.BackgroundsCache` (`BackgroundChangeFlashInfo.cs`): the
     /// style-change flash the `DrawChangeOverlay` passes read.
     pub(crate) bg_flash: world_sim::bg_animation::BackgroundChangeFlash,
-    pub(crate) stars: Vec<StarSprite>,
+    /// The live star field (`Star.cs`, W4-g70 lane 8): spawn/update/
+    /// NightSetup/StarFall — the draw reads `stars.stars`.
+    pub(crate) stars: crate::star_field::StarField,
     pub(crate) player_assets: PlayerAssets,
     pub(crate) player: Option<Player>,
     pub(crate) follow_player: bool,
@@ -2869,7 +2869,7 @@ impl App {
         let forest_styles = world.forest_bg_styles;
         let clouds = make_clouds(&world, &lookups);
         let sky = make_sky_assets(&atlas, &world);
-        let stars = make_stars(&world);
+        let stars = crate::star_field::StarField::new(world.seed);
         let player_assets = make_player_assets(&atlas);
         let npc_assets = make_npc_assets(&atlas);
         let player_enabled = !crate::env::no_player();

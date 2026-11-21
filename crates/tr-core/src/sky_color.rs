@@ -14,7 +14,7 @@
 //! arms are coded behind the world's seed flag, the other two are noted at
 //! their C# sites.
 
-use tr_core::World;
+use crate::World;
 
 /// `Main.SetBackColor`'s three outputs (`out sunColor, out moonColor` +
 /// `Main.ColorOfTheSkies`), as sRGB bytes.
@@ -378,7 +378,7 @@ pub fn atmo_dim_sky(bg: [u8; 3], atmo: f32) -> [u8; 3] {
 /// (`Main.cs:61971-61981`). `time` is the caller's (quantised) clock.
 pub fn inputs_from(
     world: &World,
-    metrics: &tr_core::scene::SceneMetrics,
+    metrics: &crate::scene::SceneMetrics,
     graveyard: f32,
     mushroom_influence: f32,
     eclipse_light: f32,
@@ -404,8 +404,8 @@ pub fn inputs_from(
         jungle: metrics.jungle_tile_count as f32 / 700.0,
         mushroom: mushroom_influence,
         lightning,
-        remix: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
-        dont_starve: world.seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE),
+        remix: world.seeds.contains(crate::seeds::SeedFlags::REMIX),
+        dont_starve: world.seeds.contains(crate::seeds::SeedFlags::DONT_STARVE),
         not_retro,
     }
 }

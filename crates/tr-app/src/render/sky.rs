@@ -82,9 +82,12 @@ pub(crate) fn horizon_phase(moon_phase: u8, day: bool, time: f64) -> usize {
 /// depth factor the horizon visibilities ride. `y` is the camera centre in
 /// world pixels (`Main.cs:61983`).
 pub(crate) fn atmosphere_factor(y: f32, world_surface: f64, max_tiles_x: i32) -> f32 {
+    // `Main.cs:63187-63188`: the numerator computes in f32, the division by
+    // `worldSurface / 5.0` in f64, the result casts back to f32 before the
+    // clamps (the `tr_core::sky::atmosphere_transparency` shape).
     let n = max_tiles_x as f32 / 4200.0;
-    let n = n * n;
-    let mut atmo = (y / 16.0 - (65.0 + 10.0 * n)) / (world_surface as f32 / 5.0);
+    let numer = y / 16.0 - (65.0 + 10.0 * n * n);
+    let atmo = (numer as f64 / (world_surface / 5.0)) as f32;
     atmo.clamp(0.0, 1.0)
 }
 
@@ -383,25 +386,8 @@ pub(crate) struct SkyAssets {
     pub(crate) stars: Vec<Option<BgTex>>,
 }
 
-/// One star from `Star.SpawnStars` (`Star.cs:86-158`). Positions live in the
-/// original's 1920x1200 design space and are mapped onto the screen by `DrawStar`
-/// (`Main.cs:63112-63137`); `twinkle` and `rotation` oscillate from their spawn
-/// values at the per-star speeds.
-#[derive(Clone, Copy)]
-pub(crate) struct StarSprite {
-    x: f32,
-    y: f32,
-    scale: f32,
-    tex: usize,
-    /// `Star.twinkle` at spawn — the phase of the 0.6..1 oscillation.
-    phase: f32,
-    /// `Star.twinkleSpeed` (per tick, signed).
-    twinkle_speed: f32,
-    /// `Star.rotation` at spawn (radians).
-    rotation: f32,
-    /// `Star.rotationSpeed` (per tick, signed).
-    rotation_speed: f32,
-}
+/// The live star pool's element is [`crate::star_field::Star`] (W4-g70
+/// lane 8); the draw below reads its per-tick twinkle/rotation directly.
 
 pub(crate) fn sky_tex(
     atlas: &Atlas,
@@ -490,47 +476,10 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
     }
 }
 
-pub(crate) fn make_stars(world: &World) -> Vec<StarSprite> {
-    // `Star.SpawnStars` seeds a `FastRandom.CreateWithRandomSeed()` — a fresh
-    // OS-seeded stream per launch (`Star.cs:88`); the port pins it to the world
-    // seed so screenshots stay deterministic.
-    let mut state = world.seed ^ 0xA076_1D64_78BD_642F;
-    let count = next_range(&mut state, 200, 400);
-    (0..count)
-        .map(|_| {
-            // The spawn recipe in its RNG order (`Star.cs:129-152`).
-            let x = next_range(&mut state, 0, 1921) as f32;
-            let y = next_range(&mut state, 0, 1201) as f32;
-            let rotation = next_range(&mut state, 0, 628) as f32 * 0.01;
-            let mut scale = next_range(&mut state, 70, 130) as f32 * 0.006;
-            let tex = next_range(&mut state, 0, 4) as usize;
-            let phase = next_range(&mut state, 60, 101) as f32 * 0.01;
-            let mut twinkle_speed = next_range(&mut state, 30, 110) as f32 * 0.0001;
-            if next_range(&mut state, 0, 2) == 0 {
-                twinkle_speed = -twinkle_speed;
-            }
-            let mut rotation_speed = next_range(&mut state, 5, 50) as f32 * 0.0001;
-            if next_range(&mut state, 0, 2) == 0 {
-                rotation_speed = -rotation_speed;
-            }
-            if next_range(&mut state, 0, 40) == 0 {
-                scale *= 2.0;
-                twinkle_speed *= 0.5;
-                rotation_speed *= 0.5;
-            }
-            StarSprite {
-                x,
-                y,
-                scale,
-                tex,
-                phase,
-                twinkle_speed,
-                rotation,
-                rotation_speed,
-            }
-        })
-        .collect()
-}
+/// The static star field (`make_stars`/`StarSprite`) is retired (W4-g70
+/// lane 8): the live pool lives in [`crate::star_field`] — `Star.Update`
+/// steps the twinkle/rotation per tick, so the draw reads the live values
+/// instead of re-deriving them from `anim_time`.
 
 /// `NextHorizonRenderer.GetCelestialEffectPower`
 /// (`NextHorizonRenderer.cs:311-321`): the flare strength ramps in over the
@@ -672,7 +621,9 @@ pub(crate) fn draw_sky(
     world: &World,
     clouds: &[CloudSprite],
     sky: &SkyAssets,
-    stars: &[StarSprite],
+    // W4-g70 lane 8: the LIVE star pool (`Star.cs`) — the per-tick twinkle/
+    // rotation/fadeIn/falling state the draw reads.
+    stars: &[crate::star_field::Star],
     surface_px: f32,
     is_day: bool,
     clock_time: f64,
@@ -728,6 +679,12 @@ pub(crate) fn draw_sky(
     // `Main.player[Main.myPlayer].head` (`Player.cs`): the effective head
     // armour texture id — 12 (Sunglasses) swaps Sun2 in (`Main.cs:62933`).
     player_head_slot: i16,
+    // `Main.GraveyardVisualIntensity` — the star-field opacity
+    // (`Main.cs:63037-63045`) and the sky's graveyard dim.
+    graveyard: f32,
+    // `Main.shimmerAlpha` — the star dim/recolour (`Main.cs:63047-63050`,
+    // `:63087-63110`).
+    shimmer_alpha: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -806,61 +763,130 @@ pub(crate) fn draw_sky(
     let view_top = camera.y - screen.y * 0.5;
     let bg_top_y = tr_core::sky::sky_bg_top_y(view_top, world.world_surface) as f32;
 
-    // `DrawStarsInBackground` (`Main.cs:63030-63058`): visibility is driven by
-    // the sky colour alone — `255 * (1 - cloudAlpha * atmo) - skyR - 25 <= 0`
-    // hides them — so the field fades out across dawn instead of switching off
-    // at a fixed hour. (`Main.atmo` is 1 at the surface; the graveyard dim of
-    // `Main.cs:63037-63045` is not modelled.)
-    let sky_r = (tint[0] * 255.0) as i32;
-    if 255.0 * (1.0 - storm) - sky_r as f32 - 25.0 > 0.0 {
-        for s in stars {
+    // `DrawStarsInBackground` (`Main.cs:63030-63058`) + `DrawStar`
+    // (`:63060-63173`), W4-g70 lane 8: the LIVE pool (`crate::star_field`)
+    // with the graveyard opacity, the shimmer dim, the fadeIn fade and the
+    // falling-star trail. Visibility is driven by the sky colour alone —
+    // `255 * (1 - cloudAlpha * atmo) - skyR - 25 <= 0` hides the field —
+    // so it fades out across dawn instead of switching off at a fixed hour.
+    // The remix world always draws (`:63051`'s first arm).
+    let remix_stars = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    let mut star_opacity = 1.0f32;
+    if graveyard > 0.0 {
+        let n2 = 1.0 - graveyard * 1.4;
+        if n2 <= 0.0 {
+            star_opacity = 0.0;
+        } else {
+            star_opacity *= n2;
+        }
+    }
+    // `:63046-63050`: the shimmer dims the sky colour the brightness reads
+    // — XNA's byte multiply (`(byte)(c * 255 * (1 - shimmerAlpha))`).
+    let star_sky = if shimmer_alpha > 0.0 {
+        sky_color.map(|c| ((c * 255.0) * (1.0 - shimmer_alpha)) as u8)
+    } else {
+        sky_color.map(|c| (c * 255.0) as u8)
+    };
+    let sky_r = star_sky[0] as i32;
+    // `Main.cs:62086`: the natural star pass skips at shimmerAlpha == 1
+    // (the artificial pass at `:62203` draws them instead — no port caller).
+    let stars_visible = shimmer_alpha != 1.0
+        && star_opacity > 0.0
+        && (remix_stars || 255.0 * (1.0 - cloud_alpha * atmo) - sky_r as f32 - 25.0 > 0.0);
+    if stars_visible {
+        // `:63113-63117`: the tiny-surface worlds pin bgTopY to 0.
+        let star_top = if world.world_surface <= 30.0 { 0.0 } else { bg_top_y };
+        for (i, s) in stars.iter().enumerate() {
+            if s.hidden {
+                continue;
+            }
             let Some(st) = sky.stars.get(s.tex).and_then(|t| *t) else {
                 continue;
             };
-            // `Star.Update`'s 0.6..1 twinkle oscillation (`Star.cs:215-225`),
-            // sine-approximated around the same centre and range.
-            let twinkle = 0.8
-                + 0.2
-                    * (s.phase
-                        + anim_time * 60.0 * s.twinkle_speed * (std::f32::consts::TAU / 0.8))
-                        .sin();
-            // `DrawStar`'s greyscale brightness (`Main.cs:63069-63080`): how far
-            // the sky sits below white, averaged over the channels, x1.4.
-            let ch = |c: f32| (255.0 - c * 255.0 - 100.0) * twinkle;
-            let n3 = ch(tint[0]) as i32;
-            let n4 = ch(tint[1]) as i32;
-            let n3 = (n3 + ch(tint[2]) as i32 + n4) / 3;
+            // `DrawStar`'s greyscale brightness (`Main.cs:63068-63080`):
+            // `(255 - skyChannel - 100) * twinkle * (1 - fadeIn)` per
+            // channel, averaged, ×1.4, capped at 255.
+            let num2 = 1.0 - s.fade_in;
+            let ch = |c: u8| ((255 - c as i32 - 100) as f32 * s.twinkle * num2) as i32;
+            let n3 = ch(star_sky[0]);
+            let n4 = ch(star_sky[1]);
+            let n3 = (n3 + ch(star_sky[2]) + n4) / 3;
             if n3 <= 0 {
                 continue;
             }
-            let mut v = (n3 as f64 * 1.4) as i32;
-            if v > 255 {
-                v = 255;
+            let v = ((n3 as f64 * 1.4) as i32).min(255) as u8;
+            // `:63086`: `color *= starOpacity` — XNA's byte multiply.
+            let vb = ((v as f32 * star_opacity) as i32) as u8;
+            let mut color = [vb, vb, vb, vb];
+            // `:63087-63110`: the shimmer recolour — one channel per index
+            // class scales by twinkle² (the `1 - num*0` factor is a no-op),
+            // lerped by the shimmer alpha; the natural pass then scales by
+            // `1 - shimmerAlpha` (the artificial pass at `:62203` is the
+            // shimmer overlay's own — no port caller yet).
+            if shimmer_alpha > 0.0 {
+                let mut value = color;
+                let t2 = s.twinkle * s.twinkle;
+                match i % 3 {
+                    0 => value[1] = (color[1] as f32 * t2) as u8,
+                    1 => value[2] = (color[2] as f32 * t2) as u8,
+                    _ => value[0] = (color[0] as f32 * t2) as u8,
+                }
+                color = std::array::from_fn(|c| {
+                    (color[c] as f32 + (value[c] as f32 - color[c] as f32) * shimmer_alpha) as u8
+                });
+                let dim = 1.0 - shimmer_alpha;
+                color = color.map(|c| (c as f32 * dim) as u8);
             }
-            // `Main.cs:63112-63137`: the design-space position mapped onto the
-            // screen and shifted by `sceneArea.bgTopY`, wrapped into the frame.
+            // `Main.cs:63112-63137`: the design-space position mapped onto
+            // the screen and shifted by `sceneArea.bgTopY`; the wrap applies
+            // only to NON-falling stars (`:63119`).
             let mut px = s.x / 1920.0 * screen.x;
-            let mut py = s.y / 1200.0 * screen.y + bg_top_y;
-            if px < 0.0 {
-                px += screen.x;
+            let mut py = s.y / 1200.0 * screen.y + star_top;
+            if !s.falling {
+                if px < 0.0 {
+                    px += screen.x;
+                }
+                if px > screen.x {
+                    px -= screen.x;
+                }
+                if py < 0.0 {
+                    py += screen.y;
+                }
+                if py > screen.y {
+                    py -= screen.y;
+                }
             }
-            if px > screen.x {
-                px -= screen.x;
+            let colorf = color.map(|c| c as f32 / 255.0);
+            // `:63140-63157`: the falling trail — up to 29 ghosts behind
+            // the head at `fallSpeed * j * 0.4`, scale and colour fading
+            // by `1 - j/30`.
+            if s.falling {
+                let n = s.fall_time.min(30);
+                for j in 1..n {
+                    let jf = j as f32;
+                    let fade = 1.0 - jf / 30.0;
+                    let k = s.scale * fade;
+                    let ghost = color.map(|c| (c as f32 * fade) as u8);
+                    push_screen_rot(
+                        r,
+                        camera,
+                        zoom,
+                        screen,
+                        [px - s.fall_speed_x * jf * 0.4, py - s.fall_speed_y * jf * 0.4],
+                        [st.w * k * s.twinkle, st.h * k * s.twinkle],
+                        st.uv,
+                        ghost.map(|c| c as f32 / 255.0),
+                        s.rotation,
+                    );
+                }
             }
-            if py < 0.0 {
-                py += screen.y;
-            }
-            if py > screen.y {
-                py -= screen.y;
-            }
-            // `Main.cs:63172`: `tex.Size() * scale * twinkle`, rotated about the
-            // centre; `Star.Update` advances `rotation` by `rotationSpeed` per
-            // tick (`Star.cs:226`). The decompile builds the colour from
-            // `default` and assigns only R/G/B (`Main.cs:63083-63086`) — a zero
-            // alpha would make every star invisible, so the port draws them
-            // fully opaque at the computed brightness (see ANALYSIS.md).
-            let k = s.scale * twinkle;
-            let rot = s.rotation + anim_time * 60.0 * s.rotation_speed;
+            // `Main.cs:63172`: `tex.Size() * scale * twinkle`, rotated about
+            // the centre. The decompile builds the colour from `default`
+            // and assigns only R/G/B (`:63083-63086`) — a zero alpha would
+            // make every star invisible under the port's blend, so the
+            // port draws them at the computed brightness with the byte
+            // alpha the `color *=` chain produces (see ANALYSIS.md).
+            let k = s.scale * s.twinkle;
             push_screen_rot(
                 r,
                 camera,
@@ -869,8 +895,8 @@ pub(crate) fn draw_sky(
                 [px, py],
                 [st.w * k, st.h * k],
                 st.uv,
-                [v as f32 / 255.0, v as f32 / 255.0, v as f32 / 255.0, 1.0],
-                rot,
+                colorf,
+                s.rotation,
             );
         }
     }
@@ -1018,11 +1044,13 @@ pub(crate) fn draw_sky(
             // `:63917-63920` reset, threaded in as `moon_color`).
             let num13 = (1.0 - cloud_alpha * 1.5 * atmo).max(0.0);
             let mc = moon_color.map(|c| ((c as f32 * num13) as i32) as u8);
+            // `moonColor *= num13` scales the ALPHA too (XNA's Color*float
+            // multiplies all four channels; the input alpha is 255).
             let mc4 = [
                 mc[0] as f32 / 255.0,
                 mc[1] as f32 / 255.0,
                 mc[2] as f32 / 255.0,
-                num13,
+                ((255.0 * num13) as i32) as f32 / 255.0,
             ];
             // The body geometry always uses `Moon[moonType]`'s width
             // (`num6`, `:62862`) — the event sheets share the 50 px row.
@@ -1943,14 +1971,12 @@ mod cloud_star_tests {
     #[test]
     fn stars_follow_the_spawn_recipe() {
         // `Star.SpawnStars` (`Star.cs:89`): 200..400 stars, reproducible per
-        // seed.
-        let mut w = World::new("t".into(), 4200, 1200);
-        w.seed = 0xDEAD_BEEF;
-        let a = make_stars(&w);
-        let b = make_stars(&w);
-        assert_eq!(a.len(), b.len());
-        assert!((200..400).contains(&a.len()));
-        for (sa, sb) in a.iter().zip(b.iter()) {
+        // seed — the live pool (`crate::star_field`, W4-g70 lane 8).
+        let a = crate::star_field::StarField::new(0xDEAD_BEEF);
+        let b = crate::star_field::StarField::new(0xDEAD_BEEF);
+        assert_eq!(a.stars.len(), b.stars.len());
+        assert!((200..400).contains(&a.stars.len()));
+        for (sa, sb) in a.stars.iter().zip(b.stars.iter()) {
             assert_eq!(sa.x, sb.x);
             assert_eq!(sa.tex, sb.tex);
             assert!(sa.scale > 0.0);
