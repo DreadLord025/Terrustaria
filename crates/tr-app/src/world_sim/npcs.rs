@@ -1948,9 +1948,15 @@ pub(crate) fn update_destroyers(app: &mut App) {
             ));
         }
         if ev.roar {
-            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, pos)` (Roar_0).
+            // `NPC.cs:50093` — `SoundEngine.PlaySound(15, x, y)`: the int
+            // overload's DEFAULT Style = 1 (`SoundEngine.cs:102`) → `Roar_1`,
+            // through the case-15 attenuation gate + slot guard
+            // (`Audio::play_roar`, S1-E-21g). W4-g21 d79-receipt fix: the old
+            // bare `play_at("Roar_0")` was wrong twice (no guard, wrong
+            // slot) — d79 §F4's keep-d79 ruling applied on the landed seam
+            // (the drain at `:1144` already rides it for the queued roars).
             let (nx, ny) = (app.npcs[i].x, app.npcs[i].y);
-            app.audio.play_at("Roar_0", nx, ny, 1.0);
+            app.audio.play_roar(1, nx, ny);
         }
         if ev.wants_death {
             // The orphan death wrote life = 0 in place; the death pass

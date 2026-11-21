@@ -3139,6 +3139,25 @@ mod tests {
         assert_eq!(audio.play_roar(0, 0.0, 0.0), Some("Roar_0"));
     }
 
+    /// W4-g21 d79-receipt fix — the Destroyer burrow roar's drain
+    /// (`world_sim/npcs.rs`'s `ev.roar` arm, `NPC.cs:50093`) rides
+    /// `play_roar(1, …)`: the C# `PlaySound(15, x, y)` takes the int
+    /// overload's DEFAULT Style = 1 (`SoundEngine.cs:102`), so the faithful
+    /// asset is `Roar_1` — NOT the old bare `play_at("Roar_0")` (wrong slot,
+    /// no guard; d79 §F4's keep-d79 ruling applied on the landed S1-E-21g
+    /// seam). Style 1 maps straight to slot 1 at ×1.0 (`roar_case15`'s
+    /// non-4 arm) and draws nothing. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g21_the_destroyer_roar_default_style_is_one() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_roar(1, 0.0, 0.0), Some("Roar_1"));
+        assert_eq!(crate::sound::roar_case15(1, false), Some((1, 1.0)));
+        assert_eq!(rng.peek(), peek, "the default-style roar is draw-free");
+    }
+
     /// S1-E-21g — the int-overload peers draw exactly ONE case pitch on
     /// the passed stream and NO NextFloat; the style façades
     /// (`NPCDeath61`/`NPCDeath13`) add the audio-only NextFloat but the

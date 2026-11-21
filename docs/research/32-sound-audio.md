@@ -276,3 +276,46 @@ BUG-17 "2 tests" for the front-end click cues are not in the audio modules eithe
 9. **S — Docs pass.** Refresh `docs/ROADMAP.md:78` (the stale Audio summary row) and
    `docs/PORT_MAP.md:240` (the stale `Audio/*` row) with the quantified coverage
    (26/527 cues, 64/1 475 call sites). Fixes D17.
+
+## The W4 main-sounds family — declaration + coverage update (2026-11-21, W4-g21)
+
+This module's seeds 2/3/4/6 are being executed by the **W4 sound family** —
+six sibling lanes off the same base `a725acb04`, all code-only (witnesses
+WRITTEN NOT RUN). The family declaration (who owns what, so no lane
+re-ports another's seam):
+
+| lane | branch | claim | tip at this update |
+| --- | --- | --- | --- |
+| **g21** (this) | `task/W4-g21-sounds-main-1` | `Main.cs` `PlaySound` sites **1-90** (`:3244`-`:43936`) + the batch 2-5 hosts (F-keys, quick-stack/sort buttons, house banners, hotbar-lock/block-replace/torch-biome icons) | `ad3282ec6` |
+| g22 | `task/W4-g22-sounds-main-2` | sites **91-180** (`:44118`-`:49727`) — the MENU region (`main_sounds.rs`, 151/151 menu sites claimed); RETIRED, direction-B merger instruction published (`research/90-doc-sweep-menu-sounds.md` `250488c34`: g22 base + g23 4-commit fold) | `250488c34` |
+| g23 | `task/W4-g23-sounds-main-3` | sites **181-271** (`:49734`-`:66248`); deprecated INTO g22 (g22 RETIRE R1) | `945391e33` |
+| g24 | `task/W4-g24-sounds-worldgen` | `WorldGen.cs` sites; folds independently (zero menu overlap) | — |
+| g25 | `task/W4-g25-sounds-item-sites` | `Item.cs`/item-use sites | — |
+| d79 | `task/W4-d79-sound-pitch-pool` | seeds **2+3** (pitch + the instance pool): the `LegacySoundPlayer` ALL-CASE census + the sibling-rewire contract (`research/W4-d79-pitch-final.md` §F2/§F4) | `03ebefad7` |
+| d80 | `task/W4-d80-tracked-sound-layer` | seed **6** (the tracked-sound entity loops on `tracked_sound.rs`) | `075b954d2` |
+
+**g21 coverage delta** (this lane, base → `ad3282ec6` + this receipts
+commit): 26 new bare-play sites (12 clicks + 9 loop + 3 ui/mod + 2
+world_sim/npcs) = d79's `7da02f439`-era +21 plus batch 5's +5 (3 `Unlock`
+clicks + 2 hover-latch ticks) — 21 draw-free menu cues (10/11/12), the 3
+`Unlock` (22) icon clicks (draw-free int-façade plays) + 2 Chat; plus the
+nurse `Item4` legacy façade (`app/mod.rs` via `play_use_sound`, NOT a
+bare play — the style-overload `GetRandomPitch` NextFloat + case 2's ONE
+pitch roll) and the batch 2-5 state hosts (the census tables in ANALYSIS
+"The Main.cs sound sites wave, part 1"). The Roar fix below REMOVES one
+base bare `play_at` (net −1 on the base's 88+2 census).
+The d79 §F4 rewire contract claims every new bare site as a pool cue:
+the 21 menu sites → `play_menu`, the 2 Chat sites → DELETE (d79's phase-7
+seams win), the 3 Unlock sites → `play_single_voice("Unlock")` (case 22,
+no draws — the batch-5 addendum to d79's `7da02f439`-era table), the nurse
+Item4 → d79's case-2 façade (already the landed `play_use_sound` shape).
+The `Roar_0`→`play_roar(1)` Destroyer fix (d79 §F4's keep-d79 ruling) is
+APPLIED on this branch (`npcs.rs` `ev.roar` arm + the
+`w4_g21_the_destroyer_roar_default_style_is_one` witness); the Chat
+DELETEs and the kill-table `play_kill_cue` rewire stay UNION-TIME (d79's
+seams do not exist on this base; g21's own witnesses pin the cues).
+The g50 `quick_stack.rs` constants-copy keep-one receipt is published on
+both trees (g21 canonical, g50 copied — `1c023f0ad`). The g22 menu region
+is DISJOINT from this lane's hosts (the shared-file hunk census in
+ANALYSIS "The W4-g21 co-lane receipts" §4). Seeds status: 2/3 in flight
+(d79), 4 in flight (this family), 6 in flight (d80); 1/5/7/8/9 unchanged.

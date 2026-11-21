@@ -24,6 +24,24 @@
 //!   Money Trough 525/960 + Void Lens 734) rides the unported interactive
 //!   projectiles (hosts 24-27 stay deferred); the tile-bank half
 //!   (`:59-83`, piggy 29 / safe 97 / defender 463 / void 491) is ported.
+//!
+//! KEEP-ONE MUTUAL RECEIPT (W4-g21 ↔ W4-g50, 2026-11-21): this file is the
+//! CANONICAL engine (g21 batch 3, `c07c1eb95`). W4-g50's `1c023f0ad`
+//! constants-copied it verbatim for the `85` QuickStackChests host arm and
+//! records the mirror note on its side ("g21's copy is the survivor").
+//! Verified by `git diff` g21-HEAD ↔ g50-tip: the engine body and all 6
+//! `w4_g21_*` witnesses are byte-identical; g50's ONLY deltas are the net
+//! extensions — the `pub(crate)` widenings (`SourceSlot`/`Dest`/`transfer`),
+//! the `Dest.changed` SyncSlot ledger + its two `push` sites (`:537`/`:565`)
+//! + the `chest_index`/`changed_slots` accessors, and three
+//! `#[allow(dead_code)]` attrs. UNION RULE: keep THIS engine body + g21's
+//! witnesses (dedupe g50's identical copies), graft g50's net-extension
+//! hunks additively (its `netglue.rs::host_quick_stack` reads them). Note:
+//! g50's module doc names a `quick_stack_net_source` entry that does not
+//! exist as a fn on either tree — the `ReadNetInventory` scratch lives
+//! inline in `netglue.rs::host_quick_stack` (g50 `:1751-1766`); the doc
+//! name is a phantom, no code is owed. See ANALYSIS "The W4-g21 co-lane
+//! receipts" §2.
 
 use crate::item::{ItemSlot, EMPTY_SLOT};
 

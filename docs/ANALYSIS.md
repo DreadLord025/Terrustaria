@@ -39560,3 +39560,161 @@ the panel geometry. The menu-region sites are **g22's claim**
 only the three icon clicks in its own `:3244`-`:43936` window plus the
 `:47588` hover-latch helper tick that g22's census explicitly leaves to
 g21 ("the hover tick stays — g21's site, not this batch's").
+
+## The W4-g21 co-lane receipts (2026-11-21, code-only mode)
+
+The post-batch-5 coordination pass: the co-lane witness monitor, the g50
+keep-one mutual receipt, the d79 pitch-rewire receipt (with the one fix
+applied now), and the g22 disjointness census. No cargo/tests/rustfmt/
+graphify invoked; the one new witness is WRITTEN NOT RUN.
+
+### §1. The batch-5 witness monitor — co-lane COMMITTED `ad3282ec6`
+
+The four dirty files (`app/clicks.rs`, `player_lights.rs`, `ui/chrome.rs`,
+`world_sim/editing.rs`) landed as `ad3282ec6` ("batch 5 witnesses + verify
+fixes") while this pass was in flight — the tree is CLEAN, nothing was
+clobbered. 8 witnesses (3 chrome + 3 clicks + 2 editing), every harness
+symbol verified against the tree (grep, not assumed):
+
+| witness | rig/symbols | resolved at |
+| --- | --- | --- |
+| `batch5_icon_hit_boxes_match_the_frame_cells` | `icon_lookups()` → `assets::Lookups::default()` (`#[derive(Default)]` `assets.rs:1929`), `SheetRect` (`tr-render/src/atlas.rs:46`), `hotbar_lock_hit`/`block_replace_hit`/`torch_biome_hit` | `chrome.rs:815/:827/:839` |
+| `batch5_builder_accs_count_and_push_gate` | `builder_accs_count_to_show(wires, actuator, torches)` | `chrome.rs:799` |
+| `batch5_hotbar_lock_hover_ticks_on_the_enter_edge_only` | `stateful_tick` (the extracted `Main.cs:3237-3247` latch tail; the draw returns through it, `chrome.rs:712`) | `chrome.rs:720` |
+| `batch5_hotbar_lock_click_flips_and_gates_the_closed_hotbar` | `inv_app()` (`clicks.rs:6479`), `handle_inventory_clicks` (`:1398`), `Player.hb_locked` (`player.rs:1117`), `selection.buffered` (`app/mod.rs:262` → `hotbar.rs:38`, the -1 none sentinel) | all live |
+| `batch5_block_replace_click_flips_the_builder_status` | `builder_acc_status[10]` (`player.rs:1022`), `tile_replacement_enabled()` (`:4690`) | all live |
+| `batch5_torch_biome_click_needs_the_unlock_and_flips_the_toggle` | `builder_acc_status[11]`, `using_biome_torches()` (`player.rs:4700`), `set_using_biome_torches` (`:4706`) | all live |
+| `batch5_the_biome_swap_toggle_gates_the_placed_torch_style` | `flat_app()` (`editing.rs:17733`), `use_tile_item` (`:7192`), `World::compute_column_surface`/`compute_chunks`/`index` (`tr-core/src/world.rs:1082/:1106/:1181`), `zones.snow` (`tr-core/src/scene.rs:271`) | all live |
+| `batch5_the_replacement_toggle_gates_the_wall_conversion` | `wall_app()` (`editing.rs:18519`), `empty_world` (`:18540`), `set_wall`/`hold_wall` (`:18544/:18549`), `update_editing` (`:1670`), `SCREEN` (`:18513`) | all live |
+
+**ONE SEMANTIC DEFECT FOUND (not fixed — co-lane's code, reported for its
+next commit):** `chrome.rs:1356`
+(`batch5_builder_accs_count_and_push_gate`) asserts
+`builder_accs_count_to_show(true, true, true) >= 10`, but the fn
+(`:799-810`) returns 6+1+1+1 = **9**. The C# `GetBuilderAccsCountToShow`
+(`Main.cs:47592-47597`) counts `rulerLine + rulerGrid + autoPaint` too —
+with the port's folds-to-false deviation the max reachable count is 9 and
+the `>= 10` push-up gate (`:41043`/`:47370`) can NEVER fire; the witness's
+own comment ("+torch = 10 pushes") is arithmetically wrong (6+1+1+1=9).
+The test WILL FAIL when run. Fix owed by the co-lane: either assert
+`< 10` on the last row too (pinning the deviation: the push never fires
+while ruler/paint are unported) or extend the fn with the three folded
+flags before claiming the 10-push. The other 7 witnesses' assertions
+check out against the C# reads (the strict-edge boxes, the enter-edge
+latch, the flip arms, the `:39612` wall gate, the `:40129` style-9
+conversion with the 240-tall rig keeping the underworld arm below).
+
+### §2. The g50 quick_stack keep-one — MUTUAL RECEIPT (g21 canonical)
+
+W4-g50's `1c023f0ad` ("wire the QuickStackChests host arm onto W4-g21's
+landed engine") constants-copied `quick_stack.rs` (490→520 lines) + the
+two `item_sorting.rs` helpers. Verified by
+`git diff HEAD origin/task/W4-g50-net-apply-arms-3 -- <file>`:
+
+- **Engine + witnesses VERBATIM**: all 6 `w4_g21_*` tests byte-identical
+  (the tests-module diff is empty); the engine body differs ONLY by the
+  net extensions below.
+- **g50's additive deltas** (graft at the union, keep g21's body):
+  `SourceSlot`/`Dest`/`transfer`/`Dest::new` widened `pub(crate)`;
+  `Dest.changed: Vec<usize>` (the SyncSlot ledger) + its two `push` sites
+  (`insert_into_free_slot` ≡ `:565`, `build_metrics_and_stack` ≡ `:537`);
+  `chest_index()`/`changed_slots()` accessors; three `#[allow(dead_code)]`
+  attrs (g50's tree has no button caller — g21's does, so the attrs DROP
+  at the union); the module-doc copy note; `item_sorting.rs`'s two
+  CONSTANTS-COPY doc notes (the fn bodies identical).
+- **g50-only files stay g50's**: `netglue.rs::host_quick_stack` (the 85
+  arm), `net.rs`'s NetItem blocked bit + i16 slot keys. `main.rs`: BOTH
+  trees declare `mod quick_stack;` (g21 at base-43 with `mod
+  house_banners;`, g50 at base-181) — different positions, so a textual
+  merge keeps BOTH lines: the union must DEDUPE to one declaration
+  (compile error otherwise).
+- **Phantom name**: g50's module doc names `quick_stack_net_source` as
+  "the net entry this lane adds" — no such fn exists on either tree; the
+  `ReadNetInventory` scratch is inline in `netglue.rs:1751-1766`. No code
+  is owed; the doc name is cosmetic.
+- **g50's base is OLDER**: its `item_sorting.rs` predates g21's batch-3
+  `sort_fav`/`sort_inventory` additions (the diff shows them as g21-only)
+  — the union keeps g21's superset, never g50's older sort body.
+
+The receipt is published on both trees: g21's `quick_stack.rs` module doc
++ the two `item_sorting.rs` doc notes (this commit) mirror g50's own
+"keep-one at union (g21's copy is the survivor)" notes (`1c023f0ad`).
+
+### §3. The d79 pitch-rewire receipt (§F4) — one fix APPLIED, rest union-time
+
+d79's `research/W4-d79-pitch-final.md` §F4 (tip `03ebefad7`) censuses g21
+at `7da02f439`: +21 bare sites (19 menu + 2 Chat), every one a draw-free
+pool cue. This pass re-censused g21 at HEAD (`ad3282ec6`): **+26** (12
+clicks + 9 loop + 3 ui/mod + 2 npcs) = the +21 plus batch 5's +5 (3
+`Unlock` clicks `:42506`/`:42544`/`:42584` + 2 hover-latch ticks
+`:42515`/`:47588` → `:3244`/`:3256`). The batch-5 addendum for d79's
+rewrite-table:
+
+| site (g21 HEAD) | C# anchor | bare call | REWRITE (d79 façade) |
+| --- | --- | --- | --- |
+| clicks.rs:1953 | `Main.cs:42506` hotbar-lock click | `play("Unlock")` | `play_single_voice("Unlock")` (case 22 `:937-946`, no draws) |
+| clicks.rs:1962 | `:42544` block-replace click | `play("Unlock")` | same |
+| clicks.rs:1973 | `:42584` torch-biome click | `play("Unlock")` | same |
+| ui/mod.rs:1018 | `:42515` → `:3244` hotbar-lock hover tick | `chest_panel.audio.play("Menu_Tick")` | `chest_panel.audio.play_menu("Menu_Tick")` (the FrontDraw audio borrow — same façade as d79's ui/mod.rs:892 row) |
+| ui/mod.rs:1042 | `:47588` → `:3256` toggleAcc hover tick | same | same |
+
+The ledger updates: 49 raw + 5 batch-5 = 54; −4 g22/g23-shared = 50
+unique; −2 g21 Chat DELETEs = **48 rewire targets** (45 prod + 3 test).
+
+**APPLIED NOW (this commit)** — the one non-new-site conflict d79 rules
+"keep d79's side" that is standalone-fixable on this base: the Destroyer
+burrow roar drain (`world_sim/npcs.rs` `ev.roar` arm) played bare
+`play_at("Roar_0", …)`. The C# `NPC.cs:50093` `PlaySound(15, x, y)` takes
+the int overload's **default Style = 1** (`SoundEngine.cs:102` — verified
+in the decompile), so `Roar_1` is faithful and `Roar_0` was wrong twice
+(wrong slot, no attenuation/slot guard). The landed S1-E-21g seam
+`Audio::play_roar` (`audio.rs:1439`) already exists on this base (the
+queued-roar drain at `npcs.rs:1144` rides it), so the arm now calls
+`app.audio.play_roar(1, nx, ny)` — d79's `:2072` hunk applied ahead of the
+union on the shared seam. Witness
+`w4_g21_the_destroyer_roar_default_style_is_one` (audio.rs) pins the
+style-1 → `Roar_1` mapping + the draw-free contract. WRITTEN NOT RUN.
+
+**UNION-TIME ONLY (not applied — d79's seams absent on this base):** the
+2 Chat DELETEs (`npcs.rs:286` talk-open `:43083`, `:644` angler `:40243` —
+d79's phase-7 `talk_to_npc`/`angler_turn_in` seams play them through
+`play_single_voice("Chat")`; deleting them here would silence the cues
+AND break g21's own batch-1 witnesses, which pin `played_count`), the
+kill-table `play_at(name, …)` → `play_kill_cue` rewire (`npcs.rs:4733`),
+the 19+2 menu `play_menu` rewrites, and the Grab/Coins click dedupes
+(d79's phase-3/5 forms win one-for-one). The merger's checklist is d79's
+§F4 table + the addendum above.
+
+### §4. The g22 menu-canonical receipt — DISJOINT, direction B respected
+
+g22's RETIRE (`250488c34`) publishes direction B: the merger starts from
+g22's base, folds g23's 4 commits (keep-g22/take-g23-unique), g24
+independent. g21 is NOT in that fold — it merges separately. The
+shared-file hunk census (`git diff a725acb04..<tip>` per file, base-line
+ranges) proves the regions disjoint:
+
+| file | g21 hunks (base lines) | g22 hunks (base lines) | verdict |
+| --- | --- | --- | --- |
+| `app/clicks.rs` | 1133-2478 (the icon/map/emote/quick-stack arms) + tests 3968+/4691+/5640+/5984+ | 2664-2670 (menu Action arms) + 2765-2771 (`cancel_connect`/`load_backup`) + tests 3267-3273 | disjoint (g21's 2472+6 hunk ends base-2478, before g22's 2664; g22's test hunk at 3267 sits before g21's first test hunk at 3968) |
+| `app/loop.rs` | 153-252 (chat/diag extraction) + 287-295 + 677-682/715-720 (the chat_key/diag_key insertion points) + tests 934-939 | 267-278 + 447-457 + 585-595 (menu tick sites) | disjoint |
+| `app/mod.rs` | 749 (App fields) + 2105-2128 (nurse_heal) + 3931 + tests 5652 | 1508 + 2565 (menu glue) | disjoint |
+| `app/flow.rs` | tests 2367 (the rig's new App fields) | 308 (FrontDraw.audio) + 437-1229 (front-screen cues) + tests 1562 | disjoint (different test-mod regions; the rig-literal hunk is g21-only, g22's FrontDraw field is g22-only — the union composes both) |
+| `app/frame/world.rs` | 32 (house-banner click) | 250 (music env fields) | disjoint |
+| `app/frame/draw.rs` | 171/1405/1416/1442/1561/1762/1988 (banner + icon draws) | 1545-1551 (menu draw) | disjoint (g22's 1545-1551 sits BETWEEN g21's 1442-1448 and 1561-1568 hunks — no shared base line) |
+| `main.rs` | 43 (`mod house_banners; mod quick_stack;`) | 258 (`mod main_sounds;`) | disjoint vs g22; NOTE the g50 union dedupe: g50 declares `mod quick_stack;` at base-181 (ANALYSIS §2) |
+| `audio.rs` | none (g21 adds no engine code) | 66 (cue rows) + 1729+ (menu façades) | g22-only |
+| `menu/*`, `ui/char_creation.rs`, `ui/keyboard.rs`, `ui/world_creation.rs`, `main_sounds.rs` | none | all g22 | g22-only |
+
+The `:47588` hover-latch tick is g21's by g22's own census reading (the
+chat-button census correction above); the `:47413-:47556` builder-toggle
+CLICK cues are g22's. The `sign >= 0` gate note (batch 5) still awaits
+f22's sign state — unchanged.
+
+### §5. The research/32 update + family declaration
+
+`docs/research/32-sound-audio.md` gains "The W4 main-sounds family —
+declaration + coverage update": the six-lane claim table (g21/g22/g23/
+g24/g25 + d79/d80), the g21 coverage delta (+26 bare sites, the nurse
+Item4 façade, the Roar fix's −1), the seeds status (2/3 → d79, 4 → this
+family, 6 → d80). The module's D-row defects are unchanged by this pass
+(the family executes the seeds; it does not re-audit).
