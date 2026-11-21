@@ -2152,6 +2152,22 @@ impl App {
         if self.net_mode() != 1 || self.net_state < net::client_state::IN_WORLD {
             return;
         }
+        // W4-c28: the `Hurt` client tail (`Player.cs:38369-38377`) — the
+        // damage path queued the send at the hit moment (the PRE-subtraction
+        // hp); drain it BEFORE the clone-compare so the 13/16 ride this
+        // tick's outbox in the C#'s order (the hurt happens inside
+        // `Player.Update`, ahead of `TrySyncingMyPlayer`).
+        if let Some((knockback_13, hp, max_hp)) =
+            self.player.as_mut().and_then(|p| p.take_hurt_net())
+        {
+            let mut hurt_out = Vec::new();
+            // `hurt_sends(net_mode, quiet, no_knockback, hit_direction, ...)`:
+            // the queue already collapsed the C#'s three-clause 13 gate into
+            // `knockback_13`; ride it through the no_knockback/hit_direction
+            // pair (false/1 when armed, true/0 when not).
+            nps::hurt_sends(1, false, !knockback_13, i32::from(knockback_13), hp, max_hp, &mut hurt_out);
+            self.net_player_outbox.extend(hurt_out);
+        }
         let Some(p) = self.player.as_ref() else {
             return;
         };
@@ -5742,6 +5758,61 @@ mod message_family_tests {
         pump(&mut host_app, &mut client_app, 12);
         client_app.net_player_outbox.clear();
         client_app
+    }
+
+    /// The `Hurt` client tail (`Player.cs:38369-38377`): an accepted hurt
+    /// queues the knockback-gated `13` + the `16` with the PRE-subtraction
+    /// hp; the cadence drains them into the outbox. A dodged/immune hit
+    /// queues nothing.
+    #[test]
+    fn an_accepted_hurt_queues_the_13_then_the_16_with_pre_hit_hp() {
+        let mut app = cadence_client();
+        app.player_sync_cadence();
+        app.net_player_outbox.clear();
+        let hp_before = app.player.as_ref().unwrap().hp;
+        let max_hp = app.player.as_ref().unwrap().max_hp;
+        let mut rng = tr_core::UnifiedRandom::default();
+        let landed = app.player.as_mut().unwrap().hurt(10, 0.0, &mut rng, false);
+        assert!(landed, "the hit lands");
+        // The queue carries the PRE-subtraction hp (the C# sends at :38375,
+        // before `statLife -= num2` at :38383).
+        let queued = app.player.as_mut().unwrap().take_hurt_net();
+        assert_eq!(queued, Some((true, hp_before, max_hp)));
+        // Re-queue through a second hurt for the cadence drain (the first
+        // take consumed it): reset the i-frames so the hit lands.
+        {
+            let p = app.player.as_mut().unwrap();
+            p.immune = false;
+            p.immune_time = 0;
+            p.hurt_cd = 0.0;
+        }
+        let hp_before2 = app.player.as_ref().unwrap().hp;
+        assert!(app.player.as_mut().unwrap().hurt(10, 0.0, &mut rng, false));
+        app.player_sync_cadence();
+        // The hurt 16 is the FIRST Life in the outbox (the drain runs ahead
+        // of the clone-compare; the throttle's own 16 may ride later with
+        // the POST-hit hp).
+        let life = app
+            .net_player_outbox
+            .iter()
+            .find_map(|s| match s {
+                PlayerSend::Life { hp, .. } => Some(*hp),
+                _ => None,
+            })
+            .expect("the hurt 16 fired");
+        assert_eq!(life, hp_before2 as i16, "the hurt 16 carries the PRE-hit hp");
+        assert!(
+            app.net_player_outbox.iter().any(|s| matches!(s, PlayerSend::Controls)),
+            "the knockback 13 rides first"
+        );
+        // The queue is drained — a second cadence pass adds no hurt sends
+        // (the clone absorbed the hp change, the throttle window is armed).
+        app.net_player_outbox.clear();
+        app.player_sync_cadence();
+        assert!(
+            !app.net_player_outbox.iter().any(|s| matches!(s, PlayerSend::Life { .. })),
+            "the hurt send fires once per accepted hit"
+        );
     }
 
     /// The `53` client send (`NPC.cs:89932-89935`): a melee on-hit debuff on

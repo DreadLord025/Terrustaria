@@ -206,7 +206,9 @@ pub(crate) fn zone_bytes(z: &tr_core::scene::Zones, shimmer: bool) -> (u8, u8, u
 
 /// `Player.Hurt`'s client tail (`Player.cs:38369-38377`): netMode 1, local,
 /// not quiet — the knockback-gated `13` FIRST (`!noKnockback &&
-/// hitDirection != 0`, the mount/cart clause has no port mount), then `16`.
+/// hitDirection != 0 && (!mount.Active || !mount.Cart)`), then `16`. The
+/// caller (`player_sync_cadence`) collapses the three-clause gate into the
+/// `no_knockback`/`hit_direction` pair from the `pending_hurt_net` queue.
 /// (`SendPlayerHurt`'s `102` is unported — M6-NET-5.)
 pub(crate) fn hurt_sends(
     net_mode: u8,
