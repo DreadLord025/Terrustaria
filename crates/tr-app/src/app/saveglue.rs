@@ -404,6 +404,10 @@ impl App {
     /// `ClearVisualPostProcessEffects` are engine-side (not modelled — the
     /// port keeps no play timer and the frame's listener flip covers the
     /// menu transition).
+    // The only production caller is the F3 debug panel's quit row (the
+    // `debug` feature, OFF by default); the test module exercises it in
+    // every build. The allow keeps the default build warning-clean.
+    #[allow(dead_code)]
     pub(crate) fn just_quit(&mut self) {
         // `WorldGen.cs:6631-6632`: the inlined 34/35 sentinel pair (the
         // `StopWaterfallAmbienceAudio` body, `:6693-6694`).

@@ -777,6 +777,11 @@ pub(crate) fn cell_blocked_by_entity_pub(
 /// the `Main.cs:17767` swap (the zombie bash drain's convention,
 /// `world_sim/npcs.rs`). The cleanup drops spawn on the same stream (the
 /// bash drain's shape).
+// The production consumer is the b3 phase-2 town wiring (the aiStyle-7
+// dispatch still routes through `update_guide` on this branch); the test
+// module exercises the adapter in every build. The allow keeps the default
+// build warning-clean until the town lane adopts it.
+#[allow(dead_code)]
 pub(crate) struct AppTownDoors<'a> {
     pub app: &'a mut App,
 }
