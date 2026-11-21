@@ -39350,7 +39350,8 @@ the d16/d1/f48/g64 pushed tips via `git show`, and the 42-site line scan.
 
 ## The PROJ-DUST coverage phase: the master census + the 503/1037/1049 rows (W4-e3, 2026-11-21, code-only mode)
 
-**The master census** lives in `docs/research/125-proj-dust-coverage.md`:
+**The master census** lives in `docs/research/231-proj-dust-coverage.md`
+(was 125 — the registry-150 rename executed at the FINAL seal):
 the 1195-site `Dust.NewDust` line scan of `Projectile.cs` attributed per
 enclosing method and matched against every pushed dust-lane tip (module
 bodies AND commit messages) plus main's draw-census stubs. The early-AI
@@ -39466,7 +39467,7 @@ window is now 15-of-15 ported (6 wired + 9 staged), zero missed.
 
 ## The AI-INLINE-40 window + the AI_001 edges (W4-e3 round 2, 2026-11-21, code-only mode)
 
-The coverage census's windows 3+5 (`docs/research/125`, the refreshed
+The coverage census's windows 3+5 (`docs/research/231` (was 125), the refreshed
 round-2 ledger + the per-machine assignment table) port on this branch:
 **37 of the 40 AI()-inline sites** (34 STAGED + 3 WIRED) + **both AI_001
 edges** (the 1006 WIRED, the 981 STAGED). The 3 unported are g64-claimed
@@ -39509,14 +39510,14 @@ draw-mirror witnesses WRITTEN NOT RUN.
   the `npc_ai_empress` divergence note inverted: here the C# behaviour IS
   the port). `Color.White * 0.1` = (25,25,25,25) — the XNA byte multiply
   including alpha (the `lights_bane_batches` precedent).
-* **The named-machines 87+36 future wave** is ASSIGNED in research/125's
+* **The named-machines 87+36 future wave** is ASSIGNED in research/231's
   per-machine table (d12/d14/d15/d16/d17/d18/d19/d20/d21 own their bands'
   machines; the main-ported machines' dust is a dust-lane follow-up; the
   two `_Old` legacy machines are the only unassigned residue — RESOLVED
   by the RETIRE pass below: the spears `_Old` cite-dropped DEAD, the
   magic-missiles `_Old` task-seeded LIVE).
 
-### The RETIRE pass (same day — research/125 SEALED, the AI-inline family declared DONE)
+### The RETIRE pass (same day — research/231 (was 125) SEALED, the AI-inline family declared DONE)
 
 The retire re-probe re-fetched the seven cited machine lanes and re-read
 every dust-skip census at the CURRENT tips: d5 `e46d9eb7f` (style43 still
@@ -39541,7 +39542,7 @@ censuses), d14 `eaa05ae9e` (`ai_elder_wins` now at projectile.rs:10720, the
   is LIVE — the `type == 491` head at `:43199` calls it; the 491
   FlyingKnife is unrowed everywhere — task-seeded to the d1 band's
   row+machine wave.
-* **The g63 receipt published** (research/125 RETIRE §3): the doc-66 `:79`
+* **The g63 receipt published** (research/231 RETIRE §3): the doc-66 `:79`
   row's `:29245/29284` mis-attribution re-verified at g63's unchanged tip
   `2ea3e7110` (the C# `:29234` `type != 1042` return; g63's emitter cites
   `:29158-29196` only — no code collision); the g63-lane doc fix is
@@ -39552,7 +39553,7 @@ censuses), d14 `eaa05ae9e` (`ai_elder_wins` now at projectile.rs:10720, the
   prefer g64's doc-comments. No reconciliation edit owed. (The moved g64
   tip `9d9d89ac1`'s own RETIRE adjudication (1) independently confirms the
   same verdict — a comment-stripped span diff, byte-identical code.)
-* **The Orch-61 residue lane-censused** (research/125 RETIRE §5): the 61
+* **The Orch-61 residue lane-censused** (research/231 RETIRE §5): the 61
   `ParticleOrchestrator.cs` sites are the world-dust pair's — d54 owns
   1-40 (`orch_dust*.rs`, batches 5-8), e4 owns 41-61
   (`orchestrator_dust.rs`), ALL landed as latent emitters; no port-small
@@ -39563,3 +39564,72 @@ censuses), d14 `eaa05ae9e` (`ai_elder_wins` now at projectile.rs:10720, the
   contracts censused (GasTrap 110, SilverBulletSparkle 5, NightsEdge 0,
   the lightning family's per-iteration bodies) so the wave keeps the
   stream exact.
+
+### The FINAL seal (the e3f dispatch — the five closing items, code-only)
+
+The five-item seal round on top of the RETIRE pass (research/231 "The
+FINAL seal receipts" (7)-(10) is the full record):
+
+* **The FINAL activation-order table PUBLISHED** (research/231 (7)): all
+  34 STAGED emitters rowed per activating merge — d5 `e46d9eb7f`
+  (style43, the 227 row+dispatch is d5's own wiring step), d6 `7edfcd495`
+  (the 321 ADD-shape flip + the 1042 trail), d9 `7a418c636` (styles
+  81/86/87/89/90), d10 `e1519df75` (91/94/96/98), d12 `c98bd8937` (the
+  836 ADD-shape flip + the flag58/59 explosions), d13 `462c86097` (the
+  column five + the sandnado three), d14 `eaa05ae9e` (the 672 motes) —
+  every tip re-verified UNCHANGED at the seal's fresh 360-tip fetch. The
+  merge order IS the activation order; no cross-lane dependency among
+  the 34. REPLACE vs ADD per the sealed contract (the four ADD members:
+  style87, style90's kept-head body, 321, 836; style91's zero-draw
+  machine noted beside them).
+* **The 981 row-lane seed CLOSED → d1** (research/231 (8)): the d75
+  first-120 census is the SOUND range #1-#120 ending `:41968` — the
+  `:56748` dust site is OUTSIDE it; d75's only 981 hits are the item
+  lane (item 278 → projectile 981) + the id-name row, zero projectile-
+  arm hits. The 981's sound sites are the Kill-tail `:76043` (d77/f1
+  deferred-unrowed ledgers). The row is the i18 research/63 §5 OUT-list
+  bullet sibling — 110 landed on d1 (S1-D-3q/slice C), so the 981 row
+  (`:9340-9353`) + the fade-chain slot (`:56746` between the 355/357
+  arms) + the sibling gates (`:13385` ×3-vs-104, `:16343` ProjLight,
+  `:78927` GetAlpha, `:76040-76048` Kill sound+sparkle) ride d1's
+  aiStyle-1 bullet wave; the e3 drip emitter is the drop-in.
+* **The 491 seed CONFIRMED at the moved d1 tip `212516a82`**
+  (research/231 (8)): the d1 `ai_magic_missile` doc pins the 491 `_Old`
+  gap (projectile.rs:8190/:8197); the falling-retire waves 3a-3c rowed
+  the aiStyle-10 families WITHOUT the 491 (zero FLYING_KNIFE hits at
+  the tip) — the band remainder is the seed's wave: the 491 row
+  (`:5404-5412`) + the type-491 head (`:43197-43200`) + the `_Old` body
+  (`:43427-43653`, only the `:43572-43582` dust half 491-reachable —
+  the 79/16/34-gated sites kept verbatim, census-F2).
+* **The g63 mutual receipt CLOSED both ways** (research/231 (9)): g63's
+  RETIRE `1c52d5ee3` (research/240 FINAL) fixed doc-66 `:79` exactly per
+  the e3 correction (`:29167/29191` ONLY; the 406 pair → g64, the 1042
+  pair → e3's emitter) — re-read verbatim at the tip. The RECIPROCAL:
+  g63 §3.2 flagged e3's `style5_star_dust` 955 arm drawing ONE Next(4)
+  where the C# `:23975-23978` anniversary RE-PICK draws TWO (the second
+  wins). **FIXED on this branch**: the emitter + its mirror witness
+  (`w4_e3_b3_star_dust_anniversary_second_operand`) take the two-draw
+  form — the g63 `036901a5e` / g16 `falling_star_trail` pin; the C#
+  block re-read verbatim. The merged 12/955 arm keeps ONE consumer of
+  the shared `:23973-23981` gore draws (g63 research/199's 12 row).
+* **The family bible FINAL** (research/231 (10)): the three-disjoint-
+  KEEP agreed across g63 research/240 / g64 research/196 / this doc —
+  g63 ≤400 per-kind trail (`1c52d5ee3`), g64 ≥401 per-kind trail
+  (`3e581c8ce` SEAL-VERIFY: the GoreRng→DustDraw lift executed, the f50
+  BlastRng deletion is the merge instruction), e3 the aiStyle-generic
+  window + the AI-INLINE-40 + the edges + the Kill-tail. The keep-one
+  retirements pinned (497/504/503→e3, 723/1133→f48, 596→d11+g64 seam,
+  813/895/898/957/650→g64 dust-wired); `clone_dust` confirmed both ways;
+  g65's Kill census CLOSED (`f6e07bb90`, 0 unclaimed); the Orch-61
+  d54/e4's. NO site unclaimed across the union.
+* **The registry-150 rename EXECUTED**: this lane's coverage doc
+  125 → **231** (d125's empress-sheets-ledger 06:07:29 wins the 125 key
+  per the §7.1 round-3 correction at d54 `51a28d09e`; d38→293, d39→230).
+  All in-tree refs updated (the doc, ANALYSIS, PORT_MAP, anchors, the
+  five code-comment cites); the g63/g64/d54 docs already cite the
+  231 assignment.
+
+The 955 fix is the round's only behaviour edit (2 draws where 1 — the
+C#-faithful form); its witness is WRITTEN NOT RUN. The full-file brace
+walk re-pins depth 0 with all 44 test fns at mod-depth 2. No
+cargo/rustc/tests/rustfmt/graphify invoked.

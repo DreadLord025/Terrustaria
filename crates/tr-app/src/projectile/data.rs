@@ -1107,7 +1107,7 @@ pub const STAR_CANNON_STAR: u16 = 955;
 /// false`, `extraUpdates = 1`, local immunity 15; `Projectile.cs:5743-5756`).
 /// W4-e3 coverage phase — the row unblocks `ai_falling_star_family`'s 503
 /// gate + the `style5_spark_503` emitter (g64's unwired `trail_503` twin is
-/// the merge keep-one; docs/research/125-proj-dust-coverage.md).
+/// the merge keep-one; docs/research/231-proj-dust-coverage.md, was 125).
 pub const STAR_WRATH: u16 = 503;
 /// `ProjectileID.MeteorWhipMeteor` (1037, `ProjectileID.cs:2628`) — the
 /// Meteor Whip's meteor (aiStyle 5, `alpha = 254`, `scale = 0.8`,
@@ -4835,7 +4835,7 @@ mod tests {
 
     /// W4-e3 coverage phase — the three UNROWED aiStyle-5 kinds' rows land
     /// verbatim (`Projectile.cs:5743-5756`/`:9780-9792`/`:9938-9952`), the
-    /// census in docs/research/125-proj-dust-coverage.md. They unblock the
+    /// census in docs/research/231-proj-dust-coverage.md (was 125). They unblock the
     /// `ai_falling_star_family` kind gate (the e3 batch-3 emitters were
     /// already written; g64's unwired `trail_503` twin is the merge
     /// keep-one). WRITTEN NOT RUN (code-only mode).

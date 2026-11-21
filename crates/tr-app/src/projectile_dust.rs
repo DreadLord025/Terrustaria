@@ -581,10 +581,13 @@ pub(crate) fn style5_spark_503(p: &Projectile, world: &World, d: &mut ProjDust) 
 
 /// `:23970-23986` — the 12/955 falling star's dust-58: the on-screen gate +
 /// `Next(6)` gore pick (the gore lane's skip — the `Next(6)` and the taken
-/// branch's `SelectRandom` `Next(4)` go with it), the `light = 0.9` write
-/// (`:23982`), then the `Next(20)` dust gate (the anniversary `Next(15)` is
-/// the second `||` operand). `anniversary` is `Main.tenthAnniversaryWorld`
-/// (the pass reads `world.seeds`).
+/// branch's `SelectRandom` `Next(4)` go with it; on an anniversary world
+/// the C# RE-PICKS at `:23976-23978` — BOTH `Next(4)` draws stay on the
+/// stream, the second wins: the g63 `036901a5e` / g16 `falling_star_trail`
+/// pin, the g63 research/240 §3.2 third-copy flag FIXED here), the
+/// `light = 0.9` write (`:23982`), then the `Next(20)` dust gate (the
+/// anniversary `Next(15)` is the second `||` operand). `anniversary` is
+/// `Main.tenthAnniversaryWorld` (the pass reads `world.seeds`).
 pub(crate) fn style5_star_dust(
     p: &mut Projectile,
     world: &World,
@@ -595,7 +598,13 @@ pub(crate) fn style5_star_dust(
     // Next(6); the taken branch's SelectRandom draws Next(4). Both go with
     // the gore (the gore lane's skip), but the GATE draws stay on the stream.
     if on_screen_wide(p, d.ctx) && d.rng.next_range(0, 6) == 0 {
-        let _ = d.rng.next_range(0, 4); // SelectRandom's pick (gore skipped)
+        let _ = d.rng.next_range(0, 4); // SelectRandom(16,17,17,17)'s pick
+        // `:23976-23978` — the anniversary RE-PICK: SelectRandom(16,16,16,17)
+        // draws a SECOND Next(4) (the second value wins; both stay on the
+        // stream — the g63/g16 pin, the research/240 §3.2 correction).
+        if anniversary {
+            let _ = d.rng.next_range(0, 4);
+        }
     }
     p.light = 0.9; // `:23982`
     // `:23983` — the dust gate: Next(20), then the anniversary Next(15) only
@@ -1163,7 +1172,8 @@ pub(crate) fn star_slash_976(p: &Projectile, world: &World, d: &mut ProjDust) {
 // ---------------------------------------------------------------------------
 // Coverage phase — the `Kill_Bombs_DoUsualKillCode` dust tail
 // (`Projectile.cs:78211-78533`, 15 sites :78227-78508). THE smallest
-// genuinely unclaimed window (docs/research/125-proj-dust-coverage.md):
+// genuinely unclaimed window (docs/research/231-proj-dust-coverage.md,
+// was 125 — the registry-150 rename):
 // g65's Kill() span ends at :77262, g16 owns only the GORE sites here
 // (waves M/O leave "the dust loops before each" to the dust lane), main's
 // `rocket_kill_census` covers :77648-78210 only.
@@ -1566,11 +1576,12 @@ fn hsl_color(h: f32, s: f32, l: f32) -> Color {
 }
 
 // ---------------------------------------------------------------------------
-// The AI-INLINE-40 window (research/125 re-probe round): the AI() inline
-// remainder + the AI_001 edges. Emitters follow the e3 pattern — argument
-// draws FIRST, pool internals, post-writes on the returned slot incl. the
-// sentinel. STAGED kinds are cited per emitter (the row/machine merge that
-// activates them is pinned in research/125's assignment table).
+// The AI-INLINE-40 window (research/231 re-probe round, was 125): the AI()
+// inline remainder + the AI_001 edges. Emitters follow the e3 pattern —
+// argument draws FIRST, pool internals, post-writes on the returned slot
+// incl. the sentinel. STAGED kinds are cited per emitter (the row/machine
+// merge that activates them is pinned in research/231's FINAL
+// activation-order table).
 // ---------------------------------------------------------------------------
 
 /// `:56042-56055` — the 1006 ShimmerArrow's rainbow sparkle (AI_001, WIRED
@@ -1633,7 +1644,7 @@ pub(crate) fn ai001_silver_bullet_drip_981(p: &Projectile, world: &World, d: &mu
 /// (aiStyle-60's `type == 1042` tail, STAGED — the row + machine are W4-d6's
 /// `projectile_ai_guns` side, dust-skipped there; the g63 doc-66 census row
 /// mis-lists these two sites under the 358 — the emitter census correction
-/// is in research/125). Per point: THREE independent Next(2) alpha+25
+/// is in research/231, was 125). Per point: THREE independent Next(2) alpha+25
 /// gates, noGravity, vel×0.3 + vel×0.5, position = Centre − v·i/6, vel×0.2,
 /// then the Next(6) colour switch (3 named + default). The Next(4) extra
 /// dust takes scale 0.6, vel×0.5 + vel×0.5 and its OWN Next(6) colour pick
@@ -3109,7 +3120,9 @@ mod tests {
     /// W4-e3 batch 3 — `:23970-23986`: the 955 dust-58 gate is Next(20), the
     /// anniversary Next(15) only as the second || operand; the light 0.9
     /// write lands every call; the off-screen gore gate short-circuits its
-    /// Next(6). Mirrored on both seed flags.
+    /// Next(6); the taken gore branch on an anniversary world draws the
+    /// RE-PICK's SECOND Next(4) (`:23976-23978` — the research/240 §3.2
+    /// correction, mirrored). Mirrored on both seed flags.
     #[test]
     fn w4_e3_b3_star_dust_anniversary_second_operand() {
         let w = world();
@@ -3125,6 +3138,9 @@ mod tests {
                 style5_star_dust(&mut p, &w, &mut d, anniversary);
                 if on_screen_wide(&p, &c) && mirror.next_range(0, 6) == 0 {
                     let _ = mirror.next_range(0, 4);
+                    if anniversary {
+                        let _ = mirror.next_range(0, 4); // the :23978 re-pick
+                    }
                 }
                 if mirror.next_range(0, 20) == 0
                     || (anniversary && mirror.next_range(0, 15) == 0)

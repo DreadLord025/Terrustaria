@@ -7066,7 +7066,7 @@ impl Projectile {
     /// (bba610bb, the shared `:7646-7658` row + `ai_cloak_star`); the
     /// 503/1037/1049 rows NOW LAND ON THIS BRANCH (`data.rs`, verbatim
     /// `:5743-5756`/`:9780-9792`/`:9938-9952` — the census in
-    /// docs/research/125-proj-dust-coverage.md), so this arm's 503/1037/1049
+    /// docs/research/231-proj-dust-coverage.md, was 125), so this arm's 503/1037/1049
     /// halves are LIVE: the dispatch kind gate reaches them through their
     /// rows. The d75 hum extension for the 503 (`:23881-23885`, its re-arm
     /// covers the 9/955 only) is the sound lane's merge edit — the skip
@@ -22393,7 +22393,7 @@ impl ProjectilePool {
     /// (`:78329-78448`) resizes again + spawns the family dust (W4-e3
     /// coverage phase — the `:78340/78345/78348` bomb-family + the
     /// `:78407/78412/78415` big-bomb sites, the smallest unclaimed window;
-    /// docs/research/125-proj-dust-coverage.md), `Kill_ExplodeTiles`
+    /// docs/research/231-proj-dust-coverage.md, was 125), `Kill_ExplodeTiles`
     /// (`:77265-77380`) digs the radius circle, and the slot deactivates.
     /// The dust rides the pass's `UpdateProjectiles` stream (the
     /// `explode_rocket` census precedent); the `damage_pve` FastRandom(0)

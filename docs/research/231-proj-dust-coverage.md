@@ -1,4 +1,4 @@
-# 125 — PROJ-DUST master coverage census (W4-e3, coverage phase, 2026-11-21; REFRESHED same day, the AI-INLINE-40 round; SEALED same day, the RETIRE phase)
+# 231 — PROJ-DUST master coverage census (W4-e3, coverage phase, 2026-11-21; REFRESHED same day, the AI-INLINE-40 round; SEALED same day, the RETIRE phase; number was 125 — the registry-150 rename EXECUTED at the seal, d125's empress-sheets-ledger 06:07:29 wins the 125 key per §7.1)
 
 Status: **SEALED** (the RETIRE phase, below — the 34-STAGED activation
 contracts re-verified against the moved d-lane tips, the `_Old` residue
@@ -417,9 +417,17 @@ censuses re-read at their CURRENT tips (2026-11-21 retire fetch):
   remainder is thereby owned by d12's machine + this emitter.
 - **981 SilverBullet - STILL unrowed** (the full 345-branch remote scan;
   re-verified at the seal's 358-tip fetch - zero `SILVER_BULLET`/`981 =>`
-  hits in any pushed tip's `projectile/data.rs`).
+  hits in any pushed tip's `projectile/data.rs`; re-verified AGAIN at the
+  FINAL seal's 360-tip fetch — zero `981 =>`/`SILVER_BULLET` hits, and
+  zero 981 code hits in d75/d1's arms).
   `ai001_silver_bullet_drip_981` stays STAGED for the bullet-row wave; its
   fade-chain slot citation (`:56746` between `:56728` and `:56753`) stands.
+  **The row-lane task seed is FINAL — see "The FINAL seal receipts" (7)
+  below: owner d1, the aiStyle-1 bullet sibling wave** (the i18
+  research/63 §5 OUT-list sibling; the d75 first-120 census is a
+  SOUND-range census — its `:41968` boundary EXCLUDES the `:56748` dust
+  site; the 981's only sound sites are the Kill-tail `:76043` d77/f1
+  deferred-unrowed rows).
 - 227 CrystalLeafShot — still unrowed even on d5 (its module's own
   `UNWIRED` marker); the d5 row+dispatch step activates machine AND
   emitter together. Unchanged.
@@ -461,7 +469,8 @@ Projectile.cs — the private methods cannot be called cross-file anyway):
 ### (3) The g63 doc-66 census-error receipt (mutual, published here)
 
 **e3 → g63**: the round-2 correction stands, re-verified against g63's
-current tip `2ea3e7110` (unchanged since the round-2 read):
+tip `2ea3e7110` at the RETIRE read (g63 has since moved to `1c52d5ee3`
+and EXECUTED the fix — the closing receipt is (9) below):
 
 - The error: `docs/research/66-proj-trail-dust-claims.md:79` (g63's tip)
   rows `| 60 | 358 (:29167/29191/29205/29229/29245/29284) | last prism |`.
@@ -482,7 +491,7 @@ current tip `2ea3e7110` (unchanged since the round-2 read):
 - **g63-lane read request**: fix the `:79` row to
   `| 60 | 358 (:29167/29191) | ... |` (the 406 pair to the g64 ledger,
   the 1042 pair to e3's emitter) at g63's next touch. e3 does not edit
-  g63's branch. This receipt + research/125's round-2 section are the
+  g63's branch. This receipt + research/231's (was 125) round-2 section are the
   mutual record; the g63 acknowledgement (if any) lands on g63's branch.
 
 ### (4) The g64 `clone_dust` genericization — keep-one CONFIRMED
@@ -594,3 +603,172 @@ draws ride the same wave.)
   each d-lane merge activates its cited emitters per the contracts above.
 - Code-only throughout: no cargo/rustc/tests/rustfmt/graphify invoked;
   all evidence is git-tip reads + C# line reads.
+
+## The FINAL seal receipts (2026-11-21, the e3f dispatch — the five closing items + the registry rename)
+
+Fresh 360-tip fetch at this round; every hash below re-read at THAT fetch.
+The doc number changed **125 → 231** (the registry-150 §3 rename EXECUTED:
+d125's `125-empress-sheets-ledger.md` first-add 06:07:29 `2dfe026d2` wins
+the 125 key per the §7.1 round-3 correction; d38 → 293, d39 → 230, this
+doc → **231** — the assignment was already published at d54 `72226e500`/
+`51a28d09e`; all in-tree refs updated, the g63 doc-66/240 rows already
+cite "e3 research/125 → 231 per registry-150").
+
+### (7) The FINAL activation-order table — the 34 STAGED, for the merger
+
+**The merge order IS the activation order** — the emitters are drop-in at
+their machines' cited skip slots and activate at the OWNING LANE'S MERGE,
+in whatever order the merger takes the lanes; there is NO cross-lane
+dependency among the 34 (each lane's row + machine + census ride its own
+branch). Per-lane table (tips re-verified at this seal's fetch — ALL
+SEVEN unchanged since the RETIRE re-probe):
+
+| merge | tip (this fetch) | emitters activated | sites | shape at merge |
+| ----- | ---------------- | ------------------ | ----- | -------------- |
+| **d5** | `e46d9eb7f` | `style43_crystal_leaf_burst_227` | 27869 (1) | REPLACE the module's 8 kept call-site NextFloat draws (the `:27873` census, module :106-107); the 227 row + dispatch are d5's OWN wiring step (module still `#![allow(dead_code)] // UNWIRED` :51) — row, machine AND emitter activate together |
+| **d6** | `7edfcd495` | `style55_flaming_jack_head_321` | 28833 (1) | **ADD** (the flag flip): row (:1057/:2858) + `ai_flaming_jack` (projectile.rs:4731, dispatch-55 :17942) now on the tip; the `:28832-28838` skip rolls NOTHING — the emitter adds the pool internals inside the C#'s `ai[0]` window after the target machine (the style87 shape) |
+| **d6** | `7edfcd495` | `style60_shimmer_gun_trail_1042` | 29245/29284 (2) | REPLACE the 1042 per-tick census in `projectile_ai_guns` (6×[3 Next(2)+Next(6)] + Next(4)-gated Next(6) — the emitter draws the SAME sequence and spawns the bodies; keeping both double-draws). The g63 doc-66 correction receipt — §3 + (9) below |
+| **d9** | `7a418c636` | `style81_influx_spark_451` (4 call gates) | 31017/31053/31149/31207 (4) | REPLACE the launch/pulse SelectRandom+Next(6) census; the homing arm's OUTER Next(3) gate stays the caller's (drawn BEFORE the pick); the strike arm (`:31201`) has NO Next(6) — its noGravity is unconditional (the emitter's `gate_next6=false` call) |
+| **d9** | `7a418c636` | `style86_ice_mist_ring_464` | 31896 (1) | REPLACE the 24-NextDouble census (module :30-32); the caller keeps `ai[1]!=1` + the 45-tick-kill RETURNS-before-dust order |
+| **d9** | `7a418c636` | `style87_clinger_curtain_482` | 31928 (1) | **ADD** — the ZERO-explicit-draw machine (module :29); pool internals are the whole stream cost |
+| **d9** | `7a418c636` | `style89_ritual_ring_490` + `_puff_490` | 32305/32330 (2) | REPLACE the burst/puff censuses (module :38-40); the caller gates `ai[0]>=60` AFTER the increment for the puff |
+| **d9** | `7a418c636` | `style90_lantern_spark_492` (per-cell) | 32426 (1) | **ADD** the body after the kept gates — the per-cell Next(4) `&&` head stays the caller's, consumed for EVERY cell (module :38-40); the scan walk + `is_tile_spelunkable` are the machine's |
+| **d10** | `e1519df75` | `style91_shadowflame_tail_496` | 32548 (1) | **ADD** — the style-91 machine keeps ZERO draws (module :46); the caller gates `scale < 1` |
+| **d10** | `e1519df75` | `style94_coin_portal_spark_518` | 32958 (1) | REPLACE the taken branch's RotatedByRandom pair (module :56); the caller KEEPS the `alpha < 90` gate + the Next(3) draw itself (the C# && order — the gate draws every tick, the emitter fires only on the taken branch) |
+| **d10** | `e1519df75` | `style96_ichor_puffs_524` | 33015 (1) | REPLACE the 2×Next(3) gates census (module :65); the caller owns the ai[0] +=0.6 + the >500 kill (no return) |
+| **d10** | `e1519df75` | `style98_cultist_particle_pair_526` | 33147 (1) | REPLACE the 2×NextFloat scale census (module :67) |
+| **d12** | `c98bd8937` | `style112_dandelion_burst_836` | 34123 (1) | **ADD** (the flag flip): row (:1090/:3697) + `ai_dandelion_seed` (projectile.rs:10080, dispatch-112 :19568) now on the tip; the `:34121-34126` latch burst is skipped as all-NewDust-internals — the caller owns the `localAI[0]` latch, the emitter fires INSIDE it |
+| **d12** | `c98bd8937` | `style117_whip_explosion_612` | 34507/34512/34516/34524/34531 (5) | REPLACE the flag58 kept-draws census (module header :24-36) — the per-family RNG census is the stream-parity contract |
+| **d12** | `c98bd8937` | `style117_guardian_explosion_624` | 34542/34551/34588 (3) | REPLACE the flag59 census (same header); the SIX pre-loop draws + the 200×135 ring order pinned |
+| **d13** | `462c86097` | `style126_column_rise`/`_burst`/`_plume`/`_body`/`_tail` | 35854/35914/35932/35956/35986 (5) | REPLACE `projectile_ai_geyser`'s per-tick census (module :10 + the CensusRng witness :277): state-0 2×Next(5), burst/plume SelectRandom+NextFloat+sign-gated Next(4), body Next(3)<2 + Next(6)<3, tail NextFloat gate — the emitter draws land in EXACTLY those positions |
+| **d13** | `462c86097` | `style128_sandnado_plume_658` + `_orbits_658` | 36106/36157/36170 (3) | REPLACE `projectile_ai_sandnado_mark`'s NextFloat-order census (module :9 + :164): amount FIRST then the X-lerp, the >−1.2-gated vel.X NextFloat then the unconditional vel.Y; the two orbit loops' rotation asymmetry (loop 1 RotatedBy(rotation), loop 2 NOT) |
+| **d14** | `eaa05ae9e` | `style132_elder_wins_motes_672` | 36427 (1) | REPLACE the taken-branch 5-draw census (`ai_elder_wins` projectile.rs:10720, doc-comment :10694-10718); count = 1+(int)(−vel.Y) truncating cast, Next(2) gate per iteration |
+
+Every STAGED entry of the round-2 ledger is rowed above — its #1-#37
+numbering minus the WIRED #18-19 pair (the family's sealed "34-STAGED"
+label; the multi-site entries #3-4/#5-8/#11-12/#21-25/#26-28/#35-36
+carry their full site lists in the table). Shape split: **REPLACE** —
+the machine's kept explicit draws are superseded by the emitter call
+(the g63 body-skip convention) — EXCEPT the sealed contract's four
+**ADD** members (d9 style87, d9 style90's body after the kept Next(4)
+head, + the two flag flips 321/836); d10 style91's machine likewise
+keeps ZERO explicit draws (its module :46 census — nothing to replace,
+the emitter adds the internals after the caller's `scale < 1` gate).
+Sentinel behaviour is the pool's (post-writes land on slot 6000);
+`customData`/`shader` writes are the documented dropped fields. The
+remaining STAGED outside the 34: the Kill-tail nine (773 scarab five /
+588 confetti three / 1088 acorn one — the row/host wave, this doc's
+coverage-phase section) + the 981 drip (the d1 bullet wave, (8) below)
++ the 227 (d5's own wiring step, above).
+
+### (8) The two unrowed-kind task seeds — FINAL dispositions
+
+- **981 SilverBullet → owner lane d1, the aiStyle-1 bullet sibling
+  wave.** The row-lane question is CLOSED: the 981's dust site
+  (`:56748`, AI_001) is NOT in d75's first-120 census — that census is
+  the SOUND-site range #1-#120 ending at `:41968` (d75's own boundary,
+  ANALYSIS Part 2/5 + research/32 at `b59e3a874`); `:56748` sits past
+  it. The d75-tip 981 hits are the item lane only (`itemdata.rs:444`
+  item 278 → projectile 981; `projectile_id.rs:993` the name row) —
+  ZERO 981 hits in its projectile arms (grep exit-1 over
+  projectile.rs/data.rs/special_arrows.rs/projectile_special_bullets.rs).
+  The 981's SOUND sites are the Kill-tail `:76040-76048` (Item10 +
+  SilverBulletSparkle) — d77 `5f10560b2` + f1 `3065492b0` both list
+  `:76043` (981) in their deferred-unrowed ledgers. The ROW itself is
+  the i18 research/63 §5 OUT-list sibling ("The 302 SniperBullet / 981
+  SilverBullet / 110 BulletSnowman siblings — other tasks' kinds; 110
+  is ai001_c's"): 110 landed via S1-D-3q/S1-D-5 slice C on **d1**, and
+  d1's band (aiStyle 1-10) owns the remaining aiStyle-1 bullet rows.
+  **The wave**: the 981 row (`Projectile.cs:9340-9353` — 4×4, aiStyle 1,
+  friendly, pen 1, light 0.5, alpha 255, scale 1.2, timeLeft 600,
+  ranged, extraUpdates 1) + the AI_001 fade-chain arm slot (`:56746`
+  BETWEEN the 355 arm `:56728-56745` and the 357 trail `:56753` — the
+  e3 `ai001_silver_bullet_drip_981` STAGED emitter is the drop-in; the
+  1-in-6 Next(6) gate draws EVERY tick the kind matches) + the sibling
+  sites the row unblocks: the Damage_PVE ×3-vs-Wyvern-head gate
+  (`:13385-13388`), the ProjLight 0.7/0.7 arm (`:16343-16347`), the
+  GetAlpha White (`:78927-78930`), the Kill-tail sound+sparkle
+  (`:76040-76048` — d77/f1's cue + the orchestrator wiring wave's
+  SilverBulletSparkle 5-draw contract, §5).
+- **491 FlyingKnife → owner lane d1, the row+machine wave (CONFIRMED
+  at the moved d1 tip `212516a82`).** The d1-band evidence: (a) the
+  `ai_magic_missile` machine doc at its tip (projectile.rs:8190/:8197)
+  pins "the `type == 491` `_Old` variant has no ported row … the
+  `_Old` arm (491) … SKIPPED" — the machine is d1-band-owned and its
+  491 head is the cited gap; (b) the falling-retire wave (d1's
+  `projectile_ai_falling.rs`, waves 3a-3c `a2dcdb152`/`e001d9215`/
+  `e47181798` + the hygiene `212516a82`) rowed the aiStyle-10 families
+  and RETIRED its active reads — the 491 row is NOT among them (zero
+  `FLYING_KNIFE`/`491 =>` hits at the tip, the 360-tip scan re-run);
+  the band remainder is exactly the aiStyle-6/9 residue this seed
+  names. **The wave**: the 491 row (`Projectile.cs:5404-5412` — 26×26,
+  aiStyle 9, friendly, melee, pen −1) + `AI_009_MagicMissiles`'s
+  type-491 head (`:43197-43200` — the `_Old` dispatch + return) + the
+  `AI_009_MagicMissiles_Old` body (`:43427-43653`) ride ONE wave; its
+  5 dust sites (`:43574/43593/43610/43627/43635`) activate by the e3
+  emitter pattern in that wave's dust follow-up — NOTE only the
+  `:43572-43582` half (the Next(2) gate + the Next(3) type switch
+  15/57/58, alpha 255 scale 0.7, vel×0.25, position=(pos+base.pos)/2)
+  is 491-reachable: the `:43593/43610/43627/43635` sites sit under
+  `type == 79/16/34` gates INSIDE `_Old` — dead for the only reachable
+  kind 491, kept verbatim when ported (the census-F2 convention; the
+  `:43434` type-16 speed branch likewise). The 491-specific machine
+  halves the wave must keep: the HandleMovement `ai[0] = −10` + the
+  ×−1 bounce (`:18464-18479`), the <100f close-range ×1.1 boost +
+  normalize-cap-20 (`:43452-43467`), the (v×4+aim)/5 blend
+  (`:43481-43485`), the localAI[0]>15 return-flight + <20f kill +
+  the 25-speed homing (`:43540-43553`), the >2000f owner-distance
+  kill (`:43568-43571`), the GetAlpha White (`:79204-79207`).
+
+### (9) The g63 doc-66 correction — the mutual receipt CLOSED
+
+The e3 → g63 request (§3 above) is **CONSUMED + FIXED on g63's branch**:
+g63's RETIRE commit `1c52d5ee3` (research/240 FINAL, this seal's fetch)
+corrected `docs/research/66-proj-trail-dust-claims.md:79` to
+`| 60 | 358 (:29167/29191 ONLY …) |` with the full attribution note
+(`:29205/29229` → the 406's/g64's, `:29245/29284` → the 1042's/e3
+`style60_shimmer_gun_trail_1042`'s, the `:29234` `type != 1042` return
+cited) — re-read verbatim at the tip this round. The e3 correction
+(`:29245/29284` = the 1042's, NOT the 358's) and the g63 fix AGREE
+line-for-line; no code collision ever existed (g63's emitter cites
+`:29158-29196` only). **The reciprocal receipt**: g63's research/240
+§3.2 flagged the THIRD copy of the 12/955 anniversary re-pick error —
+e3's `style5_star_dust` drew ONE Next(4) where the C# `:23975-23978`
+draws TWO (the second SelectRandom wins). **FIXED on this branch this
+round** (the emitter + its mirror witness take the two-draw form; the
+g63 `036901a5e` / g16 `falling_star_trail` pin). Both directions of the
+mutual receipt are now closed; the merged 12/955 arm keeps ONE consumer
+of the shared `:23973-23981` gore draws (g63 research/199's 12 row).
+
+### (10) The AI-inline-family bible — FINAL (the three-disjoint-KEEP)
+
+The family declaration, agreed across the three lanes' FINAL docs
+(g63 research/240 §1-2, g64 research/196 FINAL union-table, this doc):
+
+| axis | lane | file | scope | tip at this seal |
+| ---- | ---- | ---- | ----- | ---------------- |
+| per-kind ≤400 TRAIL | W4-g63 | `projectile_trail_dust.rs` | the rowed kinds' arms + the unrowed emitters (research/199 activation checklist; doc-66 keeps 66) | `1c52d5ee3` (RETIRE FINAL 240) |
+| per-kind ≥401 TRAIL | W4-g64 | `proj_trail_dust.rs` + the remainder machines | 24 WIRED kinds + 21 cited-unrowed + the 2 spark riders (research/196) | `3e581c8ce` (SEAL-VERIFY; the GoreRng→DustDraw lift executed, the f50 BlastRng deletion is the merge instruction) |
+| aiStyle-generic + the site windows | **W4-e3 (this)** | `projectile_dust.rs` | the `:22297-24318` generic window (styles 2/4/5/6/8/152) + the AI-INLINE-40 (34 STAGED + 3 WIRED) + the AI_001 edges 2 + the `:78227-78508` Kill_Bombs tail 15 | this seal |
+
+**Three DISJOINT axes, all KEEP at merge** (the d54 bible §8.3 step 9).
+The kind gates ≤400/≥401 never overlap; the e3 axis is aiStyle-generic +
+the cited site windows — no body overlap with either per-kind axis. The
+only retirements are the per-kind twins that feed the surviving
+machines: 497/504/503 → e3 `ai_style2`/`ai_falling_star_family` (g64
+FINAL 2 executed the 503 constants-copy), 723/1133 → f48 `ai_cloak_star`,
+596 → d11 `ai_nebula_sphere` 575 + the g64 bool seam, 813/895/898/957/650
+→ the g64 dust-wired machines (the d13 row supersets kept). The
+`clone_dust` genericization keep-one is CONFIRMED BOTH WAYS (§4 + g64's
+RETIRE (1) + its SEAL-VERIFY (2)). The Kill-family death sites stay
+g65's (`f6e07bb90` — the Kill-remainder-234 census CLOSED, 0 unclaimed);
+the Orch-61 stays d54/e4's (§5). NO site in the union is unclaimed.
+
+**The e3 lane is SEALED.** This round's deltas: the 955 anniversary
+two-draw fix (the g63 §3.2 reciprocal), the 125→231 registry rename, the
+FINAL activation-order table (7), the 981/491 task seeds closed (8), the
+g63 mutual receipt closed (9), this bible (10). No further site claims;
+later tip movement is recorded as receipts, not re-openings. Code-only
+throughout — the fix's witness is WRITTEN NOT RUN; all evidence is
+git-tip reads + C# line reads (the `:23975-23978` re-pick re-read
+verbatim this round).
