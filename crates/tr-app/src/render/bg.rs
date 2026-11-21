@@ -1204,17 +1204,41 @@ pub(crate) fn mushroom_tint(
 }
 
 /// `Main.SetBackgroundOffsets` (`Main.cs:60384-60775`) for the texture ids the
-/// five surface-variant style tables can produce: the `bgScale`/`bgParallax`
+/// eight surface-variant style tables can produce: the `bgScale`/`bgParallax`
 /// overrides (either may be absent — `222`/`223`/`224`/`237`/`238`/`239` only
-/// replace `bgTopY`, `261`/`262`/`219`/`220`/`221`/`321` only the parallax),
-/// plus the `num`/`num2` pair that replaces `bgTopY` when non-zero.
+/// replace `bgTopY`, `261`/`262`/`219`/`220`/`221`/`321`/`207` only the
+/// parallax), plus the `num`/`num2` pair that replaces `bgTopY` when non-zero.
 /// Rows the C# does not list return `None` (the caller keeps its own defaults).
 ///
-/// Deliberately absent: the forest tree sets, snow, ocean and underworld ids —
-/// those biomes' style tables are still unported.
+/// Deliberately absent: the forest tree sets and underworld ids — those
+/// biomes' style tables are still unported (the W4-g70 lane).
 #[allow(clippy::type_complexity)]
 pub(crate) fn bg_offsets(id: i32) -> Option<(Option<f32>, Option<f32>, i32, i32)> {
     Some(match id {
+        // Snow styles 5/6/7/8 (`Main.cs:60390-60443`, `:60620-60630`).
+        258 => (Some(1.25), Some(0.23), 1800, 850),
+        259 => (Some(1.31), Some(0.33), 1950, 1500),
+        260 => (Some(1.34), Some(0.40), 2100, 1650),
+        263 => (Some(1.25), Some(0.23), 1800, 1450),
+        264 => (Some(1.31), Some(0.33), 1950, 1700),
+        265 => (Some(1.34), Some(0.40), 2100, 2000),
+        267 => (Some(1.25), Some(0.23), 1700, 1300),
+        266 => (Some(1.31), Some(0.33), 1950, 1600),
+        268 => (Some(1.34), Some(0.41), 2100, 1850),
+        298 => (Some(1.25), Some(0.35), 2000, 1700),
+        299 => (None, Some(0.28), 1600, 1400),
+        // Desert style 4 (`Main.cs:60444-60461`) and style 2's parallax-only
+        // row (`:60617-60619`).
+        248 => (Some(1.30), Some(0.37), 1800, 1100),
+        249 => (Some(1.40), Some(0.43), 1950, 1200),
+        250 => (Some(1.70), Some(0.49), 2000, 1000),
+        207 => (None, Some(0.32), 0, 0),
+        // Desert styles 51/52/53 (`Main.cs:60649-60672`): the middle rows
+        // share one arm, the far rows another.
+        303 | 304 | 305 | 307 | 308 | 309 | 311 | 312 | 313 | 315 | 316 | 317 => {
+            (None, Some(0.35), 2400, 1900)
+        }
+        306 | 310 | 314 | 318 => (None, Some(0.26), 1800, 1700),
         240 => (Some(1.15), Some(0.30), 1800, 1500),
         241 => (Some(1.21), Some(0.43), 1950, 1300),
         242 => (Some(1.34), Some(0.49), 2100, 1400),
@@ -1264,14 +1288,47 @@ pub(crate) fn bg_offsets(id: i32) -> Option<(Option<f32>, Option<f32>, i32, i32)
     })
 }
 
-/// `Main.DrawSurfaceBG_GetLayerYOffset` (`Main.cs:59740-59797`), reduced to the
-/// ids the five surface-variant styles reach. The rest of the table belongs to
-/// the forest/snow/desert mountain rows and stays unported.
+/// `Main.DrawSurfaceBG_GetLayerYOffset` (`Main.cs:59740-59797`), the complete
+/// switch: the jungle 59 nudge, the forest-set ids (the g70 lane's rows), the
+/// snow/ocean mountain ids and the hallow 246/247 pair.
 pub(crate) fn layer_y_offset(id: i32) -> f32 {
     match id {
         59 => -550.0,
+        93 | 168 | 169 | 170 => -50.0,
+        171 => -100.0,
+        172 => 130.0,
+        176 => -760.0,
+        177 => -200.0,
+        179 => -100.0,
+        180 | 181 | 182 | 183 => -350.0,
+        246 | 247 => -150.0,
+        263 => -700.0,
+        269 => -600.0,
+        270 => -50.0,
         271 => -300.0,
         272 => -380.0,
+        277 => -260.0,
+        278 => -120.0,
+        280 => -170.0,
+        281 => -300.0,
+        283 => -800.0,
+        332 | 340 => -25.0,
+        _ => 0.0,
+    }
+}
+
+/// `Main.UpdateOceanWaterLineForAmbience` (`Main.cs:59965-59984`): the ocean
+/// sheet's water-line offset below its `GetLayerYOffset`-adjusted top, in
+/// unscaled sheet pixels (`num2 * Main.bgScale` in the C#). The C# writes
+/// `yScreenPosition = bgTopY + yOffset + num2 * bgScale` and the far-layer-3
+/// alpha into `AmbientSkyDrawCache.OceanLineInfo`; the port's ambience pass
+/// keeps the ocean-line term at constant 1 (the documented Q4 deviation), so
+/// only the geometry helper is ported here.
+pub(crate) fn ocean_water_line_offset(ocean_bg: i32) -> f32 {
+    match ocean_bg {
+        28 | 110 | 111 | 209 | 210 => 102.0,
+        283 => 124.0,
+        // 332/340 fall through the C# switch with num2 = 0.
         _ => 0.0,
     }
 }
@@ -1336,8 +1393,8 @@ pub(crate) fn draw_front_trees(
     tint: [f32; 3],
     counter: u32,
     mut ambience: Option<&mut AmbiencePass<'_>>,
-    // Only the Snow (`Main.cs:60186`) and Mushroom (`Main.cs:60186`) bodies end
-    // with `DrawToDepth(1f)`; the others leave the stratum to the flush
+    // Only the Mushroom body ends with `DrawToDepth(1f)` (`Main.cs:60186`);
+    // the others (incl Snow, `:60302-60382`) leave the stratum to the flush
     // (`Main.cs:59626`).
     closes_with_one: bool,
 ) {
@@ -1367,7 +1424,7 @@ pub(crate) fn draw_front_trees(
             );
         }
     }
-    // The Snow/Mushroom chains close with `DrawToDepth(1f)`; the other biomes'
+    // The Mushroom chain closes with `DrawToDepth(1f)`; the other biomes'
     // strata wait for the flush.
     if closes_with_one && let Some(p) = ambience.as_deref_mut() {
         crate::ambience::draw_range_min(r, p.entities, p.lookups, p.ctx, 1.0, p.last);
@@ -1713,12 +1770,101 @@ mod surface_variant_bg_tests {
 
     #[test]
     fn layer_y_offsets_match_get_layer_y_offset() {
-        // `Main.cs:59744-59779` down to the ids the five variants reach.
+        // The whole switch (`Main.cs:59744-59795`), spot rows per arm.
         assert_eq!(layer_y_offset(59), -550.0);
+        for id in [93, 168, 169, 170] {
+            assert_eq!(layer_y_offset(id), -50.0, "id {id}");
+        }
+        assert_eq!(layer_y_offset(171), -100.0);
+        assert_eq!(layer_y_offset(172), 130.0);
+        assert_eq!(layer_y_offset(176), -760.0);
+        assert_eq!(layer_y_offset(177), -200.0);
+        assert_eq!(layer_y_offset(179), -100.0);
+        for id in [180, 181, 182, 183] {
+            assert_eq!(layer_y_offset(id), -350.0, "id {id}");
+        }
+        assert_eq!(layer_y_offset(246), -150.0);
+        assert_eq!(layer_y_offset(247), -150.0);
+        assert_eq!(layer_y_offset(263), -700.0);
+        assert_eq!(layer_y_offset(269), -600.0);
+        assert_eq!(layer_y_offset(270), -50.0);
         assert_eq!(layer_y_offset(271), -300.0);
         assert_eq!(layer_y_offset(272), -380.0);
+        assert_eq!(layer_y_offset(277), -260.0);
+        assert_eq!(layer_y_offset(278), -120.0);
+        assert_eq!(layer_y_offset(280), -170.0);
+        assert_eq!(layer_y_offset(281), -300.0);
+        assert_eq!(layer_y_offset(283), -800.0);
+        assert_eq!(layer_y_offset(332), -25.0);
+        assert_eq!(layer_y_offset(340), -25.0);
+        // The `default:` arm.
         assert_eq!(layer_y_offset(273), 0.0);
         assert_eq!(layer_y_offset(60), 0.0);
+        assert_eq!(layer_y_offset(28), 0.0);
+    }
+
+    #[test]
+    fn w4_g71_snow_desert_ocean_offsets_match_set_background_offsets() {
+        // Snow styles 5/6/7/8 (`Main.cs:60390-60443`, `:60620-60630`).
+        assert_eq!(bg_offsets(258), Some((Some(1.25), Some(0.23), 1800, 850)));
+        assert_eq!(bg_offsets(259), Some((Some(1.31), Some(0.33), 1950, 1500)));
+        assert_eq!(bg_offsets(260), Some((Some(1.34), Some(0.40), 2100, 1650)));
+        assert_eq!(bg_offsets(263), Some((Some(1.25), Some(0.23), 1800, 1450)));
+        assert_eq!(bg_offsets(264), Some((Some(1.31), Some(0.33), 1950, 1700)));
+        assert_eq!(bg_offsets(265), Some((Some(1.34), Some(0.40), 2100, 2000)));
+        assert_eq!(bg_offsets(267), Some((Some(1.25), Some(0.23), 1700, 1300)));
+        assert_eq!(bg_offsets(266), Some((Some(1.31), Some(0.33), 1950, 1600)));
+        assert_eq!(bg_offsets(268), Some((Some(1.34), Some(0.41), 2100, 1850)));
+        // Style 8's rows: 298 keeps the scale, 299 keeps the caller's scale.
+        assert_eq!(bg_offsets(298), Some((Some(1.25), Some(0.35), 2000, 1700)));
+        assert_eq!(bg_offsets(299), Some((None, Some(0.28), 1600, 1400)));
+        // Desert style 4 (`:60444-60461`) + style 2's parallax-only 207.
+        assert_eq!(bg_offsets(248), Some((Some(1.30), Some(0.37), 1800, 1100)));
+        assert_eq!(bg_offsets(249), Some((Some(1.40), Some(0.43), 1950, 1200)));
+        assert_eq!(bg_offsets(250), Some((Some(1.70), Some(0.49), 2000, 1000)));
+        assert_eq!(bg_offsets(207), Some((None, Some(0.32), 0, 0)));
+        // Desert styles 51/52/53: the shared middle-row arm and far-row arm
+        // (`:60649-60672`); the 2x2-animated middles keep their frame steps.
+        for id in [303, 304, 305, 307, 308, 309, 311, 312, 313, 315, 316, 317] {
+            assert_eq!(bg_offsets(id), Some((None, Some(0.35), 2400, 1900)), "id {id}");
+        }
+        for id in [306, 310, 314, 318] {
+            assert_eq!(bg_offsets(id), Some((None, Some(0.26), 1800, 1700)), "id {id}");
+        }
+        // Classic snow/desert/ocean ids are NOT in the C# table.
+        for id in [37, 38, 39, 95, 96, 97, 21, 20, 108, 109, 217, 218, 28, 110, 111, 209, 210, 283, 332, 340] {
+            assert_eq!(bg_offsets(id), None, "id {id} keeps the caller's row");
+        }
+        // The desert-51 middle rows animate (`GetBackgroundRect` 15-tick set).
+        for id in [303, 305, 307, 309, 311, 313, 315, 317] {
+            assert_eq!(background_frame_step(id), 15, "id {id}");
+        }
+        // 304/306/etc are static sheets.
+        for id in [304, 306, 308, 310, 312, 314, 316, 318] {
+            assert_eq!(background_frame_step(id), 0, "id {id}");
+        }
+    }
+
+    #[test]
+    fn w4_g71_ocean_water_line_matches_update_ocean_water_line_for_ambience() {
+        // `Main.cs:59969-59981`: the five classic sheets sit 102 px below the
+        // layer top, the shimmer ocean 283 at 124; 332/340 keep num2 = 0.
+        for id in [28, 110, 111, 209, 210] {
+            assert_eq!(ocean_water_line_offset(id), 102.0, "ocean {id}");
+        }
+        assert_eq!(ocean_water_line_offset(283), 124.0);
+        assert_eq!(ocean_water_line_offset(332), 0.0);
+        assert_eq!(ocean_water_line_offset(340), 0.0);
+        // The full line: bgTopY + GetLayerYOffset + num2 * bgScale. With the
+        // Step2 state (scale 2.3, top magic*1400+1260+scAdj+30) at magic 0,
+        // scAdj 0: ocean 28 -> 1290 + 0 + 102*2.3 = 1524.6; ocean 283 ->
+        // 1290 - 800 + 124*2.3 = 775.2.
+        let top = 1260.0 + 30.0;
+        let scale = 2.3;
+        let line28 = top + layer_y_offset(28) + ocean_water_line_offset(28) * scale;
+        assert!((line28 - 1524.6).abs() < 1e-3, "line28 {line28}");
+        let line283 = top + layer_y_offset(283) + ocean_water_line_offset(283) * scale;
+        assert!((line283 - 775.2).abs() < 1e-3, "line283 {line283}");
     }
 
     #[test]

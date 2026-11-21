@@ -170,20 +170,29 @@ pub fn load_world_sheets(
     }
 
     // The surface-background layer sheets of *this* world's own style variants
-    // (`Main.corruptBG`/`jungleBG`/`hallowBG`/`crimsonBG`/`mushroomBG`, filled by
-    // `WorldGen.setBG`). They belong in the world half: which `Background_<id>`
-    // files exist depends on the world's rolled styles, and the whole 95-sheet
-    // variant set is ~300 MB — every world packs only its own five styles.
-    // `-1` is a layer the C# never draws, so no sheet is packed for it.
+    // (`Main.corruptBG`/`jungleBG`/`snowBG`/`hallowBG`/`crimsonBG`/`desertBG`/
+    // `oceanBG`/`mushroomBG`, filled by `WorldGen.setBG`). They belong in the
+    // world half: which `Background_<id>` files exist depends on the world's
+    // rolled styles, and the whole variant set is ~300 MB — every world packs
+    // only its own eight styles. `-1` is a layer the C# never draws, so no
+    // sheet is packed for it.
+    let desert = world.desert_bg_set();
     let mut bg_ids: Vec<i32> = [
         world.corrupt_bg(),
         world.jungle_bg(),
+        world.snow_bg(),
         world.hallow_bg(),
         world.crimson_bg(),
+        desert[0],
+        desert[1],
+        desert[2],
+        desert[3],
         world.mushroom_bg(),
     ]
     .into_iter()
     .flatten()
+    .chain(world.snow_mountains())
+    .chain([world.ocean_bg()])
     .filter(|&id| id >= 0)
     .collect();
     bg_ids.sort_unstable();
@@ -273,9 +282,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Background_28",
         "Background_21",
         "Background_20",
-        // Desert mountain layers behind the dunes (`DrawSurfaceBG_BackMountainsStep1/2`).
+        // Desert mountain layers behind the dunes (`DrawSurfaceBG_BackMountainsStep1/2`)
+        // and the GoodEvilDesert fallback dunes (`Main.cs:60885-60925`).
         "Background_23",
         "Background_22",
+        "Background_26",
+        "Background_27",
         "Background_112",
         "Background_113",
         "Sun",
