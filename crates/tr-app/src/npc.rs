@@ -3939,36 +3939,13 @@ impl Npc {
             NpcKind::SolarCrawltipedeHead => 700.0,
             NpcKind::SolarCrawltipedeBody => 30.0,
             NpcKind::SolarCrawltipedeTail => 30.0,
-            NpcKind::StardustWormHead => 700.0,
-            NpcKind::SolarSpearman => 900.0,
-            NpcKind::SolarCrawltipedeHead => 700.0,
-            NpcKind::SolarCrawltipedeBody => 30.0,
-            NpcKind::SolarCrawltipedeTail => 30.0,
-            NpcKind::StardustWormHead => 700.0,
-            NpcKind::SolarSpearman => 900.0,
-            NpcKind::SolarCrawltipedeHead => 700.0,
-            NpcKind::SolarCrawltipedeBody => 30.0,
-            NpcKind::SolarCrawltipedeTail => 30.0,
-            NpcKind::StardustWormHead => 700.0,
-            NpcKind::SolarSpearman => 900.0,
-            NpcKind::SolarCrawltipedeHead => 700.0,
-            NpcKind::SolarCrawltipedeBody => 30.0,
-            NpcKind::SolarCrawltipedeTail => 30.0,
-            NpcKind::StardustWormHead => 700.0,
-            NpcKind::SolarSpearman => 900.0,
-            NpcKind::SolarCrawltipedeHead => 700.0,
-            NpcKind::SolarCrawltipedeBody => 30.0,
-            NpcKind::SolarCrawltipedeTail => 30.0,
-            NpcKind::StardustWormHead => 700.0,
-            NpcKind::SolarSpearman => 900.0,
-            NpcKind::SolarCrawltipedeHead => 700.0,
-            NpcKind::SolarCrawltipedeBody => 30.0,
-            NpcKind::SolarCrawltipedeTail => 30.0,
-            NpcKind::StardustWormHead => 700.0,
+            // W4-f18 census pin: the C# 402 arm writes `value = 0f`
+            // (`NPC.cs:15018`); the old 700.0 row had no source. The
+            // five repeat copies of this 5-kind block (a merge scar)
+            // dedupe to this one; the other four values are unchanged.
+            NpcKind::StardustWormHead => 0.0,
             NpcKind::SolarSpearman => 900.0,
             NpcKind::VortexTower => 0.0,
-            // The lane gate: value 0 (`NPC.cs`'s case 549).
-            NpcKind::DD2LanePortal => 0.0,
             NpcKind::BrainSuckler => 60.0,
             NpcKind::Predictor => 900.0,
             NpcKind::MoonLordCore => 1_000_000.0,
@@ -4074,19 +4051,21 @@ impl Npc {
             NpcKind::AncientCultist => 100000.0,
             NpcKind::VortexTower => 0.0, // the C# value = 0 for the pillars
             NpcKind::DD2LanePortal => 0.0,
-            // The Moon Lord family's kb: 0 across the parts (`NPC.cs` rows).
-            NpcKind::MoonLordHead
-            | NpcKind::MoonLordHand
-            | NpcKind::MoonLordCore
-            | NpcKind::MoonLordFreeEye
-            | NpcKind::MoonLordLeechBlob => 0.0,
-            // The shards' kb: 0.3/0.4/0.03/0.2/0.4/0.6 (`NPC.cs`'s rows).
-            NpcKind::StardustCellBig => 0.3,
-            NpcKind::StardustCellSmall => 0.4,
-            NpcKind::StardustJellyfishBig => 0.03,
-            NpcKind::NebulaBeast => 0.2,
-            NpcKind::VortexRifleman => 0.4,
-            NpcKind::VortexSoldier => 0.6,
+            // W4-f18: the Moon Lord kb group + the six shard kb rows
+            // (0.3/0.4/0.03/0.2/0.4/0.6) that used to ride here were a merge
+            // scar spliced into `value()` — the group shadowed the core's
+            // 1_000_000 row above, and the six kinds (405/406/407/423/425/
+            // 429) write no C# `value` row, so the stock 0f (`NPC.cs:8544`)
+            // stands. The real kb rows live in `knock_back_resist()`. The
+            // six keep EXPLICIT 0.0 arms below: `value()` is an exhaustive
+            // match (no wildcard), so purging the arms outright would not
+            // compile — the 0f default is pinned as a live arm instead.
+            NpcKind::StardustCellBig
+            | NpcKind::StardustCellSmall
+            | NpcKind::StardustJellyfishBig
+            | NpcKind::NebulaBeast
+            | NpcKind::VortexRifleman
+            | NpcKind::VortexSoldier => 0.0,
             // The pirates: 700/1000/1000/1500/50000 (`NPC.cs`'s cases 212-216).
             NpcKind::PirateDeckhand => 700.0,
             NpcKind::PirateCaptainsMate => 1000.0,
