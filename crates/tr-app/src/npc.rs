@@ -6950,27 +6950,23 @@ impl Npc {
         self.local_ai[0] = s.local_ai0;
     }
 
-    /// W4-d44 wire — the extra-8 claim set: the FIRST ELEVEN of the
-    /// slice-8 band 443-454/460-462 — the six gold critters 443-448,
-    /// the four bone throwers 449-452 and the Skeleton Merchant 453
-    /// (the ≤11-kind batch cap, the extra7c-b precedent); 454/460/
-    /// 461/462 ride a later batch. NO exclusions: the module mapper
-    /// carries EXACTLY the 15 slice-8 ids — the d40-inline-faithful
-    /// SIX 464/465/466/468/469/470 are NOT in it (the f27 slice-9
-    /// re-census FAITHFUL-EXCLUDE verdicts), the d40 443-448 row-0
-    /// stubs are superseded, the 449-452 faithful inline twins keep
-    /// one either way (the hook precedes at merge, behaviour-
-    /// identical), the 453 town stand-in is superseded by the
-    /// module's count-internal town machine (the 26−9=17 wrap).
+    /// W4-d44 wire — the extra-8 claim set: the FULL slice-8 band
+    /// 443-454/460-462, all 15 kinds (the in-module lookup verbatim).
+    /// The first batch claimed 443-453 (the ≤11-kind cap); this batch
+    /// widens to the LAST FOUR 454/460/461/462 (the Cultist Dragon
+    /// Head, the Butcher, the Creature From The Deep, Fritz). NO
+    /// exclusions: the module mapper carries EXACTLY the 15 slice-8
+    /// ids — the d40-inline-faithful SIX 464/465/466/468/469/470 are
+    /// NOT in it (the f27 slice-9 re-census FAITHFUL-EXCLUDE
+    /// verdicts), the d40 443-448 row-0 stubs are superseded, the
+    /// 449-452/454/461 faithful inline twins keep one either way
+    /// (the hook precedes at merge, behaviour-identical), the
+    /// 453/460/462 town stand-ins are superseded (460/462 WRONG —
+    /// no air tail; the module carries the counts internally).
     fn find_frame_kind_extra8_claimed(
         cs_id: u16,
     ) -> Option<crate::npc_findframe_extra8::FindFrameExtra8Kind> {
-        use crate::npc_findframe_extra8::FindFrameExtra8Kind as K;
-        match crate::npc_findframe_extra8::find_frame_kind_extra8(cs_id as i16) {
-            // The ≤11-kind cap — the LAST FOUR ride a later batch.
-            Some(K::CultistDragonHead | K::Butcher | K::CreatureFromTheDeep | K::Fritz) => None,
-            other => other,
-        }
+        crate::npc_findframe_extra8::find_frame_kind_extra8(cs_id as i16)
     }
 
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
@@ -7181,16 +7177,17 @@ impl Npc {
         }
         // W4-d44 wire (f27 slice 8) — the `cs_id`-keyed hook into the
         // extra-wave-8 pure machines (`npc_findframe_extra8.rs`) via
-        // `find_frame_kind_extra8_claimed`: the FIRST ELEVEN slice-8
-        // ids 443-453 (the six gold critters, the four bone throwers,
-        // the Skeleton Merchant; 454/460/461/462 ride a later batch,
-        // the ≤11-kind cap). NO current kind's `cs_id` lands in the
-        // set (verified over the hand rows + the bestiary net ids),
-        // so this is stream-inert today; no arm draws RNG (the f27
-        // slice-8 mechanical grep; the town pose zones are the
-        // documented skip). The world-free lane passes slope 0 — the
-        // world-read entry `find_frame_world` resolves the GoldWorm
-        // slope probe. The wave-C hook precedent.
+        // `find_frame_kind_extra8_claimed`: ALL 15 slice-8 ids
+        // 443-454/460-462 (the six gold critters, the four bone
+        // throwers, the Skeleton Merchant, the Cultist Dragon Head,
+        // the Butcher, the Creature From The Deep, Fritz). NO current
+        // kind's `cs_id` lands in the set (verified over the hand
+        // rows + the bestiary net ids), so this is stream-inert
+        // today; no arm draws RNG (the f27 slice-8 mechanical grep;
+        // the town pose zones are the documented skip). The
+        // world-free lane passes slope 0 — the world-read entry
+        // `find_frame_world` resolves the GoldWorm slope probe. The
+        // wave-C hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra8_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra8(kind, 0);
             return;
@@ -34606,12 +34603,11 @@ mod w4_d44_wire_tests {
         }
     }
 
-    /// The extra-8 claim set is the FIRST ELEVEN slice-8 ids
-    /// 443-453 (the six gold critters, the four bone throwers, the
-    /// Skeleton Merchant); 454/460/461/462 ride a later batch (the
-    /// ≤11-kind cap). The d40-faithful SIX 464/465/466/468/469/470
-    /// are NOT in the module mapper — the claim never reaches them
-    /// (the f27 slice-9 FAITHFUL-EXCLUDE verdicts).
+    /// The extra-8 claim set is the FULL slice-8 band
+    /// 443-454/460-462 — all 15 kinds. The d40-faithful SIX
+    /// 464/465/466/468/469/470 are NOT in the module mapper — the
+    /// claim never reaches them (the f27 slice-9 FAITHFUL-EXCLUDE
+    /// verdicts).
     #[test]
     fn w4_d44_the_extra8_claim_set_matches_the_batch_band() {
         use crate::npc_findframe_extra8::FindFrameExtra8Kind as K;
@@ -34627,13 +34623,13 @@ mod w4_d44_wire_tests {
             (451, K::BoneThrowingSkeleton3),
             (452, K::BoneThrowingSkeleton4),
             (453, K::SkeletonMerchant),
+            (454, K::CultistDragonHead),
+            (460, K::Butcher),
+            (461, K::CreatureFromTheDeep),
+            (462, K::Fritz),
         ];
         for (id, k) in table {
             assert_eq!(Npc::find_frame_kind_extra8_claimed(id), Some(k), "{id}");
-        }
-        // The ≤11-kind cap — the LAST FOUR ride a later batch.
-        for id in [454, 460, 461, 462] {
-            assert_eq!(Npc::find_frame_kind_extra8_claimed(id), None, "{id}");
         }
         // The d40-faithful six + the band edges + the no-case
         // 455-459 dragon bodies stay outside the mapper entirely.
@@ -34779,6 +34775,104 @@ mod w4_d44_wire_tests {
         n.frame_counter = 3.0;
         n.find_frame_wave_extra8(K::SkeletonMerchant, 0);
         assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+    }
+
+    /// The extra-8 tail batch: the Cultist Dragon Head's counter/2
+    /// row read (the counter NEVER touched, `NPC.cs:70952-70957`),
+    /// the Butcher's wave-B fighter delegate (the FULL-16 wrap + the
+    /// air row 1, `:68611` → `:68647-69655`), the Creature From The
+    /// Deep's wet swim entry quirk + the aim ease + the facing-change
+    /// mirror (`:75315-75410`) and Fritz's >9 stride + the air 1/2
+    /// pair (`:68612`, the three overrides).
+    #[test]
+    fn w4_d44_the_extra8_tail_batch_bridge() {
+        use crate::npc_findframe_extra8::FindFrameExtra8Kind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // Dragon head: counter 5 → row (int)(5/2) = 2; the counter is
+        // NEVER touched (the aiStyle-6 chain machine owns it); no
+        // sprite/rotation write.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.4;
+        n.find_frame_wave_extra8(K::CultistDragonHead, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (2, 5.0, -1));
+        assert_eq!(n.rotation, 0.4);
+        // Butcher grounded walk: vx 1, counter 0 → |1|*2+1 = 3 < 6,
+        // row 0 lifts to 2 and holds; the flip rides facing -1.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.facing = -1;
+        n.sprite_dir = 1;
+        n.find_frame_wave_extra8(K::Butcher, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (2, 3.0, -1));
+        // The FULL-16 wrap: row 15 + step → 16, >= 16 wraps to 2.
+        n.frame = 15;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_extra8(K::Butcher, 0);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        // The Butcher air: row 1 (not in the pin list).
+        n.vy = 1.0;
+        n.frame_counter = 3.0;
+        n.find_frame_wave_extra8(K::Butcher, 0);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        // Creature wet entry quirk: vx 3 / vy 4, row 0 → the <16 lift
+        // lands 19 (NOT 16); the aim ease (rot*4 + aim)/5 with
+        // aim = atan2(4,3) ≈ 0.9273 → rotation ≈ 0.18546; the
+        // |velocity|+1 counter 0 + 5 + 1 = 6 stays <= 8 (no step).
+        n.wet = true;
+        n.vy = 4.0;
+        n.vx = 3.0;
+        n.facing = 1;
+        n.sprite_dir = 1;
+        n.rotation = 0.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.find_frame_wave_extra8(K::CreatureFromTheDeep, 0);
+        assert_eq!((n.frame, n.frame_counter), (19, 6.0), "the entry quirk");
+        assert!((n.rotation - 0.18545904).abs() < 1e-5, "rot {}", n.rotation);
+        // The facing-change mirror: sprite_dir -1 vs the vx-sign
+        // direction +1 mirrors the rotation and copies the flip; the
+        // counter 6 + 5 + 1 = 12 > 8 steps row 19 → 20 (the >20 wrap
+        // does NOT fire at 20).
+        n.sprite_dir = -1;
+        n.rotation = 0.5;
+        n.find_frame_wave_extra8(K::CreatureFromTheDeep, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (20, 0.0, 1));
+        assert!((n.rotation - (-0.21454096)).abs() < 1e-5, "rot {}", n.rotation);
+        // The dry rotation decay: the ±0.01 deadband snaps 0.
+        n.wet = false;
+        n.rotation = 0.005;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.frame = 3;
+        n.frame_counter = 2.0;
+        n.find_frame_wave_extra8(K::CreatureFromTheDeep, 0);
+        assert_eq!(n.rotation, 0.0, "the deadband snap");
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0), "the dry idle");
+        // Fritz grounded walk: vx 1, counter 8 → 8 + |1|*2 + 1 = 11
+        // > 9 steps row 2 → 3 (the num108=9 stride, NOT the group >6).
+        n.frame = 2;
+        n.frame_counter = 8.0;
+        n.vx = 1.0;
+        n.find_frame_wave_extra8(K::Fritz, 0);
+        assert_eq!((n.frame, n.frame_counter), (3, 0.0));
+        // The FULL-9 wrap: row 8 + step → 9, >= 9 wraps to 2.
+        n.frame = 8;
+        n.frame_counter = 9.0;
+        n.find_frame_wave_extra8(K::Fritz, 0);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        // The Fritz air pair: rise row 1 / fall row 2 (the early
+        // break before the group tail).
+        n.vy = -1.0;
+        n.frame_counter = 4.0;
+        n.find_frame_wave_extra8(K::Fritz, 0);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        n.vy = 1.0;
+        n.find_frame_wave_extra8(K::Fritz, 0);
+        assert_eq!(n.frame, 2);
     }
 
     /// The world-read entry runs the extra-8 bridge with the
