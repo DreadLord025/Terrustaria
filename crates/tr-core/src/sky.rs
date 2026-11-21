@@ -75,35 +75,9 @@ pub fn atmosphere_transparency(y: f32, world_surface: f64, max_tiles_x: i32) -> 
     atmo.clamp(0.0, 1.0)
 }
 
-/// `SetBackColor` sun tint as sRGB bytes. Only the base (forest) day branches are
-/// ported; corruption/crimson/graveyard/blood-moon modifiers are not modelled.
-pub fn sun_color(time: f64) -> [u8; 3] {
-    let b = |v: f64| v.clamp(0.0, 255.0) as u8;
-    if time < 13500.0 {
-        let t = time / 13500.0;
-        [b(t * 200.0 + 55.0), b(t * 180.0 + 75.0), b(t * 250.0 + 5.0)]
-    } else if time > 45900.0 {
-        let t = 1.0 - (time / 54000.0 - 0.85) * 6.666_666_666_666_667;
-        [b(t * 120.0 + 55.0), b(t * 100.0 + 25.0), b(t * 120.0 + 55.0)]
-    } else if time > 37800.0 {
-        let t = 1.0 - (time / 54000.0 - 0.7) * 6.666_666_666_666_667;
-        [b(t * 80.0 + 175.0), b(t * 130.0 + 125.0), b(t * 100.0 + 155.0)]
-    } else {
-        [255, 255, 255]
-    }
-}
-
-/// `SetBackColor` moon tint as sRGB bytes (forest, no blood moon).
-pub fn moon_color(time: f64) -> [u8; 3] {
-    let b = |v: f64| v.clamp(0.0, 255.0) as u8;
-    if time < 16200.0 {
-        let t = 1.0 - time / 16200.0;
-        [b(t * 10.0 + 205.0), b(t * 70.0 + 155.0), b(t * 100.0 + 155.0)]
-    } else {
-        let t = (time / 32400.0 - 0.5) * 2.0;
-        [b(t * 50.0 + 205.0), b(t * 100.0 + 155.0), b(t * 100.0 + 155.0)]
-    }
-}
+/// `SetBackColor`'s sun/moon ramps moved to [`crate::sky_color`] (W4-g70
+/// lane 8): the full chain (biome tints, eclipse, blood moon) computes both
+/// colours there; `DrawSunAndMoon` consumes its `out sunColor`/`out moonColor`.
 
 #[cfg(test)]
 mod tests {
@@ -148,13 +122,37 @@ mod tests {
 
     #[test]
     fn colours_are_white_at_midday_and_blue_at_midnight() {
-        assert_eq!(sun_color(27000.0), [255, 255, 255]);
-        // Night past 16200: moon colour straightens towards white.
-        let c = moon_color(32400.0);
-        assert_eq!(c, [255, 255, 255]);
-        // Early night is the bluish tint.
-        let c = moon_color(0.0);
-        assert_eq!(c, [215, 225, 255]);
+        // The ramps now live in `sky_color::set_back_color` (W4-g70 lane 8);
+        // these pin the same expectations through the full chain.
+        let mut i = crate::sky_color::BackColorInputs {
+            time: 27000.0,
+            day: true,
+            moon_phase: 0,
+            blood_moon: false,
+            eclipse: false,
+            eclipse_light: 0.0,
+            cloud_alpha: 0.0,
+            atmo: 1.0,
+            graveyard: 0.0,
+            corruption: 0.0,
+            crimson: 0.0,
+            jungle: 0.0,
+            mushroom: 0.0,
+            lightning: 0.0,
+            remix: false,
+            dont_starve: false,
+            not_retro: true,
+        };
+        assert_eq!(crate::sky_color::set_back_color(&i).sun, [255, 255, 255]);
+        // Night past 16200: the moon ramp straightens towards white — but
+        // the `:63917-63920` reset makes it plain white outside a blood moon.
+        i.day = false;
+        i.time = 32400.0;
+        assert_eq!(crate::sky_color::set_back_color(&i).moon, [255, 255, 255]);
+        // Early night under a blood moon keeps the red tint (215,225,255).
+        i.time = 0.0;
+        i.blood_moon = true;
+        assert_eq!(crate::sky_color::set_back_color(&i).moon, [215, 225, 255]);
     }
     // --- UpdateAtmosphereTransparencyToSkyColor (Main.cs:63185-63199) ---
 

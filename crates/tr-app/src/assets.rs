@@ -297,6 +297,22 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Background_112",
         "Background_113",
         "Sun",
+        // `DrawSunAndMoon`'s event suns (`Main.cs:62930-62937`): Sun3 the
+        // eclipse sun, Sun2 the Sunglasses head (head == 12) sun; Extra_280
+        // the sunglasses overlay (`:62950`). W4-g70 lane 8.
+        "Sun2",
+        "Sun3",
+        "Extra_280",
+        // The event moons (`Main.cs:62964-62975`): the drunk seed's Smiley,
+        // the Pumpkin Moon and the Frost Moon sheets (50x400 phase rows like
+        // Moon_0..8; Smiley is one frame).
+        "Moon_Smiley",
+        "Moon_Pumpkin",
+        "Moon_Snow",
+        // `NextHorizonRenderer.DrawSun`'s flare sheets (`:176-180`,
+        // `Images/Misc/Sunflare/flare1/flare2`).
+        "Misc/Sunflare/flare1",
+        "Misc/Sunflare/flare2",
         "Moon_0",
         "Moon_1",
         "Moon_2",

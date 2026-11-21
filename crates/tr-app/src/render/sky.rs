@@ -359,9 +359,27 @@ pub(crate) struct SkyAssets {
     /// `DrawBackground_DrawUnderworldBlackBox`.
     pub(crate) black_tile: Option<BgTex>,
     pub(crate) sun: Option<BgTex>,
+    /// `Images/Sun3`: the eclipse sun (`Main.cs:62930`).
+    pub(crate) sun_eclipse: Option<BgTex>,
+    /// `Images/Sun2`: the Sunglasses-head sun (`Main.cs:62935`, head == 12).
+    pub(crate) sun_sunglasses: Option<BgTex>,
+    /// `Images/Extra_280`: the sunglasses overlay drawn at alpha 100 over the
+    /// Sun2 body (`Main.cs:62950-62952`).
+    pub(crate) sunglasses_overlay: Option<BgTex>,
     /// `Images/Moon_0..8` (50x400: eight 50 px phase rows); `Main.moonType` picks
     /// the sheet, `Main.moonPhase` the row.
     pub(crate) moon: [Option<BgTex>; 9],
+    /// `Images/Moon_Smiley`: the drunk seed's whole-frame moon
+    /// (`Main.cs:62964-62967`, rotation `num9/2 + π`).
+    pub(crate) moon_smiley: Option<BgTex>,
+    /// `Images/Moon_Pumpkin` / `Moon_Snow`: the event moons' phase-row sheets
+    /// (`Main.cs:62968-62975`), same 8-row layout as `Moon_0..8`.
+    pub(crate) moon_pumpkin: Option<BgTex>,
+    pub(crate) moon_snow: Option<BgTex>,
+    /// `Images/Misc/Sunflare/flare1/flare2`: `NextHorizonRenderer.DrawSun`'s
+    /// five flare quads (`NextHorizonRenderer.cs:168-181`).
+    pub(crate) sunflare1: Option<BgTex>,
+    pub(crate) sunflare2: Option<BgTex>,
     pub(crate) stars: Vec<Option<BgTex>>,
 }
 
@@ -457,7 +475,15 @@ pub(crate) fn make_sky_assets(atlas: &Atlas, world: &World) -> SkyAssets {
         hell_bottom: [185, 186, 187].map(|i| sky_tex(atlas, &format!("Background_{i}"), None)),
         black_tile: sky_tex(atlas, "Black_Tile", None),
         sun: sky_tex(atlas, "Sun", None),
+        sun_eclipse: sky_tex(atlas, "Sun3", None),
+        sun_sunglasses: sky_tex(atlas, "Sun2", None),
+        sunglasses_overlay: sky_tex(atlas, "Extra_280", None),
         moon: std::array::from_fn(|i| sky_tex(atlas, &format!("Moon_{i}"), None)),
+        moon_smiley: sky_tex(atlas, "Moon_Smiley", None),
+        moon_pumpkin: sky_tex(atlas, "Moon_Pumpkin", None),
+        moon_snow: sky_tex(atlas, "Moon_Snow", None),
+        sunflare1: sky_tex(atlas, "Misc/Sunflare/flare1", None),
+        sunflare2: sky_tex(atlas, "Misc/Sunflare/flare2", None),
         stars: (0..4)
             .map(|i| sky_tex(atlas, &format!("Star_{i}"), None))
             .collect(),
@@ -504,6 +530,21 @@ pub(crate) fn make_stars(world: &World) -> Vec<StarSprite> {
             }
         })
         .collect()
+}
+
+/// `NextHorizonRenderer.GetCelestialEffectPower`
+/// (`NextHorizonRenderer.cs:311-321`): the flare strength ramps in over the
+/// first 3600 ticks and out over the last 1800 of each half-day.
+pub(crate) fn celestial_effect_power(time: f64, day: bool) -> f32 {
+    let remap = |v: f32, lo: f32, hi: f32, a: f32, z: f32| {
+        a + (z - a) * ((v - lo) / (hi - lo)).clamp(0.0, 1.0)
+    };
+    let t = time as f32;
+    if day {
+        remap(t, 0.0, 3600.0, 0.0, 1.0) * remap(t, 52200.0, 54000.0, 1.0, 0.0)
+    } else {
+        remap(t, 0.0, 3600.0, 0.0, 1.0) * remap(t, 30600.0, 32400.0, 1.0, 0.0)
+    }
 }
 
 /// One `DrawClouds_*` pass (`Main.cs:59644-59703`): every cloud of the scale
@@ -671,6 +712,22 @@ pub(crate) fn draw_sky(
     // W4-g70: `WorldGen.BackgroundsCache.GetFlashPower` for the four forest
     // change overlays (areas 0..3, `DrawSurfaceBG_DrawChangeOverlay(0..3)`).
     forest_flash: [f32; 4],
+    // W4-g70 lane 8: `SetBackColor`'s `out sunColor`/`out moonColor`
+    // (`Main.cs:61971`), threaded to `DrawSunAndMoon` (`:62092`). The moon is
+    // white outside a blood moon (`:63917-63920`).
+    sun_color: [u8; 3],
+    moon_color: [u8; 3],
+    // `Main.cloudAlpha` (the raw event alpha, NOT `cloudBGAlpha`) — the
+    // celestial dim terms (`Main.cs:62915`/`:62957`) and the star gate.
+    cloud_alpha: f32,
+    // `Main.eclipse` (`Main.cs:1209`) — the Sun3 swap + the horizon kill.
+    eclipse: bool,
+    // `Main.SmoothedMushroomLightInfluence` (`Main.cs:1283`) — the sun's
+    // num12 term and the horizon visibilities.
+    mushroom_influence: f32,
+    // `Main.player[Main.myPlayer].head` (`Player.cs`): the effective head
+    // armour texture id — 12 (Sunglasses) swaps Sun2 in (`Main.cs:62933`).
+    player_head_slot: i16,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -818,90 +875,206 @@ pub(crate) fn draw_sky(
         }
     }
 
-    // `DrawSunAndMoon`: the sun and the moon ride the same arc, anchored to
-    // `Main.bgTopY` (`Main.cs:62040`) and drawn only while the camera is near the
-    // surface (`Main.cs:62090`). The original computes both bodies every frame but
-    // draws only the one matching `Main.dayTime`.
+    // `DrawSunAndMoon` (`Main.cs:62848-63028`): the sun and the moon ride the
+    // same arc, anchored to `Main.bgTopY` (`Main.cs:62040`) and drawn only
+    // while the camera is near the surface (`Main.cs:62090`). The original
+    // computes both bodies every frame but draws only the one matching
+    // `Main.dayTime`. W4-g70 lane 8: the event bodies (eclipse Sun3, the
+    // Sunglasses Sun2 + Extra_280 overlay, the Smiley/Pumpkin/Snow moons),
+    // the byte-exact colour chain and the `DrawSun` flare quads.
     if view_top / TILE_PX < world.world_surface as f32 + 2.0 {
         let bg_top_y = tr_core::sky::sky_bg_top_y(view_top, world.world_surface);
-        // `num12`/`num13`: cloud cover fades the second pass; `Main.atmo` is 1 and
-        // the mushroom influence is not modelled.
-        let cloud_dim = (1.0 - storm * 1.5).max(0.0);
-        if is_day {
-            if let Some(sun) = sky.sun {
+        let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+        let drunk = world.seeds.contains(tr_core::seeds::SeedFlags::DRUNK);
+        if is_day && !remix {
+            // `:62910-62913`: the remix world draws no sun in-game.
+            if let Some(sun_tex) = sky.sun {
                 let mut body = tr_core::sky::celestial_body(
                     clock_time,
                     tr_core::sky::DAY_LENGTH,
                     bg_top_y,
-                    sun.w,
+                    sun_tex.w,
                     screen.x,
                 );
                 // `num5 *= 1.1f` in the day branch (`Main.cs:62914`).
                 body.scale *= 1.1;
-                let size = [sun.w * body.scale, sun.h * body.scale];
-                // First pass: the raw sun (white — `color = Color.White` unless an
-                // eclipse is active, which is not modelled).
+                // `num12 = 1f - tempMushroomInfluence - cloudAlpha * 1.5f *
+                // atmo`, floored at 0 (`:62915-62919`).
+                let num12 = (1.0 - mushroom_influence - cloud_alpha * 1.5 * atmo).max(0.0);
+                let byte = |v: f32| (v as i32) as u8;
+                // `:62920-62921`: the two colour passes. `color`'s R is the
+                // flat 255*num12; `color2` rides sunColor with alpha = B.
+                let mut color = [
+                    byte(255.0 * num12),
+                    byte(sun_color[1] as f32 * num12),
+                    byte(sun_color[2] as f32 * num12),
+                    byte(255.0 * num12),
+                ];
+                let mut color2 = [
+                    byte(sun_color[0] as f32 * num12),
+                    byte(sun_color[1] as f32 * num12),
+                    byte(sun_color[2] as f32 * num12),
+                    byte(sun_color[2] as f32 * num12),
+                ];
+                // `:62922-62938`: the plain sun is white; the eclipse swaps
+                // Sun3 in, the Sunglasses head (head == 12) swaps Sun2 +
+                // the Extra_280 overlay. `flag` (either swap) drops the
+                // second pass's alpha to (B-60)*num12 (`:62939-62942`).
+                let mut tex = sun_tex;
+                let mut flag = false;
+                let mut sunglasses = false;
+                if eclipse {
+                    if let Some(t) = sky.sun_eclipse {
+                        tex = t;
+                    }
+                    flag = true;
+                } else {
+                    color = [255, 255, 255, 255];
+                    if player_head_slot == 12 {
+                        if let Some(t) = sky.sun_sunglasses {
+                            tex = t;
+                        }
+                        sunglasses = true;
+                        flag = true;
+                    }
+                }
+                if flag {
+                    color2[3] = byte((sun_color[2] as f32 - 60.0) * num12);
+                }
+                let size = [tex.w * body.scale, tex.h * body.scale];
+                let to_f = |c: [u8; 4]| c.map(|v| v as f32 / 255.0);
                 push_screen_rot(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    [body.x, body.y],
-                    size,
-                    sun.uv,
-                    [1.0, 1.0, 1.0, 1.0],
-                    body.rotation,
+                    r, camera, zoom, screen,
+                    [body.x, body.y], size, tex.uv, to_f(color), body.rotation,
                 );
-                // Second pass: `sunColor` at alpha `sunColor.B` (`Main.cs:62941`).
-                let c = tr_core::sky::sun_color(clock_time);
                 push_screen_rot(
-                    r,
-                    camera,
-                    zoom,
-                    screen,
-                    [body.x, body.y],
-                    size,
-                    sun.uv,
-                    [
-                        c[0] as f32 / 255.0 * cloud_dim,
-                        c[1] as f32 / 255.0 * cloud_dim,
-                        c[2] as f32 / 255.0 * cloud_dim,
-                        c[2] as f32 / 255.0 * cloud_dim,
-                    ],
-                    body.rotation,
+                    r, camera, zoom, screen,
+                    [body.x, body.y], size, tex.uv, to_f(color2), body.rotation,
                 );
+                // `HorizonRenderer.DrawSun` (`Main.cs:62947`,
+                // `NextHorizonRenderer.cs:168-181`): five flare quads at the
+                // sun position — flare1 ×3/×2 at the sunset strength, flare2
+                // ×2/×1.5/×1 at the sunrise strength, all scaled by the
+                // celestial power. The colour is (255,255,255,0) × strength:
+                // under the premultiplied One/OneMinusSrcAlpha blend the
+                // alpha-0 tint leaves the destination alpha untouched while
+                // the tinted texture rgb ADDS — an additive glow, exactly
+                // what the port's shader does with the same factors
+                // (sprite.wgsl's documented convention).
+                let (mut sunset, mut sunrise) = horizon_visibilities(
+                    clock_time, true, atmo, cloud_alpha, mushroom_influence, eclipse,
+                );
+                let celestial = celestial_effect_power(clock_time, true);
+                sunset *= celestial;
+                sunrise *= celestial;
+                if let Some(f1) = sky.sunflare1 {
+                    for (scale, strength) in [(3.0f32, sunset * 0.75), (2.0, sunset * 0.35)] {
+                        push_screen_rot(
+                            r, camera, zoom, screen,
+                            [body.x, body.y],
+                            [f1.w * scale, f1.h * scale],
+                            f1.uv,
+                            [strength, strength, strength, 0.0],
+                            0.0,
+                        );
+                    }
+                }
+                if let Some(f2) = sky.sunflare2 {
+                    for (scale, strength) in
+                        [(2.0f32, sunrise * 0.7 * 0.5), (1.5, sunrise * 0.3 * 0.5), (1.0, sunrise * 0.2 * 0.5)]
+                    {
+                        push_screen_rot(
+                            r, camera, zoom, screen,
+                            [body.x, body.y],
+                            [f2.w * scale, f2.h * scale],
+                            f2.uv,
+                            [strength, strength, strength, 0.0],
+                            0.0,
+                        );
+                    }
+                }
+                // `:62948-62953`: the sunglasses overlay at alpha 100.
+                if sunglasses {
+                    if let Some(ov) = sky.sunglasses_overlay {
+                        push_screen_rot(
+                            r, camera, zoom, screen,
+                            [body.x, body.y], size, ov.uv,
+                            [
+                                color[0] as f32 / 255.0,
+                                color[1] as f32 / 255.0,
+                                color[2] as f32 / 255.0,
+                                100.0 / 255.0,
+                            ],
+                            body.rotation,
+                        );
+                    }
+                }
             }
-        } else if let Some(moon) = sky.moon[world.moon_type.min(8) as usize] {
+        }
+        if !is_day {
+            // `num13 = 1f - cloudAlpha * 1.5f * atmo` (`:62957-62961`);
+            // `moonColor *= num13` is XNA's byte multiply (`:62962`). The
+            // moon colour is white outside a blood moon (`SetBackColor`'s
+            // `:63917-63920` reset, threaded in as `moon_color`).
+            let num13 = (1.0 - cloud_alpha * 1.5 * atmo).max(0.0);
+            let mc = moon_color.map(|c| ((c as f32 * num13) as i32) as u8);
+            let mc4 = [
+                mc[0] as f32 / 255.0,
+                mc[1] as f32 / 255.0,
+                mc[2] as f32 / 255.0,
+                num13,
+            ];
+            // The body geometry always uses `Moon[moonType]`'s width
+            // (`num6`, `:62862`) — the event sheets share the 50 px row.
+            let moon_w = sky.moon[world.moon_type.min(8) as usize].map_or(50.0, |m| m.w);
             let body = tr_core::sky::celestial_body(
                 clock_time,
                 tr_core::sky::NIGHT_LENGTH,
                 bg_top_y,
-                moon.w,
+                moon_w,
                 screen.x,
             );
-            // `new Rectangle(0, width * moonPhase, width, width)`: one phase row.
-            let phase = world.moon_phase.min(7) as f32;
-            let dv = (moon.uv[3] - moon.uv[1]) / 8.0;
-            let v0 = moon.uv[1] + dv * phase;
-            let uv = [moon.uv[0], v0, moon.uv[2], v0 + dv];
-            let c = tr_core::sky::moon_color(clock_time);
-            let size = [moon.w * body.scale, moon.w * body.scale];
-            push_screen_rot(
-                r,
-                camera,
-                zoom,
-                screen,
-                [body.x, body.y],
-                size,
-                uv,
-                [
-                    c[0] as f32 / 255.0 * cloud_dim,
-                    c[1] as f32 / 255.0 * cloud_dim,
-                    c[2] as f32 / 255.0 * cloud_dim,
-                    cloud_dim,
-                ],
-                body.rotation,
-            );
+            // `new Rectangle(0, width * moonPhase, width, width)`: one phase
+            // row (`:62970-62978`). The Smiley is a single whole frame at
+            // rotation `num9/2 + π` (`:62964-62967`).
+            let phase_row = |m: BgTex| {
+                let phase = world.moon_phase.min(7) as f32;
+                let dv = (m.uv[3] - m.uv[1]) / 8.0;
+                let v0 = m.uv[1] + dv * phase;
+                [m.uv[0], v0, m.uv[2], v0 + dv]
+            };
+            let size = [moon_w * body.scale, moon_w * body.scale];
+            if drunk {
+                if let Some(m) = sky.moon_smiley {
+                    push_screen_rot(
+                        r, camera, zoom, screen,
+                        [body.x, body.y],
+                        [m.w * body.scale, m.h * body.scale],
+                        m.uv,
+                        mc4,
+                        body.rotation / 2.0 + std::f32::consts::PI,
+                    );
+                }
+            } else if world.pumpkin_moon {
+                if let Some(m) = sky.moon_pumpkin {
+                    push_screen_rot(
+                        r, camera, zoom, screen,
+                        [body.x, body.y], size, phase_row(m), mc4, body.rotation,
+                    );
+                }
+            } else if world.snow_moon {
+                if let Some(m) = sky.moon_snow {
+                    push_screen_rot(
+                        r, camera, zoom, screen,
+                        [body.x, body.y], size, phase_row(m), mc4, body.rotation,
+                    );
+                }
+            } else if let Some(m) = sky.moon[world.moon_type.min(8) as usize] {
+                push_screen_rot(
+                    r, camera, zoom, screen,
+                    [body.x, body.y], size, phase_row(m), mc4, body.rotation,
+                );
+            }
         }
     }
 
@@ -1736,6 +1909,35 @@ mod cloud_star_tests {
         // Deep underground saturates at 1, high sky bottoms out at 0.
         assert_eq!(atmosphere_factor(3000.0, 300.0, 4200), 1.0);
         assert_eq!(atmosphere_factor(0.0, 300.0, 4200), 0.0);
+    }
+
+    #[test]
+    fn celestial_power_ramps_at_the_half_day_edges() {
+        // `NextHorizonRenderer.cs:311-321`: in over 0..3600, out over the
+        // last 1800 ticks. Noon/midnight sit at full strength.
+        assert_eq!(celestial_effect_power(27000.0, true), 1.0);
+        assert_eq!(celestial_effect_power(16200.0, false), 1.0);
+        assert_eq!(celestial_effect_power(0.0, true), 0.0);
+        assert!((celestial_effect_power(1800.0, true) - 0.5).abs() < 1e-6);
+        // The day's out-ramp: 53100 is the midpoint of 52200..54000.
+        assert!((celestial_effect_power(53100.0, true) - 0.5).abs() < 1e-6);
+        assert_eq!(celestial_effect_power(54000.0, true), 0.0);
+        // The night mirrors it on 30600..32400.
+        assert!((celestial_effect_power(31500.0, false) - 0.5).abs() < 1e-6);
+        assert_eq!(celestial_effect_power(32400.0, false), 0.0);
+    }
+
+    #[test]
+    fn event_moon_sheets_share_the_phase_row_layout() {
+        // `Main.cs:62970-62978`: the event moons draw
+        // `Rectangle(0, width * moonPhase, width, width)` — the same 8-row
+        // slice as Moon_0..8. A synthetic 50x400 sheet exercises the row
+        // math the draw block uses (phase 3 → v spans rows 3..4 of 8).
+        let m = BgTex { uv: [0.0, 0.0, 0.1, 0.8], w: 50.0, h: 400.0 };
+        let dv = (m.uv[3] - m.uv[1]) / 8.0;
+        let v0 = m.uv[1] + dv * 3.0;
+        assert!((dv - 0.1).abs() < 1e-6);
+        assert!((v0 - 0.3).abs() < 1e-6);
     }
 
     #[test]

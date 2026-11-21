@@ -1144,6 +1144,24 @@ impl App {
                         self.mouse_text_color,
                         &*forest_hills,
                         std::array::from_fn(|n| bg_flash.get_flash_power(n)),
+                        back.sun,
+                        back.moon,
+                        rain_alpha,
+                        world.eclipse,
+                        self.mushroom_light_influence,
+                        // `Main.player[Main.myPlayer].head` — the effective
+                        // head armour slot (`Player.cs`'s armor walk); the
+                        // Sunglasses (237) resolve to 12.
+                        self.equip
+                            .armor
+                            .first()
+                            .map_or(-1, |s| {
+                                if s.count > 0 {
+                                    crate::registry::get(s.kind).map_or(-1, |d| d.head_slot)
+                                } else {
+                                    -1
+                                }
+                            }),
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.
