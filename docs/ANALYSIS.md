@@ -24648,6 +24648,26 @@ live axis tick draw-free, the separation nudge, the desert despawn gate)
 + the SetDefaults round-trip extended to the Tumbleweed row. WRITTEN, NOT
 RUN — no compiler invoked.
 
+**KEEP-ONE merge note (W4-d25 × d36/d41/d35).** At merge:
+* **The Wolf**: d25's port-local proto **355** DROPS onto d36's canonical
+  Wolf **@772** (a11f61850) — d36 owns the kind, its rows and its machine.
+* **The Tumbleweed**: d25's **@546** DROPS onto d41's fuller wired
+  Tumbleweed (61b0b53ca). The sim pre-pass halves were verified against
+  `git show 61b0b53ca:crates/tr-app/src/world_sim/npcs.rs`: d41 ALREADY
+  stamps `wind_speed_target` (from `app.wind.speed_target`),
+  `zone_sandstorm`/`zone_desert` (from `app.scene_metrics`) and the
+  slot-ordered sibling scan into `tumbler_siblings` (the `twin_time_lefts`
+  carrier precedent, the `j != i` slot exclusion). **Nothing is missing
+  semantically** — the only delta is the carrier field NAMES (d25's
+  `gallop_wind_speed_target`/`gallop_zone_desert`/`gallop_zone_sandstorm`/
+  `gallop_siblings` vs d41's `wind_speed_target`/`zone_*`/
+  `tumbler_siblings`), so the SPLICE reduces to keeping d41's block
+  wholesale and dropping d25's duplicate pre-pass + carrier fields.
+* **The Unicorn 440** STAYS d25 (the d35 batch-C mirror keep-one).
+* **Axis-26 compose**: ONE `26 =>` arm, kind-gated to both machines —
+  d36's Wolf machine and d25's `ai_026_gallop_family` (Unicorn/Tumbleweed
+  per the surviving kinds); no second dispatch arm.
+
 ## The frame phase split (S1-B-8)
 
 `app/frame.rs`'s single 2 110-line `frame()` became a phase-list orchestrator
