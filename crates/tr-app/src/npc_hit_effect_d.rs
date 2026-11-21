@@ -4241,9 +4241,11 @@ fn squid_snail_death(
 /// (`:88543-88548`, sites 648-653), 197 Armored Viking → 257 + 43x2 +
 /// 212x2 (`:88553-88557`, sites 654-658), 481 Greek Skeleton →
 /// 695/696x2/697x2 (`:88562-88566`, sites 659-663), 201/450 Headache
-/// Skeleton → 265/267 + 43x2 + 44x2 (`:88571-88576`, sites 664-669);
-/// the 202/203/322-324 branches + the generic tail land in later
-/// batches.
+/// Skeleton → 265/267 + 43x2 + 44x2 (`:88571-88576`, sites 664-669),
+/// 202/451 Misassembled Skeleton → 268 + 43x2 + 44x2 (`:88581-88585`,
+/// sites 670-674), 203/452 Pantless Skeleton → 269 + 43x2 + 266x2
+/// (`:88590-88594`, sites 675-679, legs 266 NOT 44); the 322-324
+/// branches + the generic tail land in later batches.
 fn skeleton_family_death(
     npc: &Npc,
     npc_type: i32,
@@ -4304,6 +4306,25 @@ fn skeleton_family_death(
         gore.new_gore(rng, world, p20, vel, 43, s); // :88574
         gore.new_gore(rng, world, p34, vel, 44, s); // :88575
         gore.new_gore(rng, world, p34, vel, 44, s); // :88576
+        return;
+    }
+    if npc_type == 202 || npc_type == 451 {
+        // `:88579-88587` — the Misassembled Skeleton five + return.
+        gore.new_gore(rng, world, pos, vel, 268, s); // :88581
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88582
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88583
+        gore.new_gore(rng, world, p34, vel, 44, s); // :88584
+        gore.new_gore(rng, world, p34, vel, 44, s); // :88585
+        return;
+    }
+    if npc_type == 203 || npc_type == 452 {
+        // `:88588-88596` — the Pantless Skeleton five + return (the legs
+        // are 266, NOT 44).
+        gore.new_gore(rng, world, pos, vel, 269, s); // :88590
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88591
+        gore.new_gore(rng, world, p20, vel, 43, s); // :88592
+        gore.new_gore(rng, world, p34, vel, 266, s); // :88593
+        gore.new_gore(rng, world, p34, vel, 266, s); // :88594
         return;
     }
 }
@@ -4821,8 +4842,8 @@ pub fn hit_effect_d(
     }
     // `:88527-88640` — the skeleton-family arm (21/31/294-296/32/44/45/
     // 77/110/167/197/201-203/287/291-293/322-324/481/449-452/693); the
-    // 167/197/481/201 branches are live (sites 648-669), the rest land
-    // later.
+    // 167/197/481/201/202/203 branches are live (sites 648-679), the
+    // rest land later.
     else if matches!(npc_type, 21 | 31 | 294 | 295 | 296 | 32 | 44 | 45 | 77 | 110 | 167 | 197 | 201 | 202 | 203 | 287 | 291 | 292 | 293 | 322 | 323 | 324 | 481 | 449 | 450 | 451 | 452 | 693)
     {
         skeleton_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
@@ -8407,5 +8428,34 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the headache skeleton mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88581-88594` — the Misassembled five 268/43x2/44x2 and
+    /// the Pantless five 269/43x2/266x2 (legs 266 NOT 44).
+    #[test]
+    fn w4_f5d_the_misassembled_and_pantless_skeleton_fives() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (202, vec![268, 43, 43, 44, 44]),
+            (203, vec![269, 43, 43, 266, 266]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(661);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(661);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
     }
 }
