@@ -39702,7 +39702,10 @@ sentinel draws nothing). The draw block adds the `10 + Push` offset
 (`:45089`), the Reversed UV mirror (`:45083-45086`), the Text
 `draw_mouse_text` arm (`:45102-45105`) and the head gate (`:45039`):
 `bubble_npc` (the `HoveringOverAnNPC` stand-in) OR `minimap_hover` OR the
-closed-hotbar `hovered_slot`. **Deferred halves** (documented at the
+closed-hotbar `hovered_slot`. The block rides AFTER `cursor::draw` — the
+C# layer list (`:44889-44913`) draws 40 after 36/37/38/39, the
+e19-draw_override compose-note's layer-40 position (the icon overlays
+whatever cursor is on screen). **Deferred halves** (documented at the
 block, no feed on this branch): the UsingBiomeTorches 8/966 swap
 (`:45045-45056`), TryGetAmmo (`:45093-45100`/`:45117-45144`), the
 painted-held overlay (`:45106-45110` — the port's ItemSlot has no

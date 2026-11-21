@@ -1214,9 +1214,18 @@ pub fn draw_hud(
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
     }
 
+    // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
+    // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
+    // hidden while the vanilla `Cursor_0` is on screen.
+    cursor::draw(r, lookups, cursor_state, mouse_pos);
+
     // S1-W4-g81 residuals + W4-g86 research/244 phase 1 —
     // `DrawInterface_40_InteractItemIcon` (`Main.cs:45037-45115`): the
-    // cursor-side item icon. The wiring/mining tools' latch
+    // cursor-side item icon. Layer 40 draws AFTER the cursor (36) /
+    // debug (37) / carried head (38) / mouse-over (39) — the layer list
+    // `:44889-44913` — so the block rides after `cursor::draw` above (the
+    // e19-draw_override compose-note: the icon overlays whatever cursor is
+    // on screen, override or normal). The wiring/mining tools' latch
     // (`Player.cs:46756-46760`/`:45620-45624`) arms `icon_enabled` in reach;
     // the cache linger draws the last kind for 10 frames after the tool
     // leaves reach (`:45063`'s `_itemIconCacheTime > 0 && mouseItem.type < 1`).
@@ -1291,11 +1300,6 @@ pub fn draw_hud(
             tooltip::draw_mouse_text(r, lookups, mouse_pos, icon_text, screen, pulse);
         }
     }
-
-    // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
-    // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
-    // hidden while the vanilla `Cursor_0` is on screen.
-    cursor::draw(r, lookups, cursor_state, mouse_pos);
 }
 
 /// `DrawInterface_40_InteractItemIcon`'s icon-kind selection
@@ -1312,7 +1316,8 @@ pub fn draw_hud(
 /// directly). `icon_cache` is `(cached kind, cache time)`. `mouse_air` is
 /// `MouseDisplayItem.IsAir` (`Item.cs:385`: `type <= 0 || stack <= 0`) for
 /// the live flag; `mouse_kind_air` is the linger's own `mouseItem.type < 1`
-/// (`:45063` — kind only, an empty stack of a real kind still lingers).
+/// (`:45063` — kind only, so an empty stack of a real kind passes IsAir but
+/// REFUSES the linger).
 pub(crate) fn interact_icon_kind(
     icon_enabled: bool,
     icon_id: i32,

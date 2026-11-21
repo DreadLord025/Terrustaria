@@ -233,6 +233,9 @@ Reversed UV mirror (`:45083-45086`, the `[uv[2], uv[1], uv[0], uv[3]]`
 player_layers precedent), the Text `draw_mouse_text` arm (`:45102-45105`)
 and the head gate (`:45039`): `bubble_npc` (the `HoveringOverAnNPC`
 stand-in) OR `minimap_hover` OR the closed-hotbar `hovered_slot`. The
+block rides AFTER `cursor::draw` (the C# layer list `:44889-44913` draws
+40 after 36/37/38/39 — the e19-draw_override compose-note's layer-40
+position, the icon overlays whatever cursor is on screen). The
 `MouseDisplayItem.IsAir` gate folds to `mouse_item.kind == 0 ||
 count == 0` (`Item.cs:385`'s `type <= 0 || stack <= 0`; FakeCursorItem
 parked); the linger's OWN gate (`:45063`) is `mouseItem.type < 1` — kind
