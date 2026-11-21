@@ -178,6 +178,9 @@ mod potions;
 // W4-g88: the Life Fruit permanent upgrade (Player.cs:45290-45304) — wired
 // at world_sim/editing.rs's permanent-item seam (the :43596 slot).
 mod life_fruit;
+// W4-g88: the Life/Mana Crystal permanent upgrades (Player.cs:45306-45320
+// / :45274-45288) — the :43595 / :43597 slots around the fruit.
+mod crystals;
 mod prefix;
 pub(crate) mod prefix_id;
 pub(crate) mod projectile_id;

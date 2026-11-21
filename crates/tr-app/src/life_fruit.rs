@@ -1,7 +1,8 @@
 //! W4-g88 — the Life Fruit permanent upgrade use path:
 //! `Player.ItemCheck_UseLifeFruit` (`Player.cs:45290-45304`), wired at the
 //! `ItemCheck_OwnerOnlyCode` permanent-item seam (`:43596`, between
-//! `ItemCheck_UseLifeCrystal` `:43595` and `ItemCheck_UseManaCrystal` `:43597`).
+//! `ItemCheck_UseLifeCrystal` `:43595` and `ItemCheck_UseManaCrystal`
+//! `:43597` — both siblings landed in `crystals.rs`).
 //!
 //! The gate (`:45292`): `type == 1291 && itemAnimation > 0 &&
 //! statLifeMax >= 400 && statLifeMax < 500 && ItemTimeIsZero`. On it:
@@ -62,16 +63,19 @@ pub(crate) const LIFE_FRUIT: u16 = 1291;
 const ONE_TICK_SECS: f32 = 1.0 / 60.0;
 
 /// The C# INTEGER tick comparisons out of the port's seconds timers
-/// (`Player.cs:4064` `ItemTimeIsZero => itemTime == 0`).
-fn ticks_of(secs: f32) -> i32 {
+/// (`Player.cs:4064` `ItemTimeIsZero => itemTime == 0`). Shared with the
+/// crystal machines (`crystals.rs`, the `:43595`/`:43597` siblings).
+pub(crate) fn ticks_of(secs: f32) -> i32 {
     (secs * 60.0).round() as i32
 }
 
-/// The held fruit's prefixed `useTime` in seconds — `ApplyItemTime`
+/// The held item's prefixed `useTime` in seconds — `ApplyItemTime`
 /// (`Player.cs:4416-4419` → `SetItemTime(useTime)`), the instance value
 /// (the `recall_teleport.rs::use_time_secs` convention). 1291 stocks
-/// `useTime 30 / useAnimation 30 / useStyle 4` (`itemdata.rs:1457`).
-fn use_time_secs(held: ItemSlot) -> f32 {
+/// `useTime 30 / useAnimation 30 / useStyle 4` (`itemdata.rs:1457`); the
+/// crystals stock the same 30/30/4 (`Item.cs:1724-1734` / `:2669-2679`).
+/// Shared with `crystals.rs` (the `:43595`/`:43597` siblings).
+pub(crate) fn use_time_secs(held: ItemSlot) -> f32 {
     crate::prefix::prefixed_stats(held.kind, held.prefix)
         .map(|s| s.use_time as f32 * ONE_TICK_SECS)
         .filter(|t| *t > 0.0)
@@ -111,6 +115,16 @@ fn try_use_life_fruit(app: &mut App, held: ItemSlot) -> bool {
         .handle_special_event_life_mana(2, life_max, mana_max);
     // `:43280-43326`: the generic consumable tail — one per use (the
     // `potions.rs:474-487` fold: count--, then TurnToAir on the 0-stack).
+    consume_one(app);
+    true
+}
+
+/// The generic consumable tail (`Player.cs:43280-43326`) folded onto the
+/// grant tick: one per use (`CanConsumeConsumableItem` true, no
+/// ForceConsumption entry), then TurnToAir on the 0-stack
+/// (`:42824-42828`, the drink seam's convention `potions.rs:474-487`).
+/// Shared by the fruit and both crystals.
+pub(crate) fn consume_one(app: &mut App) {
     let slot = &mut app.inventory[app.selected];
     if slot.count > 0 {
         slot.count -= 1; // `:43317-43320`
@@ -118,7 +132,6 @@ fn try_use_life_fruit(app: &mut App, held: ItemSlot) -> bool {
     if slot.count == 0 {
         *slot = crate::item::EMPTY_SLOT; // `:42824-42828`
     }
-    true
 }
 
 /// The Life Fruit `ItemCheck` machine — called once per tick from
@@ -127,8 +140,27 @@ fn try_use_life_fruit(app: &mut App, held: ItemSlot) -> bool {
 /// previous-frame pair (the `recall_item_check` convention). Returns true
 /// when it STARTED a use this tick (the caller consumes the tick).
 pub(crate) fn life_fruit_item_check(app: &mut App, press_edge: bool) -> bool {
+    permanent_upgrade_item_check(app, press_edge, LIFE_FRUIT, try_use_life_fruit)
+}
+
+/// The permanent-upgrade `ItemCheck` machine shared by the Life Fruit
+/// (`:45290-45304`), the Life Crystal (`:45306-45320`) and the Mana Crystal
+/// (`:45274-45288`) — all three ride the same `ItemCheck_OwnerOnlyCode`
+/// slot (`:43595-43597`), the same useStyle-4 HoldUp start, the same
+/// `itemAnimation > 0 && ItemTimeIsZero` grant gate and the same
+/// autoReuse-false one-use-per-press contract. `grant` is the item's
+/// `ItemCheck_Use*` gate + body, run on an action tick inside the
+/// animation. The machine shape is `recall_item_check`'s (the boss-spawner
+/// ItemTimeIsZero fold): StartActualUse leaves itemTime 0, so a granted
+/// use lands on the press tick itself.
+pub(crate) fn permanent_upgrade_item_check(
+    app: &mut App,
+    press_edge: bool,
+    kind: u16,
+    grant: fn(&mut App, ItemSlot) -> bool,
+) -> bool {
     let held = app.inventory[app.selected];
-    if held.kind != LIFE_FRUIT || held.count == 0 {
+    if held.kind != kind || held.count == 0 {
         return false;
     }
     // `:42598-42603` CCed → the animation zeroes and ItemCheck returns;
@@ -140,14 +172,14 @@ pub(crate) fn life_fruit_item_check(app: &mut App, press_edge: bool) -> bool {
         return false;
     }
     if ticks_of(app.swing) > 0 {
-        // The per-tick arm (`:43596` runs every tick of the animation):
-        // the grant fires when ItemTimeIsZero inside the swing.
-        try_use_life_fruit(app, held);
+        // The per-tick arm (`:43595-43597` run every tick of the
+        // animation): the grant fires when ItemTimeIsZero inside the swing.
+        grant(app, held);
         return false;
     }
     // The press edge (`:42733`): useStyle 4 (HoldUp) ≠ 0, autoReuse false.
     if app.mine_down && !app.inventory_open && press_edge {
-        // ItemCheck_StartActualUse → ApplyItemAnimation + the Item129
+        // ItemCheck_StartActualUse → ApplyItemAnimation + the item's
         // UseSound (`:51680-51698`, the shared start_swing_extras seam).
         app.swing_max = crate::item::use_animation_secs_of(held.kind, held.prefix);
         app.swing = app.swing_max;
@@ -156,7 +188,7 @@ pub(crate) fn life_fruit_item_check(app: &mut App, press_edge: bool) -> bool {
         // StartActualUse leaves itemTime 0 → the grant fires THIS tick
         // (the boss-spawner precedent, `editing.rs:2021-2028`).
         app.item_time = 0.0;
-        try_use_life_fruit(app, held);
+        grant(app, held);
         app.mine_target = None;
         app.mine_timer = 0.0;
         return true;

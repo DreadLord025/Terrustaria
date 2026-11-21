@@ -454,7 +454,9 @@ impl AchievementManager {
     /// (`AchievementsHelper.cs:282-306`) — the life/mana crystal/fruit cases.
     /// Case 1 (Mana Crystal `Player.cs:45286`): STAR_POWER + the TOPPED_OFF
     /// 500/200 check; case 2 (Life Fruit `:45302`): GET_A_LIFE + the same
-    /// check. `life_max`/`mana_max` are the PERMANENT maxima (`statLifeMax`/
+    /// check. Case 0 (Life Crystal `:45318`) has NO arm in the C# switch
+    /// (`:288-379`) — a vanilla no-op, kept as the `_ => return`.
+    /// `life_max`/`mana_max` are the PERMANENT maxima (`statLifeMax`/
     /// `statManaMax`, NOT the `2` variants). The myPlayer gate (`:284-287`)
     /// always holds single-player. The other cases (3 NOT_THE_BEES …) ride
     /// their own lanes; ids outside 1/2 are a no-op here (documented).

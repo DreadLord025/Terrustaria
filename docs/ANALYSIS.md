@@ -39294,3 +39294,30 @@ click buffers; the player tick applies).
   (the v7 pair in the round-trip, the v6 back-compat None, the 500
   read-clamp) — WRITTEN, NOT RUN.
 
+## The Life Crystal use path (W4-g88, crystals lane)
+
+- **The census, corrected.** `ItemCheck_UseLifeCrystal` lives at
+  `Player.cs:45306-45320` (the brief's :45270-45289 guess was the Mana
+  Crystal's neighbourhood — that one is `:45274-45288`). Gate:
+  `type == 29 && itemAnimation > 0 && statLifeMax < 400 && ItemTimeIsZero`;
+  body: `ApplyItemTime` + `statLifeMax/statLifeMax2/statLife += 20` (RAW
+  life add, no use-site clamp, no 400-clamp on the add itself) +
+  `HealEffect(20)` + `HandleSpecialEvent(this, 0)`.
+- **Event 0 is a vanilla no-op.** `AchievementsHelper.HandleSpecialEvent`'s
+  switch (`AchievementsHelper.cs:288-379`) has NO case 0, and no
+  life-crystal achievement row exists in the source (no BIGGER_THAN_LIFE
+  anywhere). The port keeps the call (the dispatcher's `_ => return`)
+  and completes nothing — inventing a completion would break the golden
+  rule. STAR_POWER's load-time grant (`statManaMax > 20`, `:148-151`) is
+  OnEnterWorld scope, not this use.
+- **The machine is shared.** The fruit and both crystals ride ONE
+  `life_fruit::permanent_upgrade_item_check` (the recall-machine
+  press-edge/per-tick shape, the grant fn parameterised) + the shared
+  `consume_one` generic-consumable tail — the house style's second-copy
+  extraction. The wire order in `update_editing` is the C# `:43595-43597`
+  order: Life Crystal, Life Fruit, (Mana Crystal lands next).
+- **Code-only mode.** 7 witnesses in `crystals.rs` (the 100 grant, the
+  400 refusal, the fifteen-crystal 100→400 ladder, the RAW life add, the
+  event-0 no-op, the one-grant cadence, the CCed refusal) — WRITTEN, NOT
+  RUN. No cargo/rustc/tests invoked.
+

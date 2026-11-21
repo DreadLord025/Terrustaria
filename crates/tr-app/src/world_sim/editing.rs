@@ -1998,13 +1998,21 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
     if crate::recall_teleport::recall_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }
+    // W4-g88 — the Life Crystal permanent upgrade (`ItemCheck_UseLifeCrystal`,
+    // `Player.cs:45306-45320`, the `:43595` permanent-item slot BEFORE the
+    // fruit's `:43596` — the C# call order). Same shared machine as the
+    // fruit below: the < 400 statLifeMax gate, +20/+20/+20, HealEffect(20),
+    // HandleSpecialEvent(0) — a vanilla no-op (no case 0 in the switch).
+    if crate::crystals::life_crystal_item_check(app, prev_mine_released && !prev_mine_down) {
+        return;
+    }
     // W4-g88 — the Life Fruit permanent upgrade (`ItemCheck_UseLifeFruit`,
     // `Player.cs:45290-45304`, the `:43596` permanent-item slot between the
-    // Life Crystal `:43595` and the Mana Crystal `:43597` — the a6 lane owns
-    // those two). Same machine shape as the recall cluster above: the press
-    // edge starts the HoldUp swing, the grant fires at ItemTimeIsZero inside
-    // it, one fruit per press (autoReuse false). A started use consumes the
-    // tick like the boss arms.
+    // Life Crystal `:43595` and the Mana Crystal `:43597`). Same machine
+    // shape as the recall cluster above: the press edge starts the HoldUp
+    // swing, the grant fires at ItemTimeIsZero inside it, one fruit per
+    // press (autoReuse false). A started use consumes the tick like the
+    // boss arms.
     if crate::life_fruit::life_fruit_item_check(app, prev_mine_released && !prev_mine_down) {
         return;
     }

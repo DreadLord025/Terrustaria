@@ -1285,13 +1285,15 @@ pub struct Player {
     pub max_hp: i32,
     /// `Player.statLifeMax` (`Player.cs:55220`'s load field, clamped to 500
     /// `:55221-55224`): the PERMANENT life cap — the Life Crystal's +20
-    /// (`:45306-45320`, the a6 lane) and the Life Fruit's +5 use-grant
-    /// (`ItemCheck_UseLifeFruit`, `:45290-45304`) raise it. The port's single
+    /// (`ItemCheck_UseLifeCrystal`, `:45306-45320`, `crystals.rs`) and the
+    /// Life Fruit's +5 use-grant (`ItemCheck_UseLifeFruit`, `:45290-45304`,
+    /// `life_fruit.rs`) raise it. The port's single
     /// `max_hp` is the effective max (`statLifeMax2`, the `:3597` convention —
     /// no per-tick rebase is wired, `ResetEffects`' `statLifeMax2 =
     /// statLifeMax` `:18388` has no port counterpart yet); this field records
-    /// the permanent half for the fruit's `[400, 500)` gate, the TOPPED_OFF
-    /// 500-check and the save. The `mana_max_base` precedent.
+    /// the permanent half for the fruit's `[400, 500)` gate, the crystal's
+    /// `< 400` gate, the TOPPED_OFF 500-check and the save. The
+    /// `mana_max_base` precedent.
     pub life_max_base: i32,
     /// `Player.statMana` / `Player.statManaMax` (`Player.cs:1930-1932`). A new
     /// character starts at `20/20` (`UICharacterCreation.cs:1721`; the default max
