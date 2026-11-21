@@ -4176,6 +4176,163 @@ fn death_bursts(
                 d.velocity += s.vel * 0.1;
             }
         }
+        // `:71680-71779` — the 711 DD2 dark-mage flame trail: loop 1 over
+        // oldPos[0,2,4] (i<5 step 2), 2 dust each of SelectRandom(6,55,158)
+        // speed (direction,−2.5) alpha 200 vel×2.4 scale+=NextFloat−0.5,
+        // type 55 → Lerp((128,0,180,128),Gold,NextFloat), noLight. Loop 2
+        // (i=10 step 2 < 10) NEVER runs on the [10] ring. Loop 3 over
+        // oldPos[5..10], a Next(3)!=0 gate → 1 dust-55 alpha 80 vel×0.3 +=
+        // vel×0.5 scale+=NextFloat×0.7−0.5 Lerp(Purple,Black,NextFloat)
+        // noLight. Then 20× Next(3)!=0 → dust-228 noGravity scale 1.25+
+        // NextFloat fadeIn 1.5 vel×6 noLight; 20× Next(3)!=0 → dust-55 the
+        // same + colour (0,0,220,128). The owner-gated 140-resize + Damage
+        // unported. NOTE: no break-on-ZERO — a ZERO entry spawns at (0,0).
+        711 => {
+            for i in (0..5).step_by(2) {
+                let ring = s.old_pos_ring[i];
+                let pos = Vec2::new(ring.x as i32 as f32, ring.y as i32 as f32);
+                for _ in 0..2 {
+                    let dust_type = rng.next_from_slice(&[6, 55, 158]);
+                    let idx = dust.new_dust(rng, ctx, world, pos, s.w, s.h, dust_type, s.direction as f32, -2.5, 0, Color::default(), 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.alpha = 200;
+                    d.velocity *= 2.4;
+                    d.scale += rng.next_float();
+                    d.scale -= 0.5;
+                    if d.dust_type == 55 {
+                        d.color = lerp_color(Color::new(128, 0, 180, 128), Color::new(255, 215, 0, 255), rng.next_float());
+                    }
+                    d.no_light = true;
+                }
+            }
+            for i in 5..10 {
+                let ring = s.old_pos_ring[i];
+                let pos = Vec2::new(ring.x as i32 as f32, ring.y as i32 as f32);
+                if rng.next_max(3) != 0 {
+                    let dust_type = rng.next_from_slice(&[55]);
+                    let idx = dust.new_dust(rng, ctx, world, pos, s.w, s.h, dust_type, s.direction as f32, -2.5, 0, Color::default(), 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.alpha = 80;
+                    d.velocity *= 0.3;
+                    d.velocity += s.vel * 0.5;
+                    d.scale += rng.next_float() * 0.7;
+                    d.scale -= 0.5;
+                    if d.dust_type == 55 {
+                        d.color = lerp_color(Color::new(128, 0, 128, 255), Color::new(0, 0, 0, 255), rng.next_float());
+                    }
+                    d.no_light = true;
+                }
+            }
+            for _ in 0..20 {
+                if rng.next_max(3) != 0 {
+                    let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 228, 0.0, 0.0, 0, Color::default(), 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale = 1.25 + rng.next_float();
+                    d.fade_in = 1.5;
+                    d.velocity *= 6.0;
+                    d.no_light = true;
+                }
+            }
+            for _ in 0..20 {
+                if rng.next_max(3) != 0 {
+                    let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 55, 0.0, 0.0, 0, Color::default(), 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale = 1.25 + rng.next_float();
+                    d.fade_in = 1.5;
+                    d.velocity *= 6.0;
+                    d.no_light = true;
+                    d.color = Color::new(0, 0, 220, 128);
+                }
+            }
+        }
+        // `:72126-72145` — the 636: loop over oldPos[0,3] (i<6 step 3), 5
+        // dust each of SelectRandom(6,259,158) speed (2.5×direction,−2.5)
+        // alpha 200 vel×2.4 scale+=NextFloat. The owner-gated 953 spawn
+        // (`:72141-72144`, a NextFloat scale) stays the spawn lane's.
+        636 => {
+            for i in (0..6).step_by(3) {
+                let ring = s.old_pos_ring[i];
+                let pos = Vec2::new(ring.x as i32 as f32, ring.y as i32 as f32);
+                for _ in 0..5 {
+                    let dust_type = rng.next_from_slice(&[6, 259, 158]);
+                    let idx = dust.new_dust(rng, ctx, world, pos, s.w, s.h, dust_type, 2.5 * s.direction as f32, -2.5, 0, Color::default(), 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.alpha = 200;
+                    d.velocity *= 2.4;
+                    d.scale += rng.next_float();
+                }
+            }
+        }
+        // `:72781-72848` — the 686: loop 1 over oldPos[0,2,4], 3 dust each
+        // of SelectRandom(6,55,158) speed (direction,−2.5) alpha 200
+        // vel×2.4 scale+=NextFloat−0.5, type 55 → Lerp(Red,Gold,NextFloat)
+        // noLight. Loop 2 (i=10) never runs. Loop 3 over oldPos[5..10], 1
+        // dust-55 alpha 80 vel×0.3 += vel×0.5 scale+=NextFloat×0.7−0.5
+        // Lerp(Purple,Black,NextFloat) noLight (NO Next(3) gate, unlike the
+        // 711). Then 30× dust-228 noGravity scale 1.25+NextFloat fadeIn 1.5
+        // vel×6 noLight (no gate).
+        686 => {
+            for i in (0..5).step_by(2) {
+                let ring = s.old_pos_ring[i];
+                let pos = Vec2::new(ring.x as i32 as f32, ring.y as i32 as f32);
+                for _ in 0..3 {
+                    let dust_type = rng.next_from_slice(&[6, 55, 158]);
+                    let idx = dust.new_dust(rng, ctx, world, pos, s.w, s.h, dust_type, s.direction as f32, -2.5, 0, Color::default(), 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.alpha = 200;
+                    d.velocity *= 2.4;
+                    d.scale += rng.next_float();
+                    d.scale -= 0.5;
+                    if d.dust_type == 55 {
+                        d.color = lerp_color(Color::new(255, 0, 0, 255), Color::new(255, 215, 0, 255), rng.next_float());
+                    }
+                    d.no_light = true;
+                }
+            }
+            for i in 5..10 {
+                let ring = s.old_pos_ring[i];
+                let pos = Vec2::new(ring.x as i32 as f32, ring.y as i32 as f32);
+                let dust_type = rng.next_from_slice(&[55]);
+                let idx = dust.new_dust(rng, ctx, world, pos, s.w, s.h, dust_type, s.direction as f32, -2.5, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.alpha = 80;
+                d.velocity *= 0.3;
+                d.velocity += s.vel * 0.5;
+                d.scale += rng.next_float() * 0.7;
+                d.scale -= 0.5;
+                if d.dust_type == 55 {
+                    d.color = lerp_color(Color::new(128, 0, 128, 255), Color::new(0, 0, 0, 255), rng.next_float());
+                }
+                d.no_light = true;
+            }
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 228, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.scale = 1.25 + rng.next_float();
+                d.fade_in = 1.5;
+                d.velocity *= 6.0;
+                d.no_light = true;
+            }
+        }
+        // `:73675-73687` — the 502: walk the ring (skip ZERO, no break),
+        // per non-ZERO entry a dust-66 at ring+Size/2 box 0×0 alpha 150
+        // Transparent scale 0.7, colour hsl(NextFloat,1,0.5) noGravity.
+        502 => {
+            let size_half = Vec2::new(s.w as f32 * 0.5, s.h as f32 * 0.5);
+            for i in 0..10 {
+                let ring = s.old_pos_ring[i];
+                if ring != Vec2::ZERO {
+                    let idx = dust.new_dust(rng, ctx, world, ring + size_half, 0, 0, 66, 0.0, 0.0, 150, Color::TRANSPARENT, 0.7);
+                    let d = dust.slot_mut(idx);
+                    let c = crate::ui::color::hsl_to_rgb(rng.next_float() as f64, 1.0, 0.5, 255);
+                    d.color = Color::new(c[0], c[1], c[2], c[3]);
+                    d.no_gravity = true;
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -7121,5 +7278,48 @@ mod tests {
         drain(&[trail_snap(34)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert!(active.iter().filter(|d| d.dust_type == 6).count() >= 40);
+    }
+
+    /// The 711/686 trails: loop 1 (3 entries × 2/3 dust) + loop 3 (5
+    /// entries, gated/ungated) + the 20/20 or 30 tail. The 636: 2 entries
+    /// × 5 = 10 dust. The 502: one dust-66 per non-ZERO ring entry.
+    #[test]
+    fn w4_g65_the_oldpos_trails() {
+        let w = world();
+        // The 636: exactly 10 dust (2 ring entries × 5), alpha 200.
+        let mut dust = DustPool::new();
+        drain(&[trail_snap(636)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.alpha == 200));
+        // The 502: 10 dust-66 (the filled ring), noGravity.
+        let mut dust = DustPool::new();
+        drain(&[trail_snap(502)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 66 && d.no_gravity));
+        // The 502's ZERO ring spawns nothing.
+        let mut dust = DustPool::new();
+        drain(&[snap(502)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert!(dust.slots().iter().all(|d| !d.active));
+        // The 711/686: the tail dust-228 counts (20-gated / 30-ungated)
+        // plus determinism over the whole arm.
+        for kind in [711u16, 686] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[trail_snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            let tail228 = active.iter().filter(|d| d.dust_type == 228).count();
+            if kind == 686 {
+                assert_eq!(tail228, 30);
+            } else {
+                assert!(tail228 <= 20);
+            }
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[trail_snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(dust.slots(), dust2.slots());
+            assert_eq!(rng, rng2);
+        }
     }
 }

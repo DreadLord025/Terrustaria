@@ -39940,6 +39940,28 @@ stay deferred. Witnesses: the ZERO-ring emptiness + filled-ring dust-267
 + determinism for all six, the 1047 14-dust-66 tail, the 16/34 40-dust
 tails — WRITTEN NOT RUN.
 
+### Batch 29 (4 kinds, the remaining oldPos trail arms `:71680-73687`)
+
+711 (the DD2 dark-mage flame: loop 1 over oldPos[0,2,4] 2 dust each
+SelectRandom(6,55,158) speed (direction,−2.5) alpha 200 vel×2.4 scale+=
+NextFloat−0.5, type 55 → Lerp((128,0,180,128),Gold,NextFloat) noLight;
+loop 2 (i=10 step 2 < 10) NEVER runs on the [10] ring; loop 3 over
+oldPos[5..10] a Next(3)!=0 gate → dust-55 alpha 80 vel×0.3+=vel×0.5
+Lerp(Purple,Black) noLight; then 20× Next(3)!=0 dust-228 + 20× Next(3)!=0
+dust-55 (0,0,220,128) noGravity scale 1.25+NextFloat fadeIn 1.5 vel×6
+noLight; the owner-gated 140-resize + Damage unported; NO break-on-ZERO —
+a ZERO entry spawns at (0,0)), 636 (loop over oldPos[0,3] 5 dust each
+SelectRandom(6,259,158) speed (2.5×direction,−2.5) alpha 200 vel×2.4
+scale+=NextFloat; the owner-gated 953 spawn stays the spawn lane's), 686
+(the 711 shape but loop 1 = 3 dust, type 55 → Lerp(Red,Gold), loop 3 NO
+Next(3) gate, the tail 30× dust-228 ungated), 502 (walk the ring skip-
+ZERO no-break, per entry a dust-66 at ring+Size/2 box 0×0 alpha 150
+Transparent scale 0.7 colour hsl(NextFloat,1,0.5) noGravity). The
+`SelectRandom(&[55])` single-element pick still draws one Next(1) (the
+C# `Next(choices.Length)` shape). Witnesses: the 636 10-count, the 502
+10-count + ZERO-ring emptiness, the 711/686 tail counts + determinism —
+WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
