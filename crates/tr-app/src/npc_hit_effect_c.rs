@@ -216,6 +216,7 @@
 //! | 1007-1010 | `:87551-87554` | the 101 Clinger death (4 gores 110/114/114/115) |
 //! | 1011-1016 | `:87570-87587` | the 7/8/9 Devourer + 98/99/100 Seeker death (1 gore each, per-type offset) |
 //! | 1017-1022 | `:87604-87620` | the 10/11/12 GiantWorm + 95/96/97 Digger death (1 gore each, per-type offset) |
+//! | 1023-1028 | `:87638-87649` | the 13/14/15 Eater of Worlds death (2 gores each, per-type) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5885,6 +5886,41 @@ fn digger_death(
     gore.new_gore(rng, world, pos, vel, npc_type - 95 + 111, 1.0); // :87620
 }
 
+/// The 13/14/15 Eater of Worlds death (`NPC.cs:87632-87650`, sites
+/// 1023-1028): the 50-dust type-18 burst (SpeedX `hitDirection`, SpeedY -2,
+/// alpha/color/scale from the NPC), then the per-type 2 gores at position —
+/// 13 Head → [24,25], 14 Body → [26,27], 15 Tail (the else) → [28,29].
+/// Scale defaults to 1.
+fn eater_of_worlds_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    let alpha = npc.alpha as i32;
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, hit_direction, -2.0, alpha,
+            Color::default(), npc.scale,
+        );
+    }
+    // `:87636-87650` — the per-type pair.
+    let (a, b) = match npc_type {
+        13 => (24, 25),
+        14 => (26, 27),
+        _ => (28, 29), // 15 Tail
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, a, 1.0);
+    gore.new_gore(rng, world, pos, vel, b, 1.0);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6601,6 +6637,10 @@ pub fn hit_effect_c(
     // `:87606-87621` — the 95/96/97 Digger arm (sites 1020-1022).
     if (npc_type == 95 || npc_type == 96 || npc_type == 97) && npc.hp <= 0 {
         digger_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87622-87651` — the 13/14/15 Eater of Worlds arm (sites 1023-1028).
+    if (npc_type == 13 || npc_type == 14 || npc_type == 15) && npc.hp <= 0 {
+        eater_of_worlds_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10439,6 +10479,22 @@ mod tests {
             let mut rng = UnifiedRandom::new(991);
             digger_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
             assert_eq!(gore.slot(0).gore_type, gore_ty, "digger {ty}");
+        }
+    }
+
+    /// `NPC.cs:87638-87649` — the Eater of Worlds death: 13 Head →
+    /// [24,25], 14 Body → [26,27], 15 Tail → [28,29].
+    #[test]
+    fn w4_f10_the_eater_of_worlds_death_uses_the_per_type_pair() {
+        let w = air();
+        for (ty, gores) in [(13, [24, 25]), (14, [26, 27]), (15, [28, 29])] {
+            let n = boss(100.0, 100.0, 30.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(997);
+            eater_of_worlds_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "eow {ty}");
         }
     }
 
