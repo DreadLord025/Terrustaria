@@ -39382,8 +39382,19 @@ the C# `RequestNewItem` spawns a world item, the player picks it up through
 the ordinary magnet). The beach ball's return (`:77620-77623`, 859×1) rides
 the same queue. Both arms sit behind `!died_out_of_world`: the C#
 out-of-world guard (`:16696`) deactivates WITHOUT `Kill()`, so those deaths
-never refund. NO owner gate — `ReserveForLocalPlayer` is a grab reservation,
-not a spawn gate.
+never refund. **RETIRE fix (`954824d0`, 26e FINAL-FINAL):** the ladder AND
+the ball return sit INSIDE `Kill_ExplodeTiles`, behind its `:77267` owner
+refusal (`owner != Main.myPlayer` returns BEFORE any type arm) AND the
+`:77367` `!noDropItem` head — a foreign coil/ball death or a noDropItem
+death refunds NOTHING. The earlier "NO owner gate" reading confused the
+`ReserveForLocalPlayer` grab reservation with a spawn gate; the g82
+`coil_kill` shape is confirmed against the source re-read. The ai[1]==0
+Dig cue (`:74617-74620`/`:74681-74684`) is WIRED at the same hook, UNGATED
+by owner/noDropItem (it sits in `Kill()`'s dust chain ahead of
+`active=false`): the int overload's LEGACY id 0 = Dig (NOT Item1 — the g82
+`3258189cb` correction), queued `(0,0,trunc pos)` into `pending_proj_sounds`
+and drained through the existing `play_place_sound` id-0 facade ahead of
+the refund (the C# cue-before-refund order).
 
 Deviations (recorded):
 * **Stream**: the C# draws the `Item.NewItem` velocity pair inline mid-`Kill()`
@@ -39427,13 +39438,18 @@ scale 0.8, origin half-sheet, `snap_to_screen_pub` for the pixel snap; the
 static list (the `FishingLine` precedent, `assets.rs:709`) and `sheet_uv`
 resolves them by name. The dust walks sharing the geometry
 (`Projectile.cs:74615-74731`) skip with the dust layer; the `ai[1]==0` sound
-cue (`:74617-74620`/`:74681-74684`, Item1) rides the wiring's `wants_sound`.
+cue (`:74617-74620`/`:74681-74684`, the legacy id 0 = Dig) is WIRED at the
+death hook (the retire fix `954824d0`, above) — NOT Item1, NOT deferred to
+the draw wiring.
 
 Witnesses WRITTEN NOT RUN: the ladder (11 rows + the is_coil gate), the
 reverse-order walk + ramps, the draw-index sheet parity, the NaN pin
 (module); the placement-kill/expiry/full-budget queue arms + the ball return
-(`projectile.rs`); the drain's world-drop shape + the two-draw `UpdateItems`
-contract with every other stream pristine (`world_sim/projectiles.rs`).
+(`projectile.rs`); the retire gates/cue witness
+(`w4_d4_retire_the_refund_gates_and_the_dig_cue`: local cue+refund, foreign
+cue-without-refund, noDropItem silence, foreign ball no-return); the drain's
+world-drop shape + the two-draw `UpdateItems` contract with every other
+stream pristine (`world_sim/projectiles.rs`).
 
 **The usability walk — WIRED (union item 2).** `check_rope_usability`
 (`world_sim/editing.rs`, ported verbatim from g82's `67c9a740`): the
