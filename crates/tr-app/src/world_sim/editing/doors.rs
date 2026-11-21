@@ -138,7 +138,8 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
 /// standing tile-edit dust deviation; the MP `52` client send (`:32812`)
 /// rides the same unported door-sync gap as the chest key walks.
 fn try_unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
-    // `:32799-32813` — the inventory key scan.
+    // `:32799-32813` — the inventory key scan. The pay lands first, the
+    // unlock after the slot borrow releases (`unlock_door` takes the app).
     let mut paid = false;
     for slot in app
         .inventory
@@ -151,13 +152,17 @@ fn try_unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
             if slot.count == 0 {
                 *slot = crate::item::EMPTY_SLOT;
             }
-            unlock_door(app, tx, ty);
             paid = true;
             break;
         }
     }
+    if paid {
+        unlock_door(app, tx, ty);
+        return;
+    }
     // `:32816-32834` — the void-bag bank4 fallback.
-    if !paid && crate::chest::use_void_bag(app) {
+    if crate::chest::use_void_bag(app) {
+        let mut vault_paid = false;
         if let Some(p) = app.player.as_mut() {
             for slot in p.banks[3].iter_mut() {
                 if slot.kind == 1141 && slot.count > 0 {
@@ -165,10 +170,13 @@ fn try_unlock_temple_door(app: &mut App, tx: i32, ty: i32) {
                     if slot.count == 0 {
                         *slot = crate::item::EMPTY_SLOT;
                     }
-                    unlock_door(app, tx, ty);
+                    vault_paid = true;
                     break;
                 }
             }
+        }
+        if vault_paid {
+            unlock_door(app, tx, ty);
         }
     }
 }
