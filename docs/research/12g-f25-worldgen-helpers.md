@@ -492,3 +492,68 @@ no Convert(3) (the grass-70 mud spread is g42's T-3/D1/D4).
 
 Runtime-only (the ai_spray comment + witness), both pins unchanged,
 a == b untouched. 1 witness written not run.
+
+## g46 LIQUID-UNION — the f25 gen-driver contract (2026-11-21)
+
+Read against the g46 RE-FOLD tip **9bc722e5f** (research/70 FINAL +
+the R-12-5 drivers addendum, `docs/research/69` SUPERSEDED-BY-70).
+The union base is g47's `liquid.rs` wholesale (the 4-step landing
+e7626b72/f588d53c/16fd6ad7/d95911ce is DONE on that branch); this lane's
+obligations are the step-6 dedupe, the step-7 producer arming and the
+RE-DERIVE.
+
+### The ORIGIN-wall fix — LANDED HERE pre-merge
+
+`Liquid.cs:152` binds `Tile tile = Main.tile[originX, originY]` and the
+`:188` dungeon re-type reads `tile.wall` — the **ORIGIN** cell's wall.
+f25's gen-local `settle_water_at` read the LANDING cell's wall
+(`world.tiles[index(num, num2)].wall`) — a real deviation (70 step 6
+flagged it "fix at this graft"). FIXED on this branch: the read is now
+`origin.wall` (the `origin` snapshot the fn already binds); the bounds
+test keeps the landing `(num, num2)` arguments (both are the fan's
+current cell in the C#). The g46-union copy already reads `origin.wall`
+(its `:1981-1990` comment names this lane's deviation) — **both copies
+now agree**, the merge is a clean delete not a reconcile. 1 witness
+written not run (`w4_f25_g46_the_dungeon_retype_reads_the_origin_wall`:
+the origin behind wall 7 outside the bounds drops into them below
+waterLine → water; the no-wall mirror keeps lava; full-width shelf so
+the fan finds no hole).
+
+### The DELETE-dedupe table (step 6, at the liquid merge)
+
+| f25 gen-local copy | union surface (already on 9bc722e5f) | action |
+| --- | --- | --- |
+| `settle_liquids.rs::shimmer_remove_water` | `LiquidSystem::set_gen_shimmer_position` + the quick_water arms (`:1884`/`:1898`) | DELETE the private fn; the driver arms the position from `gv.shimmer_position` (g36-A1 producer) |
+| `settle_liquids.rs::in_any_potential_dungeon_bounds` + `clamp_bound` + the wall read | `GenDungeonContext::in_any_bounds`/`is_dungeon_wall` via `set_gen_dungeon_context` | DELETE; the driver builds the context from the f24 producer (`DualDungeonSetup.dungeons[i].outer` hitboxes + the style-quad wall extensions, `DungeonCrawler.cs:155-181`; classic = empty extension; single-dungeon = the one entry) — c30's duplicate producer dedupes onto f24's at the worldgen master merge |
+| `settle_liquids.rs::settle_water_at` + `attempt_to_move` + `quick_water` | `LiquidSystem::quick_water(world, 3, height-3)` (the g47 method covers the whole C# surface incl. the origin-wall form) | DELETE (70's RECOMMENDED unification); the origin-wall fix above makes the semantics identical first |
+| the driver's 10-round budget loop | `LiquidSystem::gen_settle_loop` (`:16158-16206` verbatim, the Part-2 twin classic-identical) | DELETE the inline loop; call the method |
+| `liquid.rs` quick_settle/gen_ignore_water fields + `set_generating` | the union's `set_gen_settle_context(water_line, lava_line, remix)` + the carried export surface (`tiles_ignore_water`/`world_gen_tiles_ignore_water`/`gen_ignore_water` kind_solid fold/`set_bubble_solid`/`num_liquid_total`/`clear_pending_liquid`/`liquid_reaction_check` — the R-12-5 addendum carried them ALL) | the f25 liquid.rs hunks dedupe onto the union file; `set_generating` maps onto `set_gen_settle_context` |
+| KEEP driver-local | the ocean retype sweep (`:16137-16146`) + `liquid_interactions_cleanup` (`:23672-23799`) | the union quick_water's doc explicitly leaves the cleanup to the gen driver; the sweep is pass-head, not Liquid surface |
+| KEEP | `tileobject.rs::resolve_tile_def`/`check_water_death`/`check_lava_death` | the d112/d114 reconciliation stands (identical names/semantics) |
+
+### The edit_kills drain choice — DISCARD (recorded per 70's witness table)
+
+The union `LiquidSystem` queues the DelWater grass-ring/alch/lily kills +
+the AddWater inline death onto `edit_kills` (`drain_edit_kills`). The
+gen driver **drains and DISCARDS** at the pass tail: the port's worldgen
+has no loot side channel (the `square_tile_frame_gen` precedent — "the
+kills' events discarded"), the C# `KillTile` under
+`isGeneratingOrLoadingWorld` sets `noItem = true` (`:63546-63549`) so no
+item spawns either; the records must not leak across the per-pass
+instance (69 row 11). The TILE effects (the kills themselves) still
+apply — only the drop records drop.
+
+### The RE-DERIVE obligation (stands, gate-side)
+
+`SEED42_512` / `DEFAULT_WORLD` + `the_pass_is_deterministic` were derived
+against f25's discard-only `end_pass` + FIFO buffer. The union swaps in
+the real DelWater drain/tail (grass burns, alch/lily kills now fire
+during gen), the swap-remove buffer, and this origin-wall fix — **expect
+a delta, RE-DERIVE, do not silence** (70's witness table row 1). The
+DISCARD choice above is the recorded drain decision the table asks for.
+No compiler on this branch: the re-pin runs at the union gate. The
+`a == b` halves stay (no RNG draw added — the union drivers draw none,
+the R-12-5 addendum's pin).
+
+1 witness written not run (the origin-wall pair). The driver's other
+witnesses stay as written (they test semantics the union preserves).

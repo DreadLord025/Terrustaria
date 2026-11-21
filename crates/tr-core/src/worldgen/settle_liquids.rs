@@ -33,6 +33,24 @@
 //! - `Main.tileSolid[484] = false` (`:16208`) is the Gems-pass sand-slide
 //!   exemption made permanent; the port's static tile tables do not model
 //!   load-order pokes (the `desert.rs` precedent) — recorded, not applied.
+//!
+//! W4-f25 g46 liquid-union (2026-11-21, research/70 carried on
+//! `task/W4-g46-liquid-evaporation` @ 9bc722e5f): at the liquid merge this
+//! driver DEDUPES onto the g46-union `LiquidSystem` surfaces — the private
+//! `quick_water`/`settle_water_at`/`attempt_to_move`/`shimmer_remove_water`/
+//! `in_any_potential_dungeon_bounds` copies DELETE onto
+//! `LiquidSystem::quick_water`/`gen_settle_loop` + the
+//! `set_gen_settle_context`/`set_gen_shimmer_position`/
+//! `set_gen_dungeon_context` seams (the export surface f25 landed is
+//! ALREADY carried there, the R-12-5 addendum); the ocean retype sweep +
+//! `LiquidInteractionsCleanup` stay driver-local (the union quick_water
+//! documents the cleanup as the gen driver's). The ORIGIN-wall dungeon
+//! fix (`Liquid.cs:152`/`:188`) is applied HERE pre-merge — both copies
+//! now agree. The world-hash pins RE-DERIVE at the union gate (the real
+//! DelWater drain/tail + swap-remove buffer + this fix move the gen
+//! output); the gen-side `edit_kills` drain choice is DISCARD (the
+//! worldgen has no loot side channel — the `square_tile_frame_gen`
+//! precedent), recorded in 12g.
 
 use crate::liquid::LiquidSystem;
 use crate::tile::{LiquidKind, Tile};
@@ -233,10 +251,17 @@ fn settle_water_at(
                 b = 1;
             }
             if in_any_potential_dungeon_bounds(world, num, num2)
-                && super::dungeon_features::is_dungeon_wall(
-                    world.tiles[world.index(num, num2)].wall,
-                )
+                && super::dungeon_features::is_dungeon_wall(origin.wall)
             {
+                // W4-f25 g46 union fix (research/70 step 6): the C# `tile`
+                // reference binds at the ORIGIN (`Liquid.cs:152`) and the
+                // `:188` wall read is `tile.wall` — the ORIGIN cell's wall,
+                // not the landing cell's (the pre-fix copy read
+                // `world.tiles[index(num, num2)].wall`, a real deviation).
+                // The bounds test DOES read the landing (num, num2) — both
+                // arguments are the fan's current cell in the C#. This
+                // moves the gen output where origin/landing walls differ;
+                // the world-hash RE-DERIVE obligation covers it.
                 b = 0;
             }
         }
@@ -607,5 +632,59 @@ mod tests {
         assert!(!t.active(), "the block was cleared");
         assert_eq!(t.liquid, 255);
         assert_eq!(t.liquid_kind(), LiquidKind::Water);
+    }
+
+    /// W4-f25 g46 union fix (research/70 step 6): the `SettleWaterAt`
+    /// dungeon re-type reads the ORIGIN cell's wall — the C# `tile`
+    /// reference binds at `:152` and `:188` reads `tile.wall`, NOT the
+    /// landing cell's (the bounds test DOES read the landing cell).
+    /// Fixture: on the 40x30 basin with `world_surface = 0` the potential
+    /// bounds are x 22..38, y 10..11 (top = clamp(10) = 10, bottom =
+    /// clamp(-180) = 10 bumped to 11). A FULL-WIDTH stone shelf at y=11
+    /// holds the pool on row 10 (a partial shelf would let the fan's
+    /// hole-scan walk the mass off the edge — the `flag7` escape); the
+    /// origin (25, 9) — OUTSIDE the bounds — carries water 200 behind a
+    /// dungeon wall 7 and drops onto (25, 10) INSIDE the bounds, below
+    /// `waterLine = 5` (the classic retype fires, b = 1). The ORIGIN
+    /// wall 7 re-types it back to water; the pre-fix landing-wall read
+    /// (wall 0) left it lava. The fan finds no hole (every below-cell is
+    /// the shelf), so the whole 200 lands on (25, 10) and the settle
+    /// loop levels it across the row — the landing cell stays wet.
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_f25_g46_the_dungeon_retype_reads_the_origin_wall() {
+        let shelf = |w: &mut World| {
+            for x in 0..40 {
+                let s = w.index(x, 11);
+                w.tiles[s] = Tile { kind: 1, ..Default::default() };
+                w.tiles[s].flags |= FLAG_ACTIVE;
+            }
+        };
+        let mut w = basin();
+        w.world_surface = 0.0;
+        let mut g = gv();
+        g.water_line = 5;
+        shelf(&mut w);
+        // The origin: water 200 at (25, 9) behind a dungeon wall 7.
+        let o = w.index(25, 9);
+        w.tiles[o].liquid = 200;
+        w.tiles[o].wall = 7;
+        w.mark_chunk(25, 9);
+        settle_liquids(&mut w, &g, false);
+        let t = w.tiles[w.index(25, 10)];
+        assert!(t.liquid > 0, "the pool levelled on the shelf row");
+        assert_eq!(t.liquid_kind(), LiquidKind::Water, "the ORIGIN wall re-type");
+        // The mirror: the same drop with NO origin wall keeps the lava
+        // retype (the landing cell's wall 0 cannot re-type it back).
+        let mut w2 = basin();
+        w2.world_surface = 0.0;
+        shelf(&mut w2);
+        let o2 = w2.index(25, 9);
+        w2.tiles[o2].liquid = 200;
+        w2.mark_chunk(25, 9);
+        settle_liquids(&mut w2, &g, false);
+        let t2 = w2.tiles[w2.index(25, 10)];
+        assert!(t2.liquid > 0, "the mirror pool");
+        assert_eq!(t2.liquid_kind(), LiquidKind::Lava, "no origin wall — the retype stands");
     }
 }

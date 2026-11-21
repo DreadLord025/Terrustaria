@@ -18346,6 +18346,21 @@ other step's stream. Both world-hash pins (`SEED42_512`, `DEFAULT_WORLD`) move
 BY DESIGN (the liquid fields settle/retype); the re-pin is deferred to the
 merge gate (no compiler on this branch), the `a == b` determinism halves stay.
 
+**The g46 liquid-union addendum (W4-f25, 2026-11-21, code-only):** the
+`SettleWaterAt` dungeon re-type's wall read is fixed to the ORIGIN cell
+(`Liquid.cs:152` binds `tile` at the origin; `:188` reads `tile.wall` —
+the pre-fix copy read the landing cell's wall, research/70 step 6's
+flagged deviation; the g46-union copy already reads the origin, both
+copies now agree). The bounds test keeps the landing-cell arguments.
+At the liquid merge (g46 tip 9bc722e5f, research/70 FINAL) this driver
+dedupes onto the union `LiquidSystem` surfaces — the DELETE table + the
+producer arming live in `12g-f25-worldgen-helpers.md` ("g46 LIQUID-UNION");
+the gen-side `edit_kills` drain choice is **DISCARD** (the worldgen has
+no loot side channel — the `square_tile_frame_gen` precedent; the C#
+gen-time `noItem` gate `:63546-63549` spawns nothing either). The pins
+RE-DERIVE at the union gate (the real DelWater drain/tail + swap-remove
+buffer + this fix); 1 origin-wall witness written not run.
+
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
 `NPC.AI()`'s aiStyle-38 block (`NPC.cs:28995-29145`) is ported 1:1 as

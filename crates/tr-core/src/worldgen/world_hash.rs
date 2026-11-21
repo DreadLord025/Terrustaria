@@ -315,6 +315,17 @@ mod tests {
     // sets it, so both pins stay unchanged. The solution-spray rows
     // (146-149/1015-1017) and the Convert 15/16/18/19 dungeon-biome cells are
     // runtime / unwired respectively — no executed classic step calls them.
+    // W4-f25 g46 LIQUID-UNION (2026-11-21, code-only): the SettleWaterAt
+    // dungeon re-type now reads the ORIGIN cell's wall (Liquid.cs:152/:188 —
+    // the pre-fix copy read the landing cell's, a real deviation research/70
+    // step 6 flagged). This moves the gen output wherever an origin/landing
+    // wall pair differs inside the potential bounds — BOTH pins are already
+    // stale-by-design from the Settle Liquids landing; the RE-DERIVE at the
+    // g46-union gate covers this fix too (the union's real DelWater drain +
+    // swap-remove buffer move them further). The gen-side edit_kills drain
+    // choice is DISCARD (no worldgen loot side channel, the C# gen-time
+    // noItem gate :63546-63549) — recorded in 12g per 70's witness table.
+    // The f25e/g42e seal rounds are comment/witness-only — no pin effect.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
