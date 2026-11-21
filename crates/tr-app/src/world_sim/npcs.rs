@@ -1353,7 +1353,15 @@ fn update_worms_ctx(
     // (`:52004-52050`).
     let mut despawn_chains: Vec<(u32, u32)> = Vec::new();
     for i in 0..npcs.len() {
-        if !npcs[i].kind.is_worm_head() || npcs[i].hp <= 0 {
+        // W4-c8 — the TruffleWormDigger (375) rides the head machine too:
+        // a LONE AI_006 worm (the StardustWormHead precedent — `is_worm`
+        // true, `is_worm_head` false so the init grows no chain, the
+        // follower trail skips seg_index 0). Its 6/0.15 tunables
+        // (`NPC.cs:51730-51734`), the 1000-px dig override (`:51598`) and
+        // the aim inversion (`:51861-51865`) ride `worm_head_step`.
+        if (!npcs[i].kind.is_worm_head() && npcs[i].kind != NpcKind::TruffleWormDigger)
+            || npcs[i].hp <= 0
+        {
             continue;
         }
         let Some(ctx) = head_ctx else { continue };
@@ -1736,9 +1744,10 @@ fn worm_head_step(
     // The 1000-px dig override (`:51598-51615`): a listed head with no
     // player inside the ±1000-px box around its rect burrows anyway.
     // The list (7/10/13/39/95/98/117/375/454/510/513/621) covers the
-    // ported Devourer/GiantWorm/EoW/Leech heads; the Destroyer and the
-    // crawltipede are NOT in it. Single-player: one rectangle test
-    // (`Rectangle.Intersects`, strict inequalities).
+    // ported Devourer/GiantWorm/EoW/Leech heads + the TruffleWormDigger
+    // (375, W4-c8); the Destroyer and the crawltipede are NOT in it.
+    // Single-player: one rectangle test (`Rectangle.Intersects`, strict
+    // inequalities).
     if !flag3
         && matches!(
             npc.kind,
@@ -1746,6 +1755,7 @@ fn worm_head_step(
                 | NpcKind::GiantWormHead
                 | NpcKind::EaterOfWorldsHead
                 | NpcKind::LeechHead
+                | NpcKind::TruffleWormDigger
         )
     {
         let (nx, ny) = (npc.x as i32, npc.y as i32);
@@ -1781,6 +1791,13 @@ fn worm_head_step(
             (((ctx.pcx / TILE_PX) as i32 - ((npc.x + w * 0.5) / TILE_PX) as i32) * 16) as f32;
         let mut dy =
             (((ctx.pcy / TILE_PX) as i32 - ((npc.y + h * 0.5) / TILE_PX) as i32) * 16) as f32;
+        // W4-c8 — `NPC.cs:51861-51865`: the TruffleWormDigger (375) FLEES —
+        // the tile-snapped aim is inverted (it burrows AWAY from the
+        // player). The sign flip leaves the length (`:51866`) unchanged.
+        if npc.kind == NpcKind::TruffleWormDigger {
+            dx *= -1.0;
+            dy *= -1.0;
+        }
         let len = (dx * dx + dy * dy).sqrt().max(0.001);
         // S1-E-21g — `NPC.cs:51976-51995`: the dig rumble on the
         // `soundDelay == 0` cadence — the distance/40 clamp (10..20)
@@ -4249,6 +4266,19 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-c8 — `Main.essScale` pre-stamp for the aiStyle-66 flicker
+    // (`NPC.cs:34257`): the AI's `&World` borrow cannot reach
+    // `app.ess_scale`, so the sim stamps it before the update (the
+    // wind_speed_current pre-pass convention above). The draw pass's
+    // `item_lights::update_ess_scale` owns the live value.
+    {
+        let ess = app.ess_scale;
+        for n in app.npcs.iter_mut() {
+            if n.kind.ai_style() == 66 {
+                n.ess_scale = ess;
+            }
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding
@@ -4295,6 +4325,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         let npcs = &mut app.npcs;
         let audio = &mut app.audio;
         let dust = &mut app.dust;
+        // W4-c8 — the aiStyle-66 flicker's `Lighting.AddLight` requests
+        // drain into the shared `EntityLights` pair at the NPC's slot
+        // turn (the `item_lights::rand_light` fixed-step precedent,
+        // `world_sim/items.rs`); the C# appends inside `NPC.AI`
+        // (`NPC.cs:34258`), mid-`UpdateNPCs`.
+        let entity_lights = &mut app.entity_lights;
         // The aiStyle-75 family's per-tick difficulty inputs: the port is
         // single-difficulty classic (the expert bridge arm is constants-off
         // until the difficulty system lands — the module's `ctx.expert`).
@@ -4465,6 +4501,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let is_style75 = npcs[i].kind.ai_style() == 75;
                     if !is_style75 {
                         npcs[i].update_rng_dust(world, player, step, npcs_rng, dust, &dust_spawn_ctx);
+                        // W4-c8 — the aiStyle-66 flicker's AddLight request
+                        // lands in the shared pair NOW, at the C# call
+                        // position (`NPC.cs:34258`, inside `AI()`); no RNG
+                        // — the feed's placement cannot move any stream.
+                        // The solo axis queued it on `wants_ai_light`.
+                        for (lx, ly, rgb) in npcs[i].wants_ai_light.drain(..) {
+                            entity_lights.add(lx, ly, rgb);
+                        }
                     } else {
                         npcs[i].update_preamble(step);
                         let ctx = crate::npc_ai_style75::Style75Ctx {
@@ -6162,6 +6206,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
+                        // W4-c8 — the TruffleWorm's dig (`NPC.cs:34345`):
+                        // 374 → 375, the lone fleeing digger (aiStyle 6).
+                        375 => NpcKind::TruffleWormDigger,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);
@@ -14096,6 +14143,81 @@ mod worm_tests {
         // The pass's head machine never touches it (not is_worm_head):
         // the velocity stays whatever its own machine wrote (zero here).
         assert_eq!((npcs[0].vx, npcs[0].vy), (0.0, 0.0));
+    }
+
+    /// W4-c8 — the TruffleWormDigger (375) rides the worm pass's head
+    /// machine as a LONE worm: `is_worm` true but no chain (375 sits
+    /// outside the `:51301`/`:51436` lists), the 6/0.15 tunables
+    /// (`NPC.cs:51730-51734`), the 1000-px dig override (`:51598`) and
+    /// the FLEE aim inversion (`:51861-51865`). WRITTEN, NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_c8_the_digger_rides_the_worm_pass_and_flees() {
+        assert!(NpcKind::TruffleWormDigger.is_worm());
+        assert!(!NpcKind::TruffleWormDigger.is_worm_head());
+        assert!(!NpcKind::TruffleWormDigger.is_worm_mid());
+        assert!(!NpcKind::TruffleWormDigger.shares_carrier_life());
+        assert_eq!(NpcKind::TruffleWormDigger.worm_tunables(), (6.0, 0.15));
+        let world = fixture();
+        let mut n = Npc::new(
+            NpcKind::TruffleWormDigger,
+            150.0 * TILE_PX,
+            112.0 * TILE_PX,
+            1,
+            0.0,
+        );
+        n.hp = n.max_hp;
+        let mut npcs = vec![n];
+        let mut rng = UnifiedRandom::new(7);
+        let mut next_id = 1u32;
+        // The player sits RIGHT of the digger, above the ground (the air
+        // box is clear → flag3 false until the 1000-px override; the
+        // player is NEAR, so the override does not fire — the digger
+        // flees through the air-stumble arm's facing, then the dig aim
+        // inverts once it burrows). One tick: the head machine runs.
+        let px = 160.0 * TILE_PX;
+        let py = 112.0 * TILE_PX;
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            Some((px, py)),
+            &mut npcs,
+            &mut rng,
+            &mut next_id,
+        );
+        assert_eq!(npcs.len(), 1, "the lone digger grows no chain");
+        assert!(npcs[0].worm_inited, "the pass claims it (is_worm)");
+        // The head machine ran: the rotation is the atan2 + PI/2 tail
+        // (`:52201`) and the velocity moved (the air stumble / dig steer).
+        // The digger is noGravity/noTileCollide — the raw integration
+        // (`:90495-90498`) moved it off the spawn point.
+        assert!(
+            npcs[0].x != 150.0 * TILE_PX || npcs[0].y != 112.0 * TILE_PX,
+            "the head machine integrated the digger"
+        );
+        // The FLEE inversion: place the digger underground (flag3 true via
+        // the tile scan) with the player to its RIGHT — the dig aim must
+        // point LEFT (away). The tile-snapped aim inverts (`:51861`).
+        let mut d = Npc::new(
+            NpcKind::TruffleWormDigger,
+            150.0 * TILE_PX,
+            130.0 * TILE_PX, // below the surface (y=120) — inside dirt
+            1,
+            0.0,
+        );
+        d.hp = d.max_hp;
+        let mut npcs2 = vec![d];
+        let mut rng2 = UnifiedRandom::new(7);
+        let mut next_id2 = 1u32;
+        // Player far to the RIGHT (same row): the snapped dx is positive,
+        // the inversion flips it negative → the digger burrows LEFT.
+        crate::world_sim::npcs::update_worms_in(
+            &world,
+            Some((200.0 * TILE_PX, 130.0 * TILE_PX)),
+            &mut npcs2,
+            &mut rng2,
+            &mut next_id2,
+        );
+        assert!(npcs2[0].vx < 0.0, "the dig aim inverts — flees LEFT (vx {})", npcs2[0].vx);
     }
 
     #[test]

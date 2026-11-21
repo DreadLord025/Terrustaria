@@ -129,12 +129,38 @@
 //! CastLights arms (160, 254..=261/634/635, 209, 44) matches a family
 //! kind.
 //!
-//! ## Wiring deferred (the BlazingWheel / style72 precedent)
+//! ## Wiring (W4-c8 — the roster wave)
 //!
-//! The roster has NO `NpcKind` for any of the eight kinds (only the
-//! lang/sacrifice tables name them), so `update_rng`'s aiStyle axis
-//! (`npc.rs:3651`) has no style-66 arm to claim. This module is the pure
-//! port + the minimal seams:
+//! The nine kinds landed (`NpcKind::Worm`/`TruffleWorm`/`TruffleWormDigger`/
+//! `GoldWorm`/`EnchantedNightcrawler`/`Grubby`/`Sluggy`/`Buggy`/`Maggot`,
+//! vanilla ids 357/374/375/448/484-487/606): the `SetDefaults` rows ride
+//! `npc/data.rs` + `npc.rs`'s tables, the aiStyle-66 axis claim lives in
+//! `update_rng_dust` (`npc.rs::ai_066_crawler_family`), and the sim's tick
+//! closure runs `update_rng_dust` unchanged (the arm needs no sibling
+//! pool — the dig proximity scan reads the players only). The 484 light
+//! request queues on `Npc::wants_ai_light` and drains into the shared
+//! `EntityLights` pair at the slot turn (the c7 firefly precedent); the
+//! dig queues `wants_transform = Some(375)` and the sim's Transform drain
+//! runs `transform_to_kind` (the aiStyle-75 carrier-gone precedent). The
+//! integration tail is the family arm's own: the depth-scaled default
+//! gravity (`body_gravity`, `NPC.cs:90878-90955`) + the 10 fall cap, the
+//! dead-band X snap (`:90473-90476`) and the ground `UpdateCollision`
+//! stand-in (`integrate_flyer_collision`). The digger 375 (aiStyle 6) is
+//! a LONE `AI_006` worm (the StardustWormHead precedent) — the worm pass's
+//! head machine runs it (the 6/0.15 tunables, the 1000-px dig override,
+//! the FLEE aim inversion `:51861-51865`), no chain. The FindFrame family
+//! cases landed in `npc.rs::find_frame` (the slope tail deferred — no
+//! world seam). The GoldWorm sparkle ([`gold_worm_sparkle`]) stays
+//! unwired — the `UpdateNPC_CastLights` pre-pass has no tile-light seam
+//! in the sim yet (the style50 light-seam precedent). See docs/ANALYSIS.md
+//! "The crawling critters" → "W4-c8 — the roster + wiring wave".
+//!
+//! ## The original deferral (S1-D-3 — superseded by W4-c8 above)
+//!
+//! The roster had NO `NpcKind` for any of the eight kinds (only the
+//! lang/sacrifice tables named them), so `update_rng`'s aiStyle axis
+//! had no style-66 arm to claim. This module was the pure port + the
+//! minimal seams:
 //! * `Main.essScale` is the caller's `App::ess_scale`
 //!   (`item_lights.rs::update_ess_scale`, S1-E-5) — passed in.
 //! * `Main.netMode != 1` folds to true (single-player port, the
@@ -160,7 +186,7 @@
 //!
 //! See docs/ANALYSIS.md "The crawling critters (S1-D-3 aiStyle-66,
 //! code-only)".
-#![allow(dead_code)] // wiring deferred — the kinds + dispatch arm land with the roster wave
+#![allow(dead_code)] // WIRED by W4-c8 (the axis 66 + Transform drain + light feed); the witnesses stay as the audit cross-check
 
 use glam::Vec2;
 

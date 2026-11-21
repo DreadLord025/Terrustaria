@@ -1823,6 +1823,21 @@ pub struct Npc {
     /// on the `UpdateNPCs` stream at the C# call position, and this queue
     /// is the fallback drain (the `wants_hostile_shot` pattern).
     pub wants_item_sounds: Vec<(i32, f32, f32)>,
+    /// The aiStyle-66 EnchantedNightcrawler flicker's
+    /// `Lighting.AddLight(i, j, r, g, b)` request (`NPC.cs:34258`) —
+    /// `(tile_x, tile_y, [r, g, b])`, the colour already scaled by the
+    /// `Next(90,111)` roll and `Main.essScale`, the tile coords the
+    /// quotient-truncated centre (`(int)((X + width/2) / 16f)`). The sim
+    /// drains it into the shared `EntityLights` pair at the NPC's slot
+    /// turn (the `item_lights::rand_light` fixed-step precedent); the
+    /// solo `update_rng` wrapper queues it for the caller. W4-c8.
+    pub wants_ai_light: Vec<(i32, i32, [f32; 3])>,
+    /// `Main.essScale` as of the last draw pass (`App::ess_scale`,
+    /// `item_lights::update_ess_scale`) — the sim stamps it before the
+    /// tick for the aiStyle-66 flicker (`NPC.cs:34257`), the
+    /// `wind_speed_current` pre-stamp convention. The solo wrapper reads
+    /// the 1.0 stock (the `App::new` init). W4-c8.
+    pub ess_scale: f32,
     /// `NPC.alpha`: the spawn fade (`SetDefaults` 245/246/247/248's
     /// `alpha = 255`, `NPC.cs:12176/12190/12201`); the Golem family's
     /// machines decrement it by 10 per tick and the draw reads it as
@@ -3140,6 +3155,10 @@ impl Npc {
             wants_mount_carrier: None,
             wants_transform: None,
             wants_item_sounds: Vec::new(),
+            wants_ai_light: Vec::new(),
+            // `Main.essScale`'s stock 1.0 (the `App::new` init) — the sim
+            // pre-stamps the live value each tick (W4-c8).
+            ess_scale: 1.0,
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
             // 255 fade-in start (`NPC.cs:10678`/`:10698`/`:10718`,
@@ -5007,6 +5026,17 @@ impl Npc {
             // resolve. The retired `update_scutlix_rider`/`update_saucer_mount`/
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
+            // `else if (this.aiStyle == 66)` (`NPC.cs:34253-34347`) — the
+            // crawling critters (357/374/448/484-487/606). W4-c8: the
+            // faithful `npc_ai_style66::ai_style66` arm claims the style
+            // (the S1-D-3 code-only port wired). The arm needs no sibling
+            // pool (the dig proximity scan reads the PLAYERS only), so the
+            // solo path is the live route — the sim's tick closure runs
+            // `update_rng_dust` and drains the light/Transform requests at
+            // the slot turn. The integration tail is the family arm's own
+            // (the depth-scaled gravity + the ground UpdateCollision
+            // stand-in).
+            66 => self.ai_066_crawler_family(world, player, rng),
             _ => self.update_kind_ai(world, player, dt, rng),
         }
         // `NPC.UpdateNPC`'s tail (`NPC.cs:90516`): `this.justHit = false`
@@ -5182,6 +5212,24 @@ impl Npc {
         self.frame_counter = 0.0;
         self.collide_x = false;
         self.collide_y = false;
+        // W4-c8 — the SetDefaults head rows the kind swap must refresh
+        // (`NPC.cs:8508`/`:8519-8520`/`:8523` + the catchable arm
+        // `:17851-17855`): the 374→375 dig flips friendly true→false (375
+        // is not npcCatchable, `Main.cs:9326-9418`) and behindTiles
+        // false→true (`:13790`), clears the 90-tick immunity window and
+        // zeroes the rotation. The aiStyle-75 pairs (390→382, 416→518)
+        // are all non-catchable / non-behindTiles kinds with rotation 0
+        // at the carrier-gone tick, so the refresh is a no-op for them.
+        self.friendly = new_kind.is_town_resident()
+            || new_kind == NpcKind::SleepingAngler
+            || crate::bug_net::npc_catchable(new_kind.cs_id() as i32);
+        self.catchable_immunity = if crate::bug_net::npc_catchable(new_kind.cs_id() as i32) {
+            90
+        } else {
+            0
+        };
+        self.behind_tiles = new_kind.behind_tiles();
+        self.rotation = 0.0;
         let (_, new_h) = self.size();
         self.y -= new_h;
         // `:81101` — Transform re-picks the target after the defaults.
@@ -5538,6 +5586,74 @@ impl Npc {
                 self.y = ny;
             }
         }
+    }
+
+    /// W4-c8 — the aiStyle-66 family arm (`NPC.AI()`'s
+    /// `else if (this.aiStyle == 66)` block, `NPC.cs:34253-34347`): the
+    /// eight crawling critters (357/374/448/484-487/606). The faithful
+    /// machine lives in `npc_ai_style66.rs` (`ai_style66`, the S1-D-3
+    /// code-only port); this seam feeds the session player as the one
+    /// `TargetCandidate` (the S1-D-3p convention), the kind's vanilla
+    /// `cs_id`, the sim-stamped `Main.essScale` and ticker 0 (the
+    /// `EverLastingTicker` stand-in). RNG: the 484 flicker's `Next(90,111)`
+    /// every tick + the grounded gait timer's one range roll per expiry
+    /// ride the caller's `UpdateNPCs` stream (the module's witnesses pin
+    /// the exact order).
+    ///
+    /// The 484 light request queues on `wants_ai_light` for the sim's
+    /// `EntityLights` drain at the slot turn (the `wants_hostile_shot`
+    /// pattern; the solo wrapper leaves it for the caller). The 374 dig
+    /// (`ai[1] == 90`) queues `wants_transform = Some(375)` — the sim's
+    /// Transform drain runs `NPC.Transform` (`NPC.cs:81084-81145`) after
+    /// the tick (the aiStyle-75 carrier-gone precedent).
+    ///
+    /// The integration tail is `NPC.UpdateNPC`'s post-AI movement
+    /// (`NPC.cs:90459-90503`): the crawlers are noGravity=false /
+    /// noTileCollide=false, so the default depth-scaled gravity
+    /// (`UpdateNPC_UpdateGravity`, `:90878-90955` — `body_gravity`, the
+    /// ForceBubble precedent) + the 10 fall cap, the dead-band X snap
+    /// (`:90473-90476`) and the ground `UpdateCollision` stand-in
+    /// (`integrate_flyer_collision`, the blocked-axis latches the NEXT
+    /// tick's `collideX` reversal reads).
+    fn ai_066_crawler_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let players = [crate::npc_target::session_candidate(player)];
+        let outcome = crate::npc_ai_style66::ai_style66(
+            self,
+            world,
+            &players,
+            self.kind.cs_id() as i32,
+            self.ess_scale,
+            0,
+            rng,
+        );
+        // `:34258` — the 484 flicker's AddLight request (the sim drains it
+        // into the shared EntityLights pair at the slot turn).
+        if let Some(light) = outcome.light {
+            self.wants_ai_light.push(light);
+        }
+        // `:34342-34346` — the TruffleWorm dig: the module already sank
+        // `y += 16`; the Transform(375) rides the sim's drain (the
+        // aiStyle-75 `wants_transform` precedent — the bottom-anchored
+        // reposition, the SetDefaults swap, TargetClosest, the integer
+        // life rescale, all RNG-free).
+        if outcome.transform_to_digger {
+            self.wants_transform = Some(375);
+        }
+        // `NPC.UpdateNPC`'s post-AI movement (`NPC.cs:90459-90503`). The
+        // eight crawlers walk on gravity (noGravity false, `:8535`); the
+        // dig request above transforms AFTER the tick, so this tick still
+        // integrates as the crawler (the grounded worm's vy ≈ 0 — the
+        // one-tick Transform lag is the aiStyle-75 documented fold).
+        self.vy = (self.vy
+            + crate::npc_ai_golem::body_gravity(self.y, world.width as i32, world.world_surface))
+        .min(10.0);
+        // `:90473-90476` — the dead-band X snap (double f64 compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        let (w, h) = self.size();
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        self.integrate_flyer_collision(world);
     }
 
     /// S1-D-3 W-9 wiring — the aiStyle-69 adapter: the live `Npc` fields
@@ -24491,6 +24607,69 @@ mod tests {
         g2.vy = 0.0;
         g2.find_frame();
         assert_eq!(g2.frame, 1, ":72840");
+    }
+
+    /// W4-c8 — the axis-66 wiring: a full `update_rng` tick runs the
+    /// faithful arm (the 484 flicker queues the light request, the
+    /// grounded gait timer draws on the caller's stream), the 374 dig
+    /// queues `wants_transform = Some(375)`, and `transform_to_kind`
+    /// lands the digger (the SetDefaults refresh flips friendly/immunity/
+    /// behindTiles, the life carries, the ai zeroes). WRITTEN, NOT RUN
+    /// (code-only mode).
+    #[test]
+    fn w4_c8_the_axis_claims_style66_and_the_dig_transforms() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        // The 484 flicker: one Next(90,111) every tick + the light request.
+        let mut night = Npc::new(NpcKind::EnchantedNightcrawler, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
+        night.local_ai[1] = 500.0; // no gait expiry this tick
+        let mut rng = UnifiedRandom::new(11);
+        let mut witness = rng.clone();
+        let roll = witness.next_range(90, 111);
+        night.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "exactly one Next(90,111) — the flicker");
+        assert_eq!(night.wants_ai_light.len(), 1, "the 484 light request queues");
+        let (lx, ly, rgb) = night.wants_ai_light[0];
+        let num983 = roll as f32 * 0.01 * ((1.0f32 + 0.5) / 2.0);
+        assert_eq!(rgb, [0.3 * num983, 0.1 * num983, 0.25 * num983]);
+        // The centre tile: the quotient-truncated form (`:34258`).
+        let (cw, ch) = night.size();
+        assert_eq!(lx, ((night.x + cw / 2.0) / TILE_PX) as i32);
+        assert_eq!(ly, ((night.y + ch / 2.0) / TILE_PX) as i32);
+        // A non-484 crawler queues no light.
+        let mut worm = Npc::new(NpcKind::Worm, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
+        worm.local_ai[1] = 500.0;
+        let mut rng2 = UnifiedRandom::new(11);
+        worm.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng2);
+        assert!(worm.wants_ai_light.is_empty(), "357 has no flicker");
+        // The 374 dig: seed the counter at 89 with the player near — the
+        // tick increments to 90, sinks 16 and queues the Transform.
+        let mut t = Npc::new(NpcKind::TruffleWorm, 20.0 * TILE_PX, 29.0 * TILE_PX, 1, 0.0);
+        t.local_ai[1] = 5000.0;
+        t.ai[1] = 89.0;
+        player.x = t.x; // the player centre within 160 of the worm centre
+        player.y = t.y;
+        let y0 = t.y;
+        let mut rng3 = UnifiedRandom::new(11);
+        t.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng3);
+        assert_eq!(t.ai[1], 90.0, "the counter caps at 90");
+        assert_eq!(t.wants_transform, Some(375), "the dig queues Transform(375)");
+        assert!(t.y >= y0 + 16.0, "the +16 sink (:34344)");
+        // The Transform executor: the digger lands with the SetDefaults
+        // refresh — friendly true→false, immunity 90→0, behindTiles
+        // false→true, the life carries (5→5), the ai zeroes.
+        t.hp = 3; // a damaged worm keeps 3 (both maxima 5)
+        t.transform_to_kind(&w, &player, NpcKind::TruffleWormDigger);
+        assert_eq!(t.kind, NpcKind::TruffleWormDigger);
+        assert!(!t.friendly, "375 is not npcCatchable — friendly flips false");
+        assert_eq!(t.catchable_immunity, 0, "the immunity window clears");
+        assert!(t.behind_tiles, ":13790 behindTiles");
+        assert_eq!(t.hp, 3, "the integer life share carries (3*5/5)");
+        assert_eq!(t.max_hp, 5);
+        assert_eq!(t.ai, [0.0; 4], "the ai zeroes (:81111-81114)");
+        assert_eq!(t.wants_transform, None, "the request drains");
+        assert_eq!(t.size(), (10.0, 10.0), "the digger's 10x10 box");
+        assert_eq!(t.rotation, 0.0, "the SetDefaults rotation reset (:8523)");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase

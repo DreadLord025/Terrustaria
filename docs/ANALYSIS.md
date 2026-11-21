@@ -30858,6 +30858,8 @@ CODE-ONLY MODE: no cargo/rustc/rustfmt invoked; the 12 witness tests are
 written, not run. Wiring deferred (the style72/spore precedent): none of
 the eight kinds has an `NpcKind`, so the style axis (`npc.rs:3651`) has
 no arm to claim; only the one-line `mod npc_ai_style66;` seam landed.
+**WIRED by W4-c8 (2026-11-20, code-only — see the W4-c8 subsection
+below).**
 
 - **Census verified from the C#** — every `this.aiStyle = 66;` row:
   Worm 357 (`:13545-13558`), TruffleWorm 374 (`:13762-13776`), GoldWorm
@@ -30924,6 +30926,83 @@ no arm to claim; only the one-line `mod npc_ai_style66;` seam landed.
   (`Main.cs:67082-67153`: 357→2, 374→4, 375→4, 448→2, 484→2, 485→4,
   486→4, 487→4, 606→2) pinned as consts; the kinds + axis arm + the
   Transform executor wait on the roster wave.
+
+### W4-c8 — the roster + wiring wave (2026-11-20, code-only)
+
+The nine kinds landed (`NpcKind::Worm`/`TruffleWorm`/`TruffleWormDigger`/
+`GoldWorm`/`EnchantedNightcrawler`/`Grubby`/`Sluggy`/`Buggy`/`Maggot`,
+vanilla protocol ids 357/374/375/448/484-487/606 — all free in the
+protocol space) with the full `SetDefaults` table rows, the `{31}`
+Confused-immunity rows (`NPCID.cs:8171`/`:8290`/`:8297`/`:8654`/
+`:8858-8883`/`:9551`), bestiary entries, sheets (`CRAWLER_SHEETS`),
+portraits and the netglue bare seed. The wiring:
+
+- **The axis claim**: `update_rng_dust`'s `66 => ai_066_crawler_family`
+  (`npc.rs`) runs the faithful `npc_ai_style66::ai_style66` with the
+  session-player candidate, `cs_id`, the sim-stamped `Main.essScale`
+  (`Npc::ess_scale`, the `wind_speed_current` pre-stamp convention) and
+  ticker 0. The arm needs NO sibling pool (the dig proximity scan reads
+  the players only), so the solo path is the live route — the sim's tick
+  closure runs `update_rng_dust` unchanged.
+- **The light feed**: the 484 flicker queues `wants_ai_light`; the sim
+  drains it into the shared `EntityLights` pair at the NPC's slot turn
+  (the C# `AddLight` position, `NPC.cs:34258`; the c7 firefly precedent).
+  No RNG — the feed's placement cannot move any stream.
+- **The Transform(375) executor**: the dig queues `wants_transform =
+  Some(375)`; the sim's existing Transform drain (the aiStyle-75
+  carrier-gone pass) runs `transform_to_kind` after the tick. The
+  executor gained the `SetDefaults` head refresh (`NPC.cs:8508`/
+  `:8519-8520`/`:8523` + the catchable arm `:17851-17855`): friendly
+  (374 true → 375 false — 375 is NOT `npcCatchable`, `Main.cs:9326-9418`),
+  the 90-tick immunity window, behindTiles (`:13790`) and rotation. The
+  aiStyle-75 pairs (390→382, 416→518) are all non-catchable /
+  non-behindTiles kinds whose riders never write rotation, so the
+  refresh is a no-op for them. The one-tick Transform lag is the
+  aiStyle-75 documented fold; the bottom-anchored reposition nets 0
+  (both heights 10), the arm's +16 sink stands.
+- **The digger's movement**: 375 is aiStyle 6 — a LONE `AI_006` worm (the
+  StardustWormHead precedent): `is_worm` true, `is_worm_head`/
+  `is_worm_mid` false (375 sits outside the `:51301`/`:51436` chain
+  lists), so the worm-pass init grows no chain and the follower trail
+  skips it (seg_index 0). The worm pass's head loop claims it alongside
+  the heads and runs `worm_head_step` — the 6/0.15 tunables
+  (`:51730-51734`), the 1000-px dig override (`:51598`, 375 added to the
+  kind list) and the FLEE aim inversion (`:51861-51865`, the tile-snapped
+  dx/dy sign-flip before the length — it burrows AWAY from the player).
+  The per-NPC `update_kind_ai` arm is empty (the worm pass owns the
+  movement, the Devourer precedent). The dig rumble (`:51976-51995`)
+  plays the case-15 roar (375 is not in the silent list).
+- **The FindFrame cases** landed in `npc.rs::find_frame` (phase 1):
+  `case 375` (`:71109-71120`, the 4-tick cycle over 4 rows wrapping to
+  0), `case 374` (`:71121-71155`, the `localAI[0] = -2` marker, the
+  grounded still-pin row 0 / 6-tick cycle wrapping to row 1, the
+  airborne 3-tick spin + `direction * 0.1f` tilt), the 357/448/484/606
+  group (`:72774-72828`, the still-pin row 1 / 12-tick two-frame cycle /
+  airborne tilt + row-1 pin) and the 485/486/487 group (`:72829-72883`,
+  `spriteDirection = direction`, the `|vx| * 5`-weighted 10-tick
+  four-frame cycle). All nine rotate (the draw whitelist).
+- **Deviations / deferrals (W4-c8)**: the FindFrame slope tail
+  (`:72807-72826`/`:72862-72881`, the slope-1/2 ±0.785f rotation +
+  `localAI[0] = 0` marker) is DEFERRED — `find_frame` carries no world
+  seam (the slope probe reads `Framing.GetTileSafely` at the centre/top
+  tiles); the `localAI[0] = -2` marker and the rest of the cases are
+  exact. The GoldWorm sparkle (`gold_worm_sparkle`) stays unwired — the
+  `UpdateNPC_CastLights` pre-pass has no tile-light seam in the sim yet
+  (the style50 light-seam precedent; the dust-43 spawn's internal draws
+  must run in C# order when the dust feed lands). The `dontTakeDamage-
+  FromHostiles` rows (374/375) have no port field yet — the hostile-NPC
+  damage system is unported, so the flag is inert (the module's census
+  pins it). The ground integration rides `integrate_flyer_collision`
+  (the established `UpdateCollision` stand-in — the wet 0.5 slow matches
+  the C# `waterMovementSpeed = 0.5f` head default `:8437`; the
+  slope/stair/conveyor tails are the port's documented collision gap).
+  The gravity is the C# default depth-scaled 0.3 (`body_gravity`,
+  `:90878-90955`) + the 10 fall cap — NOT the walker GRAVITY 0.4/8
+  constants (the sharkron precedent). Witnesses WRITTEN NOT RUN: the
+  defaults/FindFrame pins (`npc.rs::w4_c8_*`), the axis/dig/Transform
+  integration pins and the digger worm-pass pin
+  (`world_sim/npcs.rs::w4_c8_*`).
+
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
 `NPC.AI()`'s `if (this.aiStyle == 9)` arm (`NPC.cs:21377-21571`) now rides
