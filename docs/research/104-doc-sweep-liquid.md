@@ -386,6 +386,72 @@ duplication. It is the only other C# site that touches the bucket family's
 item state; the smart-cursor re-point (`Step_EmptyBuckets`,
 `SmartCursorHelper.cs:622-676`) was already in main (`smart_cursor.rs`).
 
+#### 6c-compose. The g45-pickup × g15-fill compose contract (LIQUID RETIRE, 2026-11-21)
+
+Written against the LIVE g15 tip **`7981aa5bf`** (local
+`task/W4-g15-dust-item-sites`, 20 commits AHEAD of the pushed
+`origin/task/W4-g15-dust-item-sites` `f8f35d799` — the fill commit
+`d43b490f3` is in the local tip's history but NOT on the remote yet; the
+merger must take the LOCAL tip or wait for the push). The g15 lane grew
+past the fill: the wet-state machine (`wet_count`/`wet`/`lava_wet`/
+`honey_wet`/`age_ticks`/`splash_edge` on `ItemDrop`), the
+`enemy_grab_delay_time` clock + `apply_enemy_grab_delay`, the 17 dust
+sites. Contract axes, verified seam-by-seam:
+
+1. **Disjoint surfaces, no semantic overlap.** g45 owns the HELD-item use
+   arm (`editing/buckets.rs::use_buckets` ← `update_editing`,
+   `Player.cs:46318-46504`); g15 owns the WORLD-DROP passive fill
+   (`items.rs::try_fill_bucket` ← `update_items` :767-781,
+   `WorldItem.cs:399-402`). Same item kinds, different C# objects
+   (`Player.inventory` vs `Main.item[]`) — neither calls the other, both
+   keep their own form. The 205→206 conversion appears in both BY DESIGN
+   (pickup: `Player.cs:46370-46372`; fill: `WorldItem.cs:565-567`).
+2. **The compose LOOP closes through g15's gate inputs.** g45's pour
+   hand-back (`put_item_from_usage(205)`, `buckets.rs:311`) deposits into
+   the inventory; on a FULL inventory the overflow spawns a world 205 via
+   `spawn_item_drop_px` at the player centre (`buckets.rs:393-400`,
+   `GetOrDropItem` `:7193-7200`). That drop is EXACTLY g15's fill target:
+   `update_items`' gate `!was_grabbed && kind == 205 && !reserved_elsewhere`
+   admits it (the spawn sets no reservation), and in rain on a
+   wind-allowing wall at the surface it can fill back to 206. The reverse
+   edge: a rain-filled 206 picked up (i47 grab) becomes pourable by g45's
+   placement arm. No shared state beyond the item list itself.
+3. **RNG streams stay disjoint — order-safe.** g15's two draws
+   (`Next(num3)`, `NextFloat`) ride `RngKey::UpdateItems`
+   (`7981aa5bf:items.rs:1156-1157`, the C# `Main.cs:18024` swap); g45's
+   splash pitch + the overflow pop (`spawn_item_drop_px`'s three floats +
+   the prefix roll) ride `RngKey::UpdatePlayers` (`buckets.rs:396/:419`).
+   The spawn signatures are byte-identical on both tips (g45 `items.rs:757`
+   vs g15 `:1196` — same 5 args, same draw order, `ItemDrop::new`'s 8-arg
+   ctor unchanged), so the merge needs NO call-site re-pin in buckets.rs.
+4. **The one shared-file overlap is textual, not semantic.** Both lanes
+   touch `world_sim/editing.rs`: g45 adds the `mod buckets` + the
+   pre-melee `use_buckets` wire (:4331) + the bucket witness modules at
+   the tail; g15's only hunk is inside `resolve_melee_strike`'s lucky-coin
+   revenge arm (:7964 region — the `coin.apply_enemy_grab_delay()` call +
+   comment). Disjoint hunks, auto-mergeable; the semantic invariant to
+   re-verify at the merge: the bucket wire stays BEFORE the melee arm
+   (`Player.cs:43575` precedes `:43644`).
+5. **The wet-state machine is drop-side only — buckets.rs needs no
+   re-pin.** g15's `ItemDrop` gains 7 fields; `ItemDrop::new` initializes
+   them all (`7981aa5bf:item.rs:976-982`) and buckets.rs constructs no
+   `ItemDrop` literals (spawn-fn calls only, grep-verified). A rain-filled
+   206 that later burns in lava rides g15's despawn arm; g45's HELD 206 is
+   untouched by the wet machine (the C#'s `Item.wetCount` is the world-drop
+   half too).
+6. **Gate-faithfulness note (g15-owned, recorded not fixed).** The C#
+   `:550` reads `IsSurfaceForAtmospherics(base.position.ToTileCoordinates())`
+   (top-left) but the CENTRE tile for the wall (`:554-556`); g15's port
+   mirrors both exactly (`7981aa5bf:items.rs:1132-1144`). The remix branch
+   (`WorldGen.cs:10978-10986`) is `rockLayer < Y < maxTilesY-350`, ported
+   as such. Any future re-pin is g15's, not the liquid merger's.
+7. **Witness disposition.** g15's 2 fill witnesses
+   (`7981aa5bf:items.rs:2441+`, the gate refusals + the wall/draw pins)
+   ride g15's landing; g45's 15 `bucket_use_tests` ride THIS branch's
+   union fold (the module is g45-unique — the g46 re-fold has no
+   `editing/buckets.rs`, tree-verified `9bc722e5`). No overlapping pin
+   names; no dedupe needed between the two suites.
+
 ### 6d. The bucket STACK-consume edge census — COMPLETE after this phase
 
 The consume sites are exactly six `sItem.stack--` reads
