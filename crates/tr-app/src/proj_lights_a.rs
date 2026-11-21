@@ -535,9 +535,11 @@ pub(crate) fn proj_lights_a(
     } else if p.kind == 1038 || p.kind == 1116 {
         // `:40466-40513` — AI_196_Petal. `vector` = (0.5, 0, 0.2) for the
         // 1038 FlowerWhipPetal, (0, 0.6, 0.6) for the 1116 PetalstormShot.
-        // Site 40 (`:40507`): the early-return branch `ai[0] < 20` lights
-        // once `ai[0] >= 10` (the pre-increment `flag`), full `vector`.
-        // Site 41 (`:40513`): the 1116's `ai[0] >= 20` half scales by
+        // The C# captures `flag = ai[0] < 20` at the head (`:40468`) BEFORE
+        // the `ai[0]++` (`:40501`), so the post-step slot reads the boundary
+        // shifted by one: site 40 (`:40507`) fires for `10 <= ai[0] <= 20`
+        // (the pre-increment `ai[0] >= 10` gate), full `vector`; site 41
+        // (`:40513`) is the 1116's `ai[0] > 20` half, scaled by
         // `Remap(timeLeft, 120, 0, 1, 0)`. Rowed by W4-d20 (`:9793-9806` /
         // `:10413-10425`); its `ai_petal` runs the age counter. The 248
         // FlowerPowPetal is aiStyle 1 and never reaches this style.
@@ -546,7 +548,7 @@ pub(crate) fn proj_lights_a(
         } else {
             [0.5, 0.0, 0.2]
         };
-        if p.ai[0] < 20.0 {
+        if p.ai[0] <= 20.0 {
             if p.ai[0] >= 10.0 {
                 out.push((cx, cy, vector));
             }
@@ -1373,15 +1375,18 @@ mod tests {
 
     #[test]
     fn the_d20_petal_arms_gate_on_the_age_counter() {
-        // Site 40 (`:40507`) — the 1038 petal: ai[0] in [10,20) → (0.5,0,0.2).
+        // Site 40 (`:40507`) — the 1038 petal: post-step ai[0] in [10,20] →
+        // (0.5,0,0.2) (the C# flag is pre-increment, so the boundary shifts).
         let mut p = slot(1038);
         p.ai[0] = 9.0;
         assert!(proj_lights_a(&p, None).is_empty());
         p.ai[0] = 10.0;
         assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.0, 0.2]);
-        p.ai[0] = 20.0; // the 1038 has no >=20 light
+        p.ai[0] = 20.0; // still the early-return half (pre-increment 19 < 20)
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.0, 0.2]);
+        p.ai[0] = 21.0; // the 1038 has no >20 light
         assert!(proj_lights_a(&p, None).is_empty());
-        // Site 41 (`:40513`) — the 1116 petalstorm: ai[0]>=20 scales
+        // Site 41 (`:40513`) — the 1116 petalstorm: post-step ai[0] > 20 scales
         // (0,0.6,0.6) by Remap(timeLeft,120,0,1,0). timeLeft 60 → 0.5.
         let mut p = slot(1116);
         p.ai[0] = 25.0;
