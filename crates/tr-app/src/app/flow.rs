@@ -2333,6 +2333,13 @@ pub(crate) mod front_flow_tests {
             pointer_event: None,
             mouse_pos: Vec2::ZERO,
             cursor: ui::cursor::CursorState::default(),
+            // S1-W4-g81 carry — the cursor-icon latch + cache triple start
+            // clear (`App::new`'s twin entries); `flow_app` is a full App
+            // literal, so the four fields need their rows here too.
+            cursor_item_icon_enabled: false,
+            item_icon_cache_pos: Vec2::ZERO,
+            item_icon_cache_kind: 0,
+            item_icon_cache_time: 0,
             os_cursor_hidden: None,
             mine_down: false,
             place_down: false,

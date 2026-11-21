@@ -716,6 +716,12 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // S1-W4-g81 residuals — `DrawInterface_40_InteractItemIcon`
+    // (`Main.cs:45037-45115`): the held-tool cursor icon + the 10-frame
+    // cache linger. `icon_enabled` is `Player.cursorItemIconEnabled`,
+    // `icon_cache` the `(kind, time)` pair the verification left.
+    icon_enabled: bool,
+    icon_cache: (u16, i32),
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1198,6 +1204,46 @@ pub fn draw_hud(
     }
     if let Some(text) = housing_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
+    }
+
+    // S1-W4-g81 residuals — `DrawInterface_40_InteractItemIcon`
+    // (`Main.cs:45037-45115`): the held-tool icon beside the cursor. The
+    // wiring/mining tools' latch (`Player.cs:46756-46760`/`:45620-45624`)
+    // arms `icon_enabled` in reach; the cache linger draws the last kind
+    // for 10 frames after the tool leaves reach (`:45063`'s
+    // `_itemIconCacheTime > 0 && mouseItem.type < 1`). The icon rides
+    // `ItemSlot.DrawItemIcon` at context 21, sizeLimit 9999 (no clamp),
+    // centred on `mouse + (10,10) + hitbox.Size()*cursorScale/2`
+    // (`:45089-45092`). The `cursorItemIconID != 0` override arm is
+    // unported (the tile-interaction icon system) — the wiring tools
+    // keep ID 0, so the held kind is the icon.
+    {
+        let held = &inventory[selected.min(INV - 1)];
+        let cache_live = icon_cache.1 > 0 && mouse_item.count == 0;
+        let kind = if icon_enabled && held.count > 0 {
+            held.kind
+        } else if cache_live {
+            icon_cache.0
+        } else {
+            0
+        };
+        if kind > 0 {
+            if let Some((uv, iw, ih)) = lookups.item_icon(kind) {
+                let s = pulse.cursor_scale;
+                let center = [
+                    mouse_pos.x + 10.0 + iw * s * 0.5,
+                    mouse_pos.y + 10.0 + ih * s * 0.5,
+                ];
+                let w = iw * s;
+                let h = ih * s;
+                r.push_ui_sprite(
+                    [center[0] - w * 0.5, center[1] - h * 0.5],
+                    [w, h],
+                    uv,
+                    [1.0; 4],
+                );
+            }
+        }
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
