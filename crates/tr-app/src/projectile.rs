@@ -769,6 +769,11 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// W4-d17 doc-sweep — the reel head's `ReduceRemainingChumsInPool`
+    /// request (`Projectile.cs:53709-53713`): the bobber arm cannot see the
+    /// pool's sibling chum slots, so the `frameCounter == 0` latch rides
+    /// this intent out to the dispatcher (the `wants_splash` pattern).
+    pub(crate) wants_chum_reduce: bool,
 }
 
 impl Default for Projectile {
@@ -855,6 +860,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_chum_reduce: false,
         }
     }
 }
@@ -14775,6 +14781,16 @@ pub struct ProjectilePool {
     /// pass (the tee placement, the strikes, the cup scoring, the pad
     /// probes, the player-side writes).
     golf_effects: Vec<crate::projectile_ai_golf::GolfEffect>,
+    /// W4-d17 doc-sweep — `Main.ChumBucketProjectileHelper`
+    /// (`Main.cs:2235`, `GameContent/ChumBucketProjectileHelper.cs`): the
+    /// per-tile chum counts. `pending` accumulates THIS tick's
+    /// `AddChumLocation` calls (`AI_163_Chum` `:53601`); `last` is the
+    /// previous tick's map the bobber's pond scan reads
+    /// (`GetChumsInLocation` `:27-32`). `OnPreUpdateAllProjectiles`
+    /// (`Main.cs:17538`) swaps + clears at the projectile pass head — the
+    /// one-tick lag is the C#'s own.
+    chum_pending: HashMap<(i32, i32), i32>,
+    chum_last: HashMap<(i32, i32), i32>,
 }
 
 impl Default for ProjectilePool {
@@ -15164,6 +15180,8 @@ impl ProjectilePool {
             pending_catches: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
+            chum_pending: HashMap::new(),
+            chum_last: HashMap::new(),
         }
     }
 
@@ -16807,6 +16825,13 @@ impl ProjectilePool {
         hostile_local: bool,
     ) {
         self.update_count += 1;
+        // W4-d17 doc-sweep — `Main.ChumBucketProjectileHelper.
+        // OnPreUpdateAllProjectiles()` (`Main.cs:17538`, the helper
+        // `ChumBucketProjectileHelper.cs:12-16`): swap pending→last, clear
+        // pending. Runs ONCE per projectile pass, ahead of the slot walk —
+        // the bobber's pond scan reads LAST tick's chum spots.
+        std::mem::swap(&mut self.chum_pending, &mut self.chum_last);
+        self.chum_pending.clear();
         // `Player.Update`'s clear (`Player.cs:28300-28301`): the C#
         // runs it at the end of the player pass, so starting here preserves
         // the vanilla's one-tick latency exactly.
@@ -19945,6 +19970,9 @@ impl ProjectilePool {
                                 owner,
                                 &inputs,
                                 rng,
+                                &|tx, ty| {
+                                    self.chum_last.get(&(tx, ty)).copied().unwrap_or(0)
+                                },
                             );
                             if alive {
                                 // `HandleMovement`'s default integrate
@@ -19955,6 +19983,14 @@ impl ProjectilePool {
                                 if let Some(req) = self.slots[i].wants_splash.take() {
                                     self.pending_splashes.push(req);
                                 }
+                            }
+                            // W4-d17 doc-sweep — `ReduceRemainingChumsInPool`
+                            // (`Projectile.cs:53709-53713`): the reel head's
+                            // `frameCounter == 0` latch feeds the pool-side
+                            // reduction (the bobber arm cannot see the pool).
+                            if self.slots[i].wants_chum_reduce {
+                                self.slots[i].wants_chum_reduce = false;
+                                self.reduce_remaining_chums_in_pool(i, world, local_owner);
                             }
                         }
                         // S1-P-i55 — the golf ball (aiStyle 149,
@@ -21986,11 +22022,11 @@ impl ProjectilePool {
     /// (no gore layer); `ChildSafety.Disabled = true` statically
     /// (`ChildSafety.cs:33`) so the dangerous-gore re-roll never fires.
     ///
-    /// Skips (ANALYSIS): the `ChumBucketProjectileHelper.AddChumLocation`
-    /// book (`:53601` — the bobber module's `chumsInWater = 0` note stands);
-    /// the `netUpdate` write is kept (the pool's cadence reads it). The
-    /// `:53503-53514` tile-null guards + the discarded `_ = position.Y/16`
-    /// feed nothing live — the port keeps the water-line call only.
+    /// Skips (ANALYSIS): the `netUpdate` write is kept (the pool's cadence
+    /// reads it). The `:53503-53514` tile-null guards + the discarded
+    /// `_ = position.Y/16` feed nothing live — the port keeps the water-line
+    /// call only. The `AddChumLocation` book (`:53601`) LANDED in the
+    /// W4-d17 doc-sweep: the pending map feeds the bobber's pond scan.
     fn chum_step(&mut self, i: usize, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         // The wet probe at the tick head (the bobber stand-in).
         crate::projectile_bobber::probe_wet(&mut self.slots[i], world);
@@ -22092,12 +22128,84 @@ impl ProjectilePool {
                 let _ = rng.next_float();
             }
         }
-        // `:53593-53602` — the 60-tick cap once the bait settles (ai0 >= 10
-        // is the spawner's settle marker; the bucket's use writes it). The
-        // AddChumLocation book skips (module doc).
+        // `:53593-53602` — the settle book. `spot = Center + (0, 16)`;
+        // `ai[0] >= 10` caps the life to 60 + netUpdate; while `ai[0] < 10
+        // && timeLeft > 60` the bait feeds the chum book
+        // (`AddChumLocation(spot)` `:53601`). W4-d17 doc-sweep: the book
+        // LANDED — the pending map accumulates this tick's spots (the
+        // `ToTileCoordinates` `(int)X >> 4` arithmetic shift,
+        // `Utils.cs:1807-1810`), the pass-head swap publishes it to the
+        // bobber's pond scan next tick.
+        let spot = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5 + 16.0);
         if p.ai[0] >= 10.0 && p.time_left > 60 {
             p.time_left = 60;
             p.net_update = true;
+        }
+        if p.ai[0] < 10.0 && p.time_left > 60 {
+            let key = ((spot.x as i32) >> 4, (spot.y as i32) >> 4);
+            *self.chum_pending.entry(key).or_insert(0) += 1;
+        }
+    }
+
+    /// W4-d17 doc-sweep — `ReduceRemainingChumsInPool` (`Projectile.cs:
+    /// 53605-53656`, called from the bobber's reel head `:53712`): every
+    /// active local-owner 820 with `timeLeft > 60` contributes its
+    /// `Center + (0,16)` tile; the pond scan below the bobber walks the
+    /// columns and REMOVES each chum whose tile sits in a water cell;
+    /// every removed chum gets `ai[0]++` + `netUpdate` (one bite of the
+    /// 10-use budget). The list order is the slot scan order; the removal
+    /// walk is the C#'s reverse-index match (`:53632-53638`).
+    fn reduce_remaining_chums_in_pool(&mut self, bobber: usize, world: &World, local_owner: u8) {
+        let (bcx, bcy) = self.slots[bobber].center();
+        // `:53607-53608` — the `(int)Center.X / 16` truncation-then-divide
+        // (NOT ToTileCoordinates' shift — the C# keeps both forms).
+        let x = bcx as i32 / 16;
+        let y = bcy as i32 / 16;
+        // `:53611-53618` — the chum list (slot index, spot tile).
+        let mut list: Vec<(usize, (i32, i32))> = Vec::new();
+        for (i, p) in self.slots.iter().enumerate() {
+            if p.active && p.owner == local_owner && p.time_left > 60 && p.kind == CHUM_BUCKET {
+                let (cx, cy) = p.center();
+                let spot = Vec2::new(cx, cy + 16.0);
+                list.push((i, ((spot.x as i32) >> 4, (spot.y as i32) >> 4)));
+            }
+        }
+        if list.is_empty() {
+            return;
+        }
+        // `:53623` — the pond width on the bobber's row.
+        let (min_x, max_x) = tr_core::fishing::get_fishing_pond_width(world, x, y);
+        let mut hit: Vec<usize> = Vec::new();
+        // `:53625-53649` — the column walk: `point.Y` starts at the row,
+        // the liquid test runs on the CURRENT cell, then Y steps down.
+        'outer: for j in min_x..=max_x {
+            let mut num2 = y;
+            while world
+                .tile(j, num2)
+                .is_some_and(|t| t.liquid > 0)
+                && !tr_core::fishing::pond_cell_solid(world, j, num2)
+                && num2 < world.height - 10
+            {
+                num2 += 1;
+                let point = (j, num2);
+                for k in (0..list.len()).rev() {
+                    if list[k].1 == point {
+                        hit.push(list[k].0);
+                        list.remove(k);
+                    }
+                }
+                if list.is_empty() {
+                    break 'outer;
+                }
+            }
+            if list.is_empty() {
+                break;
+            }
+        }
+        // `:53650-53655` — the matched chums age one use.
+        for slot in hit {
+            self.slots[slot].ai[0] += 1.0;
+            self.slots[slot].net_update = true;
         }
     }
 
@@ -31243,6 +31351,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_chum_reduce: false,
         }
     }
 
@@ -31652,6 +31761,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_chum_reduce: false,
         }
     }
 
@@ -45595,6 +45705,82 @@ mod w4_d17_chum_tests {
         assert_eq!(sa.time_left, 59, "the cap 60 minus the tail decrement (:53596)");
         assert!(sa.net_update, ":53597");
         assert_eq!(sb.time_left, 86399, "the unsettled bait keeps its life");
+    }
+
+    /// Witness 3 (doc-sweep) — the chum book's one-tick swap
+    /// (`ChumBucketProjectileHelper.cs:12-32`): an unsettled bait (ai0 < 10,
+    /// timeLeft > 60) feeds `AddChumLocation(Center + (0,16))` into the
+    /// PENDING map this tick; the next pass head swaps it to LAST, where the
+    /// bobber's pond scan reads it. The settled bait (ai0 >= 10) never feeds.
+    #[test]
+    fn w4_d17_the_chum_book_swaps_pending_to_last() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        // Centre (406, 306) → spot (406, 322) → tile (25, 20).
+        let live = pool
+            .spawn_with_data_ai_owned(CHUM_BUCKET, 0, 400.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        // The settled bait caps to 60 and never feeds the book.
+        pool.spawn_with_data_ai_owned(CHUM_BUCKET, 0, 700.0, 300.0, 0.0, 0.0, 0, 0.0, 10.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        // Tick 1: the spot lands in PENDING; LAST is still empty.
+        assert_eq!(pool.chum_pending.get(&(25, 20)).copied(), Some(1));
+        assert_eq!(pool.chum_last.get(&(25, 20)).copied(), None);
+        tick(&mut pool, &mut w, &mut rng);
+        // Tick 2: the pass head swapped — LAST now carries tick 1's spot.
+        assert_eq!(pool.chum_last.get(&(25, 20)).copied(), Some(1));
+        assert_eq!(pool.chum_pending.get(&(25, 20)).copied(), Some(1));
+        assert!(pool.slots()[live].active);
+    }
+
+    /// Witness 4 (doc-sweep) — `ReduceRemainingChumsInPool`
+    /// (`Projectile.cs:53605-53656`): the reel head's `frameCounter == 0`
+    /// latch ages every local-owner chum whose `Center + 16` tile sits in
+    /// the bobber's pond. The C# walk steps Y BEFORE matching (`:53631`),
+    /// so a chum on the pond's TOP row is NOT consumed; the row below is.
+    #[test]
+    fn w4_d17_the_reel_ages_the_water_chums_only() {
+        let mut w = world();
+        // A pond: columns 20..30, rows 40..46 (liquid 255).
+        for x in 20..30 {
+            for y in 40..46 {
+                let i = w.index(x, y);
+                w.tiles[i].liquid = 255;
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        // The bobber in the reel state: pos (400, 633) → centre (407, 640)
+        // → tile (25, 40) — the pond's top row.
+        let bob = pool
+            .spawn_with_data_ai_owned(crate::projectile::BOBBER_WOODEN, 0, 400.0, 633.0, 0.0, 0.0, 0, 1.0, 0.0, 0.0)
+            .unwrap();
+        // Water chum: pos (400, 650) → centre (406, 656) → spot (406, 672)
+        // → tile (25, 42) — the walk's second cell, inside the pond.
+        let wet = pool
+            .spawn_with_data_ai_owned(CHUM_BUCKET, 0, 400.0, 650.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        // Top-row chum: spot tile (25, 40) — the walk steps past it.
+        let top = pool
+            .spawn_with_data_ai_owned(CHUM_BUCKET, 0, 400.0, 618.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        // Dry chum far right: spot tile (62, 20) — outside the pond.
+        let dry = pool
+            .spawn_with_data_ai_owned(CHUM_BUCKET, 0, 990.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = CensusRng { draws: Vec::new(), floats: 0 };
+        tick(&mut pool, &mut w, &mut rng);
+        // The reel head's frameCounter latch fired the reduction once.
+        assert_eq!(pool.slots()[wet].ai[0], 1.0, "the water chum ages (:53653)");
+        assert!(pool.slots()[wet].net_update, ":53654");
+        assert_eq!(pool.slots()[top].ai[0], 0.0, "the top row is stepped past (:53631)");
+        assert_eq!(pool.slots()[dry].ai[0], 0.0, "the dry chum keeps its budget");
+        assert!(pool.slots()[bob].active, "the reel flies home, no kill");
+        // The latch is consumed — a second reel tick does not re-reduce
+        // (frameCounter stays 1, `:53709`).
+        tick(&mut pool, &mut w, &mut rng);
+        assert_eq!(pool.slots()[wet].ai[0], 1.0, "one reduction per latch");
     }
 }
 

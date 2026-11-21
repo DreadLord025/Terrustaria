@@ -146,21 +146,65 @@ pub fn final_fishing_level(
 /// `GetFishingPondState` (`Projectile.cs:21576-21623`): the pond scan — the
 /// liquid span left/right along the bobber's row, then the columns down to
 /// the floor. The honey pond counts ×1.5. The chums ride the caller (the
-/// chum projectile book is FISH-2).
+/// W4-d17 doc-sweep landed the book — `chums_in_water` counts the pending
+/// map's entries per scanned water cell, `:21599`).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct PondState {
     pub water_tiles: i32,
     pub in_lava: bool,
     pub in_honey: bool,
+    /// `fisher.chumsInWater` (`:20609`'s out param) — the chum count the
+    /// pond scan sums off `ChumBucketProjectileHelper.GetChumsInLocation`
+    /// per water cell (`:21599`).
+    pub chums_in_water: i32,
 }
 
 pub fn get_fishing_pond_state(world: &World, x: i32, y: i32) -> PondState {
+    get_fishing_pond_state_chums(world, x, y, &|_, _| 0)
+}
+
+/// The pond scan with the chum book — `GetChumsInLocation(tileCoords)`
+/// (`ChumBucketProjectileHelper.cs:27-32`) is the per-cell lookup the C#
+/// sums into `chumCount` (`Projectile.cs:21597-21599`). The closure reads
+/// the pool's LAST-FRAME map (the one-tick-lag swap, `:12-16`).
+pub fn get_fishing_pond_state_chums(
+    world: &World,
+    x: i32,
+    y: i32,
+    chums_at: &dyn Fn(i32, i32) -> i32,
+) -> PondState {
     let mut state = PondState::default();
-    // `GetFishingPondWidth` (`:21608-21620`): the liquid span on the row,
-    // bounded by the solids and the 10-tile world margins. The C# tests the
-    // CURRENT cell before stepping (so a dry bobber cell yields the empty
-    // span — the old port probed the neighbour and slid into an adjacent
-    // pond).
+    let (min_x, max_x) = get_fishing_pond_width(world, x, y);
+    for i in min_x..=max_x {
+        let mut j = y;
+        while let Some(t) = world.tile(i, j) {
+            if t.liquid == 0 || solid(world, i, j) || j >= world.height - 10 {
+                break;
+            }
+            state.water_tiles += 1;
+            if t.flags & FLAG_LIQUID_LAVA != 0 {
+                state.in_lava = true;
+            } else if t.flags & FLAG_LIQUID_HONEY != 0 {
+                state.in_honey = true;
+            }
+            // `:21597-21599` — the chum count per water cell.
+            state.chums_in_water += chums_at(i, j);
+            j += 1;
+        }
+    }
+    if state.in_honey {
+        // `:21599-21601`: the honey pond counts ×1.5.
+        state.water_tiles = (state.water_tiles as f64 * 1.5) as i32;
+    }
+    state
+}
+
+/// `GetFishingPondWidth` (`Projectile.cs:21608-21620`): the liquid span on
+/// the row, bounded by the solids and the 10-tile world margins. The C#
+/// tests the CURRENT cell before stepping (so a dry bobber cell yields the
+/// empty span — the old port probed the neighbour and slid into an adjacent
+/// pond). `ReduceRemainingChumsInPool` (`:53623`) reads the same span.
+pub fn get_fishing_pond_width(world: &World, x: i32, y: i32) -> (i32, i32) {
     let mut min_x = x;
     let mut max_x = x;
     while min_x > 10
@@ -177,32 +221,19 @@ pub fn get_fishing_pond_state(world: &World, x: i32, y: i32) -> PondState {
     {
         max_x += 1;
     }
-    for i in min_x..=max_x {
-        let mut j = y;
-        while let Some(t) = world.tile(i, j) {
-            if t.liquid == 0 || solid(world, i, j) || j >= world.height - 10 {
-                break;
-            }
-            state.water_tiles += 1;
-            if t.flags & FLAG_LIQUID_LAVA != 0 {
-                state.in_lava = true;
-            } else if t.flags & FLAG_LIQUID_HONEY != 0 {
-                state.in_honey = true;
-            }
-            j += 1;
-        }
-    }
-    if state.in_honey {
-        // `:21599-21601`: the honey pond counts ×1.5.
-        state.water_tiles = (state.water_tiles as f64 * 1.5) as i32;
-    }
-    state
+    (min_x, max_x)
 }
 
 fn solid(world: &World, x: i32, y: i32) -> bool {
     world
         .tile(x, y)
         .is_some_and(|t| t.active() && crate::tiledata::TILE_SOLID.has(t.kind) && t.flags & crate::tile::FLAG_INACTIVE == 0)
+}
+
+/// The pond scan's `WorldGen.SolidTile` test, public for the chum
+/// reduction's column walk (`ReduceRemainingChumsInPool` `:53629`).
+pub fn pond_cell_solid(world: &World, x: i32, y: i32) -> bool {
+    solid(world, x, y)
 }
 
 /// The `FishingAttempt` slice the engine carries (`Projectile.cs:20583+`).
@@ -671,6 +702,46 @@ mod tests {
         let honey = get_fishing_pond_state(&w, 25, 40);
         assert!(honey.in_honey);
         assert_eq!(honey.water_tiles, (12 * 6) as f64 as i32 * 3 / 2);
+    }
+
+    /// W4-d17 doc-sweep — the pond scan sums the chum book per water cell
+    /// (`Projectile.cs:21597-21599`): only cells INSIDE the liquid span
+    /// count, and a cell's count is the map's value (two buckets in one
+    /// tile count twice). The plain scan keeps 0.
+    #[test]
+    fn the_pond_scan_sums_the_chum_book() {
+        let mut w = world();
+        for x in 20..32 {
+            for y in 40..46 {
+                put_water(&mut w, x, y, 255);
+            }
+        }
+        // Two chums at (25, 42), one at (30, 44), one OUTSIDE at (50, 42).
+        let book = |tx: i32, ty: i32| match (tx, ty) {
+            (25, 42) => 2,
+            (30, 44) => 1,
+            (50, 42) => 9,
+            _ => 0,
+        };
+        let pond = get_fishing_pond_state_chums(&w, 25, 40, &book);
+        assert_eq!(pond.chums_in_water, 3, "2 + 1 inside, the outside cell never scans");
+        assert_eq!(get_fishing_pond_state(&w, 25, 40).chums_in_water, 0);
+        // The +11/+6/+3 ladder reads the count (`:20638-20649`): 3 chums
+        // add the full +20 to a 100 base on a big pond.
+        let mut rng = FastRandom::new(3);
+        let mut z = zones();
+        let mut ins = inputs(100);
+        ins.chums_in_water = pond.chums_in_water;
+        // A 30×20 pond keeps the quality ≥ 1 (no penalty).
+        let mut big = world();
+        for x in 20..50 {
+            for y in 40..60 {
+                put_water(&mut big, x, y, 255);
+            }
+        }
+        let attempt =
+            try_build_fishing_attempt(&big, 30, 40, 40.0 * 16.0, &ins, &mut z, &mut rng).unwrap();
+        assert_eq!(attempt.fishing_level, 120, "100 + 11 + 6 + 3");
     }
 
     #[test]

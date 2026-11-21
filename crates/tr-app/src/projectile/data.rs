@@ -1131,9 +1131,10 @@ pub const WHITE_TIGER_POUNCE: u16 = 818;
 /// W4-d17 — `ProjectileID.ChumBucket` (820, `ProjectileID.cs:2194`) — the
 /// chum bucket's bait (aiStyle 163, `AI_163_Chum`
 /// `Projectile.cs:53474-53603`, the dispatch `:36615-36618`). The fishing
-/// attraction book (`ChumBucketProjectileHelper`) stays unported (the
-/// bobber module's `chumsInWater = 0` note); the bait's own physics +
-/// the 60-tick cap are ported.
+/// attraction book (`ChumBucketProjectileHelper`) LANDED in the W4-d17
+/// doc-sweep: the pool's pending/last maps feed the bobber's pond scan
+/// (`chumsInWater`), the reel head ages the baits
+/// (`ReduceRemainingChumsInPool`).
 pub const CHUM_BUCKET: u16 = 820;
 
 /// W4-d17 — the dove/lantern release pair (aiStyle 166, `AI_166_Dove`

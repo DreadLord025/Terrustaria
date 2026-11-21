@@ -18047,6 +18047,30 @@ mod item_mechanics {
         assert_eq!(app.inventory[app.selected].count, 4, "one consumed");
     }
 
+    /// W4-d17 doc-sweep — the Chum Bucket 4608 (`Item.cs:38233-38245`:
+    /// useStyle 1, shoot 820, shootSpeed 7, consumable, noMelee) rides the
+    /// generic thrown shot: one 820 bait per press at shootSpeed 7, one
+    /// consumed. `ItemCheck_UseBuckets` (`Player.cs:46320`) names only the
+    /// liquid buckets — the chum bucket never reaches it. The bait's
+    /// fishing-book side (the +11/+6/+3 pond bonus) is pinned in the pool's
+    /// `w4_d17_chum_tests` + `tr_core::fishing`'s pond-scan witness.
+    #[test]
+    fn w4_d17_the_chum_bucket_throws_the_bait_and_consumes() {
+        let mut app = thrown_app(4608, 5);
+        let screen = MINE_SCREEN;
+        update_editing(&mut app, 1.0 / 60.0, screen);
+        let shot = app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active)
+            .expect("the chum bait spawns");
+        assert_eq!(shot.kind, 820, "ItemID.ChumBucket's shoot is 820");
+        assert!(shot.vel.x > 0.0, "the throw flies toward the cursor");
+        assert!((shot.vel.length() - 7.0).abs() < 1e-3, "shootSpeed 7");
+        assert_eq!(app.inventory[app.selected].count, 4, "one consumed");
+    }
+
     /// The bone javelin throws from the upper third of the hitbox
     /// (`Player.cs:47225-47228`): spawn.Y = position.Y + height/3.
     #[test]
