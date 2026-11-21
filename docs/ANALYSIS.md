@@ -39321,11 +39321,22 @@ probe), `d364a2f4` (phase 2c - the emptied-cell favorite clear).
 
 ### Deliberate deviations / recorded skips
 
-1. **The vault favorites are runtime-only.** The persist sidecar
-   (`persist.rs`) saves no banks at all; `player_file.rs`'s bank4 favorited
-   bools are read-and-dropped (the S1-J-5 byte-shape writer emits them at
-   fresh-ctor defaults). `Player.vault_favorites` therefore does not survive
-   a save/load round-trip - the same gap the bank contents already have.
+1. **The vault favorites persist via the `.trvault` sidecar (interim carrier).**
+   RESOLVED by the void-chain continuation (item 4): `Player.vault_favorites`
+   now survives a save/load round-trip through `<world>.trvault` (a 40-char
+   `0`/`1` string, `persist.rs::save_vault_favorites`/`load_vault_favorites`,
+   wired at `saveglue.rs`'s save + `App::new`'s load). The C# rides the bools
+   in the `.plr` (`bank4.item[i].favorited`, `Player.cs:54856-54862`, gate 255
+   `:55495`; research/99 row 47) plus the `voidVaultInfo` BitsByte (`:54863`,
+   gate 199, row 48). The full `.plr` bank4 byte-shape is **W4-f44's lane**
+   (`task/W4-f44-save-plr-2`, the `PlayerFile.bank4` model + verify-sweep,
+   unmerged) and the live-session `.trplayer` superset is **W4-g88's lane**
+   (v7-v11); the sidecar avoids both. **The `.plr` contract for the folds:**
+   when f44/g88 land, migrate the favorites into the in-file bank4 favourited
+   bools (offset 2001 + 10*i + 9, gate 255) and drop the sidecar write — the
+   reader keeps the `.trvault` fallback for pre-fold saves (the `.trplayer`
+   back-compat precedent). The bank CONTENTS still do not persist (the same
+   gap, f44's lane).
 2. **The smart-cursor/gamepad selection arms** (`Main.SmartCursorIsUsed` /
    `SmartInteractProj` / `PlayerInput.UsingGamepad`) are unported - the
    selection mode is always 0, so the `Extra_93` glow never draws from the
@@ -39337,11 +39348,26 @@ probe), `d364a2f4` (phase 2c - the emptied-cell favorite clear).
 4. **The lens dust rolls** (`VoidLensHelper.Update`'s dust half) stay skipped
    - the S1-G-1 wave-D RNG-order rule (the dust draws would perturb the
    UpdateProjectiles stream).
-5. **`ItemSlot.SetGlowForChest`** (the glow-array resize on open) - the port's
-   glow system does not carry it (the `ui/chest.rs` module doc's same skip).
-6. **`disableVoidBag`** (the net-slot lock, `:37718`) has no port mechanic -
-   the vault always opens (the tr-core edit.rs note).
-7. **The cursor-favorite carry stays slot-positional** (research/20 �4): a
+5. **`ItemSlot.SetGlowForChest`** — RESOLVED by the void-chain continuation
+   (item 5): the bounded glow package landed (`ui/glow.rs` `GlowState` — the
+   four glow arrays, the open-time clear `:480-492`, the `SetGlow` writer
+   `:494-514`, the `UpdateInterface` decay `:522-544` with
+   `forceClearGlowsOnChest`, the draw tint `:2314-2326`). The Sort-feedback hue
+   ramp (`ItemSorting.Sort:1579-1593`) is the only non-clear writer; the
+   `FillAmmoFromInventory` ammo-row glow (`:1695`) stays out (the ammo-sort
+   producer is unported; the grid glow array exists for it).
+6. **`disableVoidBag`** — RESOLVED by the void-chain continuation (item 2):
+   `Player.disable_void_bag` (−1 default, `Player.cs:3100`) + the
+   `lock_net_slot`/`clear_void_bag_lock_on_echo` seam + the two open guards
+   (tile-vault `toggle_open` `:33134-33139`, lens `try_interacting` `:37718`).
+   **MP-only census:** set solely by `QuickStacking.SendQuickStackToNearbyChests`
+   (`QuickStacking.cs:293`, the `netMode == 1` gate `:258`) through `LockNetSlot`
+   (`:23123-23133`), cleared by the server's slot-5 echo
+   (`MessageBuffer.cs:434-437`). The port has no quick-stack-to-nearby-chests
+   producer, so the flag stays −1 in play (SP-inert); the `IsStackingItems`
+   reader (`:23116`, gates `QuickStackAllChests`) is documented, not ported (no
+   `HasLockedInventory`/`inventoryChestStack` state).
+7. **The cursor-favorite carry stays slot-positional** (research/20 �4): a
    favorited stack picked onto the cursor does not carry its star into the
    destination cell (the C# `retainFavoriteOnMoveAt` table covers the
    movement, the port's grid model is positional); the vault's own
@@ -39353,6 +39379,39 @@ probe), `d364a2f4` (phase 2c - the emptied-cell favorite clear).
    editing.rs was reverted as unfaithful. A tile-vault open relies on
    `tick_tracker`'s default-tracker None answer.
 
+### The void-chain continuation (items 1-5, 2026-11-21, code-only)
+
+The five-item VOID CHAIN census + ports on top of the phases above:
+
+* **Item 1 — the held-item 4131↔5325 right-click swap** (the use-side census
+  gap). C# has **NO "bag-open" spawn-suppression**: LMB use of 4131/5325 fires
+  the lens 734 via the generic `ItemCheck_Shoot` (`Item.cs:35875-35888`
+  shoot=734, useStyle 1, useTime/useAnimation 28, UseSound Item130); the vault
+  opens through the lens PROJECTILE's right-click (`Main.TryInteractingWithVoidLens`,
+  phase 1). The genuine unported use-side half was the HELD-item variant swap
+  (`ItemCheck_ManageRightClickFeatures`, `Player.cs:31560-31565`, sound 7) —
+  only the slot-context `ItemSlot.TryItemSwap` cycle had landed. Ported in
+  `update_editing`'s tile-interact dispatch (press edge, use button up, no
+  swing, no interface/lens-hover), with the `hovering_lens` probe
+  (`Main.HoveringAnInteractable`'s lens half, `Main.cs:2861-2870`) keeping the
+  lens-open interaction exclusive. The gate (`:31528-31534`) maps
+  `controlUseTile`→`place_down`, `releaseUseItem`→`mine_released`,
+  `controlUseItem`→`mine_down`, `mouseInterface`→`mouse_interface_now()`,
+  `mouseRightRelease`→the press edge; the capture/pending-action/smart-cursor
+  halves are unported (false), `altFunctionUse` is 0.
+* **Item 2 — `disableVoidBag`** (see deviation 6, now resolved).
+* **Item 3 — the auto-pickup** is the already-landed `GetItem` void-bag arm
+  (`Player.cs:39395-39398`, S1-P-i43/i47/i50): `IsVoidVaultEnabled` (the
+  per-tick `HasItem(4131)` refresh `:24550-24553`) gates `vault_enabled`,
+  `CanVoidVaultAccept` the kinds, `GetItem_VoidVault` (`:39402-39423`) fills
+  occupied-then-empty. The e19 quicksell/shimmer co-lane keeps the
+  `void_vault_take` calls untouched (verified: no diff). The `DoCoins(i)` inside
+  the vault fills (`:39454`/`:39544`) reads `this.inventory[i]`, NOT the vault
+  array — a vanilla quirk recorded as a deviation (`bank.rs:51`), not a re-port.
+  No new code: the arm is complete and claimed.
+* **Item 4 — the vault favorites persist** (see deviation 1, now resolved).
+* **Item 5 — `SetGlowForChest`** (see deviation 5, now resolved).
+
 ### Verification
 
 Code-only mode: NO cargo/rustc/tests invoked. 17 witness tests WRITTEN NOT
@@ -39362,3 +39421,10 @@ close, the other-container clears, the range clamp), `clicks.rs` 6 (LootAll
 favorite skip, the Alt-toggle, the Sort row, the Void Bag cycle, the
 right-click equip, the emptied-cell clear), `slot.rs` 1 (the Back19 swap),
 `item.rs` 1 (the Cofveve favorite probe).
+
+The void-chain continuation adds 10 more WRITTEN NOT RUN: `editing.rs` 2 (the
+held-bag swap + the gate refusals), `void_lens.rs` 1 (the lens-open lock
+refusal), `chest.rs` 1 (the tile-vault lock refusal), `persist.rs` 1 (the
+`.trvault` round-trip), `glow.rs` 3 (the clear/arm, the decay/force-clear, the
+tint gate/lerp), `item_sorting.rs` 1 (the sort-feedback hue ramp), plus the
+item-3 comment-only confirmation.

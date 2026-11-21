@@ -568,10 +568,25 @@ ladder ahead of the paced pickup split (`ItemSlot.cs:1668-1697`). The pickup
 room probe (`item.rs::item_space`) reads the vault slot's OWN favorited flag
 for the Cofveve accept (`ItemSpaceForCofveve`, `Player.cs:39199-39218`).
 
-Deviations (ANALYSIS "The void vault UI (W4-g56)"): the vault favorites are
-runtime-only (the persist sidecar saves no banks); the smart-cursor/gamepad
-selection arms, the cursorItemIcon surface, the lens dust rolls, the
-`SetGlowForChest` glow array and the `disableVoidBag` net-lock stay unported.
+The void-chain continuation (items 1-5) closes the use-side gaps: the HELD-item
+right-click 4131↔5325 swap (`ItemCheck_ManageRightClickFeatures`,
+`Player.cs:31560-31565`, sound 7) now flips the held bag in place — distinct
+from the slot-context cycle above; the `hovering_lens` probe keeps the lens-open
+interaction exclusive (C# has NO bag-open spawn-suppression — LMB fires the lens
+734 via the generic `ItemCheck_Shoot`). The `disableVoidBag` net-lock is ported
+(MP-only, SP-inert — `Player.disable_void_bag` + the two open guards). The vault
+favorites now PERSIST via the `<world>.trvault` sidecar (the `.plr` bank4 rows
+are f44's lane, the fold contract in ANALYSIS). The `SetGlowForChest` glow
+package landed (`ui/glow.rs`): the open-time clear, the Sort-feedback hue ramp,
+the per-frame decay and the context-3/4/32 draw tint (`Inventory_Back13` +
+base→hsl lerp). The auto-pickup is the already-landed `GetItem` void-bag arm
+(S1-P-i43/i47/i50), confirmed complete.
+
+Deviations (ANALYSIS "The void vault UI (W4-g56)"): the smart-cursor/gamepad
+selection arms, the cursorItemIcon surface and the lens dust rolls stay
+unported; the `FillAmmoFromInventory` ammo-row glow (`ItemSorting.cs:1695`)
+stays out (the ammo-sort producer is unported); the bank CONTENTS still do not
+persist (f44's lane).
 
 ### Minimap frame (`ui/minimap.rs`, `MinimapFrame.cs`)
 
