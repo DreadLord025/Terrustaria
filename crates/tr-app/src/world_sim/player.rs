@@ -1231,6 +1231,14 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 );
                 p.max_turrets_old = p.max_turrets;
             }
+            // W4-e7 lane 23 — `Player.Update_SnappingStone`
+            // (`Player.cs:28385-28410`, called at `:24564` BEFORE
+            // `Update_HarpyCharm` `:24565` / `Update_AmmoCycler` `:24566`):
+            // the shared Snapping Stone strike cooldown counts down one per
+            // tick. The recharge cue at 0 is the cited strike-family seam
+            // (`Player::update_snapping_stone`); the ready lights
+            // (`player_lights_b::snapping_stone_lights`) read the live value.
+            p.update_snapping_stone();
             p.ammo_cycling.tick();
             // `Player.Update_SentryBackpack` (`Player.cs:28428-28434`, called
             // at `:24568` right after `Update_AmmoCycler` `:24566`): the

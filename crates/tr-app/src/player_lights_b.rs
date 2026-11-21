@@ -2,23 +2,33 @@
 //!
 //! `player_lights.rs` landed 32 of Player.cs's 46 `AddLight` sites and listed
 //! 14 as dropped ("each needs a mount/armor/stealth system the port does not
-//! carry yet"). This module re-censuses those 14 against the CURRENT port and
-//! ports the **10 whose dependencies have since landed** (the mount roster,
-//! the armor-slot registry resolution, `melee_swing.rs`'s hitbox/placement,
-//! the wing-slot table and `Item.GetPhaseColor`'s inputs). The remaining **4**
-//! stay dropped (see "what stays dropped" below). Same shape as
-//! `npc_lights_b.rs`: pure fns returning `(tile_x, tile_y, rgb)` triples that
+//! carry yet"). The census close ported the **10 whose dependencies had landed**
+//! (the mount roster, the armor-slot registry resolution, `melee_swing.rs`'s
+//! hitbox/placement, the wing-slot table and `Item.GetPhaseColor`'s inputs).
+//! W4-e7 DOC-SWEEP lane 23 adds the **Snapping Stone trio** (3 more sites,
+//! `:24575-24583`) now that the flags/cooldown landed in `player.rs` — **13 of
+//! the 14** ported. The remaining **1** (the wing-27 Shroomite light) stays a
+//! cited zero-draw skip pending the f3 stealth producer (see below). Same shape
+//! as `npc_lights_b.rs`: pure fns returning `(tile_x, tile_y, rgb)` triples that
 //! the draw feed appends to the ONE [`crate::entity_lights::EntityLights`]
 //! pair (`LightingEngine.cs:36-38`, one list pair per engine, max-merged
 //! `:208-235` one frame late). No arm draws `Main.rand` — every rand-bearing
 //! dust branch is skipped wholesale, so the UpdatePlayers stream is untouched.
 //!
-//! Ported here (10 sites):
+//! Ported here (13 sites):
 //! * **Rudolph's three-tile trail** (`Player.Update`, `Player.cs:24491-24498`):
 //!   `mount.Active && mount.Type == 0`, three lights at `num`, `num+direction`,
 //!   `num+direction*2`, all (0.5, 0.2, 0.05). `num`/`j` use the **int** division
 //!   inside the cast (`(int)(position.X + (float)(width / 2)) / 16`), the live
 //!   `height` for the y half (mounted Rudolph is 42+20 = 62 tall).
+//! * **The Snapping Stone trio** (`Player.Update`, `:24571-24585`, W4-e7 lane
+//!   23): while `accSnappingStoneLightUp` (`cooldown == 0`), each worn member's
+//!   centre light — Snapping Stone (0.1, 0.25, 0.4), Pyroclast (0.4, 0.25, 0.1),
+//!   Armlet of Ruin (0.2, 0.25, 0.6). The flags/cooldown/grants/clears/tick
+//!   landed in `player.rs`; the strike machine (`TryMakingSnappingStoneStrike`,
+//!   `Projectile.cs:14283-14395`) that arms the 360-tick cooldown is the
+//!   unported projectile family (research/102), so the cooldown stays 0 and the
+//!   lights fire whenever a member is worn.
 //! * **The three armor-set lights** (`UpdateArmorLights`, `:31149-31317`): the
 //!   head/body/legs slot colour triplets, the +0.5 per matching-set bonus, the
 //!   `spinningpoint` anchors rotated by `fullRotation` about
@@ -37,14 +47,23 @@
 //!   `:45028-45032`): the mount 62-65 melee swing's `itemRectangle.Center`,
 //!   the dash colour × 0.5 (Vector3 float math, NOT byte).
 //!
-//! **What stays dropped (the other 4 of the 14):** the wing-27 Shroomite light
-//! (`:36026`, `0.4f * stealth` — the port's `stealth` has no producer, it is
-//! only ever set in a knockback witness) and the Snapping Stone trio
-//! (`:24575-24583`, gated on `accSnappingStoneLightUp` = `cooldown == 0` with
-//! `accSnappingStone`/`accPyroclast`/`accArmletOfRuin` — none of those flags,
-//! the 360-tick cooldown setter `Projectile.cs:14316`, nor
-//! `TryMakingSnappingStoneStrike` is ported). The light pets are Projectile.AI
-//! sites (projectile family); NightOwl sets `nightVision` only.
+//! **What stays dropped (the last 1 of the 14):** the wing-27 Shroomite light
+//! (`PlayerFrame`, `:36023-36027`, `0.4f * stealth` at `(int)Center.X/16,
+//! (int)Center.Y/16`, gated `wings == 27 && wingsLogic == wings`). On THIS base
+//! the port's `stealth` has no producer (only ever set in a knockback witness,
+//! `player.rs`), so the light would be a constant `0.4f` — wrong. The producer
+//! LANDED on the in-flight `task/W4-f3-dust-player-3` branch (`update_stealth`,
+//! `Player.cs:25733-25899`: the Psycho-Knife/Shroomite/Vortex if-else-if chain,
+//! `stealth` default 1f, the Shroomite set grant `ArmorSetBonuses.cs:370-373` /
+//! `:392-394`); it is NOT merged here. Wiring recipe once f3 merges: add
+//! `shroomite_wing_light(p)` gated `p.wings_logic == 27 && p.has_wings` (the
+//! port's `wings`/`wingsLogic` are one field, so `wingsLogic == wings` folds
+//! true), `num4 = 0.4 * p.stealth`, rgb `[num4, num4*0.9, num4*0.2]` at the
+//! quotient-truncated centre — the `kazzymodus_wing_light` shape. The light
+//! pets are Projectile.AI sites (projectile family); NightOwl sets
+//! `nightVision` only. The Snapping Stone STRIKE machine (the cooldown setter
+//! `Projectile.cs:14316` + `TryMakingSnappingStoneStrike`) stays the cited
+//! projectile-family gap (research/102) — its lights landed above.
 //!
 //! **Deliberate folds (recorded, ANALYSIS "The Player lights gap batch"):**
 //! * `vortexStealthActive` (`:31151`) has no port field — folds false, so the
@@ -454,10 +473,42 @@ pub(crate) fn chillet_swing_light(
     Some((x, y, rgb))
 }
 
+/// The Snapping Stone trio's ready lights (`Player.Update`,
+/// `Player.cs:24571-24585`): while `accSnappingStoneLightUp`
+/// (`accSnappingStoneCooldown == 0`, the getter `:3391-3396`), each worn
+/// member adds its centre light — Snapping Stone (0.1, 0.25, 0.4),
+/// Pyroclast (0.4, 0.25, 0.1), Armlet of Ruin (0.2, 0.25, 0.6). All three
+/// are independent `if`s (a player wearing two members lights both), at
+/// `base.Center` via the `AddLight(Vector2, …)` quotient-truncating tile
+/// form (`Lighting.cs:140-143`). W4-e7 lane 23: the flags/cooldown landed
+/// (`player.rs`); the strike machine that arms the 360-tick cooldown is the
+/// unported projectile family (research/102), so the cooldown stays 0 in
+/// play and the lights fire whenever a member is worn — the C# behaviour
+/// for a never-struck accessory. No arm draws `Main.rand`.
+pub(crate) fn snapping_stone_lights(p: &Player) -> Vec<(i32, i32, [f32; 3])> {
+    if !p.acc_snapping_stone_light_up() {
+        return Vec::new();
+    }
+    let (cx, cy) = p.center();
+    let tile = quot_tile(Vec2::new(cx, cy));
+    let mut out = Vec::new();
+    if p.acc_snapping_stone {
+        out.push((tile.0, tile.1, [0.1, 0.25, 0.4]));
+    }
+    if p.acc_pyroclast {
+        out.push((tile.0, tile.1, [0.4, 0.25, 0.1]));
+    }
+    if p.acc_armlet_of_ruin {
+        out.push((tile.0, tile.1, [0.2, 0.25, 0.6]));
+    }
+    out
+}
+
 /// The whole gap batch, in the C#'s intra-`Update` family order (Rudolph trail
-/// `:24491` → armor `:25684` → wing `:26820` → the dash + two use-visual lights
-/// inside `ItemCheckWrapped` `:28285`). The `EntityLights` max-merge is
-/// commutative and no arm draws RNG, so the order only documents the C# layout.
+/// `:24491` → the Snapping Stone trio `:24571` → armor `:25684` → wing
+/// `:26820` → the dash + two use-visual lights inside `ItemCheckWrapped`
+/// `:28285`). The `EntityLights` max-merge is commutative and no arm draws
+/// RNG, so the order only documents the C# layout.
 pub(crate) fn player_lights_b(
     p: &Player,
     held_kind: u16,
@@ -465,6 +516,7 @@ pub(crate) fn player_lights_b(
     frame_h: f32,
 ) -> Vec<(i32, i32, [f32; 3])> {
     let mut out = rudolph_trail(p);
+    out.extend(snapping_stone_lights(p));
     out.extend(armor_lights(p));
     if let Some(l) = chillet_dash_light(p) {
         out.push(l);
@@ -742,5 +794,70 @@ mod tests {
     fn the_batch_is_empty_for_a_plain_idle_player() {
         let p = player();
         assert!(player_lights_b(&p, 0, 0.0, 0.0).is_empty());
+    }
+
+    // W4-e7 DOC-SWEEP lane 23 — the Snapping Stone trio's ready lights
+    // (`Player.cs:24571-24585`). WRITTEN NOT RUN (code-only).
+
+    #[test]
+    fn snapping_stone_lights_each_member_at_the_centre() {
+        // At (160, 176) with the 20x42 body the centre is (170, 197) →
+        // quotient tile (10, 12). Each worn member adds its own colour.
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        assert!(snapping_stone_lights(&p).is_empty(), "nothing worn");
+        p.acc_snapping_stone = true;
+        assert_eq!(snapping_stone_lights(&p), vec![(10, 12, [0.1, 0.25, 0.4])]);
+        p.acc_snapping_stone = false;
+        p.acc_pyroclast = true;
+        assert_eq!(snapping_stone_lights(&p), vec![(10, 12, [0.4, 0.25, 0.1])]);
+        p.acc_pyroclast = false;
+        p.acc_armlet_of_ruin = true;
+        assert_eq!(snapping_stone_lights(&p), vec![(10, 12, [0.2, 0.25, 0.6])]);
+    }
+
+    #[test]
+    fn snapping_stone_lights_stack_independent_members() {
+        // `:24573-24584` — three independent `if`s: wearing two members
+        // lights both, in the C#'s SnappingStone → Pyroclast → Armlet order.
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        p.acc_snapping_stone = true;
+        p.acc_armlet_of_ruin = true;
+        assert_eq!(
+            snapping_stone_lights(&p),
+            vec![(10, 12, [0.1, 0.25, 0.4]), (10, 12, [0.2, 0.25, 0.6])]
+        );
+    }
+
+    #[test]
+    fn snapping_stone_lights_gate_on_the_cooldown() {
+        // `accSnappingStoneLightUp` = `cooldown == 0` (`:3391-3396`): a
+        // non-zero cooldown (the strike lockout) suppresses every light.
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        p.acc_snapping_stone = true;
+        p.acc_pyroclast = true;
+        p.acc_armlet_of_ruin = true;
+        assert_eq!(snapping_stone_lights(&p).len(), 3, "ready");
+        p.acc_snapping_stone_cooldown = 360;
+        assert!(snapping_stone_lights(&p).is_empty(), "the strike lockout");
+        p.acc_snapping_stone_cooldown = 1;
+        assert!(snapping_stone_lights(&p).is_empty(), "still cooling");
+        p.acc_snapping_stone_cooldown = 0;
+        assert_eq!(snapping_stone_lights(&p).len(), 3, "recharged");
+    }
+
+    #[test]
+    fn snapping_stone_lights_join_the_batch() {
+        let mut p = player();
+        p.x = 160.0;
+        p.y = 176.0;
+        p.acc_pyroclast = true;
+        let batch = player_lights_b(&p, 0, 0.0, 0.0);
+        assert!(batch.contains(&(10, 12, [0.4, 0.25, 0.1])), "the trio rides the batch");
     }
 }
