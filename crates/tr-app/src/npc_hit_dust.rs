@@ -296,6 +296,20 @@
 //! - 88507 — 220/221 (`:88503-88510`): ×50 dust 151, scale 0.7.
 //! - 86613 — Vulture 61 (`:86607-86614`): ×100 dust 5.
 //! - 86631 — 301 (`:86625-86632`): ×100 dust 5.
+//! Batch 21 (the DD2 roster live arms — ×20):
+//! - 82085 — 552-554 (`:82079-82086`): dust 5.
+//! - 82116 — 561-563 (`:82110-82117`): dust 5.
+//! - 82149 — 555-557 (`:82143-82150`): dust 5.
+//! - 82182 — 551 (`:82172-82183`): dust 5 (the CheckProgress gate is
+//!   draw-free).
+//! - 82225 — 572/573 (`:82219-82226`): dust 5.
+//! - 82250 — 574/575 (`:82244-82251`): dust 5.
+//! - 82275 — 570/571 (`:82269-82276`): dust 5.
+//! - 82298 — 568/569 (`:82292-82299`): dust 5.
+//! - 82320 — 558-560 (`:82314-82321`): dust 5.
+//! - 82353 — 566/567 (`:82347-82354`): dust 236.
+//! (the same commit also lands 576/577 :82395 dust 273 + 564/565
+//! :82432 + 578 :82461 dust 5 — the ×20 group's tail rows.)
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1431,6 +1445,29 @@ pub fn replay_hit_dust(
         220 | 221 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
                 live_dust(s, 151, dir, -1.0, 0, Color::default(), 0.7, rng, dust, ctx, world);
+            }
+        }
+        // The DD2 roster's ×20 dust-5 live arms (`:82085`/`:82116`/
+        // `:82149`/`:82182`/`:82225`/`:82250`/`:82275`/`:82298`/`:82320`/
+        // `:82432`/`:82461`): the goblins/kobolds/drakin/wither beasts.
+        // The 551 CheckProgress gate (`:82174`) draws nothing.
+        552..=554 | 561..=563 | 555..=557 | 551 | 572 | 573 | 574 | 575 | 570 | 571
+        | 568 | 569 | 558..=560 | 564 | 565 | 578 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:82347-82354` — 566/567: ×20 dust 236.
+        566 | 567 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 236, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:82389-82396` — 576/577: ×20 dust 273 (the ChildSafety
+        // re-type lives inside new_dust).
+        576 | 577 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 273, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -2851,5 +2888,31 @@ mod tests {
         let live: Vec<_> = p2.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 5);
         assert!(live.iter().all(|d| d.dust_type == 151));
+    }
+
+    /// W4-g62 batch 21 — the DD2 roster's ×20 rows: dust 5 for the
+    /// goblins/kobolds, 236 for 566/567, 273 for 576/577.
+    #[test]
+    fn w4_g62_the_dd2_roster_rows() {
+        let world = air();
+        let ctx = ctx();
+        for t in [552, 561, 555, 551, 572, 574, 570, 568, 558, 564, 578] {
+            let s = snap(t, 100, 100, 25.0); // ×20 → 5
+            let mut r = UnifiedRandom::new(191);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 5, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
+        }
+        for (t, dt) in [(566, 236), (576, 273)] {
+            let s = snap(t, 100, 100, 25.0);
+            let mut r = UnifiedRandom::new(191);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 5, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
+        }
     }
 }
