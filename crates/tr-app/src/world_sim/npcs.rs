@@ -8300,29 +8300,30 @@ mod tests {
         }
         assert_eq!(out, want);
         assert_eq!(a, b, "the draw sequence replays exactly");
-        // The Mother Slime (16) skips the 1/6 arm — only the 1/2 draws.
+        // The Mother Slime (16) is num = 1: BOTH gates short-circuit on
+        // `num == 0` — the fn draws NOTHING (`:79534`/`:79553`).
         let mut c = UnifiedRandom::new(4);
         let out16 = npc_loot_common_life_and_mana(&mut c, 16, 0.0, 25, 7, 0, 20, 50, 100);
-        let mut d = UnifiedRandom::new(4);
-        let want16: Vec<u16> = if d.next_max(2) == 0 { vec![184] } else { vec![] };
-        assert_eq!(out16, want16);
-        assert_eq!(c, d);
-        // The Corrupt Slime (81) is num = 1 too (`:79536`).
+        assert!(out16.is_empty());
+        assert_eq!(c, UnifiedRandom::new(4), "num = 1 draws nothing");
+        // The Corrupt Slime (81) is num = 1 too (`:79536`), as is 121.
         let mut e = UnifiedRandom::new(4);
         let out81 = npc_loot_common_life_and_mana(&mut e, 81, 0.0, 25, 7, 0, 20, 50, 100);
-        assert_eq!(out81, want16);
+        assert!(out81.is_empty());
+        assert_eq!(e, UnifiedRandom::new(4));
     }
 
     #[test]
     fn f32_common_life_and_mana_luck_one_always_hits_both_gates() {
         // Luck 1.0: the 1/2 RollLuck(2) gate ALWAYS hits (the inner
         // Next(1,2) is always 1, the outer Next(1) always 0); the 1/6
-        // gate hits when Next(Next(3,6)) lands 0 — find such a seed and
-        // pin the double-star outcome (the 1/6 arm's star + the 1/2 arm).
+        // gate hits when Next(Next(3,6)) lands 0 — find a seed where BOTH
+        // the 1/6 hit and the star-first Next(2) == 0, and pin the
+        // double-star outcome (the 1/6 arm's star + the 1/2 arm).
         let mut hit_seed = None;
         for seed in 0..500i32 {
             let mut probe = UnifiedRandom::new(seed);
-            if tr_core::loot::roll_luck(&mut probe, 1.0, 6) == 0 {
+            if tr_core::loot::roll_luck(&mut probe, 1.0, 6) == 0 && probe.next_max(2) == 0 {
                 hit_seed = Some(seed);
                 break;
             }
@@ -8353,9 +8354,21 @@ mod tests {
         assert!((5..=10).contains(&mimic));
         let boss = npc_loot_drop_hearts(&mut rng, 327, 0.0, false, 100, 100);
         assert!((6..=11).contains(&boss));
-        assert_eq!(npc_loot_drop_hearts(&mut rng, 305, 1.0, false, 100, 100), 1);
-        assert_eq!(npc_loot_drop_hearts(&mut rng, 326, 1.0, false, 100, 100), 1);
-        assert_eq!(npc_loot_drop_hearts(&mut rng, 338, 1.0, false, 100, 100), 1);
+        // The luck-gated hearts: at luck 1.0 the shrunk ranges can still
+        // miss — sweep seeds and pin the draw shape per hit.
+        for (net, range) in [(305i32, 4i32), (326, 6), (338, 5)] {
+            let mut hit = false;
+            for seed in 0..300i32 {
+                let mut a = UnifiedRandom::new(seed);
+                let got = npc_loot_drop_hearts(&mut a, net, 1.0, false, 100, 100);
+                let mut b = UnifiedRandom::new(seed);
+                let roll = tr_core::loot::roll_luck(&mut b, 1.0, range);
+                assert_eq!(got, if roll == 0 { 1 } else { 0 }, "net {net} seed {seed}");
+                assert_eq!(a, b);
+                hit |= got == 1;
+            }
+            assert!(hit, "net {net} hearts on some seed");
+        }
         // The Creeper's life gate: full life refuses even on a Next(2) hit.
         let mut rng2 = UnifiedRandom::new(0);
         let full = npc_loot_drop_hearts(&mut rng2, 267, 0.0, false, 100, 100);

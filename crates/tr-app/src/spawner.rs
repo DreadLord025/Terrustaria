@@ -2081,18 +2081,31 @@ fn spawn_basic_slime(
     } else {
         SlimeVariant::Red
     };
-    // `Spawner.SpawnNPC`'s Blue-Slime promotion (`NPC.cs:5240-5245`):
-    // `FromNetId(Type) == 1 && RollLuck(180) == 0` → -4 (Pinky). The
-    // `Luck.RollLuck` double-draw shape rides the spawn stream (W4-f32);
-    // the anniversary `RollLuck(180)` → 667 (`:5246-5249`) is
-    // constants-off (the tenth seed's second roll waits for the 667 kind).
-    let variant = if variant == SlimeVariant::Blue
-        && tr_core::loot::roll_luck(rng, ctx.luck, 180) == 0
-    {
+    // `Spawner.SpawnNPC`'s Blue-Slime promotion (`NPC.cs:5240-5249`):
+    // the outer gate `FromNetId(Type) == 1` is evaluated ONCE on the
+    // original pick — `RollLuck(180) == 0` → -4 (Pinky), THEN the
+    // anniversary `tenthAnniversaryWorld && RollLuck(180) == 0` → 667
+    // (the Golden Slime — unported, the hit consumes the roll and keeps
+    // the pick, the spawner's unmodelled-outcome pattern). The second
+    // roll runs even when the first promoted to Pinky (the gate read the
+    // ORIGINAL type). Both rolls are the real `Luck.RollLuck` over
+    // `ctx.luck` (W4-f32).
+    let was_blue = variant == SlimeVariant::Blue;
+    let variant = if was_blue && tr_core::loot::roll_luck(rng, ctx.luck, 180) == 0 {
         SlimeVariant::Pinky
     } else {
         variant
     };
+    if was_blue
+        && ctx
+            .world
+            .seeds
+            .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+        && tr_core::loot::roll_luck(rng, ctx.luck, 180) == 0
+    {
+        // 667 has no SlimeVariant — the roll is consumed, the pick stands
+        // (the C# spawns the Golden Slime; the kind lands with its wave).
+    }
     Npc::spawn_slime_variant(ctx.world, x, variant)
 }
 
@@ -4818,9 +4831,11 @@ mod tests {
 
     #[test]
     fn f32_bound_goblin_roll_rides_luck() {
-        // `NPC.cs:2084`: downedGoblins && RollLuck(20) == 0 — at luck 1.0
-        // the shrunk range Next(Next(10, 20)) doubles the cadence; the
-        // arm's guards (rock depth, no underworld) stay unchanged.
+        // `NPC.cs:2084`: downedGoblins && RollLuck(20) == 0 — at luck 0 the
+        // arm's roll is the plain Next(20) (byte-identical to the pre-luck
+        // port); at luck 1.0 it is the three-draw shrunk shape. Pin both
+        // on the same post-ladder stream state: find a seed where the
+        // plain arm MISSES, replay the arm's draws, and compare.
         let mut w = ground();
         w.rock_layer = 40.0;
         let mut lucky = ctx(&w, 100.0 * 16.0, true);
@@ -4828,21 +4843,35 @@ mod tests {
         lucky.luck = 1.0;
         let mut plain = lucky;
         plain.luck = 0.0;
-        let count = |c: &SpawnContext| {
-            let mut n = 0;
-            for seed in 0..3000i32 {
-                let mut rng = UnifiedRandom::new(seed);
-                if let Some(npc) = spawn_npc_at(c, &mut rng, 30, 100 * 16, false, false, false) {
-                    if npc.kind == NpcKind::BoundGoblin {
-                        n += 1;
-                    }
+        // The arm fires on some seed at luck 0 (the plain cadence).
+        let mut fired = false;
+        for seed in 0..3000i32 {
+            let mut rng = UnifiedRandom::new(seed);
+            if let Some(npc) = spawn_npc_at(&plain, &mut rng, 30, 100 * 16, false, false, false) {
+                if npc.kind == NpcKind::BoundGoblin {
+                    fired = true;
+                    // The twin at luck 1.0 consumes a different shape.
+                    let mut lucky_rng = UnifiedRandom::new(seed);
+                    let _ = spawn_npc_at(&lucky, &mut lucky_rng, 30, 100 * 16, false, false, false);
+                    assert_ne!(rng, lucky_rng, "the luck feed changes the roll shape");
+                    break;
                 }
             }
-            n
-        };
-        let (z, l) = (count(&plain), count(&lucky));
-        assert!(z > 0, "the plain cadence still spawns the bound goblin");
-        assert!(l > z, "positive luck raises the RollLuck(20) cadence ({l} vs {z})");
+        }
+        assert!(fired, "the plain cadence still spawns the bound goblin");
+        // The roll shapes themselves (the engine pin):
+        let mut a = UnifiedRandom::new(9);
+        let r0 = tr_core::loot::roll_luck(&mut a, 0.0, 20);
+        let mut b = UnifiedRandom::new(9);
+        assert_eq!(r0, b.next_max(20));
+        assert_eq!(a, b, "luck 0 == plain Next(20)");
+        let mut c = UnifiedRandom::new(9);
+        let r1 = tr_core::loot::roll_luck(&mut c, 1.0, 20);
+        let mut d = UnifiedRandom::new(9);
+        let _gate = d.next_float();
+        let inner = d.next_range(10, 20);
+        assert_eq!(r1, d.next_range(0, inner));
+        assert_eq!(c, d, "luck 1 == the shrunk three-draw shape");
     }
 
     #[test]
