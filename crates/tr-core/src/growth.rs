@@ -47,8 +47,18 @@ use crate::world::World;
 mod decorations;
 mod grass;
 mod herbs;
+pub mod jungle_plants;
+pub mod plantera;
 mod pumpkins;
 mod trees;
+
+// W4-c31 jungle residuals: the full `PlaceJunglePlant` port
+// (`WorldGen.cs:47779-47944`) — the life fruit 236 / bulb 238 / detritus 233
+// shapes the hardmode growth tick and the bulb event place through.
+pub use jungle_plants::place_jungle_plant;
+// W4-c31 jungle residuals: the Plantera bulb event placement
+// (`WorldGen.cs:74127-74267`) — the all-mechs-defeated hook.
+pub use plantera::generate_plantera_bulb_on_all_mechs_defeated;
 
 // S1-K-3: the tree family lives in `growth/trees.rs`; the public seams
 // stay on `growth` (verbatim move, behaviour frozen).

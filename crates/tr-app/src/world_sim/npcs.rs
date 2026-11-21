@@ -14,6 +14,25 @@ use crate::registry;
 use crate::spawner;
 use tr_core::UnifiedRandom;
 
+/// `NPC.OnGameEventClearedForTheFirstTime` case 16/17/18
+/// (`NPC.cs:78780-78788`): when a mech boss falls and ALL THREE are downed
+/// in hardmode, `WorldGen.GeneratePlanteraBulbOnAllMechsDefeated`
+/// (`WorldGen.cs:74127-74186`) forces a Plantera bulb into the jungle.
+/// The C# gates on `Main.netMode != 1` (the port runs the host path) and
+/// draws on `genRand` (the `UpdateNPCs` swap — `checkDead` runs inside
+/// `NPC.UpdateNPC`, `Main.cs:17767-17769`). W4-c31 jungle residuals.
+fn try_plantera_bulb_on_mech_clear(app: &mut App) {
+    let w = &app.world;
+    if w.hard_mode && w.downed_mech_boss1 && w.downed_mech_boss2 && w.downed_mech_boss3 {
+        let dungeon_x = w.dungeon_x;
+        tr_core::growth::generate_plantera_bulb_on_all_mechs_defeated(
+            &mut app.world,
+            dungeon_x,
+            app.rngs.stream(RngKey::UpdateNpcs),
+        );
+    }
+}
+
 /// The player's death message: a DoT drain death resolves its attribution's
 /// `DeathText.*` row family (`KillMe(PlayerDeathReason.ByOther(N))` with the
 /// `Lang.cs:1045-1127` variant roll — the C# rides `Main.rand`; the port
@@ -5294,8 +5313,14 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             NpcKind::EyeOfCthulhu => app.world.downed_eoc = true,
             NpcKind::EaterOfWorldsHead => app.world.downed_eow = true,
             NpcKind::QueenBee => app.world.downed_queen_bee = true,
-            NpcKind::TheDestroyer => app.world.downed_mech_boss1 = true,
-            NpcKind::SkeletronPrime => app.world.downed_mech_boss3 = true,
+            NpcKind::TheDestroyer => {
+                app.world.downed_mech_boss1 = true;
+                try_plantera_bulb_on_mech_clear(app);
+            }
+            NpcKind::SkeletronPrime => {
+                app.world.downed_mech_boss3 = true;
+                try_plantera_bulb_on_mech_clear(app);
+            }
             // The Twins: the flag when BOTH eyes are dead (the vanilla
             // checks `!AnyNPCs(125) && !AnyNPCs(126)` after the death).
             NpcKind::Retinazer => {
@@ -5305,6 +5330,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     .any(|n| n.kind == NpcKind::Spazmatism && n.hp > 0)
                 {
                     app.world.downed_mech_boss2 = true;
+                    try_plantera_bulb_on_mech_clear(app);
                 }
             }
             NpcKind::Spazmatism => {
@@ -5314,6 +5340,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     .any(|n| n.kind == NpcKind::Retinazer && n.hp > 0)
                 {
                     app.world.downed_mech_boss2 = true;
+                    try_plantera_bulb_on_mech_clear(app);
                 }
             }
             NpcKind::Plantera => app.world.downed_plant_boss = true,

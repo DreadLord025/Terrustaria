@@ -55,6 +55,9 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// / `jungleBG` / `hallowBG` / `crimsonBG` at `WorldFile.cs:1319-1323` and
 /// `mushroomBG` at `:1375`) that the `DrawSurfaceBG_*` variants resolve their
 /// `Background_<id>` sheets from; a pre-v16 file loads the `setBG` defaults.
+/// v18 appended `Main.dungeonX/dungeonY` (`Main.cs:1115-1117`, the C#'s flags
+/// block `WorldFile.cs:1275-1276`) — the dungeon entrance anchor the Plantera
+/// bulb event reads (W4-c31 jungle residuals); a pre-v18 file loads 0/0.
 ///
 /// **Not** in this version, and why: the TownManager rooms
 /// (`WorldFile.cs:1687-1701`), the bestiary sights/chats
@@ -65,7 +68,7 @@ const MAGIC: &[u8; 8] = b"TRWLD01\0";
 /// file-absent temps (`_tempSandstorm*`/`_tempParty*`/`_tempLanternNight*` —
 /// no writer or loader site in `WorldFile.cs`) reset on load by design, so
 /// the port saves none of them either (S1-J-7).
-pub const VERSION: u32 = 17;
+pub const VERSION: u32 = 18;
 
 /// The v7+ sections' payload — the world chests, the banner kill counts, the
 /// bestiary kill counts and the town NPCs. New sections grow this struct
@@ -428,6 +431,12 @@ fn write_world(w: &mut impl Write, world: &World, side: &WorldSide) -> Result<()
     // `:79349`) — S1-D-3 W-9 fishron wiring; the v15 queen-slime byte's
     // shape.
     w.write_all(&[u8::from(world.downed_fishron)])?;
+    // v18: `Main.dungeonX/dungeonY` (`Main.cs:1115-1117`, the C#'s flags
+    // block `WorldFile.cs:1275-1276`) — the dungeon entrance anchor the
+    // Plantera bulb event's jungle-half rectangle reads (W4-c31 jungle
+    // residuals).
+    w.write_all(&world.dungeon_x.to_le_bytes())?;
+    w.write_all(&world.dungeon_y.to_le_bytes())?;
     Ok(())
 }
 
@@ -809,6 +818,12 @@ pub fn parse(data: &[u8]) -> Result<(World, WorldSide)> {
     // v17: Duke Fishron's downed flag (see the writer's citation).
     if version >= 17 {
         world.downed_fishron = r.u8()? != 0;
+    }
+    // v18: the dungeon entrance anchor (see the writer's citation) — a
+    // pre-v18 file leaves it at the World's 0/0 unset default.
+    if version >= 18 {
+        world.dungeon_x = r.i32()?;
+        world.dungeon_y = r.i32()?;
     }
     world.revision = 0;
     Ok((world, side))

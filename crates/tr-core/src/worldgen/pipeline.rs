@@ -2008,6 +2008,10 @@ fn step_dungeon(
     let surface_row = gv.map().heights[dungeon_x as usize];
     let mut hall = dungeon::HallSeed::new(streams.pass_rng("Dungeon").0);
     dungeon::generate_dungeon(world, dungeon_x, surface_row, &mut hall);
+    // `Main.dungeonX/dungeonY` (`Main.cs:1115-1117`) — the entrance anchor
+    // the Plantera bulb event's rectangle reads (W4-c31 jungle residuals).
+    world.dungeon_x = dungeon_x;
+    world.dungeon_y = surface_row;
 }
 
 fn step_ocean_caves(
