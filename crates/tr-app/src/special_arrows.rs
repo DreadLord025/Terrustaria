@@ -616,11 +616,17 @@ pub(crate) fn bee_arrow_kill(
 /// localAI[0] latch, `alpha += (int)(25 * localAI[0])` with the 200/0
 /// bounce), the spin (`:23952` — `rotation += (|vx|+|vy|) * 0.01 *
 /// direction`), the light 0.9 (`:24053`). The star's `soundDelay` arm
-/// (`:23881-23885`, `20 + Next(40)`) and the 1/10 dust + 1/20 gore gates
-/// (`:24054-24061`) are the documented sound/dust skips — their draws go
-/// with the layers (the pool-wide convention; the sound cue itself is
-/// queued draw-free like the other AI_001 latches).
-pub(crate) fn falling_star_step(p: &mut Projectile, world: &World) {
+/// (`:23881-23885`, `20 + Next(40)`) stays the documented sound skip.
+/// W4-g63: the 1/10 dust + 1/20 gore gates (`:24054-24061`) are RE-ARMED
+/// on the live pool (the `type == 92` arm runs them EVERY tick — the
+/// `||` right operand is always true for the 92).
+pub(crate) fn falling_star_step(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // `:23858-23864` — the 92 arm: below the spawn floor the star
     // collides with tiles (above it, it falls through — the Holy Arrow
     // spawns it 600-900 px up with ai[1] = the arrow's death Y).
@@ -643,9 +649,14 @@ pub(crate) fn falling_star_step(p: &mut Projectile, world: &World) {
     }
     // `:23952` — the spin (the 92 is not 503/1037/1049).
     p.rot += (p.vel.x.abs() + p.vel.y.abs()) * 0.01 * p.direction as f32;
-    // `:24051-24053` — the `ai[1] == 1 || type == 92` arm: light 0.9
-    // (the dust/gore gates skipped).
+    // `:24051-24061` — the `ai[1] == 1 || type == 92` arm: light 0.9,
+    // then W4-g63's re-armed 1/10 dust + 1/20 gore gates (the 92 takes
+    // the arm every tick — the `||` right operand).
     p.light = 0.9;
+    crate::projectile_trail_dust::falling_star_sparkle(
+        &crate::projectile_trail_dust::TrailSlot::of(p),
+        rng, dust, dust_ctx, world,
+    );
     // Movement: the star keeps the generic `HandleMovement` default —
     // free fall until tileCollide arms, then kill-on-contact
     // (`:19843-19855`).
@@ -1144,19 +1155,31 @@ mod tests {
 
     /// The falling star's AI_005 slice: the ai[1] floor arms tileCollide,
     /// the alpha pulse bounces 50→200→0, the spin rides the direction.
+    /// W4-g63: the 1/10 dust + 1/20 gore gates are re-armed — the state
+    /// census runs on a scratch pool + permissive ctx + a seeded stream.
     #[test]
     fn the_falling_star_pulse_and_floor() {
         let w = air();
+        let mut dust = tr_core::particles::DustPool::new();
+        let dctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * tr_core::TILE_PX, w.height as f32 * tr_core::TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
         let mut p = shot(FALLING_STAR);
         p.ai[1] = 900.0; // the floor below the star
         p.vel = Vec2::new(0.0, 22.0);
         assert!(!p.tile_collide);
-        falling_star_step(&mut p, &w);
+        falling_star_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert!(!p.tile_collide, "above the floor: falls through");
         assert_eq!(p.alpha, 75, "50 + 25");
         assert_eq!(p.light, 0.9);
         p.pos.y = 950.0;
-        falling_star_step(&mut p, &w);
+        falling_star_step(&mut p, &w, &mut rng, &mut dust, &dctx);
         assert!(p.tile_collide, "below the floor: collides");
         // Drive the pulse to the 200 cap and the flip: 50 +25×6 = 200 on
         // step 6 (NOT > 200, no flip yet); step 7 rolls 225 → clamps 200
@@ -1164,11 +1187,11 @@ mod tests {
         let mut q = shot(FALLING_STAR);
         q.ai[1] = 100000.0;
         for _ in 0..7 {
-            falling_star_step(&mut q, &w);
+            falling_star_step(&mut q, &w, &mut rng, &mut dust, &dctx);
         }
         assert_eq!(q.alpha, 200);
         assert_eq!(q.local_ai[0], -1.0, "the cap flips the pulse");
-        falling_star_step(&mut q, &w);
+        falling_star_step(&mut q, &w, &mut rng, &mut dust, &dctx);
         assert_eq!(q.alpha, 175, "200 − 25");
     }
 

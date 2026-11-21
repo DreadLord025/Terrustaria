@@ -94,7 +94,14 @@ lands.
 ## Batch ledger (g63, kinds ascending, 10 kinds per commit)
 
 - batch 1: 9, 15, 22, 27, 54, 77, 80, 92, 94, 95 — the rowed
-  inline-machine kinds (styles 5/8/12/2/21/22/24).
+  inline-machine kinds (styles 5/8/12/2/21/22/24). The shared-arm
+  co-riders ≤400 land with their arm: 96 (the cursed-flame pair),
+  253/258 (the caster default), 280/288 (the golden-shower head),
+  76/78 (the note trio), 162/240/306 (the thrown bursts/trail),
+  7/8/150/151/152 (the thorn fade-cross), 281 (the aiStyle-49 bunny
+  burst emitter, UNWIRED — no row). The `update`/`update_dust`
+  scratch-pool seam (the `Npc::update_rng` precedent) threads the
+  live `app.dust` + `spawn_ctx` from `world_sim/projectiles.rs`.
 - (following batches recorded in their commit messages + this table)
 
 Kinds with NO ported `proj_data` row keep their dust arm UNWIRED (the
