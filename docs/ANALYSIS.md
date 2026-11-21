@@ -39244,3 +39244,50 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The W4-g2 reconciliation round (2026-11-21, code-only mode)
+
+Branch `task/W4-g2-proj-ai-missing-b` (continuation of the rowless-nine
+round, `docs/research/26d-projectile-rowless-kinds-w4-g2.md`). The four
+recorded gaps closed or dispositioned:
+
+- **The sibling class flags** (`d5cdd23e`): the 228/732 melee writes
+  (`Projectile.cs:3144`/`:7713`) and the 239/294 magic writes
+  (`:3214`/`:3844`) join the `proj_data` class-flag census. The
+  per-hit crit block now reads them verbatim.
+- **The -20 collision shrink** (`4674c364`): `collision_params` ports
+  `GetCollisionParams`'s -20 arm (`:19977-19981`) for its ROWED kinds
+  229/237/243; `kill_step` probes the shrunk box at the (0.5, 0.5)-anchor
+  inset origin (`HandleMovement` `:17588-17589`). **Census correction:**
+  the shrink is TILE-COLLISION-ONLY - `Damage_GetHitbox` (`:14959-15023`)
+  builds the damage rect from the FULL row box, so no projectile hit box
+  changes (the port's `damage_hitbox` already mirrors it). Residuals: the
+  33/866 boomerang siblings ride `ai_boomerang`'s own full-box probe (its
+  stand-in keeps the full box until that arm's collision port); 182/190 are
+  rowless; the other `GetCollisionParams` arms (-8/-12/-36, fixed boxes,
+  0.75 anchors, golf/phaseblade) belong to families outside this task.
+  RNG-neutral: pure geometry, zero draws - the UpdateProjectiles stream is
+  untouched by construction.
+- **The Shimmer() family** (`63a6db26`): `Projectile::shimmer`
+  (`:22361-22516`) ported VERBATIM, all 13 arms, plus
+  `shimmer_two_cell_kill` (the `:22405-22410` full-cell + above-cell
+  probe). **STAGED/UNWIRED**: the single caller `:17009-17012` sits in the
+  generic `Update` wet block (`:16790-17007`), which is unported (d53's
+  site ledger defers it to the generic wet subsystem; only the bobber's
+  `probe_wet` writes `shimmer_wet` today). The wet-subsystem round drops
+  the call in at the pre-HandleMovement seam. The `hostile` refusal gate
+  rides the port's `!friendly` proxy (exact for every rowed kind that
+  reaches an arm - the hostile shots ride `friendly = false`); the rowless
+  936 rainbow-slime spawn arm is a cited skip (no slot can exist; the
+  NPC-spawn/net/achievement layers). RNG-neutral (no draws). Co-lane probe:
+  e19/f47 own the item/NPC shimmer, d53/e3/f5 the dust sites - none claims
+  `Projectile.Shimmer`.
+- **The 1128 child row**: SKIPPED - owned by W4-d10 (`b34ad73c` on
+  `task/W4-d10-proj-ai-91-100`, not on origin/main at the probe). The
+  orb's Kill burst keeps its verbatim 64 draws; the spawn declines at the
+  `proj_data` guard until d10's merge lands the row.
+
+Witnesses (WRITTEN NOT RUN, code-only): the sibling-flag census test, the
+orb death witness re-pinned to the inset geometry + 2 shrink-geometry
+tests, 5 direct-drive Shimmer tests (the e3 STAGED precedent). No
+cargo/rustc/tests/graphify invoked.

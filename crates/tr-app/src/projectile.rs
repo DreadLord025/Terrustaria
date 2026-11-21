@@ -10327,8 +10327,11 @@ impl Projectile {
             self.kill();
         }
         // `:22471-22495` — the aiStyle-2 thrown: -0.7 Y, -20 life. The 936
-        // rainbow-slime spawn arm (`:22474-22490`) is rowless + the net/
-        // achievement layers — skipped (the -20 life else-arm stands).
+        // rainbow-slime spawn arm (`:22474-22490`) is a CITED SKIP: 936 is
+        // rowless (no slot can exist), and its arm is the NPC-spawn (681, no
+        // NpcKind row) + net (`SendData(7)`) + achievement layers. The else
+        // arm's -20 stands for every ROWED style-2 kind (the 936 condition
+        // can never hold on a live slot).
         else if style == 2 {
             self.vel.y -= 0.7;
             self.time_left -= 20;

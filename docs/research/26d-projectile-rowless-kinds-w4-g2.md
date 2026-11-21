@@ -110,21 +110,56 @@ friendly per caller). The non-obvious deltas from the friendly siblings:
   draws stay on the UpdateProjectiles stream so the alignment holds. The
   25x dust-157 tail draws nothing (the plain NewDust overload) — skipped.
 
-## Recorded gaps (NOT fixed here — sibling rows outside the task's kinds)
+## Recorded gaps — CLOSED by the reconciliation round (2026-11-21, same branch)
 
-- The 228/732 rows keep `melee = false` though their C# arms set it
-  (`:3144`/`:7713`); the 239/294 rows keep `magic = false` though theirs
-  set it (`:3214`/`:3844`). Pre-existing census misses on ROWED kinds —
-  the row round's scope is the rowless nine; fixing siblings would widen
-  the diff beyond the claim. Noted for the reconciliation round.
-- The 229's `GetCollisionParams` -20 collision shrink (`:19977`, shared
-  with 182/190/33/237/243/866) is unported port-wide (the 237 sibling
-  rides the same gap) — the damage box stays the full row box.
-- The 229's `Shimmer()` kill/bounce arm (`:22403-22422`, the
-  `shimmerWet`-gated family) is unported port-wide (the generic wet block
-  has no shimmer hook yet) — the orb's shimmer interaction is a follow-up.
-- The 1128 child row + its aiStyle-92 arm (`:32558-32820`) — the orb's
-  death burst spawns nothing until it lands (the draws are kept).
+The four gaps the row round recorded were reconciled in a follow-up round
+(commits `d5cdd23e` / `4674c364` / `63a6db26` + this doc):
+
+- **228/732 melee + 239/294 magic — FIXED** (`d5cdd23e`): the class-flag
+  census now carries the four sibling writes (`:3144`/`:7713` melee,
+  `:3214`/`:3844` magic). Witness:
+  `data.rs::the_w4_g2_sibling_class_flags_are_census_complete`.
+- **The −20 collision shrink — PORTED for the rowed kinds** (`4674c364`):
+  `Projectile::collision_params` returns `GetCollisionParams`'s
+  (`:19867-20022`) shrunk TILE-COLLISION box + inset origin; `kill_step`
+  probes it (`HandleMovement` `:17588-17589`). The −20 arm (`:19977-19981`)
+  hits rowed kinds **229/237/243** (all `kill_step` riders); the 33/182/190/
+  866 siblings are ROWLESS (33/866 ride `ai_boomerang`'s own probe — its
+  full-box stand-in stays, a recorded residual; 182/190 have no row). The
+  census correction: the shrink is **tile-collision-only** —
+  `Damage_GetHitbox` (`:14959-15023`) builds the damage rect from the FULL
+  row box, so NO projectile hit box changes (`damage_hitbox` already
+  mirrors it; the round's earlier "damage box stays full" note is the
+  faithful semantics, not a gap). The other `GetCollisionParams` arms
+  (−8/−12/−36, the fixed boxes, the 0.75 anchors, golf/phaseblade) are
+  unported — their families are outside this task's kinds. RNG-neutral
+  (pure geometry, zero draws). Witnesses: the orb death test re-pinned to
+  the inset geometry + `w4_g2_the_minus20_shrink_clears_a_full_box_wall` /
+  `w4_g2_the_minus20_shrink_kills_on_the_inset_box`.
+- **The Shimmer() family — PORTED STAGED/UNWIRED** (`63a6db26`):
+  `Projectile::shimmer` (`:22361-22516`) verbatim, all arms, plus
+  `shimmer_two_cell_kill` (the `:22405-22410` probe). Census: the SINGLE
+  caller is `:17009-17012` (`if (base.shimmerWet) this.Shimmer()`), and
+  `shimmerWet` is written only by the generic `Update` wet block
+  (`:16790-17007`) — UNPORTED (d53's site ledger: "lands with the generic
+  wet subsystem"; only the bobber's `probe_wet` writes the flag today, the
+  i35 deviation). Co-lane probe: e19/f47 own the ITEM/NPC shimmer
+  (`WorldItem`/`NPC.GetShimmered`), d53/e3/f5 own the dust SITES — none
+  claims `Projectile.Shimmer`, so the helper is this lane's; it stays
+  unwired until the wet block lands (the e3 STAGED-emitter precedent,
+  `#[allow(dead_code)]` + direct-drive witnesses). The `hostile` refusal
+  gate rides the port's `!friendly` proxy (exact for every rowed kind that
+  reaches an arm); the rowless 936 rainbow-slime spawn arm is a cited skip
+  (no slot can exist; NPC-spawn/net/achievement layers). RNG-neutral.
+  5 witnesses: orb bounce+age (cap 600 −60), the two-cell kill (one cell
+  insufficient), the arrow float, the hostile refusal, the star bounce
+  keeping life.
+- **The 1128 child row — SKIPPED, owned by W4-d10**: the aiStyle-92 cloud
+  family incl. the 1128 row + arm is ported on `task/W4-d10-proj-ai-91-100`
+  (`b34ad73c`, pushed-local at this round's probe; NOT on origin/main).
+  Another lane owns it — this branch's Kill burst keeps its verbatim draws
+  and the `proj_data(1128)` guard declines until d10's merge lands the row;
+  no re-port, no conflict (the spawn seam is the shared `spawn_with_data`).
 
 ## Witnesses (WRITTEN NOT RUN)
 
@@ -154,4 +189,14 @@ friendly per caller). The non-obvious deltas from the friendly siblings:
    the 229 orb branch + Kill arm.
 5. `c88af9dc` — the data witness + the 291 free-move fidelity fix.
 6. `daea150f` — the 13 AI witnesses.
-7. (this doc)
+7. `8ac7d95e` — the witness fix + this doc's first round.
+
+### The reconciliation round (2026-11-21, same branch)
+
+8. `d5cdd23e` — phase 1: the four sibling class flags (228/732 melee,
+   239/294 magic) + the census witness.
+9. `4674c364` — phase 2: the −20 collision shrink (`collision_params` +
+   `kill_step`), the orb death witness re-pin + 2 geometry witnesses.
+10. `63a6db26` — phase 3: the STAGED `shimmer` + `shimmer_two_cell_kill`
+    helpers + 5 direct-drive witnesses.
+11. (this doc update + the ANALYSIS/PORT_MAP/anchors rows)
