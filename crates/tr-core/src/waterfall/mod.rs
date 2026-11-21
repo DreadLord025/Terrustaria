@@ -1950,4 +1950,157 @@ mod tests {
             "the walk continues past the actuated stone"
         );
     }
+
+    // ---- W4-g73 closeout: the per-fountain-type frame tables (census rows
+    // 196/460/717 → waterfall types 11/22/26; written, not run — code-only) ----
+
+    /// `WaterfallManager.UpdateFrame` (`WaterfallManager.cs:279-322`): the
+    /// three rain-family counters advance at their OWN rates — rain fg every
+    /// tick / bg every 3rd descending (`:279-296`), lava-rain fg only on
+    /// counter 1 and 3 / bg every 4th descending (`:297-314`), snow fg every
+    /// 4th ascending (`:315-322`). Hand-replayed tick traces from all-zero.
+    #[test]
+    fn the_fountain_frame_counters_ride_their_own_rates() {
+        let mut mgr = WaterfallManager::new();
+        for _ in 0..3 {
+            mgr.update_tick();
+        }
+        // Rain: fg = tick mod 8; bg descends on every 3rd tick (0 → 7).
+        assert_eq!((mgr.rain_frame_foreground, mgr.rain_frame_background), (3, 7));
+        mgr.update_tick();
+        // Lava rain: ticks 1+3 bumped fg (2), tick 4 reset the counter and
+        // dropped bg to 7. Snow: tick 4 bumped fg once.
+        assert_eq!(
+            (mgr.lava_rain_frame_foreground, mgr.lava_rain_frame_background),
+            (2, 7)
+        );
+        assert_eq!(mgr.snow_frame_foreground, 1);
+        for _ in 0..4 {
+            mgr.update_tick();
+        }
+        // 8 ticks: rain fg 8 → 0, bg descended twice (ticks 3+6: 0 → 7 → 6).
+        assert_eq!((mgr.rain_frame_foreground, mgr.rain_frame_background), (0, 6));
+        // Lava rain: the second 4-tick cycle adds 2 fg (4) and one bg drop (6).
+        assert_eq!(
+            (mgr.lava_rain_frame_foreground, mgr.lava_rain_frame_background),
+            (4, 6)
+        );
+        // Snow: 8/4 = 2.
+        assert_eq!(mgr.snow_frame_foreground, 2);
+    }
+
+    /// `WaterfallManager.cs:236-251`: the lava cloud (tile 717) spawns a
+    /// type-26 fall one row below when the cell underneath is open — the
+    /// census's third cloud row (196 → 11, 460 → 22, 717 → 26).
+    #[test]
+    fn lava_cloud_tile_717_drops_below() {
+        let mut w = world_with_air();
+        put(&mut w, 10, 10, stone(717));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        assert_eq!(mgr.entries(), vec![(10, 11, 26)]);
+        // A solid cell underneath blocks the spawn (`:244`).
+        let mut w2 = world_with_air();
+        put(&mut w2, 10, 10, stone(717));
+        put(&mut w2, 10, 11, stone(1));
+        let mut mgr2 = WaterfallManager::new();
+        mgr2.find_waterfalls(&w2, [5, 5, 20, 20], true);
+        assert!(mgr2.entries().is_empty());
+    }
+
+    /// The lava-fountain draw arm (`WaterfallManager.cs:461-484`): type 26
+    /// draws TWO sheets per step — the background `waterfallTexture[27]`
+    /// first, then the foreground `[26]` — with the FIXED white
+    /// `Color(255,255,255,127)` tint (not the light colour), 0.9/0.4 scales,
+    /// an `AddLight` per cell, and the last-8-steps fade. The even column
+    /// leads fg by 3 / bg by 2 on the lava-rain counters (`:398-408`).
+    #[test]
+    fn lava_fountain_draws_two_white_sheets_and_lights_every_cell() {
+        // A tall world so the walk reaches its full num22 = 100/4 = 25 steps.
+        let mut w = World::new("test".into(), 80, 200);
+        w.world_surface = 30.0;
+        put(&mut w, 10, 10, stone(717));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        // 4 ticks: lavaRain fg 2, bg 7 (the counter trace above).
+        for _ in 0..4 {
+            mgr.update_tick();
+        }
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let (lights, water_scan, lava_scan) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        assert_eq!(out.len(), 50, "25 steps x two sheets");
+        // Even column 10: num23 = 2+3 = 5 → x = 5*18; num24 = 7+2 = 9 → 1.
+        // The background quad comes FIRST (`:482` before `:483`).
+        assert_eq!(out[0].texture, 27);
+        assert_eq!(out[0].source, [18, 0, 16, 16]);
+        assert_eq!(out[1].texture, 26);
+        assert_eq!(out[1].source, [5 * 18, 0, 16, 16]);
+        // Head row 11 is odd → pos = (x*16+8, y*16+8) - origin (8,8).
+        assert_eq!(out[0].pos, [160.0, 176.0]);
+        // Fixed white alpha-127 tint: fg (int)(255*0.9) = 229,
+        // (int)(127*0.9) = 114; bg (int)(255*0.4) = 102, (int)(127*0.4) = 50.
+        assert_eq!(out[1].color, [229.0 / 255.0, 229.0 / 255.0, 229.0 / 255.0, 114.0 / 255.0]);
+        assert_eq!(out[0].color, [102.0 / 255.0, 102.0 / 255.0, 102.0 / 255.0, 50.0 / 255.0]);
+        // The last step (j = 24) fades by (25-24)/8 = 0.125:
+        // (int)(255*0.9*0.125) = 28, (int)(127*0.9*0.125) = 14.
+        let tail = &out[49];
+        assert_eq!(tail.color[0], 28.0 / 255.0);
+        assert_eq!(tail.color[3], 14.0 / 255.0);
+        // `AddLight(26, ...)` per cell (`:464`): n = (0.55+80/900)*0.6.
+        assert_eq!(lights.len(), 25);
+        let n = (0.55 + (270.0 - 190.0) / 900.0) * 0.6;
+        assert_eq!(lights[0].rgb, [n, n * 0.3, n * 0.1]);
+        assert_eq!((lights[0].x, lights[0].y), (10, 11));
+        // The rain arms feed NEITHER ambience triple (no scan accumulation).
+        assert_eq!(water_scan, AmbientScan::default());
+        assert_eq!(lava_scan, AmbientScan::default());
+    }
+
+    /// The rain-fountain draw arm (`WaterfallManager.cs:410-421`/`:485-488`):
+    /// type 11 draws the background `waterfallTexture[12]` then the foreground
+    /// `[11]`, tinted by the cell's LIGHT colour at 0.6/0.3 (no fixed white,
+    /// no `AddLight`); the even column leads the rain counters by 3/2, the
+    /// odd column rides them raw (`:435-438`).
+    #[test]
+    fn rain_fountain_draws_two_lit_sheets_with_the_even_column_lead() {
+        let mut w = world_with_air();
+        put(&mut w, 12, 8, stone(196));
+        let mut mgr = WaterfallManager::new();
+        mgr.find_waterfalls(&w, [5, 5, 20, 20], true);
+        // 6 ticks: rain fg 6, bg 6 (the counter trace above).
+        for _ in 0..6 {
+            mgr.update_tick();
+        }
+        let light = LightMap::new();
+        let style = LightStyle::for_mode(crate::lighting::LightMode::Color);
+        let (lights, _, _) =
+            mgr.draw(&w, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let out = mgr.take_quads();
+        assert_eq!(out.len(), 50, "num22 = 100/4 = 25 steps x two sheets");
+        // Even column 12: num23 = 6+3 = 9 → 1; num24 = 6+2 = 8 → 0.
+        assert_eq!(out[0].texture, 12);
+        assert_eq!(out[0].source, [0, 0, 16, 16]);
+        assert_eq!(out[1].texture, 11);
+        assert_eq!(out[1].source, [18, 0, 16, 16]);
+        // Unlit cell: RGB 0; alpha (int)(255*0.6) = 153 / (int)(255*0.3) = 76.
+        assert_eq!(out[1].color, [0.0, 0.0, 0.0, 153.0 / 255.0]);
+        assert_eq!(out[0].color, [0.0, 0.0, 0.0, 76.0 / 255.0]);
+        // No AddLight for the rain arm (only 26 lights, `:461-464`).
+        assert!(lights.is_empty());
+        // Odd column 13: raw counters — fg 6 → 6*18, bg 6 → 6*18.
+        let mut w2 = world_with_air();
+        put(&mut w2, 13, 8, stone(196));
+        let mut mgr2 = WaterfallManager::new();
+        mgr2.find_waterfalls(&w2, [5, 5, 20, 20], true);
+        for _ in 0..6 {
+            mgr2.update_tick();
+        }
+        mgr2.draw(&w2, &light, &style, 0.0, &active_alpha(), 190, 0, screen_at(0.0, 0.0), false);
+        let out2 = mgr2.take_quads();
+        assert_eq!(out2[0].source, [6 * 18, 0, 16, 16]);
+        assert_eq!(out2[1].source, [6 * 18, 0, 16, 16]);
+    }
 }
