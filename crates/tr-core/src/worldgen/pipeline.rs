@@ -1443,6 +1443,10 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // Log (`:18513`), before Piles (`:18788`) — W4-d104 pass 34. The
     // scatter draws ride the fresh `pass_rng("Traps")` stream.
     step!("traps", "Traps", step_traps),
+    // The vanilla Piles slot (`WorldGen.cs:18788`): after Traps
+    // (`:18657`), before Spawn Point (`:19460`) — W4-d104 pass 35. The
+    // seven scatters draw on the fresh `pass_rng("Piles")` stream.
+    step!("piles", "Piles", step_piles),
     step!("trees", "Planting Trees", step_trees),
     step!("surface flora", "Weeds", step_surface_flora),
     step!("cacti", "Cactus, Palm Trees, & Coral", step_cacti),
@@ -2853,6 +2857,27 @@ fn step_traps(
     );
 }
 
+/// The `Piles` pass (`WorldGen.cs:18788-19458`, W4-d104 pass 35): the
+/// seven decor scatters on the fresh `pass_rng("Piles")` stream. The
+/// `Skyblock.denySomeGeneration` gate rides here.
+fn step_piles(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    _opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    if surface::deny_some_generation(world) {
+        return;
+    }
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    structures::pass_piles(world, world_surface, rock_layer, &mut streams.pass_rng("Piles"));
+}
+
 fn step_slopes(
     world: &mut World,
     gv: &mut GenVars,
@@ -3716,7 +3741,8 @@ mod tests {
         assert_eq!(pos("spreading grass") + 1, pos("surface ore and stone"));
         assert_eq!(pos("surface ore and stone") + 1, pos("place fallen log"));
         assert_eq!(pos("place fallen log") + 1, pos("traps"));
-        assert!(pos("traps") < pos("trees"));
+        assert_eq!(pos("traps") + 1, pos("piles"));
+        assert!(pos("piles") < pos("trees"));
         assert!(pos("floating islands") < pos("floating island houses"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()

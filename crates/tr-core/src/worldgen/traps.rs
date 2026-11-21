@@ -188,8 +188,8 @@ fn close_to_lava(world: &World, x: i32, y: i32) -> bool {
 }
 
 /// `WorldGen.oceanDepths` (`WorldGen.cs:10963-10973`) — the trap
-/// scatter's ocean re-roll.
-fn ocean_depths_trap(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
+/// scatter's ocean re-roll. Shared with the Piles pass (W4-d104 pass 35).
+pub(crate) fn ocean_depths_trap(world: &World, x: i32, y: i32, ocean_level: f64) -> bool {
     if y as f64 > ocean_level {
         return false;
     }

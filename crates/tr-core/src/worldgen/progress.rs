@@ -148,6 +148,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         // WorldGen.cs:18663 — Lang.gen[34] (Traps, W4-d104; the noTraps
         // Lang.gen[91] arm is the seed lane's).
         "traps" => PassMessage::Gen(34),
+        // WorldGen.cs:18792 — Lang.gen[89] (Piles, W4-d104).
+        "piles" => PassMessage::Gen(89),
         // WorldGen.cs:19944.
         "trees" => PassMessage::Gen(40),
         // WorldGen.cs:20068.

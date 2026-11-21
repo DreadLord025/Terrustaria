@@ -79,7 +79,8 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 | 31 Spreading Grass | 3a101031 | landed (code-only; classic arm, remix arm deferred to d107; hash re-pin deferred) |
 | 32 Surface Ore and Stone | 19bc132b | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
 | 33 Place Fallen Log | 2fdc8b96 | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
-| 34 Traps | (this commit) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
+| 34 Traps | 7c768356 (+341f4280 witness fix) | landed (code-only; 512-pin unchanged by the width guard; default re-pin deferred) |
+| 35 Piles | (this commit) | landed (code-only; both pins stale-by-design; re-pin deferred) |
 
 ### Pass 28 — Floating Island Houses (landed)
 
@@ -303,6 +304,37 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
   + the witnesses `w4_d104_34_the_geyser_places_and_replays` /
   `w4_d104_34_the_dart_case_wires_the_plate`.
 
+### Pass 35 — Piles (landed)
+
+* **C# read in full**: the pass body `WorldGen.cs:18788-19458` — the
+  `denySomeGeneration` gate, the `tileSolid` window (379/229/190/196/
+  189/717/718/719/202/460/484 false → restore), the seven scatters:
+  large-pile underground `width*0.06` (`:18809-18927`, the biome style
+  chain + the 1-in-75 187-17 override + the dungeon 1-in-3 skip + the
+  shimmer veto + the cluster), large-pile deep `width*0.01`
+  (`:18928-18993`), large-pile surface `width*0.03` (`:18994-19054`, the
+  grass-side 187 arm + the -1 veto), large-pile walled-surface
+  `width*0.0035` (`:19055-19125`), small-pile underground `width*0.6`
+  (`:19126-19287`, the wall-87 re-roll + the style-offset chains),
+  small-pile surface `width*0.02` (`:19288-19366`), small-pile
+  dirt/snow-wall surface `width*0.15` (`:19367-19440`, the
+  full-liquid-sand veto). `GetPileGenerationAttempts` `:23647-23655`
+  (`width/2`, skyblock /10), `PlaceSmallPile` `:46815-46873` under the
+  window, `PlaceTile` 186/187 → `Place3x2` (`:59993-60002`).
+* **Rust**: `structures.rs::pass_piles` + the window helpers
+  (`pile_floor`, `place_small_pile_window`, `pile_cluster`,
+  `pile_attempts`) + the a==b witness; `traps.rs::ocean_depths_trap`
+  promoted `pub(crate)` (shared); `pipeline.rs` (`step_piles` after
+  `traps`), `progress.rs` (`Lang.gen[89]` `:18792`).
+* **RNG**: all draws on the fresh `pass_rng("Piles")` stream.
+* **Deviations**: the noTraps boulder-solidity flip is the seed lane's;
+  the ≤50 width guard; the `anyShimmer` vetoes read the liquid-shimmer
+  flag (the shimmer lane publishes no tiles before this pass on a
+  classic world).
+* **Hash doc**: BOTH pins stale-by-design (the 512 column band is live).
+  Re-pin DEFERRED; **a == b untouched** + the witness
+  `w4_d104_35_the_piles_place_and_replay`.
+
 ## Status
 
 - [x] 28 Floating Island Houses
@@ -312,5 +344,5 @@ other new pass draws only its own `pass_rng("<vanilla name>")` stream.
 - [x] 32 Surface Ore and Stone
 - [x] 33 Place Fallen Log
 - [x] 34 Traps
-- [ ] 35 Piles
+- [x] 35 Piles
 - [ ] 36 Spawn Point
