@@ -119,6 +119,9 @@ pub fn place_item_tile(world: &mut World, x: i32, y: i32, kind: u16, style: i32,
     if kind == 19 {
         return place_platform(world, x, y, style);
     }
+    if kind == 314 {
+        return place_track(world, x, y, style);
+    }
     if kind == 4 {
         return place_torch(world, x, y, style);
     }
@@ -351,6 +354,44 @@ fn place_planter_box(world: &mut World, x: i32, y: i32, style: i32) -> bool {
     true
 }
 
+/// `WorldGen.PlaceTile` case 314 (`WorldGen.cs:60231-60233`) →
+/// `Minecart.PlaceTrack` (`Minecart.cs:1486-1506`): active, type 314,
+/// `frameY = -1` and the style's front frame — 0 → −1 (the unframed piece,
+/// the `SquareTileFrame` tail `:60261` → `TileFrameImportant` case 314
+/// `:85290-85294` refits it through `FrameTrack(pound: false)`, the app's
+/// `minecart::refit_tracks_around` seam), 1 → `_firstPressureFrame` 20,
+/// 2 → `_firstLeftBoostFrame` 31, 3 → `_firstRightBoostFrame` 30
+/// (`Minecart.cs:519-546`; the constants are the app table's
+/// `FIRST_*_FRAME`, `Minecart.cs:377-387` — frame 30 boosts right, 31 left).
+/// Style 3 has no placing item (the three track items 2340/2492/2739 carry
+/// placeStyles 0/1/2, `Item.cs:23502-23515`/`:24197`/`:26148-26163`); an
+/// unregistered style writes only the frameY −1 (the C# switch has no
+/// default). Research-71 §6 census — the f11 lane never ported PlaceTrack.
+fn place_track(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let Some(prev) = world.tile(x, y).copied() else {
+        return false;
+    };
+    if prev.active() || prev.wall == WALL_UNBREAKABLE {
+        return false;
+    }
+    let i = world.index(x, y);
+    let cell = &mut world.tiles[i];
+    cell.flags |= crate::tile::FLAG_ACTIVE;
+    cell.kind = 314;
+    cell.frame_y = -1;
+    match style {
+        0 => cell.frame_x = -1,
+        1 => cell.frame_x = 20, // FIRST_PRESSURE_FRAME
+        2 => cell.frame_x = 31, // FIRST_LEFT_BOOST_FRAME
+        3 => cell.frame_x = 30, // FIRST_RIGHT_BOOST_FRAME
+        _ => {}
+    }
+    touch(world, x, y);
+    ensure_frame_important(world, 314); // `Main.cs:7755`
+    after_edit(world, x, y);
+    true
+}
+
 /// `WorldGen.PlaceTile` case 19 (`WorldGen.cs:60221-60225`): the platform
 /// legacy write — `frameY = 18 * style`, active, type 19. Like the planter
 /// box, the C# case touches no other field, so `frameX` stays as the cell had
@@ -418,6 +459,28 @@ mod tests {
         let mut w = ground_world();
         assert!(!place_tile(&mut w, 5, 25, 0));
         assert!(!place_tile(&mut w, 999, 25, 0));
+    }
+
+    /// W4-e20 research-71 §6 census — `Minecart.PlaceTrack`
+    /// (`Minecart.cs:1486-1506`, `WorldGen.cs:60231-60233`): the style's
+    /// front frame — 0 → −1 (the refit seam takes it), 1 → 20 (pressure),
+    /// 2 → 31 (the LEFT-boosting straight), 3 → 30 (right); `frameY = -1`
+    /// always. The three track items carry placeStyles 0/1/2
+    /// (`Item.cs:23502`/`:24197`/`:26148`); style 3 has no item.
+    #[test]
+    fn dw_e20_place_track_writes_the_style_front_frame() {
+        for (style, front) in [(0i32, -1i16), (1, 20), (2, 31), (3, 30)] {
+            let mut w = ground_world();
+            assert!(place_item_tile(&mut w, 10, 19, 314, style, 1));
+            let t = *w.tile(10, 19).unwrap();
+            assert!(t.active() && t.kind == 314);
+            assert_eq!((t.frame_x, t.frame_y), (front, -1), "style {style}");
+        }
+        // An unregistered style writes only the frameY −1 (the C# switch
+        // has no default — the frameX stays as the cell had it, 0 here).
+        let mut w = ground_world();
+        assert!(place_item_tile(&mut w, 10, 19, 314, 9, 1));
+        assert_eq!(w.tile(10, 19).unwrap().frame_y, -1);
     }
 
     #[test]

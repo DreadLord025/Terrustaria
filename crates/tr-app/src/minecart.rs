@@ -1606,6 +1606,53 @@ pub(crate) fn frame_track_place(world: &mut World, i: i32, j: i32) {
     let _ = frame_track(world, i, j, false, false);
 }
 
+/// The `SquareTileFrame` wake's case-314 slice (`WorldGen.cs:80185-80196` →
+/// `TileFrame` → `TileFrameImportant` case 314 `:85290-85294`): the 3×3
+/// neighbourhood walk refits EVERY active track through
+/// `FrameTrack(pound: false)` — the placement tail (`PlaceTile` `:60261`)
+/// and the hammer fail-kill wake (`KillTile(fail)` `:63735`) both reach it.
+/// The port's `reframe_area` skips frame-important kinds, so this app seam
+/// carries the 314 arm (the `SQUARE_FRAME_ORDER` row-major walk, self last
+/// of its row — the refit is order-independent per cell: each reads the
+/// neighbours' KINDS only, `GetNearbyTilesSetLookupIndex` `:1170-1198`).
+/// `HandleRopeEndFraming` (`:85293`) is the rope-framing half — unported
+/// (the rope draw module reads the frames live).
+pub(crate) fn refit_tracks_around(world: &mut World, x: i32, y: i32) {
+    for (dx, dy) in [
+        (-1, -1), (-1, 0), (-1, 1),
+        (0, -1), (0, 0), (0, 1),
+        (1, -1), (1, 0), (1, 1),
+    ] {
+        let (cx, cy) = (x + dx, y + dy);
+        // `TileFrame`'s 5-tile edge guard (`WorldGen.cs:81330`).
+        if cx <= 5 || cy <= 5 || cx >= world.width - 5 || cy >= world.height - 5 {
+            continue;
+        }
+        if world.tile(cx, cy).is_some_and(|t| t.active() && t.kind == 314) {
+            frame_track_place(world, cx, cy);
+        }
+    }
+}
+
+/// `Minecart.GetTrackItem` (`Minecart.cs:1508-1517`): the item a track piece
+/// drops when broken — `_trackType[frameX]` 0 → 2340 (Minecart Track),
+/// 1 → 2492 (Pressure Track), 2 → 2739 (Booster Track), else 0. The C#
+/// indexes `frameX` UNGUARDED (a −1 front throws); the port's out-of-range
+/// read returns 0 (the drop-nothing arm — a −1 front only exists between
+/// `PlaceTrack` and its refit, never at break time).
+pub(crate) fn track_item(frame_x: i16) -> u16 {
+    let f = i32::from(frame_x);
+    if f < 0 || f as usize >= TRACK_FRAMES.len() {
+        return 0;
+    }
+    match TRACK_FRAMES[f as usize].track_type {
+        0 => 2340,
+        1 => 2492,
+        2 => 2739,
+        _ => 0,
+    }
+}
+
 /// `Minecart.FlipSwitchTrack` (`Minecart.cs:1296-1319`): the wired switch-track
 /// flip (`HitWireSingle` case 314, `Wiring.cs:1744-1748`). A normal track
 /// (`_trackType` 0) swaps its front/back frames when a back exists; a booster
@@ -1805,6 +1852,50 @@ mod tests {
         for mask in 0..64u32 {
             assert!(track_switch_options(mask).is_some(), "mask {mask} has options");
         }
+    }
+
+    /// Research-71 §6 census — `Minecart.GetTrackItem`
+    /// (`Minecart.cs:1508-1517`): the break drop follows the FRONT frame's
+    /// type — the straight/bumper family (0/1/3/15/25) → 2340, the pressure
+    /// frames (20-23) → 2492, the boosters (30-35) → 2739; an unframed −1
+    /// front drops nothing (the port's guarded read; the C# would throw).
+    #[test]
+    fn dw_e20_get_track_item_maps_the_front_type_to_the_three_items() {
+        for f in [0i16, 1, 3, 15, 25] {
+            assert_eq!(track_item(f), 2340, "frame {f}");
+        }
+        for f in 20i16..=23 {
+            assert_eq!(track_item(f), 2492, "frame {f}");
+        }
+        for f in 30i16..=35 {
+            assert_eq!(track_item(f), 2739, "frame {f}");
+        }
+        assert_eq!(track_item(-1), 0);
+    }
+
+    /// Research-71 §6 census — the placement wake
+    /// (`WorldGen.cs:60261` → `:85290-85294`): `refit_tracks_around` refits
+    /// the placed −1 front AND its neighbours. A fresh piece between two
+    /// straights takes the through frame 1; the left neighbour's open-end
+    /// front (15, right −1) re-fits to the straight 1 against the new
+    /// right-side rail (the through preference, `Minecart.cs:1017-1023`).
+    #[test]
+    fn dw_e20_the_placement_wake_refits_the_new_piece_and_its_neighbours() {
+        let mut w = track_world();
+        place_track(&mut w, 9, 10, 15, -1); // open end, right dead
+        place_track(&mut w, 11, 10, 1, -1);
+        // The placed piece: PlaceTrack's style-0 write (front −1, back −1).
+        place_track(&mut w, 10, 10, -1, -1);
+        refit_tracks_around(&mut w, 10, 10);
+        assert_eq!(w.tile(10, 10).unwrap().frame_x, 1, "the −1 front took the straight");
+        assert_eq!(w.tile(9, 10).unwrap().frame_x, 1, "the left neighbour re-fit through");
+        assert_eq!(w.tile(11, 10).unwrap().frame_x, 1, "the right straight keeps");
+        // A lone placed piece (no neighbours) refits to the isolated frame 0.
+        let mut w = track_world();
+        place_track(&mut w, 20, 20, -1, -1);
+        refit_tracks_around(&mut w, 20, 20);
+        assert_eq!(w.tile(20, 20).unwrap().frame_x, 0);
+        assert_eq!(w.tile(20, 20).unwrap().frame_y, -1);
     }
 
     /// W4-f11 port (research-71 §3c), re-pointed at the kept `TRACK_FRAMES`

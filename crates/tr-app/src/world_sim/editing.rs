@@ -1468,10 +1468,11 @@ fn try_pounding_tile_tick(
                 );
                 let _ = edit::square_tile_frame_default(&mut app.world, tx, ty);
                 // `TileFrameImportant` case 314 (`WorldGen.cs:85290-85294`):
-                // the wake refits the track with `FrameTrack(pound: false)`;
+                // the wake refits EVERY 3×3 track with `FrameTrack(pound:
+                // false)` (the SquareTileFrame walk, not just the hit cell);
                 // `HandleRopeEndFraming` is the rope-framing seam (the rope
                 // draw module reads the frames live — unported half).
-                crate::minecart::frame_track_place(&mut app.world, tx, ty);
+                crate::minecart::refit_tracks_around(&mut app.world, tx, ty);
             }
             app.queue_map_ring(tx, ty);
             app.world_key = None;
@@ -6221,6 +6222,16 @@ fn cell_drops(
     let rolls: Vec<(u16, i32)> = match hit.kind {
         78 => vec![(222, 1)],
         380 => vec![((3215 + i32::from(hit.frame_y) / 18) as u16, 1)],
+        // `case 314: dropItem = Minecart.GetTrackItem(tileCache);`
+        // (`WorldGen.cs:64582-64584`, `Minecart.cs:1508-1517`): the track
+        // piece drops by its FRONT frame's type — 0 → 2340 Minecart Track,
+        // 1 → 2492 Pressure Track, 2 → 2739 Booster Track. The `by_tile`
+        // fallback would leak 2340 for every frame (the first placing item).
+        // Research-71 §6 census.
+        314 => match crate::minecart::track_item(hit.frame_x) {
+            0 => None,
+            id => Some(id),
+        },
         // S1-P-i30: the tree/cactus kinds drop through their per-cell kill
         // records (`TreeDropEvent`, resolved in `break_drop_events`) — the
         // hit cell included — so the generic per-cell arm must not double
@@ -7574,6 +7585,14 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
     // counter (`AchievementsHelper.cs:401-404`).
     if matches!(kind, 20 | 590 | 595 | 615) {
         let _ = app.achievements.notify_custom_int("Do", 1);
+    }
+    if kind == 314 {
+        // `WorldGen.PlaceTile`'s `SquareTileFrame` tail (`:60261`) →
+        // `TileFrameImportant` case 314 (`:85290-85294`): the 3×3 wake refits
+        // every track through `FrameTrack(pound: false)` — the placed −1
+        // front takes its neighbourhood frame, and the neighbours re-fit
+        // against the new piece (research-71 §6 census).
+        crate::minecart::refit_tracks_around(&mut app.world, tx, ty);
     }
     app.liquids.wake_around(&app.world, tx, ty, 3);
     // The placement cue: `tr_core::edit::place_tile_sound` is the
@@ -12952,6 +12971,25 @@ mod tests {
         // Styles 2 and 6 have no window.
         assert!(!is_alchemy_plant_harvestable(2, 100, &day));
         assert!(!is_alchemy_plant_harvestable(6, 100, &day));
+    }
+
+    /// W4-e20 research-71 §6 census — the track break drop
+    /// (`WorldGen.cs:64582-64584` → `Minecart.GetTrackItem`
+    /// `Minecart.cs:1508-1517`): a pressure piece (front 21) drops 2492, a
+    /// booster (front 30) drops 2739, a plain rail (front 1) drops 2340 —
+    /// NOT the `by_tile` fallback's blanket 2340.
+    #[test]
+    fn dw_e20_the_track_break_drops_the_front_types_item() {
+        for (front, want) in [(1i16, 2340u16), (21, 2492), (30, 2739)] {
+            let mut w = World::new("t".into(), 64, 800);
+            let i = w.index(10, 19);
+            w.tiles[i] = Tile { kind: 314, frame_x: front, frame_y: -1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+            let mut app = break_app(w, 0xABCD);
+            break_tile(&mut app, 10, 19);
+            let kinds: Vec<u16> = app.items.iter().map(|it| it.kind).collect();
+            assert!(kinds.contains(&want), "front {front} drops {want} in {kinds:?}");
+        }
     }
 
     // DW-3.2: the observable break path — mining a blooming herb drops the
