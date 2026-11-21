@@ -114,6 +114,12 @@ impl SmartInteractState {
 /// `None` = the type has no arm (`num7 == 0 || num8 == 0` skip, `:295`).
 /// The campfire override (`:290-294`) forces (3, 2) with the default 2.
 pub(crate) fn interact_tile_size(kind: u16) -> Option<(i32, i32, i32)> {
+    // `:290-294` — the campfire set override (215, `TileID.cs:616`) runs
+    // BEFORE the zero-check (`:295`): 215 has no switch arm, the override
+    // is what sizes it.
+    if td::SET_CAMPFIRES.has(kind) {
+        return Some((3, 2, 2));
+    }
     let (w, h, pad) = match kind {
         136 | 144 | 494 => (1, 1, 0),
         216 | 338 => (1, 2, 2),
@@ -140,10 +146,6 @@ pub(crate) fn interact_tile_size(kind: u16) -> Option<(i32, i32, i32)> {
         464 => (5, 4, 2),
         _ => return None,
     };
-    // `:290-294` — the campfire set override (215, `TileID.cs:616`).
-    if td::SET_CAMPFIRES.has(kind) {
-        return Some((3, 2, 2));
-    }
     Some((w, h, pad))
 }
 
@@ -228,8 +230,10 @@ fn fill_potential_target_tiles(
 /// `FullInteraction = true` and `DemandOnlyZeroDistanceTargets = false`
 /// (the mouse-mode `SmartInteractLookup` settings, `Player.cs:17389-17390`).
 /// Fills the lists on `state` and returns the winning candidate's
-/// `(aimed_x, aimed_y, distance)` — `WinCandidacy` (`:40-56`) is the
-/// caller's (the single-provider fold of `RunQuery`'s vote).
+/// `(aimed_x, aimed_y)` — `WinCandidacy` (`:40-56`) is the caller's (the
+/// single-provider fold of `RunQuery`'s vote; the rect-distance value
+/// `:351` only ranks candidates against the other providers, so the
+/// single-provider port drops it).
 #[allow(clippy::too_many_arguments)]
 fn provide_tile_candidate(
     world: &World,
@@ -278,9 +282,11 @@ fn provide_tile_candidate(
         let ax = tx - (tile.frame_x as i32) % (18 * w) / 18;
         let ay = ty - (tile.frame_y as i32) % (18 * h + pad) / 18;
         // `:301-302` — the winner inside this object (`flag2`) and the
-        // mouse tile inside it (`flag3`).
+        // mouse tile inside it (`flag3`). `flag3` feeds only the
+        // zero-distance candidate (`num3/num4`, `:303-307`) — the gamepad
+        // `DemandOnlyZeroDistanceTargets` arm, unported (module docs).
         let mut flag2 = in_tile_bounds(num, num2, ax, ay, ax + w - 1, ay + h - 1);
-        let flag3 = in_tile_bounds(point.0, point.1, ax, ay, ax + w - 1, ay + h - 1);
+        let _flag3 = in_tile_bounds(point.0, point.1, ax, ay, ax + w - 1, ay + h - 1);
         // `:308-311` — `FullInteraction` is true, so no `flag2 &= flag3`.
         // `:312-315` — only the FIRST selected object keeps its selection.
         if flag {
@@ -386,7 +392,7 @@ pub(crate) fn smart_interact_lookup(
     let has = |kind: u16| app.inventory.iter().any(|s| s.kind == kind && s.count > 0);
     let has_1293 = has(1293);
     let has_949 = has(949);
-    let (pcx, pcy) = player.center();
+    let (pcx, _) = player.center();
     let (_, pbottom) = player.bottom();
     let snapping = |i: i32, j: i32| {
         let dx = i as f32 * 16.0 + 8.0 - pcx;
@@ -478,22 +484,27 @@ mod w4_g86_feed_tests {
         }
         assert!(s.showing_genuine);
         assert_eq!((s.aimed_x, s.aimed_y), (41, 38));
-        // The reach rect around (35, 40): x 30..41, y 37..43 (width 20,
-        // height 42 → ceil rows 40..42), padded ±10.
-        assert_eq!((s.lx, s.ly, s.hx, s.hy), (20, 27, 51, 53));
+        // The reach rect around (35, 40): x 30..41 (width 20 → ceil col 36),
+        // y 37..45 (height 42 → ceil((640+42)/16)-1 = 42, +3), padded ±10.
+        assert_eq!((s.lx, s.ly, s.hx, s.hy), (20, 27, 51, 55));
     }
 
-    /// The mouse OFF the altar: the coords list still fills
-    /// (FullInteraction), the selected list stays empty.
+    /// The mouse OFF the altar: the NEAREST target still wins and selects
+    /// (`flag2` tests the winning target's object, `:301`, not the mouse —
+    /// `FullInteraction` skips the `flag2 &= flag3` gate, `:308-311`), so
+    /// the altar's cells enter BOTH lists; the aimed cell is the nearest
+    /// target cell, not the mouse tile.
     #[test]
-    fn w4_g86_the_off_object_mouse_fills_coords_but_not_selected() {
+    fn w4_g86_the_off_object_mouse_still_selects_the_nearest_object() {
         let mut app = altar_app();
         let mouse = (35.0 * 16.0 + 8.0, 39.0 * 16.0 + 8.0);
         smart_interact_lookup(&mut app, mouse, (35, 39));
         let s = &app.smart_interact;
         assert_eq!(s.coords.len(), 6);
-        assert!(s.selected.is_empty(), "no object under the mouse");
-        assert!(s.showing_genuine, "the nearest target still wins");
+        assert_eq!(s.selected.len(), 6, "the nearest object keeps its selection");
+        assert!(s.showing_genuine);
+        // The nearest target to (568, 632): (40, 39) centre (648, 632), d=80.
+        assert_eq!((s.aimed_x, s.aimed_y), (40, 39));
     }
 
     /// The runtime smart-cursor flag off / a loaded cursor stack: the
