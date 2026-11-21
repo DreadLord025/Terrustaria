@@ -711,11 +711,29 @@ pub fn generate_dungeon(world: &mut World, x0: i32, surface_y: i32, r: &mut Hall
     if let Some(fp) = fp {
         // `WorldGen.getGoodWorldGen` (`get fixed boi`) triples the spike
         // count; `variants::WorldVariants` uses `FOR_THE_WORTHY` as the port's
-        // proxy for it, so the dungeon pass does too.
+        // proxy for it, so the dungeon pass does too. W4-f24 R3: the drunk/
+        // noSurface scan-row arms ride the world's flags; `gen_pos_y` is the
+        // port's proxy for `genVars.generatingDungeonPositionY` (the start
+        // row `top` — the C# moves it to the topmost room,
+        // `DungeonCrawler.cs:399-400`, no room list in the port).
         let good_world = world
             .seeds
             .contains(crate::seeds::SeedFlags::FOR_THE_WORTHY);
-        super::dungeon_features::place_spikes(world, &fp, world.world_surface, 1.0, good_world, r);
+        let drunk = world.seeds.contains(crate::seeds::SeedFlags::DRUNK);
+        let no_surface = world
+            .micro_seeds
+            .contains(crate::seeds::MicroSeedFlags::NO_SURFACE);
+        super::dungeon_features::place_spikes(
+            world,
+            &fp,
+            world.world_surface,
+            1.0,
+            good_world,
+            drunk,
+            no_surface,
+            top,
+            r,
+        );
         // The style rolls `SetupDungeonDataVariables` makes
         // (`DungeonCrawler.cs:213-280`), drawn before the crawl in the C# —
         // the wall variants feed `DungeonGlobalWallVariants` and the lantern
