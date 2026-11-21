@@ -39,6 +39,11 @@ pub struct ShimmerContext {
     pub downed_golem: bool,
     /// `Main.GetMoonPhase()` — 0-7.
     pub moon_phase: u8,
+    /// `WorldGen.crimson` (`World.crimson`, the persisted world evil type —
+    /// W4-g69's field, `.wld` flags + `.trwld` v18 tail). The decraft variant
+    /// preference (`ShimmerTransforms.cs:22-29`) reads it; `false` is the
+    /// corruption default (`WorldFile.cs:3507`'s fallback).
+    pub world_crimson: bool,
 }
 
 /// What one extraction does. `Execute` is the caller's job: the C# branch names
@@ -106,7 +111,7 @@ pub fn can_shimmer(ctx: &ShimmerContext, item_type: u16, stack: u32, make_npc: u
     let transform = shimmer::transform_to_item(equivalent, create_tile, place_style, ctx.moon_phase);
     if (equivalent != 4986 || ctx.unlocked_slime_rainbow)
         && transform <= 0
-        && !is_item_decraftable_and_unlocked(item_type, stack)
+        && !is_item_decraftable_and_unlocked(ctx, item_type, stack)
         && !shimmer::is_common_coin(equivalent)
     {
         return make_npc > 0;
@@ -117,8 +122,9 @@ pub fn can_shimmer(ctx: &ShimmerContext, item_type: u16, stack: u32, make_npc: u
 /// `ShimmerTransforms.IsItemDec craftableAndIsDecraftUnlocked`
 /// (`ShimmerTransforms.cs:64-80`): the recipe index exists, is not locked, and
 /// the stack covers at least one result.
-pub fn is_item_decraftable_and_unlocked(item_type: u16, stack: u32) -> bool {
-    let index = decrafting_recipe_index(shimmer::shimmer_equivalent_type(item_type, true));
+pub fn is_item_decraftable_and_unlocked(ctx: &ShimmerContext, item_type: u16, stack: u32) -> bool {
+    let index =
+        decrafting_recipe_index(ctx.world_crimson, shimmer::shimmer_equivalent_type(item_type, true));
     if index < 0 {
         return false;
     }
@@ -137,8 +143,10 @@ pub fn is_item_decraftable_and_unlocked(item_type: u16, stack: u32) -> bool {
 /// `Recipe.UpdateWhichItemsAreCrafted` (`Recipe.cs:15241-15257`): the LAST
 /// matching row wins per set — the plain set gates on `!notDecraftable`, the
 /// evil sets on the row's `crimson`/`corruption` tag ALONE (no
-/// `notDecraftable` gate there).
-pub fn decrafting_recipe_index(item_type: u16) -> i32 {
+/// `notDecraftable` gate there). `world_crimson` is `WorldGen.crimson` — the
+/// caller threads the persisted [`tr_core::world::World::crimson`] flag
+/// (W4-g69's field; the pre-v18 corruption default).
+pub fn decrafting_recipe_index(world_crimson: bool, item_type: u16) -> i32 {
     let mut found = -1;
     let mut crimson = -1;
     let mut corruption = -1;
@@ -161,10 +169,10 @@ pub fn decrafting_recipe_index(item_type: u16) -> i32 {
     if found < 0 {
         return -1;
     }
-    if world_crimson() && crimson >= 0 {
+    if world_crimson && crimson >= 0 {
         return crimson; // `ShimmerTransforms.cs:22-25`
     }
-    if !world_crimson() && corruption >= 0 {
+    if !world_crimson && corruption >= 0 {
         return corruption; // `:26-29`
     }
     found
@@ -203,33 +211,14 @@ pub(crate) fn decraft_flags() -> (bool, bool) {
     DECRAFT_FLAGS.with(std::cell::Cell::get)
 }
 
-/// `WorldGen.crimson` — the world-evil flavour the decraft variant preference
-/// reads (`ShimmerTransforms.cs:22-29`). The port persists no world-evil type
-/// (`wld/sections/flags.rs:69` writes false, `shop.rs`'s standing gap); the
-/// thread-local default is the corruption world (false), the same stand-in
-/// `loot.rs`/`shop.rs` carry. [`set_world_crimson`] is the wiring hook for the
-/// day the flag lands.
-fn world_crimson() -> bool {
-    WORLD_CRIMSON.with(std::cell::Cell::get)
-}
-
 thread_local! {
     static DECRAFT_FLAGS: std::cell::Cell<(bool, bool)> = const { std::cell::Cell::new((true, true)) };
-    static WORLD_CRIMSON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The app's wiring hook: the world's downed flags into the lock checks (so the
 /// pure helpers above stay callable from the tests without a world).
 pub(crate) fn set_decraft_flags(skeletron: bool, golem: bool) {
     DECRAFT_FLAGS.with(|c| c.set((skeletron, golem)));
-}
-
-/// The world-evil wiring hook (the tests flip it; the app threads the
-/// persisted flag once it exists — the port persists no world-evil type yet,
-/// so the non-test build has no caller).
-#[allow(dead_code)]
-pub(crate) fn set_world_crimson(crimson: bool) {
-    WORLD_CRIMSON.with(|c| c.set(crimson));
 }
 
 /// `Recipe.ContainsIngredient` (`Recipe.cs:16756-16773`) over the port's
@@ -307,7 +296,8 @@ pub fn resolve_shimmer(
     // walk spawns nothing, `stack -= 0` keeps the drop) and falls through to
     // the shared tail. The `CanShimmer` gate normally refuses such a drop,
     // but `GetShimmered` itself has no `amount > 0` guard.
-    let index = decrafting_recipe_index(shimmer::shimmer_equivalent_type(item_type, true));
+    let index =
+        decrafting_recipe_index(ctx.world_crimson, shimmer::shimmer_equivalent_type(item_type, true));
     if index >= 0 {
         let index = index as usize;
         let amount = stack / craft::RECIPES[index].create.1;
@@ -425,6 +415,7 @@ pub(crate) fn apply_due_transforms(app: &mut App, indices: &[u32]) {
         downed_skeletron: app.world.downed_skeletron,
         downed_golem: app.world.downed_golem,
         moon_phase: app.world.moon_phase,
+        world_crimson: app.world.crimson,
     };
     for &idx in indices {
         let Some(drop) = app.items.get(idx as usize).cloned() else {
@@ -766,6 +757,7 @@ mod tests {
             downed_skeletron: true,
             downed_golem: true,
             moon_phase: 0,
+            world_crimson: false,
         }
     }
 
@@ -856,7 +848,7 @@ mod tests {
     fn the_decraft_resolves_the_recipe_and_the_amount() {
         // Recipe 62 is Silk Rope x30 from Cobwebs (`recipes_gen.rs`) — the type
         // is in no transform set entry, so the decraft is the arm.
-        assert_eq!(decrafting_recipe_index(3077), 62);
+        assert_eq!(decrafting_recipe_index(false, 3077), 62);
         assert_eq!(
             resolve_shimmer(&ctx(), 3077, 60, 0),
             ShimmerOutcome::Decraft {
@@ -975,7 +967,7 @@ mod tests {
         // `Recipe.cs:2193-2194` — Silver Bullet (278, recipe 266) refunds
         // 70 Musket Balls + 1 Silver Ore (14), NOT the 70 balls + 1 Silver
         // Bar (21) the craft spends. The override replaces the whole list.
-        let idx = decrafting_recipe_index(278) as usize;
+        let idx = decrafting_recipe_index(false, 278) as usize;
         let ings = decraft_ingredients(idx);
         assert_eq!(ings.len(), 2);
         assert_eq!((ings[0].item_type, ings[0].units), (97, 70));
@@ -983,19 +975,19 @@ mod tests {
         // `:9664-9665` — Copper Pickaxe (3509) refunds 1 Copper Bar (12) +
         // 1 Wood (9), NOT the 8 bars / 4 wood the craft spends (the group
         // substitution is bypassed — the C# `Select` reads `item.type`).
-        let idx = decrafting_recipe_index(3509) as usize;
+        let idx = decrafting_recipe_index(false, 3509) as usize;
         let ings = decraft_ingredients(idx);
         assert_eq!(ings.len(), 2);
         assert_eq!((ings[0].item_type, ings[0].units), (12, 1));
         assert_eq!((ings[1].item_type, ings[1].units), (9, 1));
         // `:9694` — Copper Shortsword (3507) refunds 1 Copper Bar only.
-        let idx = decrafting_recipe_index(3507) as usize;
+        let idx = decrafting_recipe_index(false, 3507) as usize;
         let ings = decraft_ingredients(idx);
         assert_eq!(ings.len(), 1);
         assert_eq!((ings[0].item_type, ings[0].units), (12, 1));
         // A recipe with NO override keeps the plain required walk (Silk
         // Rope 3077 → 1 Cobweb 225).
-        let idx = decrafting_recipe_index(3077) as usize;
+        let idx = decrafting_recipe_index(false, 3077) as usize;
         let ings = decraft_ingredients(idx);
         assert_eq!(ings.len(), 1);
         assert_eq!((ings[0].item_type, ings[0].units), (225, 1));
@@ -1052,41 +1044,69 @@ mod tests {
         );
     }
 
-    /// W4-e19 deferred 6 — the crimson/corruption decraft variant
+    /// W4-e19 — the crimson/corruption decraft variant
     /// (`ShimmerTransforms.cs:22-29`, the `Recipe.cs:15249-15256` tags):
     /// Monster Lasagna (5092) has a corruption row (90, Rotten Chunk 68 ×8)
-    /// and a crimson row (91, Vertebrae 1330 ×8). The world-evil flag picks
-    /// the variant; the ingredients follow.
+    /// and a crimson row (91, Vertebrae 1330 ×8). The PERSISTED world-evil
+    /// flag (`World.crimson`, the g69 field + `.trwld` v18 tail) picks the
+    /// variant; the ingredients follow. The old thread-local hook is gone —
+    /// the preference reads the world through [`ShimmerContext`].
     #[test]
     fn w4_e19_the_decraft_variant_follows_the_world_evil() {
         // The corruption world (the default): row 90, the Rotten Chunk.
-        set_world_crimson(false);
-        let idx = decrafting_recipe_index(5092);
+        let idx = decrafting_recipe_index(false, 5092);
         assert_eq!(idx, 90, "the corruption variant");
         let ings = decraft_ingredients(idx as usize);
         assert_eq!(ings.len(), 1);
         assert_eq!((ings[0].item_type, ings[0].units), (68, 8));
         // The crimson world: row 91, the Vertebrae.
-        set_world_crimson(true);
-        let idx = decrafting_recipe_index(5092);
+        let idx = decrafting_recipe_index(true, 5092);
         assert_eq!(idx, 91, "the crimson variant");
         let ings = decraft_ingredients(idx as usize);
         assert_eq!((ings[0].item_type, ings[0].units), (1330, 8));
         // The resolve rides the same preference (the Decraft arm's index).
         assert_eq!(
-            resolve_shimmer(&ctx(), 5092, 1, 0),
+            resolve_shimmer(&ShimmerContext { world_crimson: true, ..ctx() }, 5092, 1, 0),
             ShimmerOutcome::Decraft { recipe_index: 91, amount: 1 }
         );
-        set_world_crimson(false);
         assert_eq!(
             resolve_shimmer(&ctx(), 5092, 1, 0),
             ShimmerOutcome::Decraft { recipe_index: 90, amount: 1 }
         );
         // A type with NO evil variant keeps the plain index in both worlds
         // (Silk Rope 3077, recipe 62).
-        assert_eq!(decrafting_recipe_index(3077), 62);
-        set_world_crimson(true);
-        assert_eq!(decrafting_recipe_index(3077), 62);
-        set_world_crimson(false);
+        assert_eq!(decrafting_recipe_index(false, 3077), 62);
+        assert_eq!(decrafting_recipe_index(true, 3077), 62);
+    }
+
+    /// W4-e19 CONSUME witness — the flag the decraft reads is the PERSISTED
+    /// `World.crimson`: a crimson world survives the `.trwld` v18 round trip
+    /// (g69's tail byte) and the reloaded world's decraft flips to row 91;
+    /// a pre-v18 file loads the corruption default (`WorldFile.cs:3507`'s
+    /// fallback) and decrafts row 90 even when the payload world was crimson.
+    #[test]
+    fn w4_e19_the_crimson_world_decraft_reads_the_persisted_flag() {
+        let mut w = tr_core::world::World::new("Test".into(), 64, 48);
+        w.crimson = true;
+        let mut buf =
+            tr_core::save::to_bytes(&w, &tr_core::save::WorldSide::default()).unwrap();
+        let (back, _) = tr_core::save::parse(&buf).unwrap();
+        assert!(back.crimson, "the crimson world survives the reload");
+        let reloaded = ShimmerContext { world_crimson: back.crimson, ..ctx() };
+        assert_eq!(
+            resolve_shimmer(&reloaded, 5092, 1, 0),
+            ShimmerOutcome::Decraft { recipe_index: 91, amount: 1 }
+        );
+        // The pre-v18 truncation: the version patched to 17, the crimson
+        // tail byte gone — the corruption default decrafts row 90.
+        buf.truncate(buf.len() - 1);
+        buf[8..12].copy_from_slice(&17u32.to_le_bytes());
+        let (old, _) = tr_core::save::parse(&buf).unwrap();
+        assert!(!old.crimson, "a pre-v18 file keeps the corruption default");
+        let legacy = ShimmerContext { world_crimson: old.crimson, ..ctx() };
+        assert_eq!(
+            resolve_shimmer(&legacy, 5092, 1, 0),
+            ShimmerOutcome::Decraft { recipe_index: 90, amount: 1 }
+        );
     }
 }

@@ -11768,9 +11768,14 @@ code-only — witnesses WRITTEN NOT RUN):
   5107/5120/5322/5457), `craft::Recipe` carries `crimson`/`corruption`, and
   `decrafting_recipe_index` runs the `IsCraftedCrimson`/`IsCraftedCorruption`
   LAST-tag-wins preference (the evil sets have NO `notDecraftable` gate,
-  `Recipe.cs:15249-15256`). `WorldGen.crimson` rides the `world_crimson`
-  thread-local (default false — the port persists no world-evil type, the
-  `shop.rs`/`loot.rs` standing gap; `set_world_crimson` is the wiring hook).
+  `Recipe.cs:15249-15256`). Round 3 CONSUME: the preference reads the PERSISTED
+  `World.crimson` (the W4-g69 field, adopted verbatim from g69 `2c84e9b66` —
+  same field + ctor + three gen-entries + the `.wld` flags byte + the `.trwld`
+  v18 tail, keep-one g69-canonical on merge) through
+  `ShimmerContext.world_crimson`; the round-2 `world_crimson` thread-local +
+  `set_world_crimson` hook are deleted. The pre-v18 corruption default
+  (`WorldFile.cs:3507`'s fallback) decrafts the corruption row. The
+  `shop.rs`/`loot.rs` folds still carry their own defaults (their lanes' rows).
 
 The ramp-tick witness re-pinned to a 90..=93 band: the faithful surface offset
 starts the resting drop's ramp one tick later than the old naive probe (the

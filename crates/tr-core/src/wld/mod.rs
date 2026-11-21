@@ -1610,6 +1610,8 @@ mod tests {
         world.hell_back_style = 2;
         world.blood_moon = true;
         world.eclipse = true;
+        // W4-g69: the world evil type rides the flags block (tail 10).
+        world.crimson = true;
         world.downed_eoc = true;
         world.downed_eow = true;
         world.downed_skeletron = true;
@@ -1713,6 +1715,7 @@ mod tests {
         assert_eq!(got.moon_phase, want.moon_phase, "{context}: moon phase");
         assert_eq!(got.blood_moon, want.blood_moon, "{context}: blood moon");
         assert_eq!(got.eclipse, want.eclipse, "{context}: eclipse");
+        assert_eq!(got.crimson, want.crimson, "{context}: WorldGen.crimson");
         assert_eq!(
             got.hell_back_style, want.hell_back_style,
             "{context}: hell back style"
@@ -1994,6 +1997,9 @@ mod tests {
             tail[11 + i] = u8::from(v);
         }
         tail[22] = u8::from(world.saved_goblin); // savedGoblin (`:1293`)
+        // W4-g69: `WorldGen.crimson` at tail offset 10 (2+8 — after the
+        // event pair and the dungeon anchor, `SaveWorldFlags:1281`).
+        tail[10] = u8::from(world.crimson);
         tail[25] = u8::from(world.downed_goblins); // downedGoblins (`:1296`)
         tail[27] = u8::from(world.downed_frost); // downedFrost (`:1297`)
         tail[28] = u8::from(world.downed_pirates); // downedPirates (`:1298`)
@@ -3481,6 +3487,8 @@ mod tests {
         let mut data = fixture();
         let tail_at = tail_offset_in_synthetic(&data, VER);
         let patch = |data: &mut Vec<u8>, off: usize, v: u8| data[tail_at + off] = v;
+        // W4-g69: WorldGen.crimson at tail 10 (`LoadWorldFlags:2080`).
+        patch(&mut data, 10, 1);
         patch(&mut data, 23, 1); // savedWizard (`:1294`)
         patch(&mut data, 24, 1); // savedMech (`:1295`)
         patch(&mut data, 110, 1); // savedAngler (`:1334`)
@@ -3501,6 +3509,7 @@ mod tests {
         patch(&mut data, 2030, 1); // unlockedPartyGirlSpawn (`:1401`)
         patch(&mut data, 2035, 1); // unlockedPrincessSpawn (`:1406`)
         let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.crimson, "WorldGen.crimson at tail 10");
         assert!(w.saved_wizard, "savedWizard at tail 23");
         assert!(w.saved_mech, "savedMech at tail 24");
         assert!(w.saved_angler, "savedAngler at tail 110");
