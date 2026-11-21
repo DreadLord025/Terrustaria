@@ -6866,6 +6866,95 @@ witnesses are written not run.
   carries no world-evil flag); the cake gift's `newAndShiny`/pickup-sound
   side effects ride the port's existing pickup seams, not the talk.
 
+### W4-d120 kind census + the remaining GetChat arms (2026-11-21, code-only mode)
+
+The directive's "kinds WITH rows" census, read off the PUSHED branches
+(`git rev-list a725acb0..origin/<lane>`), not memory:
+
+- **d35 (71-140, eb0f1005, 8 ahead)**: 33 kinds landed — NONE has a
+  `GetChat` arm (the Werewolf 104 / Clown 109 etc. are enemies; the C#
+  ladder `NPC.cs:93766-94821` carries no case for any of them). The
+  Truffle 160 is NOT in d35's band — it sits in d36's 141-210 lane.
+- **d34 (1-70, 4012a7f3, 2 ahead)**: the **OldMan 37** kind + identity
+  rows ARE claimed and pushed (phase 1, protocol id 268) — d120 ports
+  NO OldMan rows; only its `GetChat` arm (`:94017-94037`) lands here.
+- **d37 (211-280, 750d8e44, 1 ahead)**: the **Pirate 229** kind IS
+  claimed (protocol id 361, the `is_town_npc_like` extension included) —
+  only its `GetChat` arm (`:94569-94609`) lands here.
+- **d40 (421-490, 8fe1d6d3, 12 ahead)**: the **SkeletonMerchant 453**
+  kind IS claimed at its VANILLA protocol id 453 (batch 10;
+  `is_town_npc_like` carries the `NPC.cs:6860` row, the ctor friendly
+  flag, the humanoid FindFrame arm) — only its `GetChat` arm
+  (`:94762-94775`) lands here.
+- **d36 (141-210) / d39 (351-420) / d41 (491-560) / d42 (561-630) /
+  d43 (631-697)**: 0 ahead — the SantaClaus 142, Truffle 160,
+  Steampunker 178, Cyborg 209 and BartenderUnconscious 579 kinds are
+  UNCLAIMED. d120 ports the small SetDefaults rows itself (the claim
+  doc `tools/_d120_claim.md`, pushed FIRST): the five town kinds +
+  their `GetChat` arms, 3 kinds per commit.
+- **f43 (79a037f5)** owns the town pets 637/638/656 + the town slimes
+  670/678-684 SPAWN arms (`town_arrival_pets.rs`, id-keyed, unwired);
+  its census §Port-gaps-2 assigns the pet/slime ENUM rows to d43 —
+  d120 leaves those kinds and their `:94804-94819` arms to the
+  d43/f43 wiring lane. **c41**'s two pushed commits are docs-only
+  (the town-gate witnesses) — no kind claims there.
+
+The five new kinds' protocol ids ride the port-local 241-245 band
+(free in `to_u16`/`from_u16`/`render_key` on main AND on every pushed
+sibling — the d34 266-275, d37 354-399, d35 429-461, d40 430-488
+bands all clear it). cs_id/net_id keep the vanilla types. The
+SetDefaults rows are verbatim (`NPC.cs:10791-10804` Santa,
+`:11003-11016` Truffle, `:11252-11265` Steampunker, `:11682-11695`
+Cyborg — NPCHit4/500 HP/def 30/kb 0.25, `:16554-16568` the
+unconscious Bartender — 34x8, aiStyle 0, NPCDeath6, rarity 1); all
+five carry `SpecificallyImmuneTo {31}` (`NPCID.cs`'s
+DebuffImmunitySets rows). The bestiary entries follow
+`AddTownNPCs_Manual` (`BestiaryDatabaseNPCsPopulator.cs:809-831`);
+579 is `Hide = true` (`NPCID.cs:5178-5184`) — it folds onto the
+Tavernkeep's row (the Sleeping Angler precedent).
+
+Deliberate deviations (this slice):
+
+1. **The housing-PLACEMENT set stays narrow** — the four town kinds
+   join `is_town_resident()` (the save/resident-count set, the
+   M4-TOWN-19 Zoologist/Princess precedent) and `is_town_npc_like()`
+   (the C# `townNPC` flag's talk/melee/net consumers) and so
+   `is_friendly()`, but NOT `is_town_npc()` (the narrow
+   `quick_find_home` placement set): the arrival-ladder gates +
+   housing placement are the c41/f43/d118 lanes' surgery. The
+   unconscious Bartender 579 is a bound transient (NOT `townNPC` in
+   the C#) — it joins only `is_friendly()`'s bound list; its
+   talk-gate (`Main.cs:43047`'s explicit `579`) rides the same
+   pre-existing bound-form gap as 105/106/123/354/376/589 (the
+   `is_town_npc_like` gate the talk arm reads).
+2. **Sheets deferred** — NPC_142/160/178/209/579 are NOT packed: the
+   skyline atlas stands at 8115 px (main set) / 8119 px (full set)
+   against the 8192 bound (`tools/atlas_sim.js` re-measured); the
+   ~1100-px town strips do not fit (the wyvern/d35 precedent). The
+   draw arms read `npc_sheet` → None → skip; the bestiary portraits
+   rest the SetDefaults box.
+3. **The AI arms**: Santa/Truffle/Steampunker/Cyborg ride the
+   `update_guide` town-wander stand-in (the M4-TOWN roster's shape;
+   the faithful aiStyle-7 machine is `npc_ai_town.rs`, the b3 lane);
+   BartenderUnconscious holds still (aiStyle 0, the bound-form
+   precedent — the 579→550 talk transform is the wiring lane's).
+4. **The `npc_add_height` town list** gains the five kinds (the C#
+   `townNPC && ai[0] == 5` sitting row, `Main.cs:22169-22181`); the
+   Steampunker's `num = 2f` row (`:22064` region) and the
+   unconscious Bartender's `num = -2f` (`:22152-22155`) are carried.
+5. **The SkeletonMerchant chat arm's category pick** is the C#'s
+   `Language.RandomFromCategory` (`LanguageManager.cs:413-419` — the
+   FORWARD `keys[Next(count)]` index over `_categoryGroupedKeys`),
+   NOT the reverse `SelectRandom` the other mixed arms' chatter rows
+   use; the Cyborg's `FindAll` row IS forward (`array4[num12 - 5]`).
+   The Santa/Truffle/Steampunker ladders draw their fixed-band
+   `Next(3)/(6)/(5)` UP FRONT, before `HasSpecialEventText`
+   (`:94280`/`:94304`/`:94344`) — the Party Girl precedent.
+6. **The Pirate's mixed arm draws FIRST** (`:94571-94573`:
+   `Next(6 + FindAll length)` before the event text), the
+   `!Player.Male` gate rides `Next(5)`, and the fixed band skips 276
+   (273/274/275/277/278/279).
+
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter вЂ”
