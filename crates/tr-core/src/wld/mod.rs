@@ -1,4 +1,4 @@
-//! Parser + writer for Terraria `.wld` files (format version 87+, sections-based
+//! Parser + writer for Terraria `.wld` files (format version 88+, sections-based
 //! v2).
 //!
 //! Mirrors `Terraria.IO.WorldFile.LoadWorld_Version2` / `LoadWorldTiles` from the
@@ -153,8 +153,13 @@ impl<'a> SectionTable<'a> {
 
         // --- file format header ---------------------------------------------
         let version = r.i32()?;
-        if version < 87 {
-            bail!("unsupported world format {version} (expected >= 87)");
+        // W4-f45 final census: the C# dispatch is `num2 > 87 -> Version2`
+        // (`WorldFile.cs:712`), so Version2 starts at 88; version 1..87 route
+        // to `LoadWorld_Version1_Old_BeforeRelease88` (`:3423`), which the port
+        // does not carry — bail the whole old-loader range. The old `< 87`
+        // boundary let a v87 file into the Version2 walk (off-by-one).
+        if version < 88 {
+            bail!("unsupported world format {version} (expected >= 88)");
         }
         // W4-f45 final census: the C# rejects a later-version file outright
         // (`WorldFile.cs:712` `num2 > 326 -> StatusID.LaterVersion`, the same
@@ -1284,7 +1289,12 @@ mod tests {
 
     #[test]
     fn rejects_old_versions_and_broken_reads() {
-        // Version below 87 is still a hard bail.
+        // Version below 88 is a hard bail (the C# Version2 dispatch is `> 87`,
+        // `WorldFile.cs:712`; the old-loader range 1..87 is unported). v87 is
+        // the boundary case the old `< 87` guard let through (W4-f45 final).
+        let mut data = fixture();
+        data[0..4].copy_from_slice(&87i32.to_le_bytes());
+        assert!(parse(&data).is_err(), "v87 routes to the unported old loader");
         let mut data = fixture();
         data[0..4].copy_from_slice(&86i32.to_le_bytes());
         assert!(parse(&data).is_err());
