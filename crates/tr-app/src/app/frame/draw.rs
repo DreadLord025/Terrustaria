@@ -1979,6 +1979,27 @@ impl App {
                                         &t,
                                     );
                                 }
+                                // `Main.cs:56014-56036`: the close button draws
+                                // AFTER the hover text (`:56046-56049`'s
+                                // `MouseText` rides the batch the icon calls
+                                // run in; the button's `:56012` batch is the
+                                // UI one) — the bottom-left `Map_0`/`Map_4`
+                                // icon, hover resolved against the same box
+                                // `handle_fullmap_close` clicks.
+                                let close_pos =
+                                    ui::chrome::fullmap_close_button_pos(screen);
+                                let close_hovered = self.mouse_pos.x >= close_pos[0]
+                                    && self.mouse_pos.x
+                                        <= close_pos[0] + ui::chrome::MAP_ICON_HIT[0]
+                                    && self.mouse_pos.y >= close_pos[1]
+                                    && self.mouse_pos.y
+                                        <= close_pos[1] + ui::chrome::MAP_ICON_HIT[1];
+                                ui::chrome::draw_fullmap_close_button(
+                                    renderer,
+                                    lookups,
+                                    screen,
+                                    close_hovered,
+                                );
                                 // `Main.cs:55931-55954`: the local player's head icon,
                                 // drawn after the map tiles (`Main.cs:55609`).
                                 if let Some(p) = player.as_ref() {

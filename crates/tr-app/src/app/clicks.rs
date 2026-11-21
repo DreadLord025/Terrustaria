@@ -860,6 +860,40 @@ impl App {
         self.last_ping_pos = self.mouse_pos;
     }
 
+    /// `Main.DrawMap`'s fullscreen close button (`Main.cs:56024-56033`): the
+    /// hover box at `(10, screenHeight - 40)` (32x30, inclusive edges) sets
+    /// `player.mouseInterface = true` — the port suppresses world use behind
+    /// the whole open map already (`world_sim/editing.rs`, `Player.cs:24798`),
+    /// so the flag has no extra effect — and a press plays `SoundEngine.
+    /// PlaySound(10)` and closes the map. `UIWorldGenDebug.IsActive`
+    /// (`:56014`) has no port counterpart. Runs in the pre-gate click cluster
+    /// after `handle_fullmap_ping`, like the C#'s order inside `DrawMap`
+    /// (the ping detector at `:55486` runs before the button at `:56024`).
+    pub(crate) fn handle_fullmap_close(&mut self) {
+        if !self.ui_left_press || self.menu.is_some() || self.front.is_some() {
+            return;
+        }
+        if !self.settings.map_enabled
+            || !self.map.as_ref().is_some_and(|m| m.open)
+        {
+            return;
+        }
+        let (sw, sh) = self.screen_size();
+        let [x, y] = ui::chrome::fullmap_close_button_pos(Vec2::new(sw, sh));
+        // `Main.cs:56024`: inclusive on all four edges.
+        if self.mouse_pos.x >= x
+            && self.mouse_pos.x <= x + ui::chrome::MAP_ICON_HIT[0]
+            && self.mouse_pos.y >= y
+            && self.mouse_pos.y <= y + ui::chrome::MAP_ICON_HIT[1]
+        {
+            // `SoundEngine.PlaySound(10)` (`:56031`).
+            self.audio.play("Menu_Open");
+            if let Some(m) = self.map.as_mut() {
+                m.set_open(false);
+            }
+        }
+    }
+
     /// `ItemSlot.Handle` (context 0) subset: left click takes, places or swaps a whole
     /// stack, right click takes half or places one; on the closed hotbar a left click
     /// selects the slot like the original.
@@ -5982,5 +6016,63 @@ mod s1_p_i44_shop_click_tests {
         assert_eq!(app.shop_stock[0].stack, 2);
         // The buy price of a buyOnce torch row: 50/5 = 10 per unit.
         assert_eq!(app.coins, 1_000_000 - 100);
+    }
+}
+
+#[cfg(test)]
+mod w4_e18_fullmap_close_tests {
+    use super::*;
+    use crate::app::flow::front_flow_tests::flow_app;
+    use crate::map::WorldMap;
+
+    /// A headless App with a real-sized world and the fullscreen map open.
+    fn close_app() -> App {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = tr_core::World::new("close".into(), 260, 200);
+        app.map = Some(WorldMap::new(&app.world));
+        app.map.as_mut().unwrap().set_open(true);
+        app
+    }
+
+    /// W4-e18 residual census (written, not run - code-only): the close
+    /// button's press (`Main.cs:56024-56033`) closes the fullscreen map.
+    /// The box is `(10, screenHeight - 40)` 32x30 inclusive; the default
+    /// headless screen is 1600x900, so the centre is `(26, 875)`.
+    #[test]
+    fn w4_e18_the_close_button_press_closes_the_map() {
+        let mut app = close_app();
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(26.0, 875.0);
+        app.handle_fullmap_close();
+        assert!(!app.map.as_ref().unwrap().open, "the press closed the map");
+    }
+
+    /// W4-e18 (written, not run - code-only): a press one pixel outside the
+    /// box does not close the map (`Main.cs:56024`'s inclusive edges).
+    #[test]
+    fn w4_e18_a_press_outside_the_box_leaves_the_map_open() {
+        let mut app = close_app();
+        app.ui_left_press = true;
+        // x = 42.01 is past the 10 + 32 right edge.
+        app.mouse_pos = Vec2::new(42.01, 875.0);
+        app.handle_fullmap_close();
+        assert!(app.map.as_ref().unwrap().open, "outside the box: no close");
+        // And the corner itself IS inside (inclusive).
+        app.mouse_pos = Vec2::new(42.0, 890.0);
+        app.handle_fullmap_close();
+        assert!(!app.map.as_ref().unwrap().open, "the corner closes the map");
+    }
+
+    /// W4-e18 (written, not run - code-only): with the map shut the handler
+    /// is a no-op even on the box (the C# block lives inside the
+    /// `Main.mapFullscreen` branch, `Main.cs:55782`).
+    #[test]
+    fn w4_e18_the_handler_is_a_no_op_with_the_map_shut() {
+        let mut app = close_app();
+        app.map.as_mut().unwrap().set_open(false);
+        app.ui_left_press = true;
+        app.mouse_pos = Vec2::new(26.0, 875.0);
+        app.handle_fullmap_close();
+        assert!(!app.map.as_ref().unwrap().open);
     }
 }
