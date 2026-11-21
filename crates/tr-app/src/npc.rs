@@ -6700,8 +6700,13 @@ impl Npc {
     /// 0, default colour, scale 1f — ZERO explicit draws, type 209 hits
     /// no per-type tweak). The loop writes `frame.Y = num` per iteration
     /// (a no-op after the first — the row is the strip's row 1). The
-    /// burst fires ONCE per open: the row leaves 0 and the 30-tick cycle
-    /// never returns to it while `ai[0] > 0`.
+    /// vanilla re-fire quirk (`:71941-71947`): the tail recompute
+    /// `(int)frameCounter % 30 / 6` reads row 0 for frameCounter 1..5,
+    /// so the `frame == 0` gate RE-FIRES the burst on those ticks —
+    /// from a fresh open (counter 0) SIX 50-dust bursts land before
+    /// counter 6 holds row 1 (the port reproduces it; the batch-6
+    /// witness fix `bcf917437` pins both the single-burst park at
+    /// counter 5 and the six-burst fresh open).
     fn moon_core_open_burst(
         &mut self,
         world: &World,
@@ -13690,9 +13695,12 @@ impl Npc {
                         let ang = num6 + num5 * num10;
                         // UnitY.RotatedBy(ang) = (−sin, cos) — the XNA
                         // matrix over f64 trig (`Utils.cs:1675-1684`).
+                        // The scale keeps the C# left-to-right f32 order
+                        // ((rot·num7)·(nf·1.6+1.6)) — the e2-b5
+                        // `6e304b960` fidelity convention, NOT a
+                        // pre-folded scalar (f32 rounding differs).
                         let (sn, cs) = ((ang as f64).sin() as f32, (ang as f64).cos() as f32);
-                        let speed = num7 * (rng.next_float() * 1.6 + 1.6);
-                        dd.velocity = Vec2::new(-sn, cs) * speed;
+                        dd.velocity = Vec2::new(-sn, cs) * num7 * (rng.next_float() * 1.6 + 1.6);
                         dd.fade_in = fade_in;
                         dd.scale = num8;
                         num10 += 1.0;
@@ -13730,8 +13738,9 @@ impl Npc {
                         let dd = dust.slot_mut(idx);
                         dd.no_gravity = true;
                         dd.position = Vec2::new(vx, vy);
-                        let speed = num7 * (rng.next_float() * 0.9 + 1.6);
-                        dd.velocity = Vec2::new(0.0, -speed);
+                        // `-UnitY * num7 * (nf*0.9+1.6)` — the C#
+                        // left-to-right f32 order (e2-b5 `6e304b960`).
+                        dd.velocity = Vec2::new(0.0, -1.0) * num7 * (rng.next_float() * 0.9 + 1.6);
                         dd.fade_in = fade_in;
                         dd.scale = num8;
                     }
@@ -13754,7 +13763,11 @@ impl Npc {
                     }
                     let r = 20.0 + rng.next_float() * 400.0;
                     let (sx, sy) = (cx + ox * r, cy + oy * r);
-                    let (tx, ty) = ((sx / 16.0) as i32, (sy / 16.0) as i32);
+                    // `:41415`'s probe is ToTileCoordinates too
+                    // (`Utils.cs:1807-1810`, `(int)x >> 4` — the
+                    // arithmetic shift, NOT `/16` truncation; they
+                    // differ for negative coordinates).
+                    let (tx, ty) = ((sx as i32) >> 4, (sy as i32) >> 4);
                     let in_world = tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
                     let solid = in_world
                         && world
@@ -14307,8 +14320,11 @@ impl Npc {
                             let (dx, dy) = (cx - v2x, cy - v2y);
                             let dl = (dx * dx + dy * dy).sqrt();
                             let (nx, ny) = if dl > 0.0 { (dx / dl, dy / dl) } else { (0.0, 0.0) };
-                            let speed = 3.5 * (10.0 - num9 as f32 * 2.0) / 10.0;
-                            dd.velocity = Vec2::new(nx * speed, ny * speed);
+                            // `Normalize(...) * 3.5f * (10f - num9*2f) / 10f`
+                            // — the C# left-to-right f32 order (e2-b5
+                            // `6e304b960`), NOT a pre-folded scalar.
+                            dd.velocity =
+                                Vec2::new(nx, ny) * 3.5 * (10.0 - num9 as f32 * 2.0) / 10.0;
                             dd.no_gravity = true;
                             dd.scale = num11;
                         }
@@ -14754,8 +14770,10 @@ impl Npc {
                             let (dx, dy) = (cx - v12x, cy - v12y);
                             let dl = (dx * dx + dy * dy).sqrt();
                             let (nx, ny) = if dl > 0.0 { (dx / dl, dy / dl) } else { (0.0, 0.0) };
-                            let speed = 3.5 * (10.0 - num19 as f32 * 2.0) / 10.0;
-                            dd.velocity = Vec2::new(nx * speed, ny * speed);
+                            // The head's fan convention — the C#
+                            // left-to-right f32 order (e2-b5 `6e304b960`).
+                            dd.velocity =
+                                Vec2::new(nx, ny) * 3.5 * (10.0 - num19 as f32 * 2.0) / 10.0;
                             dd.no_gravity = true;
                             dd.scale = num21;
                         }
@@ -19459,8 +19477,9 @@ mod s1_d_3_moonlord_rng_witnesses {
                 dd.position = Vec2::new(v4x, v4y);
                 let ang = num6 + num5 * num10;
                 let (sn, cs) = ((ang as f64).sin() as f32, (ang as f64).cos() as f32);
-                let speed = num7 * (witness.next_float() * 1.6 + 1.6);
-                dd.velocity = Vec2::new(-sn, cs) * speed;
+                // The C# left-to-right f32 order ((rot·num7)·(nf·1.6+1.6)).
+                dd.velocity =
+                    Vec2::new(-sn, cs) * num7 * (witness.next_float() * 1.6 + 1.6);
                 dd.fade_in = fade_in;
                 dd.scale = num8;
                 num10 += 1.0;
@@ -19490,8 +19509,8 @@ mod s1_d_3_moonlord_rng_witnesses {
                 let dd = mirror.slot_mut(idx);
                 dd.no_gravity = true;
                 dd.position = Vec2::new(vx, vy);
-                let speed = num7 * (witness.next_float() * 0.9 + 1.6);
-                dd.velocity = Vec2::new(0.0, -speed);
+                dd.velocity =
+                    Vec2::new(0.0, -1.0) * num7 * (witness.next_float() * 0.9 + 1.6);
                 dd.fade_in = fade_in;
                 dd.scale = num8;
             }
@@ -19626,7 +19645,7 @@ mod s1_d_3_moonlord_rng_witnesses {
         let (cw, ch) = core.size();
         let sx = core.x - core.vx + cw * 0.5 + ux * r;
         let sy = core.y - core.vy + ch * 0.5 + uy * r;
-        let (tx, ty) = ((sx / 16.0) as i32, (sy / 16.0) as i32);
+        let (tx, ty) = ((sx as i32) >> 4, (sy as i32) >> 4);
         let in_world = tx >= 0 && ty >= 0 && tx < w.width && ty < w.height;
         let solid = in_world
             && w.tile(tx, ty)
@@ -19795,8 +19814,8 @@ mod s1_d_3_moonlord_rng_witnesses {
             let (dx, dy) = (cx - v2x, cy - v2y);
             let dl = (dx * dx + dy * dy).sqrt();
             let (nx, ny) = if dl > 0.0 { (dx / dl, dy / dl) } else { (0.0, 0.0) };
-            let speed = 3.5 * (10.0 - 1.0 * 2.0) / 10.0;
-            dd.velocity = Vec2::new(nx * speed, ny * speed);
+            // The C# left-to-right f32 order (num9 = 1 in this band).
+            dd.velocity = Vec2::new(nx, ny) * 3.5 * (10.0 - 1.0 * 2.0) / 10.0;
             dd.no_gravity = true;
             dd.scale = num11;
         }

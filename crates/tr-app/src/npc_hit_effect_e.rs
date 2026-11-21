@@ -2,7 +2,7 @@
 //! HEAD gap `NPC.cs:81654-81659` is the signature + `!active` gate; every
 //! gore inside `:81660-89834` is claimed by d55/e5/f10/f5), so this module
 //! takes the 17 UNCLAIMED `Gore.NewGore*` sites in OTHER NPC methods
-//! (research/71-npc-gore-wave-e-claims.md, W4-f4 wave E, code-only mode).
+//! (research/211-npc-gore-wave-e-claims.md, W4-f4 wave E, code-only mode).
 //!
 //! Batch 1 (this file's first ten sites, E1-E10):
 //!
@@ -54,7 +54,7 @@
 //!   (`:63579-63604`) draws first.
 //!
 //! Witnesses: WRITTEN NOT RUN (code-only mode, no cargo per the lane
-//! directive). See docs/research/71-npc-gore-wave-e-claims.md.
+//! directive). See docs/research/211-npc-gore-wave-e-claims.md.
 #![allow(dead_code)] // UNWIRED (the f4 code-only round): the host machines' wiring is the follow-up
 
 use crate::npc::Npc;

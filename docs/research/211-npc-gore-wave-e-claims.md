@@ -1,4 +1,9 @@
-# NPC gore wave E — the HitEffect-remainder census + claim (W4-f4, 2026-11-21)
+# 211 — NPC gore wave E: the HitEffect-remainder census + claim (W4-f4, 2026-11-21)
+
+> Renumbered 71 → **211** per the d54 collision registry
+> (`150-research-number-registry.md` §1 key 71: W4-e20's
+> `71-wiring-device-reconcile.md` first-pushed 03:50:05 wins; this doc's
+> first add 05:08:03 takes the free block). Content unchanged.
 
 Code-only lane (`task/W4-f4-dust-npc-3`, phase 2). The dust THIRD-batch
 lane (batch 1 `37d143c7`, pushed) had NO in-flight uncommitted work at the

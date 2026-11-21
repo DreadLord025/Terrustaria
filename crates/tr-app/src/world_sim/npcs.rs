@@ -1244,11 +1244,14 @@ fn update_worms_ctx(
         }
         npcs[i].worm_inited = true;
         let kind = npcs[i].kind;
-        // S1-E-21g — `NPC.cs:50965-50968`: the leech head's (117)
+        // S1-E-21g — `NPC.cs:50965-50978`: the leech head's (117)
         // tunnel-entry burst — `localAI[1]` 0 → 1 latched at the chain
-        // init, `SoundID.NPCDeath13` at base.position (the style façade).
-        // The 20-gore/dust burst behind it draws Main.rand — SKIPPED
-        // (the port's gore/dust deviation, ANALYSIS wave G).
+        // init, `SoundID.NPCDeath13` at base.position (the style façade,
+        // the play drains after the pass). W4-f4 batch 7: the 20-dust
+        // burst (site 50976) now rolls the live pool — the C# latches,
+        // plays, then spawns; the queued play drains after the pass's
+        // draws (the attenuation-gated audio convention), so the burst
+        // rides here in the latch block.
         if kind == NpcKind::LeechHead && npcs[i].local_ai[1] == 0.0 {
             npcs[i].local_ai[1] = 1.0;
             // E0502 gate fix: read the position before the mutable push.
@@ -1258,6 +1261,23 @@ fn update_worms_ctx(
                 x: sx,
                 y: sy,
             });
+            // `:50969-50977` — `num = velocity.X < 0 ? -1 : 1`, then
+            // 20× type-5 NewDust((x−20, y−20), width+40, height+40,
+            // num*8, −1) at the 7-arg defaults (alpha 0, default
+            // colour, scale 1f). ZERO explicit draws — type 5 hits no
+            // per-type tweak; no posts. The burst reads the PRE-move
+            // box (the C# runs it at AI_006's head, before `:90498`).
+            let num = if npcs[i].vx < 0.0 { -1.0 } else { 1.0 };
+            let (lw, lh) = npcs[i].size();
+            for _ in 0..20 {
+                dust.new_dust(
+                    rng, dust_ctx, world,
+                    Vec2::new(sx - 20.0, sy - 20.0),
+                    lw as i32 + 40, lh as i32 + 40, 5,
+                    num * 8.0, -1.0, 0,
+                    tr_core::particles::Color::default(), 1.0,
+                );
+            }
         }
         // The tails (9/12/15) sit outside the chain-spawn lists
         // (`:51393`/`:51436`) — they end the chain.
@@ -14133,6 +14153,20 @@ mod worm_tests {
             let mut npcs = vec![head];
             let mut rng = UnifiedRandom::new(11);
             let mut oracle = UnifiedRandom::new(11);
+            // W4-f4 b7: the Leech head's entry burst (site 50976) fires
+            // at the latch BEFORE the budget roll — 20× type-5, 6 pool
+            // internals each (50/50 box jitters, the velocity pair, the
+            // frame row, the scale jitter), ZERO explicit draws.
+            if kind == NpcKind::LeechHead {
+                for _ in 0..20 {
+                    let _ = oracle.next_max(50); // width 14+40-4
+                    let _ = oracle.next_max(50); // height 14+40-4
+                    let _ = oracle.next_range(-20, 21);
+                    let _ = oracle.next_range(-20, 21);
+                    let _ = oracle.next_max(3);
+                    let _ = oracle.next_range(-20, 21);
+                }
+            }
             let mut expected = 0u32;
             for d in 0..draws {
                 let v = if d == 0 {
@@ -14160,7 +14194,10 @@ mod worm_tests {
             // velocity pair, the frame row, the scale jitter; type 14
             // hits no per-type tweak). The links behind the opaque head
             // (alpha 255 >= 85) spawn nothing; the stationary head's
-            // displacement is 0, so the alpha holds 255.
+            // displacement is 0, so the alpha holds 255. W4-f4 b7: the
+            // Leech head's entry burst (site 50976) runs at the latch —
+            // 20× type-5, 6 internals each, ZERO explicit draws (the
+            // oracle replayed it ahead of the budget roll above).
             update_worms_in(&world, None, &mut npcs, &mut rng, &mut next_id);
             if kind == NpcKind::EaterOfWorldsHead {
                 for _ in 0..2 {
@@ -14341,6 +14378,72 @@ mod worm_tests {
             let _ = oracle.next_max(100);
         }
         assert_eq!(rng.next(), oracle.next(), "the leech still draws");
+    }
+
+    /// W4-f4 batch 7 — site 50976 (`NPC.cs:50965-50978`): the leech
+    /// head's tunnel-entry burst. The `localAI[1]` 0 → 1 latch fires
+    /// ONCE at the chain init: 20× type-5 NewDust((x−20, y−20),
+    /// width+40, height+40, num*8, −1) at the 7-arg defaults (alpha 0,
+    /// default colour, scale 1f), `num = velocity.X < 0 ? −1 : 1`.
+    /// ZERO explicit draws (type 5 hits no per-type tweak); no posts.
+    /// The burst precedes the head's budget roll on the stream (the
+    /// latch block sits ahead of `:51310`'s `Next(8,13)`). The queued
+    /// NPCDeath13 play drains after the pass (the audio convention).
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f4_the_leech_entry_burst_mirrors_site_50976() {
+        for vx in [-3.0f32, 2.0] {
+            let w = World::new("t".into(), 300, 200); // air: no scan draws
+            let mut head = Npc::new(NpcKind::LeechHead, 160.0, 160.0, 1, 0.0);
+            head.hp = head.max_hp;
+            head.vx = vx;
+            let mut npcs = vec![head];
+            let dctx = crate::npc::permissive_dust_ctx(&w);
+            let mut rng = UnifiedRandom::new(23);
+            let mut witness = rng.clone();
+            let mut dust = tr_core::particles::DustPool::new();
+            let mut mirror = tr_core::particles::DustPool::new();
+            // The mirror: the 20-dust burst FIRST (the latch block),
+            // then the budget ledger (discarded Next(8,13) + the
+            // Next(3,6) override). No player: the head machine is
+            // skipped — the init ledger is isolated.
+            let num = if vx < 0.0 { -1.0 } else { 1.0 };
+            for _ in 0..20 {
+                mirror.new_dust(
+                    &mut witness, &dctx, &w, Vec2::new(140.0, 140.0),
+                    54, 54, 5, num * 8.0, -1.0, 0,
+                    tr_core::particles::Color::default(), 1.0,
+                );
+            }
+            let _ = witness.next_range(8, 13); // the discarded budget
+            let _ = witness.next_range(3, 6); // the leech override
+            update_worms_in_dust(
+                &w, None, &mut npcs, &mut rng, &mut 1u32, &mut dust, &dctx,
+            );
+            assert_eq!(rng, witness, "vx {vx}: burst + budget, in order");
+            assert_eq!(npcs[0].local_ai[1], 1.0, "the latch fired");
+            let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+            assert_eq!(act.len(), 20, "the 20-dust entry burst");
+            for (j, &i) in act.iter().enumerate() {
+                let d = dust.slot(i);
+                let m = mirror.slot(j);
+                assert_eq!(d.dust_type, 5);
+                assert_eq!(d.position, m.position, "the (x−20, y−20) +54 box");
+                assert_eq!(d.velocity, m.velocity, "the num*8 / −1 arguments");
+                assert_eq!(d.velocity.x.signum(), num.signum(), "the vx sign arm");
+                assert_eq!(d.scale, m.scale, "the stock 1f × the pool jitter");
+                assert_eq!(d.alpha, 0, "the 7-arg overload's default alpha");
+                assert_eq!(d.color, tr_core::particles::Color::default());
+                assert!(!d.no_gravity && !d.no_light, "no posts");
+            }
+            // The latch is one-shot: the next pass draws NOTHING for
+            // the burst (the chain is inited, no player, air world).
+            let before = rng.peek();
+            update_worms_in_dust(
+                &w, None, &mut npcs, &mut rng, &mut 1u32, &mut dust, &dctx,
+            );
+            assert_eq!(rng.peek(), before, "the latched head stays silent");
+        }
     }
 
     #[test]
@@ -14568,8 +14671,18 @@ mod worm_tests {
         // the tail spawn and every link after it draw nothing (the
         // Destroyer laser's `type == 135` gate lives in the wired
         // family machine `npc_ai_style37` — R55 deleted this pass's
-        // laser block, so no self-mapping tail can draw here).
+        // laser block, so no self-mapping tail can draw here). W4-f4
+        // b7: the entry burst (site 50976) fires at the latch BEFORE
+        // the budget roll — 20× type-5, 6 pool internals each.
         let mut census = UnifiedRandom::new(7);
+        for _ in 0..20 {
+            let _ = census.next_max(50); // width 14+40-4
+            let _ = census.next_max(50); // height 14+40-4
+            let _ = census.next_range(-20, 21);
+            let _ = census.next_range(-20, 21);
+            let _ = census.next_max(3);
+            let _ = census.next_range(-20, 21);
+        }
         let _discarded = census.next_range(8, 13);
         let budget = census.next_range(3, 6) as usize;
         let mut next_id = 1u32;

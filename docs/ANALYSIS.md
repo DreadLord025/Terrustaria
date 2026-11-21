@@ -39252,7 +39252,7 @@ The HitEffect gore REMAINDER census came back EMPTY: the HEAD gap
 and every `Gore.NewGore*` inside `:81660-89834` is claimed by the
 pushed d55 (1-30) / e5 (31-86) / f10 (climbing) / f5 (wave D) lanes. The
 41 out-of-HitEffect sites were censused by method
-(research/71-npc-gore-wave-e-claims.md): 24 belong to the d52/e2-reserved
+(research/211-npc-gore-wave-e-claims.md): 24 belong to the d52/e2-reserved
 AI-machine bodies or g61's spawn/transform family; the 17 UNCLAIMED
 sites landed as `npc_hit_effect_e.rs` (E1-E17, two 10-site-capped
 batches `007b5cb4`/`81c1c5a7`): the FungiSpore birth trio, the
@@ -39268,3 +39268,41 @@ runs them first on the same stream, the g59/g60 argument/body split);
 the modules are UNWIRED standalone machines; the Betsy sweep's tile
 probe + KillTile dust amounts are the caller's. 10 witnesses WRITTEN
 NOT RUN - no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
+
+## The NPC dust lane FINAL (W4-f4 retire round, 2026-11-21, code-only)
+
+research/240-npc-dust-final.md (free number per registry-150; the
+wave-E doc renumbered 71 → 211, refs updated). Three closures:
+
+- **e2 keep-one CONFIRMED with one re-derivation**: the merger takes
+  f4's KingSlime trio + EterniaCrystal trio + the five MoonLord
+  windows (e2 research/64 §5), BUT e2's b5 fidelity fix `6e304b960`
+  had re-pinned the C# left-to-right f32 multiply order on the storm
+  fan/inner + head/eye fan velocities — f4's b6 had pre-folded the
+  scalars (a rounding difference). The e2 forms are folded into f4's
+  bodies + mirrors this round (`(rot*num7)*(nf*1.6+1.6)`,
+  `(0,-1)*num7*(nf*0.9+1.6)`, `((n*3.5)*(10-num9*2))/10`). The smoke
+  arm's tile probe also fixed to the C#'s `(int)x >> 4`
+  (`Utils.cs:1807-1810` — it had kept `/16` truncation; the two differ
+  for negative coordinates). The case-398 six-burst re-fire quirk
+  stands (`bcf917437`); the stale "fires ONCE" doc comment retired.
+- **worm-seam census CLOSED**: AI_006 (`NPC.cs:50963-52273`) holds ten
+  dust sites; the one unclaimed LIVE site — the leech head's
+  tunnel-entry 20×5 burst (50976) — ported verbatim at the chain-init
+  latch (`num = vx<0 ? −1 : 1`, the (x−20,y−20) +40 box, num*8/−1
+  args, the 7-arg defaults, zero explicit draws, the pre-move box,
+  ahead of the budget roll). The S1-E-21g "burst SKIPPED" note
+  retired. The five dormant blocks (50268/50284 BloodSquid 619 —
+  e2-64's "Wyvern fade" label corrected, 50692 the 619 hover arm,
+  50993/51015/51026 the 454-459/621-623 fades) all gate on unported
+  kinds; claims cited for the kind waves. ZERO unclaimed live sites.
+- **d31 deferral CLOSED**: the five dust-gated MoonLord sites d31's
+  ANALYSIS deferred are f4 b6's claim, re-derived this round; d31's
+  machine bodies untouched.
+
+The npc-dust-family declaration: f4's FINAL slice is 26 sites across
+batches 1-7 (the d54 bible §8.2 NPC 927+5 row); the remaining NPC
+remainder is the buff-VFX lanes' + g62's CloneDust ledger — nothing
+owed by f4. 1 new mirror witness + 2 leech ledgers re-mirrored + the
+storm/fan mirrors re-derived, all WRITTEN NOT RUN — no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
