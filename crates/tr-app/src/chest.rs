@@ -867,8 +867,9 @@ fn shift_chest_frames(world: &mut World, x: i32, y: i32, kind: u16, shift: i16) 
 /// panel close (`NewCraftingUI.Close(quiet: true)` `:33516`), the inventory
 /// open (`Main.playerInventory = true` `:33517`) and the tile origin — set
 /// for the banks too (`:33524-33525`), or the per-tick range close would
-/// probe a stale tile. The `ItemSlot.SetGlowForChest`/input-navigator arms
-/// are UI state the port does not carry (`:33508-33515`/:33518-33523).
+/// probe a stale tile. The `ItemSlot.SetGlowForChest` half NOW LANDS below
+/// (W4-g56 void-chain item 5, `ui/glow.rs` — research/239 §4 keep-one); the
+/// input-navigator arms stay unported UI state (`:33518-33523`).
 ///
 /// The browsed chest's 40-slot window materializes on open: the C#
 /// `Chest.item[]` is 40 real entries for every chest (`Chest.cs:107-109`,

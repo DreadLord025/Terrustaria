@@ -39336,7 +39336,13 @@ probe), `d364a2f4` (phase 2c - the emptied-cell favorite clear).
    bools (offset 2001 + 10*i + 9, gate 255) and drop the sidecar write — the
    reader keeps the `.trvault` fallback for pre-fold saves (the `.trplayer`
    back-compat precedent). The bank CONTENTS still do not persist (the same
-   gap, f44's lane).
+   gap, f44's lane). **RETIRE refinement (research/239 §1):** f44's landing
+   seats the byte-shape only — its `.plr` writers emit bank4 at fresh-ctor
+   defaults and NO live-session `.plr` re-save exists on any tip, so the
+   sidecar COEXISTS through the folds and retires only at the TWO-SEAM gate
+   (character-load hydration AND the exit-save both land); restore order
+   `.plr` first, sidecar second (f44 research/132 §2c); g88's v11 superset
+   carries NO vault line and none is recommended (no v12 dual-carrier).
 2. **The smart-cursor/gamepad selection arms** (`Main.SmartCursorIsUsed` /
    `SmartInteractProj` / `PlayerInput.UsingGamepad`) are unported - the
    selection mode is always 0, so the `Extra_93` glow never draws from the
@@ -39428,3 +39434,41 @@ refusal), `chest.rs` 1 (the tile-vault lock refusal), `persist.rs` 1 (the
 `.trvault` round-trip), `glow.rs` 3 (the clear/arm, the decay/force-clear, the
 tint gate/lerp), `item_sorting.rs` 1 (the sort-feedback hue ramp), plus the
 item-3 comment-only confirmation.
+
+### The RETIRE phase (research/239, the void-family bible, 2026-11-21)
+
+The five retire verdicts, co-lane tips read FULL (f44 `d35876af9`, g88
+`d09d7e10a` — the SEALED+ARBITRATED tip over the brief's `fc5cf11ae`, e19
+`e7e466d46`, g12 `2b1f8a999`, d122 `962084663`):
+
+1. **`.trvault` keep-one/retire gate** — see deviation 1's refinement above;
+   the full three-carrier table + the merger conflict notes are
+   research/239 §1. The `voidVaultInfo` bit-0 nuance: the saved bit is a
+   one-tick-stale mirror of the per-tick `HasItem(4131)` refresh
+   (`Player.cs:24550-24553`) in C# too — the fold writes it for byte parity
+   but the port never hydrates `void_vault_enabled` from it (the refresh
+   wins, C#-identical).
+2. **e19 disjoint** — bank.rs diff EMPTY; items.rs/item.rs zero void-line
+   overlap; the shared-file hunks (chest/editing/clicks/frame-draw/assets)
+   all sit outside g56's. The 16-box repin receipt: e19 research/145 lists
+   g56's main-inherited i47/i52 pins (`item.rs:1829-1830/:2017/:2026`,
+   44/45 + 293/193 → 42/43 + 292/192); g56 takes e19's canonical repinned
+   side AT MERGE (its own 27 witnesses carry no drop-geometry pins; no
+   lane-unique repin owed). research/239 §2.
+3. **g88 persist-compose zero-touch** — g56's persist.rs delta is two pure
+   insertions (`@@ -33` the sidecar fns, `@@ -274` the witness); the v11
+   save/load bodies untouched; the post-`player_path` seam takes BOTH
+   insertions; saveglue keeps g88's widened call + g56's appended write;
+   mod.rs restore order g88-block-then-`.trvault` already matches the
+   sidecar-second precedence. research/239 §3.
+4. **SetGlowForChest keep-one = g56** — the 355-tip ls-tree scan finds
+   `ui/glow.rs` on exactly ONE tip (this branch); g12/d122's only mention is
+   the inherited base `chest.rs:870` comment, corrected here (the glow half
+   lands, the input-navigator half stays unported). research/239 §4.
+5. **The bible** — the full family map (C# anchor → port → owner per row) +
+   the registry-150 numbering (237/238 consumed at the tips, the 237
+   three-way fork flagged; this doc = **239**, free at every tip).
+   research/239 §5.
+
+Code-only: no cargo/tests/rustfmt/graphify; the one code edit is the
+`chest.rs:870` comment correction. The 27 witnesses stand WRITTEN NOT RUN.

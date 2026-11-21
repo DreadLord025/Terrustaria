@@ -45,8 +45,12 @@ pub fn player_path(world: &Path) -> PathBuf {
 /// favorites persist in this self-contained sidecar (the `.trfav` marker
 /// precedent, `player_file.rs:1058`): a 40-char `0`/`1` string, one per bank4
 /// slot, index 0 first. The `.plr` contract is documented in
-/// `docs/ANALYSIS.md` ("W4-g56 void-vault favorites sidecar contract") so the
-/// f44/g88 folds can migrate it into the in-file rows without a format break.
+/// `docs/ANALYSIS.md` ("W4-g56 void-vault favorites sidecar contract") and
+/// `docs/research/239-void-family-bible.md` §1 (the RETIRE verdict): the
+/// sidecar COEXISTS through the f44/g88 folds — f44's `.plr` writers emit
+/// bank4 at fresh defaults (no live-session re-save on any tip), so this
+/// write retires only when character-load hydration AND the exit-save both
+/// land; restore `.plr` first, sidecar second (f44 research/132 §2c).
 pub fn vault_favorites_path(world: &Path) -> PathBuf {
     world.with_extension("trvault")
 }
