@@ -20286,6 +20286,12 @@ impl ProjectilePool {
             // Enchanted Beam 173, Terra Beam 132 and Light Beam 156's
             // Item10 (the dust trails are the visual skip).
             115 | 114 | 116 | 173 | 132 | 156 => Some((2, 10, pos.x, pos.y)),
+            // `:75427` — the gem bolts' Dig thud at the PRE-resize position
+            // (the AoE resize in `gem_bolt_aoe` runs after this hook; the
+            // sound is NOT feature-gated — every gem bolt plays it).
+            121..=126 | 597 => Some((0, 0, pos.x, pos.y)),
+            // `:77153` — the Night Beam's Item10 (the :77138 family's tail).
+            157 => Some((2, 10, pos.x, pos.y)),
             _ => None,
         };
         if let Some((id, style, x, y)) = cue {
@@ -20511,6 +20517,14 @@ impl ProjectilePool {
         let p = &self.slots[slot];
         if !DUNGEON_DEBRIS.contains(&p.kind) || p.owner != local_owner {
             return;
+        }
+        // S1-E-21h d77 — `:77371`: the debris' Item127 clatter (the
+        // `!noDropItem` gate `:77367` is stock false and never set for the
+        // trio; the owner gate above is `Kill_ExplodeTiles`'s `:77267`
+        // refusal, which gates the whole arm including the sound).
+        if !p.no_drop_item {
+            self.pending_proj_sounds
+                .push((2, 127, p.pos.x, p.pos.y, 0.0));
         }
         // `:77376-77377` — the tile below the centre: `(int)(Center.X / 16)`,
         // `(int)(Center.Y / 16) + 1`.
@@ -21495,6 +21509,12 @@ impl ProjectilePool {
         if !features.aoe_explosion() {
             return;
         }
+        // S1-E-21h d77 — `:75427`: the gem bolt's Dig thud at the PRE-resize
+        // `base.position` (the cue precedes the dust loops and the AoE
+        // resize; the AoE feature gate does not gate the sound — a plain
+        // gem bolt plays it too, the `kill_tail_cue` map's gem arm).
+        // (The cue itself rides the map; this comment pins the position
+        // contract the map reads.)
         // `:75433-75438`: the dust direction from the last velocity — dust
         // only, SKIPPED with the spawns above.
         let (center, damage, knock_back, cooldown) = {
@@ -22403,17 +22423,36 @@ impl ProjectilePool {
             // (`:77759-77770`'s 2×2×2 loop shape), the Spread flood fill
             // (the liquid-layer follow-up — no draws).
             resize(&mut self.slots[slot], 22.0);
+            // S1-E-21h d77 — `:77737`/`:77781`/`:77820`: the second member
+            // of each trio (785 wet / 788 lava / 791 honey) plays Item62,
+            // the rest Item14 — at the POST-resize `base.position`.
+            let style = if matches!(kind, 785 | 788 | 791) { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
             for _ in 0..8 {
                 gore(rng);
             }
         } else if matches!(kind, 799 | 800 | 801 | 810) {
-            // `:77854-77892` — the dry family: the same shape (the sound
-            // is 62 for 799, 14 otherwise — the cue skip).
+            // `:77854-77892` — the dry family: the same shape.
             resize(&mut self.slots[slot], 22.0);
+            // S1-E-21h d77 — `:77859`: 800 plays Item62, the rest Item14.
+            let style = if kind == 800 { 62 } else { 14 };
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, style, p.pos.x, p.pos.y, 0.0));
             for _ in 0..8 {
                 gore(rng);
             }
         } else if matches!(kind, 793 | 796 | 794 | 797 | 795 | 798 | 808 | 809) {
+            // S1-E-21h d77 — `:77897`/`:77901`: the Mini Nuke II pair
+            // (794/797) plays Item62, the rest Item14 — at `base.Center`
+            // BEFORE the 50×50 resize (the recentre keeps the centre, so
+            // the read is resize-invariant).
+            {
+                let style = if matches!(kind, 794 | 797) { 62 } else { 14 };
+                let p = &self.slots[slot];
+                let (cx, cy) = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+                self.pending_proj_sounds.push((2, style, cx, cy, 0.0));
+            }
             // `:77893-77979` — the Mini Nuke family: the 50×50 resize, the
             // 50 smoke dust with a `Next(5)` scale + a `Next(2)` gate (one
             // `Next(10)` fadeIn when taken) each (`:77909-77917`), the 30
@@ -22456,6 +22495,10 @@ impl ProjectilePool {
             // 15+5×2+3 dust (no explicit draws), the four-corner `Next(5)`
             // gates each spawning one gore when taken (`:78006-78018`).
             resize(&mut self.slots[slot], 22.0);
+            // S1-E-21h d77 — `:77983`: every shrapnel plays Item62 at the
+            // POST-resize `base.position`.
+            let p = &self.slots[slot];
+            self.pending_proj_sounds.push((2, 62, p.pos.x, p.pos.y, 0.0));
             for _ in 0..4 {
                 if rng.next_range(0, 5) == 0 {
                     gore(rng);
@@ -24257,6 +24300,96 @@ mod s1_e_21h_sound_tests {
             let queued = pool.drain_proj_sounds();
             assert_eq!(queued.len(), 1, "kind {kind}: one cue");
             assert_eq!((queued[0].0, queued[0].1), (2, 10), "kind {kind}'s Item10");
+            pool.kill(slot);
+        }
+    }
+
+    /// S1-E-21h d77 — batch 6 (sites `:75427`/`:77153`/`:77371`/`:77737`-
+    /// `:77983`): the gem/night-beam map arms, the debris' owner-gated
+    /// Item127 and the rocket census' per-family Item62/Item14 picks at
+    /// their exact pre/post-resize positions. WRITTEN NOT RUN.
+    #[test]
+    fn s1_e_21h_d77_the_gem_debris_and_rocket_census_cues() {
+        let mut pool = ProjectilePool::new();
+        // The gem bolts' Dig thud (all seven share :75427) + night beam.
+        for kind in [121u16, 122, 123, 124, 125, 126, 597] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the gem row spawns");
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "gem {kind}: one cue");
+            assert_eq!((queued[0].0, queued[0].1), (0, 0), "gem {kind}'s Dig thud");
+            pool.kill(slot);
+        }
+        let slot = pool
+            .spawn_with_data_ai_owned(157, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the night beam spawns");
+        pool.kill_tail_cue(slot);
+        let queued = pool.drain_proj_sounds();
+        assert_eq!(queued.len(), 1);
+        assert_eq!((queued[0].0, queued[0].1), (2, 10));
+        pool.kill(slot);
+        // The debris' Item127: local owner plays, remote owner silent
+        // (Kill_ExplodeTiles' :77267 refusal gates the sound too).
+        let mut w = air();
+        for (owner, plays) in [(0u8, true), (1, false)] {
+            let slot = pool
+                .spawn_with_data_ai_owned(736, owner, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the debris row spawns");
+            pool.debris_death_crack(
+                slot,
+                &mut w,
+                &mut tr_core::tile_light::FastRandom::new(7),
+                0,
+            );
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), usize::from(plays), "debris owner {owner}");
+            if plays {
+                assert_eq!((queued[0].0, queued[0].1), (2, 127));
+            }
+            pool.kill(slot);
+        }
+        // The rocket census: (kind, style, position mode 0=pos 1=center).
+        // The wet/lava/honey/dry/shrapnel arms play POST-resize; the Mini
+        // Nuke plays at Center (resize-invariant).
+        let cases: [(u16, i32, u8); 13] = [
+            (785, 62, 0),
+            (784, 14, 0),
+            (788, 62, 0),
+            (787, 14, 0),
+            (791, 62, 0),
+            (790, 14, 0),
+            (800, 62, 0),
+            (799, 14, 0),
+            (794, 62, 1),
+            (797, 62, 1),
+            (793, 14, 1),
+            (809, 14, 1),
+            (783, 62, 0),
+        ];
+        for (kind, style, mode) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the rocket row spawns");
+            // Capture the centre BEFORE the census (the recentres keep it).
+            let p = &pool.slots()[slot];
+            let center = (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+            pool.rocket_kill_census(slot, &mut tr_core::tile_light::FastRandom::new(7), 0);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "rocket {kind}: one census cue");
+            assert_eq!((queued[0].0, queued[0].1), (2, style), "rocket {kind}'s style");
+            if mode == 1 {
+                assert_eq!((queued[0].2, queued[0].3), center, "rocket {kind} at Center");
+            } else {
+                // The post-resize top-left: the recentred box of the arm.
+                let p = &pool.slots()[slot];
+                assert_eq!(
+                    (queued[0].2, queued[0].3),
+                    (p.pos.x, p.pos.y),
+                    "rocket {kind} at the post-resize position"
+                );
+            }
             pool.kill(slot);
         }
     }
