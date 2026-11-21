@@ -83,6 +83,8 @@
 //! | 349-352 | `:83818-83821` | the 528-529 Desert Lamia (light/dark) death (4 gores, per-tier head) |
 //! | 353-357 | `:83839-83843` | the 530/531 Desert Scorpion death (5 gores 883-887, alpha-100 type-250 dust) |
 //! | 358-361 | `:83861-83864` | the 532 Desert Beast death (4 gores 888-891, alpha-100 type-5 dust) |
+//! | 362-366 | `:83904-83908` | the 460 Butcher death (5 gores 643/645/644/646/646) |
+//! | 367-371 | `:83926-83930` | the 477 Mothron death (5 gores 687-691, type-237 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -2003,6 +2005,67 @@ fn desert_beast_death(
     gore.new_gore(rng, world, pos, vel, 891, 1.0); // :83864
 }
 
+/// The 460 Butcher death (`NPC.cs:83900-83908`, sites 362-366): the 50-dust
+/// type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the 5 gores
+/// 643/645/644/646/646 — 643 at position, 645/644 at +20 Y (645 precedes
+/// 644), 646/646 at +34 Y.
+fn butcher_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83900-83903` — the 50-dust type-5 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 643, s); // :83904
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 645, s); // :83905
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 644, s); // :83906
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 646, s); // :83907
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 646, s); // :83908
+}
+
+/// The 477 Mothron death (`NPC.cs:83922-83930`, sites 367-371): the 50-dust
+/// type-237 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the 5 gores
+/// 687/688/689/690/691 all at position.
+fn mothron_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83922-83925` — the 50-dust type-237 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 237, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 687, s); // :83926
+    gore.new_gore(rng, world, pos, vel, 688, s); // :83927
+    gore.new_gore(rng, world, pos, vel, 689, s); // :83928
+    gore.new_gore(rng, world, pos, vel, 690, s); // :83929
+    gore.new_gore(rng, world, pos, vel, 691, s); // :83930
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -2219,6 +2282,14 @@ pub fn hit_effect_c(
     // `:83846-83866` — the 532 Desert Beast arm (sites 358-361).
     if npc_type == 532 && npc.hp <= 0 {
         desert_beast_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83889-83910` — the 460 Butcher arm (sites 362-366).
+    if npc_type == 460 && npc.hp <= 0 {
+        butcher_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83911-83932` — the 477 Mothron arm (sites 367-371).
+    if npc_type == 477 && npc.hp <= 0 {
+        mothron_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3599,6 +3670,40 @@ mod tests {
         let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![888, 889, 890, 891]);
         for i in 0..4 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+    }
+
+    /// `NPC.cs:83904-83908` — the Butcher death: the 5 gores
+    /// 643/645/644/646/646 (645 precedes 644 at +20 Y).
+    #[test]
+    fn w4_f10_the_butcher_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 46.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(251);
+        butcher_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![643, 645, 644, 646, 646]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:83926-83930` — the Mothron death: the 5 gores 687-691 all at
+    /// position, after the 50-dust type-237 burst.
+    #[test]
+    fn w4_f10_the_mothron_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 60.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(257);
+        mothron_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![687, 688, 689, 690, 691]);
+        for i in 0..5 {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
         }
     }
