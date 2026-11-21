@@ -1,4 +1,10 @@
-# 144 — the item entry/exit splash KEEP-ONE (W4-f47 × W4-e19, 2-way)
+# 277 — the item entry/exit splash KEEP-ONE (W4-f47 × W4-e19, 2-way)
+
+> **RENUMBERED 144 → 277** per registry §6.3 (d54 `150-research-number-registry.md`,
+> f47 row: this doc `f80490bcf` 12:39:05 → **277**; the round-1 owed rename,
+> still-owed list §10.4). Chain: 144 → 277. Slug kept. 144 belongs to e19
+> (§7.1 corrected, claim 08:45:32). Historical `144-…` mentions in the
+> chain-history stay as the lane record.
 
 > **ARBITER FINAL v2: `379-ARBITER-FINAL-v2.md`** (renumbered
 > 144→379 per registry §10) — the e19 SHIMMER
@@ -6,7 +12,8 @@
 > entry gate verbatim; the v2 arbitration re-ruled at both new tips on
 > witness SUPERSET COVERAGE and UPHELD this doc's keeper (the f47
 > `Splash` shape). Both prior FINALs are superseded; the merger reads
-> v2, not this receipt. (v1 record: `144-ARBITER-FINAL.md`.)
+> v2, not this receipt. (v1 record: `278-ARBITER-FINAL.md`, renumbered
+> 144→278 per registry §6.3.)
 >
 > **SEALED (research/151)**: the family-wide cross-lane compositions
 > (the lights mutual-receipt, the 676 HitEffect census, the b1

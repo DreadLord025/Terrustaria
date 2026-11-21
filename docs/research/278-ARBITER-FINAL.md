@@ -1,4 +1,10 @@
-# 144 ARBITER FINAL — the splash keep-one, definitive (merger-blocker resolved)
+# 278 ARBITER FINAL — the splash keep-one, definitive (merger-blocker resolved)
+
+> **RENUMBERED 144 → 278** per registry §6.3 (d54 `150-research-number-registry.md`,
+> f47 row: this doc `18fe75f2e` 13:52:51 → **278**; the round-1 owed rename,
+> still-owed list §10.4). Chain: 144 → 278. Slug kept. 144 belongs to e19
+> (§7.1 corrected, claim 08:45:32). Historical `144-…` mentions in the
+> chain-history stay as the lane record.
 
 > **SUPERSEDED by `379-ARBITER-FINAL-v2.md`** (renumbered
 > 144→379 per registry §10; the e19 SHIMMER SEAL
@@ -22,7 +28,7 @@
 
 ## The two divergent verdicts
 
-| | f47c (`research/144-item-splash-keep-one.md`, this branch) | e19d (`research/144-splash-keep-one.md`, e19 tip) |
+| | f47c (`research/277-item-splash-keep-one.md`, this branch) | e19d (`research/144-splash-keep-one.md`, e19 tip) |
 | --- | --- | --- |
 | keeper | f47 `Splash`/`splash_due`/`ItemDrop::splash` | e19 `ItemSplash`/`pending_splash`/`take_splash`/`item_splash` |
 | rationale | verbatim LOCAL entry gate (`:886` flag2), once-per-pass water style, method-local latch spend | the C#-correct 16-box (f47 read at the STALE pre-fold tip — SIZE 14); sticky-vs-local "behaviourally void" |

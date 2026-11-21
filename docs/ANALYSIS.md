@@ -11805,11 +11805,11 @@ RNG: the NPC drain's `ShimmerEffect`/`SpawnShimmeredItem` draws ride
 stream in C# order; the item physics is draw-free by construction (the splash
 arms skipped). 29 witnesses across the four phases, WRITTEN NOT RUN.
 
-**Keep-one 144 (the e19 splash 2-way, 2026-11-21).** The e19 co-lane
+**Keep-one 277 (formerly 144 — renumbered per registry §6.3; the e19 splash 2-way, 2026-11-21).** The e19 co-lane
 (`task/W4-e19-liquid-quicksell-shimmer`, tip `939e45dc8`) ported the SAME
 entry/exit splash region (`7d3cb5e3` deferred 4 + the `3ea49d98b` wet flags
 + the round-3 `e2003946b` box fix / `939e45dc8` flush fix). The arm-by-arm
-verdict + fold-hunks live in `docs/research/144-item-splash-keep-one.md`;
+verdict + fold-hunks live in `docs/research/277-item-splash-keep-one.md`;
 the folded changes on THIS branch:
 
 - **The drop box is the C# 16** (`WorldItem.cs:138`): `item::SIZE` 14 → 16
@@ -23162,7 +23162,7 @@ rand-drawing item arms feed the same list from the fixed step instead
   (`WorldItem.cs:870`) in the movement half that runs *before*
   `UpdateItem_VisualEffects` (`:436`). `ItemDrop::box_is_wet` (`crates/tr-app/src/item.rs`)
   is the faithful centre-inset `Collision.WetCollision` bool half (the
-  `player::wet_collision` port — keep-one 144 restored the name the
+  `player::wet_collision` port — keep-one 277 (formerly 144) restored the name the
   doc-sweep 36 deletion dropped; the draw feed re-probes, the S1-E-5
   draw-side convention). The item box is `ItemDrop::SIZE` (16,
   `WorldItem.cs:138`), matching `Entity.width`/`height` for a dropped item.
@@ -23775,7 +23775,7 @@ Deliberate gaps, all recorded here rather than guessed:
   is **not** wired: the port has no unified `NPC.UpdateCollision` to hang it
   on, and `NPCID.Sets.ConveyorBeltCollision` is not in `tiledata` yet.
 * The item box is the C# 16 (`item.rs::SIZE`, `WorldItem.cs:138` — keep-one
-  144 folded the e19 round-3 fix `e2003946b`; the old 14 px stand-in is
+  277 (formerly 144) folded the e19 round-3 fix `e2003946b`; the old 14 px stand-in is
   retired). The DRAW quad keeps the 14 px visual centred in the box
   (`pos + 1`, `SIZE - 2`), so pixels are unchanged; every probe (grab rect,
   WetCollision/LavaCollision, conveyor, TileCollision, the repulsion span,

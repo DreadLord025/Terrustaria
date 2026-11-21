@@ -14,9 +14,10 @@
 > `f010b85be`, d6 `7edfcd495` (residual 9 = `e2561efe1`), d43 `0253bde90`
 > (batch 9 = `418336473`), g59 `d277f782b`, g60 `30fea0fe1`, g62
 > `32af98b44`, e5 `a62a32ce` (via g60's bible pin). The f47 lane's own
-> record: research/121 (FINAL) + research/144 (the keep-one) +
+> record: research/121 (FINAL) + research/277 (the keep-one, formerly
+> 144 — renumbered per registry §6.3) +
 > research/379-ARBITER-FINAL-v2 (THE definitive splash keeper; v1 kept
-> as the lane record).
+> as the lane record, renumbered 144→278 per registry §6.3).
 >
 > **This doc is the SEAL**: the five cross-lane compositions the brief
 > ordered, each with a keep-one verdict + the exact merge contract.
@@ -58,7 +59,7 @@ e19's round-3 `e2003946b` fixed the drop box to the C# 16
 every probe, the 14 px DRAW visual kept centred `pos+1`/`SIZE-2`, every
 geometry witness re-derived). **Receipt:** the f47 tip is a canonical
 16-pinned side; e19's `research/145-16box-cross-lane-repins.md` f47 row
-("SIZE 14 — retire") is stale and struck by 144-ARBITER-FINAL §"The
+("SIZE 14 — retire") is stale and struck by 278-ARBITER-FINAL (formerly 144) §"The
 16-box repin reconciliation" (v2 upholds the reconciliation; the e19
 seal's 145 execution table also marks f47 "already folded"). Both lanes
 now read the identical 16-box; the merge dedupes the const + the
@@ -235,7 +236,7 @@ The 676 block is DUST-ONLY (no gore sites) — it is NOT a gore-lane
 ### 2.3 The port status — g62 owns the HIT half, g60 the DEATH half
 
 **The HitEffect dust pass is NOT unported port-wide** (the f47 keep-one
-144 note's "cited-unwired" was stale at the seal tips). Census:
+277 (formerly 144) note's "cited-unwired" was stale at the seal tips). Census:
 
 - **g62 (`npc_hit_dust.rs`, tip `32af98b44`)** ports the LIVE
   (`life > 0`) halves of the whole chain — **629 live sites, 0 missed**
@@ -282,7 +283,7 @@ would double-draw against g62's live half at merge.
   them whole per g60 §5.2). The 676 block is dust-only, so it is NOT
   e5's — it is g60's (the death-dust lane), confirming the seed target.
 
-**f47's residual note retired:** the keep-one 144 "HitEffect 676 arm
+**f47's residual note retired:** the keep-one 277 (formerly 144) "HitEffect 676 arm
 stays cited-unwired (the HitEffect dust pass unported port-wide)" is
 SUPERSEDED — the pass IS ported (g62 live / g60 death-except-676). The
 f47 ANALYSIS note is corrected (§6 below).
@@ -510,7 +511,7 @@ d43's row was the roster-gap fill that f47's superset subsumes.
 
 ## 6. The f47 doc corrections (this seal's edits)
 
-- **ANALYSIS "The shimmer second half"**: the keep-one 144 block's
+- **ANALYSIS "The shimmer second half"**: the keep-one 277 (formerly 144) block's
   "HitEffect 676 arm stays a cited skip (the HitEffect dust pass is
   unported port-wide)" is SUPERSEDED — the pass IS ported (g62 live /
   g60 death-except-676, §2). Corrected to name the owners + the g60
@@ -518,7 +519,7 @@ d43's row was the roster-gap fill that f47's superset subsumes.
 - **`tr-core/src/shimmer.rs`**: the `lunar_brick_for_moon_phase` switch
   re-pinned to the RAW enum indices (the e19 `cab982244` fold, §1.5) +
   the witness corrected.
-- **research/121 + research/144**: the FINAL pointers to this seal
+- **research/121 + research/277 (formerly 144)**: the FINAL pointers to this seal
   (the family bible).
 - **INDEX**: the 151 row.
 - **anchors.txt**: the lunar-brick RAW-enum row (the e19 fold).

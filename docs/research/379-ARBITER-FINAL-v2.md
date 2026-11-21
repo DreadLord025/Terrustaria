@@ -5,8 +5,9 @@
 > 08:45:32); this THIRD f47 144 doc (`057f44a68` 16:27:02) is the uncovered
 > loser → free **379**. Chain: 144 → 379. Slug kept. f47's
 > `144-item-splash-keep-one.md`
-> → 277 and `144-ARBITER-FINAL.md` → 278 are unchanged, still owed (separate
-> rows); historical `144-…` mentions below stay as the lane record.
+> → `277-item-splash-keep-one.md` and `144-ARBITER-FINAL.md` →
+> `278-ARBITER-FINAL.md` are NOW EXECUTED (registry §6.3, the round-1 owed
+> renames); historical `144-…` mentions below stay as the lane record.
 
 > Rendered 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (tip `18fe75f2e`,
 > the v2 arbitration commit follows). Code-only: no cargo/tests/rustfmt/
@@ -20,7 +21,8 @@
 
 **BOTH prior verdicts are SUPERSEDED by this one:**
 
-- `docs/research/144-ARBITER-FINAL.md` (f47 tip `18fe75f2e`) — its keeper
+- `docs/research/278-ARBITER-FINAL.md` (formerly `144-ARBITER-FINAL.md`,
+  renumbered per registry §6.3; f47 tip `18fe75f2e`) — its keeper
   pick STANDS but its decisive ground (#1 the verbatim-vs-sticky entry
   gate) is MOOT: the e19 SHIMMER SEAL landed the identical verbatim read.
   Its e19 drop-hunk line numbers were pinned at `c7a38bea5` — stale.
@@ -33,9 +35,10 @@
 
 The files stay as the lane record; **141/master reads THIS doc** for the
 splash keep-one. The e19 144 filename fork (`144-splash-keep-one.md` vs
-f47's `144-item-splash-keep-one.md` vs this doc, then numbered 144)
+f47's `144-item-splash-keep-one.md` (now `277-…`) vs this doc, then numbered 144)
 was resolved by the d54 registry sweep:
-this doc renumbered → **379** per §10 (see the header banner).
+this doc renumbered → **379** per §10 (see the header banner); f47's
+other two docs → **277/278** per §6.3.
 
 ## The NEW FACT, verified at both tips
 
