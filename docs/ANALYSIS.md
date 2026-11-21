@@ -39846,6 +39846,35 @@ type 331 fixed). Witnesses: the 583/584 colours, the 514 12-18 sixes
 range, the 69/70/621 35-counts, the 712 Next-count + determinism, the
 962 20-count, the 370/371 5-count + gore determinism — WRITTEN NOT RUN.
 
+### Batch 26 (10 kinds, the barrel/meteor/sparkle bursts `:74983-77208`)
+
+1023 (the Dead Cells barrel: resize 192×192 centred; 8 gore-Direct rows
+— the Circular(192,192)×0.125 position two NextFloat, the 61+Next(3)
+type, the kicks, the NextFloat velocity scale; 40× dust-31 Direct vel =
+DirectionTo(own).SafeNormalize(Zero)×NextFloat×8; the ParticleOrchestrator
++ Damage unported), 312 (resize 22×22 centred BEFORE the dust; 30×
+dust-31 vel×1.4 + 20 pairs dust-6 (vel×7 noGravity / vel×3 GRAVITY) +
+2×4 corner gores; the 128-resize + Damage AFTER unported), 936 (20 pairs
+dust-4 alpha 150, each a hslToRgb(0.7+0.2×NextFloat,1,0.7/0.5) colour
+A/=2; first vel×1.5 gravity, second scale 1.8 vel×3 noGravity), 1078
+(the meteor: a Next(16)==0 loot gate → Next(2,7) stack; a Next(1,4)
+sound-count no draws; the double resize 192×scale→64 centred; 6× dust-31
++ the !wet-gated 24 pairs dust-6 + 4 SelectRandom fan; THEN 3 circular-
+scatter gores — the gore loop AFTER the dust, unlike the 1037; the
+owner-gated Damage unported), 80 (gated ai[0]>=0, 10× dust-67; the
+KillTile(127) unported no draws), 474/172 (20× dust-26 scale 0.9 /
+dust-135 alpha 100), 9/503 (the else-branch: 10/40× dust-58 speed vel×0.1
+alpha 150 scale 1.2, 503 vel/=2; 3/2 gore rows Next(16,18), 503 fixed 16
+no draw), 12 (the sparkle ring: 7× dust-58 + num+=0.125 ring 8 dust-278
+CornflowerBlue (tenth-anniversary seed → HotPink A/=2) + num+=0.25 ring
+4 Gold; the screen-gated 7-gore loop folds on-screen for the local pool
+— recorded; the damage<100 extra burst 10 dust-57 + 3 gores). The
+`DeathSnapshot` gains `damage` (the 12 gate). The 955 (the 12 shape
+without the extra burst) + 246/249 (the owner-gated 249 spawn burst) stay
+deferred. Witnesses: the 1023/312 counts + determinism, the 936 40-count,
+the 1078 dry 58/wet 6 + determinism, the 80 gate, the 9/503/12 counts +
+the 12 damage gate — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,

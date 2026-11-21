@@ -473,6 +473,8 @@ pub(crate) struct DeathSnapshot {
     /// `base.wet` — the 1037/1049 death's `!wet` dust gate (`:73901`). The
     /// pool's centre-cell liquid probe stand-in (the S1-P-i35 field doc).
     pub wet: bool,
+    /// `this.damage` — the 12's `< 100` extra-burst gate (`:75736`).
+    pub damage: i32,
 }
 
 impl DeathSnapshot {
@@ -498,6 +500,7 @@ impl DeathSnapshot {
             max_updates: (p.extra_updates + 1) as f32,
             ai2: p.ai[2],
             wet: p.wet,
+            damage: p.damage,
         }
     }
 }
@@ -3539,6 +3542,213 @@ fn death_bursts(
                 let _ = rng.next_range(-20, 21);
             }
         }
+        // `:76866-76889` — the 1023 Dead Cells barrel: resize 192×192
+        // centred; 8 gore-Direct rows (the Circular(192,192)×0.125 position
+        // — two NextFloat — the 61+Next(3) type, the kicks, the NextFloat
+        // velocity scale); then 40× dust-31 Direct at the resized box,
+        // vel = DirectionTo(own pos).SafeNormalize(Zero)×NextFloat×8. The
+        // ParticleOrchestrator + Damage are unported state.
+        1023 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(96.0);
+            for _ in 0..8 {
+                let _ = next_vector2_circular(rng, 192.0, 192.0);
+                let _ = rng.next_max(3);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+                let _ = rng.next_float();
+            }
+            for _ in 0..40 {
+                let idx = dust.new_dust_direct(rng, ctx, world, pos, 192, 192, 31, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                let dir = safe_normalize(d.position - center);
+                d.velocity = dir * rng.next_float() * 8.0;
+            }
+        }
+        // `:76890-76943` — the 312: resize 22×22 centred BEFORE the dust;
+        // 30× dust-31 alpha 100 scale 1.5 vel×1.4; 20 PAIRS dust-6 alpha
+        // 100 (scale 3.5 noGravity vel×7, then scale 1.5 vel×3 GRAVITY);
+        // 2×4 corner gores Next(61,64) + kicks. The 128-resize + Damage
+        // AFTER stay unported.
+        312 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(11.0);
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 22, 22, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 1.4;
+            }
+            for _ in 0..20 {
+                let idx = dust.new_dust(rng, ctx, world, pos, 22, 22, 6, 0.0, 0.0, 100, Color::default(), 3.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 7.0;
+                let idx = dust.new_dust(rng, ctx, world, pos, 22, 22, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 3.0;
+            }
+            for _ in 0..8 {
+                let _ = rng.next_range(61, 64);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:77193-77208` — the 936: 20 PAIRS dust-4 alpha 150, each a
+        // hslToRgb(0.7+0.2×NextFloat, 1, 0.7/0.5) colour A/=2; the first
+        // vel×1.5 (gravity), the second scale 1.8 vel×3 noGravity.
+        936 => {
+            for _ in 0..20 {
+                let h = 0.7 + 0.2 * rng.next_float();
+                let c = crate::ui::color::hsl_to_rgb(h as f64, 1.0, 0.7, 255);
+                let color = Color::new(c[0], c[1], c[2], c[3] / 2);
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 4, 0.0, 0.0, 150, color, 1.0);
+                dust.slot_mut(idx).velocity *= 1.5;
+                let h = 0.7 + 0.2 * rng.next_float();
+                let c = crate::ui::color::hsl_to_rgb(h as f64, 1.0, 0.5, 255);
+                let color = Color::new(c[0], c[1], c[2], c[3] / 2);
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 4, 0.0, 0.0, 150, color, 1.8);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 3.0;
+                d.no_gravity = true;
+            }
+        }
+        // `:74983-75036` — the 1078 meteor: a Next(16)==0 loot gate (→ a
+        // Next(2,7) stack draw); a Next(1,4) sound-count (no draws); the
+        // double resize (192×scale then 64) centred; 6× dust-31 alpha 100
+        // scale 1.5; the !wet-gated 24 pairs dust-6 + 4 SelectRandom fan;
+        // THEN 3 circular-scatter gores. The owner-gated Damage unported.
+        1078 => {
+            if rng.next_max(16) == 0 {
+                let _ = rng.next_range(2, 7);
+            }
+            let _ = rng.next_range(1, 4); // the tracked-sound count
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let pos = center - Vec2::splat(32.0);
+            for _ in 0..6 {
+                dust.new_dust(rng, ctx, world, pos, 64, 64, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+            }
+            if !s.wet {
+                for _ in 0..24 {
+                    let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.velocity *= 3.0;
+                    let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                    let d = dust.slot_mut(idx);
+                    d.velocity *= 2.0;
+                    d.no_gravity = true;
+                }
+                for _ in 0..4 {
+                    let dust_type = rng.next_from_slice(&[6, 259, 158]);
+                    let idx = dust.new_dust(rng, ctx, world, pos, 64, 64, dust_type, 2.5 * s.direction as f32, -2.5, 0, Color::default(), 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.alpha = 200;
+                    d.velocity *= 2.4;
+                    d.scale += rng.next_float();
+                }
+            }
+            for _ in 0..3 {
+                let _ = rng.next_max(100);
+                let _ = rng.next_max(100);
+                let _ = rng.next_range(61, 64);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+                let _ = next_vector2_circular(rng, 25.0, 25.0);
+                let _ = rng.next_range(-10, 11);
+                let _ = rng.next_range(-10, 11);
+            }
+        }
+        // `:75533-75553` — the 80: gated ai[0] >= 0, 10× dust-67 defaults.
+        // The KillTile(127) is unported state (no draws).
+        80 => {
+            if s.ai0 >= 0.0 {
+                for _ in 0..10 {
+                    dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 67, 0.0, 0.0, 0, Color::default(), 1.0);
+                }
+            }
+        }
+        // `:75600-75615` — the 474/172: 20× dust-26 scale 0.9 (474) /
+        // dust-135 alpha 100 (172) defaults.
+        474 => {
+            for _ in 0..20 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 26, 0.0, 0.0, 0, Color::default(), 0.9);
+            }
+        }
+        172 => {
+            for _ in 0..20 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 135, 0.0, 0.0, 100, Color::default(), 1.0);
+            }
+        }
+        // `:75681-75748` — the 9/503 else-branch: 10× (503 → 40, vel/=2)
+        // dust-58 speed vel×0.1 alpha 150 scale 1.2; 3× (503 → 2) gore
+        // rows Next(16,18) (503 → fixed 16, no draw) + kicks.
+        9 | 503 => {
+            let (count, gores) = if s.kind == 503 { (40, 2) } else { (10, 3) };
+            let vel = if s.kind == 503 { s.vel / 2.0 } else { s.vel };
+            for _ in 0..count {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 58, vel.x * 0.1, vel.y * 0.1, 150, Color::default(), 1.2);
+            }
+            for _ in 0..gores {
+                if s.kind != 503 {
+                    let _ = rng.next_range(16, 18);
+                }
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:75684-75712` — the 12 sparkle ring: 7× dust-58 speed vel×0.1
+        // alpha 150 scale 0.8; a num+=0.125 ring (8) of dust-278 Perfect
+        // CornflowerBlue (tenth-anniversary → HotPink A/=2) + a num+=0.25
+        // ring (4) Gold; the screen-gated 7-gore loop (the on-screen test
+        // folds true for the local pool — the corpse is on screen at death,
+        // recorded). The damage<100 extra burst (10 dust-57 + 3 gores) is
+        // the 12's own tail.
+        12 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let anniversary = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+            let mut ring_color = Color::new(100, 149, 237, 255);
+            if anniversary {
+                ring_color = Color::new(255, 105, 180, 255);
+                ring_color.a /= 2;
+            }
+            for _ in 0..7 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 58, s.vel.x * 0.1, s.vel.y * 0.1, 150, Color::default(), 0.8);
+            }
+            let tau = std::f32::consts::PI * 2.0;
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let angle = num * tau + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * (4.0 + rng.next_float() * 4.0);
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 278, Some(vel), 150, ring_color, 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.125;
+            }
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let angle = num * tau + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * (2.0 + rng.next_float() * 3.0);
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 278, Some(vel), 150, Color::new(255, 215, 0, 255), 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.25;
+            }
+            // The screen-gated 7 gores (the on-screen fold): each a
+            // CircularEdge(0.5,0.5) unit NextFloat, the SelectRandom
+            // (16,17×7) type, the kicks.
+            for _ in 0..7 {
+                let _ = rng.next_float();
+                let _ = rng.next_from_slice(&[16, 17, 17, 17, 17, 17, 17, 17]);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+            if s.damage < 100 {
+                for _ in 0..10 {
+                    dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 57, s.vel.x * 0.1, s.vel.y * 0.1, 150, Color::default(), 1.2);
+                }
+                for _ in 0..3 {
+                    let _ = rng.next_range(16, 18);
+                    let _ = rng.next_range(10, 31);
+                    let _ = rng.next_range(-20, 21);
+                }
+            }
+        }
         _ => {}
     }
 }
@@ -4145,6 +4355,7 @@ mod tests {
             max_updates: 1.0,
             ai2: 0.0,
             wet: false,
+            damage: 0,
         }
     }
 
@@ -6174,5 +6385,114 @@ mod tests {
             drain(&[snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
             assert_eq!(rng, rng2);
         }
+    }
+
+    /// The 1023/312: 40 dust-31 / 30 dust-31 + 40 dust-6 = 70; the gore
+    /// censuses ride the stream (determinism).
+    #[test]
+    fn w4_g65_the_1023_312_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(1023)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 40);
+        assert!(active.iter().all(|d| d.dust_type == 31));
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(7);
+        drain(&[snap(1023)], &mut dust2, &mut rng2, &ctx(), &w);
+        assert_eq!(rng, rng2);
+        let mut dust = DustPool::new();
+        drain(&[snap(312)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 70);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 30);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 40);
+    }
+
+    /// The 936: 40 dust-4 (20 pairs), the second of each pair noGravity.
+    #[test]
+    fn w4_g65_the_936_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(936)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 40);
+        assert!(active.iter().all(|d| d.dust_type == 4));
+        assert_eq!(active.iter().filter(|d| d.no_gravity).count(), 20);
+    }
+
+    /// The 1078: dry → 6 + 48 + 4 = 58 dust; wet → 6. The loot/sound/gore
+    /// census draws ride the stream (determinism).
+    #[test]
+    fn w4_g65_the_1078_meteor() {
+        let w = world();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(1078)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 58);
+        let mut s = snap(1078);
+        s.wet = true;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 6);
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(7);
+        drain(&[snap(1078)], &mut dust2, &mut rng2, &ctx(), &w);
+        assert_eq!(rng, rng2);
+    }
+
+    /// The 80/474/172: 10 dust-67 (ai0>=0) / 20 dust-26 / 20 dust-135.
+    #[test]
+    fn w4_g65_the_80_474_172_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(80)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 67));
+        let mut s = snap(80);
+        s.ai0 = -1.0;
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert!(dust.slots().iter().all(|d| !d.active));
+        let mut dust = DustPool::new();
+        drain(&[snap(474)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        assert_eq!(dust.slots().iter().filter(|d| d.active).count(), 20);
+        let mut dust = DustPool::new();
+        drain(&[snap(172)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        assert!(active.iter().all(|d| d.dust_type == 135));
+    }
+
+    /// The 9/503: 10/40 dust-58; the 12: 7 + 8 + 4 = 19 dust (+10 dust-57
+    /// when damage<100). The gore censuses ride the stream.
+    #[test]
+    fn w4_g65_the_9_503_12_bursts() {
+        let w = world();
+        for (kind, count) in [(9u16, 10), (503, 40)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == 58));
+        }
+        let mut s = snap(12);
+        s.damage = 200; // suppress the extra burst
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 19);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 278).count(), 12);
+        let mut s = snap(12);
+        s.damage = 50; // the extra burst fires
+        let mut dust = DustPool::new();
+        drain(&[s], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 29);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 57).count(), 10);
     }
 }
