@@ -679,7 +679,9 @@ pub fn info_item_line_border(hovered: bool) -> [u8; 4] {
 /// `SetBestiaryNotesOnItemCache` (`UIBestiaryInfoItemLine.cs:137-156`): the
 /// non-null, non-whitespace condition descriptions joined with `"\n"`; a
 /// null condition list leaves the notes untouched (the port returns the
-/// empty string — the item cache has no notes field yet).
+/// empty string — the C# `string.Join` over an empty list is `""` too).
+/// The result rides the line's display item (`Item.BestiaryNotes`) into
+/// the hover tooltip (`Main.cs:21334-21342` — `tooltip::bestiary_note_rows`).
 pub fn bestiary_notes(conditions: &[Option<&str>]) -> String {
     let mut list = Vec::new();
     for c in conditions {
@@ -694,8 +696,10 @@ pub fn bestiary_notes(conditions: &[Option<&str>]) -> String {
 
 /// `DrawSelf`'s hover gate (`UIBestiaryInfoItemLine.cs:112-119`): the item
 /// tooltip (`Main.HoverItem`, `:121-126`) shows only while hovered AND the
-/// line is not the locked variant (`_hideMouseOver`, `:38`).
-#[allow(dead_code)] // the drop-row hover tooltip lands with the tooltip work
+/// line is not the locked variant (`_hideMouseOver`, `:38` — set below
+/// tier 3). The W4-e23 final phase wires it: the drop-row draw feeds
+/// `draw_item_tooltip` through this gate (the f28c compose contract's
+/// writer half — `HoverFlags.bestiary_notes`' source).
 pub fn info_item_shows_tooltip(hovered: bool, hide_mouse_over: bool) -> bool {
     hovered && !hide_mouse_over
 }
@@ -2419,8 +2423,11 @@ enum InfoRow {
     Stats,
     /// `NPCKillCounterInfoElement` — the 30 px panel row (`:84`).
     KillCounter(String),
-    /// `ItemDropBestiaryInfoElement` — one `UIBestiaryInfoItemLine`.
-    Drop { name: String, rate: String, locked: bool },
+    /// `ItemDropBestiaryInfoElement` — one `UIBestiaryInfoItemLine`. The
+    /// `item_id`/`notes` ride the hover (`DrawMouseOver:121-126` sets
+    /// `Main.HoverItem` to the line's display item, whose `BestiaryNotes`
+    /// the ctor cached, `:137-156`).
+    Drop { item_id: i32, name: String, rate: String, locked: bool, notes: String },
     /// `FilterProviderInfoElement.ProvideUIElement` (`:55-95`) — the Misc
     /// category's spawn-condition row: the framed tag icon + the display
     /// name (`HideInPortraitInfo` rows never produce one, `:57-60`).
@@ -2486,7 +2493,12 @@ fn build_info_rows(
             let rate = drop_rate_text(state, row.drop_rate, row.stack_min, row.stack_max);
             let locked = state < UnlockState::CanShowDropsWithoutDropRates;
             let h = if locked { 32.0 } else { 22.0 };
-            g.push((InfoRow::Drop { name, rate, locked }, h));
+            // `SetBestiaryNotesOnItemCache` (`:137-156`): the port's
+            // `DropRateInfo` carries no condition objects (the documented
+            // `loot.rs:292-294` gap), so the cache joins an empty list —
+            // the writer seam is live for the conditions port.
+            let notes = bestiary_notes(&[]);
+            g.push((InfoRow::Drop { item_id: row.item_id, name, rate, locked, notes }, h));
         }
         if !g.is_empty() {
             groups.push(g);
@@ -2709,7 +2721,7 @@ fn draw_info_row(
         InfoRow::KillCounter(count) => {
             draw_kill_counter(r, lookups, content, ty, count, screen, mouse);
         }
-        InfoRow::Drop { name, rate, locked } => {
+        InfoRow::Drop { item_id, name, rate, locked, notes } => {
             // `UIBestiaryInfoItemLine`: below tier 3 the locked icon,
             // tier 3 "???", tier 4 stack + rate.
             if *locked {
@@ -2720,6 +2732,36 @@ fn draw_info_row(
                 }
             } else {
                 text::hud_text(r, lookups, tx, ty, 0.8, [1.0; 4], &format!("  {name} {rate}"));
+            }
+            // `DrawSelf:112-126`: the hovered, non-locked line sets
+            // `Main.HoverItem` to its display item (a fresh
+            // `SetDefaults(itemId)`, count 1 — `:23-24`) and calls
+            // `MouseText("", 0, 0)`; the tooltip prints the item's rows
+            // plus the cached `BestiaryNotes` (`Main.cs:21334-21342`).
+            // The line's rect is the ctor's (-14, 1) x 32 at Left 5
+            // (`:26-31`) — the locked variant's `_hideMouseOver` (`:38`)
+            // suppresses the hover.
+            let line = info_item_line_rect([content[0], ty, content[2], 32.0]);
+            if info_item_shows_tooltip(super::in_rect(mouse, line), *locked) {
+                let hover = crate::item::ItemSlot {
+                    kind: *item_id as u16,
+                    name: crate::registry::name(*item_id as u16),
+                    count: 1,
+                    prefix: 0,
+                };
+                super::tooltip::draw_item_tooltip(
+                    r,
+                    lookups,
+                    mouse,
+                    Some(&hover),
+                    screen,
+                    super::UiPulse::default(),
+                    super::tooltip::TooltipContext {
+                        bestiary_notes: Some(notes),
+                        ..Default::default()
+                    },
+                    true,
+                );
             }
         }
         InfoRow::SpawnCondition { tag } => {
@@ -4099,6 +4141,52 @@ mod tests {
         rows.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap().then(a.1.cmp(&b.1)));
         assert_eq!(rows.iter().map(|&(_, _, t)| t).collect::<Vec<_>>(), vec![0, 1]);
         let _ = entry;
+    }
+
+    /// W4-e23 final 2 — the bestiary NOTES compose contract
+    /// (`UIBestiaryInfoItemLine.cs:137-156` -> `Item.BestiaryNotes` ->
+    /// `Main.cs:21334-21342`): the writer joins the non-whitespace
+    /// condition descriptions with `"\n"`, the tooltip tail splits them
+    /// back into white rows; a whitespace-only cache prints nothing
+    /// (`IsNullOrWhiteSpace`); the hover gate refuses the locked line
+    /// (`_hideMouseOver`, `:38`/`:115`). The f28 salvage's
+    /// `HoverFlags.bestiary_notes` consumes the SAME string — this pins
+    /// the e23 writer half of the f28c compose. WRITTEN, NOT RUN.
+    #[test]
+    fn the_bestiary_notes_compose_contract() {
+        // The writer: two conditions + a whitespace one dropped.
+        let notes = bestiary_notes(&[Some("Expert only"), Some("  "), Some("Master only")]);
+        assert_eq!(notes, "Expert only\nMaster only");
+        // The reader: one white row per line, in order.
+        let rows = super::tooltip::bestiary_note_rows(Some(&notes));
+        assert_eq!(
+            rows,
+            vec![
+                ("Expert only".to_string(), [1.0, 1.0, 1.0, 1.0]),
+                ("Master only".to_string(), [1.0, 1.0, 1.0, 1.0]),
+            ]
+        );
+        // The empty/whitespace cache prints nothing (`:21335`).
+        assert!(super::tooltip::bestiary_note_rows(Some("")).is_empty());
+        assert!(super::tooltip::bestiary_note_rows(Some(" \n ")).is_empty());
+        assert!(super::tooltip::bestiary_note_rows(None).is_empty());
+        // The gate: hovered + unlocked shows, locked never does.
+        assert!(info_item_shows_tooltip(true, false));
+        assert!(!info_item_shows_tooltip(true, true));
+        assert!(!info_item_shows_tooltip(false, false));
+        // The full pipeline through item_tooltip_lines: the notes ride
+        // the context onto the tail (the last rows after the item's own).
+        let d = crate::registry::get(23).expect("the gel row");
+        let lines = super::tooltip::item_tooltip_lines(
+            23,
+            d,
+            super::tooltip::TooltipContext {
+                bestiary_notes: Some(&notes),
+                ..Default::default()
+            },
+        );
+        let tail: Vec<&str> = lines.iter().rev().take(2).map(|(s, _)| s.as_str()).collect();
+        assert_eq!(tail, vec!["Master only", "Expert only"]);
     }
 }
 
