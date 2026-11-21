@@ -1,10 +1,11 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-13 (111 wired C#
-//! match types covering 113 census kinds — the 40/41 BoneSerpent
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-14 (118 wired C#
+//! match types covering 120 census kinds — the 40/41 BoneSerpent
 //! segments ride the head's cs_id 39 via d34's Hide-fold; every
 //! dust-first clean kind the port's kind set carries, plus the 24 d35
-//! row-gated activations of the DOC-SWEEP phase and the 23 d34/c4/d23/
-//! d37 row-gated activations of batches 11-13).
+//! row-gated activations of the DOC-SWEEP phase, the 23 d34/c4/d23/
+//! d37 row-gated activations of batches 11-13 and the 7 g8/d120/f42
+//! row-gated activations of batch 14).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -205,6 +206,35 @@
 //! shimmer_town_transform(229)` (the `NPC.cs:6713-6723` IsShimmerVariant
 //! composition; 229 IS a ShimmerTownTransform member). The altTexture
 //! gore gate is a field read + constants — no argument draws.
+//!
+//! ## Scope — batch 14 (the g8/d120/f42 row-gated activations, part 1)
+//!
+//! ACTIVATIONS-2 re-intersection: ALL 355 pushed task refs re-probed
+//! (33 unique data/bestiary trees, scripted cs_id hand-row + bestiary-
+//! fallback extraction per tip). The 45-no-row set intersects THREE
+//! tips: g8 `82c93cec` (lane 1's <=230 machine wiring rows — 13 no-row
+//! kinds + the 64 PinkJellyfish artifact), d120 `c5e68a80` (the four
+//! town kinds 142/160/178/209, the landed truth per the d36 keep-one
+//! note), f42 `75f055fc` (the Antlion 69 bestiary row). d34 stays
+//! `5f3435a8`; d42's 51-kind wave `9b22c091` is NOW PUSHED (the old
+//! probe saw WIP `88df5809`) but its band is 578-630 — intersect ∅;
+//! d33 `b08acf46` dragonflies 595-601 / c9 `2042d77f` snails 359/360/
+//! 655/677 — intersect ∅ (>230, g60's). d36 `0eb4fee9` is census-only,
+//! NO kind rows.
+//!
+//! | C# type(s) | death arm | shape |
+//! | --- | --- | --- |
+//! | 69 Antlion | `:86562-86565` | 50× type-250, 2×dir/-2 (f42+g8 rows) |
+//! | 142/178 SantaClaus/Steampunker | `:88163`/`:88186` | 50× type-5, 2.5×dir/-2.5 (d120 rows) |
+//! | 150/152 IceBat/GiantFlyingFox | `:85807` | 15× type-5 (the bat arm, g8 rows) |
+//! | 164/165 WallCreeper pair | `:87783-87786` | 50× type-18, 2.5×dir/-2.5 (g8 rows) |
+//!
+//! 158 VampireBat rides the 82 wraith arm (`82 | 158`, batch 15 — g8's
+//! row); 179 CrimsonAxe rides the 83/84 cursed arm (`83 | 84 | 179`,
+//! batch 15 — the SAME 6 gore-ARGUMENT draws). All batch-14 gore tails
+//! draw NO arguments (the antlion's 97/98, the town shimmer gates, the
+//! bat 164/165 + 175/176/176, the creeper 207/208×4 are constants /
+//! field reads).
 //!
 //! ## The row-gated remainder after batches 11-13 (the census doc)
 //!
@@ -567,9 +597,14 @@ pub fn death_dust(
                 );
             }
         }
-        // `NPC.cs:85807-85810` — the Cave Bat (49) / Jungle Bat (51): 15
-        // type-5 puffs at 2×dir/-2 (the bat arm's dust head).
-        49 | 51 => {
+        // `NPC.cs:85807-85810` — the bat family's dust head: 15 type-5
+        // puffs at 2×dir/-2 — 49 CaveBat / 51 JungleBat (batch 4), 226
+        // FlyingSnake (batch 12, d37's row), 150 IceBat / 152
+        // GiantFlyingFox (batch 14, g8's rows — the shared `:85797`
+        // 49/51/93/150/152/226 arm; 93 wired batch 9). The per-kind gore
+        // tails `:85811-85840` (83, 107, 164/165, 175/176/176,
+        // 317/318/318/319, 82) are constant types, no argument draws.
+        49 | 51 | 150 | 152 | 226 => {
             for _ in 0..15 {
                 dust.new_dust(
                     rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
@@ -1123,14 +1158,54 @@ pub fn death_dust(
                 );
             }
         }
-        // `NPC.cs:85807-85810` — the Flying Snake (226): 15 type-5 puffs
-        // at 2×dir/-2 (the bat arm, batch 4's shape; d37's row). The
-        // 317/318/318/319 gore tail `:85830-85836` is constant types, no
-        // argument draws.
-        226 => {
-            for _ in 0..15 {
+        // (226 FlyingSnake rides the batch-4 bat arm
+        // `49 | 51 | 150 | 152 | 226` above — d37's row, the shared
+        // `:85797` arm; the 317/318/318/319 gore tail `:85830-85836` is
+        // constant types, no argument draws.)
+        // ---- batch 14 (the g8 row-gated activations, part 1: the desert
+        // antlion + the d120 town pair + the bat pair + the creeper pair,
+        // 7 kinds). g8 `82c93cec` (lane 1, the <=230 machine wiring) landed
+        // 13 no-row kinds + the 64 PinkJellyfish artifact; d120 `c5e68a80`
+        // landed the four town kinds; f42 `75f055fc` landed the Antlion.
+        // `NPC.cs:86562-86565` — the Antlion (69): 50 type-250 sand puffs
+        // at 2×dir/-2 (the shared 69/580/581/508/509/582 arm's num514=50
+        // default; only 582 lowers it to 10 — g60's band). The 97/98 gore
+        // pair `:86566-86570` is constant types, no argument draws. f42's
+        // bestiary row (69) + g8's hand row — both activate the arm.
+        69 => {
+            for _ in 0..50 {
                 dust.new_dust(
-                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    rng, ctx, world, pos, w, h, 250, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:88163-88166` / `:88186-88189` — the Santa Claus (142) /
+        // Steampunker (178): 50 type-5 puffs at 2.5×dir/-2.5 (the town
+        // shape; d120's hand rows 142/178 — the landed truth, d36 skips
+        // them per the keep-one note). The shimmer/altTexture gore gates
+        // (`:88167-88174` 1338/157 + 1340/158×2 + 1341/159×2;
+        // `:88190-88196` 1348/231 + 1349/232×2 + 1350/233) are field
+        // reads + constants, no argument draws.
+        142 | 178 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // (150 IceBat / 152 GiantFlyingFox ride the batch-4 bat arm
+        // `49 | 51 | 150 | 152 | 226` above — g8's rows, the shared
+        // `:85797` arm.)
+        // `NPC.cs:87783-87786` — the Wall Creeper (164) / Wall Creeper
+        // Wall (165): 50 type-18 puffs at 2.5×dir/-2.5 (the spider shape;
+        // g8's hand rows). The 207/208×4 gore tail `:87787-87791` is
+        // constant types, no argument draws.
+        164 | 165 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 18, 2.5 * dir, -2.5, 0,
                     Color::default(), 1.0,
                 );
             }
@@ -2477,5 +2552,95 @@ mod tests {
         let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(live.len(), 50);
         assert!(live.iter().all(|d| d.dust_type == 180 && d.no_gravity && d.scale == 1.4));
+    }
+
+    // ---- batch 14 (the g8/d120/f42 row-gated activations, part 1).
+
+    /// `NPC.cs:86562-86565` — the Antlion (69): 50 type-250 sand puffs
+    /// at 2×dir/-2 (the shared arm's num514=50 default; the 97/98 gore
+    /// pair is constant types — the dust loop is the whole census).
+    #[test]
+    fn w4_g59_the_antlion_death_draws_fifty_sand_puffs() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(251);
+        assert!(death_dust(&n, 69, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 250 && d.alpha == 0));
+        // The twin: the dust ladder by hand (zero argument draws).
+        let (bw, bh) = n.size();
+        let (bw, bh) = (bw as i32, bh as i32);
+        let mut twin = UnifiedRandom::new(251);
+        for _ in 0..50 {
+            let _px = twin.next_max(bw.max(5) - 4);
+            let _py = twin.next_max(bh.max(5) - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng, twin, "the antlion death spends exactly 50×6 draws");
+    }
+
+    /// `NPC.cs:88163-88166` / `:88186-88189` — the Santa Claus (142) /
+    /// Steampunker (178): 50 type-5 puffs at 2.5×dir/-2.5 (the town
+    /// shape, d120's rows); both share the census exactly (the shimmer
+    /// gore gates are field reads).
+    #[test]
+    fn w4_g59_the_santa_and_steampunker_share_the_town_census() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut states = Vec::new();
+        for ty in [142, 178] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(257);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert_eq!(states[0], states[1], "142 and 178 share the census");
+    }
+
+    /// `NPC.cs:85807-85810` — the Ice Bat (150) / Giant Flying Fox (152)
+    /// ride the bat arm: 15 type-5 puffs, census-equal to 49/51/226.
+    #[test]
+    fn w4_g59_the_ice_bat_and_flying_fox_ride_the_bat_arm() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut states = Vec::new();
+        for ty in [49, 150, 152, 226] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(263);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 15, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == 5));
+            states.push(rng.peek());
+        }
+        assert!(states.windows(2).all(|p| p[0] == p[1]));
+    }
+
+    /// `NPC.cs:87783-87786` — the Wall Creeper pair (164/165): 50
+    /// type-18 puffs at 2.5×dir/-2.5 (the spider shape; the 207/208×4
+    /// gore tail is constant types — zero argument draws).
+    #[test]
+    fn w4_g59_the_wall_creeper_pair_draws_fifty_spider_puffs() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(269);
+        assert!(death_dust(&n, 164, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        assert!(live.iter().all(|d| d.dust_type == 18 && d.alpha == 0));
+        let mut dust_b = DustPool::new();
+        let mut rng_b = UnifiedRandom::new(269);
+        assert!(death_dust(&n, 165, &mut dust_b, &ctx(), &mut rng_b, &w));
+        assert_eq!(rng_b, rng);
+        assert_eq!(dust.slots(), dust_b.slots());
     }
 }
