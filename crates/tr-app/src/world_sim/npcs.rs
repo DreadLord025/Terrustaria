@@ -6166,6 +6166,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // transforms into the walker Duck 362
                         // (`NPC.cs:34760`, the aiStyle-68 arm).
                         362 => NpcKind::Duck,
+                        // W4-f18 batch 3 — the DuckWhite2 365's dry landing
+                        // → the DuckWhite 364; the TruffleWorm 374's dig
+                        // → the TruffleWormDigger 375 (`NPC.cs:34346`).
+                        364 => NpcKind::DuckWhite,
+                        375 => NpcKind::TruffleWormDigger,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);

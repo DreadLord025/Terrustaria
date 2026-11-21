@@ -1118,6 +1118,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // Duck 362 (`entry_for_npc`), but its DRAW sheet is its own
         // NPC_363 (the swimming form's art) — the fishron-hazard precedent.
         NpcKind::Duck2 => 363,
+        // W4-f18 batch 3 — the folded DuckWhite2 365 / TruffleWormDigger
+        // 375 keep their OWN draw sheets (the bestiary fold is the
+        // credit's, not the texture's — the fishron-hazard precedent).
+        NpcKind::DuckWhite2 => 365,
+        NpcKind::TruffleWormDigger => 375,
         _ => kind.net_id() as u16,
     }
 }
@@ -1260,6 +1265,7 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 pub(crate) const CRITTER_SHEETS: &[u32] = &[
     355, 356, 357, 358, 359, // batch 1
     360, 361, 362, 363, 364, // batch 2 (the Duck2 363 draws its own sheet)
+    365, 366, 367, 374, 375, // batch 3 (the folded 365/375 draw their own)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3225,6 +3231,25 @@ pub(crate) fn draw_npcs(
             NpcKind::DuckWhite => {
                 pumpkin_moon_draw(assets.npc_sheet(364), npc_rows(364), n, w, h)
             }
+            // W4-f18 batch 3 — the DuckWhite2 (flight, scale 1), the
+            // scorpion pair + the TruffleWorm (grounded, scale 1) and the
+            // TruffleWormDigger (the burrower, scale 1) ride the generic
+            // anchor.
+            NpcKind::DuckWhite2 => {
+                pumpkin_moon_draw(assets.npc_sheet(365), npc_rows(365), n, w, h)
+            }
+            NpcKind::ScorpionBlack => {
+                pumpkin_moon_draw(assets.npc_sheet(366), npc_rows(366), n, w, h)
+            }
+            NpcKind::Scorpion => {
+                pumpkin_moon_draw(assets.npc_sheet(367), npc_rows(367), n, w, h)
+            }
+            NpcKind::TruffleWorm => {
+                pumpkin_moon_draw(assets.npc_sheet(374), npc_rows(374), n, w, h)
+            }
+            NpcKind::TruffleWormDigger => {
+                pumpkin_moon_draw(assets.npc_sheet(375), npc_rows(375), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3387,6 +3412,13 @@ pub(crate) fn draw_npcs(
                     // tilt (`NPC.cs:73802`, vx*0.1).
                     | NpcKind::GlowingSnail
                     | NpcKind::Duck2
+                    // W4-f18 batch 3 — the DuckWhite2's fly tilt, the
+                    // TruffleWorm's airborne tilt (`NPC.cs:71144`) and the
+                    // TruffleWormDigger's burrow rotation (`:52201`, the
+                    // atan2 + PI/2).
+                    | NpcKind::DuckWhite2
+                    | NpcKind::TruffleWorm
+                    | NpcKind::TruffleWormDigger
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

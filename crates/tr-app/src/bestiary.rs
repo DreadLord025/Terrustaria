@@ -2251,6 +2251,35 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Duck",
     },
+    // W4-f18 batch 3 — the scorpion pair and the TruffleWorm. The
+    // DuckWhite2 365 (Hide=true, `NPCID.cs:3633-3638`) folds onto the
+    // DuckWhite 364; the TruffleWormDigger 375 (Hide=true,
+    // `NPCID.cs:3713-3718`) folds onto the TruffleWorm 374 — neither has
+    // a row of its own (the DetonatingBubble precedent).
+    BestiaryEntryDef {
+        credit_id: "ScorpionBlack",
+        net_id: 366,
+        kind: NpcKind::ScorpionBlack,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "Scorpion",
+        net_id: 367,
+        kind: NpcKind::Scorpion,
+        variant: None,
+        quick_unlock: false,
+        name: "Scorpion",
+    },
+    BestiaryEntryDef {
+        credit_id: "TruffleWorm",
+        net_id: 374,
+        kind: NpcKind::TruffleWorm,
+        variant: None,
+        quick_unlock: false,
+        name: "Truffle Worm",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2376,6 +2405,11 @@ pub fn try_entry_for_npc(
         // 3622`): the swimming form folds onto the walker Duck 362's
         // entry (one credit per waterfowl, the DetonatingBubble precedent).
         NpcKind::Duck2 => NpcKind::Duck,
+        // W4-f18 batch 3 — the DuckWhite2 365 folds onto the DuckWhite 364
+        // (Hide=true, `NPCID.cs:3633-3638`); the TruffleWormDigger 375
+        // folds onto the TruffleWorm 374 (Hide=true, `NPCID.cs:3713-3718`).
+        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
+        NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2450,6 +2484,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-f18 batch 2 — the Duck2 363 folds onto the Duck 362's row
         // (Hide=true, `NPCID.cs:3617-3622`; the try_entry twin above).
         NpcKind::Duck2 => NpcKind::Duck,
+        // W4-f18 batch 3 — the DuckWhite2 365 / TruffleWormDigger 375 fold
+        // onto their walker rows (the try_entry twin above).
+        NpcKind::DuckWhite2 => NpcKind::DuckWhite,
+        NpcKind::TruffleWormDigger => NpcKind::TruffleWorm,
         other => other,
     };
     ENTRIES

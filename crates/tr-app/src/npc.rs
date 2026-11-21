@@ -1137,6 +1137,36 @@ pub enum NpcKind {
     /// def 0, 5 HP, catchItem 2123 (`NPC.cs:13637-13648`). W4-f18: the
     /// aiStyle-7 town-critter arm; the DuckWhite2 365's transform target.
     DuckWhite,
+    /// `NPCID.DuckWhite2` (365, `NPCID.cs:11407`) — the white swimming
+    /// waterfowl (`aiStyle 68`): 28x22, dmg 0, def 0, 5 HP, catchItem
+    /// 2123 (`NPC.cs:13649-13660`). Hide=true (the bestiary folds onto
+    /// the DuckWhite 364). W4-f18: the aiStyle-68 arm; the dry landing
+    /// transforms to the DuckWhite 364.
+    DuckWhite2,
+    /// `NPCID.ScorpionBlack` (366, `NPCID.cs:11409`) — the black desert
+    /// critter (`aiStyle 7`, the town-critter path): 26x18, dmg 0, def 0,
+    /// 5 HP, catchItem 2156 (`NPC.cs:13661-13672`). W4-f18: the aiStyle-7
+    /// town-critter arm.
+    ScorpionBlack,
+    /// `NPCID.Scorpion` (367, `NPCID.cs:11411`) — the desert critter
+    /// (`aiStyle 7`, the town-critter path): 26x18, dmg 0, def 0, 5 HP,
+    /// catchItem 2157 (`NPC.cs:13661-13672`, the shared 366/367 arm).
+    /// W4-f18: the aiStyle-7 town-critter arm.
+    Scorpion,
+    /// `NPCID.TruffleWorm` (374, `NPCID.cs:11425`) — the mushroom bait
+    /// critter (`aiStyle 66`): 20x10, dmg 0, def 0, 5 HP, catchItem 2673,
+    /// rarity 4, dontTakeDamageFromHostiles (`NPC.cs:13762-13776`).
+    /// W4-f18: the aiStyle-66 arm; the 90-tick approach digs into the
+    /// TruffleWormDigger 375 (`npc_ai_style66`'s transform seam).
+    TruffleWorm,
+    /// `NPCID.TruffleWormDigger` (375, `NPCID.cs:11427`) — the burrowing
+    /// form (`aiStyle 6`, the lone worm head): 10x10, dmg 0, def 0, 5 HP,
+    /// kb 0, noGravity/noTileCollide/behindTiles, catchItem 2673, rarity 4
+    /// (`NPC.cs:13777-13795`). Hide=true (the bestiary folds onto the
+    /// TruffleWorm 374). W4-f18: the AI_006 digger arm (the inverted aim,
+    /// `NPC.cs:51861-51865`); is_worm() true but NOT is_worm_head() (the
+    /// StardustWormHead lone-minion precedent — no chain).
+    TruffleWormDigger,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3594,6 +3624,12 @@ impl Npc {
             // so the C# class default 1f stands (`NPC.cs:8533`; the arms
             // `:13587-13648` carry none) — NOT this fn's 0.4 catch-all.
             NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 1.0,
+            // W4-f18 batch 3 — the DuckWhite2/scorpions/TruffleWorm write
+            // no knockBackResist row (the class default 1f, `NPC.cs:8533`);
+            // the TruffleWormDigger 375 writes `knockBackResist = 0f`
+            // (`NPC.cs:13782`).
+            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm => 1.0,
+            NpcKind::TruffleWormDigger => 0.0,
             _ => 0.4,
         }
     }
@@ -3980,6 +4016,9 @@ impl Npc {
             // W4-f18 batch 2 — the critters' `defense = 0` rows
             // (`NPC.cs:13589`/`:13603`/`:13615`/`:13627`/`:13639`).
             NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 0,
+            // W4-f18 batch 3 — the critters' `defense = 0` rows
+            // (`NPC.cs:13651`/`:13663`/`:13764`/`:13779`).
+            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4339,6 +4378,10 @@ impl Npc {
             // `SetDefaults` stock 0f, `NPC.cs:8544`; the arms
             // `:13587-13648` carry none).
             NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 0.0,
+            // W4-f18 batch 3 — the critters write no value row (the
+            // `SetDefaults` stock 0f, `NPC.cs:8544`; the arms
+            // `:13649-13795` carry none).
+            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5010,7 +5053,7 @@ impl Npc {
             // (the TownCritter subset). The town NPCs keep their live
             // `update_guide` stand-in until the full town wiring lands —
             // the kind guard keeps this arm scoped to the critters.
-            7 if matches!(self.kind, NpcKind::Frog | NpcKind::Duck | NpcKind::DuckWhite) => {
+            7 if matches!(self.kind, NpcKind::Frog | NpcKind::Duck | NpcKind::DuckWhite | NpcKind::ScorpionBlack | NpcKind::Scorpion) => {
                 self.ai_007_town_critter(world, player, rng);
             }
             // `else if (this.aiStyle == 68)` (`NPC.cs:34623-34879`): the
@@ -5840,10 +5883,18 @@ impl Npc {
             0,
             rng,
         );
-        // The 484 light is unported (no kind); the dig transform is
-        // 374-only — batch 3 wires the sim drain.
+        // The 484 light is unported (no kind). The TruffleWorm 374's dig
+        // transform (`npc_ai_style66`'s `:34342-34346`): the module already
+        // sank the worm +16; queue the kind flip to the TruffleWormDigger
+        // 375 for the sim drain (the aiStyle-75 `wants_transform` pattern).
+        // The Transform's reposition/life/ai-zeroing is the drain's
+        // `transform_to_kind` job (`NPC.cs:81084-81114`); the 374→375 pair
+        // is both lifeMax 5, so the life passes through.
         let _ = out.light;
-        debug_assert!(!out.transform_to_digger, "the 357 never digs (374-only)");
+        if out.transform_to_digger {
+            self.wants_transform = Some(375);
+            self.wants_transform_ai1 = 0.0;
+        }
         // `NPC.cs:90465-90472` — the gravity term + the fall cap.
         self.vy = (self.vy + 0.3).min(10.0);
         self.integrate_flyer_collision(world);
@@ -5948,6 +5999,204 @@ impl Npc {
             self.vy = (self.vy + 0.3).min(10.0);
         }
         self.integrate_flyer_collision(world);
+    }
+
+    /// W4-f18 batch 3 — the TruffleWormDigger 375's `AI_006_Worms` lone-head
+    /// machine (`NPC.cs:51030-52220`, the type-375 path). A lone burrower
+    /// with no chain (the StardustWormHead precedent — `is_worm()` true,
+    /// `is_worm_head()` false), driven here per-NPC rather than in the sim's
+    /// worm pass (which steps only the chained heads). The 375's dig aim is
+    /// INVERTED (`NPC.cs:51861-51865`): it burrows AWAY from the player.
+    ///
+    /// The ported subset: the 1000-px dig override (`:51598-51615`, the 375
+    /// is in the list) + the tile-overlap dig scan (`:51525-51597`) set
+    /// flag3; the dig steer (`:52112-52198`) accelerates toward the inverted
+    /// tile-snapped aim; the air stumble (`:51925-51973`) runs when not
+    /// digging. The 375 has no corruption escape (`:52004` is 7/13-only),
+    /// no wyvern/454/621 flag8 arm, no chain trail. The crumble dust
+    /// (`:51590`) and the dig roar (`:51976-51995`) ride the dust/sound
+    /// seams (documented remainders — the draw/sound cannot be skipped in
+    /// the C#, the port's worm pass carries the same deviation).
+    fn update_truffle_worm_digger(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
+        let (pcx, pcy) = player.center();
+        let (num45, num46) = self.kind.worm_tunables(); // 6 / 0.15 (:51730)
+
+        // `:51525-51597` — the dig-mode tile scan (the worm pass's shape):
+        // a solid/liquid tile whose 16-px box overlaps the NPC rect sets
+        // flag3. The 375 is NOT an always-fly preset, so the scan runs.
+        let mut flag3 = false;
+        let x0 = ((self.x / TILE_PX) as i32 - 1).max(0);
+        let x1 = (((self.x + w) / TILE_PX) as i32 + 2).min(world.width);
+        let y0 = ((self.y / TILE_PX) as i32 - 1).max(0);
+        let y1 = (((self.y + h) / TILE_PX) as i32 + 2).min(world.height);
+        for tx in x0..x1 {
+            for ty in y0..y1 {
+                let Some(t) = world.tile(tx, ty) else { continue };
+                let solid = t.active()
+                    && (tr_core::tiledata::TILE_SOLID.has(t.kind)
+                        || (tr_core::tiledata::TILE_SOLID_TOP.has(t.kind) && t.frame_y == 0));
+                if !solid && t.liquid <= 64 {
+                    continue;
+                }
+                let tlx = (tx * 16) as f32;
+                let tly = (ty * 16) as f32;
+                if self.x + w > tlx && self.x < tlx + 16.0 && self.y + h > tly && self.y < tly + 16.0 {
+                    flag3 = true;
+                    // `:51590` — the crumble draw runs for EVERY overlapping
+                    // tile (the Next(100) is consumed before the guards);
+                    // the KillTile effect-only dust rides the dust seam.
+                    let _crumble = rng.next_max(100) == 0;
+                }
+            }
+        }
+        // `:51598-51615` — the 1000-px dig override: no player inside the
+        // ±1000-px box around the rect → burrow anyway.
+        if !flag3 {
+            let (nx, ny) = (self.x as i32, self.y as i32);
+            let (nw, nh) = (w as i32, h as i32);
+            let (plx, ply) = (pcx as i32 - 1000, pcy as i32 - 1000);
+            let player_near = plx < nx + nw && nx < plx + 2000 && ply < ny + nh && ny < ply + 2000;
+            if !player_near {
+                flag3 = true;
+            }
+        }
+
+        if !flag3 {
+            // `:51925-51973` — the air stumble (the 375 is not type 39, so
+            // the +0.11 gravity arm). The aim num48/num49 is the player's
+            // centre offset, tile-snapped (`:51855-51860`), then INVERTED
+            // for the 375 (`:51861-51865`).
+            let mut num48 = (((pcx / TILE_PX) as i32) - ((cx / TILE_PX) as i32)) as f32 * 16.0;
+            let mut num49 = (((pcy / TILE_PX) as i32) - ((cy / TILE_PX) as i32)) as f32 * 16.0;
+            num48 *= -1.0;
+            num49 *= -1.0;
+            self.vy += 0.11;
+            if self.vy > num45 {
+                self.vy = num45;
+            }
+            if (self.vx.abs() + self.vy.abs()) < num45 * 0.4 {
+                if self.vx < 0.0 {
+                    self.vx -= num46 * 1.1;
+                } else {
+                    self.vx += num46 * 1.1;
+                }
+            } else if self.vy == num45 {
+                if self.vx < num48 {
+                    self.vx += num46;
+                } else if self.vx > num48 {
+                    self.vx -= num46;
+                }
+            } else if self.vy > 4.0 {
+                if self.vx < 0.0 {
+                    self.vx += num46 * 0.9;
+                } else {
+                    self.vx -= num46 * 0.9;
+                }
+            }
+        } else {
+            // `:51974-52198` — the dig. The aim is the player's centre
+            // offset, tile-snapped, INVERTED for the 375, then scaled to
+            // the max speed (`:51997-52002`).
+            let mut num48 = (((pcx / TILE_PX) as i32) - ((cx / TILE_PX) as i32)) as f32 * 16.0;
+            let mut num49 = (((pcy / TILE_PX) as i32) - ((cy / TILE_PX) as i32)) as f32 * 16.0;
+            num48 *= -1.0;
+            num49 *= -1.0;
+            let num62 = (num48 * num48 + num49 * num49).sqrt();
+            // `:51976-51995` — the dig roar on the soundDelay cadence (the
+            // 375 is not in the 621/87/117/454/412 exclusion list). The
+            // distance/40 clamp (10..20) re-arms the delay; the case-15
+            // roar at the default Style 1 rides the sound seam.
+            if self.sound_delay == 0 {
+                self.sound_delay = (num62 / 40.0).clamp(10.0, 20.0) as i32;
+                self.wants_sound.push(crate::npc::NpcSoundRequest {
+                    cue: crate::npc::NpcSoundCue::Roar(1),
+                    x: self.x,
+                    y: self.y,
+                });
+            }
+            let num67 = num45 / num62.max(0.001);
+            num48 *= num67;
+            num49 *= num67;
+            // `:52112-52198` — the dig steer (flag8 false for the 375).
+            let num65 = num48.abs();
+            let num66 = num49.abs();
+            let aligned = (self.vx > 0.0 && num48 > 0.0)
+                || (self.vx < 0.0 && num48 < 0.0)
+                || (self.vy > 0.0 && num49 > 0.0)
+                || (self.vy < 0.0 && num49 < 0.0);
+            if aligned {
+                if self.vx < num48 {
+                    self.vx += num46;
+                } else if self.vx > num48 {
+                    self.vx -= num46;
+                }
+                if self.vy < num49 {
+                    self.vy += num46;
+                } else if self.vy > num49 {
+                    self.vy -= num46;
+                }
+                // `:52132-52142` — the perpendicular kick when the aim's
+                // Y is small and the X velocity opposes the aim.
+                if num49.abs() < num45 * 0.2
+                    && ((self.vx > 0.0 && num48 < 0.0) || (self.vx < 0.0 && num48 > 0.0))
+                {
+                    if self.vy > 0.0 {
+                        self.vy += num46 * 2.0;
+                    } else {
+                        self.vy -= num46 * 2.0;
+                    }
+                }
+                // `:52143-52153` — the X kick when the aim's X is small.
+                if num48.abs() < num45 * 0.2
+                    && ((self.vy > 0.0 && num49 < 0.0) || (self.vy < 0.0 && num49 > 0.0))
+                {
+                    if self.vx > 0.0 {
+                        self.vx += num46 * 2.0;
+                    } else {
+                        self.vx -= num46 * 2.0;
+                    }
+                }
+            } else if num65 > num66 {
+                // `:52155-52176` — the X-dominant steer.
+                if self.vx < num48 {
+                    self.vx += num46 * 1.1;
+                } else if self.vx > num48 {
+                    self.vx -= num46 * 1.1;
+                }
+                if self.vx.abs() + self.vy.abs() < num45 * 0.5 {
+                    if self.vy > 0.0 {
+                        self.vy += num46;
+                    } else {
+                        self.vy -= num46;
+                    }
+                }
+            } else {
+                // `:52177-52198` — the Y-dominant steer.
+                if self.vy < num49 {
+                    self.vy += num46 * 1.1;
+                } else if self.vy > num49 {
+                    self.vy -= num46 * 1.1;
+                }
+                if self.vx.abs() + self.vy.abs() < num45 * 0.5 {
+                    if self.vx > 0.0 {
+                        self.vx += num46;
+                    } else {
+                        self.vx -= num46;
+                    }
+                }
+            }
+        }
+        // `:52201` — the head rotation: Atan2(vy, vx) + PI/2.
+        self.rotation = self.vy.atan2(self.vx) + std::f32::consts::FRAC_PI_2;
+        // `noTileCollide` — the direct integration (`NPC.cs:90495-90498`).
+        self.x += self.vx;
+        self.y += self.vy;
+        // The off-world guard (the worm pass's framework shape).
+        if self.y > world.height as f32 * TILE_PX + 200.0 {
+            self.hp = 0;
+        }
     }
 
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
@@ -6439,6 +6688,23 @@ impl Npc {
             NpcKind::Duck2 => {
                 unreachable!("aiStyle 68 rides the style axis (W4-f18)")
             }
+            // W4-f18 batch 3 — the DuckWhite2 rides the 68 axis arm; the
+            // scorpions ride the critter-guarded 7 arm; the TruffleWorm
+            // rides the 66 arm (all unreachable through `update_rng`).
+            NpcKind::DuckWhite2 => {
+                unreachable!("aiStyle 68 rides the style axis (W4-f18)")
+            }
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => {
+                unreachable!("aiStyle 7's town-critter arm rides the style axis (W4-f18)")
+            }
+            NpcKind::TruffleWorm => {
+                unreachable!("aiStyle 66 rides the style axis (W4-f18)")
+            }
+            // The TruffleWormDigger 375: the AI_006 lone-head burrower
+            // (the inverted aim, `NPC.cs:51861-51865`) — its own machine,
+            // not the sim's chained-worm pass (the StardustWormHead
+            // precedent: is_worm() true, is_worm_head() false).
+            NpcKind::TruffleWormDigger => self.update_truffle_worm_digger(world, player, rng),
             NpcKind::Goldfish | NpcKind::Piranha | NpcKind::Shark => {
                 self.update_swimmer(world, player, rng)
             }
@@ -7164,6 +7430,115 @@ impl Npc {
                     }
                     if self.frame < 11 {
                         self.frame = 11;
+                    }
+                }
+            }
+            // W4-f18 batch 3 — `case 365` shares the Duck2's case 363/365/
+            // 609 (`NPC.cs:73772-73818`): the same waterfowl machine.
+            NpcKind::DuckWhite2 => {
+                self.sprite_dir = self.facing;
+                if self.wet {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 2 {
+                        self.frame = 1;
+                    }
+                    if self.frame < 1 {
+                        self.frame = 1;
+                    }
+                    self.rotation = 0.0;
+                } else if self.vx == 0.0 && self.vy == 0.0 {
+                    self.frame = 1;
+                    self.frame_counter = 0.0;
+                    self.rotation = 0.0;
+                } else {
+                    self.rotation = self.vx * 0.1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 15 {
+                        self.frame = 11;
+                    }
+                    if self.frame < 11 {
+                        self.frame = 11;
+                    }
+                }
+            }
+            // `case 366/367` (`NPC.cs:76820-76850`): the grounded
+            // spriteDirection latch; vx == 0 pins row 0 + resets; the
+            // |vx|+1-weighted counter advances every >6 ticks, wrapping
+            // at `Main.npcFrameCount[type]` = 4.
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                }
+                if self.vx == 0.0 {
+                    self.frame = 0;
+                    self.frame_counter = 0.0;
+                } else {
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 4 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // `case 374` (`NPC.cs:71121-71155`): the localAI[0] -2 marker;
+            // the grounded 6-tick cycle rows 0..3 wrapping to 1 (vx == 0
+            // pins row 0 + resets); the airborne 3-tick cycle + the
+            // direction*0.1 tilt.
+            NpcKind::TruffleWorm => {
+                self.local_ai[0] = -2.0;
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame_counter = 0.0;
+                            self.frame += 1;
+                            if self.frame >= 4 {
+                                self.frame = 1;
+                            }
+                        }
+                    }
+                } else {
+                    self.rotation += self.facing as f32 * 0.1;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 3.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 4 {
+                            self.frame = 1;
+                        }
+                    }
+                }
+            }
+            // `case 375` (`NPC.cs:71109-71120`): the 4-tick cycle rows
+            // 0..3 (the digger's burrow spin).
+            NpcKind::TruffleWormDigger => {
+                self.frame_counter += 1.0;
+                if self.frame_counter > 4.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.frame >= 4 {
+                        self.frame = 0;
                     }
                 }
             }
@@ -19133,6 +19508,15 @@ impl Npc {
             NpcKind::Duck => 362,
             NpcKind::Duck2 => 363,
             NpcKind::DuckWhite => 364,
+            // W4-f18 batch 3 — the critters' vanilla types 365-375 (the
+            // folded DuckWhite2 365 / TruffleWormDigger 375 keep their OWN
+            // keys — the bestiary fold is the credit's, not the render
+            // hash's; the G6 key stays injective).
+            NpcKind::DuckWhite2 => 365,
+            NpcKind::ScorpionBlack => 366,
+            NpcKind::Scorpion => 367,
+            NpcKind::TruffleWorm => 374,
+            NpcKind::TruffleWormDigger => 375,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -24201,7 +24585,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 280] = [
+    pub(super) const ALL_KINDS: [NpcKind; 285] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24492,6 +24876,12 @@ mod tests {
         NpcKind::Duck,
         NpcKind::Duck2,
         NpcKind::DuckWhite,
+        // W4-f18 first-20 port — batch 3: the five critters 365-375.
+        NpcKind::DuckWhite2,
+        NpcKind::ScorpionBlack,
+        NpcKind::Scorpion,
+        NpcKind::TruffleWorm,
+        NpcKind::TruffleWormDigger,
     ];
 
     #[test]
@@ -28110,8 +28500,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            280,
-            "every decodable kind resolves (the wire roster's size - 280 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-f18 batches 1-2's ten critters)"
+            285,
+            "every decodable kind resolves (the wire roster's size - 285 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-f18 batches 1-3's fifteen critters)"
         );
         assert!(
             covered > 43,
@@ -31767,6 +32157,13 @@ mod s1_d_2_tests {
         (NpcKind::Duck, 7),
         (NpcKind::Duck2, 68),
         (NpcKind::DuckWhite, 7),
+        // W4-f18 batch 3's critters (`NPC.cs:13651`/`:13663`/`:13764`/
+        // `:13779`).
+        (NpcKind::DuckWhite2, 68),
+        (NpcKind::ScorpionBlack, 7),
+        (NpcKind::Scorpion, 7),
+        (NpcKind::TruffleWorm, 66),
+        (NpcKind::TruffleWormDigger, 6),
     ];
 
     #[test]

@@ -1656,6 +1656,34 @@ fn portrait_data(
                 .unwrap_or(22.0);
             (sheet_i, h, 28.0, h, white)
         }
+        // W4-f18 batch 3 — the scorpion pair (4 frames) and the TruffleWorm
+        // (4). The DuckWhite2 365 folds onto the DuckWhite 364's entry and
+        // the TruffleWormDigger 375 onto the TruffleWorm 374's — their arms
+        // keep the exhaustive match whole (the fold precedent).
+        (NpcKind::ScorpionBlack | NpcKind::Scorpion, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(18.0);
+            (sheet_i, h, 26.0, h, white)
+        }
+        (NpcKind::TruffleWorm, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::DuckWhite2, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 15.0)
+                .unwrap_or(22.0);
+            (sheet_i, h, 28.0, h, white)
+        }
+        (NpcKind::TruffleWormDigger, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(10.0);
+            (sheet_i, h, 10.0, h, white)
+        }
     }
 }
 

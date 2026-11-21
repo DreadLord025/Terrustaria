@@ -1290,6 +1290,13 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_362",
         "NPC_363",
         "NPC_364",
+        // W4-f18 batch 3 — the critters' own sheets (the folded DuckWhite2
+        // 365 / TruffleWormDigger 375 draw their own art).
+        "NPC_365",
+        "NPC_366",
+        "NPC_367",
+        "NPC_374",
+        "NPC_375",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -1875,7 +1882,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 193] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1916,6 +1923,10 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 190] = [
         // W4-f18 batch 2 — the GlowingSnail/Frog/duck walkers' entries
         // (the Duck2 363 folds onto 362, so it has no slot of its own).
         360, 361, 362, 364,
+        // W4-f18 batch 3 — the scorpion pair + the TruffleWorm's entries
+        // (the DuckWhite2 365 folds onto 364, the TruffleWormDigger 375
+        // onto 374 — neither has a slot of its own).
+        366, 367, 374,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2691,6 +2702,11 @@ impl Lookups {
                 atlas.sheet("NPC_361").copied(),
                 atlas.sheet("NPC_362").copied(),
                 atlas.sheet("NPC_364").copied(),
+                // W4-f18 batch 3 — the entry-bearing critters' strips, in
+                // BESTIARY_NPC_SHEET_IDS' appended order (365→364, 375→374).
+                atlas.sheet("NPC_366").copied(),
+                atlas.sheet("NPC_367").copied(),
+                atlas.sheet("NPC_374").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

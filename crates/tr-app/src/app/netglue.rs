@@ -3594,6 +3594,21 @@ fn npc_seed(
         | crate::npc::NpcKind::DuckWhite => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-f18 batch 3 — the DuckWhite2 (swimming waterfowl) and the
+        // scorpion pair / TruffleWorm (grounded critters) plant their feet
+        // on the column surface; the TruffleWormDigger 375 (noTileCollide
+        // burrower) rides the hover ctor (the net state overwrites the
+        // position below).
+        crate::npc::NpcKind::DuckWhite2
+        | crate::npc::NpcKind::ScorpionBlack
+        | crate::npc::NpcKind::Scorpion
+        | crate::npc::NpcKind::TruffleWorm => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
+        crate::npc::NpcKind::TruffleWormDigger => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

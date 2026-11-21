@@ -602,6 +602,14 @@ impl NpcKind {
             NpcKind::Duck => 244,
             NpcKind::Duck2 => 245,
             NpcKind::DuckWhite => 246,
+            // W4-f18 batch 3 — the critters take the next-free band 247..
+            // (250/288 are the AngryNimbus/DungeonSpirit's port-local ids;
+            // the vanilla types 365-375 ride cs_id/net_id, NOT these).
+            NpcKind::DuckWhite2 => 247,
+            NpcKind::ScorpionBlack => 248,
+            NpcKind::Scorpion => 249,
+            NpcKind::TruffleWorm => 252,
+            NpcKind::TruffleWormDigger => 253,
         }
     }
 
@@ -946,6 +954,14 @@ impl NpcKind {
             244 => NpcKind::Duck,
             245 => NpcKind::Duck2,
             246 => NpcKind::DuckWhite,
+            // W4-f18 batch 3 — the critters' 247.. band (`to_u16` above;
+            // 250/288 are the AngryNimbus/DungeonSpirit's). `NPCID.cs:
+            // 11407-11427`.
+            247 => NpcKind::DuckWhite2,
+            248 => NpcKind::ScorpionBlack,
+            249 => NpcKind::Scorpion,
+            252 => NpcKind::TruffleWorm,
+            253 => NpcKind::TruffleWormDigger,
             _ => return None,
         })
     }
@@ -1010,6 +1026,13 @@ impl NpcKind {
                 // outside the `:51301` spawn lists, so `is_worm_head`
                 // stays false and the init never grows links).
                 | NpcKind::StardustWormHead
+                // W4-f18 batch 3 — the TruffleWormDigger 375 IS an AI_006
+                // kind (`NPC.cs:51730-51734`'s 6/0.15 tunables, the
+                // `:51598` 1000-px dig list) — a lone burrower with no
+                // chain (type 375 sits outside the `:51301` spawn lists,
+                // so `is_worm_head` stays false; the StardustWormHead
+                // precedent). Its dig aim is INVERTED (`:51861-51865`).
+                | NpcKind::TruffleWormDigger
         )
     }
 
@@ -1124,6 +1147,9 @@ impl NpcKind {
             // The stardust worm head's 9/0.3 (`:51740-51743`) and the
             // crawltipede chain's 10/0.3 (`:51779-51880`).
             NpcKind::StardustWormHead => (9.0, 0.3),
+            // W4-f18 batch 3 — the TruffleWormDigger 375's 6/0.15
+            // (`NPC.cs:51730-51734`).
+            NpcKind::TruffleWormDigger => (6.0, 0.15),
             NpcKind::SolarCrawltipedeHead
             | NpcKind::SolarCrawltipedeBody
             | NpcKind::SolarCrawltipedeTail => (10.0, 0.3),
@@ -1832,6 +1858,9 @@ impl NpcKind {
             // W4-f18 batch 2 — the critters' `SoundID.NPCHit1` rows
             // (`NPC.cs:13591`/`:13605`/`:13617`/`:13629`/`:13641`).
             NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => "NPC_Hit_1",
+            // W4-f18 batch 3 — the critters' `SoundID.NPCHit1` rows
+            // (`NPC.cs:13653`/`:13665`/`:13766`/`:13781`).
+            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2142,6 +2171,9 @@ impl NpcKind {
             // W4-f18 batch 2 — the critters' `SoundID.NPCDeath1` rows
             // (`NPC.cs:13592`/`:13606`/`:13618`/`:13630`/`:13642`).
             NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => "NPC_Killed_1",
+            // W4-f18 batch 3 — the critters' `SoundID.NPCDeath1` rows
+            // (`NPC.cs:13654`/`:13666`/`:13767`/`:13782`).
+            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2253,6 +2285,13 @@ impl NpcKind {
             // (grounded); the Duck2 363's noGravity is the AI-head's live
             // write (`npc_ai_style68`, the static table keeps SetDefaults).
             NpcKind::GlowingSnail => true,
+            // W4-f18 batch 3 — the DuckWhite2/scorpions/TruffleWorm write
+            // no noGravity flag. The TruffleWormDigger 375's SetDefaults
+            // noGravity is true (`NPC.cs:13783`) BUT its kb is 0 (`:13782`),
+            // so the strike-time Y-pop never reaches it — this table keeps
+            // the W3-i11 convention (noGravity AND kb>0 only), so 375 reads
+            // false here BY DESIGN (the census doc's note). Its burrow
+            // movement is noTileCollide raw integration regardless.
             _ => false,
         }
     }
@@ -2516,6 +2555,12 @@ impl NpcKind {
             NpcKind::GlowingSnail => 67,
             NpcKind::Frog | NpcKind::Duck | NpcKind::DuckWhite => 7,
             NpcKind::Duck2 => 68,
+            // W4-f18 batch 3 — 365 68 (`NPC.cs:13651`), 366/367 7
+            // (`:13663`), 374 66 (`:13764`), 375 6 (`:13779`).
+            NpcKind::DuckWhite2 => 68,
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => 7,
+            NpcKind::TruffleWorm => 66,
+            NpcKind::TruffleWormDigger => 6,
         }
     }
 
@@ -3062,6 +3107,13 @@ impl NpcKind {
             NpcKind::Frog => (12.0, 10.0),
             NpcKind::Duck | NpcKind::DuckWhite => (22.0, 26.0),
             NpcKind::Duck2 => (28.0, 22.0),
+            // W4-f18 batch 3 — 365 28x22 (`NPC.cs:13649-13650`), 366/367
+            // 26x18 (`:13661-13662`), 374 20x10 (`:13762-13763`), 375
+            // 10x10 (`:13777-13778`).
+            NpcKind::DuckWhite2 => (28.0, 22.0),
+            NpcKind::ScorpionBlack | NpcKind::Scorpion => (26.0, 18.0),
+            NpcKind::TruffleWorm => (20.0, 10.0),
+            NpcKind::TruffleWormDigger => (10.0, 10.0),
         }
     }
 
@@ -3282,6 +3334,9 @@ impl NpcKind {
                 // The BlazingWheel's `behindTiles = true` row
                 // (`NPC.cs:9724`, the small-kinds wiring wave).
                 | NpcKind::BlazingWheel
+                // W4-f18 batch 3 — the TruffleWormDigger 375's
+                // `behindTiles = true` row (`NPC.cs:13785`).
+                | NpcKind::TruffleWormDigger
         )
     }
 
@@ -3709,6 +3764,9 @@ impl NpcKind {
             // W4-f18 batch 2 — the critters' `lifeMax = 5` rows
             // (`NPC.cs:13590`/`:13604`/`:13616`/`:13628`/`:13640`).
             NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 5,
+            // W4-f18 batch 3 — the critters' `lifeMax = 5` rows
+            // (`NPC.cs:13652`/`:13664`/`:13765`/`:13780`).
+            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 5,
         }
     }
 
@@ -4079,6 +4137,9 @@ impl NpcKind {
             // W4-f18 batch 2 — the critters' `damage = 0` rows
             // (`NPC.cs:13588`/`:13602`/`:13614`/`:13626`/`:13638`).
             NpcKind::GlowingSnail | NpcKind::Frog | NpcKind::Duck | NpcKind::Duck2 | NpcKind::DuckWhite => 0,
+            // W4-f18 batch 3 — the critters' `damage = 0` rows
+            // (`NPC.cs:13650`/`:13662`/`:13763`/`:13778`).
+            NpcKind::DuckWhite2 | NpcKind::ScorpionBlack | NpcKind::Scorpion | NpcKind::TruffleWorm | NpcKind::TruffleWormDigger => 0,
         }
     }
 }

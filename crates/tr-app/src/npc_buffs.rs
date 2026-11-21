@@ -500,6 +500,14 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::Duck
         | NpcKind::Duck2
         | NpcKind::DuckWhite => &[31],
+        // W4-f18 batch 3 — the critters' `SpecificallyImmuneTo` rows:
+        // 365-367/374/375 each immune to the Confused debuff (31)
+        // (`NPCID.cs:8233-8246` / the 374/375 rows).
+        NpcKind::DuckWhite2
+        | NpcKind::ScorpionBlack
+        | NpcKind::Scorpion
+        | NpcKind::TruffleWorm
+        | NpcKind::TruffleWormDigger => &[31],
     }
 }
 
