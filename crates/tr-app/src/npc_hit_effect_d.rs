@@ -1702,6 +1702,54 @@ fn drippler_death(
     gore.new_gore(rng, world, pos, vel, pick2, s);
 }
 
+/// The shark arm (`NPC.cs:86730-86786`): the 75x dust-5 burst, then the
+/// per-kind quad — head at position + three at +14 X, ALL at
+/// `velocity * 0.8` (the dampened kick base), scale 1f. The live
+/// branches: 65 Shark → 89/90/91/92 (`:86746-86749`, sites 228-231),
+/// 692 Orca → 1403/1404/1405/1406 (`:86753-86756`, sites 232-235); the
+/// 542-545 sand sharks land next batch. The C# uses independent ifs —
+/// mutually exclusive on type, the port's else-if is equivalent.
+fn shark_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86740-86743` — the 75x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        75,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let pos14 = Vec2::new(npc.x + 14.0, npc.y);
+    // `:86746` — the dampened velocity base.
+    let vel = Vec2::new(npc.vx, npc.vy) * 0.8;
+    if npc_type == 65 {
+        gore.new_gore(rng, world, pos, vel, 89, 1.0); // :86746
+        gore.new_gore(rng, world, pos14, vel, 90, 1.0); // :86747
+        gore.new_gore(rng, world, pos14, vel, 91, 1.0); // :86748
+        gore.new_gore(rng, world, pos14, vel, 92, 1.0); // :86749
+    } else if npc_type == 692 {
+        gore.new_gore(rng, world, pos, vel, 1403, 1.0); // :86753
+        gore.new_gore(rng, world, pos14, vel, 1404, 1.0); // :86754
+        gore.new_gore(rng, world, pos14, vel, 1405, 1.0); // :86755
+        gore.new_gore(rng, world, pos14, vel, 1406, 1.0); // :86756
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1913,6 +1961,11 @@ pub fn hit_effect_d(
     // Next(3) argument picks).
     else if npc_type == 490 {
         drippler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86730-86786` — the shark arm (65/692/542-545); the 65/692 quads
+    // are live (sites 228-235), the sand sharks land next batch.
+    else if matches!(npc_type, 65 | 692 | 542 | 543 | 544 | 545) {
+        shark_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3368,5 +3421,44 @@ mod tests {
         assert_eq!(types[3], p1, "pick1 matches the twin");
         assert_eq!(types[4], p2, "pick2 matches the twin");
         assert_eq!(rng.peek(), twin.peek(), "the drippler mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86746-86756` — the Shark quad 89/90/91/92 and the Orca
+    /// quad 1403-1406: head at position + three at +14 X, ALL at
+    /// velocity*0.8 (the kicks land on the dampened base), scale 1f,
+    /// after the 75x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_shark_quads_dampen_the_velocity() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 50.0, 30.0);
+        n.vx = 2.0;
+        n.vy = 1.0;
+        for (kind, want) in [
+            (65, vec![89, 90, 91, 92]),
+            (692, vec![1403, 1404, 1405, 1406]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(229);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "shark {kind}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(114.0, 100.0));
+            // The velocity base is dampened BEFORE the kicks: the X
+            // component starts at 2.0*0.8 = 1.6 (plus the pool's kick).
+            let kick_x = gore.slot(0).velocity.x - 1.6;
+            assert!((-2.0..=2.0).contains(&kick_x), "the X kick rides the 0.8 base: {kick_x}");
+            let mut twin = UnifiedRandom::new(229);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 50, 30);
+            }
+            for _ in 0..4 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "shark {kind} mirrors the C# draws");
+        }
     }
 }
