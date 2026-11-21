@@ -2460,8 +2460,9 @@ mod tests {
         app.player.as_mut().unwrap().buffs.add_buff(156, 3600);
         let before = app.audio.played_count();
         tick_ammo(&mut app);
-        // The on-edge lands the flat 20 hurt too - its voice cue (the
-        // `Hurt` tail, `Player.cs:38525`) plays beside the Dig: TWO plays.
+        // The on-edge lands the flat 20 hurt too (spawn carries no
+        // i-frames) - its voice cue (the `Hurt` tail, `Player.cs:38525`)
+        // plays beside the Dig: TWO plays.
         assert_eq!(app.audio.played_count() - before, 2, "the hurt + the dig");
         // The held buff: no second play.
         let mid = app.audio.played_count();

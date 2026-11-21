@@ -18020,11 +18020,16 @@ mod tests {
             p.update(&w, PlayerInput::default());
         }
         // Arm the midair trigger state: fuel, the release latch, canRocket.
+        // The PIN survives ResetEffects' per-tick `rocket_boots = 0` clear
+        // (`:18760`-area; the `:26628` re-grant reads it). `jump = 1` keeps
+        // the held-jump branch out of the extra-jump chain.
+        p.pinned_rocket_boots = 1;
         p.rocket_boots = 1;
         p.rocket_time = 7;
         p.rocket_time_max = 7;
         p.can_rocket = true;
         p.rocket_release = true;
+        p.jump = 1;
         p.vy = 2.0; // airborne
         p.on_ground = false;
         p.update(
@@ -18054,11 +18059,13 @@ mod tests {
         for _ in 0..120 {
             p.update(&w, PlayerInput::default());
         }
+        p.pinned_rocket_boots = 2;
         p.rocket_boots = 2;
         p.rocket_time = 7;
         p.rocket_time_max = 7;
         p.can_rocket = true;
         p.rocket_release = true;
+        p.jump = 1;
         p.vy = 2.0;
         p.on_ground = false;
         p.update(
