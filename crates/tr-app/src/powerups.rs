@@ -1,7 +1,8 @@
 //! W4-a6 — the permanent power-up consumables: `Player.ItemCheck`'s
 //! `ItemCheck_UseLifeCrystal` / `UseLifeFruit` / `UseManaCrystal` /
-//! `UseDemonHeart` (`Player.cs:45192-45320`) and their sibling
-//! `ItemCheck_Use*` arms (`:45322-45423`, later commits).
+//! `UseDemonHeart` / `UseMinecartPowerUp` / `UseArtisanLoaf`
+//! (`Player.cs:45192-45320`) and their sibling `ItemCheck_Use*` arms
+//! (`:45226-45423`, later commits).
 //!
 //! Every arm rides the C# mid-swing gate `itemAnimation > 0 &&
 //! ItemTimeIsZero` (`:4064`): the use START (`ApplyItemAnimation`) ran on
@@ -57,9 +58,9 @@ fn use_time_secs(held: ItemSlot) -> f32 {
 }
 
 /// The power-up kinds this machine owns — the `ItemCheck_Use*` cluster's
-/// ids (`Player.cs:43595-43598`'s call row).
+/// ids (`Player.cs:43595-43601`'s call row).
 pub(crate) fn is_powerup(kind: u16) -> bool {
-    matches!(kind, 29 | 109 | 1291 | 3335)
+    matches!(kind, 29 | 109 | 1291 | 3335 | 5289 | 5326)
 }
 
 /// `Player.ItemCheck_CheckCanUse_Inner`'s Demon Heart refusal
@@ -77,8 +78,9 @@ fn use_start_refused(app: &App, kind: u16) -> bool {
 }
 
 /// The mid-swing grant dispatch — the C# call order
-/// (`Player.cs:43595-43598`): LifeCrystal → LifeFruit → ManaCrystal →
-/// DemonHeart. Returns true when the grant fired (the stack pays one).
+/// (`Player.cs:43595-43601`): LifeCrystal → LifeFruit → ManaCrystal →
+/// DemonHeart → MinecartPowerUp → TorchGodsFavor → ArtisanLoaf. Returns
+/// true when the grant fired (the stack pays one).
 fn run_powerup_arm(app: &mut App, held: ItemSlot) -> bool {
     if ticks_of(app.swing) <= 0 || ticks_of(app.item_time) != 0 {
         return false;
@@ -88,6 +90,8 @@ fn run_powerup_arm(app: &mut App, held: ItemSlot) -> bool {
         1291 => use_life_fruit(app),
         109 => use_mana_crystal(app),
         3335 => use_demon_heart(app),
+        5289 => use_minecart_powerup(app),
+        5326 => use_artisan_loaf(app),
         _ => false,
     };
     if fired {
@@ -176,6 +180,116 @@ fn use_demon_heart(app: &mut App) -> bool {
         return false;
     }
     p.extra_accessory = true;
+    true
+}
+
+/// `Player.ItemCheck_UseMinecartPowerUp` (`Player.cs:45202-45214`): NO
+/// flag gate — every granted use re-arms `ApplyItemTime`, raises
+/// `unlockedSuperCart` once (`:45207-45211`, the `SendData(4)` sync is
+/// MP-only) and `QuickSpawnItem(source, 3353)` (`:45212`) grants the
+/// Minecart Mech — the Super Cart item itself, `MountID` 11.
+fn use_minecart_powerup(app: &mut App) -> bool {
+    if let Some(p) = app.player.as_mut() {
+        if !p.unlocked_super_cart {
+            p.unlocked_super_cart = true; // `:45209`
+        }
+    }
+    quick_spawn_item(app, 3353, 1);
+    true
+}
+
+/// `Player.QuickSpawnItem(source, item, stack)` → `GetOrDropItem(item,
+/// PickupItemFromWorld)` (`Player.cs:7170-7200`): a fresh `Item` with
+/// `Prefix(-1)` (the natural roll — `Item.cs:504-518`; the Minecart Mech
+/// is in no prefixable set, so the roll draws NOTHING), then `GetItem`
+/// (the deposit walk, `PickupItemFromWorld` = `CanGoIntoVoidVault: true`,
+/// `GetItemSettings.cs:57` — the chime + `NotifyItemPickup` per accepted
+/// slot, `:39491`/`:39505`), the void vault as the LAST resort
+/// (`:39395-39398`), and the OVERFLOW spawns a world drop at the player's
+/// centre with the prefix preserved (`Item.RequestNewItem`, `:7196-7199`
+/// — the reforge-return overflow precedent, `app/mod.rs`'s
+/// `return_reforge_slot`: the velocity/phase triplet on the port's pinned
+/// `Item.NewItem` stand-in, here the `UpdatePlayers` stream — the use runs
+/// inside that swap). `newAndShiny`/`enemyGrabDelayTime` are UI/MP-only
+/// (the SP `ApplySpawnOwnership` arm is a no-op, `WorldItem.cs:296-305`).
+fn quick_spawn_item(app: &mut App, kind: u16, count: u32) {
+    let (vault_enabled, center) = app
+        .player
+        .as_ref()
+        .map(|p| (p.void_vault_enabled, p.center()))
+        .unwrap_or((false, (0.0, 0.0)));
+    let inventory = &mut app.inventory;
+    let ammo = &mut app.equip.ammo;
+    let audio = &mut app.audio;
+    let achievements = &mut app.achievements;
+    let rngs = &mut app.rngs;
+    let favorite_slots = &app.favorite_slots;
+    // `Item.Prefix(-1)` on the fresh instance (`:7176`) — the roll draws
+    // ride the use's `UpdatePlayers` swap (`Item.cs:528`'s `Main.rand`).
+    let prefix =
+        crate::prefix::roll_prefix(kind, -1, rngs.stream(crate::app::RngKey::UpdatePlayers));
+    let favorite = |i: usize| favorite_slots.contains(&i);
+    let mut remaining = crate::item::deposit_pickup(
+        inventory,
+        ammo,
+        kind,
+        prefix,
+        count,
+        favorite,
+        &mut |moved| {
+            // One chime + one notify per accepted slot (`:39491`/`:39505`,
+            // the `world_sim/items.rs` pickup convention).
+            audio.play_pickup_sound(false, rngs.stream(crate::app::RngKey::UpdatePlayers));
+            let _ = moved;
+            let _ = achievements.notify(crate::achievements::CondKind::ItemPickup(kind));
+        },
+    );
+    // The void vault is GetItem's LAST resort (`:39395-39398`).
+    if remaining > 0 && vault_enabled && crate::bank::can_void_vault_accept(kind) {
+        let taken = crate::bank::void_vault_take(
+            &mut app.player.as_mut().unwrap().banks[3],
+            kind,
+            prefix,
+            remaining,
+            crate::registry::max_stack(kind),
+            false,
+            audio,
+            rngs.stream(crate::app::RngKey::UpdatePlayers),
+        );
+        remaining -= taken;
+    }
+    // `GetOrDropItem`'s overflow leg (`:7196-7199`): the remainder becomes
+    // a world drop at `base.Center`, prefix preserved (no fresh roll).
+    if remaining > 0 {
+        let rng = rngs.stream(crate::app::RngKey::UpdatePlayers);
+        let vx = (rng.next_float() * 2.0 - 1.0) * 1.2;
+        let vy = -1.5 - rng.next_float();
+        let phase = rng.next_float() * std::f32::consts::TAU;
+        app.items.push(crate::item::ItemDrop::new(
+            kind,
+            remaining,
+            prefix,
+            center.0,
+            center.1,
+            vx,
+            vy,
+            phase,
+        ));
+    }
+}
+
+/// `Player.ItemCheck_UseArtisanLoaf` (`Player.cs:45216-45224`):
+/// `!ateArtisanBread` → `ateArtisanBread = true` — the permanent +4-tile
+/// crafting reach (`AdjTiles`, `:35671`, the `craft.rs` consumer). The
+/// `SendData(4)` sync (`:45222`) is MP-only.
+fn use_artisan_loaf(app: &mut App) -> bool {
+    let Some(p) = app.player.as_mut() else {
+        return false;
+    };
+    if p.ate_artisan_bread {
+        return false;
+    }
+    p.ate_artisan_bread = true;
     true
 }
 
@@ -536,6 +650,100 @@ mod tests {
         tick(&mut app);
         assert_eq!(app.inventory[app.selected].count, 1);
         // Release + re-press with the flag already set.
+        app.mine_down = false;
+        tick(&mut app);
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        app.swing = 0.0;
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 1, "the second refuses");
+    }
+
+    /// Minecart Powerup 5289: unlockedSuperCart flips true and the Minecart
+    /// Mech 3353 lands in the inventory (QuickSpawnItem → GetItem); one
+    /// powerup consumed.
+    #[test]
+    fn minecart_powerup_unlocks_and_grants_the_mech() {
+        let mut app = rig(5289, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.player.as_ref().unwrap().unlocked_super_cart);
+        assert_eq!(app.inventory[app.selected].count, 1, "one consumed");
+        let mech = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 3353)
+            .expect("the Minecart Mech granted");
+        assert_eq!(mech.count, 1);
+    }
+
+    /// The minecart powerup has NO flag gate (`:45204` — only the crystal
+    /// arms carry one): a second use grants a SECOND mech (the stack
+    /// merges) while the unlock flag stays true.
+    #[test]
+    fn a_second_minecart_powerup_grants_another_mech() {
+        let mut app = rig(5289, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        app.mine_down = false;
+        tick(&mut app);
+        app.attack_cd = 0.0;
+        app.reuse_delay = 0.0;
+        app.swing = 0.0;
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 0, "both consumed");
+        let mech = app.inventory.iter().find(|s| s.kind == 3353).unwrap();
+        assert_eq!(mech.count, 2, "the second use grants again");
+    }
+
+    /// The QuickSpawnItem overflow leg (`GetOrDropItem` `:7196-7199`): a
+    /// full inventory with no vault spawns the mech as a world drop at the
+    /// player's centre instead of losing it.
+    #[test]
+    fn minecart_powerup_overflow_spawns_a_world_drop() {
+        let mut app = rig(5289, 1);
+        // Fill every OTHER slot to its cap — no merge, no empty slot.
+        let full = crate::registry::max_stack(9);
+        for i in 0..app.inventory.len() {
+            if i != app.selected {
+                app.inventory[i] = ItemSlot { kind: 9, name: registry::name(9), count: full, prefix: 0 };
+            }
+        }
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.player.as_ref().unwrap().unlocked_super_cart);
+        assert!(
+            app.items.iter().any(|d| d.kind == 3353 && d.count == 1),
+            "the overflow mech rides a world drop"
+        );
+    }
+
+    /// Artisan Loaf 5326: ateArtisanBread flips true (the +4 crafting
+    /// reach), one consumed.
+    #[test]
+    fn artisan_loaf_sets_the_reach_flag() {
+        let mut app = rig(5326, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.player.as_ref().unwrap().ate_artisan_bread);
+        assert_eq!(app.inventory[app.selected].count, 1);
+    }
+
+    /// A second Artisan Loaf refuses the grant AND the consume (the
+    /// `!ateArtisanBread` gate `:45218`).
+    #[test]
+    fn a_second_artisan_loaf_refuses() {
+        let mut app = rig(5326, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 1);
         app.mine_down = false;
         tick(&mut app);
         app.attack_cd = 0.0;

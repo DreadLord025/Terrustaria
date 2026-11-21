@@ -1100,9 +1100,9 @@ pub struct Player {
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
     /// `Player.ateArtisanBread` (`Player.cs:2048`): the artisan loaf's
-    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The item that
-    /// sets it (5326, `Player.cs:45218-45221`) has no ported use effect yet,
-    /// so the flag stays false in play — the reach formula reads it.
+    /// +4-tile crafting reach (`Player.AdjTiles`, `:35671`). The 5326 use
+    /// (`Player.cs:45218-45221`) rides `powerups::use_artisan_loaf` (W4-a6)
+    /// — the reach formula reads it.
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
@@ -1794,8 +1794,10 @@ pub struct Player {
     /// (`Player.cs:28123-28130`).
     pub cart_flip: bool,
     /// `Player.unlockedSuperCart` (`Player.cs:2052`): the Super Cart is
-    /// unlocked by the item 3353 (`Player.cs:45207-45211`, `:55718`) — that
-    /// writer is not ported yet, so the flag stays false in play.
+    /// unlocked by the Minecart Powerup 5289's use (`Player.cs:45207-45211`)
+    /// — `powerups::use_minecart_powerup` (W4-a6) raises it and grants the
+    /// Minecart Mech 3353 (`:45212`); the `UsingSuperCart` property
+    /// (`:3966`, `:55718`) reads it.
     pub unlocked_super_cart: bool,
     /// `Player.enabledSuperCart` (`Player.cs:2054`, default true): the
     /// player's Super Cart toggle. The UI that flips it is not ported yet.
