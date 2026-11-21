@@ -1113,6 +1113,10 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 app.rain.is_raining(),
                 Some(&app.wind),
                 rng,
+                // `FocusHelper.AllowRain && !Main.mapFullscreen`
+                // (`Player.cs:14310`): focused, unpaused, map closed
+                // (g67 `356a1ac0` fold, research/134 R6).
+                app.window_focused && !app.game_paused && !map_open,
             );
             // `Player.cs:28274-28275`: the switch-tile bridge — the player's
             // box reaching a pressure plate trips the wiring (the C#'s call
@@ -1391,6 +1395,35 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     * 0.1;
                 slot.velocity *= 0.1;
                 slot.no_gravity = true;
+            }
+            // `Player.DoEyebrellaRainEffect` (`Player.cs:14308-14331`): the
+            // queued drip spawns through `Rain.NewRainForced` (`Rain.cs:135-164`)
+            // with the live `windSpeedCurrent * 3, 9` velocity — the scale +
+            // frame draws ride Rain's own stream (the `update_drops`
+            // convention). The gfx/water-style inputs gather like `update_rain`
+            // (g67 `356a1ac0` fold, research/134 R6 — the d130 `RainInputs` seam).
+            if let Some(pos) = p.take_eyebrella_rain() {
+                let drip_inputs = crate::rain::RainInputs {
+                    camera: app.camera,
+                    screen: Vec2::new(app.screen[0] as f32, app.screen[1] as f32),
+                    zoom: app.zoom,
+                    day_rate: 1,
+                    wind_speed_current: app.wind.speed_current,
+                    player_velocity: Vec2::ZERO,
+                    shimmer_alpha: 0.0,
+                    atmo: 1.0,
+                    snow_tile_count: 0,
+                    skyblock_low_tiles: app.world.skyblock_low_tiles,
+                    zone_rain: true,
+                    water_style: crate::biome::calculate_water_style(&app.world, app.camera)
+                        as u32,
+                    any_danger: false,
+                    gfx_quality: app.gfx_quality.quality,
+                    remix_world: false,
+                    game_menu: false,
+                };
+                let vel = Vec2::new(app.wind.speed_current * 3.0, 9.0);
+                app.rain.new_rain_forced(&drip_inputs, pos, vel);
             }
             // `Player.ManaEffect` (`Player.cs:4531-4538`): the cuffs' restore
             // spawns `CombatText.NewText(playerRect, HealMana, amount)` at the

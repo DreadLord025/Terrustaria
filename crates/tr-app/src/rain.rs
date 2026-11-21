@@ -1127,13 +1127,12 @@ impl Rain {
 
     /// `Rain.NewRainForced` (`Rain.cs:135-164`, g67b `5c9398ea` fold): the
     /// Eyebrella vanity drip (`Player.DoEyebrellaRainEffect`,
-    /// `Player.cs:14308-14331` — the caller is unported, so this seam has no
-    /// production writer yet). Unlike `NewRain` it ignores
-    /// cloudAlpha/snow/atmo: the budget is `maxRain` cut by the gfx
-    /// `(1+q)/2` when q<0.9 (`:139-143`), then the first inactive slot takes
-    /// the spawn. Returns the slot index, or `maxRain` when full
+    /// `Player.cs:14308-14331` — the `UpdateEquips` arm `:13083-13087`,
+    /// g67 `356a1ac0` fold, drained in `world_sim/player.rs`). Unlike
+    /// `NewRain` it ignores cloudAlpha/snow/atmo: the budget is `maxRain` cut
+    /// by the gfx `(1+q)/2` when q<0.9 (`:139-143`), then the first inactive
+    /// slot takes the spawn. Returns the slot index, or `maxRain` when full
     /// (`:152-155`). RNG order: scale roll then frame roll (`:159-162`).
-    #[allow(dead_code)] // the Eyebrella caller (Player.cs:14308) is unported
     pub(crate) fn new_rain_forced(&mut self, i: &RainInputs, position: Vec2, velocity: Vec2) -> usize {
         let mut num2 = MAX_DROPS as i32; // `:138`
         let num3 = (1.0 + i.gfx_quality) / 2.0; // `:139`
