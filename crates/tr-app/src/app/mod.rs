@@ -4548,6 +4548,9 @@ fn apply_tr_toggles(world: &mut World, ops: &[crate::env::TrToggle]) {
                 edit::TileInteraction::DialRefused => {
                     log::info!("TR_TOGGLE {},{} -> dial refused", op.x, op.y)
                 }
+                edit::TileInteraction::BuffStation { kind } => {
+                    log::info!("TR_TOGGLE {},{} -> buff station ({kind})", op.x, op.y)
+                }
                 edit::TileInteraction::CandleToggled => {
                     log::info!("TR_TOGGLE {},{} -> candle toggled", op.x, op.y)
                 }
