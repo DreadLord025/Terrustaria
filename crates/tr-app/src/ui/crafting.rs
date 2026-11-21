@@ -2,10 +2,12 @@
 //! (`decompiled/Terraria/GameContent/UI/NewCraftingUI.cs`) drawn as static chrome.
 //!
 //! P3 scope (spec §9.2): the cyan 9-slice frame, the title, the search bar, the
-//! 11-tab filter strip, the separator, the (empty) recipe grid + auto-hidden
+//! 11-tab filter strip, the separator, the recipe grid + auto-hidden
 //! scrollbar, the detail area and the two toggles with their selected-crafting
-//! indicator. Recipes stay empty and no filter is active, so the grid draws
-//! nothing and nothing is interactive.
+//! indicator. The grid's entries are live (i46 craft): each cell runs the
+//! `ItemGrid.DrawSlot` machine through [`super::crafting_grid`] (W4-f23
+//! wiring) — the hover gate, the `Available` tint and the selected-recipe
+//! `Inventory_Back24` overlay (`NewCraftingUI.cs:55-75`, `ItemSlot.cs:2371-2374`).
 //!
 //! Geometry: children are laid out against their parent's *inner* dimensions
 //! (`UIElement.cs:287` `Recalculate`), i.e. the outer rect offset by the padding.
@@ -19,7 +21,6 @@ use super::panel;
 use super::slot;
 use super::text::{draw_border_string, hud_text_width, BorderFont};
 use crate::assets;
-use crate::craft;
 use crate::item::{EMPTY_SLOT, ItemSlot};
 
 /// Every static rectangle of the panel, derived from `screen` exactly as the
@@ -357,8 +358,15 @@ pub(crate) fn hit_test(
 ) -> Option<usize> {
     let l = layout(screen, title_width(lookups), false);
     for (i, recipe) in available.iter().enumerate() {
-        let [x, y, w, h] = recipe_cell(&l, i);
-        if mouse.x >= x && mouse.x <= x + w && mouse.y >= y && mouse.y <= y + h {
+        // The base walk's hover gate (`UIDynamicItemCollection.cs:52` via
+        // `crafting_grid::slot_hovering`): int-truncated mouse, exclusive
+        // right/bottom, on the same 40x40 cell rect the draw hovers.
+        if super::crafting_grid::slot_hovering(
+            true,
+            recipe_cell(&l, i).map(|v| v as i32),
+            [mouse.x, mouse.y],
+            false,
+        ) {
             return Some(*recipe);
         }
     }
@@ -369,6 +377,12 @@ pub(crate) fn hit_test(
 /// frames; `guide_mode` selects the `Main.InGuideCraftMenu` variants;
 /// `filter_flags` is `EntryFilterer.ActiveFilters` as the strip's eleven slots
 /// (`UICreativeItemsInfiniteFilteringOptions.cs:104-110`).
+/// `selected_recipe_index` is `NewCraftingUI._selectedRecipeIndex` (`:196`,
+/// `int?` — the port derives it from `Main.focusRecipe` via
+/// `availableRecipe[focusRecipe]`, `OnActivate` `:904`) and `inventory_back`
+/// is `Main.inventoryBack`, the selected-cell overlay's tint
+/// (`ItemSlot.cs:2373`).
+#[allow(clippy::too_many_arguments)]
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -378,6 +392,8 @@ pub fn draw(
     guide_mode: bool,
     difficulty_3_and_creative_unblocked: bool,
     filter_flags: [bool; 11],
+    selected_recipe_index: Option<usize>,
+    inventory_back: [f32; 4],
 ) {
     // `UpdateText` (`:417-427`): the search bar's width is inset by the title's
     // measured outer width, so measure it before building the layout.
@@ -426,22 +442,44 @@ pub fn draw(
         color::tint(color::shift_blue_to_cyan(color::mul([89, 116, 213, 255], 0.9))),
     );
 
-    // 5. The grid area (`UIDynamicItemCollection.cs:38-71`): the available
-    //    recipes as 40x40 icon cells on a fixed 44 px row pitch
-    //    (`GetItemSlotHitbox`, `:75-79` — integer `num / _itemsPerLine`) — the
-    //    same cells `hit_test` maps clicks back to ([`recipe_cell`]). The
-    //    hovered cell takes the cyan hover frame (`ItemSlot`'s hover,
-    //    `ItemSlot.cs:2264+` family).
+    // 5. The grid area (`UIDynamicItemCollection.cs:38-71`): the shown recipes
+    //    as 40x40 icon cells on a fixed 44 px row pitch (`GetItemSlotHitbox`,
+    //    `:75-79` — integer `num / _itemsPerLine`) — the same cells `hit_test`
+    //    maps clicks back to ([`recipe_cell`]). Each cell runs the nested
+    //    `ItemGrid.DrawSlot` machine (`NewCraftingUI.cs:55-75`, W4-f23 wiring):
+    //    `RecipeEntry` carries the raw index + the `availableRecipe` position
+    //    (`ResetRecipes` `:596-611`), the base walk's hover gate decides the
+    //    hover, and the machine picks the selection overlay + the White-vs-
+    //    DisabledSlotColor tint. The port is mouse-only (`using_gamepad =
+    //    false`, `current_point = 0` — gamepad unported, research/18 dev. 10).
     for (i, recipe_idx) in available.iter().enumerate() {
-        let [x, y, _, _] = recipe_cell(&l, i);
-        let hovered = mouse_pos.x >= x
-            && mouse_pos.x <= x + 40.0
-            && mouse_pos.y >= y
-            && mouse_pos.y <= y + 40.0;
-        if hovered {
-            r.push_ui_sprite([x, y], [40.0, 40.0], r.white_uv(), [0.35, 0.55, 0.85, 0.55]);
+        let cell = recipe_cell(&l, i);
+        let mut entry = super::crafting_grid::RecipeEntry::new(*recipe_idx);
+        // `ResetRecipes` `:610` sets `availableIndex = i` on the RAW
+        // available list; the port's `available` is the SHOWN list, so `i`
+        // is a stand-in position — only the `>= 0` Available gate is
+        // observable here (the tint), and every shown entry is available.
+        entry.available_index = i as i32;
+        entry.grid_index = i as i32; // `:605` (the shown list is `_filteredRecipes`)
+        let hovering = super::crafting_grid::slot_hovering(
+            true,
+            cell.map(|v| v as i32),
+            [mouse_pos.x, mouse_pos.y],
+            false,
+        );
+        let d = super::crafting_grid::draw_slot(&entry, selected_recipe_index, false, 0, hovering);
+        if d.hovered {
+            // The hovered cell's cyan frame — the port's `ItemSlot` hover
+            // stand-in (ANALYSIS "Crafting panel"), now gated by the C# walk.
+            r.push_ui_sprite([cell[0], cell[1]], [40.0, 40.0], r.white_uv(), [0.35, 0.55, 0.85, 0.55]);
         }
-        let recipe = &craft::RECIPES[*recipe_idx];
+        // `DrawSelectionHighlightForGridSlot` (`:66`) → the context-41
+        // `Inventory_Back24` overlay in `Main.inventoryBack`
+        // (`ItemSlot.cs:2371-2374`), over the cell's background position.
+        if d.grid_selection_highlight {
+            draw_grid_selection_overlay(r, lookups, cell, inventory_back);
+        }
+        let recipe = entry.recipe();
         // No `Item_*` sheets are extracted yet: placeable items fall back to
         // the tile's plain 16x16 frame, the same fallback the world drops use
         // (`item.rs`'s drop draw).
@@ -453,20 +491,23 @@ pub fn draw(
             });
         if let Some((uv, w, h)) = icon {
             // The icon fits inside the cell, centred (`ItemSlot.Draw`: scale
-            // to the slot with the texture's own aspect kept).
+            // to the slot with the texture's own aspect kept). The tint is
+            // `DrawSlot`'s `entry.Available ? White : DisabledSlotColor`
+            // (`NewCraftingUI.cs:74`) — shown entries are available, so this
+            // stays White in practice; the grey arm rides the machine.
             let scale = (32.0 / w).min(32.0 / h).min(1.0);
             let (dw, dh) = (w * scale, h * scale);
             r.push_ui_sprite(
-                [x + (40.0 - dw) * 0.5, y + (40.0 - dh) * 0.5],
+                [cell[0] + (40.0 - dw) * 0.5, cell[1] + (40.0 - dh) * 0.5],
                 [dw, dh],
                 uv,
-                [1.0; 4],
+                super::crafting_grid::slot_tint(&entry),
             );
         } else {
             // Items without an extracted sprite (the atlas carries only the
             // world's used tile frames): a grey placeholder box — documented
             // in docs/ANALYSIS.md.
-            r.push_ui_sprite([x + 4.0, y + 4.0], [32.0, 32.0], r.white_uv(), [0.5; 4]);
+            r.push_ui_sprite([cell[0] + 4.0, cell[1] + 4.0], [32.0, 32.0], r.white_uv(), [0.5; 4]);
         }
     }
 
@@ -487,6 +528,25 @@ pub fn draw(
 
     // 9. The toggles (`:484-495`).
     draw_toggles(r, lookups, &l, mouse_pos, guide_mode);
+}
+
+/// The selected-recipe cell's `Inventory_Back24` overlay
+/// (`ItemSlot.cs:2371-2374`): `context == 41 &&
+/// ItemSlot.DrawSelectionHighlightForGridSlot` draws the sheet at the slot
+/// position in `Main.inventoryBack`. The port's grid cell is the 40x40
+/// `recipe_cell` rect (the immediate-grid deviation — the C# background is
+/// the 52 px sheet × `inventoryScale` 3465/4095, `UIDynamicItemCollection.cs:40`),
+/// so the overlay stretches over the cell like the hover frame does.
+fn draw_grid_selection_overlay(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    cell: [f32; 4],
+    inventory_back: [f32; 4],
+) {
+    let Some(sheet) = lookups.ui_back24 else {
+        return;
+    };
+    super::push_whole(r, lookups, &sheet, cell, inventory_back);
 }
 
 /// `DrawChildren`'s detail area (`NewCraftingUI.cs:438-482`): the craft slot and
@@ -1069,6 +1129,63 @@ mod tests {
             hit_test(screen, &lookups, Vec2::new(x + 42.0, y + 20.0), &available),
             None
         );
+    }
+
+    /// W4-f23 wiring: `hit_test` rides the base walk's hover gate
+    /// (`crafting_grid::slot_hovering`, `UIDynamicItemCollection.cs:52`) —
+    /// int-truncated mouse, EXCLUSIVE right/bottom edges (the old inclusive
+    /// `<=` test accepted the exact edge pixel).
+    #[test]
+    fn grid_hover_uses_the_base_walks_exclusive_edges() {
+        let screen = Vec2::new(1600.0, 900.0);
+        let lookups = assets::Lookups::default();
+        let l = layout(screen, title_width(&lookups), false);
+        let available: Vec<usize> = (0..25).collect();
+        let [x, y, _, _] = recipe_cell(&l, 0);
+        // Just inside the right/bottom edges: still cell 0 (truncation).
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(x + 39.9, y + 39.9), &available),
+            Some(available[0])
+        );
+        // Exactly ON the right edge (x+40): outside — but the next cell
+        // starts at x+44, so the point hits nothing.
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(x + 40.0, y + 20.0), &available),
+            None
+        );
+        // Exactly ON the bottom edge (y+40): the row below starts at y+44.
+        assert_eq!(
+            hit_test(screen, &lookups, Vec2::new(x + 20.0, y + 40.0), &available),
+            None
+        );
+    }
+
+    /// W4-f23 wiring: the grid loop's per-cell machine
+    /// (`NewCraftingUI.cs:55-75` via `crafting_grid::draw_slot`): a shown
+    /// entry is available (`availableIndex = i >= 0`, `:610`) so the tint is
+    /// White; the selection overlay marks ONLY the focused raw index
+    /// (`OnActivate` `:904`'s `availableRecipe[focusRecipe]`), and the
+    /// gamepad arm stays off (mouse-only port).
+    #[test]
+    fn the_grid_machine_marks_only_the_focused_recipe() {
+        use super::super::crafting_grid::{RecipeEntry, draw_slot, slot_tint};
+        let shown = [7usize, 3, 12];
+        // focus_recipe = 1 → availableRecipe[1] = 3 (the second shown row).
+        let selected = Some(shown[1]);
+        for (i, &idx) in shown.iter().enumerate() {
+            let mut e = RecipeEntry::new(idx);
+            e.available_index = i as i32;
+            e.grid_index = i as i32;
+            assert!(e.available());
+            assert_eq!(slot_tint(&e), [1.0; 4], "shown entries draw White");
+            let d = draw_slot(&e, selected, false, 0, false);
+            assert_eq!(d.grid_selection_highlight, idx == 3, "recipe {idx}");
+            assert!(!d.gamepad_selected_highlight, "mouse-only");
+            assert!(!d.hovered);
+        }
+        // No focus (focusRecipe out of range → null, `:904`/`:614`): no overlay.
+        let e = RecipeEntry::new(7);
+        assert!(!draw_slot(&e, None, false, 0, false).grid_selection_highlight);
     }
 
     #[test]

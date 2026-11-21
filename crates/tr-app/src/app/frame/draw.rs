@@ -1646,6 +1646,18 @@ impl App {
                             .map_or(crate::bank::CHEST_CLOSED, |p| p.chest);
                         let (panel_chest_x, panel_chest_y) =
                             player.as_ref().map_or((0, 0), |p| (p.chest_x, p.chest_y));
+                        // `NewCraftingUI.OnActivate` (`:904`):
+                        // `_selectedRecipeIndex = Main.numAvailableRecipes < 0
+                        // ? null : Main.availableRecipe[Main.focusRecipe]` —
+                        // the raw recipe index the grid's selection overlay
+                        // marks (`ResetRecipes` `:612-622` clears it once the
+                        // focused recipe leaves the available list). The
+                        // port indexes the SHOWN list (the filter deviation,
+                        // ANALYSIS "Crafting panel"): with no filter active
+                        // shown == available and the two agree exactly.
+                        let craft_selected = (self.focus_recipe >= 0)
+                            .then(|| craft_available.get(self.focus_recipe as usize).copied())
+                            .flatten();
                         ui::draw_hud(
                             renderer,
                             *camera,
@@ -1672,6 +1684,15 @@ impl App {
                             self.mouse_pos,
                             &self.cursor,
                             &craft_available,
+                            craft_selected,
+                            // `Main.inventoryBack` when the crafting grid
+                            // draws: Interface Logic 2 pulses `invAlpha`
+                            // 180..240 by 0.2/tick (`Main.cs:45697-45708`)
+                            // and `DrawInventory` restores it after the
+                            // equipment loops (`:41392`/`:41525`). The port
+                            // has no invAlpha oscillation yet — the midpoint
+                            // 210 stands in (ANALYSIS "Crafting panel").
+                            [210.0 / 255.0; 4],
                             ui::UiPulse {
                                 // `Main.mouseTextColor / 255` (`Main.cs:20355`).
                                 text: self.mouse_text_color as f32 / 255.0,

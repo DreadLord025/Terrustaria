@@ -680,6 +680,12 @@ pub fn draw_hud(
     mouse_pos: Vec2,
     cursor_state: &cursor::CursorState,
     craft: &[usize],
+    // `NewCraftingUI._selectedRecipeIndex` (`:196`): the raw recipe index the
+    // grid's selection overlay marks (`OnActivate` `:904` derives it from
+    // `Main.availableRecipe[Main.focusRecipe]`; W4-f23 wiring).
+    craft_selected: Option<usize>,
+    // `Main.inventoryBack` — the overlay's tint (`ItemSlot.cs:2373`).
+    inventory_back: [f32; 4],
     pulse: UiPulse,
     m_h: f32,
     map_style: i32,
@@ -997,6 +1003,8 @@ pub fn draw_hud(
                 false,
                 false,
                 craft_filter_flags,
+                craft_selected,
+                inventory_back,
             );
             // The hovered filter tab's label — `ShowButtonName`
             // (`UICreativeItemsInfiniteFilteringOptions.cs:125-132`):

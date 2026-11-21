@@ -2751,6 +2751,19 @@ z-order (`docs/UI.md` в†’ "Crafting panel"). The deviations:
   hidden nearby-chests toggle) are ported behind `crafting::draw`'s `guide_mode`
   parameter but never reached: the guide slot cannot be opened in the port yet, so
   the menu is never entered and `guide_mode` stays false.
+* The grid cells run the nested `ItemGrid.DrawSlot` machine (W4-f23 wiring,
+  `ui/crafting_grid.rs`): hover gate, `Available` tint and the selected-recipe
+  `Inventory_Back24` overlay (`ItemSlot.cs:2371-2374`). Three deviations: the
+  overlay stretches over the port's 40×40 immediate-grid cell instead of the
+  C# 52 px sheet × `inventoryScale` 3465/4095 background; the overlay tint is
+  the constant `(210,210,210,210)` — the midpoint of `Main.invAlpha`'s
+  180..240 pulse (`Main.cs:45697-45708`), which the port does not oscillate
+  yet; and the gamepad arm (`IsGridPoint`'s `[20100,21000)` window + the
+  hover-driven shortcut highlight) stays parked data (gamepad unported,
+  research/18 deviation 10). The cell hover/click edges became exclusive
+  right/bottom with int-truncated mouse (`Rectangle.Contains`,
+  `UIDynamicItemCollection.cs:52`) — the old inclusive `<=` test accepted the
+  exact edge pixel.
 
 ### Minimap frame and boss bar (P4) (`ui/minimap.rs`, `ui/bars.rs`, `ui/chrome.rs`)
 

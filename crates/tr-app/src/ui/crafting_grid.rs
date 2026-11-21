@@ -12,7 +12,14 @@
 //! Immediate-mode ruling (research/18): pure state/geometry helpers; the
 //! `ItemSlot.Draw` call itself stays the renderer's (`ui::slot`, context 41).
 //! Gamepad arms are ported as data (gamepad unported — research/18 dev. 10).
-#![allow(dead_code)] // wiring lands when crafting.rs adopts the DrawSlot machine
+//!
+//! Wiring census (W4-f23 wiring pass): `ui/crafting.rs`'s live grid loop
+//! drives [`draw_slot`] per cell (the mouse arm: `using_gamepad = false`,
+//! `current_point = 0`), [`slot_hovering`] gates the hover, [`slot_tint`]
+//! tints the icon, and `grid_selection_highlight` draws the
+//! `Inventory_Back24` overlay (`ItemSlot.cs:2371-2374`). The gamepad half
+//! (`is_grid_point`, `gamepad_selected_highlight`) stays parked data.
+#![allow(dead_code)] // the parked gamepad half (is_grid_point + the shortcut)
 
 use super::color;
 

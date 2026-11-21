@@ -850,6 +850,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // slot, the cyan panel 9-slice, the separator, the scrollbar, the craft
         // icon/toggles and the filter strip's icons.
         "Inventory_Back18",
+        // W4-f23 wiring: `Inventory_Back24` — the selected-recipe grid overlay
+        // (`ItemSlot.cs:2371-2374`, context 41 + DrawSelectionHighlightForGridSlot).
+        "Inventory_Back24",
         "UI/PanelBackground",
         "UI/PanelBorder",
         "UI/CharCreation/Separator1",
@@ -2058,6 +2061,8 @@ pub struct Lookups {
     pub ui_tick_off: Option<tr_render::SheetRect>,
     /// `Inventory_Back18`: the crafting-recipe slot frame (`ItemSlot.cs:2272`).
     pub ui_back18: Option<tr_render::SheetRect>,
+    /// `Inventory_Back24`: the selected-recipe grid overlay (`ItemSlot.cs:2371-2374`).
+    pub ui_back24: Option<tr_render::SheetRect>,
     /// `UI/PanelBackground`: the panel background 9-slice (`UIPanel.cs:30`).
     pub ui_panel_bg: Option<tr_render::SheetRect>,
     /// `UI/PanelBorder`: the panel border 9-slice (`UIPanel.cs:26`).
@@ -2426,6 +2431,7 @@ impl Lookups {
             ui_tick_on: atlas.sheet("Inventory_Tick_On").copied(),
             ui_tick_off: atlas.sheet("Inventory_Tick_Off").copied(),
             ui_back18: atlas.sheet("Inventory_Back18").copied(),
+            ui_back24: atlas.sheet("Inventory_Back24").copied(),
             ui_panel_bg: atlas.sheet("UI/PanelBackground").copied(),
             ui_panel_border: atlas.sheet("UI/PanelBorder").copied(),
             ui_separator: atlas.sheet("UI/CharCreation/Separator1").copied(),
