@@ -203,6 +203,7 @@ no per-load re-roll exists in C# and none is ported.
   unchanged; the gate re-pins if measured otherwise, `a == b` stays green).
 - The exact draw list, order, rejection loops, width-arm bounds and the
   moon-before/after ordering constraint above were implemented verbatim.
-- Witnesses: 7 in `cave_bg.rs` + 2 in `pipeline.rs` + 1 extended in
-  `bg.rs` + 1 in `save.rs` + the `wld` owned-field sweep + 1 in `netglue.rs`
-  — all WRITTEN NOT RUN (code-only lane).
+- Witnesses: 5 in `cave_bg.rs` + 2 in `pipeline.rs` (+ the runner parity
+  test extended) + 1 extended in `bg.rs` + 1 in `save.rs` + the `wld`
+  owned-field sweep extended + 1 in `netglue.rs` — all WRITTEN NOT RUN
+  (code-only lane).

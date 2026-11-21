@@ -1605,7 +1605,9 @@ mod tests {
         w.tile_entities.place_unchecked(TeKind::ItemFrame, 2, 2);
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &WorldSide::default()).unwrap();
-        buf.truncate(buf.len() - 2); // inside the TE record
+        // Inside the TE record: the v18 cave-bg block (31) rides the stream
+        // end now, so the cut offsets by it (W4-g72).
+        buf.truncate(buf.len() - 2 - 31);
         assert!(parse(&buf).is_err());
     }
 
@@ -1721,7 +1723,7 @@ mod tests {
         }];
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &chest_side(&chests)).unwrap();
-        buf.truncate(buf.len() - 3); // inside the item record
+        buf.truncate(buf.len() - 3 - 31); // inside the item record (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
@@ -1841,7 +1843,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the banner record
+        buf.truncate(buf.len() - 2 - 31); // inside the banner record (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
@@ -1956,7 +1958,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
+        buf.truncate(buf.len() - 2 - 31); // inside the record (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
@@ -2083,7 +2085,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 2); // inside the record
+        buf.truncate(buf.len() - 2 - 31); // inside the record (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
@@ -2184,7 +2186,7 @@ mod tests {
         };
         let mut buf = Vec::new();
         write_world(&mut buf, &w, &side).unwrap();
-        buf.truncate(buf.len() - 3); // inside the tiers
+        buf.truncate(buf.len() - 3 - 31); // inside the tiers (+31: v18 tail)
         assert!(parse(&buf).is_err());
     }
 
