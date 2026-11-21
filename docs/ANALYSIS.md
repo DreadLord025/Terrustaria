@@ -39667,3 +39667,63 @@ refuse AddBuff, the unlisted accept, the 422/550 gaps stay false, the
 (`w4_d6_the_shimmer_stream_buffs_353_through_the_immunity_gate` — the
 zombie takes 353/100, the immune ForceBubble refuses but still kills
 the blob, the 1042 has no player loop). WRITTEN NOT RUN (code-only).
+
+## W4-d6 RETIRE — the band-51-60 seal (research/247)
+
+The retire round closes the band: **10/10 styles armed, 16/16 kinds
+rowed** (+ the 344 aiStyle-1 spawn rider), boundaries closed both ends
+(the 50 tail `Projectile.cs:28401` / the 61 head `:29310`). The full
+census table, the spawn-source ledger and the witness register live in
+`docs/research/247-projectile-ai-51-60-band-bible.md` (the registry-150
+free number: the all-tips scan's max claimed bare key is 246). Four
+adjudications land with the seal:
+
+1. **The 601 row-shape fix** (`388530671`, the d18 `dd7b1b0a` finding
+   executed): 601 is `PortalGunBolt` (`ProjectileID.cs:1756`), the
+   `Projectile.cs:6502-6510` block — aiStyle 1, alpha 255, the STOCK
+   penetrate 1 (`:774`); the M7-WIRE-2 row's −1/0 mislabel is gone, the
+   178 ConfettiGun row untouched, `CANNON_EXPLOSIVE` leaves the
+   `BASELINE_ROWS` reset sweep (39→38). The name deviation is recorded
+   at the const (the `POISON_DART`/645 precedent). The d18 gate-refusal
+   witness's two row-shape asserts (`penetrate == -1`, `alpha == 0`)
+   must be re-pointed at merge — the gate refusal itself (`:12448`) is
+   row-shape-independent. The teleport AI
+   (`PortalHelper.TryPlacingPortal`, `Projectile.cs:18099` →
+   `GameContent/PortalHelper.cs:216`) is a ~600-line SUBSYSTEM (the
+   placement line-scans, the per-owner 2-portal statics, the traversal
+   teleport physics, the 600/602 rows + arms, the MP messages) —
+   **TASK-SEEDed** (research/247 §6), not ported here.
+2. **The gun-splash keep-one: KEEP d6, DROP the g65 late dup.** The
+   residual-8 claim read above ("unclaimed by the g65 batch-6 kind
+   list") was correct at its census tip `7f0dc8649` but is SUPERSEDED:
+   g65 batch 18 (`1bbeec5b5`, 10:22:59 — 44 min AFTER d6's `1b54dcbbd`
+   09:38:32) re-claimed 358/406/1042 as `smoke_puff` arms (tip
+   `f6e07bb90`). The d6 module wins first-claim AND fidelity: the g65
+   copy's `DeathSnapshot::of` sets `old_vel: p.vel` (its own documented
+   stand-in), so its burst base misses the C#'s post-kick
+   `oldVelocity` latch (`:28999-29000`) — a ×5 velocity error on every
+   scale death — while the d6 hook reads the kicked value through the
+   `scale <= 0` marker. The exact g65 drop-hunks (D1 `:2786-2794` arms,
+   D2 `:4834-4885` fn, D3 `:6616-6634` witness, at `f6e07bb90`) are
+   published in research/247 §4 for the g65 lane/merger; the merger
+   MUST execute the drop (a double 50-dust burst is a visible + stream
+   regression). The `projectile_gun_splash.rs` module doc carries the
+   adjudication.
+3. **ShimmerImmunity × f47: COMPOSE, no dup.** The f47 tip `18fe75f2e`
+   READS `buff_immune[353]` (npc_buffs.rs:700 the scan's immune branch,
+   npc.rs:5082 the wet-contact guard) but never WRITES it from the kind
+   — zero `ShimmerImmunity` hits in its tree. The d6 residual-9
+   `for_kind` write IS the missing writer; the two halves are different
+   functions of the same file, a clean union. Keep both sides whole
+   (research/247 §5).
+4. **The two residual keep-one notes stand** (the light-toggle family:
+   d6 free-fn canonical superset, the base methods + e20 witnesses stay
+   for the wire lane, c42 dedupes at merge; the style-56 dup: the c6
+   kill_step signature + the d6 friendly-hold composition, all five
+   shared sites listed above).
+
+Witnesses: 1 new row-shape pin
+(`w4_d6_retire_the_601_row_is_the_portal_bolt_not_cannon_ammo`,
+`projectile/data.rs`) WRITTEN NOT RUN; the band's ~40 witnesses stay
+written-not-run — the merge gate owns the run. Code-only: no
+cargo/tests/rustfmt/graphify invoked.

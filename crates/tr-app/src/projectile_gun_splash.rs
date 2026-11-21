@@ -4,19 +4,29 @@
 //! alpha 175 (`:74063-74098`) and the ShimmerGunStream 1042's 50× dust
 //! 324 + the per-dust `Next(6)` palette (`:74099-74147`).
 //!
-//! # Claim scope (the co-lane read)
+//! # Claim scope (the co-lane read + the RETIRE keep-one adjudication)
 //!
 //! The g65 death-dust lane (`task/W4-g65-proj-death-dust`) owns the
-//! UNCLAIMED `Kill()` arms in ~10-kind batches; its batch-6 range
-//! (`:73952-74333`) covers these three sites but its kind list SKIPS
-//! them (the guns were d6's census, `projectile_ai_guns.rs`'s
-//! `gun_stream_death_draws` draw-count stub). The d53 wet-block lane
-//! owns the Update wet machine's entry/exit splashes (`:16851-16987`)
-//! and the g64 trail lane the per-tick AI dust (`:29158-29303`) — all
-//! disjoint line ranges. This module ports the three Kill bodies onto
-//! the real `DustPool` through the queue→drain seam; at merge the g65
-//! lane's census note gains the cross-reference (the arms are claimed
-//! here, not duplicated there).
+//! UNCLAIMED `Kill()` arms in ~10-kind batches. When this module landed
+//! (`1b54dcbbd`, 2026-11-21 09:38:32 +02:00) the g65 tip `7f0dc8649`
+//! SKIPPED 358/406/1042 (the guns were d6's census, the
+//! `gun_stream_death_draws` draw-count stub). The g65 lane LATER
+//! re-claimed them: batch 18 `1bbeec5b5` (10:22:59, 44 min after this
+//! module) added `smoke_puff` arms at its tip `f6e07bb90`
+//! (`projectile_death_dust.rs:2786-2794`, fn `:4834-4885`, witness
+//! `:6616-6634`). **KEEP-ONE = THIS MODULE (d6 first-claim + the
+//! faithful velocity base)** — the exact g65 drop-hunks are published in
+//! `docs/research/247-projectile-ai-51-60-band-bible.md` §4 for the
+//! g65 lane/merger (this lane cannot touch other branches). The g65
+//! copy reads `DeathSnapshot::of`'s `old_vel: p.vel` STAND-IN (its own
+//! doc defers "the true last-sub-step velocity"), so its burst base is
+//! `live_vel × 0.2` — WRONG on the scale death (the C# `:28999-29000`
+//! latches `oldVelocity = velocity` AFTER the ×5 kick; this module's
+//! hook reads the kicked value through the `scale <= 0` marker) and on
+//! every non-scale death with a stale sub-step capture. The d53
+//! wet-block lane owns the Update wet machine's entry/exit splashes
+//! (`:16851-16987`) and the g64 trail lane the per-tick AI dust
+//! (`:29158-29303`) — both still disjoint line ranges.
 //!
 //! # The seam (the gallop-dust queue→drain convention)
 //!
