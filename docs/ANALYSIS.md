@@ -2753,17 +2753,31 @@ z-order (`docs/UI.md` в†’ "Crafting panel"). The deviations:
   the menu is never entered and `guide_mode` stays false.
 * The grid cells run the nested `ItemGrid.DrawSlot` machine (W4-f23 wiring,
   `ui/crafting_grid.rs`): hover gate, `Available` tint and the selected-recipe
-  `Inventory_Back24` overlay (`ItemSlot.cs:2371-2374`). Three deviations: the
-  overlay stretches over the port's 40×40 immediate-grid cell instead of the
-  C# 52 px sheet × `inventoryScale` 3465/4095 background; the overlay tint is
-  the constant `(210,210,210,210)` — the midpoint of `Main.invAlpha`'s
-  180..240 pulse (`Main.cs:45697-45708`), which the port does not oscillate
-  yet; and the gamepad arm (`IsGridPoint`'s `[20100,21000)` window + the
-  hover-driven shortcut highlight) stays parked data (gamepad unported,
-  research/18 deviation 10). The cell hover/click edges became exclusive
-  right/bottom with int-truncated mouse (`Rectangle.Contains`,
-  `UIDynamicItemCollection.cs:52`) — the old inclusive `<=` test accepted the
-  exact edge pixel.
+  `Inventory_Back24` overlay (`ItemSlot.cs:2371-2374`). The W4-f23 deviation
+  pass retired three stand-ins: (1) `availableIndex` is now the RAW
+  `Main.availableRecipe` position (`NewCraftingUI.cs:610`'s `i`), not the
+  shown-grid position — `crafting_grid::available_position` maps it, the
+  click path stores it into `App.focus_recipe` (`HandleCraftSlot` `:510`)
+  and the draw derives the selection from `available[focus_recipe]`
+  (`OnActivate` `:904`), so a filter tab no longer desyncs the focus index
+  space; (2) the cells are the C# 44×44 hitboxes centred on the `UIList`
+  rect (`GetGridParameters` `:85-86`: `startX = Center.X − (int)(44·cols/2)`,
+  `startY = Top`), each drawing the context-41 `Inventory_Back18` background
+  at `inventoryScale = 3465/4095 = 11/13` (`UIDynamicItemCollection.cs:40`) —
+  52 px × 11/13 = exactly 44, no stretch — and the icon rides
+  `DrawItem_GetColorAndScale`'s `inventoryScale × 32px-fit`
+  (`ItemSlot.cs:2966-2975`); (3) the overlay tint is the live `invAlpha`
+  pulse (`ui/inv_pulse.rs` ports `Main.cs:45697-45708` exactly: init
+  `1/1` at `:66846-66847`, +0.2·dir per tick, clamp/flip at the 180/240
+  rails, `(byte)` truncation) — the midpoint-210 constant is gone. The
+  gamepad arm (`IsGridPoint`'s `[20100,21000)` window + the hover-driven
+  shortcut highlight) stays parked data (gamepad unported, research/18
+  deviation 10). The cell hover/click edges are exclusive right/bottom with
+  int-truncated mouse (`Rectangle.Contains`, `UIDynamicItemCollection.cs:52`);
+  with the 44 px pitch equal to the 44 px hitbox the cells tile with no gap,
+  so an edge pixel belongs to the next cell. The hovered-cell cyan frame
+  stand-in is gone — the C# hover draws no extra frame (`HandleCraftSlot`
+  `:69-73` only latches the entry + tooltip).
 
 ### Minimap frame and boss bar (P4) (`ui/minimap.rs`, `ui/bars.rs`, `ui/chrome.rs`)
 

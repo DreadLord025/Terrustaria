@@ -401,13 +401,21 @@ source's child order:
   (`:424`): the 22 px magnifier (`Button_Search_2`), the 24 px `Name:` text field
   and the 24 px cancel button (`UIWrappedSearchBar.cs`);
 * the 4 px `UIHorizontalSeparator`, then the recipe grid with its auto-hidden
-  scrollbar — each cell runs the nested `ItemGrid.DrawSlot` machine
-  (`ui/crafting_grid.rs`, W4-f23 wiring): the base walk's hover gate
-  (`UIDynamicItemCollection.cs:52`, int-truncated mouse, exclusive edges), the
-  `Available ? White : DisabledSlotColor(160,160,160,255)` tint
-  (`NewCraftingUI.cs:74`) and the selected-recipe `Inventory_Back24` overlay in
-  `Main.inventoryBack` (`ItemSlot.cs:2371-2374`; the selection derives from
-  `Main.focusRecipe` via `availableRecipe[focusRecipe]`, `OnActivate` `:904`);
+  scrollbar — 44×44 cells centred on the `UIList` rect
+  (`GetGridParameters`/`GetItemSlotHitbox`, `UIDynamicItemCollection.cs:75-97`),
+  each drawing the context-41 `Inventory_Back18` background at
+  `inventoryScale = 3465/4095` (52 px × 11/13 = exactly 44) and running the
+  nested `ItemGrid.DrawSlot` machine (`ui/crafting_grid.rs`, W4-f23 wiring):
+  the base walk's hover gate (`UIDynamicItemCollection.cs:52`, int-truncated
+  mouse, exclusive edges), the `Available ? White : DisabledSlotColor(160,160,160,255)`
+  tint (`NewCraftingUI.cs:74`) and the selected-recipe `Inventory_Back24`
+  overlay in `Main.inventoryBack` (`ItemSlot.cs:2371-2374`; the selection
+  derives from `Main.focusRecipe` via `availableRecipe[focusRecipe]`,
+  `OnActivate` `:904` — `focusRecipe` and `availableIndex` are RAW
+  available-list positions, `:610`/`:510`, so a filter tab diverges the
+  shown grid from the focus index space). `Main.inventoryBack` is the live
+  `invAlpha` pulse (`ui/inv_pulse.rs`, `Main.cs:45697-45708`: 180..240 by
+  0.2/tick, byte-truncated);
 * the 11-tab filter strip (40×46 tabs cut from the 84×192 `Infinite_Tabs_B_2`
   sheet, 28×30 icons from the 330×30 `Infinite_Icons` sheet; strip at
   `(45, 316)`, above the panel body) with the non-sequential `ItemFilters.GetImage`
@@ -416,9 +424,9 @@ source's child order:
   `Images/UI/Craft` arrow at 0.8 scale — and the grid/nearby-chests toggles at
   `(42, 285)` / `(82, 285)` with the `DrawSelectedCraftingBarIndicator` bars.
 
-Deviations: draw-only chrome (no filter/search/scrollbar interaction), the detail
-area renders without a selected recipe, the cancel button never hides — the full
-list is in `docs/ANALYSIS.md` → "Crafting panel".
+Deviations: no search/scrollbar interaction (the filter strip IS live, S1-H-7),
+the detail area renders without a selected recipe, the cancel button never
+hides — the full list is in `docs/ANALYSIS.md` → "Crafting panel".
 
 ### Chest panel (`ui/chest.rs`, `Terraria/UI/ChestUI.cs`)
 
