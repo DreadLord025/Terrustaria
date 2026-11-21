@@ -130,6 +130,110 @@ fn emit_living_tree_leaf_sideways(
     }
 }
 
+/// `TileDrawing.EmitLiquidDrops` (`TileDrawing.cs:7594-7674`): the drip
+/// gores under vine tips / stalactites / shimmer candles — called from the
+/// `TileDrawing.Draw` switch (`:688-694`, kinds 373/374/375/461/709, then
+/// `continue`), NOT from `DrawTiles_EmitParticles` (the W4-d60 deferral
+/// note; the g30 special-points driver records the cells, this is the
+/// emission body). W4-g68 ports the unclaimed arm.
+///
+/// RNG census (the two-stream rule): the gate `Next(num * 2)` rides
+/// `TileDrawing._rand` (`rand`); the `Gore.NewGore` internals ride
+/// `Main.rand` (`main_rand`) — the C# call runs outside every SwapRandom
+/// block (`Main.cs:17811-17812`). The gate short-circuits: a wet tile
+/// (`liquid != 0`) draws NOTHING.
+///
+/// `zone_corrupt`/`zone_crimson`/`zone_hallow` are the C#
+/// `Main.SceneMetrics.Zone*` reads of the 461 shimmer-candle arm — the
+/// caller passes the live scene metrics (three bools, not the whole
+/// struct, so the witness fixtures stay small).
+///
+/// **UNWIRED (code-only mode).** The call site is the `TileDrawing.Draw`
+/// switch (`:693`), which the g30 special-points driver records as
+/// `liquid_drop_cells`; the wiring wave hands those cells (plus the water
+/// style and the three zone flags) to this body on the same per-rebuild
+/// cadence the leaf arm rides. The contested `tiles.rs` seam is untouched.
+#[allow(dead_code)] // UNWIRED - the g30 driver's cells feed it (see above).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_liquid_drops(
+    world: &World,
+    j: i32,
+    i: i32,
+    kind: u16,
+    water_style: i32,
+    zone_corrupt: bool,
+    zone_crimson: bool,
+    zone_hallow: bool,
+    rand: &mut FastRandom,
+    main_rand: &mut UnifiedRandom,
+    gore: &mut GorePool,
+) {
+    // `:7596-7608`: the frequency per emitter kind.
+    let num: i32 = match kind {
+        374 => 120,
+        375 | 461 => 180,
+        _ => 60,
+    };
+    // `:7609-7612`: the wet-tile refusal precedes the roll (no draw), then
+    // the 1/(2*num) gate on `_rand`.
+    let wet = world.tile(i, j).is_some_and(|t| t.liquid != 0);
+    if wet || rand.next_range(0, num * 2) != 0 {
+        return;
+    }
+    // `:7613-7625`: the anti-cluster box — the tile rect widened ±34 px in
+    // X, −100/+400 in Y; any live drip gore intersecting it refuses the
+    // spawn (the box test is the strict XNA `Intersects`).
+    let rect = (i * 16 - 34, j * 16 - 100, 16 + 68, 400);
+    for k in 0..tr_core::gore::GORE_SLOTS {
+        let g = gore.slot(k);
+        if g.active
+            && g.gore_type >= 0
+            && (g.gore_type as usize) < tr_core::gore_id::GORE_COUNT
+            && tr_core::gore_id::is_drip(g.gore_type as usize)
+        {
+            let b = (g.position.x as i32, g.position.y as i32, 16, 16);
+            if rect.0 < b.0 + b.2 && rect.0 + rect.2 > b.0 && rect.1 < b.1 + b.3 && rect.1 + rect.3 > b.1 {
+                return;
+            }
+        }
+    }
+    // `:7626-7671`: the drip type by water style, then the emitter overrides.
+    let position = Vec2::new((i * 16) as f32, (j * 16) as f32);
+    let mut drip_type = if water_style == 14 || water_style == 13 {
+        706
+    } else if water_style == 12 {
+        1147
+    } else if water_style > 1 {
+        706 + water_style - 1
+    } else {
+        706
+    };
+    match kind {
+        374 => drip_type = 716, // lava stalactite
+        375 => drip_type = 717, // honey stalactite
+        461 => {
+            // The shimmer candle: biome-tinted (`:7652-7667`), the LAST
+            // matching zone wins in C# order (corrupt → crimson → hallow).
+            drip_type = 943;
+            if zone_corrupt {
+                drip_type = 1160;
+            }
+            if zone_crimson {
+                drip_type = 1161;
+            }
+            if zone_hallow {
+                drip_type = 1162;
+            }
+        }
+        709 => drip_type = 1383, // the water candle
+        _ => {}
+    }
+    // `:7672-7673`: `NewGore(position, default, type)` then the velocity
+    // zeroing — the spawn's internal kick draws still fire.
+    let n = gore.new_gore(main_rand, world, position, Vec2::ZERO, drip_type, 1.0);
+    gore.slot_mut(n).velocity *= 0.0;
+}
+
 /// `TileDrawing.DrawTrees`: canopy and branch sprites anchored to the transparent
 /// marker tiles of a tree. The pass scans a slightly larger rect than the tile loop
 /// because an 80x80 canopy sticks out above and beside its anchor. The sway is
@@ -997,5 +1101,118 @@ mod tests {
         assert_eq!(rng.seed, before, "the gate precedes every draw");
         assert_eq!(main_rand, main_before);
         assert_eq!(live_leaves(&pool).len(), 0);
+    }
+
+    // ---- W4-g68 deferred-4: EmitLiquidDrops (WRITTEN NOT RUN) ----
+
+    /// Find a `_rand` seed whose first `Next(max)` is 0 (the gate hit).
+    fn gate_hit_seed(max: i32) -> u64 {
+        (0..200_000u64)
+            .find(|&s| FastRandom::new(s).next_range(0, max) == 0)
+            .expect("a gate-hit seed within 200k")
+    }
+
+    /// The plain-vine drip (`TileDrawing.cs:7594-7674`): kind 373 rolls
+    /// `Next(120)` on `_rand`, spawns `NewGore((i*16, j*16), default, 706)`
+    /// on `Main.rand` (water style 0 → 706), then zeroes the velocity —
+    /// the drip sheet is 15 rows and lives 3× (`Gore.cs:1355-1360`).
+    #[test]
+    fn w4_g68_the_vine_tip_drips_water_gore_706() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 373);
+        let mut rand = FastRandom::new(gate_hit_seed(120));
+        let mut main_rand = UnifiedRandom::new(7);
+        let mut pool = GorePool::new();
+        emit_liquid_drops(&w, 10, 10, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        let live = live_leaves(&pool);
+        assert_eq!(live.len(), 1);
+        let g = pool.slot(live[0]);
+        assert_eq!(g.gore_type, 706);
+        assert_eq!(g.position, Vec2::new(160.0, 160.0));
+        assert_eq!(g.velocity, Vec2::ZERO, "the post-spawn *= 0");
+        assert_eq!(g.frame.row_count, 15, "the IsDrip sheet");
+        assert_eq!(g.time_left, tr_core::gore::GORE_TIME_DEFAULT * 3);
+        assert!(g.behind_tiles);
+    }
+
+    /// The emitter overrides (`:7644-7671`): 374 → 716 (lava, `Next(240)`),
+    /// 375 → 717 (honey, `Next(360)`), 709 → 1383 (candle); the 461 shimmer
+    /// candle is 943 plain, biome-tinted 1160/1161/1162 with the LAST zone
+    /// in C# order winning (hallow over crimson over corrupt).
+    #[test]
+    fn w4_g68_the_drip_type_overrides_and_shimmer_zones() {
+        let mut w = leaf_world();
+        for (kind, gate, want) in [(374u16, 240, 716), (375, 360, 717), (709, 120, 1383)] {
+            place(&mut w, 10, 10, kind);
+            let mut rand = FastRandom::new(gate_hit_seed(gate));
+            let mut main_rand = UnifiedRandom::new(7);
+            let mut pool = GorePool::new();
+            emit_liquid_drops(&w, 10, 10, kind, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+            let live = live_leaves(&pool);
+            assert_eq!(live.len(), 1, "kind {kind}");
+            assert_eq!(pool.slot(live[0]).gore_type, want, "kind {kind}");
+        }
+        place(&mut w, 10, 10, 461);
+        for (zones, want) in [
+            ((false, false, false), 943),
+            ((true, false, false), 1160),
+            ((false, true, false), 1161),
+            ((true, true, true), 1162), // hallow last
+        ] {
+            let mut rand = FastRandom::new(gate_hit_seed(360));
+            let mut main_rand = UnifiedRandom::new(7);
+            let mut pool = GorePool::new();
+            emit_liquid_drops(&w, 10, 10, 461, 0, zones.0, zones.1, zones.2, &mut rand, &mut main_rand, &mut pool);
+            let live = live_leaves(&pool);
+            assert_eq!(live.len(), 1);
+            assert_eq!(pool.slot(live[0]).gore_type, want, "zones {zones:?}");
+        }
+        // Water styles (`:7628-7643`): 13/14 → 706, 12 → 1147, >1 → 705+style.
+        place(&mut w, 10, 10, 373);
+        for (style, want) in [(13, 706), (14, 706), (12, 1147), (5, 710)] {
+            let mut rand = FastRandom::new(gate_hit_seed(120));
+            let mut main_rand = UnifiedRandom::new(7);
+            let mut pool = GorePool::new();
+            emit_liquid_drops(&w, 10, 10, 373, style, false, false, false, &mut rand, &mut main_rand, &mut pool);
+            let live = live_leaves(&pool);
+            assert_eq!(live.len(), 1);
+            assert_eq!(pool.slot(live[0]).gore_type, want, "style {style}");
+        }
+    }
+
+    /// The wet-tile refusal draws NOTHING (`:7609`'s `liquid != 0`
+    /// short-circuit precedes the `Next`), and the anti-cluster box
+    /// (`:7613-7625`) refuses a second drip near a live one: the box is
+    /// x−34..x+50, y−100..y+300 around the tile.
+    #[test]
+    fn w4_g68_wet_tiles_and_nearby_drips_refuse() {
+        let mut w = leaf_world();
+        place(&mut w, 10, 10, 373);
+        let i = w.index(10, 10);
+        w.tiles[i].liquid = 100;
+        let mut rand = FastRandom::new(gate_hit_seed(120));
+        let before = rand.seed;
+        let mut main_rand = UnifiedRandom::new(7);
+        let main_before = main_rand.clone();
+        let mut pool = GorePool::new();
+        emit_liquid_drops(&w, 10, 10, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(rand.seed, before, "the wet refusal precedes the roll");
+        assert_eq!(main_rand, main_before);
+        assert_eq!(live_leaves(&pool).len(), 0);
+        // Dry again: the first drip lands, the second (one tile right,
+        // inside the ±34 px box) refuses.
+        w.tiles[i].liquid = 0;
+        let mut rand = FastRandom::new(gate_hit_seed(120));
+        emit_liquid_drops(&w, 10, 10, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 1);
+        let mut rand = FastRandom::new(gate_hit_seed(120));
+        emit_liquid_drops(&w, 10, 11, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 1, "the box refuses the neighbour");
+        // Outside the box BELOW (the rect ends at y*16 + 300; row 30 starts
+        // at 480 > 460): a second drip lands. The C# argument order is
+        // (j=row, i=col).
+        let mut rand = FastRandom::new(gate_hit_seed(120));
+        emit_liquid_drops(&w, 30, 10, 373, 0, false, false, false, &mut rand, &mut main_rand, &mut pool);
+        assert_eq!(live_leaves(&pool).len(), 2);
     }
 }
