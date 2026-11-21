@@ -39441,18 +39441,41 @@ Verdicts:
   `is_a_phaseblade` set serves the hitbox narrowing only). BoulderOfEarth
   261 (aiStyle 14, `:3456`) has no row; d54 does not own it.
 
-**The e3 name collision (merge hazard).** Both this lane and W4-e3 created
-`crates/tr-app/src/projectile_dust.rs` and declare `mod projectile_dust;`
-in `main.rs` (d53 `:189`, e3 `:184`) — DIFFERENT modules with the SAME
-name (d53: the queue→drain `DustBurst` replay on the live pool; e3: the
-inline `ProjDust` bundle on `update_dust`'s threaded pool). The merge MUST
-keep-one: rename one module (suggested: e3's → `projectile_dust_inline`,
-its `ProjDust`/`ProjDustRng` types are self-contained) or union the files
-under one module with disjoint item names (the two `lerp_color` /
-`next_vector2_circular` helpers collide too). The `mod` declaration
-conflicts in `main.rs`; the `world_sim/projectiles.rs` drains are
-additive. Recorded here so the merge agent reconciles instead of
-double-declaring.
+**The e3 name collision (merge hazard) — REFRESHED at the FINAL phase
+against e3's tip `8023aa4d5` (2026-11-21).** Both this lane and W4-e3
+created `crates/tr-app/src/projectile_dust.rs` and declare
+`mod projectile_dust;` in `main.rs` (d53 `:189`, e3 `:184`) — DIFFERENT
+modules with the SAME name (d53: the queue→drain `DustBurst` replay on the
+live pool; e3: the inline `ProjDust` bundle on `update_dust`'s threaded
+pool). The merge MUST keep-one: rename one module (suggested: e3's →
+`projectile_dust_inline`, its `ProjDust`/`ProjDustRng` types are
+self-contained — every e3 emitter takes `d: &mut ProjDust`, so the rename
+is a module-path swap at the ~30 `crate::projectile_dust::style*` call
+sites in e3's `projectile.rs`) or union the files under one module.
+
+**The item-level collision census (verified, supersedes the batch-3
+guess):** the two modules' top-level items are DISJOINT at the current
+tips — d53's `DustBurst`/`EnchantmentBurst`/`drain`/`drain_burst`/`nd`/
+`lerp_color`/`reflect`/`shimmer_palette`/`wet_splash`/`arrow_trail`/
+`stationary_trail`/`sword_beam_burst`/`light_disc_bounce`/
+`enchantment_visuals`/`enchantment_burst`/`super_star_dust`/
+`lava_boulder_impact_dust`/`poulder_bounce_dust` vs e3's `ProjDust`/
+`ProjDustRng`/`rotated_by_random`/`next_vector2_unit`/
+`next_vector2_circular`/`on_screen_wide`/the `style2_*`/`style4_*`/
+`style5_*`/`style6_burst`/`style8_*` emitters/`star_slash_dust`/
+`star_slash_976`. The batch-3 note's "the two `lerp_color` /
+`next_vector2_circular` helpers collide too" was WRONG: e3 has NO
+`lerp_color` (its colour lerps inline the C# math) and d53 has NO
+`next_vector2_circular` (its circular draws, when needed, would be new).
+The REAL union hazards are: (1) the two `#[cfg(test)] mod tests` blocks
+(rename one, e.g. `mod inline_tests` — both define `ctx`/`world`-shaped
+fixtures), (2) the shared `use` lines (`Projectile`, `Vec2`, `DustPool`,
+`SpawnCtx`, `World` — dedupe, e3 adds `DropRng`/`DustRng`), (3) e3's
+`ProjDust::new_dust` method vs d53's free `nd` (different shapes, no
+collision — keep both). The `mod` declaration conflicts in `main.rs`;
+the `world_sim/projectiles.rs` drains are additive (d53's
+`drain_dust_bursts` loop vs e3's `update_dust` threading — both survive).
+Recorded here so the merge agent reconciles instead of double-declaring.
 
 ### Verification (batch 3)
 
@@ -39614,3 +39637,63 @@ wet block runs post-AI) compounds here: a wet shot's FIRST wet tick still
 steps full velocity, the C# steps it scaled — the same lag family the
 bobber's `probe_wet` documents. RNG-neutral (no draws in the drag), so the
 gap is a physics deviation, not a stream one.
+
+### The FINAL phase (W4-d53, 2026-11-21, code-only mode)
+
+The Lead's four-item close-out. Commits: `f266c6fb` (item 1), `804ad571`
+(item 2), `ab40c8a1` (item 3), this docs sweep (item 4).
+
+**Item 1 — the 11-skips ledger re-probe.** The batch-2 cited skips were
+re-read against the PUSHED sibling tips (not main): d3 `2d01693ca` landed
+the aiStyle-25 boulder family (13 kinds + the 763 spike) AFTER the batch-3
+census, so the 1053 impact pair (`:18949`/`:18952`) and the 1048 bounce
+dust (`:19245`) are NOW-ROWED. Both armed as STAGED emitters in
+`projectile_dust.rs` (`lava_boulder_impact_dust` / `poulder_bounce_dust`)
+with the d3 `bounce_ladder` drop-in contract: the 1053's ladder skip draws
+NOTHING today (the emitter adds the 10×2 type-6 blocks); the 1048's ladder
+keeps 10 count-only rectangle-pair draws the emitter RE-DRAWS — the merge
+must REPLACE (delete the ladder's pairs, keep the PooFly particle draws,
+d3's). The 502 / phaseblades / 261 skips STAY: no row on d1/d2/d16/d21/
+g1/g2/g3 (the 502 is aiStyle 8 — d21 covers 201-209; the phaseblades are
+aiStyle 3, the 261 aiStyle 14). The dust-vs-sound split with d75
+(`0e700d9ab`) is clean: d3 already queues the 1053 Dig + the 1048 Item177
+cues (`wants_sound`), this lane owns only the dust; the 502/261 sound rows
+stay STILL DEFERRED with their dust skips (research/70's split table).
+
+**Item 2 — the Shimmer() activation.** g2 (`81c4ab85`) staged the 13-arm
+`Shimmer()` helper (`Projectile.cs:22361-22516` verbatim) pending the
+generic wet block; batch 4 landed that block, and the g2d-active probe
+found NO pushed activation branch — so this lane wires the `:17011`
+caller-gate: `if shimmer_wet { shimmer(world) }` in the dispatch right
+after `wet_block`, at the C# slot (post-wet-machine, pre-HandleMovement/
+arrow-trail). The gate sits OUTSIDE the ignoreWater block (the C# `:17009`
+reads the flag, not the probe) and runs on a wet-block-killed slot too (no
+active guard — the writes land on the corpse, verbatim). The helper is
+adopted byte-identical (keep-one g2's staged copy at merge; g2's
+`#[allow(dead_code)]` STAGED markers drop with the wiring); the
+`CHLOROPHYTE_ORB` const is added here (g2's row unmerged, the kind arm
+inert until it lands — merge keep-one). One g2 comment typo corrected: the
+25/17 arm's clamp is −10 (`:22511-22514`), not the comment's −8 (d3's
+`shimmer_step` twin already had it right). The 936 rainbow-slime spawn arm
+stays g2's cited skip (rowless + the NPC-spawn/net/achievement layers).
+
+**Item 3 — the wetVelocity census.** Recorded above ("The wetVelocity
+census"): the item-side blend landed (e19/f47); the proj side is ported
+for the flail + d3 boulders, the generic integrate is a movement-lane gap
+(the follow-up arm), NOT this lane's window.
+
+**Item 4 — the docs.** research/70's ledger rows 29-38 carry the FINAL
+verdicts + the totals recomputed (the batch-4 "7 skips" under-counted the
+3-site phaseblade group as one — the rows are the authority); the
+dust-vs-sound split table; the e3 name-collision merger note REFRESHED
+against e3's tip `8023aa4d5` (the item-level collision census supersedes
+the batch-3 guess — the modules' top-level items are disjoint, the real
+union hazards are the two `mod tests` blocks + the shared `use` lines).
+
+**Verification (FINAL).** Code-only: the d3 boulder module read end-to-end
+(the bounce ladder's dust skips, the wet arm, the Shimmer twin), the g2
+staged helper diffed against the C# `:22361-22516` line-by-line, the e3
+module's item list enumerated for the collision census, the d75 ANALYSIS
+deferral table cross-read. 10 new witnesses (3 drain + 7 Shimmer) WRITTEN
+NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (user
+directive).
