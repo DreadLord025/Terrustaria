@@ -118,7 +118,7 @@ pub(crate) fn row_count(panel: &Panel, tab: Tab) -> usize {
             .iter()
             .filter(|(_, name, _)| matches(&panel.filter, name))
             .count(),
-        Tab::World => 15,
+        Tab::World => 16,
         Tab::Recipes => crate::craft::RECIPES.len(),
     }
 }
@@ -413,6 +413,11 @@ fn world_rows(
             format!("Sandstorm: {}", if sandstorm { "ON" } else { "OFF" }),
             if sandstorm { R } else { G },
         ),
+        // W4-g24 doc-sweep — the `/quit` debug chat command
+        // (`ToolkitDebugCommands.cs:232-237`: `WorldGen.JustQuit()`), the
+        // panel being the chat dispatcher's stand-in (the S1-E-29 recorded
+        // deviation, the `pauseworld` row's precedent).
+        ("Quit (no save)".to_string(), R),
     ]
 }
 
@@ -849,6 +854,13 @@ fn world_click(app: &mut App, row: usize) {
                 app.sandstorm.start_sandstorm();
             }
         }
+        15 => {
+            // W4-g24 doc-sweep — the `/quit` chat command
+            // (`ToolkitDebugCommands.cs:232-237`): `WorldGen.JustQuit()`
+            // (`WorldGen.cs:6627-6662`), the no-save exit. The panel is the
+            // chat dispatcher's stand-in (the `pauseworld` row's precedent).
+            app.just_quit();
+        }
         _ => {}
     }
 }
@@ -896,6 +908,25 @@ mod tests {
             },
         );
         assert!(!app.stepper.paused, "the second click resumed the world");
+    }
+
+    /// W4-g24 doc-sweep — the quit row is the `/quit` chat command
+    /// (`ToolkitDebugCommands.cs:232-237`): `WorldGen.JustQuit` runs its
+    /// sentinel-stop pair + the tracked drain, then the single-player
+    /// `GoToWorldSelect` hop (`WorldGen.cs:6655`). The row count includes
+    /// the new row (16).
+    #[test]
+    fn w4_g24_the_quit_row_runs_just_quit() {
+        let mut app = flow_app();
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        assert_eq!(row_count(&app.debug_panel, Tab::World), 16);
+        click_world(&mut app, 15);
+        assert_eq!(app.audio.liquid_ambience_stop_count(), 1, "the :6631 pair");
+        assert!(matches!(
+            app.front,
+            Some(crate::app::flow::FrontScreen::WorldSelect)
+        ), "the world-select hop");
+        assert!(matches!(app.net, crate::app::NetRole::Off));
     }
 
     #[test]

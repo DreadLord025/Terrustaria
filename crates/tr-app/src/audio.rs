@@ -613,6 +613,10 @@ pub struct Audio {
     /// The two `SoundInstanceLiquid[n]` stand-ins (`LegacySoundPlayer.cs:322`):
     /// 0 = the waterfall, 1 = the lavafall. `Some` while the loop plays.
     liquid_loops: [Option<rodio::Sink>; 2],
+    /// The `StopWaterfallAmbienceAudio` call count (a test seam — the
+    /// headless Apps have no liquid sink, so the quit flows assert the
+    /// sentinel-stop pair through this, W4-g24 doc-sweep).
+    liquid_ambience_stops: u64,
     /// The decoded SceneState ambient loops (`blizzard_strong_loop` /
     /// `blizzard_inside_building_loop`, from `Sounds/Custom/<name>.xnb` —
     /// the trackable path, `LegacySoundPlayer.cs:257`). The blizzard loops
@@ -765,6 +769,7 @@ impl Audio {
             cues,
             played: Default::default(),
             liquid_loops: [None, None],
+            liquid_ambience_stops: 0,
             tracked: crate::tracked_sound::SoundPlayer::default(),
             sound_style_random: tr_core::unified_random::UnifiedRandom::new(1),
             liquid_cues,
@@ -2178,6 +2183,43 @@ impl Audio {
             sink.set_volume(volume);
             self.liquid_loops[channel] = Some(sink);
         }
+    }
+
+    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`): the
+    /// `PlaySound(34, -1, -1, 0)` + `PlaySound(35, -1, -1, 0)` pair — the
+    /// sentinel stop arm of both liquid-loop cases (`LegacySoundPlayer.cs:
+    /// 1257-1262`/:1287-1292: `x == -1 || y == -1` stops the instance
+    /// outright, no attenuation, no fade). Called by `SaveAndQuit`
+    /// (`:6704`) and inlined by `JustQuit` (`:6631-6632`) BEFORE
+    /// `StopTrackedSounds`, so the loops die at the quit moment rather than
+    /// at the next ¼ s `Main.Ambience` re-volume tick (the frame's
+    /// menu-mode quiet arm covers the same effect a quarter-second later;
+    /// this seam is the immediate one). No RNG: the sentinel plays draw
+    /// NOTHING (the case bodies never reach a pitch draw).
+    pub fn stop_waterfall_ambience(&mut self) {
+        self.liquid_ambience_stops += 1;
+        for channel in 0..2 {
+            if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
+                sink.stop();
+                self.liquid_loops[channel] = None;
+            }
+        }
+    }
+
+    /// The `StopWaterfallAmbienceAudio` call count (the headless test seam,
+    /// the `played_count` convention).
+    pub fn liquid_ambience_stop_count(&self) -> u64 {
+        self.liquid_ambience_stops
+    }
+
+    /// `SoundEngine.StopTrackedSounds` (`SoundEngine.cs:151-157` →
+    /// `SoundPlayer.StopAll`, `SoundPlayer.cs:79-86`): every tracked
+    /// instance stops and the pool clears. The `!Main.dedServ &&
+    /// IsAudioSupported` gate is the port's always-true stand-in (the
+    /// headless pool still tracks entries). Called by `SaveAndQuit`
+    /// (`WorldGen.cs:6715`) and `JustQuit` (`:6646`).
+    pub fn stop_tracked_sounds(&mut self) {
+        self.tracked.stop_all();
     }
 
     /// `SoundEngine.PlayTrackedSound(SoundStyle)`'s global arm
@@ -4137,6 +4179,31 @@ mod tests {
         // One variation keeps the base asset name (`LegacySoundStyle.cs:21-28`).
         let mut rng = tr_core::unified_random::UnifiedRandom::new(1);
         assert_eq!(style.random_sound(&mut rng), "menu_accept");
+    }
+
+    /// W4-g24 doc-sweep — `StopWaterfallAmbienceAudio` (`WorldGen.cs:
+    /// 6689-6699`) + `StopTrackedSounds` (`:6646`/`:6715` → `SoundPlayer.
+    /// StopAll`, `SoundPlayer.cs:79-86`): the sentinel pair stops BOTH
+    /// liquid channels draw-free and the tracked pool empties. Headless
+    /// there is no sink, so the stop count is the witness seam; a tracked
+    /// entry registered through the test cue proves the pool drain.
+    #[test]
+    fn w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain() {
+        let mut audio = Audio::new(None);
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.liquid_ambience_stop_count(), 0);
+        audio.stop_waterfall_ambience();
+        audio.stop_waterfall_ambience();
+        assert_eq!(audio.liquid_ambience_stop_count(), 2, "each call counts");
+        assert_eq!(rng.peek(), peek, "the sentinel pair draws nothing");
+        // The tracked pool: one entry lands, StopAll clears it.
+        audio.insert_test_cue("menu_accept");
+        let style = menu_accept_style();
+        let _ = audio.play_tracked_global(style.clone());
+        assert_eq!(audio.tracked_count_for(&style), 1, "the entry landed");
+        audio.stop_tracked_sounds();
+        assert_eq!(audio.tracked_count_for(&style), 0, "StopAll cleared the pool");
     }
 
     /// S1-E-21i — the wall-break play's RNG contract
