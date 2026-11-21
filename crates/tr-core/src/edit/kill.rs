@@ -126,10 +126,11 @@ pub enum TreeDropEvent {
         /// (`seedType`).
         seed: u16,
     },
-    /// A mushroom-tree cell (72) — `KillTile_GetItemDrops`'s `case 71:
-    /// case 72:` (`WorldGen.cs:65642-65652`). `Main.rand` only: `Next(40) == 0`
-    /// mints the Mushroom Grass Seeds 194, else `Next(2) == 0` mints the
-    /// Glowing Mushroom 183, else nothing.
+    /// A mushroom-tree cell (72) OR glowing-mushroom plant (71) —
+    /// `KillTile_GetItemDrops`'s `case 71: case 72:` (`WorldGen.cs:65642-
+    /// 65652`). `Main.rand` only: `Next(40) == 0` mints the Mushroom Grass
+    /// Seeds 194, else `Next(2) == 0` mints the Glowing Mushroom 183, else
+    /// nothing.
     Mushroom { x: i32, y: i32 },
     /// A cactus cell (80) — `KillTile_GetItemDrops`'s `case 80`
     /// (`WorldGen.cs:64717-64719`): a flat Cactus 276, no RNG. Recorded per
@@ -362,11 +363,13 @@ fn tree_drop_record(world: &World, x: i32, y: i32) -> Option<TreeDropEvent> {
                 seed,
             })
         }
-        // The mushroom tree — `case 71: case 72:` (`:65642-65652`). Only 72
-        // reaches the axe arm (`Main.tileAxe[72]`, `Main.cs:7209`); the
-        // mushroom plants 71 die through their own support check and share
-        // the drop arm.
-        72 => Some(TreeDropEvent::Mushroom { x, y }),
+        // The mushroom tree AND plant — `case 71: case 72:` (`:65642-65652`).
+        // The tree 72 reaches the axe arm (`Main.tileAxe[72]`, `Main.cs:7209`);
+        // the glowing-mushroom PLANT 71 dies through its support check / a
+        // direct break and shares the SAME drop arm (W4-g42 tail D1: the old
+        // port recorded only 72, and `by_tile(71)` is None — item 183 places
+        // the potted 190 — so a broken 71 plant dropped nothing).
+        71 | 72 => Some(TreeDropEvent::Mushroom { x, y }),
         // The cactus — `case 80` (`:64717-64719`): the flat Cactus 276.
         // Recorded per cell (like the trunk kinds) so the `CheckCactus`
         // cascade's kills drop too; the app's `cell_drops` suppresses 80.
@@ -3055,6 +3058,34 @@ mod tests {
             .tree_events
             .iter()
             .all(|e| matches!(e, TreeDropEvent::Mushroom { .. })));
+    }
+
+    /// W4-g42 tail D1: the glowing-mushroom PLANT (71) records the SAME
+    /// `Mushroom` drop as the tree 72 (`KillTile_GetItemDrops` `case 71:
+    /// case 72:`, `WorldGen.cs:65642-65652`) — the old port recorded only 72,
+    /// so a broken 71 plant (whose `by_tile` is None) dropped nothing.
+    #[test]
+    fn w4_g42_tail_the_mushroom_plant_records_the_mushroom_drop() {
+        let mut w = ground_world();
+        // The mushroom grass support at (10,20), the plant 71 above it.
+        let i = w.index(10, 20);
+        w.tiles[i].kind = 70;
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 71,
+            frame_x: 0,
+            frame_y: 0,
+            flags: FLAG_ACTIVE,
+            ..Default::default()
+        };
+        w.compute_column_surface();
+        let kill = kill_tile(&mut w, 10, 19, false).expect("the plant dies");
+        assert!(
+            kill.tree_events
+                .iter()
+                .any(|e| matches!(e, TreeDropEvent::Mushroom { x: 10, y: 19 })),
+            "the 71 plant records the Mushroom drop (seeds 194 / mushroom 183)"
+        );
     }
 
     /// S1-P-i30: a surviving mushroom-tree top cell (frameX 0, nothing above)

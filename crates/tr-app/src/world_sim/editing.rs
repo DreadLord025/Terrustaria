@@ -6194,7 +6194,23 @@ fn cell_drops(
         // `registry::tile_drop`; the gem trees 583-589, the mushroom tree 72
         // and the cactus 80 (whose `tile_drop` row feeds the touch/plate
         // lanes) are suppressed here (the records carry their drops).
-        5 | 72 | 80 | 323 | 583..=589 | 596 | 616 | 634 => Vec::new(),
+        // W4-g42 tail D1: the glowing-mushroom PLANT 71 shares the 72 record
+        // (`case 71/72`), so it is suppressed here too.
+        5 | 71 | 72 | 80 | 323 | 583..=589 | 596 | 616 | 634 => Vec::new(),
+        // W4-g42 tail D3: the dye plants 227 (`KillTile_GetItemDrops`
+        // `case 227`, `WorldGen.cs:65048-65055`): `1107 + frameX/34`, styles
+        // 8-11 → the Strange Plants `3385 + num - 8`. The teal mushroom
+        // (style 0 → 1107) grows in the glowing-mushroom biome; the old
+        // `by_tile` fallback dropped 1107 for EVERY style.
+        227 => {
+            let num = i32::from(hit.frame_x) / 34;
+            let id = if (8..=11).contains(&num) {
+                (3385 + num - 8) as u16
+            } else {
+                (1107 + num) as u16
+            };
+            vec![(id, 1)]
+        }
         83 | 84 => herb_drops(
             hit.kind,
             i32::from(hit.frame_x) / 18,
@@ -9188,6 +9204,42 @@ mod tests {
         let (drops, portals) = drop_events(&kill, hit);
         assert!(portals.is_empty());
         assert_eq!(drops, vec![(3, 1, 7, 12)]);
+    }
+
+    /// W4-g42 tail D3: the dye plants 227 drop by `frameX/34` style
+    /// (`KillTile_GetItemDrops` `case 227`, `WorldGen.cs:65048-65055`):
+    /// `1107 + num`, styles 8-11 → the Strange Plants `3385 + num - 8`. The
+    /// teal mushroom (style 0 → 1107) grows in the glowing-mushroom biome; the
+    /// old `by_tile` fallback dropped 1107 for EVERY style.
+    #[test]
+    fn w4_g42_tail_dye_plants_drop_by_the_frame_style() {
+        let drop_for = |frame_x: i16| -> Vec<(u16, u32, i32, i32)> {
+            let kill = edit::TileKill { kind: 227, ..Default::default() };
+            let hit = Some(HitCell { x: 5, y: 9, kind: 227, frame_x, frame_y: 0 });
+            drop_events(&kill, hit).0
+        };
+        // Style 0 (the teal mushroom) → 1107; style 3 → 1110.
+        assert_eq!(drop_for(0), vec![(1107, 1, 5, 9)], "style 0 → teal mushroom");
+        assert_eq!(drop_for(3 * 34), vec![(1110, 1, 5, 9)], "style 3 → 1110");
+        // Styles 8-11 → the Strange Plants 3385-3388.
+        assert_eq!(drop_for(8 * 34), vec![(3385, 1, 5, 9)], "style 8 → Strange Plant1");
+        assert_eq!(drop_for(11 * 34), vec![(3388, 1, 5, 9)], "style 11 → Strange Plant4");
+    }
+
+    /// W4-g42 tail D2: the mushroom grass 70 (and the jungle grasses 60/661/662)
+    /// drop the Mud block 176 at the hit cell (`KillTile_GetItemDrops` `case 70`
+    /// `:64702-64704` / `case 59/60/661/662` `:64936-64941`), not the seed item.
+    #[test]
+    fn w4_g42_tail_mushroom_grass_drops_the_mud_block() {
+        for kind in [70u16, 60, 661, 662] {
+            let kill = edit::TileKill { kind, ..Default::default() };
+            let hit = Some(HitCell { x: 4, y: 8, kind, frame_x: 0, frame_y: 0 });
+            assert_eq!(
+                drop_events(&kill, hit).0,
+                vec![(176, 1, 4, 8)],
+                "tile {kind} drops mud 176"
+            );
+        }
     }
 
     #[test]
