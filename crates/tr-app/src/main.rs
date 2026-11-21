@@ -18,6 +18,7 @@ mod banners;
 mod bestiary;
 mod biome;
 mod boss_bags;
+mod fishing_crates;
 mod buff_effects;
 mod buff_effects_misc;
 mod buffs;

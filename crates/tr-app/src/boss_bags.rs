@@ -99,8 +99,9 @@ pub fn is_boss_bag(kind: u16) -> bool {
 /// `UnifiedRandom.Next(min, max)` (`UnifiedRandom.cs:120-132`) over the
 /// [`PrefixRandom`] seam: for the small spans every bag roll uses,
 /// `(int)(Sample() * (max - min)) + min` == `Next(max - min) + min`
-/// (`:134-141`) — one draw, the same value.
-fn range<R: PrefixRandom + ?Sized>(rng: &mut R, min: i32, max: i32) -> i32 {
+/// (`:134-141`) — one draw, the same value. `pub(crate)` for the sibling
+/// opener families (the crate trees, W4-f35).
+pub(crate) fn range<R: PrefixRandom + ?Sized>(rng: &mut R, min: i32, max: i32) -> i32 {
     rng.next_max(max - min) + min
 }
 
@@ -108,8 +109,9 @@ fn range<R: PrefixRandom + ?Sized>(rng: &mut R, min: i32, max: i32) -> i32 {
 /// (`Player.cs:7170-7180`): the `stack > 0` gate, then `SetDefaults` →
 /// `Prefix(-1)` (the natural roll on the same `Main.rand` stream,
 /// `Item.cs:504-618`) → the stack write. The prefix draws interleaved
-/// here ARE the C#'s loot-slot RNG order.
-fn quick_spawn<R: PrefixRandom + ?Sized>(
+/// here ARE the C#'s loot-slot RNG order. `pub(crate)` for the sibling
+/// opener families (the crate trees / presents / herb bags, W4-f35).
+pub(crate) fn quick_spawn<R: PrefixRandom + ?Sized>(
     rng: &mut R,
     out: &mut Vec<BagGrant>,
     item: i32,
