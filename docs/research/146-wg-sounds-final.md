@@ -1,4 +1,10 @@
-# 107 — WG-SOUND FINAL: the co-lane sync + the census re-sweep (W4-g24)
+# 146 — WG-SOUND FINAL: the co-lane sync + the census re-sweep (W4-g24)
+
+> Renumbered 107 → 146 in the retire phase (the f21b net-apply lane owns
+> research/107; 145 is double-claimed by e19's 16-box repins + g89's rod
+> union, 146 is free across every pushed ref and every live worktree —
+> the full-refs + on-disk scan). All in-repo refs re-pointed; the FINAL
+> commit messages keep the historical `research/107` name.
 
 Status: ✅ code-only (no cargo/rustc/rustfmt/tests/graphify invoked; witnesses
 WRITTEN NOT RUN). Branch `task/W4-g24-sounds-worldgen`, the FINAL phase on top

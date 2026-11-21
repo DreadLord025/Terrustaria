@@ -2577,7 +2577,7 @@ impl App {
             // half is the d85 Advanced-tab surface (its `WorldSeed` arm
             // carries `option_for_seed_text` + `select_option`; the
             // created world's flags already ride `resolve_seed_text`'s
-            // classic half) — keep-one note in research/107 §3.
+            // classic half) — keep-one note in research/146 §3.
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {

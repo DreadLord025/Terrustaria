@@ -76,7 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 106 | DOC-SWEEP lane 26: the WorldGen.cs sound deferrals (W4-g24: the quit-path 34/35 stops + JustQuit, the serverLoad dedServ skip, the AppTownDoors b3 seam, the c14 keep-one; code-only) | `106-doc-sweep-wg-sounds.md` | ✅ |
-| 107 | WG-SOUND FINAL (W4-g24: the b3 adoption contract + keep-one, the 79-site census re-sweep ledger, the secret-seed cues vs the g23 union + the two WorldSeed-arm remainders ported, the gen-progress census vs d85/f23; code-only) | `107-wg-sounds-final.md` | ✅ |
+| 146 | WG-SOUND FINAL (W4-g24: the b3 adoption contract + keep-one, the 79-site census re-sweep ledger, the secret-seed cues vs the g23 union + the two WorldSeed-arm remainders ported, the gen-progress census vs d85/f23; code-only) — renumbered 107 → 146 in the retire phase (f21b owns 107; 145 double-claimed by e19/g89) | `146-wg-sounds-final.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

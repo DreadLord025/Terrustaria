@@ -7,7 +7,7 @@
 //! seam; the sprite draw below paints the bar + header. The
 //! `CaptureManager` GPU chunk render is the S1-G-13 render-target seam.
 //!
-//! SOUND CENSUS (W4-g24 FINAL, research/107 §4): the screen's ONE audible
+//! SOUND CENSUS (W4-g24 FINAL, research/146 §4): the screen's ONE audible
 //! cue is `Update`'s Inventory-abort `PlaySound(11)`
 //! (`UIWorldLoad.cs:57`) — landed in `session.rs::world_load_queue_abort`
 //! (`Menu_Close`, once per queue via the `!QueuedAbort` gate; the pure
