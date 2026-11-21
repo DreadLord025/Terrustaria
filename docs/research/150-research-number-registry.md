@@ -1198,10 +1198,11 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 356 | c11 | 284-c11-martian-turret-final (9a9c2625e) | NEW rename owed |
 | 357 | e26 | 248-e26-luck-final-census (cbaea2864) | NEW — CORRECTION: the §8-banner e26→333 collided with d119→333; e26 takes 357 |
 | 358 | g15 | 77-doc-sweep-items (§7.3's 284 target voided: 284=g52) | NEW rename owed |
+| 359 | g51 | 309-g51-net-te-family-seal (6c4ec70d7, post-§9 self-pick) | NEW rename owed 309→359 |
 
 ### §9.3 — rules
 
-- Free floor: **359+**. New docs require a registry check + Lead assignment; NO self-picks.
+- Free floor: **360+**. New docs require a registry check + Lead assignment; NO self-picks.
 - 311/322/324/299 are FREE holes — do NOT take them without a Lead assignment.
 - e26's 248 doc: g82's reservation wins (§6.3); e26→357 (not 333).
 - d13 has TWO docs: pet-light FINAL→336, band-final→353.
