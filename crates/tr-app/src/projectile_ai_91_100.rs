@@ -26,8 +26,14 @@
 //! spawns from the Money Trough 3213 (`Item.cs:28981` `shoot = 525`, the
 //! generic `fire_non_ammo_shot` use-arm — NOT the Void Vault 4076); the 98
 //! CultistBossParticle 526 spawns from the CultistTablet 437 (aiStyle 83,
-//! `NPC.cs:36863/:36874/:36885` — NOT the boss 439/aiStyle 84 c1 ports; the
-//! tablet arm is unported, no producer feeds the 98 seek yet).
+//! `NPC.cs:36863/:36874/:36885` — NOT the boss 439/aiStyle 84 c1 ports).
+//! The tablet arm is CLAIMED: W4-d31 (`task/W4-d31-npc-ai-styles-75-83`,
+//! `a31ff86e`) ported it as unwired `npc_ai_style83.rs` (the 526 payloads
+//! ride `Style83Out.shots` as `HostileShotAi`), and W4-d40
+//! (`7fec14aa`) landed the 437/438 SetDefaults rows. The activation
+//! contract (the 526 producer→consumer composition + the drain's
+//! owner/friendly re-pin d10 owes at merge):
+//! `docs/research/26d-projectile-ai-91-100-docsweep.md` §98.
 //!
 //! RNG contract (the `UpdateProjectiles` stream, `Main.cs:17775-17777`):
 //! every EXPLICIT `Main.rand` draw at the call sites stays, in the C#'s
@@ -2596,6 +2602,76 @@ mod tests {
         ai_cultist_particle(&mut q, &mut rng2);
         assert!(!q.active);
         assert_eq!(rng2.floats, 0, "the arrival precedes the trail");
+    }
+
+    /// W4-d10 — the §98 ACTIVATION CONTRACT's composition witness
+    /// (`docs/research/26d-projectile-ai-91-100-docsweep.md`): a
+    /// d31-shaped 526 payload (`Style83Out.shots`' `HostileShotAi`:
+    /// damage 0, ai0/ai1 = the boss-centre target) spawned through the
+    /// pool flies the d10 seek and arrives at the packed target. BOTH
+    /// drain owner shapes — the stock `spawn_hostile_ai` 255 (with
+    /// `hostile_local`) and the contract's owner-0 re-pin
+    /// (`NPC.cs:36863`'s `Main.myPlayer`) — simulate identically in
+    /// single-player (the trajectory pin); the re-pin's semantic
+    /// difference is the channel-track tail + the owner field, asserted
+    /// separately.
+    #[test]
+    fn w4_d10_s98_the_tablet_payload_composes() {
+        let run = |owner_pin: bool| {
+            let mut w = World::new("t".into(), 300, 200);
+            let mut pool = crate::projectile::ProjectilePool::new();
+            // The d31 ring_particle payload: centre + dir*30, velocity
+            // dir*speed, the target on ai0/ai1 (here: 100 px right).
+            let slot = if owner_pin {
+                pool.spawn_with_data_ai_owned(526, 0, 1600.0, 800.0, 5.0, 0.0, 0, 0.0, 1704.0, 804.0)
+            } else {
+                pool.spawn_hostile_ai(526, Vec2::new(1600.0, 800.0), Vec2::new(5.0, 0.0), 0, 0.0, 1704.0, 804.0)
+            }
+            .expect("the 526 row is d10's, live");
+            assert_eq!(pool.slots()[slot].ai, [1704.0, 804.0, 0.0, 0.0], "the packed target");
+            assert_eq!(pool.slots()[slot].damage, 0, "the visual marker");
+            let mut rng = tr_core::tile_light::FastRandom::new(7);
+            let mut path = Vec::new();
+            for _ in 0..40 {
+                pool.update(
+                    &mut w,
+                    &mut [],
+                    None,
+                    None,
+                    None,
+                    crate::projectile::YoyoInputs::default(),
+                    crate::projectile::FlailInputs::default(),
+                    &mut rng,
+                    0,
+                    true,
+                );
+                let p = &pool.slots()[slot];
+                path.push((p.active, p.pos, p.vel));
+                if !p.active {
+                    break;
+                }
+            }
+            (path, pool.slots()[slot].owner)
+        };
+        let (stock_path, stock_owner) = run(false);
+        let (pinned_path, pinned_owner) = run(true);
+        assert_eq!(stock_owner, 255, "the stock drain's hostile default");
+        assert_eq!(pinned_owner, 0, "the contract's Main.myPlayer re-pin");
+        assert_eq!(stock_path, pinned_path, "identical single-player flight");
+        // The first tick: lerp(5, 15, 0.1) = 6, integrated.
+        let (active, pos, vel) = stock_path[0];
+        assert!(active);
+        assert!((vel.x - 6.0).abs() < 1e-5);
+        assert!((pos.x - 1606.0).abs() < 1e-4);
+        // The arrival kill: the flight ends AT the packed target (the
+        // dist<speed gate), well inside the 120-tick stock lifetime.
+        let (last_active, last_pos, _) = *stock_path.last().unwrap();
+        assert!(!last_active, "the particle arrives and dies");
+        assert!(stock_path.len() < 40, "the seek converges");
+        assert!(
+            (last_pos - Vec2::new(1704.0, 804.0)).length() < 16.0,
+            "the arrival is at the target: {last_pos:?}"
+        );
     }
 
     /// The seven counterweight rows (`Projectile.cs:6084-6093`): 10×10,

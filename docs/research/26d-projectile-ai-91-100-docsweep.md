@@ -70,7 +70,64 @@ use-arm is the generic `ItemCheck_Shoot` → `fire_non_ammo_shot`.**
 
 **Verdict: the 526 spawns from the CultistTablet (NPC 437, aiStyle 83)'s
 ritual despawn — NOT the Lunatic Cultist boss (439, aiStyle 84) that c1
-ports. c1's `cultist_ai_step` does NOT cover the 526 source.**
+ports. c1's `cultist_ai_step` does NOT cover the 526 source. The tablet
+arm is CLAIMED (W4-d31) — the remaining work is the ACTIVATION CONTRACT
+below, not a re-port.**
+
+**Claim census (2026-11-21 re-read):**
+- `task/W4-d31-npc-ai-styles-75-83` (`a31ff86e`, arm 2) ported the whole
+  aiStyle-83 machine as **unwired** `npc_ai_style83.rs`
+  (`style83_step`, `NPC.cs:36757-36925` verbatim): the 437 tablet's
+  `localAI[3]` latch + `CultistRitual.CheckFloor`, the 379/438 ritual-four
+  spawns, the struck-devotee release, the all-gone boss summon (ONE
+  `Next(2)` side roll), the 300-tick dissolve — **including all three 526
+  bursts** (`ring_particle` ×6 at the death + the 20 gated launches +
+  the `%10==1 && >120` trickle). The particle RNG (speed `NextFloat`,
+  the `RotatedByRandom(TAU)` pair, the launch's radius `NextFloat`, the
+  `Next(2)` gate) is consumed IN-STEP on the arm's `UnifiedRandom` — the
+  draws belong to the tablet lane, exactly as this census predicted.
+  The 526 requests ride `Style83Out::shots` as `HostileShotAi`
+  (`kind: 526, damage: 0, ai0/ai1 = the target point`).
+- `task/W4-d30-npc-ai-styles-65-72` and `task/W4-d32-npc-ai-styles-85-93`
+  do NOT touch 83 (d30 ends at 72; d32 starts at 85) — no overlap.
+- `task/W4-d40-npc-kinds-421-490` (`7fec14aa`, batch 2) landed the
+  **437/438 SetDefaults rows** (tablet 54×54 aiStyle 83
+  dontTakeDamage+noGravity+noTileCollide, devotee 22×40 aiStyle 83
+  lavaImmune) — the kinds exist, the machine stays UNWIRED (the style73
+  precedent: "tablet/devotee UNWIRED").
+
+**The activation contract (what the wiring wave owes, in order):**
+1. **Dispatch:** route NPC kinds 437/438 to `style83_step` on the
+   `UpdateNPCs` stream (the style75 wiring precedent,
+   `world_sim/npcs.rs:4465-4488`); resolve `Style83Out::spawns`/`links`
+   (the carrier slot+1 convention), `retargets`, `died`,
+   `tablet_destroyed` per the module's wiring-seam doc.
+2. **The 526 drain — the owner re-pin:** the C# call sites
+   (`NPC.cs:36863`/`:36874`/`:36885`) pass **`Main.myPlayer`** as the
+   owner — NOT the stock hostile default. The sim's generic
+   `wants_hostile_shot_ai` drain (`world_sim/npcs.rs:5947-5956`,
+   `spawn_hostile_ai`) hardcodes owner 255; for the 526 the wiring must
+   spawn with **owner 0** (`spawn_with_data_ai_owned(526, 0, …)` — the
+   fishron `spawn_hostile_ai_owned` precedent) so the local-owner
+   simulation gate + `NewProjectile`'s `TryUpdateChannel` tail
+   (`Projectile.cs:11097-11100`, owner == myPlayer) match. In
+   single-player the 255 + `hostile_local` path simulates identically
+   (the composition witness pins this), but the channel-track tail and
+   the owner semantics differ — the re-pin is the contract.
+3. **The row + arm are d10's, already live:** `proj_data(526)`
+   (`data.rs`, `Projectile.cs:5962-5970`: 8×8, aiStyle 98, tileCollide
+   false, timeLeft 120, alpha 255, stock penetrate 1, friendly/hostile
+   both false — the visual marker) + `ai_cultist_particle`
+   (`8814cb4e`): the `(ai0, ai1)` target seek, the dist<speed arrival
+   kill BEFORE the trail, the 15-speed 0.1-lerp, the 2×`NextFloat` dust
+   scales on the `UpdateProjectiles` stream. The payload d31 packs is
+   exactly what this arm reads — composition verified (the witness
+   `w4_d10_s98_the_tablet_payload_composes`).
+4. **No stream conflict:** the tablet's particle draws ride
+   `UpdateNPCs` in d31's arm; the particle's own flight draws ride
+   `UpdateProjectiles` in d10's arm; c1's boss-84 stream is untouched.
+   The 526 deals no damage (damage 0 + the row's hostile false), so the
+   PVE/PVP walks no-op — the marker is inert exactly as the C#.
 
 - The C# producer: `NPC.cs`'s `AI()` aiStyle-83 block, `this.type == 437`
   (the CultistTablet, `NPCID.cs:11549`), the `ai[0] == -1` despawn countdown
@@ -91,11 +148,10 @@ ports. c1's `cultist_ai_step` does NOT cover the 526 source.**
   (`f61243c0`) wires aiStyle **84** to `npc_ai_cultist::cultist_ai_step`
   (the 439 boss, `NPC.cs:64414-65388`, states 4/7/8 deferred). The 526
   source is aiStyle **83** / type **437** — a DIFFERENT NPC arm c1 does not
-  touch. The port's `npc.rs` has no aiStyle-83 / CultistTablet arm (the
-  `update_lunatic_cultist` stub `:10660` is the 439 boss's spawn-in fade,
-  which c1 retires). So the 526's spawn-source is **UNPORTED** — the d10
-  98-arm's particle seek is live but no producer feeds it yet (the tablet
-  ritual is a separate NPC lane).
+  touch. (Historical note, superseded by the claim census above: at this
+  doc's first writing the port had no aiStyle-83 arm; W4-d31 has since
+  ported it unwired and W4-d40 rowed the kinds — the 98-arm's producer
+  now EXISTS on the d31/d40 branches, pending the wiring wave.)
 - **Cross-note:** the 526 particle's RNG (the `RotatedByRandom(2π)` pair +
   the `NextFloat()` speed per particle, the `Next(2)` gate) belongs to the
   tablet's aiStyle-83 arm, NOT the boss's `UpdateNPCs` stream position c1
@@ -105,6 +161,13 @@ ports. c1's `cultist_ai_step` does NOT cover the 526 source.**
 
 ## Witnesses
 
-Census verdicts, not new behaviour — no new witness tests. The stale 518
-comment fix (`editing.rs:5717`) is the only code change; the existing
-pot-loot witnesses cover the portal flag + the spawn.
+Census verdicts, not new behaviour — the stale 518 comment fix
+(`editing.rs:5717`) was the first round's only code change; the existing
+pot-loot witnesses cover the portal flag + the spawn. The §98 activation
+contract adds ONE composition witness (WRITTEN NOT RUN, code-only):
+`w4_d10_s98_the_tablet_payload_composes`
+(`projectile_ai_91_100.rs`) — a d31-shaped `HostileShotAi` payload
+spawned through the pool's seam flies the d10 seek and arrives at the
+packed target, both drain owner shapes (the stock 255 + hostile_local
+and the contract's owner-0 re-pin) simulate identically in
+single-player.
