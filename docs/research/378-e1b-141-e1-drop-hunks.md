@@ -1,4 +1,12 @@
-# 67 — The e1b-141 reconcile: e1 drop-hunks + keep-lanes (f3 × g66 × e1)
+# 378 — The e1b-141 reconcile: e1 drop-hunks + keep-lanes (f3 × g66 × e1)
+
+> **RENUMBER-CHAIN 67 → 378** (registry-150 §10.2, d54 tip `08d21666e`):
+> 67 belongs to W4-d54's round-1 own claim (`67-dust-orch-sites-claims.md`,
+> the dust-union lineage, 01:23:05 < f3's `58d16612f` 16:22:23) → f3's doc loses the key and
+> takes the free number **378**. This doc now carries key **378**;
+> refs updated on this branch: `docs/research/INDEX.md` (row 378),
+> `docs/ANALYSIS.md` (×5), `docs/PORT_MAP.md` (×1).
+> f3's 65→303 assignment unchanged, still owed.
 
 **Lane:** the player-move family (pulley / carpet / wallclimb / stealth — W4-f3
 canonical) + the player-dust site lanes. **Status:** three-way reconcile input,

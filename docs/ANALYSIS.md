@@ -39891,7 +39891,7 @@ The retire pass left the reconcile as INPUT (verdicts + a recipe). The seal pass
 COMPOSES it: it re-verified every verdict against the CURRENT sibling tips, adopted
 the verified-correct sibling arms into f3's canonical copies (so the merge is a
 pure drop, not a re-edit), and published the two-sided receipts. The reconcile is
-**SEALED** — the e1b-141 merger reads the declaration + research/66 + research/67
+**SEALED** — the e1b-141 merger reads the declaration + research/66 + research/378
 as the single lookup table; no re-compare is owed.
 
 **The sibling tips at the seal (re-probed, exact trees):**
@@ -39910,7 +39910,7 @@ The bible listed stoned/drowning/splash as "pre-21654, no f3/g66 counterpart", b
 f3's batch 1/2/4 ALSO ported them (`drain_stoned_dust`/`drain_drown_bubble`/
 `drain_splash_dust`/`drain_floor_dust`/`drain_double_jump_dust`), and f3's batch 3
 ported a partial wing-glide drain that overlaps g66's complete wing lane. The seal
-re-compared each pair against the C# and corrected the verdicts (research/67 §3,
+re-compared each pair against the C# and corrected the verdicts (research/378 §3,
 research/66 §4a). The corrected keep/drop table is the FINAL bible below.
 
 **The seven sibling arms ADOPTED into f3's canonical copies (the seal's code):**
@@ -39957,7 +39957,7 @@ the family's merge.
 | --- | --- | --- | --- | --- |
 | **Pulley** (FindPulley / CanMoveForwardOnRope / the Update rope block) | `:19644-19749` / `:24247-24266` / `:26116-26493` | `find_pulley` `:10198` / `tile_rope_kind` `:10185` / `can_move_forward_on_rope` `:10288` / `update_pulley_direction` `:10304` / `pulley_sidestep` `:10444` / `pulley_ride` `:10471`, the ride block `:7868`/`:8114`, the `:26135` cancel host, the `:26483` canCarpet refill, the releaseLeft/Right 7-tick latches | never ported (its carpet/wall lack the `!pulley_ride` gate) | never ported |
 | **Carpet** (CarpetMovement + the 934 grant + re-arms) | `:21842-21890` / `:15034-15037` / `:26100-26115` / `:22624` | `carpet_movement` `:10590` (the union shadow-read), grant `:5946`, call gate `:8097` (`!grappling && !tongued && !pulley_ride`), the `:26613-26617` run boost `:7748` + `:28066`/`:23537` step-up `:13180` | DROP `carpet_movement` `:10705` + grant `:5941` + the local consumer copies `:7727`/`:12895` (byte-identical, dedupe to f3) | no machine, no grant (`carpet_frame` rest-pin reader only — shared field, one definition) |
-| **WallClimb / Wallslide** (+ the 5 type-31 sites + the climbing grants) | `:21607-21840` / `:15038-15066` / `:14426-14444` / `Mount.cs:3002` | `wall_climb_movement` `:10057` / `wallslide_movement` `:10129` / `wall_probe` `:10003` / `wall_dust_suppressed` `:10021` / `queue_wall_dust` `:10038`, `WallDust` + `drain_wall_dust` `:953` (integer halves), grants `:5921-5946`/`:5657-5670`/`:5453`, the sliding consumers (`:20670`/`:20778`/`:20632`/`:26057`) | DROP `wall_climb_movement` `:10574` / `wallslide_movement` `:10650` / `queue_wall_dust` `:10548` + `player_trail_dust::drain_wall_dust` `:33` + grants (machines byte-identical, the corner form adopted INTO f3) | DROP `wall_climb_movement` `:10041` / `wallslide_movement` `:10137` / `climb_probe_solid` `:10125` + `player_dust2::wall_cling_puff` `:546` + `WallClingDust` `:536` (5 verified C# deviations, research/67 §1) |
+| **WallClimb / Wallslide** (+ the 5 type-31 sites + the climbing grants) | `:21607-21840` / `:15038-15066` / `:14426-14444` / `Mount.cs:3002` | `wall_climb_movement` `:10057` / `wallslide_movement` `:10129` / `wall_probe` `:10003` / `wall_dust_suppressed` `:10021` / `queue_wall_dust` `:10038`, `WallDust` + `drain_wall_dust` `:953` (integer halves), grants `:5921-5946`/`:5657-5670`/`:5453`, the sliding consumers (`:20670`/`:20778`/`:20632`/`:26057`) | DROP `wall_climb_movement` `:10574` / `wallslide_movement` `:10650` / `queue_wall_dust` `:10548` + `player_trail_dust::drain_wall_dust` `:33` + grants (machines byte-identical, the corner form adopted INTO f3) | DROP `wall_climb_movement` `:10041` / `wallslide_movement` `:10137` / `climb_probe_solid` `:10125` + `player_dust2::wall_cling_puff` `:546` + `WallClingDust` `:536` (5 verified C# deviations, research/378 §1) |
 | **Stealth** (Shroomite + Vortex chain + the 2 ring sites + the toggle + set-loss) | `:25733-25899` / `:56775-56778` / `:16315-16321` | `update_stealth` `:9856` (the full else-if chain), `stealth: 1.0` spawn `:3311` (C# `:1562`), `key_double_tap_down` toggle `:12714`, the Always_Vortex disarm `:7064`, `VortexStealthDust` + `drain_vortex_stealth` `:991` | no stealth machine | DROP `update_vortex_stealth` `:10290` (vortex-arm-only, reset deferred) + `stealth: 0.0` spawn `:3063` (WRONG vs `:1562`) + `player_dust2::vortex_stealth_rings` `:1117` + `VortexRingDust` `:1106` (chain-identical drain, dedupe to f3) |
 
 **The shared dust-site drains (f3 canonical, e1/g66 duplicates drop):**
@@ -39966,7 +39966,7 @@ the family's merge.
 `:1114` (`:23790`, integer half + falling capture adopted), `drain_double_jump_dust`
 `:748` (`:21892`, sandstorm integer half + gore argument-draw adopted). e1's
 `stoned_burst`/`drown_bubble`/`liquid_splash`/`make_floor_dust`/`double_jump_visuals`
-(`player_dust2.rs`) + their host machines + drain calls DROP (research/67 §3).
+(`player_dust2.rs`) + their host machines + drain calls DROP (research/378 §3).
 
 **The wing-glide drain — g66 canonical (f3's partial copy DROPS):** g66's
 `player_wing_dust::drain_wing_glide` `:263` is the complete wing lane (the
@@ -40003,7 +40003,7 @@ for the merger/future-wave). The FindPulley stool gate stays folded false until
 that seam lands.
 
 **The receipts:** research/66 (the f3 × g66 mutual receipt, both sides sign) +
-research/67 (the e1 drop-hunks + keep-lanes). The merger reads these + this bible;
+research/378 (the e1 drop-hunks + keep-lanes). The merger reads these + this bible;
 the reconcile is SEALED.
 
 **Witness ledger after the seal:** 56 `w4_f3_*` test fns (the retire's 54 + the
