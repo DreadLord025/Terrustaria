@@ -845,6 +845,11 @@ impl App {
             // DefaultAssignNewItemsToPlayer (`MessageBuffer.cs:3388-3391`)
             // lands with the apply-wiring lanes (g48-g52) / S1-I-4.
             C2s::ItemFrameTryPlacing(_) => {}
+            // S1-I-1 W4-f21: `94`'s enableDebugCommands gate + command
+            // ladder (`MessageBuffer.cs:3469-3516`) lands with the
+            // apply-wiring lanes (g48-g52) / S1-I-4 — the port has no
+            // debug-command surface yet, the codec is the census record.
+            C2s::DevCommands(_) => {}
         }
     }
 
@@ -1927,6 +1932,11 @@ impl App {
             // (`MessageBuffer.cs:3312-3374`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             S2c::ItemTweaker(_) => {}
+            // S1-I-1 W4-f21: `94`'s client debug ladder
+            // (`MessageBuffer.cs:3469-3516`) and `104`'s shop-slot apply
+            // (`:3715-3735`, no live send site) land with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::DevCommands(_) | S2c::ShopOverride(_) => {}
         }
     }
 

@@ -282,6 +282,23 @@ pub mod id {
     /// (`MessageBuffer.cs:165`'s `b != 93` escape) — the C# accepts the
     /// frame early, then drops it.
     pub const SOCIAL_HANDSHAKE: u8 = 93;
+    /// `94 DevCommands` (`MessageID.cs:202`) — writer
+    /// `NetMessage.cs:1327-1332` (`string command + int + float + float`),
+    /// reader `MessageBuffer.cs:3463-3518` (the `enableDebugCommands` gate
+    /// + the `/showdebug` / `/randomizeprojslots` / `/setserverping` /
+    /// `/quickload-*` ladder). Both sides send (`DebugOptions.cs:68-70`,
+    /// `QuickLoad.cs:171`, the reader's own relays).
+    pub const DEV_COMMANDS: u8 = 94;
+    /// `104 ShopOverride` (`MessageID.cs:222`) — writer
+    /// `NetMessage.cs:1387-1394`, reader `MessageBuffer.cs:3715-3735`.
+    /// VERBATIM QUIRK: the two sides DISAGREE on the third field — the
+    /// writer sends `(short)number3 < 0 ? 0f : number3` (a 4-byte FLOAT,
+    /// the stack), the reader reads `ReadInt16` (2 bytes) then misaligns
+    /// the rest. Zero `SendData(104)` call sites exist tree-wide, so the
+    /// mismatch is dead code in vanilla; the port keeps BOTH shapes
+    /// verbatim (encode = writer, decode = reader) and documents the
+    /// divergence. S2c-only (the reader is `netMode == 1`-gated).
+    pub const SHOP_OVERRIDE: u8 = 104;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2090,6 +2107,43 @@ pub struct TryPlacingItem {
     pub stack: i16,
 }
 
+/// `msg 94 DevCommands`'s body (`NetMessage.cs:1327-1332`): the command
+/// string (`text.ToString()` — a plain `BinaryWriter.Write(string)`, NOT
+/// a NetworkText), then `number` int, `number2` float, `number3` float.
+/// The reader (`MessageBuffer.cs:3465-3468`) reads the string, the int,
+/// `(int)ReadSingle()` and DROPS the third float. The debug gate +
+/// command ladder are the apply arm's.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DevCommands {
+    pub command: String,
+    pub arg_int: i32,
+    pub arg_float: f32,
+    /// The writer's third float; the reader consumes and discards it
+    /// (`MessageBuffer.cs:3468`'s bare `ReadSingle()`).
+    pub arg_float2: f32,
+}
+
+/// `msg 104 ShopOverride`'s WRITER body (`NetMessage.cs:1387-1394`):
+/// `(byte)slot + (short)type + float stack (negative clamped to 0f) +
+/// (byte)prefix + int value + (byte)flags`. The READER
+/// (`MessageBuffer.cs:3719-3724`) reads `byte + short + SHORT + byte +
+/// int + byte` — a 2-byte stack where the writer sends 4. No send site
+/// exists, so the port keeps the writer shape for encode and the reader
+/// shape for decode, verbatim on both sides (the round trip is NOT
+/// byte-identity past the stack field — that is the C# bug, pinned).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShopOverride {
+    pub slot: u8,
+    pub kind: i16,
+    /// The writer's float stack; `(short)stack < 0` writes `0f`
+    /// (`NetMessage.cs:1390`'s ternary).
+    pub stack: f32,
+    pub prefix: u8,
+    pub value: i32,
+    /// `bitsByte22[0]` is `buyOnce` (`MessageBuffer.cs:3732`).
+    pub flags: u8,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2239,6 +2293,10 @@ pub enum C2s {
     /// on an item frame (`TEItemFrame.cs:150`; host `TryPlacing`,
     /// `MessageBuffer.cs:3377-3393`). C2s-only.
     ItemFrameTryPlacing(TryPlacingItem),
+    /// `94 DevCommands` — a debug command (`DebugOptions.cs:68-70`,
+    /// `QuickLoad.cs:171`; the reader's gate + ladder
+    /// `MessageBuffer.cs:3463-3518`). Both directions.
+    DevCommands(DevCommands),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2454,6 +2512,13 @@ pub enum S2c {
     /// `93 SocialHandshake` — no body; the reader ignore group
     /// (`MessageBuffer.cs:4483-4490`), accept-gate-whitelisted (`:165`).
     SocialHandshake,
+    /// `94 DevCommands` — the host's debug relay
+    /// (`MessageBuffer.cs:3488`/`:3503`). Both directions.
+    DevCommands(DevCommands),
+    /// `104 ShopOverride` — a shop slot override (no live send site; the
+    /// writer/reader stack-width mismatch is kept verbatim, see the
+    /// struct doc). S2c-only.
+    ShopOverride(ShopOverride),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2517,6 +2582,7 @@ impl C2s {
             Self::QuickStackRequest(_) => id::QUICK_STACK_CHESTS,
             Self::TileEntityPlacement(_) => id::TILE_ENTITY_PLACEMENT,
             Self::ItemFrameTryPlacing(_) => id::ITEM_FRAME_TRY_PLACING,
+            Self::DevCommands(_) => id::DEV_COMMANDS,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2625,6 +2691,12 @@ impl C2s {
             Self::ItemFrameTryPlacing(p) => {
                 w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
             }
+            // `NetMessage.cs:1327-1332`: plain string + int + float + float.
+            Self::DevCommands(d) => w
+                .str(&d.command)
+                .i32(d.arg_int)
+                .f32(d.arg_float)
+                .f32(d.arg_float2),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2818,6 +2890,15 @@ impl C2s {
                 prefix: r.u8()?,
                 stack: r.i16()?,
             }),
+            // `MessageBuffer.cs:3465-3468`: ReadString + ReadInt32 +
+            // (int)ReadSingle + a bare ReadSingle (consumed, discarded —
+            // the port keeps it in arg_float2 for the byte census).
+            id::DEV_COMMANDS => Self::DevCommands(DevCommands {
+                command: r.str()?,
+                arg_int: r.i32()?,
+                arg_float: r.f32()?,
+                arg_float2: r.f32()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2994,6 +3075,8 @@ impl S2c {
             Self::ItemTweaker(_) => id::ITEM_TWEAKER,
             Self::SpawnInstancedItem(_) => id::SPAWN_INSTANCED_ITEM,
             Self::SocialHandshake => id::SOCIAL_HANDSHAKE,
+            Self::DevCommands(_) => id::DEV_COMMANDS,
+            Self::ShopOverride(_) => id::SHOP_OVERRIDE,
         }
     }
 
@@ -3146,6 +3229,26 @@ impl S2c {
             | Self::SocialHandshake => w,
             // `NetMessage.cs:646-669` — the shared case-21 body under id 90.
             Self::SpawnInstancedItem(d) => d.write_to(w),
+            // `NetMessage.cs:1327-1332` — the shared dev-command body.
+            Self::DevCommands(d) => w
+                .str(&d.command)
+                .i32(d.arg_int)
+                .f32(d.arg_float)
+                .f32(d.arg_float2),
+            // `NetMessage.cs:1387-1394` — the WRITER shape: byte + short +
+            // FLOAT stack (negative → 0f) + byte + int + byte.
+            Self::ShopOverride(s) => {
+                // The C# `(short)number3` is the x86 two-step float→int→
+                // short truncation; `as i32 as i16` mirrors it (a plain
+                // `as i16` would saturate instead of wrapping).
+                let stack = if (s.stack as i32 as i16) < 0 { 0.0 } else { s.stack };
+                w.u8(s.slot)
+                    .i16(s.kind)
+                    .f32(stack)
+                    .u8(s.prefix)
+                    .i32(s.value)
+                    .u8(s.flags)
+            }
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -3463,6 +3566,25 @@ impl S2c {
             // `MessageBuffer.cs:1445-1459` — the shared case-21 read; the
             // instanced/reserved tail (`:1489-1493`) is the apply arm's.
             id::SPAWN_INSTANCED_ITEM => Self::SpawnInstancedItem(Box::new(ItemState::read_from(r)?)),
+            // `MessageBuffer.cs:3465-3468` — the shared dev-command read.
+            id::DEV_COMMANDS => Self::DevCommands(DevCommands {
+                command: r.str()?,
+                arg_int: r.i32()?,
+                arg_float: r.f32()?,
+                arg_float2: r.f32()?,
+            }),
+            // `MessageBuffer.cs:3719-3724` — the READER shape: byte +
+            // short + SHORT stack (the writer sends a float — the C#
+            // mismatch, kept verbatim) + byte + int + byte. The decoded
+            // stack is widened to the struct's f32 field.
+            id::SHOP_OVERRIDE => Self::ShopOverride(ShopOverride {
+                slot: r.u8()?,
+                kind: r.i16()?,
+                stack: r.i16()? as f32,
+                prefix: r.u8()?,
+                value: r.i32()?,
+                flags: r.u8()?,
+            }),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
             id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
@@ -6422,6 +6544,118 @@ mod tests {
             other => panic!("expected 93, got {:?}", other.msg_id()),
         }
         assert_eq!(r.remaining(), 0);
+    }
+
+    #[test]
+    fn w4_f21_dev_commands_round_trips_both_directions() {
+        // `NetMessage.cs:1327-1332`: plain string (NOT NetworkText) + int
+        // + float + float. `DebugOptions.cs:68`'s /showdebug shape.
+        let d = DevCommands {
+            command: "/showdebug".to_string(),
+            arg_int: 0,
+            arg_float: 1.0,
+            arg_float2: 0.0,
+        };
+        let mut body = vec![10u8]; // the 7-bit length of "/showdebug"
+        body.extend_from_slice(b"/showdebug");
+        body.extend_from_slice(&0i32.to_le_bytes());
+        body.extend_from_slice(&1.0f32.to_le_bytes());
+        body.extend_from_slice(&0.0f32.to_le_bytes());
+        let f = C2s::DevCommands(d.clone()).encode();
+        assert_eq!(f[2], 94);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::DevCommands(got) => assert_eq!(got, d),
+            other => panic!("expected 94, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        let f = S2c::DevCommands(d.clone()).encode();
+        assert_eq!(f[2], 94);
+        match S2c::decode(94, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::DevCommands(got) => assert_eq!(got, d),
+            other => panic!("expected 94, got {:?}", other.msg_id()),
+        }
+        // The /setserverping shape carries a real int + float
+        // (`DebugOptions.cs:70`: number2 = Shared_ServerPing).
+        let ping = DevCommands {
+            command: "/setserverping".to_string(),
+            arg_int: 0,
+            arg_float: 250.0,
+            arg_float2: 0.0,
+        };
+        let f = C2s::DevCommands(ping.clone()).encode();
+        match C2s::decode(94, &mut NetReader::new(&f[3..])).expect("decode") {
+            C2s::DevCommands(got) => assert_eq!(got, ping),
+            other => panic!("expected 94, got {:?}", other.msg_id()),
+        }
+        // A truncated float tail must not decode.
+        assert!(C2s::decode(94, &mut NetReader::new(&body[..body.len() - 1])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_shop_override_keeps_the_writer_reader_mismatch_verbatim() {
+        // The WRITER (`NetMessage.cs:1387-1394`): byte + short + FLOAT
+        // stack + byte + int + byte = 13 body bytes.
+        let s = ShopOverride {
+            slot: 3,
+            kind: 757,
+            stack: 5.0,
+            prefix: 81,
+            value: 10000,
+            flags: 1, // buyOnce
+        };
+        let f = S2c::ShopOverride(s).encode();
+        assert_eq!(f[2], 104);
+        let mut body = vec![3u8];
+        body.extend_from_slice(&757i16.to_le_bytes());
+        body.extend_from_slice(&5.0f32.to_le_bytes()); // the FLOAT stack
+        body.push(81);
+        body.extend_from_slice(&10000i32.to_le_bytes());
+        body.push(1);
+        assert_eq!(&f[3..], &body);
+        assert_eq!(f.len(), 3 + 13);
+        // The READER (`MessageBuffer.cs:3719-3724`) reads a SHORT stack —
+        // 11 body bytes. Feeding the writer's frame to the reader
+        // misaligns exactly as the C# does: the short eats the float's
+        // low two bytes (5.0f32 = 0x40A00000 → low short 0), the prefix
+        // byte eats the float's third byte (0xA0 = 160), the int eats
+        // [0x40, 81, 0x10, 0x27] and the flags byte eats 0x00.
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(104, &mut r).expect("decode") {
+            S2c::ShopOverride(d) => {
+                assert_eq!(d.slot, 3);
+                assert_eq!(d.kind, 757);
+                assert_eq!(d.stack, 0.0); // the float's low short
+                assert_eq!(d.prefix, 0xA0); // the float's third byte
+                assert_eq!(d.value, i32::from_le_bytes([0x40, 81, 0x10, 0x27]));
+                assert_eq!(d.flags, 0);
+            }
+            other => panic!("expected 104, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 2); // the writer's two extra bytes
+        // A clean READER-shaped frame round trips through decode.
+        let mut rbody = vec![3u8];
+        rbody.extend_from_slice(&757i16.to_le_bytes());
+        rbody.extend_from_slice(&5i16.to_le_bytes()); // the SHORT stack
+        rbody.push(81);
+        rbody.extend_from_slice(&10000i32.to_le_bytes());
+        rbody.push(1);
+        match S2c::decode(104, &mut NetReader::new(&rbody)).expect("decode") {
+            S2c::ShopOverride(d) => {
+                assert_eq!(d.stack, 5.0);
+                assert_eq!(d.prefix, 81);
+                assert_eq!(d.value, 10000);
+                assert_eq!(d.flags, 1);
+            }
+            other => panic!("expected 104, got {:?}", other.msg_id()),
+        }
+        // The negative-stack clamp: (short)(-3f) < 0 → the writer sends 0f.
+        let neg = ShopOverride { stack: -3.0, ..s };
+        let f = S2c::ShopOverride(neg).encode();
+        assert_eq!(&f[6..10], &0.0f32.to_le_bytes());
+        // S2c-only: no C2s arm.
+        assert!(C2s::decode(104, &mut NetReader::new(&rbody)).is_none());
     }
 
     #[test]
