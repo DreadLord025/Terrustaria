@@ -39417,3 +39417,65 @@ commutative, so the intra-family order only documents the C# layout.
 14 witness tests in `player_lights_b.rs` are WRITTEN, NOT RUN.** The first
 build after the merge must run `cargo test -p tr-app player_lights_b` plus the
 catalog command.
+
+## DOC-SWEEP lane 23: the lights gaps (W4-e7, 2026-11-21, code-only)
+
+The four cited gaps from the census close above, re-probed against the
+in-flight branch claims (research/102). Two landed here, two stay cited
+(one owned by an unmerged branch, one a determinism-affecting deferred port).
+
+**The Snapping Stone trio — LANDED (`5ae32127`).** The three ready lights
+(`Player.cs:24571-24585`) now port: `accSnappingStone` 6167 / `accPyroclast`
+6178 / `accArmletOfRuin` 6179 grants (`ApplyEquipFunctional`
+`:14494-14496`/`:14580-14587`), `ResetEffects` clears (`:18476-18478`), the
+shared `accSnappingStoneCooldown` countdown (`Update_SnappingStone`
+`:28385-28410`, wired at the `:24564` world-sim position before
+`Update_AmmoCycler`), the light-up getter (`:3391-3396` = `cooldown == 0`),
+and `snapping_stone_lights` in the ONE `EntityLights` batch (10 → 13 of the
+14). The strike machine (`TryMakingSnappingStoneStrike`,
+`Projectile.cs:14283-14395`, the 360-tick setter `:14316`) stays the cited
+projectile-family gap: it is RNG-bearing (the per-strike `ParticleOrchestrator`
+spawns draw `Main.rand`) and the 1121/1131/1132 proj rows are unported. The
+cooldown stays 0 in play, so the lights fire whenever a member is worn — the
+C# behaviour for a never-struck accessory. The recharge cue at the cooldown's
+zero crossing (`:28394-28408`, Item30/Item20/Item28 at `MountedCenter`) is the
+cited audio/particle seam (rides the strike family). 7 witnesses WRITTEN NOT RUN.
+
+**wing-27 Shroomite light — cited skip (f3 owns the producer).** The producer
+(`update_stealth`, `Player.cs:25733-25899`, `stealth` default 1f, the Shroomite
+set grant `ArmorSetBonuses.cs:370-373`/`:392-394`) LANDED on the in-flight
+`task/W4-f3-dust-player-3` branch but is NOT merged here (verified
+`git merge-base --is-ancestor` exit 1). On this base `stealth` has no producer,
+so the light would be a constant `0.4f` — wrong. Wiring recipe once f3 merges:
+`shroomite_wing_light(p)` gated `wings_logic == 27 && has_wings` (the port's
+`wings`/`wingsLogic` are one field, so `wingsLogic == wings` folds true),
+`0.4 * stealth` at the quotient-truncated centre, rgb `[n, n*0.9, n*0.2]` —
+the `kazzymodus_wing_light` shape. NOT stacked on the unmerged branch.
+
+**The global-flicker oscillators — LANDED (`999b292af`).** `masterColor`
+(`DoUpdate_AnimateCursorColors`, `Main.cs:18225-18235`, ±0.05) and
+`martianLight` (`DoUpdate_AnimateTileGlows`, `:18251-18261`, ±0.015) ride a
+shared `bounce_oscillator` helper (the `demon_torch` precedent), init 1f/dir 1
+(`:66831-66834`), RNG-free. The per-tile torch flicker itself is landed
+(d56/e8, `scanner.rs::torch_lights`); these are the global state half. The
+readers stay cited: `martianLight` → `TileDrawing.cs:498`'s `_martianGlow`
+(fed 0 until the glow pass + Martian event), `masterColor` → the rarity -13
+master text colour (`Main.cs:20249`/`:20562`). 3 witnesses WRITTEN NOT RUN.
+
+**The modern `UpdateLightDecay` table — cited (deferred).** The new engine's
+per-medium decay (`LightingEngine.cs:141-206`) varies water decay per
+`Main.waterStyle` (13 arms) and applies nightVision ×1.03 / blind ×0.95 /
+blackout+headcovered ×0.85 + the `SceneState.airLightDecay`/`solidLightDecay`
+factors; the port hardcodes style-0 water (`blur.rs:36`) and drops the buff/
+SceneState terms (the `scene.rs:1520-1521` fields have no blur consumer). The
+legacy engine's equivalent IS ported (`legacy.rs:1004-1048`); the WoF `gross`
+block is d65's (S1-E-19d), the modern mask residuals are d66's. The fix adds
+fields to `LightParams`/`LightKey` and changes the cached light output — a
+determinism-affecting change to the frozen G6 path needing a byte-equality
+A/B, in `blur.rs`/`mod.rs` which d66 is actively editing. Deferred to the
+10-lighting.md "[M] Water-style decay + buff/debuff decay" seed (research/102
+§4). The water jitter (S1-A-6) and fixed-18 padding (S1-G-10) are already
+exact — 10-lighting.md deviations 4/5 are stale.
+
+**Code-only mode: no cargo/rustc/rustfmt/tests/dotnet/graphify invoked; the
+10 new witnesses (7 Snapping Stone + 3 oscillator) are WRITTEN, NOT RUN.**
