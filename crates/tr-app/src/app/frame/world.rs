@@ -593,7 +593,7 @@ impl App {
         r: &mut tr_render::SpriteRenderer,
         gpu: &tr_render::Gpu,
     ) {
-        if !map.as_ref().is_some_and(|m| !m.load_map) {
+        if !Self::map_reveal_load_gate(map) {
             return; // `:61863`'s `!Main.loadMap` — blocks the WHOLE block
         }
         // `MapRenderer.checkMap` (`MapRenderer.cs:322`, inside
@@ -622,15 +622,16 @@ impl App {
     }
 
     /// `Main.cs:61863`: the driver's `!Main.loadMap` head gate — a staged
-    /// `.map` upload blocks the WHOLE block (sweep + consume). Split out
-    /// so the GPU-free witness can read the same predicate.
-    pub(crate) fn map_reveal_load_gate(&self) -> bool {
-        self.map.as_ref().is_some_and(|m| !m.load_map)
+    /// `.map` upload blocks the WHOLE block (sweep + consume). Shared by
+    /// the live path and the GPU-free witness.
+    pub(crate) fn map_reveal_load_gate(map: &Option<crate::map::WorldMap>) -> bool {
+        map.as_ref().is_some_and(|m| !m.load_map)
     }
 
     /// The `updateMap` / `ChangesQueued` consumer (`Main.cs:61886-61898`),
     /// GPU-free — the driver's flag-lifecycle half; the witnesses exercise
-    /// it without a renderer.
+    /// it without a renderer (the live path calls the field form directly).
+    #[cfg(test)]
     pub(crate) fn map_reveal_consume(&mut self, paused: bool) {
         Self::map_reveal_consume_fields(
             &mut self.map,
@@ -696,10 +697,12 @@ impl App {
     /// sections drawn, unlock each while `DebugOptions.unlockMap != 0 &&
     /// SectionLoaded`, zero the option on an empty pass without a pending
     /// refresh. Returns the drawn sections for the paint wrapper; the
-    /// witnesses exercise this core (no renderer needed). `budget_ms`
+    /// witnesses exercise this core (no renderer needed — the live path
+    /// calls the field form directly). `budget_ms`
     /// stands in for the C# `Stopwatch`'s 5 ms (`:61871`) — the driver
     /// passes 5.0; a test passes a large budget to drain the whole spiral
     /// in one call (W4-f46 salvage, research/84 §3).
+    #[cfg(test)]
     pub(crate) fn map_reveal_sweep_core(&mut self, budget_ms: f64) -> Vec<(i32, i32)> {
         let pos = self
             .player
@@ -1046,12 +1049,12 @@ mod w4_e18_reveal_driver_tests {
         m.update_map = Some([40, 40, 100, 60]);
         // The gate predicate refuses — the driver returns before BOTH
         // halves (the GPU wrapper's first `if` reads this same fn).
-        assert!(!app.map_reveal_load_gate(), "`:61863`'s !Main.loadMap");
+        assert!(!App::map_reveal_load_gate(&app.map), "`:61863`'s !Main.loadMap");
         assert!(!app.section_manager.map_section_drawn(0, 0), "no sweep");
         assert!(app.map.as_ref().unwrap().update_map.is_some(), "no consume");
         // The tail's `loadMap = false` (`MapRenderer.cs:198`) lifts it.
         app.map.as_mut().unwrap().draw_to_map_queues();
-        assert!(app.map_reveal_load_gate(), "the draw tail lifts the gate");
+        assert!(App::map_reveal_load_gate(&app.map), "the draw tail lifts the gate");
     }
 
     /// W4-e18 first half (written, not run — code-only): `DrawToMap`'s first
