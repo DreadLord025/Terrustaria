@@ -118,6 +118,7 @@
 //! | 495-503 | `:84834` | the 327 Pumpking death (9-gore loop 476-484, vel x0, type-189 scale-1.1 dust) |
 //! | 504-508 | `:84861-84865` | the 345 IceQueen death (5 gores 513/514/514/515/516, vel x0) |
 //! | 509-515 | `:84855` | the 325 MourningWood death (7-gore loop 469-475, vel x0, type-191 scale-1.1 dust) |
+//! | 516-524 | `:84884-84888` | the 344 Everscream death (two loops: 508-512 then 509-512, vel x0, type-196 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3119,6 +3120,39 @@ fn mourning_wood_death(
     }
 }
 
+/// The 344 Everscream death (`NPC.cs:84878-84889`, sites 516-524): the
+/// 60-dust type-196 burst (SpeedX `2*hitDirection`, SpeedY -2), then TWO
+/// gore loops — `num338 = 508..=512` (5 gores) then `num339 = 509..=512`
+/// (4 gores), all at position with velocity ×0.
+fn everscream_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84878-84881` — the 60-dust type-196 burst.
+    for _ in 0..60 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 196, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let s = npc.scale;
+    // `:84882-84885` — the 508..=512 loop, velocity x0.
+    for num338 in 508..=512 {
+        gore.new_gore(rng, world, pos, Vec2::ZERO, num338, s);
+    }
+    // `:84886-84889` — the 509..=512 loop, velocity x0.
+    for num339 in 509..=512 {
+        gore.new_gore(rng, world, pos, Vec2::ZERO, num339, s);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3482,6 +3516,10 @@ pub fn hit_effect_c(
     // `:84838-84858` — the 325 MourningWood arm (sites 509-515).
     if npc_type == 325 && npc.hp <= 0 {
         mourning_wood_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84867-84891` — the 344 Everscream arm (sites 516-524, both loops).
+    if npc_type == 344 && npc.hp <= 0 {
+        everscream_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5566,6 +5604,24 @@ mod tests {
         let types: Vec<i32> = gore.slots()[..7].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![469, 470, 471, 472, 473, 474, 475]);
         for i in 0..7 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+    }
+
+    /// `NPC.cs:84884-84888` — the Everscream death: the two gore loops
+    /// 508-512 then 509-512 (9 gores) at position with velocity x0, after
+    /// the 60-dust type-196 burst.
+    #[test]
+    fn w4_f10_the_everscream_death_spawns_both_loops() {
+        let w = air();
+        let n = boss(100.0, 100.0, 60.0, 80.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(433);
+        everscream_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..9].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![508, 509, 510, 511, 512, 509, 510, 511, 512]);
+        for i in 0..9 {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
         }
     }
