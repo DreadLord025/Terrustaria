@@ -69,6 +69,7 @@
 //! | 247-249 | `:83406-83408` | the 420 Vortex Rider death (3 gores at Center, vel x0.8/x0.9) |
 //! | 250-252 | `:83503-83505` | the 409 Stardust Spider death (3 gores at Center, vel x0.8/x0.9) |
 //! | 253-258 | `:83557-83562` | the 407 Stardust Cell death (6 gores, Next(3)!=0 type-17 dust gate) |
+//! | 259-263 | `:83657-83661` | the 411 Stardust Dragon body death (5 gores, Next(2)-gated type-229 dust) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1540,6 +1541,44 @@ fn stardust_cell_death(
     gore.new_gore(rng, world, c, vel * 0.9, 781, 1.0); // :83562
 }
 
+/// The 411 Stardust Dragon body death (`NPC.cs:83649-83661`, sites
+/// 259-263): the 20-iteration burst (type-17 dust + `Next(2) == 0`-gated
+/// type-229 dust, noGravity only — no velocity/scale write), then the 5
+/// gores 772/773/773/774/774 at the +0/+20/+20/+34/+34 Y ladder.
+fn stardust_dragon_body_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:83649-83656` — 20 iterations: type-17 + the Next(2)-gated type-229.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 17, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        if rng.next_max(2) == 0 {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 229, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            dust.slot_mut(idx).no_gravity = true;
+        }
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 772, s); // :83657
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 773, s); // :83658
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 773, s); // :83659
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 774, s); // :83660
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 774, s); // :83661
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1720,6 +1759,10 @@ pub fn hit_effect_c(
     // `:83532-83564` — the 407 Stardust Cell arm (sites 253-258).
     if npc_type == 407 && npc.hp <= 0 {
         stardust_cell_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83634-83663` — the 411 Stardust Dragon body arm (sites 259-263).
+    if npc_type == 411 && npc.hp <= 0 {
+        stardust_dragon_body_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2750,6 +2793,24 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the cell death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:83657-83661` — the Stardust Dragon body death: the 5 gores
+    /// 772/773/773/774/774 at +0/+20/+34 Y, after the 20x(type-17 +
+    /// Next(2)-gated type-229) burst.
+    #[test]
+    fn w4_f10_the_stardust_dragon_body_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(173);
+        stardust_dragon_body_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![772, 773, 773, 774, 774]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
