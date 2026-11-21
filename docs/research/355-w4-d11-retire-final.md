@@ -1,11 +1,17 @@
-# 245 — W4-d11 RETIRE FINAL: the band-101-110 closeout + the family declaration
+# 355 — W4-d11 RETIRE FINAL: the band-101-110 closeout + the family declaration
+
+> **Chain-banner: 245 → 355** (registry-150 §9 UNIFIED FINAL, d54 tip
+> `e9ac39459`, §9.2 row 355). The original 245 self-pick lost the key:
+> **g48 WINS 245** (pre-publish `2b61530b4` 14:30:16, §7.1/§8.2 — the key
+> stays winner-consumed). d11 takes the Lead-assigned **355**; no self-picks.
 
 Branch `task/W4-d11-proj-ai-101-110`, worktree TR-W4-d11. Number per the d54
-collision registry (`150`, `38bfd1d22`): the RETIRE-tip full scan (362
-`task/W4-*` remote tips, `git ls-tree docs/research/` per tip) finds **245
-first-free** — 244 taken (f39 `8704691a3` + g48 `2b61530b4`), 246/247 claimed
-mid-round by d10/g40/g43 (the live race the registry documents), 245 unclaimed
-at every tip at the scan AND the pre-write re-check. The census doc renumbered
+collision registry (`150` §9.2 row 355): the original RETIRE-tip full scan
+(362 `task/W4-*` remote tips, `git ls-tree docs/research/` per tip) picked 245
+as first-free — 244 taken (f39 `8704691a3` + g48 `2b61530b4`), 246/247 claimed
+mid-round by d10/g40/g43 — but the scan missed g48's PRE-PUBLISH 244/245 wins
+(`2b61530b4` 14:30:16); §9 adjudicates 245 = g48 WINS and assigns d11 **355**.
+The census doc renumbered
 `26d` → **164** per the registry's §1 assignment (d12 wins the 26d key).
 
 Code-only round: witnesses WRITTEN NOT RUN, no cargo/tests/rustfmt/graphify
@@ -237,5 +243,6 @@ commits planned after this RETIRE round.
   (WRITTEN NOT RUN); the wind-up stand-in comment cites the g64 correction
   (the arm itself unchanged — it drops wholesale at the keep-one).
 - `docs/research/26d-…` → `164-…` (the registry rename) + the RETIRE section.
-- This doc (245) + the INDEX row + the ANALYSIS RETIRE section + the PORT_MAP
+- This doc (355; originally 245, renumbered per registry §9.2 row 355 — g48
+  WINS 245) + the INDEX row + the ANALYSIS RETIRE section + the PORT_MAP
   addendum + the anchors canary.

@@ -150,7 +150,7 @@ the four hit-site rolls ride the `UpdateProjectiles` stream in C# order.
   (verified — the seam is d77's, `0573b70f2`), so it adds no competing 539/576
   cue. Merge keeps d77's cue arms; d11's AI-row + proc work is disjoint.
 
-## RETIRE round (the five-item closeout — research/245 is the FINAL)
+## RETIRE round (the five-item closeout — research/355 is the FINAL; chain 245→355 per registry-150 §9.2 row 355)
 
 1. **Git-log census, band 101-110.** `origin/main` (`051600da8` at the scan)
    carries NONE of the band: no `projectile_ai_101_110.rs` (ls-tree empty),
@@ -205,10 +205,12 @@ the four hit-site rolls ride the `UpdateProjectiles` stream in C# order.
    dust BODIES ride g64's superset; the 596 keep-one is d11's
    `ai_nebula_sphere` + g64's `trail_596` bool seam (g64 FINAL pins it);
    the 582/584/619 cited skips all landed in the DOC-SWEEP wave.
-5. **research FINAL + declaration** → `245-w4-d11-retire-final.md` (the
-   number per the registry-150 first-free scan at the RETIRE tip: 244
-   taken f39/g48, 245 free at all 361 tips; the 246/247 seats were claimed
-   by d10/g40/g43 mid-round — the race the registry documents). The
+5. **research FINAL + declaration** → `355-w4-d11-retire-final.md` (chain
+   245→355 per registry-150 §9.2 row 355, d54 tip `e9ac39459`: the original
+   first-free scan at the RETIRE tip picked 245 — 244 taken f39/g48, the
+   246/247 seats claimed by d10/g40/g43 mid-round — but missed g48's
+   PRE-PUBLISH 244/245 wins `2b61530b4` 14:30:16; §9 adjudicates g48 WINS 245
+   and assigns d11 355). The
    declaration: the band-101-110 family is d11-owned wholesale; the nebula
    PROC producer is d11-unique (360-tip grep census: only d11 carries
    `set_nebula`/`nebula_cd`/`:13826`/`wants_nebula_pickup`; d6's hit is the

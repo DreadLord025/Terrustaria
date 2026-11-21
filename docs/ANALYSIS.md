@@ -39247,8 +39247,9 @@ click buffers; the player tick applies).
 
 ## The W4-d11 RETIRE round (the band-101-110 closeout)
 
-The five-item RETIRE (research/245 FINAL, the census renumbered 26d->164 per
-registry-150). Code-only: no cargo/tests/rustfmt/graphify; the one new witness
+The five-item RETIRE (research/355 FINAL — chain 245→355 per registry-150
+§9.2 row 355, d54 `e9ac39459`: g48 WINS 245 pre-publish `2b61530b4`; the
+census renumbered 26d->164 per registry-150). Code-only: no cargo/tests/rustfmt/graphify; the one new witness
 is WRITTEN NOT RUN.
 
 1. **The git-log census**: the band 101-110 + the nebula-sweep are NOT on
@@ -39271,7 +39272,7 @@ is WRITTEN NOT RUN.
    witness pins it). The d11 wind-up `scale = 0.0` stand-in stays as-is
    (the arm drops wholesale; no hybrid).
 4. **The all-armed/rowed census**: all ten styles one live arm each, all 20
-   rowed kinds armed (research/245 s4 table). Gaps all cited + owned
+   rowed kinds armed (research/355 s4 table). Gaps all cited + owned
    elsewhere: the 535 head waits on d10 (row+arm verified at its tip), the
    578/579/813 dust bodies are g64's axis, the 539 Kill-host is the g65/Kill
    lanes', the 596 keep-one is d11's machine + g64's bool seam.
@@ -39283,11 +39284,11 @@ is WRITTEN NOT RUN.
    the tier fields + zeros + the extra_regen feed) are FOLD-SOURCE per the
    mana-family declaration (`fb771bfb8`): f49's levelup/fields/zeros,
    f12's g27 apply_orb_arm tier writer, d117/f49's regen.rs cadence — d11's
-   player.rs copies DROP at merge (the per-fn table in research/245 s5).
+   player.rs copies DROP at merge (the per-fn table in research/355 s5).
    The `can_ghost_heal` keep-one is d6's FIELD (`174c0d541`, ctor-derived
    same gate); d11's method retires, the proc call re-points to the field.
 
-The family declaration (research/245 s6): the band-101-110 family is
+The family declaration (research/355 s6): the band-101-110 family is
 d11-owned wholesale; the 813 machine g64's, the 596 machine d11's, the 576
 overlay f20's, the 539/576 Kill cues d77's, the nebula lifecycle the
 mana-family's, the can_ghost_heal gate d6's. No further d11 commits planned.
