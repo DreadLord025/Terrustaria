@@ -4705,9 +4705,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
     // then, when `ai[1] >= 10` (`flag28`), `WorldGen.OpenDoor`
     // (`:60061`) + the `Door_Opened` cue (`WorldGen.cs:37732`'s
     // `PlaySound(8)`); a refusal sets `ai[3] = num57` (`:60064`). The
-    // tall gate (388) `ShiftTallGate` is unported — the bash still
-    // counted its +2 and plays the thud, the gate never shifts
-    // (ANALYSIS "The zombie fighter audit").
+    // tall gate (388) `ShiftTallGate` (W4-g4, re-pointed at the c42
+    // canonical body per research/95 §3) shifts the gate to its open kind
+    // (389) on the same stream; a refusal sets `ai[3] = num57` (`:60077`).
     for i in 0..app.npcs.len() {
         let Some((tx, ty, dir, open)) = app.npcs[i].wants_door_bash.take() else {
             continue;
@@ -4775,8 +4775,81 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                 }
             }
         }
-        // `:60072-60084` — the tall gate (388) `ShiftTallGate`: unported
-        // (the module docs' stand-in) — no shift, no refusal.
+        // `:60072-60084` — the tall gate (388) `ShiftTallGate` (W4-g4: the
+        // S1-D-3z stand-in retired; the research/95 §3 re-point contract).
+        // The gate shifts to its open kind (389); a refusal sets
+        // `ai[3] = num57` like the door's. The occupancy gate is
+        // `Collision.EmptyTile(ignoreTiles: true)` — the player/NPC box
+        // overlap (the `close_door` convention; this closure is the
+        // reference implementation for the §8.1 entity-half seam).
+        if kind == Some(388) {
+            let mut drops = Vec::new();
+            let mut cues = Vec::new();
+            let player = app.player.as_ref();
+            let npcs = &app.npcs;
+            let cell_blocked = |cx: i32, cy: i32| -> bool {
+                let (x0, y0) = (cx as f32 * TILE_PX, cy as f32 * TILE_PX);
+                let (x1, y1) = (x0 + TILE_PX, y0 + TILE_PX);
+                if let Some(p) = player {
+                    if x0 < p.x + crate::player::WIDTH
+                        && x1 > p.x
+                        && y0 < p.y + crate::player::HEIGHT
+                        && y1 > p.y
+                    {
+                        return true;
+                    }
+                }
+                npcs.iter().any(|n| {
+                    let (w, h) = n.kind.size();
+                    x0 < n.x + w && x1 > n.x && y0 < n.y + h && y1 > n.y
+                })
+            };
+            let shifted = tr_core::edit::shift_tall_gate(
+                &mut app.world,
+                tx,
+                ty,
+                false,
+                false,
+                &cell_blocked,
+                &mut drops,
+                // `None`: no wiring flood runs on the NPC stage (the C#
+                // `Wiring.running` gate is false here — the §1 Option seam).
+                None,
+                &mut cues,
+            );
+            if !shifted {
+                // `:60075-60079` — the refusal: the idle counter jumps to
+                // num57 (60 for the zombie family).
+                app.npcs[i].ai[3] = 60.0;
+                app.npcs[i].net_update = true;
+            } else {
+                app.world_key = None;
+            }
+            // `WorldGen.cs:51762` — `SoundEngine.PlaySound(8)` at the
+            // ADJUSTED top: the canonical body queues the cue; drain it on
+            // the UpdateNpcs stream (the §3 contract — NOT g4's old
+            // hit-cell position, the cue carries the anchor centre).
+            for (open, px, py) in cues {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.stream(RngKey::UpdateNpcs),
+                );
+            }
+            for d in drops {
+                if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+                    crate::world_sim::items::spawn_item_drop(
+                        &mut app.items,
+                        app.rngs.stream(RngKey::UpdateNpcs),
+                        item,
+                        1,
+                        d.x,
+                        d.y,
+                    );
+                }
+            }
+        }
     }
     // S1-C-7 wave B — the contact lane's hurt modifiers (`Player.Hurt`
     // `:38396-38517`): the accepted contact hit queued its retaliate request
@@ -17577,6 +17650,45 @@ mod dw3_tests {
             b.world.tile(30, 118).map(|t| t.kind),
             Some(11),
             "the door opened (tile 11)"
+        );
+    }
+
+    /// W4-g4 — the door-bash drain's tall-gate arm (`NPC.cs:60072-60084`,
+    /// `WorldGen.ShiftTallGate`), re-pointed at the c42 canonical
+    /// `edit::shift_tall_gate` (research/95 §3): a queued bash with
+    /// `open = true` on a closed tall gate (388) shifts it to the open kind
+    /// (389); the request drains. The S1-D-3z stand-in (no shift) is
+    /// retired. WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g4_the_door_bash_drain_shifts_the_tall_gate() {
+        use tr_core::tile::{Tile, FLAG_ACTIVE};
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut world = crate::test_world_helpers::ground();
+        world.compute_column_surface();
+        world.day_time = false;
+        app.world = world;
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * 16.0;
+        player.y = 110.0 * 16.0;
+        app.player = Some(player);
+        // A closed tall gate (388) at column 30, rows 115-119 (the 1×5
+        // style-0 object, frameY the coordinate-heights prefix).
+        for (k, y) in (115..=119).enumerate() {
+            let i = app.world.index(30, y);
+            let fy = [0i16, 18, 34, 50, 66][k];
+            app.world.tiles[i] = Tile { kind: 388, frame_x: 0, frame_y: fy, ..Default::default() };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        let mut zombie = Npc::new(NpcKind::Zombie, 28.0 * 16.0, 116.0 * 16.0, 1, 0.0);
+        zombie.hp = zombie.max_hp;
+        zombie.wants_door_bash = Some((30, 118, 1, true));
+        app.npcs.push(zombie);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs[0].wants_door_bash.is_none(), "the request drained");
+        assert_eq!(
+            app.world.tile(30, 118).map(|t| t.kind),
+            Some(389),
+            "the tall gate shifted to its open kind (389)"
         );
     }
 }
