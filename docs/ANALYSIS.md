@@ -39361,16 +39361,18 @@ click buffers; the player tick applies).
   ManaEffect queue, STAR_POWER + TOPPED_OFF timing + the GET_A_LIFE
   sparing, the CCed refusal) — WRITTEN, NOT RUN.
 
-## The sidecar superset (W4-g88 ⨉ g89 ⨉ g89b ⨉ g89c ⨉ g90 ⨉ g55 ⨉ g90b ⨉ a6 — final v10)
+## The sidecar superset (W4-g88 ⨉ g89 ⨉ g89b ⨉ g89c ⨉ g90 ⨉ g55 ⨉ f33 ⨉ g90b ⨉ a6 — FINAL v11)
 
-- **The collision.** Eight lanes touched the post-dye block (seven
+- **The collision.** Nine lanes touched the post-dye block (eight
   writers + a6's use-arm-only lane):
   g89 (`920014cb`, `origin/task/W4-g89-aegis-fruit-use`) bumped v7 with
   the `usedAegisFruit` 0/1 flag; g88 (`f1eb9b60`) bumped v7 with the
   `statLifeMax statLifeMax2` pair; g90 (`1f1b88f0`,
   `origin/task/W4-g90-artisan-bread-use`) bumped v7 with the
   `ateArtisanBread` 0/1 flag; g55 (`cde865fc`) bumped v7 with the
-  loadout block; g89b (`9bf03ede`) bumped v8 widening the unlock line to
+  loadout block; f33 (`8a000407`, `origin/task/W4-f33-torch-god-favor`)
+  bumped v7 with the `unlockedBiomeTorches UsingBiomeTorches` 0/1 pair;
+  g89b (`9bf03ede`) bumped v8 widening the unlock line to
   `usedAegisFruit usedGummyWorm`; g89c (`78766306`) bumped v9 widening
   it again to `usedAegisFruit usedGummyWorm usedAmbrosia`; g90b
   (`e76ee133`) wrote a v7 bread + five one-token shimmer flag lines
@@ -39379,9 +39381,11 @@ click buffers; the player tick applies).
   `LuckState`). A naive merge
   would misparse one lane's file as another's (g89d's research/122 §2
   records the v9-line-as-life-pair corruption class against the
-  pre-fold-3 token-count reader).
-- **The ONE superset contract (this branch's writer, version 10 —
-  the crystal fold).** After the dye line:
+  pre-fold-3 token-count reader; f33's torch pair reads as a bogus
+  `(1,1)` life pair under any naive 2-token walk — the v11 all-0/1
+  recognition prevents it).
+- **The ONE superset contract (this branch's writer, version 11 —
+  the torch fold).** After the dye line:
   **(1)** the unlock line `usedAegisFruit usedGummyWorm usedAmbrosia
   usedAegisCrystal usedArcaneCrystal usedGalaxyPearl`
   (SIX tokens — tokens 1-3 g89c's fruit-first positions kept; tokens
@@ -39397,35 +39401,62 @@ click buffers; the player tick applies).
   `cde865fc`/`d2210b91`), **(6)** three stored-set lines (41 tokens each:
   20 armor kinds + 10 dye kinds + 10 hide flags + the set's 30-bit share
   word, `EquipmentLoadout.cs:31-45`'s Serialize shape, kinds-only like
-  the armor/dye lines). Vanilla rides the flags/pairs in the .plr
-  (`Player.cs:54773`/`:54775`/`:54779`/`:54781-54786` writes;
-  `:55220-55229`/`:55245`/`:55255-55260` reads) and the loadouts at
-  `:54919-54923`/`:55720-55727`.
-- **The tolerant reader.** v8/v9/v10: the FIRST post-dye line is
+  the armor/dye lines), **(7)** the f33 biome-torch pair line
+  `unlockedBiomeTorches UsingBiomeTorches` (TWO 0/1 tokens — the v11
+  append AFTER the loadout block, research/103 §2b: NOT unlock tokens,
+  token 7 stays DD2-reserved; `unlockedBiomeTorches` is the `:54777`
+  `.plr` bool OUTSIDE the 260+ block and `UsingBiomeTorches` is the
+  `builderAccStatus[11]` property `:3950-3964`). Vanilla rides the
+  flags/pairs in the .plr
+  (`Player.cs:54773`/`:54775`/`:54777-54779`/`:54781-54786` writes;
+  `:55220-55229`/`:55241-55242`/`:55245`/`:55255-55260` reads) and the
+  loadouts at `:54919-54923`/`:55720-55727`.
+- **The tolerant reader.** v8/v9/v10/v11: the FIRST post-dye line is
   POSITIONALLY the unlock line (g89b/g89c's contract, widened at v10;
   1-6 tokens read — short lines back-read, missing tokens keep false:
   a v9 three-token line loads the crystal trio false; token 7+
-  reserved and skipped). v7: the FIRST one-token line → the aegis flag,
-  EVERY later one → the bread flag (last wins — g90b's six-line block
-  loads with this bounded misread). Both versions then dispatch the
-  remaining lines on TOKEN COUNT/SHAPE: the first two-token line → the
-  life pair
+  reserved and skipped). v7: two LOSSLESS recognitions run first —
+  g90b's six-1-token-line block reads positionally (research/135 §2's
+  rule, landed: bread/crystal/arcane/pearl/gummy/ambrosia; the old
+  bounded misread RETIRED) and f33's lone all-0/1 two-token pair reads
+  as the torch pair (no maxima pair can be all-0/1 — the permanent
+  halves start at 100/20); otherwise the FIRST one-token line → the
+  aegis flag, EVERY later one → the bread flag. All versions then
+  dispatch the remaining lines on TOKEN COUNT/SHAPE: the first
+  two-token line → the life pair
   (permanent half clamps 500, `:55221-55224`); the second → the mana pair
   (permanent half clamps 200, `:55227-55229`); the two-token line
   directly BEFORE the first 41-token set line → the loadout index line
   (g55's block self-identifies by its set lines; index clamps 0..2,
-  `Utils.Clamp` `:55720-55727`). So g89's flag-only v7, g88's
+  `Utils.Clamp` `:55720-55727`); v11 adds the LAST two-token line AFTER
+  the last set line → the torch pair (a v10 file back-reads it false).
+  So g89's flag-only v7, g88's
   pre-reconciliation life-only v7, g90's bread-only v7, g90b's
-  bread+flags v7, g55's
+  bread+flags v7, f33's torch-only v7, g55's
   loadout-only v7, g89b's unlock-only v8, g89c's unlock-only v9, the
-  partial supersets (incl. this branch's own pre-v10 v9 superset) and the
-  full superset all load;
+  partial supersets (incl. this branch's own pre-v10 v9 and pre-v11
+  v10 supersets) and the full superset all load;
   missing pieces keep None/false/empty and the fresh defaults. Any
-  merge of the lanes keeps THIS reader (the superset). Known ambiguity:
-  a lone flag line cannot self-identify, so g90's bread-only file reads
-  into the aegis slot (slot 1 wins — research/122 §3's recommended
-  resolution); the superset writer emits all six flags so the
-  ambiguity ends at the fold (the layout doc records it).
+  merge of the lanes keeps THIS reader (the superset). Known ambiguity
+  (the ONLY survivor):
+  a lone ONE-token flag line cannot self-identify, so g90's bread-only
+  file reads into the aegis slot (slot 1 wins — research/122 §3's
+  recommended resolution); the superset writer emits all six flags so
+  the ambiguity ends at the fold (the layout doc records it).
+- **The torch pair is a deliberate dual-carrier (f44c-G7 boundary).**
+  f44c's complete `.plr` walk (`05e4020b`, research/132) models the
+  SAME two bools (`PlayerFile.unlocked_biome_torches`/
+  `using_biome_torches`, G7 block). The sidecar line is NOT redundant
+  today: the `.plr` is written only at character creation, so a
+  mid-world 5043 use survives a world reload ONLY via the sidecar
+  (132 §2b's dual-carrier rule). research/103 §2b publishes the
+  conditional DROP-recommendation: once the character-load hydration
+  AND the in-session exit-save both land, the merger drops line 16
+  (the reader keeps the back-read); restore precedence per 132 §2c —
+  character load first, sidecar second, the sidecar wins as the newer
+  state. The toggle half rides the PROPERTY (`using_biome_torches()`/
+  `set_using_biome_torches` at f33's exact spot after `luck()`), never
+  a second field; the 5043 use arm + conversion consumers stay f33's.
 - **The flag fields are carried, not used.** `Player.used_aegis_fruit`
   lands on this branch ONLY for the sidecar round-trip (declared at
   g89's exact position after `used_gummy_worm`, ctor false `:56079`, so
@@ -39470,31 +39501,44 @@ click buffers; the player tick applies).
 - **The load apply (app/mod.rs).** Both pairs apply BEFORE the hp clamp
   (a saved 405-life character keeps its hp); the mana pair feeds
   `mana_max_base`/`mana_max`; the six flag restores ride verbatim
-  (aegis/gummy/ambrosia + the v10 crystal trio, then bread).
-- **The merger contract doc.** `docs/research/103-persist-v7-layout.md`
+  (aegis/gummy/ambrosia + the v10 crystal trio, then bread), then the
+  v11 torch unlock + the toggle via `set_using_biome_torches`.
+- **The merger contract doc — FINAL.**
+  `docs/research/103-persist-v7-layout.md`
   carries the full token order/counts, the unlock line's token map
   (tokens 1-6 LIVE: aegis/gummy/ambrosia + the crystal trio at v10;
-  token 7 DD2 RESERVED), the back-compat matrix (every
+  token 7 DD2 RESERVED → v12), §2b the torch-line adjudication + the
+  conditional drop-recommendation, the back-compat matrix (every
   predecessor shape → its witness), the §5a use-arm dup adjudication
-  (g88 keep-own vs a6's powerups dups, pending research/138) and the
-  merge guidance. g89d's
+  (g88 keep-own vs a6's powerups dups, pending research/138 — still
+  unpushed at the v11 pass), §8 the research/135 alignment note (the
+  C#-verified crystal=4/arcane=5/pearl=6 order WINS over 135's
+  pearl-first recommendation — no back-compat obligation either way,
+  135's own words; the six-line recognition rule LANDED) and §9 the
+  FULL merger persist-checklist with f44c's research/132 master-map
+  cross-refs (L1 f44c base + the named-bool dedups / L2 this superset /
+  L3 the 21-byte v18 union). g89d's
   `docs/research/122-persist-v9-addendum.md` (`4344bd50`, carried onto
-  this branch with §6 + §7 fold receipts) is the g89-lane view of the same
+  this branch with §6 + §7 fold receipts + the v11 post-receipt note)
+  is the g89-lane view of the same
   line-8 contract + the v10 crystal step + the merger recipe;
   103 links it. They win over any lane's local layout note.
-- **Code-only mode.** Witnesses: `persist.rs` (the FULL v10 superset
-  round-trip with the exact line order (`10\n` header, `1 1 1 1 1 1`
-  unlock line), g89's flag-only v7, the
+- **Code-only mode.** Witnesses: `persist.rs` (the FULL v11 superset
+  round-trip with the exact line order (`11\n` header, `1 1 1 1 1 1`
+  unlock line, `1 1` torch line LAST), g89's flag-only v7, the
   life-only v7, g90's bread-only v7 (the bounded lone-flag ambiguity),
-  g90b's bread+five-flag-lines v7 (the bounded misread),
+  g90b's six-line v7 read POSITIONALLY (135 §2's rule — the misread
+  witness retired), f33's torch-only v7,
   g55's loadout-only v7, the 3-line pre-fold superset, g89b's
   unlock-only v8 + the 1-token back-read, g89c's unlock-only v9 + the
   2-token back-read + the pre-v9 superset v8 back-read + the
   pre-v10 superset v9 back-read + the v10 3-token/6-token reads + the
-  reserved-token skip (token 7+),
+  reserved-token skip (token 7+) + the pre-v11 superset v10 back-read +
+  the torch-pair round-trip + the property-getter toggle witness,
   the both-caps read clamp, the loadout index clamp, the bread/loadout
   round-trips — plus the extended v5/v6 back-compat assertions) +
-  `player.rs` +1 (the galaxy-pearl luck mirror) +
+  `player.rs` +1 (the galaxy-pearl luck mirror) + the two f33 torch
+  accessors +
   `crystals.rs` +1 (the crystal-upgrade sidecar round-trip + the
   reloaded gate) — WRITTEN, NOT RUN.
 

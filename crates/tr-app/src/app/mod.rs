@@ -2997,6 +2997,17 @@ impl App {
                     // sidecars load false. The +4 crafting reach consumer
                     // (`craft.rs::tile_reach`, `:35671`) reads the flag.
                     p.ate_artisan_bread = saved.ate_artisan_bread;
+                    // W4-g88 v11 fold (the f33 torch pair, `8a000407`):
+                    // the Torch God's Favor permanent unlock rides the
+                    // superset's LAST post-dye line (`Player.cs:54777` /
+                    // `:55241`, gate 229) so the biome torches resume
+                    // with the character. The builder toggle half
+                    // restores through the UsingBiomeTorches setter
+                    // (`builderAccStatus[11]`, `:3960-3963`). The use
+                    // arm (5043) + conversion consumers stay f33's.
+                    // Older sidecars load false/false.
+                    p.unlocked_biome_torches = saved.unlocked_biome_torches;
+                    p.set_using_biome_torches(saved.using_biome_torches);
                     // The loadout block (sidecar v7, the g55 fold
                     // `d2210b91`): the stored sets + index ride the Player
                     // (`Player.cs:3200-3207`); the live share word rides

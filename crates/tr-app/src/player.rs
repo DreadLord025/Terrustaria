@@ -10639,6 +10639,27 @@ impl Player {
         self.luck_state.luck
     }
 
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3964`): the getter is
+    /// `unlockedBiomeTorches && builderAccStatus[11] == 0`; the setter writes
+    /// `builderAccStatus[11] = !value ? 1 : 0` and NOTHING else. The 5043
+    /// use (`ItemCheck_UseTorchGodsFavor`, `:45231-45232`) sets the unlock
+    /// flag THEN this property — the pair arms the conversion in one use
+    /// (W4-f33). The builder-toggle UI (`Main.cs:42532-42585`) flips
+    /// `builder_acc_status[11]` between 0 (on) and 1 (off); the port's
+    /// toggle click is unported, so play reads the ctor's 0 (`:814`).
+    /// Carried here at f33's exact spot (`8a000407`) for the v11 sidecar
+    /// fold — the use arm/consumers stay f33's lane.
+    pub fn using_biome_torches(&self) -> bool {
+        self.unlocked_biome_torches && self.builder_acc_status[11] == 0
+    }
+
+    /// The `UsingBiomeTorches` setter half (`Player.cs:3960-3963`) — the
+    /// 5043 use's `this.UsingBiomeTorches = true` (`:45232`) and the v11
+    /// sidecar restore's write path.
+    pub fn set_using_biome_torches(&mut self, value: bool) {
+        self.builder_acc_status[11] = if value { 0 } else { 1 };
+    }
+
     /// `Player.UpdateLuck` → `UpdateLuckFactors` (`Player.cs:29041-29135`),
     /// called from the post-buff-effects position (`:25645`): the ladybug and
     /// coin decays run for every player, the torch scan + the broken-mirror

@@ -222,3 +222,17 @@ landed.
   (research/135) and a6b reconcile (research/138) were NOT pushed on
   either lane's tip at fold time (verified `git ls-tree`); this receipt
   proceeds on the landed code shapes and flags both for the merger.
+
+**v11 post-receipt note (the torch fold pass):** research/135 IS pushed
+now (g90c `b3b82d07`, read full) — its §2 six-line v7 recognition rule
+LANDED in the superset reader, so the bounded-misread witness named
+above is retired and replaced by `g90bs_six_line_v7_loads_positionally`
+(the g90b block now loads losslessly). 135 §3's pearl=4/arcane=5/
+crystal=6 recommendation does NOT overturn the landed v10 order — the
+C#-verified crystal=4/arcane=5/pearl=6 wins (no back-compat obligation
+either way, 135's own words); the alignment note is research/103 §8.
+The writer bumped v11 for the f33 biome-torch pair LINE (research/103
+§2b — not an unlock token; §3's v10 crystal contract is unchanged).
+research/138 is still unpushed (a6 tip `8ed96ee5` re-verified); §5a of
+103 remains the dup adjudication of record. The full merger checklist
+with f44c's research/132 cross-refs is 103 §9.

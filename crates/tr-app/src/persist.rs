@@ -4,18 +4,21 @@
 //! small versioned text file. Loading validates that the saved position is not inside a
 //! solid tile.
 //!
-//! ## The FINAL superset contract (W4-g88 fold — g89/g89b/g89c/g90/g55/g90b/a6)
+//! ## The FINAL superset contract (W4-g88 fold — g89/g89b/g89c/g90/g55/f33/g90b/a6)
 //!
-//! Eight lanes touched the post-dye block (seven writers + a6's
+//! Nine lanes touched the post-dye block (eight writers + a6's
 //! use-arm-only lane): g89 (`920014cb`,
 //! v7 aegis flag), g88 (`f1eb9b60`, v7 life pair), g90 (`1f1b88f0`, v7
-//! bread flag), g55 (`cde865fc`, v7 loadout block), g89b (`9bf03ede`,
+//! bread flag), g55 (`cde865fc`, v7 loadout block), f33 (`8a000407`, v7
+//! biome-torch pair line), g89b (`9bf03ede`,
 //! v8 aegis+gummy unlock pair), g89c (`78766306`, v9 aegis+gummy+ambrosia
 //! unlock triple), g90b (`e76ee133`, v7 bread + five one-token shimmer
 //! flag lines) and a6 (`f23385e5`, the six shimmer use arms — no sidecar
 //! writer; its pearl flag rides `LuckState`). The reconciled SUPERSET
-//! (this branch's writer) is version **10**, the unlock line widened to
-//! SIX tokens (the crystal fold — g90b's flags, research/122 §3):
+//! (this branch's writer) is version **11**, the unlock line widened to
+//! SIX tokens (the crystal fold — g90b's flags, research/122 §3) plus
+//! the appended biome-torch pair line (the f33 fold — research/103 §2b;
+//! token 7 stays DD2-RESERVED, the torch pair is NOT an unlock token):
 //!
 //! 1. the unlock line — `usedAegisFruit usedGummyWorm usedAmbrosia
 //!    usedAegisCrystal usedArcaneCrystal usedGalaxyPearl` 0/1 (tokens
@@ -29,31 +32,46 @@
 //! 5. the loadout index line — `currentLoadoutIndex equipShareFlags`
 //!    (TWO tokens, g55's block after bread),
 //! 6. three stored-set lines — each 20 armor kinds + 10 dye kinds +
-//!    10 hide flags + the set's 30-bit share word (41 tokens each).
+//!    10 hide flags + the set's 30-bit share word (41 tokens each),
+//! 7. the biome-torch pair line — `unlockedBiomeTorches UsingBiomeTorches`
+//!    0/1 (TWO tokens, f33's pair, the v11 bump; appended AFTER the
+//!    loadout block per research/103 §6 rule 5 — the LAST post-dye line
+//!    is its self-identifying position; the pair is NOT unlock tokens —
+//!    `unlockedBiomeTorches` is the `:54777` `.plr` bool OUTSIDE the
+//!    260+ unlock block, and `UsingBiomeTorches` is the
+//!    `builderAccStatus[11]` toggle property, `Player.cs:3950-3964`).
 //!
-//! The reader tolerates every predecessor. v8/v9/v10: the FIRST post-dye
-//! line is positionally the unlock line (g89b/g89c's contract; 1-6
-//! tokens read — a v7 one-token line loads worm/ambrosia/crystals false,
-//! a v8 two-token line loads ambrosia/crystals false, a v9 three-token
-//! line loads the crystal trio false — the v10 back-read; token 7+
-//! reserved); the
+//! The reader tolerates every predecessor. v8/v9/v10/v11: the FIRST
+//! post-dye line is positionally the unlock line (g89b/g89c's contract;
+//! 1-6 tokens read — a v7 one-token line loads worm/ambrosia/crystals
+//! false, a v8 two-token line loads ambrosia/crystals false, a v9
+//! three-token line loads the crystal trio false — the v10 back-read;
+//! token 7+ reserved); the
 //! remaining lines dispatch on TOKEN COUNT/SHAPE
 //! — a one-token line is the bread flag, the first two-token line the
 //! life pair, the second the mana pair, the two-token line directly
 //! BEFORE the first 41-token set line the loadout index line (g55's
-//! block self-identifies by its set lines). v7: the FIRST one-token line
-//! is the aegis flag, the SECOND the bread flag; pairs/loadouts as above.
+//! block self-identifies by its set lines), the LAST two-token line
+//! AFTER any set lines the biome-torch pair (the v11 append — a v10
+//! file has no line there and loads the pair false). v7: two special
+//! recognitions run BEFORE the shape walk — f33's torch-only block
+//! (exactly ONE two-token line, both tokens 0/1, no set lines; a maxima
+//! pair's permanent half is ≥100/≥20 so the 0/1 gate separates them)
+//! and g90b's six-line block (exactly SIX lines, ALL one-token —
+//! research/135 §2's rule, read positionally bread/crystal/arcane/pearl/
+//! gummy/ambrosia). Otherwise the FIRST one-token line is the aegis
+//! flag, the SECOND the bread flag; pairs/loadouts as above.
 //! So every single-lane v7, g89b's v8, g89c's v9, the partial supersets
 //! and this full superset all load; missing pieces keep their fresh
-//! defaults. g90b's v7 bread+five-flag-line block loads with a bounded
-//! misread (the v7 walk maps the first one-token line to aegis and every
-//! later one to bread — last wins — so the crystal trio keeps false;
-//! research/103 §3's ambiguity table; the superset writer emits all six
-//! flags positionally so the ambiguity ends at the fold). Any merge of
-//! the lanes keeps this reader (the superset).
+//! defaults. The lone-flag ambiguity survives only for a lone ONE-token
+//! v7 line (g90's bread-only file reads aegis — research/103 §3); g90b's
+//! six-line block and f33's torch pair load LOSSLESSLY via the v7
+//! recognitions. Any merge of the lanes keeps this reader (the superset).
 //! Full layout + token reservations + back-compat matrix:
 //! `docs/research/103-persist-v7-layout.md` (+ g89d's v9/v10 addendum,
-//! `docs/research/122-persist-v9-addendum.md`).
+//! `docs/research/122-persist-v9-addendum.md`; the cross-layer ownership:
+//! f44c's `docs/research/132-persist-master-map.md` — the torch pair is
+//! an L1 `.plr` G7 field with a deliberate L2 dual-carrier, §2c).
 
 use std::path::{Path, PathBuf};
 
@@ -119,6 +137,20 @@ pub struct SavedPlayer {
     /// gate 256); the port's live-session sidecar carries it so the
     /// permanent +4 crafting reach survives a `.trwld` reload.
     pub ate_artisan_bread: bool,
+    /// `Player.unlockedBiomeTorches` (`Player.cs:2046`, save `:54777` /
+    /// load `:55241`, gate 229) — the Torch God's Favor permanent unlock
+    /// (W4-f33 `8a000407`'s pair, folded as the v11 torch line AFTER the
+    /// loadout block — research/103 §2b). NOT an unlock-line token: the
+    /// `.plr` writes it OUTSIDE the 260+ block. Older files load false.
+    /// The use arm (5043) + the conversion consumers stay f33's lane.
+    pub unlocked_biome_torches: bool,
+    /// `Player.UsingBiomeTorches` (`Player.cs:3950-3964` — the
+    /// `unlockedBiomeTorches && builderAccStatus[11] == 0` property,
+    /// save `:54778` / load `:55242`) — the builder-toggle half of the
+    /// f33 pair (v11). The restore writes the toggle through the
+    /// property setter (`builder_acc_status[11]`), never a second
+    /// field. Older files load false.
+    pub using_biome_torches: bool,
     /// `Player.CurrentLoadoutIndex` (`Player.cs:3207`) — version 7
     /// (W4-g55 `cde865fc`, folded AFTER the bread line per the superset
     /// contract); older files load on loadout 0. The active set rides the
@@ -188,13 +220,14 @@ pub fn save(
     kills: &[(String, i32)],
     equip_share_flags: u32,
 ) -> std::io::Result<()> {
-    // Version 10 SUPERSET (the module header's contract): the unlock
+    // Version 11 SUPERSET (the module header's contract): the unlock
     // line first (`usedAegisFruit usedGummyWorm usedAmbrosia
     // usedAegisCrystal usedArcaneCrystal usedGalaxyPearl`,
     // `Player.cs:54782`/`:54785`/`:54786` + the crystal trio
     // `:54781`/`:54783`/`:54784` in the vanilla relative order), then
-    // the pairs, the bread flag and the loadout block.
-    let mut s = format!("10\n{} {} {}\n", player.x, player.y, player.hp);
+    // the pairs, the bread flag, the loadout block and the f33
+    // biome-torch pair line LAST (the v11 append).
+    let mut s = format!("11\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -254,6 +287,21 @@ pub fn save(
         }
         s.push_str(&format!("{}\n", loadout.favorited));
     }
+    // Version 11 SUPERSET, the f33 fold (`8a000407`): the Torch God's
+    // Favor biome-torch pair (`Player.unlockedBiomeTorches` /
+    // `UsingBiomeTorches`, `Player.cs:54777-54778` writes /
+    // `:55241-55242` reads, gate 229) appended AFTER the loadout block —
+    // the LAST post-dye line is its self-identifying position
+    // (research/103 §6 rule 5's append rule; f33's own writer parked it
+    // FIRST after dye, the superset reader's v7 torch-only recognition
+    // loads that shape). The pair is NOT an unlock-line token — token 7
+    // stays DD2-RESERVED; the toggle half rides the property getter
+    // (`builderAccStatus[11]`, `:3950-3964`).
+    s.push_str(&format!(
+        "{} {}\n",
+        u8::from(player.unlocked_biome_torches),
+        u8::from(player.using_biome_torches())
+    ));
     std::fs::write(player_path(world), s)
 }
 
@@ -268,9 +316,11 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         // unlock line (aegis + gummy, `9bf03ede`) atop the same block;
         // 9 the g89c ambrosia token (`78766306`) on that line; 10 the
         // crystal trio (g90b `e76ee133` / a6 `f23385e5`) as tokens 4/5/6;
+        // 11 the f33 biome-torch pair line (`8a000407`) appended AFTER
+        // the loadout block (research/103 §2b);
         // 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
         // tile/wall/weapon/coin ranges and are converted on load.
-        "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" => false,
+        "3" | "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -297,7 +347,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9" | "10") {
+    if matches!(version, "4" | "5" | "6" | "7" | "8" | "9" | "10" | "11") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -305,7 +355,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if matches!(version, "5" | "6" | "7" | "8" | "9" | "10") {
+    if matches!(version, "5" | "6" | "7" | "8" | "9" | "10" | "11") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -320,7 +370,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if matches!(version, "6" | "7" | "8" | "9" | "10") {
+    if matches!(version, "6" | "7" | "8" | "9" | "10" | "11") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
@@ -338,9 +388,14 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // trio false — the v10 back-read), token 7+ is RESERVED (DD2) and
     // skipped. The remaining lines dispatch on TOKEN COUNT/SHAPE as
     // below.
-    // v7 (the tolerant predecessor walk): the FIRST one-token line is the
-    // aegis flag (g89's line), the SECOND is the artisan-bread flag
-    // (g90's line, `:55245`).
+    // v7 (the tolerant predecessor walk): two LOSSLESS recognitions run
+    // first — f33's torch-only block (exactly one non-empty line, a
+    // two-token 0/1 pair: no maxima pair can be all-0/1, the permanent
+    // halves start at 100/20) and g90b's six-line block (exactly six
+    // lines, ALL one-token — research/135 §2's rule, positional
+    // bread/crystal/arcane/pearl/gummy/ambrosia). Otherwise the FIRST
+    // one-token line is the aegis flag (g89's line), the SECOND is the
+    // artisan-bread flag (g90's line, `:55245`).
     // Both versions: the FIRST two-token line after the unlock walk is
     // the life pair (`:55220-55224`, permanent half clamps to 500), the
     // SECOND the mana pair (`:55226-55229`, clamps to 200); the g55
@@ -350,6 +405,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // `EquipmentLoadout.cs:31-45`): the two-token line directly BEFORE
     // the first set line is the index line, NOT a maxima pair
     // (`Utils.Clamp` index to 0..2, `Player.cs:55720-55727`).
+    // v11 adds a FOURTH: the LAST non-empty two-token line AFTER any
+    // set lines is the f33 biome-torch pair (the writer appends it
+    // after the loadout block; a v10 file ends at the sets and loads
+    // the pair false — the v11 back-read).
     // So every single-lane v7, g89b's v8, g89c's v9, the partial
     // supersets AND the full superset load; missing pieces keep
     // None/false/empty defaults.
@@ -362,20 +421,22 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let mut used_arcane_crystal = false;
     let mut used_galaxy_pearl = false;
     let mut ate_artisan_bread = false;
+    let mut unlocked_biome_torches = false;
+    let mut using_biome_torches = false;
     let mut current_loadout_index = 0usize;
     let mut loadouts = [crate::loadout::EquipmentLoadout::default(); 3];
     let mut equip_share_flags = 0u32;
-    if matches!(version, "7" | "8" | "9" | "10") {
+    if matches!(version, "7" | "8" | "9" | "10" | "11") {
         // One stored-set line: ARMOR + DYE + HIDE kinds/flags + the word.
         const SET_TOKENS: usize = crate::inv::ARMOR + crate::inv::DYE + crate::loadout::HIDE + 1;
         let mut post: Vec<Vec<&str>> = lines
             .map(|l| l.split_whitespace().collect::<Vec<_>>())
             .collect();
-        // v8/v9/v10: consume the unlock line positionally
+        // v8/v9/v10/v11: consume the unlock line positionally
         // (g89b/g89c's contract, widened at v10). Its token 7+ is a
         // reserved future unlock flag (DD2) — skip it.
         let v7_flags = version == "7";
-        if matches!(version, "8" | "9" | "10") {
+        if matches!(version, "8" | "9" | "10" | "11") {
             while post.first().is_some_and(|t| t.is_empty()) {
                 post.remove(0);
             }
@@ -393,10 +454,62 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
                 post.remove(0);
             }
         }
+        // The v7 lossless recognitions (research/135 §2 + the f33 fold).
+        // No other pushed v7 writer produces either shape: g89 flag-only
+        // / g90 bread-only = one 1-token line; g88 life-only = one
+        // 2-token pair (halves ≥100); the 3-line superset = 1+2+2; the
+        // 4-line = 1+2+2+1; g55 loadout-only = 2+41+41+41.
+        let nonempty: Vec<&Vec<&str>> = post.iter().filter(|t| !t.is_empty()).collect();
+        let v7_six_line = v7_flags
+            && nonempty.len() == 6
+            && nonempty.iter().all(|t| t.len() == 1);
+        let v7_torch_only = v7_flags
+            && nonempty.len() == 1
+            && nonempty[0].len() == 2
+            && nonempty[0].iter().all(|t| *t == "0" || *t == "1");
+        if v7_six_line {
+            // g90b lane-7 (`e76ee133`): the `.plr` write order
+            // `:54781-54786` minus the g89 fruit, bread (`:54779`)
+            // leading — 135 §1's table, read positionally.
+            ate_artisan_bread = nonempty[0][0] == "1";
+            used_aegis_crystal = nonempty[1][0] == "1";
+            used_arcane_crystal = nonempty[2][0] == "1";
+            used_galaxy_pearl = nonempty[3][0] == "1";
+            used_gummy_worm = nonempty[4][0] == "1";
+            used_ambrosia = nonempty[5][0] == "1";
+            // aegis-fruit false: g90b never wrote it (g89's lane).
+            post.clear();
+        } else if v7_torch_only {
+            // f33 torch-only (`8a000407`): unlockedBiomeTorches /
+            // UsingBiomeTorches (`Player.cs:55241-55242`). A maxima
+            // pair's permanent half starts at 100/20 — an all-0/1
+            // two-token lone line is unambiguously the torch pair.
+            unlocked_biome_torches = nonempty[0][0] == "1";
+            using_biome_torches = nonempty[0][1] == "1";
+            post.clear();
+        }
         let set_start = post.iter().position(|t| t.len() == SET_TOKENS);
         let idx_line = match set_start {
             Some(i) if i > 0 && post[i - 1].len() == 2 => Some(i - 1),
             _ => None,
+        };
+        // v11: the LAST non-empty two-token line AFTER the last set
+        // line is the f33 torch pair (the superset writer's append
+        // position). No set lines → no torch arm (a lone pair stays
+        // the v7 recognition's or the maxima walk's).
+        let torch_line = if version == "11" {
+            match post.iter().rposition(|t| t.len() == SET_TOKENS) {
+                Some(last_set) => post
+                    .iter()
+                    .enumerate()
+                    .skip(last_set + 1)
+                    .filter(|(_, t)| t.len() == 2)
+                    .map(|(n, _)| n)
+                    .next_back(),
+                None => None,
+            }
+        } else {
+            None
         };
         let mut flag_seen = false;
         let mut set_no = 0usize;
@@ -404,6 +517,11 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
             if Some(n) == idx_line {
                 current_loadout_index = toks[0].parse::<usize>().unwrap_or(0).min(2);
                 equip_share_flags = toks[1].parse().unwrap_or(0);
+                continue;
+            }
+            if Some(n) == torch_line {
+                unlocked_biome_torches = toks[0] == "1";
+                using_biome_torches = toks[1] == "1";
                 continue;
             }
             match toks.len() {
@@ -461,6 +579,8 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         used_arcane_crystal,
         used_galaxy_pearl,
         ate_artisan_bread,
+        unlocked_biome_torches,
+        using_biome_torches,
         current_loadout_index,
         loadouts,
         equip_share_flags,
@@ -498,6 +618,9 @@ mod tests {
         p.used_arcane_crystal = true;
         p.used_galaxy_pearl = true;
         p.ate_artisan_bread = true;
+        // The v11 torch pair (f33): the unlock + the builder toggle.
+        p.unlocked_biome_torches = true;
+        p.set_using_biome_torches(true);
         let dir = crate::test_world_helpers::test_scratch("persist-player-state");
         let path = dir.join("tr-persist-test.trwld");
         let mut inv = [(0u16, 0u32); 50];
@@ -531,6 +654,8 @@ mod tests {
         assert!(s.used_arcane_crystal, "the v10 token 5 on the unlock line");
         assert!(s.used_galaxy_pearl, "the v10 token 6 on the unlock line");
         assert!(s.ate_artisan_bread, "the g90 flag after the mana pair");
+        assert!(s.unlocked_biome_torches, "the f33 unlock on the v11 torch line");
+        assert!(s.using_biome_torches, "the f33 toggle half");
         assert_eq!(s.inventory[0], (2, 12));
         assert_eq!(s.inventory[3], (12, 1));
         assert_eq!(s.inventory[49], (0, 0));
@@ -578,6 +703,8 @@ mod tests {
         assert!(!s.used_arcane_crystal, "pre-v10 files carry no arcane unlock");
         assert!(!s.used_galaxy_pearl, "pre-v10 files carry no pearl unlock");
         assert!(!s.ate_artisan_bread, "pre-v7 files carry no loaf unlock");
+        assert!(!s.unlocked_biome_torches, "pre-v7 files carry no torch unlock");
+        assert!(!s.using_biome_torches);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -609,6 +736,8 @@ mod tests {
         assert!(!s.used_arcane_crystal);
         assert!(!s.used_galaxy_pearl);
         assert!(!s.ate_artisan_bread, "v6 loads false — the ctor default");
+        assert!(!s.unlocked_biome_torches, "pre-v7 files carry no torch unlock");
+        assert!(!s.using_biome_torches);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -740,8 +869,9 @@ mod tests {
     }
 
     /// The FULL superset round-trip: all post-dye lines survive a
-    /// save/load, in the contract order (v10 six-token unlock line, life
-    /// pair, mana pair, bread flag, loadout index + 3 stored sets).
+    /// save/load, in the contract order (v11 six-token unlock line, life
+    /// pair, mana pair, bread flag, loadout index + 3 stored sets, the
+    /// f33 biome-torch pair LAST).
     #[test]
     fn the_superset_round_trips_the_full_block() {
         let world = World::new("t".into(), 32, 32);
@@ -759,18 +889,22 @@ mod tests {
         p.ate_artisan_bread = true;
         p.current_loadout_index = 1;
         p.loadouts[2].armor[0] = loadout_item(90);
-        let dir = crate::test_world_helpers::test_scratch("persist-v10-superset");
-        let path = dir.join("tr-persist-v10-superset.trwld");
+        // The f33 torch pair (v11): the unlock + the builder toggle.
+        p.unlocked_biome_torches = true;
+        p.set_using_biome_torches(true);
+        let dir = crate::test_world_helpers::test_scratch("persist-v11-superset");
+        let path = dir.join("tr-persist-v11-superset.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0; 3], &[0; 10], &[], 1 << 5).unwrap();
         let text = std::fs::read_to_string(player_path(&path)).unwrap();
-        assert!(text.starts_with("10\n"), "the superset writer emits v10");
+        assert!(text.starts_with("11\n"), "the superset writer emits v11");
         let post_dye: Vec<&str> = text.lines().skip(7).collect();
-        assert_eq!(post_dye.len(), 8, "unlock/life/mana/bread/index + 3 sets");
+        assert_eq!(post_dye.len(), 9, "unlock/life/mana/bread/index + 3 sets + torch");
         assert_eq!(
             &post_dye[..5],
             ["1 1 1 1 1 1", "420 420", "60 80", "1", "1 32"]
         );
-        let s = load(&path).expect("the superset v10 sidecar");
+        assert_eq!(post_dye[8], "1 1", "the f33 torch pair rides LAST");
+        let s = load(&path).expect("the superset v11 sidecar");
         assert!(s.used_aegis_fruit);
         assert!(s.used_gummy_worm);
         assert!(s.used_ambrosia);
@@ -783,6 +917,8 @@ mod tests {
         assert_eq!(s.current_loadout_index, 1);
         assert_eq!(s.equip_share_flags, 1 << 5);
         assert_eq!(s.loadouts[2].armor[0].kind, 90);
+        assert!(s.unlocked_biome_torches, "the f33 unlock rides the v11 line");
+        assert!(s.using_biome_torches, "the toggle half rides with it");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -1051,17 +1187,15 @@ mod tests {
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
-    /// The v10 fold witness: g90b's OWN v7 block (`e76ee133`'s writer —
-    /// the bread line then five one-token shimmer flag lines in the
-    /// `.plr` order crystal/arcane/pearl/gummy/ambrosia) loads with the
-    /// bounded lone-flag misread: the v7 walk maps the FIRST one-token
-    /// line to aegis and EVERY later one to bread (last wins), so the
-    /// bread half ends at the ambrosia line's value and the crystal
-    /// trio keeps false. The superset writer emits all six positionally
-    /// (v10), so the ambiguity only affects pre-fold files
-    /// (research/103 §3's ambiguity table).
+    /// The v11 fold witness (research/135 §2's rule, landed): g90b's OWN
+    /// v7 block (`e76ee133`'s writer — the bread line then five one-token
+    /// shimmer flag lines in the `.plr` order crystal/arcane/pearl/
+    /// gummy/ambrosia) loads LOSSLESSLY: exactly six lines, all
+    /// one-token, is unambiguously the lane-7 shape — read positionally
+    /// per 135 §1's table. The pre-135 bounded misread (bread→aegis,
+    /// last-line→bread) is gone; aegis stays false (g90b never wrote it).
     #[test]
-    fn g90bs_bread_plus_flags_v7_loads_with_the_bounded_misread() {
+    fn g90bs_six_line_v7_loads_positionally() {
         let dir = crate::test_world_helpers::test_scratch("persist-v7-g90b");
         let path = dir.join("tr-persist-v7-g90b.trwld");
         let mut line = String::from("7\n1.0 2.0 100\n");
@@ -1077,13 +1211,134 @@ mod tests {
         line.push_str("\n1\n1\n0\n1\n0\n1\n");
         std::fs::write(player_path(&path), line).unwrap();
         let s = load(&path).expect("g90b's v7 sidecar");
-        assert!(s.used_aegis_fruit, "the bread line reads slot 1 (aegis)");
-        assert!(s.ate_artisan_bread, "the LAST one-token line wins (ambrosia=1)");
-        assert!(!s.used_aegis_crystal, "no positional v7 crystal read");
-        assert!(!s.used_arcane_crystal);
-        assert!(!s.used_galaxy_pearl);
-        assert!(!s.used_gummy_worm, "the v7 walk has no worm slot");
-        assert!(!s.used_ambrosia, "nor an ambrosia slot");
+        assert!(s.ate_artisan_bread, "line 8 — the bread flag (135 §1)");
+        assert!(s.used_aegis_crystal, "line 9 — the aegis crystal");
+        assert!(!s.used_arcane_crystal, "line 10 — arcane clear");
+        assert!(s.used_galaxy_pearl, "line 11 — the galaxy pearl");
+        assert!(!s.used_gummy_worm, "line 12 — worm clear");
+        assert!(s.used_ambrosia, "line 13 — the ambrosia");
+        assert!(!s.used_aegis_fruit, "g90b never wrote the g89 fruit");
+        assert_eq!(s.life_max, None, "no pairs in the lane-7 writer");
+        assert_eq!(s.mana_max, None);
+        assert!(!s.unlocked_biome_torches, "no torch pair either");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The v11 fold witness: f33's OWN torch-only v7 (`8a000407`'s
+    /// writer — ONE two-token 0/1 pair directly after dye) loads
+    /// losslessly: no maxima pair can be all-0/1 (the permanent halves
+    /// start at 100/20), so the lone all-boolean pair is unambiguously
+    /// the biome-torch pair (`Player.cs:55241-55242`).
+    #[test]
+    fn f33s_torch_only_v7_loads_positionally() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-f33");
+        let path = dir.join("tr-persist-v7-f33.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n1 1\n"); // f33's pair: unlocked + using
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("f33's v7 sidecar");
+        assert!(s.unlocked_biome_torches, "the :54777 unlock reads");
+        assert!(s.using_biome_torches, "the :54778 toggle reads");
+        assert_eq!(s.life_max, None, "NOT misparsed as the life pair");
+        assert_eq!(s.mana_max, None);
+        assert!(!s.used_aegis_fruit);
+        assert!(!s.ate_artisan_bread);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The v11 fold witness: this branch's OWN pre-v11 superset (the v10
+    /// writer — six-token unlock + pairs + bread + loadout block, NO
+    /// torch line) still loads under the v11 reader: everything reads
+    /// unchanged, the torch pair keeps false (the v11 back-read).
+    #[test]
+    fn the_v10_superset_still_loads_without_the_torch_pair() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v10-superset-back");
+        let path = dir.join("tr-persist-v10-superset-back.trwld");
+        let mut line = String::from("10\n1.0 2.0 420\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n1 1 1 1 1 1\n420 420\n60 80\n1\n1 32\n");
+        for _ in 0..3 {
+            for _ in 0..41 {
+                line.push_str("0 ");
+            }
+            line.push('\n');
+        }
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the pre-v11 superset sidecar");
+        assert!(s.used_aegis_fruit && s.used_gummy_worm && s.used_ambrosia);
+        assert!(s.used_aegis_crystal && s.used_arcane_crystal && s.used_galaxy_pearl);
+        assert_eq!(s.life_max, Some((420, 420)));
+        assert_eq!(s.mana_max, Some((60, 80)));
+        assert!(s.ate_artisan_bread);
+        assert_eq!(s.current_loadout_index, 1);
+        assert_eq!(s.equip_share_flags, 32);
+        assert!(!s.unlocked_biome_torches, "the v10 block ends at the sets");
+        assert!(!s.using_biome_torches);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The v11 fold witness: the f33 torch pair round-trips alone on the
+    /// superset writer (the fresh player is locked; the pair survives,
+    /// everything else defaults) — f33's own round-trip re-pinned to v11.
+    #[test]
+    fn w4_f33_the_biome_torch_pair_round_trips_the_sidecar() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.unlocked_biome_torches = true;
+        p.set_using_biome_torches(true);
+        let dir = crate::test_world_helpers::test_scratch("persist-torch-favor");
+        let path = dir.join("tr-persist-torch-favor.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
+        let s = load(&path).expect("the v11 sidecar");
+        assert!(s.unlocked_biome_torches, "the unlock persisted");
+        assert!(s.using_biome_torches, "the toggle persisted");
+        // The fresh player loads false.
+        let fresh = Player::spawn(&world);
+        save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
+        let s = load(&path).expect("the v11 sidecar");
+        assert!(!s.unlocked_biome_torches);
+        assert!(!s.using_biome_torches);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The v11 fold witness: the toggle half rides the PROPERTY, not a
+    /// second field — unlocked with the builder toggle OFF writes
+    /// `1 0` (the getter's `builderAccStatus[11] == 0` gate,
+    /// `Player.cs:3950-3964`), and a locked player writes `0 0` even
+    /// with slot 11 at 0 (the getter's unlock gate).
+    #[test]
+    fn the_torch_toggle_half_rides_the_property_getter() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.unlocked_biome_torches = true;
+        p.set_using_biome_torches(false); // builderAccStatus[11] = 1
+        let dir = crate::test_world_helpers::test_scratch("persist-torch-toggle");
+        let path = dir.join("tr-persist-torch-toggle.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
+        let text = std::fs::read_to_string(player_path(&path)).unwrap();
+        assert!(text.lines().last() == Some("1 0"), "unlocked, toggle off");
+        let s = load(&path).expect("the v11 sidecar");
+        assert!(s.unlocked_biome_torches);
+        assert!(!s.using_biome_torches);
+        // Locked + slot 11 at 0: the getter still says false.
+        let mut locked = Player::spawn(&world);
+        locked.set_using_biome_torches(true);
+        save(&path, &locked, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
+        let text = std::fs::read_to_string(player_path(&path)).unwrap();
+        assert!(text.lines().last() == Some("0 0"), "the unlock gate wins");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -1097,12 +1352,12 @@ mod tests {
         let dir = crate::test_world_helpers::test_scratch("persist-bread");
         let path = dir.join("tr-persist-bread.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
-        let s = load(&path).expect("v10 sidecar");
+        let s = load(&path).expect("v11 sidecar");
         assert!(s.ate_artisan_bread, "the flag survives the round trip");
         assert!(!s.used_aegis_fruit, "the aegis slot stays clear");
         let fresh = Player::spawn(&world);
         save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
-        assert!(!load(&path).expect("v10 sidecar").ate_artisan_bread);
+        assert!(!load(&path).expect("v11 sidecar").ate_artisan_bread);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -1122,7 +1377,7 @@ mod tests {
         let path = dir.join("tr-persist-loadout.trwld");
         let inv = [(0u16, 0u32); 50];
         save(&path, &p, inv, 0, [0, 0, 0], &[0; 10], &[], 1 << 5).unwrap();
-        let s = load(&path).expect("v10 sidecar");
+        let s = load(&path).expect("v11 sidecar");
         assert_eq!(s.current_loadout_index, 1);
         assert_eq!(s.equip_share_flags, 1 << 5);
         assert_eq!(s.loadouts[2].armor[0].kind, 90);
