@@ -130,17 +130,42 @@ pub fn is_item_decraftable_and_unlocked(item_type: u16, stack: u32) -> bool {
 }
 
 /// `ShimmerTransforms.GetDecraftingRecipeIndex` (`ShimmerTransforms.cs:15-31`):
-/// the plain `IsCrafted` index (the port's recipes carry no crimson/corruption
-/// tags, so the variant preference is a documented deviation), -1 when the type
-/// has no decrafting recipe.
+/// the `IsCrafted` index, then the world-evil variant preference — a crimson
+/// world takes `IsCraftedCrimson[type]` when set (`:22-25`), a corruption
+/// world `IsCraftedCorruption[type]` (`:26-29`), else the plain index. -1 when
+/// the type has no decrafting recipe. The three sets are
+/// `Recipe.UpdateWhichItemsAreCrafted` (`Recipe.cs:15241-15257`): the LAST
+/// matching row wins per set — the plain set gates on `!notDecraftable`, the
+/// evil sets on the row's `crimson`/`corruption` tag ALONE (no
+/// `notDecraftable` gate there).
 pub fn decrafting_recipe_index(item_type: u16) -> i32 {
-    // `Recipe.UpdateWhichItemsAreCrafted` (`Recipe.cs:15241-15244`): the LAST
-    // non-`notDecraftable` recipe creating the type wins.
     let mut found = -1;
+    let mut crimson = -1;
+    let mut corruption = -1;
     for (i, r) in craft::RECIPES.iter().enumerate() {
-        if !r.not_decraftable && r.create.0 == item_type {
-            found = i as i32;
+        if r.create.0 != item_type {
+            continue;
         }
+        if !r.not_decraftable {
+            found = i as i32; // `:15245-15248`
+        }
+        if r.crimson {
+            crimson = i as i32; // `:15249-15252`
+        }
+        if r.corruption {
+            corruption = i as i32; // `:15253-15256`
+        }
+    }
+    // `:18-21` — no plain recipe, no decraft (the evil preference only
+    // applies when `IsCrafted[type] >= 0`).
+    if found < 0 {
+        return -1;
+    }
+    if world_crimson() && crimson >= 0 {
+        return crimson; // `ShimmerTransforms.cs:22-25`
+    }
+    if !world_crimson() && corruption >= 0 {
+        return corruption; // `:26-29`
     }
     found
 }
@@ -178,14 +203,31 @@ pub(crate) fn decraft_flags() -> (bool, bool) {
     DECRAFT_FLAGS.with(std::cell::Cell::get)
 }
 
+/// `WorldGen.crimson` — the world-evil flavour the decraft variant preference
+/// reads (`ShimmerTransforms.cs:22-29`). The port persists no world-evil type
+/// (`wld/sections/flags.rs:69` writes false, `shop.rs`'s standing gap); the
+/// thread-local default is the corruption world (false), the same stand-in
+/// `loot.rs`/`shop.rs` carry. [`set_world_crimson`] is the wiring hook for the
+/// day the flag lands.
+fn world_crimson() -> bool {
+    WORLD_CRIMSON.with(std::cell::Cell::get)
+}
+
 thread_local! {
     static DECRAFT_FLAGS: std::cell::Cell<(bool, bool)> = const { std::cell::Cell::new((true, true)) };
+    static WORLD_CRIMSON: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
 /// The app's wiring hook: the world's downed flags into the lock checks (so the
 /// pure helpers above stay callable from the tests without a world).
 pub(crate) fn set_decraft_flags(skeletron: bool, golem: bool) {
     DECRAFT_FLAGS.with(|c| c.set((skeletron, golem)));
+}
+
+/// The world-evil wiring hook (the tests flip it; the app threads the
+/// persisted flag once it exists).
+pub(crate) fn set_world_crimson(crimson: bool) {
+    WORLD_CRIMSON.with(|c| c.set(crimson));
 }
 
 /// `Recipe.ContainsIngredient` (`Recipe.cs:16756-16773`) over the port's
@@ -1006,5 +1048,43 @@ mod tests {
             resolve_shimmer(&ctx(), 3077, 29, 0),
             ShimmerOutcome::Decraft { recipe_index: 62, amount: 0 }
         );
+    }
+
+    /// W4-e19 deferred 6 — the crimson/corruption decraft variant
+    /// (`ShimmerTransforms.cs:22-29`, the `Recipe.cs:15249-15256` tags):
+    /// Monster Lasagna (5092) has a corruption row (90, Rotten Chunk 68 ×8)
+    /// and a crimson row (91, Vertebrae 1330 ×8). The world-evil flag picks
+    /// the variant; the ingredients follow.
+    #[test]
+    fn w4_e19_the_decraft_variant_follows_the_world_evil() {
+        // The corruption world (the default): row 90, the Rotten Chunk.
+        set_world_crimson(false);
+        let idx = decrafting_recipe_index(5092);
+        assert_eq!(idx, 90, "the corruption variant");
+        let ings = decraft_ingredients(idx as usize);
+        assert_eq!(ings.len(), 1);
+        assert_eq!((ings[0].item_type, ings[0].units), (68, 8));
+        // The crimson world: row 91, the Vertebrae.
+        set_world_crimson(true);
+        let idx = decrafting_recipe_index(5092);
+        assert_eq!(idx, 91, "the crimson variant");
+        let ings = decraft_ingredients(idx as usize);
+        assert_eq!((ings[0].item_type, ings[0].units), (1330, 8));
+        // The resolve rides the same preference (the Decraft arm's index).
+        assert_eq!(
+            resolve_shimmer(&ctx(), 5092, 1, 0),
+            ShimmerOutcome::Decraft { recipe_index: 91, amount: 1 }
+        );
+        set_world_crimson(false);
+        assert_eq!(
+            resolve_shimmer(&ctx(), 5092, 1, 0),
+            ShimmerOutcome::Decraft { recipe_index: 90, amount: 1 }
+        );
+        // A type with NO evil variant keeps the plain index in both worlds
+        // (Silk Rope 3077, recipe 62).
+        assert_eq!(decrafting_recipe_index(3077), 62);
+        set_world_crimson(true);
+        assert_eq!(decrafting_recipe_index(3077), 62);
+        set_world_crimson(false);
     }
 }
