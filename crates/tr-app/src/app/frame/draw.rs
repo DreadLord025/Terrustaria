@@ -1152,6 +1152,12 @@ impl App {
                         self.atmo,
                         self.game_update_count,
                         self.mouse_text_color,
+                        // `DrawStarsInBackground`'s head (W4-g69 retire sweep):
+                        // the graveyard/shimmer statics + the RAW cloudAlpha
+                        // for the `:63051` star gate.
+                        scene_state.graveyard_visual_intensity,
+                        scene_state.shimmer_alpha,
+                        rain.raw_alpha(),
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.

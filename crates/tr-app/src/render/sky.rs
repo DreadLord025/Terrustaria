@@ -506,6 +506,94 @@ pub(crate) fn draw_cloud_color(
     out
 }
 
+/// `DrawStar`'s colour chain (`Main.cs:63066-63110`, W4-g69 retire sweep /
+/// g69d-star-visual): the greyscale brightness off the SHIMMER-DIMMED sky
+/// (`bgColorForStars`), the `starOpacity` (graveyard) multiply, the i%3
+/// shimmer channel tint (`twinkle²`, the literal `(1f - num * 0f)` = 1),
+/// `Color.Lerp(color, value, shimmerAlpha)` and the final `*= 1 - shimmer`
+/// (the `artificial: false` arm; the `artificial: true` shimmer-surface call
+/// `:62203` is unported). Returns the RGB bytes, or `None` when the star is
+/// skipped (brightness ≤ 0 — `:63072-63074`).
+pub(crate) fn draw_star_color(
+    star_sky: [f32; 3],
+    twinkle: f32,
+    star_opacity: f32,
+    shimmer_alpha: f32,
+    i: usize,
+) -> Option<[u8; 3]> {
+    // `:63069-63071` — `(int)((255 - ch - 100) * twinkle)` per channel (the
+    // fadeIn factor is 1: no SpawnStars(s) respawn in the static field).
+    let ch = |c: f32| (255.0 - c * 255.0 - 100.0) * twinkle;
+    let n3 = ch(star_sky[0]) as i32;
+    let n4 = ch(star_sky[1]) as i32;
+    let n3 = (n3 + ch(star_sky[2]) as i32 + n4) / 3;
+    if n3 <= 0 {
+        return None;
+    }
+    // `:63076-63080` — `(int)((double)n3 * 1.4)`, capped at 255.
+    let v = ((n3 as f64 * 1.4) as i32).min(255);
+    // `color *= starOpacity` (`:63086`) — the XNA byte multiply.
+    let mut rgb = [(v as f32 * star_opacity) as i32 as u8; 3];
+    if shimmer_alpha > 0.0 {
+        // `:63090-63101` — i%3: 0 tints G, 1 tints B, 2 tints R.
+        let idx = match i % 3 {
+            0 => 1,
+            1 => 2,
+            _ => 0,
+        };
+        let mut value = rgb;
+        // `(float)(int)channel * (1f - num*0f) * twinkle * twinkle` — the
+        // literal-1 term, then the two sequential twinkle multiplies.
+        value[idx] = (value[idx] as f32 * twinkle * twinkle) as i32 as u8;
+        // `Color.Lerp(color, value, num)` (`:63102`) — per-channel byte lerp.
+        for k in 0..3 {
+            let (a, b) = (rgb[k] as f32, value[k] as f32);
+            rgb[k] = (a + (b - a) * shimmer_alpha) as i32 as u8;
+        }
+        // `color *= 1f - num` (`:63109`, artificial false).
+        let f = 1.0 - shimmer_alpha;
+        for c in rgb.iter_mut() {
+            *c = (*c as f32 * f) as i32 as u8;
+        }
+    }
+    Some(rgb)
+}
+
+/// `DrawStarsInBackground`'s heads (`Main.cs:63030-63058`, W4-g69 retire
+/// sweep): the graveyard opacity (`1 - intensity * 1.4`, the field dead at
+/// ≤ 0), the shimmer sky dim (`colorOfTheSkies *= 1 - shimmerAlpha`, the
+/// XNA byte multiply — the colour the `:63051` gate AND `DrawStar` read),
+/// and the gate itself: `remixWorld || 255 * (1 - cloudAlpha * atmo) - skyR
+/// - 25 > 0` on the RAW cloudAlpha (NOT cloudBGAlpha). The whole pass is
+/// skipped at `shimmerAlpha == 1` (`:62086-62088`). Returns
+/// `(star_opacity, star_sky, gate_open)`.
+pub(crate) fn star_pass_heads(
+    tint: [f32; 3],
+    graveyard_intensity: f32,
+    shimmer_alpha: f32,
+    cloud_alpha: f32,
+    atmo: f32,
+    remix: bool,
+) -> (f32, [f32; 3], bool) {
+    let star_opacity = if graveyard_intensity > 0.0 {
+        (1.0 - graveyard_intensity * 1.4).max(0.0)
+    } else {
+        1.0
+    };
+    let star_sky = if shimmer_alpha > 0.0 && shimmer_alpha != 1.0 {
+        let f = 1.0 - shimmer_alpha;
+        let ch = |v: f32| ((v * 255.0) as i32 as u8 as f32 * f) as i32 as u8 as f32 / 255.0;
+        [ch(tint[0]), ch(tint[1]), ch(tint[2])]
+    } else {
+        tint
+    };
+    let sky_r = (star_sky[0] * 255.0) as i32 as u8 as i32;
+    let gate = star_opacity > 0.0
+        && shimmer_alpha != 1.0
+        && (remix || 255.0 * (1.0 - cloud_alpha * atmo) - sky_r as f32 - 25.0 > 0.0);
+    (star_opacity, star_sky, gate)
+}
+
 /// One `DrawClouds_*` pass (`Main.cs:59644-59703`) over the live 200-slot pool:
 /// slot order 0..200, the verbatim bucket gate (`cloud_in_bucket` — scale
 /// 1.15f passes BOTH 2 and 3, the C# double/float edge), `cY` from the caller
@@ -617,6 +705,18 @@ pub(crate) fn draw_sky(
     counter: u32,
     // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
     mouse_text_color: u8,
+    // `Main.GraveyardVisualIntensity` (`Main.cs:1327`, the SceneState copy)
+    // and `Main.shimmerAlpha` (`:917`) — the `DrawStarsInBackground` head
+    // (`Main.cs:63036-63050`): the graveyard dims the star opacity (and
+    // kills the field at intensity ≥ 1/1.4), the shimmer dims the star
+    // colour. W4-g69 retire sweep (g69d-star-visual).
+    graveyard_intensity: f32,
+    shimmer_alpha: f32,
+    // `Main.cloudAlpha` RAW (`Main.cs:63051`'s star gate reads
+    // `cloudAlpha * atmo`, NOT the storm deck's cloudBGAlpha). W4-g69
+    // retire sweep; g70's tip adds the SAME param for the celestial dims —
+    // ONE param at the merge (same name, same semantics).
+    cloud_alpha: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -698,11 +798,21 @@ pub(crate) fn draw_sky(
     // `DrawStarsInBackground` (`Main.cs:63030-63058`): visibility is driven by
     // the sky colour alone — `255 * (1 - cloudAlpha * atmo) - skyR - 25 <= 0`
     // hides them — so the field fades out across dawn instead of switching off
-    // at a fixed hour. (`Main.atmo` is 1 at the surface; the graveyard dim of
-    // `Main.cs:63037-63045` is not modelled.)
-    let sky_r = (tint[0] * 255.0) as i32;
-    if 255.0 * (1.0 - storm) - sky_r as f32 - 25.0 > 0.0 {
-        for s in stars {
+    // at a fixed hour. W4-g69 retire sweep (g69d-star-visual): the heads +
+    // gate live in `star_pass_heads` (the RAW cloudAlpha·atmo gate, the remix
+    // `||` arm, the graveyard opacity kill, the shimmer sky dim + the
+    // shimmerAlpha==1 pass skip).
+    let remix = world.seeds.contains(tr_core::seeds::SeedFlags::REMIX);
+    let (star_opacity, star_sky, stars_visible) = star_pass_heads(
+        tint,
+        graveyard_intensity,
+        shimmer_alpha,
+        cloud_alpha,
+        atmo,
+        remix,
+    );
+    if stars_visible {
+        for (i, s) in stars.iter().enumerate() {
             let Some(st) = sky.stars.get(s.tex).and_then(|t| *t) else {
                 continue;
             };
@@ -713,23 +823,25 @@ pub(crate) fn draw_sky(
                     * (s.phase
                         + anim_time * 60.0 * s.twinkle_speed * (std::f32::consts::TAU / 0.8))
                         .sin();
-            // `DrawStar`'s greyscale brightness (`Main.cs:63069-63080`): how far
-            // the sky sits below white, averaged over the channels, x1.4.
-            let ch = |c: f32| (255.0 - c * 255.0 - 100.0) * twinkle;
-            let n3 = ch(tint[0]) as i32;
-            let n4 = ch(tint[1]) as i32;
-            let n3 = (n3 + ch(tint[2]) as i32 + n4) / 3;
-            if n3 <= 0 {
+            // `DrawStar`'s colour chain (`Main.cs:63066-63110`) — the shared
+            // helper (the brightness, the graveyard multiply, the shimmer
+            // i%3 tint + lerp + dim).
+            let Some(rgb) = draw_star_color(star_sky, twinkle, star_opacity, shimmer_alpha, i)
+            else {
+                continue;
+            };
+            if rgb[0] == 0 && rgb[1] == 0 && rgb[2] == 0 {
                 continue;
             }
-            let mut v = (n3 as f64 * 1.4) as i32;
-            if v > 255 {
-                v = 255;
-            }
-            // `Main.cs:63112-63137`: the design-space position mapped onto the
-            // screen and shifted by `sceneArea.bgTopY`, wrapped into the frame.
+            // `Main.cs:63112-63118`: the design-space position mapped onto the
+            // screen and shifted by `sceneArea.bgTopY` — which DrawStar zeroes
+            // on a skyblock-height world (`worldSurface <= 30`, `:63114-63117`,
+            // W4-g69 retire sweep) — then wrapped into the frame (`:63119-63137`,
+            // the not-falling arm; the falling-star no-wrap arm is the unported
+            // falling-star lane, research/117 §5).
+            let star_bg_top = if world.world_surface <= 30.0 { 0.0 } else { bg_top_y };
             let mut px = s.x / 1920.0 * screen.x;
-            let mut py = s.y / 1200.0 * screen.y + bg_top_y;
+            let mut py = s.y / 1200.0 * screen.y + star_bg_top;
             if px < 0.0 {
                 px += screen.x;
             }
@@ -758,7 +870,7 @@ pub(crate) fn draw_sky(
                 [px, py],
                 [st.w * k, st.h * k],
                 st.uv,
-                [v as f32 / 255.0, v as f32 / 255.0, v as f32 / 255.0, 1.0],
+                [rgb[0] as f32 / 255.0, rgb[1] as f32 / 255.0, rgb[2] as f32 / 255.0, 1.0],
                 rot,
             );
         }
@@ -1723,6 +1835,94 @@ mod cloud_star_tests {
         assert_eq!(
             rain_dim_sky(tinted, 0.5, 1.0, false),
             [110.0 / 255.0, 55.0 / 255.0, 27.0 / 255.0]
+        );
+    }
+
+    /// W4-g69 retire sweep (g69d-star-visual) — `DrawStarsInBackground`'s
+    /// heads + gate (`Main.cs:63030-63058`): the RAW `cloudAlpha * atmo`
+    /// (NOT the storm deck's cloudBGAlpha the stand-in read), the remix
+    /// `||` arm, the graveyard opacity kill and the shimmer sky dim + the
+    /// `shimmerAlpha == 1` pass skip (`:62086-62088`).
+    #[test]
+    fn w4_g69_the_star_gate_reads_the_raw_cloud_alpha() {
+        let night = [100.0 / 255.0; 3];
+        // Clear sky: 255 - 100 - 25 = 130 > 0 — open, opacity 1, sky unchanged.
+        let (op, sky, open) = star_pass_heads(night, 0.0, 0.0, 0.0, 1.0, false);
+        assert_eq!(op, 1.0);
+        assert_eq!(sky, night);
+        assert!(open);
+        // cloudAlpha 0.5: 255*0.5 - 100 - 25 = 2.5 > 0 — still open.
+        assert!(star_pass_heads(night, 0.0, 0.0, 0.5, 1.0, false).2);
+        // cloudAlpha 0.6: 255*0.4 - 100 - 25 = -23 <= 0 — CLOSED, even though
+        // the storm deck (cloudBGAlpha) is empty: the old stand-in read the
+        // storm and kept the stars visible through a heavy rain.
+        assert!(!star_pass_heads(night, 0.0, 0.0, 0.6, 1.0, false).2);
+        // atmo 0 (deep underground): the cloud term vanishes — open again.
+        assert!(star_pass_heads(night, 0.0, 0.0, 1.0, 0.0, false).2);
+        // remixWorld: the `||` arm draws the stars UNCONDITIONALLY.
+        assert!(star_pass_heads(night, 0.0, 0.0, 1.0, 1.0, true).2);
+        // Graveyard intensity 1: num2 = 1 - 1.4 <= 0 — the whole field dies
+        // (`:63040-63043`), remix or not.
+        let (op, _, open) = star_pass_heads(night, 1.0, 0.0, 0.0, 1.0, true);
+        assert_eq!(op, 0.0);
+        assert!(!open);
+        // Half graveyard: the opacity scales 1 - 0.5*1.4 = 0.3.
+        let (op, _, open) = star_pass_heads(night, 0.5, 0.0, 0.0, 1.0, false);
+        assert!((op - 0.3).abs() < 1e-6, "opacity {op}");
+        assert!(open);
+        // Shimmer 0.5 dims the sky bytes: (byte)(255 * 0.5) = 127 — the gate
+        // AND DrawStar read the dimmed colour (`:63046-63050`).
+        let white = [1.0; 3];
+        let (_, sky, open) = star_pass_heads(white, 0.0, 0.5, 0.0, 1.0, false);
+        assert_eq!(sky, [127.0 / 255.0; 3]);
+        assert!(open);
+        // shimmerAlpha 1: the pass is skipped wholesale (`:62086-62088`).
+        assert!(!star_pass_heads(white, 0.0, 1.0, 0.0, 1.0, true).2);
+    }
+
+    /// W4-g69 retire sweep (g69d-star-visual) — `DrawStar`'s colour chain
+    /// (`Main.cs:63066-63110`): the per-channel `(int)` truncation BEFORE the
+    /// /3 average, the `(double) * 1.4` cap-255 step, the `starOpacity`
+    /// graveyard multiply, and the shimmer i%3 `twinkle²` channel tint +
+    /// `Color.Lerp` + `*= 1 - shimmer` (the artificial-false arm).
+    #[test]
+    fn w4_g69_draw_star_color_replays_the_byte_chain() {
+        let black = [0.0; 3];
+        // Black night sky, twinkle 1: (255-0-100)*1 = 155 per channel,
+        // avg 155, (int)(155*1.4) = 217 — no shimmer, no graveyard.
+        assert_eq!(
+            draw_star_color(black, 1.0, 1.0, 0.0, 0),
+            Some([217; 3])
+        );
+        // twinkle 0.6: 155*0.6 = 93, (int)(93*1.4) = 130 (130.2 truncates).
+        assert_eq!(
+            draw_star_color(black, 0.6, 1.0, 0.0, 0),
+            Some([130; 3])
+        );
+        // Bright sky kills the star: (255-200-100) < 0 -> n3 <= 0 -> None
+        // (`:63072-63074`).
+        assert_eq!(draw_star_color([200.0 / 255.0; 3], 1.0, 1.0, 0.0, 0), None);
+        // Graveyard opacity 0.65 (intensity 0.25): (byte)(217 * 0.65) = 141.
+        assert_eq!(
+            draw_star_color(black, 1.0, 0.65, 0.0, 0),
+            Some([141; 3])
+        );
+        // Shimmer 0.5, twinkle 0.8, i%3 == 1 tints B: base (int)(124*1.4) =
+        // 173; the B channel takes twinkle² = 0.64: (byte)(173*0.64) = 110;
+        // Lerp 0.5: (int)(173 + (110-173)*0.5) = 141; *= 0.5:
+        // R/G (byte)(173*0.5) = 86, B (byte)(141*0.5) = 70.
+        assert_eq!(
+            draw_star_color(black, 0.8, 1.0, 0.5, 1),
+            Some([86, 86, 70])
+        );
+        // The i%3 channel map (`:63090-63100`): 0 -> G, 1 -> B, 2 -> R.
+        assert_eq!(
+            draw_star_color(black, 0.8, 1.0, 0.5, 0),
+            Some([86, 70, 86])
+        );
+        assert_eq!(
+            draw_star_color(black, 0.8, 1.0, 0.5, 2),
+            Some([70, 86, 86])
         );
     }
 
