@@ -83,6 +83,9 @@ mod npc_ai_drippler;
 mod npc_ai_poltergeist;
 mod npc_ai_pumpkin_boss;
 mod npc_ai_unicorn;
+// W4-c40 — the Sand Elemental's aiStyle-102 machine (UNWIRED, the d41
+// roster wave owns the kind row; the style73 precedent).
+mod npc_ai_sand_elemental;
 mod npc_ai_style10;
 mod npc_ai_style14;
 mod npc_ai_style16;
