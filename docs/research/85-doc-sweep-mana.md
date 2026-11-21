@@ -638,6 +638,7 @@ retire time (`git fetch` of the sibling refs):
 | --- | --- | --- |
 | `task/W4-f49-mana-regen-2` (THIS) | cded6714 (start) | the mana lane + the R3 executed half |
 | `task/W4-f12-buff-frame-wiring` | **22ce2a41** (its RETIRE) | the buff-frame canonical + the published bridge hunk |
+| `task/W4-d79-sound-pitch-pool` | **b98130d6** (sweep 4, latest) | the THIRD nebula copy + the sound-pool facades |
 | `task/W4-d117-mana-regen-full` | 0dbcb013 (ancestor of THIS branch) | the regen-engine read side |
 | `task/W4-g27-orb-keep-one-prep` | 1cd7ac36 | the canonical orbs module (blob-pinned below) |
 
@@ -737,3 +738,66 @@ nothing else):**
 The f12 RETIRE's other receipts (f50 dup drop-hunks, d73 co-lane, the
 BUFF merger paragraph) are f12's lane record — unchanged, not re-ruled
 here.
+
+## RT2. The d79 three-way — d79c-full-nebula-arm is the THIRD copy
+
+d79 sweep 2 (**b78b02022**, inside tip **b98130d6**, the latest read)
+landed a FULL third nebula port: the 3453/3454/3455 consume arm + the
+4143 twin + the 12/5 pull + `nebula_levelup` + a second
+`UpdateBuffs_NebulaBuffs` copy (`update_buffs_nebula` +
+`update_buffs_nebula_scan`) + the Life/Damage stat folds + a
+Player-method `apply_nebula_buff_mana` (the d117 engine copy's twin).
+Its `regen.rs` delta vs base is 3 lines (the refill-flag doc) — the
+regen ENGINE stays d117's; d79's nebula mana method is a parallel writer
+on `Player.mana`/`Player.nebula_mana_counter`.
+
+**The R3 deletion stands.** d79's scan is the same `:12070-12079` port
+this branch deleted at 8eb20d8b; three writers on one buff bar would
+triple-run the time-2 edge. d79's scan + helper fold out exactly like
+this branch's did — the g27 writer is canonical for ALL THREE trees.
+What d79 KEEPS: the pickup-chain cue facades (the D1/D4 single-slot
+pool), the levelup/lifecycle witnesses' behaviors (re-targeted onto the
+f49 set), and the full-mana refill cue (no f49 counterpart).
+
+**The per-fn keep-one FINAL table (the C#-position single chain).**
+Positions are the merged tick's C# order; "KEEP" names the surviving
+copy's tree + symbol, "DROP" the copies the merger deletes:
+
+| # | C# position | Function / arm | KEEP (one) | DROP |
+| --- | --- | --- | --- | --- |
+| 1 | `Player.cs:34953-34956` (GrabItems pull chain) | the nebula 12/5 pull | **f49** `world_sim/items.rs:685-688` | d79 `items.rs:700-704` (identical 12/5 arm) |
+| 2 | `:35045-35058` (PickupItem FIRST arm) | the trio consume: positioned case-7 + TurnToAir + NebulaLevelup | **f49** arm `items.rs:303-315` (registry `buff_type` read), REWIRED onto d79's pool facade (row 3) | d79 arm `items.rs:218-236` (hardcoded 179/173/176 match — same values, `Item.cs:31001-31018`) |
+| 3 | `LegacySoundPlayer.cs:718-725` (the case-7 play) | the positioned Grab cue | **d79** `audio.rs::play_grab_sound` (:2468 — gate → ONE `Next(-10,11)` pitch → `replace_single("Grab", …)` Stop/re-create, the D1/D4 pool contract) | f49 `play_grab_sound_at` (:1907 — same gate+pitch but NO single-slot replace; f49's `play_chest_eat_sound` :1895 rewires onto the d79 facade too) |
+| 4 | `:35080-35098` (the 4143 twin) | +50 capped, RAW-50 text, ManaHeat(0.2, 2f) | **f49** arm `items.rs:324+` | d79 arm `items.rs:328+` (same shape; f49's witness set kept) |
+| 5 | `:35067` (the star restock cue) | the unpositioned id-7 Grab | **d79** `play_pickup_sound` pool path (f49's i52/f49 arms already call it — no conflict) | — |
+| 6 | `:57030-57059` (NebulaLevelup) | the family DelBuff sweep + clamp-0..3 bump + AddBuff(tier, 480) | **f49** `player.rs::nebula_levelup` (:3492) | d79 `player.rs:3481` (same port; f49's is the anchors:904 marker) |
+| 7 | `:18755` (ResetEffects chained zero) | the three tier zeros | **f49** `player.rs:6182-6184` (+ f12's `orb_scan.reset_effects()` — different object, BOTH stay) | d79 `player.rs:6291-6293` (same three lines) |
+| 8 | `:10444-10461` + `:12070-12079` (the scan) | the tier writer + time-2 step-down | **f12/g27** `buff_effects_orbs.rs::nebula_buffs` via `apply_orb_arm` (blob c6bcb017b) | d79 `update_buffs_nebula` (:3519) + `update_buffs_nebula_scan` (:3557) + its call (:6578); f49's copy ALREADY deleted (8eb20d8b) |
+| 9 | `:10448-10452` (the Life fold) | `lifeRegen += 6 × tier` | **f12** `apply_orb_arm`'s `e.life_regen += 6 * level` → `fold_orb` → `buff_life_regen` → the regen read (f12 `player.rs:11492` sum) | d79's stat-loop arm `173\|174\|175 => accessory_life_regen += 6 * nebula_level_life` (:7113) — a SECOND consumer of the same C# line; merged it would double the add |
+| 10 | `:10453-10461` (the Damage fold) | `0.15 × tier` onto all four classes | **f12** `apply_orb_arm`'s num12 four-class adds → `fold_orb` | d79's post-loop `if nebula_level_damage > 0` block (:6886-6892) — same double-add shape |
+| 11 | `:19421` + `:19565-19585` (ApplyNebulaBuffMana) | the 6-count mana cadence | **d117/f49** `regen.rs::apply_nebula_buff_mana` (:374, called at the `update_mana_regen` head :405; `RegenState.nebula_mana_counter` :36, `RegenInputs.nebula_level_mana` :106 fed from the Player field) | d79's Player-method twin (:3533) + its `update_survival` head call (:11325) + `Player.nebula_mana_counter` (:1405) — the counter lives in RegenState, ONE home |
+| 12 | `:19550-19560` (the full-bar refill cue) | the flag4-gated PlaySound(25) + 5× dust-45 | **d79** `pending_mana_refill` queue (:1897/:3391) + the `update_survival` capture (:11362-11373) + the world-sim drain (`world_sim/player.rs:1392`, `play_single_voice("MaxMana")` + the 5-draw loop) | — (f49's engine ALREADY returns the `refilled` flag — `regen.rs:399` `update_mana_regen` → bool, `regen.rs:424-471`; the merge adds d79's capture to the LIFTED `update_survival`, not the pre-lift one) |
+| 13 | the `IsAPickup` skip-gate (`items.rs:156`) | the consume-on-touch admission | **f49** gate-REMOVED shape (every `IsAPickup` kind has a consume arm — `item.rs::is_a_pickup` :206 lists exactly the 10 kinds the arms cover) | d79's gate-with-exclusions (:156-163) AND f12's stale gate (:156, `!is_heart_or_star` only — it would SKIP the trio + 4143; the f49 wholesale resolution retires it) |
+
+**The d79 pickup-chain + levelup + lifecycle witnesses** (the merger
+keeps ONE set per behavior): d79's
+`w4_d79_the_nebula_pickup_levels_the_matching_buff_family` (items.rs
+:2496) + `…_draws_one_pitch_and_no_text` (:2545) are the SAME behaviors
+f49's `w4_f49_the_nebula_pickups_grant_their_family_buff_and_vanish`
+(:2435) + the positioned-chime witnesses pin — keep the f49 set (the
+anchors:905 marker), RETARGET its audio assertions to the d79 facade
+(the one-pitch + no-text contract is identical; the pool replace adds no
+draw). d79's 4143 twins (:2415/:2465) fold into f49's
+`w4_f49_the_mana_cloak_star_restores_fifty_and_arms_mana_heat` (:2468).
+d79's refill witnesses (`player.rs:21143` queue-once,
+`world_sim/player.rs:2071` drain + :2157 gate/muted twins) LAND CLEAN —
+no f49 counterpart exists; they re-target to the lifted seam (the queue
+capture moves with `update_survival`).
+
+**The d79 scan-position note:** d79 interleaves its scan at the timer
+head (`update_buffs_tick` :5815 → scan :6578) — the C# runs the arms
+INSIDE the UpdateBuffs slot loop after the per-slot decrement, so d79's
+position is faithful ON ITS TREE; the merged tree keeps the g27 wiring
+position instead (the f12 frame head), which is the same C# block. The
+merge must NOT keep both interleaves — row 8's drop list includes the
+:6578 call.

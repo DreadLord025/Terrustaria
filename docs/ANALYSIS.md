@@ -36391,6 +36391,22 @@ to f49 wholesale, the `extra_regen` sum kept from f12 (`player.rs:11492`
 — f49's lifted read at :11345 lacks the `buff_life_regen` term), the
 94-drink one-line resolution, the post-merge sweep + anchors verify.
 
+**RT2 — the d79 three-way keep-one:** d79 sweep 2 (b78b02022, tip
+b98130d6) landed a FULL third nebula copy (the consume arms + levelup +
+a second `:12070-12079` scan + the Life/Damage stat folds + a
+Player-method `apply_nebula_buff_mana`). The R3 deletion stands for all
+three trees: the g27 writer is the ONE tier writer, the d117 engine the
+ONE mana cadence (the counter lives in `RegenState`, d79's
+`Player.nebula_mana_counter` drops), f12's `fold_orb` the ONE Life/Damage
+consumer (d79's stat-loop/post-loop folds would double the adds). KEEP:
+the f49 consume arms/levelup/zeros/pull (the cue rewired onto d79's
+`play_grab_sound` single-slot pool facade — f49's `play_grab_sound_at`
+has no Stop/re-create and retires), d79's full-mana refill queue/drain
+(no f49 counterpart; the capture lands on the LIFTED `update_survival`,
+the engine already returns the `refilled` flag). The per-fn C#-position
+single-chain table (13 rows) + the witness keep-one rulings:
+research/85 RETIRE RT2.
+
 ## The magic guns + tomes use arms (S1-P-i22)
 
 `Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:
