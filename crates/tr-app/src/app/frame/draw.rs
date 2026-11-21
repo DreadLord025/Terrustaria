@@ -191,6 +191,23 @@ impl App {
             // mutates `self` while the draw destructure holds its fields;
             // applied after the gpu block (S1-E-26 wave A).
             let mut popup_goto: Option<&'static str> = None;
+            // The craft RAW-list rebuild (`Recipe.UpdateRecipeList`) and the
+            // worldgen-debug feed — computed BEFORE the field destructure
+            // below: both read many `self` fields disjointly, and a whole-`self`
+            // method call inside the destructure block would conflict with the
+            // live `&mut` field bindings (E0502). The owned results are used
+            // inside the block (W4-f23 closeout).
+            let craft_raw_pre = if self.inventory_open
+                && self.menu.is_none()
+                && self.front.is_none()
+                && !crate::env::no_hud()
+                && !(self.settings.map_enabled && self.map.as_ref().is_some_and(|m| m.open))
+            {
+                self.craft_raw_list()
+            } else {
+                Vec::new()
+            };
+            let worldgen_debug_pre = self.worldgen_debug_feed();
 
             {
                 let App {
@@ -1550,7 +1567,7 @@ impl App {
                             scroll: self.front_scroll,
                             vk_grid: self.vk_grid,
                             frame_count: *frame_count,
-                            worldgen_debug: self.worldgen_debug_feed(),
+                            worldgen_debug: worldgen_debug_pre.clone(),
                             worldgen_debug_open: self.worldgen_debug_open,
                         };
                         front.draw(&mut d);
@@ -1588,11 +1605,7 @@ impl App {
                         // pip-list DRAW (`CraftingUI.DrawRecipesList`,
                         // `Main.cs:41715`) stays unported — the modern grid
                         // replaces it (ANALYSIS "Crafting panel").
-                        let craft_available = if self.inventory_open {
-                            self.craft_raw_list()
-                        } else {
-                            Vec::new()
-                        };
+                        let craft_available = craft_raw_pre;
                         if self.inventory_open {
                             let old_recipe = self
                                 .craft_last_available

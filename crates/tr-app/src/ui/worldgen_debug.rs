@@ -378,7 +378,7 @@ mod tests {
         let ch = content_height(f.steps.len());
         assert_eq!(ch, f.steps.len() as f32 * 32.0);
         assert!(ch > l.list[3], "the full pipeline scrolls");
-        assert_eq!(super::char_select::clamp_scroll(99999.0, l.list[3], ch), ch - l.list[3]);
-        assert_eq!(super::char_select::clamp_scroll(-5.0, l.list[3], ch), 0.0);
+        assert_eq!(crate::ui::char_select::clamp_scroll(99999.0, l.list[3], ch), ch - l.list[3]);
+        assert_eq!(crate::ui::char_select::clamp_scroll(-5.0, l.list[3], ch), 0.0);
     }
 }
