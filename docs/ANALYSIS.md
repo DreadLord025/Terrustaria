@@ -22865,24 +22865,43 @@ Deliberate folds (host-path stand-ins):
 * The value-zero flag (`:81088`, `:81102-81105`) is inert for this pair
   (both rows carry 20000).
 
-## The buff hover's two dropped arms (S1-E-6 follow-up, 2026-11-16)
+## The buff hover's two restored arms (S1-E-6 follow-up, 2026-11-16; restored W4-f12 final 2026-11-21)
 
 `Main.GetBuffTooltip` (`Main.cs:43254-43289`) has a `switch` over the buff id
 whose two arms print a *player-computed* percentage rather than a static
 localization string:
 
-* `case 94` (`ManaSickness`) formats `Player.manaSickReduction` into the
-  `ManaSickness2` row of `Terraria.Localization.Content.en-US.Game.json`.
-* `case 396` (`ManaHeat`) does the same with `Player.manaHeat`.
+* `case 94` (`ManaSickness`) appends `(int)(Player.manaSickReduction * 100f) + 1`
+  and `"%"` to the description (`:43282`).
+* `case 396` (`ManaHeat`) appends `(int)(Math.Ceiling(Player.manaHeat * 100f) - 100.0)`
+  and `"%"` (`:43285`).
 
-The port has neither `Player.manaSickReduction` nor `Player.manaHeat`: the
-mana-sickness debuff applies its magic-damage multiplier inline in the damage
-path and stores no reduction field, and 396 does not exist at all. Rather than
-invent a field whose value no other system maintains,
-`ui::resources::buff_tooltip` falls back to the plain `BuffDescription.{name}`
-row for both ids. When the 94/396 buff *effects* land (M2-BUFF-3/4) the fields
-will exist and these two arms can be restored вЂ” the ported code is already a
-`match` over the id, so adding them is two arms.
+These were documented drops while the port had neither field. Both fields
+now exist (`Player.mana_sick_reduction`, S1-P-i19; `Player.mana_heat`,
+S1-P-i52, reset to 1 every tick) and the W4-f12 final census restored the
+two arms in `ui::resources::buff_tooltip` — the f32 multiply + `(int)`
+truncation for 94, the `ceil` for 396, exactly as written. The 94 arm's
+`DebugOptions.ManaPotionDelay` early-return (`:43278-43281`, the
+`ManaSickness2` Game.json row) stays constants-off
+(`Testing/DebugOptions.cs:28`, static ctor `:86` false — the same ruling
+as `buff_effects_potions_sets.rs`). Witnesses:
+`w4_f12_final_tooltip_the_mana_percentage_arms_print_the_player_fields`
+(written not run, code-only).
+
+The buff-tooltip lane census (W4-f12 final): the f28/e16 tooltip branches
+(`origin/task/W4-f28-tooltip-lines-2`, `origin/task/W4-e16-item-tooltip-lines`)
+touch ONLY the item-tooltip code (`tooltip.rs`'s item lanes + their new
+`tooltip_lines2.rs`/`tooltip_sets.rs`); their `ui/mod.rs` diffs carry no
+buff references — the BUFF tooltip lane (`draw_buff_hover` +
+`buff_tooltip` + `banner_hover_names`) is unclaimed and stays f12's.
+Two geometry deviations remain deliberate: the shared block printer draws
+the opaque box + single-column stack (the C# plain arm `:20218-20319` has
+no box, and `MouseText_DrawBuffTooltip` lays the banner names in 220 px
+columns of `(screenHeight - Y - 24 - 72) / 20` rows with a `UI.Ellipsis`
+cutoff at the screen edge, `:21348-21388`/`:21438-21488`); the port keeps
+the shared printer's box and stacks the banner names vertically. The
+banner LIST and its `(80, 255, 120)` tint are faithful; only the column
+geometry differs.
 
 Two further colours are dropped rather than approximated: `MouseTextInner`'s
 `-13` (master) and `-12` (disco) rarity arms read `Main.masterColor` and

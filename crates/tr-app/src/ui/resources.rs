@@ -456,14 +456,32 @@ pub(crate) fn buff_text(p: &Player, slot: usize) -> Option<String> {
 /// `Main.GetBuffTooltip` (`Main.cs:43254-43289`): the buff description with
 /// its per-buff overrides. The three WellFed tiers swap to their `_Expert`
 /// rows under `Main.expertMode`; the `ManaSickness` (94) and `ManaHeat` (396)
-/// `switch` arms append a player-computed percentage and are documented drops
-/// — the port has no `Player.manaSickReduction` / `Player.manaHeat`.
+/// arms append the player-computed percentage (restored by the W4-f12 final
+/// census — the fields landed with S1-P-i19/i52). The 94 arm's
+/// `DebugOptions.ManaPotionDelay` early-return (`:43278-43281`) is
+/// constants-off (`Testing/DebugOptions.cs:28`, static ctor `:86` false —
+/// the same ruling as `buff_effects_potions_sets.rs:108`).
 pub(crate) fn buff_tooltip(p: &Player, buff: i32) -> String {
     let expert = p.buffs.expert_mode;
     match buff {
         26 if expert => crate::lang::text("BuffDescription.WellFed_Expert"),
         206 if expert => crate::lang::text("BuffDescription.WellFed2_Expert"),
         207 if expert => crate::lang::text("BuffDescription.WellFed3_Expert"),
+        // `:43282` — `text + ((int)(manaSickReduction * 100f) + 1) + "%"`.
+        // The f32 multiply then the `(int)` truncation match the C#.
+        94 => format!(
+            "{}{}%",
+            crate::lang::buff_description(buff),
+            (p.mana_sick_reduction * 100.0f32) as i32 + 1
+        ),
+        // `:43285` — `text + (int)(Math.Ceiling(manaHeat * 100f) - 100.0)
+        // + "%"`. `manaHeat` resets to 1 every tick (`:18593`), so the
+        // resting suffix is "0%".
+        396 => format!(
+            "{}{}%",
+            crate::lang::buff_description(buff),
+            ((p.mana_heat * 100.0f32).ceil() - 100.0) as i32
+        ),
         _ => crate::lang::buff_description(buff),
     }
 }
@@ -711,10 +729,47 @@ mod s1_e_6_tests {
         // A non-fed buff ignores the flag.
         p.buffs.expert_mode = false;
         assert_eq!(buff_tooltip(&p, 26), "Minor improvements to all stats");
-        // The `ManaSickness` (94) / `ManaHeat` (396) percentage arms are
-        // documented drops: they fall back to the plain description row (no
-        // `Player.manaSickReduction` / `manaHeat` in the port).
-        assert_eq!(buff_tooltip(&p, 396), crate::lang::buff_description(396));
+        // The `ManaSickness` (94) / `ManaHeat` (396) percentage arms
+        // (`Main.cs:43282`/`:43285`, restored by the W4-f12 final census):
+        // 396's resting `manaHeat = 1` prints "0%".
+        assert_eq!(
+            buff_tooltip(&p, 396),
+            format!("{}0%", crate::lang::buff_description(396))
+        );
+    }
+
+    #[test]
+    fn w4_f12_final_tooltip_the_mana_percentage_arms_print_the_player_fields() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "BuffDescription": {
+                    "ManaSickness": "Magic damage reduced by ",
+                    "ManaHeat": "Mana cost increased by "
+                }
+            }"#,
+        );
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        // `:43282` — `(int)(manaSickReduction * 100f) + 1`: the 0.25 full
+        // sickness prints 26%, a half-decayed 0.125 prints 13% (the +1
+        // makes the fresh-drink 25% penalty read as the NEXT percent).
+        p.mana_sick_reduction = 0.25;
+        assert_eq!(buff_tooltip(&p, 94), "Magic damage reduced by 26%");
+        p.mana_sick_reduction = 0.125;
+        assert_eq!(buff_tooltip(&p, 94), "Magic damage reduced by 13%");
+        // The `(int)` truncates: 0.129 * 100 = 12.9 -> 12, +1 = 13.
+        p.mana_sick_reduction = 0.129;
+        assert_eq!(buff_tooltip(&p, 94), "Magic damage reduced by 13%");
+        // `:43285` — `(int)(Math.Ceiling(manaHeat * 100f) - 100.0)`: the
+        // ceiling rounds UP (1.105 -> 111 -> 11%), the resting 1 is 0%.
+        p.mana_heat = 1.0;
+        assert_eq!(buff_tooltip(&p, 396), "Mana cost increased by 0%");
+        p.mana_heat = 1.105;
+        assert_eq!(buff_tooltip(&p, 396), "Mana cost increased by 11%");
+        p.mana_heat = 1.5;
+        assert_eq!(buff_tooltip(&p, 396), "Mana cost increased by 50%");
     }
 
     #[test]
