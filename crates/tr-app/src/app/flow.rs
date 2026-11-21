@@ -1253,6 +1253,13 @@ impl App {
                 ui::char_creation::hover_element(&l, state.category, self.mouse_pos)
                     .map(|id| id + 1000)
             }
+            // W4-g22 DOC-SWEEP — the world creator's hover census (the
+            // GroupOptionButton/plate DrawSelf latches + FadedMouseOver).
+            // The +2000 base keeps the ids off both other screens' ranges.
+            FrontScreen::WorldCreation(_) => {
+                let l = ui::world_creation::layout(screen, 0.0);
+                ui::world_creation::hover_element(&l, self.mouse_pos).map(|id| id + 2000)
+            }
             _ => None,
         }
     }
@@ -1764,6 +1771,41 @@ pub(crate) mod front_flow_tests {
         front_press(&mut app);
         assert_eq!(app.audio.played_count(), before + 1, "one 11 on Back, not two");
         assert!(matches!(app.front, Some(FrontScreen::WorldSelect)));
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the seed submit's special-seed cue
+    /// (`UIWorldCreation.cs:834`'s 24): a seed text resolving a generation
+    /// option plays Chat ON TOP of the submit's 10; a plain text plays
+    /// only the submit's 10.
+    #[test]
+    fn doc_sweep_special_seed_submit_plays_the_chat_cue() {
+        for (text, extra) in [("for the worthy", 1u64), ("hello world", 0)] {
+            let mut app = flow_app(
+                Some(FrontScreen::WorldCreation(ui::world_creation::NewWorldDraft::new(0, 0))),
+                Vec::new(),
+                Vec::new(),
+            );
+            app.pointer.tick(300.0);
+            let (sw, sh) = app.screen_size();
+            let l = ui::world_creation::layout(Vec2::new(sw, sh), 0.0);
+            app.mouse_pos = centre(l.seed_plate);
+            front_press(&mut app);
+            let Some(FrontScreen::Keyboard(s)) = app.front.as_mut() else {
+                panic!("the seed keyboard opened");
+            };
+            ui::keyboard::write_str(&mut s.state, text);
+            let before = app.audio.played_count();
+            app.keyboard_submit();
+            assert_eq!(
+                app.audio.played_count(),
+                before + 1 + extra,
+                "seed {text:?}: the submit's 10 plus {extra} Chat"
+            );
+            assert!(matches!(
+                app.front,
+                Some(FrontScreen::WorldCreation(ref d)) if d.seed == text
+            ));
+        }
     }
 
     #[test]

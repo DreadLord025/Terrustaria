@@ -2565,7 +2565,23 @@ impl App {
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
                 if let FrontScreen::WorldCreation(draft) = &mut back {
-                    draft.seed = name;
+                    draft.seed = name.clone();
+                    // W4-g22 DOC-SWEEP — `SoundEngine.PlaySound(24)`
+                    // (`UIWorldCreation.cs:834`): the seed text resolving a
+                    // special generation option (`GetOptionFromSeedText !=
+                    // null`, `:829-833`) plays the Chat cue (SoundID.Chat =
+                    // 24, `SoundID.cs:70`). The port's resolution is the
+                    // pure `seed_flags` (`tr_core::seeds`); a non-empty
+                    // classic flag set is the option hit. The secret-seed
+                    // `Enable` trackable sound (`WorldGen.cs:539`,
+                    // SoundID.MenuAccept) stays with the Advanced tab
+                    // (documented deviation).
+                    if !name.is_empty()
+                        && ui::world_creation::seed_flags(&name)
+                            != tr_core::seeds::SeedFlags::none()
+                    {
+                        self.audio.play("Chat");
+                    }
                 }
                 self.enter_front(back);
             }

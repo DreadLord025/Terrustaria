@@ -576,6 +576,49 @@ pub fn click_cue(click: Click) -> Option<u32> {
     })
 }
 
+/// W4-g22 DOC-SWEEP — the hover-sounding element under the pointer: the
+/// two `GroupOptionButton` plate icons + the ten option rows
+/// (`GroupOptionButton.cs:212-223`'s DrawSelf latch, 12 once per enter),
+/// the two `UICharacterNameButton` plates (`UICharacterNameButton.cs:65-76`,
+/// same latch) and the Back/Create `FadedMouseOver` panels (`:678`).
+/// Ids are stable per element for the App's Bug-17 edge latch.
+pub fn hover_element(l: &Layout, mouse: Vec2) -> Option<u32> {
+    if in_rect(mouse, l.random_name_icon) {
+        return Some(0); // `GroupOptionButton.cs:216`
+    }
+    if in_rect(mouse, l.seed_button) {
+        return Some(1); // `GroupOptionButton.cs:216`
+    }
+    if in_rect(mouse, l.name_button) {
+        return Some(2); // `UICharacterNameButton.cs:69`
+    }
+    if in_rect(mouse, l.seed_plate) {
+        return Some(3); // `UICharacterNameButton.cs:69`
+    }
+    for (k, _) in l.size_buttons.iter().enumerate() {
+        if in_rect(mouse, l.size_buttons[k]) {
+            return Some(10 + k as u32); // `GroupOptionButton.cs:216`
+        }
+    }
+    for (k, _) in l.difficulty_buttons.iter().enumerate() {
+        if in_rect(mouse, l.difficulty_buttons[k]) {
+            return Some(20 + k as u32); // `GroupOptionButton.cs:216`
+        }
+    }
+    for (k, _) in l.evil_buttons.iter().enumerate() {
+        if in_rect(mouse, l.evil_buttons[k]) {
+            return Some(30 + k as u32); // `GroupOptionButton.cs:216`
+        }
+    }
+    if in_rect(mouse, l.back) {
+        return Some(40); // `FadedMouseOver` (`:678`)
+    }
+    if in_rect(mouse, l.create) {
+        return Some(41); // `FadedMouseOver` (`:678`)
+    }
+    None
+}
+
 /// The click table over the live geometry, in append order: the two 40x40
 /// icons, the two plates, the three option rows, then Back/Create. Nothing
 /// overlaps (the info rows end 19 px above the description, and the pair sits
@@ -1626,6 +1669,26 @@ mod tests {
         assert_eq!(click_cue(Click::Create), Some(10));
         assert_eq!(click_cue(Click::Back), None, "the hop plays the 11");
         assert_eq!(click_cue(Click::None), None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the world creator's hover census: the
+    /// plate icons, both plates, the ten option rows and Back/Create all
+    /// answer stable ids; the preview and empty space are silent.
+    #[test]
+    fn doc_sweep_world_creator_hover_elements() {
+        let l = layout(Vec2::new(1600.0, 900.0), 40.0);
+        let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
+        assert_eq!(hover_element(&l, centre(l.random_name_icon)), Some(0));
+        assert_eq!(hover_element(&l, centre(l.seed_button)), Some(1));
+        assert_eq!(hover_element(&l, centre(l.name_button)), Some(2));
+        assert_eq!(hover_element(&l, centre(l.seed_plate)), Some(3));
+        assert_eq!(hover_element(&l, centre(l.size_buttons[1])), Some(11));
+        assert_eq!(hover_element(&l, centre(l.difficulty_buttons[3])), Some(23));
+        assert_eq!(hover_element(&l, centre(l.evil_buttons[2])), Some(32));
+        assert_eq!(hover_element(&l, centre(l.back)), Some(40));
+        assert_eq!(hover_element(&l, centre(l.create)), Some(41));
+        assert_eq!(hover_element(&l, centre(l.preview)), None);
+        assert_eq!(hover_element(&l, Vec2::new(100.0, 100.0)), None);
     }
 
     #[test]
