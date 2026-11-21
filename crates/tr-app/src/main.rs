@@ -32,6 +32,7 @@ mod death;
 mod drawdata_cases_a;
 mod drawdata_cases_b;
 mod dust_lights;
+mod dust_lights_b;
 mod dye;
 mod emotes;
 mod env;

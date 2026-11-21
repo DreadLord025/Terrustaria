@@ -604,6 +604,44 @@ impl App {
                     {
                         style.brightness = 1.0;
                     }
+                    // The Dust `UpdateDust` SECOND-chain lights (S1-E-5,
+                    // W4-g13 — the research/68 flag-a orphan closure): the 52
+                    // RNG-free AddLight arms `Dust.cs:1061-2312`
+                    // (`dust_lights_b.rs`), fed immediately after the FIRST
+                    // ladder in the same `Main.dust` slot order, reading the
+                    // POST-move pool (d50 owns the move). The 244-247/43
+                    // ambient sample is `Lighting.GetColor` (the light map ×
+                    // GlobalBrightness, `main_dust::light_color_bytes`); the
+                    // 27/45 player push and the 35 wet probe ride the same
+                    // seams d50's `DustPhysicsEnv` uses. No arm draws
+                    // `Main.rand` (the witness in `dust_lights_b.rs` pins the
+                    // stream), so the placement leaves the fixed-step order
+                    // exact. Placed after the brightness block so the ambient
+                    // sample reads the Darkness-adjusted GlobalBrightness.
+                    {
+                        let (pvx, pvy, pwet) = player
+                            .as_ref()
+                            .map_or((0.0, 0.0, false), |p| (p.vx, p.vy, p.wet));
+                        let brightness = style.brightness;
+                        let lc = |x: i32, y: i32| {
+                            crate::main_dust::light_color_bytes(light, brightness, x, y)
+                        };
+                        let wet = |pos: Vec2, w: f32, h: f32| {
+                            crate::player::wet_collision(world, pos.x, pos.y, w, h)
+                        };
+                        let chain_env = crate::dust_lights_b::ChainLightEnv {
+                            player_wet: pwet,
+                            player_velocity: Vec2::new(pvx, pvy),
+                            light_color: &lc,
+                            wet_collision: &wet,
+                        };
+                        crate::dust_lights_b::feed_dust_chain_lights(
+                            dust,
+                            &params,
+                            &chain_env,
+                            &mut self.entity_lights,
+                        );
+                    }
                     // `Main.ForcedMinimumZoom` (`Main.cs:61989-61994`, computed per
                     // draw) splits the two view matrices: the background chain
                     // zooms to the bare floor (`BackgroundViewMatrix.Zoom`,
