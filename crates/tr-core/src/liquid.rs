@@ -620,13 +620,14 @@ impl LiquidSystem {
     /// `ShimmerCheck`), the swap-remove and the herb / lily-pad checks.
     ///
     /// KEEP-ONE (W4-g47 vs W4-g45, ANALYSIS): this body is canonical — the
-    /// swap-remove runs INSIDE (the C# `:1575-1579` decrements `numLiquid`
-    /// then copies the last entry; g45's caller-side swap double-copies
-    /// when `l == last`), and the `Check*` kills ride `edit_kills` (g45's
-    /// `check_alch_tile`/`check_lily_pad` wrappers discard the drop
-    /// records). Adopted from g45: the live side re-reads (`:1519-1528`
-    /// reads the tile references AFTER the drain), the explicit lily-pad
-    /// arm order, and the grass ring's chunk-dirty marking.
+    /// `Check*` kills ride `edit_kills` (g45's `check_alch_tile`/
+    /// `check_lily_pad` wrappers execute the kill but discard the drop
+    /// record, losing the herb/lily-pad loot), and the swap-remove lives in
+    /// one body the sweep and the stuck self-clear share (g45 splits it into
+    /// `retire_sweep`; the two shapes are equivalent). Adopted from g45: the
+    /// edge-safe sub-2 probe, the live side re-reads (`:1519-1528` reads the
+    /// tile references AFTER the drain), the explicit lily-pad arm order,
+    /// and the grass ring's chunk-dirty marking.
     fn del_water(&mut self, world: &mut World, l: usize) {
         let (x, y) = (self.active[l].x, self.active[l].y);
         let i = world.index(x, y);

@@ -18337,19 +18337,83 @@ code-only lane cannot run):
   (`tileobject::check_water_death`/`check_lava_death`) and consumed by
   `WaterCheck`; wiring them into `add_water` needs the fixtures widened past
   the border first.
-- **The `genRand` 254->255 nudge (`:892-895`) is NOT ported.** It consumes a
-  shared RNG draw, re-pinning the settle fixtures (census deviation 5); the
-  determinism note + re-pin must land with it.
-- **`settle_loaded_world` is NOT wired into the load path.** Running it
-  changes every saved world's liquid bytes, so the save/load round-trip pins
-  (`saveglue.rs`) need a deliberate re-derivation first. The function is
-  ported + witnessed; the `swap_world` hook is deferred.
-- **The generation-only settle arms are dead** (the `SettleWaterAt`
-  waterLine/lavaLine/dungeon re-type `:178-192`, `QuickWater`'s
-  `ShimmerRemoveWater`/noTraps boulder swap/`LiquidInteractionsCleanup`):
-  they ride R-12-5's worldgen settlement, like the R-11-5 generation branches.
+- **The `genRand` 254->255 nudge (`:892-895`) landed on W4-g45** (`ccfe0b42`):
+  the 3-neighbour arm rolls `WorldGen.genRand.Next(30)` on a settled 254 and
+  promotes to 255 on a zero, riding `World.frame_rng` (the port's `genRand`
+  stand-in). The 7/5-neighbour extra wake passes (`:748-771`/`:821-836`) landed
+  with it. Census deviation 5/6 are FIXED on that branch; the merger keeps
+  g45's nudge (g47 did not re-port it).
+- **`settle_loaded_world` IS wired into the load path (W4-g47 settle wiring,
+  `551c1e7b`).** The hook rides the [`App::new`] tail — the shared boot +
+  `swap_world` construction, the port's `Main.LoadWorld` tail — so a swapped
+  world settles exactly as a booted one. The round-trip pins do NOT move:
+  every `saveglue.rs` fixture is DRY, and a dry world's settle mutates zero
+  tiles, bumps zero revisions and consumes zero `frame_rng` draws (witnessed:
+  `liquid_settle_wiring::the_load_settle_on_a_dry_world_is_a_byte_and_rng_noop`,
+  `saveglue::w4_g47_app_new_on_a_dry_world_moves_no_liquid_bytes`).
+  **Re-pin obligation:** a WET saved world with objects near liquid WILL
+  re-pin `frame_rng` (the kill cascades' `SquareTileFrame` reset rolls) and
+  change its liquid bytes on load — the vanilla behaviour. Any future pin over
+  a wet world must re-derive against the settled state, not the raw file.
+  The load context arms `isGeneratingOrLoadingWorld` (the merge selector takes
+  the `LiquidOverwriteStrip` arm, `Liquid.cs:1329`) + the `waterLine = maxTilesY`
+  pin (`WorldFile.cs:734`, the re-type stays dead); `generatingWorld` stays down;
+  both drop at `:764`. `TR_NO_SETTLE` is the A/B escape hatch; the `TR_POOL`/
+  `TR_SPOUT` staging fixtures opt out (they stage pre-settle liquid the verified
+  S1-G-14 captures need).
+- **The gfx-quality `quickSettle` override (`Main.cs:17105-17113`) IS wired**
+  (census): `gfx_quality.rs::apply` reads `app.liquids.quick_settle()` and
+  restores the full window + single cycle, called every frame at
+  `frame/world.rs:669` (`gfx_quality_apply`). Both it and the budget block
+  (`:17076-17091`) are gated on `!isGeneratingOrLoadingWorld`, so neither fires
+  during the load drain — the driver runs on the `ReInit` stock pair, exactly
+  as the C# load does. The `Setting_UseReducedMaxLiquids` 5000 cap
+  (`:17108-17111`) has no port settings field (deferred with the reduced-liquids
+  setting). Witness: `gfx_quality::quick_settle_overrides_the_quality_liquid_budgets`.
+- **The `SettleWaterAt` gen re-type arm (`:178-192`) IS ported (W4-g47 settle
+  wiring)** — gated on `generating`: the classic `waterLine` boundary (`:184-187`)
+  and the remix `lavaLine`/`rockLayer`/`oceanDepths` band (`:182`), honey/shimmer
+  keep their type (`:178`). `set_gen_settle_context` is R-12-5's plumbing seam.
+  The dungeon re-type (`:188-191`) is a recorded no-op (no ported
+  `InAnyPotentialDungeonBounds`/`IsConsideredDungeonWall`). The runtime settle
+  keeps `generating` down; the load settle arms it but the `waterLine` pin keeps
+  the arm dead. **Still dead / deferred:** `QuickWater`'s `ShimmerRemoveWater`
+  (`WorldGen.cs:34825` `generatingWorld`-gated, no ported `shimmerPosition`), the
+  noTraps boulder swap (subsumed by the pass-scoped `tilesIgnoreWater`), and
+  `LiquidInteractionsCleanup` (`generatingWorld && !skyblock`, strips gen merge
+  tiles 56/659) — they ride R-12-5's gen settle driver, like the R-11-5 branches.
 - **MP scaling / net change set** (`:987-1004`/`:1151-1156`) stay out of
   scope (single-player target, census deviation 9/10).
+
+### The DelWater keep-one (W4-g47 vs W4-g45, for the merger)
+
+Both branches ported `Liquid.DelWater` (`:1470-1599`) independently. **g47's
+`liquid.rs::del_water` is canonical** — keep it, drop g45's. Arm-by-arm:
+
+| Arm (C#) | g47 | g45 | Verdict |
+| --- | --- | --- | --- |
+| `<2` dry + side wakes (`:1478-1498`) | edge-safe probe + chunk marks | edge-safe probe (`2249cf59`), no chunk marks | g47 (superset; adopted g45's probe form) |
+| `<20` drain (`:1499-1505`) | `tile_open` fold, live `here` | `!tile_is_solid` fold | equivalent (`tile_open` == the C# `!nactive \|\| !solid \|\| solidTop`) |
+| `>=20` keep-alive (`:1506-1510`) | `kill=0; return` (no retire) | `return false` (caller skips swap) | equivalent |
+| above-wake + type-clear (`:1511-1518`) | live re-read | live re-read | equivalent |
+| side wakes (`:1519-1528`) | **live re-read** (adopted) | live re-read | g45's form adopted into g47 |
+| lava grass ring (`:1529-1560`) | converts + **chunk-dirty mark** (adopted) | converts + mark | g45's marking adopted into g47 |
+| honey/shimmer re-check (`:1562-1569`) | yes | yes | equivalent |
+| swap-remove (`:1575-1579`) | **INSIDE** `del_water` (self-copy-then-pop) | caller-side (`retire_sweep`: pop-then-copy-if-`l<len`) | equivalent (both match the C# `numLiquid--` then copy `liquid[numLiquid]`; at `l==last` g47 self-copies+pops, g45 just pops — same result). g47 keeps it in one body, so the stuck self-clear and the sweep share it without a second caller |
+| `CheckAlch` tail (`:1580-1583`) | `check_alch` → `edit_kills` (drops resolved) | `check_alch_tile` wrapper (discards drops) | **g47** — the drop records ride `drain_edit_kills` → `resolve_liquid_edit_kills`; g45's wrapper drops the herb loot |
+| `CheckLilyPad` tail (`:1584-1597`) | explicit 3-arm order (adopted) + `edit_kills` | explicit 3-arm order, `check_lily_pad` wrapper (discards drops) | **g47** — same arm order, but keeps the drop seam |
+
+The merger should take g47's `del_water`/`end_pass`/`add_water` wholesale and
+NOT g45's `retire_sweep`/`refill_from_buffer`/`check_alch_tile`/`check_lily_pad`
+wrappers. The decisive difference is the **drop seam**: g47's `Check*` kills
+ride `edit_kills` (the herb/lily-pad loot resolves into item drops through
+`resolve_liquid_edit_kills`, the same path the live liquid tick uses), while
+g45's `check_alch_tile`/`check_lily_pad` wrappers execute the kill but discard
+the drop record — a behavioural loss. The swap-remove shapes are equivalent.
+g45's genuinely-better details (edge probe, live side reads, ring
+chunk-marking, explicit lily arm order) are already folded into g47's body
+(`551c1e7b`). g45's `genRand` nudge + 7/5-neighbour wakes (`ccfe0b42`) are a
+SEPARATE seam (`update_tile`'s averaging arms, not `del_water`) — keep those.
 
 ## The Frost Legion machine (R-25-1, 2026-11-13)
 
