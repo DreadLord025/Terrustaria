@@ -41,6 +41,55 @@ pub const BUTTON: f32 = 60.0;
 /// The row pitch (`:229` — `num3 * 67 + 3`).
 pub const ROW_PITCH: f32 = 67.0;
 
+/// The Everything icon's glitch walker — `WorldSeedOption_Everything.
+/// ProvideUIElement`'s `UIImageFramed` closure (`WorldSeedOption_
+/// Everything.cs:69-98`): a 7x16 frame sheet, the counter trips on
+/// `Main.rand.Next(min, max + 1)` — frame 0 holds 15..120 ticks, every
+/// other frame advances after 3 (`Next(3, 4)` is always 3) — and frames
+/// 4/8/12 roll a 1-in-3 variation re-pick (`Next(7)`). The C# state lives
+/// in the button's closure (one per `UIWorldCreationAdvanced` ctor); the
+/// port keeps it on the App and resets it at the screen's entry.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct EverythingGlitch {
+    /// `glitchFrameCounter` — the ticks since the last frame advance.
+    pub counter: i32,
+    /// `glitchFrame` — the sheet row, 0..15.
+    pub frame: i32,
+    /// `glitchVariation` — the sheet column, 0..6.
+    pub variation: i32,
+}
+
+impl EverythingGlitch {
+    /// The closure's `OnUpdate` body (`:75-96`), one UI tick. `rng` is the
+    /// bare `Main.rand` stand-in (the front end runs outside every swap).
+    pub fn tick(&mut self, rng: &mut tr_core::UnifiedRandom) {
+        let (min, max) = if self.frame == 0 { (15, 120) } else { (3, 3) };
+        self.counter += 1;
+        if self.counter >= rng.next_range(min, max + 1) {
+            self.counter = 0;
+            self.frame = (self.frame + 1) % 16;
+            if matches!(self.frame, 4 | 8 | 12) && rng.next_range(0, 3) == 0 {
+                self.variation = rng.next_range(0, 7);
+            }
+        }
+    }
+}
+
+/// The Everything sheet's frame cell — `Utils.Frame(7, 16, variation,
+/// frame)` (`Utils.cs:1344-1349`): integer cell size `width/7 × height/16`,
+/// the cell at `(cellW * variation, cellH * frame)`. `UIImageFramed` draws
+/// at the cell's own size (`UIImageFramed.cs:20-21`), not the sheet's.
+pub fn everything_frame_src(sheet: &tr_render::SheetRect, glitch: EverythingGlitch) -> [f32; 4] {
+    let cw = sheet.width / 7;
+    let ch = sheet.height / 16;
+    [
+        (cw * glitch.variation as u32) as f32,
+        (ch * glitch.frame as u32) as f32,
+        cw as f32,
+        ch as f32,
+    ]
+}
+
 /// The `KeyName` per registration (`WorldSeedOption_*.cs:5-7`) — the
 /// localization keys (`UI.{KeyName}` / `UI.{KeyName}_Title`) and the icon
 /// sheet names (`Images/UI/WorldCreation/{KeyName}`,
@@ -307,13 +356,16 @@ const DESC_HIGHLIGHT: [u8; 4] = [147, 147, 147, 178];
 const DESC_SEPARATOR: [u8; 4] = [131, 135, 183, 255];
 
 /// `UIWorldCreationAdvanced.Draw` (`:496-501`, minus the gamepad points
-/// and `DrawSeedSystems`).
+/// and `DrawSeedSystems`). `glitch` is the Everything icon's live frame
+/// state (`ProvideUIElement`'s closure — the App ticks it once per UI
+/// update while the screen is live).
 pub fn draw_screen(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
     draft: &NewWorldDraft,
     screen: Vec2,
     mouse: Vec2,
+    glitch: EverythingGlitch,
 ) {
     let root = root_rect(screen);
     let panel = panel_rect(&root);
@@ -358,7 +410,7 @@ pub fn draw_screen(
         let rect = option_rect(&list, i);
         let selected = draft.options_enabled[i];
         let hovered = in_rect(mouse, rect);
-        draw_seed_button(r, lookups, rect, lookups.wc_seed_icons[i], selected, hovered);
+        draw_seed_button(r, lookups, rect, lookups.wc_seed_icons[i], selected, hovered, i, glitch);
     }
     // The secret-seed button (`RefreshSecretSeedButton`): the
     // `Seed_Secret` icon, selected = HasEnteredSpecialSeed.
@@ -371,6 +423,8 @@ pub fn draw_screen(
             lookups.wc_seed_secret,
             draft.has_entered_special_seed(),
             in_rect(mouse, rect),
+            usize::MAX, // the secret cell is a plain UIImage (`:182-185`)
+            glitch,
         );
     }
 
@@ -443,7 +497,10 @@ pub fn draw_screen(
 /// border, then the icon at `Left -1` (`ProvideUIElement`,
 /// `AWorldGenerationOption.cs:66-72`) tinted White when
 /// selected/hovered, `White * 0.5` otherwise (`UpdateIconOpacity`,
-/// `:292-307`).
+/// `:292-307`). Option 8 (Everything) is a `UIImageFramed` over the 7x16
+/// glitch sheet — only the live frame cell draws, at the cell's own size
+/// (`WorldSeedOption_Everything.cs:69-98`).
+#[allow(clippy::too_many_arguments)]
 fn draw_seed_button(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
@@ -451,6 +508,8 @@ fn draw_seed_button(
     icon: Option<tr_render::SheetRect>,
     selected: bool,
     hovered: bool,
+    option_index: usize,
+    glitch: EverythingGlitch,
 ) {
     let (fill, accent) = super::world_creation::option_button_colors(
         selected,
@@ -498,13 +557,24 @@ fn draw_seed_button(
     // The icon: texture-sized at `Left -1` (`:70`), the opacity rule.
     if let Some(sheet) = icon {
         let tint = if selected || hovered { [1.0; 4] } else { [0.5; 4] };
-        super::push_whole(
-            r,
-            lookups,
-            &sheet,
-            [rect[0] - 1.0, rect[1], sheet.width as f32, sheet.height as f32],
-            tint,
-        );
+        if option_index == 8 {
+            // The Everything `UIImageFramed`: the live cell at its own
+            // size (`UIImageFramed.cs:20-21/48`), `Left -1` (`:73`).
+            let src = everything_frame_src(&sheet, glitch);
+            let (aw, ah) = (lookups.atlas_size.0 as f32, lookups.atlas_size.1 as f32);
+            let x0 = sheet.x as f32 + src[0];
+            let y0 = sheet.y as f32 + src[1];
+            let uv = [x0 / aw, y0 / ah, (x0 + src[2]) / aw, (y0 + src[3]) / ah];
+            r.push_ui_sprite([rect[0] - 1.0, rect[1]], [src[2], src[3]], uv, tint);
+        } else {
+            super::push_whole(
+                r,
+                lookups,
+                &sheet,
+                [rect[0] - 1.0, rect[1], sheet.width as f32, sheet.height as f32],
+                tint,
+            );
+        }
     }
 }
 
@@ -630,5 +700,72 @@ mod tests {
         assert_eq!(click_at(&draft, screen, Vec2::new(900.0, 340.0)), Click::None);
         draft.add_seed_from_seedmenu("pumpkinseason");
         assert_eq!(click_at(&draft, screen, Vec2::new(900.0, 340.0)), Click::SecretSeeds);
+    }
+
+    /// The Everything glitch walker (`WorldSeedOption_Everything.cs:75-96`):
+    /// frame 0 holds `Next(15, 121)` ticks, every later frame advances
+    /// after exactly 3 (`Next(3, 4)`), the frame wraps mod 16, and the
+    /// 4/8/12 variation roll draws `Next(3)` then `Next(7)` on a hit.
+    #[test]
+    fn the_everything_glitch_walks_the_frame_sheet() {
+        let mut g = EverythingGlitch::default();
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        // Frame 0's threshold: one Next(15, 121) draw per tick until trip.
+        let mut probe = tr_core::UnifiedRandom::new(42);
+        let mut ticks = 0;
+        loop {
+            ticks += 1;
+            if ticks >= probe.next_range(15, 121) {
+                break;
+            }
+        }
+        for _ in 0..ticks {
+            g.tick(&mut rng);
+        }
+        assert_eq!(g.frame, 1, "frame 0 advanced after the rolled hold");
+        assert_eq!(g.counter, 0);
+        // Frames 1..3 advance after exactly 3 ticks each (Next(3,4) == 3).
+        for want in [2, 3, 4] {
+            for _ in 0..3 {
+                g.tick(&mut rng);
+            }
+            assert_eq!(g.frame, want);
+        }
+        // The walker reaches frame 15 and wraps to 0.
+        let mut g = EverythingGlitch { counter: 0, frame: 14, variation: 0 };
+        for _ in 0..6 {
+            g.tick(&mut rng);
+        }
+        assert_eq!(g.frame, 0, "mod-16 wrap");
+        // The variation roll fires only on frames 4/8/12 with Next(3) == 0;
+        // a forced stream proves the draw order (the Next(3,4) threshold
+        // draw consumes a sample too, then Next(3), then Next(7) on a hit).
+        let mut g = EverythingGlitch { counter: 2, frame: 3, variation: 0 };
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        g.tick(&mut rng); // trips to frame 4, rolls Next(3)
+        assert_eq!(g.frame, 4);
+        let mut probe = tr_core::UnifiedRandom::new(42);
+        let _ = probe.next_range(3, 4); // the threshold draw
+        let roll = probe.next_range(0, 3);
+        if roll == 0 {
+            assert_eq!(g.variation, probe.next_range(0, 7));
+        } else {
+            assert_eq!(g.variation, 0, "the miss keeps the variation");
+        }
+    }
+
+    /// `Utils.Frame(7, 16, variation, frame)` (`Utils.cs:1344-1349`): the
+    /// integer cell size and the cell origin — a 420x960 sheet gives 60x60
+    /// cells, variation 3 / frame 5 → (180, 300, 60, 60).
+    #[test]
+    fn the_everything_frame_cell_matches_utils_frame() {
+        let sheet = tr_render::SheetRect { x: 100, y: 200, width: 420, height: 960, plain_frame: (0, 0) };
+        let g = EverythingGlitch { counter: 0, frame: 5, variation: 3 };
+        assert_eq!(everything_frame_src(&sheet, g), [180.0, 300.0, 60.0, 60.0]);
+        // The default state draws cell (0, 0).
+        assert_eq!(
+            everything_frame_src(&sheet, EverythingGlitch::default()),
+            [0.0, 0.0, 60.0, 60.0]
+        );
     }
 }

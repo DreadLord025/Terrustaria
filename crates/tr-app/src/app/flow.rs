@@ -427,6 +427,9 @@ pub(crate) struct FrontDraw<'a> {
     pub(crate) vk_grid: bool,
     /// The caret's `UITextBox._frameCount`.
     pub(crate) frame_count: u64,
+    /// The Advanced tab's Everything-icon glitch state
+    /// (`App.world_advanced_glitch` — the `ProvideUIElement` closure).
+    pub(crate) everything_glitch: ui::world_creation_advanced::EverythingGlitch,
 }
 
 /// The five front screens' behaviour surface — the C# `UIState` shape: the
@@ -623,13 +626,16 @@ impl FrontScreenBehaviours for FrontScreen {
             }
             FrontScreen::WorldCreationAdvanced(draft) => {
                 // `UIWorldCreationAdvanced.Draw` (`:496-501`, minus the
-                // gamepad points and DrawSeedSystems).
+                // gamepad points and DrawSeedSystems). The Everything
+                // icon's frame state rides the draw env (the App ticks it
+                // per UI update, `frame.rs`).
                 ui::world_creation_advanced::draw_screen(
                     d.renderer,
                     d.lookups,
                     draft,
                     d.screen,
                     d.mouse,
+                    d.everything_glitch,
                 );
             }
             FrontScreen::SecretSeedsList(state) => {
@@ -2669,6 +2675,7 @@ pub(crate) mod front_flow_tests {
             debug_loadouts_search: String::new(),
             debug_loadouts_last_search: String::new(),
             debug_loadouts_scroll: 0.0,
+            world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
             notifications: ui::notifications::NotificationsTracker::default(),
             emotes: crate::emotes::EmoteSystem::default(),
             banners: crate::banners::BannerSystem::default(),

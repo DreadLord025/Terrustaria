@@ -39390,6 +39390,16 @@ table rows 11-12; the research/18 task seed "M — UIWorldCreationAdvanced
   the gamepad snap points are out of scope (§J.3); (6) the base screen's
   seed-icon degradation is GONE — the icon opens the Advanced tab
   (`Click::AdvancedSeed`).
+- **The Everything glitch icon landed 2026-11-21 (DOC-SWEEP lane 30)**:
+  `WorldSeedOption_Everything.ProvideUIElement`'s `UIImageFramed` closure
+  (`WorldSeedOption_Everything.cs:69-98`) ports as `EverythingGlitch`
+  (`ui/world_creation_advanced.rs`) — the 7x16 frame walker (frame 0 holds
+  `Next(15,121)` ticks, later frames advance after `Next(3,4)` == 3, the
+  4/8/12 frames roll `Next(3)` then `Next(7)` for the variation), ticked
+  once per frame from `frame.rs` on the bare global stream while the tab
+  is live, reset at `enter_front` (the C# closures are per-ctor). The
+  draw cuts the live cell through `Utils.Frame(7,16,var,frame)` at the
+  cell's own size; the other nine options stay whole-sheet `UIImage`s.
 - Code-only mode: the witness tests (`world_creation.rs` 2 cascade tests
-  + `world_creation_advanced.rs` 5 + `secret_seeds_list.rs` 5 +
+  + `world_creation_advanced.rs` 7 + `secret_seeds_list.rs` 5 +
   `flow.rs` 2) are WRITTEN, NOT RUN.

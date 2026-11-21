@@ -336,6 +336,11 @@ pub(crate) struct App {
     /// `UIDebugLoadoutsList._lastSearch` (`:20`) — static across opens.
     pub(crate) debug_loadouts_last_search: String,
     pub(crate) debug_loadouts_scroll: f32,
+    /// The Advanced tab's Everything-icon glitch walker
+    /// (`WorldSeedOption_Everything.ProvideUIElement`'s closure state) —
+    /// fresh per `UIWorldCreationAdvanced` ctor, ticked once per UI update
+    /// while the screen is live (W4-d85 doc-sweep).
+    pub(crate) world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch,
     /// The four category toggles, all on at `OnActivate`
     /// (`UIAchievementsMenu.InitializePage`'s `SetState(value: true)`).
     pub(crate) achievements_categories: [bool; 4],
@@ -2466,8 +2471,12 @@ impl App {
             // The Advanced tab + seeds list build their pages in the ctor
             // (`UIWorldCreationAdvanced.cs:53-60`,
             // `UIWorldCreationAdvancedSecretSeedsList.cs:41-46`) — the
-            // draft rode in from the flow row; no re-list.
-            FrontScreen::WorldCreationAdvanced(_) => {}
+            // draft rode in from the flow row; no re-list. The Advanced
+            // ctor's `ProvideUIElement` closures start their glitch state
+            // at 0 (`WorldSeedOption_Everything.cs:76-78`).
+            FrontScreen::WorldCreationAdvanced(_) => {
+                self.world_advanced_glitch = ui::world_creation_advanced::EverythingGlitch::default();
+            }
             FrontScreen::SecretSeedsList(_) => {}
         }
         self.park_menu();
@@ -3851,6 +3860,7 @@ impl App {
             debug_loadouts_search: String::new(),
             debug_loadouts_last_search: String::new(),
             debug_loadouts_scroll: 0.0,
+            world_advanced_glitch: ui::world_creation_advanced::EverythingGlitch::default(),
             // The filter bits default to all-on (`SetState(value: true)`);
             // a shot run can pin a single category through the bitmask.
             achievements_categories: {

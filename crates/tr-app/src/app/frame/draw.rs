@@ -1545,6 +1545,7 @@ impl App {
                             scroll: self.front_scroll,
                             vk_grid: self.vk_grid,
                             frame_count: *frame_count,
+                            everything_glitch: self.world_advanced_glitch,
                         };
                         front.draw(&mut d);
                         // The port's not-ported notice for the front screens
