@@ -40306,3 +40306,123 @@ the 572/573 emote are the DEFERRED kinds, not this wave's). Frame counts
 vs Main.cs:67082 entry-by-entry AND render/entities.rs NPC_FRAME_COUNT
 (435/436 = 7 `:67127`, 550 = 25 `:67139`, 552-554 = 14, 555-557 = 17,
 558-560 = 5, 561-563 = 14 `:67139-67140`).
+
+### W4-f27 extra wave 11 — the per-case notes (slice complete, 15/15)
+
+`crates/tr-app/src/npc_findframe_extra11.rs` — the 15 machines landed in
+3 batches of 5 (a8a7b1fc3 / 8422ebd82 / d75262387), the
+`find_frame_kind_extra11` vanilla-id seam; the 13 npc.rs edits are the
+DD2 v1-arm fixes (9db8ed0f9, the 549-fix bridge shape — the new
+`find_frame_extra11` helper copies row/counter/sprite_dir/rotation out
+and back). 435/436 land pure (no NpcKind, the roster round wires them).
+
+| id | kind | C# case | rows (`Main.cs`) |
+| --- | --- | --- | --- |
+| 435 | ArmedZombieTwiggy | `:70884` (the 430..436/591 group) | 7 (`:67127`) |
+| 436 | ArmedZombieCenx | `:70885` (the same group) | 7 (`:67127`) |
+| 550 | DD2Bartender | `:68616` (the humanoid town walk) | 25 (`:67139`) |
+| 552/553/554 | DD2GoblinT1/T2/T3 | `:67452-67454` | 14 (`:67139`) |
+| 555/556/557 | DD2GoblinBomberT1/T2/T3 | `:67797-67799` | 17 (`:67139`) |
+| 558/559/560 | DD2WyvernT1/T2/T3 | `:67838-67840` | 5 (`:67139`) |
+| 561/562/563 | DD2JavelinstT1/T2/T3 | `:67756-67758` | 14 (`:67140`) |
+
+* **435/436 the armed-zombie tail** (`:70879-70951`): the VERBATIM d49
+  group machine (the 7c ONE-group precedent) — the ai[2] > 0 swing
+  ladder rows 3/4/5/6 at the <5/<10/<15 bands BREAKS before the flip
+  (`:70887-70905`, the counter AND sprite untouched); the grounded ±1
+  one-sided flips (`:70907-70917`); the air-OR-counter-motion row-2 pin
+  (`:70918-70923`); the idle row-0 snap (`:70924-70929`); the |vx|
+  accumulator (`:70930`) with the <8/<16/<24/<32 bands rows 0/1/2/1 and
+  the >=32 tail zeroes the counter WITHOUT writing the row
+  (`:70947-70950` — the reset-tick row-HOLD quirk, the d49 verbatim).
+* **550 the bartender** (`:68616` → `:68647-69655`): the TOWN walk —
+  townNPC true (`:16263`, aiStyle 7) so num57 = ExtraFramesCount[550] =
+  9 (`NPCID.cs:10464`), the walk wraps at 25 − 9 = 16 (rows 2..15, the
+  e8 SkeletonMerchant precedent); num108 = 6 (the |vx|*2+1 >6 stride),
+  num109 = row 2, idle row 0 (not the 140/489 pair), air row 1 (not in
+  the `:69647` pin list). The ai[0] pose zones (`:68662-69488`, with
+  their chat-bubble Main.rand draws) are the documented skip.
+* **552-554 the goblins** (`:67452-67492`): the ai[0] > 0 attack ladder
+  — the UNCONDITIONAL sprite copy, the row outside 10..13 OR ai[1] == 29
+  resets to row 10 + counter 0, the ++counter >= 6 step gated on
+  row < 13 (at row 13 the counter keeps growing — the C# writes no reset
+  there); else the walk: the vy == 0 sprite copy, the air-OR-backpedal
+  row-8 pin, the idle row-9 snap, the |vx| accumulator with the >= 64
+  (or negative) reset and the `(int)(counter/8)` row 0-7.
+* **555-557 the bombers** (`:67797-67837`): the ai[1] > 0 && ai[0] > 0
+  attack ladder rows 10-16 (the ai[1] == 41 reset, the >= 6 step gated
+  on row < 16 — the row-16 counter-keep-growing quirk); else the walk:
+  air row 1, idle row 0, the |vx| >= 64 reset + `(int)(counter/8) + 2`
+  row 2-9 (the +2 strip offset vs the goblins' 0).
+* **558-560 the wyverns** (`:67838-67873`): the vx-sign sprite copies,
+  the `ToRotation` aim (`Utils.cs:1655` = atan2(vy, vx)) +
+  `(float)Math.PI` when vx < 0 (`:67853` — the REAL PI, not the eye
+  group's literal 3.14f), OVERRIDDEN to `vx * 0.1` when ai[0] != 2
+  (`:67855-67858`); the rotation write EVERY tick (`:67859`); the
+  ai[0] == 2 dive row-4 pin with the counter UNTOUCHED else the
+  ++counter >= 6 step over rows 0-3 with the >= 4 wrap. Our v1 arm
+  missed the sprite AND rotation writes entirely.
+* **561-563 the javelineers** (`:67756-67796`): the goblin shape with
+  the ai[1] > 0 && ai[0] > 0 attack gate (rows 10-13, the ai[1] == 89
+  reset) — the ai0-only gate differs from the goblins', ai0 alone falls
+  to the walk.
+
+**The d40-quality verdicts for the fix kinds** (the brief's step 4 —
+the pushed d41 tip carries NO FindFrame arms, so the verdicts are
+against OUR tree's M4-EVENT-19 v1 stand-ins): all 13 DD2 arms were the
+invented `(vx != 0) + 0.6 >= 8` free strips (the goblins/bombers/
+javelineers `% 14`, the bartender `% 25`, the wyverns the dive-pin +
+`% 5` missing the sprite/rotation) — WRONG vs the C#'s attack ladders +
+the >= 64 walk resets + the town wrap + the wyvern aim. FIXED this
+slice (the slice-9/10 471/492/549 precedent). The 551/564-577 DD2 tail
+(14 ids) stays DEFERRED with the per-kind seams cited in the claim
+table (Betsy's boss-phase ladder, the dark mage's 41-row sheet, the
+wither beast's aura ladder, the drakin's row-14 hold, the kobold
+walker's emote, the kobold flyer's RNG dust, the ogre's variable
+strides, the skeleton's materialize cycle). The group-twin keep-one
+notes: 435/436 vs d49's 430-434 (the SAME group body, keep-one at the
+merge — the d49 high2 module's five + our two ride one arm); 550 vs the
+e8 SkeletonMerchant / e10 DemonTaxCollector town/fighter walks (the
+num57/num108 overrides make each DISTINCT — NOT keep-ones); the
+goblins/javelineers share the walk shape but the attack gates differ
+(ai0-only vs ai1&&ai0) — DISTINCT machines.
+
+**The f26h-dup dedupe note (531/532/534/535/536 both-lanes) — PUBLISHED
+for d44d:** f26's pushed 7f tip 7f38fd345 (`npc_findframe_extra7f.rs`)
+and our extra-10 (`npc_findframe_extra10.rs`) BOTH port 531/532/534/
+535/536. The machines are IDENTICAL (verified line-for-line: the 531
+num194 = 0.4 wall-crawler bands + the >= 24 reset-tick row-hold; the 532
+counter-held air/idle pins + the sign-gated sprite + the 1+|vx|/2
+lift-to-2 walk; the 534 num108 = 12 fighter stride; the 535 num2-fed
+slime strip; the 536 zombie-walker bands + the >= 32 reset-tick
+row-hold) — the frame counts agree (4/8/8/2/3), the zero-RNG grep
+agrees. **KEEP-ONE at the merge: keep the f27 extra-10 arms** (the e10
+module carries the 537-545 + 549 tail too, the wider claim; the f26 7f
+module's five drop to parity references). The d44d master wire-status
+table records the dedupe (the 7c/7d/7e ONE-group precedent).
+
+**Census count update:** 127 (the slice-10 post-state) − 5 (f26's
+pushed 7e claims 526-530; its 7f claims 531/532/534/535/536 dedupe
+against our e10's same five — NO new subtraction) = 122; − 47 (d42's
+578-630 arms, 49 case ids minus our-covered 588/589) = 75; − 2 (this
+slice's new claims 435/436) = **73 unclaimed after** (the 13 fixes
+change no claim count — those ids were port-covered with wrong arms).
+The d41 roster lane's 550-577 FindFrame arms are OURS to fix (its claim
+is roster-only); the 551/564-577 DEFERRED tail (14 ids) stays unclaimed
+for the later slices. This lane's next ascending window starts at 551
+(Betsy) / 564 (the dark mage) — the DEFERRED DD2 tail.
+
+Zero RNG: the mechanical grep over the 15 cited arm ranges
+(`:70879-70951`, `:68647-68661` + `:69489-69655`, `:67452-67492`,
+`:67797-67837`, `:67838-67873`, `:67756-67796`) = ZERO
+Main.rand/.Next(/NextFloat/NextDouble hits (the 574/575 RNG dust
+`:67959` and the 572/573 emote `:67506` are the DEFERRED kinds, not
+this wave's). Frame counts cross-checked against
+`render/entities.rs::NPC_FRAME_COUNT` — all 15 agree (the full-697
+mechanical diff EMPTY). 9 module witnesses + 2 wiring witnesses WRITTEN
+NOT RUN (code-only), every replay vector re-derived by mechanical
+Python replay of line-for-line C# transcriptions (the integer
+accumulators exact in f32; the wyvern rotation the one f32
+transcendental, the sweep checks rows only) + the 15-kind
+5x3x3x3x5x5 strip sweep (40 ticks per combo, every row asserted inside
+its own sheet — the Python sweep's 0 violations mirrored).
