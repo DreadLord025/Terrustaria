@@ -119,6 +119,8 @@
 //! | 504-508 | `:84861-84865` | the 345 IceQueen death (5 gores 513/514/514/515/516, vel x0) |
 //! | 509-515 | `:84855` | the 325 MourningWood death (7-gore loop 469-475, vel x0, type-191 scale-1.1 dust) |
 //! | 516-524 | `:84884-84888` | the 344 Everscream death (two loops: 508-512 then 509-512, vel x0, type-196 dust) |
+//! | 525 | `:84941` | the 302 SlimeMasked death (1 gore 440, type-192 gray alpha-100 dust) |
+//! | 526-531 | `:84968-84973` | the 245 Golem body death: the 6 random-position 368/370 gores |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3153,6 +3155,67 @@ fn everscream_death(
     }
 }
 
+/// The 302 SlimeMasked death (`NPC.cs:84937-84941`, site 525): the 50-dust
+/// type-192 burst (SpeedX `2*hitDirection`, SpeedY -2, alpha 100, color
+/// `(100,100,100,100)`), then the single gore 440 at position.
+fn slime_masked_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84937-84940` — the 50-dust type-192 burst (gray, alpha 100).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 192, 2.0 * hit_direction, -2.0, 100,
+            Color::new(100, 100, 100, 100), 1.0,
+        );
+    }
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 440, npc.scale); // :84941
+}
+
+/// The 245 Golem body death's random-position gores (`NPC.cs:84968-84973`,
+/// sites 526-531): 6 gores alternating 368/370, each at
+/// `position + (Next(width), Next(height))` — the two position draws fire
+/// per gore BEFORE its spawn (the C# argument evaluation). The 50-dust
+/// type-148 burst runs first (shared with the 249/247/248 arms). The fixed
+/// 360-367 tail lands with the next batch.
+fn golem_body_random_gores(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84962-84965` — the 50-dust type-148 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 148, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let wi = w as i32;
+    let hi = h as i32;
+    // `:84968-84973` — the 6 alternating 368/370 random-position gores.
+    for i in 0..6 {
+        let px = pos.x + rng.next_max(wi) as f32;
+        let py = pos.y + rng.next_max(hi) as f32;
+        let ty = if i % 2 == 0 { 368 } else { 370 };
+        gore.new_gore(rng, world, Vec2::new(px, py), vel, ty, s);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3520,6 +3583,17 @@ pub fn hit_effect_c(
     // `:84867-84891` — the 344 Everscream arm (sites 516-524, both loops).
     if npc_type == 344 && npc.hp <= 0 {
         everscream_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84926-84943` — the 302 SlimeMasked arm (site 525).
+    if npc_type == 302 && npc.hp <= 0 {
+        slime_masked_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84944-84999` — the 245-249 Golem family arm; this commit owns the
+    // 245 body's random-position gores (sites 526-531); the fixed tail +
+    // the 249/247/248 arms land with the next batches. The 246 head spawns
+    // a 249 (the roster seam, no gore).
+    if npc_type == 245 && npc.hp <= 0 {
+        golem_body_random_gores(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5624,6 +5698,55 @@ mod tests {
         for i in 0..9 {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
         }
+    }
+
+    /// `NPC.cs:84941` — the SlimeMasked death: the single gore 440 at
+    /// position, after the 50-dust type-192 gray alpha-100 burst.
+    #[test]
+    fn w4_f10_the_slime_masked_death_spawns_the_single_gore() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(439);
+        slime_masked_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        assert_eq!(gore.slot(0).gore_type, 440);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.color, Color::new(100, 100, 100, 100));
+        assert_eq!(d.alpha, 100);
+    }
+
+    /// `NPC.cs:84968-84973` — the Golem body's 6 random-position gores:
+    /// alternating 368/370, each drawing Next(width) + Next(height) BEFORE
+    /// the spawn. The twin replay pins the per-gore position draws + kicks.
+    #[test]
+    fn w4_f10_the_golem_body_random_gores_draw_position_first() {
+        let w = air();
+        let n = boss(100.0, 100.0, 60.0, 80.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(443);
+        golem_body_random_gores(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![368, 370, 368, 370, 368, 370]);
+        // The twin: 50 type-148 dusts, then 6 x (Next(60) + Next(80) + 2 kicks).
+        let mut twin = UnifiedRandom::new(443);
+        for _ in 0..50 {
+            let _px = twin.next_max(56);
+            let _py = twin.next_max(76);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..6 {
+            let _px = twin.next_max(60);
+            let _py = twin.next_max(80);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the golem body mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
