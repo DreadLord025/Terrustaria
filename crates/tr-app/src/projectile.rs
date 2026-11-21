@@ -18028,6 +18028,21 @@ impl ProjectilePool {
                             );
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d11 — aiStyle 109 (`AI()` `:34026-34065`):
+                        // the 582 MechanicWrench — the speed latch, the
+                        // 30-tick outbound wait, the Mechanic-host return
+                        // leg. The arm integrates its OWN movement (the
+                        // HandleMovement aiStyle-109 tile bounce,
+                        // `:19512-19571`) — NO kill_step here.
+                        109 => {
+                            let host_idx = self.slots[i].ai[1] as usize;
+                            let host = npcs.get(host_idx);
+                            crate::projectile_ai_101_110::ai_mechanic_wrench(
+                                &mut self.slots[i],
+                                world,
+                                host,
+                            );
+                        }
                         // W4-d11 — aiStyle 105 (`AI()` `:33512-33515` ->
                         // `AI_105_SporeSac` `:40043-40192`): the 567/568
                         // Spore Sac traps. `IndexForVisuals` is the slot

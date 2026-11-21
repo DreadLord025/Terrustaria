@@ -343,6 +343,10 @@ pub const NEBULA_SPHERE: u16 = 575;
 /// aiStyle 107 (`Projectile.cs:6450-6460`: 8x8, hostile, alpha 255,
 /// ignoreWater, timeLeft 180, tileCollide false). W4-d11.
 pub const DESERT_DJINN_CURSE: u16 = 596;
+/// `ProjectileID.MechanicWrench` (582) — the Mechanic's thrown wrench,
+/// aiStyle 109 (`Projectile.cs:6316-6324`: 20x20, friendly, penetrate
+/// -1, MaxUpdates 2 = extraUpdates 1). W4-d11.
+pub const MECHANIC_WRENCH: u16 = 582;
 pub const VORTEX_LIGHTNING: u16 = 578;
 pub const VORTEX_PORTAL: u16 = 579;
 /// `ProjectileID.BloodNautilusTears` (813) — the Blood Nautilus' tear
@@ -2545,6 +2549,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // 180, tileCollide false; the stock penetrate 1 (`:774`).
             DESERT_DJINN_CURSE => {
                 (8.0, 8.0, 107, 1, 180, 0, false, false, false, (false, -2, false, -1, 255, 1.0))
+            }
+            // W4-d11 — `Projectile.cs:6316-6324` (582, the
+            // MechanicWrench): 20x20, aiStyle 109, penetrate -1,
+            // MaxUpdates 2 (extraUpdates 1); the stock tileCollide.
+            MECHANIC_WRENCH => {
+                (20.0, 20.0, 109, -1, TIME_LEFT_DEFAULT, 1, true, false, false, RESET_STATE)
             }
             // W4-d11 — `Projectile.cs:6107-6119` (536, the MedusaHeadRay):
             // 10x10, aiStyle 101, penetrate -1, tileCollide false;

@@ -711,6 +711,101 @@ pub(crate) fn ai_nebula_sphere(
     }
 }
 
+/// `AI()`'s aiStyle-109 block (`Projectile.cs:34026-34065`) — the 582
+/// MechanicWrench: the first-tick speed latch (`localAI[1] =
+/// velocity.Length()`), the 30-tick outbound wait (`ai[0] == 0`,
+/// `localAI[0]++`), then the return leg (`ai[0] == 1`): the Mechanic
+/// (124) host validity (die when gone), the `tileCollide = false` drop,
+/// the kill inside the latch radius, and the 0.04 lerp toward the host
+/// at the latched speed; the shared `rotation += pi/10` spin.
+///
+/// `host` is the pool-resolved `ai[1]` NPC slot (the C#
+/// `Main.npc[(int)ai[1]]`). The `lazyNPCOwnedProjectileSearchArray`
+/// write (`:34050`) is the town-NPC owned-projectile latch — unported
+/// (the `npc_ai_town.rs:1594-1595` cited skip). ZERO `Main.rand` draws.
+///
+/// Movement: the 582 rides `HandleMovement`'s aiStyle-109 arm
+/// (`:19512-19571`) — the tile bounce (reverse BOTH axes + `ai[0] = 1` +
+/// netUpdate + the Dig thud), NOT the generic kill. This fn integrates
+/// its own movement (the `ai_boomerang` precedent); the dispatch must
+/// NOT call `kill_step` for it.
+pub(crate) fn ai_mechanic_wrench(
+    p: &mut Projectile,
+    world: &World,
+    host: Option<&Npc>,
+) {
+    // `:34028-34031` — the speed latch.
+    if p.local_ai[1] == 0.0 {
+        p.local_ai[1] = p.vel.length();
+    }
+    // `:34032-34063` — the two legs.
+    if p.ai[0] == 0.0 {
+        p.local_ai[0] += 1.0;
+        if p.local_ai[0] > 30.0 {
+            p.ai[0] = 1.0;
+            p.local_ai[0] = 0.0;
+            // `:34039`'s return: the spin does NOT run this tick.
+            wrench_movement(p, world);
+            return;
+        }
+    } else if p.ai[0] == 1.0 {
+        // `:34045-34049` — the host validity (type 124, the Mechanic).
+        let ok = host.is_some_and(|h| h.kind.net_id() == 124 && h.hp > 0);
+        if !ok {
+            kill(p);
+            return;
+        }
+        let h = host.unwrap();
+        // `:34050` — the lazyNPCOwnedProjectileSearchArray latch: cited
+        // skip (the town-NPC seam is unported).
+        let zero3 = crate::projectile::npc_center(h);
+        p.tile_collide = false;
+        let num820 = p.local_ai[1];
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let mut value9 = zero3 - center;
+        if value9.length() < num820 {
+            kill(p);
+            return;
+        }
+        value9 = safe_normalize(value9);
+        value9 *= num820;
+        p.vel = Vec2::lerp(p.vel, value9, 0.04);
+    }
+    // `:34064` — the shared spin.
+    p.rot += std::f32::consts::PI / 10.0;
+    wrench_movement(p, world);
+}
+
+/// `HandleMovement`'s aiStyle-109 arm (`Projectile.cs:19512-19571`) for
+/// the 582: the tile probe reverses BOTH axes from `lastVelocity` and
+/// arms the return (`ai[0] = 1`, `:19563-19568`), plays the Dig thud
+/// (`PlaySound(0, …)`, `:19571`) and sets netUpdate; the post-bounce
+/// velocity integrates (`UpdatePosition`, `:20445`). The port's
+/// `collides_rect` stand-in for `Collision.TileCollision` (the
+/// `ai_boomerang` recorded deviation).
+fn wrench_movement(p: &mut Projectile, world: &World) {
+    if p.tile_collide {
+        let last = p.vel;
+        let nx = p.pos.x + p.vel.x;
+        let ny = p.pos.y + p.vel.y;
+        let mut hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
+        let mut hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
+        hit_x |= p.pos.x <= 0.0 || p.pos.x + p.w >= world.width as f32 * 16.0;
+        hit_y |= p.pos.y <= 0.0 || p.pos.y + p.h >= world.height as f32 * 16.0;
+        if hit_x || hit_y {
+            // `:19563-19568` — reverse both axes, arm the return.
+            p.vel = -last;
+            p.ai[0] = 1.0;
+            p.net_update = true;
+            // `:19571` — the Dig thud (the int-id 0 cue).
+            if p.wants_sound.is_none() {
+                p.wants_sound = Some((0, 0, p.pos.x, p.pos.y, 0.0));
+            }
+        }
+    }
+    p.pos += p.vel;
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (W4-d11 code-only round — WRITTEN NOT RUN).
 
@@ -1378,5 +1473,89 @@ mod tests {
         p.ai[0] = -1.0;
         ai_nebula_sphere(&mut p, &w, None, false, true, &mut rng);
         assert_eq!(p.damage, 22, ":33636 (expert)");
+    }
+
+    /// The 582 row (`Projectile.cs:6316-6324`).
+    #[test]
+    fn w4_d11_109_the_wrench_row_carries_its_style() {
+        let d = proj_data(582).unwrap();
+        assert_eq!((d.ai_style, d.w, d.h, d.penetrate), (109, 20.0, 20.0, -1));
+        assert_eq!(d.extra_updates, 1, "MaxUpdates 2");
+        assert!(d.tile_collide, "the stock true");
+    }
+
+    /// `:34028-34040` — the speed latch + the 30-tick outbound wait: the
+    /// wrench flies straight, spinning pi/10/tick; at localAI[0] > 30 the
+    /// return arms (ai[0] = 1) and the spin skips that tick.
+    #[test]
+    fn w4_d11_109_the_wrench_waits_then_arms_the_return() {
+        let w = world();
+        let mut p = proj(582);
+        p.vel = Vec2::new(6.0, 0.0);
+        ai_mechanic_wrench(&mut p, &w, None);
+        assert_eq!(p.local_ai[1], 6.0, "the speed latch");
+        assert_eq!(p.local_ai[0], 1.0);
+        assert!((p.rot - std::f32::consts::PI / 10.0).abs() < 1e-6, "the spin");
+        for _ in 0..29 {
+            ai_mechanic_wrench(&mut p, &w, None);
+        }
+        assert_eq!(p.local_ai[0], 30.0);
+        assert_eq!(p.ai[0], 0.0, "still outbound at 30");
+        let rot_before = p.rot;
+        ai_mechanic_wrench(&mut p, &w, None);
+        assert_eq!(p.ai[0], 1.0, "localAI[0] > 30 arms the return");
+        assert_eq!(p.local_ai[0], 0.0, "the counter reset");
+        assert_eq!(p.rot, rot_before, ":34039's return skips the spin");
+    }
+
+    /// `:34045-34062` — the return leg: no live Mechanic (124) -> Kill;
+    /// a live host drops tileCollide, lerps the velocity toward it at the
+    /// latched speed (0.04), and kills inside the latch radius.
+    #[test]
+    fn w4_d11_109_the_return_homes_the_mechanic() {
+        let w = world();
+        let mut p = proj(582);
+        p.ai[0] = 1.0;
+        p.local_ai[1] = 6.0;
+        ai_mechanic_wrench(&mut p, &w, None);
+        assert!(!p.active, "no host -> Kill");
+        let h = host_npc(crate::npc::NpcKind::Mechanic, 1200.0, 1000.0);
+        let mut p = proj(582);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.ai[0] = 1.0;
+        p.local_ai[1] = 6.0;
+        p.vel = Vec2::new(6.0, 0.0);
+        ai_mechanic_wrench(&mut p, &w, Some(&h));
+        assert!(p.active);
+        assert!(!p.tile_collide, ":34052");
+        // The lerp: vel = lerp((6,0), (6,0), 0.04) = (6,0) (already aimed).
+        assert!((p.vel.x - 6.0).abs() < 1e-4);
+        // Inside the latch radius -> Kill.
+        let h = host_npc(crate::npc::NpcKind::Mechanic, 1002.0, 1000.0);
+        let mut p = proj(582);
+        p.pos = Vec2::new(1000.0, 1000.0);
+        p.ai[0] = 1.0;
+        p.local_ai[1] = 6.0;
+        ai_mechanic_wrench(&mut p, &w, Some(&h));
+        assert!(!p.active, "inside the latch radius -> Kill");
+    }
+
+    /// `HandleMovement` `:19563-19571` — the tile bounce reverses both
+    /// axes, arms the return, sets netUpdate + the Dig thud.
+    #[test]
+    fn w4_d11_109_the_wrench_bounces_off_tiles() {
+        let mut w = world();
+        // A solid wall at tile (110, 50).
+        let i = w.index(110, 50);
+        w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = proj(582);
+        p.pos = Vec2::new(109.0 * 16.0 - 20.0, 50.0 * 16.0);
+        p.vel = Vec2::new(6.0, 0.0);
+        ai_mechanic_wrench(&mut p, &w, None);
+        assert_eq!(p.vel, Vec2::new(-6.0, 0.0), "the X reversal");
+        assert_eq!(p.ai[0], 1.0, "the return arms");
+        assert!(p.net_update, ":19570");
+        assert!(p.wants_sound.is_some(), "the Dig thud");
     }
 }
