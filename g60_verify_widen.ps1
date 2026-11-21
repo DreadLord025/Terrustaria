@@ -1,5 +1,5 @@
-$mine = Get-Content crates\tr-app\src\npc.rs
-$g62 = Get-Content $env:TEMP\g62_npc.rs
+$mine = Get-Content crates\tr-app\src\npc.rs -Encoding UTF8
+$g62 = Get-Content $env:TEMP\g62_npc.rs -Encoding UTF8
 
 function ExtractFn($lines) {
     $s = -1; $e = -1
@@ -46,8 +46,8 @@ if (($a -join "`n") -cne ($b -join "`n")) {
 }
 
 # data.rs table
-$mineD = Get-Content crates\tr-app\src\npc\data.rs
-$g62D = Get-Content $env:TEMP\g62_data.rs
+$mineD = Get-Content crates\tr-app\src\npc\data.rs -Encoding UTF8
+$g62D = Get-Content $env:TEMP\g62_data.rs -Encoding UTF8
 function ExtractTable($lines) {
     $s = -1; $e = -1
     for ($i = 0; $i -lt $lines.Count; $i++) {
