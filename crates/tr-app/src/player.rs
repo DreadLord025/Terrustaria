@@ -867,6 +867,12 @@ pub struct Player {
     /// branches (`:4486`/`:4490`) read the inverted multipliers.
     pub tile_speed_bonus: f32,
     pub wall_speed_bonus: f32,
+    /// `Player.blockRange` (`Player.cs:2738`, reset 0 `:18689`): the Builder
+    /// buff's +1 (`:10162`) and the Toolbelt accessory's +1 (`:15426`). Added
+    /// to the held item's `tileBoost` in every `IsInTileInteractionRange`
+    /// placement/tool gate (`:39602`/`:39721`/`:41810`/`:41893`/`:41911`/
+    /// `:46752`) — the paint tools read it through the same seam (W4-g79).
+    pub block_range: i32,
     /// `Player.autoReuseGlove` (`Player.cs:2384`, reset `:18710`): the
     /// Feral Claws and the glove family grant it (`:15107`, `:14413`,
     /// `:14602`, `:15304`, `:15311`, `:15374`); `TryAllowingItemReuse`
@@ -1010,6 +1016,17 @@ pub struct Player {
     /// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a
     /// recorded follow-up (ANALYSIS "The wiring tools (S1-P-i34)").
     pub auto_actuator: bool,
+    /// `Player.autoPaint` (`Player.cs:2472`): the Paint Sprayer (2216) and
+    /// the Architect's Gizmo Pack (3061) / Hand of Creation (5126) auto-paint
+    /// placed tiles/walls while building. Cleared in `ResetEffects`
+    /// (`:18533`), re-granted by `RefreshMechanicalAccsFromItemType`
+    /// (`:12813-12816`) and the held-item arm (`:15271-15294`). The placement
+    /// consumer (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`,
+    /// and the wall routes' `:39629`/`:39709`/`:39823` tails) is a recorded
+    /// follow-up — the flag is granted and the builder-toggle UI reads it
+    /// (`Main.cs:47458`), but the auto-paint-on-build pass is not ported
+    /// (ANALYSIS "Tile paint use paths (W4-g79)").
+    pub auto_paint: bool,
     /// `Player.builderAccStatus` (`Player.cs:814`, `BuilderAccToggleIDs.Count
     /// = 12` at `:77`): the info-accessory toggle states. Slots 4/5/6/7 are
     /// the red/blue/green/yellow wire visibility, 9 the actuator visibility
@@ -2545,6 +2562,7 @@ impl Player {
             melee_speed_bonus: 0.0,
             tile_speed_bonus: 0.0,
             wall_speed_bonus: 0.0,
+            block_range: 0,
             auto_reuse_glove: false,
             stress_ball: false,
             held_item_kind: 0,
@@ -2629,6 +2647,7 @@ impl Player {
             actuation_rod_lock_setting: false,
             info_acc_mech_show_wires: false,
             auto_actuator: false,
+            auto_paint: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
             // (`:56092`): the ruler-line toggle starts off, the rest on.
             builder_acc_status: [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
@@ -5001,6 +5020,10 @@ impl Player {
             // carries the same `chiselSpeed` (`:15293`) plus the range
             // flag the reach scan reads (`craft.rs`).
             4056 | 5126 => self.pick_speed_bonus += 0.25,
+            // `Player.cs:15424-15427` — the Toolbelt (407): `blockRange++`.
+            // The equipped accessory raises the placement/tool reach the
+            // paint tools and the tile/wall routes read (W4-g79).
+            407 => self.block_range += 1,
             // S1-P-i35 — `ApplyEquipFunctional`' fishing rows
             // (`Player.cs:14651-14683`), in the C#'s order: the High Test
             // Line 2373, the Angler Earring 2374 (+10), the glow-bobber
@@ -5936,6 +5959,9 @@ impl Player {
         // (`RefreshMechanicalAccsFromItemType`, `:12799-12820`).
         self.info_acc_mech_show_wires = false;
         self.auto_actuator = false;
+        // `Player.cs:18533` — `autoPaint = false` clears beside the actuator;
+        // the sprayer/gizmo grants re-set it per tick (W4-g79).
+        self.auto_paint = false;
         // `Mount.CheckMountBuff` via `ResetEffects` (`Player.cs:18832` ->
         // `Mount.cs:5275-5281`): the buff gone means dismount.
         if self.mount.is_active()
@@ -6067,6 +6093,9 @@ impl Player {
         // below re-add them per tick, like the melee speed sum.
         self.tile_speed_bonus = 0.0;
         self.wall_speed_bonus = 0.0;
+        // `Player.cs:18689` — `blockRange = 0` resets with the speeds; the
+        // Builder buff (`:10162`) and the Toolbelt (`:15426`) re-add per tick.
+        self.block_range = 0;
         self.auto_reuse_glove = false;
         self.stress_ball = false;
         // `ResetEffects`' `statDefense = 0` (`Player.cs:18327`): the buff arms
@@ -6587,10 +6616,12 @@ impl Player {
                 308 => self.summoner_weapon_speed_bonus += 0.25,
                 314 => self.summoner_weapon_speed_bonus += 0.12,
                 // `:10158-10163` — the Builder Potion (107): tileSpeed /
-                // wallSpeed += 0.25 (the blockRange half rides the reach).
+                // wallSpeed += 0.25 and blockRange++ (the placement-reach
+                // half the paint tools and the tile/wall routes read).
                 107 => {
                     self.tile_speed_bonus += 0.25;
                     self.wall_speed_bonus += 0.25;
+                    self.block_range += 1;
                 }
 
                 // S1-P-i35 — `UpdateBuffs`' fishing potions

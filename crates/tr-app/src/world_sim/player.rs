@@ -158,12 +158,14 @@ pub(crate) fn grant_ammo_mastery(
 ///
 /// Scope: the Mechanical Lens (3619) and Wire Kite (3611) grant
 /// `InfoAccMechShowWires` (`:12801-12804`); the Actuation Accessory (3624)
-/// grants `autoActuator` (`:12817-12820`). The Wire Kite's ruler-line/grid
-/// halves (`:12805-12812`) and the auto-paint family are out of this wiring
-/// wave. The `autoActuator` placement consumer
-/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) is a recorded
-/// follow-up — the flag is granted and read by the visibility gate, but the
-/// auto-place-on-build pass is not ported (ANALYSIS "The wiring tools").
+/// grants `autoActuator` (`:12817-12820`); the Paint Sprayer (2216) / Gizmo
+/// Pack (3061) / Hand of Creation (5126) grant `autoPaint` (`:12813-12816`,
+/// W4-g79). The Wire Kite's ruler-line/grid halves (`:12805-12812`) are out
+/// of this wiring wave. The `autoActuator`/`autoPaint` placement consumers
+/// (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `:40594`) are recorded
+/// follow-ups — the flags are granted and read by the visibility/builder
+/// gates, but the auto-place-on-build pass is not ported (ANALYSIS "The
+/// wiring tools" / "Tile paint use paths (W4-g79)").
 pub(crate) fn grant_mechanical_accs(
     p: &mut Player,
     inventory: &[ItemSlot],
@@ -188,7 +190,7 @@ pub(crate) fn grant_mechanical_accs(
     refresh_mechanical_acc_from_item_type(p, held_kind);
 }
 
-/// `Player.RefreshMechanicalAccsFromItemType` (`Player.cs:12799-12820`),
+/// `Player.RefreshMechanicalAccsFromItemType` (`Player.cs:12799-12841`),
 /// the wiring-relevant arms only.
 fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
     // `:12801-12804` — the Mechanical Lens / Wire Kite show the wires.
@@ -198,6 +200,11 @@ fn refresh_mechanical_acc_from_item_type(p: &mut Player, kind: u16) {
     // `:12817-12820` — the Actuation Accessory auto-places actuators.
     if kind == 3624 {
         p.auto_actuator = true;
+    }
+    // `:12813-12816` — the Paint Sprayer / Architect's Gizmo Pack / Hand of
+    // Creation auto-paint placed tiles/walls (W4-g79).
+    if kind == 2216 || kind == 3061 || kind == 5126 {
+        p.auto_paint = true;
     }
 }
 
