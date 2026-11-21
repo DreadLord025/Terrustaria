@@ -42,14 +42,23 @@ fn use_golem_altar(app: &mut App) -> bool {
         || !app.world.hard_mode
         || !app.world.downed_plant_boss;
     if !gated {
-        // The inventory scan: the first 1293 row decrements; a zero
-        // stack clears (`SetDefaults(0)`) exactly like the C#.
-        for slot in 0..app.inventory.len() {
-            if app.inventory[slot].kind == 1293 && app.inventory[slot].count > 0 {
-                app.inventory[slot].count -= 1;
-                if app.inventory[slot].count == 0 {
-                    app.inventory[slot].kind = 0;
+        // The inventory scan (`Player.cs:32766-32778`): the C# walks
+        // `inventory[0..58]` — the grid + the coin/ammo rows (the trash 58
+        // is OUTSIDE this loop, unlike the chest key's `<= 58`). The first
+        // 1293 row decrements; a zero stack clears (`SetDefaults(0)`).
+        // W4-g43 doc-sweep: the old grid-only scan missed the coin/ammo rows.
+        for slot in app
+            .inventory
+            .iter_mut()
+            .chain(app.equip.coins.iter_mut())
+            .chain(app.equip.ammo.iter_mut())
+        {
+            if slot.kind == 1293 && slot.count > 0 {
+                slot.count -= 1;
+                if slot.count == 0 {
+                    *slot = crate::item::EMPTY_SLOT;
                 }
+                // `:32782` — the roar BEFORE the summon (the C# order).
                 app.audio.play("Roar_0");
                 spawn_golem_on_altar(app);
                 break;
@@ -63,11 +72,23 @@ fn use_golem_altar(app: &mut App) -> bool {
 /// ±20-tile scan around the player for the altar's origin cell
 /// (`type == 237 && frameX == 18 && frameY == 0`), the 50-tile solid
 /// scans up and down that column (`WorldGen.SolidTile`'s
-/// active/!solidTop/!halfBrick/slope-0 shape — an out-of-bounds cell
-/// reads solid, the C# `null` case), then the Golem lands at the
-/// column's `(up + down) / 3` pixel Y, targeting the player, with the
-/// "HasAwoken" announcement. Returns false when no altar is in range
-/// (the C#'s try/catch no-spawn path).
+/// active/!solidTop/!halfBrick/slope-0/!inActive shape — an out-of-bounds
+/// cell reads solid, the C# `null` case), then the Golem lands at the
+/// column's `(up + up + down) / 3` pixel Y, targeting the player, with the
+/// "HasAwoken" announcement (`ChatColors.BossOrEvent`). Returns false when
+/// no altar is in range (the C#'s try/catch no-spawn path).
+/// W4-g43 doc-sweep fidelity fixes vs the C#:
+/// - the scan bounds are EXCLUSIVE-upper (`j < num2 + 20`, `:80494/:80496`
+///   — the old `..=` included the +20 row/col);
+/// - the `num4 <= 0 || num5 <= 0` refusal (`:80505`) — no altar found keeps
+///   the 0/0 init and refuses, and an altar ON row/col 0 refuses too;
+/// - `NPC.NewNPC` takes the spawn point as the BOTTOM centre (`:80770`,
+///   `nPC.Bottom = (X, Y)` → `position = (X - w/2, Y - h)`): the old
+///   top-left write sat the body 140 px too high;
+/// - `target = plr` + `targetSetFrame` (`:80528-80529`);
+/// - the announcement is `Announcement.HasAwoken` formatted with the NPC
+///   name (`:80530`), `ChatColors.BossOrEvent` — not the server-message
+///   "The Golem has awoken!" literal.
 fn spawn_golem_on_altar(app: &mut App) -> bool {
     let Some(player) = app.player.as_ref() else {
         return false;
@@ -75,9 +96,11 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     let (pcx, pcy) = player.center();
     let cx_t = (pcx / TILE_PX) as i32;
     let cy_t = (pcy / TILE_PX) as i32;
+    // `:80492-80504` — the last-match scan (the C# keeps overwriting
+    // num4/num5, so the LAST matching cell in row-major order wins).
     let mut altar: Option<(i32, i32)> = None;
-    for j in (cx_t - 20)..=(cx_t + 20) {
-        for k in (cy_t - 20)..=(cy_t + 20) {
+    for j in (cx_t - 20)..(cx_t + 20) {
+        for k in (cy_t - 20)..(cy_t + 20) {
             if app
                 .world
                 .tile(j, k)
@@ -90,6 +113,12 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
     let Some((ax, ay)) = altar else {
         return false;
     };
+    // `:80505-80508` — the zero-coordinate refusal.
+    if ax <= 0 || ay <= 0 {
+        return false;
+    }
+    // `WorldGen.SolidTile` (`WorldGen.cs:70111-70132`): the null arm reads
+    // TRUE; the active arm also refuses actuated tiles (`!inActive()`).
     let solid = |j: i32, k: i32| -> bool {
         match app.world.tile(j, k) {
             None => true,
@@ -99,9 +128,12 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
                     && !tr_core::tiledata::TILE_SOLID_TOP.has(t.kind)
                     && !t.half_brick()
                     && t.slope() == 0
+                    && !t.inactive()
             }
         }
     };
+    // `:80509-80526` — both scans start at the altar row; the up-scan's
+    // exclusive lower bound is `num5 - 50` (the C# `num8 > num5 - 50`).
     let mut up = ay - 15;
     for k in ((ay - 49).max(0)..=ay).rev() {
         if solid(ax, k) {
@@ -116,13 +148,26 @@ fn spawn_golem_on_altar(app: &mut App) -> bool {
             break;
         }
     }
+    // `:80527` — NewNPC(X: num4*16+8, Y: (num6+num6+num7)/3*16): the BOTTOM
+    // centre (`:80770`), so the top-left comes off half the box / the height.
     let spawn_x = ax as f32 * TILE_PX + 8.0;
     let spawn_y = ((up + up + down) / 3) as f32 * TILE_PX;
-    let mut golem = Npc::new(NpcKind::Golem, spawn_x, spawn_y, 1, 0.0);
+    let (gw, gh) = NpcKind::Golem.size();
+    let mut golem = Npc::new(NpcKind::Golem, spawn_x - gw * 0.5, spawn_y - gh, 1, 0.0);
     golem.hp = golem.max_hp;
+    // `:80528-80529` — the target latch (the solo player is slot 0; the
+    // EverLastingTicker stand-in is the port's frame counter convention).
+    golem.target = app.local_id as i32;
+    golem.target_set_frame = app.frame_count;
     app.npcs.push(golem);
-    app.chat
-        .new_text("The Golem has awoken!", crate::chat::COLOR_SERVER_MESSAGE);
+    // `:80530` — `Announcement.HasAwoken` with the NPC's net name,
+    // `ChatColors.BossOrEvent` (the WoF precedent's literal stand-in shape,
+    // but the correct colour + the localized template).
+    let text = crate::lang::text_args(
+        "Announcement.HasAwoken",
+        &[crate::lang::npc_name(245)],
+    );
+    crate::chat::broadcast_death_text(&mut app.chat, &text, crate::chat::COLOR_BOSS_OR_EVENT);
     true
 }
 
@@ -1162,8 +1207,12 @@ mod tests {
             .iter()
             .find(|n| n.kind == NpcKind::Golem)
             .expect("the Golem spawns");
-        assert_eq!(golem.x, 30.0 * 16.0 + 8.0, "the altar column");
-        assert_eq!(golem.y, 25.0 * 16.0, "the (20+20+36)/3 row");
+        // W4-g43 doc-sweep: NewNPC's BOTTOM-centre anchor (`NPC.cs:80770`) —
+        // the body's top-left is (X - 140/2, Y - 140): the altar column's
+        // centre 488 minus 70, the (20+20+36)/3 row's 400 minus 140.
+        assert_eq!(golem.x, 30.0 * 16.0 + 8.0 - 70.0, "the altar column, bottom-centre");
+        assert_eq!(golem.y, 25.0 * 16.0 - 140.0, "the (20+20+36)/3 row, bottom-centre");
+        assert_eq!(golem.target, 0, "the summon targets the player (:80528)");
         // A living Golem refuses the re-summon; hardmode off refuses too.
         interact_tile(&mut app, 30, 30);
         assert_eq!(app.inventory[app.selected].count, 1, "the living-boss gate");
@@ -1184,6 +1233,49 @@ mod tests {
                 .iter()
                 .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
             "the hardmode gate refuses"
+        );
+    }
+
+    /// W4-g43 doc-sweep — the altar's cell scan covers the coin/ammo rows
+    /// (`Player.cs:32766`'s `inventory[0..58]`, the port's grid + coins +
+    /// ammo): a Power Cell parked in an ammo slot pays exactly like a grid
+    /// slot. The trash slot is OUTSIDE the C# loop (`n < 58`).
+    #[test]
+    fn the_altar_cell_scan_covers_the_ammo_rows() {
+        let mut app = temple_door_app();
+        // Reuse the door rig's world: plant the altar + the solid scans.
+        for &(ax, ay, kind, fx, fy) in &[
+            (30, 30, 237u16, 18i16, 0i16),
+            (30, 20, 1, 0, 0),
+            (30, 36, 1, 0, 0),
+        ] {
+            let i = app.world.index(ax, ay);
+            app.world.tiles[i] = Tile {
+                kind,
+                frame_x: fx,
+                frame_y: fy,
+                ..Default::default()
+            };
+            app.world.tiles[i].flags |= FLAG_ACTIVE;
+        }
+        {
+            let p = app.player.as_mut().unwrap();
+            p.x = 30.0 * 16.0;
+            p.y = 30.0 * 16.0;
+        }
+        app.world.hard_mode = true;
+        app.world.downed_plant_boss = true;
+        app.equip.ammo[0] = ItemSlot {
+            kind: 1293,
+            name: "Lihzahrd Power Cell".into(),
+            count: 1,
+            prefix: 0,
+        };
+        assert!(interact_tile(&mut app, 30, 30));
+        assert_eq!(app.equip.ammo[0].count, 0, "the ammo-row cell paid");
+        assert!(
+            app.npcs.iter().any(|n| n.kind == NpcKind::Golem && n.hp > 0),
+            "the Golem spawns off the ammo-row cell"
         );
     }
 
