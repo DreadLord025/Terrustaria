@@ -719,6 +719,115 @@ pub fn knockback_label(resist: f32, stats_known: bool) -> String {
     crate::lang::text(key)
 }
 
+// --- NPCStatsReportInfoElement's 2x2 grid + coin row (W4-e23 remainder) ---------
+
+/// The stat icons' natural size (`Stat_HP`/`Attack`/`Defense`/`Knockback`
+/// are 96x31 sheets; `UIImage` keeps the texture size,
+/// `UIImage.cs:52-56`).
+pub const STAT_ICON_SIZE: [f32; 2] = [96.0, 31.0];
+
+/// The coin icons' natural size (`Stat_Platinum/Gold/Silver/Copper`,
+/// 47x31).
+pub const COIN_ICON_SIZE: [f32; 2] = [47.0, 31.0];
+
+/// `ProvideUIElement`'s 2x2 icon lattice (`NPCStatsReportInfoElement.cs:69-96`):
+/// `num = 99` column pitch, `num2 = 35` row pitch, `num3 = 3` left inset,
+/// `num4 = 0` top. Append order: HP (3, 0), Attack (3, 35),
+/// Defense (102, 35), Knockback (102, 0). `origin` is the block's top-left.
+pub fn stats_grid_rects(origin: [f32; 2]) -> [[f32; 4]; 4] {
+    let (num, num2, num3, num4) = (99.0, 35.0, 3.0, 0.0); // `:69-72`
+    [
+        [origin[0] + num3, origin[1] + num4, STAT_ICON_SIZE[0], STAT_ICON_SIZE[1]], // HP `:73-77`
+        [origin[0] + num3, origin[1] + num4 + num2, STAT_ICON_SIZE[0], STAT_ICON_SIZE[1]], // Attack `:78-82`
+        [origin[0] + num3 + num, origin[1] + num4 + num2, STAT_ICON_SIZE[0], STAT_ICON_SIZE[1]], // Defense `:83-87`
+        [origin[0] + num3 + num, origin[1] + num4, STAT_ICON_SIZE[0], STAT_ICON_SIZE[1]], // Knockback `:88-92`
+    ]
+}
+
+/// The value `UIText`'s draw position inside a stat/coin icon
+/// (`:129-160`, `:217-244`): `HAlign 1`, `VAlign 0.5`, `Left = left`
+/// (-10 for the grid, -7 for the coins), scale `text_scale`. The element
+/// is `text_w x 16*scale` (`UIText.InternalSetText:186` pins the
+/// non-wrapped height at 16), centred vertically, then `DrawSelf` rides
+/// `Y -= 2 * textScale` (`UIText.cs:138`).
+pub fn stat_value_pos(icon: [f32; 4], text_w: f32, text_scale: f32, left: f32) -> [f32; 2] {
+    [
+        icon[0] + icon[2] - text_w + left,
+        icon[1] + (icon[3] - 16.0 * text_scale) * 0.5 - 2.0 * text_scale,
+    ]
+}
+
+/// The coin row's four denomination strings
+/// (`NPCStatsReportInfoElement.cs:99-119`): `(int)MonetaryValue` split
+/// into platinum/gold/silver/copper, each clamped (999/99/99/99), a
+/// denomination whose division is `< 1` prints `"-"`. Below tier 2 (or
+/// `HideStats`) all four become `"?"` (`:124-128`).
+pub fn coin_strings(value: f32, stats_known: bool) -> [String; 4] {
+    let num7 = value as i32; // `:99`
+    let mut out = [
+        (num7 / 1000000).clamp(0, 999).to_string(),
+        (num7 % 1000000 / 10000).clamp(0, 99).to_string(),
+        (num7 % 10000 / 100).clamp(0, 99).to_string(),
+        (num7 % 100).clamp(0, 99).to_string(),
+    ];
+    if num7 / 1000000 < 1 {
+        out[0] = "-".to_string(); // `:104-107`
+    }
+    if num7 / 10000 < 1 {
+        out[1] = "-".to_string(); // `:108-111`
+    }
+    if num7 / 100 < 1 {
+        out[2] = "-".to_string(); // `:112-115`
+    }
+    if num7 < 1 {
+        out[3] = "-".to_string(); // `:116-119`
+    }
+    if !stats_known {
+        out = ["?".to_string(), "?".to_string(), "?".to_string(), "?".to_string()]; // `:126`
+    }
+    out
+}
+
+/// The coin row's icon rects (`:176-198`): `num9 = num3 = 3` left,
+/// `num10 = num8 + 8 = 78` top (the separator sits at 70, `num8` took
+/// `+4` at `:175`), `num11 = 49` pitch — platinum 3, gold 52, silver
+/// 102 (`+1`), copper 151 (`+1`). Only denominations whose string is not
+/// `"-"` append their icon (`:199-214`); the caller gates the whole row
+/// on `value > 0` (`:166`).
+pub fn coin_row_rects(origin: [f32; 2]) -> [[f32; 4]; 4] {
+    let (num9, num10, num11) = (3.0, 78.0, 49.0);
+    [
+        [origin[0] + num9, origin[1] + num10, COIN_ICON_SIZE[0], COIN_ICON_SIZE[1]],
+        [origin[0] + num9 + num11, origin[1] + num10, COIN_ICON_SIZE[0], COIN_ICON_SIZE[1]],
+        [origin[0] + num9 + num11 * 2.0 + 1.0, origin[1] + num10, COIN_ICON_SIZE[0], COIN_ICON_SIZE[1]],
+        [origin[0] + num9 + num11 * 3.0 + 1.0, origin[1] + num10, COIN_ICON_SIZE[0], COIN_ICON_SIZE[1]],
+    ]
+}
+
+/// The stats block's height (`:165`, `:249-251`): `num8 = 66`, `+4` for
+/// the coin separator and `+34` for the coin row when `value > 0`, then
+/// `Height.Pixels = num8 + 4` — 70 without coins, 108 with.
+pub fn stats_block_height(has_coins: bool) -> f32 {
+    let mut num8 = 66.0;
+    if has_coins {
+        num8 += 4.0; // `:175`
+        num8 += 34.0; // `:249`
+    }
+    num8 + 4.0 // `:251`
+}
+
+/// `NPCKillCounterInfoElement.ProvideUIElement`'s panel
+/// (`NPCKillCounterInfoElement.cs:43-65`): the row is 30 tall (`num3`),
+/// the `Stat_Panel` panel `Width (-8 + num4, 1)` with `num4 = -3`
+/// (`:51`), `Height 30`, `Left -8`, `HAlign 1`, bg `(43, 56, 101)`,
+/// `PaddingRight 5` (`:65`). `content` is the list's content box,
+/// `row_top` the row's y.
+pub fn kill_counter_panel_rect(content: [f32; 4], row_top: f32) -> [f32; 4] {
+    let w = content[2] - 8.0 + -3.0; // `:56`
+    [content[0] + content[2] - 8.0 - w, row_top, w, 30.0] // `:61-62`
+}
+
+
 /// `UIBestiaryInfoItemLine.GetDropInfo`'s rate column
 /// (`UIBestiaryInfoItemLine.cs:92-109`): tier 4 prints the stack range + the
 /// prettified rate ("P4" under 0.1 %, "100%" at the full rate); tier 3
@@ -2204,28 +2313,25 @@ fn draw_info_page(
         sep(r, &mut ty);
     }
 
-    // 4. Stats (`NPCStatsReportInfoElement.cs:57-128` + the kill counter):
-    //    the block from tier 1, values "???" until tier 2.
+    // 4. Stats (`NPCStatsReportInfoElement.cs:57-256` + the kill counter):
+    //    the block from tier 1, values "???" until tier 2. The C# draws a
+    //    2x2 icon grid (HP/Attack left column, Knockback/Defense right)
+    //    plus a coin row when the value is positive — the port's vertical
+    //    `stat_row` list is replaced by that layout (W4-e23 remainder).
     let tx = content[0];
     if state.known() {
         let stats =
             crate::npc::entry_stats(entry.kind, entry.variant.unwrap_or(SlimeVariant::Blue));
         let known = state >= UnlockState::CanShowStats;
-        let masked = |v: String| if known { v } else { "???".to_string() };
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_hp, &masked(format!("{}", stats.hp)));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_attack, &masked(format!("{}", stats.damage)));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_defense, &masked(format!("{}", stats.defense)));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_knockback, &knockback_label(stats.kb, known));
-        stat_row(r, lookups, &mut ty, tx, lookups.ui_bestiary_stat_copper, &masked(format!("{}", stats.value as i64)));
+        draw_stats_block(r, lookups, [tx, ty], content[2], &stats, known, screen, mouse);
+        ty += stats_block_height(stats.value > 0.0) + 4.0;
+        // The kill counter (`NPCKillCounterInfoElement.cs:24-88`): a 30 px
+        // row, the Stat_Panel panel right-aligned, the grave icon + count.
         let (kills, _needed) = crate::bestiary::kill_progress(entry, &tracker.kills);
         if let Some(count) = kill_counter_text(kills) {
-            text::hud_text(r, lookups, tx, ty, 0.85, [0.8, 0.85, 1.0, 1.0], &count);
-            if super::in_rect(mouse, [tx, ty, 60.0, 20.0]) {
-                super::tooltip::draw_mouse_text(r, lookups, mouse, &crate::lang::text("BestiaryInfo.Slain"), screen, super::UiPulse::default());
-            }
-            ty += 26.0;
+            draw_kill_counter(r, lookups, content, ty, &count, screen, mouse);
+            ty += 30.0 + 4.0; // the row height (`:84`) + ListPadding
         }
-        ty += 4.0;
         sep(r, &mut ty);
     }
 
@@ -2308,20 +2414,153 @@ fn wrap_text(
     lines
 }
 
-/// One `Stat_*` icon + value row (the info page's stat list style).
-fn stat_row(
+/// `NPCStatsReportInfoElement.ProvideUIElement`'s draw
+/// (`NPCStatsReportInfoElement.cs:64-256`): the 2x2 icon grid with the
+/// value texts right-aligned inside each icon (`HAlign 1`, `Left -10`,
+/// scale 1), the coin separator + row when the value is positive
+/// (denomination texts at scale 0.85, `Left -7`), and the four hover
+/// tooltips (`ShowStats_Life/Attack/Defense/Knockback`, `:259-289`).
+fn draw_stats_block(
     r: &mut SpriteRenderer,
     lookups: &Lookups,
-    ty: &mut f32,
-    tx: f32,
-    sheet: Option<tr_render::SheetRect>,
-    value: &str,
+    origin: [f32; 2],
+    block_w: f32,
+    stats: &crate::npc::EntryStats,
+    known: bool,
+    screen: Vec2,
+    mouse: Vec2,
 ) {
-    if let Some(sheet) = sheet {
-        push_whole(r, lookups, &sheet, [tx, *ty, 20.0, 20.0], [1.0; 4]);
+    let masked = |v: String| if known { v } else { "???".to_string() };
+    let icons = stats_grid_rects(origin);
+    let sheets = [
+        lookups.ui_bestiary_stat_hp,
+        lookups.ui_bestiary_stat_attack,
+        lookups.ui_bestiary_stat_defense,
+        lookups.ui_bestiary_stat_knockback,
+    ];
+    let values = [
+        masked(format!("{}", stats.hp)),
+        masked(format!("{}", stats.damage)),
+        masked(format!("{}", stats.defense)),
+        knockback_label(stats.kb, known),
+    ];
+    // The hover labels (`:252-255` OnUpdate order: Attack, Defense, Life,
+    // Knockback — the first hovered icon wins the MouseText).
+    let hover_keys = [
+        "BestiaryInfo.Life",
+        "BestiaryInfo.Attack",
+        "BestiaryInfo.Defense",
+        "BestiaryInfo.Knockback",
+    ];
+    let mut hover: Option<&str> = None;
+    for i in 0..4 {
+        if let Some(sheet) = sheets[i] {
+            push_whole(r, lookups, &sheet, icons[i], [1.0; 4]);
+        }
+        let w = text::hud_text_width(r, lookups, &values[i], 1.0);
+        let p = stat_value_pos(icons[i], w, 1.0, -10.0); // `num5` (`:97`)
+        text::hud_text(r, lookups, p[0], p[1], 1.0, [1.0; 4], &values[i]);
+        if hover.is_none() && super::in_rect(mouse, icons[i]) {
+            hover = Some(hover_keys[i]);
+        }
     }
-    text::hud_text(r, lookups, tx + 28.0, *ty + 2.0, 0.8, [1.0; 4], value);
-    *ty += 24.0;
+    if stats.value > 0.0 {
+        // The coin separator (`:168-174`): `Width (0, 1)` — the block's
+        // full width — at Top 70, the same `(89, 116, 213) * 0.9` the list
+        // separators use.
+        r.push_ui_sprite(
+            [origin[0], origin[1] + 70.0],
+            [block_w, 2.0],
+            r.white_uv(),
+            super::color::tint(super::color::mul([89, 116, 213, 255], 0.9)),
+        );
+        let coins = coin_strings(stats.value, known);
+        let rects = coin_row_rects(origin);
+        let coin_sheets = [
+            lookups.ui_bestiary_stat_platinum,
+            lookups.ui_bestiary_stat_gold,
+            lookups.ui_bestiary_stat_silver,
+            lookups.ui_bestiary_stat_copper,
+        ];
+        for i in 0..4 {
+            if coins[i] == "-" {
+                continue; // `:199-214` — the icon only appends when shown
+            }
+            if let Some(sheet) = coin_sheets[i] {
+                push_whole(r, lookups, &sheet, rects[i], [1.0; 4]);
+            }
+            let w = text::hud_text_width(r, lookups, &coins[i], 0.85);
+            let p = stat_value_pos(rects[i], w, 0.85, -7.0); // `num12` (`:215`)
+            text::hud_text(r, lookups, p[0], p[1], 0.85, [1.0; 4], &coins[i]);
+        }
+    }
+    if let Some(key) = hover {
+        super::tooltip::draw_mouse_text(
+            r,
+            lookups,
+            mouse,
+            &crate::lang::text(key),
+            screen,
+            super::UiPulse::default(),
+        );
+    }
+}
+
+/// `NPCKillCounterInfoElement.ProvideUIElement`'s draw
+/// (`NPCKillCounterInfoElement.cs:54-87`): the `Stat_Panel` panel
+/// (12/7 splices, bg `(43, 56, 101)`, border transparent), the item-321
+/// grave icon at scale 0.8 in a 32x32 `UIItemIcon` (`HAlign 0`,
+/// `Left -1`), the count text right-aligned at scale 0.85 (`Left -3`,
+/// `PaddingRight 5`), and the "Slain" hover (`ShowDescription`, `:90-96`).
+fn draw_kill_counter(
+    r: &mut SpriteRenderer,
+    lookups: &Lookups,
+    content: [f32; 4],
+    row_top: f32,
+    count: &str,
+    screen: Vec2,
+    mouse: Vec2,
+) {
+    let panel = kill_counter_panel_rect(content, row_top);
+    uistate::draw_spliced_panel(
+        r,
+        lookups,
+        lookups.ui_bestiary_stat_panel,
+        panel,
+        12.0,
+        12.0,
+        7.0,
+        7.0,
+        super::color::tint([43, 56, 101, 255]),
+    );
+    // The grave icon (`:75-83`): `UIItemIcon` is a 32x32 box at HAlign 0,
+    // Left -1 inside the panel; `DrawItemIcon` centres the item texture on
+    // the box centre at `item.scale = 0.8` with the 32 px size limit.
+    let icon_box = [panel[0] - 1.0, panel[1], 32.0, 32.0];
+    let centre = (icon_box[0] + 16.0, icon_box[1] + 16.0);
+    if let Some((uv, iw, ih)) = lookups.item_icon(321) {
+        let longest = iw.max(ih);
+        let limit = if longest > 32.0 { 32.0 / longest } else { 1.0 };
+        let s = 0.8 * limit;
+        let (w, h) = (iw * s, ih * s);
+        r.push_ui_sprite([centre.0 - w * 0.5, centre.1 - h * 0.5], [w, h], uv, [1.0; 4]);
+    }
+    // The count (`:68-74`): HAlign 1 inside the panel's inner box
+    // (PaddingRight 5), Left -3, VAlign 0.5, scale 0.85.
+    let w = text::hud_text_width(r, lookups, count, 0.85);
+    let inner_right = panel[0] + panel[2] - 5.0;
+    let ty = panel[1] + (panel[3] - 16.0 * 0.85) * 0.5 - 2.0 * 0.85;
+    text::hud_text(r, lookups, inner_right - w - 3.0, ty, 0.85, [1.0; 4], count);
+    if super::in_rect(mouse, panel) {
+        super::tooltip::draw_mouse_text(
+            r,
+            lookups,
+            mouse,
+            &crate::lang::text("BestiaryInfo.Slain"),
+            screen,
+            super::UiPulse::default(),
+        );
+    }
 }
 
 /// `Utils.Frame(horizontalFrames, verticalFrames, frameX, frameY)`
@@ -3148,6 +3387,85 @@ mod tests {
         assert_eq!(prettify_percent_display(0.1429), "14.29%");
         assert_eq!(prettify_percent_display(0.0001), ".01%");
         assert_eq!(prettify_percent_display(0.0), "%");
+    }
+
+    // ---- W4-e23 remainder: the 2x2 stat grid + coin row. Written in
+    // code-only mode — NOT RUN here.
+
+    #[test]
+    fn the_stat_grid_lays_out_the_two_by_two_lattice() {
+        // `NPCStatsReportInfoElement.cs:69-96`: num=99 column pitch,
+        // num2=35 row pitch, num3=3 left, num4=0 top. Append order:
+        // HP (3,0), Attack (3,35), Defense (102,35), Knockback (102,0).
+        let rects = stats_grid_rects([100.0, 50.0]);
+        assert_eq!(rects[0], [103.0, 50.0, 96.0, 31.0]); // HP
+        assert_eq!(rects[1], [103.0, 85.0, 96.0, 31.0]); // Attack
+        assert_eq!(rects[2], [202.0, 85.0, 96.0, 31.0]); // Defense
+        assert_eq!(rects[3], [202.0, 50.0, 96.0, 31.0]); // Knockback
+        assert_eq!(STAT_ICON_SIZE, [96.0, 31.0]);
+    }
+
+    #[test]
+    fn the_stat_value_rides_right_aligned_and_two_up() {
+        // `:129-160`: HAlign 1, VAlign 0.5, Left -10, scale 1; the UIText
+        // box is text_w x 16, DrawSelf rides Y -= 2*scale (`UIText.cs:138`).
+        // A 40-wide text in the HP icon at (103, 50): x = 103+96-40-10 = 149,
+        // y = 50 + (31-16)/2 - 2 = 55.5.
+        let icon = [103.0, 50.0, 96.0, 31.0];
+        assert_eq!(stat_value_pos(icon, 40.0, 1.0, -10.0), [149.0, 55.5]);
+        // The coin texts (`:215-244`): Left -7, scale 0.85 — the box is
+        // 16*0.85 = 13.6 tall, Y -= 1.7. A 20-wide text in a 47x31 coin at
+        // (103, 128): x = 103+47-20-7 = 123, y = 128+(31-13.6)/2-1.7 = 135.
+        let coin = [103.0, 128.0, 47.0, 31.0];
+        assert_eq!(stat_value_pos(coin, 20.0, 0.85, -7.0), [123.0, 135.0]);
+    }
+
+    #[test]
+    fn the_coin_strings_split_and_dash_like_the_source() {
+        // `:99-119`: (int)value split into p/g/s/c, clamped 999/99/99/99,
+        // a denomination whose division is < 1 prints "-".
+        // 1 gold 23 silver 45 copper = 12345.
+        assert_eq!(coin_strings(12345.0, true), ["-", "1", "23", "45"]);
+        // 1 platinum 2 gold 3 silver 4 copper = 1020304.
+        assert_eq!(coin_strings(1020304.0, true), ["1", "2", "3", "4"]);
+        // 50 copper only.
+        assert_eq!(coin_strings(50.0, true), ["-", "-", "-", "50"]);
+        // Zero: every denomination dashes.
+        assert_eq!(coin_strings(0.0, true), ["-", "-", "-", "-"]);
+        // The platinum clamp: 1000 platinum reads 999 (`:100`).
+        assert_eq!(coin_strings(1_000_000_000.0, true)[0], "999");
+        // Below tier 2 all four become "?" (`:126`).
+        assert_eq!(coin_strings(12345.0, false), ["?", "?", "?", "?"]);
+    }
+
+    #[test]
+    fn the_coin_row_lays_out_the_four_denominations() {
+        // `:176-198`: num9=3 left, num10=78 top, num11=49 pitch — the
+        // silver/copper columns take the extra +1 (`:192`/`:197`).
+        let rects = coin_row_rects([100.0, 50.0]);
+        assert_eq!(rects[0], [103.0, 128.0, 47.0, 31.0]); // platinum
+        assert_eq!(rects[1], [152.0, 128.0, 47.0, 31.0]); // gold
+        assert_eq!(rects[2], [202.0, 128.0, 47.0, 31.0]); // silver (+1)
+        assert_eq!(rects[3], [251.0, 128.0, 47.0, 31.0]); // copper (+1)
+        assert_eq!(COIN_ICON_SIZE, [47.0, 31.0]);
+    }
+
+    #[test]
+    fn the_stats_block_height_takes_the_coin_row() {
+        // `:165`/`:249-251`: num8=66, +4 separator +34 coins when value>0,
+        // Height = num8+4 — 70 without coins, 108 with.
+        assert_eq!(stats_block_height(false), 70.0);
+        assert_eq!(stats_block_height(true), 108.0);
+    }
+
+    #[test]
+    fn the_kill_counter_panel_is_right_aligned_and_30_tall() {
+        // `NPCKillCounterInfoElement.cs:54-65`: Width (-8 + -3, 1) = the
+        // content width - 11, Height 30, Left -8, HAlign 1. A 206-wide
+        // content box at x 100: the panel is 195 wide, its right edge at
+        // 100+206-8 = 298, so x = 103.
+        let content = [100.0, 50.0, 206.0, 300.0];
+        assert_eq!(kill_counter_panel_rect(content, 400.0), [103.0, 400.0, 195.0, 30.0]);
     }
 }
 

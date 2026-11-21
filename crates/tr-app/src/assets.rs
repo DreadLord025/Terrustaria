@@ -912,6 +912,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/Bestiary/Stat_Defense",
         "UI/Bestiary/Stat_Knockback",
         "UI/Bestiary/Stat_Copper",
+        // W4-e23 remainders: the coin row's other three denominations
+        // (`NPCStatsReportInfoElement.cs:179-198`).
+        "UI/Bestiary/Stat_Platinum",
+        "UI/Bestiary/Stat_Gold",
+        "UI/Bestiary/Stat_Silver",
         // The dedicated single-frame bestiary portraits — the
         // `CustomTexturePath` rows of `NPCID.Sets.NPCBestiaryDrawOffset`
         // (`UnlockableNPCEntryIcon.cs:74-81` requests them by path). One
@@ -2154,6 +2159,11 @@ pub struct Lookups {
     pub ui_bestiary_stat_defense: Option<tr_render::SheetRect>,
     pub ui_bestiary_stat_knockback: Option<tr_render::SheetRect>,
     pub ui_bestiary_stat_copper: Option<tr_render::SheetRect>,
+    /// W4-e23 remainders: the coin row's other three denominations
+    /// (`NPCStatsReportInfoElement.cs:179-193`).
+    pub ui_bestiary_stat_platinum: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_gold: Option<tr_render::SheetRect>,
+    pub ui_bestiary_stat_silver: Option<tr_render::SheetRect>,
     /// The twenty-two NPC portrait sheets — the `NpcAssets` set restated
     /// for the UI draws: `[slime, demon eye, wandering eye, zombie, king
     /// slime, guide, skeleton, undead miner, cave bat, jungle bat, hellbat,
@@ -2519,6 +2529,9 @@ impl Lookups {
             ui_bestiary_stat_defense: atlas.sheet("UI/Bestiary/Stat_Defense").copied(),
             ui_bestiary_stat_knockback: atlas.sheet("UI/Bestiary/Stat_Knockback").copied(),
             ui_bestiary_stat_copper: atlas.sheet("UI/Bestiary/Stat_Copper").copied(),
+            ui_bestiary_stat_platinum: atlas.sheet("UI/Bestiary/Stat_Platinum").copied(),
+            ui_bestiary_stat_gold: atlas.sheet("UI/Bestiary/Stat_Gold").copied(),
+            ui_bestiary_stat_silver: atlas.sheet("UI/Bestiary/Stat_Silver").copied(),
             bestiary_npc_sheets: vec![
                 atlas.sheet("NPC_1").copied(),
                 atlas.sheet("NPC_2").copied(),
