@@ -305,6 +305,8 @@ fn solid_tile_probe(world: &World, x: i32, y: i32) -> bool {
 /// equivalent is `Vec2::ZERO` (the GPU transform applies). The tint
 /// comes in as the shaded light colour (the caller's `style.shade`
 /// convention); `atlas` resolves the frame through `Lookups::rect_uv`.
+#[allow(dead_code)] // STAGED — the retro oldDrawWater merge wires it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn draw_tile_in_water(
     r: &mut SpriteRenderer,
     world: &World,
