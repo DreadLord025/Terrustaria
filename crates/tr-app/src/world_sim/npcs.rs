@@ -5920,7 +5920,8 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3),
         // the Harpy's feather (`NPC.cs:23429` — W4-g8 machine round),
         // the VoodooDemon's DemonSickle (`NPC.cs:23450` — the S1-D-3 bat
-        // reconcile's `bat_ai` shot drain) and the Skeletron head's
+        // reconcile's `bat_ai` shot drain), the RedDevil's trident
+        // (`NPC.cs:23478` — W4-g8 machine round) and the Skeletron head's
         // spin-shot Skull (`NPC.cs:22013` - B-1).
         let time_left = if kind == crate::projectile::DESTROYER_LASER
             || kind == crate::projectile::BULLET_SNOWMAN
@@ -5931,6 +5932,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::QUEEN_BEE_STINGER
             || kind == crate::projectile::HARPY_FEATHER
             || kind == crate::projectile::DEMON_SICKLE
+            || kind == crate::projectile::UNHOLY_TRIDENT_HOSTILE
             || kind == crate::projectile::SKULL
         {
             300

@@ -11,18 +11,20 @@
 //! unported types' own branches (226's velocity-sign facing `:22876-22894`,
 //! 158's surface flee + 7-cap approach `:22899-22970` + Transform(159)
 //! `:23346-23355` + double `ai[1]++` `:23357-23360`, 226's 4/2.5 approach
-//! `:22971-23037`, 660's 0.35/0.3/6/5 approach `:23038-23115`, 156's trident
-//! shot `:23458-23484`) are cited skips — they land with their kinds.
-//! 48's wet arm `:23333-23345` + feather shot `:23416-23436` landed with the
-//! W4-g8 machine round (the Harpy wiring).
+//! `:22971-23037`, 660's 0.35/0.3/6/5 approach `:23038-23115`) are cited
+//! skips — they land with their kinds.
+//! 48's wet arm `:23333-23345` + feather shot `:23416-23436` and 156's
+//! trident shot `:23458-23484` landed with the W4-g8 machine round (the
+//! Harpy/RedDevil wirings).
 //!
 //! WIRED (the S1-D-3 bat/fish reconcile, `task/S1-D-3-reconcile-batfish`):
 //! `npc.rs::update_cave_bat` routes the four kinds through [`bat_ai`],
 //! feeds `Entity.wet` via the `is_wet` pass + the session-player
 //! `TargetCandidate`/`players_wet` slices, drains [`Style14Shot`] into
 //! `wants_hostile_shot` (the Demon/VoodooDemon sickle: type 44, damage 21;
-//! the Harpy feather: type 38, damage 15 — W4-g8; the sim's timed-shot pass
-//! applies the `timeLeft = 300` write, `NPC.cs:23429`/`:23450`), and integrates
+//! the Harpy feather: type 38, damage 15; the RedDevil trident: type 115,
+//! damage 80 — W4-g8; the sim's timed-shot pass applies the `timeLeft = 300`
+//! write, `NPC.cs:23429`/`:23450`/`:23478`), and integrates
 //! through the no-gravity `integrate_flyer_collision` stand-in
 //! (`UpdateCollision`, `NPC.cs:92523-92580`). The distrust-verbatim audit
 //! re-read the whole arm against `NPC.cs:22849-23486` at the wiring —
@@ -39,7 +41,9 @@
 //! flag holds (the C# `&&` short-circuits, `:23453`). Harpy (48, W4-g8):
 //! the same two `Next(-100, 101)` jitters on `ai[0] == 30/60/90`
 //! (`:23425-23426`), else ONE `Next(400)` reset roll behind flag24
-//! (`:23432`). The bat kinds
+//! (`:23432`). RedDevil (156, W4-g8): two `Next(-50, 51)` jitters on
+//! `ai[0] == 20/40/60/80/100` (`:23469-23470`), else ONE `Next(250)` reset
+//! roll behind flag24 (`:23481`). The bat kinds
 //! (49/51/60) draw nothing. `TargetClosest` is RNG-free (the Manhattan
 //! scan, `NPC.cs:77652-77781`). The witness tests below pin the stream
 //! position for each case (written, NOT run — code-only mode).
@@ -67,13 +71,15 @@ pub struct Style14Env<'a> {
     pub ticker: u64,
 }
 
-/// The type-48/62/66 shot request — `Projectile.NewProjectile` at
+/// The type-48/62/66/156 shot request — `Projectile.NewProjectile` at
 /// `NPC.cs:23428-23429` (the Harpy feather: type 38, damage 15, W4-g8) /
-/// `:23449-23450` (the Demon/VoodooDemon sickle: type 44, damage 21):
+/// `:23449-23450` (the Demon/VoodooDemon sickle: type 44, damage 21) /
+/// `:23477-23478` (the RedDevil trident: type 115, damage 80, W4-g8):
 /// knockback 0, owner `Main.myPlayer`, spawned at the NPC centre with the
-/// jittered aim; the caller sets `timeLeft = 300`. The pure module never
-/// touches the pool. (`DemonSickleShot` pre-W4-g8 — generalized when the
-/// Harpy's feather landed on the same seam.)
+/// jittered aim (the trident offsets by velocity*5 + aim*100); the caller
+/// sets `timeLeft = 300`. The pure module never touches the pool.
+/// (`DemonSickleShot` pre-W4-g8 — generalized when the Harpy's feather
+/// landed on the same seam.)
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Style14Shot {
     pub kind: u16,
@@ -91,8 +97,8 @@ const WATER_GROUP: [i32; 11] = [49, 51, 60, 62, 66, 93, 137, 150, 151, 152, 634]
 /// `this.noGravity = true` (`:22851`) is structural: the port's flyer
 /// callers integrate without gravity (the `Npc` struct has no
 /// `no_gravity` field; `update_hover`'s convention). Returns the
-/// Harpy's feather / the VoodooDemon's sickle shot request on the shoot
-/// tick, else `None`.
+/// Harpy's feather / the VoodooDemon's sickle / the RedDevil's trident
+/// shot request on the shoot tick, else `None`.
 pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> Option<Style14Shot> {
     let net_id = npc.kind.net_id();
     // `:22852-22875` — the tile-bounce clamps.
@@ -223,7 +229,44 @@ pub fn bat_ai(npc: &mut Npc, env: &Style14Env<'_>, rng: &mut UnifiedRandom) -> O
             npc.ai[0] = 0.0;
         }
     }
-    // `:23458-23484` — type 156's trident shot (RedDevil unported, skip).
+    // `:23458-23484` — type 156's trident shot (W4-g8: the RedDevil
+    // landed). The 20/40/60/80/100 cadence, the 0.2-scale ±50 jittered
+    // aim, the velocity*5 spawn offset + the aim*100 muzzle push, and
+    // the 250 + Next(250) reset gate. Type 115 (UnholyTridentHostile),
+    // damage 80 (`num249`/`num250`, `:23474-23475`).
+    if net_id == 156 {
+        npc.ai[0] += 1.0;
+        if npc.ai[0] == 20.0 || npc.ai[0] == 40.0 || npc.ai[0] == 60.0 || npc.ai[0] == 80.0 || npc.ai[0] == 100.0 {
+            let (w, h) = npc.size();
+            if crate::projectile::can_hit(
+                env.world, npc.x, npc.y, w, h, p.x, p.y, p.width as f32, p.height as f32,
+            ) {
+                // `:23467-23473` — the 0.2-scale jittered aim; the X
+                // jitter draws BEFORE the Y jitter (`:23469-23470`),
+                // ±50 (not the sickle's ±100).
+                let num245 = 0.2f32;
+                let mut num246 = pcx - cx + rng.next_range(-50, 51) as f32;
+                let mut num247 = pcy - cy + rng.next_range(-50, 51) as f32;
+                let num248 = num245 / (num246 * num246 + num247 * num247).sqrt();
+                num246 *= num248;
+                num247 *= num248;
+                // `:23476-23478` — the spawn centre rides velocity*5, the
+                // muzzle pushes aim*100; NewProjectile(115, 80, 0f),
+                // timeLeft 300 is the caller's write.
+                return Some(Style14Shot {
+                    kind: crate::projectile::UNHOLY_TRIDENT_HOSTILE,
+                    damage: 80,
+                    x: cx + npc.vx * 5.0 + num246 * 100.0,
+                    y: cy + npc.vy * 5.0 + num247 * 100.0,
+                    vx: num246,
+                    vy: num247,
+                });
+            }
+        } else if flag24 && npc.ai[0] >= (250 + rng.next_max(250)) as f32 {
+            // `:23481-23484` — the reset roll behind the firing flag.
+            npc.ai[0] = 0.0;
+        }
+    }
     None
 }
 
@@ -907,5 +950,108 @@ mod tests {
         assert!(bat_ai(&mut n, &e, &mut rng).is_none());
         assert_eq!(n.ai[0], 29.0, "the client never counts the feather timer");
         assert_eq!(rng.peek(), before);
+    }
+
+    /// W4-g8 machine round — `NPC.cs:23469-23477`: the RedDevil's trident
+    /// shot tick (ai[0] 19 → 20) draws exactly two `Next(-50, 51)`
+    /// jitters (NOT the sickle's ±100), X FIRST then Y; the aim is the
+    /// 0.2-normalised vector and the spawn rides centre + velocity*5 +
+    /// aim*100. Type 115 / damage 80 (`:23474-23475`).
+    #[test]
+    fn w4_g8_s14_the_reddevil_trident_draws_x_then_y_with_the_muzzle_push() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 19.0; // ++ → 20, the first trident tick.
+        let (cx, cy) = n.center();
+        let mut rng = UnifiedRandom::new(12345);
+        let mut witness = UnifiedRandom::new(12345);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng).expect("the trident tick fires");
+        // The approach pass ran before the shot arm: facing 1 → vx 0.1,
+        // directionY −1 → vy −0.04; bat_ai does not integrate, so the
+        // post-call velocity IS the shot-time velocity.
+        assert!(near(n.vx, 0.1));
+        assert!(near(n.vy, -0.04));
+        let pcx = 1100.0 + 10.0;
+        let pcy = 1000.0 + 21.0;
+        let dx = pcx - cx + witness.next_range(-50, 51) as f32;
+        let dy = pcy - cy + witness.next_range(-50, 51) as f32;
+        let s = 0.2f32 / (dx * dx + dy * dy).sqrt();
+        let (ax, ay) = (dx * s, dy * s);
+        assert_eq!(shot.kind, crate::projectile::UNHOLY_TRIDENT_HOSTILE, "type 115 (:23475)");
+        assert_eq!(shot.damage, 80, "damage 80 (:23474)");
+        assert_eq!(shot.x, cx + n.vx * 5.0 + ax * 100.0, "velocity*5 + aim*100 (:23476-23477)");
+        assert_eq!(shot.y, cy + n.vy * 5.0 + ay * 100.0);
+        assert_eq!((shot.vx, shot.vy), (ax, ay), "the 0.2-normalised aim");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two draws, X then Y");
+        assert_eq!(n.ai[0], 20.0);
+    }
+
+    /// `NPC.cs:23463` — the trident's FIFTH cadence value (100) fires too
+    /// (the sickle stops at 80).
+    #[test]
+    fn w4_g8_s14_the_reddevil_fifth_cadence_tick_fires() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 99.0; // ++ → 100, the last trident tick.
+        let mut rng = UnifiedRandom::new(3);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_some(), "ai[0] == 100 is a shot value (:23463)");
+        assert_eq!(n.ai[0], 100.0);
+    }
+
+    /// `NPC.cs:23481` — the RedDevil's reset roll: ONE `Next(250)` per
+    /// tick behind the firing flag on a non-shot tick. ai[0] 200 → 201
+    /// < 250 + roll always, so no reset, but the draw lands.
+    #[test]
+    fn w4_g8_s14_the_reddevil_reset_roll_draws_once_in_range() {
+        let w = air();
+        let players = [cand(1100.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 200.0;
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _roll = witness.next_max(250);
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_none());
+        assert_eq!(n.ai[0], 201.0, "201 < 250 + roll — no reset");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one Next(250)");
+    }
+
+    /// `NPC.cs:23481`'s `&&` short-circuit — out of the firing window the
+    /// RedDevil's roll is never drawn.
+    #[test]
+    fn w4_g8_s14_the_reddevil_out_of_view_draws_nothing() {
+        let w = air();
+        let players = [cand(6000.0, 1000.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 200.0;
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert_eq!(n.ai[0], 201.0);
+        assert_eq!(rng.peek(), before, "flag24 false → no draw");
+    }
+
+    /// `NPC.cs:23463-23465` — a trident-value tick with a blocked line of
+    /// sight draws NOTHING (the else-if reset roll is not evaluated).
+    #[test]
+    fn w4_g8_s14_the_reddevil_blocked_trident_tick_draws_nothing() {
+        let w = walled();
+        let players = [cand(1300.0, 979.0)];
+        let wet = [false];
+        let mut n = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        n.ai[0] = 19.0; // → 20, but the wall blocks CanHit.
+        let mut rng = UnifiedRandom::new(7);
+        let before = rng.peek();
+        let shot = bat_ai(&mut n, &env(&w, &players, &wet), &mut rng);
+        assert!(shot.is_none(), "no line of sight, no trident");
+        assert_eq!(n.ai[0], 20.0);
+        assert_eq!(rng.peek(), before, "the shot set skips the reset roll");
     }
 }

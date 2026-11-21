@@ -1268,8 +1268,8 @@ pub enum NpcKind {
     /// `NPCID.RedDevil` (156, `NPCID.cs:10987`) — the underworld devil
     /// (`NPC.cs:10974-10988`): 28x48, aiStyle 14, dmg 50, def 40, 600 HP,
     /// kb 0.5, NPCHit21/NPCDeath24, value 1200, npcSlots 2, lavaImmune.
-    /// WIRED: the axis' 14 arm rides `bat_ai`; the trident shot is a cited
-    /// machine skip.
+    /// WIRED: the axis' 14 arm rides `bat_ai` — the trident shot landed
+    /// with the W4-g8 machine round.
     RedDevil,
 }
 
@@ -12008,14 +12008,15 @@ impl Npc {
     /// `TargetCandidate` slice + the parallel `wet` flag (`Style14Env`),
     /// the [`crate::npc_ai_style14::Style14Shot`] drain (the Demon sickle
     /// `Projectile.NewProjectile(44, 21, 0f)` `:23449-23450`, the Harpy
-    /// feather `(38, 15, 0f)` `:23428-23429` — W4-g8; the sim's hostile-
-    /// shot pass applies the 300 override) and the no-gravity
+    /// feather `(38, 15, 0f)` `:23428-23429`, the RedDevil trident
+    /// `(115, 80, 0f)` `:23477-23478` — W4-g8; the sim's hostile-shot
+    /// pass applies the 300 override) and the no-gravity
     /// `UpdateCollision` integration (`integrate_flyer_collision`;
     /// `this.noGravity = true`, `:22851`). The flap/tilt live in
     /// `find_frame`'s case-49 group (`NPC.cs:74824-74881`), not here.
-    /// RNG: the arm draws only on the Harpy/VoodooDemon's shot/reset
-    /// ticks (the module's witnesses pin the order); the three bat kinds
-    /// draw nothing.
+    /// RNG: the arm draws only on the Harpy/VoodooDemon/RedDevil's
+    /// shot/reset ticks (the module's witnesses pin the order); the
+    /// three bat kinds draw nothing.
     fn update_cave_bat(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         self.wet = is_wet(world, self.x, self.y, w, h);
@@ -12032,9 +12033,10 @@ impl Npc {
             ticker: 0,
         };
         if let Some(shot) = crate::npc_ai_style14::bat_ai(self, &env, rng) {
-            // `:23428-23429` / `:23449-23450` — the feather (type 38,
-            // damage 15) / the sickle (type 44, damage 21), knockback 0;
-            // the `timeLeft = 300` write rides the sim's timed-shot list
+            // `:23428-23429` / `:23449-23450` / `:23477-23478` — the
+            // feather (type 38, damage 15) / the sickle (type 44, damage
+            // 21) / the trident (type 115, damage 80), knockback 0; the
+            // `timeLeft = 300` write rides the sim's timed-shot list
             // (`world_sim/npcs.rs`).
             self.wants_hostile_shot
                 .push((shot.kind, shot.x, shot.y, shot.vx, shot.vy, shot.damage));
@@ -36783,5 +36785,46 @@ mod w4_g8_kind_wire_1_tests {
         assert_eq!(feather.penetrate, -1);
         assert_eq!((feather.w, feather.h), (14.0, 14.0));
         assert!(feather.tile_collide);
+    }
+
+    /// W4-g8 machine round — the RedDevil's trident wiring pin (WRITTEN
+    /// NOT RUN): `update_cave_bat` drains the type-115 / damage-80 request
+    /// into `wants_hostile_shot` on the ai[0] 19 → 20 tick
+    /// (`NPC.cs:23462-23477`), exactly two `Next(-50, 51)` draws X-then-Y,
+    /// and the spawn rides centre + velocity*5 + aim*100.
+    #[test]
+    fn w4_g8_machine_the_reddevil_trident_drains_through_the_wrapper() {
+        let w = World::new("t".into(), 200, 120);
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 1100.0;
+        player.y = 1000.0;
+        player.dead = false;
+        let mut devil = Npc::new(NpcKind::RedDevil, 1000.0, 1000.0, 1, 0.0);
+        devil.ai[0] = 19.0;
+        let (cx, cy) = devil.center();
+        let mut rng = UnifiedRandom::new(12345);
+        let mut witness = UnifiedRandom::new(12345);
+        devil.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(devil.wants_hostile_shot.len(), 1, "the trident drained");
+        let (kind, sx, sy, svx, svy, dmg) = devil.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::UNHOLY_TRIDENT_HOSTILE, "type 115 (:23475)");
+        assert_eq!(dmg, 80, "damage 80 (:23474)");
+        // The shot-time velocity: the approach pass ran (facing 1 → vx
+        // 0.1, directionY −1 → vy −0.04) but integration had not yet run.
+        let (vx, vy) = (0.1f32, -0.04f32);
+        let dx = 1100.0 + 10.0 - cx + witness.next_range(-50, 51) as f32;
+        let dy = 1000.0 + 21.0 - cy + witness.next_range(-50, 51) as f32;
+        let s = 0.2f32 / (dx * dx + dy * dy).sqrt();
+        let (ax, ay) = (dx * s, dy * s);
+        assert_eq!(sx, cx + vx * 5.0 + ax * 100.0, "velocity*5 + aim*100 (:23476-23477)");
+        assert_eq!(sy, cy + vy * 5.0 + ay * 100.0);
+        assert_eq!((svx, svy), (ax, ay), "the 0.2-normalised aim");
+        assert_eq!(rng.peek(), witness.peek(), "exactly two draws, X then Y");
+        // The proj_data row (`Projectile.cs:2036-2046`).
+        let trident = crate::projectile::proj_data(crate::projectile::UNHOLY_TRIDENT_HOSTILE)
+            .expect("the UnholyTridentHostile 115 row");
+        assert_eq!(trident.ai_style, 27);
+        assert_eq!(trident.penetrate, -1);
+        assert_eq!((trident.w, trident.h), (16.0, 16.0));
     }
 }
