@@ -22264,7 +22264,7 @@ not cargo. Five items, one commit each on top of Phase B (`bd5a5a24a`):
   the flat `EMOTE_COUNT` roster; the gated wheel is W4-g54's `EmoteGates`, whose
   `from_world` pins the five seasonal flags `false` — at the merge g54 reads the World
   fields instead (field names identical). No second wheel ported here.
-* **The v18-claim input doc** (this commit): `docs/research/281-f39-v18-claim-input.md`
+* **The v18-claim input doc** (this commit): `docs/research/316-f39-v18-claim-input.md`
   re-receipts registry row #8 at the closeout tip for the g71c union-final merger — the
   five bytes unchanged (keep-one with c39, union seat [51..56] per 92 §1-FULL.2 A3), the
   seven truncation-site families re-pinned (+5→+107, the six mid-record cuts re-arm),
@@ -22285,15 +22285,19 @@ g54 hand-off + the future helpText machine).
 
 ## The W4-f39 SEAL (2026-11-21, code-only mode)
 
-**Code-only mode.** The seal (research/282) adds ZERO code bytes — every item is a
+**Code-only mode.** The seal (research/320, chain 282→320) adds ZERO code bytes — every item is a
 receipt over already-landed bodies, re-verified at tip `8704691a3` against the co-lane
 tips d130 `b8f65570` / c39 `7dd785dc5` / g48 `2b61530b4`.
 
-* **research/244 → 281 RENUMBERED** (`fec65992`): registry-150 first-pushed-wins —
+* **research/244 → 281 → 316 RENUMBERED** (`fec65992` + registry §9 round 4):
+  first leg — registry-150 first-pushed-wins:
   g48's `244-c28-18-send-switch.md` first-add 14:30:16 beats this lane's 14:32:01;
   both postdate the d54 refresh's final sweep, so the §6.3 cutoff rule applies
   (losers take ≥281 after a fresh sweep — 386 tips / 22 694 rows, 247-300 empty,
-  281 first-free). Content-preserving rename; ANALYSIS/ROADMAP/INDEX refs re-pointed.
+  281 first-free). Second leg — registry §9 UNIFIED FINAL (`b243c7086`, FROZEN
+  §8.1/§8.2): 281/282 are f26's §7.3 assignments, so f39's self-picks re-issue
+  to 316 (input doc, chain supersedes the unexecuted 299 row — 299 FREE) and
+  320 (seal doc). Content-preserving renames; ANALYSIS/ROADMAP/INDEX refs re-pointed.
 * **The d130 mutual receipt** (its research/83 §9): the five boundary gates
   (music track 48, anniversary StartRain range-5, ResetSpawnTime `/2`, menu-return
   StopSlimeRain, the slime-roll gates) are composed BOTH-ways — dedupe at merge.
@@ -22311,11 +22315,11 @@ tips d130 `b8f65570` / c39 `7dd785dc5` / g48 `2b61530b4`.
   969`/`:7050`) are the strict superset and win the shared constructions at merge.
   `LanternGates`/`lanterns_can_start` bodies byte-identical f39↔c39; c39's
   `pub(crate)` export wins (the d130-graft rider; f39 has zero `world_events.rs`
-  edits since base). The v18 quintet keep-one stays research/281 §1.
-* **The SLIMERAIN-FAMILY bible**: research/282 §5 — d130 owns the weather tick +
+  edits since base). The v18 quintet keep-one stays research/316 §1.
+* **The SLIMERAIN-FAMILY bible**: research/320 §5 — d130 owns the weather tick +
   the activated roll; f39 owns the event bodies (SlimeSky, sky-fall spawns, the
   kill-counter + King scan, the season module, the emote/help gates, the music
-  wrapper); the persist story is research/281; g54 re-points its five pins; the
+  wrapper); the persist story is research/316; g54 re-points its five pins; the
   gate command is the workspace test run (all family witnesses WRITTEN NOT RUN).
 
 ## S1-D-3 вЂ” the aiStyle-8 caster family (`npc_ai_bat.rs`, 2026-11-18, code-only mode)

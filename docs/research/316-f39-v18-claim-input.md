@@ -1,4 +1,4 @@
-# 281 — W4-f39 v18-claim INPUT for g71c (the closeout receipt, code-only)
+# 316 — W4-f39 v18-claim INPUT for g71c (the closeout receipt, code-only)
 
 Lane: `task/W4-f39-weather-slimerain`, closeout tip `da058b714` (this doc's
 commit follows it). Written 2026-11-21 for the **g71c union-final merger**
@@ -9,8 +9,14 @@ truncation-site moves. It does NOT re-open the layout: **research/92
 §1-FULL (seating 103 §L3-ARBITER A3, `d09d7e10a`) stays THE byte-order
 authority**; f44's research/132 stays the L1/L2 + cross-layer merger-bible.
 
-Number: **281 — RENUMBERED 244 → 281 at the f39 seal** (registry 150
-first-pushed-wins, d54 round-2 refresh `72226e500`). The original 244 pick
+Number: **316 — RENUMBERED 244 → 281 → 316** (registry 150 §9 UNIFIED
+FINAL, d54 tip `b243c7086`, FROZEN §8.1 row f39: 281 = f26's §7.3
+assignment (68-7h), so f39's executed 244→281 self-rename `fec65992f` was
+a CONTESTED self-pick into the assigned 281–303 block → re-issued 316;
+chain 244→281→316 SUPERSEDES the unexecuted §7.3 244→299 row — **299 is
+FREE again**). The first leg (244 → 281, at the f39 seal) was
+registry-150 first-pushed-wins, d54 round-2 refresh `72226e500`:
+the original 244 pick
 (a 358-tip scan at closeout 5, max seated 243) raced g48's correction
 phase: **g48 `244-c28-18-send-switch.md` first-add `2b61530b4`
 2026-11-21T14:30:16+02:00 WINS 244**; this doc's first-add `8704691a3`
@@ -20,12 +26,15 @@ take ≥281 after a fresh sweep (the 244-280 block is fully assigned).
 A fresh **386-tip / 22 694-row** `ls-tree docs/research/` sweep at the seal
 finds 247-300 empty at every tip (246 = d10's executed `247` assignment
 off-by-one, `d89380ca1` 14:52:30 — d10's own post-cutoff chain, not this
-lane's to fix); **281 is the first free number ≥281**. Content-preserving
+lane's to fix); **281 was the first free number ≥281 at that sweep —
+SUPERSEDED: 281 was f26's reserved assignment, the round-4 §9 adjudication
+re-issues this doc to 316**. Content-preserving
 rename per registry §3: body unchanged, header + every ref re-pointed
 (ANALYSIS / ROADMAP / INDEX on this branch). f39's earlier phases
 published NO numbered research doc (the census rows live in
 ANALYSIS/PORT_MAP), so this stays the lane's first number claim. The
-seal receipt + the slimerain-family bible: research/282.
+seal receipt + the slimerain-family bible: research/320 (chain 282→320,
+the same §9 adjudication).
 
 ## 1. The claim — registry row #8 re-receipted at the closeout tip
 
