@@ -39594,3 +39594,40 @@ Stand-ins: the `noUseGraphic`/`noMelee` fields fold to `sItem.melee` (the
 `:45028-45045` mount-62-65 AddLight/type-306 are the light/mount lanes'
 (skipped). 2 witnesses (the Terra Blade type-64 + the Night's Edge
 always-type-27, written not run).
+
+## The gore-world seal (W4-g17, research FINAL — research/304)
+
+The lane's research FINAL + the GORE-WORLD-family bible landed as
+`docs/research/304-g17-gore-world-final.md` (registry 304, verified free
+against registry-150 §7 + a fresh all-tip sweep). Three verifications
+closed this round (code-only, witnesses WRITTEN NOT RUN):
+
+1. **The census is FINAL**: Main 0 / WorldGen 36 / Player 32 = **68**
+   sites, re-counted per file and re-read line-by-line. There is NO
+   `World.cs` in this decompilation (the `Terraria.World` statics live
+   in `Main.cs`); the world-side census reads WorldGen + Main. The
+   full-family table (1627 distinct sites: 1565 bare / 16 Perfect /
+   46 Direct across 13 files + Main's zero) carries the per-file owner
+   lanes; research/15's 1643 baseline double-counted the Perfect sites
+   (the prefix match already included them). The 10 UNCLAIMED residue
+   sites (Mount 3, PlayerDrawSet 3, AmbientWindSystem 2, WorldItem's
+   star-burn gore 1, Utils.PoofOfSmoke 1) are task-seeds for the
+   merger, NOT this lane's.
+2. **The i30-compose ONE-throw contract**: `axe_tile_hit`'s fail tick
+   draws EXACTLY ONE `UpdatePlayers` throw to seed the genRand
+   FastRandom stand-in before the ladder + FX (the C# order). New
+   witness `w4_g17_the_axe_fail_tick_compose_draws_one_seed_throw`
+   (the live path vs the manual resolve→throw→ladder→FX twin, stream +
+   pool equality). Witness total 60.
+3. **DrawNPCChatButtons is DEAD** (`Main.cs:40474-40673`, ZERO callers
+   in the whole decompilation — the NPCChatPanel.DrawButtons path
+   replaced it; g58 research/240 row 8 concurs). The 6 unported chat
+   buttons are pinned (StardewValleyBit/DryadPurification/GuideTip/
+   RequestHome/PartyGirlMusicSwap/TavernkeepAdvice,
+   `NPCInteractions.cs:486-531` minus the landed roster) — they stay
+   with their lanes; no code change.
+
+The keep-one contracts hold at the co-lane tips: the sandstorm arm is
+f42's (`4bf7b2e88`), the msg-112 net arm g50's; this lane's twins retire
+at merge. The family bible (research/304 §4) is the merger's one-paragraph
+read: one owner lane per family file, no double-feed, the 68 SEALED.
