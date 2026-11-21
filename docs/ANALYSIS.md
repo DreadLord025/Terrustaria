@@ -30985,6 +30985,22 @@ portraits and the netglue bare seed. The wiring:
   airborne tilt + row-1 pin) and the 485/486/487 group (`:72829-72883`,
   `spriteDirection = direction`, the `|vx| * 5`-weighted 10-tick
   four-frame cycle). All nine rotate (the draw whitelist).
+- **The catch-net chain (W4-c8 sweep census)**: all nine kinds were
+  ALREADY in the c4/c7 catch pattern (`bug_net.rs`) — the sweep verified
+  and pinned them per kind (`w4_c8_the_nine_crawlers_ride_the_catch_chain`):
+  the catchItem rows (357→2002 `NPC.cs:13556`, 374/375→2673
+  `:13773`/`:13792`, 448→2895 `:14343`, 484-487→3191+type-484 `:14587`,
+  606→4363 `:16792`), the release whitelist (375 the ONE non-member —
+  `Main.npcCatchable` `Main.cs:9326-9418` has no 375 row; the digger is
+  a Transform-only form), the verdict (none is lava bait
+  `ItemID.cs:1306` or the 583-family — every net catches,
+  `Player.cs:44712-44740`), the CatchNPC branch order
+  (`NPC.cs:79891-79927`), the release plan (the default arm
+  `:80160-80163` — spawn + owner only, NO draws) and the cage-item
+  round trip (the `itemdata.rs` makeNPC rows 2002→357, 2673→374 — the
+  walker, NOT the digger — 2895→448, 3191-3194→484-487, 4363→606; the
+  release resolves through `kind_from_net_id`, all nine ported). No
+  code change needed — the witness is the deliverable.
 - **Deviations / deferrals (W4-c8)**: the FindFrame slope tail
   (`:72807-72826`/`:72862-72881`, the slope-1/2 ±0.785f rotation +
   `localAI[0] = 0` marker) is WIRED by the W4-c8 sweep — the d44
