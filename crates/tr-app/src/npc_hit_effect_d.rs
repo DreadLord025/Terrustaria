@@ -2352,6 +2352,58 @@ fn cursed_weapon_death(
     }
 }
 
+/// The 262/263/264 Plantera family death (`NPC.cs:87165-87219`): the
+/// 150x dust-167 burst — the C# death loop's `type == 265` gate
+/// (`:87188`) is always false in this arm (265 has its own arm), so the
+/// Next(3) short-circuits and every puff is 167 — then the per-kind
+/// scatter gores at `pos + (Next(width), Next(height))` (the argument
+/// draws X then Y BEFORE each NewGore), `this.scale` carried. The live
+/// branch: 262 Plantera → the nine 381/382/383/384/385/386/386/387/387
+/// (`:87199-87207`, sites 365-373); the 263/264 pairs land next batch.
+fn plantera_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87186-87196` — the 150x dust-167 burst (the 265 gate never fires
+    // here; no arm-level draw).
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        167,
+        hit_direction,
+        150,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let (w, h) = npc.size();
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // The scatter anchor: pos + (Next(width), Next(height)), drawn
+    // BEFORE each NewGore.
+    let scatter = |rng: &mut UnifiedRandom| {
+        Vec2::new(
+            npc.x + rng.next_max(w as i32) as f32,
+            npc.y + rng.next_max(h as i32) as f32,
+        )
+    };
+    if npc_type == 262 {
+        for t in [381, 382, 383, 384, 385, 386, 386, 387, 387] {
+            let pos = scatter(rng);
+            gore.new_gore(rng, world, pos, vel, t, s); // :87199-87207
+        }
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -2618,6 +2670,11 @@ pub fn hit_effect_d(
     // `:87141-87164` — the 83/84/179 cursed weapon arm (sites 362-364).
     else if matches!(npc_type, 83 | 84 | 179) {
         cursed_weapon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87165-87219` — the 262/263/264 Plantera family arm; the 262 nine
+    // are live (sites 365-373), the 263/264 pairs land next batch.
+    else if matches!(npc_type, 262 | 263 | 264) {
+        plantera_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -4739,5 +4796,34 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "weapon {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:87199-87207` — the Plantera nine: 381-385 then 386x2 then
+    /// 387x2, each at pos + (Next(width), Next(height)) drawn BEFORE the
+    /// NewGore; the 150x dust-167 census runs first (the 265 gate never
+    /// fires in this arm — no arm-level draw).
+    #[test]
+    fn w4_f5d_the_plantera_nine_scatter_the_anchor_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 50.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(373);
+        let _ = hit_effect_d(&n, 262, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..9].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![381, 382, 383, 384, 385, 386, 386, 387, 387]);
+        assert!(!gore.slot(9).active, "exactly nine gores");
+        let mut twin = UnifiedRandom::new(373);
+        for _ in 0..150 {
+            twin_dust(&mut twin, 50, 50);
+        }
+        for i in 0..9 {
+            let px = 100.0 + twin.next_max(50) as f32;
+            let py = 100.0 + twin.next_max(50) as f32;
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(gore.slot(i).position, Vec2::new(px, py), "gore {i} anchor");
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the plantera mirrors the C# draws");
     }
 }
