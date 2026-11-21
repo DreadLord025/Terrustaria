@@ -104,6 +104,73 @@ impl EquipmentLoadout {
     }
 }
 
+/// One item's net-state snapshot — `Player.clientCloneItem`
+/// (`Player.cs:54514-54520`): `type`, `stack`, `prefix`, `favorited` (the four
+/// fields `Item.IsNetStateDifferent` compares). The port's `ItemSlot` carries
+/// kind/count/prefix; the share flag rides the loadout's 30-bit word, so the
+/// clone takes it as a parameter (the c28 `item_net_state` convention).
+pub type ClonedItem = (u16, u32, u16, bool);
+
+/// `Player.clientCloneItemArray` (`Player.cs:54506-54512`): clone every slot's
+/// net state, reading the per-slot `favorited` bit out of `share_word`.
+fn clone_item_array(items: &[ItemSlot], share_word: u32, bit_base: usize) -> Vec<ClonedItem> {
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, s)| {
+            (
+                s.kind,
+                s.count,
+                s.prefix,
+                share_word & (1 << (bit_base + i)) != 0,
+            )
+        })
+        .collect()
+}
+
+/// The `clientCloneLoadouts` snapshot (`Player.cs:54522-54531`) — the item-array
+/// half of `Player.clientClone` (`:54461-54504`, the c28 `ClientClone` carries
+/// the scalar half). It clones the LIVE armor + dye arrays and each of the
+/// three stored loadouts' Armor + Dye (`clientCloneItemArray`, `:54524-54530`).
+/// `Hide`/`CurrentLoadoutIndex` are NOT cloned by the C# (the stored sets'
+/// `favorited` rides each item). The `TrySwitchingLoadout` tail calls it on
+/// `Main.clientPlayer` (`:5670`) so the next `TrySyncingMyPlayer` array diff
+/// (`Main.cs:17557-17575`) sees the swapped sets as already-synced.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct LoadoutClone {
+    /// `clientCloneItemArray(this.armor, clonePlayer.armor)` (`:54524`).
+    pub armor: Vec<ClonedItem>,
+    /// `clientCloneItemArray(this.dye, clonePlayer.dye)` (`:54525`).
+    pub dye: Vec<ClonedItem>,
+    /// `Loadouts[i].Armor` then `Loadouts[i].Dye` per set (`:54526-54530`),
+    /// indexed `[loadout]` -> `(armor, dye)`.
+    pub loadouts: [(Vec<ClonedItem>, Vec<ClonedItem>); 3],
+}
+
+impl LoadoutClone {
+    /// `Player.clientCloneLoadouts` (`Player.cs:54522-54531`): clone the live
+    /// armor/dye (the live share word supplies their `favorited` bits) and the
+    /// three stored sets (each set's own share word). `live_favorited` is
+    /// `App.equip_share_flags`; bit `i` = armor[i], bit `20 + j` = dye[j].
+    pub fn clone_from(
+        armor: &[ItemSlot; ARMOR],
+        dye: &[ItemSlot; DYE],
+        live_favorited: u32,
+        loadouts: &[EquipmentLoadout; 3],
+    ) -> Self {
+        Self {
+            armor: clone_item_array(armor, live_favorited, 0),
+            dye: clone_item_array(dye, live_favorited, ARMOR),
+            loadouts: std::array::from_fn(|i| {
+                (
+                    clone_item_array(&loadouts[i].armor, loadouts[i].favorited, 0),
+                    clone_item_array(&loadouts[i].dye, loadouts[i].favorited, ARMOR),
+                )
+            }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,5 +227,42 @@ mod tests {
 
         stored.swap(&mut live_armor, &mut live_dye, &mut live_hide, &mut live_fav);
         assert_eq!((live_armor, live_dye, live_hide, live_fav), before);
+    }
+
+    /// W4-g55 — `clientCloneLoadouts` (`Player.cs:54522-54531`) clones the
+    /// live armor/dye + the three stored sets' Armor/Dye, per-item
+    /// type/stack/prefix/favorited (`clientCloneItem`, `:54514-54520`). The
+    /// live share word supplies the live arrays' favorited bits; each stored
+    /// set's own word supplies its own.
+    #[test]
+    fn w4_g55_the_loadout_clone_snapshots_every_array() {
+        let mut armor = [EMPTY_SLOT; ARMOR];
+        let mut dye = [EMPTY_SLOT; DYE];
+        armor[0] = slot(90); // Iron Helmet, live + shared
+        dye[1] = slot(1007); // Red Dye, live + unshared
+        let live_fav = 1u32 << 0; // armor[0] shared, dye[1] not
+
+        let mut loadouts = [EquipmentLoadout::default(); 3];
+        loadouts[1].armor[2] = slot(954); // Ancient Iron Helmet, stored
+        loadouts[1].set_shared(2, true); // armor[2] shared
+        loadouts[2].dye[0] = slot(1007); // stored dye, unshared
+
+        let c = LoadoutClone::clone_from(&armor, &dye, live_fav, &loadouts);
+        // The live armor[0]: (90, 1, 0, true).
+        assert_eq!(c.armor[0], (90, 1, 0, true));
+        assert_eq!(c.armor[1], (0, 0, 0, false), "an air slot clones air");
+        // The live dye[1]: (1007, 1, 0, false) — bit 20+1 not set.
+        assert_eq!(c.dye[1], (1007, 1, 0, false));
+        // Loadout 1's armor[2]: (954, 1, 0, true).
+        assert_eq!(c.loadouts[1].0[2], (954, 1, 0, true));
+        // Loadout 2's dye[0]: (1007, 1, 0, false).
+        assert_eq!(c.loadouts[2].1[0], (1007, 1, 0, false));
+        // Loadout 0 is all air.
+        assert!(c.loadouts[0].0.iter().all(|&(k, _, _, _)| k == 0));
+        // The array lengths match the C# (20 armor + 10 dye per set).
+        assert_eq!(c.armor.len(), ARMOR);
+        assert_eq!(c.dye.len(), DYE);
+        assert_eq!(c.loadouts[1].0.len(), ARMOR);
+        assert_eq!(c.loadouts[1].1.len(), DYE);
     }
 }

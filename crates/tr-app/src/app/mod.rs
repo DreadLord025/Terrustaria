@@ -271,6 +271,13 @@ pub(crate) struct App {
     /// the hovered loadout button index, -1 = none — the 12 cue fires on a
     /// change onto a button (`Main.cs:3249-3259`).
     pub(crate) loadout_mouse_over: i32,
+    /// `Main.clientPlayer`'s loadout item-array snapshot — the
+    /// `clientCloneLoadouts` half of `Player.clientClone`
+    /// (`Player.cs:54522-54531`, the c28 `ClientClone` carries the scalar
+    /// half). `TrySwitchingLoadout`'s tail clones the swapped sets into it
+    /// (`:5670`) so the next `TrySyncingMyPlayer` array diff
+    /// (`Main.cs:17557-17575`) sees them as already-synced.
+    pub(crate) loadout_clone: crate::loadout::LoadoutClone,
     pub(crate) selected: usize,
     /// `Player.selectedItemState` (`Player.cs:414-568`) — the buffered /
     /// overridden halves of the selection machine (S1-P-i54); the live
@@ -1386,17 +1393,28 @@ impl App {
         let using_or_reusing = self.swing > 0.0
             || self.reuse_delay > 0.0
             || self.player.as_ref().is_some_and(|p| p.channel);
-        let Some(p) = self.player.as_mut() else {
-            return false;
+        let ok = match self.player.as_mut() {
+            Some(p) => p.try_switching_loadout(
+                index,
+                &mut self.equip.armor,
+                &mut self.equip.dye,
+                &mut self.equip_share_flags,
+                using_or_reusing,
+            ),
+            None => false,
         };
-        let ok = p.try_switching_loadout(
-            index,
-            &mut self.equip.armor,
-            &mut self.equip.dye,
-            &mut self.equip_share_flags,
-            using_or_reusing,
-        );
         if ok {
+            // `clientCloneLoadouts(Main.clientPlayer)` (`:5670`): the swapped
+            // sets clone into the client-clone snapshot so the next
+            // `TrySyncingMyPlayer` array diff sees them as already-synced.
+            if let Some(p) = self.player.as_ref() {
+                self.loadout_clone = crate::loadout::LoadoutClone::clone_from(
+                    &self.equip.armor,
+                    &self.equip.dye,
+                    self.equip_share_flags,
+                    &p.loadouts,
+                );
+            }
             self.ui_left_press = false; // `Main.mouseLeftRelease = false` (`:5671`)
             // `RecordLoadoutChange` (`:5672`): stamp the visual clock.
             self.loadout_change_time = (self.anim_time * 60.0) % 216000.0;
@@ -3799,6 +3817,7 @@ impl App {
             equip_share_flags: loaded_share_flags,
             loadout_change_time: f32::NEG_INFINITY,
             loadout_mouse_over: -1,
+            loadout_clone: crate::loadout::LoadoutClone::default(),
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,

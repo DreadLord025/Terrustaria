@@ -2225,6 +2225,7 @@ pub(crate) mod front_flow_tests {
             equip_share_flags: 0,
             loadout_change_time: f32::NEG_INFINITY,
             loadout_mouse_over: -1,
+            loadout_clone: crate::loadout::LoadoutClone::default(),
             selected: 0,
             selection: crate::hotbar::SelectionState::new(),
             block_mouse: false,
