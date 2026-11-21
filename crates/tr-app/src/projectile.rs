@@ -18089,6 +18089,17 @@ impl ProjectilePool {
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
                         }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 95)`
+                        // (`Projectile.cs:32964-33003`): the Toxic Flask's
+                        // bubble (523) — the fade-in, the launch hold then
+                        // the rise, the wet buoyancy. The movement is the
+                        // generic blocked-move kill default over the 10×10
+                        // box (`:19957`); the death burst's 75 draws ride
+                        // the kill hook below.
+                        95 => {
+                            crate::projectile_ai_91_100::ai_toxic_bubble(&mut self.slots[i]);
+                            crate::projectile_ai_91_100::toxic_bubble_move(&mut self.slots[i], world);
+                        }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
                             // machine. The Moon Lord whip's extra arms are
@@ -20076,6 +20087,11 @@ impl ProjectilePool {
                 if self.slots[i].kind == 932 {
                     crate::projectile_ai_misc::fairy_queen_death_draws(rng);
                 }
+                // W4-d10 — `Kill()`'s 523 arm (`Projectile.cs:73257-73269`):
+                // the bubble's Item54 cue + the 25×3 explicit dust-velocity
+                // draws. C# body order: the 73257 arm precedes the 73632
+                // Celebration arm below.
+                crate::projectile_ai_91_100::toxic_bubble_kill(&mut self.slots[i], rng);
                 self.celeb2_death(
                     i,
                     world,
@@ -23271,6 +23287,12 @@ impl ProjectilePool {
                         // `:11488` — Ichor 69, 60 × Next(7, 15).
                         let t = 60 * rng.next_range(7, 15);
                         npcs[idx].buffs.add_buff(69, t);
+                    }
+                    TOXIC_BUBBLE => {
+                        // W4-d10 — `:11478-11481`: the bubble's Poisoned
+                        // 20, 60 × Next(10, 30).
+                        let t = 60 * rng.next_range(10, 30);
+                        npcs[idx].buffs.add_buff(20, t);
                     }
                     _ => {}
                 }

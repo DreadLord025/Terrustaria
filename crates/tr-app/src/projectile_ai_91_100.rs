@@ -764,6 +764,90 @@ pub(crate) fn ai_coin_portal(p: &mut Projectile, rng: &mut dyn DropRng) {
     // `:32962` — Lighting.AddLight: the light-layer skip (module doc).
 }
 
+/// `AI()`'s aiStyle-95 arm (`Projectile.cs:32964-33003`) — the Toxic
+/// Flask's bubble (523). The 3-tick fade-in (localAI[0] counts to 2, then
+/// alpha −20 floors at 100), the 30-tick launch hold then the −0.05 rise
+/// (cap −8) + 0.98 X decay, the vx·0.1 tilt, the wet arm's 0.98 fall decay
+/// + −0.2 buoyancy + 0.94 X decay. ZERO draws — the arm is pure maths.
+/// The `wet` read is the port's one-tick-lag snapshot (the bobber
+/// precedent, ANALYSIS "Fishing rod").
+pub(crate) fn ai_toxic_bubble(p: &mut Projectile) {
+    // `:32966-32977` — the fade-in.
+    if p.local_ai[0] > 2.0 {
+        p.alpha -= 20;
+        if p.alpha < 100 {
+            p.alpha = 100;
+        }
+    } else {
+        p.local_ai[0] += 1.0;
+    }
+    // `:32978-32989` — the launch hold then the rise.
+    if p.ai[0] > 30.0 {
+        if p.vel.y > -8.0 {
+            p.vel.y -= 0.05;
+        }
+        p.vel.x *= 0.98;
+    } else {
+        p.ai[0] += 1.0;
+    }
+    // `:32990` — the tilt.
+    p.rot = p.vel.x * 0.1;
+    // `:32991-33002` — the wet arm.
+    if p.wet {
+        if p.vel.y > 0.0 {
+            p.vel.y *= 0.98;
+        }
+        if p.vel.y > -8.0 {
+            p.vel.y -= 0.2;
+        }
+        p.vel.x *= 0.94;
+    }
+}
+
+/// The bubble's movement: no per-type `HandleMovement` arm exists for the
+/// 523 — the generic blocked-move default (`Projectile.cs:19849-19853`:
+/// `position += velocity; Kill()`) serves it, over the 10×10 centered
+/// `GetCollisionParams` box (`:19957-19961`). The port's blocked test is
+/// the destination-box probe (the `kill_step` convention — the swept
+/// `TileCollision`'s exact death pixel is the recorded stand-in). The
+/// free move integrates (`UpdatePosition` `:20445` — the 523 is not on
+/// the skip list).
+pub(crate) fn toxic_bubble_move(p: &mut Projectile, world: &World) {
+    if !p.tile_collide {
+        p.pos += p.vel;
+        return;
+    }
+    let off = Vec2::new(p.w * 0.5 - 5.0, p.h * 0.5 - 5.0);
+    let nx = p.pos.x + off.x + p.vel.x;
+    let ny = p.pos.y + off.y + p.vel.y;
+    let hit_x = crate::player::collides_rect(world, nx, p.pos.y + off.y, 10.0, 10.0);
+    let hit_y = crate::player::collides_rect(world, p.pos.x + off.x, ny, 10.0, 10.0);
+    p.pos += p.vel;
+    if hit_x || hit_y {
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+    }
+    p.direction = if p.vel.x < 0.0 { -1 } else { 1 };
+}
+
+/// The bubble's `Kill()` arm (`Projectile.cs:73257-73269`): the Item54
+/// cue + the 25-dust burst — each dust's velocity is TWO explicit
+/// `Next(-100, 101)` draws + ONE `Next(1, 30)` speed (the call-site draws
+/// stay, the dust bodies skip — the fairy-queen/celeb2 kill precedent).
+/// 75 draws per death, in the C#'s per-dust X-Y-speed order.
+pub(crate) fn toxic_bubble_kill(p: &mut Projectile, rng: &mut dyn DropRng) {
+    if p.kind != 523 {
+        return;
+    }
+    p.wants_sound = Some((2, 54, p.pos.x, p.pos.y, 0.0));
+    for _ in 0..25 {
+        let _ = rng.next_range(-100, 101); // velocity.X
+        let _ = rng.next_range(-100, 101); // velocity.Y
+        let _ = rng.next_range(1, 30); // the speed
+    }
+}
+
 // Witnesses (W4-d10 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -1221,5 +1305,106 @@ mod tests {
         // CensusRng: Next(3) → 0 (taken) + the 2-float rotation pair.
         assert_eq!(rng.ranges, vec![(0, 3)]);
         assert_eq!(rng.floats, 2);
+    }
+
+    /// The 523 row (`Projectile.cs:5929-5938`): 32×32, aiStyle 95, alpha
+    /// 255, ranged, penetrate 1, the stock tileCollide.
+    #[test]
+    fn w4_d10_s95_the_bubble_row_is_verbatim() {
+        let d = proj_data(523).unwrap();
+        assert_eq!((d.w, d.h), (32.0, 32.0));
+        assert_eq!(d.ai_style, 95);
+        assert_eq!(d.alpha, 255);
+        assert!(d.ranged);
+        assert_eq!(d.penetrate, 1);
+        assert!(d.tile_collide);
+    }
+
+    /// The fade/rise machine (`:32966-32990`): the 3-tick counter precedes
+    /// the fade (alpha floors at 100), the 30-tick hold then the −0.05
+    /// rise capped at −8 with the 0.98 X decay, the vx·0.1 tilt. ZERO
+    /// draws.
+    #[test]
+    fn w4_d10_s95_the_bubble_fades_and_rises() {
+        let mut p = proj(523);
+        p.vel = Vec2::new(4.0, 2.0);
+        for _ in 0..3 {
+            ai_toxic_bubble(&mut p);
+        }
+        assert_eq!(p.local_ai[0], 3.0);
+        assert_eq!(p.alpha, 255, "the counter ticks precede the fade");
+        ai_toxic_bubble(&mut p);
+        assert_eq!(p.alpha, 235);
+        // The fade floor.
+        p.local_ai[0] = 10.0;
+        p.alpha = 110;
+        ai_toxic_bubble(&mut p);
+        assert_eq!(p.alpha, 100);
+        // The launch hold: ai[0] counts to 31 before the rise.
+        let mut q = proj(523);
+        q.vel = Vec2::new(4.0, 0.0);
+        for _ in 0..31 {
+            ai_toxic_bubble(&mut q);
+        }
+        assert_eq!(q.ai[0], 31.0);
+        assert_eq!(q.vel.y, 0.0, "the hold");
+        ai_toxic_bubble(&mut q);
+        assert!((q.vel.y - (-0.05)).abs() < 1e-6);
+        assert!((q.vel.x - 4.0 * 0.98).abs() < 1e-5);
+        assert!((q.rot - q.vel.x * 0.1).abs() < 1e-6);
+        // The −8 cap.
+        q.vel.y = -7.99;
+        ai_toxic_bubble(&mut q);
+        assert!(q.vel.y >= -8.0);
+        // The wet arm: the 0.98 fall decay + the −0.2 buoyancy + 0.94 X.
+        let mut r = proj(523);
+        r.ai[0] = 40.0;
+        r.wet = true;
+        r.vel = Vec2::new(2.0, 4.0);
+        ai_toxic_bubble(&mut r);
+        // rise first: 4 - 0.05 = 3.95; wet: 3.95*0.98 - 0.2 = 3.671.
+        assert!((r.vel.y - (3.95 * 0.98 - 0.2)).abs() < 1e-5);
+        assert!((r.vel.x - 2.0 * 0.98 * 0.94).abs() < 1e-5);
+    }
+
+    /// The kill burst (`:73257-73269`): the Item54 cue + 25×3 draws in
+    /// X-Y-speed order; a foreign kind draws nothing.
+    #[test]
+    fn w4_d10_s95_the_bubble_death_draws_75() {
+        let mut p = proj(523);
+        let mut rng = CensusRng::default();
+        toxic_bubble_kill(&mut p, &mut rng);
+        assert_eq!(p.wants_sound, Some((2, 54, 1600.0, 800.0, 0.0)));
+        assert_eq!(rng.ranges.len(), 75);
+        assert_eq!(rng.ranges[0], (-100, 101));
+        assert_eq!(rng.ranges[1], (-100, 101));
+        assert_eq!(rng.ranges[2], (1, 30));
+        let mut q = proj(496);
+        let mut rng2 = CensusRng::default();
+        toxic_bubble_kill(&mut q, &mut rng2);
+        assert!(rng2.ranges.is_empty());
+    }
+
+    /// The movement: open air integrates; a wall kills (the generic
+    /// blocked-move default, `:19849-19853`).
+    #[test]
+    fn w4_d10_s95_the_bubble_dies_on_tiles() {
+        let w = World::new("t".into(), 300, 200);
+        let mut p = proj(523);
+        p.vel = Vec2::new(3.0, -1.0);
+        let before = p.pos;
+        toxic_bubble_move(&mut p, &w);
+        assert_eq!(p.pos, before + Vec2::new(3.0, -1.0));
+        assert!(p.active);
+        let mut w2 = World::new("t".into(), 300, 200);
+        let tx = ((p.pos.x + p.w * 0.5 + 5.0 + 3.0) / 16.0) as i32;
+        let ty = ((p.pos.y + p.h * 0.5) / 16.0) as i32;
+        let i = w2.index(tx, ty);
+        w2.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+        w2.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut q = proj(523);
+        q.vel = Vec2::new(3.0, 0.0);
+        toxic_bubble_move(&mut q, &w2);
+        assert!(!q.active, "the contact kill");
     }
 }

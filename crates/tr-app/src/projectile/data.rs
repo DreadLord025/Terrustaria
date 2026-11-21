@@ -731,6 +731,9 @@ pub const NAIL_FRIENDLY: u16 = 514;
 /// `ProjectileID.CoinPortal` (518, `ProjectileID.cs:1590`) — the Coin
 /// Gun's portal, aiStyle 94 (`Projectile.cs:5879-5888`). W4-d10.
 pub const COIN_PORTAL: u16 = 518;
+/// `ProjectileID.ToxicBubble` (523, `ProjectileID.cs:1600`) — the Toxic
+/// Flask's bubble, aiStyle 95 (`Projectile.cs:5929-5938`). W4-d10.
+pub const TOXIC_BUBBLE: u16 = 523;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1704,6 +1707,13 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the stock penetrate 1 / timeLeft 3600. No damage-class flag.
             COIN_PORTAL => (
                 32.0, 32.0, 94, 1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Toxic Flask's bubble (`Projectile.cs:5929-5938`):
+            // 32×32, aiStyle 95, alpha 255, ranged, penetrate 1; the stock
+            // tileCollide/timeLeft.
+            TOXIC_BUBBLE => (
+                32.0, 32.0, 95, 1, TIME_LEFT_DEFAULT, 0, true, false, false,
                 (false, -2, false, -1, 255, 1.0),
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
@@ -4378,8 +4388,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
-            // W4-d10 — the Nail Gun's nail (514, `:5849`).
-                | NAIL_FRIENDLY
+            // W4-d10 — the Nail Gun's nail (514, `:5849`) and the Toxic
+            // Flask's bubble (523, `:5935`).
+                | NAIL_FRIENDLY | TOXIC_BUBBLE
         ),
         magic: matches!(
             kind,
