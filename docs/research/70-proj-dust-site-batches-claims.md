@@ -5,6 +5,14 @@ the lane's coordination rule — the branch list is the claim record; this doc
 pins the site-range split so the three site-batch lanes never overlap each
 other or the per-kind trail lanes (g63/g64) or the death lane (g65).
 
+**RETIRE (2026-11-21):** the lane's close-out record is **research/240**
+(the wetVelocity movement-gap census — 96 unclaimed integrate
+expressions, 0 covered by the wet block, seed S1-P-i57; the g2
+staged-copy drop-hunk consuming f20's F5 cross-note; the d53×e3 fn-set
+DISJOINT confirmation at the current tips; the insurance-patch
+supersede receipt; the proj-dust-family declaration). This doc's ledger
++ totals stand as the site-range authority; 240 is the retire layer.
+
 ## Scope + the split
 
 `decompiled/Terraria/Projectile.cs` carries **1195** `Dust.NewDust*` sites.

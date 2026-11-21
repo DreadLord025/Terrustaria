@@ -325,6 +325,7 @@ refer to the research file (`docs/research/NN-*.md`).
 | R-14-9 | Legacy `.map` migration — `DecompressChunk` + `LoadMapVersion1` / `LoadMapVersionCompressed` | 14 | L | behavioural (medium) | — | 14-map-minimap.md:347 |
 | R-36-2 | Port the film framework verbatim into `crates/tr-core/src/cinematics.rs` (`Film.cs:1-144` + `FrameEvent.cs` + `FrameEventData.cs` + `CinematicManager.cs:1-41`) + a `Main.cs:16789`-equivalent hook | 36 | S | behavioural (dead-code parity) | — | 36-cinematics-film.md:173 |
 | R-36-3 | Port `DSTFilm` (`DSTFilm.cs:1-177`): the `Main.hideUI` toggle, the `Player.isControlledByFilm` flag + the `Player.cs:24765` gate, the Deerclops/Chester spawns, the DST shader item 5113 | 36 | S | behavioural (dead-code parity) | R-36-1 | 36-cinematics-film.md:177 |
+| R-240-1 | The generic projectile wetVelocity arm (S1-P-i57): the `wet_velocity` helper (`Projectile.cs:17612-17655` verbatim, d3's boulder wet arm the reference) + the integrate swap at the 5 funnel points (kill_step 54 callers / ai_style1_flight / special_arrows / the thrown twin / 12 dispatch mirrors) + the satellite free moves — 96 unclaimed expressions, the `:20435` skip-list gate, the flail_wet_factor keep-one; RNG-neutral | 06 | M | behavioural (medium — physics, not stream) | W4-d53's wet machine (landed `fa7b331d3`) | 240-proj-dust-retire.md §1 |
 
 ### (e) data / coverage gaps (includes doc-truth and verification work) — 63 seeds
 

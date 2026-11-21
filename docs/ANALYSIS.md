@@ -39697,3 +39697,82 @@ module's item list enumerated for the collision census, the d75 ANALYSIS
 deferral table cross-read. 10 new witnesses (3 drain + 7 Shimmer) WRITTEN
 NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (user
 directive).
+
+### The RETIRE phase (W4-d53, 2026-11-21, code-only mode)
+
+The Lead's five-item PROJ-DUST RETIRE close-out; the full record is
+**research/240** (the number per the research/150 registry — the
+151–236 block consumed, 237/238/239 taken at pushed tips, 240 the first
+free at the RETIRE-tip scan). No new code: the census, the drop-hunk,
+the confirmations and the declaration are doc-only; the landed code
+stands at `88094c4ce`.
+
+**Item 1 — the wetVelocity movement-gap census (research/240 §1).** The
+ledger's "~96 sites" resolves EXACTLY: **96 unclaimed integrate
+expressions** on this tip (103 `.pos +=` code lines minus the flail's 1
+ported, minus aiStyle-4's 1 skip-listed fold, minus 5 non-movement
+positional writes). The landed wet block (`projectile_wet.rs`,
+`:16786-17007`) covers **ZERO** of them — it is the FLAG machine; its
+only velocity write is the 155 exit carve-out. The drag
+(`:17612-17655`) lives in `HandleMovement`, the movement lane's window.
+Ported today: the flail (`flail_wet_factor`, the mid-tile idiom) + d3's
+boulder wet arm (verbatim, on d3's tip); golf is UpdatePosition
+skip-listed (`:20435` `IsAGolfBall` — NOT a gap). The 96 funnel through
+5 swap points (kill_step's 54 callers, ai_style1_flight,
+special_arrows' bounce, the thrown twin's 3 callers, the 12 dispatch
+mirrors) + the satellite free moves. Task-seeded **S1-P-i57** (ROADMAP
++ research/90 R-240-1): the `wet_velocity` helper + the integrate swap
++ the skip-list gate + the flail keep-one. RNG-neutral — a physics
+deviation, not a stream one; the one-tick position lead compounds on
+the first wet tick (the bobber `probe_wet` lag family). The DEAD
+`AI_015_HandleMovementCollision_Old` (`:44171`, no caller) cited, not
+owed.
+
+**Item 2 — the g2 staged-copy drop-hunk (research/240 §2).** f20's F5
+cross-note (`31386266f`: g2 STAGED/unwired, "port + wiring stay g2's
+claim") is SUPERSEDED by this lane's ACTIVATION (`804ad571`). The
+published drop-hunk (g2 tip `81c4ab85a`): projectile.rs **:10189-10377**
+(the STAGED doc + both `#[allow(dead_code)]` markers + `shimmer` +
+`shimmer_two_cell_kill`) DROP — d53's `:13109-13296` ACTIVATED copy
+survives; projectile.rs **:45185-45293** (the 5 `w4_g2_shimmer_*`
+witnesses + banner, inside g2's `mod tests`) DROP — d53's 7-witness
+`w4_d53_shimmer_tests` is the superset (the arm-coverage map in §2: no
+arm loses coverage); data.rs **:917** `CHLOROPHYTE_ORB` keep-one either
+copy (g2's ROW/machine arms STAY g2's — d53 added only the const). The
+f20 F5 cross-note is CONSUMED; the 936 spawn arm stays g2's cited skip.
+
+**Item 3 — d53×e3 fn-sets DISJOINT CONFIRMED (research/240 §3).** The
+d54 bible (research/131 §8.3 step 9) verified at the CURRENT tips (d53
+`88094c4ce` × e3 `ac6392cf2`): 46 vs 123 fn names, intersection =
+{`ctx`} (the test helper) exactly. The union hazards stay the two `mod
+tests` blocks + the shared `use` lines; the merger's naming call
+(union or rename) stands, no body contest.
+
+**Item 4 — the insurance patches SUPERSEDED (research/240 §4).** The
+three temp `%TEMP%\opencode\d53-batch3-*.patch` files (the stood-down
+d53c session's insurance, 2026-11-21 06:16-06:17) are fully superseded
+by the landed batch-3 `6d09fe617`: every hunk grep-confirmed at this
+tip (data.rs :309/:2477; projectile.rs :10189/:13686/:16978/:18271;
+projectile_dust.rs :186/:195/:836). DELETE-AT-CLEANUP, never apply
+(applying double-lands). Temp-dir scratch, outside the repo — nothing
+to commit; the receipt is the record.
+
+**Item 5 — the proj-dust-family declaration (research/240 §5).** ONE
+family: d53 (sites 1-40 + the wet-machine host + the Shimmer
+ACTIVATION) → e3 (41-80 + the :24328 pair) → f5 (81-120) in site order,
+g63/g64 composing by the per-kind axis; the d53×e3 filename collision
+resolves by union/rename (§3); the d3 boulder emitters drop in per the
+REPLACE contract, the 728 into d16's count-only gates, the 977/1045
+keep-one e3's; the d75 dust-vs-sound split clean. The ONE owed
+follow-up outside the family: S1-P-i57 (the 96-site movement arm).
+
+**Verification (RETIRE).** Code-only: the C# chain re-read in ≤100-line
+windows; the counts by `Select-String -AllMatches` sums (20 wetVelocity
+token lines; 103 port `.pos +=` code lines → 96 unclaimed; 54+3
+kill_step callers); the fn-set intersection by full extraction +
+`Compare-Object` at both current tips; the g2 drop-hunk bounds read at
+`81c4ab85a`; the registry free-number scan over every pushed `task/W4-*`
+tip; the three patches read end-to-end, each hunk grep-confirmed landed.
+Witnesses stay WRITTEN NOT RUN (20+3 drain, 9+1 machine, 7 Shimmer — no
+new witnesses this phase, doc-only) — **no cargo/rustc/rustfmt/tests/
+dotnet/graphify invoked** (user directive).
