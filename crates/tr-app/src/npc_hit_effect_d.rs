@@ -2860,6 +2860,59 @@ fn queen_bee_death(
     }
 }
 
+/// The 6/94/166 Eater family death (`NPC.cs:87502-87536`, sites
+/// 423-432): the 50x dust-18 burst carrying
+/// `this.alpha`/`this.color`/`this.scale` (color default stand-in),
+/// speed (hd, −2) — the 1× hitDirection — then the per-kind sub-branch:
+/// 94 Corruptor → 108/108/109/110 (`:87518-87521`), 166 Clinger-adjacent
+/// Swamp Thing → 209/210/211 (`:87525-87527`), the 6 Eater of Souls
+/// fallthrough → 14/15 with the post `alpha = this.alpha` writes
+/// (`:87531-87534`, the sentinel included). All `this.scale` carried.
+fn eater_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87512-87515` — the 50x dust-18 burst, alpha/scale carried.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 94 {
+        gore.new_gore(rng, world, pos, vel, 108, s); // :87518
+        gore.new_gore(rng, world, pos, vel, 108, s); // :87519
+        gore.new_gore(rng, world, pos, vel, 109, s); // :87520
+        gore.new_gore(rng, world, pos, vel, 110, s); // :87521
+    } else if npc_type == 166 {
+        gore.new_gore(rng, world, pos, vel, 209, s); // :87525
+        gore.new_gore(rng, world, pos, vel, 210, s); // :87526
+        gore.new_gore(rng, world, pos, vel, 211, s); // :87527
+    } else {
+        // `:87529-87535` — the 6 Eater of Souls: the alpha post writes.
+        let idx = gore.new_gore(rng, world, pos, vel, 14, s); // :87531
+        gore.slot_mut(idx).alpha = npc.alpha as i32; // :87532
+        let idx = gore.new_gore(rng, world, pos, vel, 15, s); // :87533
+        gore.slot_mut(idx).alpha = npc.alpha as i32; // :87534
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3193,6 +3246,10 @@ pub fn hit_effect_d(
     // `:87481-87501` — the 222 Queen Bee arm (sites 417-422).
     else if npc_type == 222 {
         queen_bee_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87502-87536` — the 6/94/166 Eater family arm (sites 423-432).
+    else if matches!(npc_type, 6 | 94 | 166) {
+        eater_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5709,5 +5766,45 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the queen bee mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87518-87534` — the Eater family: 94 Corruptor
+    /// 108/108/109/110, 166 Swamp Thing 209/210/211, the 6 EoS
+    /// fallthrough 14/15 with the post alpha writes (this.alpha).
+    #[test]
+    fn w4_f5d_the_eater_family_and_the_alpha_post_writes() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 30.0);
+        n.alpha = 77;
+        for (kind, want) in [
+            (94, vec![108, 108, 109, 110]),
+            (166, vec![209, 210, 211]),
+            (6, vec![14, 15]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(457);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "eater family {kind}");
+            if kind == 6 {
+                assert_eq!(gore.slot(0).alpha, 77, "the EoS gore carries this.alpha");
+                assert_eq!(gore.slot(1).alpha, 77);
+            }
+            let mut twin = UnifiedRandom::new(457);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "eater family {kind} mirrors the C# draws");
+        }
     }
 }
