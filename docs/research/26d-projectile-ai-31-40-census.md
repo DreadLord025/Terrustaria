@@ -102,6 +102,28 @@ flag is set; the MP relay is the net task's), the beach-ball chat's
 timers are not reachable from the slot loop — the golf `PlayerWrites`
 precedent).
 
+## DOC-SWEEP deviation census (2026-11-21, item 5)
+
+The d4 ANALYSIS section records two `Player.ChangeDir` folds (the piranha's
+`flag18` caller, `Player.cs:42091-42116`). Re-censused against source:
+
+- **The pulley snap (`:42097-42110`) — NOT ported, correctly deferred.** The
+  `pulley`/`pulley_dir` fields exist (`player.rs:1210-1211`) but no sim
+  source sets them: the only C# writers are the rope-climb machine
+  (`Player.cs:19690-19746`), unported. The `pulley && pulleyDir == 2` arm is
+  unreachable in the port today — porting the snap would be dead code. It
+  lands with the rope-movement task (its `Main.cameraX` shift is draw-time
+  in the port, `world_sim/camera.rs`). NOT small-portable in isolation.
+- **The `itemLocation.X` mirror (`:42115`) — observationally folded.**
+  `itemLocation` is not a Player field here; the draw recomputes it per
+  frame from `facing` (`melee_swing::swing_item_placement`,
+  `render/player_layers.rs::item_location`), so the facing flip already
+  mirrors every subsequent frame's item position. No state to port.
+
+Verdict: both folds stand (no code port needed); the `change_dir` doc
+comment now cites this census and a witness pins the flip + the three
+rotation negates + the same-direction early return.
+
 ## DOC-SWEEP follow-ups (2026-11-21, same branch)
 
 - **Rope-coil duplicate vs W4-g82 (`de797f45`)**: the arm-by-arm keep-one
