@@ -671,7 +671,10 @@ fn coins_split(count: i64) -> [i64; 4] {
 fn try_move_coins_in_chest(
     drop_kind: u16,
     drop_count: u32,
-    slots: &mut [crate::item::ItemSlot],
+    // `&mut Vec`, not `&mut [_]`: the write-back grows the slot Vec
+    // (`Chest.Resize`, `Chest.cs:118-130`) — a slice has no `resize`
+    // (the research/146 compile blocker; the e20 `a2d6cdad0` shape).
+    slots: &mut Vec<crate::item::ItemSlot>,
     max_items: usize,
 ) -> bool {
     if !crate::registry::is_coin(drop_kind) {
@@ -770,7 +773,8 @@ fn try_adding_to_stack(
 /// between the fill and the call-site play, order-identical).
 fn try_put_item_in_chest(
     drop: &crate::item::ItemDrop,
-    slots: &mut [crate::item::ItemSlot],
+    // `&mut Vec` for the same `Chest.Resize` growth (research/146).
+    slots: &mut Vec<crate::item::ItemSlot>,
     max_items: usize,
 ) -> (bool, u32, bool) {
     if crate::registry::is_coin(drop.kind) {
@@ -861,8 +865,11 @@ fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
         if !crate::item::rects_intersect(drop.pos.x, drop.pos.y, crate::item::SIZE, crate::item::SIZE, gx, gy, 192.0, 192.0) {
             continue;
         }
-        let slots = crate::chest::chest_slots_mut(&mut app.world_chests, idx)
-            .expect("the chest exists");
+        // The chest's slot Vec directly — the empty-slot / coin arms grow it
+        // (`Chest.Resize`, `Chest.cs:118-130`); `chest_slots_mut` erases to a
+        // slice, which cannot resize (research/146, the e20 `a2d6cdad0`
+        // routing). `find_chest` above returned this live index.
+        let slots = &mut app.world_chests[idx].slots;
         let (placed, remaining, filled_empty) = try_put_item_in_chest(drop, slots, max_items);
         if placed {
             // `:2669-2671`: the drop's stack carries the leftover (a partial
@@ -1748,6 +1755,32 @@ mod tests {
         assert_eq!(app.items[0].kind, 2, "the drop is still active");
         let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
         assert_eq!(slots[0].count, 9999, "the chest stack filled to maxStack");
+    }
+
+    /// W4-c42 SEAL (research/146 re-pick receipt): the hopper slot arms take
+    /// `&mut Vec<ItemSlot>` and GROW it (`Chest.Resize`, `Chest.cs:118-130`) —
+    /// the slice signatures could not `resize` (E0599, the compile blocker
+    /// e20 fixed at `a2d6cdad0`). Both growth sites pinned directly: the
+    /// empty-slot fill past `slots.len()` (`Wiring.cs:2693-2699`) and the
+    /// coin write-back past `slots.len()` (`:2741-2754`). The whole-app
+    /// path rides `dw_e20_the_hopper_pulls_a_ground_item_into_the_chest`
+    /// (its chest starts `vec![]`). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_c42_the_hopper_slot_arms_grow_the_chest_vec() {
+        // Empty-slot arm: one FULL dirt stack, a fresh dirt drop — the merge
+        // pass finds no room, slot 1 is air beyond len → resize(2) + write.
+        let mut slots = vec![slot(2, 9999)];
+        let drop = crate::item::ItemDrop::new(2, 5, 0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        let (placed, remaining, filled_empty) = try_put_item_in_chest(&drop, &mut slots, 40);
+        assert!((placed, remaining, filled_empty) == (true, 0, true));
+        assert_eq!(slots.len(), 2, "the empty-slot arm grew the Vec");
+        assert_eq!((slots[1].kind, slots[1].count), (2, 5));
+        // Coin arm: an EMPTY Vec, 100 copper → 1 silver at target 0 →
+        // resize(1) + write (the high→low reservation skips zero splits).
+        let mut coins: Vec<crate::item::ItemSlot> = vec![];
+        assert!(try_move_coins_in_chest(71, 100, &mut coins, 40));
+        assert_eq!(coins.len(), 1, "the coin write-back grew the Vec");
+        assert_eq!((coins[0].kind, coins[0].count), (72, 1));
     }
 
     #[test]
