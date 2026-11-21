@@ -187,6 +187,8 @@
 //! | 822-826 | `:86842-86846` | the 206 IcyMerman death (5 gores 273/274/274/275/275, type-137 dust) |
 //! | 827-832 | `:86821-86826` | the 198/199 Lihzahrd death (6 gores, all tails at +20 Y) |
 //! | 833-837 | `:86862-86866` | the 342 GingerbreadMan death (5 gores 500/501/501/502/502, type-0 dust) |
+//! | 838-843 | `:86884-86896` | the 338-340 ZombieElf death (per-type head + shared 497/498/499 tails) |
+//! | 844-847 | `:86912-86915` | the 343 Yeti death (4 gores 503/504/505/506, distinct +20 pair) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5008,6 +5010,71 @@ fn gingerbread_man_death(
     five_gore_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 0, 50, 2.5, -2.5, 500, 501, 502);
 }
 
+/// The 338-340 ZombieElf death (`NPC.cs:86878-86896`, sites 838-843): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// per-type head at position (338 → 494, 339 → 495, 340 → 496) and the
+/// shared tails 497/498 at +20 Y and 499 at +34 Y, all at `this.scale`.
+fn zombie_elf_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:86882-86892` — the per-type head.
+    let head = match npc_type {
+        338 => 494,
+        339 => 495,
+        _ => 496, // 340 ZombieElfGirl
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, head, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 497, s); // :86894
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 498, s); // :86895
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 499, s); // :86896
+}
+
+/// The 343 Yeti death (`NPC.cs:86908-86915`, sites 844-847): the 50-dust
+/// type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the 4 gores
+/// 503 at position, 504/505 at +20 Y (the DISTINCT pair), 506 at +34 Y, all
+/// at `this.scale`.
+fn yeti_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 503, s); // :86912
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 504, s); // :86913
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 505, s); // :86914
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 506, s); // :86915
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5629,6 +5696,14 @@ pub fn hit_effect_c(
     // `:86848-86867` — the 342 GingerbreadMan arm (sites 833-837).
     if npc_type == 342 && npc.hp <= 0 {
         gingerbread_man_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86868-86897` — the 338-340 ZombieElf arm (sites 838-843).
+    if (338..=340).contains(&npc_type) && npc.hp <= 0 {
+        zombie_elf_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86898-86916` — the 343 Yeti arm (sites 844-847).
+    if npc_type == 343 && npc.hp <= 0 {
+        yeti_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8860,6 +8935,42 @@ mod tests {
         gingerbread_man_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![500, 501, 501, 502, 502]);
+    }
+
+    /// `NPC.cs:86884-86896` — the ZombieElf death: the per-type head
+    /// (338→494, 339→495, 340→496) + the shared 497/498 at +20 and 499 at
+    /// +34.
+    #[test]
+    fn w4_f10_the_zombie_elf_death_uses_the_per_type_head() {
+        let w = air();
+        for (ty, head) in [(338, 494), (339, 495), (340, 496)] {
+            let n = boss(100.0, 100.0, 40.0, 56.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(787);
+            zombie_elf_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, 497, 498, 499], "elf {ty}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        }
+    }
+
+    /// `NPC.cs:86912-86915` — the Yeti death: the 4 gores 503/504/505/506
+    /// (the DISTINCT 504/505 pair at +20).
+    #[test]
+    fn w4_f10_the_yeti_death_spawns_the_four_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(797);
+        yeti_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![503, 504, 505, 506]);
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
