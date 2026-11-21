@@ -3423,6 +3423,122 @@ fn death_bursts(
                 d.velocity -= s.vel * 0.5;
             }
         }
+        // `:76258-76273` — the 583/584: 10× dust-4 alpha 100 scale 0.8,
+        // colour (20,250,20,240) (583) / (250,20,120,240) (584).
+        583 | 584 => {
+            let color = if s.kind == 583 { Color::new(20, 250, 20, 240) } else { Color::new(250, 20, 120, 240) };
+            for _ in 0..10 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 4, 0.0, 0.0, 100, color, 0.8);
+            }
+        }
+        // `:76343-76376` — the 514: 10× dust-31 alpha 100 scale 1.3 vel×1.4;
+        // 6 iterations of dust-6 alpha 100 (scale 2.1 noGravity vel×4.6,
+        // then scale 1.3 vel×3.3 GRAVITY, then a Next(2)==0 gate → a third
+        // dust-6 scale 1.1 vel×2.7 GRAVITY). The owner-gated 112-resize +
+        // ai[0]=2 + Damage stay unported state.
+        514 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::default(), 1.3);
+                dust.slot_mut(idx).velocity *= 1.4;
+            }
+            for _ in 0..6 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 2.1);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 4.6;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.3);
+                dust.slot_mut(idx).velocity *= 3.3;
+                if rng.next_max(2) == 0 {
+                    let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.1);
+                    dust.slot_mut(idx).velocity *= 2.7;
+                }
+            }
+        }
+        // `:77016-77060` — the 69/70/621: 5× dust-13 defaults + 30× dust-
+        // 33/52/266 speed (0,−2) scale 1.1, alpha 100 X×1.5 then vel×3.
+        69 | 70 | 621 => {
+            let dust_type = match s.kind {
+                70 => 52,
+                621 => 266,
+                _ => 33,
+            };
+            for _ in 0..5 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 13, 0.0, 0.0, 0, Color::default(), 1.0);
+            }
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, 0.0, -2.0, 0, Color::default(), 1.1);
+                let d = dust.slot_mut(idx);
+                d.alpha = 100;
+                d.velocity.x *= 1.5;
+                d.velocity *= 3.0;
+            }
+        }
+        // `:76096-76118` — the 712: Next(6,12)× dust-15 at Center 0×0 alpha
+        // 100 defaults, vel×1.6 Y−− += −baseVel×(NextFloat×2−1)×0.5, scale
+        // 1 fadeIn 1.5 noGravity colour (255,255,255,0)×0.3, vel×0.7,
+        // position += vel×5; then 3 gore-Direct 1008 rows (the
+        // NextFloatDirection scale + the kicks, vel×4 body skipped).
+        712 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let count = rng.next_range(6, 12);
+            for _ in 0..count {
+                let idx = dust.new_dust(rng, ctx, world, center, 0, 0, 15, 0.0, 0.0, 100, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 1.6;
+                d.velocity.y -= 1.0;
+                d.velocity += -s.vel * (rng.next_float() * 2.0 - 1.0) * 0.5;
+                d.scale = 1.0;
+                d.fade_in = 1.5;
+                d.no_gravity = true;
+                let m = crate::ui::color::mul([255, 255, 255, 0], 0.3);
+                d.color = Color::new(m[0], m[1], m[2], m[3]);
+                d.velocity *= 0.7;
+                d.position += d.velocity * 5.0;
+            }
+            for _ in 0..3 {
+                let _ = rng.next_float_direction(); // the gore scale
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:71099-71108` — the 962: 20× dust-16 Perfect at Center +
+        // Circular(16,16)×scale, vel = Circular(2,2) += baseVel×0.1, scale
+        // 1 alpha 100.
+        962 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..20 {
+                let pos = center + next_vector2_circular(rng, 16.0, 16.0) * s.scale;
+                let vel = next_vector2_circular(rng, 2.0, 2.0);
+                let idx = dust.new_dust_perfect(rng, ctx, world, pos, 16, Some(vel), 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity += s.vel * 0.1;
+                d.scale = 1.0;
+                d.alpha = 100;
+            }
+        }
+        // `:77161-77192` — the 370/371: 5× dust-13 defaults + 30 gore rows
+        // (draws-only): each a Next(−10,11) X/Y direction pair, the
+        // Next(4,9) speed, the Next(40,141) (370) / Next(20,100) (371)
+        // scale, the 371's Next(435,438) type argument, then the NewGore
+        // kicks. The 370's type 331 is fixed (no draw).
+        370 | 371 => {
+            for _ in 0..5 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 13, 0.0, 0.0, 0, Color::default(), 1.0);
+            }
+            for _ in 0..30 {
+                let _ = rng.next_range(-10, 11);
+                let _ = rng.next_range(-10, 11);
+                let _ = rng.next_range(4, 9);
+                if s.kind == 370 {
+                    let _ = rng.next_range(40, 141);
+                } else {
+                    let _ = rng.next_range(20, 100);
+                    let _ = rng.next_range(435, 438);
+                }
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
         _ => {}
     }
 }
@@ -5974,6 +6090,89 @@ mod tests {
             let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(active.len(), 5, "kind {kind}");
             assert!(active.iter().all(|d| d.dust_type == dust_type && d.no_gravity), "kind {kind}");
+        }
+    }
+
+    /// The 583/584: 10 dust-4 with the green/pink colour.
+    #[test]
+    fn w4_g65_the_583_584_bursts() {
+        let w = world();
+        for (kind, color) in [(583u16, Color::new(20, 250, 20, 240)), (584, Color::new(250, 20, 120, 240))] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 10, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == 4 && d.color == color), "kind {kind}");
+        }
+    }
+
+    /// The 514: 10 dust-31 + 12-to-18 dust-6 (the Next(2) third-dust gate).
+    #[test]
+    fn w4_g65_the_514_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(514)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 10);
+        let sixes = active.iter().filter(|d| d.dust_type == 6).count();
+        assert!((12..=18).contains(&sixes));
+    }
+
+    /// The 69/70/621: 5 dust-13 + 30 dust-33/52/266 = 35.
+    #[test]
+    fn w4_g65_the_69_70_621_bursts() {
+        let w = world();
+        for (kind, dust_type) in [(69u16, 33), (70, 52), (621, 266)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 35, "kind {kind}");
+            assert_eq!(active.iter().filter(|d| d.dust_type == 13).count(), 5);
+            assert_eq!(active.iter().filter(|d| d.dust_type == dust_type).count(), 30);
+        }
+    }
+
+    /// The 712/962: Next(6,12) dust-15 / 20 dust-16; the 712 gore census
+    /// rides the stream (determinism).
+    #[test]
+    fn w4_g65_the_712_962_bursts() {
+        let w = world();
+        let mut probe = UnifiedRandom::new(7);
+        let count = probe.next_range(6, 12);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(712)], &mut dust, &mut rng, &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), count as usize);
+        assert!(active.iter().all(|d| d.dust_type == 15 && d.no_gravity));
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(7);
+        drain(&[snap(712)], &mut dust2, &mut rng2, &ctx(), &w);
+        assert_eq!(dust.slots(), dust2.slots());
+        assert_eq!(rng, rng2);
+        let mut dust = DustPool::new();
+        drain(&[snap(962)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        assert!(active.iter().all(|d| d.dust_type == 16 && d.alpha == 100 && d.scale == 1.0));
+    }
+
+    /// The 370/371: 5 dust-13 (the 30 gore rows draw no dust); the gore
+    /// census determinism.
+    #[test]
+    fn w4_g65_the_370_371_bursts() {
+        let w = world();
+        for kind in [370u16, 371] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 5, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == 13));
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(rng, rng2);
         }
     }
 }

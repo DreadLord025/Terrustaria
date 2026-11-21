@@ -39827,6 +39827,25 @@ later batch. Witnesses: the 281/240 40-count + ai0 gate, the 162
 80-count, the 282 10-count, the 660/638 Next-count probes, the 411-414
 type ladder — WRITTEN NOT RUN.
 
+### Batch 25 (10 kinds, the flower/sparkle/gore bursts `:76096-77192`)
+
+583/584 (10× dust-4 alpha 100 scale 0.8, green (20,250,20,240) / pink
+(250,20,120,240)), 514 (10× dust-31 vel×1.4 + 6 iterations of dust-6
+(scale 2.1 noGravity vel×4.6 / scale 1.3 vel×3.3 GRAVITY / a Next(2)==0
+third dust-6 scale 1.1 vel×2.7); the owner-gated 112-resize + ai[0]=2 +
+Damage unported), 69/70/621 (5× dust-13 + 30× dust-33/52/266 speed (0,−2)
+scale 1.1 alpha 100 X×1.5 vel×3), 712 (Next(6,12)× dust-15 at Center 0×0
+vel×1.6 Y−− += −baseVel×(NextFloat×2−1)×0.5 scale 1 fadeIn 1.5 noGravity
+colour (255,255,255,0)×0.3 vel×0.7 position+=vel×5; 3 gore-Direct 1008
+rows — the NextFloatDirection scale + kicks census), 962 (20× dust-16
+Perfect at Center+Circular(16,16)×scale vel=Circular(2,2)+=baseVel×0.1
+scale 1 alpha 100), 370/371 (5× dust-13 + 30 gore rows draws-only — the
+Next(−10,11) X/Y direction pair, Next(4,9) speed, Next(40,141)/
+Next(20,100) scale, the 371's Next(435,438) type, the kicks; the 370's
+type 331 fixed). Witnesses: the 583/584 colours, the 514 12-18 sixes
+range, the 69/70/621 35-counts, the 712 Next-count + determinism, the
+962 20-count, the 370/371 5-count + gore determinism — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
