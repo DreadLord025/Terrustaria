@@ -17,7 +17,7 @@
 //! * `Wiring.MassWireOperation` is unported ON THIS BRANCH - the kill
 //!   intent rides out to the world sim (the `wants_mark_spawn` pattern)
 //!   and is DROPPED there with a documented note. The compose verdict
-//!   (research/283): c42 owns the apply (`world_sim/wiring.rs::
+//!   (research/382): c42 owns the apply (`world_sim/wiring.rs::
 //!   mass_wire_operation`, fold-133), f11 threads the `drop_rng` param,
 //!   d13 owns the pool seam - the merger replaces this lane's drop with
 //!   the published direct-drain hunk (f11 research/133 §8.4b);

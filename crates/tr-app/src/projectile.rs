@@ -14551,7 +14551,7 @@ pub struct ProjectilePool {
     /// `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067`):
     /// `(ps, pe)` per dying local kite with `localAI[0] == 1`. The world
     /// sim drains them; the apply is UNPORTED ON THIS BRANCH (c42 owns
-    /// it — the compose verdict, research/283), so the drain drops them
+    /// it — the compose verdict, research/382), so the drain drops them
     /// with the documented note; the merger swaps in the f11 §8.4b hunk.
     pending_mass_wire_ops: Vec<((i32, i32), (i32, i32))>,
 }
@@ -16249,7 +16249,7 @@ impl ProjectilePool {
     /// `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067`),
     /// drained by the world-sim pass. The apply is UNPORTED ON THIS
     /// BRANCH (c42's `mass_wire_operation` is the merger keep-one,
-    /// research/283) — the drain drops them with the note.
+    /// research/382) — the drain drops them with the note.
     pub fn drain_mass_wire_ops(&mut self) -> Vec<((i32, i32), (i32, i32))> {
         std::mem::take(&mut self.pending_mass_wire_ops)
     }
@@ -20030,7 +20030,7 @@ impl ProjectilePool {
                     // (`Projectile.cs:72051-72067`): the released kite
                     // queues its mass-wire operation (the world sim
                     // drains it; the apply is c42's at the merge,
-                    // research/283 — dropped here with the note).
+                    // research/382 — dropped here with the note).
                     if let Some(op) =
                         crate::projectile_ai_kite::kill_mass_wire_op(&self.slots[i])
                     {

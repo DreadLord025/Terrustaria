@@ -29,7 +29,7 @@ pub(crate) const ACTUATOR_ITEM: u16 = 849;
 /// operation (`Wiring.MassWireOperation`, `Wiring.cs:419-453`). The
 /// ToolMode field landed on g81 (`App.wire_tool_mode`, the radial's XOR
 /// clicks); the apply is c42's fold-133 `mass_wire_operation` — the
-/// merger adds the 3625 arm there (research/283, the compose verdict).
+/// merger adds the 3625 arm there (research/382, the compose verdict).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum WiringTool {
     /// The wrench family: 509 red, 850 blue, 851 green, 3612 yellow.

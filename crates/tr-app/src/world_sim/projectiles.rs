@@ -767,7 +767,7 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
     }
     // `Kill()`'s type-651 mass-wire intents (`Projectile.cs:72051-72067`):
     // `Wiring.MassWireOperation(ps, pe, master)` is UNPORTED ON THIS
-    // BRANCH. The compose verdict (research/283): c42 owns the apply
+    // BRANCH. The compose verdict (research/382): c42 owns the apply
     // (`world_sim/wiring.rs::mass_wire_operation`, fold-133 `05ae5cc6`),
     // f11 threads the `drop_rng` param (research/133 §8.4a), d13 owns the
     // pool seam. The merger replaces this drop with the published

@@ -1,10 +1,15 @@
-# 283 — W4-g81 WIRE-DRAW SEAL: the compose verdicts + the junction-box correction + the wire-draw-family bible
+# 382 — W4-g81 WIRE-DRAW SEAL: the compose verdicts + the junction-box correction + the wire-draw-family bible
 
+> **Chain: 283-self-contested → 382.** This doc was originally self-picked
+> as 283 post-§10 (verified free across the 363 origin task tips at the
+> time), but the research/150 registry §7.3 RESERVES 283 for f26
+> (68-7j-addendum) — that reservation KEEPS. Per the Lead amendment the
+> g81 self-pick is contested and renumbers to **382** (registry §9/§10
+> micro-rename; slug kept, all references repointed).
+>
 > W4-g81 · 2026-11-21 · code-only (no cargo/tests/rustfmt/graphify run) ·
 > branch `task/W4-g81-wire-draw-overlay`, seal tip `5394f5df3` (the
-> pre-seal DONE tip `ebb5308a0`). Number 283 verified FREE across all 363
-> origin task tips (the research/150 registry's free block runs 237+;
-> 237–282 are consumed at the tips, 283 is the next free).
+> pre-seal DONE tip `ebb5308a0`).
 >
 > Sources re-read at the cited lines in this worktree's `decompiled/`
 > junction (direct paths, no recursion). Peer contracts read from

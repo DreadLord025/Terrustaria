@@ -21,7 +21,7 @@
 //! ADDITIVE term (`src + dst`): the ghost glows over the world. The
 //! port's pipeline is the same equation (`sprite.wgsl` keeps the rgb
 //! un-premultiplied, alpha = `tex.a * color.a`), so the C# alpha values
-//! reproduce the additive ghost verbatim (the seal fix, research/283 —
+//! reproduce the additive ghost verbatim (the seal fix, research/382 —
 //! the earlier alpha-255 override turned it into a semi-transparent
 //! REPLACE).
 //!
@@ -82,7 +82,7 @@ pub fn ghost_colors(tool_mode: u8) -> ([u8; 4], [u8; 4]) {
     // (`sprite.wgsl`'s fragment keeps rgb un-premultiplied, alpha =
     // `tex.a * color.a`), so the C# alpha values reproduce the additive
     // ghost verbatim — the earlier alpha-255 override turned it into a
-    // semi-transparent REPLACE (the seal fix, research/283).
+    // semi-transparent REPLACE (the seal fix, research/382).
     color47[3] = 0;
     (color47, color46)
 }

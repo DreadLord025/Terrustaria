@@ -39403,7 +39403,7 @@ order matches the C# (`DrawCachedProjsOverWiresUI` `Main.cs:57034` right
 after `DrawWires` `:57030`, before the projectile/player passes), but the
 UI range draws OVER the scene filter where the C# ghost draws UNDER it
 (the filter-order deviation). **The alpha-0 tints are CORRECT, not a
-deviation** (the seal fix, research/283): the C# batch is
+deviation** (the seal fix, research/382): the C# batch is
 `BlendState.AlphaBlend` (premultiplied `One, OneMinusSrcAlpha`), so
 `color47.A = 0` (`:31657`) with non-zero RGB is an ADDITIVE term
 (`src + dst`) - the visible ghost glow; `color46` keeps alpha 0 normally
@@ -39416,7 +39416,7 @@ it into a semi-transparent REPLACE - removed at the seal.
 ON THIS BRANCH - the kill intents drain and drop in
 `world_sim/projectiles.rs` with the note; the ghost preview + the
 anchor/release machine are the ported visuals. **The seal's compose
-verdict (research/283 §4)**: the apply is NOT an open gap - c42 owns it
+verdict (research/382 §4)**: the apply is NOT an open gap - c42 owns it
 (`world_sim/wiring.rs::mass_wire_operation`, fold-133 `05ae5cc6`, the
 58-slot stock census + the core L-walk + the ConsumeItem bill), f11
 threads the `drop_rng` param (research/133 §8.4a), d13 owns the pool
@@ -39426,7 +39426,7 @@ strip, no cooldown gate, `owner == local_id`, `UpdateProjectiles`).
 The Multicolor Wrench 3625 use arm rides the same c42 apply
 (`editing/wiring.rs:207`, the Actuator-strip mask `Player.cs:46908`).
 
-### 3. Junction-box hover highlight - CORRECTED at the seal (research/283)
+### 3. Junction-box hover highlight - CORRECTED at the seal (research/382)
 
 The census-close called this the GENERIC smart-cursor tile-outline
 subsystem (`TileDrawing.GetTileOutlineInfo` `TileDrawing.cs:4478-4489`,
@@ -39507,7 +39507,7 @@ frame slot), 6789a055 (toggle column), 18e53dd0 (cursor icon + cache),
 0e452382 (pre-click tint), 100e9d83 (opacity tie), ababd039
 (ignoreWater), + the census-close docs commit.
 
-### The seal round (research/283, 2026-11-21)
+### The seal round (research/382, 2026-11-21)
 
 Six code fixes landed at the seal (87f7b159, d17a9da7, b8c46275,
 77505fa0, + the ghost-alpha fix):
@@ -39553,5 +39553,5 @@ Six code fixes landed at the seal (87f7b159, d17a9da7, b8c46275,
    semi-transparent REPLACE. The 5 colour-mix witnesses re-derived to
    the C# alpha (the RGB bytes unchanged).
 The mass-op drop notes re-point at the compose verdict (§2 above +
-research/283 §4); the radial's icon_enabled doc-comments drop the stale
+research/382 §4); the radial's icon_enabled doc-comments drop the stale
 "stand-in" wording (the field IS the sim latch since 851a73e1).
