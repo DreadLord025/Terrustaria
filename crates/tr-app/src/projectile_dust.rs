@@ -529,6 +529,20 @@ impl ProjDust<'_> {
             scale,
         )
     }
+
+    /// `Dust.CloneDust(Dust)` (`Dust.cs:263-286`) — the W4-e3 AI-inline
+    /// window's 1006 ShimmerArrow twin (`Projectile.cs:56052`): the fresh
+    /// spawn's internals ride the pass's stream (the pool's `clone_dust`
+    /// went generic over `DustRng` this round, the g64 `853039bfc`
+    /// precedent — keep-one at merge, identical signatures).
+    fn clone_dust(&mut self, world: &World, dust_index: usize) -> usize {
+        self.pool.clone_dust(
+            &mut ProjDustRng(self.rng),
+            self.ctx,
+            world,
+            dust_index,
+        )
+    }
 }
 
 /// `:23954-23962` — the 503 Star Wrath's dust-58 spark: the `Next(16)` gate,
@@ -1520,6 +1534,99 @@ pub(crate) fn acorn_bomb_dust(
         dust.velocity -= old_vel * 0.3;
         dust.scale += d.rng.next_range(0, 150) as f32 * 0.001;
     }
+}
+
+/// `Utils.SelectRandom<T>` (`Utils.cs:2459-2462`) — ONE `Next(len)` pick.
+fn select_random<const N: usize>(rng: &mut dyn DropRng, choices: [i32; N]) -> i32 {
+    choices[rng.next_range(0, N as i32) as usize]
+}
+
+/// `Utils.RandomVector2` (`Utils.cs:2431-2434`) — TWO `NextDouble` draws
+/// cast to float BEFORE the affine map (the g64 `853039bfc` decode; the
+/// `rotated_by_random` next_double convention).
+fn random_vector2(rng: &mut dyn DropRng, min: f32, max: f32) -> Vec2 {
+    Vec2::new(
+        (max - min) * rng.next_double() as f32 + min,
+        (max - min) * rng.next_double() as f32 + min,
+    )
+}
+
+/// `Main.hslToRgb(h, s, l)` as a dust `Color` (`Main.cs:47890-47917`,
+/// default `a = 255`): the palette port returns byte-exact components as
+/// `[f32]` in 0..1 (`palette.rs:196-227`, the banker's-rounding port); the
+/// ×255 round-trip is exact for k/255 in f32.
+fn hsl_color(h: f32, s: f32, l: f32) -> Color {
+    let rgb = tr_core::tile_light::hsl_to_rgb(h, s, l);
+    Color::new(
+        (rgb[0] * 255.0) as u8,
+        (rgb[1] * 255.0) as u8,
+        (rgb[2] * 255.0) as u8,
+        255,
+    )
+}
+
+// ---------------------------------------------------------------------------
+// The AI-INLINE-40 window (research/125 re-probe round): the AI() inline
+// remainder + the AI_001 edges. Emitters follow the e3 pattern — argument
+// draws FIRST, pool internals, post-writes on the returned slot incl. the
+// sentinel. STAGED kinds are cited per emitter (the row/machine merge that
+// activates them is pinned in research/125's assignment table).
+// ---------------------------------------------------------------------------
+
+/// `:56042-56055` — the 1006 ShimmerArrow's rainbow sparkle (AI_001, WIRED
+/// on this base — `special_arrows::step`'s flight-counter tail): the
+/// `Next(8)` gate every tick, the wet-halved ×1.25 velocity, the
+/// `NextVector2Circular(4,4)` point (TWO draws), the hue `NextFloat`
+/// (argument order: position THEN colour), the scale `NextFloat` — then
+/// `NewDustPerfect` type 306, noGravity, `fadeIn = scale + 0.05`, and the
+/// `CloneDust` twin recoloured White with scale −0.3 (the clone's own
+/// internals ride the stream; the sentinel guard is the pool's).
+pub(crate) fn ai001_shimmer_sparkle_1006(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if p.kind != 1006 || d.rng.next_range(0, 8) != 0 {
+        return;
+    }
+    let mut value = p.vel * 1.25;
+    if p.wet {
+        value *= 0.5;
+    }
+    let (cx, cy) = p.center();
+    let point = Vec2::new(cx, cy) + next_vector2_circular(d.rng, 4.0, 4.0);
+    let color = hsl_color(d.rng.next_float(), 1.0, 0.5);
+    let scale = 1.0 + d.rng.next_float() * 0.4;
+    let idx = d.new_dust_perfect(world, point, 306, Some(value), 0, color, scale);
+    let dust = d.pool.slot_mut(idx);
+    dust.no_gravity = true;
+    dust.fade_in = dust.scale + 0.05;
+    let clone = d.clone_dust(world, idx);
+    let cd = d.pool.slot_mut(clone);
+    cd.color = Color::WHITE;
+    cd.scale -= 0.3;
+}
+
+/// `:56746-56752` — the 981 SilverBullet's 1-in-6 dust-279 drip (AI_001,
+/// STAGED — no row on this base; the bullet-side row wave activates it at
+/// the fade-chain slot AFTER the 265/355 arms, BEFORE the 357 trail):
+/// `noLightEmittance` (the pool carries the field), noGravity, ×0.2.
+pub(crate) fn ai001_silver_bullet_drip_981(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if p.kind != 981 || d.rng.next_range(0, 6) != 0 {
+        return;
+    }
+    let idx = d.new_dust(
+        world,
+        p.pos,
+        p.w as i32,
+        p.h as i32,
+        279,
+        p.vel.x,
+        p.vel.y,
+        100,
+        Color::default(),
+        1.2,
+    );
+    let dust = d.pool.slot_mut(idx);
+    dust.no_light_emittance = true;
+    dust.no_gravity = true;
+    dust.velocity *= 0.2;
 }
 
 // ---------------------------------------------------------------------------
@@ -2890,6 +2997,113 @@ mod tests {
             assert!(pool.slot(i).no_gravity);
             assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
             assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+        }
+    /// W4-e3 AI-inline window — `:56042-56055`: the 1006's Next(8) gate,
+    /// the wet-halved velocity, Circular(4,4)'s unit+radius pair, the hue
+    /// NextFloat BEFORE the scale NextFloat (argument order), the Perfect
+    /// 306 + fadeIn = scale+0.05, then the CloneDust twin (White, −0.3).
+    /// Mirrored over 40 ticks wet + dry. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_ai001_shimmer_1006_sparkle_and_clone_mirror() {
+        let w = world();
+        let c = ctx();
+        for wet in [false, true] {
+            let mut p = proj(1006);
+            p.wet = wet;
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(31);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(31);
+            for _ in 0..40 {
+                let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+                ai001_shimmer_sparkle_1006(&p, &w, &mut d);
+                if mirror.next_range(0, 8) == 0 {
+                    let mut value = p.vel * 1.25;
+                    if wet {
+                        value *= 0.5;
+                    }
+                    let (cx, cy) = p.center();
+                    let unit = {
+                        let a = std::f32::consts::PI * 2.0 * mirror.next_float();
+                        Vec2::new((a as f64).cos() as f32, (a as f64).sin() as f32)
+                    };
+                    let r = mirror.next_float();
+                    let point = Vec2::new(cx, cy) + Vec2::new(unit.x * 4.0 * r, unit.y * 4.0 * r);
+                    let hue = mirror.next_float();
+                    let rgb = tr_core::tile_light::hsl_to_rgb(hue, 1.0, 0.5);
+                    let color = Color::new(
+                        (rgb[0] * 255.0) as u8, (rgb[1] * 255.0) as u8, (rgb[2] * 255.0) as u8, 255,
+                    );
+                    let scale = 1.0 + mirror.next_float() * 0.4;
+                    let idx = mpool.new_dust_perfect(
+                        &mut mirror, &c, &w, point, 306, Some(value), 0, color, scale,
+                    );
+                    let md = mpool.slot_mut(idx);
+                    md.no_gravity = true;
+                    md.fade_in = md.scale + 0.05;
+                    let cl = mpool.clone_dust(&mut mirror, &c, &w, idx);
+                    let mc = mpool.slot_mut(cl);
+                    mc.color = Color::WHITE;
+                    mc.scale -= 0.3;
+                }
+            }
+            let act = active(&pool);
+            assert_eq!(act.len(), active(&mpool).len());
+            assert!(!act.is_empty(), "seed 31 passes the 1-in-8 gate in 40 ticks");
+            assert_eq!(act.len() % 2, 0, "each pass spawns the source + its clone");
+            for &i in &act {
+                assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+                assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+                assert_eq!(pool.slot(i).color, mpool.slot(i).color);
+                assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+                assert_eq!(pool.slot(i).fade_in, mpool.slot(i).fade_in);
+                assert!(pool.slot(i).no_gravity);
+            }
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        }
+        // A non-1006 kind draws nothing (the gate short-circuits on kind).
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(31);
+        let mut d2 = ProjDust { pool: &mut pool2, ctx: &c, rng: &mut rng2 };
+        ai001_shimmer_sparkle_1006(&proj(981), &w, &mut d2);
+        assert!(active(&pool2).is_empty());
+        assert_eq!(rng2.next_range(0, 1000), UnifiedRandom::new(31).next_range(0, 1000));
+    }
+
+    /// W4-e3 AI-inline window — `:56746-56752`: the 981's 1-in-6 dust-279
+    /// with the velocity args, noLightEmittance + noGravity + ×0.2.
+    /// Mirrored over 24 ticks. WRITTEN NOT RUN.
+    #[test]
+    fn w4_e3_ai001_silver_bullet_981_drip_mirror() {
+        let w = world();
+        let c = ctx();
+        let p = proj(981);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(17);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(17);
+        for _ in 0..24 {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            ai001_silver_bullet_drip_981(&p, &w, &mut d);
+            if mirror.next_range(0, 6) == 0 {
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, p.pos, 10, 10, 279,
+                    p.vel.x, p.vel.y, 100, Color::default(), 1.2,
+                );
+                let md = mpool.slot_mut(idx);
+                md.no_light_emittance = true;
+                md.no_gravity = true;
+                md.velocity *= 0.2;
+            }
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        assert!(!act.is_empty(), "seed 17 passes the 1-in-6 gate in 24 ticks");
+        for &i in &act {
+            assert_eq!(pool.slot(i).dust_type, 279);
+            assert!(pool.slot(i).no_light_emittance);
+            assert!(pool.slot(i).no_gravity);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
         }
         assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
     }

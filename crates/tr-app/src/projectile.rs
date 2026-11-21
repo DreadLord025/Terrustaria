@@ -17278,10 +17278,13 @@ impl ProjectilePool {
                                     self.slots[i].active = false;
                                     self.slots[i].time_left = 0;
                                 } else {
-                                    crate::special_arrows::step(
+                                    crate::special_arrows::step_dust(
                                         &mut self.slots[i],
                                         world,
                                         npcs,
+                                        rng,
+                                        dust,
+                                        dust_ctx,
                                     )
                                 }
                             }

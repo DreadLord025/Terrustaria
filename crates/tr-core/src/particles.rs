@@ -689,9 +689,9 @@ impl DustPool {
     /// source's type, overwritten with the copied field list. The
     /// `dustIndex == maxDustToDraw` early return (`:265-268`) is the C#'s own
     /// guard (it fires for the sentinel slot, whose index is 6000).
-    pub fn clone_dust(
+    pub fn clone_dust<R: DustRng>(
         &mut self,
-        rng: &mut UnifiedRandom,
+        rng: &mut R,
         ctx: &SpawnCtx,
         world: &World,
         dust_index: usize,

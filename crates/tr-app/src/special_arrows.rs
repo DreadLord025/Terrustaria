@@ -149,6 +149,34 @@ fn gravity_of(kind: u16) -> Gravity {
 /// The 225's bounce needs the NPC scan, so the whole step takes `npcs`
 /// (the ai001_c precedent); no other kind reads it.
 pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
+    // The scratch-pool wrapper (the g63 batch-1 `update`/`update_dust`
+    // seam): the AI-level draws ride a seeded stream, the pool internals
+    // land on a scratch pool — the witness path keeps its old signature.
+    let mut dust = tr_core::particles::DustPool::new();
+    let ctx = tr_core::particles::SpawnCtx {
+        game_menu: false,
+        game_paused: false,
+        generating: false,
+        screen_position: Vec2::ZERO,
+        screen_size: Vec2::new(world.width as f32 * 16.0, world.height as f32 * 16.0),
+        max_dust_to_draw: 6000,
+    };
+    let mut rng = tr_core::UnifiedRandom::new(0);
+    step_dust(p, world, npcs, &mut rng, &mut dust, &ctx);
+}
+
+/// The dust-threaded variant (W4-e3 AI-inline window): the pass's stream +
+/// live pool. The 1006 ShimmerArrow's rainbow sparkle (`:56042-56055`)
+/// sits between the flight counter and the gravity chain, exactly as the
+/// C# orders it; every other kind draws nothing here.
+pub(crate) fn step_dust(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
     // ---- 1. The hook group above the counter ------------------------------
     // `:55197-55208` — the Bee Arrow (469): `localAI[1]++`, then from the
     // 3rd sub-step the alpha loses 50 with the 0 floor (the row seeds
@@ -170,6 +198,17 @@ pub(crate) fn step(p: &mut Projectile, world: &World, npcs: &[Npc]) {
     let count_flight = !matches!(p.kind, JESTERS_ARROW | BEE_ARROW);
     if count_flight {
         p.ai[0] += 1.0;
+    }
+    // W4-e3 — `:56042-56055`: the 1006's Next(8)-gated rainbow sparkle +
+    // CloneDust twin, on the pass's stream (the emitter kind-gates; every
+    // other arrow draws nothing and consumes nothing).
+    {
+        let mut d = crate::projectile_dust::ProjDust {
+            pool: dust,
+            ctx: dust_ctx,
+            rng,
+        };
+        crate::projectile_dust::ai001_shimmer_sparkle_1006(p, world, &mut d);
     }
 
     // ---- 3. The gravity else-if chain -------------------------------------
