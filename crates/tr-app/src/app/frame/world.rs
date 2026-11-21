@@ -211,6 +211,16 @@ impl App {
         underworld: self.camera.y > underworld_px,
         blood_moon: self.world.blood_moon,
         windy_music: self.wind.happy_windy_day,
+        // — the W4-f39 closeout inputs (`Main.cs:12200`/`:12654`/
+        // `:12982-12989`) —
+        slime_rain: self.world.slime_rain,
+        pumpkin_moon: self.world.pumpkin_moon,
+        snow_moon: self.world.snow_moon,
+        remix_world: self.world.seeds.contains(tr_core::seeds::SeedFlags::REMIX),
+        // `screenPosition.Y / 16 < worldSurface + 10`: the camera is the
+        // view centre, the C# screenPosition the top-left (`camera.rs`).
+        moon_tail_band: (self.camera.y - screen.y * 0.5) / TILE_PX
+            < self.world.world_surface as f32 + 10.0,
         // The biome chain (`:12686-12920`): the space band with
         // `num4 = maxTilesX / 4200`, the temple wall behind the scene
         // centre, the metrics zones, the mushroom bg style and the
