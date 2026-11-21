@@ -39301,3 +39301,85 @@ territory, the E21f player-splash precedent), the type-620 exit jump
 (buff seam), the lava strike/buff `:93325-93337` (combat seam).
 Commits land ≤10 sites each. Code-only: no cargo/tests/graphify;
 witnesses WRITTEN NOT RUN.
+
+### Landing (40/40, commits `34d347b4`/`473bb1ba`/`98ed0ad1`/`1925f3ba`)
+
+**IdleSounds — all 32 arms** (`ambient_sound.rs::idle_sounds`, a pure
+else-if chain over `npc_type`/`wet`/`shimmer_transparency` + the caller
+stream + a `play` callback). The chain order, gate windows and style
+ranges are verbatim `NPC.cs:90079-90206`; the witness
+`w4_f2_idle_sounds_the_first_ten_arms_draw_in_the_c_order` (extended to
+all 32 arms across the batches) replays each arm's gate→style→pitch
+draw sequence against a same-seeded `UnifiedRandom` mirror (seed 146
+draws 0 on every gate — the derived witness seed; the JS mirror of
+`UnifiedRandom.cs` validated the per-arm style rolls). The draw-free
+paths are pinned separately
+(`w4_f2_idle_sounds_the_gates_and_fall_throughs_draw_nothing_extra`):
+the shimmer head gate, a failed gate's ONE draw + else-if fall-out, the
+dry wet-trio fall-through (the `base.wet` term inside arm 6's
+condition), an unlisted type's zero draws. The case-29 bank: the
+`Zombie_24-87` rows join `SFX_CUES` at legacy id 29 and `zombie_asset`
+gains the 64 slot arms (the ×0.5 band,
+`w4_f2_the_idle_case29_slots_resolve_the_bank` +
+`w4_f2_the_idle_case29_bank_rows_play_with_one_pitch_draw`). The sim
+wires the chain at the C# `:90422` position — the pre-machine scoped
+block, ahead of `update_rng_dust`/the style-75 pool step, on the
+`UpdateNPCs` stream.
+
+**Collision_WaterCollision — all 8 splash sites**
+(`ambient_sound.rs::water_collision_sounds` + `water_collision_tail`,
+pure fns over a `WaterWetState` snapshot). The entry quartet
+(`:93121`/`:93138`/`:93154`/`:93171`) and exit quartet
+(`:93219`/`:93236`/`:93252`/`:93269`) play case-19 styles 4/1/0/1 and
+5/1/0/1 through the landed `Audio::play_splash_sound` (the
+`splash_case19` styles-4/5 ×0.75 + `Next(-20,1)` arms S1-E-21f ported
+are these callers; the E21f stream witness already pins all six
+styles). The pass itself draws NOTHING — the pitch rides inside the
+play after the attenuation gate + playing guard. The gates are
+verbatim: the never-wet head (`:93055`, the 690/72/21/67/376/579/541/
+town-25 set), the aiStyle-116 `wetCount` pin (`:93077-93080`), the
+10-tick cooldown, the water/shimmer long gate vs the honey/lava short
+gate, the type-615 override, and the **exit-lava quirk** — `:93267`
+drops the `type != 147` term its entry twin `:93169` carries (two
+distinct gates, both kept). The tail (`:92527-92536`) clears the three
+latches on the dry state and decrements `wetCount`. Witnesses:
+`w4_f2_water_collision_the_entry_quartet_plays_the_per_liquid_style`,
+`..._the_exit_quartet_reads_the_old_latches`,
+`..._the_gates_block_and_the_lava_quirk`. The sim wires the pass at the
+per-NPC tail (post-machine, the `UpdateCollision` position), gated on
+`!NpcKind::no_tile_collide()` (the `:90490` head — the noTileCollide
+kinds skip `UpdateCollision` entirely), reusing
+`npc_ai_slime::wet_collision` + `player::lava_collision` (the type-441
+refusal `:93318-93321` applied) for the overlap probes.
+
+**Infrastructure.** `Npc` gains `wet_count`/`lava_wet`/`honey_wet`/
+`shimmer_wet` (spawn 0/false, the `Entity` defaults); `wet` exists (the
+swimmer caches keep their reads — the water pass re-derives the same
+flag). `NpcKind::no_tile_collide()` joins `no_gravity()` in
+`npc/data.rs`: the 87-kind `SetDefaults` census (the
+`this.noTileCollide = true` rows over `NPC.cs:8426-17859`, 139 vanilla
+ids, cross-referenced through the kind enum's doc-comment ids + the
+bestiary net ids) plus the pumpkin/frost defaults fold (Pumpking 327 /
+Poltergeist 330). The AI machines' LIVE phase-flip writes are not
+modelled — the `SetDefaults` row stands (the `no_gravity` table's
+documented granularity).
+
+**RNG argument.** Both emitters ride the `UpdateNPCs` stream
+(`Main.cs:17767`) at their C# call positions: IdleSounds pre-machine
+(`:90422`), the water pass post-machine (`:92526`). The idle chain's
+else-if structure means a type consumes at most its own gate roll (+
+style + pitch on a hit); the water pass is draw-free by construction
+(the case-19 pitch is inside the play). No other stream is touched;
+the dust-burst skips are the documented visual deviation (the E21f
+player-splash precedent — the plays' relative order is kept, the
+interleaved dust draws are not).
+
+**Verification.** Code-only: every arm re-read against its C# window
+(≤100 lines), the gate windows/style ranges transcribed verbatim, the
+seam signatures checked by read/grep (`play_fighter_moan`,
+`play_splash_sound`, `wet_collision`, `lava_collision`, `cs_id`,
+`ai_style`, `no_gravity`, the `Npc` fields). The 7 witness tests
+(`ambient_sound.rs` 6 + `audio.rs` 1) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/graphify invoked**. The case-19 six-style
+stream contract is already pinned by the landed
+`s1_e_21f_the_jump_and_splash_draws_ride_the_passed_stream`.
