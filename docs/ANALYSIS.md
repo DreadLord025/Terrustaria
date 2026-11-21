@@ -36518,18 +36518,50 @@ disjoint module `crates/tr-app/src/buff_frame_wiring.rs::update_buff_frame`
 - **Deliberate deviations / gaps:** the set flags
   (`beetleDefense`/`beetleOffense`/`setSolar`) stay false until the
   armor-set lane lands (the g27 contract — the arms zero + delete like the
-  C# without the set); `wolf_acc` stays false (the Moon Charm accessory
-  lane unported, so Werewolf 28 always deletes); the Inferno aura damage
-  scan (`:10224-10263`) is deferred (needs the world roster — the flag +
-  light + cadence counter ride); the DoT flag fields are the C# write's
-  faithful record (the regen lane reads them off the buff bar via
-  `holding()`); Tipsy 25's crit/damage/speed/Ale halves stay unported (the
-  inline match owns only the defense half — the misc dispatch excludes 25
-  to avoid a double defense grant).
+  C# without the set); the DoT flag fields are the C# write's faithful
+  record (the regen lane reads them off the buff bar via `holding()`).
+- **Gap completions (2026-11-21, the recorded-gaps pass):**
+  - **Tipsy 25 (gap 1):** the COMPLETE arm now rides the inline wave-A
+    match (`player.rs`, `Player.cs:11918-11930`) — the flag, −4 defense,
+    +2 melee crit, +0.1 melee damage/speed and the Ale-3821 held ranged
+    pair (+0.1/+5). Keep-one: the wiring's `MISC_DISPATCH` excludes 25, so
+    the misc module's duplicate arm never fires (no double defense grant).
+  - **Inferno aura (gap 2):** the NPC damage ring (`Player.cs:10224-10238`
+    + `ApplyDamageToNPC` `:20437-20461`) ports in
+    `buff_inferno_aura.rs::inferno_aura_scan`, wired at the world_sim seam
+    after the frame fold: the 200-px roster scan spreads Hellfire 323/120
+    every tick and strikes for 20 on the `infernoCounter % 60 == 0`
+    cadence (banner scale → `checkArmorPenetration(melee:false)` with the
+    ichor/broken-armor/Betsy bonuses → the `StrikeNPC_Inner` defence line;
+    the combat text spawns BEFORE the life write on the `UpdatePlayers`
+    stream, the hit sound + Destroyer probe drain after in C# order). The
+    critter-book refusal ports with it (`dontHurtCritters` field, the
+    `:18780` clear + the 4767/5323 grant `:12825-12828`,
+    `CanNPCBeHitByPlayerOrPlayerProjectile` `:20513-20529`; the ported
+    `CountsAsCritter` member is the Goldfish 55). The PvP twin
+    (`:10243-10263`) is single-player dead code (`hostile` defaults false,
+    no second player) — recorded, not ported. The `OnHit` accessory
+    families (`:20443`) are unported player flags — no draws, recorded.
+  - **Moon Charm / wolf_acc (gap 3):** the accessory GRANT lane the d71
+    werewolf effect was waiting on. `Player.wolf_acc` arms from the Moon
+    Charm 485 (`:15182-15189`), Moon Shell 861 (`:15134-15143`) and
+    Celestial Shell 3110 (`:15402-15411`); Neptune's Shell 497 stays
+    accMerman-only (`:15566-15573`). The `:25601-25605` night grant
+    (`wolfAcc && !merman && !dayTime && !wereWolf` → `AddBuff(28, 60)`,
+    then the flag clear) rides the merman-derivation tail; the wiring's
+    status/misc contexts read the live `p.wolf_acc`, so the wave-E
+    werewolf arm now grants the stat block at night. The `hideWolf`/
+    `forceWerewolf` visibility halves stay draw-seam scope (the
+    `ApplyEquipVanity` `:14205-14209` arm is unported — recorded).
 - **RNG census:** the wiring pass draws NOTHING — the only draw in the
   wired blocks is Rabid (148)'s `Main.rand` triple, already owned by the
-  live accessory pass (the wiring skips 148). Stream-neutral.
-- Code-only: 16 `w4_f12_*` witnesses WRITTEN, NOT RUN — no
+  live accessory pass (the wiring skips 148). The Inferno aura scan draws
+  only the strike's combat-text placement (two `Next` draws per landed
+  strike, `CombatText.cs:88-89`) + the hit-sound pitch + the Destroyer
+  probe roll, all on the `UpdatePlayers` stream in the C# order — the
+  debuff-only pass is stream-neutral.
+- Code-only: the phase-2 16 `w4_f12_*` witnesses + the gap pass's 14
+  (2 Tipsy + 7 Inferno + 5 Moon Charm) WRITTEN, NOT RUN — no
   cargo/rustc/rustfmt/tests/graphify invoked.
 
 ### Deliberate folds / gaps (recorded)
