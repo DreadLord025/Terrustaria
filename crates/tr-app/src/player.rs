@@ -1497,11 +1497,18 @@ pub struct Player {
     /// cooldown — set 1800 by a shadow dodge (`:38043`), decayed one per tick
     /// in `Player.Update` (`:25461-25464`).
     pub shadow_dodge_timer: i32,
+    /// `Player.shadowDodgeCount` (`Player.cs:1166`): the shadow-dodge
+    /// afterimage spread — DRAW-owned (`LegacyPlayerRenderer.cs:433-448`
+    /// steps it ±1/frame, cap 30 / floor 0; `ResetEffects` never touches
+    /// it). The ghosts' maths live in `player_dodge_draw` (W4-d115 lane
+    /// 19); the draw wiring is the follow-up round.
+    pub shadow_dodge_count: f32,
     /// `Player.brainOfConfusionDodgeAnimationCounter` (`Player.cs:1158`): the
     /// 300-tick animation window a brain dodge opens (`:38049`); decayed in
     /// `ResetEffects` (`:18794-18797`), zeroed on death (`UpdateDead`,
-    /// `:16932`). No render consumer yet — carried for state parity (the
-    /// S1-A-9 dead-slot convention).
+    /// `:16932`). The ghost-ring maths are ported in `player_dodge_draw`
+    /// (`LegacyPlayerRenderer.cs:455-467`, W4-d115 lane 19); the draw
+    /// wiring is the follow-up round.
     pub brain_of_confusion_dodge_animation_counter: i32,
     /// `Player.creativeGodMode` (`Player.cs:1896`): refreshed every tick from
     /// the journey `GodmodePower` (`:25493-25497`; `ResetEffects` clears it at
@@ -2782,6 +2789,7 @@ impl Player {
             honey_comb: false,
             strong_bees: false,
             shadow_dodge_timer: 0,
+            shadow_dodge_count: 0.0,
             brain_of_confusion_dodge_animation_counter: 0,
             breath: BREATH_MAX,
             breath_cd: 0,
@@ -19464,6 +19472,27 @@ mod tests {
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 299);
         p.respawn();
         assert_eq!(p.brain_of_confusion_dodge_animation_counter, 0);
+    }
+
+    /// W4-d115 lane 19 — `shadowDodgeCount` is DRAW-owned
+    /// (`LegacyPlayerRenderer.cs:433-448` is its only writer): the sim
+    /// tick and the respawn never touch it (`Player.cs:1166` has no
+    /// other write site; `ResetEffects`/`UpdateDead` carry no clear).
+    #[test]
+    fn w4_d115_lane19_the_shadow_dodge_count_is_draw_owned_not_sim_owned() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shadow_dodge_count = 17.0;
+        p.shadow_dodge = true;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shadow_dodge_count, 17.0, "the sim tick never steps it");
+        p.respawn();
+        assert_eq!(p.shadow_dodge_count, 17.0, "the respawn never clears it");
+        // The renderer's step is the ported pure fn (player_dodge_draw).
+        assert_eq!(
+            crate::player_dodge_draw::step_shadow_dodge_count(p.shadow_dodge_count, true),
+            18.0
+        );
     }
 
     // -- S1-P-i41: mount item use + data witnesses ---------------------------
