@@ -250,6 +250,7 @@
 //! | 1290-1293 | `:88058-88070` | the town-pet block (25-dust type-31 burst + 4 random 61-63 gores, velocity post-writes) |
 //! | 1294-1298 | `:88677-88682` | the 453 SkeletonMerchant death (5 gores, distinct pairs, shimmer) |
 //! | 1299-1308 | `:88698-88721` | the 269-276/281-286 armored-bones block (5 shared gores + 5 per-type +20 extras) |
+//! | 1309-1317 | `:88759-88815` | the 341 PresentMimic + 85/629 Mimic + 473-476 BigMimic deaths (3 smoke gores each) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -7614,6 +7615,110 @@ fn armored_bones_death(
     }
 }
 
+/// The 341 PresentMimic death (`NPC.cs:88755-88764`, sites 1309-1311): the
+/// 20-dust type-196 burst (the 5-arg overload: Speed 0,0, Alpha 0, default
+/// color, scale 1), then 3 smoke gores at `this.scale` — 61 at Y−10, 62 at
+/// Y+height/2−10 (the C# integer half), 63 at Y+height−10 — each with
+/// velocity `(hitDirection, 0)` then `velocity *= 0.3` post-write.
+fn present_mimic_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 196, 0.0, 0.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    let top = Vec2::new(pos.x, pos.y - 10.0);
+    let mid = Vec2::new(pos.x, pos.y + (h as i32 / 2) as f32 - 10.0);
+    let bot = Vec2::new(pos.x, pos.y + h - 10.0);
+    for (anchor, ty) in [(top, 61), (mid, 62), (bot, 63)] {
+        let idx = gore.new_gore(rng, world, anchor, vel, ty, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 85 Mimic / 629 IceMimic death (`NPC.cs:88768-88794`, sites
+/// 1312-1314): the dust type is ai[3]-gated — 7 default, 10 when `ai[3]==2`,
+/// 37 when `ai[3]==3` — the 20-dust burst (the 5-arg overload), then the
+/// same 3 smoke gores as the PresentMimic (61 at Y−10, 62 at Y+height/2−10,
+/// 63 at Y+height−10, velocity `(hitDirection, 0)` ×0.3 post-write).
+fn mimic_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:88768-88776` — the ai[3] dust-type select.
+    let mut dust_type = 7;
+    if npc.ai[3] == 2.0 {
+        dust_type = 10;
+    }
+    if npc.ai[3] == 3.0 {
+        dust_type = 37;
+    }
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, dust_type, 0.0, 0.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    let top = Vec2::new(pos.x, pos.y - 10.0);
+    let mid = Vec2::new(pos.x, pos.y + (h as i32 / 2) as f32 - 10.0);
+    let bot = Vec2::new(pos.x, pos.y + h - 10.0);
+    for (anchor, ty) in [(top, 61), (mid, 62), (bot, 63)] {
+        let idx = gore.new_gore(rng, world, anchor, vel, ty, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
+/// The 473-476 BigMimic death (`NPC.cs:88807-88816`, sites 1315-1317): the
+/// 20-dust type-31 burst (the 5-arg overload), then 3 smoke gores at
+/// `base.Center` — 61/62/63 — each with velocity `(hitDirection, 0)` then
+/// `velocity *= 0.3` post-write, at `this.scale`.
+fn big_mimic_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let c = center(npc);
+    let vel = Vec2::new(hit_direction, 0.0);
+    let s = npc.scale;
+    for ty in [61, 62, 63] {
+        let idx = gore.new_gore(rng, world, c, vel, ty, s);
+        gore.slot_mut(idx).velocity *= 0.3;
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -8547,6 +8652,18 @@ pub fn hit_effect_c(
     // 1299-1308).
     if ((269..=276).contains(&npc_type) || (281..=286).contains(&npc_type)) && npc.hp <= 0 {
         armored_bones_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88744-88765` — the 341 PresentMimic arm (sites 1309-1311).
+    if npc_type == 341 && npc.hp <= 0 {
+        present_mimic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88766-88795` — the 85/629 Mimic arm (sites 1312-1314).
+    if (npc_type == 85 || npc_type == 629) && npc.hp <= 0 {
+        mimic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88796-88817` — the 473-476 BigMimic arm (sites 1315-1317).
+    if (473..=476).contains(&npc_type) && npc.hp <= 0 {
+        big_mimic_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -13418,6 +13535,80 @@ mod tests {
                 assert_eq!(gore.slot(5).position, Vec2::new(100.0, 120.0));
             }
         }
+    }
+
+    /// `NPC.cs:88759-88764` — the PresentMimic death: 61/62/63 at
+    /// Y−10 / Y+height/2−10 / Y+height−10, velocity (hitDirection,0) ×0.3
+    /// post-write (the kicks ride inside the ×0.3).
+    #[test]
+    fn w4_f10_the_present_mimic_death_spawns_the_smoke_trio() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1361);
+        present_mimic_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![61, 62, 63]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 90.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 118.0));
+        assert_eq!(gore.slot(2).position, Vec2::new(100.0, 146.0));
+        // The twin: 20 type-196 dusts (6 default-block draws, no tweak) then
+        // 3 gores x 2 kicks; the post-write is (kick + hitVel) * 0.3.
+        let mut twin = UnifiedRandom::new(1361);
+        for _ in 0..20 {
+            let _px = twin.next_max(40 - 4);
+            let _py = twin.next_max(56 - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for i in 0..3 {
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).velocity.x, (1.0 + kx) * 0.3);
+            assert_eq!(gore.slot(i).velocity.y, -ky * 0.3);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the present mimic mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88768-88794` — the Mimic death: the ai[3] dust-type select
+    /// (7 default, 10 at ai[3]==2, 37 at ai[3]==3) and the same smoke trio.
+    #[test]
+    fn w4_f10_the_mimic_death_selects_the_dust_type_from_ai3() {
+        let w = air();
+        for (ai3, dust_type) in [(0.0, 7), (2.0, 10), (3.0, 37)] {
+            let mut n = boss(100.0, 100.0, 40.0, 56.0);
+            n.ai[3] = ai3;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(1367);
+            mimic_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, -1.0);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![61, 62, 63], "mimic ai3={ai3}");
+            let d = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(d.dust_type, dust_type, "mimic ai3={ai3}");
+        }
+    }
+
+    /// `NPC.cs:88811-88816` — the BigMimic death: the smoke trio 61/62/63
+    /// all at base.Center, velocity (hitDirection,0) ×0.3 post-write.
+    #[test]
+    fn w4_f10_the_big_mimic_death_spawns_the_center_trio() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1373);
+        big_mimic_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![61, 62, 63]);
+        for i in 0..3 {
+            assert_eq!(gore.slot(i).position, Vec2::new(120.0, 128.0));
+        }
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.dust_type, 31);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
