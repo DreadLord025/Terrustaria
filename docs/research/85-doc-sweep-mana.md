@@ -801,3 +801,32 @@ position is faithful ON ITS TREE; the merged tree keeps the g27 wiring
 position instead (the f12 frame head), which is the same C# block. The
 merge must NOT keep both interleaves — row 8's drop list includes the
 :6578 call.
+
+## RT3. The MANA-FAMILY declaration (the merger-bible)
+
+The mana family's ONE canonical home per member, across all five lanes
+(d117 / f49 / f12 / d79 / the potion lanes). The merger resolves every
+conflict in this family to this table:
+
+| Member | Canonical home | Notes |
+| --- | --- | --- |
+| The regen ENGINE (`UpdateLifeRegen`/`UpdateManaRegen`, `Player.cs:18949-19560`) | **d117** `regen.rs` (`update_life_regen` :173, `update_mana_regen` :399, `RegenState`/`RegenInputs`), adopted wholesale by f49 | d79's regen.rs delta is doc-only; the `refilled` return is the d79 cue's trigger (RT2 row 12) |
+| The nebula mana cadence (`ApplyNebulaBuffMana` `:19565-19585`) | **d117/f49** `regen.rs::apply_nebula_buff_mana` :374, counter in `RegenState` :36 | d79's Player-method twin DROPS (RT2 row 11) |
+| The nebula tier WRITER (`UpdateBuffs_NebulaBuffs` `:12070-12079`) | **f12/g27** `buff_effects_orbs.rs::nebula_buffs` :154 via `apply_orb_arm` :288 | f49's copy deleted (8eb20d8b), d79's copy drops (RT2 row 8); blob c6bcb017b |
+| The tier FIELDS + bridge | **f49** `Player.nebula_level_{mana,life,damage}` (:858/:865/:871) + `fold_orb_nebula_bridge` :3547; f12's `fold_orb` assigns at the merge | the regen read keeps the Player field; the Life/Damage consumers stay f12's fold (RT2 rows 9/10) |
+| The pickup grant (`NebulaLevelup` `:57030-57059`) + the consume arms + the 12/5 pull | **f49** `player.rs::nebula_levelup` :3492 + `world_sim/items.rs` wholesale | the cue rewires onto d79's pool facade (RT2 rows 2/3) |
+| The pickup/reset LIFECYCLE zeros (`:18755`) | **f49** `player.rs:6182-6184` + f12's `orb_scan.reset_effects()` | both objects, both stay (R3 step 3) |
+| The flower cuffs (`mana_flower`/`magic_cuffs`/ManaCloak, `:12962-12965`/`:38291-38303`/`:14936-14953`) | **f49** `player.rs` (the flag chain :5393-5532, the ONE −0.08 fold, the cuffs Hurt arm :4489-4494, `mana_cloak_override` :1522) | d79 carries the same i52/C-7-era arms (no conflict — f49's wholesale items/player resolution keeps the witnessed set); the cuffs end-to-end rig fix 6c0ee2aa2 stands |
+| The shared CheckMana machine (`Player.cs:52576-52655`) | **f49/i19** `regen.rs::check_mana` :343 + `potions.rs::check_mana_with_flower[_on]` :377/:385 | the five-site census F2: d10/d19/d21 ride it; 439 + ForbiddenStorm stay their lanes'; the constants-copy pins `potions.rs:461-467` |
+| The potions (the four mana tiers + sickness 94 + the drink) | **f49** `potions.rs` (`apply_life_and_or_mana` :170, `apply_mana_sickness_arm` :320, the tier rows R5 MATCH) | the 94 grant resolves to ONE line with f12 `potions.rs:216` (RT1 item 5); QuickMana FIRST-fit `:5629-5649` |
+| The nebula ONE-writer contract | **R3** (this report) + the f12 closeout item 1 + RT1's mutual receipt | the merger applies RT1's remainder list in order |
+| The sound cues (the positioned/unpositioned Grab, the MaxMana refill) | **d79** `audio.rs` pool facades (`play_grab_sound` :2468, `play_pickup_sound` :2107, `play_single_voice` :2426) | f49's `play_grab_sound_at` retires (RT2 row 3); the refill queue/drain lands on the LIFTED seam (RT2 row 12) |
+
+**The single-chain frame order (the merged tick, FINAL):** timer head
+(`update_buffs_tick`) → ResetEffects (both zeros) → UpdateEquips →
+`update_buff_frame` (the g27 scan + `fold_orb` + the bridge) → the
+LIFTED `update_survival` (the d117 engine reads + the d79 refill
+capture) → the d79 refill drain (world-sim, before the sticky-dust
+drain) → projectiles phase (the prism flower pass-tail) → items phase
+(GrabItems: the f49 consume arms on the d79 facades → `nebula_levelup`
+increments the bridged field — the next tick's scan re-derives it).

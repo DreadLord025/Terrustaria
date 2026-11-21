@@ -36407,6 +36407,24 @@ the engine already returns the `refilled` flag). The per-fn C#-position
 single-chain table (13 rows) + the witness keep-one rulings:
 research/85 RETIRE RT2.
 
+**RT3 — the MANA-FAMILY declaration (the merger-bible):** one canonical
+home per family member — the regen ENGINE d117 (`regen.rs`, adopted by
+f49), the nebula mana cadence d117/f49 (`apply_nebula_buff_mana`, the
+counter in `RegenState`), the tier WRITER f12/g27 (`nebula_buffs` via
+`apply_orb_arm`), the tier fields + bridge f49
+(`fold_orb_nebula_bridge`), the pickup grant/consume arms/pull f49
+(`nebula_levelup` + `items.rs` wholesale, the cue on d79's facade), the
+lifecycle zeros f49 + f12's `orb_scan.reset_effects()` (both objects),
+the flower cuffs f49 (the flag chain + the ONE −0.08 fold + the cuffs
+Hurt arm), the shared CheckMana machine f49/i19 (`check_mana` +
+`check_mana_with_flower[_on]`), the potions f49 (the four tiers MATCH,
+the 94 grant ONE line with f12), the sound cues d79 (the pool facades).
+The merged-tick single chain: timer head → both resets → UpdateEquips →
+`update_buff_frame` (scan + bridge) → the LIFTED `update_survival` (+
+the d79 refill capture) → the refill drain → projectiles (the prism
+flower pass-tail) → items (the consume arms → `nebula_levelup`). Full
+table: research/85 RETIRE RT3.
+
 ## The magic guns + tomes use arms (S1-P-i22)
 
 `Player.ItemCheck_Shoot`'s 14 magic guns + tomes (census + verdicts:
