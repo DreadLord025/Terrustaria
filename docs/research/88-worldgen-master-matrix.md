@@ -323,6 +323,62 @@ should carry it too (the C# `:20870` gate) — port the gate onto c31's step at 
 merge if absent (c31's `step_larva` currently has no skyblock gate; the C#
 `BeeLarvaInBeehives` is `!Skyblock.denyAllGeneration`-gated).
 
+**FINAL adjudication (seal phase, 2026-11-21 — C# re-read in ≤100-line windows;
+the d104c/86-§6.3 challenge answered):** the challenge was that this §2.20 DROP
+might delete a site d104's research/86 §6.3 keeps ("at the merge both survive:
+d105's classic ledger-driven pass + g41's flag-gated seed tail… the two routes
+write different sites"). **The DROP stands — the two "both-survive" routes are
+`:20868` vs `:25608-25629`, NOT c31 vs d105:**
+
+1. **`:20868-20900` `BeeLarvaInBeehives` (the vanilla Larva slot, row 100)** —
+   re-read verbatim: the `!Skyblock.denyAllGeneration` gate `:20870`, the
+   `tileSolid[229]=true` `:20872` / `[232]/[162]` `:20897-20898` boot statics,
+   the per-anchor 3×4 re-clear (`:20878-20894`, three upper rows deactivated,
+   the floor row 225 flat) + `PlaceTile(num, num2, 231, mute: true)` `:20895`
+   over `GenVars.larvaX/Y[0..numLarva]`. **c31 `hive.rs::pass_larva` +
+   `place_larva_3x3` and d105 `structures.rs::pass_larva` + `place_larva` are
+   TWO PORTS OF THIS SAME SITE.** One row, one owner: c31 (the faithful
+   producer below). d105's slice DROPs — nothing is lost that c31 lacks.
+2. **`:25608-25629` (the FinishNotTheBees conversion-tail larva rolls, INSIDE
+   the Final Cleanup pass's `NotTheBees(); FinishNotTheBees()` call
+   `:22435-22439`)** — re-read verbatim: the continue gate `:25608`
+   (`n <= num || m <= 350 || m >= w-350 || (liquid != 0 && !honey) ||
+   (anniversary && !remix)`), then `Next(600)==0` (DST‖remix) /
+   `Next(150)==0` (noTraps) / `Next(225)==0` (else) → `PlaceTile(m, n, 231)`.
+   **g41 `not_the_bees.rs::place_larva` (`78b0cd15`, called from the
+   `finish_not_the_bees` per-cell walk) owns THIS site** — flag-gated, never a
+   classic row, zero overlap with row 100. **KEEP g41's tail arm** (86 §6.3's
+   "both survive" is exactly this pair: c31's classic pass + g41's seed tail;
+   an NTB world fires BOTH, the vanilla behaviour — the Hives pass `:15929`
+   gates only skyblock).
+3. **The d105 producer is unfaithful, independently of the dome retirement** —
+   its `pass_beehives` publishes the anchor behind `if rng.range(0, 2) == 0`
+   ("~half the hives"). **No such roll exists in the C#:**
+   `HiveBiome.cs:85` calls `CreateStandForLarva(vector2D)` UNCONDITIONALLY at
+   every placed hive's chain end (the `Next(2)` at `:61` is the honey-fall
+   direction pick; the drunk extra stand `:88-99` adds a second anchor).
+   c31's `create_stand_for_larva(world, anchors, cx, cy)` runs at the chain
+   end unconditionally (the `:85` citation) + the drunk 1000-try extra stand,
+   with the `Utils.Clamp(5, max-5)` + wrap-at-99 ledger semantics
+   (`HiveBiome.cs:359-365`, `GenVars.cs:446-447` `new int[100]`). d105's Vec
+   drops anchors past 100; the C# overwrites slot 99. c31 wins on the
+   producer AND the consumer; the contest is not close.
+4. **Merge actions (unchanged from the re-adjudication, now FINAL):** DROP
+   d105's `pass_larva`/`place_larva` + `step!("larva")` row + the
+   `pass_beehives` larva-ledger edits + the `GenVars.larva` Vec; KEEP c31's
+   `hive.rs` pair + `LarvaAnchors`; PORT d105's skyblock denyAll step gate
+   onto c31's `step_larva` (the `:20870` gate — c31's step has none; d105's
+   `skyblock_deny_all_generation(opts)` is the shape, canonical table f24
+   §3.5); KEEP g41's NTB tail untouched. The 229/232/162 solidity writes are
+   boot statics both ports correctly treat as no-ops (d105's note, verified
+   `Main.cs:7145/:9612/:10220` by 86 §6.3).
+
+Verdict ledger: 88 §2.20 (this doc) = c31; 86 §6.3 (d104c) = d105 — written
+against d105 `96f65cd6` before it read c31's pushed `d538536b` hive rewrite
+(its "g41 does not cover the slot" half is CORRECT and adopted above; its
+"d105 does" half is superseded: d105 covers the slot too, but less
+faithfully). 75 §8.2/§8.3 carried no Larva verdict. **FINAL: row 100 = c31.**
+
 ### 2.21 Micro Biomes dead-man's-chest block (`:20916`) — single owner
 
 c29 `dbc93e9b`(+`d95c32cf` docs): `mini_biomes.rs` +906 lines, W:8 new (29 in
