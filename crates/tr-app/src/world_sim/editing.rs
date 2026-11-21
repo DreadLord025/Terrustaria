@@ -4062,6 +4062,32 @@ fn fire_non_ammo_shot(
                 app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
             }
         }
+    } else if held.kind == 1156 {
+        // W4-d4 sweep — `Player.cs:48365-48381` — the Piranha Gun's trio:
+        // recount the owner's active `HeldItem.shoot` (190) projectiles over
+        // the 1000-slot array, then spawn `3 - num` piranhas, each at the aim
+        // plus `Next(-40, 41) * 0.05` per axis (no renormalize). Draw order
+        // per piranha: spread X, spread Y. The channel-refill gate above
+        // (`:43545-43558`) only reaches this arm while the count is short,
+        // but the count is re-read here exactly like the C#.
+        let owner = app.local_id as u8;
+        let num = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.owner == owner && p.kind == proj)
+            .count() as i32;
+        for _ in 0..(3 - num) {
+            let vx = shot.x + loot_rng.next_range(-40, 41) as f32 * 0.05;
+            let vy = shot.y + loot_rng.next_range(-40, 41) as f32 * 0.05;
+            let slot = app.projectiles.spawn_with_data_ai(
+                proj, spawn.x, spawn.y, vx, vy, raw as i32, fx_kb, 0.0, 0.0,
+            );
+            if let Some(slot) = slot {
+                app.projectiles.set_armor_penetration(slot, arpen);
+                app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+            }
+        }
     } else if tr_core::whip::is_whip(proj) {
         // S1-P-i24 — `Player.ItemCheck_Shoot`'s whip arm
         // (`Player.cs:48655-48690`): the 18 whip items fire
@@ -5182,7 +5208,10 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
         // Channel items (the drills/chainsaws, the aimed spells, the Last Prism)
         // fire once per use and then the channel holds the projectile — the C#
         // keeps their `itemTime` armed via the channel/mining cadence, so they
-        // never reach a mid-swing re-fire. The port skips them here.
+        // never reach a mid-swing re-fire. The port skips them here (the
+        // Piranha Gun 1156 included — its `flag4` override, `Player.cs
+        // :43545-43558`, bypasses the animation/ItemTimeIsZero gate entirely;
+        // the dedicated channel-refill block above owns it, W4-d4 sweep).
         && !registry::get(held.kind).is_some_and(|d| d.channel)
     {
         // The per-item animation-window limits (`Player.cs:43491`/`:43502`/
@@ -5203,6 +5232,39 @@ fn cursor_cell_is_tile_target(app: &App, world_pos: Vec2) -> bool {
                     // `ApplyItemTime` (`Player.cs:47185-47194`): re-arm the cadence
                     // after EACH shot — the next volley shot fires `useTime` ticks
                     // later, for as long as the swing runs.
+                    app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
+                }
+            }
+        }
+    }
+    // W4-d4 sweep — `Player.cs:43545-43558`: the Piranha Gun's channel
+    // refill. `flag4 = (itemAnimation > 0 && ItemTimeIsZero) & flag`, then
+    // `type == 1156 && channel` recounts the owner's active `HeldItem.shoot`
+    // (190) projectiles over the 1000-slot array and forces `flag4 = true`
+    // while `num < 3` — INDEPENDENT of the animation/ItemTimeIsZero gate.
+    // The aiStyle-39 arm's `SetDummyItemTime(5)` (drained by the projectile
+    // pass) holds the timers at 5, so the generic volley gate above never
+    // fires for the gun; this block is its whole re-fire path. It runs every
+    // held tick while the channel is latched and the trio is short — a
+    // piranha killed mid-channel is replaced on the next use tick. The
+    // shoot arm itself tops the count back up to 3 (`:48365-48381`).
+    if held_weapon
+        && held.kind == 1156
+        && app.mine_down
+        && !app.inventory_open
+        && app.player.as_ref().is_some_and(|pl| pl.channel)
+    {
+        let in_flight = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.owner == app.local_id as u8 && p.kind == 190)
+            .count();
+        if in_flight < 3 {
+            if let (Some(proj), Some(def)) = (registry::projectile(held.kind), registry::get(held.kind)) {
+                if fire_non_ammo_shot(app, held, held_fx, world_pos, proj, def, screen) {
+                    // `ApplyItemTime` (`Player.cs:47185-47194`): the refill
+                    // shot re-arms the action cadence like every other shot.
                     app.item_time = shooter_use_time_secs(held.kind, held.prefix, app.swing_max);
                 }
             }
@@ -14814,6 +14876,60 @@ mod tests {
             stream_of(&mut app),
             draws_after(0x8A11, 0),
             "no spawn-time draw (the generic tail carries none; crit is per-hit)"
+        );
+    }
+
+    /// W4-d4 DOC-SWEEP item 3 — the Piranha Gun ITEM use (1156,
+    /// `ItemID.cs:3995`; NOT 3061 — that is the Architect Gizmo Pack).
+    /// `Item.cs:14213-14230`: channel TRUE, useStyle 5, shoot 190,
+    /// shootSpeed 14, ranged, noMelee, useTime/useAnimation 30. The C#
+    /// `ItemCheck_Shoot` arm (`Player.cs:48365-48381`) spawns `3 − num`
+    /// piranhas (the owner's active 190 recount), each at the aim plus
+    /// `Next(-40, 41) * 0.05` per axis. The channel-refill gate
+    /// (`:43545-43558`) re-fires whenever the trio is short. The
+    /// projectile side is d4's landed `piranha_step` (aiStyle 39,
+    /// `5771c1f0`). First press: the trio + the channel latch.
+    #[test]
+    fn w4_d4_sweep_the_piranha_gun_fires_a_trio_and_latches_the_channel() {
+        let mut app = staff_app(1156, "Piranha Gun");
+        seed_stream(&mut app, 0x91A2);
+        fire_once(&mut app);
+        let piranhas: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|p| p.active && p.kind == 190)
+            .collect();
+        assert_eq!(piranhas.len(), 3, "the trio (`:48372` 3 − 0)");
+        let aim = staff_aim(&app);
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let dir = (aim - Vec2::new(cx, cy)).normalize_or_zero();
+        let base = dir * 14.0; // shootSpeed 14
+        for p in &piranhas {
+            // The spread is at most 40 * 0.05 = 2.0 per axis.
+            assert!((p.vel.x - base.x).abs() <= 2.0 + 1e-3, "the X spread");
+            assert!((p.vel.y - base.y).abs() <= 2.0 + 1e-3, "the Y spread");
+        }
+        assert!(
+            app.player.as_ref().unwrap().channel,
+            "the channel latches (`StartChanneling`, `:52958`)"
+        );
+    }
+
+    /// W4-d4 DOC-SWEEP item 3 — the draw chain: per piranha the spread X
+    /// then spread Y (`Next(-40, 41)` each), 3 piranhas → 6 draws on the
+    /// `UpdatePlayers` stream (the resync spawn-crit conversion dropped the
+    /// throw-time crit). The count recount itself draws nothing.
+    #[test]
+    fn w4_d4_sweep_the_piranha_gun_draw_chain_is_seed_deterministic() {
+        let seed = 0x91A2_0007u32 as i32;
+        let mut app = staff_app(1156, "Piranha Gun");
+        seed_stream(&mut app, seed);
+        fire_once(&mut app);
+        assert_eq!(
+            stream_of(&mut app),
+            draws_after(seed, 6),
+            "2 draws per piranha × 3"
         );
     }
 
