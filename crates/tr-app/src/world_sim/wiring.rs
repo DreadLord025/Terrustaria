@@ -354,11 +354,18 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
             // per-tick fade. The `teleporting` re-entry flag is a single-player
             // no-op (one pass per pad pair).
             for slot in 0..app.npcs.len() {
-                let n = &app.npcs[slot];
-                if n.max_hp > 5 && n.hp > 0 && n.kind != NpcKind::KingSlime {
-                    let nx = n.x;
-                    let ny = n.y;
-                    let (w, h) = n.size();
+                // The gate reads copy out before the teleport (the `n` borrow
+                // of app.npcs must end before npc_teleport_wiring's &mut app).
+                let probe = {
+                    let n = &app.npcs[slot];
+                    if n.max_hp > 5 && n.hp > 0 && n.kind != NpcKind::KingSlime {
+                        let (w, h) = n.size();
+                        Some((n.x, n.y, w, h))
+                    } else {
+                        None
+                    }
+                };
+                if let Some((nx, ny, w, h)) = probe {
                     if hits(nx, ny, w, h) {
                         npc_teleport_wiring(app, slot, Vec2::new(nx + dx, ny + dy), 0, 0);
                     }
