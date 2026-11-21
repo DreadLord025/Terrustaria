@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): DeadlySphere, DrManFly, ThePossessed, CrimsonPenguin, ShadowFlameApparition.
+    /// `NPCID.DeadlySphere` (467): 22x22, aiStyle 85, dmg 100, def 80, 350 HP,
+    /// kb 0.7, value 900 (`NPC.cs` SetDefaults arm).
+    DeadlySphere,
+    /// `NPCID.DrManFly` (468): 18x40, aiStyle 3, dmg 65, def 24, 500 HP,
+    /// kb 0.6, value 1300 (`NPC.cs` SetDefaults arm).
+    DrManFly,
+    /// `NPCID.ThePossessed` (469): 38x26, aiStyle 3, dmg 68, def 28, 600 HP,
+    /// kb 0.35, value 1300 (`NPC.cs` SetDefaults arm).
+    ThePossessed,
+    /// `NPCID.CrimsonPenguin` (470): 16x34, aiStyle 3, dmg 21, def 5, 75 HP,
+    /// kb 0.4, value 500 (`NPC.cs` SetDefaults arm).
+    CrimsonPenguin,
+    /// `NPCID.ShadowFlameApparition` (472): 40x24, aiStyle 86, dmg 50, def 18, 180 HP,
+    /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
+    ShadowFlameApparition,
     // W4-d40 (NPCID 421-490 roster wave): Fritz, Nailhead, CrimsonBunny, CrimsonGoldfish, Psycho.
     /// `NPCID.Fritz` (462): 20x24, aiStyle 3, dmg 70, def 14, 270 HP,
     /// kb 0.7, value 600 (`NPC.cs` SetDefaults arm).
@@ -3704,6 +3720,12 @@ impl Npc {
             NpcKind::CrimsonBunny => 0.4,
             NpcKind::CrimsonGoldfish => 0.4,
             NpcKind::Psycho => 0.5,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 0.7,
+            NpcKind::DrManFly => 0.6,
+            NpcKind::ThePossessed => 0.35,
+            NpcKind::CrimsonPenguin => 0.4,
+            NpcKind::ShadowFlameApparition => 0.0,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4126,6 +4148,12 @@ impl Npc {
             NpcKind::CrimsonBunny => 5,
             NpcKind::CrimsonGoldfish => 7,
             NpcKind::Psycho => 40,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 80,
+            NpcKind::DrManFly => 24,
+            NpcKind::ThePossessed => 28,
+            NpcKind::CrimsonPenguin => 5,
+            NpcKind::ShadowFlameApparition => 18,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4540,6 +4568,12 @@ impl Npc {
             NpcKind::CrimsonBunny => 500.0,
             NpcKind::CrimsonGoldfish => 500.0,
             NpcKind::Psycho => 1500.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 900.0,
+            NpcKind::DrManFly => 1300.0,
+            NpcKind::ThePossessed => 1300.0,
+            NpcKind::CrimsonPenguin => 500.0,
+            NpcKind::ShadowFlameApparition => 0.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6599,6 +6633,15 @@ impl Npc {
             NpcKind::CrimsonBunny => self.update_zombie(world, player, dt),
             // W4-d40: CrimsonGoldfish ride the family machine.
             NpcKind::CrimsonGoldfish => self.update_swimmer(world, player, rng),
+            // W4-d40: DeadlySphere, ShadowFlameApparition - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::DeadlySphere
+            | NpcKind::ShadowFlameApparition => {}
+            // W4-d40: DrManFly, ThePossessed ride the family machine.
+            NpcKind::DrManFly
+            | NpcKind::ThePossessed => self.update_skeleton(world, player, dt),
+            // W4-d40: CrimsonPenguin ride the family machine.
+            NpcKind::CrimsonPenguin => self.update_zombie(world, player, dt),
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9571,6 +9614,100 @@ impl Npc {
                 } else {
                     self.frame_counter = 0.0;
                     self.frame = 3;
+                }
+            }
+            NpcKind::DeadlySphere
+            | NpcKind::ShadowFlameApparition => {
+                self.frame = 0;
+            }
+            NpcKind::DrManFly => {
+                // `FindFrame` case 468 (`NPC.cs:71516-71577`): the grounded
+                // ai[2] attack ladder reads the ai[1] bands (rows 0/3/2/1 off
+                // the 15 base), else the 2..14 walk stride; air pin row 1.
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        let a1 = self.ai[1];
+                        let n191 = if a1 < 22.0 { -15 }
+                            else if a1 < 28.0 { 3 }
+                            else if a1 < 34.0 { 2 }
+                            else if a1 < 40.0 { 1 } else { 0 };
+                        self.frame = (15 + n191) as u32;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    if self.vx == 0.0 { self.frame = 0; return; }
+                    if self.frame < 2 { self.frame = 2; }
+                    self.frame_counter += self.vx.abs() * 2.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 15 { self.frame = 2; }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            NpcKind::ThePossessed => {
+                // `FindFrame` case 469 (`NPC.cs:75665-75732`): the ai[2] == 1
+                // lunge tilts at the velocity angle + pi/2 and strides rows
+                // 2..5; else rotation 0 and the grounded 6..11 walk stride
+                // (air pin row 1).
+                if self.ai[2] == 1.0 {
+                    self.rotation = self.vy.atan2(self.vx) + 1.57;
+                    if self.vx < 0.0 { self.facing = -1; }
+                    if self.vx > 0.0 { self.facing = 1; }
+                    self.sprite_dir = self.facing;
+                    self.frame_counter += (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    if self.frame_counter > 11.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 5 { self.frame = 2; }
+                    if self.frame < 2 { self.frame = 2; }
+                    return;
+                }
+                self.rotation = 0.0;
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame_counter = 0.0; self.frame = 0; return; }
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 9.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 11 { self.frame = 6; }
+                    if self.frame < 6 { self.frame = 6; }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
+            }
+            NpcKind::CrimsonPenguin => {
+                // `FindFrame` case 470 (`NPC.cs:76395-76456`): the localAI[0]
+                // evil-form offset (0/3/6/9) shifts every row; the grounded
+                // |vx| accumulator walks the 3-row band, the air pins row 2.
+                let n40 = if self.local_ai[0] == 2.0 { 3 }
+                    else if self.local_ai[0] == 3.0 { 6 }
+                    else if self.local_ai[0] == 4.0 { 9 } else { 0 };
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = n40; self.frame_counter = 0.0; return; }
+                    self.frame_counter += self.vx.abs();
+                    if self.frame_counter < 6.0 { self.frame = n40; return; }
+                    if self.frame_counter < 12.0 { self.frame = 1 + n40; return; }
+                    if self.frame_counter < 15.0 { self.frame = 2 + n40; return; }
+                    self.frame_counter = 0.0;
+                    self.frame = 2 + n40;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 2 + n40;
                 }
             }
             NpcKind::DukeFishron => {
@@ -19237,6 +19374,12 @@ impl Npc {
             NpcKind::CrimsonBunny => 464,
             NpcKind::CrimsonGoldfish => 465,
             NpcKind::Psycho => 466,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::DeadlySphere => 467,
+            NpcKind::DrManFly => 468,
+            NpcKind::ThePossessed => 469,
+            NpcKind::CrimsonPenguin => 470,
+            NpcKind::ShadowFlameApparition => 472,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24306,7 +24449,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 305] = [
+    pub(super) const ALL_KINDS: [NpcKind; 310] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24585,6 +24728,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: DeadlySphere, DrManFly, ThePossessed, CrimsonPenguin, ShadowFlameApparition.
+        NpcKind::DeadlySphere,
+        NpcKind::DrManFly,
+        NpcKind::ThePossessed,
+        NpcKind::CrimsonPenguin,
+        NpcKind::ShadowFlameApparition,
         // W4-d40: Fritz, Nailhead, CrimsonBunny, CrimsonGoldfish, Psycho.
         NpcKind::Fritz,
         NpcKind::Nailhead,
@@ -28238,7 +28387,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            305,
+            310,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -34676,5 +34825,68 @@ mod w4_d40_fritz_nailhead_tests {
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CrimsonBunny, SlimeVariant::Blue).net_id, 464);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CrimsonGoldfish, SlimeVariant::Blue).net_id, 465);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Psycho, SlimeVariant::Blue).net_id, 466);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the DeadlySphere, DrManFly, ThePossessed, CrimsonPenguin, ShadowFlameApparition
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_deadlysphere_drmanfly_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::DeadlySphere, 467u16, 85u8, 22.0, 22.0, 100, 80, 350, 0.7f32, 900.0),
+            (NpcKind::DrManFly, 468u16, 3u8, 18.0, 40.0, 65, 24, 500, 0.6f32, 1300.0),
+            (NpcKind::ThePossessed, 469u16, 3u8, 38.0, 26.0, 68, 28, 600, 0.35f32, 1300.0),
+            (NpcKind::CrimsonPenguin, 470u16, 3u8, 16.0, 34.0, 21, 5, 75, 0.4f32, 500.0),
+            (NpcKind::ShadowFlameApparition, 472u16, 86u8, 40.0, 24.0, 50, 18, 180, 0.0f32, 0.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::DeadlySphere.hit_sound(), Some("NPC_Hit_34"));
+        assert_eq!(NpcKind::DeadlySphere.death_sound(), Some("NPC_Killed_37"));
+        assert_eq!(NpcKind::DrManFly.hit_sound(), Some("NPC_Hit_35"));
+        assert_eq!(NpcKind::DrManFly.death_sound(), Some("NPC_Killed_38"));
+        assert_eq!(NpcKind::ThePossessed.hit_sound(), Some("NPC_Hit_47"));
+        assert_eq!(NpcKind::ThePossessed.death_sound(), Some("NPC_Killed_49"));
+        assert_eq!(NpcKind::CrimsonPenguin.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::CrimsonPenguin.death_sound(), Some("NPC_Killed_1"));
+        assert_eq!(NpcKind::ShadowFlameApparition.hit_sound(), Some("NPC_Hit_52"));
+        assert_eq!(NpcKind::ShadowFlameApparition.death_sound(), Some("NPC_Killed_55"));
+        // The noGravity rows.
+        assert!(NpcKind::DeadlySphere.no_gravity());
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::DeadlySphere.to_u16(), 467);
+        assert_eq!(NpcKind::from_u16(467), Some(NpcKind::DeadlySphere));
+        assert_eq!(NpcKind::DrManFly.to_u16(), 468);
+        assert_eq!(NpcKind::from_u16(468), Some(NpcKind::DrManFly));
+        assert_eq!(NpcKind::ThePossessed.to_u16(), 469);
+        assert_eq!(NpcKind::from_u16(469), Some(NpcKind::ThePossessed));
+        assert_eq!(NpcKind::CrimsonPenguin.to_u16(), 470);
+        assert_eq!(NpcKind::from_u16(470), Some(NpcKind::CrimsonPenguin));
+        assert_eq!(NpcKind::ShadowFlameApparition.to_u16(), 472);
+        assert_eq!(NpcKind::from_u16(472), Some(NpcKind::ShadowFlameApparition));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::DeadlySphere, SlimeVariant::Blue).net_id, 467);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::DrManFly, SlimeVariant::Blue).net_id, 468);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ThePossessed, SlimeVariant::Blue).net_id, 469);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CrimsonPenguin, SlimeVariant::Blue).net_id, 470);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ShadowFlameApparition, SlimeVariant::Blue).net_id, 472);
     }
 }

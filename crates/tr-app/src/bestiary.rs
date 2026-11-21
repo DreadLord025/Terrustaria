@@ -2329,6 +2329,47 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Psycho",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "DeadlySphere",
+        net_id: 467,
+        kind: NpcKind::DeadlySphere,
+        variant: None,
+        quick_unlock: false,
+        name: "Deadly Sphere",
+    },
+    BestiaryEntryDef {
+        credit_id: "DrManFly",
+        net_id: 468,
+        kind: NpcKind::DrManFly,
+        variant: None,
+        quick_unlock: false,
+        name: "Dr. Man Fly",
+    },
+    BestiaryEntryDef {
+        credit_id: "ThePossessed",
+        net_id: 469,
+        kind: NpcKind::ThePossessed,
+        variant: None,
+        quick_unlock: false,
+        name: "The Possessed",
+    },
+    BestiaryEntryDef {
+        credit_id: "CrimsonPenguin",
+        net_id: 470,
+        kind: NpcKind::CrimsonPenguin,
+        variant: None,
+        quick_unlock: false,
+        name: "Vicious Penguin",
+    },
+    BestiaryEntryDef {
+        credit_id: "ShadowFlameApparition",
+        net_id: 472,
+        kind: NpcKind::ShadowFlameApparition,
+        variant: None,
+        quick_unlock: false,
+        name: "Shadowflame Apparition",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

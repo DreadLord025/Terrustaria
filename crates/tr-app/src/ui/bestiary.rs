@@ -1636,6 +1636,12 @@ fn portrait_data(
         | (NpcKind::Psycho, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::CrimsonBunny, _)
         | (NpcKind::CrimsonGoldfish, _) => (sheet_i, 20.0, 18.0, 20.0, white),
+        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::DeadlySphere, _) => (sheet_i, 22.0, 22.0, 22.0, white),
+        (NpcKind::DrManFly, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::ThePossessed, _) => (sheet_i, 26.0, 38.0, 26.0, white),
+        (NpcKind::CrimsonPenguin, _) => (sheet_i, 34.0, 16.0, 34.0, white),
+        (NpcKind::ShadowFlameApparition, _) => (sheet_i, 24.0, 40.0, 24.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

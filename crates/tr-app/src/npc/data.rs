@@ -627,6 +627,12 @@ impl NpcKind {
             NpcKind::CrimsonBunny => 464,
             NpcKind::CrimsonGoldfish => 465,
             NpcKind::Psycho => 466,
+            // W4-d40: DeadlySphere, DrManFly, ThePossessed, CrimsonPenguin, ShadowFlameApparition keep their vanilla ids (free in the protocol space).
+            NpcKind::DeadlySphere => 467,
+            NpcKind::DrManFly => 468,
+            NpcKind::ThePossessed => 469,
+            NpcKind::CrimsonPenguin => 470,
+            NpcKind::ShadowFlameApparition => 472,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -999,6 +1005,12 @@ impl NpcKind {
             464 => NpcKind::CrimsonBunny,
             465 => NpcKind::CrimsonGoldfish,
             466 => NpcKind::Psycho,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            467 => NpcKind::DeadlySphere,
+            468 => NpcKind::DrManFly,
+            469 => NpcKind::ThePossessed,
+            470 => NpcKind::CrimsonPenguin,
+            472 => NpcKind::ShadowFlameApparition,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1917,6 +1929,12 @@ impl NpcKind {
             | NpcKind::CrimsonBunny
             | NpcKind::CrimsonGoldfish => "NPC_Hit_1",
             NpcKind::Psycho => "NPC_Hit_48",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::DeadlySphere => "NPC_Hit_34",
+            NpcKind::DrManFly => "NPC_Hit_35",
+            NpcKind::ThePossessed => "NPC_Hit_47",
+            NpcKind::CrimsonPenguin => "NPC_Hit_1",
+            NpcKind::ShadowFlameApparition => "NPC_Hit_52",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2263,6 +2281,12 @@ impl NpcKind {
             | NpcKind::CrimsonBunny
             | NpcKind::CrimsonGoldfish => "NPC_Killed_1",
             NpcKind::Psycho => "NPC_Killed_50",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::DeadlySphere => "NPC_Killed_37",
+            NpcKind::DrManFly => "NPC_Killed_38",
+            NpcKind::ThePossessed => "NPC_Killed_49",
+            NpcKind::CrimsonPenguin => "NPC_Killed_1",
+            NpcKind::ShadowFlameApparition => "NPC_Killed_55",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2385,6 +2409,8 @@ impl NpcKind {
             | NpcKind::CultistDragonTail => true,
             // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
             NpcKind::CrimsonGoldfish => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::DeadlySphere => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2678,6 +2704,12 @@ impl NpcKind {
             | NpcKind::CrimsonBunny
             | NpcKind::Psycho => 3,
             NpcKind::CrimsonGoldfish => 16,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 85,
+            NpcKind::DrManFly
+            | NpcKind::ThePossessed
+            | NpcKind::CrimsonPenguin => 3,
+            NpcKind::ShadowFlameApparition => 86,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3250,6 +3282,12 @@ impl NpcKind {
             | NpcKind::Psycho => (18.0, 40.0),
             NpcKind::CrimsonBunny
             | NpcKind::CrimsonGoldfish => (18.0, 20.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::DeadlySphere => (22.0, 22.0),
+            NpcKind::DrManFly => (18.0, 40.0),
+            NpcKind::ThePossessed => (38.0, 26.0),
+            NpcKind::CrimsonPenguin => (16.0, 34.0),
+            NpcKind::ShadowFlameApparition => (40.0, 24.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3940,6 +3978,12 @@ impl NpcKind {
             NpcKind::CrimsonBunny => 75,
             NpcKind::CrimsonGoldfish => 110,
             NpcKind::Psycho => 550,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 350,
+            NpcKind::DrManFly => 500,
+            NpcKind::ThePossessed => 600,
+            NpcKind::CrimsonPenguin => 75,
+            NpcKind::ShadowFlameApparition => 180,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4346,6 +4390,12 @@ impl NpcKind {
             NpcKind::CrimsonBunny => 21,
             NpcKind::CrimsonGoldfish => 31,
             NpcKind::Psycho => 70,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::DeadlySphere => 100,
+            NpcKind::DrManFly => 65,
+            NpcKind::ThePossessed => 68,
+            NpcKind::CrimsonPenguin => 21,
+            NpcKind::ShadowFlameApparition => 50,
             NpcKind::DungeonSpirit => 70,
         }
     }
