@@ -36089,9 +36089,18 @@ sites has a live ported machine yet (the e2-batch-1 / d50 lane pattern).
   j==0 half-hop / j==1 full-hop-minus-(16,6) advances); the dust is
   the j/k==1 tip puff (type 5 scale 2 / type 6 scale 2.5, speeds =
   pre-normalisation deltas × 0.02). The BoneArm/BoneArm2/BoneArm3
-  SPRITE draws are unported (render/entities.rs draws the sheets
-  only) — the wiring wave calls the emitters from the future bone-arm
-  draw. DRAW-PATH RNG: the C# runs outside every `SwapRandom`; the
+  SPRITE half is ported as the staged geometry plan
+  `main_dust_b::bone_arm_sprites` (W4-g12 render-sweep-2): per-leg
+  `(anchor, atan2(dy,dx) - 1.57)` over the SAME `bone_arm_leg` walk the
+  dust rides (the shared helper — the two halves never diverge); the
+  caller maps the sheet pick (type-36 `localAI[3] == 1` → BoneArm3 else
+  BoneArm, `:22727-22733`; Prime limbs always BoneArm2, `:22810`, both
+  at BoneArm's frame size/origin) + the anchor-tile `Lighting.GetColor`
+  tint. STAGED like the dust: the wiring wave resolves the head
+  snapshot (`Main.npc[(int)ai[1]]` — the limb spawn's ctx-seam
+  stand-in) and pushes the quads beside the dust call; the sheets
+  (`Arm_Bone`/`_2`/`_3`, AssetInitializer.cs:629-633) pack at that
+  merge. DRAW-PATH RNG: the C# runs outside every `SwapRandom`; the
   port's draw-dust precedent (the Mushroom-glow/leaf/TrySparkling
   frame-pinned streams) applies — the wiring feeds a frame-derived
   stream, never a stage stream. The `FocusHelper.AllowMiscDustEffects`
@@ -36114,7 +36123,9 @@ Code-only: every site re-read against the cited C# windows (the
 case-10 named-argument order, the dead scale ladder, the case-11
 colour switch's always-overwritten `Color.Green` initial, the case-13
 sound-first order, the bone-arm integer head halves + f64 sqrt, the
-flag8 dead-gate census). The 7 witness tests (`main_dust_b.rs`) mirror
+flag8 dead-gate census). The 7 + 1 witness tests (`main_dust_b.rs` —
+the +1 is render-sweep-2's sprite-anchor/rotation pin, which also
+cross-checks the dust tip against the shared walk) mirror
 the full draw sequences on same-seeded probe streams (WRITTEN, NOT
 RUN — no cargo/rustc/rustfmt/tests/dotnet/graphify invoked).
 

@@ -37,10 +37,14 @@
 //!   nor `extraInfo`; case 10 reads `otherPosition` (the Exit leg's
 //!   pre-teleport position, `Player.cs:37443`/`:37489`).
 //! * The two bone-arm chains' SPRITE draws (`TextureAssets.BoneArm`/
-//!   `BoneArm2`/`BoneArm3`, the `localAI[3]` texture pick) are unported —
-//!   `render/entities.rs` draws the hand/limb sheets only. The dust
-//!   geometry below is the whole dust-relevant half; the wiring wave
-//!   calls it from the future bone-arm draw at the j/k == 1 leg.
+//!   `BoneArm2`/`BoneArm3`, the `localAI[3]` texture pick) are ported as
+//!   the staged geometry plan `bone_arm_sprites` (W4-g12 render-sweep-2:
+//!   per-leg anchor + `atan2 - 1.57` rotation over the SAME
+//!   `bone_arm_leg` walk the dust rides). `render/entities.rs` draws the
+//!   hand/limb sheets only; the wiring wave resolves the head snapshot
+//!   (`Main.npc[(int)ai[1]]` — the limb spawn's ctx-seam stand-in,
+//!   `npc_ai_prime_limbs.rs`) + the sheet pick and pushes the quads at
+//!   the j/k == 1 leg, beside the dust call below.
 //! * The Moon Lord core arm is parked (`render/entities.rs::
 //!   ml_extra_parts`, ANALYSIS M4-NPC-3v). **Dead-gate census finding:**
 //!   `flag8` (`Main.cs:24703`) is initialised `false` and NEVER assigned
@@ -276,6 +280,81 @@ pub fn teleport_effect_case13(
     }
 }
 
+/// One leg of the shared two-hop bone-arm walk
+/// (`Main.cs:22706-22724` / `:22791-22809`, identical in both arms):
+/// advances `v` by the normalised hop toward the head and returns
+/// `(draw_pos, dx, dy, norm)`. `draw_pos` is the arm sprite's anchor
+/// (the post-hop `vector5`/`vector7`); `dx`/`dy` are the PRE-normalisation
+/// deltas (the puff's speeds are these × 0.02) and `norm` the reach
+/// factor. The HEAD halves are INTEGER (`(float)(width / 2)`); the sqrt
+/// runs in f64 over the f32 sum of squares, the divide in f32.
+fn bone_arm_leg(
+    v: &mut Vec2,
+    j: usize,
+    side: f32,
+    head_x: f32,
+    head_y: f32,
+    head_width: i32,
+    head_height: i32,
+) -> (Vec2, f32, f32, f32) {
+    let mut dx = head_x + (head_width / 2) as f32 - v.x;
+    let mut dy = head_y + (head_height / 2) as f32 - v.y;
+    // `:22708-22724`/`:22793-22809` — the per-leg pull + reach.
+    let reach = if j == 0 {
+        dx -= 200.0 * side;
+        dy += 130.0;
+        92.0f32
+    } else {
+        dx -= 50.0 * side;
+        dy += 80.0;
+        60.0f32
+    };
+    let norm = reach / ((dx * dx + dy * dy) as f64).sqrt() as f32;
+    v.x += dx * norm;
+    v.y += dy * norm;
+    (*v, dx, dy, norm)
+}
+
+/// The bone-arm chain's SPRITE half (sites 12/13's render twin,
+/// `Main.cs:22725-22734` / `:22810`): one rotated arm quad per leg at
+/// the post-hop anchor, `rotation = atan2(dy, dx) - 1.57`, origin the
+/// BoneArm frame centre, scale 1, no flip. STAGED like the dust half —
+/// the wiring wave resolves the head snapshot (`Main.npc[(int)ai[1]]`)
+/// and the sheet, then pushes these. Returns `(anchor, rotation)` per
+/// leg; the caller maps the sheet + tint (`Lighting.GetColor` at the
+/// anchor's tile, `:22726`/`:22810`) and the sheet pick — the type-36
+/// arm reads `localAI[3] == 1` → BoneArm3, else BoneArm
+/// (`:22727-22733`); the Prime-limb arm always draws BoneArm2
+/// (`:22810`), both at BoneArm's frame size/origin. Draw-only, no RNG
+/// — the geometry is the SAME walk the dust rides ([`bone_arm_leg`]),
+/// so the two halves never diverge.
+pub fn bone_arm_sprites(
+    hand_x: f32,
+    hand_y: f32,
+    hand_width: f32,
+    side: f32,
+    head_x: f32,
+    head_y: f32,
+    head_width: i32,
+    head_height: i32,
+) -> [(Vec2, f32); 2] {
+    let mut v = Vec2::new(hand_x + hand_width * 0.5 - 5.0 * side, hand_y + 20.0);
+    let mut out = [(Vec2::ZERO, 0.0f32); 2];
+    for j in 0..2 {
+        let (pos, dx, dy, norm) =
+            bone_arm_leg(&mut v, j, side, head_x, head_y, head_width, head_height);
+        // `:22725`/`:22810` — the arm's rotation about its centre.
+        out[j] = (pos, dy.atan2(dx) - 1.57);
+        // `:22735-22738`/`:22811-22814` — the j == 0 midpoint advance
+        // (the second leg's anchor starts half a hop further along).
+        if j == 0 {
+            v.x += dx * norm / 2.0;
+            v.y += dy * norm / 2.0;
+        }
+    }
+    out
+}
+
 /// Sites 12/13 — the shared bone-arm chain geometry
 /// (`Main.cs:22701-22748` / `:22786-22824`, identical walks): the
 /// two-hop tether from the hand's shoulder toward the head, then the
@@ -289,8 +368,8 @@ pub fn teleport_effect_case13(
 /// the midpoint); the j == 1 leg advances by the FULL hop minus
 /// (16, 6) and spawns — gated by `FocusHelper.AllowMiscDustEffects`.
 /// The speeds are the PRE-normalisation deltas × 0.02. The sprite
-/// draws (BoneArm/BoneArm2/BoneArm3, the `localAI[3]` pick, the
-/// rotation) are unported — cited, draw-only, no RNG.
+/// draws are ported as the staged geometry plan [`bone_arm_sprites`]
+/// (W4-g12 render-sweep-2) — the wiring wave pushes the quads.
 fn bone_arm_chain<R: DustRng>(
     hand_x: f32,
     hand_y: f32,
@@ -311,22 +390,8 @@ fn bone_arm_chain<R: DustRng>(
     // `:22703`/`:22788` — the shoulder anchor.
     let mut v = Vec2::new(hand_x + hand_width * 0.5 - 5.0 * side, hand_y + 20.0);
     for j in 0..2 {
-        let mut dx = head_x + (head_width / 2) as f32 - v.x;
-        let mut dy = head_y + (head_height / 2) as f32 - v.y;
-        // `:22708-22724`/`:22793-22809` — the per-leg pull + reach.
-        let reach = if j == 0 {
-            dx -= 200.0 * side;
-            dy += 130.0;
-            92.0f32
-        } else {
-            dx -= 50.0 * side;
-            dy += 80.0;
-            60.0f32
-        };
-        let norm = reach / ((dx * dx + dy * dy) as f64).sqrt() as f32;
-        v.x += dx * norm;
-        v.y += dy * norm;
-        // The arm sprite draw sits here (unported, no RNG).
+        let (_, dx, dy, norm) = bone_arm_leg(&mut v, j, side, head_x, head_y, head_width, head_height);
+        // The arm sprite draw sits here ([`bone_arm_sprites`], no RNG).
         if j == 0 {
             // `:22735-22738`/`:22811-22814` — the midpoint advance.
             v.x += dx * norm / 2.0;
@@ -813,5 +878,51 @@ mod tests {
             assert_eq!(pool.slot(act[k]).scale, mp.slot(mi).scale);
         }
         assert_eq!(rng, mr, "three spawns' internals, nothing else");
+    }
+
+    /// W4-g12 render-sweep-2: the bone-arm SPRITE half's anchors and
+    /// rotations match the C# walk (`Main.cs:22725-22738`), and the
+    /// second leg's anchor is the dust tip's anchor BEFORE the (16,6)
+    /// nudge — the two halves ride the same `bone_arm_leg` geometry.
+    #[test]
+    fn w4_g12_sweep2_bone_arm_sprite_anchors_and_rotations() {
+        let (hx, hy, hw, side) = (600.0f32, 500.0f32, 52.0f32, 1.0f32);
+        let (tx, ty, tw, th) = (800.0f32, 400.0f32, 60i32, 60i32);
+        let sprites = bone_arm_sprites(hx, hy, hw, side, tx, ty, tw, th);
+        // Hand-re-derive the C# chain (f64 sqrt, integer head halves).
+        let mut v = Vec2::new(hx + hw * 0.5 - 5.0 * side, hy + 20.0);
+        let mut want = [(Vec2::ZERO, 0.0f32); 2];
+        for j in 0..2 {
+            let mut dx = tx + (tw / 2) as f32 - v.x;
+            let mut dy = ty + (th / 2) as f32 - v.y;
+            let reach = if j == 0 { dx -= 200.0 * side; dy += 130.0; 92.0f32 } else { dx -= 50.0 * side; dy += 80.0; 60.0f32 };
+            let norm = reach / ((dx * dx + dy * dy) as f64).sqrt() as f32;
+            v.x += dx * norm;
+            v.y += dy * norm;
+            want[j] = (v, dy.atan2(dx) - 1.57);
+            if j == 0 {
+                v.x += dx * norm / 2.0;
+                v.y += dy * norm / 2.0;
+            }
+        }
+        for j in 0..2 {
+            assert_eq!(sprites[j].0, want[j].0, "leg {j} anchor");
+            assert_eq!(sprites[j].1, want[j].1, "leg {j} rotation");
+        }
+        // The second sprite anchor + the (16,6) nudge IS the dust tip
+        // position the site-12 witness pins (the shared walk).
+        let w = world();
+        let c = ctx();
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(23);
+        skeletron_hand_bone_dust(hx, hy, hw, side, tx, ty, tw, th, true, &mut rng, &mut pool, &c, &w);
+        let act = active(&pool);
+        assert_eq!(act.len(), 1);
+        let tip_base = sprites[1].0 - Vec2::new(16.0, 6.0);
+        // The pool's NewDust jitters the position by Next(30-4)+4 /
+        // Next(10-4)+4 (`Dust.cs:170-171`) — the tip is within the box.
+        let p = pool.slot(act[0]).position;
+        assert!(p.x >= tip_base.x && p.x <= tip_base.x + 30.0, "tip x in the 30-box");
+        assert!(p.y >= tip_base.y && p.y <= tip_base.y + 10.0, "tip y in the 10-box");
     }
 }
