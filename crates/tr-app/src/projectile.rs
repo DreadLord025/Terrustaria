@@ -14135,8 +14135,9 @@ pub(crate) fn get_lerp_value(from: f32, to: f32, t: f32) -> f32 {
 /// `Utils.Remap(fromValue, fromMin, fromMax, toMin, toMax)` (`Utils.cs:345-348`)
 /// — `MathHelper.Lerp(toMin, toMax, GetLerpValue(fromMin, fromMax, fromValue,
 /// clamped: true))`, XNA's `a + (b - a) * amount`. The gem bolt's steering
-/// uses it for the turn rate and the close-range pull.
-fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
+/// uses it for the turn rate and the close-range pull. `pub(crate)`: the
+/// W4-d10 aiStyle-92/94 opacity ramps share it.
+pub(crate) fn remap(from_value: f32, from_min: f32, from_max: f32, to_min: f32, to_max: f32) -> f32 {
     to_min + (to_max - to_min) * get_lerp_value(from_min, from_max, from_value)
 }
 
@@ -14294,8 +14295,9 @@ fn aura_solid_at(world: &World, x: i32, y: i32) -> bool {
 /// `Vector2.SafeNormalize(v, defaultValue)` (`Utils.cs:1837-1846`) with an
 /// explicit fallback — the Ballista's aim and the aura's arc read the C#'s
 /// `SafeNormalize(Vector2.UnitY)` form, where a zero delta keeps the unit-Y
-/// default instead of collapsing to zero.
-fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
+/// default instead of collapsing to zero. `pub(crate)`: the W4-d10
+/// counterweight bounce's `SafeNormalize(Vector2.UnitY)` shares it.
+pub(crate) fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         default_value
     } else {
@@ -17999,6 +18001,16 @@ impl ProjectilePool {
                                     p.facing = dir;
                                 }
                             }
+                        }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 91)`
+                        // (`Projectile.cs:32515-32557`): the Shadowflame
+                        // Hex Doll's flame (496) — the center-preserving
+                        // shrink, the fade ramp, the ai accel/growth. The
+                        // movement is the 496's own blocked-move arm
+                        // (`:18710-18735`), NOT the generic kill_step.
+                        91 => {
+                            crate::projectile_ai_91_100::ai_shadowflame(&mut self.slots[i]);
+                            crate::projectile_ai_91_100::shadowflame_move(&mut self.slots[i], world);
                         }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing

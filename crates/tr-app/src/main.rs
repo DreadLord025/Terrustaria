@@ -195,6 +195,11 @@ mod projectile_ai026_a;
 mod projectile_ai026_b;
 mod projectile_ai026_c;
 mod projectile_ai_misc;
+// W4-d10 — the aiStyles 91-100 census port: the nine missing styles +
+// the aiStyle-99 counterweight sub-arm (f19 F1). The rows land in
+// projectile/data.rs; the dispatch arms are wired in projectile.rs::update.
+// Code-only mode — witness tests written not run.
+mod projectile_ai_91_100;
 // S1-P-i42 — the torch/glowstick/flare light-item projectile family: the
 // aiStyle-14 glowsticks (50/53/473/515/870/1089) + the aiStyle-33 flares
 // (163/310/1008-1011) + the fairy's aiStyle-170 hover. The rows land in

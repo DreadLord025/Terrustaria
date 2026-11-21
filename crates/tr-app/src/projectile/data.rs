@@ -708,6 +708,9 @@ pub const CANNON_EXPLOSIVE: u16 = 601;
 /// The bunny cannon's projectile (281, `Projectile.cs:3676-3687` — aiStyle 49,
 /// no ported AI; the constant anchors the `BunnyCannonCanFire` scan).
 pub const CANNON_BUNNY: u16 = 281;
+/// `ProjectileID.ShadowFlame` (496, `ProjectileID.cs:1546`) — the
+/// Shadowflame Hex Doll's aiStyle-91 flame (`Projectile.cs:5692-5704`).
+pub const SHADOW_FLAME: u16 = 496;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1618,6 +1621,24 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:828-836` — the shuriken (3): the 22x22 box, aiStyle 2,
             // `penetrate = 4`, the stock 3600 life and the stock `tileCollide`.
             SHURIKEN => (22.0, 22.0, 2, 4, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
+            // W4-d10 — the Shadowflame Hex Doll's flame (496,
+            // `Projectile.cs:5692-5704`): 40×40, aiStyle 91, magic,
+            // `MaxUpdates = 3` (extraUpdates 2, `:554-563`'s setter),
+            // penetrate 3, the local-immunity −1 pair, alpha 255; the
+            // stock tileCollide true / timeLeft 3600. The AI is
+            // `projectile_ai_91_100::ai_shadowflame`.
+            SHADOW_FLAME => (
+                40.0,
+                40.0,
+                91,
+                3,
+                TIME_LEFT_DEFAULT,
+                2,
+                true,
+                false,
+                false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
             THROWING_KNIFE => (12.0, 12.0, 2, 2, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE),
@@ -4308,6 +4329,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+            // W4-d10 — the Shadowflame Hex Doll's flame (496, `:5699`).
+                | SHADOW_FLAME
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
