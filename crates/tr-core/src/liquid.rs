@@ -104,6 +104,14 @@ pub struct LiquidSystem {
     cycles: usize,
     /// Set when any level changed during the current [`LiquidSystem::update`].
     dirty: bool,
+    /// `Liquid.skipCount` (`Liquid.cs:19`): the runtime tick divider the
+    /// `WorldGen.UpdateWorld` driver walks (`WorldGen.cs:71526-71534`) —
+    /// `skipCount++; if (skipCount > 1) { UpdateLiquid(); skipCount = 0; }`,
+    /// i.e. one pass per two world ticks (30 Hz). The counter belongs to the
+    /// DRIVER, not the pass: the gen settle loops and the load drain call
+    /// [`LiquidSystem::update`] directly and never touch it (the C# statics
+    /// keep it across those drains too). `ReInit` zeroes it (`:85`).
+    skip_count: i32,
     /// `Liquid.quickFall` (`Liquid.cs:33`): derived at the head of every
     /// pass from `quickSettle` (`:1056-1068`); the quick-settle mode forces
     /// every entry's `delay = 10` in the pass loop (`:1083-1090`), so
@@ -286,6 +294,10 @@ impl LiquidSystem {
     /// leaves them on the tiles, but `WaterCheck` — the load tail — wipes
     /// them across the grid, so the combined load sequence matches).
     pub fn re_init(&mut self) {
+        // `Liquid.cs:85` — `skipCount = 0`: the driver divider resets with
+        // the world-load settle (the runtime tick starts a fresh 2-tick
+        // window after `ReInit`).
+        self.skip_count = 0;
         self.stuck_count = 0;
         self.stuck_amount = 0;
         self.cycles = CYCLES;
@@ -402,6 +414,7 @@ impl LiquidSystem {
             cur_max_liquid: MAX_ACTIVE,
             cycles: CYCLES,
             dirty: false,
+            skip_count: 0,
             quick_fall: false,
             quick_settle: false,
             reduced_max_liquids: false,
@@ -540,6 +553,31 @@ impl LiquidSystem {
             for x in (cx - r).max(0)..=(cx + r).min(self.width - 1) {
                 self.add_water(world, x, y);
             }
+        }
+    }
+
+    /// One `WorldGen.UpdateWorld` liquid-driver tick (`WorldGen.cs:71526-
+    /// 71534`): `Liquid.skipCount++; if (skipCount > 1) { UpdateLiquid();
+    /// skipCount = 0; }` — the 30 Hz pump, VERBATIM. Returns whether the
+    /// pass ran this tick.
+    ///
+    /// The C# wraps the pass in `using (Main.SwapRandom("UpdateLiquid"))`
+    /// (`:71529`); the port's engine is pure (zero RNG draws in `update` —
+    /// the 254 nudge lives on the g45/g46 lanes), so the named-stream swap
+    /// is the CALLER's seam: `world_sim/liquids.rs` resolves the drained
+    /// `edit_kills` on `RngKey::UpdateLiquid`, exactly the stream the C#
+    /// `KillTile` drops draw under the swap. The
+    /// `isGeneratingOrLoadingWorld` early-return (`:71497-71500`) is the
+    /// caller's own — the port's frame loop never runs under generation
+    /// (worldgen completes before the loop starts).
+    pub fn update_world_tick(&mut self, world: &mut World) -> bool {
+        self.skip_count += 1;
+        if self.skip_count > 1 {
+            self.update(world);
+            self.skip_count = 0;
+            true
+        } else {
+            false
         }
     }
 
@@ -3401,6 +3439,54 @@ mod liquid_force_settle {
         assert!(!sys.quick_settle(), ":760 drops the flag");
         let total: i32 = w.tiles.iter().map(|t| t.liquid as i32).sum();
         assert_eq!(total, 200, "the load settle conserves the mass");
+    }
+
+    // ---- R-12-5 runtime driver witnesses (written, NOT run) ----------------
+
+    #[test]
+    fn the_update_world_driver_runs_the_pass_every_second_tick() {
+        // `WorldGen.cs:71526-71534`: `skipCount++; if (skipCount > 1)
+        // { UpdateLiquid(); skipCount = 0; }` — the first driver tick only
+        // counts, the second runs the pass and resets. The window phase
+        // matches calling `update` directly on every second tick.
+        let mut w = shaft(9, 60, 50, 4);
+        put_as(&mut w, 4, 10, 200, 0);
+        let mut sys = LiquidSystem::new(&w);
+        sys.add_water(&w, 4, 10);
+        assert!(!sys.update_world_tick(&mut w), "tick 1 only counts");
+        assert_eq!(sys.skip_count, 1);
+        assert_eq!(w.tiles[w.index(4, 10)].liquid, 200, "no pass yet");
+        assert!(sys.update_world_tick(&mut w), "tick 2 runs the pass");
+        assert_eq!(sys.skip_count, 0, ":71533 resets the counter");
+        assert_eq!(w.tiles[w.index(4, 10)].liquid, 0, "the blob fell");
+
+        // A twin driven by direct `update` every second tick stays
+        // byte-identical across a longer run (the divider adds no phase).
+        let mut w2 = shaft(9, 60, 50, 4);
+        put_as(&mut w2, 4, 10, 200, 0);
+        let mut sys2 = LiquidSystem::new(&w2);
+        sys2.add_water(&w2, 4, 10);
+        for tick in 1..=40 {
+            sys.update_world_tick(&mut w);
+            if tick % 2 == 0 {
+                sys2.update(&mut w2);
+            }
+        }
+        assert_eq!(w.tiles, w2.tiles, "the driver is a pure 2-tick divider");
+        assert_eq!(sys.active_len(), sys2.active_len());
+    }
+
+    #[test]
+    fn re_init_resets_the_driver_divider() {
+        // `Liquid.cs:85` — `ReInit` zeroes `skipCount`, so a world swap
+        // starts the runtime pump on a fresh window.
+        let mut w = shaft(9, 60, 50, 4);
+        let mut sys = LiquidSystem::new(&w);
+        assert!(!sys.update_world_tick(&mut w));
+        assert_eq!(sys.skip_count, 1);
+        sys.re_init();
+        assert_eq!(sys.skip_count, 0, ":85");
+        assert!(!sys.update_world_tick(&mut w), "the fresh window counts again");
     }
 }
 

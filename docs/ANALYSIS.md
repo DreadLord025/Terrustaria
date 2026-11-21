@@ -18414,6 +18414,53 @@ code-only lane cannot run):
 - **MP scaling / net change set** (`:987-1004`/`:1151-1156`) stay out of
   scope (single-player target, census deviation 9/10).
 
+### The runtime settle-pump driver (R-12-5, W4-g47 continuation)
+
+The per-tick driver census: C# `Liquid.UpdateLiquid` (`Liquid.cs:983-1158`)
+is consumed by THREE drivers, and the port now carries all three:
+
+1. **The runtime pump** — `WorldGen.UpdateWorld` (`WorldGen.cs:71526-71534`):
+   `Liquid.skipCount++; if (skipCount > 1) { using
+   (Main.SwapRandom("UpdateLiquid")) Liquid.UpdateLiquid(); skipCount = 0; }`
+   — one pass per two 60 Hz world ticks (30 Hz), wrapped in the named RNG
+   stream. Ported VERBATIM as `LiquidSystem::update_world_tick` (the
+   `skip_count` field is the C# static `Liquid.cs:19`, zeroed by `ReInit`
+   `:85` — a world swap starts a fresh window). The app consumer
+   `world_sim/liquids.rs` now calls the engine driver instead of its own
+   `app.liquid_tick % 2` divider (field REMOVED — the counter's C# home is
+   the Liquid statics, not Main; the old divider never reset on world swap,
+   a phase deviation the driver port fixes). The `SwapRandom` block is the
+   caller's seam: the drained `edit_kills` resolve on `RngKey::UpdateLiquid`
+   (`resolve_liquid_edit_kills`), the exact stream the C# `KillTile` drops
+   draw under the swap; the engine pass itself draws nothing on this lane
+   (the g45/g46 nudge is their seam). The `isGeneratingOrLoadingWorld`
+   early-return (`:71497-71500`) is the frame loop's own gate (worldgen
+   completes before the loop starts). Cadence-identical to the old divider
+   on a fresh boot (both fire on ticks 2, 4, ...); witnesses:
+   `liquid_force_settle::the_update_world_driver_runs_the_pass_every_second_tick`
+   (byte-equal twin vs direct `update` over 40 ticks),
+   `...::re_init_resets_the_driver_divider`. Written, NOT run.
+   Pass-internal census (already landed, re-verified against the driver
+   read): the stride window `curMaxLiquid / cycles` with the `numLiquid`
+   clamp re-walk (`:1069-1105`), the quickFall two-loop shape (`:1083-1105`
+   — delay-10 force + skip-clear vs the skip-honouring normal loop), the
+   `wetCounter >= cycles` tail (`:1106-1149` — the descending `kill >= 8`
+   sweep with the 254→255 promotion, the `num8` buffer promotion with
+   `DelBuffer(0)`'s swap-remove, the ±50 stuck band), and the panic gate
+   (`:1005-1054`). The `:1087` quickFall loop writes `delay = 10` INTO the
+   entry; the port's pass loop passes the local 10 into `update_tile`,
+   whose quickFall arms return it unchanged (`Liquid.cs:483-491`/`:512-521`
+   skip the delay writes under quickFall), and the write-back
+   `self.active[i].delay = delay` persists it — the entry carries 10 out
+   of a quickSettle window exactly as the C# does (the first non-quickFall
+   lava visit flows immediately, no 5-tick re-throttle).
+2. **The load drain** — `settle_loaded_world` (`WorldFile.cs:733-764`),
+   WIRED at `App::new` (g47 `551c1e7b`); calls `update` directly (no
+   skipCount — the C# load loop does the same).
+3. **The gen settle loops** — `WorldGen.cs:16132-16210` /
+   `:21246-21309` (f25's lane; the gen/runtime split contract is recorded
+   in the f25 gen-pass census below).
+
 ### The DelWater keep-one (W4-g47 vs W4-g45, for the merger)
 
 Both branches ported `Liquid.DelWater` (`:1470-1599`) independently. **g47's

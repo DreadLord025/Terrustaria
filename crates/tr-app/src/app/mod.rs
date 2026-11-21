@@ -843,10 +843,11 @@ pub(crate) struct App {
     pub(crate) light_rng_seed: u64,
     pub(crate) anim_time: f32,
     pub(crate) has_liquids: bool,
-    /// Cellular liquid flow (`Liquid.UpdateLiquid`), ticked at 30 Hz.
+    /// Cellular liquid flow (`Liquid.UpdateLiquid`), ticked at 30 Hz via
+    /// the engine's `skipCount` driver (`WorldGen.cs:71526-71534`) — the
+    /// counter rides [`LiquidSystem`] itself, the C# static's home.
     pub(crate) liquids: LiquidSystem,
     pub(crate) liquid_step: FixedStepper,
-    pub(crate) liquid_tick: u32,
     /// `CraftingUI._lastFilter` (`CraftingUI.cs:130`): the station filter the
     /// player's right-click on a crafting station installed
     /// (`Player.GetCraftingFilterForTile`, `Player.cs:33312-33335`, via
@@ -3989,7 +3990,6 @@ impl App {
             has_liquids,
             liquids: liquids_sim,
             liquid_step: FixedStepper::new(1.0 / 60.0, 8),
-            liquid_tick: 0,
             waterfall: tr_core::waterfall::WaterfallManager::new(),
             waterfall_step: FixedStepper::new(1.0 / 60.0, 8),
             tile_anim: tr_core::drawdata_anim::TileAnimator::new(),
