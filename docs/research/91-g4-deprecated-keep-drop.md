@@ -4,6 +4,18 @@ W4-d22 retire phase R3, branch `task/W4-d22-npc-ai-styles-3-6`
 (`fb99a047` R1 + `28866c7c` R2 on the DONE base `bcd42ddd`). Code-only
 lane: no cargo/tests invoked.
 
+> **CORRECTION (the FIGHTER-CORRECTION, the g4 seal `e5915bfab`):**
+> the §0 "no delta at `a9369ec38`" re-probe was STALE — g4's origin
+> tip was `55840d9a` (09:16, before this 12:39 probe) and later its
+> seal `e5915bfab`. The AI-arm KEEP/DROP table below stands FINAL;
+> the post-probe g4 delta is adjudicated in
+> `91-fighter-family-bible.md` §0/§2 (FINAL): f35 owns the DropHeals
+> heal seam (g4's duplicate retired by g4's own seal), merge d22+f35
+> never g4-wholesale, cherry g4's spawn_coins LIVE-inputs hunk + the
+> Thief/Skeleton scan witnesses; DROP g4's scan type-bonus arms
+> (d22 `:498-513` identical) + its pick-path Peon smash (KEEP d22's
+> `kill_tile` form).
+
 ## 0. The deprecation
 
 **`task/W4-g4-npc-style3-fighter` is DEPRECATED as a merge source.**

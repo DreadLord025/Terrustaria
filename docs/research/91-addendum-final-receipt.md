@@ -48,6 +48,15 @@ cross-note only). The full per-symbol adjudication:
 
 ## 3. The fighter-family merger instruction (FINAL)
 
+> **SUPERSEDED IN PART by the FIGHTER-CORRECTION** (the g4 seal
+> `e5915bfab` consumed): the "merge d22 only" instruction below is
+> corrected to **merge d22 + f35 (`1abae9ade`), never g4 wholesale,
+> cherry g4's two unique hunks** — f35 owns the DropHeals heal seam
+> (ported FIRST, superset `b72cdfbfc`/`00a5b27db`; g4's duplicate
+> retired by its own seal); the R4 "g4 no-delta" probe was stale
+> (g4's tip was `55840d9a`). The corrected record:
+> `91-fighter-family-bible.md` §0/§2 (FINAL). Items 3-6 below stand.
+
 For the Lead / the merging agent:
 
 1. **Merge `task/W4-d22-npc-ai-styles-3-6` only.** It carries: the

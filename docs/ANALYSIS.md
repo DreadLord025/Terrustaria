@@ -39495,6 +39495,47 @@ Verification: code-only — brace-balance delta 0/0 on the touched
 npc.rs; the loop edit is the fixture pin only (no machine change);
 no cargo/tests/rustfmt/graphify invoked. The witnesses stay
 written-not-run — the merge gate runs them.
+
+#### The SEAL-receipt CORRECTION (the g4 seal `e5915bfab` consumed)
+
+The S3 "g4 `a9369ec38` no delta" probe was STALE: g4's origin tip had
+already moved to `55840d9a` (09:16, before R3's 12:39 probe) and then
+to its own SEAL `e5915bfab` (14:24). The g4 seal RE-ADJUDICATED the
+keep-one and this lane CONSUMES it (the bible §0/§2/§4.5/§6 rewritten,
+`91-fighter-family-bible.md` FINAL):
+
+- **f35 owns the DropHeals heal seam** — the Lead's
+  g4-DropHeals-unique premise INVERTS. f35 ported the SAME
+  `NPCLoot_DropHeals`/`DropCommonLifeAndMana` seam FIRST
+  (`b72cdfbfc` 08:19 + `00a5b27db` 08:43, both before g4's
+  `55840d9a` 09:16) as a SUPERSET (the boss potions/hearts tail + the
+  Badger's Hat latches + the EoW head latch, anchored + PORT_MAP done
+  + 10 witnesses). The f35 census `:39` disclaimer g4 read was a
+  "Port status BEFORE this task" snapshot — f35 does NOT read
+  g4-owns, it owns the seam itself. g4's duplicate `spawn_heal_drops`
+  is RETIRED by g4's own seal (tombstone + repointed anchors row).
+- **Merger instruction corrected**: merge **d22 (`a1a21235`) + f35
+  (`1abae9ade`)**, NEVER g4 wholesale; cherry-apply g4's TWO unique
+  hunks after both — the `spawn_coins` midas/blood-moon LIVE inputs
+  (d22 `world_sim/npcs.rs:7218-7219` + f35 `:6954-6955` re-verified
+  still `false, false`) + witness + anchor, and the Thief/Skeleton
+  scan witnesses (d22 has none — zero grep hits; the union signature
+  compiles them unchanged). DROP g4-side: the scan type-bonus arms
+  (d22 `npc_ai_fighter_scan.rs:498-513` identical — re-read) and the
+  Peon smash (KEEP d22's `kill_tile` form `npcs.rs:4890`, closer to
+  the C# `WorldGen.KillTile` `:60049-60056` than g4's pick-path
+  `break_tile`; the g4 smash witness re-derived at the gate).
+- **MartianWalker 520 shooter = a d41 task seed** (NOT d43, NOT a
+  generic projectile lane): 520 ∈ the 491-560 band (d41 claim
+  `4ed22f0b3`; the batch-2 `5d036721d` salamander+572 in-lane
+  precedent). C# params re-read: cooldown 15 (`:59109`), speed 8
+  (`:59253`), 592 laser/35 damage (`:59442-59445`), walk 4/1/0.7
+  (`:59735-59739`), the 400-px stop (`:59763-59766`), the localAI
+  aim cycle (`:59792-59799`).
+
+Docs-only correction (no .rs touched); code-only lane — no
+cargo/tests/rustfmt/graphify invoked; witnesses stay written-not-run.
+
 ## W4-d22 — the aiStyle-4 EoC RNG census + fix (code-only)
 
 The Eye of Cthulhu (`NPC.cs:19960-20801`) rode the kind-match arm

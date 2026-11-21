@@ -1,4 +1,4 @@
-# 91 — FIGHTER-FAMILY BIBLE (SEALED): d22 canonical styles 3-6, g4 deprecated, g8/g9/g10 disjoint, d34-d43 roster table
+# 91 — FIGHTER-FAMILY BIBLE (SEALED, FINAL — corrected keep-one): d22 canonical styles 3-6 + f35 owns the heal seam, g4 never-wholesale (2 cherry hunks), g8/g9/g10 disjoint, d34-d43 roster table
 
 W4-d22 SEAL phase (S4), branch `task/W4-d22-npc-ai-styles-3-6` (retire
 tip `a1a21235`, DONE base `bcd42ddd`). Code-only lane: no cargo/tests/
@@ -8,9 +8,49 @@ the fighter family — the union of R1-R4 (`fb99a047`/`28866c7c`/
 per-item detail lives in the cited notes; this bible is the index the
 merger reads FIRST.
 
+**CORRECTION (the g4 SEAL `e5915bfab`, re-probed 2026-11-21):** the
+S3 "g4 `a9369ec38` no delta" probe was STALE — g4's origin tip had
+moved to `55840d9a` (09:16, before R3's 12:39 probe) and then to its
+own seal `e5915bfab`. The g4 seal RE-ADJUDICATED the heal seam: the
+Lead's "g4-DropHeals-unique-KEEP" premise INVERTS — **f35 ported the
+SAME seam FIRST as a SUPERSET; f35 owns it, g4's duplicate is RETIRED
+by g4's own hand.** The merger instruction is corrected below (§2):
+merge **d22 + f35**, NEVER g4 wholesale, cherry g4's two unique hunks.
+The g4-side record: `91-seal-keep-one.md` on
+`origin/task/W4-g4-npc-style3-fighter` @ `e5915bfab`.
+
+## 0. The corrected keep-one (f35 heal-seam ownership INVERTED)
+
+Both lanes ported `NPCLoot_DropHeals` (`NPC.cs:79098-79195`) +
+`NPCLoot_DropCommonLifeAndMana` (`:79531-79557`); merging both would
+DOUBLE-FEED the `UpdateNPCs` death stream. The adjudication (g4 seal
+§1, re-verified at this correction):
+
+* **f35 FIRST** — `b72cdfbfc` (08:19, `npc_death_heals.rs`) +
+  `00a5b27db` (08:43, the `spawn_heals` death-path wiring), both in
+  f35's tip ancestry (checked); g4's copy landed at `55840d9a` 09:16.
+* **f35 SUPERSET** — `npc_death_heals.rs` also carries the boss
+  potions/hearts tail (`DoDeathEvents_DropBossPotionsAndHearts`,
+  `:78945-79016`), the EoC/WoF Badger's Hat 5004 latch + dusk reset,
+  the EoW head's dynamic boss latch; g4's copy had none of these.
+  Anchored (`anchors.txt` `pub fn drop_boss_potions_and_hearts` @
+  f35) + PORT_MAP **done** row + 10 witnesses (checked at `1abae9ade`).
+* **The stale row** — f35's census `:39` disclaimer sits in a "Port
+  status BEFORE this task" table; f35 does NOT read g4-owns, it owns
+  the seam itself. No cross-lane handoff needed.
+* **g4 duplicate RETIRED** — g4's seal removed `spawn_heal_drops` +
+  the two helpers + the death-path call + `HealScriptRng` + the 8
+  seam witnesses; tombstone at g4 `world_sim/npcs.rs:7088` (the
+  `91-seal-keep-one.md` marker), anchors row repointed (checked).
+
+**Keep-one = f35's `spawn_heals`.** The death-path seam conflict at
+the d22+f35 merge resolves to f35's call AFTER `spawn_loot`.
+
 ## 1. d22 is canonical for aiStyle 3 (+ the 4/5/6 census fixes)
 
-Merge `task/W4-d22-npc-ai-styles-3-6` — it carries the whole family:
+Merge `task/W4-d22-npc-ai-styles-3-6` — it carries the whole AI
+family (the death HEAL seam is f35's, §0; the `spawn_coins` LIVE
+inputs arrive by the g4 cherry hunk, §2):
 
 | piece | landing | provenance |
 | --- | --- | --- |
@@ -28,24 +68,73 @@ Merge `task/W4-d22-npc-ai-styles-3-6` — it carries the whole family:
 | the c8 saturation-pin fix (the seal S1): `the_worm_head_digs_and_stumbles` runs 110 ticks | `npc.rs` (the fixture loop) | seal S1 — c8 `708522fc6` verdict consumed, `research/238` §3a `7c2de9c0` |
 
 The full per-symbol KEEP/DROP adjudication: `91-g4-deprecated-keep-drop.md`
-(R3) — **confirmed FINAL at the seal** (every KEEP row re-grepped at the
+(R3) — the AI-arm table stands FINAL (every KEEP row re-grepped at the
 seal tip; the samples: `player.rs:852`, `edit.rs:828`,
 `npc_ai_fighter_scan.rs:473`, `npc_ai.rs:1400`, `npc_buffs.rs:1173`,
-`npc.rs:1732`/`:3102` all present, line cites unchanged).
+`npc.rs:1732`/`:3102` all present, line cites unchanged). Its R3
+"g4 no-delta at `a9369ec38`" probe was STALE — the post-probe g4
+delta is adjudicated in §0/§2 (the correction); the R3 item-4
+cross-note ("f35's lane, NOT d22's") is CONFIRMED by the g4 seal.
 
-## 2. g4 DEPRECATED — merge d22 ONLY, NEVER g4-after
+## 2. g4 NEVER-WHOLESALE — merge d22 + f35, cherry g4's two unique hunks
 
-`task/W4-g4-npc-style3-fighter` tip re-probed at the seal (2026-11-21,
-`git fetch --prune` + rev-parse): **`a9369ec38`, no delta** since the
-reconcile. Every g4 code hunk is folded (phases 1-4 + the retire); a
-g4 merge AFTER d22 would conflict-revert the union scan signature, the
-axis dispatch and the wave-3-shaped files. The g4-unique docs
-(`91-doc-sweep-fighter.md`, `91-addendum-d22r-fold-list.md`) stay audit
-trail on the g4 branch — cherry-pick the DOC FILES only if the Lead
-wants them on main. **The Lead/owner retires the g4 branch after the
-d22 merge is verified** (the step-6 ancestor + symbol checks); this
-lane never deletes another agent's branch. The fold-list checklist:
-all 9 boxes CLOSED (`91-addendum-final-receipt.md` §1).
+**CORRECTED** (was "merge d22 ONLY" — the S3 probe was stale). The
+g4 tip re-probed at this correction: **`e5915bfab`** (the g4 seal;
+delta since `a9369ec38` = `55840d9a` FINAL code + `69d7737b` FINAL
+docs + `e5915bfab` the seal, all in ancestry — checked). A g4 merge
+AFTER d22 would still conflict-revert the union scan signature, the
+axis dispatch and the wave-3-shaped files; after the g4 seal its heal
+code is GONE by g4's own hand, so nothing unique is lost by never
+merging it wholesale. The corrected instruction (g4 seal §2):
+
+1. Merge **d22** (`a1a21235` + the seal) — canonical for EVERY fighter
+   AI arm (the §1 table + the R3 KEEP table stand unchanged).
+2. Merge **f35** (`1abae9ade`) — owns the heal seam (§0) + the
+   bag/crate/present openers; the `spawn_heals` call resolves AFTER
+   `spawn_loot` on the death path.
+3. **Cherry-apply g4's TWO unique hunks after d22+f35** (if a
+   `W4-d22 g4d` fold commits them on d22 BEFORE the merge — the
+   live wiring + the three witnesses were observed in flight in
+   this worktree at the correction — step 3 is satisfied in-branch:
+   verify by SYMBOL at the merged tip, not by re-cherrying):
+   * the `spawn_coins` midas/blood-moon LIVE inputs — the 2-argument
+     hunk (`npc.buffs.has_buff(72)` `NPC.cs:79631` +
+     `world.blood_moon` `:79660`) + the witness
+     `w4_g4_spawn_coins_midas_and_blood_moon_inputs_are_live` (g4
+     `npcs.rs:8116`) + its anchors row. **Re-verified: d22 tip
+     `world_sim/npcs.rs:7218-7219` AND f35 tip `:6954-6955` both still
+     `false, false`** — neither lane carries the wiring; the hunk
+     applies cleanly to either body (otherwise identical).
+   * the two scan witnesses — `w4_g4_the_goblin_thief_bash_adds_one`
+     (g4 `npc_ai_fighter_scan.rs:652`) +
+     `w4_g4_the_skeleton_family_bash_bonus_census` (`:678`).
+     **Re-verified: d22 has NO Thief/Skeleton bonus witness** (grep at
+     its tip, zero hits). Both call the UNION signature
+     (`npc_ai_fighter_scan.rs:271`) — they compile against d22
+     unchanged.
+4. **DROP g4-side (re-verified against d22's tip):**
+   * the scan type-bonus arms — d22 `npc_ai_fighter_scan.rs:498-513`
+     carries the SAME code (`t == 27` +1 `:498`,
+     `matches!(t, 31 | 294 | 295 | 296)` +6 `:500`, `t == 460` flag28
+     `:512` — re-read, identical). g4's "restore" was against its own
+     pre-union zombie-only scan; the d22 axis scan never lost them.
+   * the GoblinPeon 26 smash — **KEEP d22's `kill_tile` form**
+     (`world_sim/npcs.rs:4890`, `tr_core::edit::kill_tile` +
+     `kill_tile_sound` + the drop, cite `:60049-60056` — re-read).
+     g4's `editing::break_tile` rides the PICK path (the `CanKillTile`
+     refusals the C# `WorldGen.KillTile` does NOT run) — d22's form is
+     the faithful one. The g4 Peon-smash witness
+     (`w4_g4_the_goblin_peon_smashes_the_door`) pins the `break_tile`
+     behaviour: re-derive its refusal-path assertions against d22's
+     form at the merge gate (written-not-run either way).
+5. The g4-unique docs (`91-doc-sweep-fighter.md`,
+   `91-addendum-d22r-fold-list.md`, `91-final-fighter-census.md`,
+   `91-seal-keep-one.md`) stay audit trail on the g4 branch —
+   cherry-pick the DOC FILES only if the Lead wants them on main.
+   **The Lead/owner retires the g4 branch after the d22+f35 merge is
+   verified** (the step-6 ancestor + symbol checks); this lane never
+   deletes another agent's branch. The fold-list checklist: all 9
+   boxes CLOSED (`91-addendum-final-receipt.md` §1).
 
 ## 3. g8/g9/g10 COMPOSE — disjoint kind sets, keep both sides
 
@@ -90,6 +179,28 @@ The lane obligations (the table §2 + the seal's exact-hunk note
    UpdateNPCs stream + the dust pool.
 4. The flag24 bash list needs no extension (431-436/591 NOT flag24 —
    they accumulate EVERY night, the 489 correction).
+5. **The MartianWalker 520 shooter-block = a d41 TASK SEED** (the
+   corrected remainder lane — NOT d43, NOT a generic projectile
+   lane; g4 seal §3). The kind is landed (wave-3 base: `npc.rs:113`
+   — re-verified) and rides `update_skeleton` (the walk IS routed),
+   but the C# 520 is a SHOOTER-BLOCK type (`NPC.cs:59069` list) whose
+   offence is unported. 520 sits in the **491-560 band = d41**
+   (`task/W4-d41-npc-kinds-491-560`, claim `4ed22f0b3` — ancestry
+   checked); d43 covers 631-697, NOT 520. d41's own precedent ports a
+   kind's shooter machine AND its projectile in-lane (batch 2
+   `5d036721d`: `update_salamander` + the SalamanderSpit 572
+   `proj_data` row — ancestry checked). The C# work order
+   (re-read at this correction): cooldown `num162 = 15` (`:59109`),
+   speed `num164 = 8` (`:59253`), **`num170 = 592` / `num169 = 35`**
+   (`:59442-59445`, the 592 laser), walk `num180 = 4f / num181 = 1f /
+   num182 = 0.7f` (`:59735-59739`), the **400-px stop**
+   (`type == 520 && Distance < 400f && CanHitLine` → `flag22 = true;
+   ai[3] = 0f`, `:59763-59766`), the **aim cycle** (`localAI[2]++`, at
+   `>= 6` reset + `localAI[3] = player.DirectionFrom(Top + (0, 20))
+   .ToRotation()`, `:59792-59799`). The engineer's turret-spawn
+   (`:59004-59038`) + the zapper's spear (`:59062-59065`) stay with
+   the projectile-work lane (kinds 386/389 outside the bands'
+   unported sets).
 
 ## 5. The merge gate (written-not-run witnesses)
 
@@ -100,9 +211,14 @@ the seal-fixed 110-tick `the_worm_head_digs_and_stumbles` (the c8
 numeric mirror verifies it: speed 5.955 / vy −2.5 / y 2165 at tick
 110). The c8 `w4_c8_compose_*` carries duplicate d22's
 `w4_d22_the_*` single-tick witnesses by content — keep-one at the
-merge (research/238 §6).
+merge (research/238 §6). **Added by the correction:** the f35 heal
+seam's 10 witnesses (incl. the 33-kind × 5-seed × both-expert
+same-seed stream-equality replays), the cherry-applied g4
+`spawn_coins` LIVE-inputs witness + the Thief/Skeleton scan pair, and
+the Peon-smash witness re-derived against d22's `kill_tile` form
+(§2.4).
 
-## 6. Seal receipt (the hashes)
+## 6. Seal receipt (the hashes) — CORRECTED
 
 | phase | commit | scope |
 | --- | --- | --- |
@@ -111,12 +227,28 @@ merge (research/238 §6).
 | R2 | `28866c7c` | the 123-roster-gap table |
 | R3 | `78386ab1` | g4 DEPRECATED + KEEP/DROP FINAL |
 | R4 | `a1a21235` | the addendum FINAL receipt |
-| S1 | (this seal) | the c8 110-tick pin consumed (`npc.rs` fixture) |
-| S2 | (this seal) | the fighter_walker_kind exact-hunk obligation |
-| S3+S4 | (this seal) | the KEEP/DROP confirmation + this bible |
+| S1 | `3ec231f9` | the c8 110-tick pin consumed (`npc.rs` fixture) |
+| S2 | `3ec231f9` | the fighter_walker_kind exact-hunk obligation |
+| S3+S4 | `3ec231f9` | the KEEP/DROP confirmation + this bible |
+| FC (this correction) | (this commit) | the FIGHTER-CORRECTION: the stale S3 probe owned, f35-owns-heal-seam (§0), merge d22+f35 never g4-wholesale + the 2 cherry hunks (§2), the 520 d41 task seed (§4.5), this receipt |
+
+The g4-side receipt (read at `e5915bfab`): DONE base `69d7737b` →
+SEAL `e5915bfab`; f35 tip `1abae9ade` (heal port `b72cdfbfc` 08:19 +
+wiring `00a5b27db` 08:43, both BEFORE g4's `55840d9a` 09:16 — commit
+timestamps checked); d41 tip `db12805b` at this correction (claim
+`4ed22f0b3` + the `5d036721d` salamander precedent in ancestry).
 
 Verification: code-only — the g4/g8/g9/g10 tips re-probed after
 `git fetch --prune`; the KEEP samples re-grepped; the c8
 `worm_head_step` diff-read (identical type-10 kinematics — only the
 375 rows + comments differ); brace-balance delta 0/0 on the touched
-.rs; no cargo/tests/rustfmt/graphify invoked.
+.rs; no cargo/tests/rustfmt/graphify invoked. The correction adds:
+the g4/f35/d41 tips + the heal-port ancestry re-probed; the d22
+`false, false` stand-ins (`npcs.rs:7218-7219`), the f35 stand-ins
+(`:6954-6955`), the scan type-bonus arms (`npc_ai_fighter_scan.rs
+:498-513`), the Peon `kill_tile` form (`npcs.rs:4890`), the missing
+Thief/Skeleton witnesses (zero grep hits) and the f35 anchor/PORT_MAP
+rows all re-read at the named tips; the C# 520 params re-read in
+≤100-line windows (`NPC.cs:59105-59112`/`:59249-59256`/`:59440-59448`/
+`:59733-59740`/`:59760-59770`/`:59790-59800`); docs-only, no .rs
+touched by the correction.
