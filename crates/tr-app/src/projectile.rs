@@ -23498,6 +23498,15 @@ impl ProjectilePool {
             if p.kind == FLAMETHROWER_TRAP {
                 continue;
             }
+            // W4-d4 sweep — `Damage_CanDealDamage` (`:12448`): the Flames
+            // Trap 188 deals nothing during its launch ramp (`localAI[0] <
+            // 5` — the counter `ai_eye_fire` floors/counts, `:25863-25870`;
+            // extraUpdates 2 → 3 sub-steps/frame, so the ramp is ~2 frames).
+            // The C# gate wraps `Damage()` whole (`:12497`); the port carries
+            // it per-kind in both walks (the FLAMETHROWER_TRAP precedent).
+            if p.kind == FLAMES_TRAP && p.local_ai[0] < 5.0 {
+                continue;
+            }
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
@@ -24132,6 +24141,11 @@ impl ProjectilePool {
         // base-4 default is the player's; the death-burst callers pass no
         // player — the per-hit roll still rides the stream in the C# order).
         let owned_by_someone = owner < 255 && !self.slots[slot].trap;
+        // W4-d4 sweep — the Flames Trap's launch-ramp refusal
+        // (`Damage_CanDealDamage` `:12448`), the boxed walk's copy.
+        if self.slots[slot].kind == FLAMES_TRAP && self.slots[slot].local_ai[0] < 5.0 {
+            return;
+        }
         let (px, py, pw, ph) = {
             let p = &self.slots[slot];
             (p.pos.x, p.pos.y, p.w, p.h)
@@ -24262,6 +24276,12 @@ impl ProjectilePool {
         };
         let p = &self.slots[slot];
         if p.damage <= 0 {
+            return;
+        }
+        // W4-d4 sweep — `Damage_CanDealDamage` (`:12448`, the `Damage()`
+        // wrap `:12497` covers EVP too): the Flames Trap's launch ramp
+        // hurts no player either (`localAI[0] < 5`).
+        if p.kind == FLAMES_TRAP && p.local_ai[0] < 5.0 {
             return;
         }
         let cx = p.pos.x + SIZE * 0.5;
@@ -42391,6 +42411,43 @@ mod s1_d_4b_5c_tests {
         assert_eq!(p.ai[0], 1.0, ":25932 — the below-7 arm just counts");
         assert_eq!(p.local_ai[0], 0.0, "the Eye Fire does not count launches");
         assert!((p.rot + 0.3).abs() < 1e-6, ":25934 mirrors with direction");
+    }
+
+    /// W4-d4 DOC-SWEEP item 4 — the 188 flame child's launch-ramp damage
+    /// refusal (`Damage_CanDealDamage` `Projectile.cs:12448`: `type == 188
+    /// && localAI[0] < 5`). The row EXISTS (`data.rs` FLAMES_TRAP, 6×6/23/
+    /// −1/extraUpdates 2/trap, `:2752-2763`) and `ai_eye_fire` counts
+    /// `local_ai[0]`; this pins the gate that count feeds. A fresh child
+    /// (localAI[0] = 0) overlapping an NPC deals nothing; after the counter
+    /// reaches 5 the hit lands. The 20-px hitbox inflate (`:15010-15013`)
+    /// makes the 6×6 box reach the NPC at 300.
+    #[test]
+    fn w4_d4_sweep_the_flames_trap_launch_ramp_deals_no_damage() {
+        let run = |launch: f32| {
+            let w = world();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(FLAMES_TRAP, 300.0, 300.0, 0.0, 0.0, 40, 2.0, 0.0, 0.0)
+                .unwrap();
+            pool.slots_mut()[slot].local_ai[0] = launch;
+            let mut npc = Npc::new(NpcKind::Slime, 300.0, 300.0, 1, 0.0);
+            npc.hp = 500;
+            npc.max_hp = 500;
+            let before = npc.hp;
+            pool.damage_pve(
+                &w,
+                slot,
+                std::slice::from_mut(&mut npc),
+                None,
+                None,
+                None,
+                &mut tr_core::tile_light::FastRandom::new(7),
+            );
+            before - npc.hp
+        };
+        assert_eq!(run(0.0), 0, "localAI[0] < 5 refuses the hit (`:12448`)");
+        assert_eq!(run(4.0), 0, "the ramp's last refusing tick");
+        assert!(run(5.0) > 0, "localAI[0] >= 5 the flame bites");
     }
 
     /// The aiStyle-158 walk (`Projectile.cs:48770-48777`): 6 ticks per frame,
