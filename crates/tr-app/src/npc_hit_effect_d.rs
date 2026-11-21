@@ -2073,9 +2073,11 @@ fn moss_zombie_death(
 /// 306-311), 161/431 Eskimo Zombie → 191/192x2/193x2 (`:87039-87043`,
 /// sites 312-316; the 431 slimed variant shares the row though the arm's
 /// type list omits it — ported as written), 162 Frankenstein →
-/// 194/195x2/196x2 (`:87048-87052`, sites 317-321); the 188/200/...
-/// tails land in later batches. The hit-half 186/632 Next(5) gore gates
-/// (`:86945-86952`) are g62's lane.
+/// 194/195x2/196x2 (`:87048-87052`, sites 317-321), 188/434 Swamp Zombie
+/// → 243/244x2/245x2 (`:87057-87061`, sites 322-326), 200/436 Female
+/// Zombie → 262/263x2/264x2 (`:87066-87070`, sites 327-331); the
+/// 319/320/321/223/... tails land in later batches. The hit-half
+/// 186/632 Next(5) gore gates (`:86945-86952`) are g62's lane.
 fn zombie_arm_death(
     npc: &Npc,
     npc_type: i32,
@@ -2197,6 +2199,26 @@ fn zombie_arm_death(
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 195, s); // :87050
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 196, s); // :87051
         gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 196, s); // :87052
+        return;
+    }
+    if npc_type == 188 || npc_type == 434 {
+        // `:87055-87063` — the Swamp Zombie ladder + return (the 434
+        // slimed variant shares the row, ported as written).
+        gore.new_gore(rng, world, pos, vel, 243, s); // :87057
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 244, s); // :87058
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 244, s); // :87059
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 245, s); // :87060
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 245, s); // :87061
+        return;
+    }
+    if npc_type == 200 || npc_type == 436 {
+        // `:87064-87072` — the Female Zombie ladder + return (the 436
+        // slimed variant shares the row, ported as written).
+        gore.new_gore(rng, world, pos, vel, 262, s); // :87066
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 263, s); // :87067
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 263, s); // :87068
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 264, s); // :87069
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 264, s); // :87070
         return;
     }
 }
@@ -2447,8 +2469,8 @@ pub fn hit_effect_d(
     }
     // `:86937-...` — the giant zombie arm (430-436/590/591/3/52/53/536/
     // 104/109/331/332/132/161/162/186-189/200/223/251/319-321/632); the
-    // 104/632/331/332/109/161/162 branches are live (sites 286-321), the
-    // rest land later.
+    // 104/632/331/332/109/161/162/188/200 branches are live (sites
+    // 286-331), the rest land later.
     else if matches!(npc_type, 430..=436 | 590 | 591 | 3 | 52 | 53 | 536 | 104 | 109 | 331 | 332 | 132 | 161 | 162 | 186 | 187 | 188 | 189 | 200 | 223 | 251 | 319 | 320 | 321 | 632)
     {
         zombie_arm_death(
@@ -4355,6 +4377,35 @@ mod tests {
             assert_eq!(types, want, "zombie {kind}");
             assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
             let mut twin = UnifiedRandom::new(317);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "zombie {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87057-87070` — the Swamp ladder 243/244x2/245x2 and the
+    /// Female Zombie ladder 262/263x2/264x2.
+    #[test]
+    fn w4_f5d_the_swamp_and_female_zombie_ladders_spawn_the_five() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (188, vec![243, 244, 244, 245, 245]),
+            (200, vec![262, 263, 263, 264, 264]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(331);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "zombie {kind}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(331);
             for _ in 0..50 {
                 twin_dust(&mut twin, 30, 44);
             }
