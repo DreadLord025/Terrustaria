@@ -39352,3 +39352,40 @@ click buffers; the player tick applies).
   ManaEffect queue, STAR_POWER + TOPPED_OFF timing + the GET_A_LIFE
   sparing, the CCed refusal) — WRITTEN, NOT RUN.
 
+## The v7 sidecar superset (W4-g88 ⨉ W4-g89 reconciliation)
+
+- **The collision.** Both lanes independently bumped the `.trplayer`
+  sidecar to version 7, each appending ONE line after the dye line:
+  g89 (`920014cb`, `origin/task/W4-g89-aegis-fruit-use`) wrote the
+  `usedAegisFruit` 0/1 flag; g88 (`f1eb9b60`) wrote the
+  `statLifeMax statLifeMax2` pair. A naive merge would misparse one
+  lane's file as the other's.
+- **The ONE v7 contract (this branch's writer).** After the dye line:
+  **(1)** the aegis flag line (ONE token — g89's position kept), **(2)**
+  the life pair `statLifeMax statLifeMax2` (TWO tokens), **(3)** the mana
+  pair `statManaMax statManaMax2` (TWO tokens). Vanilla rides all three
+  in the .plr (`Player.cs:54773`/`:54775`/`:54782` writes;
+  `:55220-55229`/`:55256` reads).
+- **The tolerant reader.** The v7 load walks the post-dye lines and
+  dispatches on TOKEN COUNT: one token → the flag; the first two-token
+  line → the life pair (permanent half clamps 500, `:55221-55224`); the
+  second → the mana pair (permanent half clamps 200, `:55227-55229`).
+  So g89's flag-only v7, g88's pre-reconciliation life-only v7 and the
+  full superset all load; missing pieces keep None/false and the fresh
+  defaults. Any merge of the two lanes keeps THIS reader (the superset).
+- **The flag field is carried, not used.** `Player.used_aegis_fruit`
+  lands on this branch ONLY for the sidecar round-trip (declared at
+  g89's exact position after `used_gummy_worm`, ctor false `:56079`, so
+  the merge dedupes cleanly). The +4 booster row (`:12853-12856`) and
+  the 5338 use arm stay the W4-g89 lane's scope — this branch never
+  writes the flag in play.
+- **The load apply (app/mod.rs).** Both pairs apply BEFORE the hp clamp
+  (a saved 405-life character keeps its hp); the mana pair feeds
+  `mana_max_base`/`mana_max`; the flag restores verbatim.
+- **Code-only mode.** Witnesses: `persist.rs` +4 (the superset
+  round-trip with the exact three-line order, g89's flag-only v7, the
+  life-only v7, the both-caps read clamp — plus the extended v5/v6
+  back-compat and round-trip assertions) + `crystals.rs` +1 (the
+  crystal-upgrade sidecar round-trip + the reloaded gate) — WRITTEN,
+  NOT RUN.
+

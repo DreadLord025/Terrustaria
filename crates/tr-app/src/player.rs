@@ -2141,6 +2141,16 @@ pub struct Player {
     /// fishing skill (`:45411-45416`, `:12857-12860`). NOT cleared by
     /// ResetEffects — a permanent unlock (the player-file field).
     pub used_gummy_worm: bool,
+    /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit
+    /// permanent +4 defense (`ItemCheck_UseShimmerPermanentItems`
+    /// `:45393-45398`, `UpdatePermanentBoosters` `:12853-12856`). NOT
+    /// cleared by ResetEffects — a permanent unlock (the player-file
+    /// field, ctor `:56079` false, save `:54782` / load `:55256`).
+    /// W4-g88 persist note: the field rides HERE for the v7 superset
+    /// sidecar round-trip (g89's flag position); the +4 booster row and
+    /// the use arm are the W4-g89 lane's — this branch only carries the
+    /// flag through save/load.
+    pub used_aegis_fruit: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2943,6 +2953,7 @@ impl Player {
             acc_lava_fishing: false,
             override_fishing_bobber: -1,
             used_gummy_worm: false,
+            used_aegis_fruit: false, // `Player.cs:56079`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,

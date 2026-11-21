@@ -2936,16 +2936,24 @@ impl App {
                         p.x = saved.x;
                         p.y = saved.y;
                     }
-                    // W4-g88 — the v7 life-maxima pair (`Player.LoadPlayer`'s
-                    // `statLifeMax` read + 500 clamp, `Player.cs:55220-55224`):
-                    // the Life Fruit's permanent cap survives the session.
-                    // Applied BEFORE the hp clamp below so a saved 405-life
-                    // character keeps its 405 hp. Older sidecars (None) keep
-                    // the fresh 100/100 defaults.
+                    // W4-g88 — the v7 SUPERSET block (the persist.rs
+                    // module header's contract, the g89 reconciliation):
+                    // the life pair (`Player.LoadPlayer`'s `statLifeMax`
+                    // read + 500 clamp, `Player.cs:55220-55224`), the mana
+                    // pair (`:55226-55229`, clamp 200) and g89's aegis
+                    // flag (`:55256`). The permanent caps survive the
+                    // session. Applied BEFORE the hp clamp below so a
+                    // saved 405-life character keeps its 405 hp. Older
+                    // sidecars (None/false) keep the fresh defaults.
                     if let Some((base, effective)) = saved.life_max {
                         p.life_max_base = base;
                         p.max_hp = effective;
                     }
+                    if let Some((base, effective)) = saved.mana_max {
+                        p.mana_max_base = base;
+                        p.mana_max = effective;
+                    }
+                    p.used_aegis_fruit = saved.used_aegis_fruit;
                     p.hp = saved.hp.clamp(1, p.max_hp);
                     coins = saved.coins;
                     armor_kinds = saved.armor;

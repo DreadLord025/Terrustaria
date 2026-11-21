@@ -449,4 +449,50 @@ mod tests {
         assert_eq!(app.player.as_ref().unwrap().mana_max_base, 20);
         assert_eq!(app.inventory[app.selected].count, 3);
     }
+
+    /// The permanent upgrades survive the session: the v7 SUPERSET
+    /// sidecar carries both raised caps (the life crystal's +20 and the
+    /// mana crystal's +20), and the loader's apply order (app/mod.rs)
+    /// restores them before the hp clamp — the reloaded gates still fire.
+    #[test]
+    fn w4_g88_the_crystal_upgrades_round_trip_through_the_sidecar() {
+        let mut app = rig(LIFE_CRYSTAL, 2, 100);
+        press(&mut app);
+        life_crystal_item_check(&mut app, true);
+        let dir = crate::test_world_helpers::test_scratch("crystals-persist");
+        let path = dir.join("crystal.trwld");
+        let p = app.player.as_ref().unwrap();
+        let inv: [(u16, u32); 50] =
+            std::array::from_fn(|i| (app.inventory[i].kind, app.inventory[i].count));
+        crate::persist::save(&path, p, inv, 0, [0; 3], &[0; 10], &[]).unwrap();
+        let saved = crate::persist::load(&path).expect("the v7 superset sidecar");
+        assert_eq!(saved.life_max, Some((120, 120)), "the permanent +20 saved");
+        assert_eq!(saved.mana_max, Some((20, 20)), "the fresh mana pair saved");
+        // The loader's apply order (app/mod.rs): maxima first, THEN the
+        // hp clamp.
+        let mut fresh = Player::spawn(&app.world);
+        if let Some((base, effective)) = saved.life_max {
+            fresh.life_max_base = base;
+            fresh.max_hp = effective;
+        }
+        if let Some((base, effective)) = saved.mana_max {
+            fresh.mana_max_base = base;
+            fresh.mana_max = effective;
+        }
+        fresh.hp = saved.hp.clamp(1, fresh.max_hp);
+        assert_eq!(fresh.life_max_base, 120);
+        assert_eq!(fresh.mana_max_base, 20);
+        // The reloaded gate still fires: 120 < 400.
+        app.player = Some(fresh);
+        app.swing = 0.0;
+        app.item_time = 0.0;
+        app.mine_down = false;
+        for _ in 0..31 {
+            tick(&mut app);
+        }
+        press(&mut app);
+        assert!(life_crystal_item_check(&mut app, true));
+        assert_eq!(app.player.as_ref().unwrap().life_max_base, 140);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
 }

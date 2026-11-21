@@ -3,6 +3,24 @@
 //! The world format stays tile-only; the player's position, HP and hotbar counts live in a
 //! small versioned text file. Loading validates that the saved position is not inside a
 //! solid tile.
+//!
+//! ## The v7 line contract (W4-g88 ⨉ W4-g89 reconciliation)
+//!
+//! Both the aegis lane (g89, `920014cb`) and the life-fruit lane (g88,
+//! `f1eb9b60`) independently bumped the sidecar to version 7, each
+//! appending ONE line after the dye line. The reconciled SUPERSET v7
+//! order (this branch's writer) is:
+//!
+//! 1. the aegis flag line — `usedAegisFruit` 0/1 (g89's position, ONE token),
+//! 2. the life-maxima pair — `statLifeMax statLifeMax2` (TWO tokens),
+//! 3. the mana-maxima pair — `statManaMax statManaMax2` (TWO tokens).
+//!
+//! The reader tolerates both single-lane predecessors: it walks the
+//! post-dye lines and dispatches on TOKEN COUNT — a one-token line is
+//! the aegis flag, the first two-token line is the life pair, the second
+//! is the mana pair. So g89's flag-only v7, g88's life-only v7 and this
+//! superset all load; missing pieces keep their fresh defaults. Any
+//! merge of the two lanes keeps this reader (the superset).
 
 use std::path::{Path, PathBuf};
 
@@ -13,10 +31,21 @@ pub struct SavedPlayer {
     pub y: f32,
     pub hp: i32,
     /// `Player.statLifeMax` / `statLifeMax2` (`Player.cs:54773`'s write,
-    /// `:55220-55224`'s read) — version 7 of the sidecar (W4-g88: the Life
-    /// Fruit's permanent +5, `life_fruit.rs`). Older files load `None` and
-    /// the loader keeps the fresh-default maxima. `(permanent, effective)`.
+    /// `:55220-55224`'s read) — version 7 of the sidecar (W4-g88: the
+    /// Life Fruit's permanent +5 and the crystals' +20, `life_fruit.rs`
+    /// / `crystals.rs`). Older files load `None` and the loader keeps
+    /// the fresh-default maxima. `(permanent, effective)`.
     pub life_max: Option<(i32, i32)>,
+    /// `Player.statManaMax` / `statManaMax2` (`Player.cs:54775`'s write,
+    /// `:55226-55229`'s read clamp 200) — the v7 superset's mana pair
+    /// (W4-g88: the Mana Crystal's permanent +20). `None` on older
+    /// files and on g89's flag-only v7. `(permanent, effective)`.
+    pub mana_max: Option<(i32, i32)>,
+    /// `Player.usedAegisFruit` (`Player.cs:854`, save `:54782` / load
+    /// `:55256`) — version 7 of the sidecar (W4-g89's flag, g88's
+    /// superset carries it at the SAME post-dye position); older files
+    /// load with the unlock absent.
+    pub used_aegis_fruit: bool,
     pub inventory: [(u16, u32); 50],
     pub coins: u64,
     /// `Player.armor[0..3]` item ids — head, body, legs (0 = empty). Version 4
@@ -74,11 +103,15 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
-    // Version 7 (W4-g88): the life maxima — `statLifeMax` (the permanent
-    // cap, the Life Fruit's +5 ledger) then `statLifeMax2` (the effective
-    // max). Vanilla rides both in the .plr (`Player.cs:54773`); the port's
-    // live-session sidecar appends them after the dye line.
+    // Version 7 SUPERSET (the W4-g88 ⨉ W4-g89 reconciliation, the module
+    // header's contract): the aegis flag FIRST (g89's post-dye position,
+    // `Player.usedAegisFruit` save `Player.cs:54782`), then the life pair
+    // (`statLifeMax statLifeMax2`, `:54773`), then the mana pair
+    // (`statManaMax statManaMax2`, `:54775`). Vanilla rides all three in
+    // the .plr; the port's live-session sidecar appends them after dye.
+    s.push_str(&format!("{}\n", u8::from(player.used_aegis_fruit)));
     s.push_str(&format!("{} {}\n", player.life_max_base, player.max_hp));
+    s.push_str(&format!("{} {}\n", player.mana_max_base, player.mana_max));
     std::fs::write(player_path(world), s)
 }
 
@@ -88,9 +121,10 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let version = lines.next()?.trim();
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
-        // dye kinds; 7 the life-maxima pair (W4-g88); 3 stores vanilla
-        // `ItemID`s; 1 and 2 stored the ad-hoc tile/wall/weapon/coin ranges
-        // and are converted on load.
+        // dye kinds; 7 the SUPERSET post-dye block (the aegis flag ⨉ the
+        // life pair ⨉ the mana pair, the module header's contract —
+        // W4-g88 ⨉ W4-g89); 3 stores vanilla `ItemID`s; 1 and 2 stored the
+        // ad-hoc tile/wall/weapon/coin ranges and are converted on load.
         "3" | "4" | "5" | "6" | "7" => false,
         "1" | "2" => true,
         _ => return None,
@@ -147,23 +181,42 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
             *slot = kind.parse().ok()?;
         }
     }
-    // Version 7 (W4-g88) adds the life-maxima pair after the dye line:
-    // `statLifeMax` (permanent) then `statLifeMax2` (effective). The
-    // permanent half clamps to 500 (`Player.cs:55221-55224`'s read clamp);
-    // older files carry None and the loader keeps the fresh defaults.
-    let life_max = if version == "7" {
-        let mut life_line = lines.next()?.split_whitespace();
-        let base: i32 = life_line.next()?.parse().ok()?;
-        let effective: i32 = life_line.next()?.parse().ok()?;
-        Some((base.min(500), effective))
-    } else {
-        None
-    };
+    // Version 7 SUPERSET (the module header's contract): walk the
+    // post-dye lines and dispatch on TOKEN COUNT — ONE token is the
+    // aegis flag (g89's line, `Player.cs:55256`'s read), the FIRST
+    // two-token line is the life pair (`:55220-55224`, permanent half
+    // clamps to 500), the SECOND is the mana pair (`:55226-55229`,
+    // permanent half clamps to 200). This reads g89's flag-only v7, the
+    // pre-reconciliation life-only v7 AND the full superset; missing
+    // pieces keep None/false and the loader keeps the fresh defaults.
+    let mut life_max = None;
+    let mut mana_max = None;
+    let mut used_aegis_fruit = false;
+    if version == "7" {
+        while let Some(line) = lines.next() {
+            let mut toks = line.split_whitespace();
+            let Some(first) = toks.next() else { continue };
+            match toks.next() {
+                None => used_aegis_fruit = first == "1",
+                Some(second) => {
+                    let base: i32 = first.parse().ok()?;
+                    let effective: i32 = second.parse().ok()?;
+                    if life_max.is_none() {
+                        life_max = Some((base.min(500), effective));
+                    } else if mana_max.is_none() {
+                        mana_max = Some((base.min(200), effective));
+                    }
+                }
+            }
+        }
+    }
     Some(SavedPlayer {
         x,
         y,
         hp,
         life_max,
+        mana_max,
+        used_aegis_fruit,
         inventory,
         coins,
         armor,
@@ -187,6 +240,10 @@ mod tests {
         // W4-g88: a fruit-upgraded character's permanent + effective caps.
         p.life_max_base = 405;
         p.max_hp = 405;
+        // W4-g88 crystals: a crystal-upgraded mana pair + the g89 flag.
+        p.mana_max_base = 40;
+        p.mana_max = 40;
+        p.used_aegis_fruit = true;
         let dir = crate::test_world_helpers::test_scratch("persist-player-state");
         let path = dir.join("tr-persist-test.trwld");
         let mut inv = [(0u16, 0u32); 50];
@@ -211,6 +268,8 @@ mod tests {
         let s = load(&path).expect("sidecar");
         assert_eq!((s.x, s.y, s.hp), (123.5, 45.25, 73));
         assert_eq!(s.life_max, Some((405, 405)), "the v7 life-maxima pair");
+        assert_eq!(s.mana_max, Some((40, 40)), "the v7 mana-maxima pair");
+        assert!(s.used_aegis_fruit, "the g89 flag at its post-dye position");
         assert_eq!(s.inventory[0], (2, 12));
         assert_eq!(s.inventory[3], (12, 1));
         assert_eq!(s.inventory[49], (0, 0));
@@ -250,11 +309,13 @@ mod tests {
         assert_eq!(s.armor, [89, 80, 76]);
         assert_eq!(s.dye, [0; 10]);
         assert_eq!(s.life_max, None, "pre-v7 files carry no life maxima");
+        assert_eq!(s.mana_max, None, "pre-v7 files carry no mana maxima");
+        assert!(!s.used_aegis_fruit, "pre-v7 files carry no unlock");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
-    /// W4-g88: a v6 sidecar (dye, no life-maxima line) loads with `None` —
-    /// the loader keeps the fresh-default maxima for pre-fruit saves.
+    /// W4-g88: a v6 sidecar (dye, no v7 block) loads with `None`/false —
+    /// the loader keeps the fresh-default maxima for pre-upgrade saves.
     #[test]
     fn version_6_loads_without_life_maxima() {
         let dir = crate::test_world_helpers::test_scratch("persist-v6");
@@ -273,13 +334,16 @@ mod tests {
         assert_eq!(s.armor, [89, 80, 76]);
         assert_eq!(s.dye, [0; 10]);
         assert_eq!(s.life_max, None);
+        assert_eq!(s.mana_max, None);
+        assert!(!s.used_aegis_fruit);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
-    /// W4-g88: the v7 read clamps the permanent cap at 500
-    /// (`Player.cs:55221-55224`'s `statLifeMax > 500` clamp).
+    /// W4-g88: the v7 read clamps the permanent life cap at 500
+    /// (`Player.cs:55221-55224`) and the permanent mana cap at 200
+    /// (`:55227-55229`) — the superset block's both pairs.
     #[test]
-    fn version_7_clamps_the_permanent_cap_at_five_hundred() {
+    fn version_7_clamps_the_permanent_caps() {
         let dir = crate::test_world_helpers::test_scratch("persist-v7-clamp");
         let path = dir.join("tr-persist-v7.trwld");
         let mut line = String::from("7\n1.0 2.0 500\n");
@@ -290,10 +354,84 @@ mod tests {
         for _ in 0..10 {
             line.push_str("0 ");
         }
-        line.push_str("\n900 900\n");
+        line.push_str("\n0\n900 900\n900 900\n");
         std::fs::write(player_path(&path), line).unwrap();
         let s = load(&path).expect("v7 sidecar");
-        assert_eq!(s.life_max, Some((500, 900)), "the permanent half clamps");
+        assert_eq!(s.life_max, Some((500, 900)), "the life permanent half clamps");
+        assert_eq!(s.mana_max, Some((200, 900)), "the mana permanent half clamps");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The reconciliation witness: g89's FLAG-ONLY v7 (one post-dye line,
+    /// `920014cb`'s writer) still loads — the token-count dispatch reads
+    /// the unlock and keeps the maxima at None.
+    #[test]
+    fn w4_g89s_flag_only_v7_still_loads() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-g89");
+        let path = dir.join("tr-persist-v7-g89.trwld");
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n1\n"); // g89's single flag line
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("g89's v7 sidecar");
+        assert!(s.used_aegis_fruit, "the flag rides its own position");
+        assert_eq!(s.life_max, None, "no life pair in g89's writer");
+        assert_eq!(s.mana_max, None, "no mana pair in g89's writer");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The reconciliation witness: the pre-reconciliation LIFE-ONLY v7
+    /// (`f1eb9b60`'s writer — the first post-dye line is a TWO-token
+    /// pair) still loads: the pair dispatches to life, mana stays None,
+    /// the flag stays false.
+    #[test]
+    fn the_life_only_v7_still_loads() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-life-only");
+        let path = dir.join("tr-persist-v7-life.trwld");
+        let mut line = String::from("7\n1.0 2.0 405\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n405 405\n"); // f1eb9b60's single life line
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the life-only v7 sidecar");
+        assert_eq!(s.life_max, Some((405, 405)));
+        assert_eq!(s.mana_max, None);
+        assert!(!s.used_aegis_fruit);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The superset round-trip: all three post-dye lines survive a
+    /// save/load, in the contract order (flag, life pair, mana pair).
+    #[test]
+    fn the_v7_superset_round_trips_all_three_lines() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.used_aegis_fruit = true;
+        p.life_max_base = 420;
+        p.max_hp = 420;
+        p.mana_max_base = 60;
+        p.mana_max = 80; // an Arcane-inflated effective half rides verbatim
+        let dir = crate::test_world_helpers::test_scratch("persist-v7-superset");
+        let path = dir.join("tr-persist-v7-superset.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0; 3], &[0; 10], &[]).unwrap();
+        let text = std::fs::read_to_string(player_path(&path)).unwrap();
+        let post_dye: Vec<&str> = text.lines().skip(7).collect();
+        assert_eq!(post_dye, ["1", "420 420", "60 80"], "the contract order");
+        let s = load(&path).expect("the superset v7 sidecar");
+        assert!(s.used_aegis_fruit);
+        assert_eq!(s.life_max, Some((420, 420)));
+        assert_eq!(s.mana_max, Some((60, 80)));
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
