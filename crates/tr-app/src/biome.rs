@@ -71,12 +71,15 @@ pub(crate) fn calculate_water_style(world: &World, camera: Vec2) -> usize {
 }
 
 /// `Main.DrawBG_HandleBackgroundTransition` plus the `bgDelay` branch of
-/// `Main.DrawBG`. The original's instant swap only pairs two forest variant
-/// sets (`GetCurrentBackgroundOfStyle`), and all forest sets are tree set 1 in
-/// our port, so it can never fire here.
+/// `Main.DrawBG`. Delay is 60 frames when entering a forest style, 30 otherwise;
+/// after the switch `bgDelay` becomes -60 and holds a 60-frame cooldown.
 ///
-/// Delay is 60 frames when entering a forest style, 30 otherwise; after the
-/// switch `bgDelay` becomes -60 and holds a 60-frame cooldown.
+/// Remainder (W4-g70): the C#'s instant-swap arm (`Main.cs:64067-64073`) fires
+/// when both styles are forest AND `GetCurrentBackgroundOfStyle` matches (the
+/// two slots share one underlying `treeBG` style). It needs the four tree
+/// styles threaded in and is transition-timing, not parallax; generated worlds
+/// keep all four at style 0 with `treeX` at `maxTilesX`, so the 10/11/12 slots
+/// are never preferred and the arm stays unreachable there.
 pub(crate) fn advance_bg_style(style: &mut i32, delay: &mut i32, preferred: i32) {
     // `SurfaceBackgroundID.Sets.IsForest`: 0 and the four forest set styles.
     fn is_forest(style: i32) -> bool {

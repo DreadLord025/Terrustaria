@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn the_94_family_steps_both_hills_every_six_ticks() {
         let mut anim = ForestBgAnimation::default();
-        let mut hills = [[7i32, 94]];
+        let mut hills = [[7i32, 94], [7, 8], [7, 8], [7, 8]];
         // Tick 1..5 hold frame 0; tick 6 lands frame 1.
         for _ in 0..5 {
             anim.update(&mut hills);
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn the_180_family_keeps_the_far_hill() {
         let mut anim = ForestBgAnimation::default();
-        let mut hills = [[179i32, 180]];
+        let mut hills = [[179i32, 180], [7, 8], [7, 8], [7, 8]];
         for _ in 0..6 {
             anim.update(&mut hills);
         }
@@ -196,7 +196,7 @@ mod tests {
     #[test]
     fn a_static_hill_is_untouched() {
         let mut anim = ForestBgAnimation::default();
-        let mut hills = [[7i32, 8]];
+        let mut hills = [[7i32, 8], [7, 8], [7, 8], [7, 8]];
         for _ in 0..100 {
             anim.update(&mut hills);
         }
