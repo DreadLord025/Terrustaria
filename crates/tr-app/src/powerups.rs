@@ -1,8 +1,9 @@
 //! W4-a6 — the permanent power-up consumables: `Player.ItemCheck`'s
 //! `ItemCheck_UseLifeCrystal` / `UseLifeFruit` / `UseManaCrystal` /
 //! `UseDemonHeart` / `UseMinecartPowerUp` / `UseArtisanLoaf` /
-//! `UseCombatBook` (`Player.cs:45192-45350`) and their sibling
-//! `ItemCheck_Use*` arms (`:45226-45423`, later commits).
+//! `UseCombatBook` / `UseTorchGodsFavor` / `UsePeddlersSatchel`
+//! (`Player.cs:45192-45383`) and their sibling `ItemCheck_Use*` arms
+//! (`:45352-45423`, later commits).
 //!
 //! Every arm rides the C# mid-swing gate `itemAnimation > 0 &&
 //! ItemTimeIsZero` (`:4064`): the use START (`ApplyItemAnimation`) ran on
@@ -60,7 +61,7 @@ fn use_time_secs(held: ItemSlot) -> f32 {
 /// The power-up kinds this machine owns — the `ItemCheck_Use*` cluster's
 /// ids (`Player.cs:43595-43601`'s call row).
 pub(crate) fn is_powerup(kind: u16) -> bool {
-    matches!(kind, 29 | 109 | 1291 | 3335 | 5289 | 5326 | 4382 | 5336)
+    matches!(kind, 29 | 109 | 1291 | 3335 | 5289 | 5326 | 4382 | 5336 | 5043 | 5343)
 }
 
 /// `Player.ItemCheck_CheckCanUse_Inner`'s Demon Heart refusal
@@ -91,8 +92,10 @@ fn run_powerup_arm(app: &mut App, held: ItemSlot) -> bool {
         109 => use_mana_crystal(app),
         3335 => use_demon_heart(app),
         5289 => use_minecart_powerup(app),
+        5043 => use_torch_gods_favor(app),
         5326 => use_artisan_loaf(app),
         4382 | 5336 => use_combat_book(app, held.kind),
+        5343 => use_peddlers_satchel(app),
         _ => false,
     };
     if fired {
@@ -318,6 +321,49 @@ fn use_combat_book(app: &mut App, kind: u16) -> bool {
     };
     app.chat
         .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
+    true
+}
+
+/// `Player.ItemCheck_UseTorchGodsFavor` (`Player.cs:45226-45243`):
+/// `!unlockedBiomeTorches` → `unlockedBiomeTorches = true;
+/// UsingBiomeTorches = true` (the property SETTER writes
+/// `builderAccStatus[11] = 0`, `:3960-3963`), `HandleSpecialEvent(24)` →
+/// GAIN_TORCH_GODS_FAVOR's "Use" flag (`AchievementsHelper.cs:367-369`)
+/// and the SP bestiary kill for the Torch God (`SetDefaults(664)` →
+/// `RegisterKill`, `:45234-45239` — the credit id is the name string,
+/// `lang_tables.rs`'s `(664, "TorchGod")` row). The `SendData(4/51)` syncs
+/// are MP-only.
+fn use_torch_gods_favor(app: &mut App) -> bool {
+    {
+        let Some(p) = app.player.as_mut() else {
+            return false;
+        };
+        if p.unlocked_biome_torches {
+            return false;
+        }
+        p.unlocked_biome_torches = true; // `:45231`
+        p.builder_acc_status[11] = 0; // `UsingBiomeTorches = true`, `:3962`
+    }
+    let _ = app.achievements.notify_custom("Use"); // `:45233`
+    // `Main.netMode == 0` — the port is SP, the kill always registers.
+    app.bestiary.kills.register_kill("TorchGod"); // `:45236-45238`
+    true
+}
+
+/// `Player.ItemCheck_UsePeddlersSatchel` (`Player.cs:45368-45383`):
+/// `!NPC.peddlersSatchelWasUsed` → the flag + the `Misc.PeddlersSatchelUsed`
+/// World-colour line (the SP arm; the `SendData(61, -18)` MP leg folds
+/// out). The travel shop's permanent extra stock slot reads the flag
+/// (`Chest.cs:1303-1306`, `shop.rs::setup_travel_shop`).
+fn use_peddlers_satchel(app: &mut App) -> bool {
+    if app.world.peddlers_satchel_was_used {
+        return false;
+    }
+    app.world.peddlers_satchel_was_used = true; // `:45375`
+    app.chat.new_text(
+        crate::lang::text("Misc.PeddlersSatchelUsed"),
+        crate::chat::COLOR_WORLD,
+    );
     true
 }
 
@@ -835,6 +881,72 @@ mod tests {
     fn a_second_combat_book_volume_two_refuses() {
         let mut app = rig(5336, 2);
         app.world.combat_book_volume_two_was_used = true;
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
+        assert!(app.chat.messages.is_empty());
+    }
+
+    /// Torch God's Favor 5043: the unlock flag + the builder-accessory
+    /// status slot 11 flip, GAIN_TORCH_GODS_FAVOR completes, the TorchGod
+    /// bestiary kill registers, one consumed (`:45226-45243`).
+    #[test]
+    fn torch_gods_favor_unlocks_the_biome_torches() {
+        let mut app = rig(5043, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        let p = app.player.as_ref().unwrap();
+        assert!(p.unlocked_biome_torches);
+        assert_eq!(p.builder_acc_status[11], 0, "UsingBiomeTorches = true");
+        assert_eq!(app.inventory[app.selected].count, 1);
+        let torch = app
+            .achievements
+            .list
+            .iter()
+            .find(|a| a.name == "GAIN_TORCH_GODS_FAVOR")
+            .unwrap();
+        assert!(torch.completed, "HandleSpecialEvent(24)");
+        assert_eq!(app.bestiary.kills.get_kill_count("TorchGod"), 1);
+    }
+
+    /// A second Torch God's Favor refuses (the `!unlockedBiomeTorches`
+    /// gate) — no second bestiary kill, no consume.
+    #[test]
+    fn a_second_torch_gods_favor_refuses() {
+        let mut app = rig(5043, 2);
+        app.player.as_mut().unwrap().unlocked_biome_torches = true;
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert_eq!(app.inventory[app.selected].count, 2, "no consume on refusal");
+        assert_eq!(app.bestiary.kills.get_kill_count("TorchGod"), 0);
+    }
+
+    /// Peddler's Satchel 5343: the world flag flips, the World-colour chat
+    /// line prints, one consumed (`:45368-45383`).
+    #[test]
+    fn peddlers_satchel_sets_the_world_flag_and_chats() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = rig(5343, 2);
+        tick(&mut app);
+        app.mine_down = true;
+        tick(&mut app);
+        assert!(app.world.peddlers_satchel_was_used);
+        assert_eq!(app.inventory[app.selected].count, 1);
+        let line = app.chat.messages.first().expect("the chat line");
+        assert_eq!(line.text, crate::lang::text("Misc.PeddlersSatchelUsed"));
+        assert_eq!(line.color, crate::chat::COLOR_WORLD);
+    }
+
+    /// A second Peddler's Satchel refuses (the `!peddlersSatchelWasUsed`
+    /// gate) — no second chat line, no consume.
+    #[test]
+    fn a_second_peddlers_satchel_refuses() {
+        let mut app = rig(5343, 2);
+        app.world.peddlers_satchel_was_used = true;
         tick(&mut app);
         app.mine_down = true;
         tick(&mut app);

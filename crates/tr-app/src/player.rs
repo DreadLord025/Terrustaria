@@ -1106,8 +1106,10 @@ pub struct Player {
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
-    /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
-    /// is unported, so the flag stays false in play.
+    /// (`Recipe.cs:353-356`). The Torch God's Favor 5043 use
+    /// (`Player.cs:45226-45243`) rides `powerups::use_torch_gods_favor`
+    /// (W4-a6) — it also sets `builder_acc_status[11] = 0` (the
+    /// `UsingBiomeTorches` property, `:3950-3963`).
     pub unlocked_biome_torches: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the

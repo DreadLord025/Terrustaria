@@ -316,6 +316,11 @@ pub struct World {
     /// same world-field standing-in. The 5336 use writes it
     /// (`powerups::use_combat_book`, W4-a6, `Player.cs:45337-45344`).
     pub combat_book_volume_two_was_used: bool,
+    /// `NPC.peddlersSatchelWasUsed` (`WorldFile.cs:1408`, v260; the travel
+    /// shop's extra stock slot, `Chest.SetupTravelShop`, `Chest.cs:1303-
+    /// 1306`) — the same world-field standing-in. The 5343 use writes it
+    /// (`powerups::use_peddlers_satchel`, W4-a6, `Player.cs:45368-45383`).
+    pub peddlers_satchel_was_used: bool,
     /// The body's `velocity.X` — the fists' tether anchor folds it in
     /// (`AI_047`'s `vector = Main.npc[golemBoss].Center + nPC.velocity +
     /// (0, -9 * scale)`, `NPC.cs:19258-19259`) — the WoF write-through
@@ -689,6 +694,7 @@ impl World {
             unlocked_slime_red_spawn: false,
             combat_book_was_used: false,
             combat_book_volume_two_was_used: false,
+            peddlers_satchel_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
             slime_rain_time: 0.0,
