@@ -224,6 +224,13 @@ pub struct TooltipContext<'a> {
     /// `Main.LocalPlayer.chest` (`Player.cs:2876`) — the favourite rows'
     /// bank-blocked notice (`Main.cs:20659`). −1 closed.
     pub open_chest: i32,
+    /// W4-f28 — `NewCraftingUI._missingRequirementsTooltipText`
+    /// (`NewCraftingUI.cs:526`): the hovered UNAVAILABLE recipe's reason,
+    /// appended after the shop lines while the crafting panel is visible
+    /// (`Main.cs:20363-20366`). The port's grid lists craftable rows only,
+    /// so the draw sites leave this `None` until the persistent recipe-list
+    /// port lands (docs/ANALYSIS.md).
+    pub crafting_missing_reason: Option<String>,
 }
 
 impl Default for TooltipContext<'_> {
@@ -238,6 +245,7 @@ impl Default for TooltipContext<'_> {
             inventory: None,
             held_kind: 0,
             open_chest: -1,
+            crafting_missing_reason: None,
         }
     }
 }
@@ -394,17 +402,17 @@ pub fn item_tooltip_lines(
         };
         lines.push((crate::lang::tip(kb), [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20805-20812` — the fishing rows (`GameUI.PrecentFishingPower` /
-    // `BaitRequired` / `GameUI.BaitPower`).
+    // `:20804-20815` — the fishing rows. `PrecentFishingPower` is the
+    // vanilla's OWN typo'd key (`:20806`, the shipped en-US row is
+    // "{0}% fishing power") — the base-era `RecentFishingPower` spelling
+    // resolved nothing and the row rendered blank (research/128 §5-e16.1).
+    // `BaitRequired` takes NO argument (`:20808`).
     if d.fishing_pole > 0 {
         lines.push((
-            crate::lang::game_ui_fmt("RecentFishingPower", d.fishing_pole),
+            crate::lang::game_ui_fmt("PrecentFishingPower", d.fishing_pole),
             [1.0, 1.0, 1.0, 1.0],
         ));
-        lines.push((
-            crate::lang::game_ui_fmt("BaitRequired", 0),
-            [1.0, 1.0, 1.0, 1.0],
-        ));
+        lines.push((crate::lang::game_ui("BaitRequired"), [1.0, 1.0, 1.0, 1.0]));
     }
     if d.bait > 0 {
         lines.push((
@@ -556,6 +564,15 @@ pub fn item_tooltip_lines(
         ctx.flags,
         &ctx.world,
         ctx.player,
+        &mut lines,
+    );
+    // `Main.cs:20361-20366` — the row order after GetLinesInfo: the shop
+    // lines (`AddShopLines`, appended below when the shop-hover context is
+    // present), THEN `NewCraftingUI.AddTooltipLines` — the crafting row is
+    // the LAST row.
+    crate::craft::add_crafting_tooltip_lines(
+        ctx.crafting_missing_reason.as_deref(),
+        kind == 0,
         &mut lines,
     );
     lines
