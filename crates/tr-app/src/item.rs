@@ -2381,10 +2381,12 @@ mod s1_p_i47_tests {
     #[test]
     fn the_grab_rectangle_is_the_expanded_hitbox() {
         // The player at (100, 100) 20x42, range 42: the rect spans
-        // x 58..162, y 58..184. A 14x14 drop at x 44 (44+14 = 58) TOUCHES
-        // the left edge — no intersect; at 45 (45+14 = 59) it overlaps.
-        assert!(!grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(44.0, 100.0)));
-        assert!(grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(45.0, 100.0)));
+        // x 58..162, y 58..184. A 16x16 drop at x 42 (42+16 = 58) TOUCHES
+        // the left edge — no intersect; at 43 (43+16 = 59) it overlaps.
+        // (The 16-box repin per W4-e19 research/145 SHIMMER SEAL, rule 1 —
+        // `WorldItem.cs:138` `base.width = (base.height = 16)`.)
+        assert!(!grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(42.0, 100.0)));
+        assert!(grab_rect_intersects(100.0, 100.0, 20.0, 42.0, 42.0, Vec2::new(43.0, 100.0)));
         // The direct hitbox: strict overlap.
         assert!(rects_intersect(100.0, 100.0, 20.0, 42.0, 110.0, 120.0, 14.0, 14.0));
         assert!(!rects_intersect(100.0, 100.0, 20.0, 42.0, 120.0, 120.0, 14.0, 14.0));
@@ -2570,8 +2572,9 @@ mod s1_p_i47_tests {
     fn s1_p_i52_the_magnet_pull_blends_at_the_csharp_speed_and_acc() {
         let w = ground();
         let pc = Vec2::new(200.0, 200.0);
-        // centre at (300, 200) — pos = centre - 7 (the 14x14 box).
-        let mut heart = ItemDrop::new(58, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        // centre at (300, 200) — pos = centre - 8 (the 16x16 box; the
+        // research/145 SHIMMER SEAL repin, `WorldItem.cs:138`).
+        let mut heart = ItemDrop::new(58, 1, 0, 292.0, 192.0, 0.0, 0.0, 0.0);
         heart.being_grabbed = true;
         pull_item_pickup(heart.center(), &mut heart.vel, pc, 15.0, 5);
         // f32: 15/100 is inexact, so the blend lands within an ulp of -3
@@ -2579,13 +2582,13 @@ mod s1_p_i47_tests {
         assert!((heart.vel.x - -3.0).abs() < 1e-4, "15/5 blend from rest: {}", heart.vel.x);
         assert_eq!(heart.vel.y, 0.0);
         heart.update(&w, 1.0 / 60.0);
-        assert!((heart.pos.x - 290.0).abs() < 1e-3, "the blend moves the drop: {}", heart.pos.x);
-        assert_eq!(heart.pos.y, 193.0);
+        assert!((heart.pos.x - 289.0).abs() < 1e-3, "the blend moves the drop: {}", heart.pos.x);
+        assert_eq!(heart.pos.y, 192.0);
         // The second tick blends again: (−3*4 + −15)/5 = −5.4.
         heart.being_grabbed = true;
         pull_item_pickup(heart.center(), &mut heart.vel, pc, 15.0, 5);
         assert!((heart.vel.x - -5.4).abs() < 1e-4, "vel {}", heart.vel.x);
-        let mut star = ItemDrop::new(184, 1, 0, 293.0, 193.0, 0.0, 0.0, 0.0);
+        let mut star = ItemDrop::new(184, 1, 0, 292.0, 192.0, 0.0, 0.0, 0.0);
         star.being_grabbed = true;
         pull_item_pickup(star.center(), &mut star.vel, pc, 12.0, 5);
         assert!((star.vel.x - -2.4).abs() < 1e-4, "12/5 blend: {}", star.vel.x);
