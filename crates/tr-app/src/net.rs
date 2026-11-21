@@ -5099,6 +5099,28 @@ mod tests {
         assert!(S2c::decode(18, &mut NetReader::new(&[1, 0, 0])).is_none());
     }
 
+    /// W4-c27 SEAL (research/248): the PARKED `sunModY`/`moonModY` offsets
+    /// still ride the wire verbatim — the full `short` range round-trips
+    /// (`NetMessage.cs:534-535`, both `short`, `Main.cs:1185`/`:1187`), so a
+    /// future title-screen-drag sender needs no codec change.
+    #[test]
+    fn w4_c27_set_time_mod_offsets_ride_the_full_short_range() {
+        let t = SetTime {
+            day_time: true,
+            time: 0,
+            sun_mod_y: i16::MIN,
+            moon_mod_y: i16::MAX,
+        };
+        let f = S2c::SetTime(t).encode();
+        assert_eq!(f[2], 18);
+        // Body: day byte + 4 time bytes, then the two shorts LE.
+        assert_eq!(&f[8..12], &[0x00, 0x80, 0xff, 0x7f]);
+        match S2c::decode(18, &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SetTime(d) => assert_eq!(d, t),
+            other => panic!("expected 18, got {:?}", other.msg_id()),
+        }
+    }
+
     #[test]
     fn w4_c27_player_zone_round_trips() {
         // `NetMessage.cs:933-944`: (byte)number + zone1..5 + (byte)townNPCs.

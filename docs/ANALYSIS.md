@@ -11554,10 +11554,16 @@ The handshake and the wire frame are 1:1 ports; the deliberate deviations
   the moon phase/type, the world size, the spawn, the surface/rock layer,
   the dial cooldowns and the hell back style; `generator_version` carries
   `save::VERSION` (the closest marker) pending the generator-version home.
-- **The clock rides the internal `205 Time` broadcast** (host в†’ clients at
+- **The clock rides the internal `205 Time` broadcast** (host → clients at
   10 Hz). The C# sends `7 WorldInfo` only at join
   (`MessageBuffer.cs:469`/`:670`) and syncs the clock through the world
-  flags; the exact 1:1 clock path is pinned in M6-NET-2.
+  flags; the exact 1:1 clock path is pinned in M6-NET-2. **W4-c27 SEAL
+  update (research/248):** the `18 SetTime` reader/codec/apply LANDED on
+  the c27 tip (6fb7bcb25/412b6bc0d) — but the C# has ZERO `SendData(18)`
+  sites (g48's census re-probe), so the faithful retirement of this
+  stand-in is the id-7 cadence switch (the 3600-tick `UpdateServer`
+  heartbeat `Main.cs:64560` + the event edges), owned by c28 per g48's
+  research/244 instruction; the 18 codec stays as the wire-compat leg.
 - **The name gate is the ported C# gate** (`MessageBuffer.cs:360-396`): empty,
   `> Player.nameLen` (20, `Player.cs:57105`) or already taken by another slot
   в†’ the C# kick texts. The creative-mode mismatch checks
@@ -39244,3 +39250,31 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The W4-c27 SetTime SEAL (research/248, code-only)
+
+The entity-state lane's clock leg is SEALED at tip 412b6bc0d: the
+`18 SetTime` reader/codec/apply landed verbatim in batch 1 (6fb7bcb25,
+`NetMessage.cs:531-536` / `MessageBuffer.cs:1290-1298`), the c28
+205→id-7 send switch stays PENDING at c28 tip 1ac5929f3 (g48's
+research/244 instruction — the C# has ZERO `SendData(18)` sites, the
+clock rides `7 WorldData`), and g48's census FINAL (2b61530b4) records
+18 = c27-landed. **Deliberate deviations recorded:**
+
+- **sunModY/moonModY parked, scope corrected.** The batch-1 message
+  called them "journey-mode" offsets; the full writer census
+  (`Main.cs:62983-62984` decay + `:62998`/`:63007` drag, gated
+  `gameMenu && netMode != 1` `:62985`; `MessageBuffer.cs:1295-1296`
+  the sync leg) shows they are the TITLE-SCREEN celestial-drag
+  offsets — pure render, no sim, no RNG, always 0 in-world. The wire
+  keeps both shorts (full-range round-trip witness), the client apply
+  drops them (drop witness); the port home arrives with the
+  title-screen drag port. The apply-arm comment is corrected in place.
+- **The 10 Hz internal-205 clock broadcast stays on this tip** (the
+  admitted stand-in, the deviation note above re-pinned): its
+  retirement is c28's switch step 4, never c27's — the 18 codec is
+  the wire-compat leg that survives the switch.
+- Three seal witnesses WRITTEN NOT RUN (`net.rs` full-short-range
+  offsets; `netglue.rs` parked-offset drop + the `(int)` truncation ×
+  strict-boundary composition through the net path). The clock-family
+  bible (one owner per body, the merge order) is research/248 s5.

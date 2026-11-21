@@ -2022,8 +2022,10 @@ impl App {
             // `case 18` — the host's clock (`MessageBuffer.cs:1290-1298`,
             // client-only). `Main.time` is the wire `int`; the port's clock is
             // f64 ticks. `sunModY`/`moonModY` (`Main.cs:1185`/`:1187`) are the
-            // journey-mode sun/moon drag offsets — no port field yet, parked
-            // (W4-c27).
+            // TITLE-SCREEN sun/moon drag offsets (the only writers are
+            // `DrawSunAndMoon`'s `gameMenu && netMode != 1` block,
+            // `Main.cs:62983-63007`) — no port field yet, parked (W4-c27;
+            // research/248 s4: the wire keeps them, the apply drops them).
             S2c::SetTime(t) => {
                 self.world.day_time = t.day_time;
                 self.world.time = t.time as f64;
@@ -5497,6 +5499,82 @@ mod message_family_tests {
         pump(&mut host_app, &mut client_app, 12);
         assert!(!client_app.world.day_time, "the night flag applied");
         assert_eq!(client_app.world.time, 16_200.0, "the int clock applied");
+    }
+
+    /// W4-c27 SEAL (research/248): the apply arm stores ONLY the clock — the
+    /// parked `sunModY`/`moonModY` fields never touch world state
+    /// (`MessageBuffer.cs:1295-1296` writes `Main.sunModY`/`moonModY`, which
+    /// have no port home; the offsets feed only the title-screen celestial
+    /// drag, `Main.cs:62983-63007`, itself gated `gameMenu && netMode != 1`
+    /// — never a client's world). The wire keeps them (the round-trip
+    /// witness); the client apply deliberately drops them.
+    #[test]
+    fn w4_c27_set_time_apply_drops_the_parked_offsets() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The host's own 10 Hz internal-205 broadcast rides the same values
+        // (the landed convention), so the assertion holds regardless of
+        // which message lands last.
+        host_app.world.day_time = false;
+        host_app.world.time = 16_200.0;
+        let before = (client_app.world.day_time, client_app.world.time);
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::SetTime(net::SetTime {
+                day_time: false,
+                time: 16_200,
+                // Wild offsets: they must not perturb anything world-side.
+                sun_mod_y: i16::MIN,
+                moon_mod_y: i16::MAX,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        assert!(!client_app.world.day_time, "the flag applied");
+        assert_eq!(client_app.world.time, 16_200.0, "the int clock applied");
+        assert_ne!(
+            before,
+            (client_app.world.day_time, client_app.world.time),
+            "the pair started elsewhere so the apply is observable"
+        );
+        // The dial cooldowns ride the WorldInfo join fields (and the host's
+        // 51 kind-3/6 dial triggers) — an 18 frame leaves them alone (the
+        // C# reader `MessageBuffer.cs:1290-1298` has no cooldown arm).
+        assert_eq!(client_app.world.sundial_cooldown, 0, "no cooldown write from 18");
+        assert_eq!(client_app.world.moondial_cooldown, 0, "no cooldown write from 18");
+    }
+
+    /// W4-c27 SEAL (research/248), the clock-family composition: the wire
+    /// `int` (`NetMessage.cs:533` `(int)Main.time` truncates toward zero) and
+    /// the STRICT boundary tests (`Main.cs:65137`/`:65148`, ported in
+    /// `world_sim/clock.rs::advance_time`) compose — a clock applied exactly
+    /// ON a boundary stays the old half on the client too. The host's
+    /// fractional overshoot below the boundary truncates to the boundary
+    /// int, which must NOT flip the client's day flag one tick early.
+    #[test]
+    fn w4_c27_set_time_int_truncation_keeps_the_strict_boundary() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The truncation itself: a host resting at 54000.7 (still day — the
+        // strict `>` has not fired) puts 54000 on the wire.
+        assert_eq!(54_000.7f64 as i32, 54_000, "(int) truncates toward zero");
+        // The host's own 10 Hz internal-205 broadcast rides the same values
+        // (the landed convention): the host rests exactly ON the boundary.
+        host_app.world.day_time = true;
+        host_app.world.time = 54_000.0;
+        if let NetRole::Host(server) = &host_app.net {
+            server.broadcast(&S2c::SetTime(net::SetTime {
+                day_time: true,
+                time: host_app.world.time as i32,
+                sun_mod_y: 0,
+                moon_mod_y: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        assert!(client_app.world.day_time, "54000 exactly is still day");
+        assert_eq!(client_app.world.time, 54_000.0);
+        // The client's own sim then crosses on its next step past it — the
+        // strict boundary fires exactly once, overshoot discarded.
+        let mut rng = tr_core::UnifiedRandom::new(0);
+        crate::world_sim::clock::advance_time(&mut client_app.world, 0.05, &mut rng, false);
+        assert!(!client_app.world.day_time, "past 54000 the night starts");
+        assert_eq!(client_app.world.time, 0.0, "the overshoot is discarded");
     }
 
     /// W4-c27 `36 SyncPlayerZone` — the host forces the subject to the sender
