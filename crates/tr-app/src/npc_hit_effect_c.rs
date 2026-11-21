@@ -136,6 +136,9 @@
 //! | 562 | `:85684` | the 50 KingSlime death (1 gore 734 at Center anchor, baby-slimes spawn seam) |
 //! | 563-566 | `:85718-85721` | the 153 GiantTortoise death (4 gores 177/178/179/179) |
 //! | 567-570 | `:85737-85740` | the 177 Derpling death (4 gores 234/235/236/236) |
+//! | 571-572 | `:85757-85758` | the 494/495 Crawdad death (2 gores, per-type offset (type-494)*2) |
+//! | 573 | `:85775` | the 496/497 GiantShelly death (1 gore 739+(type-496)) |
+//! | 574-576 | `:85793-85795` | the 498-506 Salamander death (3 gores, per-type offset type-498) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3631,6 +3634,91 @@ fn derpling_death(
     gore.new_gore(rng, world, pos, vel, 236, 1.0); // :85740
 }
 
+/// The 494/495 Crawdad death (`NPC.cs:85752-85758`, sites 571-572): the
+/// 15-dust type-5 burst, then the 2 gores `736 + num454` / `735 + num454`
+/// where `num454 = (type-494)*2` (494 → 736/735, 495 → 738/737). The 736
+/// precedes the 735. Scale defaults to 1.
+fn crawdad_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..15 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:85756` — num454 = (type-494)*2.
+    let num454 = (npc_type - 494) * 2;
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 736 + num454, 1.0); // :85757
+    gore.new_gore(rng, world, pos, vel, 735 + num454, 1.0); // :85758
+}
+
+/// The 496/497 GiantShelly death (`NPC.cs:85771-85775`, site 573): the
+/// 15-dust type-5 burst, then the single gore `739 + (type-496)` (496 → 739,
+/// 497 → 740). Scale defaults to 1.
+fn giant_shelly_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..15 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 739 + (npc_type - 496), 1.0); // :85775
+}
+
+/// The 498-506 Salamander death (`NPC.cs:85788-85795`, sites 574-576): the
+/// 15-dust type-5 burst, then the 3 gores `750 + num459` at position,
+/// `741 + num459` at +16 Y, `759 + num459` at +18 Y, where
+/// `num459 = type-498` (the nine variants shift all three types). Scale
+/// defaults to 1.
+fn salamander_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..15 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:85792` — num459 = type-498.
+    let num459 = npc_type - 498;
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 750 + num459, 1.0); // :85793
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 16.0), vel, 741 + num459, 1.0); // :85794
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 18.0), vel, 759 + num459, 1.0); // :85795
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4064,6 +4152,18 @@ pub fn hit_effect_c(
     // `:85723-85741` — the 177 Derpling arm (sites 567-570).
     if npc_type == 177 && npc.hp <= 0 {
         derpling_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85742-85759` — the 494/495 Crawdad arm (sites 571-572).
+    if (npc_type == 494 || npc_type == 495) && npc.hp <= 0 {
+        crawdad_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85760-85777` — the 496/497 GiantShelly arm (site 573).
+    if (npc_type == 496 || npc_type == 497) && npc.hp <= 0 {
+        giant_shelly_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85778-85796` — the 498-506 Salamander arm (sites 574-576).
+    if (498..=506).contains(&npc_type) && npc.hp <= 0 {
+        salamander_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6450,6 +6550,57 @@ mod tests {
             for i in 0..4 {
                 assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
             }
+        }
+    }
+
+    /// `NPC.cs:85757-85758` — the Crawdad death: the per-type offset
+    /// (type-494)*2 shifts the 736/735 pair (494→736/735, 495→738/737).
+    #[test]
+    fn w4_f10_the_crawdad_death_uses_the_per_type_offset() {
+        let w = air();
+        for (ty, gores) in [(494, [736, 735]), (495, [738, 737])] {
+            let n = boss(100.0, 100.0, 44.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(509);
+            crawdad_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "crawdad {ty}");
+        }
+    }
+
+    /// `NPC.cs:85775` — the GiantShelly death: the single gore
+    /// 739+(type-496) (496→739, 497→740).
+    #[test]
+    fn w4_f10_the_giant_shelly_death_uses_the_per_type_offset() {
+        let w = air();
+        for (ty, gore_ty) in [(496, 739), (497, 740)] {
+            let n = boss(100.0, 100.0, 40.0, 30.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(521);
+            giant_shelly_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, gore_ty, "shelly {ty}");
+        }
+    }
+
+    /// `NPC.cs:85793-85795` — the Salamander death: the 3 gores shift by
+    /// type-498 (750/741/759 + offset) at +0/+16/+18 Y.
+    #[test]
+    fn w4_f10_the_salamander_death_uses_the_per_type_offset() {
+        let w = air();
+        for ty in [498, 502, 506] {
+            let off = ty - 498;
+            let n = boss(100.0, 100.0, 44.0, 36.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(523);
+            salamander_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![750 + off, 741 + off, 759 + off], "salamander {ty}");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 116.0));
+            assert_eq!(gore.slot(2).position, Vec2::new(100.0, 118.0));
         }
     }
 
