@@ -636,6 +636,33 @@ mod tests {
         assert_eq!(p.buffs.buff_type[0], 177, "no step-down above time 2");
     }
 
+    /// W4-f12 closeout item 1 — the f49 R3 bridge hunk (research/
+    /// W4-f12-closeout.md): f49's tip 6c0ee2aa2 still carries its three scan
+    /// arms, so the merge hunk is PUBLISHED, not applied (the Player field
+    /// exists only on their tree). This witness pins the hunk's premise:
+    /// `OrbScanState.nebula_level_mana` is ASSIGN-shaped — the per-tick
+    /// reset + `nebula_buffs`'s `:12072` derivation mean a buff-less frame
+    /// leaves 0 (a `p.nebula_level_mana = p.orb_scan.nebula_level_mana`
+    /// bridge can never carry a stale tier), and ONE dispatch steps the
+    /// time-2 edge exactly once.
+    #[test]
+    fn w4_f12_closeout_orb_scan_is_assign_shaped() {
+        let mut p = player();
+        let mut pool = ProjectilePool::default();
+        p.buffs.buff_type[0] = 177; // Nebula Mana tier 2
+        p.buffs.buff_time[0] = 2;
+        run(&mut p, &mut pool);
+        assert_eq!(p.orb_scan.nebula_level_mana, 1, "the ONE step-down");
+        assert_eq!(p.buffs.buff_type[0], 176, "tier 1 after the step");
+        assert_eq!(p.buffs.buff_time[0], 480, "re-armed once (:12077)");
+        // The next tick: the head reset (player.rs `orb_scan.reset_effects`)
+        // + no buff in the bar -> the assign-derivation leaves 0.
+        p.buffs.del_buff(0);
+        p.orb_scan.reset_effects();
+        run(&mut p, &mut pool);
+        assert_eq!(p.orb_scan.nebula_level_mana, 0, "no stale tier survives");
+    }
+
     #[test]
     fn w4_f12_nebula_life_steps_down_and_adds_regen() {
         // `:10448-10452` + `:12070-12079`: tier 2 at time 2 steps to tier 1,
