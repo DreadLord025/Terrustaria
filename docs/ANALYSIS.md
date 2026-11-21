@@ -22283,6 +22283,41 @@ surface band — the C# behaviour the early-return ladder had dropped (a behavio
 not a deviation). The emote wheel/help-text machine stay unported on this branch (the
 g54 hand-off + the future helpText machine).
 
+## The W4-f39 SEAL (2026-11-21, code-only mode)
+
+**Code-only mode.** The seal (research/282) adds ZERO code bytes — every item is a
+receipt over already-landed bodies, re-verified at tip `8704691a3` against the co-lane
+tips d130 `b8f65570` / c39 `7dd785dc5` / g48 `2b61530b4`.
+
+* **research/244 → 281 RENUMBERED** (`fec65992`): registry-150 first-pushed-wins —
+  g48's `244-c28-18-send-switch.md` first-add 14:30:16 beats this lane's 14:32:01;
+  both postdate the d54 refresh's final sweep, so the §6.3 cutoff rule applies
+  (losers take ≥281 after a fresh sweep — 386 tips / 22 694 rows, 247-300 empty,
+  281 first-free). Content-preserving rename; ANALYSIS/ROADMAP/INDEX refs re-pointed.
+* **The d130 mutual receipt** (its research/83 §9): the five boundary gates
+  (music track 48, anniversary StartRain range-5, ResetSpawnTime `/2`, menu-return
+  StopSlimeRain, the slime-roll gates) are composed BOTH-ways — dedupe at merge.
+  The `slime_rain_roll` lowTiles `/5` arm takes **d130's ACTIVATED form**
+  (`World.skyblock_low_tiles`, the g67 R5 census); f39's documented-false stand-in
+  (`weather.rs:420-423`) is superseded, NOT a code gap. d130's zero-edits to
+  `world_sim/npcs.rs`/`render/sky.rs` + the absent `season.rs` re-verified by diff
+  against the merge-base `a725acb04` — the SlimeSky/kill-counter/season bodies stay
+  f39's. f39's audio WRAPPER (the moon tail 30/32) is the surviving audio.rs shape —
+  d130's inline 48-arm dedupes into `decide_world_music`.
+* **The c39 receipt** (its research/114 §16 DONE): the real-date Halloween/Xmas
+  gates are f39 Phase B's (`bd5a5a24a`) — c39 has NO calendar (season.rs absent,
+  grep-empty); its loot flags read the endless micro seeds alone (its
+  `npcs.rs:7004-7011`), f39's resolved `World.halloween`/`xmas` reads (`npcs.rs:968-
+  969`/`:7050`) are the strict superset and win the shared constructions at merge.
+  `LanternGates`/`lanterns_can_start` bodies byte-identical f39↔c39; c39's
+  `pub(crate)` export wins (the d130-graft rider; f39 has zero `world_events.rs`
+  edits since base). The v18 quintet keep-one stays research/281 §1.
+* **The SLIMERAIN-FAMILY bible**: research/282 §5 — d130 owns the weather tick +
+  the activated roll; f39 owns the event bodies (SlimeSky, sky-fall spawns, the
+  kill-counter + King scan, the season module, the emote/help gates, the music
+  wrapper); the persist story is research/281; g54 re-points its five pins; the
+  gate command is the workspace test run (all family witnesses WRITTEN NOT RUN).
+
 ## S1-D-3 вЂ” the aiStyle-8 caster family (`npc_ai_bat.rs`, 2026-11-18, code-only mode)
 
 **Code-only mode.** This slice landed under the Lead's code-only directive: no
