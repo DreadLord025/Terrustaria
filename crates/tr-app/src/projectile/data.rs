@@ -3649,6 +3649,17 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // LOCAL pair (-1), tileCollide false, ignoreWater, ownerHitCheck
             // (the 190 arm is d19's lane; the row lets the spawn land).
             DEAD_CELLS_FLINT_SLASH => (16.0, 16.0, 190, 2, TIME_LEFT_DEFAULT, 0, false, false, false, (true, -1, false, -1, 0, 1.0)),
+            // W4-d20 — `Projectile.cs:9315-9329` (973, the True Night's Edge
+            // spin slash): 30x30, aiStyle 191, friendly, melee, penetrate 3,
+            // LOCAL pair (10), tileCollide false, ignoreWater, alpha 255,
+            // timeLeft 90.
+            TRUE_NIGHTS_EDGE => (30.0, 30.0, 191, 3, 90, 0, false, false, false, (true, 10, false, -1, 255, 1.0)),
+            // W4-d20 — `Projectile.cs:9405-9421` (985, the Terra Blade second
+            // shot): 8x8, aiStyle 191, friendly, melee, penetrate -1, LOCAL
+            // pair (-1), stock tileCollide true (the blocked-move retract
+            // :18104-18110), ignoreWater, alpha 255, timeLeft 90,
+            // ownerHitCheck (the arm sets it dynamically).
+            TERRA_BLADE_2_SHOT => (8.0, 8.0, 191, -1, 90, 0, true, false, false, (true, -1, false, -1, 255, 1.0)),
             932 => (10.0, 10.0, 181, 5, 120, 0, true, true, false, RESET_STATE),
             // `Projectile.cs:939-948` — the Hook (13): 18x18.
             HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 0, false, false, false, RESET_STATE),
@@ -4272,7 +4283,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             || kind == JUMINO_STARDROP_ANIMATION
             // W4-d20 — `Projectile.cs:9827`/`:9843`/`:9868`: the flint trio
             // (1040/1041/1043) set `ignoreWater = true`.
-            || matches!(kind, DEAD_CELLS_FLINT | DEAD_CELLS_FLINT_SHOT | DEAD_CELLS_FLINT_SLASH),
+            || matches!(kind, DEAD_CELLS_FLINT | DEAD_CELLS_FLINT_SHOT | DEAD_CELLS_FLINT_SLASH)
+            // W4-d20 — `Projectile.cs:9325`/`:9415`: the two aiStyle-191
+            // sword shots (973/985) set `ignoreWater = true`.
+            || matches!(kind, TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
@@ -4310,6 +4324,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     // W4-d20 — `Projectile.cs:9841`/`:9864`: the flint spike
                     // (1041) and slash (1043) set melee.
                     | DEAD_CELLS_FLINT_SHOT | DEAD_CELLS_FLINT_SLASH
+                    // W4-d20 — `Projectile.cs:9321`/`:9411`: the two
+                    // aiStyle-191 sword shots (973/985) set melee.
+                    | TRUE_NIGHTS_EDGE | TERRA_BLADE_2_SHOT
             ),
         ranged: matches!(
             kind,
@@ -4553,6 +4570,12 @@ pub const DEAD_CELLS_FLINT_SHOT: u16 = 1041;
 /// aiStyle 190 (`Projectile.cs:9858-9874`). W4-d20 (the 190 arm is d19's
 /// lane; the row lets the flint's spawn land).
 pub const DEAD_CELLS_FLINT_SLASH: u16 = 1043;
+/// `ProjectileID.TrueNightsEdge` (973) — the True Night's Edge spin slash,
+/// aiStyle 191 (`Projectile.cs:9315-9329`). W4-d20.
+pub const TRUE_NIGHTS_EDGE: u16 = 973;
+/// `ProjectileID.TerraBlade2Shot` (985) — the Terra Blade's second shot,
+/// aiStyle 191 (`Projectile.cs:9405-9421`). W4-d20.
+pub const TERRA_BLADE_2_SHOT: u16 = 985;
 
 pub const MINION_SACRIFICABLE: &[u16] = &[
     191, 192, 193, 194, 266, 317, 373, 375, 387, 388, 390, 393, 407, 423, 533, 613, 755, 758, 759,

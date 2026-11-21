@@ -776,6 +776,13 @@ pub struct Projectile {
     /// `wants_mark_spawn` intent pattern — the pool cannot borrow the App's
     /// item vec mid-iteration.
     pub(crate) wants_gift_item: Option<(u16, f32, f32)>,
+    /// `Projectile.ownerHitCheck` (`Projectile.cs:304`, stock false): the
+    /// melee reach gate `Damage_PVE_Inner` reads (`:12637`). The spear family
+    /// sets it via `DefaultToSpear` (the port keys that on `SPEAR_KINDS`);
+    /// W4-d20's aiStyle-191 TerraBlade2Shot (985) sets it DYNAMICALLY
+    /// (`AI_191_TrueNightsEdge` `:41730`: `localAI[0] <= 6`), so the field
+    /// carries the live state for the 985 damage gate.
+    pub owner_hit_check: bool,
 }
 
 impl Default for Projectile {
@@ -863,6 +870,7 @@ impl Default for Projectile {
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
             wants_gift_item: None,
+            owner_hit_check: false,
         }
     }
 }
@@ -17507,6 +17515,26 @@ impl ProjectilePool {
                             // HandleMovement runs before the !active return (:17015/:17027).
                             self.slots[i].kill_step(world);
                         }
+                        // W4-d20 — aiStyle 191, the True Night's Edge / Terra
+                        // Blade sword shots (`AI_191_TrueNightsEdge`
+                        // `:41640-41808`): the opacity envelope, the num4 kill,
+                        // the 973 spin / 985 velocity-aligned choreographies.
+                        // The 973 keeps tileCollide false (free integrate); the
+                        // 985's blocked-move arm (`:18104-18110`) retracts.
+                        191 => {
+                            crate::projectile_ai_misc::ai_true_nights_edge(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref(),
+                                rng,
+                            );
+                            // HandleMovement runs before the !active return (:17015/:17027).
+                            if self.slots[i].kind == crate::projectile::TERRA_BLADE_2_SHOT {
+                                crate::projectile_ai_misc::terra_blade_move(&mut self.slots[i], world);
+                            } else {
+                                self.slots[i].kill_step(world);
+                            }
+                        }
                         // S1-P-i56 — `AI()`'s `else if (this.aiStyle == 120)`
                         // (`Projectile.cs:34888-34891`) ->
                         // `AI_120_StardustGuardian` (`:44634-44963`): the
@@ -22845,6 +22873,17 @@ impl ProjectilePool {
             // exception, none is a spear target here, so the gate runs
             // unconditionally for the family (ANALYSIS).
             if SPEAR_KINDS.contains(&p.kind) {
+                if let Some(so) = self.spear_owner {
+                    if !crate::projectile_ai_spear::owner_can_hit(world, &so, n) {
+                        continue;
+                    }
+                }
+            }
+            // W4-d20 — the aiStyle-191 TerraBlade2Shot (985) sets
+            // `ownerHitCheck` dynamically (`AI_191_TrueNightsEdge` `:41730`:
+            // `localAI[0] <= 6`); the same `CanHitWithMeleeWeapon` reach gate
+            // applies while it is true (the spear snapshot carries the owner).
+            if p.kind == crate::projectile::TERRA_BLADE_2_SHOT && p.owner_hit_check {
                 if let Some(so) = self.spear_owner {
                     if !crate::projectile_ai_spear::owner_can_hit(world, &so, n) {
                         continue;
@@ -30613,6 +30652,7 @@ mod phasmal_projectile_tests {
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
             wants_gift_item: None,
+            owner_hit_check: false,
         }
     }
 
@@ -31023,6 +31063,7 @@ mod ritual_projectile_tests {
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
             wants_gift_item: None,
+            owner_hit_check: false,
         }
     }
 

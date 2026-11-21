@@ -1507,6 +1507,226 @@ pub(crate) struct FlintTick {
     pub spikes: Vec<(f32, f32, f32, f32, f32, f32)>,
 }
 
+/// `AI_191_TrueNightsEdge` (`Projectile.cs:41640-41808`) — the True Night's
+/// Edge spin slash (973) and the Terra Blade's second shot (985). Both ride
+/// the `localAI[0]` age / `ai[1]` lifetime envelope: the opacity ramp, the
+/// `num4`-tick kill, then the per-type choreography.
+///
+/// 973: the spin (`rotation += ai[0] * TAU * (4 + Opacity*4) / 90`), the
+/// scale remap, the owner-anchored centre (`RotatedRelativePoint(MountedCenter)
+/// - velocity + velocity * num6² * 77`), the damage-zeroing LOS probe and the
+/// two dust windows. 985: the velocity-aligned rotation, the eased scale, the
+/// >8 speed drag ladder (the LOS probe sets `localAI[1]`), the `ownerHitCheck`
+/// window (`localAI[0] <= 6`), the damage-zero at the 0.65 lerp and the three
+/// dust windows.
+///
+/// RNG (973): one `NextFloatDirection` (the dust angle, `:41711`), one
+/// `Next(5)` gate (`:41713`), then per opacity-dust iteration a `NextFloat`
+/// (the 75/27 type pick, `:41721`). (985): one `NextFloatDirection`
+/// (`:41770`), then THREE iterations each a `NextFloat` gate (`:41778`); the
+/// damage==0 / early-out window adds four iterations each a
+/// `NextFloatDirection` + `NextFloat` + `NextFloat` (`:41798-41805`). The dust
+/// bodies / colour lerps skip; `Lighting.AddLight` (`:41775`) skips.
+///
+/// The 973 row keeps `tileCollide = false` (free integrate); the 985 keeps
+/// stock true and its blocked-move arm (`:18104-18110`) steps once, restores
+/// `lastVelocity * 0.01` and sets `localAI[1] = 1` — [`terra_blade_move`].
+pub(crate) fn ai_true_nights_edge(
+    p: &mut Projectile,
+    world: &World,
+    player: Option<&crate::player::Player>,
+    rng: &mut dyn DropRng,
+) {
+    // `:41642-41653` — the envelope constants; the 985 swaps them.
+    let mut num = 50.0f32;
+    let num2 = 15.0f32;
+    let mut num3 = p.ai[1] + num;
+    let mut num4 = num3 + num2;
+    let mut num5 = 77.0f32;
+    let is_terra = p.kind == 985;
+    if is_terra {
+        num = 0.0;
+        num3 = p.ai[1];
+        num4 = p.ai[1] + 25.0;
+        num5 = num4;
+    }
+    // `:41654-41657` — the 973 first-tick Item8 cue.
+    if p.local_ai[0] == 0.0 && p.kind == 973 {
+        p.wants_sound = Some((2, 8, p.pos.x, p.pos.y, 0.0));
+    }
+    // `:41658-41666` — the age counter and the two fast-forward arms.
+    p.local_ai[0] += 1.0;
+    if is_terra && p.local_ai[1] == 1.0 {
+        p.local_ai[0] += 2.0;
+    }
+    if p.kind == 973 && p.damage == 0 && p.local_ai[0] < num3 + (num4 - num3) * 0.5 {
+        p.local_ai[0] += 6.0;
+    }
+    // `:41667` — the opacity envelope.
+    let opacity = remap(p.local_ai[0], 0.0, p.ai[1], 0.0, 1.0)
+        * remap(p.local_ai[0], num3, num4, 1.0, 0.0);
+    p.alpha = alpha_of(opacity);
+    // `:41668-41673` — the kill at num4.
+    if p.local_ai[0] >= num4 {
+        p.local_ai[1] = 1.0;
+        p.kill_time_left = p.time_left;
+        p.active = false;
+        p.time_left = 0;
+        return;
+    }
+    // `:41674-41677` — the owner anchor and the facing.
+    let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+    let from_value = p.local_ai[0] / p.ai[1];
+    let mut num6 = remap(p.local_ai[0], p.ai[1] * 0.4, num4, 0.0, 1.0);
+    p.direction = p.ai[0] as i32;
+    p.sprite_direction = p.ai[0] as i32;
+    // `:41678-41725` — the 973 spin-slash branch.
+    if p.kind == 973 {
+        let num7 = 3.0f32;
+        if p.damage != 0 && p.local_ai[0] >= num5 + num7 {
+            p.damage = 0;
+        }
+        if p.damage != 0 {
+            // The 5-ray LOS probe (`:41687-41703`): num8 = 80, the rays at
+            // ±0.25·(π/4) around the velocity angle; a clear ray keeps damage.
+            let num8 = 80.0f32;
+            let mut flag = false;
+            let num9 = p.vel.y.atan2(p.vel.x);
+            let mut num10 = -1.0f32;
+            while num10 <= 1.0 {
+                let ang = num9 + num10 * (std::f32::consts::FRAC_PI_4) * 0.25;
+                let position = center + rotation_vector(ang) * num8 * 0.5 * p.scale;
+                let position2 = center + rotation_vector(ang) * num8 * p.scale;
+                if !solid_tiles(world, center.x, center.y, 0.0, 0.0)
+                    && can_hit(world, position.x, position.y, 0.0, 0.0, position2.x, position2.y, 0.0, 0.0)
+                {
+                    flag = true;
+                    break;
+                }
+                num10 += 0.5;
+            }
+            if !flag {
+                p.damage = 0;
+            }
+        }
+        // `:41705-41710` — the localAI[1] counter, the eased centre, the spin
+        // and the scale.
+        p.local_ai[1] += 1.0;
+        num6 = remap(p.local_ai[1], p.ai[1] * 0.4, num4, 0.0, 1.0);
+        if let Some(pl) = player {
+            let mc = pl.mounted_center();
+            let anchor = pl.rotated_relative_point(Vec2::new(mc.0, mc.1), 0);
+            let new_center = anchor - p.vel + p.vel * num6 * num6 * num5;
+            p.pos = new_center - Vec2::new(p.w * 0.5, p.h * 0.5);
+        }
+        p.rot += p.ai[0] * std::f32::consts::TAU * (4.0 + opacity * 4.0) / 90.0;
+        p.scale = remap(p.local_ai[0], p.ai[1] + 2.0, num4, 1.12, 1.0) * p.ai[2];
+        // `:41711-41724` — the dust angle draw, the 1-in-5 gate and the
+        // opacity-dust loop (the bodies skip).
+        let _f = p.rot + (rng.next_float() * 2.0 - 1.0) * std::f32::consts::FRAC_PI_2 * 0.7;
+        if rng.next_range(0, 5) == 0 {
+            // The dust-14 body — SKIPPED.
+        }
+        let mut i = 0.0f32;
+        while i < 3.0 * opacity {
+            let _ = rng.next_float(); // the 75/27 type pick
+            i += 1.0;
+        }
+    }
+    // `:41726-41729` — only the 985 continues past here.
+    if !is_terra {
+        return;
+    }
+    // `:41730-41739` — the ownerHitCheck window, the damage-zero, the eased
+    // scale and the velocity-aligned rotation.
+    p.owner_hit_check = p.local_ai[0] <= 6.0;
+    if p.local_ai[0] >= num3 + (num4 - num3) * 0.65 {
+        p.damage = 0;
+    }
+    let from_value2 = 1.0 - (1.0 - num6) * (1.0 - num6);
+    p.rot = p.vel.y.atan2(p.vel.x);
+    p.scale = remap(from_value2, 0.0, 1.0, 1.5, 1.0) * p.ai[2];
+    num6 = remap(p.local_ai[0], p.ai[1] / 2.0, num4, 0.0, 1.0);
+    let opacity2 = remap(p.local_ai[0], 0.0, p.ai[1] * 0.5, 0.0, 1.0)
+        * remap(p.local_ai[0], num4 - 12.0, num4, 1.0, 0.0);
+    p.alpha = alpha_of(opacity2);
+    // `:41740-41769` — the >8 speed drag ladder.
+    if p.vel.length() > 8.0 {
+        p.vel *= 0.94;
+        let num11 = remap(from_value, 0.7, 1.0, 110.0, 110.0);
+        if p.local_ai[1] == 0.0 {
+            // The 5-ray LOS probe (`:41747-41759`): a blocked ray sets the
+            // localAI[1] retract latch.
+            let mut flag2 = false;
+            let mut num12 = -1.0f32;
+            while num12 <= 1.0 {
+                let ang = p.rot + num12 * std::f32::consts::FRAC_PI_4 * 0.25;
+                let a = center + rotation_vector(ang) * num11 * 0.5 * p.scale;
+                let b = center + rotation_vector(ang) * num11 * p.scale;
+                if can_hit(world, a.x, a.y, 0.0, 0.0, b.x, b.y, 0.0, 0.0) {
+                    flag2 = true;
+                    break;
+                }
+                num12 += 0.5;
+            }
+            if !flag2 {
+                p.local_ai[1] = 1.0;
+            }
+        }
+        if p.local_ai[1] == 1.0 && p.vel.length() > 8.0 {
+            p.vel *= 0.8;
+        }
+        if p.local_ai[1] == 1.0 {
+            p.vel *= 0.88;
+        }
+    }
+    // `:41770-41786` — the dust angle draw and the three-gate dust loop.
+    let _num13 = p.rot + (rng.next_float() * 2.0 - 1.0) * std::f32::consts::FRAC_PI_2 * 0.9;
+    for _ in 0..3 {
+        if rng.next_float() < opacity2 + 0.1 {
+            // The dust-107 body (colour lerp + velocity blends) — SKIPPED.
+        }
+    }
+    // `:41787-41791` — the damage==0 fast-forward + drag.
+    if p.damage == 0 {
+        p.local_ai[0] += 3.0;
+        p.vel *= 0.76;
+    }
+    // `:41792-41807` — the early-out / retract dust window.
+    if p.local_ai[0] < 10.0 && (p.local_ai[1] == 1.0 || p.damage == 0) {
+        p.local_ai[0] += 1.0;
+        p.vel *= 0.85;
+        for _ in 0..4 {
+            let _ = rng.next_float(); // NextFloatDirection
+            let _ = rng.next_float(); // the velocity rotation's NextFloat
+            let _ = rng.next_float(); // the position pull's NextFloat
+        }
+    }
+}
+
+/// The 985 TerraBlade2Shot's blocked-move arm (`HandleMovement`
+/// `Projectile.cs:18104-18110`): step once into the tile, restore
+/// `lastVelocity * 0.01` and set the `localAI[1]` retract latch. The port's
+/// per-axis destination-box probe stands in for the swept `TileCollision`.
+pub(crate) fn terra_blade_move(p: &mut Projectile, world: &World) {
+    if !p.tile_collide {
+        p.pos += p.vel;
+        return;
+    }
+    let last = p.vel;
+    let nx = p.pos.x + p.vel.x;
+    let ny = p.pos.y + p.vel.y;
+    let hit_x = crate::player::collides_rect(world, nx, p.pos.y, p.w, p.h);
+    let hit_y = crate::player::collides_rect(world, p.pos.x, ny, p.w, p.h);
+    if hit_x || hit_y {
+        p.pos += p.vel;
+        p.vel = last * 0.01;
+        p.local_ai[1] = 1.0;
+    } else {
+        p.pos += p.vel;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Witnesses (S1-D-4 code-only round — WRITTEN NOT RUN).
 
@@ -2734,5 +2954,138 @@ mod tests {
             false,
         );
         assert_eq!(pool.slots()[s].ai[1], 1.0, "the charge counter advanced");
+    }
+
+    // ---- W4-d20 aiStyle 191 (TrueNightsEdge) — WRITTEN NOT RUN ----
+
+    /// The two rows carry the census slice (`Projectile.cs:9315-9329` /
+    /// `:9405-9421`): aiStyle 191, melee, alpha 255, timeLeft 90, ignoreWater;
+    /// the 973 30x30 pen3 LOCAL10 tileCollide-false, the 985 8x8 pen-1
+    /// LOCAL-1 stock tileCollide-true.
+    #[test]
+    fn w4_d20_the_sword_rows_carry_style_191() {
+        let a = proj_data(973).unwrap();
+        assert_eq!(a.ai_style, 191);
+        assert_eq!((a.w, a.h), (30.0, 30.0));
+        assert_eq!(a.penetrate, 3);
+        assert!(a.melee);
+        assert_eq!(a.alpha, 255);
+        assert_eq!(a.time_left, 90);
+        assert!(!a.tile_collide);
+        assert!(a.uses_local_immunity && a.local_hit_cooldown == 10);
+        let b = proj_data(985).unwrap();
+        assert_eq!(b.ai_style, 191);
+        assert_eq!((b.w, b.h), (8.0, 8.0));
+        assert_eq!(b.penetrate, -1);
+        assert!(b.tile_collide, "the 985 keeps stock true");
+        assert!(b.melee);
+    }
+
+    /// The 973 first-tick Item8 cue (`:41654-41657`) and the age counter.
+    #[test]
+    fn w4_d20_the_true_nights_edge_first_tick_cue() {
+        let w = world();
+        let mut p = proj(973);
+        p.ai[1] = 30.0; // lifetime
+        p.ai[2] = 1.0; // scale
+        p.vel = Vec2::new(6.0, 0.0);
+        let mut rng = census();
+        ai_true_nights_edge(&mut p, &w, None, &mut rng);
+        assert_eq!(p.wants_sound.map(|r| (r.0, r.1)), Some((2, 8)), "Item8");
+        assert_eq!(p.local_ai[0], 1.0, "the age counter");
+    }
+
+    /// The num4 kill (`:41668-41673`): at localAI[0] >= ai[1] + 65 the 973
+    /// kills and sets localAI[1] = 1.
+    #[test]
+    fn w4_d20_the_true_nights_edge_kills_at_num4() {
+        let w = world();
+        let mut p = proj(973);
+        p.ai[1] = 30.0; // num3 = 80, num4 = 95
+        p.local_ai[0] = 94.0; // advances to 95 = num4 → kill
+        ai_true_nights_edge(&mut p, &w, None, &mut census());
+        assert!(!p.active, "the num4 kill");
+        assert_eq!(p.local_ai[1], 1.0, "the death latch");
+    }
+
+    /// The 985 ownerHitCheck window (`:41730`): localAI[0] <= 6 sets the flag,
+    /// past it clears. The damage-zero at the 0.65 lerp (`:41731-41734`).
+    #[test]
+    fn w4_d20_the_terra_blade_owner_hit_check_window() {
+        let w = world();
+        let mut p = proj(985);
+        p.ai[1] = 30.0; // num3 = 30, num4 = 55
+        p.ai[2] = 1.0;
+        p.damage = 50;
+        p.vel = Vec2::new(3.0, 0.0);
+        p.local_ai[0] = 0.0; // advances to 1 (<= 6)
+        ai_true_nights_edge(&mut p, &w, None, &mut census());
+        assert!(p.owner_hit_check, "the early window sets ownerHitCheck");
+        // Past the window: localAI[0] = 7 → clears.
+        let mut q = proj(985);
+        q.ai[1] = 30.0;
+        q.ai[2] = 1.0;
+        q.damage = 50;
+        q.vel = Vec2::new(3.0, 0.0);
+        q.local_ai[0] = 6.0; // advances to 7 (> 6)
+        ai_true_nights_edge(&mut q, &w, None, &mut census());
+        assert!(!q.owner_hit_check, "past the window clears it");
+    }
+
+    /// The 985 damage-zero (`:41731-41734`): at localAI[0] >= lerp(num3, num4,
+    /// 0.65) the damage zeroes (num3=30, num4=55 → 46.25).
+    #[test]
+    fn w4_d20_the_terra_blade_damage_zeroes_late() {
+        let w = world();
+        let mut p = proj(985);
+        p.ai[1] = 30.0;
+        p.ai[2] = 1.0;
+        p.damage = 50;
+        p.vel = Vec2::new(3.0, 0.0);
+        p.local_ai[0] = 46.0; // advances to 47 >= 46.25 → damage 0
+        ai_true_nights_edge(&mut p, &w, None, &mut census());
+        assert_eq!(p.damage, 0, "the late damage-zero");
+    }
+
+    /// The 985 retract move (`:18104-18110`): a blocked move steps once,
+    /// restores lastVelocity * 0.01 and sets localAI[1] = 1.
+    #[test]
+    fn w4_d20_the_terra_blade_retract_move() {
+        let mut w = world();
+        put(&mut w, 102, 50, 1); // wall at x 1632..1648
+        let mut p = proj(985);
+        p.pos = Vec2::new(1600.0, 800.0);
+        p.vel = Vec2::new(40.0, 0.0); // right edge 1608 + 40 = 1648 overlaps
+        terra_blade_move(&mut p, &w);
+        assert_eq!(p.local_ai[1], 1.0, "the retract latch");
+        assert!((p.vel.x - 40.0 * 0.01).abs() < 1e-6, "lastVelocity * 0.01");
+    }
+
+    /// The dispatch wires style 191: one pool update advances the age for
+    /// both kinds.
+    #[test]
+    fn w4_d20_the_dispatch_arms_style_191() {
+        let mut w = world();
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let a = pool.spawn_with_data_ai(973, 1600.0, 400.0, 6.0, 0.0, 40, 2.0, 1.0, 30.0).unwrap();
+        let b = pool.spawn_with_data_ai(985, 1600.0, 500.0, 6.0, 0.0, 40, 2.0, 1.0, 30.0).unwrap();
+        // ai[2] is the scale envelope (the spawn seam carries ai0/ai1 only).
+        pool.slots_mut()[a].ai[2] = 1.0;
+        pool.slots_mut()[b].ai[2] = 1.0;
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            false,
+        );
+        assert!(pool.slots()[a].local_ai[0] >= 1.0, "the 973 age advanced");
+        assert!(pool.slots()[b].local_ai[0] >= 1.0, "the 985 age advanced");
     }
 }
