@@ -1205,6 +1205,220 @@ pub fn idle_sounds(
         let style = rng.next_range(81, 84);
         play(29, style, rng);
     }
+    // `:90199-90202` — the 498-506 range's 600-roll, Next(84, 86).
+    else if (498..=506).contains(&npc_type) && rng.next_max(600) == 0 {
+        let style = rng.next_range(84, 86);
+        play(29, style, rng);
+    }
+    // `:90203-90206` — the Scutlix's 700-roll, Next(86, 87) (a one-slot
+    // range — the draw still happens, `UnifiedRandom.cs:126-130`).
+    else if npc_type == 391 && rng.next_max(700) == 0 {
+        let style = rng.next_range(86, 87);
+        play(29, style, rng);
+    }
+}
+
+/// W4-f2 — the `Collision_WaterCollision` splash state
+/// (`NPC.cs:93052-93275`), the `Entity` wet flags the pass reads/writes.
+/// Kept as a plain snapshot so the pass stays a pure fn of its inputs
+/// (the `idle_sounds` shape); the sim copies the `Npc` fields in and the
+/// mutated state back out.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct WaterWetState {
+    /// `Entity.wet` — the previous tick's liquid-overlap flag.
+    pub wet: bool,
+    /// `Entity.wetCount` — the 10-tick splash cooldown.
+    pub wet_count: i32,
+    /// `Entity.lavaWet`/`honeyWet`/`shimmerWet` — the per-liquid latches.
+    pub lava_wet: bool,
+    pub honey_wet: bool,
+    pub shimmer_wet: bool,
+}
+
+/// W4-f2 — `NPC.Collision_WaterCollision`'s splash-cue half
+/// (`NPC.cs:93052-93275`, called from `UpdateCollision` `:92526` AFTER
+/// `AI()`): the entry/exit edges arm the `wetCount` 10-tick cooldown and
+/// play legacy case 19 (`LegacySoundPlayer.cs:871-910` — the
+/// `splash_case19` styles-4/5 arms S1-E-21f ported for THIS wave).
+///
+/// The never-wet head gate (`:93055`) zeroes `wetCount` and forces
+/// `lava = false` for its kinds/styles; aiStyle 116 pins `wetCount` to
+/// 10 every tick (`:93077-93080`). The entry edge (`flag && !wet &&
+/// wetCount == 0`, `:93087`) plays shimmer 4 / honey 1 / water 0 / lava
+/// 1; the exit edge (`!flag && wet && wetCount == 0`, `:93185`) plays
+/// shimmer 5 / honey 1 / water 0 / lava 1 — the exit arms read the OLD
+/// per-liquid latches. The per-liquid kind/noGravity exclusion gates
+/// ride each arm; the exit-lava gate (`:93267`) DROPS the `type != 147`
+/// term its entry twin (`:93169`) carries (the C# quirk kept verbatim).
+///
+/// RNG: the pass itself draws NOTHING — the case-19 pitch draw rides
+/// inside the caller's `play` (`Audio::play_splash_sound`) after the
+/// attenuation gate and the playing guard, on the `UpdateNPCs` stream.
+/// The dust bursts (`:93096-93118` etc.) are the documented visual skip
+/// (the dust lanes' territory, the E21f player-splash precedent); the
+/// type-620 exit jump (`:93181-93184`) is a movement seam, not ported.
+///
+/// `wet_now`/`honey_now`/`shimmer_now` are THIS tick's
+/// `Collision.WetCollision` results (`npc_ai_slime::wet_collision`);
+/// `lava` is the `Collision_LavaCollision` result with the type-441
+/// refusal (`:93318-93321`) already applied by the caller.
+pub fn water_collision_sounds(
+    npc_type: i32,
+    ai_style: i32,
+    ai0: f32,
+    no_gravity: bool,
+    state: &mut WaterWetState,
+    wet_now: bool,
+    honey_now: bool,
+    shimmer_now: bool,
+    lava: bool,
+    play: &mut dyn FnMut(i32),
+) {
+    // `:93055-93060` — the never-wet head gate.
+    let never_wet = (npc_type == 690 && ai0 == 0.0)
+        || npc_type == 72
+        || ai_style == 21
+        || ai_style == 67
+        || npc_type == 376
+        || npc_type == 579
+        || npc_type == 541
+        || (ai_style == 7 && ai0 == 25.0);
+    let mut lava = lava;
+    let flag;
+    if never_wet {
+        flag = false;
+        state.wet_count = 0;
+        lava = false;
+    } else {
+        // `:93063-93075` — WetCollision + the honey/shimmer latches.
+        flag = wet_now;
+        if honey_now {
+            state.honey_wet = true;
+        }
+        if shimmer_now {
+            state.shimmer_wet = true;
+        }
+    }
+    // `:93077-93080` — aiStyle 116 pins the cooldown.
+    if ai_style == 116 {
+        state.wet_count = 10;
+    }
+    // The shared water/shimmer exclusion gate (`:93119`/`:93152`/
+    // `:93217`/`:93250`): the long kind/style list OR the type-615
+    // override. The honey/lava gates use the shorter list (no 376/579/
+    // 362/364/361/445/68 terms).
+    let water_gate = (npc_type != 376
+        && npc_type != 579
+        && ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 147
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && ai_style != 68
+        && npc_type != 362
+        && npc_type != 364
+        && npc_type != 361
+        && npc_type != 445
+        && !no_gravity)
+        || npc_type == 615;
+    let honey_gate = ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 147
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && !no_gravity;
+    // The entry-lava gate (`:93169`) carries `type != 147`; the exit-lava
+    // gate (`:93267`) drops it — two distinct gates, kept verbatim.
+    let lava_entry_gate = ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 147
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && !no_gravity;
+    let lava_exit_gate = ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && !no_gravity;
+    if flag {
+        // `:93087-93175` — the entry edge.
+        if !state.wet && state.wet_count == 0 {
+            state.wet_count = 10;
+            if !lava {
+                if state.shimmer_wet {
+                    if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                        if water_gate {
+                            play(4); // `:93121`
+                        }
+                    }
+                } else if state.honey_wet {
+                    if honey_gate {
+                        play(1); // `:93138` — the default Style 1
+                    }
+                } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                    if water_gate {
+                        play(0); // `:93154`
+                    }
+                }
+            } else if lava_entry_gate {
+                play(1); // `:93171` — the lava arm, default Style 1
+            }
+        }
+        state.wet = true; // `:93175`
+    } else if state.wet {
+        // `:93177-93272` — the exit edge. The velocity halving
+        // (`:93179`) and the type-620 jump (`:93181-93184`) are movement
+        // seams (not ported here); the splash gate stands alone.
+        state.wet = false; // `:93180`
+        if state.wet_count == 0 {
+            state.wet_count = 10;
+            if !state.lava_wet {
+                if state.shimmer_wet {
+                    if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                        if water_gate {
+                            play(5); // `:93219`
+                        }
+                    }
+                } else if state.honey_wet {
+                    if honey_gate {
+                        play(1); // `:93236`
+                    }
+                } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
+                    if water_gate {
+                        play(0); // `:93252`
+                    }
+                }
+            } else if lava_exit_gate {
+                play(1); // `:93269`
+            }
+        }
+    }
+}
+
+/// W4-f2 — `UpdateCollision`'s post-water-collision tail
+/// (`NPC.cs:92527-92536`): the dry clear of the three per-liquid latches
+/// and the `wetCount` decrement. Runs AFTER [`water_collision_sounds`]
+/// (the C#'s order — the exit arms read the OLD latches before the
+/// clear). The sim calls it once per NPC at the collision position.
+pub fn water_collision_tail(state: &mut WaterWetState) {
+    // `:92527-92532` — `if (!base.wet)` clears the latches.
+    if !state.wet {
+        state.lava_wet = false;
+        state.honey_wet = false;
+        state.shimmer_wet = false;
+    }
+    // `:92533-92536` — the cooldown ticks down.
+    if state.wet_count > 0 {
+        state.wet_count -= 1;
+    }
 }
 
 /// `Main.cs:58741-58759`'s thunder strike tick (the `currentDayRateIteration
@@ -2131,8 +2345,8 @@ mod tests {
         assert!(gate(528, true), "the 528-532 break arm");
     }
 
-    /// W4-f2 — `IdleSounds`' else-if chain (`NPC.cs:90079-90198`, arms
-    /// 1-30): a matching type consumes its gate roll, then (on a hit) the
+    /// W4-f2 — `IdleSounds`' else-if chain (`NPC.cs:90079-90206`, all 32
+    /// arms): a matching type consumes its gate roll, then (on a hit) the
     /// style roll, then the play's case-29 pitch draw — in that order, on
     /// the caller's stream. Seed 146 draws 0 on every gate (the derived
     /// witness seed); the `play` stand-in consumes the one
@@ -2187,6 +2401,10 @@ mod tests {
             (469, false, 700, Some((79, 81)), 80),
             (253, false, 700, Some((81, 84)), 82),
             (82, false, 700, Some((81, 84)), 82),
+            // Batch 4 — arms 31-32 (`:90199-90206`), the chain's tail.
+            (498, false, 600, Some((84, 86)), 85),
+            (506, false, 600, Some((84, 86)), 85),
+            (391, false, 700, Some((86, 87)), 86),
         ];
         for &(ty, wet, gate, style_roll, style) in arms {
             let mut rng = UnifiedRandom::new(146);
@@ -2285,5 +2503,114 @@ mod tests {
             "a busy idle slot blocks the cue"
         );
         assert_eq!(state.calls, 0, "the guard precedes the pitch draw");
+    }
+
+    /// W4-f2 — the water-collision entry quartet (`NPC.cs:93121`/
+    /// `:93138`/`:93154`/`:93171`): a dry→wet edge arms `wetCount` 10 and
+    /// plays the per-liquid style (shimmer 4 / honey 1 / water 0 / lava
+    /// 1). The pass draws NOTHING itself (the case-19 pitch rides inside
+    /// the caller's play); the `play` stand-in records the style.
+    #[test]
+    fn w4_f2_water_collision_the_entry_quartet_plays_the_per_liquid_style() {
+        // (shimmer_now, honey_now, lava, expected style) — a plain
+        // ground kind (type 3, aiStyle 3, gravity) passes every gate.
+        for &(shimmer, honey, lava, style) in &[
+            (true, false, false, 4),
+            (false, true, false, 1),
+            (false, false, false, 0),
+            (false, false, true, 1),
+        ] {
+            let mut st = WaterWetState::default();
+            let mut plays: Vec<i32> = Vec::new();
+            water_collision_sounds(
+                3, 3, 0.0, false, &mut st,
+                true, honey, shimmer, lava,
+                &mut |s| plays.push(s),
+            );
+            assert_eq!(plays, vec![style], "shimmer={shimmer} honey={honey} lava={lava}");
+            assert_eq!(st.wet_count, 10, "the entry arms the cooldown");
+            assert!(st.wet, "the entry sets wet");
+            // The pass itself is draw-free (no rng parameter at all).
+        }
+    }
+
+    /// W4-f2 — the water-collision exit quartet (`NPC.cs:93219`/
+    /// `:93236`/`:93252`/`:93269`): a wet→dry edge reads the OLD
+    /// per-liquid latches (shimmer 5 / honey 1 / water 0 / lava 1) and
+    /// arms the cooldown; the tail then clears the latches.
+    #[test]
+    fn w4_f2_water_collision_the_exit_quartet_reads_the_old_latches() {
+        for &(lava_wet, shimmer_wet, honey_wet, style) in &[
+            (false, true, false, 5),
+            (false, false, true, 1),
+            (false, false, false, 0),
+            (true, false, false, 1),
+        ] {
+            let mut st = WaterWetState {
+                wet: true,
+                wet_count: 0,
+                lava_wet,
+                honey_wet,
+                shimmer_wet,
+            };
+            let mut plays: Vec<i32> = Vec::new();
+            water_collision_sounds(
+                3, 3, 0.0, false, &mut st,
+                false, false, false, false,
+                &mut |s| plays.push(s),
+            );
+            assert_eq!(plays, vec![style], "lava={lava_wet} shimmer={shimmer_wet} honey={honey_wet}");
+            assert_eq!(st.wet_count, 10);
+            assert!(!st.wet, "the exit clears wet");
+            // The tail clears the latches on the dry state + ticks down.
+            water_collision_tail(&mut st);
+            assert!(!st.lava_wet && !st.honey_wet && !st.shimmer_wet);
+            assert_eq!(st.wet_count, 9);
+        }
+    }
+
+    /// W4-f2 — the water-collision gates: the never-wet head (`:93055`)
+    /// zeroes the cooldown and forces lava false; the `wetCount != 0`
+    /// cooldown suppresses the play; the noGravity/kind exclusion gates
+    /// block the cue; the exit-lava gate drops the `type != 147` term
+    /// its entry twin carries (`:93169` vs `:93267`).
+    #[test]
+    fn w4_f2_water_collision_the_gates_block_and_the_lava_quirk() {
+        // The never-wet head: aiStyle 21 (the Blazing Wheel) — wetCount
+        // zeroed, no play even on a wet overlap.
+        let mut st = WaterWetState { wet_count: 5, ..Default::default() };
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(72, 21, 0.0, false, &mut st, true, false, false, true, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "the never-wet head plays nothing");
+        assert_eq!(st.wet_count, 0, "the head zeroes the cooldown");
+        // The cooldown: a wet entry with wetCount != 0 plays nothing.
+        let mut st = WaterWetState { wet_count: 3, ..Default::default() };
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(3, 3, 0.0, false, &mut st, true, false, false, false, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "the cooldown suppresses the entry");
+        assert!(st.wet, "wet still sets");
+        // The noGravity exclusion: a floating kind plays no water cue.
+        let mut st = WaterWetState::default();
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(3, 3, 0.0, true, &mut st, true, false, false, false, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "noGravity blocks the water gate");
+        // The type-615 override: it plays despite noGravity.
+        let mut st = WaterWetState::default();
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(615, 0, 0.0, true, &mut st, true, false, false, false, &mut |s| plays.push(s));
+        assert_eq!(plays, vec![0], "the 615 override plays water");
+        // The lava quirk: type 147 (the pinky slime) — the ENTRY lava gate
+        // carries `type != 147` (blocks), the EXIT lava gate drops it
+        // (plays). Entry: lava overlap, dry→wet.
+        let mut st = WaterWetState::default();
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(147, 1, 0.0, false, &mut st, true, false, false, true, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "the entry lava gate blocks type 147 (aiStyle 1 too)");
+        // Exit: type 147 with aiStyle 0 (so only the 147 term differs),
+        // lavaWet latched — the exit gate plays.
+        let mut st = WaterWetState { wet: true, lava_wet: true, ..Default::default() };
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(147, 0, 0.0, false, &mut st, false, false, false, false, &mut |s| plays.push(s));
+        assert_eq!(plays, vec![1], "the exit lava gate drops the 147 term");
     }
 }

@@ -4572,6 +4572,59 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     for req in n.wants_sound.drain(..) {
                         play_npc_sound_request(audio, req, npcs_rng);
                     }
+                    // W4-f2 — `Collision_WaterCollision`'s splash cues
+                    // (`NPC.cs:93052-93275`, inside `UpdateCollision`
+                    // `:92526`, AFTER `AI()`): the entry/exit edges play
+                    // case 19 at the C# collision position, on the
+                    // `UpdateNPCs` stream after the machine's draws. The
+                    // `noTileCollide` kinds skip `UpdateCollision`
+                    // entirely (`:90490-90503`'s else arm) — their wet
+                    // state never updates here (the SetDefaults census).
+                    // The pass draws nothing itself; the case-19 pitch
+                    // rides inside `play_splash_sound` after the gate.
+                    if !n.kind.no_tile_collide() {
+                        let (nw, nh) = n.size();
+                        let lava = crate::player::lava_collision(world, n.x, n.y, nw, nh)
+                            && n.kind.cs_id() != 441; // `:93318-93321`
+                        let (wet_now, honey_now, shimmer_now) =
+                            crate::npc_ai_slime::wet_collision(
+                                world, n.x, n.y, nw as i32, nh as i32,
+                            );
+                        let mut wstate = crate::ambient_sound::WaterWetState {
+                            wet: n.wet,
+                            wet_count: n.wet_count,
+                            lava_wet: n.lava_wet,
+                            honey_wet: n.honey_wet,
+                            shimmer_wet: n.shimmer_wet,
+                        };
+                        // `Collision_LavaCollision` latches lavaWet on a
+                        // lava overlap (`:93322-93324`), BEFORE the water
+                        // pass reads it for the entry/exit arms.
+                        if lava {
+                            wstate.lava_wet = true;
+                        }
+                        let (nx, ny) = (n.x, n.y);
+                        crate::ambient_sound::water_collision_sounds(
+                            n.kind.cs_id() as i32,
+                            n.kind.ai_style() as i32,
+                            n.ai[0],
+                            n.kind.no_gravity(),
+                            &mut wstate,
+                            wet_now,
+                            honey_now,
+                            shimmer_now,
+                            lava,
+                            &mut |style| {
+                                audio.play_splash_sound(style, nx, ny, npcs_rng);
+                            },
+                        );
+                        crate::ambient_sound::water_collision_tail(&mut wstate);
+                        n.wet = wstate.wet;
+                        n.wet_count = wstate.wet_count;
+                        n.lava_wet = wstate.lava_wet;
+                        n.honey_wet = wstate.honey_wet;
+                        n.shimmer_wet = wstate.shimmer_wet;
+                    }
                     black_slime_darkness_touch(n, player, npcs_rng);
                     // `NPC.UpdateNPC`'s tail (`NPC.cs:90324-90327`): the
                     // look-for-home timer decays one per tick.
