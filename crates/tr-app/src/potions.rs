@@ -2007,4 +2007,60 @@ mod tests {
         // The ManaEffect amount queued for the items-pass drain (the RAW 50).
         assert_eq!(app.player.as_mut().unwrap().take_mana_effect(), Some(50));
     }
+
+    /// W4-f49 residuals — the mana-potion TIER census: the four rows'
+    /// healMana against the C# `SetDefaults` arms (ItemID.cs:1903/2061/
+    /// 2683/6101 → Item.cs:2680-2691/3701-3713/7336-7348/22346-22358):
+    /// 110 Lesser 50, 189 Mana 100, 500 Greater 200, 2209 Super 400. All
+    /// four are useStyle 9 / consumable / useTurn, NONE `potion`-flagged
+    /// (no Potion Sickness — only Mana Sickness 94 via `:51938`), and the
+    /// drink through `ApplyLifeAndOrMana` restores the RAW amount capped
+    /// at `statManaMax2` (`:51920-51928`), queues the RAW ManaEffect
+    /// (`:51950`) and keeps `manaPotionDelay = 0` (`:51937`). WRITTEN NOT
+    /// RUN (code-only).
+    #[test]
+    fn w4_f49_the_mana_potion_tiers_match_the_csharp_rows() {
+        // (id, C# healMana, Item.cs SetDefaults line).
+        let rows = [(110u16, 50i32), (189, 100), (500, 200), (2209, 400)];
+        for (id, heal) in rows {
+            let def = registry::get(id).expect("the generated row exists");
+            assert_eq!(def.heal_mana, heal, "item {id}: the C# healMana");
+            assert_eq!(def.heal_life, 0, "item {id}: mana-only");
+            assert_eq!(def.use_style, 9, "item {id}: the drink style");
+            assert!(def.consumable && def.use_turn, "item {id}");
+            assert_eq!(def.use_time, 17, "item {id}");
+            assert_eq!(def.use_animation, 17, "item {id}");
+            assert!(!def.potion, "item {id}: NOT potion-flagged (no 21)");
+            // The drink: cap at max, RAW ManaEffect, sickness 300, delay 0.
+            let w = crate::test_world_helpers::ground();
+            let mut p = Player::spawn(&w);
+            p.mana_max = 300;
+            p.mana = 300 - heal / 2; // the cap eats half the restore
+            let mut rng = UnifiedRandom::new(0);
+            let heal_text = apply_life_and_or_mana(&mut p, def, &mut rng);
+            assert_eq!(heal_text, None, "item {id}: no HealLife text");
+            assert_eq!(p.mana, 300, "item {id}: capped at statManaMax2");
+            assert_eq!(p.take_mana_effect(), Some(heal), "item {id}: the RAW text");
+            let i = p.buffs.find_buff_index(MANA_SICKNESS).expect("94 granted");
+            assert_eq!(p.buffs.buff_time[i], MANA_SICK_TIME);
+            assert!(p.buffs.find_buff_index(POTION_SICKNESS).is_none());
+            assert_eq!(p.mana_potion_delay, 0, ":51937");
+            assert!(drinkable(def), "item {id}: rides the drink seam");
+        }
+        // The chooser takes the FIRST healMana row in slot order — a Super
+        // behind a Lesser does NOT win (QuickMana_GetItemToUse :5629-5649
+        // is first-fit, not best-fit).
+        let mut app = drink_app();
+        app.inventory[0] = slot(110, 1);
+        app.inventory[1] = slot(2209, 1);
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 500;
+            p.mana = 0;
+        }
+        assert!(quick_mana(&mut app));
+        assert_eq!(app.player.as_ref().unwrap().mana, 50, "the Lesser won");
+        assert_eq!(app.inventory[0].count, 0);
+        assert_eq!(app.inventory[1].count, 1, "the Super untouched");
+    }
 }
