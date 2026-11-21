@@ -31,19 +31,25 @@ list below as their remaining porting scope.
 
 ## Scoreboard
 
-| wave | range | ported | missing | total |
-| --- | --- | --- | --- | --- |
-| d39 | 351–420 | 48 | 22 | 70 |
-| d40 | 421–490 | 14 | 56 | 70 |
-| d41 | 491–560 | 21 | 49 | 70 |
-| d42 | 561–630 | 19 | 51 | 70 |
-| d43 | 631–697 | 3 | 64 | 67 |
-| **all** | **351–697** | **105** | **242** | **347** |
+The baseline (before this branch) and the post-port counts. This branch
+lands the first 20 arm-bearing missing kinds (the 355–380 band + 430),
+all in the d39 range except 430 (d40).
 
-Of the 242 missing, **238 carry a `SetDefaults` arm** (the waves'
+| wave | range | ported (before) | missing (before) | landed here | ported (after) | missing (after) | total |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| d39 | 351–420 | 48 | 22 | 19 | 67 | 3 | 70 |
+| d40 | 421–490 | 14 | 56 | 1 | 15 | 55 | 70 |
+| d41 | 491–560 | 21 | 49 | 0 | 21 | 49 | 70 |
+| d42 | 561–630 | 19 | 51 | 0 | 19 | 51 | 70 |
+| d43 | 631–697 | 3 | 64 | 0 | 3 | 64 | 67 |
+| **all** | **351–697** | **105** | **242** | **20** | **125** | **222** | **347** |
+
+Of the 242 baseline-missing, **238 carry a `SetDefaults` arm** (the waves'
 porting scope) and **4 have none** (below). This pass ports the first
-20 arm-bearing missing kinds (355–380 band + 430), leaving 218
-arm-bearing kinds for the waves.
+20 arm-bearing missing kinds (355–380 band + 430), leaving **218
+arm-bearing kinds** for the waves. The d39 range's 3 remaining missing
+are the no-arm ids 403/404/408 (the folded StardustWorm segments + the
+unarmed JellyfishSmall).
 
 ### The four ids without a `SetDefaults` arm
 
@@ -85,9 +91,75 @@ and AI routing. Each carries a stat witness in
 | 430 | ArmedZombie | 8612-8624 | 3 | 45 | 14 | 6 | 60 | 0.5 | 18×40 |
 
 `kb` = effective C# (class default 1f when the arm writes none). The
-critters' `noGravity` rows (355/356/358/359/360/375) are strike-time
-gated by kb>0 in the port's `no_gravity()` (W3-i11), so they read false
-there despite the C# flag — BY DESIGN, not gaps.
+port's `no_gravity()` is the strike-time flag (C# noGravity AND kb>0,
+W3-i11): 355/356/358/359/360 (noGravity, kb 1) read **true**; 375
+(noGravity, kb 0) reads **false** BY DESIGN (the Y-pop selector never
+reaches a kb-0 kind), not a gap.
+
+### Landing details (the four batch commits)
+
+The twenty kinds landed in four commits of five (the task gate's
+5-kinds-per-commit cadence), each wiring EVERY exhaustive `NpcKind`
+match (the stat tables, the protocol-id bijection, the bestiary, the
+FindFrame arms, the draw + the AI routing):
+
+- **Batch 1 (355–359):** the Firefly/Butterfly/Worm/LightningBug/Snail.
+  The new `npc_ai_style65.rs` ports `AI_065_Butterflies`
+  (`NPC.cs:44896-45119`, the colour roll / scale latch / rearm / threat
+  flee); the style-axis claims 64/65/66/67 ride the existing
+  `npc_ai_style64/66/67` modules. Protocol ids 237–241.
+- **Batch 2 (360–364):** the GlowingSnail/Frog/Duck/Duck2/DuckWhite.
+  The new `npc_ai_town_critter.rs` ports the `AI_007_TownEntities`
+  TownCritter subset (`NPC.cs:52965-55561`, the idle/walk/obstacle-jump
+  machine, reusing `npc_ai_town.rs`'s shared helpers); the Duck2's
+  aiStyle-68 arm (`npc_ai_style68`) queues the dry-landing
+  `Transform(362)` on the sim's `wants_transform` drain. The Duck2 363
+  folds its bestiary credit onto the Duck 362 (Hide=true). Protocol ids
+  242–246.
+- **Batch 3 (365–375):** the DuckWhite2/ScorpionBlack/Scorpion/
+  TruffleWorm/TruffleWormDigger. The TruffleWorm's aiStyle-66 dig tail
+  queues `Transform(375)`; the TruffleWormDigger 375 rides a focused
+  `AI_006` lone-head machine (the INVERTED dig aim, `NPC.cs:51861-51865`,
+  the 6/0.15 tunables `:51730`, the 1000-px dig list `:51598`) —
+  `is_worm()` true but NOT `is_worm_head()` (the StardustWormHead
+  lone-minion precedent, no chain). The DuckWhite2 365 / TruffleWormDigger
+  375 fold their credits (Hide=true). Protocol ids 247–249, 252–253
+  (250/288 are the AngryNimbus/DungeonSpirit's port-local ids).
+- **Batch 4 (377–430):** the Grasshopper/ChatteringTeethBomb/
+  CultistArcherBlue/CultistArcherWhite/ArmedZombie. The Grasshopper rides
+  the faithful `npc_ai_slime::ai_001_slimes` (the 377 flee/friendly-latch/
+  ceiling-clamp rows); the ChatteringTeethBomb rides
+  `npc_ai_style41::style41_step` (self-integrating); the cultist archers
+  ride a focused `AI_003` shooter block (the 80-tick cooldown, the 81
+  arrow / 40 dmg / 11 speed, the ±40 jitter NO rescale, the |dx|*0.1 aim
+  lift NOT zeroed, the centre spawn NO +6 y — the 381/382-only terms);
+  the ArmedZombie rides the aiStyle-3 charge family
+  (`npc_ai3_speeds::apply_ladder`'s 430-436 arm) via `walker_step_fighter`.
+  The CultistArcherWhite 380 folds its credit onto 379 (Hide=true);
+  379/380 carry `chaseable = false`. Protocol ids 254–258.
+
+The folded kinds (363/365/375/380) keep their OWN render key + draw
+sheet (`texture_net_id`); only the bestiary credit folds. The
+`npc_w4_f18_witnesses.rs` file pins each kind's full stat row + the
+roster-level round-trip/frame-strip invariants (WRITTEN, NOT RUN).
+
+### Documented remainders (the wiring follow-ups)
+
+- The town-critter / butterfly / firefly threat scans read the sibling
+  NPC pool in the C#; the solo `update_rng` path passes an empty pool
+  (the `npc_ai_style65` module doc's deviation — the sim's pooled seam
+  lands with the wiring follow-up).
+- The cultist archers' `ai[3] < 0` retreat block (`NPC.cs:56181-56220`,
+  the sibling `Main.npc[num10]` cultist-leader link) is unported (the
+  port has no leader-link seam).
+- The TruffleWormDigger's crumble dust (`NPC.cs:51590`) rides the dust
+  seam (the worm pass's documented deviation); the dig roar rides the
+  sound seam.
+- The Worm 357's FindFrame slope tail (`NPC.cs:72807-72826`, the ±0.785
+  slope rotation) reads the tile under the centre — the port's
+  `find_frame` takes no `&World` (the signature seam), so the no-slope
+  path is byte-identical and the slope rotation is a documented
+  remainder (the world-read migration lands with the FindFrame wave).
 
 ## Findings repaired on this branch (npc.rs `value()`)
 
@@ -226,37 +298,39 @@ there despite the C# flag — BY DESIGN, not gaps.
 | 668 | Deerclops | Deerclops |
 
 
-## Unported kinds — the waves' remaining scope (242)
+## Unported kinds — the waves' remaining scope (222 after this branch)
 
 `arm` = the C# `SetDefaults` line range the wave must port; `—` = no
 arm (see above). The first 20 arm-bearing rows (355–380 + 430) are
-ported by THIS branch; the rest are the d39–d43 waves' scope.
+**ported by THIS branch** (marked ✓ below — kept in the table so the
+d39–d43 co-lanes see the full baseline census and the exact landing
+boundary); the rest are the d39–d43 waves' scope.
 
 | type | NPCID name | C# arm | aiStyle | wave |
 | --- | --- | --- | --- | --- |
-| 355 | Firefly | 13517-13530 | 64 | d39 |
-| 356 | Butterfly | 13531-13544 | 65 | d39 |
-| 357 | Worm | 13545-13558 | 66 | d39 |
-| 358 | LightningBug | 13559-13572 | 64 | d39 |
-| 359 | Snail | 13573-13586 | 67 | d39 |
-| 360 | GlowingSnail | 13587-13600 | 67 | d39 |
-| 361 | Frog | 13601-13612 | 7 | d39 |
-| 362 | Duck | 13613-13624 | 7 | d39 |
-| 363 | Duck2 | 13625-13636 | 68 | d39 |
-| 364 | DuckWhite | 13637-13648 | 7 | d39 |
-| 365 | DuckWhite2 | 13649-13660 | 68 | d39 |
-| 366 | ScorpionBlack | 13661-13672 | 7 | d39 |
-| 367 | Scorpion | 13661-13672 | 7 | d39 |
-| 374 | TruffleWorm | 13762-13776 | 66 | d39 |
-| 375 | TruffleWormDigger | 13777-13795 | 6 | d39 |
-| 377 | Grasshopper | 13811-13824 | 1 | d39 |
-| 378 | ChatteringTeethBomb | 13825-13838 | 41 | d39 |
-| 379 | CultistArcherBlue | 13839-13855 | 3 | d39 |
-| 380 | CultistArcherWhite | 13839-13855 | 3 | d39 |
+| 355 | Firefly | 13517-13530 | 64 | ✓ W4-f18 |
+| 356 | Butterfly | 13531-13544 | 65 | ✓ W4-f18 |
+| 357 | Worm | 13545-13558 | 66 | ✓ W4-f18 |
+| 358 | LightningBug | 13559-13572 | 64 | ✓ W4-f18 |
+| 359 | Snail | 13573-13586 | 67 | ✓ W4-f18 |
+| 360 | GlowingSnail | 13587-13600 | 67 | ✓ W4-f18 |
+| 361 | Frog | 13601-13612 | 7 | ✓ W4-f18 |
+| 362 | Duck | 13613-13624 | 7 | ✓ W4-f18 |
+| 363 | Duck2 | 13625-13636 | 68 | ✓ W4-f18 |
+| 364 | DuckWhite | 13637-13648 | 7 | ✓ W4-f18 |
+| 365 | DuckWhite2 | 13649-13660 | 68 | ✓ W4-f18 |
+| 366 | ScorpionBlack | 13661-13672 | 7 | ✓ W4-f18 |
+| 367 | Scorpion | 13661-13672 | 7 | ✓ W4-f18 |
+| 374 | TruffleWorm | 13762-13776 | 66 | ✓ W4-f18 |
+| 375 | TruffleWormDigger | 13777-13795 | 6 | ✓ W4-f18 |
+| 377 | Grasshopper | 13811-13824 | 1 | ✓ W4-f18 |
+| 378 | ChatteringTeethBomb | 13825-13838 | 41 | ✓ W4-f18 |
+| 379 | CultistArcherBlue | 13839-13855 | 3 | ✓ W4-f18 |
+| 380 | CultistArcherWhite | 13839-13855 | 3 | ✓ W4-f18 |
 | 403 | StardustWormBody | — | — | d39 |
 | 404 | StardustWormTail | — | — | d39 |
 | 408 | StardustJellyfishSmall | — | — | d39 |
-| 430 | ArmedZombie | 8612-8624 | 3 | d40 |
+| 430 | ArmedZombie | 8612-8624 | 3 | ✓ W4-f18 |
 | 431 | ArmedZombieEskimo | 8625-8637 | 3 | d40 |
 | 432 | ArmedZombiePincussion | 8638-8650 | 3 | d40 |
 | 433 | ArmedZombieSlimed | 8651-8663 | 3 | d40 |
