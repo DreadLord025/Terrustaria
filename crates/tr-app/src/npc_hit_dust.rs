@@ -164,6 +164,18 @@
 //! - 86834 — 206 (`:86828-86836`): ×150 dust 137.
 //! - 86854 — 342 (`:86848-86856`): ×100 dust 0.
 //! - 86874 — the Zombie Elf trio 338-340 (`:86868-86876`): ×100 dust 5.
+//! Batch 12 (the town-NPC live arms — ×100 dust 5, (dir,-1); the death
+//! halves' shimmer gore rows are g60/d55's):
+//! - 87658 — Merchant 17 (`:87652-87660`).
+//! - 88288 — Nurse 18 (`:88282-88291`).
+//! - 88311 — Arms Dealer 19 (`:88305-88313`).
+//! - 88331 — Demolitionist 38 (`:88325-88333`).
+//! - 88354 — Dryad 20 (`:88348-88356`).
+//! - 88374 — Dye Trader 207 (`:88368-88376`).
+//! - 88397 — Party Girl 208 (`:88391-88399`).
+//! - 88082 — Painter 227 (`:88076-88084`).
+//! - 88105 — Witch Doctor 228 (`:88099-88107`).
+//! - 87928 — Guide 22 (`:87922-87930`).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -858,6 +870,16 @@ pub fn replay_hit_dust(
         }
         // `:86868-86876` — the Zombie Elf trio: ×100 dust 5.
         338..=340 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // The town-NPC live arms (`:87658`/`:88288`/`:88311`/`:88331`/
+        // `:88354`/`:88374`/`:88397`/`:88082`/`:88105`/`:87928`): ×100
+        // dust 5 — the death halves' 2.5× shimmer gore rows are g60/d55's.
+        // NOTE 663 (Princess) has its OWN arm at `:88411` (no early
+        // return) — the `:88046` town-pet arm's 663 is unreachable.
+        17 | 18 | 19 | 38 | 20 | 207 | 208 | 227 | 228 | 22 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
@@ -1844,6 +1866,25 @@ mod tests {
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 12 — the town-NPC arms are the ×100 dust-5 shape
+    /// (`NPC.cs:87658` etc.); the Princess 663 is NOT in this group (her
+    /// own `:88411` arm lands with the next batch — a live 663 snapshot
+    /// currently emits nothing, the documented pending row).
+    #[test]
+    fn w4_g62_the_town_arms_share_the_dust5_shape() {
+        let world = air();
+        let ctx = ctx();
+        for t in [17, 18, 19, 38, 20, 207, 208, 227, 228, 22] {
+            let s = snap(t, 250, 250, 25.0); // ×100 → 10
+            let mut r = UnifiedRandom::new(127);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 10, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == 5), "type {t}");
         }
     }
 }
