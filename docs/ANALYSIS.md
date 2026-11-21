@@ -13315,9 +13315,18 @@ in its doc comment.
   is loot-side; the port places chests as tiles without inventories, so
   the chest arms of the three Finish passes (5001/678 drops) draw and write
   nothing.
-- `ConvertSkyIslands` (`:24243`) needs the C# `Convert` Hallow helper the
-  port does not have; the `PaintThe*` sweeps and the 138в†’665 conversion
-  run without it.
+- `ConvertSkyIslands` (`:24243`, body `:24674-24714`) IS ported (W4-f25
+  closeout): `finish_seeds.rs::convert_sky_islands` rides the C3 hallow cell
+  (`spread::convert_hallow_cell`, the single-cell overload), the vanity/
+  plant `KillTile`s (`no_item: true`, the gen-time `:63546-63549` flag) and
+  the 1-in-3 `GrowTree` roll on `growth::grow_tree`. The genRand stream is a
+  fresh `UnifiedRandom(opts.seed as i32)` (the
+  `micro_surface.rs::start_in_hardmode` precedent — the per-pass xorshift
+  contract cannot feed the `UnifiedRandom` growth seam); the draw ORDER is
+  faithful. Classic worlds never run the anniversary pass, so both
+  world-hash pins stay unchanged. Cross-note: g44's islands lane marks this
+  call "not ported" at its tip (32e478d34) — the Convert-family port lands
+  on f25.
 - The drunk `getGoodWorld`/`notTheBees` combo first branches (spider caves
   `:17369-17375`, moss `:17510-17516`'s re-roll) stay out: the port's
   classic arm draws once, so porting the C#'s extra re-roll would break
