@@ -604,3 +604,78 @@ Witnesses (written, not run - code-only): 1
 moves the row; the style-1/not-fullscreen/mapEnabled gates), 2
 `app::loop::tests::w4_f46_*` (Tab cycles 1→2→0→1 + rebind; dead while
 fullscreen).
+
+## W4-f46 × f29/e17 overlay composition (2026-11-21, closeout cross-note)
+
+Read in full from git objects: `origin/task/W4-f29-map-overlay-2` @ `e18bf6dd`
+(census `e1ffdefc` → ports `09f71b61`/`9320326c`/`1de1ad19`/`a920b704c` →
+review `a0516edf` → docs `e18bf6dd`; 9/9 claimed pieces ported) and
+`origin/task/W4-e17-map-overlay-layers` @ `8500c3e5` (revived — the
+claim-only death recorded in the e18 residual census is stale; phases
+`98e2ae01`…`8500c3e5` port the SAME nine pieces: NPC heads
+`a8b02614`, player pins/death/misc/revenge `adb5ccd9`/`ce699449`, pylon
+lines/click `5c5ad091`). Both branch off `a725acb0` — the union's own base —
+so neither contains the e18/f46 reveal work and neither touches the reveal
+driver, `map_sections.rs`, the `WorldSections` grid or the `/map` flag path.
+
+**Keep-one warning (the big one): f29 and e17 are DUPLICATE ports of the same
+nine overlay pieces** (f29: `map_overlay.rs` + `map_pylons.rs`; e17:
+`map_npc_icons.rs` + `map_player_icons.rs` + the `map_layers.rs` pylon half).
+The merger takes ONE branch's overlay implementation, never both — the
+sheets (`NPC_Head_Boss_*`, `MapDeath`, `Extra_173/175/176`, `Black_Tile`,
+`UI_quickicon1`), the `Lookups` fields and the `WorldMap` pylon/pan state
+would double. e17's own phase 1b (`2360c5dd`) already deduped its internal
+parallel lanes; the cross-branch dedupe is the merger's call (e17 carries the
+c21 hover-name base `98e2ae01` + the atlas measurement; f29 carries the
+review round `a0516edf` — read both before picking).
+
+**Composition with the union, verified by inspection (no conflicts with the
+closeout code):**
+
+- **Draw order.** The union's fullscreen tail is hover text → close button
+  (`Main.cs:56014`) → thick cursor (`:56037`) → head icon. Both siblings
+  insert their overlay draws BEFORE the hover text — revenge/misc
+  (`:55922-55923`), NPC heads (`:55926`), the 255-head loop (`:55931-55976`),
+  death markers (`:55977-55986`), the revenge money row (`:55988-55995`) —
+  i.e. between `map_layers_draw` and the close button, exactly the C# order.
+  The union's close/cursor tail stays last; no shared lines, no double-draw.
+  One seam note: the union's single head icon draws AFTER the cursor (the
+  base's placement); the siblings' head loop replaces that draw and belongs
+  at `:55931` (before the close button) — the merger re-homes it with the
+  loop, per the C# write order. The minimap inserts (heads/death between the
+  layer walk and `draw_foreground`, `:55705-55778`) slot into the union's
+  style-1 branch the same way.
+- **The reveal driver is untouched by both.** `map_reveal_draw` runs ahead
+  of `WorldMap::prepare` on the DoDraw half; the siblings' draws read
+  `map.pos`/`map.scale` after `prepare` — no interaction. The `map_ready`
+  gate (`Main.cs:55283`) wraps both draw branches, so their overlays inherit
+  it for free.
+- **The pan state is claimed TWICE and lands differently:** f29's
+  `pan_target: Option<[f32;2]>` steps in `update_map_input`
+  (`map_pylons.rs::pan_target_step`, cancel on `ui_left_press`); e17's
+  `pan_target: bool` + `pan_target_end` + `pan_cancel_press` steps in
+  `WorldMap::prepare` ahead of the clamps (the C# position,
+  `Main.cs:55361-55385` < `:55387`). Keep-one with the overlay pick. Two
+  gaps BOTH share, for the merger to close against the C#: the movement-key
+  pan cancel (`Player.cs:24776`/`:24781`/`:24786`/`:24791` — each
+  `controlUp/Down/Left/Right` sets `PanTargetMapFullscreen = false`; neither
+  sibling's pan-key block clears the target) and f29's `resetMapFull` arm
+  does not clear the pan (`Main.cs:55418`; e17's does). The union's
+  `prepare` signature carries the extra `map_enabled` param (the clearMap
+  consume gate) — e17's pan block folds in as a hunk ahead of the clamps.
+- **`set_open` / `WorldMap` fields:** both add `map_pylon_tile` (+ the pan
+  state) and clear the pylon selection in the open arm
+  (`Player.cs:29113`/`Main.cs:41102`); the union's `set_open` is the base's
+  — a clean hunk merge. e17's `prepare` lacks the union's `map_enabled`
+  param and clearMap consume; keep the union's body, fold only the pan
+  block if e17 wins the keep-one.
+- **The closeout input code composes cleanly:** neither sibling touches
+  `ui/minimap.rs`, `world_key`, or `world_sim/player.rs`'s map tail — the
+  new `apply_key_zoom`/`update_minimap_zoom_keys`/Tab arm have no overlap.
+  f29's `update_map_input` pan-step hunk lands after the drag block, ahead
+  of the clamps — the union's UsingMap-gated drag block is untouched.
+- **Click cluster:** both wire the pylon click through the draw-side
+  `map_layers_draw` return (f29 `apply_pylon_click` after the draw region;
+  e17 `handle_pylon_map_click` + the `map_left_press` snapshot in
+  `frame.rs`), NOT through `in_world_click_cluster` — the union's
+  ping → close → bestiary order and the S1-B-8 pin are untouched.
