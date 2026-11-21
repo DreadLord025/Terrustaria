@@ -132,6 +132,12 @@ pub struct HitEffectOutcomeD {
     /// the per-cell draws ride the wiring wave (the f10
     /// `nebula_predictor_shot` precedent).
     pub wof_screen_sweep: Option<(f32, f32)>,
+    /// The 115 Hungry's death-spawn seam (`NPC.cs:87420-87422`): spawn
+    /// ONE NPC-116 (The Hungry II) at `(pos.X + width/2, pos.Y +
+    /// height)`. `Some((x,y))` = the spawn anchor; the roster pass is
+    /// the wiring wave's (no draw here). The `netMode == 1` guard drops
+    /// in SP.
+    pub hungry_spawn: Option<(f32, f32)>,
 }
 
 /// The death-half dust loop shared by the classic rows (`NPC.cs` per-arm
@@ -2691,6 +2697,124 @@ fn wall_of_flesh_death(
     outcome.wof_screen_sweep = Some((npc.x, npc.y));
 }
 
+/// The 115/116 Hungry death (`NPC.cs:87410-87435`, sites 409-410): the
+/// 115's death spawns NPC-116 at `(pos.X + width/2, pos.Y + height)` +
+/// the 10x dust-5 burst at (hd, −1) + return (the roster seam,
+/// `hungry_spawn`); the 116's death runs the 20x dust-5 burst at
+/// (hd, −1) then 132/133 at position, `this.scale` carried.
+fn hungry_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeD,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    if npc_type == 115 {
+        // `:87420-87428` — the 116 spawn (the wiring wave's roster pass,
+        // no draw here) + the 10x dust-5 burst + return.
+        outcome.hungry_spawn = Some((npc.x + w / 2.0, npc.y + h));
+        for _ in 0..10 {
+            dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+                Color::default(), 1.0,
+            );
+        }
+        return;
+    }
+    // `:87429-87432` — the 116's 20x dust-5 burst.
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 132, s); // :87433
+    gore.new_gore(rng, world, pos, vel, 133, s); // :87434
+}
+
+/// The 117-119 Leech death (`NPC.cs:87436-87451`, site 411): the 10x
+/// dust-5 burst at (hd, −1), then ONE gore `134 + (type - 117)` at
+/// position, `this.scale` carried.
+fn leech_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87446-87449` — the 10x dust-5 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 134 + npc_type - 117, npc.scale); // :87450
+}
+
+/// The 217/218/219 beetle death (`NPC.cs:87452-87480`, sites 412-416):
+/// the 50x dust-18 burst carrying `this.alpha`/`this.color`/`this.scale`
+/// (the dye beetles — the port's Npc has no `color` field, so the
+/// default Color stands in; the color is render-only, no draw), speed
+/// (hd, −2) — NOTE the 1× hitDirection, not 2× — then the per-kind
+/// pair/single: 217 Cochineal → 292/293 (`:87468-87469`), 218 Cyan →
+/// 295/296 (`:87473-87474`), 219 Lac → 294 (`:87478`), `this.scale`
+/// carried.
+fn beetle_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87462-87465` — the 50x dust-18 burst, alpha/scale carried, the
+    // color default stand-in (render-only).
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        18,
+        hit_direction / 2.0, // death_dust_loop doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        npc.scale,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    if npc_type == 217 {
+        gore.new_gore(rng, world, pos, vel, 292, s); // :87468
+        gore.new_gore(rng, world, pos, vel, 293, s); // :87469
+    }
+    if npc_type == 218 {
+        gore.new_gore(rng, world, pos, vel, 295, s); // :87473
+        gore.new_gore(rng, world, pos, vel, 296, s); // :87474
+    }
+    if npc_type == 219 {
+        gore.new_gore(rng, world, pos, vel, 294, s); // :87478
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -2998,6 +3122,28 @@ pub fn hit_effect_d(
             hit_direction,
             &mut outcome,
         );
+    }
+    // `:87410-87435` — the 115/116 Hungry arm (sites 409-410).
+    else if npc_type == 115 || npc_type == 116 {
+        hungry_death(
+            npc,
+            npc_type,
+            dust,
+            dust_ctx,
+            gore,
+            rng,
+            world,
+            hit_direction,
+            &mut outcome,
+        );
+    }
+    // `:87436-87451` — the 117-119 Leech arm (site 411).
+    else if (117..=119).contains(&npc_type) {
+        leech_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87452-87480` — the 217/218/219 beetle arm (sites 412-416).
+    else if matches!(npc_type, 217 | 218 | 219) {
+        beetle_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -5388,6 +5534,101 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "wof {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87420-87434` — the Hungry split: the 115 returns the
+    /// spawn seam + the 10x dust census (no gores), the 116 runs the 20x
+    /// census + 132/133.
+    #[test]
+    fn w4_f5d_the_hungry_split_spawns_the_seam_or_the_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(431);
+        let out = hit_effect_d(&n, 115, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(out.hungry_spawn, Some((115.0, 130.0)));
+        assert!(!gore.slot(0).active, "the 115 spawns no gore");
+        let mut twin = UnifiedRandom::new(431);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 115 mirrors the C# draws");
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(433);
+        let out = hit_effect_d(&n, 116, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        assert_eq!(out.hungry_spawn, None);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![132, 133]);
+        let mut twin = UnifiedRandom::new(433);
+        for _ in 0..20 {
+            twin_dust(&mut twin, 30, 30);
+        }
+        for _ in 0..2 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 116 mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87450` — the Leech single: 134 + (type - 117), this.scale
+    /// carried, after the 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_leech_single_picks_the_segment_type() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 26.0);
+        for (kind, want) in [(117, 134), (118, 135), (119, 136)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(439);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "leech {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+            let mut twin = UnifiedRandom::new(439);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 26, 26);
+            }
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(rng.peek(), twin.peek(), "leech {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87468-87478` — the beetles: 217→292/293, 218→295/296,
+    /// 219→294; the 50x dust-18 census carries this.alpha/this.scale and
+    /// the 1x hitDirection (the helper's doubling compensated).
+    #[test]
+    fn w4_f5d_the_beetles_carry_the_dye_census() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 26.0, 22.0);
+        n.alpha = 90;
+        n.scale = 1.1;
+        for (kind, want) in [(217, vec![292, 293]), (218, vec![295, 296]), (219, vec![294])] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(443);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "beetle {kind}");
+            let dyed = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(dyed.dust_type, 18);
+            assert_eq!(dyed.alpha, 90, "the dust carries this.alpha");
+            let mut twin = UnifiedRandom::new(443);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 26, 22);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "beetle {kind} mirrors the C# draws");
         }
     }
 }
