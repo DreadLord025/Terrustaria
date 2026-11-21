@@ -77,6 +77,7 @@ per `docs/superpowers` agreements).
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 91 | Fighter (aiStyle 3) doc-sweep lane 15: d22 core probe, graveyard bash gate, door-open census, confused generic arm | `91-doc-sweep-fighter.md` | 🟡 |
 | 91-A | Fighter residuals: the d22r RESUME keep-both fold-list (graveyard/confused hunks), the blood-moon door-break census correction, the confused-immunity table fix, the coin/star cross-notes | `91-addendum-d22r-fold-list.md` | 🟡 |
+| 91-F | Fighter FINAL: the heart/star seam ported (f35 disclaimed it), the d22r reconcile receipt (fold-list CONSUMED at bcd42ddd1), the fighter-variant census (the MartianWalker 520 shooter remainder), the banner-carrier/goblin-peasant resolution | `91-final-fighter-census.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

@@ -36115,7 +36115,7 @@ rows. d22's core reads the flip through `find_buff_index(31)` — the
 immune table hides the buff, so the flip correctly never fires for the
 immune kinds; the fold-list forbids re-folding the table to `&[]`.
 
-### The coin/star drops (item 4, cross-note only)
+### The coin/star drops (item 4, cross-note only — SUPERSEDED by the FINAL phase)
 
 Per the Lead's scope, g4 does NOT wire the drops (f35 owns the loot
 trees, g60 the death-feed dust). Cross-noted in the addendum:
@@ -36127,7 +36127,17 @@ heart/star `NPCLoot_DropHeals` → `DropCommonLifeAndMana`
 (`NPC.cs:79098-79557`) is UNPORTED (no `spawn_heals` seam). Both are f35
 remainders.
 
-### The d22r RESUME fold-list (item 5)
+**FINAL-phase update (commit `55840d9a`):** f35's own census
+(`65-expert-drop-trees-census.md:39`) explicitly disclaims the heal seam
+("missing, OUT of this task"), so g4 ported it: `spawn_heal_drops` + the
+two pure draw-order helpers, wired LAST on the death path after
+`spawn_coins`/`spawn_loot` (`NPC.cs:78897-78898`). The two `spawn_coins`
+stand-ins are now LIVE (`npc.buffs.has_buff(72)` + `app.world.blood_moon`).
+The per-difficulty census: the ONLY difficulty input is the 116-119 leech
+arm's `!expert || Next(5)==0` (classic short-circuits the draw). The full
+census + the 9 witnesses live in `docs/research/91-final-fighter-census.md`.
+
+### The d22r RESUME fold-list (item 5 — CONSUMED, the reconcile landed)
 
 d22's tip re-probed to `b24977d9` (four pushed commits). Its style-3 core
 (`npc_ai_style3.rs`, the 22-plain-walker claim set) still carries the
@@ -36137,6 +36147,38 @@ keep-both fold-list: thread rng into `fighter_obstacle_scan_g`, replace
 `next_max(60)`, keep the P5 pre-pass + chain term + the four witnesses,
 keep the P6 generic arms (non-claimed riders), keep the P9 immunity rows,
 keep d22's GoblinPeon smash drain. The full checklist is addendum §7.
+
+**FINAL-phase receipt:** the d22 tip has MOVED to `bcd42ddd1` — the
+**W4-d22r G4 reconcile** landed (four commits `0cfd08ac5`/`4150d3748`/
+`e6c83bef8`/`bcd42ddd1` on top of `b24977d9`), executing the keep-both
+contract. The addendum's §0 "still pre-P5" probe is now STALE. Verified
+against `git show origin/task/W4-d22-npc-ai-styles-3-6`: the flag25 line
+is `npc.target_zone_graveyard && rng.next_max(60) == 0`, both scan entries
+take the rng, the sim pre-pass + chain term + the P5 witnesses are kept,
+the P9 immunity rows are NOT re-folded to `&[]`, the GoblinPeon smash +
+the tall-gate drain + the blood-moon census correction are kept. d22r's
+ANALYSIS record explicitly cites g4's research/91 + 91-addendum as the
+contract it executed. **No g4 re-fold is needed — the reconcile is
+complete.** The full receipt table lives in
+`docs/research/91-final-fighter-census.md` §2.
+
+### The fighter-variant FINAL census (the MartianWalker shooter remainder)
+
+The FINAL census (`docs/research/91-final-fighter-census.md` §3) re-read
+the whole `AI_003_Fighters` (`NPC.cs:55856-60298`) + the two despawn
+helpers. Every ported aiStyle-3 kind is routed: the 22 plain walkers on
+d22's axis, the 17 zombie variants on `update_zombie`, the shooters on
+their machines, the martian head-arm kinds on their fns + the P3 resets,
+the pillar mobs on their machines, the summoner on its phase machine, the
+frost siblings on `npc_ai_frost_mob`/`update_skeleton`. The banner-carrier
+question resolves to the Scutlix 391 carrier group (the invented 50-px
+stop retired by d22r); the goblin-peasant is the invasion four (26/27/28/
+111, the Peon smash live). **The ONE genuine remainder: the MartianWalker
+520** rides `update_skeleton` (the plain walker) but the C# 520 is a
+shooter-block type (`:59069`) — its walk is routed, but its 592 laser shot
++ the aim cycle + the 400-px stop are unported (the projectile-work lane,
+the same lane as the engineer's turret + the zapper's spear). The ~123
+unported style-3 types are kind-roster gaps (d34-d43), not AI-arm gaps.
 
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
