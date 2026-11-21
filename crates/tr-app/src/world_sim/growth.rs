@@ -112,9 +112,22 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
         // `WorldGen.UpdateWorld`'s infection flag (`WorldGen.cs:71502-71507`):
         // the journey `StopBiomeSpreadPower` freezes the evil/hallow spread.
         let allowed_to_spread = app.creative_powers.allowed_to_spread_infections();
+        // W4-d119 escalation 1 — the `TrySpawningTownNPC` walker seam
+        // (`WorldGen.cs:72497`/`:73807`): the growth walkers' inactive-tile
+        // arms push `(x, y)` spawn-requests onto the shared queue (the gate
+        // + its ONE conditional Next(4) ride this `UpdateWorldGen` stream,
+        // inline with the picks exactly like the C#); the drain below runs
+        // the full `SpawnTownNPC` per request after the mutable pass.
+        let mut walker = tr_core::growth::TownSpawnWalker {
+            invasion_type: app.world.invasion_type,
+            eclipse: app.world.eclipse,
+            npc_spawn_delay: &mut app.town_spawn.npc_spawn_delay,
+            npc_spawn_period: app.town_spawn.npc_spawn_period,
+            requests: &mut app.town_spawn_requests,
+        };
         // The shell-pile arm's weather inputs: the live rain intensity and
         // the wind speed (`Main.maxRaining`/`Main.windSpeedCurrent`).
-        tr_core::growth::update_world(
+        tr_core::growth::update_world_ts(
             world,
             1,
             raining,
@@ -124,6 +137,7 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
             app.rain.max_raining(),
             app.wind.speed_current,
             rng,
+            Some(&mut walker),
         );
         // `hardUpdateWorld`'s spread arms ride the same picks (the port
         // runs them unconditionally — the hardmode gate waits for
@@ -153,6 +167,31 @@ pub(crate) fn update_growth(app: &mut App, dt: f32) {
     // `WorldGen.cs:5460`).
     for _ in 0..relocated {
         let _ = app.notify_progression_net(8);
+    }
+    // W4-d119 escalation 1 — drain the walkers' `TrySpawningTownNPC` queue:
+    // each request runs the full `SpawnTownNPC` (`WorldGen.cs:74878`'s inline
+    // call, deferred to this `UpdateWorldGen` slot). The NO_HOBO events fire
+    // after the borrow releases (the same seam).
+    let requests = std::mem::take(&mut app.town_spawn_requests);
+    if !requests.is_empty() {
+        let player = app
+            .player
+            .as_ref()
+            .map(|p| (p.x, p.y, crate::player::WIDTH, crate::player::HEIGHT));
+        let nohobo = crate::town_spawn::drain_town_spawn_requests(
+            &requests,
+            &mut app.world,
+            &mut app.npcs,
+            &mut app.town_rooms,
+            &mut app.town_arrival,
+            &mut app.town_spawn,
+            player,
+            false,
+            &mut app.chat,
+        );
+        for _ in 0..nohobo {
+            let _ = app.notify_progression_net(8);
+        }
     }
 }
 
@@ -296,6 +335,78 @@ mod tests {
             *app.rngs.stream(RngKey::UpdateWorldGen),
             stream,
             "the growth group consumed exactly this prefix of the stream"
+        );
+        assert_worlds_equal(&app.world, &twin.world);
+    }
+
+    /// W4-d119 escalation 1 — the walker seam rides the phase's
+    /// `UpdateWorldGen` stream: with the period armed to 1 (and FreezeTime on
+    /// so the head's `npcSpawnPeriod = 20` re-arm is skipped, the rate-0 gate),
+    /// every inactive-tile pick runs the `TrySpawningTownNPC` gate (the wall-0
+    /// cells fire with no draw), the requests queue fills, and the drain runs
+    /// the full `SpawnTownNPC` per request. The twin drives the same prefix by
+    /// hand through `update_world_ts` + the gate, proving the draw counts match.
+    #[test]
+    fn the_walker_seam_queues_and_drains_on_the_phase_stream() {
+        let freeze = |app: &mut crate::app::App| {
+            app.creative_powers.set(
+                crate::creative::PowerId::FreezeTime,
+                crate::creative::PowerState::Toggle(true),
+            );
+            app.town_spawn.npc_spawn_period = 1;
+        };
+        let mut app = fresh_app();
+        freeze(&mut app);
+        update_growth(&mut app, 1.0 / 60.0);
+        // The gate fired on the inactive picks: the queue drained (empty now)
+        // and the counter reset per fire.
+        assert!(app.town_spawn_requests.is_empty(), "the drain emptied the queue");
+        assert_eq!(app.town_spawn.npc_spawn_delay, 0);
+
+        // The twin: the same picks through the seam, counting the pushes.
+        let mut twin = fresh_app();
+        freeze(&mut twin);
+        let raining = twin.rain.is_raining();
+        let day_time = twin.world.day_time;
+        let allowed = twin.creative_powers.allowed_to_spread_infections();
+        let mut stream = UnifiedRandom::new(twin.world.seed as i32);
+        let mut delay = 0;
+        let mut requests: Vec<(i32, i32)> = Vec::new();
+        {
+            let mut walker = tr_core::growth::TownSpawnWalker {
+                invasion_type: twin.world.invasion_type,
+                eclipse: twin.world.eclipse,
+                npc_spawn_delay: &mut delay,
+                npc_spawn_period: 1,
+                requests: &mut requests,
+            };
+            tr_core::growth::update_world_ts(
+                &mut twin.world,
+                1,
+                raining,
+                false,
+                allowed,
+                day_time,
+                twin.rain.max_raining(),
+                twin.wind.speed_current,
+                &mut stream,
+                Some(&mut walker),
+            );
+        }
+        let sx = stream.next_range(10, twin.world.width - 10);
+        let sy = stream.next_range(twin.world.rock_layer as i32, twin.world.height - 40);
+        tr_core::spread::hard_update_world(
+            &mut twin.world,
+            sx,
+            sy,
+            false,
+            allowed,
+            &mut stream,
+        );
+        assert_eq!(
+            *app.rngs.stream(RngKey::UpdateWorldGen),
+            stream,
+            "the walker seam consumed exactly this prefix of the stream"
         );
         assert_worlds_equal(&app.world, &twin.world);
     }

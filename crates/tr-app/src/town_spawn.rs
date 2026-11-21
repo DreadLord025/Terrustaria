@@ -22,9 +22,11 @@
 //! * [`try_spawning_town_npc_gate`] — `WorldGen.TrySpawningTownNPC`
 //!   (`WorldGen.cs:74869-74880`): the per-tile-update arrival driver the
 //!   growth walkers call (`:72497` overground / `:73807` underground, the
-//!   inactive-tile arms). UNWIRED: the port's growth walkers are pure
-//!   `tr-core` world fns with no NPC seam; the port's arrivals ride the
-//!   `UpdateTime_SpawnTownNPCs` consumer instead (ANALYSIS deviation).
+//!   inactive-tile arms). WIRED (W4-d119 escalation 1) through the tr-core
+//!   walker seam [`tr_core::growth::try_spawning_town_npc`]: the pure
+//!   walkers push `(x, y)` spawn-requests onto a shared queue and
+//!   [`drain_town_spawn_requests`] runs the full `SpawnTownNPC` at the
+//!   `UpdateWorldGen` slot (`world_sim/growth.rs`).
 //!
 //! RNG census (exact slots):
 //! * `SpawnHomelessNPC` (`UpdateTime` stream — `Main.cs:65043-65062` runs
@@ -258,9 +260,15 @@ pub(crate) fn is_there_a_spawnable_prioritized_town_npc(
 /// invasion/eclipse guard, the `++npcSpawnDelay >= npcSpawnPeriod` counter
 /// (reset on fire), and the blue-dungeon-wall `Next(4) == 0` roll — the ONE
 /// draw, and only when `wall == 34`. Returns whether `SpawnTownNPC(x, y)`
-/// should run. UNWIRED: the C# call sites are the growth walkers'
-/// inactive-tile arms (`:72497`/`:73807`), pure `tr-core` fns in the port
-/// (ANALYSIS deviation — the arrivals ride the UpdateTime consumer).
+/// should run.
+///
+/// W4-d119 escalation 1: WIRED through the tr-core walker seam
+/// ([`tr_core::growth::try_spawning_town_npc`] + [`TownSpawnWalker`]) — the
+/// growth walkers' inactive-tile arms (`:72497`/`:73807`) push `(x, y)`
+/// spawn-requests onto the shared queue and `world_sim/growth.rs` drains it
+/// at the `UpdateWorldGen` slot into [`spawn_town_npc`]. This app-side gate
+/// stays as the statics-carrier form the drain's witness pins (the tr-core
+/// gate is the same logic with the queue push instead of the bool return).
 pub(crate) fn try_spawning_town_npc_gate(
     wall: u16,
     invasion_type: i32,
@@ -281,6 +289,41 @@ pub(crate) fn try_spawning_town_npc_gate(
     // `:74874`: `Main.tile[x, y].wall != 34 || Main.rand.Next(4) == 0` —
     // the short-circuit means a non-34 wall draws NOTHING.
     wall != 34 || rng.next_max(4) == 0
+}
+
+/// The app drain of the walkers' `TrySpawningTownNPC` spawn-request queue
+/// (W4-d119 escalation 1): each queued `(x, y)` runs the FULL
+/// [`spawn_town_npc`] (`WorldGen.cs:5409-5615`) — the C#'s inline call at
+/// `:74878`, deferred to the `UpdateWorldGen` slot because the tr-core
+/// walkers have no NPC store. Returns the NO_HOBO (8) count (one per
+/// `Successful`/`RelocatedHomeless`); the caller fires the progression
+/// events after the borrow releases (the `notify_progression_net` seam).
+/// The `tileSolid[379]` window (`:74876-74879`) needs no toggle — the
+/// generated `TILE_SOLID` base table already carries 379.
+pub(crate) fn drain_town_spawn_requests(
+    requests: &[(i32, i32)],
+    world: &mut World,
+    npcs: &mut Vec<Npc>,
+    rooms: &mut TownRooms,
+    state: &mut ArrivalState,
+    statics: &mut TownSpawnStatics,
+    player: Option<(f32, f32, f32, f32)>,
+    unlocked_truffle_spawn: bool,
+    chat: &mut crate::chat::ChatMonitor,
+) -> u32 {
+    let mut nohobo = 0u32;
+    for &(x, y) in requests {
+        // `:74878`: `WorldGen.SpawnTownNPC(x, y)` — the default
+        // `canSpawnNewTownNPC: true`.
+        let out = spawn_town_npc(
+            world, npcs, rooms, state, statics, x, y, true, player,
+            unlocked_truffle_spawn, chat,
+        );
+        if matches!(out, TownNpcSpawnResult::Successful | TownNpcSpawnResult::RelocatedHomeless) {
+            nohobo += 1;
+        }
+    }
+    nohobo
 }
 
 /// The roofline span around a home tile (`WorldGen.cs:5097-5107`, the
@@ -1098,6 +1141,41 @@ mod tests {
         assert_eq!(out, TownNpcSpawnResult::FoundHouseNoSpawn);
         assert_eq!(statics.last_found_house, (65, 105));
         assert!(npcs.is_empty());
+    }
+
+    /// W4-d119 escalation 1 — the walker drain: each queued `(x, y)` runs the
+    /// full `SpawnTownNPC` (`WorldGen.cs:74878`); a `Successful` arrival counts
+    /// one NO_HOBO, a `FoundHouseNoSpawn` writes LastFoundHouse and counts none.
+    #[test]
+    fn the_walker_drain_runs_the_full_spawn_per_request() {
+        let mut w = ground();
+        build_furnished_room(&mut w, 60, 100, 12, 9);
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rooms = TownRooms::new();
+        let mut state = ArrivalState::new();
+        state.prioritized = Some(NpcKind::Guide);
+        state.set_can_spawn(NpcKind::Guide);
+        let mut statics = TownSpawnStatics::default();
+        let mut chat = crate::chat::ChatMonitor::default();
+        // One request at the furnished room: the Guide arrives (NO_HOBO 1).
+        let nohobo = drain_town_spawn_requests(
+            &[(65, 105)],
+            &mut w, &mut npcs, &mut rooms, &mut state, &mut statics,
+            None, false, &mut chat,
+        );
+        assert_eq!(nohobo, 1);
+        assert_eq!(npcs.len(), 1);
+        assert_eq!(npcs[0].kind, NpcKind::Guide);
+        // A second request with the prioritized slot now empty: the house is
+        // found but nobody spawns — LastFoundHouse writes, NO_HOBO stays 0.
+        let nohobo = drain_town_spawn_requests(
+            &[(65, 105)],
+            &mut w, &mut npcs, &mut rooms, &mut state, &mut statics,
+            None, false, &mut chat,
+        );
+        assert_eq!(nohobo, 0);
+        assert_eq!(statics.last_found_house, (65, 105));
+        assert_eq!(npcs.len(), 1, "no second copy spawned");
     }
 
     /// `WorldGen.cs:4881-4917`: the type-order walk — a resident clears its

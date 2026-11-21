@@ -2153,6 +2153,7 @@ pub(crate) mod front_flow_tests {
             town_look_timer: 0.0,
             town_arrival: crate::town_arrival::ArrivalState::new(),
             town_spawn: crate::town_spawn::TownSpawnStatics::default(),
+            town_spawn_requests: Vec::new(),
             reuse_delay: 0.0,
             window: None,
             gpu: None,
