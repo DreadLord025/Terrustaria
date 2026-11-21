@@ -1,10 +1,27 @@
-# 143 — W4-c8 crawler FINAL census: the cross-lane provider contract, the gold set, the d22 compose, the sheets union
+# 238 — W4-c8 crawler FINAL census: the cross-lane provider contract, the gold set, the d22 compose, the sheets union
 
 Branch: `task/W4-c8-style66-crawling-critters` (final phase, 2026-11-21,
 code-only — no cargo/tests/rustfmt run; every witness WRITTEN NOT RUN).
 Base: `3705670d3` (the sweep docs commit). Final-phase commits:
 `af2a06880` (item 1+2), `72e05facf` (item 3), `b7fd55a43` (item 4),
 this doc (item 5).
+
+**RENUMBERED 143 → 238 (retire phase, registry-150).** The W4-d54
+COLLISION REGISTRY (`origin/task/W4-d54-dust-sites-world` tip `38bfd1d22`,
+`docs/research/150-research-number-registry.md` §2) assigns key 143 to
+W4-c4 (`143-d40-crimsongoldfish-retire-hunk.md`, first-add
+2026-11-21T09:02:12+02:00 `90fd242d9`); this doc first-added
+2026-11-21T10:03:55+02:00 (`af1f8ba1d`) is a later claimant and renames on
+its OWN branch per the registry rules ("if those lanes later push them,
+they MUST take free numbers 237+"). At rename time the full 356-tip
+`ls-tree` sweep shows 237 DOUBLE-CLAIMED post-registry (W4-e23
+`237-bestiary-ui-final.md` first-add 10:53:03 `7a7779690` vs W4-g61
+`237-g61-spawn-family-final.md` 12:12:59 `fd406ecba` — e23 earlier, g61
+must move again) and **238/239/240 free at every tip** — c8 takes 238,
+the first free number after the live 237 claimants. Refs updated on this
+branch: `docs/research/INDEX.md`, `docs/ANALYSIS.md` (×3),
+`docs/PORT_MAP.md`, `docs/ROADMAP.md`. The 143-numbered mentions in
+commit messages below are historical (the doc was 143 when written).
 
 ## 1. The SIGHT-unlock provider is GENERIC — the other critter lanes are auto-covered
 

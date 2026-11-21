@@ -31087,7 +31087,7 @@ portraits and the netglue bare seed. The wiring:
   integration pins and the digger worm-pass pin
   (`world_sim/npcs.rs::w4_c8_*`).
 
-### W4-c8 FINAL phase (2026-11-21, code-only — research/143)
+### W4-c8 FINAL phase (2026-11-21, code-only — research/238, renumbered from 143 per registry-150)
 
 - **The SIGHT-provider CROSS-LANE contract**: `is_critter_entry`
   generalized from the nine-kind list to the GENERIC
@@ -31130,11 +31130,11 @@ portraits and the netglue bare seed. The wiring:
   forecast); real dims measured via the pinned LZX harness (17,424
   padded px total, every height divides by its `npcFrameCount` row).
   The d35 `_d35_npc_census.json` predates the c8 landing — re-run the
-  extraction on the merged base (research/143 §4 cross-note).
+  extraction on the merged base (research/238 §4 cross-note).
 - Witnesses WRITTEN NOT RUN: `w4_c8_final_*` (bestiary.rs ×2,
   world_sim/npcs.rs ×1, render/entities.rs ×1), `w4_c8_compose_*` ×2
   (the d22 carries), the re-pinned digger flee witness. Full register +
-  merge notes: `docs/research/143-c8-crawler-final-census.md`.
+  merge notes: `docs/research/238-c8-crawler-final-census.md`.
 
 ## The aiStyle-9 sphere family (S1-D-3 aiStyle-9, 2026-11-18, code-only mode)
 
