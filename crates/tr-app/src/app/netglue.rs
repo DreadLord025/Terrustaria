@@ -3580,6 +3580,13 @@ fn npc_seed(
         | crate::npc::NpcKind::Grasshopper => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-d39 batch 3 — the teeth bomb + the archer pair plant their
+        // feet on the column surface (the wave-A walkers' shape).
+        crate::npc::NpcKind::ChatteringTeethBomb
+        | crate::npc::NpcKind::CultistArcherBlue
+        | crate::npc::NpcKind::CultistArcherWhite => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 

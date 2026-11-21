@@ -1121,6 +1121,30 @@ pub enum NpcKind {
     /// the C#'s `AI_001_Slimes` has no 377 branch, the generic hop IS
     /// the machine).
     Grasshopper,
+    /// `NPCID.ChatteringTeethBomb` (378, `NPCID.cs:11433`) — the blood
+    /// moon's hopping bomb (`NPC.cs:13825-13838`): 20x26, aiStyle 41,
+    /// dmg 120, def 30, 200 HP, kb 0.5, value 450, slots 1. Protocol id
+    /// 785. WIRED: the axis' 41 arm rides `npc_ai_style41::style41_step`
+    /// (the faithful S1-D-3 module — the 3-hop cycle, the wet/<64-px
+    /// arming, the 10-tick fuse + the 160x160 explosion resize; keyed
+    /// on `cs_id()` 378, NOT the port-local protocol id).
+    ChatteringTeethBomb,
+    /// `NPCID.CultistArcherBlue` (379, `NPCID.cs:11435`) — the dungeon
+    /// cultist's archer (`NPC.cs:13839-13855`, the 379/380 shared row):
+    /// 18x40, aiStyle 3, dmg 45, def 14, 210 HP, kb 0.55, value 1000,
+    /// slots 0, lavaImmune, netAlways, chaseable=false. Protocol id
+    /// 786. The aiStyle-3 walker stand-in (`update_zombie`, the wave-A
+    /// precedent); the `AI_003` 379/380 retreat branch (`NPC.cs:56181-
+    /// 56214`) + the summoner link are the c1 wiring lane's.
+    CultistArcherBlue,
+    /// `NPCID.CultistArcherWhite` (380, `NPCID.cs:11437`) — the white
+    /// archer (the same `NPC.cs:13839-13855` row). Protocol id 787.
+    /// `Hide = true` (`NPCID.cs:3735`) — NO bestiary entry of its own
+    /// (the populator's `GetExclusions`, `BestiaryDatabaseNPCsPopulator.cs:870-886`);
+    /// `try_entry_for_npc` folds it onto the blue archer's 379 (the
+    /// Sharkron2 precedent), `cs_id` rides the folded net id (the
+    /// s1_f_3 invariant).
+    CultistArcherWhite,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3072,11 +3096,16 @@ impl Npc {
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
             // The `CanBeChasedBy` slice (`NPC.cs:6261`/`:6259`/`:6563`):
-            // `chaseable`'s stock true (the false writers are the unported
-            // case-345 family), `immortal`'s stock false, `friendly` the town
+            // `chaseable`'s stock true; the false writers are the
+            // case-345 family + W4-d39's cultist archer pair
+            // (`NPC.cs:13854` — the summoner-linked archers never
+            // chase), `immortal`'s stock false, `friendly` the town
             // residents' `friendly = true` write (`NPC.cs:8983+`) plus the
             // Sleeping Angler's own arm (`:13798`).
-            chaseable: true,
+            chaseable: !matches!(
+                kind,
+                NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite
+            ),
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
@@ -3573,6 +3602,10 @@ impl Npc {
             | NpcKind::ScorpionBlack
             | NpcKind::Scorpion
             | NpcKind::Grasshopper => 1.0,
+            // W4-d39 batch 3: the teeth bomb kb 0.5 (`NPC.cs:13836`),
+            // the archer pair kb 0.55 (`:13849`).
+            NpcKind::ChatteringTeethBomb => 0.5,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 0.55,
             _ => 0.4,
         }
     }
@@ -3960,6 +3993,10 @@ impl Npc {
             | NpcKind::ScorpionBlack
             | NpcKind::Scorpion
             | NpcKind::Grasshopper => 0,
+            // W4-d39 batch 3: the teeth bomb def 30 (`NPC.cs:13832`),
+            // the archer pair def 14 (`:13845`).
+            NpcKind::ChatteringTeethBomb => 30,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 14,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4339,6 +4376,10 @@ impl Npc {
             | NpcKind::ScorpionBlack
             | NpcKind::Scorpion
             | NpcKind::Grasshopper => 0.0,
+            // W4-d39 batch 3: the teeth bomb value 450 (`NPC.cs:13837`),
+            // the archer pair value 1000 (`:13850`) — copper.
+            NpcKind::ChatteringTeethBomb => 450.0,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 1000.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4989,6 +5030,21 @@ impl Npc {
             // `update_solar_drakomire_rider` stand-ins are gone.
             75 => self.update_rng_style75_solo(world, player, rng),
             // ---- W4-d39 (research/125): the Butterfly's style arm ----
+            // `else if (this.aiStyle == 41)` (`NPC.cs:29899-30159`) —
+            // the ChatteringTeethBomb (378). The faithful S1-D-3
+            // `npc_ai_style41::style41_step` (the 3-hop cycle, the
+            // wet/<64-px arming, the 10-tick fuse + the 160x160
+            // explosion resize); keyed on `cs_id()` (the C# `this.type`
+            // branches read 378, NOT the port-local protocol id 785).
+            // The module owns its integration (the frost-legion shape)
+            // and consumes ZERO RNG draws (its dust/gore/sound emissions
+            // are the documented skips — the module header's census).
+            41 => crate::npc_ai_style41::style41_step(
+                self,
+                world,
+                player,
+                self.kind.cs_id() as i32,
+            ),
             // The checkpoint wave's 64/66/67 arms are dropped with their
             // claimed kinds (c7/c8/c9 own Firefly/LightningBug/Worm/
             // TruffleWorm/Snail/GlowingSnail — their lanes wire the same
@@ -6389,6 +6445,17 @@ impl Npc {
             // carries no 377 branch — the generic hop IS the machine).
             NpcKind::ScorpionBlack | NpcKind::Scorpion => self.update_guide(world, dt),
             NpcKind::Grasshopper => self.update_slime(world, player, dt),
+            // W4-d39 batch 3: the teeth bomb's aiStyle 41 rides the
+            // style axis above (the faithful module) — unreachable
+            // through `update_rng`. The archer pair rides the aiStyle-3
+            // walker stand-in (the wave-A precedent; the `AI_003`
+            // 379/380 retreat branch is the c1 wiring lane's).
+            NpcKind::ChatteringTeethBomb => {
+                unreachable!("aiStyle 41 rides the style axis (W4-d39)")
+            }
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => {
+                self.update_zombie(world, player, dt)
+            }
         }
     }
 
@@ -9139,6 +9206,70 @@ impl Npc {
                     self.frame = 0;
                 }
                 self.sprite_dir = self.facing;
+            }
+            // W4-d39 — `case 378` (`NPC.cs:70983-71006`): the airborne
+            // +2-row shift (the landing linger: the shift back fires
+            // only at frame > 2, so the 6th-tick wrap keeps row 2 one
+            // extra cycle), the 6-tick step over
+            // `Main.npcFrameCount[378]` = 4 (`Main.cs:67082`) with the
+            // air wrap to row 2 / ground wrap to row 0.
+            NpcKind::ChatteringTeethBomb => {
+                if self.vy != 0.0 && self.frame < 2 {
+                    self.frame += 2;
+                }
+                if self.vy == 0.0 && self.frame > 2 {
+                    self.frame -= 2;
+                }
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                    if self.vy != 0.0 && self.frame >= 4 {
+                        self.frame = 2;
+                    }
+                    if self.vy == 0.0 && self.frame >= 2 {
+                        self.frame = 0;
+                    }
+                }
+            }
+            // W4-d39 — `case 379 : case 380` (`NPC.cs:71578-71622`):
+            // the grounded ±1-only flip; the ai[2] > 0 attack pose
+            // pins row `ai[2]-1+2` + zeroes the counter (the BREAK);
+            // the idle row-0 hold (the counter NOT reset — the vanilla
+            // quirk); the walk floor row 7 + the |vx|*2 counter's >6
+            // step over `Main.npcFrameCount[type]` = 12 wrapping to
+            // row 7; the air pins row 1 + zeroes the counter.
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.ai[2] > 0.0 {
+                        self.sprite_dir = self.facing;
+                        self.frame = self.ai[2] as u32 - 1 + 2;
+                        self.frame_counter = 0.0;
+                    } else if self.vx == 0.0 {
+                        self.frame = 0;
+                    } else {
+                        if self.frame < 7 {
+                            self.frame = 7;
+                        }
+                        self.frame_counter += self.vx.abs() * 2.0;
+                        if self.frame_counter > 6.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 12 {
+                            self.frame = 7;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
             }
             // `case 370` (`NPC.cs:72142-72236`): the boss's state-keyed
             // strip over `Main.npcFrameCount[370]` = 8 (`Main.cs:67121`).
@@ -18777,6 +18908,9 @@ impl Npc {
             NpcKind::ScorpionBlack => 366,
             NpcKind::Scorpion => 367,
             NpcKind::Grasshopper => 377,
+            NpcKind::ChatteringTeethBomb => 378,
+            NpcKind::CultistArcherBlue => 379,
+            NpcKind::CultistArcherWhite => 380,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23845,7 +23979,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 274] = [
+    pub(super) const ALL_KINDS: [NpcKind; 277] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24129,6 +24263,9 @@ mod tests {
         NpcKind::ScorpionBlack,
         NpcKind::Scorpion,
         NpcKind::Grasshopper,
+        NpcKind::ChatteringTeethBomb,
+        NpcKind::CultistArcherBlue,
+        NpcKind::CultistArcherWhite,
     ];
 
     #[test]
@@ -27740,8 +27877,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            274,
-            "every decodable kind resolves (the wire roster's size - 274 after W4-d39's Butterfly/ScorpionBlack/Scorpion/Grasshopper (research/125); 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            277,
+            "every decodable kind resolves (the wire roster's size - 277 after W4-d39's seven unclaimed kinds (research/125); 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31390,6 +31527,11 @@ mod s1_d_2_tests {
         (NpcKind::ScorpionBlack, 7),
         (NpcKind::Scorpion, 7),
         (NpcKind::Grasshopper, 1),
+        // W4-d39 batch 3 — the teeth bomb 41 (`NPC.cs:13830`), the
+        // archer pair 3 (`:13843`).
+        (NpcKind::ChatteringTeethBomb, 41),
+        (NpcKind::CultistArcherBlue, 3),
+        (NpcKind::CultistArcherWhite, 3),
     ];
 
     #[test]
@@ -32228,7 +32370,184 @@ mod s1_d_2_tests {
         }
     }
 
-    // ---- S1-D-3z (zombie fighter audit) — the holiday zombie variants +
+    /// W4-d39 batch 3 — the teeth bomb + the archer pair's `SetDefaults`
+    /// rows (`NPC.cs:13825-13838`/`:13839-13855`): size, aiStyle, HP,
+    /// damage, defense, value, kb, the port-local ids 785/786/787, the
+    /// archer's chaseable=false + the white's 379 bestiary fold.
+    #[test]
+    fn w4_d39_the_teeth_archer_setdefaults_rows() {
+        // (kind, cs, proto, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::ChatteringTeethBomb, 378u16, 785u16, 20.0, 26.0, 41u8, 200, 120, 30, 450.0, 0.5),
+            (NpcKind::CultistArcherBlue, 379, 786, 18.0, 40.0, 3, 210, 45, 14, 1000.0, 0.55),
+            // The white archer's cs_id rides the FOLDED 379 (the s1_f_3
+            // invariant — the Sharkron2 precedent); its own vanilla 380
+            // lives in the render_key/texture rows.
+            (NpcKind::CultistArcherWhite, 379, 787, 18.0, 40.0, 3, 210, 45, 14, 1000.0, 0.55),
+        ];
+        for (kind, cs, proto, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.cs_id(), cs, "{kind:?} cs id (the fold)");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} port-local protocol id");
+            assert_eq!(NpcKind::from_u16(proto), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused immune");
+            assert!(!kind.no_gravity(), "{kind:?} grounded");
+        }
+        // The archers never chase (`NPC.cs:13854`); the bomb does.
+        assert!(!bare(NpcKind::CultistArcherBlue).chaseable);
+        assert!(!bare(NpcKind::CultistArcherWhite).chaseable);
+        assert!(bare(NpcKind::ChatteringTeethBomb).chaseable);
+        // The white archer folds onto the blue's entry (Hide=true).
+        let e = crate::bestiary::entry_for_npc(NpcKind::CultistArcherWhite, SlimeVariant::Blue);
+        assert_eq!(e.net_id, 379, "the fold");
+        assert_eq!(e.credit_id, "CultistArcherBlue");
+        assert_eq!(
+            crate::bestiary::try_entry_for_npc(NpcKind::CultistArcherWhite, SlimeVariant::Blue)
+                .map(|e| e.net_id),
+            Some(379),
+            "the try fold"
+        );
+        // The DRAW sheet stays the white's own 380.
+        assert_eq!(
+            crate::render::entities::texture_net_id(NpcKind::CultistArcherWhite),
+            380
+        );
+    }
+
+    /// W4-d39 — the teeth bomb `FindFrame` case (`NPC.cs:70983-71006`):
+    /// the air +2 shift, the 6-tick step, the air wrap to row 2 / ground
+    /// wrap to row 0, and the landing linger (the shift back fires only
+    /// at frame > 2 — row 2 survives one ground tick).
+    #[test]
+    fn w4_d39_the_teeth_bomb_hops_and_lingers() {
+        let mut n = bare(NpcKind::ChatteringTeethBomb);
+        // Grounded from row 0: the 6-tick step 0->1->0.
+        n.vy = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, [0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 0], "the ground cycle");
+        // Airborne: the +2 shift then the wrap to row 2.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vy = -3.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, [2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 2], "the air cycle");
+        // The landing linger: row 3 shifts back to 1; row 2 does NOT
+        // shift (the > 2 gate) — it takes the 6-tick wrap to 0.
+        n.frame = 2;
+        n.frame_counter = 0.0;
+        n.vy = 0.0;
+        n.find_frame();
+        assert_eq!(n.frame, 2, "the linger keeps row 2");
+    }
+
+    /// W4-d39 — the archer `FindFrame` case (`NPC.cs:71578-71622`): the
+    /// attack pose pins row ai[2]+1, the idle row-0 hold keeps the
+    /// counter (the vanilla quirk), the walk floor row 7 + the |vx|*2
+    /// >6 step wrapping 12->7, the air row 1.
+    #[test]
+    fn w4_d39_the_archer_walks_rows_seven_to_eleven() {
+        for kind in [NpcKind::CultistArcherBlue, NpcKind::CultistArcherWhite] {
+            let mut n = bare(kind);
+            // Idle: row 0, the counter NOT reset.
+            n.frame = 9;
+            n.frame_counter = 4.0;
+            n.vx = 0.0;
+            n.vy = 0.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (0, 4.0), "{kind:?} idle hold");
+            // The attack pose: ai[2] = 3 pins row 3-1+2 = 4, counter 0.
+            n.ai[2] = 3.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (4, 0.0), "{kind:?} attack pose");
+            // Walking at vx 1: the counter adds 2/tick, the step at the
+            // 4th tick (8 > 6); the floor lifts to row 7 first.
+            n.ai[2] = 0.0;
+            n.frame = 0;
+            n.frame_counter = 0.0;
+            n.vx = 1.0;
+            let mut rows = Vec::new();
+            for _ in 0..20 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(
+                rows,
+                [7, 7, 7, 8, 8, 8, 8, 9, 9, 9, 9, 10, 10, 10, 10, 11, 11, 11, 11, 7],
+                "{kind:?} the walk strip"
+            );
+            // Air: row 1, counter 0.
+            n.vy = 2.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (1, 0.0), "{kind:?} air");
+        }
+    }
+
+    /// W4-d39 — the teeth bomb rides the faithful aiStyle-41 module
+    /// through the axis: the spawn latch (ai[0] = -100, ai[2] = 1), the
+    /// hop cadence, and the wet arming (ai[1] = 5, ai[2] = 10) → the
+    /// 160x160 explosion resize + the hp-0 death (the module's own
+    /// witnesses pin the machine; this pins the WIRING).
+    #[test]
+    fn w4_d39_the_teeth_bomb_rides_the_style41_axis() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        // Plant the bomb ON the player's tile (the <64-px arming gate,
+        // `NPC.cs:29976` — the deterministic arming, no hop-walk luck).
+        let mut n = Npc::new(NpcKind::ChatteringTeethBomb, player.x, player.y, 1, 0.0);
+        // The first tick runs the init latch (`NPC.cs:29905-29911`)
+        // and the near-player arming (ai[1] = 5, ai[2] = 10).
+        n.update(&w, &mut player, 1.0 / 60.0);
+        assert_eq!(n.ai[1], 5.0, "the arming latch");
+        // The 10-tick fuse: the explosion resize + the hp-0 death.
+        for _ in 0..20 {
+            n.update(&w, &mut player, 1.0 / 60.0);
+            if n.hp <= 0 {
+                break;
+            }
+        }
+        assert!(n.hp <= 0, "the bomb exploded within the fuse");
+        assert_eq!(n.size_override, Some((160.0, 160.0)), "the explosion resize");
+        assert!(n.dont_take_damage, "the explosion shield");
+    }
+
+    /// W4-d39 — the batch-3 kinds keep their frames inside the sheet
+    /// budgets through a full update walk (the archers the walker
+    /// stand-in, the bomb the faithful module).
+    #[test]
+    fn w4_d39_the_batch3_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [NpcKind::CultistArcherBlue, NpcKind::CultistArcherWhite] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+            }
+        }
+    }
+
+    // ---- S1-D-3z (zombie fighter audit) - the holiday zombie variants +
     // the live-path audit fixes. Tests-as-code, WRITTEN NOT RUN (code-only
     // mode — no compiler invoked). Every constant pins to its C# literal. ----
 

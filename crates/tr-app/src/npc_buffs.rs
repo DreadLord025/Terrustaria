@@ -492,6 +492,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::ScorpionBlack
         | NpcKind::Scorpion
         | NpcKind::Grasshopper => &[31],
+        // W4-d39 batch 3: the teeth bomb (`NPCID.cs:8318`) + the archer
+        // pair (`:8325`/`:8332`) — the same single `[31]` Confused row.
+        NpcKind::ChatteringTeethBomb
+        | NpcKind::CultistArcherBlue
+        | NpcKind::CultistArcherWhite => &[31],
     }
 }
 

@@ -1109,6 +1109,10 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // sheets are their own `TextureAssets.Npc[type]` (371/373).
         NpcKind::DetonatingBubble => 371,
         NpcKind::Sharkron2 => 373,
+        // W4-d39: the white archer's bestiary credit folds onto 379
+        // (Hide=true), but its DRAW sheet is its own NPC_380 (the
+        // Sharkron2 precedent).
+        NpcKind::CultistArcherWhite => 380,
         // S1-F-13d: the Force Bubble's bestiary credit folds onto the
         // Officer (Hide=true), but its DRAW sheet is its own NPC_384
         // (the officer's shield overlay, `Main.cs:25773-25777`) — the
@@ -1256,6 +1260,9 @@ pub(crate) const CRITTER_SHEETS: &[u32] = &[
     366, // the black Scorpion
     367, // the brown Scorpion
     377, // the Grasshopper
+    378, // the Chattering Teeth Bomb
+    379, // the blue Cultist Archer
+    380, // the white Cultist Archer (the Hide fold's own DRAW sheet)
 ];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
@@ -3201,6 +3208,20 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::Grasshopper => {
                 pumpkin_moon_draw(assets.npc_sheet(377), npc_rows(377), n, w, h)
+            }
+            // W4-d39 batch 3 — the teeth bomb (4 rows; the explosion's
+            // 160x160 box rides `size_override`, the frame height stays
+            // the SHEET's row height) + the archer pair (12 rows each,
+            // their OWN sheets — the white's bestiary fold does not
+            // fold the draw, the Sharkron2 precedent).
+            NpcKind::ChatteringTeethBomb => {
+                pumpkin_moon_draw(assets.npc_sheet(378), npc_rows(378), n, w, h)
+            }
+            NpcKind::CultistArcherBlue => {
+                pumpkin_moon_draw(assets.npc_sheet(379), npc_rows(379), n, w, h)
+            }
+            NpcKind::CultistArcherWhite => {
+                pumpkin_moon_draw(assets.npc_sheet(380), npc_rows(380), n, w, h)
             }
         };
         let Some(tex) = tex else {

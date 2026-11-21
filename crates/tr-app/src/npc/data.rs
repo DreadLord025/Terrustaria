@@ -594,6 +594,9 @@ impl NpcKind {
             NpcKind::ScorpionBlack => 782,
             NpcKind::Scorpion => 783,
             NpcKind::Grasshopper => 784,
+            NpcKind::ChatteringTeethBomb => 785,
+            NpcKind::CultistArcherBlue => 786,
+            NpcKind::CultistArcherWhite => 787,
         }
     }
 
@@ -929,6 +932,9 @@ impl NpcKind {
             782 => NpcKind::ScorpionBlack,
             783 => NpcKind::Scorpion,
             784 => NpcKind::Grasshopper,
+            785 => NpcKind::ChatteringTeethBomb,
+            786 => NpcKind::CultistArcherBlue,
+            787 => NpcKind::CultistArcherWhite,
             _ => return None,
         })
     }
@@ -1816,6 +1822,11 @@ impl NpcKind {
             | NpcKind::ScorpionBlack
             | NpcKind::Scorpion
             | NpcKind::Grasshopper => "NPC_Hit_1",
+            // W4-d39 batch 3: the teeth bomb (`NPC.cs:13834`) + the
+            // archer pair (`:13847`) — NPCHit1.
+            NpcKind::ChatteringTeethBomb
+            | NpcKind::CultistArcherBlue
+            | NpcKind::CultistArcherWhite => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2127,6 +2138,11 @@ impl NpcKind {
             | NpcKind::ScorpionBlack
             | NpcKind::Scorpion
             | NpcKind::Grasshopper => "NPC_Killed_1",
+            // W4-d39 batch 3: the teeth bomb (`NPC.cs:13835`) + the
+            // archer pair (`:13848`) — NPCDeath1.
+            NpcKind::ChatteringTeethBomb
+            | NpcKind::CultistArcherBlue
+            | NpcKind::CultistArcherWhite => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2486,6 +2502,10 @@ impl NpcKind {
             NpcKind::Butterfly => 65,
             NpcKind::ScorpionBlack | NpcKind::Scorpion => 7,
             NpcKind::Grasshopper => 1,
+            // W4-d39 batch 3: the teeth bomb 41 (`NPC.cs:13830`), the
+            // archer pair 3 (`:13843`).
+            NpcKind::ChatteringTeethBomb => 41,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 3,
         }
     }
 
@@ -3022,6 +3042,11 @@ impl NpcKind {
             NpcKind::Butterfly => (10.0, 10.0),
             NpcKind::ScorpionBlack | NpcKind::Scorpion => (26.0, 18.0),
             NpcKind::Grasshopper => (14.0, 10.0),
+            // W4-d39 batch 3: the teeth bomb 20x26 (`NPC.cs:13828-
+            // 13829` — the explosion's 160x160 resize rides
+            // `size_override`), the archer pair 18x40 (`:13841-13842`).
+            NpcKind::ChatteringTeethBomb => (20.0, 26.0),
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => (18.0, 40.0),
         }
     }
 
@@ -3670,6 +3695,10 @@ impl NpcKind {
             | NpcKind::ScorpionBlack
             | NpcKind::Scorpion
             | NpcKind::Grasshopper => 5,
+            // W4-d39 batch 3: the teeth bomb 200 (`NPC.cs:13833`), the
+            // archer pair 210 (`:13846`).
+            NpcKind::ChatteringTeethBomb => 200,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 210,
         }
     }
 
@@ -4041,6 +4070,10 @@ impl NpcKind {
             | NpcKind::ScorpionBlack
             | NpcKind::Scorpion
             | NpcKind::Grasshopper => 0,
+            // W4-d39 batch 3: the teeth bomb 120 (`NPC.cs:13831`), the
+            // archer pair 45 (`:13844`).
+            NpcKind::ChatteringTeethBomb => 120,
+            NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite => 45,
         }
     }
 }

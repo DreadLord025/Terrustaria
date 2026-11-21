@@ -1621,6 +1621,22 @@ fn portrait_data(
                 .unwrap_or(10.0);
             (sheet_i, h, 14.0, h, white)
         }
+        // W4-d39 batch 3 — the teeth bomb's 4-row strip + the archer's
+        // 12-row strip (`Main.npcFrameCount[378]` = 4, `[379]` = 12;
+        // `Main.cs:67082`). The white archer folds onto 379's entry
+        // (the Hide=true exclusion) — its portrait is the blue's.
+        (NpcKind::ChatteringTeethBomb, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 4.0)
+                .unwrap_or(26.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::CultistArcherBlue | NpcKind::CultistArcherWhite, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 18.0, h, white)
+        }
     }
 }
 

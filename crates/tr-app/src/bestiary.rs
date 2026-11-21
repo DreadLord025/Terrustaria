@@ -2214,6 +2214,26 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Grasshopper",
     },
+    // W4-d39 batch 3 — the teeth bomb (378, the BloodMoon-tagged enemy,
+    // populator :1146) + the blue cultist archer (379, the Dungeon-
+    // tagged enemy, populator :1522). The white archer (380) is a
+    // Hide=true exclusion — NO entry (the fold above rides 379).
+    BestiaryEntryDef {
+        credit_id: "ChatteringTeethBomb",
+        net_id: 378,
+        kind: NpcKind::ChatteringTeethBomb,
+        variant: None,
+        quick_unlock: false,
+        name: "Chattering Teeth Bomb",
+    },
+    BestiaryEntryDef {
+        credit_id: "CultistArcherBlue",
+        net_id: 379,
+        kind: NpcKind::CultistArcherBlue,
+        variant: None,
+        quick_unlock: false,
+        name: "Cultist Archer",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2335,6 +2355,10 @@ pub fn try_entry_for_npc(
         // kill credit is "Sharkron" — only the UI provider maps onto 370,
         // `BestiaryDatabaseNPCsPopulator.cs:691`).
         NpcKind::DetonatingBubble | NpcKind::Sharkron2 => NpcKind::DukeFishron,
+        // W4-d39: the white cultist archer (380) is a Hide=true exclusion
+        // (`NPCID.cs:3735`, the populator's `GetExclusions`) — it folds
+        // onto the blue archer's 379 entry (the Sharkron2 precedent).
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2406,6 +2430,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-d39: the white cultist archer (380) is a Hide=true exclusion
+        // (`NPCID.cs:3735`) — it rides the blue archer's 379 row (the
+        // Sharkron2 precedent). The DRAW sheet stays NPC_380 through
+        // `texture_net_id`'s own row.
+        NpcKind::CultistArcherWhite => NpcKind::CultistArcherBlue,
         other => other,
     };
     ENTRIES
