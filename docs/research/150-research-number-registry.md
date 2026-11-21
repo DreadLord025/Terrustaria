@@ -1170,7 +1170,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 328 | g68 | 328-g68-wind-seal | DONE 97a6fd083 |
 | 329 | c3 | 329-cursed-skull-family-bible | DONE ccb981eb3 |
 | 330 | d6 | 247-projectile-ai-51-60-band-bible | rename owed |
-| 331 | d3 | 248-d3-boulder-family-seal | rename owed |
+| 331 | d3 | 331-d3-boulder-family-seal | DONE c23b7b013 |
 | 332 | c27 | 332-c27-set-time-final | DONE 392da37b6 |
 | 333 | d119 | 333-housing-relocation-family-bible | DONE aaced1581 |
 | 334 | g62 | 334-g62-hit-dust-final | DONE 87299d2c8 |
