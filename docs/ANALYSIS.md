@@ -39420,10 +39420,19 @@ click buffers; the player tick applies).
 - **The load apply (app/mod.rs).** Both pairs apply BEFORE the hp clamp
   (a saved 405-life character keeps its hp); the mana pair feeds
   `mana_max_base`/`mana_max`; the flag restores verbatim.
-- **Code-only mode.** Witnesses: `persist.rs` +4 (the superset
-  round-trip with the exact three-line order, g89's flag-only v7, the
-  life-only v7, the both-caps read clamp — plus the extended v5/v6
-  back-compat and round-trip assertions) + `crystals.rs` +1 (the
-  crystal-upgrade sidecar round-trip + the reloaded gate) — WRITTEN,
-  NOT RUN.
+- **The merger contract doc.** `docs/research/103-persist-v7-layout.md`
+  carries the full token order/counts, the unlock line's RESERVED
+  booster tokens (ambrosia/pearl/arcane/crystal/DD2 — the vanilla
+  `:54780-54787` order), the back-compat matrix (every predecessor shape
+  → its witness) and the merge guidance. It wins over any lane's local
+  layout note.
+- **Code-only mode.** Witnesses: `persist.rs` (the FULL v8 superset
+  round-trip with the exact line order, g89's flag-only v7, the
+  life-only v7, g90's bread-only v7 (the bounded lone-flag ambiguity),
+  g55's loadout-only v7, the 3-line pre-fold superset, g89b's
+  unlock-only v8 + the 1-token back-read + the reserved-token skip,
+  the both-caps read clamp, the loadout index clamp, the bread/loadout
+  round-trips — plus the extended v5/v6 back-compat assertions) +
+  `crystals.rs` +1 (the crystal-upgrade sidecar round-trip + the
+  reloaded gate) — WRITTEN, NOT RUN.
 
