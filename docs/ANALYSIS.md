@@ -39244,3 +39244,86 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The Plantera bulb wind draw (W4-g84, 2026-11-21, code-only)
+
+The bulb's draw census found four of its five C# pieces already landed on
+main: the animator row (`drawdata_anim.rs` `step_gt_ge(238, 20, 4)`,
+`Main.cs:18709-18718` — period 21 ticks, 4 rows, 84-tick cycle), the
+`GetTileDrawData` case 238 (`drawdata.rs` — top 2, `addFrY =
+tileFrame * 36`, `TileDrawing.cs:5441-5444`), the pink glow floor
+(`tile_light/scanner.rs` case 238 — the accumulated R/B floored at 0.5,
+G untouched, `TileLightScanner.cs:1000-1009`; `tileLighted[238]` is in
+the generated `TILE_LIGHTED` set, `Main.cs:10245`) and the map icon
+(`mapdata.rs` `TILE_COLORS[238][0] = [225, 128, 206, 255]`,
+`MapHelper.cs:518`; the 655 GlowingMushroom shares it, `:519`).
+
+**The MISSING piece was the draw path itself.** C# never draws a bulb cell
+through `DrawSingleTile`: the draw-area switch registers the 2×2 object's
+top-left as a `TileCounterType.MultiTileGrass` special point
+(`TileDrawing.cs:606-613` — `236/238/702`, `frameX % 36 == 0 &&
+frameY == 0`), and `PostDrawTiles` draws the object via
+`DrawMultiTileGrass` (`:8738-8805`, the size arm `:8760-8764` —
+`sizeX = sizeY = 2`) / `DrawMultiTileGrassInWind` (`:8916-9032`):
+`GetWindCycle(topLeftX, topLeftY, _sunflowerWindCounter)` (`:8918`),
+the default-arm factor `num = 0.15` (`:8937-8939` — NOT the
+sunflower's 0.07), the per-row `num3 = 1 - (row+1)/2` with the 0-guard
+0.1 (`:8964-8968`) and the `InAPlaceWithWind(2×2)` gate
+(`:8924`/`:8969-8972`), rotation `windCycle * 0.15 * num3` and
+vertical offset `|windCycle| * 2 * num3` about the object's bottom-centre
+anchor `(topLeftX*16 + 16, topLeftY*16 + 32)` minus the cell's
+`(i*16, j*16 + tileTop)` (`:8919`/`:8982`/`:8998-8999`/`:9024`).
+The port drew the bulb as a static generic raised cell (the `dd.top != 0`
+arm) — no wind transform; the animation row landed but the object never
+leaned.
+
+`crates/tr-app/src/render/multi_tile_grass.rs` ports the per-cell
+transform (`bulb_sway`) and `render/tiles.rs` gains the `kind == 238`
+arm before the generic raised arm — the sunflower per-cell precedent (the
+documented z-order approximation; the fused row-major pass keeps its
+structure). The frame grid reconstructs the top-left from
+`frameX.rem_euclid(36)/18` / `frameY/18` (the
+`WorldGen.PlaceJunglePlant` 2×2 write, `WorldGen.cs:47834-47855` —
+`num3 = 0` for 236/238/702). The tint is the RAW `Lighting.GetColor`
+(`:8975` — the special pass applies NO `GetFinalLight` actuation ghost)
+with the `DrawTiles_GetLightOverride` Glow-coating White override
+(`:8977`/`:6626-6629`); the sprite rides
+`push_sprite_origin_rot_paint` (the painted `GetTileDrawTexture`,
+`:9000`). `windCycle = 0` (underground — where bulbs actually grow —
+or calm air) degenerates to the static draw, exactly like the C# pass.
+
+Scope: tile 238 only. The sibling MultiTileGrass kinds 236/702 (jungle
+roses / Life Fruit, the same 2×2 shape) and the rest of the roster (233,
+530, 651, 485…, 519 cattail) keep their existing draws — the general
+`DrawMultiTileGrass` pass is the follow-up (research/09 row 11 stays
+PARTIAL). The g30 special-point registry lane (UNWIRED,
+`236 | 238 | 702 => Deferred(MultiTileGrass)`) is untouched; at its merge
+the inline arm is the keep-one reconciliation point.
+
+Deviations (the recorded lanes, not new skips):
+- the deferred special-point ordering is approximated inline (the
+  sunflower precedent, research/09 deviation 2);
+- the `DrawAnimatedTile_AdjustForVisionChangers` /
+  `DrawTiles_GetLightOverride` vision-potion chain (`:8976-8977`) is the
+  d56 unwired lane — identity for 238 outside the unported potions;
+- the `_rand.Next(4)` flag3 roll + the 238 dust-168 sparkle
+  (`DrawTiles_EmitParticles` `:6956-6961` — `Dust.NewDust(16×16 at
+  (i*16, j*16), 168)`, `noGravity`, `alpha 200`) are the d60 unwired
+  lane (`tile_draw_particles.rs` `:626-629`); adding the roll here
+  would change the `_rand` stream order;
+- the `SideFlags` seams (`:9007-9023`) feed only the unported LitNature
+  shader (the vine strip's deviation).
+
+RNG: zero draws added — `bulb_sway` is pure world/wind state (the
+`VineSegment` shape); the G6 key already covers the inputs (the
+sunflower counter rides the windy `anim` slot, the animator row rides
+`tile_anim` gated on `is_animated_kind(238)`).
+
+Verification: 9 witness tests WRITTEN, NOT RUN (no cargo/rustc invoked) —
+`multi_tile_grass::tests` (4: the per-cell pivot/num3/0.15 transform, the
+style-grid reconstruction, the wall/sway/calm gates, the surface band +
+remix flip), `drawdata_anim` (the 21-tick/4-row period), `drawdata`
+(the four animation rows' `addFrY` 0/36/72/108), `tile_light/scanner`
+(the R/B 0.5 floor, G untouched, brighter channels kept), `map/colors`
+(the pink icon + the 655 share), `render/tiles` (the source-order pin:
+27 → 238 → generic raised, raw light + fullbright override, one site).

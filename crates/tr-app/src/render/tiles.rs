@@ -975,6 +975,58 @@ pub(crate) fn draw_tiles(
                             stats.quads += 1;
                         }
                     }
+                } else if tile.kind == 238 {
+                    // W4-g84: the Plantera bulb never draws through
+                    // `DrawSingleTile` — C# registers the 2×2 object's
+                    // top-left as a MultiTileGrass special
+                    // (`TileDrawing.cs:606-613`) and
+                    // `DrawMultiTileGrass`/`DrawMultiTileGrassInWind`
+                    // (`:8760-8764`, `:8916-9032`) draw it about the
+                    // bottom-centre anchor with the default-arm factor
+                    // `num = 0.15`. The row-major loop draws each cell
+                    // inline with the same per-cell transform (the
+                    // sunflower's documented z-order approximation);
+                    // `windCycle = 0` (underground / calm) degenerates to
+                    // the static draw. The animation row rides the landed
+                    // case-238 `addFrY = tileFrame * 36`
+                    // (`TileDrawing.cs:5441-5444`, `Main.cs:18709-18718`).
+                    let sw = crate::render::multi_tile_grass::bulb_sway(
+                        wind,
+                        world,
+                        tx,
+                        ty,
+                        tile.frame_x,
+                        tile.frame_y,
+                        dd.top,
+                        sunflower_wind_counter,
+                    );
+                    let (dw, dh) = (dd.width as f32, dd.height as f32);
+                    // `tileLight = Lighting.GetColor(i, j)` (`:8975`) — the
+                    // special pass applies NO `GetFinalLight` actuation
+                    // ghost; `DrawTiles_GetLightOverride` (`:8977`,
+                    // `:6626-6629`) maps a Glow-coated bulb to White. The
+                    // vision-changer chain (`:8976`) is identity without
+                    // the unported potions (the d56 lane).
+                    let bulb_l = if tile.fullbright_block() {
+                        [1.0; 3]
+                    } else {
+                        raw_l
+                    };
+                    let tint = style.shade(bulb_l, tx, ty, anim_time);
+                    // `DrawNature(vector + (0, vector3.Y), …, tileLight,
+                    // windCycle * num * num3, origin, …)` (`:9024`) — the
+                    // painted texture (`GetTileDrawTexture`, `:9000`), the
+                    // cell's `vector2 = (i*16, j*16 + tileTop)` (`:8982`).
+                    r.push_sprite_origin_rot_paint(
+                        [pos[0], pos[1] + dd.top as f32 + sw.dy],
+                        [dw, dh],
+                        flip_uv(tf.uv, dd.flip),
+                        [tint[0], tint[1], tint[2], 1.0],
+                        sw.rot,
+                        sw.pivot,
+                        tile.paint(),
+                    );
+                    stats.quads += 1;
                 } else if sway != 0.0 {
                     // `DrawGrass`'s swaying sprite: shifted by `(cycle, |cycle|)`
                     // and rotated `cycle * 0.1` about
@@ -1844,6 +1896,44 @@ mod tests {
             1,
             "one hook, gated by wants_back_rope for both C# sites"
         );
+    }
+
+    /// W4-g84 draw-order witness: the bulb arm sits BEFORE the generic
+    /// `dd.top != 0` arm (the case-238 top 2 would otherwise route the cell
+    /// into the static raised draw) and AFTER the sunflower arm — the
+    /// `DrawMultiTileGrass` roster order (`TileDrawing.cs:8756-8764`, 27
+    /// first, 236/238/702 next). The transform rides the sunflower counter
+    /// (`_sunflowerWindCounter`, `:8918`) and the RAW cell light (`:8975`,
+    /// never the actuation-ghosted `l`), with the Glow-coating White
+    /// override (`DrawTiles_GetLightOverride :6626-6629`).
+    #[test]
+    fn w4_g84_the_bulb_arm_draws_before_the_generic_raised_arm() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        let sunflower = body.find("} else if tile.kind == 27 {").expect("sunflower arm");
+        let bulb = body.find("} else if tile.kind == 238 {").expect("bulb arm");
+        let raised = body.find("} else if dd.top != 0").expect("generic raised arm");
+        assert!(sunflower < bulb && bulb < raised, "roster order 27 → 238 → generic");
+        let arm = &body[bulb..raised];
+        assert!(
+            arm.contains("multi_tile_grass::bulb_sway"),
+            "the bulb draws through the MultiTileGrass transform"
+        );
+        assert!(
+            arm.contains("sunflower_wind_counter"),
+            "the pass rides _sunflowerWindCounter (:8918)"
+        );
+        assert!(
+            arm.contains("raw_l") && arm.contains("fullbright_block"),
+            "raw Lighting.GetColor + the Glow-coating White override"
+        );
+        assert!(
+            arm.contains("push_sprite_origin_rot_paint"),
+            "the painted DrawNature call (:9000/:9024)"
+        );
+        // Exactly one bulb dispatch site.
+        assert_eq!(body.matches("tile.kind == 238").count(), 1);
     }
 
     /// S1-G-1f draw-feed witness: the animator's rows/counters feed the
