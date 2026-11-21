@@ -44573,3 +44573,336 @@ mod s1_p_i25_dragon_tests {
         assert!((cy - 312.0).abs() < 0.01, "the centre kept: {cy}");
     }
 }
+
+#[cfg(test)]
+mod w4_g2_rowless_tests {
+    //! W4-g2 — the rowless-kind round (d5 findings F1/F4/F5/F6): the
+    //! aiStyle-48 delay/cue/reflect arms (290/433), the aiStyle-50 hostile
+    //! pair (291/292 + the Kill spawn), the aiStyle-45 Blood Rain chain
+    //! (243/244/245) + the hostile nimbus drop 264, and the aiStyle-44 orb
+    //! 229. WRITTEN NOT RUN (code-only mode, the task contract): every
+    //! expected value re-derived from the cited C# by hand arithmetic.
+    use super::*;
+    use tr_core::tile::{LiquidKind, Tile, FLAG_ACTIVE};
+
+    fn world() -> World {
+        World::new("t".into(), 512, 128)
+    }
+
+    fn put_tile(w: &mut World, x: i32, y: i32, kind: u16) {
+        let i = w.index(x, y);
+        w.tiles[i] = Tile { kind, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+    }
+
+    /// A hostile slot on the local-owner seam (`NPC.cs:21219`'s
+    /// `Owner: Main.myPlayer` convention): friendly false, owner 0.
+    fn hostile_slot(pool: &mut ProjectilePool, kind: u16, x: f32, y: f32, vx: f32, vy: f32) -> usize {
+        pool.spawn_hostile_ai_owned(kind, 0, Vec2::new(x, y), Vec2::new(vx, vy), 60, 0.0, 0.0, 0.0)
+            .unwrap()
+    }
+
+    /// `Projectile.cs:53990-53992` + `:28212-28214` — the hostile beam
+    /// 290's snapshot fires at the 3-tick delay (the d5 F1 gap). The row's
+    /// `extraUpdates = 100` runs 101 sub-steps, but `timeLeft = 100`
+    /// (`:3801`) is consumed by the 100th decrement — the arm runs 100x
+    /// (the 101st sub-step skips the dead slot), so the counter ends at
+    /// 100 and the beam lives exactly ONE tick. The Item8 cue fires once,
+    /// at `localAI[0] == 1` (post-increment).
+    #[test]
+    fn w4_g2_the_hostile_beam_delays_three_and_cues_once() {
+        let mut pool = ProjectilePool::new();
+        let slot = hostile_slot(&mut pool, SHADOWBEAM_HOSTILE, 200.0, 200.0, 0.0, 0.0);
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.local_ai[0], 100.0, "100 AI sub-steps before the life ran out");
+        assert!(!p.active, "timeLeft 100 / 101 sub-steps: a one-tick flash");
+        assert!((p.local_ai[1] - 202.0).abs() < 1e-3, "the centre X snapshot at delay 3");
+        assert!((p.local_ai[2] - 202.0).abs() < 1e-3, "the centre Y snapshot");
+        assert_eq!(p.alpha, 255, ":28228");
+        let cues = pool.drain_proj_sounds();
+        assert_eq!(cues, vec![(2, 8, 200.0, 200.0, 0.0)], "the ONE Item8 cue (:28229-28232)");
+        // Tick 2: the dead slot queues nothing.
+        tick(&mut pool, &mut w);
+        assert!(pool.drain_proj_sounds().is_empty(), "one cue per life");
+    }
+
+    /// `Projectile.cs:53997-53998` — the UFO laser 433 keeps the DEFAULT 0
+    /// delay (the d5 F1 note): the snapshot lands on sub-step 0, and the
+    /// stock penetrate 1 stands. The 100-life/101-sub-step one-tick shape
+    /// matches the 290.
+    #[test]
+    fn w4_g2_the_ufo_laser_delays_zero() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(UFO_LASER, 200.0, 200.0, 0.0, 0.0, 20, 0.0).unwrap();
+        assert_eq!(pool.slots()[slot].penetrate, 1, "the stock penetrate (:774)");
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.local_ai[0], 100.0);
+        assert!((p.local_ai[1] - 204.0).abs() < 1e-3, "the 8-wide box's centre at delay 0");
+        assert!((p.local_ai[2] - 204.0).abs() < 1e-3);
+        assert!(pool.drain_proj_sounds().is_empty(), "the 433 has no cue arm");
+    }
+
+    /// `Projectile.cs:18861-18872` — the hostile beam 290 reflects like the
+    /// 294 (the C# gate is `290 || 294`): a blocked axis steps once more and
+    /// flips; the beam never dies on contact. The fixture lifts the life to
+    /// the 294's 300 so the corridor walk survives the tick (the row's 100
+    /// is pinned by the data witness — a one-tick flash in the live sim).
+    #[test]
+    fn w4_g2_the_hostile_beam_reflects_off_tiles() {
+        let mut pool = ProjectilePool::new();
+        let mut w = world();
+        for y in 9..=11 {
+            put_tile(&mut w, 9, y, 1);
+            put_tile(&mut w, 12, y, 1);
+        }
+        let slot = hostile_slot(&mut pool, SHADOWBEAM_HOSTILE, 160.0, 160.0, 2.0, 0.0);
+        pool.slots_mut()[slot].time_left = 300;
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "the beam survives the walls");
+        assert!(p.pos.x >= 144.0 && p.pos.x <= 188.0, "stayed in the corridor: {}", p.pos.x);
+        assert!((p.vel.x.abs() - 2.0).abs() < 1e-5, "the speed holds through the flips");
+    }
+
+    /// `Projectile.cs:28325-28348` — the hostile bolt 291: the first-tick
+    /// Item20 cue, then the arrival-dot kill. The target centre rides
+    /// `ai[0..1]` (`NPC.cs:21219`); a bolt flying AT the target keeps its
+    /// velocity (dot > 0), a bolt past it zeroes + dies (owner 0).
+    #[test]
+    fn w4_g2_the_hostile_bolt_kills_on_arrival() {
+        let mut pool = ProjectilePool::new();
+        // Centre (206, 206); target (306, 206) — flying +X toward it.
+        let slot = hostile_slot(&mut pool, INFERNO_HOSTILE_BOLT, 200.0, 200.0, 4.0, 0.0);
+        pool.slots_mut()[slot].ai[0] = 306.0;
+        pool.slots_mut()[slot].ai[1] = 206.0;
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active, "still short of the target: dot > 0");
+        assert_eq!(p.vel, Vec2::new(4.0, 0.0), "no zeroing before arrival");
+        assert_eq!(p.local_ai[0], 1.0, "the cue latch");
+        assert_eq!(pool.drain_proj_sounds(), vec![(2, 20, 200.0, 200.0, 0.0)]);
+        // Teleport past the target: the dot flips <= 0 -> zero + kill.
+        pool.slots_mut()[slot].pos.x = 400.0;
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(!p.active, "the arrival kill (:28338)");
+        assert_eq!(p.vel, Vec2::ZERO, ":28335");
+        // The death hook spawned the 292 blast with the FULL damage.
+        let blast = pool.slots().iter().find(|p| p.active && p.kind == INFERNO_HOSTILE_BLAST);
+        let blast = blast.expect("the 291->292 Kill spawn (:74334-74340)");
+        assert_eq!(blast.damage, 60, "FULL damage — no 0.75 (:74338)");
+        assert_eq!((blast.w, blast.h), (130.0, 130.0), "the 292 box (:3817-3818)");
+        assert!(!blast.friendly, "the hostile blast");
+        assert_eq!(blast.owner, 0, "the bolt's owner preserved");
+    }
+
+    /// `Projectile.cs:28332-28333` — the zero-target guard: an unaimed
+    /// bolt (ai = 0) never arrival-kills, whatever its velocity.
+    #[test]
+    fn w4_g2_the_unaimed_hostile_bolt_never_arrival_kills() {
+        let mut pool = ProjectilePool::new();
+        let slot = hostile_slot(&mut pool, INFERNO_HOSTILE_BOLT, 200.0, 200.0, -4.0, 0.0);
+        let mut w = world();
+        for _ in 0..5 {
+            tick(&mut pool, &mut w);
+        }
+        assert!(pool.slots()[slot].active, "the zero-target guard (:28333)");
+    }
+
+    /// `Projectile.cs:28361-28379` — the hostile blast 292 counts +1/tick
+    /// (NOT the 296's +4): the fade kill at `ai[0] > 540` lands on tick 541,
+    /// where the friendly 296 died on tick 136. The Item74 cue fires once.
+    #[test]
+    fn w4_g2_the_hostile_blast_counts_one_per_tick() {
+        let mut pool = ProjectilePool::new();
+        let slot = hostile_slot(&mut pool, INFERNO_HOSTILE_BLAST, 200.0, 200.0, 0.0, 0.0);
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        assert_eq!(pool.slots()[slot].ai[0], 1.0, "+1, NOT +4 (:28367-28370 gates on 296)");
+        assert_eq!(pool.drain_proj_sounds(), vec![(2, 74, 200.0, 200.0, 0.0)]);
+        // Fast-forward the counter to the kill boundary.
+        pool.slots_mut()[slot].ai[0] = 540.0;
+        tick(&mut pool, &mut w);
+        assert!(!pool.slots()[slot].active, "541 > 540 -> the fade kill (:28376-28379)");
+    }
+
+    /// `Projectile.cs:74341-74346` — the friendly pair keeps its 0.75
+    /// damage scaling (the regression guard for the generalized hook).
+    #[test]
+    fn w4_g2_the_friendly_blast_keeps_the_075_damage() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(INFERNO_FORK_BOLT, 200.0, 200.0, 0.0, 0.0, 60, 4.0).unwrap();
+        pool.slots_mut()[slot].time_left = 1;
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let blast = pool.slots().iter().find(|p| p.active && p.kind == INFERNO_BLAST)
+            .expect("the 295->296 spawn");
+        assert_eq!(blast.damage, 45, "(int)(60 x 0.75) (:74345)");
+        assert_eq!((blast.w, blast.h), (150.0, 150.0));
+    }
+
+    /// `Projectile.cs:27952-27985` + `:74539-74542` — the moving blood
+    /// cloud 243 rides the 237's fly-to-cursor arm and its death spawns the
+    /// 244 twin (the d5 F5 chain head).
+    #[test]
+    fn w4_g2_the_blood_cloud_settles_into_its_twin() {
+        let mut pool = ProjectilePool::new();
+        // Overshot cursor (centre 214 > 200) with Y at rest: both axes zero
+        // on tick 1 and the cloud dies -> the kill hook spawns the 244.
+        pool.spawn_with_data_ai(BLOOD_CLOUD_MOVING, 200.0, 200.0, 4.0, 0.0, 30, 0.0, 200.0, 200.0).unwrap();
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let raining = pool.slots().iter().find(|p| p.active && p.kind == BLOOD_CLOUD_RAINING);
+        let raining = raining.expect("the 243->244 kill hook (:74539-74542)");
+        assert_eq!(raining.damage, 30, "the damage carried");
+        assert_eq!((raining.w, raining.h), (54.0, 28.0), "the 244 box (:3268-3269)");
+        assert!(raining.net_important, ":3265");
+        assert!(!pool.slots().iter().any(|p| p.active && p.kind == BLOOD_CLOUD_MOVING));
+    }
+
+    /// `Projectile.cs:28028-28037` — the settled blood cloud rains every 11
+    /// ticks (the counter resets past 10, NOT the 238's 8) and its drop is
+    /// the 245 with alpha 100 pinned by the drop arm (`:28099`).
+    #[test]
+    fn w4_g2_the_blood_cloud_rains_on_the_ten_cadence() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(BLOOD_CLOUD_RAINING, 200.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        let mut w = world();
+        // 9 ticks: the 238 would have rained; the 244 has not.
+        for _ in 0..9 {
+            tick(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[slot].ai[0], 9.0, "the counter still climbing");
+        assert!(!pool.slots().iter().any(|p| p.active && p.kind == BLOOD_RAIN), "no drop at 9");
+        // Ticks 10-11: the counter passes 10 and resets, spawning the 245.
+        for _ in 0..2 {
+            tick(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[slot].ai[0], 0.0, "the reset past 10 (:28030-28032)");
+        let drop = pool.slots().iter().find(|p| p.active && p.kind == BLOOD_RAIN)
+            .expect("the 245 drop (:28035)");
+        assert_eq!(drop.vel.y, 5.0, "the drop falls at 5");
+        assert_eq!(drop.alpha, 100, "the 245's alpha (:28099)");
+        assert_eq!(drop.penetrate, 2, "the 245's penetrate (:3281)");
+    }
+
+    /// `Projectile.cs:28070-28077` — the blood cloud's owner cap is ONE
+    /// (the 238's is 2): two living 244s age out the oldest on the 10-tick
+    /// scan, with the netUpdate sync (`:28074`).
+    #[test]
+    fn w4_g2_the_blood_cloud_caps_at_one() {
+        let mut pool = ProjectilePool::new();
+        let a = pool.spawn_with_data(BLOOD_CLOUD_RAINING, 200.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        let b = pool.spawn_with_data(BLOOD_CLOUD_RAINING, 400.0, 200.0, 0.0, 0.0, 30, 0.0).unwrap();
+        pool.slots_mut()[a].ai[1] = 100.0; // the older
+        pool.slots_mut()[b].ai[1] = 50.0;
+        let mut w = world();
+        for _ in 0..10 {
+            tick(&mut pool, &mut w);
+        }
+        assert_eq!(pool.slots()[a].ai[1], 18000.0, "count 2 > 1: the oldest aged out");
+        assert!(pool.slots()[a].net_update, ":28074");
+        assert!(pool.slots()[b].ai[1] < 18000.0, "the younger survives");
+    }
+
+    /// `Projectile.cs:28086-28092` — the shimmer bounce is LIVE (d5 F5's
+    /// fold-out was stale): a full shimmer cell at the drop's bottom-centre
+    /// tile flips a falling vy and syncs; the 264's rotation pin
+    /// (`:28103`) reads the flipped velocity.
+    #[test]
+    fn w4_g2_the_nimbus_drop_bounces_off_shimmer_and_pins_rotation() {
+        let mut pool = ProjectilePool::new();
+        // Drop at (160, 120): bottom-centre tile ((160+2)/16, (120+40)/16)
+        // = (10, 10). Fill it with shimmer.
+        let slot = hostile_slot(&mut pool, RAIN_NIMBUS, 160.0, 120.0, 0.0, 5.0);
+        let mut w = world();
+        let i = w.index(10, 10);
+        w.tiles[i].liquid = u8::MAX;
+        w.tiles[i].set_liquid_kind(LiquidKind::Shimmer);
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.vel.y, -5.0, "the shimmer flip (:28090)");
+        assert!(p.net_update, ":28091");
+        // atan2(-5, 0) + 1.57 = -pi/2 + 1.57.
+        let want = (-5.0f32).atan2(0.0) + 1.57;
+        assert!((p.rot - want).abs() < 1e-5, "the 264 rotation pin (:28103)");
+        assert_eq!(p.alpha, 0, "the 264 sets NO alpha (the 239/245 arms do)");
+    }
+
+    /// `Projectile.cs:27924-27933` — the orb 229's arm: the first-tick
+    /// CanHitLine Item8 cue (open air: the line is clear), the counter,
+    /// and the >20 gravity/friction pair. The 4x dust draws are skipped
+    /// dust-only — the arm draws NOTHING.
+    #[test]
+    fn w4_g2_the_orb_cues_then_falls() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 0.0, 30, 0.0).unwrap();
+        let mut w = world();
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 1.0, ":27928");
+        assert_eq!(p.vel, Vec2::new(2.0, 0.0), "no gravity before 20");
+        assert_eq!(pool.drain_proj_sounds(), vec![(2, 8, 200.0, 200.0, 0.0)], "the first-tick cue (:27924-27927)");
+        // Past 20: gravity +0.3, X friction x0.98 per tick.
+        pool.slots_mut()[slot].ai[0] = 20.0;
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 21.0);
+        assert!((p.vel.y - 0.3).abs() < 1e-6, "the +0.3 gravity (:27931)");
+        assert!((p.vel.x - 2.0 * 0.98).abs() < 1e-6, "the x0.98 friction (:27932)");
+        assert!(pool.drain_proj_sounds().is_empty(), "the cue is first-tick only");
+    }
+
+    /// `Projectile.cs:74450-74466` — the orb's Kill arm: the Item167 death
+    /// cue (every owner) and the 32-child burst's 64 draws KEPT in order
+    /// (X roll Next(-25,26) then Y roll Next(-45,46) per child); the
+    /// rowless 1128 spawns decline until its row lands.
+    #[test]
+    fn w4_g2_the_orb_death_cues_and_keeps_the_child_draws() {
+        struct DrawLog(Vec<(i32, i32)>);
+        impl tr_core::loot::DropRng for DrawLog {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                self.draws.push((min, max));
+                min
+            }
+            fn next_float(&mut self) -> f32 { 0.5 }
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(CHLOROPHYTE_ORB, 200.0, 200.0, 2.0, 0.0, 30, 0.0).unwrap();
+        // Kill it on contact: a wall one tile ahead of the 30-wide box.
+        let mut w = world();
+        for y in 12..=14 {
+            put_tile(&mut w, 15, y, 1);
+        }
+        pool.slots_mut()[slot].pos.x = 15.0 * 16.0 - 30.0 - 1.0;
+        let mut rng = DrawLog(Vec::new());
+        pool.update(
+            &mut w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(!pool.slots()[slot].active, "the orb died on the wall (tileCollide true)");
+        let cues = pool.drain_proj_sounds();
+        assert!(cues.iter().any(|c| c.0 == 2 && c.1 == 167), "the Item167 death cue (:74452)");
+        // 32 children x 2 draws, X-then-Y interleaved.
+        assert_eq!(rng.draws.len(), 64, "the 64 kept draws (:74462)");
+        for pair in rng.draws.chunks(2) {
+            assert_eq!(pair[0], (-25, 26), "the X roll first");
+            assert_eq!(pair[1], (-45, 46), "the Y roll second");
+        }
+        // The rowless 1128 declined — no child slots.
+        assert!(!pool.slots().iter().any(|p| p.active && p.kind == 1128), "the 1128 row is a follow-up");
+    }
+}
