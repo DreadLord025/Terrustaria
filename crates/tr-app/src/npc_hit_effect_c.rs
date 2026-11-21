@@ -203,6 +203,7 @@
 //! | 945-948 | `:87128-87131` | the zombie fall-through: 187/433 SlimedZombie (headless, 25-dust blue burst + shared tails) |
 //! | 949-951 | `:87158-87162` | the 83/84/179 cursed weapon death (3 gores 61, Next(-2,3) velocity x0.5) |
 //! | 952-960 | `:87199-87207` | the 262 Plantera death (9 random-position gores 381-387) |
+//! | 961-964 | `:87211-87217` | the 263/264 Plantera's Hook/Tentacle death (2 random-position gores each) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5406,6 +5407,41 @@ fn plantera_death(
     }
 }
 
+/// The 263/264 Plantera's Hook/Tentacle death (`NPC.cs:87209-87217`, sites
+/// 961-964): the 150-dust type-167 burst, then 2 random-position gores at
+/// `this.scale` — 263 → [390,391], 264 → [388,389], each at
+/// `position + (Next(width), Next(height))`.
+fn plantera_part_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..150 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 167, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let wi = w as i32;
+    let hi = h as i32;
+    // `:87209-87217` — the per-type pair.
+    let types: &[i32] = if npc_type == 263 { &[390, 391] } else { &[388, 389] };
+    for &ty in types {
+        let px = pos.x + rng.next_max(wi) as f32;
+        let py = pos.y + rng.next_max(hi) as f32;
+        gore.new_gore(rng, world, Vec2::new(px, py), vel, ty, s);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6059,10 +6095,12 @@ pub fn hit_effect_c(
     if (npc_type == 83 || npc_type == 84 || npc_type == 179) && npc.hp <= 0 {
         cursed_weapon_death(npc, dust, dust_ctx, gore, rng, world);
     }
-    // `:87165-87219` — the 262/263/264 Plantera arm; this commit owns the
-    // 262 Plantera (sites 952-960); the 263/264 land with the next batch.
+    // `:87165-87219` — the 262/263/264 Plantera arm (sites 952-964).
     if npc_type == 262 && npc.hp <= 0 {
         plantera_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    if (npc_type == 263 || npc_type == 264) && npc.hp <= 0 {
+        plantera_part_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9638,6 +9676,22 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the plantera mirrors the C# draws");
+    }
+
+    /// `NPC.cs:87211-87217` — the Plantera's Hook/Tentacle death: 263 →
+    /// [390,391], 264 → [388,389], random-position gores.
+    #[test]
+    fn w4_f10_the_plantera_part_death_uses_the_per_type_pair() {
+        let w = air();
+        for (ty, gores) in [(263, [390, 391]), (264, [388, 389])] {
+            let n = boss(100.0, 100.0, 40.0, 40.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(883);
+            plantera_part_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, gores, "plantera part {ty}");
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
