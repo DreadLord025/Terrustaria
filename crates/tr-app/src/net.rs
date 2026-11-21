@@ -184,6 +184,11 @@ pub mod id {
     /// (`DD2Event.cs:1790`, `MessageBuffer.cs:4298-4303`). W4-g51 lifted the
     /// parked d99 codec and wired the host `AttemptToSkipWaitTime` arm.
     pub const CRYSTAL_INVASION_SKIP: u8 = 143;
+    /// `150 SpectatePlayer` (`MessageID.cs:314`) — a player (re)targets
+    /// spectating (`NetMessage.cs:1639-1642`, `MessageBuffer.cs:4361-4384`).
+    /// W4-g51 lifted the parked d97 codec; the apply is parked (the port has
+    /// no spectating system yet).
+    pub const SPECTATE_PLAYER: u8 = 150;
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
@@ -630,6 +635,11 @@ pub struct PlayerNet {
     /// Stored-not-simulated (the port has no piggy-bank/void-lens projectile
     /// tracking consumer yet). `None` = never synced (the C# field defaults).
     pub trackers: Option<ProjectileTrackers>,
+    /// `Main.player[id].CurrentLoadoutIndex` / `.hideVisibleAccessory`, fed
+    /// by `147 SyncLoadout` (`MessageBuffer.cs:4328-4343`). The loadout swap
+    /// is unported (no loadout system); the accessory-visibility bits are
+    /// stored-not-simulated on the peer. `None` = never synced.
+    pub loadout: Option<SyncLoadout>,
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -1746,6 +1756,15 @@ pub struct LucyPopup {
     pub y: i32,
 }
 
+/// `msg 150 SpectatePlayer`'s body (`NetMessage.cs:1639-1642`):
+/// `(byte)number` the spectating player, `(short)number2` the target —
+/// -1 stops spectating (`MessageBuffer.cs:4372-4378`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpectatePlayer {
+    pub player_id: u8,
+    pub target: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -1881,6 +1900,10 @@ pub enum C2s {
     /// `143 DD2EventSkipWaitTime` - a client asked to skip the DD2 wait,
     /// no body (`DD2Event.cs:1790`, `MessageBuffer.cs:4298-4303`).
     CrystalInvasionSkip,
+    /// `150 SpectatePlayer` - a client (re)targets spectating
+    /// (`Player.SetOrRequestSpectating`, `Player.cs:17252`; the host arm
+    /// `MessageBuffer.cs:4361-4384`).
+    SpectatePlayer(SpectatePlayer),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2028,6 +2051,11 @@ pub enum S2c {
     /// `141 LucyTheAxeMessage` - the host's relay of a talking-axe popup
     /// (`MessageBuffer.cs:4274`; the client CreateFromNet, `:4278`).
     LucyPopup(LucyPopup),
+    /// `150 SpectatePlayer` - a peer's spectate target, relayed by the host
+    /// on a stop (`MessageBuffer.cs:4378`) or sent from the host's own
+    /// `SetOrRequestSpectating` (`Player.cs:17271`); the client applies a
+    /// peer's value or its own stop (`:4380-4383`).
+    SpectatePlayer(SpectatePlayer),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2123,6 +2151,7 @@ impl C2s {
             Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
             Self::LucyPopup(_) => id::LUCY_POPUP,
             Self::CrystalInvasionSkip => id::CRYSTAL_INVASION_SKIP,
+            Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2215,6 +2244,8 @@ impl C2s {
                 .i32(l.y),
             // No writer arm — bodyless (`DD2Event.cs:1790` SendData(143)).
             Self::CrystalInvasionSkip => w,
+            // `NetMessage.cs:1639-1642`: (byte)number, (short)number2.
+            Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2380,6 +2411,11 @@ impl C2s {
             }),
             // `MessageBuffer.cs:4298-4303`: no body.
             id::CRYSTAL_INVASION_SKIP => Self::CrystalInvasionSkip,
+            // `MessageBuffer.cs:4363-4368`: (byte)player, (short)target.
+            id::SPECTATE_PLAYER => Self::SpectatePlayer(SpectatePlayer {
+                player_id: r.u8()?,
+                target: r.i16()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -2547,6 +2583,7 @@ impl S2c {
             Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
             Self::CavernMonsterTypes(_) => id::CAVERN_MONSTER_TYPES,
             Self::LucyPopup(_) => id::LUCY_POPUP,
+            Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
         }
     }
 
@@ -2729,6 +2766,9 @@ impl S2c {
                 .f32(l.velocity_y)
                 .i32(l.x)
                 .i32(l.y),
+            // `NetMessage.cs:1639-1642`: (byte)number, (short)number2 (the
+            // relay reuses the writer case).
+            Self::SpectatePlayer(s) => w.u8(s.player_id).i16(s.target),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -2986,6 +3026,11 @@ impl S2c {
                 velocity_y: r.f32()?,
                 x: r.i32()?,
                 y: r.i32()?,
+            }),
+            // `MessageBuffer.cs:4363-4368`: (byte)player, (short)target.
+            id::SPECTATE_PLAYER => Self::SpectatePlayer(SpectatePlayer {
+                player_id: r.u8()?,
+                target: r.i16()?,
             }),
             _ => return None,
         })
@@ -5300,6 +5345,33 @@ mod tests {
         match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
             C2s::CrystalInvasionSkip => {}
             other => panic!("expected 143, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51: the `150 SpectatePlayer` body byte-pins the player+target
+    /// pair (`NetMessage.cs:1639-1642`: byte player, short target; -1 stops)
+    /// and round-trips both directions.
+    #[test]
+    fn w4_g51_spectate_player_round_trips() {
+        let s = SpectatePlayer {
+            player_id: 3,
+            target: -1,
+        };
+        let mut body = vec![3u8];
+        body.extend_from_slice(&(-1i16).to_le_bytes());
+        let c = C2s::SpectatePlayer(s).encode();
+        assert_eq!(c[2], 150);
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::SpectatePlayer(d) => assert_eq!(d, s),
+            other => panic!("expected 150, got {:?}", other.msg_id()),
+        }
+        let f = S2c::SpectatePlayer(s).encode();
+        assert_eq!(f[2], 150);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::SpectatePlayer(d) => assert_eq!(d, s),
+            other => panic!("expected 150, got {:?}", other.msg_id()),
         }
     }
 

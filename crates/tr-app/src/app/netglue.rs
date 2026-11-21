@@ -953,15 +953,28 @@ impl App {
                     self.world.dd2_spawn_hold = hold;
                 }
             }
+            // `case 147` — a client switched loadout (`MessageBuffer.cs:
+            // 4328-4343`): the host forces the subject to the sender
+            // (`:4330-4333`), runs `TrySwitchingLoadout` + the accessory-
+            // visibility read (`:4336-4337`), then relays to the OTHERS
+            // (`:4338-4341`, `ignoreClient = num68`). The port has no loadout
+            // system (the swap is unported, `player.rs:1039`); the loadout
+            // index + visibility bits are stored-not-simulated on the peer
+            // snapshot.
+            C2s::SyncLoadout(mut l) => {
+                l.player_id = id as u8; // `:4332`
+                self.remote_players.entry(id).or_default().loadout = Some(l);
+                server.broadcast_except(&S2c::SyncLoadout(l), id);
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
-            C2s::TogglePvp(_)
-            | C2s::PlayerMana(_)
-            | C2s::TeamChange(_)
-            | C2s::ProjectileTrackers(_)
-            | C2s::SyncLoadout(_) => {}
+            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`)
+            // land with the send-path pass (S1-I-4).
+            C2s::TogglePvp(_) | C2s::PlayerMana(_) | C2s::TeamChange(_) => {}
+            // `case 150`'s host half (`MessageBuffer.cs:4361-4384`):
+            // `SetOrRequestSpectating` / the stop-relay need the unported
+            // spectating system (`Player.spectating`); parked (S1-I-4).
+            C2s::SpectatePlayer(_) => {}
         }
     }
 
@@ -2034,16 +2047,41 @@ impl App {
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
             // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
-            // `:2695-2739`, `:3118-3126`, `:3147-3153`,
-            // `:4282-4297`, `:4328-4343`) land
+            // `:2695-2739`, `:3118-3126`, `:3147-3153`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
             | S2c::PlayerMana(_)
             | S2c::TeamChange(_)
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
-            | S2c::AnglerQuest(_)
-            | S2c::SyncLoadout(_) => {}
+            | S2c::AnglerQuest(_) => {}
+            // `case 147`'s client half (`MessageBuffer.cs:4336-4337`):
+            // `TrySwitchingLoadout` + `ReadAccessoryVisibility` on
+            // `Main.player[num68]`. The loadout swap is unported (no loadout
+            // system); the accessory-visibility bits unpack onto the local
+            // player's `hide_visible_accessory` (`MessageBuffer.cs:4494-
+            // 4501`, bit i per slot). A peer's loadout is stored on the
+            // snapshot (stored-not-simulated).
+            S2c::SyncLoadout(l) => {
+                if l.player_id as u32 == self.local_id {
+                    if let Some(p) = self.player.as_mut() {
+                        for i in 0..p.hide_visible_accessory.len() {
+                            p.hide_visible_accessory[i] = (l.hide_accessory & (1 << i)) != 0;
+                        }
+                    }
+                } else {
+                    self.remote_players
+                        .entry(l.player_id as u32)
+                        .or_default()
+                        .loadout = Some(l);
+                }
+            }
+            // `case 150` (`MessageBuffer.cs:4361-4384`): the host's
+            // `SetOrRequestSpectating` / stop-relay and the client's
+            // `spectating` apply need the unported spectating system
+            // (`Player.spectating`, `Player.cs:1634`); both arms park with it
+            // (S1-I-4).
+            S2c::SpectatePlayer(_) => {}
             // `case 135`'s client half (`MessageBuffer.cs:4195-4203`):
             // `Main.player[num103].immuneAlpha = 255` — the dead-peer ghost
             // fade. The port's `immuneAlpha` blinkVisual half is draw-side
@@ -4520,6 +4558,36 @@ mod handshake_tests {
         assert_eq!(t.player_id, 1, "the subject was forced to the sender");
         assert_eq!(t.piggy_bank.key, 7);
         assert_eq!(t.void_lens.kind, 2);
+    }
+
+    /// W4-g51 `147 SyncLoadout`: the local player's accessory-visibility
+    /// bits unpack from the ushort (`MessageBuffer.cs:4337`, `:4494-4501`,
+    /// bit i per slot); the loadout swap itself is unported.
+    #[test]
+    fn the_sync_loadout_unpacks_the_accessory_visibility() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        let me = client_app.local_id as u8;
+        // Bits 0 and 3 set -> slots 0 and 3 hidden.
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::SyncLoadout(net::SyncLoadout {
+                    player_id: me,
+                    loadout: 1,
+                    hide_accessory: 0b1001,
+                })),
+            );
+        }
+        client_app.net = role;
+        let p = client_app.player.as_ref().unwrap();
+        assert!(p.hide_visible_accessory[0], "bit 0 hid slot 0");
+        assert!(!p.hide_visible_accessory[1]);
+        assert!(!p.hide_visible_accessory[2]);
+        assert!(p.hide_visible_accessory[3], "bit 3 hid slot 3");
+        assert!(!p.hide_visible_accessory[4]);
     }
 
     #[test]
