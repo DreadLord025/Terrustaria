@@ -423,9 +423,10 @@
 //!   position = Centre, velocity = spin.RotatedBy(2π·i/24) × (1.05,1)
 //!   × (0.8+NextFloat·0.4) × 2, SkyBlue, noGravity, scale +=
 //!   0.5+NextFloat.
-//! DEFERRED (documented): the 519 oldPos trail (`:83008-83022`) and the
-//! 402 oldPos trail (`:83579-83596`) need the NPC oldPos ring the port
-//! does not carry yet; the 661/657 DEATH halves, the 371 bubble ring
+//! RESOLVED (batch 33/34): the 519 oldPos trail (`:83008-83022`) and the
+//! 402 oldPos trail (`:83579-83596`) ride the g60-adopted `Npc.old_pos`
+//! ring now (`update_trails`'s mode-7 shift; both 519 and 402 map to
+//! mode 7, `NPCID.cs:10430`). The 661/657 DEATH halves, the 371 bubble ring
 //! (`:84239`), the 686/594 gore-only deaths and the daybreak prologue
 //! (`:81735`) are g59/g60's death lane.
 //! Batch 30 (the census tail — the last simple live rows):
@@ -462,6 +463,14 @@
 //!   arm's gore siblings' ARGUMENT draws ride here (the clamped
 //!   `max(1,min(5,(int)(dmg/lifeMax·3)))` count, 2 NextFloat per gore;
 //!   the bodies are d55's).
+//! Batch 33 (the unblocked oldPos trails — the g60 ring landed):
+//! - 83017 — the SolarGoop 519 (`:83008-83023`): EVERY strike (a
+//!   standalone if, NO life gate), the hitbox walks every 3rd oldPos
+//!   slot (`+= 3`, (int) truncation, NO zero-break — an unfilled slot
+//!   spawns at (0,0)), FLAT 5 per slot: the SelectRandom(6,259,158)
+//!   Next(3) arg FIRST (Utils.cs:2459-2462), (2.5·dir,-2.5), alpha 200,
+//!   velocity ×2.4, scale += NextFloat. Mode census: 519→7, the SAME
+//!   TrailingMode row as 402 (`NPCID.cs:10430`).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -509,6 +518,15 @@ pub struct HitDustSnapshot {
     /// `this.ai[1]` — the confetti-slime gate (`NPC.cs:84723`: the
     /// type-1 slime with ai[1] == 1345 bursts confetti BEFORE its gel).
     pub ai1: f32,
+    /// `this.oldPos` (`NPC.cs:6119`) — the trail ring the 519 SolarGoop
+    /// arm walks (`:83011-83014`, every 3rd slot, no zero-break) and the
+    /// 402 worm head's hit loop gates on (`:83579-83596`). Captured at
+    /// strike time like every other field; `Npc::update_trails`'s mode-7
+    /// shift fills it (`NPCID.cs:10430`: 402→7 AND 519→7). The g60
+    /// 10-slot shape verbatim — the C#'s per-type TrailCacheLength
+    /// (402→36, 519→20, `NPCID.cs:10450`) is the recorded keep-one
+    /// deviation (ANALYSIS).
+    pub old_pos: [Vec2; 10],
 }
 
 impl HitDustSnapshot {
@@ -537,6 +555,7 @@ impl HitDustSnapshot {
             wet: n.wet,
             ai3: n.ai[3],
             ai1: n.ai[1],
+            old_pos: n.old_pos,
         }
     }
 }
@@ -717,6 +736,34 @@ pub fn replay_hit_dust(
                 // `:83003` — the sibling's own internals roll.
                 let sib = live_dust(s, 259, 2.5 * dir, -2.5, 0, Color::default(), 1.0, rng, dust, ctx, world);
                 dust.slot_mut(sib).no_gravity = true; // `:83004`
+            }
+        }
+        return;
+    }
+    // `:83008-83023` — the SolarGoop 519: EVERY strike (a standalone if,
+    // NO life gate). The hitbox walks every 3rd oldPos slot (`+= 3` over
+    // the ring's length), X/Y take the C# `(int)` truncation of the
+    // slot; NO zero-break — an unfilled slot spawns at (0,0) exactly
+    // like the C#. Per slot FLAT 5: the Type argument's SelectRandom
+    // (6, 259, 158) draws Next(3) FIRST (Utils.cs:2459-2462), then the
+    // spawn at hitbox2.TopLeft() with (2.5·dir, -2.5), alpha 200,
+    // velocity ×2.4, scale += NextFloat.
+    if s.npc_type == 519 {
+        for slot_idx in (0..s.old_pos.len()).step_by(3) {
+            let slot = s.old_pos[slot_idx];
+            // `:83013-83014` — `hitbox2.X = (int)oldPos[i].X` (truncate).
+            let pos = Vec2::new(slot.x as i32 as f32, slot.y as i32 as f32);
+            for _ in 0..5 {
+                // `:83017` — the Type argument draw rides FIRST.
+                let t = [6, 259, 158][rng.next_max(3) as usize];
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, s.w, s.h, t,
+                    2.5 * dir, -2.5, 0, Color::default(), 1.0,
+                );
+                let d = dust.slot_mut(idx);
+                d.alpha = 200; // `:83018`
+                d.velocity *= 2.4; // `:83019`
+                d.scale += rng.next_float(); // `:83020`
             }
         }
         return;
@@ -2207,6 +2254,7 @@ mod tests {
             wet: false,
             ai3: 0.0,
             ai1: 0.0,
+            old_pos: [Vec2::ZERO; 10],
         }
     }
 
@@ -4196,5 +4244,80 @@ mod tests {
         replay_hit_dust(&m, &mut r4, &mut p4, &ctx, &world);
         assert_eq!(p4.slots().iter().filter(|d| d.active).count(), 1);
         assert!(p4.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 227));
+    }
+
+    /// W4-g62 batch 33 — the SolarGoop's trail walk (`NPC.cs:83008-
+    /// 83023`): EVERY strike (even a killing blow — no life gate), slots
+    /// 0/3/6/9 of the 10-ring, (int)-truncated positions, NO zero-break
+    /// (an all-zero fresh ring spawns its 4×5 dusts AT (0,0), the C#'s
+    /// fresh-NPC shape). Per dust: the SelectRandom Next(3) arg FIRST,
+    /// then the pool internals, then alpha 200 / ×2.4 / scale +=
+    /// NextFloat. Draw-for-draw twin.
+    #[test]
+    fn w4_g62_the_goop_trail_walks_every_third_slot_without_a_break() {
+        let world = air();
+        let ctx = ctx();
+        // A filled ring with fractional slots: the (int) cast truncates.
+        let mut s = snap(519, 1, 1, 9999.0); // the goop's lifeMax 1; dead
+        s.old_pos = [
+            Vec2::new(100.9, 200.9),
+            Vec2::new(1.0, 1.0),
+            Vec2::new(2.0, 2.0),
+            Vec2::new(88.5, 190.25),
+            Vec2::new(3.0, 3.0),
+            Vec2::new(4.0, 4.0),
+            Vec2::new(76.0, 180.0),
+            Vec2::new(5.0, 5.0),
+            Vec2::new(6.0, 6.0),
+            Vec2::new(64.0, 170.0),
+        ];
+        let mut rng = UnifiedRandom::new(271);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(271);
+        let mut twin = DustPool::new();
+        for slot in [
+            Vec2::new(100.0, 200.0), // (int)100.9 / (int)200.9
+            Vec2::new(88.0, 190.0),
+            Vec2::new(76.0, 180.0),
+            Vec2::new(64.0, 170.0),
+        ] {
+            for _ in 0..5 {
+                let t = [6, 259, 158][twin_rng.next_max(3) as usize];
+                let idx = twin.new_dust(
+                    &mut twin_rng, &ctx, &world, slot, 24, 18, t,
+                    2.5, -2.5, 0, Color::default(), 1.0,
+                );
+                let d = twin.slot_mut(idx);
+                d.alpha = 200;
+                d.velocity *= 2.4;
+                d.scale += twin_rng.next_float();
+            }
+        }
+        assert_eq!(rng, twin_rng, "the stream matches call-for-call");
+        assert_eq!(dust.slots(), twin.slots());
+        // The fresh all-zero ring still fires all four slot groups —
+        // at (0,0) (NO zero-break, unlike the 402 arm).
+        let z = snap(519, 1, 1, 0.0);
+        let mut rz = UnifiedRandom::new(271);
+        let mut pz = DustPool::new();
+        replay_hit_dust(&z, &mut rz, &mut pz, &ctx, &world);
+        let mut tz = UnifiedRandom::new(271);
+        let mut qz = DustPool::new();
+        for _ in 0..4 {
+            for _ in 0..5 {
+                let t = [6, 259, 158][tz.next_max(3) as usize];
+                let idx = qz.new_dust(
+                    &mut tz, &ctx, &world, Vec2::ZERO, 24, 18, t,
+                    2.5, -2.5, 0, Color::default(), 1.0,
+                );
+                let d = qz.slot_mut(idx);
+                d.alpha = 200;
+                d.velocity *= 2.4;
+                d.scale += tz.next_float();
+            }
+        }
+        assert_eq!(rz, tz);
+        assert_eq!(pz.slots(), qz.slots());
     }
 }
