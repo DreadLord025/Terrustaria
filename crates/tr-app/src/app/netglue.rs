@@ -868,6 +868,10 @@ impl App {
             // dye-unfold + ReadItem + relay (`:3995-4022`) land with the
             // apply-wiring lanes (g48-g52) / S1-I-4.
             C2s::WeaponsRackTryPlacing(_) | C2s::HatRackItemSync(_) => {}
+            // S1-I-1 W4-f21: `133`'s host TEFoodPlatter.TryPlacing
+            // (`MessageBuffer.cs:4147-4163`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            C2s::FoodPlatterTryPlacing(_) => {}
         }
     }
 
@@ -1972,6 +1976,12 @@ impl App {
             // (`MessageBuffer.cs:4004-4016`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             S2c::HatRackItemSync(_) => {}
+            // S1-I-1 W4-f21: `129`'s client team re-push + FixUIScale +
+            // TrySetPreparationState (`MessageBuffer.cs:4075-4085`) lands
+            // with the apply-wiring lanes (g48-g52) / S1-I-4 — the port's
+            // join flow drives those transitions from its own state
+            // machine today.
+            S2c::FinishedConnecting => {}
         }
     }
 

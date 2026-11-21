@@ -353,6 +353,18 @@ pub mod id {
     /// (the `>= 2` dye unfold + the `>= 2` slot refusal). Client sends:
     /// `ItemSlot.cs:1117`/`:1216`/`:1766`/`:1770`, `TEHatRack.cs:322`/`:368`.
     pub const TE_HAT_RACK_ITEM_SYNC: u8 = 124;
+    /// `129 FinishedConnectingToServer` (`MessageID.cs:272`) — NO writer
+    /// case: `TrySendData(129, whoAmI)` (`MessageBuffer.cs:937`, the
+    /// State-3→10 join arm) writes a bare frame. The reader is client-only
+    /// (`MessageBuffer.cs:4075-4085`): the team re-push (`45` when
+    /// `team > 0`), `FixUIScale`, `TrySetPreparationState(ProcessingData)`.
+    /// S2c-only, bodyless.
+    pub const FINISHED_CONNECTING: u8 = 129;
+    /// `133 FoodPlatterTryPlacing` (`MessageID.cs:280`) — writer
+    /// `NetMessage.cs:1545-1554` (the exact 89 body), reader
+    /// `MessageBuffer.cs:4147-4163` (host-only `TEFoodPlatter.TryPlacing`).
+    /// Client send: `TEFoodPlatter.cs:133`. C2s-only.
+    pub const FOOD_PLATTER_TRY_PLACING: u8 = 133;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2513,6 +2525,10 @@ pub enum C2s {
     /// (`ItemSlot.cs:1117` etc.; host id-force + dye-unfold + relay
     /// `MessageBuffer.cs:3995-4022`). Both directions.
     HatRackItemSync(HatRackItemSync),
+    /// `133 FoodPlatterTryPlacing` — a client tries to place its held
+    /// item on a food platter (`TEFoodPlatter.cs:133`; host `TryPlacing`,
+    /// `MessageBuffer.cs:4147-4163`). C2s-only; the 89 body twin.
+    FoodPlatterTryPlacing(TryPlacingItem),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2754,6 +2770,11 @@ pub enum S2c {
     /// (`MessageBuffer.cs:4019`, re-folded via `flag19.ToInt()`). Both
     /// directions.
     HatRackItemSync(HatRackItemSync),
+    /// `129 FinishedConnectingToServer` — the join arm's "you're in"
+    /// notice, bodyless (`MessageBuffer.cs:937`; the client's team
+    /// re-push + UI-scale + preparation-state tail `:4075-4085`).
+    /// S2c-only.
+    FinishedConnecting,
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2824,6 +2845,7 @@ impl C2s {
             Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
             Self::WeaponsRackTryPlacing(_) => id::WEAPONS_RACK_TRY_PLACING,
             Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
+            Self::FoodPlatterTryPlacing(_) => id::FOOD_PLATTER_TRY_PLACING,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2949,6 +2971,10 @@ impl C2s {
             Self::TileEntityInteraction(t) => w.i32(t.entity_id).u8(t.player_id),
             // `NetMessage.cs:1479-1488` — the exact 89 body under id 123.
             Self::WeaponsRackTryPlacing(p) => {
+                w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
+            }
+            // `NetMessage.cs:1545-1554` — the exact 89 body under id 133.
+            Self::FoodPlatterTryPlacing(p) => {
                 w.i16(p.x).i16(p.y).i16(p.kind).u8(p.prefix).i16(p.stack)
             }
             // `NetMessage.cs:1489-1508`: (byte)player + int id + the
@@ -3176,6 +3202,14 @@ impl C2s {
             }),
             // `MessageBuffer.cs:3984-3988` — the exact 89 read under 123.
             id::WEAPONS_RACK_TRY_PLACING => Self::WeaponsRackTryPlacing(TryPlacingItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                kind: r.i16()?,
+                prefix: r.u8()?,
+                stack: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4153-4157` — the exact 89 read under 133.
+            id::FOOD_PLATTER_TRY_PLACING => Self::FoodPlatterTryPlacing(TryPlacingItem {
                 x: r.i16()?,
                 y: r.i16()?,
                 kind: r.i16()?,
@@ -3422,6 +3456,7 @@ impl S2c {
             Self::DisplayDollSync(_) => id::TE_DISPLAY_DOLL_SYNC,
             Self::TileEntityInteraction(_) => id::TE_INTERACTION_REQUEST,
             Self::HatRackItemSync(_) => id::TE_HAT_RACK_ITEM_SYNC,
+            Self::FinishedConnecting => id::FINISHED_CONNECTING,
         }
     }
 
@@ -3614,6 +3649,9 @@ impl S2c {
             Self::HatRackItemSync(h) => h
                 .item
                 .write_slot(w.u8(h.player_id).i32(h.entity_id).u8(h.wire_slot)),
+            // No writer case for 129 — `TrySendData(129)` writes a bare
+            // frame (`MessageBuffer.cs:937`).
+            Self::FinishedConnecting => w,
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -3978,6 +4016,8 @@ impl S2c {
                 wire_slot: r.u8()?,
                 item: TeItem::read_slot(r)?,
             }),
+            // `MessageBuffer.cs:4075-4085`: the client reads NOTHING.
+            id::FINISHED_CONNECTING => Self::FinishedConnecting,
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
             id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
@@ -7337,6 +7377,48 @@ mod tests {
         }
         // A truncated prefix byte must not decode.
         assert!(C2s::decode(124, &mut NetReader::new(&[1, 55, 0, 0, 0, 0, 100, 0, 1, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_finished_connecting_is_a_bodyless_join_notice() {
+        // `129` has NO writer case — `TrySendData(129, whoAmI)`
+        // (`MessageBuffer.cs:937`, the State-3→10 arm) writes only the
+        // header; the client reader reads nothing (`:4075-4085`).
+        let f = S2c::FinishedConnecting.encode();
+        assert_eq!(f[2], 129);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::FinishedConnecting => {}
+            other => panic!("expected 129, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only.
+        assert!(C2s::decode(129, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_food_platter_try_placing_is_the_89_twin() {
+        // `NetMessage.cs:1545-1554` — the exact 89 body under id 133.
+        let b = TryPlacingItem {
+            x: 40,
+            y: 600,
+            kind: 5000,
+            prefix: 0,
+            stack: 1,
+        };
+        let f133 = C2s::FoodPlatterTryPlacing(b).encode();
+        let f89 = C2s::ItemFrameTryPlacing(b).encode();
+        assert_eq!(f133[2], 133);
+        assert_eq!(&f133[3..], &f89[3..]); // identical bodies
+        let mut r = NetReader::new(&f133[3..]);
+        match C2s::decode(f133[2], &mut r).expect("decode") {
+            C2s::FoodPlatterTryPlacing(d) => assert_eq!(d, b),
+            other => panic!("expected 133, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(133, &mut NetReader::new(&f133[3..])).is_none());
     }
 
     #[test]
