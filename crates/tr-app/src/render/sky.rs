@@ -650,6 +650,11 @@ pub(crate) fn draw_sky(
     counter: u32,
     // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
     mouse_text_color: u8,
+    // W4-f40: the `LanternSky` background lantern field, drawn at the same
+    // `SkyManager` depth boundaries as the ambience (`LanternSky.cs:154-240`).
+    lantern_sky: &crate::render::lantern_sky::LanternSky,
+    // `Main.GlobalTimeWrappedHourly` — the lantern glow's hourly bob.
+    global_time: f32,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -938,6 +943,29 @@ pub(crate) fn draw_sky(
         atmo,
         bg_alpha_front,
         background_enabled,
+        world_surface: world.world_surface,
+    };
+    // W4-f40: the `LanternSky` rides the SAME `SkyManager` depth tracker as
+    // the ambience — every `DrawToDepth(minDepth)` boundary draws its
+    // `[minDepth, last)` band (`LanternSky.cs:169-187`'s own cull). The
+    // tracker mirrors `amb_last`; the final flush draws the remainder.
+    let mut lantern_last = f32::INFINITY;
+    let mut draw_lantern_band = |r: &mut SpriteRenderer, min_depth: f32, last: &mut f32| {
+        if *last <= min_depth {
+            return;
+        }
+        lantern_sky.draw(
+            r,
+            lookups,
+            camera,
+            zoom,
+            screen,
+            world.world_surface,
+            global_time,
+            min_depth,
+            *last,
+        );
+        *last = min_depth;
     };
     // `DrawSurfaceBG`'s three cloud passes, in the original order: distant
     // (`Main.cs:59334`, before the storm banks), closer (`Main.cs:59449`,
@@ -1021,6 +1049,7 @@ pub(crate) fn draw_sky(
         1.0 / 0.15,
         &mut amb_last,
     );
+    draw_lantern_band(r, 1.0 / 0.15, &mut lantern_last);
     if show_bg {
         if far_forest > 0.0 {
             if let Some(far) = sky.far {
@@ -1084,6 +1113,7 @@ pub(crate) fn draw_sky(
     // pass: the mid-depth entities draw between the mountain rows and the
     // closer clouds.
     crate::ambience::draw_range_min(r, ambience, lookups, &amb_ctx, 5.0, &mut amb_last);
+    draw_lantern_band(r, 5.0, &mut lantern_last);
     if bg_block {
         let closer_top = if background_enabled {
             magic * 1300.0 + 1090.0 + sc_adj + 30.0 + 150.0
@@ -1212,6 +1242,9 @@ pub(crate) fn draw_sky(
         lookups,
         ctx: &amb_ctx,
         last: &mut amb_last,
+        lantern_sky,
+        lantern_last: &mut lantern_last,
+        global_time,
     });
     if show_bg {
         // `pushBGTopHack` for the front loop is `30 - 180` (`Main.cs:59302`,
@@ -1526,6 +1559,9 @@ pub(crate) fn draw_sky(
     // last front-row boundary) draw after every surface layer, before the
     // underground backdrop.
     crate::ambience::draw_range_remaining(r, ambience, lookups, &amb_ctx, &mut amb_last);
+    // W4-f40: the lantern sky's remainder (the shallowest lanterns, below
+    // the last front-row boundary) flush here too (`Main.cs:59626`).
+    draw_lantern_band(r, f32::NEG_INFINITY, &mut lantern_last);
     // `Main.DrawBackground_SurfaceTransitionBackground`,
     // `Main.DrawBackground_DirtBackground`, `DrawBackground_DrawUnderworldBlackBox`,
     // `DrawBackground_DrawRockLayer` and `DrawBackground_DrawMagmaLayer`: the textured

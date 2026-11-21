@@ -811,6 +811,9 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "Extra_282",
         "Extra_299",
         "Extra_305",
+        // W4-f40: `LanternSky`'s lantern sheet (`TextureAssets.Extra[134]`,
+        // `LanternSky.cs:79`) — the 3-variant background lantern strip.
+        "Extra_134",
         "UI/Cursor_0",
         "UI/Cursor_1",
         "Mana",
@@ -1977,6 +1980,9 @@ pub struct Lookups {
     pub extra_182: Option<tr_render::SheetRect>,
     pub extra_282: Option<tr_render::SheetRect>,
     pub extra_299: Option<tr_render::SheetRect>,
+    /// W4-f40: `TextureAssets.Extra[134]` (`LanternSky.cs:79`) — the lantern
+    /// night's background lantern sheet (3 variants across, one row).
+    pub lantern_sky: Option<tr_render::SheetRect>,
     pub extra_305: Option<tr_render::SheetRect>,
     /// `TextureAssets.Extra[49]`: the `ScreenObstruction` border
     /// (`ScreenObstruction.cs:53`).
@@ -2400,6 +2406,7 @@ impl Lookups {
             extra_182: atlas.sheet("Extra_182").copied(),
             extra_282: atlas.sheet("Extra_282").copied(),
             extra_299: atlas.sheet("Extra_299").copied(),
+            lantern_sky: atlas.sheet("Extra_134").copied(),
             extra_305: atlas.sheet("Extra_305").copied(),
             extra_49: atlas.sheet("Extra_49").copied(),
             extra_98: atlas.sheet("Extra_98").copied(),

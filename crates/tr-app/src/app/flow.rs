@@ -2436,6 +2436,8 @@ pub(crate) mod front_flow_tests {
             atmo: 1.0,
             scene_metrics: tr_core::scene::SceneMetrics::new(),
             ambience: crate::ambience::Ambience::new(),
+            lantern_sky: crate::render::lantern_sky::LanternSky::new(),
+            lantern_sky_step: FixedStepper::new(1.0 / 60.0, 8),
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,
             sunflower_wind_counter: 0.0,

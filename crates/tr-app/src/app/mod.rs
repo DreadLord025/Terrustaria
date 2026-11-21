@@ -921,6 +921,14 @@ pub(crate) struct App {
     /// [`Self::rngs`]`::global()` — the bare-`Main.rand` stand-in
     /// (`Main.cs:17214-17216`), shared with chat commands and menu rolls.
     pub(crate) ambience: crate::ambience::Ambience,
+    /// W4-f40: the `LanternSky : CustomSky` background lantern field
+    /// (`crates/tr-app/src/render/lantern_sky.rs`). Its private RNG draws on
+    /// no named stream (the C#'s `_random`, `LanternSky.cs:71`); the
+    /// activate/deactivate edges ride `world_events::update_time_lanterns`.
+    pub(crate) lantern_sky: crate::render::lantern_sky::LanternSky,
+    /// W4-f40: the `LanternSky`'s 60 Hz accumulator (`SkyManager.Update`
+    /// runs once per world update, `Main.cs:17139`; the ambience precedent).
+    pub(crate) lantern_sky_step: FixedStepper,
     pub(crate) tree_wind_counter: f32,
     pub(crate) grass_wind_counter: f32,
     /// `TileDrawing._sunflowerWindCounter` (`TileDrawing.cs:374`): the sunflower's
@@ -2315,6 +2323,14 @@ impl App {
         if let Some(engine) = self.legacy_light.as_mut() {
             engine.reset_map_delay();
         }
+        // W4-f40: the world-load event clear (`WorldGen.cs:6996`
+        // `LanternNight.WorldClear()` + the `LanternSky.Reset` the
+        // `SkyManager.Reset` family runs, `SkyManager.cs:15-22`): the
+        // lantern flags/cooldown/edge clear and the sky deactivates. The
+        // vanilla file carries no lantern temps (S1-J-7), so they reset on
+        // load by design.
+        crate::world_events::world_clear(&mut self.world_events);
+        self.lantern_sky.reset();
     }
 
     pub(crate) fn is_client(&self) -> bool {
@@ -4013,6 +4029,8 @@ impl App {
                 }
                 ambience
             },
+            lantern_sky: crate::render::lantern_sky::LanternSky::new(),
+            lantern_sky_step: FixedStepper::new(1.0 / 60.0, 8),
 
             tree_wind_counter: 0.0,
             grass_wind_counter: 0.0,

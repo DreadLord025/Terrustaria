@@ -1091,6 +1091,8 @@ impl App {
                         self.atmo,
                         self.game_update_count,
                         self.mouse_text_color,
+                        &self.lantern_sky,
+                        anim_time % 3600.0,
                     );
                     // `Main.cs:62217`: `ScreenDarkness.DrawBack` sits right after
                     // `Overlays.Scene.Draw(Background)`.
