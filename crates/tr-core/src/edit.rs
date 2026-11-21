@@ -249,6 +249,10 @@ pub enum TileInteraction {
     /// the consumption). No world write here — the extraction only consumes the
     /// held item and spawns the output.
     Extractinator,
+    /// The Slice of Cake tile (621) was eaten (`Player.cs:32600-32605`):
+    /// `AddBuff(192, 7200)` (Sugar Rush) + `SoundID.Item2`. The buff grant and
+    /// the sound are the app layer's (the core has no player/buff state).
+    CakeEat,
 }
 
 /// The world-interaction dispatcher — the port of the right-click tile hook:
@@ -313,6 +317,12 @@ pub fn interact_at(
     // same way the dials/banks do, before the registry lookup.
     if matches!(t.kind, 497 | 89 | 102 | 487) {
         return chair_sit_target(world, i, j, direction);
+    }
+    // The Slice of Cake (`Player.cs:32600-32605`): eating the cake grants
+    // Sugar Rush (192, 7200 ticks) + SoundID.Item2. The buff/sound are the
+    // app layer's; the tile is NOT consumed (the C# leaves it placed).
+    if t.kind == 621 {
+        return TileInteraction::CakeEat;
     }
     // The port routes on the registry def's `interaction` tag (Decision #3)
     // where the C# chain tests `Main.tile[myX, myY].type` literals
@@ -1797,6 +1807,26 @@ mod tests {
             interact_at(&mut w, 5, 20, 1, &blocked),
             TileInteraction::StationInteract { .. }
         ));
+    }
+
+    #[test]
+    fn w4_c39_interact_at_dispatches_the_cake_tile() {
+        // W4-c39: the Slice of Cake tile (621) answers `CakeEat`
+        // (`Player.cs:32600-32605`); the tile stays placed (the C# consumes
+        // no tile — the buff grant + SoundID.Item2 are the app layer's).
+        let mut w = World::new("cake".into(), 40, 40);
+        let i = w.index(10, 19);
+        w.tiles[i] = Tile {
+            kind: 621,
+            ..Default::default()
+        };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        let blocked = no_blocker as fn(i32, i32) -> bool;
+        assert!(matches!(
+            interact_at(&mut w, 10, 19, 1, &blocked),
+            TileInteraction::CakeEat
+        ));
+        assert_eq!(w.tile(10, 19).unwrap().kind, 621, "the cake stays placed");
     }
 
     #[test]

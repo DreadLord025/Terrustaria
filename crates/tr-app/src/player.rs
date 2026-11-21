@@ -6451,6 +6451,12 @@ impl Player {
                 // (the port's positive bonus convention: a lower pickSpeed
                 // mines faster).
                 104 => self.pick_speed_bonus += 0.25,
+                // W4-c39 — `:9935-9939`: Sugar Rush (192, the Slice of Cake's
+                // buff) `pickSpeed -= 0.2f; moveSpeed += 0.2f`.
+                192 => {
+                    self.pick_speed_bonus += 0.2;
+                    self.move_speed += 0.2;
+                }
                 // `:9956-9959` — Gills (4): `CheckDrowning` inverts the probe.
                 4 => self.gills = true,
                 // `:9964-9967` — ManaRegeneration (6): `manaRegenBuff = true`.
@@ -13016,6 +13022,19 @@ mod tests {
         p.update(&w, PlayerInput::default());
         assert!((p.move_speed - 1.25).abs() < 1e-4);
         assert!((p.max_run_speed - 3.0 * 1.25).abs() < 1e-3);
+    }
+
+    /// W4-c39 — Sugar Rush (192, the Slice of Cake's buff, `Player.cs:9935-9939`):
+    /// `pickSpeed -= 0.2f; moveSpeed += 0.2f`. The port's positive pick-bonus
+    /// convention mirrors the Mining (104) arm.
+    #[test]
+    fn w4_c39_sugar_rush_adds_pick_and_move_speed() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.buffs.add_buff(192, 7200);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 1.2).abs() < 1e-4, "moveSpeed +0.2: {}", p.move_speed);
+        assert!((p.pick_speed_bonus - 0.2).abs() < 1e-4, "pickSpeed -0.2: {}", p.pick_speed_bonus);
     }
 
     #[test]
