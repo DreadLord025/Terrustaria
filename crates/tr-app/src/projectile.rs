@@ -18170,6 +18170,106 @@ impl ProjectilePool {
                             let v = self.slots[i].vel;
                             self.slots[i].pos += v;
                         }
+                        // W4-d10 — `AI()`'s `else if (this.aiStyle == 100)`
+                        // (`Projectile.cs:33161-33164` → `AI_100_Medusa`
+                        // `:44476-44632`): the Medusa Head's held marker
+                        // (535) — the fire cadence, the frame machine, the
+                        // top-3 strike rays' instant Damage() walks + the
+                        // 4 scatter rays (536 — d11's claim: the spawns
+                        // decline until the row lands), the hand anchor
+                        // (the AI pins the position — no integrate) and
+                        // the ChangeDir/heldProj/SetDummyItemTime(2) tail.
+                        100 => {
+                            let tick = crate::projectile_ai_91_100::ai_medusa_head(
+                                &mut self.slots[i],
+                                world,
+                                npcs,
+                                player.as_deref_mut(),
+                                aim,
+                                local_owner,
+                                rng,
+                            );
+                            // `:44591-44596` — the strike rays: spawn at
+                            // the head centre with the seek velocity +
+                            // `ai0 = this.key` (`NewProjectile` centres
+                            // the 10×10 box, `:10876-10877`), jump the
+                            // child's centre onto the NPC, Damage() over
+                            // the box, zero the damage, jump back. The
+                            // 536 row is d11's claim — the no-row spawn
+                            // declines and the walk is skipped with it.
+                            let (hx, hy) = self.slots[i].center();
+                            let (damage, kb, owner_id) = {
+                                let p = &self.slots[i];
+                                (p.damage, p.knock_back, p.owner)
+                            };
+                            let key = self.key_of(i) as u32;
+                            let dolls = doll_flags(player.as_deref());
+                            let luck =
+                                player.as_deref().map(|p| p.luck_state.luck).unwrap_or(0.0);
+                            for (j, ncx, ncy) in tick.strikes {
+                                let (nw, nh) = npcs[j].size();
+                                let v = Vec2::new(ncx, ncy) - Vec2::new(hx, hy);
+                                if let Some(s) = self.spawn_with_data_ai_owned(
+                                    MEDUSA_HEAD_RAY,
+                                    owner_id,
+                                    hx - 5.0,
+                                    hy - 5.0,
+                                    v.x,
+                                    v.y,
+                                    damage,
+                                    kb,
+                                    f32::from_bits(key),
+                                    0.0,
+                                ) {
+                                    // `:44592` — Center = npc.Center.
+                                    self.slots[s].pos = Vec2::new(
+                                        ncx - (self.slots[s].w as i32 / 2) as f32,
+                                        ncy - (self.slots[s].h as i32 / 2) as f32,
+                                    );
+                                    // `:44593-44595` — damage = num3 →
+                                    // Damage() → damage = 0.
+                                    self.slots[s].damage = damage;
+                                    self.damage_pve_boxed(s, npcs, dolls, rng, luck);
+                                    self.slots[s].damage = 0;
+                                    // `:44596` — Center = position.
+                                    self.slots[s].pos = Vec2::new(
+                                        hx - (self.slots[s].w as i32 / 2) as f32,
+                                        hy - (self.slots[s].h as i32 / 2) as f32,
+                                    );
+                                }
+                            }
+                            // `:44600-44605` — the 4 scatter rays: the
+                            // rolled velocities, `ai0 = this.key`, zero
+                            // damage (the C# passes 0).
+                            if let Some(scatter) = tick.scatter {
+                                for (vx, vy) in scatter {
+                                    let _ = self.spawn_with_data_ai_owned(
+                                        MEDUSA_HEAD_RAY,
+                                        owner_id,
+                                        hx - 5.0,
+                                        hy - 5.0,
+                                        vx,
+                                        vy,
+                                        0,
+                                        0.0,
+                                        f32::from_bits(key),
+                                        0.0,
+                                    );
+                                }
+                            }
+                            // `:44629-44631` — the tail's player writes
+                            // (the GolfEffect::PlayerWrites precedent).
+                            if tick.held {
+                                self.golf_effects.push(
+                                    crate::projectile_ai_golf::GolfEffect::PlayerWrites {
+                                        facing: tick.facing,
+                                        held_proj: Some(i as i32),
+                                        dummy_item_time: Some(2),
+                                        cancel_use: false,
+                                    },
+                                );
+                            }
+                        }
                         165 => {
                             // `AI_165_Whip` (`:47667-48270`): the swing
                             // machine. The Moon Lord whip's extra arms are
@@ -22810,9 +22910,12 @@ impl ProjectilePool {
             // hit-armed clouds (511-513 / 1128 with `ai[1] >= 1`) and the
             // Gas Trap 1007 deal NO direct damage — the gas rides the AI's
             // buff cloud, the clouds' damage window is the pre-hit state.
+            // The Medusa Head marker (535) never hits either — its 536
+            // rays carry the damage (`:44591-44605`).
             if (matches!(p.kind, TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3 | SPORE_CLOUD)
                 && p.ai[1] >= 1.0)
                 || p.kind == GAS_TRAP
+                || p.kind == MEDUSA_HEAD
             {
                 continue;
             }

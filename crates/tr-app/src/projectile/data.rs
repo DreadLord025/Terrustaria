@@ -745,6 +745,16 @@ pub const FLYING_PIGGY_BANK: u16 = 525;
 /// Lunatic Cultist's homing particle, aiStyle 98
 /// (`Projectile.cs:5962-5970`). W4-d10.
 pub const CULTIST_BOSS_PARTICLE: u16 = 526;
+/// `ProjectileID.MedusaHead` (535, `ProjectileID.cs:1624`) — the Medusa
+/// Head's held channel marker, aiStyle 100 (`Projectile.cs:6094-6106`).
+/// W4-d10.
+pub const MEDUSA_HEAD: u16 = 535;
+/// `ProjectileID.MedusaHeadRay` (536, `ProjectileID.cs:1626`) — the head's
+/// petrifying ray, aiStyle 101 (`Projectile.cs:6107-6119`). The row + AI
+/// are d11's claim — until they land the 535's ray spawns decline
+/// (`spawn_with_data`'s no-row no-op) and the head deals no damage (the
+/// dependency is recorded in the module doc). W4-d10.
+pub const MEDUSA_HEAD_RAY: u16 = 536;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
 pub const LEAF_BLOWER: u16 = 206;
@@ -1783,6 +1793,18 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             CULTIST_BOSS_PARTICLE => (
                 8.0, 8.0, 98, 1, 120, 0, false, false, false,
                 (false, -2, false, -1, 255, 1.0),
+            ),
+            // W4-d10 — the Medusa Head's held marker
+            // (`Projectile.cs:6094-6106`): 18×18, aiStyle 100, friendly,
+            // penetrate −1, tileCollide false, magic, ignoreWater; the
+            // stock timeLeft 3600 (the AI pins 2 every tick). drawLayer 8
+            // + usesOwnerLight are draw-layer state (no port fields). The
+            // `Damage_CanDealDamage` refusal (`:12448`'s `type == 535`)
+            // means the marker itself never hits — its 536 rays carry the
+            // damage (d11's claim).
+            MEDUSA_HEAD => (
+                18.0, 18.0, 100, -1, TIME_LEFT_DEFAULT, 0, false, false, false,
+                RESET_STATE,
             ),
             // `Projectile.cs:1310-1316` — the throwing knife (48): 12x12, aiStyle
             // 2, `penetrate = 2`.
@@ -4364,8 +4386,8 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // keep the stock false.
             || kind == RAIN_CLOUD_RAINING
             // W4-d10 — the Coin Portal sets `ignoreWater` (`:5887`); the
-            // Ichor Splash too (`:5947`).
-            || matches!(kind, COIN_PORTAL | ICHOR_SPLASH)
+            // Ichor Splash too (`:5947`); the Medusa Head marker (`:6105`).
+            || matches!(kind, COIN_PORTAL | ICHOR_SPLASH | MEDUSA_HEAD)
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -4506,8 +4528,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
             // W4-d10 — the Shadowflame Hex Doll's flame (496, `:5699`) and
-            // the Toxic Cloud trio (511-513, `:5813`/`:5825`/`:5837`).
+            // the Toxic Cloud trio (511-513, `:5813`/`:5825`/`:5837`), the
+            // Medusa Head marker (535, `:6104`).
                 | SHADOW_FLAME | TOXIC_CLOUD | TOXIC_CLOUD_2 | TOXIC_CLOUD_3
+                | MEDUSA_HEAD
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the

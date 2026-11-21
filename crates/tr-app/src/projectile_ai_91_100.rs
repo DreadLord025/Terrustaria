@@ -1380,6 +1380,295 @@ pub(crate) fn counterweight_move(
     p.pos += p.vel;
 }
 
+/// `Main.OffsetsPlayerOnhand` (`Main.cs:66615-66637`) — the 20-row hand
+/// offset table the aiStyle-100 anchor reads (`bodyFrame.Y / 56` — the
+/// port's `body_frame` IS the row).
+const OFFSETS_PLAYER_ONHAND: [(f32, f32); 20] = [
+    (6.0, 19.0), (5.0, 10.0), (12.0, 10.0), (13.0, 17.0), (12.0, 19.0),
+    (5.0, 10.0), (7.0, 17.0), (6.0, 16.0), (6.0, 16.0), (6.0, 16.0),
+    (6.0, 17.0), (7.0, 17.0), (7.0, 17.0), (7.0, 17.0), (8.0, 17.0),
+    (9.0, 16.0), (9.0, 12.0), (8.0, 17.0), (7.0, 17.0), (7.0, 17.0),
+];
+
+/// What one aiStyle-100 tick hands back to the pool: the top-3 strike
+/// rays' instant `Damage()` walks (`Projectile.cs:44591-44596` — the ray
+/// spawns at the head, jumps to the NPC centre, walks the box, zeroes
+/// its damage and jumps back), the 4 scatter rays' rolled velocities
+/// (`:44600-44605`), and the tail's player writes (`:44629-44631` —
+/// `ChangeDir` / `heldProj` / `SetDummyItemTime(2)`, the
+/// `GolfEffect::PlayerWrites` precedent).
+#[derive(Default)]
+pub(crate) struct MedusaTick {
+    /// `(npc index, npc centre x, npc centre y)` per strike ray, in the
+    /// distance-sorted order (`NPCDistanceByIndexComparator`, `:189-195`
+    /// — the Item2 distance compare).
+    pub strikes: Vec<(usize, f32, f32)>,
+    /// The 4 scatter velocities, `Some` only on a fire tick.
+    pub scatter: Option<[(f32, f32); 4]>,
+    /// `player.ChangeDir(base.direction)` (`:44629`).
+    pub facing: Option<i32>,
+    /// The tail ran — `heldProj = whoAmI` + `SetDummyItemTime(2)`
+    /// (`:44630-44631`). The `!channel` Kill returns before the tail.
+    pub held: bool,
+}
+
+/// `AI_100_Medusa` (`Projectile.cs:44476-44632`) — the Medusa Head's held
+/// channel marker (535). The `(int)(60 × GetSlowMagicScalar) / 4` fire
+/// cadence (15, or 37 under the mana-sickness slow), the `flag2` frame
+/// machine with the DOUBLE `frameCounter++` quirk (`:44505-44506` — the
+/// bare increment then the `++` in the test), the mouse-sign facing, the
+/// `soundDelay` 4/0 latch + the NPCKilled-17 cue, the `!channel` Kill,
+/// the 320-radius chaseable + line-of-sight target scans, the CheckMana
+/// pay (`flag` is the `:44485` literal true, so `!flag || CheckMana`
+/// DOES evaluate the pay), the top-3 distance-sorted strike rays (each
+/// pins `ai[0] = 180` INSIDE the loop, verbatim), the average-rotation
+/// fallback (facing 1 → 0, else π), the 4 scatter rays' `Next(4)` +
+/// `RotatedByRandom` pair + `NextFloat` rolls, and the common tail: the
+/// rotation 0 (the gravDir=1 fold), `timeLeft = 2`, the
+/// `OffsetsPlayerOnhand` hand anchor through `RotatedRelativePoint` with
+/// the `.Floor()` int truncation (`Utils.cs:1702-1707`).
+///
+/// The 536 rays are d11's claim (aiStyle 101, `:33165-33221`): until the
+/// row lands the pool-side spawns decline and the head deals no damage
+/// (the module doc's recorded dependency). The scatter rolls stay in the
+/// arm — the C# evaluates the velocity expression BEFORE `NewProjectile`
+/// either way, so the stream position holds.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn ai_medusa_head(
+    p: &mut Projectile,
+    world: &World,
+    npcs: &[Npc],
+    mut player: Option<&mut crate::player::Player>,
+    aim: Option<Vec2>,
+    local_owner: u8,
+    rng: &mut dyn DropRng,
+) -> MedusaTick {
+    let mut tick = MedusaTick::default();
+    let player_dir = player.as_deref().map_or(1, |pl| pl.facing);
+    // `:44482` — the cadence: `(int)(60f * GetSlowMagicScalar()) / 4`
+    // (`Player.cs:47037-47049`: 1f, or 2.5f under slowMagicUse).
+    let slow_scalar = if player.as_deref().is_some_and(|pl| pl.slow_magic_use) {
+        2.5f32
+    } else {
+        1.0
+    };
+    let num = ((60.0 * slow_scalar) as i32 / 4) as f32;
+    // `:44483-44484` — zero reads player.direction BEFORE the facing
+    // recompute below (verbatim order); gravDir = 1 (the port fold).
+    let zero = Vec2::new(player_dir as f32 * 6.0, -14.0);
+    // `:44486` — flag2 latches the PRE-decrement state.
+    let flag2 = p.ai[0] > 0.0;
+    // `:44487-44490` — the dead player's marker keeps its life.
+    if !player.as_deref().is_some_and(|pl| pl.dead) {
+        p.time_left = 3;
+    }
+    // `:44491-44494`.
+    if p.ai[0] > 0.0 {
+        p.ai[0] -= 1.0;
+    }
+    // `:44495-44522` — the frame machine.
+    if flag2 {
+        if p.frame < 8 {
+            p.frame = 8;
+        }
+        if p.frame >= 12 {
+            p.frame = 8;
+        }
+        // `:44505-44506` — the DOUBLE increment quirk, verbatim.
+        p.frame_counter += 1;
+        p.frame_counter += 1;
+        if p.frame_counter >= 5 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= 12 {
+                p.frame = 8;
+            }
+        }
+    } else {
+        p.frame_counter += 1;
+        if p.frame_counter >= 5 {
+            p.frame_counter = 0;
+            p.frame += 1;
+            if p.frame >= 8 {
+                p.frame = 0;
+            }
+        }
+    }
+    // `:44523-44536` — the facing. The local owner reads the mouse sign
+    // (`Main.screenPosition.X + Main.mouseX - center.X` — the port's
+    // `aim` is that delta normalized, the sign preserved; a zero/absent
+    // delta falls back to player.direction).
+    if p.owner == local_owner {
+        let num2 = aim.map_or(0.0, |a| a.x);
+        p.direction = if num2 != 0.0 { num2.signum() as i32 } else { player_dir };
+        if p.direction as f32 != p.vel.x {
+            p.net_update = true;
+        }
+    } else {
+        p.direction = if p.vel.x != 0.0 { p.vel.x.signum() as i32 } else { player_dir };
+    }
+    // `:44537-44538`.
+    p.vel = Vec2::new(p.direction as f32, 0.0);
+    // `:44539-44543` — the cue latch: NPCKilled (4) style 17.
+    if flag2 && p.sound_delay == 0 {
+        p.wants_sound = Some((4, 17, p.pos.x, p.pos.y, 0.0));
+    }
+    p.sound_delay = if flag2 { 4 } else { 0 };
+    // `:44544-44611` — the local-owner fire block.
+    if p.owner == local_owner {
+        if let Some(pl) = player.as_deref() {
+            let (pcx, pcy) = pl.center();
+            // `:44546` — gravDir = 1.
+            let mut position = Vec2::new(pcx + pl.facing as f32 * 4.0, pcy + 2.0);
+            // `:44547-44551` — the release Kill skips the tail.
+            if !pl.channel {
+                p.kill_time_left = p.time_left;
+                p.active = false;
+                p.time_left = 0;
+                return tick;
+            }
+            // `:44552` — the fire gate.
+            if !flag2 || p.ai[0] % num == 0.0 {
+                let head = Vec2::from(p.center());
+                // `:44554-44563` — flag3: any chaseable NPC within 320
+                // with a clear line from the hand position.
+                let mut flag3 = false;
+                for n in npcs {
+                    if chaseable(n)
+                        && (npc_center(n) - head).length() < 320.0
+                        && crate::projectile::can_hit_line(
+                            world, n.x, n.y, n.size().0, n.size().1,
+                            position.x, position.y, 0.0, 0.0,
+                        )
+                    {
+                        flag3 = true;
+                        break;
+                    }
+                }
+                if flag3 {
+                    // `:44567` — flag is the `:44485` literal true: the
+                    // `!flag ||` short-circuit NEVER skips CheckMana.
+                    // The held item's mana rides `channel_item` (the
+                    // ai_last_prism precedent); a row-less kind pays 0.
+                    let mana_amount = crate::registry::item(pl.channel_item)
+                        .map_or(0, |item| item.mana);
+                    let pl = player.as_deref_mut().unwrap();
+                    let mana_ok = crate::regen::check_mana(
+                        &mut pl.mana,
+                        &mut pl.slow_magic_use,
+                        mana_amount,
+                        pl.mana_cost,
+                        true,
+                    );
+                    if mana_ok {
+                        // `:44569-44570` — the damage snapshot + the
+                        // scan origin moves to the head centre.
+                        position = head;
+                        let mut num4 = 0;
+                        let mut num5 = 0.0f32;
+                        // `:44573-44582` — the target list.
+                        let mut targets: Vec<(usize, f32)> = Vec::new();
+                        for (j, n) in npcs.iter().enumerate() {
+                            let num6 = (npc_center(n) - head).length();
+                            // The C#'s `nPC2.active` — the port's Npc
+                            // liveness is `hp > 0` (no active field).
+                            if n.hp > 0
+                                && num6 < 320.0
+                                && chaseable(n)
+                                && crate::projectile::can_hit_line(
+                                    world, n.x, n.y, n.size().0, n.size().1,
+                                    position.x, position.y, 0.0, 0.0,
+                                )
+                            {
+                                targets.push((j, num6));
+                            }
+                        }
+                        // `:44583` — the distance sort
+                        // (`NPCDistanceByIndexComparator`, `:191-194`).
+                        targets.sort_by(|a, b| a.1.total_cmp(&b.1));
+                        // `:44584-44598` — the top-3 strike rays.
+                        for &(j, _) in targets.iter().take(3) {
+                            let nc = npc_center(&npcs[j]);
+                            let v = nc - position;
+                            num5 += v.y.atan2(v.x);
+                            num4 += 1;
+                            tick.strikes.push((j, nc.x, nc.y));
+                            // `:44597` — INSIDE the loop, verbatim.
+                            p.ai[0] = 180.0;
+                        }
+                        // `:44599` — the average-rotation fallback.
+                        num5 = if num4 == 0 {
+                            if player_dir == 1 { 0.0 } else { std::f32::consts::PI }
+                        } else {
+                            num5 / num4 as f32
+                        };
+                        // `:44600-44605` — the 4 scatter rays: Next(4),
+                        // then the taken branch's RotatedByRandom pair
+                        // (TWO NextDouble, `Utils.cs:1697-1700`), then
+                        // the NextFloat speed — the C#'s operand order.
+                        let mut scatter = [(0.0f32, 0.0f32); 4];
+                        for s in scatter.iter_mut() {
+                            let v = if rng.next_range(0, 4) == 0 {
+                                let a = rng.next_float() as f64 * std::f64::consts::TAU
+                                    - rng.next_float() as f64 * std::f64::consts::TAU;
+                                crate::projectile::rotate(Vec2::X, a as f32)
+                            } else {
+                                let a = rng.next_float() as f64 * std::f64::consts::PI
+                                    - rng.next_float() as f64 * std::f64::consts::PI;
+                                crate::projectile::rotate(
+                                    crate::projectile::rotate(Vec2::X, a as f32),
+                                    num5,
+                                )
+                            };
+                            let speed = rng.next_float() * 0.7 + 0.3;
+                            let v = v * Vec2::new(200.0, 50.0) * speed;
+                            *s = (v.x, v.y);
+                        }
+                        tick.scatter = Some(scatter);
+                        // `:44606-44607`.
+                        p.ai[0] = 60.0;
+                        p.net_update = true;
+                    }
+                }
+            }
+        }
+    }
+    // `:44612` — Lighting.AddLight: the no-light-layer skip (module doc).
+    // `:44614-44617` — the common tail: gravDir = 1 → rotation 0.
+    p.rot = 0.0;
+    p.sprite_direction = p.direction;
+    p.time_left = 2;
+    // `:44618-44628` — the hand anchor.
+    if let Some(pl) = player.as_deref() {
+        let row = OFFSETS_PLAYER_ONHAND[(pl.body_frame as usize).min(19)];
+        let mut vector = Vec2::new(row.0, row.1) * 2.0;
+        // `:44619-44622` — bodyFrame.Width = 40 (`Player.cs:56041`).
+        if p.direction != 1 {
+            vector.x = 40.0 - vector.x;
+        }
+        // `:44623-44626` — the gravDir flip never fires (the fold).
+        // `:44627` — bodyFrame 40×56 (`Player.cs:56041-56042`).
+        vector -= Vec2::new(40.0 - pl.width, 56.0 - 42.0) / 2.0;
+        let (mcx, mcy) = pl.mounted_center();
+        // `:44628` — MountedCenter − (20,42)/2 + vector + zero, through
+        // RotatedRelativePoint, minus the velocity, `.Floor()` = the
+        // `(int)` truncation (`Utils.cs:1702-1707`).
+        let anchor = pl.rotated_relative_point(
+            Vec2::new(mcx, mcy) - Vec2::new(10.0, 21.0) + vector + zero,
+            0,
+        ) - p.vel;
+        let anchor = Vec2::new(anchor.x as i32 as f32, anchor.y as i32 as f32);
+        // The Center setter: position = value − width/2 (INT division).
+        p.pos = anchor
+            - Vec2::new((p.w as i32 / 2) as f32, (p.h as i32 / 2) as f32);
+    }
+    // `:44629-44631` — the player writes ride the tick (the pool queues
+    // them through GolfEffect::PlayerWrites).
+    tick.facing = Some(p.direction);
+    tick.held = true;
+    tick
+}
+
 // Witnesses (W4-d10 code-only round — WRITTEN NOT RUN).
 
 #[cfg(test)]
@@ -2286,5 +2575,153 @@ mod tests {
         // len 7.55 > 6 → the whole velocity halves.
         assert!(p.vel.x < 0.0, "the reverse");
         assert!(p.vel.length() <= 6.0, "the over-6 halving");
+    }
+
+    /// The 535 row (`Projectile.cs:6094-6106`): 18×18, aiStyle 100,
+    /// friendly, penetrate −1, tileCollide false, magic, ignoreWater, the
+    /// stock timeLeft. projFrames 535 = 12 (Main.cs:8479's table).
+    #[test]
+    fn w4_d10_s100_the_medusa_row_is_verbatim() {
+        let d = proj_data(535).unwrap();
+        assert_eq!((d.w, d.h), (18.0, 18.0));
+        assert_eq!(d.ai_style, 100);
+        assert_eq!(d.penetrate, -1);
+        assert!(!d.tile_collide);
+        assert!(d.magic);
+        assert!(d.ignore_water);
+        assert_eq!(proj_frames(535), 12);
+        // The ray kind has NO row — d11's claim (the spawn declines).
+        assert!(proj_data(536).is_none());
+    }
+
+    /// The head ticks (`:44482-44543`): the cadence 15 (the slow-magic
+    /// 2.5× → 37), the frame machine's DOUBLE frameCounter++ quirk, the
+    /// mouse-sign facing + the direction-pinned velocity, the soundDelay
+    /// 4/0 latch + the NPCKilled-17 cue.
+    #[test]
+    fn w4_d10_s100_the_frame_machine_and_cue_latch() {
+        let w = World::new("t".into(), 300, 200);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.channel = true;
+        let mut p = proj(535);
+        // ai0 = 0 → flag2 false: the idle 0-7 frame ladder, ONE
+        // frameCounter++ per tick; the soundDelay pins 0, no cue.
+        let mut rng = CensusRng::default();
+        let tick = ai_medusa_head(
+            &mut p, &w, &[], Some(&mut pl), Some(Vec2::new(1.0, 0.0)), 0, &mut rng,
+        );
+        assert_eq!(p.frame_counter, 1, "the idle single increment");
+        assert_eq!(p.sound_delay, 0);
+        assert!(p.wants_sound.is_none());
+        assert_eq!(p.direction, 1, "the mouse sign");
+        assert_eq!(p.vel, Vec2::new(1.0, 0.0), "the pinned velocity");
+        assert_eq!(p.time_left, 2, "the tail pin");
+        assert!(tick.held, "the tail ran");
+        assert_eq!(tick.facing, Some(1));
+        // ai0 = 61 → flag2 true: the 8-11 ladder, the DOUBLE increment
+        // (frame_counter += 2), the cue + soundDelay 4.
+        let mut q = proj(535);
+        q.ai[0] = 61.0;
+        q.frame = 8;
+        let mut rng2 = CensusRng::default();
+        let tick2 = ai_medusa_head(
+            &mut q, &w, &[], Some(&mut pl), Some(Vec2::new(-1.0, 0.0)), 0, &mut rng2,
+        );
+        assert_eq!(q.frame_counter, 2, "the DOUBLE quirk (:44505-44506)");
+        assert_eq!(q.sound_delay, 4);
+        assert_eq!(q.wants_sound.map(|s| (s.0, s.1)), Some((4, 17)));
+        assert_eq!(q.direction, -1);
+        assert!(tick2.held);
+    }
+
+    /// The release Kill (`:44547-44551`): `!channel` kills BEFORE the
+    /// tail — no held write, no anchor.
+    #[test]
+    fn w4_d10_s100_the_release_kills_before_the_tail() {
+        let w = World::new("t".into(), 300, 200);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.channel = false;
+        let mut p = proj(535);
+        let mut rng = CensusRng::default();
+        let tick = ai_medusa_head(
+            &mut p, &w, &[], Some(&mut pl), Some(Vec2::X), 0, &mut rng,
+        );
+        assert!(!p.active);
+        assert!(!tick.held, "the Kill returns before the tail");
+        assert!(tick.facing.is_none());
+        assert_eq!(rng.floats, 0);
+    }
+
+    /// The fire window (`:44552-44607`): a chaseable NPC in range + line
+    /// of sight triggers the CheckMana pay, the strike request, the
+    /// ai0 = 60 pin and the 4 scatter rolls — per ray ONE Next(4) + the
+    /// RotatedByRandom pair + ONE NextFloat = 3 floats × 4 rays = 12
+    /// floats + 4 ranges. The CensusRng's next_range → min = 0 takes the
+    /// FULL-circle branch every time.
+    #[test]
+    fn w4_d10_s100_the_fire_window_pays_and_rolls() {
+        let w = World::new("t".into(), 300, 200);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.channel = true;
+        pl.mana = 100;
+        pl.mana_cost = 1.0;
+        let mut p = proj(535);
+        p.damage = 40;
+        // The zombie 100 px right of the head — in the 320 radius, the
+        // empty world gives the line of sight.
+        let mut n = Npc::new(crate::npc::NpcKind::Zombie, p.pos.x + 100.0, p.pos.y, 1, 0.0);
+        n.hp = 40;
+        n.max_hp = 40;
+        let mut rng = CensusRng::default();
+        let tick = ai_medusa_head(
+            &mut p, &w, &[n], Some(&mut pl), Some(Vec2::X), 0, &mut rng,
+        );
+        assert_eq!(tick.strikes.len(), 1, "the one target");
+        assert_eq!(tick.strikes[0].0, 0);
+        assert!(tick.scatter.is_some(), "the 4 scatter rays");
+        assert_eq!(p.ai[0], 60.0, "the fire pin");
+        assert!(p.net_update);
+        assert_eq!(rng.ranges, vec![(0, 4); 4], "one Next(4) per ray");
+        assert_eq!(rng.floats, 12, "the pair + speed per ray");
+        // The mana pay ran (the row-less channel_item pays 0 — the
+        // CheckMana evaluation itself is the witness: slow_magic_use
+        // cleared, the bar untouched at amount 0).
+        assert_eq!(pl.mana, 100);
+        assert!(!pl.slow_magic_use);
+        // The next tick: ai0 = 60 → flag2 true, 59 % 15 != 0 → no fire.
+        let mut rng2 = CensusRng::default();
+        let tick2 = ai_medusa_head(
+            &mut p, &w, &[], Some(&mut pl), Some(Vec2::X), 0, &mut rng2,
+        );
+        assert!(tick2.scatter.is_none());
+        assert_eq!(rng2.floats, 0);
+    }
+
+    /// The hand anchor (`:44618-44628`): the OffsetsPlayerOnhand row 0
+    /// (6,19)×2 = (12,38), minus the (40−20, 56−42)/2 = (10,7) correction
+    /// → (2,31); MountedCenter − (10,21) + (2,31) + zero (6,−14) =
+    /// center + (−2,−4); RotatedRelativePoint at rotation 0 is the
+    /// identity (+ the gfxOffY pair), minus the pinned velocity (1,0),
+    /// `.Floor()` truncates, the Center setter subtracts width/2 = 9.
+    #[test]
+    fn w4_d10_s100_the_hand_anchor_pins_the_marker() {
+        let w = World::new("t".into(), 300, 200);
+        let mut pl = crate::player::Player::spawn(&w);
+        pl.channel = true;
+        pl.x = 1600.0;
+        pl.y = 800.0;
+        pl.body_frame = 0;
+        let mut p = proj(535);
+        let mut rng = CensusRng::default();
+        let tick = ai_medusa_head(
+            &mut p, &w, &[], Some(&mut pl), Some(Vec2::X), 0, &mut rng,
+        );
+        assert!(tick.held);
+        let (cx, cy) = pl.center(); // (1610, 821)
+        // center + (−2,−4) − vel(1,0) = (cx−3, cy−4); Floor is exact on
+        // the integers; the box anchors at −9.
+        assert_eq!(p.pos, Vec2::new(cx - 3.0 - 9.0, cy - 4.0 - 9.0));
+        assert_eq!(p.rot, 0.0, "the gravDir=1 rotation");
+        assert_eq!(p.sprite_direction, p.direction);
     }
 }
