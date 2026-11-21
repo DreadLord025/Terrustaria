@@ -12,7 +12,8 @@
 > §7.3 reservation on the same key, so 283 is NOT honored; 305 is the
 > registry-assigned number (extension block 304–307 consumed by
 > d50/f4/g86/g43; 308+ free). Chain recorded per the registry's
-> header rule (like f11/g67/d53).
+> header rule (like f11/g67/d53). ANALYSIS ref: `docs/ANALYSIS.md:39274`
+> (repointed to `research/305-npc-dust-final.md` in this rename round).
 
 > **SEALED.** W4-f4 retire round, code-only. Renumbered **240 → 283**
 > (SUPERSEDED — see the rename-chain banner above; final number 305)
