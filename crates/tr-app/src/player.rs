@@ -584,6 +584,62 @@ pub(crate) struct StickyDust {
     pub(crate) post_arms: bool,
 }
 
+/// `PlayerPettingInfo` (`GameContent/PlayerPettingInfo.cs:5-77`) — the
+/// pet-interaction target record (W4-d21 fold 2). The C# struct carries
+/// three ctors (NPC / Projectile / mount); the port's projectile lane is
+/// the live one — the NPC lane (`NPCInteractions.cs:167`) and the mount
+/// lane (`PetMount`, `Player.cs:33339-33356`) ride their own systems'
+/// follow-ups. `npc`/`mount` stay for the record's shape; `TryGetTarget`
+/// resolves through the caller's pool snapshot (the struct cannot hold
+/// the `Main.projectile` reference).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PettingInfo {
+    /// `isPetting` — armed by `PetAnimal`, cleared by `StopPettingAnimal`.
+    pub is_petting: bool,
+    /// `npc` — the NPC whoAmI, -1 for the projectile/mount lanes.
+    pub npc: i32,
+    /// `proj` — the projectile whoAmI, -1 for the NPC/mount lanes.
+    pub proj: i32,
+    /// `type` — the target's NPC type / projectile type / mount id.
+    pub kind: i32,
+    /// `mount` — the mount lane flag.
+    pub mount: bool,
+    /// `offsetFromPet` — the player-bottom offset from the pet's bottom.
+    pub offset_from_pet: (f32, f32),
+    /// `isPetSmall` — the small-pet arm pose flag (`:50264`).
+    pub is_pet_small: bool,
+}
+
+impl Default for PettingInfo {
+    fn default() -> Self {
+        Self {
+            is_petting: false,
+            npc: -1,
+            proj: -1,
+            kind: 0,
+            mount: false,
+            offset_from_pet: (0.0, 0.0),
+            is_pet_small: false,
+        }
+    }
+}
+
+impl PettingInfo {
+    /// The projectile ctor (`:32-41`): `isPetting = false`, `npc = -1`,
+    /// `proj = whoAmI`, `type = proj.type`, the offset + small flag ride.
+    pub fn from_projectile(who_am_i: i32, kind: u16, offset_from_pet: (f32, f32), is_pet_small: bool) -> Self {
+        Self {
+            is_petting: false,
+            npc: -1,
+            proj: who_am_i,
+            kind: kind as i32,
+            mount: false,
+            offset_from_pet,
+            is_pet_small,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct Player {
     // The class combat stats (`Player.cs:2430-2437`): every class starts at
@@ -1131,6 +1187,17 @@ pub struct Player {
     /// `PlayerSittingHelper.isSitting` (`PlayerSittingHelper.cs:18`) — the
     /// chair-sit state; the player's bottom is snapped to the seat.
     pub sitting: bool,
+    /// `Player.petting` (`Player.cs:2904`, W4-d21 fold 2) — the pet-
+    /// interaction state: `PetAnimal` snaps the player beside the pet and
+    /// arms it, `UpdatePettingAnimal` (`Player.cs:33470-33490`) drops it
+    /// on movement/target-loss, the digtoise's state-5 joy reads it
+    /// (`Projectile.cs:38508`).
+    pub petting: PettingInfo,
+    /// W4-d21 fold 2 — the per-tick `TryGetTarget` resolution the world-sim
+    /// feeds before the player tick (the `frame_inputs` convention): the
+    /// live pet's bottom, `None` when the target slot died / changed type
+    /// / no petting is armed. `UpdatePettingAnimal` reads it.
+    pub petting_target_bottom: Option<(f32, f32)>,
     /// `PlayerSleepingHelper.isSleeping` (`PlayerSleepingHelper.cs:13`) — the
     /// bed-sleep state; the bottom is snapped to the bed anchor and the pose
     /// rotates through `full_rotation`.
@@ -2658,6 +2725,8 @@ impl Player {
             liquid_step: 1.0,
             in_water: false,
             sitting: false,
+            petting: PettingInfo::default(),
+            petting_target_bottom: None,
             sleeping: false,
             sleep_time: 0,
             sleeping_style: 0,
@@ -3079,6 +3148,9 @@ impl Player {
             self.sit_up();
             return;
         }
+        // `PlayerSittingHelper.SitDown`'s `StopVanityActions` (`:124`,
+        // W4-d21 fold 2): the petting stop joins the sit/sleep strip.
+        self.stop_petting_animal();
         self.grappling_active = false;
         self.x = seat_x - self.width * 0.5;
         self.y = seat_y - self.height;
@@ -3126,10 +3198,9 @@ impl Player {
             self.stop_sleeping();
             return;
         }
-        // `player.StopVanityActions()` (`:172`): SitUp + StopSleeping (+ the
-        // petting stop — not ported).
-        self.sit_up();
-        self.stop_sleeping();
+        // `player.StopVanityActions()` (`:172`): SitUp + StopSleeping +
+        // the petting stop (W4-d21 fold 2 — the shared strip).
+        self.stop_vanity_actions();
         self.grappling_active = false;
         // `RemoveAllFishingBobbers` (`PlayerSleepingHelper.cs:174`) runs at
         // the interaction caller (`world_sim/editing/doors.rs`'s BedSleep arm,
@@ -3158,6 +3229,155 @@ impl Player {
             self.full_rotation_origin = (0.0, 0.0);
             self.sleep_time = 0;
         }
+    }
+
+    /// `Player.StopPettingAnimal` (`Player.cs:33465-33468`, W4-d21 fold 2).
+    pub fn stop_petting_animal(&mut self) {
+        self.petting.is_petting = false;
+    }
+
+    /// `Player.StopVanityActions` (`Player.cs:33458-33463`): the petting
+    /// stop + SitUp + StopSleeping. The `multiplayerBroadcast` argument is
+    /// the MP sync (no port layer).
+    pub fn stop_vanity_actions(&mut self) {
+        self.stop_petting_animal();
+        self.sit_up();
+        self.stop_sleeping();
+    }
+
+    /// `Player.PetAnimal` (`Player.cs:33358-33399`, W4-d21 fold 2) — the
+    /// right-click pet interaction's snap. `target_bottom` is the
+    /// resolved pet's bottom (`TryGetTarget` ran at the caller — the
+    /// projectile lane reads the pool slot; `None` = the mount lane, no
+    /// target entity). Returns whether the petting armed (the caller
+    /// plays the joy cue / re-arms the achievement on success).
+    ///
+    /// The grapple teardown (`RemoveAllGrapplingHooks`, `:33379`) needs
+    /// the pool — the caller runs it BEFORE this call when the snap is
+    /// going to land (the `sleep_down` bobber-teardown precedent: the
+    /// pure player method cannot reach the pool). The mount dismount
+    /// (`:33380-33383`) rides `try_dismount` here.
+    pub fn pet_animal(
+        &mut self,
+        world: &World,
+        info: PettingInfo,
+        target_bottom: Option<(f32, f32)>,
+    ) -> bool {
+        // `:33364-33372` — the snap target: `(target.Bottom +
+        // offsetFromPet).Floor()`; the snap box + the floor tile gate.
+        let mut vector = self.bottom();
+        if let Some((tx, ty)) = target_bottom {
+            vector = (
+                (tx + info.offset_from_pet.0).floor(),
+                (ty + info.offset_from_pet.1).floor(),
+            );
+            let (bx, by) = self.bottom();
+            if !self.can_snap_to(world, vector.0 - bx, vector.1 - by)
+                || !crate::projectile_ai026_c::solid_tile_allow_bottom_slope(
+                    world,
+                    vector.0 as i32 / 16,
+                    vector.1 as i32 / 16,
+                )
+            {
+                return false;
+            }
+        }
+        // `:33373-33377` — a repeat click at the same spot stops.
+        if self.petting.is_petting && self.bottom() == vector {
+            self.stop_petting_animal();
+            return false;
+        }
+        // `:33378-33383` — the vanity strip + the mount dismount. The
+        // grapple teardown ran at the caller (the pool borrow).
+        self.stop_vanity_actions();
+        if !info.mount && self.mount.is_active() {
+            self.try_dismount(world);
+        }
+        // `:33384-33394` — the bottom snap, the facing (the offset's sign,
+        // 0 → keep), the velocity zero, gravDir = 1 (the port is upright-
+        // only), the state arm.
+        self.x = vector.0 - self.width * 0.5;
+        self.y = vector.1 - self.height;
+        let mut num = (0.0f32 - info.offset_from_pet.0).signum() as i32;
+        if num == 0 {
+            num = self.facing;
+        }
+        self.change_dir(world, num);
+        self.vx = 0.0;
+        self.vy = 0.0;
+        self.petting = info;
+        self.petting.is_petting = true;
+        // `:33395-33398` — the achievement (HandleSpecialEvent 21) has no
+        // port layer; the caller's cue seam covers the local feedback.
+        true
+    }
+
+    /// `Player.UpdatePettingAnimal` (`Player.cs:33470-33490`, W4-d21
+    /// fold 2) — the per-tick drop: the target lost (`TryGetTarget` false
+    /// at the caller — the slot died / changed type), the player drifted
+    /// > 2 px from the snap spot, or any movement control / pulley /
+    /// mount / facing flip. `target_bottom` is the live pet's bottom
+    /// (`None` = the target is gone → drop). The NPC-lane `talkNPC` gate
+    /// (`:33476`) is the NPC system's follow-up (the projectile lane
+    /// never carries an NPC target).
+    pub fn update_petting_animal(&mut self, target_bottom: Option<(f32, f32)>) {
+        if !self.petting.is_petting {
+            return;
+        }
+        // `:33476-33480` — the target-loss / drift gate.
+        let Some((tx, ty)) = target_bottom else {
+            self.stop_petting_animal();
+            return;
+        };
+        let (bx, by) = self.bottom();
+        let spot = (tx + self.petting.offset_from_pet.0, ty + self.petting.offset_from_pet.1);
+        if ((bx - spot.0).powi(2) + (by - spot.1).powi(2)).sqrt() > 2.0 {
+            self.stop_petting_animal();
+            return;
+        }
+        // `:33481-33489` — the facing the offset demands (the mount lane
+        // keeps the current facing), then the control drop.
+        let mut num = (0.0f32 - self.petting.offset_from_pet.0).signum() as i32;
+        if self.petting.mount {
+            num = self.facing;
+        }
+        if self.control_left
+            || self.control_right
+            || self.control_up
+            || self.control_down
+            || self.control_jump
+            || self.pulley
+            || (self.mount.is_active() && !self.petting.mount)
+            || num != self.facing
+        {
+            self.stop_petting_animal();
+        }
+    }
+
+    /// `Player.ChangeDir` (`Player.cs:42091-42116`, W4-d21 fold 2) — the
+    /// facing flip with the pulley-2 reposition (`:42097-42110`: the
+    /// tile-centred X snap, refused when the snap box is solid; the
+    /// camera shift is the caller's — the port's camera follows the
+    /// player each frame anyway). The composite-arm / itemRotation /
+    /// itemLocation mirrors (`:42112-42115`) ride the ported fields;
+    /// `itemLocation` is unported (the thrust-hitbox seam derives it).
+    pub fn change_dir(&mut self, world: &World, dir: i32) {
+        if dir == self.facing {
+            return;
+        }
+        if self.pulley && self.pulley_dir == 2 {
+            let num = ((self.x + self.width * 0.5) as i32 / 16 * 16 + 8) as f32
+                - self.width * 0.5;
+            if Player::solid_collision(world, num, self.y, self.width, self.height) {
+                return;
+            }
+            self.pulley_dir = 1;
+            self.x = num;
+        }
+        self.facing = dir;
+        self.composite_back.rotation *= -1.0;
+        self.composite_front.rotation *= -1.0;
+        self.item_rotation *= -1.0;
     }
 
     /// `PlayerSleepingHelper.UpdateState` (`PlayerSleepingHelper.cs:85-138`).
@@ -5761,6 +5981,14 @@ impl Player {
             self.control_up = self.control_right;
             self.control_down = flag3;
         }
+        // `Player.UpdatePettingAnimal` (`Player.cs:26124`, W4-d21 fold 2):
+        // the petting drop runs BEFORE the sit/sleep updates. The target
+        // resolution (`TryGetTarget`) needs the pool — the world-sim
+        // caller feeds the resolved bottom through `petting_target_bottom`
+        // (the `frame_inputs` convention); the bare `update` harness keeps
+        // the previous tick's resolution (None drops the petting, the
+        // C#'s dead-slot verdict).
+        self.update_petting_animal(self.petting_target_bottom);
         // `PlayerSittingHelper.UpdateSitting` (`Player.cs:26125`) and
         // `PlayerSleepingHelper.UpdateState` (`:26126`): the stand-up/wake
         // gates run after the controls land, before the movement applies.
@@ -8021,6 +8249,32 @@ impl Player {
         // `ItemTimeIsZero` (no swing); the use arms when `itemAnimation > 0`.
         self.composite_front = CompositeArmState::DISABLED;
         self.composite_back = CompositeArmState::DISABLED;
+        // W4-d21 fold 2 — `ItemCheck_ApplyHoldStyle`'s petting arm
+        // (`Player.cs:50243-50270`): the back arm reaches toward the pet —
+        // ThreeQuarters/Full on the 14-tick miscCounter cadence, rotation
+        // `-2PI * 0.3 * dir` (0.2 for the small pets). The Chillemt-mount
+        // arm (`:50245-50254`, 0.36) is the mount lane's follow-up. The
+        // C# runs it inside ApplyHoldStyle — the NO-SWING branch only
+        // (`AnimatePlayerAndGetItemFrame` `:43378-43385`), BEFORE the
+        // CanVisuallyHoldItem gate (`:50271`): the petting pose lands even
+        // when the held item hides.
+        if self.petting.is_petting && !held.swing_active {
+            let num2 = self.misc_counter % 14 / 7;
+            let stretch2 = if num2 == 1 {
+                CompositeStretch::Full
+            } else {
+                CompositeStretch::ThreeQuarters
+            };
+            let mut num3 = 0.3f32;
+            if self.petting.is_pet_small {
+                num3 = 0.2;
+            }
+            self.composite_back = CompositeArmState {
+                enabled: true,
+                stretch: stretch2,
+                rotation: std::f32::consts::PI * -2.0 * num3 * self.facing as f32,
+            };
+        }
         if held.swing_active {
             self.apply_item_composite_arms(&held);
         } else {
@@ -21649,5 +21903,115 @@ mod s1_p_i27_tests {
         p.equipped[2] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.set_stardust, "(:18743)");
+    }
+
+    // ---- W4-d21 fold 2: the petting machine (WRITTEN NOT RUN) -------------
+
+    /// `Player.PetAnimal` (`Player.cs:33358-33399`): the snap lands the
+    /// player's bottom at `(pet.Bottom + offset).Floor()`, faces the pet
+    /// (the offset's sign inverted), zeroes the velocity and arms the
+    /// record. The digtoise (1098) offset is −48 when the pet is right of
+    /// the player (`GetPettingInfo` `Projectile.cs:38846-38849`).
+    #[test]
+    fn w4_d21_pet_animal_snaps_and_faces_the_pet() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // Stand on the surface (top row 60 → bottom 960).
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        p.facing = -1;
+        p.vx = 3.0;
+        p.vy = 1.0;
+        // The pet's bottom at (400, 960): right of the player → num = 1,
+        // offset (−48, 0), snap bottom (352, 960).
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        assert!(p.petting.is_petting);
+        assert_eq!(p.petting.proj, 7);
+        assert_eq!(p.petting.kind, 1098);
+        assert!(p.petting.is_pet_small);
+        assert_eq!(p.bottom(), (352.0, 960.0), "the floor snap (:33367)");
+        assert_eq!(p.facing, 1, "Math.Sign(0 - (-48)) = +1 (:33385)");
+        assert_eq!((p.vx, p.vy), (0.0, 0.0), "(:33391)");
+    }
+
+    /// `Player.PetAnimal`'s repeat-click toggle (`Player.cs:33373-33377`):
+    /// petting the same spot again stops; a DIFFERENT spot re-snaps.
+    #[test]
+    fn w4_d21_pet_animal_repeat_click_toggles() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        // The same bottom → the toggle-off (returns false, petting clears).
+        assert!(!p.pet_animal(&w, info, Some((400.0, 960.0))));
+        assert!(!p.petting.is_petting);
+        // A new spot re-arms.
+        assert!(p.pet_animal(&w, info, Some((500.0, 960.0))));
+        assert!(p.petting.is_petting);
+        assert_eq!(p.bottom(), (452.0, 960.0));
+    }
+
+    /// `Player.PetAnimal`'s refusal (`Player.cs:33368-33371`): a snap spot
+    /// whose floor tile is not solid refuses (the `SolidTileAllowBottomSlope`
+    /// gate) — the player does not move.
+    #[test]
+    fn w4_d21_pet_animal_refuses_a_non_solid_floor() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let before = p.bottom();
+        // The pet floats mid-air: the snap floor (row 30) is empty.
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(!p.pet_animal(&w, info, Some((400.0, 480.0))));
+        assert!(!p.petting.is_petting);
+        assert_eq!(p.bottom(), before, "the refusal leaves the player put");
+    }
+
+    /// `Player.UpdatePettingAnimal` (`Player.cs:33470-33490`): the target
+    /// loss (None) and the >2 px drift both drop the petting; a control
+    /// press drops it too.
+    #[test]
+    fn w4_d21_update_petting_animal_drops_on_loss_drift_and_controls() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        // The live target at the snap spot keeps it.
+        p.update_petting_animal(Some((400.0, 960.0)));
+        assert!(p.petting.is_petting);
+        // A 3 px drift (> 2) drops it (:33476).
+        p.update_petting_animal(Some((403.0, 960.0)));
+        assert!(!p.petting.is_petting);
+        // Re-arm, then the target loss drops it.
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        p.update_petting_animal(None);
+        assert!(!p.petting.is_petting);
+        // Re-arm, then a movement control drops it (:33486).
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        p.control_right = true;
+        p.update_petting_animal(Some((400.0, 960.0)));
+        assert!(!p.petting.is_petting);
+    }
+
+    /// `Player.UpdatePettingAnimal`'s facing gate (`Player.cs:33481-33489`):
+    /// the offset demands facing +1 (the pet is right); a flip to −1 drops.
+    #[test]
+    fn w4_d21_update_petting_animal_drops_on_facing_flip() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.x = 160.0;
+        p.y = 60.0 * TILE_PX - HEIGHT;
+        let info = PettingInfo::from_projectile(7, 1098, (-48.0, 0.0), true);
+        assert!(p.pet_animal(&w, info, Some((400.0, 960.0))));
+        assert_eq!(p.facing, 1);
+        p.facing = -1;
+        p.update_petting_animal(Some((400.0, 960.0)));
+        assert!(!p.petting.is_petting, "num != direction drops (:33486)");
     }
 }

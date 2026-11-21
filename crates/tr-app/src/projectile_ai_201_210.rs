@@ -74,12 +74,20 @@
 //!
 //! Deliberate folds (ANALYSIS "The projectile aiStyles 201-210 (W4-d21)"):
 //! - `gravDir == -1` (the 205's flipped-gravity input XOR, `:38098`): the
-//!   port is upright-only (`gravDir = 1`), so `flag4` is false.
-//! - `player.petting` (the 204's state-5 joy, `:38508-38526`): no ported
-//!   petting layer — the state is unreachable, recorded not ported as dead
-//!   code (the golf `gravDir` precedent).
+//!   port is upright-only (`gravDir = 1`), so `flag4` is false. CENSUS
+//!   (fold 1): `Player.grav_dir` is NOT landed — only the `grav_control`
+//!   buff-18 flag (`player.rs`); the i40 wings lane ported the flight
+//!   budget, not the gravity flip. The fold stays until the flip lands.
+//! - `player.petting` (the 204's state-5 joy, `:38508-38526`): UNFOLDED
+//!   (W4-d21 fold 2) — the petting machine landed (`Player.pet_animal` /
+//!   `update_petting_animal` / `PettingInfo`, the `TryPetting` right-click
+//!   seam); the state-5 joy is LIVE.
 //! - `Main.Difficulty >= Legendary` (the 203's `num3`/`num4`, `:39646-
 //!   39647`): the port is single-difficulty (below Legendary), so 14/5.
+//!   CENSUS (fold 5): the e25 `npc_scaling.rs` curves live ONLY on the
+//!   sibling `task/W4-e25-expert-master-scaling` branch (unmerged,
+//!   unwired — the World carries no game mode); the fold stays until
+//!   the difficulty flip lands.
 //! - the `LightningGenerator` bolt paths + `MultiPointHitbox` (the 203's
 //!   `Kill()` damage, `:70790-70840`): UNFOLDED (W4-d21 folds 3+4) — the
 //!   census proved the generator is NOT render-only (the tile truncation
@@ -745,8 +753,47 @@ pub(crate) fn ai_storm_lightning(
     }
 }
 
+/// `Projectile.IsInteractable` (`Projectile.cs:78828-78846`, W4-d21 fold 2)
+/// — the right-click-interactable projectile set. The three non-pet rows
+/// (525 the Money Trough, 734 the Void Lens, 960 Chester) ride their own
+/// interaction machines (`TryInteractingWithMoneyTrough` `Main.cs:37770+`,
+/// `TryInteractingWithVoidLens` `:37680+` — unported); the seven pet rows
+/// feed [`try_petting`].
+pub(crate) fn is_interactable(kind: u16) -> bool {
+    matches!(kind, 525 | 734 | 960 | 1093 | 1094 | 1098 | 1112 | 1113 | 1118 | 1123)
+}
+
+/// `Projectile.GetPettingInfo` (`Projectile.cs:38839-38864`, W4-d21 fold 2)
+/// — the pet-interaction record: `num` is +1 when the pet's centre is right
+/// of the player's, the offset is `-num * num2` on X (the player snaps to
+/// the pet's NEAR side), `num2` per type: 1098/1123 → 48 (the small pets),
+/// 1093/1112/1118 → 24, 1094/1113 → 32, default 36. `center` is the pet's
+/// `base.Center`, `player_center_x` the local player's `Center.X`. The
+/// `TryPetting` seam itself lives in `world_sim/editing.rs` (it borrows the
+/// App — the AI module stays App-free).
+pub(crate) fn get_petting_info(
+    who_am_i: usize,
+    kind: u16,
+    center: Vec2,
+    player_center_x: f32,
+) -> crate::player::PettingInfo {
+    let num = if center.x > player_center_x { 1 } else { -1 };
+    let (num2, is_pet_small) = match kind {
+        1098 | 1123 => (48, true),
+        1093 | 1112 | 1118 => (24, false),
+        1094 | 1113 => (32, false),
+        _ => (36, false),
+    };
+    crate::player::PettingInfo::from_projectile(
+        who_am_i as i32,
+        kind,
+        ((-num * num2) as f32, 0.0),
+        is_pet_small,
+    )
+}
+
 /// `Rectangle.ClosestPointInRect` (XNA) — the point clamped into the rect.
-fn closest_point_in_rect(point: Vec2, rect_pos: Vec2, w: f32, h: f32) -> Vec2 {
+pub(crate) fn closest_point_in_rect(point: Vec2, rect_pos: Vec2, w: f32, h: f32) -> Vec2 {
     Vec2::new(
         point.x.clamp(rect_pos.x, rect_pos.x + w),
         point.y.clamp(rect_pos.y, rect_pos.y + h),
@@ -1253,19 +1300,20 @@ fn walk_down_slope(
 /// `AI_204_Digtoise` (`Projectile.cs:38463-38801`) — the Digtoise / Trusty
 /// Digtoise (1098/1123): the mining turtle pet. The `ai[0]` states: 0 the
 /// idle appear (180 ticks), 1 the dig-down, 2/3 the dig-left/right, 4 the
-/// walk, 5 the petted joy (unreachable — no petting layer, ANALYSIS). The
-/// dig breaks the tiles ahead via the owner's pick (`PickTile`, the
+/// walk, 5 the petted joy (W4-d21 fold 2 — LIVE: `player.petting` landed).
+/// The dig breaks the tiles ahead via the owner's pick (`PickTile`, the
 /// `pick_tile_hit` seam rides the App drain); the appear effect fades the
 /// alpha in. The `correctSlopeCollision` row rides the dispatch's slope
 /// pass.
 ///
 /// The single-player port folds `Main.myPlayer == owner` to `owner == 0`.
-/// The petting state-5 (`:38508-38526`) is unreachable (no `player.petting`
-/// field) — recorded, not ported as dead code. The dig's `PickTile` calls
-/// ride the [`DigtoiseDig`] intent out to the App drain (the pool cannot
-/// borrow the hit-tile book).
+/// `who_am_i` is the slot index (the C#'s `base.whoAmI` — the petting
+/// target match `player.petting.proj == base.whoAmI`, `:38508`). The dig's
+/// `PickTile` calls ride the [`DigtoiseDig`] intent out to the App drain
+/// (the pool cannot borrow the hit-tile book).
 pub(crate) fn ai_digtoise(
     p: &mut Projectile,
+    who_am_i: usize,
     world: &World,
     player: Option<&crate::player::Player>,
     rng: &mut dyn DropRng,
@@ -1320,10 +1368,26 @@ pub(crate) fn ai_digtoise(
         let probe = bottom + Vec2::new(0.0, -15.0);
         ((probe.x / 16.0) as i32, (probe.y / 16.0) as i32)
     };
-    // `:38508-38526` — the petting joy (unreachable: no petting layer).
-    // The else-if flag6 reset (`:38520-38526`) keeps a stray state-5 from
-    // sticking: it returns to idle.
-    if flag6 {
+    // `:38508-38526` — the petting joy (W4-d21 fold 2, LIVE). The owner
+    // is petting THIS slot: face the player, enter state 5, reset the
+    // counter, play the joy cue. The else-if flag6 reset keeps a stray
+    // state-5 from sticking once the petting drops: it returns to idle.
+    if pl.petting.is_petting && pl.petting.proj == who_am_i as i32 {
+        if !flag6 {
+            let pc = Vec2::from(pl.center());
+            let dir = if center.x > pc.x { -1 } else { 1 };
+            p.sprite_direction = dir;
+            p.direction = dir;
+            flag = false;
+            flag6 = true;
+            p.ai[0] = 5.0;
+            p.ai[1] = 0.0;
+            // `:38517` — SoundID.PalDigtoiseJoy at base.Center: the
+            // trackable case-42 cue (style 289, no gameplay draw — the
+            // audio-only GetRandomPitch rides the sound device's stream).
+            p.wants_sound = Some((42, 289, center.x, center.y, 0.0));
+        }
+    } else if flag6 {
         flag = true;
         flag6 = false;
         p.ai[0] = 0.0;
@@ -2095,16 +2159,94 @@ mod tests {
         let mut pl = crate::player::Player::spawn(&air());
         pl.held_item_kind = 5667; // the matching staff keeps it alive
         let mut rng = FastRandom::new(7);
-        let digs = ai_digtoise(&mut p, &air(), Some(&pl), &mut rng);
+        let digs = ai_digtoise(&mut p, 0, &air(), Some(&pl), &mut rng);
         assert!(digs.is_empty(), "the idle state digs nothing");
         assert_eq!(p.alpha, 240, "DoPalAppearEffect -15 (:38810)");
         assert_eq!(p.ai[1], 1.0, ":38559");
         assert_eq!(p.time_left, 2, ":38482");
         // 180 ticks: the idle → dig-down transition.
         for _ in 0..179 {
-            ai_digtoise(&mut p, &air(), Some(&pl), &mut rng);
+            ai_digtoise(&mut p, 0, &air(), Some(&pl), &mut rng);
         }
         assert_eq!(p.ai[0], 1.0, ":38560-38565");
+    }
+
+    /// W4-d21 fold 2 — `Projectile.IsInteractable` (`Projectile.cs:78828-
+    /// 78846`): the ten right-click-interactable rows. The seven pet rows
+    /// feed `try_petting`; the Money Trough/Void Lens/Chester ride their own
+    /// machines. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d21_is_interactable_is_the_ten_row_set() {
+        for k in [525u16, 734, 960, 1093, 1094, 1098, 1112, 1113, 1118, 1123] {
+            assert!(is_interactable(k), "{k} is interactable");
+        }
+        for k in [0u16, 1, 266, 1091, 1092, 1117, 1122, 1129] {
+            assert!(!is_interactable(k), "{k} is not interactable");
+        }
+    }
+
+    /// W4-d21 fold 2 — `Projectile.GetPettingInfo` (`Projectile.cs:38839-
+    /// 38864`): the offset is `-num * num2` on X where num is +1 when the
+    /// pet's centre is right of the player's; num2 per type 1098/1123→48
+    /// (small), 1093/1112/1118→24, 1094/1113→32, default 36. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d21_get_petting_info_offset_table() {
+        // Pet centre right of the player (200 > 100) → num = +1.
+        let right = Vec2::new(200.0, 100.0);
+        // 1098 digtoise: num2 48, small → offset (-48, 0).
+        let i = get_petting_info(3, 1098, right, 100.0);
+        assert_eq!(i.proj, 3);
+        assert_eq!(i.kind, 1098);
+        assert_eq!(i.offset_from_pet, (-48.0, 0.0));
+        assert!(i.is_pet_small);
+        assert!(!i.is_petting, "the ctor arms isPetting false (:34)");
+        // 1123 trusty digtoise: same 48/small.
+        assert_eq!(get_petting_info(0, 1123, right, 100.0).offset_from_pet, (-48.0, 0.0));
+        // 1093/1112/1118: num2 24, not small.
+        for k in [1093u16, 1112, 1118] {
+            let i = get_petting_info(0, k, right, 100.0);
+            assert_eq!(i.offset_from_pet, (-24.0, 0.0), "{k}");
+            assert!(!i.is_pet_small, "{k}");
+        }
+        // 1094/1113 foxsparks: num2 32, not small.
+        for k in [1094u16, 1113] {
+            assert_eq!(get_petting_info(0, k, right, 100.0).offset_from_pet, (-32.0, 0.0), "{k}");
+        }
+        // Pet centre LEFT of the player (50 < 100) → num = -1 → offset +num2.
+        let left = Vec2::new(50.0, 100.0);
+        assert_eq!(get_petting_info(0, 1098, left, 100.0).offset_from_pet, (48.0, 0.0));
+        // A non-pet type falls to the default num2 36.
+        assert_eq!(get_petting_info(0, 999, right, 100.0).offset_from_pet, (-36.0, 0.0));
+    }
+
+    /// W4-d21 fold 2 — `AI_204`'s state-5 joy entry (`Projectile.cs:38508-
+    /// 38518`): the owner petting THIS slot faces the player, sets ai[0]=5,
+    /// ai[1]=0 and queues the joy cue. The else-if reset (`:38520-38526`)
+    /// returns a stray state-5 to idle once the petting drops. WRITTEN NOT RUN.
+    #[test]
+    fn w4_d21_the_digtoise_joy_enters_state_five_and_resets() {
+        let mut p = slot(DIGTOISE);
+        p.pos = Vec2::new(200.0, 160.0); // centre right of the player
+        p.alpha = 0;
+        let mut pl = crate::player::Player::spawn(&air());
+        pl.held_item_kind = 5667;
+        pl.x = 100.0; // player centre ~110, left of the pet centre ~217
+        // Arm the petting on slot 0.
+        pl.petting.is_petting = true;
+        pl.petting.proj = 0;
+        let mut rng = FastRandom::new(7);
+        ai_digtoise(&mut p, 0, &air(), Some(&pl), &mut rng);
+        assert_eq!(p.ai[0], 5.0, ":38515");
+        assert_eq!(p.ai[1], 1.0, "the appear branch increments (:38559)");
+        // The pet faces the player: pet centre right → direction -1 (:38512).
+        assert_eq!(p.direction, -1);
+        assert_eq!(p.sprite_direction, -1);
+        assert_eq!(p.wants_sound, Some((42, 289, p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5, 0.0)), ":38517");
+        // Drop the petting → the else-if reset returns to idle (:38520-38526).
+        pl.petting.is_petting = false;
+        p.wants_sound = None;
+        ai_digtoise(&mut p, 0, &air(), Some(&pl), &mut rng);
+        assert_eq!(p.ai[0], 0.0, "the reset (:38524)");
     }
 
     /// Folds 3+4 — the 1091 kill in AIR: the storm bolt reaches the

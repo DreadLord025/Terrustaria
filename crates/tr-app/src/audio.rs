@@ -512,6 +512,15 @@ pub(crate) const ITEM_CUSTOM_CUES: &[&str] = &[
 /// One variation, pinned like the item-use trackables.
 pub(crate) const MOUNT_CUSTOM_CUES: &[&str] = &["pal_chillet"];
 
+/// W4-d21 fold 2 — the `Sounds/Custom/` trackables the projectile AI arms
+/// play: `SoundID.PalDigtoiseJoy = CreateTrackable("pal_digtoise_joy")
+/// .WithVolume(0.35f)` (`SoundID.cs:1724`), the digtoise's state-5 petted
+/// joy (`Projectile.cs:38517`). One variation, pinned. The other Pal cues
+/// (`pal_digtoise` `:1723`, `pal_summon`, the foxsparks/cattiva joys) ride
+/// their machines' follow-ups — the 204's idle cues are the documented
+/// sound-body skip, the 1093/1094/1112/1113/1118 AI machines are unported.
+pub(crate) const PROJ_CUSTOM_CUES: &[&str] = &["pal_digtoise_joy"];
+
 /// Whether the cue name is in the SFX bank (the item-use coverage test's
 /// seam, S1-E-21 wave A).
 pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
@@ -551,7 +560,7 @@ fn sound_type(cue: &str) -> u32 {
         // `LegacySoundPlayer.PlaySound(style.SoundId = 42, …)`), whose
         // ambient-scaling switch treats 42 like any unlisted id.
         .or_else(|| {
-        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue)).then_some(42)
+        (LIQUID_CHANGE_CUES.contains(&cue) || NPC_CUSTOM_CUES.contains(&cue) || ITEM_CUSTOM_CUES.contains(&cue) || MOUNT_CUSTOM_CUES.contains(&cue) || PROJ_CUSTOM_CUES.contains(&cue)).then_some(42)
     })
         .unwrap_or(0)
 }
@@ -703,6 +712,7 @@ impl Audio {
                     .chain(NPC_CUSTOM_CUES.iter())
                     .chain(ITEM_CUSTOM_CUES.iter())
                     .chain(MOUNT_CUSTOM_CUES.iter())
+                    .chain(PROJ_CUSTOM_CUES.iter())
                 {
                     let path = custom.join(format!("{name}.xnb"));
                     match load_sound(&path) {
@@ -1033,7 +1043,9 @@ impl Audio {
     /// S1-E-21 wave A — `Player.ItemCheck_StartActualUse`'s sound arm
     /// (`Player.cs:51681-51698`): `SoundEngine.PlaySound(sItem.UseSound,
     /// base.Center, sItem.useSoundPitch)` for the style at
-    /// [`crate::soundid::SOUND_STYLES`] index `style_index`.
+    /// [`crate::soundid::SOUND_STYLES`] index `style_index`. W4-d21 fold 2:
+    /// the projectile trackables ([`Audio::play_proj_sound`]'s id-42 arm)
+    /// share the case-42 tail.
     ///
     /// The façade (`SoundEngine.cs:93-99`) passes `type.Style`,
     /// `type.Volume * volumeScale` (volumeScale 1 here) and
@@ -1099,11 +1111,13 @@ impl Audio {
             )
         };
         // Resolve against the loaded bank's static names (the cue is always
-        // in SFX_CUES/ITEM_CUSTOM_CUES — an unregistered name is a bank gap).
+        // in SFX_CUES/ITEM_CUSTOM_CUES/PROJ_CUSTOM_CUES — an unregistered
+        // name is a bank gap).
         let name = SFX_CUES
             .iter()
             .map(|(n, _)| *n)
             .chain(ITEM_CUSTOM_CUES.iter().copied())
+            .chain(PROJ_CUSTOM_CUES.iter().copied())
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
@@ -1954,8 +1968,8 @@ impl Audio {
     /// gates), the boomerang whoosh (`AI_003` `:38868-38891`), the Magic
     /// Missile hum (`AI_009` `:43361-43367`), the Light's Bane slash
     /// (`AI_188` `:42231-42239`) and the bomb blast
-    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). Every ported site is
-    /// a `SoundID.ItemN` style play — the same façade as wave A
+    /// (`Kill_Bombs_DoUsualKillCode` `:78331`/:78386). The id-2 sites are
+    /// `SoundID.ItemN` style plays — the same façade as wave A
     /// (`SoundEngine.cs:93-99`: the `GetRandomPitch` NextFloat on the
     /// audio-only `sound_style_random`, then the attenuation gate
     /// `LegacySoundPlayer.cs:369-436`, then case 2's `Main.rand` pitch
@@ -1964,8 +1978,11 @@ impl Audio {
     /// swap. `pitch_offset` is the C# call's third argument (the ported
     /// sites all pass none; the 301 Stacked Discs' −0.33 arm is deferred).
     /// Returns the cue played; `None` when the gate refused or the style
-    /// is not a legacy id-2 row (the trackable families ride their own
-    /// façades — deferred, ANALYSIS S1-E-21h).
+    /// is not a legacy id-2 row or a landed id-42 trackable (the unported
+    /// trackable families ride their own façades — deferred, ANALYSIS
+    /// S1-E-21h). W4-d21 fold 2: the id-42 arm routes the landed
+    /// projectile trackables ([`PROJ_CUSTOM_CUES`]) through the case-42
+    /// path (`play_use_sound`, the digtoise joy `Projectile.cs:38517`).
     pub fn play_proj_sound(
         &mut self,
         (id, style): (u16, i32),
@@ -1974,6 +1991,26 @@ impl Audio {
         pitch_offset: f32,
         rng: &mut tr_core::unified_random::UnifiedRandom,
     ) -> Option<&'static str> {
+        if id == 42 {
+            // The trackable case (`LegacySoundPlayer.cs:1376-1381`): the
+            // style resolves through the generated rows, but only the
+            // landed projectile cues play — the rest stay the documented
+            // skip (their machines are unported).
+            let idx = crate::soundid::SOUND_STYLES
+                .iter()
+                .position(|s| s.sound_id == 42 && s.style == style)?;
+            let s = &crate::soundid::SOUND_STYLES[idx];
+            let base = s.trackable?;
+            let cue = if s.variations == 1 {
+                base.to_string()
+            } else {
+                format!("{base}_0")
+            };
+            if !PROJ_CUSTOM_CUES.contains(&cue.as_str()) {
+                return None;
+            }
+            return self.play_use_sound(idx as u16, x, y, pitch_offset, rng);
+        }
         if id != 2 {
             return None;
         }
@@ -3790,6 +3827,30 @@ mod tests {
             assert_eq!(cue, SFX_CUES.iter().map(|(n, _)| *n).find(|n| *n == cue).unwrap());
         }
         // A non-id-2 family (the deferred trackables) refuses draw-free.
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+    }
+
+    /// W4-d21 fold 2 — the digtoise joy cue (`SoundID.PalDigtoiseJoy`,
+    /// `Projectile.cs:38517`, style 289 / id 42): the trackable case-42
+    /// path plays the pinned single variation, NO gameplay draw (the
+    /// GetRandomPitch NextFloat rides the audio-only stream). An unlanded
+    /// id-42 style (the achievement, style 0) still refuses draw-free.
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_d21_the_digtoise_joy_cue_plays_the_trackable() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        let cue = audio.play_proj_sound((42, 289), 0.0, 0.0, 0.0, &mut rng);
+        assert_eq!(cue, Some("pal_digtoise_joy"));
+        assert_eq!(rng.peek(), peek, "the trackable draws no gameplay roll");
+        assert!(PROJ_CUSTOM_CUES.contains(&"pal_digtoise_joy"));
+        assert_eq!(sound_type("pal_digtoise_joy"), 42);
+        // The unlanded trackables keep the documented skip.
         let mut rng = UnifiedRandom::new(7);
         let peek = rng.peek();
         assert_eq!(audio.play_proj_sound((42, 0), 0.0, 0.0, 0.0, &mut rng), None);

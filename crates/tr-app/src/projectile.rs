@@ -19891,6 +19891,7 @@ impl ProjectilePool {
                         204 => {
                             let digs = crate::projectile_ai_201_210::ai_digtoise(
                                 &mut self.slots[i],
+                                i,
                                 world,
                                 player.as_deref(),
                                 rng,
