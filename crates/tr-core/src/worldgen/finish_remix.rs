@@ -48,10 +48,23 @@
 //! Deviations (the census pins them all):
 //!
 //! - **`Liquid.QuickWater(-2)` ×3** (`:26586`/`:26622`/`:26759`) is a
-//!   documented no-op — the port has no worldgen liquid settle (d107's
-//!   `extraLiquid` deferral precedent). The spawn-box loop's re-flood
-//!   recheck therefore reads the cleared box and the loop runs ONCE: no
-//!   settle means the state cannot change between iterations.
+//!   documented no-op UNTIL the g47d settle drivers land — the `-2` is the
+//!   C# `verbose` parameter (`Liquid.cs:104`, progress display only), so
+//!   the activation call is `sys.quick_water(world, -1, -1)` (minY/maxY
+//!   default −1 → rows `3..=height-3`, `:116-123`) on the gen settle
+//!   driver's `LiquidSystem` (g47 `d222af69` base, research/70 step 6's
+//!   recommended unification). The context is armed ONCE at the driver
+//!   head: `set_gen_settle_context(gv.water_line, gv.lava_line, true)`
+//!   (the remix band, `Liquid.cs:182`) + `set_gen_shimmer_position`
+//!   (g36-A1's `gv.shimmer_position`) + `set_gen_dungeon_context` (the
+//!   f24/c30 producer); the noTraps `SetBoulderSolidity` window
+//!   (`:109-112`/`:139-142`) is subsumed by g47's pass-scoped
+//!   `tilesIgnoreWater(true)`. The spawn-box loop then regains its
+//!   `while flag` shape (the re-flood recheck reads the SETTLED box).
+//!   Until then the recheck reads the cleared box and the loop runs
+//!   ONCE: no settle means the state cannot change between iterations.
+//!   Wire contract: `docs/research/95-finish-no-traps-remix-census.md`
+//!   §"QuickWater activation addendum".
 //! - **The tree bridge**: `AddTrees`' density rolls draw the host stream;
 //!   the `TryGrowingTreeByType`/`GrowTree` calls take ONE `UnifiedRandom`
 //!   seeded from it (the `not_the_bees.rs` tree-bridge precedent). The
@@ -363,6 +376,9 @@ pub(crate) fn finish_remix_world(world: &mut World, gv: &GenVars, streams: &mut 
     }
 
     // `:26586` — Liquid.QuickWater(-2): the documented no-op (module note).
+    // g47d ACTIVATION SEAM 1/3: `sys.quick_water(world, -1, -1)` here once
+    // the settle drivers land (`-2` is the C# verbose param; the gen
+    // context is armed at the driver head — research/95 addendum).
 
     // `:26587-26632` — the spawn-box liquid clear. The randomSpawn micro
     // seed vetoes the whole loop; without a settle engine the re-flood
@@ -386,6 +402,11 @@ pub(crate) fn finish_remix_world(world: &mut World, gv: &GenVars, streams: &mut 
         }
         // QuickWater(-2) + the spawn-column recheck: no settle, no state
         // change — the C# loop would exit here on the cleared box.
+        // g47d ACTIVATION SEAM 2/3: `sys.quick_water(world, -1, -1)` then
+        // the `:26624-26631` recheck loop (spawn_x column, spawn_y-14..
+        // spawn_y+10: `liquid > 0` re-arms `flag`) — restore the C#
+        // `while flag` shape when the settle drivers land (research/95
+        // addendum; the module note carries the exact contract).
     }
 
     // `:26633` — AddTrees(undergroundOnly: true) (`:31365-31447`).
@@ -421,6 +442,8 @@ pub(crate) fn finish_remix_world(world: &mut World, gv: &GenVars, streams: &mut 
     }
 
     // `:26759` — QuickWater(-2): the documented no-op.
+    // g47d ACTIVATION SEAM 3/3: `sys.quick_water(world, -1, -1)` here
+    // once the settle drivers land (research/95 addendum).
 
     // `:26760-26769` — the full-map lily-pad sweep.
     for x in 0..width {

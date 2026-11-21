@@ -72,7 +72,10 @@ in d107's pushed claims or code. UNCLAIMED; taken.
 
 ## Deviations pinned by this task (all in the module notes + ANALYSIS)
 
-1. `QuickWater(-2)` ×3 in `FinishRemixWorld` — no-op (no settle engine).
+1. `QuickWater(-2)` ×3 in `FinishRemixWorld` — no-op (no settle engine on
+   this branch). The g47d ACTIVATION contract is pinned in the addendum
+   below (the `-2` is the verbose param; the call is
+   `quick_water(world, -1, -1)`).
 2. The `UnifiedRandom` tree bridge (one `next_u32` draw off the host stream).
 3. In-pass `TileFrame`/`SquareTileFrame` ride the post-pipeline framer; the
    explosives recheck reads the written kind (the C# could pop an
@@ -85,3 +88,58 @@ in d107's pushed claims or code. UNCLAIMED; taken.
 Both hosts are flag-gated (`NO_TRAPS` / `REMIX`): a classic world enters
 neither, draws nothing — BOTH world-hash pins UNCHANGED (the W4-g41 egg-sac
 re-pin deferral stands as-is). Witnesses written NOT run (code-only).
+
+## QuickWater activation addendum (W4-g41 FINAL — the g47d wire contract)
+
+Read against `origin/task/W4-g47-liquid-skip-settle` tip **fdeb897c** (the
+FINAL merge-order doc `docs/research/70`) + its code base **d222af69**.
+The three `QuickWater(-2)` calls in `finish_remix.rs` (`:26586`/`:26622`/
+`:26759`) are no-ops on THIS branch; they ACTIVATE when the g47d settle
+drivers land. The exact contract:
+
+1. **The call shape.** C# `Liquid.QuickWater(int verbose = 0, int minY = -1,
+   int maxY = -1)` (`Liquid.cs:104`) — the `-2` is the **verbose** progress
+   parameter, NOT a band. The activation call at all three seams is
+   `sys.quick_water(world, -1, -1)` — g47's signature
+   `pub fn quick_water(&mut self, world: &mut World, min_y: i32, max_y: i32)`
+   (`liquid.rs:1581` at d222af69); the `-1`s take the method's own defaults
+   (`min_y = 3`, `max_y = height - 3`, `:116-123`). No port consumer for
+   verbose (g47's doc note) — nothing else to pass.
+2. **The context arming (ONCE, at the gen settle driver head — NOT per
+   call).** g47's setters (`liquid.rs` at d222af69):
+   - `pub fn set_gen_settle_context(&mut self, water_line: i32, lava_line:
+     i32, remix: bool)` (`:1536`) — arm with the port GenVars'
+     `water_line`/`lava_line` (`pipeline.rs:288-290`, the TerrainPass
+     products) and `remix = true` for this host (`Liquid.cs:182`'s remix
+     band; a shared driver arms per-world flags).
+   - `pub fn set_gen_shimmer_position(&mut self, pos: Option<(i32, i32)>)`
+     (`:1549`) — g36-A1's `gv.shimmer_position` slot (the `WorldGen.cs:15241`
+     Shimmer-step write); the ShimmerRemoveWater arms (`Liquid.cs:108`/
+     `:138`) run inside `quick_water` pre/post sweep.
+   - `pub fn set_gen_dungeon_context(&mut self, ctx:
+     Option<GenDungeonContext>)` (`:1560`) — the f24/c30 producer
+     (research/70 step 7), ORIGIN-wall read (`Liquid.cs:152`).
+   - The noTraps `SetBoulderSolidity` swap (`Liquid.cs:109-112`/`:139-142`)
+     is subsumed by g47's pass-scoped `tilesIgnoreWater(true)` (same nine
+     boulder kinds, g47's `BOULDER_SOLIDS`); `LiquidInteractionsCleanup`
+     (`:144-147`) rides the gen settle driver (research/70 step 6 keeps it
+     in f25's `settle_liquids.rs` module).
+3. **Which LiquidSystem instance.** research/70 step 6 RECOMMENDS unifying
+   f25's gen-local `quick_water` onto `LiquidSystem::quick_water`; if the
+   g46c graft keeps the gen-local copies instead, this host calls the
+   gen-local fn with the SAME `(world, -1, -1)` shape and the identical
+   retype semantics (the origin-wall fix applies either way). The three
+   seam comments in `finish_remix.rs` name the call site, not the owner.
+4. **The spawn-box loop regains its `while flag` shape** (`:26587-26632`):
+   after seam 2's settle, the recheck loop (`for num7 = -10; num7 < 15` →
+   `Main.tile[spawnTileX, spawnTileY - num7].liquid > 0`, i.e. the spawn
+   column rows `spawn_y - 14 ..= spawn_y + 10`) re-arms `flag` and the box
+   clear + settle repeats. The port's `World.spawn_x`/`spawn_y`
+   (`world.rs:76-81`) are the C# `Main.spawnTileX/Y` stand-ins.
+5. **Hash impact at activation.** REMIX worlds change BY DESIGN (the
+   settles move liquid + the retype arms fire); the classic pins stay
+   UNCHANGED (flag gate). The activation commit re-derives the REMIX
+   a==b witnesses' pinned values — it must NOT touch the classic
+   `SEED42_512`/`DEFAULT_WORLD` pins beyond the egg-sac deferral that
+   already stands. research/70's witness re-pin table (f25 gen-hash
+   RE-DERIVE) governs the driver side.
