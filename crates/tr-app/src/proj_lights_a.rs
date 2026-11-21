@@ -41,9 +41,12 @@
 //!   `proj_lights.rs::proj_light` for every lit row. No new code.
 //! * `:17343` — site 3, `EmitEnchantmentVisualsAt`'s mount light (the
 //!   Chillet mounts 62-65, `(0.6,0.3,0.1)`/`(0.5,0.1,0.6)` × 0.5 at the
-//!   projectile centre). Absent: the port's `mount.rs` carries no 62-65
-//!   `MountData` row, so `player.mount.kind()` can never read them; the
-//!   `hostile`/`noEnchantments` gates have no slot fields either.
+//!   projectile centre). Absent: the Chillet `MountData` rows DO exist
+//!   (`mount.rs` 62-65), but the arm's `!this.hostile && !this.noEnchantments`
+//!   gate (`:17341`) reads two slot fields the port does not carry, so the
+//!   gate cannot be evaluated faithfully; the light lands with the
+//!   enchantment-visuals fields (the `npcProj`/`hostile` precedent,
+//!   `projectile.rs:22545`).
 //! * `:24307` — site 4, the 502 Meowmere's disco light
 //!   (`(0.5 + DiscoX/255)/2` per channel at `Center`, aiStyle-8 tail).
 //!   Absent: 502 has no `proj_data` row.
@@ -226,11 +229,13 @@ use glam::Vec2;
 
 use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
-    Projectile, DEADLY_SPHERE, GEM_BOLT_AMBER, GEM_BOLT_AMETHYST, GEM_BOLT_DIAMOND,
-    GEM_BOLT_EMERALD, GEM_BOLT_RUBY, GEM_BOLT_SAPPHIRE, GEM_BOLT_TOPAZ, MOONLORD_TURRET,
-    NEBULA_ARCANUM, NORTH_POLE, ORNAMENT_HOSTILE, RAINBOW_CRYSTAL_EXPLOSION, SPARKLE_GUITAR,
-    STARDUST_GUARDIAN, STORM_TIGER_1, STORM_TIGER_2, STORM_TIGER_3, TERRARIAN_BEAM,
-    THUNDER_SPEAR_BOLT, VORTEX_RITUAL_BOLT,
+    Projectile, ANTI_GRAVITY_HOOK, CANNON_EXPLOSIVE, CRIMSON_HEART, DEADLY_SPHERE,
+    GEM_BOLT_AMBER, GEM_BOLT_AMETHYST, GEM_BOLT_DIAMOND, GEM_BOLT_EMERALD, GEM_BOLT_RUBY,
+    GEM_BOLT_SAPPHIRE, GEM_BOLT_TOPAZ, LUNAR_HOOK_NEBULA, LUNAR_HOOK_SOLAR,
+    LUNAR_HOOK_STARDUST, LUNAR_HOOK_VORTEX, MOONLORD_TURRET, NEBULA_ARCANUM, NORTH_POLE,
+    ORNAMENT_HOSTILE, RAINBOW_CRYSTAL_EXPLOSION, SPARKLE_GUITAR, STARDUST_GUARDIAN,
+    STORM_TIGER_1, STORM_TIGER_2, STORM_TIGER_3, TERRARIAN_BEAM, THUNDER_SPEAR_BOLT,
+    VORTEX_RITUAL_BOLT,
 };
 
 /// The centre tile of a slot's post-step box, quotient-truncated (the
@@ -373,8 +378,104 @@ pub(crate) fn proj_lights_a(
             };
             out.push((cx, cy, rgb));
         }
+    } else if p.kind == CRIMSON_HEART {
+        // `:49462-49464` — AI_067's `type == 500` arm: (0.9, 0.1, 0.3) at
+        // the centre, unconditional.
+        out.push((cx, cy, [0.9, 0.1, 0.3]));
+    } else if p.kind == ANTI_GRAVITY_HOOK {
+        // `:52604-52606` — AI_007's 446 arm: `AddLight(mountedCenter, 0,
+        // 0.4, 0.3)`. The `PlotTileLine` rope spread (`:52613`) is the
+        // light-map write with no port — skipped (the 870 FloodFillTile
+        // precedent). The anchor is the owner's MountedCenter, not the
+        // hook's centre.
+        if let Some(mc) = mounted_center {
+            out.push(((mc.x / 16.0) as i32, (mc.y / 16.0) as i32, [0.0, 0.4, 0.3]));
+        }
+    } else if p.kind == LUNAR_HOOK_SOLAR
+        || p.kind == LUNAR_HOOK_VORTEX
+        || p.kind == LUNAR_HOOK_NEBULA
+        || p.kind == LUNAR_HOOK_STARDUST
+    {
+        // `:52623-52644` — AI_007's 646-649 arm: the per-kind colour, then
+        // `AddLight(mountedCenter, vector2)` + `AddLight(Center, vector2)`
+        // (the pair, in that order). The `PlotTileLine` rope spread
+        // (`:52644`) skipped.
+        let rgb = match p.kind {
+            LUNAR_HOOK_SOLAR => [0.7, 0.5, 0.1],   // `:52629`
+            LUNAR_HOOK_VORTEX => [0.0, 0.6, 0.7],  // `:52632`
+            LUNAR_HOOK_NEBULA => [0.6, 0.2, 0.6],  // `:52635`
+            _ => [0.6, 0.6, 0.9],                  // `:52638` (649)
+        };
+        if let Some(mc) = mounted_center {
+            out.push(((mc.x / 16.0) as i32, (mc.y / 16.0) as i32, rgb));
+        }
+        out.push((cx, cy, rgb));
+    } else if (715..=718).contains(&p.kind) {
+        // `:52890` — AI_147_Celeb2Rocket's head:
+        // `AddLight(Center, GetCeleb2Color().ToVector3() * 0.5f)`. The
+        // palette is the `(int)ai[0]` switch (`:52550-52563`); the
+        // Transparent default contributes a zeroed light (still appended).
+        let c = celeb2_color(p.ai[0] as i32);
+        out.push((
+            cx,
+            cy,
+            [
+                c[0] as f32 / 255.0 * 0.5,
+                c[1] as f32 / 255.0 * 0.5,
+                c[2] as f32 / 255.0 * 0.5,
+            ],
+        ));
+    } else if p.kind == CANNON_EXPLOSIVE {
+        // `:54066-54071` — AI_001's 601 arm:
+        // `AddLight(Center + velocity*3, GetPortalColor(owner, ai[0]) * 0.5)`.
+        // The portal teleport AI is unported, so `ai[0]` keeps its spawn
+        // value (the e6 ported-but-dark precedent); the single-player
+        // `netMode == 0` fold (`PortalHelper.cs:381-384`) picks the orange
+        // hue at portal 0 and the blue at portal != 0. The lead anchor is
+        // `Center + velocity*3`, quotient-truncated.
+        let centre = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let lead = centre + p.vel * 3.0;
+        let c = portal_color(p.ai[0] as i32);
+        out.push((
+            (lead.x / 16.0) as i32,
+            (lead.y / 16.0) as i32,
+            [
+                c[0] as f32 / 255.0 * 0.5,
+                c[1] as f32 / 255.0 * 0.5,
+                c[2] as f32 / 255.0 * 0.5,
+            ],
+        ));
     }
     out
+}
+
+/// `Projectile.GetCeleb2Color` (`Projectile.cs:52550-52563`): the
+/// `(int)ai[0]` palette — XNA's named colours as bytes. The default is
+/// `Color.Transparent` (0,0,0,0).
+fn celeb2_color(state: i32) -> [u8; 3] {
+    match state {
+        0 => [255, 0, 0],       // Color.Red
+        1 => [255, 140, 0],     // Color.DarkOrange
+        2 => [255, 215, 0],     // Color.Gold
+        3 => [50, 205, 50],     // Color.LimeGreen
+        4 => [65, 105, 225],    // Color.RoyalBlue
+        5 => [80, 20, 180],     // `new Color(80, 20, 180)`
+        6 => [255, 105, 180],   // Color.HotPink
+        _ => [0, 0, 0],         // Color.Transparent
+    }
+}
+
+/// `PortalHelper.GetPortalColor(player, portal)` (`PortalHelper.cs:378-392`)
+/// in the single-player `netMode == 0` fold: portal 0 is
+/// `hslToRgb(0.12, 1, 0.5)` (orange), any other portal is
+/// `hslToRgb(0.52, 1, 0.6)` (blue). The `A = 66` write does not touch RGB.
+fn portal_color(portal: i32) -> [u8; 3] {
+    let c = if portal != 0 {
+        crate::ui::color::hsl_to_rgb(0.52, 1.0, 0.6, 255)
+    } else {
+        crate::ui::color::hsl_to_rgb(0.12, 1.0, 0.5, 255)
+    };
+    [c[0], c[1], c[2]]
 }
 
 /// The gem bolts' per-kind light tint (`Projectile.cs:37959-38000`): the
