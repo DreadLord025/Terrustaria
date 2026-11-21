@@ -98,7 +98,8 @@ impl App {
             // step; the render is now the same. `gfxOffY` stays a separate
             // draw offset (`draw_player`'s `gfx_off_y`), not baked into `y`.
             // The dead player renders nothing until the respawn (vanilla draws
-            // no corpse; the ghost is master-mode only).
+            // no corpse); the hardcore ghost draws its own sheet after the
+            // cached world pass (W4-c46, `draw_ghost` below).
             let render_player = self.player.as_ref().filter(|p| !p.dead).cloned();
             // The body rows — the item-use rows included — are all computed by
             // `Player::update_frames` (`PlayerFrame()`) inside the fixed step.
@@ -1187,6 +1188,31 @@ impl App {
                         *world_key = Some(key);
                     }
 
+                    // W4-c46 — the hardcore ghost (`LegacyPlayerRenderer.
+                    // DrawPlayerFull`'s ghost arm, `:274-281`): the dead
+                    // player renders no body, but the ghost flies and draws
+                    // every frame — OUTSIDE the cached world pass (the cache
+                    // key carries no ghost, so a cached frame still animates
+                    // it). The C# draws it in the player phase; the port's
+                    // post-tiles slot keeps it above the terrain like the
+                    // living body (the item-drop z-order rides the cache).
+                    if let (Some(p), Some(a)) =
+                        (player.as_ref().filter(|p| p.ghost), atlas.as_ref())
+                    {
+                        crate::render::entities::draw_ghost(
+                            renderer,
+                            a,
+                            p,
+                            light,
+                            &style,
+                            anim_time,
+                            draw_cam,
+                            world_zoom,
+                            screen,
+                            self.mouse_text_color,
+                        );
+                    }
+
                     // S1-G-1 wave C: the tile-crack overlay
                     // (`Main.DrawTileCracks`, `Main.cs:61533-61626`; the
                     // solid-layer sites `TileDrawing.cs:732-733`). It rides
@@ -1809,6 +1835,10 @@ impl App {
                                     &self.lost_coin_string,
                                     p.respawn_timer,
                                     self.respawn_skip_frames,
+                                    // `GetDeathAlpha(Color.Transparent)`
+                                    // (`Main.cs:45332`): the death fade rides
+                                    // `Player.immuneAlpha` (UpdateDead's +2/tick).
+                                    p.immune_alpha,
                                 );
                             }
                         }

@@ -630,6 +630,21 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                 }
             }
         }
+        // W4-c46 — `Player.difficulty` mirrors the session character
+        // (`Main.ActivePlayerFileData.Player.difficulty`'s stand-in, the
+        // `active_player_difficulty` seam — the disjoint field read, the
+        // player borrow is live): the hardcore `UpdateDead` arm reads it.
+        // The sync runs per tick so a draft change lands without a respawn.
+        p.difficulty = app.session_draft.as_ref().map_or(0, |d| d.difficulty);
+        // `Player.Update`'s ghost arm (`Player.cs:24744-24748`): the hardcore
+        // ghost flies INSTEAD of `UpdateDead` — the early return precedes the
+        // dead branch. `Ghost()` reads the live controls and the world bounds.
+        if p.ghost {
+            app.player_step.tick(dt, |_| {
+                p.ghost_tick(&app.world, input);
+            });
+            return;
+        }
         // `Player.Update` -> `UpdateDead` (`Player.cs:16919`): the dead player
         // runs the respawn-timer tick instead of the normal simulation. The
         // boss check reads the live NPC list; the danger-NPC gate has no
@@ -666,8 +681,13 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                     &app.projectiles,
                     app.local_id as i32,
                 );
-                respawn_now = p.update_dead(input.jump, boss_near, danger_near, moon_event_live)
-                    || respawn_now;
+                respawn_now = p.update_dead_seeded(
+                    input.jump,
+                    boss_near,
+                    danger_near,
+                    moon_event_live,
+                    app.world.seeds,
+                ) || respawn_now;
                 p.reset_projectile_caches();
                 p.update_projectile_caches(&app.projectiles);
             });
@@ -691,7 +711,28 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                             - crate::player::HEIGHT as f32;
                     }
                 }
-                p.revive();
+                // W4-c46 — `Player.Spawn`'s position pick (`Player.cs:
+                // 37621-37633`): no valid bed (`SpawnX = -1`) falls to the
+                // team-based-spawns arm (`Spawn_SetPositionAtTeamSpawn`,
+                // `:37993-38011` — the `.wld` v297 `extra_spawn_points`
+                // anchor for the player's team, W4-f45's list) BEFORE the
+                // world spawn. The C# arm leaves the position untouched
+                // when the seed/team gates refuse; the port's cached
+                // `spawn_x/y` already holds the world spawn then, so only a
+                // landed team anchor rewrites the fields (`revive` reads
+                // them below). The helper owns `&mut App` (the force-clear
+                // may kill tiles + roll drops) — `p`'s borrow ends with the
+                // bed re-validation above (the dead branch returns).
+                if app.world.bed_spawn.is_none() {
+                    if let Some((px, py)) =
+                        crate::recall_teleport::spawn_set_position_at_team_spawn(app)
+                    {
+                        let revived = app.player.as_mut().expect("the dead player");
+                        revived.spawn_x = px;
+                        revived.spawn_y = py;
+                    }
+                }
+                app.player.as_mut().expect("the dead player").revive();
                 app.respawn_skip_available = false;
                 app.respawn_skip_frames = 0;
                 app.npcs.clear();

@@ -731,6 +731,24 @@ pub struct Player {
     /// `Player.dead`: the player is dead and waiting for the respawn timer
     /// (`Player.cs:38908`).
     pub dead: bool,
+    /// `Player.difficulty` (`Player.cs:1654`): 0 softcore / 1 mediumcore /
+    /// 2 hardcore / 3 journey. `UpdateDead`'s hardcore arm (`:17044-17053`)
+    /// reads it; the session feeds `active_player_difficulty` at spawn
+    /// (the `App::new`/`enter_loaded_world` seam).
+    pub difficulty: u8,
+    /// `Player.ghost` (`Player.cs:1350`): the hardcore dead player keeps
+    /// flying after the timer expires (`UpdateDead` `:17053`, `Ghost()`
+    /// `:6715-6849`). The C# never clears it in SP — a hardcore death is
+    /// permanent until the world reload; the port's `revive` keeps it too.
+    pub ghost: bool,
+    /// `Player.ghostFrame`/`ghostFrameCounter` (`Player.cs:1352-1354`): the
+    /// 4-row ghost sheet animator — 8 ticks per frame (`Ghost()` `:6803-6819`).
+    pub ghost_frame: i32,
+    ghost_frame_counter: i32,
+    /// `Player.immuneAlpha` (`Player.cs:1502`): the death/immunity fade the
+    /// ghost draw's `GetImmuneAlpha` reads (`:54162-54181`). `UpdateDead`
+    /// adds 2 per tick capped at 255 (`:17022-17026`); `Ghost()` zeroes it.
+    pub immune_alpha: i32,
     /// `Player.aggro` (`Player.cs:1446`, the int default 0): the stealth
     /// offset the shared NPC target scan subtracts (`NPC.cs:77688`) and
     /// the facing-inheritance gate reads (`:77749`). The stealth armour
@@ -2514,6 +2532,11 @@ impl Player {
         };
         Self {
             dead: false,
+            difficulty: 0,
+            ghost: false,
+            ghost_frame: 0,
+            ghost_frame_counter: 0,
+            immune_alpha: 0,
             // The S1-D-3p stock values (`Player.cs:1446`/`:2994`/`:870`'s
             // field defaults): no stealth, no per-type calm, no tank pet.
             aggro: 0,
@@ -3715,6 +3738,9 @@ impl Player {
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
+        // `Player.KillMe`'s fade reset (`Player.cs:38911`): the death fade
+        // climbs from 0 (the ChildSafety 255 arm is gore-only, unported).
+        self.immune_alpha = 0;
         // `Player.KillMe` -> `mount.Dismount` (`Player.cs:38907`).
         let _ = self.dismount(world, true);
         // `Player.KillMe`'s tail (`Player.cs:38868`): the death cue — the
@@ -3788,8 +3814,8 @@ impl Player {
 
     /// `Player.AllowsRespawnTimerSkip` (`Player.cs:38962-38987`): after the
     /// 90-tick lockout, with no boss hindering, no danger NPCs nearby and
-    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The
-    /// `ghost`/`pvpDeath` branches stay unreachable in the port.
+    /// no Frost/Pumpkin/OOA event running (`:38984-38986`). The `ghost`
+    /// branch refuses the skip (`:38964-38967`); `pvpDeath` has no port lane.
     pub fn allows_respawn_timer_skip(
         &self,
         boss_near: bool,
@@ -3799,21 +3825,45 @@ impl Player {
         !(self.ghost_like() || self.dead_time < 90 || boss_near || danger_near || moon_event_live)
     }
 
-    /// The port has no ghosts (hardcore) or PVP deaths; both gates are false.
+    /// The `ghost` half of the skip gate (`Player.cs:38964`); the `pvpDeath`
+    /// twin (`:38968`) has no port lane and stays false.
     fn ghost_like(&self) -> bool {
-        false
+        self.ghost
+    }
+
+    /// `Main.surviveHardcoreDeath` (`Main.cs:2638-2647`): the Don't-Starve ×
+    /// 10th-anniversary crossover lets a hardcore death revive — unless For
+    /// the Worthy is also on. Every other seed combination keeps the ghost.
+    fn survive_hardcore_death(seeds: tr_core::seeds::SeedFlags) -> bool {
+        seeds.contains(tr_core::seeds::SeedFlags::DONT_STARVE)
+            && seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY)
+            && !seeds.contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY)
     }
 
     /// `Player.UpdateDead` (`Player.cs:16919-17070`): `deadTime++`, the
     /// respawn decrement clamped to `respawnTimerMax` (3600), and the
     /// jump-press skip while `AllowsRespawnTimerSkip`. Returns true when the
-    /// player should respawn now.
+    /// player should respawn now. `seeds` feeds the hardcore arm's
+    /// `Main.surviveHardcoreDeath` crossover gate (`:17044`).
     pub fn update_dead(
         &mut self,
         jump: bool,
         boss_near: bool,
         danger_near: bool,
         moon_event_live: bool,
+    ) -> bool {
+        self.update_dead_seeded(jump, boss_near, danger_near, moon_event_live, tr_core::seeds::SeedFlags::none())
+    }
+
+    /// The seeded form — the world-sim caller passes `World.seeds`; the bare
+    /// callers keep the no-seed default (the crossover gate stays false).
+    pub fn update_dead_seeded(
+        &mut self,
+        jump: bool,
+        boss_near: bool,
+        danger_near: bool,
+        moon_event_live: bool,
+        seeds: tr_core::seeds::SeedFlags,
     ) -> bool {
         self.dead_time += 1;
         // `Player.cs:17016`: the dead tick zeroes the life pool.
@@ -3831,7 +3881,9 @@ impl Player {
         // reset, exactly like the source).
         self.potion_delay = 0;
         self.mana_potion_delay = 0;
-        self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+        // `Player.cs:17023-17027`: the death fade climbs 2 per tick to 255
+        // (the ghost draw's `GetImmuneAlpha` and the death text read it).
+        self.immune_alpha = (self.immune_alpha + 2).min(255);
         // `Player.UpdateDead`'s counter reset (`Player.cs:17009-17010`): the
         // budget zeroes while dead — the pool stays until AI_062's dead-owner
         // flag read (M4-PROJ-8 phase 4) despawns the minions.
@@ -3841,6 +3893,21 @@ impl Player {
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
         self.chest = crate::bank::CHEST_CLOSED;
+        // `Player.cs:17044-17066`: the hardcore arm — `difficulty == 2 &&
+        // (statLifeMax <= 0 || !Main.surviveHardcoreDeath)` drains the timer
+        // ONLY while it is positive (`:17047-17050`), then latches `ghost`
+        // (`:17053`, `myPlayer` — the port's single player). No revive, no
+        // skip: the ghost flies until the world reloads. Everyone else
+        // decrements unconditionally and revives at 0 (`:17057-17065`).
+        if self.difficulty == 2 && (self.max_hp <= 0 || !Self::survive_hardcore_death(seeds)) {
+            if self.respawn_timer > 0 {
+                self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
+            } else {
+                self.ghost = true;
+            }
+            return false;
+        }
+        self.respawn_timer = (self.respawn_timer - 1).clamp(0, 3600);
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);
@@ -3848,6 +3915,117 @@ impl Player {
             return true;
         }
         self.respawn_timer <= 0
+    }
+
+    /// `Player.Ghost` (`Player.cs:6715-6849`): the hardcore dead player's
+    /// free flight — the 7 px/s cap with the 0.2 acceleration and the ×0.9
+    /// opposite-direction brake, the ±0.1 dead-band snap, the 8-tick frame
+    /// animator (4 rows), and the 640 px world-margin clamps (`Main.leftWorld`
+    /// etc. are 0 / width×16 — the `:6822-6847` arms). The controls ride the
+    /// live input (the C# copies `PlayerInput.Triggers` after zeroing).
+    /// `ResetEffects`/`ResetVisibleAccessories` are the per-tick clears the
+    /// living tick already runs — the port's dead branch does not re-derive
+    /// equipment, so the flight needs no stat state (the immune flag clears).
+    pub fn ghost_tick(&mut self, world: &World, input: PlayerInput) {
+        self.immune = false;
+        self.immune_alpha = 0;
+        self.control_up = input.up;
+        self.control_left = input.left;
+        self.control_down = input.down;
+        self.control_right = input.right;
+        self.control_jump = input.jump;
+        // `:6737-6766`: the vertical flight — up/jump ascend, down descends,
+        // the ±0.1 band snaps to rest, everything else brakes ×0.9.
+        let num = 7.0f32;
+        let num2 = 0.2f32;
+        if self.control_up || self.control_jump {
+            if self.vy > 0.0 {
+                self.vy *= 0.9;
+            }
+            self.vy -= num2;
+            if self.vy < -num {
+                self.vy = -num;
+            }
+        } else if self.control_down {
+            if self.vy < 0.0 {
+                self.vy *= 0.9;
+            }
+            self.vy += num2;
+            if self.vy > num {
+                self.vy = num;
+            }
+        } else if self.vy < -0.1 || self.vy > 0.1 {
+            self.vy *= 0.9;
+        } else {
+            self.vy = 0.0;
+        }
+        // `:6767-6796`: the horizontal twin.
+        if self.control_left && !self.control_right {
+            if self.vx > 0.0 {
+                self.vx *= 0.9;
+            }
+            self.vx -= num2;
+            if self.vx < -num {
+                self.vx = -num;
+            }
+        } else if self.control_right && !self.control_left {
+            if self.vx < 0.0 {
+                self.vx *= 0.9;
+            }
+            self.vx += num2;
+            if self.vx > num {
+                self.vx = num;
+            }
+        } else if self.vx < -num2 || self.vx > num2 {
+            self.vx *= 0.9;
+        } else {
+            self.vx = 0.0;
+        }
+        // `:6797`: `position += velocity` — no collision, the ghost passes
+        // through tiles.
+        self.prev_x = self.x;
+        self.prev_y = self.y;
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:6798-6819`: the facing follows the velocity sign; the frame
+        // counter ticks every call and rolls the 4-row sheet every 8.
+        self.ghost_frame_counter += 1;
+        if self.vx < 0.0 {
+            self.facing = -1;
+        } else if self.vx > 0.0 {
+            self.facing = 1;
+        }
+        if self.ghost_frame_counter >= 8 {
+            self.ghost_frame_counter = 0;
+            self.ghost_frame += 1;
+            if self.ghost_frame >= 4 {
+                self.ghost_frame = 0;
+            }
+        }
+        // `:6820-6847`: the 640 px margins. `leftWorld`/`topWorld` are 0,
+        // `rightWorld`/`bottomWorld` the world pixel bounds (`Main.cs:66786-
+        // 66789`'s load-time rebind); the top clamp keeps a −0.1 upward drift.
+        let num3 = 640.0f32;
+        if self.x < num3 {
+            self.x = num3;
+            self.vx = 0.0;
+        }
+        let max_x = world.width as f32 * TILE_PX - num3 - self.width;
+        if self.x > max_x {
+            self.x = max_x;
+            self.vx = 0.0;
+        }
+        if self.y < num3 {
+            self.y = num3;
+            if self.vy < -0.1 {
+                self.vy = -0.1;
+            }
+        }
+        let max_y = world.height as f32 * TILE_PX - num3 - self.height;
+        if self.y > max_y {
+            self.y = max_y;
+            self.vy = 0.0;
+        }
     }
 
     /// `Player.Spawn(ReviveFromDeath)`: the dead flags clear, then the
@@ -5918,6 +6096,12 @@ impl Player {
                 honey_wet: self.honey_wet,
                 lava_wet: self.lava_wet,
                 shimmer_wet: self.shimmer_wet,
+                // W4-c46 — the live transformation flags feed the rebase
+                // (the C# reads the previous tick's state here — the
+                // transformation runs later in `Update`, `:25577`; the
+                // absorbed-state writers are S1-E-16, default false).
+                shimmering: self.shimmering,
+                merman: self.merman,
                 ..WetStaticsFlags::default()
             };
             let (g, mf, jh, js) =
@@ -11435,45 +11619,53 @@ impl Player {
         // The lava hit and the water extinguish both trail `UpdateLifeRegen` in
         // the original frame (`Player.cs:27630-27761` > `:25977`): a DoT kill
         // this tick wins over the lava hit.
-        // `Player.cs:27681-27722`: the lava timer. Standing in lava drains one
-        // tick of the immunity budget per frame; only when it is empty does the
-        // 80-damage hit land (and grant On Fire for 420). Out of the lava the
-        // budget refills up to `lavaMax` — the Lava Charm family's 420 ticks.
-        // `Player.cs:27676`: `flag25 && !lavaImmune` — ObsidianSkin (buff 1)
-        // keeps the flag true, so the drain/hit arm is skipped AND `flag26`
-        // stays true (the budget refills while standing in lava).
+        // `Player.cs:27673-27722`: the lava timer. W4-c46 — the C#'s `flag26`
+        // starts TRUE and clears ONLY on the `flag25 && !lavaImmune` entry
+        // (`:27676-27678`), so the budget refills (+1/tick, `:27716-27722`)
+        // out of lava AND while lava-immune in it (ObsidianSkin, buff 1);
+        // a non-immune lava stand NEVER refills — the old `else` arm refilled
+        // through the hit-cooldown ticks (the deviation). The drain and the
+        // hit both sit INSIDE the `hurtCooldowns[Lava] <= 0` gate
+        // (`:27679-27680`): a live cooldown skips the drain too.
+        let mut lava_budget_open = true;
         if self.in_lava && !self.lava_immune {
-            if self.lava_time > 0 {
-                self.lava_time -= 1;
-            } else if self.hurt_cd <= 0.0 {
-                let cx = self.x + self.width * 0.5;
-                // `Player.cs:27687-27707`: the hit's damage/burn pair —
-                // 80/420 classic, halved by the Ash Wood set
-                // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
-                // `:27694-27702`, S1-C-12 wave D). The remix-world
-                // variants (`:27689-27693`, `:27696-27699`) and the
-                // `lavaRose` halves (`:27703-27707`) have no port fields
-                // and stay out (ANALYSIS "S1-C-12 wave D").
-                let (mut num79, mut num80) = (80, 420);
-                if self.ash_wood_bonus {
-                    num79 /= 2;
-                    num80 -= 210;
-                }
-                // The lava hit rolls the dodge block like any `Hurt` — the
-                // stream rides in from the `UpdatePlayers` stage through the
-                // update chain, `dodgeable` keeps `Hurt`'s default `true`
-                // (research S1-C-1 §1.4). `Crit: false` and the
-                // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) — Lava
-                // is NOT in `Sets.Retaliate` (`ImmunityCooldownID.cs:49`), so
-                // the S1-C-7 wave B retaliate lane stays off.
-                if self.hurt_inner(num79, cx, true, rng, true, false, None, false) {
-                    // The Hurt return `num81 > 0.0` gates the OnFire grant
-                    // (`Player.cs:27709-27711`). `AddBuff` applies the expert
-                    // ×2 itself (24 is in the difficulty set, `BuffID.cs:50`).
-                    self.buffs.add_buff(24, num80);
+            lava_budget_open = false;
+            if self.hurt_cd <= 0.0 {
+                if self.lava_time > 0 {
+                    self.lava_time -= 1;
+                } else {
+                    let cx = self.x + self.width * 0.5;
+                    // `Player.cs:27687-27707`: the hit's damage/burn pair —
+                    // 80/420 classic, halved by the Ash Wood set
+                    // (`ashWoodBonus`: `num79 /= 2`, `num80 -= 210`,
+                    // `:27694-27702`, S1-C-12 wave D). The remix-world
+                    // variants (`:27689-27693`, `:27696-27699`) and the
+                    // `lavaRose` halves (`:27703-27707`) have no port fields
+                    // and stay out (ANALYSIS "S1-C-12 wave D").
+                    let (mut num79, mut num80) = (80, 420);
+                    if self.ash_wood_bonus {
+                        num79 /= 2;
+                        num80 -= 210;
+                    }
+                    // The lava hit rolls the dodge block like any `Hurt` — the
+                    // stream rides in from the `UpdatePlayers` stage through
+                    // the update chain, `dodgeable` keeps `Hurt`'s default
+                    // `true` (research S1-C-1 §1.4). `Crit: false` and the
+                    // `ImmunityCooldownID.Lava` counter (`Player.cs:27708`) —
+                    // Lava is NOT in `Sets.Retaliate`
+                    // (`ImmunityCooldownID.cs:49`), so the S1-C-7 wave B
+                    // retaliate lane stays off.
+                    if self.hurt_inner(num79, cx, true, rng, true, false, None, false) {
+                        // The Hurt return `num81 > 0.0` gates the OnFire grant
+                        // (`Player.cs:27709-27711`). `AddBuff` applies the
+                        // expert ×2 itself (24 is in the difficulty set,
+                        // `BuffID.cs:50`).
+                        self.buffs.add_buff(24, num80);
+                    }
                 }
             }
-        } else if self.lava_time < self.lava_max {
+        }
+        if lava_budget_open && self.lava_time < self.lava_max {
             self.lava_time += 1;
         }
         if self.lava_time > self.lava_max {
@@ -17106,6 +17298,176 @@ mod tests {
         p.hp = 0;
         p.respawn();
         assert!(!p.immune_no_blink, "hostile: no blink suppress");
+    }
+
+    /// W4-c46 — `UpdateDead`'s hardcore arm (`Player.cs:17044-17053`): a
+    /// difficulty-2 death drains the timer ONLY while positive, then latches
+    /// `ghost` — no revive, no jump skip (`AllowsRespawnTimerSkip`'s ghost
+    /// gate, `:38964`). The Don't-Starve × anniversary crossover
+    /// (`Main.surviveHardcoreDeath`, `Main.cs:2638-2647`) revives instead —
+    /// unless For the Worthy is also on.
+    #[test]
+    fn w4_c46_the_hardcore_death_latches_the_ghost() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.difficulty = 2;
+        p.start_death(&w, false, false);
+        p.respawn_timer = 3;
+        for _ in 0..3 {
+            assert!(!p.update_dead(false, false, false, false));
+        }
+        assert_eq!(p.respawn_timer, 0);
+        assert!(!p.ghost, "the drain ticks do not latch yet");
+        // The next tick latches the ghost — and never revives.
+        assert!(!p.update_dead(false, false, false, false));
+        assert!(p.ghost);
+        assert!(p.dead, "the ghost stays dead");
+        // The ghost refuses the skip even past the lockout.
+        p.dead_time = 200;
+        assert!(!p.allows_respawn_timer_skip(false, false, false));
+        // A jump press never revives a ghost.
+        for _ in 0..10 {
+            assert!(!p.update_dead(true, false, false, false));
+        }
+        assert_eq!(p.respawn_timer, 0, "the ghost's timer stays at 0");
+        // Softcore keeps the plain revive.
+        let mut q = Player::spawn(&w);
+        q.start_death(&w, false, false);
+        q.respawn_timer = 1;
+        assert!(q.update_dead(false, false, false, false));
+        // The crossover seed pair revives a hardcore death.
+        let mut r = Player::spawn(&w);
+        r.difficulty = 2;
+        r.start_death(&w, false, false);
+        r.respawn_timer = 1;
+        let crossover = tr_core::seeds::SeedFlags::from(
+            tr_core::seeds::SeedFlags::DONT_STARVE | tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY,
+        );
+        assert!(r.update_dead_seeded(false, false, false, false, crossover));
+        assert!(!r.ghost);
+        // For the Worthy cancels the crossover.
+        let mut s = Player::spawn(&w);
+        s.difficulty = 2;
+        s.start_death(&w, false, false);
+        s.respawn_timer = 1;
+        let ftw = crossover | tr_core::seeds::SeedFlags::FOR_THE_WORTHY;
+        assert!(!s.update_dead_seeded(false, false, false, false, ftw));
+        assert!(!s.ghost, "the timer drained to 0, the ghost latches next tick");
+        assert!(!s.update_dead_seeded(false, false, false, false, ftw));
+        assert!(s.ghost);
+        // The dead tick's fade climbs 2/tick to 255 (`:17023-17027`).
+        let mut t = Player::spawn(&w);
+        t.start_death(&w, false, false);
+        assert_eq!(t.immune_alpha, 0, "KillMe resets the fade (:38911)");
+        for _ in 0..200 {
+            t.update_dead(false, false, false, false);
+        }
+        assert_eq!(t.immune_alpha, 255);
+    }
+
+    /// W4-c46 — `Player.Ghost` (`Player.cs:6715-6849`): the 0.2 acceleration
+    /// toward the ±7 cap, the ×0.9 opposite brake, the ±0.1 dead-band snap,
+    /// the 8-tick 4-row animator and the 640 px world-margin clamps.
+    #[test]
+    fn w4_c46_the_ghost_flight_caps_brakes_and_clamps() {
+        let w = World::new("t".into(), 200, 200);
+        let mut p = Player::spawn(&w);
+        p.ghost = true;
+        p.x = 1600.0;
+        p.y = 1600.0;
+        // Ascend: 40 ticks of up reaches the −7 cap (0.2/tick).
+        for _ in 0..40 {
+            p.ghost_tick(&w, PlayerInput { up: true, ..Default::default() });
+        }
+        assert!((p.vy - -7.0).abs() < 1e-4, "the ascent cap: {}", p.vy);
+        assert!(p.y < 1600.0);
+        // Release inside the ±0.1 band snaps to rest.
+        p.vy = 0.05;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.vy, 0.0, "the dead-band snap");
+        // The opposite-direction brake: down while ascending ×0.9 first.
+        p.vy = -4.0;
+        p.ghost_tick(&w, PlayerInput { down: true, ..Default::default() });
+        assert!((p.vy - (-4.0 * 0.9 + 0.2)).abs() < 1e-4, "brake then accel");
+        // The frame animator: 8 ticks per row, 4 rows.
+        p.ghost_frame = 0;
+        p.ghost_frame_counter = 0;
+        for _ in 0..8 {
+            p.ghost_tick(&w, PlayerInput::default());
+        }
+        assert_eq!(p.ghost_frame, 1);
+        for _ in 0..24 {
+            p.ghost_tick(&w, PlayerInput::default());
+        }
+        assert_eq!(p.ghost_frame, 0, "the 4-row wrap");
+        // The left margin clamp (640 px) zeroes the velocity.
+        p.x = 630.0;
+        p.vx = -3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.x, 640.0);
+        assert_eq!(p.vx, 0.0);
+        // The top clamp keeps the −0.1 drift.
+        p.y = 630.0;
+        p.vy = -5.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.y, 640.0);
+        assert!((p.vy - -0.1).abs() < 1e-5);
+        // The right/bottom margins read the world bounds − 640 − the box.
+        p.x = 200.0 * 16.0;
+        p.vx = 3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.x, 200.0 * 16.0 - 640.0 - p.width);
+        p.y = 200.0 * 16.0;
+        p.vy = 3.0;
+        p.ghost_tick(&w, PlayerInput::default());
+        assert_eq!(p.y, 200.0 * 16.0 - 640.0 - p.height);
+        // The facing follows the velocity sign (`:6805-6811`).
+        p.vx = 0.0;
+        p.ghost_tick(&w, PlayerInput { right: true, ..Default::default() });
+        assert_eq!(p.facing, 1);
+        p.ghost_tick(&w, PlayerInput { left: true, ..Default::default() });
+        assert_eq!(p.facing, -1);
+    }
+
+    /// W4-c46 — the lava budget's `flag26` semantics (`Player.cs:27673-27722`):
+    /// a non-immune lava stand NEVER refills (the old else-arm refilled
+    /// through the hit-cooldown ticks); the drain sits INSIDE the cooldown
+    /// gate; a lava-immune stand DOES refill.
+    #[test]
+    fn w4_c46_the_lava_budget_refills_only_when_open() {
+        let w = ground_world();
+        let mut rng = tr_core::UnifiedRandom::default();
+        let mut p = Player::spawn(&w);
+        p.max_hp = 500;
+        p.hp = 500;
+        p.lava_max = 420;
+        p.lava_time = 10;
+        p.in_lava = true;
+        p.lava_wet = true;
+        // A live hurt cooldown skips the drain AND the refill.
+        p.hurt_cd = 1.0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 10, "the cooldown gates the drain");
+        // The cooldown free: the drain runs, no refill.
+        p.hurt_cd = 0.0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 9);
+        // The budget empty: the hit lands, still no refill.
+        p.lava_time = 0;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 0, "the hit tick does not refill");
+        assert!(p.hp < 500, "the 80-damage hit landed");
+        // Lava-immune in lava: the budget refills (flag26 stays true).
+        p.lava_immune = true;
+        p.lava_time = 10;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 11, "immune: the budget refills in lava");
+        // Out of lava: the refill runs for everyone.
+        p.in_lava = false;
+        p.lava_wet = false;
+        p.lava_immune = false;
+        p.update_survival(&w, &mut rng);
+        assert_eq!(p.lava_time, 12);
     }
 
     #[test]

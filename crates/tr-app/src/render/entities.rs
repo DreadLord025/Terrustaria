@@ -1731,6 +1731,88 @@ pub(crate) fn draw_player(
     push_layers(r, &layers, camera, zoom, screen)
 }
 
+/// `LegacyPlayerRenderer.DrawGhost` (`:514-524`) + `DrawPlayerFull`'s ghost
+/// arm (`:274-281`): the hardcore ghost draws the `Images/Ghost` sheet's
+/// `ghostFrame` row (4 rows), flipped when facing left, tinted by the centre
+/// tile's light lifted to `mouseTextColor/2 + 100` (byte saturating — the
+/// vanilla `Color` ctor clamps), through `GetImmuneAlpha`
+/// (`Player.cs:54162-54181`: `(255 - immuneAlpha)/255`, the shadow's
+/// `1 - alphaReduction` scale, transparent past 125). The three velocity
+/// trail copies (`position - velocity*(2 + i*2)`, shadow `0.5 + 0.2*i`) draw
+/// first with the alpha's `(1 - max(0.5, shadow - 0.5))` cut, then the body.
+/// The XNA origin is the frame centre — the top-left lands at
+/// `(int)(pos + frame/2) - frame/2`; the port snaps the same world pixels.
+/// `shimmerTransparency` has no port field (S1-E-16) — its arms read 0.
+pub(crate) fn draw_ghost(
+    r: &mut SpriteRenderer,
+    atlas: &Atlas,
+    player: &Player,
+    light: &LightMap,
+    style: &LightStyle,
+    anim_time: f32,
+    camera: Vec2,
+    zoom: f32,
+    screen: Vec2,
+    mouse_text_color: u8,
+) -> u32 {
+    let Some(rect) = atlas.sheet("Ghost") else {
+        return 0;
+    };
+    let fw = rect.width as f32;
+    let fh = rect.height as f32 / 4.0;
+    let row = player.ghost_frame.clamp(0, 3) as u32;
+    let uv = [
+        rect.x as f32 / atlas.width as f32,
+        (rect.y as f32 + row as f32 * fh) / atlas.height as f32,
+        (rect.x as f32 + fw) / atlas.width as f32,
+        (rect.y as f32 + (row as f32 + 1.0) * fh) / atlas.height as f32,
+    ];
+    let uv = flip_uv(uv, player.facing != 1);
+    // The tint: `Lighting.GetColor(centre tile, new Color(mtc/2 + 100, ...))`
+    // — the byte ctor saturates at 255; the light multiplies it per channel.
+    let (cx, cy) = player.center();
+    let (tx, ty) = ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32);
+    let base = (mouse_text_color / 2).saturating_add(100) as f32 / 255.0;
+    let l = style.shade(light.get(tx, ty), tx, ty, anim_time);
+    let tint = [l[0] * base, l[1] * base, l[2] * base, base];
+    // `GetImmuneAlpha`: the immuneAlpha scale, transparent past 125.
+    let immune_scale = if player.immune_alpha > 125 {
+        0.0
+    } else {
+        (255 - player.immune_alpha) as f32 / 255.0
+    };
+    let mut quads = 0;
+    let mut push = |pos: [f32; 2], shadow: f32| {
+        let mut scale = immune_scale;
+        if shadow > 0.0 {
+            scale *= 1.0 - shadow;
+        }
+        // The DrawGhost alpha cut (`:519`): `A *= 1 - max(0.5, shadow - 0.5)`.
+        let a = tint[3] * scale * (1.0 - (shadow - 0.5).max(0.5));
+        if a <= 0.0 {
+            return;
+        }
+        let color = [tint[0] * scale, tint[1] * scale, tint[2] * scale, a];
+        // The XNA centre-origin draw: top-left = (int)(pos + frame/2) - frame/2.
+        let tl = [
+            (pos[0] + fw * 0.5).trunc() - fw * 0.5,
+            (pos[1] + fh * 0.5).trunc() - fh * 0.5,
+        ];
+        r.push_sprite(snap_to_screen(tl, camera, zoom, screen), [fw, fh], uv, color);
+        quads += 1;
+    };
+    // `DrawPlayerFull`'s trail (`:276-280`): three copies behind the velocity.
+    for i in 0..3 {
+        let back = 2.0 + i as f32 * 2.0;
+        push(
+            [player.x - player.vx * back, player.y - player.vy * back],
+            0.5 + 0.2 * i as f32,
+        );
+    }
+    push([player.x, player.y], 0.0);
+    quads
+}
+
 /// `Main.PlayerRenderer.DrawPlayer` in UI space (`UICharacter.cs:118`): the
 /// existing frame-UV machinery of [`draw_player`] at a fixed screen rect,
 /// full-white light (the preview is unlit), the draft's colours, `scale` =
