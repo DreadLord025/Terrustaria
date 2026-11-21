@@ -257,6 +257,7 @@
 //! | 1345-1354 | `:89091-89263` | the 140 PossessedArmor trio + 39/40/41 BoneSerpent head + 139 Probe quadrants + 467 DeadlySphere pair |
 //! | 1355-1359 | `:89185-89192` | the 35/68 SkeletronHead/DungeonGuardian death (RedHat 1398/1399/1400 or normal 54/55) |
 //! | 1360-1367 | `:89197-89207` | the 36 SkeletronHand death (RedHat 1401/1402x3 or normal 56/57x3) |
+//! | 1368-1372 | `:89290-89318` | the 134-136 Destroyer death (head 156 + 50%-gated quadrant burst) + probe-drop seam |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -379,6 +380,13 @@ pub struct HitEffectOutcomeC {
     /// = the position/box; the count draw + the per-spawn draws + the NPC
     /// spawns are the wiring wave's.
     pub maggot_zombie_spawns: Option<(f32, f32, f32, f32)>,
+    /// The 135 DestroyerBody's probe-drop seam (`NPC.cs:89268-89284`): on a
+    /// non-fatal hit, when `ai[2]==0` and `Next(maxValue)==0` (maxValue 25,
+    /// or 50 while `NPC.IsMechQueenUp`), set `ai[2]=1` and spawn one NPC-139
+    /// Probe at `(pos.X + width/2, pos.Y + height)`. `Some((x,y))` = the
+    /// spawn anchor; the IsMechQueenUp read, the Next draw, the ai[2] latch
+    /// and the NPC spawn are the wiring wave's (the roster seam).
+    pub destroyer_probe_drop: Option<(f32, f32)>,
 }
 
 /// `Utils.RotatedBy` (`Utils.cs:1675-1684`), centre default (0,0): the
@@ -8265,6 +8273,63 @@ fn skeletron_hand_death(
     }
 }
 
+/// The 134-136 Destroyer death (`NPC.cs:89290-89322`, sites 1368-1372):
+/// the head gore 156 at position with `base.velocity` (scale defaults to
+/// 1), then the `Next(2)==0` coin-gate — on heads: the 10-dust type-31
+/// burst (Alpha 100, scale 1.5, velocity ×1.4), the 5-iteration PAIRED
+/// type-6 burst (scale 2.5 noGravity ×5, then scale 1.5 ×3), then FOUR
+/// gores at position, Zero velocity, type `Next(61, 64)` per gore, each
+/// `velocity *= 0.4` FIRST then the quadrant ±1 post-writes.
+fn destroyer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    gore.new_gore(rng, world, pos, Vec2::new(npc.vx, npc.vy), 156, 1.0); // :89290
+    // `:89291` — the coin gate.
+    if rng.next_max(2) != 0 {
+        return;
+    }
+    // `:89293-89297` — the 10-dust type-31 burst.
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 31, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx).velocity *= 1.4;
+    }
+    // `:89298-89305` — the 5 paired type-6 dusts.
+    for _ in 0..5 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 2.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true;
+        d.velocity *= 5.0;
+        let idx2 = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 6, 0.0, 0.0, 100,
+            Color::default(), 1.5,
+        );
+        dust.slot_mut(idx2).velocity *= 3.0;
+    }
+    // `:89306-89321` — the four quadrant gores.
+    let quadrants: [(f32, f32); 4] = [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+    for (dx, dy) in quadrants {
+        let ty = rng.next_range(61, 64);
+        let idx = gore.new_gore(rng, world, pos, Vec2::ZERO, ty, 1.0);
+        let g = gore.slot_mut(idx);
+        g.velocity *= 0.4;
+        g.velocity.x += dx;
+        g.velocity.y += dy;
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9270,6 +9335,20 @@ pub fn hit_effect_c(
     }
     if npc_type == 36 && npc.hp <= 0 {
         skeletron_hand_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89266-89323` — the 134-136 Destroyer arm (sites 1368-1372). The
+    // 135's non-fatal probe drop (`:89268-89284`) is a roster seam: the
+    // IsMechQueenUp read + the Next(25/50) draw + the ai[2] latch + the
+    // NPC-139 spawn are the wiring wave's; the anchor is returned.
+    if (134..=136).contains(&npc_type) {
+        if npc_type == 135 && npc.hp > 0 && npc.ai[2] == 0.0 {
+            let (w, h) = npc.size();
+            outcome.destroyer_probe_drop =
+                Some((npc.x + (w as i32 / 2) as f32, npc.y + h));
+        }
+        if npc.hp <= 0 {
+            destroyer_death(npc, dust, dust_ctx, gore, rng, world);
+        }
     }
     outcome
 }
@@ -14563,6 +14642,60 @@ mod tests {
         skeletron_hand_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..4].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1401, 1402, 1402, 1402]);
+    }
+
+    /// `NPC.cs:89290-89321` — the Destroyer death: the head 156 always
+    /// spawns; the Next(2) coin gate decides the quadrant burst. The twin
+    /// replays the head kicks, the coin draw, and (when heads) the dust
+    /// census + the four type-draw/kick pairs.
+    #[test]
+    fn w4_f10_the_destroyer_death_coin_gates_the_quadrant_burst() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1481);
+        destroyer_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w);
+        assert_eq!(gore.slot(0).gore_type, 156);
+        // The twin: head kicks, the coin, then the gated census.
+        let mut twin = UnifiedRandom::new(1481);
+        let _ky = twin.next_range(10, 31);
+        let _kx = twin.next_range(-20, 21);
+        let coin = twin.next_max(2);
+        let active = gore.slots().iter().filter(|g| g.active).count();
+        if coin == 0 {
+            assert_eq!(active, 5);
+            for _ in 0..10 {
+                let _px = twin.next_max(30 - 4);
+                let _py = twin.next_max(30 - 4);
+                let _vx = twin.next_range(-20, 21);
+                let _vy = twin.next_range(-20, 21);
+                let _row = twin.next_max(3);
+                let _scale = twin.next_range(-20, 21);
+            }
+            for _ in 0..10 {
+                let _px = twin.next_max(30 - 4);
+                let _py = twin.next_max(30 - 4);
+                let _vx = twin.next_range(-20, 21);
+                let _vy = twin.next_range(-20, 21);
+                let _row = twin.next_max(3);
+                let _scale = twin.next_range(-20, 21);
+                let _tweak = twin.next_range(-10, 6);
+            }
+            let quadrants: [(f32, f32); 4] =
+                [(1.0, 1.0), (-1.0, 1.0), (1.0, -1.0), (-1.0, -1.0)];
+            for (i, (dx, dy)) in quadrants.iter().enumerate() {
+                let ty = twin.next_range(61, 64);
+                assert_eq!(gore.slot(i + 1).gore_type, ty);
+                let ky = twin.next_range(10, 31) as f32 * 0.1;
+                let kx = twin.next_range(-20, 21) as f32 * 0.1;
+                assert_eq!(gore.slot(i + 1).velocity.x, kx * 0.4 + dx);
+                assert_eq!(gore.slot(i + 1).velocity.y, -ky * 0.4 + dy);
+            }
+        } else {
+            assert_eq!(active, 1);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the destroyer mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
