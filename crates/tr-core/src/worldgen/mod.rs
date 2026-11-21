@@ -156,6 +156,10 @@ pub fn generate_with_progress<'a>(
     streams.chest_stock = chest_stock;
     streams.progress = Some(progress);
     let outcome = pipeline::run(&mut world, &mut streams, opts, &noise, &config);
+    // The skyblock low-tiles census at generation completion (the load twin is
+    // `WorldFile.cs:766`; W4-g67 `f8c4b659` fold). A classic world reads false
+    // either way. Draw-free (no RNG), so the world-hash golden is unaffected.
+    world.scan_skyblock_low_tiles();
     (world, outcome)
 }
 
@@ -189,6 +193,9 @@ pub fn generate_with_chest_stock<'a>(
     let mut streams = pipeline::Streams::new(opts.seed);
     streams.chest_stock = chest_stock;
     pipeline::run(&mut world, &mut streams, opts, &noise, &config);
+    // The skyblock low-tiles census at generation completion (W4-g67
+    // `f8c4b659` fold — the load twin is `WorldFile.cs:766`).
+    world.scan_skyblock_low_tiles();
     world
 }
 

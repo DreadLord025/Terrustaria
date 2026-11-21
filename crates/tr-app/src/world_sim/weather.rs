@@ -47,6 +47,9 @@ pub(crate) fn update_rain(app: &mut App, dt: f32, screen: Vec2) {
             app.world.width,
         ),
         snow_tile_count: app.scene_metrics.snow_tile_count,
+        // The skyblock low-tiles flag (`WorldGen.Skyblock.lowTiles` — the
+        // `SnowTileThreshold` arm, g67 `f8c4b659` fold).
+        skyblock_low_tiles: app.world.skyblock_low_tiles,
         zone_rain: app.scene_metrics.zone_rain,
         // `Main.waterStyle` (`Main.cs:57475`) — the frame-type selector.
         water_style: crate::biome::calculate_water_style(&app.world, app.camera) as u32,
@@ -850,6 +853,7 @@ mod tests {
             shimmer_alpha: 0.0,
             atmo: 1.0,
             snow_tile_count: 0,
+            skyblock_low_tiles: false,
             zone_rain: true,
             water_style: 0,
             any_danger: false,

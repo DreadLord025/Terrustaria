@@ -144,6 +144,16 @@ pub struct World {
     /// text (`WorldFileData.SetSeed` + `CheckInputForSecretSeed`), because
     /// the C# stores no micro-seed bytes in the file.
     pub micro_seeds: crate::seeds::MicroSeedFlags,
+    /// `WorldGen.Skyblock.lowTiles` (`WorldGen.cs:3079`) — the skyblock
+    /// low-tile-density flag the scene thresholds read (`SceneMetrics
+    /// .SnowTileThreshold`/`DesertTileThreshold`, `SceneMetrics.cs:154-176`:
+    /// 300 when set, 1500 normal). Computed by [`World::scan_skyblock_low_tiles`]
+    /// (the `Skyblock.ScanTiles` + `Calculate` lowTiles arm, `WorldGen.cs:3210-
+    /// 3218`/`:3238-3265`) at world load (`WorldFile.cs:766`) and generation
+    /// completion. Field shape adopted from W4-f24's `SkyblockState.low_tiles`
+    /// (the runtime ledger lives on `World` here, not the generator state).
+    /// Folded from g67 `f8c4b659` (research/134 R5).
+    pub skyblock_low_tiles: bool,
     /// Bumped by every tile/wall/liquid mutation; the light (D2) and instance (G6)
     /// caches key on it so an edit invalidates them. Loading does not bump it.
     pub revision: u64,
@@ -704,6 +714,7 @@ impl World {
             seed: 0,
             seeds: crate::seeds::SeedFlags::default(),
             micro_seeds: crate::seeds::MicroSeedFlags::default(),
+            skyblock_low_tiles: false,
             revision: 0,
             extras: std::collections::HashMap::new(),
             eclipse: false,
@@ -1101,6 +1112,33 @@ impl World {
         }
     }
 
+    /// `WorldGen.Skyblock.ScanTiles` + `Calculate`'s lowTiles arm
+    /// (`WorldGen.cs:3238-3265` + `:3210-3218`): count the active tiles in the
+    /// 40-margin interior (`[40, maxTilesX-40) × [40, maxTilesY-40)`), then
+    /// `lowTiles = (count / (maxTilesX*maxTilesY)) < 0.1 && Main.skyblockWorld`.
+    /// The has*/no* ledger halves are W4-f24's generator-side `SkyblockState`;
+    /// only the runtime threshold flag lands here. Called at world load
+    /// (`WorldFile.cs:766`) and generation completion — the C# also recalculates
+    /// per save-column (`WorldGen.cs:71236`), a worldgen-time path.
+    /// (g67 `f8c4b659` fold, research/134 R5.)
+    pub fn scan_skyblock_low_tiles(&mut self) {
+        let mut current_active_tiles: i64 = 0;
+        let x_end = self.width - 40;
+        let y_end = self.height - 40;
+        for x in 40..x_end {
+            for y in 40..y_end {
+                if self.tiles[self.index(x, y)].active() {
+                    current_active_tiles += 1;
+                }
+            }
+        }
+        // `:3210-3218`: the fraction is f32 in the C# (`(float)count / (float)num`).
+        let num = (self.width as i64) * (self.height as i64);
+        let num2 = current_active_tiles as f32 / num as f32;
+        self.skyblock_low_tiles =
+            num2 < 0.1 && self.seeds.contains(crate::seeds::SeedFlags::SKYBLOCK);
+    }
+
     /// Recomputes chunk occupancy. Must be called after loading/framing and after any
     /// bulk edit; per-tile edits can call [`World::mark_chunk`].
     pub fn compute_chunks(&mut self) {
@@ -1458,6 +1496,66 @@ impl World {
 
 #[cfg(test)]
 mod tests {
+    /// W4-g67 (folded `f8c4b659`) — `Skyblock.ScanTiles`/`Calculate`'s lowTiles
+    /// arm (`WorldGen.cs:3210-3218`/`:3238-3265`): the 40-margin interior active
+    /// count over `maxTilesX*maxTilesY`, `< 0.1` AND the skyblock seed.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_skyblock_low_tiles_census() {
+        // 100×100 world: interior [40,60)×[40,60) = 400 cells, num = 10000.
+        let mut w = super::World::new("sky".into(), 100, 100);
+        w.seeds |= crate::seeds::SeedFlags::SKYBLOCK;
+        // Empty interior → 0/10000 = 0 < 0.1 → lowTiles on a skyblock world.
+        w.scan_skyblock_low_tiles();
+        assert!(w.skyblock_low_tiles, "empty skyblock interior is low-tiles");
+        // The margin is excluded: a tile at x=39 (outside) never counts.
+        let i = w.index(39, 50);
+        w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+        w.scan_skyblock_low_tiles();
+        assert!(w.skyblock_low_tiles, "the 40-margin band is not scanned");
+        // A 200×200 world: interior 120×120 = 14400 cells, num = 40000, so the
+        // 0.1 cut is 4000 active cells. Fill the interior whole → 0.36 ≥ 0.1.
+        let mut big = super::World::new("sky".into(), 200, 200);
+        big.seeds |= crate::seeds::SeedFlags::SKYBLOCK;
+        for y in 40..160 {
+            for x in 40..160 {
+                let i = big.index(x, y);
+                big.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        // 14400/40000 = 0.36 ≥ 0.1 → not low-tiles even on skyblock.
+        big.scan_skyblock_low_tiles();
+        assert!(!big.skyblock_low_tiles, "a dense interior is not low-tiles");
+        // Exactly at the cut: 4000 active cells / 40000 = 0.1 → NOT < 0.1.
+        // Row-major fill: cell k sits at (40 + k%120, 40 + k/120).
+        let mut edge = super::World::new("sky".into(), 200, 200);
+        edge.seeds |= crate::seeds::SeedFlags::SKYBLOCK;
+        let mut placed = 0;
+        'outer: for y in 40..160 {
+            for x in 40..160 {
+                let i = edge.index(x, y);
+                edge.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+                placed += 1;
+                if placed == 4000 {
+                    break 'outer;
+                }
+            }
+        }
+        edge.scan_skyblock_low_tiles();
+        assert!(!edge.skyblock_low_tiles, "0.1 exactly is not < 0.1");
+        // 3999 cells → 0.099975 < 0.1 → low-tiles. Clear the LAST placed cell
+        // (index 3999 in the row-major fill above).
+        let i = edge.index(40 + (3999 % 120), 40 + (3999 / 120));
+        edge.tiles[i].flags &= !crate::tile::FLAG_ACTIVE;
+        edge.scan_skyblock_low_tiles();
+        assert!(edge.skyblock_low_tiles, "just under the cut is low-tiles");
+        // A NON-skyblock world with an empty interior stays false (the
+        // `&& Main.skyblockWorld` term, `:3215`).
+        let mut classic = super::World::new("classic".into(), 100, 100);
+        classic.scan_skyblock_low_tiles();
+        assert!(!classic.skyblock_low_tiles, "classic worlds never low-tiles");
+    }
+
     #[test]
     fn surface_bg_style_tables_match_set_bg() {
         // Spot rows from `WorldGen.setBG`, including the `default:` rows and

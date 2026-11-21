@@ -217,6 +217,11 @@ pub struct RainInputs {
     pub atmo: f32,
     /// `Main.SceneMetrics.SnowTileCount` (`Rain.cs:181`).
     pub snow_tile_count: i32,
+    /// `WorldGen.Skyblock.lowTiles` — the `SnowTileThreshold` skyblock arm
+    /// (`SceneMetrics.cs:154-163`: 300 low-tiles / 1500 normal). The port
+    /// gathers `World.skyblock_low_tiles` here (g67 `f8c4b659` fold,
+    /// research/134 R5 — adapted to the `RainInputs` seam).
+    pub skyblock_low_tiles: bool,
     /// `Main.SceneMetrics.ZoneRain` (`Rain.cs:32`).
     pub zone_rain: bool,
     /// `Main.waterStyle` (`Rain.cs:162/205` — the frame type).
@@ -1081,11 +1086,11 @@ impl Rain {
         }
         // `:181-182`: the snow-tile suppression, then `atmo^9`.
         // `SceneMetrics.SnowTileThreshold` is skyblock-aware (300 low-tiles /
-        // 1500 normal, `SceneMetrics.cs:154-163`); the port tracks no
-        // `World.skyblock_low_tiles`, so it reads the normal threshold
-        // (g67b `5c9398ea`'s documented gap — the skyblock arm lands with
-        // that field).
-        let snow_threshold = tr_core::scene::thresholds::SNOW_TILE_NORMAL as f32;
+        // 1500 normal, `SceneMetrics.cs:154-163`); the flag rides
+        // `RainInputs.skyblock_low_tiles` ← `World.skyblock_low_tiles`
+        // (g67 `f8c4b659` fold, research/134 R5 — the census
+        // `World::scan_skyblock_low_tiles` fills it at load/gen).
+        let snow_threshold = tr_core::scene::snow_tile_threshold(i.skyblock_low_tiles) as f32;
         let num5 = (i.snow_tile_count as f32 / snow_threshold).clamp(0.0, 1.0);
         num2 = (((num2 as f32) * (1.0 - num5 * num5)) as i32 as f64
             * (i.atmo as f64).powf(9.0)) as i32;
@@ -1561,6 +1566,7 @@ mod tests {
             shimmer_alpha: 0.0,
             atmo: 1.0,
             snow_tile_count: 0,
+            skyblock_low_tiles: false,
             zone_rain: true,
             water_style: 0,
             any_danger: false,
@@ -3316,5 +3322,37 @@ mod tests {
             !dust_in_cull_rect(Vec2::new(800.0, 450.0), shifted),
             "the old view is now outside"
         );
+    }
+
+    /// W4-g67 witness (folded `f8c4b659`, research/134 R5) — the skyblock
+    /// snow-threshold arm (`Rain.cs:181` via `SceneMetrics.SnowTileThreshold`,
+    /// `SceneMetrics.cs:154-163`): 300 snow tiles fully suppress the budget on
+    /// a low-tiles skyblock world (ratio 1 → budget 0) but barely suppress on
+    /// a normal world (300/1500 = 0.2 → budget 720 > the 26-attempt spawn).
+    /// Adapted to the `RainInputs.skyblock_low_tiles` seam. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g67_skyblock_low_tiles_lowers_the_snow_threshold() {
+        let w = World::new("air".into(), 64, 64);
+        let mut i = inputs();
+        // The threshold getters the spawn reads.
+        assert_eq!(tr_core::scene::snow_tile_threshold(false), 1500);
+        assert_eq!(tr_core::scene::snow_tile_threshold(true), 300);
+        // A skyblock world with 300+ snow tiles fully suppresses (ratio 1 →
+        // budget 0): no drop spawns at all.
+        let mut sky = Rain::with_forced(7, Some(1.0), false);
+        i.skyblock_low_tiles = true;
+        i.snow_tile_count = 300;
+        for _ in 0..60 {
+            sky.update(&w, &i, 1.0 / 60.0, None);
+        }
+        assert_eq!(sky.drop_count(), 0, "300 snow tiles fully suppress on skyblock");
+        // The same 300 tiles on a normal world: ratio 0.2 → budget 720 > the
+        // per-tick attempts, so drops still spawn.
+        let mut normal = Rain::with_forced(7, Some(1.0), false);
+        i.skyblock_low_tiles = false;
+        for _ in 0..60 {
+            normal.update(&w, &i, 1.0 / 60.0, None);
+        }
+        assert!(normal.drop_count() > 0, "300 tiles barely suppress on a normal world");
     }
 }
