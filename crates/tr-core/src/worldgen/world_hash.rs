@@ -242,9 +242,13 @@ mod tests {
     // 512-wide world (both Count draws truncate to 0), so the residual
     // itself leaves this pin unchanged; the P0 hive-rising stalactite arm
     // may move it via the spider-cave decor — the gate re-pins or confirms
-    // (see the DEFAULT_WORLD note). The entrance residual (research 94)
+    // (see the DEFAULT_WORLD note). The entrance residual (research 222,
+    // renumbered from 94)
     // CAN fire on the 512 world (the 36-wide desert band's entrance
     // fraction) — its Blotches ledger may move this pin too; same gate.
+    // W4-g40 hive-smooth (research 246): the PostPlacementEffect walk adds
+    // slope/half-brick states inside the hive — RNG-free, but the tile
+    // bytes move, so this pin is stale-by-design too when the hive fires.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -307,7 +311,8 @@ mod tests {
     // arm, `WorldGen.cs:38543-38552`, previously missing) can move the pin
     // if a spider-cave hive seat exists on the 512 world; unmeasurable
     // code-only, so the gate re-pins or confirms it.
-    // W4-g40 entrance residual (2026-11-21, code-only, research 94): the
+    // W4-g40 entrance residual (2026-11-21, code-only, research 222 —
+    // renumbered from 94 per the d54 research/150 registry): the
     // four underground-desert entrances now run the faithful Blotches
     // draws + SetTile/ClearTile/Smooth chains (`desert_entrances.rs`), and
     // the entrance gate reads the JSON 0.5 with the anniversary/extraLiquid
@@ -320,6 +325,16 @@ mod tests {
     // stays green (the `desert_entrances.rs` witnesses pin the Blotches
     // ledger replay + the per-kind end-to-end replay, `desert.rs` pins the
     // anniversary stream separation).
+    // W4-g40 hive-smooth slice (2026-11-21, code-only, research 246): the
+    // DesertHive PostPlacementEffect.Smooth map + the post-carve
+    // Tile.SmoothSlope(applyToNeighbors:false) walk (DesertHive.cs:210-221)
+    // land on the biomes::tile_smooth_slope_one seam. RNG-FREE (no Rng or
+    // FastRandom draw added or moved — the carve's ledgers are untouched),
+    // but the hive's shell edges gain slope/half-brick states, so
+    // DEFAULT_WORLD moves BY DESIGN wherever the hive fires; SEED42_512
+    // moves iff its desert band seats a hive. Re-pin DEFERRED to the merge
+    // gate; a==b kept (the three desert.rs hive-smooth witnesses pin the
+    // map's arm-exactness, the slope delta and the RNG-neutral replay).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

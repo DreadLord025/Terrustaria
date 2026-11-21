@@ -8,7 +8,7 @@
 //! action chain is inlined here with the C# line anchors (`Shapes.cs`,
 //! `Modifiers.cs`, `Actions.cs`, `ModShapes.cs`, `Utils.cs`) — the walks visit
 //! exactly the cells the C# visits, in the C#'s order, and apply exactly the
-//! C#'s tile effects. W4-g40 (research 94) closed the shape-level residual:
+//! C#'s tile effects. W4-g40 (research 222, renumbered from 94) closed the shape-level residual:
 //!
 //! * `Shapes.Circle` is the y-major `(hr+1)²` row walk (`Shapes.cs:33-49`),
 //!   not a normalised ellipse — the visit order feeds the per-cell Blotches
@@ -794,7 +794,7 @@ fn smoother_step(mut delta: f64) -> f64 {
     1.0 - (delta * 3.1415927410125732).cos() * 0.5 - 0.5
 }
 
-/// The W4-g40 residual witnesses (research 94) — WRITTEN NOT RUN (code-only
+/// The W4-g40 residual witnesses (research 222, renumbered from 94) — WRITTEN NOT RUN (code-only
 /// mode, no compiler on this branch). The ledgers replay the xorshift stream
 /// independently (`rng.rs`'s pre-refactor transcription convention); the
 /// a==b pair pins the entrance outputs across two same-seed runs.

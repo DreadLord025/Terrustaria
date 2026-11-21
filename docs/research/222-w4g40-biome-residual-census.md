@@ -1,4 +1,12 @@
-# 94 — Biome-residual census (W4-g40 continuation, 2026-11-21, code-only)
+# 222 — Biome-residual census (W4-g40 continuation, 2026-11-21, code-only)
+
+RENUMBERED per the d54 research/150 collision registry §1 key-94 row:
+`94` belongs to W4-g41's `94-not-the-bees-host-census.md` (first-add
+2026-11-21T03:24:48 `4317e2ba5`); this doc (first-add 04:15:49) takes the
+registry-assigned free number **222**. Content-preserving rename — the
+body below is unchanged; refs updated on this branch (INDEX row, ANALYSIS
+citation, desert_entrances.rs/world_hash.rs comments). The lane FINAL +
+desert/marble-family declaration lives in `246-w4g40-desert-marble-final.md`.
 
 Scope: after the marble/granite residual closed (79361f00), census the
 remaining C# biome classes against the landed port, mark every co-lane
