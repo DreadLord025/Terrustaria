@@ -4291,6 +4291,21 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-d41 — the Tumbleweed's wind/zone pre-stamps (`NPC.cs:62709-62714`'s
+    // windSpeedTarget + `:62710`/`:62570`'s ZoneSandstorm/ZoneDesert): the
+    // AI's `&World` borrow cannot reach `app.wind`/`app.scene_metrics`.
+    {
+        let wind_target = app.wind.speed_target;
+        let sandstorm = app.scene_metrics.zone_sandstorm;
+        let desert = app.scene_metrics.zone_desert;
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::Tumbleweed {
+                n.wind_speed_target = wind_target;
+                n.zone_sandstorm = sandstorm;
+                n.zone_desert = desert;
+            }
+        }
+    }
     // The Twins' shared-despawn seam (S1-D-3-wire-retinazer,
     // `NPC.cs:26468-26474` — the aiStyle-30 arm's `num400 != whoAmI`
     // scan over the other ACTIVE type-125/126 slots, feeding

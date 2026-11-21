@@ -543,6 +543,10 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (`:9104`); the sand slime: `{ 537, [20] }` (`:9105-9111`).
         NpcKind::DesertBeast | NpcKind::DemonTaxCollector | NpcKind::TheBride => &[],
         NpcKind::SlimeSpiked | NpcKind::SandSlime => &[20],
+        // W4-d41 — the critters: `{ 538..540, [31] }`
+        // (`NPCID.cs:9112-9132`); the tumbler: `{ 546, [31] }`
+        // (`:9168-9174`).
+        NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny | NpcKind::Tumbleweed => &[31],
     }
 }
 

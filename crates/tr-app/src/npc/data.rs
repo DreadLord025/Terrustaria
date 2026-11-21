@@ -644,6 +644,12 @@ impl NpcKind {
             NpcKind::SlimeSpiked => 535,
             NpcKind::TheBride => 536,
             NpcKind::SandSlime => 537,
+            // W4-d41 — the critters + the tumbler keep their vanilla ids
+            // (538-540/546 free in the wire space). `NPCID.cs:11753-11769`.
+            NpcKind::SquirrelRed => 538,
+            NpcKind::SquirrelGold => 539,
+            NpcKind::PartyBunny => 540,
+            NpcKind::Tumbleweed => 546,
         }
     }
 
@@ -1020,6 +1026,11 @@ impl NpcKind {
             535 => NpcKind::SlimeSpiked,
             536 => NpcKind::TheBride,
             537 => NpcKind::SandSlime,
+            // W4-d41 — the critters + the tumbler.
+            538 => NpcKind::SquirrelRed,
+            539 => NpcKind::SquirrelGold,
+            540 => NpcKind::PartyBunny,
+            546 => NpcKind::Tumbleweed,
             _ => return None,
         })
     }
@@ -2009,6 +2020,10 @@ impl NpcKind {
             | NpcKind::SlimeSpiked
             | NpcKind::TheBride
             | NpcKind::SandSlime => "NPC_Hit_1",
+            // W4-d41 — the critters' `NPCHit1` (`NPC.cs:15881`/`:15893`/
+            // `:9344`), the tumbler's `NPCHit11` (`:15980`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => "NPC_Hit_1",
+            NpcKind::Tumbleweed => "NPC_Hit_11",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2366,6 +2381,10 @@ impl NpcKind {
             | NpcKind::SlimeSpiked
             | NpcKind::SandSlime => "NPC_Killed_1",
             NpcKind::TheBride => "NPC_Killed_2",
+            // W4-d41 — the critters' `NPCDeath1` (`NPC.cs:15882`/`:15894`/
+            // `:9345`), the tumbler's `NPCDeath15` (`:15981`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => "NPC_Killed_1",
+            NpcKind::Tumbleweed => "NPC_Killed_15",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2800,6 +2819,10 @@ impl NpcKind {
             // slimes (`:15833`/`:15862`).
             NpcKind::DesertBeast | NpcKind::DemonTaxCollector | NpcKind::TheBride => 3,
             NpcKind::SlimeSpiked | NpcKind::SandSlime => 1,
+            // W4-d41 — aiStyle 7, the critters (`NPC.cs:15877`/`:15889`/
+            // `:9340`); aiStyle 26, the tumbler (`:15976`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 7,
+            NpcKind::Tumbleweed => 26,
             // W4-d41 — aiStyle 39, the shelly pair (`NPC.cs:14682`).
             NpcKind::GiantShelly | NpcKind::GiantShelly2 => 39,
         }
@@ -3424,6 +3447,11 @@ impl NpcKind {
             NpcKind::DemonTaxCollector | NpcKind::TheBride => (18.0, 40.0),
             NpcKind::SlimeSpiked => (24.0, 18.0),
             NpcKind::SandSlime => (30.0, 24.0),
+            // W4-d41 — the critters' 18x20 box (`NPC.cs:15875-15876`/
+            // `:15887-15888`/`:9338-9339`), the tumbler's 30x30
+            // (`:15974-15975`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => (18.0, 20.0),
+            NpcKind::Tumbleweed => (30.0, 30.0),
         }
     }
 
@@ -3568,6 +3596,12 @@ impl NpcKind {
             NpcKind::SlimeSpiked => 535,
             NpcKind::TheBride => 536,
             NpcKind::SandSlime => 537,
+            // W4-d41 — the critters + the tumbler keep their vanilla
+            // types (`NPCID.cs:11753-11769`).
+            NpcKind::SquirrelRed => 538,
+            NpcKind::SquirrelGold => 539,
+            NpcKind::PartyBunny => 540,
+            NpcKind::Tumbleweed => 546,
             NpcKind::Goldfish => 55,
             NpcKind::Piranha => 58,
             NpcKind::Shark => 65,
@@ -4194,6 +4228,10 @@ impl NpcKind {
             NpcKind::DemonTaxCollector => 400,
             NpcKind::SlimeSpiked | NpcKind::SandSlime => 50,
             NpcKind::TheBride => 200,
+            // W4-d41 — the critters' lifeMax 5 (`NPC.cs:15880`/`:15892`/
+            // `:9343`), the tumbler's 50 (`:15979`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 5,
+            NpcKind::Tumbleweed => 50,
         }
     }
 
@@ -4610,6 +4648,10 @@ impl NpcKind {
             NpcKind::DemonTaxCollector | NpcKind::TheBride => 14,
             NpcKind::SlimeSpiked => 14,
             NpcKind::SandSlime => 15,
+            // W4-d41 — the critters' damage 0 (`NPC.cs:15878`/`:15890`/
+            // `:9341`), the tumbler's 30 (`:15977`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 0,
+            NpcKind::Tumbleweed => 30,
         }
     }
 }

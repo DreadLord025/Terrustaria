@@ -1745,6 +1745,28 @@ fn portrait_data(
         // never shows it); the arm exists for the match's
         // exhaustiveness — the SetDefaults box.
         (NpcKind::SlimeSpiked, _) => (sheet_i, 18.0, 24.0, 18.0, white),
+        // W4-d41 — the critters' portraits: the 6/7-row hop strips over
+        // the 18x20 frames, the frame width the sheet's own.
+        (NpcKind::SquirrelRed, _) | (NpcKind::SquirrelGold, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::PartyBunny, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 7.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        // W4-d41 — the tumbler's portrait: the single-frame NPC_546
+        // sheet.
+        (NpcKind::Tumbleweed, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32)
+                .unwrap_or(30.0);
+            (sheet_i, h, 30.0, h, white)
+        }
     }
 }
 

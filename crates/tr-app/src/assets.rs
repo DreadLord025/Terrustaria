@@ -1277,6 +1277,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_535",
         "NPC_536",
         "NPC_537",
+        // W4-d41 — the critters + the tumbler (CRITTER_TUMBLER_SHEETS).
+        "NPC_538",
+        "NPC_539",
+        "NPC_540",
+        "NPC_546",
         // The Pumpkin Moon wave family's sheets (`S1-F-13b` Phase 2): one per
         // kind — the Scarecrows (305-314) and the five named kinds
         // (315/325/326/327/329/330) — keyed by the vanilla net id in

@@ -817,6 +817,44 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
     },
     // W4-d41 — the spiked slime (535) has NO bestiary entry: its draw
     // modifiers hide it (the redigit dictionary's `Hide = true`).
+    // W4-d41 — the critters + the tumbler (`BestiaryEntry.Critter`/
+    // `Enemy`, the automated populator; the Surface tag `:1153-1162`,
+    // the UndergroundDesert/Sandstorm tags `:1292`). The gold squirrel's
+    // UI provider folds onto [299, 538]
+    // (`BestiaryDatabaseNPCsPopulator.cs:716`) — the entry keeps its own
+    // 539 net id (the gold-critter pattern).
+    BestiaryEntryDef {
+        credit_id: "SquirrelRed",
+        net_id: 538,
+        kind: NpcKind::SquirrelRed,
+        variant: None,
+        quick_unlock: false,
+        name: "Red Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "SquirrelGold",
+        net_id: 539,
+        kind: NpcKind::SquirrelGold,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Squirrel",
+    },
+    BestiaryEntryDef {
+        credit_id: "PartyBunny",
+        net_id: 540,
+        kind: NpcKind::PartyBunny,
+        variant: None,
+        quick_unlock: false,
+        name: "Bunny",
+    },
+    BestiaryEntryDef {
+        credit_id: "Tumbleweed",
+        net_id: 546,
+        kind: NpcKind::Tumbleweed,
+        variant: None,
+        quick_unlock: false,
+        name: "Angry Tumbler",
+    },
     // The spheres: the Chaos Ball entry also covers Tim's ChaosBallTim
     // clone 665 (the port folds it — identical stats and name).
     BestiaryEntryDef {

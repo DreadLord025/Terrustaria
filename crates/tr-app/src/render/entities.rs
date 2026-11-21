@@ -521,6 +521,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(ANCIENT_GHOUL_SHEETS)
             .chain(LAMIA_SCORPION_SHEETS)
             .chain(BASILISK_SOUL_SHEETS)
+            .chain(CRITTER_TUMBLER_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1322,6 +1323,11 @@ pub(crate) const LAMIA_SCORPION_SHEETS: &[u32] = &[527, 528, 529, 530, 531];
 /// the vanilla net id in `NpcAssets::npc_sheets` exactly like
 /// `LAMIA_SCORPION_SHEETS`.
 pub(crate) const BASILISK_SOUL_SHEETS: &[u32] = &[532, 534, 535, 536, 537];
+
+/// W4-d41 — the critters' + the tumbler's own sheets (the vanilla's
+/// `TextureAssets.Npc[type]`), keyed by the vanilla net id in
+/// `NpcAssets::npc_sheets` exactly like `BASILISK_SOUL_SHEETS`.
+pub(crate) const CRITTER_TUMBLER_SHEETS: &[u32] = &[538, 539, 540, 546];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3338,6 +3344,18 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d41 — the critters + the tumbler draw their OWN sheets
+            // (`CRITTER_TUMBLER_SHEETS`) at `Main.npcFrameCount` rows
+            // (`Main.cs:67082`: 538/539 six, 540 seven, 546 one) with
+            // the generic centred anchor. The tumbler rotates with its
+            // roll (the rotation whitelist).
+            NpcKind::SquirrelRed
+            | NpcKind::SquirrelGold
+            | NpcKind::PartyBunny
+            | NpcKind::Tumbleweed => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3466,6 +3484,9 @@ pub(crate) fn draw_npcs(
                     // its flight (`NPC.cs:29810-29815`, the atan2 aim +
                     // π/2).
                     | NpcKind::DesertScorpionWall
+                    // W4-d41 — the tumbler's roll rotation
+                    // (`NPC.cs:62921`, `velocity.X * 0.05`).
+                    | NpcKind::Tumbleweed
                     // The saucer family (`Main.cs:24586-24612`) rotates
                     // about its CENTRE (the `origin = halfSize` draw point
                     // — the quad the anchors computed sits at that centre,

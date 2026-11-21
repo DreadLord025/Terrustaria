@@ -1311,6 +1311,31 @@ pub enum NpcKind {
     /// npcSlots 2, NPCHit1/NPCDeath1. The slime hop machine + the
     /// 3-row hop strip (`NPC.cs:70818-70846`). W4-d41.
     SandSlime,
+    /// `NPCID.SquirrelRed` (538, `NPCID.cs:11753`) — the red squirrel
+    /// critter (`aiStyle 7`, `NPC.cs:15873-15884`): 18x20, dmg 0,
+    /// def 0, 5 HP, catchItem 3563, NPCHit1/NPCDeath1. The town-critter
+    /// walker + the 6-row hop strip (`NPC.cs:76459-76512`). W4-d41.
+    SquirrelRed,
+    /// `NPCID.SquirrelGold` (539, `NPCID.cs:11755`) — the gold squirrel
+    /// critter (`aiStyle 7`, `NPC.cs:15885-15897`): 18x20, dmg 0,
+    /// def 0, 5 HP, catchItem 3564, rarity 3, NPCHit1/NPCDeath1. The
+    /// gold-critter bestiary fold (`BestiaryDatabaseNPCsPopulator.cs:716`:
+    /// {539→[299,538]}). W4-d41.
+    SquirrelGold,
+    /// `NPCID.PartyBunny` (540, `NPCID.cs:11757`) — the party bunny
+    /// critter (`aiStyle 7`, `NPC.cs:9336-9347`'s 46/303/337/540 group):
+    /// 18x20, dmg 0, def 0, 5 HP, catchItem 2019, NPCHit1/NPCDeath1.
+    /// The town-critter walker + the 7-row hop strip
+    /// (`NPC.cs:76857-76904`). W4-d41.
+    PartyBunny,
+    /// `NPCID.Tumbleweed` (546, `NPCID.cs:11769`) — the angry tumbler
+    /// (`aiStyle 26`, `NPC.cs:15972-15984`): 30x30, dmg 30, def 6,
+    /// 50 HP, kb 0.8, value 100, NPCHit11/NPCDeath15. The
+    /// `AI_026_Unicorns` wind-driven walk (`NPC.cs:62703-62716`: the
+    /// 4 + wind*3 cap, the 0.05 accel, the 0.92 turnaround), the
+    /// rotation tail (`:62919-62923`), the desert despawn gate
+    /// (`:62570-62580`). W4-d41.
+    Tumbleweed,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -1942,6 +1967,14 @@ pub struct Npc {
     /// Bubble's wind blend reads it (`NPC.cs:34903`). The AI's `&World`
     /// borrow cannot reach `app.wind`; 0 until the sim stamps it.
     pub wind_speed_current: f32,
+    /// W4-d41 — `Main.windSpeedTarget` pre-stamped by the sim — the
+    /// Tumbleweed's wind-driven walk cap reads it (`NPC.cs:62709-62714`).
+    pub wind_speed_target: f32,
+    /// W4-d41 — `Main.player[target].ZoneSandstorm` / `ZoneDesert`
+    /// pre-stamped by the sim — the Tumbleweed's sandstorm wind gate +
+    /// the desert despawn gate read them (`NPC.cs:62710`/`:62570`).
+    pub zone_sandstorm: bool,
+    pub zone_desert: bool,
     /// The Twins' shared-despawn seam (S1-D-3-wire-retinazer): the OTHER
     /// active type-125/126 NPCs' `timeLeft`s in slot order — the C#'s
     /// `num400 != whoAmI` scan inside the aiStyle-30/31 arms
@@ -3337,6 +3370,9 @@ impl Npc {
             wants_fishron_trail: Vec::new(),
             wants_fishron_bolts: Vec::new(),
             wind_speed_current: 0.0,
+            wind_speed_target: 0.0,
+            zone_sandstorm: false,
+            zone_desert: false,
             twin_time_lefts: Vec::new(),
             slot: 0,
             wants_martian_invasion: false,
@@ -3841,6 +3877,11 @@ impl Npc {
             NpcKind::TheBride => 0.5,
             NpcKind::SandSlime => 0.7,
             NpcKind::SlimeSpiked => 1.0,
+            // W4-d41 — the critters keep the head's 1 (`NPC.cs:8533` —
+            // the branches write no kb row); the tumbler's 0.8
+            // (`:15982`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 1.0,
+            NpcKind::Tumbleweed => 0.8,
             _ => 0.4,
         }
     }
@@ -4270,6 +4311,10 @@ impl Npc {
             NpcKind::DemonTaxCollector => 20,
             NpcKind::SlimeSpiked | NpcKind::SandSlime => 5,
             NpcKind::TheBride => 8,
+            // W4-d41 — the critters' defense 0 (`NPC.cs:15879`/`:15891`/
+            // `:9342`), the tumbler's 6 (`:15978`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 0,
+            NpcKind::Tumbleweed => 6,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4692,6 +4737,10 @@ impl Npc {
             NpcKind::SlimeSpiked => 40.0,
             NpcKind::TheBride => 1000.0,
             NpcKind::SandSlime => 75.0,
+            // W4-d41 — the critters write no value row (the head's 0,
+            // `NPC.cs:8544`); the tumbler's 100 (`:15983`).
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => 0.0,
+            NpcKind::Tumbleweed => 100.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6360,6 +6409,19 @@ impl Npc {
             // W4-d41 — the slimes (535/537, aiStyle 1): the slime hop
             // machine on their OWN SetDefaults boxes.
             NpcKind::SlimeSpiked | NpcKind::SandSlime => self.update_slime(world, player, dt),
+            // W4-d41 — the critters (538-540, aiStyle 7): the town-critter
+            // walker (the guide's wander stand-in — the full AI_007
+            // town machine is the follow-up). The catchable window rides
+            // the ctor's `bug_net::npc_catchable` friendly arm.
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold | NpcKind::PartyBunny => {
+                self.update_guide(world, dt)
+            }
+            // W4-d41 — the tumbler (546, aiStyle 26): the
+            // `AI_026_Unicorns` wind-driven walk
+            // (`npc_ai_unicorn.rs`, the 546 branches).
+            NpcKind::Tumbleweed => {
+                crate::npc_ai_unicorn::unicorn_step(self, world, player, rng)
+            }
             // W4-d41 — the salamanders (498-506, aiStyle 3): the
             // `AI_003_Fighters` SHOOTER block (`NPC.cs:59069-59801`, the
             // 498-506 terms) — the 70-tick cadence, the 7-speed spit 572
@@ -8001,6 +8063,81 @@ impl Npc {
             // (`Main.npcFrameCount[522]` = 1) — the single frame never
             // advances.
             NpcKind::AncientLight => {
+                self.frame = 0;
+            }
+            // W4-d41 — the squirrels ride the case-538/539 arm
+            // (`NPC.cs:76459-76512`): the grounded walk climbs from row 1
+            // at the `|vx|*0.5 + 1` >6 step, wrapping at count-1 (6) back
+            // to 1; the idle row 0, the rising air row 2, the falling
+            // air row 4.
+            NpcKind::SquirrelRed | NpcKind::SquirrelGold => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    self.frame_counter += self.vx.abs() * 0.5;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 5 {
+                        self.frame = 1;
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 2;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                }
+            }
+            // W4-d41 — the party bunny rides the case-540 arm
+            // (`NPC.cs:76857-76904`): the grounded walk cycles rows 0..6
+            // at the `|vx| + 1` >6 step, wrapping at 7 back to 0; the
+            // idle row 0, the rising air row 4, the falling air row 6.
+            NpcKind::PartyBunny => {
+                if self.vy == 0.0 {
+                    if self.facing == 1 {
+                        self.sprite_dir = 1;
+                    }
+                    if self.facing == -1 {
+                        self.sprite_dir = -1;
+                    }
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                        return;
+                    }
+                    self.frame_counter += self.vx.abs();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame >= 7 {
+                        self.frame = 0;
+                    }
+                } else if self.vy < 0.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = 4;
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 6;
+                }
+            }
+            // W4-d41 — the tumbler has NO `FindFrame` case
+            // (`Main.npcFrameCount[546]` = 1) — the single frame never
+            // advances (the roll rides the rotation, not the strip).
+            NpcKind::Tumbleweed => {
                 self.frame = 0;
             }
             // W4-d41 — the basilisk rides the SAME case-508 arm
@@ -20415,6 +20552,13 @@ impl Npc {
             NpcKind::SlimeSpiked => 535,
             NpcKind::TheBride => 536,
             NpcKind::SandSlime => 537,
+            // W4-d41 — the critters + the tumbler's vanilla type ids
+            // (the same values `to_u16` rides) — unused by every arm
+            // above, so the G6 key stays injective.
+            NpcKind::SquirrelRed => 538,
+            NpcKind::SquirrelGold => 539,
+            NpcKind::PartyBunny => 540,
+            NpcKind::Tumbleweed => 546,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -25483,7 +25627,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 308] = [
+    pub(super) const ALL_KINDS: [NpcKind; 312] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25808,6 +25952,11 @@ mod tests {
         NpcKind::SlimeSpiked,
         NpcKind::TheBride,
         NpcKind::SandSlime,
+        // W4-d41 — the critters + the tumbler.
+        NpcKind::SquirrelRed,
+        NpcKind::SquirrelGold,
+        NpcKind::PartyBunny,
+        NpcKind::Tumbleweed,
     ];
 
     #[test]
@@ -27048,6 +27197,156 @@ mod tests {
             NpcKind::SlimeSpiked,
             NpcKind::TheBride,
             NpcKind::SandSlime,
+        ] {
+            let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+            let hp = n.hp;
+            let rows = crate::render::entities::npc_rows(
+                crate::render::entities::texture_net_id(kind),
+            );
+            for _ in 0..120 {
+                n.update(&w, &mut player, 1.0 / 60.0);
+                assert!(n.frame < rows, "{kind:?} row {} of {rows}", n.frame);
+                assert!(n.hp <= hp, "{kind:?} hp grew");
+            }
+        }
+    }
+
+    /// The critters' + the tumbler's `SetDefaults` rows
+    /// (`NPC.cs:15873-15897` for 538/539, `:9336-9347` for 540,
+    /// `:15972-15984` for 546).
+    #[test]
+    fn w4_d41_the_critter_tumbler_setdefaults_rows() {
+        // (kind, vanilla, w, h, ai, hp, dmg, def, value, kb)
+        let table = [
+            (NpcKind::SquirrelRed, 538u16, 18.0, 20.0, 7u8, 5, 0, 0, 0.0, 1.0f32),
+            (NpcKind::SquirrelGold, 539, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0),
+            (NpcKind::PartyBunny, 540, 18.0, 20.0, 7, 5, 0, 0, 0.0, 1.0),
+            (NpcKind::Tumbleweed, 546, 30.0, 30.0, 26, 50, 30, 6, 100.0, 0.8),
+        ];
+        for (kind, vanilla, w, h, ai, hp, dmg, def, value, kb) in table {
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.max_hp(), hp, "{kind:?} lifeMax");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            let n = bare(kind);
+            assert_eq!(n.defense(), def, "{kind:?} defense");
+            assert_eq!(n.value(), value, "{kind:?} value");
+            assert_eq!(n.knock_back_resist(), kb, "{kind:?} knockBackResist");
+            assert_eq!(kind.to_u16(), vanilla, "{kind:?} protocol id");
+            assert_eq!(NpcKind::from_u16(vanilla), Some(kind), "{kind:?} decode");
+        }
+        // The critters are catchable (the ctor's friendly arm).
+        for kind in [NpcKind::SquirrelRed, NpcKind::SquirrelGold, NpcKind::PartyBunny] {
+            let n = bare(kind);
+            assert!(n.friendly, "{kind:?} the catchable friendly window");
+            assert_eq!(n.catchable_immunity, 90, "{kind:?} the 90-tick window");
+        }
+        // The sound rows.
+        for kind in [NpcKind::SquirrelRed, NpcKind::SquirrelGold, NpcKind::PartyBunny] {
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
+        }
+        assert_eq!(NpcKind::Tumbleweed.hit_sound(), Some("NPC_Hit_11"));
+        assert_eq!(NpcKind::Tumbleweed.death_sound(), Some("NPC_Killed_15"));
+        // The Confused [31] immunity rows (`NPCID.cs:9112-9132`/`:9168-9174`).
+        for kind in [NpcKind::SquirrelRed, NpcKind::SquirrelGold, NpcKind::PartyBunny, NpcKind::Tumbleweed] {
+            let b = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(b.buff_immune[31], "{kind:?} Confused-immune");
+        }
+    }
+
+    /// The bestiary rows: the critters + the tumbler carry their own
+    /// entries. The draw sheets + row counts.
+    #[test]
+    fn w4_d41_the_critter_tumbler_bestiary_and_sheets() {
+        for (kind, net, credit, name) in [
+            (NpcKind::SquirrelRed, 538, "SquirrelRed", "Red Squirrel"),
+            (NpcKind::SquirrelGold, 539, "SquirrelGold", "Gold Squirrel"),
+            (NpcKind::PartyBunny, 540, "PartyBunny", "Bunny"),
+            (NpcKind::Tumbleweed, 546, "Tumbleweed", "Angry Tumbler"),
+        ] {
+            let e = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(e.net_id, net, "{kind:?} net id");
+            assert_eq!(e.credit_id, credit, "{kind:?} credit");
+            assert_eq!(e.name, name, "{kind:?} name");
+        }
+        // The DRAW sheets + row counts (`Main.npcFrameCount`,
+        // `Main.cs:67082`: 538/539 six, 540 seven, 546 one).
+        for (kind, net, rows) in [
+            (NpcKind::SquirrelRed, 538u16, 6u32),
+            (NpcKind::SquirrelGold, 539, 6),
+            (NpcKind::PartyBunny, 540, 7),
+            (NpcKind::Tumbleweed, 546, 1),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), net);
+            assert_eq!(crate::render::entities::npc_rows(net), rows, "{kind:?} rows");
+        }
+    }
+
+    /// The squirrels' `FindFrame` case (`NPC.cs:76459-76512`): the
+    /// grounded walk climbs from row 1 at the `|vx|*0.5 + 1` >6 step,
+    /// the rising air row 2, the falling air row 4. The party bunny's
+    /// case (`:76857-76904`): the `|vx| + 1` >6 step over the 7-row
+    /// strip, the rising air row 4, the falling air row 6.
+    #[test]
+    fn w4_d41_the_critter_find_frame_bands() {
+        let mut s = bare(NpcKind::SquirrelRed);
+        s.vx = 0.0;
+        s.vy = 0.0;
+        s.frame = 3;
+        s.find_frame();
+        assert_eq!(s.frame, 0, "the idle row");
+        s.vy = -1.0;
+        s.find_frame();
+        assert_eq!(s.frame, 2, "the rising air row");
+        s.vy = 1.0;
+        s.find_frame();
+        assert_eq!(s.frame, 4, "the falling air row");
+        s.vy = 0.0;
+        // The walk: 4 px/tick → 3/tick, a row every 3 ticks (>6).
+        s.vx = 4.0;
+        s.facing = 1;
+        s.frame = 0;
+        s.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            s.find_frame();
+            rows.push(s.frame);
+        }
+        assert_eq!(&rows[..], &[0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4], "the 1..4 cycle");
+        // The party bunny: 4 px/tick → 5/tick, a row every 2 ticks (>6).
+        let mut b = bare(NpcKind::PartyBunny);
+        b.vx = 4.0;
+        b.vy = 0.0;
+        b.facing = 1;
+        b.frame = 0;
+        b.frame_counter = 0.0;
+        let mut rows = Vec::new();
+        for _ in 0..14 {
+            b.find_frame();
+            rows.push(b.frame);
+        }
+        assert_eq!(&rows[..], &[0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 0], "the 0..6 cycle");
+        b.vy = -1.0;
+        b.find_frame();
+        assert_eq!(b.frame, 4, "the rising air row");
+        b.vy = 1.0;
+        b.find_frame();
+        assert_eq!(b.frame, 6, "the falling air row");
+    }
+
+    /// The critters' + the tumbler's AI routing: each kind steps without
+    /// panicking, stays inside its own strip, and keeps its `SetDefaults`
+    /// HP.
+    #[test]
+    fn w4_d41_the_critter_tumbler_kinds_step_their_machines() {
+        let w = ground();
+        let mut player = Player::spawn(&w);
+        for kind in [
+            NpcKind::SquirrelRed,
+            NpcKind::SquirrelGold,
+            NpcKind::PartyBunny,
+            NpcKind::Tumbleweed,
         ] {
             let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
             let hp = n.hp;
@@ -30625,8 +30924,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            308,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five + the ancient orbs/ghouls five + the hallowed ghoul/lamias/sand poachers five + the basilisk/soul/slimes/bride five)"
+            312,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate + W4-d41's cavern crawdads/shellies four + the nine salamanders + the antlions/Dune Splicer five + the Tomb Crawler/solar fragments five + the ancient orbs/ghouls five + the hallowed ghoul/lamias/sand poachers five + the basilisk/soul/slimes/bride five + the critters/tumbler four)"
         );
         assert!(
             covered > 43,

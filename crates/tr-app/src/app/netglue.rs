@@ -3658,6 +3658,14 @@ fn npc_seed(
         | crate::npc::NpcKind::SandSlime => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
+        // W4-d41 — the critters (aiStyle 7) + the tumbler (aiStyle 26):
+        // the ground walkers plant their feet.
+        crate::npc::NpcKind::SquirrelRed
+        | crate::npc::NpcKind::SquirrelGold
+        | crate::npc::NpcKind::PartyBunny
+        | crate::npc::NpcKind::Tumbleweed => {
+            crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
+        }
     })
 }
 
