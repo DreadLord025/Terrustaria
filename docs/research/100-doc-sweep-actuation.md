@@ -95,7 +95,11 @@ neighbours (`:299`, C# `nactive()`), and the furniture scan (`:313`, C#
 `:5915` `tile.nactive()`). Effect: an actuated floor/wall scores as a home
 spot / furniture in the port but not in C#. The housing lanes are in flight
 (`task/W4-d118-housing-scoreroom`, `task/W4-d119-housing-relocation`) — this
-is recorded for them, not fixed in this lane.
+is recorded for them, not fixed in this lane. (UPDATE 2026-11-21: the
+pushed d118 tip 91db266e FIXES `solid_tiles_in_box` — edge guards +
+`!inactive` + `!TILE_SOLID_TOP`; the ScoreRoom `nactive` residue remains,
+cross-noted with their branch's line numbers in
+`docs/research/101-g80-task-seeds.md`.)
 
 ### 1c. The `evenActuated` parameter — one C# caller, no port
 
@@ -166,7 +170,10 @@ no tile, it sets the device bit).
   (`world_sim/player.rs:163-166`, ANALYSIS "The wiring tools"). It needs the
   pre-placement tile snapshot the place route does not yet keep. MISSING —
   recorded, not in this lane's scope (it is a place-route mechanic, not a
-  draw one).
+  draw one). (PORTED 2026-11-21 in the follow-up round, W4-g80 1284dc63:
+  `world_sim/editing/auto_actuator.rs` — the snapshot + the actuator half,
+  wired at the `place_tile` tail; the autoPaint half + the block-swap
+  consumer stay deferred. ANALYSIS "The autoActuator build pass".)
 - The Multicolor Wrench 3625 / `MassWireOperation` (`Wiring.cs:419-453`):
   deferred (the `WiresUI` tool modes), recorded at `world_sim/editing/
   wiring.rs:27-29`. Out of scope.
@@ -251,7 +258,7 @@ handling — correct, matches C#. VERIFIED, no change.
 | Question | Verdict |
 | --- | --- |
 | 1. Actuated-tile behaviour | PORTED across collision/wiring/persistence; ONE gap (housing `solid_tiles_in_box` + ScoreRoom `nactive`, owned by d118/d119) + the snow `evenActuated` arm (wider AI_010 gap) — recorded, not fixed |
-| 2. Actuator PLACE side | PORTED (S1-P-i34: place/cut/rod + consumption); `autoActuator` build-pass stays the recorded follow-up |
+| 2. Actuator PLACE side | PORTED (S1-P-i34: place/cut/rod + consumption); `autoActuator` build-pass stays the recorded follow-up (PORTED 2026-11-21, W4-g80 1284dc63 — `world_sim/editing/auto_actuator.rs`, ANALYSIS "The autoActuator build pass") |
 | 3. Visual transition | INSTANT in C#, port matches; shine branch is d56's unwired port |
 | 4. Parked arm | 83 herb-maturity sheet swap PORTED (3 witnesses) |
 | 5. Inactive walls | NONE in C#, port matches |

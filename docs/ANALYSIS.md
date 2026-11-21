@@ -20865,7 +20865,9 @@ Deferred (recorded follow-ups, NOT ported):
 2. The `autoActuator` placement consumer
    (`PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate`, `Player.cs:40594`) — the
    flag is granted and read by the visibility gate, but the auto-place-on-build
-   pass is out of this wave.
+   pass is out of this wave. (PORTED 2026-11-21, W4-g80 — the actuator half,
+   `world_sim/editing/auto_actuator.rs`; ANALYSIS "The autoActuator build
+   pass". The autoPaint half stays deferred.)
 3. The wire-removal dust (five dust-50 particles, `WorldGen.cs:58133-58135`,
    and the actuator twin `:58032-58035`) and the net messages — the port has
    no dust engine on this path and the local wire state is the truth.
@@ -39380,6 +39382,12 @@ references; `Tile.inActive` is a block-only flag) — the port matches.
   stays the recorded follow-up (`world_sim/player.rs:163-166`): the flag is
   granted (3624) and read by the visibility gate, the auto-place-on-build
   pass is not ported. It needs the `tileDataCaches` pre-placement snapshot.
+  (RESOLVED 2026-11-21, W4-g80 1284dc63 — the actuator half + the snapshot
+  ported as `world_sim/editing/auto_actuator.rs`, wired at the `place_tile`
+  tail; ANALYSIS "The autoActuator build pass". The housing gap's
+  `solid_tiles_in_box` half is FIXED on the pushed d118 tip; the ScoreRoom
+  `nactive` residue + the snow seed are cross-noted in
+  `docs/research/101-g80-task-seeds.md`.)
 
 **PORTED — the 83 herb-maturity sheet swap (the parked positional-switch
 arm, `TileDrawing.cs:1149-1151` → `GetTileDrawTexture` `:1450-1455`).**
@@ -39421,3 +39429,51 @@ Tiles_84 at the same frame by day / Tiles_83 by night + the dispatch-source
 pin that the resolve call consumes the override and the corrections receive
 the weather), `app/mod.rs` `herb_weather_gates_change_the_frame_key` (each
 of the three gates flips the key; unchanged gates do not).
+
+## The autoActuator build pass (W4-g80, 2026-11-21, code-only mode)
+
+The recorded follow-up from the wiring-tools waves, now ported: the
+Actuation Accessory (3624) auto-places an actuator on every newly placed
+solid block. C#: `Player.PlaceThing_Tiles_GetAutoAccessoryCache`
+(`Player.cs:40460-40488`, the pre-placement 11×11 snapshot) + the actuator
+half of `PlaceThing_Tiles_PlaceIt_AutoPaintAndActuate` (`:40594-40669`),
+called at the `PlaceThing_Tiles_PlaceIt` tail (`:40163`).
+
+Port: `crates/tr-app/src/world_sim/editing/auto_actuator.rs` —
+`auto_accessory_cache` (the snapshot: active cells (kind, frameX, frameY),
+inactive (-1,-1,-1), null keeps the (0,0,0) default) +
+`auto_actuate_after_place`, wired in `editing.rs::place_tile`: the cache
+is taken BEFORE `place_item_and_consume` (the C# `:40115` order), the
+pass runs after the placement's net 17/1 (`request_edit`). Kept verbatim:
+the `builderAccStatus[2]` toggle gate (hoisted to one check — nothing in
+the pass mutates it), the target-cell window shrink
+(`!tileFrameImportant || Platforms` → the single cell, `:40608-40612`),
+the flag2 frame-exact families (BasicChest/Fake/Dresser/Campfires/Torches),
+the flag3 platform-pair skip QUIRK (`:40628` — flag3 true / flag2 false
+fires neither disjunct, so an unchanged platform is re-acted every
+placement), the DeActive solid gate WITHOUT the above-cell/CanKillTile rule
+(`:40640-40652`), `FindItem(849)`'s first-slot scan (the 50-slot grid;
+the coin/ammo rows never hold actuators), `PlaceActuator` + burn-one +
+`SetDefaults(0)` on empty (`:40657-40665`). Sound 0 rides the shared
+`wire_placed_feedback` seam (now `pub(super)`).
+
+Deliberate deviations: the autoPaint half (`:40632-40635`,
+`builderAccStatus[3]`) is unported (no `auto_paint` flag — the auto-paint
+family stays out); the block-swap consumer (`:39892/:39909`,
+`PlaceThing_TryReplacingTiles`) stays parked with the BlockSwap mechanic
+(no `WorldGen.ReplaceTile` route); the net 17/8 (`:40660`) has no wire
+flavour in the port's edit kinds (the S1-P-i34 Actuator tool arm's
+convention — the local tile state is the truth).
+
+RNG: the pass draws no random numbers (`PlaceActuator`'s sound 0 is the
+fixed Dig cue on the wiring feedback seam).
+
+Verification: code-only mode — no cargo/rustc/rustfmt/tests/graphify
+invoked. 8 witnesses WRITTEN, NOT RUN (`auto_actuator.rs`: the placed
+block marks + burns one, the unchanged neighbour skips, the toggle off, the
+empty inventory, the last-actuator slot clear, the snapshot's
+inactive/-1 cell + write isolation, the platform-pair quirk + the set-bit
+second-pass refusal, the 314 exception kind). The round's censuses (the
+actuator-DRAW re-verification, actuators-in-walls, the snow evenActuated
+seed for the AI_010 lane, the housing nactive residue cross-note for
+d118/d119) live in `docs/research/101-g80-task-seeds.md`.
