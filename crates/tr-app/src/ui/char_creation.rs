@@ -172,6 +172,12 @@ pub struct CreationState {
     /// `UISliderBase.CurrentLockedSlider`'s port for the three HSL bars —
     /// 0 none, 1..=3 Hue/Saturation/Luminance while the button is held.
     pub hsl_grab: u8,
+    /// W4-g22 DOC-SWEEP — `UIColoredSlider._alreadyHovered` (`:134-142`):
+    /// the per-bar hover latch, 12 once per enter (`:136`).
+    pub hsl_hovered: [bool; 3],
+    /// W4-g22 DOC-SWEEP — `UIColoredSlider._soundedUsage` (`:83-92`): the
+    /// per-bar drag latch, 12 once per held-drag spell (`:85`).
+    pub hsl_sounded: [bool; 3],
 }
 
 impl CreationState {
@@ -183,6 +189,8 @@ impl CreationState {
             category: 0,
             hair_picked: false,
             hsl_grab: 0,
+            hsl_hovered: [false; 3],
+            hsl_sounded: [false; 3],
         }
     }
 }
@@ -1176,6 +1184,8 @@ pub fn hsl_sliders_update(
     if state.category < 3 {
         // The HSL menu is only live over a colour category (`:1826`).
         state.hsl_grab = 0;
+        state.hsl_hovered = [false; 3];
+        state.hsl_sounded = [false; 3];
         return highlight;
     }
     let color_id = state.category;
@@ -1207,6 +1217,40 @@ pub fn hsl_sliders_update(
         }
     }
     highlight
+}
+
+/// W4-g22 DOC-SWEEP — the HSL bars' two per-bar cue latches
+/// (`UIColoredSlider.cs`): the hover enter plays 12 once
+/// (`_alreadyHovered`, `:134-142` — the highlight flag IS the latch input)
+/// and the held drag plays 12 once per spell (`_soundedUsage`, `:83-92`,
+/// re-arming on release). Runs after [`hsl_sliders_update`] with its
+/// highlight answer; returns the number of 12s to play (0..=2 — a hover
+/// enter and a drag start can coincide on one bar, the C# plays both).
+pub fn hsl_slider_cues(state: &mut CreationState, highlight: [bool; 3], mouse_down: bool) -> u32 {
+    let mut cues = 0;
+    for k in 0..3 {
+        // The hover latch (`:131-143`): `flag || lockMode == 1` is the
+        // highlight the update derived.
+        if highlight[k] {
+            if !state.hsl_hovered[k] {
+                cues += 1; // `:136`
+            }
+            state.hsl_hovered[k] = true;
+        } else {
+            state.hsl_hovered[k] = false;
+        }
+        // The usage latch (`:80-92`): the locked bar under a held button.
+        let dragging = mouse_down && state.hsl_grab == (k + 1) as u8;
+        if dragging {
+            if !state.hsl_sounded[k] {
+                cues += 1; // `:85`
+            }
+            state.hsl_sounded[k] = true;
+        } else {
+            state.hsl_sounded[k] = false;
+        }
+    }
+    cues
 }
 
 // --- The Randomize / Copy / Paste handlers -------------------------------------
@@ -1831,7 +1875,9 @@ fn draw_hair_button(
 /// makes the timing unobservable. `time` is `Main.GlobalTimeWrappedHourly`
 /// (the preview's animation clock, `:92`); `mouse_down` feeds the HSL drag
 /// latch. Mutates the draft like the source's draw-side paths do
-/// (`:1102-1124`, `:2011-2021`).
+/// (`:1102-1124`, `:2011-2021`). Returns the HSL bars' highlight flags (the
+/// `hsl_sliders_update` answer) so the App can run the W4-g22 DOC-SWEEP cue
+/// latches ([`hsl_slider_cues`]) without re-running the drag.
 pub fn draw(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
@@ -1841,14 +1887,14 @@ pub fn draw(
     time: f32,
     mouse: Vec2,
     mouse_down: bool,
-) {
+) -> [bool; 3] {
     let l = layout(screen, 0.0);
 
     // The Draw-time dirty check (`:2011-2021`) runs before Back's consult.
     state.draft.refresh_dirty();
     // The HSL drag pass runs in the draw like the source's `DrawSelf` chain
     // (`UIColoredSlider.cs:47-90`): hit-test -> mutate -> render.
-    let _highlight = hsl_sliders_update(&l, state, mouse, mouse_down);
+    let highlight = hsl_sliders_update(&l, state, mouse, mouse_down);
 
     // The creation panel: bg `(33, 43, 79) * 0.8` (`:201`), border the
     // `UIPanel` default black (`UIPanel.cs:18`).
@@ -2013,6 +2059,7 @@ pub fn draw(
         }
         border_string(r, lookups, x, y, [1.0; 4], &text);
     }
+    highlight
 }
 
 /// `UICharacterCreation.Draw`'s tooltip resolution (`:1880-1979`) over the
@@ -2857,6 +2904,41 @@ mod tests {
         assert_eq!(hover_element(&l, 2, centre(hair_button(l.hair_grid, 200))), None);
         // The preview and the panel border are silent.
         assert_eq!(hover_element(&l, 0, centre(l.preview)), None);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the HSL bars' two cue latches
+    /// (`UIColoredSlider.cs:136`/`:85`): the hover enter plays one 12,
+    /// staying hovered is silent, the held drag plays one more 12, holding
+    /// the drag is silent, release re-arms the usage latch, exit re-arms
+    /// the hover latch.
+    #[test]
+    fn doc_sweep_hsl_hover_and_usage_latches() {
+        let mut s = CreationState::new();
+        s.category = 3;
+        // Hover enter on bar 0: one cue.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 1);
+        // Still hovered, no button: silent.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 0);
+        // The drag starts (the update latched hsl_grab = 1): one more cue.
+        s.hsl_grab = 1;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 1);
+        // Held drag: silent.
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 0);
+        // Release: the usage latch re-arms; the hover stays latched.
+        s.hsl_grab = 0;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 0);
+        s.hsl_grab = 1;
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], true), 1);
+        // Exit: both latches clear; re-enter plays again.
+        s.hsl_grab = 0;
+        assert_eq!(hsl_slider_cues(&mut s, [false, false, false], false), 0);
+        assert_eq!(hsl_slider_cues(&mut s, [true, false, false], false), 1);
+        // A hover enter and a drag start on DIFFERENT bars in one frame
+        // play both (the C# runs each bar's DrawSelf independently).
+        let mut s = CreationState::new();
+        s.category = 3;
+        s.hsl_grab = 2;
+        assert_eq!(hsl_slider_cues(&mut s, [true, true, false], true), 2);
     }
 
     #[test]

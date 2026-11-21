@@ -308,6 +308,10 @@ pub(crate) struct FrontDraw<'a> {
     pub(crate) vk_grid: bool,
     /// The caret's `UITextBox._frameCount`.
     pub(crate) frame_count: u64,
+    /// W4-g22 DOC-SWEEP — the audio seam for the DrawSelf-time cues
+    /// (`UIColoredSlider`'s hover/usage latches play inside the draw pass
+    /// in the C#, `UIColoredSlider.cs:85`/`:136`).
+    pub(crate) audio: &'a crate::audio::Audio,
 }
 
 /// The five front screens' behaviour surface — the C# `UIState` shape: the
@@ -437,7 +441,7 @@ impl FrontScreenBehaviours for FrontScreen {
                 // categories, the one middle menu, Back/Create and the hover
                 // tooltip. The HSL drag runs inside (the `CurrentLockedSlider`
                 // latch) off `front_mouse_down`.
-                ui::char_creation::draw(
+                let highlight = ui::char_creation::draw(
                     d.renderer,
                     d.lookups,
                     d.player_assets,
@@ -447,6 +451,19 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.mouse,
                     d.front_mouse_down,
                 );
+                // W4-g22 DOC-SWEEP — the HSL bars' DrawSelf cue latches
+                // (`UIColoredSlider.cs:136` hover-enter / `:85` drag-start,
+                // 12 each): the highlight the drag pass just derived feeds
+                // `hsl_slider_cues`, the plays run here (the draw itself
+                // stays audio-free, the App owns the seam).
+                let cues = ui::char_creation::hsl_slider_cues(
+                    state,
+                    highlight,
+                    d.front_mouse_down,
+                );
+                for _ in 0..cues {
+                    d.audio.play("Menu_Tick");
+                }
             }
             FrontScreen::WorldCreation(draft) => {
                 // `Main.MenuUI.Draw`'s `UIWorldCreation` state (`:1024-1033`,
