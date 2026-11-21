@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): CultistDragonBody3, CultistDragonBody4, CultistDragonTail, Butcher, CreatureFromTheDeep.
+    /// `NPCID.CultistDragonBody3` (457): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
+    CultistDragonBody3,
+    /// `NPCID.CultistDragonBody4` (458): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
+    CultistDragonBody4,
+    /// `NPCID.CultistDragonTail` (459): 32x32, aiStyle 6, dmg 50, def 30, 10000 HP,
+    /// kb 0.0, value 0 (`NPC.cs` SetDefaults arm).
+    CultistDragonTail,
+    /// `NPCID.Butcher` (460): 18x40, aiStyle 3, dmg 70, def 30, 700 HP,
+    /// kb 0.25, value 1000 (`NPC.cs` SetDefaults arm).
+    Butcher,
+    /// `NPCID.CreatureFromTheDeep` (461): 18x40, aiStyle 3, dmg 60, def 22, 400 HP,
+    /// kb 0.3, value 1000 (`NPC.cs` SetDefaults arm).
+    CreatureFromTheDeep,
     // W4-d40 (NPCID 421-490 roster wave): BoneThrowingSkeleton4, SkeletonMerchant, CultistDragonHead, CultistDragonBody1, CultistDragonBody2.
     /// `NPCID.BoneThrowingSkeleton4` (452): 18x40, aiStyle 3, dmg 22, def 8, 60 HP,
     /// kb 0.5, value 110 (`NPC.cs` SetDefaults arm).
@@ -3223,6 +3239,11 @@ impl Npc {
                             NpcKind::CultistDragonHead
                             | NpcKind::CultistDragonBody1
                             | NpcKind::CultistDragonBody2 => 255,
+                            // W4-d40: the dragon family's `alpha = 255` spawn-fade
+                            // rows (`NPC.cs:14431`/`:14449`/`:14468`).
+                            NpcKind::CultistDragonBody3
+                            | NpcKind::CultistDragonBody4
+                            | NpcKind::CultistDragonTail => 255,
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
@@ -3655,6 +3676,12 @@ impl Npc {
             NpcKind::CultistDragonHead => 0.0,
             NpcKind::CultistDragonBody1 => 0.0,
             NpcKind::CultistDragonBody2 => 0.0,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3 => 0.0,
+            NpcKind::CultistDragonBody4 => 0.0,
+            NpcKind::CultistDragonTail => 0.0,
+            NpcKind::Butcher => 0.25,
+            NpcKind::CreatureFromTheDeep => 0.3,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4065,6 +4092,12 @@ impl Npc {
             NpcKind::CultistDragonHead => 15,
             NpcKind::CultistDragonBody1 => 30,
             NpcKind::CultistDragonBody2 => 30,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3 => 30,
+            NpcKind::CultistDragonBody4 => 30,
+            NpcKind::CultistDragonTail => 30,
+            NpcKind::Butcher => 30,
+            NpcKind::CreatureFromTheDeep => 22,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4467,6 +4500,12 @@ impl Npc {
             NpcKind::CultistDragonHead => 0.0,
             NpcKind::CultistDragonBody1 => 0.0,
             NpcKind::CultistDragonBody2 => 0.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3 => 0.0,
+            NpcKind::CultistDragonBody4 => 0.0,
+            NpcKind::CultistDragonTail => 0.0,
+            NpcKind::Butcher => 1000.0,
+            NpcKind::CreatureFromTheDeep => 1000.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6510,6 +6549,14 @@ impl Npc {
             | NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => {}
+            // W4-d40: CultistDragonBody3, CultistDragonBody4, CultistDragonTail - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => {}
+            // W4-d40: Butcher, CreatureFromTheDeep ride the family machine.
+            NpcKind::Butcher
+            | NpcKind::CreatureFromTheDeep => self.update_skeleton(world, player, dt),
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9348,6 +9395,65 @@ impl Npc {
             NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => {
                 self.frame = 0;
+            }
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => {
+                self.frame = 0;
+            }
+            NpcKind::Butcher => {
+                // The humanoid-group walk (`NPC.cs:68610-68613`'s case list
+                // carries 453/460/462/463): the town machine over the kind's
+                // own `npcFrameCount` strip.
+                self.humanoid_town_frame();
+            }
+            NpcKind::CreatureFromTheDeep => {
+                // `FindFrame` case 461 (`NPC.cs:75315-75410`): the wet swim
+                // tilts at the velocity angle and strides rows 16..20; the dry
+                // arm is the 2..15 walk stride (air pin row 1).
+                if self.wet {
+                    if self.vx < 0.0 { self.facing = -1; }
+                    if self.vx > 0.0 { self.facing = 1; }
+                    if self.sprite_dir != self.facing {
+                        self.rotation *= -1.0;
+                        self.sprite_dir = self.facing;
+                    }
+                    let n288 = (self.vy * self.facing as f32)
+                        .atan2(self.vx * self.facing as f32);
+                    if (self.rotation - n288).abs() >= 3.14 {
+                        if n288 < self.rotation { self.rotation -= 6.28; }
+                        else { self.rotation += 6.28; }
+                    }
+                    self.rotation = (self.rotation * 4.0 + n288) / 5.0;
+                    self.frame_counter += (self.vx * self.vx + self.vy * self.vy).sqrt();
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 8.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 20 { self.frame = 16; }
+                    else if self.frame < 16 { self.frame = 19; }
+                    return;
+                }
+                if self.rotation > 3.14 { self.rotation -= 6.28; }
+                if self.rotation > -0.01 && self.rotation < 0.01 { self.rotation = 0.0; }
+                else { self.rotation *= 0.9; }
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = 0; self.frame_counter = 0.0; return; }
+                    if self.frame < 2 { self.frame = 2; }
+                    self.frame_counter += self.vx.abs() * 2.0;
+                    self.frame_counter += 1.0;
+                    if self.frame_counter > 6.0 {
+                        self.frame += 1;
+                        self.frame_counter = 0.0;
+                    }
+                    if self.frame > 15 { self.frame = 2; }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 1;
+                }
             }
             NpcKind::DukeFishron => {
                 if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
@@ -19001,6 +19107,12 @@ impl Npc {
             NpcKind::CultistDragonHead => 454,
             NpcKind::CultistDragonBody1 => 455,
             NpcKind::CultistDragonBody2 => 456,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::CultistDragonBody3 => 457,
+            NpcKind::CultistDragonBody4 => 458,
+            NpcKind::CultistDragonTail => 459,
+            NpcKind::Butcher => 460,
+            NpcKind::CreatureFromTheDeep => 461,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24070,7 +24182,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 295] = [
+    pub(super) const ALL_KINDS: [NpcKind; 300] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24349,6 +24461,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: CultistDragonBody3, CultistDragonBody4, CultistDragonTail, Butcher, CreatureFromTheDeep.
+        NpcKind::CultistDragonBody3,
+        NpcKind::CultistDragonBody4,
+        NpcKind::CultistDragonTail,
+        NpcKind::Butcher,
+        NpcKind::CreatureFromTheDeep,
         // W4-d40: BoneThrowingSkeleton4, SkeletonMerchant, CultistDragonHead, CultistDragonBody1, CultistDragonBody2.
         NpcKind::BoneThrowingSkeleton4,
         NpcKind::SkeletonMerchant,
@@ -27990,7 +28108,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            295,
+            300,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -34297,5 +34415,73 @@ mod w4_d40_bonethrowingskeleton4_skeletonmerchant_tests {
         assert_eq!(Npc::new(NpcKind::CultistDragonHead, 0.0, 0.0, 1, 0.0).alpha, 255);
         assert_eq!(Npc::new(NpcKind::CultistDragonBody1, 0.0, 0.0, 1, 0.0).alpha, 255);
         assert_eq!(Npc::new(NpcKind::CultistDragonBody2, 0.0, 0.0, 1, 0.0).alpha, 255);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the CultistDragonBody3, CultistDragonBody4, CultistDragonTail, Butcher, CreatureFromTheDeep
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_cultistdragonbody3_cultistdragonbody4_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::CultistDragonBody3, 457u16, 6u8, 32.0, 32.0, 50, 30, 10000, 0.0f32, 0.0),
+            (NpcKind::CultistDragonBody4, 458u16, 6u8, 32.0, 32.0, 50, 30, 10000, 0.0f32, 0.0),
+            (NpcKind::CultistDragonTail, 459u16, 6u8, 32.0, 32.0, 50, 30, 10000, 0.0f32, 0.0),
+            (NpcKind::Butcher, 460u16, 3u8, 18.0, 40.0, 70, 30, 700, 0.25f32, 1000.0),
+            (NpcKind::CreatureFromTheDeep, 461u16, 3u8, 18.0, 40.0, 60, 22, 400, 0.3f32, 1000.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::CultistDragonBody3.hit_sound(), Some("NPC_Hit_56"));
+        assert_eq!(NpcKind::CultistDragonBody3.death_sound(), Some("NPC_Killed_60"));
+        assert_eq!(NpcKind::CultistDragonBody4.hit_sound(), Some("NPC_Hit_56"));
+        assert_eq!(NpcKind::CultistDragonBody4.death_sound(), Some("NPC_Killed_60"));
+        assert_eq!(NpcKind::CultistDragonTail.hit_sound(), Some("NPC_Hit_56"));
+        assert_eq!(NpcKind::CultistDragonTail.death_sound(), Some("NPC_Killed_60"));
+        assert_eq!(NpcKind::Butcher.hit_sound(), Some("NPC_Hit_7"));
+        assert_eq!(NpcKind::Butcher.death_sound(), Some("NPC_Killed_17"));
+        assert_eq!(NpcKind::CreatureFromTheDeep.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::CreatureFromTheDeep.death_sound(), Some("NPC_Killed_1"));
+        // The noGravity rows.
+        assert!(NpcKind::CultistDragonBody3.no_gravity());
+        assert!(NpcKind::CultistDragonBody4.no_gravity());
+        assert!(NpcKind::CultistDragonTail.no_gravity());
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::CultistDragonBody3.to_u16(), 457);
+        assert_eq!(NpcKind::from_u16(457), Some(NpcKind::CultistDragonBody3));
+        assert_eq!(NpcKind::CultistDragonBody4.to_u16(), 458);
+        assert_eq!(NpcKind::from_u16(458), Some(NpcKind::CultistDragonBody4));
+        assert_eq!(NpcKind::CultistDragonTail.to_u16(), 459);
+        assert_eq!(NpcKind::from_u16(459), Some(NpcKind::CultistDragonTail));
+        assert_eq!(NpcKind::Butcher.to_u16(), 460);
+        assert_eq!(NpcKind::from_u16(460), Some(NpcKind::Butcher));
+        assert_eq!(NpcKind::CreatureFromTheDeep.to_u16(), 461);
+        assert_eq!(NpcKind::from_u16(461), Some(NpcKind::CreatureFromTheDeep));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CultistDragonBody3, SlimeVariant::Blue).kind, NpcKind::CultistDragonHead);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CultistDragonBody4, SlimeVariant::Blue).kind, NpcKind::CultistDragonHead);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CultistDragonTail, SlimeVariant::Blue).kind, NpcKind::CultistDragonHead);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Butcher, SlimeVariant::Blue).net_id, 460);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CreatureFromTheDeep, SlimeVariant::Blue).net_id, 461);
+        assert_eq!(Npc::new(NpcKind::CultistDragonBody3, 0.0, 0.0, 1, 0.0).alpha, 255);
+        assert_eq!(Npc::new(NpcKind::CultistDragonBody4, 0.0, 0.0, 1, 0.0).alpha, 255);
+        assert_eq!(Npc::new(NpcKind::CultistDragonTail, 0.0, 0.0, 1, 0.0).alpha, 255);
     }
 }

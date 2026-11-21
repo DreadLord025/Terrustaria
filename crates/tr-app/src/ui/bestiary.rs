@@ -1624,6 +1624,12 @@ fn portrait_data(
         (NpcKind::CultistDragonHead, _)
         | (NpcKind::CultistDragonBody1, _)
         | (NpcKind::CultistDragonBody2, _) => (sheet_i, 32.0, 32.0, 32.0, white),
+        // W4-d40: the new kinds' portrait boxes (the SetDefaults w/h).
+        (NpcKind::CultistDragonBody3, _)
+        | (NpcKind::CultistDragonBody4, _)
+        | (NpcKind::CultistDragonTail, _) => (sheet_i, 32.0, 32.0, 32.0, white),
+        (NpcKind::Butcher, _)
+        | (NpcKind::CreatureFromTheDeep, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
     }
 }

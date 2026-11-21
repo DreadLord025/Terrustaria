@@ -2271,6 +2271,23 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Phantasm Dragon",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "Butcher",
+        net_id: 460,
+        kind: NpcKind::Butcher,
+        variant: None,
+        quick_unlock: false,
+        name: "Butcher",
+    },
+    BestiaryEntryDef {
+        credit_id: "CreatureFromTheDeep",
+        net_id: 461,
+        kind: NpcKind::CreatureFromTheDeep,
+        variant: None,
+        quick_unlock: false,
+        name: "Creature from the Deep",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2410,6 +2427,11 @@ pub fn try_entry_for_npc(
         // the Hide=true variants have no own entry).
         NpcKind::CultistDragonBody1 => NpcKind::CultistDragonHead,
         NpcKind::CultistDragonBody2 => NpcKind::CultistDragonHead,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::CultistDragonBody3 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonBody4 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2499,6 +2521,11 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // the Hide=true variants have no own entry).
         NpcKind::CultistDragonBody1 => NpcKind::CultistDragonHead,
         NpcKind::CultistDragonBody2 => NpcKind::CultistDragonHead,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::CultistDragonBody3 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonBody4 => NpcKind::CultistDragonHead,
+        NpcKind::CultistDragonTail => NpcKind::CultistDragonHead,
         other => other,
     };
     ENTRIES

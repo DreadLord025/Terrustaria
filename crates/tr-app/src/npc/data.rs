@@ -615,6 +615,12 @@ impl NpcKind {
             NpcKind::CultistDragonHead => 454,
             NpcKind::CultistDragonBody1 => 455,
             NpcKind::CultistDragonBody2 => 456,
+            // W4-d40: CultistDragonBody3, CultistDragonBody4, CultistDragonTail, Butcher, CreatureFromTheDeep keep their vanilla ids (free in the protocol space).
+            NpcKind::CultistDragonBody3 => 457,
+            NpcKind::CultistDragonBody4 => 458,
+            NpcKind::CultistDragonTail => 459,
+            NpcKind::Butcher => 460,
+            NpcKind::CreatureFromTheDeep => 461,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -975,6 +981,12 @@ impl NpcKind {
             454 => NpcKind::CultistDragonHead,
             455 => NpcKind::CultistDragonBody1,
             456 => NpcKind::CultistDragonBody2,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            457 => NpcKind::CultistDragonBody3,
+            458 => NpcKind::CultistDragonBody4,
+            459 => NpcKind::CultistDragonTail,
+            460 => NpcKind::Butcher,
+            461 => NpcKind::CreatureFromTheDeep,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1881,6 +1893,12 @@ impl NpcKind {
             NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => "NPC_Hit_56",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Hit_56",
+            NpcKind::Butcher => "NPC_Hit_7",
+            NpcKind::CreatureFromTheDeep => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2215,6 +2233,12 @@ impl NpcKind {
             NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => "NPC_Killed_60",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => "NPC_Killed_60",
+            NpcKind::Butcher => "NPC_Killed_17",
+            NpcKind::CreatureFromTheDeep => "NPC_Killed_1",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2331,6 +2355,10 @@ impl NpcKind {
             NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2612,6 +2640,12 @@ impl NpcKind {
             NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => 6,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => 6,
+            NpcKind::Butcher
+            | NpcKind::CreatureFromTheDeep => 3,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3172,6 +3206,12 @@ impl NpcKind {
             NpcKind::CultistDragonHead
             | NpcKind::CultistDragonBody1
             | NpcKind::CultistDragonBody2 => (32.0, 32.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::CultistDragonBody3
+            | NpcKind::CultistDragonBody4
+            | NpcKind::CultistDragonTail => (32.0, 32.0),
+            NpcKind::Butcher
+            | NpcKind::CreatureFromTheDeep => (18.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3850,6 +3890,12 @@ impl NpcKind {
             NpcKind::CultistDragonHead => 10000,
             NpcKind::CultistDragonBody1 => 10000,
             NpcKind::CultistDragonBody2 => 10000,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3 => 10000,
+            NpcKind::CultistDragonBody4 => 10000,
+            NpcKind::CultistDragonTail => 10000,
+            NpcKind::Butcher => 700,
+            NpcKind::CreatureFromTheDeep => 400,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4244,6 +4290,12 @@ impl NpcKind {
             NpcKind::CultistDragonHead => 100,
             NpcKind::CultistDragonBody1 => 50,
             NpcKind::CultistDragonBody2 => 50,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::CultistDragonBody3 => 50,
+            NpcKind::CultistDragonBody4 => 50,
+            NpcKind::CultistDragonTail => 50,
+            NpcKind::Butcher => 70,
+            NpcKind::CreatureFromTheDeep => 60,
             NpcKind::DungeonSpirit => 70,
         }
     }
