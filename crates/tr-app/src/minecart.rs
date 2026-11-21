@@ -1417,7 +1417,7 @@ fn frame_track_pound(world: &mut World, i: i32, j: i32) -> bool {
     };
     let mut through = 0;
     let mut dead_end = 0;
-    for &opt in &options {
+    for &opt in options {
         if i32::from(TRACK_FRAMES[opt as usize].track_type) == front_type {
             if is_dead_end(opt) { dead_end += 1; } else { through += 1; }
         }

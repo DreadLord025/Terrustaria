@@ -63,6 +63,14 @@ Batch plan (5 arms per commit):
   the wiring arms (tr-core has no entity store — the `smart_cursor.rs:312`
   precedent); the app-side `cell_blocked` wiring is a follow-up seam, the
   same shape `edit::close_door`'s interaction path uses.
+- **Union-exec SUPERSEDES the seam shapes** (research/95 §10, `f982f1d4`/
+  `ed88ec3d`): the `open_door_wired`/`close_door_wired` wrappers named
+  above are DROPPED — `open_door`/`close_door` carry f11's
+  `wire_skips: Option<&mut Vec>` directly (the running gate at the call
+  site); `shift_trapdoor` gained f11's `only_close_or_open` param and both
+  shift fns took the Option skip seam. The bodies, the cue queue and the
+  11-site drain union are unchanged. The g4 NPC-bash drain now re-points
+  at `edit::shift_tall_gate` (`552a0a44`).
 
 ## Explicitly NOT claimed here (later lanes' scope — do not touch)
 

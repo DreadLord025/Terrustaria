@@ -5,6 +5,14 @@
 > `NPC.cs` (1.4.5.8) + the branch tips below. Supersedes nothing; **adopts and
 > extends research/71** (the e20×f11 device-arm reconcile, `8791f07f` on
 > `task/W4-e20-wiring-device-arms-2` — pushed; no separate "e20b" branch exists).
+>
+> **EXECUTION STATUS (union-exec on `task/W4-c42-wiring-device-arms`, this
+> branch is now the wiring canonical).** All six items below executed
+> code-only on top of the reconcile tip `ec568b3e`; per-item hashes + what
+> landed in §10. No `e20c` branch exists on origin (checked at exec time) —
+> the PlaySound(7)/OnceLock wins came from f11 and were merged INTO the kept
+> e20 bodies per research/71 §3b, exactly as item 4's fallback allows. No
+> cargo/tests/graphify run; every witness WRITTEN NOT RUN.
 
 **Tips compared** (all branched from `a725acb0`, wave-3 land):
 
@@ -322,3 +330,48 @@ bodies ×2, `coins_split` ×2, `try_find_chest_for_extractinator`/
 `decompiled/Terraria/` checkout; all port comparisons read from
 `git diff a725acb0..<tip>` per file. No cargo/tests/graphify run (code-only
 lane); every witness named above is WRITTEN NOT RUN on its source branch.*
+
+---
+
+## 10. EXECUTED — the union-exec record (this branch, on top of `ec568b3e`)
+
+Executed code-only on `task/W4-c42-wiring-device-arms` (the wiring
+canonical). Order: items 1→2→3→6→5→4→3-finish→4-finish (the light
+unification ran BEFORE the e20/e21 cherry-picks so their hunks land on the
+final method shapes; e21 before e20 per the §9.5 adjacency note — all
+auto-merged except two additive field/drain conflicts in `264dc4b7`,
+resolved by union, and the anchors.txt tail in `12cc46a2`, resolved by
+union + re-pointing the c42 canary rows at the surviving symbols).
+
+| Item | Status | Commits | What landed |
+| --- | --- | --- | --- |
+| 1 — doors Option shape | **EXECUTED** | `f982f1d4` | f11's `wire_skips: Option<&mut Vec<(i32,i32)>>` appended to `open_door`/`close_door` themselves; the c42 `open_door_wired`/`close_door_wired` wrappers + `*_inner` split DROPPED; the `Main.netMode != 1 && Wiring.running` gate lives at the arm call sites (`if self.running { Some(&mut skips) } else { None }`); all interaction/NPC/test callers pass `None` (edit.rs ×3 + ~14 test sites, npcs.rs bash drain). The c42 11-site `door_cues` drain union KEPT untouched. f11's unique `w4_f11_the_door_direction_draw_is_deterministic` landed beside the c42 stream-join pin; the open/close overlap pair kept as the c42 versions (they pin the SkipWire sets). |
+| 2 — trapdoor param | **EXECUTED** | `ed88ec3d` | `only_close_or_open: i32` merged into the c42 `shift_trapdoor` (the `:51450`/`:51534` branch gates verbatim; the wiring arm passes the C# default −1); `shift_trapdoor`/`shift_tall_gate` skip seams adopt the §1 Option shape. The c42 body wins all kept: paint+fullbright coating, in-body per-site cues (incl. the double-thud), `touch()`, the injected `can_kill` slice, the radius-2/4 superset reframes. New gate witness `c42_the_trapdoor_only_close_or_open_gates_the_direction`. |
+| 3 — tall gates + g4 re-point | **EXECUTED** | `552a0a44`, `23411fa7` | The c42 `shift_tall_gate` body untouched (already canonical: alternate-0 decode, padding-free row walk, radius-4 reframe); the §3 NPC-bash drain re-point contract documented ON the fn and LANDED in `world_sim/npcs.rs`: g4's real player/NPC box-overlap closure kept, `wire_skips: None`, the in-body cues drained on UpdateNpcs at the adjusted anchor centre (g4's hit-cell `play_door_sound` call replaced), refusal `ai[3]=60`+`net_update`, success `world_key=None`, drops on UpdateNpcs. g4's `edit.rs` shift copy NOT taken (alternate-1 + radius-2 gap dropped with it). S1-D-3z stand-in docs retired (npc.rs, npc_ai_fighter_scan.rs). Both g4 witnesses landed re-pointed (`w4_g4_the_door_bash_drain_shifts_the_tall_gate`, `w4_g4_shift_tall_gate_opens_the_closed_gate` — fixtures re-derived to the real placement grid frameY 0/20/38/56/74, verified against `tileobject/registry.rs` D_388 `coordinate_heights [18,16,16,16,18]` + padding 2). |
+| 4 — e20 devices | **EXECUTED (cherry-picked, not attach-contract)** | `39b9d71c`, `6dc38f37`, `0df48370`, `264dc4b7`, `4e4f8a92`, `26ae3739`, `83ef35ff`, `05b6f940`, `12cc46a2`, `f1c24c38`, `e8e6b159` | The whole e20 code+docs slice cherry-picked (fix round, light/429 witnesses, b=0 pin, the three D8-residual arms + app minecart extension + hopper/extractinator bodies, grab-box + partial-merge + cap-fixture + lantern fixes, D8-closure docs, research/71). **No `e20c` branch exists on origin** (re-checked at exec time) — the PlaySound(7)/OnceLock wins are f11's and were merged INTO the kept e20 code per research/71 §3b (`e8e6b159`): `try_put_item_in_chest` returns `(placed, remaining, filled_empty)` and `hopper_pull` plays `play_pickup_sound(false, app.wiring.rand_mut())` on the empty-slot path (the wiring-stream draw, order-identical); `track_switch_options` wrapped in the OnceLock 64-mask cache over `TRACK_FRAMES` (returns `Option<&'static [i32]>`). The f11 §3b.3 witnesses re-pointed: coins_split 1234567, grab-rect 192, locked-chest refusal (fixture keeps frameX 72 — `chest_at` would reset it), non-anchor hopper/extractinator hits (wire re-routed around the anchor cell — discriminating under the e20 hit-cell request seam), the three cooldown-EXPIRY re-fires, the track-table sanity + lookup-mask pins (in app minecart.rs). f11's `tr-core::minecart`/`wiring_devices.rs` NOT taken (never existed on this branch). |
+| 5 — e21 unique ×4 | **EXECUTED (cherry-picked clean)** | `7c9a67a2`, `8a3d7c7a`, `7ef9166b` | pump `xfer_water` active-gate drop, monolith nine-kind gate + grate 546/557 wake drops, boulder-531 app drain → DeviceShot{99,70,10.0}. All three auto-merged (the §7 adjacency predictions held; the Boulder arm sits above the e20 drain extends, both `s1_l6_tests` tails unioned). |
+| 6 — d6 try_toggle_light unification | **EXECUTED** | `6381b52d` | ONE free-fn family (the 10 `Toggle*` statics + the unique `try_toggle_light` dispatch) with `forced: Option<bool>` AND a `skips: Option<&mut Vec>` out-collector; the base `Wiring` methods became thin wire-path wrappers (`None` + `Some(&mut skips)` → `self.skip`; campfire drops → `actuation_drops`); the torch arm adopts f11's `SET_TORCHES` guard form calling the unified `toggle_torch`. The forced gates follow the C# per-static form (early-return vs wrap; campfire's gate AFTER the validate). `skip_wires=true` now feeds the collector (the §8.5 seam structurally closed; the collected cells are discarded in `try_toggle_light` — no free-fn caller owns a flood skip set, documented). d6's 4 forced-gate witnesses + f11's unique actuated-torch witness landed; the e20 skip-set witnesses (`6dc38f37`/`05b6f940`) pin the unified family's wire path. **Attach contract**: `pub fn try_toggle_light(world, x, y, forced: Option<bool>, skip_wires: bool, drops: &mut Vec<ObjectDrop>) -> bool` is UNCHANGED — d6's `projectile_ai_guns.rs:183/:189` callers (on `task/W4-d6-proj-ai-51-60`, not merged here) attach verbatim when that lane lands. |
+
+**Witness union state**: every KEEP/unique witness named in §1-7 is present
+on this branch under its original name (re-pointed where the signature
+changed); the dropped overlaps are f11's open/close/trapdoor/tall-gate
+duplicates (the c42 versions pin strictly more) and f11's plain-rail/
+no-back duplicates (the e20 versions ride the kept seam). The g4 unit
+witness additionally pins the adjusted-top cue position. New witnesses
+added by the exec: the `only_close_or_open` gate pin, the f11
+deterministic-draw + actuated-torch pins, and the nine re-pointed f11
+device pins. All WRITTEN NOT RUN (code-only).
+
+**Canary**: the c42 anchors rows for `open_door_wired`/`close_door_wired`
+were re-pointed at `pub fn open_door(`/`pub fn close_door(` (the wrappers
+are gone — the rows would have failed the build); the four e20 rows landed
+verbatim. The `fn toggle_camp_fire` row still matches (the wrapper kept its
+name).
+
+**Open seams after the exec**: §8.1 (the wiring-tick drain still passes
+the always-free closure — the g4 NPC closure is landed and is the
+reference), §8.2 SendData(19), §8.5 (collector landed, sink pending),
+§8.6-8.10 unchanged; §8.11 unchanged (the trapdoor close guard still rides
+the injected slice). The §9.6 doc rows (PORT_MAP D8-residual → e20
+modules) landed with `12cc46a2`; no f11/g4-shift rows ever existed on this
+branch to delete.
