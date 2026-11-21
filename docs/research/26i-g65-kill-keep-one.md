@@ -155,4 +155,4 @@ generic snapshot hook keeps snapshotting the gun kinds — inert, no arm
 consumes them post-drop. One survivor, never both: a double-feed desyncs
 the stream. Post-drop drain: 316−3 = **313 kinds**; the 406-site closure
 holds with the 3 gun sites moving to other-lane-claimed (390+9+7 = 406).
-The FINAL bible (research/308 §2b) carries the same hunks.
+The FINAL bible (research/346 §2b) carries the same hunks.

@@ -46,7 +46,7 @@ per `docs/superpowers` agreements).
 | 25 | NPC AI families (aiStyle dispatch) | `25-npc-ai-audit.md` | в¬њ |
 | 26 | Projectile AI families (aiStyle dispatch) | `26-projectile-ai-audit.md` | в¬њ |
 | 26i | g65 Kill-bodies keep-one receipt (the d78c blasts cross-lane publish: 234-census CLOSED 406=393+6+7, the d77/g3 census drop-hunks, the swept-618 inline KEEP) | `26i-g65-kill-keep-one.md` | done |
-| 308 | g65 Kill death-dust-family bible FINAL (the 309→316-kinds census correction, the 406-site closure re-scan, the d78/g1 CURRENT-tip re-verification + the 17 merger drop-hunks incl. the d6 gun smoke-puff keep-one per g63-298 §3.3, the deferred set task-seeded S1-P-i58/59/60, the family declaration; chain 245→308 per registry-150 §7.4 fresh sweep) | `308-g65-kill-death-dust-family-final.md` | ✅ SEALED |
+| 346 | g65 Kill death-dust-family bible FINAL (the 309→316-kinds census correction, the 406-site closure re-scan, the d78/g1 CURRENT-tip re-verification + the 17 merger drop-hunks incl. the d6 gun smoke-puff keep-one per g63-298 §3.3, the deferred set task-seeded S1-P-i58/59/60, the family declaration; chain 245→308→346 per registry-150 §8.7 FROZEN assignment) | `346-g65-kill-death-dust-family-final.md` | ✅ SEALED |
 | 27 | Mounts / pets / minecart / grapple | `27-mounts-pets-vehicles.md` | в¬њ |
 | 28 | Buffs & debuffs (apply, UI, sync) | `28-buffs-debuffs.md` | в¬њ |
 | 29 | Town NPCs (housing/happiness/pylon) | `29-town-npc-housing.md` | в¬њ |

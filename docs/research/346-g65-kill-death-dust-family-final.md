@@ -1,4 +1,4 @@
-# 308 — g65 Kill death-dust-family bible FINAL (the 309→316-kinds census)
+# 346 — g65 Kill death-dust-family bible FINAL (the 309→316-kinds census)
 
 Status: FINAL / SEALED (W4-g65, 2026-11-21). Code-only — no
 cargo/rustc/tests/rustfmt/graphify invoked; every witness WRITTEN NOT RUN.
@@ -7,7 +7,12 @@ read in ≤100-line windows. Rust cites pin g65's tip `b0842907c`
 (`crates/tr-app/src/projectile_death_dust.rs`, 7315 lines at that tip;
 7333 with this seal's new witness).
 
-**Number chain: 245 → 308.** The prior session's uncommitted draft claimed
+**Number chain: 245 → 308 → 346.** Registry-150 §8.7 AMENDMENT 3
+(`origin/task/W4-d54` `9dddb32b4`, FROZEN TABLE): g65's post-§8
+tips-only self-pick 308 is contested → **346 the §8.7 FINAL assignment**
+(this file was formerly numbered 308; micro-rename,
+content unchanged). Historical chain narrative below, preserved verbatim:
+the prior session's uncommitted draft claimed
 "245 first free" from a stale sweep; registry-150's LATEST refresh
 (`origin/task/W4-d54-dust-sites-world` `0426245f2`,
 `docs/research/150-research-number-registry.md` §7.4) declares 245 inside
@@ -229,10 +234,10 @@ The 7 deferred dust sites are NOT free; each needs state the drain's
 
 | kind(s) | C# arm | dust | the blocking state | owner lane / seed |
 | ------- | ------ | ---- | ------------------ | ----------------- |
-| 1084 TorchGodHelper | `:70956-70975` | 40× `TorchID.Dust[(int)ai[0]]` alpha 100, Next(3)≠0 → noGravity, vel×2.5; type-66 → `Main.DiscoR/G/B` colour + noGravity | the 24-entry `TorchID.Dust` table (`TorchID.cs:179-184`, UNPORTED — only `TorchColor` is ported) + the App-frame disco cycle (`App.disco`/`advance_disco` exists, `app/mod.rs:840/1499`, but is not in `SpawnCtx`) | **S1-P-i58** (R-308-1): the torch-table + disco feed into the drain seam, then the 1084/949 arms |
+| 1084 TorchGodHelper | `:70956-70975` | 40× `TorchID.Dust[(int)ai[0]]` alpha 100, Next(3)≠0 → noGravity, vel×2.5; type-66 → `Main.DiscoR/G/B` colour + noGravity | the 24-entry `TorchID.Dust` table (`TorchID.cs:179-184`, UNPORTED — only `TorchColor` is ported) + the App-frame disco cycle (`App.disco`/`advance_disco` exists, `app/mod.rs:840/1499`, but is not in `SpawnCtx`) | **S1-P-i58** (R-346-1): the torch-table + disco feed into the drain seam, then the 1084/949 arms |
 | 949 TorchGod | `:70976-70995` | 20× `(int)ai[0]`-typed dust alpha 100, Next(3)≠0 → noGravity, vel×0.8; type-66 → disco colour + noGravity | same disco feed (no table — the type is ai[0] direct) | **S1-P-i58** (rides the same feed) |
-| 868/869/996 Tree/World/MoonGlobe | `:73705-73728` | 15× dust-13 vel(0,−2) scale 1.5 (no explicit draws) | the AFTER-dust `WorldGen.TreeTops.RandomizeTreeStyleBasedOnWorldPosition(Main.rand, Center)` / `RandomizeBackgroundBasedOnPlayer(Main.rand, player[owner])` / `RandomizeMoonState(Main.rand, true)` (`:73717/:73720/:73723`) — UNPORTED state-bearing randomizers that consume the SAME `Main.rand` + `SendData(7)` | **S1-P-i59** (R-308-2): the three globe Kill arms ride the worldgen-randomizer lane (g70/g71/g72-adjacent); the 15-dust prefix ports with them (stream order: dust internals BEFORE the randomizer draws) |
-| 655 BeeHive | `:75080-75124` | 30× dust-147, Next(2)==0 → scale×1.4, `velocity *= 1.9` PER ITERATION (the corpse velocity compounds ×1.9³⁰) | the wet-item `Item.NewItem(1124, Next(2,6))` / the 2+3×Next(3) NPC-count + `NPC.NewNPC(Next(210,212), Start:1)` burst with per-NPC velocity rolls — cross-seam spawn draws; the compounding velocity write mutates the corpse mid-arm | **S1-P-i60** (R-308-3): the hive death arm rides the NPC-spawn/item-drop seam owner; the dust prefix + the ×1.9 ladder port together (the velocity write is observable by later hooks) |
+| 868/869/996 Tree/World/MoonGlobe | `:73705-73728` | 15× dust-13 vel(0,−2) scale 1.5 (no explicit draws) | the AFTER-dust `WorldGen.TreeTops.RandomizeTreeStyleBasedOnWorldPosition(Main.rand, Center)` / `RandomizeBackgroundBasedOnPlayer(Main.rand, player[owner])` / `RandomizeMoonState(Main.rand, true)` (`:73717/:73720/:73723`) — UNPORTED state-bearing randomizers that consume the SAME `Main.rand` + `SendData(7)` | **S1-P-i59** (R-346-2): the three globe Kill arms ride the worldgen-randomizer lane (g70/g71/g72-adjacent); the 15-dust prefix ports with them (stream order: dust internals BEFORE the randomizer draws) |
+| 655 BeeHive | `:75080-75124` | 30× dust-147, Next(2)==0 → scale×1.4, `velocity *= 1.9` PER ITERATION (the corpse velocity compounds ×1.9³⁰) | the wet-item `Item.NewItem(1124, Next(2,6))` / the 2+3×Next(3) NPC-count + `NPC.NewNPC(Next(210,212), Start:1)` burst with per-NPC velocity rolls — cross-seam spawn draws; the compounding velocity write mutates the corpse mid-arm | **S1-P-i60** (R-346-3): the hive death arm rides the NPC-spawn/item-drop seam owner; the dust prefix + the ×1.9 ladder port together (the velocity write is observable by later hooks) |
 | 91/92 HolyArrow/HallowStar | `:75212-75249` | 10× dust-58 speed vel×0.1 alpha 150 scale 1.2 + 3 gores Next(16,18) | the star spawn's state-bearing draws (`Next(-400,400)`/`Next(600,900)` position, the 22/√ normalize, damage/3 for 91) ride `special_arrow_kill` inline (`projectile.rs:20849`, `special_arrows.rs:480/503` — main-landed) | the i17 special-arrow lane (main): the dust+gore prefix folds into `holy_arrow_kill`/`falling_star_kill` ahead of the spawn draws — **cross-seam dedupe note to i17, no new seed** (the arm is already owned) |
 | 89 CrystalBullet | `:75250-75268` | 5× dust-68 noGravity vel×1.5 scale×0.9 | the 2-shard split's 8 state-bearing draws ride `special_bullet_kill` inline (`projectile.rs:20974`, the `:20986` "5 dust-68 (skipped)" comment) | the i18 special-bullet lane (main): the 5-dust prefix folds ahead of the shard draws — **cross-seam dedupe note to i18, no new seed** |
 | 183 Beenade | `:76431-76464` | 20× dust-31 alpha 100 scale 1.5 vel×1 | the 4 gore rows + the bee burst's draws ride `beenade_death` (`projectile_ai_thrown.rs:461`, main-landed — the G3 census: 4×(Next(61,64)+kicks) + Next(15,25) + per-bee rolls) | the thrown lane (main): the 20-dust prefix folds ahead of the gore census — **cross-seam dedupe note, no new seed** |
@@ -241,7 +246,7 @@ The three cross-seam rows (89/91+92/183) need NO new lane — the owning
 hooks are main-landed; the fold is a prefix-insert at the cited fn, drawn
 BEFORE the existing state-bearing draws (the C# body order). The three
 seeded rows (1084+949 / 868+869+996 / 655) are registered as S1-P-i58/59/60
-(ROADMAP) + R-308-1/2/3 (research/90 §(d)) — id space verified free at
+(ROADMAP) + R-346-1/2/3 (research/90 §(d)) — id space verified free at
 every tip.
 
 ## 5. The death-dust-family declaration (the bible)
