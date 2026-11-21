@@ -846,11 +846,25 @@ pub struct Player {
     pub mana_regen_bonus: i32,
     /// `Player.nebulaLevelMana` (`Player.cs:926`): the Nebula Mana booster
     /// tier 0..3 (`UpdateBuffs_NebulaBuffs` `:12070-12079` derives it from
-    /// the live 176-178 slot — the buff-scan lane owns that write;
-    /// `NebulaLevelup` `:57050-57053` grants the buff). `ResetEffects`
-    /// zeroes it (`:18755`); `RegenState::nebula_mana_counter` is the
-    /// cadence half the regen engine reads (`ApplyNebulaBuffMana`).
+    /// the live 176-178 slot — the scan arm landed with W4-f49 lane 12;
+    /// `NebulaLevelup` `:57050-57053` grants the buff, the 3455 pickup is
+    /// its only source). `ResetEffects` zeroes it (`:18755`);
+    /// `RegenState::nebula_mana_counter` is the cadence half the regen
+    /// engine reads (`ApplyNebulaBuffMana`).
     pub nebula_level_mana: i32,
+    /// `Player.nebulaLevelLife` (`Player.cs:924`): the Nebula Life booster
+    /// tier — the same `UpdateBuffs_NebulaBuffs` derivation on the 173-175
+    /// slot (`:10448-10452`); `NebulaLevelup` `:57046-57049` (the 3454
+    /// pickup). The `lifeRegen += 6 * tier` consumer stays the f12
+    /// buff-frame lane's (its `orb_scan.nebula_level_life` twin); this
+    /// field carries the levelup ladder + the shared reset (`:18755`).
+    pub nebula_level_life: i32,
+    /// `Player.nebulaLevelDamage` (`Player.cs:930`): the Nebula Damage
+    /// booster tier — the 179-181 slot (`:10453-10461`), `NebulaLevelup`
+    /// `:57054-57057` (the 3453 pickup). The `0.15 * tier` four-class
+    /// damage consumer stays the f12 buff-frame lane's; this field carries
+    /// the levelup ladder + the shared reset (`:18755`).
+    pub nebula_level_damage: i32,
     /// `Player.usedArcaneCrystal` (`Player.cs:856`): the 5339 shimmer
     /// permanent (`ItemCheck_UseShimmerPermanentItems` `:45399-45404` —
     /// the crystals/powerups lane owns the use arm). NOT cleared by
@@ -2562,6 +2576,8 @@ impl Player {
             auras: tr_core::scene::Auras::default(),
             mana_regen_bonus: 0,
             nebula_level_mana: 0,
+            nebula_level_life: 0,
+            nebula_level_damage: 0,
             used_arcane_crystal: false,
             stat_defense: 0,
             well_fed: false,
@@ -3459,6 +3475,66 @@ impl Player {
         }
     }
 
+    /// `Player.NebulaLevelup` (`Player.cs:57030-57059`): the Nebula booster
+    /// pickup's buff grant (W4-f49 lane 12). The `whoAmI != Main.myPlayer`
+    /// gate is always false in the single-player port. The scan deletes
+    /// EVERY buff in `[type, type+3)` with the C#'s `DelBuff(i--)` rescan
+    /// (the compaction re-presents the next buff at the same index — the
+    /// port's `del_buff` compacts identically, so the loop re-reads `i`).
+    /// Then the family's tier climbs ONE, clamped 0..3 (`MathHelper.Clamp`
+    /// — the tier is never negative), and `AddBuff(base + tier - 1, 480)`
+    /// grants the tier's buff id. Only the three base ids act; anything
+    /// else falls through the switch with the deletes already done.
+    pub(crate) fn nebula_levelup(&mut self, buff_kind: i32) {
+        let time = 480; // `:57036`
+        let mut i = 0;
+        while i < crate::buffs::MAX_BUFFS {
+            let bt = self.buffs.buff_type[i];
+            if bt >= buff_kind && bt < buff_kind + 3 {
+                self.buffs.del_buff(i); // `:57041` — `DelBuff(i--)` then `i++`
+            } else {
+                i += 1;
+            }
+        }
+        match buff_kind {
+            173 => {
+                // `:57046-57049`: `(int)MathHelper.Clamp(tier + 1, 0f, 3f)`.
+                self.nebula_level_life = (self.nebula_level_life + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_kind + self.nebula_level_life - 1, time);
+            }
+            176 => {
+                // `:57050-57053` — the mana family (the 3455 pickup).
+                self.nebula_level_mana = (self.nebula_level_mana + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_kind + self.nebula_level_mana - 1, time);
+            }
+            179 => {
+                // `:57054-57057` — the damage family (the 3453 pickup).
+                self.nebula_level_damage = (self.nebula_level_damage + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_kind + self.nebula_level_damage - 1, time);
+            }
+            _ => {}
+        }
+    }
+
+    /// `Player.UpdateBuffs_NebulaBuffs` (`Player.cs:12070-12079`): derive
+    /// the family tier from the live slot (`1 + buffType[b] - baseBuffId`),
+    /// and at the `buffTime == 2` edge with tier > 1 step BOTH the returned
+    /// tier and the slot's buffType down one, re-arming `buffTime = 480`.
+    /// The C# takes `ref nebulaLevel` but its first statement OVERWRITES it
+    /// (`:12072` is an assign, not an add) — the port returns the derived
+    /// value and the caller assigns the family field. `b` is the slot
+    /// index; the timer check reads the POST-tick-head value (the head
+    /// decrements before the scan, `:9869-9876`), so a 480-granted tier-2+
+    /// buff steps down when its timer reaches 2.
+    fn update_buffs_nebula_buffs(&mut self, base_buff_id: i32, b: usize) -> i32 {
+        let mut level = 1 + self.buffs.buff_type[b] - base_buff_id; // `:12072`
+        if self.buffs.buff_time[b] == 2 && level > 1 {
+            level -= 1; // `:12075`
+            self.buffs.buff_type[b] -= 1; // `:12076`
+            self.buffs.buff_time[b] = 480; // `:12077`
+        }
+        level
+    }
 
     /// S1-C-7 wave B: takes the accepted-hurt retaliation request
     /// (`Player.cs:38401-38517`) — the hit-moment snapshot (final post-floor
@@ -6072,11 +6148,14 @@ impl Player {
         // summon arms pass in `world_sim/player.rs`).
         self.reset_projectile_caches();
         self.mana_regen_bonus = 0;
-        // `ResetEffects`' nebula trio zero (`Player.cs:18755`) — the Mana
-        // tier; the Life/Damage twins are the buff-tail lane's fields. The
-        // regen COUNTER is not reset here (the C# leaves it to the tier-0
-        // arm of `ApplyNebulaBuffMana`, `:19583`).
+        // `ResetEffects`' nebula trio zero (`Player.cs:18755`) — ONE chained
+        // assign clears Damage, Life AND Mana (`nebulaLevelDamage =
+        // (nebulaLevelLife = (nebulaLevelMana = 0))`). The regen COUNTER is
+        // not reset here (the C# leaves it to the tier-0 arm of
+        // `ApplyNebulaBuffMana`, `:19583`).
         self.nebula_level_mana = 0;
+        self.nebula_level_life = 0;
+        self.nebula_level_damage = 0;
         // `ResetEffects`' `magicCuffs = false` (`Player.cs:18599`): the cuffs'
         // accessory rows below re-arm it from the live items each tick.
         self.magic_cuffs = false;
@@ -6765,6 +6844,34 @@ impl Player {
                     self.lava_immune = true;
                     self.lava_vision = true;
                     self.fire_walk = true;
+                }
+                // W4-f49 lane 12 — `UpdateBuffs`' Nebula trio arms
+                // (`Player.cs:10444-10461`), in the C# chain order (Mana →
+                // Life → Damage). Each calls `UpdateBuffs_NebulaBuffs`
+                // (`:12070-12079`): tier = 1 + buffType − base, and the
+                // `buffTime == 2 && tier > 1` edge steps the buff DOWN one
+                // id with a fresh 480-tick timer. The scan's snapshot keeps
+                // the slot indices stable across the in-place buffType
+                // write (no compaction happens here). The Life arm's
+                // `lifeRegen += 6 * tier` (`:10451`) and the Damage arm's
+                // `0.15 * tier` four-class adds (`:10456-10460`) are the
+                // W4-f12 buff-frame lane's consumers (its `orb_scan` twins,
+                // branch task/W4-f12-buff-frame-wiring) — the merge keeps
+                // one writer; recorded seam.
+                176..=178 => {
+                    if let Some(i) = self.buffs.find_buff_index(bt) {
+                        self.nebula_level_mana = self.update_buffs_nebula_buffs(176, i);
+                    }
+                }
+                173..=175 => {
+                    if let Some(i) = self.buffs.find_buff_index(bt) {
+                        self.nebula_level_life = self.update_buffs_nebula_buffs(173, i);
+                    }
+                }
+                179..=181 => {
+                    if let Some(i) = self.buffs.find_buff_index(bt) {
+                        self.nebula_level_damage = self.update_buffs_nebula_buffs(179, i);
+                    }
                 }
                 _ => {}
             }
@@ -14968,6 +15075,140 @@ mod tests {
             42 + 150,
             "the +150 rides every kind"
         );
+    }
+
+    /// W4-f49 lane 12 — `NebulaLevelup` (`Player.cs:57030-57059`): the
+    /// pickup climbs the family tier ONE per grant, clamped at 3, deletes
+    /// the family's old buff ids first (`DelBuff(i--)` rescan) and grants
+    /// `base + tier - 1` for 480 ticks. The item rows map 3453→179,
+    /// 3454→173, 3455→176 (`Item.cs:31008-31016`). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_nebula_levelup_climbs_the_ladder_and_replaces_the_family_buff() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        // First mana pickup: tier 0 → 1, buff 176 for 480.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 1);
+        let i = p.buffs.find_buff_index(176).expect("tier 1 = base id");
+        assert_eq!(p.buffs.buff_time[i], 480);
+        // Second: the old 176 is DELETED, tier 2 grants 177.
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 2);
+        assert!(p.buffs.find_buff_index(176).is_none(), "the old id aired");
+        let i = p.buffs.find_buff_index(177).expect("tier 2");
+        assert_eq!(p.buffs.buff_time[i], 480);
+        // Third and fourth: cap 3 — the tier stays, the 178 timer refreshes
+        // to 480 (AddBuff's same-id arm keeps the larger time).
+        p.nebula_levelup(176);
+        p.nebula_levelup(176);
+        assert_eq!(p.nebula_level_mana, 3, "MathHelper.Clamp caps at 3");
+        assert!(p.buffs.find_buff_index(178).is_some());
+        assert!(p.buffs.find_buff_index(177).is_none());
+        // The families are independent: a Life pickup deletes only 173-175.
+        p.nebula_levelup(173);
+        assert_eq!(p.nebula_level_life, 1);
+        assert!(p.buffs.find_buff_index(173).is_some());
+        assert!(p.buffs.find_buff_index(178).is_some(), "the mana buff survives");
+        p.nebula_levelup(179);
+        assert_eq!(p.nebula_level_damage, 1);
+        assert!(p.buffs.find_buff_index(179).is_some());
+        // An unknown base id still runs the delete scan but grants nothing.
+        p.nebula_levelup(200);
+        assert_eq!(p.buffs.active_count(), 3, "no fourth buff from a stray id");
+    }
+
+    /// W4-f49 lane 12 — `UpdateBuffs_NebulaBuffs` (`Player.cs:12070-12079`,
+    /// scan arms `:10444-10461`): the live slot derives the tier every tick
+    /// (`1 + buffType - base`, an ASSIGN — a stale field cannot survive a
+    /// tick with the buff up), and the `buffTime == 2 && tier > 1` edge
+    /// steps the buff id down one with a fresh 480 timer. The timer read is
+    /// POST-tick-head (`:9871-9873` decrements inside the same scan).
+    /// WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_nebula_scan_derives_the_tier_and_steps_down_at_time_two() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.nebula_levelup(176);
+        p.nebula_levelup(176); // tier 2, buff 177 @ 480
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 2, "the scan re-derived the tier");
+        let i = p.buffs.find_buff_index(177).unwrap();
+        assert_eq!(p.buffs.buff_time[i], 479, "one head decrement");
+        // Drive the timer to 3: the NEXT tick's head leaves 2 and the arm
+        // steps 177 → 176 with buffTime 480 (the tier drops to 1).
+        p.buffs.buff_time[i] = 3;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 1, "the step-down landed on the field");
+        assert!(p.buffs.find_buff_index(177).is_none());
+        let j = p.buffs.find_buff_index(176).expect("stepped to the tier-1 id");
+        assert_eq!(p.buffs.buff_time[j], 480, "the fresh 480 window");
+        // Tier 1 never steps (`tier > 1` gate): time 2 just expires normally.
+        p.buffs.buff_time[j] = 3;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 1, "no step at tier 1");
+        assert_eq!(p.buffs.buff_time[j], 2);
+        // The Life/Damage twins ride the same helper on their own fields.
+        let mut q = Player::spawn(&w);
+        q.nebula_levelup(173);
+        q.nebula_levelup(173);
+        let k = q.buffs.find_buff_index(174).unwrap();
+        q.buffs.buff_time[k] = 3;
+        q.update(&w, PlayerInput::default());
+        assert_eq!(q.nebula_level_life, 1);
+        assert!(q.buffs.find_buff_index(173).is_some());
+        let mut r = Player::spawn(&w);
+        r.nebula_levelup(179);
+        r.nebula_levelup(179);
+        let k = r.buffs.find_buff_index(180).unwrap();
+        r.buffs.buff_time[k] = 3;
+        r.update(&w, PlayerInput::default());
+        assert_eq!(r.nebula_level_damage, 1);
+        assert!(r.buffs.find_buff_index(179).is_some());
+    }
+
+    /// W4-f49 lane 12 — the END-TO-END mana lane: a 3455 pickup grants buff
+    /// 176, the next player tick's scan derives `nebulaLevelMana = 1`, and
+    /// `ApplyNebulaBuffMana` (`:19421`, d117's read arm) accrues the counter
+    /// — SIX ticks at tier 1 yield ONE mana point (`:19570-19574`), on top
+    /// of the normal regen line. The pickup→writer→reader chain the f49
+    /// first half recorded as "no port writer yet" is now closed on this
+    /// branch. WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_the_mana_pickup_feeds_the_regen_engine_through_the_scan() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.mana = 10;
+        p.mana_max = 200;
+        p.nebula_levelup(176); // the 3455 pickup's grant
+        // Park the normal regen line far out so ONLY the nebula arm grants.
+        p.regen.mana_regen_delay = 1000.0;
+        for _ in 0..5 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert_eq!(p.nebula_level_mana, 1, "the scan re-derived the tier");
+        assert_eq!(p.regen.nebula_mana_counter, 5);
+        assert_eq!(p.mana, 10, "no point before the sixth tick");
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.mana, 11, "the 6-counter grant (:19571-19574)");
+        assert_eq!(p.regen.nebula_mana_counter, 0);
+    }
+
+    /// W4-f49 lane 12 — `ResetEffects`' chained trio zero
+    /// (`Player.cs:18755`): one tick without a live nebula buff clears ALL
+    /// THREE tiers (the C# chains Damage = (Life = (Mana = 0))); the regen
+    /// counter is NOT reset here — the engine's tier-0 arm owns that
+    /// (`:19583`, d117's witness pins it). WRITTEN NOT RUN.
+    #[test]
+    fn w4_f49_reset_effects_zeroes_all_three_nebula_tiers() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.nebula_level_mana = 3;
+        p.nebula_level_life = 2;
+        p.nebula_level_damage = 1;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.nebula_level_mana, 0);
+        assert_eq!(p.nebula_level_life, 0);
+        assert_eq!(p.nebula_level_damage, 0);
     }
 
     /// `Player.Heal` (`Player.cs:35112-35123`): the cap AFTER the queue —
