@@ -195,6 +195,14 @@ When d36 lands 163/164 (+ the wall forms 165/238): replace the two
 type)` Bottom placement); the `SetDefaults` rows + the `FindFrame` cases +
 the wall-stick transform + the expert web-shot are d36's census above.
 The arm's gates/draws are ALREADY faithful — d36 only swaps the outcome.
+**RETIRE-PHASE CORRECTION (research/96 §2):** `spawn_cave_walker` is the
+WRONG ctor for this arm — it re-scans `world.surface_of` (the world
+surface column, not the found cavern tile) and adds a `liquid > 128`
+veto the C# lacks. The published activation hunk (research/96 §2) uses
+the Bottom placement (`spawn_caster` math via a `spawn_spider_walker`
+alias, `NPC.cs:80770` `nPC.Bottom = (X, Y)`); apply THAT hunk, not this
+recipe. Kind owners: 163 d36 (band re-pinned 767-816 by d37 R7), 164 g8
+(batch 2, proto →745-761 per E8), 238 d37 — the hunk is id-agnostic.
 
 ## FINAL STATUS (W4-g41 closeout) — the egg-sac re-pin deferral + the merger checklist
 

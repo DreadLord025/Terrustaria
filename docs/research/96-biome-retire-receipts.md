@@ -62,4 +62,75 @@ missing-surface symbol now greps PRESENT on the union tip (table above).
 Residual for the liquid merger: the closeout trio carry + the §11 pair
 dedupes; the g41 side owes NOTHING further until activation.
 
+## 2. d36 hand-off — NOT porting yet; activation hunk PUBLISHED anyway
+
+Tips read: `origin/task/W4-d36-npc-kinds-141-210` **`bcf4ac551`** (09:30
+supersede-note), `0eb4fee95` (08:20 census, research/109), `65e481f96`
+(06:03 CLAIM). `origin/task/W4-d36x-npc-kinds-141-210-exec` tip ==
+`0eb4fee95` (same census, zero code). Receipt: `git grep BlackRecluse`
+over both tips' `crates/` hits ONLY the base tables (`lang_tables.rs`
+`:240`/`:315`, itemdata, creative_sacrifices) — **zero kind code**. The
+d36 lane is at CENSUS + PLAN; E4-762-band resume is ACTIVE (research/109
+supersede-note: 21-kind skip list → 28 kinds to port).
+
+**Band caveat (read before wiring ids):** d36's own supersede-note still
+says E4 **762-811** (28 kinds at 762-789), but d37's later reconcile
+`a341daa12` (10:02, research/108 **R7**) re-pins d36 to **767-816**
+(R5 Arapaima → 762, R6 d120 towns → 763-766 took the low holes). The
+activation hunk below keys on `NpcKind` NAMES, never protocol ids — it
+survives either re-pin. Co-lane kind owners at the read tips:
+
+| Kind | Owner tip | Receipt |
+| --- | --- | --- |
+| 164 WallCreeper (+165 wall form) | g8 `82c93cecf` (batch 2 `0a4b76e3f`) | `npc.rs:1163`, `data.rs:607` proto 366 (→745-761 per E8), aiStyle 3 `:2630`, 50×20 `:3202`, cs 164 `:3349`, hp 80 `:3944`, dmg 30 `:4358`, NPCHit29/NPCDeath32 |
+| 163 BlackRecluse | d36 (unported) | research/109 supersede-note 28-kind list; SetDefaults `NPC.cs:11030-11043` re-read: 50×20 aiStyle 3 dmg 90 def 40 350 HP kb 0.25 value 500 slots 0.5 |
+| 238 BlackRecluseWall | d37 `a341daa12` (band 354-399 kept) | `npc.rs:1167`, `data.rs:613` proto 370, hp 350 `:4009` |
+
+### The activation hunk (publish — apply when BOTH kinds exist on main)
+
+`crates/tr-app/src/spawner.rs`, the pool pick at `:1142-1154` (the
+consume-and-None arms; the Stylist sub-arm above is already live). The
+C# is TERMINAL either way (`NPC.cs:1671-1678`), so both replacements
+keep the `return`:
+
+```rust
+        // `:1671-1678` — the pool pick: hardmode `Next(10) != 0` → the
+        // Black Recluse 163, else the Wall Creeper 164 (d36 + g8 kinds).
+        if ctx.flags.hard_mode && rng.next_max(10) != 0 {
+            return spawn_spider_walker(ctx, x, y / 16, NpcKind::BlackRecluse);
+        }
+        return spawn_spider_walker(ctx, x, y / 16, NpcKind::WallCreeper);
+```
+
+with the placement helper beside `set_spawn_spider_flag` (the C#
+`SpawnNPC(spawnTileX * 16 + 8, spawnTileY * 16, type)` is the **Bottom**
+placement — `NPC.cs:5238` → `NewNPC` `:80750`, `nPC.Bottom = (X, Y)`
+`:80770`; NOT `spawn_cave_walker` (`npc.rs:2705`), which re-scans
+`world.surface_of` (the WORLD surface column — wrong row for a cavern
+pocket) and adds a `liquid > 128` veto the C# arm does not have. The
+`spawn_caster` body (`npc.rs:2731`) is the same Bottom math but is named
+for casters; a dedicated helper keeps the aiStyle-3 semantics explicit):
+
+```rust
+/// `NPC.SpawnNPC`'s Bottom placement (`NPC.cs:5238`/`:80770`) for the
+/// spider pool's aiStyle-3 walkers — feet on the found tile's top edge,
+/// X centred; the rect test is the port's collision refusal (the
+/// Stylist arm's `spawn_caster` precedent).
+fn spawn_spider_walker(ctx: &SpawnContext, x: i32, y_tile: i32, kind: NpcKind) -> Option<Npc> {
+    Npc::spawn_caster(ctx.world, x, y_tile, kind)
+}
+```
+
+(The helper is a thin alias ON PURPOSE: if d36 lands a Bottom-placement
+walker ctor with the aiStyle-3 facing/idle conventions, point the alias
+at it — one line, no stream change; the placement draws NOTHING. This
+corrects research/93 §"d36 cross-note"'s earlier `spawn_cave_walker`
+recipe — that ctor's surface re-scan is wrong for this arm.)
+Witness swap: the two consume-and-None pins in `spawner.rs`'s W4-g41
+block (`:4777` region) flip to kind/position assertions; the draw-order
+pins (flag draws before `GetZombieSettings`, the `Next(8)`/`Next(10)`
+order) HOLD unchanged — the hunk adds no draws. The wall-stick transform
+(`:58875-58905`), the expert web-shot (`:58855-58874`) and `FindFrame`
+(`:73083-73111`/`:73227-73267`) ride the KINDS (d36/g8/d37), not this arm.
+
 <!-- NEXT-PHASES -->
