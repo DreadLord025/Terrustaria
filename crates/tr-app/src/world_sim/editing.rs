@@ -12724,6 +12724,71 @@ mod tests {
         assert!((1..=2).contains(&acorn.count), "stack Next(1,3) = 1..2, got {}", acorn.count);
     }
 
+    /// W4-g17 g17d — the i30-compose seam witness: the axe fail tick's
+    /// ShakeTree compose (`axe_tile_hit` `:1870-1901`) draws EXACTLY ONE
+    /// UpdatePlayers throw to seed the genRand FastRandom stand-in, then
+    /// the loot ladder (the genRand gates on the stand-in, the Main.rand
+    /// item/NPC rolls on UpdatePlayers), then the FX tail — the C# order
+    /// (`WorldGen.cs:63131-63418`). The manual twin (resolve → ONE throw →
+    /// ladder → FX) must end on the identical stream + pools. The i30 chop
+    /// lane's break path never runs on a fail tick (no break drops), so
+    /// this compose is the tick's whole draw; a second seed throw (or a
+    /// reordering) diverges the streams. Written, NOT run (code-only).
+    #[test]
+    fn w4_g17_the_axe_fail_tick_compose_draws_one_seed_throw() {
+        use tr_core::tree::{shake_tree_fx_at, shake_tree_resolve};
+        let seed = 0x5EEDi32;
+        // The live path: one fail hit through axe_tile_hit.
+        let mut live = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        live.inventory[live.selected].kind = 10; // the Iron Axe, axe 9
+        *live.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let held = live.inventory[live.selected];
+        let broke = axe_tile_hit(&mut live, 30, 260, 5, 9, held);
+        assert!(!broke, "the first hit is a fail tick (10 damage < 100)");
+        // The manual twin: the documented compose, step by step.
+        let mut twin = mining_app(axe_tree_world(5, 2, 4), 30, 260);
+        twin.inventory[twin.selected].kind = 10;
+        *twin.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let site = shake_tree_resolve(&mut twin.world, 30, 260).expect("the tree shakes");
+        let spawn_ctx = twin.spawn_ctx();
+        {
+            // ONE throw seeds the stand-in (the spawn_things_from_pot
+            // convention), drawn BEFORE the ladder and the FX.
+            let mut gen = tr_core::tile_light::FastRandom::new(
+                twin.rngs
+                    .stream(crate::app::RngKey::UpdatePlayers)
+                    .next() as u64,
+            );
+            let rng = twin.rngs.stream(crate::app::RngKey::UpdatePlayers);
+            shake_loot::shake_tree_loot(&mut twin, &site, 30, 260, &mut gen, rng);
+        }
+        if let Some((bx, by, style)) = shake_tree_fx_at(&twin.world, &site) {
+            crate::world_gore_a::tree_grow_fx(
+                bx,
+                by,
+                1,
+                style,
+                true,
+                &mut twin.gore,
+                &mut twin.dust,
+                &spawn_ctx,
+                twin.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                &twin.world,
+            );
+        }
+        assert_eq!(
+            live.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            twin.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            "the compose draws ONE seed throw + the ladder + the FX, no more"
+        );
+        assert_eq!(live.items.len(), twin.items.len(), "the ladder's drops match");
+        assert_eq!(live.npcs.len(), twin.npcs.len(), "the ladder's critters match");
+        let lg = live.gore.slots().iter().filter(|g| g.active).count();
+        let tg = twin.gore.slots().iter().filter(|g| g.active).count();
+        assert_eq!(lg, tg, "the FX burst matches");
+        assert_eq!(live.world.tree_shakes, twin.world.tree_shakes);
+    }
+
     /// S1-P-i30: the axe arm chops the cactus (80) and the whole plant
     /// collapses, one Cactus 276 per segment (`WorldGen.CheckCactus`,
     /// `:54116-54158`; the drop `case 80`, `:64717-64719`). The cactus takes
