@@ -502,6 +502,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::FairyCritterBlue
         | NpcKind::ZombieMerman
         | NpcKind::EyeballFlyingFish => &[],
+        // W4-d42 - the NPCID 590-594 immunity rows (`NPCID.cs:9395+`).
+        // The null rows + the fairies' ImmuneToAllBuffsThatAreNotWhips
+        // (the mask loop is unmodelled - the documented gap; the
+        // fairies' ImmuneToWhips rides `whip_immune`).
+        NpcKind::TorchZombie
+        | NpcKind::ArmedTorchZombie => &[],
+        NpcKind::GoldGoldfish
+        | NpcKind::GoldGoldfishWalker
+        | NpcKind::WindyBalloon => &[31],
     }
 }
 

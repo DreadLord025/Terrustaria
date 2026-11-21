@@ -1610,6 +1610,12 @@ fn portrait_data(
         (NpcKind::FairyCritterBlue, _) => (sheet_i, 20.0, 18.0, 20.0, white),
         (NpcKind::ZombieMerman, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::EyeballFlyingFish, _) => (sheet_i, 18.0, 32.0, 18.0, white),
+        // W4-d42 - the roster's portraits rest the kinds' SetDefaults
+        // boxes on their own sheets (the WyvernHead literal-size
+        // precedent - the sheets are deferred, the index folds to 0).
+        (NpcKind::TorchZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
+        (NpcKind::GoldGoldfish, _) => (sheet_i, 18.0, 20.0, 18.0, white),
+        (NpcKind::WindyBalloon, _) => (sheet_i, 20.0, 20.0, 20.0, white),
     }
 }
 

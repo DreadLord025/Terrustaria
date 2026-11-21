@@ -601,6 +601,11 @@ impl NpcKind {
             NpcKind::FairyCritterBlue => 361,
             NpcKind::ZombieMerman => 362,
             NpcKind::EyeballFlyingFish => 363,
+            NpcKind::TorchZombie => 364,
+            NpcKind::ArmedTorchZombie => 365,
+            NpcKind::GoldGoldfish => 366,
+            NpcKind::GoldGoldfishWalker => 367,
+            NpcKind::WindyBalloon => 368,
         }
     }
 
@@ -943,6 +948,11 @@ impl NpcKind {
             361 => NpcKind::FairyCritterBlue,
             362 => NpcKind::ZombieMerman,
             363 => NpcKind::EyeballFlyingFish,
+            364 => NpcKind::TorchZombie,
+            365 => NpcKind::ArmedTorchZombie,
+            366 => NpcKind::GoldGoldfish,
+            367 => NpcKind::GoldGoldfishWalker,
+            368 => NpcKind::WindyBalloon,
             _ => return None,
         })
     }
@@ -1835,6 +1845,11 @@ impl NpcKind {
             NpcKind::FairyCritterBlue => "NPC_Hit_1",
             NpcKind::ZombieMerman => "NPC_Hit_18",
             NpcKind::EyeballFlyingFish => "NPC_Hit_1",
+            // W4-d42 - the roster's HitSound rows.
+            NpcKind::TorchZombie => "NPC_Hit_1",
+            NpcKind::ArmedTorchZombie => "NPC_Hit_1",
+            NpcKind::GoldGoldfish => "NPC_Hit_1",
+            NpcKind::GoldGoldfishWalker => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2153,6 +2168,13 @@ impl NpcKind {
             NpcKind::FairyCritterBlue => "NPC_Killed_1",
             NpcKind::ZombieMerman => "NPC_Killed_21",
             NpcKind::EyeballFlyingFish => "NPC_Killed_1",
+            // W4-d42 - the roster's DeathSound rows (614's null row
+            // rides the None fall-through).
+            NpcKind::TorchZombie => "NPC_Killed_2",
+            NpcKind::ArmedTorchZombie => "NPC_Killed_2",
+            NpcKind::GoldGoldfish => "NPC_Killed_1",
+            NpcKind::GoldGoldfishWalker => "NPC_Killed_1",
+            NpcKind::WindyBalloon => "NPC_Killed_63",
             _ => return None,
         })
     }
@@ -2259,6 +2281,10 @@ impl NpcKind {
             NpcKind::FairyCritterPink
             | NpcKind::FairyCritterGreen
             | NpcKind::FairyCritterBlue
+            => true,
+            // W4-d42 - the noGravity rows.
+            NpcKind::GoldGoldfish
+            | NpcKind::WindyBalloon
             => true,
             NpcKind::AngryNimbus => true,
             _ => false,
@@ -2524,6 +2550,12 @@ impl NpcKind {
             NpcKind::FairyCritterBlue => 112,
             NpcKind::ZombieMerman => 3,
             NpcKind::EyeballFlyingFish => 44,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 3,
+            NpcKind::ArmedTorchZombie => 3,
+            NpcKind::GoldGoldfish => 16,
+            NpcKind::GoldGoldfishWalker => 7,
+            NpcKind::WindyBalloon => 113,
         }
     }
 
@@ -2639,6 +2671,10 @@ impl NpcKind {
             // W4-d42 - the ladder's per-type caps (`npc_ai3_speeds.rs`;
             // 586's row is the full-life base of the life-scaled cap).
             NpcKind::ZombieMerman => 1.5,
+            // W4-d42 - the ladder's per-type caps (`npc_ai3_speeds.rs`;
+            // 586's row is the full-life base of the life-scaled cap).
+            NpcKind::TorchZombie => 1.0,
+            NpcKind::ArmedTorchZombie => 1.0,
             _ => return None,
         })
     }
@@ -3073,6 +3109,12 @@ impl NpcKind {
             NpcKind::FairyCritterBlue => (18.0, 20.0),
             NpcKind::ZombieMerman => (18.0, 40.0),
             NpcKind::EyeballFlyingFish => (32.0, 18.0),
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => (18.0, 40.0),
+            NpcKind::ArmedTorchZombie => (18.0, 40.0),
+            NpcKind::GoldGoldfish => (20.0, 18.0),
+            NpcKind::GoldGoldfishWalker => (18.0, 20.0),
+            NpcKind::WindyBalloon => (20.0, 20.0),
         }
     }
 
@@ -3191,6 +3233,14 @@ impl NpcKind {
             NpcKind::FairyCritterBlue => 585,
             NpcKind::ZombieMerman => 586,
             NpcKind::EyeballFlyingFish => 587,
+            // W4-d42 - the roster's TRUE vanilla types (the folded kinds
+            // keep their own - the AI arms read cs_id; the bestiary
+            // folds in entry_for_npc only).
+            NpcKind::TorchZombie => 590,
+            NpcKind::ArmedTorchZombie => 591,
+            NpcKind::GoldGoldfish => 592,
+            NpcKind::GoldGoldfishWalker => 593,
+            NpcKind::WindyBalloon => 594,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3742,6 +3792,12 @@ impl NpcKind {
             NpcKind::FairyCritterBlue => 5,
             NpcKind::ZombieMerman => 400,
             NpcKind::EyeballFlyingFish => 300,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 45,
+            NpcKind::ArmedTorchZombie => 45,
+            NpcKind::GoldGoldfish => 5,
+            NpcKind::GoldGoldfishWalker => 5,
+            NpcKind::WindyBalloon => 1,
         }
     }
 
@@ -4118,6 +4174,12 @@ impl NpcKind {
             NpcKind::FairyCritterBlue => 0,
             NpcKind::ZombieMerman => 40,
             NpcKind::EyeballFlyingFish => 35,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 14,
+            NpcKind::ArmedTorchZombie => 14,
+            NpcKind::GoldGoldfish => 0,
+            NpcKind::GoldGoldfishWalker => 0,
+            NpcKind::WindyBalloon => 0,
         }
     }
 }

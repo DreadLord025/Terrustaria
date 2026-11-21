@@ -1118,6 +1118,11 @@ pub(crate) fn texture_net_id(kind: NpcKind) -> u16 {
         // W4-d42 - the folded kinds keep their OWN draw sheets (the
         // ForceBubble precedent - the bestiary credit folds, the
         // sheet does not).
+        NpcKind::ArmedTorchZombie => 591,
+        NpcKind::GoldGoldfishWalker => 593,
+        // W4-d42 - the folded kinds keep their OWN draw sheets (the
+        // ForceBubble precedent - the bestiary credit folds, the
+        // sheet does not).
         NpcKind::BartenderUnconscious => 579,
         _ => kind.net_id() as u16,
     }
@@ -3175,6 +3180,25 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d42 - the roster's draw arms ride the generic anchor over
+            // their own NPC_<id> sheets. The sheets are NOT packed yet
+            // (the atlas headroom - the wyvern deferral precedent), so
+            // `npc_sheet` returns None and the arm no-draws.
+            NpcKind::TorchZombie => {
+                generic_anchor(assets.npc_sheet(590), npc_rows(590), n, w, h)
+            }
+            NpcKind::ArmedTorchZombie => {
+                generic_anchor(assets.npc_sheet(591), npc_rows(591), n, w, h)
+            }
+            NpcKind::GoldGoldfish => {
+                generic_anchor(assets.npc_sheet(592), npc_rows(592), n, w, h)
+            }
+            NpcKind::GoldGoldfishWalker => {
+                generic_anchor(assets.npc_sheet(593), npc_rows(593), n, w, h)
+            }
+            NpcKind::WindyBalloon => {
+                generic_anchor(assets.npc_sheet(594), npc_rows(594), n, w, h)
             }
             // W4-d42 - the roster's draw arms ride the generic anchor over
             // their own NPC_<id> sheets. The sheets are NOT packed yet

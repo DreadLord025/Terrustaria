@@ -2247,6 +2247,32 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Wandering Eye Fish",
     },
+    // W4-d42 - the NPCID 590-594 roster's own credits (the
+    // Hide=true kinds fold in `entry_for_npc` - the SleepingGolfer row).
+    BestiaryEntryDef {
+        credit_id: "TorchZombie",
+        net_id: 590,
+        kind: NpcKind::TorchZombie,
+        variant: None,
+        quick_unlock: false,
+        name: "Zombie",
+    },
+    BestiaryEntryDef {
+        credit_id: "GoldGoldfish",
+        net_id: 592,
+        kind: NpcKind::GoldGoldfish,
+        variant: None,
+        quick_unlock: false,
+        name: "Gold Goldfish",
+    },
+    BestiaryEntryDef {
+        credit_id: "WindyBalloon",
+        net_id: 594,
+        kind: NpcKind::WindyBalloon,
+        variant: None,
+        quick_unlock: false,
+        name: "Windy Balloon",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
@@ -2442,6 +2468,10 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
         // one credit per family (the SleepingGolfer precedent).
         NpcKind::BartenderUnconscious => NpcKind::DD2Bartender,
+        // W4-d42 - the Hide=true folds (`NPCID.cs`'s draw modifiers):
+        // one credit per family (the SleepingGolfer precedent).
+        NpcKind::ArmedTorchZombie => NpcKind::TorchZombie,
+        NpcKind::GoldGoldfishWalker => NpcKind::GoldGoldfish,
         other => other,
     };
     ENTRIES

@@ -1139,6 +1139,26 @@ pub enum NpcKind {
     /// 32x18, aiStyle 44, dmg 35, def 18,
     /// 300 HP, kb 0.0, value 1000.
     EyeballFlyingFish,
+    /// `NPCID.TorchZombie` (590) - `NPC.cs:16666-16678`:
+    /// 18x40, aiStyle 3, dmg 14, def 6,
+    /// 45 HP, kb 0.5, value 60.
+    TorchZombie,
+    /// `NPCID.ArmedTorchZombie` (591) - `NPC.cs:16666-16678 (the 590/591 group)`:
+    /// 18x40, aiStyle 3, dmg 14, def 6,
+    /// 45 HP, kb 0.5, value 60.
+    ArmedTorchZombie,
+    /// `NPCID.GoldGoldfish` (592) - `NPC.cs:16679-16693`:
+    /// 20x18, aiStyle 16, dmg 0, def 0,
+    /// 5 HP, kb 0.5, value 0.
+    GoldGoldfish,
+    /// `NPCID.GoldGoldfishWalker` (593) - `NPC.cs:16694-16706`:
+    /// 18x20, aiStyle 7, dmg 0, def 0,
+    /// 5 HP, kb 1.0, value 0.
+    GoldGoldfishWalker,
+    /// `NPCID.WindyBalloon` (594) - `NPC.cs:16707-16719`:
+    /// 20x20, aiStyle 113, dmg 0, def 0,
+    /// 1 HP, kb 0.3, value 0.
+    WindyBalloon,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3599,6 +3619,12 @@ impl Npc {
             NpcKind::FairyCritterBlue => 1.0,
             NpcKind::ZombieMerman => 0.0,
             NpcKind::EyeballFlyingFish => 0.0,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 0.5,
+            NpcKind::ArmedTorchZombie => 0.5,
+            NpcKind::GoldGoldfish => 0.5,
+            NpcKind::GoldGoldfishWalker => 1.0,
+            NpcKind::WindyBalloon => 0.3,
             _ => 0.4,
         }
     }
@@ -3991,6 +4017,12 @@ impl Npc {
             NpcKind::FairyCritterBlue => 0,
             NpcKind::ZombieMerman => 20,
             NpcKind::EyeballFlyingFish => 18,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 6,
+            NpcKind::ArmedTorchZombie => 6,
+            NpcKind::GoldGoldfish => 0,
+            NpcKind::GoldGoldfishWalker => 0,
+            NpcKind::WindyBalloon => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4375,6 +4407,12 @@ impl Npc {
             NpcKind::FairyCritterBlue => 0.0,
             NpcKind::ZombieMerman => 1000.0,
             NpcKind::EyeballFlyingFish => 1000.0,
+            // W4-d42 - the NPCID 590-594 SetDefaults rows.
+            NpcKind::TorchZombie => 60.0,
+            NpcKind::ArmedTorchZombie => 60.0,
+            NpcKind::GoldGoldfish => 0.0,
+            NpcKind::GoldGoldfishWalker => 0.0,
+            NpcKind::WindyBalloon => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6381,6 +6419,23 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d42 batch 3: the NPCID 590-594 roster
+            // (data-only join). Unwired styles idle in place (the
+            // wyvern precedent); walkers ride the aiStyle-3 family,
+            // swimmers the aiStyle-16 family.
+            // `NPC.cs:16666-16678` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::TorchZombie => self.update_zombie(world, player, dt),
+            // `NPC.cs:16666-16678 (the 590/591 group)` - the aiStyle-3 walk rides the C#
+            // ladder's own per-type arm (`npc_ai3_speeds.rs`).
+            NpcKind::ArmedTorchZombie => self.update_zombie(world, player, dt),
+            NpcKind::GoldGoldfish => self.update_swimmer(world, player, rng),
+            // `NPC.cs:16694-16706` - aiStyle 7 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::GoldGoldfishWalker => {}
+            // `NPC.cs:16707-16719` - aiStyle 113 is UNWIRED (the
+            // MartianTurret/wyvern precedent): the idle stand-in.
+            NpcKind::WindyBalloon => {}
             // ---- W4-d42 batch 2: the NPCID 583-587 roster
             // (data-only join). Unwired styles idle in place (the
             // wyvern precedent); walkers ride the aiStyle-3 family,
@@ -9314,6 +9369,116 @@ impl Npc {
                 if self.frame >= 4 {
                     self.frame = 0;
                 }
+            }
+            // W4-d42 - `FindFrame`'s case-3 walker group (590 `NPC.cs:16666-16678`).
+            NpcKind::TorchZombie => {
+                self.walker_frame();
+            }
+            // W4-d42 - `FindFrame` case 591 (`NPC.cs:70886-70951`): the
+            // charge-state rows 3..6 off ai[2], then the case-3 walk
+            // bands over the 7-row strip's first three rows.
+            NpcKind::ArmedTorchZombie => {
+                if self.ai[2] > 0.0 {
+                    self.frame = if self.ai[2] < 5.0 {
+                        3
+                    } else if self.ai[2] < 10.0 {
+                        4
+                    } else if self.ai[2] < 15.0 {
+                        5
+                    } else {
+                        6
+                    };
+                } else {
+                    if self.vy == 0.0 {
+                        self.sprite_dir = self.facing;
+                    }
+                    if self.vy != 0.0
+                        || (self.facing == -1 && self.vx > 0.0)
+                        || (self.facing == 1 && self.vx < 0.0)
+                    {
+                        self.frame_counter = 0.0;
+                        self.frame = 2;
+                    } else if self.vx == 0.0 {
+                        self.frame_counter = 0.0;
+                        self.frame = 0;
+                    } else {
+                        self.frame_counter += self.vx.abs();
+                        if self.frame_counter < 8.0 {
+                            self.frame = 0;
+                        } else if self.frame_counter < 16.0 {
+                            self.frame = 1;
+                        } else if self.frame_counter < 24.0 {
+                            self.frame = 2;
+                        } else if self.frame_counter < 32.0 {
+                            self.frame = 1;
+                        } else {
+                            self.frame_counter = 0.0;
+                        }
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 592/607 (`NPC.cs:74187-74226`):
+            // the wet swim rows 0..3 on the 6-tick phases, the dry
+            // flop rows 4..5.
+            NpcKind::GoldGoldfish => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                if self.wet {
+                    if self.frame_counter < 6.0 {
+                        self.frame = 0;
+                    } else if self.frame_counter < 12.0 {
+                        self.frame = 1;
+                    } else if self.frame_counter < 18.0 {
+                        self.frame = 2;
+                    } else if self.frame_counter < 24.0 {
+                        self.frame = 3;
+                    } else {
+                        self.frame_counter = 0.0;
+                    }
+                } else if self.frame_counter < 6.0 {
+                    self.frame = 4;
+                } else if self.frame_counter < 12.0 {
+                    self.frame = 5;
+                } else {
+                    self.frame_counter = 0.0;
+                }
+            }
+            // W4-d42 - `FindFrame` case 593 (`NPC.cs:75923-75962`): the
+            // ground walk on the |vx|*2+1 accumulator (>10, wrap over
+            // 6 rows), the air row 0 with the >4 fall tilt.
+            NpcKind::GoldGoldfishWalker => {
+                if self.vy == 0.0 {
+                    self.rotation = 0.0;
+                    self.sprite_dir = self.facing;
+                    if self.vx == 0.0 {
+                        self.frame = 0;
+                        self.frame_counter = 0.0;
+                    } else {
+                        self.frame_counter += self.vx.abs() * 2.0;
+                        self.frame_counter += 1.0;
+                        if self.frame_counter > 10.0 {
+                            self.frame += 1;
+                            self.frame_counter = 0.0;
+                        }
+                        if self.frame >= 6 {
+                            self.frame = 0;
+                        }
+                    }
+                } else {
+                    self.frame_counter = 0.0;
+                    self.frame = 0;
+                    if self.vy > 4.0 {
+                        self.rotation -= self.vy * 0.01;
+                    }
+                }
+            }
+            // W4-d42 - `FindFrame` case 594 (`NPC.cs:67993-67997`): the
+            // frame rides ai[2] (the balloon's colour cell), sprite
+            // pinned +1. The `frame.Width = 32` cell override rides
+            // the draw arm (the sheet is deferred - the wyvern note).
+            NpcKind::WindyBalloon => {
+                self.sprite_dir = 1;
+                self.frame = self.ai[2] as u32;
             }
         }
     }
@@ -18888,6 +19053,12 @@ impl Npc {
             NpcKind::FairyCritterBlue => 585,
             NpcKind::ZombieMerman => 586,
             NpcKind::EyeballFlyingFish => 587,
+            // W4-d42 - the vanilla ids 590-594 are free render keys.
+            NpcKind::TorchZombie => 590,
+            NpcKind::ArmedTorchZombie => 591,
+            NpcKind::GoldGoldfish => 592,
+            NpcKind::GoldGoldfishWalker => 593,
+            NpcKind::WindyBalloon => 594,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23956,7 +24127,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 280] = [
+    pub(super) const ALL_KINDS: [NpcKind; 285] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24247,6 +24418,12 @@ mod tests {
         NpcKind::FairyCritterBlue,
         NpcKind::ZombieMerman,
         NpcKind::EyeballFlyingFish,
+        // W4-d42 - the NPCID 590-594 roster.
+        NpcKind::TorchZombie,
+        NpcKind::ArmedTorchZombie,
+        NpcKind::GoldGoldfish,
+        NpcKind::GoldGoldfishWalker,
+        NpcKind::WindyBalloon,
     ];
 
     #[test]
@@ -24413,6 +24590,42 @@ mod tests {
         assert_eq!(NpcKind::ZombieMerman.to_u16(), 362u16);
         assert_eq!(NpcKind::EyeballFlyingFish.to_u16(), 363u16);
         assert_eq!(ALL_KINDS.len(), 280);
+    }
+
+    /// W4-d42 batch 3 - the NPCID 590-594 `SetDefaults` rows pin
+    /// against the C# (NPC.cs:16666-16678, NPC.cs:16666-16678 (the 590/591 group), NPC.cs:16679-16693, NPC.cs:16694-16706, NPC.cs:16707-16719), through the port's
+    /// tables - the smallkinds witness shape. WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_b3_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::TorchZombie, 590u16, 3u8, 18.0, 40.0, 14, 6, 45, 0.5f32, 60.0f32),
+            (NpcKind::ArmedTorchZombie, 591u16, 3u8, 18.0, 40.0, 14, 6, 45, 0.5f32, 60.0f32),
+            (NpcKind::GoldGoldfish, 592u16, 16u8, 20.0, 18.0, 0, 0, 5, 0.5f32, 0.0f32),
+            (NpcKind::GoldGoldfishWalker, 593u16, 7u8, 18.0, 20.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::WindyBalloon, 594u16, 113u8, 20.0, 20.0, 0, 0, 1, 0.3f32, 0.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+        // The port-local wire band (the vanilla types ride cs_id/net_id).
+        assert_eq!(NpcKind::TorchZombie.to_u16(), 364u16);
+        assert_eq!(NpcKind::ArmedTorchZombie.to_u16(), 365u16);
+        assert_eq!(NpcKind::GoldGoldfish.to_u16(), 366u16);
+        assert_eq!(NpcKind::GoldGoldfishWalker.to_u16(), 367u16);
+        assert_eq!(NpcKind::WindyBalloon.to_u16(), 368u16);
+        assert_eq!(ALL_KINDS.len(), 285);
     }
 
     /// The small-kinds wiring wave: the style axis claims 21/49/56/72, so
@@ -27930,7 +28143,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            280,
+            285,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

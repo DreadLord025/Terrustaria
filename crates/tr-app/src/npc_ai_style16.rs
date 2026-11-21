@@ -103,6 +103,8 @@ fn vanilla_type(kind: NpcKind) -> i32 {
         NpcKind::Goldfish => 55,
         NpcKind::Piranha => 58,
         NpcKind::Shark => 65,
+        // W4-d42 - the roster's aiStyle-16 kinds.
+        NpcKind::GoldGoldfish => 592,
         _ => unreachable!("only aiStyle-16 kinds reach the family arm"),
     }
 }

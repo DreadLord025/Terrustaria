@@ -165,6 +165,8 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_20", 4),
     // S1-D-3z — the Blood Zombie's death cue (`NPC.cs:14614`'s NPCDeath21).
     ("NPC_Killed_21", 4),
+    // W4-d42 - the roster's death cue (`SoundID.NPCDeath63`).
+    ("NPC_Killed_63", 4),
     // W4-d42 - the roster's death cue (`SoundID.NPCDeath35`).
     ("NPC_Killed_35", 4),
     // W4-d42 - the roster's death cue (`SoundID.NPCDeath34`).
