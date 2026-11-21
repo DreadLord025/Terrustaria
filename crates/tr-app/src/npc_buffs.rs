@@ -298,7 +298,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::MartianWalker => &[20, 24, 31, 323],
         NpcKind::FlyingDutchman
         | NpcKind::FlyingDutchmanCannon
-        | NpcKind::DD2GoblinT1
         | NpcKind::DD2GoblinT2
         | NpcKind::DD2GoblinT3
         | NpcKind::DD2GoblinBomberT1
@@ -310,7 +309,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DD2SkeletonT1
         | NpcKind::DD2SkeletonT3
         | NpcKind::DD2DarkMage
-        | NpcKind::DD2Betsy
         | NpcKind::DD2WitherBeast
         | NpcKind::DD2WyvernT1
         | NpcKind::DD2WyvernT2
@@ -325,8 +323,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::DD2KoboldFlyerT3
         | NpcKind::DD2OgreT2
         | NpcKind::DD2OgreT3
-        | NpcKind::DD2Bartender
-        | NpcKind::DD2EterniaCrystal
         | NpcKind::AncientCultist
         | NpcKind::StardustTower
         | NpcKind::NebulaTower
@@ -357,7 +353,6 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::SolarSpearman
         | NpcKind::SolarSelenian
         | NpcKind::VortexTower
-        | NpcKind::DD2LanePortal
         | NpcKind::StardustCellBig
         | NpcKind::VortexTower
         | NpcKind::StardustCellSmall
@@ -484,6 +479,17 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d41: the DD2 SetDefaults census — the crystal 548
+        // (`NPCID.cs:9182-9188`), the Tavernkeep 550 (`:9197-9203`) and
+        // the etherian goblin 552 (`:9211-9217`) each carry the Confused
+        // (31) row; Betsy 551 carries `{24, 31, 323}` (`:9204-9210`).
+        NpcKind::DD2EterniaCrystal | NpcKind::DD2Bartender | NpcKind::DD2GoblinT1 => &[31],
+        NpcKind::DD2Betsy => &[24, 31, 323],
+        // The lane portal 549 (`NPCID.cs:9189-9196`) is an
+        // `ImmuneToAllBuffsThatAreNotWhips` + `ImmuneToWhips` row — the
+        // NotWhips mask is the documented unmodelled gap (`&[]` above),
+        // the whip half rides `whip_immune`.
+        NpcKind::DD2LanePortal => &[],
     }
 }
 
@@ -491,11 +497,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
 /// (`:6499`/`:6528`/`:8378`/`:8601`/`:8899`/`:9194`/`:9415`/`:9423`/`:9431`/
 /// `:10034`/`:10042`): DungeonGuardian 68, BlazingWheel 72, MartianSaucer 392,
 /// CultistBossClone 440, FlyingDutchman 491, DD2LanePortal 549, the fairy
-/// critters 583/584/585, the bound town slimes 686/687. Only the saucer and
-/// the pirate ship are on the ported roster — the whip tag gate
-/// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
+/// critters 583/584/585, the bound town slimes 686/687. The saucer, the
+/// pirate ship and the lane portal (W4-d41) are on the ported roster — the
+/// whip tag gate (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman)
+    matches!(
+        kind,
+        NpcKind::MartianSaucer
+            | NpcKind::FlyingDutchman
+            | NpcKind::DD2LanePortal
+            // W4-d41 — the BlazingWheel 72's `ImmuneToWhips` row
+            // (`NPCID.cs:6524-6529`) — the wheel is on the ported roster.
+            | NpcKind::BlazingWheel
+    )
 }
 
 impl NpcBuffs {
