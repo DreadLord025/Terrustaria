@@ -3568,6 +3568,14 @@ fn npc_seed(
         }
         // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
         // (the hover ctor; the net state overwrites the position below).
+        crate::npc::NpcKind::WaterBoltMimic
+        | crate::npc::NpcKind::PalworldCattivaDistressed
+        | crate::npc::NpcKind::PalworldFoxsparksDistressed => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
+        // W4-d43: the flyers/bosses/swimmers/spheres seed in the open air
+        // (the hover ctor; the net state overwrites the position below).
         crate::npc::NpcKind::StatueMimic
         | crate::npc::NpcKind::Orca => {
             let y = (y / TILE_PX) as i32;

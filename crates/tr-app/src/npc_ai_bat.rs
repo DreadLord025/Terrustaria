@@ -433,8 +433,11 @@ pub fn ai_style_8_step(
             }
         } else if npc.ai[1] == num89 {
             // `:21175-21277` — the standard shoot tick. The 281-286
-            // projectile arm (`:21177-21227`) and the 693/172 arms are
-            // deferred with their kinds.
+            // projectile arm (`:21177-21227`) and the 172 arm are
+            // deferred with their kinds. W4-d43: the LibrarianSkeleton
+            // (693) is ported, but its book shot (projectile 1092 via
+            // `AI_FindNearbyBook`, `NPC.cs:62308`) is a documented skip —
+            // the book-search feed is unplumbed (the kind casts silently).
             // S1-E-21g — `NPC.cs:21230-21233`: the cast's Item8 puff
             // (`this.type != 172` — the Rune Wizard is silent; no ported
             // kind is 172, every caster here plays).

@@ -181,6 +181,7 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_59", 4),
     ("NPC_Killed_62", 4),
     ("NPC_Killed_66", 4),
+    ("NPC_Killed_52", 4),
     ("NPC_Hit_58", 3),
     ("NPC_Killed_67", 4),
     ("NPC_Killed_63", 4),
@@ -463,6 +464,8 @@ pub(crate) const NPC_CUSTOM_CUES: &[&str] = &[
     // S1-E-21g — the EoW head's dig rumble (`SoundID.EOWDiggin`,
     // `SoundID.cs:1763`'s `CreateTrackable("eow_dig")`, one variation).
     "eow_dig",
+    "pal_cattiva_pain",
+    "pal_foxparks_pain",
 ];
 
 /// The `Sounds/Custom/` trackable cues the liquid-merge events play

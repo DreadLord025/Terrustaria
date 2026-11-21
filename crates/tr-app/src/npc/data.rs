@@ -586,6 +586,9 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            NpcKind::WaterBoltMimic => 694,
+            NpcKind::PalworldCattivaDistressed => 695,
+            NpcKind::PalworldFoxsparksDistressed => 696,
             NpcKind::OwlMimic => 689,
             NpcKind::StatueMimic => 690,
             NpcKind::MossZombie => 691,
@@ -976,6 +979,9 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            694 => NpcKind::WaterBoltMimic,
+            695 => NpcKind::PalworldCattivaDistressed,
+            696 => NpcKind::PalworldFoxsparksDistressed,
             689 => NpcKind::OwlMimic,
             690 => NpcKind::StatueMimic,
             691 => NpcKind::MossZombie,
@@ -1949,6 +1955,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            NpcKind::WaterBoltMimic => "dd2_book_staff_cast_0",
+            NpcKind::PalworldCattivaDistressed => "pal_cattiva_pain",
+            NpcKind::PalworldFoxsparksDistressed => "pal_foxparks_pain",
             NpcKind::OwlMimic => "NPC_Hit_1",
             NpcKind::StatueMimic => "NPC_Hit_58",
             NpcKind::MossZombie => "NPC_Hit_1",
@@ -2310,6 +2319,9 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            NpcKind::WaterBoltMimic => "NPC_Killed_52",
+            NpcKind::PalworldCattivaDistressed => "pal_cattiva_pain",
+            NpcKind::PalworldFoxsparksDistressed => "pal_foxparks_pain",
             NpcKind::OwlMimic => "NPC_Killed_1",
             NpcKind::StatueMimic => "NPC_Killed_67",
             NpcKind::MossZombie => "NPC_Killed_2",
@@ -2469,6 +2481,8 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
+            NpcKind::WaterBoltMimic => true,
             // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
             NpcKind::OwlMimic
             | NpcKind::Orca => true,
@@ -2746,6 +2760,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            NpcKind::WaterBoltMimic => 10,
+            NpcKind::PalworldCattivaDistressed => 127,
+            NpcKind::PalworldFoxsparksDistressed => 127,
             NpcKind::OwlMimic => 24,
             NpcKind::StatueMimic => 126,
             NpcKind::MossZombie => 3,
@@ -3340,6 +3357,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            NpcKind::WaterBoltMimic => (44.0, 44.0),
+            NpcKind::PalworldCattivaDistressed => (18.0, 18.0),
+            NpcKind::PalworldFoxsparksDistressed => (18.0, 18.0),
             NpcKind::OwlMimic => (18.0, 34.0),
             NpcKind::StatueMimic => (28.0, 38.0),
             NpcKind::MossZombie => (18.0, 40.0),
@@ -3476,6 +3496,9 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            NpcKind::WaterBoltMimic => 694,
+            NpcKind::PalworldCattivaDistressed => 695,
+            NpcKind::PalworldFoxsparksDistressed => 696,
             NpcKind::OwlMimic => 689,
             NpcKind::StatueMimic => 690,
             NpcKind::MossZombie => 691,
@@ -4103,6 +4126,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            NpcKind::WaterBoltMimic => 60,
+            NpcKind::PalworldCattivaDistressed => 250,
+            NpcKind::PalworldFoxsparksDistressed => 250,
             NpcKind::OwlMimic => 5,
             NpcKind::StatueMimic => 400,
             NpcKind::MossZombie => 60,
@@ -4527,6 +4553,9 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            NpcKind::WaterBoltMimic => 20,
+            NpcKind::PalworldCattivaDistressed => 0,
+            NpcKind::PalworldFoxsparksDistressed => 0,
             NpcKind::OwlMimic => 0,
             NpcKind::StatueMimic => 40,
             NpcKind::MossZombie => 18,

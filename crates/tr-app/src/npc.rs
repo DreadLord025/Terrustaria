@@ -1086,6 +1086,18 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    /// `NPCID.WaterBoltMimic` (694) — Water Bolt Mimic (`aiStyle 10`):
+    /// 44x44, dmg 20, def 4, 60 HP, kb 0.2,
+    /// value 150.0, noGravity (`NPC.cs:17737-17751`). W4-d43.
+    WaterBoltMimic,
+    /// `NPCID.PalworldCattivaDistressed` (695) — Cattiva (`aiStyle 127`):
+    /// 18x18, dmg 0, def 15, 250 HP, kb 0.5,
+    /// value 0.0, friendly (`NPC.cs:17752-17765`). W4-d43.
+    PalworldCattivaDistressed,
+    /// `NPCID.PalworldFoxsparksDistressed` (696) — Foxparks (`aiStyle 127`):
+    /// 18x18, dmg 0, def 15, 250 HP, kb 0.5,
+    /// value 0.0, friendly (`NPC.cs:17766-17779`). W4-d43.
+    PalworldFoxsparksDistressed,
     /// `NPCID.OwlMimic` (689) — Owl (`aiStyle 24`):
     /// 18x34, dmg 0, def 0, 5 HP, kb 0.8,
     /// value 0.0 (`NPC.cs:17667-17679`). W4-d43.
@@ -3288,6 +3300,8 @@ impl Npc {
             immortal: matches!(kind, NpcKind::StatueMimic),
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
+                || kind == NpcKind::PalworldCattivaDistressed
+                || kind == NpcKind::PalworldFoxsparksDistressed
                 || kind == NpcKind::BoundTownSlimeOld
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
@@ -3775,6 +3789,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            NpcKind::WaterBoltMimic => 0.2,
+            NpcKind::PalworldCattivaDistressed => 0.5,
+            NpcKind::PalworldFoxsparksDistressed => 0.5,
             NpcKind::OwlMimic => 0.8,
             NpcKind::StatueMimic => 0.0,
             NpcKind::MossZombie => 0.45,
@@ -4215,6 +4232,9 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            NpcKind::WaterBoltMimic => 4,
+            NpcKind::PalworldCattivaDistressed => 15,
+            NpcKind::PalworldFoxsparksDistressed => 15,
             NpcKind::OwlMimic => 0,
             NpcKind::StatueMimic => 10,
             NpcKind::MossZombie => 10,
@@ -4647,6 +4667,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            NpcKind::WaterBoltMimic => 150.0,
+            NpcKind::PalworldCattivaDistressed => 0.0,
+            NpcKind::PalworldFoxsparksDistressed => 0.0,
             NpcKind::OwlMimic => 0.0,
             NpcKind::StatueMimic => 0.0,
             NpcKind::MossZombie => 80.0,
@@ -6713,6 +6736,13 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            NpcKind::WaterBoltMimic => self.update_water_bolt_mimic(world, player, rng),
+            // W4-d43: AI_127_Pal (NPC.cs:42929-43438) — the pal machine is unported. The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::PalworldCattivaDistressed => {}
+            // W4-d43: AI_127_Pal (NPC.cs:42929-43438) — the pal machine is unported. The kind holds
+            // still until its machine lands (the MartianTurret stand-in precedent).
+            NpcKind::PalworldFoxsparksDistressed => {}
             // W4-d43: the aiStyle-24 bird arm (NPC.cs:25313-25537, npc_ai_style24.rs ported unwired). The kind holds
             // still until its machine lands (the MartianTurret stand-in precedent).
             NpcKind::OwlMimic => {}
@@ -10884,6 +10914,130 @@ impl Npc {
                     self.frame += 2;
                 } else if self.ai[1] > 0.0 {
                     self.frame += 1;
+                }
+            }
+            NpcKind::WaterBoltMimic => {
+                // `case 694` (`NPC.cs:77202-77291`): the water bolt mimic's book
+                // states — `ai[3]` 3 closed (row 0), 4 wake-up (the 5-tick
+                // counter climbs to 16), 2 charge (rows 17..23, the `ai[2]`
+                // timer caps at 19 below 40), 1 dash (rows 24..29), else the
+                // idle 17/22/23 cycle at 6 ticks (wrap at the strip to 0).
+                let mut row = self.frame;
+                if self.ai[3] == 3.0 {
+                    row = 0;
+                    self.frame_counter = 0.0;
+                } else if self.ai[3] == 4.0 {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame_counter = 0.0;
+                        row += 1;
+                        if row > 16 {
+                            row = 16;
+                        }
+                    }
+                } else if self.ai[3] == 2.0 {
+                    let timer = self.ai[2];
+                    if timer == 0.0 {
+                        row = 17;
+                    }
+                    if !(17..=23).contains(&row) {
+                        row = 17;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame_counter = 0.0;
+                        row += 1;
+                        if timer < 40.0 && row > 19 {
+                            row = 19;
+                        }
+                        if row > 23 {
+                            row = 23;
+                        }
+                    }
+                } else if self.ai[3] == 1.0 {
+                    if !(24..=29).contains(&row) {
+                        row = 24;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 5.0 {
+                        self.frame_counter = 0.0;
+                        row += 1;
+                        if row > 29 {
+                            row = 29;
+                        }
+                    }
+                } else {
+                    if !(17..=23).contains(&row) {
+                        row = 17;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 6.0 {
+                        self.frame_counter = 0.0;
+                        row = match row {
+                            17 => 22,
+                            22 => 23,
+                            _ => 17,
+                        };
+                    }
+                    if row >= self.rows() {
+                        row = 0;
+                    }
+                }
+                self.frame = row;
+            }
+            NpcKind::PalworldCattivaDistressed => {
+                // `case 695` (`NPC.cs:66707-66719`): the distressed Cattiva —
+                // `ai[0]` 1 holds row 2, 2 holds row 1, else row 0.
+                if self.ai[0] == 1.0 {
+                    self.frame = 2;
+                } else if self.ai[0] == 2.0 {
+                    self.frame = 1;
+                } else {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::PalworldFoxsparksDistressed => {
+                // `case 696` (`NPC.cs:66721-66766`): the distressed Foxparks —
+                // the sheet is a 6x27 GRID (`Main.cs:23832`'s `Frame(6, 27)`);
+                // the cell index rides `frame` (the Deerclops grid precedent).
+                // `ai[0]` 1 cycles cells 0..7 at 4 ticks, 2 cycles 45..52 at 4,
+                // else 9..16 at 10.
+                if self.ai[0] == 1.0 {
+                    if self.frame >= 8 {
+                        self.frame = 0;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 8 {
+                            self.frame = 0;
+                        }
+                    }
+                } else if self.ai[0] == 2.0 {
+                    if self.frame < 45 || self.frame >= 53 {
+                        self.frame = 45;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 4.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 53 {
+                            self.frame = 45;
+                        }
+                    }
+                } else {
+                    if self.frame < 9 || self.frame >= 17 {
+                        self.frame = 9;
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 10.0 {
+                        self.frame_counter = 0.0;
+                        self.frame += 1;
+                        if self.frame >= 17 {
+                            self.frame = 9;
+                        }
+                    }
                 }
             }
         }
@@ -20532,6 +20686,9 @@ impl Npc {
             NpcKind::MossZombie => 691,
             NpcKind::Orca => 692,
             NpcKind::LibrarianSkeleton => 693,
+            NpcKind::WaterBoltMimic => 694,
+            NpcKind::PalworldCattivaDistressed => 695,
+            NpcKind::PalworldFoxsparksDistressed => 696,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -25601,7 +25758,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 330] = [
+    pub(super) const ALL_KINDS: [NpcKind; 333] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -25939,6 +26096,9 @@ mod tests {
         NpcKind::MossZombie,
         NpcKind::Orca,
         NpcKind::LibrarianSkeleton,
+        NpcKind::WaterBoltMimic,
+        NpcKind::PalworldCattivaDistressed,
+        NpcKind::PalworldFoxsparksDistressed,
         NpcKind::WyvernTail,
     ];
 
@@ -26343,6 +26503,35 @@ mod tests {
             (NpcKind::MossZombie, 691, 3u8, 18.0, 40.0, 18, 10, 60, 0.45, 80.0),
             (NpcKind::Orca, 692, 16u8, 120.0, 34.0, 50, 20, 400, 0.7, 10000.0),
             (NpcKind::LibrarianSkeleton, 693, 8u8, 18.0, 40.0, 18, 2, 70, 0.6, 160.0),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(kind.to_u16(), ty, "{kind:?} protocol id = vanilla id");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+        }
+    }
+
+    /// W4-d43 batch 13 — the new kinds' `SetDefaults` rows pin against the
+    /// C# (`NPC.cs` SetDefaults arms), through the port's tables — the
+    /// `s1_d_3_wire_smallkinds_the_defaults_match_the_csharp_rows` shape.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d43_batch13_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::WaterBoltMimic, 694, 10u8, 44.0, 44.0, 20, 4, 60, 0.2, 150.0),
+            (NpcKind::PalworldCattivaDistressed, 695, 127u8, 18.0, 18.0, 0, 15, 250, 0.5, 0.0),
+            (NpcKind::PalworldFoxsparksDistressed, 696, 127u8, 18.0, 18.0, 0, 15, 250, 0.5, 0.0),
         ];
         for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
             let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
@@ -27094,6 +27283,7 @@ mod tests {
                 // +6/+12 colour offsets (`:73499-73507`) are unreachable
                 // for this kind — the grid/cell bound precedent.
                 NpcKind::PresentMimic => 18,
+                NpcKind::PalworldFoxsparksDistressed => 53,
                 NpcKind::Shimmerfly => 5,
                 NpcKind::QueenSlimeBoss => 32,
                 _ => npc_rows(texture_net_id(kind)),
@@ -29925,7 +30115,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            330,
+            333,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(

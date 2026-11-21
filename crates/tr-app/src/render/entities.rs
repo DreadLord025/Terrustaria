@@ -3429,6 +3429,15 @@ pub(crate) fn draw_npcs(
             NpcKind::LibrarianSkeleton => {
                 pumpkin_moon_draw(assets.npc_sheet(693), npc_rows(693), n, w, h)
             }
+            NpcKind::WaterBoltMimic => {
+                pumpkin_moon_draw(assets.npc_sheet(694), npc_rows(694), n, w, h)
+            }
+            NpcKind::PalworldCattivaDistressed => {
+                pumpkin_moon_draw(assets.npc_sheet(695), npc_rows(695), n, w, h)
+            }
+            NpcKind::PalworldFoxsparksDistressed => {
+                foxparks_draw(assets.npc_sheet(696), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
