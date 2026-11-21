@@ -5,6 +5,7 @@ pub mod achievements;
 pub mod bars;
 pub(crate) mod bestiary;
 pub(crate) mod bestiary_draw_offsets;
+pub(crate) mod bestiary_hover;
 pub(crate) mod bestiary_screen;
 pub(crate) mod bestiary_screen_draw;
 pub mod buttons;

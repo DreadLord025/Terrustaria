@@ -70,6 +70,10 @@ pub struct BestiaryUi {
     /// The thumb drag's `_dragYOffset` (`UIScrollbar.cs:27`) — `Some` while
     /// `_isDragging` (`:23`), cleared on the left release (`:145-149`).
     pub info_scroll_drag: Option<f32>,
+    /// The screen's hover-sound latches (W4-e23 remainder 4) — the
+    /// per-hover `PlaySound(12)` edges the immediate draw did not tick
+    /// (`GroupOptionButton.DrawSelf:212-223`, `UIImageButton.MouseOver:61`).
+    pub hover_sounds: super::bestiary_hover::BestiaryHoverSounds,
 }
 
 impl Default for BestiaryUi {
@@ -85,6 +89,7 @@ impl Default for BestiaryUi {
             opened: false,
             info_scroll: 0.0,
             info_scroll_drag: None,
+            hover_sounds: super::bestiary_hover::BestiaryHoverSounds::default(),
         }
     }
 }
