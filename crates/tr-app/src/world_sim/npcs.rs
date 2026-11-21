@@ -408,6 +408,24 @@ pub(crate) fn try_open_shop_at_cursor(app: &mut App, world_pos: Vec2) -> bool {
     if let Some(i) = try_tax_collect_at_cursor(app, world_pos) {
         return tax_collector_payout(app, i);
     }
+    // The Dye Trader's Strange Plants turn-in (`NPCInteractions.cs:443-463`'s
+    // `DyeTraderRarePlant` → `Main.NPCChatText_DyeTraderRarePlant`,
+    // `Main.cs:40002-40020`): the button collapses onto the right-click (the
+    // Angler/Nurse treatment) — a plant in hand trades for a dye reward, an
+    // empty hand draws the NoPlant line. The button's hard-mode `Condition`
+    // (`:445-452`) is a UI gate; the `Interact` body carries none, so the
+    // collapse runs unconditionally like the Angler turn-in's.
+    if let Some(i) = app.npcs.iter().position(|n| {
+        n.hp > 0 && n.kind == NpcKind::DyeTrader && {
+            let (w, h) = n.size();
+            world_pos.x >= n.x
+                && world_pos.x < n.x + w
+                && world_pos.y >= n.y
+                && world_pos.y < n.y + h
+        }
+    }) {
+        return dye_trader_turn_in(app, i);
+    }
     // The town dispatch: the Nurse heals (the vanilla's dialog-button pair
     // — the port collapses them onto the right-click).
     let Some(nurse_idx) = app.npcs.iter().position(|n| {
@@ -713,6 +731,102 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
             Vec2::new(ax, ay),
         );
     }
+}
+
+/// `Main.NPCChatText_DyeTraderRarePlant` (`Main.cs:40002-40020`) — the Strange
+/// Plants turn-in: the `ExoticPlantsForDyeTrade` scan (`FindItem(bool[])`,
+/// `Player.cs:55996-56006` — the first live slot 0..58 whose kind is in the
+/// set), the stack decrement, the case-24 Chat cue (`:40016`, unpositioned,
+/// draw-free) and the dye reward (`Player.GetDyeTraderReward`,
+/// `Player.cs:56685-56732`), then the `Lang.DyeTraderQuestChat(gotDye)` line.
+/// The `npcChatCornerItem = 0` head (`:40004`) has no port field yet. The
+/// button's `Condition` is hard-mode-only (`NPCInteractions.cs:445-452`) but
+/// the `Interact` body carries no gate — the port's right-click collapse runs
+/// unconditionally like the Angler turn-in's. Returns whether a plant was
+/// handed in.
+pub(crate) fn dye_trader_turn_in(app: &mut App, dye_trader_idx: usize) -> bool {
+    // `:40005` — the button's MenuTick (the Angler turn-in's `:40230` twin).
+    crate::chest::play_menu_sound(app, 12);
+    let mut got_dye = false;
+    // `ItemID.Sets.ExoticPlantsForDyeTrade` (`ItemID.cs:1324`): the four
+    // Strange Plants 3385-3388. `FindItem(bool[])` scans 0..58 forward; the
+    // port's one inventory is the grid 0..50 (no ammo/coin rows carry plants).
+    if let Some(slot) = app
+        .inventory
+        .iter()
+        .position(|s| s.count > 0 && matches!(s.kind, 3385 | 3386 | 3387 | 3388))
+    {
+        // `:40010-40014` — the stack decrement, the air-out at zero.
+        app.inventory[slot].count -= 1;
+        if app.inventory[slot].count == 0 {
+            app.inventory[slot].kind = 0;
+        }
+        got_dye = true;
+        // W4-d79 — the orphaned Chat emitter's third site (`Main.cs:40016`,
+        // `SoundEngine.PlaySound(24)` — unpositioned, between the decrement
+        // and the reward): case 24 draws nothing, so the reward roll below
+        // keeps its stream position.
+        app.audio.play_single_voice("Chat", -1.0, -1.0);
+        give_dye_trader_reward(app, dye_trader_idx);
+    }
+    // `:40019` — `Lang.DyeTraderQuestChat(gotDye)` (`Lang.cs:300-304`): a
+    // random line from the HasPlant/NoPlant sub-category. The draw rides the
+    // bare global stream (the talk/turn-in handlers run outside every
+    // SwapRandom block, the S1-A-10 contract).
+    let prefix = if got_dye {
+        "DyeTraderSpecialText.HasPlant"
+    } else {
+        "DyeTraderSpecialText.NoPlant"
+    };
+    let keys = crate::lang::dialog_prefix_keys(prefix);
+    if !keys.is_empty() {
+        let index = app.rngs.global().next_max(keys.len() as i32) as usize;
+        app.npc_chat_text = crate::lang::text(&keys[index]);
+    }
+    got_dye
+}
+
+/// The dye reward spawn (`Player.GetDyeTraderReward`, `Player.cs:56685-56732`):
+/// the 14-dye base pool, the hard-mode additions gated on the mech/Plantera/
+/// Martian/Moon Lord latches, ONE `Main.rand.Next(list.Count)` pick, then a
+/// stack-6 `QuickSpawnItem` at the Dye Trader's centre. The roll rides the
+/// `UpdatePlayers` stream (the turn-in is the player's item-use interaction
+/// under the `Main.cs:17754` swap — the Angler reward's convention).
+fn give_dye_trader_reward(app: &mut App, dye_trader_idx: usize) {
+    // `:56688-56692` — the base list, in the C#'s initializer order.
+    let mut list: Vec<u16> = vec![
+        3560, 3028, 3041, 3040, 3025, 3190, 3027, 3026, 3554, 3553, 3555, 2872, 3534, 2871,
+    ];
+    if app.world.hard_mode {
+        // `:56695-56702` — the unconditional hard-mode additions.
+        list.extend_from_slice(&[3039, 3038, 3598, 3597, 3600, 3042, 3533, 3561]);
+        if app.world.downed_mech_boss1 || app.world.downed_mech_boss2 || app.world.downed_mech_boss3
+        {
+            list.extend_from_slice(&[2883, 2869, 2873, 2870]); // `:56705-56708`
+        }
+        if app.world.downed_plant_boss {
+            list.extend_from_slice(&[2878, 2879, 2884, 2885]); // `:56712-56715`
+        }
+        if app.world.downed_martians {
+            list.extend_from_slice(&[2864, 3556]); // `:56719-56720`
+        }
+        if app.world.downed_moon_lord {
+            list.push(3024); // `:56724`
+        }
+    }
+    // `:56727` — the pick on the turn-in's `UpdatePlayers` stream.
+    let pick = app
+        .rngs
+        .stream(RngKey::UpdatePlayers)
+        .next_max(list.len() as i32) as usize;
+    let kind = list[pick];
+    let (dx, dy) = app.npcs[dye_trader_idx].center();
+    // `:56728-56731` — `SetDefaults(num)`, `stack = 6`, the gift spawn. The
+    // dyes are non-prefixable (`Item.GetRollablePrefixes` — no dye row), so
+    // `spawn_item_drop_px`'s `roll_prefix(kind, -1)` draws nothing past the
+    // velocity triplet; the spawn joins the same `UpdatePlayers` stream.
+    let rng = app.rngs.stream(RngKey::UpdatePlayers);
+    crate::world_sim::items::spawn_item_drop_px(&mut app.items, rng, kind, 6, Vec2::new(dx, dy));
 }
 
 /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`) — the
@@ -7855,6 +7969,129 @@ mod tests {
         let played = app.audio.played_count();
         angler_turn_in(&mut app, 0);
         assert_eq!(app.audio.played_count(), played, "the refusal is silent");
+    }
+
+    /// W4-d79 — the DyeTrader Strange Plants turn-in (`Main.cs:40002-40020`):
+    /// the plant scan + decrement, the case-24 Chat cue (`:40016`, draw-free),
+    /// the stack-6 dye reward at the trader's centre, the HasPlant line. An
+    /// empty hand plays only the MenuTick + the NoPlant line (no Chat, no
+    /// reward). The reward pick + spawn ride `UpdatePlayers`; the quest-text
+    /// draw rides the bare global stream.
+    #[test]
+    fn w4_d79_the_dye_trader_turn_in_trades_a_plant_for_a_dye() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        player.y = 100.0;
+        app.player = Some(player);
+        app.world = world;
+        app.world.hard_mode = true;
+        // A Strange Plant (3385) in hand, stack 2.
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 3385,
+            name: "Strange Plant",
+            count: 2,
+            prefix: 0,
+        };
+        let mut d = Npc::new(NpcKind::DyeTrader, 32.0, 100.0, 1, 0.0);
+        d.hp = d.max_hp;
+        app.npcs.push(d);
+        let played = app.audio.played_count();
+        let before_items = app.items.len();
+        assert!(dye_trader_turn_in(&mut app, 0), "the plant handed in");
+        // MenuTick (12) + Chat (24) = two plays; the reward spawn is silent.
+        assert_eq!(app.audio.played_count(), played + 2, "the tick + the Chat");
+        assert_eq!(app.inventory[0].count, 1, "the stack drops one");
+        assert!(app.items.len() > before_items, "the dye reward spawned");
+        let drop = app.items.last().unwrap();
+        assert_eq!(drop.count, 6, "the reward is a stack of 6");
+        // The pick is one of the hard-mode pool's dyes.
+        assert!(
+            matches!(
+                drop.kind,
+                3560 | 3028 | 3041 | 3040 | 3025 | 3190 | 3027 | 3026 | 3554 | 3553 | 3555
+                    | 2872 | 3534 | 2871 | 3039 | 3038 | 3598 | 3597 | 3600 | 3042 | 3533
+                    | 3561
+            ),
+            "a base/hard-mode dye, kind {}",
+            drop.kind
+        );
+        assert!(
+            app.npc_chat_text.starts_with("Brilliant")
+                || app.npc_chat_text.starts_with("You bring")
+                || app.npc_chat_text.starts_with("Fantabulous"),
+            "a HasPlant line: {}",
+            app.npc_chat_text
+        );
+        // The empty hand: only the MenuTick, the NoPlant line, no reward.
+        app.inventory[0].kind = 0;
+        app.inventory[0].count = 0;
+        let played = app.audio.played_count();
+        let before_items = app.items.len();
+        assert!(!dye_trader_turn_in(&mut app, 0), "no plant, no hand-in");
+        assert_eq!(app.audio.played_count(), played + 1, "only the MenuTick");
+        assert_eq!(app.items.len(), before_items, "no reward");
+        assert!(
+            app.npc_chat_text.starts_with("Oh no")
+                || app.npc_chat_text.starts_with("You think")
+                || app.npc_chat_text.starts_with("These dye"),
+            "a NoPlant line: {}",
+            app.npc_chat_text
+        );
+    }
+
+    /// W4-d79 — the dye reward's RNG order: ONE `Next(list.Count)` pick on
+    /// `UpdatePlayers` (`Player.cs:56727`), then the spawn's velocity triplet
+    /// (`Item.NewItem`'s three `NextFloat`s; the dyes are non-prefixable so no
+    /// prefix draws). The Chat cue (`:40016`) and the MenuTick draw nothing;
+    /// the quest-text draw rides the bare global stream, NOT `UpdatePlayers`.
+    #[test]
+    fn w4_d79_the_dye_reward_draws_ride_update_players_in_order() {
+        use tr_core::unified_random::UnifiedRandom;
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        crate::lang::init(tr_core::localization::GameCulture::English);
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let world = app.world.clone();
+        let mut player = crate::player::Player::spawn(&world);
+        player.x = 32.0;
+        player.y = 100.0;
+        app.player = Some(player);
+        app.world = world;
+        // Classic mode: the 14-dye base pool, no progression additions.
+        app.world.hard_mode = false;
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 3386,
+            name: "Strange Plant",
+            count: 1,
+            prefix: 0,
+        };
+        let mut d = Npc::new(NpcKind::DyeTrader, 32.0, 100.0, 1, 0.0);
+        d.hp = d.max_hp;
+        app.npcs.push(d);
+        let seed = 0x0D7E_5152i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let pick = witness.next_max(14); // the base pool's count (`:56727`)
+        let _r1 = witness.next_float(); // the spawn velocity triplet
+        let _r2 = witness.next_float();
+        let _r3 = witness.next_float();
+        let global_before = app.rngs.global().peek();
+        assert!(dye_trader_turn_in(&mut app, 0));
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the pick + the three spawn floats, in the C# order"
+        );
+        // The quest-text draw consumed the bare global stream (one Next).
+        assert_ne!(app.rngs.global().peek(), global_before, "the line drew");
+        let base = [
+            3560u16, 3028, 3041, 3040, 3025, 3190, 3027, 3026, 3554, 3553, 3555, 2872, 3534,
+            2871,
+        ];
+        assert_eq!(app.items.last().unwrap().kind, base[pick as usize]);
     }
 
     /// `UpdateTime_StartDay`'s `Main.AnglerQuestSwap()` (`Main.cs:65373`): the
