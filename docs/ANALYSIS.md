@@ -14673,6 +14673,156 @@ arm's `boss_handled` flag is a port structural stand-in (the C# pushes each eye
 through its own `SpawnOnPlayer`; the port pushes both in the arm and skips the
 shared tail's push) — observation-identical, the per-eye bookend order preserved.
 
+## The owning-systems batch (W4-f30, 2026-11-21)
+
+**Code-only mode** (user order "port UNPORTED OWNING SYSTEMS", same branch):
+the five cited-unwired systems f30 owns, smallest first, then the prepared
+research 45 wired. No cargo/tests run — the witnesses are WRITTEN NOT RUN.
+The systems owned by active lanes stay untouched: boulder-rain (34) →
+worldgen, rainbow-boulder (39) → d54 orch, combat-book-v2 (40) → g89b,
+Mechdusa-summon (31) → the boss-summon lane.
+
+### The vampire sun-scorch (W4-f30, system 2, progression 33)
+
+`sun_scorch.rs` ports `UpdateSunScorch` (`Player.cs:28626-28670`) +
+`VampireSeedSunlightExposure` (`:28672-28719`) + `UpdateSunScorchValues`
+(`:28580-28604`). The exposure scan's 15-step climb keeps the C#'s STALE-tile
+quirk: the wall test reads the current cell, the solid test's type/invisible
+terms read the PRE-decrement cell while `SolidTile3` reads the new one. The
+Moon-Lord shade reads the live NPC list at the player centre (the
+`SceneMetrics.ClosestNPCPosition[398]` stand-in, the 3000/6000 clamped
+inverse lerp). The 120-crossing fires the `Array.Clear(buffImmune)` + the
+OnFire/Cursed/Slow 24/23/32 triple + the mount dismount + the wings/rocket
+zero, and 33 on the vampire vanity set 124/85/72 (the effective-armor fold;
+the `SetMatch` robe rewrites never touch those ids, so the `PlayerFrame()`
+side effects are cited without changing the check's outcome).
+
+**Order seam:** the C# runs `UpdateSunScorch` (`:25634`) BEFORE
+`UpdateArmorSets` (`:25685`), so Molten's `buffImmune[24]` grant reads the
+fresh flag. The port's equipment phase is one `update_equips` call (the
+Molten fold inside it), so the sun-scorch seam runs AFTER the fold;
+`Player.fire_immune_pre_molten` captures the pre-fold immunity and the call
+site restores it on a warm-up burn tick (flag set, counter < 120 — no
+`Array.Clear` yet). At >= 120 the clear stripped everything, nothing is
+restored — observation-identical to the C# order.
+
+**Deferred (cited):** the sizzle looped sound (`SoundID.VampireSizzle`), the
+`VampireOnFire` particle request, the `PlayerFrame()` visible-accessory
+recompute. The generic DoT death lane now tests `vampireBurningInSunlight`
+first (`:19364`, ByOther 22 — the `DeathText.VampireBurningInDaylight` row
+was already ported).
+
+### The hardcore death penalty (W4-f30, system 3, progression 35)
+
+`death.rs::hardcore_death_penalty` ports `Player.cs:38775-38787`:
+`survive_hardcore_death` (`Main.cs:2638-2648` — the DST+Anniversary flag
+pair unless FTW; the two flags co-occur via the advanced seed toggles or a
+combined seed, the zenith world carries both plus FTW so it permadeaths),
+the `statLifeMax-60` clamp + 35 while positive, `kill_me_for_good`
+(`:38789-38805`) at 0 or on a non-surviving world. The erase resolves the
+`.plr` from the session character's name (`tr_core::save::default_player_path`,
+the creation writer's path) and rides `save_list::erase_player` (the
+`Main.ErasePlayer` shape — a superset of the two files the C# removes: the
+folder side is the map sidecar dir); the session draft resets (the
+`new PlayerFileData()` stand-in). The erase is `cfg(not(test))` — the
+headless rigs never touch the real Players dir.
+
+`Player.ghost` lands (`:17053`); `update_dead`'s hardcore gate
+(`:17045-17067`) routes the expiry to the ghost instead of the respawn
+(the `hardcore_permadeath` arg the world_sim caller folds from difficulty +
+`max_hp` + the seed predicate); `ghost_like` reads it so
+`AllowsRespawnTimerSkip` (`:38964`) refuses the skip. The 18 existing
+`update_dead` call sites pass false.
+
+### The gravestone kills (W4-f30, system 1, progression 36)
+
+The falling tombstone becomes the REAL aiStyle-17 projectile beside the
+existing `TombFall` visual (which keeps falling — the classic stone is
+inert, damage 0). `projectile/data.rs` carries the family row
+(43/201-205/527-531, 24x24, penetrate -1; `Projectile.cs:1258-1270` /
+`:2872-2937` / `:5971-5983`). `ai_gravestone` ports `:25316-25366`: the
+grounded friction, the spin, the 0.2 gravity, the FTW rest kill, the
+owner-gated landing scan (the style off the type); the placement rides the
+`wants_gravestone_place` intent (the pass owns the mutable world) —
+`place_item_tile(85, style)` + the epitaph sign (`Sign.ReadSign/TextSign`)
++ the Dig cue + the Kill. The movement zeroes the blocked axis (the stone
+rests; the C# `TileCollision`), the per-axis destination probe standing in
+for the swept collision (the `kill_step` precedent's approximation).
+
+`DropTombstone` (`Player.cs:39108-39137`) adds the launch draws
+(`Next(10,30)`/`Next(-40,-20)`, FTW x1.5 both) after the existing scatter/
+kind roll — the three RNG-witness twins extend with the two draws. The FTW
+stone is `friendly && hostile` (the new `Projectile.hostile` field; the
+player-contact gate is `!friendly || hostile`), damage 70 / kb 10,
+`ai[0] = whoAmI` (the `ByProjectile` attribution key), the epitaph
+(death text + the `MMMM d, yyy` date line, the civil-from-days
+`world_select` precedent). `hitDirection` folds to 1 (the port's death path
+carries none — documented).
+
+The 36 sites: the `OnKillNPC` town-kill latch in `damage_pve`
+(`Player.cs:20471-20474` — `refuses_friendly` bypassed for gravestones, the
+pre-strike life captured, the local-owner gate; `damage_pve` gains
+`local_owner`, the 19 call sites updated) drained by the projectile pass;
+the `KillMe` teammate-gravestone arm (`:38834-38837`) reads
+`Player.death_source_projectile` (latched in `hurt_inner` on the hit that
+zeroes the life pool, cleared on respawn). **MP deviation:** the C# gates on
+a TEAMMATE's death (`whoAmI != myPlayer && team == LocalPlayer.team`); the
+single-player port's local gravestone self-kill stands in — the primary 36
+site is the town-kill arm.
+
+### The town shimmer transform (W4-f30, system 4, progression 43)
+
+**Lane split:** the full state-25 machine (the transparency-ramp trigger,
+the hue light / 309 dust / particle visuals, the four-scan
+`TeleportToLandingSpot`) AND its inline progression-43 wire are the
+liquid-shimmer lane's (W4-f47 `e5aebe3e`,
+`npc_ai_town.rs::town_shimmer_state25` + `shimmer_town_progression`, on its
+unmerged branch). f30 ports the RNG-free DECISION CORE as
+`town_shimmer.rs::town_shimmer_step` (a standalone pure fn — the ai2 hold,
+the climb, the >=30 transparency decay pinned while wet, the (0,-4t) rise,
+the >=75 && t<=0 completion with the ai/localAI zero + the (0,-4) kick + the
+variant flip; the outcome carries the 43 gate). The two meet at the merge.
+The town AI itself is UNWIRED on this base (the live town walk is the
+`update_guide` stand-in, the `npc_ai_town.rs` module doc) and the shimmer
+trigger (buff 353 → `GetShimmered`'s town-set arm) is f47's — so the core is
+exercised by the witnesses; the `npc_ai_town.rs` cited-skip note points at
+it. Cited: `TargetClosest`/`Math.Sign` (the result is DISCARDED, `:53257`),
+`SendData(56)`, `Teleport(pos,12)` (the position UNCHANGED), the
+`ShimmerTownNPC` particle, the `shimmerWet/honeyWet/lavaWet` clears (f47's
+NPC fields).
+
+### The Dryad Joja bit (W4-f30, system 5, progression 46)
+
+**VERIFIED LIVE, not dead code:** `NPCInteractions.cs:517` registers the
+`StardewValleyBit` interaction; the dead wrapper is
+`DryadText_WorldPurityOrStardewValleyBit` (`Main.cs:40265`, no callers) —
+the live path is the button's `Interact` → `DryadText_Do_StardewValleyBit`.
+`dryad_stardew.rs` ports `CanDryadPlayStardewAnimation` (`Main.cs:40449-40457`),
+the gift (`:40280-40295` — `ConsumeItem(5275, reverseOrder: true)` the
+last-cell drain, the `PreventJojaColaDialog`/`RerollDryadText` latches, the
+thank-you line, 46), `HaveDryadDoStardewAnimation` (`NPC.cs:19184-19229` —
+the first live Dryad to state 24/480 ticks, the 15-row ground scan 100px
+right, the Junimo 995 at the scanned spot + (0,-52)), and the
+`OverrideChatTextWithShenanigans` reminder + the 2→1→0 reroll machine
+(`NPCChatPanel.cs:195-213`). The Purify button rides the interaction row
+before Close (the `NPCInteractions.All` order); the shared
+`draw_interaction_button` extracts the Close-only label draw. The latches
+reset on both chat-close paths. The Junimo 995 row lands (aiStyle 192,
+240x104, timeLeft*5). **Deferred (cited):** the AI_192 Junimo fall/opacity
+animation, the `SendData(144)` client relay (the host path runs the
+animation directly), the `DryadPurification` world-status button (the
+purity report is unported).
+
+### The research 45 wire
+
+The census's PREP becomes WIRED: `App.research` (`ResearchTracker`) +
+`App.last_research_version` (the `_lastResearchVersion` static latch), the
+per-tick armor-tail check (`Player.cs:25703`) beside the 38/41 notifies and
+the forced `enter_loaded_world` check (`:325`). The live sacrifice UI is
+unported, so the tracker never edits in play and the check is inert until
+the Journey research lands — the helper, the count, the App field and both
+call sites are wired.
+
 ## The emote bubble wheel (S1-E-26 wave B)
 
 **Code-only mode** (2026-11-18, `task/S1-E-26b-emote-ui`): no cargo/rustc/
