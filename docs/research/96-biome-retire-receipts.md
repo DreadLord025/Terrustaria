@@ -197,4 +197,62 @@ dedupe onto the generated set).
    the same gate). The keep-one is RNG-neutral for the spider pass by
    construction (same draws, same order — d106 proved byte-identity).
 
-<!-- NEXT-PHASES -->
+## 4. FINAL DECLARATION — SPIDER + NTB + FINISH family
+
+**ALL G41 PASSES + HOSTS + POOLS LANDED** on
+`task/W4-g41-biome-spider-cave` (closeout `2254f2e1` + this retire phase):
+
+| Piece | Landing commit | State |
+| --- | --- | --- |
+| Spider-cave egg-sac validator chain + decor arms + webs/DST residuals | `e5e2d783..ee937411` | landed; 14 witnesses NOT run; pins stale-by-design |
+| NTB host (`NotTheBees` + `FinishNotTheBees` + `Spread.Wall2` + `OverGrownDungeon` + `spider_wall_remover` WIRED) | `78b0cd152` + `5ca77ca8a` + `c1c527e12` | landed; 17 witnesses NOT run; flag-gated, pins UNCHANGED |
+| FinishNoTraps host | `d267d43fd` + `74d3eb3d6` | landed; 7 witnesses NOT run; flag-gated |
+| FinishRemixWorld host | `6300aab69` + `74d3eb3d6` | landed; 11 witnesses NOT run; flag-gated; QuickWater ×3 no-op seams marked |
+| QuickWater wire-contract addendum | `3b626b83c` (+ research/95 §addendum) | contract pinned; §1 receipt: API holds at g47 `5c09a68b8` + union `9bc722e5f` |
+| Ambience census | `64e1f9cad` | NOTHING TO PORT (no spider track/gate/cue in 1.4.5.8) |
+| Spawn pool (wall-62 arm + spawnSpider latch + CheckToSpawnSpider + Stylist sub-arm; stand-in RETIRED) | `c55239723` | landed; 9 witnesses NOT run; 163/164 consume-and-None (hunk §2) |
+| PlacePot remix centre veto (last research/93 MISSING row) | `d18923543` | landed; 1 witness NOT run; flag-gated |
+| Closeout docs (deferral final status + 6-step merger checklist + INDEX) | `2254f2e14` | landed |
+
+59 written-NOT-run witnesses total (14+17+7+11+1+9). Both classic pins
+(`SEED42_512 = 124297949`, `DEFAULT_WORLD = 3647283075`) stale-by-design,
+re-pin at the gate; NOTHING in the FINAL phase moved them.
+
+### The merger 6-step (research/93 §FINAL STATUS, refreshed by these receipts)
+
+1. **Stalactite keep-one** — §3's FINAL INSTRUCTION (g41 body + d106
+   generalisation, matrix §3.2 at `bf7b6bf5b`; d106 half verified alive).
+2. **Sequential re-pins** with the world-changing lanes (d106 R1-R5,
+   g36/g37/g38/g40/g42/g43/g44, f24/f25, d103/d104); each lane's a==b
+   witness green on the failing run before its re-pin is recorded.
+3. **Run the 59 witnesses** (the full-pipeline flag-world a==b halves
+   included); gate command `cargo test --workspace -- --skip
+   migrates_version_2_kinds_to_item_ids`, judge by `test result:` lines.
+4. **QuickWater activation** — now against the g46 RE-FOLD union
+   (`9bc722e5f`+) per §1: arm the gen context ONCE at the driver head,
+   swap the three seams for `quick_water(world, -1, -1)`, restore the
+   spawn-box `while flag` shape, re-derive the REMIX pins ONLY; carry
+   the g47-only closeout shimmer witness + the §11 dedupes.
+5. **d36 kinds hand-off** — §2's published hunk when 163 (d36) + 164
+   (g8) both exist on main; ids ride `NpcKind` names (R7 band 767-816
+   vs d36's E4 note 762-811 — the hunk is id-agnostic).
+6. **Anchors canary** — the five g41 rows (`anchors.txt:899-903`:
+   `fn check_stalactite`, `finish_not_the_bees`, `finish_no_traps`,
+   `finish_remix_world`, `fn set_spawn_spider_flag`) must all survive;
+   a failed marker = lossy merge, recover the arm, never delete the row.
+
+### research/95 addendum — the receipt cross-ref
+
+The addendum's five items re-verified at the retire tips (research/96
+§1's table is the symbol-level receipt): items 1-2 HOLD verbatim on
+both g47 `5c09a68b8` and the union `9bc722e5f`; item 3's instance
+question resolves at the f25 dedupe (research/70 §9 item 2 — DELETE the
+gen-local copies); item 4's while-flag shape + item 5's REMIX-only
+re-pin are unchanged obligations of the activation commit. The three
+seam comments in `finish_remix.rs` (`:379`/`:405`/`:445`) stay as the
+call-site markers until that commit.
+
+**Retire verdict:** the g41 lane has NO remaining unclaimed work. Every
+residual is a NAMED cross-lane obligation with an owner and a published
+contract (liquid activation → g46-union/f25 graft; kinds → d36/g8/d37;
+keep-one → the gate). Branch ready for the merge gate.

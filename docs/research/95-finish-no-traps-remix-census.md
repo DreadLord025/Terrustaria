@@ -143,3 +143,14 @@ drivers land. The exact contract:
    `SEED42_512`/`DEFAULT_WORLD` pins beyond the egg-sac deferral that
    already stands. research/70's witness re-pin table (f25 gen-hash
    RE-DERIVE) governs the driver side.
+
+**RETIRE-PHASE RECEIPT (research/96 §1).** Re-verified 2026-11-21 against
+g47 tip `5c09a68b8` (closeouts 1-4 touch only research/70 + three
+`liquid_sim` witnesses — the API is unchanged) and the g46 RE-FOLD union
+tip `9bc722e5f` (the g46d re-base is DONE: `e7626b72d`/`f588d53c5`/
+`16fd6ad78`/`d95911ce1` carried every §8 surface). Items 1-2 hold
+verbatim on both (`quick_water` g47 `liquid.rs:1742` / union `:1882`;
+the setters `:1582`/`:1597`/`:1606` / `:1722`/`:1737`/`:1746`); item 3
+resolves at the f25 dedupe (research/70 §9 item 2 — DELETE the gen-local
+copies, call the LiquidSystem methods). The activation now targets the
+UNION + the f25 gen-driver graft, not a separate "g47d" landing.
