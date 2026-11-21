@@ -54,7 +54,7 @@
 //! * RNG census: ZERO draws — the whole scan is integer/float maths.
 
 use crate::app::App;
-use tr_core::smart_cursor::{in_tile_bounds, reachable_rect};
+use tr_core::smart_cursor::in_tile_bounds;
 use tr_core::tiledata as td;
 use tr_core::World;
 
@@ -345,12 +345,20 @@ pub(crate) fn smart_interact_lookup(
         return;
     };
     // `:17402-17407` — the Simple reach region + the 10-tile world clamps.
-    let (lx, ly, hx, hy) = reachable_rect(
-        (player.x, player.y),
-        crate::player::WIDTH as i32,
-        player.height as i32,
-        0,
-    );
+    // The region reads the CURRENT `Player.tileRangeX/Y`
+    // (`TileReachCheckSettings.GetRanges`, `TileReachCheckSettings.cs:22-23`
+    // — the journey/accessory range the port's `tile_range_x/y()` carry,
+    // the `craft::tile_reach` convention); the boost is 0 (no `TB` argument
+    // at this call site, `Player.cs:17403`).
+    let reach_x =
+        (player.tile_range_x() as i32).min(tr_core::smart_cursor::SIMPLE_TILE_REACH_LIMIT);
+    let reach_y =
+        (player.tile_range_y() as i32).min(tr_core::smart_cursor::SIMPLE_TILE_REACH_LIMIT);
+    let px = (player.x / 16.0) as i32;
+    let py = (player.y / 16.0) as i32;
+    let hx0 = ((player.x + crate::player::WIDTH) / 16.0).ceil() as i32 - 1;
+    let hy0 = ((player.y + player.height) / 16.0).ceil() as i32 - 1;
+    let (lx, ly, hx, hy) = (px - reach_x, py - reach_y, hx0 + reach_x, hy0 + reach_y);
     let (w, h) = (app.world.width, app.world.height);
     let lx = lx.clamp(10, w - 10);
     let hx = hx.clamp(10, w - 10);
