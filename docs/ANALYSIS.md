@@ -39404,9 +39404,11 @@ corners).
   MULTIPLY postlude), 955 star ×7 screen-gated, 9 star ×3, 240 Dutchman
   corners ×4 + 96 resize + Damage.
 * Batch 5 (`43a99ff1`): the 1025 barnacle tile-collision burst
-  (`AI_197_HandleTileCollision`, `ai[0]==0` gate BEFORE `sentry_turret_step`
-  latches it, type==1025 gate, 9 gores) + the wave-O bomb family —
-  `explode_bomb` threads the pass's rng + gore pool and adds ONLY the
+  (`AI_197_HandleTileCollision` rides INSIDE `sentry_turret_step` at the
+  blocked-move latch — the C# handler runs only from the blocked arm
+  `:18637-18643`, so the burst gates on the same `vel != before && ai[0]==0`
+  condition the latch reads + the type==1025 gate, 9 gores) + the wave-O bomb
+  family — `explode_bomb` threads the pass's rng + gore pool and adds ONLY the
   `Kill_Bombs_DoUsualKillCode` gore rows on the PASS stream (bomb-corner
   family 22 recentre + ×4; dynamite 200 recentre + ×8 boulders) AFTER the
   frozen zero-rng `Damage()` walk (KEPT untouched — the M4-PROJ-9 deviation,

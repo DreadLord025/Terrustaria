@@ -9059,7 +9059,12 @@ impl Projectile {
     /// pool has no sound, dust or gore layer. The move itself is
     /// `Collision.TileCollision` (`flag6 = true` at `:17536-17539`) then
     /// `UpdatePosition`'s `position += velocity` (`:19858`/`:20445`).
-    fn sentry_turret_step(&mut self, world: &World) {
+    fn sentry_turret_step(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        gore: Option<&mut tr_core::gore::GorePool>,
+    ) {
         let before = self.vel;
         let tc = crate::collision::tile_collision(
             world,
@@ -9076,6 +9081,18 @@ impl Projectile {
         // only while the AI has not already latched (`:18639`, `ai[0] == 0`
         // is checked before the call, so the latch is one-shot per stuck run).
         if self.vel != before && self.ai[0] == 0.0 {
+            // W4-g16 wiring — `AI_197_HandleTileCollision`'s 1025 gore burst
+            // (`Projectile.cs:40273-40304`, `tile_collision_burst`): the C#
+            // handler runs from THIS blocked arm (`:18637-18643`) and gates
+            // on `type == 1025` (`:40252`); the burst reads the pre-latch box
+            // (the handler's `base.Top` is the position the move just landed
+            // on). The 30-dust loop before (`:40258-40272`) is the dust lane's
+            // skip. No pool: the burst was the documented skip.
+            if self.kind == DEAD_CELLS_BARNACLE {
+                if let Some(g) = gore {
+                    crate::projectile_gore_b::tile_collision_burst(self, g, rng, world);
+                }
+            }
             self.ai[0] = 1.0;
         }
     }
@@ -18643,21 +18660,12 @@ impl ProjectilePool {
                                 // (`:40250`). The sound + the `HitTiles` are SKIPPED; the
                                 // 30-dust loop (`:40258-40272`) is the dust lane's skip.
                                 // W4-g16 wiring — the 1025 barnacle's tile-collision gore
-                                // burst (`:40273-40304`, `tile_collision_burst`) is a REAL
-                                // spawn at the C# call position: the `ai[0] == 0` gate
-                                // (`:18639`) BEFORE the step latches it to 1, and the
-                                // `type == 1025` gate (`:40252`) inside the handler. No
-                                // pool: the burst was the documented skip.
-                                if self.slots[i].ai[0] == 0.0
-                                    && self.slots[i].kind == DEAD_CELLS_BARNACLE
-                                {
-                                    if let Some(g) = self.gore_pool.as_mut() {
-                                        crate::projectile_gore_b::tile_collision_burst(
-                                            &self.slots[i], g, rng, world,
-                                        );
-                                    }
-                                }
-                                self.slots[i].sentry_turret_step(world);
+                                // burst (`:40273-40304`, `tile_collision_burst`) rides
+                                // INSIDE `sentry_turret_step` at the blocked-move latch
+                                // (the C# handler runs only from the blocked arm, so the
+                                // burst gates on the SAME `vel != before && ai[0] == 0`
+                                // condition the latch reads — not on `ai[0] == 0` alone).
+                                self.slots[i].sentry_turret_step(world, rng, self.gore_pool.as_mut());
                         }
                         130 => {
                             // `AI_130_FlameBurstTower`
@@ -45518,24 +45526,31 @@ mod w4_g16_batch3_kill_gore_tests {
         assert!((pool.slots()[slot].w - 96.0).abs() < 1e-6, "the trailing 96×96");
     }
 
-    /// The 1025 barnacle's tile-collision burst (`:40273-40304`): the
-    /// `ai[0] == 0` gate (`:18639`) BEFORE the step latches it to 1, the
-    /// `type == 1025` gate (`:40252`). Three iterations × three gores = 9.
-    /// The 30-dust loop before is the dust lane's skip. The first tick's
-    /// aiStyle-197 arm draws nothing (ai[0]==0, frame 3, no target), so the
-    /// burst is the only stream consumer — the exact draw ORDER is pinned by
-    /// the site-fn witness in `projectile_gore_b.rs` (the jitter draws
-    /// precede the second/third Circular); here we pin the COUNT + the latch
-    /// + the one-shot gate.
+    /// The 1025 barnacle's tile-collision burst (`:40273-40304`): the C#
+    /// `AI_197_HandleTileCollision` runs ONLY from the blocked-move arm
+    /// (`:18637-18643`), so the burst rides `sentry_turret_step`'s blocked
+    /// latch (`vel != before && ai[0] == 0`) + the `type == 1025` gate
+    /// (`:40252`). Three iterations × three gores = 9. The 30-dust loop before
+    /// is the dust lane's skip. The exact draw ORDER is pinned by the site-fn
+    /// witness in `projectile_gore_b.rs`; here we pin the COUNT + the latch +
+    /// the one-shot gate + the no-burst-when-unblocked arm.
     #[test]
-    fn w4_g16_b5_the_1025_burst_draws_nine_gores_on_the_first_tick() {
+    fn w4_g16_b5_the_1025_burst_fires_on_the_blocked_move() {
+        use tr_core::tile::{FLAG_ACTIVE, Tile};
         let mut pool = ProjectilePool::new();
+        // A solid wall one tile ahead: the barnacle (42×38) at x=300 flying
+        // +8 lands its right edge (342+8=350) inside tile 21 (336..352).
         let slot = pool
-            .spawn_with_data_ai_owned(DEAD_CELLS_BARNACLE, 0, 300.0, 300.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .spawn_with_data_ai_owned(DEAD_CELLS_BARNACLE, 0, 300.0, 300.0, 8.0, 0.0, 10, 0.0, 0.0, 0.0)
             .expect("the 1025 row spawns");
         pool.slots_mut()[slot].time_left = 36000;
         pool.set_gore_pool(Some(GorePool::new()));
         let mut w = world();
+        for y in 17..22 {
+            let i = w.index(21, y);
+            w.tiles[i] = Tile { kind: 1, ..Default::default() };
+            w.tiles[i].flags |= FLAG_ACTIVE;
+        }
         let mut rng = UnifiedRandom::new(71);
         let mut npcs: Vec<Npc> = Vec::new();
         pool.update(
@@ -45552,7 +45567,7 @@ mod w4_g16_batch3_kill_gore_tests {
         );
         let gore = pool.take_gore_pool().unwrap();
         let active = gore.slots().iter().filter(|g| g.active).count();
-        assert_eq!(active, 9, "three iterations × three gores");
+        assert_eq!(active, 9, "three iterations × three gores on the blocked move");
         assert_eq!(pool.slots()[slot].ai[0], 1.0, "the step latched ai[0] = 1");
         // The second tick: ai[0] == 1 → no burst (the gate is one-shot).
         pool.set_gore_pool(Some(GorePool::new()));
@@ -45571,6 +45586,31 @@ mod w4_g16_batch3_kill_gore_tests {
         );
         let gore2 = pool.take_gore_pool().unwrap();
         assert_eq!(gore2.slots().iter().filter(|g| g.active).count(), 0, "no second burst");
+        // The unblocked arm: a barnacle in open air never bursts (the C#
+        // handler runs only from the blocked-move arm).
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai_owned(DEAD_CELLS_BARNACLE, 0, 300.0, 300.0, 8.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the 1025 row spawns");
+        pool.slots_mut()[slot].time_left = 36000;
+        pool.set_gore_pool(Some(GorePool::new()));
+        let mut w = world();
+        let mut rng3 = UnifiedRandom::new(71);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng3,
+            0,
+            true,
+        );
+        let gore3 = pool.take_gore_pool().unwrap();
+        assert_eq!(gore3.slots().iter().filter(|g| g.active).count(), 0, "no burst when unblocked");
+        assert_eq!(pool.slots()[slot].ai[0], 0.0, "the latch never fired");
     }
 
     /// The bomb-corner family (`:78329-78366`): the 22×22 recentre + the four
