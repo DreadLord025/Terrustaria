@@ -418,6 +418,21 @@ pub(crate) fn conversion_hardened_sand_walls_contains(wall: u16) -> bool {
 pub(crate) fn conversion_snow_walls_contains(wall: u16) -> bool {
     CONVERSION_SNOW_WALLS.contains(&wall)
 }
+
+/// W4-f25 closeout seam — the Convert type-16/18 wall unions read these
+/// (`WorldGen.cs:56044`/`:56127`); the shared `convert_wall_by_case` carries
+/// no 15/16/18/19 arm (those types are the dungeon-biome cells, ported in
+/// `spread.rs` with their own wall chains).
+pub(crate) fn conversion_dirt_walls_contains(wall: u16) -> bool {
+    CONVERSION_DIRT_WALLS.contains(&wall)
+}
+
+/// W4-f25 closeout seam — the NewWall1..4 membership for the type-18 wall
+/// ladder (`WorldGen.cs:56131-56146`), in set order (the first matching set
+/// picks the 212-215 target).
+pub(crate) fn conversion_new_wall_set(wall: u16) -> Option<usize> {
+    CONVERSION_NEW_WALLS.iter().position(|set| set.contains(&wall))
+}
 /// `TileID.Sets.SpreadUnderground` (`TileID.cs:622`) — the underground tiles
 /// the growth pass runs the grass arm over.
 pub(super) const SPREAD_UNDERGROUND: [u16; 9] = [23, 661, 109, 199, 662, 60, 70, 633, 226];

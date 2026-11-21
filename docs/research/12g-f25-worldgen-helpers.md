@@ -251,3 +251,43 @@ ladder) and the `CONV_THORN`/`in_world`/`CONV_JUNGLE_GRASS` constants —
 d1's `CONV_THORN` duplicate carries the merger-dedupe note (the C3
 precedent). No f25 wiring is missing on the powder chain; the merge
 lands d1's machine whole.
+
+### 4. Convert types 15/16/18/19 — LANDED (the dungeon-biome cells)
+
+`WorldGen.cs:56008-56040` (15 glowing-mushroom), `:56041-56086` (16
+desert), `:56124-56189` (18 pure), `:56190-56231` (19 jungle) as
+`spread::convert_biome_cell` + `convert_sized_biome`.
+
+- **c32 read at tip d27fb00ae**: its `dungeon_styles.rs` is the style
+  TABLES + lookups only (the module note's "UNWIRED: data tables + pure
+  lookups"); it carries NO Convert cells and NO `BiomeDungeonRoom`
+  bodies. The room bodies (`BiomeDungeonRoom.cs`'s
+  `BiomeRoom_GrassySurface`/`SandySurface`/`SnowySurface`) call
+  `DungeonUtils.ChangeTileType` DIRECTLY (`:232/:236/:248/:252/:266/
+  :270/:282/:286`) — NOT `WorldGen.Convert` — so they are c32's room-port
+  lane, not these cells. The C1/C2 helpers they DO call
+  (`TileIsExposedToAir` `:230/:246`, `BlockBelow…HardenedSand`
+  `:264/:280`) are f25's, already landed.
+- **Zero C# call sites**: a whole-decompile grep for `Convert(…, 15|16|
+  18|19[,)]` and `conversionType = 15|16|18|19` returns nothing — the
+  four switch arms are dead code in 1.4.5.8 (the dungeon-biome conversion
+  the rooms would use if they routed through Convert). They are part of
+  the Convert family, so f25 ports them UNWIRED (the C1-C8 precedent).
+- **The catch-all is the new shape**: unlike C3/C4/C5, these arms carry
+  the INDEPENDENT `!Main.tileFrameImportant[type]` tail (`:56029`/
+  `:56082`/`:56185`/`:56220`) — any non-frame-important tile converts to
+  the biome base (15: 70/59 by C1 exposure; 16: 396; 18: 1; 19: 60/59 by
+  C1). The thorn arms differ: 15/18 KILL, 16 kills with the 69 exemption,
+  19 CONVERTS to the jungle thorn 69 (then the catch-all re-types it).
+  The 15/19 catch-alls re-read the LIVE tile (the C# `ref Tile` — a
+  thorn kill deactivates it, the `active()` gate refuses the write).
+- **The wall chains** are cell-local (the shared `convert_wall_by_case`
+  has no 15/16/18/19 arm): 15 → 80; 16 the HardenedSand/Dirt/Snow union →
+  216 else 187; 18 the union → 2 / NewWall → 212-215 / else 349 (the
+  else-if fall-through is load-bearing — a wall already at its target
+  falls to 349); 19 the wall>0 switch (63/69/70/81 → 64, 15 no-op,
+  default 15). Two new `pub(crate)` seams in `growth/grass.rs`
+  (`conversion_dirt_walls_contains`, `conversion_new_wall_set`) feed the
+  16/18 unions.
+- Both pins unchanged (no executed step calls them), a == b untouched.
+  5 witnesses written not run.
