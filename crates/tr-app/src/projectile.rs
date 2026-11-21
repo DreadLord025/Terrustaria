@@ -22968,6 +22968,24 @@ impl ProjectilePool {
                     p.tag_effects.try_apply_tag_to_npc(tag_type, idx, npcs[idx].kind);
                 }
             }
+            // W4-d115 — `if (ownedBySomeone && targetNPC.life > 5) this.
+            // TryDoingOnHitEffects(targetNPC)` (`Projectile.cs:13585-13588`),
+            // after StatusNPC/tag, before the strike (`:13649`). The method
+            // (`:15128-15141`) refuses kinds 221/227/614/729/908/977 (the
+            // on-hit-spawned shots — they must not re-trigger OnHit) and
+            // calls `Main.player[owner].OnHit`; only the Hallowed
+            // `onHitDodge` arm lands (`Player.cs:6938-6941`, the Holy
+            // Protection buff-59 grant, RNG-free). The port's `player` is
+            // the local player — the single-player owner fold (the
+            // `owned_by_someone` gate carries `!trap && owner < 255`).
+            if owned_by_someone
+                && npcs[idx].hp > 5
+                && !matches!(self.slots[slot].kind, 221 | 227 | 614 | 729 | 908 | 977)
+            {
+                if let Some(p) = player.as_deref_mut() {
+                    p.on_hit_dodge_grant();
+                }
+            }
             // NPC.cs:81189,81239 — apply defense/crit (Main.CalculateDamageNPCsTake)
             // as StrikeNPC does before the knockback/HP application.
             // `Damage_PVE_Inner`'s `num5` (`Projectile.cs:12831`): the
@@ -24335,6 +24353,67 @@ mod tests {
         pool.damage_player(slot, Some(&mut player), &mut rng);
         assert!(player.hp < hp0, "the 9999 shot lands through the belt");
         assert!(rng.draws.is_empty(), "no dodge roll ran");
+    }
+
+    /// W4-d115 — the projectile `TryDoingOnHitEffects` seam
+    /// (`Projectile.cs:13585-13588` → `:15128-15141`): an owned shot on a
+    /// `life > 5` victim runs `Player.OnHit`'s Hallowed arm (buff 59, 1800);
+    /// the `life <= 5` gate skips it, and the grant consumes no stream draw
+    /// (the armed/unarmed controls end on identical stream state).
+    #[test]
+    fn w4_d115_the_owned_shot_grants_holy_protection_rng_free() {
+        let w = ground();
+        let rig = || {
+            let mut npc = one_npc(&w);
+            npc.x = 20.0 * TILE_PX;
+            npc.y = 24.0 * TILE_PX;
+            npc.hp = 10_000;
+            npc.max_hp = 10_000;
+            npc
+        };
+        // The Wooden Arrow (1) — a plain owned shot with a data row.
+        let armed = {
+            let mut npc = rig();
+            let mut player = crate::player::Player::spawn(&w);
+            player.on_hit_dodge = true;
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(1, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::UnifiedRandom::new(42);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+            let i = player.buffs.find_buff_index(59).expect("the owned shot grants buff 59");
+            assert_eq!(player.buffs.buff_time[i], 1800, "AddBuff(59, 1800) (:6940)");
+            rng
+        };
+        let unarmed = {
+            let mut npc = rig();
+            let mut player = crate::player::Player::spawn(&w);
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_with_data_ai(1, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .unwrap();
+            let mut rng = tr_core::UnifiedRandom::new(42);
+            pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+            assert!(player.buffs.find_buff_index(59).is_none(), "no flag, no grant");
+            rng
+        };
+        assert_eq!(armed, unarmed, "the grant arm draws nothing (RNG-free)");
+        // The life gate: a fresh 5-life victim skips OnHit.
+        let mut npc = rig();
+        npc.hp = 5;
+        let mut player = crate::player::Player::spawn(&w);
+        player.on_hit_dodge = true;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(1, npc.x, npc.y, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .unwrap();
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut npc), None, None, Some(&mut player), &mut rng);
+        assert!(
+            player.buffs.find_buff_index(59).is_none(),
+            "life <= 5 skips TryDoingOnHitEffects (:13585)"
+        );
     }
 
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate

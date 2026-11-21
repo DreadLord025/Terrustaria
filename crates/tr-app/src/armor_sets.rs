@@ -98,6 +98,11 @@ pub enum SetFlag {
     AmmoCost80,
     /// `Benefits.AdamantiteRanged` (`:205-208`) — ammo-mastery seam.
     AmmoCost75,
+    /// `Benefits.Hallowed` (`ArmorSetBonuses.cs:231-234`) and
+    /// `HallowedSummoner`'s second half (`:225-229`): `onHitDodge = true` —
+    /// the "Holy Protection" strike-grant (`Player.OnHit` `:6938-6941`).
+    /// W4-d115.
+    OnHitDodge,
 }
 
 /// One `ArmorSetBonuses.All` entry (`ArmorSetBonus.cs:128-142`): the
@@ -264,6 +269,49 @@ pub const SETS: &[ArmorSetRow] = &[
         primary: PrimaryPart::Head,
         flags: &[SetFlag::AmmoCost75],
     },
+    // W4-d115 — `:472` Benefits.HallowedSummoner (`:225-229`): the
+    // `onHitDodge` half (the `maxMinions += 2` stat half is tr-core's
+    // HallowedSummoner rows, S1-P-i25 — no double-apply). The registration
+    // is `Set(new int[2]{4873,4899}, new int[2]{551,4900}, new int[2]{552,
+    // 4901})` — the ancient pieces mix freely, 8 triples. The heads are
+    // disjoint from the plain Hallowed set below, so the plain
+    // `complete_set` scan stays correct despite the shared body/leg ids
+    // (a completion needs the head match too).
+    ArmorSetRow { name: "HallowedSummoner", text_key: "ArmorSetBonus.HallowedSummoner", head: 4873, body: 551, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "HallowedSummoner", text_key: "ArmorSetBonus.HallowedSummoner", head: 4873, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "HallowedSummoner", text_key: "ArmorSetBonus.HallowedSummoner", head: 4873, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "HallowedSummoner", text_key: "ArmorSetBonus.HallowedSummoner", head: 4873, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "HallowedSummoner", text_key: "ArmorSetBonus.HallowedSummoner", head: 4899, body: 551, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "HallowedSummoner", text_key: "ArmorSetBonus.HallowedSummoner", head: 4899, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "HallowedSummoner", text_key: "ArmorSetBonus.HallowedSummoner", head: 4899, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "HallowedSummoner", text_key: "ArmorSetBonus.HallowedSummoner", head: 4899, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    // W4-d115 — `:473` Benefits.Hallowed (`:231-234`): `onHitDodge` alone.
+    // `Set(new int[6]{558,553,559,4898,4897,4896}, new int[2]{551,4900},
+    // new int[2]{552,4901})` — 24 triples, head order verbatim.
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 558, body: 551, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 558, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 558, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 558, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 553, body: 551, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 553, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 553, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 553, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 559, body: 551, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 559, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 559, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 559, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4898, body: 551, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4898, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4898, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4898, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4897, body: 551, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4897, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4897, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4897, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4896, body: 551, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4896, body: 551, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4896, body: 4900, legs: 552, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
+    ArmorSetRow { name: "Hallowed", text_key: "ArmorSetBonus.Hallowed", head: 4896, body: 4900, legs: 4901, primary: PrimaryPart::Head, flags: &[SetFlag::OnHitDodge] },
 ];
 
 /// `ArmorSetBonus.QueryResult` (`ArmorSetBonus.cs:43-50`).
@@ -360,6 +408,11 @@ pub fn apply_armor_set_bonuses(p: &mut Player) {
             // (`world_sim/player.rs::grant_ammo_mastery` clears them
             // after this update) — granted in `grant_set_ammo_flags`.
             SetFlag::AmmoCost80 | SetFlag::AmmoCost75 => {}
+            // `ArmorSetBonuses.cs:231-234` — Benefits.Hallowed (and
+            // HallowedSummoner's `:228`): the Holy Protection strike-grant
+            // flag; `Player.OnHit` (`Player.cs:6938-6941`) consumes it.
+            // W4-d115.
+            SetFlag::OnHitDodge => p.on_hit_dodge = true,
         }
     }
 }
@@ -684,6 +737,81 @@ mod tests {
         p.equipped[0] = 0;
         p.update(&w, PlayerInput::default());
         assert!(!p.frost_burn, "ResetEffects clears frostBurn (`:18686`)");
+    }
+
+    /// W4-d115 — `:473` + `:231-234`: the Hallowed set's `onHitDodge` flag
+    /// (all 24 head/body/leg mixes), the `OnHit` buff-59 grant gated on
+    /// `shadowDodgeTimer == 0` (`Player.cs:6938-6941`), and the
+    /// `ResetEffects` clear (`:18443`).
+    #[test]
+    fn w4_d115_the_hallowed_set_arms_on_hit_dodge_and_grants_holy_protection() {
+        assert_eq!(SETS.iter().filter(|r| r.name == "Hallowed").count(), 24);
+        assert_eq!(SETS.iter().filter(|r| r.name == "HallowedSummoner").count(), 8);
+        let (w, mut p) = rig();
+        // Every head × ancient-mix completion arms the flag.
+        for head in [558u16, 553, 559, 4898, 4897, 4896] {
+            for (body, legs) in [(551u16, 552u16), (551, 4901), (4900, 552), (4900, 4901)] {
+                wear(&w, &mut p, head, body, legs);
+                assert!(p.on_hit_dodge, "({head}, {body}, {legs}) arms onHitDodge");
+            }
+        }
+        // The summoner head's set arms the same flag (the +2 minions stay
+        // tr-core's — no double-apply here).
+        wear(&w, &mut p, 4873, 551, 552);
+        assert!(p.on_hit_dodge);
+        // The grant: timer 0 → buff 59 for 1800; the buff scan arms
+        // shadow_dodge on the next tick.
+        wear(&w, &mut p, 558, 551, 552);
+        assert!(p.buffs.find_buff_index(59).is_none(), "no grant before a strike");
+        p.on_hit_dodge_grant();
+        let i = p.buffs.find_buff_index(59).expect("the strike grants Holy Protection");
+        assert_eq!(p.buffs.buff_time[i], 1800, "AddBuff(59, 1800) (:6940)");
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge, "buff 59 arms shadowDodge (:10076)");
+        // The cooldown gate: a live shadowDodgeTimer refuses the grant.
+        p.buffs.clear_buff(59);
+        p.shadow_dodge_timer = 100;
+        p.on_hit_dodge_grant();
+        assert!(p.buffs.find_buff_index(59).is_none(), "the timer gates (:6938)");
+        p.shadow_dodge_timer = 0;
+        // Taking the set off clears the flag (ResetEffects :18443) AND the
+        // orphan buff (the :25705-25708 clear).
+        p.on_hit_dodge_grant();
+        assert!(p.buffs.find_buff_index(59).is_some());
+        p.equipped[0] = 0;
+        p.update(&w, PlayerInput::default());
+        assert!(!p.on_hit_dodge, "ResetEffects clears onHitDodge (:18443)");
+        assert!(
+            p.buffs.find_buff_index(59).is_none(),
+            "shadowDodge && !onHitDodge clears buff 59 (:25705-25708)"
+        );
+    }
+
+    /// W4-d115 — the grant is RNG-free and the dodge cycle holds: strike →
+    /// buff 59 → deterministic shadow dodge → buff stripped + timer 1800 →
+    /// no re-grant until the timer decays.
+    #[test]
+    fn w4_d115_the_holy_protection_dodge_cycle_holds_the_cooldown() {
+        let (w, mut p) = rig();
+        wear(&w, &mut p, 558, 551, 552);
+        p.on_hit_dodge_grant();
+        p.update(&w, PlayerInput::default());
+        assert!(p.shadow_dodge);
+        let hp = p.hp;
+        // The shadow dodge draws nothing (the S1-C-1 contract).
+        let mut rng = tr_core::UnifiedRandom::new(42);
+        let mirror = rng.clone();
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the shadow dodge");
+        assert_eq!(p.hp, hp);
+        assert_eq!(rng, mirror, "the shadow dodge consumes no draw");
+        assert!(p.buffs.find_buff_index(59).is_none(), "ShadowDodge strips 59");
+        assert_eq!(p.shadow_dodge_timer, 1800);
+        // A fresh strike during the cooldown grants nothing.
+        p.on_hit_dodge_grant();
+        assert!(p.buffs.find_buff_index(59).is_none());
+        // The timer decays one per tick at the update head (:25461-25464).
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.shadow_dodge_timer, 1799);
     }
 
     /// `:402` + `:380-383` — Ash Wood: the flag and the lava halves

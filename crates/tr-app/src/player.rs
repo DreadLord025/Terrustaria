@@ -1410,6 +1410,16 @@ pub struct Player {
     pub brain_of_confusion: bool,
     pub shadow_dodge: bool,
     pub long_invince: bool,
+    /// `Player.onHitDodge` (`Player.cs:1170`): the Hallowed / Ancient
+    /// Hallowed set bonus's strike-grant flag ("Holy Protection" — buff 59's
+    /// display name, `Terraria.Localization.Content.en-US.Game.json`
+    /// `BuffName.ShadowDodge`). `ArmorSetBonuses.Benefits.Hallowed`
+    /// (`ArmorSetBonuses.cs:231-234`) and `HallowedSummoner`'s second half
+    /// (`:225-229`) arm it per tick; `ResetEffects` clears it (`:18443`).
+    /// `Player.OnHit` (`:6938-6941`) grants buff 59 for 1800 ticks while
+    /// `shadowDodgeTimer == 0` — the buff arms `shadow_dodge` through the
+    /// buff scan (`:10074-10077`) and the next `Hurt` dodges. W4-d115.
+    pub on_hit_dodge: bool,
     /// `Player.magicCuffs` (`Player.cs:2248`): the Magic Cuffs (1595,
     /// `ApplyEquipFunctional` `:14936-14939`) and the Celestial Cuffs (2221,
     /// `:14949-14953`) arm it per tick; `ResetEffects` clears it (`:18599`).
@@ -2756,6 +2766,7 @@ impl Player {
             brain_of_confusion: false,
             shadow_dodge: false,
             long_invince: false,
+            on_hit_dodge: false,
             magic_cuffs: false,
             gold_ring: false,
             has_lucky_coin: false,
@@ -4253,6 +4264,22 @@ impl Player {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
         self.brain_of_confusion_dodge_animation_counter = 300;
         self.buffs.add_buff(321, 240);
+    }
+
+    /// `Player.OnHit`'s Hallowed arm (`Player.cs:6938-6941`): `if (this.
+    /// onHitDodge && this.shadowDodgeTimer == 0) this.AddBuff(59, 1800)` —
+    /// the "Holy Protection" strike-grant. The buff arms `shadow_dodge`
+    /// through the buff scan (`:10074-10077`) and the next `Hurt` dodges
+    /// deterministically; `ShadowDodge` strips the buff and sets the 1800
+    /// cooldown, so the grant cannot re-fire until it decays. The arm is
+    /// RNG-free. The other `OnHit` arms (titanium storm `:6928-6937`, regen
+    /// `:6942-6945`, stardust/petal/crystal-leaf) are unported families;
+    /// the statue/Mimic `flag` only gates the titanium arm, not this one.
+    /// W4-d115.
+    pub(crate) fn on_hit_dodge_grant(&mut self) {
+        if self.on_hit_dodge && self.shadow_dodge_timer == 0 {
+            self.buffs.add_buff(59, 1800);
+        }
     }
 
     /// `Player.DoMysticSashDodge` (`Player.cs:38057-38059`): the 120/80
@@ -6228,6 +6255,9 @@ impl Player {
         self.black_belt = false;
         self.mystic_sash_dodge = false;
         self.long_invince = false;
+        // W4-d115 — `ResetEffects`' `onHitDodge = false` (`Player.cs:18443`):
+        // the Hallowed set rows re-arm it in `apply_armor_set_bonuses`.
+        self.on_hit_dodge = false;
         if self.brain_of_confusion_dodge_animation_counter > 0 {
             self.brain_of_confusion_dodge_animation_counter -= 1;
         }
@@ -6567,10 +6597,10 @@ impl Player {
                 160 => self.dazed = true,
                 22 => self.blind = true, // `BuffID.Darkness`
                 32 => self.slow = true,  // `BuffID.Slow`
-                // `Player.UpdateBuffs`' shadow-dodge arm (`Player.cs:10075-
-                // 10077`): the Hallowed set's buff 59 arms `shadowDodge` for
-                // the tick; the buff is granted by the set bonus's
-                // `onHitDodge` scan, which is an armor-set row (out of scope).
+                // `Player.UpdateBuffs`' shadow-dodge arm (`Player.cs:10074-
+                // 10077`): buff 59 ("Holy Protection") arms `shadowDodge` for
+                // the tick. The buff is granted by the Hallowed set's
+                // `OnHit` arm (`:6938-6941`, W4-d115 — `on_hit_dodge_grant`).
                 59 => self.shadow_dodge = true,
                 // `:10138-10141` — Heartreach (105): `lifeMagnet = true`
                 // (S1-P-i52 — the heart grab-range bonus + the 15/5 pull).
@@ -6936,6 +6966,15 @@ impl Player {
         // `UpdateEquips` (`:25633`) and the equipment-flag clears
         // (`ResetEffects` `:25491`), matching this position.
         crate::armor_sets::apply_armor_set_bonuses(self);
+        // W4-d115 — `Player.cs:25705-25708`: `if (this.shadowDodge && !this.
+        // onHitDodge) this.ClearBuff(59)` — right after `UpdateArmorSets`
+        // (`:25685`). A buff-59 granted WITHOUT the Hallowed set (debug/net)
+        // is stripped the same tick the set comes off; with the set armed
+        // the buff survives until `ShadowDodge` deletes it. The flag itself
+        // stays armed for this tick (the C# clears it in `ResetEffects`).
+        if self.shadow_dodge && !self.on_hit_dodge {
+            self.buffs.clear_buff(59);
+        }
         // `Player.cs:25900-25911` — the Mana Sickness damage cut: after every
         // `magicDamage` grant (the buff scan, the equip/set rows), the recalc
         // multiplies `magicDamage *= 1 - manaSickReduction` then `*= manaHeat`

@@ -7779,6 +7779,18 @@ fn resolve_melee_strike(
                         &mut app.npcs[idx].buffs,
                         status_rng,
                     );
+                    // W4-d115 — `ProcessHitAgainstNPC`'s `if (nPC.life > 5)
+                    // this.OnHit(...)` (`Player.cs:44392-44395`): AFTER
+                    // StatusToNPC (`:44391`), BEFORE the nano-flask boost
+                    // (`:44396`). Only the Hallowed `onHitDodge` arm lands
+                    // (`OnHit` `:6938-6941`, the Holy Protection buff-59
+                    // grant — RNG-free); the titanium/regen/petal/stardust/
+                    // crystal-leaf arms are unported families.
+                    if app.npcs[idx].hp > 5 {
+                        if let Some(p) = app.player.as_mut() {
+                            p.on_hit_dodge_grant();
+                        }
+                    }
                     // `if (this.meleeEnchant == 6) num2 = (int)((float)
                     // num2 * Player.GetNanoFlaskDamageBoost())`
                     // (`Player.cs:44396-44399`, `:44423-44426`) — the
@@ -8532,6 +8544,40 @@ mod tests {
         let n = &a.npcs[0];
         let slot = n.buffs.find_buff_index(120).expect("Stinky lands");
         assert_eq!(n.buffs.buff_time[slot], 300, "the fixed 300 (:6573)");
+    }
+
+    /// W4-d115 — the melee `OnHit` seam (`Player.cs:44392-44395`,
+    /// `if (nPC.life > 5) OnHit`): the Hallowed flag grants buff 59 on the
+    /// landed swing, the `life > 5` gate refuses a near-dead victim, and
+    /// the grant consumes no `UpdatePlayers` draw (the arm is RNG-free).
+    #[test]
+    fn w4_d115_the_melee_strike_grants_holy_protection_behind_the_life_gate() {
+        let mut a = melee_app();
+        a.inventory[a.selected].kind = 24;
+        a.inventory[a.selected].count = 1;
+        a.player.as_mut().unwrap().on_hit_dodge = true;
+        mine_frames(&mut a, 1);
+        let p = a.player.as_ref().unwrap();
+        let i = p.buffs.find_buff_index(59).expect("the strike grants buff 59");
+        assert_eq!(p.buffs.buff_time[i], 1800, "AddBuff(59, 1800) (:6940)");
+        // The life gate: a 5-life victim never reaches OnHit.
+        let mut b = melee_app();
+        b.inventory[b.selected].kind = 24;
+        b.inventory[b.selected].count = 1;
+        b.player.as_mut().unwrap().on_hit_dodge = true;
+        b.npcs[0].hp = 5;
+        mine_frames(&mut b, 1);
+        assert!(
+            b.player.as_ref().unwrap().buffs.find_buff_index(59).is_none(),
+            "life <= 5 skips OnHit (:44392)"
+        );
+        // The unarmed control: no flag, no grant, and the stream matches —
+        // the grant arm draws nothing either way.
+        let mut c = melee_app();
+        c.inventory[c.selected].kind = 24;
+        c.inventory[c.selected].count = 1;
+        mine_frames(&mut c, 1);
+        assert!(c.player.as_ref().unwrap().buffs.find_buff_index(59).is_none());
     }
 
     /// BUG-10: melee on a town NPC is refused (`ProcessHitAgainstNPC`'s
