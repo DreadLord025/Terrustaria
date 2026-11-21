@@ -1331,7 +1331,9 @@ mod tests {
     /// W4-g42 D4: the underground 71 plant placement below the world
     /// surface tries the cattail climb first (`:59656-59658`) — a placed
     /// 519 skips the mushroom write AND its `Next(5)` frame draw; a refused
-    /// climb falls back to the write. Stream-pinned both ways.
+    /// climb falls back to the write. Stream-pinned both ways (the tail
+    /// switch's `Next(250)` tree roll follows every walk — pinned on the
+    /// miss streams; a hit grows the tree with its own G5 draws).
     #[test]
     fn w4_g42_d4_the_71_plant_cattail_branch_skips_the_frame_draw() {
         let build = |water: bool| {
@@ -1362,17 +1364,23 @@ mod tests {
             update_world_grass_growth(&mut w, 100, 200, 99, 102, 199, 202, true, &mut rng);
             let roll = witness.next_max(10);
             if roll == 0 {
-                assert_eq!(rng, witness, "seed {seed}: the cattail took — no Next(5)");
                 assert!(
                     w.tile(100, 199).is_some_and(|t| t.active() && t.kind == 519),
                     "the cattail 519 stands above the water"
                 );
-                pinned_water = true;
-                break;
             }
-            assert_eq!(rng, witness);
+            // The tail switch: the liquid-above cattail branch is RNG-free
+            // (a second climb attempt refuses on the now-active cell), then
+            // the Next(250) tree roll. Pin only the tree-miss streams.
+            let tree = witness.next_max(250);
+            if tree != 0 {
+                assert_eq!(rng, witness, "seed {seed}: no Next(5) on the cattail path");
+                if roll == 0 {
+                    pinned_water = true;
+                }
+            }
         }
-        assert!(pinned_water, "some stream hits the plant roll");
+        assert!(pinned_water, "some stream hits the plant roll and misses the tree");
         // The dry world: the same hit writes the 71 with the Next(5) frame.
         let mut pinned_dry = false;
         for seed in 1i32..400 {
@@ -1383,15 +1391,18 @@ mod tests {
             let roll = witness.next_max(10);
             if roll == 0 {
                 let fx = witness.next_max(5) * 18;
-                assert_eq!(rng, witness, "seed {seed}: the refused climb draws Next(5)");
                 let t = *w.tile(100, 199).unwrap();
                 assert_eq!(t.kind, 71);
                 assert_eq!(t.frame_x, fx as i16, "the frame is the Next(5)*18 roll");
-                pinned_dry = true;
-                break;
             }
-            assert_eq!(rng, witness);
+            let tree = witness.next_max(250);
+            if tree != 0 {
+                assert_eq!(rng, witness, "seed {seed}: the refused climb draws Next(5)");
+                if roll == 0 {
+                    pinned_dry = true;
+                }
+            }
         }
-        assert!(pinned_dry, "some stream hits the dry plant roll");
+        assert!(pinned_dry, "some stream hits the dry plant roll and misses the tree");
     }
 }
