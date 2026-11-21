@@ -7176,9 +7176,41 @@ impl Npc {
                 self.frame = 0;
             }
             // The Old One's Army's lane gate: `ai[1]` drives its scale
-            // fade in the sim's gate pass; the machine here is 1-frame.
+            // fade in the sim's gate pass. `case 549` (`NPC.cs:67980-
+            // 67992`): the spriteDirection = 1 + rotation = 0 snap
+            // every tick + the `++frameCounter >= 6` step over the
+            // FULL 8 rows (`Main.npcFrameCount[549]` = 8,
+            // `Main.cs:67138` slot 9). W4-f27 slice 10: the v1 row-0
+            // pin here was WRONG ("the machine here is 1-frame" — the
+            // sheet is 8 rows and the portal spins); the arm
+            // delegates to the extra-10 machine (the 439-fix bridge
+            // shape — all four fields copy back, the arm writes
+            // sprite/rotation every tick). cs_id 549 via the bestiary
+            // net_id row (`bestiary.rs:1601`) + the world-hash hand
+            // row below.
             NpcKind::DD2LanePortal => {
-                self.frame = 0;
+                let mut s = crate::npc_findframe_extra10::FrameState {
+                    row: self.frame,
+                    counter: self.frame_counter,
+                    sprite_dir: self.sprite_dir,
+                    rotation: self.rotation,
+                };
+                let i = crate::npc_findframe_extra10::FrameInput {
+                    vx: self.vx,
+                    vy: self.vy,
+                    direction: self.facing,
+                    ai0: self.ai[0],
+                    ai_action: self.ai_action,
+                };
+                crate::npc_findframe_extra10::find_frame_extra10(
+                    crate::npc_findframe_extra10::FindFrameExtra10Kind::DD2LanePortal,
+                    &mut s,
+                    &i,
+                );
+                self.frame = s.row;
+                self.frame_counter = s.counter;
+                self.sprite_dir = s.sprite_dir;
+                self.rotation = s.rotation;
             }
             // The lunar families' own machines - one `case` per vanilla id
             // (`Main.npcFrameCount` = the row count of the kind's sheet, the
@@ -27423,6 +27455,57 @@ mod s1_d_3b_tests {
         ship.frame = 2;
         ship.find_frame();
         assert_eq!(ship.frame, 0);
+    }
+
+    #[test]
+    fn f27s10_the_lane_portal_spins_its_full_eight_rows() {
+        // W4-f27 slice 10: the v1 row-0 pin for DD2LanePortal (cs_id
+        // 549 via the bestiary net_id, `bestiary.rs:1601`) was WRONG
+        // vs the C#'s `case 549` (`NPC.cs:67980-67992`): the
+        // spriteDirection = 1 + rotation = 0 snap every tick + the
+        // `++frameCounter >= 6` step over the FULL 8 rows
+        // (`Main.npcFrameCount[549]` = 8, `Main.cs:67138` slot 9).
+        // The arm now delegates to the extra-10 machine; expectations
+        // identical to the e10 module witness (mechanical replay).
+        assert_eq!(NpcKind::DD2LanePortal.cs_id(), 549);
+        // The 6-tick step: rows 0(x5)/1(x6)/2(x6)/3...
+        let mut n = bare(NpcKind::DD2LanePortal);
+        let mut rows = Vec::new();
+        for _ in 0..20 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3]
+        );
+        // The sprite/rotation snap fires EVERY tick (the hold ticks
+        // included) — the bridge copies all four fields back.
+        let mut n = bare(NpcKind::DD2LanePortal);
+        n.frame = 3;
+        n.frame_counter = 2.0;
+        n.sprite_dir = -1;
+        n.rotation = 0.7;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (3, 3.0));
+        assert_eq!((n.sprite_dir, n.rotation), (1, 0.0));
+        // The wrap: row 7 + counter 5 → the step lands 8, the >= 8
+        // wrap snaps 0.
+        let mut n = bare(NpcKind::DD2LanePortal);
+        n.frame = 7;
+        n.frame_counter = 5.0;
+        n.find_frame();
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The velocity never feeds the portal (the C# reads none).
+        let mut n = bare(NpcKind::DD2LanePortal);
+        n.vx = 9.0;
+        n.vy = -9.0;
+        let mut rows = Vec::new();
+        for _ in 0..12 {
+            n.find_frame();
+            rows.push(n.frame);
+        }
+        assert_eq!(rows, vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2]);
     }
 
     #[test]
