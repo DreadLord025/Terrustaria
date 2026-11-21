@@ -1166,6 +1166,12 @@ pub struct Player {
     /// `:33524-33525`), the per-tick range close's probe point.
     pub chest_x: i32,
     pub chest_y: i32,
+    /// `Player.sign` (`Player.cs:1440`, init -1): the open sign's
+    /// `Main.sign[]` index — the port's `World.signs` store index
+    /// (`signs.rs`). W4-e10 gap census: the open/close latch + cues
+    /// (`OpenSign`/`CloseSign` `:33528-33551`) land here; the sign EDITOR
+    /// (`Main.editSign`/`InputTextSign`) stays S1-E-26's.
+    pub sign: i32,
     /// `Player.editedChestName` (`Player.cs:1442`): the MP client's rename
     /// flag — `ChestUI.RenameChestSubmit` sets it on a write under netMode 1
     /// (`ChestUI.cs:855-859`), and the next `33 SyncPlayerChest` send carries
@@ -2858,6 +2864,7 @@ impl Player {
             chest: crate::bank::CHEST_CLOSED,
             chest_x: 0,
             chest_y: 0,
+            sign: -1,
             edited_chest_name: false,
             prev_synced_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,

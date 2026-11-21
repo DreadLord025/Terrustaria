@@ -1091,9 +1091,11 @@ impl App {
         self.npc_chat_last_hovered = hovered;
         if hovered == 0 && self.ui_left_press {
             self.ui_left_press = false; // `:152` — `Main.mouseLeftRelease = false`
-            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`): the sign
-            // half is unported; `SetTalkNPC(-1)` + the text clear + sound
-            // 11 + the panel's `Close` reset.
+            // `Main.CloseNPCChatOrSign` (`Main.cs:40680-40692`):
+            // `CloseSign(quiet: true)` (W4-e10 — no cue from the sign
+            // half), `SetTalkNPC(-1)` + the text clear + sound 11
+            // (`:40688`, the function's own) + the panel's `Close` reset.
+            crate::signs::close_sign(self, true); // `:40682`
             self.talk_npc = None;
             self.npc_chat_text.clear();
             crate::chest::play_menu_sound(self, 11);

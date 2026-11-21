@@ -1898,6 +1898,11 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         }
     }
     crate::chest::tick_open(app); // `Player.HandleBeingInChestRange` (`Player.cs:25290`/:31015-31124)
+    // W4-e10 gap census — the per-tick sign range close
+    // (`Player.cs:27504-27519`, beside the talk close): a record gone or
+    // out of the Simple reach closes the sign WITH the Menu_Close cue
+    // (`:33537` via `CloseSign()`).
+    crate::signs::tick_sign_range_close(app);
     if map_open {
         app.update_map_input();
     }

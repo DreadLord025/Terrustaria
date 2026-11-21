@@ -194,6 +194,44 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     {
         return use_golem_altar(app);
     }
+    // W4-e10 gap census — the sign arm (`TileInteractionsUse`'s
+    // `Main.tileSign[type]` branch, `Player.cs:32693-32723`): a re-click
+    // on the OPEN sign closes it WITH the cue (`CloseSign()` `:32699`,
+    // the `:33537` site); otherwise single-player opens locally
+    // (`OpenSign(Sign.ReadSign)` `:32706` — create-if-missing, the
+    // `:33547` Menu_Open) and the MP client asks the host with `46`
+    // (`:32720`, the origin decode `:32710-32718` is `signs::origin`'s
+    // frame probe). The arm consumes the click either way (`flag2`).
+    // Sign kinds are disjoint from the furniture dispatch below, so the
+    // branch sits ahead of `interact_at` like the altar's. The C# gates
+    // on the CLICKED tile's kind (`Main.tileSign[type]` `:32693`) — the
+    // origin probe alone could decode a non-sign cell onto a sign.
+    let clicked_sign = app
+        .world
+        .tile(tx, ty)
+        .is_some_and(|t| t.active() && matches!(t.kind, 55 | 85 | 425 | 573));
+    if clicked_sign {
+        if let Some((sx, sy)) = crate::signs::origin(&app.world, tx, ty) {
+            let current = app.player.as_ref().map_or(-1, |p| p.sign);
+            let same = app
+                .world
+                .signs
+                .iter()
+                .position(|r| r.x == sx && r.y == sy)
+                .is_some_and(|i| i as i32 == current);
+            if same {
+                crate::signs::close_sign(app, false); // `:32699`
+            } else if let crate::app::NetRole::Client(client) = &app.net {
+                client.send(&crate::net::C2s::SignRequest(crate::net::SignRequest {
+                    x: sx as i16,
+                    y: sy as i16,
+                })); // `:32720` — the host answers `47`, the client arm opens
+            } else if let Some(idx) = crate::signs::find_or_create(&mut app.world.signs, sx, sy) {
+                crate::signs::open_sign(app, idx as i32); // `:32706`
+            }
+        }
+        return true;
+    }
     let direction = app.player.as_ref().map(|p| p.facing).unwrap_or(1);
     // The entity half of `Collision.EmptyTile` (`Collision.cs:1359`): the
     // closing column must be free of the player and NPCs. Disjoint field
@@ -213,7 +251,9 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
         // (`:33516-33525`); the close keeps the inventory open (the C#
         // never touches it here — the STORE-1 pair-close deviation is
         // gone). The prologue's sign/talk/chat clears (:33087-33096) are
-        // the shop close, the world route's mapping (chest.rs:525).
+        // the shop close, the world route's mapping (chest.rs:525);
+        // W4-e10: the prologue's `CloseSign()` (`:33087`, quiet=false).
+        crate::signs::close_sign(app, false);
         app.close_shop();
         let (ox, oy) = crate::chest::bank_open_origin(&app.world, tx, ty);
         let sound = crate::chest::toggle_open(app, ox, oy, bank);
@@ -1470,6 +1510,47 @@ mod tests {
         assert!(
             app.player.as_ref().unwrap().buffs.find_buff_index(29).is_some(),
             "the buff still lands at volume 0"
+        );
+    }
+
+    /// W4-e10 gap census — the sign arm (`Player.cs:32693-32723`): the
+    /// right-click on a sign tile opens it single-player (`OpenSign(
+    /// Sign.ReadSign)` `:32706` — create-if-missing, ONE Menu_Open
+    /// `:33547`, the record's text into the chat line); a re-click on the
+    /// OPEN sign closes it with ONE Menu_Close (`:32699` → `:33537`).
+    /// Both consume the click; neither draws gameplay RNG.
+    #[test]
+    fn w4_e10_the_sign_arm_opens_then_closes_with_one_menu_cue_each() {
+        let mut w = object_world();
+        // A 2-wide sign at (10, 18)/(11, 18).
+        for x in [10, 11] {
+            set_tile(&mut w, x, 18, 55);
+            let i = w.index(x, 18);
+            w.tiles[i].frame_x = if x == 10 { 0 } else { 18 };
+        }
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        player.x = 10.0 * TILE_PX;
+        player.y = 18.0 * TILE_PX;
+        app.player = Some(player);
+        let rng_before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
+        let before = app.audio.played_count();
+        // The right half's click decodes the same origin (`signs::origin`).
+        assert!(interact_tile(&mut app, 11, 18), "the sign consumes the click");
+        assert_eq!(app.audio.played_count(), before + 1, "`:33547` Menu_Open");
+        assert_eq!(app.player.as_ref().unwrap().sign, 0, "the latch");
+        assert_eq!(app.world.signs.len(), 1, "ReadSign create-if-missing");
+        assert!(app.npc_chat_text.is_empty(), "the fresh record's text");
+        // The re-click closes (the same-sign probe), ONE Menu_Close.
+        let mid = app.audio.played_count();
+        assert!(interact_tile(&mut app, 10, 18));
+        assert_eq!(app.audio.played_count(), mid + 1, "`:33537` Menu_Close");
+        assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:32699`");
+        assert_eq!(
+            *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+            rng_before,
+            "the menu cues draw no gameplay RNG"
         );
     }
 }

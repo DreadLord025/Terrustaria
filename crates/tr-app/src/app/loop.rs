@@ -718,6 +718,12 @@ impl App {
                     self.npc_chat_text.clear();
                     self.audio.play("Menu_Close");
                     self.inventory_open = false;
+                } else if self.player.as_ref().is_some_and(|p| p.sign >= 0) {
+                    // W4-e10 gap census — `ToggleInv`'s sign arm
+                    // (`Player.cs:5017-5020`): `CloseSign()` — the latch
+                    // clears, the chat text empties, `PlaySound(11)`
+                    // (`:33537`); the press is consumed (no toggle).
+                    crate::signs::close_sign(self, false);
                 } else {
                     self.inventory_open = !self.inventory_open;
                     // W4-e10 — `ToggleInv`'s close arm plays 11
@@ -757,6 +763,18 @@ impl App {
                 if self.settings.map_enabled {
                     if let Some(m) = self.map.as_mut() {
                         let open = !m.open;
+                        if open {
+                            // W4-e10 gap census — the open prologue
+                            // (`TryOpeningFullscreenMap`,
+                            // `Player.cs:29107-29110`): the inventory
+                            // closes, `CloseSign(quiet: true)` (NO cue),
+                            // the talk latch + the chat text clear — then
+                            // the `PlaySound(10)` (`:29111`).
+                            self.inventory_open = false;
+                            crate::signs::close_sign(self, true); // `:29108`
+                            self.talk_npc = None;
+                            self.npc_chat_text.clear();
+                        }
                         m.set_open(open);
                         // W4-e10 — the close arm plays 11
                         // (`Player.cs:24973`); the open arm rides
@@ -1005,6 +1023,38 @@ mod tests {
         assert_eq!(app.audio.played_count(), before + 2, "the map open chime");
         app.world_key(KeyCode::KeyM); // the cMapFull close, `:24973`
         assert_eq!(app.audio.played_count(), before + 3, "the cMapFull close chime");
+    }
+
+    /// W4-e10 gap census — `ToggleInv`'s sign arm (`Player.cs:5017-5020`):
+    /// with a live sign latch (and no map/talk ahead of it), Escape runs
+    /// `CloseSign()` — ONE Menu_Close (`:33537`), the latch clears, the
+    /// chat text empties, the inventory does NOT toggle. The map-open
+    /// prologue's `CloseSign(quiet: true)` (`:29108`) clears the latch
+    /// with NO extra cue (only the map's own 10 plays).
+    #[test]
+    fn w4_e10_the_escape_sign_arm_closes_with_one_menu_close() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.world.signs.push(tr_core::wld::sections::WldSign {
+            text: "note".into(),
+            x: 3,
+            y: 3,
+        });
+        crate::signs::open_sign(&mut app, 0);
+        let before = app.audio.played_count();
+        app.world_key(KeyCode::Escape);
+        assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:5019`");
+        assert!(app.npc_chat_text.is_empty(), "`:33534`");
+        assert!(!app.inventory_open, "the press is consumed");
+        assert_eq!(app.audio.played_count(), before + 1, "`:33537` once");
+        // The map-open prologue: quiet sign close + the map's own 10.
+        crate::signs::open_sign(&mut app, 0);
+        app.map = Some(WorldMap::new(&app.world));
+        let mid = app.audio.played_count();
+        app.world_key(KeyCode::KeyM);
+        assert!(app.map.as_ref().is_some_and(|m| m.open));
+        assert_eq!(app.player.as_ref().unwrap().sign, -1, "`:29108` quiet");
+        assert_eq!(app.audio.played_count(), mid + 1, "only the map's `:29111`");
     }
 
     /// W4-e10 — the map-style cycle key (`Main.cMapStyle`, default Tab,
