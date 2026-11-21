@@ -12980,6 +12980,80 @@ Deliberate deviations, all in the module header:
 
 Hash re-pins recorded in `world_hash.rs` (`SEED42_512 = 3074238937`, `DEFAULT_WORLD = 4238218118`): every world on every seed changes by design, because the cave pockets now carry spider/gem/moss walls and decor.
 
+### Gem-moss fidelity (W4-c29, 2026-11-21 — code-only mode: written NOT run)
+
+The unclaimed gem-fidelity row the g41 spider-cave census handed off
+(`docs/research/93-spider-cave-census.md` "Census deviations recorded, NOT
+changed": "`Spread.Gem`'s duplicate-visit redraw … left for the gem-fidelity
+row"). Scope check against the pushed co-lane claims: g41 took the spider
+residuals (egg-sac validator chain, webs/honey arms, wall coverage) and left
+`pass_moss`/`spread_gem` untouched; d105's lane-5 range claim owns the
+`Random Gems` (`:20729`) and `Moss Grass` (`:20769`) PASSES (not these
+fidelity fixes); the gem-moss placement residuals below are unclaimed.
+
+- **`Spread.Gem`'s duplicate-visit redraw** (`WorldGen.cs:3617`): the C#'s
+  `hashSet.Add(item)` IGNORES its return — a cell two open neighbours enqueue
+  in one wave is processed on EVERY visit, and the solid branch's
+  `randGemTile` conversions re-draw each time (the second visit reads the
+  freshly painted gem wall and takes the solid branch). The M5-STRUCT-5
+  draft's `if !seen.insert(item) { continue; }` dedup dropped those draws —
+  a real RNG deviation. The insert now ignores its result like the C#.
+  (`Spread.Moss`'s duplicates are draw-free idempotent writes, so its dedup
+  stays faithful — the g41 census's own note.)
+- **The exposed-gem write is `PlaceTile`'s 178 arm** (`:59691-59701`): the
+  `CheckAndAdjustMultiDirectionalTile` anchor gate (`:60314-60366`) — the
+  four slope-allowing face anchors (`SolidTileAllowTopSlope` `:70320`,
+  `SolidTileAllowBottomSlope` `:70167`, `SolidTileAllowLeftSlope` `:70340`,
+  `SolidTileAllowRightSlope` `:70360`, ported beside their landed bottom
+  sibling in `edit/kill.rs`), the boulder/door veto (`:60299`), the priority
+  pick below(0) → left(2) → right(3) → above(1) each requiring solid-not-
+  solidTop — then `frameX = style*18`, `frameY = genRand.Next(3)*18`. The
+  draft's `place_framed` write carried NEITHER the gate nor the draw: it
+  filled the deep pocket interior (no anchor) and never drew the frame row.
+  The style draw (`randGem()`) happens BEFORE the gate (the C# argument
+  order, `:3655`), so a refused placement still consumes it.
+- **`neonMossBiome`'s classic clamps** (`:9843-9858`): the rock-line clamp
+  rides `num6` (the ellipse's TOP edge), not the bottom — the draft clamped
+  `ymax`, inverting the gate; the clamps SET the drift to ±5.0 (`:9848`,
+  `:9856`), the draft nudged ±2.0 (a different walker trajectory after the
+  first clamped step); the step budget `num2` stays a scaled double
+  (`:9800-9807`, the `while (num2 > 0.0)` runs ceil iterations on a sub-4200
+  world), the draft truncated it; the paint loops are EXCLUSIVE on the high
+  edges (`k < num5`, `l < num7`, `:9860-9862`), the draft painted the
+  inclusive rim. The remix clamp (`Main.remixWorld`, `:9832-9842`) stays
+  unported with the other remix draw schedules.
+- **The moss pass's arm A reject ledger** (`:17554-17566`): a rejected anchor
+  bumps `num2` (the consecutive-reject streak) and only advances `num3` (the
+  placed count) once the streak passes `maxTilesX`; an accepted anchor RESETS
+  `num2` and advances `num3` at once. The draft advanced the placed count on
+  every attempt, so a reject-heavy world placed fewer biomes than the C#.
+  The exclusion scan now carries `Main.tileDungeon` (`:17545`, the six bricks
+  41/43/44/677/678/679 — the draft omitted them).
+- **Arm F walks the map LIVE column-major over `Main.tileMoss`**
+  (`:17659-17698`): the generated `TILE_MOSS` set carries the rainbow moss
+  627 (`Main.cs:7031`) beside the five + neon + lava moss. The draft
+  snapshotted a ROW-major list without 627 — a different visit order (the
+  sweep's conversions feed later cells) and a missed family.
+- **The 178/184 frame-important boot statics** (`Main.cs:7413-7414`): the
+  framer keeps the stored gem frames (`frameX = style*18`,
+  `frameY = Next(3)*18`) through the load-time re-frame instead of autotiling
+  them.
+
+RNG / hash contract: every new draw rides the EXISTING world-pass slots
+(`pass_rng("Gem Caves")` via `Spread.Gem` → the 178 arm; `pass_rng("Moss")`
+via arm A/F) — no new stream slot. The draw COUNTS and the painted tiles
+change, so `DEFAULT_WORLD` moves by design (arm A places 2 neon biomes on the
+4200 world, the gem/moss cave passes find pockets); `SEED42_512`'s bands
+collapse on the compact 512 terrain (arm A's `width/2100` rounds to 0), so
+whether it moves depends on the 512 pockets. Both re-pins are DEFERRED to the
+merge gate (no compiler on this branch — the S1-K-2 wave B / g41 precedent);
+the `a == b` determinism halves stay green. 5 witnesses written NOT run
+(`w4_c29_spread_gem_duplicate_visits_redraw_deterministically`,
+`w4_c29_the_exposed_gem_anchor_gate_and_frame_row`,
+`w4_c29_the_neon_moss_blob_stays_under_the_rock_line`,
+`w4_c29_the_moss_arm_a_ledger_and_dungeon_exclusion`,
+`w4_c29_the_moss_arm_f_sweeps_the_rainbow_moss_live`).
+
 ## The pillar shards (M4-EVENT-9)
 
 The celestial pillars spawn six mobs (`NPC.cs`'s tower region of
