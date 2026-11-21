@@ -1096,6 +1096,11 @@ pub struct Player {
     /// flush reads). Updated by `chest::tick_open` each player tick
     /// (S1-P-i43).
     pub prev_synced_chest: i32,
+    /// `Player.sign` (`Player.cs:1440`): the open sign's `Main.sign[]` slot
+    /// index — the port's `World.signs` store index (`signs.rs`), -1 closed.
+    /// `OpenSign` (`:33542-33551`) latches it, `CloseSign` (`:33528-33540`)
+    /// clears it; the per-tick range close is `Player.cs:27504-27518`.
+    pub sign: i32,
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
@@ -2696,6 +2701,7 @@ impl Player {
             chest_y: 0,
             edited_chest_name: false,
             prev_synced_chest: crate::bank::CHEST_CLOSED,
+            sign: -1, // `Player.cs:1440` — `public int sign = -1`
             void_vault_enabled: false,
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
@@ -3809,6 +3815,11 @@ impl Player {
         // the open container SILENTLY (no sound — the range close's 11 never
         // fires; S1-P-i43). `chestX/Y` stay, exactly like the C#.
         self.chest = crate::bank::CHEST_CLOSED;
+        // `Player.cs:17014` — `this.sign = -1`: the dead tick drops the open
+        // sign too (the `Main.editSign = false` half at `:17006` is the
+        // keyboard session's — the App's `sign_tick` closes the editor when
+        // the index clears, the `Main.cs:17389-17394` gate).
+        self.sign = -1;
         let jump_edge = jump && !self.prev_jump_input;
         self.prev_jump_input = jump;
         let can_skip = self.allows_respawn_timer_skip(boss_near, danger_near, moon_event_live);

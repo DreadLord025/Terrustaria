@@ -65,6 +65,15 @@ pub fn enter_seed() -> String { crate::lang::text("UI.EnterSeed") }
 /// `Language.GetText("UI.EnterNewName")` — the chest-rename keyboard's label
 /// (`IngameFancyUI.cs:100`).
 pub fn enter_new_name() -> String { crate::lang::text("UI.EnterNewName") }
+/// `Language.GetText("UI.EnterMessage")` — the sign keyboard's label
+/// (`IngameFancyUI.cs:96`).
+pub fn enter_message() -> String { crate::lang::text("UI.EnterMessage") }
+/// `Language.GetText("UI.EnterButton")` — the sign context's newline key
+/// (`UIVirtualKeyboard.cs:461`).
+pub fn enter_button() -> String { crate::lang::text("UI.EnterButton") }
+/// `Language.GetText("UI.RestoreButton")` — the cancel-cache restore key
+/// (`UIVirtualKeyboard.cs:475`).
+pub fn restore_button() -> String { crate::lang::text("UI.RestoreButton") }
 /// `Language.GetText("UI.Save")` — the desktop submit pair's label for the
 /// sign/chest contexts (`(this._editingSign || this._editingChest) ?
 /// Language.GetText("UI.Save") : Language.GetText("UI.Submit")`,
@@ -116,22 +125,28 @@ const SILVER: [u8; 4] = [192, 192, 192, 255];
 // --- Model --------------------------------------------------------------------
 
 /// The ctor's `inputMode` — the static `KeyboardContext` (`:159`, `:161`,
-/// `:147-157`). The port serves the text keyboards (0) and the chest rename
-/// (2); the sign context (1) stays out (the sign editor is not ported).
+/// `:147-157`). The port serves the text keyboards (0), the sign editor (1)
+/// and the chest rename (2).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Context {
     /// `inputMode = 0` — the character/world-name keyboards.
     #[default]
     Text = 0,
+    /// `inputMode = 1` — the sign editor (`IngameFancyUI.cs:136-145`).
+    Sign = 1,
     /// `inputMode = 2` — the chest rename (`IngameFancyUI.cs:147-156`).
     Chest = 2,
 }
 
 impl Context {
-    /// `this._editingChest = this._keyboardContext == 2` (`:167`). The sign
-    /// twin (`_editingSign`, `:166`) is context 1's and stays out.
+    /// `this._editingChest = this._keyboardContext == 2` (`:167`).
     pub fn editing_chest(self) -> bool {
         self == Context::Chest
+    }
+
+    /// `this._editingSign = this._keyboardContext == 1` (`:166`).
+    pub fn editing_sign(self) -> bool {
+        self == Context::Sign
     }
 }
 
@@ -319,8 +334,14 @@ pub struct Layout {
 /// `UIState`'s `GetInnerDimensions`). `show_gamepad_hints` picks which layer
 /// `DrawSelf` keeps alive (`:684-726`): with it, `outerLayer1` and the
 /// textbox/label sit at their unshifted pixel tops; without it, `outerLayer2`
-/// and the `+50` shift (`:716-725`).
-pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
+/// and the `+50` shift (`:716-725`). `context` feeds the sign offset
+/// `num3 = -5000 * _editingSign.ToInt()` (`:176`): the sign context parks
+/// the textbox/label far off-screen — the sign text edits in the
+/// `NPCChatPanel` dialog instead (`IngameFancyUI.Draw`'s `GUIChatDraw`,
+/// `:212-215`), so the keyboard shows only its key layer.
+pub fn layout(screen: Vec2, show_gamepad_hints: bool, context: Context) -> Layout {
+    // `num3` (`:176`) — -5000 for the sign context, 0 otherwise.
+    let sign_offset = if context.editing_sign() { -5000.0 } else { 0.0 };
     let root = [0.0, 0.0, screen.x, screen.y];
     // `outerLayer1` == `outerLayer2` — the identical initializer (`:180-195`).
     let layer = uistate::resolve(
@@ -372,12 +393,12 @@ pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
     // layer is the live one.
     let shift = if show_gamepad_hints { 0.0 } else { 50.0 };
     // The textbox (`:210-218`): `Top.Pixels = num5 + num2 - 10 + num3` with
-    // `num5 = -50`, `num2 = 270`, `num3 = 0` (the sign offset is context 1
-    // only, `:176`) -> 210.
+    // `num5 = -50`, `num2 = 270`, `num3` the sign offset (`:176`) -> 210
+    // (or -4790 while editing a sign).
     let textbox = uistate::resolve(
         root,
         Style::px(0.0),
-        Style::px(210.0 + shift),
+        Style::px(210.0 + shift + sign_offset),
         Style::px(516.0), // `num4` (`:214`)
         Style::px(37.0),  // `:217`
         0.5,              // `this._textBox.HAlign = 0.5f` (`:213`)
@@ -387,11 +408,12 @@ pub fn layout(screen: Vec2, show_gamepad_hints: bool) -> Layout {
         root[2],
         [0.0; 4],
     );
-    // The label (`:408-425`): `Top.Pixels = num5 - 37 - 4 + num2 + num3` -> 179.
+    // The label (`:408-425`): `Top.Pixels = num5 - 37 - 4 + num2 + num3` -> 179
+    // (or -4821 while editing a sign).
     let label = uistate::resolve(
         root,
         Style::px(0.0),
-        Style::px(179.0 + shift),
+        Style::px(179.0 + shift + sign_offset),
         Style::px(516.0), // `Width.Pixels = num4` (`:413`)
         Style::px(37.0),  // `:422`
         0.5,              // `HAlign = 0.5f` (`:410`)
@@ -560,10 +582,10 @@ pub fn submit_colors(valid: bool, hovered: bool) -> ([u8; 4], [u8; 4]) {
 /// `TextIsValidForSubmit` (`:615-626`) with the custom validator unset: a
 /// trimmed-empty string submits iff `_allowEmpty` — but only while neither
 /// editor flag holds (`!this._editingSign && !this._editingChest`), so the
-/// chest context (2) is **always** valid and the text context (0) falls back
-/// to `allowEmpty`.
+/// sign (1) and chest (2) contexts are **always** valid and the text
+/// context (0) falls back to `allowEmpty`.
 pub fn text_valid_for(text: &str, allow_empty: bool, context: Context) -> bool {
-    if text.trim().is_empty() && !context.editing_chest() {
+    if text.trim().is_empty() && !context.editing_chest() && !context.editing_sign() {
         return allow_empty;
     }
     true
@@ -589,6 +611,12 @@ pub enum Click {
     Symbol,
     /// The space bar (`:452-457`).
     Space,
+    /// The sign context's newline key (`UI.EnterButton`, `:459-470`): sound
+    /// 12 + `_textBox.Write("\n")`.
+    Newline,
+    /// The cancel-cache restore key (`UI.RestoreButton`, `:473-488`): sound
+    /// 12 + `RestoreCanceledInput` + the bottom row rebuilds.
+    Restore,
     /// The backspace key (`:391-397`).
     Backspace,
     /// Submit — reported even when the text is invalid; the *handler* re-checks
@@ -600,22 +628,65 @@ pub enum Click {
     None,
 }
 
+/// The bottom row's space/enter/restore widths (`BuildSpaceBarArea`,
+/// `:444-489`): `flag = CanRestore()` (the sign context's
+/// `_cancelCacheSign.Length > 0`, `:504-515`), `x = flag ? 4 : 5`,
+/// `num = (flag && _editingSign) ? 2 : 3`. The space bar is
+/// `(2, 4, _editingSign || (_editingChest && flag) ? num : 6)`; the sign
+/// context adds the newline key at `(x, 4, num)` and a non-empty cancel
+/// cache adds the restore key at `(6, 4, 2)`. The text context keeps the
+/// historical 6-wide space bar with no extra keys. Answers
+/// `(space [x, y, w], enter Option<[x, y, w]>, restore visible)`.
+pub fn bottom_row(context: Context, can_restore: bool) -> ([usize; 3], Option<[usize; 3]>, bool) {
+    let x = if can_restore { 4 } else { 5 };
+    let num = if can_restore && context.editing_sign() { 2 } else { 3 };
+    let space_w = if context.editing_sign() || (context.editing_chest() && can_restore) {
+        num
+    } else {
+        6
+    };
+    let enter = context.editing_sign().then_some([x, 4, num]);
+    (
+        [2, 4, space_w],
+        enter,
+        can_restore && (context.editing_sign() || context.editing_chest()),
+    )
+}
+
 /// The layer's hit-test — the same [`key_rect`] geometry the draw replays
 /// (Review Focus 2). The visible layer's buttons only: `outerLayer1`'s grid
 /// and bottom row plus the small Submit/Cancel pair while
 /// `show_gamepad_hints` holds (`:684-704`), just the big pair of
-/// `outerLayer2` otherwise (`:705-726`).
-pub fn click_at(state: &KeyboardState, l: &Layout, show_gamepad_hints: bool, mouse: Vec2) -> Click {
+/// `outerLayer2` otherwise (`:705-726`). `can_restore` is the sign/chest
+/// cancel cache's non-empty state (`CanRestore`, `:504-515`) — it re-shapes
+/// the bottom row exactly as the draw does.
+pub fn click_at(
+    state: &KeyboardState,
+    l: &Layout,
+    show_gamepad_hints: bool,
+    mouse: Vec2,
+    context: Context,
+    can_restore: bool,
+) -> Click {
     if show_gamepad_hints {
-        // The bottom row first (`:228`, `:263`, `:452`, `:391`).
+        // The bottom row first (`:228`, `:263`, `:452`, `:391`, `:459-488`).
         if in_rect(mouse, key_rect(l.grid_origin, 0, 4, 1)) {
             return Click::Shift;
         }
         if in_rect(mouse, key_rect(l.grid_origin, 1, 4, 1)) {
             return Click::Symbol;
         }
-        if in_rect(mouse, key_rect(l.grid_origin, 2, 4, 6)) {
+        let (space, enter, restore) = bottom_row(context, can_restore);
+        if in_rect(mouse, key_rect(l.grid_origin, space[0], space[1], space[2])) {
             return Click::Space;
+        }
+        if let Some([ex, ey, ew]) = enter {
+            if in_rect(mouse, key_rect(l.grid_origin, ex, ey, ew)) {
+                return Click::Newline;
+            }
+        }
+        if restore && in_rect(mouse, key_rect(l.grid_origin, 6, 4, 2)) {
+            return Click::Restore;
         }
         if in_rect(mouse, key_rect(l.grid_origin, 8, 4, 2)) {
             return Click::Backspace;
@@ -776,6 +847,7 @@ pub fn draw(
     show_gamepad_hints: bool,
     mouse: Vec2,
     frame: u64,
+    can_restore: bool,
 ) {
     // The textbox (`UITextBox.DrawSelf`, `UITextBox.cs:80-108`): a transparent
     // panel (`:211-212`) so only the text shows, centred, with the caret.
@@ -890,8 +962,11 @@ pub fn draw(
             SYMBOL_BUTTON_LABEL,
             [1.0; 4],
         );
-        // The space bar (`:452-457`): the `UI.SpaceButton` label, 6 keys wide.
-        let space_rect = key_rect(l.grid_origin, 2, 4, 6);
+        // The bottom row's space/enter/restore trio (`BuildSpaceBarArea`,
+        // `:444-489`): the widths follow `CanRestore()` + the context.
+        let (space, enter, restore) = bottom_row(request.context, can_restore);
+        // The space bar (`:452-457`): the `UI.SpaceButton` label.
+        let space_rect = key_rect(l.grid_origin, space[0], space[1], space[2]);
         let (bg, border) = key_colors(false, in_rect(mouse, space_rect));
         draw_panel_text(
             r,
@@ -904,6 +979,38 @@ pub fn draw(
             &space(),
             [1.0; 4],
         );
+        // The sign context's newline key (`:459-470`): `UI.EnterButton`.
+        if let Some([ex, ey, ew]) = enter {
+            let enter_rect = key_rect(l.grid_origin, ex, ey, ew);
+            let (bg, border) = key_colors(false, in_rect(mouse, enter_rect));
+            draw_panel_text(
+                r,
+                lookups,
+                enter_rect,
+                [0.0, 12.0, 0.0, 12.0],
+                bg,
+                border,
+                KEY_TEXT_SCALE,
+                &enter_button(),
+                [1.0; 4],
+            );
+        }
+        // The restore key (`:473-488`): `UI.RestoreButton`, (6, 4, 2).
+        if restore {
+            let restore_rect = key_rect(l.grid_origin, 6, 4, 2);
+            let (bg, border) = key_colors(false, in_rect(mouse, restore_rect));
+            draw_panel_text(
+                r,
+                lookups,
+                restore_rect,
+                [0.0, 12.0, 0.0, 12.0],
+                bg,
+                border,
+                KEY_TEXT_SCALE,
+                &restore_button(),
+                [1.0; 4],
+            );
+        }
         // The backspace key (`:391-407`): the `VK_Backspace` icon at
         // `ImageScale 0.92`, 2 keys wide.
         let backspace_rect = key_rect(l.grid_origin, 8, 4, 2);
@@ -923,7 +1030,13 @@ pub fn draw(
         // The small pair: Submit carries `ValidateText`'s colours (`:298`,
         // `:585-613`), Cancel is `StyleKey(external: true)`'d — the border
         // stays the `UIPanel` default Black (`:315`, `:634-636`'s `!external`).
-        let valid = text_valid(&state.text, request.allow_empty);
+        // The label is `UI.Save` for the sign/chest contexts (`:291`).
+        let valid = text_valid_for(&state.text, request.allow_empty, request.context);
+        let submit_label = if request.context.editing_sign() || request.context.editing_chest() {
+            submit_save()
+        } else {
+            submit()
+        };
         let (bg, border) = submit_colors(valid, in_rect(mouse, l.submit));
         draw_panel_text(
             r,
@@ -933,7 +1046,7 @@ pub fn draw(
             bg,
             border,
             KEY_TEXT_SCALE,
-            &submit(),
+            &submit_label,
             if valid { [1.0; 4] } else { color::tint(GRAY) },
         );
         let (bg, border) = if in_rect(mouse, l.cancel) {
@@ -957,7 +1070,7 @@ pub fn draw(
         // false (`:329`, `:369`), so they are text: Silver at 0.72, White at
         // 0.85 while hovered (`:334-343`, `:370-379`). The submit label is
         // `UI.Save` for the sign/chest contexts (`:327`).
-        let submit_label = if request.context.editing_chest() {
+        let submit_label = if request.context.editing_chest() || request.context.editing_sign() {
             submit_save()
         } else {
             submit()
@@ -1000,7 +1113,7 @@ mod tests {
     fn layout_matches_the_source_table_at_1600x900() {
         // The desktop layer (`show_gamepad_hints == false`) — the screen the
         // port always shows (Review Focus 6).
-        let l = layout(SCREEN, false);
+        let l = layout(SCREEN, false, Context::Text);
         // outerLayer: Width 516+8+16 = 540, Top 270, Height 266, HAlign .5
         // (`:181-185`) -> x = 800 - 270 = 530.
         assert_eq!(l.layer, [530.0, 270.0, 540.0, 266.0]);
@@ -1025,7 +1138,7 @@ mod tests {
         // The gamepad layer (`show_gamepad_hints == true`): the tops lose the
         // +50 and the small 37-tall pair sits at the layer's bottom
         // (`:291-326`).
-        let g = layout(SCREEN, true);
+        let g = layout(SCREEN, true, Context::Text);
         assert_eq!(g.textbox, [542.0, 210.0, 516.0, 48.96]);
         assert_eq!(g.label, [542.0, 179.0, 516.0, 37.0]);
         // Submit: W 216, H 37, HAlign 1 + VAlign 1 of the 540x266 layer
@@ -1263,7 +1376,7 @@ mod tests {
 
     #[test]
     fn click_at_maps_every_visible_key_centre() {
-        let l = layout(SCREEN, true);
+        let l = layout(SCREEN, true, Context::Text);
         let mut state = KeyboardState::new(&Request {
             label: String::new(),
             initial: String::new(),
@@ -1276,47 +1389,47 @@ mod tests {
         // the live `KeyState`, so pin Default first.
         state.set_key_state(KeyState::Default);
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 0, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 0, 1)), Context::Text, false),
             Click::Char('1')
         );
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 9, 3, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 9, 3, 1)), Context::Text, false),
             Click::Char('?')
         );
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 4, 2, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 4, 2, 1)), Context::Text, false),
             Click::Char('g')
         );
         // The labels follow the live `KeyState` (`:574-577`).
         state.set_key_state(KeyState::Shift);
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 1, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 1, 1)), Context::Text, false),
             Click::Char('Q')
         );
         state.set_key_state(KeyState::Symbol);
         assert_eq!(
-            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 3, 1, 1))),
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 3, 1, 1)), Context::Text, false),
             Click::Char('$')
         );
         state.set_key_state(KeyState::Default);
         // The bottom row (`:228`, `:263`, `:452`, `:391`).
-        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 4, 1))), Click::Shift);
-        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 1, 4, 1))), Click::Symbol);
-        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 2, 4, 6))), Click::Space);
-        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 8, 4, 2))), Click::Backspace);
+        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 0, 4, 1)), Context::Text, false), Click::Shift);
+        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 1, 4, 1)), Context::Text, false), Click::Symbol);
+        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 2, 4, 6)), Context::Text, false), Click::Space);
+        assert_eq!(click_at(&state, &l, true, centre(key_rect(l.grid_origin, 8, 4, 2)), Context::Text, false), Click::Backspace);
         // The small pair (`:313`, `:326`) — Submit reports even when invalid;
         // the handler re-checks (`:358-365`).
-        assert_eq!(click_at(&state, &l, true, centre(l.submit)), Click::Submit);
-        assert_eq!(click_at(&state, &l, true, centre(l.cancel)), Click::Cancel);
-        assert_eq!(click_at(&state, &l, true, Vec2::new(100.0, 100.0)), Click::None);
+        assert_eq!(click_at(&state, &l, true, centre(l.submit), Context::Text, false), Click::Submit);
+        assert_eq!(click_at(&state, &l, true, centre(l.cancel), Context::Text, false), Click::Cancel);
+        assert_eq!(click_at(&state, &l, true, Vec2::new(100.0, 100.0), Context::Text, false), Click::None);
 
         // The desktop layer: only the big pair answers (`:366`, `:390`); the
         // hidden grid is dead.
-        let d = layout(SCREEN, false);
-        assert_eq!(click_at(&state, &d, false, centre(key_rect(d.grid_origin, 0, 0, 1))), Click::None);
-        assert_eq!(click_at(&state, &d, false, centre(d.submit)), Click::Submit);
-        assert_eq!(click_at(&state, &d, false, centre(d.cancel)), Click::Cancel);
-        assert_eq!(click_at(&state, &d, false, Vec2::new(100.0, 100.0)), Click::None);
+        let d = layout(SCREEN, false, Context::Text);
+        assert_eq!(click_at(&state, &d, false, centre(key_rect(d.grid_origin, 0, 0, 1)), Context::Text, false), Click::None);
+        assert_eq!(click_at(&state, &d, false, centre(d.submit), Context::Text, false), Click::Submit);
+        assert_eq!(click_at(&state, &d, false, centre(d.cancel), Context::Text, false), Click::Cancel);
+        assert_eq!(click_at(&state, &d, false, Vec2::new(100.0, 100.0), Context::Text, false), Click::None);
     }
 
     #[test]
@@ -1324,5 +1437,108 @@ mod tests {
         // `new Color(23, 33, 69) * 0.7f` (`:206`).
         assert_eq!(PANEL_BG, color::mul([23, 33, 69, 255], 0.7));
         assert_eq!(PANEL_BG, [16, 23, 48, 178]);
+    }
+
+    /// W4-f22 — `num3 = -5000 * _editingSign.ToInt()` (`UIVirtualKeyboard.cs:
+    /// 176`): the sign context parks the textbox and label 5000 px above
+    /// their normal tops (the text edits in the NPCChatPanel dialog instead,
+    /// `IngameFancyUI.cs:212-215`); the key layer itself does not move.
+    #[test]
+    fn sign_context_parks_the_textbox_and_label_offscreen() {
+        let t = layout(SCREEN, false, Context::Text);
+        let s = layout(SCREEN, false, Context::Sign);
+        assert_eq!(s.textbox[1], t.textbox[1] - 5000.0, "260 - 5000 = -4740");
+        assert_eq!(s.label[1], t.label[1] - 5000.0, "229 - 5000 = -4771");
+        assert_eq!(s.textbox[0], t.textbox[0], "the x/width/height stay");
+        assert_eq!(s.textbox[3], t.textbox[3]);
+        assert_eq!(s.layer, t.layer, "the key layer does not move");
+        assert_eq!(s.panel, t.panel);
+        assert_eq!(s.submit, t.submit);
+        assert_eq!(s.grid_origin, t.grid_origin);
+        // The gamepad layer shifts the same way (`:716-725`'s +50 is absent).
+        let g = layout(SCREEN, true, Context::Sign);
+        assert_eq!(g.textbox[1], 210.0 - 5000.0);
+        assert_eq!(g.label[1], 179.0 - 5000.0);
+        // The chest context keeps the historical geometry.
+        assert_eq!(layout(SCREEN, false, Context::Chest), t);
+    }
+
+    /// W4-f22 — `TextIsValidForSubmit` (`:615-626`): the `_editingSign` gate
+    /// makes the sign context always valid, even for an empty text with
+    /// `allowEmpty: false` (the sign open passes exactly that pair,
+    /// `IngameFancyUI.cs:145`).
+    #[test]
+    fn sign_context_is_always_valid_for_submit() {
+        assert!(text_valid_for("", false, Context::Sign));
+        assert!(text_valid_for("   ", false, Context::Sign));
+        assert!(text_valid_for("hi", false, Context::Sign));
+        // The text context keeps the allowEmpty fallback.
+        assert!(!text_valid_for("", false, Context::Text));
+        assert!(text_valid_for("", true, Context::Text));
+    }
+
+    /// W4-f22 — `BuildSpaceBarArea` (`:444-489`): the sign row without a
+    /// cancel cache is space (2,4,3) + enter (5,4,3); with one it is space
+    /// (2,4,2) + enter (4,4,2) + restore (6,4,2). The text context keeps the
+    /// 6-wide space bar and no extras.
+    #[test]
+    fn sign_bottom_row_follows_the_restore_flag() {
+        assert_eq!(
+            bottom_row(Context::Sign, false),
+            ([2, 4, 3], Some([5, 4, 3]), false)
+        );
+        assert_eq!(
+            bottom_row(Context::Sign, true),
+            ([2, 4, 2], Some([4, 4, 2]), true)
+        );
+        assert_eq!(bottom_row(Context::Text, false), ([2, 4, 6], None, false));
+        assert_eq!(bottom_row(Context::Text, true), ([2, 4, 6], None, false));
+        // The chest row only shrinks with a cache (`_editingChest & flag`).
+        assert_eq!(bottom_row(Context::Chest, false), ([2, 4, 6], None, false));
+        assert_eq!(bottom_row(Context::Chest, true), ([2, 4, 3], None, true));
+    }
+
+    /// W4-f22 — the sign row's click map: the newline key answers
+    /// `Click::Newline`, the restore key `Click::Restore`, and the shrunk
+    /// space bar keeps its own rect.
+    #[test]
+    fn sign_bottom_row_clicks_map_to_newline_and_restore() {
+        let l = layout(SCREEN, true, Context::Sign);
+        let state = KeyboardState::new(&Request {
+            label: String::new(),
+            initial: String::new(),
+            allow_empty: false,
+            max_length: 1200,
+            context: Context::Sign,
+        });
+        let centre = |rect: [f32; 4]| Vec2::new(rect[0] + rect[2] * 0.5, rect[1] + rect[3] * 0.5);
+        // No cache: space (2,4,3), enter (5,4,3).
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 2, 4, 3)), Context::Sign, false),
+            Click::Space
+        );
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 5, 4, 3)), Context::Sign, false),
+            Click::Newline
+        );
+        // The old 6-wide space bar's tail columns are dead now (the enter
+        // key owns 5..8; column 8+ is backspace).
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 8, 4, 2)), Context::Sign, false),
+            Click::Backspace
+        );
+        // With a cache: space (2,4,2), enter (4,4,2), restore (6,4,2).
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 2, 4, 2)), Context::Sign, true),
+            Click::Space
+        );
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 4, 4, 2)), Context::Sign, true),
+            Click::Newline
+        );
+        assert_eq!(
+            click_at(&state, &l, true, centre(key_rect(l.grid_origin, 6, 4, 2)), Context::Sign, true),
+            Click::Restore
+        );
     }
 }
