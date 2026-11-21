@@ -419,6 +419,27 @@ pub mod id {
     /// the peer's held item's `UseSound` at its Centre with
     /// `useSoundPitch`). Client send: `Player.cs:51692`. Both directions.
     pub const ITEM_USE_SOUND: u8 = 152;
+    /// `156 TELeashedEntityAnchorPlaceItem` (`MessageID.cs:326`) — writer
+    /// `NetMessage.cs:1654-1658` (three `(short)`s: x, y, itemType),
+    /// reader `MessageBuffer.cs:4439-4449` (host-only: `TryGetAt` at the
+    /// Point16 then `InsertItem`). Client sends:
+    /// `TELeashedEntityAnchorWithItem.cs:60`, `TEKiteAnchor.cs:66`.
+    /// C2s-only.
+    pub const LEASHED_ANCHOR_PLACE_ITEM: u8 = 156;
+    /// `160 ItemPosition` (`MessageID.cs:334`) — writer
+    /// `NetMessage.cs:1666-1672` (`(short)slot + WriteVector2(position)`),
+    /// reader `MessageBuffer.cs:4463-4470` (`netMode != 2` → the position
+    /// snap). Host send: the section item sweep
+    /// (`WorldItem.SyncItemsInSection`, `WorldItem.cs:1864`). S2c-only.
+    pub const ITEM_POSITION: u8 = 160;
+    /// `161 HostToken` (`MessageID.cs:336`) — writer
+    /// `NetMessage.cs:1673-1675` (`text.ToString()` — a plain string),
+    /// reader `MessageBuffer.cs:4471-4476` (host-only:
+    /// `player.host = HostToken non-empty && == text`). Client send: the
+    /// join push when `Netplay.HostToken` is set
+    /// (`MessageBuffer.cs:275`). Gate-whitelisted pre-spawn (`:165`).
+    /// C2s-only.
+    pub const HOST_TOKEN: u8 = 161;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2415,6 +2436,30 @@ pub enum ShimmerAction {
     Unknown(u8),
 }
 
+/// `msg 156 TELeashedEntityAnchorPlaceItem`'s body
+/// (`NetMessage.cs:1654-1658`): three `(short)`s — the anchor tile x, y
+/// and the item type. The reader (`MessageBuffer.cs:4442-4447`) builds
+/// the `Point16(x, y)`, looks up the `TELeashedEntityAnchorWithItem` and
+/// calls `InsertItem(itemType)` (which respawns the leashed entity,
+/// `TELeashedEntityAnchorWithItem.cs:32-36`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LeashedAnchorPlaceItem {
+    pub x: i16,
+    pub y: i16,
+    pub item_type: i16,
+}
+
+/// `msg 160 ItemPosition`'s body (`NetMessage.cs:1666-1672`): the item
+/// slot `(short)` then `WriteVector2(worldItem.position)`. The reader
+/// (`MessageBuffer.cs:4466-4468`) snaps `Main.item[slot].position` when
+/// `netMode != 2` — the section-sweep position correction, no velocity.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ItemPosition {
+    pub slot: i16,
+    pub x: f32,
+    pub y: f32,
+}
+
 impl HatRackItemSync {
     /// The reader's unfold (`MessageBuffer.cs:4005-4009`): `>= 2` is a
     /// dye slot, the index is `wire_slot - 2`.
@@ -2628,6 +2673,14 @@ pub enum C2s {
     /// (`Player.cs:51692`; host id-force + relay
     /// `MessageBuffer.cs:4386-4407`). Both directions.
     ItemUseSound { player_id: u8 },
+    /// `156 TELeashedEntityAnchorPlaceItem` — a client placed an item on
+    /// a kite/critter anchor (`TEKiteAnchor.cs:66`; host `InsertItem`,
+    /// `MessageBuffer.cs:4439-4449`). C2s-only.
+    LeashedAnchorPlaceItem(LeashedAnchorPlaceItem),
+    /// `161 HostToken` — the client's host-token claim, pushed in the
+    /// join bundle when set (`MessageBuffer.cs:275`; host compare
+    /// `:4471-4476`). Gate-whitelisted pre-spawn (`:165`). C2s-only.
+    HostToken(String),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2885,6 +2938,10 @@ pub enum S2c {
     /// `152 ItemUseSound` — a peer's item-use sound, host relay
     /// (`MessageBuffer.cs:4395`). Both directions.
     ItemUseSound { player_id: u8 },
+    /// `160 ItemPosition` — a drop's position snap, the section sweep
+    /// (`WorldItem.cs:1864`; client-only reader
+    /// `MessageBuffer.cs:4463-4470`). S2c-only.
+    ItemPosition(ItemPosition),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2960,6 +3017,8 @@ impl C2s {
             Self::RequestQuestEffect => id::REQUEST_QUEST_EFFECT,
             Self::DeadCellsJarTryPlacing(_) => id::DEAD_CELLS_JAR_TRY_PLACING,
             Self::ItemUseSound { .. } => id::ITEM_USE_SOUND,
+            Self::LeashedAnchorPlaceItem(_) => id::LEASHED_ANCHOR_PLACE_ITEM,
+            Self::HostToken(_) => id::HOST_TOKEN,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -3101,6 +3160,10 @@ impl C2s {
             }
             // `NetMessage.cs:1643-1645`: (byte)player only.
             Self::ItemUseSound { player_id } => w.u8(*player_id),
+            // `NetMessage.cs:1654-1658`: three (short)s.
+            Self::LeashedAnchorPlaceItem(p) => w.i16(p.x).i16(p.y).i16(p.item_type),
+            // `NetMessage.cs:1673-1675`: one plain string.
+            Self::HostToken(t) => w.str(t),
             // `NetMessage.cs:1489-1508`: (byte)player + int id + the
             // already-folded wire slot + WriteItem (or the air fallback,
             // which is the same 5 bytes as an air TeItem slot).
@@ -3357,6 +3420,15 @@ impl C2s {
             id::ITEM_USE_SOUND => Self::ItemUseSound {
                 player_id: r.u8()?,
             },
+            // `MessageBuffer.cs:4442-4443`: two ReadInt16 (the Point16) +
+            // ReadInt16 itemType.
+            id::LEASHED_ANCHOR_PLACE_ITEM => Self::LeashedAnchorPlaceItem(LeashedAnchorPlaceItem {
+                x: r.i16()?,
+                y: r.i16()?,
+                item_type: r.i16()?,
+            }),
+            // `MessageBuffer.cs:4473`: ReadString, then the host compare.
+            id::HOST_TOKEN => Self::HostToken(r.str()?),
             // `MessageBuffer.cs:3997-4016`: byte + int + byte slot; the
             // dye unfold + the >= 2 refusal are the apply arm's — the
             // codec keeps the wire slot verbatim and reads the 5-byte
@@ -3601,6 +3673,7 @@ impl S2c {
             Self::CountsAsHost(_) => id::COUNTS_AS_HOST,
             Self::ShimmerAction(_) => id::SHIMMER_ACTIONS,
             Self::ItemUseSound { .. } => id::ITEM_USE_SOUND,
+            Self::ItemPosition(_) => id::ITEM_POSITION,
         }
     }
 
@@ -3808,6 +3881,8 @@ impl S2c {
             },
             // `NetMessage.cs:1643-1645` — the shared one-byte body.
             Self::ItemUseSound { player_id } => w.u8(*player_id),
+            // `NetMessage.cs:1666-1672`: (short)slot + WriteVector2.
+            Self::ItemPosition(p) => w.i16(p.slot).f32(p.x).f32(p.y),
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -4197,6 +4272,12 @@ impl S2c {
             id::ITEM_USE_SOUND => Self::ItemUseSound {
                 player_id: r.u8()?,
             },
+            // `MessageBuffer.cs:4466-4467`: ReadInt16 + ReadVector2.
+            id::ITEM_POSITION => Self::ItemPosition(ItemPosition {
+                slot: r.i16()?,
+                x: r.f32()?,
+                y: r.f32()?,
+            }),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
             id::RELEASE_ITEM_OWNERSHIP => Self::ReleaseItemOwnership(ReleaseItemOwnership {
@@ -7766,6 +7847,77 @@ mod tests {
         }
         // A missing byte must not decode.
         assert!(C2s::decode(152, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_leashed_anchor_place_item_round_trips() {
+        // `NetMessage.cs:1654-1658`: three (short)s — x, y, itemType.
+        let b = LeashedAnchorPlaceItem { x: -4, y: 500, item_type: 4765 };
+        let mut body = (-4i16).to_le_bytes().to_vec();
+        body.extend_from_slice(&500i16.to_le_bytes());
+        body.extend_from_slice(&4765i16.to_le_bytes());
+        let f = C2s::LeashedAnchorPlaceItem(b).encode();
+        assert_eq!(f[2], 156);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::LeashedAnchorPlaceItem(d) => assert_eq!(d, b),
+            other => panic!("expected 156, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only.
+        assert!(S2c::decode(156, &mut NetReader::new(&body)).is_none());
+        // A truncated itemType must not decode.
+        assert!(C2s::decode(156, &mut NetReader::new(&body[..5])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_item_position_round_trips() {
+        // `NetMessage.cs:1666-1672`: (short)slot + WriteVector2(position)
+        // — no velocity (the section-sweep snap, WorldItem.cs:1864).
+        let p = ItemPosition { slot: 399, x: 1234.5, y: -67.25 };
+        let mut body = 399i16.to_le_bytes().to_vec();
+        body.extend_from_slice(&1234.5f32.to_le_bytes());
+        body.extend_from_slice(&(-67.25f32).to_le_bytes());
+        let f = S2c::ItemPosition(p).encode();
+        assert_eq!(f[2], 160);
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::ItemPosition(d) => assert_eq!(d, p),
+            other => panic!("expected 160, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only.
+        assert!(C2s::decode(160, &mut NetReader::new(&body)).is_none());
+        // A truncated y must not decode.
+        assert!(S2c::decode(160, &mut NetReader::new(&body[..9])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_host_token_round_trips() {
+        // `NetMessage.cs:1673-1675`: one plain string (text.ToString());
+        // the join push sends Netplay.HostToken (`MessageBuffer.cs:275`).
+        let token = "a-host-token-123".to_string();
+        let f = C2s::HostToken(token.clone()).encode();
+        assert_eq!(f[2], 161);
+        let mut body = vec![token.len() as u8];
+        body.extend_from_slice(token.as_bytes());
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::HostToken(d) => assert_eq!(d, token),
+            other => panic!("expected 161, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The empty token is a bare 0 length byte (the reader's
+        // IsNullOrWhiteSpace gate then refuses it, :4474).
+        let f = C2s::HostToken(String::new()).encode();
+        assert_eq!(&f[3..], &[0]);
+        // C2s-only.
+        assert!(S2c::decode(161, &mut NetReader::new(&body)).is_none());
+        // A truncated payload must not decode.
+        assert!(C2s::decode(161, &mut NetReader::new(&[16, b'a'])).is_none());
     }
 
     #[test]

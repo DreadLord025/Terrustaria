@@ -885,6 +885,11 @@ impl App {
             // relay (`:4386-4396`) land with the apply-wiring lanes
             // (g48-g52) / S1-I-4.
             C2s::DeadCellsJarTryPlacing(_) | C2s::ItemUseSound { .. } => {}
+            // S1-I-1 W4-f21: `156`'s host TryGetAt + InsertItem
+            // (`MessageBuffer.cs:4439-4449`) and `161`'s host-token
+            // compare (`:4471-4476`) land with the apply-wiring lanes
+            // (g48-g52) / S1-I-4.
+            C2s::LeashedAnchorPlaceItem(_) | C2s::HostToken(_) => {}
         }
     }
 
@@ -2008,6 +2013,10 @@ impl App {
             // Centre with useSoundPitch (`MessageBuffer.cs:4397-4405`)
             // lands with the apply-wiring lanes (g48-g52) / S1-I-4.
             S2c::ItemUseSound { .. } => {}
+            // S1-I-1 W4-f21: `160`'s client position snap
+            // (`MessageBuffer.cs:4463-4470`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::ItemPosition(_) => {}
         }
     }
 
