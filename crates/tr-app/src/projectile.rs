@@ -22654,6 +22654,21 @@ impl ProjectilePool {
             if refuses_friendly(n, p.kind, kill_guide, kill_clothier) {
                 continue;
             }
+            // W4-c8 sweep — `Damage_PVE_Inner`'s hostile half
+            // (`Projectile.cs:12606-12611`): `flag2 = targetNPC.friendly
+            // && !targetNPC.dontTakeDamageFromHostiles`; the
+            // `!(this.hostile & flag2)` refusal drops a HOSTILE shot's
+            // hit on a friendly NPC that carries the flag. The port's
+            // hostile shots ride `friendly = false` (the `spawn_hostile`
+            // family — the recorded `npcProj` stand-in), so the gate
+            // reads `!p.friendly` as the hostile term. Scoped to the
+            // flag carriers (the TruffleWorm pair today — both
+            // non-catchable, `friendly` false, so the gate is inert for
+            // them; the field + gate land for the census and the future
+            // friendly-flag carriers — the no-behaviour-change freeze).
+            if !p.friendly && n.friendly && n.dont_take_damage_from_hostiles {
+                continue;
+            }
             // `Damage_PVE_Inner`'s `!this.friendly` refusal (`:12611`): the
             // dungeon-debris trio is stock `friendly = false`/`hostile = false`
             // (`SetDefaults` `:788`/`:764`), so it damages no NPC — the arm
@@ -24369,6 +24384,83 @@ mod tests {
         );
         assert_eq!(npcs[0].hp, hp, "the shot passes through the shield");
         assert!(pool.slots[slot].active, "and the shot is not consumed");
+    }
+
+    /// W4-c8 sweep — `Damage_PVE_Inner`'s hostile half
+    /// (`Projectile.cs:12606-12611`): `flag2 = friendly &&
+    /// !dontTakeDamageFromHostiles`; a hostile shot hits a friendly NPC
+    /// only while flag2 holds. The field's SetDefaults rows: 374/375
+    /// true (`NPC.cs:13775`/`:13794`), everything else false (`:8501`).
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c8_hostile_shots_refuse_the_dont_take_damage_from_hostiles_carriers() {
+        let w = ground();
+        // The SetDefaults rows: the TruffleWorm pair carries the flag,
+        // the plain Worm does not.
+        let t = Npc::new(NpcKind::TruffleWorm, 100.0, 100.0, 1, 0.0);
+        assert!(t.dont_take_damage_from_hostiles, ":13775");
+        let d = Npc::new(NpcKind::TruffleWormDigger, 100.0, 100.0, 1, 0.0);
+        assert!(d.dont_take_damage_from_hostiles, ":13794");
+        let worm = Npc::new(NpcKind::Worm, 100.0, 100.0, 1, 0.0);
+        assert!(!worm.dont_take_damage_from_hostiles, ":8501 reset");
+        // The Transform refresh keeps the flag across the 374→375 dig.
+        let mut t2 = Npc::new(NpcKind::TruffleWorm, 100.0, 100.0, 1, 0.0);
+        let player0 = crate::player::Player::spawn(&w);
+        t2.transform_to_kind(&w, &player0, NpcKind::TruffleWormDigger);
+        assert!(t2.dont_take_damage_from_hostiles, "the dig keeps the row");
+        // The gate: a friendly carrier refuses the hostile shot. Force
+        // friendly true (the wild-critter window shape — the pair is
+        // non-catchable so production friendly is false and the gate is
+        // inert; this pins the FLAG's mechanics for the future carriers).
+        let mut carrier = Npc::new(NpcKind::TruffleWorm, 100.0, 100.0, 1, 0.0);
+        carrier.friendly = true;
+        carrier.catchable_immunity = 0; // no window re-arm
+        let mut npcs = vec![carrier];
+        let mut player = crate::player::Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_hostile(SHURIKEN, Vec2::new(108.0, 108.0), Vec2::ZERO, 10, 5.0)
+            .expect("the hostile slot");
+        assert!(!pool.slots[slot].friendly, "the hostile spawn");
+        let hp = npcs[0].hp;
+        pool.update(
+            &mut w.clone(),
+            &mut npcs,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert_eq!(npcs[0].hp, hp, "flag2 false — the hostile hit refuses");
+        // The same carrier WITHOUT the flag takes the hostile hit
+        // (flag2 true — the C# hostile shots damage friendly critters).
+        let mut plain = Npc::new(NpcKind::Worm, 100.0, 100.0, 1, 0.0);
+        plain.friendly = true;
+        plain.catchable_immunity = 0;
+        assert!(!plain.dont_take_damage_from_hostiles);
+        let mut npcs2 = vec![plain];
+        let mut pool2 = ProjectilePool::new();
+        pool2
+            .spawn_hostile(SHURIKEN, Vec2::new(103.0, 100.0), Vec2::ZERO, 10, 5.0)
+            .expect("the hostile slot");
+        let hp2 = npcs2[0].hp;
+        pool2.update(
+            &mut w.clone(),
+            &mut npcs2,
+            None,
+            None,
+            Some(&mut player),
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut tr_core::tile_light::FastRandom::new(7),
+            0,
+            true,
+        );
+        assert!(npcs2[0].hp < hp2, "flag2 true — the hostile hit lands");
     }
 
     /// BUG-23: the friendly refusal on the player's shots —

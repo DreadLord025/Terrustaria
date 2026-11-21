@@ -31011,9 +31011,24 @@ portraits and the netglue bare seed. The wiring:
   only on success (the C# order; dust 43 is ChildSafety-safe, no extra
   draw). The 484 essScale flicker was already the `wants_ai_light` feed
   (phase 2) — the two effects are distinct C# arms. The `dontTakeDamage-
-  FromHostiles` rows (374/375) have no port field yet — the hostile-NPC
-  damage system is unported, so the flag is inert (the module's census
-  pins it). The ground integration rides `integrate_flyer_collision`
+  FromHostiles` field LANDED with the sweep: the census pins the
+  declaration (`NPC.cs:6277`), the reset (`:8501`), the ported roster's
+  only true rows (374 `:13775` / 375 `:13794` — the DD2 crystal 548's AI
+  writes `:40760`/`:40866`/`:78092`, the 686 row `:17638` and the
+  aiStyle-112 `:48598` write are unported kinds) and the consumers
+  (`GetHurtByOtherNPCs`'s early return `:92418` — the NPC-vs-NPC lane,
+  unported; `Damage_PVE_Inner`'s `flag2 = friendly &&
+  !dontTakeDamageFromHostiles` `Projectile.cs:12606` + the
+  `!(hostile & flag2)` refusal `:12611`; the DD2 draw arms
+  `Main.cs:24054`/`:46100` and the 548 target gate `NPC.cs:62999` are
+  unported). The port carries the field (`Npc::
+  dont_take_damage_from_hostiles`, the SetDefaults matches! + the
+  Transform refresh) and the flag2 gate in `damage_pve` (the hostile
+  term reads `!p.friendly` — the `spawn_hostile` stand-in). The gate is
+  INERT today: both carriers are non-catchable so `friendly` is false
+  and flag2 never holds for them — the field + gate land for the census
+  and the future friendly carriers (the no-behaviour-change freeze).
+  The ground integration rides `integrate_flyer_collision`
   (the established `UpdateCollision` stand-in — the wet 0.5 slow matches
   the C# `waterMovementSpeed = 0.5f` head default `:8437`; the
   slope/stair/conveyor tails are the port's documented collision gap).

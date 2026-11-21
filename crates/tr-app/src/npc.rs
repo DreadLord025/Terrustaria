@@ -1571,6 +1571,19 @@ pub struct Npc {
     /// `NPC.dontTakeDamage` (`NPC.cs:6525`): the hurt path refuses while
     /// it holds (the Brain of Cthulhu's Creeper shield).
     pub dont_take_damage: bool,
+    /// `NPC.dontTakeDamageFromHostiles` (`NPC.cs:6277`, the `SetDefaults`
+    /// reset false `:8501`): the hostile-damage refusal — the C#
+    /// consumers are `GetHurtByOtherNPCs`'s early return (`:92418`, the
+    /// NPC-vs-NPC lane, unported) and `Damage_PVE_Inner`'s
+    /// `flag2 = targetNPC.friendly && !dontTakeDamageFromHostiles`
+    /// (`Projectile.cs:12606` — a hostile shot may hit a friendly NPC
+    /// only when flag2 holds). Of the ported roster ONLY the
+    /// TruffleWorm 374 (`NPC.cs:13775`) and its digger 375 (`:13794`)
+    /// set it — both NOT `npcCatchable`, so their `friendly` rides the
+    /// stock false and the flag2 gate is a no-op for them today (the
+    /// field is carried for the census + the future hostile lanes).
+    /// W4-c8 sweep.
+    pub dont_take_damage_from_hostiles: bool,
     /// `NPC.behindTiles` (`NPC.cs:6517`, default false, reset `:8520`): drawn
     /// only in the behind-tiles pass (`Main.cs:22320,22336`).
     pub behind_tiles: bool,
@@ -3088,6 +3101,15 @@ impl Npc {
             dont_take_damage: matches!(
                 kind,
                 NpcKind::PlanterasHook | NpcKind::MartianSaucerCore | NpcKind::BlazingWheel
+            ),
+            // W4-c8 sweep — `NPC.dontTakeDamageFromHostiles`
+            // (`NPC.cs:6277`, reset false `:8501`): the TruffleWorm 374
+            // (`:13775`) and the digger 375 (`:13794`) are the ported
+            // roster's only true rows (the DD2 crystal 548's AI writes
+            // and the 686/687 rows are unported kinds).
+            dont_take_damage_from_hostiles: matches!(
+                kind,
+                NpcKind::TruffleWorm | NpcKind::TruffleWormDigger
             ),
             // NPC.cs:6517,8520 — behindTiles defaults false; per-type SetDefaults sets true (e.g. 10355).
             behind_tiles: kind.behind_tiles(),
@@ -5237,6 +5259,13 @@ impl Npc {
             0
         };
         self.behind_tiles = new_kind.behind_tiles();
+        // W4-c8 sweep — the SetDefaults hostile-refusal row refreshes
+        // with the kind (`NPC.cs:8501` reset + the 374/375 rows
+        // `:13775`/`:13794`): the 374→375 dig keeps true on both sides.
+        self.dont_take_damage_from_hostiles = matches!(
+            new_kind,
+            NpcKind::TruffleWorm | NpcKind::TruffleWormDigger
+        );
         self.rotation = 0.0;
         let (_, new_h) = self.size();
         self.y -= new_h;
