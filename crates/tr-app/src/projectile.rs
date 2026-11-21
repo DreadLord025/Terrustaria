@@ -25017,7 +25017,7 @@ mod tests {
         // MoonLeech refuses the knife heal (`:13812`).
         player.buffs.add_buff(145, 840);
         pool.slots_mut()[slot].penetrate = 1;
-        let mut bubble2 = Npc::new(crate::npc::NpcKind::ForceBubble, 22.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
+        let mut bubble2 = Npc::new(crate::npc::NpcKind::ForceBubble, 20.0 * TILE_PX, 24.0 * TILE_PX, 1, 0.0);
         bubble2.hp = 10_000;
         bubble2.max_hp = 10_000;
         bubble2.defense_override = Some(0);

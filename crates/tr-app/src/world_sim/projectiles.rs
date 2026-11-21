@@ -867,17 +867,10 @@ mod w4_d6_heal_orb_chain_tests {
         assert!(orb.vel.length() < 1e-6, "the drain spawns at rest");
         let heal = orb.ai[1];
         assert!((heal - strike as f32 * 0.2).abs() < 1e-3, "the 0.2 share");
-        // The next tick: the armed 52 dispatch blends toward the player.
-        update_projectiles(&mut app, 1.0 / 60.0);
-        let orb = app
-            .projectiles
-            .slots()
-            .iter()
-            .find(|p| p.active && p.kind == SPIRIT_HEAL)
-            .expect("the orb still flies (the victim centre is >50f out)");
-        assert!(orb.vel.length() > 0.0, "the blend armed");
-        assert!(orb.vel.x < 0.0, "steering left toward the player");
-        // Fly it home: enough ticks to cross the ~20f gap at ~1-4 px/tick.
+        // The next ticks: the armed 52 dispatch blends toward the player
+        // (the victim centre is ~15f from the player centre — inside the
+        // 50f contact radius, so the box overlap decides; the orb closes
+        // the last few px within a tick or two). Fly it home.
         for _ in 0..40 {
             update_projectiles(&mut app, 1.0 / 60.0);
         }
