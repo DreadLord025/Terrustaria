@@ -1,6 +1,33 @@
 # 134 — W4-g67 post-union fold-list (for W4-d130d/e)
 
-**STATUS: FOLD-LIST PUBLISHED** (code-only, `task/W4-g67-weather-rain-splash`).
+**STATUS: FOLD-LIST PUBLISHED — FINAL-PHASE RE-CHECK DONE, R1–R7 STILL OPEN**
+(code-only, `task/W4-g67-weather-rain-splash`).
+
+## Fold-monitor re-check (g67 final phase, 2026-11-21)
+
+`git fetch origin --prune` + `git ls-remote --heads origin`: the d130 lane is
+still **one branch**, `task/W4-d130-weather-ambience` at **`560a02eac`** — the
+exact tip this note was derived against. No `d130d`/`d130e`/`d130-draw_splashes`
+branch exists on origin. **d130e has NOT landed; this fold-list stands.** Every
+residual was re-verified per-hunk against the d130 tip's actual file bodies
+(`git show origin/task/W4-d130-weather-ambience:<path>`), not commit messages:
+
+| residual | d130-tip evidence (re-read 2026-11-21) | verdict |
+| --- | --- | --- |
+| R1 | `app/frame/world.rs:188/253/494`, `app/netmodules.rs:484`, `world_sim/weather.rs:110` all still feed `self.rain.is_raining()`; the tip's `rain.rs` fn-list has `cloud_alpha` (`:292`) but NO `is_it_raining` | OPEN |
+| R2 | `app/saveglue.rs:346` `save_and_quit` — `:361` still carries the "ClearRain is visual-only" comment, no `clear_rain()` call; `rain.rs` has no `clear_rain` fn | OPEN |
+| R3 | `rain.rs:1308-1310` still documents the 4×4 cull as "not modelled … a documented widening"; no `splash_cull_rect`/`dust_in_cull_rect` in the fn-list | OPEN |
+| R4 | no `new_rain_forced` in the tip's `rain.rs` fn-list | OPEN |
+| R5 | `rain.rs:1048` `new_rain` still reads `thresholds::SNOW_TILE_NORMAL as f32` unconditionally | OPEN |
+| R6 | `player.rs` grep: no `eyebrella`/`5101` arm (only an unrelated `:15519` citation) | OPEN |
+| R7 | `player.rs` grep: no `umbrella_hold` arm | OPEN |
+
+The "Already folded" table below was likewise re-checked at the same tip
+(splash lane `88cfbf38`, impact gate `50c845e5`, float attempt loop
+`spawn:962-1030`, `new_rain:1034-1081`, f39 start gate via `cf4574e9`) — all
+still present, none regressed.
+
+**STATUS (original): FOLD-LIST PUBLISHED** (code-only, `task/W4-g67-weather-rain-splash`).
 The d130 union-exec (`88cfbf38`, research/83 §3) transplanted g67's **phase-1
 splash lane** (`40128e5d`) and reconciled the impact gate (`50c845e5`), but its
 tip census only covered g67 up to `006bc04d` (phase 2). g67 has since landed
