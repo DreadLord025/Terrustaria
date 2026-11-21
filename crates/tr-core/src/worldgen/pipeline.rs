@@ -38,6 +38,7 @@ use super::finish_seeds;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
+use super::final_cleanup;
 use super::islands;
 use super::liquids;
 use super::living_trees;
@@ -1443,6 +1444,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // insertion (the seaweed arm of the pass).
     step!("lihzahrd altar", "Lihzahrd Altars", step_lihzahrd_altar),
     step!("water plants", "Water Plants", step_water_plants),
+    // The vanilla Final Cleanup slot (`WorldGen.cs:22141`): the last classic
+    // pass — after Water Plants (`:21973`) / Stalac (`:22038`) / Remove
+    // Broken Traps (`:22121`, d106's slots, not on this branch), before the
+    // world tail — W4-g37 gap-fill. Own `pass_rng("Final Cleanup")` stream
+    // (only the 668 dirt-throw scatter draws).
+    step!("final cleanup", "Final Cleanup", step_final_cleanup),
     step!("world tail", "", step_world_tail),
     // The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the
     // seed `Finish*` passes — M5-SEED-1's `step_seed_finish`, gated per
@@ -2962,6 +2969,37 @@ fn step_cacti(
     );
 }
 
+/// The vanilla Final Cleanup slot (`WorldGen.cs:22141-22490`) — W4-g37
+/// gap-fill: the wall-hole fill + the whole-map cleanup sweep + the 668
+/// dirt-throw scatter. Own `pass_rng("Final Cleanup")` stream (the scatter
+/// is the pass's only draw). The layer anchors come from GenVars — the
+/// world's own fields are stamped at the world tail, after this pass.
+fn step_final_cleanup(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = gv.layers();
+    let (world_surface, rock_layer) = (layers.world_surface, layers.rock_layer);
+    let mut rng = streams.pass_rng("Final Cleanup");
+    final_cleanup::pass_final_cleanup(
+        world,
+        world_surface,
+        rock_layer,
+        opts.flags.contains(crate::seeds::SeedFlags::REMIX),
+        opts.micro_flags
+            .contains(crate::seeds::MicroSeedFlags::DUAL_DUNGEONS),
+        opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES),
+        opts.flags.contains(crate::seeds::SeedFlags::TENTH_ANNIVERSARY),
+        opts.micro_flags
+            .contains(crate::seeds::MicroSeedFlags::EXTRA_LIQUID),
+        &mut rng,
+    );
+}
+
 fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
@@ -3438,8 +3476,10 @@ mod tests {
         // `hellforge` (vanilla "Hellforge", `:18187`) after `pots`. B8: +
         // `spreading grass` (vanilla "Spreading Grass", `:18237`) after
         // `hellforge`. B9: + `surface ore and stone` (vanilla "Surface Ore and
-        // Stone", `:18447`) after `spreading grass`.
-        assert_eq!(names.len(), 75);
+        // Stone", `:18447`) after `spreading grass`. W4-g37 gap-fill: +
+        // `final cleanup` (vanilla "Final Cleanup", `:22141`) after
+        // `water plants`, before `world tail`.
+        assert_eq!(names.len(), 76);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3561,6 +3601,9 @@ mod tests {
                 "cacti",
                 "lihzahrd altar",
                 "water plants",
+                // W4-g37 gap-fill: the vanilla Final Cleanup slot
+                // (`WorldGen.cs:22141`) is the last classic pass.
+                "final cleanup",
                 "world tail",
                 "seed finish",
             ]
@@ -3641,7 +3684,10 @@ mod tests {
         assert_eq!(names[pos("shell piles") + 1], "slopes");
         assert_eq!(names[pos("lihzahrd altar") - 1], "cacti");
         assert_eq!(names[pos("water plants") - 1], "lihzahrd altar");
-        assert_eq!(names[pos("water plants") + 1], "world tail");
+        // W4-g37 gap-fill: `final cleanup` (vanilla `:22141`) sits between
+        // `water plants` and the world tail.
+        assert_eq!(names[pos("water plants") + 1], "final cleanup");
+        assert_eq!(names[pos("final cleanup") + 1], "world tail");
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -3933,6 +3979,26 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Spreading Grass") < cpos("Surface Ore and Stone"));
         assert!(cpos("Surface Ore and Stone") < cpos("Place Fallen Log"));
+    }
+
+    /// W4-g37 gap-fill: `final cleanup` sits after `water plants`, before
+    /// `world tail` (the vanilla FinalCleanup anchor `WorldGen.cs:22141` is
+    /// the last classic pass — after Remove Broken Traps `:22121`, d106's
+    /// slot, not on this branch).
+    #[test]
+    fn w4_g37_the_final_cleanup_step_is_the_last_classic_pass() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("final cleanup"), pos("water plants") + 1);
+        assert_eq!(names[pos("final cleanup") + 1], "world tail");
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Remove Broken Traps") < cpos("Final Cleanup"));
+        assert_eq!(cpos("Final Cleanup"), chain.len() - 1);
     }
 
     #[test]

@@ -288,6 +288,13 @@ mod tests {
     // lands after `spreading grass` — the surface ore veins + stone blobs
     // place on their own stream, moving this pin BY DESIGN; deferred. a == b
     // untouched.
+    // W4-g37 gap-fill (code-only): the Final Cleanup pass
+    // (`WorldGen.cs:22141-22490`, `final_cleanup.rs::pass_final_cleanup`)
+    // lands after `water plants` — the whole-map sweep runs on the 512 world
+    // too (the wall-hole fill, the sand hardening, the dungeon liquid resets
+    // are tile-state arms), so this pin moves BY DESIGN; deferred to the
+    // gate. Only the 668 dirt-throw scatter is width-guarded out (the
+    // `Next(50, maxX-50)` band collapses at 512). a == b untouched.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -352,6 +359,15 @@ mod tests {
     // the surface conversion moves this pin BY DESIGN; deferred.
     // W4-g37 B9 (code-only): the Surface Ore and Stone pass (see SEED42_512
     // above) — the ore veins + stone blobs move this pin BY DESIGN; deferred.
+    // W4-g37 gap-fill (code-only): the Final Cleanup pass
+    // (`WorldGen.cs:22141-22490`, `final_cleanup.rs::pass_final_cleanup`)
+    // lands after `water plants` — the wall-hole fill, the falling-sand
+    // hardening, the boulder re-seats, the dungeon-wall liquid resets and the
+    // 668 dirt throws move this pin BY DESIGN; deferred to the gate. The
+    // dirt-throw scatter's `Next(50, maxX-50)` band collapses on the 512
+    // world (the sub-vanilla guard skips it), but the sweep arms still run
+    // there — SEED42_512 moves too, deferred. a == b untouched (the scatter
+    // rides its own `pass_rng("Final Cleanup")` stream).
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

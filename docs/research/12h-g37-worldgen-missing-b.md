@@ -401,3 +401,76 @@ merger-reconciled. No other lane's landed pass was touched.
 | B8 Spreading Grass | df468d00 | ported — witnesses written not run |
 | B9 Surface Ore and Stone | 94c365ee | ported — witnesses written not run |
 | B2/B3 slot fix (chest-family group) | 809a61a8 | ordering corrected — witnesses updated |
+| reconcile vs d103/d104/g44/c33 (docs/research/75) | 53a5b5b5 | arm-by-arm fidelity layer under matrix 88 |
+| FINAL CLEANUP gap-fill | (this commit) | ported — witnesses written not run |
+
+## FINAL CLEANUP gap-fill — landing notes (this commit)
+
+**Claim probe (2026-11-21):** g36's LATEST tip is `6d46f6a5` (04:00, the
+master matrix doc 88) — its row 109 flags Final Cleanup "**GAP — unlanded**
+(d106 R6 pending, no other owner)"; d106's tip `e2c2609c` still has the `12f`
+R6 box unchecked; no g36c gap-fill commit exists on
+`origin/task/W4-g36-worldgen-missing-a`. UNCLAIMED → this lane fills the gap.
+(If a g36c Final Cleanup lands later, the merger keeps ONE — this port is the
+fallback body; cross-noted in docs/research/75's addendum.)
+
+- **Pass body** `WorldGen.cs:22141-22490` → new module
+  `final_cleanup.rs::pass_final_cleanup` (the pass is a tail-region family,
+  not a `passes_b.rs` B-row — its own module keeps the B-lane file's scope).
+  - The surface wall-hole fill (`:22144` → `FillWallHolesInArea`
+    `:9886-9898` + `FillWallHolesInColumn` `:9900-9926` +
+    `FillWallHolesInSpot` `:9928-10053`): the x-clamp `[2, maxX-3]`, the
+    wall→no-wall edge latch, the 150-cell two-list BFS with the `InWorld(1)`
+    margin, the walled-cell vote tally, the inactive-cross expansion gate,
+    the strict-`>` majority pick (no votes → wall 2). The C# `Dictionary`
+    iteration tie-break is replayed with a first-seen-order Vec.
+  - The whole-map sweep (`:22150-22378`): the falling-sand arm
+    (`:22155-22242` — the 10-row 314 veto, the `worldSurface+10` / wall-191 /
+    `oceanDepths` gates, the 10-cell drop with per-step de-slope, the
+    397/398/399/147/1 hardening, the sloped-floor de-slope, the in-place
+    hardening); the 187/216 lava top-up (`:22243-22247`, the remix +
+    dualDungeons gates); the 137 slope clear (`:22248-22252`); the boulder
+    re-seat + 26-altar collapse (`:22253-22300`, 484→397); the 323 liquid
+    kill (`:22301-22304`); the dungeon-wall liquid reset (`:22305-22318`,
+    374→373, 56→water-255); the 314 minecart liquid strip (`:22319-22333`,
+    15 rows up + the j row); the 332 torch floor (`:22334-22339`,
+    `ClearEverything` + seat); the beach-band partial-liquid clear
+    (`:22340-22343`, the ±380 band + the three cloud vetoes); the painting
+    wall inheritance (`:22344-22375`, left/right/up/down order).
+  - The 668 dirt-throw scatter (`:22379-22422`): `GetWorldSize`
+    (`:6559-6570`) 3/6/9, anniversary ×5, the 50/200 margins, the 3000-attempt
+    budget, `TileID.Sets.Dirt` (+`Mud` on notTheBees), `ClearTile` + 668.
+- **`tileSolid[484]=false` window** (`:22143`): rides the pass-local
+  `solid_tile_fc` predicate (the static-table convention — the
+  `spider_gem_moss.rs` `tileSolid[379]` precedent); the pass's only solidity
+  read is the falling-sand floor test.
+- **Deviations / deferrals** (cited in the module doc): the
+  `surfaceIsDesertNormalFunction` early arm (the port's `DoSurfaceIsDesert`
+  runs at `seed finish`, M5-SEED-2 grouping); the `Finish*` seed tails
+  (`:22423-22456` — `step_seed_finish` owns the landed ones; FinishNoTraps /
+  NotTheBees / FinishRemixWorld / ShimmerifySideOfWorld /
+  PaintTheSandRainbowAndSandWallsBlack unported); the vampire block
+  (`:22457-22466`); `ShimmerCleanUp` (`:22472` — g36 A1's `shimmerPosition`
+  slot, absent here); the `Liquid.LiquidCheck` merge sweep (`:22473-22483` —
+  the f25/d106 liquid-core seam); `PrepareExtraSpawns` /
+  `TownNPCPositionsCleanup` (`:22484-22485`); the flag resets
+  (`:22486-22487` — immutable `GenOptions`); `AnglerQuestSwap` (`:22488` — a
+  `Main.rand` runtime draw, the app's day-reset owns it); the per-cell
+  `TileFrame` calls (`:22240`, `:22376` — the framing deferral).
+- **Pipeline**: `step!("final cleanup", "Final Cleanup", …)` after
+  `water plants`, before `world tail` (the vanilla last-classic slot; d106's
+  Stalac/Remove Broken Traps slots are not on this branch); count 75→76;
+  witnesses `w4_g37_the_final_cleanup_step_is_the_last_classic_pass` +
+  the DW-4-4 adjacency update; progress `Gen(86)` (`:22145`).
+- **RNG**: the sweep draws none; the scatter rides the own
+  `pass_rng("Final Cleanup")` stream. Sub-vanilla guard: the scatter's
+  `Next(50, maxX-50)` / `Next(50, maxY-200)` bands collapse on a tiny world
+  (the 512 world skips the scatter; the sweep arms still run).
+- **Hash notes**: BOTH pins move BY DESIGN (the sweep is tile-state, runs at
+  512 too); deferred to the gate; `a == b` untouched.
+- **Witnesses** (written, NOT run — code-only): 5 module tests in
+  `final_cleanup.rs` (the wall-hole majority fill, the sand drop+hardening,
+  the boulder altar collapse, the dungeon liquid reset, the dirt-throw
+  a==b replay) + the pipeline positional witness.
+- **Verification**: code-only — no cargo on this branch; witnesses written,
+  not run.
