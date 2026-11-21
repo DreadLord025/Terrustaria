@@ -358,9 +358,9 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
     }
     // The trap emissions spawn after the fixed step (`NewProjectile` with
     // the knockback 2f, `Wiring.cs:1990-1992`). The trap darts, the spiky
-    // ball 185, the spear 186 (aiStyle 14) and the flame jet 187 (aiStyle
-    // 38 — the stationary emitter of the 188 children) spawn through the
-    // pool. The jet is stock friendly/hostile FALSE (`Projectile.cs
+    // ball 185, the spear 186 (aiStyle 37 since the temple FINAL / the
+    // W4-d4 f19 F3 fix) and the flame jet 187 (aiStyle 38 — the stationary
+    // emitter of the 188 children) spawn through the pool. The jet is stock friendly/hostile FALSE (`Projectile.cs
     // :2741-2751`) — the spawn site flips the pool's friendly-true default
     // off; its damage rides the 188 children (the W4-d4 drain lift, keep-one
     // union with the W4-g43 row). The ceiling −7 arm emits one identical
