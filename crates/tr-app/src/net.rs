@@ -312,6 +312,21 @@ pub mod id {
     /// Sends: the sign-read wiring messages (`Wiring.cs:1208`/`:1228`,
     /// width 460). S2c-only.
     pub const SMART_TEXT_MESSAGE: u8 = 107;
+    /// `111 ToggleParty` (`MessageID.cs:236`) — NO writer case at all
+    /// (`NetMessage.cs`'s switch skips 111): `SendData(111)` writes a bare
+    /// 3-byte frame. The only send site is the client's manual-party
+    /// toggle (`BirthdayParty.cs:154`, `netMode == 1`); the reader is
+    /// host-only `BirthdayParty.ToggleManualParty()`
+    /// (`MessageBuffer.cs:3809-3814`). C2s-only, bodyless.
+    pub const TOGGLE_PARTY: u8 = 111;
+    /// `119 CombatTextString` (`MessageID.cs:252`) — writer
+    /// `NetMessage.cs:1188-1196` (`float x + float y + WriteRGB +
+    /// NetworkText`), reader `MessageBuffer.cs:3235-3242` (client-only
+    /// `CombatText.NewText` with the `(int)` float truncation). The 81
+    /// CombatTextInt twin (d98) carries an int amount instead of the
+    /// text. No live `SendData(119)` site tree-wide — the writer arm is
+    /// the census record. S2c-only.
+    pub const COMBAT_TEXT_STRING: u8 = 119;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2185,6 +2200,20 @@ pub struct SmartTextMessage {
     pub width_limit: i16,
 }
 
+/// `msg 119 CombatTextString`'s body (`NetMessage.cs:1188-1196`): the
+/// position as two raw floats (`number2`/`number3`), the colour via
+/// `WriteRGB` (the `(uint)number` packed value re-expanded), then the
+/// `NetworkText`. The reader (`MessageBuffer.cs:3238-3240`) truncates the
+/// floats with `(int)` casts into the `Rectangle(x, y, 0, 0)` location —
+/// the truncation is the apply arm's; the codec keeps the raw floats.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CombatTextString {
+    pub x: f32,
+    pub y: f32,
+    pub color: Rgb,
+    pub text: NetText,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2342,6 +2371,10 @@ pub enum C2s {
     /// (`Player.cs:32547`/`:32559`; host `WorldGen.ToggleGemLock`,
     /// `MessageBuffer.cs:3736-3741`). C2s-only.
     GemLockToggle(GemLockToggle),
+    /// `111 ToggleParty` — the client's manual-party ask, bodyless
+    /// (`BirthdayParty.cs:154`; host `ToggleManualParty`,
+    /// `MessageBuffer.cs:3809-3814`). C2s-only.
+    ToggleParty,
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2568,6 +2601,11 @@ pub enum S2c {
     /// wiring messages, `Wiring.cs:1208`/`:1228`; client-only reader
     /// `MessageBuffer.cs:3752-3757`). S2c-only.
     SmartTextMessage(SmartTextMessage),
+    /// `119 CombatTextString` — a text combat number (the 81 int twin's
+    /// text half; no live send site, the writer arm is the census
+    /// record; client-only reader `MessageBuffer.cs:3235-3242`).
+    /// S2c-only.
+    CombatTextString(CombatTextString),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2633,6 +2671,7 @@ impl C2s {
             Self::ItemFrameTryPlacing(_) => id::ITEM_FRAME_TRY_PLACING,
             Self::DevCommands(_) => id::DEV_COMMANDS,
             Self::GemLockToggle(_) => id::GEM_LOCK_TOGGLE,
+            Self::ToggleParty => id::TOGGLE_PARTY,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2749,6 +2788,8 @@ impl C2s {
                 .f32(d.arg_float2),
             // `NetMessage.cs:1395-1399`: two (short)s + (number3 == 1f).
             Self::GemLockToggle(g) => w.i16(g.x).i16(g.y).bool(g.on),
+            // No writer case for 111 — `SendData(111)` writes a bare frame.
+            Self::ToggleParty => w,
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2957,6 +2998,8 @@ impl C2s {
                 y: r.i16()?,
                 on: r.bool()?,
             }),
+            // `MessageBuffer.cs:3809-3814`: the host reads NOTHING.
+            id::TOGGLE_PARTY => Self::ToggleParty,
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3136,6 +3179,7 @@ impl S2c {
             Self::DevCommands(_) => id::DEV_COMMANDS,
             Self::ShopOverride(_) => id::SHOP_OVERRIDE,
             Self::SmartTextMessage(_) => id::SMART_TEXT_MESSAGE,
+            Self::CombatTextString(_) => id::COMBAT_TEXT_STRING,
         }
     }
 
@@ -3315,6 +3359,12 @@ impl S2c {
                 .clone()
                 .write_to(w.rgb(m.color))
                 .i16(m.width_limit),
+            // `NetMessage.cs:1188-1196`: float x + float y + WriteRGB +
+            // NetworkText.
+            Self::CombatTextString(c) => c
+                .text
+                .clone()
+                .write_to(w.f32(c.x).f32(c.y).rgb(c.color)),
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -3657,6 +3707,14 @@ impl S2c {
                 color: r.rgb()?,
                 text: NetText::read_from(r)?,
                 width_limit: r.i16()?,
+            }),
+            // `MessageBuffer.cs:3238-3240`: two ReadSingle (the (int)
+            // truncation is the apply arm's) + ReadRGB + NetworkText.
+            id::COMBAT_TEXT_STRING => Self::CombatTextString(CombatTextString {
+                x: r.f32()?,
+                y: r.f32()?,
+                color: r.rgb()?,
+                text: NetText::read_from(r)?,
             }),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
@@ -6784,6 +6842,56 @@ mod tests {
         assert!(C2s::decode(107, &mut NetReader::new(&body)).is_none());
         // A truncated width limit must not decode.
         assert!(S2c::decode(107, &mut NetReader::new(&body[..body.len() - 1])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_toggle_party_is_a_bodyless_client_ask() {
+        // `111` has NO writer case — `SendData(111)` (BirthdayParty.cs:154)
+        // writes only the frame header; the host reader reads nothing
+        // (`MessageBuffer.cs:3809-3814`).
+        let f = C2s::ToggleParty.encode();
+        assert_eq!(f[2], 111);
+        assert_eq!(f.len(), 3);
+        let mut r = NetReader::new(&f[3..]);
+        match C2s::decode(f[2], &mut r).expect("decode") {
+            C2s::ToggleParty => {}
+            other => panic!("expected 111, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // C2s-only: no S2c arm (the reader is host-gated).
+        assert!(S2c::decode(111, &mut NetReader::new(&[])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_combat_text_string_round_trips() {
+        // `NetMessage.cs:1188-1196`: float x + float y + WriteRGB +
+        // NetworkText — the 81 int twin's text half (d98 owns 81).
+        let c = CombatTextString {
+            x: 123.75,
+            y: -45.5,
+            color: Rgb(255, 240, 20),
+            text: NetText("Immune!".to_string()),
+        };
+        let f = S2c::CombatTextString(c.clone()).encode();
+        assert_eq!(f[2], 119);
+        let mut body = 123.75f32.to_le_bytes().to_vec();
+        body.extend_from_slice(&(-45.5f32).to_le_bytes());
+        body.extend_from_slice(&[255, 240, 20]);
+        body.push(0); // literal mode
+        body.push(7); // "Immune!" length
+        body.extend_from_slice(b"Immune!");
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::CombatTextString(d) => assert_eq!(d, c),
+            other => panic!("expected 119, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // The raw floats ride (the reader's (int) truncation is apply-side).
+        // S2c-only: no C2s arm.
+        assert!(C2s::decode(119, &mut NetReader::new(&body)).is_none());
+        // A truncated text must not decode.
+        assert!(S2c::decode(119, &mut NetReader::new(&body[..body.len() - 1])).is_none());
     }
 
     #[test]

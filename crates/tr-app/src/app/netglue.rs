@@ -854,6 +854,10 @@ impl App {
             // (`MessageBuffer.cs:3736-3741`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             C2s::GemLockToggle(_) => {}
+            // S1-I-1 W4-f21: `111`'s host BirthdayParty.ToggleManualParty
+            // (`MessageBuffer.cs:3809-3814`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            C2s::ToggleParty => {}
         }
     }
 
@@ -1945,6 +1949,10 @@ impl App {
             // (`MessageBuffer.cs:3752-3757`) lands with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             S2c::SmartTextMessage(_) => {}
+            // S1-I-1 W4-f21: `119`'s client CombatText.NewText
+            // (`MessageBuffer.cs:3235-3242`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::CombatTextString(_) => {}
         }
     }
 
