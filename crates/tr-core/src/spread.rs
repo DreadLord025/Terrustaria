@@ -2032,4 +2032,106 @@ mod tests {
         assert_eq!(got, (roll as f64) < 1.0);
         assert_eq!(rng2, mirror, "exactly one Next(-1, 4)");
     }
+
+    /// W4-d103 WG-POST RETIRE (d103d post-gen coordination): the type-0
+    /// cleanse cell (`WorldGen.cs:55527-55664`) is the seam BOTH Final
+    /// Cleanup ports call — g36's `shimmer.rs::shimmer_clean_up` and
+    /// d106's `cleanup.rs::shimmer_clean_up` route the ShimmerCleanUp
+    /// ellipse's `Convert(j, i, 0, 3)` (`:34760`) through
+    /// [`convert_cleanse`]. This pins the d103-owned helper's tile ladder
+    /// + thorn kill + the no-caller-RNG contract (the reframe rolls ride
+    /// `world.frame_rng`, the recorded genRand deviation — matrix-88
+    /// §6.4). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d103_retire_the_cleanse_cell_purifies_and_kills_thorns() {
+        let mut w = world();
+        // The evil family around (200, 200): corrupt grass 23, ebonstone
+        // 25, ebonsand 112, purple ice 163, corrupt hardened sand 398,
+        // corrupt sandstone 400 — the type-0 ladder's six stone/sand/ice
+        // targets (`:55628-55651`).
+        put(&mut w, 200, 200, 23);
+        put(&mut w, 201, 200, 25);
+        put(&mut w, 199, 200, 112);
+        put(&mut w, 200, 199, 163);
+        put(&mut w, 200, 201, 398);
+        put(&mut w, 202, 200, 400);
+        // The thorn bushes 32/352 die (`:55656-55662`); the already-pure
+        // grass 2 / stone 1 are no-ops (the `type != newType` guards).
+        put(&mut w, 203, 200, 32);
+        put(&mut w, 204, 200, 352);
+        put(&mut w, 205, 200, 2);
+        put(&mut w, 206, 200, 1);
+        // The wall half: the corrupt grass wall 69 → 64 below the surface
+        // roll band (the no-rng arm, `convert_wall_by_case(wall, 0, ..,
+        // None)`); the ebonstone wall 3 → 349 (the Stone set's default).
+        let i69 = w.index(200, 200);
+        w.tiles[i69].wall = 69;
+        let i3 = w.index(201, 200);
+        w.tiles[i3].wall = 3;
+        w.world_surface = 100.0; // y=200 is below the surface roll band
+        // The single-cell arm directly (the size walk is the next witness):
+        // each placed cell runs the type-0 ladder once.
+        for (x, y) in [
+            (200, 200), (201, 200), (199, 200), (200, 199),
+            (200, 201), (202, 200), (203, 200), (204, 200),
+            (205, 200), (206, 200),
+        ] {
+            convert_cleanse_cell(&mut w, x, y);
+        }
+        assert_eq!(w.tile(200, 200).unwrap().kind, 2, "the corrupt grass purifies");
+        assert_eq!(w.tile(201, 200).unwrap().kind, 1, "the ebonstone purifies");
+        assert_eq!(w.tile(199, 200).unwrap().kind, 53, "the ebonsand purifies");
+        assert_eq!(w.tile(200, 199).unwrap().kind, 161, "the purple ice purifies");
+        assert_eq!(w.tile(200, 201).unwrap().kind, 397, "the hardened sand purifies");
+        assert_eq!(w.tile(202, 200).unwrap().kind, 396, "the sandstone purifies");
+        assert!(!w.tile(203, 200).unwrap().active(), "the thorn 32 dies");
+        assert!(!w.tile(204, 200).unwrap().active(), "the thorn 352 dies");
+        assert_eq!(w.tile(205, 200).unwrap().kind, 2, "the pure grass is a no-op");
+        assert_eq!(w.tile(206, 200).unwrap().kind, 1, "the pure stone is a no-op");
+        assert_eq!(w.tile(200, 200).unwrap().wall, 64, "the grass wall 69 → 64");
+        assert_eq!(w.tile(201, 200).unwrap().wall, 349, "the stone wall 3 → 349");
+    }
+
+    /// W4-d103 WG-POST RETIRE (d103d post-gen coordination): the size-3
+    /// square walk (`WorldGen.cs:55067-55083`) — the `±size` box with the
+    /// Manhattan `< 6` gate and the `InWorld(…, 1)` margin. At size 3 every
+    /// in-box cell passes the gate (max |dx|+|dy| = 6 is the corner, which
+    /// the `< 6` REFUSES — the four corners stay untouched). The walk draws
+    /// NO caller RNG (the C# `Convert` head is RNG-free; the cell's reframe
+    /// rolls ride `world.frame_rng`). a == b: the twin replays byte-identical.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d103_retire_the_cleanse_size3_walk_gates_the_corners() {
+        let build = || {
+            let mut w = world();
+            // A 7x7 ebonstone patch centred on (200, 200): the size-3 box.
+            for x in 197..=203 {
+                for y in 197..=203 {
+                    put(&mut w, x, y, 25);
+                }
+            }
+            w
+        };
+        let mut w = build();
+        convert_cleanse(&mut w, 200, 200, 3);
+        // The Manhattan < 6 gate: the four corners (|dx|+|dy| == 6) stay
+        // ebonstone; every other in-box cell purifies to stone 1.
+        for (x, y) in [(197, 197), (197, 203), (203, 197), (203, 203)] {
+            assert_eq!(
+                w.tile(x, y).unwrap().kind,
+                25,
+                "the corner ({x},{y}) is outside the Manhattan gate"
+            );
+        }
+        assert_eq!(w.tile(200, 200).unwrap().kind, 1, "the centre purifies");
+        assert_eq!(w.tile(197, 200).unwrap().kind, 1, "the edge mid purifies");
+        assert_eq!(w.tile(203, 200).unwrap().kind, 1, "the edge mid purifies");
+        assert_eq!(w.tile(198, 198).unwrap().kind, 1, "the |dx|+|dy|=4 cell purifies");
+        // a == b: the twin replays byte-identical (the walk is deterministic;
+        // the reframe rolls ride world.frame_rng, seeded identically by
+        // World::new — no caller stream exists to diverge).
+        let mut w2 = build();
+        convert_cleanse(&mut w2, 200, 200, 3);
+        assert_eq!(w.tiles, w2.tiles, "a == b tiles");
+    }
 }

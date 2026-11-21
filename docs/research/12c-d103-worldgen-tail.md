@@ -356,3 +356,173 @@ save payload, `saveglue.rs:108-111`), the remix dual-dispatch growth loop
   reads + the sibling-tip reads (`git show origin/<branch>:<path>`).
 - Pins unchanged (the chat line + the witnesses are runtime/test-only);
   `a == b` untouched.
+
+## WG-POST RETIRE (2026-11-21, resume — the SmashAltar wraith activation + the post-gen coordination)
+
+> Resumed after the prior session's TIMEOUT (WIP frozen 13:03). Two code
+> slices landed + pushed (`ce6a76a58` the g8-kind Wraith activation +
+> `SpawnOnPlayer` scan, `882be0ec1` the smash-seam wiring); this section is
+> the third slice — the d103-side witnesses for the post-gen coordination
+> seam + the coordination census. The PF-2 "wraith parks" verdict is
+> SUPERSEDED by the activation below.
+
+### R-1 — the SmashAltar wraith spawn: ACTIVATED (the g8-kind constants-copy)
+
+PF-2 parked the wraith spawn (`WorldGen.cs:49078-49105`) on the NPC lane.
+This resume activates it as a **g8-kind constants-copy** (the g8 branch's
+`NpcKind::Wraith` + the d24 aiStyle-22 machine, copied verbatim — NOT a
+re-port; the g8 merge reconciles the duplicate kind):
+
+- `NpcKind::Wraith` lands the full `SetDefaults` row (`NPC.cs:9852-9878`:
+  24×44, aiStyle 22, dmg 65, def 16, 160 HP, kb 0.7, NPCHit54/NPCDeath52,
+  alpha 100, value 500, noGravity+noTileCollide; the remix ×1.2 scale arm
+  `:9867-9877` parks with the g8 merge). Protocol id 360 (port-local, the
+  vanilla 82 stays PrimeSaw's — injective both directions).
+- `npc_ai_style22.rs` is the VERBATIM copy of the g8 branch's d24 module
+  (`origin/task/W4-g8-npc-kind-wire-1` blob `2a38b1051`, code-identical —
+  only the doc header + allow comment differ): the aiStyle-22 ghost machine
+  `NPC.cs:24666-25234`. On THIS branch the axis' 22 arm (kind-guarded)
+  routes ONLY the Wraith through `ai_022_arm` + `integrate_no_tile_collide`
+  (the Wraith path draws NO RNG — the module's census witness); the other
+  seven members stay UNWIRED until the g8 merge.
+- `spawner.rs::spawn_on_player_tile` ports `NPC.SpawnOnPlayer`'s generic
+  tail (`NPC.cs:80565-80633`): the 500×50 scan with the 316/82 200×30 band,
+  the shared `spawn_area_rects`/`check_not_spawning_on_screen_at` helpers,
+  the solid/house-wall veto (the King-Slime `tile[num16,num16]` quirk
+  verbatim), the down-column ground walk, the safe-area/HasTileSpawnSpace
+  gates + the last-attempt bypasses, the type-50 CanHit headroom probe.
+- `editing.rs::hammer_tile_hit`'s smash tail runs `Main.rand.Next(2)+1` on
+  the UpdatePlayers stream → `spawn_on_player_tile(82)` → `NewNPC`'s
+  `Bottom=(X,Y)` placement with `SpawnBoss`'s timeLeft ×20 (937→18740) and
+  `Target=plr`. The journey spawn-disable gate parks (creative lane); the
+  getGood `NewNPC` Next(3) transform draw parks (seed lane, no 82 arm).
+- FindFrame case 82 (`NPC.cs:74823-74884` floater group) bridges
+  `npc_findframe_b::FindFrameKind::Wraith`; the NPC_82 sheet + bestiary
+  credit + portrait + hit/death cues all land. 3 witnesses written NOT run.
+
+### R-2 — d103d post-gen coordination: FinalCleanup / ShimmerCleanUp (d106/g36)
+
+The post-gen passes `Final Cleanup` (`WorldGen.cs:22141-22490`) and its
+`ShimmerCleanUp` arm (`:22472`, body `:34716-34821`) are **d106/g36-owned**
+— d103 ports neither (the 12c Part 1 row 47-50 "d106 R3-R6 pending" stands;
+the matrix-88 §6.4 keep-one adjudicates g36's `shimmer.rs::shimmer_clean_up`
+as the ONE arm). d103's coordination role is the **shared `Convert` type-0
+cleanse seam** both ports call, plus the census below.
+
+**The C# structure (re-read in ≤80-line windows):**
+
+- `Final Cleanup` (`:22141`): `Main.tileSolid[484]=false` (`:22143`, a
+  load-order poke), `FillWallHolesInArea` over the surface band (`:22144`,
+  body `:9886-10053`), the `surfaceIsDesertNormalFunction` gate (`:22146`),
+  the whole-world sweep (`:22150-22378`: the sand-family fall columns
+  53/112/234/224/123 with the 314-track veto + hardened conversions, the
+  wall-187/216 lava fill, the 137 slope clear, the boulder 2×2 normalisation
+  + altar-26 veto 484→397, the 323-in-liquid kill, the dungeon-wall liquid
+  strip, the 314 liquid strip, the 332 pile extension, the surface
+  partial-liquid clear with the Clouds veto, the painting wall inheritance),
+  the poo-668 scatter (`:22379-22422`, count 3/6/9 by `GetWorldSize`,
+  anniversary ×5, the 3000 valve), the seed `Finish*` dispatch
+  (`:22423-22471`), `ShimmerCleanUp` (`:22472`), the final whole-world
+  `Liquid.LiquidCheck(createMergeTilesDuringGen:true)` sweep (`:22473-22483`,
+  y-outer/x-inner), the NPC/angler/extra-spawn tails (`:22484-22488`).
+- `ShimmerCleanUp` (`:34716`): the `(0,0)` sentinel early-return (`:34718`),
+  `ShimmerRemoveWater` (`:34722`, body `:34823-34851`), the ±120 inner-disc
+  cleanse (22/204→1, 51/56/229/230/659 kill, `Conversion.Moss`→1, 184 kill;
+  `:34730-34752`), the outer 90-radius ellipse (y-stretch 1.4 above / 1.2
+  below, **two `NextDouble` jitter per cell** `:34753`, 162 kill + wall-0 +
+  `Convert(j,i,0,3)` `:34760`), the shimmer-fill walk (`:34764-34788`,
+  127/255 rows), the anniversary tail (`:34789-34809`, 373/374/375→709 +
+  `Shimmerator`), the tree-under-shimmer kill (`:34811-34820`).
+- `Shimmerator`/`Shimminate` (`:35118-35147`/`:35104-35116`): the bounded
+  3500-tile DFS over the connected non-solid liquid pool (+ active 56),
+  then every counted cell → shimmer-255 + the tree/obsidian/cut(except 28)
+  kill. `maxTileCount` is 3500 at this slot (the last classic writer is
+  Grass Wall's `:19593`; `AddSpikeCaves` `:24087` also sets 3500 but runs
+  earlier at `:16305`).
+
+**The sibling ports (read at the pushed tips):**
+
+- **g36** (`origin/task/W4-g36-worldgen-missing-a`, tip `a91bf92b7`, the
+  gap-fill `bf7b6bf5b`): `shimmer.rs::shimmer_clean_up` (`pub`, the ONE arm
+  per matrix-88 §6.4) + `shimmerator`/`shimmer_remove_water`/
+  `solid_tile_ignore_water`. **UNWIRED by design** — the merger composes it
+  at the TAIL of g41's `step_seed_finish` (after `micro_surface::run`), NOT
+  inside `pass_final_cleanup`. Reads g36 A1's published
+  `GenVars.shimmer_position` (`pipeline.rs:2093`). 7 witnesses written NOT
+  run. The `Convert(j,i,0,3)` cleanse reuses **`spread::convert_cleanse`**
+  (the d103-owned helper — see R-3).
+- **d106** (`origin/task/W4-d106-worldgen-passes-6`, tip `c82e70a9a`, R6
+  `4612ffc57`): `cleanup.rs::final_cleanup` (the whole pass) + a LOCAL
+  `shimmer_clean_up`/`shimmerator` copy. The retire-final
+  (`312-d106-worldgen-6-retire-final.md` §2.2) publishes the **DROP hunks**:
+  the local `shimmer_clean_up`/`shimmerator` + the final LiquidCheck sweep
+  block DELETE at the graft (g36's arm + the g47/g46-union LiquidSystem
+  survive); `liquids::shimmer_remove_water` STAYS (the None-guard upgrade).
+  d106 R6 as landed threads ONE `pass_rng("Final Cleanup")` through
+  `poo_scatter` → `shimmer_clean_up` (the stream-trap fix). Witnesses
+  `r6_the_shimmer_cleanup_continues_the_scatter_stream` +
+  `r6_the_merge_sweep_matches_the_y_outer_replay` written NOT run.
+- **g37** (`origin/task/W4-g37-worldgen-missing-b`, tip `81fd1e0d0`):
+  `final_cleanup.rs::pass_final_cleanup` (the wall-hole fill + sweep +
+  scatter, `:22143-22422`); the `:22423-22488` seed/shimmer/liquid tails
+  DEFERRED (the `ShimmerCleanUp` arm explicitly deferred to g36 — "reads
+  `GenVars.shimmerPosition`, which g36 A1 owns; no slot on this branch").
+
+**The coordination verdict (d103-side):**
+
+1. **The `Convert` type-0 cleanse is the d103-owned seam.** Both g36's and
+   d106's `shimmer_clean_up` route the ellipse's `Convert(j,i,0,3)`
+   (`:34760`) through `spread::convert_cleanse` (the S1-D-4 Clentaminator
+   helper, `spread.rs:644`). d103 does NOT port FinalCleanup/ShimmerCleanUp
+   — it owns the shared cleanse the two ports call. R-3 pins it.
+2. **The stream contract.** The C# `genRand` is ONE per-pass UnifiedRandom;
+   the poo scatter (`:22379-22422`) and the ShimmerCleanUp ellipse jitter
+   (`:34753`) draw on the SAME instance. `Streams::pass_rng(name)` returns a
+   FRESH stream per call (`pipeline.rs:230`), so the merger MUST thread ONE
+   `Rng` through scatter→cleanup (matrix-88 §6.4 form (a): stash
+   `gv.final_cleanup_rng`). d106 R6 already threads it; g36's arm takes
+   `rng: &mut Rng` (the merger passes the threaded instance). On a classic
+   world with no shimmer (`shimmer_position == None`) the arm draws NOTHING
+   (the sentinel returns before any draw) — the trap only bites shimmer
+   worlds. **d103's `convert_cleanse` draws NO caller RNG** (the C# `Convert`
+   head `:55067-55083` is RNG-free); its reframe rolls ride `world.frame_rng`
+   (the recorded genRand deviation, `spread.rs:662-668`), so the cleanse
+   never perturbs the threaded scatter stream. This is the load-bearing
+   d103-side invariant for the compose.
+3. **The `tilesIgnoreWater` window** (`:34767`/`:34810`) lifts the boulder
+   family (138/484/664/711-716) + grate 546 solidity for the Shimmerator
+   flood. g36 carries `solid_tile_ignore_water` (the `liquid.rs::BOULDER_SOLIDS`
+   cited copy); d106's local copy documents it as a no-op stand-in (the
+   boulder/grate family does not appear in the shimmer disc's fill path).
+   The window is a documented no-op for the cleanse arm itself.
+4. **The `kill_tile` no_item receipt.** At gen time the C# `KillTile`
+   ALWAYS suppresses items (`:63546-63549`, `isGeneratingOrLoadingWorld`
+   true for the whole generation). d106/g36's gen-time `kill_tile(...,true)`
+   is behaviourally identical, not a deviation (research-312 §3a). d103's
+   `convert_cleanse` thorn kill passes `false` (the runtime Clentaminator
+   path, `spread.rs:767`) — at the gen-time compose the C# override would
+   make it `true`, but the thorn kill drops no item either way (the thorn
+   kinds 32/352 have no `KillTile_GetItemDrops` row), so the seam is
+   draw-neutral and item-neutral. **No d103 change needed.**
+
+### R-3 — the d103-side witnesses (written NOT run)
+
+`spread.rs` (the `tests` module, the d103-owned `convert_cleanse` seam):
+
+- `w4_d103_retire_the_cleanse_cell_purifies_and_kills_thorns` — the type-0
+  cell ladder (`:55527-55664`): the evil grass/stone/sand/ice/hardened-sand/
+  sandstone → their pure targets, the thorn 32/352 kill, the pure-grass/
+  stone no-ops, the wall 69→64 / 3→349 arms. Drives `convert_cleanse_cell`
+  directly (the single-cell arm).
+- `w4_d103_retire_the_cleanse_size3_walk_gates_the_corners` — the size-3
+  square walk (`:55067-55083`): the Manhattan `< 6` gate refuses the four
+  corners (|dx|+|dy|==6), every other in-box cell purifies; a==b twin
+  replay (the walk is deterministic, the reframe rolls ride
+  `world.frame_rng` seeded identically by `World::new`).
+
+These pin the d103-owned helper the g36/d106 ShimmerCleanUp ports call —
+the coordination seam, not the post-gen passes themselves (d106/g36 own
+those). Code-only lane: **no cargo/tests/rustfmt/graphify run**. Evidence =
+the C# re-reads cited above (all ≤80-line windows) + the sibling-tip reads
+(`git show origin/<branch>:<path>`) + the Rust call-chain reads. Pins
+unchanged (the witnesses are test-only); `a == b` untouched.
