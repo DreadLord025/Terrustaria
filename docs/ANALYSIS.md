@@ -6955,6 +6955,79 @@ Deliberate deviations (this slice):
    `!Player.Male` gate rides `Next(5)`, and the fixed band skips 276
    (273/274/275/277/278/279).
 
+### W4-d120 final census (2026-11-21, code-only mode) — GetChat complete + the sibling cross-notes
+
+The FULL `NPC.GetChat` census (`NPC.cs:93766-94821`, every arm read
+against `crates/tr-app/src/npc_chat.rs` + the pushed f38/f41/g58 diffs):
+
+- **All 40 arms accounted for** (39 type cases + the `IsTownSlime` set
+  arm). The 36 type cases 17/18/19/20/37/38/54/105/107/106/108/123/
+  124/22/142/160/178/207/208/209/227/228/229/354/353/368/376/369/453/
+  441/579/550/589/588/633/663 were ported by the re-pin + arms A/B/C;
+  the LAST four (637/638/656 pets + the `IsTownSlime` arm
+  `:94816-94819`) land in arms D — type-keyed until d43/f43 merge.
+  The pet filters are DOT-LESS (`CatChatter.Chatter` matches
+  `Chatter_1/2/3`, `Lang.cs:360-373` — the `BloodMoonFishing` shape);
+  `Lang.GetSlimeType`'s colour words (`:375-406`) feed
+  `Slime<Colour>Chatter.Chatter` (`:408-411`). The slime colour is the
+  recorded Blue default until d43's `SlimeVariant` kinds arrive (the
+  port's `Npc.slime` field carries no town-slime colours yet).
+- **The happiness-mood lines are NOT GetChat arms** (the g58/f38 naming
+  census): the mood report rides `Player.SetTalkNPC`'s
+  `currentShoppingSettings` latch + the `ReportHappiness` BUTTON
+  (`NPCInteractions.cs:289-312`, g58 P2) and the homeless text rides
+  `RequestHome` (`:314-368`, `TownNPCMood_<Name>.NoHome` + the
+  Zoologist `Transformed` suffix + the pet/slime category overrides +
+  the Truffle's `HousingRequirements_Truffle` tail) — g58's lane, not
+  the ladder. The only in-ladder mood-adjacent line is the Dryad's
+  cola override (`:94012-94015`, ported).
+- **f38 vs f41 union**: both branches carry the SAME
+  `check_dialogue`/`cake_chat` block (f41 = f38's + the gift-before-
+  text draw-order note, research/70 §3). d120's `talk_to_npc` already
+  drains the gift side effects BEFORE the Cake text draw (the
+  `the_party_girl_gifts_the_cake_then_draws_the_text` +
+  `a_full_inventory_overflows_the_cake_to_a_world_drop` witnesses pin
+  the order) — the merger keeps ONE copy of the block (f41's comment
+  superset) and d120's talk seam; no behaviour conflict.
+- **g58's zoologist re-pin**: g58 D2 moves the lycantrope predicate to
+  `happiness::should_bestiary_girl_be_lycantrope` (shared with the
+  mood report's `Transformed` suffix). d120's inline copy
+  (`npc_chat.rs` zoologist) is the SAME predicate (`NPC.cs:93753-
+  93764`) — the merger keeps g58's shared-fn call; no behaviour
+  conflict.
+
+**The sign-half compose verify (f22b, `NPCChatPanel-sign`)** — f22's
+`ui/npc_chat.rs` diff read against `NPCChatPanel.cs` line-by-line:
+
+- `interactions(sign_open, edit_sign)` = Close (`inter[52]`) + the
+  sign's Edit/Save toggle (`inter[48]`/`[47]`, `OpenSign.GetText`
+  `NPCInteractions.cs:22-29`) — matches the registry order (Close
+  registered `:515`, OpenSign `:516`) and `PrepareInteractions`'
+  Condition filter (`:164-175`). VERIFIED.
+- `interaction_rects`' per-button walk (x += width + 30, `:135`; the
+  `num % 4 == 0` reset, `:103-107`; the 260-px shrink `:113-117`) —
+  VERIFIED for the ≤4-button rows the port renders. The C#'s row
+  reset also steps y (`num / 4 * 22`, `:106`) and
+  `_neededInteractionLines = ceil(count/4)` (`:174`) grows the panel;
+  f22 keeps `INTERACTION_LINES = 1` — correct while only Close+Sign
+  render, but the Shop/Happiness/Home rows (g58/f38's buttons) push
+  the count past 4: the merger must make the line count DYNAMIC
+  (`ceil(labels.len()/4)`) and add the y-step. Recorded for the
+  panel-merge lane; no d120 edit (f22 owns the file half).
+- The caret (`DrawText :236-262`): f22 gates `edit_sign &&
+  !lines.is_empty()`, measures the last line at scale 1, advances the
+  20-frame `TextBlinker` (the `ChestUI.cs:175-179` shape = the panel's
+  own `++count >= 20` toggle `:254-258`), draws "|" at state on —
+  VERIFIED. The IME composition half (`:242-253`) is recorded
+  unported (f22's note). One C# nuance: the panel's blinker fields
+  are per-panel state (`:20-22`), f22 threads the chest editor's
+  `TextBlinker` type — same maths, the instance is the caller's.
+- `CanHoldConversation` (`:276-283`: talkNPC < 0 → sign != -1) and
+  the sign-open `allowRichText = false` path (`:38`, the
+  `DrawBorderStringFourWay` branch `:232`) — f22's phase B wires the
+  sign gate; d120's text-only panel keeps the rich-text branch (the
+  talk case). VERIFIED consistent.
+
 ## Town chatter UI (S1-E-10b, 2026-11-18, code-only mode)
 
 `crates/tr-app/src/ui/npc_chat.rs` ports the UI half of the town chatter вЂ”
