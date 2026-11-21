@@ -4499,6 +4499,63 @@ mod tests {
         }
     }
 
+    /// W4-e10 — the player-voice plays' RNG contract: case 20 (female hurt)
+    /// draws exactly ONE `Next(3)` slot pick (`LegacySoundPlayer.cs:913`),
+    /// the chicken-rare pick draws ONE `Next(5)` (`Player.cs:38602`) then the
+    /// style façade draws NO gameplay roll (the trackable case 42), the
+    /// mount/armor NPC int arms draw ONE `Next(-10, 11)` pitch (case 3/4);
+    /// a muted gate refuses before any draw. The style façade's
+    /// `GetRandomPitch` NextFloat rides the audio-only stream, never the
+    /// passed gameplay stream.
+    #[test]
+    fn w4_e10_the_voice_plays_draws_ride_the_passed_stream() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // Case 20: one Next(0, 3) — the Female_Hit_<n> slot pick.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(0, 3);
+        let cue = audio.play_female_hurt_sound(0.0, &mut rng);
+        let want = match slot {
+            0 => "Female_Hit_0",
+            1 => "Female_Hit_1",
+            _ => "Female_Hit_2",
+        };
+        assert_eq!(cue, Some(want), "the slot pick rides the stream");
+        assert_eq!(rng.peek(), witness.peek(), "exactly one gameplay draw");
+        // The chicken-rare pick: one Next(0, 5), then the trackable façade
+        // draws nothing on the gameplay stream.
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let rare = witness.next_range(0, 5) == 0;
+        let roll = rng.next_range(0, 5);
+        let name = if roll == 0 { "ChickenHurtRare" } else { "ChickenHurt" };
+        audio.play_voice_style(name, -1.0, -1.0, 0.0, &mut rng);
+        assert_eq!(rare, roll == 0);
+        assert_eq!(rng.peek(), witness.peek(), "the façade draws no gameplay roll");
+        // The mount/armor NPC int arms: one Next(-10, 11) pitch (case 3).
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        witness.next_range(-10, 11);
+        audio.play_hurt_npc_int(3, 6, -1.0, -1.0, &mut rng);
+        assert_eq!(rng.peek(), witness.peek(), "case 3 draws one pitch");
+        // Muted: the gate precedes every draw.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_female_hurt_sound(0.0, &mut rng), None);
+        assert_eq!(audio.play_hurt_npc_int(3, 6, -1.0, -1.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek, "the muted voice plays are draw-free");
+        // The bank rows resolve.
+        assert_eq!(sound_type("Female_Hit_1"), 20);
+        assert_eq!(sound_type("NPC_Hit_47"), 3);
+        assert_eq!(sound_type("Item_35"), 2);
+        assert_eq!(sound_type("player_hit_chicken"), 42);
+        assert_eq!(sound_type("dst_male_hit_0"), 42);
+    }
+
     /// S1-E-21f — the double-jump and splash plays: case 16 draws one
     /// `Next(-10, 11)` pitch after the gate; case 19's playing guard is
     /// modelled by the splash slots (headless: always fresh), one pitch per
