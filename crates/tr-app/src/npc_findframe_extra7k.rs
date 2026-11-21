@@ -642,12 +642,12 @@ mod tests {
         assert_eq!(s.row, 4);
     }
 
-    /// The boss idle walk: fresh rows 0..3 at stride 10 (the
-    /// counter -1 re-seed makes the first step land tick 10), the
-    /// `(!flag12 || row == 13) && row >= 4` wrap goes 3 → 4 → 0;
-    /// the rows-10..12 hop cycle runs at stride 6 and wraps
-    /// 12 → 13 → 0 (the row == 13 clause); a row >= 4 outside
-    /// 10..12 re-seeds the walk at 0.
+    /// The boss idle walk: fresh rows 0..3 at stride 10 (row 0
+    /// does NOT re-seed — the >= 4 gate — so the first step lands
+    /// tick 10), the `(!flag12 || row == 13) && row >= 4` wrap goes
+    /// 3 → 4 → 0 at tick 40; the rows-10..12 hop cycle runs at
+    /// stride 6 and wraps 12 → 13 → 0 (the row == 13 clause); a
+    /// row >= 4 outside 10..12 re-seeds the walk at 0.
     #[test]
     fn f26s7k_the_boss_idle_walk_and_hop_cycle() {
         let k = FindFrameExtra7kKind::QueenSlimeBoss;
@@ -657,14 +657,15 @@ mod tests {
             find_frame_extra7k(k, &mut s, &input(3.0, 0.0));
             rows.push(s.row);
         }
-        // rows 0 ticks 1-10, 1 ticks 11-20, 2 ticks 21-30,
-        // 3 ticks 31-40, tick 41 wraps to 0.
-        assert_eq!(rows[9], 0);
-        assert_eq!(rows[10], 1);
-        assert_eq!(rows[30], 3);
-        assert_eq!(rows[39], 3);
+        // rows 0 ticks 1-9, 1 ticks 10-19, 2 ticks 20-29,
+        // 3 ticks 30-39, tick 40 wraps to 0.
+        assert_eq!(rows[8], 0);
+        assert_eq!(rows[9], 1);
+        assert_eq!(rows[29], 3);
+        assert_eq!(rows[38], 3);
+        assert_eq!(rows[39], 0);
         assert_eq!(rows[40], 0);
-        assert_eq!(s.counter, 0.0);
+        assert_eq!(s.counter, 1.0);
         // The hop cycle: row 10 counter 5 → ++ = 6 >= 6 → 11.
         let mut s = FrameState { row: 10, counter: 5.0, ..Default::default() };
         find_frame_extra7k(k, &mut s, &input(0.0, 0.0));
