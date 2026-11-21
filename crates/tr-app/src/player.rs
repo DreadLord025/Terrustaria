@@ -5372,7 +5372,8 @@ impl Player {
             // The Mana Flower (`:15591-15594`), the Arcane Flower
             // (`:14405-14410` — also +5 magic crit / +5% magic damage; the
             // aggro -400 has no port consumer), the Magnet Flower
-            // (`:14455-14457`, its manaMagnet half unported) and the Mana
+            // (`:14455-14458`, its manaMagnet half live since i52 — the
+            // merged arm below) and the Mana
             // Cloak (`:14459-14460`) arm `manaFlower`; the ONE -0.08
             // `manaCost` row applies after the equip loop (`:12962-12965`),
             // so two flowers do not stack. Nature's Gift (`:15110-15113`)

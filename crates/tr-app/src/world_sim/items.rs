@@ -2535,6 +2535,71 @@ mod pickup_tests {
         );
     }
 
+    /// W4-f49 residuals — the manaMagnet chain END TO END (the 2221
+    /// stale-note census): equipping the Celestial Cuffs 2221 arms
+    /// `manaMagnet` through the real tick (`ApplyEquipFunctional`
+    /// `Player.cs:14949-14953`, `ResetEffects` clear `:18491`), the grab
+    /// pass feeds it into `GrabFlags`, the +300 star range row
+    /// (`:35137-35140`) reaches a star 100 px out, and the 12/5 pull
+    /// (`:34943-34946`) blends -2.4 from rest — NOT the common 0.75 pull.
+    /// At FULL mana without a magic held item the star is not pulled at
+    /// all (`:34947`); without the magnet the base 42 never reaches.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_f49_the_cuffs_arm_the_star_magnet_end_to_end() {
+        let mut app = pickup_world();
+        {
+            let mut p = app.player.take().unwrap();
+            p.equipped[3] = 2221; // the Celestial Cuffs
+            p.mana_max = 200;
+            p.mana = 150; // short — the :34947 gate stays open regardless
+            let w = app.world.clone();
+            for _ in 0..2 {
+                p.update(&w, crate::player::PlayerInput::default());
+            }
+            assert!(p.mana_magnet, "the equip pass armed the flag");
+            assert!(p.magic_cuffs, "the cuffs' other half rides along");
+            app.player = Some(p);
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        let x0 = pc.0 + 93.0; // centre +100 — inside 42+300, outside touch
+        app.items.push(collectable_drop(184, 1, x0, pc.1 - 7.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1, "pulled, not teleported");
+        assert!(
+            (app.items[0].vel.x - -2.4).abs() < 1e-3,
+            "the 12/5 star blend: {}",
+            app.items[0].vel.x
+        );
+        // Full mana, empty hand: the :34947 gate refuses the star pull.
+        let mut app = pickup_world();
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_max = 200;
+            p.mana = 200;
+        }
+        let pc = app.player.as_ref().unwrap().center();
+        let x0 = pc.0 + 93.0;
+        app.items.push(collectable_drop(184, 1, x0, pc.1 - 7.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 1);
+        assert_eq!(
+            app.items[0].vel.x, 0.0,
+            "no magnet: no reach at 100 (gravity owns y alone)"
+        );
+        // With the magnet the full-mana gate does NOT apply (:34943 wins).
+        {
+            let p = app.player.as_mut().unwrap();
+            p.mana_magnet = true;
+        }
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(
+            app.items[0].vel.x < 0.0,
+            "the magnet pulls at full mana: {}",
+            app.items[0].vel.x
+        );
+    }
+
     /// `Item.NewItem`'s seasonal remap (`Item.cs:49668-49714`): the branch
     /// order and the draw counts. Classic flags: no draw, no remap.
     /// Halloween alone: 58→1734, 184→1735, draw-free. Christmas alone:
