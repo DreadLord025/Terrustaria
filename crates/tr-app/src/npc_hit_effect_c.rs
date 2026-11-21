@@ -177,6 +177,8 @@
 //! | 769-770 | `:86639-86640` | the 301 Raven death (2 gores 438/439, +14 X offset) |
 //! | 771-772 | `:86656-86657` | the 252 Parrot death (2 gores 373/374) |
 //! | 773-777 | `:86675-86679` | the 489 BloodZombie death (5 gores 722/723/723/724/724) |
+//! | 778-782 | `:86683-86687` | the 586 ZombieMerman death (5 gores 1106/1107/1107/1108/1108) |
+//! | 783-787 | `:86704-86708` | the 534 DemonTaxCollector death (5 gores 894/895/895/896/896) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4728,11 +4730,44 @@ fn parrot_death(
     gore.new_gore(rng, world, pos, vel, 374, 1.0); // :86657
 }
 
-/// The 489 BloodZombie / 586 ZombieMerman death (`NPC.cs:86669-86687`):
-/// the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
-/// the 5 gores at the +0/+20/+20/+34/+34 Y ladder at `this.scale`. This
-/// commit ports the 489 BloodZombie (sites 773-777: 722/723/723/724/724);
-/// the 586 ZombieMerman lands with the next batch.
+/// The shared 5-gore blood-zombie ladder (`NPC.cs:86669-86708`): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then 5
+/// gores at the +0/+20/+20/+34/+34 Y ladder at `this.scale` — the head, the
+/// middle pair, the tail pair. The per-type triple `(head, middle, tail)`:
+/// 489 BloodZombie → (722,723,724), 586 ZombieMerman → (1106,1107,1108),
+/// 534 DemonTaxCollector → (894,895,896).
+fn blood_zombie_ladder(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    head: i32,
+    middle: i32,
+    tail: i32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // The 50-dust type-5 burst (SpeedX 2.5*dir).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, head, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, middle, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, middle, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, tail, s);
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, tail, s);
+}
+
+/// The 489 BloodZombie death (`NPC.cs:86675-86679`, sites 773-777): the
+/// shared 5-gore ladder with (722,723,724).
 fn blood_zombie_death(
     npc: &Npc,
     dust: &mut DustPool,
@@ -4742,22 +4777,35 @@ fn blood_zombie_death(
     world: &World,
     hit_direction: f32,
 ) {
-    let (w, h) = npc.size();
-    let pos = Vec2::new(npc.x, npc.y);
-    // `:86669-86672` — the 50-dust type-5 burst (SpeedX 2.5*dir).
-    for _ in 0..50 {
-        dust.new_dust(
-            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
-            Color::default(), 1.0,
-        );
-    }
-    let vel = Vec2::new(npc.vx, npc.vy);
-    let s = npc.scale;
-    gore.new_gore(rng, world, pos, vel, 722, s); // :86675
-    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 723, s); // :86676
-    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 723, s); // :86677
-    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 724, s); // :86678
-    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 724, s); // :86679
+    blood_zombie_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 722, 723, 724);
+}
+
+/// The 586 ZombieMerman death (`NPC.cs:86683-86687`, sites 778-782): the
+/// shared 5-gore ladder with (1106,1107,1108).
+fn zombie_merman_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    blood_zombie_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 1106, 1107, 1108);
+}
+
+/// The 534 DemonTaxCollector death (`NPC.cs:86704-86708`, sites 783-787):
+/// the shared 5-gore ladder with (894,895,896).
+fn demon_tax_collector_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    blood_zombie_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 894, 895, 896);
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -5342,10 +5390,17 @@ pub fn hit_effect_c(
     if npc_type == 252 && npc.hp <= 0 {
         parrot_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:86659-86689` — the 489/586 BloodZombie/ZombieMerman arm; this commit
-    // owns the 489 (sites 773-777); the 586 lands with the next batch.
+    // `:86659-86689` — the 489/586 BloodZombie/ZombieMerman arm (sites
+    // 773-782).
     if npc_type == 489 && npc.hp <= 0 {
         blood_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    if npc_type == 586 && npc.hp <= 0 {
+        zombie_merman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86690-86709` — the 534 DemonTaxCollector arm (sites 783-787).
+    if npc_type == 534 && npc.hp <= 0 {
+        demon_tax_collector_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8422,23 +8477,31 @@ mod tests {
         assert_eq!(types, vec![373, 374]);
     }
 
-    /// `NPC.cs:86675-86679` — the BloodZombie death: the 5 gores
-    /// 722/723/723/724/724 at +0/+20/+34 Y, at this.scale.
+    /// `NPC.cs:86675-86708` — the blood-zombie ladder: 489→(722,723,724),
+    /// 586→(1106,1107,1108), 534→(894,895,896), the 5-gore +0/+20/+34
+    /// ladder at this.scale.
     #[test]
-    fn w4_f10_the_blood_zombie_death_spawns_the_five_gores() {
+    fn w4_f10_the_blood_zombie_ladder_uses_the_per_type_triple() {
         let w = air();
-        let mut n = boss(100.0, 100.0, 40.0, 56.0);
-        n.scale = 1.1;
-        let mut gore = GorePool::new();
-        let mut dust = DustPool::new();
-        let mut rng = UnifiedRandom::new(743);
-        blood_zombie_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
-        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
-        assert_eq!(types, vec![722, 723, 723, 724, 724]);
-        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
-        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
-        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
-        assert_eq!(gore.slot(0).scale, 1.1);
+        let cases: [(fn(&Npc, &mut DustPool, &SpawnCtx, &mut GorePool, &mut UnifiedRandom, &World, f32), i32, i32, i32); 3] = [
+            (blood_zombie_death, 722, 723, 724),
+            (zombie_merman_death, 1106, 1107, 1108),
+            (demon_tax_collector_death, 894, 895, 896),
+        ];
+        for (f, head, middle, tail) in cases {
+            let mut n = boss(100.0, 100.0, 40.0, 56.0);
+            n.scale = 1.1;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(743);
+            f(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, middle, middle, tail, tail]);
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            assert_eq!(gore.slot(0).scale, 1.1);
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
