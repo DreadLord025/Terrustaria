@@ -166,3 +166,88 @@ pins stay unchanged; the `a == b` halves stay untouched.
 **C5 stays unwired** — d103 P8 owns the verbatim hardUpdateWorld chlorophyte
 arms with its own `convert_purge_cell`; wiring the C5 cells there would
 collide. The C5 helpers remain available for that lane / the merger.
+
+## Closeout phase (2026-11-21) — the Convert-family census gaps
+
+The wiring round left four Convert-family consumers unported/unrowed; this
+phase closes them (one commit per item, witnesses written not run).
+
+### 1. ConvertSkyIslands — LANDED f0fe0f388
+
+`WorldGen.cs:24674-24714` as `finish_seeds.rs::convert_sky_islands`, wired
+at the `:24243` anniversary call (the `!getGood && !drunk` gate inside the
+reduced `:24239` guard). g44's islands lane (read at tip 32e478d34) marks
+the call "not ported" in its `finish_seeds.rs` module note — the
+Convert-family port lands HERE (cross-note in ANALYSIS/PORT_MAP). The C3
+`convert_hallow_cell` single-cell overload is the Convert arm; the vanity
+596/616 + plant 82/83/185-187/227 kills ride `kill_tile(no_item: true)`
+(the gen-time `:63546-63549` flag, the `finish_get_good_world` precedent);
+the 1-in-3 `TryGrowingTreeByType(5)` = `GrowTree` roll rides
+`growth::grow_tree` on a fresh `UnifiedRandom(opts.seed as i32)` (the
+`micro_surface.rs::start_in_hardmode` precedent — the per-pass xorshift
+contract cannot feed the `UnifiedRandom` growth seam). Classic worlds
+never run the anniversary pass: both pins unchanged.
+
+### 2. The clentaminator SOLUTIONS census — LANDED 5e83d3ecb
+
+The full `ItemID` solution list vs the `ai_spray` dispatch
+(`Projectile.cs:26791-26824`):
+
+| item | name | `Item.shoot` | + 145 → proj | Convert type | cell owner |
+| --- | --- | --- | --- | --- | --- |
+| 780 | Green Solution | 0 (`Item.cs:10517`) | 145 PureSpray | 0 | `convert_cleanse` (landed) |
+| 781 | Blue Solution | 1 (`:10526`) | 146 HallowSpray | 2 | C3 (landed, wired) |
+| 782 | Purple Solution | 2 (`:10535`) | 147 CorruptSpray | 1 | d1 `convert_sized` (unmerged) |
+| 783 | Dark Blue Solution | 3 (`:10544`) | 148 MushroomSpray | 3 | g42 `convert_cell_mushroom` (unmerged) |
+| 784 | Red Solution | 4 (`:10553`) | 149 CrimsonSpray | 4 | d1 `convert_sized` (unmerged) |
+| 5392 | Sand Solution | 870 (`DefaultToSolution(1015)`, `:42772`+`:47799`) | 1015 SandSpray | 5 | C4 (landed, wired) |
+| 5393 | Snow Solution | 871 (`:42775`) | 1016 SnowSpray | 6 | C4 (landed, wired) |
+| 5394 | Dirt Solution | 872 (`:42778`) | 1017 DirtSpray | 7 | C4 (landed, wired) |
+
+- The dispatch itself was already verbatim-complete (the wiring round);
+  the GAP was the seven missing `proj_data` rows (146-149 line-identical
+  `:2350-2397` copies of the 145 arm; 1015-1017 `DefaultToSpray`
+  `:9633-9636` → `:10691-10702`) — rowed this phase. All eight item rows
+  were already in the registry; both guns (779 speed 7 / 5134 speed 11,
+  `shoot 145` + `useAmmo Solution`) resolve through `ammo.rs`'s additive
+  arm (`Player.cs:53487-53490`).
+- **5495 is NOT a Clentaminator**: it is the **Shimmer Gun**
+  (`ItemID.cs:12673`, `Item.cs:43313-43325` — `shoot 1042`
+  ShimmerGunStream, aiStyle 60 `Projectile.cs:9848-9857`, NO useAmmo).
+  Its `Player.cs:49124-49128` spawn passes `ai1 = 1`, but that is the
+  shimmer stream's own flag — no solution arm belongs to it. The 1042
+  row is the shimmer lane's (unrowed here, out of scope).
+- The 147/148/149 arms stay no-ops in `ai_spray` until d1/g42 merge —
+  their cells are the COMPLEMENT this lane documented at claim time.
+
+### 3. The powder items — census, d1 owns the machine (no port here)
+
+The task prompt's "194/195" are NOT powders: `ItemID.cs:2071/:2073` —
+194 MushroomGrassSeeds, 195 JungleGrassSeeds. The powders are:
+
+| item | name | `Item.shoot` | proj | Convert call (`Projectile.cs:24191-24202`) |
+| --- | --- | --- | --- | --- |
+| 66 | Purification Powder (`Item.cs:2168-2184`) | 10 | 10 (`:897-912`) | `Convert(x, y, 11, 1)` (`:24193`) |
+| 67 | Vile Powder (`:2185-2198`) | 11 | 11 (`:913-923`) | `Convert(x, y, 1, 1)` (`:24197`) |
+| 2886 | Vicious Powder (`:27373-27386`) | 463 | 463 (`:5340-5350`) | `Convert(x, y, 4, 1)` (`:24201`) |
+
+The aiStyle-6 machine (`Projectile.cs:24100-24228`) is **d1's claim,
+verified at tip e271b5bc8**: `projectile_ai_powder.rs::step` (660e111fc)
+ports the whole arm — the 0.95 decay / 180-tick kill / one-shot dust burst
+(the 1051's 50 `Next(3)` draws stay), the owner-gated tile scan calling
+`spread::convert_sized(world, tx, ty, 11|1|4, 1)` (78dc52720's
+`convert_powder_cell` — the type-1/4/11 ladders), the fertilizer
+(1019/1051) sapling growth deferring to the `UpdateWorldGen` pass via
+`wants_sapling_grow` → `growth::attempt_grow_tree_from_sapling`, the five
+`SetDefaults` rows (7e70c3c91) + the dispatch 6-arm. The three item rows
+(66/67/2886) are already registry-rowed on THIS branch; the generic
+throw path (`editing.rs`'s `held_use_ammo == 0` fire block) spawns them.
+
+**Are f25's Convert cells called by the powder chain? NO — and correctly
+so.** The powders call types 11/1/4 (d1's cells); f25's C3/C4/C5 cells
+are types 2/5/6/7/8/9/10 — disjoint. The only shared seams are
+`growth::convert_wall_by_case` (d1's types 1/4/11 ride the same flat
+ladder) and the `CONV_THORN`/`in_world`/`CONV_JUNGLE_GRASS` constants —
+d1's `CONV_THORN` duplicate carries the merger-dedupe note (the C3
+precedent). No f25 wiring is missing on the powder chain; the merge
+lands d1's machine whole.
