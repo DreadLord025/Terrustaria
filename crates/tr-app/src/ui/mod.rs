@@ -721,6 +721,9 @@ pub fn draw_hud(
     // `NPC.downedPlantBoss`, the seed flags (anniversary / getGoodWorld /
     // Mechdusa), `downedDD2EventAnyDifficulty` and `Main.expertMode`, plus
     // the shared disco cycle for the −12 expert name colour.
+    // DEPRECATED-BY-UNION (128 §4.1): f28 appends its superset
+    // `tooltip_lines2::TooltipWorld` at this SAME position — one struct,
+    // one param at the f28c merge (f28's wins; this type deletes).
     tooltip_world: tooltip::TooltipWorld,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
@@ -1198,6 +1201,9 @@ pub fn draw_hud(
     // (`ItemSlot.MouseHover`, `ItemSlot.cs:3184-3198`): the grid/coin/ammo
     // favourites ride the side set; the equip columns' contexts decide
     // wornArmor (8) / social (9/11) and the loadout-share arm (8-12).
+    // UNIQUE-SALVAGE (128 §4.3 / §5-e16 #5): this full HoverRef→ctx map +
+    // the coin/ammo favourite stamps fold into f28's `HoverFlags.context`
+    // at the f28c merge (f28 only stamps Grid + hotbar favourites).
     let (hover_context, hover_favorited) = if inventory_open {
         match open_hover {
             Some(inventory::HoverRef::Grid(i)) => (0, favorites.contains(&i)),
@@ -1248,6 +1254,10 @@ pub fn draw_hud(
             held_kind: inventory[selected].kind,
             // `Player.HasItem(905)` (`Player.cs:55894-55904`): the 58-slot
             // scan — the grid plus the coin/ammo rows (`inv::INV_SLOTS`).
+            // UNIQUE-SALVAGE (128 §4.4): f28's `inventory.take(58)` runs
+            // over a 50-slot slice (coin/ammo rows 50-57 unreachable) —
+            // f28c takes this bool (the smaller edit) or the concatenated
+            // 58-slot view.
             has_coin_gun: inventory.iter().any(|s| s.count > 0 && s.kind == 905)
                 || equip.coins.iter().any(|s| s.count > 0 && s.kind == 905)
                 || equip.ammo.iter().any(|s| s.count > 0 && s.kind == 905),

@@ -247,6 +247,9 @@ pub struct Settings {
     /// (`ItemSlot.cs:886` → `DisableLoadoutShareHint`, `Player.cs:394-401`).
     /// Vanilla key `"ShowLoadoutShareHint"` (`Put` `Main.cs:4219`,
     /// `Get` `:4553`).
+    /// UNIQUE-SALVAGE (128 §5-e16 #4): f28 defers the whole loadout head —
+    /// f28c ports this key (Put/Get/default true) + the share-hint row +
+    /// the round-trip witness into the merged settings.
     pub show_loadout_share_hint: bool,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the 14 gameplay
     /// binds of the menuMode 27 list, in the vanilla's declaration order

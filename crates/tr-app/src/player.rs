@@ -5550,6 +5550,11 @@ impl Player {
     /// clamps to 0.5, then `(int)(damage * (1 + bonus))`. The increase arm
     /// (+0.12 clamped to 0.62, the melee `:44291` path) is the combat
     /// lane's; this port keeps the read (W4-e16).
+    /// DEPRECATED-BY-UNION (128 §4.5): f28's full `&mut self, …,
+    /// increase_bonus` form + `ResetEffects` −0.005 decay wins at the
+    /// f28c merge — this read-only wrapper retires (the tooltip call
+    /// passes `increase_bonus: false`; f28's `damage_row_value` already
+    /// does, PRE-charge read witnessed).
     pub fn apply_rapid_attack_bonus(&self, damage: i32, item_type: u16) -> i32 {
         // `ItemID.Sets.RapidAttackBonusDamage` (`ItemID.cs:344`).
         if !matches!(item_type, 2608 | 3349 | 672) {

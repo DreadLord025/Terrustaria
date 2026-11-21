@@ -1782,6 +1782,12 @@ impl App {
                             &self.npc_chat_text,
                             // The item tooltip's world gates (W4-e16,
                             // `Main.cs:20961-21031`).
+                            // DEPRECATED-BY-UNION (128 §4.1-§4.2): the
+                            // struct/param become f28's superset at the
+                            // f28c merge; UNIQUE-SALVAGE the
+                            // `downed_dd2_any = t1‖t2‖t3` derivation below
+                            // (`DD2Event.DownedInvasionAnyDifficulty`,
+                            // `DD2Event.cs:89-99`) — NOT f28's `dd2_won`.
                             ui::tooltip::TooltipWorld {
                                 downed_plant_boss: world.downed_plant_boss,
                                 anniversary: world

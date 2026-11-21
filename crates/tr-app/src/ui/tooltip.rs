@@ -262,6 +262,13 @@ pub struct TooltipContext<'a> {
 
 /// The world-side gates the tooltip rows read (`Main.cs:20961-21031`) —
 /// the `draw_hud` caller derives them from the `World` once per frame.
+///
+/// DEPRECATED-BY-UNION (128 §4.1): f28's `tooltip_lines2::TooltipWorld`
+/// is the superset (9 fields: +`npc_shop`, `master_color`,
+/// `tenth_anniversary`) and wins the `draw_hud` param collision; this
+/// struct deletes at the merge. UNIQUE-SALVAGE: the draw-site
+/// `downed_dd2_any = t1‖t2‖t3` derivation (§4.2, `DD2Event.cs:89-99`)
+/// rides into f28's struct — NOT its `dd2_won` sentinel.
 #[derive(Clone, Copy, Debug)]
 pub struct TooltipWorld {
     /// `NPC.downedPlantBoss` (`Main.cs:20961`).
@@ -358,6 +365,14 @@ fn player_crit(p: &crate::player::Player, class: registry::DamageClass) -> i32 {
 /// (`:20358-20360`), then the stat/tool rows each behind its own value gate,
 /// through `Lang.tip[i]` (`LegacyTooltip.{i}`, `Lang.cs:497`) and the
 /// `CommonItemTooltip.*` language rows.
+///
+/// DEPRECATED-BY-UNION (docs/research/128 §2/§3, f28c merge): f28's
+/// `tooltip.rs` first half + `tooltip_lines2::append_second_half` is the
+/// canonical builder. The blocks marked DEPRECATED-BY-UNION below retire
+/// there; the blocks marked UNIQUE-SALVAGE (loadout head, fishing typo,
+/// `!flag` equipable gate, share hint, oldKB discipline) are ported INTO
+/// f28 by f28c. Nothing is deleted on this branch — the witnesses and the
+/// `append_prefix_lines` anchor still read this code until the merge.
 pub fn item_tooltip_lines(
     kind: u16,
     d: &crate::itemdata::ItemDef,
@@ -379,6 +394,10 @@ pub fn item_tooltip_lines(
     // `GetSharedLoadoutItem` never answers (`ItemSlot.cs:3171-3174`'s
     // shared-item arm is unreachable) — the favourited arm prints
     // `UI.ItemLoadoutShared` directly.
+    // UNIQUE-SALVAGE (128 §5-e16 #4): f28 DEFERS the whole loadout head —
+    // f28c ports these flag/flag2 latches + `UI.ItemLoadoutShared` +
+    // `can_loadout_share_at` into the f28 structure (ctx 8-12 through
+    // `HoverFlags.context`).
     let mut loadout_share_flag = false;
     let mut share_hint_flag = false;
     let mut lines: Vec<(String, [f32; 4])> = vec![(
@@ -387,6 +406,9 @@ pub fn item_tooltip_lines(
         // colour); `:20560-20567` — −13 reads masterColor, −12 the shared
         // disco cycle. The diff 1/2 mediumcore/hardcore overrides
         // (`:20620-20627`) stay unported (no difficulty flag).
+        // DEPRECATED-BY-UNION (128 §2 row 0): f28's `tooltip_name_color`
+        // wins — the `d.expert` column replaces the census read and the
+        // App `master_color` animator replaces the static 1.0.
         if super::tooltip_sets::expert_only(kind) {
             super::color::tint([ctx.disco[0], ctx.disco[1], ctx.disco[2], 255])
         } else if ps.rare == -13 {
@@ -412,6 +434,9 @@ pub fn item_tooltip_lines(
         lines.push((crate::lang::tip(57), [1.0, 1.0, 1.0, 1.0]));
         // `:20659-20662` — the favorited bank-bound items refuse their own
         // container (`ChestUI.IsBlockedFromTransferIntoChest`).
+        // DEPRECATED-BY-UNION (128 §2 row 2): f28's `favorite_rows` wins
+        // (the `open_chest` pre-`chest::draw` capture fix); the bank-idx
+        // mapping here is equivalent — keep the e16 ctx wiring.
         if super::tooltip_sets::blocked_from_transfer_into_chest(kind, ctx.open_bank) {
             lines.push((
                 crate::lang::text("UI.ItemCannotBePlacedInsideItself"),
@@ -422,6 +447,8 @@ pub fn item_tooltip_lines(
     // `:20664-20668` — the social-slot row: contexts 9/11 set `social`
     // (`ItemSlot.cs:3191-3194`); the vanity kinds and the info accessories
     // / music boxes (hasVanityEffects) keep their function.
+    // DEPRECATED-BY-UNION (128 §2 row 3): f28's `social_row` over the
+    // generated `d.has_vanity_effects` column wins; the census retires.
     let social = matches!(ctx.context, 9 | 11);
     if social && !d.vanity && !super::tooltip_sets::has_vanity_effects(kind) {
         lines.push((crate::lang::tip(61), [1.0, 1.0, 1.0, 1.0]));
@@ -430,6 +457,12 @@ pub fn item_tooltip_lines(
     // && (type < 71 || type > 74 || HasItem(905))`. The coins 71-74 are
     // notAmmo placeables — their damage row only shows while the Coin Gun
     // is carried.
+    // DEPRECATED-BY-UNION (128 §2 rows 4-7): f28's `damage_row_gate` /
+    // `damage_row_value` / `visual_crit_chance` / `use_time_row_gate` /
+    // `display_knockback` helpers win this whole stat block; the UNIQUE
+    // parts f28c salvages are the 58-slot `has_coin_gun` scan (§4.4),
+    // the `prefixed_stats_of` caller-row seam (§3) and the oldKB capture
+    // above (§5-e16 #3). f28's rapid-attack form is the full `&mut` one.
     if ps.damage > 0
         && (!crate::item::not_ammo(kind) || d.use_style != 0)
         && (!(71..=74).contains(&kind) || ctx.has_coin_gun)
@@ -574,6 +607,9 @@ pub fn item_tooltip_lines(
     }
     // `:20804-20815` — the fishing rows (`GameUI.PrecentFishingPower` —
     // the vanilla's own typo'd key — / `BaitRequired` / `BaitPower`).
+    // UNIQUE-SALVAGE (128 §5-e16 #1): f28 still reads the base-era wrong
+    // `RecentFishingPower` key (renders nothing) — f28c MUST take this
+    // typo-fix spelling (`Main.cs:20806`).
     if d.fishing_pole > 0 {
         lines.push((
             crate::lang::game_ui_fmt("PrecentFishingPower", d.fishing_pole),
@@ -595,6 +631,10 @@ pub fn item_tooltip_lines(
     // (`item.mountType != -1`) and the light / vanity pets. `flag` is the
     // loadout-share arm's latch (`:20653`) — a shared slot never prints
     // the equipable row.
+    // UNIQUE-SALVAGE (128 §2 row 9): the `!loadout_share_flag` gate is
+    // e16-only (it matters once the loadout head lands — e16's does);
+    // f28c folds it into f28's `equipable_row` helper (the shop tip[60]
+    // arm itself is f28 KEEP).
     let hook = d
         .projectile
         .map_or(false, |p| crate::projectile_id::is_hook_projectile(p as i32));
@@ -619,6 +659,8 @@ pub fn item_tooltip_lines(
     }
     // `:20828-20832` — the tileWand row: tip[52] ("Consumes ") + the
     // consumed material's name (`Item.cs`'s six tileWand writes).
+    // DEPRECATED-BY-UNION (128 §2 row 10): f28's `tile_wand_row` over the
+    // generated `d.tile_wand` column wins; the census table retires.
     if let Some(wand) = super::tooltip_sets::tile_wand(kind) {
         lines.push((
             format!("{}{}", crate::lang::tip(52), crate::lang::item_name(wand)),
@@ -669,6 +711,8 @@ pub fn item_tooltip_lines(
     }
     // `:20876-20893` — the life / mana restore rows. The Strange Brew 3001
     // prints the RANGE row (`RestoresLifeRange`, healLife..120, `:20878-20882`).
+    // DEPRECATED-BY-UNION (128 §2 row 13): f28's `restores_life_row`
+    // (format_net 2-arg) wins — identical output.
     if d.heal_life > 0 {
         let row = if kind == 3001 {
             crate::lang::text_args(
@@ -728,6 +772,11 @@ pub fn item_tooltip_lines(
     // needs `PlaceTileOnAltUse[type] || consumable` (`ItemID.cs:412`). The
     // ammo row refuses notAmmo; the consumable row refuses the
     // chlorophyte-extractinator kinds (86/1329/2337-2339).
+    // DEPRECATED-BY-UNION (128 §2 row 16): f28's `place_row_active` /
+    // `ammo_row_active` / `consumable_row_active` + the `not_ammo` /
+    // `extractinator_consumable` columns win. SALVAGE NOTE: the `w > 0`
+    // wall check here matches C# `createWall > 0` — verify f28's
+    // `wall.is_some()` at the merge (§2 row 16 VERIFY).
     let places = d.wall.map_or(false, |w| w > 0) || d.tile.is_some() || kind == 849;
     if places {
         if super::tooltip_sets::place_tile_on_alt_use(kind) || d.consumable {
@@ -745,6 +794,10 @@ pub fn item_tooltip_lines(
     // `:20942-20956` — the wiring rows: Wireable (the trigger/mechanism tile
     // sets with the statue carve-out), Container (tile 21/467) and
     // WireTrigger (tile 441/468).
+    // DEPRECATED-BY-UNION (128 §2 row 18): f28's generated
+    // `SET_IS_A_TRIGGER`/`SET_IS_A_MECHANISM` bitsets beat these
+    // hand-copied tile slices; the statue set dedupes to ONE table
+    // (`tooltip_sets.rs` stays its home).
     if super::tooltip_sets::wireable(kind, d.tile) {
         lines.push((
             crate::lang::common_item_tooltip("Wireable"),
@@ -768,6 +821,10 @@ pub fn item_tooltip_lines(
     // one line each. The biome keys' FIRST line becomes `Lang.tip[59]`
     // ("It has been cursed by a powerful Jungle creature") until Plantera
     // falls (`ItemID.Sets.UsesCursedByPlanteraTooltip`, `ItemID.cs:410`).
+    // DEPRECATED-BY-UNION (128 §2 rows 21-24): f28's `append_second_half`
+    // head wins (identical swap; set table dedupes to ONE home); the
+    // Mechdusa 5334 arm below is superseded by f28's literal
+    // `pop;pop;push` double-`numLines--` walk (§5-f28 #2).
     if let Some(text) = crate::lang::item_tooltip_text(kind) {
         for (i, line) in text.split('\n').enumerate() {
             let row = if i == 0
@@ -782,6 +839,9 @@ pub fn item_tooltip_lines(
         }
     }
     // `:20973-20977` — the anniversary Wizard Hat 238 row.
+    // DEPRECATED-BY-UNION (128 §2 row 22): f28's
+    // `world.tenth_anniversary` field name wins at the merge (§4.1) —
+    // the row body itself is identical either way.
     if ctx.anniversary && kind == 238 {
         lines.push((
             crate::lang::common_item_tooltip("WizardHatDuringAnniversary"),
@@ -813,6 +873,9 @@ pub fn item_tooltip_lines(
     }
     // `:21000-21004` — the DD2 poppers need Etherian Mana until the
     // Eternia Crystal has been defended (`Lang.misc[104]`).
+    // DEPRECATED-BY-UNION (128 §2 row 25): f28's `is_dd2_crystal_gear`
+    // row wins; UNIQUE-SALVAGE the draw-site `downed_dd2_any` derivation
+    // (t1‖t2‖t3, §4.2) — f28's `dd2_won` sentinel is the wrong granularity.
     if super::tooltip_sets::dd2_needs_etherian_mana(kind) && !ctx.downed_dd2_any {
         lines.push((crate::lang::misc(104), [1.0, 1.0, 1.0, 1.0]));
     }
@@ -838,6 +901,9 @@ pub fn item_tooltip_lines(
     // `:21016-21021` — the yoyo kinds append a blank line whose index the
     // draw pass swaps for the OneDropLogo texture (`:20410-20438`). The
     // texture is unported; the blank line keeps the row geometry.
+    // DEPRECATED-BY-UNION (128 §2 rows 28-30): f28's yoyo arm (returns the
+    // row index for the OneDropLogo draw arm) + `d.expert` column +
+    // `hover_stats` rare (the Guarding-63 master-shift pin) win.
     if super::tooltip_sets::yoyo_logo(kind) {
         lines.push((" ".to_string(), [1.0, 1.0, 1.0, 1.0]));
     }
@@ -850,11 +916,19 @@ pub fn item_tooltip_lines(
     }
     // `:21032-21265` — the prefix comparison rows (the red/green deltas
     // against a fresh SetDefaults copy) + the accessory fixed rows.
+    // DEPRECATED-BY-UNION (128 §2 row 31): f28's `append_prefix_rows` +
+    // tr-core `apply_format_spec` win (the `signed_fmt` workaround
+    // retires); the oldKB capture discipline is UNIQUE-SALVAGE (§5-e16
+    // #3, witnessed below) and the e16 anchor row REPOINTS at the
+    // surviving symbol at the merge (§4.7) — never deleted.
     append_prefix_lines(d, &ps, old_kb, ctx.prefix, &mut lines);
     // `:21267-21311` — the armor-set bonus row. `wornArmor` is context 8
     // (`ItemSlot.cs:3188-3189`): the worn piece queries the local player's
     // equipped head/body/legs and picks the best set (`:21280-21306`);
     // every other context prints the single-piece grey row.
+    // DEPRECATED-BY-UNION (128 §2 row 33): f28's unworn arm reads SETS
+    // array[0] literally (`SETS.find`) — VERIFY the e16 `best_worn_set`
+    // row choice for the unworn text at the merge.
     if let Some((row, result)) = crate::armor_sets::best_worn_set(
         kind as i32,
         ctx.player.map_or(0, |p| p.equipped[0] as i32),
@@ -888,18 +962,27 @@ pub fn item_tooltip_lines(
     }
     // `:21312-21317` — the loadout share hint (flag2 && the setting), in
     // `Main.OurFavoriteColor` (255, 231, 69) at alpha 190 (`Main.cs:66748`).
+    // UNIQUE-SALVAGE (128 §5-e16 #4): f28 DEFERS this row + the settings
+    // key — f28c ports the row, `Settings.ShowLoadoutShareHint` (Put/Get/
+    // default true) and the round-trip witness.
     if share_hint_flag && ctx.show_loadout_share_hint {
         lines.push((
             crate::lang::text("UI.ItemLoadoutShareHint"),
             super::color::tint([255, 231, 69, 190]),
         ));
     }
-    // `:21318-21333` — the journey creative-sacrifice rows: CONSTANTS-OFF
-    // (the port has no journey difficulty, `Main.LocalPlayer.difficulty
-    // == 3` never holds — the `player.rs:4494` precedent).
-    // `:21334-21342` — `Item.BestiaryNotes`: only the bestiary's item
-    // cache ever writes the field (`UIBestiaryInfoItemLine.cs:155`); the
-    // port's bestiary drop rows never build an item tooltip — cited drop.
+    // `:21318-21333` — the journey creative-sacrifice rows: still cited
+    // CONSTANTS-OFF on this branch (no `difficulty` field on `Player` —
+    // the `player.rs:4494` precedent). RE-VERIFIED against c24's tip
+    // `e2e50a42`: `App::active_player_difficulty()` can now read 3
+    // (char-creation Journey row) and `research::ResearchTracker::
+    // sacrifice_numbers` landed — the gate inputs EXIST post-c24; the
+    // rows themselves stay unported on every lane (128 §7).
+    // `:21334-21342` — `Item.BestiaryNotes`: the cited drop is SUPERSEDED
+    // (128 §7) — e23's `bestiary_notes` writer (`ui/bestiary.rs`,
+    // `UIBestiaryInfoItemLine.cs:137-156`) landed and `DrawMouseOver`
+    // (:121-126) feeds `Main.HoverItem`; f28's `HoverFlags.bestiary_notes`
+    // seam is the merge home (the hover wire itself is still pending).
     lines
 }
 
@@ -936,6 +1019,13 @@ fn push_percent_delta(
 /// shroomite scales, `:20333`). The accessory prefixes 62-80 grant player
 /// benefits, not item stats, so they print fixed rows instead
 /// (`:21152-21265`).
+///
+/// DEPRECATED-BY-UNION (128 §2 row 31 / §4.6-§4.7): f28's
+/// `append_prefix_rows` over tr-core `apply_format_spec` replaces this
+/// block at the merge (same output); the `append_prefix_lines` anchor
+/// row REPOINTS at the surviving symbol — never deleted. The oldKB
+/// pre-scale discipline is UNIQUE-SALVAGE (§5-e16 #3), pinned by
+/// `w4_e16_the_knockback_delta_reads_the_prefix_only_oldkb`.
 fn append_prefix_lines(
     d: &crate::itemdata::ItemDef,
     ps: &crate::prefix::PrefixedStats,
@@ -1043,6 +1133,11 @@ fn append_prefix_lines(
 /// `PrefixTagDamage`): the C# format prints `+N` / `-N` (zero as `0`).
 /// `format_net` drops the specifier (research/33 D5), so the signed
 /// argument is built here and substituted plain.
+///
+/// DEPRECATED-BY-UNION (128 §4.6): f28's tr-core `apply_format_spec`
+/// custom-section grammar (+ the standard-specifier guard) retires this
+/// workaround — the pen/tag witnesses assert the same strings and
+/// survive the swap unchanged.
 fn signed_fmt(key: &str, n: i32) -> String {
     let arg = if n > 0 { format!("+{n}") } else { n.to_string() };
     crate::lang::text_args(key, &[arg])

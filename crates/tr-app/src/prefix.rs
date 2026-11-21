@@ -399,6 +399,10 @@ pub fn prefixed_stats(kind: u16, prefix: u16) -> Option<PrefixedStats> {
 /// `Item.cs:576-586`), and the port's tooltip receives the hovered row
 /// directly (a witness may override fields), so the application runs on
 /// that row rather than re-reading the registry.
+/// UNIQUE-SALVAGE (128 §3 stats seam / §5-e16 #2): f28c keeps this as the
+/// application primitive and re-points f28's `hover_stats` at it when
+/// the caller holds the row (f28's registry re-read cannot see the
+/// witness overrides); f28's bare-def fallback stays as the outer Option.
 pub fn prefixed_stats_of(def: &ItemDef, prefix: u16) -> PrefixedStats {
     if prefix == 0 {
         return PrefixedStats {

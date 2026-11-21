@@ -4,6 +4,15 @@
 //! [`super::tooltip`]. `ItemDef` (the generated table) carries no columns
 //! for these flags, so the census keeps them here next to their consumer
 //! (docs/research/64-item-tooltip-line-census.md).
+//!
+//! DEPRECATED-BY-UNION IN PART (docs/research/128 §3): the four tables
+//! marked below (`has_vanity_effects`, `expert_only`, `tile_wand`,
+//! `chlorophyte_extractinator_consumable`) retire into f28's GenItemData
+//! columns at the f28c merge, and the wiring tile slices lose to f28's
+//! generated bitsets. The PURE ID-set tables (well-fed, loadout-share
+//! contexts, bank block, cursed keys, yoyo/DD2 kinds, alt-use, statue
+//! carve-out) SURVIVE — this module stays their ONE home; f28's inline
+//! copies dedupe INTO it. Nothing is deleted on this branch.
 
 /// `BuffID.Sets.IsWellFed` (`BuffID.cs:43`): the three food buffs whose
 /// items print the expert life-regen row (`Main.cs:21005-21009`).
@@ -18,6 +27,8 @@ pub(super) fn is_well_fed(buff_type: i32) -> bool {
 /// watches/compass/GPS family) and `DefaultToMusicBox` (`:48650` — also
 /// `vanity=true`, so the social row's `!vanity` gate already excludes
 /// them). The social row (`Main.cs:20664`) reads it.
+/// DEPRECATED-BY-UNION (128 §3): retires into f28's generated
+/// `d.has_vanity_effects` column (regen + FNV-pin `0x1dd2_84fc_4b36_2f46`).
 pub(super) fn has_vanity_effects(kind: u16) -> bool {
     matches!(
         kind,
@@ -118,6 +129,8 @@ pub(super) fn uses_cursed_by_plantera_tooltip(kind: u16) -> bool {
 /// 40881,40952,41995`), all unconditional in their case bodies. The
 /// `GameUI.Expert` row (`Main.cs:21022-21026`) and the −12 disco name
 /// colour (`:20329-20332`) read it; `ItemDef` carries no column.
+/// DEPRECATED-BY-UNION (128 §3): retires into f28's generated `d.expert`
+/// column — the census would silently rot when a wave touches `Item.cs`.
 pub(super) fn expert_only(kind: u16) -> bool {
     matches!(
         kind,
@@ -171,6 +184,8 @@ pub(super) fn dd2_needs_etherian_mana(kind: u16) -> bool {
 /// `:12161`), 932 → Gel 154 (`:12148`), 1129 → Fallen Star 1124 (`:13888`),
 /// 3360/3361 → Bone 620 (`:30697`/`:30710`). The tooltip prints
 /// `Lang.tip[52] + Lang.GetItemNameValue(tileWand)` (`Main.cs:20828-20832`).
+/// DEPRECATED-BY-UNION (128 §3): retires into f28's generated `d.tile_wand`
+/// column; the six-write witness retires with it (§6 sets-tables row).
 pub(super) fn tile_wand(kind: u16) -> Option<u16> {
     match kind {
         832 | 933 => Some(9),
@@ -202,6 +217,8 @@ pub(super) fn place_tile_on_alt_use(kind: u16) -> bool {
 /// `MakeUsableWithChlorophyteExtractinator` (`Item.cs:48505-48513`), called
 /// for 86 (`:2405`), 1329 (`:16477`) and 2337-2339 (`:23497`). These refuse
 /// the plain "Consumable" row (`Main.cs:20932`).
+/// DEPRECATED-BY-UNION (128 §3): retires into f28's generated
+/// `d.extractinator_consumable` column.
 pub(super) fn chlorophyte_extractinator_consumable(kind: u16) -> bool {
     matches!(kind, 86 | 1329 | 2337 | 2338 | 2339)
 }
@@ -238,6 +255,10 @@ fn is_wireable_statue(kind: u16) -> bool {
 
 /// The "Wireable" row's gate (`Main.cs:20942`):
 /// `(IsATrigger[tile] || IsAMechanism[tile]) & (tile != 105 || IsWireableStatue[type])`.
+/// DEPRECATED-BY-UNION IN PART (128 §2 row 18 / §3): the two hand-copied
+/// tile slices lose to f28's generated `SET_IS_A_TRIGGER` /
+/// `SET_IS_A_MECHANISM` bitsets; the `is_wireable_statue` carve-out
+/// SURVIVES here as the ONE statue table (f28's inline copy dedupes in).
 pub(super) fn wireable(kind: u16, tile: Option<u16>) -> bool {
     let Some(t) = tile else {
         return false;
