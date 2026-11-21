@@ -1050,7 +1050,7 @@ mod w4_f28_tests {
                             "BaitRequired": "Requires bait to catch fish" },
                 "UI": { "ItemCannotBePlacedInsideItself": "Placing into itself will be blocked",
                         "ItemLoadoutShared": "Shared with other loadouts",
-                        "ItemLoadoutShareHint": "{InputTriggerUI_FavoriteItem} to share across loadouts",
+                        "ItemLoadoutShareHint": "Favorite to share across loadouts",
                         "ItemSetBonusGeneral": "Set Bonus: {Description}",
                         "ItemSetBonusEquipped": "Set Bonus ({Numerator}/{Denominator})\n{Description}",
                         "ItemSetBonusDecidedByHead": "Changes with head piece" }
@@ -1592,7 +1592,7 @@ mod w4_f28_tests {
         let rows = item_tooltip_lines(123, def(123), ctx);
         let hint = rows
             .iter()
-            .find(|(t, _)| t == "{InputTriggerUI_FavoriteItem} to share across loadouts")
+            .find(|(t, _)| t == "Favorite to share across loadouts")
             .expect("the share hint");
         assert_eq!(hint.1, [1.0, 231.0 / 255.0, 69.0 / 255.0, 190.0 / 255.0]);
         // The setting off drops the hint (Player.cs:372/:412).
