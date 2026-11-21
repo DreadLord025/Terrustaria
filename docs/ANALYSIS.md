@@ -19168,7 +19168,10 @@ icon layers and the NPC heads sit between, both branches wired in
   `(6,6)..(w-16,h-14)` `:55726`, deaths `(8,8)..(w-18,h-16)` `:55752`).
 - **The death markers** — `DrawPlayerDeathMarker` (`:56446-56464`): the
   `MapDeath` sheet centred at `headScale`, the hover box the head box
-  shifted `(-4,-4)`. `Player.KillMe`'s stamp (`Player.cs:38846-38848`:
+  `(4, 2) - 14*headScale` with NO further shift — the `-4/-4` pair exists
+  only in the minimap inline copy (`:55757-55758`; W4-f29 fix F5 corrected
+  the first pass, which applied the minimap's net `(0,-2)` box to both
+  branches). `Player.KillMe`'s stamp (`Player.cs:38846-38848`:
   `lastDeathPostion = Center`, `lastDeathTime = DateTime.Now`,
   `showLastDeath = true`) lands on `Player::start_death`; the hover reads
   `Game.PlayerDeathTime` ("{0} died {1} ago") through
@@ -19178,7 +19181,9 @@ icon layers and the NPC heads sit between, both branches wired in
   names to the existing abbreviated form.
 - **The misc icons** — `DrawMiscMapIcons` (`:56466-56539`): the
   Potion-of-Return home/exit portals (`Extra_175`/`Extra_173`, the
-  `(pos + (0, -height/2))/16` transform FLOORED, `Rectangle.Contains`
+  `(pos + (0, -height/2))/16` transform through `Utils.Floor` — which is
+  `(int)` TRUNCATION toward zero, `Utils.cs:1702-1707`, NOT `Math.Floor`;
+  W4-f29 fix F3 corrected the first pass's `.floor()` — `Rectangle.Contains`
   clip, `Utils.CenteredRectangle` hover) and the last-hit golf ball
   (`Extra_176` + the ball's own `Projectile[type]` frame 0; the hover rect
   is the MARKER's, captured before the ball draw `:56528`).
@@ -19188,7 +19193,11 @@ icon layers and the NPC heads sit between, both branches wired in
 - **The revenge markers** — `RevengeMarker.DrawMapIcon`
   (`CoinLossRevengeSystem.cs:252-266`): the coin tier picks the sheet
   (`<100` copper, `<10000` silver, `>=1000000` platinum, else gold — the
-  `MapDeath` assignment at `:261` is dead), frame `(1,8)` row 0, centred;
+  `MapDeath` assignment at `:261` is dead) from `TextureAssets.Coin[0..3]`,
+  the 1x8 ANIMATION strips (`AssetInitializer.cs:369`), NOT the
+  `Item_71..74` inventory icons (W4-f29 fix F4 corrected the first pass's
+  `lookups.coins` reuse; `Lookups.coin_anim` carries the strips); frame
+  `(1,8)` row 0, centred;
   `DrawMapIcons` (`:482-496`) keeps the LAST hovered marker;
   `UseMouseOver` (`:268-273`) draws `ItemSlot.DrawMoney` horizontal
   (`ItemSlot.cs:3652-3684`): four coin icons at `mouse/drawScale + (-24,
@@ -19295,6 +19304,80 @@ flag is carried but has no same-frame consumer yet. 13 `w4_e17_*` witnesses
 WRITTEN NOT RUN (code-only mode). The atlas pack stays under the 8192-px
 bound: the head sheets add +16 px (8115 → 8131, measured through
 `tools/atlas_sim.js`'s skyline packer over the real content dims).
+
+## The map-overlay 2-way reconcile execution (W4-f29 exec, code-only 2026-11-21)
+
+`docs/research/140-map-overlay-reconcile.md` adjudicated the two parallel
+ports; this branch executed it: the e17 tip `8500c3e5d` is the surviving
+skeleton (taken wholesale per §4/§6), f29's duplicate modules
+(`map_overlay.rs`/`map_pylons.rs`, `apply_pylon_click`, the `height_boost`
+accessor, `clear_reset_pos`, `lang::localized_duration`, the f64 death
+epoch) retired, and the six f29 fixes landed as cited patches F1-F6 (§3):
+
+- **F1** — `MapOverlayContext::unclamped_center` truncates the top-left AND
+  the size to int before the integer-halves Centre
+  (`MapOverlayDrawContext.cs:64`); the pure `unclamped_center_int` carries
+  the witness (the float centre drifted up to 1 px per endpoint).
+- **F2** — all three context hover rects (`draw`/`draw_scaled`/
+  `draw_clamped`) are XNA `Rectangle.Contains(MouseScreen.ToPoint())`:
+  half-open integer `[x, x+w)` with the mouse truncated first
+  (`MapOverlayDrawContext.cs:58`/`:185`/`:234`); the shared
+  `rect_contains_int` helper. The e17 float-inclusive compares claimed the
+  far edge row/column the C# excludes.
+- **F3** — the misc portal/golf positions ride `utils_floor` = `(int)`
+  truncation toward zero (`Utils.cs:1702-1707`), not `Math.Floor`
+  (negatives differ). Now a FIX, not a deviation.
+- **F4** — the revenge markers draw `Lookups.coin_anim` (`Coin_0..3`, the
+  1x8 animation strips, `AssetInitializer.cs:369`), not `coins`
+  (`Item_71..74`); `CoinLossRevengeSystem.cs:262` + `CoinSlot.cs:242`.
+  Atlas re-measured with the strips: 8131 px, under the 8192 bound
+  (`tools/atlas_e17_check.js`).
+- **F5** — the fullscreen death hover box has NO −4 shift
+  (`Main.cs:56455-56462` read in full); the −4/−4 pair exists only in the
+  minimap inline copy (`:55757-55758`) and the mapStyle-2 copy
+  (`:55683-55684`). `draw_death_marker` takes a `minimap` bool; the wrong
+  e17 witness re-derived, the minimap y-offset pinned at 108.55
+  (`-(2 - scale/5*2)` = −1.2 at scale 2, NOT the head's `−2*scale/5`).
+- **F6** — the pan step is the pure `map.rs::pan_target_step`
+  (`Main.cs:55361-55385`); `WorldMap::prepare` delegates, the reset arm
+  still clears the pan (`:55418`).
+
+Folded deviations/notes (f29's, still applying):
+
+- **The pylon TE placement hook is a deferred seam.** The network scan reads
+  the loaded `.wld` pylons (`scan_pylons` over the TE book); the
+  `TETeleportationPylon.PlacementPreviewHook_AfterPlacement` post-place hook
+  that would register a freshly-placed pylon is the documented wave-A
+  callback seam (`tileobject.rs:304-307`), not yet installed. The
+  line/click machinery ports against the existing scan.
+- **The revenge `UseMouseOver` coin row** reproduces `ItemSlot.DrawMoney`'s
+  horizontal layout (`ItemSlot.cs:3663-3683`); the `CoinSlot.DrawItemCoin`
+  sizeLimit 1024 never binds on the 16-px coin frames. The row draws in the
+  UIScale batch (`Main.cs:55991`/`:55771` re-begin with `uIScaleMatrix`).
+- **`Lang.LocalizedDuration`'s `showAllAvailableUnits` multi-unit path is
+  UNPORTED** — no caller in the ported surface passes true (both live call
+  sites read `(false, false)`); f29's `lang::localized_duration(f64,
+  abbreviated, show_all)` retired rather than kept as dead code
+  (research/140 §4). `ui/resources.rs::localized_duration_full` covers the
+  live arms.
+- **Shared minor deviation (both lanes):** the C# truncates `Main.mouseX/Y`
+  to int in minimap transform space (`Main.cs:55512-55513`); neither lane's
+  head/death hover compare reproduces the `(int)` step (the port folds the
+  `MapScale` into the rects and compares the screen float mouse).
+  Sub-pixel only; the `MapOverlayDrawContext` rects DID gain the truncation
+  with F2. Recorded, not fixed (the head-loop hover rework rides a later
+  pass).
+
+Witness union (research/140 §5): e17's 25 stay (the death-hover one
+re-derived per F5); f29 folds 9 adapted — F1 endpoint, F3 floored, F5 death
+transform + minimap y-pin, F6 pan step, head-pos two-modes (onto
+`fullscreen_pin_pos`/`minimap_pin_pos`), golf guards (onto tr-core
+`last_hit_ball_for_draw`), clamped on-screen + left-overflow (beside the
+e17 pull-back witness), duration largest-unit (onto
+`localized_duration_full`, with the process-global `lang::test_lock`); the
+asset witness merges into e17's pack test (coin rows + town-head asserts).
+~14 f29 witnesses drop as duplicates (research/140 §5). All witnesses
+WRITTEN NOT RUN (code-only mode).
 
 ## Dust & gore (module 15) (S1-E-1, 2026-11-14; S1-E-3, 2026-11-17)
 

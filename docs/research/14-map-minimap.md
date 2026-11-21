@@ -385,6 +385,18 @@ fullscreen map and the minimap, against the port at main `a725acb0`. The e17 sib
 
 ### PORTED (W4-f29, 2026-11-21, code-only — witnesses written not run)
 
+> **SUPERSEDED by the reconcile execution (research/140, 2026-11-21):** the
+> e17 sibling lane advanced past this census and ported all nine pieces
+> independently; `docs/research/140-map-overlay-reconcile.md` adjudicated
+> e17's tip `8500c3e5d` as the surviving skeleton. This branch rebuilt onto
+> it — the `map_overlay.rs`/`map_pylons.rs` module homes named below are
+> RETIRED; the live homes are e17's `map_npc_icons.rs`/`map_player_icons.rs`/
+> `map_layers.rs`/`map.rs`/`app/clicks.rs`, with f29's six fixes F1-F6
+> applied as cited patches (the int-truncated line endpoints, the half-open
+> `Contains` hovers, `Utils.Floor` truncation, the `Coin_0..3` strips, the
+> fullscreen death box without the −4 shift, the pure pan step). The census
+> below is kept as the historical record of what the f29 lane ported.
+
 All nine pieces below landed on `task/W4-f29-map-overlay-2` (base main `a725acb0`).
 The new module `crates/tr-app/src/map_overlay.rs` carries the head/death/revenge/misc/
 hover machinery; `crates/tr-app/src/map_pylons.rs` carries the pylon lines/clamp/click;
