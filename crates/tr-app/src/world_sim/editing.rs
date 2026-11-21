@@ -18820,6 +18820,80 @@ mod s1_p_i08_throw_tests {
         let grown_rows = grown.iter().filter(|v| **v != 0).count();
         assert_eq!(grown_rows, base_rows + 1, "the satchel's +1 slot");
     }
+
+    // ---- W4-g90 final: the artisan-loaf consumer chain (WRITTEN NOT RUN) ---
+    // The live-wiring proof, the combat-book-ladder shape (`8521139d`): the
+    // press-tick use flips `Player.ate_artisan_bread`, and the SAME flag
+    // feeds the live crafting-reach read (`craft.rs::tile_reach` →
+    // `scan_adjacent`, the `AdjTiles` consumer `Player.cs:35671`) and the
+    // Skeleton Merchant's stock gate (`Chest.cs:2958` via the shop-open's
+    // `ShopFlags` feeder, `world_sim/npcs.rs:969-972`). No build-speed leg
+    // exists: the C# `tileSpeed`/`wallSpeed` consumers read the Brick
+    // Layer / Builder Potion / Ambrosia rows only — the full-source
+    // `ateArtisanBread` census is exactly four sites (the use arm, AdjTiles,
+    // the shop gate, the net pair), none in `UpdateItemTime`/placement.
+
+    /// The use → reach chain is LIVE: a work bench 8 tiles away is out of
+    /// the (5,3) default reach, the 5326 press eats ONE loaf, and the very
+    /// next scan (the clicks/draw path's exact reads) sees the station.
+    #[test]
+    fn w4_g90_the_loaf_use_widens_the_live_crafting_reach() {
+        let mut app = potion_press_app(5326, 2);
+        // The flow rig's 8x8 air world grows to 40x40; the player parks at
+        // tile (20,20), the bench sits at (28,20) — 8 tiles right, inside
+        // the eaten (9,7) reach, outside the default (5,3).
+        app.world = World::new("loaf".into(), 40, 40);
+        let bench = app.world.index(28, 20);
+        app.world.tiles[bench].kind = 18; // TileID.WorkBench
+        app.world.tiles[bench].flags |= tr_core::tile::FLAG_ACTIVE;
+        let mut p = Player::spawn(&app.world);
+        p.x = 20.0 * TILE_PX;
+        p.y = 20.0 * TILE_PX;
+        app.player = Some(p);
+        let reach_of = |app: &App| {
+            let p = app.player.as_ref().unwrap();
+            crate::craft::tile_reach(
+                p.equipped[..10].contains(&2215) || p.equipped[..10].contains(&3061),
+                app.inventory[app.selected].kind == 1923,
+                app.creative_powers.far_placement_range(),
+                p.ate_artisan_bread,
+            )
+        };
+        let before = crate::craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), reach_of(&app));
+        assert!(!before.tiles.contains(&18), "the bench is out of the default reach");
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN); // idle: edge armed
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        assert!(app.player.as_ref().unwrap().ate_artisan_bread, "`Player.cs:45221`");
+        assert_eq!(app.inventory[app.selected].count, 1, "one loaf paid");
+        let after = crate::craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), reach_of(&app));
+        assert!(after.tiles.contains(&18), "the eaten loaf reaches the bench (`:35671`)");
+    }
+
+    /// The use → shop-gate chain is LIVE: the shop-open feeder reads the
+    /// Player flag (`world_sim/npcs.rs:969-972`'s exact expression), and
+    /// the stock gate (`shop.rs` case 20's `ArtisanLoafWindow`) hides the
+    /// 5326 row in every moon phase once the loaf is eaten.
+    #[test]
+    fn w4_g90_the_loaf_use_hides_the_merchant_stock() {
+        let mut app = potion_press_app(5326, 2);
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        app.mine_down = true;
+        update_editing(&mut app, 1.0 / 60.0, DRINK_SCREEN);
+        // The feeder's exact read (`npcs.rs:969-972`).
+        let flags = crate::shop::ShopFlags {
+            ate_artisan_bread: app
+                .player
+                .as_ref()
+                .is_some_and(|p| p.ate_artisan_bread),
+            ..Default::default()
+        };
+        assert!(flags.ate_artisan_bread, "the use fed the gate");
+        for phase in 3..=5u32 {
+            let stock = crate::shop::resolve_stock_moon(20, &flags, &[], phase);
+            assert!(!stock.contains(&5326), "phase {phase}: eaten hides the loaf (`Chest.cs:2958`)");
+        }
+    }
 }
 
 /// S1-P-i33 — the wall placement/removal census fixes: the adjacency gate,
