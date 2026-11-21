@@ -146,6 +146,33 @@ through the existing Bug-17 edge (`app/loop.rs`) fed by `App::front_hit`:
 `app/clicks.rs`: `doc_sweep_cancel_connect_drops_the_role_and_returns_main`,
 `doc_sweep_load_backup_probe_moves_and_plays`.
 
+## MENU-FINAL — the menu MUSIC census (Main.cs:12400-region → :12455-12532)
+
+The `UpdateAudio_DecideOnNewMusic` `gameMenu` ladder vs the port's
+`audio.rs::decide_new_music` menu arm. Full row census:
+
+| C# arm | Track | Port |
+| --- | --- | --- |
+| `:12459-12464` drunk + remix | 70 | already landed |
+| `:12465-12468` drunk + `onlyShimmerOceanWorldsGeneration` | 72 (OtherworldSnow) | **PORTED (MENU-FINAL)** — the property (`:2686-2696`: drunk && anniversary && !remix && !everything && !bees) is pure flag tests, `shimmer_ocean_generation` |
+| `:12469-12472` drunk + `vampireSeed` | 75 (OtherworldCrimson) | **PORTED (MENU-FINAL)** — `MusicEnv::menu_micro_flags` carries VAMPIRISM (`WorldGen.cs:555-558`); the creator seed text resolves through `seed_identity` |
+| `:12473-12476` drunk + notTheBees | 86 | already landed |
+| `:12477-12480` plain drunk | 60 (TitleAlt) | already landed |
+| `:12482-12485` remix alone | 8 | already landed |
+| `:12486-12489` `menuMode == 3000` | 89 (JourneysEnd) | **PORTED (MENU-FINAL)** — `MusicEnv::menu_credits` fed by `Menu::page == Page::Credits` in `update_menu_music` |
+| `:12490-12493` tenthAnniversary | 11 | already landed |
+| `:12494-12497` `playOldTile` + style Current | 6 (TitleClassic) | CENSUS-ONLY — `playOldTile` is the sun/moon-grab easter egg (`:48232-48238`), unported |
+| `:12498-12501` `!_isAsyncLoadComplete` | 50 (TitleJourneysBeginningWithIntro) | CENSUS-ONLY — the port's loads are synchronous, no async-intro state |
+| `:12502-12520` `!IsTrackPlaying(50)` style switch | Console 60 / Old 6 / default 51 | PARTIAL — the port pins the `default:` 51; the `TitleMusicStyle` setting (`:4510-4515`, config "TitleMusic") is unported (census: adding it means a Settings row + the Random roll `Next(3)`) |
+| `:12521-12524` `musicNoCrossFade[newMusic]` | fade jump | **PORTED (MENU-FINAL)** — the set is exactly `{51}` (`:12217`), the title pick sets `music_fade[51] = 1.0` |
+| `:12527-12530` netMode 2 | 0 | unreachable (single-player port, documented) |
+
+The day/eerie/underworld WORLD tracks were re-verified against the same
+read: day 1/18 alternate + windy 44 (`:12930-12965`), eerie 2
+(meteor `:12737`, blood moon `:12969`), underworld 36 (`:12682`) — all
+already landed in the world ladder (`decide_new_music`'s world half).
+Witness: `menu_final_the_missing_title_arms_land` (written, not run).
+
 ## MENU-FINAL — the armor handlers' activation contract (co-lane read)
 
 Read `origin/task/W4-d85-ui-screens-2` (`aeadb43a`) and local
