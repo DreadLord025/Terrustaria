@@ -2530,4 +2530,918 @@ mod tests {
         assert_eq!(a, b);
         assert_eq!(ra.next(), rb.next(), "the streams stay aligned");
     }
+
+    // ---- research/67 §5 witness-supplement union (WRITTEN NOT RUN) ----
+    // Ported from the dropped g33/f14 drawdata_cages.rs modules, retargeted
+    // to CritterCageAnimator's per-table loop bodies + the animate(bool,
+    // rand) gate-parameter form. Keep-one folds: g33's slug/fairy-jar/lava
+    // witnesses overlap g34's above (only the uncovered halves ride below);
+    // g33's full_animate overlaps same_seed_replays_bit_equal (kept, the
+    // stronger 400-tick form); f14's gate/frame_of/fairy-jar witnesses have
+    // g34 equivalents (dropped).
+
+    /// g33 port: bunny idle rolls EVERY tick and hops on the pass
+    /// (Main.cs:13519-13542) — Next(30,900) gate, Next(3)!=0 then Next(7):
+    /// 0 → 4, 1-2 → 2, 3-6 → 1; frame 1 holds 10 ticks then returns to 0.
+    #[test]
+    fn bunny_idle_rolls_every_tick_and_hops_on_pass() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        for _ in 0..2000 {
+            step_bunny(&mut t, &mut r);
+            if t.frame[0] != 0 {
+                break;
+            }
+        }
+        assert!(matches!(t.frame[0], 1 | 2 | 4), "first hop picks 1/2/4");
+        assert_eq!(t.counter[0], 0, "the pass resets the counter (:13542)");
+        t.frame[0] = 1;
+        t.counter[0] = 0;
+        for _ in 0..9 {
+            step_bunny(&mut t, &mut r);
+        }
+        assert_eq!(t.frame[0], 1);
+        step_bunny(&mut t, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (0, 0));
+    }
+
+    /// g33 port: the bunny run band wraps > 21 (Main.cs:13604-13615) —
+    /// frame 21 draws one more slot before the wrap.
+    #[test]
+    fn bunny_run_band_wraps_21_to_0() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 21;
+        for _ in 0..4 {
+            step_bunny(&mut t, &mut r);
+        }
+        assert_eq!(t.frame[0], 21, "4 ticks below the 5-tick gate");
+        step_bunny(&mut t, &mut r);
+        assert_eq!(t.frame[0], 0, "22 wraps to 0");
+    }
+
+    /// g33 port: the squirrel hop band rolls the 1-in-5 reset
+    /// (Main.cs:13654-13672); the 11/12 band's `< 5` returns WITHOUT the
+    /// counter reset (:13717-13736).
+    #[test]
+    fn squirrel_hop_band_rolls_the_1_in_5_reset() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 3;
+        t.counter[0] = 4;
+        step_squirrel(&mut t, &mut r);
+        assert!(matches!(t.frame[0], 0 | 2), "the wrap picks 0 or 2");
+        assert_eq!(t.counter[0], 0);
+        t.frame[0] = 11;
+        t.counter[0] = 3;
+        step_squirrel(&mut t, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (11, 4));
+    }
+
+    /// g33 port: the duck/mallard idle short-circuit draws exactly ONE
+    /// gate roll per state (Main.cs:13888-13917) — pinned by stream
+    /// position on two same-seeded tables.
+    #[test]
+    fn duck_idle_arm_rolls_one_gate_draw_per_state() {
+        let mut a = CageTable::default();
+        let mut b = CageTable::default();
+        a.counter[0] = 5000; // past any Next(45,2700)
+        b.counter[0] = 5000;
+        let mut ra = UnifiedRandom::new(1);
+        let mut rb = UnifiedRandom::new(1);
+        step_mallard_duck(&mut a, &mut ra);
+        step_mallard_duck(&mut b, &mut rb);
+        assert_eq!((a.frame[0], a.counter[0]), (b.frame[0], b.counter[0]));
+        assert_eq!(ra.next(), rb.next(), "same stream position after the arm");
+    }
+
+    /// g33 port: the grebe counter ++ rides FIRST, the limit rolls after
+    /// (Main.cs:14144-14159); frames 13/17 snap to 0 on a pass.
+    #[test]
+    fn grebe_idle_limit_is_rolled_before_the_gate() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        step_grebe(&mut t, &mut r);
+        assert_eq!(t.counter[0], 1, "the unconditional ++ (:14144)");
+        assert_eq!(t.frame[0], 0);
+        t.frame[0] = 13;
+        t.counter[0] = 400; // past the Next(300,400) idle limit
+        step_grebe(&mut t, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (0, 0));
+    }
+
+    /// g33 port: the seagull glide band re-derives the frame from
+    /// counter % 66 EVERY tick (Main.cs:14267-14313); the ==15 exit at the
+    /// limit lands 14 (:14256).
+    #[test]
+    fn seagull_glide_band_rederives_the_frame_from_the_counter() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 15;
+        t.counter[0] = 60; // ++ → 61 → n = 61 > 60 → frame 15
+        step_seagull(&mut t, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (15, 61));
+        t.counter[0] = 54; // ++ → 55 → n = 55 > 54 → frame 16
+        step_seagull(&mut t, &mut r);
+        assert_eq!(t.frame[0], 16);
+        t.counter[0] = 0; // ++ → 1 → n = 1 → frame 15 (the else)
+        step_seagull(&mut t, &mut r);
+        assert_eq!(t.frame[0], 15);
+        t.counter[0] = 65; // ++ → 66 ≥ limit → the ==15 → 14 arm
+        step_seagull(&mut t, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (14, 0));
+    }
+
+    /// g33 port: the bird frame-3 hop can jump to 13 (Main.cs:14403-14417).
+    #[test]
+    fn bird_frame3_hop_can_jump_to_13() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        let mut saw13 = false;
+        let mut saw4 = false;
+        for _ in 0..60 {
+            t.frame[0] = 3;
+            t.counter[0] = 4;
+            step_bird(&mut t, &mut r);
+            match t.frame[0] {
+                13 => saw13 = true,
+                4 => saw4 = true,
+                other => panic!("unexpected hop target {other}"),
+            }
+            assert_eq!(t.counter[0], 0);
+        }
+        assert!(saw13 && saw4, "both hop targets must be reachable");
+    }
+
+    /// g33 port: bird frame 14 rolls TWO 1-in-20s in order
+    /// (Main.cs:14461-14479) — the sing pick, then the frame-4 hop, else 15.
+    #[test]
+    fn bird_frame14_rolls_two_20s_in_order() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        let mut targets = std::collections::BTreeSet::new();
+        for _ in 0..4000 {
+            t.frame[0] = 14;
+            t.counter[0] = 600; // past any Next(5,600)
+            step_bird(&mut t, &mut r);
+            targets.insert(t.frame[0]);
+            assert_eq!(t.counter[0], 0);
+        }
+        assert_eq!(targets, [4, 15, 16].into_iter().collect());
+    }
+
+    /// g33 port: the three bird C# bodies are byte-identical — the keep-one
+    /// port's parity witness (same seed, same state, same outcome).
+    #[test]
+    fn red_and_blue_bird_share_the_bird_machine() {
+        let mut a = CageTable::default();
+        let mut b = CageTable::default();
+        let mut ra = UnifiedRandom::new(1);
+        let mut rb = UnifiedRandom::new(1);
+        for _ in 0..500 {
+            step_bird(&mut a, &mut ra);
+            step_bird(&mut b, &mut rb);
+        }
+        assert_eq!(a.frame[3], b.frame[3]);
+        assert_eq!(a.counter[3], b.counter[3]);
+    }
+
+    /// g33 port (cage_kind_set_matches_the_furniture_table retargeted to
+    /// `drawdata_furniture::is_cage_kind`): the G6 gate set covers exactly
+    /// the cage_table kinds — all 92, and the near-miss ids stay out.
+    #[test]
+    fn cage_kind_set_matches_the_furniture_table() {
+        let cages: &[u16] = &[
+            275, 276, 277, 278, 279, 280, 281, 296, 297, 309, 358, 359, 413, 414, 542, 550, 551,
+            553, 554, 558, 559, 599, 600, 601, 602, 603, 604, 605, 606, 607, 608, 609, 610, 611,
+            612, 632, 640, 643, 644, 645, 710, 285, 286, 298, 299, 310, 339, 361, 362, 363, 364,
+            391, 392, 393, 394, 532, 533, 538, 544, 555, 556, 582, 619, 629, 282, 505, 543, 598,
+            568, 569, 570, 288, 289, 290, 291, 292, 293, 294, 295, 360, 580, 620, 521, 522, 523,
+            524, 525, 526, 527, 316, 317, 318,
+        ];
+        assert_eq!(cages.len(), 92);
+        for &k in cages {
+            assert!(crate::drawdata_furniture::is_cage_kind(k), "kind {k} missing from the gate");
+        }
+        for k in [0u16, 1, 21, 283, 284, 287, 300, 315, 319, 365, 395, 621, 631, 641, 646, 711] {
+            assert!(!crate::drawdata_furniture::is_cage_kind(k), "kind {k} is not a cage");
+        }
+    }
+
+    /// g33 port: the macaw walk band steps on counter > 5 (six ticks) and
+    /// passing 5 lands on 6 (Main.cs:14802-14813), not 0.
+    #[test]
+    fn macaw_walk_band_uses_gt5_not_ge5() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 5;
+        for _ in 0..5 {
+            step_macaw(&mut t, &mut r);
+        }
+        assert_eq!((t.frame[0], t.counter[0]), (5, 5), "> 5 keeps the 6th tick waiting");
+        step_macaw(&mut t, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (6, 0));
+    }
+
+    /// g33 port: the scorpion idle-7 pass writes 0 with NO Next(3) chain
+    /// (Main.cs:14890-14893) — the stream shows exactly one gate draw.
+    #[test]
+    fn scorpion_frame7_snaps_to_zero_without_rolls() {
+        let mut frame = [0i32; N];
+        let mut counter = [0i32; N];
+        frame[0] = 7;
+        counter[0] = 4000; // past any Next(30,3600)
+        let mut r = UnifiedRandom::new(1);
+        step_scorpion(&mut frame, &mut counter, &mut r);
+        assert_eq!((frame[0], counter[0]), (0, 0));
+        let mut r2 = UnifiedRandom::new(1);
+        r2.next_range(30, 3600);
+        assert_eq!(r.next(), r2.next(), "exactly one gate draw on the 7-arm");
+    }
+
+    /// g33 port: the penguin 10/11 band's `> 3` copy-paste quirk
+    /// (Main.cs:15157-15176) — frame 10's first 5-tick pass ALWAYS wraps.
+    #[test]
+    fn penguin_10_11_band_keeps_the_gt3_quirk() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 10;
+        t.counter[0] = 4;
+        step_penguin(&mut t, &mut r);
+        assert!(matches!(t.frame[0], 8 | 10), "the >3 quirk wraps immediately");
+        assert_eq!(t.counter[0], 0);
+    }
+
+    /// g33 port: turtle frame 29 resets without a roll; frame 15 rolls
+    /// Next(3)==0 → 30 else ++ (Main.cs:15218-15227).
+    #[test]
+    fn turtle_29_resets_and_15_can_jump_to_30() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 29;
+        t.counter[0] = 300; // frame 29 is not idle — limit 8
+        step_turtle(&mut t, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (0, 0));
+        let mut targets = std::collections::BTreeSet::new();
+        for _ in 0..200 {
+            t.frame[0] = 15;
+            t.counter[0] = 300; // past the Next(180,250) idle roll
+            step_turtle(&mut t, &mut r);
+            targets.insert(t.frame[0]);
+        }
+        assert_eq!(targets, [16, 30].into_iter().collect());
+    }
+
+    /// g33 port: the seahorse swim band uses limit 6; frame 24 → 0
+    /// (Main.cs:15239-15266).
+    #[test]
+    fn seahorse_swim_band_limit_6_and_24_reset() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 25;
+        for _ in 0..5 {
+            step_seahorse(&mut t, &mut r);
+        }
+        assert_eq!(t.frame[0], 25, "5 ticks below the 6 limit");
+        step_seahorse(&mut t, &mut r);
+        assert_eq!(t.frame[0], 26);
+        t.frame[0] = 24;
+        t.counter[0] = 10;
+        step_seahorse(&mut t, &mut r);
+        assert_eq!(t.frame[0], 0);
+    }
+
+    /// g33 port: the pufferfish swim band wraps > 40 → 0 and the 1/75
+    /// inflate roll reads the POST-step frame (Main.cs:15277-15327).
+    #[test]
+    fn pufferfish_swim_wraps_40_to_0_and_inflate_reads_post_step() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        let mut saw_inflate = false;
+        for _ in 0..600 {
+            t.frame[0] = 40;
+            t.counter[0] = 6;
+            step_pufferfish(&mut t, &mut r);
+            match t.frame[0] {
+                0 => {}
+                41 => saw_inflate = true,
+                other => panic!("unexpected post-wrap frame {other}"),
+            }
+        }
+        assert!(saw_inflate, "the 1/75 inflate must fire on the wrapped 0");
+    }
+
+    /// g33 port, RETARGETED to g34's num25 = 5*7*5+8 = 183 (the C#
+    /// arithmetic; g33's 175-comment witness shipped the same code): from
+    /// 41 the counter climbs to num26 = 175 (deflate hold 45) then 183 →
+    /// frame 1, counter 0; the mid-cycle ladder counter 7 → num27 = 1 → 42.
+    #[test]
+    fn pufferfish_inflate_cycle_returns_to_the_swim_entry() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 41;
+        for _ in 0..183 {
+            step_pufferfish(&mut t, &mut r);
+        }
+        assert_eq!((t.frame[0], t.counter[0]), (1, 0));
+        t.frame[0] = 41;
+        t.counter[0] = 6;
+        step_pufferfish(&mut t, &mut r);
+        assert_eq!(t.frame[0], 42);
+    }
+
+    /// f14 port (w4_f14_the_owl_frame_is_the_counter_function): the owl
+    /// frame is a pure counter function (Main.cs:16617-16666) — the
+    /// `% 40 != 0` bump arm short-circuits the Next(80) roll.
+    #[test]
+    fn the_owl_frame_is_the_counter_function() {
+        let cases = [(9, 1), (29, 1), (49, 7), (89, 8), (129, 12)];
+        for (counter, frame) in cases {
+            let mut frames = [0i32; N];
+            let mut counters = [0i32; N];
+            counters[0] = counter;
+            let mut r = UnifiedRandom::new(1);
+            step_owl(&mut frames, &mut counters, 0, &mut r);
+            assert_eq!(counters[0], counter + 1, "the bump arm fired");
+            assert_eq!(frames[0], frame, "counter {counter} → frame");
+        }
+        // The block-1 phase-0 rest: counter 39 → 40 → num 0 → frame 0.
+        let mut frames = [0i32; N];
+        let mut counters = [0i32; N];
+        counters[0] = 39;
+        step_owl(&mut frames, &mut counters, 0, &mut UnifiedRandom::new(1));
+        assert_eq!(frames[0], 0);
+    }
+
+    /// g33 port: the owl counter cycle maps the four phases
+    /// (Main.cs:16627-16665): num = counter%40/10, num2 = counter/40;
+    /// phase 0: 0,1,2,1; phase 1: 0,7,6,7; phase 2: 0,8,9,8;
+    /// phase 3: 0,12,13,12 (num==3 folds to 1 in phases 0/1 only).
+    #[test]
+    fn owl_counter_cycle_maps_the_four_phases() {
+        let mut frames = [0i32; N];
+        let mut counters = [0i32; N];
+        let mut r = UnifiedRandom::new(1);
+        for counter in [5, 15, 25, 35, 45, 55, 65, 75, 85, 95, 105, 115, 125, 135, 145, 155] {
+            counters[0] = counter;
+            step_owl(&mut frames, &mut counters, 0, &mut r);
+            let c = counter + 1;
+            if (c + 1) % 40 != 39 {
+                let mut num = c % 40 / 10;
+                let phase = c / 40;
+                if phase <= 1 && num == 3 {
+                    num = 1;
+                }
+                let want = match phase {
+                    0 => num,
+                    1 => if num != 0 { 8 - num } else { 0 },
+                    2 => if num != 0 { 7 + num } else { 0 },
+                    _ => if num != 0 { 11 + num } else { 0 },
+                };
+                assert_eq!(frames[0], want, "counter {counter}");
+            }
+        }
+    }
+
+    /// g33 port: the snail hide band swaps 19↔20 and can exit to 2
+    /// (Main.cs:15521-15547); the crawl band's double frame-1 roll reaches
+    /// 19 then 20 (:15490-15497 — the second clause draws only when the
+    /// first missed).
+    #[test]
+    fn snail_hide_band_swaps_19_20_and_can_exit_to_2() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        let mut targets = std::collections::BTreeSet::new();
+        for _ in 0..3000 {
+            t.frame[0] = 19;
+            t.counter[0] = 8000; // past any Next(60,7200)
+            step_snail(&mut t, &mut r);
+            targets.insert(t.frame[0]);
+        }
+        assert_eq!(targets, [2, 19, 20].into_iter().collect());
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..3000 {
+            t.frame[0] = 1;
+            t.counter[0] = 4000; // past any Next(45,3600)
+            step_snail(&mut t, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&19) && saw.contains(&20) && saw.contains(&2));
+    }
+
+    /// g33 port: the frog 18-23 band's `> 17` wrap sits OUTSIDE the 5-tick
+    /// gate (Main.cs:15711-15721) — frame 18 re-rolls EVERY tick.
+    #[test]
+    fn frog_18_23_band_rerolls_the_wrap_every_tick() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 18;
+        t.counter[0] = 0;
+        step_frog(&mut t, &mut r);
+        assert!(matches!(t.frame[0], 6 | 18), "the wrap rolls below the gate");
+        assert_eq!(t.counter[0], 1, "the counter still ticks");
+        t.frame[0] = 17;
+        t.counter[0] = 0;
+        step_frog(&mut t, &mut r);
+        assert_eq!(t.frame[0], 17, "no wrap roll below the 5-tick gate");
+    }
+
+    /// g33 port: the mouse 0/1 walk wraps to 0 THEN rolls the 1/15 hop to 4
+    /// (Main.cs:15726-15741); the 2/3 band's chained 1/15s reach 8 then 12.
+    #[test]
+    fn mouse_idle_band_can_hop_to_4_after_the_wrap() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        let mut saw4 = false;
+        for _ in 0..400 {
+            t.frame[0] = 1;
+            t.counter[0] = 4;
+            step_mouse(&mut t, &mut r);
+            match t.frame[0] {
+                0 => {}
+                4 => saw4 = true,
+                other => panic!("unexpected {other}"),
+            }
+        }
+        assert!(saw4);
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..2000 {
+            t.frame[0] = 3;
+            t.counter[0] = 4;
+            step_mouse(&mut t, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&8) && saw.contains(&12) && saw.contains(&2));
+    }
+
+    /// g33 port: the worm's step-to-9 coin (Next(2)==0 → 0) and the > 18
+    /// wrap (9 or 0, never 19) (Main.cs:15842-15856).
+    #[test]
+    fn worm_frame9_coin_and_18_wrap() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..2000 {
+            t.frame[0] = 8;
+            t.counter[0] = 100; // past any Next(30,91)
+            step_worm(&mut t, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&0) && saw.contains(&9), "the 9-coin fires both ways");
+        saw.clear();
+        for _ in 0..2000 {
+            t.frame[0] = 18;
+            t.counter[0] = 100;
+            step_worm(&mut t, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&0) && saw.contains(&9) && !saw.contains(&19));
+    }
+
+    /// g33 port: the grasshopper hop bands mirror the mouse shape
+    /// (Main.cs:15888-15947): 0/1 → 1/15 hop to 2; 6/7 → 1/15 hop to 8.
+    #[test]
+    fn grasshopper_hop_bands_mirror_the_mouse_shape() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..400 {
+            t.frame[0] = 1;
+            t.counter[0] = 4;
+            step_grasshopper(&mut t, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&0) && saw.contains(&2));
+        saw.clear();
+        for _ in 0..400 {
+            t.frame[0] = 7;
+            t.counter[0] = 4;
+            step_grasshopper(&mut t, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert!(saw.contains(&6) && saw.contains(&8));
+    }
+
+    /// g33 port: the maggot idle-0 picks 13 or 1; 12 resets; > 23 lands 6
+    /// (Main.cs:15963-15983).
+    #[test]
+    fn maggot_idle_0_picks_13_or_1_and_12_resets() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..300 {
+            t.frame[0] = 0;
+            t.counter[0] = 200; // past any Next(100,140)
+            step_maggot(&mut t, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert_eq!(saw, [1, 13].into_iter().collect());
+        t.frame[0] = 12;
+        t.counter[0] = 200;
+        step_maggot(&mut t, &mut r);
+        assert_eq!(t.frame[0], 0);
+        t.frame[0] = 23;
+        t.counter[0] = 200;
+        step_maggot(&mut t, &mut r);
+        assert_eq!(t.frame[0], 6);
+    }
+
+    /// g33 port: the ladybug base Next(10,12) draws UNCONDITIONALLY
+    /// (Main.cs:15990) — even for the 8-16 band whose limit is overwritten
+    /// to 5; frame 18 draws base + (160,241).
+    #[test]
+    fn ladybug_base_limit_draw_is_unconditional() {
+        let mut t = CageTable::default();
+        t.frame[0] = 8;
+        let mut r = UnifiedRandom::new(1);
+        step_ladybug(&mut t, &mut r);
+        let mut r2 = UnifiedRandom::new(1);
+        r2.next_range(10, 12);
+        assert_eq!(r.next(), r2.next(), "exactly the base Next(10,12)");
+        t.frame[0] = 18;
+        t.counter[0] = 0;
+        let mut r3 = UnifiedRandom::new(1);
+        step_ladybug(&mut t, &mut r3);
+        let mut r4 = UnifiedRandom::new(1);
+        r4.next_range(10, 12);
+        r4.next_range(160, 241);
+        assert_eq!(r3.next(), r4.next());
+    }
+
+    /// g33 port: the rat >11 band maps counter%90; the groom band steps
+    /// only on counter%10==0 (Main.cs:16105-16155).
+    #[test]
+    fn rat_sleep_band_ladder_and_groom_mod10() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 12;
+        t.counter[0] = 80; // ++ → 81 → n=81 > 80 → 12
+        step_rat(&mut t, &mut r);
+        assert_eq!(t.frame[0], 12);
+        t.counter[0] = 70; // ++ → 71 → 13
+        step_rat(&mut t, &mut r);
+        assert_eq!(t.frame[0], 13);
+        t.frame[0] = 8;
+        t.counter[0] = 9; // ++ → 10, %10==0 → 9
+        step_rat(&mut t, &mut r);
+        assert_eq!(t.frame[0], 9);
+        t.counter[0] = 10; // ++ → 11, %10!=0 → hold
+        step_rat(&mut t, &mut r);
+        assert_eq!(t.frame[0], 9);
+        t.counter[0] = 19; // ++ → 20 → 9-- → 8
+        step_rat(&mut t, &mut r);
+        assert_eq!(t.frame[0], 8);
+    }
+
+    /// g33 port: the water strider's 15/18 reset and > 21 wrap to 8
+    /// (Main.cs:16186-16195).
+    #[test]
+    fn water_strider_15_18_reset_and_21_wrap() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        t.frame[0] = 15;
+        t.counter[0] = 300; // past the Next(110,210)/(150,260) rolls
+        step_water_strider(&mut t, &mut r);
+        assert_eq!(t.frame[0], 0);
+        t.frame[0] = 21;
+        t.counter[0] = 300;
+        step_water_strider(&mut t, &mut r);
+        assert_eq!(t.frame[0], 8, "> 21 wraps to 8");
+    }
+
+    /// g33 port: the fish-bowl mode-0 frame-10 bubble rolls Next(12), NOT
+    /// Next(20), and never writes the mode (Main.cs:16330-16339); the
+    /// 12/13 surface band wraps > 13 with the 1/20 → 14 roll.
+    #[test]
+    fn fish_bowl_mode0_frame10_bubble_uses_next12_not_next20() {
+        let mut t = CageTable::default();
+        let mut mode = [0u8; N];
+        t.frame[0] = 10;
+        t.counter[0] = 9; // ++ → 10, passes the < 10 gate
+        let mut r = UnifiedRandom::new(1);
+        step_fish_bowl(&mut t, &mut mode, &mut r);
+        assert!(matches!(t.frame[0], 1 | 11));
+        assert_eq!(mode[0], 0, "the default arm never writes the mode");
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..400 {
+            t.frame[0] = 13;
+            t.counter[0] = 9;
+            step_fish_bowl(&mut t, &mut mode, &mut r);
+            saw.insert(t.frame[0]);
+        }
+        assert_eq!(saw, [12, 14].into_iter().collect());
+    }
+
+    /// g33 port (the stream-shape half g34's lava_fish_bowl_wraps_at_26
+    /// does not cover): the gate draws Next(3) EVERY tick
+    /// (Main.cs:16387-16396) and frame 26 wraps to 0 on a forced pass.
+    #[test]
+    fn lava_fish_bowl_gate_draws_every_tick() {
+        let mut t = CageTable::default();
+        let mut r = UnifiedRandom::new(1);
+        step_lava_fish_bowl(&mut t, &mut r);
+        assert_eq!(t.counter[0], 1);
+        let mut r2 = UnifiedRandom::new(1);
+        r2.next_max(3);
+        assert_eq!(r.next(), r2.next(), "exactly one Next(3) per tick");
+        t.frame[0] = 26;
+        t.counter[0] = 10; // past any 4+Next(3)
+        step_lava_fish_bowl(&mut t, &mut r);
+        assert_eq!((t.frame[0], t.counter[0]), (0, 0));
+    }
+
+    /// g33 port: the butterfly base Next(3,16) draws UNCONDITIONALLY
+    /// (Main.cs:16411) — a mode-1 tick below the gate consumes
+    /// gate(3600) + base(3,16) only.
+    #[test]
+    fn butterfly_base_speed_draw_is_unconditional() {
+        let mut frame = [0i32; N];
+        let mut counter = [0i32; N];
+        let mut mode = [0u8; N];
+        mode[0] = 1;
+        let mut r = UnifiedRandom::new(1);
+        step_butterfly(&mut frame, &mut counter, &mut mode, &mut r);
+        let mut r2 = UnifiedRandom::new(1);
+        r2.next_max(3600);
+        r2.next_range(3, 16);
+        assert_eq!(r.next(), r2.next());
+        assert_eq!(counter[0], 1, "below the 3-tick speed gate");
+    }
+
+    /// g33 port, RE-DERIVED (the g33 assertion pinned `15` from frame 6 —
+    /// unreachable: the +8 hop rolls on the POST-increment frame, so 6→7
+    /// never hops; the jump reads 7→0→8 and 3→4→12, Main.cs:16495-16522):
+    /// frame 3's pass reaches 4 then 12 on the 1/10; the reverse machine
+    /// (mode >= 10) decrements and wraps < 0 → 7.
+    #[test]
+    fn butterfly_forward_flap_wraps_and_can_jump_bands() {
+        let mut frame = [0i32; N];
+        let mut counter = [0i32; N];
+        let mut mode = [0u8; N];
+        let mut r = UnifiedRandom::new(1);
+        let mut saw = std::collections::BTreeSet::new();
+        for _ in 0..400 {
+            frame[0] = 3;
+            counter[0] = 100; // past any Next(3,16)
+            step_butterfly(&mut frame, &mut counter, &mut mode, &mut r);
+            saw.insert(frame[0]);
+        }
+        assert!(saw.contains(&4) && saw.contains(&12), "4 holds or jumps to 12");
+        // The 7 → 0 wrap (no hop: 0 is not a landmark).
+        frame[0] = 7;
+        counter[0] = 100;
+        step_butterfly(&mut frame, &mut counter, &mut mode, &mut r);
+        assert_eq!(frame[0], 0);
+        mode[0] = 11;
+        frame[0] = 0;
+        counter[0] = 100;
+        step_butterfly(&mut frame, &mut counter, &mut mode, &mut r);
+        assert_eq!(frame[0], 7);
+    }
+
+    /// g33 port: the dragonfly counter/4%4 triangle (3 folds to 1) and the
+    /// below-300 no-draw gate (Main.cs:16710-16723).
+    #[test]
+    fn dragonfly_flap_ladder_and_early_exit() {
+        let mut frame = [0i32; N];
+        let mut counter = [0i32; N];
+        let mut r = UnifiedRandom::new(1);
+        frame[0] = 2; // num=1, num2=0 → base 2
+        counter[0] = 7; // ++ → 8, 8/4%4 = 2 → frame 2+2 = 4
+        step_dragonfly(&mut frame, &mut counter, &mut r);
+        assert_eq!(frame[0], 4);
+        counter[0] = 11; // ++ → 12, 12/4%4 = 3 → folds 1 → frame 3
+        step_dragonfly(&mut frame, &mut counter, &mut r);
+        assert_eq!(frame[0], 3);
+        frame[0] = 0;
+        counter[0] = 0;
+        let mut r3 = UnifiedRandom::new(1);
+        step_dragonfly(&mut frame, &mut counter, &mut r3);
+        let mut r4 = UnifiedRandom::new(1);
+        assert_eq!(r3.next(), r4.next(), "no draw below the 300 gate");
+    }
+
+    /// g33 port: the jellyfish mode arms are SEPARATE ifs
+    /// (Main.cs:16557-16593) — the mode-1 arm's >= 7 promotion re-gates the
+    /// mode-2 arm in-tick, but the just-reset counter blocks it (frame 7
+    /// holds); mode 3's >= 10 exit resets frame 3 + mode 0.
+    #[test]
+    fn jellyfish_mode_arms_are_separate_ifs() {
+        let mut frame = [0i32; N];
+        let mut counter = [0i32; N];
+        let mut mode = [0u8; N];
+        mode[0] = 1;
+        frame[0] = 6;
+        counter[0] = 100; // past any Next(15,25)
+        let mut r = UnifiedRandom::new(1);
+        step_jellyfish(&mut frame, &mut counter, &mut mode, &mut r);
+        assert_eq!(frame[0], 7);
+        assert_eq!(mode[0], 2, "the promotion fired");
+        assert_eq!(counter[0], 0);
+        mode[0] = 3;
+        frame[0] = 9;
+        counter[0] = 100;
+        step_jellyfish(&mut frame, &mut counter, &mut mode, &mut r);
+        assert_eq!((frame[0], mode[0]), (3, 0));
+    }
+
+    /// g33 port (zero_tables_stay_the_static_arms_until_animated): the
+    /// gated-off animator's draw output IS the static table — spot-check
+    /// over both halves (the all-92 acceptance pin rides render/tiles.rs's
+    /// wired_cage_rewrite_matches_the_static_arms_at_t0).
+    #[test]
+    fn zero_tables_stay_the_static_arms_until_animated() {
+        let a = CritterCageAnimator::new();
+        for kind in [275u16, 285, 282, 316, 710, 620] {
+            let dd = crate::drawdata_furniture::cage_draw_data(
+                kind, 13, 7, 18, 18, CAGE_FRAMES,
+                |t, r, i| a.frame_of(t, r, i),
+            )
+            .unwrap();
+            let static_dd = crate::drawdata::draw_data(kind, 13, 7, 18, 18, 0, false);
+            assert_eq!(dd, static_dd, "kind {kind}");
+        }
+    }
+
+    /// f14 port (w4_f14_one_tick_is_deterministic_and_consumes_the_caller_stream,
+    /// gate-parameter form): one open-gate tick draws on the CALLER's
+    /// stream and two same-seeded runs are bit-identical (state + stream).
+    #[test]
+    fn one_tick_is_deterministic_and_consumes_the_caller_stream() {
+        let run = || {
+            let mut a = CritterCageAnimator::new();
+            let mut rng = UnifiedRandom::new(42);
+            a.animate(true, &mut rng);
+            (a.anim_key(), rng.peek())
+        };
+        let (k1, p1) = run();
+        let (k2, p2) = run();
+        assert_eq!(k1, k2, "same seed, same tables");
+        assert_eq!(p1, p2, "same seed, same stream position");
+        assert_ne!(p1, UnifiedRandom::new(42).peek(), "the tick drew");
+        assert_ne!(k1, CritterCageAnimator::new().anim_key());
+    }
+
+    /// f14 port (w4_f14_the_warmup_replays_on_a_clone_not_the_live_stream,
+    /// §2.6 semantics at the module level — the App-seam pin rides
+    /// app/mod.rs): warm_up on a fresh clone leaves a same-seeded LIVE
+    /// stream untouched, and the same seed reproduces the same tables.
+    #[test]
+    fn the_warmup_replays_on_a_clone_not_the_live_stream() {
+        let mut live = UnifiedRandom::new(123);
+        let peek = live.peek();
+        let mut a = CritterCageAnimator::new();
+        a.warm_up(&mut UnifiedRandom::new(123));
+        let mut b = CritterCageAnimator::new();
+        b.warm_up(&mut UnifiedRandom::new(123));
+        assert_eq!(live.peek(), peek, "the live stream is untouched");
+        assert_eq!(a.anim_key(), b.anim_key(), "the warm-up is seeded");
+        assert_ne!(
+            a.anim_key(),
+            CritterCageAnimator::new().anim_key(),
+            "3600 ticks moved the tables"
+        );
+    }
+
+    /// f14 port (w4_f14_anim_key_tracks_the_frame_tables, adapted to the
+    /// kept frames+counters+modes key — research/67 §2.4 keeps the
+    /// superset): frame slots (1-D and 2-D) ride the key, and so do the
+    /// counters/modes (over-keying is safe; a mode byte changes the next
+    /// frame's cadence).
+    #[test]
+    fn anim_key_tracks_the_frame_tables_counters_and_modes() {
+        let mut a = CritterCageAnimator::new();
+        let k0 = a.anim_key();
+        a.bunny.frame[3] = 5;
+        let k1 = a.anim_key();
+        assert_ne!(k0, k1, "a 1-D frame slot rides the key");
+        assert_eq!(k1, a.anim_key(), "unchanged state, unchanged key");
+        a.butterfly[8][2] = 9; // the 620 jar's row
+        let k2 = a.anim_key();
+        assert_ne!(k1, k2, "a 2-D frame slot rides the key");
+        a.bunny.counter[3] = 99;
+        let k3 = a.anim_key();
+        assert_ne!(k2, k3, "the counters ride the kept superset key");
+        a.butterfly_mode[8][2] = 11;
+        assert_ne!(k3, a.anim_key(), "the mode bytes ride the key");
+    }
+
+    /// g33/f14 port (frame_of_reads_the_right_table_and_row, merged with
+    /// f14's route pin): every CageAnim routes to its table/row — the 2-D
+    /// tables read the C# first index, the 1-D tables ignore the row.
+    #[test]
+    fn frame_of_routes_the_first_half_tables_and_rows() {
+        let mut a = CritterCageAnimator::new();
+        a.bunny.frame[6] = 3;
+        a.scorpion[1][6] = 8;
+        a.slug[2][16] = 11;
+        a.butterfly[8][24] = 14;
+        a.dragonfly[6][24] = 5;
+        a.jellyfish[2][16] = 7;
+        assert_eq!(a.frame_of(CageAnim::Bunny, 0, 6), 3);
+        assert_eq!(a.frame_of(CageAnim::Bunny, 1, 6), 3, "1-D ignores row");
+        assert_eq!(a.frame_of(CageAnim::Scorpion, 1, 6), 8);
+        assert_eq!(a.frame_of(CageAnim::Scorpion, 0, 6), 0, "row 0 is distinct");
+        assert_eq!(a.frame_of(CageAnim::Slug, 2, 16), 11);
+        assert_eq!(a.frame_of(CageAnim::Butterfly, 8, 24), 14);
+        assert_eq!(a.frame_of(CageAnim::Dragonfly, 6, 24), 5);
+        assert_eq!(a.frame_of(CageAnim::Jellyfish, 2, 16), 7);
+    }
+
+    /// f14 port (w4_f14_the_tables_feed_the_census_cage_rewrite): a moved
+    /// bunny slot at the (12,12) big probe (idx 6) shifts addFrY by
+    /// frame × 54; the 620 jar reads butterfly row 8 through the WATER
+    /// probe (idx 24).
+    #[test]
+    fn the_tables_feed_the_census_cage_rewrite() {
+        let mut a = CritterCageAnimator::new();
+        a.bunny.frame[6] = 2;
+        a.butterfly[8][24] = 3;
+        let d = crate::drawdata_furniture::cage_draw_data(
+            275, 12, 12, 0, 0, CAGE_FRAMES, |t, r, i| a.frame_of(t, r, i),
+        )
+        .unwrap();
+        assert_eq!((d.top, d.add_fr_y), (2, 2 * 54));
+        let d = crate::drawdata_furniture::cage_draw_data(
+            620, 12, 12, 0, 0, CAGE_FRAMES, |t, r, i| a.frame_of(t, r, i),
+        )
+        .unwrap();
+        assert_eq!((d.top, d.add_fr_y), (2, 3 * 36));
+    }
+
+    /// f14 port (w4_f14_the_pufferfish_machine_stays_in_range, merged with
+    /// the bunny band): 4000 whole ticks keep every machine's frames in
+    /// their C# bands (the butterfly/jellyfish bands ride g34's own
+    /// witnesses above).
+    #[test]
+    fn the_pufferfish_machine_stays_in_range() {
+        let mut a = CritterCageAnimator::new();
+        let mut rng = UnifiedRandom::new(9);
+        for _ in 0..4000 {
+            a.animate(true, &mut rng);
+            for &f in &a.pufferfish.frame {
+                assert!((0..=70).contains(&f), "pufferfish frame {f} out of range");
+            }
+            for &f in &a.bunny.frame {
+                assert!((0..=21).contains(&f), "bunny frame {f} out of range");
+            }
+        }
+    }
+
+    /// f14 port (w4_f14_the_driver_order_matches_the_csharp, retargeted to
+    /// `pub fn animate`): the driver walks the 34 tables in C# source
+    /// order — the orange squirrel between grey and mallard (:13752), the
+    /// owl between pufferfish and snail (:15476), the dragonfly between
+    /// butterfly and jellyfish (:16526); the gate precedes every loop.
+    #[test]
+    fn the_driver_order_matches_the_csharp() {
+        let src = include_str!("critter_cage_anim.rs");
+        let body = &src[src.find("pub fn animate(&mut self").unwrap()..];
+        let body = &body[..body.find("/// `Initialize_TileAndNPCData2`'s warm-up").unwrap()];
+        let pos = |needle: &str| body.find(needle).expect(needle);
+        let order = [
+            "step_bunny(&mut self.bunny",
+            "step_squirrel(&mut self.squirrel,",
+            "step_squirrel(&mut self.squirrel_orange",
+            "step_mallard_duck(&mut self.mallard",
+            "step_mallard_duck(&mut self.duck",
+            "step_grebe(&mut self.grebe",
+            "step_seagull(&mut self.seagull",
+            "step_bird(&mut self.bird",
+            "step_bird(&mut self.blue_bird",
+            "step_bird(&mut self.red_bird",
+            "step_macaw(&mut self.macaw",
+            "step_scorpion(",
+            "step_penguin(&mut self.penguin",
+            "step_turtle(&mut self.turtle",
+            "step_seahorse(&mut self.seahorse",
+            "step_pufferfish(&mut self.pufferfish",
+            "step_owl(",
+            "step_snail(&mut self.snail,",
+            "step_snail2(&mut self.snail2",
+            "step_frog(&mut self.frog",
+            "step_mouse(&mut self.mouse",
+            "step_worm(&mut self.worm",
+            "step_slug(",
+            "step_grasshopper(&mut self.grasshopper",
+            "step_maggot(&mut self.maggot",
+            "step_ladybug(&mut self.ladybug",
+            "step_rat(&mut self.rat",
+            "step_water_strider(&mut self.water_strider",
+            "step_fairy_jar(&mut self.fairy_jar",
+            "step_fish_bowl(",
+            "step_lava_fish_bowl(&mut self.lava_fish_bowl",
+            "step_butterfly(",
+            "step_dragonfly(",
+            "step_jellyfish(",
+        ];
+        let mut last = 0;
+        for needle in order {
+            let p = pos(needle);
+            assert!(p > last, "{needle} must follow the previous loop");
+            last = p;
+        }
+        // The gate precedes every loop (Main.cs:13513-13516).
+        assert!(pos("if !critter_cage") < pos("step_bunny(&mut self.bunny"));
+    }
 }
