@@ -96,7 +96,7 @@ The four blockers the first wave left, re-censused against the pushed d-lanes:
    no lane ported the 601 portal teleport AI (`ai001_b` runs only the
    fade/frame). Both keep their spawn `ai[0]`; the deviations are unchanged.
 
-**Round-2 accounting: 45 ported sites / 55 light contributions, 2 audit-landed,
-20 absent** (the still-unrowed kinds + the rand-gated 409/590/849/912). 12 new
+**Round-2 accounting: 44 ported sites / 53 light contributions, 2 audit-landed,
+21 absent** (the still-unrowed kinds + the rand-gated 409/590/849/912). 12 new
 witnesses written not run (30 total: the mount gate/census/swings + the
 per-lane activations + the conditional row invariant).

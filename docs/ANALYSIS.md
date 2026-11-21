@@ -23120,8 +23120,8 @@ absent wholesale (the e6 RNG rule), and no ported arm draws `Main.rand` — the
 feed is pure, so its placement cannot move any stream.
 
 **Accounting (first wave): 23 ported sites / 32 lights, 2 audit-landed, 42
-absent.** Round 2 re-censused the 42 absent and activated 22 of them — see the
-round-2 note below the register (45 ported / 55 lights / 20 absent).
+absent.** Round 2 re-censused the 42 absent and activated 21 of them — see the
+round-2 note below the register (44 ported / 53 lights / 21 absent).
 
 * Sites 1-2 (`:16655`/`:16659`) are the `ProjLight` chain tail, already live in
   `proj_lights.rs` (the 870 centre `AddLight` rides the common tail; the
@@ -23195,7 +23195,7 @@ the every-unrowed-kind-contributes-nothing sweep (44 kinds).
 
 **Round 2 — the 42-absent re-census (2026-11-21, `1b85dfec` / `88ee3165`).** The
 four blockers re-censused against the pushed d-lanes; the accounting moves to
-**45 ported sites / 55 lights, 2 audit-landed, 20 absent** (30 witnesses).
+**44 ported sites / 53 lights, 2 audit-landed, 21 absent** (30 witnesses).
 
 * **Blocker 1 — the gate fields (site 3, `:17343`).** The `SetDefaults` census:
   `hostile = true` **179 kinds**, `noEnchantments` **4** (480/1121/1131/1132),
@@ -23229,7 +23229,7 @@ four blockers re-censused against the pushed d-lanes; the accounting moves to
   out of `ai_freaking_pirates`; no lane ported the 601 teleport AI (`ai001_b`
   runs only the fade/frame). Both keep their spawn `ai[0]`.
 
-The 20 still-absent sites: 502 (`:24307`), 1092 (`:25394`), 451 (`:31212`),
+The 21 still-absent sites: 502 (`:24307`), 1092 (`:25394`), 451 (`:31212`),
 464/465/466 (`:31864`/`:31893`/`:31998`/`:32049`), 490 (`:32384`), 492
 (`:32410`), 518 (`:32962`), 575 (`:33580`), 978 (the `:34487` trio's third
 term), 731 (`:37821`), the phaseblades (`:39020`/`:39021`), 567/568 (`:40046`),
