@@ -96,6 +96,11 @@ pub fn inferno_aura_scan(
         }
         let (nw, nh) = n.size();
         let (ncx, ncy) = (n.x + nw * 0.5, n.y + nh * 0.5);
+        // The banner net id is captured HERE (the `n` borrow ends before the
+        // mutable buff write below — NLL). The slime variants carry distinct
+        // ids (`entry_for_npc(kind, variant)`, the bestiary convention), so
+        // the scan reads the live variant, not `net_id()`'s Blue default.
+        let net_id = crate::bestiary::entry_for_npc(n.kind, n.slime).net_id;
         let dx = pcx - ncx;
         let dy = pcy - ncy;
         if (dx * dx + dy * dy).sqrt() > radius {
@@ -120,11 +125,6 @@ pub fn inferno_aura_scan(
         //   4. `StrikeNPC` (`:20447`) — the combat text BEFORE the life
         //      write (`NPC.cs:81250-81264`), then the defence line + pool.
         let mut dmg = base_damage;
-        // The banner lookup keys on the NPC's net id — the slime variants
-        // carry distinct ids (`entry_for_npc(kind, variant)`, the bestiary
-        // convention), so the scan reads the live variant, not `net_id()`'s
-        // Blue default.
-        let net_id = crate::bestiary::entry_for_npc(n.kind, n.slime).net_id;
         if let Some((dealt, _)) = crate::banners::banner_buff_for(metrics, net_id) {
             dmg = (dmg as f32 * dealt) as i32;
         }
