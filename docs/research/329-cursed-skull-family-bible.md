@@ -1,4 +1,10 @@
-# 247 — W4-c3 RESEARCH FINAL: the cursed-skull-family bible (SEALED)
+# 329 — W4-c3 RESEARCH FINAL: the cursed-skull-family bible (SEALED)
+
+> **RENUMBER CHAIN: 247 → 329** (registry §9 UNIFIED FINAL, d54 tip
+> `b243c7086`, §9.2 row 329): the seal-time 247 take lost to d10's
+> EXECUTED 247 reservation (`72431e61f`); c3 renumbers 247→329 per
+> claim-time order. The seal-time number receipt below is kept as
+> chain history.
 
 **STATUS: FINAL — SEALED.** No further W4-c3 rounds planned. Lane
 `task/W4-c3-style10-cursed-skull`, worktree TR-W4-c3, tip at seal
@@ -7,7 +13,7 @@ cargo/rustc/rustfmt/test runs; every witness WRITTEN NOT RUN; verification
 is C# re-reads (whole-arm line-by-line) + hand-traced arithmetic + the
 origin-tip probes cited below.
 
-**Number receipt (research/150 registry)**: 150 is the collision registry
+**Number receipt (research/150 registry — chain history, seal-time)**: 150 is the collision registry
 (`38bfd1d22`, d54); its free block 151–236 is fully consumed. The 237+
 first-free scan at seal time (`git log --remotes=origin --diff-filter=A
 --name-only -- docs/research/`, first-add per number) finds 237–246

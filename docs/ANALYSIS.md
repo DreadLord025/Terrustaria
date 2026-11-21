@@ -28884,9 +28884,10 @@ keep c3's 299 row/arm, or the skull family regresses. This is the
 c3→merger hand-off: the wiring is the valuable part, the duplicate kind
 rows are the drop.
 ### W4-c3 RESEARCH FINAL — the cursed-skull-family bible SEALED (2026-11-21)
-`docs/research/247-cursed-skull-family-bible.md` (number 247 per the
-research/150 registry: 151-236 consumed, the origin first-add scan at
-seal time finds 237-246 claimed, 247 the first free) closes the lane:
+`docs/research/329-cursed-skull-family-bible.md` (number 329 per the
+research/150 registry §9 UNIFIED FINAL, d54 tip `b243c7086`: the
+seal-time 247 take lost to d10's executed 247 reservation, c3 renumbers
+247→329 by claim-time order) closes the lane:
 the family bible (the three SetDefaults rows, the machine + drains, the
 299 bolt row/arm/debuff/census, FindFrame + GetAlpha tints + the 694
 anchor, the dungeon band's full roll table + the book-origin gate), the
