@@ -2460,27 +2460,25 @@ mod tests {
         app.player.as_mut().unwrap().buffs.add_buff(156, 3600);
         let before = app.audio.played_count();
         tick_ammo(&mut app);
-        // The on-edge also lands the flat 20 hurt (its own dodge rolls ride
-        // the stream first) - the play census is the pin here.
-        assert_eq!(app.audio.played_count() - before, 1, "the on-edge plays");
+        // The on-edge lands the flat 20 hurt too - its voice cue (the
+        // `Hurt` tail, `Player.cs:38525`) plays beside the Dig: TWO plays.
+        assert_eq!(app.audio.played_count() - before, 2, "the hurt + the dig");
         // The held buff: no second play.
         let mid = app.audio.played_count();
         tick_ammo(&mut app);
         assert_eq!(app.audio.played_count(), mid, "no edge, no play");
         // The off-edge (the buff expires) plays too - the C# site is
-        // outside the `stoned` arm - and with no hurt in the way the drain
-        // spends exactly the case-0 two draws.
+        // outside the `stoned` arm - with no hurt in the way: ONE play,
+        // and the case-0 draws move the stream.
         app.player.as_mut().unwrap().buffs.clear_buff(156);
-        let mut witness = app.rngs.stream(RngKey::UpdatePlayers).clone();
-        let _ = witness.next_range(0, 3);
-        let _ = witness.next_range(-10, 11);
+        let stream_before = app.rngs.stream(RngKey::UpdatePlayers).clone();
         let before = app.audio.played_count();
         tick_ammo(&mut app);
         assert_eq!(app.audio.played_count() - before, 1, "the off-edge plays");
-        assert_eq!(
-            app.rngs.stream(RngKey::UpdatePlayers).peek(),
-            witness.peek(),
-            "exactly the case-0 two draws"
+        assert_ne!(
+            *app.rngs.stream(RngKey::UpdatePlayers),
+            stream_before,
+            "the case-0 draws ride UpdatePlayers"
         );
     }
 

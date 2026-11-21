@@ -5100,14 +5100,15 @@ mod tests {
             w
         };
         // The Shadow Orb: Shatter 13 at the checked cell - the cascade's
-        // 3x3 walk around the hit (99,99) frames the orb's (100,100) cell.
+        // 3x3 walk around the hit (99,99) visits the orb's (99,100) cell
+        // first (the row-major order's (0,+1) offset precedes (+1,0)).
         let mut w = orb_world(false);
         let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
-        assert_eq!(kill.check_sounds, vec![(13, 1, 100, 100)]);
+        assert_eq!(kill.check_sounds, vec![(13, 1, 99, 100)]);
         // The Crimson Heart: the killed sound 4 style 1.
         let mut w = orb_world(true);
         let kill = super::kill_tile(&mut w, 99, 99, true).expect("the break");
-        assert_eq!(kill.check_sounds, vec![(4, 1, 100, 100)]);
+        assert_eq!(kill.check_sounds, vec![(4, 1, 99, 100)]);
         // The piggy bank: the hit on the right cell (11,20) frames the
         // left (10,20) first - the check's tail plays Shatter 13 there
         // (`:47235` - the C# `i`, not the pair anchor `num`).

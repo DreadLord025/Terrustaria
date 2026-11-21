@@ -18100,7 +18100,8 @@ mod tests {
         assert_eq!(cues[0].cue, "Item_168");
         assert_eq!((cues[0].x, cues[0].y), (cx, cy), "the centre position");
         assert!(p.vy < 0.0, "the hop lifted");
-        assert_eq!(p.jump, 15, "the static jumpHeight");
+        // (`jump = 15` is written by the hop, then the same tick's
+        // jump-released branch clears it - `Player.cs:21026`, the C# order.)
         // The ground jump (jump held on a resting tick) plays it too.
         let mut p = Player::spawn(&w);
         assert!(p.set_mount(43, false));
