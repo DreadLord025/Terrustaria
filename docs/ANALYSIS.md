@@ -39266,7 +39266,7 @@ arm nor rows.
 | 7 | `AI_007_GrapplingHooks` `:24229` -> `:52567+` | `ai_hook` | PORTED (verify-only) — the dead/CCed kill gate, the MountedCenter pull, the attach-cap recycle, the blacklist rebuild, the Queen Slime teleport. |
 | 8 | inline `:24233-24362` | `ai_ball_of_fire` | PORTED (verify-only) — the gravity timer + the per-type bounce budget; the WaterBolt lava bounce, the 96/258 sound latches. |
 | 9 | `AI_009_MagicMissiles` `:24363` -> `:43195-43425` | `ai_magic_missile` | PORTED (verify-only) — the channel aim, the Flamelash drag-lift, the release homing. |
-| 10 | `AI_010` `:24367` -> `:57826-58100` | kind-gated 109/736-738 (`ai_snowball_hostile` / `ai_dungeon_debris`) + `projectile_ai_falling::step` + the frozen falling-tile tail | PORTED — W4-d1 wave 3 rowed the falling-block family 17/31/39/40/56/67/71/179/241/812/411-414/1081 (`a2dcdb15`/`e001d921`/`e4718179`) and armed the sandgun balls 42/65/68/354 through the same arm — the S1-D-5 "42-row gap" CLOSES (the rows existed but the dispatch no-op'd them; now the 60-tick straight flight + the 0.2 gravity + the death placement run). The `spawn_falling` slots keep their frozen custom tail (the carve-out below). |
+| 10 | `AI_010` `:24367` -> `:57826-58100` | kind-gated 109/736-738 (`ai_snowball_hostile` / `ai_dungeon_debris`) + `projectile_ai_falling::step` | PORTED — W4-d1 wave 3 rowed the falling-block family 17/31/39/40/56/67/71/179/241/812/411-414/1081 (`a2dcdb15`/`e001d921`/`e4718179`) and armed the sandgun balls 42/65/68/354 through the same arm — the S1-D-5 "42-row gap" CLOSES (the rows existed but the dispatch no-op'd them; now the 60-tick straight flight + the 0.2 gravity + the death placement run). W4-d1 RETIRE (`dd7b6f32d`, research/246): the natural-fall spawner moved to the data path — the frozen-tail carve-out is RETIRED, every served kind rides the arm; the forced-PlaceTile bypass set + the tile-cut bodies ported. FAMILY COMPLETE. |
 
 **The missing style 6.** The powder/fertilizer cloud — five kinds, all
 unrowed on main: 10 PurificationPowder (`Projectile.cs:897-912`), 11
@@ -39385,20 +39385,21 @@ item 0, 65 → 112/0, 68 → 116/0, 354 → 234/0). Their rows already carried
 `extraUpdates = 1` (two sub-steps per tick), so the 60-tick count spends 30
 frames — the C#'s own cadence.
 
-**The frozen-tail carve-out (deliberate deviation).** The pool's
-pre-existing `spawn_falling` path (the `check_falling` tile-break trigger)
-hardcodes the slot fields (10×10, pen 1, `ai[0] = 1`, vel (0, 0.41),
-`falling_tile: Some(tile)`) and rides the custom falling-tile tail: gravity
-+ integrate per sub-step, the post-loop `landed`/`can_place_back`
-placement. Wave 3 does NOT rewire it — the dispatch arm and the death hook
-both gate on `falling_tile.is_none()`, so those slots keep their frozen
-flight (no double gravity, no double placement) and the new arm serves the
-data-carrying spawns (`spawn_with_data_ai*`). The two paths differ where
-the frozen tail was already approximate (the landing's bottom-edge probe
-vs the C#'s blocked-move kill + centre-cell place; the frozen tail's
-pen 1 vs the rows' pen −1) — recorded, not fixed (the no-behaviour-change
-freeze on the pre-existing path). The natural-fall spawner's move to the
-data path is the wiring follow-up.
+**The frozen-tail carve-out (deliberate deviation — RETIRED, see the
+RETIRE round below).** The pool's pre-existing `spawn_falling` path (the
+`check_falling` tile-break trigger) hardcoded the slot fields (10×10,
+pen 1, `ai[0] = 1`, vel (0, 0.41), `falling_tile: Some(tile)`) and rode the
+custom falling-tile tail: gravity + integrate per sub-step, the post-loop
+`landed`/`can_place_back` placement. Wave 3 did NOT rewire it — the
+dispatch arm and the death hook both gated on `falling_tile.is_none()`,
+so those slots kept their frozen flight (no double gravity, no double
+placement) and the new arm served the data-carrying spawns
+(`spawn_with_data_ai*`). The two paths differed where the frozen tail was
+already approximate (the landing's bottom-edge probe vs the C#'s
+blocked-move kill + centre-cell place; the frozen tail's pen 1 vs the
+rows' pen −1). **The RETIRE round (`dd7b6f32d`) executed the wiring
+follow-up**: the spawner moved to the data path, the frozen tail removed,
+the carve-out retired — the deltas are the RETIRE section's own record.
 
 **Damage-flag handling (deliberate deviation, the row-shape gap).** The
 `ProjData` shape carries neither `friendly` nor `hostile`. The arm holds
@@ -39423,17 +39424,23 @@ ranged (NOT hostile) — no player damage, verbatim.
   `kill_step` stand-in vs the C#'s step + `UpdatePosition` second step
   (`:19851` + `:20445`) — the recorded `kill_step` deviation (the kill
   itself does not differ).
-- The tile-cut bodies (the 484 vine block `:17910-17947`, the
-  cracked-brick block `:17948-17985`) skip with the unported cutting
-  layer; the `Next(3)` draw stays (the first `&&` operand).
+- The tile-cut bodies (the 484 rolling-cactus block `:17910-17947`, the
+  cracked-brick block `:17948-17985`) skipped with the unported cutting
+  layer; the `Next(3)` draw stayed (the first `&&` operand). **RESOLVED by
+  the RETIRE round** — the bodies ported (`cut_tiles_in_flight_box`, the
+  falling-block slice; the wave-3 "vine" label was a misnomer,
+  `TileID.RollingCactus = 484`).
 - The `GetCollisionParams` resize (no served kind overrides it), the wet
   branch (the liquid flags fold dry), the `SlopeCollision`
   `correctSlopeCollision` pass (deferred layer), the `CanPoundTile` gate +
   the fail-dust/sound/net tails of the tile walk's `SlopeTile`, the
   `netUpdate` writes — all skipped, each noted at its point.
-- The death placement's `WorldGen.PlaceTile(forced: true)` rides the
-  port's `place_tile` (which keeps its wall-unbreakable refusal — the
-  forced flag's exact bypass set is unported, a micro-deviation).
+- The death placement's `WorldGen.PlaceTile(forced: true)` rode the
+  port's `place_tile` (which kept its wall-unbreakable refusal — the
+  forced flag's exact bypass set was unported, a micro-deviation).
+  **RESOLVED by the RETIRE round** — the bypass set censused whole +
+  ported (`place_tile_forced`); the `mute: false` tail cue now queues on
+  the pool's sound intent (the Dig 0 / Coins 18 arms).
 - The 1081's Dig cue (`PlaySound(0)`, `:19845`) rides the `wants_sound`
   id-0 drain (the pass's `play_place_sound` Dig arm).
 - The channel aim-steer's gravDir −1 mirror folds positive (no gravity
@@ -39444,3 +39451,82 @@ ranged (NOT hostile) — no player damage, verbatim.
 + the wave-1/2 witnesses are WRITTEN, NOT RUN — verified by re-reading the
 cited C# blocks and hand arithmetic (the gravity ladders, the dust-gate
 draw sequences, the landing cells, the side-slide probe).
+
+### The RETIRE round (W4-d1, 2026-11-21, `dd7b6f32d` — research/246)
+
+The three documented open follow-ups censused WHOLE and ported; the
+frozen-tail carve-out RETIRED; the spray rows composed. The full census +
+the falling-block-family declaration live in
+`docs/research/246-d1-falling-block-final.md` (number per registry-150:
+246 first-free at the pushed tips). The deltas:
+
+**The natural-fall spawner move (the carve-out retired).** `spawn_falling`
+now delegates to `spawn_with_data_ai` (the rowed `SetDefaults` stats, the
+`ai0 = 1` argument landing the C#'s post-spawn `ai[0] = 1f` write,
+`WorldGen.cs:86063-86064`). The frozen tail is REMOVED: the pool's
+per-sub-step `falling_tile` gravity block + the post-loop
+`landed`/`can_place_back` bottom-edge placement; the dispatch/death-hook/
+player-damage gates drop their `falling_tile.is_none()` terms; the
+`tr-core/falling.rs` flight helpers (`TILE_FALL_GRAVITY`/
+`TIME_LEFT_DEFAULT`/`landed`/`can_place_back`) go with it (zero callers).
+The `falling_tile` field stays `None` on every slot (the save/net shape).
+The behaviour deltas over the frozen tail (each now the C#'s own shape):
+the pen −1 rows (the falls no longer die on first NPC contact), the
+blocked-move kill + centre-cell forced place (the half-brick up-shift,
+the 1081 side-slide, the below-tile refusals, the item-drop-on-refusal),
+the `FALLING_HOSTILE_KINDS` player-damage pass (the nine natural falls
+hurt the player — the frozen tail never did), the dust-gate draws on the
+`UpdateProjectiles` stream, the tile-cut chain, the +0.1 spin. The
+`netMode == 2` dedupe/2.5-velocity variant + the `ExploitDestroyQueue`
+tails stay MP-only folds.
+
+**The forced-PlaceTile bypass set (the micro-deviation resolved).**
+`tr_core::edit::place_tile_forced` — the `WorldGen.PlaceTile(forced: true)`
+route (`WorldGen.cs:59342-60295`) censused whole: the forced flag is the
+first disjunct of the `:59373` gate (bypasses `Collision.EmptyTile`'s
+occupant + player/NPC overlap scan AND the port's `CanKillTile`-derived
+wall-350 refusal the C# does not carry); the served kinds match NONE of
+the grass/moss rewrites, the drip gate, the liquid refusals, the
+per-kind placement arms (the full census in research/246 §1b). The free
+cell's `Clear(Tile | TilePaint | Slope)` keeps the wall + liquid; the 53's
+anniversary `color(7)` arm ports over `world.seeds` (the rainbow paint
+folds off — the shimmer-ocean mode the port does not generate). The
+occupied-cell paint-keep is a recorded micro-deviation for a path no
+caller reaches (`death_place` gates on `!active`). `death_place` rides the
+forced route + queues the `mute: false` tail cue (the `place_tile_sound`
+table: 330-333 → Coins 18, default → Dig 0) on the pool's sound intent;
+the drain routes id-18 → `play_place_sound` (the new arm).
+
+**The tile-cut bodies (the skip resolved, the falling-block slice).**
+`projectile_ai_falling::cut_tiles_in_flight_box` — `HandleMovement`'s two
+blocks in the C# order: the 484 rolling-cactus block (`:17910-17947`,
+every blocked move, no call-site rand — the wave-3 doc's "484 vine block"
+was a misnomer, `TileID.RollingCactus = 484`) FIRST, THEN the `Next(3)`
+(the first `&&` operand, the draw already stayed), THEN the cracked-brick
+block (`:17948-17985`) on the `== 0` roll. The gate folds: `CanCutTiles`
+passes every served kind, `friendly || hostile` excludes only the coin
+piles, `damage > 0` excludes the snow variants' zero-damage falls,
+`GetTileCutIgnorance` is `TileCutIgnore.None` (no `dontHurtNature`
+granter). The box is `position + velocity` pre-integration. The cutting
+layer's other slices keep their own lanes.
+
+**The spray compose (the f25/d18 DUP keep-one).** The seven solution
+sprays 146-149/1015-1017 rowed VERBATIM — the d18 `78ffe8e11` shape
+(alpha 255 + ignoreWater true) wins over the f25 `5e83d3ecb` copy (the
+145-precedent dropped pair); the merger keeps this branch's rows, drops
+the two duplicates (research/246 §2a). `ai_spray`'s types 1/4 ACTIVATED
+through d1's own `convert_sized` cells (the 147 Corrupt / 149 Red
+solutions); types 2/5/6/7 stay f25's, type 3 stays g42's — the merged
+match composes per research/246 §2b's table. The 145's own dropped
+alpha/ignoreWater stays its M3-ITEM-6 deviation.
+
+**The 502 Meowmere row (the d75 owed gate).** Census verdict: d1's band
+does NOT own it — d75 part 5 (`d328fad8c`) rowed the 502 itself (the only
+carrier across the pushed tips), the part-4 chime gate goes live on d75's
+tip; no d1 action, no duplicate row (research/246 §3).
+
+**Code-only round.** 12 new witnesses (the forced-place 3, the spray-row
+1, the spray-activation 1, the data-path-spawn 1, the tile-cut 3, the
+falling_tests re-derivations) WRITTEN, NOT RUN — verified by re-reading
+the cited C# blocks whole and hand arithmetic (the PlaceTile gate census,
+the cut-box spans, the conversion targets, the landing cells).
