@@ -695,6 +695,242 @@ pub(crate) fn client_toggle_pvp(app: &mut App, player_id: u8, hostile: bool) {
     }
 }
 
+/// `WorldGen.PlaceChest(x, y, type, notNearOtherChests: false, style)`
+/// (`WorldGen.cs:57813-57846`): the boulder gate below, then
+/// `TileObject.CanPlace`/`Place` + `Chest.CreateChest`. Returns the store
+/// index or -1. The `netMode == 1` send tail (`:57837-57844`) is the local
+/// placement path's, not the reader's — the reader relays its own `34`.
+fn place_chest(app: &mut App, x: i32, y: i32, kind: u16, style: i32) -> i32 {
+    // `:57816-57819` — a boulder under either column refuses.
+    for dx in 0..2 {
+        if app
+            .world
+            .tile(x + dx, y + 1)
+            .is_some_and(|t| tr_core::tiledata::SET_BOULDERS.has(t.kind))
+        {
+            return -1;
+        }
+    }
+    let Some(def) = tr_core::tileobject::def_for_tile(kind) else {
+        return -1;
+    };
+    let mut rand = std::mem::take(&mut app.world.place_rng);
+    let instance = tr_core::tileobject::can_place(
+        &app.world,
+        x,
+        y,
+        def,
+        style,
+        1,
+        None,
+        &mut rand,
+        app.world.tile_object_random_cache,
+    );
+    app.world.place_rng = rand;
+    let Some(instance) = instance else {
+        return -1;
+    };
+    if !tr_core::tileobject::place(&mut app.world, &instance) {
+        return -1;
+    }
+    // `Chest.CreateChest(objectData.xCoord, objectData.yCoord)` (`:57830`).
+    match crate::chest::find_empty_chest(&app.world_chests, instance.x_coord, instance.y_coord) {
+        Some(_) => {
+            let idx = crate::chest::create_chest(
+                &mut app.world_chests,
+                instance.x_coord,
+                instance.y_coord,
+            );
+            idx as i32
+        }
+        None => -1,
+    }
+}
+
+/// The `34 ChestUpdates` reader (`MessageBuffer.cs:1984-2158`) — the host's
+/// apply + relay. `b4` maps 0/1 chest place/destroy (21), 2/3 dresser (88),
+/// 4/5 chest2 (467); the host zeroes the wire index (`:1991-1994`) and
+/// answers the placement's store index (or -1 + the item drop on refusal).
+/// The destroy arms decode the object's top-left, `KillTile` it and relay
+/// the found index when the tile died.
+pub(crate) fn host_chest_updates(app: &mut App, server: &net::Server, id: u32, u: net::ChestUpdates) {
+    let (mut x, mut y) = (u.x as i32, u.y as i32);
+    let style = u.style as i32;
+    let action = u.action;
+    // The placement kinds and their tile types (`:2003`/:2045/:2080).
+    let (place_kind, destroy_kind): (u16, u16) = match action {
+        0 | 1 => (21, 21),
+        2 | 3 => (88, 88),
+        4 | 5 => (467, 467),
+        _ => return,
+    };
+    if matches!(action, 0 | 2 | 4) {
+        // The placement arm (`:2001-2017`/:2043-2055/:2078-2094`).
+        let result = place_chest(app, x, y, place_kind, style);
+        if result == -1 {
+            // The refusal: relay -1 to the asker + drop the item
+            // (`Item.NewItem(..., noBroadcast: true)`, `:2010`).
+            let drop = if action == 2 {
+                crate::chest::item_drop_dressers(style)
+            } else {
+                crate::chest::item_drop_chests(style, action == 4)
+            };
+            if drop > 0 {
+                let rng = app.rngs.global();
+                crate::world_sim::items::spawn_item_drop(&mut app.items, rng, drop, 1, x, y);
+            }
+            server.send(
+                id,
+                &S2c::ChestUpdates(net::ChestUpdates {
+                    chest: -1,
+                    ..u
+                }),
+            );
+            return;
+        }
+        // The success: relay the index to EVERYONE (`:2015`).
+        server.broadcast(&S2c::ChestUpdates(net::ChestUpdates {
+            chest: result as i16,
+            ..u
+        }));
+        app.world_key = None;
+        return;
+    }
+    // The destroy arms (`:2019-2039`/:2057-2074/:2096-2115`): the tile must
+    // be the object kind; decode the top-left, FindChest, KillTile, relay
+    // the index when the tile died.
+    let Some(t) = app.world.tile(x, y).copied() else {
+        return;
+    };
+    if t.kind != destroy_kind {
+        return; // the C# `goto default` falls through to nothing
+    }
+    if action == 3 {
+        // Dresser: frameX % 54 / 18 columns, frameY % 36 row (`:2061-2065`).
+        x -= i32::from(t.frame_x) % 54 / 18;
+        if t.frame_y % 36 != 0 {
+            y -= 1;
+        }
+    } else {
+        // Chest: frameX % 36 / frameY % 36 (`:2023-2030`/:2100-2107).
+        if t.frame_x % 36 != 0 {
+            x -= 1;
+        }
+        if t.frame_y % 36 != 0 {
+            y -= 1;
+        }
+    }
+    let number = crate::chest::find_chest(&app.world_chests, x, y)
+        .map(|i| i as i32)
+        .unwrap_or(-1);
+    crate::world_sim::editing::replicated_break(app, x, y, false, true);
+    if !app.world.tile_active(x, y) {
+        // `:2035` — the relay carries style 0 and the found index.
+        server.broadcast(&S2c::ChestUpdates(net::ChestUpdates {
+            action,
+            x: x as i16,
+            y: y as i16,
+            style: 0,
+            chest: number as i16,
+        }));
+    }
+}
+
+/// The `34` client half (`MessageBuffer.cs:2124-2157`): the direct
+/// placement/destroy pass — `PlaceChestDirect`/`PlaceDresserDirect` write the
+/// tiles + the store slot at the host's index, `DestroyChestDirect` removes
+/// it; the refusal (-1) kills the tile. Sound 0 plays on a placement.
+pub(crate) fn client_chest_updates(app: &mut App, u: net::ChestUpdates) {
+    let (x, y) = (u.x as i32, u.y as i32);
+    let style = u.style as i32;
+    let id = u.chest as i32;
+    match u.action {
+        0 | 4 => {
+            if id == -1 {
+                crate::world_sim::editing::replicated_break(app, x, y, true, false);
+                return;
+            }
+            app.audio
+                .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
+            let kind = if u.action == 0 { 21 } else { 467 };
+            crate::chest::place_chest_direct(app, x, y, kind, style, id);
+            app.world_key = None;
+        }
+        2 => {
+            if id == -1 {
+                crate::world_sim::editing::replicated_break(app, x, y, true, false);
+                return;
+            }
+            app.audio
+                .play_at("Dig_1", x as f32 * TILE_PX, y as f32 * TILE_PX, 1.0);
+            crate::chest::place_dresser_direct(app, x, y, 88, style, id);
+            app.world_key = None;
+        }
+        _ => {
+            // The destroy default (`:2153-2156`).
+            crate::chest::destroy_chest_direct(app, x, y, id);
+            crate::world_sim::editing::replicated_break(app, x, y, true, false);
+            app.world_key = None;
+        }
+    }
+}
+
+/// The `35 PlayerHeal` reader (`MessageBuffer.cs:2160-2177`): the host forces
+/// the id to the sender (`:2163-2166`), raises `HealEffect` for a peer
+/// (`:2168-2171` — the local player without ServerSideCharacter is skipped;
+/// the port's host has no ServerSideCharacter, so a peer's heal always
+/// spawns the text) and relays (`:2174`).
+pub(crate) fn host_player_heal(app: &mut App, server: &net::Server, id: u32, amount: i16) {
+    heal_effect_at_peer(app, id, amount);
+    server.broadcast_except(
+        &S2c::PlayerHeal(net::PlayerHeal {
+            player_id: id as u8,
+            amount,
+        }),
+        id,
+    ); // `:2174`
+}
+
+/// The `35` client half: a peer's heal text (`Player.HealEffect`,
+/// `Player.cs:4522-4529` — `CombatText.NewText` at the peer's position with
+/// the HealLife colour, the raw amount).
+pub(crate) fn client_player_heal(app: &mut App, player_id: u8, amount: i16) {
+    heal_effect_at_peer(app, player_id as u32, amount);
+}
+
+/// `Player.HealEffect(amount)` for a remote peer — the heal combat text at
+/// the peer's snapshot position (the port's `PlayerNet` is the C#
+/// `Main.player[id]`). The draws ride the bare global stream (the message
+/// handler's S1-E-21i precedent).
+fn heal_effect_at_peer(app: &mut App, peer: u32, amount: i16) {
+    let Some(p) = app.remote_players.get(&peer) else {
+        return;
+    };
+    let (px, py) = (p.x, p.y);
+    let text = (amount as i32).to_string();
+    let size = match app.lookups.combat_text_font.as_ref() {
+        Some(f) => [crate::ui::text::font_width(f, &text, 1.0), f.line_spacing],
+        None => [text.chars().count() as f32 * 8.0, 10.0],
+    };
+    let location = crate::combat_text::Rect {
+        x: px,
+        y: py,
+        width: player::WIDTH,
+        height: player::HEIGHT,
+    };
+    crate::combat_text::spawn_amount(
+        &mut app.combat_texts,
+        location,
+        crate::combat_text::HEAL_LIFE,
+        amount as i32,
+        false,
+        false,
+        size,
+        1.0,
+        app.rngs.global(),
+    );
+}
+
 /// The `20 SectionRange` body for a `SendTileSquare(whoAmi, x, y, w, h)`
 /// (`NetMessage.cs:2627-2630`) — the live tiles read back out.
 pub(crate) fn tile_square(app: &App, x: i32, y: i32, w: i32, h: i32) -> net::SectionRange {

@@ -762,12 +762,12 @@ impl App {
                 crate::chest::set_chest_slot(&mut self.world_chests, idx as usize, slot, value);
                 server.broadcast_except(&S2c::ChestItem(ci), id); // `:1915`
             }
-            // S1-I-1 wave I: `case 34`'s bodies + codecs exist (`net.rs`);
-            // the host's `PlaceChest`/`KillTile` pass + the `34` relays
-            // (`MessageBuffer.cs:1995-2122`) ride the tile-edit send-path
-            // pass (S1-I-4) — the port's chest place/break already runs
-            // through `world_sim/editing.rs`'s local edit chain.
-            C2s::ChestUpdates(_) => {}
+            // `case 34` — a client's chest/dresser place or destroy
+            // (`MessageBuffer.cs:1984-2158`): the host's PlaceChest/KillTile
+            // pass + the index/refusal relays — W4-g48 (`net_apply`).
+            C2s::ChestUpdates(u) => {
+                crate::app::net_apply::host_chest_updates(self, server, id, u);
+            }
             // `case 33` — the open chest / its rename (`MessageBuffer.cs:1920-1982`).
             C2s::PlayerChest(pc) => {
                 if pc.name_len != 0 {
@@ -942,13 +942,17 @@ impl App {
             // parked for S1-I-4.
             C2s::MassWireOperation(_) => {}
 
-            // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
-            // `net.rs`; the host apply/relay arms (`MessageBuffer.cs:2160-2177`,
-            // `:2178-2201`, `:2256-2270`, `:2271-2289`, `:2307-2324`) land with
-            // the send-path pass (S1-I-4) — 36's faeling edge (`:2195-2198`)
-            // rides there too.
-            C2s::PlayerHeal(_)
-            | C2s::TalkNpc(_)
+            // `case 35` — a client's heal effect (`MessageBuffer.cs:2160-
+            // 2177`): the peer's HealEffect text + the relay — W4-g48.
+            C2s::PlayerHeal(h) => {
+                crate::app::net_apply::host_player_heal(self, server, id, h.amount);
+            }
+            // W4-d96 (S1-I-1 player-family first half): the remaining bodies +
+            // codecs in `net.rs`; the host apply/relay arms
+            // (`MessageBuffer.cs:2178-2201`, `:2256-2270`, `:2271-2289`,
+            // `:2307-2324`) land with the send-path pass (S1-I-4) — 36's
+            // faeling edge (`:2195-2198`) rides there too.
+            C2s::TalkNpc(_)
             | C2s::PlayerZone(_)
             | C2s::ItemAnim(_)
             | C2s::ManaEffect(_) => {}
@@ -2070,10 +2074,12 @@ impl App {
                     self.rngs.global(),
                 );
             }
-            // S1-I-1 wave I: `34`'s client apply (`MessageBuffer.cs:
-            // 2124-2157`'s PlaceChestDirect/DestroyChestDirect pass) rides
-            // the tile-edit send-path pass (S1-I-4).
-            S2c::ChestUpdates(_) => {}
+            // `case 34` on a client — the host's chest place/destroy relay
+            // (`MessageBuffer.cs:2124-2157`): the PlaceChestDirect/
+            // DestroyChestDirect pass — W4-g48 (`net_apply`).
+            S2c::ChestUpdates(u) => {
+                crate::app::net_apply::client_chest_updates(self, u);
+            }
             // `case 30` on a client — a peer's PvP flag
             // (`MessageBuffer.cs:1858-1859`): the snapshot store; the chat
             // line arrives as the `82` module — W4-g48 (`net_apply`).
@@ -2168,12 +2174,17 @@ impl App {
                 entry.off_y = 0.0;
                 entry.talk_npc = None; // `:37648` — `SetTalkNPC(-1)`
             }
-            // W4-d96 (S1-I-1 player-family first half): bodies + codecs in
-            // `net.rs`; the client read sites (`MessageBuffer.cs:2160-2177`,
-            // `:2178-2201`, `:2256-2270`, `:2271-2289`, `:2307-2324`) land
-            // with the send-path pass (S1-I-4) — nothing sends them yet.
-            S2c::PlayerHeal(_)
-            | S2c::TalkNpc(_)
+            // `case 35` on a client — a peer's heal text
+            // (`MessageBuffer.cs:2168-2171`, `Player.HealEffect`) — W4-g48.
+            S2c::PlayerHeal(h) => {
+                crate::app::net_apply::client_player_heal(self, h.player_id, h.amount);
+            }
+            // W4-d96 (S1-I-1 player-family first half): the remaining bodies +
+            // codecs in `net.rs`; the client read sites
+            // (`MessageBuffer.cs:2178-2201`, `:2256-2270`, `:2271-2289`,
+            // `:2307-2324`) land with the send-path pass (S1-I-4) — nothing
+            // sends them yet.
+            S2c::TalkNpc(_)
             | S2c::PlayerZone(_)
             | S2c::ItemAnim(_)
             | S2c::ManaEffect(_) => {}
@@ -6240,5 +6251,76 @@ mod g48_apply_tests {
         // The client received the relay (its own echo is skipped by the
         // host's broadcast_except, so the flag lands via the module only if
         // a second peer existed; here the host's store is the witness).
+    }
+
+    /// `case 34` action 0 (`MessageBuffer.cs:2001-2017`): a client's chest
+    /// placement runs the host's `PlaceChest` (the store slot + the 2x2
+    /// tiles) and relays the index; the receiving client writes the same
+    /// tiles + store slot via `PlaceChestDirect`.
+    #[test]
+    fn g48_34_chest_place_replicates_the_store_and_tiles() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The dirt row (y 4) supports a chest at (8, 3) — the 2x2 sits on it.
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::ChestUpdates(net::ChestUpdates {
+                action: 0,
+                x: 8,
+                y: 3,
+                style: 0,
+                chest: 0, // the client writes 0; the host zeroes it (`:1993`)
+            }));
+        }
+        let mut placed = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            placed = crate::chest::find_chest(&host_app.world_chests, 8, 2).is_some()
+                && crate::chest::find_chest(&client_app.world_chests, 8, 2).is_some();
+            if placed {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(placed, "the chest store slot landed on both sides");
+        // The 2x2 tiles (the anchor is (8, 2): PlaceChest's objectData.yCoord).
+        for app in [&host_app, &client_app] {
+            for dx in 0..2 {
+                for dy in 0..2 {
+                    let t = app.world.tile(8 + dx, 2 + dy).unwrap();
+                    assert!(t.active() && t.kind == 21, "chest cell ({dx},{dy})");
+                }
+            }
+        }
+    }
+
+    /// `case 35` (`MessageBuffer.cs:2160-2177`): a client's heal raises the
+    /// HealLife combat text at the peer's position on the host and relays;
+    /// the receiving client spawns the same text.
+    #[test]
+    fn g48_35_player_heal_spawns_the_peer_text() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerHeal(net::PlayerHeal {
+                player_id: 255, // the host forces the sender (`:2163-2166`)
+                amount: 20,
+            }));
+        }
+        let mut spawned = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            spawned = host_app.combat_texts.iter().any(|t| t.active && t.text == "20");
+            if spawned {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(spawned, "the host spawned the peer's heal text");
+        let t = host_app.combat_texts.iter().find(|t| t.active).unwrap();
+        assert_eq!(t.color, crate::combat_text::HEAL_LIFE, "the HealLife colour");
     }
 }
