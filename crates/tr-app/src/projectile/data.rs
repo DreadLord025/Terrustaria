@@ -3393,6 +3393,21 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             CRIMSON_HEART => (20.0, 20.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
             DIRTIEST_BLOCK => (16.0, 16.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
             BOULDER_PET => (32.0, 32.0, 67, -1, 18000, 0, true, false, false, RESET_STATE),
+            // W4-d7 F3 — the deferred aiStyle-67 pets' rows: the Companion
+            // Cube (`Projectile.cs:7012-7023`: 30x30, penetrate -1,
+            // netImportant, timeLeft *= 5, friendly, ignoreWater, scale 0.8)
+            // and the Rainbow Boulder Pet (`:10163-10174`: 32x32, the same
+            // slice but scale 0.5). Both re-pin friendly false per tick
+            // (`:49562`), no minion slice (the slice-B pets' convention).
+            COMPANION_CUBE => (30.0, 30.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.8)),
+            RAINBOW_BOULDER_PET => (32.0, 32.0, 67, -1, 18000, 0, true, false, false, (false, -2, false, -1, 0, 0.5)),
+            // W4-d7 F3 — the Cob Whip's spider (`Projectile.cs:9767-9779`):
+            // 18x10, aiStyle 67, friendly, penetrate -1, netImportant, the
+            // LOCAL immunity pair (20), armorPenetration 30 (dropped — no
+            // ProjData field, the spawn-source convention, the 864 precedent),
+            // decidesManualFallThrough. The stock timeLeft 3600 (NOT *5 — the
+            // row sets no timeLeft) / tileCollide true.
+            COB_WHIP_SPIDER => (18.0, 10.0, 67, -1, TIME_LEFT_DEFAULT, 0, true, false, false, (true, 20, false, -1, 0, 1.0)),
 
             // The Storm Tiger family (`Projectile.cs:8091`/`:8105`/`:8119`)
             // — aiStyle 67; these three arms set neither tileCollide nor
@@ -4153,6 +4168,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The slice-B pets set `netImportant` themselves
             // (`Projectile.cs:5419`/`:9643`/`:9993`).
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // W4-d7 F3 — the deferred pets + the Cob Whip spider set
+            // `netImportant` themselves (`Projectile.cs:7018`/`:10169`/`:9774`).
+            || matches!(kind, COMPANION_CUBE | RAINBOW_BOULDER_PET | COB_WHIP_SPIDER)
             // S1-P-i42 — the glowstick/flare family sets `netImportant = true`
             // (`Projectile.cs:1328`/`:1356`/`:2517`/`:4024`/`:5487`/`:5853`/
             // `:8345`/`:9582`/`:9593`/`:9604`/`:9615`/`:10155`).
@@ -4205,6 +4223,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // The slice-B pets set `ignoreWater` themselves
             // (`Projectile.cs:5422`/`:9646`/`:9996`) — they are not minions.
             || matches!(kind, CRIMSON_HEART | DIRTIEST_BLOCK | BOULDER_PET)
+            // W4-d7 F3 — the Companion Cube + Rainbow Boulder Pet set
+            // `ignoreWater` themselves (`Projectile.cs:7021`/`:10173`); the
+            // Cob Whip spider keeps the stock false (`:9767-9779` sets none).
+            || matches!(kind, COMPANION_CUBE | RAINBOW_BOULDER_PET)
             // AI_026 slice A: the Tiki Spirit (`Projectile.cs:2860`) and the
             // Wisp (`:3002`) set `ignoreWater`; the other flyers keep false.
             || matches!(kind, TIKI_SPIRIT | WISP)
@@ -4266,6 +4288,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // (`Projectile.cs:4643`); the aiStyle-63 arm drives
                 // `shouldFallThrough` (`:29345`/`:29349`).
                 | BABY_SPIDER
+                // W4-d7 F3 — the Cob Whip spider's `decidesManualFallThrough`
+                // (`Projectile.cs:9778`).
+                | COB_WHIP_SPIDER
                 // S1-P-i25: the new aiStyle-67 rows' `decidesManualFallThrough`
                 // — the flinx (`:8980`), the mushroom boi (`:9679`), the
                 // cattivas (`:10207`/`:10374`) and the clay pot (`:10462`).
@@ -4396,6 +4421,15 @@ pub const CRIMSON_HEART: u16 = 500;
 pub const DIRTIEST_BLOCK: u16 = 1018;
 /// `ProjectileID.BoulderPet` (`ProjectileID.cs:2666`).
 pub const BOULDER_PET: u16 = 1056;
+/// `ProjectileID.CompanionCube` (`ProjectileID.cs:1860`) — the aiStyle-67
+/// pet, W4-d7 F3 (`Projectile.cs:7012-7023`).
+pub const COMPANION_CUBE: u16 = 653;
+/// `ProjectileID.RainbowBoulderPet` (`ProjectileID.cs:2734`) — the aiStyle-67
+/// pet, W4-d7 F3 (`Projectile.cs:10163-10174`).
+pub const RAINBOW_BOULDER_PET: u16 = 1090;
+/// `ProjectileID.CobWhipSpider` (`ProjectileID.cs:2626`) — the Cob Whip's
+/// aiStyle-67 spider, W4-d7 F3 (`Projectile.cs:9767-9779`).
+pub const COB_WHIP_SPIDER: u16 = 1036;
 
 pub const DEADLY_SPHERE: u16 = 533;
 pub const TEMPEST: u16 = 407;
@@ -4665,6 +4699,14 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // the aiStyle-63 arm's frame machine (`Projectile.cs:29381-29407`)
         // indexes it. The 404 Flairon head keeps the stock 1 (no override).
         BABY_SPIDER => 4,
+        // W4-d7 F3 — the Cob Whip spider's 4-frame sheet (`Main.cs:8511`);
+        // the aiStyle-67 walk machine (`Projectile.cs:50768-50797`) indexes
+        // it. The Storm Tigers' sheets (`Main.cs:8650-8652`): the 833 walks
+        // 0-7 / flies 8, the 834/835 walk 0-9 / fly 10-11. The 653/1090 keep
+        // the stock 1 (no `projFrames` override in `Main.cs:8444-8727`).
+        COB_WHIP_SPIDER => 4,
+        STORM_TIGER_1 => 10,
+        STORM_TIGER_2 | STORM_TIGER_3 => 12,
 
         // The Explosive Trap family (`Main.cs:8467-8472`): the traps and the
         // T1/T2 blasts animate 4 frames, the T3 blast 5 — `AI_138`'s wrap
