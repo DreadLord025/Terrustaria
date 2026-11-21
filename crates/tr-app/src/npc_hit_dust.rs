@@ -117,6 +117,12 @@
 //! - 83213/83216 — Vortex Rifleman 425 (`:83207-83222`), ×20, Next(4)==0.
 //! - 83253 — Vortex Larva 428 (`:83247-83254`), ×20, NO child gate live
 //!   (the 229/240 selector is death-half only).
+//! Batch 8 (the Nebula pillar's gated-child live arms — dust 249 parent
+//! + the Next-gated dust-242 child, the same four post-writes):
+//! - 83280/83283 — Nebula Soldier 424 (`:83274-83289`), ×20, Next(4)==0.
+//! - 83318/83321 — Nebula Beast 423 (`:83312-83327`), ×50, Next(4)==0.
+//! - 83351/83354 — Nebula Headcrab 421 (`:83345-83360`), ×20, Next(2)==0.
+//! - 83384/83387 — Nebula Brain 420 (`:83378-83393`), ×20, Next(2)==0.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -627,6 +633,27 @@ pub fn replay_hit_dust(
         428 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
                 live_dust(s, 241, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:83274-83393` — the Nebula gated-child arms: dust 249 parent +
+        // the dust-242 child (the same four post-writes). 423 rides ×50
+        // (`:83316`); 421/420 gate Next(2) (`:83352`/`:83385`).
+        424 | 423 | 421 | 420 => {
+            let (gate, mult) = match s.npc_type {
+                423 => (4, 50.0),
+                421 | 420 => (2, 20.0),
+                _ => (4, 20.0),
+            };
+            for _ in 0..hit_count(s.dmg, s.life_max, mult) {
+                live_dust(s, 249, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                if rng.next_max(gate) == 0 {
+                    let idx = live_dust(s, 242, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                    let d = dust.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale = 1.5;
+                    d.fade_in = 1.0;
+                    d.velocity *= 3.0;
+                }
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -1387,5 +1414,42 @@ mod tests {
         }
         assert_eq!(rng, twin_rng);
         assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 8 — the Nebula rows (`NPC.cs:83280-83288`/`:83318-
+    /// 83326`/`:83351-83359`/`:83384-83392`): dust 249 parent + 242
+    /// child; 423 ×50 Next(4), 421/420 ×20 Next(2).
+    #[test]
+    fn w4_g62_the_nebula_rows() {
+        let world = air();
+        let ctx = ctx();
+        for (t, gate, mult) in [(424, 4, 20.0), (423, 4, 50.0), (421, 2, 20.0), (420, 2, 20.0)] {
+            let s = snap(t, 100, 100, 50.0); // mult/2 iterations
+            let iters = hit_count(s.dmg, s.life_max, mult);
+            let mut rng = UnifiedRandom::new(89);
+            let mut dust = DustPool::new();
+            replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+            let mut twin_rng = UnifiedRandom::new(89);
+            let mut twin = DustPool::new();
+            for _ in 0..iters {
+                twin.new_dust(
+                    &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 249,
+                    1.0, -1.0, 0, Color::default(), 1.0,
+                );
+                if twin_rng.next_max(gate) == 0 {
+                    let idx = twin.new_dust(
+                        &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 242,
+                        0.0, 0.0, 0, Color::default(), 1.0,
+                    );
+                    let d = twin.slot_mut(idx);
+                    d.no_gravity = true;
+                    d.scale = 1.5;
+                    d.fade_in = 1.0;
+                    d.velocity *= 3.0;
+                }
+            }
+            assert_eq!(rng, twin_rng, "type {t}");
+            assert_eq!(dust.slots(), twin.slots(), "type {t}");
+        }
     }
 }
