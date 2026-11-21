@@ -586,15 +586,21 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
-            // W4-d36 census batch 0 — the E4 re-pin band 762-811
-            // (research/108-E `bdd59afb`; doc-109's 731-768 collides with
-            // the canonical small-lane 731-761). The vanilla type rides
-            // `cs_id`/the bestiary `net_id`.
-            NpcKind::ToxicSludge => 762,
-            NpcKind::Penguin => 763,
-            NpcKind::PenguinBlack => 764,
-            NpcKind::GiantTortoise => 765,
-            NpcKind::IceTortoise => 766,
+            // W4-d36 census batch 0 — the d37-R7 re-pin band 767-816
+            // (research/108 R7 `a341daa12`; the E4 762-811 draft's head
+            // collided c4's Arapaima@762 + d120's towns 763-766, R5/R6;
+            // doc-109's 731-768 collided the small-lane 731-761). The
+            // vanilla type rides `cs_id`/the bestiary `net_id`.
+            NpcKind::ToxicSludge => 767,
+            NpcKind::Penguin => 768,
+            NpcKind::PenguinBlack => 769,
+            NpcKind::GiantTortoise => 770,
+            NpcKind::IceTortoise => 771,
+            // W4-d36 census batch 1 — the aiStyle-5 hover trio at their
+            // R7-band slots (ascending vanilla order, the b0 convention).
+            NpcKind::Crimera => 781,
+            NpcKind::MossHornet => 782,
+            NpcKind::Moth => 793,
         }
     }
 
@@ -925,14 +931,18 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
-            // W4-d36 census batch 0 — the 762-band decode (the foreign
+            // W4-d36 census batch 0 — the R7 767-band decode (the foreign
             // stash's `NpcKind::X => NpcKind::X` generator bug FIXED:
             // the match scrutinee is the u16 id, the arm is id => kind).
-            762 => NpcKind::ToxicSludge,
-            763 => NpcKind::Penguin,
-            764 => NpcKind::PenguinBlack,
-            765 => NpcKind::GiantTortoise,
-            766 => NpcKind::IceTortoise,
+            767 => NpcKind::ToxicSludge,
+            768 => NpcKind::Penguin,
+            769 => NpcKind::PenguinBlack,
+            770 => NpcKind::GiantTortoise,
+            771 => NpcKind::IceTortoise,
+            // W4-d36 census batch 1 — the hover trio's decode arms.
+            781 => NpcKind::Crimera,
+            782 => NpcKind::MossHornet,
+            793 => NpcKind::Moth,
             _ => return None,
         })
     }
@@ -1821,6 +1831,11 @@ impl NpcKind {
             | NpcKind::PenguinBlack => "NPC_Hit_1",
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => "NPC_Hit_24",
+            // W4-d36 census batch 1: the hover trio's NPCHit1
+            // (`NPC.cs:11177`/`:11231`/`:11633`).
+            NpcKind::Crimera
+            | NpcKind::MossHornet
+            | NpcKind::Moth => "NPC_Hit_1",
             _ => return None,
         })
     }
@@ -2132,6 +2147,11 @@ impl NpcKind {
             | NpcKind::PenguinBlack => "NPC_Killed_1",
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => "NPC_Killed_27",
+            // W4-d36 census batch 1: the hover trio's NPCDeath1
+            // (`NPC.cs:11178`/`:11233`/`:11635`).
+            NpcKind::Crimera
+            | NpcKind::MossHornet
+            | NpcKind::Moth => "NPC_Killed_1",
             _ => return None,
         })
     }
@@ -2183,6 +2203,12 @@ impl NpcKind {
             | NpcKind::ServantOfCthulhu
             | NpcKind::Bee
             | NpcKind::BeeSmall => true,
+            // W4-d36 census batch 1 — the hover trio's `noGravity = true`
+            // rows: Crimera 173 (`NPC.cs:11179`), Moss Hornet 176
+            // (`:11235`), Moth 205 (`:11637`).
+            NpcKind::Crimera
+            | NpcKind::MossHornet
+            | NpcKind::Moth => true,
             // The Creeper (267, `NPC.cs:12466`), the Probe (139, `:10731`),
             // the Martian Drone (388, `:13948`), the Drippler (490,
             // `:14620`), the Poltergeist (330, `:13190`), the Dungeon
@@ -2491,6 +2517,12 @@ impl NpcKind {
             | NpcKind::PenguinBlack => 7,
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => 39,
+            // W4-d36 census batch 1: 173/176/205 aiStyle 5
+            // (`NPC.cs:11173`/`:11227`/`:11629`) — the style axis claims
+            // them (`ai_005_hover_family`).
+            NpcKind::Crimera
+            | NpcKind::MossHornet
+            | NpcKind::Moth => 5,
         }
     }
 
@@ -3028,6 +3060,11 @@ impl NpcKind {
             | NpcKind::PenguinBlack => (16.0, 34.0),
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => (46.0, 32.0),
+            // W4-d36 census batch 1 (`NPC.cs:11171-11172`/`:11225-11226`/
+            // `:11627-11628`): Crimera 30x30, Moss Hornet 34x32, Moth 40x40.
+            NpcKind::Crimera => (30.0, 30.0),
+            NpcKind::MossHornet => (34.0, 32.0),
+            NpcKind::Moth => (40.0, 40.0),
         }
     }
 
@@ -3136,6 +3173,10 @@ impl NpcKind {
             NpcKind::PenguinBlack => 149,
             NpcKind::GiantTortoise => 153,
             NpcKind::IceTortoise => 154,
+            // W4-d36 census batch 1 (`NPCID.cs:11023`/`:11029`/`:11087`).
+            NpcKind::Crimera => 173,
+            NpcKind::MossHornet => 176,
+            NpcKind::Moth => 205,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3686,6 +3727,10 @@ impl NpcKind {
             | NpcKind::PenguinBlack => 5,
             NpcKind::GiantTortoise => 470,
             NpcKind::IceTortoise => 400,
+            // W4-d36 census batch 1 (`NPC.cs:11176`/`:11230`/`:11632`).
+            NpcKind::Crimera => 40,
+            NpcKind::MossHornet => 220,
+            NpcKind::Moth => 1000,
         }
     }
 
@@ -4057,6 +4102,10 @@ impl NpcKind {
             | NpcKind::PenguinBlack => 0,
             NpcKind::GiantTortoise => 80,
             NpcKind::IceTortoise => 55,
+            // W4-d36 census batch 1 (`NPC.cs:11174`/`:11228`/`:11630`).
+            NpcKind::Crimera => 22,
+            NpcKind::MossHornet => 70,
+            NpcKind::Moth => 70,
         }
     }
 }

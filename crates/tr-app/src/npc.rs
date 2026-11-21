@@ -1086,7 +1086,8 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
-    // ---- W4-d36 census batch 0 (research/109 supersede-note: E4 band 762+).
+    // ---- W4-d36 census batch 0 (d37-R7 re-pin: band 767-816, b0 rides
+    // 767-771; research/108 R7 `a341daa12` supersedes the E4 762-811 note).
     /// `NPCID.ToxicSludge` (141) — W4-d36 census (`NPC.cs` SetDefaults
     /// case 141, `:10776-10790`): 34x28, aiStyle 1, dmg 50, def 18, 150 HP,
     /// kb 0.8, value 400, alpha 55, scale 1.1.
@@ -1107,6 +1108,24 @@ pub enum NpcKind {
     /// case 154, `:10945-10960`): 46x32, aiStyle 39, dmg 55, def 28, 400 HP,
     /// kb 0.3, value 450, coldDamage.
     IceTortoise,
+    // ---- W4-d36 hover batch (the in-flight stash's presets COMPLETED:
+    // R7-band slots 781/782/793, ascending vanilla order).
+    /// `NPCID.Crimera` (173) — W4-d36 (`NPC.cs` SetDefaults case 173,
+    /// `:11168-11193`): 30x30, aiStyle 5, dmg 22, def 8, 40 HP, kb 0.5,
+    /// value 90, noGravity (NO noTileCollide row — it bounces ×0.4,
+    /// `:50659-50661`). WIRED: `HoverParams::CRIMERA`.
+    Crimera,
+    /// `NPCID.MossHornet` (176) — W4-d36 (`NPC.cs` SetDefaults case 176,
+    /// `:11223-11237`): 34x32, aiStyle 5, dmg 70, def 22, 220 HP, kb 0.5,
+    /// value 600, noGravity. WIRED: `HoverParams::MOSS_HORNET` (flag5
+    /// TRUE — `:50447` excludes 173/6/42/231-235/94/139/619, not 176).
+    /// The stinger volley (`:50754-50810`, proj 55 dmg 30) is the
+    /// documented remainder — the hostile-shot seam, the Probe precedent.
+    MossHornet,
+    /// `NPCID.Moth` (205) — W4-d36 (`NPC.cs` SetDefaults case 205,
+    /// `:11625-11639`): 40x40, aiStyle 5, dmg 70, def 28, 1000 HP, kb 0.4,
+    /// value 600, noGravity, rarity 2. WIRED: `HoverParams::MOTH`.
+    Moth,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3560,6 +3579,11 @@ impl Npc {
             | NpcKind::PenguinBlack => 1.0,
             NpcKind::GiantTortoise
             | NpcKind::IceTortoise => 0.3,
+            // W4-d36 hover batch (`NPC.cs:11180`/`:11232`/`:11634`):
+            // Crimera/MossHornet 0.5, Moth 0.4.
+            NpcKind::Crimera
+            | NpcKind::MossHornet => 0.5,
+            NpcKind::Moth => 0.4,
             _ => 0.4,
         }
     }
@@ -3947,6 +3971,10 @@ impl Npc {
             | NpcKind::PenguinBlack => 0,
             NpcKind::GiantTortoise => 30,
             NpcKind::IceTortoise => 28,
+            // W4-d36 hover batch (`NPC.cs:11175`/`:11229`/`:11631`).
+            NpcKind::Crimera => 8,
+            NpcKind::MossHornet => 22,
+            NpcKind::Moth => 28,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4326,6 +4354,10 @@ impl Npc {
             | NpcKind::PenguinBlack => 0.0,
             NpcKind::GiantTortoise => 500.0,
             NpcKind::IceTortoise => 450.0,
+            // W4-d36 hover batch (`NPC.cs:11181`/`:11234`/`:11636`).
+            NpcKind::Crimera => 90.0,
+            NpcKind::MossHornet => 600.0,
+            NpcKind::Moth => 600.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -5192,6 +5224,14 @@ impl Npc {
             // shot needs the hostile-shot seam); the per-NPC step is the
             // family no-op (the Destroyer precedent).
             NpcKind::Probe => {}
+            // W4-d36 — the census aiStyle-5 flyers ride the shared hover
+            // core on their own presets (the Hornet/MeteorHead precedent;
+            // the in-flight stash's arms, COMPLETED with their variants +
+            // the two C# fixes: MOSS_HORNET flag5 true `:50447`, CRIMERA
+            // collides — no noTileCollide row in case 173 `:11168-11193`).
+            NpcKind::Crimera => self.update_hover(world, player, HoverParams::CRIMERA),
+            NpcKind::MossHornet => self.update_hover(world, player, HoverParams::MOSS_HORNET),
+            NpcKind::Moth => self.update_hover(world, player, HoverParams::MOTH),
             _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
         }
     }
@@ -6149,6 +6189,10 @@ impl Npc {
             NpcKind::EaterOfSouls | NpcKind::Hornet | NpcKind::MeteorHead => {
                 unreachable!("aiStyle 5 rides the style axis (S1-D-2)")
             }
+            // W4-d36 hover batch (173/176/205): same axis, same unreachable.
+            NpcKind::Crimera | NpcKind::MossHornet | NpcKind::Moth => {
+                unreachable!("aiStyle 5 rides the style axis (W4-d36)")
+            }
             NpcKind::KingSlime => self.update_king_slime(world, player, rng),
             NpcKind::EyeOfCthulhu => self.update_eye_of_cthulhu(world, player),
             NpcKind::ServantOfCthulhu => {
@@ -6763,6 +6807,53 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = if self.ai[1] < 10.0 { 7 } else if self.ai[1] < 20.0 { 6 } else { 5 };
                 } else { self.frame_counter = 0.0; self.frame = 7; }
+            }
+            // ---- W4-d36 hover batch FindFrame arms.
+            NpcKind::Crimera => {
+                // `case 173` (`NPC.cs:76967-76978`): the counter++ 8-tick
+                // flap over the 2-row strip (`Main.npcFrameCount[173] = 2`,
+                // `Main.cs:67082`) — the case-6 group's shape verbatim.
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 8.0 {
+                    self.frame_counter = 0.0;
+                    self.frame += 1;
+                }
+                if self.frame >= 2 {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::MossHornet => {
+                // `case 176` (`NPC.cs:74958-74969`): counter++, > 4 the
+                // row advances, > num (2 rows, `Main.npcFrameCount[176]
+                // = 2`) wraps to 0 — a 5-tick flap, NOT the Hornet's
+                // four-phase clock.
+                self.frame_counter += 1.0;
+                if self.frame_counter > 4.0 {
+                    self.frame += 1;
+                    self.frame_counter = 0.0;
+                }
+                if self.frame > 1 {
+                    self.frame = 0;
+                }
+            }
+            NpcKind::Moth => {
+                // `case 205` (`NPC.cs:74935-74957`): the +0.5 clock over
+                // the 2/4/6/8 phase bands, rows 0/1/2/1 on the 3-row
+                // strip (`Main.npcFrameCount[205] = 3`); the >= 8 else
+                // resets the counter WITHOUT a row write (the C#'s
+                // last-phase frame stands).
+                self.frame_counter += 0.5;
+                if self.frame_counter < 2.0 {
+                    self.frame = 0;
+                } else if self.frame_counter < 4.0 {
+                    self.frame = 1;
+                } else if self.frame_counter < 6.0 {
+                    self.frame = 2;
+                } else if self.frame_counter < 8.0 {
+                    self.frame = 1;
+                } else {
+                    self.frame_counter = 0.0;
+                }
             }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
@@ -18771,6 +18862,10 @@ impl Npc {
             NpcKind::PenguinBlack => 552,
             NpcKind::GiantTortoise => 553,
             NpcKind::IceTortoise => 554,
+            // W4-d36 hover batch — the next fresh hash slots (injective).
+            NpcKind::Crimera => 555,
+            NpcKind::MossHornet => 556,
+            NpcKind::Moth => 557,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23839,7 +23934,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 275] = [
+    pub(super) const ALL_KINDS: [NpcKind; 278] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24124,6 +24219,10 @@ mod tests {
         NpcKind::PenguinBlack,
         NpcKind::GiantTortoise,
         NpcKind::IceTortoise,
+        // W4-d36 hover batch.
+        NpcKind::Crimera,
+        NpcKind::MossHornet,
+        NpcKind::Moth,
     ];
 
     #[test]
@@ -24309,6 +24408,78 @@ mod tests {
             assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
             assert_eq!(crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id, ty as i32, "{kind:?} bestiary net_id");
         }
+    }
+
+    /// W4-d36 hover batch — the aiStyle-5 trio's `SetDefaults` rows pin
+    /// against the C# through the port's tables (the b0 pin's shape).
+    /// The protocol ids ride the d37-R7 band slots 781/782/793.
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_hover_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, proto, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::Crimera, 173u16, 781u16, 5u8, 30.0, 30.0, 22, 8, 40, 0.5f32, 90.0f32),
+            (NpcKind::MossHornet, 176u16, 782u16, 5u8, 34.0, 32.0, 70, 22, 220, 0.5f32, 600.0f32),
+            (NpcKind::Moth, 205u16, 793u16, 5u8, 40.0, 40.0, 70, 28, 1000, 0.4f32, 600.0f32),
+        ];
+        for (kind, ty, proto, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.to_u16(), proto, "{kind:?} the R7-band slot");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert!(kind.no_gravity(), "{kind:?} noGravity");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+            assert_eq!(crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id, ty as i32, "{kind:?} bestiary net_id");
+        }
+    }
+
+    /// W4-d36 hover batch — the trio's FindFrame clocks pin against the
+    /// C# cases 173/176/205 (`NPC.cs:76967`/`:74958`/`:74935`).
+    /// WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_hover_the_frame_clocks_match_the_csharp_cases() {
+        // Crimera: the 8-tick flap over 2 rows (case 173).
+        let mut c = Npc::new(NpcKind::Crimera, 0.0, 0.0, 1, 0.0);
+        for _ in 0..7 {
+            c.find_frame();
+        }
+        assert_eq!((c.frame, c.frame_counter), (0, 7.0), "the 7th tick holds row 0");
+        c.find_frame();
+        assert_eq!((c.frame, c.frame_counter), (1, 0.0), "the 8th tick flips");
+        for _ in 0..8 {
+            c.find_frame();
+        }
+        assert_eq!((c.frame, c.frame_counter), (0, 0.0), "the 16th tick wraps");
+        // Moss Hornet: the >4 clock over 2 rows (case 176).
+        let mut m = Npc::new(NpcKind::MossHornet, 0.0, 0.0, 1, 0.0);
+        for _ in 0..4 {
+            m.find_frame();
+        }
+        assert_eq!((m.frame, m.frame_counter), (0, 4.0), "the 4th tick holds");
+        m.find_frame();
+        assert_eq!((m.frame, m.frame_counter), (1, 0.0), "the 5th tick flips");
+        for _ in 0..5 {
+            m.find_frame();
+        }
+        assert_eq!((m.frame, m.frame_counter), (0, 0.0), "the 10th tick wraps");
+        // Moth: the +0.5 clock, rows 0/1/2/1 over the 2/4/6/8 bands
+        // (case 205); the >=8 else resets the counter, keeps the row.
+        let mut t = Npc::new(NpcKind::Moth, 0.0, 0.0, 1, 0.0);
+        let mut seen = Vec::new();
+        for _ in 0..16 {
+            t.find_frame();
+            seen.push(t.frame);
+        }
+        assert_eq!(seen, vec![0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 1, 1, 1, 1, 1], "the 16-tick phase walk");
+        assert_eq!(t.frame_counter, 0.0, "the 16th tick resets the clock");
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -27765,8 +27936,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            275,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five, L-B gate)"
+            278,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five + the hover batch's three, L-B gate)"
         );
         assert!(
             covered > 43,

@@ -1627,6 +1627,27 @@ fn portrait_data(
                 .unwrap_or(32.0);
             (sheet_i, h, 50.0, h, white)
         }
+        // W4-d36 hover batch portraits — the sheet's frame height (the
+        // vanilla strips: 173 = 2 rows, 176 = 2, 205 = 3, `Main.cs:67082`)
+        // with the padded box width (the b0 convention).
+        (NpcKind::Crimera, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(30.0);
+            (sheet_i, h, 34.0, h, white)
+        }
+        (NpcKind::MossHornet, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 2.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::Moth, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(40.0);
+            (sheet_i, h, 44.0, h, white)
+        }
     }
 }
 

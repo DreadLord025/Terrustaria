@@ -1,6 +1,47 @@
 # 109 — W4-d36 NPC kinds 141-210: census, claims, id-band plan
 
 Status: CENSUS + PLAN (research phase; the port batches follow).
+
+## SUPERSEDED AGAIN — d37-R7 re-pin (research/108 `a341daa12`, latest)
+
+The d37 RECEIPTS pass re-pins d36 to **767-816** (R7): the R5/R6 moves
+(c4 Arapaima 237→**762**, d120 towns 241-244→**763-766**) extend the
+canonical max to 766, so the E4 762-811 band's head is occupied. Executed
+on this branch:
+
+1. **Batch 0 renumbered 762-766 → 767-771** (ToxicSludge 767, Penguin
+   768, PenguinBlack 769, GiantTortoise 770, IceTortoise 771). Only the
+   `to_u16`/`from_u16` arms moved — `cs_id`, ENTRIES `net_id`, sheets,
+   render keys untouched (the E8 seam rule).
+2. **The hover batch landed** (the in-flight stash@{0}'s unique work,
+   COMPLETED): 173 Crimera → **781**, 176 MossHornet → **782**, 205 Moth
+   → **793** (the R7-band ascending-vanilla slots). The stash shipped
+   HoverParams presets + family arms WITHOUT the enum variants (never
+   compiled); this pass adds the variants + all hard/wildcard sites and
+   FIXES two preset bugs against the C#:
+   - MOSS_HORNET `double_add` false→**true** (`NPC.cs:50447`'s flag5
+     exclusion set {173,6,42,231-235,94,139,619} does NOT list 176);
+   - CRIMERA `no_tile_collide` true→**false** (SetDefaults case 173
+     `:11168-11193` writes noGravity ONLY; the ×0.4 bounce `:50659-50661`
+     exists for the colliding 6/173 pair). The base EATER_OF_SOULS row's
+     `no_tile_collide: true` claim is likewise unsupported by case 6
+     (`:8733-8762`) — left untouched (frozen behaviour), flagged for the
+     Lead.
+   - The MossHornet stinger volley (`:50754-50810`, proj 55 dmg 30) and
+     the Moth wet-arm (`:50726-50738`) are the documented remainders
+     (the hostile-shot seam, the Probe precedent).
+3. **Pins after the hover batch:** ALL_KINDS/to/from/s1_f_3 **278**;
+   ENTRIES **249 numeric-net rows** (+3, no folds in this batch);
+   BESTIARY_NPC_SHEET_IDS **189**; D36_SHEETS 8 rows; bijection script
+   ALL PINS HOLD (278/278, max id 793). Witnesses WRITTEN NOT RUN
+   (code-only): `w4_d36_hover_the_defaults_match_the_csharp_rows`,
+   `w4_d36_hover_the_frame_clocks_match_the_csharp_cases`, the extended
+   `the_hover_presets_match_the_csharp_table` (7 rows + the gate pins).
+4. **A FOREIGN writer raced this worktree again** (npc.rs batch-1 WIP:
+   Wolf/Vampire/Frankenstein/BlackRecluse/SwampThing enum + stat arms,
+   NO data.rs arms, comment claims "E4 band 767-771" — which under R7
+   belongs to batch 0). Preserved verbatim as stash `d36-inflight-4`,
+   NOT landed; its band claim needs Lead adjudication against R7.
 Branch: `task/W4-d36-npc-kinds-141-210`, base `a725acb0` (claim `65e481f9`).
 All numbers re-derived by script from the working tree + `git show` of the
 pushed tips (no compiler invoked; code-only mode).

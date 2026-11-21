@@ -491,6 +491,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::PenguinBlack => &[31],
         NpcKind::GiantTortoise => &[],
         NpcKind::IceTortoise => &[44, 324],
+        // W4-d36 hover batch (`NPCID.cs:7125`/`:7146`/`:7277`): 173 {31},
+        // 176/205 {20,31}.
+        NpcKind::Crimera => &[31],
+        NpcKind::MossHornet
+        | NpcKind::Moth => &[20, 31],
     }
 }
 

@@ -3574,6 +3574,14 @@ fn npc_seed(
         | crate::npc::NpcKind::IceTortoise => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
         crate::npc::NpcKind::Penguin
         | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
+        // W4-d36 hover batch — the aiStyle-5 trio rides the hover
+        // placement (the net state overwrites the position below).
+        crate::npc::NpcKind::Crimera
+        | crate::npc::NpcKind::MossHornet
+        | crate::npc::NpcKind::Moth => {
+            let y = (y / TILE_PX) as i32;
+            crate::npc::Npc::spawn_hover(world, tx, y, kind)?
+        }
     })
 }
 

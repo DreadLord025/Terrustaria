@@ -812,6 +812,12 @@ fn npc_add_height(n: &Npc) -> f32 {
         // the Crawltipede — no port kind).
         // `:22031` 6/173 (the Eater of Souls / the Meteor Head).
         EaterOfSouls | MeteorHead => 26.0,
+        // W4-d36 hover batch: `:22029-22031` the 6||173 arm — the Crimera
+        // rides the Eater's 26 (the pre-existing comment misnamed 173 as
+        // the Meteor Head; 23 has NO row here). `:22013-22015` 205 → 8.
+        // The Moss Hornet (176) has no NPCAddHeight row (the default 0).
+        Crimera => 26.0,
+        Moth => 8.0,
         // `:22035` 94 (the Goblin Archer).
         GoblinArcher => 14.0,
         // `:22037-22039` 7/8/9 (the Devourer's segments — `NPCID.cs:10691-10695`;
@@ -1252,8 +1258,9 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// keyed by the vanilla net id in `NpcAssets::npc_sheets`. The physical
 /// atlas packing is the repack wave's (research/108 §5: the union
 /// overflows 8192); the draw arms reference the sheets, absent ones
-/// render nothing. Batch 0: 141/148/149/153/154.
-pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154];
+/// render nothing. Batch 0: 141/148/149/153/154; hover batch:
+/// 173/176/205.
+pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154, 173, 176, 205];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3188,6 +3195,15 @@ pub(crate) fn draw_npcs(
                 let ty = texture_net_id(n.kind);
                 pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
+            // W4-d36 hover batch draw — own sheets at npc_rows (173 = 2,
+            // 176 = 2, 205 = 3, `Main.cs:67082`), the generic anchor (the
+            // b0 convention; the repack wave packs the strips).
+            NpcKind::Crimera
+            | NpcKind::MossHornet
+            | NpcKind::Moth => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3337,6 +3353,13 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-d36 hover batch: the Crimera's aim tilt
+                    // (`NPC.cs:50643-50645`) and the Moss Hornet / Moth
+                    // velocity-X roll (`:50647-50650`) — the generic draw
+                    // rotates by npc.rotation (`Main.cs:26632`).
+                    | NpcKind::Crimera
+                    | NpcKind::MossHornet
+                    | NpcKind::Moth
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with

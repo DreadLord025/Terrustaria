@@ -2212,6 +2212,33 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Ice Tortoise",
     },
+    // W4-d36 hover batch — own entries (no Hide folds; the populator adds
+    // the Crimson/Jungle info at `BestiaryDatabaseNPCsPopulator.cs:611`/
+    // `:1339`/`:1570`; the names ride `Lang.GetNPCNameValue`).
+    BestiaryEntryDef {
+        credit_id: "Crimera",
+        net_id: 173,
+        kind: NpcKind::Crimera,
+        variant: None,
+        quick_unlock: false,
+        name: "Crimera",
+    },
+    BestiaryEntryDef {
+        credit_id: "MossHornet",
+        net_id: 176,
+        kind: NpcKind::MossHornet,
+        variant: None,
+        quick_unlock: false,
+        name: "Moss Hornet",
+    },
+    BestiaryEntryDef {
+        credit_id: "Moth",
+        net_id: 205,
+        kind: NpcKind::Moth,
+        variant: None,
+        quick_unlock: false,
+        name: "Moth",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
