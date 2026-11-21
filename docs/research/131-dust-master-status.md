@@ -1,5 +1,20 @@
 # 131 — DUST CROSS-LANE MASTER STATUS (W4-d54 crosslane phase)
 
+**BIBLE-FINAL (bible-final round, 2026-11-21, §8): the consolidated
+final record.** ALL dust-lane tips re-fetched (three fetches mid-round —
+g61 pushed its 9-commit wiring wave `b5ff1803d`, d130 landed the F1-F7
+adjudication + the g67b fold `97ed44f5d`, g11 landed its union-exec +
+final docs `98283df08`, g13 declared the Main family COMPLETE
+`4444e1011`, g73 completed the falls closeout + the full g75d re-fold
+`5d444f15a`, g67 published research/134 FINAL `e777b3e2c`, g60 consumed
+g62's trailcache contract `19431e385`). Per-fold VERIFIED/OWED status
+table with exact tip hashes: §8.1. The Dust.cs-family COMPLETE
+declaration + the per-family spawn-site census: §8.2. The merger
+dust-checklist (keep-one symbol list): §8.3. The witness-union recount
+at current tips: §8.4 — **the 318 figure is SUPERSEDED: 492 gross /
+≈461 net** at the final tips (the lanes landed the lights, the wiring
+waves and the folds the 318 census still counted as owed).
+
 **FINAL-STATUS (final-audit round, 2026-11-21): d54 residuals ZERO**
 (§6 — anchors/diff/prose re-verified); the owed-fold ledger §5 stands
 with row 3 now carrying the EXACT patch hunk (§7.1) and the 0-340
@@ -444,6 +459,290 @@ active-player loop :90964-90966 — single-player index 0 only, so d50's
 `env.player_center` arm is exact; the (10,21) fallback stays as
 documented unreachable insurance.
 
+## 8. BIBLE-FINAL (bible-final round, 2026-11-21) — the consolidated record
+
+Three `git fetch origin --prune` passes this round; the lanes moved
+between them (g61 pushed its wiring wave, d130 landed the adjudication,
+g13/g11/g67/g73/g60 all advanced). Every status below is against the
+FINAL fetched tips in §8.1, verified against blobs — not commit
+messages. This section SUPERSEDES §1-§5 wherever they disagree (the
+earlier sections stay as the historical record).
+
+### 8.1 All dust-lane tips + the per-fold VERIFIED/OWED table
+
+| Lane | Branch suffix | FINAL tip | Δ vs §1 |
+| ---- | ------------- | --------- | ------- |
+| d50 | dust-type-table | `2e243a2d2` | unchanged |
+| d51 | dust-sites-player | `0d0cf7c42` | unchanged (26 sites, 3 batches) |
+| d52 | dust-sites-npc | `231b31555` | unchanged (5 batches) |
+| d53 | dust-sites-projectile | `6d09fe617` | unchanged (sites 1-40 + wet machine + batch-3 re-census) |
+| d54 (this) | dust-sites-world | `1d16ef4ea` + this round | gap-closure tip; bible-final docs land on top |
+| e1 | dust-sites-player-2 | `3245d624c` | unchanged (40/40 + fidelity fixes) |
+| e2 | dust-sites-npc-2 | `6e304b960` | unchanged (batch 5 + f32-order fixes) |
+| e3 | dust-sites-proj-2 | `1d26efa94` | ADVANCED `8023aa4d`→ (+4: research/125 census `300355bba`, 503/1037/1049 rows `80d47a568`, Kill_Bombs 6 wired `7ee870200` + 9 staged `1bf9db051` + clone fix) |
+| e4 | dust-sites-world-2 | `2a79551ab` | unchanged |
+| f3 | dust-player-3 | `0b11548fb` | pulley+carpet hosts (ZERO dust sites — host census) |
+| f4 | dust-npc-3 | `0b7b14e29` | KingSlime trio + Destroyer fade (wave E complete) |
+| f5 | dust-proj-3 | `d0619d8e9` | ADVANCED `55dd8f9f5`→ (wave D batches 97-103: the classic-mob gore chain 853/853 COMPLETE — NPC.cs gore, not Projectile sites) |
+| f6 | dust-world-3 | `0f9fd642f` origin / `a67d13638` LOCAL | origin unchanged; 3 unpushed local commits incl `76aeaf3c3` (atan2 consumed) |
+| g11 | dust-main-sites-1 | `98283df08` | ADVANCED `d892d8d4`→ (+5: union 1-3 `56afc0c01`/`8540a8ad5`/`9a9ac1fd0` = research/116 EXECUTED + F1-F7 exact hunks published; final `cc8c767b0`/`98283df08` = seam-4 folds + snowing DEPRECATED + 116 §5/§6) |
+| g12 | dust-main-sites-2 | `f24dd76ac` | ADVANCED `665cd1e8`→ (+8 doc-sweep commits: blood-moon sky/shroom cap/martianLight/DrawGoreBehind/DrawSavings/DrawTileInWater/slime scales — NO new dust sites; main_dust_b.rs unchanged) |
+| g13 | dust-main-sites-3 | `4444e1011` | ADVANCED `15fd99c9`→ (+6: DrawCapture cull `1af798478`, sweep docs `5ea44967b`, **52 lights `a234107ac` + census `441f6120f`**, receipt `6a2f68304`, GetAlpha 157/327 `daf7b7804`, **Main-family COMPLETE `4444e1011`**) |
+| g14 | dust-worldgen-sites | `a35efec26` | unchanged (folded into d54) |
+| g15 | dust-item-sites | `f8f35d799` | unchanged origin (17 WorldItem sites); local worktree ahead on doc-sweep lane 5 (item mechanics, no new dust) |
+| g59 | npc-death-effects-1 | `29c13d103` | unchanged (death halves kinds 1-230) |
+| g60 | npc-death-effects-2 | `19431e385` | ADVANCED `402b32f27`→ (+1: g62's TRAILCACHE 6-hunk contract CONSUMED byte-identical) |
+| g61 | npc-spawn-dust | `b5ff1803d` | ADVANCED `a96289284`→ (+9: the wiring wave seams 1-6 `1eedb9a33`…`8f5450077` + docs `7bed9a1c4` + borrow fixes — NOW PUSHED) |
+| g62 | npc-hit-dust | `32af98b44` | unchanged (32 batches, 629-live-site census closed, TRAILCACHE widening) |
+| g63 | proj-trail-dust-1 | `2ea3e7110` | ADVANCED `b1e78b19`→ (+7: batches 5-6 `95bc7c012`/`dcf4d75a8`, claim `ed8d4bf5c`, 281 correction `eea7156fe`, batch 7 `395aab688`, activation checklist `036901a5e`, f20b cross-note) |
+| g64 | proj-trail-dust-2 | `625c449e0` | ADVANCED `77616a7d`→ (+4 remainders: pets-124 `80644e7f9`, 813 four-phase `5be4452ce`, 596 activated `060d4e36b`, keep-one refresh `625c449e0`) |
+| g65 | proj-death-dust | `7f0dc8649` | unchanged (10 batches ≈147 of Kill()'s 399) |
+| g66 | player-trail-dust | `7213f3c71` | unchanged origin; local `248f0ff4d` f3 keep-one inputs unpushed |
+| g67 | weather-rain-splash | `e777b3e2c` | ADVANCED `30b39fceb`→ (+5 final-phase: fold-monitor/Rain.fn-census/DrawRain/visual-overlap/**research/134 FINAL**) |
+| g68 | weather-wind-leaves | `d247a1c9f` | unchanged (wiring 1-4, 28 witnesses) |
+| g73 | waterfall-draw | `5d444f15a` | ADVANCED `82ae8b96`→ (+10: the falls CLOSEOUT `ea335744a`…`58b5a833f` + **the g75d re-fold 1-4 `05535ca23`/`7330a21b6`/`7e2ccce18`/`f9cdb54c4` + keep-one sync `5d444f15a`**) |
+| g74 | lavafall-draw | `cd462c1ae` | unchanged (ancestor of g73 — verified exit 0) |
+| g75 | honeyfall-draw | `41b64b042` | unchanged; CONTENT fully folded into g73 (per-hunk below) |
+| d130 | weather-ambience | `97ed44f5d` | ADVANCED `ec1d73c7`→ (+7: the final wave `852507123`…`560a02eac` (F2/F3/F4-verify + ambience + intensity + sandstorm + f39 + docs) then **`099df89e2` F1/F5/F7 EXECUTED + `16a792d56` g67b fold + `97ed44f5d` adjudication docs**) |
+
+**Per-fold status (the owed-list-current):**
+
+| Fold | Owed by (§5 #) | FINAL status | Evidence at the exact tip |
+| ---- | -------------- | ------------ | ------------------------- |
+| d130e F1 (global stream, splitmix retirement) | 2 | **VERIFIED-EXECUTED** `099df89e2` | d130 `97ed44f5d` snow.rs: free `fn snowing(rng: &mut UnifiedRandom, …)`, no `Snow` struct/splitmix, `scene_scan` passes `app.rngs.global()`; call-chain proof in research/83 §7 (:17238 precedes every SwapRandom) |
+| d130e F2 (HiDef 4096) | 2 | **VERIFIED-EXECUTED** `852507123` | `const MAX_SCREEN_W: f32 = 4096.0` + budget witnesses re-derived (195/214.5/165.75/71.5) |
+| d130e F3 (in-body pause gate) | 2 | **VERIFIED-EXECUTED** `852507123` | `SnowInputs.game_paused` + first-disjunct check + the pause witness arm |
+| d130e F4 (counter once-per-call) | 2 | **VERIFIED (d130's own shape)** | `snow_dust: i32` param read once; g11's per-attempt live_type census retired with the body; the g11b budget-hoist flag CLOSED (g11 `98283df08` research/83 FINAL: "no g11b fix owed") |
+| d130e F5 (int attempt loop) | 2 | **VERIFIED-EXECUTED** `099df89e2` | `let mut attempt = 0; while (attempt as f32) < num3` |
+| d130e F6 (env re-point) | 2 | **VERIFIED-EXECUTED** `852507123` | `update_scene` feeds `SnowInputs` + `game_paused: app.game_paused` |
+| d130e F7 (witness re-pins) | 2 | **VERIFIED-EXECUTED** `099df89e2` | 8 d130 witnesses re-pinned to UnifiedRandom + g11's 3 draw-mirrors ported (snow.rs = 11 tests) |
+| g67-134 R1 (IsItRaining consumers) | new | **VERIFIED-EXECUTED** d130 `16a792d56` | `Rain::is_it_raining()` feeds frame/world.rs ×3 + netmodules + weather.rs thunder gate (blob-verified); fountain scanner + Lang keep Main.raining |
+| g67-134 R2 (ClearRain on quit) | new | **VERIFIED-EXECUTED** d130 `16a792d56` | `self.rain.clear_rain()` in save_and_quit (blob-verified) |
+| g67-134 R3 (DrawDust cull + else-kill) | new | **VERIFIED-EXECUTED** d130 `16a792d56` | `splash_cull_rect`/`dust_in_cull_rect` in draw_splashes AND snow::draw (blob-verified) |
+| g67-134 R4 (NewRainForced) | new | **VERIFIED-EXECUTED** d130 `16a792d56` | `new_rain_forced` fixed-slot scan + maxRain sentinel (blob-verified); the Eyebrella CALLER stays R6 |
+| g67-134 R5 (skyblock snow threshold) | new | **OWED** (note folded, field not) | d130 rain.rs still reads `SNOW_TILE_NORMAL` unconditionally + the cited gap note; g67's `World.skyblock_low_tiles` + `snow_tile_threshold` arm awaits the f24 coordination |
+| g67-134 R6 (Eyebrella caller) | new | **OWED** | no `eyebrella` arm in d130 player.rs (grep empty); g67 `356a1ac0e` owns it; R4 seam ready |
+| g67-134 R7 (umbrella held-item) | new | **OWED** | no `umbrella_hold` in d130 player.rs; g67 `01ba6c7a9` owns it (player/render lane, independent) |
+| g67 menu +2000 kill arm | new | **VERIFIED-EXECUTED** d130 `16a792d56` | `RainInputs.game_menu` move-first arm (the earlier "folded out" divergence RETIRED) |
+| g73e g75d re-fold (5 commits) | 1 | **VERIFIED-EXECUTED** g73 `05535ca23`/`7330a21b6`/`7e2ccce18`/`f9cdb54c4` + sync `5d444f15a` | disco: `set_disco_rgb` latch in waterfall/mod.rs, manager-local cycle GONE (grep); 717: both lava-fountain witnesses present; spout: `liquid_behind_spout_refused` + the manager-handle call in render/liquids.rs; sound.rs DELEGATED-STATUS banner present. NOTE: `git merge-base --is-ancestor 41b64b042 g73` = exit 1 (the fold is per-hunk cherry-picks, not ancestry) — the CONTENT check is the authority; g75 branch DROPS wholesale per the contract |
+| g73 falls closeout uniques | 1 | **VERIFIED-EXECUTED** `ea335744a`…`58b5a833f` | frame-table witnesses, quit-stop (`Audio::stop_waterfall_ambience` wired in saveglue), retro `ambient_lava_scan` (tr-core retro_water.rs, 3 witnesses), fountain wire-trip witness (wiring.rs) |
+| g11 teleport union (116 §3) | 4 | **VERIFIED-EXECUTED** g11 `56afc0c01`/`8540a8ad5` | teleport_dust.rs = g61's widest-11 body adapted (8 witnesses); App dispatcher + Entry/Exit replays; the 6 wiring gaps closed in code (Queen-Slime 10 hook, Shellphone 11, other_position, pylon extraInfo2, water_style, head/tail + double-grant dedupe); g12's boundary witness INVERTED |
+| g11 seam-4 folds (fade PRE-AI + statue-14) | 4 | **VERIFIED-EXECUTED** g11 `cc8c767b0` | fade at the UpdateNPC preamble (:90322 before AI :90423), statue style-14 rides the NpcTeleportReq queue, 2 witnesses |
+| g11×g13 main_dust.rs filename union | 4 | **OWED (merger)** — plan FINAL | research/116 §6 per-fn keep table (§8.3); both files still exist on their branches |
+| g61 wiring wave seams 1-6 | new | **VERIFIED-EXECUTED + PUSHED** `1eedb9a33`…`b5ff1803d` | bug-net poof, statue/lamp poofs, NPC.Teleport sites + fade driver, Transform tail, key-summon mimic; 12 wiring witnesses; keep-one vs g11: the pad-loop dup resolves keep-g11-queue/drop-g61b-helper (116 §5) |
+| f6 double-atan2 | 3 | **RESOLVED-LOCAL, PUSH OWED** | f6 local `a67d13638` blob: `(d.y as f64).atan2(d.x as f64) as f32` ×2 (body + mirror); origin `0f9fd642f` still f32 ×2 — §7.1 fallback hunk stands until the push |
+| f6 tile_draw_rand g68 keep-one | new | **VERIFIED-PUBLISHED** f6 local `8a34f6642` | ONE App.tile_draw_rand BOTH consumers (drips-before-pylons order); merge-order pin, no code owed |
+| f6 mount-abilities activation contract | new | **VERIFIED-PUBLISHED** f6 local `a67d13638` | the UseDrill seam for the mining-machine lane (Player.cs:28288-28291), signature kept |
+| e3 152 drop-in vs d16 | 5 | **OWED** — d16 advanced `e122a6b2`→`d414afbca` (+5 kite/159/161 commits) but `ai_super_star_slash` STILL count-only (grep: no star_slash_dust call) — the 3-edit contract unchanged |
+| e3 1051 vs d1 | 5 | **OWED** — d1 `e271b5bc8` unchanged, count-only powder twin (grep: no style6_burst) |
+| e3 cloak-five vs f48 + g64 twins | 5 | **OWED** — f48 advanced `bba610bb`→`69d499c6b` (+6 parry-wave commits, ai_cloak_star untouched); g64's keep-one refresh `625c449e0` pins the survivors + 5 parity witnesses (§8.3) |
+| prefix.rs RainbowRodHit fold | 6 | **OWED** (wiring wave) — e4 `2a79551ab` unchanged |
+| G1 52 lights | §7.2 | **CLOSED** g13 `a234107ac` | dust_lights_b.rs 52-arm collector WIRED via feed_dust_chain_lights in draw.rs; 23 witnesses; 94/94 family (research/69 §7) |
+| G2 snowDust++ one-edit | §7.2a | **OWED (d50×d130 resolve)** — d50 `2e243a2d2` unchanged (76 arm still cites+skips); d130's tick landing shape verified unchanged (`let mut snow_dust = 0` … `pool.snow_dust = snow_dust`); the §7.2a hunk applies mechanically |
+| G3/G4 GetAlpha 157/327 | §7.2 | **CLOSED ×2 — KEEP-ONE NOW OWED** | d54 `641561c2` (`get_alpha_with_globals`, 2 witnesses) AND g13 `daf7b7804` (`get_alpha_mouse_text`/`get_alpha_disco`, 3 witnesses incl. the tint-census pin) BOTH ported the same arms — g13's probe found the drops unclaimed at its read (d54's closure was mid-flight). Same maths, different seams: merger keeps ONE (§8.3) |
+| G5/G6 | §7.2b | **CLOSED** (d54 `c5a0e646`, unchanged) |
+| g13 flag-b pre_move 35 strip | new | **OWED (d50 wiring wave)** | d50 `2e243a2d2` pre_move :170-172 still carries the 35 arm (g13 receipt `6a2f68304` re-verified); g13's inline increment canonical |
+| g13 flag-c dust_lights decrement retire | new | **OWED (same wave)** | 206/174/230 + 309/261 compensations retire when type_chain wires; dust_lights_b's replays retire arm-by-arm |
+| g62 TRAILCACHE 6-hunk adoption | new | **VERIFIED-CONSUMED** g60 `19431e385` | byte-identical widening (grep-verified witness adoption); g62 `32af98b44` unchanged |
+| witness UNION compile+run | 7 | **OWED (merge-verify wave)** | every lane code-only; §8.4 census |
+
+### 8.2 Dust.cs FAMILY COMPLETE — the per-family spawn-site census
+
+**Declaration basis:** the C# `Dust.NewDust*`-family counts re-derived
+THIS round by direct `Select-String` on the decompiled files (no
+junction recursion), cross-checked against the lane censuses
+(research/15 caller table, e1's research/64, e3's research/125, g13's
+research/68 §2, g62's ANALYSIS 629-census). Family =
+`NewDust`+`NewDustPerfect`+`NewDustDirect` (the research/15 convention);
+`CloneDust` counted separately where a lane counts it.
+
+| C# family | Total (re-counted) | Owner lanes (FINAL tips) | Remaining unclaimed |
+| --------- | ------------------ | ------------------------ | ------------------- |
+| **Main.cs — 23 spawn + 1 CloneDust** | 17 ND + 1 NDP + 5 NDD = 23 (+1 Clone :13410 rides g12's case-10) | g11 sites 1-8 (`98283df08`, snowing DEPRECATED→d130, teleport→dispatcher) + g12 sites 9-16 (`f24dd76ac`) + g13 sites 17-23 (`4444e1011`) | **ZERO** — g13 research/68 §2 + the COMPLETE declaration `4444e1011`; the DrawCapture cull (:56735-56744, non-spawn) ported `1af798478`; DrawDust generic draw = the DRAW lane's remainder, cull+else-kill landed d130 `16a792d56` |
+| **NPC.cs — 927 (+5 Clone = 932)** | 836 ND + 16 NDP + 75 NDD | AI/misc <50000: 159 → d52 (`231b31555`) + e2 (`6e304b960`) + f4 (`0b7b14e29`) per-kind batches; 50000-69999: 87 → e2 batch 5 + d52; spawn/Transform 70000-81653: 12 → g61 (`b5ff1803d` WIRED); **HitEffect :81654-89834: 629** → g62 live halves (`32af98b44`, "0 uncovered live sites" census) + g59/g60 death halves (`29c13d103`/`19431e385`); >89834: 40 → g61 teleport-visuals + buff-VFX lanes (the 235 soul-drain producer UNPORTED — npc_buffs.rs:619 note, G6) | the buff-VFX producers (>90322 remainder) ride their buff lanes (c16-c18/d71-d74); the 2 CloneDust in HitEffect ride g62's ledger |
+| **Player.cs — 215** | 182 ND + 16 NDP + 17 NDD (+4 Clone; e1 counts :24654 in its 40) | d51 26 (`0d0cf7c42`) + e1 40 (`3245d624c`) + g66 trails/wings/boots (`7213f3c71`) + main's recall/mirror 6 + sticky 6 + f48 dodge/parry (`69d499c6b`) + g15 item-use halves + f3 host census (pulley/carpet ZERO sites, `0b11548fb`) | e1's no-host remainder: 36005-36193 SetArmorEffectVisuals (no slot fields), 38873 anniversary death, 39038-39053 KillMe_DustExplosion (armor flags), 43242 rod-of-discord (item lane), 56850/56860/57020 minion rest — each cited with its missing host |
+| **Projectile.cs — 1195** | 890 ND + 112 NDP + 193 NDD (+21 Clone +1 QuickDust) | d53 :16851-22297 43 sites incl. the wet 8 (`6d09fe617`); e3 :22297-24328 42 + Kill_Bombs 15 (`1d26efa94` — 6 wired + 9 staged); f5 :24406-26501 43 (`d0619d8e9`); g63 per-kind ≤400 (`2ea3e7110`, batches 1-7 + the AI_001 remainder emitters); g64 kinds ≥401 + the remainder machines (`625c449e0` — pets-124/813/596 now WIRED); g65 Kill() ≈147 (`7f0dc8649`); main's stubs (rocket_kill_census etc.) | **e3 research/125's unclaimed windows, re-verified at the final tips:** Kill() remainder **234** (g65's continuation — its claim is the whole span); AI() inline **40** minus g64's remainder closures (the pets-124 :35601/:35681 + the 813 :33993/:34005/:34020 window now cited ⇒ ~35 remain, g63/g64 continuation); named machines **87+36** (the named-machine dust wave — unassigned); AI_001 **2** (:56049/:56748, g63 continuation — its batch 7 covered 55/174/176/299/374/376) |
+| **WorldGen.cs — 29 (KillTile et al.)** | 29 ND | g14 trio folded into d54 (`a35efec26` → d54 `8f8471cb`/`74ba4a2e`/`e41a90f0`); latent at runtime (isGeneratingOrLoadingWorld returns 6000) but ported + witnessed | **ZERO** |
+| **ParticleOrchestrator.cs — 61 sites (+7 Clone = 68)** | 16 ND + 37 NDP + 8 NDD | d54 orch 1-40 (4 modules) + e4 orch 41-61 (`2a79551ab`) — DISJOINT, boundary 2582/2653 | **ZERO** (the prefix.rs RainbowRodHit count-only→emitter fold is wiring, not coverage) |
+| **Mount.cs — 27** | 27 | f6 ALL 27 (`0f9fd642f` + local wiring wave); e4's 19 subset DROPS | **ZERO** |
+| **WorldItem.cs — 17** | 17 | g15 (`f8f35d799`) — Item.cs itself has ZERO dust sites (g15's census correction) | **ZERO** |
+| **TileDrawing.cs — 53** | 50 ND + 3 NDD | g68 wind/leaves/drips (`d247a1c9f`, EmitLiquidDrops WIRED per-draw), d60 tile_draw_particles (22 tests, UNWIRED — the cadence contract g68 wiring-4 verified), g31 grass-pass seam | the d60 wiring wave (per-frame pass move + persistent _rand + DrawnThisUpdate) |
+| **Rain.cs — 1 (+ the Main snowing producer)** | 1 ND :122 splash | d130 canonical (`97ed44f5d`): splash union + snow.rs (F1-F7 done) + the g67b residuals R1-R4; g67 (`e777b3e2c`) keeps R5/R6/R7 | R5 skyblock field (f24 coordination), R6 Eyebrella caller, R7 umbrella (g67's own player-lane commits — fold or keep at merge) |
+| **WaterfallManager.cs — 1** | 1 ND (the 717 lava-fountain spawn) | g73 (`5d444f15a`) — the falls family FINAL, g74/g75 content folded | **ZERO** |
+| **Dust.cs internals (0-340 type sweep)** | 94 AddLight + the physics chain | d50 chain (`2e243a2d2`) + d54 table incl. G3/G4 + g13 lights_b (52) + main dust_lights (42) = **94/94**; generic head/tail on main | G2 one-edit + the flag-b strip + flag-c retire (all d50-wiring-wave, §8.1) |
+
+**FAMILY COMPLETE verdict:** every spawn-site family above is either
+fully claimed-and-ported or carries an explicit owner-lane remainder
+(the Projectile Kill()/named-machine windows, the Player no-host rows,
+the NPC buff-VFX producers, the TileDrawing wiring). NO unowned dust
+window remains in Main.cs, WorldGen.cs, ParticleOrchestrator.cs,
+Mount.cs, WorldItem.cs, Rain.cs, WaterfallManager.cs or the Dust.cs
+internals. The dust-lane family is COMPLETE as a coverage claim; the
+owed work is wiring seams + the named-machine/continuation waves with
+named owners (§8.1 fold table + §8.3 checklist).
+
+### 8.3 The merger dust-checklist (keep-one symbol list, FINAL)
+
+Ordered per §3 (unchanged except where noted). Each row: the surviving
+symbol/file, the retire list, the exact tips.
+
+1. **d54 first** (WorldGen resolve already landed): tr-core
+   `worldgen_dust{,_wall,_tile}.rs` + the LIVE editing/wiring seams +
+   orch 1-40. Nothing owed.
+2. **g61 `b5ff1803d`**: `npc_spawn_visuals.rs` KEEP whole +
+   `particles.rs` DustRng generalisation (g64's twin is
+   COMMENT-ONLY-different — re-verified this round, take g61's wording)
+   + the 6 wiring seams. At the g11 resolve: g61's env-level
+   `npc_teleport` driver + pad-loop helper RETIRE into g11's App-level
+   replay queue (116 §5 keep-g11-queue); g61's statue-14/fade folds
+   already mirrored on g11 `cc8c767b0`.
+3. **g12 `f24dd76ac`**: `main_dust_b.rs` bone-arm puffs + Moon-Lord
+   flag8 trio KEEP; `teleport_effect_case10/11/13` RETIRE (g61 body via
+   g11 dispatcher); the doc-sweep additions (sky/savings/gore-behind)
+   are disjoint files, no dust conflict.
+4. **main_dust.rs THREE-WAY resolve (g11 `98283df08` × g13 `4444e1011`
+   × d54)** — ONE file per research/116 §6's per-fn table:
+   KEEP g11: `teleport_effect` dispatcher + `CellRng`/`EffectRect` +
+   `player_teleport`/`npc_teleport` + the Req types;
+   KEEP g13: `to_rotation`/`math_sign`/`tentacle_tip_position`/
+   `moon_lord_tentacle_tip_puff`, `AlePlayerView`/`tavernkeep_ale_sparkle`,
+   `world_item_sparkle`/`light_color_bytes`/`item_sparkle_feed`,
+   `liquid_surface_sparkle`/`lava_bubble_pair`/`retro_surface_rect`/
+   `retro_liquid_dust_feed`, the two feeds (Moon-Lord feed FUSES with
+   g12's `moon_lord_core_dust` — ONE caller pass), `capture_snow_cull`;
+   DROP: g11 `snowing`+`SnowingEnv` (DEPRECATED in-code already), d54
+   `world_dust_main.rs` both bodies (9 witnesses re-point: 2→d130,
+   7→g61); g13 test helpers RENAME `rig`→`pool_rig`/`live`→`pool_live`;
+   ONE `mod main_dust;` (g11's spot). `teleport_dust.rs` (g11) = the
+   g61-adapted body, KEEP. g13's `dust_lights_b.rs` KEEP + the draw.rs
+   feed (G1 closed).
+5. **d130 `97ed44f5d`**: `snow.rs` canonical (F1-F7 ALL EXECUTED —
+   free fn on the global stream) + `rain.rs` splash union + the g67b
+   residuals. g67 `e777b3e2c`: R5/R6/R7 fold or keep g67's player-lane
+   bodies at the player-file resolve (they are disjoint from d130's
+   files); the `spawn_acc` cadence + compacted-Vec storage NOT taken
+   (d130's shapes canonical). **G2 landing (§7.2a) executes at the
+   d50×d130 tick resolve**: d50 `type_chain` wins the 76 arm, the env
+   gains `snow_dust`, d130's :1069/:1126 landing feeds it;
+   `snow::type_76_arm`/`type_76_tails` retire.
+6. **d54 `world_dust_main.rs` DROP** (with step 4).
+7. **mount resolve**: f6 tip AFTER its push (local `a67d13638` carries
+   the atan2 fix `76aeaf3c3`); fallback = §7.1 hunk at origin
+   `0f9fd642f` (:85 body, :1846 mirror). e4 `mount_dust.rs` DROPS (10
+   witnesses supplement); e4 `orchestrator_dust.rs` KEEPS (disjoint);
+   prefix.rs RainbowRodHit fold rides here. `App.tile_draw_rand` ONE
+   field both consumers (f6 `8a34f6642` contract, drips-before-pylons).
+8. **f6 batch-4 small files**: unique six fold; g61's poof/pylon +
+   d130's splash win the three duplicates (unchanged).
+9. **trail trio g63 `2ea3e7110` → g64 `625c449e0` → e3 `1d26efa94`**:
+   all three files KEEP (disjoint axes). NEW keep-ones from g64's
+   remainder wave (its ANALYSIS table is the authority):
+   ONE `ai_pets_style124` = g64's dust-wired port (d13's gates-only
+   retires, `tentacle_pointer_pose` joins); ONE `ai_vortex_ritual` =
+   g64's (d11/d13 census arms retire, witnesses RE-DERIVE); 596: d11's
+   `ai_nebula_sphere` keeps the 575, the 596 half takes g64's
+   `trail_596` bool seam (ONE machine either way); 497/504/503 → e3's
+   arms survive, g64's twins retire (parity witnesses pin); 723/1133 →
+   f48's `ai_cloak_star` survives + takes the dust half, e3+g64 twins
+   retire. e3's contracts: 152 3-edit drop-in over d16 `d414afbca`
+   (still count-only), 1051 `style6_burst` over d1 `e271b5bc8` (still
+   count-only), the 503/1037/1049 rows e3 landed (`80d47a568`) make
+   g64's trail_503 wireable — same keep-one. **projectile_dust.rs
+   FILENAME collision d53×e3**: fn-name sets are DISJOINT (verified
+   this round — only the test helper `ctx` shared); union into one
+   file or rename e3's module (d53's ANALYSIS note) — merger's naming
+   call, no body contest. g63's activation checklist (research/67
+   `036901a5e`) lists which merge unlocks which UNWIRED emitter
+   (12←d15, 87←d2, 298/305/358←d6, 55←d22, 299←c3, 357←f20 slice D,
+   281←row+d5+call).
+10. **g73 `5d444f15a` waterfall family**: TAKE THIS BRANCH ONLY —
+    g74 `cd462c1ae` + g75 `41b64b042` DROP wholesale (g74 ancestry-in
+    exit 0; g75 content folded per-hunk, ancestry exit 1 is EXPECTED
+    for cherry-pick folds — the blob checks in §8.1 are the authority).
+    Two-tier sound contract: keep BOTH `ambient_sound::liquid_loop_update`
+    (decision) + `sound::liquid_ambience` (volume). The g80 spout halves
+    compose by OR.
+11. **dust_table.rs G3/G4 keep-one (NEW)**: d54's
+    `get_alpha_with_globals` (globals struct seam, 2 witnesses) vs
+    g13's `get_alpha_mouse_text`+`get_alpha_disco` (split seams, 3
+    witnesses incl. the 8-consumer tint census). Same verbatim maths
+    (both pin m=255→94 + the 327 zero-quirk). Recommended: keep ONE
+    seam shape — g13's split fns are the purer shape (no struct), d54's
+    witnesses re-pin trivially; either way the loser's fns DROP and
+    its witnesses supplement. The draw-pass wiring contract is g13
+    research/70 §3 (Main.cs:38973 between the gore draw and the
+    DrawnThisUpdate set).
+12. **d50 wiring wave**: `type_chain` into the `type_arm` hook +
+    the flag-b strip (pre_move 35 arm) + the flag-c decrement retire
+    (dust_lights 206/174/230+309/261 and dust_lights_b's replays
+    arm-by-arm) + the 299-305 shrink/lift the skeleton lacks.
+13. **Merge-verify wave**: compile + run the witness union (§8.4);
+    anchors canary + main_anchors guard every step.
+
+### 8.4 Witness-union recount at the FINAL tips (supersedes §4's 318)
+
+All counts = `#[test]` greps of the exact tip blobs (this round),
+delta-vs-main where the file pre-exists. All WRITTEN NOT RUN.
+
+| Lane / file | Tip | Count | Disposition |
+| ----------- | --- | ----- | ----------- |
+| d54 supplements world_dust{,_wall,_tile} | `1d16ef4ea` | 18 (7+5+6) | KEEP |
+| d54 world_dust_main | `1d16ef4ea` | 9 | re-point (2→d130, 7→g61) |
+| d54 orch ×4 | `1d16ef4ea` | 21 (7+3+5+6) | KEEP |
+| d54 dust_table G3/G4 | `1d16ef4ea` | +2 | keep-one vs g13 (§8.3.11) — count once |
+| g14 trio (on d54) | `74ba4a2e` | 25 (8+7+10) | KEEP |
+| g11 main_dust | `98283df08` | 30 | 26 survive (4 snow DROP→d130 F7 already re-pinned there) |
+| g11 teleport_dust | `98283df08` | 8 | KEEP |
+| g11 wiring/npcs | `98283df08` | 2 (pad + fade-pre-AI) | KEEP |
+| g12 main_dust_b | `f24dd76ac` | 7 | 4 supplement g61, 3 KEEP |
+| g13 main_dust | `4444e1011` | 20 | KEEP (incl. the 2 cull witnesses) |
+| g13 dust_lights_b | `4444e1011` | 23 | KEEP (G1) |
+| g13 dust_table + particles | `4444e1011` | 3+1 | 3 = the G3/G4 keep-one pool (+2 d54 = 5 gross, 3 net if g13's shape wins); 1 lava-bubbles KEEP |
+| g61 npc_spawn_visuals | `b5ff1803d` | 18 | KEEP (9 teleport transfer-adapted already on g11) |
+| g61 wiring wave (bug_net/chest/npcs/wiring×2) | `b5ff1803d` | 12 (1+6+1+3+1) | KEEP minus the pad-helper dup at the g11 resolve |
+| e4 orchestrator_dust | `2a79551ab` | 9 | KEEP |
+| e4 mount_dust | `2a79551ab` | 10 | supplement f6 |
+| f6 mount_dust | `0f9fd642f` | 28 (24+4 wiring) | KEEP base |
+| f6 world_dust + pylons + liquid_draw | `0f9fd642f` | 8+1+1 | KEEP minus poof/pylon/splash dup oracles |
+| g63 projectile_trail_dust | `2ea3e7110` | 50 (19+11+14+6) | KEEP |
+| g64 proj_trail_dust | `625c449e0` | 45 (+45 vs main; was 44 at `77616a7d`) | KEEP minus the 5 retired twins' bodies (witnesses stay as parity pins) |
+| g64 projectile.rs + pets124 | `625c449e0` | 10+6 | KEEP (wiring + machine witnesses) |
+| e3 projectile_dust + data.rs | `1d26efa94` | 27+1 | KEEP |
+| d130 snow | `97ed44f5d` | 11 | KEEP (F7 re-pins incl. g11's 3 mirrors) |
+| d130 rain (g67 union + g67b) | `97ed44f5d` | +22 | KEEP |
+| d130 weather/wind/audio | `97ed44f5d` | 5+1+4 | KEEP |
+| g73 family (mod 36 + draw 2 + ambient 5 + sound 5 + audio 2 + retro 3 + liquids 2 + tiles 1 + frame/draw 1 + wiring 1) | `5d444f15a` | **58** (43+7+8 per the contract's pinned inventory — grep-sum matches) | KEEP; g74/g75 drop |
+
+**Union total (the §4 scope — the crosslane dust lanes):**
+the table re-summed at the final tips:
+18+9+21+2+25 (d54 75) + 26+8+2 (g11 36) + 7 (g12) + 20+23+3+1 (g13 47)
++ 18+12 (g61 30) + 9+10 (e4 19) + 28+8+1+1 (f6 38) + 50 (g63)
++ 45+10+6 (g64 61) + 27+1 (e3 28) + 11+22+5+1+4 (d130 43) + 58 (g73)
+= **492 gross lane-witnesses**. Dedup estimate (the keep-one drops):
+d54's 2 G3/G4 vs g13's 3 → −2; g61's 9 teleport witnesses superseded
+by g11's union-adapted mirrors → −9; g12's 4 case witnesses superseded
+by g11's `w4_g11u_g12_*` → −4; d54 world_dust_main's 7 teleport oracles
+superseded by g11's `w4_g11u_d54_*` (the 2 snowing already re-pinned on
+d130) → −7; e4's ~6 exact-shape mount dups → −6; f6's 3 poof/pylon/
+splash dup oracles → −3 ⇒ **≈461 net** in the §4 scope. (g64's 5
+retired-twin bodies keep their parity witnesses — no deduction.)
+
+**The 318→recount bridge (exact):** 318
++ g73 51→58 (+7) + g63 19→50 (+31) + g64 44→61 (+17)
++ e3 21→28 (+7) + g11 16→36 (+20) + g13 18→47 (+29)
++ f6 32→38 (+6) + g61 18→30 (+12) + d54 +2 (G3/G4)
++ d130 joins the scope (+43: snow 11 + rain 22 + weather/wind/audio 10)
+= **492 gross**, matching the table sum. **The 318 figure is
+SUPERSEDED**; the merge-verify wave's compile+run is still the exact
+post-dedup authority (checklist 13).
+
+**Outside the §4 scope (the site-batch lanes, for the family-wide
+union):** d51 24, e1 25, g66 76 (7+13+24+11+21), f3 50 (27+23),
+d52 15 (5+4+5+1), e2 30 (11+2+2+15), f4 26 (2+3+3+1+10+7),
+g62 66 (61+5), g59 53, g60 23, g65 26, d53 29 (20+9), f5 21 (+142
+wave-D gore witnesses — the gore lane's), g15 20, g68 28. These ride
+their own merges; the dust-family compile wave runs the whole tree.
+
 ## Verification
 
 Code-only per the task brief: no cargo/tests/rustfmt/graphify. Every
@@ -494,3 +793,38 @@ the blob at :88/:1849); origin :85/:1846 still f32 (the fallback hunk
 targets). 2 new witnesses WRITTEN NOT RUN (code-only). Commits:
 `641561c2` (G3/G4), `c5a0e646` (G5/G6), `84eb739b` (G2 hunk), this
 commit (f6 probe + header). No cargo/tests/rustfmt/graphify invoked.
+
+**Bible-final round (2026-11-21, §8):** THREE `git fetch origin
+--prune` passes (the lanes moved between passes 1→2→3: g61's wiring
+wave pushed, d130 landed `099df89e2`/`16a792d56`/`97ed44f5d`, g11
+`98283df08`, g13 `4444e1011`, g67 `e777b3e2c`, g60 `19431e385`, f5
+`d0619d8e9`); every §8.1 tip is from the FINAL pass. Fold verdicts
+blob-verified, not message-trusted: d130 snow.rs (free fn /
+UnifiedRandom / int loop / 4096 / game_paused / counter param — F1-F7
+all present), d130 rain.rs (`is_it_raining`/`clear_rain`/
+`new_rain_forced`/`splash_cull_rect`/`dust_in_cull_rect` present; the
+skyblock threshold still `SNOW_TILE_NORMAL` — R5 note-only), d130
+saveglue (`clear_rain()` call), d130 player.rs (eyebrella/umbrella
+greps EMPTY — R6/R7 owed), g73 waterfall/mod.rs (`set_disco_rgb`
+present, manager-local cycle absent, both 717 witnesses), g73
+render/liquids.rs (`liquid_behind_spout_refused` + call), g73 sound.rs
+(DELEGATED banner), g73 wiring.rs (fountain-trip witness), g73
+saveglue (`stop_waterfall_ambience` ×2); g75-tip ancestry in g73
+exit 1 (cherry-pick fold — content is the authority), g74/e30ad7ba
+ancestry exit 0. f6 local `a67d13638` atan2 blob re-read (double ×2),
+origin `0f9fd642f` still f32 ×2. d16 `d414afbca` / d1 `e271b5bc8` /
+f48 `69d499c6b` re-probed for the e3 contracts (all still count-only /
+cloak-owner — contracts unchanged). The §8.2 C# family counts are
+fresh `Select-String` censuses of the decompiled files (direct paths,
+no junction recursion): Main 23+1, NPC 927+5 (HitEffect window 629+2),
+Player 215+4, Projectile 1195+21+1 (Kill() 399, Kill_Bombs 15),
+WorldGen 29, Orchestrator 61+7, Mount 27, WorldItem 17, TileDrawing
+53, Rain 1, WaterfallManager 1, Dust.cs AddLight 94. The e3-125
+40-site inline list re-verified line-by-line against the actual
+NewDust lines (6 of the listed line numbers are loop-body lines, the
+8 real sites in :34507-34588 enumerated); g64's remainder closures
+(:33993/:34005/:34020/:35601/:35681 + the 813 window) confirmed in its
+blob. The §8.4 witness counts are `#[test]` greps / delta-vs-main per
+file at the exact tips; the 492 gross sum machine-checked. The
+d53×e3 projectile_dust.rs fn-name sets diffed (disjoint; only the test
+helper `ctx` shared). No cargo/tests/rustfmt/graphify invoked.
