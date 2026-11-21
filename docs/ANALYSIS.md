@@ -39492,6 +39492,67 @@ then overwrites position/velocity — zero velocity survives.
   `sign(wind)*Lerp(0.9,1,|wind|)` drift, the `num13*20` push, the
   severity scales, the dead-calm refusal) — no behaviour change.
 
+**The d60 G6-contract cross-note (W4-g68 wiring-4, 2026-11-21).** Read
+`origin/task/W4-d60-tile-draw-particles` tip `77429fe1` (the module
+`tile_draw_particles.rs`, 2086 ln, 22 `#[test]`, UNWIRED) against the
+three-site cadence contract above. Verdict per clause:
+* **Site 1 (the throwaway quarter-roll): FOLLOWS.** The module doc
+  (`:18-21`) states the exact gate — `_isActiveAndNotPaused` and
+  (`!Lighting.UpdateEveryFrame` or the per-tile
+  `FastRandom(TileFrameSeed).WithModifier(x,y).Next(4)==0`) — and
+  explicitly assigns it to the CALLER ("the caller owns that gate; this
+  module is the body"). The body's 192/384 arms roll only
+  `Next(leaf_frequency/4)` (`ctx.leaf_frequency / 4`, `:490`), never the
+  quarter-roll — no double-gate, no missing gate. The ANALYSIS diff
+  repeats the obligation verbatim. The port's inline arm now carries
+  the same gate (wiring-3), so the two copies agree at the wiring merge.
+* **Site 2 (the grass passes' REAL `_rand.Next(4)`): SILENT —
+  legitimate deferral, one flag.** The module is the
+  `DrawTiles_EmitParticles` BODY; the four grass-pass call sites
+  (`:8346-8352`, `:8403-8409`, `:8974-8980`, `:9485-9491`) roll
+  `flag = _rand.Next(4)==0` BEFORE the call and pass
+  `_isActiveAndNotPaused & flag` — the module neither ports nor claims
+  those drivers (they are the g31 drain lane's `can_do_dust` seam,
+  UNION-CONTRACT §1.4: "the binding must not re-roll"). No violation in
+  the body; the wiring wave must keep the flag ALREADY-CONSUMED.
+* **Site 3 (EmitTreeLeaves' bare gate): FOLLOWS.** d60's
+  `emit_living_tree_leaf` trio is the same faithful body g68 landed
+  (unconditional sideways `Next(2)`, two-open-cell gate, −10 shift,
+  paint column); the module doc flags the OLD inline deviation for
+  reconciliation — g68 already reconciled it, and the wiring-3
+  quarter-roll now matches d60's caller-owns-gate design. At the merge
+  the two `emit_living_tree_leaf` copies dedupe (g68's is wired; d60's
+  doc says "the wiring wave dedupes onto one copy").
+* **The per-frame pass move / persistent `_rand` / DrawnThisUpdate:
+  SILENT — deferred, not violated.** d60 documents the two-stream
+  census (`rand` = `_rand`, `main_rand` = `Main.rand`) and the
+  caller-owned gate, but says nothing about the G6 cached range, the
+  per-frame move, the persistent stream or the flag mechanism. That is
+  the wiring wave's obligation per its own doc; g68's drip wiring
+  (wiring-1) is the precedent: the per-frame seam beside tile_cracks +
+  `App.tile_draw_rand`.
+* **One factual flag (not a code violation):** d60's module doc
+  (`:75-77`) and ANALYSIS say `EmitLiquidDrops` "is called from
+  `CacheSpecialDraws` (`:693`)" — the C# `:693` call sits in
+  `TileDrawing.Draw` (`:465`, the per-draw tile walk), NOT
+  `CacheSpecialDraws_Part1/Part2` (`:4152`/`:4287`, the
+  `DrawSingleTile` special-point cache helpers). The distinction
+  matters for the cadence: `Draw` runs per draw (the drip gate rolls
+  per draw), while the cache helpers ride the cached tile range. g68's
+  wiring-1 ported the arm at the per-frame seam accordingly; the g30
+  `liquid_drop_cells` attach-contract (UNION-CONTRACT §5) records the
+  cells during the classify walk — the wiring wave must feed them
+  per-frame, not per-rebuild.
+* **Stream-order pins verified against the C#:** the 215 `Next(3)`
+  before the `frameY==0` re-test (`:6780`), the 592/406/452 else-if
+  chain (`:6796-6847`), the 192/384 arms BEFORE the rubble gate
+  (`:6848` vs `:6901` — the 77429fe1 fix), the chimney's
+  `Next(825,828)` type roll then the 1/4→1/2→else scale tiers
+  (`:6820-6832`), the lantern petals' `Next(570,573)` + two ±50%
+  jitters + the 572/571 X shifts (`:6966-6979`), the herb styles'
+  per-style gates (`:9605-9655`) — all match the ported bodies
+  verbatim. No emission-cadence violation found in d60's scope.
+
 Verification: 23 witness tests WRITTEN NOT RUN (no cargo/rustc invoked) —
 `render/foliage.rs` 11 (the dead-wind double shed, the sideways miss, the
 two-open-cell gate, the −10 left shift, the paint column, the liquid
