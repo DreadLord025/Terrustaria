@@ -2326,6 +2326,7 @@ pub(crate) mod front_flow_tests {
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),
             focus_recipe: 0,
+            craft_last_available: Vec::new(),
             current_recipe_being_crafted: -1,
             prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),

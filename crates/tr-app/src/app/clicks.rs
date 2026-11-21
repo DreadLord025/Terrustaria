@@ -5394,6 +5394,85 @@ mod s1_h_7_tests {
         Vec2::new(b[0] + 20.0, b[1] + 20.0)
     }
 
+    /// W4-f23 doc-sweep: the refocus-on-craft wiring — after a craft drains
+    /// the ingredients, the draw-path rebuild (`frame/draw.rs`'s
+    /// `try_refocusing_recipe` call, `Recipe.cs:232-233`/`:257`) moves the
+    /// focus off the vanished recipe onto the last row. The witness runs
+    /// the same capture + refocus sequence the draw path runs.
+    #[test]
+    fn crafting_the_last_ingredients_refocuses_to_the_last_row() {
+        let mut app = craft_app();
+        // Exactly one torch craft's worth: 1 wood + 1 gel.
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 1,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 1,
+            prefix: 0,
+        };
+        let adj = craft::scan_adjacent(&app.world, app.player.as_ref().unwrap(), (5, 3));
+        let zones = craft::Zones::default();
+        let in_range = craft::chests_in_range(
+            &app.world,
+            app.player.as_ref().unwrap(),
+            &app.world_chests,
+            false,
+        );
+        let before = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            None,
+            None,
+        );
+        let torch_pos = before
+            .iter()
+            .position(|&r| craft::RECIPES[r].create.0 == 8)
+            .expect("the torch recipe is available");
+        // The draw path's snapshot + focus before the craft.
+        app.craft_last_available = before.clone();
+        app.focus_recipe = torch_pos as i32;
+        // Craft the torch (the focused click).
+        app.mouse_pos = torch_mouse(&app);
+        app.ui_left_press = true;
+        app.mine_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert!(app.inventory.iter().any(|s| s.kind == 8), "the craft ran");
+        // The next frame's rebuild: the torch left the list (no gel/wood
+        // left), the refocus tail captures the OLD recipe from the
+        // snapshot and pins the focus to the new last row.
+        let after = craft::available(
+            &app.inventory,
+            &app.equip,
+            &app.world_chests,
+            &in_range,
+            &adj,
+            &zones,
+            None,
+            None,
+        );
+        assert!(
+            !after.contains(&before[torch_pos]),
+            "the torch recipe vanished with its ingredients"
+        );
+        let old_recipe = app.craft_last_available[app.focus_recipe as usize];
+        app.focus_recipe =
+            craft::try_refocusing_recipe(&after, old_recipe, app.focus_recipe);
+        assert_eq!(
+            app.focus_recipe,
+            (after.len() as i32 - 1).max(0),
+            "the focus rides the last row (`Recipe.cs:487-494`)"
+        );
+    }
+
     /// The shown grid — the same call `handle_crafting_clicks` makes.
     fn shown(app: &App) -> Vec<usize> {
         let (sw, sh) = app.screen_size();

@@ -1645,6 +1645,39 @@ impl App {
                         } else {
                             Vec::new()
                         };
+                        // `Recipe.UpdateRecipeList`'s refocus tail
+                        // (`Recipe.cs:232-233`, `:257`, `TryRefocusingRecipe`
+                        // `:477-495`): the focus follows the recipe it
+                        // pointed at across the rebuild — after a craft
+                        // consumes the last ingredients the old recipe
+                        // leaves the list and the focus pins to the last
+                        // row (or 0 when the list emptied). Runs every
+                        // frame the panel draws (`NewCraftingUI.Draw` →
+                        // `UpdateContents` `:585`), exactly like the C#.
+                        // The old recipe is captured BEFORE the rebuild;
+                        // an out-of-range focus reads the zero-filled
+                        // array's recipe 0 (`ClearAvailableRecipes` `:472`),
+                        // which never enters the list and falls through to
+                        // the clamps. Deviation: the C# also runs
+                        // `UpdateRecipeList` while the panel is CLOSED
+                        // (`Main.cs:41712`, the classic pip list's arm —
+                        // unported); the port's list only exists while the
+                        // panel draws, so the snapshot keeps the last open
+                        // frame's list across a close/reopen and the focus
+                        // follows the recipe it held (research/126).
+                        if self.crafting_open {
+                            let old_recipe = self
+                                .craft_last_available
+                                .get(self.focus_recipe.max(0) as usize)
+                                .copied()
+                                .unwrap_or(0);
+                            self.focus_recipe = craft::try_refocusing_recipe(
+                                &craft_available,
+                                old_recipe,
+                                self.focus_recipe,
+                            );
+                            self.craft_last_available = craft_available.clone();
+                        }
                         // `NewCraftingUI.UpdateContents` (`:596-611`): the
                         // grid shows only the recipes whose product passes
                         // the filterer (`_filteredRecipes`); the raw list

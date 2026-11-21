@@ -664,6 +664,12 @@ pub(crate) struct App {
     /// click focuses, the next crafts. NOT a recipe-table index and NOT a
     /// shown-grid position (the W4-f23 index-space fix).
     pub(crate) focus_recipe: i32,
+    /// The previous frame's RAW available list — `Main.availableRecipe`'s
+    /// state across `Recipe.UpdateRecipeList`'s clear+rebuild: the refocus
+    /// tail (`Recipe.cs:232-233`) captures `availableRecipe[focusRecipe]`
+    /// from THIS list before the rebuild (`TryRefocusingRecipe` `:477-495`,
+    /// wired in `frame/draw.rs`). Empty until the panel first draws.
+    pub(crate) craft_last_available: Vec<usize>,
     /// `Main._currentRecipeBeingCrafted` (`Main.cs:2352`): the held-repeat's
     /// recipe lock — a different recipe or a maxStack-1 product resets it.
     pub(crate) current_recipe_being_crafted: i32,
@@ -3898,6 +3904,7 @@ impl App {
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],
             buff_removals: Vec::new(),
             focus_recipe: 0,
+            craft_last_available: Vec::new(),
             current_recipe_being_crafted: -1,
             prevent_craft_click: false,
             pointer: ui::pointer::PointerState::default(),
