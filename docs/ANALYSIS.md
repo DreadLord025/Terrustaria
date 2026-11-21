@@ -7233,10 +7233,11 @@ currency — `CustomCurrencySingleCoin` OVERRIDES it (`:26-74`).
   the `medal_stacks` helper filters by the constant so a wrong constant
   would hide there).
 
-Deviations: the savings-draw/price-text chrome (`CustomCurrencyManager.
-DrawSavings` `:28-62`, `CustomCurrencySingleCoin.DrawSavingsMoney`/
-`GetPriceText` `:76-107`, the `Main.cs:20456-20458` tooltip arm) stays
-the UI follow-up; the no-player headless refusal is the port's safe
+Deviations: the savings-draw chrome (`CustomCurrencyManager.DrawSavings`
+`:28-62`, `CustomCurrencySingleCoin.DrawSavingsMoney` `:76-101`) landed
+in the sixth round (below); the `GetPriceText` tooltip arm
+(`CustomCurrencySingleCoin.cs:103-107`, the `Main.cs:20456-20458` price
+line) stays unported; the no-player headless refusal is the port's safe
 stand-in (the C# always has a local player). Witnesses written, not
 run (code-only): 7 wallet-side (the 3817-not-3822 constants, the
 count/ignore/cap arms, the combine clamp, the five-container count,
@@ -7274,14 +7275,14 @@ invBottom` = (180, 258), horizontal) draws inside the `reforgeItem.type
 > 0` block (`:41584`); `draw_hud` takes the `CoinSlotState` and the
 player's four banks.
 
-Deviations: the `_customCurrencyForSavings` hover latch (`ItemSlot.cs:
-3177`'s `MouseHover` write, `:3707-3711`'s branch → `CustomCurrencyManager.
-DrawSavings`) has no port consumer — the Tavernkeep medal-savings arm
-stays the chrome follow-up, so the port always draws the coin arm. The
-shop-panel call (`Main.cs:41791`, (504, invBottom), vertical) and its
-"Shop" label / happiness icon stay with the shop-chrome pass (the
-`draw_savings` helper is vertical-ready). The `GetPriceText` tooltip arm
-stays unported.
+Deviations (superseded in the sixth round, below): the
+`_customCurrencyForSavings` hover latch and the shop-panel call were
+this round's recorded chrome follow-up — both landed in the sixth
+round. The `GetPriceText` tooltip arm stays unported. The third C#
+caller (`DrawHairWindow`, `Main.cs:43862`) has no port consumer (the
+in-game hair window is unported). The count-text origin was wrong in
+this round's port (frozen scale) — fixed in the sixth round
+(research/142-savings-keep-one.md).
 
 **The Stylist Coins gate (`Chest.cs:2714-2746`).** The C# scans
 `Player.inventory[0..54]` — the 50-slot grid AND the four coin rows
@@ -7329,6 +7330,73 @@ Witnesses written, not run (code-only): the f36 raw-id pin
 4 savings-side (`ui/savings.rs`: the Utils arithmetic, the pile order +
 per-bank gates, the two-arm positions + the >99 platinum nudge, the
 savings machine's clamped-count pulse).
+
+## The savings keep-one round (W4-d122, sixth round)
+
+The g58b branch (`1328b118`, W4-g58 D5) ported the SAME `ItemSlot.
+DrawSavings` independently. The two-way arm-by-arm comparison + the
+keep-one decision live in `docs/research/142-savings-keep-one.md`; the
+C# caller census found THREE call sites (the reforge `Main.cs:41637`,
+the shop panel `:41791`, and `DrawHairWindow` `:43862` — the third's
+window is unported). Both branches' call sites are real; the union is
+ONE module + both wired calls.
+
+* **Keep d122's module** (`ui/savings.rs`, both DrawMoney arms, the
+  `sizeLimit` clamp + the static-icon fallback) and take g58b's ONE
+  faithful arm: the count-text origin. `DrawBorderStringFourWay`'s
+  origin `(0, LineSpacing)` is SCALED by `DrawString`
+  (`DynamicSpriteFont.InternalDrawFast`, `DynamicSpriteFont.cs:194`:
+  `position -= origin * scale`), so the net top-left is
+  `y + ls*0.75 − ls*scale` — at rest (scale 0.75) the ls terms cancel
+  EXACTLY; the fifth round froze scale at 1 (`y − 0.25*ls`, ~4-5 px off
+  at rest and no pulse lift). `money_text_pos` takes the draw scale.
+* **The shop-panel call lands** (`ui/shop_happiness.rs`, g58b's chrome
+  ported onto this branch's signature): the Shop label (`Lang.inter[28]`
+  at (504, invBottom), `Main.cs:41790`), the DrawSavings vertical pile
+  (`:41791`), the NPCHappiness 4-frame icon (`:41792-41796`, the
+  ≤0.82/≤1/≤1.1/else bands, centre origin, offsets (12,108)) and the P0
+  percent (`:41797`, offsets (26,98), `Main.cs:67266-67269`);
+  `assets.rs` packs `Images/UI/NPCHappiness`. g58b's `happiness_button`
+  report gate is NOT ported here (its own lane — merge note in
+  research/142).
+* **The medal arm lands** (the fifth round's deviation closed):
+  `ItemSlot._customCurrencyForSavings` (`ItemSlot.cs:308/:363`) →
+  `App.custom_currency_for_savings`; the `UpdateInterface` reset
+  (`:516-521`, `!playerInventory || talkNPC == -1`) rides
+  `update_shop_close`'s per-frame cluster (the port's talk stand-in:
+  `shop_npc || talk_npc`); the `MouseHover` stamps (`:3175-3177`) ride
+  `draw_hud` in the C#'s order — the grid/coin hover (all plain, −1)
+  BEFORE the reforge draw, the shop-row hover (the row's
+  `shopSpecialCurrency`) AFTER the shop pile (`Main.cs:41814`'s Handle
+  runs after `:41791`'s draw, so the latch is one frame late — kept).
+  `draw_savings`' `currency != -1` branch (`:3707-3711`) dispatches to
+  the medal display: `custom_currency::count_savings` (the FOUR BANKS
+  only, each capped 999 + the combine capped 999,
+  `CustomCurrencyManager.cs:32-36`), the DIFFERENT pile centres (vault
+  (+96,+50), forge (+80,+50), safe (+80,+50) — the C#'s forge/safe
+  OVERLAP kept as-is `:49/:53`, piggy (+70,+60)), the same Savings label
+  (`:59`), then `DrawSavingsMoney` (`CustomCurrencySingleCoin.cs:76-
+  101`): the STATIC Item_3817 at scale 0.8 centred (no strip, no size
+  clamp, no 999 display clamp), `CoinSlot.UpdateCustom`
+  (`CoinSlot.cs:230-238` — the new `custom_entries` map keyed by 3817,
+  the `Type == 3817` pulse arm, stepped LAST in `UpdateSlotAnims`
+  `:270-273`); the horizontal text RIDES the jump (`:93` passes
+  `position.Y`), the vertical text does NOT (`:99`), origin (0.3, 0.3)
+  scaled, the >99 nudge reads the TOTAL.
+* **The coin-purse display census** (research/142 §purse): the ctx-1
+  coin column (`Main.cs:41752-41764`) is plain `ItemSlot.Draw` — its
+  spin strips/jump/pulse ride `CoinSlot.UpdateDrawState`
+  (`ItemSlot.cs:2349/:2515/:2697-2706`), which `ui/slot.rs::draw_slot`
+  does not consume (the recorded S1-H-9 deviation stands; wiring it
+  touches every slot caller — a dedicated follow-up, NOT this round).
+
+Witnesses written, not run (code-only): the fixed text-origin formula
+(rest + pulse, both arms), the medal pile centres + the forge/safe
+overlap, the medal text positions (jump-riding horizontal / nudged
+vertical / scaled origin), `update_custom`'s 3817 pulse + rank
+isolation, `count_savings`' banks-only + caps, the shop chrome's
+bands/P0/offsets (g58b's three, kept), the coin-strip + NPCHappiness
+packing.
 
 ## Dye Trader/Party Girl (M4-TOWN-20)
 
