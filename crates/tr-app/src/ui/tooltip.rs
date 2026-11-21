@@ -216,6 +216,32 @@ pub struct TooltipContext<'a> {
     /// `Main.npcShop > 0` (`Main.cs:20818`): the shop's equipable row swaps
     /// to `Lang.tip[60]` for the Pocket Mirror 854 / Peddler's Satchel 3035.
     pub shop_open: bool,
+    /// `NPC.downedPlantBoss` (`Main.cs:20961`): the biome keys' first
+    /// tooltip line stays cursed until Plantera falls.
+    pub downed_plant_boss: bool,
+    /// `Main.tenthAnniversaryWorld` (`Main.cs:20973`) — the Wizard Hat 238
+    /// anniversary row.
+    pub anniversary: bool,
+    /// `Main.getGoodWorld` (`Main.cs:20978`) — the Crispy Honey Block 1127
+    /// burning row.
+    pub get_good_world: bool,
+    /// `SpecialSeedFeatures.Mechdusa` (`SpecialSeedFeatures.cs:119-128` =
+    /// `remixWorld && getGoodWorld`) — the mech-summon tooltip swap
+    /// (`Main.cs:20983-20999`).
+    pub mechdusa: bool,
+    /// `Main.player[myPlayer].downedDD2EventAnyDifficulty`
+    /// (`Main.cs:21000`) — the DD2 poppers' Etherian-Mana row.
+    pub downed_dd2_any: bool,
+    /// `Main.expertMode` (`Main.cs:21005`) — the well-fed life-regen row.
+    pub expert_mode: bool,
+    /// `Main.masterColor` (`Main.cs:18225-18234`'s ±0.05 oscillation,
+    /// `DoUpdate_AnimateCursorColors`): the −13 master name colour's green
+    /// channel. The port has no animated global yet — 1.0 (the static
+    /// default, `Main.cs:66833`).
+    pub master_color: f32,
+    /// `Main.DiscoR/G/B` (`Main.cs:20564-20567`): the −12 expert name
+    /// colour; the caller passes the shared cycle (`App.disco`).
+    pub disco: [u8; 3],
 }
 
 impl Default for TooltipContext<'_> {
@@ -228,6 +254,14 @@ impl Default for TooltipContext<'_> {
             held_kind: 0,
             has_coin_gun: false,
             shop_open: false,
+            downed_plant_boss: false,
+            anniversary: false,
+            get_good_world: false,
+            mechdusa: false,
+            downed_dd2_any: false,
+            expert_mode: false,
+            master_color: 1.0,
+            disco: [255, 0, 0],
         }
     }
 }
@@ -274,7 +308,19 @@ pub fn item_tooltip_lines(
 ) -> Vec<(String, [f32; 4])> {
     let mut lines: Vec<(String, [f32; 4])> = vec![(
         hover_name(kind, ctx.prefix, ctx.stack),
-        item_name_color(registry::rare(kind)),
+        // `:20328-20332` — the expert items force rare −12 (the disco
+        // colour); `:20560-20567` — −13 reads masterColor, −12 the shared
+        // disco cycle. The diff 1/2 mediumcore/hardcore overrides
+        // (`:20620-20627`) stay unported (no difficulty flag).
+        if super::tooltip_sets::expert_only(kind) {
+            super::color::tint([ctx.disco[0], ctx.disco[1], ctx.disco[2], 255])
+        } else if registry::rare(kind) == -13 {
+            // `(byte)(Main.masterColor * 200f)` (`:20562`) — masterColor
+            // stays in [0, 1], so the truncation cannot wrap.
+            [1.0, (ctx.master_color * 200.0) as u8 as f32 / 255.0, 0.0, 1.0]
+        } else {
+            item_name_color(registry::rare(kind))
+        },
     )];
     // `:20669` — the damage gate: `damage > 0 && (!notAmmo || useStyle != 0)
     // && (type < 71 || type > 74 || HasItem(905))`. The coins 71-74 are
@@ -613,13 +659,90 @@ pub fn item_tooltip_lines(
             [1.0, 1.0, 1.0, 1.0],
         ));
     }
-    // `:20958-20972` — the per-item tooltip text (`Lang.GetTooltip`,
+    // `:20957-20972` — the per-item tooltip text (`Lang.GetTooltip`,
     // `Lang.cs:193-196`): the `ItemTooltip.<ItemID name>` language rows,
-    // one line each.
+    // one line each. The biome keys' FIRST line becomes `Lang.tip[59]`
+    // ("It has been cursed by a powerful Jungle creature") until Plantera
+    // falls (`ItemID.Sets.UsesCursedByPlanteraTooltip`, `ItemID.cs:410`).
     if let Some(text) = crate::lang::item_tooltip_text(kind) {
-        for line in text.split('\n') {
-            lines.push((line.to_string(), [1.0, 1.0, 1.0, 1.0]));
+        for (i, line) in text.split('\n').enumerate() {
+            let row = if i == 0
+                && super::tooltip_sets::uses_cursed_by_plantera_tooltip(kind)
+                && !ctx.downed_plant_boss
+            {
+                crate::lang::tip(59)
+            } else {
+                line.to_string()
+            };
+            lines.push((row, [1.0, 1.0, 1.0, 1.0]));
         }
+    }
+    // `:20973-20977` — the anniversary Wizard Hat 238 row.
+    if ctx.anniversary && kind == 238 {
+        lines.push((
+            crate::lang::common_item_tooltip("WizardHatDuringAnniversary"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    // `:20978-20982` — the for-the-worthy Crispy Honey Block 1127 row.
+    if ctx.get_good_world && kind == 1127 {
+        lines.push((
+            crate::lang::common_item_tooltip("BurningBlock"),
+            [1.0, 1.0, 1.0, 1.0],
+        ));
+    }
+    // `:20983-20999` — the Mechdusa swap. Under Mechdusa the three mech
+    // summons' LAST line becomes "Part of a set"; outside it Ocram's Razor
+    // 5334 drops its last line and REPLACES the previous one (the double
+    // `numLines--` walk) with "It has no effect in this world".
+    if ctx.mechdusa {
+        if matches!(kind, 556 | 557 | 544) {
+            if let Some(last) = lines.last_mut() {
+                last.0 = crate::lang::common_item_tooltip("MechSummonDuringEverything");
+            }
+        }
+    } else if kind == 5334 {
+        lines.pop();
+        if let Some(last) = lines.last_mut() {
+            last.0 = crate::lang::common_item_tooltip("MechdusaSummonNotDuringEverything");
+        }
+    }
+    // `:21000-21004` — the DD2 poppers need Etherian Mana until the
+    // Eternia Crystal has been defended (`Lang.misc[104]`).
+    if super::tooltip_sets::dd2_needs_etherian_mana(kind) && !ctx.downed_dd2_any {
+        lines.push((crate::lang::misc(104), [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:21005-21009` — the well-fed items' expert life-regen row
+    // (`BuffID.Sets.IsWellFed`, `Lang.misc[40]`).
+    if d.buff_type > 0 && super::tooltip_sets::is_well_fed(d.buff_type) && ctx.expert_mode {
+        lines.push((crate::lang::misc(40), [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:21010-21015` — the buff duration row: under 60 seconds the
+    // SecondDuration key with `Math.Round(buffTime / 60.0)` (banker's),
+    // else MinuteDuration with `Math.Round((buffTime / 60) / 60.0)` — the
+    // C# divides the INT quotient again.
+    if d.buff_time > 0 {
+        let row = if d.buff_time / 60 < 60 {
+            let secs = tr_core::damage::round_bankers(d.buff_time as f64 / 60.0);
+            crate::lang::common_item_tooltip_fmt("SecondDuration", secs as i32)
+        } else {
+            let mins = tr_core::damage::round_bankers((d.buff_time / 60) as f64 / 60.0);
+            crate::lang::common_item_tooltip_fmt("MinuteDuration", mins as i32)
+        };
+        lines.push((row, [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:21016-21021` — the yoyo kinds append a blank line whose index the
+    // draw pass swaps for the OneDropLogo texture (`:20410-20438`). The
+    // texture is unported; the blank line keeps the row geometry.
+    if super::tooltip_sets::yoyo_logo(kind) {
+        lines.push((" ".to_string(), [1.0, 1.0, 1.0, 1.0]));
+    }
+    // `:21022-21031` — the expert / master rarity rows.
+    if super::tooltip_sets::expert_only(kind) {
+        lines.push((crate::lang::game_ui("Expert"), [1.0, 1.0, 1.0, 1.0]));
+    }
+    if d.rare == -13 {
+        lines.push((crate::lang::game_ui("Master"), [1.0, 1.0, 1.0, 1.0]));
     }
     lines
 }
@@ -1417,5 +1540,191 @@ mod tests {
         let statue = crate::registry::get(441).expect("the goblin statue row");
         let rows = item_tooltip_lines(441, statue, TooltipContext::default());
         assert!(rows.iter().any(|(t, _)| *t == crate::lang::common_item_tooltip("Wireable")));
+    }
+
+    // --- W4-e16 family 2: the ToolTip tail + the world rows -------------------
+
+    /// The language rows the tail reads (the shipped values,
+    /// `Terraria.Localization.Content.en-US.Items.json` / `.Legacy.json`).
+    fn register_tail_language() {
+        crate::lang::test_register_source(
+            "Terraria.Localization.Content.en-US.Items.json",
+            r#"{
+                "ItemTooltip": {
+                    "JungleKey": "Unlocks a Jungle Chest in the dungeon",
+                    "MechanicalWorm": "Summons The Destroyer",
+                    "MechdusaSummon": "Summons ???\n'You really shouldn't'"
+                },
+                "CommonItemTooltip": {
+                    "MechSummonDuringEverything": "'Part of a set'",
+                    "MechdusaSummonNotDuringEverything": "'It has no effect in this world'",
+                    "WizardHatDuringAnniversary": "Increases your max number of minions by 1",
+                    "BurningBlock": "Burns you when touched without special protection",
+                    "SecondDuration": "{0} second duration",
+                    "MinuteDuration": "{0} minute duration"
+                }
+            }"#,
+        );
+    }
+
+    /// `Main.cs:20961-20965`: the Jungle Key 1533's first tooltip line is
+    /// tip[59] until Plantera falls, then the real text.
+    #[test]
+    fn w4_e16_the_biome_keys_stay_cursed_until_plantera() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let key = crate::registry::get(1533).expect("the jungle key row");
+        let rows = item_tooltip_lines(1533, key, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(59)), "{rows:?}");
+        assert!(
+            !rows.iter().any(|(t, _)| t == "Unlocks a Jungle Chest in the dungeon"),
+            "the real text stays hidden: {rows:?}"
+        );
+        let rows = item_tooltip_lines(
+            1533,
+            key,
+            TooltipContext { downed_plant_boss: true, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, _)| t == "Unlocks a Jungle Chest in the dungeon"),
+            "{rows:?}"
+        );
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(59)));
+    }
+
+    /// `Main.cs:20973-20982`: the anniversary Wizard Hat 238 and the
+    /// for-the-worthy Crispy Honey Block 1127 rows.
+    #[test]
+    fn w4_e16_the_seed_rows_gate_on_their_world_flags() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let hat = crate::registry::get(238).expect("the wizard hat row");
+        let rows = item_tooltip_lines(238, hat, TooltipContext::default());
+        let anniversary_row = crate::lang::common_item_tooltip("WizardHatDuringAnniversary");
+        assert!(!rows.iter().any(|(t, _)| *t == anniversary_row));
+        let rows = item_tooltip_lines(
+            238,
+            hat,
+            TooltipContext { anniversary: true, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == anniversary_row), "{rows:?}");
+        let honey = crate::registry::get(1127).expect("the crispy honey row");
+        let burning = crate::lang::common_item_tooltip("BurningBlock");
+        let rows = item_tooltip_lines(1127, honey, TooltipContext::default());
+        assert!(!rows.iter().any(|(t, _)| *t == burning));
+        let rows = item_tooltip_lines(
+            1127,
+            honey,
+            TooltipContext { get_good_world: true, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == burning), "{rows:?}");
+    }
+
+    /// `Main.cs:20983-20999`: under Mechdusa the Mechanical Worm 556's last
+    /// line becomes "Part of a set"; outside it Ocram's Razor 5334 drops
+    /// its last line and replaces the previous one (the double `numLines--`).
+    #[test]
+    fn w4_e16_the_mechdusa_swap_rewrites_the_last_lines() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let worm = crate::registry::get(556).expect("the mechanical worm row");
+        let rows = item_tooltip_lines(
+            556,
+            worm,
+            TooltipContext { mechdusa: true, ..Default::default() },
+        );
+        assert_eq!(
+            rows.last().unwrap().0, "'Part of a set'",
+            "the last line is rewritten, not appended: {rows:?}"
+        );
+        let razor = crate::registry::get(5334).expect("the ocram's razor row");
+        let rows = item_tooltip_lines(5334, razor, TooltipContext::default());
+        assert_eq!(
+            rows.last().unwrap().0, "'It has no effect in this world'",
+            "{rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| t == "'You really shouldn't'"),
+            "the dropped last line stays gone: {rows:?}"
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| t == "Summons ???"),
+            "the previous line was REPLACED (numLines-- twice): {rows:?}"
+        );
+        // Under Mechdusa the razor keeps its own text (the else-if arm).
+        let rows = item_tooltip_lines(
+            5334,
+            razor,
+            TooltipContext { mechdusa: true, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| t == "'You really shouldn't'"), "{rows:?}");
+    }
+
+    /// `Main.cs:21000-21009`: the DD2 popper 3818 prints misc[104] until
+    /// the crystal is defended; the Apple 4009 (WellFed 26) prints misc[40]
+    /// only in expert mode.
+    #[test]
+    fn w4_e16_the_dd2_and_well_fed_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let popper = crate::registry::get(3818).expect("the dd2 popper row");
+        let rows = item_tooltip_lines(3818, popper, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::misc(104)), "{rows:?}");
+        let rows = item_tooltip_lines(
+            3818,
+            popper,
+            TooltipContext { downed_dd2_any: true, ..Default::default() },
+        );
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::misc(104)));
+        let apple = crate::registry::get(4009).expect("the apple row");
+        let rows = item_tooltip_lines(4009, apple, TooltipContext::default());
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::misc(40)));
+        let rows = item_tooltip_lines(
+            4009,
+            apple,
+            TooltipContext { expert_mode: true, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::misc(40)), "{rows:?}");
+    }
+
+    /// `Main.cs:21010-21015`: the Apple's 18000 ticks → 300 s → 5 minutes;
+    /// the seconds arm rounds BANKER'S (2730 → 45.5 → 46, 2670 → 44.5 → 44).
+    #[test]
+    fn w4_e16_the_duration_row_rounds_bankers() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let apple = crate::registry::get(4009).expect("the apple row");
+        let rows = item_tooltip_lines(4009, apple, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| t == "5 minute duration"), "{rows:?}");
+        let base = crate::registry::get(1).expect("a base row");
+        let odd_half = crate::itemdata::ItemDef { buff_time: 2730, ..*base };
+        let rows = item_tooltip_lines(1, &odd_half, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| t == "46 second duration"), "{rows:?}");
+        let even_half = crate::itemdata::ItemDef { buff_time: 2670, ..*base };
+        let rows = item_tooltip_lines(1, &even_half, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| t == "44 second duration"), "{rows:?}");
+    }
+
+    /// `Main.cs:21016-21031`: the Code 1 yoyo appends the blank logo line;
+    /// the Hive Backpack 3333 prints GameUI.Expert and takes the −12 disco
+    /// name colour; the Pirate Ship Mount 4792 (rare −13) prints
+    /// GameUI.Master with the masterColor green channel.
+    #[test]
+    fn w4_e16_the_yoyo_expert_and_master_rows() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let yoyo = crate::registry::get(3262).expect("the code 1 row");
+        let rows = item_tooltip_lines(3262, yoyo, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| t == " "), "the blank logo line: {rows:?}");
+        let backpack = crate::registry::get(3333).expect("the hive backpack row");
+        let ctx = TooltipContext { disco: [0, 255, 0], ..Default::default() };
+        let rows = item_tooltip_lines(3333, backpack, ctx);
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::game_ui("Expert")), "{rows:?}");
+        assert_eq!(rows[0].1, [0.0, 1.0, 0.0, 1.0], "the disco name colour");
+        let mount = crate::registry::get(4792).expect("the pirate ship mount row");
+        let rows = item_tooltip_lines(4792, mount, TooltipContext::default());
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::game_ui("Master")), "{rows:?}");
+        // masterColor 1.0 -> (byte)(1 * 200) = 200.
+        assert_eq!(rows[0].1, [1.0, 200.0 / 255.0, 0.0, 1.0]);
     }
 }

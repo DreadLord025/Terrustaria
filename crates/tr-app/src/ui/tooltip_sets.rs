@@ -5,6 +5,73 @@
 //! for these flags, so the census keeps them here next to their consumer
 //! (docs/research/64-item-tooltip-line-census.md).
 
+/// `BuffID.Sets.IsWellFed` (`BuffID.cs:43`): the three food buffs whose
+/// items print the expert life-regen row (`Main.cs:21005-21009`).
+pub(super) fn is_well_fed(buff_type: i32) -> bool {
+    matches!(buff_type, 26 | 206 | 207)
+}
+
+/// `ItemID.Sets.UsesCursedByPlanteraTooltip` (`ItemID.cs:410`): the biome
+/// keys + the Lightning Carrot — their first tooltip line becomes
+/// `Lang.tip[59]` until Plantera falls (`Main.cs:20961-20965`).
+pub(super) fn uses_cursed_by_plantera_tooltip(kind: u16) -> bool {
+    matches!(kind, 1533 | 1534 | 1535 | 1536 | 1537 | 4714)
+}
+
+/// `Item.expert` — the 25 `this.expert = true` writes in `Item.SetDefaults`
+/// (`Item.cs:13923,28599,28647,29748,29757,29898,30614,30626,30647,30655,
+/// 30663,30669,30678,30781,32271,34163,37575,39327,39951,40025,40183,40201,
+/// 40881,40952,41995`), all unconditional in their case bodies. The
+/// `GameUI.Expert` row (`Main.cs:21022-21026`) and the −12 disco name
+/// colour (`:20329-20332`) read it; `ItemDef` carries no column.
+pub(super) fn expert_only(kind: u16) -> bool {
+    matches!(
+        kind,
+        1131 | 3090
+            | 3097
+            | 3223
+            | 3224
+            | 3245
+            | 3318..=3333
+            | 3335
+            | 3336
+            | 3337
+            | 3353..=3356
+            | 3367
+            | 3577
+            | 3860..=3862
+            | 4444
+            | 4782
+            | 4954
+            | 4957
+            | 4987
+            | 4989
+            | 5100
+            | 5111
+            | 5289
+    )
+}
+
+/// The yoyo-logo kinds (`Main.cs:21016-21021`): a blank line is appended
+/// and its index becomes `yoyoLogo` (the draw pass swaps it for the
+/// OneDropLogo texture, `:20410-20438` — unported, the blank line keeps
+/// the geometry).
+pub(super) fn yoyo_logo(kind: u16) -> bool {
+    matches!(
+        kind,
+        3262 | 3282..=3286 | 3315 | 3316 | 3317 | 3291 | 3389
+    )
+}
+
+/// The DD2 tower/popper kinds whose tooltip prints `Lang.misc[104]` until
+/// the Eternia Crystal has been defended (`Main.cs:21000-21004`).
+pub(super) fn dd2_needs_etherian_mana(kind: u16) -> bool {
+    matches!(
+        kind,
+        3818 | 3819 | 3820 | 3824 | 3825 | 3826 | 3829 | 3830 | 3831 | 3832 | 3833 | 3834
+    )
+}
+
 /// `Item.tileWand` (`Item.cs:113`, stock −1): the six kinds that consume a
 /// material to place their tile — 832/933 → Wood 9 (`Item.cs:11149`/
 /// `:12161`), 932 → Gel 154 (`:12148`), 1129 → Fallen Star 1124 (`:13888`),
