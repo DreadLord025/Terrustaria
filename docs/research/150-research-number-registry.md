@@ -25,15 +25,19 @@ copies) across 64 lanes**. Free renumber block assigned: **151–236, sequential
 > 7h/7i/7j (KEEP their §7.3 assignments)**, **284 = g15**, **244/245 = g48**
 > (pre-publish WINS stand), **246 = e23 reservation**, **247 = d10 reservation
 > (EXECUTED `72431e61f`)**, **248 = g82's published round-2 reservation**
-> (e26's 15:44:26 direct add is POST-publish → loses, §7.4 rule; brief's
-> "e26-KEEPS?" verified NO). g48's executed 244→281 / 245→282 self-renames
-> and f39's 244→281 rename are CONTESTED → NOT honored → **308/309** and
-> **312** (f39 chain 244→281→312, supersedes its unexecuted 299 row → 299
-> FREE); f4's 240→283 rename was contested but f4 then self-corrected to
-> **305 EXECUTED** (§7.4 row satisfied). **26 numbers 308–333 (25 assigned
-> + 323 RESERVED g65 per dispatch, claim unverified at tip); LIVE total
-> 173 = 151–236 (86) + 246–280 (35) + 281–303 (22, 299 freed) + 304–307 (4)
-> + 308–333 (26). Numbers 334+ are FREE.**
+> (verified per dispatch: e26's 15:44:26 direct add is POST-publish 14:47:50
+> → e26 does NOT keep → **333**). g48's executed 244→281 / 245→282
+> self-renames and f39's 244→281 rename are CONTESTED → NOT honored →
+> **310/319** and **311** (f39 chain 244→281→311, supersedes its unexecuted
+> 299 row → 299 FREE); f4's 240→283 rename was contested but f4 then
+> self-corrected to **305 EXECUTED** (§7.4 row satisfied). g65 took 245 then
+> executed 245→308 (`573ec7a8c` 16:47:47) — per dispatch g65 → **323**
+> (308 = d30's §8 assignment; executed-pre-publish tension FLAGGED §8.2).
+> The 10 281-self-pickers → **308–317 in claim order** (d30/d125/g48/f39/
+> d106/d9/c9/c25/c32/g8); the 282 trio → **318–320** (d125/g48/f39-seal).
+> **26 NEW assignments 308–333; LIVE total 173 = 151–236 (86) + 246–280 (35)
+> + 281–303 minus 299 (22) + 304–307 (4) + 308–333 (26). Numbers 334+ are
+> FREE.**
 
 > ## 🔄🔄🔄 §4-REFRESH (round 3 EXTENSION, same scan date) — §7.4 authority extended by §8 where noted
 >
@@ -50,7 +54,8 @@ copies) across 64 lanes**. Free renumber block assigned: **151–236, sequential
 > 134→146→247→267). Executed self-renames are honored ONLY if uncontested —
 > both of these were contested. **4 NEW assignments 304–307; live total 148 =
 > 151–236 + 246–280 + 281–303 + 304–307 (§5 machine check). Numbers 308+ are
-> FREE.** §7.4 supersedes §7.1–§7.3 wherever they disagree.
+> FREE.** ⚠ **§8 consumed 308–333; 334+ FREE. §7.4 supersedes §7.1–§7.3
+> wherever they disagree; §8 supersedes §7.4 on keys 244–248/281–284.**
 >
 > ## 🔄🔄 §4-REFRESH (round 3, commit `51a28d09e`) — extended by §7.4 where noted
 >
@@ -86,7 +91,7 @@ copies) across 64 lanes**. Free renumber block assigned: **151–236, sequential
 > - **Live assignment total: 144 = 151–236 (86) + 246–280 (35) + 281–303 (23),
 >   machine-checked unique, no gaps within each block (§5 round 3).**
 >   Winner-consumed: **237–245** (e23/d42×2/g58×4/g48×2). ~~Numbers 304+ are
->   FREE.~~ **⚠ §7.4 consumed 304–307; 308+ FREE.** Do NOT pick max-on-origin+1; check this registry AND a fresh
+>   FREE.~~ **⚠ §7.4 consumed 304–307; §8 consumed 308–333; 334+ FREE.** Do NOT pick max-on-origin+1; check this registry AND a fresh
 >   all-tip sweep first.
 > - **Claim-time convention (pinned §7):** a directly-added doc contests its
 >   number at first-add `%cI`; a SELF-RENAMED doc contests the NEW number at
@@ -592,7 +597,7 @@ replace the named §6.3 row (do not execute both).
 | e19-liquid-quicksell-shimmer | `146-aether-biome-census.md` → `296-aether-biome-census.md` | 146 — The AETHER biome census (W4-e19 final, SHIMMER item 3) | `docs/research/INDEX.md` — e19's 144/145 WINS stand; 147→268 unchanged |
 | e19-liquid-quicksell-shimmer | `148-e19-research-final.md` → `297-e19-research-final.md` | 148 — W4-e19 research FINAL (the liquid/quicksell/shimmer lane closes) | `docs/research/INDEX.md` |
 | g63-proj-trail-dust-1 | `240-proj-trail-dust-family-final.md` → `298-proj-trail-dust-family-final.md` | 240 — W4-g63 projectile TRAIL dust (kinds ≤400): FINAL + family declaration (SEALED) | `docs/research/INDEX.md` — 240 belongs to g58's earlier rename (12:16:37); g63's 66 win + 199 EXECUTED stand |
-| f39-weather-slimerain | `244-f39-v18-claim-input.md` → `299-f39-v18-claim-input.md` | 244 — W4-f39 v18-claim INPUT for g71c (the closeout receipt, code-only) | `docs/ANALYSIS.md`, `docs/ROADMAP.md`, `docs/research/INDEX.md` — g48's 244 (14:30:16) predates this doc (14:32:01) |
+| f39-weather-slimerain | `244-f39-v18-claim-input.md` → `299-f39-v18-claim-input.md` **⚠ SUPERSEDED §8: f39 executed 244→281 (`fec65992f` 15:53:15, contested — 281=f26) → renumber `281-f39-v18-claim-input.md` → 311; 299 FREE again; chain 244→281→311** | 244 — W4-f39 v18-claim INPUT for g71c (the closeout receipt, code-only) | `docs/ANALYSIS.md`, `docs/ROADMAP.md`, `docs/research/INDEX.md` — g48's 244 (14:30:16) predates this doc (14:32:01) |
 | c31-hive-rewrite | `12k-c31-jungle-residuals.md` → `300-c31-jungle-residuals.md` | 12k — W4-c31 jungle residuals census + gap-fill | `docs/ANALYSIS.md` — **RE-ISSUE of §6.3's c31→244 row** (244 taken by g48's pre-publish push) |
 | d81-ui-elements-1 | `18b-element-census.md` (d81 fork copy) → `301-element-census-d81.md` | 18b — UIElement class census + the d81/d82/d83 range split | (none) — **RE-ISSUE of §6.3's d81→245 row** (245 taken by g48's pre-publish push) |
 | g53-ui-achievement-screen | `18b-element-census.md` — IDENTICAL blob to d81's copy | (same header) | rename to the SAME `301-element-census-d81.md` (or drop the copy); merger keep-one with d81. No separate number. **RE-ISSUE of the §6.3 g53 ride row.** |
@@ -608,7 +613,7 @@ LIVE assignment total: 144 = 151–236 (86) + 246–280 (35, round 2 minus the
 g48-consumed 244/245) + 281–303 (23), machine-checked unique, no gaps within
 each block (§5 round 3). Winner-consumed numbers: 237–245 (e23 / d42×2 /
 g58×4 / g48×2). Numbers 304+ are FREE.** ⚠ **EXTENDED by §7.4: 304–307
-consumed (d50/f4/g86/g43), 308+ FREE.** New lanes must NOT pick
+consumed (d50/f4/g86/g43); §8: 308–333 consumed, 299 freed, 334+ FREE.** New lanes must NOT pick
 max-on-origin+1 or first-free-at-my-last-fetch — check this registry AND a
 fresh all-tip sweep first.
 
@@ -617,7 +622,8 @@ sweep (360 tips, 21 172 rows). Later pushes self-adjudicate per the rules
 (first-add wins; renamed docs contest at rename-commit time; losers take
 ≥304 after a fresh sweep) or request a round-4 refresh. **⚠ EXTENDED by §7.4:
 the post-cutoff claimants on keys 240/243/244/246/247 are adjudicated there;
-304–307 consumed, 308+ FREE.**
+304–307 consumed. ⚠ EXTENDED by §8: the self-pick wave on 244–248/281–284
+adjudicated there; 308–333 consumed, 334+ FREE.**
 
 ### 7.4 EXTENSION (round 3, post-cutoff claimants) — keys 240/243/244/246/247, block 304–307
 
@@ -683,15 +689,18 @@ new numbers. LIVE assignment total: 148 = 151–236 (86) + 246–280 (35) +
 308+ are FREE.** Same warning: no max-on-origin+1, no
 first-free-at-my-last-fetch — d50's 243, f4's 240, g86's 244, g43's 246 and
 g67's 247 all came from racing scans that missed a landed push or a published
-reservation.
+reservation. **⚠ EXTENDED by §8: 308–333 consumed by the round-4 self-pick
+wave, 334+ FREE.**
 
 **Cutoff note (extension):** adjudicates the claimant tips listed in the §7.4
 header at this fetch. Pushes after it self-adjudicate per the same rules
 (losers take ≥308 after a fresh sweep) or request a round-4 refresh.
+**⚠ §8 (round 4) landed: the post-§7.4 self-pick wave is adjudicated there;
+308–333 consumed (299 freed), 334+ FREE.**
 **⚠ EXTENDED by §8 (round 4): the post-§7.4 self-pick wave on keys
-244–248/281–284 is adjudicated there; 308–332 consumed, 333+ FREE.**
+244–248/281–284 is adjudicated there; 308–333 consumed, 334+ FREE.**
 
-## 8. REFRESH (round 4, APPEND-ONLY) — post-§7.4 self-pick wave, block 308–332
+## 8. REFRESH (round 4, APPEND-ONLY) — post-§7.4 self-pick wave, block 308–333
 
 Lean claimant-tip re-check only (NO full tip sweep — the §7.2/§7.3/§7.4
 assignments are the AUTHORITY). **The 281–303 block was ASSIGNED by §7.2/§7.3
@@ -699,17 +708,20 @@ to specific lanes. A lane that picked a number in 281–303 WITHOUT an
 assignment COLLIDES with the assignment holder and renames to 308+.** The
 §7 claim-time convention applies unchanged (direct adds contest at first-add
 `%cI`; EXECUTED self-renames contest the NEW number at rename-commit `%cI`
-and are honored ONLY IF UNCONTESTED). All timestamps 2026-11-21 +02:00,
-claimant tips as fetched for this round.
+and are honored ONLY IF UNCONTESTED; published reservations contest at
+publish time — a post-publish take of a reserved number LOSES even if it is
+the earliest EXECUTED file at that number, the d10-246 precedent). All
+timestamps 2026-11-21 +02:00, claimant tips as fetched for this round.
 
 **NO SELF-PICKS: the assigned blocks 151–236, 246–280, 281–303, 304–307 and
-now 308–332 are RESERVED. Do NOT take any number from them, do NOT pick
-max-on-origin+1 or first-free-at-your-last-fetch. New docs take ≥333 ONLY
+now 308–333 are RESERVED. Do NOT take any number from them, do NOT pick
+max-on-origin+1 or first-free-at-your-last-fetch. New docs take ≥334 ONLY
 after checking this registry AND a fresh all-tip sweep.** Every collision in
 this round came from a self-pick into an assigned block (g48's 281/282,
-d30/d125/c9/d106/d9/c25/c32/f39/g8's 281, d125/f39's 282, g52's 284) or from
-re-taking a number whose winner was already adjudicated (d43/g5's 244,
-g40/d16's 246, d16/g68/c3/d6's 247, d3/c27's 248).
+d30/d125/c9/d106/d9/c25/c32/f39/g8's 281, d125/f39's 282, g52's 284), a
+re-take of an adjudicated winner key (d43/g5's 244, g65's 245, g40/d16's
+246, d16/g68/c3/d6's 247), or a post-publish take of a reserved number
+(e26/d3/c27's 248).
 
 ### 8.1 Simple renumber table (old → new; lanes execute on OWN branches)
 
@@ -720,74 +732,68 @@ Same procedure as §3: `git mv`, update the number header, update refs
 
 | # | Lane (branch `task/W4-…`) | Old key/doc (at tip) | New | Claim ts / why |
 | --- | --- | --- | --- | --- |
-| 1 | g48-net-apply-arms-1 | `281-c28-18-send-switch.md` (chain 244→281) | **308** | rename `9c776ca2f` 15:50:24 — 281 is f26's §7.3 assignment (7h); g48's 244 WIN was revoked BY ITS OWN executed rename into the assigned block → contested, NOT honored |
-| 2 | d30-npc-ai-styles-65-72 | `281-band-65-72-retire.md` | **310** | add `ec89521fb` 15:42:58 — 281=f26 (self-pick) |
-| 3 | d125-empress-r7-drain | `281-empress-sheets-ledger.md` | **311** | add `5a26ae348` 15:44:38 — 281=f26 (self-pick); d125's 125 WIN (§7.1) unaffected |
-| 4 | f39-weather-slimerain | `281-f39-v18-claim-input.md` (chain 244→281) | **316** | rename `fec65992f` 15:53:15 — 281=f26; SUPERSEDES §7.3's unexecuted f39 244→299 row (299 is now FREE); chain 244→281→316 |
+| 1 | d30-npc-ai-styles-65-72 | `281-band-65-72-retire.md` | **308** | add `ec89521fb` 15:42:58 — 281=f26's §7.3 assignment (7h), self-pick; first of the 10 by claim time |
+| 2 | d125-empress-r7-drain | `281-empress-sheets-ledger.md` | **309** | add `5a26ae348` 15:44:38 — 281=f26 (self-pick); d125's 125 WIN (§7.1) unaffected |
+| 3 | g48-net-apply-arms-1 | `281-c28-18-send-switch.md` (chain 244→281) | **310** | rename `9c776ca2f` 15:50:24 — 281=f26; g48's executed rename INTO the assigned block is contested → NOT honored; its 244 pre-publish WIN stands as the key verdict, its doc renumbers |
+| 4 | f39-weather-slimerain | `281-f39-v18-claim-input.md` (chain 244→281) | **311** | rename `fec65992f` 15:53:15 — 281=f26; SUPERSEDES §7.3's unexecuted f39 244→299 row (**299 FREE again**); chain 244→281→311 |
 | 5 | d106-worldgen-passes-6 | `281-d106-worldgen-6-retire-final.md` | **312** | add `b78762c63` 15:53:52 — 281=f26 (self-pick) |
 | 6 | d9-proj-ai-81-90 | `281-projectile-ai-81-90-final.md` | **313** | add `88677f9de` 15:55:17 — 281=f26 (self-pick) |
 | 7 | c9-style67-snails | `281-snail-family-final.md` | **314** | add `9252d6f31` 15:57:35 — 281=f26 (self-pick); c9's 109 WIN unaffected |
 | 8 | c25-keyboard-text-field | `281-c25-keyboard-text-field-final.md` | **315** | add `1d6e31a74` 15:58:39 — 281=f26 (self-pick) |
-| 9 | c32-convert | `281-convert-tables-family-bible.md` | **317** | add `de25eddf8` 16:07:40 — 281=f26 (self-pick) |
-| 10 | g8-npc-kind-wire-1 | `281-g8-kind-wire-final.md` | **318** | add `9c66afc30` 16:29:22 (tip `dd3cb0572`) — 281=f26 (self-pick); g8's 108→292 assignment unchanged |
-| 11 | d125-empress-r7-drain | `282-d125-retire-final.md` | **319** | add `5a26ae348` 15:44:38 (same commit as its 281 doc; filename tiebreak) — 282=f26 (7i) |
-| 12 | g48-net-apply-arms-1 | `282-39-item-ownership-seed.md` (chain 245→282) | **309** | rename `9c776ca2f` 15:50:24 — 282=f26 (7i); g48's 245 WIN revoked by its own contested rename (see row 1) |
+| 9 | c32-convert | `281-convert-tables-family-bible.md` | **316** | add `de25eddf8` 16:07:40 — 281=f26 (self-pick) |
+| 10 | g8-npc-kind-wire-1 | `281-g8-kind-wire-final.md` | **317** | add `9c66afc30` 16:29:22 (tip `dd3cb0572`) — 281=f26 (self-pick); g8's 108→292 assignment unchanged |
+| 11 | d125-empress-r7-drain | `282-d125-retire-final.md` | **318** | add `5a26ae348` 15:44:38 (same commit as its 281 doc; filename tiebreak) — 282=f26 (7i), first of the 3 |
+| 12 | g48-net-apply-arms-1 | `282-39-item-ownership-seed.md` (chain 245→282) | **319** | rename `9c776ca2f` 15:50:24 — 282=f26 (7i); contested rename, see row 3; 245 WIN stands as key verdict |
 | 13 | f39-weather-slimerain | `282-f39-seal.md` | **320** | add `1c120b550` 16:06:54 — 282=f26 (7i) (self-pick) |
-| 14 | d43-npc-kinds-631-697 | `244-d43-kinds-631-697-retire.md` | **321** | add `6fbe06250` 15:55:04 — **244 = g48 WINS** (pre-publish 14:30:16, §7.1/§7.4); g48's own exit to 308 does NOT free 244 for re-takes — the key stays winner-consumed |
+| 14 | d43-npc-kinds-631-697 | `244-d43-kinds-631-697-retire.md` | **321** | add `6fbe06250` 15:55:04 — **244 = g48 WINS** (pre-publish 14:30:16, §7.1/§7.4); g48's own contested exit does NOT free 244 for re-takes — the key stays winner-consumed |
 | 15 | g5-npc-style7-caster-doc | `244-caster-family-declaration.md` | **322** | add `f044bd315` 16:17:57 — 244=g48 WINS |
-| 16 | g40-biome-marble-granite | `246-w4g40-desert-marble-final.md` | **324** | add `0e3a17852` 16:02:53 — **246 = e23's published reservation WINS** (14:47:50, §7.4) |
-| 17 | d16-proj-ai-151-160 | `246-d16-research-final.md` | **325** | add `1d3c4a4b5` 16:07:49 — 246=e23 reservation |
-| 18 | d16-proj-ai-151-160 | `247-kite-family-bible.md` | **326** | add `1d3c4a4b5` 16:07:49 (same commit; filename tiebreak) — **247 = d10's reservation WINS, EXECUTED** (`72431e61f` 16:05:28, §7.4 row satisfied) |
-| 19 | g68-weather-wind-leaves | `247-g68-wind-seal.md` | **327** | add `375466868` 16:10:43 — 247=d10 |
-| 20 | d6-proj-ai-51-60 | `247-projectile-ai-51-60-band-bible.md` | **328** | add `174c0d541` 16:14:05 — 247=d10 |
-| 21 | c3-style10-cursed-skull | `247-cursed-skull-family-bible.md` | **329** | add `dd0ca4727` 16:14:34 — 247=d10 |
-| 22 | d3-proj-ai-21-30 | `248-d3-boulder-family-seal.md` | **330** | add `740026af6` 16:10:40 — **248 = e26 first-add KEEPS** (verified: `cbaea2864` 15:44:26 predates both; 248 was free, valid take) |
-| 23 | c27-net-entity-state-ids | `248-c27-set-time-final.md` | **331** | add `75902ca72` 16:12:49 — 248=e26 |
-| 24 | g52-net-relay-host | `284-g52c-relay-host-arms-census.md` | **332** | add `0224fff80` 16:19:37 — 284=g15's §7.3 assignment (77-doc-sweep-items) (self-pick) |
-| 25 | f4-dust-npc-3 | `283-npc-dust-final.md` (interim; chain 240→283→305) | **305 — ALREADY EXECUTED** | f4 self-corrected `331b29858` 16:25:06 → `305-npc-dust-final.md` at tip `bd96f08df`; 283=f26 (7j); §7.4.3 f4 row SATISFIED, no action. NOT a new number. |
+| 16 | g65-proj-death-dust | `308-g65-kill-death-dust-family-final.md` (chain 245→308) | **323** | add `c356cb99c` 16:32:28 on 245 (=g48's WIN key), executed 245→308 `573ec7a8c` 16:47:47 — 308 is d30's §8 assignment (row 1), contested → renumber; **⚠ pre-publish-execution tension FLAGGED**: g65's 308 landed BEFORE this §8 publish — under the raw g48-244 precedent it could claim 308; this round rules the ASSIGNED block reserved from the moment 281–303 was published (§7.3), so an executed self-pick into 308+ is honored only if the number is unassigned. g65 → 323 per dispatch; escalation note for the Lead if contested. |
+| 17 | g40-biome-marble-granite | `246-w4g40-desert-marble-final.md` | **324** | add `0e3a17852` 16:02:53 — **246 = e23's published reservation WINS** (14:47:50, §7.4) |
+| 18 | d16-proj-ai-151-160 | `246-d16-research-final.md` | **325** | add `1d3c4a4b5` 16:07:49 — 246=e23 reservation |
+| 19 | d16-proj-ai-151-160 | `247-kite-family-bible.md` | **326** | add `1d3c4a4b5` 16:07:49 (same commit; filename tiebreak) — **247 = d10's reservation WINS, EXECUTED** (`72431e61f` 16:05:28, §7.4 row satisfied) |
+| 20 | g68-weather-wind-leaves | `247-g68-wind-seal.md` | **327** | add `375466868` 16:10:43 — 247=d10 |
+| 21 | d6-proj-ai-51-60 | `247-projectile-ai-51-60-band-bible.md` | **328** | add `174c0d541` 16:14:05 — 247=d10 (d6 predates c3 by 29 s) |
+| 22 | c3-style10-cursed-skull | `247-cursed-skull-family-bible.md` | **329** | add `dd0ca4727` 16:14:34 — 247=d10 |
+| 23 | d3-proj-ai-21-30 | `248-d3-boulder-family-seal.md` | **330** | add `740026af6` 16:10:40 — **248 = g82's published round-2 reservation WINS** (§6.3, publish `72226e500` 14:47:50); verified per dispatch: e26's add is POST-publish → loses |
+| 24 | c27-net-entity-state-ids | `248-c27-set-time-final.md` | **331** | add `75902ca72` 16:12:49 — 248=g82 reservation |
+| 25 | g52-net-relay-host | `284-g52c-relay-host-arms-census.md` | **332** | add `0224fff80` 16:19:37 — 284=g15's §7.3 assignment (77-doc-sweep-items) (self-pick) |
+| 26 | e26-luck-system | `248-e26-luck-final-census.md` | **333** | add `cbaea2864` 15:44:26 — earliest EXECUTED 248 file but POST-publish vs g82's reserved 248 (14:47:50) → loses per the d10-246 rule (dispatch's "e26-248-first-KEEPS? verify §7" answered: reservation beats post-publish add). §6.3's g82 26e-f→248 row STANDS (still owed at g82 tip `6e08d9ed1`). |
+| — | f4-dust-npc-3 | `283-npc-dust-final.md` (interim; chain 240→283→305) | **305 — ALREADY EXECUTED** | f4 self-corrected `331b29858` 16:25:06 → `305-npc-dust-final.md` at tip `bd96f08df`; 283=f26 (7j); §7.4.3 f4 row SATISFIED, no action. NOT a new number, NOT counted below. |
 
-Rows 1–24 = **24 NEW assignments**; together with the already-executed
-f4→305 (§7.4), the live extension block is **308–332 (25 numbers)**.
-§7.3's unexecuted f39→299 row is SUPERSEDED by row 4 — **299 is FREE
-again**. Row 25 (f4→305) executes an EXISTING §7.4 assignment, no new
-number.
-
-**Assignment order note (281 self-pickers):** the brief's "first-add order"
-is applied per the §7 claim-time convention: g48/f39's 281 docs are
-self-RENAMES and contest 281 at their rename-commit times (15:50:24 /
-15:53:15), interleaved with the direct adds. Chronological claim order is
-d30, d125, g48, f39, d106, d9, c9, c25, c32, g8; g48's TWO renames ride one
-commit and are kept ADJACENT at the block floor (**308/309**), the
-remaining nine take **310–318 in claim order**: d30→310, d125→311,
-f39→312, d106→313, d9→314, c9→315, c25→316, c32→317, g8→318. The 282 trio:
-d125 15:44:38 → **319**, g48 rename 15:50:24 → **309** (adjacent to 308),
-f39-seal 16:06:54 → **320**.
+**Rows 1–26 = 26 NEW assignments, block 308–333, no gaps, no dups.**
+§7.3's unexecuted f39→299 row is SUPERSEDED by row 4 — **299 is FREE again**
+(281–303 block now holds 22 live assignments). f4→305 executes an EXISTING
+§7.4 assignment (no new number). **LIVE assignment total: 173 = 151–236 (86)
++ 246–280 (35) + 281–303 minus 299 (22) + 304–307 (4) + 308–333 (26).**
+Winner-consumed keys unchanged: 237–245 (g48's 244/245 wins stand as key
+verdicts even though its docs renumber to 310/319; 248 is g82's reservation,
+an assignment, not a winner key).
 
 ### 8.2 Key verdicts (winners KEEP; reservations vs self-picks)
 
 | Key | Winner / holder | Verdict |
 | --- | --- | --- |
-| 281 | **f26 `68-findframe-census-addendum-7h.md` → 281 (§7.3 ASSIGNED)** | 10 self-pickers COLLIDE → rows 1–10 (308/310–318). f26's rename still owed at its tip `a2e43ef77`. |
-| 282 | **f26 addendum-7i → 282 (§7.3 ASSIGNED)** | 3 self-pickers → rows 11–13 (319/309/320). |
-| 283 | **f26 addendum-7j → 283 (§7.3 ASSIGNED)** | f4's interim 283 take self-corrected → 305 EXECUTED (row 25). No other claimant. |
-| 284 | **g15 `77-doc-sweep-items.md` → 284 (§7.3 ASSIGNED)** | g52 self-pick → 332 (row 24). g15's rename still owed at its tip `af7d97534`. |
-| 244 | **g48 WINS** (§7.1/§7.4, pre-publish 14:30:16) | g48 then EXECUTED 244→281 (contested self-pick) → NOT honored, g48 → 308. The 244 KEY stays winner-consumed (g48's win is recorded; its doc lives at 308). Post-win re-takes d43/g5 → 321/322. §7.3's f39→299 superseded → 316; d53→275 / g86→306 / c31→300 unchanged. |
-| 245 | **g48 WINS** (§7.1, pre-publish) | g48 EXECUTED 245→282 (contested) → 309. Key stays winner-consumed. d81+g53→301 unchanged. |
+| 281 | **f26 `68-findframe-census-addendum-7h.md` → 281 (§7.3 ASSIGNED)** | 10 self-pickers COLLIDE → rows 1–10 (**308–317 in claim order**). f26's rename still owed at its tip `a2e43ef77`. |
+| 282 | **f26 addendum-7i → 282 (§7.3 ASSIGNED)** | 3 self-pickers → rows 11–13 (**318–320**). |
+| 283 | **f26 addendum-7j → 283 (§7.3 ASSIGNED)** | f4's interim 283 take self-corrected → 305 EXECUTED. No other claimant. |
+| 284 | **g15 `77-doc-sweep-items.md` → 284 (§7.3 ASSIGNED)** | g52 self-pick → 332 (row 25). g15's rename still owed at its tip `af7d97534`. |
+| 244 | **g48 WINS** (§7.1/§7.4, pre-publish 14:30:16) | g48 then EXECUTED 244→281 (contested self-pick into f26's assignment) → NOT honored, g48 doc → 310. The 244 KEY stays winner-consumed. Post-win re-takes d43/g5 → 321/322. §7.3's f39→299 SUPERSEDED → 311 (299 FREE); d53→275 / g86→306 / c31→300 unchanged. |
+| 245 | **g48 WINS** (§7.1, pre-publish) | g48 EXECUTED 245→282 (contested) → 319; g65's post-win 245 take + executed 245→308 → 323 (row 16, tension flagged). Key stays winner-consumed. d81+g53→301 unchanged. |
 | 246 | **e23 published reservation WINS** (§7.4) | g40/d16 re-takes → 324/325; d10→247 / g43→307 unchanged. |
-| 247 | **d10 reservation WINS — EXECUTED** (`72431e61f` 16:05:28, `247-projectile-ai-91-100-final.md` at tip) | d16/g68/d6/c3 → 326–329 (claim-time order; d6 16:14:05 predates c3 16:14:34); g67→267 unchanged. |
-| 248 | **e26 first-add KEEPS** (`248-e26-luck-final-census.md`, `cbaea2864` 15:44:26 — verified earliest; 248 was FREE, single-claimant at first-add, valid take; NOT an assignment) | d3/c27 → 330/331. g82's round-2 26e-f→248 row is superseded by this valid earlier take → g82 re-issues to a free number ≥333 at its own rename time (NOT assigned here — g82 tip `6e08d9ed1` still carries `26e-f-rope-union-final.md`, unexecuted; flag for round 5 if it picks before then). |
+| 247 | **d10 reservation WINS — EXECUTED** (`72431e61f` 16:05:28, `247-projectile-ai-91-100-final.md` at tip) | d16/g68/d6/c3 → 326–329 (claim-time order); g67→267 unchanged. |
+| 248 | **g82's published round-2 reservation WINS** (§6.3 `26e-f-rope-union-final.md` → 248, publish 14:47:50; still owed at tip `6e08d9ed1`) | e26 (15:44:26) / d3 (16:10:40) / c27 (16:12:49) all POST-publish → 333/330/331. Dispatch's "e26-248-first-KEEPS?" VERIFIED against §7: NO — the d10-246 precedent (post-publish executed take loses to the published reservation) applies; e26 was earliest at the NUMBER but the reservation contests from 14:47:50. |
 
 ### 8.3 INDEX note
 
 `docs/research/INDEX.md` collision-note updated in this same commit: §8 is
 authority for keys 244–248/281–284; live assignments **173 = 151–236 (86) +
-246–280 (35) + 281–303 (23) + 304–307 (4) + 308–332 (25)**; 299 returned
-FREE (f39 re-issued 316); **333+ FREE, NO SELF-PICKS into any assigned
-block**; g82's 248 reservation superseded by e26's valid take.
+246–280 (35) + 281–303 minus 299 (22) + 304–307 (4) + 308–333 (26)**; 299
+returned FREE (f39 re-issued 311); **334+ FREE, NO SELF-PICKS into any
+assigned block**; 248 = g82's reservation (e26 →333).
 
 **Cutoff note (round 4):** adjudicates the claimant tips listed in §8.1 at
 this fetch. Later pushes self-adjudicate per the same rules (losers take
-≥333 after a fresh sweep) or request a round-5 refresh.
+≥334 after a fresh sweep) or request a round-5 refresh.
 
 ## 5. Verification record
 
@@ -950,6 +956,37 @@ this fetch. Later pushes self-adjudicate per the same rules (losers take
   unique assignments, 151-236 + 246-280 + 281-303 + 304-307, no gaps, no dups,
   winners 237-245 disjoint`.
 - No cargo/tests/rustfmt/graphify run (docs-only extension, per mandate). No
+  other branch touched; publication on `task/W4-d54-dust-sites-world` only.
+
+### Round 4 (§8, this commit)
+
+- APPEND-ONLY per dispatch: NO full tip sweep; §7.2/§7.3/§7.4 assignments
+  treated as authority. `git fetch origin --prune` (one connection-reset
+  retry) + `git ls-tree docs/research/` at the ~26 claimant tips ONLY:
+  g48 `9c776ca2f`, d30 `ec89521fb`, d125 `5a26ae348`, c9 `9252d6f31`,
+  d106 `b78762c63`, d9 `88677f9de`, c25 `1d6e31a74`, c32 `de25eddf8`,
+  f39 `1c120b550`, g8 `dd3cb0572`, g65 `573ec7a8c`, d43 `6fbe06250`,
+  g5 `f044bd315`, g40 `0e3a17852`, d16 `1d3c4a4b5`, g68 `375466868`,
+  c3 `dd0ca4727`, d6 `174c0d541`, d3 `740026af6`, c27 `75902ca72`,
+  e26 `a23c64933`, g52 `0224fff80`, f4 `bd96f08df`, f26 `a2e43ef77`,
+  g15 `af7d97534`, g82 `6e08d9ed1`, d10 `72431e61f`.
+- Claim times: `git log --diff-filter=A -1` per (tip, file); rename-commit
+  `%cI` via `git show --name-status` for g48 `9c776ca2f` (R 244→281 + 245→282,
+  15:50:24), f39 `fec65992f` (R 244→281, 15:53:15), g65 `573ec7a8c`
+  (R 245→308, 16:47:47), f4 `331b29858` (283→305, 16:25:06 — EXECUTED §7.4
+  row). e26 `cbaea2864` 15:44:26 verified POST round-2 publish `72226e500`
+  14:47:50 → loses 248 to g82's reservation (dispatch's "verify §7" answered).
+- Assignment-holder presence checks: f26 tip still carries 68-7h/7i/7j
+  (281/282/283 owed); g15 tip still carries 77-doc-sweep-items (284 owed);
+  g82 tip still carries 26e-f-rope-union-final (248 owed); d10 tip carries
+  `247-projectile-ai-91-100-final.md` (EXECUTED). No 3xx docs at any other
+  claimant tip (g65's 308 the sole pre-§8 3xx take).
+- **Lean check (machine-check NOT required per dispatch):** §8.1 rows 1–26
+  targets = {308..333}, 26 unique, no gaps, no dups (hand-verified against
+  the table); f4→305 excluded (existing §7.4 assignment); 299 removed from
+  the §7.3 live set (f39 superseded). LIVE total arithmetic: 86+35+22+4+26
+  = 173. Winner keys 237–245 disjoint from assignments.
+- No cargo/tests/rustfmt/graphify run (docs-only round, per mandate). No
   other branch touched; publication on `task/W4-d54-dust-sites-world` only.
 
 ---
