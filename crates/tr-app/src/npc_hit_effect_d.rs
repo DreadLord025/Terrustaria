@@ -1846,6 +1846,83 @@ fn lihzahrd_death(
     gore.new_gore(rng, world, pos20, vel, 261, s); // :86826
 }
 
+/// The 206 Icy Merman death (`NPC.cs:86828-86847`, sites 263-267): the
+/// 75x dust-137 burst (the ice mist, NOT 5), then the ladder
+/// 273/274/274/275/275 at +0/+20/+20/+34/+34 Y, `this.scale` carried.
+fn icy_merman_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86838-86841` — the 75x dust-137 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        137,
+        hit_direction,
+        75,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 273, s); // :86842
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 274, s); // :86843
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 274, s); // :86844
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 275, s); // :86845
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 275, s); // :86846
+}
+
+/// The 342 Gingerbread Man death (`NPC.cs:86848-86867`, sites 268-272):
+/// the 50x dust-0 burst at (2.5·hd, −2.5) — the crumbs, NOT dust-5 —
+/// then the ladder 500/501/501/502/502 at +0/+20/+20/+34/+34 Y,
+/// `this.scale` carried.
+fn gingerbread_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86858-86861` — the 50x dust-0 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng,
+            dust_ctx,
+            world,
+            pos,
+            w as i32,
+            h as i32,
+            0,
+            2.5 * hit_direction,
+            -2.5,
+            0,
+            Color::default(),
+            1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 500, s); // :86862
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 501, s); // :86863
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 501, s); // :86864
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 502, s); // :86865
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 502, s); // :86866
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -2069,6 +2146,14 @@ pub fn hit_effect_d(
     // `:86807-86827` — the 198/199 Lihzahrd arm (sites 257-262).
     else if npc_type == 198 || npc_type == 199 {
         lihzahrd_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86828-86847` — the 206 Icy Merman arm (sites 263-267).
+    else if npc_type == 206 {
+        icy_merman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86848-86867` — the 342 Gingerbread Man arm (sites 268-272).
+    else if npc_type == 342 {
+        gingerbread_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3677,5 +3762,55 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "lihzahrd {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:86842-86846` — the Icy Merman ladder 273/274x2/275x2 after
+    /// the 75x dust-137 ice-mist burst (NOT dust-5).
+    #[test]
+    fn w4_f5d_the_icy_merman_puffs_ice_mist() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(257);
+        let _ = hit_effect_d(&n, 206, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![273, 274, 274, 275, 275]);
+        let mist = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(mist.dust_type, 137, "the icy merman puffs type 137");
+        let mut twin = UnifiedRandom::new(257);
+        for _ in 0..75 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the icy merman mirrors the C# draws");
+    }
+
+    /// `NPC.cs:86862-86866` — the Gingerbread Man ladder 500/501x2/502x2
+    /// after the 50x dust-0 crumb burst at the wider 2.5 velocity.
+    #[test]
+    fn w4_f5d_the_gingerbread_man_crumbles_dust_zero() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(263);
+        let _ = hit_effect_d(&n, 342, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![500, 501, 501, 502, 502]);
+        let crumb = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(crumb.dust_type, 0, "the gingerbread man crumbles type 0");
+        let mut twin = UnifiedRandom::new(263);
+        for _ in 0..50 {
+            twin_dust(&mut twin, 30, 44);
+        }
+        for _ in 0..5 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the gingerbread man mirrors the C# draws");
     }
 }
