@@ -4672,12 +4672,17 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // draws — the table's rolls, then the legacy family's
                     // slot/pitch draws. The C#'s `Main.netMode == 2` gate
                     // (`NPC.cs:92245`) is the dedicated server's; the port
-                    // has none. No ported kind matches the critter table
-                    // yet (M4-NPC's roster has no critter ids), so the
-                    // emitter stays silent until they land.
+                    // has none. W4-e9 census fix: the key is cs_id() (the
+                    // vanilla `this.type`), NOT to_u16 — the protocol space
+                    // put GolemHead on 74, the C# Bird's critter id (the
+                    // MERGER-L7 mis-route class the idle wiring's 3793fef8
+                    // comment pinned). No ported kind's cs_id matches the
+                    // critter table yet (the roster has no critter ids), so
+                    // the emitter stays silent until they land — but a
+                    // Golem head no longer rolls the bird's Next(400).
                     let mut hi_roll = |hi: u32| npcs_rng.next_max(hi as i32) as u32;
                     let cue = crate::ambient_sound::critter_sound_cue(
-                        n.kind.to_u16() as i32,
+                        n.kind.cs_id() as i32,
                         world.day_time,
                         world.time,
                         (world.world_surface * 16.0) as f32,
@@ -7173,14 +7178,15 @@ mod tests {
     /// `NPC.cs:92244-92340`): an NPC the critter table does not name consumes
     /// no `Main.rand` draws — the port's roster has no critter kinds yet
     /// (M4-NPC), so the zombie's id 3 must leave the per-NPC stream
-    /// untouched through the `NPC.cs:90323` seam.
+    /// untouched through the `NPC.cs:90323` seam. W4-e9: the key is
+    /// cs_id() (the vanilla `this.type`), NOT the protocol id.
     #[test]
     fn the_critter_seam_consumes_no_rolls_outside_the_table() {
         let mut rng = UnifiedRandom::new(0);
         let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
         assert_eq!(
             crate::ambient_sound::critter_sound_cue(
-                NpcKind::Zombie.to_u16() as i32,
+                NpcKind::Zombie.cs_id() as i32,
                 true,
                 1000.0,
                 3000.0,
@@ -7196,6 +7202,60 @@ mod tests {
             UnifiedRandom::new(0),
             "out-of-table types consume no draws"
         );
+    }
+
+    /// W4-e9 — the critter-key census fix: GolemHead's PROTOCOL id is 74
+    /// (`to_u16`), the C# Bird's critter id — the pre-fix `to_u16` key
+    /// rolled the bird's day `Next(400)` + slot pick for every attached
+    /// Golem head (the MERGER-L7 mis-route class). The cs_id() key folds
+    /// the head onto the body's 245 (`bestiary.rs:2035`), outside the
+    /// table: zero draws, no cue. The protocol-key call still hits the
+    /// bird arm — the pin that the spaces differ.
+    #[test]
+    fn w4_e9_the_critter_key_is_cs_id_not_the_protocol_golem_head_74() {
+        assert_eq!(NpcKind::GolemHead.to_u16(), 74, "the protocol collision");
+        assert_eq!(NpcKind::GolemHead.cs_id(), 245, "the bestiary fold");
+        // The faithful key: outside the table, no draws (day AND night —
+        // the bird arm is day-gated but the 611/689 night arm must not
+        // catch the head either).
+        for day in [true, false] {
+            let mut rng = UnifiedRandom::new(3);
+            let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+            assert_eq!(
+                crate::ambient_sound::critter_sound_cue(
+                    NpcKind::GolemHead.cs_id() as i32,
+                    day,
+                    1000.0,
+                    3000.0,
+                    3000.0,
+                    0.0,
+                    &mut hi_roll
+                ),
+                None,
+                "the Golem head is outside the critter table (day={day})"
+            );
+            assert_eq!(rng, UnifiedRandom::new(3), "no draws (day={day})");
+        }
+        // The pre-fix protocol key DOES enter the bird arm (the witness
+        // that the fix changes behaviour for exactly this kind): the
+        // day gate rolls Next(400) even on failure.
+        let mut rng = UnifiedRandom::new(3);
+        let mut hi_roll = |hi: u32| rng.next_max(hi as i32) as u32;
+        let _ = crate::ambient_sound::critter_sound_cue(
+            NpcKind::GolemHead.to_u16() as i32,
+            true,
+            1000.0,
+            3000.0,
+            3000.0,
+            0.0,
+            &mut hi_roll,
+        );
+        let mut witness = UnifiedRandom::new(3);
+        let hit = witness.next_max(400) == 0;
+        if hit {
+            let _ = witness.next_max(3);
+        }
+        assert_eq!(rng, witness, "the protocol key rolls the bird's gate");
     }
 
     /// S1-E-21 wave C — the death play's stream contract: `checkDead`'s
