@@ -1632,6 +1632,34 @@ mod tests {
         assert_eq!(w.tile(10, 10).unwrap().frame_x, 30);
     }
 
+    /// W4-f11 port (research-71 §3c), re-pointed at the kept `TRACK_FRAMES`
+    /// superset: the connection tables' popcount sanity — frame 0 is the
+    /// isolated rail (both sides −1), frame 1 the level straight (both 1);
+    /// the pressure frames start at 20, the boosters at 30 (30 boosts right,
+    /// 31 boosts left). Also pins the OnceLock cache against the direct fit
+    /// rule on the boundary masks (0 isolated, 18 two straight neighbours).
+    #[test]
+    fn w4_f11_the_track_tables_transcribe_the_isolated_and_straight_frames() {
+        assert_eq!(TRACK_FRAMES[0].left_connection, -1);
+        assert_eq!(TRACK_FRAMES[0].right_connection, -1);
+        assert_eq!(TRACK_FRAMES[0].track_type, 0);
+        assert_eq!(TRACK_FRAMES[1].left_connection, 1);
+        assert_eq!(TRACK_FRAMES[1].right_connection, 1);
+        // The pressure frames 20..23 are type 1; the boosters 30..35 type 2.
+        assert_eq!(TRACK_FRAMES[20].track_type, 1);
+        assert_eq!(FIRST_PRESSURE_FRAME, 20);
+        assert_eq!(TRACK_FRAMES[30].track_type, 2);
+        assert!(!TRACK_FRAMES[30].boost_left);
+        assert!(TRACK_FRAMES[31].boost_left);
+        // Mask 0 (no neighbours, popcount 0) needs an EXACT frame-mask match:
+        // only the isolated frame 0 (mask 0) fits.
+        assert_eq!(track_switch_options(0), Some(&[0i32][..]));
+        // Mask 18 (bits 2+16, popcount 2): the frame's mask must be a
+        // non-zero subset — frame 1 (2|16 = 18) fits; frame 0 (mask 0) never.
+        let opts = track_switch_options(18).expect("the straight fits");
+        assert!(opts.contains(&1) && !opts.contains(&0));
+    }
+
     /// A player position whose bottom-center magnet sits at `magnet`:
     /// `magnet = position + (width/2, height/2 + 26)` (`Minecart.cs:570-571`).
     fn cart_at(magnet: Vec2) -> Vec2 {

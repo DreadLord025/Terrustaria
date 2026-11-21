@@ -1706,4 +1706,140 @@ mod tests {
         let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
         assert!(slots.iter().all(|s| s.count == 0), "nothing entered");
     }
+
+    /// Re-route the fixture's red wire around the anchor cell (10, 20) so
+    /// ONLY the far cell (11, 21) is wired: 8→9 (row 20), up to row 19,
+    /// across to column 11, down to (11, 21). The non-anchor witnesses hit
+    /// the device through its bottom-right / centre cell alone.
+    fn wire_only_far_cell(app: &mut App) {
+        app.world.wires.set(10, 20, tr_core::wiring::WireColor::Red, false);
+        for (x, y) in [(9, 19), (10, 19), (11, 19), (11, 20), (11, 21)] {
+            app.world.wires.set(x, y, tr_core::wiring::WireColor::Red, true);
+        }
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `hopper_pull`: the 2×2
+    /// anchor (`Wiring.cs:2643-2650`) — hitting the bottom-right chest cell
+    /// (11, 21) with frameX/Y 18 (both mod-36 non-zero) resolves the anchor
+    /// (10, 20) and pulls into THAT chest.
+    #[test]
+    fn w4_f11_the_hopper_resolves_its_2x2_anchor() {
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        // The bottom-right chest cell — the only wired device cell.
+        let i = app.world.index(11, 21);
+        app.world.tiles[i] = Tile { kind: 21, frame_x: 18, frame_y: 18, ..Default::default() };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        wire_only_far_cell(&mut app);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 0, "the non-anchor hit pulled the drop");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert!(slots.iter().any(|s| s.kind == 2 && s.count == 5), "the anchor chest took it");
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `extractinator_roll`:
+    /// the 3×3 anchor (`Wiring.cs:2557-2560`) — hitting the centre cell
+    /// (11, 21) with frameX/Y 18 resolves (10, 20) (`18 % 54 / 18 == 1`);
+    /// the kind rides the request (the 642 chlorophyte variant runs too).
+    /// Poop Block (5395, mode 4) always yields (the seed roll or the dirt
+    /// fallback, `ExtractinatorHelper.cs:269-288`), so the consume is
+    /// draw-independent.
+    #[test]
+    fn w4_f11_the_extractinator_resolves_its_3x3_anchor_and_kind() {
+        let mut app = app_with(219, 0, 0);
+        // Move the device to the centre cell (11, 21); anchor → (10, 20).
+        let old = app.world.index(10, 20);
+        app.world.tiles[old] = Tile::default();
+        let i = app.world.index(11, 21);
+        app.world.tiles[i] = Tile { kind: 219, frame_x: 18, frame_y: 18, ..Default::default() };
+        app.world.tiles[i].flags |= FLAG_ACTIVE;
+        wire_only_far_cell(&mut app);
+        let idx = chest_at(&mut app, 12, 20, vec![slot(5395, 3)]);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "the non-anchor hit consumed one input");
+        assert!(!app.items.is_empty(), "the roll spawned a drop");
+        // The chlorophyte variant (642) rides its own kind through the seam.
+        let mut app = app_with(642, 0, 0);
+        let idx = chest_at(&mut app, 12, 20, vec![slot(5395, 3)]);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "the 642 arm ran");
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at the e20 request seam:
+    /// the switch track's `CheckMech(5)` (`Wiring.cs:1744-1748`) blocks an
+    /// immediate re-hit, and AFTER expiry the flip runs again (the e20 core
+    /// witness pins the refusal only — this pins the post-expiry re-fire).
+    #[test]
+    fn w4_f11_the_switch_track_flips_and_the_cooldown_gates_the_rehit() {
+        let mut app = app_with(314, 1, 5);
+        trip_and_tick(&mut app);
+        assert_eq!(app.world.tile_frame_x(10, 20), 5, "front took the back");
+        assert_eq!(app.world.tile_frame_y(10, 20), 1, "back took the front");
+        // The mech is queued (5 ticks) — an immediate re-trip is refused.
+        trip_and_tick(&mut app);
+        assert_eq!(app.world.tile_frame_x(10, 20), 5, "the cooldown blocked the re-flip");
+        // Drain the cooldown, then re-trip — the flip runs again.
+        for _ in 0..5 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        assert_eq!(app.world.tile_frame_x(10, 20), 1, "after the cooldown the flip runs again");
+        assert_eq!(app.world.tile_frame_y(10, 20), 5);
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `hopper_pull`'s drain
+    /// gate: `CheckMech(60)` (`Wiring.cs:2651`) refuses an immediate re-hit;
+    /// after 60 ticks the pull runs again.
+    #[test]
+    fn w4_f11_the_hopper_cooldown_gates_the_rehit() {
+        let mut app = app_with(21, 0, 0);
+        let idx = chest_at(&mut app, 10, 20, vec![]);
+        app.items.push(crate::item::ItemDrop::new(
+            2, 5, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[0].count, 0, "the first pull ran");
+        // A second drop arrives inside the 60-tick window — refused.
+        app.items.push(crate::item::ItemDrop::new(
+            2, 7, 0, 10.0 * 16.0 + 16.0, 20.0 * 16.0 + 16.0, 0.0, 0.0, 0.0,
+        ));
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[1].count, 7, "the cooldown blocked the second pull");
+        // Drain the cooldown — the same drop now enters.
+        for _ in 0..60 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        assert_eq!(app.items[1].count, 0, "after the cooldown the pull runs again");
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        let dirt: u32 = slots.iter().filter(|s| s.kind == 2).map(|s| s.count).sum();
+        assert_eq!(dirt, 12, "both drops landed");
+    }
+
+    /// W4-f11 port (research-71 §3b.3), re-pointed at `extractinator_roll`'s
+    /// drain gate: `CheckMech(60)` (`Wiring.cs:2561`) refuses an immediate
+    /// re-hit; after 60 ticks the roll runs again. Poop Block (mode 4) always
+    /// yields, so the consume count is draw-independent.
+    #[test]
+    fn w4_f11_the_extractinator_cooldown_gates_the_rehit() {
+        let mut app = app_with(219, 0, 0);
+        let idx = chest_at(&mut app, 12, 20, vec![slot(5395, 3)]);
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "the first roll consumed one");
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 2, "the cooldown blocked the second roll");
+        for _ in 0..60 {
+            update_wiring(&mut app, 1.0 / 60.0);
+        }
+        trip_and_tick(&mut app);
+        let slots = crate::chest::chest_slots(&app.world_chests, idx).unwrap();
+        assert_eq!(slots[0].count, 1, "after the cooldown the roll runs again");
+    }
 }
