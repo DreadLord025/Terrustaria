@@ -1092,8 +1092,9 @@ pub enum NpcKind {
     /// (W4-c4): the axis' 44 arm owns the flyer integration tail; the
     /// steering machine runs in the world-sim pre-pass
     /// (`npc_ai_style44::style44_step`, the style-56 seam). The protocol
-    /// id is 354 — the vanilla 224 slot is the WyvernLegs' port-local
-    /// band (`to_u16`'s guard).
+    /// id is 359 — d37's frozen-band FlyingFish row ADOPTED (the original
+    /// port-local 354 collided d37's CochinealBeetle; the vanilla 224
+    /// slot is the WyvernLegs' port-local band, `to_u16`'s guard).
     FlyingFish,
     /// `NPCID.GiantFlyingAntlion` (509, `NPCID.cs:11695`) — the
     /// hardmode desert swarm's big flap (`aiStyle 44`): 40x31, dmg 34,
@@ -1120,8 +1121,9 @@ pub enum NpcKind {
     /// NPCDeath1, value 500 (`NPC.cs:9489-9501`). WIRED (W4-c4): the
     /// `update_swimmer` family arm (`npc_ai_style16::ai_016_step`, the
     /// style-44-adjacent `integrate_flyer_collision` + `is_wet` seam).
-    /// The protocol id is port-local 229 — the vanilla 57 slot is the
-    /// GoblinThief's (`to_u16`'s bijection guard).
+    /// The protocol id is port-local 405 — the free-port band (the
+    /// original 229 squatted the Pirate's reserved cs hole; the vanilla
+    /// 57 slot is the GoblinThief's, `to_u16`'s bijection guard).
     CorruptGoldfish,
     /// `NPCID.Arapaima` (157, `NPCID.cs:10991`) — the jungle's big fish
     /// (`aiStyle 16`): 74x20, dmg 75, def 30, 200 HP, kb 1 (no row),
@@ -1129,8 +1131,9 @@ pub enum NpcKind {
     /// WIRED (W4-c4), the 57 seam; the module's 157 branches (the
     /// asymmetric chase caps `:23774-23802`, the own bob `:23853-23902`,
     /// the ±0.4 damp exemption `:23957`) ride the vanilla type. The
-    /// protocol id is port-local 237 — the vanilla 157 slot is the
-    /// BoundWizard's.
+    /// protocol id is port-local 406 — the free-port band (the original
+    /// 237 squatted JungleCreeperWall's reserved cs hole; the vanilla
+    /// 157 slot is the BoundWizard's).
     Arapaima,
     /// `NPCID.BloodFeeder` (241, `NPCID.cs:11159`) — the crimson's fish
     /// (`aiStyle 16`): 18x20, dmg 50, def 20, 150 HP, kb 1 (no row),
@@ -6845,7 +6848,7 @@ impl Npc {
             // (`:74763-74785`: the velocity-sign flip + the ±vy·0.2
             // tilt + the 6-tick flap over the literal 4-row wrap).
             // `style44_find_frame` reads the vanilla type (`cs_id` —
-            // the FlyingFish's protocol id is the port-local 354) and
+            // the FlyingFish's protocol id is the port-local 359) and
             // the sheet's row count (`rows()` rides `texture_net_id` →
             // the vanilla net ids 224/509/581/587).
             NpcKind::FlyingFish
@@ -18855,20 +18858,22 @@ impl Npc {
             NpcKind::WyvernTail => 228,
             // W4-c4 (the style-44 swimmers): the FlyingFish's vanilla 224
             // is the WyvernLegs' key above, so its hash rides the
-            // port-local 354 band (the wyvern renumber's precedent —
-            // injective either way); 509/581/587 are unused by every arm
-            // above, so the G6 key stays injective.
-            NpcKind::FlyingFish => 354,
+            // port-local 359 row (d37's frozen-band id adopted — the
+            // wyvern renumber's precedent, injective either way);
+            // 509/581/587 are unused by every arm above, so the G6 key
+            // stays injective.
+            NpcKind::FlyingFish => 359,
             NpcKind::GiantFlyingAntlion => 509,
             NpcKind::FlyingAntlion => 581,
             NpcKind::EyeballFlyingFish => 587,
             // W4-c4 (the style-16 swimmers): the CorruptGoldfish's vanilla
             // 57 and the Arapaima's 157 are the GoblinThief's/BoundWizard's
-            // keys above, so their hashes ride the port-local 229/237 band
-            // (the FlyingFish 354 precedent — injective either way);
-            // 241/465/592/607/615/688/692 are unused by every arm above.
-            NpcKind::CorruptGoldfish => 229,
-            NpcKind::Arapaima => 237,
+            // keys above, so their hashes ride the port-local 405/406
+            // free-port band (the FlyingFish 359 precedent — injective
+            // either way); 241/465/592/607/615/688/692 are unused by
+            // every arm above.
+            NpcKind::CorruptGoldfish => 405,
+            NpcKind::Arapaima => 406,
             NpcKind::BloodFeeder => 241,
             NpcKind::CrimsonGoldfish => 465,
             NpcKind::GoldGoldfish => 592,
@@ -24355,6 +24360,14 @@ mod tests {
         ] {
             assert_eq!(kind.ai_style(), 44, "{kind:?} aiStyle");
             assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            // The renumber pin (the dup-check verdict): FlyingFish rides
+            // d37's frozen-band 359 (the original 354 collided d37's
+            // CochinealBeetle); the antlion/eye trio keep vanilla ids.
+            assert_eq!(
+                kind.to_u16(),
+                if ty == 224 { 359 } else { ty },
+                "{kind:?} protocol id"
+            );
             assert_eq!(
                 crate::render::entities::texture_net_id(kind),
                 ty,
@@ -24421,8 +24434,8 @@ mod tests {
         // (692). The kb rows: 57/157/241/465 no row (the head's 1f reset,
         // `:8533`); 592/607/615/688 0.5; 692 0.7.
         for (kind, cs, proto, w, h, dmg, def, hp, kb, value, rows) in [
-            (NpcKind::CorruptGoldfish, 57u16, 229u16, 18.0, 20.0, 30, 6, 100, 1.0, 500.0, 6u32),
-            (NpcKind::Arapaima, 157, 237, 74.0, 20.0, 75, 30, 200, 1.0, 500.0, 6),
+            (NpcKind::CorruptGoldfish, 57u16, 405u16, 18.0, 20.0, 30, 6, 100, 1.0, 500.0, 6u32),
+            (NpcKind::Arapaima, 157, 406, 74.0, 20.0, 75, 30, 200, 1.0, 500.0, 6),
             (NpcKind::BloodFeeder, 241, 241, 18.0, 20.0, 50, 20, 150, 1.0, 500.0, 6),
             (NpcKind::CrimsonGoldfish, 465, 465, 18.0, 20.0, 31, 7, 110, 1.0, 500.0, 6),
             (NpcKind::GoldGoldfish, 592, 592, 20.0, 18.0, 0, 0, 5, 0.5, 0.0, 6),

@@ -4463,7 +4463,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     // is the C#'s `Main.npc[0..200]` view: slot order,
                     // `active` = the slot holds a live NPC, `type` the
                     // VANILLA id (`cs_id`, NOT the protocol id — the
-                    // FlyingFish's 354 would never match the arm's 224).
+                    // FlyingFish's 359 would never match the arm's 224).
                     // The axis' 44 arm (`npc.rs`) owns the post-`AI()`
                     // `UpdateCollision` tail (`:90490-90492`).
                     if npcs[i].kind.ai_style() == 44 && npcs[i].hp > 0 {
@@ -7137,7 +7137,7 @@ mod tests {
     /// W4-c4: the style-44 pre-pass runs at each swimmer's own slot turn
     /// on the `UpdateNPCs` stream — the antlion separation reads the
     /// sibling slots through the VANILLA `cs_id` (the FlyingFish's
-    /// protocol id is the port-local 354; a protocol-keyed sibling scan
+    /// protocol id is the port-local 359; a protocol-keyed sibling scan
     /// would never match the arm's 224/509/581/587), and the 587
     /// materialize's dust rolls land in the SHARED `app.dust` pool (the
     /// style-56 seam). WRITTEN, NOT RUN (code-only mode).

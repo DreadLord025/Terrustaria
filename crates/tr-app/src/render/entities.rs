@@ -1272,7 +1272,8 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
 /// W4-c4: the style-44 swimmers' own sheets (`TextureAssets.Npc[type]`),
 /// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
 /// `SMALL_KIND_SHEETS`. The FlyingFish's protocol id is the port-local
-/// 354 (`to_u16`'s wyvern-band reassignment), but its DRAW sheet is the
+/// 359 (d37's frozen-band row adopted; the original 354 retired — it
+/// collided d37's CochinealBeetle), but its DRAW sheet is the
 /// vanilla NPC_224 — `texture_net_id` rides `net_id()` (the bestiary row),
 /// which already carries 224, so no override arm is needed. Measured
 /// headroom (tools/atlas_sim.js's skyline packer over the real content
@@ -1289,7 +1290,8 @@ pub(crate) const STYLE44_SHEETS: &[u32] = &[
 /// W4-c4: the style-16 swimmers' own sheets (`TextureAssets.Npc[type]`),
 /// keyed by the vanilla net id in `NpcAssets::npc_sheets` exactly like
 /// `STYLE44_SHEETS`. The CorruptGoldfish/Arapaima protocol ids are the
-/// port-local 229/237 (`to_u16`'s goblin/wizard-band reassignment), but
+/// port-local 405/406 (the free-port band; the original 229/237 squatted
+/// the reserved cs-owned holes), but
 /// their DRAW sheets are the vanilla NPC_57/NPC_157 — `texture_net_id`
 /// rides `net_id()` (the bestiary row), which carries 57/157, so no
 /// override arm is needed. Measured headroom (tools/_w4c4_headroom.js's

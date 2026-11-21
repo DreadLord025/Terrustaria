@@ -588,25 +588,38 @@ impl NpcKind {
             NpcKind::WyvernTail => 228,
             // W4-c4 (the style-44 swimmers): the FlyingFish's vanilla 224
             // is the WyvernLegs' port-local slot above (`to_u16`'s
-            // bijection guard), so it takes the next free port-local id
-            // 354 (the BlazingWheel 353 precedent); 509/581/587 keep their
-            // vanilla ids (all three free). `NPC.cs:11885-11897` /
-            // `:14841-14853` / `:14868-14880` / `:16623-16637`.
-            NpcKind::FlyingFish => 354,
+            // bijection guard). Its original port-local 354 HARD-collided
+            // d37's pushed CochinealBeetle 354 (and d23/d42/g8 claim 354
+            // too) — RETIRED on this branch: the row adopts d37's
+            // FlyingFish id 359 (its frozen 354-399 band, research/108
+            // §3; the dup-check verdict keeps ONE FlyingFish at 359/cs
+            // 224 with c4's world-sim wiring — the identical arm dedupes
+            // at merge). 509/581/587 keep their vanilla ids (free on
+            // every pushed tip — tools/_w4c4_proto_census.js).
+            // `NPC.cs:11885-11897` / `:14841-14853` / `:14868-14880` /
+            // `:16623-16637`.
+            NpcKind::FlyingFish => 359,
             NpcKind::GiantFlyingAntlion => 509,
             NpcKind::FlyingAntlion => 581,
             NpcKind::EyeballFlyingFish => 587,
             // W4-c4 (the style-16 swimmers): the CorruptGoldfish's vanilla
             // 57 is the GoblinThief's port-local slot above and the
             // Arapaima's 157 is the BoundWizard's (`to_u16`'s bijection
-            // guard), so they take the next free port-local ids 229/237
-            // (the FlyingFish 354 precedent); 241/465/592/607/615/688/692
-            // keep their vanilla ids (all free). `NPC.cs:9489-9501` /
+            // guard). Their original port-local 229/237 squatted the 108
+            // §3 reserved cs-owned holes (the Pirate's/JungleCreeperWall's
+            // vanilla types — now also claimed by d125's EmpressOfLight/
+            // PrismaticLacewing), so they take the free-port band 405/406
+            // (above d37's frozen 354-399 + d42's pushed 354-404, below
+            // d35's 108 §3 renumber target 429-461; free on ALL 354 pushed
+            // tips — tools/_w4c4_proto_census.js). 241/465/592/607/615/
+            // 688/692 keep their vanilla ids; BloodFeeder 241 is the
+            // dup-check's merge-retire (d37's 373 survives — the row
+            // stays until the merge dedupe). `NPC.cs:9489-9501` /
             // `:10989-11002` / `:12105-12118` / `:14483-14495` /
             // `:16679-16693` / `:16795-16808` / `:16892-16904` /
             // `:17653-17666` / `:17709-17722`.
-            NpcKind::CorruptGoldfish => 229,
-            NpcKind::Arapaima => 237,
+            NpcKind::CorruptGoldfish => 405,
+            NpcKind::Arapaima => 406,
             NpcKind::BloodFeeder => 241,
             NpcKind::CrimsonGoldfish => 465,
             NpcKind::GoldGoldfish => 592,
@@ -944,19 +957,22 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
-            // W4-c4 (the style-44 swimmers): 354 is the FlyingFish's
-            // port-local id (the vanilla 224 slot is the WyvernLegs');
+            // W4-c4 (the style-44 swimmers): 359 is the FlyingFish's
+            // port-local id — d37's frozen-band row ADOPTED here (the
+            // original 354 is retired: d37's CochinealBeetle owns it);
             // 509/581/587 keep their vanilla ids (`to_u16` above).
-            354 => NpcKind::FlyingFish,
+            359 => NpcKind::FlyingFish,
             509 => NpcKind::GiantFlyingAntlion,
             581 => NpcKind::FlyingAntlion,
             587 => NpcKind::EyeballFlyingFish,
-            // W4-c4 (the style-16 swimmers): 229/237 are the
+            // W4-c4 (the style-16 swimmers): 405/406 are the
             // CorruptGoldfish/Arapaima port-local ids (the vanilla 57/157
-            // slots are the GoblinThief's/BoundWizard's); 241/465/592/607/
-            // 615/688/692 keep their vanilla ids (`to_u16` above).
-            229 => NpcKind::CorruptGoldfish,
-            237 => NpcKind::Arapaima,
+            // slots are the GoblinThief's/BoundWizard's; the original
+            // 229/237 squatted the reserved cs-owned holes — renumbered
+            // to the free-port band, `to_u16` above); 241/465/592/607/
+            // 615/688/692 keep their vanilla ids.
+            405 => NpcKind::CorruptGoldfish,
+            406 => NpcKind::Arapaima,
             241 => NpcKind::BloodFeeder,
             465 => NpcKind::CrimsonGoldfish,
             592 => NpcKind::GoldGoldfish,
@@ -3204,8 +3220,10 @@ impl NpcKind {
             NpcKind::ForceBubble => 384,
             // W4-c4 (the style-44 swimmers): the vanilla `NPC.type` ids
             // (`NPCID.cs:11125`/`:11695`/`:11839`/`:11851`). The
-            // FlyingFish's protocol id is port-local 354, so its C#-type
-            // consumers (the style-44 arm's type gates) read 224 here.
+            // FlyingFish's protocol id is port-local 359 (d37's
+            // frozen-band row adopted; the original 354 retired), so its
+            // C#-type consumers (the style-44 arm's type gates + the
+            // world-sim pre-pass's sibling scan) read 224 here.
             NpcKind::FlyingFish => 224,
             NpcKind::GiantFlyingAntlion => 509,
             NpcKind::FlyingAntlion => 581,
@@ -3218,8 +3236,9 @@ impl NpcKind {
             // W4-c4 (the style-16 swimmers): the vanilla `NPC.type` ids
             // (`NPCID.cs:10791`/`:10991`/`:11159`/`:11603`/`:11861`/
             // `:11891`/`:11907`/`:12053`/`:12061`). The CorruptGoldfish/
-            // Arapaima protocol ids are port-local 229/237, so the
-            // style-16 arm's type gates read 57/157 here.
+            // Arapaima protocol ids are port-local 405/406 (the free-port
+            // band; the original 229/237 reserved-hole squat retired),
+            // so the style-16 arm's type gates read 57/157 here.
             NpcKind::CorruptGoldfish => 57,
             NpcKind::Arapaima => 157,
             NpcKind::BloodFeeder => 241,
