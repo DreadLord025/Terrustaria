@@ -243,6 +243,12 @@ pub fn neighbor_preferences(kind: NpcKind) -> &'static [(AffectionLevel, NpcKind
         NpcKind::PartyGirl,
         NpcKind::Painter,
         NpcKind::WitchDoctor,
+        // The Tavernkeep (550) — `NPCID.DD2Bartender` IS the town Tavernkeep
+        // (`NPC.cs:16261-16274`: `townNPC = true`, aiStyle 7). There is NO
+        // separate event twin: NPCID 109 is the Clown, and 109 is only the
+        // port's wire id (`to_u16`), not his `cs_id` (which resolves 550
+        // through the bestiary). His rows + the rows that name him land.
+        NpcKind::DD2Bartender,
     ];
     let rows = ROWS.get_or_init(|| {
         IDS.iter()
@@ -383,20 +389,19 @@ pub fn process_mood(
         if other.hp <= 0 || std::ptr::eq(other, npc) {
             continue;
         }
-        if !other.kind.is_town_resident()
-            || matches!(
-                other.kind,
-                NpcKind::TravellingMerchant | NpcKind::DD2Bartender
-            )
-        {
-            // `:305` — `townNPC && !IsNotReallyTownNPC` (`:363-371`: 37
-            // OldMan / 368 Travelling Merchant / 453 Skeleton Merchant).
-            // The port's town set rides `is_town_resident`; the Tavernkeep
-            // (550) is a town NPC but his kind ports as the DD2 event
-            // Bartender — excluded until his town twin lands (ANALYSIS
-            // "Shop happiness UI (W4-g58)"). The pets' housingCategory
-            // filter (`CanNPCsLiveWithEachOther_ShopHelper`,
-            // `TownRoomManager.cs:153-161`) is inert — no pets ported.
+        // `:305` — `nPC.active && nPC.townNPC && !IsNotReallyTownNPC(nPC)`
+        // (`:363-371`: 37 OldMan / 368 Travelling Merchant / 453 Skeleton
+        // Merchant). The port's `is_town_resident` carries the `townNPC`
+        // flag but omits the Tavernkeep and includes the Travelling
+        // Merchant, so the gate re-derives the C# pair: admit the
+        // Tavernkeep (550 — `NPCID.DD2Bartender` IS the town Tavernkeep,
+        // `NPC.cs:16261-16274`; no separate event twin exists, NPCID 109
+        // is the Clown / the port's wire id) and drop the Travelling
+        // Merchant (the only ported `IsNotReallyTownNPC` kind). The pets'
+        // housingCategory filter (`CanNPCsLiveWithEachOther_ShopHelper`,
+        // `TownRoomManager.cs:153-161`) is inert — no pets ported.
+        let town_npc = other.kind.is_town_resident() || other.kind == NpcKind::DD2Bartender;
+        if !town_npc || other.kind == NpcKind::TravellingMerchant {
             continue;
         }
         let (ox, oy) = match other.home {
@@ -1008,6 +1013,58 @@ mod tests {
             let tax = neighbor_preferences(NpcKind::TaxCollector);
             assert_eq!(tax.len(), 4);
             assert!(!tax.iter().any(|(_, k)| k.cs_id() == 142));
+        }
+
+        /// The Tavernkeep (550) is a town NPC — `NPCID.DD2Bartender` IS the
+        /// town Tavernkeep (`NPC.cs:16261-16274`: `townNPC = true`, aiStyle
+        /// 7); NPCID 109 is the Clown (the port's wire id), NOT a second
+        /// event twin. His own rows + the rows that name him resolve, and
+        /// he counts toward the crowd (`GetNearbyResidentNPCs`, `:305`).
+        #[test]
+        fn the_tavernkeep_is_a_town_neighbor() {
+            // His `cs_id` resolves 550 through the bestiary (not the wire 109).
+            assert_eq!(NpcKind::DD2Bartender.cs_id(), 550);
+            // His own switch (`:213-230`): Demolitionist love, Tinkerer
+            // like, Guide dislike, DyeTrader hate — all four port.
+            let tk = neighbor_preferences(NpcKind::DD2Bartender);
+            assert_eq!(
+                tk,
+                &[
+                    (V, NpcKind::Demolitionist),
+                    (L, NpcKind::GoblinTinkerer),
+                    (D, NpcKind::Guide),
+                    (H, NpcKind::DyeTrader),
+                ]
+            );
+            // The rows that NAME him survive: the Angler hates him (`:141-
+            // 158`), the Demolitionist loves him (`:177-194`).
+            let angler = neighbor_preferences(NpcKind::Angler);
+            assert!(angler.contains(&(H, NpcKind::DD2Bartender)));
+            let demo = neighbor_preferences(NpcKind::Demolitionist);
+            assert!(demo.contains(&(V, NpcKind::DD2Bartender)));
+            // The crowd gate admits him: a housed Tavernkeep beside a
+            // housed Guide is one within-house neighbor (the Guide alone
+            // would be LoveSpace; two housed NPCs still ≤2 → LoveSpace,
+            // but the roster now counts the Tavernkeep). The multiplier
+            // witness: the Guide + the Tavernkeep within 25 tiles, the
+            // forest Like ×0.94 × LoveSpace 0.95 × the Guide's LikeNPC
+            // (the Tavernkeep is not in the Guide's rows, so no neighbor
+            // factor) — the point is the Tavernkeep is COUNTED, not dropped.
+            let w = forest_world();
+            let guide = housed_guide(&w, (60, 120));
+            let mut tk_npc = Npc::new(NpcKind::DD2Bartender, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            tk_npc.home = Some((64, 120));
+            tk_npc.hp = tk_npc.max_hp;
+            let all = vec![guide.clone(), tk_npc];
+            let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false);
+            // within_house = 1 (the Tavernkeep) → LoveSpace holds; the
+            // forest Like ×0.94 × 0.95 = 0.893 → 0.89.
+            assert!(mood.flags.contains(&MoodFlag::LoveSpace));
+            assert!(
+                (mood.multiplier - 0.89).abs() < 0.001,
+                "the multiplier {}",
+                mood.multiplier
+            );
         }
 
         /// `AffectionLevel.cs:5-8` + `ShopHelper.cs:35-42` — the four
