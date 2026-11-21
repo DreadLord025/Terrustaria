@@ -1,5 +1,9 @@
-# 285 — NPC.cs dust-site window coverage (W4-e2 SEALED)
+# 341 — NPC.cs dust-site window coverage (W4-e2 SEALED)
 
+> **Renumber chain: 64 → 285 → 341.** registry-150 §8.7 (FROZEN table,
+> `9dddb32b4` on task/W4-d54): e2's post-§8 self-picks 285/286 → **341**
+> (coverage) + **342** (bible). All refs repointed at the rename.
+>
 > W4-e2 batch 6 + seal · 2026-11-21 · code-only census. Which `Dust.NewDust*`
 > windows in `decompiled/Terraria/NPC.cs` are claimed by which lane, at
 > the fetched branch tips. Companion to d54f's `131-dust-master-status.md`
@@ -23,9 +27,10 @@
 > `284-g52c-relay-host-arms-census.md` (`0224fff80`, 16:19:37; an
 > executed push beats the unpublished pick, the f4-281 precedent).
 > **285 = this coverage doc, 286 = the npc-dust-family bible** (both
-> zero-claimant at the final pre-push sweep, 285/286/287 probed). The
-> old key-64/284 citations in commit messages stay as history; the one
-> code ref (`npc_dust.rs` module banner) is repointed to 285.
+> zero-claimant at the final pre-push sweep, 285/286/287 probed) — that
+> pick was later SUPERSEDED by registry-150 §8.7: **341/342 FINAL**. The
+> old key-64/284/285/286 citations in commit messages stay as history; the one
+> code ref (`npc_dust.rs` module banner) is repointed to 341.
 
 ## 1. Lane tips (seal re-fetch 2026-11-21; the batch-6 read in brackets)
 
@@ -234,4 +239,4 @@ exactly. The gap census :21562-39039 holds 49 ND-family lines, ALL
 claimed by the §2 rows: e2 b1/b2 Twins 6 + Skeletron 2 + Golem-head 2
 + Brain 1 + MoonLeach 2 + Dutchman 1, b3 style39/41 10, b6 staged 9;
 c4 style44 3, style56 1, frost-boss-b 1, style74 7, saucer style75 4
-- 49/49, zero unclaimed. Family bible: `286-npc-dust-family-bible.md`.
+- 49/49, zero unclaimed. Family bible: `342-npc-dust-family-bible.md`.

@@ -39247,18 +39247,19 @@ click buffers; the player tick applies).
 
 ## The NPC dust second batch FINAL (W4-e2 SEAL, 2026-11-21, code-only)
 
-research/285 (the window-coverage table, renumbered 64→285 per
-registry-150 — d64's `161c63898` wins key 64, e2's post-cutoff push
+research/341 (the window-coverage table, renumbered 64→285→341 per
+registry-150 §8.7 — d64's `161c63898` wins key 64, e2's post-cutoff push
 self-adjudicates the first free ≥281 after a fresh all-tip sweep:
 281×8/282×3/283=f4 taken; the interim 284 pick lost to g52's executed
-push `0224fff80`, re-picked 285/286) + research/286 (the
+push `0224fff80`, re-picked 285/286; the post-§8 self-picks re-issued to
+341/342 by §8.7's FROZEN table, `9dddb32b4`) + research/342 (the
 npc-dust-family bible: the 927+5 census re-counted direct-path —
 836 ND + 16 NDP + 75 NDD, HitEffect 629+2, windows 159/87/12/629/40 —
 matching d54's 131 §8.2; the per-window ownership map; the keep-one
 symbol list; the staged-emitter wiring obligations).
 
 - **Keep-one MUTUAL seal with f4** (its research/283 §1 at `26728bd87`
-  ↔ e2's 285 §5): the merger keeps f4's KingSlime trio / EterniaCrystal
+  ↔ e2's 341 §5): the merger keeps f4's KingSlime trio / EterniaCrystal
   trio / MoonLord storm+head+eye bodies; e2's inline duplicates DROP,
   its named emitters + machine witnesses supplement. f4 b7 absorbed
   the e2-b5 left-to-right f32 multiply order (`6e304b960`) + the

@@ -1,15 +1,21 @@
-# 286 — NPC dust family bible (W4-e2 SEAL)
+# 342 — NPC dust family bible (W4-e2 SEAL)
 
+> **Renumber chain: 286 → 342.** registry-150 §8.7 (FROZEN table,
+> `9dddb32b4` on task/W4-d54): e2's post-§8 self-picks 285/286 → **341**
+> (coverage) + **342** (bible, this doc). All refs repointed at the rename.
+>
 > 2026-11-21 · code-only · the NPC.cs `Dust.NewDust*` family's final
 > ownership map at the fetched lane tips. Companion docs: d54's
 > `131-dust-master-status.md` §8.2 (the whole-Dust.cs family census,
-> tip `38bfd1d22`), e2's `285-npc-dust-window-coverage.md` (the
-> per-window table + the overlap register, renumbered 64→285 per
+> tip `38bfd1d22`), e2's `341-npc-dust-window-coverage.md` (the
+> per-window table + the overlap register, renumbered 64→285→341 per
 > registry-150 — the interim 284 pick lost to g52's executed push
-> `0224fff80`), f4's `283-npc-dust-final.md` (the f4 slice + the
-> keep-one confirmation, tip `26728bd87`). Number 286 verified
-> zero-claimant at the final pre-push sweep (281×8 / 282×3 / 283=f4 /
-> 284=g52 / 298=g63 taken; 285 this lane's coverage doc).
+> `0224fff80`; the 285 pick superseded by §8.7), f4's
+> `283-npc-dust-final.md` (the f4 slice + the
+> keep-one confirmation, tip `26728bd87`). The original 286 pick was
+> verified zero-claimant at the final pre-push sweep (281×8 / 282×3 /
+> 283=f4 / 284=g52 / 298=g63 taken; the coverage doc rode 285) — §8.7
+> later re-issued both to 341/342 (this doc = 342).
 
 ## 1. The family count (re-derived THIS round, direct-path)
 
@@ -35,7 +41,7 @@ Matches d54 bible §8.2's NPC row (**927 +5 Clone = 932**, HitEffect
 | AI_004 Eye 20064-20379 | d52 b2 | wired | `f86731ed6` |
 | aiStyle-8 caster 20867-21368 | d52 b3/b4 | wired | `7ce6e95c8`/`e55b04b23` |
 | aiStyle-9 sphere 21524-21562 | d52 b5 | wired | `eb084fa9a` |
-| :21562-39039 gap (49 lines) | e2 b1-b3/b6 + c4 + style56 + frost-boss-b + style74 + saucer | wired 40 / **staged 9** | research/285 §2; the 9 staged = 24520/24850/24866/35157/35162/37289/37307/37337/37464 (`9912498fc`) |
+| :21562-39039 gap (49 lines) | e2 b1-b3/b6 + c4 + style56 + frost-boss-b + style74 + saucer | wired 40 / **staged 9** | research/341 §2; the 9 staged = 24520/24850/24866/35157/35162/37289/37307/37337/37464 (`9912498fc`) |
 | pillar 39007-39362 | e2 b4/b5p1 | wired | `1ec45ba28`/`0f0d7036e` |
 | StardustCell 39421 | e2 b2 | wired | `2bfaa71a4` |
 | NebulaFloater 39524/39559/39571 | e2 b5/b6 | wired (faithful aiStyle-97) | `31c91d902`/`6c424595f` |
@@ -46,13 +52,13 @@ Matches d54 bible §8.2's NPC row (**927 +5 Clone = 932**, HitEffect
 | TrueEye pair+fan 42675/42873 | **f4 b6 KEEP** | wired | `abff45cf8`; e2 angle fix `d5ae8725c` |
 | KingSlime trio 43251/43278/43365 | **f4 b2 KEEP** (e2 b6 drops inline) | wired | `23e313f60` / `1cbbcb95d` |
 | Deerclops 44037 + Fishron 49029-49661 + StardustWorm 51046/51054 | f4 b1 | wired | `37d143c75` |
-| Empress/HallowBoss/wyvern/misc AI 44937-69003 | empress / bow-launch / kind waves | cited (research/285 §2 other-lane table) | the 619/454-459/621-623 dormant blocks per f4 research/283 §2 |
+| Empress/HallowBoss/wyvern/misc AI 44937-69003 | empress / bow-launch / kind waves | cited (research/341 §2 other-lane table) | the 619/454-459/621-623 dormant blocks per f4 research/283 §2 |
 | Destroyer fade 49801 | f4 b3 | wired | `0b7b14e29` |
 | AI_005 hover gate 50702/50710 | f4 b5 | wired | `87da911e4` (619 arm dormant, cited) |
 | leech entry 50976 | f4 b7 | wired | `e7ea8b24b` (the AI_006 seam's one live site) |
 | Crawltipede 51656/51662 + EoW fade 52259 | f4 b4 | wired | `8d5e4e7cf` |
 | FindFrame 71938 (case-398 open burst) | f4 b6 | wired | `abff45cf8` + the six-burst re-fire pin `bcf917437` |
-| FindFrame other dust 74009-74846 | d44-d49 findframe lanes | their census | research/285 §2 |
+| FindFrame other dust 74009-74846 | d44-d49 findframe lanes | their census | research/341 §2 |
 | spawn/Transform/Teleport 77494-81058 + 90236-92241 | g61 | wired | `0a4af1908`/`6345f7b7b`/`8d23e2985`; SEAL `6e922fc60` (the g11 dispatcher keep-one per its research/238) |
 | **HitEffect every-strike 81660-89834** | g62 | wired (29 batches, "0 uncovered live sites") | `32af98b44`; the +2 CloneDust ride its ledger; f5's 4 hit-half gore bodies EMIT-AT-WIRING here (f5 research/111 §7) |
 | HitEffect death halves (dust-only kinds) | g59 | wired (16 batches, ACTIVATIONS-2 census) | `d277f782b` |
@@ -61,7 +67,7 @@ Matches d54 bible §8.2's NPC row (**927 +5 Clone = 932**, HitEffect
 
 ## 3. The keep-one symbol list (merger input, MUTUAL seal)
 
-Both sides sealed: e2 research/285 §5 + f4 research/283 §1 agree
+Both sides sealed: e2 research/341 §5 + f4 research/283 §1 agree
 verbatim.
 
 | Sites | KEEP (f4 tip `26728bd87`) | DROP (e2 side) | e2 SUPPLEMENTS kept |
