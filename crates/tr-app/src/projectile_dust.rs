@@ -436,6 +436,373 @@ pub(crate) fn style4_fade_burst(p: &Projectile, world: &World, d: &mut ProjDust)
 }
 
 // ---------------------------------------------------------------------------
+// Batch 3 — the aiStyle-5 falling-star family (`Projectile.cs:23954-24098`).
+// ---------------------------------------------------------------------------
+
+/// `Utils.NextVector2Unit` (`Utils.cs:1261-1264`) — one `NextFloat`; the
+/// angle is FLOAT arithmetic, then `ToRotationVector2` (`Utils.cs:1665-1668`)
+/// cos/sin in double of the widened float, cast back to f32 (the
+/// `npc_ai_empress.rs:477` convention).
+fn next_vector2_unit(rng: &mut dyn DropRng) -> Vec2 {
+    let angle = std::f32::consts::PI * 2.0 * rng.next_float();
+    Vec2::new((angle as f64).cos() as f32, (angle as f64).sin() as f32)
+}
+
+/// `Utils.NextVector2Circular` (`Utils.cs:1266-1269`) — the unit draw THEN a
+/// second `NextFloat` radius scale.
+fn next_vector2_circular(rng: &mut dyn DropRng, half_w: f32, half_h: f32) -> Vec2 {
+    let unit = next_vector2_unit(rng);
+    let r = rng.next_float();
+    Vec2::new(unit.x * half_w * r, unit.y * half_h * r)
+}
+
+/// The C# `base.Hitbox.Intersects(Utils.CenteredRectangle(Main.screenPosition
+/// + screen/2, screen + 400))` gate (`Projectile.cs:23973` and passim;
+/// `Utils.cs:947-950`): the on-screen box widened by 200 px per side, XNA
+/// `Rectangle.Intersects`' strict `<` on both axes.
+pub(crate) fn on_screen_wide(p: &Projectile, ctx: &SpawnCtx) -> bool {
+    let sw = ctx.screen_size.x;
+    let sh = ctx.screen_size.y;
+    let rx = (ctx.screen_position.x + sw / 2.0 - (sw + 400.0) / 2.0) as i32;
+    let ry = (ctx.screen_position.y + sh / 2.0 - (sh + 400.0) / 2.0) as i32;
+    let rw = (sw + 400.0) as i32;
+    let rh = (sh + 400.0) as i32;
+    let sx = p.pos.x as i32;
+    let sy = p.pos.y as i32;
+    let pw = p.w as i32;
+    let ph = p.h as i32;
+    rx < sx + pw && sx < rx + rw && ry < sy + ph && sy < ry + rh
+}
+
+impl ProjDust<'_> {
+    /// `Dust.NewDustDirect` (`Dust.cs:65-73`).
+    #[allow(clippy::too_many_arguments)]
+    fn new_dust_direct(
+        &mut self,
+        world: &World,
+        pos: Vec2,
+        w: i32,
+        h: i32,
+        dust_type: i32,
+        speed_x: f32,
+        speed_y: f32,
+        alpha: i32,
+        color: Color,
+        scale: f32,
+    ) -> usize {
+        self.pool.new_dust_direct(
+            &mut ProjDustRng(self.rng),
+            self.ctx,
+            world,
+            pos,
+            w,
+            h,
+            dust_type,
+            speed_x,
+            speed_y,
+            alpha,
+            color,
+            scale,
+        )
+    }
+
+    /// `Dust.NewDustPerfect` (`Dust.cs:54-63`).
+    fn new_dust_perfect(
+        &mut self,
+        world: &World,
+        pos: Vec2,
+        dust_type: i32,
+        velocity: Option<Vec2>,
+        alpha: i32,
+        color: Color,
+        scale: f32,
+    ) -> usize {
+        self.pool.new_dust_perfect(
+            &mut ProjDustRng(self.rng),
+            self.ctx,
+            world,
+            pos,
+            dust_type,
+            velocity,
+            alpha,
+            color,
+            scale,
+        )
+    }
+}
+
+/// `:23954-23962` — the 503 Star Wrath's dust-58 spark: the `Next(16)` gate,
+/// the `UnitX.RotatedByRandom(π/2).RotatedBy(vel.ToRotation())` direction
+/// (two draws), then the dust at `centre + dir·12` with velocity `dir·0.66`.
+/// The trailing `Next(48)` gore GATE (`:23963`) is an AI-level draw and stays
+/// on the stream; the taken branch's gore body (type literal 16, no pick
+/// draw) is the gore lane's skip.
+pub(crate) fn style5_spark_503(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if d.rng.next_range(0, 16) == 0 {
+        let dir = crate::bow_launch::rotated_by(
+            rotated_by_random(Vec2::X, 1.5707963705062866, d.rng),
+            p.vel.y.atan2(p.vel.x) as f64,
+        );
+        let idx = d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            58,
+            p.vel.x * 0.5,
+            p.vel.y * 0.5,
+            150,
+            Color::default(),
+            1.2,
+        );
+        let (cx, cy) = p.center();
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity = dir * 0.66;
+        dust.position = Vec2::new(cx, cy) + dir * 12.0;
+    }
+    // `:23963` — the gore gate (the body is the gore lane's skip; the gate
+    // draw stays).
+    let _ = d.rng.next_range(0, 48);
+}
+
+/// `:23970-23986` — the 12/955 falling star's dust-58: the on-screen gate +
+/// `Next(6)` gore pick (the gore lane's skip — the `Next(6)` and the taken
+/// branch's `SelectRandom` `Next(4)` go with it), the `light = 0.9` write
+/// (`:23982`), then the `Next(20)` dust gate (the anniversary `Next(15)` is
+/// the second `||` operand). `anniversary` is `Main.tenthAnniversaryWorld`
+/// (the pass reads `world.seeds`).
+pub(crate) fn style5_star_dust(
+    p: &mut Projectile,
+    world: &World,
+    d: &mut ProjDust,
+    anniversary: bool,
+) {
+    // `:23973-23981` — the gore gate: the on-screen test short-circuits the
+    // Next(6); the taken branch's SelectRandom draws Next(4). Both go with
+    // the gore (the gore lane's skip), but the GATE draws stay on the stream.
+    if on_screen_wide(p, d.ctx) && d.rng.next_range(0, 6) == 0 {
+        let _ = d.rng.next_range(0, 4); // SelectRandom's pick (gore skipped)
+    }
+    p.light = 0.9; // `:23982`
+    // `:23983` — the dust gate: Next(20), then the anniversary Next(15) only
+    // when the first failed AND the world is the anniversary one.
+    if d.rng.next_range(0, 20) == 0 || (anniversary && d.rng.next_range(0, 15) == 0) {
+        d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            58,
+            p.vel.x * 0.5,
+            p.vel.y * 0.5,
+            150,
+            Color::default(),
+            1.2,
+        );
+    }
+}
+
+/// `:23988-24031` — the 723-726/1133 shooting-star family. The 726/725/1133
+/// arm: the on-screen `Next(24)` gore gate (skip), the 1133's `Next(6)`
+/// dust-89 gate, the `Next(3)` dust-86/87 gate (×0.5 velocity, noGravity);
+/// the 723's three-ring dust-267 pair (Blue + White, noLight/noGravity).
+pub(crate) fn style5_shooting_star(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if matches!(p.kind, 726 | 725 | 1133) {
+        // `:23992-23996` — the gore gate (the gore lane's skip; the gate
+        // draws stay).
+        if on_screen_wide(p, d.ctx) && d.rng.next_range(0, 24) == 0 {
+            let _ = d.rng.next_range(0, 2); // SelectRandom(16,17)
+        }
+        let mut num48 = 86;
+        if p.kind == 1133 {
+            num48 = 87;
+            // `:24001-24004` — the 1133's dust-89 gate.
+            if d.rng.next_range(0, 6) == 0 {
+                let idx = d.new_dust_direct(
+                    world,
+                    p.pos,
+                    p.w as i32,
+                    p.h as i32,
+                    89,
+                    0.0,
+                    0.0,
+                    127,
+                    Color::default(),
+                    1.0,
+                );
+                d.pool.slot_mut(idx).no_gravity = true;
+            }
+        }
+        // `:24006-24011` — the dust-86/87 gate.
+        if d.rng.next_range(0, 3) == 0 {
+            let idx = d.new_dust_direct(
+                world,
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                num48,
+                0.0,
+                0.0,
+                127,
+                Color::default(),
+                1.0,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.velocity *= 0.5;
+            dust.no_gravity = true;
+        }
+    }
+    if p.kind == 723 {
+        // `:24015-24019` — the 723's gore gate (skip; the gate draws stay).
+        if on_screen_wide(p, d.ctx) && d.rng.next_range(0, 6) == 0 {
+            // Gore.NewGore(..., 17) — no pick draw (the type is literal).
+        }
+        // `:24020-24029` — the three-ring dust-267 pair.
+        let (cx, cy) = p.center();
+        for num49 in 0..3 {
+            let num49 = num49 as f32;
+            let offset = crate::bow_launch::rotated_by(
+                Vec2::new(0.0, 12.0 * p.scale),
+                (p.pos.y / 200.0 + num49 * (std::f32::consts::PI * 2.0) + p.rot) as f64,
+            );
+            let vector7 = Vec2::new(cx, cy) + offset - p.vel * 0.5;
+            let idx = d.new_dust_perfect(
+                world,
+                vector7,
+                267,
+                Some(p.vel * 0.2 * num49),
+                0,
+                Color::new(0, 0, 255, 255), // Color.Blue
+                1.0,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.no_light = true;
+            dust.no_gravity = true;
+            let idx = d.new_dust_perfect(
+                world,
+                vector7,
+                267,
+                Some(p.vel * 0.2 * num49),
+                0,
+                Color::WHITE,
+                0.4,
+            );
+            let dust = d.pool.slot_mut(idx);
+            dust.no_light = true;
+            dust.no_gravity = true;
+        }
+    }
+}
+
+/// `:24032-24049` — the 9 Starfury star's dust-86: the on-screen `Next(20)`
+/// gore gate (skip), then the `Next(4)` dust gate (×0.7 velocity, noGravity,
+/// +0.3·vel, the `Next(2)` position pull).
+pub(crate) fn style5_star9_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
+    // `:24034-24038` — the gore gate (skip; the gate draws stay).
+    if on_screen_wide(p, d.ctx) && d.rng.next_range(0, 20) == 0 {
+        let _ = d.rng.next_range(16, 18); // the gore type pick
+    }
+    // `:24039-24049` — the dust-86 gate.
+    if d.rng.next_range(0, 4) == 0 {
+        let idx = d.new_dust_direct(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            86,
+            0.0,
+            0.0,
+            127,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= 0.7;
+        dust.no_gravity = true;
+        dust.velocity += p.vel * 0.3;
+        if d.rng.next_range(0, 2) == 0 {
+            dust.position -= p.vel * 4.0;
+        }
+    }
+}
+
+/// `:24051-24061` — the generic `ai[1] == 1 || type == 92` arm: the light
+/// 0.9 write (the caller owns it), the `Next(10)` dust-58 gate, then the
+/// `Next(20)` gore gate (skip).
+pub(crate) fn style5_generic_dust(p: &Projectile, world: &World, d: &mut ProjDust) {
+    if d.rng.next_range(0, 10) == 0 {
+        d.new_dust(
+            world,
+            p.pos,
+            p.w as i32,
+            p.h as i32,
+            58,
+            p.vel.x * 0.5,
+            p.vel.y * 0.5,
+            150,
+            Color::default(),
+            1.2,
+        );
+    }
+    // `:24058-24061` — the gore gate (skip; the gate draws stay).
+    if d.rng.next_range(0, 20) == 0 {
+        let _ = d.rng.next_range(16, 18);
+    }
+}
+
+/// `:24067-24098` — the 1037/1049 comet tail: the two `Next(2)` dust gates
+/// (each with the `Next(4)` type pick, the two velocity `NextFloat`s), then
+/// the `!wet` dust-6 perfect (the `NextVector2Circular(25,25)` pair).
+pub(crate) fn style5_comet_tail(p: &Projectile, world: &World, d: &mut ProjDust) {
+    let (cx, cy) = p.center();
+    let vector9 = Vec2::new(cx, cy) + p.vel.normalize_or_zero() * 10.0;
+    for sign in [1.0f64, -1.0f64] {
+        if d.rng.next_range(0, 2) == 0 {
+            // `:24070`/`:24080` — the type arg draws Next(4) BEFORE NewDust.
+            let dust_type = if d.rng.next_range(0, 4) == 0 { 6 } else { 31 };
+            let idx = d.new_dust(
+                world,
+                p.pos,
+                p.w as i32,
+                p.h as i32,
+                dust_type,
+                0.0,
+                0.0,
+                0,
+                Color::default(),
+                1.0,
+            );
+            let rotated = crate::bow_launch::rotated_by(p.vel, sign * 1.5707963705062866);
+            let dust = d.pool.slot_mut(idx);
+            dust.position = vector9;
+            dust.velocity = (rotated * 0.25 + p.vel / 3.0) * 0.9;
+            dust.position += rotated;
+            dust.scale *= 0.3 + 0.9 * d.rng.next_float();
+            dust.velocity *= d.rng.next_float();
+            dust.no_gravity = true;
+        }
+    }
+    // `:24088-24098` — the !wet dust-6 perfect.
+    if !p.wet {
+        let offset = next_vector2_circular(d.rng, 25.0, 25.0);
+        let idx = d.new_dust_perfect(
+            world,
+            Vec2::new(cx, cy) + offset,
+            6,
+            None,
+            0,
+            Color::default(),
+            1.0,
+        );
+        let dust = d.pool.slot_mut(idx);
+        dust.velocity *= 0.5;
+        dust.scale *= 1.3;
+        dust.fade_in = 1.0;
+        dust.no_gravity = true;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witness tests-as-code — WRITTEN NOT RUN (code-only mode, W4-e3 batch 1).
 // Verified by re-reading the cited C# and mirroring every draw through the
 // same pool call on a twin stream; run with
@@ -849,6 +1216,270 @@ mod tests {
             let t = smirror.next_range(68, 71);
             assert_eq!(spool.slot(i).dust_type, t, "the type arg precedes the internals");
             assert!(spool.slot(i).no_gravity);
+        }
+    }
+
+
+    /// W4-e3 batch 3 — `:23954-23968`: the 503 spark's Next(16) gate + the
+    /// RotatedByRandom(π/2) direction pair + the Next(48) gore gate (always
+    /// drawn). Mirrored: the taken branch's dust sits at centre + dir·12
+    /// with velocity dir·0.66.
+    #[test]
+    fn w4_e3_b3_spark503_direction_and_gore_gate() {
+        let w = world();
+        let c = ctx();
+        let p = proj(503);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(101);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(101);
+        for _ in 0..32 {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style5_spark_503(&p, &w, &mut d);
+            if mirror.next_range(0, 16) == 0 {
+                let angle = mirror.next_double() * 1.5707963705062866
+                    - mirror.next_double() * 1.5707963705062866;
+                let dir = crate::bow_launch::rotated_by(
+                    crate::bow_launch::rotated_by(Vec2::X, angle),
+                    p.vel.y.atan2(p.vel.x) as f64,
+                );
+                let idx = mpool.new_dust(
+                    &mut mirror, &c, &w, p.pos, 10, 10, 58,
+                    p.vel.x * 0.5, p.vel.y * 0.5, 150, Color::default(), 1.2,
+                );
+                let (cx, cy) = p.center();
+                let md = mpool.slot_mut(idx);
+                md.velocity = dir * 0.66;
+                md.position = Vec2::new(cx, cy) + dir * 12.0;
+            }
+            let _ = mirror.next_range(0, 48);
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        for &i in &act {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert!((pool.slot(i).velocity.length() - 0.66).abs() < 1e-4);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 batch 3 — `:23970-23986`: the 955 dust-58 gate is Next(20), the
+    /// anniversary Next(15) only as the second || operand; the light 0.9
+    /// write lands every call; the off-screen gore gate short-circuits its
+    /// Next(6). Mirrored on both seed flags.
+    #[test]
+    fn w4_e3_b3_star_dust_anniversary_second_operand() {
+        let w = world();
+        let c = ctx();
+        for anniversary in [false, true] {
+            let mut p = proj(955);
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(111);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(111);
+            for _ in 0..40 {
+                let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+                style5_star_dust(&mut p, &w, &mut d, anniversary);
+                if on_screen_wide(&p, &c) && mirror.next_range(0, 6) == 0 {
+                    let _ = mirror.next_range(0, 4);
+                }
+                if mirror.next_range(0, 20) == 0
+                    || (anniversary && mirror.next_range(0, 15) == 0)
+                {
+                    mpool.new_dust(
+                        &mut mirror, &c, &w, p.pos, 10, 10, 58,
+                        p.vel.x * 0.5, p.vel.y * 0.5, 150, Color::default(), 1.2,
+                    );
+                }
+            }
+            assert_eq!(p.light, 0.9, "the light write");
+            assert_eq!(active(&pool).len(), active(&mpool).len());
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+        }
+    }
+
+    /// W4-e3 batch 3 — `:24013-24029`: the 723's three-ring dust-267 pair —
+    /// 6 dusts (Blue scale 1.0 + White scale 0.4 per ring), noLight +
+    /// noGravity, the rotated (0, 12·scale) offset at pos.Y/200 + i·2π + rot.
+    #[test]
+    fn w4_e3_b3_shooting_star723_six_ring_dusts() {
+        let w = world();
+        let c = ctx();
+        let mut p = proj(723);
+        p.scale = 1.0;
+        p.rot = 0.3;
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(121);
+        let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+        style5_shooting_star(&p, &w, &mut d);
+        let act = active(&pool);
+        assert_eq!(act.len(), 6, "3 rings × (Blue + White)");
+        let (cx, cy) = p.center();
+        for ring in 0..3 {
+            let offset = crate::bow_launch::rotated_by(
+                Vec2::new(0.0, 12.0),
+                (p.pos.y / 200.0 + ring as f32 * (std::f32::consts::PI * 2.0) + p.rot) as f64,
+            );
+            let anchor = Vec2::new(cx, cy) + offset - p.vel * 0.5;
+            let blue = pool.slot(act[ring * 2]);
+            let white = pool.slot(act[ring * 2 + 1]);
+            assert_eq!(blue.position, anchor);
+            assert_eq!(white.position, anchor);
+            assert_eq!(blue.dust_type, 267);
+            assert_eq!(blue.color, Color::new(0, 0, 255, 255));
+            assert_eq!(white.color, Color::WHITE);
+            // The White ring's scale is the 0.4 arg × the pool's jitter
+            // (1 ± 0.2, `Dust.cs:190`) — the Blue ring's is 1.0 × jitter.
+            assert!(white.scale >= 0.32 && white.scale <= 0.48, "0.4 × jitter");
+            assert!(blue.scale >= 0.8 && blue.scale <= 1.2, "1.0 × jitter");
+            assert!(blue.no_light && blue.no_gravity);
+            assert!(white.no_light && white.no_gravity);
+            assert_eq!(blue.velocity, p.vel * 0.2 * ring as f32);
+        }
+        // The 724 draws NOTHING in the block (the C# inner gate omits it).
+        let mut pool2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(121);
+        let mut d2 = ProjDust { pool: &mut pool2, ctx: &c, rng: &mut rng2 };
+        style5_shooting_star(&proj(724), &w, &mut d2);
+        assert!(active(&pool2).is_empty());
+        assert_eq!(rng2.next_range(0, 1000), UnifiedRandom::new(121).next_range(0, 1000));
+    }
+
+    /// W4-e3 batch 3 — `:24032-24049`: the 9's dust-86 gate (Next(4)) with
+    /// the ×0.7 velocity, +0.3·vel and the Next(2) position pull; the gore
+    /// gate's Next(20) + Next(16,18) pick stay on the stream. Mirrored.
+    #[test]
+    fn w4_e3_b3_star9_dust_gate_and_position_pull() {
+        let w = world();
+        let c = ctx();
+        let p = proj(9);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(131);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(131);
+        for _ in 0..24 {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style5_star9_dust(&p, &w, &mut d);
+            if on_screen_wide(&p, &c) && mirror.next_range(0, 20) == 0 {
+                let _ = mirror.next_range(16, 18);
+            }
+            if mirror.next_range(0, 4) == 0 {
+                let idx = mpool.new_dust_direct(
+                    &mut mirror, &c, &w, p.pos, 10, 10, 86,
+                    0.0, 0.0, 127, Color::default(), 1.0,
+                );
+                let md = mpool.slot_mut(idx);
+                md.velocity *= 0.7;
+                md.no_gravity = true;
+                md.velocity += p.vel * 0.3;
+                if mirror.next_range(0, 2) == 0 {
+                    md.position -= p.vel * 4.0;
+                }
+            }
+        }
+        let act = active(&pool);
+        assert_eq!(act.len(), active(&mpool).len());
+        assert!(!act.is_empty());
+        for &i in &act {
+            assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+            assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+            assert!(pool.slot(i).no_gravity);
+        }
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 batch 3 — `:24051-24061`: the generic 92 arm's Next(10) dust-58
+    /// gate + the Next(20) gore gate (the taken branch's Next(16,18) pick
+    /// stays). Mirrored over 30 ticks.
+    #[test]
+    fn w4_e3_b3_generic92_dust_and_gore_gates() {
+        let w = world();
+        let c = ctx();
+        let p = proj(92);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(141);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(141);
+        for _ in 0..30 {
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style5_generic_dust(&p, &w, &mut d);
+            if mirror.next_range(0, 10) == 0 {
+                mpool.new_dust(
+                    &mut mirror, &c, &w, p.pos, 10, 10, 58,
+                    p.vel.x * 0.5, p.vel.y * 0.5, 150, Color::default(), 1.2,
+                );
+            }
+            if mirror.next_range(0, 20) == 0 {
+                let _ = mirror.next_range(16, 18);
+            }
+        }
+        assert_eq!(active(&pool).len(), active(&mpool).len());
+        assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
+    }
+
+    /// W4-e3 batch 3 — `:24067-24098`: the comet tail's two Next(2) gates
+    /// (each: the Next(4) type pick BEFORE the internals, the two velocity
+    /// NextFloats after) + the !wet dust-6 perfect with the
+    /// NextVector2Circular(25,25) pair. Mirrored; the wet flag kills only
+    /// the perfect.
+    #[test]
+    fn w4_e3_b3_comet_tail_gates_and_wet_perfect() {
+        let w = world();
+        let c = ctx();
+        for wet in [false, true] {
+            let mut p = proj(1037);
+            p.wet = wet;
+            let mut pool = DustPool::new();
+            let mut rng = UnifiedRandom::new(151);
+            let mut mpool = DustPool::new();
+            let mut mirror = UnifiedRandom::new(151);
+            let mut d = ProjDust { pool: &mut pool, ctx: &c, rng: &mut rng };
+            style5_comet_tail(&p, &w, &mut d);
+            let (cx, cy) = p.center();
+            let vector9 = Vec2::new(cx, cy) + p.vel.normalize_or_zero() * 10.0;
+            for sign in [1.0f64, -1.0f64] {
+                if mirror.next_range(0, 2) == 0 {
+                    let dust_type = if mirror.next_range(0, 4) == 0 { 6 } else { 31 };
+                    let idx = mpool.new_dust(
+                        &mut mirror, &c, &w, p.pos, 10, 10, dust_type,
+                        0.0, 0.0, 0, Color::default(), 1.0,
+                    );
+                    let rotated = crate::bow_launch::rotated_by(p.vel, sign * 1.5707963705062866);
+                    let md = mpool.slot_mut(idx);
+                    md.position = vector9;
+                    md.velocity = (rotated * 0.25 + p.vel / 3.0) * 0.9;
+                    md.position += rotated;
+                    md.scale *= 0.3 + 0.9 * mirror.next_float();
+                    md.velocity *= mirror.next_float();
+                    md.no_gravity = true;
+                }
+            }
+            if !wet {
+                let unit_angle = std::f32::consts::PI * 2.0 * mirror.next_float();
+                let unit = Vec2::new(
+                    (unit_angle as f64).cos() as f32,
+                    (unit_angle as f64).sin() as f32,
+                );
+                let r = mirror.next_float();
+                let offset = Vec2::new(unit.x * 25.0 * r, unit.y * 25.0 * r);
+                let idx = mpool.new_dust_perfect(
+                    &mut mirror, &c, &w, Vec2::new(cx, cy) + offset, 6,
+                    None, 0, Color::default(), 1.0,
+                );
+                let md = mpool.slot_mut(idx);
+                md.velocity *= 0.5;
+                md.scale *= 1.3;
+                md.fade_in = 1.0;
+                md.no_gravity = true;
+            }
+            assert_eq!(active(&pool).len(), active(&mpool).len(), "wet={wet}");
+            for i in active(&pool) {
+                assert_eq!(pool.slot(i).position, mpool.slot(i).position);
+                assert_eq!(pool.slot(i).velocity, mpool.slot(i).velocity);
+                assert_eq!(pool.slot(i).scale, mpool.slot(i).scale);
+            }
+            assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000));
         }
     }
 

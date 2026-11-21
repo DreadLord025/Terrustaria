@@ -620,7 +620,21 @@ pub(crate) fn bee_arrow_kill(
 /// (`:24054-24061`) are the documented sound/dust skips — their draws go
 /// with the layers (the pool-wide convention; the sound cue itself is
 /// queued draw-free like the other AI_001 latches).
-pub(crate) fn falling_star_step(p: &mut Projectile, world: &World) {
+pub(crate) fn falling_star_step(
+    p: &mut Projectile,
+    world: &World,
+    rng: &mut dyn DropRng,
+    dust: &mut tr_core::particles::DustPool,
+    dust_ctx: &tr_core::particles::SpawnCtx,
+) {
+    // W4-e3 — the generic arm's dust seam (`:24051-24061`): the light 0.9
+    // write, the `Next(10)` dust-58 gate, the `Next(20)` gore gate (the
+    // body is the gore lane's skip; both gate draws stay on the stream).
+    let mut d = crate::projectile_dust::ProjDust {
+        pool: dust,
+        ctx: dust_ctx,
+        rng,
+    };
     // `:23858-23864` — the 92 arm: below the spawn floor the star
     // collides with tiles (above it, it falls through — the Holy Arrow
     // spawns it 600-900 px up with ai[1] = the arrow's death Y).
@@ -644,8 +658,11 @@ pub(crate) fn falling_star_step(p: &mut Projectile, world: &World) {
     // `:23952` — the spin (the 92 is not 503/1037/1049).
     p.rot += (p.vel.x.abs() + p.vel.y.abs()) * 0.01 * p.direction as f32;
     // `:24051-24053` — the `ai[1] == 1 || type == 92` arm: light 0.9
-    // (the dust/gore gates skipped).
+    // (the caller owns the write), then the dust-58 gate and the gore
+    // gate (the helper owns both in the C#'s order; the gore body is the
+    // gore lane's skip).
     p.light = 0.9;
+    crate::projectile_dust::style5_generic_dust(p, world, &mut d);
     // Movement: the star keeps the generic `HandleMovement` default —
     // free fall until tileCollide arms, then kill-on-contact
     // (`:19843-19855`).
@@ -1144,19 +1161,31 @@ mod tests {
 
     /// The falling star's AI_005 slice: the ai[1] floor arms tileCollide,
     /// the alpha pulse bounces 50→200→0, the spin rides the direction.
+    /// W4-e3: the generic arm's dust seam rides a scratch pool + a seeded
+    /// stream (the `Npc::update_rng` convention).
     #[test]
     fn the_falling_star_pulse_and_floor() {
         let w = air();
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * 16.0, w.height as f32 * 16.0),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = tr_core::UnifiedRandom::new(7);
         let mut p = shot(FALLING_STAR);
         p.ai[1] = 900.0; // the floor below the star
         p.vel = Vec2::new(0.0, 22.0);
         assert!(!p.tile_collide);
-        falling_star_step(&mut p, &w);
+        falling_star_step(&mut p, &w, &mut rng, &mut dust, &ctx);
         assert!(!p.tile_collide, "above the floor: falls through");
         assert_eq!(p.alpha, 75, "50 + 25");
         assert_eq!(p.light, 0.9);
         p.pos.y = 950.0;
-        falling_star_step(&mut p, &w);
+        falling_star_step(&mut p, &w, &mut rng, &mut dust, &ctx);
         assert!(p.tile_collide, "below the floor: collides");
         // Drive the pulse to the 200 cap and the flip: 50 +25×6 = 200 on
         // step 6 (NOT > 200, no flip yet); step 7 rolls 225 → clamps 200
@@ -1164,11 +1193,11 @@ mod tests {
         let mut q = shot(FALLING_STAR);
         q.ai[1] = 100000.0;
         for _ in 0..7 {
-            falling_star_step(&mut q, &w);
+            falling_star_step(&mut q, &w, &mut rng, &mut dust, &ctx);
         }
         assert_eq!(q.alpha, 200);
         assert_eq!(q.local_ai[0], -1.0, "the cap flips the pulse");
-        falling_star_step(&mut q, &w);
+        falling_star_step(&mut q, &w, &mut rng, &mut dust, &ctx);
         assert_eq!(q.alpha, 175, "200 − 25");
     }
 

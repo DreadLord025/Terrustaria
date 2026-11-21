@@ -6921,9 +6921,24 @@ impl Projectile {
     /// `ai[1]` latch (`:23871-23879`: the first non-solid tick arms
     /// `tileCollide`). The 9's alpha ramps −15 to the 150/0 floor
     /// (`:23900-23913`); the 955's generic alpha bounce (`:23928-23945`).
-    /// The rotation spins by `(|vx|+|vy|)·0.01·direction` (`:23952`). The
-    /// dust/gore rolls (`:23883/:23973/:23983/:24035/:24039`) are SKIPPED.
-    fn ai_falling_star(&mut self, world: &World) {
+    /// The rotation spins by `(|vx|+|vy|)·0.01·direction` (`:23952`).
+    /// W4-e3 — the dust sites spawn through the `projectile_dust` seam: the
+    /// 955's `:23983-23986` dust-58 gate, the 9's `:24039-24049` dust-86
+    /// gate; the gore gates (`:23973`/`:24035`) keep their draws on the
+    /// stream with the gore bodies the gore lane's skip. The soundDelay
+    /// roll (`:23883`) stays the sound lane's skip.
+    fn ai_falling_star(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust::ProjDust {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         if self.kind == STARFURY {
             // `:23865-23868` — `tileCollide = base.Bottom.Y >= this.ai[1]`.
             self.tile_collide = self.pos.y + self.h >= self.ai[1];
@@ -6969,8 +6984,134 @@ impl Projectile {
         // `AutomaticallyChangesDirection` `:17281-17288`, true for aiStyle 5).
         self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
         self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        if self.kind == STAR_CANNON_STAR {
+            // `:23970-23987` — the 12/955 block: the gore gate (skip), the
+            // light 0.9 write (`:23982`) and the dust-58 gate (`:23983`) —
+            // the helper owns all three in the C#'s order.
+            let anniversary = world
+                .seeds
+                .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+            crate::projectile_dust::style5_star_dust(self, world, &mut d, anniversary);
+        } else {
+            // `:24032-24050` — the 9's block: the gore gate (skip) + the
+            // dust-86 gate.
+            crate::projectile_dust::style5_star9_dust(self, world, &mut d);
+        }
         // The movement: `HandleMovement`'s default tile arm (`:19849-19853`)
         // — the blocked hit kills. The 9's `tileCollide` is the latch above.
+        self.kill_step(world);
+    }
+
+    /// `AI()`'s aiStyle-5 falling-star arm for the UNROWED family kinds
+    /// (`Projectile.cs:23830-24099`): the 503 Star Wrath, the 723-726/1133
+    /// cloak stars and the 1037/1049 meteors. The 9/955 ride
+    /// [`Self::ai_falling_star`] and the 92 rides `special_arrows::
+    /// falling_star_step`; this arm serves the rest. The kinds have no
+    /// `proj_data` rows yet — the dispatch kind-gates it so it stays a no-op
+    /// until they land (the aiStyle-6/152 precedent).
+    ///
+    /// W4-e3 — the dust sites spawn through the `projectile_dust` seam: the
+    /// 503's `:23954-23968` spark, the 723-726/1133's `:23988-24031` block,
+    /// the 1037/1049's `:24063-24098` comet tail. The gore GATE draws stay on
+    /// the stream (the bodies are the gore lane's skip); the `soundDelay`
+    /// roll (`:23881-23885`) is the sound lane's skip (the 9/955 precedent).
+    /// `owner_top` is `Main.player[owner].Top.Y` for the 723's manual
+    /// fall-through gate (`:23847`); `None` folds the gate off (orphan).
+    fn ai_falling_star_family(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+        owner_top: Option<f32>,
+    ) {
+        let mut d = crate::projectile_dust::ProjDust {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
+        let comet = matches!(self.kind, 1037 | 1049);
+        let star_family = matches!(self.kind, 503 | 723 | 724 | 725 | 726 | 1133);
+        // `:23845-23879` — the tileCollide head.
+        if star_family {
+            // `:23847-23852` — the 723's manual fall-through: below the
+            // owner's top with `ai[2] == 1` it collides and drops through.
+            // `decidesManualFallThrough` is a SetDefaults row constant in the
+            // port (`data.rs`), not a per-instance slot field — the write is
+            // the `should_fall_through = false` half (documented deviation).
+            if self.kind == 723
+                && owner_top.is_some_and(|top| self.pos.y + self.h > top)
+                && self.ai[2] == 1.0
+            {
+                self.tile_collide = true;
+                self.should_fall_through = false;
+            }
+            // `:23853-23856` — below the spawn floor the star collides.
+            if self.center().1 > self.ai[1] {
+                self.tile_collide = true;
+            }
+        } else if self.kind == 1037 {
+            // `:23865-23868` — the 1037 shares the 9's `Bottom.Y >= ai[1]`.
+            self.tile_collide = self.pos.y + self.h >= self.ai[1];
+        } else {
+            // `:23869-23879` — the 1049's generic latch.
+            if self.ai[1] == 0.0 && !solid_collision(world, self.pos, self.w, self.h) {
+                self.ai[1] = 1.0;
+                self.net_update = true;
+            }
+            if self.ai[1] != 0.0 {
+                self.tile_collide = true;
+            }
+        }
+        // `:23881-23885` — the soundDelay roll is the sound lane's skip (the
+        // 1037/1049 are exempt in the C# too).
+        // `:23886-23926` — the alpha ramp + the localAI[0] spin accumulator.
+        let spin = (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        if comet {
+            // `:23886-23898` — alpha −10, floor 0.
+            self.alpha -= 10;
+            if self.alpha < 0 {
+                self.alpha = 0;
+            }
+            self.local_ai[0] += spin;
+        } else if self.kind == 503 {
+            // `:23900-23913` — alpha −15, floor 150 above the target / 0 at it.
+            self.alpha -= 15;
+            let floor = if self.center().1 >= self.ai[1] { 0 } else { 150 };
+            if self.alpha < floor {
+                self.alpha = floor;
+            }
+            self.local_ai[0] += spin;
+        } else {
+            // `:23914-23926` — the cloak stars: alpha −15, floor 100 / 0.
+            self.alpha -= 15;
+            let floor = if self.center().1 >= self.ai[1] { 0 } else { 100 };
+            if self.alpha < floor {
+                self.alpha = floor;
+            }
+            self.local_ai[0] += spin;
+        }
+        // `:23946-23953` — the rotation: the 503/1037/1049 aim along the
+        // velocity (−π/2), the cloak stars spin by the direction term.
+        if matches!(self.kind, 503 | 1037 | 1049) {
+            self.rot = self.vel.y.atan2(self.vel.x) - std::f32::consts::FRAC_PI_2;
+        } else {
+            self.direction = if self.vel.x < 0.0 { -1 } else { 1 };
+            self.rot += (self.vel.x.abs() + self.vel.y.abs()) * 0.01 * self.direction as f32;
+        }
+        // `:23954-24031` — the per-kind dust block.
+        if self.kind == 503 {
+            crate::projectile_dust::style5_spark_503(self, world, &mut d);
+        } else if star_family {
+            // The 724 draws nothing here (the C#'s inner gate `:23990` omits
+            // it); the helper's kind matches reproduce that exactly.
+            crate::projectile_dust::style5_shooting_star(self, world, &mut d);
+        }
+        // `:24063-24098` — the 1037/1049 comet tail.
+        if comet {
+            crate::projectile_dust::style5_comet_tail(self, world, &mut d);
+        }
+        // The movement: `HandleMovement`'s default tile arm (`:19849-19853`).
         self.kill_step(world);
     }
 
@@ -17061,17 +17202,31 @@ impl ProjectilePool {
                         // i17 slice; the Starfury star 9 + the Star Cannon
                         // star 955 (S1-P-i22) ride the fuller i22 arm (the
                         // tileCollide latches + the alpha ramps + the spin).
-                        // The other aiStyle-5 kinds (12/503/723-726/1037/
-                        // 1049/1133) have no rows yet — the arm stays
-                        // kind-gated so they keep the no-op fall-through.
+                        // W4-e3: the unrowed family kinds (503/723-726/1037/
+                        // 1049/1133) ride `ai_falling_star_family` — kind-
+                        // gated so they keep the no-op fall-through until
+                        // their rows land (the aiStyle-6 precedent); the
+                        // 723's manual fall-through gate reads the owner's
+                        // Top.Y (`:23847`, the pass's player snapshot).
                         5 => {
                             if self.slots[i].kind == FALLING_STAR {
                                 crate::special_arrows::falling_star_step(
                                     &mut self.slots[i],
                                     world,
+                                    rng,
+                                    dust,
+                                    dust_ctx,
                                 );
                             } else if matches!(self.slots[i].kind, STARFURY | STAR_CANNON_STAR) {
-                                self.slots[i].ai_falling_star(world);
+                                self.slots[i].ai_falling_star(world, rng, dust, dust_ctx);
+                            } else if matches!(
+                                self.slots[i].kind,
+                                503 | 723 | 724 | 725 | 726 | 1037 | 1049 | 1133
+                            ) {
+                                let owner_top = player.as_deref().map(|p| p.y);
+                                self.slots[i].ai_falling_star_family(
+                                    world, rng, dust, dust_ctx, owner_top,
+                                );
                             }
                         }
                         // `AI()`'s `else if (this.aiStyle == 10)`
