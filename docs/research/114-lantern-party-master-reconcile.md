@@ -1,11 +1,15 @@
 # 114 — Lantern-night / birthday-party MASTER reconcile (merger assist)
 
 Code-only reconciliation of the c39 umbrella lane against every sibling lane
-that touches the same slice. **No lane code is changed by this note** — it is
-the per-function KEEP/DROP verdict sheet for the merge, in the shape of
-research/70 (which it extends: 70 adjudicated f38/d120/f34/f41 among
-themselves; this note folds **c39** into that sheet and adjudicates the
-lantern-side 2-ways 70 never saw).
+that touches the same slice. The reconcile pass itself changed **no lane
+code** — it is the per-function KEEP/DROP verdict sheet for the merge, in
+the shape of research/70 (which it extends: 70 adjudicated f38/d120/f34/f41
+among themselves; this note folds **c39** into that sheet and adjudicates
+the lantern-side 2-ways 70 never saw). **The c39-side deviations are now
+EXECUTED on this branch** — see §7 (the per-item landing record); the
+sibling-side KEEP pieces (f40's `render/lantern_sky.rs` module, d55's gore
+table, f34's StationBuff route, d120's GetChat re-pin, f38's naming layer)
+still land at the merge, not here.
 
 Every C# claim below was re-read from the decompiled windows directly
 (≤100-line reads, citations inline); every port claim was read from the
@@ -370,4 +374,54 @@ invoked**. Evidence: C# windows re-read directly —
 `BirthdayParty.cs:60-144`/`:183-222`; `Legacy.json` misc[99]. Port claims
 read from `git diff a725acb0..<tip>` / `git show <tip>:<file>` for all
 seven lanes (tips in the header table; f40 confirmed still at `4e2deb3b`,
-no f40b). No working-tree code was modified by this note.
+no f40b). No working-tree code was modified by the reconcile pass itself.
+
+---
+
+## 7. EXECUTED — the c39-side landing record (this branch)
+
+The c39-side deviations below are EXECUTED on `task/W4-c39-lantern-birthday`
+(code-only, **WRITTEN NOT RUN** — no cargo/rustc/tests/rustfmt/graphify
+invoked; every witness is written, none executed). One commit per verdict.
+The sibling-side KEEP pieces are NOT landed here — they survive at the
+merge per §2 (f40's `render/lantern_sky.rs` module + shop row + world-load
+reset, d55's `npc_hit_effect_a.rs` gore table, f34's StationBuff route +
+single `192 =>` arm, d120's GetChat re-pin + superset ctx, f38's naming
+layer + broadcast order). Where a verdict says "f40/d17/d55/f34 canonical",
+the c39 duplicate is retired/fixed HERE and the canonical sibling form is
+re-derived in-place so this branch is self-consistent; the merge folds the
+sibling's own module wholesale.
+
+| # | Verdict (§) | Commit | What landed on c39 |
+| --- | --- | --- | --- |
+| 1 | triggers (§0.1/§0.2/§1a) | `b5ab90db` | the id-less `on_game_event_cleared_first_time(ev, was_down)` REPLACED by f40's id-table `on_game_event_cleared(ev, game_event_id, first)` with the FIXED case-4 label (Mourning Wood 325, NOT Pumpking; Pumpking 327 = id 5, the default arm — ARMS). All 20 call sites re-pointed at the C# ids (invasions 0/1/2/3 `Main.cs:64336-64351`; bosses 6/7/25/10/9/14/11/13/8/16/18/17/12/15/19; WoF keeps the outside-guard `was_down` capture + unconditional call). The five MISSING moon-boss death arms ADDED (Pumpking/MourningWood/Everscream/IceQueen/SantaNK1, `NPC.cs:79210-79238`, pumpkin/snow-moon gated) + their `World` flags + the `.wld` flags-block write/read + the port-save **v18** tail (5 bytes, the v17 fishron shape; 6 back-compat witnesses mechanically re-derived + a new round-trip witness). The gone-home literal → keyed `lang::misc(99)` in BOTH `check_night_party` and `update_time_party` (§0.4). Witnesses: the EoC-integration half DROPPED (f40's superset survives the union), the invasion tail RE-DERIVED (`w4_c39_the_invasion_clear_arms_the_next_lantern_night`) + new id-table (`w4_c39_the_event_clear_id_table_skips_only_the_three_moon_bosses`) and Pumpking-arms/MourningWood-skips (`w4_c39_pumpking_arms_and_mourning_wood_skips`) rigs. |
+| 2 | LanternSky colour + PartySky (§1b/§1e) | `4d184569` | the lantern body tint's double-depth-tier rgb apply (tier²·120/255) DROPPED for f40's canonical `LanternSky.cs:224` byte-truncation ladder × `_opacity` ONCE (`lantern_body_tint`/`lantern_glow_tint` helpers + a colour-fix witness); the glow → premultiplied-source `[a,a,a,0]` under AlphaBlend (the tile-flame convention; was white-with-alpha under Additive, which zeroed it). The two superseded lantern ladder/opacity witnesses DROPPED (f40 supersets). PartySky KEPT wholesale + the §1e follow-up-1 retrofit: `draw_balloons` → `draw_balloons_band` (the `PartySky.cs:185-198` num/num2 index walk, unscaled screenPosition + integer-halved centre + zoom-scaled `push_screen` + `>=` cull edges), threaded through `draw_sky`'s depth boundaries + `AmbiencePass`/`draw_front_trees` (the f40 `lantern_sky` shape) — the near balloons now draw in front of the near trees, not one flush batch; `balloon_band_indices` helper + a strata witness. The lantern STATE fns stay interim (f40's module is the surviving LanternSky at the merge). |
+| 3 | hats (§0.3/§1g) | `912f0ae2` | the baked `hp > 0` gate REMOVED from `uses_party_hat` (the C# property has NO life gate) + `n.hp > 0` added at the DRAW caller (`entities.rs`, the living UpdateNPC roster). `party_death_gores` + the `update_npcs` death-site gore block + the death-gore-rows witness DROPPED (d55's `npc_hit_effect_a.rs::party_hat_block` canonical: caller-gated `town_npc && hp <= 0 && uses_party_hat`, the strike-stream contract, the full normal/shimmer table — c39's block never fired on the dead clones and rode the wrong UpdateNpcs stream). New life-agnostic predicate witness. The hat DRAW layer + colour hash stay c39-unique. |
+| 4 | cake-side (§1h, f41c `f1f95be4`) | `a493e8f1` | the third copies DROPPED: `TileInteraction::CakeEat` + the kind-621 dispatch arm + cake-dispatch witness (`edit.rs`); the CakeEat app arm + `interaction_events` arm (`doors.rs`) + the TR_TOGGLE log arm (`app/mod.rs`); the `192 =>` SugarRush arm (`player.rs` — byte-identical third copy, two arms cannot compile); the FreeCake talk arm (`talk_to_npc` — d120's collapse shape with a worse always-world-drop gift). The `party_is_up`/`lanterns_up`/`downed_moonlord` live-feed hunks revert to base defaults (d120's superset ctx, research/70 drop 8). The full-tick sugar-rush witness KEPT in the union (tests the surviving f34 arm); the `free_cake` field + its writers stay. |
+| 5 | AI_166 (§1c, d17 canonical) | `bb19d79f` | the duplicate `projectile_ai166.rs` module RETIRED onto d17's in-file `ai_dove`/`dove_movement`/`dove_bounce` in `projectile.rs`: the consumed `Next(3)` blocked-move cut roll (`:17948`), the unconditional movement + direction sign write (`:17015` precedes the `:17027` `!active` return), the velocity-delta bounce gates, the inline alpha-kill (c39's `kill` `pub(crate)` bump `d3e63863` REVERTED). The `proj_frames` 851/855 => 4 rows ADDED (`Main.cs:8657`/`:8660`). c39's live entity-light feed KEPT as the graft beside d17's machine (`draw.rs`, the `:47568-47569` citation). Witnesses: d17's 2 re-derived in-file + c39's fade-kill and downward-Y bounce folded (re-pointed at `dove_bounce(last)`); the frame-latch witness dropped (d17 #1 superset). |
+| 6 | anchors (§4) | `7aff2857` | the 7 enumerated rows ADDED to `anchors.txt` (c39 added ZERO at reconcile): `event_skies.rs\|fn update_party`, `party_hat.rs\|fn hat_draw`, `world_events.rs\|fn update_time_party`, `world_events.rs\|tenth_anniversary`, `wind.rs\|pub lantern_night`, `projectile.rs\|fn ai_dove`, `app/frame/draw.rs\|RELEASE_LANTERN`. All 7 markers verified present; no existing row deleted; no row names a dropped c39 piece. |
+| 7 | luck (§1d, f40 placement) | `ce288dac` | the duplicate lantern-night luck write (the before-`update_with_grapple` placement) RETIRED onto f40's canonical beside-auras/zones snapshot (ONE write, `Player.cs:29146-29149`). The underground-isolation luck-live witness stays unchanged. |
+
+**Witness union after the exec** (all WRITTEN NOT RUN): the c39 survivors
+are the invasion-clear tail, the id-table + Pumpking/MourningWood rigs, the
+lantern colour-fix + balloon band-strata + 3 balloon witnesses, the
+life-agnostic hat predicate + hash/columns/draw, the sugar-rush full-tick,
+the lantern fade-kill + downward-Y bounce (folded into d17's module), the
+luck-live, the 4 wind/rain, the persistence-gate, the anniversary-roll, the
+prune + RemoveAt-stride (2), the v18 moon-flag round-trip. The DROPPED c39
+witnesses (lantern ladder/opacity, frame-latch, death-gore-rows,
+cake-dispatch, the EoC-integration half) are superseded by the sibling
+supersets per §3. The sibling witnesses (f40's trigger-table/EoC/3
+lantern-sky/luck/shop, d17's 2 machine, d55's 7 gore, research/70's
+f38/d120/f34/f41 set) land with their modules at the merge.
+
+**Remaining merge scope** (NOT executed here — the sibling KEEP pieces):
+f40's `render/lantern_sky.rs` module wholesale (the lantern STATE fns in
+`event_skies.rs` are interim until it folds) + the world-seed RNG graft +
+the shop wish row + the world-load reset; d55's `hit_effect` strike-path
+wire (its lane's declared follow-up); f34's StationBuff dispatch + app arm
++ the single `192 =>` arm; d120's GetChat re-pin + superset ctx + the
+FreeCake gift chain (research/70 §3's recipe); f38's naming layer +
+broadcast-before-achievement order. The PartySky §1e follow-up-2 (the
+world-load reset seam extended to the party sky) rides f40's reset at the
+merge.
