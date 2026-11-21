@@ -1038,6 +1038,39 @@ impl App {
                             }
                             h
                         },
+                        herb_weather: {
+                            // W4-g80: the 83 herb-maturity sheet swap
+                            // (`TileDrawing.cs:1450-1455` → `WorldGen.
+                            // IsAlchemyPlantHarvestable`, `WorldGen.cs:
+                            // 66148-66175`) reads weather the light key does
+                            // not carry: cloudAlpha's > 0 gate, the deathweed
+                            // moon gate and the fireblossom time gate. Gated
+                            // on an herb 83 in the view rect (the vine-grid
+                            // key's convention) — herb-free views keep the
+                            // pre-wiring cache behaviour bit-for-bit.
+                            let vh = screen * 0.5 / *zoom;
+                            let vx0 = ((camera.x - vh.x) / TILE_PX).floor() as i32 - 1;
+                            let vx1 = ((camera.x + vh.x) / TILE_PX).ceil() as i32 + 1;
+                            let vy0 = ((camera.y - vh.y) / TILE_PX).floor() as i32 - 1;
+                            let vy1 = ((camera.y + vh.y) / TILE_PX).ceil() as i32 + 1;
+                            let any_herb = (vy0..=vy1).any(|ty| {
+                                (vx0..=vx1).any(|tx| {
+                                    world
+                                        .tile(tx, ty)
+                                        .is_some_and(|t| t.active() && t.kind == 83)
+                                })
+                            });
+                            if any_herb {
+                                // The fireblossom gate reads `world.time` (the
+                                // harvest predicate's own input), not the
+                                // pinned render clock.
+                                (rain.visual_alpha() > 0.0) as u32
+                                    | (((world.blood_moon || world.moon_phase == 0) as u32) << 1)
+                                    | (((world.time > 40500.0) as u32) << 2)
+                            } else {
+                                0
+                            }
+                        },
                         world_revision: world.revision,
                     };
                     let reuse_world = !crate::env::no_cache() && *world_key == Some(key);
@@ -1180,6 +1213,13 @@ impl App {
                             &self.wiring,
                             crate::world_events::party_is_up(&self.world_events),
                             crate::env::show_invisible(),
+                            // W4-g80: `Main.cloudAlpha` for the 83 herb-maturity
+                            // sheet swap's waterleaf gate
+                            // (`WorldGen.IsAlchemyPlantHarvestable`,
+                            // `WorldGen.cs:66148-66175`) — the same live value
+                            // the smart-cursor harvest arm reads
+                            // (`world_sim/smart_cursor.rs`).
+                            rain.visual_alpha(),
                             // S1-G-1f: the wired tile animator's rows/counters
                             // (`Main.tileFrame[kind]`, `TileDrawing.cs:4533`).
                             &self.tile_anim,

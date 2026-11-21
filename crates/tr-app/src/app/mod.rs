@@ -1126,6 +1126,14 @@ pub(crate) struct WorldFrameKey {
     /// accumulators: the networked entities drawn inside the cached world
     /// range. Zero in single-player (the offsets are zero and no peers).
     pub(crate) net_key: u32,
+    /// W4-g80: the 83 herb-maturity sheet swap's weather inputs that the
+    /// light key does not already carry — `Main.cloudAlpha`'s zero/non-zero
+    /// gate and the deathweed moon gate (`blood_moon || moonPhase == 0`),
+    /// plus the fireblossom `time > 40500` gate. `day_time`/`raining`/`time`
+    /// already ride `light_params`. Zero unless an herb 83 is active in the
+    /// view rect, so herb-free worlds keep the pre-wiring cache behaviour
+    /// bit-for-bit (the vine-grid key's convention).
+    pub(crate) herb_weather: u32,
     pub(crate) world_revision: u64,
 }
 
@@ -1160,6 +1168,7 @@ mod frame_key {
             waterfall: 0,
             tile_anim: 0,
             net_key: 0,
+            herb_weather: 0,
             world_revision: 0,
         };
         assert_ne!(key(1.2), key(1.0), "blind's GlobalBrightness drop must change the key");
@@ -1192,6 +1201,7 @@ mod frame_key {
             waterfall: 0,
             tile_anim,
             net_key: 0,
+            herb_weather: 0,
             world_revision: 0,
         };
         let mut a = tr_core::drawdata_anim::TileAnimator::new();
@@ -1206,6 +1216,42 @@ mod frame_key {
         let before = a.anim_key();
         a.weather_vane_bobframe += 1;
         assert_ne!(before, a.anim_key(), "the weather-vane bob rides the key");
+    }
+
+    /// W4-g80 key-coverage witness: the 83 herb-maturity sheet swap reads
+    /// weather the light key does not carry (`cloudAlpha > 0`, the deathweed
+    /// moon gate, the fireblossom `time > 40500` gate), so two frames that
+    /// differ only in those gates must not share a cached world range while
+    /// an herb 83 is in view. The key input is the three-gate bitmask.
+    #[test]
+    fn herb_weather_gates_change_the_frame_key() {
+        let key = |herb_weather: u32| WorldFrameKey {
+            cam_tile: [0, 0],
+            zoom: 0,
+            screen: [0, 0],
+            sky_light: [0, 0, 0],
+            hell_glow: 0,
+            light_params: 0,
+            light_mode: 0,
+            anim: 0,
+            player_key: 0,
+            npc_key: 0,
+            items_key: 0,
+            hand_key: 0,
+            light_generation: 0,
+            brightness: 0,
+            waterfall: 0,
+            tile_anim: 0,
+            net_key: 0,
+            herb_weather,
+            world_revision: 0,
+        };
+        // bit 0 = cloudAlpha > 0 (waterleaf), bit 1 = the deathweed moon
+        // gate, bit 2 = time > 40500 (fireblossom).
+        for gate in [1u32, 2, 4] {
+            assert_ne!(key(0), key(gate), "gate {gate} must change the key");
+        }
+        assert_eq!(key(5), key(5), "unchanged gates must not");
     }
 }
 

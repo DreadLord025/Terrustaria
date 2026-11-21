@@ -315,10 +315,15 @@ pub(crate) fn draw_tiles(
     // S1-F-9 slice B: the `GetTileDrawData` engine-driven case arm's extra
     // inputs — `PressurePlateHelper.PressurePlatesPressed` (case 428),
     // `BirthdayParty.PartyIsUp` (case 455) and
-    // `TileDrawing._shouldShowInvisibleBlocks` (case 541).
+    // `TileDrawing._shouldShowInvisibleBlocks` (case 541). W4-g80:
+    // `rain_cloud_alpha` (`Main.cloudAlpha`) feeds the 83 herb-maturity sheet
+    // swap's waterleaf gate (`WorldGen.IsAlchemyPlantHarvestable`,
+    // `TileDrawing.cs:1450-1455`); the probe's day/night/moon inputs read
+    // `world.*` internally.
     wiring: &tr_core::wiring::Wiring,
     party_is_up: bool,
     show_invisible_blocks: bool,
+    rain_cloud_alpha: f32,
     // S1-G-1f: the wired tile animator (`Main.tileFrame`/`tileFrameCounter`,
     // `Main.cs:1596-1597`) — `GetTileDrawData`'s `Main.tileFrame[typeCache]`
     // row (`TileDrawing.cs:4533`), slice B's per-type counter and the
@@ -680,6 +685,17 @@ pub(crate) fn draw_tiles(
                     // The world-probing frame corrections C# applies in
                     // `GetTileDrawData` (palm biome row 323, dye plants 227)
                     // and `DrawSingleTile` (cactus 80, cog 272).
+                    // The 83 herb-maturity probe reads `world.day_time`/
+                    // `world.time`/`world.blood_moon`/`world.moon_phase`
+                    // internally (`IsAlchemyPlantHarvestable`); the WeatherCtx
+                    // carries the live rain/clouds. `Main.remixWorld` has no
+                    // port state (the M5-SEED-2 arm, same as the smart-cursor
+                    // harvest arm, `world_sim/smart_cursor.rs`).
+                    let herb_wx = tr_core::growth::WeatherCtx {
+                        raining: params.raining,
+                        cloud_alpha: rain_cloud_alpha,
+                        remix_world: false,
+                    };
                     dd.apply_world_corrections(
                         world,
                         tile.kind,
@@ -688,6 +704,7 @@ pub(crate) fn draw_tiles(
                         tile.frame_x,
                         tile.frame_y,
                         anim_row,
+                        &herb_wx,
                     );
                     // S1-F-9 slice B: the engine-driven special-tile cases
                     // (wind, the player, the party, pressed plates, echo
@@ -759,7 +776,10 @@ pub(crate) fn draw_tiles(
                         atlas,
                         is_tree,
                         trunk_offset,
-                        tile.kind,
+                        // `case 83`'s `GetTileDrawTexture` re-pick
+                        // (TileDrawing.cs:1149-1151 → :1450-1455): the
+                        // harvestable herb draws the mature sheet 84.
+                        dd.sheet_kind_override.unwrap_or(tile.kind),
                         tile.frame_x,
                         tile.frame_y,
                         &dd,
@@ -2183,7 +2203,7 @@ mod tests {
             }
             let mut dd = tr_core::drawdata::TileDrawData::default();
             let tile = *w.tile(20, 19).unwrap();
-            dd.apply_world_corrections(&w, 80, 20, 19, 0, 0, 0);
+            dd.apply_world_corrections(&w, 80, 20, 19, 0, 0, 0, &Default::default());
             let uv = flat_src_uv(&dd, &tile, tf, Some(&atlas), &lookups);
             (dd.src_y_shift, uv[1])
         };
@@ -2256,6 +2276,82 @@ mod tests {
             },
         );
         assert!(bottom.is_some(), "sunflower bottom row resolves");
+    }
+
+    /// W4-g80 DOC-SWEEP: the 83 herb-maturity sheet swap reaches the pixels.
+    /// `DrawSingleTile` case 83 (`TileDrawing.cs:1149-1151`) re-picks the draw
+    /// texture through `GetTileDrawTexture` (`:1450-1455`): a harvestable
+    /// herb samples `Tiles_84` at the SAME frame, an unharvestable one keeps
+    /// `Tiles_83`. The renderer consumes `dd.sheet_kind_override` at the
+    /// `resolve_tile_frame` call.
+    #[test]
+    fn w4_g80_the_harvestable_herb_draws_the_mature_sheet() {
+        let atlas = sheet_atlas(&["Tiles_83", "Tiles_84"], 126, 148);
+        let mut lookups = assets::Lookups::build(
+            &atlas,
+            [
+                (83_u16, "Tiles_83".to_string()),
+                (84, "Tiles_84".to_string()),
+            ]
+            .into_iter(),
+            std::iter::empty(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let mut w = World::new("t".into(), 40, 40);
+        w.day_time = true; // daybloom (style 0) harvests by day
+        let dry = tr_core::growth::WeatherCtx::default();
+        let mut dd = tr_core::drawdata::draw_data(83, 10, 20, 0, 0, 0, false);
+        dd.apply_world_corrections(&w, 83, 10, 20, 0, 0, 0, &dry);
+        assert_eq!(dd.sheet_kind_override, Some(84));
+        let mature = resolve_tile_frame(
+            &mut lookups,
+            Some(&atlas),
+            false,
+            0,
+            dd.sheet_kind_override.unwrap_or(83),
+            0,
+            0,
+            &dd,
+        )
+        .expect("the mature herb frame resolves");
+        let own = lookups.frame_tex(&atlas, 83, 0, 0).expect("Tiles_83 (0,0)");
+        let sheet84 = lookups.frame_tex(&atlas, 84, 0, 0).expect("Tiles_84 (0,0)");
+        assert_eq!(mature.uv, sheet84.uv, "the swap samples Tiles_84");
+        assert_ne!(mature.uv, own.uv, "not the herb's own sheet");
+        // Night: no swap — the same call shape keeps Tiles_83.
+        w.day_time = false;
+        let mut dd = tr_core::drawdata::draw_data(83, 10, 20, 0, 0, 0, false);
+        dd.apply_world_corrections(&w, 83, 10, 20, 0, 0, 0, &dry);
+        assert_eq!(dd.sheet_kind_override, None);
+        let green = resolve_tile_frame(
+            &mut lookups,
+            Some(&atlas),
+            false,
+            0,
+            dd.sheet_kind_override.unwrap_or(83),
+            0,
+            0,
+            &dd,
+        )
+        .expect("the green herb frame resolves");
+        assert_eq!(green.uv, own.uv, "the unharvestable herb keeps its sheet");
+        // The dispatch witness: the production resolve call consumes the
+        // override (a dropped unwrap_or would silently keep Tiles_83).
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert!(
+            body.contains("dd.sheet_kind_override.unwrap_or(tile.kind)"),
+            "the resolve call must consume the case-83 sheet override"
+        );
+        assert!(
+            body.contains("&herb_wx,"),
+            "apply_world_corrections must receive the live weather"
+        );
     }
 
     // fix/vines-destroy-walls: the wall pass draws BEHIND vine cells. C#
