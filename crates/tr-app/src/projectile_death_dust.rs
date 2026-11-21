@@ -3749,6 +3749,219 @@ fn death_bursts(
                 }
             }
         }
+        // `:75911-75939` — the 283 VenomBullet: THREE 10-dust-171 loops
+        // alpha 100 scale Next(1,10)×0.1 noGravity fadeIn 1.5; loop 1
+        // vel×0.75, loop 2 vel×0.75 += oldVel×0.5×NextFloat, loop 3 vel×1.5
+        // += oldVel×1.5×NextFloat. The debuff-spread Damage is
+        // `venom_burst_spread`'s (the i18 hook); the dust here is the
+        // reclaimed visual layer (the module's dust-skip).
+        283 => {
+            for loop_idx in 0..3 {
+                for _ in 0..10 {
+                    let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 171, 0.0, 0.0, 100, Color::default(), 1.0);
+                    let d = dust.slot_mut(idx);
+                    d.scale = rng.next_range(1, 10) as f32 * 0.1;
+                    d.no_gravity = true;
+                    d.fade_in = 1.5;
+                    if loop_idx == 2 {
+                        d.velocity *= 1.5;
+                        d.velocity += s.old_vel * 1.5 * rng.next_float();
+                    } else {
+                        d.velocity *= 0.75;
+                        if loop_idx == 1 {
+                            d.velocity += s.old_vel * 0.5 * rng.next_float();
+                        }
+                    }
+                }
+            }
+        }
+        // `:75975-75999` — the 284 PartyBullet: 10× confetti dust
+        // Next(139,143) speed −vel×0.3 scale 1.2 + the X/Y nudge ladder +
+        // scale×=1+Next(−30,31)×0.01; 5 gore rows Next(276,283) + the
+        // ladder (scale×=1+Next(−20,21)×0.01). The whole arm was a
+        // documented skip (no state) — reclaimed here.
+        284 => {
+            for _ in 0..10 {
+                let dust_type = rng.next_range(139, 143);
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, dust_type, -s.vel.x * 0.3, -s.vel.y * 0.3, 0, Color::default(), 1.2);
+                let d = dust.slot_mut(idx);
+                d.velocity.x += rng.next_range(-50, 51) as f32 * 0.01;
+                d.velocity.y += rng.next_range(-50, 51) as f32 * 0.01;
+                d.velocity.x *= 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
+                d.velocity.y *= 1.0 + rng.next_range(-50, 51) as f32 * 0.01;
+                d.velocity.x += rng.next_range(-50, 51) as f32 * 0.05;
+                d.velocity.y += rng.next_range(-50, 51) as f32 * 0.05;
+                d.scale *= 1.0 + rng.next_range(-30, 31) as f32 * 0.01;
+            }
+            for _ in 0..5 {
+                let _ = rng.next_range(276, 283);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+                let _ = rng.next_range(-50, 51);
+                let _ = rng.next_range(-50, 51);
+                let _ = rng.next_range(-50, 51);
+                let _ = rng.next_range(-50, 51);
+                let _ = rng.next_range(-20, 21);
+                let _ = rng.next_range(-50, 51);
+                let _ = rng.next_range(-50, 51);
+            }
+        }
+        // `:76000-76018` — the 286 ExplodingBullet: 7× dust-31 alpha 100
+        // scale 1.5; 3 PAIRS dust-6 alpha 100 (scale 2.5 noGravity vel×3,
+        // then scale 1.5 vel×2 GRAVITY); ONE gore at pos−(10,10)
+        // Next(61,64) + kicks + the Next(−10,11)×0.05 nudges. The AoE
+        // Damage is `exploding_bullet_burst`'s; the dust reclaimed.
+        286 => {
+            for _ in 0..7 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+            }
+            for _ in 0..3 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 2.0;
+            }
+            let _ = rng.next_range(61, 64);
+            let _ = rng.next_range(10, 31);
+            let _ = rng.next_range(-20, 21);
+            let _ = rng.next_range(-10, 11);
+            let _ = rng.next_range(-10, 11);
+        }
+        // `:76308-76330` — the 41 Hellfire: 10× dust-31 alpha 100 scale
+        // 1.5; 5 PAIRS dust-6 alpha 100 (scale 2.5 noGravity vel×3, then
+        // scale 1.5 vel×2 GRAVITY); 2 gores Next(61,64) + kicks + the
+        // Next(−10,11)×0.1 nudges. The resize + Damage is
+        // `hellfire_kill_resize`'s; the dust/gore reclaimed (the module's
+        // documented skip).
+        41 => {
+            for _ in 0..10 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+            }
+            for _ in 0..5 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 2.0;
+            }
+            for _ in 0..2 {
+                let _ = rng.next_range(61, 64);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+                let _ = rng.next_range(-10, 11);
+                let _ = rng.next_range(-10, 11);
+            }
+        }
+        // `:75684-75712` — the 955: the 12 sparkle ring WITHOUT the
+        // damage<100 extra burst (7 dust-58 + 8 CornflowerBlue/HotPink +
+        // 4 Gold dust-278 + the screen-gated 7 gores).
+        955 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let anniversary = world.seeds.contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY);
+            let mut ring_color = Color::new(100, 149, 237, 255);
+            if anniversary {
+                ring_color = Color::new(255, 105, 180, 255);
+                ring_color.a /= 2;
+            }
+            for _ in 0..7 {
+                dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 58, s.vel.x * 0.1, s.vel.y * 0.1, 150, Color::default(), 0.8);
+            }
+            let tau = std::f32::consts::PI * 2.0;
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let angle = num * tau + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * (4.0 + rng.next_float() * 4.0);
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 278, Some(vel), 150, ring_color, 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.125;
+            }
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let angle = num * tau + rng.next_float() * 0.5;
+                let vel = rotated_by(Vec2::Y, angle) * (2.0 + rng.next_float() * 3.0);
+                let idx = dust.new_dust_perfect(rng, ctx, world, center, 278, Some(vel), 150, Color::new(255, 215, 0, 255), 1.0);
+                dust.slot_mut(idx).no_gravity = true;
+                num += 0.25;
+            }
+            for _ in 0..7 {
+                let _ = rng.next_float();
+                let _ = rng.next_from_slice(&[16, 17, 17, 17, 17, 17, 17, 17]);
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:71052-71067` — the 1116: num37 = Remap(alpha,0,255,1,0); 4×
+        // dust-306 Perfect at Center+Circular(10,10)×scale vel Zero, scale
+        // 1.5+NextFloat×0.25 noGravity colour (50,170,255) vel=baseVel×0.4
+        // scale×=num37; then a CloneDust (colour White, scale×0.3).
+        1116 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let fade = remap_f32(s.alpha as f32, 0.0, 255.0, 1.0, 0.0);
+            for _ in 0..4 {
+                let pos = center + next_vector2_circular(rng, 10.0, 10.0) * s.scale;
+                let idx = dust.new_dust_perfect(rng, ctx, world, pos, 306, Some(Vec2::ZERO), 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale = 1.5 + rng.next_float() * 0.25;
+                d.no_gravity = true;
+                d.color = Color::new(50, 170, 255, 255);
+                d.velocity = s.vel * 0.4;
+                d.scale *= fade;
+                let clone = dust.clone_dust(rng, ctx, world, idx);
+                let c = dust.slot_mut(clone);
+                c.color = Color::WHITE;
+                c.scale *= 0.3;
+            }
+        }
+        // `:76944-76963` — the 246 molotov: 10× dust-31 alpha 100 scale
+        // 1.5 vel×0.9; 5 PAIRS dust-6 alpha 100 (scale 2.5 noGravity vel×3,
+        // then scale 1.5 vel×2 GRAVITY); ONE gore Next(61,64) + kicks + the
+        // Next(−1,2) X/Y nudges. The 150-resize + Damage + the owner-gated
+        // 249 spawn burst (`:76973-76985`) stay unported / the spawn lane's.
+        246 => {
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 0.9;
+            }
+            for _ in 0..5 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 3.0;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 2.0;
+            }
+            let _ = rng.next_range(61, 64);
+            let _ = rng.next_range(10, 31);
+            let _ = rng.next_range(-20, 21);
+            let _ = rng.next_range(-1, 2);
+            let _ = rng.next_range(-1, 2);
+        }
+        // `:76987-77006` — the 249 greek fire: 7× dust-31 alpha 100 scale
+        // 1.5 vel×0.8; 2 PAIRS dust-6 alpha 100 (scale 2.5 noGravity
+        // vel×2.5, then scale 1.5 vel×1.5 GRAVITY); ONE gore Next(61,64) +
+        // kicks + the Next(−1,2) nudges. The 100-resize + Damage unported.
+        249 => {
+            for _ in 0..7 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 0.8;
+            }
+            for _ in 0..2 {
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 2.5;
+                let idx = dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 6, 0.0, 0.0, 100, Color::default(), 1.5);
+                dust.slot_mut(idx).velocity *= 1.5;
+            }
+            let _ = rng.next_range(61, 64);
+            let _ = rng.next_range(10, 31);
+            let _ = rng.next_range(-20, 21);
+            let _ = rng.next_range(-1, 2);
+            let _ = rng.next_range(-1, 2);
+        }
         _ => {}
     }
 }
@@ -6494,5 +6707,77 @@ mod tests {
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 29);
         assert_eq!(active.iter().filter(|d| d.dust_type == 57).count(), 10);
+    }
+
+    /// The 283 venom: 30 dust-171 (three 10-loops), all noGravity fadeIn
+    /// 1.5. The 284 party: 10 confetti dust-139..142. The 286 exploding:
+    /// 7 dust-31 + 6 dust-6 = 13.
+    #[test]
+    fn w4_g65_the_special_bullet_dust() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(283)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 30);
+        assert!(active.iter().all(|d| d.dust_type == 171 && d.no_gravity && d.fade_in == 1.5));
+        let mut dust = DustPool::new();
+        drain(&[snap(284)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| (139..=142).contains(&d.dust_type)));
+        let mut dust = DustPool::new();
+        drain(&[snap(286)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 13);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 7);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 6).count(), 6);
+    }
+
+    /// The 41 hellfire: 10 dust-31 + 10 dust-6 = 20. The 955: 19 dust
+    /// (7 + 12 dust-278, no extra burst).
+    #[test]
+    fn w4_g65_the_41_955_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(41)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 20);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 10);
+        let mut dust = DustPool::new();
+        drain(&[snap(955)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 19);
+        assert_eq!(active.iter().filter(|d| d.dust_type == 278).count(), 12);
+    }
+
+    /// The 1116: 4 dust-306 + 4 clones = 8; the clones White scale×0.3.
+    #[test]
+    fn w4_g65_the_1116_burst() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(1116)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 8);
+        assert!(active.iter().all(|d| d.dust_type == 306));
+        assert_eq!(active.iter().filter(|d| d.color == Color::WHITE).count(), 4);
+    }
+
+    /// The 246/249: 10 + 10 = 20 / 7 + 4 = 11 dust; the gore census rides
+    /// the stream (determinism).
+    #[test]
+    fn w4_g65_the_246_249_bursts() {
+        let w = world();
+        for (kind, count, thirtyones) in [(246u16, 20, 10), (249, 11, 7)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind}");
+            assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), thirtyones);
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(rng, rng2);
+        }
     }
 }

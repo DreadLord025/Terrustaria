@@ -39875,6 +39875,36 @@ deferred. Witnesses: the 1023/312 counts + determinism, the 936 40-count,
 the 1078 dry 58/wet 6 + determinism, the 80 gate, the 9/503/12 counts +
 the 12 damage gate — WRITTEN NOT RUN.
 
+### Batch 27 (8 kinds, the reclaimed special-bullet/arrow + molotov dust)
+
+283 (the VenomBullet: THREE 10-dust-171 loops alpha 100 scale Next(1,10)×
+0.1 noGravity fadeIn 1.5 — loop 1 vel×0.75, loop 2 += oldVel×0.5×
+NextFloat, loop 3 vel×1.5 += oldVel×1.5×NextFloat; the debuff-spread
+Damage is `venom_burst_spread`'s, the dust reclaimed from the i18
+module's documented skip), 284 (the PartyBullet confetti: 10×
+Next(139,143) speed −vel×0.3 scale 1.2 + the nudge ladder + 5 gore rows
+Next(276,283) + the ladder; the whole arm was a no-state documented skip
+— reclaimed), 286 (the ExplodingBullet: 7× dust-31 + 3 pairs dust-6 +
+ONE gore at pos−(10,10) with the Next(−10,11)×0.05 nudges; the AoE Damage
+is `exploding_bullet_burst`'s), 41 (the Hellfire: 10× dust-31 + 5 pairs
+dust-6 + 2 gores with the Next(−10,11)×0.1 nudges; the resize + Damage is
+`hellfire_kill_resize`'s, the dust/gore reclaimed from the i17 module's
+skip), 955 (the 12 sparkle ring WITHOUT the damage<100 extra burst),
+1116 (4× dust-306 Perfect at Center+Circular(10,10)×scale scale 1.5+
+NextFloat×0.25 noGravity (50,170,255) vel=baseVel×0.4 scale×=Remap(alpha,
+0,255,1,0) + a CloneDust White scale×0.3 — the first `clone_dust` use),
+246/249 (the molotov/greek-fire: 10/7× dust-31 vel×0.9/0.8 + 5/2 pairs
+dust-6 + ONE gore with the Next(−1,2) nudges; the 150/100-resize + Damage
++ the 246's owner-gated 249 spawn burst stay unported / the spawn lane's).
+The 337/731/76/77/78/55/719/51/267 were found ALREADY landed — the
+duplicate arms removed before commit. The 89/91/92 (state-bearing
+split/star draws inline in the i17/i18 hooks), 183 (the beenade gore+bee
+census already in `beenade_death`), 655 (NPC-spawn draws), 1084/949 (the
+TorchID.Dust + Main.DiscoR/G/B App-frame colour) stay DEFERRED.
+Witnesses: the 283 30-count, the 284 confetti, the 286 13-count, the 41
+20-count, the 955 19-count, the 1116 8-count + clones, the 246/249
+counts + determinism — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,
