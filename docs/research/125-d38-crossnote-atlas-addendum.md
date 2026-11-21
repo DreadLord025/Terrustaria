@@ -283,3 +283,61 @@ hook precedes the body match); d38's arms stay as the parity references.
 The 8-IN rotation whitelist (s9/crossnote) is unaffected — none of the
 7 stand-in kinds writes rotation in either form.
 
+## 8. FINAL: the bestiary UNLOCK census (kill-counts / rarity, per kind)
+
+Mechanical census (`tools/_d38_final_unlock.py`, RUN, output committed):
+the C# chain `CommonEnemyUICollectionInfoProvider.GetKillCountNeeded`
+(`:21-34`) = `KillsToBanner[BannerToItem(NPCtoBanner(BannerID()))]`
+(`BannerSystem.cs:341/:403`, `ItemID.cs:1303-1304`), and the port's
+`kills_needed_for` (`tr-core/bestiary.rs:979`) rides the same three
+tables. **All 35 chains AGREE** (banner id, item id, full kill count,
+tier-2/3 thresholds — zero disagreements):
+
+- **29 CommonEnemy kinds**: full 50 kills (tiers 1/10/25/50), EXCEPT
+  **290 Paladin: full 25** (banner 149 → item 2958 → `KillsToBanner`
+  25; tiers 1/5/12/25) — the one non-default ladder in the band, and
+  the port reproduces it exactly.
+- **6 critters** (297/298/299/300/303/337 — `CountsAsACritter`,
+  `NPC.cs:6887-6897`: lifeMax 5 + damage 0): vanilla uses
+  `CritterUICollectionInfoProvider` (`:14-20`) — **one SIGHTING jumps
+  straight to tier 4**, no kill ladder at all. The port's
+  `unlock_state` (`bestiary.rs:2529`) applies the kill ladder to ALL
+  entries: **GAP-1, PRE-EXISTING base-wide** (the base roster already
+  carries the Goldfish 55 critter entry, `bestiary.rs:657-664`, on the
+  same kill ladder; d38's b4/b5/b7 added six more critter rows that
+  inherit the gap — d38 did not introduce it). A caught bunny unlocks
+  its card in vanilla; in the port it needs 50 kills. The sightings
+  tracker EXISTS (`tr-core/bestiary.rs:143-173`, persisted) but no
+  production writer feeds it and `unlock_state` never reads it.
+  Wiring-round item: a critter branch in `unlock_state` (sight → tier 4)
+  + the `NPCWasNearPlayerTracker.ScanWorldForFinds` port (`:102-130`).
+- **5 rare spawns** (287 BoneLee rarity 1, 290 Paladin rarity 2,
+  291/292/293 rarity 1 — the SetDefaults `rarity` rows): vanilla adds
+  `RareSpawnBestiaryInfoElement` (`BestiaryEntry.cs:32-35`) + the
+  portrait rarity stars (`NpcBestiaryRarityStars`). The port's
+  `BestiaryEntryDef` has NO rarity field and the UI draws no stars:
+  **GAP-2, display-only** (unlock tiers unaffected — rarity is not an
+  unlock condition in either lane). Wiring-round item: a rarity field
+  + the star row (the `NPCPortraitInfoElement` port).
+- **328 PumpkingBlade**: vanilla `Hide = true`
+  (`NPCID.cs` draw-offset row, ported verbatim at
+  `bestiary_draw_offsets.rs:384`) → the populator's `GetExclusions`
+  (`BestiaryDatabaseNPCsPopulator.cs:870-886`) gives it **NO entry**;
+  its kill credit stays "PumpkingBlade" (`ContentSamples` name row, no
+  fold) but no card exists. The port gave it an ENTRIES row + a
+  portrait slot (b6/crossnote B): **GAP-3, one extra card** vs vanilla.
+  The kill credit itself is faithful (the port registers
+  "PumpkingBlade" kills, vanilla does too — they just never display).
+  Merger note: the 216-slot pin and the 323 union pin count this row;
+  dropping it is a 1-row ENTRIES/slot/vec edit + the witness re-pin,
+  deferred to the wiring round to keep this phase's pins stable.
+- **quick_unlock**: zero of the 35 (no boss, no
+  `ShouldBeCountedAsBossForBestiary` member — the set is
+  {517,422,507,493,13,664}, `NPCID.cs:10481`); all 35 rows
+  `quick_unlock: false` — agrees with `BestiaryEntry.Enemy`'s
+  non-boss branch (`:44`).
+- **The kill-credit path** (`world_sim/npcs.rs:5283-5291`) registers
+  `entry.credit_id` per death + broadcasts the count — the
+  `NPCKillsTracker.RegisterKill` shape (`:23-33`), faithful for all 35
+  (the 328 credit included, per the vanilla name-row census above).
+

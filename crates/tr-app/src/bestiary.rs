@@ -2822,4 +2822,77 @@ mod tests {
             UnlockState::CanShowDropsWithDropRates
         );
     }
+
+    /// W4-d38 FINAL (research/125 §8) — the 35 kinds' unlock ladders match
+    /// the C# banner chain: `GetKillCountNeeded`
+    /// (`CommonEnemyUICollectionInfoProvider.cs:21-34`) =
+    /// `KillsToBanner[BannerToItem(NPCtoBanner(BannerID()))]`
+    /// (`BannerSystem.cs:341/:403`, `ItemID.cs:1303-1304`). Mechanically
+    /// re-derived by `tools/_d38_final_unlock.py` (all 35 chains agree):
+    /// 290 Paladin is the ONE non-default ladder (banner 149 → item 2958 →
+    /// 25 kills, tiers 1/5/12/25); every other kind rides the default 50
+    /// (tiers 1/10/25/50). The 6 critters' COMPUTED ladder is pinned here
+    /// too — their vanilla provider is sight-based
+    /// (`CritterUICollectionInfoProvider.cs:14-20`, GAP-1 in research/125
+    /// §8, a pre-existing base-wide gap the wiring round owns), so this
+    /// witness pins the port's CURRENT behavior, not the vanilla tier.
+    #[test]
+    fn w4_d38_final_the_unlock_ladders_match_the_banner_chain() {
+        use crate::npc::NpcKind as K;
+        let d38 = [
+            K::RaggedCaster, K::RaggedCasterOpenCoat, K::Necromancer,
+            K::NecromancerArmored, K::DiabolistRed, K::DiabolistWhite,
+            K::BoneLee, K::GiantCursedSkull, K::Paladin, K::SkeletonSniper,
+            K::TacticalSkeleton, K::SkeletonCommando, K::AngryBonesBig,
+            K::AngryBonesBigMuscle, K::AngryBonesBigHelmet, K::BirdBlue,
+            K::BirdRed, K::Squirrel, K::Mouse, K::Raven, K::SlimeMasked,
+            K::BunnySlimed, K::HoppinJack, K::Ghost, K::DemonEyeOwl,
+            K::DemonEyeSpaceship, K::SkeletonTopHat, K::SkeletonAstonaut,
+            K::SkeletonAlien, K::PumpkingBlade, K::SlimeRibbonWhite,
+            K::SlimeRibbonYellow, K::SlimeRibbonGreen, K::SlimeRibbonRed,
+            K::BunnyXmas,
+        ];
+        assert_eq!(d38.len(), 35);
+        for kind in d38 {
+            let e = entry_for_npc(kind, SlimeVariant::Blue);
+            // protocol == vanilla (research/125 §9, the 108 corridor).
+            assert_eq!(e.net_id, kind.cs_id() as i32, "{kind:?}");
+            // No boss / ShouldBeCountedAsBossForBestiary member in the band
+            // (`NPCID.cs:10481` = {517,422,507,493,13,664}).
+            assert!(!e.quick_unlock, "{kind:?}");
+            let full = tr_core::bestiary::kills_needed_for(e.net_id);
+            let want = if kind == K::Paladin { 25 } else { 50 };
+            assert_eq!(full, want, "{kind:?} full kill count");
+            // The tier ladder at the exact thresholds (the C#'s integer
+            // half/fifth, `CommonEnemyUICollectionInfoProvider.cs:53-54`).
+            let mut kills = KillTracker::new();
+            assert_eq!(unlock_state(e, &kills), UnlockState::NotKnownAtAll);
+            kills.set_kill_count_directly(e.credit_id, 1);
+            assert_eq!(unlock_state(e, &kills), UnlockState::CanShowPortraitOnly);
+            kills.set_kill_count_directly(e.credit_id, full / 5);
+            assert_eq!(unlock_state(e, &kills), UnlockState::CanShowStats);
+            kills.set_kill_count_directly(e.credit_id, full / 2);
+            assert_eq!(unlock_state(e, &kills), UnlockState::CanShowDropsWithoutDropRates);
+            kills.set_kill_count_directly(e.credit_id, full);
+            assert_eq!(unlock_state(e, &kills), UnlockState::CanShowDropsWithDropRates);
+        }
+        // The 6 critters (`CountsAsACritter`, `NPC.cs:6887-6897`: lifeMax 5
+        // + damage 0) — their entries exist on the kill ladder today
+        // (GAP-1: vanilla's sight → tier 4 provider is unwired).
+        for kind in [K::BirdBlue, K::BirdRed, K::Squirrel, K::Mouse,
+                     K::BunnySlimed, K::BunnyXmas] {
+            let e = entry_for_npc(kind, SlimeVariant::Blue);
+            let kills = KillTracker::new();
+            assert_eq!(unlock_state(e, &kills), UnlockState::NotKnownAtAll,
+                "{kind:?}: the port needs kills where vanilla needs a sighting");
+        }
+        // 328 PumpkingBlade: the vanilla draw modifiers Hide it
+        // (`NPCID.cs`'s row, ported verbatim) — the populator's
+        // `GetExclusions` (`BestiaryDatabaseNPCsPopulator.cs:870-886`)
+        // gives it NO entry; the port's extra row is GAP-3 (research/125
+        // §8), pinned here so the wiring-round drop is a deliberate edit.
+        assert!(crate::ui::bestiary_draw_offsets::get(328).unwrap().hide);
+        assert!(ENTRIES.iter().any(|e| e.net_id == 328),
+            "GAP-3: the port carries the Hide kind's entry (vanilla has none)");
+    }
 }

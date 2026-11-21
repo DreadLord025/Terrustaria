@@ -1,0 +1,39 @@
+chains agree (banner/item/kills): True
+disagreements: NONE
+critter-provider gap (6): ['BirdBlue', 'BirdRed', 'Squirrel', 'Mouse', 'BunnySlimed', 'BunnyXmas']
+rare spawns: {'TacticalSkeleton': 1.0, 'SkeletonCommando': 1.0, 'BoneLee': 1.0, 'Paladin': 2.0, 'SkeletonSniper': 1.0} | quick_unlock rows: False
+281 RaggedCaster kills 50 (t2@10 t3@25) 
+282 RaggedCasterOpenCoat kills 50 (t2@10 t3@25) 
+283 Necromancer kills 50 (t2@10 t3@25) 
+284 NecromancerArmored kills 50 (t2@10 t3@25) 
+285 DiabolistRed kills 50 (t2@10 t3@25) 
+286 DiabolistWhite kills 50 (t2@10 t3@25) 
+287 BoneLee kills 50 (t2@10 t3@25) 
+289 GiantCursedSkull kills 50 (t2@10 t3@25) 
+290 Paladin kills 25 (t2@5 t3@12) 
+291 SkeletonSniper kills 50 (t2@10 t3@25) 
+292 TacticalSkeleton kills 50 (t2@10 t3@25) 
+293 SkeletonCommando kills 50 (t2@10 t3@25) 
+294 AngryBonesBig kills 50 (t2@10 t3@25) 
+295 AngryBonesBigMuscle kills 50 (t2@10 t3@25) 
+296 AngryBonesBigHelmet kills 50 (t2@10 t3@25) 
+297 BirdBlue kills 50 (t2@10 t3@25) CRITTER
+298 BirdRed kills 50 (t2@10 t3@25) CRITTER
+299 Squirrel kills 50 (t2@10 t3@25) CRITTER
+300 Mouse kills 50 (t2@10 t3@25) CRITTER
+301 Raven kills 50 (t2@10 t3@25) 
+302 SlimeMasked kills 50 (t2@10 t3@25) 
+303 BunnySlimed kills 50 (t2@10 t3@25) CRITTER
+304 HoppinJack kills 50 (t2@10 t3@25) 
+316 Ghost kills 50 (t2@10 t3@25) 
+317 DemonEyeOwl kills 50 (t2@10 t3@25) 
+318 DemonEyeSpaceship kills 50 (t2@10 t3@25) 
+322 SkeletonTopHat kills 50 (t2@10 t3@25) 
+323 SkeletonAstonaut kills 50 (t2@10 t3@25) 
+324 SkeletonAlien kills 50 (t2@10 t3@25) 
+328 PumpkingBlade kills 50 (t2@10 t3@25) 
+333 SlimeRibbonWhite kills 50 (t2@10 t3@25) 
+334 SlimeRibbonYellow kills 50 (t2@10 t3@25) 
+335 SlimeRibbonGreen kills 50 (t2@10 t3@25) 
+336 SlimeRibbonRed kills 50 (t2@10 t3@25) 
+337 BunnyXmas kills 50 (t2@10 t3@25) CRITTER
