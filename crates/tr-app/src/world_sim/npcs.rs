@@ -5344,9 +5344,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // `:78897` → `:78898`): DropItems FIRST (its boss-bag/master-pet
         // CommonCode tails zero npc.value), THEN DropMoney (reads the
         // possibly-zeroed value), THEN DropHeals. The pre-final port ran
-        // coins before loot (the recorded fold — retired here). The
-        // statue gate (`:78849-78852`) returns from the WHOLE NPCLoot —
-        // a refused statue kill drops no coins and no heals either.
+        // coins before loot (the recorded fold — retired here). The entry
+        // gate (`:78832`) and the statue gate (`:78849-78852`) return from
+        // the WHOLE NPCLoot — a refused kill drops no coins and no heals.
         let Some(value_zeroed) = spawn_loot(app, &npc) else {
             continue;
         };
@@ -6793,15 +6793,37 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
 /// (`ItemDropResolver.TryDropping` over `ItemDropDatabase.Populate()`, ported
 /// into `loot_db_gen`): the dead NPC's vanilla net id resolves its registered
 /// rules; the executor skips requests for items the registry does not model.
-/// Returns `None` when the statue gate (`NPC.cs:78849-78852`) refuses the
-/// WHOLE NPCLoot (no coins, no heals either — the C# `return`); otherwise
-/// `Some(resets_money)` — whether any drop zeroed `npc.value`
-/// (`DropRequest.resets_money`, the boss bag / master pet `CommonCode`
-/// tails): the death path feeds the zeroed value into `spawn_coins` (the
-/// C# `NPCLoot_DropItems` :78855 runs BEFORE `NPCLoot_DropMoney` :78897).
+/// Returns `None` when the entry gate (`NPC.cs:78832-78835`) or the statue
+/// gate (`:78849-78852`) refuses the WHOLE NPCLoot (no coins, no heals
+/// either — the C# `return`); otherwise `Some(resets_money)` — whether any
+/// drop zeroed `npc.value` (`DropRequest.resets_money`, the boss bag /
+/// master pet `CommonCode` tails): the death path feeds the zeroed value
+/// into `spawn_coins` (the C# `NPCLoot_DropItems` :78855 runs BEFORE
+/// `NPCLoot_DropMoney` :78897).
 fn spawn_loot(app: &mut App, npc: &Npc) -> Option<bool> {
     let entry = crate::bestiary::entry_for_npc(npc.kind, npc.slime);
     let net_id = entry.net_id;
+    // W4-f35 LOOT FINAL — `NPCLoot`'s ENTRY gate (`NPC.cs:78832-78835`),
+    // the terms reachable in the port's single-player classic world:
+    // (a) the no-surface / getGoodWorld pre-Skeletron dungeon refusal —
+    //     `Main.isThereAWorldSurface` is `worldSurface > 50` (`Main.cs:2788`);
+    //     a no-surface world (`worldSurface <= 50`) before Skeletron refuses
+    //     the nine dungeon kinds (31/294/295/296/32/34/71/693/694). The
+    //     getGoodWorld / onlyShimmerOceanWorlds halves are constants-off
+    //     (the ftw / shimmer-ocean seeds have no runtime port).
+    // (b) the red-hat Dark Caster refusal — `type == 32 && localAI[3] == 1`
+    //     (the Skeletron-pose caster drops nothing; the red-hat mode itself
+    //     is unported so the slot stays 0 in live play, but the gate reads
+    //     the live slot like the C#).
+    // The netMode == 1 (client) and type >= NPCID.Count halves are dead in
+    // the port (single-player host, every kind < Count).
+    let no_surface = app.world.world_surface <= 50.0;
+    let dungeon_kind = matches!(net_id, 31 | 294 | 295 | 296 | 32 | 34 | 71 | 693 | 694);
+    if (no_surface && !app.world.downed_skeletron && dungeon_kind)
+        || (net_id == 32 && npc.local_ai[3] == 1.0)
+    {
+        return None;
+    }
     // W4-f35 LOOT FINAL — `NPCLoot`'s statue gate (`NPC.cs:78849-78852`):
     // the early-mode refusal set + the rarity float draw (the type table
     // `NPCID.cs:10445-10446`). Runs BEFORE any rule — a refusal draws
@@ -17627,6 +17649,56 @@ mod dw3_tests {
         assert!(
             !a.items.is_empty(),
             "the last Twin eye drops its coins (value intact)"
+        );
+    }
+
+    /// W4-f35 LOOT FINAL: `NPCLoot`'s ENTRY gate (`NPC.cs:78832-78835`) —
+    /// the no-surface pre-Skeletron dungeon refusal (`Main.isThereAWorldSurface`
+    /// = `worldSurface > 50`, `Main.cs:2788`): a no-surface world before
+    /// Skeletron refuses the nine dungeon kinds' whole NPCLoot; after
+    /// Skeletron (or with a surface) they loot. The red-hat Dark Caster
+    /// (`type == 32 && localAI[3] == 1`) refuses too.
+    #[test]
+    fn w4_f35_npcloot_entry_gate_refuses_no_surface_dungeon_and_red_hat() {
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        a.world = crate::test_world_helpers::ground();
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        let mut caster = Npc::new(NpcKind::DarkCaster, 30.0 * 16.0, 4.0 * 16.0, 1, 0.0);
+        caster.hp = 0;
+        let pristine = UnifiedRandom::new(a.world.seed as i32);
+
+        // A normal surface world: the caster loots (the gate passes).
+        a.world.world_surface = 120.0;
+        a.world.downed_skeletron = false;
+        assert!(spawn_loot(&mut a, &caster).is_some(), "a surface world loots");
+
+        // A no-surface world (worldSurface <= 50) before Skeletron: refused.
+        a.world.world_surface = 40.0;
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        a.items.clear();
+        assert!(
+            spawn_loot(&mut a, &caster).is_none(),
+            "the no-surface pre-Skeletron dungeon kill is refused"
+        );
+        assert_eq!(
+            *a.rngs.stream(RngKey::UpdateNpcs),
+            pristine,
+            "the entry refusal draws nothing"
+        );
+
+        // After Skeletron: the no-surface world loots again.
+        a.world.downed_skeletron = true;
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        assert!(spawn_loot(&mut a, &caster).is_some(), "downedBoss3 opens it");
+
+        // The red-hat Dark Caster (localAI[3] == 1) refuses even on a surface.
+        a.world.world_surface = 120.0;
+        caster.local_ai[3] = 1.0;
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        assert!(
+            spawn_loot(&mut a, &caster).is_none(),
+            "the red-hat caster drops nothing"
         );
     }
 
