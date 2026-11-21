@@ -1454,6 +1454,13 @@ impl App {
         let now_on = self.equip_share_flags & (1 << bit) == 0;
         if now_on {
             self.equip_share_flags |= 1 << bit;
+            // `Player.Settings.DisableLoadoutShareHint` (`ItemSlot.cs:886` →
+            // `Player.cs:394-401`): the turn-ON arm clears the hint flag and
+            // re-saves the config (only when it was still true).
+            if self.settings.show_loadout_share_hint {
+                self.settings.show_loadout_share_hint = false;
+                let _ = self.settings.save();
+            }
             // `ClearSlotShareInOtherLoadouts` (`:891-912`): the stored sets'
             // same-slot share clears (the live set is not in `Loadouts`).
             if let Some(p) = self.player.as_mut() {

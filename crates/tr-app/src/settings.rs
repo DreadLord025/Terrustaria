@@ -240,6 +240,14 @@ pub struct Settings {
     /// `Get` `:4542`). With it off the item tooltip draws its lines without
     /// the `DrawInvBG` box (`Main.cs:20398-20403`).
     pub opaque_tooltip_box: bool,
+    /// `Player.Settings.ShowLoadoutShareHint` (`Player.cs:372`, static-ctor
+    /// default **true** `:412`): the "Alt+click to share an item across
+    /// loadouts" tooltip hint. `ToggleLoadoutShare`'s turn-ON arm calls
+    /// `DisableLoadoutShareHint` (`ItemSlot.cs:886` → `Player.cs:394-401`),
+    /// which clears it and re-saves the config. Persisted under
+    /// `"ShowLoadoutShareHint"` (`Put` `Main.cs:4219`, `Get` `:4553`). The
+    /// hint LINE itself (`Main.cs:21312-21316`) rides the tooltip lane.
+    pub show_loadout_share_hint: bool,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the 14 gameplay
     /// binds of the menuMode 27 list, in the vanilla's declaration order
     /// (`cUp, cLeft, cDown, cRight, ...` — **not** the typing order).
@@ -319,6 +327,9 @@ impl Default for Settings {
             boss_bar_text: true,                  // BigProgressBarSystem.cs:259
             flashy_effects_interface: true,       // Main.cs:66578
             opaque_tooltip_box: true,             // Main.cs:66513
+            // `Player.Settings.ShowLoadoutShareHint = true` (static ctor,
+            // `Player.cs:412`).
+            show_loadout_share_hint: true,
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
         }
@@ -653,6 +664,11 @@ impl Settings {
                 "SettingsEnabled_OpaqueBoxBehindTooltips" => {
                     me.opaque_tooltip_box = boolean(value)
                 }
+                // `configuration.Get("ShowLoadoutShareHint", ref
+                // Player.Settings.ShowLoadoutShareHint)` (`Main.cs:4553`);
+                // the static-ctor default true (`Player.cs:412`) survives a
+                // missing key.
+                "ShowLoadoutShareHint" => me.show_loadout_share_hint = boolean(value),
                 // The 14 gameplay binds (`Main.cs:4582-4595`) and the 6 map
                 // binds (`:4596-4600`). A name the reader does not know keeps
                 // the row's default, like the vanilla `Get` leaving the field
@@ -716,6 +732,7 @@ impl Settings {
              \"PlayerResourcesSet\": \"{}\",\n  \"PortraitPreference\": {},\n  \
              \"ShowBossBarHealthText\": {},\n  \"FlashyEffectsInterface\": {},\n  \
              \"SettingsEnabled_OpaqueBoxBehindTooltips\": {},\n  \
+             \"ShowLoadoutShareHint\": {},\n  \
              \"MinimapFrame\": \"{}\"{}\n}}\n",
             self.auto_save,
             self.auto_pause,
@@ -791,6 +808,7 @@ impl Settings {
             self.boss_bar_text,
             self.flashy_effects_interface,
             self.opaque_tooltip_box,
+            self.show_loadout_share_hint,
             self.minimap_frame,
             self.bind_block(),
         )
@@ -985,6 +1003,9 @@ mod tests {
         assert_eq!(s.portrait_preference, 0);
         assert!(s.boss_bar_text, "the static ctor sets ShowText = true");
         assert!(s.flashy_effects_interface);
+        // `Player.Settings.ShowLoadoutShareHint = true` (static ctor,
+        // `Player.cs:412`).
+        assert!(s.show_loadout_share_hint);
     }
 
     #[test]
@@ -1031,6 +1052,7 @@ mod tests {
         s.portrait_preference = 2;
         s.boss_bar_text = false;
         s.flashy_effects_interface = false;
+        s.show_loadout_share_hint = false;
         let back = Settings::parse(&s.to_json());
         assert_eq!(back.auto_save, s.auto_save);
         assert_eq!(back.auto_pause, s.auto_pause);
@@ -1071,6 +1093,7 @@ mod tests {
         assert_eq!(back.portrait_preference, 2);
         assert!(!back.boss_bar_text);
         assert!(!back.flashy_effects_interface);
+        assert!(!back.show_loadout_share_hint);
     }
 
     #[test]

@@ -670,15 +670,39 @@ fn give_angler_reward(app: &mut App, angler_idx: usize) {
     // exclusions do not cover 369, but the port's town NPCs carry no mood
     // rows for him yet, so the plain 1.0 stands).
     let adjustment = 1.0f32;
-    // `DropAnglerAccByMissing`'s inventory scan (`Player.cs:56590-56594`):
-    // the port's one inventory (the armor/bank/loadout scans are
-    // constants-off — the port carries neither).
-    let owned: Vec<u16> = app
+    // `DropAnglerAccByMissing`'s scan (`Player.cs:56590-56627`): the inventory
+    // (`:56590-56594`), the armor (`:56595-56599`), the four banks
+    // (`:56600-56619`) and the three stored loadouts' Armor (`:56620-56627`,
+    // W4-g55 loadout-rest). Each non-air slot removes its row (and families)
+    // from the reward pool — the loadout scan reads `Loadouts[num].Armor`
+    // only (the Dye arrays are not scanned, `:56622`).
+    let mut owned: Vec<u16> = app
         .inventory
         .iter()
         .filter(|s| s.kind != 0 && s.count > 0)
         .map(|s| s.kind)
         .collect();
+    owned.extend(
+        app.equip
+            .armor
+            .iter()
+            .filter(|s| s.kind != 0 && s.count > 0)
+            .map(|s| s.kind),
+    );
+    if let Some(p) = app.player.as_ref() {
+        for bank in p.banks.iter() {
+            owned.extend(bank.iter().filter(|s| s.kind != 0 && s.count > 0).map(|s| s.kind));
+        }
+        for loadout in p.loadouts.iter() {
+            owned.extend(
+                loadout
+                    .armor
+                    .iter()
+                    .filter(|s| s.kind != 0 && s.count > 0)
+                    .map(|s| s.kind),
+            );
+        }
+    }
     // The turn-in is the player's item-use interaction (`Player.ItemCheck`
     // under the `UpdatePlayers` swap) — the reward rolls ride
     // `stream(UpdatePlayers)`.
@@ -17869,6 +17893,48 @@ mod fishron_wiring_tests {
         let s = sharks[0];
         assert_eq!(s.ai[3], -1.5, "the rise preset");
         assert!(s.ai[2] > 0.0, "the sway amplitude = the cloud width");
+    }
+
+    /// W4-g55 loadout-rest — `DropAnglerAccByMissing`'s loadout scan
+    /// (`Player.cs:56620-56627`): a stored loadout's Armor removes its row
+    /// (and families) from the reward pool exactly like an owned inventory
+    /// item — the scan reads `Loadouts[num].Armor` only (the Dye arrays are
+    /// not scanned, `:56622`). The `give_angler_reward` caller collects the
+    /// inventory + armor + banks + the three stored sets' Armor into
+    /// `owned_ids`; this witness pins the loadout half through the same
+    /// `remove_acc_options` filter the reward roll reads.
+    #[test]
+    fn w4_g55_the_angler_pool_drops_a_stored_loadout_accessory() {
+        // A stored 3721 (Terraspark Boots) in loadout 1's armor removes the
+        // boot family (2373/2374/2375) from the pool — the same family rule
+        // an owned inventory 3721 applies (`Player.cs:56655-56659`).
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(crate::player::Player::spawn(&app.world));
+        app.player.as_mut().unwrap().loadouts[1].armor[3] = crate::item::ItemSlot {
+            kind: 3721, name: crate::registry::name(3721), count: 1, prefix: 0,
+        };
+        // The caller's owned-ids collection (the loadout half): the stored
+        // armor's non-air kinds feed the same filter the inventory does.
+        let owned: Vec<u16> = app
+            .player
+            .as_ref()
+            .unwrap()
+            .loadouts
+            .iter()
+            .flat_map(|l| l.armor.iter())
+            .filter(|s| s.kind != 0 && s.count > 0)
+            .map(|s| s.kind)
+            .collect();
+        assert_eq!(owned, vec![3721], "the stored boot is the only owned id");
+        let mut pool: Vec<u16> = vec![2373, 2374, 2375, 3120, 5139];
+        for id in &owned {
+            crate::angler::remove_acc_options_for_test(&mut pool, *id);
+        }
+        assert!(
+            pool.iter().all(|v| !matches!(v, 2373 | 2374 | 2375)),
+            "the stored 3721 removed the boot family from the reward pool"
+        );
+        assert!(pool.contains(&3120), "the unrelated rows stay");
     }
 }
 

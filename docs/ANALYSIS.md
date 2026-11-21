@@ -18919,25 +18919,42 @@ sets as kinds/hide/share); v6-and-older files load on loadout 0 with empty sets.
 
 **Recorded deviations / skips.**
 - The vanilla F1/F2/F3 = Loadout1/2/3 keys (`PlayerInput.cs:2088-2090` →
-  `TriggersSet.cs:805-816`) stay the port's debug bindings (F1 debug overlay,
+  `TriggersSet.cs:805-824`) stay the port's debug bindings (F1 debug overlay,
   F2 light mode, F3 workbench — the S1-E-29 deviation); the loadout swap is
   reachable through the button UI and the `try_switching_loadout` API. The
   Next/PreviousLoadout triggers have no vanilla keyboard default.
-- The `Extra_310..315` share-badge corner icons (`ItemSlot.cs:2733-2746`) are
-  not packed; the shared-item ghost icon at 0.6 fade (`:2474-2488`) is the
-  visible share indicator.
-- The `clientCloneLoadouts` / `TrySendData(147)` / `ParticleOrchestraType
-  .LoadoutChange` tails of `TrySwitchingLoadout` (`:5670-5679`) are MP/visual
-  and stay with their systems; the 12 cue + `RecordLoadoutChange` +
+- The `ParticleOrchestraType.LoadoutChange` tail of `TrySwitchingLoadout`
+  (`:5675-5679` → `ParticleOrchestrator.Spawn_LoadOutChange`,
+  `ParticleOrchestrator.cs:2370-2399`) is the particle-system lane's (the port's
+  particle orchestration is unported); the 12 cue + `RecordLoadoutChange` +
   `mouseLeftRelease = false` are ported.
-- `UsingOrReusingItem`'s `pendingItemReuse` half (`:4074`) has no port state;
-  the gate reads swing/reuseDelay/channel.
 
-**Evidence**: 19 `w4_g55_*` witnesses written not run (code-only lane) — the
+**Landed since the Ph5 note (dev-1/2/3/4 + the loadout-rest retire round,
+research/334):** the `Extra_310..315` share-badge corner icons
+(`ItemSlot.cs:2733-2746`, dev-1 — packed + drawn at `Color.White*0.7*num17`);
+the `clientCloneLoadouts` item-array half (`Player.cs:54522-54531`, dev-3 —
+`LoadoutClone` + `App.loadout_clone`); the `TrySendData(147)` send-on-swap +
+the host/client apply arms (dev-2 — `send_sync_loadout` + the C2s/S2c arms, the
+join push's 147, `WriteAccessoryVisibility`'s ushort mask); and
+`UsingOrReusingItem`'s `pendingItemReuse` fourth member (`:4074`, dev-4 —
+`App.pending_item_reuse`, armed at the animation-zero tick, cleared on the
+air-out, read by the `:5663` gate). The loadout-rest round adds the death
+loadout sweep (`Player.cs:54351-54355`), the angler reward loadout scan
+(`:56620-56627`) and the share-hint disable (`ItemSlot.cs:886` →
+`Player.cs:394-401`, `Settings.ShowLoadoutShareHint`). The remaining tails (the
+`TrySyncingMyPlayer` array-diff cadence + the join-push stored-set arrays are
+c28's; the `.plr`/`.trplayer` transport dedups onto f44/g88; the net-147 apply
+is g55's keep-one over g51's stub; the tooltip share lines are e16/f28's; the
+`FixLoadedData` sanitisation folds onto f44's walk) are merge-time folds, not
+g55 gaps — the full census + compose confirmation is research/334.
+
+**Evidence**: 29 `w4_g55_*` witnesses written not run (code-only lane) — the
 swap rotation/gate/wrap, the `.plr` round-trip + index clamp + fresh-zero block,
 the sidecar v7 round-trip + v6-empty load, the button geometry/hit/colour, the
 tint/flash, the button click + equipment-page gate, the effective-item share
-scan, and the share toggle/clear.
+scan, the share toggle/clear (+ the hint disable), the share badges, the net-147
+mask/switch/apply, the loadout clone, the `pendingItemReuse` gate + arm, the
+death loadout sweep, and the angler loadout scan.
 
 ## The world-format contract (S1-J-8)
 

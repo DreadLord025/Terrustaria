@@ -4159,20 +4159,28 @@ mod tests {
 
     /// W4-g55 — `ToggleLoadoutShare` (`ItemSlot.cs:879-912`): the toggle flips
     /// the live share flag, and turning it ON clears the same slot's share in
-    /// every stored loadout; a non-share context refuses.
+    /// every stored loadout AND disables the share hint
+    /// (`DisableLoadoutShareHint`, `:886` → `Player.cs:394-401`); a non-share
+    /// context refuses.
     #[test]
     fn w4_g55_toggle_loadout_share_flips_and_clears_the_stored_sets() {
         let mut app = inv_app();
         app.equip.armor[0] = slot(90, 1);
         // Loadout 1 already shares the head slot.
         app.player.as_mut().unwrap().loadouts[1].set_shared(0, true);
-        // Toggle ON: the live flag sets, the stored share clears.
+        // The hint starts on (the static-ctor default, `Player.cs:412`).
+        assert!(app.settings.show_loadout_share_hint);
+        // Toggle ON: the live flag sets, the stored share clears, the hint
+        // disables (`ItemSlot.cs:886`).
         assert!(app.toggle_loadout_share(8, 0));
         assert!(app.equip_slot_shared(8, 0));
         assert!(!app.player.as_ref().unwrap().loadouts[1].is_shared(0));
-        // Toggle OFF: the live flag clears.
+        assert!(!app.settings.show_loadout_share_hint, "the turn-ON arm disabled the hint");
+        // Toggle OFF: the live flag clears; the hint stays off (the C# only
+        // disables on turn-ON, never re-enables).
         assert!(app.toggle_loadout_share(8, 0));
         assert!(!app.equip_slot_shared(8, 0));
+        assert!(!app.settings.show_loadout_share_hint);
         // The dye context (12) maps to bit 20 + idx.
         app.equip.dye[1] = slot(1007, 1);
         assert!(app.toggle_loadout_share(12, 1));
