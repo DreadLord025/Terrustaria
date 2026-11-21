@@ -1,168 +1,289 @@
 # 92 — DOC-SWEEP: background variants (lane 16, W4-g71)
 
 **Branch:** `task/W4-g71-bg-layers-2` (continues the DONE `2b57b362` surface-variant
-work). **Mode:** code-only — no cargo/tests/graphify invoked; witnesses WRITTEN NOT
+work + the `f08e8d41` wiring docs; FINAL consolidation `fc76a48b`). **Mode:**
+code-only — no cargo/tests/graphify invoked; witnesses WRITTEN NOT
 RUN. **Scope:** the four bg-variant follow-ups the Lead flagged after the g70/g71/g72
-surface lanes landed. Companion lanes: `task/W4-g70-bg-layers-1` (forest sets, tip
-`b86c8d69`), `task/W4-g72-bg-layers-3` (cavern/hell style machine, tip `f956d3ba`).
+surface lanes landed, PLUS the V18 FINAL consolidation (the 13-branch claimant
+registry §1-FULL + the RandomizeBackgrounds keep-one §2.1-FINAL). Companion lanes:
+`task/W4-g70-bg-layers-1` (forest sets, tip `75265591`),
+`task/W4-g72-bg-layers-3` (cavern/hell style machine + the canonical cave roll,
+tip `4a75715e`).
 
 Four items, four verdicts:
 
 | # | Item | Verdict | Evidence |
 | --- | --- | --- | --- |
-| 1 | g70/g71/g69/d125/d109 v18 tails | **CONFLICT — five-branch UNION contract below** | all five append a *different* v18 block after the v17 fishron byte |
-| 2 | `RandomizeBackgrounds`/Tree/Cave rolls | **WIRED** (`worldgen/bg_rolls.rs` → `step_world_tail`) + boot seam + atlas budget guard | g72c "ACTIVE" claim STALE (census only); tile pins unmoved; hell value stale-by-design |
+| 1 | v18 tails — 13 claimant branches | **CONFLICT — FINAL UNION §1-FULL: 107-byte fixed head + dense LAST** | every tip's `save.rs` read; supersedes the 21/53/65-byte drafts |
+| 2 | `RandomizeBackgrounds`/Tree/Cave rolls | **WIRED + KEEP-ONE FINAL** (`bg_rolls` tree/surface/boot + g72 `cave_bg` canonical, `fc76a48b`) | g72c `2184ba07` DID land cave wiring (the old STALE verdict read a pre-wiring tip); double-draw risk resolved §2.1-FINAL |
 | 3 | ocean wave ANIMATION | **NO-OP — the C# ocean bg is STATIC** | ocean ids absent from every animation site |
 | 4 | desert oasis row-250 + underground-desert bg | **row-250 VERIFIED live; underground-desert = g72's, no separate bg** | `sky.rs:1735` witness; `Main.cs:54033-54095` has no desert arm |
 
 ---
 
-## 1. The TRWLD v18 UNION layout contract (five-branch extension)
+## 1-FULL. The TRWLD v18 UNION — FINAL claimant registry + single layout (13 branches)
 
-> **Extended by the W4-g71 wiring phase** (this branch, `task/W4-g71-bg-layers-2`).
-> The original §1 reconciled only g70×g71. Three more branches have since bumped
-> `save.rs` `VERSION` to **18** with their own tail block — **g69** (crimson byte),
-> **d125** (downedEmpress byte) and **d109** (the dense framing-variants block).
-> The union below now carries **all five**. Every tail was read off the branch's own
-> `save.rs` (writer + reader + back-compat fixtures); the exact per-branch truncation
-> constants are tabulated in §1.5.
+> **FINAL consolidation (this branch, `fc76a48b`).** SUPERSEDES the earlier §1
+> (five-branch 21-byte head) and reconciles g72's research/64a (53-byte) — BOTH
+> were incomplete. The full sweep of every `origin/task/W4-*` tip found **13
+> branches at `VERSION = 18`** carrying **11 distinct blocks** (three duplicate
+> pairs; g71 claims two — surface + the underworld seat). Every tail below was read off the branch's own `save.rs` writer +
+> reader; every C# anchor re-verified against `decompiled/Terraria/IO/WorldFile.cs`
+> directly (the `SaveWorldHeader`/`SaveWorldFlags` field order at `:1221-1419`).
 
-### The conflict (five incompatible v18 tails)
+### 1-FULL.1 The complete claimant registry
 
-Each lane independently bumped `VERSION` 17→**18** and appended a *different* block
-immediately after the v17 `downedFishron` byte. The version byte alone cannot
-disambiguate them — a v18 file from one branch mis-parses on every other:
+| # | Lane | Branch tip | Block | Size | C# anchor (write) | Pre-v18 default |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1 | **g70** forest-set | `75265591` (`bbe47378` claim) | `tree_x[0..3]` 3×i32 LE + `forest_bg_styles[0..4]` 4×u8 (treeBG1..4) | **16 B** | `WorldFile.cs:1253-1255` (treeX), `:1318` (treeBG1), `:1377-1379` (treeBG2-4) | `tree_x=[width;3]`, styles `[0;4]` |
+| 2 | **g72** cave-bg | `4a75715e` (`715c6096` claim) | `cave_back_x[0..3]` 3×i32 LE + `cave_back_style[0..4]` 4×i32 LE + ice/jungle/hell 3×u8 | **31 B** | `:1260-1266` (i32 verbatim), `:1267-1269` (C# i32, compressed u8) | `World::new` zeros (NOT Reset band defaults — boot dead store) |
+| 3 | **g69** crimson | `20d0380f` (`9717c0bb` claim) | `WorldGen.crimson` u8 bool | **1 B** | `:1281`; `:3507` corruption fallback | `false` |
+| 4 | **e19** crimson DUP | `d7de8bd5` | same `crimson` byte (inherited g69 code, comment cites W4-g69) | 1 B (dup of #3) | same | same |
+| 5 | **g71** surface | this branch | `snow/desert/ocean_bg_style` 3×u8 | **3 B** | `:1321`/`:1324-1325` | all 0 |
+| 6 | **g71** underworld seat | this branch (rolled + `.wld`-persisted since the wiring phase) | `underworld_bg_style` u8 (setBG 9) | **1 B** | `:1376` | 0 |
+| 7 | **c39** moon bosses | `8ecb288a` | `downed_halloween_king/tree`, `downed_christmas_ice_queen/santank/tree` 5×u8 bool | **5 B** | `:1347-1351`; `NPC.cs:79210-79238` death arms | all `false` |
+| 8 | **f39** moon bosses DUP | `bd5a5a24` | byte-identical five flags (inherited c39 code) | 5 B (dup of #7) | same | same |
+| 9 | **g87** pet licenses | `dfbcaf94` | `bought_cat/dog/bunny` 3×u8 bool | **3 B** | `:1392-1394`; items 4829/4830/4910 | all `false` |
+| 10 | **d125** empress | `07697080` (`d8047a10` claim) | `downed_empress_of_light` u8 bool | **1 B** | `:1395`; `NPC.cs:6393`, case-636 `:79351-79353` | `false` |
+| 11 | **g90** books | `94d33f2c` | `combat_book_volume_two_was_used` + `peddlers_satchel_was_used` 2×u8 bool | **2 B** | `:1407-1408`; `.wld` gates v259/v260 (`:2404-2405` read) | both `false` |
+| 12 | **c43/f45** identity | `e7e466d4` / `6352d384` (byte-identical blocks) | `generator_version` u64 + `unique_id` [u8;16] + `world_id` i32 + `creation_time` i64 + `last_played` i64 | **44 B** | `SaveWorldHeader:1225-1227` + `SaveWorldFlags:1250-1251` | `World::new` zeros |
+| 13 | **d109** dense variants | `81894095` | `World::variants` dense `width*height`×u8, row-major | **W×H B** | port-only (`Tile.bTileHeader2` bits 4-7, `Tile.cs:464-482`; never in the `.wld` tile stream) | zeros, `variants_from_save=false` |
 
-| Branch | Tip | Block | Size | C# citation | Pre-v18 default |
-| --- | --- | --- | --- | --- | --- |
-| **g70** | `bbe47378` | forest-set: `tree_x[0..3]` 3×i32 LE + `forest_bg_styles[0..4]` 4×u8 | **16 B** | `WorldFile.cs:1253-1259` (treeX/treeStyle), `:1318` (setBG0), `:1376-1379` (treeBG2-4) | `tree_x=[width;3]`, `forest_bg_styles=[0;4]` |
-| **g71** | `edc40654` | surface: `snow/desert/ocean_bg_style` 3×u8 | **3 B** | `WorldFile.cs:1321`/`:1324-1325` (setBG 3/6/7) | all three 0 |
-| **g69** | `9717c0bb` | `WorldGen.crimson` 1×u8 (bool) | **1 B** | `WorldFile.cs:1281` (flags byte); `:3507` corruption fallback | `false` (corruption) |
-| **d125** | `d8047a10` | `NPC.downedEmpressOfLight` 1×u8 (bool) | **1 B** | `NPC.cs:6393`, case-636 death flag `:79351-79353` | `false` |
-| **d109** | `81894095` | packed framing variants `World::variants`, dense `width*height`×u8, row-major | **W×H B** (dense) | port-only (`Tile.bTileHeader2` bits 4-7, `Tile.cs:464-482`; the C# `.wld` never writes them, `SaveWorldTiles` `WorldFile.cs:1432-1604`) | `World::new` zeros, `variants_from_save=false` (re-roll) |
+**Duplicate adjudications (keep-one, zero layout cost):**
+- **#4 e19 = #3 g69** — same field, same byte; g69 owns the claim (e19's writer
+  comment itself cites W4-g69). One `crimson` byte in the union.
+- **#8 f39 = #7 c39** — byte-identical five-flag block; c39 is the claimant of
+  record (research/114 §0.2), f39's copy drops at merge. One 5-byte block.
+- **#12 c43 = f45** — byte-identical 44-byte identity block (f45 inherits c43;
+  a6's research/138 §5 already adjudicated "f45 supersedes a6" for the `.wld`
+  bought-pet bytes — that's the `.wld` side, orthogonal to this tail). One
+  44-byte block; `stamp_created_identity` + the WorldId roll stay f45/c43 scope.
 
-All five writers end their block at `Ok(())`; all five readers gate on
-`if version >= 18`. g69/d125 append their byte to the **flags tail** (the same
-`write_flags` stream g70/g71 extend); d109 appends its dense block at the very end of
-`write_world` (after the flags tail) and its reader sizes it from `world.tiles.len()`.
+**Missed by BOTH prior unions:** the earlier §1 (21-byte head) missed g72's
+31 B cave block, g90's 2 B books, and every #7-#12 claimant; g72's 64a
+(53-byte) missed d125's empress byte, the pets/moon-boss/identity blocks and
+the underworld seat it flagged but left unclaimed. a6's research/138 §5
+(65-byte) missed the cave block, crimson, empress, moon bosses and pets.
+This registry is the union of all three plus the full-tip sweep.
 
-### The UNION contract (one tail, all five blocks, fixed order)
+### 1-FULL.2 The SINGLE union layout — C#-field-order-derived, forest-first
 
-The merge keeps **one** v18 tail carrying **all five** blocks in a fixed order:
-**forest-first** (the C# `.wld` field order — treeX/treeStyle precede the setBG bytes,
-which precede the crimson flag), then the g71 surface bytes, then the two new flag
-bytes (g69 crimson, d125 empress), then **d109's dense variants block LAST** (it is
-variable-length and must sit at the end so the fixed head stays at a known offset):
+Order rule (extends §1's forest-first rationale + 64a's "do NOT re-shuffle
+g70" instruction, now applied to ALL blocks): **g72's published 53-byte
+prefix (64a §2) is kept VERBATIM at offsets [0..53]** — forest 16, cave 31,
+surface 3, crimson 1, books 2 — so every offset 64a published stays stable.
+The remaining claims append in C# `.wld` relative order among themselves:
+moon bosses (`:1347-1351`) → underworld (`:1376`, 64a §3's flagged seat) →
+pets (`:1392-1394`) → empress (`:1395`). The identity block is the ONLY
+claim with no flags-relative position (it rides `SaveWorldHeader:1225-1227`
++ the two time fields `:1250-1251`, ahead of the whole flags stream); as a
+self-contained 44-byte header group it closes the fixed head. d109's
+variable-length dense block sits LAST so every fixed-head offset stays
+known and its end-relative peel arithmetic keeps working. Within the bg
+family the C# order holds (treeX `:1253` → cave `:1260` → setBG `:1321-1325`);
+crimson (`:1281`) rides after the surface group per 64a's published choice
+("keeps every multi-byte claim contiguous"), and g70's treeBG1/2-4 split
+(`:1318`/`:1377-1379`) stays bridged inside its contiguous 16-byte block.
 
 ```
 … v17 downedFishron byte (1)
-v18 UNION tail — fixed head (21 bytes) + dense variants (W×H bytes):
+v18 UNION tail — fixed head (107 bytes) + dense variants (W×H bytes):
   offsets relative to the start of the v18 block:
-  [0..4]   tree_x[0]            i32 LE   ┐
-  [4..8]   tree_x[1]            i32 LE   │ g70 forest-set block (16 bytes)
-  [8..12]  tree_x[2]            i32 LE   │
-  [12]     forest_bg_styles[0]  u8       │  (setBG0  / treeBG1)
-  [13]     forest_bg_styles[1]  u8       │  (setBG10 / treeBG2)
-  [14]     forest_bg_styles[2]  u8       │  (setBG11 / treeBG3)
-  [15]     forest_bg_styles[3]  u8       ┘  (setBG12 / treeBG4)
-  [16]     snow_bg_style        u8       ┐ g71 surface bytes (3 bytes)
-  [17]     desert_bg_style      u8       │  (setBG3 / setBG6 / setBG7)
-  [18]     ocean_bg_style       u8       ┘
-  [19]     crimson              u8 bool    g69 world evil type (WorldFile.cs:1281)
-  [20]     downed_empress_of_light u8 bool d125 Empress flag (NPC.cs:6393)
-  [21..21+W*H]  variants        W*H × u8   d109 dense framing variants (LAST)
+  [0..4]     tree_x[0]           i32 LE  ┐
+  [4..8]     tree_x[1]           i32 LE  │ g70 forest-set block (16 B,
+  [8..12]    tree_x[2]           i32 LE  │  §1/64a unchanged, offset 0)
+  [12]       forest_bg_styles[0] u8      │  treeBG1 :1318
+  [13]       forest_bg_styles[1] u8      │  treeBG2 :1377
+  [14]       forest_bg_styles[2] u8      │  treeBG3 :1378
+  [15]       forest_bg_styles[3] u8      ┘  treeBG4 :1379
+  [16..20]   cave_back_x[0]      i32 LE  ┐
+  [20..24]   cave_back_x[1]      i32 LE  │
+  [24..28]   cave_back_x[2]      i32 LE  │ g72 cave block (31 B, 64a §1
+  [28..32]   cave_back_style[0]  i32 LE  │  verbatim; caveBackX[3] NEVER
+  [32..36]   cave_back_style[1]  i32 LE  │  persisted :1260-1262)
+  [36..40]   cave_back_style[2]  i32 LE  │
+  [40..44]   cave_back_style[3]  i32 LE  │
+  [44]       ice_back_style      u8      │  :1267 (C# i32 → u8)
+  [45]       jungle_back_style   u8      │  :1268
+  [46]       hell_back_style     u8      ┘  :1269
+  [47]       snow_bg_style       u8      ┐ g71 surface bytes (3 B,
+  [48]       desert_bg_style     u8      │  :1321/:1324-1325 — 64a offsets)
+  [49]       ocean_bg_style      u8      ┘
+  [50]       crimson             u8 bool   g69 (:1281; e19 dup drops)
+  [51]       combat_book_volume_two_was_used u8 ┐ g90 books (2 B,
+  [52]       peddlers_satchel_was_used       u8 ┘  :1407-1408 — 64a's
+                                            [51..53] closes its prefix
+  ---- 64a's 53-byte prefix ends here; the FINAL extension follows ----
+  [53]       downed_halloween_king        u8 ┐ c39 moon bosses (5 B,
+  [54]       downed_halloween_tree        u8 │  :1347-1351, vanilla order;
+  [55]       downed_christmas_ice_queen   u8 │  f39 dup drops)
+  [56]       downed_christmas_santank     u8 │
+  [57]       downed_christmas_tree        u8 ┘
+  [58]       underworld_bg_style u8          g71 seat (:1376 — 64a §3's
+                                            flagged seat, now claimed:
+                                            rolled + .wld-owned here)
+  [59]       bought_cat          u8 bool ┐ g87 pet licenses (3 B,
+  [60]       bought_dog          u8 bool │  :1392-1394)
+  [61]       bought_bunny        u8 bool ┘
+  [62]       downed_empress_of_light u8      d125 (:1395 — after pets in
+                                            C# order, before books there;
+                                            here it rides the extension
+                                            group to keep 64a stable)
+  [63..71]   generator_version   u64 LE  ┐
+  [71..87]   unique_id           [u8;16] │ c43/f45 identity block (44 B,
+  [87..91]   world_id            i32 LE  │  WorldFile.cs:1225-1227 +
+  [91..99]   creation_time       i64 LE  │  :1250-1251 — header fields,
+  [99..107]  last_played         i64 LE  ┘  no flags position; closes head)
+  [107..107+W*H]  variants       W*H × u8     d109 dense framing variants
+                                             (LAST, variable-length)
 ```
 
-**Fixed head = 21 bytes: 16 (forest) + 3 (surface) + 1 (crimson) + 1 (empress).**
-**Total tail = 21 + width*height bytes.**
+**Fixed head = 107 bytes: 16 (forest) + 31 (cave) + 3 (surface) + 1 (crimson)
++ 2 (books) + 5 (moon bosses) + 1 (underworld) + 3 (pets) + 1 (empress)
++ 44 (identity).**
+**Total tail = 107 + width*height bytes.**
 
-**Writer** (`save.rs`, after the v17 fishron write; the variants block is the last
-thing `write_world` emits):
+**Writer** (`save.rs`, after the v17 fishron write; the variants block is the
+last thing `write_world` emits):
 ```rust
-// v18 UNION fixed head: g70 forest, g71 surface, g69 crimson, d125 empress.
-for x in world.tree_x { w.write_all(&x.to_le_bytes())?; }   // 3×i32  [0..12]
-w.write_all(&world.forest_bg_styles)?;                       // 4×u8   [12..16]
-w.write_all(&[world.snow_bg_style, world.desert_bg_style, world.ocean_bg_style])?; // [16..19]
-w.write_all(&[u8::from(world.crimson)])?;                    //        [19]
-w.write_all(&[u8::from(world.downed_empress_of_light)])?;    //        [20]
+// v18 UNION fixed head (107 B) — research/92 §1-FULL, 64a prefix verbatim.
+for x in world.tree_x { w.write_all(&x.to_le_bytes())?; } // [0..12]
+w.write_all(&world.forest_bg_styles)?;                 // [12..16]
+for x in world.cave_back_x[..3] { w.write_all(&x.to_le_bytes())?; } // [16..28]
+for s in world.cave_back_style { w.write_all(&s.to_le_bytes())?; }  // [28..44]
+w.write_all(&[world.ice_back_style, world.jungle_back_style, world.hell_back_style])?; // [44..47]
+w.write_all(&[world.snow_bg_style, world.desert_bg_style, world.ocean_bg_style])?; // [47..50]
+w.write_all(&[u8::from(world.crimson)])?;              // [50]
+w.write_all(&[
+    u8::from(world.combat_book_volume_two_was_used),
+    u8::from(world.peddlers_satchel_was_used),
+])?;                                                   // [51..53]
+w.write_all(&[
+    u8::from(world.downed_halloween_king),
+    u8::from(world.downed_halloween_tree),
+    u8::from(world.downed_christmas_ice_queen),
+    u8::from(world.downed_christmas_santank),
+    u8::from(world.downed_christmas_tree),
+])?;                                                   // [53..58]
+w.write_all(&[world.underworld_bg_style])?;            // [58]
+w.write_all(&[
+    u8::from(world.bought_cat),
+    u8::from(world.bought_dog),
+    u8::from(world.bought_bunny),
+])?;                                                   // [59..62]
+w.write_all(&[u8::from(world.downed_empress_of_light)])?; // [62]
+w.write_all(&world.generator_version.to_le_bytes())?;  // [63..71]
+w.write_all(&world.unique_id)?;                        // [71..87]
+w.write_all(&world.world_id.to_le_bytes())?;           // [87..91]
+w.write_all(&world.creation_time.to_le_bytes())?;      // [91..99]
+w.write_all(&world.last_played.to_le_bytes())?;        // [99..107]
 // … then, at the very end of write_world (d109):
-w.write_all(&world.variants)?;                               // dense W*H  [21..]
+w.write_all(&world.variants)?;                         // dense W*H [107..]
 ```
 
-**Reader** (`save.rs`, the `if version >= 18` arm):
+**Reader** (`save.rs`, the `if version >= 18` arm — the exact inverse, same
+order; the dense block sized from `world.tiles.len()`):
 ```rust
 if version >= 18 {
-    for x in &mut world.tree_x { *x = r.i32()?; }            // [0..12]
-    for s in &mut world.forest_bg_styles { *s = r.u8()?; }   // [12..16]
-    world.snow_bg_style = r.u8()?;                           // [16]
-    world.desert_bg_style = r.u8()?;                         // [17]
-    world.ocean_bg_style = r.u8()?;                          // [18]
-    world.crimson = r.u8()? != 0;                            // [19]
-    world.downed_empress_of_light = r.u8()? != 0;            // [20]
-    let n = world.tiles.len();                               // d109 dense, LAST
+    for x in &mut world.tree_x { *x = r.i32()?; }
+    for s in &mut world.forest_bg_styles { *s = r.u8()?; }
+    for x in &mut world.cave_back_x[..3] { *x = r.i32()?; } // [3] keeps 0
+    for s in &mut world.cave_back_style { *s = r.i32()?; }
+    world.ice_back_style = r.u8()?;
+    world.jungle_back_style = r.u8()?;
+    world.hell_back_style = r.u8()?;
+    world.snow_bg_style = r.u8()?;
+    world.desert_bg_style = r.u8()?;
+    world.ocean_bg_style = r.u8()?;
+    world.crimson = r.u8()? != 0;
+    world.combat_book_volume_two_was_used = r.u8()? != 0;
+    world.peddlers_satchel_was_used = r.u8()? != 0;
+    world.downed_halloween_king = r.u8()? != 0;
+    world.downed_halloween_tree = r.u8()? != 0;
+    world.downed_christmas_ice_queen = r.u8()? != 0;
+    world.downed_christmas_santank = r.u8()? != 0;
+    world.downed_christmas_tree = r.u8()? != 0;
+    world.underworld_bg_style = r.u8()?;
+    world.bought_cat = r.u8()? != 0;
+    world.bought_dog = r.u8()? != 0;
+    world.bought_bunny = r.u8()? != 0;
+    world.downed_empress_of_light = r.u8()? != 0;
+    world.generator_version = r.u64()?;
+    for b in &mut world.unique_id { *b = r.u8()?; }
+    world.world_id = r.i32()?;
+    world.creation_time = r.u64()? as i64;
+    world.last_played = r.u64()? as i64;
+    let n = world.tiles.len();                         // d109 dense, LAST
     world.variants = r.take(n)?.to_vec();
     world.variants_from_save = true;
 }
 ```
 
-### Back-compat
+### 1-FULL.3 Back-compat matrix
 
-- **Pre-v18 files** (version ≤ 17): the whole tail sits unread. The World keeps its
-  `new`/Reset defaults — `tree_x=[width;3]`, `forest_bg_styles=[0;4]`,
-  `snow/desert/ocean_bg_style=0`, `crimson=false`, `downed_empress_of_light=false`,
-  `variants=zeros`, `variants_from_save=false`. Each branch's own pre-v18 arm already
-  does exactly this; the union preserves all five.
-- **Any single-branch v18 file** read by the union loader mis-parses (the fixed head
-  expects 21 bytes + the dense block; a 16/3/1/1-byte or variants-only tail runs off
-  the end or reads garbage). **Not back-compat** — but no such file ships: all five
-  branches are unmerged task work, and the union is the *first* v18 to land on main.
-  The contract is forward-only from the merge; there is no released v18 to grandfather.
-- **d109's dense block is self-delimiting by `tiles.len()`**, so a v18 payload cut
-  mid-variants-block is a structural EOF error (d109's
-  `w4_d109_a_truncated_variants_block_bails` witness) — the union keeps that property.
+| File class | Union loader result | Notes |
+| --- | --- | --- |
+| version ≤ 17 (any released/port file) | **LOADS** — whole tail unread; every claimant's own pre-v18 default holds | identity zeros, `tree_x=[width;3]`, forest/surface/underworld styles 0, cave arrays zero (NOT Reset band defaults — g72 64a §1), crimson `false` (`:3507` fallback), all 11 flag bytes `false`, variants zeros + `variants_from_save=false` (re-roll) |
+| any single-branch v18 (16/31/1/3/5/3/1/2/44-byte or variants-only tail) | **MIS-PARSES** — structural EOF or garbage | forward-only: no released v18 exists, all 13 branches are unmerged task work; the union is the FIRST v18 to land on main |
+| union v18, cut mid-fixed-head | structural EOF error | every field read is checked |
+| union v18, cut mid-variants | structural EOF error | d109's `w4_d109_a_truncated_variants_block_bails` property preserved — the dense block is self-delimiting by `tiles.len()` |
+| union v18 written by the union, read by any single-branch reader | mis-parses (symmetric) | same forward-only rationale |
 
-### 1.5 Per-branch truncation-constant moves (the merge arithmetic)
+**`.wld` side (separate stream, no union needed):** the retail flags block
+already carries every field at its C# position; the per-lane `.wld` ownership
+claims dedupe independently — g69×f45 both touch the crimson flags byte
+(g69 reads, f45 writes: write+read ONCE, g69's research/117 §1 cross-note),
+g72's cave i32 writes (`flags.rs:47-55` there) and this branch's identical
+writes are byte-identical (both keep the C# i32 widths), and this branch's
+underworld/treeStyle writes supersede g72's zero-write/skip-read stand-ins
+(`flags.rs:188`/`:573` there).
 
-Every back-compat fixture that counts the v18 tail from the end moves to the union
-length. **Fixed-head fixtures → 21; end-relative fixtures that also peel d109's dense
-block → `21 + v18_tail_len(buf)`** (d109's `v18_tail_len` helper reads width×height
-from the header, `save.rs:1351` on its branch). Per branch (line numbers are that
-branch's own `save.rs`):
+### 1-FULL.4 Per-branch truncation-move table (the merge arithmetic)
 
-| Site | g70 | g71 | g69 | d125 | d109 | **UNION** |
-| --- | --- | --- | --- | --- | --- | --- |
-| `EMPTY_V16_TAIL` | `…+1+16` (`:1331`) | `…+1+3` (`:1329`) | `…+1+1` (`:1325`) | `…+1+1` (`:1319`) | `…+1` (no v18 in const; dense peeled separately) | `EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 21` |
-| v12 `let tail = …` | `…+1+16` (`:1302`) | `…+1+3` (`:1300`) | `…+1+1` (`:1296`) | `…+1+1` (`:1290`) | `v18_tail_len(&buf)+…` (`:1201`) | `…+1+21` (+ dense if end-relative) |
-| v14 `truncate(len-1-5-1-…)` | `-16` (`:1520`) | `-3` (`:1518`) | `-1` (`:1514`) | `-1` (`:1508`) | `v18_tail_len+1+5+1` (`:1552`) | `-21` |
-| v18 round-trip truncation | `-16` (`:2212`) | `-3` (`:2210`) | `-1` (`:1541`) | `-1` (`:1526`) | `-v18_tail_len` (`:2280`) | `-21` (fixed head) / `-v18_tail_len` (dense) |
-| v5/v6 `+1` fishron comment | `+16` (`:1189`) | `+1` (`:1187`) | `+1` (`:1183`) | `+2` (`:1176`) | `v18_tail_len+…` (`:1104`) | `+21` (+ dense) |
+Every fixture that counts the v18 tail moves to **107** (fixed head) or
+**`107 + width*height`** (end-relative with the dense block). d109's
+`v18_tail_len(buf)` helper (`save.rs:1351` on its branch, reads width×height
+from the header) returns **`107 + width*height`** in the union — its 14
+end-relative sites need no structural change, only the helper's new value.
+Line numbers are each branch's own `save.rs` at the cited tip:
 
-The `expected_flags_block` byte-table test (g71 phase 4b, `2b57b362`) and g70's
-forest round-trip keep their assertions; only the tail length moves. **d109's
-end-relative fixtures** (`:1104`, `:1201`, `:1253`, `:1319`, `:1366`, `:1373`,
-`:1552`, `:1574`, `:1596`, `:1713`, `:1834`, `:1950`, `:2078`, `:2180`) already peel
-`v18_tail_len(buf)` first — in the union that helper returns **`21 + width*height`**
-(the fixed head rides ahead of the dense block), so those sites need no structural
-change, only the helper's new return value.
+| Site | g70 | g72 | g71 (here) | g69 / e19 | d125 | c39 / f39 | g87 | g90 | c43 / f45 | **UNION** |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| v12 `let tail = …` | `+16` `:1302` | `+31` `:1349` | `+3` `:1300` | `+1` `:1296` | `+1` `:1290` | `+5` `:1309`/`:1310` | `+3` `:1300` | `+2` `:1306` | `+EMPTY_V18_TAIL` `:1312` | `+107` |
+| `EMPTY_V16_TAIL` | `+16` `:1331` | `+31` `:1378` | `+3` `:1329` | `+1` `:1325` | `+1` `:1319` | `+5` `:1338`/`:1339` | `+3` `:1329` | `+2` `:1335` | `EMPTY_V18_TAIL=44` `:1343` separate | `EMPTY_V13_TAIL + 9 + 1 + 5 + 1 + 107` |
+| v14 `truncate(len-1-5-1-…)` | `-16` `:1520` | `-31` `:1567` | `-3` `:1518` | `-1` `:1514` | `-1` `:1508` | `-5` `:1527`/`:1528` | `-3` `:1518` | `-2` `:1524` | `-EMPTY_V18_TAIL` `:1532` | `-107` |
+| v18/v17 round-trip truncation | `-16` `:2212` | `-31` `:1285` | `-3` `:2210` | `-1` `:1541` | `-1` `:1526` | `-5` `:1552`/`:1553` | `-3` `:1542` | `-2` `:1547` | `-EMPTY_V18_TAIL` `:1561` | `-107` |
+| v5/v6/v7 `V6_FLAGS_LEN+…` | `:1190` | `+31` `:1207` | `:1188` (+1 fishron) | `+1` `:1184` | `+2` `:1178` | `+1+5` `:1197` | `:1188` | `+2` `:1194` | `:1250` family | `+107` (+ dense if end-relative) |
+| v13 `2+V6_FLAGS_LEN+…` | `:1541` | `+31` `:1588` | (same family) | `+1` `:1562` | `:1546` | `:1574` | `:1564` | `+2` `:1576` | `+EMPTY_V18_TAIL` `:1608` | `+107` |
+| mid-record cuts (TE/item/banner/bestiary/NPC/tiers) | (unarmed) | `-2-31`/`-3-31` `:1610/:1726/:1846/:1961/:2088/:2189` | `-3` `:1093/:1674/:2137` (v18-unaware — **re-arm all six like g72's `2b02345c`**) | (unarmed) | (unarmed) | (unarmed `:1594…:2173`) | `-3` `:1093/:1700/:2163` | `-2` `:1596/:1832/:1947/:2074` | (unarmed) | `-2-107` / `-3-107` per record shape |
+| d109 end-relative peels (14 sites `:1104…:2180`) | — | — | — | — | — | — | — | — | — | `v18_tail_len` → `107+W*H`, no structural change |
 
-**Merge instruction:** when the five branches reconcile on main, take the union
-writer + reader above (NOT `--ours`/`--theirs`), keep `VERSION = 18`, move every
-fixed-head truncation constant to **21**, and make `v18_tail_len` return
-`21 + width*height`. The five round-trip witnesses (g70 forest, g71 surface, g69
-crimson, d125 empress, d109 variants) all keep their assertions; only the tail
-lengths move.
+**Merge instruction:** take the union writer + reader above (NOT
+`--ours`/`--theirs`), keep `VERSION = 18`, move every fixed-head constant to
+**107**, make `v18_tail_len` return `107 + width*height`, and re-arm the
+mid-record cuts on every branch that has not done so (g72's `2b02345c` is the
+pattern). All thirteen branches' round-trip witnesses keep their assertions;
+only the tail lengths move. The three duplicate pairs (#4/#8/#12) contribute
+ZERO extra bytes — drop the duplicate writer/reader hunks wholesale, keep the
+claimant of record's fields (the field sets are identical).
 
-**Why forest-first + variants-last:** the order is arbitrary but must be *fixed and
-shared*. Forest first matches the C# `.wld` field order for the two style groups
-(treeX/treeStyle `WorldFile.cs:1253-1259` precede the setBG bytes `:1318-1325`) and
-keeps g70's 16-byte block readable as a unit at offset 0 — the original §1 contract,
-unchanged. The two new flag bytes (crimson, empress) follow the style bytes as a
-group; they do NOT sit at their C# relative positions (crimson `:1281` precedes setBG
-in the vanilla block) because the union tail is the port's own appended block, not a
-replay of the vanilla flags layout. The dense variants block is variable-length and
-port-only, so it sits LAST — the fixed head stays at a known offset from the v17
-byte, and d109's end-relative peel arithmetic keeps working. This is the
-least-surprising choice for the next lane that extends the tail.
+---
+
+### 1-LEGACY (SUPERSEDED — kept for the audit trail only)
+
+> The five-branch 21-byte-head contract that previously lived here (g70 forest
+> 16 + g71 surface 3 + g69 crimson 1 + d125 empress 1, d109 dense LAST) is
+> **superseded by §1-FULL above**. It missed g72's 31-byte cave block and g90's
+> 2-byte books (both read by g72's research/64a, whose own 53-byte union in
+> turn missed the empress/pets/moon-boss/identity/underworld claims), plus the
+> later g87/c39/f39/c43/f45/e19 tips. Do NOT merge to the 21-byte or 53-byte or
+> 65-byte (a6 research/138 §5) constants — the FINAL fixed head is **107**
+> (§1-FULL.2), total tail **107 + width*height**. The old §1.5 truncation table
+> and its `+21` merge instruction are void; §1-FULL.4 is the live table.
+> Historical tips for the record: g70 `bbe47378`, g71 `edc40654`, g69
+> `9717c0bb`, d125 `d8047a10`, d109 `81894095` — all re-read at their CURRENT
+> tips for §1-FULL (only g70/g71/d109/d125 tips moved or matched; the blocks
+> themselves are unchanged on every branch).
 
 ---
 
@@ -192,18 +313,126 @@ the 19-arm style→texture table) is **already ported** by g70 as
 **Port.** `crates/tr-core/src/worldgen/bg_rolls.rs` (`pub mod`): `roll_random_forest_bg_style`,
 `randomize_backgrounds_corruption`, `randomize_backgrounds_desert`, `roll_snow_bg_style`,
 `randomize_backgrounds` (returns a `BackgroundStyles` struct), `randomize_tree_style`,
-`randomize_cave_backgrounds` (returns `CaveBackgrounds`), `is_background_considered_the_same`
+`is_background_considered_the_same`
 (`:8061-8095`, the 3≡31/5≡51/7≡71-73 equivalence the player-driven re-roll uses), and
-`boot_reroll_backgrounds` (the `Main.cs:6594-6603` boot seam, §2.3). All are **pure
-functions over a caller-supplied stream** through the [`RollRng`] trait — no `World`
-writes inside the rolls, no global state. The trait is implemented for BOTH the
-worldgen xorshift64 `Rng` (the tail's `pass_rng` slots) and `UnifiedRandom` (the boot
+`boot_reroll_backgrounds` (the `Main.cs:6594-6603` boot seam, §2.3). The cave roll
+(`randomize_cave_backgrounds`, `:8192-8249`) lives in `worldgen/cave_bg.rs` — g72's
+canonical driver, the FINAL keep-one (§2.1-FINAL). All are **pure
+functions over a caller-supplied stream** through the [`RollRng`] trait (the cave
+driver through its own `CaveRoll` twin) — no `World`
+writes inside the rolls, no global state. The traits are implemented for BOTH the
+worldgen xorshift64 `Rng` (the tail's `pass_rng` slots / `streams.rng`) and `UnifiedRandom` (the boot
 re-roll's bare-`Main.rand` stand-in), so the SAME canonical code serves both callers.
 10 roll witnesses + 4 boot witnesses WRITTEN NOT RUN, expectations derived from
 independent Python references (xorshift64 for the tail; a Knuth-subtractive
 `UnifiedRandom.cs` port — golden `Next()` vector verified — for the boot).
 
-### 2.1 WIRING (this phase) — the keep-one adjudication + the seam contract
+### 2.1-FINAL WIRING — the keep-one adjudication (SUPERSEDES the STALE verdict below)
+
+**The DUP is REAL (the earlier "g72c census-only" verdict is superseded).**
+Re-read at g72's CURRENT tip `4a75715e` (the earlier adjudication read the stale
+`1f5c2b1e`): commit `2184ba07` (phase 7) **DID land** the cave-roll wiring —
+`worldgen/cave_bg.rs` (the `CaveRoll` trait over `Xorshift64` + `UnifiedRandom`,
+the width-arm bands, per-arm distinct styles, the ice/hell/jungle u8 tail)
+drawn in `step_world_tail` on the SHARED `streams.rng` ahead of the moon
+`Next(9)`, applied via `World::apply_cave_backgrounds`; phase 8 (`715c6096`)
+owns the persistence trio (`.wld` flags i32s, `.trwld` v18 31-byte tail, the 7
+WorldInfo net header) and the `App::new` boot dead-store; final item 3
+(`39479b55`) wires the DRAW consumer (`bg_style_pick_input` + `ug_back_step`
+latch). Meanwhile THIS branch wired its own `bg_rolls::randomize_cave_backgrounds`
+on a `pass_rng` slot. **A naive merge keeps BOTH calls: the cave block draws
+TWICE (double-consuming the stream, re-rolling the styles) and the two
+`CaveBackgrounds` types collide** (`[i32;3]`+i32 tail here vs `[i32;4]`+u8 tail
+there). This was the CRITICAL double-draw risk; resolved by keep-one, landed
+in `fc76a48b`.
+
+**The verdict: KEEP g72's `cave_bg.rs`, DROP the `bg_rolls` cave copy.**
+Both drivers are draw-order-equivalent (bands → base styles in index order →
+the three rejection loops → ice/hell/jungle; verified draw-by-draw against
+`WorldGen.cs:8192-8249` and each other — the "batch-then-reject" shapes
+consume the identical sequence). The deciding deltas:
+
+| Axis | g71 `bg_rolls` copy (DROPPED) | g72 `cave_bg` driver (KEPT) |
+| --- | --- | --- |
+| un-rolled arm-A/B style slots | zeroed (unfaithful — C# keeps the previous `Main.caveBackStyle` values, `:8195-8223` writes only the arm's count) | carries the passed-in previous array (faithful) |
+| `cave_back_x` shape | `[i32;3]` | `[i32;4]` — the C# `new int[4]` (`Main.cs:66696`), `[3]` never rolled/persisted/sent |
+| ice/hell/jungle types | i32 (caller casts) | u8 direct (the `.trwld` widths) |
+| seam | `RollRng` (`roll_range` only) | `CaveRoll` (`roll` + `roll_range` — the `Next(n)` vs `Next(lo,hi)` distinction the C# makes) |
+| downstream consumers | none landed | the LIVE draw chain (`bg_style_pick_input` reads `[i32;4]`), the `.wld`/`.trwld`/net persistence trio, the `App::new` boot witness — all typed against ITS outcome |
+| boot placement | `boot_reroll_backgrounds` (menu seam, full surface+cave) | `App::new` dead-store (cave only, width-0 arm) |
+
+**What g71 KEEPS** (g72 has no copy of any of it): the `RollRng` seam,
+`randomize_backgrounds` + the forest/corruption/desert/snow helpers,
+`randomize_tree_style`, `is_background_considered_the_same`, and
+`boot_reroll_backgrounds` — whose cave leg now calls the CANONICAL
+`cave_bg::randomize_cave_backgrounds(rng, width, world.cave_back_style)` +
+`apply_cave_backgrounds` (the fn takes `UnifiedRandom` concretely; it
+implements both seams). The boot fn stays the MENU seam (§2.3); g72's
+`App::new` dead-store stays its own scope — at merge keep ONE boot call site
+per process (the C# fires once, `Main.cs:6594-6603`); the two are
+complementary today (different worlds, different streams) but must not both
+survive as live rolls on the same boot path.
+
+**Drop-hunks (executed in `fc76a48b`, this branch):**
+1. `bg_rolls.rs`: DELETE `struct CaveBackgrounds` + `fn randomize_cave_backgrounds`
+   (the whole 73-line block); the 3 cave witnesses re-point at
+   `cave_bg::randomize_cave_backgrounds` with `[i32;4]` pins (`[3]=0`) and the
+   previous-`[0;4]` carry reproducing the old zero pins; the 4 boot witnesses'
+   `cave_back_x` pins gain the trailing 0.
+2. `pipeline.rs step_world_tail`: DELETE the `pass_rng("RandomizeCaveBackgrounds")`
+   call + the five field writes; INSERT g72's verbatim seat (below).
+3. `world.rs`: `cave_back_x: [i32;3]` → `[i32;4]` (+ `World::new` `[0;4]`).
+4. `wld/sections/flags.rs` + `wld/mod.rs`: the cave loops slice `[..3]` (the
+   C# never persists `[3]`); the owned-world sweep value `[11,22,33,0]`.
+5. `anchors.txt`: the duplicate-marker rows replaced (cave_bg canonical row,
+   bg_rolls surface-only row, pipeline compose row).
+6. At the g72-side merge: g72's `cave_bg.rs`/`mod.rs`/persistence/net/draw hunks
+   land UNCHANGED (this branch adopted them verbatim — the comment-stripped
+   diff is empty); only ITS `step_world_tail` comment block updates to the
+   composed order below.
+
+**The ORDER-CONTRACT compose (g72 research/64 §6 + this lane, BOTH wired):**
+the C# `:11337-11341` sequence is contiguous on `genRand`; the port composes:
+
+```
+step_world_tail (the LAST rng-consuming step):
+  :11337 WorldId       — f45/c43 scope (identity stamp), NOT drawn here
+  :11338 RandomizeTreeStyle    → bg_rolls::randomize_tree_style
+                                 on pass_rng("RandomizeTreeStyle")   [g71]
+  :11339 RandomizeCaveBackgrounds → cave_bg::randomize_cave_backgrounds
+                                 on streams.rng, apply_cave_backgrounds [g72 seat]
+  :11340 RandomizeBackgrounds  → bg_rolls::randomize_backgrounds
+                                 on pass_rng("RandomizeBackgrounds") [g71]
+  :11341 RandomizeMoonState    → moon_type = streams.rng.next_u32() % 9
+                                 (shifts behind the cave block — stale-by-design)
+```
+
+The tree/surface rolls ride isolated `pass_rng` slots (the documented
+per-pass-stream deviation) so they shift NOTHING; the cave block rides the
+shared stream at g72's landed seat so the moon draw order matches the C#
+relative order (`:11339` before `:11341`). **Nothing else may draw between the
+cave block and the moon draw** (64 §6's contract) — the `:11340` surface roll
+sits between them in CALL order but draws on its own slot, so the shared-stream
+sequence stays cave→moon exactly. ONE cave draw, never both: any future lane
+that re-adds a `bg_rolls` cave call re-opens the double-draw bug.
+
+**Why the tile-hash pins do NOT move.** The tail is the **last** `streams.rng`
+consumer (the seed-finish/micro passes all ride isolated `pass_rng` slots), and
+every roll writes **only style/divider fields, never tiles**. The shared-stream
+cave block therefore shifts no other pass's draws and moves no `world_hash`
+TILE pin — `SEED42_512`/`DEFAULT_WORLD` stay byte-identical (the
+`w4_g71_the_wired_tail_rolls_styles_without_moving_tiles` witness asserts
+`a.tiles == b.tiles`). The moon/hell VALUES move (stale-by-design; the
+`worldgen_rolls_hell_back_style` determinism + `<3` witness stays green, as
+does the direct-vs-pipeline parity). The `SEED42_512` note in `world_hash.rs`
+records the arm-C draw census (3 bands + 4 styles + rejections + the 3-draw
+tail on a 512-wide world).
+
+### 2.1-LEGACY (SUPERSEDED — the stale-tip adjudication, audit trail only)
+
+> The verdict below was written against g72 tip `1f5c2b1e`, BEFORE `2184ba07`
+> landed the wiring. Its "g72 has zero roll code / no duplicate to keep-one"
+> conclusion is FALSE at the current tip `4a75715e` — see §2.1-FINAL above.
 
 **Adjudication (g72c "ACTIVE cave wiring" is STALE).** The brief claimed g72c ports
 `RandomizeCaveBackgrounds` into `step_world_tail` and that `bg_rolls.rs` has the SAME
@@ -289,8 +518,9 @@ research/64 §2.2 claim that the boot roll "overwrites the .wld-persisted arrays
 load: the load read comes AFTER the boot roll and wins.)
 
 **The seam (`bg_rolls::boot_reroll_backgrounds`).** The canonical roll-and-apply the
-menu caller invokes on the bare-`Main.rand` stand-in (`UnifiedRandom`, the same
-`RollRng` the tail uses). The 173 retry: `SetForestBGSet(6)` sets `treeSet[0]=173`
+menu caller invokes on the bare-`Main.rand` stand-in (`UnifiedRandom` — taken
+concretely since the FINAL keep-one: its cave leg calls `cave_bg`'s `CaveRoll`
+driver, and `UnifiedRandom` implements both seams). The 173 retry: `SetForestBGSet(6)` sets `treeSet[0]=173`
 (`WorldGen.cs:7691`), so a forest style 6 re-rolls the whole set, up to two extra
 times (the C#'s two `if` guards = at most three rolls). The port reads the rolled
 `forest[0]` and re-rolls while it is 6. Witnesses pin seed 42 (forest `[9,71,10,73]`,
@@ -300,12 +530,14 @@ is the menu-background seam, NOT the world-load path. This phase ports + witness
 the fn; wiring it into the live menu draw is the menu lane's call (the menu currently
 renders a static sky — the roll would feed a future menu-bg consumer).
 
-**Ownership note (updated).** The cave/ice/jungle back-style fields + the tree
-arrays + the forest/underworld setBG bytes are **owned** now (the wired tail rolls
-them; `wld/sections/flags.rs` writes + reads them, the `.trwld` v18 union carries the
-forest block). g72's `render/bg_styles.rs` consumes them as `World` fields when its
-draw side wires. `hell_back_style` was already owned; its draw folds into the cave
-block.
+**Ownership note (FINAL).** The cave/ice/jungle back-style fields + the tree
+arrays + the forest/underworld setBG bytes are **owned** (the wired tail rolls
+them; `wld/sections/flags.rs` writes + reads them — the cave i32 widths match
+g72's byte-for-byte; the `.trwld` v18 UNION §1-FULL carries every block).
+g72's draw side is LIVE at its tip (`39479b55`: `bg_style_pick_input` +
+`ug_back_step` + the 22-case sheet table with graceful classic-only
+degradation); it consumes the `World` fields the canonical `cave_bg` driver
+lands. `hell_back_style` folds into the cave block (one draw, `:8247`).
 
 ---
 
@@ -430,13 +662,38 @@ WIRING phase (this branch, continuing `e2d085ae`):
 - `crates/tr-app/src/render/bg.rs` — `worldgen_rolls_hell_back_style` witness extends.
 - `docs/research/92-doc-sweep-bg.md` — §1 five-branch union, §2 wiring/seam/guard/boot.
 
+FINAL CONSOLIDATION phase (this branch, `fc76a48b` keep-one code + this doc):
+- `crates/tr-core/src/worldgen/cave_bg.rs` — NEW, g72's canonical cave driver
+  adopted VERBATIM (tip `4a75715e`; comment-stripped diff empty) + keep-one header.
+- `crates/tr-core/src/worldgen/mod.rs` — `pub mod cave_bg;`.
+- `crates/tr-core/src/worldgen/bg_rolls.rs` — the `CaveBackgrounds` struct +
+  `randomize_cave_backgrounds` DROPPED; the boot fn's cave leg calls `cave_bg` +
+  `apply_cave_backgrounds` (takes `UnifiedRandom` concretely); 3 cave + 4 boot
+  witnesses re-pinned to the `[i32;4]` shape.
+- `crates/tr-core/src/worldgen/pipeline.rs` — `step_world_tail` composes
+  :11338-tree(pass_rng) → :11339-cave(streams.rng, g72 seat) → :11340-surface(pass_rng)
+  → :11341-moon; ONE cave draw (double-draw risk resolved).
+- `crates/tr-core/src/world.rs` — `cave_back_x: [i32;4]` (+ `World::new [0;4]`).
+- `crates/tr-core/src/wld/sections/flags.rs` + `wld/mod.rs` — cave loops slice
+  `[..3]` (C# never persists `[3]`); owned-world sweep `[11,22,33,0]`.
+- `crates/tr-core/src/worldgen/world_hash.rs` — SEED42_512 keep-one draw-census note.
+- `crates/tr-app/src/render/bg.rs` — hell witness comment re-pointed.
+- `anchors.txt` — cave_bg canonical / bg_rolls surface-only / pipeline compose rows.
+- `docs/research/92-doc-sweep-bg.md` — §1-FULL (13-branch registry, 107-byte union,
+  back-compat matrix, truncation-move table), §2.1-FINAL (keep-one adjudication,
+  drop-hunks, order-contract compose); the old §1/§2.1 kept as SUPERSEDED audit trail.
+
 **Verification:** code-only mode — no cargo/tests/rustfmt/graphify run. The roll +
 boot + guard witnesses are WRITTEN NOT RUN; their expectations come from independent
 Python references (xorshift64 for the tail; a Knuth-subtractive `UnifiedRandom.cs`
 port — golden `Next()` vector verified — for the boot) fed through the verbatim C#
 roll logic, not from executing the Rust. The atlas heights come from the
 `tools/atlas_sim.js` skyline twin (node, not cargo). The UNION v18 contract is a
-*merge instruction* — the five branches' `save.rs` tails are not reconciled here
+*merge instruction* — the thirteen branches' `save.rs` tails are not reconciled here
 (each stays on its own branch); the reconciliation happens when they land on main
-per §1. The `.wld` ownership changes ARE landed on this branch (the wired tail rolls
-the fields, so the save layer must carry them).
+per §1-FULL. The keep-one cave consolidation + the `.wld` ownership changes ARE
+landed on this branch (the wired tail rolls the fields, so the save layer must
+carry them). Static checks performed: brace/paren balance on all touched Rust
+files; comment-stripped `cave_bg.rs` byte-compare against g72's blob (identical);
+every claimant tail re-read off its own branch tip; the C# field order re-verified
+directly against `WorldFile.cs:1221-1419`.

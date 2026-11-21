@@ -1331,23 +1331,37 @@ not run (no compiler invoked, code-only mode).
 
 **W4-g71 WIRING phase (2026-11-21, code-only)** wired the background style rolls into
 `step_world_tail` (`WorldGen.cs:11338-11340`): `RandomizeTreeStyle` /
-`RandomizeCaveBackgrounds` / `RandomizeBackgrounds`, each on its own `pass_rng` slot,
-writing `World.tree_x`/`tree_style`/`cave_back_x`/`cave_back_style`/`ice_back_style`/
+`RandomizeCaveBackgrounds` / `RandomizeBackgrounds`, writing
+`World.tree_x`/`tree_style`/`cave_back_x`/`cave_back_style`/`ice_back_style`/
 `jungle_back_style`/`forest_bg_styles`/`underworld_bg_style` + the eight surface
 styles through `set_surface_bg_style`. The `hell_back_style` `Next(3)` (`:8247`) folds
-into the cave block (the former standalone tail draw is gone). The rolls are the
-canonical `worldgen/bg_rolls.rs` fns over a `RollRng` seam (xorshift `Rng` for the
-tail, `UnifiedRandom` for the boot re-roll). **g72c's "ACTIVE cave wiring" claim was
-STALE** — its tip `1f5c2b1e` is a census only (`345c334a`, "NO wiring"), zero roll
-code; `bg_rolls.rs` is the sole keep-one copy, g72's `bg_styles.rs` consumes the
-`World` fields. **The tile-hash pins do NOT move**: the tail is the last `streams.rng`
-consumer, the rolls ride isolated `pass_rng` slots and write only style fields (no
-tiles) — `SEED42_512`/`DEFAULT_WORLD` stay byte-identical; only the folded
-`hell_back_style` value moves (stale-by-design, the `a == b` determinism witness stays
-green). The boot re-roll (`Main.cs:6594-6603`) is ported as
-`bg_rolls::boot_reroll_backgrounds` — the menu seam (the C# runs it once per process
-before any load; `LoadWorldFlags` then overwrites with the file values, so a loaded
-world keeps its saved styles).
+into the cave block (the former standalone tail draw is gone). The boot re-roll
+(`Main.cs:6594-6603`) is ported as `bg_rolls::boot_reroll_backgrounds` — the menu seam
+(the C# runs it once per process before any load; `LoadWorldFlags` then overwrites
+with the file values, so a loaded world keeps its saved styles).
+
+**W4-g71 FINAL keep-one (2026-11-21, code-only, `fc76a48b`) — SUPERSEDES the wiring
+phase's "g72c STALE" verdict.** That verdict read g72's pre-wiring tip `1f5c2b1e`;
+at the CURRENT tip `4a75715e`, `2184ba07` DID land the cave-roll wiring
+(`worldgen/cave_bg.rs` on `streams.rng` ahead of the moon) plus the persistence trio
+and the live draw consumer. Both branches having wired a cave roll, a naive merge
+would draw the block TWICE. Adjudication (research/92 §2.1-FINAL): **keep g72's
+`cave_bg.rs` VERBATIM** (faithful previous-style carry through the un-rolled arm
+slots, the C# `new int[4]` shape, u8 ice/hell/jungle, and every landed consumer is
+typed against its outcome); **drop the `bg_rolls` cave duplicate** (draw-order-
+equivalent but zeroed the un-rolled slots and returned `[i32;3]`). The g71 `RollRng`
+seam + tree/surface rolls + boot fn are kept (g72 has no copy); the boot fn's cave
+leg calls the canonical driver. `step_world_tail` composes the C# order:
+:11338 tree (`pass_rng`) → :11339 cave (`streams.rng`, g72's seat) → :11340 surface
+(`pass_rng`) → :11341 moon (`streams.rng`, shifts behind the cave block —
+stale-by-design VALUE). `World.cave_back_x` is `[i32;4]` (`[3]` never
+rolled/persisted/sent); the `.wld` flags loops slice `[..3]`. **The tile-hash pins do
+NOT move**: the tail is the last `streams.rng` consumer, the tree/surface rolls ride
+isolated `pass_rng` slots, the cave block writes only style fields —
+`SEED42_512`/`DEFAULT_WORLD` stay byte-identical; the moon/hell values move
+(stale-by-design, the `a == b` determinism witnesses stay green). The v18 `.trwld`
+union is FINALIZED as research/92 §1-FULL: 13 claimant branches, 107-byte fixed head
++ d109 dense LAST (supersedes the 21/53/65-byte drafts).
 
 **Deliberate deviation — the atlas budget guard.** A rolled non-default surface style
 can overflow the 8192 px atlas (style-0 baseline 7847 px; non-default styles add
