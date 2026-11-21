@@ -263,6 +263,7 @@ mod orch_dust;
 mod orch_dust_boulder;
 mod orch_dust_lightning;
 mod orch_dust_town;
+mod orch_dispatch;
 mod town;
 mod town_arrival;
 mod tracked_sound;
