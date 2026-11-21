@@ -39642,6 +39642,11 @@ in `find_pulley`, `player.rs:10191`), `:20768-20774` (the jump-off unboost +
 (`:3341-3367`) and the held-item draw offset (`:42604`/`:42846`). The
 `cPortableStool` dye slot (`:2976`/`:9735`) is a third seam. A small-port would
 need the offset family FIRST; deferred with the seam, not dropped.
+**Retire-pass update:** the full census + the seam task's shape now live in
+`docs/research/65-heightoffset-stool-seam.md` (the movement-lane task seed —
+the five getters, every fold-to-0 site, the consumers-list incl. the
+`mounted_center`/`mounted_top` accessor leverage and the duplicate
+`player_layers.rs` offset table).
 
 **(c) UpdateControlHolds — port verified, one init fix.** `release_up` +
 `update_control_holds` (`player.rs:12786-12789`, the pure `!controlUp` mirror

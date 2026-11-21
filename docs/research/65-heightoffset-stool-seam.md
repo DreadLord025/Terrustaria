@@ -1,0 +1,130 @@
+# 65 — The HeightOffset family seam + the portableStool deferral (movement-lane task seed)
+
+**Lane:** the player-move family (pulley / carpet / wallclimb / stealth — W4-f3
+canonical). **Status:** census + deferral record, code-only (no compiler invoked).
+**Producer:** W4-f3 retire pass, `task/W4-f3-dust-player-3`, 2026-11-21.
+**Consumer:** the movement-lane task that lands the mount/stool offset seam
+(`portableStool` + the mount-offset family together — NOT self-contained, see §3).
+
+The C# `Player` exposes five derived offset properties. The port folds SOME of
+them to 0 and ports OTHERS piecemeal; the stool machine needs the whole family
+at once. This doc is the fold-site census (where each property is consumed in
+C#, what the port does today, and what the seam task must re-site).
+
+## 1. The family (all `Player.cs`, all getters — no backing fields)
+
+| Property | C# | mount.Active arm | stool IsInUse arm | else |
+| --- | --- | --- | --- | --- |
+| `HeightOffsetVisual` (float) | `:3237-3251` | `mount.PlayerOffset` | `portableStoolInfo.VisualYOffset` | 0 |
+| `HeightOffsetHitboxCenter` (float) | `:3253-3267` | `mount.PlayerOffsetHitbox` | `HeightBoost - VisualYOffset` | 0 |
+| `MountXOffset` (float) | `:3269-3279` | `mount.PlayerXOFfset` | — | 0 |
+| `HeightOffsetBoost` (int) | `:3281-3295` | `mount.HeightBoost` | `portableStoolInfo.HeightBoost` | 0 |
+| `HeightMapOffset` (int) | `:3297-3311` | `mount.PlayerHeadOffset` | `portableStoolInfo.HeightBoost` | 0 |
+| `BaseHeight` (float) | `:3335` | `height - HeightOffsetBoost` (derived) | | |
+
+`PortableStoolUsage` (`DataStructures/PortableStoolUsage.cs:3-31`): a 5-field
+struct (`HasAStool`, `IsInUse`, `HeightBoost`, `VisualYOffset`, `MapYOffset`)
++ `Reset` + `SetStats`. The equip rows: items **4341 / 5126**
+(`Player.cs:14544-14546`, `SetStats(26, 26, 26)` — all three offsets 26);
+`Reset` at `:18783` (beside `ResizeHitbox` `:18784`).
+
+## 2. The consumers-list (the seam's blast radius)
+
+### HeightOffsetVisual (the DRAW offset)
+* `PlayerDrawSet.cs:428-429` — `mountOffSet = HeightOffsetVisual; Position.Y -= mountOffSet`.
+* `PlayerDrawLayers.cs:3979` — `38f - HeightOffsetVisual` (a layer's Y anchor).
+* **Port today:** `render/player_layers.rs:142` carries its own per-mount
+  `player_offset: i32` table (rows `:2521-2691`), applied at `:1469`; the
+  stool arm does not exist. The table duplicates `Mount.PlayerOffset`
+  (`mount.rs:2920-2930`, `Mount.cs:407-421`) — the seam should unify them.
+
+### HeightOffsetHitboxCenter (the CENTRE offset)
+* `MountedCenter` get/set (`Player.cs:3341`/`:3345`): `position + (width/2,
+  BaseHeight/2 + HeightOffsetHitboxCenter)`.
+* `MountedTop` get/set (`:3354-3367`): `position.Y + HeightOffsetHitboxCenter`
+  (gravDir 1) / `Bottom.Y - HeightOffsetHitboxCenter` (−1); the setters mirror.
+* The held-item draw offset (`:42604`, `:42846` —
+  `AnimatePlayerAndGetItemFrame(heightOffsetHitboxCenter, item)`).
+* **Port today:** `player.rs::mounted_center` (`:5199`) folds to `center()`
+  and `mounted_top` (`:5209`) folds to the body top-centre — BOTH offsets 0.
+  The consumers already route through the accessors (the seam's leverage):
+  `bow_launch.rs` (3 sites: the flail/bow anchor frame), `projectile.rs`
+  (7 sites: the sentry-backpack reposition, the minion spawn anchors, the
+  `mounted_center` input struct `:14610`), `projectile_ai_spear.rs` (1),
+  `world_sim/editing.rs` (1), `world_sim/projectiles.rs` (3). Re-siting the
+  two accessors re-sites every consumer without touching them.
+  `render/player_layers.rs:1178` documents the draw-side fold
+  (`mountOffset = HeightOffsetHitboxCenter` stands at 0).
+
+### MountXOffset
+* `PlayerDrawSet.cs:342` — `Position += (MountXOffset * direction, 0)`.
+* **Port today:** no fold site (the draw X offset is unported); the seam adds
+  it beside the Y offset in the same draw-set pass.
+
+### HeightOffsetBoost (the HITBOX growth)
+* `BaseHeight` (`:3335`) — feeds `MountedCenter`, the item-frame centring
+  (`:50606-50607`), the MowTheLawn anchor (`:20307`).
+* `ResizeHitbox` (`:29211`): `height = 42 + HeightOffsetBoost`.
+* `CanFitSpace` (`:6102-6106`): the `42 + heightBoost` clear-spot probe.
+* **Port today:** the MOUNT arm is ported piecemeal — `mount.rs` rows carry
+  `height_boost` (39 rows), `player.rs:10876` grows the hitbox
+  (`grow_hitbox(HEIGHT + equip.height_boost)`, the `:6264-6277`
+  bottom-anchored growth), `:11015` the size preview, `:11900-11903` the
+  cart body scan. The STOOL arm does not exist; `BaseHeight` is not modelled
+  (the port's hitbox already includes the boost, so `center()` ≠ C#
+  `MountedCenter` on a boosted mount — the known fold, `player.rs:5193-5198`).
+
+### HeightMapOffset (the MINIMAP head dot)
+* `PlayerDrawHeadSet.cs:155` — `Position.Y -= HeightMapOffset`.
+* **Port today:** `player.rs::apply_head_offset_from_mount` (`:5306`,
+  `Player.cs:51544-51645`) ports the per-mount head-offset TABLE (types
+  54/55/56/61) for the projectile-side head anchors (`projectile.rs:13875-
+  13883`); `mount.rs` rows carry `player_head_offset` (39 rows). The minimap
+  head-dot consumer is the map lane's; the stool arm does not exist.
+
+## 3. The portableStool machine — why it is NOT self-contained
+
+`UpdatePortableStoolUsage` (`Player.cs:29193-29205`, called `:25647`):
+`HasAStool && controlUp && !gravControl && !mount.Active && vx == 0 && vy == 0
+&& !pulley && grappling[0] == -1` → `CanFitSpace(HeightBoost)` →
+`IsInUse = true` + `ResizeHitbox` (`:29207-29222`: bottom-anchored
+`position.Y += height`, `width = 20`, `height = 42 + HeightOffsetBoost`).
+
+Every downstream consumer reads the offset family, not the struct:
+* `:19614-19617` — `jumpHeight += 5` while in use (the jump-stat tail).
+* `:19646` — the FindPulley gate (`IsInUse || (!controlUp && !controlDown)`
+  refuses the attach). **Port:** folded false in `find_pulley`
+  (`player.rs:10199`, the cited fold).
+* `:20768-20776` — the jump-off: `IsInUse = false`, `position.Y -= HeightBoost`,
+  the `StoolJump` camera modifier (local player only).
+* `Center`/`Bottom`/`Top` (`:3341-3367`) — via HeightOffsetHitboxCenter (§2).
+* The held-item draw (`:42604`/`:42846`) — via HeightOffsetHitboxCenter.
+* `cPortableStool` dye slot (`:2976`, cleared `:9591`, set `:9735`) — a third
+  seam (the dye pass).
+
+A stool-only port would need: the struct + the two equip rows + the usage
+machine + `ResizeHitbox`'s stool arm + `CanFitSpace` + the jump-stat tail +
+the jump-off unboost + the camera modifier + the offset getters' stool arms
++ the dye slot — i.e. the whole seam. **Deferred WITH the seam, not dropped**
+(the W4-f3 close-out (b) verdict, re-verified this pass).
+
+## 4. The seam task's shape (recommendation)
+
+1. Model the five getters on `Player` (mount arm reads the existing
+   `mount.rs` accessors — `player_offset` `:2921`, `player_offset_hitbox`
+   `:2933`, `height_boost`/`player_head_offset` rows; stool arm reads a new
+   `portable_stool: PortableStoolUsage` field).
+2. Re-site `mounted_center`/`mounted_top` to the C# expressions — every
+   consumer in §2 routes through them already.
+3. Unify the draw-side `player_layers.rs` offset table onto the getter
+   (drop the duplicate rows), add `MountXOffset` + the head-dot offset.
+4. Land the stool machine + its equip rows + the jump tail/unboost +
+   `CanFitSpace` + the `StoolJump` camera modifier + the dye slot.
+5. Un-fold the FindPulley stool gate (`player.rs:10199`).
+6. Witnesses: the offset getters per mount kind (the `mount.rs` frame-table
+   witness `:3727` is the precedent), the stool usage gate chain, the
+   jump-off unboost position maths, the FindPulley refusal while perched.
+
+**RNG contract:** none of the offsets draw; the stool machine is
+deterministic state. The `StoolJump` camera modifier is local-player-only
+(`Main.myPlayer == whoAmI`, `:20772`).
