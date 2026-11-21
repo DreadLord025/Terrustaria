@@ -2,6 +2,8 @@
 # branch ADDS to assets.rs (vs the wave base a725acb0), for the cumulative
 # atlas-headroom scenarios in _d35_atlas_sim.js. Only `+  "Name",` rows count
 # (const-list rows); `atlas.sheet(...)` code lines are lookups, not packs.
+# RETIRE amendment: trailing `// comment` on a row is legal (e23's MapBG
+# backdrop set carries one per row) - the regex tolerates it now.
 import subprocess, re, json
 
 BASE = "a725acb0"
@@ -11,7 +13,7 @@ def git(*a):
 
 branches = [b for b in git("branch", "-r", "--format=%(refname:short)").split()
             if b.startswith("origin/task/")]
-row = re.compile(r'^\+\s+"([^"{} ]+)",?\s*$')
+row = re.compile(r'^\+\s+"([^"{} ]+)",?\s*(//.*)?$')
 out = {}
 for b in branches:
     d = git("diff", BASE + ".." + b, "--", "crates/tr-app/src/assets.rs")

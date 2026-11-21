@@ -1165,6 +1165,96 @@ names pack eagerly vs per-world) and the audit's reference set move. The
 NPC lazy form composes with the bg pages and the underworld escape; it is
 the last input-list amendment of the repack wave.
 
+## 14. The NEW-claimant delta since 490 (the RETIRE re-extraction)
+
+The §11 FINAL re-extraction stood at 37 branches / 424 pushed names → the
+490-name union. The RETIRE re-fetch (`git fetch origin --prune` +
+`tools/_d35_pushed_extract.py` re-run, 2026-11-21) finds **54 branches /
+504 pushed names** → the **562-name union** (504 pushed + 56 d40-forecast
++ 12 d35-deferred + 3 d125-tip + 5 d125-deferred, deduped; the d40/d35/
+d125 sets overlap the pushed rows heavily). **+72 genuinely-new names, 0
+gone** (Appendix B-2). Total padded area 13.48 Mpx ≈ 1646 px of bin width.
+
+### 14.1 The extraction fix: the comment-tolerant row regex
+
+The FINAL regex `^\+\s+"([^"{} ]+)",?\s*$` matched only bare `+  "Name",`
+rows. e23's bestiary-backdrop set carries a trailing `// comment` on every
+row (`+  "MapBG5",  // dungeon`), so the FINAL extraction **silently
+dropped all 26 MapBG backdrops** — they were never in the 490 union. The
+RETIRE regex `^\+\s+"([^"{} ]+)",?\s*(//.*)?$` tolerates the comment;
+`tools/_d35_retire_probe.py` confirms e23 is the ONLY branch with
+comment-row misses (26 names, all MapBG). This is a measurement-harness
+correction, not a new claim: e23's backdrops were always packed on its
+branch, the union table just never listed them.
+
+### 14.2 The named claimants (the brief's five, at their current tips)
+
+| claimant | tip | atlas delta | verdict |
+|---|---|---|---|
+| **g66c** (player-trail-dust) | `7213f3c71` | **0 sheet rows** | NO atlas claim — pure dust wiring (`player_trail_dust.rs`/`player_wing_dust.rs` etc., 7464 insertions, zero `assets.rs`/`atlas.rs` diff, zero `atlas.sheet`/`load_png` refs). The dust draws sample EXISTING sheets; nothing new packs. |
+| **g84b** (plantera-bulb-draw) | `e6c2dcd0d` | **+2: `Extra_260` (90×36), `Glow_294` (36×432)** | the bulb's glow overlay + the plantera-bulb Extra strip. Both ride the union (Appendix B-2 #7/#46). `Glow_294` is a `GLOW_SHEET_NAMES`-family row (the f15 glow set), `Extra_260` an Extra row. |
+| **e23b** (bestiary-ui-grid) | `a4b972bde` | **+30: 26 MapBG backdrops + `UI/Scrollbar` + `Stat_Gold/Platinum/Silver`** | the 26 MapBG are the §14.1 regex recovery (always packed, now listed); the 4 UI rows are the bestiary info-page's coin denominations + Blue-theme scrollbar (`NPCStatsReportInfoElement.cs:179-198`, `UIScrollbar.cs:61`). All small (≤7.8 kpx each). |
+| **f42** (sandstorm-2) | `75f055fcf` | **+9 NPC: 546/61/69/78/79/80/580/581/630** | the desert family's sheets (the spawn arm `NPC.cs:3949-4018`). NPC_79/80 were d35-DEFERRED (now real on f42); the rest are new. Under the §10 lazy form ALL nine ride the per-world NPC page (desert spawnable kinds), NOT the union. |
+| **g34e** (drawdata-wire-2) | `595debb8d` | **0 sheet rows** | NO atlas claim — pure drawdata/cage wiring (`drawdata_cases_a/b.rs`, `render/tiles.rs`, the cage-light `LightParams.cage_mode` feed). Zero `assets.rs`/`atlas.rs` diff, zero new sheet refs. |
+
+**The other new arrivals** (the re-extraction's full +72, Appendix B-2):
+d33's lunar band (NPC_595-601, 7), d39's critters (NPC_356/366/367/377,
+4), d41's band (NPC_494-497, 4), d9's proj-NPCs (NPC_454-459/521, 7 —
+**NPC_454-459 were d40-FORECAST, now packed by d9's proj-ai lane**, the
+forecast dagger retires for those six), d23 (NPC_516/666, 2), g5's caster
+(NPC_172/693, 2), d11 (NPC_619), f47's shimmer (NPC_676), g82's rope/coil
+(Chain16/38/39 + Chains_4-7, 7), f41's birthday (Armor_Head_195 +
+Player_HairAlt_1, 2), g12 (Shroom_Tops), c46 (Flame + Ghost), f22 (Chat2),
+f28 (OneDropLogo), d13 (Extra_66).
+
+### 14.3 The re-measured worst case (the 562-name union)
+
+`tools/_d35_retire_measure.js` → `_d35_retire_measure.json` (24
+scenarios, verify() + double-run determinism on every layout, boundary
+split recursed to N pages):
+
+| scenario | sheets | area Mpx | area bound | skyline | boundary pages | atlas MB |
+|---|---|---|---|---|---|---|
+| merged-407 base (§7, re-witnessed) | 9904 | 74.72 | 9125 | 9478 | 8192 / 1298 | 311.0 |
+| merged-final-504 (the RETIRE pushed union) | 10051 | 76.46 | 9338 | 9757 | 8190 / 1602 | 320.9 |
+| + d125 full tip (636/661/Extra_188) | 10054 | 76.55 | 9349 | 9739 | 8174 / 1612 | 320.7 |
+| **+ d125 deferred 5 (the WORST case)** | 10059 | 77.73 | 9493 | 9922 | **8160 / 1754** | 324.9 |
+| **lazy union (504 − all NPC_)** | 9544 | **55.10** | **6730** | **7140** | **ONE page 7140** | 234.0 |
+| **lazy union (worst − all NPC_)** | 9550 | **56.30** | **6877** | **7305** | **ONE page 7305** | 239.4 |
+
+**The two-page contract holds with ≥6400 px of page-1 headroom** (worst
+page 1 = 1754, cap 8192). **The lazy union stays ONE page** (7140 px,
+1052 px headroom). The +72 new names split 25 NPC-band kinds + 47 non-NPC
+rows: the NPC kinds are pulled out by the lazy filter (they ride the
+per-world NPC page), and the 47 non-NPC rows (the 26 MapBG recovery + the
+small UI/Extra/Chain/Armor rows, ≤47 kpx each) add only 0.33 Mpx — the
+lazy union's height moves 7162 → 7140 (the skyline's chaotic ordering,
+§1; the area bound rises monotonically 6690 → 6730, the honest metric).
+The lazy-union SHEET count is stable at 9544 across the retire snapshots
+because the 47 non-NPC rows were already in the first retire extraction
+(488); the latest +16 names (504) are all NPC-band kinds the filter
+removes. The NPC-band growth (d33/d39/d41/f42/d9/d23/g5) rides the
+per-world NPC page, NOT the union — exactly the §10 contract's intent.
+
+### 14.4 The per-world NPC page under the new claimants
+
+The new claimant kinds are NOT in the landed spawn-roster census
+(`_d35_npc_census.json` reads THIS branch's spawner/world_sim/bestiary;
+the new kinds live on their own branches). Post-merge their spawn arms
+land, so their sheets join the per-world NPC page. The augmented sets
+(the 31 new-claimant spawnable ids added to the census sets):
+
+| world stage | NPC sheets | area Mpx | own page |
+|---|---|---|---|
+| long-lived + new claimants | 226 | 15.81 | **2160 px** (one page) |
+| bestiary-opened + new claimants | 320 | 20.03 | **2566 px** (one page) |
+
+The bestiary superset height is UNCHANGED (2566 px) — the new kinds are
+small (≤256 px strips) and pack into the existing page's headroom. **Every
+realistic set still fits ONE own page with ≥5600 px headroom.** The
+realistic total budget is unchanged: 3 pages (~533-568 MB) / 4 adversarial
+(~647-660 MB), §15.
+
 ## Appendix A - the original 407-name union list (priority order: padded area desc)
 
 Legend: branch slugs omit the W4- prefix; dagger = d40 FORECAST (data-only branch, sheets phase pending); double-dagger = d35 DEFERRED (admitted by the repack). Generated by tools/_d35_union_table.py from the REAL .xnb dims. **This is the §1-9 measurement base (26 branches / 339 pushed + 56 forecast + 12 deferred). The FINAL 490-name list lives in `tools/_d35_union_table.md` (regenerated); the 83-name delta is Appendix B below.**
@@ -1673,3 +1763,91 @@ deferred; "(tip 2dfe026d, local)" = d125's unpushed sheets tip.
 | 81 | `Extra_256` | 18×18 | 0.4 | g21-sounds-main-1 |
 | 82 | `NPC_357` | 14×16 | 0.3 | c8-style66-crawling-critters |
 | 83 | `NPC_606` | 14×16 | 0.3 | c8-style66-crawling-critters |
+
+## Appendix B-2 - the RETIRE delta (72 new names, priority order: padded area desc)
+
+The §14 re-extraction delta: 54 pushed branches / 504 names (+80 vs the
+424 base, 0 gone; 8 of the 80 were already forecast/deferred in the 490
+union — NPC_79/80 + NPC_454-459 — so +72 genuinely-new), deduped against
+Appendix A + B (the 490-name union). Generated by
+`tools/_d35_delta_table.py` from `tools/_d35_union_list.json` (the FULL
+562-name table is `tools/_d35_union_table.md`). Legend: the 26 MapBG rows
+are e23's bestiary backdrops the FINAL regex dropped (§14.1, always
+packed, now listed); NPC_454-459 were d40-forecast, now packed by d9's
+proj-ai lane (the dagger retires for those six). The NPC-band rows ride
+the per-world NPC page under the §10 lazy form, NOT the union.
+
+| # | sheet | w×h | padded kpx | owner branch(es) |
+|---|-------|-----|-----------|------------------|
+| 1 | `Armor_Head_195` | 40×1120 | 47.1 | f41-birthday-party-2 |
+| 2 | `NPC_630` | 40×896 | 37.7 | f42-sandstorm-2 |
+| 3 | `NPC_521` | 100×352 | 36.1 | d9-proj-ai-81-90 |
+| 4 | `Player_HairAlt_1` | 40×784 | 33.0 | f41-birthday-party-2 |
+| 5 | `NPC_619` | 48×444 | 22.3 | d11-proj-ai-101-110 |
+| 6 | `NPC_494` | 62×256 | 16.5 | d41-491-560 |
+| 7 | `Glow_294` | 36×432 | 16.5 | g84-plantera-bulb-draw |
+| 8 | `NPC_496` | 40×360 | 15.2 | d41-491-560 |
+| 9 | `NPC_497` | 40×360 | 15.2 | d41-491-560 |
+| 10 | `NPC_356` | 24×576 | 15.0 | d39-351-420 |
+| 11 | `NPC_495` | 54×256 | 14.4 | d41-491-560 |
+| 12 | `NPC_580` | 66×192 | 13.2 | f42-sandstorm-2 |
+| 13 | `NPC_172` | 40×210 | 8.9 | g5-npc-style7-caster-doc |
+| 14 | `Shroom_Tops` | 186×44 | 8.6 | g12-dust-main-sites-2 |
+| 15 | `MapBG13` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 16 | `MapBG22` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 17 | `MapBG23` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 18 | `MapBG24` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 19 | `MapBG26` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 20 | `MapBG27` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 21 | `MapBG28` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 22 | `MapBG29` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 23 | `MapBG30` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 24 | `MapBG31` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 25 | `MapBG34` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 26 | `MapBG35` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 27 | `MapBG36` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 28 | `MapBG37` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 29 | `MapBG38` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 30 | `MapBG39` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 31 | `MapBG40` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 32 | `MapBG41` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 33 | `MapBG42` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 34 | `MapBG5` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 35 | `MapBG6` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 36 | `MapBG7` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 37 | `MapBG8` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 38 | `MapBG9` | 115×65 | 7.8 | e23-bestiary-ui-grid |
+| 39 | `MapBG20` | 115×61 | 7.4 | e23-bestiary-ui-grid |
+| 40 | `MapBG21` | 115×61 | 7.4 | e23-bestiary-ui-grid |
+| 41 | `NPC_693` | 40×168 | 7.1 | g5-npc-style7-caster-doc |
+| 42 | `Ghost` | 34×176 | 6.4 | c46-respawn-breath-drown |
+| 43 | `NPC_516` | 38×152 | 6.2 | d23-npc-ai-styles-9-14 |
+| 44 | `NPC_366` | 38×112 | 4.6 | d39-351-420 |
+| 45 | `NPC_367` | 34×104 | 3.8 | d39-351-420 |
+| 46 | `Extra_260` | 90×36 | 3.5 | g84-plantera-bulb-draw |
+| 47 | `NPC_676` | 34×52 | 1.9 | f47-liquid-shimmer-2 |
+| 48 | `NPC_546` | 42×42 | 1.9 | f42-sandstorm-2 |
+| 49 | `UI/Bestiary/Stat_Gold` | 47×31 | 1.6 | e23-bestiary-ui-grid |
+| 50 | `UI/Bestiary/Stat_Platinum` | 47×31 | 1.6 | e23-bestiary-ui-grid |
+| 51 | `UI/Bestiary/Stat_Silver` | 47×31 | 1.6 | e23-bestiary-ui-grid |
+| 52 | `NPC_595` | 20×48 | 1.1 | d33-npc-ai-styles-95-127 |
+| 53 | `NPC_596` | 20×48 | 1.1 | d33-npc-ai-styles-95-127 |
+| 54 | `NPC_597` | 20×48 | 1.1 | d33-npc-ai-styles-95-127 |
+| 55 | `NPC_598` | 20×48 | 1.1 | d33-npc-ai-styles-95-127 |
+| 56 | `NPC_599` | 20×48 | 1.1 | d33-npc-ai-styles-95-127 |
+| 57 | `NPC_600` | 20×48 | 1.1 | d33-npc-ai-styles-95-127 |
+| 58 | `NPC_601` | 20×48 | 1.1 | d33-npc-ai-styles-95-127 |
+| 59 | `Chat2` | 32×28 | 1.0 | f22-ui-screens-4 |
+| 60 | `Flame` | 22×22 | 0.6 | c46-respawn-breath-drown |
+| 61 | `NPC_377` | 18×24 | 0.5 | d39-351-420 |
+| 62 | `OneDropLogo` | 19×19 | 0.4 | f28-tooltip-lines-2 |
+| 63 | `UI/Scrollbar` | 20×16 | 0.4 | e23-bestiary-ui-grid |
+| 64 | `NPC_666` | 16×16 | 0.3 | d23-npc-ai-styles-9-14 |
+| 65 | `Extra_66` | 12×12 | 0.2 | d13-proj-ai-121-130 |
+| 66 | `Chain38` | 16×8 | 0.2 | g82-rope-coil-draw |
+| 67 | `Chain39` | 16×8 | 0.2 | g82-rope-coil-draw |
+| 68 | `Chains_4` | 16×8 | 0.2 | g82-rope-coil-draw |
+| 69 | `Chains_5` | 16×8 | 0.2 | g82-rope-coil-draw |
+| 70 | `Chains_6` | 16×8 | 0.2 | g82-rope-coil-draw |
+| 71 | `Chains_7` | 16×8 | 0.2 | g82-rope-coil-draw |
+| 72 | `Chain16` | 8×8 | 0.1 | g82-rope-coil-draw |

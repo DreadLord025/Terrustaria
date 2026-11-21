@@ -302,7 +302,7 @@
  {
   "name": "NPC_636",
   "owners": [
-   "W4-d125-empress-r7-drain (sheets tip 2dfe026d, local ahead of origin)"
+   "W4-d125-empress-r7-drain (sheets tip 86e3adfd3, local ahead of origin)"
   ],
   "w": 166,
   "h": 352,
@@ -488,6 +488,16 @@
   "w": 176,
   "h": 264,
   "padded_area": 47348,
+  "missing": false
+ },
+ {
+  "name": "Armor_Head_195",
+  "owners": [
+   "W4-f41-birthday-party-2"
+  ],
+  "w": 40,
+  "h": 1120,
+  "padded_area": 47124,
   "missing": false
  },
  {
@@ -745,7 +755,8 @@
  {
   "name": "NPC_581",
   "owners": [
-   "W4-c4-style44-flying-fish"
+   "W4-c4-style44-flying-fish",
+   "W4-f42-sandstorm-2"
   ],
   "w": 100,
   "h": 378,
@@ -773,6 +784,16 @@
   "missing": false
  },
  {
+  "name": "NPC_630",
+  "owners": [
+   "W4-f42-sandstorm-2"
+  ],
+  "w": 40,
+  "h": 896,
+  "padded_area": 37716,
+  "missing": false
+ },
+ {
   "name": "NPC_73",
   "owners": [
    "W4-d35-npc-kinds-71-140"
@@ -785,7 +806,8 @@
  {
   "name": "NPC_78",
   "owners": [
-   "W4-d35-npc-kinds-71-140"
+   "W4-d35-npc-kinds-71-140",
+   "W4-f42-sandstorm-2"
   ],
   "w": 40,
   "h": 896,
@@ -795,7 +817,8 @@
  {
   "name": "NPC_79",
   "owners": [
-   "W4-d35-npc-kinds-71-140 (DEFERRED: packed only if a repack admits it)"
+   "W4-d35-npc-kinds-71-140 (DEFERRED: packed only if a repack admits it)",
+   "W4-f42-sandstorm-2"
   ],
   "w": 40,
   "h": 896,
@@ -805,7 +828,8 @@
  {
   "name": "NPC_80",
   "owners": [
-   "W4-d35-npc-kinds-71-140 (DEFERRED: packed only if a repack admits it)"
+   "W4-d35-npc-kinds-71-140 (DEFERRED: packed only if a repack admits it)",
+   "W4-f42-sandstorm-2"
   ],
   "w": 40,
   "h": 896,
@@ -840,6 +864,16 @@
   "w": 40,
   "h": 872,
   "padded_area": 36708,
+  "missing": false
+ },
+ {
+  "name": "NPC_521",
+  "owners": [
+   "W4-d9-proj-ai-81-90"
+  ],
+  "w": 100,
+  "h": 352,
+  "padded_area": 36108,
   "missing": false
  },
  {
@@ -920,6 +954,16 @@
   "w": 110,
   "h": 300,
   "padded_area": 33824,
+  "missing": false
+ },
+ {
+  "name": "Player_HairAlt_1",
+  "owners": [
+   "W4-f41-birthday-party-2"
+  ],
+  "w": 40,
+  "h": 784,
+  "padded_area": 33012,
   "missing": false
  },
  {
@@ -1016,7 +1060,7 @@
  {
   "name": "Extra_188",
   "owners": [
-   "W4-d125-empress-r7-drain (sheets tip 2dfe026d, local ahead of origin)"
+   "W4-d125-empress-r7-drain (sheets tip 86e3adfd3, local ahead of origin)"
   ],
   "w": 166,
   "h": 174,
@@ -1027,6 +1071,7 @@
   "name": "NPC_61",
   "owners": [
    "W4-d34-npc-kinds-1-70",
+   "W4-f42-sandstorm-2",
    "W4-g8-npc-kind-wire-1"
   ],
   "w": 78,
@@ -1109,7 +1154,8 @@
  {
   "name": "NPC_454",
   "owners": [
-   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)"
+   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)",
+   "W4-d9-proj-ai-81-90"
   ],
   "w": 80,
   "h": 312,
@@ -1175,6 +1221,16 @@
   "w": 48,
   "h": 462,
   "padded_area": 23200,
+  "missing": false
+ },
+ {
+  "name": "NPC_619",
+  "owners": [
+   "W4-d11-proj-ai-101-110"
+  ],
+  "w": 48,
+  "h": 444,
+  "padded_area": 22300,
   "missing": false
  },
  {
@@ -1361,6 +1417,16 @@
   "missing": false
  },
  {
+  "name": "NPC_494",
+  "owners": [
+   "W4-d41-npc-kinds-491-560"
+  ],
+  "w": 62,
+  "h": 256,
+  "padded_area": 16512,
+  "missing": false
+ },
+ {
   "name": "NPC_226",
   "owners": [
    "W4-d37-npc-kinds-211-280",
@@ -1395,6 +1461,16 @@
   "name": "Glow_270",
   "owners": [
    "W4-f15-glow-bind-tiledraw2"
+  ],
+  "w": 36,
+  "h": 432,
+  "padded_area": 16492,
+  "missing": false
+ },
+ {
+  "name": "Glow_294",
+  "owners": [
+   "W4-g84-plantera-bulb-draw"
   ],
   "w": 36,
   "h": 432,
@@ -1473,6 +1549,26 @@
   "missing": false
  },
  {
+  "name": "NPC_496",
+  "owners": [
+   "W4-d41-npc-kinds-491-560"
+  ],
+  "w": 40,
+  "h": 360,
+  "padded_area": 15204,
+  "missing": false
+ },
+ {
+  "name": "NPC_497",
+  "owners": [
+   "W4-d41-npc-kinds-491-560"
+  ],
+  "w": 40,
+  "h": 360,
+  "padded_area": 15204,
+  "missing": false
+ },
+ {
   "name": "NPC_470",
   "owners": [
    "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)"
@@ -1480,6 +1576,16 @@
   "w": 28,
   "h": 504,
   "padded_area": 15180,
+  "missing": false
+ },
+ {
+  "name": "NPC_356",
+  "owners": [
+   "W4-d39-npc-kinds-351-420"
+  ],
+  "w": 24,
+  "h": 576,
+  "padded_area": 15028,
   "missing": false
  },
  {
@@ -1501,6 +1607,16 @@
   "w": 84,
   "h": 168,
   "padded_area": 14620,
+  "missing": false
+ },
+ {
+  "name": "NPC_495",
+  "owners": [
+   "W4-d41-npc-kinds-491-560"
+  ],
+  "w": 54,
+  "h": 256,
+  "padded_area": 14448,
   "missing": false
  },
  {
@@ -1592,6 +1708,16 @@
   "w": 264,
   "h": 48,
   "padded_area": 13300,
+  "missing": false
+ },
+ {
+  "name": "NPC_580",
+  "owners": [
+   "W4-f42-sandstorm-2"
+  ],
+  "w": 66,
+  "h": 192,
+  "padded_area": 13192,
   "missing": false
  },
  {
@@ -1857,6 +1983,16 @@
   "missing": false
  },
  {
+  "name": "NPC_172",
+  "owners": [
+   "W4-g5-npc-style7-caster-doc"
+  ],
+  "w": 40,
+  "h": 210,
+  "padded_area": 8904,
+  "missing": false
+ },
+ {
   "name": "Extra_146",
   "owners": [
    "W4-d16-proj-ai-151-160"
@@ -1869,7 +2005,8 @@
  {
   "name": "NPC_455",
   "owners": [
-   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)"
+   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)",
+   "W4-d9-proj-ai-81-90"
   ],
   "w": 80,
   "h": 104,
@@ -1879,7 +2016,8 @@
  {
   "name": "NPC_456",
   "owners": [
-   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)"
+   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)",
+   "W4-d9-proj-ai-81-90"
   ],
   "w": 80,
   "h": 104,
@@ -1889,7 +2027,8 @@
  {
   "name": "NPC_457",
   "owners": [
-   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)"
+   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)",
+   "W4-d9-proj-ai-81-90"
   ],
   "w": 80,
   "h": 104,
@@ -1899,7 +2038,8 @@
  {
   "name": "NPC_458",
   "owners": [
-   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)"
+   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)",
+   "W4-d9-proj-ai-81-90"
   ],
   "w": 80,
   "h": 104,
@@ -1909,11 +2049,22 @@
  {
   "name": "NPC_459",
   "owners": [
-   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)"
+   "W4-d40-npc-kinds-421-490 (FORECAST: data-only today, sheets phase pending)",
+   "W4-d9-proj-ai-81-90"
   ],
   "w": 80,
   "h": 104,
   "padded_area": 8692,
+  "missing": false
+ },
+ {
+  "name": "Shroom_Tops",
+  "owners": [
+   "W4-g12-dust-main-sites-2"
+  ],
+  "w": 186,
+  "h": 44,
+  "padded_area": 8648,
   "missing": false
  },
  {
@@ -1977,6 +2128,246 @@
   "missing": false
  },
  {
+  "name": "MapBG13",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG22",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG23",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG24",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG26",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG27",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG28",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG29",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG30",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG31",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG34",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG35",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG36",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG37",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG38",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG39",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG40",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG41",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG42",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG5",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG6",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG7",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG8",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
+  "name": "MapBG9",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 65,
+  "padded_area": 7839,
+  "missing": false
+ },
+ {
   "name": "NPC_284",
   "owners": [
    "W4-d38-npc-kinds-281-350"
@@ -2010,6 +2401,7 @@
  {
   "name": "NPC_69",
   "owners": [
+   "W4-f42-sandstorm-2",
    "W4-g8-npc-kind-wire-1"
   ],
   "w": 36,
@@ -2025,6 +2417,26 @@
   "w": 42,
   "h": 168,
   "padded_area": 7480,
+  "missing": false
+ },
+ {
+  "name": "MapBG20",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 61,
+  "padded_area": 7371,
+  "missing": false
+ },
+ {
+  "name": "MapBG21",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 115,
+  "h": 61,
+  "padded_area": 7371,
   "missing": false
  },
  {
@@ -2061,6 +2473,16 @@
   "name": "NPC_283",
   "owners": [
    "W4-d38-npc-kinds-281-350"
+  ],
+  "w": 40,
+  "h": 168,
+  "padded_area": 7140,
+  "missing": false
+ },
+ {
+  "name": "NPC_693",
+  "owners": [
+   "W4-g5-npc-style7-caster-doc"
   ],
   "w": 40,
   "h": 168,
@@ -2161,6 +2583,16 @@
   "missing": false
  },
  {
+  "name": "Ghost",
+  "owners": [
+   "W4-c46-respawn-breath-drown"
+  ],
+  "w": 34,
+  "h": 176,
+  "padded_area": 6408,
+  "missing": false
+ },
+ {
   "name": "NPC_255",
   "owners": [
    "W4-d37-npc-kinds-211-280"
@@ -2187,6 +2619,16 @@
   ],
   "w": 42,
   "h": 138,
+  "padded_area": 6160,
+  "missing": false
+ },
+ {
+  "name": "NPC_516",
+  "owners": [
+   "W4-d23-npc-ai-styles-9-14"
+  ],
+  "w": 38,
+  "h": 152,
   "padded_area": 6160,
   "missing": false
  },
@@ -2424,6 +2866,16 @@
   "w": 304,
   "h": 14,
   "padded_area": 4896,
+  "missing": false
+ },
+ {
+  "name": "NPC_366",
+  "owners": [
+   "W4-d39-npc-kinds-351-420"
+  ],
+  "w": 38,
+  "h": 112,
+  "padded_area": 4560,
   "missing": false
  },
  {
@@ -2800,6 +3252,16 @@
   "missing": false
  },
  {
+  "name": "NPC_367",
+  "owners": [
+   "W4-d39-npc-kinds-351-420"
+  ],
+  "w": 34,
+  "h": 104,
+  "padded_area": 3816,
+  "missing": false
+ },
+ {
   "name": "UI/Workshop/HubPublishResourcepacks",
   "owners": [
    "W4-d84-ui-screens-1"
@@ -2837,6 +3299,16 @@
   "w": 60,
   "h": 58,
   "padded_area": 3720,
+  "missing": false
+ },
+ {
+  "name": "Extra_260",
+  "owners": [
+   "W4-g84-plantera-bulb-draw"
+  ],
+  "w": 90,
+  "h": 36,
+  "padded_area": 3496,
   "missing": false
  },
  {
@@ -3035,6 +3507,7 @@
  {
   "name": "UI/NPCHappiness",
   "owners": [
+   "W4-d122-shop-restock-npc",
    "W4-g58-ui-shop-happiness"
   ],
   "w": 96,
@@ -3075,7 +3548,8 @@
  {
   "name": "Coin_3",
   "owners": [
-   "W4-f29-map-overlay-2"
+   "W4-f29-map-overlay-2",
+   "W4-g12-dust-main-sites-2"
   ],
   "w": 14,
   "h": 144,
@@ -3135,7 +3609,8 @@
  {
   "name": "Coin_2",
   "owners": [
-   "W4-f29-map-overlay-2"
+   "W4-f29-map-overlay-2",
+   "W4-g12-dust-main-sites-2"
   ],
   "w": 12,
   "h": 144,
@@ -3223,9 +3698,29 @@
   "missing": false
  },
  {
+  "name": "NPC_676",
+  "owners": [
+   "W4-f47-liquid-shimmer-2"
+  ],
+  "w": 34,
+  "h": 52,
+  "padded_area": 1944,
+  "missing": false
+ },
+ {
+  "name": "NPC_546",
+  "owners": [
+   "W4-f42-sandstorm-2"
+  ],
+  "w": 42,
+  "h": 42,
+  "padded_area": 1936,
+  "missing": false
+ },
+ {
   "name": "NPC_661",
   "owners": [
-   "W4-d125-empress-r7-drain (sheets tip 2dfe026d, local ahead of origin)"
+   "W4-d125-empress-r7-drain (sheets tip 86e3adfd3, local ahead of origin)"
   ],
   "w": 24,
   "h": 72,
@@ -3235,7 +3730,8 @@
  {
   "name": "Coin_1",
   "owners": [
-   "W4-f29-map-overlay-2"
+   "W4-f29-map-overlay-2",
+   "W4-g12-dust-main-sites-2"
   ],
   "w": 12,
   "h": 128,
@@ -3314,6 +3810,36 @@
   "missing": false
  },
  {
+  "name": "UI/Bestiary/Stat_Gold",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 47,
+  "h": 31,
+  "padded_area": 1617,
+  "missing": false
+ },
+ {
+  "name": "UI/Bestiary/Stat_Platinum",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 47,
+  "h": 31,
+  "padded_area": 1617,
+  "missing": false
+ },
+ {
+  "name": "UI/Bestiary/Stat_Silver",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 47,
+  "h": 31,
+  "padded_area": 1617,
+  "missing": false
+ },
+ {
   "name": "NPC_95",
   "owners": [
    "W4-d35-npc-kinds-71-140"
@@ -3346,7 +3872,8 @@
  {
   "name": "Coin_0",
   "owners": [
-   "W4-f29-map-overlay-2"
+   "W4-f29-map-overlay-2",
+   "W4-g12-dust-main-sites-2"
   ],
   "w": 12,
   "h": 112,
@@ -3492,7 +4019,8 @@
  {
   "name": "NPC_Head_71",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 34,
   "h": 34,
@@ -3522,7 +4050,8 @@
  {
   "name": "NPC_Head_67",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 26,
   "h": 40,
@@ -3553,7 +4082,8 @@
  {
   "name": "NPC_Head_76",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 34,
   "h": 30,
@@ -3563,11 +4093,82 @@
  {
   "name": "NPC_Head_54",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 28,
   "h": 36,
   "padded_area": 1140,
+  "missing": false
+ },
+ {
+  "name": "NPC_595",
+  "owners": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "w": 20,
+  "h": 48,
+  "padded_area": 1100,
+  "missing": false
+ },
+ {
+  "name": "NPC_596",
+  "owners": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "w": 20,
+  "h": 48,
+  "padded_area": 1100,
+  "missing": false
+ },
+ {
+  "name": "NPC_597",
+  "owners": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "w": 20,
+  "h": 48,
+  "padded_area": 1100,
+  "missing": false
+ },
+ {
+  "name": "NPC_598",
+  "owners": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "w": 20,
+  "h": 48,
+  "padded_area": 1100,
+  "missing": false
+ },
+ {
+  "name": "NPC_599",
+  "owners": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "w": 20,
+  "h": 48,
+  "padded_area": 1100,
+  "missing": false
+ },
+ {
+  "name": "NPC_600",
+  "owners": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "w": 20,
+  "h": 48,
+  "padded_area": 1100,
+  "missing": false
+ },
+ {
+  "name": "NPC_601",
+  "owners": [
+   "W4-d33-npc-ai-styles-95-127"
+  ],
+  "w": 20,
+  "h": 48,
+  "padded_area": 1100,
   "missing": false
  },
  {
@@ -3594,7 +4195,8 @@
  {
   "name": "NPC_Head_63",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 32,
   "h": 30,
@@ -3604,7 +4206,8 @@
  {
   "name": "NPC_Head_69",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 32,
   "h": 30,
@@ -3794,7 +4397,8 @@
  {
   "name": "NPC_Head_Boss_31",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 30,
   "h": 30,
@@ -3826,7 +4430,8 @@
  {
   "name": "NPC_Head_Boss_7",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 30,
   "h": 30,
@@ -3874,9 +4479,20 @@
   "missing": false
  },
  {
+  "name": "Chat2",
+  "owners": [
+   "W4-f22-ui-screens-4"
+  ],
+  "w": 32,
+  "h": 28,
+  "padded_area": 1020,
+  "missing": false
+ },
+ {
   "name": "NPC_Head_56",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 32,
   "h": 28,
@@ -3886,7 +4502,8 @@
  {
   "name": "NPC_Head_77",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 32,
   "h": 28,
@@ -3896,7 +4513,8 @@
  {
   "name": "NPC_Head_78",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 32,
   "h": 28,
@@ -3917,7 +4535,8 @@
  {
   "name": "NPC_Head_66",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 26,
   "h": 34,
@@ -3949,7 +4568,8 @@
  {
   "name": "NPC_Head_79",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 28,
   "h": 30,
@@ -4058,7 +4678,8 @@
  {
   "name": "NPC_Head_80",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 32,
   "h": 26,
@@ -4141,7 +4762,8 @@
  {
   "name": "NPC_Head_64",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 26,
   "h": 30,
@@ -4151,7 +4773,8 @@
  {
   "name": "NPC_Head_70",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 26,
   "h": 30,
@@ -4259,7 +4882,8 @@
  {
   "name": "NPC_Head_73",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 32,
   "h": 24,
@@ -4269,7 +4893,8 @@
  {
   "name": "NPC_Head_59",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 22,
   "h": 34,
@@ -4290,7 +4915,8 @@
  {
   "name": "NPC_Head_57",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 28,
   "h": 26,
@@ -4300,7 +4926,8 @@
  {
   "name": "NPC_Head_62",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 28,
   "h": 26,
@@ -4310,7 +4937,8 @@
  {
   "name": "NPC_Head_72",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 28,
   "h": 26,
@@ -4320,7 +4948,8 @@
  {
   "name": "NPC_Head_75",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 28,
   "h": 26,
@@ -4415,7 +5044,8 @@
  {
   "name": "NPC_Head_68",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 26,
   "h": 26,
@@ -4469,7 +5099,8 @@
  {
   "name": "NPC_Head_60",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 28,
   "h": 22,
@@ -4479,7 +5110,8 @@
  {
   "name": "NPC_Head_74",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 28,
   "h": 22,
@@ -4550,9 +5182,20 @@
   "missing": false
  },
  {
+  "name": "Flame",
+  "owners": [
+   "W4-c46-respawn-breath-drown"
+  ],
+  "w": 22,
+  "h": 22,
+  "padded_area": 576,
+  "missing": false
+ },
+ {
   "name": "NPC_Head_36",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 22,
   "h": 22,
@@ -4562,7 +5205,8 @@
  {
   "name": "NPC_Head_38",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 22,
   "h": 22,
@@ -4583,7 +5227,8 @@
  {
   "name": "NPC_Head_58",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 20,
   "h": 24,
@@ -4613,7 +5258,8 @@
  {
   "name": "NPC_Head_34",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 22,
   "h": 20,
@@ -4623,7 +5269,8 @@
  {
   "name": "NPC_Head_55",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 22,
   "h": 20,
@@ -4633,11 +5280,22 @@
  {
   "name": "NPC_Head_65",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 20,
   "h": 22,
   "padded_area": 528,
+  "missing": false
+ },
+ {
+  "name": "NPC_377",
+  "owners": [
+   "W4-d39-npc-kinds-351-420"
+  ],
+  "w": 18,
+  "h": 24,
+  "padded_area": 520,
   "missing": false
  },
  {
@@ -4664,7 +5322,8 @@
  {
   "name": "NPC_Head_35",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 22,
   "h": 18,
@@ -4674,7 +5333,8 @@
  {
   "name": "NPC_Head_37",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 22,
   "h": 18,
@@ -4695,7 +5355,8 @@
  {
   "name": "NPC_Head_0",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 16,
   "h": 24,
@@ -4705,11 +5366,22 @@
  {
   "name": "NPC_Head_40",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 16,
   "h": 24,
   "padded_area": 468,
+  "missing": false
+ },
+ {
+  "name": "OneDropLogo",
+  "owners": [
+   "W4-f28-tooltip-lines-2"
+  ],
+  "w": 19,
+  "h": 19,
+  "padded_area": 441,
   "missing": false
  },
  {
@@ -4726,7 +5398,8 @@
  {
   "name": "NPC_Head_31",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 18,
   "h": 20,
@@ -4736,7 +5409,8 @@
  {
   "name": "NPC_Head_61",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 18,
   "h": 20,
@@ -4805,6 +5479,16 @@
   "missing": false
  },
  {
+  "name": "UI/Scrollbar",
+  "owners": [
+   "W4-e23-bestiary-ui-grid"
+  ],
+  "w": 20,
+  "h": 16,
+  "padded_area": 396,
+  "missing": false
+ },
+ {
   "name": "NPC_Head_27",
   "owners": [
    "W4-e17-map-overlay-layers",
@@ -4818,7 +5502,8 @@
  {
   "name": "NPC_Head_28",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 16,
   "h": 18,
@@ -4828,7 +5513,8 @@
  {
   "name": "NPC_Head_29",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 16,
   "h": 18,
@@ -4838,7 +5524,8 @@
  {
   "name": "NPC_Head_30",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 16,
   "h": 18,
@@ -4848,7 +5535,8 @@
  {
   "name": "NPC_Head_32",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 16,
   "h": 18,
@@ -4869,7 +5557,8 @@
  {
   "name": "NPC_Head_41",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 14,
   "h": 20,
@@ -4879,7 +5568,8 @@
  {
   "name": "NPC_Head_42",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 14,
   "h": 20,
@@ -4889,7 +5579,8 @@
  {
   "name": "NPC_Head_44",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 14,
   "h": 20,
@@ -4910,7 +5601,18 @@
  {
   "name": "NPC_112",
   "owners": [
+   "W4-d23-npc-ai-styles-9-14",
    "W4-d35-npc-kinds-71-140"
+  ],
+  "w": 16,
+  "h": 16,
+  "padded_area": 324,
+  "missing": false
+ },
+ {
+  "name": "NPC_666",
+  "owners": [
+   "W4-d23-npc-ai-styles-9-14"
   ],
   "w": 16,
   "h": 16,
@@ -4961,7 +5663,8 @@
  {
   "name": "NPC_Head_43",
   "owners": [
-   "W4-e17-map-overlay-layers"
+   "W4-e17-map-overlay-layers",
+   "W4-f29-map-overlay-2"
   ],
   "w": 16,
   "h": 14,
@@ -4989,6 +5692,76 @@
   "missing": false
  },
  {
+  "name": "Extra_66",
+  "owners": [
+   "W4-d13-proj-ai-121-130"
+  ],
+  "w": 12,
+  "h": 12,
+  "padded_area": 196,
+  "missing": false
+ },
+ {
+  "name": "Chain38",
+  "owners": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "w": 16,
+  "h": 8,
+  "padded_area": 180,
+  "missing": false
+ },
+ {
+  "name": "Chain39",
+  "owners": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "w": 16,
+  "h": 8,
+  "padded_area": 180,
+  "missing": false
+ },
+ {
+  "name": "Chains_4",
+  "owners": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "w": 16,
+  "h": 8,
+  "padded_area": 180,
+  "missing": false
+ },
+ {
+  "name": "Chains_5",
+  "owners": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "w": 16,
+  "h": 8,
+  "padded_area": 180,
+  "missing": false
+ },
+ {
+  "name": "Chains_6",
+  "owners": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "w": 16,
+  "h": 8,
+  "padded_area": 180,
+  "missing": false
+ },
+ {
+  "name": "Chains_7",
+  "owners": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "w": 16,
+  "h": 8,
+  "padded_area": 180,
+  "missing": false
+ },
+ {
   "name": "UI/UI_quickicon1",
   "owners": [
    "W4-e17-map-overlay-layers",
@@ -4997,6 +5770,16 @@
   "w": 6,
   "h": 16,
   "padded_area": 144,
+  "missing": false
+ },
+ {
+  "name": "Chain16",
+  "owners": [
+   "W4-g82-rope-coil-draw"
+  ],
+  "w": 8,
+  "h": 8,
+  "padded_area": 100,
   "missing": false
  }
 ]

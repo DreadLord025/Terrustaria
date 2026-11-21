@@ -14,9 +14,11 @@ D40_IDS = [430,431,432,433,434,435,436,437,438,440,442,443,444,445,446,
   466,467,468,469,470,472,473,474,475,476,477,478,479,480,481,482,483,484,485,
   486,487,488]
 D35_DEFERRED = [79,80,84,85,86,103,104,109,110,120,122,140]
-# W4-d125b's sheets tip (2dfe026d, LOCAL - ahead of its pushed origin tip
-# d8047a10): packs NPC_636/NPC_661 in STATIC_SHEET_NAMES. Read at the local
-# tip per the FINAL cross-read; the pushed extraction misses it.
+# W4-d125b's sheets tip (LOCAL - ahead of its pushed origin tip d8047a10):
+# packs NPC_636/NPC_661 in STATIC_SHEET_NAMES + Extra_188 in the draw phase.
+# Read at the local tip per the FINAL/RETIRE cross-read; the pushed
+# extraction misses it. The rows are stable across the tip move
+# (2dfe026d -> cd2b1b1e3 -> 86e3adfd3, the hitbox phase added no sheets).
 D125_TIP = ["NPC_636", "NPC_661", "Extra_188"]
 # d125's five deferred overlay strips (its research/125 section 2: they
 # overflow the solo headroom +64..+214 and ride the repack) - worst case.
@@ -27,7 +29,7 @@ for b, names in pushed.items():
     for n in names:
         owners.setdefault(n, []).append(b.replace("origin/task/", ""))
 for n in D125_TIP:
-    owners.setdefault(n, []).append("W4-d125-empress-r7-drain (sheets tip 2dfe026d, local ahead of origin)")
+    owners.setdefault(n, []).append("W4-d125-empress-r7-drain (sheets tip 86e3adfd3, local ahead of origin)")
 for n in D125_DEFERRED:
     owners.setdefault(n, []).append("W4-d125-empress-r7-drain (DEFERRED: packed only if a repack admits it)")
 for i in D40_IDS:
