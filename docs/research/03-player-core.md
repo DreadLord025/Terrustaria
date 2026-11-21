@@ -75,9 +75,9 @@ Shared data: `tr-core` tile/light maps, `world_sim::World` (liquid flags), `app:
 | C# subsystem | Status | Rust location | Evidence / notes |
 | --- | --- | --- | --- |
 | Per-tick movement defaults | PORTED | `player.rs:2507-2522` | 1:1 with `Player.cs:24364-24371`: `maxRunSpeed 3.0`, `runAcceleration 0.08`, `runSlowdown 0.2`, `accRunSpeed = maxRunSpeed`, jump statics → `jump_boost` floor (`UpdateJumpHeight` :19589-19593), `moveSpeed 1.0` |
-| Wet/shimmer/on-fire gravity branch | **PARTIAL** | `player.rs:2516-2517`, :3189-3198 | C# `Player.cs:24382-24432` sets water `gravity 0.2 / maxFallSpeed 5 / jumpHeight 30 / jumpSpeed 6.01`, honey `0.1/3`, merman `0.3/7`, trident `0.25/6 + 25/5.51` (+`controlUp` → `0.1/2`), shimmerWet `gravity 0.15 + 23/5.51`; the port resets `jump_height 15` / `jump_speed 5.01` with **no** wet arm and uses `GRAVITY/3` (0.133) + `MAX_FALL/3` (3.33) for **all** liquids |
-| `maxFallSpeed += 0.01f` | MISSING | — | `Player.cs:24437`; `MAX_FALL` stays `10.0` (`player.rs:30`). Also `PortalPhysicsEnabled = 35` (:24380) |
-| Vortex debuff `gravity = 0` | MISSING | — | `Player.cs:24433-24436` |
+| Wet/shimmer/on-fire gravity branch | ✅ W4-c46 | `player.rs::wet_gravity_and_cap` (:230) | C# `Player.cs:24380-24437` ported: water `0.2/5.01 + 30/6.01`, honey `0.1/3.01`, merman `0.3/7.01`, trident `0.25/6.01 + 25/5.51` (`control_up` → `0.1/2.01`), shimmerWet `0.15 + 23/5.51`, shimmering ×0.9, down-dash ×0.85, vortex gravity 0, portal 35, the `+0.01f` creep (:24437). The not-yet-ported writers (shimmering/merman/trident/down-dash/vortex/portal) default false — the flags exist, the writers ride their own lanes |
+| `maxFallSpeed += 0.01f` | ✅ W4-c46 | `player.rs::wet_gravity_and_cap` :295 | `Player.cs:24437` ported; `PortalPhysicsEnabled = 35` (:24380) at :254-256 |
+| Vortex debuff `gravity = 0` | ✅ W4-c46 | `player.rs::wet_gravity_and_cap` :292-294 | `Player.cs:24433-24436` ported (the `vortex_debuff` flag defaults false until the Moon Lord debuff writer lands) |
 | Gravity / fall cap integration | PORTED | `player.rs:3189-3198`, :3327 | Body is 1:1 for the *dry* case; see the liquid deviation below |
 | Jump (ground, hold, release) | PORTED | `player.rs:3211-3279` | `controlJump`/`releaseJump`/`jump`/`jumpHeight` semantics match `Player.cs:20671-20712` |
 | Extra jumps (8 types + priority) | PORTED | `player.rs:3242-3271` | `ExtraJump::PRIORITY`, `hold_multiplier`, `refresh_double_jumps` :3232 |
@@ -94,12 +94,13 @@ Shared data: `tr-core` tile/light maps, `world_sim::World` (liquid flags), `app:
 | Drowning / breath | ✅ W4-c46 | `player.rs::check_drowning` → `collision::drown_collision` | The C# `CheckDrowning` gate (`Player.cs:23191-23317` → `Collision.DrownCollision` :1383-1432, 10×12 head box, liquid-level aware, honey included, lava/shimmer excluded) with the vanilla `gravDir = 1f` probe (`position.Y − 2`); fish-bowl 250/4275, reed snorkel, Gills/FTW, mount-4 and accMerman arms ported. The `shimmering` absorbed-state clear awaits S1-E-16 (comment in place) |
 | `breathCDMax` item scaling | ✅ W4-c46 | `player.rs::breath_cd_max` | The property: 7 base, ×2 held Breathing Reed while no item animation, ×6 Diving Helm (`Player.cs:3855-3869`); grants 268/394/1860/1861 + ResetEffects clear landed |
 | Death — drops, tombstone, text | PORTED | `death.rs` | softcore gems only, mediumcore inventory, coins `stack/2` (expert /4), tombstone RNG (`Player.cs:38863`, 54261, 39091-39115) |
-| Death — `KillMe` entry from NPC | **PARTIAL** | `world_sim/npcs.rs:3160-3183` | `expert = false` hardcoded at :3180, so expert ×1.5 in `GetRespawnTime` (`Player.cs:39060-39082`) is unreachable |
-| `UpdateDead` countdown + revive | PORTED | `player.rs` `update_dead`, tests `update_dead_counts_down_and_revives_at_zero` | respawn timer `3600` matches `Player.cs:57108` |
-| `UpdateDead` state reset | **PARTIAL** | `player.rs` `update_dead` | C# `Player.cs:16995-17020` clears non-persistent buffs, `chest = -1`, `itemAnimation`; only the buff-clear family is absent |
-| Respawn timer skip rules | **PARTIAL** | `player.rs:1901-1930` | omits `Main.snowMoon ‖ Main.pumpkinMoon ‖ DD2Event.Ongoing` refusal (`Player.cs:38984-38987`); 90-tick lockout, jump edge, `bossHinders` Manhattan 4000, 1920×1080 + 320 inflated NPC rect are present |
-| Respawn — life/iframes | **PARTIAL** | `player.rs:1820-1821` | `hp = max_hp` vs C# `statLife = max(statLifeMax, statLifeMax2)/2` (`Player.cs:37596-37611`); `hurt_cd = 0` vs `immuneTime = 180` (60 expert-ish) (`Player.cs:37661-37668`) |
-| Lava flat damage | **PARTIAL** | `player.rs` lava tick | 30 vs C# 80 (`Player.cs:27687`); separate immunity counter is correct (`ImmunityCooldownID.Lava = 4`) |
+| Death — `KillMe` entry from NPC | ✅ W4-c46 | `world_sim/npcs.rs` death pass | `buffs.expert_mode` feeds `start_death` (×1.5, `Player.cs:39072-39075`), the boss +600 gates on `netMode != 0` (`:39064-39067`); the `myPlayer && difficulty==2` arm calls `HardcoreDeathPenalty` (`:38864-38866`) |
+| Hardcore permadeath (`KillMeForGood`) | ✅ W4-c46 final | `player.rs::hardcore_death_penalty`, `player_file.rs::kill_player_files`, `death.rs::kill_me_for_good` | `Player.cs:38775-38805`: the −60 statLifeMax ONLY inside surviveHardcoreDeath (floor 0, EXTRA_LIFE 35 on survive), the `.plr`+`.bak` Exists→Delete pair; the :38803 singleton reset documented NOT ported (see the FINAL census) |
+| `UpdateDead` countdown + revive | ✅ W4-c46 | `player.rs::update_dead_seeded` | respawn timer `3600`, the hardcore arm drains-only-while-positive then latches `ghost` (`Player.cs:17044-17066`), the surviveHardcoreDeath crossover (`Main.cs:2638-2647`) |
+| `UpdateDead` state reset | **PARTIAL** | `player.rs::update_dead_seeded` | `chest=-1` (:17020), channel/potion/minion counters, `immuneAlpha += 2` fade (:17023-17027) ported; the non-persistent buff purge (:16995-17002) + head/body/leg debris (:17029-17040) remain (S8) |
+| Respawn timer skip rules | ✅ W4-c46 | `player.rs::allows_respawn_timer_skip` | the snowMoon/pumpkinMoon/DD2Event refusal rides `moon_event_live` (`Player.cs:38984-38987`); the ghost refusal (:38964) clears the cached flag (`world_sim/player.rs`, 6d8fc54c3); 90-tick lockout, jump edge, bossHinders Manhattan 4000 |
+| Respawn — life/iframes | ✅ W4-c46 | `player.rs::respawn` | `max(max_hp/2, 100)` gated `hp<=0` (`Player.cs:37596`), breath on the same arm, `lavaTime=lavaMax` (:37589), 180 i-frames + `immuneNoBlink=!hostile` (:37669) |
+| Lava flat damage | ✅ W4-c46 | `player.rs` lava tick | 80/420 classic + the Ash Wood halving (`Player.cs:27687-27707`); the flag26 budget refills ONLY out-of-lava or lava-immune, the drain+hit inside the `hurtCooldowns[Lava]` gate (:27673-27722, 8816f3dc2); `ImmunityCooldownID.Lava = 4` |
 | `whoAmI` / player index | **PARTIAL** | `player.rs:2001-2003` | owner stands in as `0`; structural, rendered OK because it only feeds per-player drain/aura ids |
 | Head/body/leg slot assignment | **PARTIAL** | `player.rs:504`, :507 | `leg_frame`/`body_frame` are **frame-row indices**, not C#'s `PlayerFrame` slot ids; `headPosition`/`headVelocity` death animation (`Player.cs:17029-17040`) is unfilled |
 | `UpdateBuffs` slot engine | PORTED | `buffs.rs` | `maxBuffs 44` (`Player.cs:57106`), `TimeLeftDoesNotDecrease` set, expert ×2 (master ×2.5) debuff extension |
@@ -152,6 +153,10 @@ Note: `grapple_counts_as_still_for_mana` **passes** only because the test sets
 ## Deviations & risks
 
 **Critical (behavioural, unadmitted)** — in-liquid statics are the wrong formula port-wide.
+**✅ W4-c46 (S1/S2 resolved)**: `wet_gravity_and_cap` (`player.rs:230`, consumed :6126)
+ports `Player.cs:24380-24437` in full — the table below is the C# reference the port now
+matches; the `GRAVITY/3`/`MAX_FALL/3` helpers survive only as the mount/wings flight
+integrators (`Player.cs:27008`, :27339), correctly gated. The historical finding follows.
 
 `player.rs:3190-3198` applies `liquid_gravity() = GRAVITY/3 = 0.1333` and
 `liquid_fall_cap() = MAX_FALL/3 = 3.333` to *every* liquid. The citation
@@ -194,6 +199,8 @@ earlier with S1-M-1.)
 `Player.cs:24437` `this.maxFallSpeed += 0.01f` (and `PortalPhysicsEnabled` → 35 at :24380).
 Small per-tick drift on every fall, and `MAX_FALL/3` inherits it. **Behavioural**, cosmetic in
 isolation.
+**✅ W4-c46 (S2 resolved)**: the `+0.01f` creep and the portal-35 arm live inside
+`wet_gravity_and_cap` (`player.rs:295`/`:254-256`); the vortex gravity-0 row at :292-294.
 
 **High (behavioural)** — drowning gate is centre-tile, not a head box. `player.rs:2484-2493`
 derives `in_water` from the tile under the player's centre; C# `CheckDrowning`
@@ -246,11 +253,18 @@ grappling is live in movement but dead in regen. Admitted in ANALYSIS:4131-4135.
 `Player.cs:16995-17002`, and no `chest = -1` (:17020); `headPosition`/`headVelocity`
 (`Player.cs:17029-17040`) are not modelled, so the death animation has no head debris.
 Partly admitted (ANALYSIS:7220-7222).
+**✅ W4-c46 (partial)**: `chest = -1` (:17020, S1-P-i43), the channel/potion/minion counter
+resets (:17009-17019) and the `immuneAlpha += 2` fade (:17023-17027) are ported in
+`update_dead_seeded`. Remaining: the buff purge + the head/body/leg debris (S8).
 
 **Medium (behavioural)** — respawn-skip refusal list. `allows_respawn_timer_skip`
 (`player.rs:1901-1930`) omits the `Main.snowMoon ‖ Main.pumpkinMoon ‖ DD2Event.Ongoing`
 refusal at `Player.cs:38984-38987`: the skip is granted during invasions/events where C#
 forbids it.
+**✅ W4-c46**: the refusal rides the `moon_event_live` seam
+(`world_sim/player.rs:667-668` → `allows_respawn_timer_skip`); the ghost refusal
+(`Player.cs:38964`) clears the cached `respawn_skip_available` flag in the ghost arm
+(6d8fc54c3) so a stale `true` cannot draw the prompt.
 
 **Low (determinism / pixel)** — `whoAmI` stand-in. `player.rs:2001-2003` uses `0` for the
 owner index; multi-player/lan-secondary aura and drain ids would collide, single-player is
@@ -278,15 +292,114 @@ sit between dash and the wing arm and must stay in that slot.
 
 | # | Task | Size | Depends on |
 | --- | --- | --- | --- |
-| S1 | Move the wet/shimmer statics into `update_with_grapple` before the movement defaults: add `wet_gravity_and_cap()` returning the `(gravity, maxFallSpeed, jumpHeight, jumpSpeed)` tuple from `Player.cs:24382-24437`, consume at `player.rs:3189-3198` and `player.rs:2516-2517`, and replace the `liquid_gravity`/`liquid_fall_cap` call sites. Keep the mount/wings `÷3` arms (`Player.cs:27008`, :27339) as separate, correctly-gated branches. | M | — |
-| S2 | `maxFallSpeed += 0.01f` + `PortalPhysicsEnabled = 35` (`Player.cs:24437`, :24380) and `vortexDebuff` gravity = 0 (:24433-24436). | S | — |
+| S1 | ✅ W4-c46 — `wet_gravity_and_cap()` (`player.rs:230`) returns the `(gravity, maxFallSpeed, jumpHeight, jumpSpeed)` tuple from `Player.cs:24380-24437`, consumed at :6126 ahead of the integration; the mount/wings `÷3` arms (`Player.cs:27008`, :27339) stay separate. The not-yet-ported flag writers (shimmering/merman/trident/down-dash/vortex/portal) default false. | M | — |
+| S2 | ✅ W4-c46 — `maxFallSpeed += 0.01f` (`player.rs:295`) + `PortalPhysicsEnabled = 35` (:254-256) and `vortexDebuff` gravity = 0 (:292-294), all inside `wet_gravity_and_cap`. The flag writers ride their own lanes. | S | — |
 | S3 | ✅ W4-c46 — `breath_cd_max()` property: 7 base, ×2 held Breathing Reed while no item animation (`has_breathing_reed`, DontHoldItems 55/56/61), ×6 Diving Helm (`Player.cs:3855-3869`); the 268/394/1860/1861 grants + `item_animation_active` feed landed. | S | item registry access |
 | S4 | ✅ W4-c46 — `check_drowning` walks `collision::drown_collision` (`Collision.cs:1383-1432`) with the vanilla `gravDir = 1f`; the −2 is direct with NO `hurt_cd` write, `lose_health` deleted, `DotDeath::Drowned` kill attribution + 7-variant death text. Remaining: the `shimmering` absorbed-state clear (S1-E-16). | M | — |
 | S5 | ✅ W4-c46 (life/i-frames) — revive `max(max_hp/2, 100)` gated on `hp <= 0` (`Player.cs:37596`), breath on the same arm, `lavaTime = lavaMax` (`:37589`), 180 i-frames + `immuneNoBlink = !hostile` (`:37669`). The snowMoon/pumpkinMoon/DD2Event refusal rides the existing `moon_event_live` seam (`allows_respawn_timer_skip`). | M | — |
 | S6 | ✅ W4-c46 — the death pass reads `buffs.expert_mode` into `start_death` (×1.5) and `drop_coins` (expert keeps /4); the boss +600 gates on `netMode != 0` (`Player.cs:39064-39067`). | M | world-gen/difficulty plumbing |
 | S7 | Feed `RegenInputs.grappling` from the live hook state (`grapple.rs` → `player.rs` regen call), so `Player.cs:19241`, :19426, :19449 apply. Update `grapple_counts_as_still_for_mana` to construct its input the same way the tick does. | M | — |
-| S8 | Finish `UpdateDead`: non-persistent buff purge (`Player.cs:16995-17002`), `chest = -1` (:17020), `headPosition`/`headVelocity` death animation (:17029-17040). | M | buffs module boundary |
+| S8 | Finish `UpdateDead`: non-persistent buff purge (`Player.cs:16995-17002`) and `headPosition`/`headVelocity` death animation (:17029-17040). **W4-c46 partial**: `chest = -1` (:17020), the channel/potion/minion counters (:17009-17019) and the `immuneAlpha` fade (:17023-17027) landed in `update_dead_seeded`. | M | buffs module boundary |
 | S9 | ✅ W4-c46 — the −2.0 stand-in replaced by the C# `flag2 & flag3` swim branch (full wet statics −6.01/30 + `swimTime = 30`, merman held-jump refresh); the invented `-(MAX_FALL/3)` liquid upward clamp removed (the gravDir-1 arm caps only the descent). See the resolved finding above. | S | S1 |
 | S10 | Replace the `whoAmI = 0` stand-in (`player.rs:2001-2003`) with the real index once multi-player netsession ids land. | M | net |
 | S11 | Correct ROADMAP §8's stale "Rust ⬜ (none yet)" header (`ROADMAP.md:401`) and reconcile its task rows with the 2026-11-12 reality. | S | — |
 | S12 | Derive the `leg_frame`/`body_frame` → C# `PlayerFrame` slot-id table before any head/body/leg slot work (module 06 territory; the table itself belongs to this module). | M | framing module |
+
+## The respawn-family FINAL census (W4-c46, 2026-11-21, code-only mode)
+
+The c46 respawn/breath/drown/ghost/mediumcore/extra-spawns family is **census-complete**.
+Every C# window the wave named has been read against the port and either landed or
+documented as a scoped deviation. This section is the closing declaration.
+
+### What landed across the family (commit trail)
+
+| Piece | C# anchor | Rust landing | Commit |
+| --- | --- | --- | --- |
+| Drowning head-box + breath drain | `Player.cs:23191-23317`, `Collision.cs:1383-1432` | `player.rs::check_drowning` → `collision::drown_collision`, `breath_cd_max` | phase 1 |
+| Respawn life/i-frames | `Player.cs:37589-37672` | `player.rs::respawn` (`max(max_hp/2,100)` gated `hp<=0`, 180 i-frames, `immuneNoBlink=!hostile`) | phase 1 |
+| Expert death scaling | `Player.cs:39060-39082`, `:54271-54274` | `world_sim/npcs.rs` death pass (`buffs.expert_mode` → `start_death` ×1.5, `drop_coins` /4, SP boss gate) | phase 1 |
+| Swim ascent (S9) | `Player.cs:20637-20767` | `player.rs` `flag2 & flag3` wet statics −6.01/30, merman refresh | phase 1 |
+| Breath/lava meter draw | `Main.cs:43406-43513` | `ui/resources.rs::draw_breath`/`breath_meter_anchor` | sweep |
+| Death-screen fade + countdown | `Player.cs:54198-54213`, `Main.cs:45322-45390` | `ui/mod.rs::death_alpha`, countdown 0.7 scale | sweep |
+| extraSpawnPoints consumer | `Player.cs:37993-38011`, `ExtraSpawnPointManager.cs:18-38` | `recall_teleport.rs::spawn_set_position_at_team_spawn` | sweep |
+| Mediumcore drop-all | `Player.cs:54302-54362`, `:38863` | `death.rs::drop_items` (verified already ported, S1-P-i51) | sweep |
+| Hardcore ghost flight + latch | `Player.cs:6715-6849`, `:17044-17066`, `:24744` | `player.rs::ghost_tick`/`update_dead_seeded`, `world_sim/player.rs` ghost arm | 8816f3dc2 |
+| Ghost draw + trails | `LegacyPlayerRenderer.cs:274-281`/`:514-524` | `render/entities.rs::draw_ghost` | 8816f3dc2 |
+| Ghost respawn-skip refusal | `Player.cs:38964`, `Main.cs:45348` | `world_sim/player.rs` ghost arm clears `respawn_skip_available` | 6d8fc54c3 |
+| **Hardcore permadeath** | `Player.cs:38775-38805`, `:38864-38866` | `player.rs::hardcore_death_penalty`, `player_file.rs::kill_player_files`/`backup_path`, `death.rs::hardcore_death_penalty`/`kill_me_for_good` | **4445a1459** |
+| **Ghost-HUD gates** | `Main.cs:43588`, `:56612-56615` | `ui/mod.rs` hotbar/name/hover skip, `clicks.rs::slot_at_mouse`, `frame/world.rs` scale freeze, `frame/draw.rs` map-head border | **2802ed5b9** |
+
+### The ghost census — C# `Ghost()` :6715-6849 vs the port
+
+Line-by-line against `player.rs::ghost_tick` (:3947-4029):
+
+| C# line | Behaviour | Port status |
+| --- | --- | --- |
+| :6717 `spectating = -1` | clears the spectate target | **no port field** — `spectating` is unmodelled (SP has no spectate; `recall_teleport.rs:546` documents the same gap). No observable SP effect. |
+| :6718-6719 `immune=false`, `immuneAlpha=0` | the ghost is untargetable, no fade | ported :3948-3949 |
+| :6720-6721 `ResetEffects`/`ResetVisibleAccessories` | per-tick stat/accessory clears | **no-op by design** — the port's dead branch does not re-derive equipment, so there is no stat state to clear (:3944-3946 documents this). |
+| :6724-6728 control zeroing | reset before the input copy | ported — `ghost_tick` assigns all five controls from `input` (:3950-3954) |
+| :6729 `!drawingPlayerChat && !editSign && !editChest && !blockInput` gate | input only while no text UI | **partial** — the port's `player_input` gates on `map_open`; the chat/sign/chest/blockInput flags are not separately consulted in the ghost arm. Minor: a ghost with the chat open would still read movement keys. Documented residual. |
+| :6731 `CopyInto` | copy the live triggers | ported (the `input` param) |
+| :6732-6733 `TrySyncingInput`/`TryOpeningInGameOptionsBasedOnInput` | net sync + options hotkey | **SP out of scope** — no net, the options hotkey rides the frame's key path |
+| :6736-6769 vertical flight (7 cap / 0.2 accel / ×0.9 brake / ±0.1 snap) | ascend/descend/coast | ported :3955-3961 |
+| :6770-6801 horizontal twin | left/right/coast | ported :3963-3983 |
+| :6802 `position += velocity` | no collision | ported :3986-3989 |
+| :6803-6820 frame counter + direction + 8-tick 4-row animator | the sheet walk | ported :3992-4004 |
+| :6821-6848 640 px world margins (top keeps −0.1) | the clamp box | ported :4008-4028 |
+| :6849 `UpdateNetOffset` | net interpolation | **SP out of scope** |
+
+`DrawGhost` (`LegacyPlayerRenderer.cs:514-524`) + the trail arm (`:274-281`) are fully
+ported in `render/entities.rs::draw_ghost` (:1746): the 3 velocity trails at
+`0.5+0.2i` shadow, the `GetImmuneAlpha` tint (transparent past 125), the
+`mouseTextColor/2+100` light lift, the alpha cut `1-max(0.5, shadow-0.5)`, the 4-row
+`Images/Ghost` sheet, the facing flip and the centre-origin snap. **No gap.**
+
+**Ghost verdict:** the SP ghost is behaviourally complete. The only residuals are the
+unmodelled `spectating` field (no SP effect), the chat/sign/chest input gate (minor),
+and the net-sync calls (SP out of scope). None blocks the c46-family closure.
+
+### The hardcore-permadeath census — `KillMeForGood` :38789-38805
+
+| C# line | Behaviour | Port |
+| --- | --- | --- |
+| :38791 `Main.ActivePlayerFileData` | the active file singleton | the session draft's saved `.plr` path (`save::default_player_path(name)`) |
+| :38792 `!ServerSideCharacter` gate | skip on server-side chars | **no port carrier** (no server-side characters) — the deletion always runs |
+| :38794 `IsCloudSave` | cloud vs local | local only (no cloud carrier) |
+| :38795-38798 `Exists`→`Delete` on `.plr` | the character file | `player_file.rs::kill_player_files` first target |
+| :38799-38802 `Exists`→`Delete` on `path+".bak"` | the backup | `backup_path` (string concat) second target |
+| :38803 `ActivePlayerFileData = new PlayerFileData()` | reset the singleton | **documented NOT ported** — the port syncs `Player.difficulty` from `session_draft` per tick; clearing the draft would reset difficulty to 0 and break the ghost latch. The reset's only SP-observable effect is menu-side (no active player), which the disk re-list already reflects. |
+
+`FileUtilities.Delete` without `forceDeleteFile` routes to `IPathService.MoveToRecycleBin`
+(`FileUtilities.cs:23-37`); the port deletes outright — the same deviation
+`save_list::erase_player` documents (no recycle-bin API).
+
+`HardcoreDeathPenalty` (:38775-38787): the −60 `statLifeMax` runs ONLY inside
+`Main.surviveHardcoreDeath` (floor 0); a positive remainder fires
+`NotifyProgressionEvent(35)` (EXTRA_LIFE) and survives, else `KillMeForGood`. Ported as
+`player.rs::hardcore_death_penalty` (stat half) + `death.rs::hardcore_death_penalty`
+(App glue, `notify_progression_net(35)`), wired at `KillMe` :38864-38866's
+`myPlayer && difficulty==2` gate AFTER `DropItems`.
+
+### Remaining module-03 residuals (NOT respawn-family)
+
+These belong to sibling lanes and do not block the c46 closure:
+- **S7** — `RegenInputs.grappling` is still fed `false` outside `regen.rs`'s tests
+  (`player.rs:11622` `..RegenInputs::default()`); the live hook state never reaches the
+  regen engine (`Player.cs:19241`/`:19426`/`:19449`). Regen lane.
+- **S8** — `UpdateDead`'s non-persistent buff purge (`Player.cs:16995-17002`) and the
+  `headPosition`/`headVelocity` death-debris animation (`:17029-17040`) are unmodelled.
+  The `chest=-1` (:17020), channel/potion/minion counters and `immuneAlpha` fade ARE
+  ported (`update_dead_seeded`). Buffs/death-animation lane.
+- **S1/S2** — the wet-statics rebase landed (S9 + S1-M-1); the `maxFallSpeed += 0.01f`
+  and vortex-gravity micro-rows remain. Movement lane.
+
+### Verification (FINAL)
+
+Code-only: every block re-read against the cited C# windows (`Player.cs:38775-38805`/
+`:38864-38866`/`:6715-6849`/`:17044-17066`, `Main.cs:43588`/`:56610-56618`/`:2857`,
+`FileUtilities.cs:14-37`, `LegacyPlayerRenderer.cs:274-281`/`:514-524`). The 3 new
+`w4_c46_*` witnesses (player.rs penalty, death.rs file-delete, frame.rs ghost-hotbar)
+are WRITTEN, NOT RUN — no cargo/rustc/rustfmt/tests/graphify invoked. The ghost-sibling
+(8816f3dc2 → 6d8fc54c3) was probed live via mtimes + origin tip before each write; its
+pending respawn-skip edit landed as 6d8fc54c3 and was not disturbed.

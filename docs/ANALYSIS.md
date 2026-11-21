@@ -39398,11 +39398,10 @@ The five residuals the wave left, censused and resolved:
    FTW, `Main.cs:2638-2647`), the skip refusal (`:38964`), and
    `DrawGhost`'s 3 velocity trails + `GetImmuneAlpha` tint
    (`LegacyPlayerRenderer.cs:274-281`/`:514-524`). The remaining ghost
-   surface is the **file deletion** (`KillMeForGood`, `Player.cs:38789-
-   38805` — the `.plr`/`.bak` delete on the non-survive hardcore death) and
-   the `HardcoreDeathPenalty` `-60 statLifeMax` survive arm (`:38775-38787`);
-   both ride the character-file persistence lane (the port's session draft
-   has no `.plr` file yet). Scope documented, not ported here.
+   surface — the **file deletion** (`KillMeForGood`, `Player.cs:38789-
+   38805`) and the `HardcoreDeathPenalty` `-60 statLifeMax` survive arm
+   (`:38775-38787`) — landed in the FINAL phase below (4445a1459); the
+   `.plr` read/write walk itself stays the f44-family persistence lane.
 
 ### Verification (sweep)
 
@@ -39412,3 +39411,92 @@ Code-only: every block re-read against the cited C# windows
 `ExtraSpawnPointManager.cs:18-38`/`:91-113`). The 4 new `w4_c46_*` witness
 tests (resources.rs 2, ui/mod.rs 1, recall_teleport.rs 1) are WRITTEN, NOT
 RUN — no cargo/rustc/rustfmt/tests/graphify invoked.
+
+## The respawn-family FINAL phase (W4-c46, 2026-11-21, code-only mode)
+
+The c46 family's closing phase: the hardcore permadeath (the death-side half
+of the persistence lane) and the ghost-HUD census gaps. The full census table
+and the ghost line-by-line live in `docs/research/03-player-core.md` ("The
+respawn-family FINAL census"); this section records the deviations.
+
+### The hardcore permadeath (4445a1459)
+
+`KillMe` `:38864-38866`'s `myPlayer && difficulty == 2` gate calls
+`HardcoreDeathPenalty` AFTER `DropItems`. The port wires it in
+`death.rs::on_player_death` at the same position:
+
+* **Stat half** — `player.rs::hardcore_death_penalty`: ONLY inside
+  `Main.surviveHardcoreDeath` (the Don't-Starve × anniversary crossover minus
+  FTW, `Main.cs:2638-2647`) does `statLifeMax = max(statLifeMax - 60, 0)` run
+  (`Player.cs:38779` — the floor is 0; the plain ghost death does NOT lose
+  60). A positive remainder returns true → the App glue fires
+  `notify_progression_net(35)` (EXTRA_LIFE, `:38782`).
+* **File deletion** — `player_file.rs::kill_player_files` +
+  `death.rs::kill_me_for_good`: the `Exists`-then-`Delete` pair on
+  `Main.playerPathName` (`Main.cs:2857` = `ActivePlayerFileData.Path`) then
+  `path + ".bak"` (`Player.cs:38795-38802`). `backup_path` is the STRING
+  CONCAT (`Belsin.plr.bak`), not a `with_extension` swap — the C# uses the
+  concat at `:54732`/`:38799`/`:55873`. The path resolves through
+  `save::default_player_path(session_draft.name)` — the same path
+  `save_created_character` writes. A disk-less session stand-in resolves a
+  non-existent path, so the `Exists` guard deletes nothing (the C# shape).
+
+**Deviation 1 — the recycle bin.** `FileUtilities.Delete` without
+`forceDeleteFile` routes to `IPathService.MoveToRecycleBin`
+(`FileUtilities.cs:23-37`); the port deletes outright. The same deviation
+`save_list::erase_player` already documents (no recycle-bin API).
+
+**Deviation 2 — the `ActivePlayerFileData = new PlayerFileData()` reset
+(`Player.cs:38803`) is NOT ported.** In C# the reset swaps the *file-data*
+singleton, but `Main.player[myPlayer]` still points at the OLD `Player`
+object — its `difficulty` stays 2, so `UpdateDead` still latches the ghost.
+The port derives `Player.difficulty` from `session_draft` every tick
+(`world_sim/player.rs:638`); clearing the draft would reset the live
+difficulty to 0 and break the ghost latch the sibling lane landed
+(8816f3dc2). The reset's only SP-observable effect is menu-side (the
+character select shows no active player), which the port's disk re-list
+already reflects once the file is gone. The `!ServerSideCharacter` gate
+(`:38792`) and the `IsCloudSave` arm have no port carriers (no server-side
+characters, no cloud saves) — the deletion always runs on the local path.
+
+**Lane boundary.** The f44-family owns the `.plr` read/write walk
+(`SavePlayer`'s `.bak` copy `:54732`, `LoadPlayer`'s corrupt-restore
+`:55873-55875`); THIS phase owns only the death-side DELETE call. The
+`backup_path` helper is shared — the persistence lane can reuse it.
+
+### The ghost-HUD gates (2802ed5b9)
+
+The ghost census (`Player.cs:6715-6849` vs `player.rs::ghost_tick`) found the
+SP flight behaviourally complete; the gaps were in the HUD consumers:
+
+* **`GUIHotbarDrawInner`'s early-return** (`Main.cs:43588`:
+  `playerInventory || LocalPlayer.ghost || spectating >= 0`). The port's
+  closed hotbar drew for the ghost. Now: the hotbar row AND the selected-item
+  name skip (`ui/mod.rs` — the name draw moved INSIDE the closed arm, where
+  the C# has it; the old port drew it even with the inventory open), the
+  closed-hotbar hover refuses (`ui/mod.rs` `hover_item` +
+  `clicks.rs::slot_at_mouse`), and the scale lerp freezes
+  (`frame/world.rs` — it lives inside the function, `:43604-43611`).
+  `spectating` has no port field (SP has no spectate).
+* **`GetPlayerHeadBordersColor`'s ghost/dead arm** (`Main.cs:56612-56615`):
+  `Color.Transparent` for ghost/dead, else `teamColor[0]` (White in SP). The
+  map-head border was hardcoded White; now it reads the arm
+  (`frame/draw.rs`).
+
+**Ghost residuals (documented, not blocking):** the unmodelled `spectating`
+field (no SP effect), the `!drawingPlayerChat && !editSign && !editChest &&
+!blockInput` input gate (`Player.cs:6729` — the port's ghost arm reads
+movement keys even with the chat open; minor), and the net-sync calls
+(`TrySyncingInput`/`UpdateNetOffset`, SP out of scope).
+
+### Verification (FINAL)
+
+Code-only: every block re-read against the cited C# windows
+(`Player.cs:38775-38805`/`:38864-38866`/`:6715-6849`,
+`Main.cs:43588`/`:56610-56618`/`:2857`, `FileUtilities.cs:14-37`,
+`LegacyPlayerRenderer.cs:274-281`/`:514-524`). The 3 new `w4_c46_*` witnesses
+(player.rs penalty, death.rs file-delete, frame.rs ghost-hotbar) are WRITTEN,
+NOT RUN — no cargo/rustc/rustfmt/tests/graphify invoked. The ghost-sibling
+(8816f3dc2 → 6d8fc54c3) was probed live via mtimes + origin tip before each
+write; its pending respawn-skip edit landed as 6d8fc54c3 and was not
+disturbed.
