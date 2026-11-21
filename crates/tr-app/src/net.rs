@@ -299,6 +299,19 @@ pub mod id {
     /// verbatim (encode = writer, decode = reader) and documents the
     /// divergence. S2c-only (the reader is `netMode == 1`-gated).
     pub const SHOP_OVERRIDE: u8 = 104;
+    /// `105 GemLockToggle` (`MessageID.cs:224`) — writer
+    /// `NetMessage.cs:1395-1399` (`(short)x + (short)y + (number3 == 1f)`
+    /// bool), reader `MessageBuffer.cs:3736-3741` (`netMode != 1` →
+    /// `WorldGen.ToggleGemLock`). Client sends: `Player.cs:32547`/`:32559`.
+    /// C2s-only in practice; the reader accepts on host AND single-player.
+    pub const GEM_LOCK_TOGGLE: u8 = 105;
+    /// `107 SmartTextMessage` (`MessageID.cs:228`) — writer
+    /// `NetMessage.cs:769-775` (`(byte)r + (byte)g + (byte)b +
+    /// NetworkText + (short)widthLimit`), reader
+    /// `MessageBuffer.cs:3752-3757` (client-only `NewTextMultiline`).
+    /// Sends: the sign-read wiring messages (`Wiring.cs:1208`/`:1228`,
+    /// width 460). S2c-only.
+    pub const SMART_TEXT_MESSAGE: u8 = 107;
 
     /// The ad-hoc event ids `netglue` still owns. Kept out of the 1..162 range
     /// so the accept gate (`GetData`, `MessageBuffer.cs:148-172`) rejects them
@@ -2144,6 +2157,34 @@ pub struct ShopOverride {
     pub flags: u8,
 }
 
+/// `msg 105 GemLockToggle`'s body (`NetMessage.cs:1395-1399`): the tile
+/// as two `(short)`s and `number3 == 1f` as a bool (the gem lock's on/off;
+/// `Player.cs:32547` sends 1f, `:32559` the default 0f). The reader calls
+/// `WorldGen.ToggleGemLock(x, y, on)` when `netMode != 1`
+/// (`MessageBuffer.cs:3737-3740`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GemLockToggle {
+    pub x: i16,
+    pub y: i16,
+    pub on: bool,
+}
+
+/// `msg 107 SmartTextMessage`'s body (`NetMessage.cs:769-775`): the colour
+/// as three separate `(byte)` casts (r, g, b — the writer does NOT call
+/// `WriteRGB`, but the byte order is identical, `Utils.cs:1369-1374`),
+/// then the `NetworkText` and the `(short)` width limit. The reader
+/// (`MessageBuffer.cs:3752-3757`) reads `ReadRGB` (R, G, B,
+/// `Utils.cs:1387-1390`), the text and the limit, and calls
+/// `NewTextMultiline(force: false)`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SmartTextMessage {
+    pub color: Rgb,
+    pub text: NetText,
+    /// `WidthLimit` — 460 at the sign-read send sites
+    /// (`Wiring.cs:1208`/`:1228`).
+    pub width_limit: i16,
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2297,6 +2338,10 @@ pub enum C2s {
     /// `QuickLoad.cs:171`; the reader's gate + ladder
     /// `MessageBuffer.cs:3463-3518`). Both directions.
     DevCommands(DevCommands),
+    /// `105 GemLockToggle` — a client toggled a gem lock
+    /// (`Player.cs:32547`/`:32559`; host `WorldGen.ToggleGemLock`,
+    /// `MessageBuffer.cs:3736-3741`). C2s-only.
+    GemLockToggle(GemLockToggle),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2519,6 +2564,10 @@ pub enum S2c {
     /// writer/reader stack-width mismatch is kept verbatim, see the
     /// struct doc). S2c-only.
     ShopOverride(ShopOverride),
+    /// `107 SmartTextMessage` — a multiline smart text (the sign-read
+    /// wiring messages, `Wiring.cs:1208`/`:1228`; client-only reader
+    /// `MessageBuffer.cs:3752-3757`). S2c-only.
+    SmartTextMessage(SmartTextMessage),
     // ---- internal (no 1:1 body in the port's scope) ----
     Joined {
         id: u32,
@@ -2583,6 +2632,7 @@ impl C2s {
             Self::TileEntityPlacement(_) => id::TILE_ENTITY_PLACEMENT,
             Self::ItemFrameTryPlacing(_) => id::ITEM_FRAME_TRY_PLACING,
             Self::DevCommands(_) => id::DEV_COMMANDS,
+            Self::GemLockToggle(_) => id::GEM_LOCK_TOGGLE,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2697,6 +2747,8 @@ impl C2s {
                 .i32(d.arg_int)
                 .f32(d.arg_float)
                 .f32(d.arg_float2),
+            // `NetMessage.cs:1395-1399`: two (short)s + (number3 == 1f).
+            Self::GemLockToggle(g) => w.i16(g.x).i16(g.y).bool(g.on),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -2899,6 +2951,12 @@ impl C2s {
                 arg_float: r.f32()?,
                 arg_float2: r.f32()?,
             }),
+            // `MessageBuffer.cs:3739`: two ReadInt16 + ReadBoolean.
+            id::GEM_LOCK_TOGGLE => Self::GemLockToggle(GemLockToggle {
+                x: r.i16()?,
+                y: r.i16()?,
+                on: r.bool()?,
+            }),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3077,6 +3135,7 @@ impl S2c {
             Self::SocialHandshake => id::SOCIAL_HANDSHAKE,
             Self::DevCommands(_) => id::DEV_COMMANDS,
             Self::ShopOverride(_) => id::SHOP_OVERRIDE,
+            Self::SmartTextMessage(_) => id::SMART_TEXT_MESSAGE,
         }
     }
 
@@ -3249,6 +3308,13 @@ impl S2c {
                     .i32(s.value)
                     .u8(s.flags)
             }
+            // `NetMessage.cs:769-775`: (byte)r + (byte)g + (byte)b +
+            // NetworkText + (short)widthLimit.
+            Self::SmartTextMessage(m) => m
+                .text
+                .clone()
+                .write_to(w.rgb(m.color))
+                .i16(m.width_limit),
             // `NetMessage.cs:948-951` / `:987-995` — the same bodies as C2s.
             Self::ReleaseItemOwnership(r) => w.i16(r.slot).bool(r.force_assign_to_server),
             Self::LiquidUpdate(l) => w.i16(l.x).i16(l.y).u8(l.liquid).u8(l.liquid_type),
@@ -3584,6 +3650,13 @@ impl S2c {
                 prefix: r.u8()?,
                 value: r.i32()?,
                 flags: r.u8()?,
+            }),
+            // `MessageBuffer.cs:3755`: ReadRGB + NetworkText.Deserialize +
+            // ReadInt16 width limit.
+            id::SMART_TEXT_MESSAGE => Self::SmartTextMessage(SmartTextMessage {
+                color: r.rgb()?,
+                text: NetText::read_from(r)?,
+                width_limit: r.i16()?,
             }),
             // `MessageBuffer.cs:2234-2236` / `:2409-2412` — the shared
             // reader reads the same shapes on both sides.
@@ -6656,6 +6729,61 @@ mod tests {
         assert_eq!(&f[6..10], &0.0f32.to_le_bytes());
         // S2c-only: no C2s arm.
         assert!(C2s::decode(104, &mut NetReader::new(&rbody)).is_none());
+    }
+
+    #[test]
+    fn w4_f21_gem_lock_toggle_round_trips() {
+        // `NetMessage.cs:1395-1399`: (short)x + (short)y + (number3 == 1f)
+        // bool — `Player.cs:32547` sends 1f (on), `:32559` the default 0f.
+        for on in [true, false] {
+            let b = GemLockToggle { x: -9, y: 800, on };
+            let mut body = (-9i16).to_le_bytes().to_vec();
+            body.extend_from_slice(&800i16.to_le_bytes());
+            body.push(u8::from(on));
+            let f = C2s::GemLockToggle(b).encode();
+            assert_eq!(f[2], 105);
+            assert_eq!(&f[3..], &body);
+            let mut r = NetReader::new(&f[3..]);
+            match C2s::decode(f[2], &mut r).expect("decode") {
+                C2s::GemLockToggle(d) => assert_eq!(d, b),
+                other => panic!("expected 105, got {:?}", other.msg_id()),
+            }
+            assert_eq!(r.remaining(), 0);
+        }
+        // C2s-only in practice: no S2c variant.
+        assert!(S2c::decode(105, &mut NetReader::new(&[0, 0, 0, 0, 1])).is_none());
+        // A truncated bool must not decode.
+        assert!(C2s::decode(105, &mut NetReader::new(&[0, 0, 0, 0])).is_none());
+    }
+
+    #[test]
+    fn w4_f21_smart_text_message_round_trips() {
+        // `NetMessage.cs:769-775`: (byte)r + (byte)g + (byte)b +
+        // NetworkText + (short)widthLimit. The Wiring.cs:1208 sign-read
+        // fixture: the pink colour + width 460.
+        let m = SmartTextMessage {
+            color: Rgb(255, 100, 200),
+            text: NetText("A sign's text".to_string()),
+            width_limit: 460,
+        };
+        let f = S2c::SmartTextMessage(m.clone()).encode();
+        assert_eq!(f[2], 107);
+        let mut body = vec![255, 100, 200];
+        body.push(0); // NetworkText literal mode
+        body.push(13); // the 7-bit length of "A sign's text"
+        body.extend_from_slice(b"A sign's text");
+        body.extend_from_slice(&460i16.to_le_bytes());
+        assert_eq!(&f[3..], &body);
+        let mut r = NetReader::new(&f[3..]);
+        match S2c::decode(f[2], &mut r).expect("decode") {
+            S2c::SmartTextMessage(d) => assert_eq!(d, m),
+            other => panic!("expected 107, got {:?}", other.msg_id()),
+        }
+        assert_eq!(r.remaining(), 0);
+        // S2c-only: no C2s arm.
+        assert!(C2s::decode(107, &mut NetReader::new(&body)).is_none());
+        // A truncated width limit must not decode.
+        assert!(S2c::decode(107, &mut NetReader::new(&body[..body.len() - 1])).is_none());
     }
 
     #[test]

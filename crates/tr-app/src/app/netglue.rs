@@ -850,6 +850,10 @@ impl App {
             // apply-wiring lanes (g48-g52) / S1-I-4 — the port has no
             // debug-command surface yet, the codec is the census record.
             C2s::DevCommands(_) => {}
+            // S1-I-1 W4-f21: `105`'s host WorldGen.ToggleGemLock
+            // (`MessageBuffer.cs:3736-3741`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            C2s::GemLockToggle(_) => {}
         }
     }
 
@@ -1937,6 +1941,10 @@ impl App {
             // (`:3715-3735`, no live send site) land with the apply-wiring
             // lanes (g48-g52) / S1-I-4.
             S2c::DevCommands(_) | S2c::ShopOverride(_) => {}
+            // S1-I-1 W4-f21: `107`'s client NewTextMultiline
+            // (`MessageBuffer.cs:3752-3757`) lands with the apply-wiring
+            // lanes (g48-g52) / S1-I-4.
+            S2c::SmartTextMessage(_) => {}
         }
     }
 
