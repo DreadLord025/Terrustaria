@@ -1888,6 +1888,35 @@ impl App {
                             popup_goto = Some(name);
                         }
                     }
+                    // W4-f46 salvage (research/84 §3): the section-draw
+                    // driver (`Main.cs:61863-61899`, the `DoDraw` tail
+                    // after `MapUpdateQueue.Update` `:61862`): the 5
+                    // ms-budgeted spiral walk paints the map texture one
+                    // 200x150 section at a time (`GetNextMapDraw` →
+                    // `DrawToMap_Section`), unlocking each while
+                    // `DebugOptions.unlockMap != 0`, then the `updateMap`
+                    // / `refreshMap` flag lifecycle. The `!gameMenu &&
+                    // !generatingWorld` gate (`:61865`) is the in-world
+                    // gate here; the `!Main.loadMap` gate (`:61863`) rides
+                    // inside `map_reveal_draw`. `player_pos` is
+                    // `Main.player[myPlayer].position` in world PIXELS
+                    // (`:61871`); `[0, 0]` without a player
+                    // (`TR_NOPLAYER` — the C# always has one).
+                    if menu.is_none() && front.is_none() {
+                        let player_pos =
+                            player.as_ref().map_or([0.0, 0.0], |p| [p.x, p.y]);
+                        Self::map_reveal_draw(
+                            map,
+                            &mut self.section_manager,
+                            &mut self.debug_unlock_map,
+                            world,
+                            player_pos,
+                            settings.map_enabled,
+                            self.game_paused,
+                            renderer,
+                            gpu,
+                        );
+                    }
                     // Task 6b: upload the revealed tiles into the world-sized map texture
                     // and clamp/recentre the fullscreen map. Vanilla centres the recentre
                     // and the minimap on the view centre (`Main.cs:55420-55421`,
