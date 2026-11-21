@@ -6547,6 +6547,10 @@ impl Player {
         // (`Update_SentryBackpack`, `:28428-28434`).
         self.acc_sentry_backpack = false;
         self.ballista_panic = false;
+        // W4-e10 — `ResetEffects` clears `deadCellsPotionStation`
+        // (`Player.cs:18362`); the buff-366 arm below re-derives it per tick
+        // (the Dead Cells Potion Station 699's grant, `:10185-10188`).
+        self.buffs.dead_cells_potion_station = false;
         // S1-P-i35 — `ResetEffects`' fishing clears (`Player.cs:18507-18513`):
         // the skill and the six accessory/potion flags re-derive in the buff
         // loop (121/122/123) and the equip grants below. The bobber override
@@ -7067,6 +7071,18 @@ impl Player {
                 }
                 // `:9932-9934`: the Star in a Bottle's mana-regen add.
                 158 => self.mana_regen_bonus += 10,
+                // W4-e10 — `:9935-9938`: Sugar Rush (192, the Slice of Cake
+                // 621's buff): `pickSpeed -= 0.2f` (the port's positive bonus
+                // convention) + `moveSpeed += 0.2f`, per slot.
+                192 => {
+                    self.pick_speed_bonus += 0.2;
+                    self.move_speed += 0.2;
+                }
+                // W4-e10 — `:10185-10188`: the Dead Cells Potion Station buff
+                // (366, the tile-699 grant) arms `deadCellsPotionStation`, the
+                // ×1.2 potion-duration extension `AddBuff_DetermineBuffTimeToAdd`
+                // reads (`:5430`). `ResetEffects` clears it (`:18362`).
+                366 => self.buffs.dead_cells_potion_station = true,
                 // (Gate resync take-one: the Mana Sickness 94 arm lives ONCE
                 // above through `potions::apply_mana_sickness_arm` — the i37
                 // canonical fn; the i19 inline copy was identical maths
@@ -15721,6 +15737,54 @@ mod tests {
         assert_eq!(p.death_voice(true, true), DeathVoice::Style("RetroDeath"));
     }
 
+    /// W4-e10 — the mount voice-override census (`Player.cs:38651-38678`):
+    /// the hurt tree's mount block covers EXACTLY {52, 54, 55, 56, 61} — the
+    /// Wolf 52 → NPC_Hit_6, Velociraptor 54 → NPC_Hit_47, Rat 55 / Bat 56 →
+    /// NPC_Killed_4, Pixie 61 → NPC_Hit_5. Every OTHER mount falls through to
+    /// the werewolf/armor/DST/voiceVariant tail — in particular the whole
+    /// `MountID.Sets.Cart` family (the base Minecart 6, the Coffin/Hellwizard
+    /// Minecart 38, `MountID.cs:43`/`:129`): a cart rider keeps the DEFAULT
+    /// voice, there is no cart voice-override. The death tree
+    /// (`:38715-38746`) has NO mount block at all — every mount dies with the
+    /// voiceOverride/DST/default decision.
+    #[test]
+    fn w4_e10_the_mount_voice_override_census_is_complete() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The five override arms, including the Bat 56 twin of the Rat 55.
+        p.mount.set_mount(52, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 6)));
+        p.mount.set_mount(54, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 47)));
+        p.mount.set_mount(55, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(4, 4)));
+        p.mount.set_mount(56, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(4, 4)));
+        p.mount.set_mount(61, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Npc(3, 5)));
+        // The cart family falls through to the default voice (no override):
+        // the base Minecart 6 and the Coffin Minecart 38.
+        p.mount.set_mount(6, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.0)));
+        p.mount.set_mount(38, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.0)));
+        // A non-cart, non-override mount (the Unicorn's neighbour the Bunny 1)
+        // also falls through.
+        p.mount.set_mount(1, false);
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Male(0.0)));
+        // The death tree has no mount block: even the five override mounts die
+        // with the default Killed cue (`:38743-38746`).
+        p.voice_override = 0;
+        for m in [52, 54, 55, 56, 61, 6, 38] {
+            p.mount.set_mount(m, false);
+            assert_eq!(p.death_voice(false, false), DeathVoice::Killed, "mount {m}");
+        }
+        // The voiceOverride still wins over the mount block (`:38581` < `:38651`).
+        p.mount.set_mount(52, false);
+        p.voice_override = 6;
+        assert_eq!(p.hurt_voice(false, false), Some(HurtVoice::Chicken));
+    }
+
     /// W4-e10 — `Player.Male` (`Player.cs:3405-3410`) reads
     /// `PlayerVariantID.Sets.Male` = {0,1,2,3,8,10} (`PlayerVariantID.cs:20`).
     #[test]
@@ -15731,6 +15795,53 @@ mod tests {
             p.skin_variant = v;
             assert_eq!(p.male(), matches!(v, 0 | 1 | 2 | 3 | 8 | 10), "variant {v}");
         }
+    }
+
+    /// W4-e10 — the voice hydration cast-seam contract (research/132 §4): the
+    /// `.plr` reader's `finish_player_file` clamps `voice_variant` to 1..4 and
+    /// the live `Player.voice_variant` is `i32` — the f44e full-walk restore
+    /// block hydrates it with `p.voice_variant = file.voice_variant as i32`
+    /// and `p.voice_pitch_offset = file.voice_pitch_offset` (the pitch is a
+    /// direct f32 copy). This witness pins the CONSUMER side: a hydrated pair
+    /// drives the default-voice tail exactly as the picker's draft does, so
+    /// the cast-seam needs no further transform. The save direction casts back
+    /// (`file.voice_variant = p.voice_variant as u8`, `Player.cs:54924`).
+    #[test]
+    fn w4_e10_the_hydrated_voice_pair_drives_the_default_voice_tail() {
+        let w = World::new("t".into(), 64, 800);
+        let mut p = Player::spawn(&w);
+        // The f44e hydration hunk (the cast-seam, research/132 §4): the file's
+        // u8 variant (already clamped 1..4 on the read) widens to the live i32;
+        // the pitch copies straight. Simulate a loaded variant-3 / +0.5 file.
+        let file_voice_variant: u8 = 3;
+        let file_voice_pitch_offset: f32 = 0.5;
+        p.voice_variant = file_voice_variant as i32;
+        p.voice_pitch_offset = file_voice_pitch_offset;
+        // The default-voice tail reads the hydrated pair: variant 3 → the
+        // DefaultPlayerHurt trackable, the +0.5 pitch remaps through
+        // `Utils.Remap(-1, 1, -0.7, 0.7)` (`:38699-38700`) — the same f32 path
+        // the drain runs (the literal 0.35 is not the f32 product).
+        let expect_pitch = crate::player::voice_pitch_remap(0.5);
+        assert_eq!(
+            p.hurt_voice(false, false),
+            Some(HurtVoice::Style("DefaultPlayerHurt", expect_pitch))
+        );
+        // The save direction casts back to the u8 slot (`:54924`).
+        assert_eq!(p.voice_variant as u8, file_voice_variant);
+        // A variant-2 (female) / -1 file hydrates to the id-20 female at the
+        // remapped -1 pitch.
+        p.voice_variant = 2u8 as i32;
+        p.voice_pitch_offset = -1.0;
+        assert_eq!(
+            p.hurt_voice(false, false),
+            Some(HurtVoice::Female(crate::player::voice_pitch_remap(-1.0)))
+        );
+        // The clamp is the reader's job (`finish_player_file`, `:55831`): a
+        // hydrated 4 (the clamp ceiling) falls through the variant switch
+        // silently (the C# `:38701-38712` has no case 4).
+        p.voice_variant = 4u8 as i32;
+        p.voice_pitch_offset = 0.0;
+        assert_eq!(p.hurt_voice(false, false), None);
     }
 
     /// S1-E-21 wave D — the fast-run footstep queue
