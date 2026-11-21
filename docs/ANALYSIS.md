@@ -9935,6 +9935,75 @@ scope — NOT re-landed here; the chest loot draws are M5-CHEST-gen's.
   pound/plate raw-type gates, the trap frameX quirk + plate pre-Clear on
   refusal, and the whole-world a==b triple.
 
+## The temple doc-sweep (W4-g43, lane 22)
+
+Code-only wave 2026-11-21 (`task/W4-g43-biome-jungle-temple`, the DOC-SWEEP
+phase after the placement round 9420da89): the temple/jungle USE-side census
+— the altar summon, the door lock, the furniture place-conditions, the
+jungle shrines and the trap wiring coverage. No compiler invoked; the
+witness tests WRITTEN NOT RUN. The full census + citations ride
+`docs/research/101-doc-sweep-temple.md`.
+
+- **The Solar Tablet use** (`use_solar_tablet`, `world_sim/editing.rs`): the
+  brief's "solar tablet 2300" reconciles to item **2767** (2300 is a dye,
+  `ItemID.cs:7217` SolarTablet = 2767). The `ItemCheck_UseEventItems` arm
+  (`Player.cs:43988-44008`) was UNPORTED: the day && !eclipse action gate +
+  the hardMode USE-START gate (`:52269-52272`), the roar + `ApplyItemTime`
+  re-arm + one paid, `Main.eclipse = true` and the `Lang.misc[20]` row (the
+  remix `Lang.misc[106]` variant). No boss spawns — the eclipse's spawner
+  owns the roster. The 2767 joins the `is_summon` mid-swing gate list.
+- **The Abeemination jungle gate** (`use_boss_summon_item`): the 1133's
+  `ZoneJungle` USE-START gate (`Player.cs:52253-52256`) was missing from the
+  zone ladder (the old "1133 ungated" comment described the action arm
+  `:43861-43873`, not the start gate).
+- **The Temple Key door unlock** (`unlock_temple_door` + `edit::unlock_door`):
+  `IsLockedDoor` (`WorldGen.cs:69191-69197`) was ported but the USE side was
+  missing — a locked temple-door click fell into `open_door`'s refusal and
+  did nothing. The `Player.cs:32793-32838` arm now consumes the click
+  (`flag2 = true`), pays one Temple Key 1141 from the 58-slot inventory scan
+  (grid + coins + ammo, NOT the trash) and calls `WorldGen.UnlockDoor`
+  (`:37599-37628`: the up-walk to the frameY-594 anchor, the three-row +54
+  shift 594/612/630 → 648/666/684); the `!flag9 && useVoidBag` fallback walks
+  bank4. The `SoundID.Unlock` 22 cue at `(i*16, num*16+16)` +
+  `NotifyProgressionEvent(22)` (TEMPLE_RAIDER) fire per unlock. The door
+  NEVER opens on the locked click — the next click opens it. The Plantera
+  gate is the key's DROP (the loot_db 262 row), not a runtime check. The 12
+  dusts (`:37622-37625`) are the unported dust layer.
+- **The altar summon fidelity** (`spawn_golem_on_altar`, `NPC.SpawnOnPlayer`
+  case-245 `NPC.cs:80475-80531`): five deviations fixed — the ±20 scan is
+  EXCLUSIVE-upper (`:80494/:80496`), the `num4 <= 0 || num5 <= 0` refusal
+  (`:80505`), `NewNPC`'s BOTTOM-centre anchor (`:80770` — the old top-left
+  write sat the 140×140 body 140 px too high), `target = plr` +
+  `targetSetFrame` (`:80528-80529`), and the `Announcement.HasAwoken`
+  localized template in `ChatColors.BossOrEvent` (`:80530` — not the
+  server-message literal). `SolidTile`'s `!inActive()` conjunct
+  (`WorldGen.cs:70119`) joined the scan predicate; the Power Cell scan now
+  covers `inventory[0..58]` = grid + coins + ammo (`Player.cs:32766`).
+- **The flame trap's jet** (proj 187, aiStyle 38): the temple places styles
+  1/2 (horizontal: super-dart 184, flame 187) and 3/4 (vertical: spiky-ball
+  185, spear 186); all four emit wiring requests, but variant 2's flame jet
+  had NO data row and NO AI — `spawn_device_kind` dropped it silently. The
+  `FLAMETHROWER_TRAP` row (`Projectile.cs:2741-2751`: 6×6, aiStyle 38, alpha
+  255, tileCollide false, ignoreWater, timeLeft 60, trap) + the aiStyle-38
+  dispatch arm (`AI()` `:27500-27512`: the stationary 6-tick emitter of the
+  188 FlamesTrap children, `UpdatePosition`'s skip list `:20435` holds the
+  jet in place) land. The 188 child rides the existing aiStyle-23
+  `ai_eye_fire` flight. The spear 186 keeps its stand-in row (the aiStyle-37
+  port stays the M4-PROJ follow-up); the wall-trap `vy` fix is e20's lane.
+- **Census-only (no code)**: the Lihzahrd furniture has NO temple-only
+  placement gate in the C# (`PlaceThing_Tiles_PlaceIt` `:40108-40170` routes
+  on the registry def, no wall/biome check) — the temple's protection is the
+  wiring gate (`CanDoWireStuffHere` `:46920-46943`, ported), the rod's wall-87
+  refusal (`:45508`, ported) and the 210 pick-power gate (`:53942`, ported
+  `tool.rs:258`). The jungle shrines are ported (`structures.rs`
+  `pass_jungle_shrines` `:15977-16140` + `ChestsInJungleShrines` `:17211`);
+  the jungle residuals are c31's claimed scope — coordinated, not re-landed.
+- **Witnesses** (written not run): the tablet day-use pays/arms/flags + the
+  three free refusals; the Abeemination jungle gate; the Temple Key pay +
+  three-row shift + next-click open + no-key free refusal + the void-bag
+  bank4 fallback; the altar bottom-centre coords + target + the ammo-row
+  cell scan; the flame jet's stationary 6-tick emission of the 188 child.
+
 ## Polish passes (M1.4-WGEN-7)
 
 The worldgen rounding-out:
