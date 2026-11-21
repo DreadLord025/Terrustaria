@@ -1556,11 +1556,10 @@ impl App {
     /// `Main.GetPreferredBGStyleForPlayer` (`Main.cs:64211-64256`): the surface
     /// background style wanted by the biome around the scene centre.
     ///
-    /// Two deviations, both because the style they would select is not ported:
-    /// the forest sub-styles 10/11/12 need `Main.treeX[]` and the three extra
-    /// tree sets (only tree set 1 / `Background_50..52` is packed), and the
-    /// desert-variant styles 5/13/14 need `Main.desertBackgroundSet`. The forest
-    /// branch therefore stays 0 and the desert branch stays 2.
+    /// One deviation: the forest sub-styles 10/11/12 need `Main.treeX[]` and
+    /// the three extra tree sets (only tree set 1 / `Background_50..52` is
+    /// packed), so the forest branch stays 0. The desert-variant styles
+    /// 5/13/14 are live since the W4-g71 desert-set port.
     pub(crate) fn preferred_bg_style(&self) -> i32 {
         // `Main.SceneMetrics.Zone*`, read in the C#'s order.
         let m = &self.scene_metrics;
@@ -1583,9 +1582,16 @@ impl App {
         } else if m.enough_tiles_for_glowing_mushroom() {
             9
         } else if m.zone_desert {
-            // `(corrupt && evil > blood && evil > holy) ? 5 : ((crimson &&
-            // blood > holy) ? 14 : (!hallow ? 2 : 13))` — 5/13/14 unported.
-            2
+            // `Main.cs:64225` — the branch order lives in `biome.rs` so the
+            // witness can drive it without an App.
+            crate::biome::desert_preferred_style(
+                m.zone_corrupt,
+                m.zone_crimson,
+                m.zone_hallow,
+                m.evil_tile_count,
+                m.blood_tile_count,
+                m.holy_tile_count,
+            )
         } else if m.zone_hallow {
             6
         } else if m.zone_corrupt {
@@ -1627,6 +1633,7 @@ impl App {
             self.bg_style,
             self.world.jungle_bg_style as i32,
             self.world.hallow_bg_style as i32,
+            &self.world.desert_bg_set(),
             speed,
         );
     }
