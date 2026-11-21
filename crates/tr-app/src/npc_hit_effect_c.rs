@@ -185,6 +185,7 @@
 //! | 809-816 | `:86774-86784` | the sandshark 544/545 death (completes the shark family) |
 //! | 817-821 | `:86801-86805` | the 195/196 LostGirl/Nymph death (5 gores 254/255/255/256/256) |
 //! | 822-826 | `:86842-86846` | the 206 IcyMerman death (5 gores 273/274/274/275/275, type-137 dust) |
+//! | 827-832 | `:86821-86826` | the 198/199 Lihzahrd death (6 gores, all tails at +20 Y) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4959,6 +4960,38 @@ fn icy_merman_death(
     five_gore_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 137, 75, 2.0, -2.0, 273, 274, 275);
 }
 
+/// The 198/199 Lihzahrd death (`NPC.cs:86817-86826`, sites 827-832): the
+/// 75-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY -2), then the 6
+/// gores at `this.scale` — 258 at position, then 259/259/260/260/261 ALL at
+/// +20 Y (no +34 tier).
+fn lihzahrd_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..75 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let tail = Vec2::new(pos.x, pos.y + 20.0);
+    gore.new_gore(rng, world, pos, vel, 258, s); // :86821
+    gore.new_gore(rng, world, tail, vel, 259, s); // :86822
+    gore.new_gore(rng, world, tail, vel, 259, s); // :86823
+    gore.new_gore(rng, world, tail, vel, 260, s); // :86824
+    gore.new_gore(rng, world, tail, vel, 260, s); // :86825
+    gore.new_gore(rng, world, tail, vel, 261, s); // :86826
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5572,6 +5605,10 @@ pub fn hit_effect_c(
     // `:86828-86847` — the 206 IcyMerman arm (sites 822-826).
     if npc_type == 206 && npc.hp <= 0 {
         icy_merman_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86807-86827` — the 198/199 Lihzahrd arm (sites 827-832).
+    if (npc_type == 198 || npc_type == 199) && npc.hp <= 0 {
+        lihzahrd_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -8770,6 +8807,24 @@ mod tests {
             assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
             assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
             assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+        }
+    }
+
+    /// `NPC.cs:86821-86826` — the Lihzahrd death: the 6 gores 258 at
+    /// position then 259/259/260/260/261 ALL at +20 Y (no +34 tier).
+    #[test]
+    fn w4_f10_the_lihzahrd_death_spawns_the_six_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(769);
+        lihzahrd_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![258, 259, 259, 260, 260, 261]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        for i in 1..6 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 120.0));
         }
     }
 
