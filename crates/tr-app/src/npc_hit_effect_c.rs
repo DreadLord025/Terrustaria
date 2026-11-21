@@ -230,6 +230,7 @@
 //! | 1115-1124 | `:88039-88097` | the 368 TravellingMerchant + 227 Painter death (5 gores each, shimmer) |
 //! | 1125-1129 | `:88113-88117` | the 228 WitchDoctor death (5 gores, shimmer) |
 //! | 1130-1139 | `:88146-88174` | the 229 Pirate (shimmer dust-only branch) + 142 SantaClaus death (5 gores each) |
+//! | 1140-1149 | `:88192-88220` | the 178 Steampunker (4 gores) + 353/354 Stylist (6 gores) death (shimmer) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6629,6 +6630,73 @@ fn santa_claus_death(
     gore.new_gore(rng, world, low, vel, if shimmer { 1341 } else { 159 }, 1.0);
 }
 
+/// The 178 Steampunker death (`NPC.cs:88186-88196`, sites 1140-1143): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// head 231 (1348 shimmer) gated on `altTexture == 0` (the stand-in), then
+/// 232/232 (1349) at +20 and a SINGLE 233 (1350) at +34. Scale defaults to 1.
+fn steampunker_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(178);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88190-88192` — the head gated on altTexture == 0 (the stand-in).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1348 } else { 231 }, 1.0);
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1349 } else { 232 }, 1.0); // :88194
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1349 } else { 232 }, 1.0); // :88195
+    gore.new_gore(rng, world, low, vel, if shimmer { 1350 } else { 233 }, 1.0); // :88196
+}
+
+/// The 353/354 Stylist death (`NPC.cs:88208-88220`, sites 1144-1149): the
+/// 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the
+/// head 544 (1351 shimmer) gated on `altTexture == 0` (the stand-in), then
+/// 543 (1352) at position, 546/546 (1353) at +20 and 545/545 (1354) at +34.
+/// Scale defaults to 1.
+fn stylist_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer = npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(353);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    // `:88212-88214` — the head gated on altTexture == 0 (the stand-in).
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1351 } else { 544 }, 1.0);
+    gore.new_gore(rng, world, pos, vel, if shimmer { 1352 } else { 543 }, 1.0); // :88216
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1353 } else { 546 }, 1.0); // :88217
+    gore.new_gore(rng, world, mid, vel, if shimmer { 1353 } else { 546 }, 1.0); // :88218
+    gore.new_gore(rng, world, low, vel, if shimmer { 1354 } else { 545 }, 1.0); // :88219
+    gore.new_gore(rng, world, low, vel, if shimmer { 1354 } else { 545 }, 1.0); // :88220
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -7435,6 +7503,14 @@ pub fn hit_effect_c(
     // `:88153-88175` — the 142 SantaClaus arm (sites 1135-1139).
     if npc_type == 142 && npc.hp <= 0 {
         santa_claus_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88176-88197` — the 178 Steampunker arm (sites 1140-1143).
+    if npc_type == 178 && npc.hp <= 0 {
+        steampunker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88198-88221` — the 353/354 Stylist arm (sites 1144-1149).
+    if (npc_type == 353 || npc_type == 354) && npc.hp <= 0 {
+        stylist_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -11708,6 +11784,53 @@ mod tests {
         santa_claus_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
         let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types2, vec![1338, 1340, 1340, 1341, 1341]);
+    }
+
+    /// `NPC.cs:88192-88196` — the Steampunker death: the 4 gores
+    /// 231/232/232/233 (normal, single +34) or 1348/1349/1349/1350 (shimmer).
+    #[test]
+    fn w4_f10_the_steampunker_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1151);
+        steampunker_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![231, 232, 232, 233]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1151);
+        steampunker_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..4].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1348, 1349, 1349, 1350]);
+    }
+
+    /// `NPC.cs:88214-88220` — the Stylist death: the 6 gores
+    /// 544/543/546/546/545/545 (normal) or 1351/1352/1353/1353/1354/1354
+    /// (shimmer).
+    #[test]
+    fn w4_f10_the_stylist_death_uses_the_shimmer_variants() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 40.0, 56.0);
+        n.variation_index = 0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1153);
+        stylist_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![544, 543, 546, 546, 545, 545]);
+        let mut n2 = boss(100.0, 100.0, 40.0, 56.0);
+        n2.variation_index = 1;
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(1153);
+        stylist_death(&n2, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..6].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1351, 1352, 1353, 1353, 1354, 1354]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
