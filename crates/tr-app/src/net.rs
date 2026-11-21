@@ -237,6 +237,16 @@ pub mod id {
     /// (`MessageID.cs:246`, `NetMessage.cs:1436-1438`,
     /// `MessageBuffer.cs:3861-3866`, host→client only).
     pub const CRYSTAL_INVASION_WAIT: u8 = 116;
+    /// `117 PlayerHurtV2` (W4-g50, S1-I-4): `(byte)` player, the death
+    /// reason, `(short)` damage, `(byte)(dir+1)`, the crit/pvp BitsByte,
+    /// `(sbyte)` cooldown (`MessageID.cs:248`, `NetMessage.cs:1439-1446`,
+    /// `MessageBuffer.cs:3867-3886`). Both directions.
+    pub const PLAYER_HURT_V2: u8 = 117;
+    /// `118 PlayerDeathV2` (W4-g50, S1-I-4): `(byte)` player, the death
+    /// reason, `(short)` damage, `(byte)(dir+1)`, the pvp BitsByte
+    /// (`MessageID.cs:250`, `NetMessage.cs:1447-1453`,
+    /// `MessageBuffer.cs:3887-3904`). Both directions.
+    pub const PLAYER_DEATH_V2: u8 = 118;
     pub const PLAYER_STATE: u8 = 13; // NetMessage.cs:446-513 / MessageBuffer.cs:952-1059
     pub const ITEM_DROP: u8 = 21; // NetMessage.cs:646-669 / MessageBuffer.cs:1445-1535
     pub const ITEM_OWNER: u8 = 22; // NetMessage.cs:675-685 / MessageBuffer.cs:1552-1562
@@ -734,6 +744,10 @@ pub struct PlayerNet {
     /// (`MessageBuffer.cs:3666`; W4-g50). The 45 relay that feeds it is
     /// parked, so peers read 0 until it lands.
     pub team: i32,
+    /// `Main.player[id].hostile` (`Player.cs:2570`), the `117` hurt gate's
+    /// mutual-PvP term (`MessageBuffer.cs:3870`; W4-g50). The 30 relay that
+    /// feeds it is parked, so peers read false until it lands.
+    pub hostile: bool,
 }
 
 impl Default for PlayerNet {
@@ -765,6 +779,7 @@ impl Default for PlayerNet {
             minion_rest_target_point: (0.0, 0.0),
             minion_attack_target_npc: -1,
             team: 0,
+            hostile: false,
         }
     }
 }
@@ -2360,6 +2375,212 @@ pub struct CrystalInvasionWait {
     pub time_left: i32,
 }
 
+/// `PlayerDeathReason` (`DataStructures/PlayerDeathReason.cs`), the shared
+/// reason block of `117 PlayerHurtV2` / `118 PlayerDeathV2`
+/// (`NetMessage.cs:1441`/`:1449` write it via `_currentPlayerDeathReason`,
+/// set by `SendPlayerHurt`/`SendPlayerDeath`, `:2600`/`:2609`). The indices
+/// default to -1 and the type/prefix fields to 0 (`:8-20`); the wire is the
+/// flag byte then the present fields in bit order (`WriteSelfTo`,
+/// `:138-182`; `FromReader`, `:184-221`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlayerDeathReason {
+    /// bit 0 — `(short)` when != -1 (`PlayerDeathReason.cs:141`/`:150-153`).
+    pub source_player_index: i16,
+    /// bit 1 — `(short)` when != -1 (`:142`/`:154-157`).
+    pub source_npc_index: i16,
+    /// bit 2 — `(short)` when != -1 (`:143`/`:158-161`).
+    pub source_projectile_local_index: i16,
+    /// bit 3 — `(byte)` when != -1 (`:144`/`:162-165`). The C# casts the int
+    /// to a byte, so -1 would ride as 255; the port keeps the flag test on
+    /// the un-cast value (`LegacyDefault`'s 255 is a *present* other-index).
+    pub source_other_index: i16,
+    /// bit 4 — `(short)` when != 0 (`:145`/`:166-169`).
+    pub source_projectile_type: i16,
+    /// bit 5 — `(short)` when != 0 (`:146`/`:170-173`).
+    pub source_item_type: i16,
+    /// bit 6 — `(byte)` when != 0 (`:147`/`:174-177`).
+    pub source_item_prefix: u8,
+    /// bit 7 — the string when present (`:148`/`:178-181`). The port's wire
+    /// strings are literal-mode `BinaryWriter.Write(string)`
+    /// (a 7-bit length + UTF-8), same as every other body here.
+    pub source_custom_reason: Option<String>,
+}
+
+impl Default for PlayerDeathReason {
+    /// The C# field initialisers (`PlayerDeathReason.cs:8-22`): -1 indices,
+    /// 0 types, no custom reason.
+    fn default() -> Self {
+        Self {
+            source_player_index: -1,
+            source_npc_index: -1,
+            source_projectile_local_index: -1,
+            source_other_index: -1,
+            source_projectile_type: 0,
+            source_item_type: 0,
+            source_item_prefix: 0,
+            source_custom_reason: None,
+        }
+    }
+}
+
+impl PlayerDeathReason {
+    /// `WriteSelfTo` (`PlayerDeathReason.cs:138-182`): the flag byte then the
+    /// present fields in bit order.
+    pub fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut b = BitsByte::new();
+        b.set(0, self.source_player_index != -1);
+        b.set(1, self.source_npc_index != -1);
+        b.set(2, self.source_projectile_local_index != -1);
+        b.set(3, self.source_other_index != -1);
+        b.set(4, self.source_projectile_type != 0);
+        b.set(5, self.source_item_type != 0);
+        b.set(6, self.source_item_prefix != 0);
+        b.set(7, self.source_custom_reason.is_some());
+        let mut w = w.bitsbyte(b);
+        if b.get(0) {
+            w = w.i16(self.source_player_index);
+        }
+        if b.get(1) {
+            w = w.i16(self.source_npc_index);
+        }
+        if b.get(2) {
+            w = w.i16(self.source_projectile_local_index);
+        }
+        if b.get(3) {
+            w = w.u8(self.source_other_index as u8);
+        }
+        if b.get(4) {
+            w = w.i16(self.source_projectile_type);
+        }
+        if b.get(5) {
+            w = w.i16(self.source_item_type);
+        }
+        if b.get(6) {
+            w = w.u8(self.source_item_prefix);
+        }
+        if let Some(reason) = &self.source_custom_reason {
+            w = w.str(reason);
+        }
+        w
+    }
+
+    /// `FromReader` (`PlayerDeathReason.cs:184-221`): absent fields keep the
+    /// constructor defaults (-1 / 0 / null).
+    pub fn read_from(r: &mut NetReader) -> Option<Self> {
+        let b = r.bitsbyte()?;
+        Some(Self {
+            source_player_index: if b.get(0) { r.i16()? } else { -1 },
+            source_npc_index: if b.get(1) { r.i16()? } else { -1 },
+            source_projectile_local_index: if b.get(2) { r.i16()? } else { -1 },
+            // The wire byte widens back to the int field; an absent flag
+            // keeps -1, a present 255 stays 255 (`LegacyDefault`).
+            source_other_index: if b.get(3) { r.u8()? as i16 } else { -1 },
+            source_projectile_type: if b.get(4) { r.i16()? } else { 0 },
+            source_item_type: if b.get(5) { r.i16()? } else { 0 },
+            source_item_prefix: if b.get(6) { r.u8()? } else { 0 },
+            source_custom_reason: if b.get(7) { Some(r.str()?) } else { None },
+        })
+    }
+}
+
+/// `msg 117 PlayerHurtV2`'s body (`NetMessage.cs:1439-1446`): `(byte)number`,
+/// the death reason, `(short)number2` damage, `(byte)(number3 + 1f)`
+/// direction, `(byte)number4` the `BitsByte{bit0 critical, bit1 pvp}` packed
+/// by `SendPlayerHurt` (`:2601-2604`), `(sbyte)number5` the immunity-cooldown
+/// counter. The reader subtracts the 1 back off the direction
+/// (`MessageBuffer.cs:3874`) and unpacks bit0/bit1 (`:3875-3877`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerHurtV2 {
+    pub player_id: u8,
+    pub reason: PlayerDeathReason,
+    pub damage: i16,
+    /// The wire value is `hitDirection + 1` (`NetMessage.cs:1443`); -1 rides
+    /// as 0, +1 as 2. Stored un-offset like `NpcStrike.hit_direction`.
+    pub hit_direction: i8,
+    pub crit: bool,
+    pub pvp: bool,
+    /// `Player.Hurt`'s `cooldownCounter` (`ImmunityCooldownID`), an `sbyte`
+    /// on the wire (`NetMessage.cs:1445`, `MessageBuffer.cs:3878`).
+    pub cooldown_counter: i8,
+}
+
+impl PlayerHurtV2 {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut b = BitsByte::new();
+        b.set(0, self.crit);
+        b.set(1, self.pvp);
+        let w = w.u8(self.player_id);
+        let w = self.reason.write_to(w);
+        w.i16(self.damage)
+            .u8(self.hit_direction.wrapping_add(1) as u8)
+            .bitsbyte(b)
+            .i8(self.cooldown_counter)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let player_id = r.u8()?;
+        let reason = PlayerDeathReason::read_from(r)?;
+        let damage = r.i16()?;
+        let hit_direction = (r.u8()? as i8).wrapping_sub(1);
+        let b = r.bitsbyte()?;
+        let cooldown_counter = r.i8()?;
+        Some(Self {
+            player_id,
+            reason,
+            damage,
+            hit_direction,
+            crit: b.get(0),
+            pvp: b.get(1),
+            cooldown_counter,
+        })
+    }
+}
+
+/// `msg 118 PlayerDeathV2`'s body (`NetMessage.cs:1447-1453`):
+/// `(byte)number`, the death reason, `(short)number2` damage,
+/// `(byte)(number3 + 1f)` direction, `(byte)number4` the
+/// `BitsByte{bit0 pvp}` packed by `SendPlayerDeath` (`:2610-2612`).
+/// Unlike 117 there is no crit bit and no trailing cooldown sbyte. The
+/// reader subtracts the 1 back off the direction and unpacks bit0 as pvp
+/// (`MessageBuffer.cs:3896-3897`) before `Player.KillMe` (`:3898`).
+#[derive(Clone, Debug, PartialEq)]
+pub struct PlayerDeathV2 {
+    pub player_id: u8,
+    pub reason: PlayerDeathReason,
+    pub damage: i16,
+    /// The wire value is `hitDirection + 1` (`NetMessage.cs:1451`); -1 rides
+    /// as 0, +1 as 2. Stored un-offset like `PlayerHurtV2.hit_direction`.
+    pub hit_direction: i8,
+    pub pvp: bool,
+}
+
+impl PlayerDeathV2 {
+    fn write_to(&self, w: NetWriter) -> NetWriter {
+        let mut b = BitsByte::new();
+        b.set(0, self.pvp);
+        let w = w.u8(self.player_id);
+        let w = self.reason.write_to(w);
+        w.i16(self.damage)
+            .u8(self.hit_direction.wrapping_add(1) as u8)
+            .bitsbyte(b)
+    }
+
+    fn read_from(r: &mut NetReader) -> Option<Self> {
+        let player_id = r.u8()?;
+        let reason = PlayerDeathReason::read_from(r)?;
+        let damage = r.i16()?;
+        let hit_direction = (r.u8()? as i8).wrapping_sub(1);
+        let b = r.bitsbyte()?;
+        Some(Self {
+            player_id,
+            reason,
+            damage,
+            hit_direction,
+            pvp: b.get(0),
+        })
+    }
+}
+
 // ===========================================================================
 // Messages
 // ===========================================================================
@@ -2524,6 +2745,13 @@ pub enum C2s {
     /// (`DD2Event.cs:574-577`); the host summons on the sender
     /// (`MessageBuffer.cs:3841-3854`; W4-g50).
     CrystalInvasionStart(CrystalInvasionStart),
+    /// `117 PlayerHurtV2` — this client was hurt (`Player.Hurt`'s net send);
+    /// the host applies + relays (`MessageBuffer.cs:3867-3886`; W4-g50).
+    PlayerHurtV2(PlayerHurtV2),
+    /// `118 PlayerDeathV2` — this client died (`Player.KillMe`'s net send);
+    /// the host forces the id, applies + relays (`MessageBuffer.cs:3887-
+    /// 3904`; W4-g50).
+    PlayerDeathV2(PlayerDeathV2),
     // ---- internal (no 1:1 body in the port's scope) ----
     Edit {
         x: i32,
@@ -2724,6 +2952,12 @@ pub enum S2c {
     /// `116 CrystalInvasionSendWaitTime` - the wave-break countdown
     /// (`DD2Event.cs:947-950`; `MessageBuffer.cs:3861-3866`; W4-g50).
     CrystalInvasionWait(CrystalInvasionWait),
+    /// `117 PlayerHurtV2` - a peer's hurt, relayed by the host
+    /// (`MessageBuffer.cs:3882`; W4-g50).
+    PlayerHurtV2(PlayerHurtV2),
+    /// `118 PlayerDeathV2` - a peer's death, relayed by the host
+    /// (`MessageBuffer.cs:3901`; W4-g50).
+    PlayerDeathV2(PlayerDeathV2),
     /// `82` - a NetModule envelope (see `C2s::NetModule`).
     NetModule {
         module: u16,
@@ -2825,6 +3059,8 @@ impl C2s {
             Self::MassWireOperation(_) => id::MASS_WIRE_OPERATION,
             Self::ToggleParty => id::TOGGLE_PARTY,
             Self::CrystalInvasionStart(_) => id::CRYSTAL_INVASION_START,
+            Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
+            Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
             Self::Edit { .. } => id::INT_EDIT,
             Self::Pickup { .. } => id::INT_PICKUP,
         }
@@ -2937,6 +3173,10 @@ impl C2s {
             Self::ToggleParty => w,
             // `NetMessage.cs:1432-1435`: (short)x + (short)y.
             Self::CrystalInvasionStart(c) => w.i16(c.x).i16(c.y),
+            // `NetMessage.cs:1439-1446` via `SendPlayerHurt` (`:2598-2605`).
+            Self::PlayerHurtV2(h) => h.write_to(w),
+            // `NetMessage.cs:1447-1453` via `SendPlayerDeath` (`:2607-2613`).
+            Self::PlayerDeathV2(d) => d.write_to(w),
             Self::SpawnRequest(s) => w.i32(s.x).i32(s.y).u8(s.team),
             Self::PlayerSpawn(s) => w
                 .i16(s.x)
@@ -3142,6 +3382,12 @@ impl C2s {
                 x: r.i16()?,
                 y: r.i16()?,
             }),
+            // `MessageBuffer.cs:3869-3878`: the direction byte minus 1, the
+            // crit/pvp BitsByte, the sbyte cooldown counter.
+            id::PLAYER_HURT_V2 => Self::PlayerHurtV2(PlayerHurtV2::read_from(r)?),
+            // `MessageBuffer.cs:3889-3897`: the direction byte minus 1, the
+            // pvp-only BitsByte — no cooldown sbyte follows.
+            id::PLAYER_DEATH_V2 => Self::PlayerDeathV2(PlayerDeathV2::read_from(r)?),
             id::SPAWN_REQUEST => Self::SpawnRequest(SpawnRequest {
                 x: r.i32()?,
                 y: r.i32()?,
@@ -3325,6 +3571,8 @@ impl S2c {
             Self::SpecialFx(_) => id::SPECIAL_FX,
             Self::CrystalInvasionWipe => id::CRYSTAL_INVASION_WIPE,
             Self::CrystalInvasionWait(_) => id::CRYSTAL_INVASION_WAIT,
+            Self::PlayerHurtV2(_) => id::PLAYER_HURT_V2,
+            Self::PlayerDeathV2(_) => id::PLAYER_DEATH_V2,
         }
     }
 
@@ -3582,6 +3830,10 @@ impl S2c {
             Self::CrystalInvasionWipe => w,
             // `NetMessage.cs:1436-1438`: the raw (int) countdown.
             Self::CrystalInvasionWait(t) => w.i32(t.time_left),
+            // `NetMessage.cs:1439-1446` via `SendPlayerHurt` (`:2598-2605`).
+            Self::PlayerHurtV2(h) => h.write_to(w),
+            // `NetMessage.cs:1447-1453` via `SendPlayerDeath` (`:2607-2613`).
+            Self::PlayerDeathV2(d) => d.write_to(w),
             // Returned early above; unreachable through the builder chain.
             Self::TileBlock(_)
             | Self::SectionRange(_)
@@ -3959,6 +4211,12 @@ impl S2c {
             id::CRYSTAL_INVASION_WAIT => Self::CrystalInvasionWait(CrystalInvasionWait {
                 time_left: r.i32()?,
             }),
+            // `MessageBuffer.cs:3869-3878`: the direction byte minus 1, the
+            // crit/pvp BitsByte, the sbyte cooldown counter.
+            id::PLAYER_HURT_V2 => Self::PlayerHurtV2(PlayerHurtV2::read_from(r)?),
+            // `MessageBuffer.cs:3889-3897`: the direction byte minus 1, the
+            // pvp-only BitsByte — no cooldown sbyte follows.
+            id::PLAYER_DEATH_V2 => Self::PlayerDeathV2(PlayerDeathV2::read_from(r)?),
             _ => return None,
         })
     }
@@ -7003,6 +7261,84 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::CrystalInvasionWait(d) => assert_eq!(d, t),
             other => panic!("expected 116, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `117 PlayerHurtV2` (`NetMessage.cs:1439-1446`): byte player, the
+    /// death reason, short damage, byte (dir+1), the crit/pvp BitsByte,
+    /// sbyte cooldown. Both directions (`MessageBuffer.cs:3867-3886`).
+    #[test]
+    fn w4_g50_player_hurt_v2_round_trips() {
+        let h = PlayerHurtV2 {
+            player_id: 2,
+            reason: PlayerDeathReason {
+                source_npc_index: 5,
+                ..Default::default()
+            },
+            damage: 35,
+            hit_direction: -1,
+            crit: true,
+            pvp: false,
+            cooldown_counter: 0,
+        };
+        let c = C2s::PlayerHurtV2(h.clone()).encode();
+        assert_eq!(c[2], 117);
+        // byte id, the reason flag byte (bit 1 = npc index), the short 5,
+        // short damage, byte (dir+1)=0, BitsByte crit=1, sbyte cooldown.
+        let mut body = vec![2u8, 0x02];
+        body.extend_from_slice(&5i16.to_le_bytes());
+        body.extend_from_slice(&35i16.to_le_bytes());
+        body.push(0); // -1 + 1
+        body.push(0x01); // crit bit 0
+        body.push(0); // cooldown sbyte
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerHurtV2(d) => assert_eq!(d, h),
+            other => panic!("expected 117, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerHurtV2(h.clone()).encode();
+        assert_eq!(f[2], 117);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerHurtV2(d) => assert_eq!(d, h),
+            other => panic!("expected 117, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// `118 PlayerDeathV2` (`NetMessage.cs:1447-1453`): byte player, the
+    /// death reason, short damage, byte (dir+1), the pvp BitsByte — no crit
+    /// bit, no cooldown sbyte. Both directions (`MessageBuffer.cs:3887-3904`).
+    #[test]
+    fn w4_g50_player_death_v2_round_trips() {
+        let d = PlayerDeathV2 {
+            player_id: 3,
+            reason: PlayerDeathReason {
+                source_other_index: 255, // LegacyDefault
+                ..Default::default()
+            },
+            damage: 999,
+            hit_direction: 1,
+            pvp: true,
+        };
+        let c = C2s::PlayerDeathV2(d.clone()).encode();
+        assert_eq!(c[2], 118);
+        // byte id, reason flag (bit 3 = other index), byte 255, short damage,
+        // byte (dir+1)=2, BitsByte pvp=1.
+        let mut body = vec![3u8, 0x08, 255];
+        body.extend_from_slice(&999i16.to_le_bytes());
+        body.push(2); // 1 + 1
+        body.push(0x01); // pvp bit 0
+        assert_eq!(&c[3..], &body);
+        match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+            C2s::PlayerDeathV2(back) => assert_eq!(back, d),
+            other => panic!("expected 118, got {:?}", other.msg_id()),
+        }
+        let f = S2c::PlayerDeathV2(d.clone()).encode();
+        assert_eq!(f[2], 118);
+        assert_eq!(&f[3..], &body);
+        match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
+            S2c::PlayerDeathV2(back) => assert_eq!(back, d),
+            other => panic!("expected 118, got {:?}", other.msg_id()),
         }
     }
 }

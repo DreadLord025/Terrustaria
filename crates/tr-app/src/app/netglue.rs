@@ -1152,6 +1152,128 @@ impl App {
                 }
                 self.summon_crystal_direct(server, x, y);
             }
+            // `case 117` — a peer's hurt (W4-g50, `MessageBuffer.cs:3867-3886`):
+            // the gate `netMode != 2 || whoAmI == num27 || (both hostile)`
+            // (`:3870`) — on the host only a self-hurt or a mutual-PvP hit
+            // applies; then `Player.Hurt(quiet: true)` and the
+            // `SendPlayerHurt` relay (`:3882`, ignoreClient = the sender).
+            C2s::PlayerHurtV2(h) => {
+                let subject = h.player_id;
+                let sender_hostile = self
+                    .remote_players
+                    .get(&id)
+                    .map(|p| p.hostile)
+                    .unwrap_or(false);
+                let subject_hostile = if subject as u32 == self.local_id {
+                    self.player.as_ref().map(|p| p.hostile).unwrap_or(false)
+                } else {
+                    self.remote_players
+                        .get(&(subject as u32))
+                        .map(|p| p.hostile)
+                        .unwrap_or(false)
+                };
+                let applies = subject as u32 == id || (sender_hostile && subject_hostile);
+                if !applies {
+                    return; // `:3870` — the gate skips BOTH apply and relay
+                }
+                self.apply_player_hurt(subject, &h);
+                // `SendPlayerHurt(num27, …, -1, this.whoAmI)` — the relay
+                // carries the subject's id, excluding the sender.
+                server.broadcast_except(
+                    &S2c::PlayerHurtV2(net::PlayerHurtV2 {
+                        player_id: subject,
+                        ..h
+                    }),
+                    id,
+                );
+            }
+            // `case 118` — a peer's death (W4-g50, `MessageBuffer.cs:3887-3904`):
+            // the host forces the subject to the sender (`:3892`), runs
+            // `Player.KillMe` and relays via `SendPlayerDeath` (`:3901`,
+            // ignoreClient = the sender).
+            C2s::PlayerDeathV2(d) => {
+                let subject = id as u8;
+                self.apply_player_death(subject, &d);
+                server.broadcast_except(
+                    &S2c::PlayerDeathV2(net::PlayerDeathV2 {
+                        player_id: subject,
+                        ..d
+                    }),
+                    id,
+                );
+            }
+        }
+    }
+
+    /// The shared `117` apply (`MessageBuffer.cs:3879`): `Player.Hurt(reason,
+    /// damage, hitDirection, pvp, quiet: true, crit, cooldownCounter)`. The
+    /// local player runs the ported `hurt_inner` (the quiet flag suppresses
+    /// the local hurt sound — the port's hurt path plays none inline); a peer
+    /// snapshot takes the raw damage off its hp (the C# runs the full Hurt
+    /// on every `Main.player` slot, the port keeps the hp part — the 16/13
+    /// convention). The defense/dodge halves ride the local sim only.
+    fn apply_player_hurt(&mut self, subject: u8, h: &net::PlayerHurtV2) {
+        if subject as u32 == self.local_id {
+            if let Some(pl) = self.player.as_mut() {
+                // `hitDirection` picks the knockback source side; the port's
+                // `hurt_inner` takes `from_x` — the subject's own x offset by
+                // the direction (the C# `Hurt` reads `hitDirection` for the
+                // knockback sign, `Player.cs:38519`).
+                let from_x = pl.x - h.hit_direction as f32 * 16.0;
+                let rng = self.rngs.global();
+                pl.hurt_inner(
+                    h.damage as i32,
+                    from_x,
+                    h.hit_direction != 0,
+                    rng,
+                    false, // dodgeable: the net replay is not a dodge roll
+                    h.crit,
+                    None,
+                    false, // retaliate_lane: quiet net hurt
+                );
+            }
+        } else if let Some(p) = self.remote_players.get_mut(&(subject as u32)) {
+            p.hp = (p.hp - h.damage as i32).max(0);
+        }
+    }
+
+    /// The shared `118` apply (`MessageBuffer.cs:3898`): `Player.KillMe(reason,
+    /// damage, hitDirection, pvp)`. The local player runs the ported death
+    /// pipeline (the npcs-pass `hp <= 0 && !dead` arm's shape — drops, chat
+    /// broadcast, `start_death`); a peer snapshot marks dead (hp 0). The
+    /// death text resolves from the reason's `ByOther` family when present,
+    /// else the `DeathText.Slain` row.
+    fn apply_player_death(&mut self, subject: u8, d: &net::PlayerDeathV2) {
+        if subject as u32 == self.local_id {
+            let Some(pl) = self.player.as_ref() else {
+                return;
+            };
+            if pl.dead || pl.creative_god_mode {
+                return; // `KillMe`'s head gate (`Player.cs:38809-38812`)
+            }
+            let (dx, dy) = (pl.x, pl.y);
+            let boss_near = pl.boss_hinders(&self.npcs);
+            let name = self.player_name.clone();
+            // The death text: the reason's custom string wins, else the
+            // `ByOther` family, else `DeathText.Slain` (`GetDeathText`).
+            let death_text = if let Some(custom) = &d.reason.source_custom_reason {
+                custom.clone()
+            } else if d.reason.source_other_index >= 0 {
+                // The `ByOther(N)` family maps through the DoT attribution
+                // table; the port's `death_text_key` covers the drain lanes.
+                // A net other-index outside them falls back to Slain.
+                crate::death::slain_message(&name)
+            } else {
+                crate::death::slain_message(&name)
+            };
+            crate::death::on_player_death(self, dx, dy, &death_text);
+            crate::chat::broadcast_death(&mut self.chat, &death_text);
+            if let Some(pl) = self.player.as_mut() {
+                pl.hp = 0;
+                pl.start_death(&self.world, boss_near, false);
+            }
+        } else if let Some(p) = self.remote_players.get_mut(&(subject as u32)) {
+            p.hp = 0;
         }
     }
 
@@ -2835,6 +2957,18 @@ impl App {
             // display and the skip-wait gate read.
             S2c::CrystalInvasionWait(t) => {
                 self.world.dd2_time_left_between_waves = t.time_left;
+            }
+            // `case 117` — a peer's hurt replay (W4-g50,
+            // `MessageBuffer.cs:3879`): the quiet `Player.Hurt` — the local
+            // player runs the ported hurt path, a peer snapshot takes the hp.
+            S2c::PlayerHurtV2(h) => {
+                self.apply_player_hurt(h.player_id, &h);
+            }
+            // `case 118` — a peer's death replay (W4-g50,
+            // `MessageBuffer.cs:3898`): `Player.KillMe` — the local player
+            // runs the death pipeline, a peer snapshot marks dead.
+            S2c::PlayerDeathV2(d) => {
+                self.apply_player_death(d.player_id, &d);
             }
             // `151` — the slot is gone.
             S2c::ItemDead { slot } => {
@@ -7490,5 +7624,50 @@ mod message_family_tests {
         }
         pump(&mut host_app, &mut client_app, 10);
         assert_eq!(client_app.world.dd2_time_left_between_waves, 1800);
+    }
+
+    /// `case 117` (`MessageBuffer.cs:3867-3886`): a self-hurt applies and
+    /// relays; the local player's hp drops by the damage.
+    #[test]
+    fn w4_g50_the_117_self_hurt_drops_the_local_hp() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        let hp_before = client_app.player.as_ref().unwrap().hp;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerHurtV2(net::PlayerHurtV2 {
+                player_id: me,
+                reason: net::PlayerDeathReason::default(),
+                damage: 10,
+                hit_direction: 0,
+                crit: false,
+                pvp: false,
+                cooldown_counter: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        let hp_after = client_app.player.as_ref().unwrap().hp;
+        assert!(hp_after < hp_before, "the self-hurt dropped the hp");
+    }
+
+    /// `case 118` (`MessageBuffer.cs:3887-3904`): the host forces the subject
+    /// to the sender; the local player dies and the death pipeline runs.
+    #[test]
+    fn w4_g50_the_118_death_kills_the_local_player() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let me = client_app.local_id as u8;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::PlayerDeathV2(net::PlayerDeathV2 {
+                player_id: 250, // the host overrides it (`:3892`)
+                reason: net::PlayerDeathReason::default(),
+                damage: 999,
+                hit_direction: 0,
+                pvp: false,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 15);
+        let p = client_app.player.as_ref().unwrap();
+        assert!(p.dead, "the local player died");
+        assert_eq!(p.hp, 0);
+        assert!(p.respawn_timer > 0, "the respawn timer armed");
     }
 }
