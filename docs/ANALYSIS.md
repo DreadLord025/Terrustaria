@@ -40039,3 +40039,80 @@ the nebula 620/618 (`:72394`), 619 (`:72418`); 601 (`:72454`), 596
 (`:77046`), 370 (`:77161`), 371 (`:77176`), 936 (`:77193`). The
 gore-adjacent arms (a gore draw sits BETWEEN dust draws) stay deferred to
 the gore-census companion; the pure-dust arms port in the batches below.
+
+### Census completeness (batches 11-31 landed — the final accounting)
+
+A dust-line → owning-arm mapping over the whole Kill body
+(`Projectile.cs:70642-77262`, 406 `Dust.NewDust*`/`CloneDust` sites)
+cross-referenced against the drain's 309 distinct kind arms confirms
+every dust arm is now PORTED or explicitly accounted for:
+
+**Ported in batches 11-31** (the re-census list above, minus the deferred
+set below): the firework/star rings 167-170/415-418/1024/873 (b11), the
+spoke/queen-slime/sparkle/terraspark rings 659/1012/920/921/926/937/818/
+856/728/985 (b12), the DD2 explosions 710/662/685/680/664/666/668/706/
+669/614 (b13), the lunar/nebula/portal 634/635/645/661/617/620/618/619/
+601/596 (b14), the mid-Kill 539/585/590/587/676/405/501/410/452/454
+(b15), the late-mid 467/468/485/484/483/523/521/459/709/639 (b16), the
+small + 424-family 640/682/449/448/616/836/1092/424/425/426 (b17), the
+smoke/cursed-flame 1037/1049/399/358/406/1042/323/589/311/316 (b18), the
+confetti/trail-walk 1097/270/837/229/178/289/475/505/506/171 (b19), the
+99-family 117/166/99/1013/727/1014/1021/1048/1054/1055 (b20), the
+geode/boulder/star 1005/772/763/723/724/725/726/907/1133/1053 (b21), the
+head-block sparkle 1098/1123/1020/1105/1085/1080/1038/1036/756/961
+(b22), the gem bolts 121-126/597/1115/379/377 (b23), the bomb/sparkle
+281/162/240/282/660/638/411-414 (b24), the flower/gore 583/584/514/69/
+70/621/712/962/370/371 (b25), the barrel/meteor 1023/312/936/1078/80/
+474/172/9/503/12 (b26), the reclaimed special-bullet/arrow 283/284/286/
+41/955/1116/246/249 (b27), the oldPos trail-ring 931/1039/1047/79/16/34
+(b28), the remaining oldPos 711/636/686/502 (b29), the 932 census dedupe
+(b30), the last free 681/1120 (b31).
+
+**Claimed by other lanes (NOT ported here, by design):**
+- d12 (`origin/task/W4-d12-proj-ai-111-120`, `projectile_ai_explosions.rs`):
+  the aiStyle-117 tick-1 dust censuses incl. 624's 200-ring (`:34459-
+  34637`) + the 608 Solar Counter Kill burst (`:72177-72225`).
+- i16 (`dart_electro_firework_kill`): the 442 electrosphere (`:73528-
+  73552`) + 478 flame (`:75578`) death spawns (the 167-170 firework dust
+  was DEDUPED onto b11).
+- celeb2 (`celeb2_death`/`celeb2_explosion`): the 715-718 Celebration
+  rockets' Kill resize + Damage + explosion census.
+- floating-turret (`floating_turret_kill`/`rainbow_crystal_explosion_draws`):
+  the 644/641/643 turret/crystal/shard arms.
+- g16 (`origin/task/W4-g16-gore-projectile-sites`): the gore BODIES/draws
+  (165 sites) — the dust beside a gore site is NOT g16's; this lane took
+  the gore DRAWS as census where they interleave with dust.
+
+**Deferred — state-bearing draws consumed inline by other hooks (porting
+the dust needs a cross-seam dedupe of those spawn/split draws):**
+- 89 CrystalBullet (`:75250`): the 5 dust-68 precede the 2-shard split
+  whose 8 draws ride `special_bullet_kill` inline.
+- 91/92 Holy/Falling star (`:75212`): the 10 dust-58 + 3 gores precede
+  the star spawn whose draws ride `special_arrow_kill` inline.
+- 183 Beenade (`:76431`): the 20 dust-31 sit BETWEEN the 4 gore rows and
+  the bee burst whose draws ride `beenade_death` (the G3 census).
+- 655 (`:75080`): the 30 dust-147 precede the wet-item / NPC-spawn draws.
+- 246's owner-gated 249 spawn burst (`:76973`): the dust ported (b27),
+  the spawn draws stay the spawn lane's.
+
+**Deferred — App-frame state not in the drain's World/SpawnCtx:**
+- 1084/949 (`:70956`/`:70976`): the TorchID.Dust table pick + the
+  `Main.DiscoR/G/B` rainbow-torch colour (the App's frame-cycle state).
+- 868/869/996 (`:73705`): the 15 dust-13 precede the
+  WorldGen.RandomizeTreeStyle/Background/MoonState draws (unported
+  state-bearing randomizers).
+
+**No dust to port (particle-orchestrator-only / sound-only / state-only /
+empty-loop arms):** 1122/1091/1117/981/1006/1057 (ParticleOrchestrator
+only), 969/704/651/761/762 (sound-stop / item-drop only), 291/295/237/
+243/441/629/567/568/453/290/14/191-194/510 (state/spawn/gore-only — the
+510/191-194 gore draws are g16's), 1134/477/479 (empty loops).
+
+The `DeathSnapshot` grew `ai0`/`ai2`/`local_ai1`/`apprentice_t3`/
+`max_updates`/`wet`/`damage`/`old_pos_ring` across the batches; the module
+gained the `rotated_by`/`to_rotation`/`smooth_step`/`ring_kick`/
+`next_vector2_square`/`rotated_by_random`/`queen_slime_dust_color`/
+`remap_f32`/`scatter_y_dust`/`scatter_x_dust`/`gore_census`/`crimson_half`/
+`portal_color`/`double_angle_ring_pos`/`chlorophyte_ring`/`smoke_puff`/
+`cursed_flame_death`/`confetti_burst`/`trail_walk_burst`/`dd2_explosion_dust`/
+`rainbow_trail_ring` helpers. Every witness WRITTEN NOT RUN (code-only).
