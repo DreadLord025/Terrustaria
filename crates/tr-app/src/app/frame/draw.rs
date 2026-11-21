@@ -1793,6 +1793,8 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // `Main.item[]` — the world-hover item walk.
+                            &self.items,
                             // `Main.hideUI` — the F11 layer-8 stop.
                             self.hide_ui,
                         );

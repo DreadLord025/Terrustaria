@@ -37,6 +37,7 @@ pub(crate) mod text_wrap;
 pub mod tooltip;
 pub mod uistate;
 pub mod world_creation;
+pub mod world_hover;
 pub(crate) mod world_load;
 pub mod world_select;
 
@@ -718,6 +719,9 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // `Main.item[]` — the dropped-item hover walk (`DrawMouseOver`,
+    // `Main.cs:42884-42913`).
+    items: &[crate::item::ItemDrop],
     // `Main.hideUI` (`Main.cs:2085`): the F11 toggle stops the interface
     // layer loop at layer 8 (`DrawInterface_8_CheckF11UIHideToggle`,
     // `:46175-46183`). The emote/NPC-chat bubbles are layer 1_1
@@ -1213,6 +1217,38 @@ pub fn draw_hud(
     }
     if let Some(text) = housing_hover_text.as_ref().filter(|_| !mouse_npc.carried()) {
         tooltip::draw_mouse_text(r, lookups, mouse_pos, text, screen, pulse);
+    }
+
+    // `DrawInterface_39_MouseOver` → `Main.DrawMouseOver`
+    // (`Main.cs:44904-44908`, `:42871-42988`): the in-world hover texts —
+    // the dropped item's affix name + stack (`:42884-42913`) and the NPC's
+    // GivenOrTypeName + carrier life (`:43087-43104`), both through the
+    // plain `MouseTextInner` arm (no box). The `Main.mouseText` priority:
+    // the slot tooltip / PVP / housing texts above are the earlier
+    // claimants (`:45188`'s carried item sets it too), so this pass only
+    // runs when none of them drew. The emote/bestiary overlays own the
+    // pointer while open (their own MouseText rides their draw).
+    let earlier_text = hover_item.is_some()
+        || pvp_hover_text.is_some()
+        || housing_hover_text.is_some()
+        || mouse_item.count > 0
+        || mouse_npc.carried();
+    if !earlier_text && !bestiary_open && !emotes_state.menu_open {
+        let mouse_world =
+            world_hover::mouse_world_point(mouse_pos, camera, zoom, screen);
+        // The item walk first (`:42884-42913`), then the NPC walk
+        // (`:42939` → `HoverOverNPCs`) only while no item claimed the text.
+        if let Some(drop) = world_hover::hovered_drop(items, lookups, mouse_world) {
+            let (label, color) = world_hover::drop_hover_text(drop);
+            world_hover::draw_hover_text(
+                r, lookups, mouse_pos, false, &label, color, screen, pulse,
+            );
+        } else if let Some(i) = world_hover::hovered_npc(npcs, mouse_world) {
+            let label = world_hover::npc_hover_text(npcs, i);
+            world_hover::draw_hover_text(
+                r, lookups, mouse_pos, false, &label, [1.0; 4], screen, pulse,
+            );
+        }
     }
 
     // `Main.DrawPendingMouseText()` then `Main.DrawCursor(...)` are the last
