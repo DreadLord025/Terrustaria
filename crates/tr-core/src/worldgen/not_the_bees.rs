@@ -28,8 +28,10 @@
 //!   seam** (the M5-STRUCT-5 idiom) — no in-pass framing.
 //! - **The `tileSolid[379]` window** (`:25394` false / `:25792` true): the
 //!   port's `TILE_SOLID` boot table is immutable, so the in-window solid
-//!   tests veto 379 explicitly (`bubble_solid = false`); `OverGrownDungeon`
-//!   runs after the restore and sees 379 solid (`solid_tile3`).
+//!   tests veto 379 explicitly (`bubble_solid = false`). `OverGrownDungeon`
+//!   runs after the restore; its only `SolidTile3` use is the `dualDungeons`
+//!   disjunct (`:23996`), which reads false in the port, so no post-restore
+//!   solid test is needed.
 //! - **The tree-growth bridge**: `growth::{grow_tree, try_growing_tree_by_type}`
 //!   take `UnifiedRandom`; the host feeds them ONE `UnifiedRandom` seeded from
 //!   its own pass stream (the `micro_surface.rs:419` `start_in_hardmode`
@@ -137,6 +139,11 @@ const WALL_GLASS: [u16; 10] = [21, 88, 89, 90, 91, 92, 241, 93, 243, 242];
 /// `WallID.Sets.CannotBeReplacedByWallSpread` (`WallID.cs:98`).
 const WALL_NO_SPREAD: [u16; 7] = [4, 40, 3, 83, 87, 244, 34];
 
+/// The bamboo 571 `TileFrame` arm (`:25459-25462`) rides the post-pipeline
+/// framer, so the id is kept as a real dependency of the const block (the
+/// `spider_gem_moss.rs` idiom).
+const _: u16 = TILE_BAMBOO;
+
 // --- small helpers ----------------------------------------------------------
 
 fn in_world(world: &World, x: i32, y: i32, fluff: i32) -> bool {
@@ -181,17 +188,6 @@ fn solid_tile2(world: &World, x: i32, y: i32, bubble_solid: bool) -> bool {
         && !t.half_brick()
         && !t.inactive()
         && (bubble_solid || t.kind != TILE_BUBBLE)
-}
-
-/// `WorldGen.SolidTile3` (`:70474-70485`) — `nactive && tileSolid &&
-/// !tileSolidTop`; runs after the 379 restore (379 solid).
-fn solid_tile3(world: &World, x: i32, y: i32) -> bool {
-    if !in_world(world, x, y, 1) {
-        return false;
-    }
-    world
-        .tile(x, y)
-        .is_some_and(|t| t.active() && !t.inactive() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind))
 }
 
 /// `WorldGen.SolidOrSlopedTile` (`:69985-70010`, includePlatforms=false) —
@@ -330,7 +326,7 @@ fn convert_solid_cell(
         return;
     }
     // `:25233` — the second exclusion list.
-    if matches!(kind, 226 | 202 | 70 | 48 | 232) {
+    if matches!(kind, TILE_LIHZAHRD_BRICK | 202 | 70 | 48 | 232) {
         return;
     }
     // `:25235-25245` — the grass conversion (the lava-line band).
@@ -401,7 +397,7 @@ fn convert_wall(world: &mut World, rng: &mut Rng, i: i32, j: i32, num2: i32, fla
     let tenth = flags.contains(SeedFlags::TENTH_ANNIVERSARY);
     let drunk = flags.contains(SeedFlags::DRUNK);
     let wall = wall_at(world, i, j);
-    if matches!(wall, 15 | 64 | 204 | 205 | 206 | 207 | 87) {
+    if matches!(wall, 15 | 64 | 204 | 205 | 206 | 207 | WALL_LIHZAHRD) {
         return;
     }
     if WALL_DUNGEON.contains(&wall) {
