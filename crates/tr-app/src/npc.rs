@@ -13520,10 +13520,11 @@ impl Npc {
                         d.no_gravity = true;
                         d.position = Vec2::new(sx, sy);
                         // UnitY.RotatedBy(num6 + num5*num10) — the double
-                        // cos/sin form: (0,1) → (-sin, cos).
+                        // cos/sin form: (0,1) → (-sin, cos). The scale is
+                        // the C# left-to-right ((rot·num7)·(nf·1.6+1.6)).
                         let a = (num6 + num5 * num10) as f64;
-                        let speed = num7 * (rng.next_float() * 1.6 + 1.6);
-                        d.velocity = Vec2::new(-(a.sin() as f32), a.cos() as f32) * speed;
+                        d.velocity = Vec2::new(-(a.sin() as f32), a.cos() as f32)
+                            * num7 * (rng.next_float() * 1.6 + 1.6);
                         d.fade_in = fade_in;
                         d.scale = num8;
                         num10 += 1.0;
@@ -14138,8 +14139,9 @@ impl Npc {
                                 nx /= nl;
                                 ny /= nl;
                             }
-                            let k = 3.5 * (10.0 - (num9 * 2) as f32) / 10.0;
-                            d.velocity = Vec2::new(nx * k, ny * k);
+                            // `Normalize(...) * 3.5f * (10f - num9*2f) / 10f`
+                            // — the C# left-to-right f32 order.
+                            d.velocity = Vec2::new(nx, ny) * 3.5 * (10.0 - (num9 * 2) as f32) / 10.0;
                             d.no_gravity = true;
                             d.scale = scale;
                         }
@@ -14585,8 +14587,9 @@ impl Npc {
                                 nx /= nl;
                                 ny /= nl;
                             }
-                            let k = 3.5 * (10.0 - (num19 * 2) as f32) / 10.0;
-                            d.velocity = Vec2::new(nx * k, ny * k);
+                            // The C# left-to-right f32 order (the head's
+                            // fan convention).
+                            d.velocity = Vec2::new(nx, ny) * 3.5 * (10.0 - (num19 * 2) as f32) / 10.0;
                             d.no_gravity = true;
                             d.scale = scale;
                         }
@@ -34454,8 +34457,7 @@ mod w4_e2_batch5_tests {
                 let (mut nx, mut ny) = (cx - px, cy - py);
                 let nl = (nx * nx + ny * ny).sqrt();
                 if nl > 0.0 { nx /= nl; ny /= nl; }
-                let k = 3.5 * (10.0 - (num9 * 2) as f32) / 10.0;
-                d.velocity = glam::Vec2::new(nx * k, ny * k);
+                d.velocity = glam::Vec2::new(nx, ny) * 3.5 * (10.0 - (num9 * 2) as f32) / 10.0;
                 d.no_gravity = true;
                 d.scale = scale;
             }
@@ -34559,8 +34561,7 @@ mod w4_e2_batch5_tests {
                 let (mut nx, mut ny) = (cx - px, cy - py);
                 let nl = (nx * nx + ny * ny).sqrt();
                 if nl > 0.0 { nx /= nl; ny /= nl; }
-                let k = 3.5 * (10.0 - (num19 * 2) as f32) / 10.0;
-                d.velocity = glam::Vec2::new(nx * k, ny * k);
+                d.velocity = glam::Vec2::new(nx, ny) * 3.5 * (10.0 - (num19 * 2) as f32) / 10.0;
                 d.no_gravity = true;
                 d.scale = scale;
             }

@@ -548,9 +548,11 @@ pub fn pillar_ai_step(
         if rng.next_max(5) == 0 && npc.ai[1] < 150.0 {
             for _ in 0..3 {
                 let (rx, ry) = rotated_unit_y_random(rng, 4.188790321350098);
-                let k = 0.7 * rng.next_float();
-                let vx196 = dcx + rx * dw * k;
-                let vy196 = dcy + ry * dh * k;
+                // `rot * (width, height) * 0.7f * NextFloat()` — the
+                // left-to-right f32 order: ((rot·extent)·0.7)·nf.
+                let nf = rng.next_float();
+                let vx196 = dcx + (rx * dw) * 0.7 * nf;
+                let vy196 = dcy + (ry * dh) * 0.7 * nf;
                 let num1294 = 1.0 + rng.next_float() * 2.0 + npc.ai[1] / 180.0 * 4.0;
                 for num1295 in 0..6 {
                     let idx = dust.new_dust(

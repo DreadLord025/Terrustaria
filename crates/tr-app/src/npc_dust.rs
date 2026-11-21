@@ -611,11 +611,17 @@ pub fn squidhead_rings(
         );
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
-        let r = rng.next_range(10, 21) as f32 * scale;
-        d.position = Vec2::new(cx - rx * r, cy - ry * r);
-        // vector210.RotatedBy(π/2): (x,y) → (-y, x) (the double cos/sin
-        // form at exactly π/2: cos=0, sin=1).
-        d.velocity = Vec2::new(-ry, rx) * 4.0;
+        // `Center - vector210 * Next(10,21) * scale` — left-to-right:
+        // (v * Next) * scale, NOT v * (Next * scale).
+        let n = rng.next_range(10, 21) as f32;
+        d.position = Vec2::new(cx - (rx * n) * scale, cy - (ry * n) * scale);
+        // vector210.RotatedBy(1.5707963705062866) — the DOUBLE cos/sin
+        // form (Utils.cs:1675-1684); the literal is the f32 π/2 widened,
+        // so cos ≈ -4.37e-8, NOT exactly 0 (the (-y, x) shortcut drops
+        // that term).
+        let r = 1.5707963705062866f64;
+        let (c, s) = (r.cos() as f32, r.sin() as f32);
+        d.velocity = Vec2::new(rx * c - ry * s, rx * s + ry * c) * 4.0;
         d.scale = 0.5 + rng.next_float();
         d.fade_in = 0.5;
     }
@@ -628,9 +634,11 @@ pub fn squidhead_rings(
         );
         let d = dust.slot_mut(idx);
         d.no_gravity = true;
-        d.position = Vec2::new(cx - rx * 20.0 * scale, cy - ry * 20.0 * scale);
-        // RotatedBy(-π/2): (x,y) → (y, -x).
-        d.velocity = Vec2::new(ry, -rx) * 2.0;
+        d.position = Vec2::new(cx - (rx * 20.0) * scale, cy - (ry * 20.0) * scale);
+        // RotatedBy(-1.5707963705062866) — the double cos/sin form.
+        let r = -1.5707963705062866f64;
+        let (c, s) = (r.cos() as f32, r.sin() as f32);
+        d.velocity = Vec2::new(rx * c - ry * s, rx * s + ry * c) * 2.0;
         d.scale = 0.5 + rng.next_float();
         d.fade_in = 0.5;
     }
@@ -642,7 +650,7 @@ pub fn squidhead_rings(
             0.0, 0.0, 0, Color::default(), 1.0,
         );
         let d = dust.slot_mut(idx);
-        d.position = Vec2::new(cx - rx * 20.0 * scale, cy - ry * 20.0 * scale);
+        d.position = Vec2::new(cx - (rx * 20.0) * scale, cy - (ry * 20.0) * scale);
         d.velocity = Vec2::ZERO;
         d.scale = 0.5 + rng.next_float();
         d.fade_in = 0.5;
@@ -1188,9 +1196,11 @@ mod tests {
             let idx = mpool.new_dust(&mut mirror, &c, &w, Vec2::new(1000.0 - rx * 20.0, 1000.0 - ry * 20.0), 0, 0, 27, 0.0, 0.0, 0, Color::default(), 1.0);
             let d = mpool.slot_mut(idx);
             d.no_gravity = true;
-            let r = mirror.next_range(10, 21) as f32;
-            d.position = Vec2::new(1000.0 - rx * r, 1000.0 - ry * r);
-            d.velocity = Vec2::new(-ry, rx) * 4.0;
+            let n = mirror.next_range(10, 21) as f32;
+            d.position = Vec2::new(1000.0 - (rx * n) * 1.0, 1000.0 - (ry * n) * 1.0);
+            let r = 1.5707963705062866f64;
+            let (cc, ss) = (r.cos() as f32, r.sin() as f32);
+            d.velocity = Vec2::new(rx * cc - ry * ss, rx * ss + ry * cc) * 4.0;
             d.scale = 0.5 + mirror.next_float();
             d.fade_in = 0.5;
         }
@@ -1201,8 +1211,10 @@ mod tests {
             let idx = mpool.new_dust(&mut mirror, &c, &w, Vec2::new(1000.0 - rx * 30.0, 1000.0 - ry * 30.0), 0, 0, 240, 0.0, 0.0, 0, Color::default(), 1.0);
             let d = mpool.slot_mut(idx);
             d.no_gravity = true;
-            d.position = Vec2::new(1000.0 - rx * 20.0, 1000.0 - ry * 20.0);
-            d.velocity = Vec2::new(ry, -rx) * 2.0;
+            d.position = Vec2::new(1000.0 - (rx * 20.0) * 1.0, 1000.0 - (ry * 20.0) * 1.0);
+            let r = -1.5707963705062866f64;
+            let (cc, ss) = (r.cos() as f32, r.sin() as f32);
+            d.velocity = Vec2::new(rx * cc - ry * ss, rx * ss + ry * cc) * 2.0;
             d.scale = 0.5 + mirror.next_float();
             d.fade_in = 0.5;
         }
@@ -1212,7 +1224,7 @@ mod tests {
             let (rx, ry) = (-(a.sin() as f32), a.cos() as f32);
             let idx = mpool.new_dust(&mut mirror, &c, &w, Vec2::new(1000.0 - rx * 30.0, 1000.0 - ry * 30.0), 0, 0, 240, 0.0, 0.0, 0, Color::default(), 1.0);
             let d = mpool.slot_mut(idx);
-            d.position = Vec2::new(1000.0 - rx * 20.0, 1000.0 - ry * 20.0);
+            d.position = Vec2::new(1000.0 - (rx * 20.0) * 1.0, 1000.0 - (ry * 20.0) * 1.0);
             d.velocity = Vec2::ZERO;
             d.scale = 0.5 + mirror.next_float();
             d.fade_in = 0.5;
