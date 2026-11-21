@@ -1455,18 +1455,15 @@ impl ItemDrop {
                 let ty = (ny / TILE_PX).floor() as i32;
                 (ty + 1) as f32 * TILE_PX
             };
-            // `Collision.cs:2446-2451`: `result.Y` collapses to the flush
-            // residual — no restitution. The WET arm keeps that residual as
-            // the velocity (`:1056-1059` copies it into `wetVelocity`, and
-            // `ApplyMovement` steps the drop flush); the DRY arm keeps the
-            // standing flush-rest deviation (snap the position, zero the
-            // velocity — the resting witnesses pin vel 0).
-            if wet_now {
-                self.vel.y = flush - self.pos.y;
-            } else {
-                self.pos.y = flush;
-                self.vel.y = 0.0;
-            }
+            // `Collision.cs:2394`/`:2444`: `result.Y` collapses to the flush
+            // residual — no restitution, BOTH arms (the C# runs the same
+            // `TileCollision` at `:1051`/`:1064`). `ApplyMovement` steps the
+            // drop flush (`:1078` wet via the `:1056-1059` wetVelocity copy,
+            // `:1082` dry at full velocity). W4-e19 round 3: the old dry
+            // snap-and-zero stand-in is retired — a landing tick carries the
+            // residual as velocity; at flush rest the residual is 0, so the
+            // resting drop still reads vel 0 after each tick.
+            self.vel.y = flush - self.pos.y;
         }
         // `:1052-1059` — the axes the collision changed refresh `wetVelocity`
         // to the new (full) value; the free axes keep the scaled head value.
@@ -1477,8 +1474,8 @@ impl ItemDrop {
             wet_vel.y = self.vel.y;
         }
         // `ApplyMovement` (`:1074-1084`): a wet drop integrates `wetVelocity`,
-        // a dry one the full velocity. The dry blocked-Y arm already snapped
-        // the position flush and zeroed vel.y, so its Y term adds nothing.
+        // a dry one the full velocity. The blocked-Y arm's residual steps the
+        // drop flush either way (the wet copy above put it in `wet_vel`).
         if wet_now {
             self.pos += wet_vel;
         } else {
@@ -2590,8 +2587,9 @@ mod s1_p_i47_tests {
         assert!((d.vel.y - 0.065).abs() < 1e-6);
     }
 
-    /// The dry arm is unchanged: full-velocity integration (`:1082`), the
-    /// flush-rest deviation keeps the resting drop still.
+    /// The dry arm: full-velocity integration (`:1082`); at flush rest the
+    /// collision residual is 0, so the resting drop stays still (round 3
+    /// retired the snap-and-zero stand-in — both arms run the C# residual).
     #[test]
     fn w4_e19_the_dry_drop_integrates_at_full_velocity() {
         let w = ground();
@@ -2600,6 +2598,18 @@ mod s1_p_i47_tests {
         d.update(&w, 1.0 / 60.0);
         assert!((d.pos.x - (before.x + 1.9)).abs() < 1e-5, "full X: {}", d.pos.x - before.x);
         assert!((d.pos.y - (before.y + 0.1)).abs() < 1e-5, "full Y: {}", d.pos.y - before.y);
+        // A dry drop one px above the floor lands flush in ONE tick with the
+        // residual as velocity (`Collision.cs:2394` → `ApplyMovement:1082`),
+        // the same shape as the wet arm.
+        let mut land = ItemDrop::new(2, 1, 0, 10.0 * TILE_PX, 303.0, 0.0, 2.0, 0.0);
+        land.update(&w, 1.0 / 60.0);
+        assert!((land.pos.y - 304.0).abs() < 1e-4, "dry flush landing: {}", land.pos.y);
+        assert!((land.vel.y - 1.0).abs() < 1e-4, "the dry residual: {}", land.vel.y);
+        // The next tick: gravity 0.1, the collision re-blocks at residual 0 —
+        // the drop lies flush, vel 0 (no bounce, no drift).
+        land.update(&w, 1.0 / 60.0);
+        assert!((land.pos.y - 304.0).abs() < 1e-4, "flush rest: {}", land.pos.y);
+        assert_eq!(land.vel.y, 0.0, "the rest residual is zero");
     }
 
     /// The wet blocked-Y arm keeps the flush residual (`:1056-1059` →

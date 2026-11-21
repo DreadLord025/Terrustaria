@@ -11748,10 +11748,13 @@ code-only — witnesses WRITTEN NOT RUN):
   factor with the gravity pair (air 0.5 / shimmer 0.375 / honey 0.25);
   `move_in_world` runs the collision at FULL velocity, refreshes `wet_vel` on
   the axes the collision changed (`:1052-1059`), and `ApplyMovement`
-  integrates a wet drop at `wetVelocity` (`:1076-1079`). The wet blocked-Y arm
-  keeps the flush residual as velocity (the drop steps flush in one tick);
-  the DRY arm keeps the standing flush-rest deviation (snap + zero — the
-  resting witnesses pin vel 0). The wet re-probe moved into `MoveInWorld`'s
+  integrates a wet drop at `wetVelocity` (`:1076-1079`). The blocked-Y arm
+  keeps the flush residual as velocity in BOTH arms — round 3 retired the
+  dry snap-and-zero stand-in (`Collision.cs:2394`/`:2444`'s residual is the
+  same code path at `:1051`/`:1064`; `ApplyMovement:1082` steps the dry drop
+  flush). A landing tick carries the residual (one px above the floor →
+  vel 1.0); at flush rest the residual is 0, so the resting witnesses still
+  read vel 0. The wet re-probe moved into `MoveInWorld`'s
   `:865-878` slot (after the conveyor, before the collision).
 - **The honey/water gravity arms + per-drop wet flags** (`:386-396`):
   `ItemDrop` carries `wet`/`honey_wet`/`lava_wet`/`wet_count`; the probes
