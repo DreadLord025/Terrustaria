@@ -265,6 +265,12 @@ mod tests {
     // placement and the object frame normalisation all move tile bytes BY
     // DESIGN. The pass draws only its own stream, so no other step's ledger
     // shifts; a == b stays green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R4 (2026-11-21, code-only): the `Stalac` pass
+    // (`WorldGen.cs:22038-22120`) lands after `water plants` on a fresh
+    // name-seeded `UnifiedRandom` (`pass_unified("Stalac")`) — the gem-tree
+    // scatter (583-589) and the stalactite/stalagmite placement move tile
+    // bytes BY DESIGN. The pass draws only its own stream; a == b stays
+    // green. Re-pin DEFERRED to the merge gate.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -322,6 +328,10 @@ mod tests {
     // slope clear / drip placement / object normalisation move this pin BY
     // DESIGN on the fresh `pass_rng("Tile Cleanup")` stream; a == b stays
     // green. Re-pin DEFERRED to the merge gate.
+    // W4-d106 R4 (code-only): `Stalac` (see SEED42_512 above) — the gem
+    // trees + speleothems move this pin BY DESIGN on the fresh
+    // `pass_unified("Stalac")` stream; a == b stays green. Re-pin DEFERRED
+    // to the merge gate.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

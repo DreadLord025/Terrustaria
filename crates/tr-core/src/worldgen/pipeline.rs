@@ -224,6 +224,17 @@ impl<'a> Streams<'a> {
     pub(crate) fn pass_rng(&self, name: &str) -> Rng {
         Rng(self.seed ^ fnv1a64(name))
     }
+
+    /// The per-pass stream as a [`crate::UnifiedRandom`] — the same name-mixed
+    /// seed ([`Self::pass_rng`]) but the C#'s own Knuth subtractive algorithm,
+    /// for the passes whose ported helpers already draw on `UnifiedRandom`
+    /// (the gem-tree grower `growth::try_growing_tree_by_type`, W4-d106 R4's
+    /// Stalac pass). The seed is the low 32 bits of the mixed state, wrapped
+    /// to `i32` (the `UnifiedRandom(int)` ctor). Isolation is identical to
+    /// `pass_rng`: a fresh stream per call, no other step's ledger shifts.
+    pub(crate) fn pass_unified(&self, name: &str) -> crate::UnifiedRandom {
+        crate::UnifiedRandom::new((self.seed ^ fnv1a64(name)) as u32 as i32)
+    }
 }
 
 // --- cross-pass state (the GenVars slice) -----------------------------------
@@ -1409,6 +1420,12 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // insertion (the seaweed arm of the pass).
     step!("lihzahrd altar", "Lihzahrd Altars", step_lihzahrd_altar),
     step!("water plants", "Water Plants", step_water_plants),
+    // The vanilla Stalac slot (`WorldGen.cs:22038`): after Water Plants
+    // (`:21973`) and before Remove Broken Traps (`:22121`) — W4-d106 R4.
+    // The pass draws only its own name-seeded `UnifiedRandom` stream (the
+    // gem-tree grower + PlaceTight share vanilla's single genRand), so the
+    // insertion shifts no other step's ledger.
+    step!("stalac", "Stalac", step_stalac),
     step!("world tail", "", step_world_tail),
     // The vanilla `GenerateWorld` tail (`WorldGen.cs:22431-22444`): the
     // seed `Finish*` passes — M5-SEED-1's `step_seed_finish`, gated per
@@ -2758,6 +2775,30 @@ fn step_cacti(
     );
 }
 
+/// The vanilla Stalac slot (`WorldGen.cs:22038-22120`) — W4-d106 R4: the
+/// gem-tree scatter + the speleothem placement, on the pass's own
+/// name-seeded `UnifiedRandom` stream (the grower + PlaceTight share it).
+fn step_stalac(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let (world_surface, rock_layer) = {
+        let l = gv.layers();
+        (l.world_surface, l.rock_layer)
+    };
+    spider_gem_moss::pass_stalac(
+        world,
+        &mut streams.pass_unified("Stalac"),
+        world_surface,
+        rock_layer,
+        opts,
+    );
+}
+
 fn step_world_tail(
     world: &mut World,
     gv: &mut GenVars,
@@ -3222,7 +3263,9 @@ mod tests {
         // Again", `WorldGen.cs:21246`) before `cacti`.
         // W4-d106 R3: + `tile cleanup` (vanilla "Tile Cleanup",
         // `WorldGen.cs:21520`) between `cacti` and `lihzahrd altar`.
-        assert_eq!(names.len(), 69);
+        // W4-d106 R4: + `stalac` (vanilla "Stalac", `WorldGen.cs:22038`)
+        // after `water plants`.
+        assert_eq!(names.len(), 70);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3321,6 +3364,7 @@ mod tests {
                 "tile cleanup",
                 "lihzahrd altar",
                 "water plants",
+                "stalac",
                 "world tail",
                 "seed finish",
             ]

@@ -147,6 +147,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "tile cleanup" => PassMessage::Gen(84),
         // WorldGen.cs:21977.
         "water plants" => PassMessage::Gen(88),
+        // WorldGen.cs:22040 — `Language.GetTextValue("WorldGeneration.Speleothems")`.
+        "stalac" => PassMessage::Key("WorldGeneration.Speleothems"),
         // WorldGen.cs:22489 — the GenerateWorld tail's own message
         // (the port's world-tail step is that tail's stand-in).
         "world tail" => PassMessage::Gen(87),
