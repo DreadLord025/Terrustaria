@@ -1,5 +1,5 @@
 //! W4-f18 first-20 port — the stat witnesses for the twenty kinds 355-380
-//! + 430 (the census doc `docs/research/64-npc-kinds-351-697-census.md`'s
+//! + 430 (the census doc `docs/research/381-npc-kinds-351-697-census.md`'s
 //! "first 20 missing" list). WRITTEN, NOT RUN (code-only mode — no compiler
 //! or test runner was invoked on this branch; the convention the prior
 //! waves used).

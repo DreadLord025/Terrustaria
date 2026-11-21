@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| 64 | NPC kinds 351–697 SetDefaults census + first-20 port (W4-f18; 343 arm-bearing ids, 105→125 ported, the value() merge-scar repair, the d37-E8 roster-collision keep-one + exact drop-hunks + the kinds-verify-2 family bible; SEALED, code-only) | `64-npc-kinds-351-697-census.md` | ✅ SEALED |
+| 381 | NPC kinds 351–697 SetDefaults census + first-20 port (W4-f18; 343 arm-bearing ids, 105→125 ported, the value() merge-scar repair, the d37-E8 roster-collision keep-one + exact drop-hunks + the kinds-verify-2 family bible; SEALED, code-only; number chain 64→249-voided→381, registry-150 §10) | `381-npc-kinds-351-697-census.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

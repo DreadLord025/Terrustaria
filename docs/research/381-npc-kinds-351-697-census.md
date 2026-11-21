@@ -1,9 +1,13 @@
-# 64 — NPC kinds 351–697 `SetDefaults` census + first-20 port (W4-f18)
+# 381 — NPC kinds 351–697 `SetDefaults` census + first-20 port (W4-f18)
+
+> **Number chain: 64 → 249 (VOIDED) → 381 (registry-150 §10).** §6.3's `64→249`
+> assignment is VOID — 249 = W4-d15 (§9.1 KEEPS, executed `869ac7edd`); §10.2
+> re-issues **381** per the g15-284→358 void-re-issue precedent (d54 tip
+> `08d21666e`). Do NOT take 249.
 
 **Status: SEALED** (see the SEAL section at the end — the roster-collision
 adjudication + the kinds-verify-2 family bible; code-only, witnesses WRITTEN
-NOT RUN). Registry-150 FROZEN §9 voided the round-1 `64→249` rename (249=d15);
-the doc keeps the `64-` filename pending a Lead §9 assignment ≥367.
+NOT RUN).
 
 Census of the vanilla `NPC.SetDefaults` type arms
 (`decompiled/Terraria/NPC.cs`, the `else if (this.type == N)` chain)
@@ -566,15 +570,6 @@ d37-E8 roster collision; it consumes the d39 SEAL (`048c74f8f`, research/125
 f18 code rows stay on-branch so the exhaustive `NpcKind` matches compile (the
 E8 dropped-lane rule); the drop-hunks below are EXECUTE-prep for the merger.**
 
-> **Registry note (registry-150 FROZEN §9, d54 tip `880b9ecbe`).** This doc's
-> round-1/§6.3 assignment `64 → 249` is **VOID**: §8.2/§9.1 give **249 to d15**
-> (band-141-150, `869ac7edd`, sole claimant KEEPS) and §9 carries **no f18
-> reassignment**. §9.3 forbids self-picks ("New docs require a registry check +
-> Lead assignment; NO self-picks"). The doc therefore **keeps the `64-` filename
-> on-branch** (a merge-time collision the registry must adjudicate — f18 requests
-> a §9 number ≥367); it is NOT renamed to 249. This SEAL section rides the same
-> census doc (no new numbered doc is created, so no new number is consumed).
-
 ### Seal item 1 — the 20-kind port landed (verified)
 
 The twenty kinds 355–380 + 430 landed in four batch commits
@@ -781,9 +776,9 @@ arms (362/364/375) + the ai1 write (ride c10/c8's kinds).
 **Whole-file DROP:** `crates/tr-app/src/npc_w4_f18_witnesses.rs` (303 lines, 21
 tests — the stat pins ride the owners' witnesses).
 
-### Seal item 4 — research/64 SEALED + the kinds-verify-2 family bible
+### Seal item 4 — research/381 SEALED + the kinds-verify-2 family bible
 
-This census (research/64) is **SEALED**: the 347-id 351–697 `SetDefaults` census
+This census (research/381) is **SEALED**: the 347-id 351–697 `SetDefaults` census
 (343 arm-bearing + 4 no-arm), the 105→125 ported scoreboard, the first-20 port,
 the `value()` repair, and the roster-collision adjudication above are complete
 and verified at `a832d38ea`. The remaining 222 unported kinds are the d39–d43
