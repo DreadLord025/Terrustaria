@@ -3533,6 +3533,14 @@ impl App {
         // (`Main.cs:67199`); `frame.rs`'s per-frame sync replaces it from the
         // live settings, so this is only the pre-first-frame value.
         let cursor_mouse_color = settings.mouse_color;
+        // W4-g68: snapshot the packed `Gore_<id>` sheet sizes BEFORE the
+        // struct literal moves `lookups` into its field — the gore pool's
+        // `Width`/`Height` asset seam reads them (`Gore.cs:44-66`).
+        let gore_texture_sizes: std::collections::HashMap<i32, (u32, u32)> = lookups
+            .gore_sheets
+            .iter()
+            .map(|(&id, r)| (id as i32, (r.width, r.height)))
+            .collect();
         let mut app = App {
             window: None,
             talk_npc: None,
@@ -4026,13 +4034,7 @@ impl App {
             // fallback.
             gore: {
                 let mut gore = tr_core::gore::GorePool::new();
-                gore.set_texture_sizes(
-                    lookups
-                        .gore_sheets
-                        .iter()
-                        .map(|(&id, r)| (id as i32, (r.width, r.height)))
-                        .collect(),
-                );
+                gore.set_texture_sizes(gore_texture_sizes);
                 gore
             },
             entity_lights: crate::entity_lights::EntityLights::default(),

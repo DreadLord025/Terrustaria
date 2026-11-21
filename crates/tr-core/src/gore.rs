@@ -2252,14 +2252,13 @@ mod tests {
     }
 
     /// The falling-leaf liquid probe (`Gore.cs:1180`) centres on
-    /// `(Width, Height) * 0.5 + position`: with the 12×12 cell the probe
-    /// tile is `((int)(x + 6)) >> 4`, one cell right of the 1f-fallback
-    /// probe when the leaf sits near a tile's right edge. The liquid in
-    /// THAT cell flips `velocity.Y` to −1 (the rest sentinel).
+    /// `(Width, Height) * 0.5 + position`. Use a 1-column × 1-row sheet
+    /// (12×12, no padding cut) so the half-size is 6: pos.x 170 + 6 →
+    /// tile 11, while the 1f fallback's +0.5 stays in tile 10. The liquid
+    /// in THAT cell flips `velocity.Y` to −1 (the rest sentinel).
     #[test]
     fn w4_g68_the_fall_probe_uses_the_sheet_half_size() {
         let mut world = leaf_physics_world();
-        // pos.x 170: +0.5 (fallback) → tile 10; +6 (12px cell) → tile 11.
         // The probe box is `(vector.x, vector.y + 6, 4, 4)` with
         // vector = pos + (4, −4) → (174, 302..306); tile 11 spans x
         // 176..192 (overlap) and the liquid rect must reach y < 306:
@@ -2267,8 +2266,12 @@ mod tests {
         let i = world.index(11, 19);
         world.tiles[i].liquid = 16;
         let mut pool = GorePool::new();
-        pool.set_texture_sizes(std::collections::HashMap::from([(910, (448, 112))]));
+        pool.set_texture_sizes(std::collections::HashMap::from([(910, (12, 12))]));
         spawn_leaf(&mut pool, &world, Vec2::new(170.0, 300.0));
+        // The leaf frame is 32×8; pin it to 1×1 for this probe witness (the
+        // C# reads whatever frame the slot carries — a paint-swapped leaf
+        // can ride any cell shape).
+        pool.slot_mut(0).frame = SpriteFrame::new(1, 1);
         pool.update(&mut VecRng::new(vec![]), &world, &FreeCollision, 0.0, None);
         assert_eq!(
             pool.slot(0).velocity.y,
