@@ -1216,6 +1216,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 367 | d54 | 367-merger-order-dag (Lead-assigned, in flight) | reserved |
 | 368 | f43 | 368-pet-arrival-family-final | DONE ffadc1f49 |
 | 369 | d34 | 369-band-211-280-seal-bible | DONE 2f7aed30b (worktree TR-W4-d34seal — cleanup-phase removal) |
+| 370 | d54j | 355-d54j-orch-dispatch-router (PROVISIONAL self-pick; 355=d11 executed 7820a9466) | rename owed 355→370 when writer lands |
 
 ### §9.3 — rules
 
