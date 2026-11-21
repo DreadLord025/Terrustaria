@@ -1,4 +1,5 @@
-import json
+import json, io, sys
+sys.stdout = io.open('g60_drop_table.md', 'w', encoding='utf-8', newline='\n')
 d = json.load(open('g60_f10_overrun.json'))
 over = [f for f in d['fns'] if f['min_cite'] >= 85560]
 
