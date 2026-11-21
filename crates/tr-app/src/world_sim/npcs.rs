@@ -18449,3 +18449,290 @@ mod king_slime_audit_tests {
         assert_eq!(rng2, witness, "the pick consumes exactly one Next(0, size) draw");
     }
 }
+
+/// W4-d125 empress wiring — the live-route witnesses (WRITTEN NOT RUN,
+/// code-only mode): the axis claim, the day-enrage one-shot, the
+/// projectile request drain, the Lacewing release/death chain and the
+/// `empressRageMode` static lifecycle. Each pins the SEAM; the machines'
+/// own maths/RNG are pinned by `npc_ai_empress`/`npc_ai_lacewing`'s
+/// witness modules.
+#[cfg(test)]
+mod empress_wiring_tests {
+    use super::*;
+    use tr_core::World;
+
+    fn air() -> World {
+        World::new("t".into(), 400, 240)
+    }
+
+    fn session(w: &World, x: f32, y: f32) -> crate::player::Player {
+        let mut p = crate::player::Player::spawn(w);
+        p.x = x;
+        p.y = y;
+        p
+    }
+
+    /// The roster rows through the port's tables (`NPC.cs:17188-17206`)
+    /// + the protocol round-trip + the ctor's boss/invuln/alpha rows.
+    #[test]
+    fn the_empress_roster_row() {
+        assert_eq!(NpcKind::EmpressOfLight.size(), (100.0, 100.0));
+        assert_eq!(NpcKind::EmpressOfLight.ai_style(), 120);
+        assert_eq!(NpcKind::EmpressOfLight.max_hp(), 70000);
+        assert_eq!(NpcKind::EmpressOfLight.contact_damage(), 80);
+        assert_eq!(NpcKind::EmpressOfLight.cs_id(), 636);
+        assert_eq!(NpcKind::EmpressOfLight.to_u16(), 229);
+        assert_eq!(NpcKind::from_u16(229), Some(NpcKind::EmpressOfLight));
+        assert_eq!(NpcKind::PrismaticLacewing.to_u16(), 237);
+        assert_eq!(NpcKind::from_u16(237), Some(NpcKind::PrismaticLacewing));
+        assert_eq!(
+            crate::npc::kind_from_net_id(636),
+            Some((NpcKind::EmpressOfLight, crate::npc::SlimeVariant::Blue)),
+            "the release/save path resolves the vanilla 636"
+        );
+        assert_eq!(
+            crate::npc::kind_from_net_id(661),
+            Some((NpcKind::PrismaticLacewing, crate::npc::SlimeVariant::Blue)),
+            "the Lacewing release resolves (the roster-gap fix)"
+        );
+        let n = Npc::new(NpcKind::EmpressOfLight, 0.0, 0.0, 1, 0.0);
+        assert!(n.boss, "NPC.cs:17202");
+        assert!(n.dont_take_damage, "NPC.cs:17204");
+        assert_eq!(n.alpha, 255, "Opacity 0f, NPC.cs:17203");
+        assert_eq!(n.knock_back_resist(), 0.0, "NPC.cs:17198");
+        assert_eq!(n.value(), 250000.0, "25 gold, NPC.cs:17199");
+        assert_eq!(n.defense(), 50);
+        assert_eq!(n.kind.death_sound(), Some("NPC_Killed_65"));
+        // The bestiary credit rides the vanilla name (NPCID.cs:11949).
+        let e = crate::bestiary::entry_for_npc(NpcKind::EmpressOfLight, Default::default());
+        assert_eq!(e.credit_id, "HallowBoss");
+        assert_eq!(e.net_id, 636);
+    }
+
+    /// The axis claim: a 636 stepping through `update_rng` runs the
+    /// faithful machine — the first tick is the materialize
+    /// (`NPC.cs:46024-46031`): vy 5 * 0.95, the 874 aurora request at
+    /// centre+(0,-80), ai[1] 1, the opacity ramp off 255.
+    #[test]
+    fn the_axis_claims_the_empress() {
+        let w = air();
+        let mut p = session(&w, 2000.0, 1600.0);
+        let mut rng = UnifiedRandom::new(7);
+        let mut boss = Npc::new(NpcKind::EmpressOfLight, 1600.0 - 50.0, 1500.0 - 50.0, 1, 0.0);
+        boss.target = 0;
+        boss.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(boss.ai[1], 1.0, "the materialize timer");
+        assert_eq!(boss.vy, 5.0 * 0.95, "the vy latch + damp");
+        assert!(boss.alpha < 255, "the opacity ramp started");
+        assert!(boss.dont_take_damage, "flag6 false in the materialize");
+        // The 874 aurora request rides the ai-shot queue: centre+(0,-80)
+        // shifted to the 30x30 top-left.
+        assert_eq!(boss.wants_hostile_shot_ai.len(), 1);
+        let s = boss.wants_hostile_shot_ai[0];
+        assert_eq!(s.kind, crate::projectile::HALLOW_BOSS_DEATH_AURORA);
+        assert_eq!((s.x, s.y), (1600.0 - 15.0, 1500.0 - 80.0 - 15.0));
+        assert_eq!((s.vx, s.vy, s.damage), (0.0, 0.0, 0));
+    }
+
+    /// The daytime one-shot: a full-life Empress under `Main.dayTime`
+    /// latches ai[3] += 2 and every damage row goes 9999
+    /// (`NPC.cs:45974-45977`/`:46002-46010`/`:46921-46924`); the
+    /// contact's dodgeable value flips false (`:78752-78753`).
+    #[test]
+    fn the_day_enrage_one_shot_wires_through_the_adapter() {
+        let mut w = air();
+        w.day_time = true;
+        let mut p = session(&w, 2000.0, 1600.0);
+        let mut rng = UnifiedRandom::new(7);
+        let mut boss = Npc::new(NpcKind::EmpressOfLight, 1600.0 - 50.0, 1500.0 - 50.0, 1, 0.0);
+        boss.target = 0;
+        assert!(boss.is_damage_dodgeable(), "no stamp yet: the true default");
+        boss.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(boss.ai[3], 2.0, "the full-life enrage latch");
+        assert_eq!(boss.damage_override, Some(9999), "the contact one-shot");
+        assert!(!boss.is_damage_dodgeable(), "the 636 dodge arm flips");
+        // Night: no latch, the base damage, dodgeable again.
+        w.day_time = false;
+        let mut calm = Npc::new(NpcKind::EmpressOfLight, 1600.0 - 50.0, 1500.0 - 50.0, 1, 0.0);
+        calm.target = 0;
+        calm.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(calm.ai[3], 0.0);
+        assert_eq!(calm.damage_override, Some(80));
+        assert!(calm.is_damage_dodgeable());
+    }
+
+    /// The prismatic-bolt volley drains into the pool with the C#'s
+    /// ai0 = target / ai1 = tick/60 payload and the myPlayer owner
+    /// (`NPC.cs:46298`): the sim's ai-shot drain spawns them owned.
+    #[test]
+    fn the_bolt_requests_drain_owned_into_the_pool() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let w = air();
+        let p = session(&w, 2000.0, 1600.0);
+        app.player = Some(p);
+        app.world = w;
+        let mut boss = Npc::new(NpcKind::EmpressOfLight, 1900.0, 1400.0, 1, 0.0);
+        boss.hp = boss.max_hp;
+        boss.target = 0;
+        // Jump straight into the prismatic-bolt state at tick 0.
+        boss.ai[0] = 2.0;
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let bolts: Vec<_> = app
+            .projectiles
+            .slots()
+            .iter()
+            .filter(|s| s.active && s.kind == crate::projectile::HALLOW_BOSS_RAINBOW_STREAK)
+            .collect();
+        assert!(!bolts.is_empty(), "the tick-0 bolt spawned");
+        assert_eq!(bolts[0].owner, app.local_id as u8, "Owner: Main.myPlayer");
+        assert_eq!(bolts[0].ai[0], 0.0, "ai0 = this.target");
+        assert_eq!(bolts[0].ai[1], 0.0, "ai1 = ai[1]/60 at tick 0");
+        assert!(!bolts[0].friendly, "the hostile seam");
+    }
+
+    /// The remix latch lifecycle: the tick-head clear
+    /// (`Main.cs:17922-17924`) drops `empressRageMode` when no 636
+    /// lives; a live surface boss re-raises it through the adapter's
+    /// write-back (`NPC.cs:45942-45947`).
+    #[test]
+    fn the_rage_mode_static_clears_and_rearms() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let mut w = air();
+        w.seeds = tr_core::seeds::SeedFlags::from(tr_core::seeds::SeedFlags::REMIX);
+        w.empress_rage_mode = true;
+        let p = session(&w, 2000.0, 1600.0);
+        app.player = Some(p);
+        app.world = w;
+        // No Empress: the head clear fires.
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(!app.world.empress_rage_mode, "the AnyNPCs(636) clear");
+        // A live boss ABOVE worldSurface*16 re-raises the sticky latch.
+        let mut boss = Npc::new(NpcKind::EmpressOfLight, 1900.0, 100.0, 1, 0.0);
+        boss.hp = boss.max_hp;
+        boss.target = 0;
+        app.npcs.push(boss);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.empress_rage_mode, "the surface scan re-arms");
+        assert_eq!(app.npcs[0].ai[3], 2.0, "the full-life latch rode it");
+    }
+
+    /// The Lacewing release gate: `ReleaseNPC(661)` now spawns the
+    /// critter (the roster gap fix) with `releaseOwner` set and the
+    /// catchable friendly window (`NPC.cs:80160-80163`'s default arm +
+    /// `:17851-17855`).
+    #[test]
+    fn the_lacewing_release_spawns_the_critter() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        app.player = Some(session(&app.world, 1000.0, 1000.0));
+        crate::bug_net::release_npc(&mut app, 1000, 1000, 661, 0, app.local_id as u8);
+        let n = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::PrismaticLacewing)
+            .expect("the release resolves the 661 kind");
+        assert_eq!(n.release_owner, app.local_id as u8);
+        assert!(n.friendly, "the catchable arm");
+        // NewNPC's Bottom anchor: the 10x10 box hangs above the point.
+        assert_eq!((n.x, n.y), (1000.0 - 5.0, 1000.0 - 10.0));
+        assert_eq!(n.despawn_timer, (750.0 * 1.25) as i32);
+    }
+
+    /// The Lacewing death chain (`NPC.cs:79493-79502`): a player-
+    /// interacted death spawns ONE Empress at centre+(0,-200)+jitter,
+    /// target = the closest player, timeLeft x20; the AnyNPCs gate
+    /// refuses a second; a no-interaction death spawns nothing.
+    #[test]
+    fn the_lacewing_death_spawns_the_empress_once() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let w = air();
+        app.player = Some(session(&w, 2000.0, 1600.0));
+        app.world = w;
+        let mut lace = Npc::new(NpcKind::PrismaticLacewing, 1995.0, 1595.0, 1, 0.0);
+        lace.hp = 0; // dead: the death pass owns the chain
+        lace.player_interaction[app.local_id as usize] = true;
+        app.npcs.push(lace);
+        update_npcs(&mut app, 1.0 / 60.0);
+        let boss = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::EmpressOfLight)
+            .expect("the death spawned the Empress");
+        assert_eq!(boss.target, app.local_id as i32);
+        assert_eq!(boss.despawn_timer, ((750.0 * 1.25) as i32) * 20);
+        // The jitter band: centre (2000,1600) + (0,-200) +/- 50.
+        let (bcx, bcy) = boss.center();
+        assert!((bcx - 2000.0).abs() <= 50.0, "the circular jitter X");
+        assert!((bcy - 1400.0).abs() <= 50.0, "the -200 lift + jitter Y");
+        // A second interacted death while she lives: no duplicate.
+        let mut lace2 = Npc::new(NpcKind::PrismaticLacewing, 1995.0, 1595.0, 1, 0.0);
+        lace2.hp = 0;
+        lace2.player_interaction[app.local_id as usize] = true;
+        app.npcs.push(lace2);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.npcs.iter().filter(|n| n.kind == NpcKind::EmpressOfLight).count(),
+            1,
+            "AnyNPCs(636) refuses the second"
+        );
+        // The downed flag: the Empress's own death raises it
+        // (`NPC.cs:79351-79353`).
+        for n in app.npcs.iter_mut() {
+            if n.kind == NpcKind::EmpressOfLight {
+                n.hp = 0;
+            }
+        }
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.world.downed_empress_of_light, "case 636's flag");
+    }
+
+    /// A no-interaction Lacewing death spawns NOTHING (`:79494`'s
+    /// `GetWereThereAnyInteractions` gate).
+    #[test]
+    fn the_uninteracted_lacewing_death_stays_quiet() {
+        let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        let w = air();
+        app.player = Some(session(&w, 2000.0, 1600.0));
+        app.world = w;
+        let mut lace = Npc::new(NpcKind::PrismaticLacewing, 1995.0, 1595.0, 1, 0.0);
+        lace.hp = 0;
+        app.npcs.push(lace);
+        update_npcs(&mut app, 1.0 / 60.0);
+        assert!(app.npcs.iter().all(|n| n.kind != NpcKind::EmpressOfLight));
+    }
+
+    /// The Terraprisma gate: the loot fold reads the dead clone's ai[3]
+    /// (`Conditions.EmpressOfLightIsGenuinelyEnraged` — 2|3); a night
+    /// kill drops no 5005, a day-enraged kill does.
+    #[test]
+    fn the_terraprisma_rides_the_enrage_fold() {
+        let run = |enraged: bool| -> bool {
+            let mut app = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+            let w = air();
+            app.player = Some(session(&w, 2000.0, 1600.0));
+            app.world = w;
+            let mut boss = Npc::new(NpcKind::EmpressOfLight, 1900.0, 1400.0, 1, 0.0);
+            boss.hp = 0;
+            boss.ai[3] = if enraged { 2.0 } else { 0.0 };
+            boss.player_interaction[app.local_id as usize] = true;
+            app.npcs.push(boss);
+            update_npcs(&mut app, 1.0 / 60.0);
+            app.items.iter().any(|d| d.kind == 5005)
+        };
+        assert!(run(true), "the genuinely-enraged kill drops the Terraprisma");
+        assert!(!run(false), "the calm kill keeps it");
+    }
+
+    /// The sun-dance snap gate goes live: `npc_ref` maps the 636 kind
+    /// (`Projectile.cs:45008-45014`) — the tether reads the live boss.
+    #[test]
+    fn the_sun_dance_snap_reads_the_live_kind() {
+        let mut boss = Npc::new(NpcKind::EmpressOfLight, 1000.0, 900.0, 1, 0.0);
+        boss.hp = boss.max_hp;
+        let r = crate::projectile_ai_empress::npc_ref(&boss);
+        assert!(r.active && r.is_empress);
+        assert_eq!(r.center, (1050.0, 950.0));
+        let other = Npc::new(NpcKind::DukeFishron, 0.0, 0.0, 1, 0.0);
+        assert!(!crate::projectile_ai_empress::npc_ref(&other).is_empress);
+    }
+}

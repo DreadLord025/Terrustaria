@@ -5761,12 +5761,12 @@ impl Npc {
     /// (`ai_069_fishron`): RNG on the caller's `UpdateNPCs` stream (the
     /// module consumes EVERY draw in C# order — the dust trails, the
     /// bolt fans, the discarded case-7 `NextFloat`); the `TargetClosest`
-    /// requests resolve INLINE on this adapter (the C# re-reads the
-    /// target after each call; the port's single session player makes
-    /// the re-pick idempotent — the pick writes target/facing only, no
-    /// draws), so the request drains to a no-op. The projectile spawns
-    /// ride `wants_hostile_shot_ai` (the C# `Owner: Main.myPlayer` +
-    /// the ai0/ai1 payload); the despawn (`out.active == false`, the
+    /// requests resolve AHEAD of the step (the fishron pre-resolution
+    /// precedent — the pick is RNG-free and writes target/facing only,
+    /// so with the one session player the pre-pass is behaviour-
+    /// identical), the request itself drains to a no-op. The projectile
+    /// spawns ride `wants_hostile_shot_ai` (the C# `Owner: Main.myPlayer`
+    /// + the ai0/ai1 payload); the despawn (`out.active == false`, the
     /// case-13 alpha-255 tail-skip `:46904-46911`) maps to
     /// `EncourageDespawn(0)` — the creeper precedent, NO death events.
     /// The remix `empressRageMode` static rides the World latch; the

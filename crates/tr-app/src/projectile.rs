@@ -24349,6 +24349,43 @@ mod tests {
         assert!(rng.draws.is_empty(), "no dodge roll ran");
     }
 
+    /// W4-d125 — the 919/923 telegraph invuln (`Damage_CanDealDamage`,
+    /// `Projectile.cs:12448`: `localAI[0] <= 60` deals nothing). WRITTEN
+    /// NOT RUN (code-only mode). The gate runs before the hitbox test;
+    /// a refused hit leaves the slot LIVE (no single-hit kill).
+    #[test]
+    fn w4_d125_the_lance_and_sun_dance_telegraph_deal_no_damage() {
+        let w = ground();
+        for kind in [FAIRY_QUEEN_LANCE, FAIRY_QUEEN_SUN_DANCE] {
+            let mut player = crate::player::Player::spawn(&w);
+            let (pcx, pcy) = player.center();
+            let mut pool = ProjectilePool::new();
+            let slot = pool
+                .spawn_hostile_ai_owned(
+                    kind,
+                    0,
+                    Vec2::new(pcx - 4.0, pcy - 4.0),
+                    Vec2::ZERO,
+                    60,
+                    0.0,
+                    0.0,
+                    0.0,
+                )
+                .expect("the empress shot spawns");
+            pool.slots[slot].local_ai[0] = 60.0;
+            let hp0 = player.hp;
+            let mut rng = tr_core::UnifiedRandom::new(3);
+            pool.damage_player(slot, Some(&mut player), &mut rng);
+            assert_eq!(player.hp, hp0, "kind {kind}: the telegraph refuses");
+            assert!(pool.slots()[slot].active, "kind {kind}: no kill on refusal");
+            // Past the window the hit lands (and the single-hit kill fires).
+            pool.slots[slot].local_ai[0] = 61.0;
+            pool.damage_player(slot, Some(&mut player), &mut rng);
+            assert!(player.hp < hp0, "kind {kind}: past 60 the shot lands");
+            assert!(!pool.slots()[slot].active, "kind {kind}: the hit kill");
+        }
+    }
+
     /// The shielded NPC refuses the shot — `Damage_PVE`'s outer gate
     /// (`Projectile.cs:12583`): `!nPC.dontTakeDamage`. The Moon Lord's
     /// core wears the shield until its parts are dead; the Brain's
