@@ -57,8 +57,10 @@ pub struct ShopFlags {
     pub infected_seed: bool,
     /// `WorldGen.crimson` — the world's evil type; the Dryad's vampirism row
     /// picks the Crimson Torch (4386) over the Corrupt one (4385)
-    /// (`Chest.cs:1735-1740`). The port persists no world-evil type (see
-    /// [`ShopFlags::from_world`]), so the caller fills it like the zones.
+    /// (`Chest.cs:1735-1740`), the blood-moon seed rows pick their flavour
+    /// (`:1571-1594`) and the 3217/3218 painting split (`:1665-1672`).
+    /// W4-g69 doc-sweep: [`ShopFlags::from_world`] reads the live
+    /// `World.crimson` (the `.wld` flags byte + the `.trwld` v18 tail).
     pub crimson_world: bool,
     /// `Main.travelShop` (`Main.cs:1779`) — the Travelling Merchant's
     /// per-visit stock (`Chest.SetupTravelShop`), captured at the open
@@ -107,9 +109,10 @@ impl ShopFlags {
     /// (the port has no shop UI call yet) starts from this and fills the
     /// scene flags; a classic world is exactly [`ShopFlags::default`].
     ///
-    /// `crimson_world` stays false: the port persists no world-evil type
-    /// (the same gap `loot.rs`'s `LootFlags.crimson_world` documents), so the
-    /// Dryad's 4385/4386 split rides the caller's own field.
+    /// `crimson_world` reads the LIVE world evil type (W4-g69 doc-sweep:
+    /// `World.crimson`, persisted in the `.wld` flags byte and the `.trwld`
+    /// v18 tail) — the Dryad's 4385/4386, 67/59/4504 vs 2886/2171/4508 and
+    /// 3217/3218 splits all ride it.
     pub fn from_world(world: &World) -> Self {
         Self {
             hard_mode: world.hard_mode,
@@ -118,6 +121,7 @@ impl ShopFlags {
             downed_moon_lord: world.downed_moon_lord,
             night: !world.day_time,
             blood_moon: world.blood_moon,
+            crimson_world: world.crimson,
             vampirism: world
                 .micro_seeds
                 .contains(tr_core::seeds::MicroSeedFlags::VAMPIRISM),
@@ -173,9 +177,13 @@ pub enum StockWhen {
     /// `:1468-1475`'s inventory scan — the item appears when the player
     /// carries `0` (the Flower Boots 930 → the 931/1614 rows).
     PlayerHasItem(u16),
-    /// The blood-moon corruption rows (`Chest.cs:1570-1593`'s else branch —
-    /// the crimson variants ride the world's crimson flag, constants-off).
+    /// The blood-moon corruption rows (`Chest.cs:1585-1593`'s else branch —
+    /// `!WorldGen.crimson`; W4-g69 doc-sweep: the live world flag gates it).
     BloodMoonCorruption,
+    /// The blood-moon crimson rows (`Chest.cs:1575-1581`'s crimson branch —
+    /// 2886/2171/4508; the powder row's remix exclusion is constants-on like
+    /// the corruption twin's).
+    BloodMoonCrimson,
     /// M5-SEED-2: `Chest.cs:3403-3406`'s Bestiary Girl tail — `Main.vampireSeed
     /// && !Main.infectedSeed` adds one Torch (8) after the moon-phase rows.
     VampirismNotInfected,
@@ -186,6 +194,11 @@ pub enum StockWhen {
     VampirismInfectedCrimson,
     /// The Dryad tail's other half — the Corrupt Torch (4385).
     VampirismInfectedCorrupt,
+    /// `Chest.cs:1665-1672`'s Dryad painting split — 3218 on a crimson
+    /// world (`WorldGen.crimson`, W4-g69 doc-sweep).
+    CrimsonWorld,
+    /// The other half of the painting split — 3217 on a corruption world.
+    CorruptionWorld,
     /// `ZoneUnderworldHeight` (`:1710`) — constants-off until the scene
     /// metrics' underworld flag reaches the shop call.
     ZoneUnderworld,
@@ -345,14 +358,19 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(270, StockWhen::Always),
             row(271, StockWhen::Always),
         ],
-        // The Dryad (`Chest.cs:1568-1745`): the blood-moon corruption seed
-        // branch, the base rows, the flower-seed moon-phase pairs. The
-        // crimson variants (2886/2171/4508), the graveyard/underworld/
-        // glowshroom rows and the halloween rows sit constants-off.
+        // The Dryad (`Chest.cs:1568-1745`): the blood-moon seed branch (both
+        // flavours — W4-g69 doc-sweep wires the `WorldGen.crimson` split),
+        // the base rows, the flower-seed moon-phase pairs. The graveyard/
+        // underworld/glowshroom rows and the halloween rows sit constants-off.
         3 => vec![
             row(67, StockWhen::BloodMoonCorruption),
             row(59, StockWhen::BloodMoonCorruption),
             row(4504, StockWhen::BloodMoonCorruption),
+            // `:1575-1581`: the crimson branch's Vicious Powder / Crimson
+            // Seeds / Blood-Moon Monolith rows.
+            row(2886, StockWhen::BloodMoonCrimson),
+            row(2171, StockWhen::BloodMoonCrimson),
+            row(4508, StockWhen::BloodMoonCrimson),
             row(66, StockWhen::Always),
             row(62, StockWhen::Always),
             row(63, StockWhen::Always),
@@ -370,8 +388,10 @@ pub fn setup_shop(shop_index: u32, inventory_ids: &[u16], flags: &ShopFlags) -> 
             row(3215, StockWhen::Always),
             row(3216, StockWhen::Always),
             row(3219, StockWhen::Always),
-            // `:1656-1661`'s 3217/3218 crimson split rides the world flag.
-            row(3217, StockWhen::Always),
+            // `:1665-1672`'s 3217/3218 crimson split rides the live world
+            // flag (W4-g69 doc-sweep).
+            row(3217, StockWhen::CorruptionWorld),
+            row(3218, StockWhen::CrimsonWorld),
             row(3220, StockWhen::Always),
             row(3221, StockWhen::Always),
             row(3222, StockWhen::Always),
@@ -1271,7 +1291,10 @@ pub fn resolve_stock_entries_moon(
             StockWhen::ZoneSnow => flags.zone_snow,
             StockWhen::ZoneJungle => flags.zone_jungle,
             StockWhen::PlayerHasItem(id) => inventory_ids.contains(&id),
-            StockWhen::BloodMoonCorruption => flags.blood_moon,
+            StockWhen::BloodMoonCorruption => flags.blood_moon && !flags.crimson_world,
+            StockWhen::BloodMoonCrimson => flags.blood_moon && flags.crimson_world,
+            StockWhen::CrimsonWorld => flags.crimson_world,
+            StockWhen::CorruptionWorld => !flags.crimson_world,
             StockWhen::VampirismNotInfected => flags.vampirism && !flags.infected_seed,
             StockWhen::VampirismInfected => {
                 !flags.hard_mode && flags.vampirism && flags.infected_seed
@@ -1704,6 +1727,10 @@ mod s1_f_16_tests {
         w.hard_mode = true;
         let f = ShopFlags::from_world(&w);
         assert!(f.downed_slime_king && f.downed_queen_slime && f.downed_moon_lord && f.hard_mode);
+        // W4-g69 doc-sweep: the world evil type rides the live field.
+        assert!(!f.crimson_world, "a corruption world reads false");
+        w.crimson = true;
+        assert!(ShopFlags::from_world(&w).crimson_world);
     }
 }
 #[cfg(test)]
@@ -2172,6 +2199,40 @@ mod town5_tests {
         for id in [67, 59, 4504] {
             assert!(bm.contains(&id), "the blood-moon row {id} missing");
         }
+        // W4-g69 doc-sweep: `Chest.cs:1571-1594` — a crimson world's blood
+        // moon swaps the seed flavour (2886/2171/4508, not 67/59/4504), and
+        // `:1665-1672` swaps the painting (3218, not 3217).
+        assert!(bm.contains(&3217) && !bm.contains(&3218));
+        let bmc = resolve_stock_moon(
+            3,
+            &ShopFlags {
+                blood_moon: true,
+                crimson_world: true,
+                ..ShopFlags::default()
+            },
+            &[],
+            0,
+        );
+        for id in [2886, 2171, 4508] {
+            assert!(bmc.contains(&id), "the crimson blood-moon row {id} missing");
+        }
+        for id in [67, 59, 4504] {
+            assert!(!bmc.contains(&id), "the corruption row {id} leaked");
+        }
+        assert!(bmc.contains(&3218) && !bmc.contains(&3217));
+        // The painting split is blood-moon-independent (`:1662-1673` sits
+        // outside the branch).
+        let plain_c = resolve_stock_moon(
+            3,
+            &ShopFlags {
+                crimson_world: true,
+                ..ShopFlags::default()
+            },
+            &[],
+            0,
+        );
+        assert!(plain_c.contains(&3218) && !plain_c.contains(&3217));
+        assert!(!plain_c.contains(&2886), "no blood moon, no crimson seeds");
         // The hardmode rows stay out (the constants-off gates).
         assert!(!base.contains(&746));
         // The unknown index stays empty.
