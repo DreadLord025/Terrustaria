@@ -3545,6 +3545,14 @@ pub(crate) fn draw_npcs(
                     | NpcKind::BirdBlue
                     | NpcKind::BirdRed
                     | NpcKind::Raven
+                    // W4-d38 sheets phase (b5/b6): the 317/318 eyes' atan2
+                    // (`NPC.cs:74019-74031`), the 316 ghost's vx*0.1
+                    // (`:74858`), the 328 blade's atan2+1.57 (`:33296`/
+                    // `:33305`/`:33340`).
+                    | NpcKind::DemonEyeOwl
+                    | NpcKind::DemonEyeSpaceship
+                    | NpcKind::Ghost
+                    | NpcKind::PumpkingBlade
                     // The small-kinds wiring wave: the BlazingWheel's spin
                     // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
