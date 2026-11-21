@@ -1803,6 +1803,25 @@ pub struct Npc {
     /// (`NPC.cs:36056-36063`): 390 → 382 RayGunner, 416 → 518 SolarSpearman.
     /// The sim runs `NPC.Transform` (`NPC.cs:81084-81114`) in place.
     pub wants_transform: Option<i32>,
+    /// `GetShimmered`'s statue arm (`NPC.cs:91550-91560`, the W4-c9 snail
+    /// shimmer gate): `NPC.noSpawnCycle = true` + `active = false`. The
+    /// adapter despawns through the timer seam (the silent retain) and
+    /// queues this latch; the sim drains it onto `App::spawn_no_cycle`
+    /// (the one-call suppression, `NPC.cs:80171-80174`).
+    pub wants_spawn_no_cycle: bool,
+    /// The Shimmerfly's threat-scan pool (`NPC.cs:34120-34128`, W4-c9):
+    /// the sim pre-pass stamps the slot-ordered `Main.npc` views here
+    /// (the `twin_time_lefts` carrier precedent) — the solo `update_rng`
+    /// path reads the empty list (the style75 solo fold).
+    pub shimmerfly_threat_views: Vec<crate::npc_ai_style64::Ai64NpcView>,
+    /// The snail's per-tick `noGravity` flag (W4-c9, `NPC.cs:34445` /
+    /// `:34488`): the aiStyle-67 machine returns the arm's writes through
+    /// `SnailEvents::no_gravity`; the adapter caches the last write here
+    /// (the `Npc` struct has no live gravity flag — the kind table's
+    /// `no_gravity()` is the strike-time row). Init true — the
+    /// `SetDefaults` rows (`:13584`/`:13598`/`:17291`); the shimmer
+    /// early-return writes nothing, so the flag stands.
+    pub snail_no_gravity: bool,
     /// The aiStyle-75 `SoundEngine.PlaySound(SoundID.Item12/Item39, pos)`
     /// cues (`(style, x, y)`) queued by the standalone `update_rng` wrapper
     /// (no audio seam there); the sim's pooled path drains them immediately
@@ -3125,6 +3144,9 @@ impl Npc {
             wants_saucer_crew: false,
             wants_mount_carrier: None,
             wants_transform: None,
+            wants_spawn_no_cycle: false,
+            shimmerfly_threat_views: Vec::new(),
+            snail_no_gravity: true,
             wants_item_sounds: Vec::new(),
             // `NPC.alpha`'s `SetDefaults` row — the kind-level default (the
             // Poltergeist's 100, `NPC.cs:13202`); the Destroyer family's
@@ -4957,6 +4979,26 @@ impl Npc {
             63 if self.kind == NpcKind::Flocko => {
                 crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
             }
+            // `else if (this.aiStyle == 64)` (`NPC.cs:34019-34248`) — the
+            // firefly family; the ONLY ported member is the Shimmerfly 677
+            // (W4-c9 — the 355/358/654 trio is W4-c7's kind wave). The
+            // faithful `npc_ai_style64::ai_064_step` claims the arm through
+            // a kind-gated adapter: the 677 threat scan reads the sibling
+            // pool the sim pre-pass stamps (`shimmerfly_threat_views`);
+            // the solo path runs it over the empty list (the style75 solo
+            // fold). noGravity + noTileCollide (`NPC.cs:17590-17592`) →
+            // the raw integration tail (`:90494-90498`).
+            64 if self.kind == NpcKind::Shimmerfly => {
+                self.ai_064_shimmerfly(world, player, rng)
+            }
+            // `else if (this.aiStyle == 67)` (`NPC.cs:34348-34622`) — the
+            // snail wall-crawler family (359/360/655, W4-c9). The faithful
+            // `npc_ai_style67::snail_ai_step` claims the axis; the adapter
+            // owns the shimmer-seam drain (the Transform(677) / statue
+            // despawn requests), the per-tick gravity flag the machine
+            // returns, and the snail's `UpdateCollision` tail (the
+            // `Collision_MoveSnailOnSlopes` replacement, `:92568-92571`).
+            67 => self.ai_067_snail(world, player, rng),
             // `else if (this.aiStyle == 75)` (`NPC.cs:35501-36070`) — the
             // mount/rider family (390/392/393/394/492/416). S1-D-3-wire-saucer:
             // the SOLO path (a test's bare `update_rng`) runs the faithful
@@ -5706,6 +5748,180 @@ impl Npc {
             // is the tracked-sound seam; the port's NPC sound table has
             // no style-19 row, so it stays a documented skip (ANALYSIS).
         }
+    }
+
+    /// W4-c9 wiring — the aiStyle-67 adapter: the snail wall-crawler
+    /// family's faithful arm (`npc_ai_style67::snail_ai_step`,
+    /// `NPC.cs:34348-34622`). RNG census (the module's, preserved): the
+    /// 359-only scale `Next(80,111)` once (`:34381`) and the `Next(7200)`
+    /// fall roll while `ai[2] == 0` (`:34411`, gate-fail draw consumed) —
+    /// both on the caller's UpdateNPCs stream. The adapter owns:
+    /// * the shimmer seam — `GetShimmered`'s statue despawn
+    ///   (`:91550-91560`: noSpawnCycle + active=false; the port despawns
+    ///   through the timer seam and queues `wants_spawn_no_cycle`) and
+    ///   the `Transform(677)` request (`:91561-91565`, the style75
+    ///   one-tick drain fold). `WorldItem.ShimmerEffect`'s Item176 cue +
+    ///   20-dust `Next(6)` burst is the documented visual skip (the
+    ///   item-shimmer path's standing fold, `shimmer.rs`).
+    /// * the per-tick `noGravity` flag the machine returns (the fall
+    ///   block writes false, the crawl head true; the shimmer return
+    ///   writes nothing — the flag stands, `snail_no_gravity`).
+    /// * the post-AI movement: the depth-scaled gravity + 10 cap
+    ///   (`UpdateNPC_UpdateGravity` `:90878-90936` dry row — aiStyle 67
+    ///   never wets, `Collision_WaterCollision` `:93055-93060`), the
+    ///   ±0.005 double deadband (`:90473-90476`), then `UpdateCollision`
+    ///   (`:92523-92580`): the `WalkDownSlope` head (`:93342-93350`),
+    ///   fall-through false (no `DecideFallThroughPlatforms` row matches
+    ///   the trio, `:92917-93050`), the identity collision parameters
+    ///   (`:92807-92881` — no snail row), `Collision_MoveNormal`'s
+    ///   `TileCollision(fall: false, fall2: false)` (`:92723-92726`),
+    ///   `Collision_MoveWhileDry` (`:92591-92607`) and the aiStyle-67
+    ///   `Collision_MoveSnailOnSlopes` replacement (`:92568-92571`).
+    fn ai_067_snail(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let npc_type = match self.kind {
+            NpcKind::Snail => crate::npc_ai_style67::SNAIL_TYPE,
+            NpcKind::GlowingSnail => crate::npc_ai_style67::GLOWING_SNAIL_TYPE,
+            NpcKind::MagmaSnail => crate::npc_ai_style67::MAGMA_SNAIL_TYPE,
+            _ => unreachable!("only the snail trio rides aiStyle 67"),
+        };
+        // `NPC.gravity` — the static the pre-AI `UpdateNPC_UpdateGravity`
+        // (`:90380`) computes from the PRE-AI position; `WalkDownSlope`
+        // and the gravity term both read it. The dry row (the family
+        // never wets): base 0.3 depth-scaled, maxFallSpeed 10.
+        let gravity = crate::npc_ai_golem::body_gravity(
+            self.y,
+            world.width,
+            world.world_surface,
+        );
+        let ctx = crate::npc_ai_style67::SnailCtx::stock(npc_type);
+        let ev = crate::npc_ai_style67::snail_ai_step(self, &ctx, world, &[cand], rng, 0);
+        // The lights ride the draw-side `EntityLights` feed
+        // (`npc_lights::snail_light` — the post-step position, the
+        // small-kinds convention); the machine's pre-move request is
+        // discarded here.
+        let _ = ev.light;
+        if let Some(ng) = ev.no_gravity {
+            self.snail_no_gravity = ng;
+        }
+        if ev.shimmer_statue_despawn {
+            // `:91550-91560` — noSpawnCycle + active=false (no life=0
+            // outside netMode 2): the silent despawn, no death events.
+            // The timer-0 retain drops the slot this tick; the damage
+            // zero mirrors the mid-update deactivation (no contact).
+            self.wants_spawn_no_cycle = true;
+            self.despawn_timer = 0;
+            self.damage_override = Some(0);
+            return;
+        }
+        if ev.shimmer_transform {
+            // `:91561-91565` — Transform(677) + ShimmerEffect. The C#
+            // `return`s from AI() (`:34358`) AFTER the transform, so the
+            // fresh 677's noTileCollide tail integrates the OLD snail
+            // velocity once. The port queues the request (the style75
+            // one-tick drain fold) and skips that tail too: the drain
+            // swaps the kind after the tick, the bottom anchor holds
+            // exactly across the swap, and the fly's first AI tick is
+            // the next one (the velocity survives `transform_to_kind`,
+            // so the rearm blend still reads it). Documented fold.
+            self.wants_transform = Some(crate::npc_ai_style67::SHIMMERFLY_TYPE);
+            return;
+        }
+        // `:90465-90472` — the gravity term behind the machine's flag.
+        if !self.snail_no_gravity {
+            self.vy = (self.vy + gravity).min(10.0);
+        }
+        // `:90473-90476` — the dead-band X snap (double compare).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `UpdateCollision` (`:92523-92580`), the snail shape.
+        let (w, h) = self.size();
+        // `:92525` — `Collision_WalkDownSlopes` (velocity-only).
+        let v = crate::collision::walk_down_slope(
+            world,
+            [self.x, self.y],
+            [self.vx, self.vy],
+            w,
+            h,
+            gravity,
+        );
+        self.vx = v[0];
+        self.vy = v[1];
+        // `:92538-92540` — latch, then clear.
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        // `:92544` → `Collision_MoveNormal` (`:92725`): fall = false.
+        let tc = crate::collision::tile_collision(
+            world,
+            [self.x, self.y],
+            [self.vx, self.vy],
+            w,
+            h,
+            false,
+            false,
+        );
+        self.vx = tc.vel[0];
+        self.vy = tc.vel[1];
+        // `Collision_MoveWhileDry` (`:92593-92607`).
+        if tc.up {
+            self.vy = 0.01;
+        }
+        if self.old_vx != self.vx {
+            self.collide_x = true;
+        }
+        if self.old_vy != self.vy {
+            self.collide_y = true;
+        }
+        self.old_x = self.x;
+        self.old_y = self.y;
+        self.old_direction = self.facing;
+        self.x += self.vx;
+        self.y += self.vy;
+        // `:92568-92571` — the aiStyle-67 slope replacement.
+        crate::npc_ai_style67::snail_move_on_slopes(self, world);
+    }
+
+    /// W4-c9 wiring — the aiStyle-64 adapter: the Shimmerfly's faithful
+    /// arm (`npc_ai_style64::ai_064_step`'s 677 branches,
+    /// `NPC.cs:34019-34248`). RNG census (the module's): the scale latch
+    /// `Next(75,111)` once, the rearm `Next(60,180)` + the far/near
+    /// wander draws — all on the caller's stream. The 677 threat scan
+    /// reads the slot-ordered pool the sim pre-pass stamps
+    /// (`shimmerfly_threat_views`); the solo path runs it over the empty
+    /// list (the style75 solo fold — the player scan still fires).
+    /// noGravity + noTileCollide (`NPC.cs:17590-17592`) → the raw
+    /// integration tail (`:90494-90498`); the 677 has NO glow tail
+    /// (the `:34154-34174` branch is the non-677 else), so the light
+    /// request is always None.
+    fn ai_064_shimmerfly(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let views = std::mem::take(&mut self.shimmerfly_threat_views);
+        let ctx = crate::npc_ai_style64::Ai64Ctx {
+            players: &[cand],
+            npcs: &views,
+            ticker: 0,
+        };
+        let fx = crate::npc_ai_style64::ai_064_step(
+            crate::npc_ai_style64::SHIMMERFLY,
+            self,
+            world,
+            &ctx,
+            rng,
+        );
+        let _ = fx.light;
+        // `:90473-90476` — the dead-band X snap, then the noTileCollide
+        // stamps + raw integration (`:90496-90498`, the style56 shape).
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        self.old_x = self.x;
+        self.old_y = self.y;
+        self.old_direction = self.facing;
+        self.x += self.vx;
+        self.y += self.vy;
     }
 
     /// The kind-keyed dispatch — the pre-S1-D-2 `match self.kind`, unchanged
@@ -9007,6 +9223,39 @@ impl Npc {
                     self.frame_counter = 0.0;
                 }
                 if self.frame > 5 {
+                    self.frame = 0;
+                }
+            }
+            // W4-c9 — the snail trio's `case 359 : case 360 : case 655`
+            // (`NPC.cs:72238-72295`): the fall rows 4/5 (vy > 1, the
+            // 6-tick phase reset at 11) vs the walk rows 0/1/2/3/2/1
+            // (the 10-tick phases, reset at 59); a zero velocity leaves
+            // both untouched. The pure twin lives in the style67 module
+            // (the nimbus_find_frame convention).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                let (row, counter) = crate::npc_ai_style67::snail_find_frame(
+                    self.vx,
+                    self.vy,
+                    self.frame,
+                    self.frame_counter,
+                );
+                self.frame = row;
+                self.frame_counter = counter;
+            }
+            // W4-c9 — the Shimmerfly's `case 677` (`NPC.cs:72710-72721`):
+            // spriteDirection = direction; the DOUBLE counter increment
+            // (the plain ++ then the ++ inside the compare), reset at 6.
+            // The `++frame.Y >= 5` wrap counts PIXELS, not rows — the
+            // vanilla quirk: frame.Y cycles 0..4 px INSIDE row 0 (the
+            // sheet's row height is >= 5 px), so the port's row index
+            // never leaves 0 (the sub-row offset is below the port's
+            // row-granular frame model — documented fold).
+            NpcKind::Shimmerfly => {
+                self.sprite_dir = self.facing;
+                self.frame_counter += 1.0;
+                self.frame_counter += 1.0;
+                if self.frame_counter >= 6.0 {
+                    self.frame_counter = 0.0;
                     self.frame = 0;
                 }
             }
@@ -33594,6 +33843,288 @@ mod s1_f_13d_tests {
             assert_eq!(n.vx, 0.0);
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
+        }
+    }
+}
+
+/// W4-c9 — the snail wall-crawler family's wiring witnesses: the aiStyle-67
+/// axis arm (`ai_067_snail`) + the kind-gated aiStyle-64 Shimmerfly arm
+/// (`ai_064_shimmerfly`) through the FULL `update_rng` step (the preamble,
+/// the axis dispatch, the movement tail, find_frame). Code-only mode: the
+/// witnesses are written, not run. The pure machines' own 17+19 witnesses
+/// live in `npc_ai_style67.rs` / `npc_ai_style64.rs`.
+#[cfg(test)]
+mod w4_c9_snail_wiring_tests {
+    use super::*;
+
+    /// A 200x120 air world (the style67 module's fixture shape).
+    fn air() -> World {
+        let mut w = World::new("t".into(), 200, 120);
+        w.world_surface = 30.0;
+        w.day_time = false;
+        w
+    }
+
+    fn player_at(w: &World, x: f32, y: f32) -> Player {
+        let mut p = Player::spawn(w);
+        p.x = x;
+        p.y = y;
+        p
+    }
+
+    /// A shimmer liquid tile at (x, y) with `liquid` level.
+    fn shimmer_at(w: &mut World, x: i32, y: i32, liquid: u8) {
+        let i = w.index(x, y);
+        w.tiles[i] = tr_core::tile::Tile { liquid, ..Default::default() };
+        w.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+    }
+
+    /// The axis claim: the trio rides aiStyle 67, the shimmer target 64,
+    /// and the protocol ids keep the vanilla 359/360/655/677 slots.
+    #[test]
+    fn w4_c9_the_axis_claims_the_family_and_the_ids_round_trip() {
+        for (kind, style, id) in [
+            (NpcKind::Snail, 67, 359u16),
+            (NpcKind::GlowingSnail, 67, 360),
+            (NpcKind::MagmaSnail, 67, 655),
+            (NpcKind::Shimmerfly, 64, 677),
+        ] {
+            assert_eq!(kind.ai_style(), style, "{kind:?}");
+            assert_eq!(kind.to_u16(), id, "{kind:?} keeps its vanilla slot");
+            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decodes");
+            assert_eq!(kind.cs_id() as i32, id as i32, "{kind:?} cs_id");
+            assert_eq!(kind.max_hp(), 5, "{kind:?} lifeMax 5");
+            assert_eq!(kind.contact_damage(), 0, "{kind:?} damage 0");
+            assert!(kind.no_gravity(), "{kind:?} the SetDefaults noGravity row");
+        }
+        assert_eq!(NpcKind::Snail.size(), (12.0, 12.0));
+        assert_eq!(NpcKind::GlowingSnail.size(), (14.0, 14.0));
+        assert_eq!(NpcKind::MagmaSnail.size(), (14.0, 14.0));
+        assert_eq!(NpcKind::Shimmerfly.size(), (10.0, 10.0));
+    }
+
+    /// The 359 scale roll through the full step: ONE `Next(80,111)` draw
+    /// rides the caller's stream (`NPC.cs:34381`), `ai[3]` latches and
+    /// netUpdate arms; the resize reads ai[3] BEFORE the roll, so the box
+    /// stays 12x12 this tick. The fall block's noGravity=false reaches the
+    /// carrier flag and the gravity term applies behind it.
+    #[test]
+    fn w4_c9_the_snail_scale_roll_replays_through_update_rng() {
+        let w = air();
+        let mut p = player_at(&w, 1000.0, 800.0);
+        let mut n = Npc::new(NpcKind::Snail, 100.0, 100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai = [1.0, 0.0, 2.0, 0.0]; // init done, fall armed, scale unset
+        let mut rng = UnifiedRandom::new(3);
+        let mut witness = rng.clone();
+        let d = witness.next_range(80, 111);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "exactly one Next(80,111) on the stream");
+        assert_eq!(n.ai[3], d as f32 * 0.01);
+        assert!(n.net_update);
+        assert_eq!(n.size(), (12.0, 12.0), "the resize reads ai[3] pre-roll");
+        assert!(!n.snail_no_gravity, "the fall block wrote noGravity=false");
+        // The second tick resizes the box to (int)(12 * scale) — the
+        // integer-half -2f X quirk / full-height Y offset math is pinned
+        // by the module's own resize witness; here only the box + the
+        // latched scale ride (the fall integration also moves the body).
+        let scale = n.ai[3];
+        let side = (12.0 * scale) as i32;
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(n.size(), (side as f32, side as f32), "the resize lands");
+        assert_eq!(n.ai[3], scale, "the scale never re-rolls");
+    }
+
+    /// The shimmer gate through the full step: a shimmer tile (liquid >
+    /// 30) under the centre queues the `Transform(677)` request and draws
+    /// NOTHING; the statue variant queues the noSpawnCycle latch + the
+    /// timer-0 despawn instead (`GetShimmered` `NPC.cs:91550-91565`).
+    #[test]
+    fn w4_c9_the_shimmer_gate_queues_the_transform_or_the_despawn() {
+        let mut w = air();
+        // Snail at (160,160), 12-box -> centre (166,166) -> tile (10,10).
+        shimmer_at(&mut w, 10, 10, 40);
+        let mut p = player_at(&w, 1000.0, 800.0);
+        let mut n = Npc::new(NpcKind::Snail, 160.0, 160.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai = [1.0, 0.0, 0.0, 1.0];
+        let mut rng = UnifiedRandom::new(11);
+        let witness = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "the shimmer path consumes zero draws");
+        assert_eq!(n.wants_transform, Some(677), "the Transform(677) request");
+        assert!(!n.wants_spawn_no_cycle);
+        assert_eq!(n.kind, NpcKind::Snail, "the drain is the sim's job");
+        // The statue variant despawns instead of transforming. The 14-box
+        // at (159,159) centres (166,166) -> the same shimmer tile.
+        let mut s = Npc::new(NpcKind::GlowingSnail, 159.0, 159.0, 1, 0.0);
+        s.hp = s.max_hp;
+        s.ai = [1.0, 0.0, 0.0, 0.0];
+        s.spawned_from_statue = true;
+        s.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert!(s.wants_spawn_no_cycle, "the noSpawnCycle latch");
+        assert_eq!(s.despawn_timer, 0, "the silent timer-0 despawn");
+        assert_eq!(s.wants_transform, None);
+        assert_eq!(s.damage_override, Some(0), "no contact on the despawn tick");
+    }
+
+    /// The settled ground crawl through the full step: the machine's
+    /// noGravity=true reaches the carrier, the velocity tail is the 0.6
+    /// pair for 360, and `Collision_MoveWhileDry` latches collideY on the
+    /// ground stop (the NEXT tick's crawl state machine reads it).
+    #[test]
+    fn w4_c9_the_ground_crawl_stops_on_the_floor_and_latches_collide_y() {
+        let mut w = air();
+        for x in 0..w.width {
+            for y in 20..w.height {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        let mut p = player_at(&w, 1000.0, 100.0);
+        // The 14-box feet rest on row 20's top (y = 320).
+        let mut n = Npc::new(NpcKind::GlowingSnail, 100.0, 306.0, 1, 0.0);
+        n.hp = n.max_hp;
+        n.ai = [1.0, 0.0, 0.0, 0.0];
+        n.facing = 1;
+        n.direction_y = 1;
+        // A seed whose first Next(7200) fails (the fall stays unarmed).
+        let mut seed = 0;
+        for s in 0..1000 {
+            if UnifiedRandom::new(s).next_max(7200) != 0 {
+                seed = s;
+                break;
+            }
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        let mut witness = rng.clone();
+        let _ = witness.next_max(7200);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "one gate-fail Next(7200), nothing else");
+        assert!(n.snail_no_gravity, "the crawl head wrote noGravity=true");
+        // Tick 1: the collide flags were false on entry (the AI runs
+        // before UpdateCollision), so the turn is NOT armed yet; the
+        // tail writes the 0.6 pair and the floor stop latches collideY.
+        assert_eq!(n.ai[0], 1.0, "no collideY on entry — the turn waits");
+        assert!(n.collide_y, "MoveWhileDry latched the floor stop");
+        assert_eq!(n.y, 306.0, "the feet rest on the floor top");
+        assert_eq!(n.vy, 0.0, "TileCollision zeroed the downward step");
+        assert_eq!(n.vx, 0.6, "360 crawls at 0.6");
+        assert!((n.x - 100.6).abs() < 1e-4, "the crawl moved one 0.6 step");
+        // Tick 2 reads the latched collideY. The second Next(7200) is
+        // drawn too (ai[2] == 0) — mirror it and branch on the value:
+        // a fail arms the turn (ai[0] = 2); a 0 re-arms the fall instead.
+        let mut witness2 = rng.clone();
+        let d2 = witness2.next_max(7200);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness2, "the second fall-roll draw");
+        if d2 != 0 {
+            assert_eq!(n.ai[0], 2.0, "collideY arms the turn");
+        } else {
+            // The 0 roll re-arms the fall; the ground probe behind the
+            // settled snail decrements it once (`:34446-34451`).
+            assert!(n.ai[2] > 0.0, "the fall re-armed: {}", n.ai[2]);
+        }
+        // The light feed: the blue at the truncated centre tile.
+        let (cx, cy) = n.center();
+        let light = crate::npc_lights::snail_light(n.kind, glam::Vec2::new(n.x, n.y), 14.0, 14.0);
+        assert_eq!(light, Some((cx as i32 / 16, cy as i32 / 16, [0.1, 0.2, 0.7])));
+        // The plain Snail emits nothing; the MagmaSnail the orange.
+        assert!(crate::npc_lights::snail_light(NpcKind::Snail, glam::Vec2::ZERO, 12.0, 12.0).is_none());
+        assert_eq!(
+            crate::npc_lights::snail_light(NpcKind::MagmaSnail, glam::Vec2::new(n.x, n.y), 14.0, 14.0),
+            Some((cx as i32 / 16, cy as i32 / 16, [0.6, 0.3, 0.1]))
+        );
+    }
+
+    /// The Shimmerfly through the full step: the scale latch
+    /// `Next(75,111)` + the rearm `Next(60,180)` + the near-wander draws
+    /// ride the caller's stream in the module's cited order; the raw
+    /// noTileCollide integration moves the body; the tilt is vx * 0.3.
+    #[test]
+    fn w4_c9_the_shimmerfly_first_tick_replays_the_rearm_draws() {
+        let w = air();
+        let mut p = player_at(&w, 1000.0, 800.0);
+        let mut n = Npc::new(NpcKind::Shimmerfly, 800.0, 600.0, 1, 0.0);
+        n.hp = n.max_hp;
+        let mut rng = UnifiedRandom::new(5);
+        let mut witness = rng.clone();
+        // The module's draw census for a fresh fly near the player:
+        // the scale latch, the rearm timer, then the NEAR wander
+        // (the gap < 700): speed + the two spread draws.
+        let scale = witness.next_range(75, 111);
+        let _timer = witness.next_range(60, 180);
+        let _speed = witness.next_range(5, 151);
+        let _sx = witness.next_range(-100, 101);
+        let _sy = witness.next_range(-100, 101);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness, "the five cited draws, in order");
+        assert_eq!(n.ai[3], scale as f32 * 0.01);
+        assert_eq!(n.scale, n.ai[3], "scale rides the latch (:34069)");
+        assert!(n.net_update);
+        assert_eq!(n.local_ai[3], 1.0, "the near-wander latch (:34057)");
+        // The velocity/position maths carry the C#'s NaN pass-through
+        // (two zero spread draws → 0 × ∞); the module's own witnesses
+        // pin the blend — here only the stream + the latches ride.
+        // The second tick: localAI[0] > 0, no rearm — the 677 branch
+        // draws nothing on a non-rearm tick (the top margin keeps the
+        // threat scan off at this depth).
+        let witness2 = rng.clone();
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng, witness2, "a non-rearm 677 tick draws nothing");
+    }
+
+    /// The find_frame wiring: the snail trio's fall/walk rows ride the
+    /// module's pure twin; the 677's double counter resets at 6 and the
+    /// row stays 0 (the pixel-quirk fold).
+    #[test]
+    fn w4_c9_the_frame_machines_ride_the_module_twins() {
+        let mut n = Npc::new(NpcKind::Snail, 0.0, 0.0, 1, 0.0);
+        n.vy = 2.0; // > 1: the fall rows
+        for _ in 0..6 {
+            n.find_frame();
+        }
+        assert_eq!(n.frame, 5);
+        assert_eq!(n.frame_counter, 6.0);
+        // The walk cycle from rest.
+        let mut m = Npc::new(NpcKind::MagmaSnail, 0.0, 0.0, 1, 0.0);
+        m.vx = 0.6;
+        for _ in 0..10 {
+            m.find_frame();
+        }
+        assert_eq!(m.frame, 1, "the second 10-tick phase");
+        // The Shimmerfly: spriteDirection = direction, the double
+        // counter, the row-0 fold.
+        let mut f = Npc::new(NpcKind::Shimmerfly, 0.0, 0.0, -1, 0.0);
+        f.find_frame();
+        assert_eq!(f.sprite_dir, -1);
+        assert_eq!(f.frame_counter, 2.0);
+        f.find_frame();
+        f.find_frame();
+        assert_eq!(f.frame_counter, 0.0, "the reset at 6");
+        assert_eq!(f.frame, 0, "the pixel-quirk row stays 0");
+    }
+
+    /// The sheets + the bestiary order table: all four strips are packed
+    /// and the frame counts are the vanilla's (359/360/655 six rows, 677
+    /// four — `Main.cs:67121`/`:67125`).
+    #[test]
+    fn w4_c9_the_sheets_resolve_with_the_csharp_frame_counts() {
+        for (kind, id, rows) in [
+            (NpcKind::Snail, 359u16, 6u32),
+            (NpcKind::GlowingSnail, 360, 6),
+            (NpcKind::MagmaSnail, 655, 6),
+            (NpcKind::Shimmerfly, 677, 4),
+        ] {
+            assert_eq!(crate::render::entities::texture_net_id(kind), id);
+            assert_eq!(crate::render::entities::npc_rows(id), rows);
+            let name = format!("NPC_{id}");
+            assert!(
+                crate::assets::STATIC_SHEET_NAMES.contains(&name.as_str()),
+                "{name} is never packed into the atlas"
+            );
+            assert!(crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&id));
         }
     }
 }

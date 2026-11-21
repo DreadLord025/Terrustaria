@@ -399,6 +399,122 @@ pub fn slope_collision(
     }
 }
 
+/// `Collision.WalkDownSlope` (`Collision.cs:1686-1789`) — the
+/// `NPC.Collision_WalkDownSlopes` head of `UpdateCollision`
+/// (`NPC.cs:93342-93350`). Velocity-only: the position is returned
+/// unchanged (`new Vector4(Position, ...)`), so the port returns the
+/// velocity pair. The `Velocity.Y != gravity` early-out (`:1688`) means
+/// the pass only fires while the body falls at EXACTLY the tick's
+/// gravity — a settled walker's `vy == 0` skips it. The support scan
+/// (`:1707-1757`) reads `nactive() && (tileSolid || tileSolidTop)` (the
+/// RUNTIME table — 192 cleared, `WorldGen.cs:15714`; the solidTop half
+/// carries NO frameY gate here, unlike `solid()`), the half-brick +8,
+/// the `(i*16, j*16-17, 16, 16)` probe rect (XNA `Intersects` — strict,
+/// touching edges do NOT count) and the `num5 <= num` ceiling with the
+/// equal-height slope-direction preference (`num4`: 2 walking left,
+/// 1 right). The tail (`:1760-1787`) adds `|Velocity.X|` to Y on the
+/// matching ramp when the feet sit at/below the ramp line.
+pub fn walk_down_slope(
+    world: &World,
+    pos: [f32; 2],
+    vel: [f32; 2],
+    width: f32,
+    height: f32,
+    gravity: f32,
+) -> [f32; 2] {
+    // `:1688-1691` — the exact-gravity gate.
+    if vel[1] != gravity {
+        return vel;
+    }
+    let mut vy = vel[1];
+    // `:1693-1698` — the scan bounds; the Y clamp's upper is
+    // `maxTilesY - 2 - 40` (the Utils.Clamp order: min first).
+    let value = ((pos[0] / 16.0) as i32).clamp(0, world.width - 1);
+    let value2 = (((pos[0] + width) / 16.0) as i32).clamp(0, world.width - 1);
+    let raw3 = ((pos[1] + height + 4.0) / 16.0) as i32;
+    // The Utils.Clamp order: min first, then max — on a tiny world the
+    // upper goes negative and the scan rows read null tiles (the C#'s
+    // `Main.tile[i, j] == null` arm; the port's `world.tile` → None).
+    let upper3 = world.height - 2 - 40;
+    let value3 = if raw3 < 0 { 0 } else if raw3 > upper3 { upper3 } else { raw3 };
+    let mut num = (value3 + 3) as f32 * 16.0;
+    let mut num2 = -1i32;
+    let mut num3 = -1i32;
+    let mut prev_slope = 0u8;
+    let num4 = if vel[0] < 0.0 { 2u8 } else { 1u8 };
+    // The int-truncated body rect (`(int)Position.X/Y`, `:1724`).
+    let (bx, by) = (pos[0] as i32, pos[1] as i32);
+    let (bw, bh) = (width as i32, height as i32);
+    for i in value..=value2 {
+        for j in value3..=value3 + 1 {
+            let Some(t) = world.tile(i, j) else { continue };
+            // `:1715` — nactive + the runtime solid/solidTop union.
+            if !t.active() || t.inactive() {
+                continue;
+            }
+            let solid = (td::TILE_SOLID.has(t.kind) && t.kind != 192)
+                || td::TILE_SOLID_TOP.has(t.kind);
+            if !solid {
+                continue;
+            }
+            let mut num5 = (j * 16) as f32;
+            if t.half_brick() {
+                num5 += 8.0;
+            }
+            // `:1724` — the strict rect intersect + the ceiling.
+            let (rx, ry) = (i * 16, j * 16 - 17);
+            let intersects = bx < rx + 16 && bx + bw > rx && by < ry + 16 && by + bh > ry;
+            if !intersects || num5 > num {
+                continue;
+            }
+            if num == num5 {
+                // `:1728-1749` — the equal-height preference.
+                if t.slope() == 0 {
+                    continue;
+                }
+                if num2 != -1 && num3 != -1 && prev_slope != 0 {
+                    if t.slope() == num4 {
+                        num = num5;
+                        num2 = i;
+                        num3 = j;
+                        prev_slope = t.slope();
+                    }
+                } else {
+                    num = num5;
+                    num2 = i;
+                    num3 = j;
+                    prev_slope = t.slope();
+                }
+            } else {
+                num = num5;
+                num2 = i;
+                num3 = j;
+                prev_slope = t.slope();
+            }
+        }
+    }
+    // `:1758-1787` — the ramp push (the found tile's slope > 0).
+    if num2 != -1 && num3 != -1 && prev_slope > 0 {
+        let (tx, ty) = (num2 as f32 * 16.0, num3 as f32 * 16.0);
+        match prev_slope {
+            2 => {
+                let num9 = tx + 16.0 - (pos[0] + width);
+                if pos[1] + height >= ty + num9 && vel[0] < 0.0 {
+                    vy += vel[0].abs();
+                }
+            }
+            1 => {
+                let num9 = pos[0] - tx;
+                if pos[1] + height >= ty + num9 && vel[0] > 0.0 {
+                    vy += vel[0].abs();
+                }
+            }
+            _ => {}
+        }
+    }
+    [vel[0], vy]
+}
+
 /// `Collision.StepUp` with `gravDir = 1`: lifts the body onto a one-tile ledge and
 /// records the lift in `gfx_off_y` so the sprite eases down afterwards.
 #[allow(clippy::too_many_arguments)]

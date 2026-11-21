@@ -75,6 +75,33 @@ pub(crate) fn npc_light(
     ))
 }
 
+/// The snail family's aiStyle-67 lights (W4-c9, `NPC.cs:34385-34392`):
+/// the GlowingSnail 360's blue (0.1, 0.2, 0.7) (`:34387`) and the
+/// MagmaSnail 655's orange (0.6, 0.3, 0.1) (`:34391`), both at
+/// `(int)Center.X / 16` — the cast BEFORE the int divide
+/// (`XAnchor::CenterTruncated`, NOT the quotient truncation). The plain
+/// Snail 359 and the Shimmerfly 677 emit nothing. RNG-free; the feed
+/// reads the post-step position (the small-kinds convention — the C#
+/// adds the light inside `AI()` before the move, one step of position
+/// lag, the `npc_light` precedent).
+pub(crate) fn snail_light(
+    kind: NpcKind,
+    pos: Vec2,
+    width: f32,
+    height: f32,
+) -> Option<(i32, i32, [f32; 3])> {
+    let rgb = match kind {
+        NpcKind::GlowingSnail => [0.1, 0.2, 0.7],
+        NpcKind::MagmaSnail => [0.6, 0.3, 0.1],
+        _ => return None,
+    };
+    Some((
+        tile_x(pos, width, XAnchor::CenterTruncated),
+        tile_y(pos, height, XAnchor::CenterTruncated),
+        rgb,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

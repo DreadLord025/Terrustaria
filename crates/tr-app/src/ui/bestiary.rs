@@ -1595,6 +1595,13 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-c9 — the snail family + its shimmer target: the portrait
+        // rests each kind's `SetDefaults` box (`NPC.cs:13575-13576` /
+        // `:13589-13590` / `:17282-17283` / `:17581-17582`), the
+        // wave-A shape.
+        (NpcKind::Snail, _) => (sheet_i, 12.0, 12.0, 12.0, white),
+        (NpcKind::GlowingSnail | NpcKind::MagmaSnail, _) => (sheet_i, 14.0, 14.0, 14.0, white),
+        (NpcKind::Shimmerfly, _) => (sheet_i, 10.0, 10.0, 10.0, white),
     }
 }
 

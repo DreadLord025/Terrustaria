@@ -4379,6 +4379,38 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         }
                     }
                 }
+                // W4-c9 — the Shimmerfly's threat-scan pool
+                // (`NPC.cs:34120-34128`: `Main.npc[0..maxNPCs]` in slot
+                // order — active, damage > 0, !friendly, the int-truncated
+                // Hitbox). The per-NPC `&mut self` update cannot see its
+                // siblings, so the views are stamped here before the slot
+                // loop (the twin_time_lefts carrier precedent). ORDER
+                // DEVIATION (documented, the ForceBubble pre-pass's
+                // shape): the C# scans at the fly's own slot turn; the
+                // port reads the tick-start pool — one tick of lag for
+                // later slots. RNG-free by construction.
+                {
+                    let views: Vec<crate::npc_ai_style64::Ai64NpcView> = npcs
+                        .iter()
+                        .map(|m| {
+                            let (mw, mh) = m.size();
+                            crate::npc_ai_style64::Ai64NpcView {
+                                active: m.hp > 0,
+                                damage: m.damage_override.unwrap_or(m.kind.contact_damage()),
+                                friendly: m.friendly,
+                                x: m.x,
+                                y: m.y,
+                                width: mw as i32,
+                                height: mh as i32,
+                            }
+                        })
+                        .collect();
+                    for fi in 0..npcs.len() {
+                        if npcs[fi].kind == NpcKind::Shimmerfly && npcs[fi].hp > 0 {
+                            npcs[fi].shimmerfly_threat_views = views.clone();
+                        }
+                    }
+                }
                 // The single session player as slot 0 (the S1-D-3p
                 // convention — the aiStyle-75 `TargetClosest` reads).
                 let cand = crate::npc_target::session_candidate(player);
@@ -4793,6 +4825,18 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             expert,
             app.rngs.stream(RngKey::UpdateNpcs),
         );
+    }
+    // W4-c9 — `GetShimmered`'s statue arm (`NPC.cs:91550-91560`): the
+    // statue-spawned snail the shimmer consumes raises `NPC.noSpawnCycle`
+    // (one spawn call suppressed, `:80171-80174`). The adapter despawned
+    // the slot through the timer seam (timer 0 — the silent retain
+    // below); the latch drains onto the App BEFORE that retain drops
+    // the slot.
+    for n in app.npcs.iter_mut() {
+        if n.wants_spawn_no_cycle {
+            n.wants_spawn_no_cycle = false;
+            app.spawn_no_cycle = true;
+        }
     }
     // `NPC.cs:77986-77996`: `this.timeLeft--` once per NPC update, and
     // `timeLeft <= 0` deactivates it — no distance gate. The aiStyle-4
@@ -6149,7 +6193,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         app.npcs.extend(new_bubbles);
     }
     // The aiStyle-75 carrier-gone Transform requests (`NPC.cs:36056-36063`:
-    // 390 → 382 RayGunner, 416 → 518 SolarSpearman): `NPC.Transform`
+    // 390 → 382 RayGunner, 416 → 518 SolarSpearman) + the W4-c9 snail
+    // shimmer `Transform(677)` (`GetShimmered` `NPC.cs:91561-91565`, the
+    // `NPCID.cs:10470` 359/360/655 → 677 rows): `NPC.Transform`
     // (`:81084-81114`) in place — the bottom-anchored reposition, the
     // SetDefaults swap, TargetClosest and the integer life rescale.
     {
@@ -6162,6 +6208,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                     let new_kind = match ty {
                         382 => NpcKind::RayGunner,
                         518 => NpcKind::SolarSpearman,
+                        677 => NpcKind::Shimmerfly,
                         _ => continue,
                     };
                     npcs[i].transform_to_kind(world_ref, player, new_kind);
@@ -6169,6 +6216,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-c9 — `GetShimmered`'s statue arm (`NPC.cs:91550-91560`): the
+    // statue-spawned snail the shimmer consumes raises `NPC.noSpawnCycle`
+    // (one spawn call suppressed, `:80171-80174`). The adapter already
+    // despawned the slot through the timer seam (the silent retain
+    // below); the latch drains onto the App here.
     // The saucer core's crew (`AI`'s aiStyle-76 init arm): the 2 turrets
     // 393, the 2 cannons 394 and the shell 392, each `ai[0]`-linked (the
     // port's link rides the write-through) with the seat `ai[1]`.
@@ -9894,6 +9946,94 @@ mod rider_tests {
         let shot = n.wants_hostile_shot.pop().expect("the ray fires");
         assert_eq!(shot.0, 438);
         assert_eq!(shot.5, 30);
+    }
+
+    /// W4-c9 — the snail shimmer `Transform(677)` end to end: a snail in
+    /// a shimmer pool (liquid > 30 under the centre) queues the request
+    /// on its tick; the sim's drain runs `NPC.Transform` in place — the
+    /// kind swaps to the Shimmerfly, the bottom edge holds across the
+    /// 12→10 box swap (`NPC.cs:81092-81100`), the ai zero loop + the
+    /// integer life rescale ride (`:81106-81114`), and the NEXT tick the
+    /// 677 flies its own aiStyle-64 arm.
+    #[test]
+    fn w4_c9_the_snail_shimmers_into_the_shimmerfly() {
+        let (mut app, _player) = app_with_player();
+        // A shimmer cell under the snail's centre: the 12-box at
+        // (160, 1760) centres (166, 1766) → tile (10, 110) — the air
+        // above the surface_world's row-120 ground.
+        let i = app.world.index(10, 110);
+        app.world.tiles[i] = tr_core::Tile { liquid: 40, ..Default::default() };
+        app.world.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        let mut snail = Npc::new(NpcKind::Snail, 160.0, 1760.0, 1, 0.0);
+        snail.hp = snail.max_hp;
+        snail.ai = [1.0, 0.0, 0.0, 1.0]; // init done, scale set
+        let bottom = snail.y + 12.0;
+        app.npcs.push(snail);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let fly = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Shimmerfly)
+            .expect("the Transform(677) drain ran");
+        assert!(!app.npcs.iter().any(|n| n.kind == NpcKind::Snail));
+        assert_eq!(fly.size(), (10.0, 10.0), "the SetDefaults box swap");
+        // The drain runs AFTER the tick loop (the style75 fold), so the
+        // bottom anchor holds EXACTLY across the 12→10 swap — the fly
+        // has not run its own AI yet.
+        assert_eq!(fly.y + 10.0, bottom, "the bottom anchor holds");
+        assert_eq!(fly.ai, [0.0; 4], "the ai zero loop (:81111-81114)");
+        assert_eq!(fly.hp, 5, "the integer life share 5*5/5");
+        assert_eq!(fly.wants_transform, None, "the request drained");
+        // Tick 2 is the fly's FIRST aiStyle-64 tick: the scale latch
+        // draws and the rearm arms the timer (Next(60,180)).
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let fly = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Shimmerfly)
+            .expect("the fly lives");
+        assert!(fly.ai[3] != 0.0, "the 677 scale latch drew");
+        let timer = fly.local_ai[0];
+        assert!((60.0..180.0).contains(&timer), "the rearm timer: {timer}");
+        // Tick 3: no rearm — the timer decrements once (:34025).
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        let fly = app
+            .npcs
+            .iter()
+            .find(|n| n.kind == NpcKind::Shimmerfly)
+            .expect("the fly lives");
+        assert_eq!(fly.local_ai[0], timer - 1.0, "the rearm timer decrements");
+    }
+
+    /// W4-c9 — the statue-spawned snail the shimmer consumes: the
+    /// adapter's timer-0 despawn + the noSpawnCycle latch drain onto the
+    /// App (one spawn call suppressed, `NPC.cs:80171-80174`), and the
+    /// slot drops through the SILENT retain — no death cue, no loot.
+    #[test]
+    fn w4_c9_the_statue_snail_despawns_and_suppresses_one_spawn() {
+        let (mut app, _player) = app_with_player();
+        // Hold the ambient spawner off (the one_sim_tick convention) so
+        // the drained latch is observable — a live spawn call would
+        // consume it in the same tick (`NPC.cs:80171-80174`).
+        app.npc_timer = 10.0;
+        let i = app.world.index(10, 110);
+        app.world.tiles[i] = tr_core::Tile { liquid: 40, ..Default::default() };
+        app.world.tiles[i].set_liquid_kind(tr_core::tile::LiquidKind::Shimmer);
+        let mut snail = Npc::new(NpcKind::GlowingSnail, 159.0, 1759.0, 1, 0.0);
+        snail.hp = snail.max_hp;
+        snail.ai = [1.0, 0.0, 0.0, 0.0];
+        snail.spawned_from_statue = true;
+        app.npcs.push(snail);
+        crate::world_sim::npcs::update_npcs(&mut app, 1.0 / 60.0);
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::GlowingSnail),
+            "the statue snail despawned"
+        );
+        assert!(
+            !app.npcs.iter().any(|n| n.kind == NpcKind::Shimmerfly),
+            "no transform for the statue arm"
+        );
+        assert!(app.spawn_no_cycle, "the noSpawnCycle latch drained");
     }
 }
 

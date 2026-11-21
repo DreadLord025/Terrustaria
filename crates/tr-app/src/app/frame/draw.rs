@@ -492,6 +492,21 @@ impl App {
                                 );
                                 self.entity_lights.add(x, y, [0.1, 0.5, 0.7]);
                             }
+                            // W4-c9 — the snail family's aiStyle-67
+                            // lights (`NPC.cs:34387`/`:34391`): the
+                            // 360 blue / 655 orange at the truncated
+                            // centre tile. RNG-free (the npc_lights
+                            // convention).
+                            NpcKind::GlowingSnail | NpcKind::MagmaSnail => {
+                                if let Some((x, y, rgb)) = crate::npc_lights::snail_light(
+                                    n.kind,
+                                    pos,
+                                    w,
+                                    h,
+                                ) {
+                                    self.entity_lights.add(x, y, rgb);
+                                }
+                            }
                             _ => {}
                         }
                     }

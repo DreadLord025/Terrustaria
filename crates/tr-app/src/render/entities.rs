@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(SNAIL_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1246,6 +1247,12 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// The snail wall-crawler family + its shimmer target (W4-c9): the Snail
+/// (359), the Glowing Snail (360), the Magma Snail (655) and the
+/// Shimmerfly (677) each draw their own `NPC_<id>` art. Keyed by the
+/// vanilla net id ([`NpcKind::net_id`]) in [`NpcAssets::npc_sheet`].
+pub(crate) const SNAIL_SHEETS: &[u32] = &[359, 360, 655, 677];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3170,6 +3177,18 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
+            // W4-c9 — the snail family + its shimmer target draw their
+            // own sheets (`SNAIL_SHEETS`) at `Main.npcFrameCount[type]`
+            // rows (359/360/655 six, 677 four — `Main.cs:67121`/`:67125`)
+            // with the generic centred anchor. The 359 scale roll
+            // (`Next(80,111) * 0.01f`) and the 677 scale latch
+            // (`Next(75,111) * 0.01f`) ride `n.scale` — `scaled_anchor`
+            // (the BlazingWheel/stardust-cells convention). All four
+            // rotate (the whitelist below).
+            NpcKind::Snail | NpcKind::GlowingSnail | NpcKind::MagmaSnail | NpcKind::Shimmerfly => {
+                let ty = texture_net_id(n.kind);
+                scaled_anchor(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
+            }
         };
         let Some(tex) = tex else {
             continue;
@@ -3319,6 +3338,13 @@ pub(crate) fn draw_npcs(
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
                     | NpcKind::BlazingWheel
                     | NpcKind::DungeonSpirit
+                    // W4-c9 — the snail trio's quadrant rotation + ease
+                    // (`NPC.cs:34525-34619`) and the Shimmerfly's
+                    // `rotation = vx * 0.3` tilt (`:34234-34237`).
+                    | NpcKind::Snail
+                    | NpcKind::GlowingSnail
+                    | NpcKind::MagmaSnail
+                    | NpcKind::Shimmerfly
             )
         {
             // `Main.DrawNPC` draws every NPC at its centre with
