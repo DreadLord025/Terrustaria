@@ -151,12 +151,12 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             }
             // The `IsAPickup` consume-on-touch arms (`PickupItem`
             // `:35045-35098`): hearts/stars ride the i52 arms below, the
-            // 4143 Mana Cloak star its W4-d79 arm; the nebula trio has no
-            // ported buff route — those kinds are not grabbed until it
-            // lands (ANALYSIS S1-P-i47/i52).
+            // 4143 Mana Cloak star and the nebula trio 3453-3455 their W4-d79
+            // arms (ANALYSIS S1-P-i47/i52).
             if crate::item::is_a_pickup(kind)
                 && !crate::item::is_heart_or_star(kind)
                 && kind != 4143
+                && !matches!(kind, 3453 | 3454 | 3455)
             {
                 i += 1;
                 continue;
@@ -201,6 +201,37 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 // slot being non-air OR the swing finished (`:34919`).
                 if inventory[app.selected].kind == 0 && app.swing > 0.0 {
                     i += 1;
+                    continue;
+                }
+                // W4-d79 — `Player.PickupItem`'s Nebula arm (`Player.cs:35045-
+                // 35058`), FIRST in the `else if` chain (before hearts/stars):
+                // `ItemID.Sets.NebulaPickup` (3453-3455, `ItemID.cs:1324`).
+                // `PlaySound(7, (int)position.X, (int)position.Y)` — the
+                // POSITIONED case-7 Grab (the heart/star arms are unpositioned;
+                // this one attenuates against the camera), then `TurnToAir`
+                // and `NebulaLevelup(inner.buffType)` (the netMode-1 send
+                // collapses to the local call). The buffType rides the item
+                // table: 3453→179 (damage), 3454→173 (life), 3455→176 (mana)
+                // (`Item.cs:31001-31018`). The case-7 pitch draw rides
+                // `UpdatePlayers` (the `GrabItems` caller, `Main.cs:17754`);
+                // `NebulaLevelup` draws nothing (the buff grant is RNG-free).
+                if matches!(kind, 3453 | 3454 | 3455) {
+                    // `:35047` — `(int)base.position.X/(int)base.position.Y`
+                    // truncates (the positioned façade's casts).
+                    audio.play_grab_sound(
+                        px.trunc(),
+                        py.trunc(),
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
+                    let buff_type = match kind {
+                        3453 => 179,
+                        3454 => 173,
+                        _ => 176,
+                    };
+                    if let Some(p) = player.as_mut() {
+                        p.nebula_levelup(buff_type);
+                    }
+                    items.swap_remove(i);
                     continue;
                 }
                 // S1-P-i52 — `Player.PickupItem`'s heart/star arms
@@ -652,8 +683,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // (`:34947`). The C# arm order (`:34943-34971`): manaMagnet-star
             // → lifeMagnet-heart → nebula → void-vault → goldRing-coin →
             // journey far-range → common. The treasure magnet's RANGE row
-            // is live via GrabFlags; the nebula pull rides the unported
-            // consume arms (S1-P-i52).
+            // is live via GrabFlags.
             let drop = &mut items[i];
             drop.shimmered = false;
             drop.being_grabbed = true;
@@ -667,6 +697,11 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 if flags.life_magnet && matches!(kind, 58 | 1734 | 1867) {
                     // `:34949-34952` — `PullItem_Pickup(worldItem, 15f, 5)`.
                     crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 15.0, 5);
+                } else if matches!(kind, 3453 | 3454 | 3455) {
+                    // W4-d79 — `:34953-34956` — the Nebula trio's
+                    // `PullItem_Pickup(worldItem, 12f, 5)` (the same 12/5
+                    // blend as the Mana Magnet star pull).
+                    crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 12.0, 5);
                 } else if status.to_void_vault {
                     // `PullItem_ToVoidVault` (`:34978-34981`).
                     crate::item::pull_item_pickup(drop.center(), &mut drop.vel, pc, 12.0, 5);
@@ -2449,6 +2484,80 @@ mod pickup_tests {
             witness.peek(),
             "exactly the chime + two placement draws, in the C# order"
         );
+    }
+
+    /// W4-d79 — the Nebula trio pickup (`Player.cs:35045-35058`): the
+    /// positioned case-7 Grab, `TurnToAir`, and `NebulaLevelup(buffType)` —
+    /// 3453→179 (damage), 3454→173 (life), 3455→176 (mana). The first pickup
+    /// grants tier 1 at 480 ticks; a second same-family pickup sweeps the old
+    /// tier and grants tier 2 (the level clamp 0..3). The drop never enters
+    /// the inventory.
+    #[test]
+    fn w4_d79_the_nebula_pickup_levels_the_matching_buff_family() {
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        // The damage pickup (3453 → buff 179).
+        app.items.push(collectable_drop(3453, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the nebula pickup aired out");
+        {
+            let p = app.player.as_ref().unwrap();
+            assert_eq!(p.nebula_level_damage, 1, "tier 1");
+            assert!(p.buffs.find_buff_index(179).is_some(), "NebulaUpDmg1");
+            let i = p.buffs.find_buff_index(179).unwrap();
+            assert_eq!(p.buffs.buff_time[i], 480, "the 480-tick grant");
+            assert!(
+                app.inventory.iter().all(|s| s.count == 0),
+                "nothing entered the inventory"
+            );
+        }
+        // A second damage pickup sweeps tier 1 and grants tier 2.
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(3453, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert_eq!(p.nebula_level_damage, 2, "tier 2");
+            assert!(p.buffs.find_buff_index(179).is_none(), "tier 1 swept");
+            assert!(p.buffs.find_buff_index(180).is_some(), "NebulaUpDmg2");
+        }
+        // The life (3454 → 173) and mana (3455 → 176) families are independent.
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(3454, 1, pc.0 - 4.0, pc.1 - 4.0));
+        app.items.push(collectable_drop(3455, 1, pc.0 - 4.0, pc.1 - 4.0));
+        update_items(&mut app, 1.0 / 60.0);
+        {
+            let p = app.player.as_ref().unwrap();
+            assert_eq!(p.nebula_level_life, 1);
+            assert_eq!(p.nebula_level_mana, 1);
+            assert_eq!(p.nebula_level_damage, 2, "the damage family untouched");
+            assert!(p.buffs.find_buff_index(173).is_some(), "NebulaUpLife1");
+            assert!(p.buffs.find_buff_index(176).is_some(), "NebulaUpMana1");
+        }
+    }
+
+    /// W4-d79 — the Nebula pickup's RNG order: the POSITIONED case-7 Grab
+    /// draws ONE `Next(-10, 11)` pitch (`LegacySoundPlayer.cs:725`) on
+    /// `UpdatePlayers` after the attenuation gate; `NebulaLevelup` draws
+    /// nothing (the buff grant is RNG-free). Unlike the heart/star arms there
+    /// is NO combat-text placement draw — the nebula arm spawns no text.
+    #[test]
+    fn w4_d79_the_nebula_pickup_draws_one_pitch_and_no_text() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut app = pickup_world();
+        let pc = app.player.as_ref().unwrap().center();
+        app.items.push(collectable_drop(3455, 1, pc.0 - 4.0, pc.1 - 4.0));
+        let seed = 0x0EB0_5152i32;
+        *app.rngs.stream(crate::app::RngKey::UpdatePlayers) = UnifiedRandom::new(seed);
+        let mut witness = UnifiedRandom::new(seed);
+        let _pitch = witness.next_range(-10, 11); // case 7 (`:725`)
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdatePlayers).peek(),
+            witness.peek(),
+            "exactly the one pitch draw — no text, no buff-grant draws"
+        );
+        assert!(app.combat_texts.iter().all(|t| !t.active), "no combat text");
     }
 
     /// The RNG order inside the heart pickup arm: the case-7 pitch draw

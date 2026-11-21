@@ -1391,6 +1391,18 @@ pub struct Player {
     /// sim caller feeds the App's swing/reuse timers each tick (the
     /// `frame_inputs` convention); the bare `update` callers keep false.
     pub mana_regen_item_in_use: bool,
+    /// W4-d79 — the Nebula armor buff levels (`Player.nebulaLevelLife`/
+    /// `nebulaLevelMana`/`nebulaLevelDamage`/`nebulaManaCounter`,
+    /// `Player.cs:924-930`, `nebulaMaxLevel = 3` `:922`). `NebulaLevelup`
+    /// (`:57030-57059`) bumps the picked family's level (clamp 0..3) and
+    /// `AddBuff`s the tier; `UpdateBuffs_NebulaBuffs` (`:12070-12079`)
+    /// re-derives the level from the live buff each tick and steps it down at
+    /// `buffTime == 2`; `ResetEffects` (`:18755`) zeroes all three. The mana
+    /// counter feeds `ApplyNebulaBuffMana` (`:19565-19585`).
+    pub nebula_level_life: i32,
+    pub nebula_level_mana: i32,
+    pub nebula_level_damage: i32,
+    pub nebula_mana_counter: i32,
     /// The 44 buff slots and `buffImmune` — `Player.buffType`/`buffTime`/`buffImmune`
     /// (`Player.cs:1510-1514`), driven by the `Player.AddBuff` family (`buffs.rs`).
     pub buffs: BuffSlots,
@@ -2750,6 +2762,10 @@ impl Player {
             mana_flower: false,
             slow_magic_use: false,
             mana_regen_item_in_use: false,
+            nebula_level_life: 0,
+            nebula_level_mana: 0,
+            nebula_level_damage: 0,
+            nebula_mana_counter: 0,
             buffs: BuffSlots::default(),
             hurt_cd: 0.0,
             black_belt: false,
@@ -3450,6 +3466,107 @@ impl Player {
         self.latest_mana_potion_duration = time * 60.0;
         if time != 0.0 && power != 0.0 {
             self.buffs.add_buff(396, self.latest_mana_potion_duration as i32);
+        }
+    }
+
+    /// `Player.NebulaLevelup(int type)` (`Player.cs:57030-57059`): the Nebula
+    /// pickup's buff grant. The `whoAmI != Main.myPlayer` early return
+    /// (`:57032-57035`) collapses to the port's single local player. The
+    /// 480-tick duration (`:57036`), the family-wide `DelBuff` sweep
+    /// (`:57037-57043` — every buff in `[type, type+3)` clears, the `i--`
+    /// rescan after compaction), then the per-family level bump (clamp 0..3,
+    /// `nebulaMaxLevel = 3` `:922`) and `AddBuff(type + level - 1, 480)`.
+    /// `type` is the pickup's `buffType` — 173 (life), 176 (mana), 179
+    /// (damage); any other value draws no arm (the C# switch's default).
+    pub(crate) fn nebula_levelup(&mut self, buff_type: i32) {
+        let time = 480;
+        // `:57037-57043` — the family sweep. The C# `for` rescans slot `i`
+        // after `DelBuff(i--)` compacts the next buff into it.
+        let mut i = 0;
+        while i < MAX_BUFFS {
+            let t = self.buffs.buff_type[i];
+            if t >= buff_type && t < buff_type + 3 {
+                self.buffs.del_buff(i);
+                // `i--` then the loop's `i++` — re-read the same slot.
+            } else {
+                i += 1;
+            }
+        }
+        // `:57044-57058` — the per-family bump + grant.
+        match buff_type {
+            173 => {
+                self.nebula_level_life = (self.nebula_level_life + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_life - 1, time);
+            }
+            176 => {
+                self.nebula_level_mana = (self.nebula_level_mana + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_mana - 1, time);
+            }
+            179 => {
+                self.nebula_level_damage = (self.nebula_level_damage + 1).clamp(0, 3);
+                self.buffs.add_buff(buff_type + self.nebula_level_damage - 1, time);
+            }
+            _ => {}
+        }
+    }
+
+    /// `Player.UpdateBuffs_NebulaBuffs(ref int nebulaLevel, int baseBuffId,
+    /// int b)` (`Player.cs:12070-12079`): re-derive the level from the live
+    /// buff (`1 + buffType[b] - baseBuffId`); at `buffTime[b] == 2` with a
+    /// level above 1, step the level down, decrement the buff id and refresh
+    /// the timer to 480. Returns the derived level (the caller folds the
+    /// life-regen / damage stat adds).
+    fn update_buffs_nebula(&mut self, base_buff_id: i32, b: usize) -> i32 {
+        let mut level = 1 + self.buffs.buff_type[b] - base_buff_id;
+        if self.buffs.buff_time[b] == 2 && level > 1 {
+            level -= 1;
+            self.buffs.buff_type[b] -= 1;
+            self.buffs.buff_time[b] = 480;
+        }
+        level
+    }
+
+    /// `Player.ApplyNebulaBuffMana` (`Player.cs:19565-19585`): the mana
+    /// family's per-tick regen — `nebulaManaCounter += nebulaLevelMana`, and
+    /// each 6-count pays one mana (capped at `statManaMax2`); a zero level
+    /// resets the counter. Runs at the head of `UpdateManaRegen` (`:19421`).
+    pub(crate) fn apply_nebula_buff_mana(&mut self) {
+        if self.nebula_level_mana > 0 {
+            self.nebula_mana_counter += self.nebula_level_mana;
+            if self.nebula_mana_counter >= 6 {
+                self.nebula_mana_counter -= 6;
+                self.mana += 1;
+                if self.mana >= self.mana_max {
+                    self.mana = self.mana_max;
+                }
+            }
+        } else {
+            self.nebula_mana_counter = 0;
+        }
+    }
+
+    /// W4-d79 — the `UpdateBuffs` nebula arms (`Player.cs:10444-10461`): the
+    /// three family ranges re-derive their level from the live buff each tick
+    /// (`UpdateBuffs_NebulaBuffs`, `:12070-12079` — the `buffTime == 2`
+    /// step-down refreshes the timer to 480). The C# runs these inside the
+    /// main `UpdateBuffs` slot loop right after the per-slot timer decrement;
+    /// the port's timer head (`update_buffs_tick`) is the matching interleave
+    /// point. The stat folds (life-regen +6/level, damage +0.15/level) ride
+    /// the established buff-stat loops downstream — the port's split-loop
+    /// convention (the timer head vs the `active_types` stat pass).
+    pub(crate) fn update_buffs_nebula_scan(&mut self) {
+        for b in 0..MAX_BUFFS {
+            let t = self.buffs.buff_type[b];
+            if t <= 0 || self.buffs.buff_time[b] <= 0 {
+                continue;
+            }
+            if (176..=178).contains(&t) {
+                self.nebula_level_mana = self.update_buffs_nebula(176, b);
+            } else if (173..=175).contains(&t) {
+                self.nebula_level_life = self.update_buffs_nebula(173, b);
+            } else if (179..=181).contains(&t) {
+                self.nebula_level_damage = self.update_buffs_nebula(179, b);
+            }
         }
     }
 
@@ -6168,6 +6285,12 @@ impl Player {
         // re-derives both per tick.
         self.set_stardust = false;
         self.set_forbidden = false;
+        // W4-d79 — `ResetEffects`' `nebulaLevelDamage = (nebulaLevelLife =
+        // (nebulaLevelMana = 0))` (`Player.cs:18755`): the `UpdateBuffs`
+        // nebula arms re-derive all three from the live buffs each tick.
+        self.nebula_level_damage = 0;
+        self.nebula_level_life = 0;
+        self.nebula_level_mana = 0;
         // `:18663`: `lavaMax = 0` — the charm rows below re-add it.
         self.lava_max = 0;
         // `:18659`: `dashType = 0` - the armor-set rows and the accessory
@@ -6445,6 +6568,14 @@ impl Player {
                 self.dash_type = set.dash_type;
             }
         }
+        // W4-d79 — the `UpdateBuffs` nebula arms (`Player.cs:10444-10461`):
+        // the three family levels re-derive from the live buffs (the C# runs
+        // them inside the `UpdateBuffs` slot loop, AFTER `ResetEffects` zeroes
+        // the levels at `:18755`). The port's timer head already decremented
+        // the buff timers; this scan is the matching interleave point — the
+        // `buffTime == 2` step-down refreshes the timer to 480. The stat folds
+        // ride the buff-stat loops below (the split-loop convention).
+        self.update_buffs_nebula_scan();
         for bt in self.buffs.active_types() {
             match bt {
                 // S1-E-7 wave A — the potion-buff block, in the C# chain's
@@ -6747,6 +6878,18 @@ impl Player {
                 _ => {}
             }
         }
+        // W4-d79 — the Nebula damage family's stat fold (`Player.cs:10453-
+        // 10461`): `0.15 * nebulaLevelDamage` onto all four damage classes.
+        // The level re-derives in `update_buffs_nebula_scan` (the timer head);
+        // the fold rides here after the buff-stat loop (the split-loop
+        // convention — one slot per family survives `NebulaLevelup`'s sweep).
+        if self.nebula_level_damage > 0 {
+            let add = 0.15 * self.nebula_level_damage as f32;
+            self.melee_damage += add;
+            self.ranged_damage += add;
+            self.magic_damage += add;
+            self.minion_damage += add;
+        }
         if self.slow {
             self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.5);
         }
@@ -6961,6 +7104,13 @@ impl Player {
             match bt {
                 2 => self.accessory_life_regen += 4,
                 165 => self.accessory_life_regen += 6,
+                // W4-d79 — the Nebula life family (`Player.cs:10448-10452`):
+                // `lifeRegen += 6 * nebulaLevelLife` per live tier slot. The
+                // level re-derives in `update_buffs_nebula_scan` (the timer
+                // head); the fold rides this stat loop (the split-loop
+                // convention). One slot per family survives `NebulaLevelup`'s
+                // sweep, so the per-slot sum is the single level's add.
+                173 | 174 | 175 => self.accessory_life_regen += 6 * self.nebula_level_life,
                 _ => {}
             }
         }
@@ -11168,6 +11318,11 @@ impl Player {
         // defaults until those systems land (`regen.rs`); the hp gate stands in
         // for the original's dead-player check (M2-DEATH).
         if self.hp > 0 {
+            // W4-d79 — `UpdateManaRegen`'s head (`Player.cs:19421`): the
+            // Nebula mana family's per-tick regen runs BEFORE the delay/regen
+            // machine (the C# order — `ApplyNebulaBuffMana` precedes the
+            // `manaRegenDelay` decrement). Draw-free.
+            self.apply_nebula_buff_mana();
             let in_ = RegenInputs {
                 max_life: self.max_hp,
                 max_mana: self.mana_max,
