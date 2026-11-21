@@ -197,6 +197,7 @@
 //! | 889-898 | `:87057-87070` | the zombie block: 188/434 SwampZombie + 200/436 FemaleZombie (5-gore ladders) |
 //! | 899-907 | `:87075-87087` | the zombie block: 319 ZombieDoctor (5 gores) + 320 ZombieSuperman (4 gores) |
 //! | 908-917 | `:87092-87105` | the zombie block: 321 ZombiePixie + 223 ZombieRaincoat (5-gore ladders) |
+//! | 918-927 | `:87110-87131` | the zombie fall-through: 132 BaldZombie + 189/435 TwiggyZombie (head + shared 4/4/5/5 tails) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -5119,8 +5120,11 @@ fn moss_zombie_death(
 /// the 453 middle precedes the 452 tail) and the 320 ZombieSuperman (sites
 /// 904-907: 4 gores 454/455/456/456, only ONE +20 gore), the 321 ZombiePixie
 /// (sites 908-912: ladder 457/458/459) and the 223 ZombieRaincoat (sites
-/// 913-917: ladder 309/310/311). The remaining zombie types land with the
-/// next batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
+/// 913-917: ladder 309/310/311). The fall-through tail (the per-type head
+/// at scale 1 + the shared 4/4 at +20 and 5/5 at +34) is started with the
+/// 132 BaldZombie (sites 918-922: head 154) and the 189/435 TwiggyZombie
+/// (sites 923-927: head 246). The remaining zombie types land with the next
+/// batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
 /// (the wiring wave's hit-half detail is noted per arm).
 fn zombie_block_death(
     npc: &Npc,
@@ -5267,6 +5271,22 @@ fn zombie_block_death(
         gore.new_gore(rng, world, low, vel, 311, s); // :87104
         gore.new_gore(rng, world, low, vel, 311, s); // :87105
         return;
+    }
+    // `:87108-87139` — the fall-through tail: the per-type head (scale 1),
+    // then the shared 4/4 at +20 and 5/5 at +34. This commit ports the 132
+    // BaldZombie (head 154) and the 189/435 TwiggyZombie (head 246); the
+    // 186/432/251/else heads land with the next batches.
+    let head: Option<i32> = match npc_type {
+        132 => Some(154), // :87110
+        189 | 435 => Some(246), // :87118
+        _ => None,
+    };
+    if let Some(h) = head {
+        gore.new_gore(rng, world, pos, vel, h, 1.0);
+        gore.new_gore(rng, world, mid, vel, 4, 1.0); // :87128
+        gore.new_gore(rng, world, mid, vel, 4, 1.0); // :87129
+        gore.new_gore(rng, world, low, vel, 5, 1.0); // :87130
+        gore.new_gore(rng, world, low, vel, 5, 1.0); // :87131
     }
 }
 
@@ -5905,12 +5925,13 @@ pub fn hit_effect_c(
         moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     // `:86937-87139` — the big zombie block; the 104/632/331/332/109/161/
-    // 431/162/188/434/200/436/319/320/321/223 (sites 853-917); the rest
-    // lands with the next batches.
+    // 431/162/188/434/200/436/319/320/321/223/132/189/435 (sites 853-927);
+    // the rest lands with the next batches.
     if (npc_type == 104 || npc_type == 632 || npc_type == 331 || npc_type == 332 || npc_type == 109
         || npc_type == 161 || npc_type == 431 || npc_type == 162 || npc_type == 188
         || npc_type == 434 || npc_type == 200 || npc_type == 436 || npc_type == 319
-        || npc_type == 320 || npc_type == 321 || npc_type == 223)
+        || npc_type == 320 || npc_type == 321 || npc_type == 223 || npc_type == 132
+        || npc_type == 189 || npc_type == 435)
         && npc.hp <= 0
     {
         zombie_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
@@ -9319,6 +9340,27 @@ mod tests {
             zombie_block_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "zombie {ty}");
+        }
+    }
+
+    /// `NPC.cs:87110-87131` — the zombie fall-through: 132 BaldZombie
+    /// head 154, 189/435 TwiggyZombie head 246, then the shared 4/4 at +20
+    /// and 5/5 at +34 (all scale 1).
+    #[test]
+    fn w4_f10_the_zombie_fallthrough_bald_and_twiggy() {
+        let w = air();
+        for (ty, head) in [(132, 154), (189, 246), (435, 246)] {
+            let n = boss(100.0, 100.0, 40.0, 56.0);
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(853);
+            let mut out = HitEffectOutcomeC::default();
+            zombie_block_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![head, 4, 4, 5, 5], "zombie {ty}");
+            assert_eq!(gore.slot(0).scale, 1.0);
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
         }
     }
 
