@@ -1,4 +1,4 @@
-# 285 — W4-e21 wiring-tail family SEAL: the five receipts at the pushed tips
+# 365 — W4-e21 wiring-tail family SEAL: the five receipts at the pushed tips
 
 > **STATUS: SEAL — 2026-11-21, branch
 > `task/W4-e21-wiring-device-arms-3` (seal phase, the FINAL doc).**
@@ -6,10 +6,11 @@
 > seal items against the CURRENT origin tips (fetched this round), the
 > merge-time keep-one instructions, and the verification record.
 > Code-only lane: no cargo/tests/rustfmt/graphify invoked; every witness
-> on the branch is WRITTEN NOT RUN. Number 285 = the lowest free key at
-> the seal-time full remote-tip scan (`git ls-tree docs/research/` per
-> tip; taken ≥281: 281/282/283/284/293/298 — 285-292 free; the d54
-> registry-150 §6.3 "281+ FREE" rule, executed pushes beat drafts).
+> on the branch is WRITTEN NOT RUN. Number chain 285→365: the seal-time
+> self-pick 285 (lowest free key at the full remote-tip scan under the
+> d54 registry-150 §6.3 "281+ FREE" rule) was a post-§9 self-pick into
+> §7.2's 285 (the §7.2 owner KEEPS 285); the registry's §9 UNIFIED FINAL
+> TABLE (§9.2 row 365, d54 tip `b4c94432c`) re-issues this doc as **365**.
 
 ## 0. The lane's landed estate (this branch, pre-seal tip `4782d663`)
 
@@ -207,7 +208,8 @@ this lane never ran them (code-only).
 - The anchor-defect finding (§4) is a code READ at both tips
   (`spawn_with_data_ai`'s `pos` literal vs d3's −15.5 arm), not a test
   run — the witnesses stay WRITTEN NOT RUN.
-- Number 285: the full remote-tip `docs/research/` scan at seal time
-  (taken ≥281: 281/282/283/284/293/298); 285 the lowest free.
+- Number chain 285→365: the seal-time full remote-tip `docs/research/`
+  scan picked 285 (lowest free then); registry §9.2 (d54 `b4c94432c`)
+  rules 285 = §7.2 owner KEEPS, this doc re-issued 365.
 - No cargo/tests/rustfmt/graphify invoked (lane rule). The seal commit
   touches docs + anchors only — zero `crates/` diff.

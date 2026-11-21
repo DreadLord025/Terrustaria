@@ -7968,16 +7968,16 @@ rows, `40f8cbe3d` the dispatch/death/contact wiring, `affd7fa90` the
 world-sim drains + its own `StatueSpawn::Boulder` arm, tip `5ff9fe983`):
 the earlier "census-only, rows in flight" reading is superseded. e21's
 boulder-statue seam auto-spawns once they land; the two arms are a
-merge-time keep-one (research/285 §4 — d3's direct-spawn arm subtracts
+merge-time keep-one (research/365 §4 — d3's direct-spawn arm subtracts
 the 31×31 half-box per `Projectile.cs:10876-10877`, e21's device-shot
 seam passes the C# centre anchor straight to `spawn_with_data_ai`,
 whose `pos` is the top-left — the merger keeps d3's arm or applies the
 half-box lift to the seam).
 
-### The wiring tail family SEAL (W4-e21, research/285)
+### The wiring tail family SEAL (W4-e21, research/365, chain 285→365 per registry §9.2)
 
 The e21 lane is SEALED — no further rounds. The five seal receipts
-(research/285 carries the full evidence): (1) the HitWireSingle census
+(research/365 carries the full evidence): (1) the HitWireSingle census
 is 66/66 claimed with ZERO unclaimed arms and the bunny statue's pair
 46/540 is ported (`178a6d37f`); (2) the c42 wiring seal (`2910a720`,
 research/240→280 per registry-150 §6.3) re-picked the compile blocker
