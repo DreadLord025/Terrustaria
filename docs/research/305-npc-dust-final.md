@@ -1,6 +1,21 @@
-# 283 — NPC dust lane FINAL (SEALED): keep-one confirmation + worm-seam census + family declaration (W4-f4, 2026-11-21)
+# 305 — NPC dust lane FINAL (SEALED): keep-one confirmation + worm-seam census + family declaration (W4-f4, 2026-11-21)
+
+> **RENAME CHAIN: 240 → 281 (raced, unpublished) → 283 (collides with
+> f26's §7.3 reservation — `68-findframe-census-addendum-7j.md` →
+> 283-findframe-census-addendum-7j) → 305 (registry-150 §7.4
+> ASSIGNMENT).** The d54 collision registry
+> (`150-research-number-registry.md`, round-3 EXTENSION §7.4, fetched
+> at `origin/task/W4-d54-dust-sites-world`) adjudicates key 240: g58
+> WINS (`cdfe3d108` 12:16:37), f4's `240-npc-dust-final.md`
+> (`e7ea8b24b` 15:00:53, missed by the round-3 sweep) → **305** per
+> the §7.4.3 f4 row. The executed 283 push contests f26's published
+> §7.3 reservation on the same key, so 283 is NOT honored; 305 is the
+> registry-assigned number (extension block 304–307 consumed by
+> d50/f4/g86/g43; 308+ free). Chain recorded per the registry's
+> header rule (like f11/g67/d53).
 
 > **SEALED.** W4-f4 retire round, code-only. Renumbered **240 → 283**
+> (SUPERSEDED — see the rename-chain banner above; final number 305)
 > per the d54 collision registry (`150-research-number-registry.md`
 > round-2 §6.1 key 240 + §6.3 cutoff note): the doc was first pushed on
 > 240 at 15:00:53 (`e7ea8b24b`), AFTER g58's `240-happiness-final.md`
@@ -184,7 +199,7 @@ dust-GATED fan draws stay deferred with the dust engine") and the
 `:41396-41401`, the head's 229 fan `:42221`, the eye's dust pairs) are
 UNCHANGED at the tip — they are d31-lane reads, and this §3 is the
 dust-lane closure receipt for them (the merger may annotate d31's rows
-"closed by f4 research/283"; f4 does not edit d31's branch). d31's
+"closed by f4 research/305"; f4 does not edit d31's branch). d31's
 9+3·inner unconditional draw census and f4's storm port consume the
 SAME draws in the SAME order — the two ledgers agree.
 
@@ -258,7 +273,10 @@ twice (d125 retire-final + g48 item-ownership-seed); **283 verified
 zero-claimant** at the final pre-push sweep (283–299 free). 243
 (g58+d50) and 244 (d53+f39+g48+g86) are live post-cutoff collisions
 for OTHER lanes — not f4's to adjudicate; noted for the round-3
-cascade.
+cascade. **SUPERSEDED by registry-150 §7.4:** 283 collides with f26's
+published §7.3 reservation (`68-findframe-census-addendum-7j.md` →
+283); the §7.4.3 f4 row assigns **305** (chain 240 → 281-raced →
+283-collides → 305).
 
 **SEAL-round re-verifications (this commit):**
 - 71→211 rename refs: `git grep -n 71-npc-gore-wave-e-claims HEAD` →

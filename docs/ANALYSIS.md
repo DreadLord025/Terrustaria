@@ -39271,11 +39271,12 @@ NOT RUN - no cargo/rustc/rustfmt/tests/dotnet/graphify invoked.
 
 ## The NPC dust lane FINAL (W4-f4 retire round, SEALED, 2026-11-21, code-only)
 
-research/283-npc-dust-final.md (SEALED; renumbered 240 → 283 per
-registry-150 §6.1 — g58's 240-happiness-final 12:16:37 wins the key,
+research/305-npc-dust-final.md (SEALED; renumbered 240 → 283 → 305 per
+registry-150 §7.4 — g58's 240-happiness-final 12:16:37 wins the key,
 f4's 15:00:53 push is last of three claimants; fresh 360-tip sweep,
 the interim 281 pick lost to d30's executed push and 282 is taken
-twice, 283 first-free; the wave-E doc renumbered 71 → 211, refs
+twice, 283 collides with f26's §7.3 reservation → §7.4.3 assigns 305;
+the wave-E doc renumbered 71 → 211, refs
 verified). Three closures:
 
 - **e2 keep-one CONFIRMED with one re-derivation**: the merger takes
