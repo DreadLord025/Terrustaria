@@ -5270,7 +5270,7 @@ mod message_family_tests {
             status: 2,
         })
         .encode();
-        let msg = S2c::decode(frame[0], &mut net::NetReader::new(&frame[1..]))
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..]))
             .expect("the 60 body decodes");
         if let NetRole::Client(client) = &client_app.net {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
@@ -5293,7 +5293,7 @@ mod message_family_tests {
             status: 1,
         })
         .encode();
-        let msg = S2c::decode(frame[0], &mut net::NetReader::new(&frame[1..])).unwrap();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
         if let NetRole::Client(client) = &client_app.net {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
         }
@@ -5320,7 +5320,7 @@ mod message_family_tests {
             status: 2,
         })
         .encode();
-        let msg = S2c::decode(frame[0], &mut net::NetReader::new(&frame[1..])).unwrap();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
         if let NetRole::Client(client) = &client_app.net {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
         }
@@ -5336,7 +5336,7 @@ mod message_family_tests {
             status: 2,
         })
         .encode();
-        let msg = S2c::decode(frame[0], &mut net::NetReader::new(&frame[1..])).unwrap();
+        let msg = S2c::decode(frame[2], &mut net::NetReader::new(&frame[3..])).unwrap();
         if let NetRole::Client(client) = &client_app.net {
             client_app.client_event(client, net::ClientEvent::Frame(msg));
         }
