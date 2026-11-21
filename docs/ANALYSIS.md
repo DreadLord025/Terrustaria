@@ -39595,3 +39595,50 @@ witnesses (`g48_19_trapdoor_open_toggle_replicates`,
 `g48_17_track_pound_edit_frames_and_replicates`,
 `g48_17_replace_tile_edit_swaps_and_replicates`,
 `g48_36_faeling_edge_fires_once_and_roster_gates`) WRITTEN NOT RUN.
+
+## NET-APPLY-1 final phase (W4-g48, 2026-11-21, code-only)
+
+The lane's closing round: the ids 1-40 FINAL census, the f11 fail-tail
+upstream publish, the g52c-139 receipt and the research/17 tail SEAL
+(the declaration lives in research/17 "NET-APPLY-1 declaration").
+
+- **The FINAL census re-probe.** 18 SetTime: the clock lane's c27 tip
+  `412b6bc0d` LANDED the reader (`id::SET_TIME`/`SetTime` +
+  the client apply, `NetMessage.cs:531-536`/`MessageBuffer.cs:1290-1298`,
+  sunModY/moonModY parked — no port field); c28 tip `6379f881b` is the
+  SendData-trigger census ONLY (its `net_player_sync.rs:24-25` assigns
+  the 18 body/apply to c27), so the internal-205 → 18 send switch is
+  still c28's pending cadence work. 39 ReleaseItemOwnership: FINALIZED
+  PARKED — the f21 codec is landed (`5274a097`), the FindOwner/22
+  re-announce arm needs the peer `CanPullItem`/`ItemSpace`/magnet/hopper
+  scan + reservation fields (`WorldItem.cs:188-285`) that no tip rows;
+  g49/g50/g51 grep-empty, the item lane owns it. The table counts
+  mechanically: 30 WIRED / 4 N/A / 4 DEAD / 2 PARKED = 40/40.
+- **The f11 fail-tile tail-fix publish (research/237).** The f11 tip
+  `84ed6342b` STILL carries the killing `kill_tile(world, i, j, true)`
+  in `frame_track`'s `(pound & flag4) && !mute` tail — inert for f11's
+  mute:true callers, live for the net reader's default mute:false. The
+  g48 no-op fix hunk is published verbatim for f11e/the merger, with a
+  new core witness
+  (`w4_g48_the_pound_fail_tail_never_removes_the_track` — the mask-18
+  isolated-rail pound cycle survives the fail tail). Number 237 per
+  the research/150 registry's free block (139 reserved for g52c).
+- **The g52c-139-master receipt.** The pushed g52 tip `590b93565`
+  (`task/W4-g52-net-relay-host`) carries NO research/139 master-final
+  table — the g52c sub-round is unpushed (the research/150 registry
+  records the 139 reservation + g89's rename to 145, `41dabfbc8`). The
+  receipt records what the pushed tip DOES carry: the relay census
+  deferring the client applies to g48-g51, the 34 destroy-arm
+  refinement (`e2a5968a4`: the `can_kill_tile` + `chest_holds_items`
+  gate, the store removal + local close, the cascade object drop —
+  g48's `f086297b` destroy arm has none of these; the merger takes
+  g52's), and the byte-verbatim codec keep-one instruction (the g48
+  `34` codec == g52's copy, re-verified struct + both arms; the `162`
+  codec lives on g52 + g51, NOT g48 — the merger keeps g51's
+  pending-damage apply with either copy).
+
+Verification: code-only — no cargo/rustc/tests/rustfmt/graphify invoked.
+The lane-tip probes ran over `git grep`/`git show` at the pinned hashes;
+the C# windows re-read (`MessageBuffer.cs:2232-2255`,
+`WorldItem.cs:188-285`, `WorldGen.cs:63700-63737`). 1 new core witness
+WRITTEN NOT RUN (the fail-tail pin); the lane total is 17 g48 witnesses.

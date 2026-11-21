@@ -519,3 +519,25 @@ DOES carry:
   and g51 (`51d01bc87` — the pending-damage queue apply); g48 has
   NEITHER (out of its 1-40 scope) — the merger keeps g51's apply arm
   with either codec copy.
+
+## NET-APPLY-1 declaration (W4-g48 FINAL, 2026-11-21) — research/17 tail SEALED
+
+**Declaration.** The g48 apply-arms lane 1 (`task/W4-g48-net-apply-arms-1`)
+is COMPLETE for its scope: the update-compatible ids 1-40 host/client
+apply arms are wired on this tip per the FINAL census above (30 WIRED /
+4 N/A / 4 DEAD / 2 PARKED-with-owner), the five cited skips closed
+(ANALYSIS "The g48 cited-skip closures"), the six codec branches merged
+in (d89 → d90 → d91 → d93 → d96 → d98, the keep-one/keep-both merge
+commits `a190d705e`/`178d14e17`/`e241c25bd`/`9c40ed2d1`/`8802562ce`/
+`648c7cdbd`), and 17 lane witnesses WRITTEN NOT RUN (16 `g48_*` loopback
++ 1 minecart fail-tail core pin, research/237). No compiler invoked
+anywhere in the lane (code-only mode); verification = whole-arm C#
+re-reads + byte-identity hash pins of the landed canonical modules.
+
+**SEAL.** This tail (the f21 cross-note table, the FINAL census verdict,
+the g52c receipt, this declaration) is SEALED for the g48 lane: later
+rounds edit the rows above only with a re-probe citation, never re-open
+the scope. The lane's remaining external dependencies are recorded, not
+owned: 18's send switch (c28), 39's FindOwner arm (the item lane), the 34
+destroy-arm refinement (g52), the 17 kinds 18/19 SetCurrentUser
+attribution (M7-WIRE-2), the 13 simulation tails (c27/d96).

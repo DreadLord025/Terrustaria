@@ -75,6 +75,11 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 237 | The f11 minecart fail-tile tail-fix upstream hunk (W4-g48 NET-APPLY-1: the kill_tile no_item→KillTile(fail) no-op fix published for f11e/the merger; the ids 1-40 FINAL census + the g52c-139 receipt + the tail SEAL live in research/17; code-only) | `237-f11-tail-fix.md` | ✅ |
+
+W4-g48 NET-APPLY-1 (2026-11-21): research/17's tail is SEALED — the ids
+1-40 apply-status table is FINAL (the declaration + the g52c-139 receipt
+live there); row 17 stays the netcode master file.
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
