@@ -5933,7 +5933,37 @@ mod message_family_tests {
 #[cfg(test)]
 mod g48_apply_tests {
     use super::*;
-    use crate::app::netglue::handshake_tests::{drive_to, in_world_pair};
+    use crate::app::netglue::handshake_tests::{apps, drive_to, in_world_pair};
+
+    /// A joined pair over a 64x64 world (the `big_world_pair` shape): the
+    /// 8x8 flow world's fluff-3 handler box (`in_world(x, y, 3)` → 3..5)
+    /// and the kill cascade's 5-tile edge guard leave no room for the
+    /// multi-tile fixtures, so the round-2 witnesses build their own.
+    fn roomy_pair() -> (App, App) {
+        let (mut host_app, mut client_app) = apps();
+        let server = net::Server::start(0, String::new()).unwrap();
+        let addr = server.addr().to_string();
+        host_app.net = NetRole::Host(server);
+        host_app.player_name = "host".into();
+        client_app.player_name = "client".into();
+        client_app.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        client_app.join_target = Some((addr, String::new()));
+        host_app.world = tr_core::World::new("flow".into(), 64, 64);
+        host_app.world.column_surface = vec![64; 64];
+        for x in 0..64 {
+            let i = host_app.world.index(x, 20);
+            host_app.world.tiles[i] = tr_core::Tile {
+                kind: 1,
+                ..Default::default()
+            };
+            host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            host_app.world.column_surface[x as usize] = 20;
+        }
+        drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
+        host_app.player = Some(player::Player::spawn(&host_app.world));
+        (host_app, client_app)
+    }
 
     /// `case 11` (`MessageBuffer.cs:895-899`): the client runs
     /// `WorldGen.SectionTileFrame` — the section's tiles re-roll their frame
@@ -6199,12 +6229,12 @@ mod g48_apply_tests {
     /// track (the W4-g48 no-op fix over f11's kill). WRITTEN NOT RUN.
     #[test]
     fn g48_17_track_pound_edit_frames_and_replicates() {
-        let (mut host_app, mut client_app) = in_world_pair();
-        // Three rails in a row at y=3: (5,3) front 1, (6,3) front 1 back
-        // −1 (the hit), (7,3) front 1 — the mask is 2|16 = 18.
+        let (mut host_app, mut client_app) = roomy_pair();
+        // Three rails in a row at y=10: (9,10) front 1, (10,10) front 1
+        // back −1 (the hit), (11,10) front 1 — the mask is 2|16 = 18.
         for app in [&mut host_app, &mut client_app] {
-            for x in 5..=7i32 {
-                let i = app.world.index(x, 3);
+            for x in 9..=11i32 {
+                let i = app.world.index(x, 10);
                 app.world.tiles[i] = tr_core::Tile {
                     kind: 314,
                     frame_x: 1,
@@ -6217,8 +6247,8 @@ mod g48_apply_tests {
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::TileEdit(net::TileEdit {
                 kind: 15,
-                x: 6,
-                y: 3,
+                x: 10,
+                y: 10,
                 value: 0,
                 style: 0,
             }));
@@ -6229,8 +6259,8 @@ mod g48_apply_tests {
             client_app.net_tick(1.0 / 60.0);
             host_app.poll_net();
             client_app.poll_net();
-            framed = host_app.world.tile_frame_x(6, 3) == 5
-                && client_app.world.tile_frame_x(6, 3) == 5;
+            framed = host_app.world.tile_frame_x(10, 10) == 5
+                && client_app.world.tile_frame_x(10, 10) == 5;
             if framed {
                 break;
             }
@@ -6240,7 +6270,7 @@ mod g48_apply_tests {
         for app in [&host_app, &client_app] {
             // The fail-tile tail (`flag4` true, mute false) did NOT kill
             // the track (`WorldGen.cs:63709-63737` — no removal).
-            let t = app.world.tile(6, 3).unwrap();
+            let t = app.world.tile(10, 10).unwrap();
             assert!(t.active() && t.kind == 314, "the track survives the fail tick");
             assert_eq!(t.frame_y, -1, "no back connection on the mask");
         }
@@ -6558,10 +6588,11 @@ mod g48_apply_tests {
     /// local drop (the `netMode == 1` gate). WRITTEN NOT RUN (code-only).
     #[test]
     fn g48_17_replace_tile_edit_swaps_and_replicates() {
-        let (mut host_app, mut client_app) = in_world_pair();
-        // A stone block at (6, 3) on both sides (above the dirt row).
+        let (mut host_app, mut client_app) = roomy_pair();
+        // A stone block at (10, 10) on both sides (in the air above the
+        // dirt row 20 — no neighbours to reframe into it).
         for app in [&mut host_app, &mut client_app] {
-            let i = app.world.index(6, 3);
+            let i = app.world.index(10, 10);
             app.world.tiles[i] = tr_core::Tile {
                 kind: 1,
                 ..Default::default()
@@ -6571,8 +6602,8 @@ mod g48_apply_tests {
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::TileEdit(net::TileEdit {
                 kind: 21, // ReplaceTile
-                x: 6,
-                y: 3,
+                x: 10,
+                y: 10,
                 value: 30, // wood — a valid solid target
                 style: 0,
             }));
@@ -6583,8 +6614,8 @@ mod g48_apply_tests {
             client_app.net_tick(1.0 / 60.0);
             host_app.poll_net();
             client_app.poll_net();
-            swapped = host_app.world.tile(6, 3).is_some_and(|t| t.active() && t.kind == 30)
-                && client_app.world.tile(6, 3).is_some_and(|t| t.active() && t.kind == 30);
+            swapped = host_app.world.tile(10, 10).is_some_and(|t| t.active() && t.kind == 30)
+                && client_app.world.tile(10, 10).is_some_and(|t| t.active() && t.kind == 30);
             if swapped {
                 break;
             }
@@ -6609,13 +6640,13 @@ mod g48_apply_tests {
     /// (`WorldGen.cs:51471-51485`). WRITTEN NOT RUN (code-only).
     #[test]
     fn g48_19_trapdoor_open_toggle_replicates() {
-        let (mut host_app, mut client_app) = in_world_pair();
-        // The closed trapdoor 2x2 at (3,3)..(4,4) (inside the fluff-3 box of
-        // the 8x8 flow world), overwriting the dirt row cells it covers.
+        let (mut host_app, mut client_app) = roomy_pair();
+        // The closed trapdoor 2x2 at (10,10)..(11,11), in the air above the
+        // dirt row 20 — the c42 closed_trapdoor fixture shape.
         for app in [&mut host_app, &mut client_app] {
             for col in 0..2i32 {
                 for row in 0..2i32 {
-                    let i = app.world.index(3 + col, 3 + row);
+                    let i = app.world.index(10 + col, 10 + row);
                     app.world.tiles[i] = tr_core::Tile {
                         kind: 386,
                         frame_x: (col * 18) as i16,
@@ -6629,8 +6660,8 @@ mod g48_apply_tests {
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::DoorToggle(net::DoorToggle {
                 action: 3, // ShiftTrapdoor(..., onlyCloseOrOpen: 0) — open
-                x: 3,
-                y: 3,
+                x: 10,
+                y: 10,
                 direction: 1,
             }));
         }
@@ -6640,8 +6671,8 @@ mod g48_apply_tests {
             client_app.net_tick(1.0 / 60.0);
             host_app.poll_net();
             client_app.poll_net();
-            opened = host_app.world.tile(3, 4).is_some_and(|t| t.kind == 387)
-                && client_app.world.tile(3, 4).is_some_and(|t| t.kind == 387);
+            opened = host_app.world.tile(10, 11).is_some_and(|t| t.kind == 387)
+                && client_app.world.tile(10, 11).is_some_and(|t| t.kind == 387);
             if opened {
                 break;
             }
@@ -6650,11 +6681,11 @@ mod g48_apply_tests {
         assert!(opened, "the trapdoor opened on both sides");
         for app in [&host_app, &client_app] {
             // The top row cleared (`Tile.ClearTile`, :51471-51478).
-            assert!(!app.world.tile_active(3, 3), "top-left cleared");
-            assert!(!app.world.tile_active(4, 3), "top-right cleared");
+            assert!(!app.world.tile_active(10, 10), "top-left cleared");
+            assert!(!app.world.tile_active(11, 10), "top-right cleared");
             // The bottom row is the open trapdoor (:51479-51485).
             for col in 0..2i32 {
-                let t = app.world.tile(3 + col, 4).unwrap();
+                let t = app.world.tile(10 + col, 11).unwrap();
                 assert_eq!(t.kind, 387);
                 assert_eq!((t.frame_x, t.frame_y), ((col * 18) as i16, 0));
             }
@@ -6668,20 +6699,20 @@ mod g48_apply_tests {
     /// relays; the receiving client shifts its own copy. The 5-tall column
     /// 388 → 389, the frames survive (`WorldGen.cs:51763-51766`); the hit
     /// cell is mid-column so the row walk's anchor adjustment is exercised.
-    /// The gate rows sit at y 6..10 — inside the handler's fluff-3 box AND
-    /// past the kill cascade's 5-tile edge guard (`kill.rs`'s
-    /// `square_tile_frame`, the C# `TileFrame` `:81330` margin), so the
-    /// validate's reframes cannot pop the column mid-test.
+    /// The gate rows sit at y 10..14 in the roomy 64x64 world — inside the
+    /// handler's fluff-3 box AND past the kill cascade's 5-tile edge guard
+    /// (`kill.rs`'s `square_tile_frame`, the C# `TileFrame` `:81330`
+    /// margin), so the validate's reframes cannot pop the column mid-test.
     /// WRITTEN NOT RUN (code-only).
     #[test]
     fn g48_19_tall_gate_open_toggle_replicates() {
-        let (mut host_app, mut client_app) = in_world_pair();
-        // The closed gate column x=3, rows 6..10 — the real placement grid
+        let (mut host_app, mut client_app) = roomy_pair();
+        // The closed gate column x=10, rows 10..14 — the real placement grid
         // (D_388 coordinate_heights [18,16,16,16,18] + 2px padding → frameY
         // 0/20/38/56/74, the c42 23411fa7 fixture derivation).
         for app in [&mut host_app, &mut client_app] {
             for (row, fy) in [(0i32, 0i16), (1, 20), (2, 38), (3, 56), (4, 74)] {
-                let i = app.world.index(3, 6 + row);
+                let i = app.world.index(10, 10 + row);
                 app.world.tiles[i] = tr_core::Tile {
                     kind: 388,
                     frame_x: 0,
@@ -6694,8 +6725,8 @@ mod g48_apply_tests {
         if let NetRole::Client(client) = &client_app.net {
             client.send(&C2s::DoorToggle(net::DoorToggle {
                 action: 4, // ShiftTallGate(closing: false, forced: true)
-                x: 3,
-                y: 7, // mid-column: frameY 20 → the walk steps one row up
+                x: 10,
+                y: 11, // mid-column: frameY 20 → the walk steps one row up
                 direction: 0,
             }));
         }
@@ -6705,8 +6736,8 @@ mod g48_apply_tests {
             client_app.net_tick(1.0 / 60.0);
             host_app.poll_net();
             client_app.poll_net();
-            opened = host_app.world.tile(3, 6).is_some_and(|t| t.kind == 389)
-                && client_app.world.tile(3, 6).is_some_and(|t| t.kind == 389);
+            opened = host_app.world.tile(10, 10).is_some_and(|t| t.kind == 389)
+                && client_app.world.tile(10, 10).is_some_and(|t| t.kind == 389);
             if opened {
                 break;
             }
@@ -6715,7 +6746,7 @@ mod g48_apply_tests {
         assert!(opened, "the tall gate opened on both sides");
         for app in [&host_app, &client_app] {
             for (row, fy) in [(0i32, 0i16), (1, 20), (2, 38), (3, 56), (4, 74)] {
-                let t = app.world.tile(3, 6 + row).unwrap();
+                let t = app.world.tile(10, 10 + row).unwrap();
                 assert_eq!(t.kind, 389, "row {row} opened");
                 assert_eq!((t.frame_x, t.frame_y), (0, fy), "frames survive");
             }
