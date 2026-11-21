@@ -110,6 +110,7 @@ pub struct HitEffectOutcomeD {
     /// position/velocity/ai draws and the `Start: whoAmI+1` scan ride the
     /// wiring wave's roster pass (the f10 `nebula_brain_spawn` precedent).
     /// The C# `netMode == 1` early-return (`:85685-85688`) drops in SP.
+    pub king_slime_spawns: Option<(f32, f32)>,
     /// The 632 Maggot Zombie's maggot-spawn seam (`NPC.cs:86996-87006`):
     /// `num550 = Next(2) + 2` spawns of NPC-606 at
     /// `(pos.X + width/2, pos.Y + Next(height/2) + 10)`, each with
