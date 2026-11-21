@@ -1,9 +1,10 @@
 # 69 — The 52 orphaned second-chain dust lights (W4-g13, flag-a closure): census, collector port, wiring, the d50 strip-contract (flag-b) and the decrement retire (flag-c)
 
-Status: DONE (W4-g13, code-only — `dust_lights_b.rs` ported + WIRED in
-`app/frame/draw.rs`; 23 witnesses WRITTEN NOT RUN; no cargo/rustc/rustfmt/
-tests/graphify invoked). Base `5ea44967` (research/68 sweep tip). Sibling
-probes (read-only): d50 `2e243a2d` (`dust_physics.rs`, 2154 ln), c19
+Status: DONE + FINAL (W4-g13, code-only — `dust_lights_b.rs` ported +
+WIRED in `app/frame/draw.rs`; 23 witnesses WRITTEN NOT RUN; no cargo/
+rustc/rustfmt/tests/graphify invoked). Base `5ea44967` (research/68
+sweep tip). Sibling probes (read-only): d50 `2e243a2d` (`dust_physics.rs`,
+2154 ln — re-verified UNCHANGED at the final phase, §6 receipt), c19
 `4eedcb32` (`proj_lights_a.rs`), e6 `c8b072b6` (`proj_ai_lights.rs`).
 
 research/68 §3 flag-a found the 52 second-chain `AddLight` arms
@@ -195,6 +196,36 @@ each replays a d50 `type_chain` mutation on a local copy. When d50 wires,
 the record carries the post-mutation value and the replay retires arm-by-arm
 (the cited d50 arm is the retire key). The 35 `alpha == 255` boundary (§2)
 resolves then too — d50's chain writes the post-kill scale.
+
+## 6. FINAL-phase receipt — the d50 strip-contract re-verified UNCHANGED
+
+Re-probe at the final phase (this branch `441f6120` base): origin
+`task/W4-d50-dust-type-table` tip is STILL `2e243a2d` (phase-2 docs,
+2026-11-20 21:10 +0200 — the same tip §1-5 probed; the d50 session has
+pushed NOTHING since). `git show` of its `dust_physics.rs` re-read:
+
+- `pub fn pre_move(d: &mut Dust, lava_bubbles: &mut i32)` at `:162` —
+  the type-35 arm `if d.dust_type == 35 { *lava_bubbles += 1; }` is
+  STILL PRESENT at `:170-172`. **No strip landed.**
+- The 299/300/301/305 shrink/lift (`:163-168`) is present, as §4 requires
+  it to stay.
+- d50's own integration witness helper `tick_physics` (`:1999-2020`)
+  drives `pre_move` per-slot with `pool.lava_bubbles` — i.e. the d50
+  lane's own test harness DOUBLE-COUNTS against the skeleton's landed
+  inline increment (`particles.rs:359-361`, re-read present at this
+  phase) exactly as §4 predicts.
+
+**Receipt verdict: research/69 §4 STANDS for the merger, verbatim.**
+KEEP the inline `update_dust` increment (canonical, landed + witnessed);
+STRIP the `pre_move` 35 arm at the d50 wiring wave (the 299-305
+shrink/lift stays and must be wired — the skeleton lacks it); the
+`lava_bubbles: &mut i32` parameter then goes unused and is d50's to
+drop. §5's decrement retire (206/174/230 + 309/261, and this module's
+replays arm-by-arm) is likewise UNCHANGED — `dust_lights.rs` on main
+still carries the compensating decrements (`:381` re-read
+`(d.scale - 0.1) * 0.4`), and `dust_physics` is still UNWIRED on main
+(no `dust_physics` reference in any live crate file — only this lane's
+doc comments cite it).
 
 ## Delivered this lane
 
