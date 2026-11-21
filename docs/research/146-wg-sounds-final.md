@@ -219,3 +219,83 @@ branches (§3 — the classic 24 + the single-text MenuAccept); both are
 variations 1 / pitch_variance 0 — the tracked path consumes no gameplay
 stream), so no RNG-stream drift. The census repairs (§2) and the doc
 contracts (§1/§4) are comment-only.
+
+---
+
+## §5 — RETIRE phase: FINAL-FINAL + the wg-sound-family declaration
+
+Four retire items, each verified against the co-lane's LATEST pushed tip
+(fetched fresh 2026-11-21):
+
+**1. This doc's renumber (107 → 146).** The f21b net-apply lane owns
+research/107. The free-number scan swept every local + origin ref's
+`docs/research/` tree AND every live Desktop worktree's on-disk research
+dir: **145 is double-claimed** (e19's `145-16box-cross-lane-repins.md`,
+local-only, + g89's `145-rod-teleport-union-composition.md`), **146 is
+free everywhere** (no ref carries 146+, no worktree file above 145).
+f21 latest `5274a097` carries no 107 file/INDEX row yet (its tail census
+lives in research/17) — the rename is the pre-emptive keep-one so f21b
+lands 107 unobstructed. All four in-repo refs re-pointed (title/banner,
+INDEX, ROADMAP ×2, the two code-comment cites). Commit `2678cfae`.
+
+**2. The quit-stop DUP cross-receipt (g73).** g73's latest tip is
+`bce01ece8` — its OWN retire adjudication over its closeout `4e7e3f58`.
+It rules **g24's `c3eccb77`+`7ca8b087` the SUPERSET** (the direct
+sink-kill body — g73's route-through-`set_liquid_loop` no-ops headless
+behind the cue/handle gates — + the `liquid_ambience_stops` counter +
+`stop_tracked_sounds` + the full `JustQuit` + the F3 row) and has ALREADY
+folded that shape onto its branch. **Keep-one: ONE
+`stop_waterfall_ambience` fn + ONE `:6704` call site; the merger keeps
+g73's folded copies, g24's identical hunks dedupe onto them**; g24's
+`SecretSeed.Enable` → `menu_accept_style` production caller stays on
+this branch (g73 carries the fn under a dead_code allow until the
+merge). g73 retired its closeout witness into g24's
+`w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain` on its side —
+no witness dup survives. The ONE correction g73 found here is adopted:
+the stale `s1_e_29_..._fifteen_rows` witness (pinned 15 after the
+doc-sweep's 15→16 row bump) renamed `..._sixteen_rows`, pins 16/16 + the
+`Quit (no save)` tail row. Verdict published: ANALYSIS lane-26 §6 +
+research/106 retire addendum. Commit `9fb7137d`.
+
+**3. The b3 phase-2 monitor.** `origin/task/W4-b3-npc-ai-town-wire` tip
+UNCHANGED at `96a5d88f` (2026-11-20 21:44, phase 1 only).
+`npc.rs::ai_007_town_family` still passes `let mut doors =
+NoOpTownDoors;` — **the adoption contract (§1) is UNCONSUMED**; nothing
+to verify on the b3 side, the contract + its dyn witness
+(`w4_g24_the_b3_adoption_contract_is_dyn_compatible`) stand verbatim.
+`AppTownDoors` remains the keep-one survivor.
+
+**4. FINAL-FINAL census verdict + the family declaration (below).**
+
+### The wg-sound-family declaration
+
+The WorldGen/menu/quit sound surface is CLOSED across the family lanes;
+this branch is DONE and carries no open audio work:
+
+| lane | tip (read) | scope | g24 overlap verdict |
+| --- | --- | --- | --- |
+| g21 sounds-main-1 | `7da02f43` | Main.cs sound windows A | none — disjoint windows |
+| g22 sounds-main-2 | `250488c3` | Main.cs legacy menus `:48489-49727` | none — the g23 union owns the legacy queues (§3) |
+| g23 sounds-main-3 | `945391e3` | Main.cs legacy menus `:49734-51052` + submit/cancel, `Menu::pending_cue` union | ZERO queue overlap with the 888 seed screens (§3) |
+| g25 sounds-item-sites | `67d8a698` | Item.cs UseSound census (ZERO direct PlaySound sites) | none — its `saveglue` region is the pre-wave heritage, no quit-stop copy |
+| g73 waterfall-draw | `bce01ece8` | waterfall/lavafall draw + the ambience consumers | the quit-stop DUP — RESOLVED, item 2 above |
+| b3 npc-ai-town-wire | `96a5d88f` | aiStyle-7 phase 1 | the `AppTownDoors` seam — contract published, adoption pending b3 phase 2 (item 3) |
+| d85 ui-screens-2 / f23 ui-elements-4 | `1d7d39a0` / `adf5c908` | the 888 screens / gen icons | §4 — zero sound overlap; the row-toggle adoption contract (§3) awaits their merger |
+
+**g24's own ledger**: 79/79 WorldGen.cs play sites claimed (§2), the
+quit paths complete (`save_and_quit` + `just_quit` + the F3 row), the
+secret-seed surface censused with the two remainders ported (§3), the
+gen-progress surface owes nothing (§4). **22 `w4_g24_*` witnesses** on
+this branch (15 wave + 5 doc-sweep + 2 FINAL), ALL WRITTEN NOT RUN
+(code-only); one edited this phase (the sixteen-rows fix). The recorded
+cross-lane gaps are OWNED elsewhere, not owed here: the g22b-class hover
+12s (§3/§4), the loadout-swap 12 (the unported loadout system), the d85
+row-toggle MenuAccept (adoption contract published), the b3 doors
+binding (adoption contract published).
+
+**Retire verdict: WG-SOUND FINAL-FINAL — DONE.** No unclaimed site, no
+dup left unadjudicated, no contract left unpublished. The merger's
+keep-one instructions live in ANALYSIS lane-26 §5 (c14), §6 (g73 quit
+stop) and this doc §1 (b3) / §3 (g23/d85). Retire commits: `2678cfae`
+(renumber), `9fb7137d` (quit-stop cross-receipt + witness fix), this
+section's commit (b3 monitor + FINAL-FINAL + declaration).
