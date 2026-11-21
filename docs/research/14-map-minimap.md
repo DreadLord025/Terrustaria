@@ -533,3 +533,36 @@ geometry + hover flip), 3 `app::clicks::w4_e18_fullmap_close_tests` (press close
 outside-box no-op + inclusive corner, map-shut no-op), 1
 `ui::cursor::tests::w4_e18_thick_cursor_gate_and_bonus` (the ThickMouse packed-colour
 gate + the (2,2) bonus).
+
+## W4-e18 → union fold status (2026-11-21, code-only)
+
+**For the e18 final-sweep (e18d) still working on
+`task/W4-e18-minimap-reveal-queue`:** the dup-reconcile union lives on
+`task/W4-f46-minimap-reveal-2` (research/84 EXECUTED) and is the branch the
+merger keeps — the separate e18/f46 versions are dropped. As of this note the
+union has folded e18 through tip `670c948d` (close button `ebd54f66`, thick
+cursor `254f309b`, census close `670c948d`, cherry-picked per-hunk as
+`c06bc2fe`/`6dea2b66`/`0fc306bc`).
+
+Contract for any further e18 commits (zoom-keys/pan-inertia etc.):
+
+- Keep committing on the e18 branch as usual; the union owner re-folds each
+  new commit past `670c948d` (fetch tip → cherry-pick → per-hunk resolve).
+- Target the UNION's seams, not the old e18 driver shape:
+  - the reveal driver is `frame/world.rs::map_reveal_draw` (field-borrow
+    associated fn) called from `frame/draw.rs` on the DoDraw half ahead of
+    `WorldMap::prepare` — NOT `map_reveal_driver` on the update half;
+  - the sweep/consume split: `map_reveal_sweep_core`/`_fields` (GPU-free
+    state) + `draw_to_map_section` paint, `map_reveal_consume_fields`
+    with the paused `ChangesQueued` else-arm;
+  - the click cluster order: `handle_fullmap_ping` → `handle_fullmap_close`
+    → `handle_bestiary_clicks` inside `in_world_click_cluster`;
+  - the fullscreen draw tail order: hover text → close button → thick
+    cursor (`draw_thick` + `draw_with_bonus`) → player head icon;
+  - `/map` routes through `WorldMap::unlock_map(&mut i32, bool)`
+    (`App.debug_unlock_map`), not inline option arming.
+- Zoom-key/pan additions belong with the existing `map_scale_clamp`/
+  `map_key_scale` seams and the fullscreen drag block; avoid re-adding an
+  update-half reveal driver call — the S1-B-8 orchestrator pin
+  (`frame.rs::s1_b_8_phase2_the_world_branch_calls_the_named_phase_fns`)
+  walks the frozen phase list and the driver is deliberately absent from it.

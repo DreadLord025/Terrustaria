@@ -1,10 +1,12 @@
 # 84 — Map reveal dup-reconcile: W4-e18 vs W4-f46 (2026-11-21, code-only)
 
 > **STATUS: EXECUTED (2026-11-21, salvage-exec on `task/W4-f46-minimap-reveal-2`).**
-> The §8 union landed on this branch: e18 `c6cf86bf`'s skeleton adopted
-> verbatim (base commit `0bc3414d`), then the six f46 salvages + the
-> `sections_left()` accessor committed per piece. The merger keeps THIS
-> branch's union and drops the separate e18/f46 versions. Execution notes:
+> The §8 union landed on this branch: e18's skeleton adopted verbatim
+> (base commit `0bc3414d`), then the six f46 salvages + the
+> `sections_left()` accessor committed per piece. **Fold phase (same day):
+> e18's three post-`c6cf86bf` commits folded per-hunk — the union's e18
+> base is now `670c948d` (e18-latest tip).** The merger keeps THIS branch's
+> union ONLY and drops the separate e18/f46 versions. Execution notes:
 >
 > - The driver entry is `frame/world.rs::map_reveal_draw` — a field-borrow
 >   associated fn (the draw region's 55-field destructure holds
@@ -32,6 +34,41 @@
 >   adoption; ONE new `draw_to_map_section` row added (§8).
 > - Compile-by-inspection only (no cargo/tests/graphify, as tasked); all
 >   witnesses written not run.
+>
+> **Fold phase notes (e18 advanced past the union base):**
+>
+> - Folded `ebd54f66` (fullscreen close button: `ui/chrome.rs` geometry/
+>   hover/draw + `clicks.rs::handle_fullmap_close` wired after
+>   `handle_fullmap_ping` in `in_world_click_cluster` — the `:55486` <
+>   `:56024` C# order), `254f309b` (vanilla thick cursor:
+>   `ui/cursor.rs::draw_thick`/`thick_cursor_bonus`/`draw_with_bonus`,
+>   `Cursor_11` packed, the fullscreen draw tail after the close button,
+>   the `frame.rs` OS-pointer gate now hides over the map) and `670c948d`
+>   (census close: 2 anchor rows + PORT_MAP row + ANALYSIS note +
+>   research/14 census section). The ANALYSIS conflict (both notes append
+>   after the same paragraph) resolved by keeping both; all other files
+>   auto-merged — the folded code is byte-identical to e18's tip in
+>   `chrome.rs`/`cursor.rs`/`assets.rs`/`frame.rs`/`clicks.rs`.
+> - Composition verified by inspection: f46's `map_reveal_draw` call sits
+>   at `frame/draw.rs` ahead of `WorldMap::prepare` (before the fullscreen
+>   draw branch); e18's close-button + cursor tail sits inside the
+>   `map.open` draw branch after the hover text — no shared lines, no
+>   double-draw (the HUD cursor `ui::draw_hud` is gated off by
+>   `!fullscreen_map`, `draw.rs:1579`; the map tail is the only cursor
+>   draw while the map is open). The S1-B-8 orchestrator pin is untouched:
+>   `handle_fullmap_close` lives inside `in_world_click_cluster`, not the
+>   pinned phase list.
+> - **e18d contract (final-sweep still ACTIVE on
+>   `task/W4-e18-minimap-reveal-queue` at fold time, tip `670c948d`):** any
+>   further e18 commits (zoom-keys/pan-inertia etc.) must be folded into
+>   THIS branch before the merger takes it. Fold-status note published in
+>   `docs/research/14-map-minimap.md` "W4-e18 → union fold status" — e18's
+>   next commits target the union's seams (`map_reveal_draw` field-borrow
+>   driver on the draw half, `map.rs` statics/queues skeleton,
+>   `handle_fullmap_close` after the ping in the click cluster, the
+>   close-button/cursor tail inside the fullscreen draw branch). Re-fold
+>   recipe: fetch the e18 tip, cherry-pick each commit past `670c948d`,
+>   resolve per-hunk keeping the f46 driver placement + consume structure.
 
 > Reconcile-phase report. NO code changed on either branch by this pass — this
 > document is the only artifact. Inputs read directly from git objects:
