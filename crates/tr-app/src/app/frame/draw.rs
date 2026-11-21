@@ -2029,6 +2029,28 @@ impl App {
                                     screen,
                                     close_hovered,
                                 );
+                                // `Main.cs:56037-56040`: the vanilla cursor
+                                // over the fullscreen map — `DrawCursor(
+                                // DrawThickCursor())` with the thick border
+                                // ring (`Main.cs:48064-48134`) and the
+                                // `(2, 2)` bonus. `!Main.gameMenu &&
+                                // !Main.InGameUI.IsVisible` — the port draws
+                                // no in-game UI over the map (the options
+                                // window rides the inventory, which is shut).
+                                let bonus = crate::ui::cursor::draw_thick(
+                                    renderer,
+                                    lookups,
+                                    &self.cursor,
+                                    self.mouse_pos,
+                                    settings.mouse_border_color,
+                                );
+                                crate::ui::cursor::draw_with_bonus(
+                                    renderer,
+                                    lookups,
+                                    &self.cursor,
+                                    self.mouse_pos,
+                                    bonus,
+                                );
                                 // `Main.cs:55931-55954`: the local player's head icon,
                                 // drawn after the map tiles (`Main.cs:55609`).
                                 if let Some(p) = player.as_ref() {
