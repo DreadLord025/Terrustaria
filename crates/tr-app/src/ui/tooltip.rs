@@ -237,6 +237,12 @@ pub struct TooltipContext<'a> {
     /// so the draw sites leave this `None` until the persistent recipe-list
     /// port lands (docs/ANALYSIS.md).
     pub crafting_missing_reason: Option<String>,
+    /// W4-f28 — the shop price row's hover inputs
+    /// (`Main.MouseText_DrawItemTooltip_AddShopLines`, `Main.cs:20448-20555`):
+    /// `Some` while a shop is open (`Main.npcShop > 0`) — the row appends
+    /// after `GetLinesInfo` on EVERY hover, the shop grid's context-15
+    /// stamp (`buy = true`) included. `None` = no shop, no row.
+    pub shop_lines: Option<crate::shop::ShopLineContext>,
 }
 
 impl Default for TooltipContext<'_> {
@@ -253,6 +259,7 @@ impl Default for TooltipContext<'_> {
             held_kind: 0,
             open_chest: -1,
             crafting_missing_reason: None,
+            shop_lines: None,
         }
     }
 }
@@ -300,16 +307,22 @@ pub fn item_tooltip_lines(
     d: &crate::itemdata::ItemDef,
     ctx: TooltipContext<'_>,
 ) -> Vec<(String, [f32; 4])> {
-    // The hovered instance's stats: the prefix applied over the defaults
-    // (`Item.Prefix`, `Item.cs:576-586`) — the C#'s HoverItem IS the prefixed
-    // instance; the unregistered kinds fall back to the bare def.
-    let stats = tooltip_lines2::hover_stats(kind, ctx.prefix);
-    let damage = stats.map_or(d.damage, |s| s.damage);
-    let crit = stats.map_or(d.crit, |s| s.crit);
-    let use_animation = stats.map_or(d.use_animation as i32, |s| s.use_animation);
-    let mana = stats.map_or(d.mana, |s| s.mana);
-    let knock_back = stats.map_or(d.knock_back, |s| s.knock_back);
-    let rare = stats.map_or(d.rare, |s| s.rare);
+    // The hovered instance's stats: the prefix applied over the CALLER's
+    // row (`Item.Prefix`, `Item.cs:576-586`, through `prefixed_stats_of` —
+    // the e16 caller seam, research/128 §3): the C#'s HoverItem IS the
+    // prefixed instance, so a witness-overridden def reaches the math.
+    let stats = tooltip_lines2::hover_stats(d, ctx.prefix);
+    let damage = stats.damage;
+    let crit = stats.crit;
+    let use_animation = stats.use_animation;
+    let mana = stats.mana;
+    // `Main.cs:20333` — `oldKB` captured BEFORE the glove/buff/shroomite
+    // scales mutate `hoverItem.knockBack` (`:20334-20350`): the prefix
+    // comparison (`:21124`) reads the PREFIX-only knockback while the word
+    // tier reads the scaled one (research/128 §5-e16.3).
+    let old_kb = stats.knock_back;
+    let knock_back = stats.knock_back;
+    let rare = stats.rare;
     let mut lines: Vec<(String, [f32; 4])> = vec![(
         hover_name(kind, ctx.prefix, ctx.stack),
         tooltip_lines2::tooltip_name_color(rare, d.expert, &ctx.world),
@@ -568,15 +581,28 @@ pub fn item_tooltip_lines(
         kind,
         d,
         ctx.prefix,
+        old_kb,
         ctx.flags,
         &ctx.world,
         ctx.player,
         &mut lines,
     );
-    // `Main.cs:20361-20366` — the row order after GetLinesInfo: the shop
-    // lines (`AddShopLines`, appended below when the shop-hover context is
-    // present), THEN `NewCraftingUI.AddTooltipLines` — the crafting row is
-    // the LAST row.
+    // `Main.cs:20361-20362` — `AddShopLines` runs right after GetLinesInfo:
+    // the price row on every hover while a shop is open (the context-15
+    // shop-grid stamp prints the BUY row, every other hover the SELL row).
+    // The hover's CURRENT value is the prefixed instance's (`Item.Prefix`'s
+    // ×value², `Item.cs:614-615`) — the caller's context carries the
+    // shopCustomPrice override and the session inputs.
+    if let Some(mut shop_ctx) = ctx.shop_lines {
+        shop_ctx.instance_value = stats.value;
+        if let Some(row) =
+            crate::shop::add_shop_lines(kind, ctx.stack, ctx.world.npc_shop, shop_ctx)
+        {
+            lines.push((row.text, row.color));
+        }
+    }
+    // `Main.cs:20363-20366` — THEN `NewCraftingUI.AddTooltipLines`: the
+    // crafting row is the LAST row.
     crate::craft::add_crafting_tooltip_lines(
         ctx.crafting_missing_reason.as_deref(),
         kind == 0,

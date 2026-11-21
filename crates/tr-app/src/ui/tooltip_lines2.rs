@@ -78,7 +78,7 @@ impl TooltipWorld {
 /// The hovered INSTANCE's state beyond the kind defaults — the flags
 /// `ItemSlot.MouseHover` stamps (`ItemSlot.cs:3183-3198`) and the inventory
 /// favourite flag. The kind defaults ride the `ItemDef`; a prefixed hover's
-/// stat deltas ride `prefix::prefixed_stats` through [`hover_stats`].
+/// stat deltas ride `prefix::prefixed_stats_of` through [`hover_stats`].
 #[derive(Clone, Copy, Debug, Default)]
 pub struct HoverFlags {
     /// `Item.favorited` (`Main.cs:20655`).
@@ -327,12 +327,13 @@ pub fn visual_crit_chance(
     crit
 }
 
-/// The hovered instance's effective stats — the kind defaults with the
-/// prefix applied (`Item.Prefix`, `Item.cs:576-586`, through
-/// `prefix::prefixed_stats`). The tooltip's stat rows read these, not the
-/// bare defaults (the C#'s `HoverItem` is the prefixed instance).
-pub fn hover_stats(kind: u16, prefix: u16) -> Option<crate::prefix::PrefixedStats> {
-    crate::prefix::prefixed_stats(kind, prefix)
+/// The hovered instance's effective stats — the prefix applied over the
+/// CALLER's row (`Item.Prefix`, `Item.cs:576-586`, through
+/// `prefix::prefixed_stats_of` — the e16 caller seam, research/128 §3:
+/// the C#'s `HoverItem` IS the hovered instance, so a witness-overridden
+/// row must reach the prefixed math; the registry re-read cannot see it).
+pub fn hover_stats(d: &ItemDef, prefix: u16) -> crate::prefix::PrefixedStats {
+    crate::prefix::prefixed_stats_of(d, prefix)
 }
 
 /// The name row's colour (`Main.cs:20328-20332` + `GetItemNameColor`
@@ -377,13 +378,17 @@ pub fn advance_master_color(color: f32, dir: i32) -> (f32, i32) {
 /// `Main.cs:20937`, and the first half calls the gate helpers below for the
 /// rows it already emits.
 ///
-/// `lines` arrives holding the first half's rows; `yoyo_logo` returns the
-/// row index the OneDropLogo draws over (`Main.cs:21019`'s `yoyoLogo`), or
-/// `None`.
+/// `lines` arrives holding the first half's rows; `old_kb` is the instance
+/// knockback the first half captured at `Main.cs:20333` BEFORE the
+/// glove/buff/shroomite scales (research/128 §5-e16.3); `yoyo_logo` returns
+/// the row index the OneDropLogo draws over (`Main.cs:21019`'s `yoyoLogo`),
+/// or `None`.
+#[allow(clippy::too_many_arguments)]
 pub fn append_second_half(
     kind: u16,
     d: &ItemDef,
     prefix: u16,
+    old_kb: f32,
     flags: HoverFlags,
     world: &TooltipWorld,
     player: Option<&crate::player::Player>,
@@ -492,13 +497,13 @@ pub fn append_second_half(
     // skips the clamp for rare ≤ −11 (`Item.cs:603`), so a prefix on a
     // master item shifts −13 by ±1/±2 and the row then drops — the
     // instance compare keeps that quirk.
-    let instance_rare = hover_stats(kind, prefix).map_or(d.rare, |s| s.rare);
+    let instance_rare = hover_stats(d, prefix).rare;
     if instance_rare == -13 {
         lines.push((crate::lang::game_ui("Master"), white));
     }
     // `:21032-21266` — the prefix comparison rows.
     if prefix > 0 {
-        append_prefix_rows(kind, d, prefix, lines);
+        append_prefix_rows(kind, d, prefix, old_kb, lines);
     }
     // `:21267-21311` — the armor set-bonus row (the wave-D table). The
     // unworn arm reads no player (`array[0].GetTooltipForSinglePiece`);
@@ -558,16 +563,18 @@ pub fn append_second_half(
 /// `:21093`). The knockback row compares `oldKB` — the instance knockback
 /// captured at `:20333` BEFORE the draw pass's glove/buff/shroomite scaling
 /// — against the defaults. The fixed rows for prefixes 62-80 close the
-/// block (`:21152-21265`).
+/// block (`:21152-21265`). `old_kb` arrives captured by the FIRST half at
+/// `:20333` — the caller-seam discipline (research/128 §5-e16.3): the
+/// prefix application runs over the caller's row, so a witness-overridden
+/// knockback reaches BOTH the delta row and the word tier.
 fn append_prefix_rows(
     kind: u16,
     d: &ItemDef,
     prefix: u16,
+    old_kb: f32,
     lines: &mut Vec<(String, [f32; 4])>,
 ) {
-    let Some(stats) = hover_stats(kind, prefix) else {
-        return;
-    };
+    let stats = hover_stats(d, prefix);
     // `Main.tooltipPrefixComparisonItem` — a fresh SetDefaults item of the
     // same type (`:21034-21039`); the port's registry row IS that item.
     let round_pct = |delta: f64, base: f64| -> f64 {
@@ -637,8 +644,7 @@ fn append_prefix_rows(
     // CAPTURED at `:20333` BEFORE `MouseText_DrawItemTooltip`'s glove/buff/
     // shroomite scaling (`:20334-20350` mutates hoverItem.knockBack in place,
     // but the captured float rides the ref parameter) — i.e. the prefixed
-    // instance's own knockback, unscaled.
-    let old_kb = stats.knock_back;
+    // instance's own knockback, unscaled. The first half passes it in.
     if d.knock_back != old_kb {
         let num13 = round_pct((old_kb - d.knock_back) as f64, d.knock_back as f64);
         lines.push((
@@ -1111,7 +1117,7 @@ mod w4_f28_tests {
         assert!(idx > 1);
         let mut lines = Vec::new();
         let logo = append_second_half(
-            3262, def(3262), 0, HoverFlags::default(), &TooltipWorld::STOCK, None, &mut lines,
+            3262, def(3262), 0, def(3262).knock_back, HoverFlags::default(), &TooltipWorld::STOCK, None, &mut lines,
         );
         assert_eq!(logo, Some(lines.len() - 1));
         let rows = item_tooltip_lines(1131, def(1131), TooltipContext::default());
@@ -1419,5 +1425,56 @@ mod w4_f28_tests {
         assert!(t.contains(&"Requires bait to catch fish"), "{t:?}");
         // The wrong key must not be read anywhere on this path.
         assert!(!t.contains(&"RecentFishingPower"));
+    }
+
+    /// W4-f28 salvage (research/128 §3, e16
+    /// `w4_e16_the_quiver_knockback_truncates_before_the_word_tier`):
+    /// the stat application runs over the CALLER's row — a witness-
+    /// overridden knockback 9.5 with the quiver's ×1.1 truncates to
+    /// (int)10.45 = 10 → the <=11 word tip[21]. The registry re-read
+    /// (`prefixed_stats(kind, …)`) could not see the override.
+    #[test]
+    fn w4_f28_the_caller_row_seam_lets_an_overridden_knockback_reach_the_word_tier() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_lang();
+        let mut bow = *def(1);
+        bow.knock_back = 9.5;
+        bow.use_ammo = crate::ammo::AMMO_ARROW;
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        p.magic_quiver = true;
+        let ctx = TooltipContext { player: Some(&p), ..Default::default() };
+        let rows = item_tooltip_lines(1, &bow, ctx);
+        let t = texts(&rows);
+        assert!(t.contains(&crate::lang::tip(21).as_str()), "{t:?}");
+        assert!(!t.contains(&crate::lang::tip(22).as_str()));
+        // The seam itself: the overridden row reaches prefixed_stats_of.
+        let ps = hover_stats(&bow, 0);
+        assert_eq!(ps.knock_back, 9.5);
+    }
+
+    /// W4-f28 salvage (research/128 §5-e16.3, e16
+    /// `w4_e16_the_knockback_delta_reads_the_prefix_only_oldkb`): oldKB is
+    /// captured BEFORE the glove scale (`Main.cs:20333`) — the Legendary
+    /// Iron Broadsword's knockback DELTA row stays prefix-only (+15%) even
+    /// with the glove, while the WORD tier reads the glove-scaled
+    /// 5.5 × 1.15 × 2 = 12.65 → the insane word tip[22].
+    #[test]
+    fn w4_f28_the_knockback_delta_reads_the_prefix_only_oldkb() {
+        let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_lang();
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        p.kb_glove = true;
+        let ctx = TooltipContext { prefix: 81, player: Some(&p), ..Default::default() };
+        let rows = item_tooltip_lines(4, def(4), ctx);
+        let t = texts(&rows);
+        // oldKB = 5.5 * 1.15 = 6.325; (6.325 - 5.5) / 5.5 * 100 = 15.
+        let kb_delta = format!("+15{}", crate::lang::tip(45));
+        assert!(t.contains(&kb_delta.as_str()), "{t:?}");
+        let glove_leak = format!("+130{}", crate::lang::tip(45));
+        assert!(!t.contains(&glove_leak.as_str()), "the glove scale must not leak: {t:?}");
+        // The word tier reads the glove-scaled 12.65 → tip[22].
+        assert!(t.contains(&crate::lang::tip(22).as_str()), "{t:?}");
     }
 }
