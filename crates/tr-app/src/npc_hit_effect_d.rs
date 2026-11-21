@@ -1101,6 +1101,75 @@ fn nutcracker_death(
     gore.new_gore(rng, world, pos, vel, 532, 1.0); // :86330
 }
 
+/// The 351 Krampus death (`NPC.cs:86332-86351`, sites 132-136): the 10x
+/// dust-5 burst, then the five gores 538/539/540/541/542 at position,
+/// scale 1f.
+fn krampus_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86342-86345` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 538, 1.0); // :86346
+    gore.new_gore(rng, world, pos, vel, 539, 1.0); // :86347
+    gore.new_gore(rng, world, pos, vel, 540, 1.0); // :86348
+    gore.new_gore(rng, world, pos, vel, 541, 1.0); // :86349
+    gore.new_gore(rng, world, pos, vel, 542, 1.0); // :86350
+}
+
+/// The 350 Elf Archer death (`NPC.cs:86352-86370`, sites 137-140): the
+/// 10x dust-5 burst, then the four gores 533/534/535/536 at position,
+/// scale 1f.
+fn elf_archer_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86362-86365` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 533, 1.0); // :86366
+    gore.new_gore(rng, world, pos, vel, 534, 1.0); // :86367
+    gore.new_gore(rng, world, pos, vel, 535, 1.0); // :86368
+    gore.new_gore(rng, world, pos, vel, 536, 1.0); // :86369
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1251,6 +1320,14 @@ pub fn hit_effect_d(
     // `:86312-86331` — the 348/349 Nutcracker arm (sites 127-131).
     else if npc_type == 348 || npc_type == 349 {
         nutcracker_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86332-86351` — the 351 Krampus arm (sites 132-136).
+    else if npc_type == 351 {
+        krampus_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86352-86370` — the 350 Elf Archer arm (sites 137-140).
+    else if npc_type == 350 {
+        elf_archer_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2261,6 +2338,39 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "nutcracker {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86346-86350` — the Krampus five 538-542; `:86366-86369` —
+    /// the Elf Archer four 533-536; both after the 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_krampus_and_elf_archer_spawn_the_frostmoon_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 40.0);
+        for (kind, want) in [
+            (351, vec![538, 539, 540, 541, 542]),
+            (350, vec![533, 534, 535, 536]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(157);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "frostmoon {kind}");
+            let mut twin = UnifiedRandom::new(157);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 30, 40);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "frostmoon {kind} mirrors the C# draws");
         }
     }
 }
