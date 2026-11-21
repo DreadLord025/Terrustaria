@@ -63,6 +63,8 @@
 //! | 222-226 | `:83156-83160` | the 429 Nebula Predictor death (5 gores, projectile-578 spawn seam) |
 //! | 227-233 | `:83238-83244` | the 425 Nebula Beast death (7 gores, gated type-229 dust) |
 //! | 234-235 | `:83270-83271` | the 428 Nebula Brain death (2 gores, vel x0.8, Next(2) type-229/240 dust) |
+//! | 236-240 | `:83305-83309` | the 424 Vortex Soldier death (5 gores, gated type-242 dust) |
+//! | 241-243 | `:83340-83342` | the 423 Vortex Hornet death (3 gores at Center, vel x0.8/x0.9) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -1328,6 +1330,90 @@ fn nebula_brain_death(
     gore.new_gore(rng, world, pos, vel, 807, 1.0); // :83271
 }
 
+/// The Vortex death dust burst shared by the 424/423/421/420 arms
+/// (`NPC.cs:83293-83304` et al.): `count` iterations, each a type-249 dust
+/// then a type-242 dust (noGravity, scale 1.5, fadeIn 1, velocity ×3). When
+/// `gate` is `Some(n)` the type-242 spawn is `Next(n) == 0`-gated (the draw
+/// still fires); when `None` it is ungated. The 424 arm gates `Next(3)`;
+/// the 423/421/420 death halves are ungated.
+fn vortex_death_dust(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    count: i32,
+    gate: Option<i32>,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..count {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 249, hit_direction, -1.0, 0,
+            Color::default(), 1.0,
+        );
+        let take = match gate {
+            Some(n) => rng.next_max(n) == 0,
+            None => true,
+        };
+        if take {
+            let idx = dust.new_dust(
+                rng, dust_ctx, world, pos, w as i32, h as i32, 242, 0.0, 0.0, 0,
+                Color::default(), 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.no_gravity = true;
+            d.scale = 1.5;
+            d.fade_in = 1.0;
+            d.velocity *= 3.0;
+        }
+    }
+}
+
+/// The 424 Vortex Soldier death (`NPC.cs:83293-83309`, sites 236-240): the
+/// 20-iteration type-249 + `Next(3) == 0`-gated type-242 burst, then the 5
+/// gores 793/794/794/795/795 at the +0/+20/+20/+34/+34 Y ladder.
+fn vortex_soldier_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    vortex_death_dust(npc, dust, dust_ctx, rng, world, hit_direction, 20, Some(3));
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 793, s); // :83305
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 794, s); // :83306
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 794, s); // :83307
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 795, s); // :83308
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 795, s); // :83309
+}
+
+/// The 423 Vortex Hornet death (`NPC.cs:83331-83342`, sites 241-243): the
+/// 20-iteration UNGATED type-249 + type-242 burst, then the 3 gores
+/// 790/791/792 at Center with velocity ×0.8/×0.8/×0.9. Scale defaults to 1.
+fn vortex_hornet_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    vortex_death_dust(npc, dust, dust_ctx, rng, world, hit_direction, 20, None);
+    let c = center(npc);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, c, vel * 0.8, 790, 1.0); // :83340
+    gore.new_gore(rng, world, c, vel * 0.8, 791, 1.0); // :83341
+    gore.new_gore(rng, world, c, vel * 0.9, 792, 1.0); // :83342
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1484,6 +1570,14 @@ pub fn hit_effect_c(
     // `:83247-83273` — the 428 Nebula Brain arm (sites 234-235).
     if npc_type == 428 && npc.hp <= 0 {
         nebula_brain_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83274-83311` — the 424 Vortex Soldier arm (sites 236-240).
+    if npc_type == 424 && npc.hp <= 0 {
+        vortex_soldier_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83312-83344` — the 423 Vortex Hornet arm (sites 241-243).
+    if npc_type == 423 && npc.hp <= 0 {
+        vortex_hornet_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -2368,6 +2462,67 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the brain death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:83305-83309` — the Vortex Soldier death: the 5 gores
+    /// 793/794/794/795/795 at +0/+20/+34 Y, after the 20x(type-249 +
+    /// Next(3)-gated type-242) burst.
+    #[test]
+    fn w4_f10_the_vortex_soldier_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 44.0, 52.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(149);
+        vortex_soldier_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![793, 794, 794, 795, 795]);
+        assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+        assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:83340-83342` — the Vortex Hornet death: the 3 gores
+    /// 790/791/792 at Center, velocity x0.8/x0.8/x0.9, after the 20x
+    /// UNGATED (type-249 + type-242) burst. The twin replay pins the
+    /// ungated census (no gate draw).
+    #[test]
+    fn w4_f10_the_vortex_hornet_death_is_ungated() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 38.0, 38.0);
+        n.vx = 2.0;
+        n.vy = 1.0;
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(151);
+        vortex_hornet_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![790, 791, 792]);
+        // Center = (119,119).
+        for i in 0..3 {
+            assert_eq!(gore.slot(i).position, Vec2::new(119.0, 119.0));
+        }
+        // The twin: 20 x (type-249 census + type-242 census + its tweak
+        // draw), no gate; then the 3 gores' kicks.
+        let mut twin = UnifiedRandom::new(151);
+        let census = |r: &mut UnifiedRandom| {
+            let _px = r.next_max(34);
+            let _py = r.next_max(34);
+            let _vx = r.next_range(-20, 21);
+            let _vy = r.next_range(-20, 21);
+            let _row = r.next_max(3);
+            let _scale = r.next_range(-20, 21);
+        };
+        for _ in 0..20 {
+            census(&mut twin); // type 249 (no tweak)
+            census(&mut twin); // type 242 default block
+            let _tweak = twin.next_range(-10, 6); // type-242 tweak (Dust.cs:216)
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the hornet death mirrors the C# draws");
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
