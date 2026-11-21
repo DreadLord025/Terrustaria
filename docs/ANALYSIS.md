@@ -22072,6 +22072,75 @@ Three, all forced by the port's shape:
   (`TransformWorldOnBackgroundThread`, `:31721-31742`) and queues the chat/achievement
   follow-up back to the main thread. The port's `start_hardmode` transforms inline
 
+## The Slime Rain event (W4-f39, 2026-11-21, code-only mode)
+
+**Code-only mode.** No `cargo`/`rustc`/`rustfmt`/test run was invoked. The port was
+verified by re-reading the C# source in ≤100-line windows (`Main.cs:64742-64961`,
+`:65166-65176`, `:65504-65522`, `:48216-48219`, `:52242-52244`; `NPC.cs:5892-5955`,
+`:77902-77924`, `:79080-79096`, `:79405-79410`, `:7022-7029`; `Collision.cs:3455-3488`)
+and by hand-arithmetic on the witness tests (written, not run). The witnesses are the
+`weather_w4_f39.rs` / `npcs_w4_f39.rs` / `npcs_w4_f39_spawns.rs` / `saveglue_w4_f39.rs`
+`#[cfg(test)]` modules (the d129 `#[path]` convention).
+
+S1-E-37 landed the `StartSlimeRain`/`StopSlimeRain` entry points and the morning roll's
+draw shape. W4-f39 re-ports the **UpdateTime slots** and the **sky-fall spawn** to the
+C# statement order, fixing the deviations the census found:
+
+* **The `:64846` surface gate wraps the whole block.** `isThereAWorldSurface` is
+  `worldSurface > 50.0` (`Main.cs:2788`), EXCLUSIVE — the pre-fix port gated the slime
+  clock/roll on nothing (the clock decayed in a surface-less world). The gate now wraps
+  the clock, the rain section and the roll; `start_slime_rain`'s own `:64744` refusal
+  moves from `<= 0.0` to `<= 50.0` and gains the `remixWorld` arm (the port HAS the seed
+  flag now, `SeedFlags::REMIX`).
+* **The clock decays BEFORE the rain section** (`:64848-64863` ahead of `:64864`). The
+  pre-fix port ran the slime clock AFTER `Rain::update_time`; the expiry's
+  `StopSlimeRain` draw now precedes the rain section's draws on `UpdateTime`.
+* **The `:64864`/`:64890` ladder samples its arm ONCE.** The C# reads `Main.raining` at
+  the branch entry; a rain that expires INSIDE `Rain::update_time` (`:64880`) leaves the
+  tick in the raining arm — the start arms and the slime roll (`:64925`, inside the
+  else-if) stay closed until the next tick. The port now samples `was_raining` /
+  `slime_rain` / `lanterns_up` / `next_night_lanterns` at the entry (the lantern statics
+  are read BEFORE `LanternNight.UpdateTime` at `:64965` can move them).
+* **The lantern arms.** `:64868-64871`'s `LanternsUp → StopRain()` (no drain, no strength
+  roll) and `:64890`'s `!slimeRain && !LanternsUp && !NextNightIsLanternNight` gate on the
+  start arms — the pre-fix `Rain::update_time` folded all three to false.
+* **The kill counter's per-death gate** (`NPC.cs:79082`). `DoDeathEvents_AdvanceSlimeRain`
+  re-checks `slimeRain && slimeRainNPC[type] && !AnyNPCs(50)` for EACH death; the pre-fix
+  port checked `!AnyNPCs(50)` once before the loop, so a King spawned by an earlier death
+  in the same tick did not close the gate for later deaths. The check now lives inside
+  the loop. The `slimeRainNPC[1]` filter (`Main.cs:8864`) is the port's `Slime` kind —
+  every colour variant shares vanilla type 1.
+* **The sky-fall spawn** (`Spawner.SlimeRainSpawns`, `NPC.cs:5892-5955`) is re-ported
+  whole: the `position.Y` (TOP, not centre) depth gate, the `nearbyActiveNPCs` slot sum
+  with the 0.65 `slimeRainNPCSlots` discount (`Main.cs:66803`, `NPC.cs:77916-77918`), the
+  `45 + (int)(450f * (nearby/15))` truncated denominator, the `maxTilesX + 10` upper bound
+  (was `-10`), `Collision.SolidTiles(xt-3, xt+3, yt-5, yt+2)` + the `Main.wallHouse`
+  refusal (was folded), and the full four-arm kind chain — `Next(200)==0` → Pinky(-4),
+  `Next(10)==0` → Purple(-7), `Next(5)<2` → Green(-3), else Blue (the pre-fix port folded
+  the Pinky arm and mapped the `Next(10)` arm to Yellow).
+* **The menu-return stop** (`Main.cs:48216-48219`, `DrawMenu`'s `menuMode <= 1 &&
+  slimeRain → StopSlimeRain`). The port's `save_and_quit` is the in-world → menuMode-0
+  transition; the stop runs AFTER the save (the C# saves the live event, then the menu
+  frame stops it), on the bare `Main.rand` stand-in.
+
+**Documented folds (single-difficulty / port-absent systems):** the expert `×0.85`
+denominator and the `Next(7)`/`Next(3)` kind arms (`NPC.cs:5902-5905`/`:5935-5945`), the
+journey spawn-rate slider (`:5906-5913`), the `WorldGen.Skyblock.lowTiles` `/5` roll arm
+(`Main.cs:64931-64934` — `lowTiles` is skyblock-only, `WorldGen.cs:3215`), the
+`FreezeRainPower` gates, and the `netMode`/`SkyManager` arms. The King's `SpawnOnPlayer`
+tile-scan placement stays the S1-D-3g deviation (the port spawns at the player's column
++12, the C# scans a 500×50 off-screen area). The death-path loop split (the counter pass
+ahead of the boss-death `checkDead` pass) means a slime dying in the SAME tick as the King
+still counts — the C# interleaves per-NPC; recorded, not re-homed.
+
+**RNG argument:** the clock walk is RNG-free; the expiry's `StopSlimeRain` draws one
+`Next(3024, 6048)` on `UpdateTime` (the King-death caller draws `UpdateNpcs`, the
+menu-return caller the bare global); the morning roll draws one `Next(num3)` +
+`StartSlimeRain`'s `Next(32400, 54000)`; the sky-fall arm draws `Next(num2)` + the two
+window `Next(min, max)` + the kind chain (`Next(200)`, [`Next(10)`], [`Next(5)`]) on
+`SpawnNPC`. Every witness mirrors the sequence on a cloned `UnifiedRandom` and compares
+the full stream state.
+
 ## S1-D-3 вЂ” the aiStyle-8 caster family (`npc_ai_bat.rs`, 2026-11-18, code-only mode)
 
 **Code-only mode.** This slice landed under the Lead's code-only directive: no

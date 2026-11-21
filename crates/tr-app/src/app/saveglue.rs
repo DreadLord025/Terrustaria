@@ -366,6 +366,17 @@ impl App {
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.
         self.world.fast_forward_to_dawn = false;
         self.world.fast_forward_to_dusk = false;
+        // W4-f39: `Main.cs:48216-48219` (`DrawMenu`): `menuMode <= 1 &&
+        // Main.slimeRain → Main.StopSlimeRain()` — the event ends when the
+        // player returns to the main menu. The port's save-and-quit is the
+        // in-world → menuMode-0 transition; the stop runs AFTER the save
+        // (the C# saves the live event, then the menu frame stops it), so
+        // the saved world keeps the running rain and the menu-side state
+        // carries the negative cooldown. The draw rides the bare Main.rand
+        // stand-in (the menu frame is outside every SwapRandom block).
+        if self.world.slime_rain {
+            crate::world_sim::weather::stop_slime_rain(&mut self.world, self.rngs.global());
+        }
         // `WorldGen.cs:6682`: `Main.menuMode = 0` — back to the main menu
         // (`Main.gameMenu` stays true; the port's `menu.is_some()` is that
         // flag, `frame.rs:256`).
@@ -406,6 +417,11 @@ impl App {
 
 #[cfg(test)]
 mod tests {
+    // W4-f39 census witness (written-not-run, code-only lane): the
+    // menu-return StopSlimeRain (Main.cs:48216-48219).
+    #[path = "saveglue_w4_f39.rs"]
+    mod saveglue_w4_f39;
+
     use super::*;
     use crate::app::WorldSections;
     use crate::app::flow::front_flow_tests::flow_app;
