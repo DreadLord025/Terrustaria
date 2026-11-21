@@ -3348,7 +3348,8 @@ mod tests {
         // yOffset 6: eye0 = (990 + 35 + 1, 500 − 44 + 6) = (1026, 462).
         // The cursor (1200, 500) is outside the dead zone (rel 200, 0).
         // aim = normalize((1200, 500) − (1026, 462)) × 14.
-        m.aim_ability_scutlix(c, &mut { 1 }, 0.0, Vec2::new(1200.0, 500.0));
+        let mut fire_facing = 1;
+        m.aim_ability_scutlix(c, &mut fire_facing, 0.0, Vec2::new(1200.0, 500.0));
         let beams = m
             .scutlix_laser_fire(
                 Vec2::new(980.0, 458.0),
