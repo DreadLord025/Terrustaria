@@ -39473,6 +39473,18 @@ Deliberate folds/deviations:
   g90 v7 file loads without error (the unlock stays false, the correct
   default for a character that never used the favor). The `SavedPlayer`
   struct keeps both fields; the g90 merge adds `ate_artisan_bread`.
+  **SUPERSEDED at closeout** by `docs/research/93-torch-god-fold-input-addendum.md`
+  §1: the g88 superset is now writer **v10** (`c8985b53`, the six-token
+  unlock line — research/103 is THE merger contract), and a 2-token v7
+  line reads as the LIFE pair under its walk (the maxima corrupt to 1 —
+  the v8-line recommendation above predates the superset). The addendum's
+  fold recipe: the torch pair rides its OWN 2-token line appended AFTER
+  the loadout block (103 §6 rule 5, the v11 bump), the lone-2-token v7
+  ambiguity resolves life-pair-first (the bounded pre-fold f33 loss
+  documented like 103 §3's bread→aegis case); the pair is NOT a line-8
+  unlock token (it sits outside the `.plr` `:54780-54787` family). a6
+  carries NO torch persistence (both `.plr` bools hardcoded false) — f33
+  is the only pushed writer of the pair.
 
 The `happyFunTorchTime` consumers (the event flag now exists,
 `torch_god.happy_fun_torch_time`):
@@ -39528,3 +39540,47 @@ Witnesses: `achievements.rs::w4_f33_the_torch_god_row_is_a_use_flag_not_a_progre
 `w4_f33_special_event_24_completes_only_the_torch_row` (the named complete
 leaves the other eight "Use" rows open, queues the completion event once,
 the second 24 is a no-op).
+
+### Closeout cross-lane verification (W4-f33, 2026-11-21, code-only)
+
+The full closeout record is `docs/research/93-torch-god-fold-input-addendum.md`
+(research/93a). Verified at probe:
+
+- **The c36 achievement row EXISTS and the chain terminates on it.**
+  `origin/task/W4-c36-achievement-notify-save` (`585fa0a8`) carries a
+  blob-identical `achievements_data.rs` (`e0486920`): the
+  `GAIN_TORCH_GODS_FAVOR` row (`:1004-1010`, the one `Category::None`
+  Use-flag row). The chain: the f33 use arm (`torch_god_favor_use.rs:117`)
+  → `handle_special_event(24)` (`achievements.rs:484`) →
+  `complete_condition("GAIN_TORCH_GODS_FAVOR", "Use")` (`:446`) → the c36
+  row. The three pushed 5043 use arms adjudicate KEEP f33 (the named
+  dispatcher + the full C# body + the permanence), DROP a6's
+  `powerups.rs:344` (the broadcast `notify_custom("Use")` over-completes
+  all nine Use rows) and c36's `editing.rs:16332` (a reduced copy); c36's
+  enter-world re-check (`achievement_hooks.rs:173-176`) SURVIVES — it is
+  the `OnPlayerEnteredWorld` `:192-195` wire, idempotent on the completed
+  row (addendum §3).
+- **The d19 949 keep-one drop-hunks re-pinned to the d19b tip**
+  (`1054c396` — the parked-intents follow-up landed AFTER the 93 note's
+  `a4185f89` probe): the 184 section `:392-481`, the wrong drain witness
+  `:1457-1482`, the NEW dodge witness `:1484-1525` (its contract re-pinned
+  on the f33 arm — `w4_f33_the_self_hurt_is_dodgeable`), the dispatch arm
+  `projectile.rs:17398-17410`, the const/row dups + the header/anchor
+  repoints; d19b's "f33 NOT on origin" clauses are STALE (f33 IS pushed)
+  (addendum §2).
+- **The music-101 priority census**: every `new_music` writer in
+  `audio.rs` vs the minigame flag — 101 holds against every world branch;
+  the only overrides are C#-faithful (the volume mute, the front-end
+  ladder, the music box). Witness
+  `w4_f33_the_minigame_track_holds_against_every_world_branch` (all 26
+  below-ladder inputs armed at once → still 101; the box overrides; the
+  flag cleared → the ladder resumes) (addendum §4).
+- **The persist fold-input**: the v7 biome-torch pair's exact
+  shape/position published for the g88 v10 superset (the v11 torch-line
+  recommendation, the mapping table, the bounded lone-2-token ambiguity);
+  a6 carries NO torch persistence — f33 is the only pushed writer
+  (addendum §1, superseding the v8-line recommendation above).
+
+Closeout witnesses: 2 WRITTEN NOT RUN (`projectile_ai_torch_god.rs` the
+dodge contract; `audio.rs` the full-ladder sweep). No cargo/rustc/tests/
+graphify invoked.
