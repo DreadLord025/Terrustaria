@@ -2,25 +2,25 @@
 
 Date: 2026-11-21. Author: W4-g46 (reconcile phase, code-only — no cargo/tests run).
 
-> **SUPERSEDED-BY-70 (RE-FOLD phase, 2026-11-21).** This note was written
+> **SUPERSEDED-BY-252 (was 70; RE-FOLD phase, 2026-11-21).** This note was written
 > against g47 `cfe5f1c9` — BEFORE the settle wiring (`551c1e7b`/`95e9c1ef`),
 > the final phase (`d3a30ebf`) and the R-12-5 drivers (`3dbbe3ef`..`ae688401`).
-> **`docs/research/70-liquid-merge-order.md` (g47 `fdeb897c` + the driver
+> **`docs/research/252-liquid-merge-order-g46.md` (g47 `fdeb897c` + the driver
 > addendum `dd66fa3a`) is the authoritative merge order**; where this note
-> disagrees, 70 wins. Specifically superseded: row 1's graft recipe (g47's
+> disagrees, 252 wins. Specifically superseded: row 1's graft recipe (g47's
 > `del_water` is canonical WHOLESALE — the g45 details AND g46's
 > `square_tile_frame_record` loot seam are already adopted at `d3a30ebf`;
 > do NOT graft g46's body over it), row 8's "load hook stays UNWIRED"
 > (WIRED at `App::new` since `551c1e7b`, dry-world no-op witnessed), the
 > fixture note's "AddWater border guard stays deferred" (g45b landed the
-> guards WITH the (+6,+6) widening — carried per 70 step 5), and the
+> guards WITH the (+6,+6) widening — carried per 252 step 5), and the
 > `retire_kills` queue-name recommendation (the union keeps g47's
 > `edit_kills`/`drain_edit_kills`/`resolve_liquid_edit_kills` names). The
 > per-function KEEP table below stays valid EXCEPT those re-marks; the
-> witness-union dispositions were executed per 70's re-pin table.
+> witness-union dispositions were executed per 252's re-pin table.
 >
 > **UNION-CONTRACT — FINAL (RE-FOLD landing, 2026-11-21).** The union on
-> `task/W4-g46-liquid-evaporation` was REBUILT in research/70's 7-step
+> `task/W4-g46-liquid-evaporation` was REBUILT in research/252's 7-step
 > order (the stale `f57d7bac` graft-prep union was replaced, not patched):
 >
 > | Step | Commit | What landed |
@@ -34,7 +34,7 @@ Date: 2026-11-21. Author: W4-g46 (reconcile phase, code-only — no cargo/tests 
 > drops the g45/g47 lane versions.** Steps 6/7 (the f25 gen-module dedupe
 > onto the export surface + context setters — INCLUDING the origin-wall fix
 > — and the f24/c30/g36 producer wiring) execute at the worldgen master
-> merge; the surfaces they call are ON this branch. Witness re-pins per 70's
+> merge; the surfaces they call are ON this branch. Witness re-pins per 252's
 > table: the f25 `world_hash.rs` SEED42_512/DEFAULT_WORLD +
 > `the_pass_is_deterministic` **RE-DERIVE** (the real DelWater drain/tail +
 > swap-remove buffer + origin-wall fix change the gen settle; the gen-side
@@ -51,7 +51,7 @@ Date: 2026-11-21. Author: W4-g46 (reconcile phase, code-only — no cargo/tests 
 > `liquid.rs`, all written-NOT-run (code-only); the merger runs the full
 > union post-graft (`cargo test --workspace -- --skip
 > migrates_version_2_kinds_to_item_ids`, judge by `test result: ok`) and
-> the anchors canary (70 gate 2 — every g47 row survives on this branch).
+> the anchors canary (252 gate 2 — every g47 row survives on this branch).
 
 Four lanes touched `crates/tr-core/src/liquid.rs` (and neighbours) from the
 same base `a725acb0` (wave-3 landing). This note is the per-function 4-way
@@ -394,7 +394,7 @@ union (no lane ran any of them).
 
 ## Graft-prep landing record (SUPERSEDED — historical, the `f57d7bac` union)
 
-> **SUPERSEDED-BY-70 / the FINAL UNION-CONTRACT above.** The record below
+> **SUPERSEDED-BY-252 (was 70) / the FINAL UNION-CONTRACT above.** The record below
 > describes the STALE graft-prep union (`f57d7bac`, built against g47
 > `cfe5f1c9`): its `retire_kills` queue name, `check_alch_tile` wrapper,
 > pure-form `check_lily_pad`, UNWIRED load hook and arm-by-arm DelWater

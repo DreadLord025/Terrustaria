@@ -1,4 +1,12 @@
-# 70 — FINAL liquid merge order (W4-g47, the closing verdict)
+# 252 — FINAL liquid merge order (W4-g47, the closing verdict; g46 fork copy)
+
+> Chain-banner: 70-fork → 252 per research-number-registry §6.3 (round-1
+> owed rename, listed in §10.4): `70-liquid-merge-order.md` (the W4-g46
+> fork copy, first add `9bc722e5f`) → `252-liquid-merge-order-g46.md` —
+> 70 belongs to d53's proj-dust-site-batches-claims (round-1 winner);
+> g47's copy keeps its **209**; g46's 69 KEEP unchanged. The §8-15
+> docs-tail extension (`789bdf8aa` + `acd7c84b5`) is preserved whole.
+> Cite THIS registry §6.3/§10.4.
 
 Date: 2026-11-21. Author: W4-g47 (final phase, code-only — no cargo/tests run).
 Supersedes research/69's "Merger order suggestion" where they disagree; the
@@ -156,7 +164,7 @@ no nudge code lives on this branch and none of the four drivers draws RNG.
 
 > **SEAL STATUS (W4-g46 seal phase, 2026-11-21).** This section was written
 > against the stale graft-prep union `f57d7bacd`. The g46d re-fold it demands
-> has since EXECUTED on this branch in research/70's order — the RE-FOLD
+> has since EXECUTED on this branch in research/252's order — the RE-FOLD
 > landing record (research/69 §"UNION-CONTRACT — FINAL", ANALYSIS "The g46c
 > RE-FOLD landing record") lists the four steps `e7626b72`/`f588d53c`/
 > `16fd6ad7`/`d95911ce` that re-based onto g47 `95e9c1ef`→`d3a30ebf`→`8e81814e`
@@ -190,9 +198,9 @@ every surface below has **zero hits** in the union:
 **Exact commit list g46d must re-fold** (code, in order): `551c1e7ba`,
 `95e9c1eff`, `d3a30ebf2`, `3dbbe3ef1`, `d9445fc4f`, `4288657ce`,
 `ae6884017`. Doc re-fold alongside: `ba6946530`, `d222af697`, `fdeb897ca`,
-`dd66fa3aa` (ANALYSIS/PORT_MAP/research-70/anchors — research/70 never
-existed on the union's tree, its base predates `fdeb897ca`; carry it over,
-this file is the merge order of record).
+`dd66fa3aa` (ANALYSIS/PORT_MAP/this note (then key 70)/anchors — this note
+never existed on the union's tree, its base predates `fdeb897ca`; carry it
+over, this file is the merge order of record).
 
 **Shape of the re-fold**: do NOT merge arm-by-arm. Re-base onto g47
 `dd66fa3a`'s `liquid.rs` + `edit.rs` + `edit/kill.rs` +
@@ -207,7 +215,7 @@ Naming keep-one: the queue is **`edit_kills`** (g47 name; the union's
 back), and `edit/kill.rs` keeps the g47 `check_alch`/`check_lily_pad`
 (closure `kind_solid`) form — the union took the g46 `check_alch_tile`
 form whose `del_water` tail callers do not exist on the g47 body. The
-union's `del_water` is NOT the canonical one: research/70's base verdict
+union's `del_water` is NOT the canonical one: research/252's base verdict
 (g47 `del_water` wholesale, `d3a30ebf` loot seam) still stands; the union
 re-derived the same seam under its own queue name, so the re-fold is a
 rename + re-base, not a behaviour merge.
@@ -467,7 +475,7 @@ Fresh fetch: `origin/task/W4-g46-liquid-evaporation` tip is now
 commits: `e7626b72d` (step 1, base swap to g47 `95e9c1ef` wholesale),
 `f588d53c5` (step 2, g47c `d3a30ebf`), `16fd6ad78` (step 3, g45b
 `8e81814e` guards + the ~40 fixture widenings), `d95911ce1` (step 4, the
-four R-12-5 drivers), `9bc722e5f` (docs: 69 SUPERSEDED-BY-70 + the
+four R-12-5 drivers), `9bc722e5f` (docs: 69 SUPERSEDED-BY-252 (was 70) + the
 UNION-CONTRACT). **§8's driver-surface obligation is DISCHARGED** —
 symbol re-grep on the `9bc722e5` blobs: union `liquid.rs` carries
 `skip_count` (:114/:323/:440) + `update_world_tick` (:662), union
@@ -478,7 +486,8 @@ GONE), union `wiring.rs` carries `pump_wakes`/`take_pump_wakes`
 guard module all present. BUT the re-fold's base snapshot is
 `dd66fa3a` (07:26:06) — it **PRE-DATES all seven g47 post-`dd66fa3a`
 commits** (`e420e351e` 08:36 → `776e64671` 10:20), and its carried
-research/70 is the 153-line `dd66fa3a` snapshot: **§8–§14 are absent
+copy of this note (then key 70) is the 153-line `dd66fa3a`
+snapshot: **§8–§14 are absent
 from the union's doc**. The remaining obligation is the delta fold
 below, NOT a re-base.
 
@@ -494,7 +503,7 @@ split, hunks verified against the `9bc722e5` blobs this pass:
 | `a9dba7cf1` | **CODE** | the render-gaps closure, ALL of it: `liquid_draw.rs` +244 whole-file (`LiquidAnimClock`/`wave_mask`/`has_full_water`/`VISCOSITY_MASK` — union grep = 0 hits); `app/mod.rs` +7 (the `liquid_clock` field :856 + the `App::new` literal :3999 + the per-update tick); `render/liquids.rs` clock wiring (union STILL derives `anim_time * 8.0` :99/:206 + `* 0.5` :100 — the retired cadence); `render/tiles.rs` +6; `frame/draw.rs` +18/−3; anchors ×3; ANALYSIS + PORT_MAP rows |
 | `2bbadd9bd` | **CODE** | the two sim fixes: the down-arm post-burn re-read hunk (`@@ -1283,6 +1292,18 @@` — the `let down = world.tile(x, y + 1)…` re-read after `kill_tile`, `flag` stays the pre-kill read) — **the union is STALE, see Seal 3**; the fall arm's `own_now` is a ZERO code delta (union :1112 already reads live post-reaction; only the comment differs — take the base cite `:570-575` + the reaction case). `liquid_downarm_live` ×4 + `the_fall_arm_reads_the_live_post_reaction_level` ×1 FOLD (+5, ONE module copy); §13; anchors ×2 |
 | `bf5fc4ffb` | **CODE** | `flow.rs` +1: the `liquid_clock` field on the front-end-boot App literal (:2414; the union's literal :2410 lacks it). Compile-critical rider of `a9dba7cf1`'s `app/mod.rs` field — fold them together |
-| `0823ec3dd` + `776e64671` + this seal | docs | §14 + §15 (replace the union's 153-line 70 snapshot with this file wholesale) |
+| `0823ec3dd` + `776e64671` + this seal | docs | §14 + §15 (replace the union's 153-line pre-rename snapshot with this file wholesale) |
 
 **Seal 3 — the down-arm-live receipt (2bbadd9bd IS the fix-source).**
 Re-verified on `9bc722e5`'s `liquid_check`: the down arm copies

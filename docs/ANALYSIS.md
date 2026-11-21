@@ -18321,12 +18321,12 @@ witnesses (code-only mode — no cargo/tests this lane):
   (`WorldGen.cs:71529`) in `world_sim/liquids.rs`.
 
 Documented deviations / deferred items — **re-marked by the W4-g46 RE-FOLD
-(union `e7626b72`..`d95911ce`, research/70's graft order)**: the three
+(union `e7626b72`..`d95911ce`, research/252's graft order)**: the three
 "NOT ported" deferrals below are now LANDED on the union branch; the g47
 lane's original deferral text is kept struck for the record.
 
 - ~~**Underworld evaporation (`:466-474`) is NOT ported.**~~ **PORTED on the
-  union (W4-g46 graft, research/70 step 2).** `LiquidSystem::underworld_layer`
+  union (W4-g46 graft, research/252 step 2).** `LiquidSystem::underworld_layer`
   seeds `height - 200` in `new` (runtime-faithful, unguarded `y > layer`,
   water-only `min(2, liquid)` shed pre-flow, zero-kill `KILL_DEAD`); the fall
   arm reads the LIVE post-evaporation level (`own_now`), the kill bookkeeping
@@ -18336,7 +18336,7 @@ lane's original deferral text is kept struck for the record.
   evaporation witnesses (`liquid_evaporation` ×4 + the re-pinned layer-row
   boundary in `liquid_merge_cadence`) use `new`. Census deviation 3 FIXED.
 - ~~**`AddWater`'s guards are NOT ported into `add_water`.**~~ **PORTED on the
-  union (W4-g45 round 2 `daa1cdb0` carried per research/70 step 5).** The
+  union (W4-g45 round 2 `daa1cdb0` carried per research/252 step 5).** The
   `:1163` 5-tile border exclusion + the `type != 546` carve-out + the
   `:1183-1206` inline `CheckLavaDeath`/`CheckWaterDeath` → `KillTile` are on
   `add_water(&mut World, …)`; the inline kill's `TileKill` queues on
@@ -18348,11 +18348,11 @@ lane's original deferral text is kept struck for the record.
   deviation 7 FIXED.
 - ~~**The merger keeps g45's nudge (`World.frame_rng`).**~~ **SUPERSEDED —
   the union keeps g46's arm + per-consumer `surface_rng`** (research/69 row
-  10 / research/70 step 3): world-seeded `UnifiedRandom`, drawn ONLY on a
+  10 / research/252 step 3): world-seeded `UnifiedRandom`, drawn ONLY on a
   254 3-cell average, pinned draw-for-draw by
   `surface_rng_is_the_world_seeded_unified_stream`. g45's three nudge
   witnesses are RE-PINNED onto it (`w.seed = 35/0`). The 7/5-neighbour extra
-  wake passes (`:748-771`/`:821-836`, g45 `ccfe0b42`) are carried (research/70
+  wake passes (`:748-771`/`:821-836`, g45 `ccfe0b42`) are carried (research/252
   step 4); the extra-wake witness is re-derived onto the 7-arm fixed-point
   fixture (the C# 3-cell arm has no extra wakes). Census deviations 5/6
   FIXED on the union.
@@ -18500,7 +18500,7 @@ loop, `ClearPendingLiquid`, `LiquidInteractionsCleanup` with the `:23755`
 up-shimmer quirk) + the pipeline step; g47 owns the RUNTIME side (the
 skipCount pump above, the load drain, the panic/stuck/buffer machinery).
 The shared `Liquid.UpdateLiquid` engine is ONE body — f25's gen-local
-copies dedupe onto the g47 surfaces at the g46c graft (research/70 step 6).
+copies dedupe onto the g47 surfaces at the g46c graft (research/252 step 6).
 Carried onto the g47 machinery here (the export surface f25's module
 drives): `tiles_ignore_water`, `world_gen_tiles_ignore_water` (the
 `gen_ignore_water` field + the `kind_solid` fold — the C# pokes the RAW
@@ -18518,7 +18518,7 @@ extraLiquid round bump, and the progress fractions). f25's
 the STRICT `generating_world` too — the fuller C# context; f25's flag
 only armed `generating` + `remix`, so its dungeon/shimmer arms were dead
 by flag as well as by un-armed context — same classic result). The
-context arming stays the GEN DRIVER's job (research/70 step 7:
+context arming stays the GEN DRIVER's job (research/252 step 7:
 `set_gen_settle_context(water_line, lava_line, remix)` +
 `set_gen_shimmer_position(gv.shimmer_position)` + the f24/c30
 `GenDungeonContext`; `edit_kills` drained/discarded at the pass tail —
@@ -18526,7 +18526,7 @@ records must not leak across the per-pass instance). f25's claimed
 "no RNG draws in the whole pass" holds only for ITS discard-only
 `end_pass`; on the g47 machinery the DelWater grass-ring/lily kills fire
 during gen and ride `edit_kills` (the world-hash RE-DERIVE obligation,
-research/70's witness table — unchanged by this carry). Witnesses
+research/252's witness table — unchanged by this carry). Witnesses
 (written, NOT run): `liquid_gen_driver::world_gen_tiles_ignore_water_lifts_the_door_family`,
 `...::clear_pending_liquid_drops_both_lists_and_their_checking_bits`,
 `...::the_gen_settle_loop_drains_the_lists_and_drops_quick_settle`,
@@ -18639,12 +18639,12 @@ written against g47 `cfe5f1c9` — BEFORE the settle wiring (`551c1e7b` /
    / `sys.set_gen_dungeon_context` and drops its private copies).
 
 The full graft order, the producer wiring and the witness re-pin table live
-in **`docs/research/70-liquid-merge-order.md`** (the FINAL liquid merge-order
+in **`docs/research/252-liquid-merge-order-g46.md`** (the FINAL liquid merge-order
 doc — which branch base, graft steps 1-7, re-pins, gate checklist).
 
 ### The g46c RE-FOLD landing record (W4-g46 union, 2026-11-21, code-only)
 
-The graft above EXECUTED on `task/W4-g46-liquid-evaporation` in research/70's
+The graft above EXECUTED on `task/W4-g46-liquid-evaporation` in research/252's
 order (the stale `f57d7bac` union — built against g47 `cfe5f1c9` — was
 replaced, not patched):
 
@@ -18657,13 +18657,13 @@ replaced, not patched):
 
 Witness count: **102 `#[test]` fns** in the union `liquid.rs` (g47's base +
 final + driver pins, g46's evap/stream/lily pins, g45's cadence/delwater/
-nudge/guard carries — the duplicates dropped per research/70's table). All
+nudge/guard carries — the duplicates dropped per research/252's table). All
 written-not-run; compile-by-inspection only. Steps 6/7 (the f25 gen-module
 dedupe + the f24/c30/g36 producer wiring) stay with the worldgen master
 merge — the export surface + context setters they call are ON this branch;
-the f25 gen-hash RE-DERIVE obligation (research/70 witness table) stands,
+the f25 gen-hash RE-DERIVE obligation (research/252 witness table) stands,
 and the gen-side `edit_kills` drain choice must be picked + recorded there.
-The runtime-inert gen-fields contract (research/69 §contract, research/70
+The runtime-inert gen-fields contract (research/69 §contract, research/252
 gate 3) holds: `generating`/`generating_world`/`gen_ignore_water`/
 `quick_settle` default false; the context setters are gen-driver-only; the
 load driver arms `generating` but never `generating_world`;
@@ -18690,7 +18690,7 @@ per-fn verdict, nothing left unaccounted:
 | `Update` (`:449-964`) | `update_tile` (+ the fall/row/kill arms) | PORTED — the evap block (`:466-474`) and the Next(30) nudge (`:892-895`) are ON the union (the g46 graft steps 2/3, `e7626b72`); the g45 doc-sweep's LIVE reads (fall `own_now`, down-arm post-burn re-read) sealed onto it |
 | `StartPanic` (`:966-981`) | `start_panic` | PORTED |
 | `UpdateLiquid` (`:983-1158`) | `update` + `end_pass` | PORTED except the MP cycle scaling (`:987-1004`), the MP section-reset (`:1038-1051`), the `Misc.WaterSettled` console line (`:1034`) and the net broadcast (`:1151-1156`) — all MP/console, cited-dropped |
-| `AddWater` (`:1160-1207`) | `add_water` | PORTED — the `:1163` 5-tile border exclusion + `type != 546` carve-out and the `:1183-1206` inline water/lava-death check are ON the union (g45b's guards, `16fd6ad7`, with the `edit_kills` loot upgrade; research/70 step 5) |
+| `AddWater` (`:1160-1207`) | `add_water` | PORTED — the `:1163` 5-tile border exclusion + `type != 546` carve-out and the `:1183-1206` inline water/lava-death check are ON the union (g45b's guards, `16fd6ad7`, with the `edit_kills` loot upgrade; research/252 step 5) |
 | `UndergroundDesertCheck` (`:1209-1223`) | `underground_desert_check` | PORTED |
 | `LiquidCheck` (`:1225-1309`) | `liquid_check` (the `create_merge_tiles_during_gen` param carried) | PORTED; the down arm's LIVE post-burn reads sealed (`c8908a55` carry); the `WorldGen.cs:22480` gen finalize-sweep CALLER is f25's lane (the fn is here, the gen driver calls it) |
 | `LiquidOverwriteStrip` (`:1311-1323`) | `liquid_overwrite_strip` | PORTED |
@@ -18854,7 +18854,7 @@ clock). 3 anchors rows carried (`LiquidAnimClock`, `wave_mask`,
 ### The g45d co-lane carry (W4-g47 retire, SEAL carry `2bbadd9bd`/`8d581953`/`c8908a55` via `a4d49b355`)
 
 The g45 doc-sweep's two liquid.rs sim fixes adopted onto the g47 canonical
-base and folded onto this union (research/70 §13's FINAL owner table; both
+base and folded onto this union (research/252 §13's FINAL owner table; both
 were real fidelity gaps in the base body, not lane-specific deltas):
 
 - **The fall arm's LIVE read** (`Liquid.cs:570-575`, g45 `8d581953`):
@@ -18888,7 +18888,7 @@ closeout's `shimmer_falls_every_visit_ungated` — the keep-ONE MERGED form
 (the g47 shelf fixture + entry.delay==0 asserts AND the g45 cadence-trace
 asserts ride one pin, per the g45 research/69 A9.2 row 4). Post-fold
 count RE-MEASURED on this tip: **109 `liquid.rs` pins + 2 wiring compose
-pins** (research/70 §15 Seal 4's sealed expectation; §13's 99+2 as
+pins** (research/252 §15 Seal 4's sealed expectation; §13's 99+2 as
 projected, +10 guards arrived early at re-fold step 3). All written,
 NOT run. 2 anchors rows carried (`the_fall_arm_reads…`,
 `liquid_downarm_live`).

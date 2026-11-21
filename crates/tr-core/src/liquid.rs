@@ -221,7 +221,7 @@ pub struct LiquidSystem {
     /// the whole `Settle Liquids` pass (`WorldGen.cs:16156`/`:16207`,
     /// `:21263`/`:21306`). Gen-only — the runtime pass never arms it.
     /// (f25's `gen_ignore_water` export, carried onto the g47 machinery for
-    /// the gen-module dedupe — research/70 step 6.)
+    /// the gen-module dedupe — research/252 step 6.)
     gen_ignore_water: bool,
     /// `Main.tileSolid[379]` (`Liquid.cs:451` vs `Main.cs:17753`/`:17799`):
     /// the bubble is solid for the liquid pass itself and not solid for the
@@ -236,14 +236,14 @@ pub struct LiquidSystem {
     /// `i32::MAX` to isolate the fall/level mechanics from the band (the
     /// `tool.rs` test convention), since their fixture worlds are shorter
     /// than a vanilla underworld. NOT a gen field — runtime-faithful, never
-    /// gated on `generating` (research/69 contract, item 5; research/70
-    /// gate 3). W4-g46's evaporation graft (research/70 step 2).
+    /// gated on `generating` (research/69 contract, item 5; research/252
+    /// gate 3). W4-g46's evaporation graft (research/252 step 2).
     underworld_layer: i32,
     /// The 3-cell surface average's `WorldGen.genRand.Next(30)` nudge
     /// stream (`Liquid.cs:892-895`) — a per-consumer `UnifiedRandom` seeded
     /// from the world seed (the `place_rng` precedent; vanilla shares one
     /// `genRand`, documented in ANALYSIS). Drawn only when the average
-    /// rounds to 254. W4-g46's nudge graft (research/70 step 3 — g46's
+    /// rounds to 254. W4-g46's nudge graft (research/252 step 3 — g46's
     /// stream pick wins over g45's `frame_rng`).
     surface_rng: crate::unified_random::UnifiedRandom,
 }
@@ -476,7 +476,7 @@ impl LiquidSystem {
     /// evaporate the fixtures. The sentinel parks the evaporation band out of
     /// reach (the `tool.rs` `i32::MAX` convention), isolating the fall/level
     /// mechanics under test. The evaporation witnesses use [`Self::new`].
-    /// (W4-g46, research/70 step 2 — every flow witness must use this.)
+    /// (W4-g46, research/252 step 2 — every flow witness must use this.)
     #[cfg(test)]
     pub(crate) fn new_flow_fixture(world: &World) -> Self {
         let mut sys = Self::new(world);
@@ -560,7 +560,7 @@ impl LiquidSystem {
     /// in the cell. `&mut World` because the death kill (`WorldGen.KillTile`,
     /// `:1201`) runs INLINE — the C# kills before `AddWater` returns, so the
     /// cascade's tile edits are visible to the rest of the caller's visit.
-    /// (W4-g45 round 2 `daa1cdb0`, carried per research/70 step 5 with the
+    /// (W4-g45 round 2 `daa1cdb0`, carried per research/252 step 5 with the
     /// `edit_kills` loot upgrade — g45b's inline kill discarded the record.)
     pub fn add_water(&mut self, world: &mut World, x: i32, y: i32) {
         if x < 0 || y < 0 || x >= self.width || y >= self.height || self.is_checking(x, y) {
@@ -610,7 +610,7 @@ impl LiquidSystem {
         // all four kinds). The Tile overloads resolve the def from the
         // cell's frames (`TileObjectData.cs:5083-5119`, W4-e11's seam);
         // a death kills the tile INLINE (`WorldGen.KillTile(x, y)`, the
-        // default noItem=false). LOOT UPGRADE (research/70 step 5): g45b
+        // default noItem=false). LOOT UPGRADE (research/252 step 5): g45b
         // discarded the kill record — the port pushes the `TileKill` onto
         // `edit_kills`, the same loot seam the DelWater keep-one uses (the
         // liquid tick resolves the drops on the UpdateLiquid stream).
@@ -1039,7 +1039,7 @@ impl LiquidSystem {
         // flow, and a cell it empties retires immediately (`:475-478`,
         // `kill = 999`). `start` keeps the pre-evaporation level for the kill
         // bookkeeping at the tail (the C#'s `byte liquid = tile5.liquid`
-        // captured at `:464`). W4-g46 graft (research/70 step 2).
+        // captured at `:464`). W4-g46 graft (research/252 step 2).
         if y > self.underworld_layer && kind == 0 && world.tiles[i].liquid > 0 {
             let b = world.tiles[i].liquid.min(2);
             world.tiles[i].liquid -= b;
@@ -1203,7 +1203,7 @@ impl LiquidSystem {
                         + set_level(world, self, x - 3, y, avg, kind)
                         + set_level(world, self, x + 3, y, avg, kind);
                     // `Liquid.cs:748-771` — the extra wake pass (W4-g45
-                    // carry, research/70 step 4), run BEFORE the conditional
+                    // carry, research/252 step 4), run BEFORE the conditional
                     // centre write: re-queue each neighbour when its
                     // (post-`set_level`) level OR the centre's level differs
                     // from the average. The neighbours all hold `avg` now,
@@ -1225,7 +1225,7 @@ impl LiquidSystem {
                         + set_level(world, self, x - 2, y, avg, kind)
                         + set_level(world, self, x + 2, y, avg, kind);
                     // `Liquid.cs:821-836` — the 5-neighbour extra wake pass
-                    // (W4-g45 carry, research/70 step 4), the same
+                    // (W4-g45 carry, research/252 step 4), the same
                     // centre-diff reduction as the 7-arm above.
                     if own as i32 != avg {
                         for nx in [x - 1, x + 1, x - 2, x + 2] {
@@ -1258,7 +1258,7 @@ impl LiquidSystem {
                     // so the draw never interleaves with other systems. The
                     // roll runs exactly once per 3-cell average, BEFORE any
                     // neighbour write — the C# order. W4-g46 graft
-                    // (research/70 step 3 — g46's stream pick, NOT g45's
+                    // (research/252 step 3 — g46's stream pick, NOT g45's
                     // `frame_rng`).
                     let mut avg = round_level(l + r + own as f32 + bias, 3);
                     if avg == 254 && self.surface_rng.next_max(30) == 0 {
@@ -1764,7 +1764,7 @@ impl LiquidSystem {
         self.gen_dungeon = ctx;
     }
 
-    // ---- the f25 gen-module export surface (research/70 step 6) -----------
+    // ---- the f25 gen-module export surface (research/252 step 6) -----------
     // f25's `worldgen/settle_liquids.rs` drives these on its per-pass
     // LiquidSystem; carried onto the g47 machinery so the g46c graft dedupes
     // the gen-local copies instead of keeping a second liquid engine.
@@ -1825,7 +1825,7 @@ impl LiquidSystem {
     /// `HoneyCheck`, 3 → `ShimmerCheck` (`Liquid.cs:1445-1468`). The g47
     /// `attempt_to_move_*` methods carry their own arms; this export is
     /// for a gen-local `settle_water_at` copy that stays gen-local
-    /// (research/70 step 6's keep-both option).
+    /// (research/252 step 6's keep-both option).
     pub fn liquid_reaction_check(&mut self, world: &mut World, x: i32, y: i32, kind: u8) {
         match kind {
             1 => self.lava_check(world, x, y),
@@ -1850,7 +1850,7 @@ impl LiquidSystem {
     /// special-seed arm (d107/c30) — classic breaks straight out. The
     /// progress fractions (`:16179`/`:16184-16199`/`:16203`) drive the
     /// loading bar only: no tile effect, no draw. The gen driver drains/
-    /// discards `edit_kills` at the pass tail (research/70 step 7 — the
+    /// discards `edit_kills` at the pass tail (research/252 step 7 — the
     /// records must not leak across the per-pass instance).
     pub fn gen_settle_loop(&mut self, world: &mut World) {
         self.water_check(world); // `:16158`
@@ -4319,7 +4319,7 @@ mod liquid_settle_wiring {
 }
 
 // --- W4-g46: the underworld evaporation pins (`Liquid.cs:466-474`) ----------
-// Re-grafted onto the g47 base (research/70 step 2 + the witness re-pin
+// Re-grafted onto the g47 base (research/252 step 2 + the witness re-pin
 // table): g46's four pins KEEP, the g45 duplicates DROP
 // (`water_evaporates_two_per_visit_below_the_underworld_layer` — the g45
 // `>= 0` guard semantics were dropped for g46's faithful `y > layer` form);
@@ -4434,7 +4434,7 @@ mod liquid_evaporation {
         // alch/lily tail even when the cell drained to 0 (no early return).
         // A lily pad 518 over a full (255) below with a dry above takes the
         // `CheckLilyPad` arm; here the pad's below is empty so the pad sinks.
-        // RE-RUN note (research/70 witness table): the g47 splice runs INSIDE
+        // RE-RUN note (research/252 witness table): the g47 splice runs INSIDE
         // `del_water` before the tail — the drained-cell tail equivalence
         // holds either way (the tail never AddWaters). W4-g45: the scene
         // rides the (+6,+6) embed (36 wide / 266 tall).
@@ -4489,13 +4489,13 @@ mod liquid_evaporation {
     }
 }
 
-/// W4-g45 carry-forward (union re-fold, research/70 step 4) — the non-water
+/// W4-g45 carry-forward (union re-fold, research/252 step 4) — the non-water
 /// cadence pins and the down-arm/shimmer merge witnesses: the per-entry
 /// `delay` throttle (lava 1-in-6, honey 1-in-11), the `quickFall` bypass, the
 /// layer-row evaporation boundary (RE-PINNED onto the g46 unguarded
 /// `y > height - 200` semantics), the down-arm sub-24 drain and the
 /// shimmer-side merge arms. The g45 evaporation duplicates dropped per
-/// research/70 (g46's pins above win). Written, NOT run (code-only mode).
+/// research/252 (g46's pins above win). Written, NOT run (code-only mode).
 #[cfg(test)]
 mod liquid_merge_cadence {
     use super::*;
@@ -4601,7 +4601,7 @@ mod liquid_merge_cadence {
         // Union re-pin: `update` derives `quick_fall = quick_settle` at the
         // pass head (`:1056-1068`, g47), so the witness arms quick_settle
         // instead of pinning the derived field directly.
-        // W4-g47 closeout carry (research/70 §11): the g47
+        // W4-g47 closeout carry (research/252 §11): the g47
         // `quick_fall_bypasses_both_delay_gates` (lava + honey twins)
         // dedupes onto this shaft fixture — the union's lava-only
         // `quick_fall_bypasses_the_delay_gate` name retired, the honey
@@ -4642,7 +4642,7 @@ mod liquid_merge_cadence {
         // re-pinned 207 so the +6 embed lands the floor one row below the
         // layer), and the stone walls fence the row arms, so only the
         // evaporation gate is tested.
-        // RE-PIN (research/70 witness table): the g46 unguarded
+        // RE-PIN (research/252 witness table): the g46 unguarded
         // `y > height - 200` gate — `LiquidSystem::new` seeds the layer,
         // no fixture sentinel.
         let mut w = shaft(9, 400, 207, 4);
@@ -4743,7 +4743,7 @@ mod liquid_merge_cadence {
     // assert families, the g47 shelf fixture).
 }
 
-/// W4-g45 carry-forward (union re-fold per research/70's witness table) —
+/// W4-g45 carry-forward (union re-fold per research/252's witness table) —
 /// the DelWater/sweep/buffer/stuck witnesses that survive the dedupe
 /// against the g47 `liquid_settle` module: the delay-inheritance sweep
 /// fixture (the sharper form of g47's
@@ -4825,7 +4825,7 @@ mod liquid_delwater {
         // `Liquid.cs:1532-1560`: the retired lava cell's 3×3 ring turns the
         // grass family (2/23/109/199/477/492) to dirt 0 and the mud/ash
         // family (60/70/661/662) to 59. Interior coordinates keep the
-        // SquareTileFrame 5-tile margin clear. Union re-pin (research/70):
+        // SquareTileFrame 5-tile margin clear. Union re-pin (research/252):
         // the converts now queue `square_tile_frame_record` cascades on
         // `edit_kills` (the g46 loot seam g47 adopted at d3a30ebf) — the
         // ring witness asserts the RECORDS, not just the conversion.
@@ -4924,7 +4924,7 @@ mod liquid_delwater {
 
 /// W4-g45 carry-forward (union re-fold) — the 3-neighbour `genRand` 254→255
 /// nudge (`Liquid.cs:892-895`) and the 7-neighbour extra wake pass
-/// (`:748-771`). RE-PIN (research/70 witness table): the nudge rides the g46
+/// (`:748-771`). RE-PIN (research/252 witness table): the nudge rides the g46
 /// per-consumer `LiquidSystem::surface_rng` (world-seeded), NOT g45's
 /// shared `World.frame_rng`; the seed pins below re-derive on that stream.
 /// The extra-wake witness is RE-DERIVED onto the 7-arm (the C#'s 3-cell arm
@@ -5039,14 +5039,14 @@ mod liquid_nudge_wakes {
     }
 }
 
-/// W4-g45 round 2 (union re-fold per research/70 step 5) — the
+/// W4-g45 round 2 (union re-fold per research/252 step 5) — the
 /// `Liquid.AddWater` death-guards (`Liquid.cs:1163`, `:1183-1206`): the
 /// 5-tile world-border exclusion, the `type != 546` carve-out, and the
 /// `CheckWaterDeath`/`CheckLavaDeath` → `KillTile` of a submerged object
 /// (the Tile overloads, `TileObjectData.cs:5083-5119` — W4-e11's symbols).
 /// There is NO shimmer-specific AddWater: honey and shimmer ride the
 /// `CheckWaterDeath` else-arm, lava rides `CheckLavaDeath`. LOOT UPGRADE
-/// (research/70 witness table): the inline-death witness asserts the
+/// (research/252 witness table): the inline-death witness asserts the
 /// queued `TileKill` on `edit_kills` instead of g45b's discard. The
 /// fixtures are embedded past the border. Written, NOT run (code-only).
 #[cfg(test)]
@@ -5130,7 +5130,7 @@ mod liquid_addwater_guards {
         // torch 4 resolves to its own def (`water_death: true`,
         // `uses_global_liquid_checks: false`, registry D_4), so the
         // submerged torch dies INLINE and keeps its liquid. LOOT UPGRADE
-        // (research/70): the kill record queues on `edit_kills` — g45b
+        // (research/252): the kill record queues on `edit_kills` — g45b
         // discarded it.
         let mut w = guarded_world();
         object(&mut w, 10, 10, 4);
@@ -5341,7 +5341,7 @@ mod liquid_addwater_guards {
 }
 
 /// R-12-5 driver 3 witnesses: the f25 gen-module export surface carried onto
-/// the g47 machinery (research/70 step 6) + the shared gen settle-loop
+/// the g47 machinery (research/252 step 6) + the shared gen settle-loop
 /// driver (`WorldGen.cs:16158-16206`). Union re-pin: the fixtures ride the
 /// (+6,+6) embed past AddWater's 5-tile border. Written, NOT run (code-only
 /// mode).

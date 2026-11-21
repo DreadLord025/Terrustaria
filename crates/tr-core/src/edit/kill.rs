@@ -449,7 +449,7 @@ fn square_tile_frame(
         }
         // `TileFrameImportant`'s `case 518` (`WorldGen.cs:84966-84968`): the
         // lily pad's settle check (W4-g46's dispatch arm, kept through the
-        // g47 base swap — research/70 gate 2). Like the tree arms it carries
+        // g47 base swap — research/252 gate 2). Like the tree arms it carries
         // no `destroyObject` guard and `return`s from `TileFrameImportant` —
         // the pad's kills fold into the record, no plan/kill-loop machinery.
         // The support walk reads the stock raw table (no liquid pass is

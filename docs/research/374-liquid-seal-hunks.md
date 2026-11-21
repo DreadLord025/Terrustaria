@@ -8,7 +8,7 @@
 Date: 2026-11-21. Author: W4-g46 (seal phase, code-only — no cargo/tests run).
 Branch `task/W4-g46-liquid-evaporation`, continuing the RE-FOLD union tip
 `9bc722e5`. This note publishes the **exact mechanical hunks** the worldgen
-master merge applies for research/70's steps 6 (the f25 gen-module dedupe)
+master merge applies for research/252's steps 6 (the f25 gen-module dedupe)
 and 7 (the f24/c30/g36 producer wiring), with the seam signatures they call,
 plus the one-paragraph liquid-family bible. The runtime surfaces these hunks
 call are ALL on this branch (the RE-FOLD carried them); f25's
@@ -29,7 +29,7 @@ Every hunk below calls only these public surfaces — no new engine code:
 | quick water | `LiquidSystem::quick_water(&mut self, world: &mut World, min_y: i32, max_y: i32)` | `Liquid.QuickWater` (`:104-148`); `-1` args resolve to 3 / `height-3`; the `ShimmerRemoveWater` arms run inside (`:108`/`:138`, `generating_world`-gated) |
 | water check | `LiquidSystem::water_check(&mut self, world: &mut World)` | `WorldGen.WaterCheck` (`WorldGen.cs:80415-80494`) |
 | gen loop | `LiquidSystem::gen_settle_loop(&mut self, world: &mut World)` | `WorldGen.cs:16158-16206` verbatim (Part-2 twin `:21265-21305` classic-identical): WaterCheck → quickSettle → 10 rounds × `num3*5` budget with live re-raise → WaterCheck between → ClearPendingLiquid → quickSettle down |
-| kill drain | `LiquidSystem::drain_edit_kills(&mut self) -> Vec<crate::edit::TileKill>` | the gen-tail `edit_kills` drain (research/70 §9.3 — the records must not leak across the per-pass instance) |
+| kill drain | `LiquidSystem::drain_edit_kills(&mut self) -> Vec<crate::edit::TileKill>` | the gen-tail `edit_kills` drain (research/252 §9.3 — the records must not leak across the per-pass instance) |
 | reaction check | `LiquidSystem::liquid_reaction_check(&mut self, world: &mut World, x: i32, y: i32, kind: u8)` | the `AttemptToMove*` tail's `LavaCheck`/`HoneyCheck`/`ShimmerCheck` dispatch (`Liquid.cs:284-286`/`:1445-1468`) — only needed if a gen-local `settle_water_at` is kept (the recommended unification drops it) |
 
 The producer-side seams (on the f24/c30/g36 lanes, carried at the worldgen
@@ -101,7 +101,7 @@ pub(crate) fn settle_liquids(world: &mut World, gv: &GenVars, remix: bool) {
     sys.gen_settle_loop(world);
     // `Liquid.worldGenTilesIgnoreWater(false)` (`:16207`).
     sys.world_gen_tiles_ignore_water(false);
-    // The gen-tail edit_kills drain (research/70 §9.3): DISCARD — the C#
+    // The gen-tail edit_kills drain (research/252 §9.3): DISCARD — the C#
     // KillTile forces noItem during generation (`WorldGen.cs:63546-63548`),
     // so the DelWater grass-ring/lily kills produce no loot at gen time; the
     // records are dropped, never resolved into items. RECORDED drain choice.
@@ -177,7 +177,7 @@ conversion is the `gen_dungeon_context` helper the merger adds to
 
 ```rust
 /// The `GenVars.dungeonGenVars` → [`GenDungeonContext`] conversion
-/// (research/70 step 7): each `DualDungeonSetup.dungeons[i].outer` hitbox
+/// (research/252 step 7): each `DualDungeonSetup.dungeons[i].outer` hitbox
 /// becomes a half-open `(left, top, right, bottom)` row (XNA Right/Bottom
 /// exclusive — `DungeonBounds.cs:33-39`), plus the union of the style quads'
 /// `BrickWallType` + `ExtraWallTypes` BEYOND `Main.wallDungeon`
@@ -249,7 +249,7 @@ Rationale: the C# `WorldGen.KillTile` forces `noItem = true` while
 grass-ring/lily/`Check*` kills produce NO loot during generation — resolving
 them into items would be a deviation. The records are dropped at the pass
 tail (the per-pass instance boundary, `WorldGenerator.cs:508`'s
-`numLiquid == 0` invariant). This is the drain choice research/70 §11's f25
+`numLiquid == 0` invariant). This is the drain choice research/252 §11's f25
 gen-hash RE-DERIVE row demands be picked + recorded: **DISCARD**. The
 world-hash pins (`SEED42_512`/`DEFAULT_WORLD` + `the_pass_is_deterministic`)
 RE-DERIVE at the gate — the real DelWater drain/tail + swap-remove buffer +
@@ -296,7 +296,7 @@ the player-facing half in `world_sim/editing/buckets.rs`; the only unported
 members are MP (`NetSendLiquid`/the broadcast tails/the MP cycle scaling),
 UI (`UpdateProgressDisplay`) and dev tooling
 (`AddGameplaySnapshotComponents`), all cited out-of-scope — the sim gaps-list
-is EMPTY (research/70 §10), the runtime-inert gen-fields contract holds
+is EMPTY (research/252 §10), the runtime-inert gen-fields contract holds
 (`generating`/`generating_world`/`gen_ignore_water`/`quick_settle` default
 false, the context setters gen-driver-only, `underworld_layer`
 runtime-faithful, `surface_rng` advances only on a 254 average, `skip_count`
@@ -316,6 +316,6 @@ migrates_version_2_kinds_to_item_ids`, judged by the `test result: ok` lines).
   f25's `settle_liquids.rs` lands at the worldgen master merge with these
   dedupes applied; the f25 gen-hash RE-DERIVE obligation stands (drain
   choice DISCARD, recorded §7.3).
-- research/69 SUPERSEDED-BY-70; research/70 §8-12 carried + the SEAL status
+- research/69 SUPERSEDED-BY-252 (was 70); research/252 §8-12 carried + the SEAL status
   notes; this note (374, was 71 — registry §10) is the steps-6/7 hunk record
   + the bible.

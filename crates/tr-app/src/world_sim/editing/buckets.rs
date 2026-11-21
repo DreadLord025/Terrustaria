@@ -29,7 +29,7 @@
 //! W4-g46 SEAL carry: the g45 doc-sweep module (`fa96cf32a`) taken verbatim
 //! onto the RE-FOLD union — the `add_water(&mut World)` / `wake_around`
 //! signatures it calls are the union's g45b-guarded forms (research/69
-//! ADDENDUM A1/A4; research/70 step 5).
+//! ADDENDUM A1/A4; research/252 step 5).
 
 use tr_core::tile::{LiquidKind, FLAG_LIQUID_HONEY, FLAG_LIQUID_LAVA};
 use tr_core::{edit, tiledata as td};
