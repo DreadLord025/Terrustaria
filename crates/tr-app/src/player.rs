@@ -4284,8 +4284,11 @@ impl Player {
         }
     }
 
-    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38059`): the 120/80
-    /// immunity; the 50x dust + gore burst is deferred to S1-E-1.
+    /// `Player.DoMysticSashDodge` (`Player.cs:38057-38117`): the 120/80
+    /// immunity; the 50x dust + gore burst is deferred to S1-E-1 (the W4-g17
+    /// wave-C port). The `SendData(62, .., 5f)` tail (`:38113-38116`) queues
+    /// at the `Hurt` caller (`hurt_inner`'s sash arm) — the 62 reader shares
+    /// this handler and never re-sends (W4-c27/W4-d115).
     fn do_mystic_sash_dodge(&mut self) {
         self.set_immune_time_for_all_types(if self.long_invince { 120 } else { 80 });
     }
@@ -4405,6 +4408,13 @@ impl Player {
         if dodgeable {
             if self.mystic_sash_dodge && rng.next_range(0, 10) == 0 {
                 self.do_mystic_sash_dodge();
+                // `Player.DoMysticSashDodge`'s tail (`Player.cs:38113-38116`):
+                // `NetMessage.SendData(62, -1, -1, null, whoAmI, 5f)` — the
+                // queue drains in the net tick; the 62 reader shares the
+                // handler and never re-sends (W4-c27/W4-d115). This closes
+                // the family's send census: kinds 1/2/4/5 all queue at their
+                // `Hurt` arms.
+                self.pending_dodge_sends.push(5);
                 return false;
             }
             if self.black_belt && rng.next_range(0, 10) == 0 {
@@ -19075,6 +19085,22 @@ mod tests {
         let mut rng = DodgeRng::with_rolls(&[1]);
         assert!(p.hurt(20, p.x + 100.0, &mut rng, true));
         assert!(p.hp < hp);
+    }
+
+    /// W4-d115 — the Mystic Arts Sash dodge queues the `62 SyncDodge`
+    /// kind-5 send (`Player.cs:38113-38116`); the reader never re-sends.
+    /// With this the family's send census is complete: kinds 1/2/4/5.
+    #[test]
+    fn w4_d115_sash_dodge_queues_the_kind_5_send() {
+        let mut p = dodge_player_with(&[6189]);
+        let mut rng = DodgeRng::with_rolls(&[0]);
+        assert!(!p.hurt(20, p.x + 100.0, &mut rng, true), "the sash dodges");
+        assert_eq!(rng.draws, vec![(0, 10)]);
+        assert_eq!(p.take_dodge_sends(), vec![5], "kind 5 = MysticSash (:38115)");
+        expire_dodge_window(&mut p);
+        p.apply_net_dodge(5);
+        assert!(p.immune);
+        assert!(p.take_dodge_sends().is_empty(), "the net-apply never re-sends");
     }
 
     #[test]
