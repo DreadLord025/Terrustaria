@@ -886,7 +886,192 @@ pub fn initialize_hard_mode(world: &mut World, corruption: bool, rng: &mut Unifi
             gerunner(world, num4, 0, -3.0 * num5 as f64, 5.0, false, corruption, rng);
         }
     }
-    // The moss-wall tail (`:31663-31698`) — the next slice (P5).
+    // The moss-wall tail (`:31663-31698`).
+    hardmode_moss_walls(world, rng);
+}
+
+/// `initializeHardMode`'s moss-wall tail (`WorldGen.cs:31663-31698`):
+/// `(int)(25 · maxTilesX/4200)` wall-ring placements. Each attempt draws a
+/// `RandomWorldPoint(worldSurface − 100, 1, 190, 1)` (the `worldSurface <=
+/// 100` arm uses top 20, `:31672`); a crimson/corrupt/hallowed floor tile
+/// with air above rolls the unsafe-wall family (`192 + Next(4)` crimson,
+/// `188 + Next(4)` corrupt, `200 + Next(4)` hallow, `:31676-31687`), then
+/// floods the pocket above through `ShapeFloodFill(1000)` carrying
+/// `IsNotSolid → OnlyWalls(the 31-wall natural set) → Blank.Output`
+/// (`:31690`). A drained pocket over 50 cells takes the wall ring
+/// (`OuterOutline(useDiagonals, useInterior)` + `PlaceWall`, `:31693`);
+/// every 15000th failed attempt burns one placement (`:31668-31671`).
+///
+/// The shape/action framework is ported inline (the `wall_variety.rs`
+/// precedent): the `OnlyWalls` list verbatim (the duplicated 71 kept), the
+/// `PlaceWall` `SquareWallFrame` self + 4 neighbours deferred per the
+/// port's plain-write convention.
+fn hardmode_moss_walls(world: &mut World, rng: &mut UnifiedRandom) {
+    let mut num9 = (25.0 * (world.width as f64 / 4200.0)) as i32;
+    let mut shape = MossShape::default();
+    let mut num10 = 0;
+    while num9 > 0 {
+        num10 += 1;
+        if num10 % 15000 == 0 {
+            num9 -= 1;
+        }
+        // `RandomWorldPoint` (`:27111-27114`): X first, then Y.
+        let top = if world.world_surface > 100.0 {
+            world.world_surface as i32 - 100
+        } else {
+            20
+        };
+        let px = rng.next_range(1, world.width - 1);
+        let py = rng.next_range(top, world.height - 190);
+        let Some(tile) = world.tile(px, py) else {
+            continue;
+        };
+        let kind = tile.kind;
+        let mut num11: u16 = 0;
+        if crate::tiledata::sets::SET_CRIMSON.has(kind) {
+            num11 = 192 + rng.next_max(4) as u16;
+        } else if crate::tiledata::sets::SET_CORRUPT.has(kind) {
+            num11 = 188 + rng.next_max(4) as u16;
+        } else if crate::tiledata::sets::SET_HALLOW.has(kind) {
+            num11 = 200 + rng.next_max(4) as u16;
+        }
+        let above_active = world.tile(px, py - 1).is_some_and(|t| t.active());
+        if tile.active() && num11 != 0 && !above_active {
+            let flag2 = moss_pocket_fill(world, (px, py - 1), &mut shape);
+            if shape.count() > 50 && flag2 {
+                moss_outline_place(world, (px, py), &shape, num11);
+                num9 -= 1;
+            }
+            shape.clear();
+        }
+    }
+}
+
+/// The `OnlyWalls` list of the hardmode moss chain (`WorldGen.cs:31690`) —
+/// the natural unsafe-wall families; the duplicated 71 is the C#'s own.
+const MOSS_POCKET_WALLS: [u16; 31] = [
+    0, 54, 55, 56, 57, 58, 59, 61, 185, 212, 213, 214, 215, 2, 196, 197, 198, 199, 15, 40, 71,
+    64, 204, 205, 206, 207, 208, 209, 210, 211, 71,
+];
+
+/// `ShapeData` (`ShapeData.cs:9-114`) — the relative cell set, insertion
+/// order beside the membership set (the `wall_variety.rs` precedent).
+#[derive(Default)]
+struct MossShape {
+    points: Vec<(i32, i32)>,
+    set: std::collections::HashSet<(i32, i32)>,
+}
+
+impl MossShape {
+    fn add(&mut self, x: i32, y: i32) {
+        if self.set.insert((x, y)) {
+            self.points.push((x, y));
+        }
+    }
+    fn contains(&self, x: i32, y: i32) -> bool {
+        self.set.contains(&(x, y))
+    }
+    fn count(&self) -> usize {
+        self.set.len()
+    }
+    fn clear(&mut self) {
+        self.points.clear();
+        self.set.clear();
+    }
+}
+
+/// `ShapeFloodFill(1000)` (`ShapeFloodFill.cs:17-58`) carrying
+/// `Chain(IsNotSolid, OnlyWalls(MOSS_POCKET_WALLS), Blank.Output(shape))`
+/// (`WorldGen.cs:31690`): a cell passes only when it is not solid-or-sloped
+/// AND its wall is in the natural set; a pass records the relative cell and
+/// enqueues the 4 neighbours (the 1-tile border guards). Returns the C#
+/// `queue.Count == 0` after the drain loop — true only when the pocket
+/// drained within the 1000-action budget.
+fn moss_pocket_fill(world: &World, origin: (i32, i32), shape: &mut MossShape) -> bool {
+    use std::collections::{HashSet, VecDeque};
+    let (ox, oy) = origin;
+    let mut queue: VecDeque<(i32, i32)> = VecDeque::new();
+    let mut visited: HashSet<(i32, i32)> = HashSet::new();
+    queue.push_back(origin);
+    let mut num = 1000;
+    while !queue.is_empty() && num > 0 {
+        let (x, y) = queue.pop_front().unwrap();
+        if visited.contains(&(x, y)) {
+            continue;
+        }
+        // `Modifiers.IsNotSolid` (`Modifiers.cs:573-583`) — inactive or not
+        // solid-or-sloped (`WorldGen.cs:69985-70009`: tileSolid, not
+        // tileSolidTop, not wired-inactive; slopes/half-bricks pass).
+        let not_solid = !world.tile(x, y).is_some_and(|t| {
+            t.active()
+                && crate::tiledata::TILE_SOLID.has(t.kind)
+                && !crate::tiledata::TILE_SOLID_TOP.has(t.kind)
+                && (t.flags & crate::tile::FLAG_INACTIVE) == 0
+        });
+        // `Modifiers.OnlyWalls` (`Modifiers.cs:220-230`).
+        let wall_ok = world
+            .tile(x, y)
+            .is_some_and(|t| MOSS_POCKET_WALLS.contains(&t.wall));
+        if !not_solid || !wall_ok {
+            continue;
+        }
+        shape.add(x - ox, y - oy);
+        visited.insert((x, y));
+        num -= 1;
+        if x + 1 < world.width - 1 {
+            queue.push_back((x + 1, y));
+        }
+        if x - 1 >= 1 {
+            queue.push_back((x - 1, y));
+        }
+        if y + 1 < world.height - 1 {
+            queue.push_back((x, y + 1));
+        }
+        if y - 1 >= 1 {
+            queue.push_back((x, y - 1));
+        }
+    }
+    // The drain loop (`:48-57`).
+    while let Some(item) = queue.pop_front() {
+        if !visited.contains(&item) {
+            queue.push_front(item);
+            break;
+        }
+    }
+    queue.is_empty()
+}
+
+/// `ModShapes.OuterOutline(shape, useDiagonals: true, useInterior: true)` +
+/// `Actions.PlaceWall(num11)` (`WorldGen.cs:31693`, `ModShapes.cs:43-61`):
+/// every recorded cell plus its 8-neighbour ring cells NOT in the set, in
+/// discovery order. The origin is the FLOOR cell while the data was
+/// recorded relative to the air cell above — the ring lands one row lower,
+/// verbatim. The `PlaceWall` `SquareWallFrame` self + 4 neighbours
+/// (`Actions.cs:536-547`) is deferred per the plain-write convention.
+fn moss_outline_place(world: &mut World, origin: (i32, i32), shape: &MossShape, wall: u16) {
+    const OFFSETS: [(i32, i32); 8] = [
+        (1, 0),
+        (-1, 0),
+        (0, 1),
+        (0, -1),
+        (1, 1),
+        (1, -1),
+        (-1, 1),
+        (-1, -1),
+    ];
+    let (ox, oy) = origin;
+    for &(dx, dy) in &shape.points {
+        if let Some(t) = world.tile_mut(ox + dx, oy + dy) {
+            t.wall = wall;
+        }
+        for (px, py) in OFFSETS {
+            if !shape.contains(dx + px, dy + py) {
+                if let Some(t) = world.tile_mut(ox + dx + px, oy + dy + py) {
+                    t.wall = wall;
+                }
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1129,6 +1314,57 @@ mod runner_tests {
         initialize_hard_mode(&mut w, true, &mut rng);
         assert_eq!(w.tiles, before, "no V conversions");
         assert_ne!(rng, pristine, "the head still drew");
+    }
+
+    /// W4-d103 tail (P5): the moss-wall tail (`:31663-31698`) — a corrupt
+    /// floor tile with a drained wall-0 pocket above takes the 188-191
+    /// unsafe-wall ring (the outline lands one row lower than the pocket,
+    /// the floor-cell origin quirk). The fixture: a stone ceiling at row
+    /// 180, stone dividers every 10 columns, the corrupt floor at row 198 —
+    /// each 10x17 air pocket (>50 cells) drains within the 1000 budget, and
+    /// EVERY non-divider floor column qualifies, so the drawn point lands
+    /// one within the 15000-attempt burn budget.
+    #[test]
+    fn w4_d103_p5_the_moss_wall_ring_paints_the_pocket_rim() {
+        fn fixture() -> World {
+            let mut w = World::new("t".into(), 200, 400);
+            w.world_surface = 150.0;
+            // The stone ground from row 198 down + the ceiling at 180.
+            for x in 0..200 {
+                for y in 198..400 {
+                    put(&mut w, x, y, 1);
+                }
+                put(&mut w, x, 180, 1);
+            }
+            // The dividers every 10 columns (rows 181..197).
+            for x in (0..200).step_by(10) {
+                for y in 181..198 {
+                    put(&mut w, x, y, 1);
+                }
+            }
+            // The corrupt floor row.
+            for x in 0..200 {
+                put(&mut w, x, 198, 25);
+            }
+            w
+        }
+        let mut w = fixture();
+        let mut rng = UnifiedRandom::new(17);
+        hardmode_moss_walls(&mut w, &mut rng);
+        // Some ring cell took a 188-191 wall (the placement point is drawn,
+        // so the exact cell varies — the family is the assertion).
+        let painted = w
+            .tiles
+            .iter()
+            .filter(|t| (188..=191).contains(&t.wall))
+            .count();
+        assert!(painted > 0, "the corrupt unsafe-wall ring ({painted})");
+        // a == b: the same seed replays byte-identical.
+        let mut w2 = fixture();
+        let mut rng2 = UnifiedRandom::new(17);
+        hardmode_moss_walls(&mut w2, &mut rng2);
+        assert_eq!(w.tiles, w2.tiles, "a == b");
+        assert_eq!(rng, rng2, "a == b stream");
     }
 }
 
