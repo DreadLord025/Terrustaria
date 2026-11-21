@@ -4833,6 +4833,32 @@
    "bgAreaMpx": 70.57
   },
   {
+   "scenario": "pageform+underworld0",
+   "note": "g72 style-0 underworld set on its own page",
+   "sheets": 9909,
+   "newBgSheets": 5,
+   "missing": [],
+   "areaMpx": 80.86,
+   "basePages": [
+    {
+     "height": 8192,
+     "n": 963
+    },
+    {
+     "height": 1298,
+     "n": 8941
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 1904,
+     "n": 5
+    }
+   ],
+   "totalPages": 3,
+   "bgAreaMpx": 6.14
+  },
+  {
    "scenario": "pageform+underworld1",
    "note": "g72 style-1 underworld set on its own page",
    "sheets": 9909,
@@ -4857,6 +4883,32 @@
    ],
    "totalPages": 3,
    "bgAreaMpx": 12.33
+  },
+  {
+   "scenario": "pageform+underworld2",
+   "note": "g72 style-2 underworld set on its own page",
+   "sheets": 9909,
+   "newBgSheets": 5,
+   "missing": [],
+   "areaMpx": 81.78,
+   "basePages": [
+    {
+     "height": 8192,
+     "n": 963
+    },
+    {
+     "height": 1298,
+     "n": 8941
+    }
+   ],
+   "bgPages": [
+    {
+     "height": 1722,
+     "n": 5
+    }
+   ],
+   "totalPages": 3,
+   "bgAreaMpx": 7.06
   },
   {
    "scenario": "pageform+ALL-VARIANTS",
@@ -4895,58 +4947,6 @@
    ],
    "totalPages": 6,
    "bgAreaMpx": 181.48
-  },
-  {
-   "scenario": "pageform+underworld0",
-   "note": "g72 style-0 underworld set on its own page",
-   "sheets": 9909,
-   "newBgSheets": 5,
-   "missing": [],
-   "areaMpx": 80.86,
-   "basePages": [
-    {
-     "height": 8192,
-     "n": 963
-    },
-    {
-     "height": 1298,
-     "n": 8941
-    }
-   ],
-   "bgPages": [
-    {
-     "height": 1904,
-     "n": 5
-    }
-   ],
-   "totalPages": 3,
-   "bgAreaMpx": 6.14
-  },
-  {
-   "scenario": "pageform+underworld2",
-   "note": "g72 style-2 underworld set on its own page",
-   "sheets": 9909,
-   "newBgSheets": 5,
-   "missing": [],
-   "areaMpx": 81.78,
-   "basePages": [
-    {
-     "height": 8192,
-     "n": 963
-    },
-    {
-     "height": 1298,
-     "n": 8941
-    }
-   ],
-   "bgPages": [
-    {
-     "height": 1722,
-     "n": 5
-    }
-   ],
-   "totalPages": 3,
-   "bgAreaMpx": 7.06
   }
  ]
 }
