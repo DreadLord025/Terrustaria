@@ -2661,7 +2661,7 @@ impl Projectile {
                     self.vel.x *= 0.97;
                 }
                 if self.ai[1] == 0.0 {
-                    self.ai[1] = 1.0 + rng.next_range(0, 6) as f32;
+                    self.ai[1] = 1.0 + d.rng.next_range(0, 6) as f32;
                 }
                 if self.ai[1] > 0.0 {
                     self.frame = self.ai[1] as i32 - 1;
@@ -2934,7 +2934,7 @@ impl Projectile {
             // default 20-tick arm and the five kinds that aim while rising.
             _ => {
                 let delay = if self.kind == 93 {
-                    28.0 + rng.next_range(0, 6) as f32
+                    28.0 + d.rng.next_range(0, 6) as f32
                 } else {
                     20.0
                 };
@@ -2997,7 +2997,7 @@ impl Projectile {
             // type flip (`150 → 151` on `Next(2) == 0`, only while `ai[1] == 0`
             // and `alpha == 255`). The draw is spent ONLY for the 150/151/152
             // kinds at that state — the Vilethorn pair never reaches it.
-            if nettle && self.ai[1] == 0.0 && self.alpha == 255 && rng.next_range(0, 2) == 0 {
+            if nettle && self.ai[1] == 0.0 && self.alpha == 255 && d.rng.next_range(0, 2) == 0 {
                 self.kind += 1;
                 self.net_update = true;
             }

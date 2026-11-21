@@ -1826,16 +1826,36 @@ mod tests {
         let q = proj(1051);
         let mut qpool = DustPool::new();
         let mut qrng = UnifiedRandom::new(161);
+        let mut qmpool = DustPool::new();
         let mut qmirror = UnifiedRandom::new(161);
         let mut qd = ProjDust { pool: &mut qpool, ctx: &c, rng: &mut qrng };
         style6_burst(&q, &w, &mut qd, 0, 50, true, true);
-        assert_eq!(active(&qpool).len(), 50);
+        // The mirror replays the FULL draw sequence: the Next(3) pick, the
+        // pool internals, then the flag2 post-arms.
         for num53 in 0..50 {
             let t = if qmirror.next_range(0, 3) == 0 { 309 } else { 0 };
-            assert_eq!(qpool.slot(num53).dust_type, t, "the per-dust pick");
-            let no_gravity = num53 % 3 != 0;
-            assert_eq!(qpool.slot(num53).no_gravity, no_gravity);
-            if !no_gravity {
+            let idx = qmpool.new_dust(
+                &mut qmirror, &c, &w, q.pos, 10, 10, t,
+                q.vel.x, q.vel.y, 50, Color::default(), 1.0,
+            );
+            let md = qmpool.slot_mut(idx);
+            md.no_gravity = num53 % 3 != 0;
+            if !md.no_gravity {
+                md.scale *= 1.25;
+                md.velocity /= 2.0;
+                md.velocity.y -= 2.2;
+            } else {
+                md.scale *= 1.75;
+                md.velocity += q.vel * 0.65;
+            }
+        }
+        assert_eq!(active(&qpool).len(), 50);
+        for num53 in 0..50 {
+            assert_eq!(qpool.slot(num53).dust_type, qmpool.slot(num53).dust_type);
+            assert_eq!(qpool.slot(num53).no_gravity, num53 % 3 != 0);
+            assert_eq!(qpool.slot(num53).velocity, qmpool.slot(num53).velocity);
+            assert_eq!(qpool.slot(num53).scale, qmpool.slot(num53).scale);
+            if num53 % 3 == 0 {
                 assert!(qpool.slot(num53).velocity.y < 0.0, "the −2.2 Y kick");
             }
         }
