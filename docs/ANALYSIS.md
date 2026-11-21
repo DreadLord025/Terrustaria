@@ -39244,3 +39244,163 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The caster aiStyle-8 draw-parity (W4-g5, code-only)
+
+**Task identity, restated**: the brief's "style-7 caster" is the ROADMAP
+parent row's mislabel — the C# dispatch is `aiStyle == 7` →
+`AI_007_TownEntities` (the town family, b3's axis-7 wiring landed
+`96a5d88f`) and `aiStyle == 8` → the caster arm
+(`NPC.cs:20817-21376`). This round ports the caster arm's MISSING
+halves onto the LIVE machine and lands the Djinn's bolt; the town axis
+is untouched.
+
+**The in-flight census this round executes**: `task/W4-d128-caster-
+reference-doc` (pushed, unmerged — commits `02c184b9`/`42b8a1d0`)
+censused the family and EXCLUDED `npc_ai_caster.rs` from wiring as a
+drop-in swap (it consumes the draws the live arm skipped — a swap
+without coordination is a determinism break). Its verdict: keep the
+wired arm (`npc.rs::update_caster` → `npc_ai_bat::ai_style_8_step`),
+land ONE coordinated draw-parity commit on the LIVE arm at the exact
+C# draw positions, fix the FireImp radius defect in the same commit,
+then the reference retires. W4-g5 IS that parity commit (phases 1-2),
+plus the 596 bolt the volley needs to be observable.
+
+### Policy A (the parity commit's stated draw policy)
+
+Every ARM-LEVEL `Main.rand` draw is consumed at its exact C# position
+on the caller's stream; the `Dust.NewDust` INTERNAL draws (the
+six-draw row, `Dust.cs:170-175`/`:190`, plus the pool-occupancy skip
+rolls `:114-148`) stay the dust task's documented skip (S1-E-1's
+`DustRng` seam) — the same policy the reference module's header
+enumerated and the empress/unicorn machines already use. The visual
+dust bodies, the AddLight feeds (S1-E-5's `npc_lights`) and the Item8
+sounds (S1-E-21g, already wired) are unchanged.
+
+**This is the deliberate ONE-TIME stream shift** the d128 plan
+mandates: every caster tick now advances the shared `UpdateNPCs`
+stream further than before. The golden outputs that pin NPC-adjacent
+streams re-bless at the verification gate (no cargo in this round —
+code-only mode; the witnesses below are written, NOT run).
+
+### The RNG slot census (per kind, per tick, in C# order)
+
+UpdateNPCs stream, one caster's tick (`NPC.cs:20817-21376`):
+
+| Slot | C# site | 24 FireImp | 29 GoblinSorcerer | 32 DarkCaster | 45 Tim | 533 DesertDjinn |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1. arrival burst 1 | `:20867` | 0 | 50× Next(1,3) | 0 | 50× Next(1,3) | 0 |
+| 2. arrival burst 2 | `:20936` | 0 | 50× Next(1,3) | 0 | 50× Next(1,3) | 0 |
+| 3. teleport search | `:18952-18953` | 2/attempt ≤100, radius 20 | same | same (+dungeon gate) | same | same |
+| 4. Djinn volley | `:21140-21141` | — | — | — | — | 2/iteration ≤50, on ai[1]=120/90/60/30/0 |
+| 5. ambient gate | `:21282`/`:21292`/`:21366` | Next(6) | Next(5) | Next(3) | Next(5) | 0 (light only `:21358-21361`) |
+
+Slots 1-2 fire ONLY on the arrival tick (ai[2]/ai[3] both non-zero —
+the deferred teleport, exactly 100 draws for 29/45); slot 3 only on
+the ai[0] ≥ 650 tick (the >2000-px Manhattan bail draws NOTHING,
+`:18944`); slot 4 only on the five window ticks (the >2000-px length
+gate draws NOTHING, `:21133`); slot 5 EVERY tick. Zero-draw paths:
+netMode 1 (unported — the port is host/single-player), the 172/281-286/
+693 branches (unported kinds, cited skips with their kinds).
+
+The 596 bolt's own slots (UpdateProjectiles stream,
+`Projectile.cs:33553-33678` + Kill `:72470-72502`):
+
+| Slot | C# site | Draws |
+| --- | --- | --- |
+| ring gate | `:33619` | Next(3) per iteration, ≤3; `!= 0` RETURNS (the homing tail skipped — on average the arm returns after ~1.5 draws) |
+| fuse burst | `:33644` | timeLeft < 4: 10× Next(2) (SelectRandom(27,6), `Utils.cs:2459-2462`) |
+| Kill ring 1 | `:72486` | 4× (2 NextDouble RotatedByRandom + 1 NextDouble radius) = 12 |
+| Kill ring 2 | `:72491` | 20× 3 = 60 |
+| Kill ring 3 | `:72498` | 10× 2 = 20 (the velocity ToRotation is pure) |
+
+Kill total: 92 NextDouble. The NewDust internals in every ring stay
+the dust task's skip.
+
+### What landed (the MISSING halves, ported verbatim)
+
+Phase 1 (`1a25138f`, the live arm `npc_ai_bat.rs`):
+* the 100-draw arrival bursts (`teleport_burst_draws`, 29/45 only)
+  around the placement, between the two wired Item8 puffs;
+* the per-tick ambient gates Next(5)/Next(3)/Next(6) (533 none);
+* the Djinn curse volley (`:21117-21162`) verbatim: the %30 window's
+  Item8 FIRST (netMode-independent), the >2000 gate, ≤50 X-then-Y
+  pairs, the ±2 target / ±6 self box exclusions with `nactive()`
+  (active AND not actuated), the lava + SolidTiles(±2) gates, the
+  accepted tile's centre → `wants_djinn_curse` (the sim drains it
+  into the 596 with damage 0, knockback 1, ai0 = target, owner
+  myPlayer — the sharknado-bolt seam);
+* **L1 fixed**: the teleport search radius is the C# DEFAULT 20 for
+  EVERY type (`:18937`/`:21097`); num88 (5 for the imp) is only the
+  post-teleport windup (`:21101`).
+
+Phase 2 (`2f934eeb`, the bolt):
+* the 596 SetDefaults row (`Projectile.cs:6450-6460`) + the
+  ignoreWater overlay;
+* `ai_djinn_curse` (the aiStyle-107 arm, `:33553-33678`): the
+  materialize fade + the SolidCollision 128 hold, the 4-frame sheet,
+  the ring's Next(3) != 0 EARLY RETURN verbatim (the quirk that makes
+  the homing intermittent), the timeLeft<4 fuse (60×60 recentre,
+  damage 30/22, the 10 SelectRandom draws), the (v×9 + aim×7.5)/10
+  homing beyond 40 px with the UnitY NaN fold, the dead-target
+  30-floor + ai[0] = −1 latch; the 575 SandTornado sibling is an
+  unported kind (cited skip);
+* `djinn_curse_kill` (`:72470-72502`): the recentred 60×60, damage
+  30/22, the Damage() PVE box walk (`damage_pve_boxed`, the
+  gem_bolt_aoe precedent) + the Damage_EVP player-box fold, Item14,
+  the 92-NextDouble ring census; wired in the death-hook chain at its
+  C# body position (72470 above the 73398+ wave-3 arms).
+
+### Decisions recorded
+
+* **R4 (Tim's 665)**: the fold STAYS. The C# 30/665 SetDefaults rows
+  are stat-identical (`NPC.cs:15699-15713` vs `:17403-17417`:
+  16×16, aiStyle 9, dmg 20, def 0, 1 HP, NPCHit3/NPCDeath3, noGravity/
+  noTileCollide, alpha 100, kb 0) and the aiStyle-9 arm serves both
+  (`:21519`); the port's ChaosBall kind covers both net ids in the
+  bestiary. A distinct kind would add protocol surface for zero
+  behavioural delta.
+* **R1/R2/R3 (the reference residuals)**: moot for the live arm — it
+  already had `nactive()` right, the Item8 order wired, and its
+  documented inline integration tail. `npc_ai_caster.rs` stays the
+  unwired draw-census SPEC (its retirement is the merge-time keep-one
+  decision, not this round's).
+* **The Djinn volley's sound**: the window Item8 (`:21121`) plays
+  even when the >2000 gate or the tile search rejects every spot —
+  the C# plays before the netMode gate.
+* **The fuse double-write**: the C# writes the 60×60/damage at
+  timeLeft<4 in the AI (`:33631-33651`) AND again in Kill
+  (`:72472-72480`); both are ported (the AI write makes the pre-death
+  contact ticks hurt at 30/22 through the resized box, the Kill write
+  re-arms the explosion walk).
+* **The Damage_EVP fold**: the port's `damage_player` is a
+  centre-point test; the Kill explosion needs the BOX overlap
+  (`Damage_EVP`'s `Colliding(projRectangle, player.getRect())`,
+  `:14816`), so the kill hook carries its own box test + the
+  `hurt_with_source` call (the iframe gate holds repeats). The
+  DamageVar/luck/banner scaling chain stays the hit-path's existing
+  fold (the same deviation `damage_player` records).
+
+### Witnesses (written, NOT run — code-only mode)
+
+`npc_ai_bat.rs` (6 new + 1 re-derived): the Tim arrival's exact
+101-draw mirror replay, the DarkCaster arrival's ambient-only spend,
+the per-kind ambient census (5 kinds), the FireImp radius-20 stream
+proof + windup-5 pin, the volley window's pair-replay + tile-centre
+pin, the far-window zero-draw pin; the Djinn never-fires witness
+re-derived to fires-curses (the sphere list stays empty — the Djinn
+fires a PROJECTILE). `npc.rs`'s Djinn trigger/wrap witness comment
+updated (the assertion itself unchanged — it never asserted the
+stream). `projectile.rs` `w4_g5_djinn_curse_tests` (6): the row
+pin, the ring early-return stream proof, the homing blend's first
+step (0.75), the dead-target floor/latch, the Kill 92-double census +
+Item14 payload, the expert-22 arm.
+
+**Verification**: no cargo/rustc/rustfmt/tests/graphify invoked
+(code-only). Every ported block re-read against the cited C# windows
+in ≤100-line reads: `NPC.cs:20780-21379` (six windows),
+`:18937-19006`, `Projectile.cs:6440-6484`/`:33540-33719`/
+`:72460-72504`/`:10862-10936`/`:14770-14859`/`:17060-17104`/
+`:17190-17219`/`:79135-79164`, `Dust.cs:100-209`,
+`Utils.cs:1697-1700`/`:2459-2462`, `Entity.cs:185-214`,
+`NPC.cs:15699-15713`/`:17403-17417` (the R4 fold proof).
