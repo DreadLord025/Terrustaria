@@ -1239,6 +1239,7 @@ pub fn draw_hud(
                 ..tooltip_world
             },
             inventory: Some(&inventory[..]),
+            has_coin_gun: has_coin_gun(inventory, equip),
             held_kind: inventory[selected].kind,
             open_chest,
             ..Default::default()
@@ -1256,6 +1257,18 @@ pub fn draw_hud(
     // things `Main.DrawInterface` draws (`Main.cs:44939`); the OS pointer is
     // hidden while the vanilla `Cursor_0` is on screen.
     cursor::draw(r, lookups, cursor_state, mouse_pos);
+}
+
+/// `Player.HasItem(905)` (`Player.cs:55894-55904`): the Coin Gun scan over
+/// the full 58 carry slots — the grid PLUS the coin/ammo rows
+/// (`inv::INV_SLOTS` = 50 + 4 + 4). The C# keeps all 58 in one array; the
+/// port splits them, so the scan walks the three (`research/128 §4.4` —
+/// the old `.take(58)` over the 50-slot grid slice never reached 50-57).
+fn has_coin_gun(inventory: &[ItemSlot; INV], equip: &inv::EquipSlots) -> bool {
+    let carries = |s: &ItemSlot| s.count > 0 && s.kind == 905;
+    inventory.iter().any(carries)
+        || equip.coins.iter().any(carries)
+        || equip.ammo.iter().any(carries)
 }
 
 /// Maps an `inventory::HoverRef` (which panel the pointer is over) to the item it
@@ -1288,6 +1301,36 @@ fn hover_item_for<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// W4-f28 salvage (research/128 §4.4): `Player.HasItem(905)`
+    /// (`Player.cs:55894-55904`) scans 58 slots — the grid plus the coin
+    /// (50-53) and ammo (54-57) rows. A Coin Gun parked in a coin or ammo
+    /// cell must satisfy the coin-damage gate; the old `.take(58)` over
+    /// the 50-slot grid slice missed them. An empty stack never counts.
+    #[test]
+    fn w4_f28_the_coin_gun_scan_covers_the_coin_and_ammo_rows() {
+        let grid: [ItemSlot; INV] =
+            std::array::from_fn(|_| ItemSlot { kind: 0, name: "", count: 0, prefix: 0 });
+        let mut equip = inv::EquipSlots::empty();
+        assert!(!has_coin_gun(&grid, &equip), "no coin gun anywhere");
+        // Coin cell 50 (`inv::coin_slot_index(0)`).
+        equip.coins[0] = ItemSlot { kind: 905, name: "", count: 1, prefix: 0 };
+        assert!(has_coin_gun(&grid, &equip), "the coin row is slot 50");
+        assert_eq!(crate::inv::coin_slot_index(0), 50);
+        // Ammo cell 57 (`inv::ammo_slot_index(3)`).
+        equip.coins[0] = ItemSlot { kind: 0, name: "", count: 0, prefix: 0 };
+        equip.ammo[3] = ItemSlot { kind: 905, name: "", count: 1, prefix: 0 };
+        assert!(has_coin_gun(&grid, &equip), "the ammo row is slot 57");
+        assert_eq!(crate::inv::ammo_slot_index(3), 57);
+        // stack == 0 does not count (`inventory[i].stack > 0`).
+        equip.ammo[3].count = 0;
+        assert!(!has_coin_gun(&grid, &equip));
+        // The grid arm still works.
+        let mut grid = grid;
+        grid[25] = ItemSlot { kind: 905, name: "", count: 1, prefix: 0 };
+        assert!(has_coin_gun(&grid, &equip));
+        assert_eq!(crate::inv::INV_SLOTS, 58);
+    }
 
     /// The corner chat's row anchor (`RemadeChatMonitor.cs:83`):
     /// `(88, screenHeight - 30 - 28 - row*22)` — x=88, the newest row 58 px

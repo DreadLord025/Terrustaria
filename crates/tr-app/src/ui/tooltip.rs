@@ -213,10 +213,16 @@ pub struct TooltipContext<'a> {
     /// W4-f28 — the world/session gates (expert mode, the downed latches,
     /// the seed flags, npcShop, the master/disco colour animators).
     pub world: TooltipWorld,
-    /// `Main.player[myPlayer].inventory[selectedItem].type` — the coin-gun
-    /// damage gate's `HasItem(905)` scan (`Main.cs:20669`) and the Psycho
-    /// Knife's self-hold arm (`:20762`). `None` = no inventory visible (the
-    /// menu/craft hovers keep the C#'s no-player shape).
+    /// `Main.player[myPlayer].HasItem(905)` (`Player.cs:55894-55904`) — the
+    /// coin-gun damage gate's 58-slot scan (`Main.cs:20669`). The draw site
+    /// computes it over grid + `equip.coins` + `equip.ammo` (`inv::INV_SLOTS`
+    /// = 58); a `inventory` slice alone is the 50-slot grid and would miss
+    /// the coin/ammo rows 50-57 (research/128 §4.4).
+    pub has_coin_gun: bool,
+    /// The hovered player's carry grid (`&inventory[..]`, the 50-slot
+    /// grid). Kept on the context for the shop/craft hover seams
+    /// (research/128 §4.3); the coin-gun scan rides `has_coin_gun` above —
+    /// this slice alone cannot see the coin/ammo rows 50-57.
     pub inventory: Option<&'a [ItemSlot]>,
     /// The held item's KIND (the inventory scan's `selectedItem` row) —
     /// the Psycho Knife 3106 self-hold compare (`Main.cs:20762`).
@@ -242,6 +248,7 @@ impl Default for TooltipContext<'_> {
             held_crit: 0,
             flags: HoverFlags::default(),
             world: TooltipWorld::STOCK,
+            has_coin_gun: false,
             inventory: None,
             held_kind: 0,
             open_chest: -1,
@@ -317,8 +324,8 @@ pub fn item_tooltip_lines(
         lines.push((row, [1.0, 1.0, 1.0, 1.0]));
     }
     // `:20669` — the damage gate: the notAmmo/useStyle exclusion and the
-    // coin-gun `HasItem(905)` arm.
-    if tooltip_lines2::damage_row_gate(kind, d, damage, ctx.inventory) {
+    // coin-gun `HasItem(905)` arm (the 58-slot scan rides ctx.has_coin_gun).
+    if tooltip_lines2::damage_row_gate(kind, d, damage, ctx.has_coin_gun) {
         // Damage (`:20672-20700`): the item's own damage × the per-item
         // tooltip multiplier × the rapid-attack scale, then the player's
         // weapon-damage multiplier (`GetWeaponDamageMultiplier`).

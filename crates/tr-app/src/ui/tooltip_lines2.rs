@@ -748,19 +748,14 @@ pub fn display_knockback(
 /// The damage row's gate (`Main.cs:20669`): `damage > 0` (the INSTANCE's
 /// prefixed damage), the notAmmo/useStyle exclusion and the coin-gun arm —
 /// coins 71-74 only show damage while the player carries the Coin Gun 905
-/// (`Player.HasItem`, the 58-slot scan).
-pub fn damage_row_gate(
-    kind: u16,
-    d: &ItemDef,
-    instance_damage: i32,
-    inventory: Option<&[crate::item::ItemSlot]>,
-) -> bool {
+/// (`Player.HasItem`, `Player.cs:55894-55904`: the 58-slot scan — the grid
+/// plus the coin/ammo rows; the draw site computes `has_coin_gun` over
+/// grid + `equip.coins` + `equip.ammo`, research/128 §4.4 — the old
+/// `.take(58)` over the 50-slot grid slice never reached rows 50-57).
+pub fn damage_row_gate(kind: u16, d: &ItemDef, instance_damage: i32, has_coin_gun: bool) -> bool {
     instance_damage > 0
         && (!d.not_ammo || d.use_style != 0)
-        && (!(71..=74).contains(&kind)
-            || inventory.is_some_and(|inv| {
-                inv.iter().take(58).any(|s| s.kind == 905 && s.count > 0)
-            }))
+        && (!(71..=74).contains(&kind) || has_coin_gun)
 }
 
 /// The use-time row's gate (`Main.cs:20717`): `useStyle != 0` and — for a
@@ -1211,7 +1206,8 @@ mod w4_f28_tests {
 
     /// W4-f28 — the damage gate's coin-gun arm (`Main.cs:20669`): the
     /// Copper Coin's damage row appears only while the player carries the
-    /// Coin Gun 905; the Strange Brew's life row prints the RANGE form
+    /// Coin Gun 905 (the 58-slot `HasItem` scan rides `ctx.has_coin_gun`);
+    /// the Strange Brew's life row prints the RANGE form
     /// (`:20878-20882`).
     #[test]
     fn w4_f28_the_coin_gun_gate_and_the_range_restore() {
@@ -1220,8 +1216,7 @@ mod w4_f28_tests {
         let damage = crate::lang::tip(3);
         let rows = item_tooltip_lines(71, def(71), TooltipContext::default());
         assert!(!texts(&rows).iter().any(|t| t.ends_with(damage.as_str())), "no coin gun: no damage row");
-        let inv = [crate::item::ItemSlot { kind: 905, name: "", count: 1, prefix: 0 }];
-        let ctx = TooltipContext { inventory: Some(&inv), ..Default::default() };
+        let ctx = TooltipContext { has_coin_gun: true, ..Default::default() };
         let rows = item_tooltip_lines(71, def(71), ctx);
         assert!(texts(&rows).contains(&format!("25{damage}").as_str()), "{:?}", texts(&rows));
         // The Strange Brew: RestoresLifeRange(70, 120).
