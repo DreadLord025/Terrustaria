@@ -22,7 +22,13 @@
 //!
 //! Deviations (the standing pool precedents, ANALYSIS): the 650/895/896
 //! `Utils.PlotTileLine` light casts (`:35008-35043`) have no per-frame port
-//! layer (the `ProjLight` chain carries only the `SetDefaults` amount); the
+//! layer — the pets carry ZERO `light` amount (none of the seven
+//! `SetDefaults` rows sets it, so the `ProjLight` chain's `light > 0f`
+//! gate never fires) and ZERO `AddLight` sites (the c19/e6 107-site
+//! family has nothing of these kinds — the light is the light-map WRITE
+//! layer, the 870 `FloodFillTile` deferral precedent; the colours/widths
+//! are censused in ANALYSIS "The activation wave" (4) for that layer's
+//! row); the 882/888/898/957 cast nothing — dark in the C# too. The
 //! 957's `SoundID.GlommerBounce` (`:35524`) is a TRACKABLE cue
 //! (`SoundID.cs:1703`, `CreateTrackable("glommer_bounce", 2)`) — deferred
 //! with the D3 trackable pool (the Item42 precedent); `Main.screenWidth`

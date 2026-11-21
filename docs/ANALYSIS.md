@@ -39445,6 +39445,43 @@ here calls the unmerged fn. 1 shape-composition witness
 (`w4_d13_the_queued_tuple_composes_with_the_f11_apply_shape`) WRITTEN NOT
 RUN.
 
+**(4) The PET lights — the c19/e6 AddLight family covers NOTHING of the
+seven pets, correctly (census, no gap).** c19's first wave (`4eedcb32`,
+read: ANALYSIS "The projectile AI-arm lights, first wave") + e6's second
+wave CLOSE the `Projectile.cs` AddLight family at 107 sites (67 + 40).
+The seven aiStyle-124 pets contribute ZERO sites to that family:
+
+* **No `AddLight` call exists in the whole aiStyle-124 arm**
+  (`Projectile.cs:34970-35696` — grepped: the only light writes are the
+  `Utils.PlotTileLine` casts below). The c19 register's absent-42 list
+  never names 650/882/888/895/896/898/957 because the C# has no sites
+  there to absent.
+* **No `light` amount either**: the seven `SetDefaults` rows
+  (`:6977-6989`/`:8461-8473`/`:8508-8520`/`:8553-8565`/`:8576-8588`/
+  `:9034-9046` — all re-read) set no `this.light`/`DelegateMethods.v3_1`,
+  so the `ProjLight` chain (`:16153-16661`, the `light > 0f` early return)
+  never fires for them. The module doc's "the ProjLight chain carries
+  only the SetDefaults amount" phrasing was misleading — the amount is
+  ZERO; corrected in `projectile_ai_pets124.rs`'s doc.
+* **The pets' actual light is the `PlotTileLine`/`CastLightOpen` layer**
+  (`:35008-35043`): the 650 casts `(0.5, 0.9, 1)·2` over its own
+  centre→velocity·6 line (width 20) + Left→Right (20) + the OWNER's
+  centre→velocity·6 (40) + Left→Right (40); the 895 `(1, 0.6, 1)·1.5`
+  (×0.8 when `!Lighting.NotRetro`) at ×1.5 self / ×0.75 owner; the 896
+  `(1, 0.7, 0.05)·1.5` same ladder. The other four pets (882/888/898/957)
+  cast NOTHING — they are dark in the C# too. This is the light-map
+  WRITE layer (`Utils.PlotTileLine` walks tiles and calls
+  `Lighting.AddLight` per tile through the delegate), NOT the entity
+  list the c19/e6 feeds append to — the standing per-frame PlotTileLine
+  deferral (the 870 `FloodFillTile` / hooks' rope-spread precedent, the
+  empress module's 13-point walk note). d2's player-lights census
+  already cross-noted the same split from the other side ("the light
+  pets are not Player.cs sites at all — Fairy Bell / Wisp / Magic
+  Lantern / Suspicious Looking Tentacle emit from Projectile.AI");
+  this note closes the projectile side: when the PlotTileLine layer
+  lands, the 650/895/896 casts are its rows (the colours/widths/anchors
+  above), the retro ×0.8 gate rides `LightParams`. No c19/e6 gap to file.
+
 ### Verification
 
 Code-only: every change re-read against the cited C# windows; the seam
