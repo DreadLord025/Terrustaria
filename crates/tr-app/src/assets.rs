@@ -1450,6 +1450,23 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         }
     }
 
+    // `TextureAssets.HighlightMask[type]` (`AssetInitializer.cs:356-362`):
+    // the smart-cursor selection-outline sheets, one per `HasOutlines` id
+    // (`TileID.cs:551`, 95 ids), loaded from `Images/Misc/TileOutlines/
+    // Tiles_<id>` — W4-g86 seam 2, the atlas feed of
+    // `render/tile_outlines.rs`. The C# loads exactly the set members; the
+    // two extra files in the dir (Tiles_14/Tiles_469) are NOT in the set
+    // and stay unpacked. A missing file leaves that id's outline undrawn
+    // (the `r.uv` None arm), the item-icon convention.
+    for kind in 0..tr_core::tiledata::TILE_COUNT as u16 {
+        if tr_core::tiledata::SET_HAS_OUTLINES.has(kind) {
+            let name = format!("Misc/TileOutlines/Tiles_{kind}");
+            if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+                images.push(img);
+            }
+        }
+    }
+
     // The tile-side glow sheets of `DrawSingleTile_Flames`
     // (`TileDrawing.cs:2684-2825`, `:3463-3491`): `TextureAssets.GlowMask`
     // loads as `Images/Glow_{id}` (`AssetInitializer.cs:352-354`) and the

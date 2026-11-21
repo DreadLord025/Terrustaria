@@ -1210,6 +1210,33 @@ impl App {
                         mine_crack_style,
                         mine_crack_target,
                     );
+                    // W4-g86: the smart-cursor tile-outline overlay
+                    // (`TileDrawing.GetTileOutlineInfo` :4478-4489 + the
+                    // draw tail :1404-1408). Like the crack overlay it
+                    // rides the per-frame world-effect range right after
+                    // the cached tile pass — the highlight lists track the
+                    // mouse every tick, so the outline cannot live inside
+                    // the G6-cached range (the `WorldFrameKey` is
+                    // untouched). The lists come from the
+                    // `SmartInteractLookup` feed (`world_sim/
+                    // smart_interact.rs`, the `Player.cs:25447` seam).
+                    crate::render::tile_outlines::draw_tile_outlines(
+                        renderer,
+                        world,
+                        light,
+                        draw_cam,
+                        world_zoom,
+                        screen,
+                        &self.smart_interact,
+                        &self.tile_anim,
+                        &self.wind,
+                        &self.wiring,
+                        crate::world_events::party_is_up(&self.world_events),
+                        crate::env::show_invisible(),
+                        player.as_ref().map(|p| p.center().0),
+                        anim_time % 3600.0,
+                        self.tile_anim.weather_vane_bobframe,
+                    );
                     // S1-G-1 wave D: `TileDrawing.PostDrawTiles(solidLayer:
                     // false)`'s pylon / trophy / void-lens passes
                     // (`TileDrawing.cs:423-425`). The sprites ride the

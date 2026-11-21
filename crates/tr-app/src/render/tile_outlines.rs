@@ -4,7 +4,8 @@
 //! `Main.InSmartCursorHighlightArea` (`Main.cs:3945-3957`).
 //!
 //! W4-g86 (the demon/crimson altar draw lane), CODE-ONLY MODE — no compiler
-//! invoked; the witnesses below are WRITTEN NOT RUN.
+//! invoked; the witnesses below are WRITTEN NOT RUN. The two feed seams
+//! landed in the follow-up commits (see "WIRED" below).
 //!
 //! ## Census (what the altar draw lane verified vs ported)
 //!
@@ -44,18 +45,27 @@
 //! `Images/Misc/TileOutlines/Tiles_26` exists in the content dir
 //! (`AssetInitializer.cs:356-360`).
 //!
-//! ## UNWIRED — the two feed seams
+//! ## WIRED — the two feed seams (this commit)
 //!
 //! 1. `Main.SmartInteractTileCoords`/`…Selected` (the highlight-area point
-//!    lists, `Main.cs:2035-2037`, filled by the smart-cursor lookup tail,
-//!    cleared by `ClearSmartInteract` `:48054-48062`) are unported — the
-//!    `world_sim/smart_cursor` lane owns the lookup; [`HighlightArea`]
-//!    carries the lists + the interaction rect until then (fed empty =
-//!    no outline, exactly the pre-wiring pixels).
-//! 2. The `HighlightMask` sheets are not packed into the atlas; the draw
-//!    tail returns an [`OutlineQuad`] record (sheet name + rect + tint)
-//!    for the atlas-binding wave, the `CrackQuad`/`SpecialSprite` seam
-//!    convention (`tile_cracks.rs`, `pylons.rs`).
+//!    lists, `Main.cs:2035-2037`) are filled by
+//!    `world_sim/smart_interact.rs` (`Player.SmartInteractLookup`,
+//!    `Player.cs:17374-17398`, the `Player.cs:25447` seam right after the
+//!    smart-cursor re-point); [`draw_tile_outlines`] scans the lists and
+//!    resolves each cell's framed rect through the same `draw_data` chain
+//!    the tile pass uses. The pass rides the always-rebuilt world-effect
+//!    range (the `pylons.rs` convention) — the G6 `WorldFrameKey` is
+//!    untouched, so the outline tracks the mouse every frame.
+//! 2. The `HighlightMask` sheets are packed by `assets.rs`
+//!    (`AssetInitializer.cs:356-362`: one `Misc/TileOutlines/Tiles_{kind}`
+//!    per `HasOutlines` id, 95 sheets); [`tile_outline_quad`] returns the
+//!    sheet name + rect + tint and the pass binds it through `r.uv`.
+//!
+//! The C# draws the outline at the END of `DrawSingleTile`
+//! (`TileDrawing.cs:1404-1408`, after the base sprite + flames); the port's
+//! deferred pass draws it after the whole tile range instead — the same
+//! documented z-order approximation the pylon pass keeps (the outline is
+//! an overlay; nothing but entities draws between).
 //!
 //! ## RNG census
 //!
@@ -175,6 +185,179 @@ pub(crate) fn tile_outline_quad(
     })
 }
 
+/// The pass hook (W4-g86 seam 2): walk the smart-interact coords list (the
+/// C# gates every drawn tile through `InSmartCursorHighlightArea`, so only
+/// listed cells can outline — the list walk is the same set, the pylon
+/// pass's scan-instead-of-registry convention), resolve each cell's
+/// `TileDrawData` through the same chain the tile pass uses
+/// (`tiles.rs:653-734`: `draw_data` → `apply_world_corrections` →
+/// `case_draw_data` → `apply_cases_a`) and push the `:1404-1408` quad into
+/// the always-rebuilt world-effect range (screen space, the `pylons.rs`
+/// convention — the G6-cached world range and its key stay untouched).
+/// Returns the quad count.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_tile_outlines(
+    r: &mut tr_render::sprite::SpriteRenderer,
+    world: &tr_core::World,
+    light: &tr_core::lighting::LightMap,
+    camera: glam::Vec2,
+    zoom: f32,
+    screen: glam::Vec2,
+    state: &crate::world_sim::smart_interact::SmartInteractState,
+    tile_anim: &tr_core::drawdata_anim::TileAnimator,
+    wind: &tr_core::wind::Wind,
+    wiring: &tr_core::wiring::Wiring,
+    party_is_up: bool,
+    show_invisible: bool,
+    player_center_x: Option<f32>,
+    global_time: f32,
+    weather_vane_bobframe: i32,
+) -> u32 {
+    if state.coords.is_empty() {
+        return 0;
+    }
+    let area = HighlightArea {
+        coords: &state.coords,
+        selected: &state.selected,
+        // `Main.hideUI` — no port state (the F11 toggle is unported).
+        hide_ui: false,
+        lx: state.lx,
+        ly: state.ly,
+        hx: state.hx,
+        hy: state.hy,
+    };
+    let case_env = crate::drawdata_cases_b::CaseEnv {
+        world,
+        wind,
+        wiring,
+        inputs: crate::drawdata_cases_b::CaseInputs {
+            weather_vane_bobframe,
+            player_center_x,
+            show_invisible_blocks: show_invisible,
+            party_is_up,
+            global_time_wrapped_hourly: global_time,
+        },
+    };
+    let mut quads = 0u32;
+    for &(x, y) in &state.coords {
+        let Some(tile) = world.tile(x, y) else { continue };
+        if !tile.active() || !td::SET_HAS_OUTLINES.has(tile.kind) {
+            continue;
+        }
+        // The tile pass's drawdata chain (`tiles.rs:653-734`), verbatim
+        // inputs: the solid-above probe, the animator row/counter.
+        let solid_above = world.tile(x, y - 1).is_some_and(|t| {
+            t.active() && td::TILE_SOLID.has(t.kind) && !td::TILE_SOLID_TOP.has(t.kind)
+        });
+        let anim_row = if (tile.kind as usize) < td::TILE_COUNT {
+            tile_anim.animation_row(tile.kind)
+        } else {
+            0
+        };
+        let anim_counter = if (tile.kind as usize) < td::TILE_COUNT {
+            tile_anim.tile_frame_counter[tile.kind as usize]
+        } else {
+            0
+        };
+        let mut dd = tr_core::drawdata::draw_data(
+            tile.kind,
+            x,
+            y,
+            tile.frame_x,
+            tile.frame_y,
+            anim_row,
+            solid_above,
+        );
+        dd.apply_world_corrections(
+            world,
+            tile.kind,
+            x,
+            y,
+            tile.frame_x,
+            tile.frame_y,
+            anim_row,
+        );
+        if let Some(cased) = crate::drawdata_cases_b::case_draw_data(
+            tile.kind,
+            x,
+            y,
+            tile.frame_x,
+            tile.frame_y,
+            anim_row,
+            anim_counter,
+            dd,
+            &case_env,
+        ) {
+            dd = cased;
+        }
+        // `Lighting.GetColor(x, y)` (`TileDrawing.cs:871`) as XNA bytes —
+        // the `cell_bytes` convention (`tiles.rs:725-730`), the RAW light
+        // (the outline gate runs before the actuation ghost).
+        let cell = light.get(x, y);
+        let cell_bytes = [
+            (cell[0] * 255.0).min(255.0) as u8,
+            (cell[1] * 255.0).min(255.0) as u8,
+            (cell[2] * 255.0).min(255.0) as u8,
+        ];
+        let _glow = crate::drawdata_cases_a::apply_cases_a(
+            &mut dd, world, tile, x, y, [cell_bytes[0], cell_bytes[1], cell_bytes[2], 255],
+            255, 0.0,
+        );
+        let fx = dd.frame_x_override.unwrap_or(tile.frame_x) as i32;
+        let fy = dd.frame_y_override.unwrap_or(tile.frame_y) as i32;
+        let Some(q) = tile_outline_quad(
+            tile.kind,
+            fx,
+            fy,
+            dd.add_fr_x as i32,
+            dd.add_fr_y as i32,
+            dd.width as i32,
+            dd.height as i32,
+            cell_bytes,
+            &area,
+            x,
+            y,
+        ) else {
+            continue;
+        };
+        let Some(uv) = r.uv(
+            &q.sheet,
+            q.src[0] as f32,
+            q.src[1] as f32,
+            q.src[2] as f32,
+            q.src[3] as f32,
+        ) else {
+            continue;
+        };
+        // `:1407` — the plain tileTop anchor: `x*16 - (width-16)/2`,
+        // `y*16 + tileTop` (NO half-brick shift, NO draw_dx/dy nudge —
+        // the C# tail builds its own vector, not `DrawSingleTile`'s).
+        let pos = [
+            x as f32 * tr_core::TILE_PX - (dd.width as f32 - 16.0) / 2.0,
+            y as f32 * tr_core::TILE_PX + dd.top as f32,
+        ];
+        let uv = crate::render::player_layers::flip_uv(uv, dd.flip);
+        let c = [
+            q.color[0] as f32 / 255.0,
+            q.color[1] as f32 / 255.0,
+            q.color[2] as f32 / 255.0,
+            q.color[3] as f32 / 255.0,
+        ];
+        r.push_fx_sprite_rot(
+            [
+                (pos[0] - camera.x) * zoom + screen.x * 0.5,
+                (pos[1] - camera.y) * zoom + screen.y * 0.5,
+            ],
+            [dd.width as f32 * zoom, dd.height as f32 * zoom],
+            uv,
+            c,
+            0.0,
+        );
+        quads += 1;
+    }
+    quads
+}
+
 #[cfg(test)]
 mod w4_g86_tests {
     use super::*;
@@ -254,5 +437,37 @@ mod w4_g86_tests {
         assert_eq!(selection_glow_color_bytes(false, 101), [50, 50, 50, 101]);
         assert_eq!(selection_glow_color_bytes(true, 101), [101, 101, 33, 101]);
         assert_eq!(selection_glow_color_bytes(true, 255), [255, 255, 85, 255]);
+    }
+
+    /// The wiring witnesses: the atlas pack covers exactly the HasOutlines
+    /// set (`AssetInitializer.cs:356-362`) and the draw hook rides the
+    /// per-frame range after the cached tile pass (the crack-overlay
+    /// convention, `frame/draw.rs`).
+    #[test]
+    fn w4_g86_the_atlas_pack_and_the_draw_hook_are_wired() {
+        let assets = include_str!("../assets.rs");
+        assert!(
+            assets.contains("Misc/TileOutlines/Tiles_{kind}"),
+            "the HighlightMask sheets pack per HasOutlines id"
+        );
+        assert!(
+            assets.contains("SET_HAS_OUTLINES.has(kind)"),
+            "the pack gate is the HasOutlines set"
+        );
+        let draw = include_str!("../app/frame/draw.rs");
+        let hook = draw
+            .find("tile_outlines::draw_tile_outlines")
+            .expect("the outline draw hook");
+        let cache_close = draw.find("*world_key = Some(key);").unwrap();
+        let pylons = draw.find("pylons::draw_pylons_trophies_void").unwrap();
+        assert!(cache_close < hook, "the outline draws after the cached range");
+        assert!(hook < pylons, "the outline draws before the pylon pass");
+        // The feed call site: SmartInteractLookup right after the repoint.
+        let editing = include_str!("../world_sim/editing.rs");
+        let repoint = editing.find("smart_cursor::repoint").unwrap();
+        let feed = editing
+            .find("smart_interact::smart_interact_lookup")
+            .expect("the feed call");
+        assert!(repoint < feed, "Player.cs:25446-25447 order");
     }
 }
