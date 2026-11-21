@@ -427,6 +427,51 @@ mod tests {
     #![allow(non_snake_case)] // DW-IDs are part of the test names (traceability)
     use super::*;
 
+    /// W4-g35 — the item glowMask census (`Item.cs` SetDefaults writes +
+    /// the `ResetStats` −1 stock `:49006`). The generated table carries the
+    /// 59 non-stock rows; the registry corrections carry the four lunar
+    /// chainsaws the generator leaves as Deprecated zero rows.
+    #[test]
+    fn w4_g35_the_item_glow_mask_census() {
+        let g = |id: u16| item(id).expect("the item exists").glow_mask;
+        // The stock: an ordinary item keeps −1.
+        assert_eq!(g(1), -1); // Iron Pickaxe
+        assert_eq!(g(2), -1); // Dirt Block
+        // The first record: the Starfury's case 46 (`Item.cs:1942`).
+        assert_eq!(g(46), 328);
+        // The lunar armor set (`:26337-26381`).
+        assert_eq!(g(2757), 26);
+        assert_eq!(g(2758), 27);
+        assert_eq!(g(2760), 28);
+        assert_eq!(g(2761), 29);
+        assert_eq!(g(2762), 30);
+        // The lunar tools + their clone rows (the sdcall fix, `:26483-26617`,
+        // `:31058-31080`).
+        assert_eq!(g(2772), -1); // Deprecated → air
+        assert_eq!(g(2774), 21); // Vortex Drill
+        assert_eq!(g(2776), 5); // Vortex Pickaxe
+        assert_eq!(g(2779), 23); // Nebula Drill (post-call override)
+        assert_eq!(g(2781), 10); // Nebula Pickaxe
+        assert_eq!(g(2784), -1); // Solar Flare Drill (explicit −1)
+        assert_eq!(g(2786), -1); // Solar Flare Pickaxe
+        assert_eq!(g(3464), 176); // Stardust Drill
+        assert_eq!(g(3466), 178); // Stardust Pickaxe
+        // The four registry-correction chainsaws.
+        assert_eq!(g(2773), 20); // Vortex Chainsaw
+        assert_eq!(g(2778), 22); // Nebula Chainsaw
+        assert_eq!(g(2783), -1); // Solar Flare Chainsaw
+        assert_eq!(g(3463), 175); // Stardust Chainsaw
+        // The hamaxes (`:31254-31260`), the pal accessories (`:41845-41863`).
+        assert_eq!(g(3523), 196);
+        assert_eq!(g(3524), 197);
+        assert_eq!(g(3525), 198);
+        assert_eq!(g(3522), -1); // the plain hamaxe keeps the stock
+        assert_eq!(g(5140), 318);
+        assert_eq!(g(5146), 324);
+        // The Bejeweled Staff correction keeps the stock.
+        assert_eq!(g(6171), -1);
+    }
+
     /// S1-P-i34 — the pressure plates drop the item of their frame row
     /// (`KillTile_GetItemDrops`, `WorldGen.cs:65569-65599` for 135,
     /// `:65311-65328` for 428). The v1 `by_tile` fallback returned the first
