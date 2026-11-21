@@ -593,9 +593,11 @@ pub(crate) fn proj_lights_a(
         let mut rgb = [0.0, 96.0 / 255.0, 0.0];
         if p.local_ai[2] == 1.0 {
             let num = if p.ai[1] != 0.0 { p.local_ai[0] / p.ai[1] } else { 0.0 };
+            // XNA's Color.Lerp truncates each byte (`(byte)MathHelper.Lerp`,
+            // the 835 tiger precedent): R = (byte)(34·num), G = (byte)(96+32·num).
             rgb = [
-                34.0 / 255.0 * num,
-                (96.0 + (128.0 - 96.0) * num) / 255.0,
+                (34.0 * num) as u8 as f32 / 255.0,
+                (96.0 + (128.0 - 96.0) * num) as u8 as f32 / 255.0,
                 0.0,
             ];
         }
@@ -1305,10 +1307,10 @@ mod tests {
         assert_eq!(proj_lights_a(&p, None)[0].2, [0.0, 96.0 / 255.0, 0.0]);
         p.local_ai[2] = 1.0;
         p.local_ai[0] = 5.0;
-        p.ai[1] = 10.0; // num = 0.5
+        p.ai[1] = 10.0; // num = 0.5 → R = (byte)17 = 17, G = (byte)112 = 112
         assert_eq!(
             proj_lights_a(&p, None)[0].2,
-            [34.0 / 255.0 * 0.5, (96.0 + 32.0 * 0.5) / 255.0, 0.0]
+            [17.0 / 255.0, 112.0 / 255.0, 0.0]
         );
     }
 
