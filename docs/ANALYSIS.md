@@ -39244,3 +39244,65 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The glow-mask records census + wire (W4-g35)
+
+The four glow-mask record families censused from the C# and landed as data;
+the TEXTURE BINDING (the draw passes that consume them) stays with the
+render tasks — TILE-DRAW-2 (W4-f15) owns the tile glow binding, the entity
+glow draws are the NPC/proj/item render work.
+
+- **Tile** (`tr-core/src/glowmask.rs`): `Main.tileGlowMask` — all 37
+  assignments (`Main.cs:10024-10068`), the −1 reset stock (`:8437`), the −2
+  sentinel on Crystals 129 (`:10048` — `IndexInRange` fails, the glow block
+  keeps the painted tile texture, `TileDrawing.cs:1258-1275`). Consumer:
+  `DrawSingleTile` `TileDrawing.cs:1178-1339` (the per-type colour switch +
+  the slope/half-brick draw ladder). Two dead colour arms recorded: 391/718
+  have colour cases but NO table assignment.
+- **NPC** (`tr-app/src/npc_glow.rs`): no `NPC.glowMask` field exists — each
+  `Main.DrawNPC` type arm hard-codes its sheet(s). 76 records over 74 types
+  (`Main.cs:23406-26297`), incl. the town variants (Truffle 160 166/352,
+  Cyborg 209 167/350/351), the trail alternates (StardustWormHead 402
+  133/134/135), the dynamic Crawltipede 157+type−412, and the dual-arm
+  419/421. The pillar ghosts (493/507/422/517) are already drawn
+  (`render/entities.rs`); the census pins their ids. Named-sheet arms
+  (Firefly/Lightningbug, Prime's Bone_Eyes/Bone_Laser, the Golem extras) and
+  the non-glow twins (393/382/516) documented in the module header.
+- **Projectile** (`projectile/data.rs::set_defaults_glow_mask` +
+  `ProjData.glow_mask` + `Projectile.glow_mask`): all 10 C# assignment sites
+  (`Projectile.cs:4055`, `:4988-5035`, `:9432`, `:10019`/`:10035`) → 16
+  kinds; the −1 stock (`:780`); the data-carrying spawn copies it onto the
+  slot. The solar drill/chainsaw pair sets NO glowMask (`:5011-5022`) —
+  pinned.
+- **Item** (`itemdata.rs` `glow_mask` column, generated): `glowMask` left
+  `THIS_SKIP_FIELDS`, stock −1 (`Item.cs:49006`), 59 non-stock rows. The
+  four Deprecated lunar chainsaws ride `registry.rs` corrections
+  (2773/20, 2778/22, 2783/−1, 3463/175).
+
+### The GenItemData sdcall/type-repoint interpreter fix
+
+Landing the item column exposed two latent interpreter bugs (both masked
+while `glowMask` was a skip field):
+1. The nested `this.SetDefaultsN(arg)` call leaked its `return` flag into
+   the caller and dispatched its switches on the OUTER id — so the clone
+   rows re-ran the caller's case and lost their post-call overrides.
+2. The bare `type = N;` re-point did `return` (aborting the rest of the case
+   body) instead of continuing.
+
+Fixed: sdcall saves/restores `returned` + pins `switch_subject` to the
+argument; the re-point updates the subject and CONTINUES; top-level +
+nested switches dispatch on the current subject. Restored rows: 52 Angel
+Statue (tile 105/style 1 — its whole body was dropped after `type = 52;`),
+2779 Nebula Drill (shoot 430/glow 23), 2781 Nebula Pickaxe (10), 2784/2786
+Solar (432/−1), 3464 Stardust Drill (609/176), 3466 Stardust Pickaxe (178).
+`itemdata_freeze` re-pinned `0x8e04_e794_8244_3e00`.
+
+### Verification
+
+Code-only (no cargo/tests/graphify). The Python generator checks RUN and
+pass: `gen.py --check` (6196 rows), `test_gen.py` (ALL GEN TESTS PASSED),
+`gen_recipes.py --check` (3206 rows), `test_gen_recipes.py` (2895+311 rows).
+The Rust witness tests (glowmask 3, npc_glow 2, projectile/data 2,
+registry 1) are WRITTEN, NOT RUN. Every record re-read against the cited C#
+window; the clone-row fix traced write-by-write against
+`Item.cs:26576-26581`/`:2003-2016`.
