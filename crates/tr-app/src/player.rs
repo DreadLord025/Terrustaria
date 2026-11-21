@@ -5806,6 +5806,13 @@ impl Player {
         // unported (the kite machine has no port state — `selectedKite`
         // folds −1); the `Select` reset (`:515`) rides the hotbar click
         // seam (`app/clicks.rs`).
+        // W4-d15 RETIRE keep-one (research/249 §4): d16 (`41080e159`)
+        // ports the SAME block as `kites::afk_counter_tick` at a
+        // POST-movement call site — the merge keeps ONE tick HERE (the
+        // C# `:25497` reads the PRE-movement velocity, long before
+        // `HorizontalMovement` `:26688`), folding their kiting-counter
+        // tail (`:25500`/`:25507-25514`) into this site; their
+        // `KITE_ITEMS` literal is byte-identical to `IS_A_KITE`.
         let afk_still = self.vx.abs() < 0.05 && self.vy.abs() < 0.05;
         let afk_idle = !input.item_in_use || IS_A_KITE.contains(&self.held_item_kind);
         if afk_still
@@ -12027,6 +12034,56 @@ mod tests {
         p.afk_counter = 5;
         p.update(&w, swing);
         assert_eq!(p.afk_counter, 6, "the kite keeps the climb");
+    }
+
+    /// W4-d15 RETIRE — the d16 afk keep-one pins (research/249 §4). Both
+    /// lanes ported `Player.cs:25497-25506`; the merge keeps ONE tick
+    /// site at the C# position (PRE-movement — `:25497` runs long before
+    /// `HorizontalMovement` `:26688`). This witness pins OUR side of the
+    /// keep-one table: the pre-movement read (a run key's first tick
+    /// still climbs on the zero pre-move velocity — a post-movement site
+    /// would zero it), the 24-id kite set's identity with d16's
+    /// `KITE_ITEMS` literal, and the two lanes' disjoint constants.
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d15_the_d16_afk_keep_one_pins() {
+        // The pre-movement position: settle, then push vx with NO keys.
+        // 0.04 is under the still-gate — the climb happens. The
+        // discriminating vector is the 0.05 BOUNDARY: the C# gate reads
+        // the PRE-move velocity, and `0.05 < 0.05` is false → ZERO; a
+        // post-movement site would read the friction-decayed value
+        // (< 0.05) and wrongly climb. (A run key zeroes at both sites —
+        // the control term — so the keyless push is the position probe.)
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground);
+        p.afk_counter = 0;
+        p.vx = 0.04; // under the 0.05 still-gate, PRE-movement
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.afk_counter, 1, "0.04 pre-move climbs");
+        p.vx = 0.05; // exactly ON the strict gate — pre-move ZEROES
+        p.update(&w, PlayerInput::default());
+        assert_eq!(
+            p.afk_counter, 0,
+            "the gate reads the PRE-movement velocity (0.05 is NOT < 0.05)"
+        );
+        // The 24-id kite set — byte-identical to d16's KITE_ITEMS
+        // (`kites.rs:44`, verified against their tip 41080e159).
+        assert_eq!(
+            IS_A_KITE,
+            [
+                4367, 4368, 4369, 4370, 4371, 4379, 4610, 4611, 4612, 4613, 4648, 4649,
+                4650, 4651, 4669, 4670, 4671, 4674, 4675, 4676, 4677, 4681, 4683, 4684,
+            ],
+            "the keep-one set: one definition at the merge"
+        );
+        // The constants are DISJOINT across the lanes (all three kept).
+        assert_eq!(AFK_TIME_NEEDED_FOR_NO_LUCKY_STARS, 10800, ":57103");
+        assert_eq!(AFK_TIME_NEEDED_FOR_NO_WORM_SPAWNS, 300, ":57102");
+        // d16's AFK_TIME_NEEDED_FOR_AUTO_KITING is 3600 (:57104) — theirs.
     }
 
     #[test]

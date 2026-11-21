@@ -20189,6 +20189,11 @@ impl ProjectilePool {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
                     }
+                    // W4-d15 RETIRE cross-note (research/249 §3): the d77
+                    // lane's `kill_tail_cue(i)` inserts HERE at the merge
+                    // (`5f10560b2`'s hook shape) — its `9 | 12 | 955`
+                    // Item10 arm (`Projectile.cs:75683`) rides our 12
+                    // row + daylight kill; no local cue copy exists.
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
@@ -24161,6 +24166,63 @@ mod tests {
             }
         }
         assert_eq!(seen.len(), 10, "all ten band styles rowed: {:?}", seen);
+    }
+
+    /// W4-d15 RETIRE — the d77c cue-12 compose (research/249 §3). The d77
+    /// lane (`5f10560b2`, `0573b70f2`) arms `9 | 12 | 955 => (2, 10, pos)`
+    /// on its `kill_tail_cue` map (`Projectile.cs:75681-75683` — Item10 at
+    /// the PRE-hook `base.position`, no resize precedes the play). Their
+    /// branch has NO 12 row/dispatch (the cue is inert there); ours has
+    /// NO `kill_tail_cue` (their map is the only copy — nothing to
+    /// dedupe). The merge inserts their one call line at our death hook
+    /// (after `try_cancel_channel`, inside `!died_out_of_world`). This
+    /// witness pins OUR half: the 12 row, the daylight kill funnelling
+    /// through `Projectile::kill` (so the once-per-death hook fires) and
+    /// the unrowed 503 sibling. The cue's position read is the C#'s
+    /// in-`Kill()` `base.position` — at the merge the play rides the
+    /// death hook's slot state (the daylight kill runs mid-arm; the
+    /// arm's tail keeps writing the dead slot, the no-early-return
+    /// convention — so the hook-time position is the port's cue point).
+    /// WRITTEN NOT RUN (code-only round).
+    #[test]
+    fn w4_d15_the_d77_cue_12_composes_on_the_death_hook() {
+        // Our half 1: the 12 row exists (aiStyle 5, the i22 machine).
+        let d = proj_data(NATURAL_FALLING_STAR).expect("the 12 row");
+        assert_eq!(d.ai_style, 5, ":926 — the falling-star family");
+        // The 503 sibling stays unrowed on BOTH branches (their comment).
+        assert!(proj_data(503).is_none(), "the unrowed 503 stays out");
+        // Our half 2: no local kill_tail_cue copy; the death hook's
+        // channel-cancel marker is unique (their call line inserts after
+        // it — the s1_d_4c include_str scan precedent). The markers are
+        // concat-built so this witness's own source cannot self-match.
+        let src = include_str!("projectile.rs");
+        let cue_fn = concat!("fn kill_tail", "_cue");
+        assert!(!src.contains(cue_fn), "d77's map is the only copy");
+        let hook = concat!("self.try_cancel_channel(i,", " p);");
+        assert_eq!(src.matches(hook).count(), 1, "the one death-hook insert point");
+        // Our half 3: the daylight kill rides Projectile::kill — the
+        // kill_time_left capture proves the funnel (the direct
+        // deactivate paths never set it). vel stays zero so the arm's
+        // dead-slot tail writes move nothing (the hook-time position is
+        // the kill-time position for a stationary star).
+        let w = ground(); // World::new defaults day_time = true
+        assert!(w.day_time);
+        let mut p = Projectile {
+            active: true,
+            kind: NATURAL_FALLING_STAR,
+            damage: 1000,
+            time_left: 3600,
+            pos: Vec2::new(320.0, 100.0),
+            w: d.w,
+            h: d.h,
+            ..Default::default()
+        };
+        let before = p.pos;
+        p.ai_falling_star(&w);
+        assert!(!p.active, "the :23841 daylight kill fires");
+        assert_eq!(p.time_left, 0);
+        assert_eq!(p.kill_time_left, 3600, "the kill() funnel, not a deactivate");
+        assert_eq!(p.pos, before, "the zero-vel tail moves nothing");
     }
 
     /// S1-D-4c — the 185 row pin: `SetDefaults` (`Projectile.cs:2717-2727`)

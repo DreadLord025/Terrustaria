@@ -39571,3 +39571,31 @@ roster + the deferral-list exclusion + the ten-style reachability. The
 ONLY decade-adjacent deferral is 140 — OUTSIDE the band, d14's
 `ai_monk_staff` (the item-1 cross-note; the integrate drops it from
 this branch's pin). WRITTEN NOT RUN.
+
+### The W4-d15 RETIRE round (the final ledger, 2026-11-21, code-only)
+
+The band's final ledger is published as **research/249**
+(`249-projectile-ai-141-150-final.md` — numbered per the registry-150
+collision protocol: a fresh all-tip scan shows 244 four-way contested,
+245/246/247 consumed, 248 claimed by the local e26 lane; 249 is the
+first free number). Contents: the ten-style band table with landing
+hashes, the kind-row census, the **d77c cue-12 compose** (their
+`kill_tail_cue` `9 | 12 | 955` Item10 arm at `Projectile.cs:75683` is
+inert on d77 — no 12 row there — and arms at the merge on our row +
+daylight kill; no local cue copy exists, the merge inserts their one
+call line at our death hook after `try_cancel_channel`; the band's
+Kill()-tail census pins the 704 tracked-loop stop as d80's and the
+709/459 Kill host + the 1110 circle as the ONE unclaimed remainder),
+the **d14 keep-one** re-verification (697/707/698 row dedupe + the
+`UNARMED_ROWED` reconciliation to `[156,164,169,206]`) and the **d16
+afk keep-one table** (both lanes ported `Player.cs:25497-25506`; the
+merge keeps ONE tick at the C# PRE-movement position — our site —
+folding d16's richer kiting tail in; their `KITE_ITEMS` is
+byte-identical to our `IS_A_KITE`; the three AFK constants are
+disjoint; their two-field Select resets are the superset form). Two
+compose witnesses added (`w4_d15_the_d77_cue_12_composes_on_the_death_hook`
+in projectile.rs, `w4_d15_the_d16_afk_keep_one_pins` in player.rs) —
+**51 witnesses total, ALL WRITTEN NOT RUN**. Cross-note comments land
+at the death hook and the afk tick block. The band is DECLARED
+COMPLETE (code-only); the recorded remainders are other lanes'
+documented folds, not band gaps (the full list in research/249 §5).
