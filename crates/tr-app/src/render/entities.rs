@@ -515,6 +515,7 @@ pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
             .chain(DESTROYER_SHEETS)
             .chain(FISHRON_SHEETS)
             .chain(SMALL_KIND_SHEETS)
+            .chain(D36_SHEETS)
             .filter_map(|&id| {
                 npc_tex(atlas, &format!("NPC_{id}")).map(|t| (id as u16, t))
             })
@@ -1246,6 +1247,13 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     288, // the Dungeon Spirit
     384, // the Force Bubble
 ];
+
+/// W4-d36 — the census kinds' own sheets (`TextureAssets.Npc[type]`),
+/// keyed by the vanilla net id in `NpcAssets::npc_sheets`. The physical
+/// atlas packing is the repack wave's (research/108 §5: the union
+/// overflows 8192); the draw arms reference the sheets, absent ones
+/// render nothing. Batch 0: 141/148/149/153/154.
+pub(crate) const D36_SHEETS: &[u32] = &[141, 148, 149, 153, 154];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3169,6 +3177,16 @@ pub(crate) fn draw_npcs(
             }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
+            }
+            // W4-d36 census batch 0 draw — own sheets at npc_rows, the
+            // generic anchor (the repack wave packs the strips).
+            NpcKind::ToxicSludge
+            | NpcKind::Penguin
+            | NpcKind::PenguinBlack
+            | NpcKind::GiantTortoise
+            | NpcKind::IceTortoise => {
+                let ty = texture_net_id(n.kind);
+                pumpkin_moon_draw(assets.npc_sheet(ty), npc_rows(ty), n, w, h)
             }
         };
         let Some(tex) = tex else {

@@ -139,6 +139,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Hit_51", 3),
     ("NPC_Hit_55", 3),
     ("NPC_Hit_57", 3),
+    // W4-d36 census batch 0 — the tortoises' NPCHit24 (`NPC.cs:10939`/
+    // `:10954`); the `Sounds/NPC_Hit_24.xnb` asset ships with the content.
+    ("NPC_Hit_24", 3),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),
@@ -163,6 +166,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_21", 4),
     ("NPC_Killed_22", 4),
     ("NPC_Killed_24", 4),
+    // W4-d36 census batch 0 — the tortoises' NPCDeath27 (`NPC.cs:10941`/
+    // `:10956`); the `Sounds/NPC_Killed_27.xnb` asset ships with the content.
+    ("NPC_Killed_27", 4),
     // The small-kinds wiring wave (S1-D-3-wire-smallkinds): the Angry
     // Nimbus' NPCDeath33 (`NPC.cs:12230`), the Dungeon Spirit's NPCDeath39
     // (`:12748`) and the Force Bubble's NPCDeath45 (`:13890`) — the

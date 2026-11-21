@@ -586,6 +586,15 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d36 census batch 0 — the E4 re-pin band 762-811
+            // (research/108-E `bdd59afb`; doc-109's 731-768 collides with
+            // the canonical small-lane 731-761). The vanilla type rides
+            // `cs_id`/the bestiary `net_id`.
+            NpcKind::ToxicSludge => 762,
+            NpcKind::Penguin => 763,
+            NpcKind::PenguinBlack => 764,
+            NpcKind::GiantTortoise => 765,
+            NpcKind::IceTortoise => 766,
         }
     }
 
@@ -916,6 +925,14 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            // W4-d36 census batch 0 — the 762-band decode (the foreign
+            // stash's `NpcKind::X => NpcKind::X` generator bug FIXED:
+            // the match scrutinee is the u16 id, the arm is id => kind).
+            762 => NpcKind::ToxicSludge,
+            763 => NpcKind::Penguin,
+            764 => NpcKind::PenguinBlack,
+            765 => NpcKind::GiantTortoise,
+            766 => NpcKind::IceTortoise,
             _ => return None,
         })
     }
@@ -1796,6 +1813,14 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            // W4-d36 census batch 0: 141/148/149 NPCHit1 (`NPC.cs:10784`/
+            // `:10869`/`:10881`), 153/154 NPCHit24 (`:10939`/`:10954` —
+            // the cue banks with the wave's audio row).
+            NpcKind::ToxicSludge
+            | NpcKind::Penguin
+            | NpcKind::PenguinBlack => "NPC_Hit_1",
+            NpcKind::GiantTortoise
+            | NpcKind::IceTortoise => "NPC_Hit_24",
             _ => return None,
         })
     }
@@ -2100,6 +2125,13 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            // W4-d36 census batch 0: 141/148/149 NPCDeath1 (`NPC.cs:10785`/
+            // `:10870`/`:10882`), 153/154 NPCDeath27 (`:10941`/`:10956`).
+            NpcKind::ToxicSludge
+            | NpcKind::Penguin
+            | NpcKind::PenguinBlack => "NPC_Killed_1",
+            NpcKind::GiantTortoise
+            | NpcKind::IceTortoise => "NPC_Killed_27",
             _ => return None,
         })
     }
@@ -2451,6 +2483,14 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            // W4-d36 census batch 0: 141 aiStyle 1 (`NPC.cs:10780`),
+            // 148/149 aiStyle 7 (`:10865`/`:10877`), 153/154 aiStyle 39
+            // (`:10935`/`:10950`).
+            NpcKind::ToxicSludge => 1,
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => 7,
+            NpcKind::GiantTortoise
+            | NpcKind::IceTortoise => 39,
         }
     }
 
@@ -2981,6 +3021,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            // W4-d36 census batch 0 (`NPC.cs:10778-10779`/`:10863-10864`/
+            // `:10875-10876`/`:10933-10934`/`:10948-10949`).
+            NpcKind::ToxicSludge => (34.0, 28.0),
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => (16.0, 34.0),
+            NpcKind::GiantTortoise
+            | NpcKind::IceTortoise => (46.0, 32.0),
         }
     }
 
@@ -3083,6 +3130,12 @@ impl NpcKind {
             // not cs_id; the render sheets keep 371/373 via render_key.
             NpcKind::DukeFishron => 370,
             NpcKind::Sharkron => 372,
+            // W4-d36 census batch 0 — the vanilla types (`NPCID.cs`).
+            NpcKind::ToxicSludge => 141,
+            NpcKind::Penguin => 148,
+            NpcKind::PenguinBlack => 149,
+            NpcKind::GiantTortoise => 153,
+            NpcKind::IceTortoise => 154,
             // S1-F-3: the remaining kinds ride the generated loot-db net ids
             // (`bestiary.rs`'s entries are the C#'s `NPC.type` values) — the
             // hand table above keeps the roster-verified rows; the negative
@@ -3135,6 +3188,10 @@ impl NpcKind {
             // case list carries 338-340 (`NPC.cs:68603-68605`) on their
             // 15-frame strips (`Main.npcFrameCount[338..340]`, `Main.cs`).
             NpcKind::ZombieElf | NpcKind::ZombieElfBeard | NpcKind::ZombieElfGirl => 15,
+            // W4-d36 census batch 0 — the penguins' 12-frame colour-band
+            // strip (`Main.npcFrameCount[148/149]`, `Main.cs:67082`).
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => 12,
             _ => 1,
         }
     }
@@ -3622,6 +3679,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            // W4-d36 census batch 0 (`NPC.cs:10783`/`:10868`/`:10880`/
+            // `:10938`/`:10953`).
+            NpcKind::ToxicSludge => 150,
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => 5,
+            NpcKind::GiantTortoise => 470,
+            NpcKind::IceTortoise => 400,
         }
     }
 
@@ -3986,6 +4050,13 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            // W4-d36 census batch 0 (`NPC.cs:10781`/`:10866`/`:10878`/
+            // `:10936`/`:10951`).
+            NpcKind::ToxicSludge => 50,
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => 0,
+            NpcKind::GiantTortoise => 80,
+            NpcKind::IceTortoise => 55,
         }
     }
 }

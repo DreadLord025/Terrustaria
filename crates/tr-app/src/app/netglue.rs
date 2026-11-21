@@ -3566,6 +3566,14 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d36 census batch 0 net seeds — the ground walkers ride the
+        // cave-walker ctor, the critters the guide ctor (the net state
+        // overwrites the position below).
+        crate::npc::NpcKind::ToxicSludge
+        | crate::npc::NpcKind::GiantTortoise
+        | crate::npc::NpcKind::IceTortoise => crate::npc::Npc::spawn_cave_walker(world, tx, kind)?,
+        crate::npc::NpcKind::Penguin
+        | crate::npc::NpcKind::PenguinBlack => crate::npc::Npc::spawn_guide(world, tx)?,
     })
 }
 

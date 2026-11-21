@@ -1086,6 +1086,27 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // ---- W4-d36 census batch 0 (research/109 supersede-note: E4 band 762+).
+    /// `NPCID.ToxicSludge` (141) — W4-d36 census (`NPC.cs` SetDefaults
+    /// case 141, `:10776-10790`): 34x28, aiStyle 1, dmg 50, def 18, 150 HP,
+    /// kb 0.8, value 400, alpha 55, scale 1.1.
+    ToxicSludge,
+    /// `NPCID.Penguin` (148) — W4-d36 census (`NPC.cs` SetDefaults
+    /// case 148, `:10861-10872`): 16x34, aiStyle 7, dmg 0, def 0, 5 HP,
+    /// kb 1.0 (the head default, no row), value 0, catchItem 2205.
+    Penguin,
+    /// `NPCID.PenguinBlack` (149) — W4-d36 census (`NPC.cs` SetDefaults
+    /// case 149, `:10873-10884`): the 148 row verbatim.
+    PenguinBlack,
+    /// `NPCID.GiantTortoise` (153) — W4-d36 census (`NPC.cs` SetDefaults
+    /// case 153, `:10930-10944`): 46x32, aiStyle 39, dmg 80, def 30, 470 HP,
+    /// kb 0.3, value 500. WIRED: `update_tortoise` rides the faithful
+    /// `npc_ai_style39::style39_step` (the SolarSroller wrapper's shape).
+    GiantTortoise,
+    /// `NPCID.IceTortoise` (154) — W4-d36 census (`NPC.cs` SetDefaults
+    /// case 154, `:10945-10960`): 46x32, aiStyle 39, dmg 55, def 28, 400 HP,
+    /// kb 0.3, value 450, coldDamage.
+    IceTortoise,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -2952,7 +2973,7 @@ impl Npc {
                 .or_else(|| kind.holiday_zombie_scale())
                 // The BlazingWheel's `scale = 1.2f` row (`NPC.cs:9730`,
                 // the small-kinds wiring wave).
-                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else { 1.0 }),
+                .unwrap_or(if kind == NpcKind::BlazingWheel { 1.2 } else if kind == NpcKind::ToxicSludge { 1.1 } /* W4-d36 case 141 scale (`NPC.cs:10788`) */ else { 1.0 }),
             net_offset: Vec2::ZERO,
             burn: 0.0,
             wants_minion: false,
@@ -3129,6 +3150,9 @@ impl Npc {
                             NpcKind::DetonatingBubble | NpcKind::Sharkron | NpcKind::Sharkron2 => {
                                 255
                             }
+                            // W4-d36 — the ToxicSludge `alpha = 55` row
+                            // (case 141, `NPC.cs:10786`).
+                            NpcKind::ToxicSludge => 55,
                             _ => 0,
                         }
                     }),
@@ -3529,6 +3553,13 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
+            // W4-d36 census batch 0 (`NPC.cs:10789`/`:10940`/`:10955`;
+            // the penguins keep the head's 1f default, `NPC.cs:8533`).
+            NpcKind::ToxicSludge => 0.8,
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => 1.0,
+            NpcKind::GiantTortoise
+            | NpcKind::IceTortoise => 0.3,
             _ => 0.4,
         }
     }
@@ -3909,6 +3940,13 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
+            // W4-d36 census batch 0 (`NPC.cs:10782`/`:10867`/`:10879`/
+            // `:10937`/`:10952`).
+            NpcKind::ToxicSludge => 18,
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => 0,
+            NpcKind::GiantTortoise => 30,
+            NpcKind::IceTortoise => 28,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4281,6 +4319,13 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
+            // W4-d36 census batch 0 (`NPC.cs:10787`/`:10942`/`:10957`;
+            // the penguins write no value row — the head's 0, `:8544`).
+            NpcKind::ToxicSludge => 400.0,
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => 0.0,
+            NpcKind::GiantTortoise => 500.0,
+            NpcKind::IceTortoise => 450.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6287,6 +6332,12 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
+            // ---- W4-d36 census batch 0: the kind-dispatch arms.
+            NpcKind::ToxicSludge => self.update_slime(world, player, dt),
+            NpcKind::Penguin
+            | NpcKind::PenguinBlack => self.update_guide(world, dt),
+            NpcKind::GiantTortoise
+            | NpcKind::IceTortoise => self.update_tortoise(world, player, rng),
         }
     }
 
@@ -6658,6 +6709,60 @@ impl Npc {
             // is the same row-0 pin — one arm kept, the dup removed.)
             NpcKind::ForceBubble => {
                 self.frame = 0;
+            }
+            // ---- W4-d36 census batch 0 FindFrame arms.
+            NpcKind::ToxicSludge => {
+                // `case 141` (`NPC.cs:72977-72994`): sprite mirrors facing;
+                // airborne row 2; grounded 8-tick hop over rows 0/1.
+                self.sprite_dir = self.facing;
+                if self.vy != 0.0 { self.frame = 2; }
+                else {
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 8.0 { self.frame += 1; self.frame_counter = 0.0; }
+                    if self.frame > 1 { self.frame = 0; }
+                }
+            }
+            NpcKind::Penguin | NpcKind::PenguinBlack => {
+                // `case 148/149` (`NPC.cs:76392-76457`): the localAI[0]
+                // colour band (0/3/6/9) offsets the 3-row walk strip; the
+                // port keeps band 0 until the critter colour roll lands.
+                let num40 = match self.local_ai[0] as i32 { 2=>3, 3=>6, 4=>9, _=>0 };
+                if self.vy == 0.0 {
+                    if self.facing == 1 { self.sprite_dir = 1; }
+                    if self.facing == -1 { self.sprite_dir = -1; }
+                    if self.vx == 0.0 { self.frame = num40; self.frame_counter = 0.0; }
+                    else {
+                        self.frame_counter += self.vx.abs();
+                        self.frame = if self.frame_counter < 6.0 { num40 }
+                            else if self.frame_counter < 12.0 { 1 + num40 }
+                            else if self.frame_counter < 15.0 { 2 + num40 }
+                            else { self.frame_counter = 0.0; 2 + num40 };
+                    }
+                } else { self.frame_counter = 0.0; self.frame = 2 + num40; }
+            }
+            NpcKind::GiantTortoise | NpcKind::IceTortoise => {
+                // The aiStyle-39 post-switch tail (`NPC.cs:77292-77368`,
+                // `type != 417`): state 0 the |vx|*1.1 walk over rows 0..4
+                // (the 6/12/18/24/32 bands), state 1/5 the wind-up rows
+                // 5/6/7 off ai[1], else row 7.
+                if self.ai[0] == 0.0 {
+                    self.rotation = 0.0;
+                    if self.vy == 0.0 { self.sprite_dir = self.facing; }
+                    else if self.vy < 0.0 { self.frame_counter = 0.0; }
+                    self.frame_counter += self.vx.abs() * 1.1;
+                    self.frame = if self.frame_counter < 6.0 { 0 }
+                        else if self.frame_counter < 12.0 { 1 }
+                        else if self.frame_counter < 18.0 { 2 }
+                        else if self.frame_counter < 24.0 { 3 }
+                        else if self.frame_counter < 32.0 { 4 }
+                        else { self.frame_counter = 0.0; self.frame };
+                } else if self.ai[0] == 1.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.ai[1] < 10.0 { 5 } else if self.ai[1] < 20.0 { 6 } else { 7 };
+                } else if self.ai[0] == 5.0 {
+                    self.frame_counter = 0.0;
+                    self.frame = if self.ai[1] < 10.0 { 7 } else if self.ai[1] < 20.0 { 6 } else { 5 };
+                } else { self.frame_counter = 0.0; self.frame = 7; }
             }
             // The Wizard/Mechanic: `FindFrame`'s humanoid-group case list
             // carries them (`NPC.cs:68554`/`:68556`) with no arm of their
@@ -14485,6 +14590,63 @@ impl Npc {
     // Transform(518) fallback (`NPC.cs:35523-35537`/`:36060-36062`),
     // routed through the aiStyle-75 axis.
 
+    /// W4-d36 — the aiStyle-39 tortoise family (GiantTortoise 153 /
+    /// IceTortoise 154) through the faithful `npc_ai_style39::style39_step`
+    /// (the SolarSroller wrapper's shape, minus the 417-only bounce pass).
+    /// The caller owns the gravity + tile-collision integration tail
+    /// (`NPC.UpdateNPC`, `NPC.cs:90465-90503`).
+    fn update_tortoise(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let cand = crate::npc_target::session_candidate(player);
+        let ty = if self.kind == NpcKind::IceTortoise {
+            crate::npc_ai_style39::Style39Type::IceTortoise
+        } else {
+            crate::npc_ai_style39::Style39Type::GiantTortoise
+        };
+        let mut ctx = crate::npc_ai_style39::Style39Context {
+            kind: ty,
+            difficulty: 1.0, // Classic — the port's difficulty fold
+            just_hit: self.hurt_cd > 0.0,
+            ticker: 0,
+            gfx_off_y: self.gfx_off_y,
+            step_speed: self.step_speed,
+            knockback_resist: self.knock_back_resist(),
+        };
+        crate::npc_ai_style39::style39_step(self, world, &mut ctx, &[cand], rng);
+        self.gfx_off_y = ctx.gfx_off_y;
+        self.step_speed = ctx.step_speed;
+        self.kb_resist_override = Some(ctx.knockback_resist);
+        // The shared movement tail (`NPC.UpdateNPC :90465-90472`): the
+        // port-wide gravity seam + the axis-separated tile collision.
+        self.vy = (self.vy + GRAVITY).min(MAX_FALL);
+        // `base.oldVelocity = base.velocity` (`NPC.cs:92538`) — latched
+        // BEFORE the collision pass (the sroller wrapper's convention):
+        // next tick's state-0 blocked-move flip reads it (`:29278`, the
+        // module's `npc.vx != npc.old_vx` term).
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        let (w, h) = self.size();
+        let nx = self.x + self.vx;
+        if !crate::player::collides_rect(world, nx, self.y, w, h) {
+            self.x = nx;
+        } else {
+            self.vx = 0.0;
+        }
+        let ny = self.y + self.vy;
+        if !crate::player::collides_rect(world, self.x, ny, w, h) {
+            self.y = ny;
+            self.on_ground = false;
+        } else if self.vy > 0.0 {
+            let ty = ((ny + h) / TILE_PX).floor() as i32;
+            self.y = ty as f32 * TILE_PX - h;
+            self.vy = 0.0;
+            self.on_ground = true;
+        } else if self.vy < 0.0 {
+            let ty = (ny / TILE_PX).floor() as i32;
+            self.y = (ty + 1) as f32 * TILE_PX;
+            self.vy = 0.0;
+        }
+    }
+
     /// `AI()`'s aiStyle-39 block's SolarSroller arm (`NPC.cs:29145-29665`)
     /// — S1-D-4 W-10 WIRES the faithful `npc_ai_style39::style39_step`
     /// (S1-D-3 module, W83 audit) over the invented v1 (the
@@ -18601,6 +18763,14 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-d36 census batch 0 — fresh hash slots above the roster
+            // max (549, the DD2LanePortal); injective (the ForceBubble
+            // convention).
+            NpcKind::ToxicSludge => 550,
+            NpcKind::Penguin => 551,
+            NpcKind::PenguinBlack => 552,
+            NpcKind::GiantTortoise => 553,
+            NpcKind::IceTortoise => 554,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -23669,7 +23839,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24118,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d36 census batch 0.
+        NpcKind::ToxicSludge,
+        NpcKind::Penguin,
+        NpcKind::PenguinBlack,
+        NpcKind::GiantTortoise,
+        NpcKind::IceTortoise,
     ];
 
     #[test]
@@ -24103,6 +24279,36 @@ mod tests {
         assert_eq!(o.local_ai[0], 0.0, "the cooldown expires");
         o.martian_officer_bubble();
         assert!(o.wants_force_bubble, "the re-spawn request fires at 0");
+    }
+
+    /// W4-d36 batch 0 — the census kinds' `SetDefaults` rows pin
+    /// against the C# through the port's tables (the small-kinds pin's
+    /// shape). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_d36_b0_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::ToxicSludge, 141u16, 1u8, 34.0, 28.0, 50, 18, 150, 0.8f32, 400.0f32),
+            (NpcKind::Penguin, 148u16, 7u8, 16.0, 34.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::PenguinBlack, 149u16, 7u8, 16.0, 34.0, 0, 0, 5, 1.0f32, 0.0f32),
+            (NpcKind::GiantTortoise, 153u16, 39u8, 46.0, 32.0, 80, 30, 470, 0.3f32, 500.0f32),
+            (NpcKind::IceTortoise, 154u16, 39u8, 46.0, 32.0, 55, 28, 400, 0.3f32, 450.0f32),
+        ];
+        for (kind, ty, ai, w, h, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (w, h), "{kind:?} size");
+            assert_eq!(shell.size(), (w, h), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+            assert_eq!(NpcKind::from_u16(kind.to_u16()), Some(kind), "{kind:?} round-trip");
+            assert_eq!(crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue).net_id, ty as i32, "{kind:?} bestiary net_id");
+        }
     }
 
     /// The Dye Trader's shop (`case 12`): the four always rows, the moon-phase
@@ -27559,8 +27765,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
-            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
+            275,
+            "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-d36 census batch 0's five, L-B gate)"
         );
         assert!(
             covered > 43,

@@ -2171,6 +2171,47 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
+    // W4-d36 census batch 0.
+    BestiaryEntryDef {
+        credit_id: "ToxicSludge",
+        net_id: 141,
+        kind: NpcKind::ToxicSludge,
+        variant: None,
+        quick_unlock: false,
+        name: "Toxic Sludge",
+    },
+    BestiaryEntryDef {
+        credit_id: "Penguin",
+        net_id: 148,
+        kind: NpcKind::Penguin,
+        variant: None,
+        quick_unlock: false,
+        name: "Penguin",
+    },
+    BestiaryEntryDef {
+        credit_id: "PenguinBlack",
+        net_id: 149,
+        kind: NpcKind::PenguinBlack,
+        variant: None,
+        quick_unlock: false,
+        name: "Penguin",
+    },
+    BestiaryEntryDef {
+        credit_id: "GiantTortoise",
+        net_id: 153,
+        kind: NpcKind::GiantTortoise,
+        variant: None,
+        quick_unlock: false,
+        name: "Giant Tortoise",
+    },
+    BestiaryEntryDef {
+        credit_id: "IceTortoise",
+        net_id: 154,
+        kind: NpcKind::IceTortoise,
+        variant: None,
+        quick_unlock: false,
+        name: "Ice Tortoise",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`

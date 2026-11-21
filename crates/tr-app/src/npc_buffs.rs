@@ -484,6 +484,13 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-d36 census batch 0 (`NPCID.cs:6955-7040`): 141 {20,70,395},
+        // 148/149 {31}, 153 null-row (no immunity), 154 {44,324}.
+        NpcKind::ToxicSludge => &[20, 70, 395],
+        NpcKind::Penguin
+        | NpcKind::PenguinBlack => &[31],
+        NpcKind::GiantTortoise => &[],
+        NpcKind::IceTortoise => &[44, 324],
     }
 }
 

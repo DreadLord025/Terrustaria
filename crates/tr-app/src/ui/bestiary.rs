@@ -1595,6 +1595,38 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        // W4-d36 census batch 0 portraits — the sheet's frame height
+        // (the vanilla strip / npcFrameCount) with the padded box width.
+        (NpcKind::ToxicSludge, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 3.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 38.0, h, white)
+        }
+        (NpcKind::Penguin, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::PenguinBlack, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 12.0)
+                .unwrap_or(34.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::GiantTortoise, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 50.0, h, white)
+        }
+        (NpcKind::IceTortoise, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 8.0)
+                .unwrap_or(32.0);
+            (sheet_i, h, 50.0, h, white)
+        }
     }
 }
 
