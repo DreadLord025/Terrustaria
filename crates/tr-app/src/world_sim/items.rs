@@ -544,6 +544,17 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 // S1-P-i43 — the fills chime per accepted slot INSIDE the
                 // helper (`Player.cs:39444`/`:39534`), `IsACoin ? 38 : 7`,
                 // on the `UpdatePlayers` stream (the GrabItems caller).
+                // W4-g56 void-chain item 3 (census): this auto-route IS the
+                // C# `GetItem` void-bag arm — `IsVoidVaultEnabled` (the
+                // per-tick `HasItem(4131)` refresh, `Player.cs:24550-24553`)
+                // gates `vault_enabled`, `CanVoidVaultAccept` the kinds, and
+                // `GetItem_VoidVault` (`:39402-39423`) fills occupied then
+                // empty. Already landed (S1-P-i43/i47/i50); the e19
+                // quicksell/shimmer co-lane keeps these calls untouched. The
+                // `DoCoins(i)` inside the vault fills (`:39454`/`:39544`)
+                // reads `this.inventory[i]`, NOT the vault array — a vanilla
+                // quirk the port records as a deviation (bank.rs:51), not a
+                // re-port. No new code: the arm is complete and claimed.
                 if remaining > 0
                     && vault_enabled
                     && crate::bank::can_void_vault_accept(kind)
