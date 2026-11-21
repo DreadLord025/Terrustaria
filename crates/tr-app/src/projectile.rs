@@ -42702,6 +42702,108 @@ mod w4_d1_falling_block_tests {
         assert!(pool.drain_block_drops().is_empty(), "the placement stood, no drop");
         assert_eq!(rng.draws, vec![(0, 2), (0, 3)], "the dust gate + the cut roll");
     }
+
+    /// Wave 3b — the five remaining natural-fall rows (67/71/179/241/812)
+    /// carry the 31's shape verbatim (`:1467-1476`/`:1512-1521`/`:2650-2659`
+    /// /`:3228-3237`/`:7953-7962`): 10×10, aiStyle 10, pen −1, stock life.
+    #[test]
+    fn w4_d1_the_wave3b_falling_rows_match_set_defaults() {
+        for k in [
+            PEARLSAND_BALL_FALLING, SILT_BALL_FALLING, SLUSH_BALL_FALLING,
+            CRIMSAND_BALL_FALLING, SHELL_PILE_FALLING,
+        ] {
+            let d = proj_data(k).expect("the falling row");
+            assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (10.0, 10.0, 10, -1), "kind {k}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {k}");
+            assert_eq!(d.extra_updates, 0, "kind {k}");
+            assert!(d.tile_collide, "kind {k}");
+            assert!(!d.ignore_water, "kind {k}");
+            assert!(FALLING_BLOCK_NO_PLATFORM_FALL.contains(&k), "kind {k}");
+            assert!(FALLING_HOSTILE_KINDS.contains(&k), "the hostile flag, kind {k}");
+        }
+    }
+
+    /// The silt ball's dust gate is its own `Next(2)` branch (`:57903`,
+    /// dust 53); the spawn-with-data carries the row (no decline).
+    #[test]
+    fn w4_d1_the_silt_ball_spawn_and_dust_gate() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SILT_BALL_FALLING, 160.0, 100.0, 0.0, 0.0, 10, 0.0, 1.0, 0.0)
+            .expect("the 71 row spawns");
+        let p = &pool.slots()[slot];
+        assert_eq!((p.w, p.h, p.penetrate), (10.0, 10.0, -1));
+        assert!(p.falling_tile.is_none());
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(pool.slots()[slot].active);
+        assert!((pool.slots()[slot].vel.y - 0.41).abs() < 1e-6);
+        assert_eq!(rng.draws, vec![(0, 2)], "the 71's dust gate (:57905)");
+    }
+
+    /// The shell pile's death map (`:77487-77491`): tile 495, item 4090.
+    /// An OCCUPIED centre cell refuses the placement and drops the item
+    /// at `Center` (`:77567-77570`).
+    #[test]
+    fn w4_d1_the_shell_pile_death_drops_on_an_occupied_cell() {
+        let mut pool = ProjectilePool::new();
+        // The box bottom rests on row 24; the centre cell (10, 23) is
+        // occupied by a stone tile → the placement refuses, item 4090.
+        let slot = pool
+            .spawn_with_data_ai(SHELL_PILE_FALLING, 160.0, 374.0, 0.0, 0.41, 10, 0.0, 1.0, 0.0)
+            .expect("the 812 row spawns");
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        put_solid(&mut w, 10, 23);
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(!pool.slots()[slot].active, "the blocked-move kill");
+        let drops = pool.drain_block_drops();
+        assert_eq!(drops.len(), 1);
+        assert_eq!(drops[0].0, 4090, "the 812 → item 4090 map (:77490)");
+        // The centre (165, 379) — the occupied-cell drop point.
+        assert!((drops[0].1 - 165.0).abs() < 1e-4);
+        assert!((drops[0].2 - 379.0).abs() < 1e-3);
+    }
+
+    /// The slush ball's death map (`:77452-77456`): tile 224, item 1103 —
+    /// the free-cell placement stands the slush tile, no drop.
+    #[test]
+    fn w4_d1_the_slush_ball_lands_and_places_the_tile() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(SLUSH_BALL_FALLING, 160.0, 374.0, 0.0, 0.41, 10, 0.0, 1.0, 0.0)
+            .expect("the 179 row spawns");
+        let mut w = world();
+        put_solid(&mut w, 10, 24);
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(!pool.slots()[slot].active);
+        let placed = w.tile(10, 23).unwrap();
+        assert_eq!(placed.kind, 224, "the 179 → tile 224 map (:77454)");
+        assert!(placed.active());
+        assert!(pool.drain_block_drops().is_empty());
+    }
+
+    /// The crimsand ball's dust gate (`:57919`, dust 36) shares the 354's
+    /// branch; the ebonsand/pearlsand dust types ride their own gates
+    /// (`:57887` dust 14 / `:57895` dust 51) — the draw shapes are the
+    /// same `Next(2)`, pinned here for the 241.
+    #[test]
+    fn w4_d1_the_crimsand_ball_falls_and_draws() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(CRIMSAND_BALL_FALLING, 160.0, 100.0, 0.0, 0.0, 10, 0.0, 1.0, 0.0)
+            .expect("the 241 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(pool.slots()[slot].active);
+        assert!((pool.slots()[slot].vel.y - 0.41).abs() < 1e-6);
+        assert!((pool.slots()[slot].rot - 0.1).abs() < 1e-6);
+        assert_eq!(rng.draws, vec![(0, 2)], "the 241/354 dust gate (:57921)");
+    }
 }
 
 /// S1-D-5 — the dungeon-debris trio 736/737/738 (`AI_010`,

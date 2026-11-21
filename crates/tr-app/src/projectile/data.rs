@@ -3408,6 +3408,16 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             SAND_BALL_FALLING | MUD_BALL_FALLING | ASH_BALL_FALLING | EBONSAND_BALL_FALLING => {
                 (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
+            // W4-d1 wave 3b — the remaining natural falls
+            // (`Projectile.cs:1467-1476` 67, `:1512-1521` 71, `:2650-2659`
+            // 179, `:3228-3237` 241, `:7953-7962` 812): the 31's shape
+            // verbatim — 10x10, aiStyle 10, friendly + hostile,
+            // `penetrate = -1`, the stock life / tileCollide; the
+            // `knockBack = 6f` drop is the sand-row precedent above.
+            PEARLSAND_BALL_FALLING | SILT_BALL_FALLING | SLUSH_BALL_FALLING
+            | CRIMSAND_BALL_FALLING | SHELL_PILE_FALLING => {
+                (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
             // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
             // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever
