@@ -1936,6 +1936,13 @@ impl App {
                 }
                 if let Some(p) = self.player.as_mut() {
                     p.banks[bi][bank_idx] = target;
+                    // W4-g56 — the vault cell emptied: its favorite clears
+                    // (the flag rides a non-air stack — the draw gate and
+                    // the C#'s `!item.IsAir && item.favorited` arm,
+                    // `ItemSlot.cs:2152`; a re-stocked cell starts plain).
+                    if bi == 3 && target.count == 0 {
+                        p.vault_favorites[bank_idx] = false;
+                    }
                 }
                 return;
             }
@@ -4516,6 +4523,26 @@ mod tests {
         assert!(
             !app.player.as_ref().unwrap().vault_favorites[0],
             "the source's favourite cleared with the move"
+        );
+    }
+
+    /// W4-g56 — the vault cell emptied by a left pickup clears its favorite
+    /// (the flag rides a non-air stack, `ItemSlot.cs:2152`'s `!item.IsAir &&
+    /// item.favorited` draw gate); a re-stocked cell starts plain.
+    #[test]
+    fn w4_g56_the_vault_favorite_clears_when_the_cell_empties() {
+        let mut app = vault_app();
+        app.player.as_mut().unwrap().banks[3][0] = slot(9, 1);
+        app.player.as_mut().unwrap().vault_favorites[0] = true;
+        app.mouse_item = EMPTY_SLOT;
+        app.mouse_pos = Vec2::new(20.0, 330.0);
+        app.ui_left_press = true;
+        app.handle_inventory_clicks();
+        assert_eq!(app.mouse_item, slot(9, 1), "the stack onto the cursor");
+        assert_eq!(app.player.as_ref().unwrap().banks[3][0].count, 0);
+        assert!(
+            !app.player.as_ref().unwrap().vault_favorites[0],
+            "the emptied cell's favourite cleared"
         );
     }
 
