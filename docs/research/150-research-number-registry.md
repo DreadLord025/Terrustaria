@@ -1277,6 +1277,17 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 - d13 has TWO docs: pet-light FINAL→336, band-final→353.
 - Merger dedupes filenames by THIS table. Chain-banners must cite §9.
 
+### §10.4 — EXECUTION COMPLETE (13/13)
+
+All §10.2 rows 371–381 EXECUTED + pushed (c14 56d14741d / d78 25b19e180 /
+g1 294bc2290 / g46 4bcbdd645 / g78 ce6783ffe / c26 f34527b9b / g2 2f87737fb /
+f3 3980e0c5b / f47 13eb89e60 / f32 c7c107fec / f18 4ee1579aa) + §9 additions
+370-d54j 97c8c5180 / 382-g81 a978fbd6a. Zero-stale verified per lane.
+**The number race is CLOSED for the second time — 62 total renames executed
+(§9 49 + §10 11 + 370/382). NO SELF-PICKS; new docs ≥383 Lead-assignment only.**
+Still-owed round-1 renames (outside §9/§10 scope, merger dedupes by final key):
+f6-198, g1-160, g2-157+163, f3-303, g78-179, f47-277+278, g46-70-fork-252.
+
 ### §9.4 — EXECUTION COMPLETE (49/49)
 
 All §9.2 rename rows are EXECUTED and pushed (verified per-lane reports +
