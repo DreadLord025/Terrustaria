@@ -34,7 +34,7 @@ const SPAWN_SPACE_Y: i32 = 3;
 /// The world/scene state `GetSpawnRate` reads (`NPC.cs:473-810`). Everything
 /// the ported simulation cannot supply yet stays `false`/`0` — the chain
 /// branches still run in the vanilla order so future systems only flip flags.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 pub struct SpawnFlags {
     pub hard_mode: bool,
     pub blood_moon: bool,
@@ -66,6 +66,56 @@ pub struct SpawnFlags {
     pub enemy_spawns: bool,
     /// `Main.wofNPCIndex >= 0` (the Wall of Flesh is alive).
     pub wof_active: bool,
+    /// `Main.IsJourneyMode` (`Main.cs:2634`: `GameMode == 3`) — the
+    /// spawn-rate power's gates (`NPC.cs:350`/`:762`/`:5906`). The port's
+    /// stand-in is the session difficulty (`App::active_player_difficulty`,
+    /// the same one `journey_available` reads); a Journey character only
+    /// joins a Journey world (`UIWorldSelect.cs:177-180`'s rejection).
+    pub journey_mode: bool,
+    /// `SpawnRateSliderPerPlayerPower.GetShouldDisableSpawnsFor`
+    /// (`CreativePowers.cs:1584-1595`): the local player's exact-zero
+    /// cache — `NPC.CanSpawnEnemiesNear` refuses the whole attempt
+    /// (`NPC.cs:350-357`).
+    pub journey_spawns_disabled: bool,
+    /// `SpawnRateSliderPerPlayerPower.GetRemappedSliderValueFor`
+    /// (`:222-231`): the local player's x0.1..10 factor — `GetSpawnRate`
+    /// divides the rate and multiplies the cap by it (`NPC.cs:762-770`).
+    /// The fresh default 0.5 remaps to 1.0 (inert).
+    pub journey_spawn_rate: f32,
+}
+
+impl Default for SpawnFlags {
+    fn default() -> Self {
+        Self {
+            hard_mode: false,
+            blood_moon: false,
+            eclipse: false,
+            moon_event: false,
+            zone_dungeon: false,
+            downed_boss3: false,
+            zone_sandstorm: false,
+            zone_underground_desert: false,
+            zone_jungle: false,
+            zone_evil: false,
+            zone_meteor: false,
+            zone_temple: false,
+            zone_hallow_deep: false,
+            zone_water_candle: false,
+            zone_peace_candle: false,
+            zone_graveyard: false,
+            invis: false,
+            calmed: false,
+            sunflower: false,
+            angler_set: false,
+            enemy_spawns: false,
+            wof_active: false,
+            journey_mode: false,
+            journey_spawns_disabled: false,
+            // The power's fresh cache 0.5 (`_sliderDefaultValue`,
+            // `CreativePowers.cs:1580`) remaps to x1 — inert.
+            journey_spawn_rate: 1.0,
+        }
+    }
 }
 
 /// The wave-20 boss kinds the `Spawner` ctor weights (`NPC.cs:273-286`):
@@ -426,6 +476,15 @@ pub fn get_spawn_rate(ctx: &SpawnContext, rng: &mut UnifiedRandom) -> SpawnRate 
     }
     if rate.max_spawns > DEFAULT_MAX_SPAWNS * 3 {
         rate.max_spawns = DEFAULT_MAX_SPAWNS * 3;
+    }
+    // `Main.getGoodWorld` (`:757-761`) is constants-off (no FTW worlds).
+    // `Main.IsJourneyMode` (`:762-770`): the spawn-rate power divides the
+    // rate and multiplies the cap by the remapped x0.1..10 factor — the
+    // `(int)` casts truncate, the factor is the raw float (no rounding).
+    if f.journey_mode {
+        let value = f.journey_spawn_rate;
+        rate.spawn_rate = (rate.spawn_rate as f32 / value) as i32; // `:767`
+        rate.max_spawns = (rate.max_spawns as f32 * value) as i32; // `:768`
     }
     // The invasion overrides (`:792-801`) — the moon events force the raid
     // pacing; the pre-Skeletron dungeon crawls at rate 10 (`:806-809`).
