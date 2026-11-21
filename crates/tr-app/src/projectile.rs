@@ -10171,6 +10171,76 @@ impl Projectile {
         false
     }
 
+    /// W4-c19 round 3 — `AI()`'s aiStyle-112 type-590 arm
+    /// (`Projectile.cs:34194-34233`): the TruffleSpore's 4-tick frame machine
+    /// (the `ai[2] == 1` grown strip reads frames 3-5), the 15-per-tick alpha
+    /// fade to 0, the rand-flicker light (`:34226`) and the sine hover
+    /// (`:34228-34232`). The 590 row is W4-d12's to merge (keep-one-dedupe —
+    /// this branch copies no rows); the arm is live as soon as the row lets a
+    /// slot carry the kind.
+    ///
+    /// RNG: while `alpha == 0` ONE `Next(28, 42)` per tick colours the light
+    /// (`num831 = draw * 0.005 + (270 - mouseTextColor) / 500`); the fade
+    /// ticks draw nothing. `mouse_text_color` is `Main.mouseTextColor` as of
+    /// the last draw pass (the `item_lights::rand_light` essScale precedent —
+    /// the step reads the value the draw left).
+    ///
+    /// The light anchor is the `AddLight(Vector2, …)` overload's quotient
+    /// truncation (`Lighting.cs:140-143`, `XAnchor::Center`). Returns the
+    /// light intent or `None`.
+    fn ai_truffle_spore(
+        &mut self,
+        mouse_text_color: u8,
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<(i32, i32, [f32; 3])> {
+        // `:34196-34210` — the 4-tick frame machine: the grown spore
+        // (`ai[2] == 1`) cycles 3..5, the fresh one 0..2.
+        self.frame_counter += 1;
+        if self.frame_counter >= 4 {
+            let (first, past) = if self.ai[2] == 1.0 { (3, 6) } else { (0, 3) };
+            self.frame_counter = 0;
+            self.frame += 1;
+            if self.frame >= past {
+                self.frame = first;
+            }
+        }
+        // `:34211-34218` — the alpha fade to 0.
+        if self.alpha > 0 {
+            self.alpha -= 15;
+        }
+        if self.alpha < 0 {
+            self.alpha = 0;
+        }
+        let mut light = None;
+        if self.alpha == 0 {
+            // `:34221-34226` — the flicker: one `Next(28, 42)`, the
+            // mouseTextColor term, then the 0.35-scaled (0.1, 0.3+n/2, 0.6+n)
+            // teal at the centre.
+            let num831 = rng.next_range(28, 42) as f32 * 0.005
+                + (270.0 - mouse_text_color as f32) / 500.0;
+            let num832 = 0.1f32;
+            let num833 = 0.3 + num831 / 2.0;
+            let num834 = 0.6 + num831;
+            let num835 = 0.35f32;
+            let (cx, cy) = self.center();
+            light = Some((
+                (cx / 16.0) as i32,
+                (cy / 16.0) as i32,
+                [num832 * num835, num833 * num835, num834 * num835],
+            ));
+        }
+        // `:34228-34232` — the sine hover: `velocity = (0, sin(2π·ai[0]/180)
+        // * 0.15)`, the phase wraps at 180. The C# casts the f32 phase to
+        // double for `Math.Sin`, back to f32, THEN multiplies by 0.15f.
+        let phase = (std::f32::consts::PI * 2.0 * self.ai[0] / 180.0) as f64;
+        self.vel = Vec2::new(0.0, phase.sin() as f32 * 0.15);
+        self.ai[0] += 1.0;
+        if self.ai[0] >= 180.0 {
+            self.ai[0] = 0.0;
+        }
+        light
+    }
+
     /// The generic movement the C#'s `HandleMovement` runs for the styles
     /// without their own bounce or kill scan (`:17587` `Collision.TileCollision`
     /// + `:20468` `UpdatePosition`): a free move steps the box forward; a
@@ -14594,6 +14664,11 @@ pub struct ProjectilePool {
     /// `EntityLights` pair (`drain_ai_lights`, the `item_lights.rs`
     /// named-stream precedent — the e6-rule exception).
     pending_ai_lights: Vec<(i32, i32, [f32; 3])>,
+    /// W4-c19 round 3 — `Main.mouseTextColor` as of the last draw pass, the
+    /// 590 TruffleSpore's flicker term (`Projectile.cs:34221`). The step-time
+    /// arm reads the value the draw left (the `item_lights` essScale
+    /// precedent); the default 225 is the app's seed (`app/mod.rs`).
+    mouse_text_color: u8,
     /// S1-E-21 wave C — the landed strikes' `NPC.HitSound` intents
     /// (`NPC.cs:81544-81553` via `Projectile.Damage`'s `StrikeNPC`,
     /// `Projectile.cs:13649`): `(cue, npc.x, npc.y)` per landed hit, drained
@@ -15034,6 +15109,7 @@ impl ProjectilePool {
             hook_blacklist: HashMap::new(),
             disco: [255, 0, 0],
             pending_ai_lights: Vec::new(),
+            mouse_text_color: 225,
             pending_npc_hit_sounds: Vec::new(),
             pending_proj_sounds: Vec::new(),
             pending_channel_tracks: Vec::new(),
@@ -15125,6 +15201,13 @@ impl ProjectilePool {
     /// C# slot + sub-step order the arms collected them.
     pub fn drain_ai_lights(&mut self) -> Vec<(i32, i32, [f32; 3])> {
         std::mem::take(&mut self.pending_ai_lights)
+    }
+
+    /// W4-c19 round 3 — `Main.mouseTextColor` as the 590 TruffleSpore's
+    /// flicker reads it (`Projectile.cs:34221`); the app's draw-pass pulse
+    /// owns the value (the `set_disco` precedent).
+    pub fn set_mouse_text_color(&mut self, mouse_text_color: u8) {
+        self.mouse_text_color = mouse_text_color;
     }
 
     /// S1-P-i35 — the bobber arm's per-tick player/world snapshot
@@ -18948,6 +19031,25 @@ impl ProjectilePool {
                             }
                         }
                         112 => {
+                            // W4-c19 round 3 — `AI()`'s aiStyle-112 type-590
+                            // arm (`Projectile.cs:34194-34233`): the Truffle
+                            // Spore's frame/fade/flicker/hover. The C# runs it
+                            // BEFORE the 644 arm (`:34235`'s `type != 644`
+                            // return); the 590 row is W4-d12's (keep-one).
+                            if self.slots[i].kind == 590 {
+                                if let Some(l) = self.slots[i]
+                                    .ai_truffle_spore(self.mouse_text_color, rng)
+                                {
+                                    self.pending_ai_lights.push(l);
+                                }
+                                // `HandleMovement`: `tileCollide = false`
+                                // (`:6394`) — `UpdatePosition` integrates the
+                                // sine hover.
+                                if self.slots[i].active {
+                                    let vel = self.slots[i].vel;
+                                    self.slots[i].pos += vel;
+                                }
+                            } else {
                             // `AI()`'s aiStyle-112 type-644 arm
                             // (`Projectile.cs:34235-34362`, S1-D-4b-3): the
                             // Rainbow Crystal's shard. The parent probe
@@ -18969,6 +19071,7 @@ impl ProjectilePool {
                             if self.slots[i].active {
                                 let vel = self.slots[i].vel;
                                 self.slots[i].pos += vel;
+                            }
                             }
                         }
                         134 => {
@@ -35502,6 +35605,118 @@ mod magic_ai_tests {
             assert_eq!(l.2, [0.2, 0.0, 0.4]);
         }
         assert!(pool.drain_ai_lights().is_empty(), "the drain empties the vec");
+    }
+
+    /// The 590's flicker (`Projectile.cs:34221-34226`): while alpha == 0 ONE
+    /// `Next(28, 42)` per tick; the colour is the C#'s product order
+    /// `(0.1·0.35, (0.3+n/2)·0.35, (0.6+n)·0.35)` with
+    /// `n = draw·0.005 + (270−mouseTextColor)/500`. The twin replays the draw.
+    #[test]
+    fn the_truffle_spore_flicker_draws_one_next_28_42() {
+        let mut p = Projectile::default();
+        p.kind = 590;
+        p.pos = Vec2::new(160.0, 176.0);
+        p.w = 14.0;
+        p.h = 14.0;
+        p.alpha = 0;
+        let mut rng = tr_core::tile_light::FastRandom::new(4242);
+        let mut twin = tr_core::tile_light::FastRandom::new(4242);
+        for mtc in [225u8, 255, 190] {
+            let got = p.ai_truffle_spore(mtc, &mut rng).expect("alpha 0 lights");
+            let draw = twin.next_range(28, 42);
+            assert_eq!(rng.seed, twin.seed, "exactly one Next(28,42)");
+            let n = draw as f32 * 0.005 + (270.0 - mtc as f32) / 500.0;
+            // The 14x14 box centres on (167, 183) → tile (10, 11).
+            assert_eq!((got.0, got.1), (10, 11));
+            assert_eq!(
+                got.2,
+                [0.1 * 0.35, (0.3 + n / 2.0) * 0.35, (0.6 + n) * 0.35],
+                "mtc {mtc}: the C# product order"
+            );
+        }
+        // The fade ticks draw NOTHING (alpha 255 → 240 → … → 0).
+        p.alpha = 255;
+        let before = rng.seed;
+        for _ in 0..17 {
+            assert!(p.ai_truffle_spore(225, &mut rng).is_none());
+        }
+        assert_eq!(rng.seed, before, "the fade is draw-free");
+        assert_eq!(p.alpha, 0, "255 - 17*15 clamps at 0");
+        // The 18th tick lights again.
+        assert!(p.ai_truffle_spore(225, &mut rng).is_some());
+    }
+
+    /// The 590's frame machine + hover (`:34196-34210` / `:34228-34232`):
+    /// the fresh spore cycles frames 0-2 every 4 ticks, the grown one
+    /// (`ai[2] == 1`) 3-5; the hover is `(0, sin(2π·ai[0]/180)·0.15)` with the
+    /// 180 wrap.
+    #[test]
+    fn the_truffle_spore_frames_and_hover_follow_the_c() {
+        let mut p = Projectile::default();
+        p.kind = 590;
+        p.alpha = 0;
+        let mut rng = tr_core::tile_light::FastRandom::new(1);
+        // Fresh: ticks 1-3 hold frame 0, tick 4 advances to 1, tick 12 wraps.
+        for tick in 1..=12u32 {
+            p.ai_truffle_spore(225, &mut rng);
+            let want = ((tick / 4) % 3) as i32;
+            assert_eq!(p.frame, want, "tick {tick}");
+        }
+        // Grown: the strip reads 3-5.
+        p.ai[2] = 1.0;
+        p.frame = 3;
+        p.frame_counter = 0;
+        for tick in 1..=12u32 {
+            p.ai_truffle_spore(225, &mut rng);
+            let want = 3 + ((tick / 4) % 3) as i32;
+            assert_eq!(p.frame, want, "grown tick {tick}");
+        }
+        // The hover: ai[0] = 45 → sin(π/2)·0.15 = 0.15; the phase wraps.
+        p.ai[0] = 45.0;
+        p.ai_truffle_spore(225, &mut rng);
+        assert!((p.vel.y - 0.15).abs() < 1e-6, "the quarter-phase peak");
+        assert_eq!(p.vel.x, 0.0);
+        assert_eq!(p.ai[0], 46.0);
+        p.ai[0] = 179.0;
+        p.ai_truffle_spore(225, &mut rng);
+        assert_eq!(p.ai[0], 0.0, "the 180 wrap");
+    }
+
+    /// The 590 dispatch is conditional on the W4-d12 row (keep-one-dedupe —
+    /// this branch copies no rows): once `proj_data(590)` resolves, a spawn
+    /// rides the aiStyle-112 arm and its flicker lands in the drain seam.
+    #[test]
+    fn the_truffle_spore_seam_is_conditional_on_the_d12_row() {
+        let Some(row) = proj_data(590) else {
+            // The d12 row has not merged into this branch — the arm stays
+            // dormant (the Chillet sword-swing witness precedent).
+            return;
+        };
+        assert_eq!(row.ai_style, 112, "the 590 row rides aiStyle 112");
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(590, 160.0, 176.0, 0.0, 0.0, 10, 0.0)
+            .expect("the rowed kind spawns");
+        pool.slots[slot].alpha = 0;
+        pool.set_mouse_text_color(225);
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = tr_core::tile_light::FastRandom::new(11);
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        let drained = pool.drain_ai_lights();
+        assert_eq!(drained.len(), 1, "one flicker per tick at alpha 0");
+        assert_eq!((drained[0].0, drained[0].1), (10, 11));
     }
 
     #[test]
