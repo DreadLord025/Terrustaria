@@ -122,6 +122,8 @@
 //! | 525 | `:84941` | the 302 SlimeMasked death (1 gore 440, type-192 gray alpha-100 dust) |
 //! | 526-531 | `:84968-84973` | the 245 Golem body death: the 6 random-position 368/370 gores |
 //! | 532-538 | `:84974-84980` | the 245 Golem body death: the fixed tail 360/361/362/363/364/367/366 |
+//! | 539-545 | `:84984-84990` | the 249 GolemHeadFree death (4 random 368/370 + fixed 365/363/362) |
+//! | 546-548 | `:84994-84996` | the 247/248 Golem fist death (3 gores 369/371/370) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3226,6 +3228,73 @@ fn golem_body_random_gores(
     gore.new_gore(rng, world, pos, vel, 366, s); // :84980
 }
 
+/// The 249 GolemHeadFree death (`NPC.cs:84984-84990`, sites 539-545): the
+/// 50-dust type-148 burst, then 4 random-position gores alternating 368/370
+/// (Next(width)+Next(height) per gore), then the fixed 365/363/362 at
+/// position.
+fn golem_head_free_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:84962-84965` — the shared 50-dust type-148 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 148, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let wi = w as i32;
+    let hi = h as i32;
+    // `:84984-84987` — the 4 alternating 368/370 random-position gores.
+    for i in 0..4 {
+        let px = pos.x + rng.next_max(wi) as f32;
+        let py = pos.y + rng.next_max(hi) as f32;
+        let ty = if i % 2 == 0 { 368 } else { 370 };
+        gore.new_gore(rng, world, Vec2::new(px, py), vel, ty, s);
+    }
+    // `:84988-84990` — the fixed tail at position.
+    gore.new_gore(rng, world, pos, vel, 365, s); // :84988
+    gore.new_gore(rng, world, pos, vel, 363, s); // :84989
+    gore.new_gore(rng, world, pos, vel, 362, s); // :84990
+}
+
+/// The 247/248 Golem fist death (`NPC.cs:84994-84996`, sites 546-548): the
+/// 50-dust type-148 burst, then the 3 gores 369/371/370 at position (the
+/// `else` arm of the 245-249 block — the fists and any other non-245/246/249
+/// member).
+fn golem_fist_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 148, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 369, s); // :84994
+    gore.new_gore(rng, world, pos, vel, 371, s); // :84995
+    gore.new_gore(rng, world, pos, vel, 370, s); // :84996
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3598,11 +3667,18 @@ pub fn hit_effect_c(
     if npc_type == 302 && npc.hp <= 0 {
         slime_masked_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:84944-84999` — the 245-249 Golem family arm; the 245 body is
-    // complete (sites 526-538); the 249/247/248 arms land with the next
-    // batches. The 246 head spawns a 249 (the roster seam, no gore).
-    if npc_type == 245 && npc.hp <= 0 {
-        golem_body_random_gores(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    // `:84944-84999` — the 245-249 Golem family arm. The 245 body (sites
+    // 526-538), the 249 free head (sites 539-545) and the 247/248 fists
+    // (sites 546-548) spawn gores; the 246 head spawns a 249 (the roster
+    // seam, no gore — the wiring wave's).
+    if npc.hp <= 0 {
+        if npc_type == 245 {
+            golem_body_random_gores(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+        } else if npc_type == 249 {
+            golem_head_free_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+        } else if npc_type == 247 || npc_type == 248 {
+            golem_fist_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+        }
     }
     outcome
 }
@@ -5769,6 +5845,40 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the golem body mirrors the C# draws");
+    }
+
+    /// `NPC.cs:84984-84990` — the GolemHeadFree death: the 4 random
+    /// 368/370 gores then the fixed 365/363/362 at position.
+    #[test]
+    fn w4_f10_the_golem_head_free_death_spawns_the_seven_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 50.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(449);
+        golem_head_free_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..7].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![368, 370, 368, 370, 365, 363, 362]);
+        for i in 4..7 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+    }
+
+    /// `NPC.cs:84994-84996` — the Golem fist death: the 3 gores
+    /// 369/371/370 at position.
+    #[test]
+    fn w4_f10_the_golem_fist_death_spawns_the_three_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(457);
+        golem_fist_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![369, 371, 370]);
+        for i in 0..3 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
