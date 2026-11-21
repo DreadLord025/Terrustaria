@@ -498,16 +498,16 @@ pub(crate) fn start_swing_extras(app: &mut App, held_kind: u16) {
             app.rngs.stream(crate::app::RngKey::UpdatePlayers),
         );
     }
-    // W4-f32 — the Carbon/Ivy Guitar chord (`Player.cs:46576-46589`):
-    // `ItemCheck_UseMisc`'s arm plays `PlayGuitarChord(range)` with range =
-    // cursor distance / (Camera.SmallerScaledAxis / 2), clamped to 1
-    // (`:46579-46585`). The chord's luck roll (`RollOnlyBadLuckExtreme(10)`,
-    // `:46675`) + the pitch draw ride the `UpdatePlayers` stream; the cue
-    // ladder is `luck::guitar_chord_cue`. The Sparkle Guitar 4715's chord
-    // (`:46591-46603`) fires through the same seam when its note arm starts
-    // the swing. The `58` net-sync and the progression-37 notify are the
-    // documented skips.
-    if matches!(held_kind, 4057 | 4372 | 4715) {
+    // W4-f32 — the Sparkle Guitar 4715's chord (`Player.cs:46591-46603`,
+    // `ItemCheck_UseMisc`'s `ItemAnimationJustStarted` arm): the note arm
+    // starts the swing through `fire_non_ammo_shot` → this seam, so the
+    // chord fires here. The range clamp + luck roll + pitch draw ride the
+    // `UpdatePlayers` stream (`luck::guitar_chord_cue`). The Carbon/Ivy
+    // guitars (4057/4372) are damage-less and never start a swing — their
+    // chord fires on the dedicated press-edge arm in `update_editing`, NOT
+    // here (listing them would double-draw). The `58` net-sync and the
+    // progression-37 notify are the documented skips.
+    if held_kind == 4715 {
         play_guitar_chord(app, Vec2::new(cx, cy), mouse_world, Vec2::new(sw, sh));
     }
 }
