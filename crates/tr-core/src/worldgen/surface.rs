@@ -928,6 +928,368 @@ mod sunflower_tests {
     }
 }
 
+// --- W4-g38 C7: the Herbs pass -----------------------------------------------
+//
+// The vanilla `AlchemyHerbs` pass (`WorldGen.cs:19964-19980`): gated only by
+// `Skyblock.denyAllGeneration` (= `skyblockWorldGen`, `:3131` — even the
+// surface-rebuilding micro seeds do NOT admit it), it runs a `w * 1.7`
+// double-ceil ladder of `PlantAlch` attempts (remix ×5), each planting a
+// stage-0 herb (tile 82) on a suitable soil when fewer than 5 herbs already
+// sit in its ±num3 box.
+//
+// The gen-local `PlaceAlch` slice below duplicates the soil/liquid/write
+// core of `crate::edit::place_alch` (`edit/place.rs:269`) by design: the
+// runtime edit path carries `touch`/`after_edit` side effects (the revision
+// bump + the re-frame area) which generation must not run — the re-frame
+// rides the post-pipeline seam (the d106 convention), and the 82-84
+// frame-important boot bits are already set (`boot_statics`).
+
+/// The per-style soil families of `WorldGen.PlaceAlch`
+/// (`WorldGen.cs:45395-45466`) — the same table as `crate::edit::ALCH_SOILS`
+/// (`edit.rs:47-55`, private to the runtime edit path); every style also
+/// accepts the clay pot 78 and the planter box 380.
+const HERB_SOILS: [&[u16]; 7] = [
+    &[2, 477, 492, 78, 380, 109],
+    &[60, 78, 380],
+    &[0, 59, 78, 380],
+    &[661, 662, 199, 203, 23, 25, 78, 380],
+    &[53, 78, 380, 116],
+    &[57, 633, 78, 380],
+    &[78, 380, 147, 161, 163, 164, 200],
+];
+
+/// `WorldGen.PlaceAlch(x, y, style)` (`WorldGen.cs:45380-45479`), the
+/// generation slice: the cell-empty + `nactive` flat-soil gate
+/// (`:45392`), the per-style soil sets + liquid rules (`:45395-45466` —
+/// styles 0-3 refuse any liquid, 4/6 refuse lava only, 5 refuses
+/// everything but lava), then the write `active + 82 + frameX = 18*style +
+/// frameY = 0` and `CopyPaintAndCoating(soil)` (`:45470-45474`,
+/// `Tile.cs:867-872` — paint + invisible block + fullbright). The C#
+/// null-creates the cells (`:45382-45388`); the port's bounds-checked
+/// reads refuse out-of-world coordinates instead. No draws.
+fn place_alch_gen(world: &mut World, x: i32, y: i32, style: i32) -> bool {
+    let Some(herb) = world.tile(x, y).copied() else {
+        return false;
+    };
+    let Some(soil) = world.tile(x, y + 1).copied() else {
+        return false;
+    };
+    // `:45392`: !active && nactive(below) && !halfBrick && slope 0.
+    if herb.active()
+        || !crate::tileobject::nactive(&soil)
+        || soil.half_brick()
+        || soil.slope() != 0
+    {
+        return false;
+    }
+    // `:45395-45466`: the soil set + the liquid rule per style.
+    let soil_ok = match style {
+        0..=6 => HERB_SOILS[style as usize].contains(&soil.kind),
+        // No case matches: the C# switch falls through with the reject
+        // flag still false — an out-of-range style plants unchecked.
+        _ => true,
+    };
+    let herb_lava = herb.liquid_kind() == crate::tile::LiquidKind::Lava;
+    let liquid_ok = match style {
+        0..=3 => herb.liquid == 0,
+        4 | 6 => !(herb.liquid > 0 && herb_lava),
+        5 => !(herb.liquid > 0 && !herb_lava),
+        _ => true,
+    };
+    if !soil_ok || !liquid_ok {
+        return false;
+    }
+    // `:45470-45474`: the write + `CopyPaintAndCoating(tile2)`.
+    if let Some(cell) = world.tile_mut(x, y) {
+        cell.flags |= FLAG_ACTIVE;
+        cell.kind = 82;
+        cell.frame_x = (18 * style) as i16;
+        cell.frame_y = 0;
+        cell.set_paint(soil.paint());
+        cell.flags = (cell.flags & !crate::tile::FLAG_FULLBRIGHT)
+            | (soil.flags & crate::tile::FLAG_FULLBRIGHT);
+    }
+    world.set_invisible_block(x, y, world.invisible_block(x, y + 1));
+    true
+}
+
+/// `WorldGen.PlaceSuitableHerbHere(x, y)` (`WorldGen.cs:45940-45970`):
+/// the seven sequential soil-kind ifs — NOT else-if, one soil kind can
+/// fire several arms (each arm targets a different style, so at most one
+/// write lands: the first `PlaceAlch` fills the cell, the rest refuse on
+/// the active gate). The sand/pearlsand arm (style 4) carries the
+/// `beachDistance` band (`WorldGen.beachDistance = 380`, `:86914`).
+fn place_suitable_herb_here(world: &mut World, x: i32, y: i32) {
+    let Some(kind) = world.tile(x, y).map(|t| t.kind) else {
+        return;
+    };
+    if kind == 2 || kind == 109 {
+        place_alch_gen(world, x, y - 1, 0);
+    }
+    if kind == 60 {
+        place_alch_gen(world, x, y - 1, 1);
+    }
+    if kind == 0 || kind == 59 {
+        place_alch_gen(world, x, y - 1, 2);
+    }
+    if matches!(kind, 23 | 661 | 25 | 203 | 199 | 662) {
+        place_alch_gen(world, x, y - 1, 3);
+    }
+    if (kind == 53 || kind == 116) && x >= 380 && x <= world.width - 380 {
+        place_alch_gen(world, x, y - 1, 4);
+    }
+    if kind == 57 || kind == 633 {
+        place_alch_gen(world, x, y - 1, 5);
+    }
+    if matches!(kind, 147 | 163 | 164 | 161 | 200) {
+        place_alch_gen(world, x, y - 1, 6);
+    }
+}
+
+/// `WorldGen.PlantAlch()` (`WorldGen.cs:45901-45938`). Draws, in C# order
+/// on the pass stream: the x roll, the y-ladder rolls (remix: one full
+/// band roll; classic: `Next(40)` then — on 0 — the deep band roll, else
+/// `Next(10)` then the surface/deep band roll). The fall-to-ground scan,
+/// the `nactive`/above-active/above-liquid refuse and the ±num3 herb-count
+/// box are draw-free. `num4 = 5` herbs veto a fresh plant.
+fn plant_alch(
+    world: &mut World,
+    rng: &mut Rng,
+    world_surface: f64,
+    rock_layer: f64,
+    remix: bool,
+) {
+    let (w, h) = (world.width, world.height);
+    // `:45903-45905`: the x roll + the y ladder.
+    let x = rng.range(20, w - 20);
+    let mut y = if remix {
+        rng.range(20, h - 20)
+    } else if rng.chance(40) {
+        // Next(40) == 0 → the deep band, from `(int)(rockLayer + h) / 2`
+        // (the C# casts the double sum to int, then divides).
+        rng.range((rock_layer + h as f64) as i32 / 2, h - 20)
+    } else if !rng.chance(10) {
+        // Next(10) != 0 → the surface band.
+        rng.range(world_surface as i32, h - 20)
+    } else {
+        rng.range(20, h - 20)
+    };
+    // `:45905`: fall while the cell is inactive, stop at h - 20.
+    while y < h - 20 && !world.tile(x, y).is_some_and(|t| t.active()) {
+        y += 1;
+    }
+    // `:45908`: the landing refuse — not nactive, or the cell above is
+    // active or carries liquid.
+    let landed = world
+        .tile(x, y)
+        .is_some_and(|t| crate::tileobject::nactive(t));
+    let above_blocked = world
+        .tile(x, y - 1)
+        .is_some_and(|t| t.active() || t.liquid != 0);
+    if !landed || above_blocked {
+        return;
+    }
+    // `:45912-45919`: the ±num3 count box, clamped into [4, w-4]/[4, h-4].
+    let num3 = (15.0 * (w as f64 / 4200.0)) as i32;
+    let x_lo = (x - num3).clamp(4, w - 4);
+    let x_hi = (x + num3).clamp(4, w - 4);
+    let y_lo = (y - num3).clamp(4, h - 4);
+    let y_hi = (y + num3).clamp(4, h - 4);
+    let mut herbs = 0;
+    for i in x_lo..=x_hi {
+        for j in y_lo..=y_hi {
+            if world
+                .tile(i, j)
+                .is_some_and(|t| crate::tileobject::tile_alch(t.kind))
+            {
+                herbs += 1;
+            }
+        }
+    }
+    // `:45930-45932`: fewer than 5 herbs in the box → plant. (The C#'s
+    // netMode-2 SendTileSquare tail is a server broadcast, not state.)
+    if herbs < 5 {
+        place_suitable_herb_here(world, x, y);
+    }
+}
+
+/// The Herbs pass (`GenPassNameID.AlchemyHerbs`, `WorldGen.cs:19964-19980`).
+/// The `w * 1.7` double-ceil ladder (remix ×5) of `PlantAlch` attempts on
+/// the pass's own stream; gated by `Skyblock.denyAllGeneration` only.
+pub(crate) fn pass_herbs(
+    world: &mut World,
+    world_surface: f64,
+    rock_layer: f64,
+    rng: &mut Rng,
+    opts: &GenOptions,
+) {
+    // `:19966`: !Skyblock.denyAllGeneration (= skyblockWorldGen, :3131).
+    if opts.flags.contains(SeedFlags::SKYBLOCK) {
+        return;
+    }
+    let remix = opts.flags.contains(SeedFlags::REMIX);
+    // `:19968-19974`: the double count, the ceil loop (`(double)i < num`).
+    let mut count = world.width as f64 * 1.7;
+    if remix {
+        count *= 5.0;
+    }
+    let count = count.ceil() as i32;
+    for _ in 0..count {
+        plant_alch(world, rng, world_surface, rock_layer, remix);
+    }
+}
+
+#[cfg(test)]
+mod herb_tests {
+    use super::*;
+    use crate::tiledata::TILE_COUNT;
+
+    /// A grass-2 surface row at `ground` with air above.
+    fn grass_world(ground: i32) -> World {
+        let mut w = World::new("herbs".into(), 120, 120);
+        w.frame_important = vec![false; TILE_COUNT];
+        for x in 0..120 {
+            for y in ground..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: if y == ground { 2 } else { 1 },
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        w
+    }
+
+    /// W4-g38 C7: `place_alch_gen` writes the stage-0 herb on its soil —
+    /// the 18*style frameX, the paint/coating copy — and refuses the wrong
+    /// soil, the liquid rules and an occupied cell. No draws anywhere.
+    #[test]
+    fn w4_g38_c7_place_alch_gen_soil_liquid_and_paint() {
+        let mut w = grass_world(40);
+        // Style 0 on grass 2: the write + the coating copy.
+        let i = w.index(60, 40);
+        w.tiles[i].set_paint(7);
+        w.tiles[i].flags |= crate::tile::FLAG_FULLBRIGHT;
+        w.set_invisible_block(60, 40, true);
+        assert!(place_alch_gen(&mut w, 60, 39, 0));
+        let t = w.tile(60, 39).unwrap();
+        assert!(t.active());
+        assert_eq!(t.kind, 82);
+        assert_eq!(t.frame_x, 0);
+        assert_eq!(t.frame_y, 0);
+        assert_eq!(t.paint(), 7);
+        assert!(t.flags & crate::tile::FLAG_FULLBRIGHT != 0);
+        assert!(w.invisible_block(60, 39));
+        // The occupied cell refuses (the second sequential arm).
+        assert!(!place_alch_gen(&mut w, 60, 39, 0));
+        // Style 1 refuses grass (mushroom-grass soil only).
+        assert!(!place_alch_gen(&mut w, 61, 39, 1));
+        // Style 2 on mud 59.
+        let i = w.index(62, 40);
+        w.tiles[i].kind = 59;
+        assert!(place_alch_gen(&mut w, 62, 39, 2));
+        assert_eq!(w.tile(62, 39).unwrap().frame_x, 36);
+        // Style 5 (ash) accepts lava, refuses water; style 0 refuses both.
+        let i = w.index(63, 40);
+        w.tiles[i].kind = 57;
+        let i = w.index(63, 39);
+        w.tiles[i].liquid = 255;
+        w.tiles[i].flags |= crate::tile::FLAG_LIQUID_LAVA;
+        assert!(place_alch_gen(&mut w, 63, 39, 5));
+        let i = w.index(64, 40);
+        w.tiles[i].kind = 57;
+        let i = w.index(64, 39);
+        w.tiles[i].liquid = 255; // water
+        assert!(!place_alch_gen(&mut w, 64, 39, 5));
+        let i = w.index(65, 39);
+        w.tiles[i].liquid = 255;
+        assert!(!place_alch_gen(&mut w, 65, 39, 0));
+    }
+
+    /// W4-g38 C7: `plant_alch`'s draw schedule — the x roll, the Next(40)
+    /// / Next(10) ladder, the band roll (3 draws on the deep arm, 4 on
+    /// the others) — then the fall + plant. The stream stays in sync,
+    /// and the landing follows the C# fall + refuse rules.
+    #[test]
+    fn w4_g38_c7_plant_alch_draw_schedule_and_fall() {
+        let mut w = grass_world(40);
+        let before = w.tiles.clone();
+        let mut rng = Rng(11);
+        let mut probe = Rng(11);
+        // The C# ladder rolls, in order (`:45903-45905`).
+        let x = probe.range(20, 100);
+        let y0 = if probe.chance(40) {
+            probe.range((60.0 + 120.0) as i32 / 2, 100)
+        } else if !probe.chance(10) {
+            probe.range(30, 100)
+        } else {
+            probe.range(20, 100)
+        };
+        plant_alch(&mut w, &mut rng, 30.0, 60.0, false);
+        assert_eq!(rng.next_u32(), probe.next_u32(), "the streams stay in sync");
+        // The fall stops at the first active cell; the plant only lands
+        // when that cell is the surface row (a deeper landing has an
+        // active dirt cell above → the `:45908` refuse).
+        if y0 <= 40 {
+            let t = w.tile(x, 39).unwrap();
+            assert!(t.active(), "a herb at ({x},39)");
+            assert_eq!(t.kind, 82);
+            assert_eq!(t.frame_x, 0, "grass soil → style 0");
+        } else {
+            assert_eq!(w.tiles, before, "the above-active refuse");
+        }
+    }
+
+    /// W4-g38 C7: the five-herb box veto and the pass gates — the
+    /// skyblock denyAllGeneration gate skips without draws, the classic
+    /// pass plants herbs.
+    #[test]
+    fn w4_g38_c7_pass_plants_and_gates() {
+        // An 840-wide world → num3 = 3 (`:45915`); herbs buried in row 41
+        // put 7 tileAlch kinds in every landing box (rows 37..43) — the
+        // `< 5` count gate (`:45930`) vetoes every fresh plant while the
+        // above-cell check stays clear.
+        let mut w = World::new("herbs".into(), 840, 120);
+        w.frame_important = vec![false; TILE_COUNT];
+        for x in 0..840 {
+            for y in 40..120 {
+                let i = w.index(x, y);
+                w.tiles[i] = Tile {
+                    kind: if y == 40 {
+                        2
+                    } else if y == 41 {
+                        82
+                    } else {
+                        1
+                    },
+                    flags: FLAG_ACTIVE,
+                    ..Default::default()
+                };
+            }
+        }
+        let before = w.tiles.clone();
+        pass_herbs(&mut w, 30.0, 60.0, &mut Rng(5), &GenOptions::default());
+        assert_eq!(w.tiles, before, "the five-herb box veto");
+        // The classic pass plants.
+        let mut w = grass_world(40);
+        pass_herbs(&mut w, 30.0, 60.0, &mut Rng(5), &GenOptions::default());
+        let herbs = w.tiles.iter().filter(|t| t.active() && t.kind == 82).count();
+        assert!(herbs > 0, "the 120-wide world plants herbs");
+        // The skyblock gate: no tiles, no draws (denyAllGeneration admits
+        // no micro seed — unlike denySomeGeneration).
+        let mut w = grass_world(40);
+        let before = w.tiles.clone();
+        let mut opts = GenOptions::default();
+        opts.flags.insert(SeedFlags::SKYBLOCK);
+        opts.micro_flags.insert(MicroSeedFlags::SURFACE_IS_DESERT);
+        let mut rng = Rng(5);
+        pass_herbs(&mut w, 30.0, 60.0, &mut rng, &opts);
+        assert_eq!(w.tiles, before);
+        assert_eq!(rng.next_u32(), Rng(5).next_u32(), "no draw");
+    }
+}
+
 #[cfg(test)]
 mod fallen_log_tests {
     use super::*;

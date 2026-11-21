@@ -128,6 +128,8 @@ pub fn step_message(step: &str) -> Option<PassMessage> {
         "piles" => PassMessage::Gen(89),
         // WorldGen.cs:19902 (SunflowersPart2 - Lang.gen[39]).
         "sunflowers" => PassMessage::Gen(39),
+        // WorldGen.cs:19973 (AlchemyHerbs - Lang.gen[41]).
+        "herbs" => PassMessage::Gen(41),
         // WorldGen.cs:20910 (Micro Biomes — the grouped steps).
         "campsites" | "sword shrines" | "mahogany trees" | "mining explosives" | "thin ice" => PassMessage::Gen(76),
         // WorldGen.cs:16309 (ShellPilesMarblePilesAndSpikePits — the

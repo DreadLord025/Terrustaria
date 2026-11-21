@@ -292,6 +292,14 @@ mod tests {
     // band is live on the 512-wide world (the centre roll spans the full
     // width) — the 2×4 tile-27 sunflowers plant on its grass seats.
     // Re-pin DEFERRED to the merge gate; a == b stays green.
+    // W4-g38 C7 (2026-11-21, code-only): the `Herbs` pass (`AlchemyHerbs`,
+    // `WorldGen.cs:19964-19980` + `PlantAlch` `:45901-45938` +
+    // `PlaceSuitableHerbHere` `:45940-45970` + `PlaceAlch` `:45380-45479`)
+    // lands after `sunflowers` on a fresh `pass_rng("Herbs")` stream. This
+    // pin MOVES BY DESIGN: the 1.7w ladder is live on the 512-wide world
+    // (the x band `[20, 492)` spans the width) — the stage-0 tile-82 herbs
+    // plant on their soils. Re-pin DEFERRED to the merge gate; a == b
+    // stays green.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -373,6 +381,13 @@ mod tests {
     // surface grass — this pin moves BY DESIGN. The pass draws only its
     // own fresh stream. Re-pin DEFERRED to the merge gate; a == b stays
     // green.
+    // W4-g38 C7 (2026-11-21, code-only): the Herbs pass (see SEED42_512
+    // above) — on the 4200-wide default world the `width * 1.7` = 7140
+    // PlantAlch attempts plant the stage-0 tile-82 herbs on the grass /
+    // mud / jungle / sand / ash / snow soils (the deep + surface + full
+    // y ladders, the ±15 count box) — this pin moves BY DESIGN. The pass
+    // draws only its own fresh stream. Re-pin DEFERRED to the merge gate;
+    // a == b stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`

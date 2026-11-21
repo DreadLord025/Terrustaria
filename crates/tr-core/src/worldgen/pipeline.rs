@@ -1369,6 +1369,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // W4-g38 C6. The pass draws only its own `pass_rng("Sunflowers")`
     // stream, so the insertion shifts no other step's ledger.
     step!("sunflowers", "Sunflowers", step_sunflowers),
+    // The vanilla Herbs slot (`WorldGen.cs:19964`, AlchemyHerbs): after
+    // Planting Trees (`:19940`) and before Dye Plants (`:19981`, this
+    // lane's C8) — W4-g38 C7. The port slots it after `sunflowers` (the
+    // nearest executed neighbour; Planting Trees runs later in the grouped
+    // vegetation family). The pass draws only its own `pass_rng("Herbs")`
+    // stream, so the insertion shifts no other step's ledger.
+    step!("herbs", "Herbs", step_herbs),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2493,6 +2500,28 @@ fn step_sunflowers(
         world,
         world_surface,
         &mut streams.pass_rng("Sunflowers"),
+        opts,
+    );
+}
+
+/// The vanilla Herbs slot (`WorldGen.cs:19964-19980`, AlchemyHerbs) —
+/// W4-g38 C7: the 1.7w PlantAlch ladder (remix ×5) on the pass's own
+/// stream, gated by denyAllGeneration (skyblock only).
+fn step_herbs(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = gv.layers();
+    let (world_surface, rock_layer) = (layers.world_surface, layers.rock_layer);
+    surface::pass_herbs(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Herbs"),
         opts,
     );
 }
@@ -3645,7 +3674,9 @@ mod tests {
         // `spawn point`.
         // W4-g38 C6: + `sunflowers` (vanilla "Sunflowers",
         // `WorldGen.cs:19898`) after `guide`.
-        assert_eq!(names.len(), 72);
+        // W4-g38 C7: + `herbs` (vanilla "Herbs", `WorldGen.cs:19964`)
+        // after `sunflowers`.
+        assert_eq!(names.len(), 73);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3726,6 +3757,7 @@ mod tests {
                 "spawn point",
                 "guide",
                 "sunflowers",
+                "herbs",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3939,12 +3971,13 @@ mod tests {
     /// slot — the thin-ice block (`WorldGen.cs:20941`) runs before the
     /// sword shrines (`:20979`), the campsites (`:21031`) and the
     /// mahogany block (`:21105`); the port groups it right after the
-    /// cave houses, ahead of `campsites`.
+    /// cave houses, ahead of `campsites`. (W4-g38 C7 slots `herbs`
+    /// between `sunflowers` and `thin ice`.)
     #[test]
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("sunflowers") + 1);
+        assert_eq!(pos("thin ice"), pos("herbs") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
@@ -4069,7 +4102,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("sunflowers"), pos("guide") + 1);
-        assert_eq!(pos("sunflowers") + 1, pos("thin ice"));
+        assert_eq!(pos("sunflowers") + 1, pos("herbs"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -4079,6 +4112,27 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Guide") < cpos("Sunflowers"));
         assert!(cpos("Sunflowers") < cpos("Planting Trees"));
+    }
+
+    /// W4-g38 C7: `herbs` sits after `sunflowers` and before the grouped
+    /// micro family — the vanilla chain's relative order Sunflowers
+    /// (`WorldGen.cs:19898`) → Planting Trees (`:19940`) → Herbs (`:19964`)
+    /// → Dye Plants (`:19981`, C8) puts the pass ahead of the micro group.
+    #[test]
+    fn w4_g38_c7_the_herbs_step_sits_after_the_sunflowers() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("herbs"), pos("sunflowers") + 1);
+        assert_eq!(pos("herbs") + 1, pos("thin ice"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Planting Trees") < cpos("Herbs"));
+        assert!(cpos("Herbs") < cpos("Dye Plants"));
     }
 
     // --- W4-g38 C4: the Spawn Point pass unit witnesses ---------------------
