@@ -914,8 +914,34 @@ pub const SHADOWBEAM: u16 = 294;
 /// `ProjectileID.InfernoFriendlyBolt` (295) — the Inferno Fork's bolt
 /// (aiStyle 50); it spawns the blast 296 on death.
 pub const INFERNO_FORK_BOLT: u16 = 295;
-/// `ProjectileID.Blast` (296) — the fork's on-death explosion (aiStyle 50).
+/// `ProjectileID.Blast` (296) - the fork's on-death explosion (aiStyle 50).
 pub const INFERNO_BLAST: u16 = 296;
+// W4-g2 — d5's F1/F4 rowless hostile twins (aiStyles 48/50).
+/// `ProjectileID.ShadowBeamHostile` (290, `ProjectileID.cs:1134`) — the
+/// Necromancer's beam (283/284, `NPC.cs:21204`) (aiStyle 48,
+/// `Projectile.cs:3793-3803`): 4x4, hostile, magic, extraUpdates 100,
+/// timeLeft 100, penetrate -1. The delay table maps 290→3 (`:53991`); the
+/// arm's Item8 cue at `localAI[0] == 1` (`:28229-28232`) and the
+/// HandleMovement reflect (`:18861-18904`) ride the 294's shape.
+pub const SHADOWBEAM_HOSTILE: u16 = 290;
+/// `ProjectileID.InfernoHostileBolt` (291, `ProjectileID.cs:1136`) — the
+/// Diabolist's bolt (285/286, `NPC.cs:21207`) (aiStyle 50,
+/// `Projectile.cs:3804-3814`): 12x12, hostile, alpha 255, magic,
+/// tileCollide false, penetrate -1. The spawn passes the target centre as
+/// `ai[0]/ai[1]` (`NPC.cs:21219`); the arm's arrival-dot kill (`:28333`)
+/// reads them.
+pub const INFERNO_HOSTILE_BOLT: u16 = 291;
+/// `ProjectileID.InfernoHostileBlast` (292, `ProjectileID.cs:1138`) — the
+/// bolt's on-death blast (aiStyle 50, `Projectile.cs:3815-3825`): 130x130,
+/// hostile, alpha 255, magic, tileCollide false, penetrate -1. The Kill
+/// spawn (`:74334-74340`) carries the bolt's FULL damage (no 0.75).
+pub const INFERNO_HOSTILE_BLAST: u16 = 292;
+/// `ProjectileID.UFOLaser` (433, `ProjectileID.cs:1420`) — the UFO minion's
+/// laser (aiStyle 48, `Projectile.cs:5037-5046`): 8x8, friendly,
+/// extraUpdates 100, timeLeft 100, ignoreWater. The stock penetrate 1
+/// (`:774`) stands — the laser dies on its first hit, unlike the beams.
+/// `Sets.MinionShot` (`ProjectileID.cs:431`) already lists 433.
+pub const UFO_LASER: u16 = 433;
 /// `ProjectileID.VenomFang` (355) — the Poison Staff's aiStyle-1 rider.
 pub const VENOM_FANG: u16 = 355;
 /// `ProjectileID.FrostBoltStaff` (359) — the Frost Staff's bolt.
@@ -2739,6 +2765,26 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `:3859-3868` — the bolt's on-death blast: 150x150, aiStyle 50,
             // alpha 255, `tileCollide = false`, `penetrate = -1`.
             INFERNO_BLAST => (150.0, 150.0, 50, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-g2 (d5 F4) — `:3804-3814`: the Diabolist's bolt: 12x12,
+            // aiStyle 50, hostile, alpha 255, magic, `tileCollide = false`,
+            // `penetrate = -1`. The stock timeLeft 3600 (`:787`) stands.
+            INFERNO_HOSTILE_BOLT => (12.0, 12.0, 50, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-g2 (d5 F4) — `:3815-3825`: the bolt's on-death blast:
+            // 130x130 (the friendly 296's 150 does NOT carry over), aiStyle
+            // 50, hostile, alpha 255, magic, `tileCollide = false`,
+            // `penetrate = -1`.
+            INFERNO_HOSTILE_BLAST => (130.0, 130.0, 50, -1, TIME_LEFT_DEFAULT, 0, false, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-g2 (d5 F1) — `:3793-3803`: the Necromancer's beam: 4x4,
+            // aiStyle 48, hostile, magic, `extraUpdates = 100`,
+            // `timeLeft = 100`, `penetrate = -1`. The delay table's 290→3
+            // arm (`:53991`) rides `ai_magnet_bolt`.
+            SHADOWBEAM_HOSTILE => (4.0, 4.0, 48, -1, 100, 100, true, false, false, RESET_STATE),
+            // W4-g2 (d5 F1) — `:5037-5046`: the UFO minion's laser: 8x8,
+            // aiStyle 48, friendly, `extraUpdates = 100`, `timeLeft = 100`,
+            // `ignoreWater`. The stock penetrate 1 (`:774`) stands — the
+            // laser dies on its first hit; the delay table's default 0
+            // (`:53997-53998`) is correct for it.
+            UFO_LASER => (8.0, 8.0, 48, 1, 100, 100, true, false, false, RESET_STATE),
             // `:4451-4463` — the venom fang: 12x12, aiStyle 1 (the rider
             // hook), alpha 255, `penetrate = 5`, the local immunity with
             // the 10-tick cooldown, `timeLeft = 58`.
@@ -4178,6 +4224,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`Projectile.cs:3195`); the moving cloud 237 and the drop 239
             // keep the stock false.
             || kind == RAIN_CLOUD_RAINING
+            // W4-g2 (d5 F1): the UFO laser 433 sets `ignoreWater`
+            // (`Projectile.cs:5045`).
+            || kind == UFO_LASER
             // S1-D-4: the Empress family's five arms all set `ignoreWater`
             // (`Projectile.cs:8365`/`:8378`/`:8414`/`:8725`/`:8768`).
             || matches!(
@@ -4308,6 +4357,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 | NEBULA_ARCANUM | NEBULA_ARCANUM_SUBSHOT
                 | LAST_PRISM_LASER | LAST_PRISM | NEBULA_BLAZE_1 | NEBULA_BLAZE_2
                 | POISON_DART | SPIRIT_FLAME | SKY_FRACTURE | BOOK_OF_SKULLS | SPARK
+                // W4-g2 (d5 F4/F1): the hostile inferno pair 291/292
+                // (`Projectile.cs:3811`/`:3822`) and the hostile beam 290
+                // (`:3799`). The 294/239 siblings' magic writes were missed
+                // by the earlier census — a recorded gap, NOT fixed here;
+                // the 433 sets NO class flag (`:5037-5046`).
+                | SHADOWBEAM_HOSTILE | INFERNO_HOSTILE_BOLT | INFERNO_HOSTILE_BLAST
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
