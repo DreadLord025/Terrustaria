@@ -70,6 +70,7 @@
 //! | 250-252 | `:83503-83505` | the 409 Stardust Spider death (3 gores at Center, vel x0.8/x0.9) |
 //! | 253-258 | `:83557-83562` | the 407 Stardust Cell death (6 gores, Next(3)!=0 type-17 dust gate) |
 //! | 259-263 | `:83657-83661` | the 411 Stardust Dragon body death (5 gores, Next(2)-gated type-229 dust) |
+//! | 264-274 | `:83670-83676` | the 491 Flying Dutchman death: the head block (2 fixed + 3x3 loop gores) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -139,6 +140,14 @@ fn top(npc: &Npc) -> Vec2 {
 /// `Utils.SelectRandom<T>` (`Utils.cs:2459-2462`) — `choices[Next(len)]`.
 fn select_random(rng: &mut UnifiedRandom, choices: &[i32]) -> i32 {
     choices[rng.next_max(choices.len() as i32) as usize]
+}
+
+/// `Utils.RandomVector2(Main.rand, min, max)` (`Utils.cs:2431-2434`): TWO
+/// `NextDouble` draws, X then Y, each `(max-min)*NextDouble + min`.
+fn random_vector2(rng: &mut UnifiedRandom, min: f32, max: f32) -> Vec2 {
+    let x = (max - min) * rng.next_double() as f32 + min;
+    let y = (max - min) * rng.next_double() as f32 + min;
+    Vec2::new(x, y)
 }
 
 /// The side-effects the wiring caller owes (the roster seams this module
@@ -1579,6 +1588,45 @@ fn stardust_dragon_body_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 774, s); // :83661
 }
 
+/// The 491 Flying Dutchman death's HEAD block (`NPC.cs:83668-83677`, sites
+/// 264-274): the anchor `vector15 = Center - (60,60)` and the facing unit
+/// `vector16 = ((spriteDirection != 1) ? 1 : -1, 0).RotatedBy(rotation)`,
+/// then the 858 gore at `+ vector16 * (width/2)` and the 857 at
+/// `+ vector16 * (width/3)` (the C# `base.width / 2` / `/ 3` are INTEGER
+/// divisions — width is int), then the `num183 = -1..1` loop's 3×3 = 9 gores
+/// of type 859 at `width * (0.45/0.4/0.35 + num183*0.1)`. No arm-level draws
+/// (the types/anchors are data); each spawn draws only the NewGore kicks.
+/// The rest of the 491 arm (the RandomVector2 fan, the 855/854/853/856
+/// loops, the 30-gore 861/862 burst, the 120-dust burst and the projectile
+/// seam) lands with the next batches.
+fn dutchman_death_head(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let (w, _h) = npc.size();
+    // `:83668` — vector15 = Center - (60,60).
+    let v15 = center(npc) - Vec2::new(60.0, 60.0);
+    // `:83669` — vector16 = (dir, 0).RotatedBy(rotation); dir = +1 unless
+    // spriteDirection == 1.
+    let dir = if npc.sprite_dir != 1 { 1.0 } else { -1.0 };
+    let v16 = rotated_by(Vec2::new(dir, 0.0), npc.rotation as f64);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    // `:83670-83671` — the integer width/2 and width/3.
+    let wi = w as i32;
+    gore.new_gore(rng, world, v15 + v16 * (wi / 2) as f32, vel, 858, s);
+    gore.new_gore(rng, world, v15 + v16 * (wi / 3) as f32, vel, 857, s);
+    // `:83672-83677` — the num183 = -1..1 loop, 3 gores of 859 each.
+    for num183 in -1..2 {
+        let f = num183 as f32;
+        gore.new_gore(rng, world, v15 + v16 * (w * (0.45 + f * 0.1)), vel, 859, s); // :83674
+        gore.new_gore(rng, world, v15 + v16 * (w * (0.4 + f * 0.1)), vel, 859, s); // :83675
+        gore.new_gore(rng, world, v15 + v16 * (w * (0.35 + f * 0.1)), vel, 859, s); // :83676
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -1763,6 +1811,11 @@ pub fn hit_effect_c(
     // `:83634-83663` — the 411 Stardust Dragon body arm (sites 259-263).
     if npc_type == 411 && npc.hp <= 0 {
         stardust_dragon_body_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:83664-83722` — the 491 Flying Dutchman arm; this commit owns the
+    // HEAD block (sites 264-274); the rest lands with the next batches.
+    if npc_type == 491 && npc.hp <= 0 {
+        dutchman_death_head(npc, gore, rng, world);
     }
     outcome
 }
@@ -2811,6 +2864,47 @@ mod tests {
         assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
         assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
         assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+    }
+
+    /// `NPC.cs:83670-83676` — the Dutchman death head block: the 858/857
+    /// gores at the integer width/2 and width/3 anchors, then the 3x3 loop
+    /// of 859 gores. The facing unit flips on spriteDirection == 1.
+    #[test]
+    fn w4_f10_the_dutchman_death_head_spawns_the_eleven_gores() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 350.0, 120.0);
+        n.sprite_dir = -1; // dir = +1
+        n.rotation = 0.0;
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(179);
+        dutchman_death_head(&n, &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..11].iter().map(|g| g.gore_type).collect();
+        assert_eq!(
+            types,
+            vec![858, 857, 859, 859, 859, 859, 859, 859, 859, 859, 859]
+        );
+        // Center = (275,160); v15 = (215,100); v16 = (1,0).
+        // width/2 = 175 -> (390,100); width/3 = 116 -> (331,100).
+        assert_eq!(gore.slot(0).position, Vec2::new(390.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(331.0, 100.0));
+        // The num183=-1 first 859: width*(0.45-0.1)=350*0.35=122.5 -> (337.5,100).
+        assert_eq!(gore.slot(2).position, Vec2::new(215.0 + 350.0 * 0.35, 100.0));
+    }
+
+    /// `NPC.cs:83669` — the facing unit flips when spriteDirection == 1
+    /// (dir = -1), mirroring the head anchors across the anchor point.
+    #[test]
+    fn w4_f10_the_dutchman_death_head_flips_on_sprite_direction() {
+        let w = air();
+        let mut n = boss(100.0, 100.0, 350.0, 120.0);
+        n.sprite_dir = 1; // dir = -1
+        n.rotation = 0.0;
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(181);
+        dutchman_death_head(&n, &mut gore, &mut rng, &w);
+        // v16 = (-1,0); width/2 = 175 -> (215-175,100) = (40,100).
+        assert_eq!(gore.slot(0).position, Vec2::new(40.0, 100.0));
+        assert_eq!(gore.slot(1).position, Vec2::new(215.0 - 116.0, 100.0));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
