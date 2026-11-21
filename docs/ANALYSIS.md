@@ -19072,6 +19072,23 @@ double-count, truncating TileLoaded, quadrant pick), 3 `map::tests::w4_e18_*`
 on the empty pass, pending-refresh hold, refresh consume, paused skip, load
 gate, mapEnabled drain gate) — all written not run (code-only mode).
 
+### The first-half DrawMap overlay census (W4-e18, 2026-11-21, code-only)
+
+The seeded six candidates resolved against `Main.cs:55283-56650`: background/edges
+and the fullscreen/minimap frames were already landed; grid lines, the map legend,
+a player-arrow rotation and a zoom-level indicator do not exist in the source
+(phantoms — the player marker is a head icon, never rotated). Two genuinely missing,
+unclaimed pieces landed: the fullscreen close button (`Main.cs:56014-56036`,
+`ui/chrome.rs` + `clicks.rs::handle_fullmap_close`) and the fullscreen vanilla
+cursor with its thick border (`Main.cs:56037-56040` + `DrawThickCursor`
+`:48064-48134`, `ui/cursor.rs`, `Cursor_11` packed). Deliberate deviations: the
+`showFrameRate` `-15` button shift never fires (F10 unported); the gamepad cursor
+branches and `UIWorldGenDebug.IsActive` have no port counterpart; the
+`inventoryScale = 3` swap around `MouseText` is a no-op (`MouseTextInner` draws at
+`Vector2.One`, `:20319`); `OnPostFullscreenMapDraw` has zero subscribers in vanilla
+(mod hook). Full table + evidence: `docs/research/14-map-minimap.md` "W4-e18
+first-half census". Witnesses: 2 chrome + 3 clicks + 1 cursor, written not run.
+
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
 `Main.HoverOverCraftingItemButton` (`Main.cs:42252-42305`) is ported into

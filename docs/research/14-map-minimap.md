@@ -464,3 +464,71 @@ clear+lock, Clear zeroes), 2 `debug_panel` (the `/map` row's clearMap arm inside
 `w4_e18_the_clearmap_row_wipes_the_tiles_and_arms_the_refresh`), 1
 `app::w4_e18_map_drag_capture_tests` (UsingMap skips the whole drag block), plus the
 16-row World-tab count update (`s1_e_29_the_world_tab_keeps_its_sixteen_rows`).
+## W4-e18 first-half census (2026-11-21, code-only)
+
+Full inventory of `Main.DrawMap` + its helper block (`Main.cs:55283-56650`, the range
+this task was seeded with) for pieces NOT among W4-f29's nine overlay claims
+(`origin/task/W4-f29-map-overlay-2`, census `e1ffdefc`, ports `09f71b61`/`9320326c`/
+`1de1ad19` — read in full). The f29 nine: pylon lines/click/pan, boss/town heads, death
+markers, revenge coins, misc portals+golf, minimap heads, hover names. The e17 sibling
+branch died claim-only (0 commits); nothing of its scope was landed elsewhere.
+
+### The seed's six candidates, resolved
+
+| Candidate | Verdict | Evidence |
+| --- | --- | --- |
+| map background/edges draw | LANDED | `map.rs::map_bg_index`/`draw_map_background` (`Main.cs:56342-56444`), `map_full_quad`'s `[10,10]..[w-11,h-20]` window (`:55425-55430`+`:55591-55607`), the minimap edge clamp (`:55580-55589`). |
+| grid lines | PHANTOM | No grid-line draw exists anywhere in `DrawMap`/`MapRenderer.DrawMap` (the only "grid" in the range is the debug sections overlay, `:56311-56326`, dev-only). |
+| map legend | PHANTOM | No legend draw exists in the range (grep `Legend` over Main.cs's map block = 0 hits). |
+| player-position arrow rotation | PHANTOM | The player marker is a HEAD icon (`MapPlayerRenderer.DrawPlayerHead`, `:55954`), never an arrow and never rotated; the fullscreen head is landed (`frame/draw.rs` + `entities.rs::draw_player_map_icon`), the minimap head loop is f29 item 8. |
+| fullscreen border/frame | LANDED | `map.rs::map_frame_rect` + `draw_full`'s `Images/Map` 928x248 scroll frame (`Main.cs:55431-55485`); the minimap chrome `DrawTo`/`DrawForeground` (`:55546`/`:55769`) is landed (`ui/minimap.rs`). |
+| zoom-level indicator | PHANTOM | No zoom-level readout exists in the range; zoom is input-only (`map_scale_clamp`/`map_key_scale` landed). |
+
+### UNCLAIMED + MISSING (ported by this census)
+
+1. **Fullscreen close button** — `Main.cs:56014-56036`: `MapIcon[0]` at
+   `(10, screenHeight - 40)` (`showFrameRate`'s `-15` shift never fires — F10,
+   `:18492-18514`, is unported), the inclusive 32x30 hover box flips to `MapIcon[4]`
+   white-255 (`Color(n,n,n,n)` tint, grey-130 unhovered), sets `mouseInterface` (the
+   port already suppresses world use behind the whole open map,
+   `world_sim/editing.rs`), and a press plays `PlaySound(10)` + `mapFullscreen = false`.
+   Ported: `ui/chrome.rs::fullmap_close_button_*` + `draw_fullmap_close_button`,
+   `app/clicks.rs::handle_fullmap_close` (after the ping detector, the C#'s
+   `:55486` < `:56024` order), drawn after the hover text (`frame/draw.rs`).
+2. **Fullscreen vanilla cursor + thick border** — `Main.cs:56037-56040`
+   (`!gameMenu && !InGameUI.IsVisible`): `DrawCursor(DrawThickCursor())`.
+   `DrawThickCursor` (`:48064-48134`): while `ThickMouse` (`MouseBorderColor !=
+   Transparent`, `:2599`; default `Color(64,64,64,64)`, `:66514`) four `Cursors[11]`
+   rings at the `(0,1),(1,0),(0,-1),(-1,0)` offsets `+ (2,2)`, origin `(2,2)`, scale
+   `cursorScale * 1.1`, border tint; returns the `(2,2)` bonus. `DrawCursor`'s
+   non-gamepad branch (`:48046-48048`) adds the bonus to the shadow + sprite. Ported:
+   `ui/cursor.rs::draw_thick`/`thick_cursor_bonus`/`draw_with_bonus`, `Cursor_11`
+   packed (`assets.rs`), wired at the fullscreen draw tail; the OS pointer now hides
+   over the map too (`frame.rs`, `FocusHelper.cs:160-163`).
+
+### Verify-only / phantom rows (recorded so no future census re-hunts them)
+
+- `OnPostFullscreenMapDraw` (`Main.cs:3060`, fired `:56062-56064`): ZERO subscribers
+  anywhere in `decompiled/` + `decompiled-libs/` (grep `OnPostFullscreenMapDraw +=` =
+  0 hits) — a tModLoader-style hook, dead in vanilla. Nothing to port.
+- The `inventoryScale = 3` swap around `MouseText` (`:56044-56050`): `MouseTextInner`
+  draws the plain hover string at `Vector2.One` (`:20319`) and never reads
+  `inventoryScale` — the swap is a no-op for the map's text. The port's hover draw
+  (`hud_text` 0.85) is the existing hover-text convention, unchanged.
+- `Main.cs:62147-62181`'s fullscreen post-`DrawMap` batch (`DrawFPS`,
+  `DrawPlayerChat`, `DrawPendingMouseText`, `DrawCursor`): `DrawFPS` rides
+  `showFrameRate` (F10, unported — the close button's `-15` shift with it);
+  `DrawPlayerChat`/`DrawPendingMouseText`/the cursor are Draw-interface pieces
+  outside this census's `DrawMap` range; the cursor half is ported above via
+  `:56037-56040` (the same `DrawCursor(DrawThickCursor())` call).
+- `DrawDebugMapOverlays` (`:56299-56340`) — DebugOptions gates, dev-only (f29
+  census already recorded it; re-verified).
+- `mouseInterface = true` (`:55386`) — the port suppresses use-item/use-tile behind
+  the whole open map (`Player.cs:24798-24807`, `world_sim/editing.rs:1944`), a
+  superset of the flag's effect; no separate field needed.
+
+Witnesses (written, not run - code-only): 2 `ui::chrome::tests::w4_e18_*` (close-button
+geometry + hover flip), 3 `app::clicks::w4_e18_fullmap_close_tests` (press closes,
+outside-box no-op + inclusive corner, map-shut no-op), 1
+`ui::cursor::tests::w4_e18_thick_cursor_gate_and_bonus` (the ThickMouse packed-colour
+gate + the (2,2) bonus).
