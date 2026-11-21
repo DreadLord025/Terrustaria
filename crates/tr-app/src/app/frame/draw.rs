@@ -1787,6 +1787,8 @@ impl App {
                                 scroll_row: &mut self.chest_scroll_row,
                                 button_scales: &mut self.chest_button_scales,
                                 button_hovered: &mut self.chest_button_hovered,
+                                // W4-g56 — the world-chest glow (context 3).
+                                glow: Some(&self.slot_glow),
                                 audio: &mut self.audio,
                             },
                             self.in_reforge_menu.then(|| {
@@ -1819,6 +1821,8 @@ impl App {
                             player.as_ref().and_then(|p| {
                                 (p.chest == -5).then_some(&p.vault_favorites)
                             }),
+                            // W4-g56 — the chest-glow state (contexts 3/4/32).
+                            Some(&self.slot_glow),
                             // `Main.DrawPVPIcons`'s state (`Main.cs:42654`): the
                             // net-mode / team-based-spawns gates, the local
                             // player's `hostile` + `team` and `Main.teamCooldown`.

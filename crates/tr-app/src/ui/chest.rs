@@ -115,6 +115,10 @@ pub(crate) struct PanelState<'a> {
     pub(crate) button_scales: &'a mut [f32; BUTTON_COUNT],
     /// `ChestUI.ButtonHovered` (`ChestUI.cs:50`).
     pub(crate) button_hovered: &'a mut [bool; BUTTON_COUNT],
+    /// W4-g56 — the chest-glow state (`ItemSlot.Draw:2314-2326`): the open
+    /// world chest's per-slot glow time/hue (context 3). `None` keeps the
+    /// plain background.
+    pub(crate) glow: Option<&'a crate::ui::glow::GlowState>,
     /// The `SoundEngine.PlaySound(12)` cues (`ChestUI.cs:64`/:325).
     pub(crate) audio: &'a mut audio::Audio,
 }
@@ -346,7 +350,12 @@ fn draw_slots(r: &mut SpriteRenderer, lookups: &assets::Lookups, p: &mut PanelSt
             // `slots.len()` are the C#'s air items (the `chest.rs` indexed
             // encoding).
             let view = slots.get(abs).copied().unwrap_or(EMPTY_SLOT);
-            slot::draw_slot(
+            // W4-g56 — the chest-glow entries (`ItemSlot.Draw:2314-2326`):
+            // the world-chest context (3) glows when the Sort feedback armed
+            // it; the chest slots cannot favorite, so the favorite flag is
+            // always false here.
+            let slot_glow = p.glow.map(|g| (g.chest_time_at(abs), g.chest_hue_at(abs)));
+            slot::draw_slot_glow(
                 r,
                 lookups,
                 &view,
@@ -357,6 +366,8 @@ fn draw_slots(r: &mut SpriteRenderer, lookups: &assets::Lookups, p: &mut PanelSt
                 false,
                 CHEST_SCALE,
                 SLOT_TINT,
+                false,
+                slot_glow,
             );
         }
     }
@@ -836,6 +847,7 @@ mod tests {
             scroll_row: &mut app.chest_scroll_row,
             button_scales: &mut app.chest_button_scales,
             button_hovered: &mut app.chest_button_hovered,
+            glow: None,
             audio: &mut app.audio,
         };
         // The static ctor's `new float[7]` (`ChestUI.cs:1306`): scale 0.0.

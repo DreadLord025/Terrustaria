@@ -1096,6 +1096,11 @@ pub struct Player {
     /// flush reads). Updated by `chest::tick_open` each player tick
     /// (S1-P-i43).
     pub prev_synced_chest: i32,
+    /// `Player.lastChest` (`Player.cs:2870`) — the previous tick's chest for
+    /// `ChestChangeEvents` (`:28760-28775`): a change to a world chest
+    /// (`chest >= 0`) arms `ItemSlot.forceClearGlowsOnChest` (`:28771`).
+    /// Updated by `chest::tick_open` each player tick. W4-g56.
+    pub last_chest: i32,
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
@@ -2720,6 +2725,7 @@ impl Player {
             chest_y: 0,
             edited_chest_name: false,
             prev_synced_chest: crate::bank::CHEST_CLOSED,
+            last_chest: crate::bank::CHEST_CLOSED,
             void_vault_enabled: false,
             void_lens_chest: crate::void_lens::LensTracker::default(),
             disable_void_bag: -1,

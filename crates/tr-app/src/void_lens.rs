@@ -198,6 +198,18 @@ pub(crate) fn try_interacting(app: &mut App, index: usize) -> u8 {
                 p.chest_y = ty;
                 p.void_lens_chest.set(app.local_id as u8, index, &proj); // `:37727`
             }
+            // W4-g56 — `ItemSlot.SetGlowForChest(currentContainer)` (`Main.cs:
+            // 37722-37726`): the lens open clears the vault glow arrays (the
+            // bank4 40-slot window) and resets the coin-cell ranks, the same
+            // call `OpenChest` makes (`Player.cs:33513`).
+            app.slot_glow.set_glow_for_chest(crate::bank::BANK_SLOTS);
+            for j in 0..crate::bank::BANK_SLOTS {
+                let (kind, count) = app
+                    .player
+                    .as_ref()
+                    .map_or((0, 0), |p| (p.banks[3][j].kind, p.banks[3][j].count));
+                app.coin_slot.force_slot_state(j as i32, 3, kind, count);
+            }
             app.audio.play("Item_130"); // `:37733`
         }
     }

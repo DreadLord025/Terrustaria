@@ -1673,6 +1673,10 @@ impl App {
                             self.rngs.global(),
                             tr_core::UnifiedRandom::default(),
                         );
+                        // W4-g56 — the Sort-feedback glow pairs, collected
+                        // under the `p` borrow and applied to `slot_glow`
+                        // after it ends (the disjoint-field borrow).
+                        let mut sort_glow: Vec<(usize, f32)> = Vec::new();
                         match id {
                             // `ChestUI.LootAll`'s bank arm (:417-473) —
                             // `LootAllFromBank` is the default settings
@@ -1774,7 +1778,7 @@ impl App {
                                     p.magic_damage,
                                     p.minion_damage,
                                 ];
-                                crate::item_sorting::sort_chest(&mut p.banks[bi], mult);
+                                sort_glow = crate::item_sorting::sort_chest(&mut p.banks[bi], mult);
                             }
                             _ => {
                                 let _ = crate::bank::restock(
@@ -1788,6 +1792,12 @@ impl App {
                             }
                         }
                         *self.rngs.global() = rng;
+                        // W4-g56 — the Sort-feedback glow (`ItemSorting.cs:
+                        // 1586`, `chest != -1` true): arm the chest glow pair
+                        // per written slot (the `p` borrow has ended).
+                        for (slot, hue) in sort_glow {
+                            self.slot_glow.set_glow(slot, hue, true);
+                        }
                         return;
                     }
                 }
@@ -2655,7 +2665,12 @@ impl App {
             ],
             None => [1.0; 4],
         };
-        crate::item_sorting::sort_chest(&mut wc.slots, mult);
+        let glow = crate::item_sorting::sort_chest(&mut wc.slots, mult);
+        // W4-g56 — the Sort-feedback glow (`ItemSorting.cs:1586`, `chest !=
+        // -1` true — a world chest is open): arm the chest glow pair.
+        for (slot, hue) in glow {
+            self.slot_glow.set_glow(slot, hue, true);
+        }
     }
 
     /// One ctx-3 cell's click pair (`ItemSlot.Handle`'s `LeftClick` +

@@ -498,6 +498,10 @@ pub fn draw(
     // favorited arm swaps to `Inventory_Back19` (`ItemSlot.cs:2155-2158`).
     // `None` for the other banks (their slots cannot favorite).
     bank_favorites: Option<&[bool; crate::bank::BANK_SLOTS]>,
+    // W4-g56 — the chest-glow state (`ItemSlot.Draw:2314-2326`): the open
+    // container's per-slot glow time/hue (contexts 4/32 here, 3 in the chest
+    // panel). `None` outside the glow system's reach (the closed inventory).
+    glow: Option<&crate::ui::glow::GlowState>,
     chest_or_shop: bool,
     // `Player.hideVisibleAccessory` — the per-accessory visual-hide flags the
     // ticks beside the accessory column read and flip (`Main.cs:41425-41460`).
@@ -891,8 +895,12 @@ pub fn draw(
             let favored = context == 32
                 && bank_favorites.is_some_and(|f| f[idx])
                 && slots[idx].count > 0;
+            // W4-g56 — the chest-glow entries for this slot (`ItemSlot.Draw:
+            // 2314-2326`): the bank/vault contexts (4/32) glow when the Sort
+            // feedback armed them; the favorite arm still wins.
+            let slot_glow = glow.map(|g| (g.chest_time_at(idx), g.chest_hue_at(idx)));
             if favored {
-                slot::draw_slot_favorited(
+                slot::draw_slot_glow(
                     r,
                     lookups,
                     &slots[idx],
@@ -903,9 +911,11 @@ pub fn draw(
                     false,
                     INVENTORY_SCALE,
                     INVENTORY_BACK,
+                    true,
+                    slot_glow,
                 );
             } else {
-                slot::draw_slot(
+                slot::draw_slot_glow(
                     r,
                     lookups,
                     &slots[idx],
@@ -916,6 +926,8 @@ pub fn draw(
                     false,
                     INVENTORY_SCALE,
                     INVENTORY_BACK,
+                    false,
+                    slot_glow,
                 );
             }
             if hit.hovered.is_none() && hit_test(mouse, p.x, p.y + m_h, INVENTORY_SCALE, cell) {

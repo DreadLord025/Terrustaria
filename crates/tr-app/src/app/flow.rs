@@ -2323,6 +2323,7 @@ pub(crate) mod front_flow_tests {
             no_throw: 0,
             last_mouse_interface: false,
             void_lens_selection: Vec::new(),
+            slot_glow: crate::ui::glow::GlowState::default(),
             ui_right_release_latch: true,
             ui_left_release: false,
             buff_alpha: [0.4; crate::buffs::MAX_BUFFS],

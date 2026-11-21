@@ -367,7 +367,7 @@ pub(crate) fn draw_slot(
     scale: f32,
     tint: [f32; 4],
 ) {
-    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, false);
+    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, false, None);
 }
 
 /// [`draw_slot`] with the favorite flag the C# reads from the item
@@ -386,7 +386,32 @@ pub(crate) fn draw_slot_favorited(
     scale: f32,
     tint: [f32; 4],
 ) {
-    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, true);
+    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, true, None);
+}
+
+/// W4-g56 — [`draw_slot_favorited`] with the chest-glow entries
+/// (`ItemSlot.Draw:2314-2326`): a glowing (`time > 0`) non-air non-favorited
+/// slot in context 3/4/32 swaps to `Inventory_Back13` and lerps the base tint
+/// toward `hslToRgb(hue, 1, 0.5)` by `t²/2`. `glow` is `Some((time, hue))` for
+/// the open-container slots (the caller reads `App.slot_glow`'s chest pair);
+/// `None` keeps the plain background. The favorite arm still wins (the C#
+/// glow gate reads `!inv[slot].favorited`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn draw_slot_glow(
+    r: &mut SpriteRenderer,
+    lookups: &assets::Lookups,
+    item: &ItemSlot,
+    x: f32,
+    y: f32,
+    context: i32,
+    index: i32,
+    selected: bool,
+    scale: f32,
+    tint: [f32; 4],
+    favorite: bool,
+    glow: Option<(i32, f32)>,
+) {
+    draw_slot_flagged(r, lookups, item, x, y, context, index, selected, scale, tint, favorite, glow);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -402,6 +427,7 @@ fn draw_slot_flagged(
     scale: f32,
     tint: [f32; 4],
     favorite: bool,
+    glow: Option<(i32, f32)>,
 ) {
     // `ItemSlot.cs:2109-2112` + `Main.cs:43615`: the derived `lightColor`.
     let light_color = if context == 13 {
@@ -420,6 +446,20 @@ fn draw_slot_flagged(
         (favorited_background_for(lookups, context), tint)
     } else {
         (background_for(lookups, context, index), tint)
+    };
+    // W4-g56 — `ItemSlot.cs:2314-2326`: the chest-glow arm runs AFTER the
+    // context sheet chain and overrides it (a glowing non-air non-favorited
+    // slot in context 3/4/32 swaps to `Inventory_Back13` + the lerped tint).
+    // The favorite gate (`!inv[slot].favorited`) and the air gate
+    // (`!inv[slot].IsAir`) match the C#; the favorite arm above already won
+    // for a favorited slot, so this only fires for the plain ones.
+    let (back, tint) = if !favorite && item.count > 0 {
+        match glow.and_then(|(time, hue)| super::glow::chest_glow_tint(context, time, hue)) {
+            Some(glow_tint) => (lookups.ui_inv_bg13, glow_tint),
+            None => (back, tint),
+        }
+    } else {
+        (back, tint)
     };
     // `ItemSlot.cs:2499`: cell = `value.Size()`, the chosen sheet's native size
     // (the retail `Inventory_Back*` sheets are 52x52; the 56 px is the layout

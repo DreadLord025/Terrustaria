@@ -895,6 +895,32 @@ fn open_chest(app: &mut App, x: i32, y: i32, new_chest: i32) {
             c.slots.resize(c.max_items, EMPTY_SLOT);
         }
     }
+    // W4-g56 — `ItemSlot.SetGlowForChest(currentContainer)` (`Player.cs:33508-
+    // 33515`): the open clears the chest glow arrays (and grows them to the
+    // container's `maxItems`). The `CoinSlot.ForceSlotState(j, 3, ...)` half
+    // (`ItemSlot.cs:488-491`) resets the coin-cell ranks for the open window.
+    let max_items = if new_chest >= 0 {
+        app.world_chests
+            .get(new_chest as usize)
+            .map_or(crate::chest::DEFAULT_MAX_ITEMS as usize, |c| c.max_items)
+    } else {
+        crate::bank::BANK_SLOTS
+    };
+    app.slot_glow.set_glow_for_chest(max_items);
+    for j in 0..max_items {
+        let (kind, count) = if new_chest >= 0 {
+            app.world_chests
+                .get(new_chest as usize)
+                .and_then(|c| c.slots.get(j))
+                .map_or((0, 0), |s| (s.kind, s.count))
+        } else {
+            app.player
+                .as_ref()
+                .and_then(|p| crate::bank::bank_for_chest(new_chest).map(|bi| p.banks[bi][j]))
+                .map_or((0, 0), |s| (s.kind, s.count))
+        };
+        app.coin_slot.force_slot_state(j as i32, 3, kind, count);
+    }
 }
 
 /// `Player.cs:33230-33252` — the open toggle shared by every container kind
@@ -1320,6 +1346,22 @@ pub(crate) fn tick_open(app: &mut App) {
     }
     if let Some(p) = app.player.as_mut() {
         p.prev_synced_chest = p.chest;
+    }
+    // W4-g56 — `Player.ChestChangeEvents` (`Player.cs:28760-28775`, the
+    // `:25384` call): a change to a WORLD chest (`lastChest != chest && chest
+    // >= 0`) arms `ItemSlot.forceClearGlowsOnChest` (`:28771`), consumed by
+    // the next glow decay. The bank values (−2..−5) never arm it (the C#
+    // `chest >= 0` gate); the gas-trap / big-mimic halves (`:28766`/:28770`)
+    // are unported. `lastChest` updates every tick.
+    let (cur_chest, last_chest) = app
+        .player
+        .as_ref()
+        .map_or((-1, -1), |p| (p.chest, p.last_chest));
+    if last_chest != cur_chest && cur_chest >= 0 {
+        app.slot_glow.force_clear_chest = true;
+    }
+    if let Some(p) = app.player.as_mut() {
+        p.last_chest = p.chest;
     }
 }
 
