@@ -710,3 +710,123 @@ Retire-phase commit ledger (this branch, task/W4-g44-biome-sky-lakes):
 compose-note), 4/4 = this note. All verdicts are direct tip reads
 (code-only mode; no cargo/tests run — the witnesses cited are
 written-not-run per the lane's standing mode).
+
+## SEAL-VERIFY — the retire seal re-verified at the live tips (2026-11-21)
+
+The `g44e-islands-retire` seal (`9ce512b4f383689fc67e42141ae567f79c0e8230`
+= this branch's tip, pushed — `merge-base --is-ancestor 9ce512b4
+origin/task/W4-g44-biome-sky-lakes` exit 0) re-verified item-by-item at a
+fresh `fetch --prune`. **Verdict: the seal STANDS; two of its claims are
+now SUPERSEDED by landed peer work (the feather shot ported on g8, the
+wall hunk consumed on d119) — both supersessions are the seal's own
+published outcomes arriving, not contradictions.**
+
+### Tip ledger at seal-verify
+
+| Lane | Retire-tip | Seal-verify tip | Drift |
+| --- | --- | --- | --- |
+| d118 | `91db266ea` | `91db266ea` | none — housing.rs blob still `2ecd7924e` (narrow) |
+| d119 | `04d7f9fd2` | `dd8a2f764` | +2: `171549649` escalation-1 (the TrySpawningTownNPC walker seam) + `dd8a2f764` (the g44e dedupe, housing.rs blob `555bb04d6`) |
+| g8 | `82c93cecf` | `058453096` | +4 machine rounds: `a6c4f5ae9` (Harpy feather+wet), `e1d9578a4` (RedDevil trident), `5767ca7c7` (VampireBat), `058453096` (FlyingSnake) |
+| d34 | `4012a7f3a` | `5f3435a87` | +2: `467c9c886` (OldMan orphan-token repair) + `5f3435a87` (phase-3 kinds 276-280); Harpy rows unchanged (275 at `data.rs:601/:946`, net_id 48 `:3202`, ai_style 14 `:2561`) |
+| d126 | `7ddf25a49` | `7ddf25a49` | none |
+| f35 | `1abae9ade` | `1abae9ade` | none |
+| f25 | (closeout) | `d587b128d` | closeout 5/5 FINAL (the 12g-ledger) |
+| main | — | `051600da8` | S1-L-11g craft freeze guards (unrelated) |
+
+### Item 1 — the four retire claims
+
+1. **wall_house-dedupe ONE verbatim hunk (d118/d119): VERIFIED at retire,
+   now HALF-CONSUMED.** The blob census re-reads identical at d118
+   (`2ecd7924e` housing / `9f39cbde8` wall.rs) and main (`f2a7c31af`
+   housing, the :18-27 narrow block byte-identical to d118's). d119
+   consumed the hunk itself (`dd8a2f764`, see item 3). The ONE hunk still
+   applies verbatim to d118; the second-lander keeps ONE copy.
+2. **harpy-kind-gate resolves at merge (g8-386 × d34-275): VERIFIED, still
+   open.** g8 `data.rs:629/:1002` protocol 386 (ai_style 14 `:2659`,
+   net_id 48 `:3396` — line drift from the machine rounds, values
+   unchanged) vs d34 `:601/:946` protocol 275. ONE-row loud-conflict
+   verdict stands. g8/d34/d126 diffs vs base `a725acb04` on
+   `crates/tr-app/src/spawner.rs` are ALL EMPTY (re-verified) — the ONE
+   activation hunk (RETIRE §6, g44 `spawner.rs:1003-1010` terminal-None,
+   witnesses `:3527/:3586`) joins cleanly. g44's `world_sim/npcs.rs`
+   hunks (`:6746/:7637`, the wyvern_exists wiring) are line-disjoint from
+   g8's machine-round hunks (`:1161/:4278/:5918+`) — clean union.
+3. **feather-shot NOT active: TRUE at the retire tips, SUPERSEDED at
+   seal.** g8 machine round 1 `a6c4f5ae9` PORTED the cited skip exactly
+   per the published spec: `npc_ai_style14.rs:211+` the type-48 arm
+   (ai[0] 30/60/90 cadence, 6f aim, X-then-Y `Next(-100,101)`, reset
+   `400 + Next(400)` behind flag24 — re-read against `NPC.cs:23416-23436`
+   line-for-line), the wet arm `:162+` (`:23333-23345`: ×0.95 / −0.5 /
+   cap −4 / TargetClosest), `DemonSickleShot` generalized to `Style14Shot`
+   (kind+damage), `HARPY_FEATHER = 38` (`projectile/data.rs:889`, the
+   14×14 aiStyle-1 penetrate row `:2688`), the sim's timeLeft-300 timed
+   list (`world_sim/npcs.rs:5933`). 6 module + 1 wiring witnesses
+   written-not-run. RETIRE §6's "residual / future slice" paragraph is
+   now HISTORY — the spec was consumed by the g8 machine lane, no g44
+   action. The merged Harpy shoots.
+4. **sky-lake fishing chain COMPOSES, zero port work: VERIFIED, holds.**
+   f35 tip unchanged `1abae9ade`, its `tr-core/src/fishing.rs` diff vs
+   main still EMPTY; g44 catch rows `fishing.rs:1675-1676` (3206/3985
+   Rare 1/1 Crate&&Height0) present; f35 open dispatch
+   `fishing_crates.rs:81/:94/:109`, weapon pick `:421`, tails `:610`
+   present. The one recorded composition-witness gap stays optional.
+
+### Item 2 — f25d ConvertSkyIslands: g44-not-ported → f25 owns the gate
+
+VERIFIED. f25 `d587b128d` (closeout FINAL) carries
+`finish_seeds.rs::convert_sky_islands` (`:519`, landed `f0fe0f388`),
+WIRED at `:464` inside the `!getGood && !drunk` gate — the C# call
+`WorldGen.cs:24243` re-read (`ConvertSkyIslands(2, growTrees: true)`),
+body `:24674-24714` re-read line-for-line vs the port: the deepest-cloud
+scan (inner break leaves the column loop only), `k <= width-20`
+inclusive / `l < num`, vanity 596/616 kill, the C3 single-cell Convert,
+the post-Convert plant kill 82-83/185-187/227 (`no_item`), the 1-in-3
+GrowTree roll on a fresh world-seeded UnifiedRandom. g44's
+`finish_seeds.rs` diff vs base is EMPTY — its "not ported" module notes
+(`:33/:453`) are BASE text, superseded by f25's landing (f25's PORT_MAP
+row + anchors `:914` carry the supersession note). Anniversary-only:
+neither pinned world sets the flag (`world_hash.rs:302/:311`), both pins
+unchanged. Merge keeps f25's file; g44 claims nothing here.
+
+### Item 3 — d118/d119 hunk consumption; d119c town-spawn resume ACTIVE
+
+- **d119 CONSUMED the dedupe** at `dd8a2f764` (2026-11-21 14:56): the fn
+  body is the load-bearing `crate::edit::wall_house(wall)` delegation
+  (the anchors marker, row `:904` kept), the doc reworded in d119's own
+  voice (permitted — RETIRE §5 pins the body, not the doc), its own
+  full-table witness `the_house_wall_gate_is_the_full_main_table`
+  (bands + unsafe walls + the 279 count over `WALL_COUNT` + a wood-4
+  room scans) instead of g44's optional additive, and the wall.rs /
+  hammer.rs stale-subset comments repointed to the one-copy state.
+  `town_spawn.rs:506` (was `:463` at `04d7f9fd2` — line drift from
+  escalation-1) gains the `WorldGen.cs:5411` correctness with NO hunk
+  there (C# `SpawnTownNPC`'s `Main.wallHouse[Main.tile[x,y].wall]` pick
+  re-read `:5409-5418`).
+- **d119c town-spawn resume is ACTIVE**: escalation-1 `171549649`
+  (14:34) landed the TrySpawningTownNPC walker seam (the recorded
+  UNWIRED deviation closed), the dedupe followed 22 minutes later. The
+  `TR-W4-d119` worktree is in flight (local HEAD `171549649`, one commit
+  behind origin, an uncommitted housing.rs edit matching the pushed
+  dedupe) — left untouched, not this lane's checkout.
+- **d118 still needs the ONE hunk** (tip `91db266ea` unchanged, narrow
+  blob `2ecd7924e`); its worktree carries unrelated in-flight town.rs /
+  world_sim/npcs.rs edits — the hunk applies cleanly whenever that lane
+  lands it, or the merger applies it at merge. Second-lander keeps ONE
+  copy; the two delegations are body-identical, the conflict is trivial.
+
+### Item 4 — 87 SEALED + the bible FINAL
+
+The FINAL-FINAL merger-bible paragraph STANDS as written, with the two
+supersessions above folded in: the wall table is already ONE copy on
+d119 (d118's hunk pending), and the feather shot is already ported on g8
+(the "cited skip" clause reads as history). Every other clause — g44
+islands/buried_chest FINAL-KEEP, the ONE deny_floating_islands helper,
+the ONE harpy row + ONE activation hunk, the fishing clean union, the
+desert boundary, matrix-88 CONFIRMED FINAL / matrix-86 pair-only — is
+re-verified unchanged at the seal-verify tips. **The islands family
+seal is CLOSED: ONE owner, ONE wall table, ONE harpy row, every join a
+published hunk.**
+
+Seal-verify commit: this note (code-only; no cargo/tests/rustfmt run —
+all verdicts are direct tip reads + C# window re-reads ≤100 lines).
