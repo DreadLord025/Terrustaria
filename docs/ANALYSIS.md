@@ -39315,3 +39315,68 @@ the chain at that wave (their bodies are already the chain's 213/268 arms).
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked**
 (user directive). The 38 witnesses are owed a compile window before merge.
 
+## The projectile trail dust lane 2 (W4-g64, task/W4-g64-proj-trail-dust-2, 2026-11-21, code-only mode)
+
+`crates/tr-app/src/proj_trail_dust.rs` ports the REPEATING in-flight dust
+sites of `Projectile.AI()`'s per-kind arms for **kinds ≥ 401** — 41 kinds in
+5 commits of ≤ 10 (the claim ledger `docs/research/66-proj-trail-dust-claims.md`
+pins the split: g63 takes kinds ≤ 400, g65 the Kill-family death sites; the
+d53/e3/f5 co-lanes were probed at claim time — unpushed, f5's tip was the bare
+d50 foundation). The branch base fast-forwards onto
+`origin/task/W4-d50-dust-type-table` (`2e243a2d`) for the DustPool contract.
+
+**Scope rule:** a "trail" is the dust a kind sheds while it flies. One-shot
+spawn-latch bursts (`localAI[0] == 0` / `ai[1] == 0` first-tick blocks) stay
+with the general proj-site co-lanes and are cited per kind in the ledger;
+death bursts are g65's (596's `timeLeft < 4` burst, 1053's HandleMovement
+bounce pair). Deferred within ≥ 401 (cited in the ledger): 813 (the 13-site
+four-phase machine), 957 (the behaviour-coupled spelunker tile scan), 670
+(the style-126 sites are style-generic, not kind-gated), 644 (the prism-hue
+orbit), 493/494, 836, 968, 1134 (one-shots), 1044/624 (the flag60 arm is
+ParticleOrchestrator-only; flag59 is the ai[0]==1 explosion), 590 (the
+census rows at :34272+ belong to 644 — the `type != 644` return precedes
+them; 590's own block is light-only).
+
+**Contract:** every draw rides the caller's **UpdateProjectiles** stream
+(`Main.cs:17775`'s `SwapRandom`), per-slot C# statement order — explicit
+argument draws FIRST, then the `NewDust` internals (`Dust.cs:75-256` via
+`DustPool::new_dust`/`new_dust_perfect`/`new_dust_direct`), then the
+post-spawn writes; the sentinel slot (6000) takes the writes exactly like
+the C#. The C# `Dust dustN = Main.dust[idx]` aliases are class references —
+ported as `slot_mut` chains in statement order.
+
+**Deliberate deviations / drops (each cited at its site):**
+
+* **UNWIRED** (the d50 / `npc_ai_*` code-only precedent): the wiring wave
+  threads `app.dust` + the frame's `spawn_ctx()` into
+  `world_sim/projectiles.rs` and calls each fn at its cited site with the
+  slot snapshot at the C# read moment. The 596 ring's `Next(3) != 0` gate is
+  an **early return from AI()** — the fn returns `bool` and the wiring must
+  `return` from the machine on `false` (659's twin gate CONTINUES instead).
+* **Lights** (`Lighting.AddLight` / `Utils.PlotTileLine`) stay the e6/f7
+  addlight-proj lanes; **gore** bodies AND their gate draws stay d55/g16
+  (503's `:23963` `Next(48)`, 723's `:24016` `Next(6)`, 1133's `:23993`
+  `Next(24)` — the last is itself `&&`-gated on the on-screen box test);
+  **sounds** stay d76. `customData` is the pool's dropped field (533 spin
+  ring, 618, 656).
+* **Dead writes kept:** the pillar drips' `scale = 1 + NextDouble*0.3`
+  (overwritten by the 0.6 pin — the DRAW is kept), 421's ring `velocity *=
+  0f` + the dead `> 0` flip, 465's ±0.5 clamps (NextDouble already lands in
+  range), 504's kill-tick spawn (the C# spawns after `Kill()` on the same
+  tick), 596's dead `num805` (no draws — dropped with a note).
+* **Behaviour-feeding draw surfaced:** 509's `:25575` velocity-X jitter
+  (`*= 1 + Next(-3,4)*0.01`) always draws — the port's `ai_drill` skipped it
+  with the dust layer; the wiring wave replaces that skip with
+  `trail_509`'s head (the draw order is the arm's tail).
+* Numeric conventions: `Utils.RotatedBy` = the shared
+  `bow_launch::rotated_by` (double-angle float-cos/sin); `ToRotation` =
+  double `atan2` cast to f32; XNA `Vector2.Normalize` = `v / v.length()`
+  with NO zero guard (the d50 convention); `RotatedByRandom` = TWO
+  `NextDouble` draws, left operand first; `NextVector2Circular` = unit
+  `NextFloat` + radius `NextFloat` (the empress form); `Math.Sign(float)`
+  = -1/0/+1; integer `width / 2` where the C# divides ints (447).
+
+Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
+invoked** (user directive). The 40 `w4_g64_*` draw-mirror witnesses are owed
+a compile window before merge.
+

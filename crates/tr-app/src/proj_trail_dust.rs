@@ -3,6 +3,7 @@
 //! Batch 2: 466 / 497 / 503 / 504 / 509 / 533 / 537 / 538 / 539 / 573.
 //! Batch 3: 574 / 578 / 579 / 596 / 618 / 642 / 656 / 659 / 669 / 723.
 //! Batch 4: 732 / 895 / 898 / 907 / 967 / 1026 / 1048 / 1053 / 1092 / 1114.
+//! Batch 5: 1133.
 //!
 //! Scope (docs/research/66-proj-trail-dust-claims.md): the REPEATING in-flight
 //! dust sites inside `AI()`'s per-kind arms — the dust a kind sheds while it
@@ -1821,6 +1822,40 @@ pub fn trail_1114(
     }
 }
 
+/// Kind 1133 — the Star Wrath's falling-star sparkle (`AI()` aiStyle 5,
+/// `Projectile.cs:23988-24011`), the `type == 1133` sub-branch. TWO gates:
+/// `Next(6) == 0` → one `NewDustDirect` type 89 (alpha 127), noGravity only
+/// (the `.noGravity = true` is a chained write on the returned Dust); then
+/// `Next(3) == 0` → one `NewDustDirect` type `num48` (87 for 1133,
+/// `:24000`), alpha 127, velocity ×0.5, noGravity. The `:23993` `Next(24)`
+/// GORE gate above is d55/g16's — it is itself gated on the on-screen
+/// `Hitbox.Intersects(CenteredRectangle(...))` test (`&&` short-circuit), so
+/// the wiring wave interleaves that draw (when on-screen) BEFORE this fn.
+pub fn trail_1133(
+    pos: Vec2,
+    w: i32,
+    h: i32,
+    rng: &mut UnifiedRandom,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if rng.next_max(6) == 0 {
+        // `:24001-24004` — the type-89 puff.
+        let idx = dust.new_dust_direct(rng, ctx, world, pos, w, h, 89, 0.0, 0.0, 127, Color::default(), 1.0);
+        dust.slot_mut(idx).no_gravity = true;
+    }
+    // `:23997-24000` — num48 = 86 default, 87 for 1133.
+    let num48 = 87;
+    if rng.next_max(3) == 0 {
+        // `:24006-24011`
+        let idx = dust.new_dust_direct(rng, ctx, world, pos, w, h, num48, 0.0, 0.0, 127, Color::default(), 1.0);
+        let d = dust.slot_mut(idx);
+        d.velocity *= 0.5;
+        d.no_gravity = true;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2590,7 +2625,7 @@ mod tests {
         let center = Vec2::new(1400.0, 900.0);
         let mut fired = 0;
         let mut bailed = 0;
-        for seed in 0..40u64 {
+        for seed in 0..40i32 {
             let mut pool = DustPool::new();
             let mut rng = UnifiedRandom::new(seed);
             let ok = trail_596(center, seed as f32, 50, &mut rng, &mut pool, &c, &w);
@@ -3044,6 +3079,45 @@ mod tests {
             let d = pool.slot(i);
             assert_eq!(d.dust_type, 57);
             assert!(d.no_gravity && d.no_light && d.no_light_emittance);
+        }
+    }
+
+    /// W4-g64 — kind 1133: the Next(6) type-89 gate precedes the Next(3)
+    /// type-87 gate; both draw every tick; the second dust's velocity ×0.5.
+    #[test]
+    fn w4_g64_1133_two_direct_gates() {
+        let w = world();
+        let c = ctx();
+        let pos = Vec2::new(900.0, 300.0);
+        let mut pool = DustPool::new();
+        let mut rng = UnifiedRandom::new(193);
+        let mut mpool = DustPool::new();
+        let mut mirror = UnifiedRandom::new(193);
+        for _ in 0..20 {
+            trail_1133(pos, 16, 16, &mut rng, &mut pool, &c, &w);
+        }
+        for _ in 0..20 {
+            if mirror.next_max(6) == 0 {
+                let idx = mpool.new_dust_direct(&mut mirror, &c, &w, pos, 16, 16, 89, 0.0, 0.0, 127, Color::default(), 1.0);
+                mpool.slot_mut(idx).no_gravity = true;
+            }
+            if mirror.next_max(3) == 0 {
+                let idx = mpool.new_dust_direct(&mut mirror, &c, &w, pos, 16, 16, 87, 0.0, 0.0, 127, Color::default(), 1.0);
+                let d = mpool.slot_mut(idx);
+                d.velocity *= 0.5;
+                d.no_gravity = true;
+            }
+        }
+        assert_eq!(active(&pool), active(&mpool));
+        for i in active(&pool) {
+            assert_eq!(pool.slot(i), mpool.slot(i), "slot {i}");
+            let t = pool.slot(i).dust_type;
+            assert!(t == 89 || t == 87, "type {t}");
+            assert_eq!(pool.slot(i).alpha, 127);
+            assert!(pool.slot(i).no_gravity);
+        }
+        for _ in 0..8 {
+            assert_eq!(rng.next_max(1000), mirror.next_max(1000));
         }
     }
 }
