@@ -149,6 +149,7 @@
 //! | 601-610 | `:85958-85981` | the critter family: bunny group (46/303/337/540), crab 67, goldfish 55/230 |
 //! | 611-620 | `:85985-86006` | the critter family: dolphin 615, bird 74, birds 297/298, scarlet macaw 671 |
 //! | 621-629 | `:86010-86024` | the critter family: blue macaw 672, toucan 673, yellow cockatiel 674 |
+//! | 630-638 | `:86028-86054` | the critter family: gray cockatiel 675, squirrel 299/538, mouse 300, rat 610, seahorse 626, anglerfish 102 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4012,6 +4013,37 @@ fn critter_family_death(
         gore.new_gore(rng, world, c + Vec2::new(4.0, 0.0), vel, 1285, 1.0); // :86023
         gore.new_gore(rng, world, c + Vec2::new(-4.0, 0.0), vel, 1285, 1.0); // :86024
     }
+    // `:86026-86031` — the gray cockatiel 675.
+    else if npc_type == 675 {
+        let c = center(npc);
+        gore.new_gore(rng, world, pos, vel, 1286, 1.0); // :86028
+        gore.new_gore(rng, world, c + Vec2::new(4.0, 0.0), vel, 1287, 1.0); // :86029
+        gore.new_gore(rng, world, c + Vec2::new(-4.0, 0.0), vel, 1287, 1.0); // :86030
+    }
+    // `:86032-86035` — the squirrel 299.
+    else if npc_type == 299 {
+        gore.new_gore(rng, world, pos, vel, 433, 1.0); // :86034
+    }
+    // `:86036-86039` — the red squirrel 538.
+    else if npc_type == 538 {
+        gore.new_gore(rng, world, pos, vel, 897, 1.0); // :86038
+    }
+    // `:86040-86043` — the mouse 300.
+    else if npc_type == 300 {
+        gore.new_gore(rng, world, pos, vel, 434, 1.0); // :86042
+    }
+    // `:86044-86047` — the rat 610.
+    else if npc_type == 610 {
+        gore.new_gore(rng, world, pos, vel, 1163, 1.0); // :86046
+    }
+    // `:86048-86051` — the seahorse 626.
+    else if npc_type == 626 {
+        gore.new_gore(rng, world, pos, vel, 1197, 1.0); // :86050
+    }
+    // `:86052-86055` — the anglerfish 102.
+    else if npc_type == 102 {
+        gore.new_gore(rng, world, pos, vel, 116, 1.0); // :86054
+    }
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -4490,11 +4522,14 @@ pub fn hit_effect_c(
     // `:85942-86091` — the critter family arm; the bunny group / crab /
     // goldfish (sites 601-610) + dolphin / bird / birds / scarlet macaw
     // (sites 611-620) + blue macaw / toucan / yellow cockatiel (sites
-    // 621-629); the rest lands with the next batches.
+    // 621-629) + gray cockatiel / squirrels / mouse / rat / seahorse /
+    // anglerfish (sites 630-638); the rest lands with the next batches.
     if (npc_type == 46 || npc_type == 303 || npc_type == 337 || npc_type == 540 || npc_type == 67
         || npc_type == 55 || npc_type == 230 || npc_type == 615 || npc_type == 74
         || npc_type == 297 || npc_type == 298 || npc_type == 671 || npc_type == 672
-        || npc_type == 673 || npc_type == 674)
+        || npc_type == 673 || npc_type == 674 || npc_type == 675 || npc_type == 299
+        || npc_type == 538 || npc_type == 300 || npc_type == 610 || npc_type == 626
+        || npc_type == 102)
         && npc.hp <= 0
     {
         critter_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
@@ -7126,6 +7161,31 @@ mod tests {
             // Center = (115,112).
             assert_eq!(gore.slot(1).position, Vec2::new(119.0, 112.0));
             assert_eq!(gore.slot(2).position, Vec2::new(111.0, 112.0));
+        }
+    }
+
+    /// `NPC.cs:86028-86054` — the gray cockatiel 675 (1286/1287 wings) and
+    /// the single-gore critters: squirrel 299 (433), red squirrel 538 (897),
+    /// mouse 300 (434), rat 610 (1163), seahorse 626 (1197), anglerfish 102
+    /// (116).
+    #[test]
+    fn w4_f10_the_critter_family_cockatiel_and_single_gores() {
+        let w = air();
+        // The gray cockatiel 675.
+        let n = boss(100.0, 100.0, 30.0, 24.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(599);
+        critter_family_death(&n, 675, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![1286, 1287, 1287]);
+        // The single-gore critters.
+        for (ty, gore_ty) in [(299, 433), (538, 897), (300, 434), (610, 1163), (626, 1197), (102, 116)] {
+            let mut g = GorePool::new();
+            let mut d = DustPool::new();
+            let mut r = UnifiedRandom::new(599);
+            critter_family_death(&n, ty, &mut d, &ctx(), &mut g, &mut r, &w, 1.0);
+            assert_eq!(g.slot(0).gore_type, gore_ty, "critter {ty}");
         }
     }
 
