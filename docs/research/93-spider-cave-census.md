@@ -17,7 +17,7 @@ stalactite family + its support validator), **wall coverage** (the wall-62 flood
 | `Spread.Spider` `:3682-3789` | `spread_spider` `:600` | **draw-faithful incl. the duplicate-visit quirk**: the C# `hashSet.Add` (`:3716`) ignores its return, so a cell enqueued twice in one wave is processed twice — but the two depth-gate draws (`:3706`, `:3711`) run on EVERY visit before the dedup, and the second visit hits the `wall != 0` branch (no draws, no re-decor). The port draws both gates before `seen.insert` (`:621-628`) and skips the re-process — same draw count, same writes |
 | `PlaceTight` `:38303-38325` | `place_tight` `:392` | the shimmer/larva veto + the `Next(2)`/`Next(3)` pair faithful; **the `CheckStalactite` tail `:38320-38323` is MISSING** (below) |
 | `PlaceUncheckedStalactite` `:38327-38641` | `place_unchecked_stalactite` `:409` | the spider family (`108 + variation*18`, two tiles, `:38334-38350`) faithful; the hanging ice/stone-moss/hive/sandstone arms + the rising stone-moss/sandstone/granite/marble arms faithful; **MISSING arms below**; `CopyPaintAndCoating` folded into the frame write (documented) |
-| `PlacePot` `:54066-54114` | `place_pot` `:507` | the 2×2 seat validation + `Next(3)*36` variant + style frames faithful; **the `halfBrick(false)` write `:54108` and the remix centre veto `:54069-54072` MISSING** |
+| `PlacePot` `:54066-54114` | `place_pot` `:507` | the 2×2 seat validation + `Next(3)*36` variant + style frames faithful; the `halfBrick(false)` write `:54108` PORTED (W4-g41); the remix centre veto `:54069-54072` PORTED (W4-g41 FINAL — the 0.48-0.52 x band below `maxTilesY-220` refuses before the variant draw, flag-gated REMIX, classic unchanged) |
 | `PlaceSmallPile` `:46815-46873` | `place_small_pile` `:541` | the size-1 2-wide seat + the size-0 1-wide seat faithful; **the `InvalidTileForPilesOrSpeleothems` boulder-seat veto `:46847-46850` MISSING**; the `anyLava` gate reads the kind without the `liquid > 0` guard (`Tile.cs:410-415` requires both) |
 | `WebsInSpiderCavesAndHoneyPlusSpeleothemsInBeehives` `:19995-20063` | `pass_webs_and_honey` `:1201` | the wall-86 honey + `Next(3)` speleothem arm and the wall-62 `Next(10)!=0` → `Next(2,5)` solid-scan → cobweb-51 arm faithful (the scan's inner-only `break` `:20050` matches the port's `'scan` label); **the DST row-50 start `:20003-20006` and the `ILied` honey arm `:20022-20028` MISSING** |
 | `DoNoSpiderCavesILiedMoreSpiderCaves` `:2618-2630` | `micro_finish.rs:442` `no_spider_caves_i_lied` | the 8-wall → 62 sweep faithful, but **UNWIRED**: the C# dispatches it from the SpiderCaves pass tail (`:17422-17425`); the port's `pass_spider_caves` never calls it |
@@ -51,7 +51,10 @@ stalactite family + its support validator), **wall coverage** (the wall-62 flood
    (`225` → `162+v*18` frameY 90, `:38543-38552`); `Main.tileMoss[627]` (`Main.cs:7031`,
    the rainbow moss) in the moss-support test.
 3. **`PlaceSmallPile`** boulder-seat veto (`:46847-46850`) + the `anyLava` `liquid > 0` guard.
-4. **`PlacePot`** `halfBrick(false)` write (`:54108`).
+4. **`PlacePot`** `halfBrick(false)` write (`:54108`) + the remix centre veto
+   (`:54069-54072` — W4-g41 FINAL: the 0.48-0.52 x band below `maxTilesY-220`
+   refuses before the `Next(3)` variant draw; flag-gated REMIX, classic
+   worlds unchanged).
 5. **Webs pass**: the DST `num = 50` start row (`:20003-20006`); the `ILied` honey arm
    (`:20022-20028` — wall-62 liquid converts to honey instead of clearing).
 6. **Spider pass**: the `shroomCount > 1` retry veto (`:17407-17410` — sets the count to

@@ -68,7 +68,8 @@
 //!   the guarded `Check*` re-entries early-return in the C#, so no cascade).
 //!   The missing `PlaceUncheckedStalactite` arms (hanging granite/marble,
 //!   rising hive), the `tileMoss[627]` member, the `PlacePot` halfBrick
-//!   clear, the `PlaceSmallPile` boulder-seat veto + `anyLava` guard, the
+//!   clear + remix centre veto (`:54069-54072`, W4-g41 FINAL), the
+//!   `PlaceSmallPile` boulder-seat veto + `anyLava` guard, the
 //!   spider pass's `shroomCount > 1` retry veto + `ILied` tail dispatch +
 //!   remix y-bands, the webs pass's DST row-50 start + `ILied` honey arm and
 //!   `SpiderWallRemover` (`:77279-77344`, WIRED by the W4-g41 follow-up —
@@ -786,6 +787,19 @@ fn write_stalactite(world: &mut World, x: i32, y: i32, frame_x: i32, frame_y: i3
 /// `WorldGen.PlacePot` (`WorldGen.cs:54066-54114`) — the 2x2 seat validation
 /// plus the style frame pair.
 fn place_pot(world: &mut World, rng: &mut Rng, x: i32, y: i32, style: i32) -> bool {
+    // `:54069-54072` — the remix centre veto (W4-g41 FINAL): the 0.48-0.52
+    // x band below `maxTilesY - 220` refuses the pot. The C# sets
+    // `flag = false` and keeps scanning, but a false flag returns before
+    // the `Next(3)` variant draw — the early return is write- AND
+    // draw-identical (the seat loop allocates null tiles only, a no-op on
+    // the port's dense world).
+    if world.seeds.contains(crate::seeds::SeedFlags::REMIX)
+        && (x as f64) > world.width as f64 * 0.48
+        && (x as f64) < world.width as f64 * 0.52
+        && y > world.height - 220
+    {
+        return false;
+    }
     let mut ok = true;
     for i in x..x + 2 {
         for j in (y - 1)..(y + 1) {
@@ -2392,6 +2406,32 @@ mod tests {
         assert!(!w.tiles[seat].active(), "the seat is air");
         assert!(place_pot(&mut w, &mut Rng(4), 110, 119, 19));
         assert!(!w.tile(110, 119).unwrap().half_brick(), "the half-brick cleared");
+    }
+
+    /// `PlacePot`'s remix centre veto (`WorldGen.cs:54069-54072`, W4-g41
+    /// FINAL): the 0.48-0.52 x band below `maxTilesY - 220` refuses the
+    /// pot BEFORE the `Next(3)` variant draw; classic worlds never veto.
+    #[test]
+    fn the_remix_pot_centre_veto_refuses_before_the_variant_draw() {
+        // A 300x500 world: the band is x 144..156, y > 280. The pocket
+        // floor at 300 inside the band.
+        let mut w = flat_world(300, 500, 40);
+        carve_pocket(&mut w, 140, 290, 20, 10);
+        w.seeds.insert(crate::seeds::SeedFlags::REMIX);
+        let mut rng = Rng(4);
+        assert!(!place_pot(&mut w, &mut rng, 150, 299, 19), "the band refuses");
+        assert_eq!(rng.0, Rng(4).0, "the veto draws nothing (pre-Next(3))");
+        assert!(!w.tile(150, 299).unwrap().active(), "no pot written");
+        // Outside the x band (x 130 < 144): the same depth places.
+        carve_pocket(&mut w, 125, 290, 10, 10);
+        assert!(place_pot(&mut w, &mut Rng(4), 130, 299, 19), "off-band places");
+        // Above the y gate (y 270 <= 280) inside the band: places.
+        carve_pocket(&mut w, 145, 260, 10, 11);
+        assert!(place_pot(&mut w, &mut Rng(4), 150, 270, 19), "above the gate places");
+        // The classic world never vetoes (the flag gate).
+        let mut wc = flat_world(300, 500, 40);
+        carve_pocket(&mut wc, 140, 290, 20, 10);
+        assert!(place_pot(&mut wc, &mut Rng(4), 150, 299, 19), "classic places in-band");
     }
 
     /// `SpiderWallRemover` (`WorldGen.cs:77279-77344`) — the drifting diamond
