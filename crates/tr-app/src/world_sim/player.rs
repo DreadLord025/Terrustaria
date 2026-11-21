@@ -2286,17 +2286,17 @@ mod tests {
         let mut app = ammo_app();
         let p = app.player.as_mut().unwrap();
         p.buffs.add_buff(116, 14400); // Inferno potion
+        // Arm the cadence counter so the NEXT tick's increment lands on 60
+        // (`:24595-24598` increments, then `:10218` reads `% 60 == 0`) — one
+        // deterministic strike tick instead of 60 (no player drift).
+        p.inferno_counter = 59;
         let (cx, cy) = p.center();
         // A zombie inside the 200px ring.
         app.npcs.push(crate::npc::Npc::new(
             crate::npc::NpcKind::Zombie, cx - 10.0, cy - 10.0, 1, 0.0,
         ));
         let hp0 = app.npcs[0].hp;
-        // The cadence counter starts at 0; the first tick increments it to
-        // 1, so the strike waits for tick 60. Drive 60 ticks.
-        for _ in 0..60 {
-            tick_ammo(&mut app);
-        }
+        tick_ammo(&mut app);
         assert!(app.npcs[0].buffs.has_buff(323), "Hellfire spreads (`:10231`)");
         assert!(app.npcs[0].hp < hp0, "the cadence strike landed");
         assert!(!app.combat_texts.is_empty(), "the combat text spawned");
