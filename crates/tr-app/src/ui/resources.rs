@@ -654,6 +654,39 @@ mod s1_e_6_tests {
     }
 
     #[test]
+    fn w4_f12_final_buff_time_the_unit_boundaries_and_the_two_tick_gate() {
+        // The W4-f12 final buff-time census (`Main.cs:43321-43324` →
+        // `Lang.LocalizedDuration`, `Lang.cs:1158-1205`): the text is the
+        // duration ONLY when `TryGetBuffTime` yields and the tick count is
+        // over 2; the TimeSpan is whole seconds (`buffTimeValue / 60`,
+        // integer division). The exact-unit boundaries do NOT bump
+        // (`time > TimeSpan.FromX(1)` is strict), the remainder above does.
+        assert!(localized_duration(60).starts_with("1 "), "exactly 1 min");
+        assert!(localized_duration(61).starts_with("2 "), "1 min + 1 s ceilings");
+        assert!(localized_duration(3599).starts_with("60 "), "59 min + 59 s");
+        assert!(localized_duration(3601).starts_with("2 "), "1 h + 1 s ceilings");
+        assert!(localized_duration(86_400).starts_with("1 "), "exactly 1 day");
+        assert!(localized_duration(86_401).starts_with("2 "), "1 d + 1 s ceilings");
+        // The >2-tick gate (`:43321`): 2 ticks print nothing, 3 print "0 s"
+        // (3/60 = 0 whole seconds — the C# prints `0 <ShortSeconds>` too).
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut p = crate::player::Player::spawn(&world);
+        p.buffs.buff_type[0] = 5; // Ironskin — no handler, no hide gate
+        for (ticks, want) in [(0, None), (2, None), (3, Some(0)), (120, Some(2))] {
+            p.buffs.buff_time[0] = ticks;
+            let got = try_get_buff_time(&p, 0, false).filter(|t| *t > 2).map(|t| t / 60);
+            assert_eq!(got, want, "ticks {ticks}");
+        }
+        // The handler counter beats the duration (`:43317-43320`): buff 64
+        // with an owned projectile prints xN even at 3 ticks.
+        p.buffs.buff_type[0] = 64;
+        p.buffs.buff_time[0] = 3;
+        p.owned_projectile_counts[266] = 2;
+        assert_eq!(buff_text(&p, 0).as_deref(), Some("x2"));
+        assert!(try_get_buff_time(&p, 0, false).is_some(), "the timer still ticks");
+    }
+
+    #[test]
     fn the_buff_text_handler_table_is_the_csharp_set() {
         // `BuffID.cs:54-168`: 28 ids, each a `CachedProjectileCounterBuffTextHandler`.
         // Every entry is present with its exact projectile list, and no extra id
