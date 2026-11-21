@@ -4,15 +4,17 @@
 //! small versioned text file. Loading validates that the saved position is not inside a
 //! solid tile.
 //!
-//! ## The FINAL v7 line contract (W4-g88 superset fold — g89/g90/g55)
+//! ## The FINAL superset contract (W4-g88 fold — g89/g89b/g90/g55)
 //!
-//! Four lanes independently bumped the sidecar to version 7, each
-//! appending a block after the dye line: g89 (`920014cb`) the
-//! `usedAegisFruit` flag, g88 (`f1eb9b60`) the life-maxima pair, g90
-//! (`1f1b88f0`) the `ateArtisanBread` flag, g55 (`cde865fc`) the loadout
-//! block. The reconciled SUPERSET v7 order (this branch's writer) is:
+//! Five lane writers collided on the post-dye block: g89 (`920014cb`,
+//! v7 aegis flag), g88 (`f1eb9b60`, v7 life pair), g90 (`1f1b88f0`, v7
+//! bread flag), g55 (`cde865fc`, v7 loadout block), g89b (`9bf03ede`,
+//! v8 aegis+gummy unlock pair). The reconciled SUPERSET (this branch's
+//! writer) is version **8**, g89b's unlock-line shape kept:
 //!
-//! 1. the aegis flag line — `usedAegisFruit` 0/1 (g89's position, ONE token),
+//! 1. the unlock line — `usedAegisFruit usedGummyWorm` 0/1 (g89b's
+//!    position, TWO tokens; token 3+ RESERVED for ambrosia/galaxy-pearl/
+//!    arcane-crystal/aegis-crystal/DD2 — the layout doc's token map),
 //! 2. the life-maxima pair — `statLifeMax statLifeMax2` (TWO tokens),
 //! 3. the mana-maxima pair — `statManaMax statManaMax2` (TWO tokens),
 //! 4. the artisan-bread flag line — `ateArtisanBread` 0/1 (ONE token,
@@ -22,15 +24,18 @@
 //! 6. three stored-set lines — each 20 armor kinds + 10 dye kinds +
 //!    10 hide flags + the set's 30-bit share word (41 tokens each).
 //!
-//! The reader tolerates every predecessor: it walks the post-dye lines
-//! and dispatches on TOKEN COUNT/SHAPE — the FIRST one-token line is the
-//! aegis flag, the SECOND is the bread flag; the first two-token line is
-//! the life pair, the second the mana pair; the two-token line directly
-//! BEFORE the first 41-token set line is the loadout index line (g55's
-//! block self-identifies by its set lines). So every single-lane v7, the
-//! partial supersets and this full superset all load; missing pieces keep
-//! their fresh defaults. Any merge of the lanes keeps this reader (the
-//! superset). Full layout + back-compat matrix:
+//! The reader tolerates every predecessor. v8: the FIRST post-dye line
+//! is positionally the unlock line (g89b's contract; 1 or 2 tokens read,
+//! the rest reserved); the remaining lines dispatch on TOKEN COUNT/SHAPE
+//! — a one-token line is the bread flag, the first two-token line the
+//! life pair, the second the mana pair, the two-token line directly
+//! BEFORE the first 41-token set line the loadout index line (g55's
+//! block self-identifies by its set lines). v7: the FIRST one-token line
+//! is the aegis flag, the SECOND the bread flag; pairs/loadouts as above.
+//! So every single-lane v7, g89b's v8, the partial supersets and this
+//! full superset all load; missing pieces keep their fresh defaults.
+//! Any merge of the lanes keeps this reader (the superset). Full layout
+//! + token reservations + back-compat matrix:
 //! `docs/research/103-persist-v7-layout.md`.
 
 use std::path::{Path, PathBuf};
@@ -57,6 +62,11 @@ pub struct SavedPlayer {
     /// superset carries it at the SAME post-dye position); older files
     /// load with the unlock absent.
     pub used_aegis_fruit: bool,
+    /// `Player.usedGummyWorm` (`Player.cs:2074`, save `:54785` / load
+    /// `:55259`) — version 8 of the sidecar (W4-g89b `9bf03ede`), the
+    /// SECOND token on the unlock line (the superset keeps g89b's
+    /// position). The permanent +3 fishing skill (`:12857-12860`).
+    pub used_gummy_worm: bool,
     /// `Player.ateArtisanBread` (`Player.cs:2048`) — version 7 (W4-g90,
     /// folded into the superset as the FOURTH post-dye line); older files
     /// load false (the ctor default, `Player.cs:56077`). The vanilla
@@ -133,7 +143,10 @@ pub fn save(
     kills: &[(String, i32)],
     equip_share_flags: u32,
 ) -> std::io::Result<()> {
-    let mut s = format!("7\n{} {} {}\n", player.x, player.y, player.hp);
+    // Version 8 SUPERSET (the module header's contract): g89b's unlock
+    // line first (`usedAegisFruit usedGummyWorm`, `Player.cs:54782`/
+    // `:54785`), then the pairs, the bread flag and the loadout block.
+    let mut s = format!("8\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -153,14 +166,19 @@ pub fn save(
         s.push_str(&format!("{kind} "));
     }
     s.push_str("\n");
-    // Version 7 SUPERSET (the module header's contract, the g88⨉g89⨉g90
-    // fold): the aegis flag FIRST (g89's post-dye position,
-    // `Player.usedAegisFruit` save `Player.cs:54782`), then the life pair
-    // (`statLifeMax statLifeMax2`, `:54773`), then the mana pair
+    // Version 8 SUPERSET (the module header's contract, the
+    // g88⨉g89⨉g89b⨉g90⨉g55 fold): the unlock line FIRST (g89b's post-dye
+    // position, `usedAegisFruit usedGummyWorm`, `Player.cs:54782`/
+    // `:54785`; token 3+ reserved — 103-persist-v7-layout.md), then the
+    // life pair (`statLifeMax statLifeMax2`, `:54773`), then the mana pair
     // (`statManaMax statManaMax2`, `:54775`), then the artisan-bread flag
-    // (`Player.ateArtisanBread`, `:54779`, W4-g90). Vanilla rides all four
+    // (`Player.ateArtisanBread`, `:54779`, W4-g90). Vanilla rides them all
     // in the .plr; the port's live-session sidecar appends them after dye.
-    s.push_str(&format!("{}\n", u8::from(player.used_aegis_fruit)));
+    s.push_str(&format!(
+        "{} {}\n",
+        u8::from(player.used_aegis_fruit),
+        u8::from(player.used_gummy_worm)
+    ));
     s.push_str(&format!("{} {}\n", player.life_max_base, player.max_hp));
     s.push_str(&format!("{} {}\n", player.mana_max_base, player.mana_max));
     s.push_str(&format!("{}\n", u8::from(player.ate_artisan_bread)));
@@ -191,11 +209,12 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let version = lines.next()?.trim();
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
-        // dye kinds; 7 the SUPERSET post-dye block (the aegis flag ⨉ the
-        // life pair ⨉ the mana pair, the module header's contract —
-        // W4-g88 ⨉ W4-g89); 3 stores vanilla `ItemID`s; 1 and 2 stored the
-        // ad-hoc tile/wall/weapon/coin ranges and are converted on load.
-        "3" | "4" | "5" | "6" | "7" => false,
+        // dye kinds; 7 the SUPERSET post-dye block (the module header's
+        // contract — W4-g88 ⨉ W4-g89 ⨉ W4-g90 ⨉ W4-g55); 8 the g89b
+        // unlock line (aegis + gummy, `9bf03ede`) atop the same block;
+        // 3 stores vanilla `ItemID`s; 1 and 2 stored the ad-hoc
+        // tile/wall/weapon/coin ranges and are converted on load.
+        "3" | "4" | "5" | "6" | "7" | "8" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -222,7 +241,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if matches!(version, "4" | "5" | "6" | "7") {
+    if matches!(version, "4" | "5" | "6" | "7" | "8") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -230,7 +249,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if matches!(version, "5" | "6" | "7") {
+    if matches!(version, "5" | "6" | "7" | "8") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -245,41 +264,60 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if matches!(version, "6" | "7") {
+    if matches!(version, "6" | "7" | "8") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
         }
     }
-    // Version 7 SUPERSET (the module header's contract): walk the
-    // post-dye lines and dispatch on TOKEN COUNT — the FIRST one-token
-    // line is the aegis flag (g89's line, `Player.cs:55256`'s read), the
-    // SECOND is the artisan-bread flag (g90's line, `:55245`); the FIRST
-    // two-token line is the life pair (`:55220-55224`, permanent half
-    // clamps to 500), the SECOND is the mana pair (`:55226-55229`,
-    // permanent half clamps to 200). The g55 loadout block (fold 2) adds
-    // a THIRD two-token shape — the index/share line — identified by the
-    // 41-token stored-set lines that follow it (20 armor + 10 dye + 10
-    // hide + the share word, `EquipmentLoadout.cs:31-45`): the two-token
-    // line directly BEFORE the first set line is the index line, NOT a
-    // maxima pair (`Utils.Clamp` index to 0..2, `Player.cs:55720-55727`).
-    // This reads g89's flag-only v7, the pre-reconciliation life-only v7,
-    // g90's bread-only v7, g55's loadout-only v7, the three/four-line
-    // g88⨉g89⨉g90 superset AND the full superset with loadouts; missing
-    // pieces keep None/false/empty and the loader keeps fresh defaults.
+    // Version 7/8 SUPERSET (the module header's contract).
+    // v8 (the current writer, g89b's shape kept): the FIRST post-dye line
+    // is POSITIONALLY the unlock line — token 1 the aegis flag
+    // (`Player.cs:55256`), token 2 the gummy worm (`:55259`); a one-token
+    // line still reads (g89b's v7 back-read), tokens 3+ are RESERVED
+    // (103-persist-v7-layout.md) and skipped. The remaining lines dispatch
+    // on TOKEN COUNT/SHAPE as below.
+    // v7 (the tolerant predecessor walk): the FIRST one-token line is the
+    // aegis flag (g89's line), the SECOND is the artisan-bread flag
+    // (g90's line, `:55245`).
+    // Both versions: the FIRST two-token line after the unlock walk is
+    // the life pair (`:55220-55224`, permanent half clamps to 500), the
+    // SECOND the mana pair (`:55226-55229`, clamps to 200); the g55
+    // loadout block adds a THIRD two-token shape — the index/share line —
+    // identified by the 41-token stored-set lines that follow it (20
+    // armor + 10 dye + 10 hide + the share word,
+    // `EquipmentLoadout.cs:31-45`): the two-token line directly BEFORE
+    // the first set line is the index line, NOT a maxima pair
+    // (`Utils.Clamp` index to 0..2, `Player.cs:55720-55727`).
+    // So every single-lane v7, g89b's v8, the partial supersets AND the
+    // full superset load; missing pieces keep None/false/empty defaults.
     let mut life_max = None;
     let mut mana_max = None;
     let mut used_aegis_fruit = false;
+    let mut used_gummy_worm = false;
     let mut ate_artisan_bread = false;
     let mut current_loadout_index = 0usize;
     let mut loadouts = [crate::loadout::EquipmentLoadout::default(); 3];
     let mut equip_share_flags = 0u32;
-    if version == "7" {
+    if matches!(version, "7" | "8") {
         // One stored-set line: ARMOR + DYE + HIDE kinds/flags + the word.
         const SET_TOKENS: usize = crate::inv::ARMOR + crate::inv::DYE + crate::loadout::HIDE + 1;
-        let post: Vec<Vec<&str>> = lines
+        let mut post: Vec<Vec<&str>> = lines
             .map(|l| l.split_whitespace().collect::<Vec<_>>())
             .collect();
+        // v8: consume the unlock line positionally (g89b's contract).
+        // Its tokens 3+ are reserved future unlock flags — skip them.
+        let v7_flags = version == "7";
+        if version == "8" {
+            while post.first().is_some_and(|t| t.is_empty()) {
+                post.remove(0);
+            }
+            if let Some(unlock) = post.first() {
+                used_aegis_fruit = unlock.first().is_some_and(|t| *t == "1");
+                used_gummy_worm = unlock.get(1).is_some_and(|t| *t == "1");
+                post.remove(0);
+            }
+        }
         let set_start = post.iter().position(|t| t.len() == SET_TOKENS);
         let idx_line = match set_start {
             Some(i) if i > 0 && post[i - 1].len() == 2 => Some(i - 1),
@@ -296,7 +334,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
             match toks.len() {
                 0 => continue,
                 1 => {
-                    if flag_seen {
+                    if !v7_flags || flag_seen {
                         ate_artisan_bread = toks[0] == "1";
                     } else {
                         used_aegis_fruit = toks[0] == "1";
@@ -342,6 +380,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         life_max,
         mana_max,
         used_aegis_fruit,
+        used_gummy_worm,
         ate_artisan_bread,
         current_loadout_index,
         loadouts,
@@ -373,6 +412,7 @@ mod tests {
         p.mana_max_base = 40;
         p.mana_max = 40;
         p.used_aegis_fruit = true;
+        p.used_gummy_worm = true;
         p.ate_artisan_bread = true;
         let dir = crate::test_world_helpers::test_scratch("persist-player-state");
         let path = dir.join("tr-persist-test.trwld");
@@ -401,6 +441,7 @@ mod tests {
         assert_eq!(s.life_max, Some((405, 405)), "the v7 life-maxima pair");
         assert_eq!(s.mana_max, Some((40, 40)), "the v7 mana-maxima pair");
         assert!(s.used_aegis_fruit, "the g89 flag at its post-dye position");
+        assert!(s.used_gummy_worm, "the g89b token on the unlock line");
         assert!(s.ate_artisan_bread, "the g90 flag after the mana pair");
         assert_eq!(s.inventory[0], (2, 12));
         assert_eq!(s.inventory[3], (12, 1));
@@ -443,6 +484,7 @@ mod tests {
         assert_eq!(s.life_max, None, "pre-v7 files carry no life maxima");
         assert_eq!(s.mana_max, None, "pre-v7 files carry no mana maxima");
         assert!(!s.used_aegis_fruit, "pre-v7 files carry no unlock");
+        assert!(!s.used_gummy_worm, "pre-v8 files carry no worm unlock");
         assert!(!s.ate_artisan_bread, "pre-v7 files carry no loaf unlock");
         crate::test_world_helpers::remove_scratch(&dir);
     }
@@ -469,6 +511,7 @@ mod tests {
         assert_eq!(s.life_max, None);
         assert_eq!(s.mana_max, None);
         assert!(!s.used_aegis_fruit);
+        assert!(!s.used_gummy_worm);
         assert!(!s.ate_artisan_bread, "v6 loads false — the ctor default");
         crate::test_world_helpers::remove_scratch(&dir);
     }
@@ -601,13 +644,14 @@ mod tests {
     }
 
     /// The FULL superset round-trip: all post-dye lines survive a
-    /// save/load, in the contract order (aegis flag, life pair, mana pair,
-    /// bread flag, loadout index + 3 stored sets).
+    /// save/load, in the contract order (v8 unlock line, life pair, mana
+    /// pair, bread flag, loadout index + 3 stored sets).
     #[test]
-    fn the_v7_superset_round_trips_the_full_block() {
+    fn the_superset_round_trips_the_full_block() {
         let world = World::new("t".into(), 32, 32);
         let mut p = Player::spawn(&world);
         p.used_aegis_fruit = true;
+        p.used_gummy_worm = true;
         p.life_max_base = 420;
         p.max_hp = 420;
         p.mana_max_base = 60;
@@ -615,21 +659,102 @@ mod tests {
         p.ate_artisan_bread = true;
         p.current_loadout_index = 1;
         p.loadouts[2].armor[0] = loadout_item(90);
-        let dir = crate::test_world_helpers::test_scratch("persist-v7-superset");
-        let path = dir.join("tr-persist-v7-superset.trwld");
+        let dir = crate::test_world_helpers::test_scratch("persist-v8-superset");
+        let path = dir.join("tr-persist-v8-superset.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0; 3], &[0; 10], &[], 1 << 5).unwrap();
         let text = std::fs::read_to_string(player_path(&path)).unwrap();
+        assert!(text.starts_with("8\n"), "the superset writer emits v8");
         let post_dye: Vec<&str> = text.lines().skip(7).collect();
-        assert_eq!(post_dye.len(), 8, "flag/life/mana/bread/index + 3 sets");
-        assert_eq!(&post_dye[..5], ["1", "420 420", "60 80", "1", "1 32"]);
-        let s = load(&path).expect("the superset v7 sidecar");
+        assert_eq!(post_dye.len(), 8, "unlock/life/mana/bread/index + 3 sets");
+        assert_eq!(&post_dye[..5], ["1 1", "420 420", "60 80", "1", "1 32"]);
+        let s = load(&path).expect("the superset v8 sidecar");
         assert!(s.used_aegis_fruit);
+        assert!(s.used_gummy_worm);
         assert_eq!(s.life_max, Some((420, 420)));
         assert_eq!(s.mana_max, Some((60, 80)));
         assert!(s.ate_artisan_bread);
         assert_eq!(s.current_loadout_index, 1);
         assert_eq!(s.equip_share_flags, 1 << 5);
         assert_eq!(s.loadouts[2].armor[0].kind, 90);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The g89b fold witness: g89b's OWN v8 (`9bf03ede`'s writer — the
+    /// two-token unlock line ONLY, no pairs/bread/loadouts) loads: both
+    /// unlocks read positionally, everything else keeps fresh defaults.
+    #[test]
+    fn g89bs_unlock_only_v8_still_loads() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v8-g89b");
+        let path = dir.join("tr-persist-v8-g89b.trwld");
+        let mut line = String::from("8\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n0 1\n"); // g89b's unlock line: no fruit, worm eaten
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("g89b's v8 sidecar");
+        assert!(!s.used_aegis_fruit);
+        assert!(s.used_gummy_worm, "the second token reads");
+        assert_eq!(s.life_max, None);
+        assert_eq!(s.mana_max, None);
+        assert!(!s.ate_artisan_bread);
+        assert_eq!(s.current_loadout_index, 0);
+        assert_eq!(s.loadouts, [crate::loadout::EquipmentLoadout::default(); 3]);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The g89b fold witness: a v7 ONE-token unlock line under version 8
+    /// (g89b's own back-read shape) still reads the fruit half; the worm
+    /// keeps false.
+    #[test]
+    fn a_one_token_unlock_line_reads_under_v8() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v8-1tok");
+        let path = dir.join("tr-persist-v8-1tok.trwld");
+        let mut line = String::from("8\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        line.push_str("\n1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v8 sidecar");
+        assert!(s.used_aegis_fruit, "the first token reads");
+        assert!(!s.used_gummy_worm, "no second token — the worm absent");
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// The reservation witness: unlock-line tokens 3+ are RESERVED
+    /// (ambrosia/pearl/arcane/crystal/DD2 — the layout doc's token map)
+    /// and skipped, never misparsed as maxima pairs; the block behind
+    /// them still reads.
+    #[test]
+    fn reserved_unlock_tokens_are_skipped() {
+        let dir = crate::test_world_helpers::test_scratch("persist-v8-reserved");
+        let path = dir.join("tr-persist-v8-reserved.trwld");
+        let mut line = String::from("8\n1.0 2.0 420\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n0 0 0\n0 \n");
+        for _ in 0..10 {
+            line.push_str("0 ");
+        }
+        // A future writer's unlock line: 7 tokens (the full vanilla set).
+        line.push_str("\n1 1 1 1 1 1 1\n420 420\n60 80\n1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("v8 sidecar");
+        assert!(s.used_aegis_fruit);
+        assert!(s.used_gummy_worm);
+        assert_eq!(s.life_max, Some((420, 420)), "the pairs read past the line");
+        assert_eq!(s.mana_max, Some((60, 80)));
+        assert!(s.ate_artisan_bread);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -643,12 +768,12 @@ mod tests {
         let dir = crate::test_world_helpers::test_scratch("persist-bread");
         let path = dir.join("tr-persist-bread.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
-        let s = load(&path).expect("v7 sidecar");
+        let s = load(&path).expect("v8 sidecar");
         assert!(s.ate_artisan_bread, "the flag survives the round trip");
         assert!(!s.used_aegis_fruit, "the aegis slot stays clear");
         let fresh = Player::spawn(&world);
         save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[], 0).unwrap();
-        assert!(!load(&path).expect("v7 sidecar").ate_artisan_bread);
+        assert!(!load(&path).expect("v8 sidecar").ate_artisan_bread);
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -668,7 +793,7 @@ mod tests {
         let path = dir.join("tr-persist-loadout.trwld");
         let inv = [(0u16, 0u32); 50];
         save(&path, &p, inv, 0, [0, 0, 0], &[0; 10], &[], 1 << 5).unwrap();
-        let s = load(&path).expect("v7 sidecar");
+        let s = load(&path).expect("v8 sidecar");
         assert_eq!(s.current_loadout_index, 1);
         assert_eq!(s.equip_share_flags, 1 << 5);
         assert_eq!(s.loadouts[2].armor[0].kind, 90);

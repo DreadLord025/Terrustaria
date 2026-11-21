@@ -39352,17 +39352,22 @@ click buffers; the player tick applies).
   ManaEffect queue, STAR_POWER + TOPPED_OFF timing + the GET_A_LIFE
   sparing, the CCed refusal) — WRITTEN, NOT RUN.
 
-## The v7 sidecar superset (W4-g88 ⨉ W4-g89 ⨉ W4-g90 reconciliation)
+## The sidecar superset (W4-g88 ⨉ g89 ⨉ g89b ⨉ g90 ⨉ g55 — final v8)
 
-- **The collision.** Three lanes independently bumped the `.trplayer`
-  sidecar to version 7, each appending ONE line after the dye line:
-  g89 (`920014cb`, `origin/task/W4-g89-aegis-fruit-use`) wrote the
-  `usedAegisFruit` 0/1 flag; g88 (`f1eb9b60`) wrote the
+- **The collision.** Five lane writers collided on the post-dye block:
+  g89 (`920014cb`, `origin/task/W4-g89-aegis-fruit-use`) bumped v7 with
+  the `usedAegisFruit` 0/1 flag; g88 (`f1eb9b60`) bumped v7 with the
   `statLifeMax statLifeMax2` pair; g90 (`1f1b88f0`,
-  `origin/task/W4-g90-artisan-bread-use`) wrote the `ateArtisanBread`
-  0/1 flag. A naive merge would misparse one lane's file as another's.
-- **The ONE v7 contract (this branch's writer).** After the dye line:
-  **(1)** the aegis flag line (ONE token — g89's position kept), **(2)**
+  `origin/task/W4-g90-artisan-bread-use`) bumped v7 with the
+  `ateArtisanBread` 0/1 flag; g55 (`cde865fc`) bumped v7 with the
+  loadout block; g89b (`9bf03ede`) bumped v8 widening the unlock line to
+  `usedAegisFruit usedGummyWorm`. A naive merge would misparse one
+  lane's file as another's.
+- **The ONE superset contract (this branch's writer, version 8 —
+  g89b's unlock-line shape kept).** After the dye line:
+  **(1)** the unlock line `usedAegisFruit usedGummyWorm` (TWO tokens —
+  g89b's position; tokens 3+ RESERVED for ambrosia/galaxy-pearl/
+  arcane-crystal/aegis-crystal/DD2, the layout doc's token map), **(2)**
   the life pair `statLifeMax statLifeMax2` (TWO tokens), **(3)** the mana
   pair `statManaMax statManaMax2` (TWO tokens), **(4)** the artisan-bread
   flag line (ONE token — g90's flag, after the mana pair per the fold
@@ -39375,27 +39380,34 @@ click buffers; the player tick applies).
   (`Player.cs:54773`/`:54775`/`:54779`/`:54782` writes;
   `:55220-55229`/`:55245`/`:55256` reads) and the loadouts at
   `:54919-54923`/`:55720-55727`.
-- **The tolerant reader.** The v7 load walks the post-dye lines and
-  dispatches on TOKEN COUNT: the FIRST one-token line → the aegis flag,
-  the SECOND → the bread flag; the first two-token line → the life pair
+- **The tolerant reader.** v8: the FIRST post-dye line is POSITIONALLY
+  the unlock line (g89b's contract; 1 or 2 tokens read, tokens 3+
+  reserved and skipped). v7: the FIRST one-token line → the aegis flag,
+  the SECOND → the bread flag. Both versions then dispatch the
+  remaining lines on TOKEN COUNT/SHAPE: the first two-token line → the
+  life pair
   (permanent half clamps 500, `:55221-55224`); the second → the mana pair
   (permanent half clamps 200, `:55227-55229`); the two-token line
   directly BEFORE the first 41-token set line → the loadout index line
   (g55's block self-identifies by its set lines; index clamps 0..2,
   `Utils.Clamp` `:55720-55727`). So g89's flag-only v7, g88's
   pre-reconciliation life-only v7, g90's bread-only v7, g55's
-  loadout-only v7, the partial supersets and the full superset all load;
+  loadout-only v7, g89b's unlock-only v8, the partial supersets and the
+  full superset all load;
   missing pieces keep None/false/empty and the fresh defaults. Any
   merge of the lanes keeps THIS reader (the superset). Known ambiguity:
   a lone flag line cannot self-identify, so g90's bread-only file reads
   into the aegis slot (slot 1 wins); the superset writer emits both
   flags so the ambiguity ends at the fold (the layout doc records it).
-- **The flag field is carried, not used.** `Player.used_aegis_fruit`
+- **The flag fields are carried, not used.** `Player.used_aegis_fruit`
   lands on this branch ONLY for the sidecar round-trip (declared at
   g89's exact position after `used_gummy_worm`, ctor false `:56079`, so
   the merge dedupes cleanly). The +4 booster row (`:12853-12856`) and
   the 5338 use arm stay the W4-g89 lane's scope — this branch never
-  writes the flag in play.
+  writes the flag in play. `used_gummy_worm` pre-existed (S1-P-i35's
+  +3 fishing consumer, `player.rs`); the g89b fold adds ONLY its
+  sidecar carrier + restore — the 5341 use arm and the shared
+  `use_shimmer_permanent_item` core stay g89b's scope.
 - **The loadout fields are carried, not used (g55 fold).**
   `loadout.rs` lands byte-identical to g55 (`cde865fc`, blob
   `a647ae55`); `Player.loadouts`/`current_loadout_index` +

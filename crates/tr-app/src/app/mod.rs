@@ -2967,6 +2967,11 @@ impl App {
                         p.mana_max = effective;
                     }
                     p.used_aegis_fruit = saved.used_aegis_fruit;
+                    // W4-g89b fold: the Gummy Worm rides the unlock line's
+                    // SECOND token (`Player.cs:55259`; the +3 fishing row
+                    // `:12857-12860` — player.rs's S1-P-i35 consumer reads
+                    // the flag). Older sidecars load false.
+                    p.used_gummy_worm = saved.used_gummy_worm;
                     // W4-g90 fold: the permanent artisan-loaf unlock rides
                     // the superset's FOURTH post-dye line
                     // (`Player.ateArtisanBread`, `Player.cs:2048`; vanilla
