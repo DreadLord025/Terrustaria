@@ -585,6 +585,12 @@ impl NpcKind {
             NpcKind::WyvernBody => 225,
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
+            // W4-d40: ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp keep their vanilla ids (free in the protocol space).
+            NpcKind::ArmedZombie => 430,
+            NpcKind::ArmedZombieEskimo => 431,
+            NpcKind::ArmedZombiePincussion => 432,
+            NpcKind::ArmedZombieSlimed => 433,
+            NpcKind::ArmedZombieSwamp => 434,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -915,6 +921,12 @@ impl NpcKind {
             225 => NpcKind::WyvernBody,
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            430 => NpcKind::ArmedZombie,
+            431 => NpcKind::ArmedZombieEskimo,
+            432 => NpcKind::ArmedZombiePincussion,
+            433 => NpcKind::ArmedZombieSlimed,
+            434 => NpcKind::ArmedZombieSwamp,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1788,6 +1800,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Hit_1",
             NpcKind::AngryNimbus => "NPC_Hit_30",
             NpcKind::DungeonSpirit => "NPC_Hit_36",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => "NPC_Hit_1",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2092,6 +2110,12 @@ impl NpcKind {
             NpcKind::BlazingWheel => "NPC_Killed_1",
             NpcKind::AngryNimbus => "NPC_Killed_33",
             NpcKind::DungeonSpirit => "NPC_Killed_39",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => "NPC_Killed_2",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2450,6 +2474,12 @@ impl NpcKind {
             // Spirit); 72 - :13888 (the ForceBubble).
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => 3,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -2980,6 +3010,12 @@ impl NpcKind {
             // 384 18x40 (`:13885`/`:13887`).
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => (18.0, 40.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3621,6 +3657,12 @@ impl NpcKind {
             // 300 (`:12228`), 288 200 (`:12745`), 384 1000 (`:13884`).
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::ArmedZombie => 45,
+            NpcKind::ArmedZombieEskimo => 50,
+            NpcKind::ArmedZombiePincussion => 50,
+            NpcKind::ArmedZombieSlimed => 40,
+            NpcKind::ArmedZombieSwamp => 45,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -3985,6 +4027,12 @@ impl NpcKind {
             // head's `damage = 0` (`:8563`, the branch writes none).
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::ArmedZombie => 14,
+            NpcKind::ArmedZombieEskimo => 16,
+            NpcKind::ArmedZombiePincussion => 16,
+            NpcKind::ArmedZombieSlimed => 13,
+            NpcKind::ArmedZombieSwamp => 13,
             NpcKind::DungeonSpirit => 70,
         }
     }

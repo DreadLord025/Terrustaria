@@ -3553,6 +3553,13 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
+        // W4-d40: the new kinds' net seeds (the bare stats seed; the
+        // net state overwrites the position below).
+        crate::npc::NpcKind::ArmedZombie
+        | crate::npc::NpcKind::ArmedZombieEskimo
+        | crate::npc::NpcKind::ArmedZombiePincussion
+        | crate::npc::NpcKind::ArmedZombieSlimed
+        | crate::npc::NpcKind::ArmedZombieSwamp => crate::npc::Npc::new(kind, _x, y, 1, 0.0),
         // The wyvern family (`S1-D-3` wyvern): the sky flyer's net seed
         // rides the hover ctor (the net state overwrites the position
         // below); the chain links rebuild through the sim wiring — a lone

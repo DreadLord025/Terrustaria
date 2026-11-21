@@ -471,6 +471,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         // (`NPCID.cs:8892-8893`).
         | NpcKind::BloodZombie
         | NpcKind::Drippler => &[],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::ArmedZombie
+        | NpcKind::ArmedZombiePincussion
+        | NpcKind::ArmedZombieSlimed
+        | NpcKind::ArmedZombieSwamp => &[],
+        NpcKind::ArmedZombieEskimo => &[44, 324],
         // S1-D-3 W-9 fishron wiring — 370/371/372/373 have NO
         // `DebuffImmunitySets` rows (`NPCID.cs:6075+`'s dictionary carries
         // no 370-373 keys) — the null-row else-branch, no immunity.

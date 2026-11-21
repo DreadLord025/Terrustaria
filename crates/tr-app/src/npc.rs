@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp.
+    /// `NPCID.ArmedZombie` (430): 18x40, aiStyle 3, dmg 14, def 6, 45 HP,
+    /// kb 0.5, value 60 (`NPC.cs` SetDefaults arm).
+    ArmedZombie,
+    /// `NPCID.ArmedZombieEskimo` (431): 18x40, aiStyle 3, dmg 16, def 8, 50 HP,
+    /// kb 0.45, value 80 (`NPC.cs` SetDefaults arm).
+    ArmedZombieEskimo,
+    /// `NPCID.ArmedZombiePincussion` (432): 18x40, aiStyle 3, dmg 16, def 8, 50 HP,
+    /// kb 0.45, value 65 (`NPC.cs` SetDefaults arm).
+    ArmedZombiePincussion,
+    /// `NPCID.ArmedZombieSlimed` (433): 18x40, aiStyle 3, dmg 13, def 6, 40 HP,
+    /// kb 0.55, value 55 (`NPC.cs` SetDefaults arm).
+    ArmedZombieSlimed,
+    /// `NPCID.ArmedZombieSwamp` (434): 18x40, aiStyle 3, dmg 13, def 8, 45 HP,
+    /// kb 0.45, value 80 (`NPC.cs` SetDefaults arm).
+    ArmedZombieSwamp,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3528,6 +3544,12 @@ impl Npc {
             // (`:8533`) — the stock `_ => 0.4` below never sees it.
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::ArmedZombie => 0.5,
+            NpcKind::ArmedZombieEskimo => 0.45,
+            NpcKind::ArmedZombiePincussion => 0.45,
+            NpcKind::ArmedZombieSlimed => 0.55,
+            NpcKind::ArmedZombieSwamp => 0.45,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -3908,6 +3930,12 @@ impl Npc {
             // (`:12227`), 288 30 (`:12744`), 384 20 (`:13886`).
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::ArmedZombie => 6,
+            NpcKind::ArmedZombieEskimo => 8,
+            NpcKind::ArmedZombiePincussion => 8,
+            NpcKind::ArmedZombieSlimed => 6,
+            NpcKind::ArmedZombieSwamp => 8,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4280,6 +4308,12 @@ impl Npc {
             // writes none).
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::ArmedZombie => 60.0,
+            NpcKind::ArmedZombieEskimo => 80.0,
+            NpcKind::ArmedZombiePincussion => 65.0,
+            NpcKind::ArmedZombieSlimed => 55.0,
+            NpcKind::ArmedZombieSwamp => 80.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6284,6 +6318,12 @@ impl Npc {
             // claimed by the aiStyle-69/70/71 axis above (the Spazmatism
             // precedent — this arm keeps the kind match exhaustive and
             // routes to the same machines for direct-kind callers).
+            // W4-d40: ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp ride the family machine.
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => self.update_zombie(world, player, dt),
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -8978,6 +9018,22 @@ impl Npc {
             // windows; the materialize/bolt states flap with the 60/80
             // window; the transform pause flaps with the 120/160 window.
             // States 10..13 (phase 3) have NO arm — the frame holds.
+            NpcKind::ArmedZombie
+            | NpcKind::ArmedZombieEskimo
+            | NpcKind::ArmedZombiePincussion
+            | NpcKind::ArmedZombieSlimed
+            | NpcKind::ArmedZombieSwamp => {
+                // `FindFrame` case 430-436 (`NPC.cs:70879-70951`): the ai[2]
+                // attack ladder wins first (rows 3/4/5/6 on the <5/<10/<15
+                // bands), else the case-3 walker strip over the 7-row sheet.
+                if self.ai[2] > 0.0 {
+                    self.frame = if self.ai[2] < 5.0 { 3 }
+                        else if self.ai[2] < 10.0 { 4 }
+                        else if self.ai[2] < 15.0 { 5 } else { 6 };
+                    return;
+                }
+                self.walker_frame();
+            }
             NpcKind::DukeFishron => {
                 if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
                     // `:72144-72160` — num45 = 5 (state 0) / 4 (state 5).
@@ -18600,6 +18656,12 @@ impl Npc {
             NpcKind::WyvernBody => 225,
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::ArmedZombie => 430,
+            NpcKind::ArmedZombieEskimo => 431,
+            NpcKind::ArmedZombiePincussion => 432,
+            NpcKind::ArmedZombieSlimed => 433,
+            NpcKind::ArmedZombieSwamp => 434,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -23669,7 +23731,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 275] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24010,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp.
+        NpcKind::ArmedZombie,
+        NpcKind::ArmedZombieEskimo,
+        NpcKind::ArmedZombiePincussion,
+        NpcKind::ArmedZombieSlimed,
+        NpcKind::ArmedZombieSwamp,
     ];
 
     #[test]
@@ -27559,7 +27627,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            270,
+            275,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -33544,5 +33612,67 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+}
+
+
+/// W4-d40 (NPCID 421-490 roster wave): the ArmedZombie, ArmedZombieEskimo, ArmedZombiePincussion, ArmedZombieSlimed, ArmedZombieSwamp
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_armedzombie_armedzombieeskimo_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::ArmedZombie, 430u16, 3u8, 18.0, 40.0, 14, 6, 45, 0.5f32, 60.0),
+            (NpcKind::ArmedZombieEskimo, 431u16, 3u8, 18.0, 40.0, 16, 8, 50, 0.45f32, 80.0),
+            (NpcKind::ArmedZombiePincussion, 432u16, 3u8, 18.0, 40.0, 16, 8, 50, 0.45f32, 65.0),
+            (NpcKind::ArmedZombieSlimed, 433u16, 3u8, 18.0, 40.0, 13, 6, 40, 0.55f32, 55.0),
+            (NpcKind::ArmedZombieSwamp, 434u16, 3u8, 18.0, 40.0, 13, 8, 45, 0.45f32, 80.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::ArmedZombie.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::ArmedZombie.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::ArmedZombieEskimo.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::ArmedZombieEskimo.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::ArmedZombiePincussion.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::ArmedZombiePincussion.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::ArmedZombieSlimed.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::ArmedZombieSlimed.death_sound(), Some("NPC_Killed_2"));
+        assert_eq!(NpcKind::ArmedZombieSwamp.hit_sound(), Some("NPC_Hit_1"));
+        assert_eq!(NpcKind::ArmedZombieSwamp.death_sound(), Some("NPC_Killed_2"));
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::ArmedZombie.to_u16(), 430);
+        assert_eq!(NpcKind::from_u16(430), Some(NpcKind::ArmedZombie));
+        assert_eq!(NpcKind::ArmedZombieEskimo.to_u16(), 431);
+        assert_eq!(NpcKind::from_u16(431), Some(NpcKind::ArmedZombieEskimo));
+        assert_eq!(NpcKind::ArmedZombiePincussion.to_u16(), 432);
+        assert_eq!(NpcKind::from_u16(432), Some(NpcKind::ArmedZombiePincussion));
+        assert_eq!(NpcKind::ArmedZombieSlimed.to_u16(), 433);
+        assert_eq!(NpcKind::from_u16(433), Some(NpcKind::ArmedZombieSlimed));
+        assert_eq!(NpcKind::ArmedZombieSwamp.to_u16(), 434);
+        assert_eq!(NpcKind::from_u16(434), Some(NpcKind::ArmedZombieSwamp));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombie, SlimeVariant::Blue).kind, NpcKind::Zombie);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombieEskimo, SlimeVariant::Blue).kind, NpcKind::ZombieEskimo);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombiePincussion, SlimeVariant::Blue).kind, NpcKind::PincushionZombie);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombieSlimed, SlimeVariant::Blue).kind, NpcKind::SlimedZombie);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ArmedZombieSwamp, SlimeVariant::Blue).kind, NpcKind::SwampZombie);
     }
 }

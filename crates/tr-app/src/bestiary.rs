@@ -2292,6 +2292,13 @@ pub fn try_entry_for_npc(
         // kill credit is "Sharkron" — only the UI provider maps onto 370,
         // `BestiaryDatabaseNPCsPopulator.cs:691`).
         NpcKind::DetonatingBubble | NpcKind::Sharkron2 => NpcKind::DukeFishron,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::ArmedZombie => NpcKind::Zombie,
+        NpcKind::ArmedZombieEskimo => NpcKind::ZombieEskimo,
+        NpcKind::ArmedZombiePincussion => NpcKind::PincushionZombie,
+        NpcKind::ArmedZombieSlimed => NpcKind::SlimedZombie,
+        NpcKind::ArmedZombieSwamp => NpcKind::SwampZombie,
         other => other,
     };
     ENTRIES.iter().find(|e| {
@@ -2363,6 +2370,13 @@ pub fn entry_for_npc(kind: NpcKind, variant: SlimeVariant) -> &'static BestiaryE
         // it never has an entry of its own (the Sleeping Angler precedent;
         // the banner fold agrees — `BannerSystem.cs:777-779` shares 141).
         NpcKind::ForceBubble => NpcKind::MartianOfficer,
+        // W4-d40: the bestiary credit folds (`ContentSamples.cs`;
+        // the Hide=true variants have no own entry).
+        NpcKind::ArmedZombie => NpcKind::Zombie,
+        NpcKind::ArmedZombieEskimo => NpcKind::ZombieEskimo,
+        NpcKind::ArmedZombiePincussion => NpcKind::PincushionZombie,
+        NpcKind::ArmedZombieSlimed => NpcKind::SlimedZombie,
+        NpcKind::ArmedZombieSwamp => NpcKind::SwampZombie,
         other => other,
     };
     ENTRIES
