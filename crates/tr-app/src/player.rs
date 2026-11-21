@@ -10565,14 +10565,22 @@ impl Player {
     /// machine (the W4-f3 census found zero `Dust.NewDust` in it).
     fn carpet_movement(&mut self, gravity: f32) {
         let mut flag = false;
+        // W4-f3 keep-one (g66 b2dcd063 union): the C# zeroes an unequipped
+        // tier's budget at `:26745-26752` BEFORE `CarpetMovement` (`:26766`).
+        // The port's zeroing lives at the `flight_section` head, which runs
+        // AFTER this call — so the gate shadow-reads the same zero here (a
+        // stale budget from a just-unequipped wing/rocket tier must not block
+        // the launch). g66's arm; the rest of the machine is byte-identical.
+        let wing_time = if self.wings_logic == 0 { 0.0 } else { self.wing_time };
+        let rocket_time = if self.rocket_boots == 0 { 0 } else { self.rocket_time };
         // `:21845`: the launch gate — the nine can-flags ALL spent.
         if !self.grappling_active
             && self.carpet
             && !self.can_jump_again.iter().any(|&c| c)
             && self.jump == 0
             && self.vy != 0.0
-            && self.rocket_time == 0
-            && self.wing_time == 0.0
+            && rocket_time == 0
+            && wing_time == 0.0
             && !self.mount.is_active()
         {
             if self.control_jump && self.can_carpet {
@@ -24063,9 +24071,33 @@ mod w4_f3_carpet_tests {
         q.carpet_movement(GRAVITY);
         assert_eq!(q.carpet_frame, -1, "a can-flag refuses (:21845)");
         let mut r = carpet_ready(&w);
+        r.wings_logic = 1; // an EQUIPPED wing tier (`:26745` keeps its budget)
         r.wing_time = 10.0; // a wing budget
         r.carpet_movement(GRAVITY);
         assert_eq!(r.carpet_frame, -1, "wingTime != 0 refuses (:21845)");
+    }
+
+    /// W4-f3 keep-one (the g66 b2dcd063 union arm): the C# `:26745-26752`
+    /// zeroes an UNEQUIPPED tier's budget before the `:21845` gate reads it.
+    /// A stale `wingTime`/`rocketTime` left over from a just-unequipped tier
+    /// must NOT block the launch — the gate shadow-reads zero.
+    #[test]
+    fn w4_f3_the_carpet_gate_shadow_reads_the_unequipped_budgets() {
+        let w = ground_world();
+        let mut p = carpet_ready(&w);
+        p.wings_logic = 0; // no wing tier
+        p.wing_time = 170.0; // a STALE budget from the removed wings
+        p.rocket_boots = 0; // no rocket tier
+        p.rocket_time = 7; // a STALE rocket budget
+        p.carpet_movement(GRAVITY);
+        assert!(p.carpet_frame >= 0, "the stale budgets read zero (:26745-26752)");
+        assert_eq!(p.carpet_time, 299, "the launch armed (:21850)");
+        // …and an EQUIPPED rocket tier's live budget still refuses.
+        let mut q = carpet_ready(&w);
+        q.rocket_boots = 2;
+        q.rocket_time = 7;
+        q.carpet_movement(GRAVITY);
+        assert_eq!(q.carpet_frame, -1, "rocketTime != 0 refuses (:21845)");
     }
 
     /// `:21866-21879` — the 6-frame glide cadence: the counter accumulates
