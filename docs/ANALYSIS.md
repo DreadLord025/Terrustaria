@@ -39536,8 +39536,10 @@ closure receipts, then declares the band complete.
    landed on `task/W4-c8-style66-crawling-critters`
    (`scan_world_for_critter_sights` at the `update_npcs` head,
    `a17cd75b8`) and GENERALIZED to the C# `CountsAsACritter` gate
-   (`af2a06880`, local FINAL tip `af1f8ba1d` — origin pushes stop at
-   `3705670d3`, the nine-kind-list form; recorded). **All six d38
+   (`af2a06880`, local FINAL tip `af1f8ba1d` — at RETIRE time origin
+   pushes stopped at `3705670d3`, the nine-kind-list form; the
+   SEAL-VERIFY re-probe confirms the generic gate NOW PUSHED at c8
+   origin tip `7c2de9c06`, `bestiary.rs:2280`/`:2412`). **All six d38
    critters (297/298/299/300/303/337) pass the generic gate on their
    SetDefaults rows (5 HP / 0 dmg), no other d38 kind passes** —
    mechanically extracted; the credit ids land unfolded in the same
@@ -39551,10 +39553,21 @@ closure receipts, then declares the band complete.
    portraits COMPLETE; the 6-item merger hand-off published (the
    stand-in drops, the keep-one dedupes, the 328 card drop, the UI
    sight fold, the 113 §10.6 step-7 lazy migration, GAP-2).
+5. **SEAL-VERIFY addendum (same day, later round)**: the residual
+   294/296 re-probed at d44's refresh-4 tip `ce2c3a24a` — STILL no
+   wave-B cs_id hook/mapper, and the 68 §5 "ZERO real wire work left"
+   verdict does NOT cover the wave-B module (not on its DONE rows nor
+   its next-rounds line). The **task seed → d44** is now recorded in
+   research/125 §11 (the 2-id wave-B wiring batch on the extra6
+   `pub(crate)` fighter-delegate precedent, 289 excluded per E3, the
+   stand-in drop + witness re-pin at that batch). The RETIRE receipt's
+   check count corrected 44/44 → **41/41** (the committed output and a
+   fresh RUN both show 41 PASS lines, 0 FAIL — the 44 was a
+   transcription error; the script and its output are unchanged).
 
 ### Verification (RETIRE)
 
-Code-only: `tools/_d38_retire_check.py` RUN, **44/44 PASS** (R1 the
+Code-only: `tools/_d38_retire_check.py` RUN, **41/41 PASS** (R1 the
 d44-tip claim sets/hook order/residual + the wave-B no-hook proof; R2
 the six unique 328 drop anchors + the panic-path; R3 the generic gate
 + the six-critter coverage + the credit rows + the gold-key absence;

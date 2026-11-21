@@ -464,6 +464,24 @@ inline arms vs extra7). 289 GiantCursedSkull keeps the d38 inline arm
 twin). None of these arms draws RNG in either form — the dedupe cannot
 move a stream.
 
+**TASK SEED → d44 (the wave-B wiring batch, 2 ids)**: re-probed at d44's
+refresh-4 tip `ce2c3a24a` — STILL no wave-B hook (`find_frame_wave_b` /
+`npc_findframe_b::find_frame_b` absent from `npc.rs`, no cs_id mapper in
+`npc_findframe_b.rs`), while the 68 §5 refresh-4 worklist reads "ZERO
+real wire work left on the landed modules" — the wave-B module is NOT
+on that list's DONE rows (extra6/7/7b/7c/8 only) nor its next-rounds
+line (7d/7e/7f/extra10). The batch this seed names: claim **294
+AngryBonesBig + 296 AngryBonesBigHelmet** (`npc_findframe_b.rs:239/:252`
+and `:240/:253`, fighter group, air pin 0 per `NPC.cs:69647`) via a
+cs_id hook + bridge on the extra6 precedent (`9d6baa89`'s
+`humanoid_fighter_frame` lift is already `pub(crate)` — the delegate
+`humanoid_fighter_frame(…, air_row0 = true, …)` needs no new lift);
+289 stays EXCLUDED (the E3 dedupe keeps the d38 inline arm). At that
+batch the d38 stand-in arms `npc.rs:9514-9515`/`:9518-9519` drop and the
+FINAL witness's 294/296 rows re-pin (§11 recipe above). Owner: d44 (or
+the wiring-round merger); NOT d38's work — recorded here so the "zero
+wire work" refresh-4 verdict cannot silently retire the residual.
+
 ## 12. RETIRE: the 328 extra-card drop-hunk (GAP-3, exact)
 
 Vanilla facts re-verified at source this phase:
@@ -540,6 +558,18 @@ the -1 against the E4 count pins: 489→488 entries, ≤357→≤356 slots).
 The 35-kinds/35-sheets pins are UNCHANGED (the kind + its in-world
 sheet stay).
 
+**SEAL-VERIFY re-pin note**: d37's S4 SEAL (`fbb948172`, research/108
+S0-S4) supersedes E4/R9 — the CURRENT merger pins are ENTRIES **489**
+core / **509** grand, slots **347 surviving / 419 target** (grand
+≈439). This drop's -1 applies to THOSE rows: ENTRIES 489→**488** core
+/ 509→**508** grand; slots surviving 347→**346** (the 328 slot is
+packed on this branch and net-canonical, so S3 counts it surviving —
+the drop is a DELIBERATE exception to the survival rule, the vanilla
+Hide exclusion) / target 419→**418** (grand ≈439→≈438). The kinds
+pins (552/583), sheets pins (463/494) and cues (103/109) are
+UNCHANGED. The d38 KEEP-receipt (35 owned, 0 renumber, 0 drop) was
+CONSUMED per S1 — the band's final ids 281-337 stand.
+
 ## 13. RETIRE: GAP-1 closure receipt + the d38-band SEAL declaration
 
 ### 13a. GAP-1 (the critter sight provider) — CLOSED by c8, d38's six auto-covered
@@ -549,9 +579,12 @@ The §8 GAP-1 wiring-round item is ALREADY LANDED on
 `scan_world_for_critter_sights` (`a17cd75b8`, at the `update_npcs`
 head — `Main.cs:17914` before the UpdateNPC loop, the 300×200-inflated
 player box) and the FINAL generalization (`af2a06880`, local FINAL
-tip **`af1f8ba1d`** — the pushed origin tip `3705670d3` carries the
-nine-kind-list form; the generic gate is on the local final commits,
-the merger reads the branch tip). Receipt
+tip **`af1f8ba1d`** — at RETIRE time the pushed origin tip `3705670d3`
+still carried the nine-kind-list form; **SEAL-VERIFY re-probe: the
+generic gate is NOW PUSHED** — origin tip `7c2de9c06` (c8 retire phase
+4) carries `counts_as_a_critter` at `bestiary.rs:2280` +
+`unlock_state_world` at `:2412`, mechanically re-verified; the merger
+reads the branch tip). Receipt
 (`tools/_d38_retire_check.py` R3, RUN, ALL PASS):
 
 - The c8 FINAL dispatch is the GENERIC C# gate, not a kind list:
@@ -627,10 +660,37 @@ RETIRE receipts above close every d38-owned wiring item):
      `texture_net_id` unchanged);
   6. GAP-2 rarity stars (unclaimed, display-only).
 - **Verification record (RETIRE)**: `tools/_d38_retire_check.py` RUN,
-  **44/44 PASS** (R1 the claim sets/hooks/residual at `c863a7a5`, R2
+  **41/41 PASS** (R1 the claim sets/hooks/residual at `c863a7a5`, R2
   the six unique drop anchors + the panic-path proof, R3 the generic
   gate + the six-critter coverage + the credit rows, R4 the census
   pins 284/216/216/216 + the post-drop arithmetic); output
   `tools/_d38_retire_check.txt` committed. No cargo/tests/rustfmt
   (code-only); no game-code change this phase — the drop-hunks are
   the MERGER's edits, published exact so they are mechanical.
+
+### 13c. SEAL-VERIFY receipt (the later-round re-probe, this branch)
+
+The SEAL was re-verified item-by-item at the lanes' CURRENT tips
+(all reads mechanical, git-show/grep; no game-code change):
+
+- **d38f-sheets-seal**: LANDED — this doc §§11-13 + ANALYSIS RETIRE +
+  PORT_MAP/INDEX SEALED rows + the anchors canary row, pushed at
+  `9c0e3bc54`. The check-count transcription error 44/44 corrected to
+  **41/41** everywhere (the committed `_d38_retire_check.txt` always
+  had 41 PASS lines; a fresh RUN this round: 41 PASS / 0 FAIL,
+  ALL PASS).
+- **Residual 294/296**: re-probed at d44 refresh-4 tip `ce2c3a24a` —
+  still NO wave-B cs_id hook/mapper; the **task seed → d44** recorded
+  in §11 (the 68 §5 "zero wire work" verdict does not cover wave-B).
+- **328**: the 7-part drop-hunk + panic-path proof stand (§12); the
+  S4-SEAL re-pin note added (489→488 / 347→346 / 419→418).
+- **GAP-1**: c8's generic gate NOW PUSHED — origin `7c2de9c06`
+  (retire phase 4) carries `counts_as_a_critter` (`bestiary.rs:2280`)
+  + `unlock_state_world` (`:2412`); the six auto-covered, action NONE.
+- **d35-atlas**: research/113 §16.1 d38d cross-receipt LANDED and
+  pushed (`1afd327b9`, 113 §9.2/§11/§16 all carry the 35 sheets;
+  the sheets-family table §10.2 + the lazy step-7 contract unchanged).
+- **d37-roster**: E8 d38 KEEP-receipt (35 owned, 0 renumber, 0 drop)
+  CONSUMED per S1 at `fbb948172` (pushed); S4 merger bible orders
+  d34→**d38**→d37→d40→d42→d35-renumber-last→small-lanes; the band's
+  final ids 281-337 stand.
