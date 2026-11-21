@@ -1116,6 +1116,102 @@ impl App {
                 self.world_key = None;
                 server.broadcast_except(&S2c::TilePaint(p), id); // `:2925`
             }
+            // `case 64` — a client painted/coated a wall
+            // (`MessageBuffer.cs:2929-2948`): coat 0 paints
+            // (`WorldGen.paintWall` `:2937`), else coats (`paintCoatWall`
+            // `:2941`); the host relays to the others (`:2945`).
+            C2s::WallPaint(p) => {
+                if p.coat == 0 {
+                    paint_wall(&mut self.world, p.x as i32, p.y as i32, p.paint);
+                } else {
+                    paint_coat_wall(&mut self.world, p.x as i32, p.y as i32, p.paint);
+                }
+                self.world_key = None;
+                server.broadcast_except(&S2c::WallPaint(p), id); // `:2945`
+            }
+            // `case 65` — a teleport (`MessageBuffer.cs:2949-3035`): the host
+            // forces the entity to the sender (`:2953-2956`), overrides the
+            // position from the live player when bit 2 is set (`:2979-2982`),
+            // then the kind ladder. Kind 3 is the client's ack (the
+            // unacknowledgedTeleports counter is the send path's, S1-I-4).
+            C2s::TeleportEntity(mut t) => {
+                t.entity = id as i16; // `:2953-2956`
+                if t.get_pos_from_player {
+                    // `:2979-2982`: the live player's position (slot 0 host).
+                    let pos = if id == 0 {
+                        self.player.as_ref().map(|p| (p.x, p.y))
+                    } else {
+                        self.remote_players.get(&id).map(|p| (p.x, p.y))
+                    };
+                    if let Some((x, y)) = pos {
+                        t.x = x;
+                        t.y = y;
+                    }
+                }
+                match t.kind {
+                    0 => {
+                        // `:2985-2995`: the player teleport + relay.
+                        self.apply_player_teleport(id, t.x, t.y, t.style);
+                        server.broadcast_except(&S2c::TeleportEntity(t), id); // `:2989`
+                    }
+                    1 => {
+                        // `:2996-2999`: the NPC teleport + netOffset zero.
+                        if let Some(npc) = self.npcs.get_mut(t.entity as usize) {
+                            npc.x = t.x;
+                            npc.y = t.y;
+                            npc.net_offset = Vec2::ZERO; // `:2998`
+                        }
+                    }
+                    2 => {
+                        // `:3000-3028`: player-to-player — teleport, relay to
+                        // ALL (`:3008`), then the nearest-peer chat.
+                        self.apply_player_teleport(id, t.x, t.y, t.style);
+                        server.broadcast(&S2c::TeleportEntity(t)); // `:3008`
+                        // The nearest active peer to the sender (`:3009-3022`).
+                        let sender_pos = if id == 0 {
+                            self.player.as_ref().map(|p| (p.x, p.y))
+                        } else {
+                            self.remote_players.get(&id).map(|p| (p.x, p.y))
+                        };
+                        if let Some((sx, sy)) = sender_pos {
+                            let mut nearest: Option<(u32, f32)> = None;
+                            for (&pid, p) in &self.remote_players {
+                                if pid == id {
+                                    continue;
+                                }
+                                let d = ((p.x - sx).powi(2) + (p.y - sy).powi(2)).sqrt();
+                                if nearest.map_or(true, |(_, bd)| d < bd) {
+                                    nearest = Some((pid, d));
+                                }
+                            }
+                            if let Some((nid, _)) = nearest {
+                                let sender_name = if id == 0 {
+                                    self.player_name.clone()
+                                } else {
+                                    self.remote_players.get(&id).map(|p| p.name.clone()).unwrap_or_default()
+                                };
+                                let target_name = self.remote_players.get(&nid).map(|p| p.name.clone()).unwrap_or_default();
+                                let text = crate::lang::text_args(
+                                    "Game.HasTeleportedTo",
+                                    &[sender_name, target_name],
+                                );
+                                // `new Color(250, 250, 0)` (`:3025`).
+                                crate::chat::broadcast_death_text(&mut self.chat, &text, [250, 250, 0]);
+                                let sm = crate::app::netmodules::ServerMessage {
+                                    author: 255,
+                                    text,
+                                    color: net::Rgb(250, 250, 0),
+                                };
+                                server.broadcast(&S2c::NetModule {
+                                    module: crate::app::netmodules::module_id::TEXT,
+                                    body: sm.encode(),
+                                });
+                            }
+                        }
+                    }
+                    _ => {} // kind 3 ack (`:3029-3032`): the counter is S1-I-4
+                }
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
             // (`MessageBuffer.cs:1851-1867`, `:4282-4297`, `:4328-4343`) land
@@ -2109,6 +2205,47 @@ impl App {
                 }
                 self.world_key = None;
             }
+            // `case 64` — the host's wall paint/coat relay
+            // (`MessageBuffer.cs:2929-2948`): the client applies the same
+            // paint/coat to its world copy.
+            S2c::WallPaint(p) => {
+                if p.coat == 0 {
+                    paint_wall(&mut self.world, p.x as i32, p.y as i32, p.paint);
+                } else {
+                    paint_coat_wall(&mut self.world, p.x as i32, p.y as i32, p.paint);
+                }
+                self.world_key = None;
+            }
+            // `case 65` — the host's teleport broadcast
+            // (`MessageBuffer.cs:2949-3035`): kind 0/2 teleports the subject
+            // player (`:2986`/`:3002`), kind 1 the NPC + netOffset zero
+            // (`:2997-2998`). Our own kind-0 echo is skipped (the local player
+            // is authoritative); the kind-3 ack send-back (`:2991-2994`) is
+            // the send path's (S1-I-4).
+            S2c::TeleportEntity(t) => {
+                match t.kind {
+                    0 | 2 => {
+                        if t.entity as u32 == self.local_id {
+                            return; // our own teleport — the local sim owns it
+                        }
+                        if let Some(p) = self.remote_players.get_mut(&(t.entity as u32)) {
+                            p.x = t.x;
+                            p.y = t.y;
+                            p.off_x = 0.0; // `Player.netOffset = Vector2.Zero`
+                            p.off_y = 0.0;
+                        }
+                    }
+                    1 => {
+                        if let Some(npc) = self.net_npcs.get_mut(&(t.entity as u32)) {
+                            npc.x = t.x;
+                            npc.y = t.y;
+                            npc.net_offset = Vec2::ZERO; // `:2998`
+                            self.net_npcs_dirty = true;
+                        }
+                    }
+                    _ => {} // kind 3 ack is host-only (`:3030`)
+                }
+            }
             // `case 59` — a peer tripped a switch: replay it locally
             // (`MessageBuffer.cs:2682-2693`).
             S2c::HitSwitch(hs) => {
@@ -2386,6 +2523,23 @@ impl App {
             self.world.height
         );
         true
+    }
+
+    /// `Player.Teleport` (`Player.cs:37414-37496`) for the `65` reader: the
+    /// host's local player (slot 0) rides `teleport_style`, a peer's record
+    /// takes the position with the netOffset zeroed (`:37447`). The camera /
+    /// teleport-effect / map halves are render seams (out). W4-g49.
+    fn apply_player_teleport(&mut self, slot: u32, x: f32, y: f32, style: u8) {
+        if slot == 0 {
+            if let Some(p) = self.player.as_mut() {
+                p.teleport_style(x, y, style as i32);
+            }
+        } else if let Some(p) = self.remote_players.get_mut(&slot) {
+            p.x = x;
+            p.y = y;
+            p.off_x = 0.0; // `Player.netOffset = Vector2.Zero` (`:37447`)
+            p.off_y = 0.0;
+        }
     }
 
     /// Builds the `7 WorldInfo` body from the live world (`App.world`).
@@ -5827,5 +5981,76 @@ mod message_family_tests {
             Some(13),
             "the relay painted the client's copy (`:2925`)"
         );
+    }
+
+    /// W4-g49 `64 SyncWallPaintOrCoating` (`MessageBuffer.cs:2929-2948`): the
+    /// host applies the wall paint and relays; the client's copy takes it.
+    #[test]
+    fn w4_g49_wall_paint_applies_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A wall at (5, 4) on both sides.
+        for app in [&mut host_app, &mut client_app] {
+            let i = app.world.index(5, 4);
+            app.world.tiles[i].wall = 1;
+            app.world.set_wall_paint(5, 4, 0);
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::WallPaint(net::TilePaint {
+                x: 5,
+                y: 4,
+                paint: 9,
+                coat: 0,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert_eq!(host_app.world.wall_paint(5, 4), 9, "the host painted the wall (`:2937`)");
+        assert_eq!(client_app.world.wall_paint(5, 4), 9, "the relay painted the client's wall (`:2945`)");
+    }
+
+    /// W4-g49 `65 TeleportEntity` (`MessageBuffer.cs:2949-3035`): a kind-0
+    /// player teleport forces the entity to the sender (`:2953-2956`), moves
+    /// the host's peer record and relays to the OTHERS (`:2989`); a second
+    /// client's copy of the sender takes the position, netOffset zeroed.
+    #[test]
+    fn w4_g49_teleport_entity_moves_the_peer_and_relays() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // A second client on the same host (the relay's recipient).
+        let mut second = flow_app(None, Vec::<PlayerEntry>::new(), Vec::<WorldEntry>::new());
+        let addr = match &host_app.net {
+            NetRole::Host(server) => server.addr().to_string(),
+            _ => unreachable!("host role"),
+        };
+        second.player_name = "second".into();
+        second.net = NetRole::Client(net::Client::connect(&addr).unwrap());
+        second.join_target = Some((addr, String::new()));
+        drive_to(&mut host_app, &mut second, net::client_state::IN_WORLD);
+        let sender_slot = client_app.local_id;
+        // The second client's copy of the sender peer, at the origin.
+        second.remote_players.insert(sender_slot, net::PlayerNet { id: sender_slot, ..Default::default() });
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TeleportEntity(net::TeleportEntity {
+                entity: 0, // forced to the sender on the host
+                x: 500.0,
+                y: 300.0,
+                style: 1,
+                kind: 0,
+                get_pos_from_player: false,
+                extra_info: None,
+            }));
+        }
+        for _ in 0..30 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            second.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            second.poll_net();
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let host_peer = host_app.remote_players.get(&sender_slot).expect("host peer");
+        assert_eq!((host_peer.x, host_peer.y), (500.0, 300.0), "the host moved the peer (`:2986`)");
+        let relayed = second.remote_players.get(&sender_slot).expect("second's sender peer");
+        assert_eq!((relayed.x, relayed.y), (500.0, 300.0), "the relay moved the second client's copy");
+        assert_eq!((relayed.off_x, relayed.off_y), (0.0, 0.0), "the netOffset zeroed (`:37447`)");
     }
 }
