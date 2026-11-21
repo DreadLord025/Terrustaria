@@ -360,8 +360,8 @@ pub fn find_frame_extra11(kind: FindFrameExtra11Kind, s: &mut FrameState, i: &Fr
                 s.row = 1;
             }
         }
-        // `case 552`/`case 553` (`NPC.cs:67452-67453` → `:67455-67492`,
-        // shared with 554 — batch 2): the ai[0] > 0 attack ladder
+        // `case 552`/`case 553`/`case 554` (`NPC.cs:67452-67454` →
+        // `:67455-67492`): the ai[0] > 0 attack ladder
         // (`:67455-67469`): the UNCONDITIONAL sprite copy, the row
         // outside 10..13 OR ai[1] == 29 resets to row 10 + counter 0,
         // the ++counter >= 6 step gated on row < 13 (at row 13 the
@@ -371,7 +371,9 @@ pub fn find_frame_extra11(kind: FindFrameExtra11Kind, s: &mut FrameState, i: &Fr
         // row-9 snap (`:67480-67485`), the |vx| accumulator with the
         // >= 64 (or negative) reset (`:67486-67490`) and the
         // `(int)(counter/8)` row (`:67491`) over rows 0-7.
-        FindFrameExtra11Kind::DD2GoblinT1 | FindFrameExtra11Kind::DD2GoblinT2 => {
+        FindFrameExtra11Kind::DD2GoblinT1
+        | FindFrameExtra11Kind::DD2GoblinT2
+        | FindFrameExtra11Kind::DD2GoblinT3 => {
             // `:67455-67469`.
             if i.ai0 > 0.0 {
                 s.sprite_dir = i.direction;
@@ -412,9 +414,107 @@ pub fn find_frame_extra11(kind: FindFrameExtra11Kind, s: &mut FrameState, i: &Fr
             }
             s.row = (s.counter / 8.0) as i32 as u32;
         }
-        // The batch-2/3 kinds land in the next commits (the 5-kinds-
+        // `case 555`/`case 556`/`case 557` (`NPC.cs:67797-67799` →
+        // `:67800-67837`): the ai[1] > 0 && ai[0] > 0 attack ladder
+        // (`:67800-67814`): the UNCONDITIONAL sprite copy, the row
+        // outside 10..16 OR ai[1] == 41 resets to row 10 + counter 0,
+        // the ++counter >= 6 step gated on row < 16 (at row 16 the
+        // counter keeps growing); else the walk: the vy == 0 sprite
+        // copy (`:67815-67818`), the air-OR-backpedal row-1 pin
+        // (`:67819-67824`), the idle row-0 snap (`:67825-67830`), the
+        // |vx| accumulator with the >= 64 (or negative) reset
+        // (`:67831-67835`) and the `(int)(counter/8) + 2` row
+        // (`:67836`) over rows 2-9.
+        FindFrameExtra11Kind::DD2GoblinBomberT1
+        | FindFrameExtra11Kind::DD2GoblinBomberT2
+        | FindFrameExtra11Kind::DD2GoblinBomberT3 => {
+            // `:67800-67814`.
+            if i.ai1 > 0.0 && i.ai0 > 0.0 {
+                s.sprite_dir = i.direction;
+                if s.row < 10 || s.row > 16 || i.ai1 == 41.0 {
+                    s.row = 10;
+                    s.counter = 0.0;
+                }
+                s.counter += 1.0;
+                if s.counter >= 6.0 && s.row < 16 {
+                    s.counter = 0.0;
+                    s.row += 1;
+                }
+                return;
+            }
+            // `:67815-67818`.
+            if i.vy == 0.0 {
+                s.sprite_dir = i.direction;
+            }
+            // `:67819-67824`.
+            if i.vy != 0.0
+                || (i.direction == -1 && i.vx > 0.0)
+                || (i.direction == 1 && i.vx < 0.0)
+            {
+                s.counter = 0.0;
+                s.row = 1;
+                return;
+            }
+            // `:67825-67830`.
+            if i.vx == 0.0 {
+                s.counter = 0.0;
+                s.row = 0;
+                return;
+            }
+            // `:67831-67836`.
+            s.counter += i.vx.abs();
+            if s.counter >= 64.0 || s.counter < 0.0 {
+                s.counter = 0.0;
+            }
+            s.row = (s.counter / 8.0) as i32 as u32 + 2;
+        }
+        // `case 558` (`NPC.cs:67838` → `:67841-67873`, shared with
+        // 559/560 — batch 3): the vx-sign sprite copies
+        // (`:67842-67849`), the `ToRotation` aim (`Utils.cs:1655` =
+        // atan2(vy, vx)) + `(float)Math.PI` when vx < 0 (`:67850-67854`
+        // — the REAL PI, not the eye group's literal 3.14f),
+        // OVERRIDDEN to `vx * 0.1` when ai[0] != 2 (`:67855-67858`);
+        // the rotation write EVERY tick (`:67859`); the ai[0] == 2
+        // dive row-4 pin with the counter UNTOUCHED (`:67860-67863`)
+        // else the ++counter >= 6 step over rows 0-3 with the >= 4
+        // wrap (`:67864-67872`). Our v1 arm missed the sprite AND
+        // rotation writes entirely.
+        FindFrameExtra11Kind::DD2WyvernT1 => {
+            // `:67842-67849`.
+            if i.vx > 0.0 {
+                s.sprite_dir = 1;
+            }
+            if i.vx < 0.0 {
+                s.sprite_dir = -1;
+            }
+            // `:67850-67854` — ToRotation + PI when moving left.
+            let mut aim = i.vy.atan2(i.vx);
+            if i.vx < 0.0 {
+                aim += std::f32::consts::PI;
+            }
+            // `:67855-67858` — the non-dive override.
+            if i.ai0 != 2.0 {
+                aim = i.vx * 0.1;
+            }
+            // `:67859`.
+            s.rotation = aim;
+            // `:67860-67872`.
+            if i.ai0 == 2.0 {
+                s.row = 4;
+            } else {
+                s.counter += 1.0;
+                if s.counter >= 6.0 {
+                    s.row += 1;
+                    s.counter = 0.0;
+                    if s.row >= 4 {
+                        s.row = 0;
+                    }
+                }
+            }
+        }
+        // The batch-3 kinds land in the next commit (the 5-kinds-
         // per-commit rule — the e10 batch-1 catch-all precedent).
-        _ => unimplemented!("extra-11 batch 2/3"),
+        _ => unimplemented!("extra-11 batch 3"),
     }
 }
 
@@ -553,13 +653,17 @@ mod tests {
         assert_eq!(s.rotation, 0.5);
     }
 
-    /// 552/553 the DD2 goblins: the ai[0] attack ladder rows 10-13
+    /// 552/553/554 the DD2 goblins: the ai[0] attack ladder rows 10-13
     /// (the ai[1] == 29 reset, the row-13 counter-keep-growing quirk)
     /// + the walk (air 8, idle 9, the |vx| >=64 reset + counter/8 row).
     /// Expectations re-derived by mechanical replay.
     #[test]
     fn f27s11_goblins_walk_the_attack_ladder_and_the_64_reset() {
-        for k in [FindFrameExtra11Kind::DD2GoblinT1, FindFrameExtra11Kind::DD2GoblinT2] {
+        for k in [
+            FindFrameExtra11Kind::DD2GoblinT1,
+            FindFrameExtra11Kind::DD2GoblinT2,
+            FindFrameExtra11Kind::DD2GoblinT3,
+        ] {
             // vx 4: +4 a tick — the (int)(counter/8) row, the >=64
             // reset tick shows row 0.
             let rows = rows_over(k, input(4.0, 0.0), 16);
@@ -601,6 +705,100 @@ mod tests {
             find_frame_extra11(k, &mut s, &input(0.0, 0.0));
             assert_eq!((s.row, s.counter), (9, 0.0));
         }
+    }
+
+    /// 555-557 the DD2 bombers: the ai[1] > 0 && ai[0] > 0 attack
+    /// ladder rows 10-16 (the ai[1] == 41 reset) + the walk (air 1,
+    /// idle 0, the |vx| >=64 reset + counter/8+2 strip). Expectations
+    /// re-derived by mechanical replay.
+    #[test]
+    fn f27s11_bombers_walk_the_plus_two_strip_and_the_41_reset() {
+        for k in [
+            FindFrameExtra11Kind::DD2GoblinBomberT1,
+            FindFrameExtra11Kind::DD2GoblinBomberT2,
+            FindFrameExtra11Kind::DD2GoblinBomberT3,
+        ] {
+            // vx 4: the (int)(counter/8)+2 row, the >=64 reset tick
+            // shows row 2.
+            let rows = rows_over(k, input(4.0, 0.0), 16);
+            assert_eq!(rows, vec![2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 2]);
+            // The attack ladder: ai0 1 + ai1 1 — rows 10(x5)/11-15(x6
+            // each)/16 (the row-16 counter keeps growing).
+            let mut i = input(0.0, 0.0);
+            i.ai0 = 1.0;
+            i.ai1 = 1.0;
+            let rows = rows_over(k, i, 40);
+            assert_eq!(
+                rows,
+                vec![
+                    10, 10, 10, 10, 10, 11, 11, 11, 11, 11, 11, 12, 12, 12, 12, 12, 12, 13,
+                    13, 13, 13, 13, 13, 14, 14, 14, 14, 14, 14, 15, 15, 15, 15, 15, 15, 16,
+                    16, 16, 16, 16,
+                ]
+            );
+            // The ai[1] == 41 reset: row 10, counter 0 THEN ++ → 1.
+            let mut s = FrameState { row: 14, counter: 3.0, ..Default::default() };
+            let mut i41 = i;
+            i41.ai1 = 41.0;
+            find_frame_extra11(k, &mut s, &i41);
+            assert_eq!((s.row, s.counter), (10, 1.0));
+            // The attack gate needs BOTH ai slots > 0 — ai1 alone
+            // falls to the walk.
+            let mut s = FrameState { row: 12, counter: 3.0, ..Default::default() };
+            let mut i_only1 = input(0.0, 0.0);
+            i_only1.ai1 = 1.0;
+            find_frame_extra11(k, &mut s, &i_only1);
+            assert_eq!((s.row, s.counter), (0, 0.0), "the idle snap, not the ladder");
+            // The air pin: row 1 + counter 0.
+            let mut s = FrameState { row: 5, counter: 20.0, ..Default::default() };
+            find_frame_extra11(k, &mut s, &input(4.0, -3.0));
+            assert_eq!((s.row, s.counter), (1, 0.0));
+            // The idle snap: row 0 + counter 0.
+            find_frame_extra11(k, &mut s, &input(0.0, 0.0));
+            assert_eq!((s.row, s.counter), (0, 0.0));
+        }
+    }
+
+    /// 558 the DD2 wyvern: the vx-sign sprite + the ToRotation aim
+    /// (+PI when vx < 0, the vx*0.1 non-dive override) + the dive
+    /// row-4 pin / the >=6 full-4 step. Expectations re-derived by
+    /// mechanical replay (the rotation is the one f32 transcendental).
+    #[test]
+    fn f27s11_wyvern_aims_and_steps_the_full_four_rows() {
+        let k = FindFrameExtra11Kind::DD2WyvernT1;
+        // The >=6 step over rows 0-3 (row 4 is the dive pin only).
+        let rows = rows_over(k, input(1.0, 0.0), 20);
+        assert_eq!(
+            rows,
+            vec![0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 3, 3, 3]
+        );
+        // The wrap: row 3 + counter 5 → the step lands 4, the >=4 wrap
+        // snaps 0.
+        let mut s = FrameState { row: 3, counter: 5.0, ..Default::default() };
+        find_frame_extra11(k, &mut s, &input(1.0, 0.0));
+        assert_eq!((s.row, s.counter), (0, 0.0));
+        // The dive pin: ai0 == 2 → row 4, the counter UNTOUCHED, the
+        // sprite -1 (vx < 0), the rotation the aim + PI.
+        let mut s = FrameState { row: 1, counter: 3.0, ..Default::default() };
+        let mut i = input(-2.0, -2.0);
+        i.ai0 = 2.0;
+        find_frame_extra11(k, &mut s, &i);
+        assert_eq!((s.row, s.counter, s.sprite_dir), (4, 3.0, -1));
+        let expect = (-2.0f32).atan2(-2.0) + std::f32::consts::PI;
+        assert!((s.rotation - expect).abs() < 1e-6);
+        // The non-dive override: rotation = vx*0.1 (the f32 product).
+        let mut s = FrameState::default();
+        let mut i = input(3.0, 9.0);
+        i.ai0 = 0.0;
+        find_frame_extra11(k, &mut s, &i);
+        assert_eq!(s.rotation, 3.0 * 0.1);
+        assert_eq!(s.sprite_dir, 1);
+        // vx == 0: neither sprite if fires (the sprite holds), the
+        // rotation still writes (the override vx*0.1 = 0).
+        let mut s = FrameState { sprite_dir: -1, rotation: 0.7, ..Default::default() };
+        find_frame_extra11(k, &mut s, &input(0.0, 5.0));
+        assert_eq!(s.sprite_dir, -1);
+        assert_eq!(s.rotation, 0.0);
     }
 
     /// The seam maps exactly the slice's vanilla types (the full
