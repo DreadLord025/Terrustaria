@@ -81,3 +81,45 @@ the cull/sentinel branch); the storm-arm mirror with Deerclops (4-seed
 sweep, local budget counter); the live-76 budget break. Every mirror
 ends with a full-stream equality (`UnifiedRandom` clone compare — the
 d51 `stream_of` pattern), so any extra/missing/reordered draw fails.
+
+## Final sweep — every Main.cs dust-family site vs the union-table (dust-retire phase)
+
+Fresh `Dust\.NewDust|NewDustPerfect|NewDustDirect|CloneDust|Main\.dust\[|
+Dust\.[A-Za-z]` census over `decompiled/Terraria/Main.cs` (direct file,
+no junction recursion). Result: **ZERO unclaimed sites** — every
+spawn/draw/pool window is owned by the union-table (research/64's 23-site
+split + g13 research/68's residual census, re-verified here):
+
+| Main.cs window | family | owner at the union |
+| --- | --- | --- |
+| `:13088` (snowing) | site 1 | d130 `snow.rs` canonical (83 §-receipt: F1-F7 APPLIED at `099df89e2`/`16a792d56`); g11 body DEPRECATED → merger DROP |
+| `:13243/13262/13280/13290/13324/13340/13358` | sites 2-8 (styles 0/1/2/3/4/5/7) | g11 `teleport_dust.rs` (g61 widest-11 body) + the seams dispatcher — KEEP (116 §3) |
+| `:13390/:13410 (CloneDust)/:13438/:13452` | sites 9-11 + the clone (styles 10/11/13) | SAME g61 body covers them (`teleport_dust.rs` arms 10/11/13, the spawned-slot clone guard) — g12's `teleport_effect_case*` staged fns DROP (116 §4) |
+| `:22744/:22820` | sites 12/13 (bone-arm chains) | g12 `main_dust_b.rs` `skeletron_hand_bone_dust`/`prime_limb_bone_dust` — KEEP |
+| `:24736/24748/24752` | sites 14-16 (Moon Lord core) | g12 `moon_lord_core_dust` — KEEP; the feed FUSES with g13's tentacle feed into ONE caller pass (116 §6) |
+| `:24756` | site 17 (tentacle tip) | g13 `moon_lord_tentacle_tip_puff` — KEEP |
+| `:27381/:27384` | sites 18/19 (Tavernkeep ale pair) | g13 `tavernkeep_ale_sparkle` — KEEP |
+| `:38664` | site 20 (world-item sparkle) | g13 `world_item_sparkle` + `item_sparkle_feed` — KEEP |
+| `:57766/:57789/:57793` | sites 21-23 (retro liquid/lava) | g13 `liquid_surface_sparkle`/`lava_bubble_pair` + retro feed — KEEP |
+| `:6687-6688` | pool ctor | S1-E-1 `DustPool::new` (g13 research/68 census row) |
+| `:18046-18070` | `UpdateWorld_Dust` + crash re-init | S1-E-3 `minecart::tick`'s single `update_dust` pass; the `:18065` re-init is the catch-arm recovery (port: no exceptions — cited skip, research/68) |
+| `:18055` `Dust.UpdateDust` | physics/lights/draw | d50 `dust_physics.rs` + S1-E-5/g13 `dust_lights*` + the draw lane (94/94 lights closed, research/68 §3) |
+| `:38832-39022` | DrawDust cull + tails | g67/d130 splash+cull union — d130e `16a792d56` folded `splash_cull_rect`/`dust_in_cull_rect` into `draw_splashes` AND `snow::draw` (type 76 shares the loop) |
+| `:56735-56744` | DrawCapture snow cull | g13 `capture_snow_cull` (`1af79847`) — KEEP (116 §6; RNG-free, reads live 76 — d130's flakes are its input) |
+| `:57785` `Dust.lavaBubbles < 200` | counter gate | g13 retro feed reads the pool counter (research/68 §4: both readers accounted) |
+| `:66985` `new Dust[6001]` | pool alloc | S1-E-1 pool sizing (6000 + sentinel) |
+| `:66700` `Main.snowDust = 0` | static init | ctor-zero; the LIVE reset is `Dust.cs:428` in `UpdateDust` (83 §-receipt counter-feed check) |
+
+Dispatcher/feeds coverage: every g11 seam (`player_teleport`/`npc_teleport`
+replays, the pad/statue queue, the Queen-Slime/Shellphone drains) feeds the
+ONE g61 body; g13's feeds (`item_sparkle_feed`, `retro_liquid_dust_feed`,
+`moon_lord_tentacle_feed`, `tavernkeep_ale_feed`) are draw-path callers on
+`rngs.global()` — no g11-owned site is orphaned, no foreign site is
+double-claimed. The teleport-dispatcher boundary holds: g61b's poof/
+mimic/transform families never call `TeleportEffect` (116 §5 census), so
+no Main-dust site hides in that lane.
+
+Verification: code-only (no cargo/tests/rustfmt/graphify). The census
+greps ran against the direct `decompiled\Terraria\Main.cs` path; the
+owner columns re-read g12 `main_dust_b.rs` + g13 `main_dust.rs` module
+docs at their origin tips and this branch's `teleport_dust.rs`.
