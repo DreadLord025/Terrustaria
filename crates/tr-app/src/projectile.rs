@@ -4428,31 +4428,46 @@ impl Projectile {
     }
 
     /// `AI()`'s aiStyle-71 block (`Projectile.cs:30355-30454`) — the Razorblade
-    /// Typhoon (409). The six-dust ring (`:30359-30375`) and the
-    /// `Lighting.AddLight` (`:30382`) have no layer in the pool — documented
-    /// skips.
-    ///
-    /// Deviation from the source: the C# opens the whole fade/spin/frame block
-    /// with `Main.rand.Next(3) == 0` (`:30358`) as well as `localAI[1] > 10f`,
-    /// because the dust that block ends with is rolled on the same branch. The
-    /// pool takes no RNG this phase, so the port runs it every sub-step past
-    /// the 10th (the alpha reaches its 50 floor sooner and the frame advances
-    /// three times as fast as the source's average). The slot's `alpha` has no
-    /// draw consumer yet (`draw_with_hand` ignores it), so nothing visible
-    /// moves; the roll is a follow-up row.
-    fn ai_typhoon(&mut self, world: &World, npcs: &[Npc]) {
-        // `:30357-30383` — the age counter and the fade: past its 10th sub-step
-        // the alpha loses 5 with the 50 floor, the rotation spins by the
-        // flight's own X and the frame rides `localAI[1] / 3 % 3` — the slot's
-        // `frame` field this phase adds, with `localAI[1]` as its counter.
+    /// Typhoon (409). W4-c19 round 3: the `localAI[1] > 10 && Main.rand.Next(3)
+    /// == 0` gate (`:30358`) now lands — the arm takes the gate draw on the
+    /// pass's `UpdateProjectiles` stream and runs the fade/spin/frame block +
+    /// the `Lighting.AddLight` (`:30378`) only on the taken branch, appending
+    /// the light intent for the world-sim drain (`drain_ai_lights`). The
+    /// six-dust ring's explicit draws (`:30364`, one `NextDouble` + one
+    /// `Next(3, 8)` per dust × 6) are censused; the `Dust.NewDust` internal
+    /// rolls go with the dust pool (the `projectile_ai_darts` convention).
+    /// The old unconditional-fade deviation is RETIRED (ANALYSIS round 3).
+    /// Returns the light intent (`(tile x, tile y, rgb)`) or `None`.
+    fn ai_typhoon(
+        &mut self,
+        world: &World,
+        npcs: &[Npc],
+        rng: &mut dyn tr_core::loot::DropRng,
+    ) -> Option<(i32, i32, [f32; 3])> {
+        // `:30357-30379` — the age counter, then the rand-gated fade: past the
+        // 10th sub-step ONE `Next(3)` decides the whole block — the six-dust
+        // ring, the alpha's 5-loss with the 50 floor, the rotation spin, the
+        // `localAI[1] / 3 % 3` frame and the light.
         self.local_ai[1] += 1.0;
-        if self.local_ai[1] > 10.0 {
+        let mut light = None;
+        if self.local_ai[1] > 10.0 && rng.next_range(0, 3) == 0 {
+            // `:30361-30370` — the ring's explicit draws, in order: per dust
+            // the `NextDouble` angle then the `Next(3, 8)` radius.
+            for _ in 0..6 {
+                let _ = rng.next_double();
+                let _ = rng.next_range(3, 8);
+            }
             self.alpha -= 5;
             if self.alpha < 50 {
                 self.alpha = 50;
             }
             self.rot += self.vel.x * 0.1;
             self.frame = (self.local_ai[1] / 3.0) as i32 % 3;
+            // `:30378` — `AddLight((int)Center.X / 16, (int)Center.Y / 16,
+            // 0.1, 0.4, 0.6)`: truncate the centre BEFORE the /16
+            // (`XAnchor::CenterTruncated`).
+            let (cx, cy) = self.center();
+            light = Some((cx as i32 / 16, cy as i32 / 16, [0.1, 0.4, 0.6]));
         }
         let center = Vec2::new(self.pos.x + self.w * 0.5, self.pos.y + self.h * 0.5);
         let mut target = center;
@@ -4543,6 +4558,7 @@ impl Projectile {
             }
         }
         self.pos += self.vel;
+        light
     }
 
     /// The C# caster families' steering blend —
@@ -17580,7 +17596,13 @@ impl ProjectilePool {
                         189 => self.slots[i].ai_volcano(world),
                         // The aiStyle-71 Typhoon (`:30355-30454`): the lock,
                         // the turn, the accel and the full tile reflect.
-                        71 => self.slots[i].ai_typhoon(world, &npcs[..]),
+                        // W4-c19 round 3: the rand-gated fade block's light
+                        // intent (`:30378`) rides the pool's drain seam.
+                        71 => {
+                            if let Some(l) = self.slots[i].ai_typhoon(world, &npcs[..], rng) {
+                                self.pending_ai_lights.push(l);
+                            }
+                        }
                         // The aiStyle-23 Eye Fire (101) / Flames Trap (188)
                         // (`:25861-25935`): the launch ramp, the 60-tick cap
                         // and the spin.
@@ -35060,25 +35082,178 @@ mod magic_ai_tests {
     fn test_dw_6_1_the_typhoon_rides_its_frame_off_the_tick_counter() {
         // `:30376-30377` (`Projectile.cs`): `frame = (int)(localAI[1] / 3) % 3`
         // — the age counter into the 3-frame sheet, unwrapped by proj_frames.
+        // W4-c19 round 3: the block is rand-gated (`:30358`), so the witness
+        // drives the arm directly with an always-0 `Next(3)` twin — the frame
+        // math is the C#'s on every TAKEN sub-step (the gate census lives in
+        // `the_typhoon_gate_draws_one_next3_per_substep_past_ten`).
+        struct AlwaysZero(tr_core::tile_light::FastRandom);
+        impl DropRng for AlwaysZero {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (0, 3) {
+                    return 0;
+                }
+                self.0.next_range(min, max)
+            }
+            fn next_float(&mut self) -> f32 {
+                self.0.next_float()
+            }
+            fn next_double(&mut self) -> f64 {
+                self.0.next_double()
+            }
+        }
         let mut pool = ProjectilePool::new();
         let slot = pool
             .spawn_with_data(TYPHOON, 10.0 * TILE_PX, 10.0 * TILE_PX, 2.0, 0.0, 40, 5.0)
             .unwrap();
-        let mut w = world();
-        for _ in 0..7 {
-            step(&mut pool, &mut w);
+        let w = world();
+        let mut rng = AlwaysZero(tr_core::tile_light::FastRandom::new(7));
+        // 21 taken sub-steps — the counter's 21st rides 21/3 % 3.
+        for _ in 0..21 {
+            pool.slots[slot].ai_typhoon(&w, &[], &mut rng);
         }
         let p = &pool.slots()[slot];
-        // `extraUpdates = 2` runs the AI three sub-steps per tick (`:16668`),
-        // so seven ticks advance the counter 21 — the frame rides 21/3 % 3.
         assert_eq!(p.local_ai[1], 21.0, "the sub-stepped tick counter");
         assert_eq!(p.frame, 1, "21 / 3 = 7 % 3 — the modulo bounds the sheet");
         assert_eq!(proj_frames(TYPHOON), 3, "the Typhoon's projFrames slice");
-        for _ in 0..5 {
-            step(&mut pool, &mut w);
+        for _ in 0..15 {
+            pool.slots[slot].ai_typhoon(&w, &[], &mut rng);
         }
         // 36 / 3 = 12 — the twelfth frame wraps to the first sheet row.
         assert_eq!(pool.slots()[slot].frame, 0, "36 / 3 = 12 % 3 — the wrap");
+    }
+
+    // ---- W4-c19 round 3: the rand-gated AI lights (written, NOT run) --------
+
+    /// The 409's gate census (`Projectile.cs:30358`): sub-steps 1-10 draw
+    /// NOTHING; every sub-step past the 10th draws exactly one `Next(3)`, and
+    /// a taken branch adds the six-dust ring's 6 × (`NextDouble`, `Next(3,8)`)
+    /// pairs (`:30364`) — the twin replays the whole sequence.
+    #[test]
+    fn the_typhoon_gate_draws_one_next3_per_substep_past_ten() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TYPHOON, 160.0, 176.0, 2.0, 0.0, 40, 5.0)
+            .unwrap();
+        let w = world();
+        let mut rng = tr_core::tile_light::FastRandom::new(4242);
+        let mut twin = tr_core::tile_light::FastRandom::new(4242);
+        for age in 1..=40u32 {
+            let got = pool.slots[slot].ai_typhoon(&w, &[], &mut rng);
+            if age <= 10 {
+                assert!(got.is_none(), "age {age}: the gate never opens");
+                continue;
+            }
+            let gate = twin.next_range(0, 3);
+            if gate == 0 {
+                for _ in 0..6 {
+                    let _ = twin.next_double();
+                    let _ = twin.next_range(3, 8);
+                }
+                let (cx, cy) = pool.slots[slot].center();
+                assert_eq!(
+                    got,
+                    Some((cx as i32 / 16, cy as i32 / 16, [0.1, 0.4, 0.6])),
+                    "age {age}: the taken branch lights"
+                );
+            } else {
+                assert!(got.is_none(), "age {age}: the missed gate stays dark");
+            }
+            assert_eq!(rng, twin, "age {age}: the draw sequence is the C#'s");
+        }
+    }
+
+    /// The taken branch's fade (`:30371-30375`): the alpha loses 5 per TAKEN
+    /// sub-step with the 50 floor; a missed gate leaves it untouched (the
+    /// retired unconditional-fade deviation's replacement).
+    #[test]
+    fn the_typhoon_fade_only_runs_on_taken_gates() {
+        struct Gate(tr_core::tile_light::FastRandom, bool);
+        impl DropRng for Gate {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (0, 3) {
+                    return if self.1 { 0 } else { 1 };
+                }
+                self.0.next_range(min, max)
+            }
+            fn next_float(&mut self) -> f32 {
+                self.0.next_float()
+            }
+            fn next_double(&mut self) -> f64 {
+                self.0.next_double()
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TYPHOON, 160.0, 176.0, 2.0, 0.0, 40, 5.0)
+            .unwrap();
+        let w = world();
+        pool.slots[slot].local_ai[1] = 10.0;
+        pool.slots[slot].alpha = 255;
+        // A missed gate: no fade, no frame, no light.
+        let mut miss = Gate(tr_core::tile_light::FastRandom::new(1), false);
+        assert!(pool.slots[slot].ai_typhoon(&w, &[], &mut miss).is_none());
+        assert_eq!(pool.slots[slot].alpha, 255, "the missed gate keeps the alpha");
+        assert_eq!(pool.slots[slot].frame, 0, "nor advances the frame");
+        // Taken gates: 255 → 250 → … → 50 floor (41 taken sub-steps).
+        let mut hit = Gate(tr_core::tile_light::FastRandom::new(1), true);
+        for _ in 0..41 {
+            pool.slots[slot].ai_typhoon(&w, &[], &mut hit);
+        }
+        assert_eq!(pool.slots[slot].alpha, 50, "the 50 floor holds");
+        // The light anchor truncates the centre BEFORE the /16 (`:30378`).
+        pool.slots[slot].pos = Vec2::new(160.0, 176.0);
+        let got = pool.slots[slot].ai_typhoon(&w, &[], &mut hit).unwrap();
+        // The 30x30 box centres on (175, 191) → (10, 11).
+        assert_eq!(got, (10, 11, [0.1, 0.4, 0.6]));
+    }
+
+    /// The pool seam: a taken typhoon gate appends ONE intent to
+    /// `pending_ai_lights`; `drain_ai_lights` takes the whole vec and leaves
+    /// it empty (the `drain_npc_hit_sounds` shape).
+    #[test]
+    fn the_typhoon_light_rides_the_pending_drain_seam() {
+        struct AlwaysZero(tr_core::tile_light::FastRandom);
+        impl DropRng for AlwaysZero {
+            fn next_range(&mut self, min: i32, max: i32) -> i32 {
+                if (min, max) == (0, 3) {
+                    return 0;
+                }
+                self.0.next_range(min, max)
+            }
+            fn next_float(&mut self) -> f32 {
+                self.0.next_float()
+            }
+            fn next_double(&mut self) -> f64 {
+                self.0.next_double()
+            }
+        }
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(TYPHOON, 160.0, 176.0, 0.0, 0.0, 40, 5.0)
+            .unwrap();
+        pool.slots[slot].local_ai[1] = 10.0;
+        let mut w = world();
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = AlwaysZero(tr_core::tile_light::FastRandom::new(3));
+        pool.update(
+            &mut w,
+            &mut npcs,
+            None,
+            None,
+            None,
+            YoyoInputs::default(),
+            FlailInputs::default(),
+            &mut rng,
+            0,
+            true,
+        );
+        // extraUpdates = 2 → three taken sub-steps → three intents, slot order.
+        let drained = pool.drain_ai_lights();
+        assert_eq!(drained.len(), 3, "one intent per taken sub-step");
+        for l in &drained {
+            assert_eq!(l.2, [0.1, 0.4, 0.6]);
+        }
+        assert!(pool.drain_ai_lights().is_empty(), "the drain empties the vec");
     }
 
     #[test]
