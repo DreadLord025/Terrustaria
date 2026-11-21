@@ -5,7 +5,9 @@ cargo/rustc/tests/rustfmt/graphify invoked; every witness WRITTEN NOT RUN.
 C# cites are `decompiled/Terraria/Projectile.cs` (stable) unless named,
 read in ≤100-line windows. Rust cites pin g65's tip `b0842907c`
 (`crates/tr-app/src/projectile_death_dust.rs`, 7315 lines at that tip;
-7333 with this seal's new witness).
+7333 with this seal's new witness) EXCEPT §2c (the g16 gore compose),
+which pins the compose tip `37ec2f3aa` + its own commit (7549 lines:
++18 module-header seam lines, the 503 fix, +1 witness).
 
 **Number chain: 245 → 308 → 346.** Registry-150 §8.7 AMENDMENT 3
 (`origin/task/W4-d54` `9dddb32b4`, FROZEN TABLE): g65's post-§8
@@ -188,6 +190,127 @@ a double-feed desyncs the stream. Post-drop drain: 316−3 = **313 kinds**
 (§3 roster minus 358/406/1042); the 406-site closure holds as 390+9+7 (§1).
 
 **Total merger drop-hunks: 17 = 14 census (§2a) + 3 gun smoke-puff (§2b).**
+The g16 gore compose adds 12 more (§2c) — **29 total**.
+
+### 2c. Seal item 3 — the g16 gore compose: disjoint POOLS, shared STREAM (g16 tip `72e4cae20`)
+
+g16 wired its 165 gore sites into real `GorePool` spawns across five batches
+(`1deeb8ca`/`36e03444`/`69eaf77f`/`a05959ec`/`43a99ff1`, ANALYSIS "The
+Projectile gore sites" WIRING record; tip `72e4cae20` = the 955 witness fix).
+**Kill-side, once per death**: `gore_death_arms` (`projectile.rs:21482`,
+dispatched `:20258`) plus the gore rows inside `special_arrow_kill`
+(`:21130` the 41 pair, `:21139` the 91/92 triple), `special_bullet_kill`
+(`:21360` the 284 confetti, `:21370` the 286 gore) and
+`thrown_consumable_death` (`:21411` the 183 bee four) — ALL in the same
+`!active` once-per-death block that g65's snapshot hook rides
+(`:20319`/`:20326`/`:20341` dispatches; a dead slot never returns to active).
+
+**The pools are disjoint; the stream is not.** g16 writes `GorePool`, g65
+writes `DustPool`; neither reads the other, and no kind's dust loop is
+duplicated (g16's comments pin "the dust loops … are the dust lane's" at
+every arm). But BOTH consume `Main.rand` = `RngKey::UpdateProjectiles`
+(g65 `world_sim/projectiles.rs:425`, g16 the pass `rng` threaded from
+`:236`). g65's `gore_census` + inline gore loops are DRAWS-ONLY stand-ins
+("the bodies stay the gore lane's — the beenade precedent",
+`death_dust.rs:4774`); with g16's bodies live they DOUBLE-FEED the stream.
+
+**Draw-equivalence verified per row** (C# re-read + fn-by-fn comparison):
+every overlapping gore type (61-63, 16/17, 276-282) is in `SAFE_GORE`
+(`gore.rs:144-164`), `special_ai = 0` (`gore_id.rs:26-37`) and non-drip
+(`:94-99`) — so `GorePool::new_gore`'s only draws are the
+`Next(10,31)`+`Next(-20,21)` kick pair (`gore.rs:415-416`), exactly what the
+census replicates; the ChildSafety re-type (`:424-428`) and the SpecialAI
+rolls (`:499-546`) never fire for these types. The type/position draws ride
+BEFORE `new_gore` in both ports. Confirmed pairs: `celeb2_gore`
+(`gore_c.rs:173`) = `gore_census(1,false,false)`; `fire_explosion_gores`
+(`gore_b.rs:279`) = `gore_census(2,true,false)`; `dd2_explosion_gores`
+(`gore_f.rs:100`) = `gore_census(ngore,true,true)` (the Next(2) lift gate
+included); `kill_row_gores` ×N (`gore_g.rs:125`) = `gore_census(N,false,false)`;
+`corner_gores` (`gore_j.rs:120`) / `goblin_bomb_gores` (`gore_f.rs:131`) =
+4× `Next(61,64)`+kicks; `kill41_gores` (`gore_k.rs:117`) / `kill286_gore`
+(`:83`) = the type+kicks+two `Next(-10,11)` nudges; `confetti_gores_vel`
+(`gore_h.rs:157`) = the 10-draw confetti ladder; `star_kill_gores`
+(`gore_i.rs:131`) = NextFloat + Next(8) + kicks ×7; `kill9_503_gores`
+(`gore_j.rs:65`) = `Next(16,18)` (rolled then OVERRIDDEN for the 503 — the
+draw is unconditional) + kicks.
+
+**Merger drop-hunks 18–29 (execute at the g65×g16 merge; g16's bodies KEEP
+— they carry the bodies AND the draws). Ranges at g65 tip `37ec2f3aa` +
+this compose commit (`projectile_death_dust.rs`, 7549 lines):**
+
+18. `:287` — `gore_census(rng, ngore, true, true)` in `dd2_explosion_dust`
+    → **DROP for 664/666/668 ONLY**: g16's `FLAME_BURST_SHOT_1|2|3` arm
+    (`:21528`) spawns the loop. The shared `664|666|668|706` arm
+    (`death_dust.rs:1962`) keeps the census for the **706** (g16 has no 706
+    arm — unrowed): gate the call on `s.kind == 706`.
+19. `:2074` — `gore_census(rng, 1, false, false)` (645) → DROP whole
+    (g16 `kill645_gore`, `:21567`; no resize/Damage in either port).
+20. `:2170` — `gore_census(rng, 2, true, false)` (617) → DROP whole
+    (g16 `kill608_617_gores`, `:21584`). The 608 half is d12's, not g65's.
+21. `:2412` / `:2438` — `gore_census` ×1 (452) / ×3 (454) → DROP both
+    (g16 `kill_row_gores`, `:21611`/`:21625`). The d78 EVP halves stay
+    (§2a) — three-way disjoint: d78 state, g16 gore, g65 dust.
+22. `:2617` — `gore_census(rng, ngore, false, false)` (459|709) → **DROP
+    for 459 ONLY** (g16 `CHARGED_BLASTER_ORB`, `:21642`, scale≥1 count 2):
+    gate on `s.kind == 709` (the 709 is unrowed in g16 — its `ngore` rides
+    the same scale gate, so the census stays correct for it).
+23. `:2697` — `gore_census(rng, 1, false, false)` (448) → DROP whole
+    (g16 `kill448_616_424_gores`, `:21655`).
+24. `:3386-3390` — the 240 inline 4-corner loop → DROP (g16
+    `kill240_corner_gores`, `:21701`).
+25. `:3716-3720` — the 9|503 inline gore loop → **DROP for 9 ONLY** (g16
+    `STARFURY`, `:21690`, ×3): gate on `s.kind == 503` (the 503 is unrowed
+    in g16; its 2 rows keep the census — INCLUDING the unconditional
+    `Next(16,18)`, the fix below).
+26. `:3760-3765` — the 12 inline 7-gore loop → **KEEP** (g16's 12 arm is
+    the 955-only `STAR_CANNON_STAR`; `kill12_low_damage_gores` is NOT
+    wired). `:3770-3774` — the damage<100 3-gore loop → **KEEP** likewise.
+27. `:3821-3832` — the 284 inline 5-confetti loop → DROP (g16
+    `kill284_confetti`, `:21360`).
+28. `:3851-3855` — the 286 inline single-gore row → DROP (g16
+    `kill286_gore`, `:21370`).
+29. `:3875-3881` — the 41 inline 2-gore loop → DROP (g16 `kill41_gores`,
+    `:21132`); `:3914-3919` — the 955 inline 7-gore loop → DROP (g16
+    `kill12_star_gores`, `:21682`, screen-gated); `:4427-4431` — the 681
+    inline 4-corner loop → DROP (g16 `goblin_bomb_gores`, `:21554`);
+    `:4986-4997` — `confetti_burst`'s gore ladder → **DROP for the 178
+    caller ONLY** (`:2913`, g16 `confetti_gores` ×40, `:21668`): pass
+    `gores = 0` at `:2913`, keep `15` at the 289 caller (`:2915` — the 289
+    is unrowed in g16, `kill289_confetti` NOT wired).
+
+**KEEP (no g16 body — the census is the only stream consumer):** the 590
+(`:2298`), 587 (`:2331`), 501 (`:2380`), 483 (`:2563`), 467/468
+(`:2476`/`:2510` — `kill467_468_gores` NOT wired), 616 (`:2719`), 424-426
+(`:2765`), 724/725/726/907/1133 (`:3061`), 1053 (`:3088`), 1020/1105
+(`:3135`), 1085 (`:3154`), 281 (`:3316`/`:3334`), 162 (`:3365`), 712
+(`:3528`), 370/371 (`:3564`), 1023 (`:3582`), 312 (`:3614`), 1078
+(`:3676`), 246/249 (`:3961`/`:3984`), the 12's two loops (hunk 26), the
+289 confetti (hunk 29), the 706/709/503 halves (hunks 18/22/25). g16's own
+deferral list (ANALYSIS "Cited deferrals (unrowed hosts)") matches this
+KEEP set kind-for-kind — the two lanes' deferral boundaries agree.
+
+**The bomb family: NO drop, NO double-feed.** `explode_bomb`
+(`projectile.rs:22496`) threads the pass `rng` + gore pool and adds ONLY
+the `Kill_Bombs_DoUsualKillCode` gore rows (`:22570` bomb-corner ×4,
+`:22582` dynamite boulder ×8) on the PASS stream AFTER the frozen zero-rng
+`FastRandom::new(0)` `Damage()` walk (`:22544`, the M4-PROJ-9 deviation —
+KEPT untouched, the gore draws do not feed it) and BEFORE
+`Kill_ExplodeTiles`. None of the bomb kinds (28/29/30/37/397/516/517/519)
+has a g65 drain arm (verified: zero matches in the 316-kind roster), and
+the C# `Kill_Bombs` dust (`:77648-78500`, 51 sites) is OUTSIDE the
+`Kill()`-body census window (`:70642-77262`) — it is the bomb lane's, not
+g65's. Disjoint by construction.
+
+**The 503 stream fix (this compose commit).** The `9 | 503` arm gated the
+gore type draw on `s.kind != 503` ("503 → fixed 16, no draw") — WRONG: the
+C# `:75729-75733` rolls `num726 = Main.rand.Next(16, 18)` UNCONDITIONALLY
+and only overrides the RESULT to 16 for the 503 (g16's `kill9_503_gores`
+`gore_j.rs:75-78` ports the roll-then-override correctly). The 503's two
+gore rows were landing 2 draws behind the C# stream. Fixed: the draw is
+now unconditional (`death_dust.rs:3717`), with the new witness
+`w4_g65_the_503_gore_census_draws_the_type_it_overrides` (`:7279`) pinning
+the 40-spawn + 2×(type+kicks) stream against a hand-built twin. The 9's
+three rows were already correct. **117 witnesses** now (116 + this one).
 
 ## 3. The drain census — 316 kinds, the FINAL roster
 
@@ -226,7 +349,10 @@ lists). The witness suite: **116 `w4_g65_*` fns** at the seal tip (115 +
 this seal's inert-deferred witness) — all WRITTEN NOT RUN; post-merge 115
 (the smoke-puff witness drops, §2b hunk 17).
 
-## 4. Seal item 3 — the deferred set, task-seeded to owner lanes
+## 4. Seal item 4 — the deferred set, task-seeded to owner lanes
+
+(The Lead's seal numbering: item 3 = the g16 gore compose, §2c; item 4 =
+this deferred set; item 5 = this FINAL + the §5 family bible.)
 
 The 7 deferred dust sites are NOT free; each needs state the drain's
 `World`/`SpawnCtx` does not carry. C# re-read whole at this seal
@@ -268,8 +394,15 @@ ONE family, axis-disjoint, per the d54-bible convention:
   (442/478, the special arrows/bullets, 715-718, 644/641/643, 608): their
   Kill dust stays theirs (the 6 other-lane sites + the 3 cross-seam
   prefixes of §4).
-- **g16** — the gore BODIES/draws (165 sites); g65's `gore_census` carries
-  only the draws that interleave with its dust arms.
+- **g16** — the gore BODIES/draws (165 sites), WIRED at `72e4cae20`
+  (`gore_death_arms` + the special-arrow/bullet/thrown gore rows, Kill-side
+  once-per-death on the same `!active` seam). Disjoint POOLS (GorePool vs
+  DustPool) but the SHARED `UpdateProjectiles` stream: g65's `gore_census`
+  + inline gore loops are draws-only stand-ins that DROP per-kind where
+  g16's bodies are live (§2c hunks 18–29); the unrowed-host halves
+  (706/709/503/289/12 + the KEEP set) keep their census. The bomb family
+  rides the pass stream with the frozen zero-rng Damage walk — no
+  double-feed, no g65 arm.
 - **d77/d78/g3/g1** — cues/state/census per §2; every census stub that
   duplicates a g65 body drops at the merge (§2a hunks 1–14 + §2b 15–17).
 
@@ -279,10 +412,14 @@ lines.
 
 ## 6. Witnesses
 
-WRITTEN NOT RUN (code-only). The 115 `w4_g65_*` fns at the tip plus this
-seal's new `w4_g65_seal_the_deferred_kinds_are_inert` (the 10 deferred
-kinds — 89/91/92/183/655/868/869/949/996/1084 — spawn nothing and draw
-nothing through the drain: the deferred set is stream-inert until its
-owner lane ports it). The 26i §4 pins stand: 617 `:6157`, nebula sparks
-`:6173`, 710 `:6006`, 661 `:6141`, 452/454 `:6358`, 448/616 `:6525`. The
-smoke-puff witness (`:6616-6634`) drops at merge with §2b hunk 17.
+WRITTEN NOT RUN (code-only). **117 `w4_g65_*` fns** at this compose tip:
+the 116 at the seal (`37ec2f3aa`, incl.
+`w4_g65_seal_the_deferred_kinds_are_inert` `:7538` — the 10 deferred kinds
+89/91/92/183/655/868/869/949/996/1084 spawn nothing and draw nothing
+through the drain: stream-inert until their owner lane ports them) plus
+the §2c 503 fix's `w4_g65_the_503_gore_census_draws_the_type_it_overrides`
+(`:7279`). The 26i §4 pins re-verified line-exact at this compose tip: 617
+`:6175`, nebula sparks `:6191`, 710 `:6024`, 661 `:6159`, 452/454 `:6376`,
+448/616 `:6543`. The smoke-puff witness (`:6638`) drops at merge with §2b
+hunk 17; the gore-census witnesses that pin dropped rows (§2c) re-pin to
+g16's body witnesses at the merge (post-merge 116).

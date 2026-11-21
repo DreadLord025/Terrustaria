@@ -40147,6 +40147,32 @@ arms `:2786-2794`, the `smoke_puff` helper `:4834-4885` and the witness
 old_velocity latch + the scale-death ×5 base + the corpse p.vel write);
 post-drop drain 313 kinds, closure 390+9+7=406. 17 drop-hunks total.
 
+**The g16 gore compose** (research/346 §2c, g16 tip `72e4cae20`): g16 wired
+its 165 gore sites into real `GorePool` spawns — `gore_death_arms`
+(`projectile.rs:21482`) + the 41/91-92/284/286/183 gore rows inside
+`special_arrow_kill`/`special_bullet_kill`/`thrown_consumable_death`, ALL
+Kill-side once-per-death on the same `!active` seam g65 snapshots. The
+POOLS are disjoint (GorePool vs DustPool, no kind's dust duplicated) but
+the STREAM is shared (`RngKey::UpdateProjectiles`): g65's `gore_census` +
+inline gore loops are draws-only stand-ins that DOUBLE-FEED once g16's
+bodies are live. Draw-equivalence verified per row (every overlapping gore
+type 61-63/16-17/276-282 is SAFE_GORE + special_ai 0 + non-drip, so
+`new_gore`'s only draws are the kick pair the census replicates). 12 more
+drop-hunks (18-29, **29 total**): the 645/617/452/454/448/240/284/286/41/
+955/681/178 censuses DROP whole; the shared arms drop PER-KIND (the DD2
+census gates to the 706, the 459|709 to the 709, the 9|503 to the 503, the
+confetti helper's 178 caller passes gores=0) — g16's unrowed-host deferral
+list matches the KEEP set kind-for-kind (the 12's two loops KEEP,
+`kill12_low_damage_gores` unwired). The bomb family needs NO drop:
+`explode_bomb`'s gore rows ride the pass stream, the frozen zero-rng
+`FastRandom::new(0)` Damage walk stays (M4-PROJ-9, no double-feed), and no
+bomb kind (28/29/30/37/397/516/517/519) has a drain arm. **The 503 stream
+fix**: the `9|503` arm gated the gore type draw on `kind != 503` — the C#
+`:75729-75733` rolls `Next(16,18)` UNCONDITIONALLY and only overrides the
+result to 16 (g16's `kill9_503_gores` rolls-then-overrides); the 503's two
+rows were 2 draws behind. Fixed + witnessed
+(`w4_g65_the_503_gore_census_draws_the_type_it_overrides`) — 117 witnesses.
+
 The 7 deferred sites are task-seeded to owner lanes (research/346 §4):
 S1-P-i58 (1084/949 — the TorchID.Dust table + App disco feed), S1-P-i59
 (868/869/996 — the WorldGen randomizer lane), S1-P-i60 (655 — the

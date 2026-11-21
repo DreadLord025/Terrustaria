@@ -44,6 +44,24 @@
 //! CODE-ONLY MODE (W4-g65): no compiler invoked on this branch; the witness
 //! tests at the bottom are WRITTEN NOT RUN, every expected value hand-derived
 //! from the cited C# lines on a cloned `UnifiedRandom`.
+//!
+//! # The g16 gore compose (research/346 §2c)
+//!
+//! g16 (`72e4cae20`, `gore_death_arms` + the special-bullet/arrow/thrown hooks)
+//! spawns the REAL gore bodies for the Kill arms, Kill-side ONCE per death on
+//! the same `!active` seam this module snapshots. The pools are DISJOINT — g16
+//! writes `GorePool`, this module writes `DustPool`, neither reads the other —
+//! but the STREAM is SHARED: both consume `Main.rand`
+//! (`RngKey::UpdateProjectiles`). So every gore row g16 spawns is a row this
+//! module must NOT also census: the `gore_census` calls and the inline
+//! `Next(61,64)`/`Next(16,18)`/`Next(276,283)` loops below are draws-only
+//! stand-ins that DOUBLE-FEED the stream once g16's bodies are live. The
+//! per-kind drop-hunks are pinned in research/346 §2c (execute at the
+//! g65×g16 merge, g16's bodies KEEP — they carry the bodies AND the draws).
+//! The bomb family needs no drop: `explode_bomb`'s gore rows ride the pass
+//! stream while its `Damage()` walk keeps the frozen zero-rng `FastRandom`
+//! (the M4-PROJ-9 deviation) — no double-feed, and none of the bomb kinds
+//! (28/29/30/37/397/516/517/519) has a drain arm.
 
 use glam::Vec2;
 use tr_core::particles::{Color, DustPool, SpawnCtx};
@@ -3686,7 +3704,9 @@ fn death_bursts(
         }
         // `:75681-75748` — the 9/503 else-branch: 10× (503 → 40, vel/=2)
         // dust-58 speed vel×0.1 alpha 150 scale 1.2; 3× (503 → 2) gore
-        // rows Next(16,18) (503 → fixed 16, no draw) + kicks.
+        // rows: the Next(16,18) type draw is UNCONDITIONAL (`:75729`), the
+        // 503 only overrides the RESULT to 16 (`:75732`) — g16's
+        // `kill9_503_gores` rolls-then-overrides the same way; then kicks.
         9 | 503 => {
             let (count, gores) = if s.kind == 503 { (40, 2) } else { (10, 3) };
             let vel = if s.kind == 503 { s.vel / 2.0 } else { s.vel };
@@ -3694,9 +3714,7 @@ fn death_bursts(
                 dust.new_dust(rng, ctx, world, s.pos, s.w, s.h, 58, vel.x * 0.1, vel.y * 0.1, 150, Color::default(), 1.2);
             }
             for _ in 0..gores {
-                if s.kind != 503 {
-                    let _ = rng.next_range(16, 18);
-                }
+                let _ = rng.next_range(16, 18);
                 let _ = rng.next_range(10, 31);
                 let _ = rng.next_range(-20, 21);
             }
@@ -7266,6 +7284,35 @@ mod tests {
         let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
         assert_eq!(active.len(), 29);
         assert_eq!(active.iter().filter(|d| d.dust_type == 57).count(), 10);
+    }
+
+    /// The 503 star's gore census draws `Next(16,18)` UNCONDITIONALLY: the
+    /// C# `:75729-75733` rolls `num726 = Main.rand.Next(16, 18)` first and
+    /// only then OVERRIDES the value to 16 for the 503 — the draw is not
+    /// skipped (g16's `kill9_503_gores` ports the same roll-then-override).
+    /// Two 503 gores therefore cost 2 type draws + 2 kick pairs, exactly
+    /// like the 9's three. A census that gates the draw on `kind != 503`
+    /// lands 2 steps behind the C# stream.
+    #[test]
+    fn w4_g65_the_503_gore_census_draws_the_type_it_overrides() {
+        let w = world();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(7);
+        drain(&[snap(503)], &mut dust, &mut rng, &ctx(), &w);
+        // The twin: the 40 spawns at the halved velocity, then the two
+        // gore rows each taking the type draw (overridden) + the kicks.
+        let mut witness = DustPool::new();
+        let mut wrng = UnifiedRandom::new(7);
+        let vel = Vec2::new(4.0, -2.0) / 2.0;
+        for _ in 0..40 {
+            witness.new_dust(&mut wrng, &ctx(), &w, Vec2::new(100.0, 100.0), 10, 10, 58, vel.x * 0.1, vel.y * 0.1, 150, Color::default(), 1.2);
+        }
+        for _ in 0..2 {
+            let _ = wrng.next_range(16, 18);
+            let _ = wrng.next_range(10, 31);
+            let _ = wrng.next_range(-20, 21);
+        }
+        assert_eq!(rng, wrng, "the 503 takes BOTH overridden type draws");
     }
 
     /// The 283 venom: 30 dust-171 (three 10-loops), all noGravity fadeIn
