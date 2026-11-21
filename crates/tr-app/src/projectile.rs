@@ -14314,7 +14314,7 @@ fn aura_solid_at(world: &World, x: i32, y: i32) -> bool {
 /// explicit fallback — the Ballista's aim and the aura's arc read the C#'s
 /// `SafeNormalize(Vector2.UnitY)` form, where a zero delta keeps the unit-Y
 /// default instead of collapsing to zero.
-fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
+pub(crate) fn safe_normalize_or(v: Vec2, default_value: Vec2) -> Vec2 {
     if v == Vec2::ZERO || v.is_nan() {
         default_value
     } else {

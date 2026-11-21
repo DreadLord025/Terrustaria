@@ -340,6 +340,7 @@ fn swing_t3_alt(
             vy: vector7.y,
             damage: p.damage,
             knock_back: 0.0,
+            ai1: None,
         });
     }
     // `:69926-69960` — the dust gates: k = 0, 2 (the `k += 2` loop); the
