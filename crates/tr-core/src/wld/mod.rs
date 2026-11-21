@@ -1808,6 +1808,10 @@ mod tests {
         world.unlocked_nurse_spawn = true;
         // W4-f45: the extra respawn anchors (the c46 lane's list).
         world.extra_spawn_points = vec![(10, 20), (30, 40)];
+        // W4-f45: the pet-license trio (the f43 lane's consumers).
+        world.bought_cat = true;
+        world.bought_dog = true;
+        world.bought_bunny = true;
         world
     }
 
@@ -2176,6 +2180,9 @@ mod tests {
             got.extra_spawn_points, want.extra_spawn_points,
             "{context}: extraSpawnPoints"
         );
+        assert_eq!(got.bought_cat, want.bought_cat, "{context}: boughtCat");
+        assert_eq!(got.bought_dog, want.bought_dog, "{context}: boughtDog");
+        assert_eq!(got.bought_bunny, want.bought_bunny, "{context}: boughtBunny");
     }
 
     #[test]
@@ -2365,6 +2372,10 @@ mod tests {
             tail[at..at + 4].copy_from_slice(&v.to_le_bytes());
             at += 4;
         }
+        // W4-f45: the pet-license trio at 2021..2023 (`:1392-1394`, v217+).
+        tail[2021 + d] = u8::from(world.bought_cat);
+        tail[2022 + d] = u8::from(world.bought_dog);
+        tail[2023 + d] = u8::from(world.bought_bunny);
         // downedQueenSlime: 2021 quartet-end + 3 pets = 2024 empress, +1.
         tail[2024 + d] = u8::from(world.downed_empress_of_light); // (`:1395`, W4-f45)
         tail[2025 + d] = u8::from(world.downed_queen_slime); // (`:1396`)
@@ -4657,6 +4668,48 @@ mod tests {
         data[tail_at + 2063..tail_at + 2065].copy_from_slice(&9i16.to_le_bytes());
         let w = parse(&data).expect("v297 loads");
         assert_eq!(w.extra_spawn_points, vec![(7, 9)], "extraSpawnPoints reads from 297");
+    }
+
+    /// W4-f45 — `boughtCat/Dog/Bunny` land at tail 2021/2022/2023
+    /// (`WorldFile.cs:1392-1394`) and follow the v217 read gate (`:2357-2367`).
+    /// The license use-setters (`Player.cs:45352-45366`) ride the item-use lane
+    /// (the f43 consumers read the latches). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_pet_licenses_land_and_gate() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 2021] = 1; // boughtCat
+        data[tail_at + 2023] = 1; // boughtBunny (dog stays 0)
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.bought_cat, "boughtCat at tail 2021");
+        assert!(!w.bought_dog, "the dog byte between stays 0");
+        assert!(w.bought_bunny, "boughtBunny at tail 2023");
+        // v216: the trio does not exist yet — all stay false.
+        let w = parse(&synthetic_file(216, &[2, 144], 160, 11)).expect("v216 loads");
+        assert!(!w.bought_cat && !w.bought_dog && !w.bought_bunny, "below 217: false");
+        // v217: the trio lands. The v217 tail lacks the 223 empress/queenSlime
+        // (2), 240 deerclops (1), 250 slimeBlue (1), 251 unlocks (8), 257
+        // afterPartyOfDoom (1), 259/260 books (2), 261 slimes (7), 264 moondial
+        // (2), 287+ seeds — all AFTER the pets, so the pet offsets stay 2021.
+        let mut data = synthetic_file(217, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 217);
+        data[tail_at + 2022] = 1; // boughtDog
+        let w = parse(&data).expect("v217 loads");
+        assert!(w.bought_dog, "boughtDog reads from 217");
+        assert!(!w.bought_cat, "the cat byte before it stays 0");
+        // The writer's own block carries the owned world's trio (d=8 shift).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        for off in [2021, 2022, 2023] {
+            assert_eq!(buf[tail_at + off + d], 1, "pet license at tail {off}+d");
+        }
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
     }
 
     // --- S1-A-7: the C#-generated world (real genRand) -----------------------

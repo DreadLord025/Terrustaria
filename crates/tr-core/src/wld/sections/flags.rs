@@ -227,9 +227,9 @@ pub fn write(w: &mut Writer, world: &World) {
     w.i32(world.ore_tiers.iron); // Iron
     w.i32(world.ore_tiers.silver); // Silver
     w.i32(world.ore_tiers.gold); // Gold
-    w.boolean(false); // boughtCat
-    w.boolean(false); // boughtDog
-    w.boolean(false); // boughtBunny
+    w.boolean(world.bought_cat); // boughtCat (W4-f45, `:1392`; the f43 license lane)
+    w.boolean(world.bought_dog); // boughtDog (`:1393`)
+    w.boolean(world.bought_bunny); // boughtBunny (`:1394`)
     // WorldFile.cs:1392-1397: the two post-1.4 bosses; `downedQueenSlime` and
     // `downedDeerclops` are owned; W4-f45 claims `downedEmpressOfLight` too
     // (the HallowBoss kind is unported, so the file round-trips the latch).
@@ -699,7 +699,11 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.ore_tiers.gold = -1;
     }
     if version >= 217 {
-        r.skip(3)?; // boughtCat/Dog/Bunny
+        // W4-f45: the pet-license trio lands (`:2358-2360`); the f43 lane's
+        // `TailFlags.bought_*` consumers read them.
+        world.bought_cat = r.bool()?; // boughtCat
+        world.bought_dog = r.bool()?; // boughtDog
+        world.bought_bunny = r.bool()?; // boughtBunny
     }
     if version >= 223 {
         world.downed_empress_of_light = r.bool()?; // downedEmpressOfLight (W4-f45)
