@@ -189,7 +189,9 @@ impl App {
                 m_h,
                 dead,
                 mouse,
-                crate::ui::inventory::extra_accessory_slots(),
+                // `Main.cs:45508`: the LIVE row count (W4-g87) — the Demon
+                // Heart's slot-8 row shifts the Settings-button avoidance.
+                crate::ui::inventory::ExtraAccessoryShow::of(self.player.as_ref()).count(),
                 false,
             );
         }

@@ -1712,8 +1712,9 @@ pub fn advance_button_scale(scale: &mut f32, over: bool) {
 /// `Main.RefreshSettingsButtonStatus` (`Main.cs:45492-45527`): the label's centre
 /// and whether the button had to be pushed beside the accessory column.
 ///
-/// `extra_accessory` is `Player.GetAmountOfExtraAccessorySlotsToShow()` (0 in the
-/// port — `EXTRA_ACCESSORY_SLOTS`) and `push_equipment_up` is
+/// `extra_accessory` is `Player.GetAmountOfExtraAccessorySlotsToShow()` (LIVE
+/// since W4-g87 — `ui::inventory::ExtraAccessoryShow::count`, 1 with the Demon
+/// Heart used in expert) and `push_equipment_up` is
 /// `PlayerInput.SettingsForUI.PushEquipmentAreaUp` (not modelled), both kept as
 /// parameters so the branches stay faithful.
 pub fn settings_button_pos(
