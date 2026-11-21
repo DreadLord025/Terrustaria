@@ -503,6 +503,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
             .keys
             .iter()
             .any(|k| crate::input_map::is_bound(&binds, crate::input_map::Action::Torch, *k));
+        // W4-d16 residual 8 — `UpdateEquips`' `RefreshAutoKitingFromItemTypeAndSlot`
+        // scan (`Player.cs:12898`/`:12905`): the C# `ResetEffects` clears
+        // `selectedKite = -1` (`:18432`, `:25491`) AFTER the `:25218`
+        // selection update reads it, so the override sees LAST tick's
+        // `UpdateEquips` pin (`:25633`). The port's `update_with_grapple`
+        // ResetEffects clear runs later in this pass; re-pinning here
+        // (pre-override, against this tick's inventory) gives the gate a
+        // live slot — the one-tick-early deviation is observation-identical
+        // for a stable inventory (the pin only changes when the kite moves
+        // slots, and the C# would catch up the next tick).
+        super::editing::kites::refresh_selected_kite(app);
         let override_slot = if can_change {
             let smart = app.player.as_ref().and_then(|p| {
                 let (sw, sh) = app.screen_size();
@@ -1679,12 +1690,6 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
         super::editing::spawn_force_clear_area(app, fx, fy);
     }
 
-    // W4-d16 residual 8 — `UpdateEquips`' `RefreshAutoKitingFromItemTypeAndSlot`
-    // scan (`Player.cs:12898`/`:12905`, the `:25633` seam): the ResetEffects
-    // clear (`:18432`) ran inside `update_with_grapple`, this re-pins the
-    // first kite slot. (The afk-counter tail itself ran PRE-movement, the
-    // `:25497` order — the selection block above.)
-    super::editing::kites::refresh_selected_kite(app);
     // `Player.cs:25214-25217` — `dropItemCheck` runs when `itemAnimation ==
     // 0 && ItemTimeIsZero && reuseDelay == 0` (the port's swing/item_time/
     // reuse_delay seconds trio). Per-frame like the hook/mount key edges

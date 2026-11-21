@@ -810,6 +810,9 @@ mod w4_d16_160_tests {
     fn w4_d16_160_the_wind_place_gate() {
         let mut w = world();
         let mut pl = crate::player::Player::spawn(&w);
+        // Near the LEFT edge so the out-of-world arm's kite stays inside
+        // the 2000-px leash (the kill gate runs ahead of the wind read).
+        pl.x = 30.0;
         let p0 = kite(&w, &pl);
         let (tx, ty) = ((p0.pos.x / 16.0) as i32, (p0.pos.y / 16.0) as i32);
         // The baseline: open air above the surface — the wind reads.
@@ -839,11 +842,13 @@ mod w4_d16_160_tests {
         p5.pos.y = (w.world_surface as f32 + 10.0) * 16.0;
         kite_step(&mut p5, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
         assert_eq!(p5.local_ai[0], 0.0, "the height gate");
-        // The out-of-world skip: a kite at the map's left edge (the box
-        // covers only x = −1) still reads the wind — the C# InWorld
-        // guard skips the outside cell instead of refusing.
+        // The out-of-world skip: a kite whose box reaches past the left
+        // edge (x = −2 → tile −1) still reads the wind — the C# InWorld
+        // guard skips the outside cell instead of refusing. The player
+        // stands near the edge (pl.x = 30) so the kite stays inside the
+        // 2000-px leash (the kill gate runs ahead of the wind read).
         let mut p6 = kite(&w, &pl);
-        p6.pos.x = -20.0;
+        p6.pos.x = -2.0;
         kite_step(&mut p6, &w, Some(&mut pl), &ctx(), (0.5, 0.0, 0.0, 0.0), &mut census(), 0, 3, 3);
         assert_eq!(p6.local_ai[0], 1.0, "the out-of-world cells skip (`:86868`)");
     }
