@@ -1,20 +1,25 @@
-# 245 — g65 Kill death-dust-family bible FINAL (the 309-kinds census)
+# 308 — g65 Kill death-dust-family bible FINAL (the 309→316-kinds census)
 
 Status: FINAL / SEALED (W4-g65, 2026-11-21). Code-only — no
 cargo/rustc/tests/rustfmt/graphify invoked; every witness WRITTEN NOT RUN.
 C# cites are `decompiled/Terraria/Projectile.cs` (stable) unless named,
 read in ≤100-line windows. Rust cites pin g65's tip `b0842907c`
-(`crates/tr-app/src/projectile_death_dust.rs`, 7483 lines at that tip —
-26i's "7315" was a blank-line-excluding count).
+(`crates/tr-app/src/projectile_death_dust.rs`, 7315 lines at that tip;
+7333 with this seal's new witness).
 
-Research number **245** per registry-150
-(`origin/task/W4-d54-dust-sites-world` `docs/research/150-research-number-registry.md`,
-38bfd1d22): the 151–236 rename block is consumed; a fresh ls-tree scan of
-**all 362 origin refs** at this seal finds 237–244/246/247/248 +
-262–264/266/269–274/276/279–282 taken (240 SIX-claimed, 243 FOUR, 244/246/281
-triple/double — those collisions belong to their lanes/merger), **245 the
-first free key**. 26i (the keep-one receipt, f6e07bb90) is key-unique at
-every tip and stays 26i; this FINAL is its companion, not a rename.
+**Number chain: 245 → 308.** The prior session's uncommitted draft claimed
+"245 first free" from a stale sweep; registry-150's LATEST refresh
+(`origin/task/W4-d54-dust-sites-world` `0426245f2`,
+`docs/research/150-research-number-registry.md` §7.4) declares 245 inside
+the winner-consumed block 237–245 (g48's pre-publish 14:30:16 claim; g48
+later self-renamed it 245→282 at `9c776ca2f`, but the registry's block
+stands) and assigns 304–307 to d50/f4/g86/g43 — **308+ FREE, no
+max+1/first-free-at-my-last-fetch picks**. This seal's fresh `ls-tree`
+sweep of **all 363 origin refs** finds NOTHING numbered ≥308 (highest
+filed: 298 g63, 293 d38) → **308 the first free key**. No g65 assignment
+exists in §7.4; this is a fresh-sweep pick, not a rename-instruction.
+26i (the keep-one receipt, `f6e07bb90`) is key-unique at every tip and
+stays 26i; this FINAL is its companion.
 
 ## 1. Seal item 1 — the remainder census LANDED and CLOSED
 
@@ -33,7 +38,8 @@ zero duplicate kinds; the four range arms are `121..=126 | 597` `:3232`,
 `411..=414` `:3423`, `424..=426` `:2730`, `625..=628` `:1020`). The
 accounting's "309" (b0842907c) is the stale batch-28 figure; 26i's "317"
 (f6e07bb90) is a +1 miscount. **316 is the FINAL number** — re-derived at
-both `b0842907c` and the seal tip (code unchanged between them).
+both `b0842907c` and the seal tip (code unchanged between them; re-scanned
+mechanically again at this publish: 241 arms / 316 distinct).
 
 **The 406-site closure re-verified independently at this seal** (not just
 26i's re-scan): every `Dust.NewDust*`/`CloneDust` line in
@@ -47,7 +53,8 @@ arm, **6 other-lane-claimed** (442 `:73534` → i16
 **Unclaimed: 0.** The 7 CloneDust owners: 1116 `:71063`, 932 `:71141`,
 931|1039 `:71184`, 1047 `:71235`, 79 `:71307`, 16 `:71373`, 34 `:71453`
 — all ride g65 drain arms (`:3907`/`:4346`/`:3980`/`:4023`/`:4035`/
-`:4112`).
+`:4112`). POST-MERGE the 3 gun sites (`:74029/:74063/:74099`) move to
+other-lane-claimed (d6, §2b): **390 + 9 + 7 = 406**, still 0 unclaimed.
 
 ## 2. Seal item 2 — d78c blasts keep-one, re-verified at CURRENT tips
 
@@ -78,7 +85,7 @@ g3 `8568ef37` / g1 `e43c62879`. **Two tips moved since; re-read:**
   `projectile.rs:21836-21838` (16/34/79) + `:21894-21897` (634/635, 659,
   661); the fn bodies `projectile_ai_misc.rs:484/528/568/606/634/661`.
 
-### 2a. Merger drop-hunks — the FINAL table (execute in this order)
+### 2a. Merger drop-hunks — the census table (execute in this order)
 
 d77 (`5f10560b`), per 26i §3 (unchanged, re-verified):
 
@@ -140,6 +147,43 @@ d77 `kill_tail_cue` alongside the g65 rings; 452/454/448 keep d78
 state+EVP alongside the g65 dust/gore halves. The only double-roll risk
 is the census stubs — every one is now pinned to a drop-hunk above.
 
+### 2b. The gun Kill smoke-dup — d6 SURVIVES, g65 DROPS (g63-298 §3.3)
+
+The g63 FINAL (`298-proj-trail-dust-family-final.md` §3.3, g63 tip
+`10775b366`; corroborated by d6's RETIRE `174c0d541`, its research/247)
+adjudicated the 358/406/1042 smoke puffs — DOUBLE-PORTED by g65 batch 18
+(`1bbeec5b5`, 10:22:59) and d6 residual 8 (`1b54dcbbd`, 09:38:32,
+`projectile_gun_splash.rs`); both port `Projectile.cs:74029-74147` with
+the same per-dust draw census. **Verdict: d6-SURVIVES-g65-DROPS** —
+first-claim AND the strictly faithful port: the TRUE `old_velocity` latch
++ the style-60 scale-death ×5 base (`:28999-29000` kicks velocity BEFORE
+Kill; d6 `projectile.rs:20545` selects `p.vel` on `scale <= 0`) + the
+corpse `p.vel = base * 0.2` write (`:20546`). g65's `DeathSnapshot::of`
+sets `old_vel: p.vel` — a documented STAND-IN (`death_dust.rs:437-442`),
+wrong for moving guns — and `smoke_puff` never writes the corpse. g65's
+"kind list skips the guns" claim note is stale; 26i §5 now carries the
+verdict. Merger DROP-hunks on g65's OWN file (ranges re-verified at
+`f6e07bb90`, code unchanged below `:7480`):
+
+15. **D1** `projectile_death_dust.rs:2786-2794` — the 358/406/1042 match
+    arms DROP (the guns fall through to the default, no draws); replace
+    with the 298 §3.3 ownership comment citing d6 + research/298 §3.3.
+16. **D2** `:4834-4885` — the `smoke_puff` helper DROPs whole (doc
+    comment included; its only callers were D1's arms).
+17. **D3** `:6616-6634` — the `w4_g65_the_smoke_puffs` witness DROPs
+    (d6's three gun-splash witnesses cover the surviving census).
+
+d6 keeps EVERYTHING (`projectile_gun_splash.rs` module + 3 witnesses, the
+`pending_gun_splashes` queue `projectile.rs:14752-14757`,
+`drain_gun_splashes` `:15289-15294`, the death-hook snapshot + velocity
+write `:20525-20556`, the pass-tail drain `world_sim/projectiles.rs:680-696`,
+`main.rs:187`); g65's generic snapshot hook keeps snapshotting the gun
+kinds — inert, no arm consumes them post-drop. One survivor, never both:
+a double-feed desyncs the stream. Post-drop drain: 316−3 = **313 kinds**
+(§3 roster minus 358/406/1042); the 406-site closure holds as 390+9+7 (§1).
+
+**Total merger drop-hunks: 17 = 14 census (§2a) + 3 gun smoke-puff (§2b).**
+
 ## 3. The drain census — 316 kinds, the FINAL roster
 
 241 arms, 316 distinct kinds (mechanical scan at `b0842907c`, ranges
@@ -169,10 +213,13 @@ expanded, zero duplicates). The roster in ascending order:
 1055, 1073, 1078, 1080, 1085, 1092, 1097, 1098, 1105, 1111, 1115, 1116,
 1120, 1123, 1124, 1133.
 
+**POST-MERGE roster: 313** — 358/406/1042 drop to d6 (§2b hunks 15–17).
+
 Batch provenance: batches 1–10 (pre-`7f0dc8649`, 135 distinct kinds at
 the base) + batches 11–31 (the ANALYSIS "Census completeness" per-batch
-lists). The witness suite: **115 `w4_g65_*` fns** at the tip — all
-WRITTEN NOT RUN.
+lists). The witness suite: **116 `w4_g65_*` fns** at the seal tip (115 +
+this seal's inert-deferred witness) — all WRITTEN NOT RUN; post-merge 115
+(the smoke-puff witness drops, §2b hunk 17).
 
 ## 4. Seal item 3 — the deferred set, task-seeded to owner lanes
 
@@ -182,10 +229,10 @@ The 7 deferred dust sites are NOT free; each needs state the drain's
 
 | kind(s) | C# arm | dust | the blocking state | owner lane / seed |
 | ------- | ------ | ---- | ------------------ | ----------------- |
-| 1084 TorchGodHelper | `:70956-70975` | 40× `TorchID.Dust[(int)ai[0]]` alpha 100, Next(3)≠0 → noGravity, vel×2.5; type-66 → `Main.DiscoR/G/B` colour + noGravity | the 24-entry `TorchID.Dust` table (`TorchID.cs:179-184`, UNPORTED — only `TorchColor` is ported) + the App-frame disco cycle (`App.disco`/`advance_disco` exists, `app/mod.rs:840/1499`, but is not in `SpawnCtx`) | **S1-P-i58** (R-245-1): the torch-table + disco feed into the drain seam, then the 1084/949 arms |
+| 1084 TorchGodHelper | `:70956-70975` | 40× `TorchID.Dust[(int)ai[0]]` alpha 100, Next(3)≠0 → noGravity, vel×2.5; type-66 → `Main.DiscoR/G/B` colour + noGravity | the 24-entry `TorchID.Dust` table (`TorchID.cs:179-184`, UNPORTED — only `TorchColor` is ported) + the App-frame disco cycle (`App.disco`/`advance_disco` exists, `app/mod.rs:840/1499`, but is not in `SpawnCtx`) | **S1-P-i58** (R-308-1): the torch-table + disco feed into the drain seam, then the 1084/949 arms |
 | 949 TorchGod | `:70976-70995` | 20× `(int)ai[0]`-typed dust alpha 100, Next(3)≠0 → noGravity, vel×0.8; type-66 → disco colour + noGravity | same disco feed (no table — the type is ai[0] direct) | **S1-P-i58** (rides the same feed) |
-| 868/869/996 Tree/World/MoonGlobe | `:73705-73728` | 15× dust-13 vel(0,−2) scale 1.5 (no explicit draws) | the AFTER-dust `WorldGen.TreeTops.RandomizeTreeStyleBasedOnWorldPosition(Main.rand, Center)` / `RandomizeBackgroundBasedOnPlayer(Main.rand, player[owner])` / `RandomizeMoonState(Main.rand, true)` (`:73717/:73720/:73723`) — UNPORTED state-bearing randomizers that consume the SAME `Main.rand` + `SendData(7)` | **S1-P-i59** (R-245-2): the three globe Kill arms ride the worldgen-randomizer lane (g70/g71/g72-adjacent); the 15-dust prefix ports with them (stream order: dust internals BEFORE the randomizer draws) |
-| 655 BeeHive | `:75080-75124` | 30× dust-147, Next(2)==0 → scale×1.4, `velocity *= 1.9` PER ITERATION (the corpse velocity compounds ×1.9³⁰) | the wet-item `Item.NewItem(1124, Next(2,6))` / the 2+3×Next(3) NPC-count + `NPC.NewNPC(Next(210,212), Start:1)` burst with per-NPC velocity rolls — cross-seam spawn draws; the compounding velocity write mutates the corpse mid-arm | **S1-P-i60** (R-245-3): the hive death arm rides the NPC-spawn/item-drop seam owner; the dust prefix + the ×1.9 ladder port together (the velocity write is observable by later hooks) |
+| 868/869/996 Tree/World/MoonGlobe | `:73705-73728` | 15× dust-13 vel(0,−2) scale 1.5 (no explicit draws) | the AFTER-dust `WorldGen.TreeTops.RandomizeTreeStyleBasedOnWorldPosition(Main.rand, Center)` / `RandomizeBackgroundBasedOnPlayer(Main.rand, player[owner])` / `RandomizeMoonState(Main.rand, true)` (`:73717/:73720/:73723`) — UNPORTED state-bearing randomizers that consume the SAME `Main.rand` + `SendData(7)` | **S1-P-i59** (R-308-2): the three globe Kill arms ride the worldgen-randomizer lane (g70/g71/g72-adjacent); the 15-dust prefix ports with them (stream order: dust internals BEFORE the randomizer draws) |
+| 655 BeeHive | `:75080-75124` | 30× dust-147, Next(2)==0 → scale×1.4, `velocity *= 1.9` PER ITERATION (the corpse velocity compounds ×1.9³⁰) | the wet-item `Item.NewItem(1124, Next(2,6))` / the 2+3×Next(3) NPC-count + `NPC.NewNPC(Next(210,212), Start:1)` burst with per-NPC velocity rolls — cross-seam spawn draws; the compounding velocity write mutates the corpse mid-arm | **S1-P-i60** (R-308-3): the hive death arm rides the NPC-spawn/item-drop seam owner; the dust prefix + the ×1.9 ladder port together (the velocity write is observable by later hooks) |
 | 91/92 HolyArrow/HallowStar | `:75212-75249` | 10× dust-58 speed vel×0.1 alpha 150 scale 1.2 + 3 gores Next(16,18) | the star spawn's state-bearing draws (`Next(-400,400)`/`Next(600,900)` position, the 22/√ normalize, damage/3 for 91) ride `special_arrow_kill` inline (`projectile.rs:20849`, `special_arrows.rs:480/503` — main-landed) | the i17 special-arrow lane (main): the dust+gore prefix folds into `holy_arrow_kill`/`falling_star_kill` ahead of the spawn draws — **cross-seam dedupe note to i17, no new seed** (the arm is already owned) |
 | 89 CrystalBullet | `:75250-75268` | 5× dust-68 noGravity vel×1.5 scale×0.9 | the 2-shard split's 8 state-bearing draws ride `special_bullet_kill` inline (`projectile.rs:20974`, the `:20986` "5 dust-68 (skipped)" comment) | the i18 special-bullet lane (main): the 5-dust prefix folds ahead of the shard draws — **cross-seam dedupe note to i18, no new seed** |
 | 183 Beenade | `:76431-76464` | 20× dust-31 alpha 100 scale 1.5 vel×1 | the 4 gore rows + the bee burst's draws ride `beenade_death` (`projectile_ai_thrown.rs:461`, main-landed — the G3 census: 4×(Next(61,64)+kicks) + Next(15,25) + per-bee rolls) | the thrown lane (main): the 20-dust prefix folds ahead of the gore census — **cross-seam dedupe note, no new seed** |
@@ -194,20 +241,24 @@ The three cross-seam rows (89/91+92/183) need NO new lane — the owning
 hooks are main-landed; the fold is a prefix-insert at the cited fn, drawn
 BEFORE the existing state-bearing draws (the C# body order). The three
 seeded rows (1084+949 / 868+869+996 / 655) are registered as S1-P-i58/59/60
-(ROADMAP) + R-245-1/2/3 (research/90 §(d)) — id space verified free at
+(ROADMAP) + R-308-1/2/3 (research/90 §(d)) — id space verified free at
 every tip.
 
 ## 5. The death-dust-family declaration (the bible)
 
 ONE family, axis-disjoint, per the d54-bible convention:
 
-- **g63/g64** — the per-tick TRAIL dust (g63 ≤400 / g64 ≥401, research/196
-  FINAL) + e3's aiStyle-generic trail copies. NOT death dust.
+- **g63/g64** — the per-tick TRAIL dust (g63 ≤400 / g64 ≥401, research/298
+  FINAL + research/196) + e3's aiStyle-generic trail copies. NOT death dust.
 - **g65 (this lane)** — the `Kill()` per-kind DEATH dust: the 316-kind
-  drain, the snapshot→pass-tail seam, the 393/406 sites. CANONICAL for
-  every kind in §3's roster.
+  drain (313 post-merge), the snapshot→pass-tail seam, the 393/406 sites
+  (390 post-merge). CANONICAL for every kind in §3's roster MINUS the
+  §2b gun trio.
+- **d6** — the gun Kill smoke puffs (358/406/1042, `projectile_gun_splash.rs`):
+  the keep-one survivor per g63-298 §3.3 (§2b); g65's copies DROP at merge.
 - **d53→e3→f5** — the projectile per-tick/AI dust site batches
-  (research/244 RETIRE). NOT death dust.
+  (research/275 RETIRE, re-issued per registry-150 §7.4.3; chain
+  240→244→275). NOT death dust.
 - **i16/i17/i18/celeb2/floating-turret/d12** — the special-death hosts
   (442/478, the special arrows/bullets, 715-718, 644/641/643, 608): their
   Kill dust stays theirs (the 6 other-lane sites + the 3 cross-seam
@@ -215,7 +266,7 @@ ONE family, axis-disjoint, per the d54-bible convention:
 - **g16** — the gore BODIES/draws (165 sites); g65's `gore_census` carries
   only the draws that interleave with its dust arms.
 - **d77/d78/g3/g1** — cues/state/census per §2; every census stub that
-  duplicates a g65 body drops at the merge (§2a hunks 1–14).
+  duplicates a g65 body drops at the merge (§2a hunks 1–14 + §2b 15–17).
 
 Gate command (post-merge, NOT run here): `cargo test --workspace --skip
 migrates_version_2_kinds_to_item_ids` — judge by the `test result: ok`
@@ -228,4 +279,5 @@ seal's new `w4_g65_seal_the_deferred_kinds_are_inert` (the 10 deferred
 kinds — 89/91/92/183/655/868/869/949/996/1084 — spawn nothing and draw
 nothing through the drain: the deferred set is stream-inert until its
 owner lane ports it). The 26i §4 pins stand: 617 `:6157`, nebula sparks
-`:6173`, 710 `:6006`, 661 `:6141`, 452/454 `:6358`, 448/616 `:6525`.
+`:6173`, 710 `:6006`, 661 `:6141`, 452/454 `:6358`, 448/616 `:6525`. The
+smoke-puff witness (`:6616-6634`) drops at merge with §2b hunk 17.

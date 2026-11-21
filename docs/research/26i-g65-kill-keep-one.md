@@ -125,3 +125,34 @@ The g65 bodies' witnesses are WRITTEN NOT RUN (code-only): the 617
 (`:6141`), the 452/454 (`:6358`) + 448/616 (`:6525`) bursts. The
 draw-equivalence claims above were verified by C# re-read + census-fn
 line-by-line comparison, NOT by running the tests.
+
+## 5. ADDENDUM — the gun Kill smoke-dup verdict (g63-298 §3.3): d6 SURVIVES, g65 DROPS
+
+The g63 FINAL (`298-proj-trail-dust-family-final.md` §3.3, g63 tip
+`10775b366`; corroborated by d6's RETIRE `174c0d541`, research/247 there)
+adjudicated the 358/406/1042 smoke puffs — DOUBLE-PORTED by g65 batch 18
+(`1bbeec5b5`) and d6 residual 8 (`1b54dcbbd`, `projectile_gun_splash.rs`);
+both port `Projectile.cs:74029-74147` with the same per-dust draw census.
+**Verdict: d6-SURVIVES-g65-DROPS.** d6's hook is the strictly faithful port:
+the TRUE `old_velocity` latch + the style-60 scale-death ×5 base
+(`:28999-29000` kicks velocity BEFORE Kill; d6 `projectile.rs:20545` selects
+`p.vel` on `scale <= 0`) + the corpse `p.vel = base * 0.2` write (`:20546`).
+g65's `DeathSnapshot::of` sets `old_vel: p.vel` — a documented STAND-IN
+(`death_dust.rs:437-442`), wrong for moving guns — and `smoke_puff` never
+writes the corpse. Merger DROP-hunks on g65's file (ranges re-verified at
+this receipt's tip `f6e07bb90`, code unchanged below `:7480`):
+
+- **D1** `projectile_death_dust.rs:2786-2794` — the 358/406/1042 match arms
+  DROP (guns fall through to the default, no draws); replace with the
+  298 §3.3 ownership comment citing d6 + research/298 §3.3.
+- **D2** `:4834-4885` — the `smoke_puff` helper DROPs whole (doc comment
+  included; its only callers were D1's arms).
+- **D3** `:6616-6634` — the `w4_g65_the_smoke_puffs` witness DROPs (d6's
+  three gun-splash witnesses cover the surviving census).
+
+d6 keeps EVERYTHING (module + queue + death-hook + pass-tail drain); g65's
+generic snapshot hook keeps snapshotting the gun kinds — inert, no arm
+consumes them post-drop. One survivor, never both: a double-feed desyncs
+the stream. Post-drop drain: 316−3 = **313 kinds**; the 406-site closure
+holds with the 3 gun sites moving to other-lane-claimed (390+9+7 = 406).
+The FINAL bible (research/308 §2b) carries the same hunks.
