@@ -288,6 +288,15 @@ pub struct PlayerFile {
     /// derived from `HasItemInAnyInventory(3353)` (`:55716-55719`) and the
     /// enabled bit keeps its field default true.
     pub super_cart: u8,
+    /// `Player.voiceVariant` (`Serialize:54924` writes `(byte)voiceVariant` /
+    /// `Deserialize:55728-55731`, gate 280; the ctor sets 1 `Player.cs:56045`).
+    /// `LoadPlayer_LastMinuteFixes` clamps it to 1..4 (`:55831`). Below 280
+    /// it derives from `Male ? 1 : 2` (`:55735`, `PlayerVariantID.Sets.Male`
+    /// = {0,1,2,3,8,10}, `ID/PlayerVariantID.cs:20`).
+    pub voice_variant: u8,
+    /// `Player.voicePitchOffset` (`Player.cs:1348`, `Serialize:54925` /
+    /// `Deserialize:55738-55741`, gate 281; below 281 it is 0f `:55742-55745`).
+    pub voice_pitch_offset: f32,
 }
 
 /// The three `IPersistentPerPlayerContent` powers the `.plr` carries
@@ -992,10 +1001,23 @@ fn read_player_fields(
         }
     }
     if version >= 280 {
-        r.u8().ok_or(PlayerFileError::Truncated("voice"))?; // `:55728-55731`
+        tail.voice_variant = r.u8().ok_or(PlayerFileError::Truncated("voice"))?; // `:55728-55731`
+    } else {
+        // `:55732-55737`: the skinVariant clamp (done in finish_player_file),
+        // then voiceVariant = Male ? 1 : 2. `Male` reads
+        // `PlayerVariantID.Sets.Male[skinVariant]` (`Player.cs:3405-3410`,
+        // the set {0,1,2,3,8,10}, `ID/PlayerVariantID.cs:20`); the variant is
+        // clamped first exactly like `:55734`.
+        let variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1);
+        let male = matches!(variant, 0 | 1 | 2 | 3 | 8 | 10);
+        tail.voice_variant = if male { 1 } else { 2 };
+        tail.voice_pitch_offset = 0.0;
     }
     if version >= 281 {
-        r.f32().ok_or(PlayerFileError::Truncated("voicePitch"))?; // `:55738-55741`
+        tail.voice_pitch_offset =
+            r.f32().ok_or(PlayerFileError::Truncated("voicePitch"))?; // `:55738-55741`
+    } else {
+        tail.voice_pitch_offset = 0.0; // `:55742-55745`
     }
     if version >= 300 {
         // _pendingRefunds (`:55746-55754`): count + Item.DeserializeFrom triples.
@@ -1067,6 +1089,8 @@ struct PlayerTail {
     golfer_score: i32,
     temp_slots: [Option<(i32, i32, u8)>; 4],
     super_cart: u8,
+    voice_variant: u8,
+    voice_pitch_offset: f32,
 }
 
 impl Default for PlayerTail {
@@ -1106,6 +1130,8 @@ impl Default for PlayerTail {
             temp_slots: [None; 4],
             // `enabledSuperCart = true` (`Player.cs:2054`) → 0b10 = 2.
             super_cart: 2,
+            voice_variant: 1, // the ctor (`Player.cs:56045`)
+            voice_pitch_offset: 0.0,
         }
     }
 }
@@ -1130,6 +1156,8 @@ fn finish_player_file(
     tail: PlayerTail,
 ) -> PlayerFile {
     let skin_variant = (skin_variant as i32).clamp(0, PLAYER_VARIANT_COUNT - 1) as u8;
+    // `LoadPlayer_LastMinuteFixes` (`:55831`): voiceVariant clamps to 1..4.
+    let voice_variant = (tail.voice_variant as i32).clamp(1, 4) as u8;
     // CreativePowerManager.LoadToPlayer (`CreativePowerManager.cs:211-214`):
     // a non-Journey character (difficulty != 3) has the loaded powers RESET
     // after the walk — Godmode false / FarPlacement true / SpawnRate 0.5
@@ -1185,6 +1213,8 @@ fn finish_player_file(
         golfer_score: tail.golfer_score,
         temp_slots: tail.temp_slots,
         super_cart: tail.super_cart,
+        voice_variant,
+        voice_pitch_offset: tail.voice_pitch_offset,
     }
 }
 
@@ -1329,6 +1359,8 @@ fn read_legacy_port_subset(
         golfer_score: 0,
         temp_slots: [None; 4],
         super_cart: 2,
+        voice_variant: 1,
+        voice_pitch_offset: 0.0,
     })
 }
 
@@ -1428,6 +1460,10 @@ pub struct PlayerFileWrite {
     pub respawn_timer: i32,
     /// `Player.golferScoreAccumulated` (`:54910`), default 0.
     pub golfer_score: i32,
+    /// `(byte)Player.voiceVariant` (`:54924`), default 1 (the ctor `:56045`).
+    pub voice_variant: u8,
+    /// `Player.voicePitchOffset` (`:54925`), default 0f.
+    pub voice_pitch_offset: f32,
     /// `Player._temporaryItemSlots[4]` (`:54912` ->
     /// `SaveTemporaryItemSlotContents:54935-54959`): `Some(triple)` writes
     /// the slot's bit + payload, `None` = air. A fresh save is all-`None`.
@@ -1489,6 +1525,8 @@ impl Default for PlayerFileWrite {
             golfer_score: 0,
             temp_slots: [None; 4],
             super_cart: 2,
+            voice_variant: 1, // the ctor (`Player.cs:56045`)
+            voice_pitch_offset: 0.0,
         }
     }
 }
@@ -1761,8 +1799,8 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
             w.boolean(hide);
         }
     }
-    w.u8(1); // `:54924` (byte)voiceVariant — the ctor sets 1 (`Player.cs:56045`)
-    w.f32(0.0); // `:54925` voicePitchOffset (`Player.cs:1348`, default 0f)
+    w.u8(file.voice_variant); // `:54924` (byte)voiceVariant (ctor 1, `:56045`)
+    w.f32(file.voice_pitch_offset); // `:54925` voicePitchOffset (`:1348`)
                 // `:54926` CraftingRequests.SavePossibleRefunds
                 // (`CraftingRequests.cs:353-362`): the sum of consumed items over _pendingCrafts
                 // — a fresh queue is empty → count 0, no item payloads.
@@ -1967,6 +2005,113 @@ mod tests {
         // A fresh write keeps the golden zeros (`:54754-54757`).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: the voice pair round-trips; the read clamps the variant
+    /// to 1..4 (`:55831`); a pre-280 file derives the variant from the
+    /// skinVariant's Male set and zeroes the pitch.
+    #[test]
+    fn the_voice_pair_round_trips_clamps_and_derives() {
+        let written = PlayerFileWrite {
+            voice_variant: 3,
+            voice_pitch_offset: -0.25,
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.voice_variant, 3);
+        assert_eq!(file.voice_pitch_offset, -0.25);
+        // The clamp: 0 → 1, 9 → 4 (`Utils.Clamp(1, 4)`, `:55831`).
+        for (raw, want) in [(0u8, 1u8), (5, 4), (255, 4), (2, 2)] {
+            let written = PlayerFileWrite { voice_variant: raw, ..sample() };
+            let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+            assert_eq!(file.voice_variant, want);
+        }
+        // A pre-280 body: hand-built at 279's gates (no team < 283, no 324
+        // bool, no armour/dye favourites < 322, no bank4 favourites < 255,
+        // no tracker flag < 282, no voice bytes) — ends after the loadouts.
+        fn body_279(skin_variant: u8) -> Vec<u8> {
+            let mut w = Writer::new();
+            w.i32(279);
+            w.u64(FILE_METADATA_MAGIC | (FILE_TYPE_PLAYER << 56));
+            w.u32(0);
+            w.u64(0);
+            w.cs_string("Belsin");
+            w.u8(0); // difficulty
+            w.u64(0); // playtime
+            w.i32(0); // hair
+            w.u8(0); // hairDye — no team at 279
+            w.bytes(&[0, 0]); // hide BitsBytes
+            w.u8(0); // hideMisc
+            w.u8(skin_variant);
+            for v in [100, 100, 20, 20] {
+                w.i32(v);
+            }
+            for _ in 0..11 {
+                w.boolean(false); // extra + torch pair + bread + 6 unlocks + dd2
+            }
+            w.i32(0); // tax
+            w.i32(0); // deathsPVE (254)
+            w.i32(0); // deathsPVP (254)
+            w.bytes(&[0; 21]); // colors
+            for _ in 0..30 {
+                w.i32(0); // armor + dye pairs, no favourited (< 322)
+                w.u8(0);
+            }
+            for _ in 0..58 {
+                w.bytes(&[0; 10]); // inventory triples + favourited
+            }
+            for _ in 0..5 {
+                w.bytes(&[0; 10]); // misc pairs
+            }
+            for _ in 0..120 {
+                w.bytes(&[0; 9]); // bank + bank2 + bank3 triples
+            }
+            for _ in 0..40 {
+                w.bytes(&[0; 10]); // bank4 with favourited (>= 255)
+            }
+            w.u8(0); // voidVaultInfo (199)
+            for _ in 0..44 {
+                w.i32(0); // buffs (>= 252)
+                w.i32(0);
+            }
+            w.i32(-1); // spawn sentinel
+            w.boolean(false); // hbLocked
+            w.bytes(&[0; 13]); // hideInfo
+            w.i32(0); // angler
+            for _ in 0..4 {
+                w.i32(-1); // dpad
+            }
+            for i in 0..12 {
+                w.i32(i32::from(i == 0)); // builderAcc (>= 230)
+            }
+            w.i32(0); // bartender
+            w.boolean(false); // dead
+            w.u64(0); // timestamp
+            w.i32(0); // golfer (206)
+            w.i32(0); // tracker count (218) — no flag (< 282)
+            w.u8(0); // temp-slot BitsByte (214)
+            w.boolean(false); // powers terminator (220)
+            w.u8(2); // superCart (253)
+            w.i32(0); // CurrentLoadoutIndex (262)
+            for _ in 0..3 {
+                for _ in 0..30 {
+                    w.bytes(&[0; 9]); // loadout items, no favourited (< 322)
+                }
+                w.bytes(&[0; 10]); // Hide[10]
+            }
+            w.into_inner() // the 279 file ends before the voice bytes
+        }
+        // Male variants {0,1,2,3,8,10} → 1; female {4,5,6,7,9,11} → 2.
+        for variant in [0u8, 1, 2, 3, 8, 10] {
+            let file = read_player_bytes(&body_279(variant)).unwrap();
+            assert_eq!(file.voice_variant, 1, "variant {variant} is Male");
+            assert_eq!(file.voice_pitch_offset, 0.0);
+        }
+        for variant in [4u8, 5, 6, 7, 9, 11] {
+            let file = read_player_bytes(&body_279(variant)).unwrap();
+            assert_eq!(file.voice_variant, 2, "variant {variant} is female");
+            assert_eq!(file.voice_pitch_offset, 0.0);
+        }
     }
 
     /// W4-f44 ph3: the super-cart BitsByte round-trips verbatim; a pre-253
