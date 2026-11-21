@@ -769,6 +769,13 @@ pub struct Projectile {
     /// S1-P-i35 — the pull's Duke Fishron spawn (`Player.cs:52403-52414`,
     /// `NPC.SpawnOnPlayer(plr, 370)`): the owner player id.
     pub wants_duke_spawn: bool,
+    /// W4-d19 — the 1126 Chlorophyte Claymore's spore-machine child intents
+    /// (`AI_190_NightsEdge` `Projectile.cs:42078-42182`): the queued 1128
+    /// clouds and the optional 1129 slam. The child rows + the aiStyle-92/
+    /// 209 machines are the documented follow-up (`projectile_ai_sword_styles`
+    /// module doc) — the intents park here (the `wants_mark_spawn` pattern)
+    /// until the drain lands. `None` for every slot that bloomed nothing.
+    pub(crate) wants_claymore_spores: Option<crate::projectile_ai_sword_styles::ClaymoreSpores>,
 }
 
 impl Default for Projectile {
@@ -855,6 +862,7 @@ impl Default for Projectile {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_claymore_spores: None,
         }
     }
 }
@@ -10090,7 +10098,10 @@ impl Projectile {
     /// rings shift **once per update call** — after the AI sub-steps, ahead of
     /// the `timeLeft--` at `:17201` — so a sub-stepped kind records one entry
     /// per tick, not one per sub-step. The modes 4/5 arms (`:17168-17196`) are
-    /// absent: their kinds (933/1100/106) are not ported.
+    /// absent: W4-d19 rowed the mode-4 kinds 933/1100 (the Zenith illusions)
+    /// but their owner-delta push + 60-entry cache stay the recorded
+    /// trail-density deviation (`projectile_ai_sword_styles` module doc);
+    /// the mode-5 kind 106 is still unported.
     fn shift_trailing_history(&mut self) {
         let mode = trailing_mode(self.kind);
         if mode < 0 {
@@ -13399,8 +13410,11 @@ fn shift_ring<T: Copy>(ring: &mut [T]) {
 /// The table is the in-scope slice over the ported kinds (`Projectile.cs`
 /// `17091-17195`'s chain). The C# set's 1120 (the Forbidden sign's shot) and the
 /// rest of the unported kinds default to −1 here, as the source's factory
-/// default does for every id the set omits. Modes 4/5 have no ported kind
-/// (933/1100/106) and no arm.
+/// default does for every id the set omits. Mode 4's kinds 933/1100 (the
+/// Zenith illusions) are rowed by W4-d19 but keep the −1 default here —
+/// their owner-delta push + 60-entry cache are the recorded trail-density
+/// deviation (`projectile_ai_sword_styles` module doc); mode 5's kind 106
+/// is still unported.
 pub(crate) fn trailing_mode(kind: u16) -> i32 {
     match kind {
         // `:17091`'s mode-0 kinds among the ported rows (the positions only;
@@ -17327,6 +17341,99 @@ impl ProjectilePool {
                                 rng,
                             );
                             // HandleMovement runs before the !active return (:17015/:17027).
+                            self.slots[i].kill_step(world);
+                        }
+                        // W4-d19 — the aiStyles 182-186/190 census slice
+                        // (`projectile_ai_sword_styles`). Each arm owns its
+                        // state; the movement is the post-arm `kill_step`
+                        // (HandleMovement's default, `:17015` before the
+                        // `!active` return `:17027`) EXCEPT 182, whose kinds
+                        // sit in `UpdatePosition`'s skip list (`:20435`).
+                        // aiStyle 182 — the Zenith illusions (933/1100,
+                        // `AI_182_FinalFractal` `:43111-43176`): the orbit,
+                        // the opacity window, the dust-trail draws.
+                        182 => {
+                            let owner_view = if self.slots[i].owner == local_owner {
+                                player.as_deref().map(|pl| {
+                                    let (mcx, mcy) = pl.mounted_center();
+                                    crate::projectile_ai_sword_styles::FractalOwner {
+                                        mounted_center: Vec2::new(mcx, mcy),
+                                    }
+                                })
+                            } else {
+                                None
+                            };
+                            crate::projectile_ai_sword_styles::ai_final_fractal(
+                                &mut self.slots[i],
+                                owner_view.as_ref(),
+                                rng,
+                            );
+                            // `UpdatePosition` (`:20435`) names 933/1100 —
+                            // NO integration after the AI (the Centre pin
+                            // is the whole movement).
+                        }
+                        // aiStyle 183 — the Zoologist strikes (880/929,
+                        // `AI_183_ZoologistStrike` `:43095-43109`): the
+                        // velocity brake, the facing, the frame clamp.
+                        183 => {
+                            crate::projectile_ai_sword_styles::ai_zoologist_strike(
+                                &mut self.slots[i],
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 184 — the Torch God's fireball (949,
+                        // `AI_184_BadTorchLuck` `:42787-42822`): the
+                        // owner-gated self-hurt, the cue, the ai[1] drain
+                        // that re-arms tileCollide, the four-dust trail.
+                        184 => {
+                            crate::projectile_ai_sword_styles::ai_bad_torch_luck(
+                                &mut self.slots[i],
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 185 — the Soul Drain (476,
+                        // `AI_185_LifeDrain` `:42631-42665`): the first-tick
+                        // hitbox scan + the mana-pay latch.
+                        185 => {
+                            crate::projectile_ai_sword_styles::ai_life_drain(
+                                &mut self.slots[i],
+                                player.as_deref_mut(),
+                                &npcs[..],
+                                local_owner,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 186 — the Resonance Scepter's blast (950,
+                        // `AI_186_PrincessWeapon` `:42667-42785`): the
+                        // 60-tick life, the eased scale, the dust rings.
+                        186 => {
+                            crate::projectile_ai_sword_styles::ai_princess_weapon(
+                                &mut self.slots[i],
+                                rng,
+                            );
+                            self.slots[i].kill_step(world);
+                        }
+                        // aiStyle 190 — the seven big-sword slashes
+                        // (`AI_190_NightsEdge` `:41972-42227`): the shared
+                        // spine + the per-kind dust gates; the 1126 spore
+                        // machine's child intents ride back out.
+                        190 => {
+                            let spores = crate::projectile_ai_sword_styles::ai_nights_edge(
+                                &mut self.slots[i],
+                                world,
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            // The 1128/1129 child rows + the 92/209 machines
+                            // are the documented follow-up (module doc) — the
+                            // intents park on the slot until the drain lands.
+                            if !spores.clouds.is_empty() || spores.slam.is_some() {
+                                self.slots[i].wants_claymore_spores = Some(spores);
+                            }
                             self.slots[i].kill_step(world);
                         }
                         // aiStyle 193 — the Flamethrower Flames
@@ -30445,6 +30552,7 @@ mod phasmal_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_claymore_spores: None,
         }
     }
 
@@ -30854,6 +30962,7 @@ mod ritual_projectile_tests {
             wants_splash: None,
             wants_fishing_enemy: None,
             wants_duke_spawn: false,
+            wants_claymore_spores: None,
         }
     }
 

@@ -39244,3 +39244,91 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-d19 sword styles — the aiStyles 182-186/190 census slice (code-only)
+
+**Task.** The projectile-AI census window 181-190: 181/187/188/189 were
+already armed (181 in `projectile_ai_misc`, 187/188/189 on the pool); the
+six styles **182/183/184/185/186/190** had NO dispatch arm and NO
+`proj_data` rows. This round ports all six into the NEW
+`crates/tr-app/src/projectile_ai_sword_styles.rs`, adds the thirteen
+missing rows, and wires six dispatch arms. **No compiler invoked**
+(code-only wave); the 8 witness tests are WRITTEN, NOT RUN.
+
+**Census (verified against `ID/ProjectileID.cs` + each `SetDefaults` arm).**
+
+| style | C# arm | kinds | SetDefaults |
+|-------|--------|-------|-------------|
+| 182 | `AI_182_FinalFractal` `Projectile.cs:43111-43176` | 933 FinalFractal / 1100 TrueCopperShortsword | `:8857-8873` / `:10265-10281` |
+| 183 | `AI_183_ZoologistStrike` `:43095-43109` | 880 ZoologistStrikeGreen / 929 ZoologistStrikeRed | `:8438-8450` / `:8804-8816` |
+| 184 | `AI_184_BadTorchLuck` `:42787-42822` | 949 TorchGod | `:8948-8955` |
+| 185 | `AI_185_LifeDrain` `:42631-42665` | 476 SoulDrain | `:5505-5517` |
+| 186 | `AI_186_PrincessWeapon` `:42667-42785` | 950 PrincessWeapon | `:8956-8968` |
+| 190 | `AI_190_NightsEdge` `:41972-42227` | 972 / 982 / 983 / 984 / 997 / 1043 / 1126 | `:9298-9314` / `:9354-9404` / `:9466-9482` / `:9858-9874` / `:10543-10558` |
+
+**Coverage.** All six arms ported WHOLE (state machine + every explicit
+call-site `Main.rand` draw in C# order). The 190 arm carries the seven
+per-kind dust gates, the 972/1043 thrust extension, and the 1126
+Chlorophyte Claymore spore machine (`FindChlorophyteSporeCloudSpawn`
+`:41810-41846`, `SpawnChlorophyteSporeCloud` `:41861-41970`,
+`IsTileSolidForImpact` `:41848-41859`). The 182 orbit reads the
+`FinalFractalHelper` profile table (`Graphics/FinalFractalHelper.cs:128-215`)
+for the trail width and replays the `StripDust` gate (`:39-53`).
+
+**Documented deviations (the house dust/light/sound/particle skips).**
+- The dust/gore/light/particle BODIES and the `Dust.NewDust*` internal
+  rolls go with the dust layer (ANALYSIS "Dust & gore"); every EXPLICIT
+  call-site draw stays, including the draws inside gates that feed only
+  skipped visuals. The one exception: the 1126 spore cloud's
+  `KillTile_MakeTileDust` internals are pool-occupancy-dependent dust-index
+  rolls the port cannot replay (the `ai_stardust_guardian` skip) — the
+  surrounding explicit fadeIn/scale floats and the spawn gate stay.
+- The sound cues (`Item169` 182, `Item60` 984, `Item8` 949, `Item167`
+  spore) ride the `wants_sound` intent seam; the 984 post-play `Volume *=
+  0.65` scale is the S1-E-21h deferred-scale deviation.
+- The `Lighting.AddLight` writes (182 `:43172-43173`, 1126 `:42176-42181`,
+  984 `:42206`) are the lighting seam's skip; the
+  `ParticleOrchestrator.RequestParticleSpawn` calls (186 `:42757-42782`)
+  are the particle layer's skip (their gates' `Next(4)` draws stay).
+- The 933/1100 trail ring is TrailingMode 4 with cache 60
+  (`ProjectileID.cs:521-522`); the port's fixed 10-entry ring shifts once
+  per update WITHOUT mode 4's owner-delta push (the recorded trail-density
+  deviation, `shift_trailing_history`'s doc). `trailing_mode` keeps the −1
+  default for them.
+- The damage-side slices stay with the melee port: `ownerHitCheck` /
+  `usesOwnerMeleeHitCD` / `stopsDealingDamageAfterPenetrateHits` (190's
+  rows), the 190 cone hitbox (`Colliding` `:15506-15524`).
+- **The 1126 spore machine's CHILDREN** — the 1128 cloud (aiStyle 92) and
+  the 1129 slam (aiStyle 209) — are OUTSIDE this census window and their
+  styles are unarmed. Their spawn intents ride out of the arm
+  (`ClaymoreSpores`, the `wants_mark_spawn` pattern) and park on the slot's
+  `wants_claymore_spores` field; the child ROWS + the 92/209 machines + the
+  drain are the documented follow-up (the pool cannot spawn an unrowed
+  kind). The intent payloads and their RNG order are ported and
+  witness-tested here so the follow-up only adds the rows + the drain.
+- `SelfHurtPlayers` (184): the `deadMansSweater` halving, the gravestone
+  player-index override and the `trapDebuffSource` write have no port
+  fields — the 949 is neither trap nor gravestone, so all three folds are
+  no-ops for the only rowed kind; the `ownerHitCheck` term is false.
+- The 255-player PvP scan (185) folds to the single-player port's one
+  player — the `whoAmI != player.whoAmI` gate refuses it, so the scan never
+  fires (the empress module's single-player fold).
+- The 182 `isAPreviewDisplayDoll` head (`:43113-43116`) has no port field —
+  the preview-doll display is unported, so the gate folds false.
+
+**Movement.** 182's kinds sit in `UpdatePosition`'s skip list (`:20435`
+names 933/1100) — the AI sets `Center` and NOTHING integrates after it.
+183/185/186/190 keep `tileCollide = false` (the free `position += velocity`
+`kill_step` stand-in). 184 starts `tileCollide = false` and the arm re-arms
+it once `ai[1]` drains. `HandleMovement` runs even on the AI-killed tick
+(`:17015` before the `!active` return `:17027`).
+
+**Verification.** Code-only: every arm re-read against the cited C#
+windows; the seam call sites checked against the actual signatures by
+read/grep (`Player.mounted_center/rotated_relative_point/melee_speed/
+hurt`, `regen::check_mana`, `registry::item`, `collision::tile_dust_amount`,
+`tr_core::damage::damage_var`, `Npc.size/is_town_npc_like`,
+`tiledata::TILE_SOLID`). The 8 witness tests are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The census pin
+(`s1_d_4c_every_rowed_style_has_exactly_one_live_arm`) stays satisfied:
+each of the six new styles has exactly one 24-space dispatch arm.
