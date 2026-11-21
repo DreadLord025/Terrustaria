@@ -777,6 +777,15 @@ pub const HIVE_FIVE: u16 = 999;
 /// (`Projectile.cs:9237-9252`'s SetDefaults, `AI_188_LightsBane`
 /// `:42229-42262`, `Main.DrawProj_LightsBane` `Main.cs:27455-27495`).
 pub const LIGHTS_BANE: u16 = 974;
+/// `ProjectileID.Volcano` (978) — the Fiery Greatsword / Volcano (item 121)
+/// melee on-hit explosion (`Projectile.cs:9253-9268`'s SetDefaults, aiStyle
+/// 189 `AI_189_Volcano` `:42264-42371`). W4-d12 DOC-SWEEP item 7: d19's
+/// a4185f89 landed the 189 ARM + the 182-186/190 rows but NOT this row, so it
+/// ports here (the row is the spawn's only gate — `spawn_with_data` declines
+/// rowless kinds). The spawn site is `Player.Volcano_TrySpawningVolcano`
+/// (`Player.cs:44150-44158`), the item-121 melee proc — the player-lane
+/// follow-up, not this row.
+pub const VOLCANO: u16 = 978;
 
 // ===== S1-D-4: the Empress of Light's projectile family =====
 // The five kinds the Empress `AI_120_HallowBoss` machine spawns (R7's
@@ -2965,6 +2974,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 (true, -1, false, -1, 255, 1.0),
             ),
+            // W4-d12 DOC-SWEEP item 7 — `Projectile.cs:9253-9268` Volcano
+            // (978): 160×160, aiStyle 189, friendly, melee, `alpha = 255`,
+            // `ignoreWater`, `tileCollide = false`, `ownerHitCheck = true`
+            // (no port field — the spear family's gate is the only ported
+            // ownerHitCheck consumer, ANALYSIS), `penetrate = 3`,
+            // local-immunity −1. The `timeLeft = 60` (`:9261`) is OVERWRITTEN
+            // by the second `timeLeft = 30` (`:9268`) — the row keeps 30.
+            VOLCANO => (
+                160.0,
+                160.0,
+                189,
+                3,
+                30,
+                0,
+                false,
+                false,
+                false,
+                (true, -1, false, -1, 255, 1.0),
+            ),
             // `TheEyeOfCthulhuDash` (`:10596-10608`): 100×100, aiStyle 210,
             // `timeLeft = 600`, `penetrate = -1`, local-immunity −1.
             EYE_OF_CTHULHU_DASH => (100.0, 100.0, 210, -1, 600, 0, false, false, false, RESET_STATE),
@@ -4342,6 +4370,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 SOLAR_COUNTER | SOLAR_WHIP_SWORD_EXPLOSION | STARDUST_GUARDIAN_EXPLOSION
                     | DAYBREAK_EXPLOSION | DEAD_CELLS_MUSHROOM_BOI_EXPLOSION
             )
+            // W4-d12 DOC-SWEEP item 7 — `Projectile.cs:9260`: the Volcano
+            // explosion's `ignoreWater = true`.
+            || kind == VOLCANO
             // `Projectile.cs:9517` — the Horseman's pumpkin lob (1001).
             || kind == HORSEMAN_PUMPKIN
             // S1-D-3 W-9: the sharknado clouds' `ignoreWater = true`
@@ -4419,6 +4450,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | LIGHTS_BANE | TERRARIAN_BEAM
                     | CASCADE_EXPLOSION | EYE_OF_CTHULHU_DASH | CRYSTAL_SHARD_MELEE | KRAKEN_WAVE
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
+                    // W4-d12 DOC-SWEEP item 7 — the Volcano explosion's melee
+                    // flag (`Projectile.cs:9267`).
+                    | VOLCANO
                     // W4-d12 F1 — the aiStyle-113 melee sticks: the Daybreak
                     // (636, `:6844`), the Tentacle Spike (971, `:9203`) and
                     // the Blood Butcherer (975, `:9293`).
@@ -4842,6 +4876,10 @@ pub(crate) const fn proj_frames(kind: u16) -> u32 {
         // the `3 * projFrames` life cap reads it (`:34467`). The 608/624/
         // 1044 keep the init 1 (no override — `Main.cs:8441`).
         SOLAR_WHIP_SWORD_EXPLOSION | DAYBREAK_EXPLOSION => 5,
+        // W4-d12 DOC-SWEEP item 7 — the Volcano explosion's 5-frame sheet
+        // (`Main.cs:8493`); the aiStyle-189 arm's 2-tick machine wraps at 5
+        // (`Projectile.cs:42282-42289`).
+        VOLCANO => 5,
         // W4-d12 F1 — the aiStyle-113 family's sheets: the Stardust Cell's
         // shot is 4 frames (`Main.cs:8495`), the Killing Deck card 8
         // (`Main.cs:8444`). The 598/636/971/975 keep the init 1 (no
@@ -5068,12 +5106,16 @@ mod tests {
             assert_eq!(d.ai_style, style, "kind {k}");
         }
         // The 978 flag58 term: Volcano's SetDefaults is aiStyle 189
-        // (`Projectile.cs:9253-9268`), d19's decade (181-190) — rowless on
-        // this branch (d19/d20 carry no pushed commits; the claim is
-        // theirs). When d19 lands the row the style must be 189, and the
-        // flag58 term in the 117 arm stays unreachable for it (verbatim).
-        if let Some(d) = proj_data(978) {
-            assert_eq!(d.ai_style, 189, ":9257");
-        }
+        // (`Projectile.cs:9253-9268`). W4-d12 DOC-SWEEP item 7: d19's
+        // a4185f89 landed the 189 ARM but NOT the row, so the row ports here
+        // (`VOLCANO`). The flag58 term in the 117 arm stays unreachable for
+        // it (verbatim) — the 978 rides the 189 dispatch.
+        let d = proj_data(VOLCANO).expect("the Volcano row landed (DOC-SWEEP item 7)");
+        assert_eq!(d.ai_style, 189, ":9257");
+        assert_eq!(d.time_left, 30, "the second timeLeft = 30 wins (:9268)");
+        assert_eq!(d.penetrate, 3, ":9264");
+        assert!(d.uses_local_immunity && d.local_hit_cooldown == -1, ":9265-9266");
+        assert!(d.melee, ":9267");
+        assert_eq!(proj_frames(VOLCANO), 5, "Main.cs:8493");
     }
 }
