@@ -997,6 +997,14 @@ pub struct Player {
     /// the lock across ticks and a fresh press re-arms it.
     pub actuation_rod_lock: bool,
     pub actuation_rod_lock_setting: bool,
+    /// `Player.wireOperationsCooldown` (`Player.cs:2868`): the Grand Design /
+    /// Multicolor Wrench mass-operation throttle. `ResetEffects` decrements
+    /// it (`:18798-18800`), `CanUseItem` refuses 3611/3625 while it stands
+    /// (`:52075-52078`), and the msg-110 pay bill clears it
+    /// (`MessageBuffer.cs:3805`). No setter assigns a positive value in
+    /// 1.4.5.8 (the only write is the clear) — the port keeps the field +
+    /// decrement + gates for the wire shape (W4-f11).
+    pub wire_operations_cooldown: i32,
     /// `Player.InfoAccMechShowWires` (`Player.cs:2620`): the Mechanical Lens
     /// (3619) / Wire Kite (3611) show the wires without a mech tool held.
     /// Cleared in `ResetEffects` (`:18524`), re-granted by
@@ -2627,6 +2635,7 @@ impl Player {
             old_y: sy,
             actuation_rod_lock: false,
             actuation_rod_lock_setting: false,
+            wire_operations_cooldown: 0,
             info_acc_mech_show_wires: false,
             auto_actuator: false,
             // `Player.cs:814`'s all-zero field init + the reset's `[0] = 1`
