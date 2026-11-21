@@ -4676,8 +4676,10 @@ impl Npc {
         #[deny(unreachable_patterns)]
         match self.kind.ai_style() {
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
-            // (`NPC.cs:20802-20806`).
-            5 => self.ai_005_hover_family(world, player),
+            // (`NPC.cs:20802-20806`). W4-f4: the family's dust gate
+            // (sites 50702/50710) rolls the live pool on the caller's
+            // stream — the arm threads rng/dust/dust_ctx.
+            5 => self.ai_005_hover_family(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
             // BlazingWheel (72), the style's only user. The small-kinds
             // wiring wave: the ricochet machine rides `npc_ai_style21`
@@ -5165,7 +5167,38 @@ impl Npc {
     /// rows (`num`/`num2`/`flag5`/the rotation arms) are the kind dispatch
     /// inside the one family machine; behaviour is the pre-axis arms',
     /// verbatim (the A/B pin `s1_d_2_the_style_axis_keeps_the_hover_behaviour`).
-    fn ai_005_hover_family(&mut self, world: &World, player: &Player) {
+    fn ai_005_hover_family(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        // W4-f4 — the dust gate (`NPC.cs:50656-50713`, sites 50702/50710)
+        // runs AFTER the fly core in the C# (the bounce, then the gate,
+        // then the `:90498` integration). The gate call sits at the same
+        // position (after the machine — the d22 wrapper's call site);
+        // the port's hover machines integrate INSIDE the step, so the
+        // box reads the POST-move position (a one-tick position
+        // deviation of the stand-in; the velocity is the fresh
+        // post-approach value — exact). The d22 fidelity wave owns the
+        // AI/integration split; the dust ledger is the same. The
+        // `:50656` bounce-list membership and the `:50695` exclusion
+        // are per-kind constants of the ported set.
+        let (bounced, excluded) = match self.kind {
+            // 6/23: in the bounce list, NOT excluded — the Next(20)
+            // type-18 gate at this.color/this.scale (site 50702).
+            NpcKind::EaterOfSouls | NpcKind::MeteorHead => (true, false),
+            // 42/139/210/211: in the bounce list but EXCLUDED — no draw.
+            NpcKind::Hornet | NpcKind::Probe | NpcKind::Bee | NpcKind::BeeSmall => {
+                (true, true)
+            }
+            // 5: outside the bounce list — the Next(40) type-5 gate at
+            // the defaults (site 50710).
+            NpcKind::ServantOfCthulhu => (false, false),
+            _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
+        };
         match self.kind {
             // The type-5 branch (`NPC.cs:50379-50383` + `:50418-50579`):
             // the servant's own snapped-aim machine (S1-D-3k).
@@ -5180,10 +5213,12 @@ impl Npc {
             // The Probe (139): its laser/rotation arm runs in the sim's
             // `update_destroyers` pass (`npc_ai_style37::probe_step` — the
             // shot needs the hostile-shot seam); the per-NPC step is the
-            // family no-op (the Destroyer precedent).
-            NpcKind::Probe => {}
+            // family no-op (the Destroyer precedent). The dust gate
+            // excludes 139 (`:50695`) — nothing to run.
+            NpcKind::Probe => return,
             _ => unreachable!("only aiStyle-5 kinds reach the family arm"),
         }
+        crate::npc_ai::hover_dust_gate(self, world, bounced, excluded, rng, dust, dust_ctx);
     }
 
     /// S1-D-3: the aiStyle-9 family arm — `NPC.AI()`'s
@@ -31797,6 +31832,18 @@ mod s1_d_2_tests {
             let mut legacy = axis.clone();
             let mut rng_a = UnifiedRandom::new(123);
             let mut rng_b = UnifiedRandom::new(123);
+            // W4-f4: the axis arm now rolls the hover dust gate (sites
+            // 50702/50710) — the legacy side re-mirrors the same gate on
+            // its own scratch pool so the streams stay aligned (the K-1
+            // parity precedent); the kinematics pin is unchanged.
+            let (bounced, excluded) = match kind {
+                NpcKind::EaterOfSouls | NpcKind::MeteorHead => (true, false),
+                NpcKind::Hornet => (true, true),
+                NpcKind::ServantOfCthulhu => (false, false),
+                _ => unreachable!(),
+            };
+            let dctx = crate::npc::permissive_dust_ctx(&w);
+            let mut legacy_dust = tr_core::particles::DustPool::new();
             for tick in 0..300 {
                 axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
                 // The pre-axis arm, verbatim (the kind match's old bodies).
@@ -31811,6 +31858,9 @@ mod s1_d_2_tests {
                     }
                     _ => unreachable!(),
                 }
+                crate::npc_ai::hover_dust_gate(
+                    &legacy, &w, bounced, excluded, &mut rng_b, &mut legacy_dust, &dctx,
+                );
                 legacy.find_frame();
                 legacy.contact(&mut player_b, &mut rng_b);
                 assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
