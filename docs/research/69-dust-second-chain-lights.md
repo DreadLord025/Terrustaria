@@ -249,3 +249,36 @@ research/70.
 - This doc + the ANALYSIS section + the PORT_MAP/ROADMAP/anchors rows.
 - d50's `dust_physics.rs` is a READ-ONLY probe (the strip-contract §4 and
   the retire note §5 are its wiring wave's work, not edited here).
+
+## 8. RETIRE — the d50-session probe (2026-11-21, read-only; report for resume)
+
+The brief's `2e243a2d` (Nov-20 21:10) is 12h+ stale at the retire probe
+(2026-11-21 09:22 +02). Read-only evidence from `TR-W4-d50` (no writes,
+no checkout — the worktree is not this lane's):
+
+| Probe | Result |
+| ----- | ------ |
+| `git status` | `On branch task/W4-d50-dust-type-table` / `nothing to commit, working tree clean` — **dead-CLEAN, not dead-dirty** |
+| HEAD | `2e243a2d228f2abff574d8546a55e90df5fbc811` == `origin/task/W4-d50-dust-type-table` — fully pushed, zero unpushed commits (`log origin..HEAD` empty) |
+| index mtime | `…/.git/worktrees/TR-W4-d50/index` 2026-11-20 21:10:02 — matches the phase-2 commit, no later staging |
+| HEAD reflog mtime | same 21:10:02; last entry the phase-2 commit (`cb07d2b6` → `2e243a2d`) — no reset/checkout after |
+| `dust_physics.rs` mtime | 2026-11-20 21:02:27 (the phase-1 write) — no post-commit edit |
+| `diff HEAD --stat` | empty |
+| stash list | 5 entries, ALL foreign-lane preservations (d36 ×3, d52 ×1, S1-D-3 ×1) — none d50's, nothing to salvage |
+
+**Verdict: the d50 session ended cleanly at its pushed phase-2 tip; there
+is no in-flight work to recover.** The resume owes exactly the §4-6
+contracts, unchanged at this tip (re-read `pre_move` `dust_physics.rs:162-
+173`: the type-35 `*lava_bubbles += 1` arm is STILL present at `:170-172`
+— no strip landed; the 299-305 shrink/lift `:165-168` stays):
+
+1. **The pre_move-35 strip** (§4): delete the `:170-172` arm (g13's inline
+   increment is canonical, landed + witnessed); keep the 299-305 block.
+2. **The wiring** (§4): `type_chain` into the shared `UpdateDust` skeleton's
+   `type_arm` hook, post-move, with the `DustPhysicsEnv` feeds (the 76-arm
+   snowDust++ is the d50×d130 G2 resolve — d54's ONE-EDIT hunk published at
+   `84eb739b`, research/131 §7.2a: the `:650` 'dropped' comment →
+   `*env.snow_dust += 1`, the env field + the d130 tick plumbing).
+3. **The decrement retire** (§5): once the chain wires, `dust_lights.rs`'s
+   compensating decrements (206 `:381`, 174 `:419`, 230 `:309`, 309/261)
+   and this module's replays retire arm-by-arm.
