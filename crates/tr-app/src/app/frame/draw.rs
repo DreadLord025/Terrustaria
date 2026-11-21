@@ -164,9 +164,10 @@ impl App {
             self.close_dialog_behind_fullmap();
             // `Main.PylonSystem.Pylons` (`TeleportPylonsMapLayer.cs:32`): the map
             // layers read the live network. The scan walks the TE book, so it stays
-            // off the per-frame path unless the map or the minimap is drawing.
+            // off the per-frame path unless the map or the minimap or the style-2
+            // overlay (`Main.cs:55625`'s same `MapIcons.Draw`) is drawing.
             let map_layer_pylons = if (self.map.as_ref().is_some_and(|m| m.open)
-                || (self.settings.map_enabled && self.map_style == 1))
+                || (self.settings.map_enabled && (self.map_style == 1 || self.map_style == 2)))
                 && !crate::env::no_hud()
             {
                 tr_core::pylons::scan_pylons(&self.world)
@@ -1467,9 +1468,9 @@ impl App {
                     // draw order — the `DrawTo` black backdrop (`:55546`, via
                     // `map_back` so it lands under the tiles), the tile pass
                     // (`MapRenderer.DrawMap`, `:55609`) and the frame foreground
-                    // batch (`:55768-55769`). `mapStyle == 2` (the overlay) draws
-                    // nothing (out of P4 scope, the whole-UI P4 plan's
-                    // Uncertainty 7).
+                    // batch (`:55768-55769`). `mapStyle == 2` (the overlay)
+                    // draws its tile pass + layer walk below (D18's draw arm,
+                    // `Main.cs:55548-55578`/`:55609`/`:55615-55627`).
                     let view_center = [camera.x / TILE_PX, camera.y / TILE_PX];
                     // `Main.MapScale` (`Main.cs:67297`, clamp `Main.cs:4494`): the
                     // minimap anchor and the whole panel's render scale, through the
@@ -1572,6 +1573,87 @@ impl App {
                                 self.minimap_hover,
                                 map_scale,
                             );
+                        }
+                    }
+                    // `Main.cs:62231-62235`: the style-2 overlay's call site
+                    // is the in-world draw (`DoDraw_WallsTilesNPCs`' tail),
+                    // NOT interface pass 16 — the gate is only
+                    // `!mapFullscreen && mapStyle == 2` plus `DrawMap`'s own
+                    // `mapEnabled && mapReady` head (`:55283`). The port's
+                    // map batches sit under the UI batch, so the overlay
+                    // draws under the HUD/bestiary like the source; the
+                    // menu/front/no_hud gates mirror the minimap branch
+                    // (the in-world path does not run on the front screens).
+                    if settings.map_enabled
+                        && menu.is_none()
+                        && front.is_none()
+                        && !crate::env::no_hud()
+                        && !fullscreen_map
+                        && self.map_style == 2
+                    {
+                        if let Some(m) = map.as_ref().filter(|m| m.map_ready) {
+                            // `Main.cs:55548-55578` + `:55609`: the clamps ran
+                            // in the prepare block above; the tile pass tints
+                            // `(byte)(255*mapOverlayAlpha)` (`:55568`).
+                            let (overlay_offset, num5, alpha) =
+                                m.draw_overlay(renderer, world, screen, view_center);
+                            // `Main.cs:55619-55625`: the icon draw scale
+                            // `num37 = (num5*0.2*2+1)/3` capped at 1, then
+                            // `*= Main.UIScale`. The layer walk is the SAME
+                            // `MapIcons.Draw` as the fullscreen/minimap arms
+                            // at the overlay transform: `mapPosition =
+                            // Vector2.Zero`, no clip (`null`), `b` opacity.
+                            // The rest of the `:55626-55694` icon block
+                            // (revenge/misc/NPC heads/the 255 player loop +
+                            // death markers) is the f29/e17 overlay
+                            // keep-one's nine pieces — ported with that
+                            // pick, never twice (research/14 retire census).
+                            let num37 = ((num5 * 0.2 * 2.0 + 1.0) / 3.0).min(1.0)
+                                * settings.applied_ui_scale(screen.x, screen.y);
+                            let digtoise =
+                                crate::map_layers::digtoise_marker(player.as_ref(), &self.projectiles);
+                            let near_pylon = player.as_ref().is_some_and(|p| {
+                                let (cx, cy) = p.center();
+                                tr_core::pylons::is_player_near_a_pylon(
+                                    world,
+                                    ((cx / TILE_PX) as i32, (cy / TILE_PX) as i32),
+                                )
+                            });
+                            let hover = crate::map_layers::map_layers_draw(
+                                renderer,
+                                lookups,
+                                &crate::map_layers::MapIconInputs {
+                                    world,
+                                    player: player.as_ref(),
+                                    item_drops: &self.items,
+                                    digtoise,
+                                    pings: crate::map_layers::map_pings(m),
+                                    pylons: &map_layer_pylons,
+                                    near_pylon,
+                                    map: Some(m),
+                                    team_based_spawns,
+                                    mouse: self.mouse_pos,
+                                },
+                                [0.0, 0.0],
+                                overlay_offset,
+                                None,
+                                num5,
+                                num37,
+                                alpha,
+                            );
+                            // `Main.cs:56046-56049`: the shared `MouseText`
+                            // tail — the hover line draws over the overlay.
+                            if let Some(t) = hover {
+                                crate::ui::text::hud_text(
+                                    renderer,
+                                    lookups,
+                                    self.mouse_pos.x + 12.0,
+                                    self.mouse_pos.y + 12.0,
+                                    0.85,
+                                    [1.0; 4],
+                                    &t,
+                                );
+                            }
                         }
                     }
                     if let Some(front) = front.as_mut() {
@@ -1957,6 +2039,13 @@ impl App {
                     // is computed above, where the minimap branch consumes it.
                     if settings.map_enabled {
                         if let Some(m) = map.as_mut() {
+                            // `Main.cs:55550-55566`: the style-2 overlay's
+                            // draw-side clamps ride the same draw half as
+                            // the minimap's (`prepare`'s clamp_minimap_axes)
+                            // — `world_zoom` IS `RenderZoom` (`:61999`, the
+                            // `ForcedMinimumZoom * Clamp(GameZoomTarget)`
+                            // product computed above).
+                            m.clamp_overlay_axes(screen.x, world.width, world_zoom);
                             m.prepare(renderer, gpu, world, screen, view_center, settings.map_enabled);
                         }
                     }

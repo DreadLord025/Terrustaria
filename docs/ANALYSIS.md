@@ -2777,9 +2777,12 @@ behaviour notes:
   (`audio.rs:22-31`), consistent with the silent menus. `Main.DoStatefulTickSound`
   (`:41126`) is not ported either.
 * `mapStyle == 2` (the overlay style) draws nothing in the minimap branch вЂ”
-  the whole-UI P4 plan's Uncertainty 7: only the style-1 branch
-  (`Main.cs:55503-55547`) is ported, and the style-2 overlay render has no
-  Rust counterpart yet.
+  but its OWN style-2 arm is landed: the D18 draw arm (compose step 0 re-fold
+  of e18 `099beeba5`, research/84 §10.4) draws the overlay tile pass +
+  `num37` layer walk + hover tail in `frame/draw.rs`'s style-2 branch
+  (`Main.cs:55548-55578`/`:55609`/`:55615-55625`); the old "Uncertainty 7 /
+  no Rust counterpart" wording is superseded. The `:55626-55694` icon block
+  rides the f29-tip landing.
 * The minimap **content** icons are not ported: NPC map icons, player heads,
   revenge/death markers (`TextureAssets.MapDeath`) and map pings
   (`TextureAssets.MapPing`) вЂ” the render entry points of research В§F
@@ -19201,18 +19204,54 @@ the e18 seal (`5509cb87a`, its research/84 §10.10) ported D18's style-2
 overlay DRAW as `099beeba5` (`draw_overlay`/`map_overlay_quad`/
 `clamp_overlay_axes` + the `num37` layer walk + the `:56046` hover tail,
 `Main.cs:55548-55625`; style-0 retro censused a PHANTOM — callers gate
-1/2 at `:45778`/`:62231`); it RE-FOLDS onto this union per the SEALED
-16-hunk recipe as compose step 0 BEFORE this branch lands (the f29 seal
+1/2 at `:45778`/`:62231`); it RE-FOLDED onto this union per the SEALED
+16-hunk recipe as compose step 0 — **EXECUTED (receipt below + research/84
+§10.5)** (the f29 seal
 `ff819421d`, research/140 §11, adopts the same table and publishes the
 joint compose steps 0-4: f46-union-FIRST → f29-TIP-SECOND, e17 drops).
 The union's stale "draws nothing" (minimap deviation above +
-`frame/draw.rs:1471`) and "D18 out of scope" (`map.rs:448`) wording goes
+`frame/draw.rs`) and "D18 out of scope" (`map.rs` field docs) wording went
 with that re-fold; the `:55626-55694` icon block stays with the f29-tip
 landing. The witness union is exact at seal: 34 (f29) + 56 (f46) + 2
 (D18) = 92, zero shared names; the composed atlas measures 8131 px /
 9606 sheets (margin 61, 140 §11.3). D22's content-lost refresh stays the
 recorded deviation (no GPU-reset path; `ensure_map_texture` +
 `needs_full_upload` is the creation-time equivalent).
+
+### The style-2 overlay draw arm — compose step 0 EXECUTED on the union (W4-f46, 2026-11-21, code-only)
+
+The e18 `099beeba5` D18 draw arm is RE-FOLDED onto this union per e18
+§10.10's SEALED 16-hunk recipe (research/84 §10.4(c)/§10.5; research/14's
+"W4-f46 compose step 0" section carries the hunk-by-hunk receipt). The
+union now carries `map_overlay_quad` + `WorldMap::draw_overlay` +
+`WorldMap::clamp_overlay_axes` + the style-2 draw branch in
+`frame/draw.rs` (gate + `num37` layer walk + the `:56046` hover tail) +
+the pylon-scan gate widening + the clamp call beside `prepare` + the 2
+map witnesses + the `draw_overlay` anchor row. Deliberate choices,
+recorded (the e18-arm notes carried through the re-fold):
+
+- **The 3 helpers stay ONE copy** — `map_key_alpha`/`map_alpha_clamp`/
+  `overlay_scale_clamp` were already on the union byte-identical
+  (`a352b16e`); the recipe's SKIP list honoured, no second copy.
+- **Clamps stay draw-side** (`clamp_overlay_axes` beside `prepare`, fed
+  the frame's `world_zoom` — the `RenderZoom = forced_minimum_zoom * zoom`
+  product, `Main.cs:61999`). The union's `update_minimap_zoom_keys`
+  clamps input-side too (`a352b16e`), so the folded draw-side clamp is a
+  benign double projection — KEPT for draw-side fidelity (the recipe's
+  own ruling; the style-2 key rows + their witness + the `minimap_app`
+  fixture DROPPED as covered by the union equivalents).
+- **The overlay draws under the HUD**: the C# call site is the in-world
+  pass (`:62231`), not interface 16; the port's map batches sit under the
+  UI batch, which reproduces that order. The menu/front/no_hud guards
+  mirror the minimap branch.
+- **The `:55626-55694` icon block is NOT ported here** — it rides the
+  f29-tip landing (compose step 2); the shared `MapIcons.Draw` walk
+  (`:55625`) IS ported (the union's S1-L-4 `map_layers_draw`, a third
+  call site — the f29 merge adds its 4 `MapIconInputs` fields at all
+  three sites, 140 §11.1).
+
+2 witnesses written not run (the recipe's third e18 witness dropped);
+1 anchor row (`map.rs::draw_overlay`). Net union `w4_e18` census: 36 → 38.
 
 ## The crafting focus + quantity (S1-H-7, 2026-11-13)
 
