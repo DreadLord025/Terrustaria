@@ -1095,9 +1095,10 @@ impl Rain {
         }
         // `:181-182`: snow suppression. `SceneMetrics.SnowTileThreshold` is
         // skyblock-aware (300 low-tiles / 1500 normal, `SceneMetrics.cs:154-163`);
-        // the port tracks no `World.skyblock_low_tiles`, so it reads the normal
-        // threshold (a documented gap — the skyblock arm lands with that field).
-        let snow_threshold = tr_core::scene::thresholds::SNOW_TILE_NORMAL.max(1) as f32;
+        // the flag rides `World.skyblock_low_tiles` (W4-g67 — the census
+        // `World::scan_skyblock_low_tiles` fills it at load/gen).
+        let snow_threshold =
+            tr_core::scene::snow_tile_threshold(world.skyblock_low_tiles).max(1) as f32;
         let snow_ratio = (snow_tile_count.max(0) as f32 / snow_threshold).clamp(0.0, 1.0);
         num2 = ((num2 as f32) * (1.0 - snow_ratio * snow_ratio)) as i32;
         num2 = ((num2 as f64) * (atmo as f64).powi(9)) as i32; // `:182` double cast
@@ -3108,5 +3109,42 @@ mod tests {
         assert_eq!(shifted, (4000, 1950, 3600, 3000));
         assert!(dust_in_cull_rect(Vec2::new(5000.0, 3000.0), shifted));
         assert!(!dust_in_cull_rect(Vec2::new(800.0, 450.0), shifted), "the old view is now outside");
+    }
+
+    /// W4-g67 witness — the skyblock snow-threshold arm (`Rain.cs:181` via
+    /// `SceneMetrics.SnowTileThreshold`, `SceneMetrics.cs:154-163`): 150 snow
+    /// tiles suppress the live-drop budget to 562 on a low-tiles skyblock world
+    /// (150/300 = 0.5 → 1−0.25 = 0.75 → 750·0.75 = 562) but leave it at the full
+    /// 750 on a normal world (150/1500 = 0.1 → 0.99 → 742, above the 26-attempt
+    /// spawn). The 26 calm attempts fill whichever budget is lower.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn w4_g67_skyblock_low_tiles_lowers_the_snow_threshold() {
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let screen = Vec2::new(1600.0, 200.0);
+        // Normal world: threshold 1500, budget 742 > 26 attempts → 26 drops.
+        let normal = World::new("air".into(), 64, 64);
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        rain.gfx_quality = 1.0;
+        rain.spawn(&normal, camera, screen, 1.0, 0.0, 1.0, 150, true, DropSimInputs::default());
+        assert_eq!(rain.drop_count(), 26, "normal threshold barely suppresses");
+        // Low-tiles skyblock world: threshold 300, budget 562 — still > 26, so
+        // the attempt count is unchanged; the BUDGET is what the arm moves. Pin
+        // it directly through the threshold getter the spawn reads.
+        assert_eq!(tr_core::scene::snow_tile_threshold(false), 1500);
+        assert_eq!(tr_core::scene::snow_tile_threshold(true), 300);
+        // A skyblock world with 300+ snow tiles fully suppresses (ratio 1 →
+        // budget 0): no drop spawns at all.
+        let mut sky = World::new("sky".into(), 64, 64);
+        sky.skyblock_low_tiles = true;
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        rain.gfx_quality = 1.0;
+        rain.spawn(&sky, camera, screen, 1.0, 0.0, 1.0, 300, true, DropSimInputs::default());
+        assert_eq!(rain.drop_count(), 0, "300 snow tiles fully suppress on skyblock");
+        // The same 300 tiles on a normal world: ratio 0.2 → budget 720 > 26.
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        rain.gfx_quality = 1.0;
+        rain.spawn(&normal, camera, screen, 1.0, 0.0, 1.0, 300, true, DropSimInputs::default());
+        assert_eq!(rain.drop_count(), 26, "300 tiles barely suppress on a normal world");
     }
 }

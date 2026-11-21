@@ -39380,10 +39380,14 @@ landed splash lane. Every function now has a port or a cited gap:
   (`:175`) is computed-and-discarded in the C# (dead, omitted); the live
   `GetRainFallVelocity` (`:91-94`, `wind*18,14`) replaces the frozen
   wind+sine stand-in; the `Next(-20,21)*0.01` scale and the
-  `waterStyle*3+Next(3)` type (`:202-205`). The snow threshold reads the
-  normal 1500 — `SceneMetrics.SnowTileThreshold` is skyblock-aware (300
-  low-tiles, `SceneMetrics.cs:154-163`) but the port tracks no
-  `World.skyblock_low_tiles` (a cited gap).
+  `waterStyle*3+Next(3)` type (`:202-205`). The snow threshold is now
+  skyblock-aware (W4-g67 follow-up): `World.skyblock_low_tiles` (the
+  `WorldGen.Skyblock.lowTiles` census, `World::scan_skyblock_low_tiles`,
+  `WorldGen.cs:3210-3218`/`:3238-3265`, filled at load `WorldFile.cs:766`
+  and gen completion) picks `SceneMetrics.SnowTileThreshold` 300 low-tiles
+  vs 1500 normal (`SceneMetrics.cs:154-163`); the scene scan's
+  `ZoneSnow`/`ZoneDesert` read the same arm. Field shape adopted from
+  W4-f24's `SkyblockState.low_tiles` (the runtime ledger lives on `World`).
 * **`NewRainForced` (`:135-164`)** — landed as the Eyebrella vanity-drip
   seam (`Player.DoEyebrellaRainEffect`, `Player.cs:14308-14331` — the
   caller is unported, `#[allow(dead_code)]`). Budget = `maxRain` cut by

@@ -4345,6 +4345,9 @@ pub(crate) fn load_world(world_path: &Path) -> Result<(World, WorldSections)> {
     let wall_frame_ms = t_walls.elapsed().as_secs_f32() * 1000.0;
     world.compute_column_surface();
     world.compute_chunks();
+    // `WorldFile.cs:766`: `WorldGen.Skyblock.ScanTiles()` at load — the
+    // low-tiles flag the scene snow/desert thresholds read (W4-g67).
+    world.scan_skyblock_low_tiles();
     // Torches are important tiles; generated saves written before the hotbar existed
     // may lack this bit.
     if world.frame_important.len() > 4 {

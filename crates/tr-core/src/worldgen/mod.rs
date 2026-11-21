@@ -156,6 +156,9 @@ pub fn generate_with_progress<'a>(
     streams.chest_stock = chest_stock;
     streams.progress = Some(progress);
     let outcome = pipeline::run(&mut world, &mut streams, opts, &noise, &config);
+    // The skyblock low-tiles census at generation completion (the load twin is
+    // `WorldFile.cs:766`; W4-g67). A classic world reads false either way.
+    world.scan_skyblock_low_tiles();
     (world, outcome)
 }
 
@@ -189,6 +192,8 @@ pub fn generate_with_chest_stock<'a>(
     let mut streams = pipeline::Streams::new(opts.seed);
     streams.chest_stock = chest_stock;
     pipeline::run(&mut world, &mut streams, opts, &noise, &config);
+    // The skyblock low-tiles census at generation completion (W4-g67).
+    world.scan_skyblock_low_tiles();
     world
 }
 

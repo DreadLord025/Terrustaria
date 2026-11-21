@@ -100,6 +100,9 @@ pub(crate) fn scan_scene_full(
     let mut metrics = SceneMetrics::new();
     metrics.center = center;
     metrics.tile_center = tile_center;
+    // The skyblock low-tiles flag the snow/desert thresholds read
+    // (`SceneMetrics.cs:154-176` via `WorldGen.Skyblock.lowTiles`).
+    metrics.skyblock_low_tiles = world.skyblock_low_tiles;
     scan_tiles(world, &mut metrics);
     // `SceneMetrics.cs:338-341`: the visual-area pass runs only when the
     // settings carry the rect (`Main.cs:62540` always does).
