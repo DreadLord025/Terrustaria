@@ -6843,9 +6843,9 @@ impl Npc {
     /// FAITHFUL on BOTH sides, the d40 INLINE arms win at merge and
     /// the module arms drop to parity references — census research/68
     /// §3.5). The remaining TWELVE ids are the d40 row-0 stubs the
-    /// module supersedes; this batch claims the FIRST ELEVEN
-    /// 473/474/475/476/477/479/483/484/485/486/487 (the ≤11-kind cap),
-    /// 488 TargetDummy rides the next batch.
+    /// module supersedes — ALL claimed: the first batch took
+    /// 473-477/479/483-487 (the ≤11-kind cap), this batch widens to
+    /// the LAST ONE 488 TargetDummy.
     fn find_frame_kind_extra7b_claimed(
         cs_id: u16,
     ) -> Option<crate::npc_findframe_extra7b::FindFrameExtra7bKind> {
@@ -6853,21 +6853,7 @@ impl Npc {
         match crate::npc_findframe_extra7b::find_frame_kind_extra7b(cs_id as i16) {
             // The f26e keep-inline verdict — NEVER claimed.
             Some(K::Medusa | K::GreekSkeleton | K::GraniteGolem) => None,
-            // The batch band (488 excluded until the next batch).
-            Some(
-                k @ (K::BigMimicCorruption
-                | K::BigMimicCrimson
-                | K::BigMimicHallow
-                | K::BigMimicJungle
-                | K::Mothron
-                | K::MothronSpawn
-                | K::GraniteFlyer
-                | K::EnchantedNightcrawler
-                | K::Grubby
-                | K::Sluggy
-                | K::Buggy),
-            ) => Some(k),
-            _ => None,
+            other => other,
         }
     }
 
@@ -34202,11 +34188,10 @@ mod w4_d44_wire_tests {
         }
     }
 
-    /// The extra-7b claim set is the FIRST ELEVEN of the twelve
-    /// d40-stub kinds 473/474/475/476/477/479/483/484/485/486/487;
-    /// 488 rides the next batch, 480/481/482 are NEVER claimed (the
-    /// f26e keep-inline verdict), the no-case 478 + the band edges
-    /// stay outside.
+    /// The extra-7b claim set is ALL TWELVE d40-stub kinds
+    /// 473/474/475/476/477/479/483/484/485/486/487/488; 480/481/482
+    /// are NEVER claimed (the f26e keep-inline verdict), the no-case
+    /// 478 + the band edges stay outside.
     #[test]
     fn w4_d44_the_extra7b_claim_set_matches_the_batch_band() {
         use crate::npc_findframe_extra7b::FindFrameExtra7bKind as K;
@@ -34222,6 +34207,7 @@ mod w4_d44_wire_tests {
             (485, K::Grubby),
             (486, K::Sluggy),
             (487, K::Buggy),
+            (488, K::TargetDummy),
         ];
         for (id, k) in table {
             assert_eq!(Npc::find_frame_kind_extra7b_claimed(id), Some(k), "{id}");
@@ -34230,8 +34216,8 @@ mod w4_d44_wire_tests {
         assert_eq!(Npc::find_frame_kind_extra7b_claimed(480), None, "Medusa keeps d40");
         assert_eq!(Npc::find_frame_kind_extra7b_claimed(481), None, "GreekSkeleton keeps d40");
         assert_eq!(Npc::find_frame_kind_extra7b_claimed(482), None, "GraniteGolem keeps d40");
-        // The next-batch id + the no-case 478 + the band edges.
-        for id in [472, 478, 488, 489] {
+        // The no-case 478 + the band edges.
+        for id in [472, 478, 489] {
             assert_eq!(Npc::find_frame_kind_extra7b_claimed(id), None, "{id}");
         }
     }
@@ -34607,6 +34593,20 @@ mod w4_d44_wire_tests {
         n.find_frame_wave_extra7b(K::EnchantedNightcrawler, 0, false);
         assert_eq!((n.frame, n.frame_counter, n.local_ai[0]), (1, 7.0, -2.0));
         assert!((n.rotation - -0.1).abs() < 1e-6, "the air tilt accumulates");
+        // Target Dummy: the recoil clock — the 24-clamp + decrement,
+        // ceil(23/6) = 4 + the +1-dir +5 bank = row 9; the frame_x36
+        // probe flips +1 to the 4-row bank (ceil(23/4) = 6, no +5).
+        n.vy = 0.0;
+        n.local_ai = [120.0, 1.0, 0.0, 0.0];
+        n.find_frame_wave_extra7b(K::TargetDummy, 0, false);
+        assert_eq!((n.frame, n.local_ai[0]), (9, 23.0), "the 24-clamp");
+        n.local_ai = [24.0, 1.0, 0.0, 0.0];
+        n.find_frame_wave_extra7b(K::TargetDummy, 0, true);
+        assert_eq!((n.frame, n.local_ai[0]), (6, 23.0), "the probe flips the bank");
+        // The left hit: ceil(23/4) = 6 with NO +5 even unflipped.
+        n.local_ai = [24.0, -1.0, 0.0, 0.0];
+        n.find_frame_wave_extra7b(K::TargetDummy, 0, false);
+        assert_eq!(n.frame, 6);
     }
 
     /// The wave-C bridge copies the five fields both ways and feeds
