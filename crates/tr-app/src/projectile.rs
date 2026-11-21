@@ -20123,8 +20123,12 @@ impl ProjectilePool {
                 // (the d77 kill_tail_cue pattern — the C# plays/drops
                 // inside Kill(); the out-of-world guard never reaches
                 // it). Kinds disjoint from every other death arm, so the
-                // position in the hook chain is unobservable.
-                self.coil_kill(i, local_owner);
+                // position in the hook chain is unobservable. The
+                // out-of-world guard (`:16696`) deactivates WITHOUT
+                // Kill() — no cue, no refund (the d77 gate precedent).
+                if !died_out_of_world {
+                    self.coil_kill(i, local_owner);
+                }
 
                 // S1-P-i35 — `Kill()`'s bobber arm (`Projectile.cs:71986-
                 // 71994`): a reeled catch (`0 < ai[1] < ItemID.Count`) rides
@@ -25825,7 +25829,7 @@ mod w4_g82_coil_dispatch_tests {
         assert_eq!(drops, vec![(985, 1, 307.25, 307.75)], "one coil item at Centre");
         // ai1 = 3: 7 rope items, no cue.
         let slot = pool
-            .spawn_with_data_ai_owned(475, 0, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 3.0, 0.0)
+            .spawn_with_data_ai_owned(475, 0, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 3.0)
             .unwrap();
         pool.slots_mut()[slot].time_left = 1;
         step(&mut pool, &mut w);
@@ -25833,7 +25837,7 @@ mod w4_g82_coil_dispatch_tests {
         assert_eq!(pool.drain_coil_drops(), vec![(2996, 7, 307.0, 307.0)]);
         // ai1 = 10: nothing drops, no cue.
         let slot = pool
-            .spawn_with_data_ai_owned(505, 0, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 10.0, 0.0)
+            .spawn_with_data_ai_owned(505, 0, 300.0, 300.0, 0.0, 0.0, 0, 0.0, 0.0, 10.0)
             .unwrap();
         pool.slots_mut()[slot].time_left = 1;
         step(&mut pool, &mut w);
