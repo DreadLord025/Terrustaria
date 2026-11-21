@@ -503,8 +503,21 @@ impl Wiring {
             // `_mechTime[num]--` (`Wiring.cs:172`).
             self.mechs[num].time -= 1;
             let mech = self.mechs[num];
-            if !world.in_bounds(mech.x, mech.y) {
-                self.mechs.remove(num);
+            // W4-f11 census (research-23 D16, fold-133): the C#'s out-of-world
+            // / null branches do `_numMechs--` WITHOUT shifting (`Wiring.cs:
+            // 165-175`) — the LAST slot is dropped and the dead entry survives
+            // at its index until the tail drains past it. `Vec::remove`
+            // (the port's old fold) shifted the tail and kept the last
+            // entry instead. `pop` is the verbatim count decrement; the
+            // loop never revisits index `num`, and the next iteration's
+            // `num - 1` is always < the new len. The gate is `InWorld(x, y,
+            // 1)` (`:165`) — fluff 1, one cell inside each edge.
+            let in_world = mech.x >= 1
+                && mech.y >= 1
+                && mech.x < world.width - 1
+                && mech.y < world.height - 1;
+            if !in_world || world.tile(mech.x, mech.y).is_none() {
+                self.mechs.pop();
                 continue;
             }
             let tile_kind = world.tile(mech.x, mech.y).map(|t| t.kind);
