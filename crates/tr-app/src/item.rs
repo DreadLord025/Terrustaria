@@ -925,6 +925,15 @@ pub struct ItemDrop {
     /// dry-clear runs before the drain). [`crate::item_dust::splash_edge`]
     /// drains it (the dust + the case-19 play) in the items pass.
     pub splash_edge: Option<(bool, SplashKind)>,
+    /// `WorldItem.enemyGrabDelayTime` (`WorldItem.cs:28`): ticks the drop
+    /// refuses the MONSTER grab (`GetPickedUpByMonsters_Special`'s `:405`
+    /// gate); decremented per update (`:449-452`). The `ReserveForLocalPlayer`
+    /// / `GrabDelayForLocalPlayer` ownership arms set it to `DefaultGrabDelay`
+    /// (`Item.cs:49757-49760`). W4-g15 lane 5 — the port's monster grab (the
+    /// copper-slime pickup) reads it; the revenge coin-suck's own gate is the
+    /// `:405` row too. Distinct from [`Self::grab_delay_time`] (the PLAYER
+    /// grab clock).
+    pub enemy_grab_delay_time: i32,
 }
 
 /// The liquid kind a splash edge resolved to (`WorldItem.cs:886-954` entry /
@@ -970,6 +979,7 @@ impl ItemDrop {
             honey_wet: false,
             age_ticks: 0,
             splash_edge: None,
+            enemy_grab_delay_time: 0,
         }
     }
 
@@ -981,6 +991,17 @@ impl ItemDrop {
     pub fn apply_grab_delay(&mut self, player: u8) {
         self.grab_delay_time = DEFAULT_GRAB_DELAY;
         self.grab_delay_player = player;
+    }
+
+    /// `Item.NewItem`'s `enemyGrabDelayTime` arm (`Item.cs:49757-49760`):
+    /// the `ReserveForLocalPlayer` / `GrabDelayForLocalPlayer` ownership
+    /// sets the monster-grab clock to `DefaultGrabDelay` (100). W4-g15
+    /// lane 5 — the player-drop spawn calls it for the named-player arm
+    /// (the `GrabDelayForAllPlayers` arm does NOT set it, `:49757`'s
+    /// `ownership == ReserveForLocalPlayer || ownership ==
+    /// GrabDelayForLocalPlayer` gate).
+    pub fn apply_enemy_grab_delay(&mut self) {
+        self.enemy_grab_delay_time = DEFAULT_GRAB_DELAY;
     }
 
     pub fn center(&self) -> Vec2 {
@@ -1210,6 +1231,14 @@ impl ItemDrop {
         // grabbed or not.
         if self.grab_delay_time > 0 {
             self.grab_delay_time -= 1;
+        }
+        // `WorldItem.cs:449-452` — the enemy-grab delay ticks down every
+        // update too (W4-g15 lane 5). The `timeToKeepReservation` decrement
+        // (`:445-448`) is the MP reservation clock — the port's host owns
+        // every drop in SP, so it has no live consumer (the net_reserved
+        // hold rides the client's `22 ItemOwner` handler).
+        if self.enemy_grab_delay_time > 0 {
+            self.enemy_grab_delay_time -= 1;
         }
     }
 

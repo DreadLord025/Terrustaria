@@ -209,6 +209,7 @@ pub(crate) fn update_wiring(app: &mut App, dt: f32) {
                         honey_wet: false,
                         age_ticks: 0,
                         splash_edge: None,
+                        enemy_grab_delay_time: 0,
                     });
                 }
                 tr_core::wiring::StatueSpawn::Teleport { x, y, roster } => {
@@ -802,6 +803,7 @@ mod tests {
                 honey_wet: false,
                 age_ticks: 0,
                 splash_edge: None,
+                enemy_grab_delay_time: 0,
             });
         }
         trip_and_tick(&mut app);

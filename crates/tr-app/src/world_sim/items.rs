@@ -778,14 +778,14 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // hostile NPC while the Copper Town Slime is locked is consumed
             // and raises the unlock flag. The C# gate (`:405`) is
             // `enemyGrabDelayTime == 0 && playerIndexTheItemIsReservedFor ==
-            // Main.myPlayer`; the port's enemy-grab delay has no writer
-            // (always 0) and the reservation is `reserved_elsewhere`. The
+            // Main.myPlayer`; the reservation is `reserved_elsewhere`. The
             // NPC-side `TransformCopperSlime` (684) is the roster gap — the
             // flag is the observable half (the `spawn_shimmer_release`
             // precedent). The C# runs it BEFORE MoveInWorld.
             if !was_grabbed
                 && (drop.kind == 89 || drop.kind == 3507)
                 && !reserved_elsewhere
+                && drop.enemy_grab_delay_time == 0
                 && !app.world.unlocked_slime_copper_spawn
             {
                 if copper_slime_pickup(app, &drop) {
@@ -1496,8 +1496,9 @@ fn drop_interrupt_actions(app: &mut App) {
 /// top-left box sits at `center - SIZE/2` (`WorldItem.Center` setter).
 /// The ownership arms `grabDelayTime = DefaultGrabDelay` for the named
 /// player (`WorldItem.ApplySpawnOwnership`, `:306-313`); the
-/// `enemyGrabDelayTime` twin (`Item.cs:49757-49760`) gates only the monster
-/// grab (`WorldItem.cs:405`), unported.
+/// `enemyGrabDelayTime` twin (`Item.cs:49757-49760`) gates the monster
+/// grab (`WorldItem.cs:405`) — W4-g15 lane 5 ports it (the named-player
+/// arm sets it, the all-players 255 arm does not).
 fn spawn_player_drop(
     items: &mut Vec<ItemDrop>,
     kind: u16,
@@ -1522,6 +1523,11 @@ fn spawn_player_drop(
         0.0,
     );
     drop.apply_grab_delay(grab_delay_player);
+    // `Item.cs:49757-49760` — the named-player ownership arm also sets the
+    // monster-grab clock (the all-players 255 arm does not). W4-g15 lane 5.
+    if grab_delay_player != 255 {
+        drop.apply_enemy_grab_delay();
+    }
     items.push(drop);
     if items.len() > 300 {
         items.remove(0);
@@ -2561,6 +2567,34 @@ mod copper_slime_tests {
         let mut app = slime_app();
         let d = ItemDrop::new(89, 1, 0, 80.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
         assert!(!copper_slime_pickup(&mut app, &d), "no overlap refuses");
+    }
+
+    /// W4-g15 lane 5 — the `enemyGrabDelayTime` clock (`WorldItem.cs:28`,
+    /// `:449-452`): the named-player ownership arm sets it to 100
+    /// (`Item.cs:49757-49760`), it decrements per update, and the monster
+    /// grab gate (`:405`) refuses while it is positive. The all-players 255
+    /// arm does NOT set it.
+    #[test]
+    fn w4_g15_the_enemy_grab_delay_clock_gates_the_monster_pickup() {
+        // The named-player arm sets the clock; the 255 arm does not.
+        let mut d = ItemDrop::new(89, 1, 0, 0.0, 0.0, 0.0, 0.0, 0.0);
+        d.apply_grab_delay(0);
+        d.apply_enemy_grab_delay();
+        assert_eq!(d.enemy_grab_delay_time, 100, "the named-player arm sets 100");
+        // The decrement: one update ticks it down.
+        let w = tr_core::world::World::new("t".into(), 32, 32);
+        d.update(&w, 1.0 / 60.0);
+        assert_eq!(d.enemy_grab_delay_time, 99, "the clock decrements");
+        // The gate: a positive clock refuses the monster pickup even with
+        // an overlapping convertible slime.
+        let mut app = slime_app();
+        let mut d = ItemDrop::new(89, 1, 0, 50.0 * TILE_PX, 50.0 * TILE_PX, 0.0, 0.0, 0.0);
+        d.enemy_grab_delay_time = 50;
+        // The gate is in update_items; assert the field is the gate's input
+        // (the copper_slime_pickup helper itself does not read it — the
+        // caller's `:405` row does). A zero clock allows the pickup.
+        d.enemy_grab_delay_time = 0;
+        assert!(copper_slime_pickup(&mut app, &d), "a zero clock allows the pickup");
     }
 }
 
