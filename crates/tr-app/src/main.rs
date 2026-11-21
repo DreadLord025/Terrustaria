@@ -166,6 +166,7 @@ mod npc_findframe_extra5;
 mod npc_findframe_extra6;
 mod npc_findframe_extra7b;
 mod npc_findframe_extra7c;
+mod npc_findframe_extra7d;
 mod persist;
 mod grapple;
 mod gore_seam;
