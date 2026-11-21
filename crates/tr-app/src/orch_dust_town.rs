@@ -481,7 +481,8 @@ mod tests {
             shimmer_town_npc(&mut rng, &mut dust, &ctx, &w, pos);
             for _ in 0..20 {
                 probe.next_range(20, 40);
-                for _ in 0..5 {
+                // hsl(1) + from-rect(2) + scale(2) + from-rect(2) = 7.
+                for _ in 0..7 {
                     probe.next_float();
                 }
             }
