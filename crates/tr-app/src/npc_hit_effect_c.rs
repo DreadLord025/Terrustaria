@@ -116,6 +116,7 @@
 //! | 485-489+ | `:84738` | the party Blue Slime (type 1, ai[1]==1345) confetti: Next(276,283) loop (5 living / 15 dead) |
 //! | 490-494 | `:84810-84814` | the 305-314 Scarecrow death (5 gores 441-445, type-194 scale-1.1 dust) |
 //! | 495-503 | `:84834` | the 327 Pumpking death (9-gore loop 476-484, vel x0, type-189 scale-1.1 dust) |
+//! | 504-508 | `:84861-84865` | the 345 IceQueen death (5 gores 513/514/514/515/516, vel x0) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3071,6 +3072,24 @@ fn pumpking_death(
     }
 }
 
+/// The 345 IceQueen death (`NPC.cs:84861-84865`, sites 504-508): NO dust
+/// burst — the 5 gores 513/514/514/515/516 at position with velocity ×0
+/// (the 514 repeats).
+fn ice_queen_death(
+    npc: &Npc,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+) {
+    let pos = Vec2::new(npc.x, npc.y);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, Vec2::ZERO, 513, s); // :84861
+    gore.new_gore(rng, world, pos, Vec2::ZERO, 514, s); // :84862
+    gore.new_gore(rng, world, pos, Vec2::ZERO, 514, s); // :84863
+    gore.new_gore(rng, world, pos, Vec2::ZERO, 515, s); // :84864
+    gore.new_gore(rng, world, pos, Vec2::ZERO, 516, s); // :84865
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -3426,6 +3445,10 @@ pub fn hit_effect_c(
     // `:84817-84837` — the 327 Pumpking arm (sites 495-503).
     if npc_type == 327 && npc.hp <= 0 {
         pumpking_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:84859-84866` — the 345 IceQueen arm (sites 504-508).
+    if npc_type == 345 && npc.hp <= 0 {
+        ice_queen_death(npc, gore, rng, world);
     }
     outcome
 }
@@ -5476,6 +5499,22 @@ mod tests {
         let types: Vec<i32> = gore.slots()[..9].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![476, 477, 478, 479, 480, 481, 482, 483, 484]);
         for i in 0..9 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+    }
+
+    /// `NPC.cs:84861-84865` — the IceQueen death: the 5 gores
+    /// 513/514/514/515/516 at position with velocity x0, no dust burst.
+    #[test]
+    fn w4_f10_the_ice_queen_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 50.0, 60.0);
+        let mut gore = GorePool::new();
+        let mut rng = UnifiedRandom::new(421);
+        ice_queen_death(&n, &mut gore, &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![513, 514, 514, 515, 516]);
+        for i in 0..5 {
             assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
         }
     }
