@@ -1,6 +1,6 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-8 (74 kinds — every
-//! dust-first clean kind the port's kind set carries, plus the first 10
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-9 (84 kinds — every
+//! dust-first clean kind the port's kind set carries, plus the first 20
 //! d35 row-gated activations of the DOC-SWEEP phase).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
@@ -107,15 +107,15 @@
 //! ladder `:87495-87500`, the Umbrella's 314 and the painter/witch
 //! shimmer gates are constant data / field reads).
 //!
-//! ## Scope — batch 8 (the DOC-SWEEP: the first d35 row-gated activations)
+//! ## Scope — batches 8-9 (the DOC-SWEEP: the d35 row-gated activations)
 //!
 //! W4-d35's 33-kind SetDefaults wave (`eb0f1005`, kinds 73-140) landed 24
 //! kinds inside this lane's 107-kind UNWIRED remainder; 120/137 were
 //! ALREADY wired (batch 1's illuminant arm + batch 5's — their arms fire
 //! once d35's cs_id rows merge). 112 VileSpit's whole-arm burst
 //! (`:85395-85408`) fires on EVERY hit — g62 owns it (`npc_hit_dust.rs`,
-//! the `:85399` site). The sweep activates them in three batches; this
-//! is the first 10:
+//! the `:85399` site). The sweep activates them in three batches; these
+//! are the first 20:
 //!
 //! | batch | C# type(s) | death arm | shape |
 //! | --- | --- | --- | --- |
@@ -125,19 +125,26 @@
 //! | 8 | 78/79/80 the mummy trio | `:88946-88951` | 20× type-31 scale 1.5 vel×2 noGrav |
 //! | 8 | 82 Wraith | `:88971-88976` | 20× type-54 alpha 50 scale 1.5 vel×2 noGrav |
 //! | 8 | 83/84 CursedHammer/EnchantedSword | `:87152-87163` | 20× type-31 + 6 gore ARG draws |
+//! | 9 | 85 Mimic | `:88785` | 20× ai[3]-selected 7/10/37 |
+//! | 9 | 86 Unicorn | `:87705` | 50× type-5 |
+//! | 9 | 93 GiantBat | `:85807` | 15× type-5 (the bat arm) |
+//! | 9 | 94 Corruptor | `:87512` | 50× type-18 alpha/color/scale |
+//! | 9 | 95/96/97 the digger trio | `:87616` | 10× type-5 2.5×dir |
+//! | 9 | 98/99/100 the seeker trio | `:87583` | 50× type-18 alpha/color/scale |
 //!
 //! The 83/84 pair is the SECOND gore-ARGUMENT arm: each of the 3 gores
 //! draws a `Next(-2, 3)` x/y velocity pair (`:87158`/`:87160`/`:87162`) —
 //! 6 draws consumed here in C# order, the bodies stay d55's (the g63
-//! rule). Every other batch-8 tail draws NO arguments (verified against
-//! the C#: constant types / `this.type` arithmetic / hitDirection).
+//! rule). Every other batch-8/9 tail draws NO arguments (verified against
+//! the C#: constant types / `this.type` arithmetic / hitDirection / ai-field reads — the Mimic's
+//! ai[3] selector is a field read, not a draw).
 //!
 //! ## The lane's remainder (the census's absent kinds)
 //!
 //! The 173-kind dust-first clean census had 109 kinds with NO port kind
 //! row at batch 7's close; the DOC-SWEEP re-census counts 107 UNWIRED
-//! (the 66 landed C# types cover 66 of the 173). Batch 8 activates 10 of
-//! the d35-rowed kinds; 97 stay row-gated UNWIRED until their kinds land
+//! (the 66 landed C# types cover 66 of the 173). Batches 8-9 activate 20 of
+//! the d35-rowed kinds; 87 stay row-gated UNWIRED until their kinds land
 //! (the S1-F-9b row-gate convention); the census rows + arm citations
 //! live in docs/ANALYSIS.md. The 20 dust-only kinds' still-absent members
 //! (34/63/112/141/169/204) are the same remainder (75/120/137 activated
@@ -713,6 +720,87 @@ pub fn death_dust(
             for _ in 0..3 {
                 let _gx = rng.next_range(-2, 3);
                 let _gy = rng.next_range(-2, 3);
+            }
+        }
+        // ---- batch 9 (the d35 row-gated activations: the mimic / unicorn /
+        // giant bat / corruptor / digger trio / seeker trio).
+        // `NPC.cs:88785-88788` — the Mimic (85): 20 puffs of the ai[3]
+        // selector type (`:88768-88776`: 2→10, 3→37, else 7), default
+        // args. The 61/62/63 gore tail `:88789-88794` is constant types +
+        // hitDirection (no argument draws).
+        85 => {
+            let mut ty = 7;
+            if npc.ai[3] == 2.0 {
+                ty = 10;
+            }
+            if npc.ai[3] == 3.0 {
+                ty = 37;
+            }
+            for _ in 0..20 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, ty, 0.0, 0.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87705-87708` — the Unicorn (86): 50 type-5 puffs at
+        // 2.5×dir/-2.5 (the 101-105 gore tail `:87709-87715` is constant
+        // types, no argument draws).
+        86 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:85807-85810` — the Giant Bat (93): 15 type-5 puffs at
+        // 2×dir/-2 (the bat arm, batch 4's shape; the 107 gore
+        // `:85815-85818` is a constant type, no argument draws).
+        93 => {
+            for _ in 0..15 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.0 * dir, -2.0, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87512-87515` — the Corruptor (94): 50 type-18 puffs at
+        // dir/-2, `this.alpha`/`this.color`/`this.scale` (the EoSouls arm,
+        // batch 2's shape; the color stand-in is default — 94 writes no
+        // color). The 108/108/109/110 gore tail `:87516-87522` is constant
+        // types, no argument draws.
+        94 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 18, dir, -2.0,
+                    npc.alpha as i32, Color::default(), npc.scale,
+                );
+            }
+        }
+        // `NPC.cs:87616-87619` — the Digger head (95) / body (96) / tail
+        // (97): 10 type-5 puffs at 2.5×dir/-2.5 (the Giant Worm arm,
+        // batch 2's shape; the `this.type - 95 + 111` gore `:87620` is
+        // constant arithmetic, no argument draws).
+        95 | 96 | 97 => {
+            for _ in 0..10 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:87583-87586` — the Seeker head (98) / body (99) / tail
+        // (100): 50 type-18 puffs at dir/-2, `this.alpha`/`this.color`/
+        // `this.scale` (the EoSouls arm; the color stand-in is default —
+        // none writes a color). The 110 gore `:87587-87588` is a constant
+        // type + `this.alpha` post-write, no argument draws.
+        98 | 99 | 100 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 18, dir, -2.0,
+                    npc.alpha as i32, Color::default(), npc.scale,
+                );
             }
         }
         _ => return false,
@@ -1460,7 +1548,7 @@ mod tests {
         }
     }
 
-    // ---- batch 8 (the d35 row-gated activations). The d35 kinds
+    // ---- batches 8-9 (the d35 row-gated activations). The d35 kinds
     // (GoblinScout 73 … PossessedArmor 140) land with the d35 merge; the
     // witnesses drive the RAW C# ids over a stand-in corpse shell (the
     // batch-1 snowman-trio precedent — `death_dust` matches on the type
@@ -1568,6 +1656,64 @@ mod tests {
             let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len(), count, "type {ty}");
             assert!(live.iter().all(|d| d.dust_type == want_ty));
+        }
+    }
+
+    /// `NPC.cs:88768-88788` — the Mimic (85): the ai[3] selector picks
+    /// the dust type (2→10, 3→37, else 7); 20 puffs, default args.
+    #[test]
+    fn w4_g59_the_mimic_death_reads_the_ai3_selector() {
+        let w = air();
+        for (ai3, want_ty) in [(0.0f32, 7), (2.0, 10), (3.0, 37), (1.0, 7)] {
+            let mut n = corpse(NpcKind::Skeleton);
+            n.ai[3] = ai3;
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(157);
+            assert!(death_dust(&n, 85, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 20);
+            assert!(live.iter().all(|d| d.dust_type == want_ty), "ai3={ai3}");
+        }
+    }
+
+    /// `NPC.cs:87616-87619` / `:87583-87586` / `:87512-87515` — the
+    /// digger trio (95/96/97) 10×5 at 2.5×dir, the seeker trio
+    /// (98/99/100) + Corruptor (94) 50×18 at dir/-2 reading the live
+    /// alpha/scale; the unicorn (86) 50×5 and the giant bat (93) 15×5
+    /// ride the type-5 shapes.
+    #[test]
+    fn w4_g59_the_digger_seeker_and_corruptor_arms() {
+        let w = air();
+        let mut n = corpse(NpcKind::Skeleton);
+        n.alpha = 90;
+        n.scale = 1.1;
+        for ty in [95, 96, 97] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(163);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 10);
+            assert!(live.iter().all(|d| d.dust_type == 5));
+        }
+        for ty in [94, 98, 99, 100] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(163);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 50);
+            for d in &live {
+                assert_eq!(d.dust_type, 18);
+                assert_eq!(d.alpha, 90);
+                assert!((d.scale - 1.1).abs() <= 0.22 + 1e-6);
+            }
+        }
+        for (ty, count) in [(86, 50), (93, 15)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(163);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), count, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == 5));
         }
     }
 
