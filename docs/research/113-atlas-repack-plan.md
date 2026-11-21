@@ -1,11 +1,17 @@
 # 113 — Atlas repack plan: the W4 union overflows the 8192 strict-GPU bound
 
-Status: ✅ FINAL (measurement + merger contract complete: §1-6 the
+Status: ✅ RETIRED (measurement + merger contract complete: §1-6 the
 union crisis + 2-page contract, §7-9 the BG-STYLE extension, §10 the
 NPC lazy-load census + the one-page lazy union, §11 the FINAL claimant
-cross-read + 490-name union, §12 the merger checklist + witness matrix).
+cross-read + 490-name union, §12 the merger checklist + witness matrix;
+§13 the RETIRE phase — the step-7 lazy-load IMPLEMENTATION contract
+(port-side load-path census + the exact merger code plan), §14 the
+NEW-claimant delta since 490 (552-name union, worst case re-measured),
+§15 the FINAL acceptance budgets + GPU-limit check + VRAM min-spec,
+§16 the cross-receipts d38d/g72e/g31g).
 Branch: `task/W4-d35-npc-kinds-71-140` (ATLAS-REPACK phase + extension
-phase + FINAL phase). Base: `a725acb0` (wave-3 landing). Code-only mode:
+phase + FINAL phase + RETIRE phase). Base: `a725acb0` (wave-3 landing).
+Code-only mode:
 no cargo/tests run; every number below is measured by the pinned sim
 harness over the REAL retail `.xnb` dims (LZX first-frame decoder,
 `tools/_d35_atlas_sim_pinned.js`), with `verify()` (no overlap incl. PAD,
@@ -20,7 +26,18 @@ spawn-roster inputs `tools/_d35_npc_census.py` →
 `_d35_npc_census.json`; the union re-extraction
 `tools/_d35_pushed_extract.py` at the current tips →
 `_d35_pushed_sheets.json`, the §1-9 base pinned in
-`_d35_pushed_sheets_339.json`).
+`_d35_pushed_sheets_339.json`). The RETIRE phase (§13-16) re-extracts
+at the latest tips (the comment-tolerant row regex recovers e23's 26
+MapBG backdrops the FINAL regex silently dropped; 52 branches / 488
+pushed names → the 552-name union) and re-measures via
+`tools/_d35_retire_measure.js` → `_d35_retire_measure.json` (24
+scenarios, same verify + determinism discipline) +
+`_d35_retire_gpu.json` (the per-page VRAM caps + the GPU-limit check);
+the font-array VRAM is measured by `tools/_d35_font_vram.js` →
+`_d35_font_vram.json` (a full multi-frame LZX decompress of the five
+retail font XNBs + the `FontAtlas::build` shelf-pack replica, 4 BC2
+layers = 268.4 MB, page counts 159/159/159/160/160 matching the Rust
+pins).
 
 ## 1. The crisis, re-measured
 
@@ -988,6 +1005,165 @@ canonical form
 `A098AE10A2BC8B85AEF9AA82F7E68707B80EFC3930ED7B600699E42C7CD903BD`).
 The BG-STYLE fresh re-run witness
 (`6a2a155a`) proves the harness itself is deterministic across runs.
+
+## 13. The step-7 lazy-load IMPLEMENTATION contract (the port-side census)
+
+§10.6 published the step-7 amendment as a CONTRACT (which names leave
+the eager pack, which set packs per world). This section makes it an
+IMPLEMENTATION spec: the exact port load path today, the exact seam the
+merger edits, and the load-on-first-draw semantics it reproduces. It is
+the step-7 witness the §12 checklist's row 7 points at. Code-only: no
+Rust touched; every citation is a read of the landed tree at this tip.
+
+### 13.1 The port's NPC-sheet load path today (eager-STATIC_SHEET_NAMES)
+
+The NPC corpus rides the EAGER static half, end to end:
+
+| stage | site | what it does |
+|---|---|---|
+| name list | `assets.rs:239` `STATIC_SHEET_NAMES` | **269 `NPC_<id>` rows** (of the const's ~1070 rows) — the named NPC subset, packed eagerly |
+| decode | `assets.rs:1315` `load_static_sheets` → `:1319-1324` | `for name in STATIC_SHEET_NAMES { load_png(dir, name, Raw) }` — every NPC row decoded at boot, world-independent |
+| split | `assets.rs:113` `load_world_images` → `(world_half, static_half)` | the NPC rows are in the STATIC half (the `:99-108` doc: "backgrounds, NPCs, items, UI" are world-independent) |
+| pack | `app/mod.rs:4692` `Atlas::build_ref(&images, 8192)` | one page today; the NPC strips are the tall consumers that pin page 0 |
+| lookup build | `assets.rs:2324` `Lookups::build` → `:2510` `bestiary_npc_sheets` | `atlas.sheet("NPC_<id>").copied()` per `BESTIARY_NPC_SHEET_IDS` slot (`:1893`, 197 entries) |
+| draw map | `render/entities.rs:450` `make_npc_assets` → `:505-522` `npc_sheets` | the 13 family lists (`PILLAR_SHEETS`…`D35_SHEETS`) chained, `npc_tex(atlas, "NPC_<id>")` per id → `HashMap<u16, BgTex>` (`:297`) |
+| named fields | `render/entities.rs:452-655` | ~140 dedicated `npc_tex(atlas, "NPC_<id>")` fields (slime/eye/bosses/town…) alongside the map |
+| draw | `render/entities.rs:2193` `draw_npcs` → `:3280` | `let Some(tex) = tex else { continue }` — an absent sheet SKIPS the draw (the deferred-kind contract) |
+
+**The packing audit**: `npc_tex` (`entities.rs:442-448`) carries
+`debug_assert!(STATIC_SHEET_NAMES.contains(&name))` — the M4-NPC-3v bug
+guard (a name asked for but never packed is a silent no-draw). **This
+assertion is the step-7 edit's tripwire**: when the NPC rows leave
+`STATIC_SHEET_NAMES`, every `npc_tex` call for an NPC name fails the
+assert in debug builds until the audit is re-pointed at the per-world
+set (§13.3 step 7c).
+
+**The bestiary path**: `ui/bestiary.rs:587` `entry_sheet` resolves
+`lookups.bestiary_sheet_index(entry.net_id)` → `bestiary_npc_sheets[slot]`
+(the `:579-593` doc: the literal-slot reads drifted twice, BUG_REPORT §15).
+The grid icon + info-page portrait both draw through it (`:704`, `:802+`).
+So the bestiary's NPC sheets are the SAME `NPC_<id>` atlas rects as the
+in-world draw — one pack serves both, exactly the C# `LoadNPC` sharing.
+
+### 13.2 The C# contract being reproduced (load-on-first-draw)
+
+§10.1's census, restated as the semantics the port must match:
+
+- **Registration is `DoNotLoad` for ALL 697** (`AssetInitializer.cs:127-129`)
+  — nothing NPC decodes at boot.
+- **`LoadNPC(i)` fires per DRAWN NPC** (`Main.cs:59084-59090`, guard
+  `State == NotLoaded`, synchronous `ImmediateLoad`), from
+  `NPC.SetFrameSize` (`NPC.cs:66661-66663`) at the top of `DrawNPCDirect`
+  (`Main.cs:22513-22516`). The first frame a kind draws, its sheet loads;
+  every later frame is a no-op (idempotent).
+- **The bestiary hover loads EVERY entry** (`UnlockableNPCEntryIcon.cs:185`)
+  — opening the grid and hovering a card loads that entry's sheet whether
+  or not the kind was ever seen in-world. The bestiary-opened set is the
+  lifetime superset of the lazy contract (§10.4).
+- **10 cross-draw sites** load a sheet for a kind that is NOT the drawn
+  NPC's own type (§10.1's table): the stardust dragon arm (403/404), the
+  empress arm (492), the bestiary scutlix dummy (391), the mech-queen
+  destroyer (136), the probe projectile (139), the eye-spawn projectile
+  (4), the lunatic-cultist projectile (594), the leashed critters
+  (`LeashedCritter.cs:199`, `ShimmerFlyLeashedCritter.cs:60`), the credits
+  roll (550/199). These are why the per-world set must include the
+  cross-draw ids, not just the spawnable kinds.
+
+**The working-set bound**: at any instant the C# holds only the on-screen
+NPC types (the 200-slot roster, typically ≤20 distinct kinds); over a
+world's lifetime it holds what the world SPAWNS plus what the bestiary
+HOVERS — never the 697-sheet corpus. The port's eager 269-row pack is a
+superset deviation; step 7 closes it.
+
+### 13.3 The exact port-contract edits (step 7, the merger's code plan)
+
+The amendment is an INPUT-LIST change plus a per-world pack arm — NOT a
+packer or binding change (§10.6). The merger edits, in order:
+
+**7a. The NPC rows leave the eager pack.** Delete the 269 `NPC_<id>` rows
+from `STATIC_SHEET_NAMES` (`assets.rs:239`). They join a new
+`npc_sheet_names_for_world(world, roster) -> Vec<String>` helper that
+returns the world's RESIDENT + SPAWNABLE + bestiary-superset ids as
+`NPC_<texture_net_id>` names. **Which ids**: `texture_net_id(kind)`
+(`entities.rs:1061`) for every kind the world can spawn or house — NOT
+`net_id()` (the Hide kinds draw their own sheets, the 96/97/99/100/112
+precedent). The roster census is `_d35_npc_census.json` (the spawner /
+world_sim / moon-ladder / town / bestiary-ENTRIES / cross-draw tables,
+§10.4); the bestiary-opened superset (289 sheets) is packed at world load
+so the atlas stays immutable during play (§13.4).
+
+**7b. The per-world NPC pack arm.** In `build_atlas_inner`
+(`app/mod.rs:4615`), after the union pages pack, append the world's NPC
+set as FRESH pages — exactly the §8.4 bg form. The seam is the existing
+`load_world_sheets` world half (`assets.rs:128`): the NPC names decode
+there (or in a sibling `load_world_npc_sheets`), concatenate AFTER the
+static half, and `Atlas::build_ref` boundary-splits them onto their own
+page(s). The union layout (pages 0..N) is a pure function of the merged
+branch set, never of the world's rolls (§10.5's strengthened determinism
+contract); the NPC pages (N+1..M) re-pack per world.
+
+**7c. Re-point the packing audit.** `npc_tex`'s
+`debug_assert!(STATIC_SHEET_NAMES.contains(&name))` (`entities.rs:444`)
+becomes a check against the WORLD's packed NPC set (the union + the
+per-world NPC names), not the static const. The `make_npc_assets` map
+(`:505`) and the ~140 named fields (`:452-655`) build by name from the
+atlas exactly as today — a kind whose sheet is absent keeps its
+`let Some(tex) else { continue }` skip (`:3280`, the deferred-kind box
+rest). **No draw-path change**: `npc_sheets` is still built from the
+atlas by name at load; only WHICH names are packed changes.
+
+**7d. `MAIN_PAGE_COUNT` runtime uniform.** The layer-range encoding's
+font offset (`sprite.wgsl:256` `sample_tex`, the `push_font_glyph`
+chokepoint `sprite.rs:1088`) must use `atlas.pages.len()` at runtime, not
+a compile-time 2 — the page count now varies by world AND by bestiary
+state if the bestiary set is deferred (§8.4's requirement, extended to
+the NPC pages). Packing the bestiary superset at load avoids the
+bestiary-state variation; the world variation remains, so the uniform is
+REQUIRED.
+
+**7e. The world-swap seam.** `swap_world` (`app/mod.rs:2682`) already
+rebuilds the atlas via `build_atlas_reusing_static` (`:4601`, the static
+half cached). The NPC pages ride the world half, so a swap re-packs them
+from the new world's roster while pages 0..N stay bit-stable (the §3
+step-1 determinism witness, per page). The static cache
+(`App.static_sheets`) no longer carries the NPC rows — they move to the
+world half, so the cache shrinks by the 269-row decode (the ~1.4 s boot
+decode drops accordingly).
+
+### 13.4 Atlas-page-append-at-load, immutable-in-play
+
+The contract packs the world's NPC set ONCE at world load (the
+bestiary-opened superset, 289 sheets / 2566 px / one page, §10.4) and
+NEVER re-packs during play. This is the same rolled-set-superset argument
+as §8.4's bg pages:
+
+- The C# loads a kind's sheet on its first draw; the port packs the whole
+  spawnable+bestiary superset at load (a superset — every kind the world
+  can show is already resident). The first-draw `LoadNPC` becomes a no-op
+  lookup (`npc_sheet(id)` returns the packed rect).
+- **No mid-frame re-pack, no UV invalidation, the G6 cache untouched** —
+  the atlas is immutable from world-load to world-swap. A kind outside the
+  superset (none, by construction) would keep its box rest.
+- **The bestiary superset is the lifetime bound**: hovering every card
+  loads every entry sheet in the C#; the port pre-packs them all, so the
+  bestiary open is also a no-op lookup. Still ONE page (2566 px, ≥5600 px
+  headroom).
+- A future memory-tightening pass could defer the bestiary-only sheets
+  until first hover (true per-draw laziness), but that re-introduces the
+  bestiary-state page-count variation and a mid-play re-pack — it is an
+  optimisation, NOT the contract (§8.4's identical note for the bg pages).
+
+### 13.5 What step 7 does NOT change
+
+§3 steps 1-6 stand; the boundary-split form, the deferred-12 admission,
+the d40 forecast, the mechanical sweep, the bg pages, the g72 screenTarget
+escape are all unaffected. Item/Projectile/Gore stay eager (§10.2: 13.7
+Mpx combined, scattered draw sites, the E-4b superset precedent). The
+`npc_sheets` map, the named fields, the draw arms, the bestiary
+`entry_sheet` resolution are all unchanged — only the INPUT LIST (which
+names pack eagerly vs per-world) and the audit's reference set move. The
+NPC lazy form composes with the bg pages and the underworld escape; it is
+the last input-list amendment of the repack wave.
 
 ## Appendix A - the original 407-name union list (priority order: padded area desc)
 
