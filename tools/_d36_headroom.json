@@ -1,0 +1,92 @@
+[
+ {
+  "label": "base (HEAD, gore landed)",
+  "height": 8115,
+  "overflow": false
+ },
+ {
+  "label": "base + boot font",
+  "height": 8119,
+  "overflow": false
+ },
+ {
+  "label": "base + d36 through batch 1 (5 sheets)",
+  "height": 8320,
+  "overflow": true
+ },
+ {
+  "label": "base + font + d36 through batch 1",
+  "height": 8320,
+  "overflow": true
+ },
+ {
+  "label": "base + d36 through batch 2 (10 sheets)",
+  "height": 8262,
+  "overflow": true
+ },
+ {
+  "label": "base + font + d36 through batch 2",
+  "height": 8262,
+  "overflow": true
+ },
+ {
+  "label": "base + d36 through batch 3 (15 sheets)",
+  "height": 8316,
+  "overflow": true
+ },
+ {
+  "label": "base + font + d36 through batch 3",
+  "height": 8316,
+  "overflow": true
+ },
+ {
+  "label": "base + d36 through batch 4 (20 sheets)",
+  "height": 8326,
+  "overflow": true
+ },
+ {
+  "label": "base + font + d36 through batch 4",
+  "height": 8326,
+  "overflow": true
+ },
+ {
+  "label": "base + d36 through batch 5 (25 sheets)",
+  "height": 8381,
+  "overflow": true
+ },
+ {
+  "label": "base + font + d36 through batch 5",
+  "height": 8381,
+  "overflow": true
+ },
+ {
+  "label": "base + d36 through batch 6 (30 sheets)",
+  "height": 8307,
+  "overflow": true
+ },
+ {
+  "label": "base + font + d36 through batch 6",
+  "height": 8307,
+  "overflow": true
+ },
+ {
+  "label": "base + d36 through batch 7 (35 sheets)",
+  "height": 8348,
+  "overflow": true
+ },
+ {
+  "label": "base + font + d36 through batch 7",
+  "height": 8348,
+  "overflow": true
+ },
+ {
+  "label": "base + d36 through batch 8 (38 sheets)",
+  "height": 8340,
+  "overflow": true
+ },
+ {
+  "label": "base + font + d36 through batch 8",
+  "height": 8340,
+  "overflow": true
+ }
+]
