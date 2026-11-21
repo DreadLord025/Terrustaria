@@ -553,6 +553,18 @@ pub const EXPLODING_BULLET: u16 = 286;
 /// Bullet: inflicts Midas 72 (`Projectile.cs:3758-3771`, `StatusNPC`
 /// `:11537-11540`). S1-P-i18.
 pub const GOLDEN_BULLET: u16 = 287;
+/// `ProjectileID.SilverBullet` (981, `ProjectileID.cs:2516`) — the Silver
+/// Bullet's shot (aiStyle 1, `Projectile.cs:9340-9353`): 4x4, friendly,
+/// ranged, penetrate 1, light 0.5, alpha 255, scale 1.2, timeLeft 600,
+/// extraUpdates 1. W4-g2d rowless-rider batch (the e3e flag): a plain
+/// bullet — the generic aiStyle-1 flight is its whole AI (the only
+/// per-type `AI_001` site is the `Next(6)` dust-279 gate `:56746-56752`,
+/// dust-only, skipped with the layer like every other bullet's trail).
+/// The `Damage_PVE_Inner` x3-vs-Werewolf arm (`:13385-13388`,
+/// `targetNPC.type == 104`) is INERT: the Werewolf (`NPCID.cs:10885`) is
+/// an unported NPC kind (the port's internal id 104 is DD2SkeletonT1,
+/// NOT the vanilla id — `npc/data.rs:288`); recorded in research/26d-g2d.
+pub const SILVER_BULLET: u16 = 981;
 /// The special-bullet kind set S1-P-i18 owns (the aiStyle-1 arms in
 /// `projectile_special_bullets`). Disjoint from the ai001 A/B/C kind lists,
 /// the riders and the moon-lord set. 90 CrystalShard is aiStyle 24 (the
@@ -1630,6 +1642,7 @@ pub(crate) fn set_defaults_light(kind: u16) -> f32 {
         NANO_BULLET => 0.5,                    // `:3734`
         EXPLODING_BULLET => 0.5,               // `:3747`
         GOLDEN_BULLET => 0.5,                  // `:3765`
+        SILVER_BULLET => 0.5,                  // `:9347` (W4-g2d)
         // S1-P-i35 — the glow bobbers 987-993 (`Projectile.cs:9430-9434`):
         // `light = 1f` (the 986 plain override keeps the stock 0).
         987..=993 => 1.0,
@@ -2259,6 +2272,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:3758-3771` — GoldenBullet 287: penetrate 1,
             // extraUpdates 2, scale 1.3 (Midas on hit).
             GOLDEN_BULLET => (4.0, 4.0, 1, 1, 600, 2, true, false, false, (false, -2, false, -1, 255, 1.3)),
+            // W4-g2d — `Projectile.cs:9340-9353`: the Silver Bullet 981:
+            // 4x4, aiStyle 1, friendly, penetrate 1, alpha 255, scale 1.2,
+            // timeLeft 600, extraUpdates 1 (NOT the hardmode bullets' 2),
+            // ranged (`:9351`). The stock tileCollide TRUE stands. Light
+            // 0.5 rides `set_defaults_light`.
+            SILVER_BULLET => (4.0, 4.0, 1, 1, 600, 1, true, false, false, (false, -2, false, -1, 255, 1.2)),
             // `:1823-1832` / `:2707-2716` / `:9330-9339`: the trap darts —
             // `penetrate = -1`, `trap = true`, aiStyle 1. (The spiky ball 185
             // left this group in S1-D-5/S1-D-4c: its own arm below carries
@@ -4395,6 +4414,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // C# writes ranged on them too; the owner-255 gate keeps the
             // flags moot, the census stays verbatim.
                 | SNOW_BALL_HOSTILE | BULLET_SNOWMAN
+            // W4-g2d — the Silver Bullet 981 sets `ranged = true`
+            // (`Projectile.cs:9351`); the musket-ball twin's census entry
+            // above predates the row.
+                | SILVER_BULLET
         ),
         magic: matches!(
             kind,
@@ -5035,6 +5058,31 @@ mod tests {
             INFERNO_HOSTILE_BOLT, INFERNO_HOSTILE_BLAST, UFO_LASER]
         {
             assert_eq!(proj_frames(kind), 1, "kind {kind} stock sheet");
+        }
+    }
+
+    /// W4-g2d rowless-rider batch — the Silver Bullet 981's `SetDefaults`
+    /// slice (`Projectile.cs:9340-9353`), WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn the_w4_g2d_silver_bullet_row_is_verbatim() {
+        let d = proj_data(SILVER_BULLET).expect("the 981 row landed");
+        assert_eq!((d.w, d.h), (4.0, 4.0), ":9342-9343");
+        assert_eq!(d.ai_style, 1, ":9344");
+        assert_eq!(d.penetrate, 1, ":9346");
+        assert_eq!(d.light, 0.5, ":9347");
+        assert_eq!(d.alpha, 255, ":9348");
+        assert_eq!(d.scale, 1.2, ":9349");
+        assert_eq!(d.time_left, 600, ":9350");
+        assert!(d.ranged && !d.melee && !d.magic, ":9351");
+        assert_eq!(d.extra_updates, 1, ":9352 — NOT the hardmode 2");
+        assert!(d.tile_collide, "the stock true (:775) stands");
+        assert!(!d.ignore_water && !d.net_important && !d.arrow && !d.trap);
+        assert!(!d.uses_local_immunity && !d.uses_id_static_immunity);
+        assert_eq!(proj_frames(SILVER_BULLET), 1, "no Main.projFrames override");
+        // The rowed siblings stay rowless (the g2d task-seeds, research/26d-g2d):
+        // the 19 phaseblades need the AI_003 machine, the 491 needs _Old.
+        for kind in [1059, 1065, 1074, 1075, 1076, 1101, 1102, 491] {
+            assert!(proj_data(kind).is_none(), "kind {kind} stays rowless (task-seed)");
         }
     }
 }

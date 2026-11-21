@@ -21339,9 +21339,12 @@ impl ProjectilePool {
             }
             // `:76035-76039` — the common bullet arm (36/104/207/242/279/285/287
             // and the unrowed siblings): `Collision.HitTiles` dust + Item10,
-            // both skipped, no explicit draw, no state.
+            // both skipped, no explicit draw, no state. W4-g2d: the 981's own
+            // arm (`:76040-76049`) is the SAME HitTiles + Item10 pair plus the
+            // `SilverBulletSparkle` ParticleOrchestrator request (the particle
+            // layer is unported — skipped); it folds onto this group.
             METEOR_SHOT | CURSED_BULLET | CHLOROPHYTE_BULLET | HIGH_VELOCITY_BULLET
-            | ICHOR_BULLET | NANO_BULLET | GOLDEN_BULLET => {}
+            | ICHOR_BULLET | NANO_BULLET | GOLDEN_BULLET | SILVER_BULLET => {}
             _ => {}
         }
     }
@@ -23322,6 +23325,13 @@ impl ProjectilePool {
                     }
                 }
             }
+            // `:13385-13388` — the Silver Bullet 981's `targetNPC.type ==
+            // 104` (NPCID.Werewolf, `NPCID.cs:10885`) x3 damage arm: INERT
+            // SKIP (W4-g2d) — the Werewolf is an unported NPC kind, so no
+            // slot can match it. NOT gated on the port's internal id 104
+            // (that is DD2SkeletonT1, `npc/data.rs:288` — a false triple
+            // there would corrupt the DD2 lane). The arm lands with the
+            // Werewolf's row.
             // `:13389-13396` — the yoyo damage doublings, evaluated BEFORE
             // the strike against the player's `yoyoHitCounter` with the peek
             // (`countUp: false`) form, so the spawn arms below see the same
@@ -45290,5 +45300,67 @@ mod w4_g2_rowless_tests {
         assert_eq!(p.vel.y, -5.0, "the bounce (:22434)");
         assert_eq!(p.time_left, 3600, "NO life cap / -60 (the :22424 arm)");
         assert!(!p.shimmer_wet && !p.wet, "the wet flags clear (:22436-22437)");
+    }
+}
+
+// --- W4-g2d rowless riders: the Silver Bullet 981 ---------------------------
+// The e3e-flagged rowless kind with an AI arm (the generic aiStyle-1 bullet
+// flight). WRITTEN NOT RUN (code-only mode, the task contract).
+#[cfg(test)]
+mod w4_g2d_silver_bullet_tests {
+    use super::*;
+
+    fn world() -> World {
+        World::new("t".into(), 512, 128)
+    }
+
+    fn tick(pool: &mut ProjectilePool, w: &mut World) {
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        pool.update(
+            w, &mut [], None, None, None,
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+    }
+
+    /// `Projectile.cs:9340-9353` — the 981 spawns through the data seam
+    /// (was a silent decline) and rides the generic aiStyle-1 flight:
+    /// `extraUpdates = 1` runs TWO sub-steps per tick, `ai[0]` climbs 2/tick,
+    /// gravity +0.1 per sub-step from `ai[0] >= 15` (`:57572-57583`).
+    #[test]
+    fn w4_g2d_the_silver_bullet_spawns_and_flies() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data(SILVER_BULLET, 200.0, 200.0, 8.0, 0.0, 9, 3.0)
+            .expect("the 981 row accepts the spawn");
+        let mut w = world();
+        assert_eq!(pool.slots()[slot].extra_updates, 1);
+        assert_eq!(pool.slots()[slot].time_left, 600);
+        tick(&mut pool, &mut w);
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert_eq!(p.ai[0], 2.0, "two sub-steps per tick (:9352)");
+        assert_eq!(p.vel.y, 0.0, "no gravity before ai[0] >= 15");
+        assert!((p.pos.x - 216.0).abs() < 1e-4, "two 8-px steps");
+        // 7 more ticks: ai[0] reaches 16, the last sub-step adds +0.1 Y.
+        for _ in 0..7 {
+            tick(&mut pool, &mut w);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 16.0);
+        assert!((p.vel.y - 0.1).abs() < 1e-6, "the >=15 gravity (:57577)");
+    }
+
+    /// `ProjLight` `:16343-16347` — the 981's own colour arm:
+    /// `(l, 0.7l, 0.7l)` at the row's light 0.5, NOT the common bullet's
+    /// `(l, 0.7l, 0.1l)`.
+    #[test]
+    fn w4_g2d_the_silver_bullet_light_is_its_own_arm() {
+        let l = proj_data(SILVER_BULLET).unwrap().light;
+        let lit = crate::proj_lights::proj_light(
+            SILVER_BULLET, l, Vec2::new(200.0, 200.0), 4.0, 4.0, false,
+            &tr_core::lighting::LightParams::default(),
+        )
+        .expect("light 0.5 is lit");
+        assert_eq!(lit.2, [l, l * 0.7, l * 0.7], "the :16343 arm");
     }
 }
