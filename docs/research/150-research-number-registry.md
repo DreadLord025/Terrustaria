@@ -1174,7 +1174,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 332 | c27 | 248-c27-set-time-final | rename owed |
 | 333 | d119 | 304-d119-housing-bible | rename owed |
 | 334 | g62 | 240-g62-hit-dust | rename owed |
-| 335 | f30 | 240-f30-systems | rename owed |
+| 335 | f30 | 335-f30-systems-retire | DONE 981400cda |
 | 336 | d13 | 304-…-final (executed 243→304 e310bd6e7) | rename owed 304→336 |
 | 337 | f24 | 243-f24-room-content | rename owed |
 | 338 | d30 | 338-band-65-72-retire | DONE ee73eff97 |
@@ -1203,10 +1203,11 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 361 | d5 | 360-…-final (fd69c1167, collided with g10-360) | NEW rename owed 360→361 |
 | 362 | g55 | 334-g55-loadout-family-final (b4bf0e08b 17:37, post-§9 self-pick into g62's assigned 334) | NEW rename owed 334→362 |
 | 363 | d31 | 352-d31-style83-wiring-retire-final (1f0bd6385 17:39, post-§9 self-pick into d1's assigned 352) | NEW rename owed 352→363 |
+| 364 | g16 | 360-proj-gore-family-final (1254ff5e0 17:40:42, third 360 claimant; g10 17:31 first) | NEW rename owed 360→364 |
 
 ### §9.3 — rules
 
-- Free floor: **364+**. New docs require a registry check + Lead assignment; NO self-picks.
+- Free floor: **365+**. New docs require a registry check + Lead assignment; NO self-picks.
 - 311/322/324/299 are FREE holes — do NOT take them without a Lead assignment.
 - e26's 248 doc: g82's reservation wins (§6.3); e26→357 (not 333).
 - d13 has TWO docs: pet-light FINAL→336, band-final→353.
