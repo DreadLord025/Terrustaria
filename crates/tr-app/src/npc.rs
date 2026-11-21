@@ -18243,6 +18243,18 @@ impl Npc {
                 // reflects. The port's `hurt_cd <= 0` is the `!immune`
                 // stand-in (the collapsed General cooldown, M4-HAZARD-1).
                 let pre_hit_not_immune = player.hurt_cd <= 0.0;
+                // `Player.cs:31366-31381` — the parry verdict rides BEFORE
+                // the thorns arms: `flag3 = CanParryAgainst(rect, npcRect,
+                // velocity)`; on a parry the reflect multiplier pins at 2
+                // (`num = 2f`), the knockback halves to 5, `flag = false`
+                // skips `Hurt` and `flag2 = true` skips `StatusFromNPC`.
+                // The enemy centre is the C# `Rectangle.Center` integer
+                // arithmetic (`(int)position.X + width/2`, `:31356`).
+                let parry = player.can_parry_against(
+                    self.x as i32 + w as i32 / 2,
+                    self.vx,
+                    self.vy,
+                );
                 // `Player.cs:31397-31410`: the contact bounces the thorns
                 // back — `thorns` scales the NPC's own damage (2x on the
                 // Turtle set), the Cactus set adds its flat 15.
@@ -18251,7 +18263,16 @@ impl Npc {
                 // carries the varied contact damage (`num3`, `:31387`) and
                 // runs BEFORE `Hurt` — a dodged hit reflects too.
                 if pre_hit_not_immune && dmg > 0 && !self.dont_take_damage {
-                    let reflect = player.thorns_damage(dmg);
+                    // On a parry the multiplier is 2 REGARDLESS of the
+                    // thorns sources (`num = 2f`, `:31377`) — a shield
+                    // parry reflects even with no thorns armed; the
+                    // Cactus flat 15 still rides (`:31406-31418`).
+                    let reflect = if parry {
+                        ((dmg as f32 * 2.0) as i32).min(1000)
+                            + if player.cactus_thorns { 15 } else { 0 }
+                    } else {
+                        player.thorns_damage(dmg)
+                    };
                     if reflect > 0 {
                         let (ncx, _) = self.center();
                         let dir = if ncx < player.x + crate::player::WIDTH * 0.5 {
@@ -18260,17 +18281,31 @@ impl Npc {
                             1.0
                         };
                         // The C# knocks the NPC away from the player
-                        // (`-num2`, knockback 10).
-                        self.hurt(reflect, ncx, 10.0 * dir, false, player.buffs.expert_mode);
+                        // (`-num2`, knockback 10 — 5 on a parry, `:31378`).
+                        let kb = if parry { 5.0 } else { 10.0 };
+                        self.hurt(reflect, ncx, kb * dir, false, player.buffs.expert_mode);
                     }
                 }
                 // `Player.cs:31423` — `Hurt(damageSource: ByNPC(i), Damage:
                 // num3, hitDirection: num2, .., dodgeable:
                 // Main.npc[i].IsDamageDodgeable())`; the `> 0 && !dead` tail
                 // gates `StatusFromNPC`, whose debuff body the port carries
-                // elsewhere (unchanged).
-                if dmg > 0 {
+                // elsewhere (unchanged). `flag` is false on a parry — the
+                // shield eats the hit whole.
+                if dmg > 0 && !parry {
                     player.hurt(dmg, cx, rng, self.is_damage_dodgeable());
+                }
+                // `Player.cs:31427-31431` — the parry tail: the collision
+                // immunity window (60 with the Cross Necklace's
+                // `longInvince`, else 30) through the strike-counted
+                // `GiveImmuneTimeForCollisionAttack`, then the
+                // ParryDamageBuff grant `AddBuff(198, 300)` — the next
+                // melee strike ×5s (`:44307-44312`).
+                if parry {
+                    player.give_immune_time_for_collision_attack(
+                        if player.long_invince { 60 } else { 30 },
+                    );
+                    player.buffs.add_buff(198, 300);
                 }
             }
         }
@@ -19574,6 +19609,94 @@ mod tests {
             }
         }
         assert!(dodged_seen, "no seed in the sweep dodged — the test lost its dodge case");
+    }
+
+    #[test]
+    fn w4_f48_parry_contact_eats_the_hit_reflects_double_and_grants_198() {
+        // `Update_NPCCollision`'s parry lane (`Player.cs:31366-31431`):
+        // `flag3` skips `Hurt` (`flag = false`), pins the reflect at 2x
+        // with knockback 5, then grants the 60/30 collision window +
+        // `AddBuff(198, 300)`.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.hp = 10_000;
+        bat.max_hp = 10_000;
+        bat.vx = -1.0; // moving toward the player's facing side
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0; // overlapping, the bat centre RIGHT of the player
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        p.time_since_last_immune_get = 10000;
+        p.shield_parry_time_left = 5;
+        let hp0 = p.hp;
+        let bat_hp0 = bat.hp;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert_eq!(p.hp, hp0, "the parry eats the hit (flag = false)");
+        // The reflect: 2x the VARIED contact damage (±15% band), capped.
+        let reflected = bat_hp0 - bat.hp;
+        assert!(
+            (34..=46).contains(&reflected),
+            "2x the varied 20 lands (got {reflected})"
+        );
+        // The 30-tick window + the no-blink flag + buff 198 for 300.
+        assert!(p.immune && p.immune_no_blink);
+        assert_eq!(p.immune_time, 30);
+        let i = p.buffs.find_buff_index(198).expect("the parry grants 198");
+        assert_eq!(p.buffs.buff_time[i], 300);
+    }
+
+    #[test]
+    fn w4_f48_parry_contact_window_doubles_to_60_with_long_invince() {
+        // `Player.cs:31429`: `GiveImmuneTimeForCollisionAttack(longInvince
+        // ? 60 : 30)` — the Cross Necklace's second consumer.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.vx = -1.0;
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0;
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        p.time_since_last_immune_get = 10000;
+        p.shield_parry_time_left = 5;
+        p.long_invince = true;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert_eq!(p.immune_time, 60, "the Cross Necklace doubles the parry window");
+    }
+
+    #[test]
+    fn w4_f48_parry_contact_without_the_window_lands_the_hit_normally() {
+        // No parry window: the vanilla lane — `Hurt` runs, no 198 grant,
+        // no reflect without thorns.
+        let w = World::new("t".into(), 64, 64);
+        let mut bat = Npc::new(NpcKind::CaveBat, 100.0, 100.0, 1, 0.0);
+        bat.damage_override = Some(20);
+        bat.hp = 10_000;
+        bat.max_hp = 10_000;
+        bat.vx = -1.0;
+        let mut p = crate::player::Player::spawn(&w);
+        p.x = bat.x - 10.0;
+        p.y = bat.y;
+        p.facing = 1;
+        p.immune = false;
+        p.immune_time = 0;
+        p.hurt_cd = 0.0;
+        let hp0 = p.hp;
+        let bat_hp0 = bat.hp;
+        let mut rng = UnifiedRandom::new(3);
+        bat.contact(&mut p, &mut rng);
+        assert!(p.hp < hp0, "the hit lands without the shield window");
+        assert_eq!(bat.hp, bat_hp0, "no thorns, no reflect");
+        assert!(p.buffs.find_buff_index(198).is_none(), "no parry, no 198");
     }
 
     #[test]
