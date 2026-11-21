@@ -1484,13 +1484,18 @@ impl App {
                     Some(ui::chrome::PvpClick::ToggleHostile) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
                         self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
-                        if let Some(p) = self.player.as_mut() {
+                        let hostile = if let Some(p) = self.player.as_mut() {
                             p.hostile = !p.hostile;
-                        }
-                        // `NetMessage.SendData(30, -1, -1, null, myPlayer)` —
-                        // the PVP-state broadcast. M6-NET's message table has
-                        // no 30 (`net.rs`); the local flip is the whole effect
-                        // in SP (ANALYSIS).
+                            p.hostile
+                        } else {
+                            false
+                        };
+                        // `NetMessage.SendData(30, -1, -1, null, myPlayer)`
+                        // (`Main.cs:42694`) — W4-c28: the send trigger now
+                        // rides the flip (the role match is SendData's own
+                        // netMode gate; SP drops it). The host apply/relay +
+                        // chat are g48's lane.
+                        self.send_toggle_pvp(hostile);
                     }
                     Some(ui::chrome::PvpClick::SetTeam(i)) => {
                         self.team_cooldown = ui::chrome::TEAM_COOLDOWN_LEN;
@@ -1500,7 +1505,12 @@ impl App {
                         }
                         // `:42765-42770`: `SendData(157)` in MP, else the
                         // team-based-spawns respawn in SP (`teamBasedSpawnsSeed`
-                        // is not ported — no team spawn seeds yet).
+                        // is not ported — no team spawn seeds yet). W4-c28:
+                        // the send DECISION rides the team set; the `157` id
+                        // parks until d97's `TEAM_CHANGE_FROM_UI` codec merges
+                        // (a `45` stand-in would skip the `b == 157` team-spawn
+                        // tail — not faithful). The host apply is g49's lane.
+                        self.send_team_change(i as u8);
                     }
                     None => {}
                 }

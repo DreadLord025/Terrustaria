@@ -28801,6 +28801,57 @@ Verification: code-only mode — no cargo/rustc/tests run; the 9 new witnesses
 (`net_player_sync` remote-pvp + the netglue hurt/53/54/catch-all/id-lane/section tests)
 are the tests-as-code (WRITTEN NOT RUN). C# cross-reads cited per block.
 
+## The cadence-final UI/door/expiry send-triggers (W4-c28c, code-only mode, 2026-11-21)
+
+The last census residuals with ported interaction sites. Cross-read against
+`NetMessage.SendData`'s own `netMode == 0` return (`NetMessage.cs:83-86`) — the
+unguarded click sites ride that gate, so the port's role match IS the gate.
+
+**PVP toggle `30` (`Main.cs:42694`).** The click flips `hostile` THEN sends; the
+writer reads `Main.player[number].hostile` at send time (`NetMessage.cs:856-859`),
+so the port's `send_toggle_pvp(hostile)` carries the live post-flip flag. Client:
+one `30` with its own id; host: the default-arm fan-out (`NetMessage.cs:1801-1811`)
+with slot 0 (`Main.myPlayer`). The host apply/relay + team-coloured chat are g48's
+lane (`MessageBuffer.cs:1851-1867`); the c28 base parks the read (the no-op arm).
+
+**Team click `157` (`Main.cs:42766`, the `netMode != 0` gate `:42764`).** The
+writer's `case 45: case 157:` fall-through (`NetMessage.cs:970-974`) writes the
+SAME two bytes, but the reader's team-based-spawns tail keys on `b == 157`
+(`MessageBuffer.cs:2355`) — a `45` stand-in is NOT faithful. The send DECISION is
+recorded (`send_team_change`); the wire PARKS until d97's `TEAM_CHANGE_FROM_UI`
+codec (the c27 `55`/`36`/`35` precedent — recorded, not silent). Host apply is
+g49's lane (`MessageBuffer.cs:2325-2364`).
+
+**Door `19` (`Player.cs:32844`/`:32851` open, `:32861` close; the host fighter
+bash `NPC.cs:60067-60070`).** The sends gate on the open/close SUCCESS (the
+`type != 10` retry / `CloseDoor` bool), so the port queues at the fired
+`Door_Opened`/`Door_Closed` cue, not the blocked arm. The `19` id PARKS until
+d90's `DOOR_TOGGLE` codec (`NetMessage.cs:537-542` — byte action + short x/y +
+the `number4 == 1f ? 1 : 0` direction byte); the open-retry `-direction` nuance
+rides the d90 wire's decode. Trapdoor 2/3 + tall-gate 4/5 arms are unported
+(`ShiftTrapdoor`/`ShiftTallGate` have no port). Host apply is g48's
+`host_door_toggle` (`MessageBuffer.cs:1299-1334`).
+
+**Expired-buff sweep `54` (`NPC.cs:91890-91909`) — the WIRING the residual pass
+left open.** The decision helper (`net_npc_sync::expired_buff_sweep`) existed
+with no caller: the port's `clear_expired_buffs` runs inside `update_buffs_tick`
+with no netMode and dropped the C# `flag`. Now the quiet per-slot `DelBuff`s
+latch `NpcBuffs::expired_send` (`:91902`), and `drain_npc_buff_sends` takes the
+latch through the decision layer — host ONE `54` full list per expired sweep
+(coalesced with an AddBuff in the same pass: both write the SAME current list,
+last write wins, the same bytes — the recorded deviation); client/SP drop the
+latch with no wire (`:91892-91895`).
+
+**Fixture fix:** the door witness's `object_world` lacked the ceiling row the
+door's `CanPlace` upper `SolidTile` anchor requires — added row 16 (the core
+`doorway_world` shape); without it the placement refused and the witness could
+never reach the send arm.
+
+Verification: code-only mode — no cargo/rustc/tests run; the 8 new witnesses
+(the netglue pvp/team/door-decision + expiry wire tests, the npc_buffs sweep
+gate/latch tests, the doors.rs interaction test) are WRITTEN NOT RUN. C#
+cross-reads cited per block.
+
 ## The aiStyle-10 family (S1-D-3-s10, code-only mode, 2026-11-18)
 `crates/tr-app/src/npc_ai_style10.rs` (`style10_ai`) ports `NPC.AI()`'s
 `if (this.aiStyle == 10)` arm (`NPC.cs:21572-21918`) вЂ” the Cursed Skull

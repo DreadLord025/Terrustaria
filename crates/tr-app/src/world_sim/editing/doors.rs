@@ -358,6 +358,18 @@ pub(super) fn interact_tile(app: &mut App, tx: i32, ty: i32) -> bool {
     let Some((cue, drops)) = interaction_events(result) else {
         return false;
     };
+    // W4-c28: the door `19 ToggleDoorState` send decision
+    // (`Player.cs:32844`/`:32851` open, `:32861` close). The fired open/close
+    // arms queue the send (the blocked arm sends nothing — the C# gates the
+    // send behind the `type != 10` / `CloseDoor` success). The `19` id parks
+    // until d90's `DOOR_TOGGLE` codec merges; the decision is recorded here.
+    // `direction` is the player's facing (the open-retry `-direction` nuance
+    // rides the d90 wire's decode); the trapdoor/tall-gate arms are unported.
+    match cue {
+        Some("Door_Opened") => app.send_door_toggle(0, tx, ty, direction),
+        Some("Door_Closed") => app.send_door_toggle(1, tx, ty, direction),
+        _ => {}
+    }
     if let Some(cue) = cue {
         // S1-E-21i — the door open/close plays upgrade to the faithful
         // case-8/9 pitched path (`WorldGen.OpenDoor` `WorldGen.cs:37727` /
@@ -1094,5 +1106,36 @@ mod tests {
                 .all(|n| n.kind != NpcKind::Golem || n.hp == 0),
             "the hardmode gate refuses"
         );
+    }
+
+    /// W4-c28: the door right-click fires the `19 ToggleDoorState` send
+    /// decision (`Player.cs:32844`/`:32861`). The `19` id parks until d90's
+    /// `DOOR_TOGGLE` codec, so the send is a recorded no-op — this pins that
+    /// the interaction still opens/closes the door and reaches the send arm
+    /// without a panic (the decision is wired at the fired cue, not the
+    /// blocked one). A closed door (tile 10) at (10, 18), floor row 20, the
+    /// stone ceiling row 16 (`CanPlace`'s upper `SolidTile` anchor — the
+    /// core `doorway_world` fixture shape), the player parked clear of the
+    /// opening column.
+    #[test]
+    fn the_door_click_fires_the_19_send_decision_on_open_and_close() {
+        let mut w = object_world();
+        set_tile(&mut w, 10, 16, 1);
+        assert!(edit::place_item_tile(&mut w, 10, 18, 10, 0, 1));
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = w;
+        let mut player = Player::spawn(&app.world);
+        // Park left of the door so the +1 opening column (11) is clear and
+        // the close occupancy gate passes.
+        player.x = 8.0 * 16.0;
+        player.y = 17.0 * 16.0;
+        player.facing = 1;
+        app.player = Some(player);
+        // The open: tile 10 → 11, the DoorOpened cue → the action-0 send arm.
+        assert!(interact_tile(&mut app, 10, 18), "the open consumed the click");
+        assert_eq!(app.world.tile(10, 18).map(|t| t.kind), Some(11), "the door opened");
+        // The close: tile 11 → 10, the DoorClosed cue → the action-1 send arm.
+        assert!(interact_tile(&mut app, 10, 18), "the close consumed the click");
+        assert_eq!(app.world.tile(10, 18).map(|t| t.kind), Some(10), "the door closed");
     }
 }

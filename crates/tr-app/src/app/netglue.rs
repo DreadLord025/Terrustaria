@@ -3459,6 +3459,71 @@ impl App {
         }
     }
 
+    /// W4-c28: the PVP-toggle click's `30 TogglePVP` send
+    /// (`Main.cs:42694`, `NetMessage.SendData(30, -1, -1, null, myPlayer)`).
+    /// The site has NO netMode guard of its own — `SendData`'s own
+    /// `netMode == 0` return (`NetMessage.cs:83-86`) drops it in SP, so the
+    /// port's role match is the whole gate. Client: one `30` to the host
+    /// (the writer reads `Main.player[number].hostile` at send time,
+    /// `NetMessage.cs:856-859` — the flip already landed). Host: the
+    /// broadcast fan-out (`NetMessage.cs:1801-1811`'s default arm); the host
+    /// is player slot 0 (`Main.myPlayer`), so the body's id is 0 — the port's
+    /// `local_id` is 0 while hosting (the client's assigned id is its own).
+    /// The host apply/relay + the team-coloured chat fan-out are W4-g48's
+    /// lane (`MessageBuffer.cs:1851-1867`); this is the SEND trigger the
+    /// click site lacked.
+    pub(crate) fn send_toggle_pvp(&self, hostile: bool) {
+        match &self.net {
+            NetRole::Host(server) => server.broadcast(&S2c::TogglePvp(net::TogglePvp {
+                player_id: 0, // the host's player slot (`Main.myPlayer`)
+                hostile,
+            })),
+            NetRole::Client(client) => client.send(&C2s::TogglePvp(net::TogglePvp {
+                player_id: self.local_id as u8,
+                hostile,
+            })),
+            NetRole::Off => {}
+        }
+    }
+
+    /// W4-c28: the team-cell click's `157 TeamChangeFromUI` send DECISION
+    /// (`Main.cs:42766`, `NetMessage.SendData(157, -1, -1, null, myPlayer)`
+    /// under `Main.netMode != 0`, `:42764`). The writer's `case 45: case 157:`
+    /// fall-through (`NetMessage.cs:970-974`) writes the SAME two bytes as
+    /// `45`, but the id byte differs and the C# reader's team-based-spawns
+    /// tail keys on `b == 157` (`MessageBuffer.cs:2355`) — so a `45` stand-in
+    /// is NOT faithful. The `157` id/codec is W4-d97's lane
+    /// (`TEAM_CHANGE_FROM_UI`, the shared `TeamChange` body); until that wire
+    /// merges the send PARKS on both legs (the c27 `55`/`36`/`35` precedent —
+    /// recorded, not silent). The host apply/relay + announcement are W4-g49's
+    /// lane (`MessageBuffer.cs:2325-2364`). This records the trigger the click
+    /// site lacked; the wire lands with d97's id.
+    pub(crate) fn send_team_change(&self, _team: u8) {
+        // Parked: the `157` id is d97's `TEAM_CHANGE_FROM_UI`. No faithful
+        // stand-in exists on the c28 base (`45` would skip the `b == 157`
+        // team-spawn distinction), so the decision is recorded and the send
+        // lands with the id. SP: the C#'s `netMode != 0` gate already drops it.
+    }
+
+    /// W4-c28: the door right-click's `19 ToggleDoorState` send DECISION
+    /// (`Player.cs:32844`/`:32851` open, `:32861` close —
+    /// `NetMessage.SendData(19, -1, -1, null, 0|1, myX, myY, direction)`).
+    /// The sites are unguarded at the call (SendData's `netMode == 0` return
+    /// drops SP); the host fighter door-bash (`NPC.cs:60069`/`:60082`) is the
+    /// `netMode == 2` twin. The `19` id/codec is W4-d90's lane
+    /// (`DOOR_TOGGLE`, `NetMessage.cs:537-542` — byte action + short x/y +
+    /// the `number4 == 1f ? 1 : 0` direction byte); until that wire merges the
+    /// send PARKS (the c27 `55`/`36` precedent — recorded, not silent). The
+    /// host apply/relay is W4-g48's `host_door_toggle`
+    /// (`MessageBuffer.cs:1299-1334`). `action` is 0 open / 1 close (the
+    /// trapdoor 2/3 + tall-gate 4/5 arms are unported — `ShiftTrapdoor`/
+    /// `ShiftTallGate` have no port); `direction` is the player's facing (the
+    /// C# open retry's `-direction` nuance rides the d90 wire's own decode).
+    pub(crate) fn send_door_toggle(&self, _action: u8, _x: i32, _y: i32, _direction: i32) {
+        // Parked: the `19` id is d90's `DOOR_TOGGLE`. The decision is recorded
+        // at the interaction site; the wire lands with the id. SP drops it.
+    }
+
     /// `AchievementsHelper.NotifyNPCKilled`'s wire half
     /// (`AchievementsHelper.cs:200-217`): in MP the host sends `97` to every
     /// slot recorded in the dead NPC's `playerInteraction` (`:210-216`). The
@@ -3613,12 +3678,19 @@ impl App {
     /// through the host slot map; host: ONE `54` per touched NPC (the C#
     /// sends per AddBuff call, but the list body is identical within a
     /// pass — the last write wins, the same bytes). SP: the queue drops.
+    /// W4-c28: the expiry-sweep latch (`NpcBuffs::expired_send`,
+    /// `NPC.cs:91896-91908`) rides the same host arm — the decision layer
+    /// (`net_npc_sync::expired_buff_sweep`) gates it, one `54` per expired
+    /// sweep, coalesced with an AddBuff in the same pass.
     /// Runs at the sim-pass tails that mutate NPC buffs (the melee hit,
     /// the projectile pass, the player-tick retaliate drain).
     pub(crate) fn drain_npc_buff_sends(&mut self) {
         match self.net_mode() {
             1 => {
                 for idx in 0..self.npcs.len() {
+                    // The client's sweep returns before the send
+                    // (`NPC.cs:91892-91895`) — the latch drops, no wire.
+                    self.npcs[idx].buffs.expired_send = false;
                     let sends = self.npcs[idx].buffs.take_net_sends();
                     for (buff, time) in sends {
                         self.send_npc_add_buff(idx, buff as u16, time);
@@ -3630,7 +3702,25 @@ impl App {
                     return;
                 };
                 for idx in 0..self.npcs.len() {
-                    if self.npcs[idx].buffs.take_net_sends().is_empty() {
+                    let added = !self.npcs[idx].buffs.take_net_sends().is_empty();
+                    // W4-c28: the expired-sweep's `flag` latch
+                    // (`NPC.cs:91896-91908`). The decision layer owns the
+                    // host-only gate; the sweep ran inside `update_buffs_tick`
+                    // with no netMode, so the latch rides here.
+                    let expired = std::mem::take(&mut self.npcs[idx].buffs.expired_send);
+                    let mut sweep = Vec::new();
+                    crate::app::net_npc_sync::expired_buff_sweep(
+                        idx as i16,
+                        2,
+                        expired,
+                        &mut sweep,
+                    );
+                    // One `54` full list per touched NPC per pass — the AddBuff
+                    // fan-out (`:89979-89982`) and the expiry sweep
+                    // (`:91905-91908`) both write the SAME current list, so a
+                    // pass that did both coalesces to one (last write wins,
+                    // the same bytes — the recorded deviation).
+                    if !added && sweep.is_empty() {
                         continue;
                     }
                     let buffs = npc_buffs_of(&self.npcs[idx]);
@@ -3643,6 +3733,7 @@ impl App {
             _ => {
                 for n in self.npcs.iter_mut() {
                     n.buffs.net_sends.clear();
+                    n.buffs.expired_send = false;
                 }
             }
         }
@@ -5982,6 +6073,57 @@ mod message_family_tests {
         assert!(host_app.npcs[0].buffs.net_sends.is_empty());
     }
 
+    /// W4-c28: the expiry-sweep `54` (`NPC.cs:91890-91909`) — the sweep's
+    /// quiet `DelBuff`s latch `expired_send` (`:91902`), the host drain
+    /// turns the latch into ONE `54` full list, and the client's bar loses
+    /// the expired buff. The decision-layer gate itself is pinned by
+    /// `npc_buffs::tests::the_expired_sweep_queues_one_54_on_the_host_only_when_something_expired`.
+    #[test]
+    fn an_expired_buff_sweep_sends_one_54_from_the_host() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        pump(&mut host_app, &mut client_app, 15);
+        // A 1-tick Confused 31 on the host, fanned out to the client.
+        host_app.npcs[0].buffs.add_buff(31, 1);
+        host_app.drain_npc_buff_sends();
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(client_app.npcs[0].buffs.find_buff_index(31).is_some());
+        // The sweep tick: the timer decrements to 0, the quiet DelBuff
+        // clears the slot and latches the flag (`:91899-91902`).
+        let mut hp = host_app.npcs[0].hp;
+        let max_hp = host_app.npcs[0].max_hp;
+        host_app.npcs[0].buffs.update_buffs_tick(&mut hp, max_hp);
+        host_app.npcs[0].hp = hp;
+        assert!(host_app.npcs[0].buffs.find_buff_index(31).is_none(), "the sweep cleared it");
+        assert!(host_app.npcs[0].buffs.expired_send, "the flag latched");
+        // The drain takes the latch and sends the one 54.
+        host_app.drain_npc_buff_sends();
+        assert!(!host_app.npcs[0].buffs.expired_send, "the drain took the latch");
+        pump(&mut host_app, &mut client_app, 15);
+        assert!(
+            client_app.npcs[0].buffs.find_buff_index(31).is_none(),
+            "the 54 list reached the client without the expired buff"
+        );
+    }
+
+    /// W4-c28: the client's expiry latch drops with no wire — the C# sweep
+    /// returns before the flag on `netMode == 1` (`NPC.cs:91892-91895`), so
+    /// the port's drain clears the latch instead of sending.
+    #[test]
+    fn the_client_expiry_latch_drops_without_a_wire() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        host_app
+            .npcs
+            .push(crate::npc::Npc::spawn_slime_sky(100.0, 100.0, crate::npc::SlimeVariant::Blue));
+        pump(&mut host_app, &mut client_app, 15);
+        client_app.npcs[0].buffs.expired_send = true;
+        client_app.drain_npc_buff_sends();
+        assert!(!client_app.npcs[0].buffs.expired_send, "the client latch dropped");
+        assert!(client_app.npcs[0].buffs.net_sends.is_empty());
+    }
+
     // --- W4-c28: the player-state send cadence (the SWAP witnesses) ---------
 
     #[test]
@@ -6405,5 +6547,86 @@ mod message_family_tests {
             0,
             "the edit reached the host with no cadence tick (event-driven)"
         );
+    }
+
+    // --- W4-c28: the PVP/team UI click send triggers (the census residuals) --
+
+    /// The `30 TogglePVP` click send (`Main.cs:42694`): a joined client's
+    /// `send_toggle_pvp` pushes one `30` carrying its id + the live hostile
+    /// flag. The host's apply/relay is g48's lane — on the c28 base the host
+    /// PARKS the read (the no-op arm), so this pins the SEND leg: the frame
+    /// reaches the host's accept gate (the slot stays in-world, not kicked —
+    /// a `30` from an in-world slot passes `host_gate`). The byte body is
+    /// pinned by `net::tests::s1_i_1_toggle_pvp_round_trips`.
+    #[test]
+    fn a_client_pvp_toggle_sends_one_30_with_the_live_flag() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        pump(&mut host_app, &mut client_app, 12);
+        let me = client_app.local_id as u8;
+        // The flip lands first (the click site's order), then the send reads
+        // the live flag (`NetMessage.cs:858` reads `Main.player[number].hostile`).
+        client_app.player.as_mut().unwrap().hostile = true;
+        client_app.send_toggle_pvp(true);
+        // The frame is queued immediately (client.send pushes to the wire
+        // buffer — the event-driven convention, no cadence tick needed).
+        pump(&mut host_app, &mut client_app, 15);
+        let NetRole::Host(server) = &host_app.net else {
+            panic!("host lost its role");
+        };
+        assert_eq!(
+            server.state(client_app.local_id),
+            net::slot_state::IN_WORLD,
+            "the 30 passed the accept gate (not kicked)"
+        );
+        // The body the send carries: id + hostile, the writer's two bytes.
+        let body = C2s::TogglePvp(net::TogglePvp { player_id: me, hostile: true }).encode();
+        assert_eq!(body[2], 30);
+        assert_eq!(&body[3..], &[me, 1]);
+    }
+
+    /// The host's own `30` broadcast leg (`Main.cs:42694` folds the host in —
+    /// `SendData(30, -1, …)` fans out through the default arm): the host's
+    /// `send_toggle_pvp` broadcasts the live flag to every client. The client
+    /// read is g48's `client_toggle_pvp` (parked on the c28 base); this pins
+    /// that the host leg produces the `30` frame without a panic and the
+    /// client stays connected.
+    #[test]
+    fn a_host_pvp_toggle_broadcasts_the_30_to_the_clients() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        pump(&mut host_app, &mut client_app, 12);
+        host_app.player.as_mut().unwrap().hostile = true;
+        host_app.send_toggle_pvp(true);
+        pump(&mut host_app, &mut client_app, 15);
+        assert_eq!(client_app.net_state, net::client_state::IN_WORLD, "the client stayed in-world");
+        // The host's broadcast body: slot 0 + the live flag.
+        let body = S2c::TogglePvp(net::TogglePvp { player_id: 0, hostile: true }).encode();
+        assert_eq!(body[2], 30);
+        assert_eq!(&body[3..], &[0, 1]);
+    }
+
+    /// The `157 TeamChangeFromUI` send DECISION parks until d97's id merges
+    /// (`Main.cs:42766`): a `45` stand-in would skip the C# reader's `b == 157`
+    /// team-spawn tail (`MessageBuffer.cs:2355`), so the c28 send is recorded
+    /// but emits nothing — the team set still lands locally (the click's
+    /// first effect). This pins the parked decision: no frame, no kick.
+    #[test]
+    fn the_team_click_send_parks_until_the_157_id_lands() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        pump(&mut host_app, &mut client_app, 12);
+        client_app.player.as_mut().unwrap().team = 2;
+        client_app.send_team_change(2);
+        pump(&mut host_app, &mut client_app, 15);
+        // The local team set is the click's first effect; the send parked.
+        assert_eq!(client_app.player.as_ref().unwrap().team, 2);
+        let NetRole::Host(server) = &host_app.net else {
+            panic!("host lost its role");
+        };
+        assert_eq!(server.state(client_app.local_id), net::slot_state::IN_WORLD);
+        // The host's peer record exists (the join) but no team relay fired —
+        // the `45`/`157` apply arms are g49's lane; the parked send produced
+        // no frame at all (the client's team stayed local).
+        assert!(host_app.remote_players.contains_key(&client_app.local_id));
     }
 }

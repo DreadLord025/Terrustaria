@@ -139,6 +139,15 @@ pub struct NpcBuffs {
     /// NOT part of the buff state — the `54` reader's array writes never
     /// touch it.
     pub net_sends: Vec<(i32, i32)>,
+    /// W4-c28: the expired-sweep's `flag` latch
+    /// (`UpdateNPC_BuffClearExpiredBuffs`, `NPC.cs:91896-91908`) — the quiet
+    /// per-slot `DelBuff`s set it when at least one buff expired; the ONE
+    /// `54` fires host-only at the sweep tail. The port's sweep runs inside
+    /// `update_buffs_tick` with no netMode, so the latch rides to the
+    /// App-side drain (`netglue::drain_npc_buff_sends`), which calls the
+    /// decision layer (`net_npc_sync::expired_buff_sweep`) and owns the
+    /// wire. NOT part of the buff state.
+    pub expired_send: bool,
 }
 
 impl Default for NpcBuffs {
@@ -149,6 +158,7 @@ impl Default for NpcBuffs {
             buff_immune: [false; BUFF_ID_COUNT],
             life_regen_count: 0,
             net_sends: Vec::new(),
+            expired_send: false,
         }
     }
 }
@@ -687,11 +697,15 @@ impl NpcBuffs {
 
     /// `UpdateNPC_BuffClearExpiredBuffs` (`NPC.cs:91890-91909`). Like the C#,
     /// the loop does not rescan after `DelBuff`: an expired buff shifted into
-    /// an already-passed slot is only removed on a later tick.
+    /// an already-passed slot is only removed on a later tick. The per-slot
+    /// `DelBuff`s are QUIET (`:91901`); the sweep's `flag` (`:91896`/`:91902`)
+    /// rides `expired_send` — the ONE host `54` (`:91905-91908`) fires at the
+    /// App-side drain (the sweep itself runs with no netMode).
     fn clear_expired_buffs(&mut self) {
         for i in 0..NPC_MAX_BUFFS {
             if self.buff_type[i] > 0 && self.buff_time[i] <= 0 {
                 self.del_buff(i);
+                self.expired_send = true; // NPC.cs:91902 — flag = true
             }
         }
     }
@@ -1288,6 +1302,55 @@ mod tests {
         assert_eq!(b.buff_type[0], 0);
         assert_eq!(b.buff_type[1], 70, "one shift per empty slot");
         assert_eq!(b.buff_type[2], 0);
+    }
+
+    /// W4-c28: the expired-buff sweep's `54` send decision
+    /// (`NPC.cs:91890-91909`): the per-slot `DelBuff`s are QUIET (`:91901`),
+    /// and ONE `54` fires only when at least one buff expired AND the role is
+    /// the host (`:91905-91908`). The port's `clear_expired_buffs` runs inside
+    /// `update_buffs_tick` with no netMode, so the App-side drain
+    /// (`netglue::drain_npc_buff_sends`' host arm) owns the wire — this pins
+    /// the decision layer's gate: a sweep that expired something queues the
+    /// list on the host, nothing on the client, nothing when nothing expired.
+    #[test]
+    fn the_expired_sweep_queues_one_54_on_the_host_only_when_something_expired() {
+        use crate::app::net_npc_sync::{expired_buff_sweep, NpcSend};
+        // Host + an expiry: one BuffList.
+        let mut out = Vec::new();
+        expired_buff_sweep(3, 2, true, &mut out);
+        assert_eq!(out, vec![NpcSend::BuffList { slot: 3 }]);
+        // Client: the sweep returns before the send (`:91892-91895`).
+        let mut out = Vec::new();
+        expired_buff_sweep(3, 1, true, &mut out);
+        assert!(out.is_empty(), "the client never sends the 54");
+        // Host + no expiry: nothing (`:91905`'s flag gate).
+        let mut out = Vec::new();
+        expired_buff_sweep(3, 2, false, &mut out);
+        assert!(out.is_empty(), "no expiry, no 54");
+        // SP: nothing (the netMode == 2 gate).
+        let mut out = Vec::new();
+        expired_buff_sweep(3, 0, true, &mut out);
+        assert!(out.is_empty(), "single-player sends nothing");
+    }
+
+    /// W4-c28: the sweep's `flag` latch (`NPC.cs:91896`/`:91902`) — the quiet
+    /// `DelBuff`s set `expired_send` when a slot expired; a sweep over a live
+    /// bar leaves it false. The drain takes the latch (the App-side witness
+    /// `an_expired_buff_sweep_sends_one_54_from_the_host` pins the wire).
+    #[test]
+    fn the_sweep_latches_expired_send_only_when_a_slot_expired() {
+        let mut b = NpcBuffs::default();
+        b.buff_type[0] = 31;
+        b.buff_time[0] = 0; // expired: type > 0, time <= 0 (`:91899`)
+        b.clear_expired_buffs();
+        assert!(b.expired_send, "the expiry latched the flag");
+        assert_eq!(b.buff_type[0], 0, "the quiet DelBuff cleared the slot");
+        // A live bar: no expiry, no latch.
+        let mut b = NpcBuffs::default();
+        b.buff_type[0] = 31;
+        b.buff_time[0] = 60;
+        b.clear_expired_buffs();
+        assert!(!b.expired_send, "a live bar latches nothing");
     }
 
     #[test]
