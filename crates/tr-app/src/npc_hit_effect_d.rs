@@ -4247,8 +4247,12 @@ fn squid_snail_death(
 /// (`:88590-88594`, sites 675-679, legs 266 NOT 44), 322 Top Hat
 /// Skeleton → 460 + the interleaved 461/462/461/462 (`:88599-88603`,
 /// sites 680-684), 323 Astronaut Skeleton → 463/465/464x2
-/// (`:88608-88611`, sites 685-688, the FOUR shape); the 324 branch +
-/// the generic tail land in later batches.
+/// (`:88608-88611`, sites 685-688, the FOUR shape), 324 Alien Skeleton
+/// → 466/467x2/468x2 (`:88616-88620`, sites 689-693); the generic tail
+/// (`:88623-88639`, sites 694-698 for the non-77/110 kinds): 42 head +
+/// 43x2 mid + 44x2 legs — the 77's 106 extra, the 110's 130 extra + 131
+/// legs slot land next batch (the 77/110 kinds currently spawn the base
+/// tail only, documented partial).
 fn skeleton_family_death(
     npc: &Npc,
     npc_type: i32,
@@ -4350,6 +4354,23 @@ fn skeleton_family_death(
         gore.new_gore(rng, world, p34, vel, 464, s); // :88611
         return;
     }
+    if npc_type == 324 {
+        // `:88614-88622` — the Alien Skeleton five + return.
+        gore.new_gore(rng, world, pos, vel, 466, s); // :88616
+        gore.new_gore(rng, world, p20, vel, 467, s); // :88617
+        gore.new_gore(rng, world, p20, vel, 467, s); // :88618
+        gore.new_gore(rng, world, p34, vel, 468, s); // :88619
+        gore.new_gore(rng, world, p34, vel, 468, s); // :88620
+        return;
+    }
+    // `:88623-88639` — the generic skeleton tail: the 42 head, the
+    // 77/110 extras, the 43x2 mid, the 110's 131 legs slot, the 44x2
+    // legs. The 77/110 extras land next batch; the base tail is live.
+    gore.new_gore(rng, world, pos, vel, 42, s); // :88623
+    gore.new_gore(rng, world, p20, vel, 43, s); // :88632
+    gore.new_gore(rng, world, p20, vel, 43, s); // :88633
+    gore.new_gore(rng, world, p34, vel, 44, s); // :88638
+    gore.new_gore(rng, world, p34, vel, 44, s); // :88639
 }
 
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
@@ -4865,8 +4886,8 @@ pub fn hit_effect_d(
     }
     // `:88527-88640` — the skeleton-family arm (21/31/294-296/32/44/45/
     // 77/110/167/197/201-203/287/291-293/322-324/481/449-452/693); the
-    // 167/197/481/201/202/203/322/323 branches are live (sites 648-688),
-    // the rest land later.
+    // 167/197/481/201/202/203/322/323/324 branches + the generic base
+    // tail are live (sites 648-698); the 77/110 extras land next batch.
     else if matches!(npc_type, 21 | 31 | 294 | 295 | 296 | 32 | 44 | 45 | 77 | 110 | 167 | 197 | 201 | 202 | 203 | 287 | 291 | 292 | 293 | 322 | 323 | 324 | 481 | 449 | 450 | 451 | 452 | 693)
     {
         skeleton_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
@@ -8508,6 +8529,40 @@ mod tests {
                 assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
             }
             let mut twin = UnifiedRandom::new(673);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeleton {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:88616-88620` — the Alien Skeleton five 466/467x2/468x2;
+    /// `:88623-88639` — the generic base tail 42/43x2/44x2 (the 21
+    /// Skeleton kind; the 77/110 extras land next batch).
+    #[test]
+    fn w4_f5d_the_alien_skeleton_and_the_generic_tail() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, want) in [
+            (324, vec![466, 467, 467, 468, 468]),
+            (21, vec![42, 43, 43, 44, 44]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(677);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "skeleton {kind}");
+            let mut twin = UnifiedRandom::new(677);
             for _ in 0..20 {
                 twin_dust(&mut twin, 30, 44);
             }
