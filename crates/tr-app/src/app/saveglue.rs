@@ -358,9 +358,14 @@ impl App {
         // `Player.SavePlayer` + `WorldFile.SaveWorld` (single-player's
         // `Main.netMode == 0` arm) — the port's one save funnel writes the
         // world, the player sidecar and the explored map together.
-        // `Rain.ClearRain` (`:6672`) is visual-only; the save already
-        // snapshotted the live rain into the file payload above.
+        // `Rain.ClearRain` (`:6672`) ran AFTER the save snapshotted the live
+        // rain into the file payload above — the visual field clears, the
+        // event triple survives (see the clear call below).
         self.save_world();
+        // `Rain.ClearRain` (`WorldGen.cs:6672`, `Rain.cs:22-28`): every drop
+        // deactivates on the quit — the residual field never survives onto the
+        // menu (W4-g67 residuals).
+        self.rain.clear_rain();
         // `WorldGen.cs:6676`: `SoundEngine.PlaySound(10)` after the world write.
         self.audio.play("Menu_Open");
         // `WorldGen.cs:6678-6679`: both fast-forward flags drop.

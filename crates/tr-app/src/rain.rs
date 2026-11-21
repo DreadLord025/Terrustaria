@@ -308,6 +308,64 @@ impl Rain {
         self.raining
     }
 
+    /// `Main.IsItRaining` (`Main.cs:2597`): `cloudAlpha > 0f` — the VISIBLE
+    /// intensity, NOT the `Main.raining` event flag. The ambience scheduler
+    /// (`AmbienceServer.cs:32/50`), the music rain gates (`Main.cs:12100` etc.)
+    /// and the storm-lightning rain gate (`WorldGen.cs:71872`) read this, so
+    /// they stay "raining" through the post-`StopRain` cloud ramp-down.
+    pub fn is_it_raining(&self) -> bool {
+        self.intensity > 0.0
+    }
+
+    /// `Rain.ClearRain` (`Rain.cs:22-28`): deactivate every drop. The C# calls
+    /// it from `SaveAndQuitCallBack` (`WorldGen.cs:6672`) and `genWorldCallBack`
+    /// (`:6747`); the port's save-and-quit funnel calls it, and a freshly
+    /// generated world boots a fresh `Rain` (empty drops) so the gen-side call
+    /// is a no-op there.
+    pub(crate) fn clear_rain(&mut self) {
+        self.drops.clear();
+    }
+
+    /// `Rain.NewRainForced` (`Rain.cs:135-164`): the Eyebrella vanity drip
+    /// (`Player.DoEyebrellaRainEffect`, `Player.cs:14308-14331` — the caller is
+    /// unported, so this seam has no production writer yet). Unlike `NewRain`
+    /// it ignores `cloudAlpha`/snow/atmo: the budget is `maxRain` cut by the
+    /// gfx `(1+q)/2` when q<0.9 (`:139-143`), then the first inactive slot takes
+    /// the spawn. Returns the slot index, or `maxRain` when full (`:152-155`).
+    #[allow(dead_code)] // the Eyebrella caller (Player.cs:14308) is unported
+    pub(crate) fn new_rain_forced(
+        &mut self,
+        world: &World,
+        camera: Vec2,
+        position: Vec2,
+        velocity: Vec2,
+    ) -> usize {
+        let mut num2 = MAX_DROPS; // `:138`
+        let num3 = (1.0 + self.gfx_quality) / 2.0; // `:139`
+        if num3 < 0.9 {
+            num2 = (num2 as f32 * num3) as usize; // `:140-143`
+        }
+        // `:144-155`: the first inactive slot under the budget; the port's
+        // packed vec has no holes, so its tail IS that slot.
+        if self.drops.len() >= num2 {
+            return MAX_DROPS;
+        }
+        // `:159-162`: scale, velocity, rotation, frame type.
+        let scale = 1.0 + self.range_signed(-20, 21) as f32 * 0.01;
+        let vel = velocity * scale;
+        let water_style = crate::biome::calculate_water_style(world, camera) as u32;
+        let kind = (water_style * 3 + self.range(0, 3)) as u8;
+        let idx = self.drops.len();
+        self.drops.push(Drop {
+            pos: position,
+            vel,
+            scale,
+            rot: vel.x.atan2(-vel.y),
+            kind,
+        });
+        idx
+    }
+
     /// `Main.rainTime`: ticks left in the event (`Main.cs:64874` drains it).
     pub(crate) fn rain_time(&self) -> i32 {
         self.rain_time
@@ -521,6 +579,7 @@ impl Rain {
                 atmo,
                 snow_tile_count,
                 zone_rain,
+                sim,
             );
         }
         // The splash particles are `DustPool` slots now (W4-g67) — the shared
@@ -682,8 +741,10 @@ impl Rain {
     /// (`:64846` — netMode 0 and an in-game tick make the first conjunct true),
     /// the raining branch (`:64864-64888`), then the not-raining start arms
     /// (`:64890-64923`). The slime-rain block after them (`:64925-64949`) is M4
-    /// events. `FreezeRainPower`, `LanternNight` and `slimeRain` do not exist in
-    /// the port — their gates resolve to the C# shape with all false. There is no
+    /// events. `FreezeRainPower` does not exist in the port (its gate resolves
+    /// false); `start_gates_open` carries the C# `!slimeRain && !LanternsUp &&
+    /// !NextNightIsLanternNight` conjunct (`:64890`, W4-g67 census — the weather
+    /// tick derives it from `World.slime_rain` + `WorldEvents`). There is no
     /// `Main.dayTime` gate on the start arms (only the slime roll is day-gated).
     pub(crate) fn update_time(
         &mut self,
@@ -692,6 +753,7 @@ impl Rain {
         any_player_120: bool,
         remix_world: bool,
         player_luck: f32,
+        start_gates_open: bool,
     ) {
         // TR_RAIN pin / TR_NO_WEATHER: port-only scheduler switches — the pin
         // overrides the state machine exactly as the retired session schedule was
@@ -722,9 +784,10 @@ impl Rain {
                     self.change_rain(); // `:64882-64885`
                 }
             }
-        } else {
-            // `Main.cs:64890-64923`: `!slimeRain && !LanternsUp &&
-            // !NextNightIsLanternNight` — all port-absent.
+        } else if start_gates_open {
+            // `Main.cs:64890`: `!slimeRain && !LanternsUp &&
+            // !NextNightIsLanternNight` — the caller derives the conjunct
+            // (W4-g67 census); with it closed no start roll runs at all.
             let num2 = 86400 / if day_rate == 0 { 1 } else { day_rate }; // `:64892`
             // `:64893`: `!FreezeRainPower.Enabled && Main.dayRate != 0` — the
             // freeze power is port-absent.
@@ -967,14 +1030,25 @@ impl Rain {
         }
     }
 
-    /// `Rain.MakeRain` (`Rain.cs:30-89`, S1-L-2): the per-tick drop spawn.
-    /// Gates: `!ZoneRain || shimmerAlpha > 0f` suppress spawning (the C# also
-    /// early-returns on netMode 2 / paused / menu). The attempt rate is
-    /// `screenWidth / MaxWorldViewSize.X * 25 * (0.25 + cloudAlpha)` with the
-    /// `NPC.AnyDanger` 0.05 throttle (`:36-45`); `NewRain` (`:166-207`) then
-    /// caps the live count by `maxRain * cloudAlpha` scaled by `gfxQuality`,
-    /// the snow-tile suppression `(1 - (snow/max)^2)`, and `atmo^9` (0 when
-    /// `atmo < 0.4`), and sets the `waterStyle*3 + rand(3)` frame type.
+    /// `Rain.MakeRain` (`Rain.cs:30-89`, S1-L-2) + `Rain.NewRain`
+    /// (`:166-207`): the per-tick drop spawn. Gates: `!ZoneRain ||
+    /// shimmerAlpha > 0f` suppress spawning (the C# also early-returns on
+    /// netMode 2 / paused / menu — the port's frame gates the weather cluster
+    /// out of those). The attempt rate is `screenWidth / MaxWorldViewSize.X *
+    /// 25 * (0.25 + cloudAlpha)` with the `NPC.AnyDanger(quickBossNPCCheck)`
+    /// 0.05 throttle (`:36-45`, floored to 1 attempt when any would remain).
+    /// Each attempt draws the X/Y spawn window (the rising-player `num3`
+    /// widening `:50-53`, the wind/player-X drift `:56-57`, the world-X clamp
+    /// `:58-65`), then spawns only through open sky — or through ANYTHING on
+    /// remix/menu (`:84`). `NewRain` caps the live count by `maxRain *
+    /// cloudAlpha`, the gfx `(1+q)/2` cut when q<0.9 (`:176-180`), the
+    /// snow-tile suppression `(1-(snow/threshold)^2)` (`:181-182`) and
+    /// `atmo^9` (0 when `atmo<0.4`, `:183-186`), and sets the
+    /// `waterStyle*3 + rand(3)` frame type (`:205`).
+    ///
+    /// Cadence deviation: the C# loops `for (i=0; i<num; i++)` (ceil(num)
+    /// attempts per call); the port accumulates the fractional rate across
+    /// ticks (`spawn_acc`) — same average, and the live-count budget caps both.
     fn spawn(
         &mut self,
         world: &World,
@@ -985,14 +1059,22 @@ impl Rain {
         atmo: f32,
         snow_tile_count: i32,
         zone_rain: bool,
+        sim: DropSimInputs,
     ) {
         if !zone_rain || shimmer_alpha > 0.0 {
             return;
         }
+        // `Rain.cs:36`: `screenWidth / MaxWorldViewSize.X(1920) * 25 * (0.25 + cloudAlpha)`.
         let mut rate = screen.x / 1920.0 * 25.0 * (0.25 + self.intensity);
         // `Rain.cs:37-45`: `NPC.AnyDanger(quickBossNPCCheck: true)` throttles to
-        // 0.05x (floored to 1 attempt when any would remain). The port has no
-        // boss-danger scan on Rain; the gate is preserved as a hook (no-op).
+        // 0.05x, floored to 1 attempt when the unthrottled rate would leave any.
+        if sim.any_danger {
+            let unthrottled = rate;
+            rate *= 0.05;
+            if unthrottled > 1.0 && rate < 1.0 {
+                rate = 1.0;
+            }
+        }
         self.spawn_acc += rate;
         let count = self.spawn_acc.floor();
         self.spawn_acc -= count;
@@ -1000,42 +1082,71 @@ impl Rain {
             return;
         }
         // `Rain.NewRain` (`:166-207`): the active-slot budget.
-        let mut num2 = (MAX_DROPS as f32 * self.intensity.clamp(0.0, 1.0)) as i32;
+        let mut num2 = (MAX_DROPS as f32 * self.intensity) as i32; // `:169`
         if num2 > MAX_DROPS as i32 {
-            num2 = MAX_DROPS as i32;
+            num2 = MAX_DROPS as i32; // `:170-173`
         }
-        // gfxQuality defaults to 1.0 in the port (no setting); the C# scales by
-        // `(1 + gfxQuality) / 2` when < 0.9 (`:176-180`).
+        // `:174-175`: the `Math.Max(...)` depth term is computed and DISCARDED
+        // (no assignment) — dead in the C#, omitted.
+        // `:176-180`: the gfx-quality cut `(1+q)/2` when q<0.9.
+        let gfx = (1.0 + self.gfx_quality) / 2.0;
+        if (gfx as f64) < 0.9 {
+            num2 = (num2 as f32 * gfx) as i32;
+        }
+        // `:181-182`: snow suppression. `SceneMetrics.SnowTileThreshold` is
+        // skyblock-aware (300 low-tiles / 1500 normal, `SceneMetrics.cs:154-163`);
+        // the port tracks no `World.skyblock_low_tiles`, so it reads the normal
+        // threshold (a documented gap — the skyblock arm lands with that field).
         let snow_threshold = tr_core::scene::thresholds::SNOW_TILE_NORMAL.max(1) as f32;
         let snow_ratio = (snow_tile_count.max(0) as f32 / snow_threshold).clamp(0.0, 1.0);
         num2 = ((num2 as f32) * (1.0 - snow_ratio * snow_ratio)) as i32;
-        num2 = ((num2 as f64) * (atmo.clamp(0.0, 1.0) as f64).powi(9)) as i32;
-        if atmo < 0.4 {
-            num2 = 0;
+        num2 = ((num2 as f64) * (atmo as f64).powi(9)) as i32; // `:182` double cast
+        if (atmo as f64) < 0.4 {
+            num2 = 0; // `:183-186`
         }
         if self.drops.len() >= num2.max(0) as usize {
             return;
         }
-        let px = tr_core::TILE_PX;
         let half = screen * 0.5 / zoom;
-        let wind = self.wind + 0.05 * (self.intensity * 9.0).sin();
+        let screen_pos = camera - half; // `Main.screenPosition`
+        let max_x = ((world.width - 1) * 16) as f32; // `:62-64`
         for _ in 0..count as usize {
             if self.drops.len() >= num2.max(0) as usize || self.drops.len() >= MAX_DROPS {
                 break;
             }
-            let x = camera.x + (self.rand01() * 2.0 - 1.0) * (half.x + 600.0) - wind * 600.0;
-            let y = camera.y - half.y - 20.0 - self.rand01() * 80.0;
-            let tx = (x / px).floor() as i32;
-            let ty = (y / px).floor() as i32;
-            let open = world
-                .tile(tx, ty)
-                .is_some_and(|t| !t.active() && t.wall == 0);
+            // `:49-53`: the spawn window widens upward while the player rises.
+            let mut num3 = 600;
+            if sim.player_vel.y < 0.0 {
+                num3 += (sim.player_vel.y.abs() * 30.0) as i32;
+            }
+            // `:54-55`: X ~ Next(screenX - num3, screenX + screenWidth + num3),
+            // Y = screenY - Next(20, 100).
+            let lo = screen_pos.x as i32 - num3;
+            let hi = screen_pos.x as i32 + screen.x as i32 + num3;
+            let mut x = self.range_signed(lo, hi) as f32;
+            let y = screen_pos.y - self.range(20, 100) as f32;
+            // `:56-57`: the wind + player-X drift.
+            x -= sim.wind_current * 15.0 * 40.0;
+            x += sim.player_vel.x * 40.0;
+            // `:58-65`: clamp X into the world.
+            x = x.clamp(0.0, max_x);
+            // `:66-83`: the tile probe coords, clamped to the world bounds.
+            let tx = ((x as i32) / 16).clamp(0, world.width - 1);
+            let ty = ((y as i32) / 16).clamp(0, world.height - 1);
+            // `:84`: remix/menu spawn through ANYTHING; else open sky only
+            // (`!WorldGen.SolidTile && wall <= 0`).
+            let open = sim.remix_world
+                || sim.game_menu
+                || (!crate::projectile::solid_tile(world, tx, ty)
+                    && world.tile(tx, ty).is_some_and(|t| t.wall == 0));
             if !open {
                 continue;
             }
-            let scale = 1.0 + (self.rand01() * 2.0 - 1.0) * 0.2;
-            let vel = Vec2::new(wind * 18.0 * scale, 14.0 * scale);
-            // `Rain.cs:205`: `type = (byte)(Main.waterStyle * 3 + Main.rand.Next(3))`.
+            // `Rain.NewRain` `:202-205`: scale, velocity, rotation, frame type.
+            let scale = 1.0 + self.range_signed(-20, 21) as f32 * 0.01;
+            // `GetRainFallVelocity` (`:91-94`): `(windSpeedCurrent * 18, 14)`.
+            let vel = Vec2::new(sim.wind_current * 18.0, 14.0) * scale;
+            // `:205`: `type = (byte)(Main.waterStyle * 3 + Main.rand.Next(3))`.
             let water_style = crate::biome::calculate_water_style(world, camera) as u32;
             let kind = (water_style * 3 + self.range(0, 3)) as u8;
             self.drops.push(Drop {
@@ -1842,7 +1953,7 @@ mod tests {
         ending.rain_time = 0;
         let mut tall = ground();
         tall.world_surface = 200.0; // `isThereAWorldSurface` (`Main.cs:2788`)
-        ending.update_time(1, &tall, true, false, 0.0);
+        ending.update_time(1, &tall, true, false, 0.0, true);
         assert_eq!(ending.max_raining(), 0.0);
         assert!(!ending.is_raining());
     }
@@ -2091,11 +2202,11 @@ mod tests {
             })
             .expect("a 8280-only seed exists");
         let mut fast = Rain::with_forced(fire_at_60, None, false);
-        fast.update_time(60, &w, true, false, 0.0);
+        fast.update_time(60, &w, true, false, 0.0, true);
         assert!(fast.is_raining(), "the ×5.75 roll hit at dayRate 60");
 
         let mut slow = Rain::with_forced(fire_at_60, None, false);
-        slow.update_time(1, &w, true, false, 0.0);
+        slow.update_time(1, &w, true, false, 0.0, true);
         assert!(
             !slow.is_raining(),
             "dayRate 1 rolls the plain 86400·5.75 denominator"
@@ -2107,10 +2218,10 @@ mod tests {
             .find(|&s| StreamReplay::new(s).next_u64() % 496_800 == 0)
             .expect("a 496800 seed exists");
         let mut both_fast = Rain::with_forced(fire_at_both, None, false);
-        both_fast.update_time(60, &w, true, false, 0.0);
+        both_fast.update_time(60, &w, true, false, 0.0, true);
         assert!(both_fast.is_raining());
         let mut both_slow = Rain::with_forced(fire_at_both, None, false);
-        both_slow.update_time(1, &w, true, false, 0.0);
+        both_slow.update_time(1, &w, true, false, 0.0, true);
         assert!(
             both_slow.is_raining(),
             "the plain 86400 shape fired at dayRate 1"
@@ -2128,7 +2239,7 @@ mod tests {
         rain.target = 0.8;
         rain.rain_time = 1;
         let state = rain.rng;
-        rain.update_time(1, &w, true, false, 0.0);
+        rain.update_time(1, &w, true, false, 0.0, true);
         assert!(!rain.is_raining());
         assert_eq!(rain.max_raining(), 0.0);
         assert_eq!(rain.rain_time, 0, "StopRain pins rainTime to 0 (`:64648`)");
@@ -2139,7 +2250,7 @@ mod tests {
         alive.raining = true;
         alive.target = 0.8;
         alive.rain_time = 2;
-        alive.update_time(1, &w, true, false, 0.0);
+        alive.update_time(1, &w, true, false, 0.0, true);
         assert!(alive.is_raining(), "rainTime 1 is still above the boundary");
         assert_eq!(alive.rain_time, 1);
     }
@@ -2154,7 +2265,7 @@ mod tests {
             .find(|&s| StreamReplay::new(s).next_u64() % 496_800 == 0)
             .expect("a 496800 seed exists");
         let mut rain = Rain::with_forced(fire, None, false);
-        rain.update_time(1, &w, true, false, 0.0);
+        rain.update_time(1, &w, true, false, 0.0, true);
         assert!(rain.is_raining());
         assert!(rain.rain_time > 0);
     }
@@ -2169,9 +2280,9 @@ mod tests {
         let w = rain_world();
         let mut drain = Rain::with_forced(7, None, false);
         drain.lady_bug_rain_boost = 120;
-        drain.update_time(60, &w, false, false, 0.0); // no 120-HP player: arms gated
+        drain.update_time(60, &w, false, false, 0.0, true); // no 120-HP player: arms gated
         assert_eq!(drain.lady_bug_rain_boost, 60);
-        drain.update_time(60, &w, false, false, 0.0);
+        drain.update_time(60, &w, false, false, 0.0, true);
         assert_eq!(drain.lady_bug_rain_boost, 0, "the `> 0` gate clamps at 0");
 
         let fire = (1..200_000u64)
@@ -2186,11 +2297,11 @@ mod tests {
             .expect("a ladybug-arm seed exists");
         let mut rain = Rain::with_forced(fire, None, false);
         rain.lady_bug_rain_boost = 100;
-        rain.update_time(60, &w, true, false, 0.0);
+        rain.update_time(60, &w, true, false, 0.0, true);
         assert!(rain.is_raining(), "the ladybug arm fired");
 
         let mut quiet = Rain::with_forced(fire, None, false);
-        quiet.update_time(60, &w, true, false, 0.0);
+        quiet.update_time(60, &w, true, false, 0.0, true);
         assert!(
             !quiet.is_raining(),
             "boost 0 gates the third arm before its roll"
@@ -2257,7 +2368,7 @@ mod tests {
         rain.rain_time = 0;
         rain.lady_bug_rain_boost = 100;
         let state = rain.rng;
-        rain.update_time(60, &w, true, false, 0.0);
+        rain.update_time(60, &w, true, false, 0.0, true);
         assert_eq!(rain.rain_time, 0, "no drain under the pin");
         assert_eq!(rain.lady_bug_rain_boost, 100, "no drain under the pin");
         assert_eq!(rain.rng, state, "no rolls under the pin");
@@ -2283,7 +2394,7 @@ mod tests {
         let mut quiet = Rain::with_forced(9, None, true);
         quiet.lady_bug_rain_boost = 100;
         let state = quiet.rng;
-        quiet.update_time(60, &w, true, false, 0.0);
+        quiet.update_time(60, &w, true, false, 0.0, true);
         assert_eq!(
             quiet.lady_bug_rain_boost, 100,
             "no drain under TR_NO_WEATHER"
@@ -2816,5 +2927,118 @@ mod tests {
         assert_eq!(rain.drops.len(), 0, "605 > 600");
         assert_eq!(rain.rng, state, "the remix kill rolls nothing");
         assert_eq!(splash_count(&pool), 0, "no splash on the remix kill");
+    }
+
+    /// W4-g67 census witness — `MakeRain`'s `AnyDanger` throttle
+    /// (`Rain.cs:37-45`): the attempt rate drops to 0.05x. At intensity 1 /
+    /// gfx 1 the calm rate is `1600/1920*25*1.25 = 26.04` (26 attempts the
+    /// first tick); throttled it is `1.302` (1 attempt). Open-air world so
+    /// every attempt spawns.
+    #[test]
+    fn w4_g67_any_danger_throttles_the_spawn_rate_to_005() {
+        let w = World::new("air".into(), 64, 64);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let screen = Vec2::new(1600.0, 200.0);
+        let mut calm = Rain::with_forced(7, Some(1.0), false);
+        calm.gfx_quality = 1.0;
+        calm.spawn(&w, camera, screen, 1.0, 0.0, 1.0, 0, true, DropSimInputs::default());
+        assert_eq!(calm.drops.len(), 26, "floor(26.04) calm attempts");
+        let mut danger = Rain::with_forced(7, Some(1.0), false);
+        danger.gfx_quality = 1.0;
+        let sim = DropSimInputs { any_danger: true, ..Default::default() };
+        danger.spawn(&w, camera, screen, 1.0, 0.0, 1.0, 0, true, sim);
+        assert_eq!(danger.drops.len(), 1, "floor(26.04*0.05)=1 throttled attempt");
+    }
+
+    /// W4-g67 census witness — the `MakeRain`/`NewRain` RNG census: one open
+    /// spawn attempt draws exactly 4 on Rain's stream — X `Next(lo,hi)`, Y
+    /// `Next(20,100)`, scale `Next(-20,21)`, frame `Next(3)` (`Rain.cs:54-55`,
+    /// `:202-205`). 26 calm attempts → 104 draws, replayed draw-for-draw.
+    #[test]
+    fn w4_g67_spawn_attempts_draw_four_each_in_order() {
+        let w = World::new("air".into(), 64, 64);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let screen = Vec2::new(1600.0, 200.0);
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        rain.gfx_quality = 1.0;
+        let mut twin = rain.rng;
+        rain.spawn(&w, camera, screen, 1.0, 0.0, 1.0, 0, true, DropSimInputs::default());
+        assert_eq!(rain.drops.len(), 26);
+        for _ in 0..(26 * 4) {
+            crate::app::next_rand(&mut twin);
+        }
+        assert_eq!(rain.rng, twin, "26 attempts × (X, Y, scale, frame)");
+        // The frame type is the water-style row: `waterStyle*3 + Next(3)`.
+        let style = crate::biome::calculate_water_style(&w, camera) as u8;
+        for d in &rain.drops {
+            assert!(d.kind >= style * 3 && d.kind < style * 3 + 3, "kind {}", d.kind);
+            assert!((d.scale - 1.0).abs() <= 0.2 + 1e-6, "scale in [0.8,1.2]");
+        }
+    }
+
+    /// W4-g67 census witness — `NewRainForced` (`Rain.cs:135-164`): the budget
+    /// is `maxRain` cut by `(1+q)/2` when q<0.9, ignoring cloudAlpha/snow/atmo.
+    /// At q 0 the cap is 375; the 376th spawn refuses with the `maxRain`
+    /// sentinel. The spawn itself takes the `:159-162` shape.
+    #[test]
+    fn w4_g67_new_rain_forced_budget_and_shape() {
+        let w = World::new("air".into(), 64, 64);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let mut rain = Rain::with_forced(7, None, false); // intensity 0 — forced ignores it
+        rain.gfx_quality = 0.0; // (1+0)/2 = 0.5 < 0.9 → cap 750*0.5 = 375
+        let pos = Vec2::new(500.0, 300.0);
+        let vel = Vec2::new(2.0, 9.0);
+        let idx = rain.new_rain_forced(&w, camera, pos, vel);
+        assert_eq!(idx, 0);
+        let d = rain.drops[0];
+        assert_eq!(d.pos, pos);
+        assert!((d.scale - 1.0).abs() <= 0.2 + 1e-6);
+        assert_eq!(d.vel, vel * d.scale, "`:160` velocity * scale");
+        assert_eq!(d.rot, d.vel.x.atan2(-d.vel.y), "`:161`");
+        // Fill to the cap, then the next refuses.
+        while rain.drops.len() < 375 {
+            rain.new_rain_forced(&w, camera, pos, vel);
+        }
+        assert_eq!(rain.new_rain_forced(&w, camera, pos, vel), MAX_DROPS, "full → maxRain");
+        assert_eq!(rain.drops.len(), 375);
+    }
+
+    /// W4-g67 census witness — `ClearRain` (`Rain.cs:22-28`) empties the field;
+    /// `IsItRaining` (`Main.cs:2597`) follows `cloudAlpha`, NOT the event flag.
+    #[test]
+    fn w4_g67_clear_rain_and_is_it_raining_semantics() {
+        let w = World::new("air".into(), 64, 64);
+        let camera = Vec2::new(32.0 * 16.0, 25.0 * 16.0);
+        let mut rain = Rain::with_forced(7, Some(1.0), false);
+        rain.gfx_quality = 1.0;
+        rain.spawn(&w, camera, Vec2::new(1600.0, 200.0), 1.0, 0.0, 1.0, 0, true, DropSimInputs::default());
+        assert!(rain.drop_count() > 0);
+        rain.clear_rain();
+        assert_eq!(rain.drop_count(), 0, "ClearRain deactivates every drop");
+        // The event flag is off but the clouds still linger → IsItRaining true.
+        rain.raining = false;
+        rain.intensity = 0.5;
+        assert!(!rain.is_raining(), "Main.raining is the event flag");
+        assert!(rain.is_it_raining(), "cloudAlpha 0.5 > 0 → IsItRaining");
+        rain.intensity = 0.0;
+        assert!(!rain.is_it_raining(), "cloudAlpha 0 → not raining");
+    }
+
+    /// W4-g67 census witness — the `UpdateTime` start gate
+    /// (`Main.cs:64890`): with `start_gates_open` false (slime rain / lantern
+    /// night) NO start roll runs — the stream is untouched and the event never
+    /// begins; with it open the same seed's ladder fires.
+    #[test]
+    fn w4_g67_start_gates_close_suppresses_every_start_roll() {
+        let w = rain_world();
+        let mut closed = Rain::with_forced(42, None, false);
+        let state = closed.rng;
+        closed.update_time(60, &w, true, false, 0.0, false);
+        assert_eq!(closed.rng, state, "no roll while the gates are closed");
+        assert!(!closed.is_raining());
+        // The open twin at the same seed consumes the ladder.
+        let mut open = Rain::with_forced(42, None, false);
+        open.update_time(60, &w, true, false, 0.0, true);
+        assert_ne!(open.rng, state, "the open gate rolls the start arms");
     }
 }

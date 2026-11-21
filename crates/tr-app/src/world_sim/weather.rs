@@ -119,7 +119,9 @@ fn thunder_inputs(app: &App) -> crate::rain::ThunderInputs {
         // `WorldGen.cs:580-586`) plus `Main.IsItRaining` — the three
         // `WorldGen.SpawnStormLightning` (`:71866-71881`) inputs `thunder_step`
         // reads. A classic world leaves them off, so its chain is unchanged.
-        raining: app.rain.is_raining(),
+        // `IsItRaining` = `cloudAlpha > 0` (`Main.cs:2597`), not the event flag
+        // (W4-g67 census).
+        raining: app.rain.is_it_raining(),
         more_lightning: app
             .world
             .micro_seeds
@@ -217,6 +219,13 @@ pub(crate) fn update_world_tick(app: &mut App, dt: f32) {
             // (`Main.cs:64668`) — the port's single player, 0 when none
             // (the C# falls back to a fresh `Player()`).
             app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
+            // `Main.cs:64890`: `!slimeRain && !LanternNight.LanternsUp &&
+            // !LanternNight.NextNightIsLanternNight` (W4-g67 census) — the
+            // slime flag is the world's, the lantern pair the WorldEvents
+            // port (`lanterns_up` = genuine || manual).
+            !world.slime_rain
+                && !crate::world_events::lanterns_up(&app.world_events)
+                && !app.world_events.next_night_is_lantern_night,
         );
         // (4) `Main.cs:64963-64966`: the event walks — CultistRitual
         // (the delay decay + the recheck window's AnyDanger arm),

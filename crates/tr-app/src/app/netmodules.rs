@@ -481,7 +481,9 @@ impl App {
             pumpkin_moon: self.world.pumpkin_moon,
             snow_moon: self.world.snow_moon,
             hard_mode: self.world.hard_mode,
-            is_raining: self.rain.is_raining(),
+            // `AmbienceServer.cs:32/50` reads `Main.IsItRaining`
+            // (`cloudAlpha > 0`, `Main.cs:2597`) — W4-g67 census.
+            is_raining: self.rain.is_it_raining(),
             is_storming: self.wind.storming,
             happy_windy_day: self.wind.happy_windy_day,
             too_windy_for_butterflies: self.wind.too_windy_for_butterflies(),
