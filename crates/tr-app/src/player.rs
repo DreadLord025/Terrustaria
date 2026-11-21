@@ -1096,6 +1096,16 @@ pub struct Player {
     /// flush reads). Updated by `chest::tick_open` each player tick
     /// (S1-P-i43).
     pub prev_synced_chest: i32,
+    /// `Player.lastChest` (`Player.cs:2870`): the previous tick's open-container
+    /// index — `ChestChangeEvents` (`Player.cs:28760-28775`, called from
+    /// `Player.Update` `:25384`) reads it on the close edge (`chest == -1 &&
+    /// lastChest >= 0`) to run `NPC.BigMimicSummonCheck` on the just-closed
+    /// chest (the key-summon, W4-g61 wiring). Updated to `chest` at the end of
+    /// `ChestChangeEvents` each player tick. -1 = no previous chest (the C#
+    /// field's zero-init reads as the first tick's `lastChest = 0`, but the
+    /// `Main.chest[0] != null` gate refuses an empty slot — the port's -1
+    /// sentinel is the same no-previous-chest state).
+    pub last_chest: i32,
     /// `Player.IsVoidVaultEnabled` (`Player.cs:24550-24553` —
     /// `HasItem(4131)`): refreshed per tick beside the other scans.
     pub void_vault_enabled: bool,
@@ -2696,6 +2706,7 @@ impl Player {
             chest_y: 0,
             edited_chest_name: false,
             prev_synced_chest: crate::bank::CHEST_CLOSED,
+            last_chest: -1,
             void_vault_enabled: false,
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
