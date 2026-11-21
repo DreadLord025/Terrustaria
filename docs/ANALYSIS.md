@@ -11874,7 +11874,8 @@ agree). 12 new witnesses (3 gate + 1 light + 1 drain + 4 pass-level splash
 **The shimmer-family SEAL (research/151, 2026-11-21).** The five cross-lane
 compositions closed on top of the arbiter: (1) the e19 lights mutual-receipt
 — the 16-box fix folded both ways, `box_is_wet` the e19 name+body kept, the
-splash keeper f47 (144-ARBITER-FINAL-v2 definitive, the witness-superset
+splash keeper f47 (379-ARBITER-FINAL-v2 definitive — renumbered
+144→379 per registry §10 — the witness-superset
 ground at the e19 SHIMMER-SEAL tip `0fb0ac4ad`), the lights/AddLight scope
 DISJOINT (e19 touches no `npc_lights.rs`; its item-light hunks are the same
 16-box fixture re-pins; the 676 torch-23 NPC-source vs the item-sources share

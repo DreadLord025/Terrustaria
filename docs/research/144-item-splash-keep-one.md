@@ -1,6 +1,7 @@
 # 144 — the item entry/exit splash KEEP-ONE (W4-f47 × W4-e19, 2-way)
 
-> **ARBITER FINAL v2: `144-ARBITER-FINAL-v2.md`** — the e19 SHIMMER
+> **ARBITER FINAL v2: `379-ARBITER-FINAL-v2.md`** (renumbered
+> 144→379 per registry §10) — the e19 SHIMMER
 > SEAL (`0fb0ac4ad`) re-opened the dispute (keep e19) after fixing its
 > entry gate verbatim; the v2 arbitration re-ruled at both new tips on
 > witness SUPERSET COVERAGE and UPHELD this doc's keeper (the f47

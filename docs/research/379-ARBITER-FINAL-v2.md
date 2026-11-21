@@ -1,4 +1,12 @@
-# 144 ARBITER FINAL v2 — the splash keep-one, THE definitive verdict
+# 379 ARBITER FINAL v2 — the splash keep-one, THE definitive verdict
+
+> **RENUMBERED 144 → 379** per registry §10 (d54 `150-research-number-registry.md`
+> @ `08d21666e`, §10.2 f47 row): 144 belongs to e19 (§7.1 corrected, claim
+> 08:45:32); this THIRD f47 144 doc (`057f44a68` 16:27:02) is the uncovered
+> loser → free **379**. Chain: 144 → 379. Slug kept. f47's
+> `144-item-splash-keep-one.md`
+> → 277 and `144-ARBITER-FINAL.md` → 278 are unchanged, still owed (separate
+> rows); historical `144-…` mentions below stay as the lane record.
 
 > Rendered 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (tip `18fe75f2e`,
 > the v2 arbitration commit follows). Code-only: no cargo/tests/rustfmt/
@@ -25,8 +33,9 @@
 
 The files stay as the lane record; **141/master reads THIS doc** for the
 splash keep-one. The e19 144 filename fork (`144-splash-keep-one.md` vs
-f47's `144-item-splash-keep-one.md` vs this `144-ARBITER-FINAL-v2.md`)
-remains noted for the d54 registry sweep.
+f47's `144-item-splash-keep-one.md` vs this doc, then numbered 144)
+was resolved by the d54 registry sweep:
+this doc renumbered → **379** per §10 (see the header banner).
 
 ## The NEW FACT, verified at both tips
 

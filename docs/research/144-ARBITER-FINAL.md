@@ -1,6 +1,7 @@
 # 144 ARBITER FINAL — the splash keep-one, definitive (merger-blocker resolved)
 
-> **SUPERSEDED by `144-ARBITER-FINAL-v2.md`** (the e19 SHIMMER SEAL
+> **SUPERSEDED by `379-ARBITER-FINAL-v2.md`** (renumbered
+> 144→379 per registry §10; the e19 SHIMMER SEAL
 > `0fb0ac4ad` landed the verbatim entry gate, mooting this doc's
 > tiebreak; v2 re-rules on witness superset coverage at both new tips
 > and re-pins the drop-hunks at `0fb0ac4ad`). The keeper pick is

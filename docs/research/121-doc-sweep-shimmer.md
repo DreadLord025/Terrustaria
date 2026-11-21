@@ -5,7 +5,8 @@
 > co-lanes — the e19 lights mutual-receipt, the 676 HitEffect census
 > (g62 hit / g60 death), the b1 activation-contract, the d6
 > ShimmerImmunity compose, the d43 676-row keep-one. The splash keeper
-> is definitive in `144-ARBITER-FINAL-v2.md`. The family bible
+> is definitive in `379-ARBITER-FINAL-v2.md` (renumbered
+> 144→379 per registry §10). The family bible
 > (single-owner map + merge checklist) is research/151 §7.
 
 > Coded 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (base `507a0da5`,

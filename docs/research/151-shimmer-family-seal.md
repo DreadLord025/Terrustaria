@@ -15,12 +15,12 @@
 > (batch 9 = `418336473`), g59 `d277f782b`, g60 `30fea0fe1`, g62
 > `32af98b44`, e5 `a62a32ce` (via g60's bible pin). The f47 lane's own
 > record: research/121 (FINAL) + research/144 (the keep-one) +
-> research/144-ARBITER-FINAL-v2 (THE definitive splash keeper; v1 kept
+> research/379-ARBITER-FINAL-v2 (THE definitive splash keeper; v1 kept
 > as the lane record).
 >
 > **This doc is the SEAL**: the five cross-lane compositions the brief
 > ordered, each with a keep-one verdict + the exact merge contract.
-> The splash keep-one is ALREADY definitive (144-ARBITER-FINAL-v2);
+> The splash keep-one is ALREADY definitive (379-ARBITER-FINAL-v2);
 > this doc adds the LIGHTS mutual-receipt, the 676 HitEffect census,
 > the b1 activation-contract, the d6 ShimmerImmunity compose and the
 > d43 keep-one — then the family bible (the single-owner map for every
@@ -30,7 +30,7 @@
 
 | surface | C# | owner (merged) | f47's half |
 | --- | --- | --- | --- |
-| the item splash (entry/exit) | `WorldItem.cs:879-1035` | **f47** (`Splash`/`splash_due`/`ItemDrop::splash`) | the keeper (144-ARBITER-FINAL-v2) |
+| the item splash (entry/exit) | `WorldItem.cs:879-1035` | **f47** (`Splash`/`splash_due`/`ItemDrop::splash`) | the keeper (379-ARBITER-FINAL-v2) |
 | the drop box 16 | `WorldItem.cs:138` | **f47** (the e19 fix folded) | `item::SIZE = 16.0` |
 | the item transform chain | `WorldItem.cs:1691-1849` | **f47** resolve + **e19** apply | `resolve_shimmer`/`can_shimmer` (f47), the chain-apply `wet` writes (e19) |
 | the lunar-brick moon-phase table | `ShimmerTransforms.cs:113-126` | **e19** (the RAW-enum fix) | folded here (§1.5) |
@@ -76,7 +76,7 @@ copy (the f47 restoration ≡ the e19 original — same inset maths, the
 
 ### 1.3 The splash keeper — f47 (the ARBITER FINAL v2, definitive)
 
-144-ARBITER-FINAL-v2 adjudicated the re-opened dispute at both NEW tips
+379-ARBITER-FINAL-v2 adjudicated the re-opened dispute at both NEW tips
 (f47 `18fe75f2e` / e19 `0fb0ac4ad`, the SHIMMER SEAL): **KEEPER = the
 f47 `Splash`/`splash_due`/`ItemDrop::splash` shape, UPHELD on the
 witness-superset ground.** The NEW FACT: the e19 seal landed the entry
@@ -529,7 +529,7 @@ The merger's keep-one checklist for the shimmer family (each C#
 statement draws/writes exactly once):
 
 1. **The item splash** → f47 `Splash`/`splash_due`/`ItemDrop::splash`
-   (144-ARBITER-FINAL-v2). DROP the e19 `ItemSplash`/`pending_splash`/
+   (379-ARBITER-FINAL-v2). DROP the e19 `ItemSplash`/`pending_splash`/
    `take_splash`/`item_splash` (the exact hunks re-pinned at `0fb0ac4ad`
    in v2). KEEP the e19 flags/gravity/repulsion family + the
    dry-integration full-velocity SPLIT half.
@@ -578,7 +578,7 @@ migrates_version_2_kinds_to_item_ids`).
 its own 18-row family bible (ANALYSIS "The shimmer family — the merger
 bible"). This doc is the f47-side complement — the two agree on every
 row EXCEPT the splash keeper (e19's bible still says "e19 KEEPS", its
-lane's superseded claim; 144-ARBITER-FINAL-v2 overrules it — f47 keeps,
+lane's superseded claim; 379-ARBITER-FINAL-v2 overrules it — f47 keeps,
 the e19 drop-hunks apply). The rows this seal ADDS beyond e19's bible:
 the 676 HitEffect owner split (g62 hit / g60 death + the seed), the b1
 activation-contract detail (the unreachable-kind-arm addition), the d6
