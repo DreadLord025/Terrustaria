@@ -20112,200 +20112,243 @@ impl ProjectilePool {
     /// plays ride ids 0/6/13 and the Sharknado cry rides id 4 — the drain
     /// (`world_sim/projectiles.rs`) routes each to its case façade.
     /// Positions ride untruncated (the landed 21h queue convention; the
-    /// id-4 façade truncates itself). Deferred arms (state-first resizes,
-    /// unported kinds, the 0.5-volume DD2 style) are listed in ANALYSIS
-    /// "The projectile sound wave, part 3".
+    /// id-4/29 façades truncate themselves).
+    /// S1-E-21h d77 deferred-arm wave: the state-bearing arms whose writes
+    /// NOW exist on the pushed branches (d78 `5fe6d940`'s
+    /// `magic_death_blast` 79/16/34/634/635/661, g3 `778573ca`'s
+    /// `aimed_spell_kill`/`nebula_spirit_onyx_kill` 659) arm here with the
+    /// C# play-point position DERIVED from the pre-hook box: `Resize`
+    /// (`:22353-22359`) keeps the centre, so the 79/16 Item10-at-Center and
+    /// the 34 post-restore position read are centre-invariant, and the
+    /// 661/659 no-restore recentres play at `centre − blast/2`. The 681
+    /// goblin bomb's centre cue rides the queue's 0.5 volumeScale term; the
+    /// 452/454 Phantasmal cues are cue-first (int ids 29/4); the 1088
+    /// acorn's Dig plays at Center. Still deferred: the 710/617 bursts
+    /// (their Kill resize+Damage writes are unported on every pushed
+    /// branch — the f20 slice-D ports are the AI_001 flight overlays, not
+    /// the Kill arms), listed in ANALYSIS "The projectile sound wave,
+    /// part 3".
     fn kill_tail_cue(&mut self, slot: usize) {
         let p = &self.slots[slot];
         let pos = p.pos;
         let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
-        let cue: Option<(u16, i32, f32, f32)> = match p.kind {
+        // `(sound id, style, x, y, volumeScale)` — the sixth queue term.
+        let cue: Option<(u16, i32, f32, f32, f32)> = match p.kind {
+            // `:71266`/`:71338` — the Rainbow Rod bolt / Magic Missile's
+            // Item10 at Center AFTER the 128×128 blast + restore (d78's
+            // `magic_death_blast` / g3's `aimed_spell_kill` own the writes;
+            // both resizes keep the centre, so the read is the pre-hook
+            // centre).
+            79 | 16 => Some((2, 10, center.x, center.y, 1.0)),
+            // `:71418` — the Flamelash's Item10 at the POST-restore
+            // position: `Resize(96,96)` then `Resize(old,old)` keep the
+            // centre, so the restored top-left is the pre-hook position.
+            34 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:71112` — the Fairy Queen shot's Item10 at Center (the dust
             // census rides `fairy_queen_death_draws` below the hook).
-            932 => Some((2, 10, center.x, center.y)),
+            932 => Some((2, 10, center.x, center.y, 1.0)),
             // `:71782`/`:71802` — the DD2 javelin/ballista Dig thud.
-            662 | 685 | 680 => Some((0, 0, pos.x, pos.y)),
+            662 | 685 | 680 => Some((0, 0, pos.x, pos.y, 1.0)),
+            // `:71906` — the DD2 Goblin Bomb's 0.5-volume blast cue
+            // (`SoundID.DD2_GoblinBomb = LegacySoundStyle(2,14)
+            // .WithVolume(0.5f)`, `SoundID.cs:1596`). The C# plays AFTER
+            // `PrepareBombToBlow`'s `Resize(80,80)` (`:46804-46808`) +
+            // `Damage()` (`:70671`) and the `+width/2` recentre
+            // (`:71904-71905`) — both keep/restore the CENTRE, so the play
+            // position is the pre-hook centre. The 22-box dust/gore census
+            // and the second 80×80 `Damage()` (`:71907-71950`) are the
+            // unported state remainder (the bomb's blast walk — the
+            // `explode_bomb` family gate).
+            681 => Some((2, 14, center.x, center.y, 0.5)),
             // `:72015` — the Nebula Blaze's Item14 BEFORE the centre-snap
             // (`:72016`); the resize/Damage/dust burst is the unported
             // state remainder (the cue precedes every write).
-            634 | 635 => Some((2, 14, pos.x, pos.y)),
+            634 | 635 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:72716` — the Blood Arrow's Dig thud.
-            819 => Some((0, 0, pos.x, pos.y)),
+            819 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:72851` — the Flairon bubble's Item54 pop.
-            405 => Some((2, 54, pos.x, pos.y)),
+            405 => Some((2, 54, pos.x, pos.y, 1.0)),
+            // `:72989` — the Phantasmal Eye's death moan: the int overload
+            // `PlaySound(29, (int)X, (int)Y, 103)` — case 29's slot 103,
+            // the ×0.4 arm + playing guard (`LegacySoundPlayer.cs:1025-
+            // 1048`), the drain's fighter-moan façade. CUE-FIRST: the play
+            // precedes the 144×144 resize/dust/30-box `Damage()`
+            // (`:72990-73012`), so the read is the pre-hook position (the
+            // façade truncates).
+            452 => Some((29, 103, pos.x, pos.y, 1.0)),
             // `:73294` — the Crystal Pulse's Item110 (the 522 shard ring
             // `:73324` is the unported state remainder).
-            521 => Some((2, 110, pos.x, pos.y)),
+            521 => Some((2, 110, pos.x, pos.y, 1.0)),
             // `:73400` — the Xenopopper's Item96 (the payload release rides
             // `xenopopper_bubble_kill` below the hook).
-            444 => Some((2, 96, pos.x, pos.y)),
+            444 => Some((2, 96, pos.x, pos.y, 1.0)),
             // `:73530` — the Electrosphere's Item94 (the sphere spawn rides
             // `dart_electro_firework_kill`).
-            442 => Some((2, 94, pos.x, pos.y)),
+            442 => Some((2, 94, pos.x, pos.y, 1.0)),
             // `:73605` — the Saucer Missile's Item14 BEFORE the centre-snap
             // (`:73606`); the resize/Damage burst is the unported remainder.
-            448 => Some((2, 14, pos.x, pos.y)),
+            448 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:73634` — the Celebration rockets' Item14 (the resize/burst
             // rides `celeb2_death`).
-            715..=718 => Some((2, 14, pos.x, pos.y)),
+            715..=718 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:73763` — the Sharknado bolt's case-4 style-19 cry at Center
             // (the cloud spawn rides `sharknado_bolt_kill`).
-            385 => Some((4, 19, center.x, center.y)),
+            385 => Some((4, 19, center.x, center.y, 1.0)),
             // `:73923` — the Molotov's Shatter (the greek-fire burst rides
             // `thrown_consumable_death`).
-            399 => Some((13, 0, pos.x, pos.y)),
+            399 => Some((13, 0, pos.x, pos.y, 1.0)),
             // `:73965`/`:73982` — the Javelin / Bone Javelin Dig thud.
-            507 | 598 => Some((0, 0, pos.x, pos.y)),
+            507 | 598 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74014` — the arrow/dart family's Dig thud (the wooden /
             // hostile wooden arrows, the Poison Dart, the Venom Dart Trap;
             // the unrowed 1073 sibling stays out).
-            1 | 81 | 98 | 980 => Some((0, 0, pos.x, pos.y)),
+            1 | 81 | 98 | 980 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74161`/`:74173`/`:74238` — the North Pole spear / Frost
             // Shard / hostile Ornament's Item27 shatter.
-            343 | 349 | 346 => Some((2, 27, pos.x, pos.y)),
+            343 | 349 | 346 => Some((2, 27, pos.x, pos.y, 1.0)),
             // `:74184` — the Stake's Dig thud.
-            323 => Some((0, 0, pos.x, pos.y)),
+            323 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74305` — the Poison Dart Trap's Dig thud (the unrowed 195
             // sibling stays out).
-            184 => Some((0, 0, pos.x, pos.y)),
+            184 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74328` — the Plantera seeds' Dig thud.
-            275 | 276 => Some((0, 0, pos.x, pos.y)),
+            275 | 276 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74352` — the Skull's Dig thud; the int overload's Style 27
             // is unused by case 0 (`LegacySoundPlayer.cs:440-452`), kept
             // on the payload for the census mapping.
-            270 => Some((0, 27, pos.x, pos.y)),
+            270 => Some((0, 27, pos.x, pos.y, 1.0)),
             // `:74369` — the Book of Skulls' skull: the SAME Dig thud,
             // gated `penetrate != maxPenetrate` (`:74367` — a skull that
             // never hit anything dies silent).
-            837 if p.penetrate != p.max_penetrate => Some((0, 27, pos.x, pos.y)),
+            837 if p.penetrate != p.max_penetrate => Some((0, 27, pos.x, pos.y, 1.0)),
             // `:74444` — the Drippler flail's extra ball Dig thud.
-            928 => Some((0, 0, pos.x, pos.y)),
+            928 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74517` — the spore cloud's Grass rustle (id 6), gated
             // `type != 206 || alpha < 255` (`:74515` — the fully-faded
             // Gas Trap 206 dies silent; the 225 spore always plays).
-            206 if p.alpha < 255 => Some((6, 0, pos.x, pos.y)),
-            225 => Some((6, 0, pos.x, pos.y)),
+            206 if p.alpha < 255 => Some((6, 0, pos.x, pos.y, 1.0)),
+            225 => Some((6, 0, pos.x, pos.y, 1.0)),
             // `:74545` — the Frost Arrow's Dig thud.
-            120 => Some((0, 0, pos.x, pos.y)),
+            120 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74736` — the Bone Arrow's Dig thud (the 1124 bone-shard
             // spawn `:74748` is the unported state remainder).
-            117 => Some((0, 0, pos.x, pos.y)),
+            117 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:74762` — the friendly Snowball's Item51 splat.
-            166 => Some((2, 51, pos.x, pos.y)),
+            166 => Some((2, 51, pos.x, pos.y, 1.0)),
             // `:75214` — the Holy Arrow / falling star's Item10 (the star
             // spawn rides `special_arrow_kill` below the hook).
-            91 | 92 => Some((2, 10, pos.x, pos.y)),
+            91 | 92 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:75252` — the Crystal Bullet's Dig thud (the shard split
             // rides `special_bullet_kill`).
-            89 => Some((0, 0, pos.x, pos.y)),
+            89 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75278` — the Houndius fireball's Item45.
-            967 => Some((2, 45, pos.x, pos.y)),
+            967 => Some((2, 45, pos.x, pos.y, 1.0)),
             // `:75288` — the Dead Cells barnacle's Item167.
-            1026 => Some((2, 167, pos.x, pos.y)),
+            1026 => Some((2, 167, pos.x, pos.y, 1.0)),
             // `:75331` — the Frost Bolt staff's Item27 (the unrowed
             // 118/119/128 siblings stay out).
-            359 => Some((2, 27, pos.x, pos.y)),
+            359 => Some((2, 27, pos.x, pos.y, 1.0)),
             // `:75350`/`:75365` — the Frost Blast / Frost Hydra's Item27.
-            309 | 308 => Some((2, 27, pos.x, pos.y)),
+            309 | 308 => Some((2, 27, pos.x, pos.y, 1.0)),
             // `:75515` — the Blizzard's Item27.
-            337 => Some((2, 27, pos.x, pos.y)),
+            337 => Some((2, 27, pos.x, pos.y, 1.0)),
             // `:75537` — the Ice Block's Item27, gated `ai[0] >= 0`
             // (`:75535`); the gel-tile KillTile (`:75551`) is the unported
             // state remainder.
-            80 if p.ai[0] >= 0.0 => Some((2, 27, pos.x, pos.y)),
+            80 if p.ai[0] >= 0.0 => Some((2, 27, pos.x, pos.y, 1.0)),
             // `:75572` — the blowgun Poison Dart's Dig thud (the unrowed
             // 51 sibling stays out).
-            267 => Some((0, 0, pos.x, pos.y)),
+            267 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75594` — the Fire / Flaming Arrow's Dig thud.
-            2 | 82 => Some((0, 0, pos.x, pos.y)),
+            2 | 82 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75602` — the merchant Bone Arrow's Dig thud.
-            474 => Some((0, 0, pos.x, pos.y)),
+            474 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75610` — the Frostburn Arrow's Dig thud.
-            172 => Some((0, 0, pos.x, pos.y)),
+            172 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75618` — the Cursed Arrow's Dig thud.
-            103 => Some((0, 0, pos.x, pos.y)),
+            103 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75632` — the Ichor Arrow's Dig thud.
-            278 => Some((0, 0, pos.x, pos.y)),
+            278 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75646` — the Shuriken / Throwing Knife / Poisoned Knife's
             // Dig thud (the unrowed 599/909 siblings stay out).
-            3 | 48 | 54 => Some((0, 0, pos.x, pos.y)),
+            3 | 48 | 54 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75662` — the Unholy Arrow's Dig thud.
-            4 => Some((0, 0, pos.x, pos.y)),
+            4 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:75670` — the Jester's Arrow's Item10.
-            5 => Some((2, 10, pos.x, pos.y)),
+            5 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:75683` — the Starfury / Star Cannon star's Item10 (the
             // unrowed 12/503 siblings stay out; the 12/955 dust rings are
             // the visual skip).
-            9 | 955 => Some((2, 10, pos.x, pos.y)),
+            9 | 955 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:75857` — the hostile Cannonball's Item14 BEFORE the 96×96
             // centre-snap (`:75887`); the resize/Damage burst is the
             // unported state remainder (the cue precedes every write).
-            240 => Some((2, 14, pos.x, pos.y)),
+            240 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:75901` — the Venom Arrow's Item10.
-            282 => Some((2, 10, pos.x, pos.y)),
+            282 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:75913` — the Venom Bullet's Item10 BEFORE the debuff-spread
             // resize (`venom_burst_spread` runs below the hook).
-            283 => Some((2, 10, pos.x, pos.y)),
+            283 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76002` — the Exploding Bullet's Item14 BEFORE the AoE
             // resize (`exploding_bullet_burst` runs below the hook).
-            286 => Some((2, 14, pos.x, pos.y)),
+            286 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:76038` — the common bullet arm's Item10 (the ported subset
             // of the C#'s 24-kind list; the unrowed 257/302/576/577/876
             // siblings stay out).
             14 | 20 | 36 | 83 | 84 | 88 | 100 | 104 | 110 | 180 | 207 | 242 | 259
-            | 279 | 285 | 287 | 357 | 389 | 968 => Some((2, 10, pos.x, pos.y)),
+            | 279 | 285 | 287 | 357 | 389 | 968 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76053` — the Shimmer Arrow's Dig thud (the Vector2 int
             // overload `PlaySound(0, base.position)`).
-            1006 => Some((0, 0, pos.x, pos.y)),
+            1006 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:76070` — the Sky Fracture's Item10.
-            660 => Some((2, 10, pos.x, pos.y)),
+            660 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76122` — the Moonlord Bullet's Item10.
-            638 => Some((2, 10, pos.x, pos.y)),
+            638 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76136` — the Ball of Fire's Item10 (the unrowed 321
             // sibling stays out).
-            15 => Some((2, 10, pos.x, pos.y)),
+            15 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76148` — the Ball of Frost's Item10.
-            253 => Some((2, 10, pos.x, pos.y)),
+            253 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76160` — the friendly/hostile Cursed Flame's Item10.
-            95 | 96 => Some((2, 10, pos.x, pos.y)),
+            95 | 96 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76180` — the Sand Ball (gun)'s Dig thud (the unrowed 31
             // falling sibling stays out).
-            42 => Some((0, 0, pos.x, pos.y)),
+            42 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:76207` — the hostile Snowball's Dig thud.
-            109 => Some((0, 0, pos.x, pos.y)),
+            109 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:76283` — the Water Bolt's Item10.
-            27 => Some((2, 10, pos.x, pos.y)),
+            27 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76300` — the Demon Sickle / Scythe's Item10.
-            44 | 45 => Some((2, 10, pos.x, pos.y)),
+            44 | 45 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:76310` — the Hellfire Arrow's Item14 BEFORE the 64×64
             // blast resize (`special_arrow_kill` runs below the hook).
-            41 => Some((2, 14, pos.x, pos.y)),
+            41 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:76433` — the Beenade's Item14 (the bee burst rides
             // `thrown_consumable_death`).
-            183 => Some((2, 14, pos.x, pos.y)),
+            183 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:76470` — the aiStyle-34 fireworks' Item14 (the ported
             // kinds 167-170; the dust census rides
             // `dart_electro_firework_kill`).
-            167..=170 => Some((2, 14, pos.x, pos.y)),
+            167..=170 => Some((2, 14, pos.x, pos.y, 1.0)),
             // `:77018`/`:77033`/`:77048` — the holy/unholy/blood water
             // bottles' Shatter (the splash conversion rides
             // `thrown_consumable_death`, after the cue).
-            69 | 70 | 621 => Some((13, 0, pos.x, pos.y)),
+            69 | 70 | 621 => Some((13, 0, pos.x, pos.y, 1.0)),
             // `:77063`/`:77077`/`:77094`/`:77107`/`:77124`/`:77138` — the
             // Unholy Trident (hostile 115 / friendly 114), Sword Beam 116,
             // Enchanted Beam 173, Terra Beam 132 and Light Beam 156's
             // Item10 (the dust trails are the visual skip).
-            115 | 114 | 116 | 173 | 132 | 156 => Some((2, 10, pos.x, pos.y)),
+            115 | 114 | 116 | 173 | 132 | 156 => Some((2, 10, pos.x, pos.y, 1.0)),
             // `:75427` — the gem bolts' Dig thud at the PRE-resize position
             // (the AoE resize in `gem_bolt_aoe` runs after this hook; the
             // sound is NOT feature-gated — every gem bolt plays it).
-            121..=126 | 597 => Some((0, 0, pos.x, pos.y)),
+            121..=126 | 597 => Some((0, 0, pos.x, pos.y, 1.0)),
             // `:77153` — the Night Beam's Item10 (the :77138 family's tail).
-            157 => Some((2, 10, pos.x, pos.y)),
+            157 => Some((2, 10, pos.x, pos.y, 1.0)),
             _ => None,
         };
-        if let Some((id, style, x, y)) = cue {
-            self.pending_proj_sounds.push((id, style, x, y, 0.0, 1.0));
+        if let Some((id, style, x, y, volume)) = cue {
+            self.pending_proj_sounds.push((id, style, x, y, 0.0, volume));
         }
     }
 
@@ -24485,6 +24528,58 @@ mod s1_e_21h_sound_tests {
             assert_eq!(queued.len(), 1, "rocket {kind}: one census cue");
             assert_eq!((queued[0].0, queued[0].1), (2, 14));
             assert_eq!((queued[0].2, queued[0].3), pre_pos);
+            pool.kill(slot);
+        }
+    }
+
+    /// S1-E-21h d77 deferred-arm wave, part 1 — the arms whose state writes
+    /// NOW exist on the pushed branches: the 79/16/34 aimed spells (d78
+    /// `5fe6d940` / g3 `778573ca`), the 681 goblin bomb's 0.5-volume centre
+    /// cue (the queue's sixth term) and the 452 cue-first Phantasmal Eye
+    /// moan (int id 29). The position reads are DERIVED from the pre-hook
+    /// box exactly as the C# play points resolve (`Resize` keeps the
+    /// centre, `:22353-22359`). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn s1_e_21h_d77_the_deferred_arms_whose_writes_landed() {
+        let mut pool = ProjectilePool::new();
+        // (kind, (id, style), position mode, volumeScale): mode 0 = pos,
+        // 1 = centre.
+        let cases: [(u16, (u16, i32), u8, f32); 5] = [
+            (79, (2, 10), 1, 1.0),
+            (16, (2, 10), 1, 1.0),
+            (34, (2, 10), 0, 1.0),
+            (681, (2, 14), 1, 0.5),
+            (452, (29, 103), 0, 1.0),
+        ];
+        for (kind, want, mode, volume) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            let p = &pool.slots()[slot];
+            let (x, y) = if mode == 1 {
+                (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            } else {
+                (p.pos.x, p.pos.y)
+            };
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue per death");
+            assert_eq!(
+                (queued[0].0, queued[0].1, queued[0].2, queued[0].3, queued[0].4, queued[0].5),
+                (want.0, want.1, x, y, 0.0, volume),
+                "kind {kind}'s cue payload (the volume term included)"
+            );
+            pool.kill(slot);
+        }
+        // The 710/617 bursts stay DEFERRED: their Kill resize+Damage writes
+        // are unported on every pushed branch (f20's slice-D ports are the
+        // AI_001 flight overlays `:57549`/`:55734`, not the Kill arms).
+        for kind in [710u16, 617] {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            pool.kill_tail_cue(slot);
+            assert!(pool.drain_proj_sounds().is_empty(), "kind {kind} stays deferred");
             pool.kill(slot);
         }
     }
