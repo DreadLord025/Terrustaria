@@ -2820,6 +2820,54 @@ mod w4_d16_155_tests {
         assert!(!pool.slots()[slot].active, "the orphan kill");
         assert_eq!(rng.ranges, Vec::new());
     }
+
+    /// The LIVE wiring drain (the residual-3 census): a pool update with
+    /// a resolved owner runs the placement walk against the REAL world —
+    /// the blocker at row 45 trips the scan, the column fills rows
+    /// 49..44 with 504, the coil attaches (ai[1] = 2, life 1800), and the
+    /// tile writes bump `world.revision` (the `WorldFrameKey` input —
+    /// the frame cache invalidates, `draw.rs:1041`). The death window
+    /// then removes every rope cell through the same live path.
+    #[test]
+    fn w4_d16_155_the_dispatch_drains_the_rope_seams_live() {
+        let mut w = world();
+        put(&mut w, 100, 45, 1); // the solid blocker (dirt)
+        let mut pl = crate::player::Player::spawn(&w);
+        let mut pool = ProjectilePool::new();
+        let mut npcs: Vec<Npc> = Vec::new();
+        // The risen coil: pos.y 688 (centre row 43), anchor row 49,
+        // ai[1] = 1 (the rise state) — the first update's blocker scan
+        // attaches it.
+        let slot = pool
+            .spawn_with_data_ai(MYSTIC_SNAKE_COIL, 1600.0, 688.0, 0.0, 0.0, 0, 0.0, 792.0, 1.0)
+            .unwrap();
+        let rev0 = w.revision;
+        let mut rng = census();
+        pool.update(
+            &mut w, &mut npcs, Some((2000.0, 808.0)), None, Some(&mut pl),
+            YoyoInputs::default(), FlailInputs::default(), &mut rng, 0, false,
+        );
+        assert!(pool.slots()[slot].active, "the coil attached");
+        assert_eq!(pool.slots()[slot].ai[1], 2.0, "the attach state");
+        for y in [44, 46, 47, 48, 49] {
+            assert_eq!(w.tile(100, y).unwrap().kind, 504, "the LIVE column cell {y}");
+        }
+        assert_eq!(w.tile(100, 45).unwrap().kind, 1, "the blocker untouched");
+        assert!(w.revision > rev0, "the tile writes bump the frame-cache key");
+        // The death window: timeLeft 4 → the re-burst + the owner-gated
+        // removal kill every 504 cell through the same dispatch.
+        pool.slots_mut()[slot].time_left = 4;
+        let rev1 = w.revision;
+        pool.update(
+            &mut w, &mut npcs, Some((2000.0, 808.0)), None, Some(&mut pl),
+            YoyoInputs::default(), FlailInputs::default(), &mut census(), 0, false,
+        );
+        assert!(!pool.slots()[slot].active, "the ≤4 death");
+        for y in [44, 46, 47, 48, 49] {
+            assert!(!w.tile(100, y).unwrap().active(), "the LIVE removal {y}");
+        }
+        assert!(w.revision > rev1, "the removal bumps the key too");
+    }
 }
 
 #[cfg(test)]
