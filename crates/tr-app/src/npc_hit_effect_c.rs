@@ -146,6 +146,7 @@
 //! | 597 | `:85896` | the 628 Dandelion death: the 1207 tail |
 //! | 598-599 | `:85918-85919` | the 646-652 GemBunny death (2 gores, per-type offset (type-646)*2) |
 //! | 600 | `:85940` | the 639-645 GemSquirrel death (1 gore 1227+(type-639)) |
+//! | 601-610 | `:85958-85981` | the critter family: bunny group (46/303/337/540), crab 67, goldfish 55/230 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3906,6 +3907,63 @@ fn gem_squirrel_death(
     gore.new_gore(rng, world, pos, vel, 1227 + (npc_type - 639), 1.0); // :85940
 }
 
+/// The critter family death (`NPC.cs:85942-86090`): the 10-dust type-5
+/// burst (SpeedX `2*hitDirection`, SpeedY -2), then the per-type gore list
+/// at position. This commit ports the bunny group (46/303/337/540 → 76/77,
+/// the 303 adds a 10-dust type-193 burst, the 540 adds 926), the crab 67
+/// (95/95/96) and the goldfish 55/230 (553/554). The remaining critter
+/// types land with the next batches. Scale defaults to 1.
+fn critter_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:85952-85955` — the 10-dust type-5 burst.
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    // `:85956-85971` — the bunny group.
+    if npc_type == 46 || npc_type == 303 || npc_type == 337 || npc_type == 540 {
+        gore.new_gore(rng, world, pos, vel, 76, 1.0); // :85958
+        gore.new_gore(rng, world, pos, vel, 77, 1.0); // :85959
+        // `:85960-85966` — the 303 BunnySlimed adds a 10-dust type-193 burst.
+        if npc_type == 303 {
+            for _ in 0..10 {
+                dust.new_dust(
+                    rng, dust_ctx, world, pos, w as i32, h as i32, 193, 2.0 * hit_direction, -2.0,
+                    0, Color::default(), 1.0,
+                );
+            }
+        }
+        // `:85967-85970` — the 540 PartyBunny adds the 926 hat gore.
+        if npc_type == 540 {
+            gore.new_gore(rng, world, pos, vel, 926, 1.0); // :85969
+        }
+    }
+    // `:85972-85977` — the crab 67.
+    else if npc_type == 67 {
+        gore.new_gore(rng, world, pos, vel, 95, 1.0); // :85974
+        gore.new_gore(rng, world, pos, vel, 95, 1.0); // :85975
+        gore.new_gore(rng, world, pos, vel, 96, 1.0); // :85976
+    }
+    // `:85978-85982` — the goldfish 55/230.
+    else if npc_type == 55 || npc_type == 230 {
+        gore.new_gore(rng, world, pos, vel, 553, 1.0); // :85980
+        gore.new_gore(rng, world, pos, vel, 554, 1.0); // :85981
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4378,6 +4436,15 @@ pub fn hit_effect_c(
     // `:85921-85941` — the 639-645 GemSquirrel arm (site 600).
     if (639..=645).contains(&npc_type) && npc.hp <= 0 {
         gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85942-86091` — the critter family arm; this commit owns the bunny
+    // group / crab / goldfish (sites 601-610); the rest lands with the next
+    // batches.
+    if (npc_type == 46 || npc_type == 303 || npc_type == 337 || npc_type == 540 || npc_type == 67
+        || npc_type == 55 || npc_type == 230)
+        && npc.hp <= 0
+    {
+        critter_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6917,6 +6984,43 @@ mod tests {
             gem_squirrel_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
             assert_eq!(gore.slot(0).gore_type, 1227 + (ty - 639), "squirrel {ty}");
         }
+    }
+
+    /// `NPC.cs:85958-85981` — the critter family: the bunny group (76/77,
+    /// 303 adds dust, 540 adds 926), the crab (95/95/96), the goldfish
+    /// (553/554).
+    #[test]
+    fn w4_f10_the_critter_family_bunny_crab_goldfish() {
+        let w = air();
+        // The plain bunny 46: 76/77.
+        let n = boss(100.0, 100.0, 30.0, 24.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(577);
+        critter_family_death(&n, 46, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![76, 77]);
+        // The PartyBunny 540: 76/77/926.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(577);
+        critter_family_death(&n, 540, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0);
+        let types2: Vec<i32> = gore2.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![76, 77, 926]);
+        // The crab 67: 95/95/96.
+        let mut gore3 = GorePool::new();
+        let mut dust3 = DustPool::new();
+        let mut rng3 = UnifiedRandom::new(577);
+        critter_family_death(&n, 67, &mut dust3, &ctx(), &mut gore3, &mut rng3, &w, 1.0);
+        let types3: Vec<i32> = gore3.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types3, vec![95, 95, 96]);
+        // The goldfish 55: 553/554.
+        let mut gore4 = GorePool::new();
+        let mut dust4 = DustPool::new();
+        let mut rng4 = UnifiedRandom::new(577);
+        critter_family_death(&n, 55, &mut dust4, &ctx(), &mut gore4, &mut rng4, &w, 1.0);
+        let types4: Vec<i32> = gore4.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types4, vec![553, 554]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
