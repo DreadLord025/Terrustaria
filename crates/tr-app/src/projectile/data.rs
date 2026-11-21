@@ -3418,6 +3418,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             | CRIMSAND_BALL_FALLING | SHELL_PILE_FALLING => {
                 (10.0, 10.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
             }
+            // W4-d1 wave 3c — the coin piles 411-414
+            // (`Projectile.cs:4933-4941`): 10x10, aiStyle 10 ONLY — the
+            // stock friendly false (`:788`) / hostile false (`:764`) /
+            // penetrate 1 (`:774`) / 3600 life stand (the arm touches
+            // neither flag; the empty switch is a decompilation remnant).
+            // The arm holds the C# friendly state and the PVE walk refuses
+            // them (`Damage_PVE_Inner` `:12611`, the debris precedent).
+            COPPER_COINS_FALLING | SILVER_COINS_FALLING | GOLD_COINS_FALLING
+            | PLATINUM_COINS_FALLING => {
+                (10.0, 10.0, 10, 1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
+            // W4-d1 wave 3c — the player Mud Ball 1081
+            // (`Projectile.cs:10087-10094`): 12x12, aiStyle 10, friendly,
+            // `penetrate = -1`; the stock life / tileCollide stand. Its own
+            // 20-tick gravity delay (`:57997-58004`) + the side-slide death
+            // probe (`:77492-77502`) ride the falling arm.
+            MUD_BALL_PLAYER => {
+                (12.0, 12.0, 10, -1, TIME_LEFT_DEFAULT, 0, true, false, false, RESET_STATE)
+            }
             // S1-P-i17 — the special-arrow rows (the ammo items' own `shoot`
             // ids, `itemdata.rs`). Every row is the C# `SetDefaults` arm
             // verbatim; the stock `timeLeft = 3600` (`:787`) stands wherever

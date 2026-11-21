@@ -42804,6 +42804,132 @@ mod w4_d1_falling_block_tests {
         assert!((pool.slots()[slot].rot - 0.1).abs() < 1e-6);
         assert_eq!(rng.draws, vec![(0, 2)], "the 241/354 dust gate (:57921)");
     }
+
+    /// Wave 3c — the coin piles' rows (`:4933-4941`): 10×10, aiStyle 10,
+    /// the STOCK penetrate 1 / 3600 life (the arm writes neither flag);
+    /// the 1081's row (`:10087-10094`): 12×12, pen −1.
+    #[test]
+    fn w4_d1_the_coin_pile_and_mud_ball_rows_match_set_defaults() {
+        for k in COIN_PILE_KINDS {
+            let d = proj_data(k).expect("the coin row");
+            assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (10.0, 10.0, 10, 1), "kind {k}");
+            assert_eq!(d.time_left, TIME_LEFT_DEFAULT, "kind {k}");
+            assert!(d.tile_collide, "kind {k}");
+            assert!(!d.ignore_water, "kind {k}");
+            assert!(FALLING_BLOCK_NO_PLATFORM_FALL.contains(&k), "kind {k}");
+            assert!(!FALLING_HOSTILE_KINDS.contains(&k), "stock hostile false, kind {k}");
+        }
+        let d = proj_data(MUD_BALL_PLAYER).expect("the 1081 row");
+        assert_eq!((d.w, d.h, d.ai_style, d.penetrate), (12.0, 12.0, 10, -1));
+        assert_eq!(d.time_left, TIME_LEFT_DEFAULT);
+        assert!(d.tile_collide);
+        // The 1081 is NOT on the platform set (`ProjectileID.cs:433`).
+        assert!(!FALLING_BLOCK_NO_PLATFORM_FALL.contains(&MUD_BALL_PLAYER));
+    }
+
+    /// The coin pile's first tick: the arm holds the stock
+    /// `friendly = false` (the PVE refusal), the dust gate is `Next(3)`
+    /// (`:57855`), the fall adds 0.41.
+    #[test]
+    fn w4_d1_the_coin_pile_holds_the_stock_friendly_and_draws() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(GOLD_COINS_FALLING, 160.0, 100.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0)
+            .expect("the 413 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        let p = &pool.slots()[slot];
+        assert!(p.active);
+        assert!(!p.friendly, "the stock friendly false (:788, the :4933 arm touches neither)");
+        assert_eq!(p.ai[0], 1.0, "the owner latch");
+        assert!((p.vel.y - 0.41).abs() < 1e-6);
+        assert_eq!(rng.draws, vec![(0, 3)], "the coin dust gate (:57855)");
+    }
+
+    /// The 1081's own age/gravity (`:57997-58004`): `ai[0]++` every tick,
+    /// NO gravity before 20, then +0.3 and the 2% X damp. The dust gate is
+    /// its `Next(2)` (`:57846`).
+    #[test]
+    fn w4_d1_the_mud_ball_player_gravity_delay() {
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(MUD_BALL_PLAYER, 160.0, 100.0, 2.0, 0.0, 20, 0.0, 0.0, 0.0)
+            .expect("the 1081 row spawns");
+        let mut w = world();
+        let mut rng = Script::with_rolls(&[]);
+        // Tick 1: the owner latch arms ai[0] = 1, then the 1081 branch
+        // increments to 2 — below 20, no gravity, the free move carries x.
+        tick(&mut pool, &mut w, &mut rng);
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 2.0);
+        assert_eq!(p.vel.y, 0.0, "no gravity before 20 (:58000)");
+        assert!((p.pos.x - 162.0).abs() < 1e-4);
+        assert_eq!(rng.draws, vec![(0, 2)], "the 1081 dust gate (:57846)");
+        // Ticks 2-19: ai[0] climbs to 20; gravity starts ON tick 19
+        // (ai[0] reaches 20 inside that tick's ++).
+        for _ in 0..18 {
+            tick(&mut pool, &mut w, &mut rng);
+        }
+        let p = &pool.slots()[slot];
+        assert_eq!(p.ai[0], 20.0);
+        assert!((p.vel.y - 0.3).abs() < 1e-6, "the first +0.3 at ai[0] == 20");
+        assert!((p.vel.x - 2.0 * 0.98).abs() < 1e-5, "the 2% X damp (:58003)");
+    }
+
+    /// The channel aim-steer (`:57956-57989`): a channeling owner's
+    /// first-tick DirtBall steers toward the mouse at speed 12 (the delta
+    /// (100, 0) caps to (12, 0)), `localAI[1] = -1`, `ai[0]` stays 0.
+    #[test]
+    fn w4_d1_the_channel_aim_steer_caps_at_twelve() {
+        let mut w = world();
+        let mut p = crate::player::Player::spawn(&w);
+        p.channel = true;
+        let mut pool = ProjectilePool::new();
+        let slot = pool
+            .spawn_with_data_ai(DIRT_BALL, 160.0, 100.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the 17 row spawns");
+        let mut npcs: Vec<Npc> = Vec::new();
+        let mut rng = Script::with_rolls(&[]);
+        let mut inputs = YoyoInputs::default();
+        inputs.aim = Some((265.0, 105.0)); // the centre (165, 105) + (100, 0)
+        pool.update(
+            &mut w, &mut npcs, None, None, Some(&mut p),
+            inputs, FlailInputs::default(), &mut rng, 0, true,
+        );
+        let s = &pool.slots()[slot];
+        assert_eq!(s.ai[0], 0.0, "the channel branch keeps ai[0] at 0");
+        assert_eq!(s.local_ai[1], -1.0, "the channel latch (:57958)");
+        assert!((s.vel.x - 12.0).abs() < 1e-5, "the 12-speed cap (:57969-57979)");
+        assert!(s.vel.y.abs() < 1e-5);
+        assert!(!s.tile_collide, "the first-tick drop (:57955)");
+    }
+
+    /// The 1081's side-slide death probe (`:77492-77502`): no solid below
+    /// the centre cell, a solid left diagonal with a free left cell →
+    /// the placement slides one tile left (mud 59 at (9, 23)). The death
+    /// rides `timeLeft` (a Y-block landing would put a solid below the
+    /// centre and close the probe).
+    #[test]
+    fn w4_d1_the_mud_ball_player_death_side_slide() {
+        let mut pool = ProjectilePool::new();
+        // The box (160, 372, 12×12) hangs beside the ledge; the centre
+        // (166, 378) → cell (10, 23). Below (10, 24) is FREE, the left
+        // diagonal (9, 24) is solid, the left cell (9, 23) free.
+        let slot = pool
+            .spawn_with_data_ai(MUD_BALL_PLAYER, 160.0, 372.0, 0.0, 0.41, 20, 0.0, 1.0, 0.0)
+            .expect("the 1081 row spawns");
+        pool.slots_mut()[slot].time_left = 1;
+        let mut w = world();
+        put_solid(&mut w, 9, 24);
+        let mut rng = Script::with_rolls(&[]);
+        tick(&mut pool, &mut w, &mut rng);
+        assert!(!pool.slots()[slot].active, "the timeLeft kill");
+        let placed = w.tile(9, 23).unwrap();
+        assert_eq!(placed.kind, 59, "the 1081 → tile 59 map (:77444), slid left");
+        assert!(placed.active());
+        assert!(pool.drain_block_drops().is_empty(), "the placement stood");
+    }
 }
 
 /// S1-D-5 — the dungeon-debris trio 736/737/738 (`AI_010`,
