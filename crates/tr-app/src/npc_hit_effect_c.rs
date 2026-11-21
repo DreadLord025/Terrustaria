@@ -121,6 +121,7 @@
 //! | 516-524 | `:84884-84888` | the 344 Everscream death (two loops: 508-512 then 509-512, vel x0, type-196 dust) |
 //! | 525 | `:84941` | the 302 SlimeMasked death (1 gore 440, type-192 gray alpha-100 dust) |
 //! | 526-531 | `:84968-84973` | the 245 Golem body death: the 6 random-position 368/370 gores |
+//! | 532-538 | `:84974-84980` | the 245 Golem body death: the fixed tail 360/361/362/363/364/367/366 |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -3183,8 +3184,9 @@ fn slime_masked_death(
 /// sites 526-531): 6 gores alternating 368/370, each at
 /// `position + (Next(width), Next(height))` — the two position draws fire
 /// per gore BEFORE its spawn (the C# argument evaluation). The 50-dust
-/// type-148 burst runs first (shared with the 249/247/248 arms). The fixed
-/// 360-367 tail lands with the next batch.
+/// type-148 burst runs first (shared with the 249/247/248 arms), then the
+/// fixed tail 360/361/362/363/364/367/366 at position (sites 532-538).
+/// Sites 526-538 (all 13 body gores).
 fn golem_body_random_gores(
     npc: &Npc,
     dust: &mut DustPool,
@@ -3214,6 +3216,14 @@ fn golem_body_random_gores(
         let ty = if i % 2 == 0 { 368 } else { 370 };
         gore.new_gore(rng, world, Vec2::new(px, py), vel, ty, s);
     }
+    // `:84974-84980` — the fixed tail at position (the 367 precedes the 366).
+    gore.new_gore(rng, world, pos, vel, 360, s); // :84974
+    gore.new_gore(rng, world, pos, vel, 361, s); // :84975
+    gore.new_gore(rng, world, pos, vel, 362, s); // :84976
+    gore.new_gore(rng, world, pos, vel, 363, s); // :84977
+    gore.new_gore(rng, world, pos, vel, 364, s); // :84978
+    gore.new_gore(rng, world, pos, vel, 367, s); // :84979
+    gore.new_gore(rng, world, pos, vel, 366, s); // :84980
 }
 
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
@@ -3588,10 +3598,9 @@ pub fn hit_effect_c(
     if npc_type == 302 && npc.hp <= 0 {
         slime_masked_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
-    // `:84944-84999` — the 245-249 Golem family arm; this commit owns the
-    // 245 body's random-position gores (sites 526-531); the fixed tail +
-    // the 249/247/248 arms land with the next batches. The 246 head spawns
-    // a 249 (the roster seam, no gore).
+    // `:84944-84999` — the 245-249 Golem family arm; the 245 body is
+    // complete (sites 526-538); the 249/247/248 arms land with the next
+    // batches. The 246 head spawns a 249 (the roster seam, no gore).
     if npc_type == 245 && npc.hp <= 0 {
         golem_body_random_gores(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
@@ -5717,9 +5726,10 @@ mod tests {
         assert_eq!(d.alpha, 100);
     }
 
-    /// `NPC.cs:84968-84973` — the Golem body's 6 random-position gores:
-    /// alternating 368/370, each drawing Next(width) + Next(height) BEFORE
-    /// the spawn. The twin replay pins the per-gore position draws + kicks.
+    /// `NPC.cs:84968-84980` — the Golem body's 13 gores: the 6 random-
+    /// position 368/370 (Next(width)+Next(height) per gore before spawn)
+    /// then the fixed tail 360/361/362/363/364/367/366 at position. The twin
+    /// replay pins the per-gore position draws + kicks.
     #[test]
     fn w4_f10_the_golem_body_random_gores_draw_position_first() {
         let w = air();
@@ -5728,9 +5738,17 @@ mod tests {
         let mut dust = DustPool::new();
         let mut rng = UnifiedRandom::new(443);
         golem_body_random_gores(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
-        let types: Vec<i32> = gore.slots()[..6].iter().map(|g| g.gore_type).collect();
-        assert_eq!(types, vec![368, 370, 368, 370, 368, 370]);
-        // The twin: 50 type-148 dusts, then 6 x (Next(60) + Next(80) + 2 kicks).
+        let types: Vec<i32> = gore.slots()[..13].iter().map(|g| g.gore_type).collect();
+        assert_eq!(
+            types,
+            vec![368, 370, 368, 370, 368, 370, 360, 361, 362, 363, 364, 367, 366]
+        );
+        // The fixed tail sits at position.
+        for i in 6..13 {
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+        }
+        // The twin: 50 type-148 dusts, then 6 x (Next(60) + Next(80) + 2
+        // kicks), then the 7 fixed gores' kicks.
         let mut twin = UnifiedRandom::new(443);
         for _ in 0..50 {
             let _px = twin.next_max(56);
@@ -5743,6 +5761,10 @@ mod tests {
         for _ in 0..6 {
             let _px = twin.next_max(60);
             let _py = twin.next_max(80);
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        for _ in 0..7 {
             let _ky = twin.next_range(10, 31);
             let _kx = twin.next_range(-20, 21);
         }
