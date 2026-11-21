@@ -4,6 +4,14 @@
 > code-only (no cargo/tests/graphify; witnesses WRITTEN NOT RUN everywhere) ·
 > merger-assist doc: NO code changes here, other lanes untouched.
 >
+> **STATUS: union EXECUTED on the g34 branch (2026-11-21).** The KEEP
+> recommendation (§2) and this branch's DROP items (§3) are LANDED here —
+> see §6 for the per-phase commit record. **The merger keeps THIS branch's
+> cage wiring and drops the f14/g33 wiring wholesale** (their
+> `drawdata_cages.rs` modules, f14's dispatcher/key slot, g33's live-stream
+> warm-up); their surviving contributions (f14's composite order + warm-up
+> clone semantics, g33's 92-id gate + witness set) are already folded in.
+>
 > Three branches independently ported `Main.AnimateTiles_CritterCages`
 > (`Main.cs:13511-16596` + `UpdateOwlCageFrame` `:16617-16666` +
 > `UpdateDragonflyJarFrame` `:16668-16727`) and wired cage draws. This doc
@@ -348,6 +356,30 @@ keep; retarget to `pub fn animate`).
 4. Determinism: cage-free play must keep the pre-wiring `Main.rand`
    interleave bit-for-bit (the gate + the clone warm-up are the two
    pieces that guarantee it).
+
+## 6. Execution record (union EXECUTED on `task/W4-g34-drawdata-wire-2`)
+
+All six phases landed on this branch, code-only (witnesses WRITTEN NOT
+RUN), one commit per phase:
+
+| Phase | Commit | What landed |
+| --- | --- | --- |
+| 1 — composite order (§2.3) | `f4da0697` | the `cage_draw_data` call moved from post-`apply_cases_a` to the FIRST-switch tail: after `draw_data` + slice B's `case_draw_data`, before slice A — the 568-570/580 glow rects now read the POST-cage `addFrY` (`:6085-6104`) and the `:1007` source-rect resolve reads the final `addFr`. New order witness `the_cage_rewrite_rides_the_first_switch_tail` (f14's pin adapted to the direct call); the old `cage > glow` assertion INVERTED (glow reads post-cage). |
+| 2 — lifetime (§2.5/§3) | `d9b6219b` | `enter_loaded_world`'s `cage_anim.reset()` + `critter_cage = false` dropped — PROCESS state; the mis-cited "`:66902-66972` re-allocates in Initialize_TileAndNPCData" comment replaced with the static-ctor fact (`:66502`). `tile_anim.reset()` stays. |
+| 3 — 92-id union gates (§2.2/§2.4) | `a5ba9493` | the tiles.rs draw gate + the G6 `tile_anim` cage contribution widened from `is_lane2_cage_kind` (50) to `is_cage_kind` (92; g33's 42 verified against 97704d01's id list + `cage_table` map — byte-identical arms). `is_lane2_cage_kind` kept as the census-split documentation predicate + its split witness. Feed witness renamed `the_cage_rewrite_feeds_from_the_cage_animator`; f14's tick-order + key-gate app-side witnesses retargeted to `frame/world.rs`/`frame/draw.rs`. |
+| 4 — warm-up (§2.6/§4) | `da5c8176` | `warm_up` wired at BOTH constructors (`App::new` world-seed, `flow_app` seed-1 twin) on a FRESH `UnifiedRandom` clone — NOT g33's live `rngs.global()` form; the live `Main.rand` interleave stays bit-for-bit. The §4 exact-stream residual (ctor draws `:6467`/`:6594-6601` before `:6610`) stays recorded. f14 key-coverage witness adapted to the `tile_anim` FNV-mix + a warm-up/lifetime seam witness. |
+| 5 — witness union (§5) | `23054bfb` | 42 supplement witnesses ported into `critter_cage_anim.rs` (54 total), retargeted to the per-table loop bodies + `animate(bool, rand)`; keep-one folds applied (g33 slug/fairy-jar/full-animate, f14 gate/frame_of/fairy-jar dropped as equivalents exist). Two g33 written-not-run assertions RE-DERIVED against the C#: the butterfly forward hop reads the POST-increment frame (6→7 never hops; pinned 3→4→12 + the 7→0 wrap instead of g33's unreachable 6→15), the pufferfish inflate cycle pinned to num25 = 183 (g33's 175 comment shipped the same code). The all-92 t0 acceptance pin `wired_cage_rewrite_matches_the_static_arms_at_t0` landed in tiles.rs (phase 1 commit). |
+| 6 — docs | (this commit) | this status + record; research/66 residual + wiring notes repointed; ANALYSIS union section; PORT_MAP cage rows; anchors rows updated per phase. |
+
+Merger instruction (supersedes the §2/§3 future tense): take THIS branch's
+`render/tiles.rs`, `app/mod.rs`, `app/flow.rs`, `app/frame.rs`,
+`app/frame/{world,draw}.rs`, `drawdata_furniture.rs`,
+`critter_cage_anim.rs` and `anchors.txt` rows as-is; drop BOTH
+`drawdata_cages.rs` variants + their `lib.rs` registrations, f14's
+`furniture_post_pass` call site + `WorldFrameKey::cage_anim` slot, g33's
+live-stream warm-up call. The §5 acceptance checklist (verify wave) is
+unchanged and still owed: cargo green, t0 parity + order pin, screenshots,
+cage-free determinism.
 
 ## Sources
 

@@ -1,5 +1,13 @@
 # 66 — DrawData unwired-arm census, SECOND half + wiring (W4-g34)
 
+> **UPDATE (research/67 union EXECUTED on this branch):** the lane split
+> below is now historical — the live draw + G6 gates cover ALL 92 ids
+> (`is_cage_kind`), the cage rewrite rides f14's slice-B/A composite order
+> (FIRST-switch tail, before the glow pass), the warm-up is WIRED at App
+> construction on a fresh world-seed clone, and the world-entry cage reset
+> is dropped (PROCESS state). See `67-cage-animator-reconcile.md` §6 for
+> the commit record; the census tables below stay as the per-id evidence.
+>
 > Wave 4 · researched 2026-11-21 · branch `task/W4-g34-drawdata-wire-2` @ base a725acb0 ·
 > code-only mode (no builds/tests run; witnesses WRITTEN NOT RUN) · sources:
 > `decompiled/Terraria/Main.cs`, `decompiled/Terraria/GameContent/Drawing/TileDrawing.cs`,
@@ -98,8 +106,9 @@ infrastructure; the **draw wiring** is what's halved (g34 wires only `is_lane2_c
 - `frame_of(table, row, idx)` — the lookup `cage_draw_data` consumes (out-of-range probe → 0).
 - `anim_key()` — FNV-1a over every frame/counter/mode value (the G6 convention).
 - `warm_up()` — `Initialize_TileAndNPCData2`'s 3600 forced ticks (`Main.cs:6802-6807`),
-  exposed but **NOT wired into App init** (it needs the full `Initialize_TileAndNPCData2`
-  RNG-order census; documented deviation below).
+  **WIRED at App construction** on a fresh world-seed `UnifiedRandom` clone
+  (research/67 §2.6/§4 — the census landed there; the exact-stream ctor-draw
+  replay stays the recorded residual).
 - 12 witnesses WRITTEN NOT RUN (zero-state, gate, determinism, fairy-jar derivation,
   lava-bowl wrap, slug wraps, jellyfish/butterfly/dragonfly/fish-bowl bands, `frame_of`
   table map, warm-up equivalence).
@@ -107,10 +116,13 @@ infrastructure; the **draw wiring** is what's halved (g34 wires only `is_lane2_c
 ### 2. The draw seam — `render/tiles.rs::draw_tiles`
 
 - New params `cage_anim: &CritterCageAnimator`, `critter_cage: &mut bool`.
-- After `apply_cases_a`, for `is_lane2_cage_kind(tile.kind)` the rewrite
+- ~~After `apply_cases_a`, for `is_lane2_cage_kind`~~ **SUPERSEDED by the
+  research/67 union**: BEFORE `apply_cases_a` (the FIRST-switch tail, after
+  `draw_data` + slice B — the glow rects read the POST-cage `addFrY`), for
+  `is_cage_kind(tile.kind)` (all 92) the rewrite
   `cage_draw_data(..., |t,r,i| cage_anim.frame_of(t,r,i))` replaces the static fallback
-  (`top = 2` + `addFrY = table[idx] * stride`). The big-cage ids + snail 285 stay g33's;
-  the chest rewrite stays with the chest lane (W4-d58).
+  (`top = 2` + `addFrY = table[idx] * stride`).
+  The chest rewrite stays with the chest lane (W4-d58).
 - `Main.critterCage` (`Main.cs:1445`): cleared at the pass head (`TileDrawing.cs:474`),
   raised for **every** cage cell (`is_cage_kind`, `:5672` etc.) — the flag gates the whole
   animator, not just this half.
@@ -120,16 +132,20 @@ infrastructure; the **draw wiring** is what's halved (g34 wires only `is_lane2_c
 - `App::animate_tiles_phase` (`app/frame/world.rs`) ticks `cage_anim.animate(critter_cage, rng)`
   beside `tile_anim.animate_tiles` on the shared 60 Hz accumulator + `Main.rand` stream
   (the C# calls `AnimateTiles_CritterCages` at the tail of `AnimateTiles`, `Main.cs:19303`).
-- `App` gains `cage_anim` + `critter_cage` fields (both constructors + the world-load reset).
+- `App` gains `cage_anim` + `critter_cage` fields (both constructors; the
+  world-load reset was DROPPED by the research/67 union — PROCESS state).
 - The G6 `WorldFrameKey::tile_anim` (`app/frame/draw.rs`) gains a cage-gated contribution:
-  none of the 50 lane-2 ids is in `TileAnimator::is_animated_kind`'s gate set (they animate
-  through the separate cage tables), so a lane-2 cage active in the view rect mixes
-  `cage_anim.anim_key()` into the key; a cage-free view keeps the pre-wiring key bit-for-bit.
+  none of the 92 cage ids is in `TileAnimator::is_animated_kind`'s gate set (they animate
+  through the separate cage tables), so ANY cage active in the view rect mixes
+  `cage_anim.anim_key()` into the key (`is_cage_kind` since the union); a cage-free view
+  keeps the pre-wiring key bit-for-bit.
 
 ### 4. Predicates — `drawdata_furniture.rs`
 
-- `is_cage_kind(kind)` — any of the 92 cage ids (the `critterCage` flag).
-- `is_lane2_cage_kind(kind)` — exactly the 50 second-half ids (the draw-wiring gate).
+- `is_cage_kind(kind)` — any of the 92 cage ids (the `critterCage` flag AND,
+  since the research/67 union, the live draw + G6 gates).
+- `is_lane2_cage_kind(kind)` — exactly the 50 second-half ids (now the
+  census-split documentation predicate, not a live gate).
 - Witness `lane2_cage_split_is_disjoint_and_exhaustive`: 92 = 50 (g34) + 42 (g33), disjoint.
 
 ## DEVIATIONS fixed (the census-flagged draw-math gaps)
@@ -152,11 +168,13 @@ infrastructure; the **draw wiring** is what's halved (g34 wires only `is_lane2_c
 - **185/186 `Main.tileShine2`** — sparkle lane (d64 R10), not DrawData.
 - **`martianLight` fed 0 / `mouseTextColor` fed 255** — event/UI state not simulated
   (documented `cases_a.rs`); the glow colours take the values so the events can feed them.
-- **Cage animator warm-up** — `warm_up` is ported but not wired into App init: the C#
-  `Initialize_TileAndNPCData2` (`Main.cs:6800-6807`) runs 3600 forced cage ticks at startup
-  amid other init RNG draws; wiring it needs that whole init's RNG-order census. Until then
-  the cages start at the zero state (the vanilla t=0 draw) and animate from the first tick —
-  a startup-phase deviation, not a steady-state one.
+- ~~**Cage animator warm-up** — not wired~~ **RESOLVED by the research/67
+  union**: the census landed (research/67 §4) and `warm_up` is wired at both
+  App constructors on a FRESH world-seed clone (f14 semantics). The remaining
+  recorded approximation: the C# stream is `DateTime.Now.Ticks`-seeded
+  process state, and an exact-stream replay would need the ctor draws before
+  `:6610` (`Next(6)` `:6467` + `RandomizeBackgrounds` `:6594-6601`) — a
+  whole-init determinism project, not a cage-lane change.
 - **Temporary-animation registry** — `Animation._temporaryAnimations` (`Animation.cs:186-196`)
   still unported; `temporary_frame` returns `None`. The 349/593/594/441/468 probe arms are
   scaffolded around it (the 441/468 half is new here).

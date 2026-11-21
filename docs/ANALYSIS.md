@@ -39274,23 +39274,26 @@ fish-bowl mode-0 `:16332` `Next(12)` (not `Next(20)`) + no mode clear,
 owl `:16623` `(counter+1)%40==39` reseed, the snail/snail2 double
 `== 1 && Next(3)` clauses, the butterfly `>= 10` backward walk.
 
-### The wiring
+### The wiring (as landed; SUPERSEDED in part by the union below)
 
-- `App` gains `cage_anim` + `critter_cage` (both constructors + the
-  world-load reset). `animate_tiles_phase` ticks
+- `App` gains `cage_anim` + `critter_cage` (both constructors; the
+  world-load reset was later DROPPED - see the union record).
+  `animate_tiles_phase` ticks
   `cage_anim.animate(critter_cage, rng)` beside `tile_anim.animate_tiles`
   on the shared 60 Hz accumulator + `Main.rand` stream (the C# calls
   `AnimateTiles_CritterCages` at the tail of `AnimateTiles`,
   `Main.cs:19303`).
-- `draw_tiles` takes `cage_anim` + `critter_cage: &mut bool`; after
-  `apply_cases_a` it applies `cage_draw_data` (reading `frame_of`) for
-  `is_lane2_cage_kind` cells. `Main.critterCage` is cleared at the pass
+- `draw_tiles` takes `cage_anim` + `critter_cage: &mut bool`; the cage
+  rewrite applies `cage_draw_data` (reading `frame_of`) - originally after
+  `apply_cases_a` for `is_lane2_cage_kind` cells, MOVED + WIDENED by the
+  union (below). `Main.critterCage` is cleared at the pass
   head (`TileDrawing.cs:474`) and raised for EVERY cage cell
   (`is_cage_kind`, `:5672` etc.) - the flag gates the whole animator.
 - G6 `WorldFrameKey::tile_anim` gains a cage-gated contribution: none of
-  the 50 lane-2 ids is in `TileAnimator::is_animated_kind`'s gate set (they
-  animate through the separate cage tables), so a lane-2 cage in view mixes
-  `cage_anim.anim_key()` into the key; a cage-free view keeps the
+  the cage ids is in `TileAnimator::is_animated_kind`'s gate set (they
+  animate through the separate cage tables), so a cage in view mixes
+  `cage_anim.anim_key()` into the key (`is_cage_kind` since the union);
+  a cage-free view keeps the
   pre-wiring key bit-for-bit (the waterfall/vine-grid gate convention).
 
 ### Deviations fixed (census-flagged draw-math)
@@ -39315,12 +39318,9 @@ owl `:16623` `(counter+1)%40==39` reseed, the snail/snail2 double
 
 ### Deliberate residual deviations
 
-- **Cage warm-up unwired**: `warm_up` ports `Initialize_TileAndNPCData2`'s
-  3600 forced ticks (`Main.cs:6802-6807`) but is NOT called at App init -
-  that init runs the cage ticks amid other RNG draws, so wiring it needs the
-  whole `Initialize_TileAndNPCData2` RNG-order census. Until then the cages
-  start at the zero state (vanilla t=0) and animate from the first tick: a
-  startup-phase deviation, not a steady-state one.
+- ~~**Cage warm-up unwired**~~ RESOLVED by the union record below: the
+  init RNG-order census landed (research/67 §4) and `warm_up` is wired on
+  a fresh clone; the exact-stream replay stays the recorded approximation.
 - **Glow bind / 711 / 637 / 184 / 185-186 / martianLight / mouseTextColor /
   temporary-animation registry**: unchanged, other lanes (TILE-DRAW-2/g35,
   d62, sparkle lane, event/UI state, Animation registry). The 564 rect fix
@@ -39334,3 +39334,57 @@ the seam call sites checked against the actual signatures by read/grep. The
 15 new witnesses (`critter_cage_anim.rs` 12 + `drawdata_furniture.rs` 1 +
 `render/tiles.rs` 1 + `drawdata_cases_a.rs` 1) plus the updated
 `drawdata.rs`/`drawdata_cases_b.rs` assertions are WRITTEN, NOT RUN.
+
+## The cage-animator union execution (W4-g34, research/67 contract, code-only, 2026-11-21)
+
+The triple-dup reconcile (research/67: f14 50046fe1 / g33 97704d01 / g34
+16f88fb7 all ported `AnimateTiles_CritterCages` independently) is EXECUTED
+on this branch - the KEEP recommendation landed here so the merger keeps
+this branch's wiring and drops the f14/g33 wiring wholesale. Per-phase
+commits: `f4da0697` (order), `d9b6219b` (lifetime), `a5ba9493` (gates),
+`da5c8176` (warm-up), `23054bfb` (witness union), + the docs commit.
+
+1. **Composite order (f14's slice-B/A fix)**: the `cage_draw_data` rewrite
+   moved from post-`apply_cases_a` to the C# FIRST-switch tail
+   (`TileDrawing.cs:5629-5907`) - AFTER `draw_data` + slice B's
+   `case_draw_data`, BEFORE slice A. The 568/569/570/580 glow rects read
+   `tileFrameY + addFrY` POST-cage (`:6085-6104`) and the `:1007`
+   source-rect resolve reads the final `addFrX/addFrY`. The old
+   `cage > glow` witness assertion INVERTED (glow reads post-cage); f14's
+   order pin adapted as `the_cage_rewrite_rides_the_first_switch_tail`.
+   The a80da26a 564 pre-clear-rect fix is independent (564 is not a cage
+   kind) and kept.
+2. **Lifetime**: the `enter_loaded_world` cage reset dropped - the cage
+   arrays are PROCESS state, allocated zeroed once in `static Main()`
+   (`Main.cs:66502`, `:66901-66972`); the world-load zero loop
+   (`:8387-8395`) covers `tileFrame`/`tileFrameCounter` only.
+3. **92-id union gates**: the draw seam + the G6 `tile_anim` cage
+   contribution widened from `is_lane2_cage_kind` (50) to `is_cage_kind`
+   (92 = g34's 50 + g33's 42, id lists verified byte-identical against
+   97704d01). `is_lane2_cage_kind` stays as the census-split documentation
+   predicate + split witness.
+4. **Warm-up (f14 fresh-clone semantics)**: `warm_up` wired at BOTH App
+   constructors on a fresh world-seeded `UnifiedRandom` clone
+   (`Initialize_TileAndNPCData2` `:6802-6807`, the first statement of the
+   ctor-called `:6610` init) - NOT g33's live `rngs.global()` form; the
+   live `Main.rand` interleave stays bit-for-bit with the pre-wiring
+   baseline. **Recorded approximation**: the C# stream is
+   `DateTime.Now.Ticks`-seeded process state; an exact-stream replay would
+   need the ctor draws before `:6610` (`Next(6)` `:6467` +
+   `RandomizeBackgrounds` `:6594-6601`) and would shift
+   `moonType`/`wind`/`numClouds` (`:10873-10876`) - a whole-init
+   determinism project (research/67 §4), not a cage-lane change.
+5. **Witness union**: 42 supplement witnesses ported into
+   `critter_cage_anim.rs` (54 total) + 3 tiles.rs wiring witnesses + 2
+   frame.rs app-side witnesses + 2 mod.rs key/warm-up witnesses, all
+   WRITTEN NOT RUN. Keep-one folds per research/67 §5. Two g33
+   written-not-run assertions re-derived against the C# during the port:
+   the butterfly forward +8 hop reads the POST-increment frame (g33's
+   6->15 pin unreachable; now 3->4->12 + the 7->0 wrap), the pufferfish
+   inflate cycle pinned to num25 = 5*7*5+8 = 183.
+
+Verification: code-only, no cargo/tests/graphify; call sites checked
+against the actual signatures by read/grep; the 92-id union verified
+against g33's `cage_table` map + gate list. The research/67 §5 acceptance
+checklist (cargo green, t0 parity, screenshots, cage-free determinism) is
+owed to the verify wave.
