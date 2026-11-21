@@ -4686,6 +4686,41 @@ fn pigron_hallow_death(
     }
 }
 
+/// The 290 arm (`NPC.cs:88891-88908`, sites 742-744): the 10x dust-16
+/// burst (×2, noGravity), then THREE `Next(11,14)` smoke gores at
+/// +0/+20/+40 Y with ZERO velocity base (the type argument draws
+/// BEFORE each NewGore) + the ×0.5 post, `this.scale` carried. The
+/// `life <= 0` gate wraps the whole body (no hit half).
+fn paladin_smoke_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    _hit_direction: f32,
+) {
+    // `:88895-88900` — the 10x dust-16 burst.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        let idx = dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 16, 0.0, 0.0, 0, Color::default(),
+            1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 2.0;
+        d.no_gravity = true;
+    }
+    let s = npc.scale;
+    // `:88901-88906` — the three smoke gores + the ×0.5 post.
+    for dy in [0.0, 20.0, 40.0] {
+        let t = rng.next_range(11, 14);
+        let idx = gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + dy), Vec2::ZERO, t, s);
+        gore.slot_mut(idx).velocity *= 0.5;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5243,6 +5278,10 @@ pub fn hit_effect_d(
     // `:88862-88890` — the 171 Hallowed Pigron arm (sites 738-741).
     else if npc_type == 171 {
         pigron_hallow_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88891-88908` — the 290 arm (sites 742-744).
+    else if npc_type == 290 {
+        paladin_smoke_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9159,5 +9198,36 @@ mod tests {
         let _kx = twin.next_range(-20, 21);
         assert_eq!(types[3], t, "the fourth matches the twin");
         assert_eq!(rng.peek(), twin.peek(), "the hallow pigron mirrors the C# draws");
+    }
+
+    /// `NPC.cs:88901-88906` — the 290 arm's three Next(11,14) smoke
+    /// gores at +0/+20/+40 Y, zero velocity base + the ×0.5 post.
+    #[test]
+    fn w4_f5d_the_290_smoke_triple_halves_the_velocity() {
+        let w = air();
+        let n = mob(100.0, 100.0, 40.0, 40.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(743);
+        let _ = hit_effect_d(&n, 290, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        for t in &types {
+            assert!((11..14).contains(t), "smoke type in range: {t}");
+        }
+        assert!(!gore.slot(3).active, "exactly three gores");
+        let mut twin = UnifiedRandom::new(743);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 40, 40);
+        }
+        for (i, dy) in [0.0, 20.0, 40.0].iter().enumerate() {
+            let t = twin.next_range(11, 14);
+            let ky = twin.next_range(10, 31) as f32 * 0.1;
+            let kx = twin.next_range(-20, 21) as f32 * 0.1;
+            assert_eq!(gore.slot(i).gore_type, t);
+            assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0 + dy));
+            assert_eq!(gore.slot(i).velocity.x, kx * 0.5);
+            assert_eq!(gore.slot(i).velocity.y, -ky * 0.5);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the 290 arm mirrors the C# draws");
     }
 }
