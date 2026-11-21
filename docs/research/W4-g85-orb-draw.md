@@ -738,3 +738,29 @@ half (`editing.rs:2089-2092` the locked-use gate + `:16325-16349`
 loaf. The DROP hunk is f33b's — c36 carries no drop code, and the orb
 lane touches no 5043 site: nothing for g85 to keep or drop there; the
 merge keeps both halves of the favor flag per c36's own note.
+
+### 9.2 The f35 stale summon-poll DROP hunk — exact ranges at tip `1abae9ade`
+
+**Re-probe at the NEW latest pushed tip `1abae9ade`** (the DOC-SWEEP
+bag-open census; the §8.2 read was at `b72cdfbfc`). The
+`b72cdfbfc..1abae9ade` `npcs.rs` diff is TWO hunks — `:5342` (+6, the
+coin/loot side) and `:6969` (+98, the bag-open helpers) — **neither
+touches the summon poll or the death arm**: the stale copy survives
+verbatim. The exact merger ranges (f35 tip `1abae9ade`, direct read):
+
+| Site | f35 tip `1abae9ade` | g85 tip `dd237e331` (KEEP) |
+| --- | --- | --- |
+| **the stale summon poll — DROP WHOLE** | **`npcs.rs:5693-5725`** — the comment block `:5693-5704` (still says "the crimson-Brain arm rides the heart-detection wave") + the code `:5705-5725`: `count >= 3 && !AnyNPCs(EoW-head)` only, EoW-only spawn for BOTH halves, NO crimson bit, NO FTW override, NO chat arm, NO client guard | `npcs.rs:5714-5805` — the full replacement: the per-half living-boss gate (`:5742-5750`), the `orb_smash_crimson` read (`:5741`), the FTW+DontStarve-not-remix override + the count-1 smash-edge floor (`:5736-5755`), the client guard (`:5757`), the Brain/EoW split spawn (`:5771-5781`), the chat watermark arm (`:5783-5804`) |
+| the orb-boss death arm | `npcs.rs:5168-5186` — the pre-g85 shape (meteor + `downed_eow`, NO skyblock unlock, NO surface gate) | `npcs.rs:5168-5213` — g85's gates WRAP f35's identical inner block (the skyblock unlock `:5182-5188` + the `world_surface > 50.0` gate `:5194-5208` around the byte-identical `was_down`/`boss_death_roll` core) |
+| the resummon witness | `npcs.rs:14369-14406` `the_orbs_resummon_the_eow_after_the_first_kill` | `npcs.rs:14357-14394` — **byte-identical** (verified by direct compare); keep ONE copy, either |
+| the new summon witnesses | none | `w4_g85_the_crimson_half_summons_the_brain_not_the_eow` `:14397-14464`, `w4_g85_the_ftw_starve_pair_summons_on_every_smash_and_the_chat_arm` `:14467-14523`, `w4_g85_the_orb_boss_death_arms_the_shared_flag_and_the_skyblock_unlock` `:14526-14572` |
+
+**The merger's cut list (f35 side):** delete `npcs.rs:5693-5725`
+(comment + poll) and put g85's `:5714-5805` at that slot; take g85's
+death arm `:5168-5213` (it strictly wraps f35's core — no f35 content
+lost); keep ONE resummon witness; keep ALL of f35's drop-tree content
+(the 23-kind boss table, the bag-open census's `:5342`/`:6969` hunks,
+the crate/present/misc/heal chains) — disjoint from the summon lane.
+The g85 poll's `World.orb_smash_crimson`/`orb_smash_chat_count` fields
+(`world.rs:380-397`, defaults `:759-760`) come with g85's `check_orb`
+per §9.1 — f35 carries neither field, so no field conflict.
