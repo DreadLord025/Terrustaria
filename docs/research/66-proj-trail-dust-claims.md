@@ -132,19 +132,96 @@ lands.
   arm), 156/157 (the beams ride the shared pulse), 131 (the spore is
   RNG-free), 181/316 (the bee/bat hunt draws nothing), 387/388 (the
   twins' dust is the 533 gate).
+- batch 5: 41, 120, 207, 265, 270, 282, 325, 337, 350, 355 — the ROWED
+  `AI_001` per-kind arms (the contested slice modules). Each slice gains
+  a `step_dust` variant threading `rng`+`dust`+`ctx`; the old signature
+  stays a scratch-pool wrapper for its witnesses. The 41 Hellfire 31+6
+  pair (`:55483-55489`, special_arrows), the 282 Venom 171 + Next(1,10)
+  post-spawn scale (`:55003-55011`, special_arrows), the 120 Frost 67
+  trail inside its gravity arm (`:57251-57253`, special_arrows), the 337
+  Blizzard 1-in-2 197 sparkle (`:56949-56954`, ai_blizzard), the 350
+  Missile alpha==0 window (`:55138-55157`, frost_shots), the 325
+  FlamingWood twin window (`:55172-55190`, ai001_a), the 270 Skull
+  first-tick 10×5 burst + per-tick 2×5 trail (`:56079-56087`/`:56678-56685`,
+  ai001_a), the 265/355 fang alpha==0 163/205 dusts (`:56710-56745`,
+  ai_style1_rider — the 265 fade re-armed with its dust), the 207
+  Chlorophyte alpha<170 10-point 75 trail (`:56780-56793`,
+  special_bullets). The 357 PulseBolt 206 twin emitter written UNWIRED
+  (its flight arm is W4-f20 slice D `4bd2f496`, unmerged — the f20b dust
+  seam). 11 draw-mirror witnesses WRITTEN NOT RUN.
+- batch 6: 12, 87, 93, 118, 119, 128, 129, 177, 196, 229, 261, 291, 298,
+  305, 307, 335, 358 — the UNROWED-kind emitters, written + witnessed
+  UNWIRED (no `proj_data` row at this tip; the row is the wiring gate).
+  The 93 MagicDagger 1-in-5 drip (`:23211`), the 87 fairy 1-in-6 sparkle
+  (`:24395`, d2's rows), the 12 natural star gore+dust gates (`:23970`,
+  d15's row), the 177 IcewaterSpit 3×137 (`:26602`), the 118 IceBolt 2×92
+  (`:26611`) + the 119/128 frost trio 3×92 (`:26620`), the 129 RuneBlast
+  6×106 (`:26638`), the 196 SmokeBomb Next(1,3) burst (`:24898`), the 261
+  BoulderStaff dual gates (`:25017`), the 229 ChlorophyteOrb 4×157
+  (`:27922`), the 307 TinyEater 3×184 (`:27310`), the 335 Ornament
+  frame-colour sparkle (`:26722`), the 291 InfernoHostileBolt 10×174
+  (`:28325`), the 305/298 heal-orb trails (`:28533`, d6's rows), the 358
+  WaterGun 6×211 + 3 alpha gates (`:29158`, d6's row). The
+  `NextVector2Square` helper (`Utils.cs:1251-1254`). 14 draw-mirror
+  witnesses WRITTEN NOT RUN (the 118/119+128 pair and the 305/298 pair
+  share one witness each).
 - (following batches recorded in their commit messages + this table)
 
 Kinds with NO ported `proj_data` row keep their dust arm UNWIRED (the
 row is the wiring gate — the S1-F-9b convention). Batch 1 landed the
-281 bunny emitter cited + witnessed as the unwired precedent; the
-remaining unrowed per-kind emitters (12/87/93/118/119/128/129/162/177/
-196/229/261/288/291/305/307/335/358) and the `AI_001` per-kind arms
-(41/55/120/174/176/207/265/267/270/275/276/282/299/325/337/350/355/
-357/374/376) are the lane's continuation — the `AI_001` arms live in
-the slice modules (`projectile_ai001_a/b/c`, `special_arrows`,
-`projectile_special_bullets`, `projectile_ai_darts`), the AI lanes'
-contested territory, so they ride a follow-up round rather than this
-inline-machine pass.
+281 bunny emitter cited + witnessed as the unwired precedent; batch 6
+landed the remaining unrowed per-kind emitters (12/87/93/118/119/128/
+129/177/196/229/261/291/298/305/307/335/358) the same way. The 162/288
+emitters were already re-armed in batch 1 (their rows exist).
+
+### Row census (2026-11-21, the d-lane pushed tips)
+
+The unrowed-kind emitters' rows were checked against the pushed d-lane
+`data.rs` diffs (`git diff a725acb0..origin/task/W4-d*`):
+- **12** NATURAL_FALLING_STAR — rowed on **d15** (`1c373008`, aiStyle 5).
+- **87** GREEN_FAIRY (+72/86) — rowed on **d2** (`15e5448a`, aiStyle 11).
+- **305** VAMPIRE_HEAL / **298** SPIRIT_HEAL / **358** WATER_GUN — rowed
+  on **d6** (`5ae2978c`, aiStyles 52/52/60).
+- **93/118/119/128/129/177/196/229/261/291/307/335** — NO row on any
+  pushed tip (the 118/119/129 `proj_data` hits are ai_style false
+  positives: NEBULA_ARCANUM 617 / NEBULA_ARCANUM_SUBSHOT 618 /
+  SPIRIT_FLAME 659, different kinds).
+- **281** CANNON_BUNNY — the const exists (`data.rs:710`) but NO match
+  arm on ANY branch (`git log --all -S 'CANNON_BUNNY =>'` empty). The
+  bunny emitter stays UNWIRED; the aiStyle-49 machine (`:28243-28322`)
+  is also unported (no `49 =>` dispatch arm). Activation needs both the
+  row AND the machine — a d-lane follow-up, not this dust lane's.
+
+These rows live on UNMERGED d-lane branches; at this tip (main `a725acb0`)
+none is present, so every batch-6 emitter is correctly UNWIRED. They
+activate when the d-lanes merge (the wiring is a one-line dispatch gate
+per kind, cited at each emitter).
+
+### AI_001 remainder census (the 20 kinds ≤400)
+
+Of the 20 `AI_001` per-kind gated kinds ≤400, batch 5 re-armed the 10
+ROWED ones with dust (41/120/207/265/270/282/325/337/350/355) + the 357
+emitter (UNWIRED, f20b's). The remaining 9 are UNROWED at this tip and
+their emitters are the lane's continuation:
+- **55** Stinger (`:55490-55494`, dust 18 noGravity) — no row.
+- **174** IceSpike (`:55032-55051`, alpha==0 dust 76 at oldPosition−v*3)
+  — no row.
+- **176** JungleSpike (`:55109-55129`, alpha==0 dust 22 at oldPosition)
+  — no row.
+- **267** PoisonDart (`:57292-57306`) — ROWED, but its C# block draws NO
+  dust (the fade + gravity only; the 479's split dust `:57344-57347` is
+  the Ichor Dart, a different kind). Censused closed — no emitter owed.
+- **275/276** SeedPlantera (`:55012-55024` frame flutter, `:57197-57231`
+  gravity) — ROWED (ai001_c), but their C# blocks draw NO dust ≤400 (the
+  expert homing is RNG-free). Censused closed — no emitter owed.
+- **299** Shadowflames (`:56631-56656`, localAI[0]==6 40×181 burst +
+  post-6 3×181 trail) — no row.
+- **374** HornetStinger (`:55544-55557`, 1-in-2 dust 18) — no row.
+- **376** ImpFireball (`:55558-55586`, post-3 1/2× dust 6) — no row.
+
+The 267/275/276 closures are the batch-4 no-dust convention (the rowed
+kind whose C# arm draws nothing). The 55/174/176/299/374/376 emitters
+are unrowed-kind work (batch 6's shape) — they ride the d-lane rows.
 
 ## Status (2026-11-21)
 
@@ -153,6 +230,11 @@ The ROWED inline-machine kinds ≤400 are RE-ARMED end-to-end (batches
 per-kind trailing/ambient dust now spawns through the live `DustPool`
 on the `UpdateProjectiles` stream, wired from
 `world_sim/projectiles.rs` via the `update_dust` seam. The no-dust
-rowed kinds are censused closed (batch 4). 19 draw-mirror witnesses
-WRITTEN NOT RUN (code-only). The unrowed-kind emitters + the `AI_001`
-slice arms are the documented remainder above.
+rowed kinds are censused closed (batch 4). Batch 5 re-armed the 10 rowed
+`AI_001` slice-module kinds (+ the 357 emitter for f20b); batch 6 wrote
+the 17 unrowed-kind emitters UNWIRED. 44 draw-mirror witnesses WRITTEN
+NOT RUN (code-only, the actual `#[test]` tally): 19 (batches 1-4) + 11
+(batch 5) + 14 (batch 6). The
+281 bunny stays UNWIRED (no row, no machine). The unrowed `AI_001`
+emitters (55/174/176/299/374/376) + the d-lane row activations are the
+documented remainder above.
