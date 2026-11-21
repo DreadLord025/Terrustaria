@@ -14710,6 +14710,13 @@ pub struct ProjectilePool {
     /// (`Projectile.cs:71986-71994` → `GiveItemToPlayer`): `(owner, item,
     /// stack)` the world sim resolves into the inventory/drop.
     pending_catches: Vec<(u8, u16, i32)>,
+    /// W4-d6 — the aiStyle-60 gun streams' campfire-validate mismatch kills
+    /// (`Wiring.ToggleCampFire` → `ValidateTileSquareIsActiveAndOfType`,
+    /// `Wiring.cs:3012` → `WorldGen.cs:37891-37914`): the object drops the
+    /// slime walk's light toggle produced. The world sim drains them into
+    /// item spawns (the `drain_catches` intent pattern — the arm cannot
+    /// borrow the App's item pool).
+    pending_light_drops: Vec<tr_core::edit::ObjectDrop>,
     /// S1-P-i55 — the golf family's per-tick context
     /// (`Main.LocalGolfState` + `Main.MouseWorld` + the mouse-right pair +
     /// the player snapshot the aiStyle-150 arm reads). The world-sim pass
@@ -15109,6 +15116,7 @@ impl ProjectilePool {
             bobber_inputs: None,
             pending_splashes: Vec::new(),
             pending_catches: Vec::new(),
+            pending_light_drops: Vec::new(),
             golf_ctx: None,
             golf_effects: Vec::new(),
         }
@@ -15204,6 +15212,13 @@ impl ProjectilePool {
     /// hands to the owner's inventory (the `QuickSpawnItem` overflow drop).
     pub fn drain_catches(&mut self) -> Vec<(u8, u16, i32)> {
         std::mem::take(&mut self.pending_catches)
+    }
+
+    /// W4-d6 — the aiStyle-60 slime walk's campfire-validate mismatch kills
+    /// (`Wiring.cs:3012`): the world sim spawns each through the item pool
+    /// (the actuation-drops precedent, `world_sim/wiring.rs`).
+    pub fn drain_light_drops(&mut self) -> Vec<tr_core::edit::ObjectDrop> {
+        std::mem::take(&mut self.pending_light_drops)
     }
 
     /// S1-P-i35 — `Player.RemoveAllFishingBobbers` (`Player.cs:33576-33585`):
@@ -17683,6 +17698,26 @@ impl ProjectilePool {
                         // row's `tileCollide = false`, `:4223`).
                         56 => {
                             self.slots[i].ai_flaming_scythe();
+                        }
+                        // W4-d6 — `AI()`'s `else if (this.aiStyle == 60)`
+                        // (`Projectile.cs:28994-29309`): the gun streams
+                        // (WaterGun 358 / SlimeGun 406 / ShimmerGunStream
+                        // 1042). The tile writes (the light toggles, the
+                        // biome-torch conversion) reborrow `world` mutably
+                        // (the ai_ice_block carve-out); the campfire-
+                        // validate drops ride the pool's drain. The arm
+                        // owns its movement (the 1×1 GetCollisionParams
+                        // probe, `:19872-19876`).
+                        60 => {
+                            let drops = crate::projectile_ai_guns::gun_stream(
+                                &mut self.slots[i],
+                                world,
+                                npcs,
+                                player.as_deref_mut(),
+                                local_owner,
+                                rng,
+                            );
+                            self.pending_light_drops.extend(drops);
                         }
                         // The Spectre Wrath (`:28938-28993`): the hostile
                         // window, the uniform re-pick (one rng draw) and the
@@ -20236,6 +20271,16 @@ impl ProjectilePool {
                 // ABOVE the 478 flame's `:75578`; the fireworks aiStyle-34
                 // arm `:76464` follows both).
                 self.dart_electro_firework_kill(i, rng, local_owner);
+                // W4-d6 — `Kill()`'s gun-stream dust census
+                // (`Projectile.cs:74029-74147`: the 358's 50× dust 211, the
+                // 406's 40× dust 4, the 1042's 50× dust 324 + colour picks).
+                // The C# body order puts these ABOVE the :75212 Holy star
+                // arm inside special_arrow_kill below.
+                crate::projectile_ai_guns::gun_stream_death_draws(
+                    &mut self.slots[i],
+                    old_velocity,
+                    rng,
+                );
                 // S1-P-i17 — `Kill()`'s special-arrow arms, in the C#'s
                 // body order: the Hellfire blast (`:76308-76341`, the
                 // resize + box Damage), the Holy Arrow's star / the

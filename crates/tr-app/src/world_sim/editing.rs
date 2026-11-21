@@ -7572,7 +7572,10 @@ pub(crate) fn place_tile(app: &mut App, tx: i32, ty: i32, kind: u16) -> bool {
 /// (`:40248`) rides `Zones.temple`; the remix desert arm (`:40284-40287`)
 /// reads the world's REMIX seed flag. The underworld arm reads
 /// `Main.UnderworldLayer * 16` = `(height - 200) * 16` (`Main.cs:2790`).
-fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
+/// `pub(crate)`: the aiStyle-60 Shimmer stream's torch conversion calls it
+/// with `useWithoutTorchGodsFavor: true` (`Projectile.cs:29142`) — the same
+/// unconditional body (W4-d6).
+pub(crate) fn biome_torch_place_style(p: &crate::player::Player, world: &World) -> i32 {
     let z = p.zones;
     // `:40244-40247` — the dungeon arm comes before the underworld one.
     if z.dungeon {

@@ -597,6 +597,20 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
             }
         }
     }
+    // W4-d6 — the aiStyle-60 slime walk's campfire-validate mismatch kills
+    // (`Wiring.ToggleCampFire` → `ValidateTileSquareIsActiveAndOfType`,
+    // `Wiring.cs:3012` → `WorldGen.cs:37891-37914`): the object drops spawn
+    // on the `UpdateProjectiles` stream (the walk ran inside the pool's
+    // update — the actuation-drops precedent, `world_sim/wiring.rs`).
+    for drop in app.projectiles.drain_light_drops() {
+        if let Some(id) = drop
+            .item
+            .map(|i| i as u16)
+            .or_else(|| crate::registry::tile_drop(drop.tile_kind, 0))
+        {
+            crate::world_sim::items::spawn_item_drop(&mut app.items, rng, id, 1, drop.x, drop.y);
+        }
+    }
     // S1-P-i55 — the golf arms' queued effects, drained at the pass tail
     // (the `drain_mark_spawns` shape — the pool cannot borrow the App).
     // The C# plays the sounds / trips the wiring mid-walk; the port's

@@ -2850,6 +2850,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // (`set_defaults_light` below). ai0/ai1 carry the blade's
             // rotation/spriteDirection (`NPC.cs:33230`'s trailing args).
             FLAMING_SCYTHE => (80.0, 80.0, 56, -1, 420, 0, false, false, false, RESET_STATE),
+            // W4-d6 — `:4487-4496` WaterGun (358): 18x18, aiStyle 60,
+            // alpha 255, `penetrate = -1`, `extraUpdates = 2`, `ignoreWater`
+            // (the overlay below); the stock tileCollide true — the 1x1
+            // collision probe (`GetCollisionParams`, `:19872-19876`) rides
+            // the arm's movement stand-in.
+            WATER_GUN => (18.0, 18.0, 60, -1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:4868-4877` SlimeGun (406): 14x14, aiStyle 60,
+            // alpha 255, `penetrate = -1`, `extraUpdates = 2`, ignoreWater.
+            SLIME_GUN => (14.0, 14.0, 60, -1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
+            // W4-d6 — `:9848-9857` ShimmerGunStream (1042): 18x18, aiStyle
+            // 60, alpha 255, `penetrate = -1`, `extraUpdates = 2`,
+            // ignoreWater.
+            SHIMMER_GUN_STREAM => (18.0, 18.0, 60, -1, TIME_LEFT_DEFAULT, 2, true, false, false, (false, -2, false, -1, 255, 1.0)),
             // `:4903-4915` Typhoon — 30x30, aiStyle 71, `penetrate = -1`,
             // alpha 255, `timeLeft = 300`, `extraUpdates = 2`, `ignoreWater`
             // dropped.
@@ -4254,7 +4267,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER
             // W4-d6 — `Projectile.cs:4147`: the FlamingJack (321) ignores water.
-            || kind == FLAMING_JACK,
+            || kind == FLAMING_JACK
+            // W4-d6 — `Projectile.cs:4495`/`:4876`/`:9856`: the three gun
+            // streams ignore water.
+            || matches!(kind, WATER_GUN | SLIME_GUN | SHIMMER_GUN_STREAM),
         // The aiStyle-67 summon rows set `decidesManualFallThrough`
         // (`:4767`/`:7825`/`:8092`/`:8106`/`:8120`); the pirates/frog's arm
         // drives `shouldFallThrough` (`:49561`/`:51206`).
