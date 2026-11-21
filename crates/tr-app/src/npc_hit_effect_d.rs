@@ -4094,6 +4094,72 @@ fn dryad_dye_trader_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0);
 }
 
+/// The 208 Party Girl death (`NPC.cs:88391-88410`, sites 610-614): the
+/// 50x dust-5 burst at (2.5·hd, −2.5), then 286/287x2/288x2 (shimmer
+/// 1335/1336x2/1337x2), scale 1f, NO head gate.
+fn party_girl_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88401-88404` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if shimmer { (1335, 1336, 1337) } else { (286, 287, 288) };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :88405
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88406
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88407
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88408
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88409
+}
+
+/// The 209 Cyborg death (`NPC.cs:88428-88447`, sites 615-619): the 50x
+/// dust-5 burst at (2.5·hd, −2.5), then 289/290x2/291x2 (shimmer
+/// 1294/1295x2/1296x2), scale 1f, NO head gate.
+fn cyborg_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:88438-88441` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let (head, mid, legs) = if shimmer { (1294, 1295, 1296) } else { (289, 290, 291) };
+    gore.new_gore(rng, world, pos, vel, head, 1.0); // :88442
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88443
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :88444
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88445
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :88446
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -4583,6 +4649,18 @@ pub fn hit_effect_d(
     // 600-609).
     else if npc_type == 20 || npc_type == 207 {
         dryad_dye_trader_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88391-88410` — the 208 Party Girl arm (sites 610-614).
+    else if npc_type == 208 {
+        party_girl_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:88411-88427` — the 663 Princess arm: NO gore sites (the death
+    // half is the 50x dust-5 census only; the town-pet smoke arm at
+    // :88046 catches 663 FIRST in the C# chain — the port's dispatcher
+    // order matches, so this arm is unreachable for 663; recorded).
+    // `:88428-88447` — the 209 Cyborg arm (sites 615-619).
+    else if npc_type == 209 {
+        cyborg_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7937,6 +8015,38 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, want, "town {kind} shimmer={shimmer}");
             let mut twin = UnifiedRandom::new(613);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "town {kind} shimmer={shimmer} mirrors");
+        }
+    }
+
+    /// `NPC.cs:88405-88409`/`:88442-88446` — the Party Girl ladder
+    /// 286/287x2/288x2 (shimmer 1335/1336x2/1337x2) and the Cyborg
+    /// ladder 289/290x2/291x2 (shimmer 1294/1295x2/1296x2).
+    #[test]
+    fn w4_f5d_the_party_girl_and_cyborg_ladders() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (208, false, vec![286, 287, 287, 288, 288]),
+            (208, true, vec![1335, 1336, 1336, 1337, 1337]),
+            (209, false, vec![289, 290, 290, 291, 291]),
+            (209, true, vec![1294, 1295, 1295, 1296, 1296]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(617);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "town {kind} shimmer={shimmer}");
+            let mut twin = UnifiedRandom::new(617);
             for _ in 0..50 {
                 twin_dust(&mut twin, 30, 44);
             }
