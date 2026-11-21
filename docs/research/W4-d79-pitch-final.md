@@ -1,5 +1,17 @@
 # W4-d79 PITCH FINAL — the 3-way Nebula keep-one, the all-case census, the co-lanes (2026-11-21)
 
+> **PITCH SEAL (2026-11-21, commits `b2c9aa1d2` + the seal docs commit):**
+> the lane is SEALED. §S1 is the f49 mutual receipt (the owner-table
+> adjudicated against f49 `0d1f941af` §RT2 — AGREED on every canonical
+> home, four identical-twin survivorships resolved to f49's side, the
+> bridge-ASSIGN-with-deletions one-commit contract restated); §S2 the
+> per-lane rewire-table at the CURRENT sibling tips (g21 moved +5, e10
+> moved +0-bare, the ledger 43 → **48**); §S3 the case-39 Drip PORTED
+> (`b2c9aa1d2` — the F2 in-band gap CLOSED, the census now 43/43);
+> §S4 the six out-of-band E21 task-seeds (owner-lanes named); §S5 the
+> pitch-family bible + the SEALED banner. The F1-F5 tables below are the
+> historical record — where the seal supersedes them, the §S row wins.
+
 The final-phase record of `task/W4-d79-sound-pitch-pool` (base `a725acb04`,
 sweep tip `b98130d66`). Code-only mode — witnesses WRITTEN NOT RUN, no
 compiler invoked. All sibling tips re-fetched at census time:
@@ -482,3 +494,284 @@ excepted).
    Verification = the whole-block C# re-reads cited per row + the
    per-tip `git diff`/`git grep` censuses (the commands' outputs are
    the tables above).
+
+---
+
+# PITCH SEAL — the receipts (2026-11-21, after 03ebefad7)
+
+The seal phase. Code-only mode — witnesses WRITTEN NOT RUN, no compiler
+invoked. Tip reads at seal time (`git fetch origin --prune`, one
+connection-reset retried after 90 s per the retry rule):
+
+| lane | tip at THIS seal | vs the F-phase census |
+| --- | --- | --- |
+| W4-d79-sound-pitch-pool (THIS) | `b2c9aa1d2` (seal 1, the Drip port) | past `03ebefad7` |
+| W4-f49-mana-regen-2 | **`0d1f941af`** | past `6c0ee2aa2`: the MANA FINAL (`cded67142`, R3 EXECUTED `8eb20d8b`) + the RETIRE receipts RT1-RT4 (research/85 SEALED) |
+| W4-f12-buff-frame-wiring | **`22ce2a41f`** | past `ee67786ec`: the closeout/RETIRE wave |
+| W4-g21-sounds-main-1 | **`7596fb262`** | past `7da02f439`: batch 5 (hotbar-lock / block-replacement / torch-biome icons, hosts 71/72/73) — **+5 new bare sites** |
+| W4-g22-sounds-main-2 | `250488c34` | unchanged (the MENU RETIRE R3 tip; direction-B canonical) |
+| W4-g23-sounds-main-3 | `945391e33` | unchanged (DEPRECATED as a base by g22's R1; folds INTO g22) |
+| W4-e10-player-sounds-wave | **`8e0d951fc`** | past `432dd5ab1`: the buff-station wave + the census scripts — **+0 new bare sites** (the stations ride `play_use_sound`) |
+| W4-d80-tracked-sound-layer | **`a6bcf736a`** (origin; the worktree rides `f0da72ead`) | past `075b954d2`: phases through 12 (the DD2 riders round). Re-censused at the origin tip: **90 bare sites = the base** — the F3 compose-note's zero-bare-overlap verdict HOLDS (the riders' cues ride the tracked arms + the machine streams) |
+
+## S1. The f49 mutual receipt — F1 vs RT2 (`0d1f941af` research/85 §RT2, the 13-row keep-one)
+
+**The question the Lead posed: does d79's §F1 owner-table agree with
+f49's §RT2?** Read in full at `0d1f941af` (RT1 `12d9414d3`, RT2
+`b2c9a71fa`, RT3 `fb771bfb8`, RT4 the seal `0d1f941af`). **Verdict:
+AGREED on every canonical-home ruling; four rows name a different
+surviving TWIN of an identical port — this receipt resolves them to
+f49's side (the adjudication below), so the merged tree has ONE answer
+per row.** The functional split the Lead named — pickup-cue = d79,
+scan/folds = f12-g27, mana = f49 — holds on BOTH tables; the difference
+is only WHICH TREE'S COPY of the pickup ARM / levelup / reset / pull
+survives the dedupe (the cue façade is d79's on both).
+
+### The row-by-row concordance (F1 row → RT2 row)
+
+| C# block | F1 (this doc) said | RT2 (f49) says | SEAL verdict |
+| --- | --- | --- | --- |
+| Scan writer `:12070-12079` + arms `:10444-10461` | KEEP f12's `apply_orb_arm`; DELETE d79's AND f49's | row 8: KEEP f12/g27 `nebula_buffs` (blob `c6bcb017b`); d79's drops, f49's ALREADY deleted (`8eb20d8b`) | **AGREE.** f49's deletion is EXECUTED (RT1: the tombstones `player.rs:6874`/`:3523`); d79's `update_buffs_nebula`/`_scan` + the `:6578` call still live on THIS tree — the merge deletes them (the pre-merge witness pins them until then). |
+| Life/Damage folds `:10448-10461` | KEEP f12's `fold_orb`; DELETE d79's two arms | rows 9/10: same (the double-add argument verbatim) | **AGREE.** |
+| Mana reader `:19565-19585` | KEEP f49's `regen.rs` engine form; DELETE d79's Player-method twin + `Player.nebula_mana_counter` | row 11: KEEP d117/f49 `regen.rs:374` (`RegenState` the ONE counter); d79's twin + field + head call drop | **AGREE.** |
+| Positioned case-7 cue | KEEP d79's `play_grab_sound` (Stop-then-recreate); f49's `_at` emit-only twin retires, its 2 call sites re-point | row 3: KEEP d79's `play_grab_sound` :2468; f49's `play_grab_sound_at` retires (chest-eat :1895 rewires too) | **AGREE** — the Lead's "pickup-cue = d79". |
+| Pickup arm `:35045-35058` | KEEP d79's (hardcoded map = the `Item.cs` rows verbatim); f49's registry-read arm is the duplicate | row 2: KEEP **f49's** arm (registry `buff_type` read), REWIRED onto d79's façade; d79's hardcoded arm drops | **RESOLVED → f49's arm.** Both maps are the same values (registry rows verified: `itemdata.rs:3619-3621` buff_type 179/173/176 = `Item.cs:31001-31018`); RT2's wholesale-items.rs resolution (RT1 item 3) makes f49's arm the survivor with ONE rewire (`play_grab_sound_at` → `play_grab_sound`, the `(int)` casts already equivalent). F1's "KEEP d79's" is superseded — the behaviour is identical either way, but ONE table must name ONE tree and RT1's items.rs-wholesale instruction already commits to f49's file. |
+| `NebulaLevelup` `:57030-57059` | KEEP ONE — d79's ("either survives, the merge dedupes") | row 6: KEEP **f49's** `player.rs:3492` (the anchors:904-equivalent marker); d79's :3481 drops | **RESOLVED → f49's.** F1 explicitly permitted either; RT2 names f49's because its anchors row + witness set ride it. d79's `fn nebula_levelup` anchors row (:903) REWORDS its prose to cite f49's home at the merge (never deleted — the marker `fn nebula_levelup` matches f49's `pub(crate) fn nebula_levelup` too, so the canary survives the swap). |
+| Chained reset `:18755` | KEEP BOTH forms (Player trio zero + `orb_scan.reset_effects`) | row 7: KEEP **f49's** Player-zero lines + f12's orb_scan reset; d79's :6291-6293 drops | **RESOLVED → f49's Player-zero copy.** The BOTH-OBJECTS ruling agrees; only the Player-zero twin's tree changes (identical three lines). |
+| Pull arm `:34953-34956` | KEEP ONE — d79's ("identical rows") | row 1: KEEP **f49's** `items.rs:685-688`; d79's :700-704 drops | **RESOLVED → f49's** (the same wholesale-items.rs argument; F1 permitted either). |
+| 4143 Mana Cloak arm `:35080-35097` | KEEP d79's (the phase-7 text-font sizing convention) | row 4: KEEP **f49's** arm (`items.rs:324+`); d79's drops | **RESOLVED → f49's arm.** Re-read at `0d1f941af`: f49's arm carries the SAME RAW-50-before-cap text with the SAME font-sizing match (`combat_text_font` width/line_spacing, the 8.0/10.0 fallback) — F1's "d79's carries the convention" premise is stale, BOTH carry it. The bodies are line-equivalent; the wholesale resolution keeps f49's. |
+| `IsAPickup` gate | (F1 implicit: d79's gate-with-exclusions) | row 13: KEEP f49's gate-REMOVED shape; d79's exclusions AND f12's stale gate drop | **AGREE with RT2** — the gate removal is the faithful shape (every `IsAPickup` kind has a consume arm); d79's exclusion list is the same admission expressed as a skip. |
+| Player fields `:924-930` | KEEP the trio on Player; DELETE d79's counter | RT3: the tier FIELDS + bridge = f49's (`Player.nebula_level_*` + `fold_orb_nebula_bridge`) | **AGREE.** |
+| Full-mana refill cue `:19550-19560` | (d79's phase 6, no f49 counterpart) | row 12: KEEP d79's queue/capture/drain; lands on the LIFTED `update_survival` (f49's engine already returns `refilled`) | **AGREE** — d79's refill witnesses land clean. |
+| Star restock cue `:35067` | (d79's `play_pickup_sound` shared) | row 5: KEEP d79's pool path (f49's arms already call it) | **AGREE.** |
+
+### The bridge-ASSIGN-with-deletions ONE-COMMIT contract (restated, mutual)
+
+Both tables carry the same invariant, now with f49's executed half:
+
+1. **f49's side is DONE** (RT1, verified at `0d1f941af`): the three scan
+   arms deleted (`8eb20d8b`), the `fold_orb_nebula_bridge(mana, life,
+   damage)` ASSIGN stub landed (`player.rs:3547`), `update_survival`
+   LIFTED to the wiring seam (`world_sim/player.rs:1204`) + the wrapper
+   re-add (`player.rs:5763`).
+2. **The merge's one commit** lands: f12's `update_buff_frame` at the
+   marked seam + the `fold_orb` bridge (f12's published 2-line hunk
+   compiles as-is — `fold_orb(p, e)` reads `p.orb_scan` directly; the
+   3-line stub-call form is the all-tiers equivalent, both ASSIGN-shaped
+   per RT1) + the d79-side deletions (the `update_buffs_nebula`/`_scan`
+   fns + the `:6578` call + the two stat-fold arms + the Player-method
+   mana reader + `Player.nebula_mana_counter`) + the items.rs-wholesale
+   resolution with the ONE cue rewire (`play_grab_sound_at` →
+   `play_grab_sound`). **Either half alone is a behaviour bug**
+   (double-write / stranded reader) — F1 and RT1/RT2 agree verbatim.
+3. **The extra_regen sum** (RT1 item 4): the merge keeps f12's
+   `accessory_life_regen + buff_life_regen` read — f49's lifted read
+   lacks the sum; without it the Nebula Life add never lands. d79's
+   tree carries the accessory-only read too; the sum is the merge's.
+4. **The witness re-targets** (F1's list, updated): d79's two pickup
+   witnesses fold into f49's set (RT2's instruction — keep ONE set per
+   behaviour, f49's anchors marker survives, its audio assertions
+   re-target to the d79 façade); d79's scan/levelup/counter pre-merge
+   witness (`w4_d79_final_the_nebula_owner_table_holds_on_this_tree`)
+   stays valid ON THIS TREE until the merge, then its scan/counter
+   assertions re-target to `orb_scan` + `RegenState` (the f49 re-target
+   pattern); the refill witnesses land clean on the lifted seam.
+
+**Mutual-receipt status: PUBLISHED from the d79 side.** f49's RT2 read
+d79 at `b98130d6` (sweep 4) — before the PITCH FINAL owner-table existed;
+this section is the d79 answer at f49's SEALED tip. No f49 re-read is
+needed: every RT2 row is either agreed or resolved-to-f49 above, and the
+resolutions only SIMPLIFY the merger's work (one wholesale file + one
+cue rewire instead of a per-arm splice).
+
+## S2. The sibling-rewire execution record — per-lane tables at the CURRENT tips
+
+The Lead's instruction: the 43-rewire-target execution happens on the
+SIBLING lanes' own branches (g21/g22/g23/e10 execute their own sites);
+d79 publishes the per-lane rewire-table they execute against. **The
+sibling resume sessions (g21c-chat-resume-active, g22-canonical,
+e10c-voice-resume-active) were probed: no such branches/worktrees/docs
+exist yet** (`git branch -a` + the three worktrees' research dirs +
+`--grep` over all refs — zero hits). The tables below are the contract
+those sessions read; the F4 tables remain the base record, this section
+is the DELTA at the moved tips.
+
+### g21 `7596fb262` (was `7da02f439`) — +26 raw now (21 menu/Unlock + 2 Chat + 3 batch-5)
+
+The batch-5 delta (`git diff a725acb04 7596fb262` added-line census,
+total 116 = base 90 + 26):
+
+| site (g21 NEW tip) | C# anchor | bare call | REWRITE |
+| --- | --- | --- | --- |
+| clicks.rs:1953 | `Main.cs:42506` hotbar-lock click | `play("Unlock")` | `play_single_voice("Unlock", -1.0, -1.0)` — case 22 IS in the 17-row pool (Stop-then-recreate, draw-free); the unpositioned int overload |
+| clicks.rs:1962 | `:42544` block-replacement click | `play("Unlock")` | same |
+| clicks.rs:1973 | `:42584` torch-biome click | `play("Unlock")` | same |
+| ui/mod.rs:1018 | `:42515` → `:3244` hotbar-lock hover edge | `chest_panel.audio.play("Menu_Tick")` | `chest_panel.audio.play_menu("Menu_Tick")` (the FrontDraw borrow) |
+| ui/mod.rs:1042 | `:47588` → `:3256` toggleAccMouseOver latch | `chest_panel.audio.play("Menu_Tick")` | same |
+
+The F4 g21 table's 21 rows stand (the clicks.rs line numbers shift
+non-uniformly — −1 early, +40 past the batch-3/4 insertions; loop.rs −1;
+ui/mod.rs +9 — the table locates by C# anchor, not the line). The 2
+Chat DELETEs stand
+(npcs.rs:286/:644 at the new tip — d79's phase-7 seams win). The
+non-new conflict rulings stand: the Destroyer `Roar_0` (npcs.rs:1953)
+→ d79's `play_roar(1, …)` (the int overload's default Style 1), the
+kill-table `play_at` (:4733) → d79's `play_kill_cue`, the Grab/Coins
+click duplicates → d79's phase-3/5 forms. **g21's rewire count: 24
+(19 menu + 3 Unlock + 2 hover) + 2 Chat DELETEs.**
+
+### g22 `250488c34` — unchanged, the CANONICAL menu base (direction B)
+
+The g22-canonical receipt: g22's MENU RETIRE R1-R3
+(`docs/research/91-g23-branch-deprecated.md` at `250488c34`) deprecates
+g23 AS A BASE — the merger takes g22's tip + the 4-commit g23 fold
+(keep-g22/take-g23-unique, the disjoint-queue contract: `pending_cue`
+activation / `pending_ticks` draw-chrome / `FrontDraw.audio` front
+cues). d79's F4 g22 table (12 rows: 9 prod + 3 test rigs) applies to the
+UNION's drains — every `play(cue)`/`play(match id …)` becomes
+`play_menu(…)`; the `mod.rs:2596` seed Chat →
+`play_single_voice("Chat", -1.0, -1.0)`. **No delta at this seal** (the
+tip did not move). g23's 4-unique rows (frame/draw.rs:1843, chat.rs:117
++ the 4 shared drains) fold via direction B — ONE rewrite after the
+union.
+
+### e10 `8e0d951fc` (was `432dd5ab1`) — +0 new bare sites (the buff-station wave)
+
+The delta (`git diff 432dd5ab1 8e0d951fc`): the seven-tile BuffStation
+family (`Player.cs:32594-32634`, `world_sim/editing/doors.rs:402`) plays
+through `play_use_sound` (the case-2 STYLE façade — the audio-only
+NextFloat + the per-style pitch on `UpdatePlayers`), the `Item_149`/
+`Item_179` bank rows join, the smart-cursor comment cites both press
+arms (`Player.cs:28820`/:28827 — the single press-edge play covers the
+pair). **Zero new `audio.play(`/`play_at(` sites** (the tip's total
+stays 93 = 91 prod + 2 test). The F4 e10 table stands with a +4-line
+shift in loop.rs (the comment hunk): the 10 prod menu rows + the cart
+fallback DELETE (now `world_sim/player.rs:1370`) + the −7 Roar keep-one
++ the three façade rulings (MaxMana/Hungry/voice-picker) unchanged.
+**e10's rewire count: 10 prod menu + 1 cart-fallback DELETE.**
+
+### The updated added-bare ledger (the merger's checklist, FINAL)
+
+Raw added: g21 **+26**, g22 +12, g23 +6, e10 +10 = **54**. Dedupe −4
+(the g22/g23-shared drains) = **50 unique**; −2 (the g21 Chat pair,
+DELETE not rewire) = **48 rewire targets** (45 prod + 3 g22 test rigs).
+Every added site is a draw-free pool cue (cases 10/11/12/22/24) — ZERO
+new drawing-case bare plays on any sibling tip (the pitch/pool contract
+holds tree-wide). After the rewrites the merged tree's bare count
+returns to **0** (the `tracked_sound.rs` Resume seam excepted). The
+per-lane execution split: **g21 24 rewires + 2 deletes, g22 12 (9 prod
++ 3 test), g23 2 unique (post-union), e10 10 + 1 delete** = 48 + 3
+deletes. The base Bug-17 flow.rs pair rides every tip (d79 retired it;
+the merged tree rewires it too if the sibling hover hunk survives).
+
+## S3. The case-39 Drip gap — CLOSED (ported, `b2c9aa1d2`)
+
+The Lead's option "port small" was taken (the gore-pool drop was the
+F2 census's ONE in-band gap; the task-seed alternative is moot). The
+port, verbatim against the C#:
+
+- **`tr-core/src/gore.rs`** — the `GoreSound` seam (the `GoreCollision`
+  injection pattern; `tr-core` cannot borrow `tr-app`'s Audio).
+  `update_drip_collision` (`Gore.cs:915-977`) now: the `flag4` quiet
+  kinds (716/717/943/1160-1162, `:942`) skip both arms; the tile-hit
+  arm (`:953`) draws ONE `Next(2)` STYLE pick **at the C# call-argument
+  position** (mid-walk, BEFORE the PlaySound gate — a refused play
+  still spends it) and calls the seam; the wet arm (`:965`) passes
+  style 2 with NO style draw. `NoGoreSound` keeps the pool's own tests
+  stream-exact. **An after-walk intent queue was rejected mid-port** —
+  it would move the case's pitch draw out of the inter-slot stream
+  order (the `Main.cs:17771` `SwapRandom("UpdateGores")` wraps the walk
+  AND the plays).
+- **`tr-app/src/audio.rs`** — `Audio::play_drip`
+  (`LegacySoundPlayer.cs:1351-1358`): the gate first (case 39 is
+  ambient-scaled, `DoesSoundScaleWithAmbientVolume` `:1516`; the `:433`
+  `type != 39` post-scale zero-volume exemption means a menu-muted
+  drip STILL draws its pitch at volume 0 — the TOP `soundVolume == 0`
+  gate `:369` refuses draw-free), ONE `Next(-30, 31) * 0.01` pitch on
+  the caller's stream, `num2 * 0.5` volume (`:1354`, via the gate's
+  `volume_scale`), the no-Stop `SoundInstanceDrip[3]` overwrite
+  (`:1353` — the Coins/Chat/MaxMana detach family). The `Drip_0/1/2`
+  bank rows pin id 39 (`SoundID.cs:100`; the three `.xnb` assets ship).
+- **`tr-app/src/gore_seam.rs`** — `AppGoreSound` forwards the seam;
+  **`app/frame/world.rs::gores_phase`** threads it (the one prod
+  caller).
+- **Witnesses (4, WRITTEN NOT RUN):** the tile-hit style-then-pitch
+  order twin + the wet style-2 no-style-draw twin + the six quiet
+  kinds' zero-play/zero-draw refusal (gore.rs); the façade's
+  gate/exemption/no-Stop/bank pins (audio.rs). The bank-pin census
+  witness re-pins `Drip_0/1/2 → 39`.
+- **Stays dropped (draw-free):** the `:967` water-shader ripple + the
+  `:917-941` shimmer light (the `LiquidRenderer` dependency).
+
+**The F2 census verdict updates: all 43 in-band cases (0-42) PORTED**
+(41 on d79 HEAD incl. the new 39; 20 → e10, 37 → g23 at the merge). The
+gore-lane co-ownership note: f5's research/111 gore-family census
+(853 sites) is SPAWN-site scoped — the drip SOUND is the pool's Update
+walk, not a spawn site; no f5/g62 conflict (g62's hit-half is the
+`:86532`-family wiring, not the drip). The six out-of-band gaps stay
+(§S4).
+
+## S4. The six out-of-band E21 gaps — the task-seeds (owner-lanes named)
+
+Every one is an unported-CALLER deferral (the case specs are
+table-complete in F2's rows). The seeds, with the owner-lane the Lead's
+catalog assigns:
+
+| gap | C# caller (unported) | case spec (F2) | owner-lane / seed |
+| --- | --- | --- | --- |
+| 47-52 guitar chords | `Player.ItemCheck_PlayInstruments` (`Player.cs:46506`) → `PlayGuitarChord` (`:46671-46702`): the 1-in-10 `RollOnlyBadLuckExtreme(10) == 0` bad-luck roll (`:18208`, the luck lane e26's machine) then `Next(-50, 51) * 0.01` pitchOffset; the range ladder 1/6-steps picks 49/48/47/51/52/50 | slots 133-138, the family Stop sweep `:1220-1226`, ×0.45 volume, NO case pitch (the offset rides `:1410`) | **the instrument-use seam** — i22's NOTE projectile is a different block; seed rides the item-use census (research/60) + e26 luck. d79's façade contract: the six chord ids join the bank under their cases when the seam lands |
+| 53-62 drum family | `PlayDrums` (`Player.cs:46705-46747`): the 1/10-step range ladder picks 59/58/53/57/62/61/54/56/55/60, NO luck roll | slots 139-148, per-slot Stop, ×0.7 volume, no pitch | **same seam as 47-52** (one instrument lane) |
+| 63/64 Journey research | `ItemSlot.cs:1288-1297` (the sacrifice-click arm): `SacrificedAndDone` → 64, default → 63; `clicks.rs:1818` records the deferral | 63 draws ONE `Next(1, 4)` slot pick (`:482`), 64 fixed slot 0; both Stop, no pitch | **c24-journey-ui's lane** (`ff99f1486`, the Journey UI wiring) — the sacrifice-click seam is its scope; `creative_sacrifices.rs` is the DATA table |
+| 65 QueenSlime ambient | `NPC.cs:45757-45759` (`AI_121_QueenSlime`): the `Next(360) == 0` ambient roll on UpdateNPCs; the Queen Slime NPC (kind 657) is spawn/data-only | 3-slot playing guard (115/116/117), ONE `Next(115, 118)` slot pick, ×0.5 volume, NO pitch | **the d33/d43 NPC-AI/kind lanes** — the AI_121 body is the aiStyle-121 machine's (d33's 95-127 band covers the style; the kind 657 row is d43's 631-697 band); the roll rides UpdateNPCs when the body lands |
+| 66 type-75 bomb ambient | `Projectile.cs:46936-46941` (`AI_016_Bombs`' type-75 arm): `soundDelay == 0` → −1 + the play; `projectile.rs:314` records 147/75/10/181 as unported stand-ins | 3-slot guard (121/122/123), ONE `Next(121, 124)` pick + ONE `Next(-15, 16)` pitch, ×0.45 volume | **d8-proj-ai-71-80's lane** (`e9de71683`, the band 71-80 all-armed table — the type-75 body is its scope); TWO draws when it lands |
+
+**No bare-play regression anywhere** — none of the six has a ported
+emitter playing through the retired `audio.play()` path (the F2 verdict
+stands). The seeds are recorded here + the ROADMAP S1-E-21 row; the
+owner-lanes execute on their own branches.
+
+## S5. The pitch-family bible + SEALED
+
+**The pitch-family declaration (the merger-bible, one paragraph):** the
+LegacySoundPlayer pitch/pool family's ONE canonical home per member —
+the per-case façades + the bank + the 17-row SINGLE_SLOT_CUES pool + the
+dedicated slots (pixie/moonlord_cry/drip) + the `play_menu`/
+`play_single_voice` draw-free paths are **d79's `audio.rs` wholesale**
+(the merge keeps it; d80's bank rows + test seams join, e10's
+Female_Hit/voice-picker/Hungry-style façades join per the F4 rulings,
+g23's star-hit pair joins via the g22 direction-B union); the tier
+WRITER is **f12/g27's `apply_orb_arm`** (blob `c6bcb017b`), the mana
+cadence **d117/f49's `regen.rs`** (`RegenState` the ONE counter), the
+pickup/levelup/reset/pull **f49's copies** (the S1 adjudication — the
+cue on d79's façade), the bridge **f49's stub + f12's `fold_orb`
+ASSIGN** in ONE commit with the deletions; the sibling bare sites rewire
+onto the d79 façades per the S2 per-lane tables (48 targets + 3
+deletes); the tracked layer's `ActiveSound.Resume` `sink.play()` is the
+ONE surviving bare `.play()` (not a PlaySound case, no RNG). The
+pitch/pool contract: every gameplay draw rides its C# pass's named
+stream at the C# statement position; the menu/Chat/Unlock pool cues are
+draw-free; the style façades' NextFloat rides the audio-only stream.
+
+**SEALED.** No further d79 commits planned after the seal docs commit.
+The lane's record: the sweep phase (`7f3c29da4`/`b78b02022`/`5a719d90e`/
+`b98130d66`), the PITCH FINAL phase (`2edd40547`/`ef4fc427b`/`e917c0664`/
+`03ebefad7`), the PITCH SEAL (`b2c9aa1d2` the Drip port + this docs
+commit). The merger-facing contracts: §S1 (the f49 mutual receipt), §S2
+(the per-lane rewire tables), F3 (the d80 compose-note), F4 (the façade
+keep-one rulings), §S4 (the E21 task-seeds). Witnesses tree-wide:
+WRITTEN NOT RUN (code-only mode; the catalog command runs at the merge).
+
+### SEAL files touched
+
+| File | Change |
+| --- | --- |
+| `crates/tr-core/src/gore.rs` | the GoreSound seam + the drip-collision port + 3 witnesses (seal 1) |
+| `crates/tr-app/src/audio.rs` | `play_drip` + the Drip bank rows + the drip_slots + the witness re-pins + 1 witness (seal 1) |
+| `crates/tr-app/src/gore_seam.rs` | AppGoreSound (seal 1) |
+| `crates/tr-app/src/app/frame/world.rs` | gores_phase threads the seam (seal 1) |
+| `anchors.txt` | the play_drip canary row (seal 1) |
+| `docs/research/W4-d79-pitch-final.md` | the SEAL banner + §S1-§S5 (this commit) |
+| `docs/research/INDEX.md` | the W4-d79-final row → SEALED (this commit) |
+| `docs/ANALYSIS.md` | the PITCH SEAL note (this commit) |
+| `docs/PORT_MAP.md` | the case-surface row's 39-closed update + the nebula row's S1 pointer (this commit) |
+| `docs/ROADMAP.md` | the S1-E-21 row's seal note + the E21 task-seed pointer (this commit) |

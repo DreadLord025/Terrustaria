@@ -75,7 +75,7 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
-| W4-d79-final | PITCH FINAL: the 3-way Nebula keep-one owner-table (d79/f49/f12), the LegacySoundPlayer ALL-CASE census (0-42 closed, case-39 the one in-band gap), the d80 compose-note, the sibling per-site rewire-table (g21/g22/g23/e10), the exact bare census (code-only) | `W4-d79-pitch-final.md` | ✅ |
+| W4-d79-final | PITCH FINAL + **SEALED**: the 3-way Nebula keep-one owner-table (d79/f49/f12) + the f49 mutual receipt (§S1 — AGREED vs RT2, four identical-twin survivorships resolved to f49, the bridge-ASSIGN-with-deletions one-commit contract), the LegacySoundPlayer ALL-CASE census (0-42 **43/43 PORTED** — case-39 Drip landed at the seal `b2c9aa1d2`, the GoreSound seam), the d80 compose-note (re-censused at `a6bcf736a`, zero bare overlap holds), the per-lane rewire-table at the CURRENT tips (§S2 — g21 `7596fb262` +5, e10 `8e0d951fc` +0-bare, the ledger **48 targets + 3 deletes**), the six E21 task-seeds with owner-lanes (§S4), the pitch-family bible (§S5); code-only | `W4-d79-pitch-final.md` | ✅ SEALED |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

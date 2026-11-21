@@ -39608,3 +39608,58 @@ re-reads cited per census row (`LegacySoundPlayer.cs`'s three switches,
 `:46506-46730`, `ItemSlot.cs:1280-1298`, `NPC.cs:45759`/`:50093`,
 `Projectile.cs:46925-46945`) + the per-tip `git diff`/`git grep`
 censuses with the per-file `mod tests` split.
+
+## The W4-d79 PITCH SEAL (2026-11-21, code-only mode)
+
+The seal phase, commits `b2c9aa1d2` (the Drip port) + the seal docs
+commit; the full receipts in `docs/research/W4-d79-pitch-final.md`
+§S1-§S5. The four verdicts:
+
+1. **The f49 mutual receipt (§S1).** f49's SEALED tip `0d1f941af`
+   (research/85 RT1-RT4) read d79 at sweep 4 and published its own
+   13-row keep-one (RT2). The d79 F1 owner-table and RT2 AGREE on every
+   canonical home (scan = f12/g27 `apply_orb_arm`, folds = f12
+   `fold_orb`, mana = d117/f49 `regen.rs` engine, the positioned cue =
+   d79 `play_grab_sound`, the bridge-ASSIGN-with-deletions ONE commit).
+   Four rows named different surviving TWINS of identical ports
+   (pickup arm / levelup / reset / pull / 4143) — the seal resolves them
+   to **f49's copies** (RT1's items.rs-wholesale instruction already
+   commits to f49's file; the registry buff_type rows verified equal to
+   the hardcoded map; both 4143 arms carry the RAW-50 text-font
+   convention). The merge's d79-side work simplifies to: the scan/fold/
+   reader deletions + ONE cue rewire (`play_grab_sound_at` →
+   `play_grab_sound`) + the anchors-prose reword. f49's R3 execution is
+   DONE on its tree (the tombstones + the bridge stub + the lift); the
+   wiring + bridge + deletions land in ONE merge commit.
+2. **The case-39 Drip gap CLOSED (§S3, `b2c9aa1d2`).** The F2 census's
+   one in-band gap ported small: the `tr-core` `GoreSound` seam (the
+   `GoreCollision` injection pattern) draws the tile-hit arm's `Next(2)`
+   style pick at the C# call-argument position (mid-walk, before the
+   gate — `Gore.cs:953`), the wet arm passes style 2 draw-free (`:965`),
+   the flag4 quiet kinds skip (`:942`); `Audio::play_drip` runs the gate
+   (the `:433` `type != 39` zero-volume exemption — a menu-muted drip
+   still draws), ONE `Next(-30,31)` pitch on `UpdateGores`, the ×0.5
+   volume, the no-Stop `SoundInstanceDrip[3]` overwrite. **An after-walk
+   intent queue was rejected mid-port** — it would move the pitch draw
+   out of the inter-slot stream order (the deliberate-deviation record:
+   the seam is called at the C# statement position, not drained). The
+   in-band census is now **43/43 ported** (20 → e10, 37 → g23 at the
+   merge). 4 witnesses written not run; the ripple/shimmer-light drops
+   stay (draw-free).
+3. **The sibling rewire ledger at the CURRENT tips (§S2).** g21 moved
+   `7da02f439` → `7596fb262` (+5: three Unlock clicks → the case-22 pool
+   + two hover ticks → `play_menu`); e10 moved `432dd5ab1` → `8e0d951fc`
+   (+0 bare — the buff-station family rides `play_use_sound`); g22/g23
+   unchanged (direction B stands). The ledger: 54 raw − 4 shared − 2
+   Chat-deletes = **48 rewire targets (45 prod + 3 test) + 3 deletes**;
+   the per-lane execution split g21 24+2 / g22 12 / g23 2-unique / e10
+   10+1. The sibling resume sessions (g21c/g22-canonical/e10c) were
+   probed — not yet spawned; the §S2 tables are their contract. d80
+   re-censused at `a6bcf736a`: 90 bare = the base, the F3 zero-overlap
+   verdict holds.
+4. **The six E21 task-seeds (§S4)** — owner-lanes named: the instrument
+   seam (47-52/53-62, the item-use census + e26 luck), c24-journey-ui
+   (63/64 sacrifice click), the d33/d43 NPC lanes (65 QueenSlime AI_121),
+   d8-proj-ai-71-80 (66 type-75 bomb). No bare-play regression; the
+   pitch-family bible (§S5) is the merger-bible entry. **SEALED — no
+   further d79 commits planned.**
