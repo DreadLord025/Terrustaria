@@ -44,6 +44,42 @@ between this census's first draft and its commit — the table's five
 families were already closed by then; the SharedFrom/Journey rows moved
 from "deferred" to "ported, source dormant" in the same window.
 
+## Retire-phase updates (the e16c-128-FINAL receipts)
+
+Read against `origin/task/W4-e16-item-tooltip-lines` tip `1dc8520f3`
+(research/128 STATUS FINAL — the S1-S13 hunk list, §6 witness-dedupe map,
+§7 re-verified drops). The per-item receipt table + the FINAL GetLinesInfo
+census + the merger instruction live in
+`docs/research/130-f28-retire.md` (this branch).
+
+- **Co-lane probe (retire phase):** at the first probe the worktree carried
+  live f28b WIP (`research.rs`/`tooltip_lines2.rs`/`anchors.txt`/
+  `ANALYSIS.md` dirty, mtimes minutes old — LEFT untouched per the live-lane
+  rule). The co-lane then committed and pushed it itself as `e9e37216a`
+  (`Colors.JourneyMode` = (255,120,187), the XNA BYTE-Lerp truncation —
+  re-verified against `ID/Colors.cs:113`: `Lerp(HotPink, White, 0.1f)`);
+  the worktree is clean at the retire HEAD. No commit-rescue was needed.
+- **Journey rows — verdict UPDATE (128 §7 pending-port → ROWS PORTED,
+  source dormant):** `39babafa7` landed `research::research_tooltip_rows`
+  (the 17-context whitelist `research_row_context`, the difficulty-3 gate,
+  `CreativeSacrificeNeeded` remaining-count in the corrected JourneyMode
+  colour, the ctx-29 teammate-credit arm) + `ResearchTracker::sacrifice_numbers`
+  (the c24 accessor, `ItemsSacrificedUnlocksTracker.cs:75-86`), witnessed by
+  `w4_f28_the_co_lane_rows_ride_their_contract_fields`. The residual is the
+  SOURCE: `TooltipContext.difficulty`/`research` stay 0/`None` at the draw
+  sites until c24's `active_player_difficulty` + `App.research` wire lands;
+  the teammate credit stays `None` single-player.
+- **Bestiary rows — verdict UPDATE (128 §7 e16-DROP superseded → seam
+  PORTED, writer on e23):** the `HoverFlags.bestiary_notes` seam emits the
+  `\n`-split rows LAST with the `IsNullOrWhiteSpace` guard
+  (`tooltip_lines2.rs` `append_second_half` tail); the co-lane witness pins
+  the split order + the whitespace skip. The e23 writer
+  (`ui::bestiary::bestiary_notes`, tip `6daf6d3d`) exists on its branch —
+  the remaining work is the hover WIRE, not the rows.
+- **SharedFrom row — PORTED, source dormant:** `39babafa7` (the
+  `UI.ItemLoadoutSharedFrom` 1-based arm beats the favourited arm, witnessed);
+  the g55 `GetSharedLoadoutItem` writer is the residual (above).
+
 ## The e16 MUST-SALVAGE folds (this session, per 128 §4/§5)
 
 1. `PrecentFishingPower` typo key (`Main.cs:20806`) — `57dd02078`.
