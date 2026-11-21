@@ -12632,11 +12632,14 @@ mod tests {
         for seed in 0..400u64 {
             let mut gen = tr_core::tile_light::FastRandom::new(seed);
             let mut rng = UnifiedRandom::new(seed as i32);
-            let items_before = app.items.len();
-            let npcs_before = app.npcs.len();
+            // Clear per-seed so the 300-item cap never skews the accounting
+            // (each shake starts from an empty pool — the site is already
+            // resolved, the ladder is independent of the dedupe book).
+            app.items.clear();
+            app.npcs.clear();
             shake_loot::shake_tree_loot(&mut app, &site, 30, 260, &mut gen, &mut rng);
-            let new_items = app.items.len() - items_before;
-            let new_npcs = app.npcs.len() - npcs_before;
+            let new_items = app.items.len();
+            let new_npcs = app.npcs.len();
             if new_items > 0 {
                 saw_item = true;
             }
@@ -12653,7 +12656,7 @@ mod tests {
                 "seed {seed}: the else-if chain spawns one arm, got {new_items} items + {new_npcs} npcs"
             );
             // Every dropped item is a legal ladder kind.
-            for it in &app.items[items_before..] {
+            for it in &app.items {
                 assert!(
                     matches!(it.kind, 1130 | 832 | 933 | 3360 | 3361 | 5517 | 4366
                         | 5629 | 27 | 194 | 1809 | 71 | 72 | 73 | 965
@@ -12686,34 +12689,24 @@ mod tests {
         let site = shake_tree_resolve(&mut app.world, 30, 260).unwrap();
         // Sweep for a seed whose genRand chain reaches the Next(7) acorn gate
         // and hits it (the earlier gates all miss). The FastRandom stand-in
-        // is deterministic per seed.
+        // is deterministic per seed. The C# gates are `genRand.Next(N) == 0
+        // && treeType == X` — the ROLL runs first (the left operand), then
+        // the type check, so every gate's roll draws regardless of family.
+        // Forest tree, classic world (no tenth/getGood — the first two arms
+        // skip): 300a/300b (forest), 200a/200b (jungle — type mismatch falls
+        // through even on 0), 1000a/1000b (forest), 100 (fsha), then 7. The
+        // acorn fires when 300a/300b/1000a/1000b/100 all != 0 and g7 == 0.
         let mut found = None;
         for seed in 0..2000u64 {
             let mut probe = tr_core::tile_light::FastRandom::new(seed);
-            // Replay the gate chain up to the acorn (forest tree, classic
-            // world: no tenth/getGood, so the first two gates skip).
-            // :63179/63183 Next(300) x2, :63187/63191 Next(200) x2 (jungle,
-            // skip — but the genRand draws still run for the forest? No:
-            // the C# `&&` short-circuits on the treeType term BEFORE the
-            // roll for the jungle arms. Forest: the Next(300) forest arms
-            // draw, the jungle Next(200) arms skip the roll (type mismatch
-            // is the SECOND operand — wait, the roll is FIRST). Re-read:
-            // `genRand.Next(300) == 0 && treeType == Forest` — the roll runs
-            // first, THEN the type. So every gate's roll draws regardless.
             let g300a = probe.next(300);
             let g300b = probe.next(300);
-            let g200a = probe.next(200);
-            let g200b = probe.next(200);
+            let _g200a = probe.next(200);
+            let _g200b = probe.next(200);
             let g1000a = probe.next(1000);
             let g1000b = probe.next(1000);
             let g100 = probe.next(100);
             let g7 = probe.next(7);
-            // The chain is else-if: the FIRST hit wins. For the acorn to
-            // fire, every earlier gate must miss (or hit-but-type-mismatch).
-            // Forest: 300a/300b are forest arms (hit → spawn, not acorn);
-            // 200a/200b are jungle (type mismatch → fall through even on 0);
-            // 1000a/1000b forest; 100 fsha. So acorn needs 300a/300b/1000a/
-            // 1000b/100 all != 0, 200a/200b anything, g7 == 0.
             if g300a != 0 && g300b != 0 && g1000a != 0 && g1000b != 0 && g100 != 0 && g7 == 0 {
                 found = Some(seed);
                 break;
