@@ -18823,13 +18823,14 @@ mod bucket_use_tests {
 
     /// The Empty Bucket draws water into a Water Bucket (`:46370-46371`):
     /// the target wipes, the stack burns one and the hand-back lands in the
-    /// now-air selected slot. The 3×3 box over 100 (`:46347`) passes on the
-    /// 255 target alone.
+    /// now-air selected slot (the LAST bucket — a surviving stack takes the
+    /// GetOrDropItem deposit walk instead, the C# order). The 3×3 box over
+    /// 100 (`:46347`) passes on the 255 target alone.
     #[test]
     fn w4_g45_the_empty_bucket_draws_water_into_a_water_bucket() {
         let mut app = bucket_app(30, 120);
         wet(&mut app.world, 30, 120, 255, LiquidKind::Water);
-        hold(&mut app, 205, 3);
+        hold(&mut app, 205, 1);
         app.mine_down = true;
         ticks(&mut app, 2);
         assert_eq!(app.world.tile(30, 120).unwrap().liquid, 0, "the target wiped");
@@ -18877,7 +18878,10 @@ mod bucket_use_tests {
         app.mine_down = true;
         ticks(&mut app, 20);
         assert_eq!(app.world.tile(30, 120).unwrap().liquid, 100, "the 100-box refuses 205");
-        // The sponge draws the same cell, keeps its stack.
+        // The sponge draws the same cell, keeps its stack. The rig drives
+        // update_editing alone — `attack_cd` decays in the npcs pass, so
+        // clear the stale start lock by hand for the second phase.
+        app.attack_cd = 0.0;
         hold(&mut app, 3032, 1);
         app.mine_down = true;
         ticks(&mut app, 20);
@@ -18902,11 +18906,12 @@ mod bucket_use_tests {
     }
 
     /// The Water Bucket pours a full 255 water cell into an empty target and
-    /// hands back an Empty Bucket (`:46451-46469`).
+    /// hands back an Empty Bucket (`:46451-46469`) — the LAST bucket, so the
+    /// hand-back fills the now-air selected slot.
     #[test]
     fn w4_g45_the_water_bucket_pours_and_hands_back_an_empty() {
         let mut app = bucket_app(30, 120);
-        hold(&mut app, 206, 2);
+        hold(&mut app, 206, 1);
         app.mine_down = true;
         ticks(&mut app, 2);
         let t = app.world.tile(30, 120).unwrap();

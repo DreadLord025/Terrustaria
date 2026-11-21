@@ -65,8 +65,10 @@ multipliers (`Player.cs:27728-27910`, ported in `world_sim/player.rs`, ROADMAP M
 the `SceneMetrics` liquid counts that drive the shimmer ramps (`SceneState.cs:283-309`,
 ported with M1.5-LIQUID-3), the liquid sound loops (`LegacySoundPlayer`, M1.4-BG-20), the
 liquid death rules for tiles and NPCs (`WorldGen.cs:72203`, `TileObjectData`), and the
-`.wld` tile section as a whole (module 42). Pumps, actuator liquid control and buckets are
-still open items in ROADMAP §3.
+`.wld` tile section as a whole (module 42). Pumps and actuator liquid control are
+still open items in ROADMAP §3; **buckets are PORTED** (W4-g45 doc-sweep,
+`world_sim/editing/buckets.rs::use_buckets`, `Player.cs:46318-46504` — the
+twelve bucket/sponge kinds, research/104 §1b).
 
 ## Dependencies
 
@@ -149,6 +151,24 @@ still open items in ROADMAP §3.
   shimmer+lava/honey → 659 merges. The R-11-5 `tests` module already pins the
   water+lava/honey/shimmer merges, the 24-unit gate, the down-arm merge, the
   container override, the `tileCut` burn and the merge-type/change-type tables.
+- `crates/tr-core/src/liquid.rs::liquid_downarm_live` (W4-g45 doc-sweep,
+  written NOT run — code-only mode): the down arm's LIVE post-burn reads
+  (`Liquid.cs:1278-1306`) — the seven `tileCut` kinds OUTSIDE
+  `tileObsidianKill` (444/518/519/549/637/638/711) drain/merge after the burn
+  clears them (the pre-kill copy refused); the sub-24 drain over seaweed-549,
+  the full merge over lily-pad-518, the honey arm over cattail-519, the water
+  arm burns nothing. Plus `the_fall_arm_moves_the_post_evaporation_level`
+  (the fall moves the post-evap level, `:570-575`) and
+  `shimmer_falls_every_visit_like_water` (the shimmer arm has no delay gate,
+  `:542-545`) in `liquid_merge_cadence`.
+- `crates/tr-app/src/world_sim/editing.rs::bucket_use_tests` (W4-g45
+  doc-sweep, written NOT run — code-only mode): the twelve-kind
+  `ItemCheck_UseBuckets` port (`Player.cs:46318-46504`,
+  `editing/buckets.rs`) — the water draw + hand-back, the lava/honey
+  conversion, the shimmer refusal, the box-min + sponge exemption, the
+  partial top-up, the pour + hand-back, the >=200/solid refusals, the
+  bottomless-shimmer no-consume, the empty-or-same-type gate, the typed
+  sponges. research/104 §1b.
 
 ## Deviations & risks
 
@@ -221,6 +241,23 @@ still open items in ROADMAP §3.
     cellular water flow, so the honest status for the simulation is **PARTIAL** per rows 1-11
     above; the remaining-items list in §3 is accurate for what it lists but omits the whole
     reaction/evaporation/skip/stuck surface.
+13. **Down-arm stale-read (behavioural, low-med).** — **FIXED (W4-g45
+    doc-sweep, `c8908a55d`).** The `liquid_check` down arm read `down` once
+    before the `tileCut` burn and re-used that copy for the merge gate
+    (`Liquid.cs:1286`) + merge-type reads (`:1303`); the C# `tile4` is a LIVE
+    reference, so a cut kind the kill just cleared passes on
+    `!tile4.active()` even when not `tileObsidianKill`. The seven cut kinds
+    outside the set (444/518/519/549/637/638/711) were wrongly refused.
+    Re-read after `kill_tile`; `liquid_downarm_live` ×4 discriminate (the
+    plant-3 witness is obsidianKill and cannot). The g46 UNION carries the
+    same bug — research/69 ADDENDUM A3.
+14. **Fall-arm pre-evap read (behavioural, low).** — **FIXED (W4-g45
+    doc-sweep, `8d581953b`).** The down transfer read the pre-evaporation
+    `start.liquid` (`Liquid.cs:570-575` reads the LIVE `tile5.liquid`),
+    resurrecting the shed units on every fall inside the underworld band.
+    Read `own_now` after the evaporation block; the g46 UNION already carries
+    this form (`f57d7bacd:832`). Witness
+    `the_fall_arm_moves_the_post_evaporation_level`.
 
 ## Task seeds
 
@@ -242,6 +279,10 @@ still open items in ROADMAP §3.
   `SquareTileFrame` being callable from tr-core (new seam or an out-param).
 - **M** — ~~Port `AddWater`'s missing guards: 5-tile border, `type != 546`, and
   `CheckWaterDeath/CheckLavaDeath` → kill.~~ DONE (W4-g45 round 2).
+- **M** — ~~Port the bucket/sponge use arms (`Player.ItemCheck_UseBuckets`,
+  `Player.cs:46318-46504`).~~ DONE (W4-g45 doc-sweep, `editing/buckets.rs`,
+  research/104 §1b — the twelve kinds, the pickup/placement arms, the
+  hand-back + the five splashes).
 - **L** — Port the force-settle family: `QuickWater`/`SettleWaterAt`/
   `AttemptToMoveHoney|Lava|Shimmer`, the world-load settle (`WorldFile.cs:735-760`,
   `quickSettle`), stuck detection and panic mode. Depends on M above (merge tiles share

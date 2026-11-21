@@ -39421,3 +39421,94 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The liquid doc-sweep (W4-g45 lane 24, 2026-11-21)
+
+Branch `task/W4-g45-liquid-lava-honey-delays`, DOC-SWEEP phase continuing
+the guards-DONE tip `8e81814e`. Code-only: no cargo/tests/graphify run, no
+compiler invoked; every witness WRITTEN NOT RUN. The census + the four real
+gaps are recorded in `docs/research/104-doc-sweep-liquid.md`; the cross-lane
+graft instructions in the `docs/research/69-liquid-reconcile.md` ADDENDUM.
+
+### The census verdicts (no-gap items)
+
+- **QuickShimmer does not exist** in the 1.4.5.8 decompilation (zero grep
+  matches over `decompiled/Terraria/**.cs`). The shimmer bulk-settle is
+  `AttemptToMoveShimmer` (`Liquid.cs:387-433`) + `ShimmerCheck`
+  (`:1465-1468`), inside the g47 QuickWater family the UNION keeps.
+- **No liquid "pressure" constant exists** — the model is cellular
+  mass-transfer. The flow-rate constants (maxLiquid 25000 / maxLiquidBuffer
+  50000 / cycles 10 / kill 8 / KILL_DEAD 999 / lava delay 5 / honey delay 10 /
+  the 7/5/4/4/3/2/2 averaging divisors / the sub-3 -1 bias / the >=24 merge
+  gate / the min(2,liquid) evap shed / the gfx-quality `17-10q` and
+  `maxLiquid*(0.25+0.75q)` runtime pair) all verified matching the port
+  (research/104 §1c table).
+- **The honey/crispy-honey merge (c34 owns it) is correctly fed by the g45
+  delay counters**: the reactions run EVERY visit (`LavaCheck`/
+  `HoneyCheck`/`ShimmerCheck` before the delay gate, `Liquid.cs:480-490`
+  /`:511-522`), the delay throttles only the flow. The g45
+  `the_delay_gate_never_throttles_the_merge` pin and c34's
+  `honey_and_lava_merge_into_crisp_honey_once` agree.
+- **e19/f47 own the item-side shimmer physics** (WorldItem.MoveInWorld/
+  UpdateShimmer, the shimmerWet ladder, the repulsion scan, the transform/
+  decraft spawns); neither touches `tr-core/src/liquid.rs`. The liquid-side
+  shimmer arm (`Liquid.cs:542-545`) has NO delay gate — pinned by the new
+  `shimmer_falls_every_visit_like_water` witness (`99a4f8ccf`).
+
+### The four ported gaps
+
+1. **The down-arm LIVE post-burn reads** (`c8908a55d`, `Liquid.cs:1278-1306`).
+   The C# `tile4` is a reference: the merge gate (`:1286`) + merge-type
+   reads (`:1303`) run AFTER the `tileCut` burn (`:1280`). The port's
+   pre-kill copy wrongly refused the drain/merge for the seven cut kinds
+   OUTSIDE `tileObsidianKill` (444/518/519/549/637/638/711 — the generated
+   bitset membership hand-computed). Re-read `down` after `kill_tile`;
+   the container `flag` stays the pre-kill read (`:1274` precedes
+   `:1278`). `liquid_downarm_live` ×4 (the plant-3 witness is
+   obsidianKill and cannot discriminate). **The g46 UNION carries the same
+   bug** — the graft must take this fix (research/69 ADDENDUM A3).
+2. **The bucket/sponge family** (`fa96cf32a`, `Player.cs:46318-46504`) —
+   entirely unported on every lane before this pass. New
+   `world_sim/editing/buckets.rs` (the twelve kinds, the pickup/placement
+   arms, `PutItemInInventoryFromItemUsage`, the five `PlaySound(19)`
+   splashes on the S1-E-21f case-19 seam), wired before the melee arm
+   (`:43575` precedes `:43644`; `damage = -1` never mines/melees/places,
+   the bug-net tick-consume precedent). `bucket_use_tests` ×10.
+3. **The shimmer liquid-side flow pin** (`99a4f8ccf`) — the cadence suite
+   had the shimmer MERGE arms but no FLOW pin; shimmer falls like water at
+   the one-tile-per-two-passes skipLiquid cadence.
+4. **The fall-arm LIVE post-evap read** (`8d581953b`, `Liquid.cs:570-575`)
+   — the down transfer read the pre-evap `start.liquid`, resurrecting the
+   shed units on every fall in the underworld band; read `own_now` after
+   the evaporation block. The g46 UNION already carries this form
+   (`f57d7bacd:832`); g45 catches up + adds the discriminating witness.
+
+### Deliberate stand-ins (the bucket port)
+
+- **The mid-swing zero-stack refusal**: the C# `ItemCheck_UseBuckets` would
+  still fire on a zero stack mid-swing (`sItem` is a reference); the port
+  refuses (a one-action-per-stack floor) and clears the emptied slot at the
+  swing end (`TurnToAir`, `Player.cs:42824-42828`). The C# keeps the kind
+  through the swing too, so the observable difference is one refused action
+  on the last stack's swing tail.
+- **The `noBuilding` gate half** (`:46320`) has no port state — the
+  frozen/webbed CC gate already refuses (the standing `editing.rs`
+  noBuilding note).
+- **The pickup box-sum reads out-of-world cells as absent** (the C#
+  `Main.tile[i,j]` is non-null at the edge); the reach rect can poke past
+  the world edge, so the port probes. A vanilla world's liquid never sits in
+  the 5-tile border, so the box is always in-bounds at runtime.
+- **The bucket splashes ride the player's top-left** (`(int)position.X/Y`),
+  Style 1, on the `UpdatePlayers` stream — the S1-E-21f case-19 playing
+  guard + the one `Next(-10,11)*0.01` pitch draw (`LegacySoundPlayer.cs:871-888`).
+
+### The graft dependency (research/69 ADDENDUM)
+
+The g46 graft-prep UNION (`f57d7bacd`) dropped the g45 round-2 AddWater
+guards (the 5-tile border, the grate-546 carve-out, the inline
+`CheckWaterDeath`/`CheckLavaDeath` kill, the `&mut World` ripple) and
+the (+6,+6) widened fixtures. The graft-union MUST carry them (the g45
+`liquid_addwater_guards` module + the widened `basin`/`floor_world`/
+`shaft` helpers), plus the down-arm fix, the bucket module, the shimmer-flow
+and fall-arm witnesses. The e11 `tileobject::check_water_death`/
+`check_lava_death` seam is a merge-order dependency (e11 not in main yet).

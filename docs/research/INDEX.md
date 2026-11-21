@@ -75,6 +75,8 @@ per `docs/superpowers` agreements).
 | 61 | Weapon data census (S1-P-i02: all 624 weapon rows, Item.SetDefaults vs itemdata.rs; 18 fields + 25 seed variants; 0 WRONG / 0 MISSING) | `61-weapon-data-census.md` | ✅ |
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
+| 69 | Liquid 4-way reconcile (W4-g46 merger assist: the g45/g46/g47/f25 per-fn KEEP table + the graft-prep UNION record + the W4-g45 ADDENDUM — the UNION dropped the AddWater guards + widened fixtures) | `69-liquid-reconcile.md` | 🟡 |
+| 104 | DOC-SWEEP lane 24 liquid census + the bucket port (W4-g45: QuickShimmer phantom / no pressure constant / the flow-rate table; the down-arm live reads + ItemCheck_UseBuckets + the shimmer-flow & fall-arm pins; code-only) | `104-doc-sweep-liquid.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
