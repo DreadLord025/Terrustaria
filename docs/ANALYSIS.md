@@ -36055,6 +36055,66 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## World-item dust sites (W4-g15, code-only 2026-11-20)
+
+**Census correction.** The task brief names `Item.cs`, but a direct-file scan
+(49 981 lines) finds ZERO `Dust.NewDust*` sites there — `Item.cs` is the item
+*definition* class. The item use/pickup/spawn dust lives in `WorldItem.cs`
+(the `Main.item[400]` world-drop entity), exactly as research/15's per-file
+table records (`WorldItem.cs | 17 | 1 | none | MISSING`). W4-g15 ports those
+17 dust sites; research/65 pins the census + the line-order map.
+
+**The port.** `crates/tr-app/src/item_dust.rs` carries the 17 sites behind a
+`DustSink` seam (disjoint field borrows: the `UpdateItems` stream, the shared
+`DustPool`, the `World`, the `SpawnCtx`, the `Audio` — the
+`world_sim/npcs.rs` dust convention). Every spawn rides the verbatim
+`DustPool::new_dust` / `new_dust_perfect` (W4-d50, `Dust.cs:75-256` / `:54-63`);
+the sentinel (6000) is written through like the C# (`Main.dust[6000]`). The
+sites: the `UpdateShimmer` shimmered sparkle (`:461`, 1/30 gate), the three
+`DespawnIfMeetingConditions` burns (fallen-star 75 daytime `:649`, the 4143
+expiry `:661` with the CornflowerBlue→Indigo `Color.Lerp`, the 3822 DD2 despawn
+`:670` with the `Next(18,24)` count), the eight `MoveInWorld` wet entry/exit
+splashes (`:892`-`:1025`, shimmer 308 / honey 152 / water `dustWater()` / lava
+35, the exit-water box's dropped `−8` kept verbatim), the meteorite 116 1/250
+gate (`:1217`), the pixie-dust 501 1/6 gate (`:1299`), the fallen-star / boss-bag
+`% 12` `NewDustPerfect` sparkles (`:1629`/`:1641`, the `NextVector2CircularEdge`
++ two `NextFloat` argument order), and the `ShimmerEffect` transform burst
+(`:1671`, 20 × 309 + the Item176 play).
+
+**RNG (S1-A-10).** One slot per C# call-pass: every draw rides the
+`UpdateItems` stream (`Main.SwapRandom("UpdateItems")` wraps
+`WorldItem.UpdateItem`, `Main.cs:17779-17781`), in `Main.item` slot order. No
+new streams. The `ShimmerEffect` burst runs from `GetShimmered`'s shared tail
+(`:1846`) — still inside the same swap. The `ItemDrop.update` stays RNG-free;
+the `wet_edges` state machine arms a `splash_edge` marker the items-pass drain
+reads, and `tick_age` is the `timeSinceItemSpawned` tick at its C# position
+(AFTER `UpdateItem_VisualEffects`, `:437-440`, so the `% 12` / `> 300` gates read
+the pre-increment value).
+
+**Deliberate deviations.**
+- The `:653` `Gore.NewGore` sibling (the fallen-star burn's 16/17 gore ×3) is
+  the gore lane's (W4-d55/f10); its `Next(16,18)` draws are a documented skip,
+  exactly as the rest of the port treats unported gore.
+- The honey/shimmer wet flags ride the box scan (`box_in_liquid`) rather than
+  the `Collision.honey`/`Collision.shimmer` statics' last-write-wins — the
+  port has no per-probe static, so the box union approximates it (the splash
+  kind resolution is lava-first, then shimmer, then honey, else water, matching
+  the `:886-940` arm order).
+- The pixie-dust `this.color` is `Color::default()` (all-zero): the C# 501 row
+  sets no colour (`Item.cs:7349-7354`), so `SetDefaults`' `this.color = default`
+  (`Item.cs:49005`) stands — exact for the pixie dust. The port's `ItemDrop`
+  carries no per-item colour field yet.
+- The `ShimmerEffect` `netMode == 2` server branch (`:1663-1667`) is dropped
+  (single-player port).
+
+**Witnesses.** `item_dust.rs` carries `w4_g15_*` stream-mirror witnesses (the
+gate draws, the full NewDust draw sequence, the splash counts/types, the
+despawn gates, the palette/lerp rows, the sentinel write-through). WRITTEN,
+NOT RUN — **no cargo/rustc/rustfmt/tests/dotnet/graphify invoked** (code-only
+lane). The two `world_sim/wiring.rs` `ItemDrop` struct literals gained the new
+fields; `item_lights.rs` / `entity_lights.rs` docs repointed to the landed dust
+halves.
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the
