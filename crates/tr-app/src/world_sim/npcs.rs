@@ -5195,10 +5195,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
     }
     // The Slime Rain kill counter (`DoDeathEvents_AdvanceSlimeRain`,
-    // `NPC.cs:79078-79095`): the slime kills count toward 150 (75 after
-    // the first King) while no King lives (`!AnyNPCs(50)`); at the
-    // threshold `SpawnOnPlayer(50)` — the King — and the counter flips
-    // negative (`-num / 2`) for the next climb.
+    // `NPC.cs:79078-79095`): the BLUE slime kills (`Main.slimeRainNPC[type]`,
+    // `Main.cs:8864` sets only type 1) count toward 150 (75 after the first
+    // King) while no King lives (`!AnyNPCs(50)`); at the threshold
+    // `SpawnOnPlayer(50)` — the King — and the counter flips negative
+    // (`-num / 2`) for the next climb.
     if app.world.slime_rain
         && !app
             .npcs
@@ -5206,7 +5207,11 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             .any(|n| n.kind == NpcKind::KingSlime && n.hp > 0)
     {
         for npc in &dead {
-            if npc.kind != NpcKind::Slime {
+            // `Main.slimeRainNPC[this.type]` (`Main.cs:8864` sets ONLY type 1
+            // — the blue slime — true): the other slime variants do NOT
+            // count toward the King Slime spawn. The pre-final port counted
+            // every `NpcKind::Slime`; the gate is the blue variant only.
+            if npc.kind != NpcKind::Slime || npc.slime != SlimeVariant::Blue {
                 continue;
             }
             let threshold = if app.world.downed_slime_king { 75 } else { 150 };
@@ -17873,6 +17878,32 @@ mod dw3_tests {
             !a.npcs.iter().any(|n| n.kind == NpcKind::DungeonSpirit),
             "a non-dungeon wall spawns nothing"
         );
+    }
+
+    /// W4-f35 LOOT FINAL: `DoDeathEvents_AdvanceSlimeRain`
+    /// (`NPC.cs:79078-79095`) counts ONLY the blue slime (`Main.slimeRainNPC`
+    /// sets only type 1, `Main.cs:8864`) — the other variants do NOT advance
+    /// the King Slime spawn counter. The pre-final port counted every slime.
+    #[test]
+    fn w4_f35_slime_rain_counts_only_the_blue_slime() {
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        a.world = crate::test_world_helpers::ground();
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        a.world.slime_rain = true;
+        a.world.slime_rain_kills = 0;
+        // A dead GREEN slime: does NOT count.
+        let mut green = Npc::spawn_slime_variant(&a.world, 30, SlimeVariant::Green).unwrap();
+        green.hp = 0;
+        a.npcs.push(green);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert_eq!(a.world.slime_rain_kills, 0, "a green slime does not count");
+        // A dead BLUE slime: counts.
+        let mut blue = Npc::spawn_slime_variant(&a.world, 32, SlimeVariant::Blue).unwrap();
+        blue.hp = 0;
+        a.npcs.push(blue);
+        update_npcs(&mut a, 1.0 / 60.0);
+        assert_eq!(a.world.slime_rain_kills, 1, "a blue slime counts");
     }
 
     /// DW-3.3: the spawner draws the persistent `SpawnNPC` stream — its
