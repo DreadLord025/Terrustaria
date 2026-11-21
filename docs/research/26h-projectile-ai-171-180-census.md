@@ -1,7 +1,11 @@
-# 26h — Projectile aiStyles 171-180 FINAL band census (W4-d18)
+# 26h — Projectile aiStyles 171-180 FINAL band census (W4-d18) — SEALED
 
 > Researched 2026-11-21 at branch tip `5e51c66e` (band complete + the
 > Damage_CanDealDamage census round), base `a725acb0` (wave-3 complete).
+> **SEALED by the PROJ-171 RETIRE round** (tips `83600da0` / `f53de9c7` /
+> `dd7b1b0a` + this seal): the band is complete, the Damage-switch remainders
+> are ported, the 978 dup is dropped (keep-d12c), the 601 row-shape is
+> cross-noted (d6-lane). No further census work is owed on 171-180.
 > C# cites are `decompiled/Terraria/Projectile.cs` (stable); Rust cites are
 > `crates/tr-app/src/projectile.rs` / `projectile/data.rs` /
 > `projectile_ai_misc.rs` / `projectile_ai_empress.rs` at this revision.
@@ -113,3 +117,46 @@ the dispatch arms checked against the live match block (no duplicate style
 arm — the deny(unreachable_patterns) contract); the row witness + gate
 witnesses WRITTEN, NOT RUN. Build/test verification deferred to the merge
 gate per the task contract.
+
+## PROJ-171 RETIRE — the closeout ledger (this branch)
+
+| phase | commit | scope |
+| --- | --- | --- |
+| 1 | `83600da0` | the Damage-switch rowless-conditionals (434/451/631/537/261/818/281/511-513/1128/1092/1091/1122 + aiStyles 25/93) ARM-TOTAL + the projPet `:12480` block (`proj_pet_contact_refuses`, the decoded exception ladder); 2 witnesses written not run; ANALYSIS census table updated (the two remainders CLOSED) |
+| 2 | `f53de9c7` | the 978 Volcano dup DROP (keep-d12c superset `9e668d0f0`, the d19 verdict `6e80e4201`); the EXACT 5-site drop-hunk published above (D1-D5); the 964/1106 residuals + `ai_volcano` arm stay |
+| 3 | `dd7b1b0a` | the 601 CANNON_EXPLOSIVE row-shape cross-note (d6-lane): aiStyle 1 NOT 0, penetrate 1 / alpha 255 the true C# shape, the M7-WIRE-2 row mislabeled; the teleport AI unported; the "death blast" claim withdrawn; 1 witness written not run |
+| 4 | (this seal) | 26h SEALED + the band-171-180 declaration below |
+
+**Witnesses added this retire round (WRITTEN, NOT RUN):**
+`w4_d18_the_rowless_conditionals_census`, `w4_d18_the_proj_pet_contact_ladder`,
+`w4_d18_the_601_portal_bolt_gate_refusal_cross_note`; the residual-row witness
+`w4_d18_the_residual_rows_carry_the_csharp_set_defaults` re-pointed (the 978
+half → `proj_data(978).is_none`). **No compiler invoked** — build/test
+verification deferred to the merge gate per the task contract.
+
+## SEALED + band-171-180 declaration
+
+**26h is SEALED.** The aiStyles 171-180 band is **10/10 styles armed, 15/15
+kinds rowed** (the FINAL table above), boundaries closed at BOTH ends (the
+171 friendly-weapon tail `e4c69e46` + the 180 empress boundary). The
+PROJ-171 RETIRE round closes the last Damage-switch remainders:
+
+* **Rowless-conditionals:** PORTED arm-total — the kind-literal +
+  `proj_data().ai_style` gate shape means every row-less term AUTO-ACTIVATES
+  when a d-lane lands the row (the activation contract, verified). No re-port
+  is owed when the rows land.
+* **projPet `:12480` block:** PORTED (`proj_pet_contact_refuses`) — the
+  `PROJ_PET` table + the decoded exception ladder; the rowed attack-minions
+  are ALL exceptions (their attack windows keep biting), the inert pets /
+  row-less pygmies refuse faithful to C#.
+* **978 dup:** DROPPED (keep-d12c) — the row rides d12c's `9e668d0f0`
+  superset; the 978 spawn declines on d18 until d12c merges (merge-order,
+  not coverage).
+* **601 row-shape:** CROSS-NOTED to the d6 wiring/teleport lane (the row is
+  M7-WIRE-2's, not d18's; the gate already refuses 601 faithfully).
+
+**Remaining (NOT band gaps, owned elsewhere):** the 874 style-0 visual, the
+924 row-less-in-C#-too kind, the R7 empress-spawner wiring, the hitbox/draw
+slices (the S1-D-4 ANALYSIS notes), the 601 teleport-AI port (d6-lane), the
+978 row merge (d12c). **No census/arm/row work is owed on 171-180.** The
+band is declared COMPLETE + SEALED.
