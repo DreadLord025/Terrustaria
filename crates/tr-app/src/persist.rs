@@ -32,6 +32,10 @@ pub struct SavedPlayer {
     /// with the unlock absent. The permanent +4 defense
     /// (`UpdatePermanentBoosters` `:12853-12856`) survives world reloads.
     pub used_aegis_fruit: bool,
+    /// `Player.usedGummyWorm` (`Player.cs:2074`, save `:54785` / load
+    /// `:55259`) — version 8 of the sidecar (W4-g89), the SECOND token on
+    /// the unlock line. The permanent +3 fishing skill (`:12857-12860`).
+    pub used_gummy_worm: bool,
 }
 
 pub fn player_path(world: &Path) -> PathBuf {
@@ -54,7 +58,7 @@ pub fn save(
     dye: &[u16; 10],
     kills: &[(String, i32)],
 ) -> std::io::Result<()> {
-    let mut s = format!("7\n{} {} {}\n", player.x, player.y, player.hp);
+    let mut s = format!("8\n{} {} {}\n", player.x, player.y, player.hp);
     for (kind, count) in inventory {
         s.push_str(&format!("{kind} {count} "));
     }
@@ -75,8 +79,13 @@ pub fn save(
     }
     s.push_str("\n");
     // Version 7 (W4-g89): the permanent shimmer unlocks on their own line
-    // — `Player.usedAegisFruit` (`Player.cs:54782`), 0/1.
-    s.push_str(&format!("{}\n", u8::from(player.used_aegis_fruit)));
+    // — `Player.usedAegisFruit` (`Player.cs:54782`), 0/1. Version 8 appends
+    // `Player.usedGummyWorm` (`:54785`) as the line's second token.
+    s.push_str(&format!(
+        "{} {}\n",
+        u8::from(player.used_aegis_fruit),
+        u8::from(player.used_gummy_worm)
+    ));
     std::fs::write(player_path(world), s)
 }
 
@@ -86,10 +95,11 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     let version = lines.next()?.trim();
     let migrate = match version {
         // Version 4 adds the equipped armor line; 5 the bestiary kills; 6 the
-        // dye kinds; 7 the permanent shimmer unlocks (W4-g89); 3 stores
-        // vanilla `ItemID`s; 1 and 2 stored the ad-hoc tile/wall/weapon/coin
-        // ranges and are converted on load.
-        "3" | "4" | "5" | "6" | "7" => false,
+        // dye kinds; 7 the permanent shimmer unlocks (W4-g89); 8 the Gummy
+        // Worm token on that line; 3 stores vanilla `ItemID`s; 1 and 2
+        // stored the ad-hoc tile/wall/weapon/coin ranges and are converted
+        // on load.
+        "3" | "4" | "5" | "6" | "7" | "8" => false,
         "1" | "2" => true,
         _ => return None,
     };
@@ -116,7 +126,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         .unwrap_or(0);
     // The armor line is version 4+; older files load with every slot empty.
     let mut armor = [0u16; 3];
-    if matches!(version, "4" | "5" | "6" | "7") {
+    if matches!(version, "4" | "5" | "6" | "7" | "8") {
         let mut armor_line = lines.next()?.split_whitespace();
         for slot in &mut armor {
             *slot = armor_line.next()?.parse().ok()?;
@@ -124,7 +134,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     }
     // Version 5 adds the bestiary kill pairs.
     let mut kills = Vec::new();
-    if matches!(version, "5" | "6" | "7") {
+    if matches!(version, "5" | "6" | "7" | "8") {
         let kill_line = lines.next()?;
         let mut parts = kill_line.split_whitespace();
         let count: usize = parts.next().and_then(|c| c.parse().ok()).unwrap_or(0);
@@ -139,19 +149,24 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
     // Version 6 adds the dye slot kinds; older files load with every slot
     // empty.
     let mut dye = [0u16; 10];
-    if matches!(version, "6" | "7") {
+    if matches!(version, "6" | "7" | "8") {
         let dye_line = lines.next()?;
         for (slot, kind) in dye.iter_mut().zip(dye_line.split_whitespace()) {
             *slot = kind.parse().ok()?;
         }
     }
     // Version 7 (W4-g89) adds the permanent shimmer unlock flags
-    // (`Player.usedAegisFruit`, `Player.cs:55256`); older files load with
-    // the unlock absent.
-    let used_aegis_fruit = if version == "7" {
-        lines.next()?.trim() == "1"
+    // (`Player.usedAegisFruit`, `Player.cs:55256`); version 8 appends
+    // `usedGummyWorm` (`:55259`) as the second token. Older files load with
+    // the unlocks absent; a v7 line has only the first token.
+    let (used_aegis_fruit, used_gummy_worm) = if matches!(version, "7" | "8") {
+        let line = lines.next()?;
+        let mut tokens = line.split_whitespace();
+        let fruit = tokens.next().is_some_and(|t| t == "1");
+        let worm = tokens.next().is_some_and(|t| t == "1");
+        (fruit, worm)
     } else {
-        false
+        (false, false)
     };
     Some(SavedPlayer {
         x,
@@ -163,6 +178,7 @@ pub fn load(world: &Path) -> Option<SavedPlayer> {
         dye,
         kills,
         used_aegis_fruit,
+        used_gummy_worm,
     })
 }
 
@@ -210,9 +226,9 @@ mod tests {
     }
 
     /// W4-g89 — the permanent Aegis Fruit unlock round-trips through the
-    /// v7 sidecar line (`Player.usedAegisFruit`, save `Player.cs:54782` /
-    /// load `:55256`): the flag survives the world reload, so the +4
-    /// booster (`:12853-12856`) resumes with the character.
+    /// sidecar's unlock line (v7 wrote it; save `Player.cs:54782` / load
+    /// `:55256`): the flag survives the world reload, so the +4 booster
+    /// (`:12853-12856`) resumes with the character.
     #[test]
     fn w4_g89_the_aegis_fruit_unlock_round_trips() {
         let world = World::new("t".into(), 32, 32);
@@ -221,12 +237,45 @@ mod tests {
         let dir = crate::test_world_helpers::test_scratch("persist-aegis");
         let path = dir.join("tr-persist-aegis.trwld");
         save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
-        let s = load(&path).expect("the v7 sidecar");
+        let s = load(&path).expect("the sidecar");
         assert!(s.used_aegis_fruit, "the unlock persisted");
         // The fresh player loads false.
         let fresh = Player::spawn(&world);
         save(&path, &fresh, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
-        assert!(!load(&path).expect("the v7 sidecar").used_aegis_fruit);
+        assert!(!load(&path).expect("the sidecar").used_aegis_fruit);
+        crate::test_world_helpers::remove_scratch(&dir);
+    }
+
+    /// W4-g89 — the Gummy Worm unlock rides the v8 unlock line's SECOND
+    /// token (`Player.usedGummyWorm`, save `Player.cs:54785` / load
+    /// `:55259`); a v7 file (one token) loads with the worm absent while
+    /// the fruit half still reads.
+    #[test]
+    fn w4_g89_the_gummy_worm_unlock_round_trips_and_v7_back_reads() {
+        let world = World::new("t".into(), 32, 32);
+        let mut p = Player::spawn(&world);
+        p.used_gummy_worm = true;
+        let dir = crate::test_world_helpers::test_scratch("persist-gummy");
+        let path = dir.join("tr-persist-gummy.trwld");
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("the v8 sidecar");
+        assert!(s.used_gummy_worm, "the unlock persisted");
+        assert!(!s.used_aegis_fruit, "the first token stayed false");
+        // Both flags round-trip independently.
+        p.used_aegis_fruit = true;
+        save(&path, &p, [(0, 0); 50], 0, [0, 0, 0], &[0; 10], &[]).unwrap();
+        let s = load(&path).expect("the v8 sidecar");
+        assert!(s.used_aegis_fruit && s.used_gummy_worm);
+        // A v7 file: the unlock line carries only the fruit token.
+        let mut line = String::from("7\n1.0 2.0 100\n");
+        for _ in 0..50 {
+            line.push_str("0 0 ");
+        }
+        line.push_str("\n0\n89 80 76\n0 \n1007 0 0 0 0 1015 0 0 0 0 \n1\n");
+        std::fs::write(player_path(&path), line).unwrap();
+        let s = load(&path).expect("the v7 sidecar still reads");
+        assert!(s.used_aegis_fruit, "the v7 fruit token reads");
+        assert!(!s.used_gummy_worm, "a v7 line carries no worm token");
         crate::test_world_helpers::remove_scratch(&dir);
     }
 
@@ -244,6 +293,7 @@ mod tests {
         std::fs::write(player_path(&path), line).unwrap();
         let s = load(&path).expect("the v6 sidecar still reads");
         assert!(!s.used_aegis_fruit, "older files carry no unlock");
+        assert!(!s.used_gummy_worm, "older files carry no worm either");
         assert_eq!(s.dye[0], 1007, "the v6 dye line still parses");
         crate::test_world_helpers::remove_scratch(&dir);
     }

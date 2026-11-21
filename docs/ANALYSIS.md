@@ -39295,3 +39295,46 @@ last-fruit TurnToAir + non-fruit refusal), `player.rs` ×1 (the +4 per
 tick, no compounding, flag survives ResetEffects), `persist.rs` ×2 (v7
 round-trip; v6 back-compat), `player_file.rs` ×1 (the :54782/:55256 bool
 round-trip with the walk alignment pinned).
+
+## W4-g89b — the Gummy Worm use path + persistence (2026-11-21, code-only)
+
+The 5341 Gummy Worm (shimmer-crafted from a Gold Worm) is a once-ever
+permanent +3 fishing-skill unlock — `Player.usedGummyWorm`
+(`Player.cs:2074`). The flag and the `UpdatePermanentBoosters` row
+(`:12857-12860`) landed with S1-P-i35; the USE PATH and both persistence
+halves were missing and land here.
+
+- **Census correction**: the worm is **5341**, not 5339 (5339 is the
+  Arcane Crystal). `ItemCheck_UseShimmerPermanentItems`
+  (`Player.cs:45385-45423`) holds SIX arms: 5337 Aegis Crystal
+  (lifeRegenTime += 0.2, `:19113`), 5338 Aegis Fruit (landed, W4-g89),
+  5339 Arcane Crystal (d117's in-flight flag/read arms), 5340 Galaxy Pearl
+  (e26's landed luck read), 5341 Gummy Worm (this commit), 5342 Ambrosia
+  (the follow-up commit). The a6-crystals-powerups / g87-demon-heart-use /
+  g88-life-fruit-use branches claim 5337/5339/5340 + 3335 + the Life
+  Fruit; at main tip all three sit at zero commits — nothing landed to
+  skip beyond those claims.
+- **The use path**: `use_gummy_worm` under the i37 `use_press_edge`
+  block, sharing the new `use_shimmer_permanent_item` core with the
+  Aegis Fruit arm (the six C# arms are the SAME machine — house-style
+  keep-one helper; the `fn use_aegis_fruit` anchor marker survives as
+  the thin wrapper). Same folds: press-tick window, 45-tick
+  `ApplyItemTime` (`Item.cs:42376-42385` — useTime 45 == useAnimation
+  45), consumable pay + TurnToAir, no net sync.
+- **The .plr slot**: the 260+ six-unlock block now keeps the FIFTH bool
+  (`usedGummyWorm`, write `:54785` / read `:55259`); four remain
+  consumed-and-dropped (a6's three + Ambrosia until the next commit).
+- **The sidecar**: `.trplayer` version 8 appends the worm as the unlock
+  line's SECOND token; a v7 one-token line reads fruit-only, v3-v6 read
+  neither. The App sidecar restore seeds both flags.
+
+### Verification (W4-g89b)
+
+Code-only: re-read `Player.cs:45385-45423` / `:12851-12867` /
+`:54776-54787` / `:55235-55262` and `Item.cs:42376-42385`; **no
+cargo/rustc/rustfmt/tests/graphify invoked**. Three witness tests
+WRITTEN, NOT RUN: `editing.rs` (unlock-once + consume + 45-tick cadence
++ last-worm TurnToAir + non-worm refusal), `player_file.rs` (the
+:54785/:55259 fifth-bool round-trip, both-flags independence, walk
+alignment), `persist.rs` (v8 round-trip + the v7 one-token back-read;
+the v6 witness extended with the worm-absent assert).

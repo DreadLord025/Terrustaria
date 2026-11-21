@@ -1653,37 +1653,43 @@ fn held_use_time_ticks(held: ItemSlot) -> i32 {
     registry::get(held.kind).map_or(0, |d| i32::from(d.use_time))
 }
 
-/// W4-g89 — `ItemCheck_UseShimmerPermanentItems`' Aegis Fruit arm
-/// (`Player.cs:45393-45398`, called from `ItemCheck_OwnerOnlyCode`
-/// `:43607`): the 5338 permanent unlock. The C# gate is
-/// `sItem.type == 5338 && itemAnimation > 0 && !usedAegisFruit &&
-/// ItemTimeIsZero` — the mid-swing window folds onto the press tick (the
-/// i37 food/potion convention; the caller's `use_press_edge` carries the
-/// animation/cooldown halves). The arm: `ApplyItemTime(sItem)` (the
-/// ACTION cadence re-arms — `SetItemTime` sets itemTime = itemTimeMax =
-/// useTime, `:4406-4418`; the swing keeps running), then
-/// `usedAegisFruit = true`. The `NetMessage.SendData(4)` player sync
-/// (`:45397`) has no single-player port. The generic consumable tail
-/// (`:43280-43326` — `Item.consumable` on the 5338 row) pays one per use;
-/// the TurnToAir fold matches the food arm above.
-fn use_aegis_fruit(app: &mut App, held: ItemSlot) -> bool {
-    if held.kind != 5338 {
+/// `ItemCheck_UseShimmerPermanentItems`' shared arm body
+/// (`Player.cs:45385-45423`, called from `ItemCheck_OwnerOnlyCode`
+/// `:43607`): every one of the six C# arms is the SAME machine —
+/// `sItem.type == <id> && itemAnimation > 0 && !<flag> && ItemTimeIsZero`
+/// → `ApplyItemTime(sItem)`, `<flag> = true`, `NetMessage.SendData(4)`.
+/// The mid-swing window folds onto the press tick (the i37 food/potion
+/// convention; the caller's `use_press_edge` carries the animation/
+/// cooldown halves). The `SendData(4)` player sync has no single-player
+/// port. The generic consumable tail (`:43280-43326` — `Item.consumable`
+/// on every 5337-5342 row, `Item.cs:42337-42395`) pays one per use; the
+/// TurnToAir fold matches the food arm above. `already_used` is the
+/// caller-read `!<flag>` half; `latch` writes the flag.
+fn use_shimmer_permanent_item(
+    app: &mut App,
+    held: ItemSlot,
+    kind: u16,
+    already_used: bool,
+    latch: impl FnOnce(&mut Player),
+) -> bool {
+    if held.kind != kind {
         return false;
     }
     let Some(p) = app.player.as_mut() else {
         return false;
     };
-    if p.used_aegis_fruit {
-        return false; // `!this.usedAegisFruit` (`:45393`) — once ever
+    if already_used {
+        return false; // `!this.<flag>` — once ever
     }
-    p.used_aegis_fruit = true; // `:45396`
+    latch(p);
     // The use START (`ItemCheck_StartActualUse`, `:51678-51680`): the swing
     // + the Item92 UseSound (`Item.cs:42351`) — the press tick's swing seam
     // every consume arm rides (the boss-summon gate above starts it the
     // same way before its mid-swing fire).
     start_use_timers(app, held);
-    // `ApplyItemTime(sItem)` (`:45395`): the PREFIXED instance useTime
-    // (`Item.Prefix` scales useTime), the boss-summon arm's read shape.
+    // `ApplyItemTime(sItem)` (`:45389`/`:45395`/`:45401`/`:45407`/`:45413`/
+    // `:45419`): the PREFIXED instance useTime (`Item.Prefix` scales
+    // useTime), the boss-summon arm's read shape.
     app.item_time = crate::prefix::prefixed_stats(held.kind, held.prefix)
         .map(|s| s.use_time)
         .or_else(|| registry::get(held.kind).map(|d| d.use_time as i32))
@@ -1697,6 +1703,21 @@ fn use_aegis_fruit(app: &mut App, held: ItemSlot) -> bool {
     app.mine_target = None;
     app.mine_timer = 0.0;
     true
+}
+
+/// W4-g89 — the 5338 Aegis Fruit arm (`Player.cs:45393-45398`): the
+/// permanent +4 defense (`UpdatePermanentBoosters` `:12853-12856`).
+fn use_aegis_fruit(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_aegis_fruit);
+    use_shimmer_permanent_item(app, held, 5338, already, |p| p.used_aegis_fruit = true)
+}
+
+/// W4-g89 — the 5341 Gummy Worm arm (`Player.cs:45411-45416`): the
+/// permanent +3 fishing skill (`UpdatePermanentBoosters` `:12857-12860`,
+/// the i35 row). The flag landed with i35; this is its MISSING use path.
+fn use_gummy_worm(app: &mut App, held: ItemSlot) -> bool {
+    let already = app.player.as_ref().is_some_and(|p| p.used_gummy_worm);
+    use_shimmer_permanent_item(app, held, 5341, already, |p| p.used_gummy_worm = true)
 }
 
 /// Refresh the crack overlay's `mine_timer`/`mine_hardness` from the
@@ -2400,6 +2421,12 @@ pub(crate) fn update_editing(app: &mut App, dt: f32, screen: Vec2) {
         // `ItemTimeIsZero && itemAnimation > 0` window folds onto the press
         // tick (the i37 food/potion convention above).
         if use_aegis_fruit(app, held) {
+            return;
+        }
+        // W4-g89 — the 5341 Gummy Worm arm (`Player.cs:45411-45416`): the
+        // permanent +3 fishing skill (the i35 booster row's MISSING use
+        // path). Same fold, same once-ever gate.
+        if use_gummy_worm(app, held) {
             return;
         }
         // (Resync keep-one: the gate's i19 inline mana-potion arm was
@@ -16839,7 +16866,7 @@ mod use_loop_tests {
         assert_eq!(p.slots_minions, 1.0);
     }
 
-    /// W4-g89 — the Aegis Fruit (5338) use arm
+    /// W4-g89 — the 5338 Aegis Fruit use arm
     /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45393-45398`):
     /// ONE press unlocks `usedAegisFruit` permanently, pays one from the
     /// stack (the generic consumable tail `:43280-43326`) and re-arms the
@@ -16872,6 +16899,50 @@ mod use_loop_tests {
         assert!(!super::use_aegis_fruit(&mut app, held));
         assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
         assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+    }
+
+    /// W4-g89 — the 5341 Gummy Worm use arm
+    /// (`ItemCheck_UseShimmerPermanentItems`, `Player.cs:45411-45416`): the
+    /// i35 flag/booster row's MISSING use path. ONE press unlocks
+    /// `usedGummyWorm`, pays one and re-arms the 45-tick cadence
+    /// (`Item.cs:42376-42385` — useTime 45 == useAnimation 45). A second
+    /// worm is refused (`!usedGummyWorm`, `:45411`) — the stack stays.
+    #[test]
+    fn w4_g89_the_gummy_worm_unlocks_once_and_consumes_one() {
+        let mut app = app_with_staff(5341);
+        app.inventory[app.selected].count = 2;
+        app.mine_down = true;
+        app.mine_prev_down = false;
+        app.mine_released = true;
+        crate::world_sim::editing::update_editing(&mut app, 1.0 / 60.0, Vec2::new(800.0, 600.0));
+        assert!(
+            app.player.as_ref().unwrap().used_gummy_worm,
+            "the unlock latched (`:45414`)"
+        );
+        assert_eq!(app.inventory[app.selected].count, 1, "one paid (`:43317`)");
+        assert_eq!(
+            app.item_time,
+            45.0 * super::ONE_TICK_SECS,
+            "ApplyItemTime re-armed the 45-tick cadence (`:45413`)"
+        );
+        assert!(app.swing > 0.0, "the use-start swing seam armed");
+        // The second worm: the once-ever gate refuses.
+        let swing_before = app.item_time;
+        let held = app.inventory[app.selected];
+        assert!(!super::use_gummy_worm(&mut app, held));
+        assert_eq!(app.inventory[app.selected].count, 1, "the refusal keeps the stack");
+        assert_eq!(app.item_time, swing_before, "no cadence re-arm on refusal");
+        // The last worm TurnToAirs on the consume tick; a non-worm never
+        // enters the arm.
+        let mut last = app_with_staff(5341);
+        let held = last.inventory[last.selected];
+        assert!(super::use_gummy_worm(&mut last, held));
+        assert_eq!(last.inventory[last.selected].count, 0);
+        assert_eq!(last.inventory[last.selected].kind, 0, "TurnToAir folded");
+        let mut other = app_with_staff(2); // Dirt Block
+        let dirt = other.inventory[other.selected];
+        assert!(!super::use_gummy_worm(&mut other, dirt));
+        assert!(!other.player.as_ref().unwrap().used_gummy_worm);
     }
 
     /// W4-g89 — the last fruit in the stack TurnToAirs on the consume tick

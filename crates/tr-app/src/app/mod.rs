@@ -2940,8 +2940,11 @@ impl App {
                     // W4-g89 — the permanent Aegis Fruit unlock rides the
                     // sidecar's v7 line (`Player.usedAegisFruit` load,
                     // `Player.cs:55256`); the booster pass re-adds the +4
-                    // every tick (`:12853-12856`).
+                    // every tick (`:12853-12856`). The Gummy Worm rides the
+                    // same line's second token (v8, `:55259`; the +3 row
+                    // `:12857-12860`).
                     p.used_aegis_fruit = saved.used_aegis_fruit;
+                    p.used_gummy_worm = saved.used_gummy_worm;
                     coins = saved.coins;
                     armor_kinds = saved.armor;
                     dye_kinds = saved.dye;
