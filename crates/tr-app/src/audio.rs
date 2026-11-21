@@ -593,6 +593,9 @@ pub struct Audio {
     /// The two `SoundInstanceLiquid[n]` stand-ins (`LegacySoundPlayer.cs:322`):
     /// 0 = the waterfall, 1 = the lavafall. `Some` while the loop plays.
     liquid_loops: [Option<rodio::Sink>; 2],
+    /// The live pan gains the playing liquid-loop sources read (the XNA
+    /// `Pan` write reaches the instance mid-play, `:1267`/`:1297`).
+    liquid_pans: [Option<LiquidPanGains>; 2],
     /// The decoded SceneState ambient loops (`blizzard_strong_loop` /
     /// `blizzard_inside_building_loop`, from `Sounds/Custom/<name>.xnb` —
     /// the trackable path, `LegacySoundPlayer.cs:257`). The blizzard loops
@@ -745,6 +748,7 @@ impl Audio {
             cues,
             played: Default::default(),
             liquid_loops: [None, None],
+            liquid_pans: [None, None],
             tracked: crate::tracked_sound::SoundPlayer::default(),
             sound_style_random: tr_core::unified_random::UnifiedRandom::new(1),
             liquid_cues,
@@ -2122,10 +2126,14 @@ impl Audio {
     /// `LegacySoundPlayer`'s case 34/35 (`LegacySoundPlayer.cs:1249-1307`): the
     /// two persistent liquid loops whose Volume/Pan update in place every ¼ s
     /// tick (`Main.Ambience`, `Main.cs:13466-13515`). `volume <= 0` stops the
-    /// channel outright (the vanilla stops the instance; no fade). The pan is
-    /// baked at creation (a documented deviation — XNA re-pans the live
-    /// instance).
-    pub fn set_liquid_loop(&mut self, channel: usize, volume: f32, pan: f32) {
+    /// channel outright (the vanilla stops the instance; no fade). The pan
+    /// rides shared per-loop gains (`liquid_pans`) so the live instance
+    /// re-pans exactly like XNA's `SoundInstanceLiquid[n].Pan = num3`
+    /// (`:1267`/`:1297`); `pitch` is the re-volume arm's
+    /// `Pitch = -0.2f` (case 34, `:1268`) / `-0f` (case 35, `:1298`) — XNA
+    /// octaves, so the sink's speed is `2^pitch` (the fresh-create arms pass
+    /// `None` and keep the default rate, `:1272-1275`/`:1302-1305`).
+    pub fn set_liquid_loop(&mut self, channel: usize, volume: f32, pan: f32, pitch: Option<f32>) {
         let Some((channels, rate, samples)) = self.liquid_cues.get(channel).cloned().flatten()
         else {
             return;
@@ -2141,23 +2149,44 @@ impl Audio {
         }
         if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
             sink.set_volume(volume);
+            // The live re-pan (`:1267`/`:1297`): the shared gains the
+            // playing source reads per sample.
+            if let Some(gains) = &self.liquid_pans[channel] {
+                gains.store_left(left);
+                gains.store_right(right);
+            }
+            if let Some(p) = pitch {
+                sink.set_speed(2.0f32.powf(p.clamp(-1.0, 1.0)));
+            }
             return;
         }
         // A fresh looped sink: the decoded PCM wrapped in an infinite repeat.
+        let gains = LiquidPanGains::new(left, right);
         let buf =
             rodio::buffer::SamplesBuffer::new(channels, rate, samples).convert_samples::<f32>();
-        let source = Panned {
+        let source = PannedShared {
             inner: buf.repeat_infinite(),
             channels,
-            left: left.max(right).max(0.0),
-            right: right.max(left).max(0.0),
+            gains: gains.clone(),
             channel: 0,
         };
         if let Ok(sink) = rodio::Sink::try_new(handle) {
             sink.append(source);
             sink.set_volume(volume);
             self.liquid_loops[channel] = Some(sink);
+            self.liquid_pans[channel] = Some(gains);
         }
+    }
+
+    /// `SoundInstanceLiquid[n] != null && State == Playing`
+    /// (`LegacySoundPlayer.cs:1264`/`:1294`): the re-volume arm's guard —
+    /// headless (no output device) nothing ever plays, the fresh-create
+    /// convention. A stopped-but-not-reaped sink reads as finished.
+    pub fn liquid_loop_playing(&self, channel: usize) -> bool {
+        self.liquid_loops
+            .get(channel)
+            .and_then(|s| s.as_ref())
+            .is_some_and(|sink| !sink.empty())
     }
 
     /// `SoundEngine.PlayTrackedSound(SoundStyle)`'s global arm
@@ -2339,6 +2368,85 @@ struct Panned<S> {
     left: f32,
     right: f32,
     channel: u16,
+}
+
+/// The liquid loops' live pan gains — the XNA `SoundEffectInstance.Pan`
+/// write (`LegacySoundPlayer.cs:1267`/`:1297`) reaches the PLAYING source:
+/// the audio thread reads the atomics per sample while the ¼ s ambience
+/// tick stores the new `pan_gains` pair. `Arc` clones share one cell.
+#[derive(Clone)]
+struct LiquidPanGains {
+    left: std::sync::Arc<std::sync::atomic::AtomicU32>,
+    right: std::sync::Arc<std::sync::atomic::AtomicU32>,
+}
+
+impl LiquidPanGains {
+    fn new(left: f32, right: f32) -> Self {
+        use std::sync::atomic::AtomicU32;
+        Self {
+            left: std::sync::Arc::new(AtomicU32::new(left.to_bits())),
+            right: std::sync::Arc::new(AtomicU32::new(right.to_bits())),
+        }
+    }
+
+    fn store_left(&self, v: f32) {
+        self.left.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn store_right(&self, v: f32) {
+        self.right.store(v.to_bits(), std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn load(&self) -> (f32, f32) {
+        use std::sync::atomic::Ordering;
+        (
+            f32::from_bits(self.left.load(Ordering::Relaxed)),
+            f32::from_bits(self.right.load(Ordering::Relaxed)),
+        )
+    }
+}
+
+/// [`Panned`] with shared live gains — the liquid-loop source shape.
+struct PannedShared<S> {
+    inner: S,
+    channels: u16,
+    gains: LiquidPanGains,
+    channel: u16,
+}
+
+impl<S: Iterator<Item = f32>> Iterator for PannedShared<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        let sample = self.inner.next()?;
+        let (left, right) = self.gains.load();
+        let gain = match self.channel {
+            0 => left,
+            1 => right,
+            _ => 1.0,
+        };
+        self.channel = if self.channels == 0 {
+            0
+        } else {
+            (self.channel + 1) % self.channels
+        };
+        Some(sample * gain)
+    }
+}
+
+impl<S: Source<Item = f32>> Source for PannedShared<S> {
+    fn current_frame_len(&self) -> Option<usize> {
+        self.inner.current_frame_len()
+    }
+    fn channels(&self) -> u16 {
+        self.inner.channels()
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn total_duration(&self) -> Option<Duration> {
+        self.inner.total_duration()
+    }
 }
 
 impl<S: Iterator<Item = f32>> Iterator for Panned<S> {
@@ -3137,6 +3245,37 @@ mod tests {
         // null-or-Stopped test passes every time (the fresh-slot table,
         // the wave-C convention).
         assert_eq!(audio.play_roar(0, 0.0, 0.0), Some("Roar_0"));
+    }
+
+    /// W4-g73 falls-adjacent — the liquid loops' live pan: the shared gains
+    /// the playing source reads update in place (the XNA
+    /// `SoundInstanceLiquid[n].Pan = num3` write,
+    /// `LegacySoundPlayer.cs:1267`/`:1297`), and the headless slot guard
+    /// reads not-playing (the fresh-create convention).
+    #[test]
+    fn the_liquid_loop_pan_gains_update_the_live_source() {
+        let gains = LiquidPanGains::new(1.0, 0.5);
+        let reader = gains.clone();
+        assert_eq!(reader.load(), (1.0, 0.5));
+        // The ¼ s re-pan stores reach the same cell the source reads.
+        let (left, right) = sound::pan_gains(-0.75);
+        gains.store_left(left);
+        gains.store_right(right);
+        assert_eq!(reader.load(), (left, right));
+        assert_eq!(reader.load(), (1.0, 0.25));
+        // The source shape applies the gains per channel.
+        let mut src = PannedShared {
+            inner: [1.0f32, 1.0, 1.0, 1.0].into_iter(),
+            channels: 2,
+            gains: reader,
+            channel: 0,
+        };
+        assert_eq!(src.next(), Some(1.0));
+        assert_eq!(src.next(), Some(0.25));
+        // Headless: no output device, so the slot never plays.
+        let audio = Audio::new(None);
+        assert!(!audio.liquid_loop_playing(0));
+        assert!(!audio.liquid_loop_playing(1));
     }
 
     /// S1-E-21g — the int-overload peers draw exactly ONE case pitch on

@@ -899,6 +899,14 @@ pub(crate) struct App {
     /// `Main.ambientLavafallX/Y/Strength` (`Main.cs:2207-2211`, stored by
     /// `WaterfallManager.cs:963-965`): the lavafall loop's (strength, x, y).
     pub(crate) ambient_lavafall: (f32, f32, f32),
+    /// `Main.ambientLavaX/Y/Strength` (`Main.cs:2213-2217`, stored by
+    /// `oldDrawWater`'s `Main.cs:57932-57936` retro-only scan): the pooled
+    /// lava's (strength, x, y) — the lavafall loop's position pick and
+    /// strength sum read it (`Main.Ambience`, `Main.cs:13488-13497`). The
+    /// port's liquid passes are the `LiquidRenderer` path, which never
+    /// scans it, so the triple stays at the `Main.cs:67235-67236` load
+    /// reset (-1, -1, 0) — the retro `oldDrawWater` scan is unported.
+    pub(crate) ambient_lava: (f32, f32, f32),
     /// `Main.ambientCounter` — the ¼ s gate of `Main.Ambience`
     /// (`Main.cs:13469-13476`).
     pub(crate) ambient_counter: f32,
@@ -3413,6 +3421,9 @@ impl App {
         // of `LegacySoundPlayer.cs:376` differently).
         let ambient_waterfall = (0.0, -1.0, -1.0);
         let ambient_lavafall = (0.0, -1.0, -1.0);
+        // `Main.cs:67235-67236` load reset; the retro-only `oldDrawWater`
+        // scan (`:57932-57936`) never runs in the port's LiquidRenderer path.
+        let ambient_lava = (0.0, -1.0, -1.0);
         let ambient_counter = 0.0f32;
         // `Main.atmo` starts at its surface value; recomputed per draw below.
         let atmo = 1.0_f32;
@@ -4008,6 +4019,7 @@ impl App {
             rain,
             ambient_waterfall,
             ambient_lavafall,
+            ambient_lava,
             ambient_counter,
             wind,
             world_tick_step: FixedStepper::new(1.0 / 60.0, 8),
