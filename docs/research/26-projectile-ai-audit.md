@@ -260,7 +260,7 @@ Rust data row, so nothing spawns it).
 | 32 | inline: alpha ramp (26887) | — | M | n/a | |
 | 33 | inline: light + alpha fade (27049) | — | M | n/a | |
 | 34 | inline: rotation + ai[1] state (27136) | — | M | n/a | |
-| 35 | inline: velocity 1.25 accelerate (27189) | — | M | n/a | |
+| 35 | inline: the rope coils (27189-27291) — the 30-tick fall + the owner-gated 10-link placement walk (the "velocity 1.25 accelerate" label was a misread) | `projectile_rope_coil.rs::coil_step` (W4-g82, WIRED; FINAL keep-one canonical per 26e-f, d4's `ai_rope_coil` the drop half) | done | behavioural | the refund :77572-77615 + the chain preview Main.cs:28499-28669 ride the same lane |
 | 36 | inline: wet-kill + alpha fade (27292) | — | M | n/a | |
 | 37 | inline: boulder fall (27472) | — | M | n/a | |
 | 38 | inline: flame-jet trap (27500) | — | M | n/a | |

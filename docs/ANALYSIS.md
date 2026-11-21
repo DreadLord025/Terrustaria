@@ -36171,14 +36171,42 @@ Deliberate deviations:
   render dependency — the d56 inlined-table convention; both copies are
   verbatim `WorldGen.cs:70026-70104` incl. the no-top-end down-scan
   degeneration.
+* **FINAL keep-one (2026-11-21, final phase)**: `coil_step` is the
+  CANONICAL style-35 machine — the d4 branch's `ai_rope_coil` + its four
+  named-const data rows + its four witnesses are the DROP half
+  (the re-adjudication of d4's 26e doc, which ruled the other way while
+  g82 was still unwired; g82 then wired the full lane — refund/cue/
+  usability/chain draw/friendly pin/PVP exemption/direction write, none
+  of which d4 carries). The two faithfulness deltas 26e credited to d4
+  are FIXED here (c2b7507a0): the null-tile abort integrates and the
+  placement kill tick adds the dead-tick integrate (the C# returns from
+  AI only — HandleMovement :17015 → UpdatePosition :20445 still runs,
+  the :17027 !active return sits AFTER). Exact drop-hunks, the row
+  dedupe, the f3-pulley compose chain and the pool-wide TileKill census
+  + task seed: `docs/research/26e-f-rope-union-final.md`.
+* **The f3-pulley compose** (origin/task/W4-f3-dust-player-3 0b11548f):
+  the pulley machine attaches to the SAME td::TILE_ROPE set the coil
+  placement writes — place→attach→ride→coil-refund runs end-to-end on
+  the merged tree (disjoint files, no seam conflict); the compose
+  witness pins f3's exact attach/ride predicates on a live-placed
+  column (e23c69da7).
+* **The cut-tile TileKill drop is POOL-WIDE** (the final-phase census):
+  all seven projectile-pool kill_tile sites discard the record
+  (ai_ice_block :7598, ai_dungeon_debris :12786, debris_death_crack
+  :20393, celeb2_death :20472, explode_bomb :22064/:22109, explode_rocket
+  :22256, the coil dispatch :17632) — the player-mining path resolves
+  them (editing.rs break_drop_events) but the pool has no drain. Task
+  seed "projectile-loot seam" recorded in 26e-f; NOT a coil-only fix.
 
 Verification: code-only, every arm re-read against the cited windows;
-17 phase-1..3 witnesses + 10 wiring witnesses WRITTEN, NOT RUN (6
-framing + 11 coil from the port phases; wiring: 4 framing_rope core
-witnesses, 3 dispatch witnesses (rows live/spawnable, the landing
-places + kills, the free flight spins), 1 four-arm death-hook witness
-(cue + refund ladder + owner gate), 1 end-to-end usability witness
-(the retarget through use_tile_item), 1 chain-sheet packing witness).
+17 phase-1..3 witnesses + 10 wiring witnesses + 2 final-phase witnesses
+WRITTEN, NOT RUN (6 framing + 11 coil from the port phases; wiring: 4
+framing_rope core witnesses, 3 dispatch witnesses (rows live/spawnable,
+the landing places + kills, the free flight spins), 1 four-arm
+death-hook witness (cue + refund ladder + owner gate), 1 end-to-end
+usability witness (the retarget through use_tile_item), 1 chain-sheet
+packing witness; final: the null-abort/kill-tick integrate witness
+(c2b7507a0) + the f3-compose chain witness (e23c69da7) — 29 total).
 The wiring re-read the enclosing C# bodies (Kill()'s :70642-77628
 gate chain, the :39726 PlaceThing_Tiles chain, the DrawProjDirect
 arm-vs-emit order) and verified every port seam by read/grep (the
