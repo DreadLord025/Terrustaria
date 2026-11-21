@@ -27075,9 +27075,12 @@ mod arrow_tests {
         assert_eq!(drops.len(), 1, "one return request");
         let (item, stack, cx, cy) = drops[0];
         assert_eq!((item, stack), (859, 1), "the Beach Ball back (`:77622`)");
-        // base.Center of the 44×44 box at (1600, 400) — the kill precedes
-        // the dead-tick integrate, so the centre is the pre-move one.
-        assert!((cx - 1622.0).abs() < 1e-3 && (cy - 422.0).abs() < 1e-3);
+        // base.Center of the 44×44 box — the port's death hook reads the
+        // slot AFTER the sub-step's dead-tick integrate (the C# `Kill()`
+        // captures the centre pre-`UpdatePosition`; the pool-wide hook
+        // timing deviation): the dry gravity tail gave the dead ball
+        // vy = 0.1, so the centre is (1622, 422.1).
+        assert!((cx - 1622.0).abs() < 1e-3 && (cy - 422.1).abs() < 1e-3);
     }
 
     /// The owner gate (`:27202-27205`): a foreign coil flies through the

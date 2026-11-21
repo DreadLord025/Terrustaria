@@ -857,8 +857,10 @@ mod w4_d4_death_drop_tests {
         assert_eq!(app.items.len(), 1, "the ball returns");
         let d = &app.items[0];
         assert_eq!((d.kind, d.count), (859, 1), "`:77622`");
-        // The 44×44 ball's centre: (54, 54).
-        assert!((d.center().x - 54.0).abs() < 1e-3 && (d.center().y - 54.0).abs() < 1e-3);
+        // The 44×44 ball's centre: (54, 54.1) — the death hook reads the
+        // post-integrate slot (the dry gravity tail's 0.1 dead-tick move,
+        // the pool-wide hook timing deviation).
+        assert!((d.center().x - 54.0).abs() < 1e-3 && (d.center().y - 54.1).abs() < 1e-3);
         let mut expect = UnifiedRandom::new(0);
         let _ = expect.next_range(-30, 31);
         let _ = expect.next_range(-40, -15);
