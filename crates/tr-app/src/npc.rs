@@ -6910,6 +6910,69 @@ impl Npc {
         crate::npc_findframe_extra7c::find_frame_kind_extra7c(cs_id as i16)
     }
 
+    /// W4-d44 wire (f27 slice 8) — the bridge into
+    /// `npc_findframe_extra8`'s pure machines: copy the five
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_c` precedent). `direction` is `facing` (the
+    /// C#'s `Entity.direction`); the inputs are vx/vy/direction/wet +
+    /// the four `ai` slots (the bone-throwers' `ai[2]` toss gate /
+    /// `ai[1]` wind-up bands, `NPC.cs:71412-71422`) + the RESOLVED
+    /// world read `slope` (the GoldWorm's tile probe, `:72807-72826`
+    /// — the SAME two-tile fall-through as the worm's). The
+    /// world-free lane passes slope 0 (the `find_frame_wave_c`
+    /// convention); `find_frame_world` resolves it. The worm's
+    /// `localAI[0]` -2f pin copies back.
+    fn find_frame_wave_extra8(
+        &mut self,
+        kind: crate::npc_findframe_extra8::FindFrameExtra8Kind,
+        slope: i32,
+    ) {
+        let mut s = crate::npc_findframe_extra8::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+            rotation: self.rotation,
+            local_ai0: self.local_ai[0],
+        };
+        let i = crate::npc_findframe_extra8::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            wet: self.wet,
+            ai: self.ai,
+            slope,
+        };
+        crate::npc_findframe_extra8::find_frame_extra8(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+        self.rotation = s.rotation;
+        self.local_ai[0] = s.local_ai0;
+    }
+
+    /// W4-d44 wire — the extra-8 claim set: the FIRST ELEVEN of the
+    /// slice-8 band 443-454/460-462 — the six gold critters 443-448,
+    /// the four bone throwers 449-452 and the Skeleton Merchant 453
+    /// (the ≤11-kind batch cap, the extra7c-b precedent); 454/460/
+    /// 461/462 ride a later batch. NO exclusions: the module mapper
+    /// carries EXACTLY the 15 slice-8 ids — the d40-inline-faithful
+    /// SIX 464/465/466/468/469/470 are NOT in it (the f27 slice-9
+    /// re-census FAITHFUL-EXCLUDE verdicts), the d40 443-448 row-0
+    /// stubs are superseded, the 449-452 faithful inline twins keep
+    /// one either way (the hook precedes at merge, behaviour-
+    /// identical), the 453 town stand-in is superseded by the
+    /// module's count-internal town machine (the 26−9=17 wrap).
+    fn find_frame_kind_extra8_claimed(
+        cs_id: u16,
+    ) -> Option<crate::npc_findframe_extra8::FindFrameExtra8Kind> {
+        use crate::npc_findframe_extra8::FindFrameExtra8Kind as K;
+        match crate::npc_findframe_extra8::find_frame_kind_extra8(cs_id as i16) {
+            // The ≤11-kind cap — the LAST FOUR ride a later batch.
+            Some(K::CultistDragonHead | K::Butcher | K::CreatureFromTheDeep | K::Fritz) => None,
+            other => other,
+        }
+    }
+
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
     /// 254-258 + 268-277, all 15 kinds (the in-module lookup verbatim).
     fn find_frame_kind_extra5_claimed(
@@ -6918,12 +6981,13 @@ impl Npc {
         crate::npc_findframe_extra5::find_frame_kind_extra5(cs_id as i16)
     }
 
-    /// W4-d44 wire (d48 wave C + f26 slice 7b) — the WORLD-READ
-    /// entry: the claimed wave-C kinds ride the world-read arm (the
-    /// worm resolves its slope probe against the live world) and the
-    /// claimed extra-7b kinds resolve their slope/frame_x36 probes;
-    /// every other kind falls through to the world-free `find_frame`
-    /// hook unchanged.
+    /// W4-d44 wire (d48 wave C + f26 slice 7b + f27 slice 8) — the
+    /// WORLD-READ entry: the claimed wave-C kinds ride the world-read
+    /// arm (the worm resolves its slope probe against the live
+    /// world), the claimed extra-7b kinds resolve their slope/
+    /// frame_x36 probes and the claimed extra-8 kinds resolve the
+    /// GoldWorm slope probe; every other kind falls through to the
+    /// world-free `find_frame` hook unchanged.
     pub(crate) fn find_frame_world(&mut self, world: &World) {
         if let Some(kind) = Self::find_frame_kind_c_claimed(self.kind.cs_id()) {
             self.find_frame_c_world(kind, world);
@@ -6933,7 +6997,32 @@ impl Npc {
             self.find_frame_extra7b_world(kind, world);
             return;
         }
+        if let Some(kind) = Self::find_frame_kind_extra8_claimed(self.kind.cs_id()) {
+            self.find_frame_extra8_world(kind, world);
+            return;
+        }
         self.find_frame();
+    }
+
+    /// W4-d44 wire — the extra-8 world-read arm: the GoldWorm (448)
+    /// resolves the SAME two-tile slope probe as the worm
+    /// (`NPC.cs:72807-72826` — the shared `find_frame_worm_slope`
+    /// helper, the wave-C/extra7b precedent); every other claimed
+    /// kind ignores the field, so the probe is skipped (RNG-free
+    /// either way). Split out of `find_frame_world` so the seam
+    /// witness can drive it with an explicit kind (no current
+    /// `NpcKind` maps to the band yet).
+    fn find_frame_extra8_world(
+        &mut self,
+        kind: crate::npc_findframe_extra8::FindFrameExtra8Kind,
+        world: &World,
+    ) {
+        let slope = if kind == crate::npc_findframe_extra8::FindFrameExtra8Kind::GoldWorm {
+            self.find_frame_worm_slope(world)
+        } else {
+            0
+        };
+        self.find_frame_wave_extra8(kind, slope);
     }
 
     /// W4-d44 wire — the extra-7b world-read arm: the crawler/grub
@@ -7088,6 +7177,22 @@ impl Npc {
         // ranges = ZERO). The extra7 hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra7c_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra7c(kind);
+            return;
+        }
+        // W4-d44 wire (f27 slice 8) — the `cs_id`-keyed hook into the
+        // extra-wave-8 pure machines (`npc_findframe_extra8.rs`) via
+        // `find_frame_kind_extra8_claimed`: the FIRST ELEVEN slice-8
+        // ids 443-453 (the six gold critters, the four bone throwers,
+        // the Skeleton Merchant; 454/460/461/462 ride a later batch,
+        // the ≤11-kind cap). NO current kind's `cs_id` lands in the
+        // set (verified over the hand rows + the bestiary net ids),
+        // so this is stream-inert today; no arm draws RNG (the f27
+        // slice-8 mechanical grep; the town pose zones are the
+        // documented skip). The world-free lane passes slope 0 — the
+        // world-read entry `find_frame_world` resolves the GoldWorm
+        // slope probe. The wave-C hook precedent.
+        if let Some(kind) = Self::find_frame_kind_extra8_claimed(self.kind.cs_id()) {
+            self.find_frame_wave_extra8(kind, 0);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -34485,6 +34590,229 @@ mod w4_d44_wire_tests {
         n.frame_counter = 0.0;
         n.find_frame_wave_extra7c(K::GiantFlyingAntlion);
         assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (0, 1.0, 1));
+    }
+
+    /// The extra-8 hook fires for NO current kind — the inertness
+    /// proof (443-453 skip the hand rows + net ids).
+    #[test]
+    fn w4_d44_the_extra8_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                Npc::find_frame_kind_extra8_claimed(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-8 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The extra-8 claim set is the FIRST ELEVEN slice-8 ids
+    /// 443-453 (the six gold critters, the four bone throwers, the
+    /// Skeleton Merchant); 454/460/461/462 ride a later batch (the
+    /// ≤11-kind cap). The d40-faithful SIX 464/465/466/468/469/470
+    /// are NOT in the module mapper — the claim never reaches them
+    /// (the f27 slice-9 FAITHFUL-EXCLUDE verdicts).
+    #[test]
+    fn w4_d44_the_extra8_claim_set_matches_the_batch_band() {
+        use crate::npc_findframe_extra8::FindFrameExtra8Kind as K;
+        let table = [
+            (443u16, K::GoldBunny),
+            (444, K::GoldButterfly),
+            (445, K::GoldFrog),
+            (446, K::GoldGrasshopper),
+            (447, K::GoldMouse),
+            (448, K::GoldWorm),
+            (449, K::BoneThrowingSkeleton),
+            (450, K::BoneThrowingSkeleton2),
+            (451, K::BoneThrowingSkeleton3),
+            (452, K::BoneThrowingSkeleton4),
+            (453, K::SkeletonMerchant),
+        ];
+        for (id, k) in table {
+            assert_eq!(Npc::find_frame_kind_extra8_claimed(id), Some(k), "{id}");
+        }
+        // The ≤11-kind cap — the LAST FOUR ride a later batch.
+        for id in [454, 460, 461, 462] {
+            assert_eq!(Npc::find_frame_kind_extra8_claimed(id), None, "{id}");
+        }
+        // The d40-faithful six + the band edges + the no-case
+        // 455-459 dragon bodies stay outside the mapper entirely.
+        for id in [442, 455, 459, 463, 464, 465, 466, 468, 469, 470] {
+            assert_eq!(Npc::find_frame_kind_extra8_claimed(id), None, "{id}");
+        }
+    }
+
+    /// The extra-8 bridge copies the five fields both ways and feeds
+    /// vx/vy/facing/wet/ai through — pinned on the gold bunny hop
+    /// (the |vx|+1 >6 step over the FULL 7 rows,
+    /// `NPC.cs:76851-76904`), the butterfly velocity-fed bands + the
+    /// no-bank pin (`:72739-72773`), the frog wet deadbands
+    /// (`:76618-76685`), the grasshopper counter-hold
+    /// (`:70958-70982`), the mouse idle blink (`:76513-76565`), the
+    /// worm -2f pin + the slope override (`:72774-72828`), the
+    /// bone-toss ladder + the literal-15 wrap (`:71398-71453`) and
+    /// the merchant town-17 wrap (`:68610` → `:69521-69585`).
+    #[test]
+    fn w4_d44_the_extra8_bridge_copies_the_fields_both_ways() {
+        use crate::npc_findframe_extra8::FindFrameExtra8Kind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // Gold bunny walk: vx 1, counter 5 → 5+1+1 = 7 > 6 steps
+        // row 0 → 1; the grounded flip rides facing -1.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.rotation = 0.3;
+        n.find_frame_wave_extra8(K::GoldBunny, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 0.0, -1));
+        assert_eq!(n.rotation, 0.3, "the bunny never writes rotation");
+        // The full-7 wrap: row 6 steps to 7, >= 7 wraps to 0.
+        n.frame = 6;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_extra8(K::GoldBunny, 0);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The air pins: rise row 4 / fall row 6, counter zeroed.
+        n.vy = -1.0;
+        n.frame_counter = 3.0;
+        n.find_frame_wave_extra8(K::GoldBunny, 0);
+        assert_eq!((n.frame, n.frame_counter), (4, 0.0));
+        n.vy = 1.0;
+        n.find_frame_wave_extra8(K::GoldBunny, 0);
+        assert_eq!(n.frame, 6);
+        // Gold butterfly: vx 2 → rotation 0.6, counter 0 + 1 +
+        // (2+0)/2 = 2 < 7 → row 0; the direction copy is
+        // UNCONDITIONAL (facing 0 included); ai[2] 3 banks NOTHING
+        // (the 444 colour bank is type-gated OFF).
+        n.vy = 0.0;
+        n.vx = 2.0;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.rotation = 0.0;
+        n.facing = 0;
+        n.sprite_dir = 1;
+        n.ai[2] = 3.0;
+        n.find_frame_wave_extra8(K::GoldButterfly, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (0, 2.0, 0));
+        assert_eq!(n.rotation, 0.6);
+        // Gold frog wet: the counter zeroes, |vx| 1 > 0.25 pins
+        // row 10; the direction copy is unconditional.
+        n.ai = [0.0; 4];
+        n.wet = true;
+        n.vx = 1.0;
+        n.facing = -1;
+        n.frame = 3;
+        n.frame_counter = 4.0;
+        n.find_frame_wave_extra8(K::GoldFrog, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (10, 0.0, -1));
+        // The dry idle blink: counter 8 + 1 = 9 > 8 steps row 1 → 2,
+        // the > 5 wrap lands 0.
+        n.wet = false;
+        n.vx = 0.0;
+        n.frame = 1;
+        n.frame_counter = 8.0;
+        n.find_frame_wave_extra8(K::GoldFrog, 0);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // Gold grasshopper: the air row-1 pin, the counter NEVER
+        // touched; the direction copy runs on both paths.
+        n.frame = 0;
+        n.frame_counter = 7.0;
+        n.vy = 2.0;
+        n.facing = -1;
+        n.find_frame_wave_extra8(K::GoldGrasshopper, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (1, 7.0, -1));
+        // Gold mouse idle blink: counter 8 + 1 = 9 > 8 steps row 1
+        // → 2, the > 1 wrap lands 0.
+        n.vy = 0.0;
+        n.frame = 1;
+        n.frame_counter = 8.0;
+        n.find_frame_wave_extra8(K::GoldMouse, 0);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // Gold worm grounded idle: the -2f pin + row 1 + the
+        // rotation zero, slope 0.
+        n.frame = 0;
+        n.frame_counter = 5.0;
+        n.local_ai[0] = 7.0;
+        n.rotation = 0.3;
+        n.find_frame_wave_extra8(K::GoldWorm, 0);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        assert_eq!(n.local_ai[0], -2.0, "the -2f pin copies back");
+        assert_eq!(n.rotation, 0.0);
+        // Slope 1: the +0.785 override lifts localAI[0] to 0.
+        n.find_frame_wave_extra8(K::GoldWorm, 1);
+        assert_eq!(n.rotation, 0.785);
+        assert_eq!(n.local_ai[0], 0.0);
+        // Slope 2: the -0.785 override.
+        n.find_frame_wave_extra8(K::GoldWorm, 2);
+        assert_eq!(n.rotation, -0.785);
+        assert_eq!(n.local_ai[0], 0.0);
+        // Bone thrower toss: ai[2] > 0, ai[1] 45 lands the >= 43
+        // band 2 → row count-5+2 = 16 (the 19-row sheet); the toss
+        // copies facing UNCONDITIONALLY (0 included).
+        n.ai = [0.0, 45.0, 1.0, 0.0];
+        n.facing = 0;
+        n.sprite_dir = 1;
+        n.frame_counter = 4.0;
+        n.find_frame_wave_extra8(K::BoneThrowingSkeleton, 0);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (16, 0.0, 0));
+        // 452's 20-row sheet: the SAME band lands row 17.
+        n.find_frame_wave_extra8(K::BoneThrowingSkeleton4, 0);
+        assert_eq!(n.frame, 17, "the 20-row count variant");
+        // The walk: |vx|*2 NO-+1, row 14 + step → 15, the LITERAL
+        // 15 wrap lands 2 (rows 15+ are toss-only on EVERY sheet).
+        n.ai = [0.0; 4];
+        n.frame = 14;
+        n.frame_counter = 4.0;
+        n.vx = 2.0;
+        n.find_frame_wave_extra8(K::BoneThrowingSkeleton2, 0);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        // Skeleton merchant town walk: row 16 + step → 17, the
+        // ExtraFramesCount-9 wrap (26 − 9 = 17) lands 2.
+        n.frame = 16;
+        n.frame_counter = 4.0;
+        n.vx = 1.0;
+        n.find_frame_wave_extra8(K::SkeletonMerchant, 0);
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0), "the town-17 wrap");
+        // The merchant air: row 1 (not in the :69647 pin list).
+        n.vy = 1.0;
+        n.frame_counter = 3.0;
+        n.find_frame_wave_extra8(K::SkeletonMerchant, 0);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+    }
+
+    /// The world-read entry runs the extra-8 bridge with the
+    /// resolved GoldWorm slope (the SAME two-tile probe as the worm)
+    /// — driven through `find_frame_extra8_world` with explicit
+    /// kinds (no current `NpcKind` maps to the band yet).
+    #[test]
+    fn w4_d44_the_world_entry_resolves_the_goldworm_slope() {
+        use crate::npc_findframe_extra8::FindFrameExtra8Kind as K;
+        let mut w = ground();
+        let mut n = bare(NpcKind::Piranha);
+        // Centre.x = 100 + nw/2 → tx 6; y = 480 → ty 30 (the ground).
+        n.x = 100.0;
+        n.y = 480.0;
+        let j = w.index(6, 30);
+        w.tiles[j].set_slope(1);
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 0.0;
+        n.vy = 0.0;
+        n.local_ai[0] = 5.0;
+        n.find_frame_extra8_world(K::GoldWorm, &w);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0), "the idle pin");
+        assert_eq!(n.rotation, 0.785, "the slope-1 override");
+        assert_eq!(n.local_ai[0], 0.0, "the lift");
+        // A non-worm kind ignores the slope (the probe is skipped):
+        // the gold bunny ticks with rotation untouched.
+        n.rotation = 0.5;
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 1.0;
+        n.find_frame_extra8_world(K::GoldBunny, &w);
+        assert_eq!(n.rotation, 0.5, "no slope read");
+        assert_eq!((n.frame, n.frame_counter), (0, 2.0));
     }
 
     /// The extra-6 bridge copies the three fields both ways and feeds
