@@ -1025,11 +1025,35 @@ impl FrontScreenBehaviours for FrontScreen {
                 // handlers): the on-screen keys type, the toggles cycle the
                 // `KeyState`, Submit re-checks the validation, Cancel runs
                 // the `_cancelAction`.
+                let l = ui::keyboard::layout(screen, app.vk_grid);
+                // The click resolves against the live state first (the
+                // read borrow drops before the audio play).
+                let click = match app.front.as_ref() {
+                    Some(FrontScreen::Keyboard(session)) => {
+                        ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse)
+                    }
+                    _ => return None,
+                };
+                // W4-g22 DOC-SWEEP — the on-screen keys' own cues
+                // (`UIVirtualKeyboard.cs`): Shift/Symbol/letter keys/Space/
+                // Backspace play 12 BEFORE the edit (`:252`/`:286`/`:525`/
+                // `:499`/`:394`); Submit/Cancel play their 10/11 inside
+                // `keyboard_submit`/`keyboard_cancel` already (the
+                // validation gate decides), so they queue nothing here.
+                match click {
+                    ui::keyboard::Click::Char(_)
+                    | ui::keyboard::Click::Shift
+                    | ui::keyboard::Click::Symbol
+                    | ui::keyboard::Click::Space
+                    | ui::keyboard::Click::Backspace => {
+                        app.audio.play("Menu_Tick");
+                    }
+                    _ => {}
+                }
                 let Some(FrontScreen::Keyboard(session)) = app.front.as_mut() else {
                     return None;
                 };
-                let l = ui::keyboard::layout(screen, app.vk_grid);
-                match ui::keyboard::click_at(&session.state, &l, app.vk_grid, mouse) {
+                match click {
                     ui::keyboard::Click::Char(c) => ui::keyboard::type_char(&mut session.state, c),
                     // The shift button: `(keyState != Shift) ? Shift : Default`
                     // (`:250-254`).
@@ -1806,6 +1830,48 @@ pub(crate) mod front_flow_tests {
                 Some(FrontScreen::WorldCreation(ref d)) if d.seed == text
             ));
         }
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — the on-screen keyboard keys play
+    /// ONE Menu_Tick each (`UIVirtualKeyboard.cs:252`/`:286`/`:525`/
+    /// `:499`/`:394`): a letter key, the shift toggle and backspace; the
+    /// dead space outside the layer stays silent.
+    #[test]
+    fn doc_sweep_keyboard_keys_tick_once() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let cl = ui::char_creation::layout(screen, 0.0);
+        app.mouse_pos = centre(cl.info_name);
+        front_press(&mut app);
+        // The grid layer (`TR_VK_GRID=1`'s shape).
+        app.vk_grid = true;
+        let l = ui::keyboard::layout(screen, true);
+        // A letter key (0, 0).
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 0, 0, 1));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the key");
+        // The shift toggle.
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 0, 4, 1));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on shift");
+        // Backspace.
+        app.mouse_pos = centre(ui::keyboard::key_rect(l.grid_origin, 8, 4, 2));
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on backspace");
+        // Outside the layer: silent.
+        app.mouse_pos = Vec2::new(10.0, 10.0);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before);
     }
 
     #[test]
