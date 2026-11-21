@@ -5714,9 +5714,13 @@ pub(crate) fn break_tile(app: &mut App, tx: i32, ty: i32) {
             cell.frame_y = frame_y;
         }
     }
-    // The Coin Portal projectile of the pot loot (:57176-57182); the port
-    // has no 518 family yet — `spawn_with_data` declines it and the break
-    // still returns like the C# (recorded deviation, phase 5).
+    // The Coin Portal projectile of the pot loot (`WorldGen.cs:57176-57182`,
+    // `SpawnThingsFromPot`'s luck-0 arm — NOT the Coin Gun 905, which fires
+    // the coin projectiles 158 via `useAmmo = AmmoID.Coin`, `Item.cs:11824-
+    // 11841`). The 518 row + aiStyle-94 arm landed W4-d10 (`5c229707`): the
+    // spawn resolves now (the old no-row decline is closed). The C# gates
+    // `Main.netMode != 1` (not a client) — the port's single-player/host
+    // fold; the `GetClosestRollLuck` luck-0 roll rides `spawn_things_from_pot`.
     for (px, py) in portals {
         let _ = app.projectiles.spawn_with_data(
             518,

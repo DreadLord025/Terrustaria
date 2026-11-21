@@ -19,6 +19,16 @@
 //! | 99 | `AI_099_1_Counterweights` `:67380-67731` (gate `:33153-33156`) + `AI_099_2_Yoyos` `:67733+` (gate `:33157-33160`) | yoyos 534/541-555/562-564/603/999; counterweights 556-561/1079 (`:6084-6093`) | yoyo half LANDED (`projectile.rs::ai_yoyo`); counterweight sub-arm MISSING (f19 F1) → this module |
 //! | 100 | `AI_100_Medusa` `:44476-44632` (gate `:33161-33164`) | MedusaHead 535 (`:6094-6106`) | MISSING → this module |
 //!
+//! Spawn-source censuses (the DOC-SWEEP, `docs/research/26d-projectile-ai-
+//! 91-100-docsweep.md`): the 94 CoinPortal 518 spawns from the POT break
+//! (`WorldGen.SpawnThingsFromPot` `:57176-57182`, the luck-0 arm — NOT the
+//! Coin Gun 905, which fires the coin shot 158); the 97 FlyingPiggyBank 525
+//! spawns from the Money Trough 3213 (`Item.cs:28981` `shoot = 525`, the
+//! generic `fire_non_ammo_shot` use-arm — NOT the Void Vault 4076); the 98
+//! CultistBossParticle 526 spawns from the CultistTablet 437 (aiStyle 83,
+//! `NPC.cs:36863/:36874/:36885` — NOT the boss 439/aiStyle 84 c1 ports; the
+//! tablet arm is unported, no producer feeds the 98 seek yet).
+//!
 //! RNG contract (the `UpdateProjectiles` stream, `Main.cs:17775-17777`):
 //! every EXPLICIT `Main.rand` draw at the call sites stays, in the C#'s
 //! order; the dust BODIES are skipped (no draw layer wired here) and the
