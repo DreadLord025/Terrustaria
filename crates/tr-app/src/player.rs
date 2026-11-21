@@ -7478,9 +7478,18 @@ impl Player {
                 // `MinecartLandingSound` (Item53) + a 10-spark burst, both
                 // with the pre-call position and rotation captured above.
                 // W4-c14: the fart carts' delegate plays Item16 THEN
-                // Item53 (`LandingSoundFart`, `DelegateMethods.cs:314-319`).
+                // Item53 (`LandingSoundFart`, `DelegateMethods.cs:314-319`);
+                // the Meowmere cart (33) plays the case-37 style-5 cue
+                // (`Mount.MeowcartLandingSound`, `Mount.cs:659-662`).
                 if matches!(self.cart_mount, 51 | 53) {
                     minecart::minecart_landing_sound_fart(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else if self.cart_mount == 33 {
+                    minecart::meowcart_landing_sound(
                         &mut self.pending_cart_sounds,
                         pre_pos,
                         WIDTH as i32,
@@ -7517,12 +7526,23 @@ impl Player {
                 }
                 // `:28140`: `MinecartBumperSound` → Item56, at the
                 // post-TrackCollision position (`base.position`, pre-integration).
-                minecart::minecart_bumper_sound(
-                    &mut self.pending_cart_sounds,
-                    pos,
-                    WIDTH as i32,
-                    body_h,
-                );
+                // W4-c14: the Meowmere cart (33) plays the case-37 style-3
+                // cue instead (`Mount.MeowcartBumperSound`, `Mount.cs:664-667`).
+                if self.cart_mount == 33 {
+                    minecart::meowcart_bumper_sound(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else {
+                    minecart::minecart_bumper_sound(
+                        &mut self.pending_cart_sounds,
+                        pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                }
             }
             if flags.hit_switch() {
                 hit_switch_flag = true; // `:28138-28140`

@@ -328,6 +328,22 @@ pub fn item_use_case2(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32,
     (num, tweak, pitch)
 }
 
+/// One `LegacySoundPlayer.PlaySound` case-37 (Meowcart) play's decisions
+/// (`LegacySoundPlayer.cs:1326-1336`, W4-c14 - `Mount.MeowcartLandingSound`
+/// `Mount.cs:661` style 5 / `MeowcartBumperSound` `:666` style 3): the
+/// `Next(57, 59)` slot pick (`:1328` - the `Item_57`/`Item_58` assets), the
+/// `Style * 0.05` volume scale (`:1329`, the non-starGame arm - the port
+/// has no starGame) and the `Next(-40, 41) * 0.01` pitch (`:1333`). TWO
+/// `Main.rand` draws per play, in that order; the caller must gate on
+/// audibility BEFORE drawing (the C# reaches the switch only past
+/// `:390-436`). Returns `(slot, volume_scale, pitch)`.
+pub fn meowcart_case37(style: i32, rng: &mut dyn FnMut(i32, i32) -> i32) -> (i32, f32, f32) {
+    let slot = rng(57, 59);
+    let volume = style as f32 * 0.05;
+    let pitch = rng(-40, 41) as f32 * 0.01;
+    (slot, volume, pitch)
+}
+
 /// One `LegacySoundPlayer.PlaySound` case-3 (NPC hit) play's decisions
 /// (`LegacySoundPlayer.cs:646-672`, S1-E-21 wave C): the volume tweak the
 /// case applies to the attenuated gain and the instance pitch BEFORE the

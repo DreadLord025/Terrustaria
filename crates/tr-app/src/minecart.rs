@@ -1304,6 +1304,38 @@ pub(crate) fn minecart_bumper_sound(
     });
 }
 
+/// W4-c14 - `Mount.MeowcartLandingSound` (`Mount.cs:659-662`, the Meowmere
+/// cart 33's delegate `:1014`): legacy id 37 style 5 at the centre rule.
+/// The cue name routes the drain to `Audio::play_meowcart_sound` (the
+/// case-37 slot pick, NOT an Item-style play).
+pub(crate) fn meowcart_landing_sound(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    sounds.push(CartCue {
+        cue: "MeowcartLanding",
+        x: (position.x as i32 + width / 2) as f32,
+        y: (position.y as i32 + height / 2) as f32,
+    });
+}
+
+/// W4-c14 - `Mount.MeowcartBumperSound` (`Mount.cs:664-667`, `:1015`):
+/// legacy id 37 style 3, same position rule.
+pub(crate) fn meowcart_bumper_sound(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    sounds.push(CartCue {
+        cue: "MeowcartBumper",
+        x: (position.x as i32 + width / 2) as f32,
+        y: (position.y as i32 + height / 2) as f32,
+    });
+}
+
 /// W4-c14 - `DelegateMethods.Minecart.JumpingSoundFart`
 /// (`DelegateMethods.cs:308-312`, the Fart/Terra-Fart carts' delegate,
 /// `Mount.cs:1102`/`:1110`): Item16 at the same centre rule, then the
@@ -3155,6 +3187,20 @@ mod tests {
         assert_eq!(sounds[1].cue, "Item_56");
         assert_eq!(sounds[1].x, 10.0, "(int)(-0.5) truncates to 0");
         assert_eq!(sounds[1].y, 26.0);
+    }
+
+    /// W4-c14 - the Meowcart delegates (`Mount.cs:659-667`): the landing
+    /// and bumper queue their own case-37 cue names (NOT Item-style names)
+    /// at the truncated centre; the drain routes them to the case-37 play.
+    #[test]
+    fn w4_c14_the_meowcart_delegates_queue_the_case37_cues() {
+        let mut sounds = Vec::new();
+        meowcart_landing_sound(&mut sounds, Vec2::new(100.7, 208.9), 20, 52);
+        assert_eq!(sounds[0].cue, "MeowcartLanding");
+        assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
+        meowcart_bumper_sound(&mut sounds, Vec2::new(-0.5, -0.5), 20, 52);
+        assert_eq!(sounds[1].cue, "MeowcartBumper");
+        assert_eq!((sounds[1].x, sounds[1].y), (10.0, 26.0));
     }
 
     /// W4-c14 - the fart carts' delegates (`DelegateMethods.cs:308-319`):

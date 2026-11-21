@@ -234,6 +234,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // W4-c14 - the Pogo Stick's hop cue (`SoundID.Item168`,
     // `Player.cs:19784`/`:20764`; `Sounds/Item_168.xnb`).
     ("Item_168", 2),
+    // W4-c14 - the Meowcart's case-37 slot pair (`LegacySoundPlayer.cs:1328`
+    // `Next(57, 59)`; `Mount.cs:661`/`:666` play legacy id 37).
+    ("Item_57", 37),
+    ("Item_58", 37),
     // S1-E-21 wave A — the item-use family: every `Sounds/Item_<style>.xnb`
     // an `Item.UseSound` row names (`itemdata.rs::use_sound` →
     // `soundid.rs::SOUND_STYLES`, `SoundID.cs:1384-1582`'s
@@ -2045,7 +2049,36 @@ impl Audio {
         }
     }
 
-    /// S1-E-21i — one door open/close play (`WorldGen.OpenDoor`
+    /// W4-c14 - one Meowcart play (`Mount.MeowcartLandingSound`
+    /// `Mount.cs:659-662`: `PlaySound(37, x, y, 5)`; `MeowcartBumperSound`
+    /// `:664-667`: `PlaySound(37, x, y, 3)`). The int overload
+    /// (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat.
+    ///
+    /// Case 37 (`LegacySoundPlayer.cs:1326-1336`): the `Next(57, 59)` slot
+    /// pick (`Item_57`/`Item_58`), the `Style * 0.05` volume scale (the
+    /// non-starGame arm) and the `Next(-40, 41) * 0.01` pitch - TWO draws
+    /// on the caller's `UpdatePlayers` stream (the cart ride runs in
+    /// `Player.Update`, `Main.cs:17754`), only AFTER the attenuation gate
+    /// passed. Returns the cue played; `None` when the gate refused.
+    pub fn play_meowcart_sound(
+        &mut self,
+        style: i32,
+        x: f32,
+        y: f32,
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        if sound::play_sound(37, x, y, self.listener, 1.0).is_none() {
+            return None;
+        }
+        let (slot, volume, pitch) =
+            sound::meowcart_case37(style, &mut |lo, hi| rng.next_range(lo, hi));
+        let cue = if slot == 57 { "Item_57" } else { "Item_58" };
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.emit(cue, x, y, volume, pitch.clamp(-1.0, 1.0));
+        Some(cue)
+    }
+
+    /// S1-E-21i - one door open/close play (`WorldGen.OpenDoor`
     /// `WorldGen.cs:37727`: `PlaySound(8, i * 16, j * 16)`; `CloseDoor`
     /// `:31908`: `PlaySound(9, ...)` — both success-only). The int overload
     /// (`SoundEngine.cs:102-108`) draws NO `GetRandomPitch` NextFloat.
@@ -3972,7 +4005,48 @@ mod tests {
         }
     }
 
-    /// S1-E-21e — the fighter moans' RNG contract: the moan arms' rolls ride
+    /// W4-c14 - the Meowcart case-37 contract (`Mount.cs:659-667`,
+    /// `LegacySoundPlayer.cs:1326-1336`): TWO draws per play - the
+    /// `Next(57, 59)` slot pick then the `Next(-40, 41)` pitch - on the
+    /// caller's stream after the gate; the style scales the volume
+    /// (5 × 0.05 landing / 3 × 0.05 bumper); a muted play draws nothing.
+    #[test]
+    fn w4_c14_the_meowcart_case37_draws_the_slot_then_the_pitch() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let slot = witness.next_range(57, 59);
+        let _ = witness.next_range(-40, 41);
+        let cue = audio
+            .play_meowcart_sound(5, 0.0, 0.0, &mut rng)
+            .expect("audible");
+        assert_eq!(cue, if slot == 57 { "Item_57" } else { "Item_58" });
+        assert_eq!(rng.peek(), witness.peek(), "exactly two gameplay draws");
+        // The case maths: the slot window, the volume scale, the pitch window.
+        let mut roll = UnifiedRandom::new(3);
+        let (slot, volume, pitch) =
+            sound::meowcart_case37(5, &mut |lo, hi| roll.next_range(lo, hi));
+        assert!((57..59).contains(&slot));
+        assert!((volume - 0.25).abs() < 1e-6, "5 * 0.05");
+        assert!(pitch.abs() <= 0.40 + 1e-6);
+        let (_, volume, _) = sound::meowcart_case37(3, &mut |_, _| 57);
+        assert!((volume - 0.15).abs() < 1e-6, "3 * 0.05");
+        // Muted: draw-free.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.play_meowcart_sound(5, 0.0, 0.0, &mut rng), None);
+        assert_eq!(rng.peek(), peek);
+        // Both slot assets resolve to the legacy id 37.
+        for name in ["Item_57", "Item_58"] {
+            assert_eq!(sound_type(name), 37, "{name}");
+        }
+    }
+
+    /// S1-E-21e - the fighter moans' RNG contract: the moan arms' rolls ride
     /// the caller's stream (`UpdateNPCs`, `Main.cs:17767`), and each legacy
     /// case's slot/pitch draws run AFTER the attenuation gate on the SAME
     /// stream (`LegacySoundPlayer.cs:369-436`'s prologue precedes the

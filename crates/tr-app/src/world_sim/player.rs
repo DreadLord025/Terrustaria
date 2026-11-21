@@ -1374,6 +1374,17 @@ pub(crate) fn update_player(app: &mut App, dt: f32) {
                         cue.y,
                         app.rngs.stream(crate::app::RngKey::UpdatePlayers),
                     );
+                } else if matches!(cue.cue, "MeowcartLanding" | "MeowcartBumper") {
+                    // W4-c14 - the Meowmere cart's case-37 plays
+                    // (`Mount.cs:661` style 5 / `:666` style 3): the slot
+                    // pick + the Style*0.05 volume + the wide pitch window.
+                    let style = if cue.cue == "MeowcartLanding" { 5 } else { 3 };
+                    app.audio.play_meowcart_sound(
+                        style,
+                        cue.x,
+                        cue.y,
+                        app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                    );
                 } else {
                     app.audio.play_at(cue.cue, cue.x, cue.y, 1.0);
                 }
