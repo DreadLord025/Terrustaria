@@ -71,8 +71,9 @@
 //!   clear, the `PlaceSmallPile` boulder-seat veto + `anyLava` guard, the
 //!   spider pass's `shroomCount > 1` retry veto + `ILied` tail dispatch +
 //!   remix y-bands, the webs pass's DST row-50 start + `ILied` honey arm and
-//!   `SpiderWallRemover` (`:77279-77344`, UNWIRED — its `FinishNotTheBees`
-//!   host is unported) land with it. Census: `docs/research/93-spider-cave-census.md`.
+//!   `SpiderWallRemover` (`:77279-77344`, WIRED by the W4-g41 follow-up —
+//!   its `FinishNotTheBees` host is ported in `not_the_bees.rs`) land with it.
+//!   Census: `docs/research/93-spider-cave-census.md`.
 //! - M5-SEED-1 ports the for-the-worthy arms of this file against the world's
 //!   own flags (`World::seeds`, the `generate` publication of
 //!   `GenOptions::flags` — a classic world reads no flag and stays
@@ -1601,11 +1602,11 @@ pub(crate) fn pass_webs_and_honey(world: &mut World, rng: &mut Rng, _world_surfa
 /// `|dx|+|dy| < radius*0.5*(1+Next(-10,11)*0.015)` diamond each step, with
 /// the `Next(-10,11)*0.05` velocity jitter clamped to ±1.
 ///
-/// UNWIRED by design (the c32 constants-off precedent): the C#'s only callers
-/// are `FinishNotTheBees`' two 10000-draw search loops (`:25409-25434`, the
-/// for-the-worthy + not-the-bees combo), and `FinishNotTheBees` (`:25388`)
-/// is itself unported — the wiring lands with that row. A classic world
-/// reads no flag and never reaches it.
+/// WIRED (W4-g41 follow-up): the C#'s only callers are `FinishNotTheBees`'
+/// two 10000-draw search loops (`:25409-25434`, the for-the-worthy +
+/// not-the-bees combo), ported in `not_the_bees.rs::spider_wall_search` and
+/// dispatched from `step_seed_finish`'s NTB slot. A classic world reads no
+/// flag and never reaches it.
 pub(crate) fn spider_wall_remover(world: &mut World, rng: &mut Rng, i: i32, j: i32) {
     // `:77281` — the width budget; the C# never decrements `num` (only the
     // `num3` life counter steps down), so the loop runs exactly `num2` times.

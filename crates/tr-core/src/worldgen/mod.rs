@@ -35,6 +35,7 @@ mod micro_grass;
 mod micro_surface;
 mod mini_biomes;
 mod noise;
+mod not_the_bees;
 mod ocean;
 pub mod pipeline;
 pub mod progress;

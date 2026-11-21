@@ -42,6 +42,7 @@ use super::islands;
 use super::liquids;
 use super::living_trees;
 use super::micro_finish;
+use super::not_the_bees;
 use super::micro_grass;
 use super::micro_surface;
 use super::mini_biomes;
@@ -1426,7 +1427,7 @@ fn step_constant_lava_layer(
 /// `Finish*` passes (`finish_seeds`), each gated on its own flag.
 fn step_seed_finish(
     world: &mut World,
-    _gv: &mut GenVars,
+    gv: &mut GenVars,
     streams: &mut Streams,
     opts: &GenOptions,
     _noise: &Noise,
@@ -1434,6 +1435,14 @@ fn step_seed_finish(
 ) {
     if opts.flags.contains(crate::seeds::SeedFlags::DRUNK) {
         finish_seeds::finish_drunk_gen(world, streams, opts);
+    }
+    // The vanilla NTB slot (`WorldGen.cs:22435-22439`): `NotTheBees()` then
+    // `FinishNotTheBees()`, BETWEEN the drunk and for-the-worthy tails —
+    // W4-g41's host port (the `spider_wall_remover` wiring). Each function
+    // carries its own seed/skyblock gate; a classic world reads no flag.
+    if opts.flags.contains(crate::seeds::SeedFlags::NOT_THE_BEES) {
+        not_the_bees::not_the_bees(world, gv, streams, opts);
+        not_the_bees::finish_not_the_bees(world, gv, streams, opts);
     }
     if opts.flags.contains(crate::seeds::SeedFlags::FOR_THE_WORTHY) {
         finish_seeds::finish_get_good_world(world, streams, opts);
