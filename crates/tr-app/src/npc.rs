@@ -1797,8 +1797,24 @@ pub struct Npc {
     /// `NPC.wet`: the liquid-overlap flag the swimmer machine caches each
     /// tick (`NPC.cs:90474`'s `CheckFacetedLiquid` write); `FindFrame`'s
     /// swimmer cases read it for the wet flap vs the dry flop
-    /// (`NPC.cs:74181`/`:74654`).
+    /// (`NPC.cs:74181`/`:74654`). W4-f2: the water-collision pass
+    /// (`Collision_WaterCollision`, `NPC.cs:93052-93275`) owns the
+    /// authoritative write now — the swimmer machines' own `is_wet`
+    /// caches keep their reads (the pass re-derives the same flag).
     pub wet: bool,
+    /// W4-f2 — `Entity.wetCount` (`NPC.cs:93058`/`:93089`/`:93187`): the
+    /// splash cooldown, armed to 10 on a wet entry/exit edge, decremented
+    /// once per `UpdateCollision` (`:92533-92536`); the never-wet head
+    /// gate zeroes it (`:93058`), aiStyle 116 pins it to 10 (`:93079`).
+    pub wet_count: i32,
+    /// W4-f2 — `Entity.lavaWet`/`honeyWet`/`shimmerWet`
+    /// (`NPC.cs:93064-93075`/`:93324`): the per-liquid overlap flags the
+    /// water-collision pass latches; `UpdateCollision` clears all three
+    /// when the NPC leaves the liquid (`:92527-92532`). The exit splash
+    /// arms read the OLD flags (the C#'s `base.lavaWet` at `:93188`).
+    pub lava_wet: bool,
+    pub honey_wet: bool,
+    pub shimmer_wet: bool,
     /// `NPC.spriteDirection` (`NPC.cs:6515`, the default -1) — the DISPLAY
     /// direction the `DrawNPCDirect` flip reads (`Main.cs:23124-23128`:
     /// `spriteDirection == 1` is exactly when the sheet flips). The C# keeps
@@ -3135,6 +3151,12 @@ impl Npc {
             },
             head_turn: 0,
             wet: false,
+            // W4-f2 — `Entity.wetCount`/`lavaWet`/`honeyWet`/`shimmerWet`
+            // spawn at 0/false (`Entity.cs`'s field defaults).
+            wet_count: 0,
+            lava_wet: false,
+            honey_wet: false,
+            shimmer_wet: false,
             carrier_timer: -1.0,
             carrier_phase: 0.0,
             carrier_rot: 0.0,

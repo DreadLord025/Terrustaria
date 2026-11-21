@@ -2204,6 +2204,115 @@ impl NpcKind {
         }
     }
 
+    /// W4-f2 — `NPC.noTileCollide` for this kind: the `SetDefaults`
+    /// census (the `this.noTileCollide = true;` rows over
+    /// `NPC.cs:8426-17859`, 139 vanilla ids; the ported 87 below) plus
+    /// the pumpkin/frost family defaults fold (the `no_gravity` shape).
+    /// The water-collision splash gates read it (`NPC.cs:93119`/
+    /// `:93136`/`:93152`/`:93169` + the exit twins' `!this.noGravity`
+    /// companions) and the `UpdateCollision` head gate (`:90490`).
+    /// The AI machines' LIVE `noTileCollide` writes (the phase flips)
+    /// are not modelled — the `SetDefaults` row stands (the `no_gravity`
+    /// table's documented granularity).
+    pub fn no_tile_collide(self) -> bool {
+        if let Some(d) = self.pumpkin_moon_defaults() {
+            return d.no_tile_collide;
+        }
+        if let Some(d) = self.frost_moon_defaults() {
+            return d.no_tile_collide;
+        }
+        matches!(
+            self,
+            NpcKind::AncientCultist
+                | NpcKind::BrainOfCthulhu
+                | NpcKind::BurningSphere
+                | NpcKind::ChaosBall
+                | NpcKind::Creeper
+                | NpcKind::DD2Betsy
+                | NpcKind::DD2KoboldFlyerT2
+                | NpcKind::DD2KoboldFlyerT3
+                | NpcKind::DD2LanePortal
+                | NpcKind::DD2WyvernT1
+                | NpcKind::DD2WyvernT2
+                | NpcKind::DD2WyvernT3
+                | NpcKind::Deerclops
+                | NpcKind::DetonatingBubble
+                | NpcKind::DevourerBody
+                | NpcKind::DevourerHead
+                | NpcKind::DevourerTail
+                | NpcKind::DukeFishron
+                | NpcKind::DungeonSpirit
+                | NpcKind::EaterOfWorldsBody
+                | NpcKind::EaterOfWorldsHead
+                | NpcKind::EaterOfWorldsTail
+                | NpcKind::ElfCopter
+                | NpcKind::EyeOfCthulhu
+                | NpcKind::Flocko
+                | NpcKind::FlyingDutchmanCannon
+                | NpcKind::ForceBubble
+                | NpcKind::FungiSpore
+                | NpcKind::GiantWormBody
+                | NpcKind::GiantWormHead
+                | NpcKind::GiantWormTail
+                | NpcKind::Hungry
+                | NpcKind::IceQueen
+                | NpcKind::LeechBody
+                | NpcKind::LeechHead
+                | NpcKind::LeechTail
+                | NpcKind::MartianDrone
+                | NpcKind::MartianSaucer
+                | NpcKind::MartianSaucerCannon
+                | NpcKind::MartianSaucerCore
+                | NpcKind::MartianSaucerTurret
+                | NpcKind::MeteorHead
+                | NpcKind::MoonLordCore
+                | NpcKind::MoonLordFreeEye
+                | NpcKind::MoonLordHand
+                | NpcKind::MoonLordHead
+                | NpcKind::MoonLordLeechBlob
+                | NpcKind::NebulaFloater
+                | NpcKind::NebulaTower
+                | NpcKind::Plantera
+                | NpcKind::PlanterasHook
+                | NpcKind::PlanterasTentacle
+                | NpcKind::Poltergeist
+                | NpcKind::PrimeCannon
+                | NpcKind::PrimeLaser
+                | NpcKind::PrimeSaw
+                | NpcKind::PrimeVice
+                | NpcKind::Probe
+                | NpcKind::Pumpking
+                | NpcKind::QueenBee
+                | NpcKind::Retinazer
+                | NpcKind::ServantOfCthulhu
+                | NpcKind::SkeletronHand
+                | NpcKind::SkeletronHead
+                | NpcKind::SkeletronPrime
+                | NpcKind::SolarCorite
+                | NpcKind::SolarCrawltipedeBody
+                | NpcKind::SolarCrawltipedeHead
+                | NpcKind::SolarCrawltipedeTail
+                | NpcKind::SolarTower
+                | NpcKind::Spazmatism
+                | NpcKind::Spore
+                | NpcKind::StardustTower
+                | NpcKind::StardustWormHead
+                | NpcKind::TheDestroyer
+                | NpcKind::TheDestroyerBody
+                | NpcKind::TheDestroyerTail
+                | NpcKind::VortexTower
+                | NpcKind::WallOfFlesh
+                | NpcKind::WallOfFleshEye
+                | NpcKind::WaterSphere
+                | NpcKind::WyvernBody
+                | NpcKind::WyvernBody2
+                | NpcKind::WyvernBody3
+                | NpcKind::WyvernHead
+                | NpcKind::WyvernLegs
+                | NpcKind::WyvernTail
+        )
+    }
+
     /// The C#'s `aiStyle` for this kind - the first dispatch axis of
     /// `NPC.AI` (`NPC.cs:19819-41132`, the `if (this.aiStyle == N)` chain).
     /// Every row is the `SetDefaults` assignment for the kind's vanilla

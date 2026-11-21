@@ -587,6 +587,73 @@ fn zombie_asset(slot: usize) -> &'static str {
         21 => "Zombie_21",
         22 => "Zombie_22",
         23 => "Zombie_23",
+        // W4-f2 - the IdleSounds Style-is-the-slot rows 24-87
+        // (NPC.cs:90081-90205; the case-29 full switch's x0.5 band,
+        // LegacySoundPlayer.cs:1009-1011).
+        24 => "Zombie_24",
+        25 => "Zombie_25",
+        26 => "Zombie_26",
+        27 => "Zombie_27",
+        28 => "Zombie_28",
+        29 => "Zombie_29",
+        30 => "Zombie_30",
+        31 => "Zombie_31",
+        32 => "Zombie_32",
+        33 => "Zombie_33",
+        34 => "Zombie_34",
+        35 => "Zombie_35",
+        36 => "Zombie_36",
+        37 => "Zombie_37",
+        38 => "Zombie_38",
+        39 => "Zombie_39",
+        40 => "Zombie_40",
+        41 => "Zombie_41",
+        42 => "Zombie_42",
+        43 => "Zombie_43",
+        44 => "Zombie_44",
+        45 => "Zombie_45",
+        46 => "Zombie_46",
+        47 => "Zombie_47",
+        48 => "Zombie_48",
+        49 => "Zombie_49",
+        50 => "Zombie_50",
+        51 => "Zombie_51",
+        52 => "Zombie_52",
+        53 => "Zombie_53",
+        54 => "Zombie_54",
+        55 => "Zombie_55",
+        56 => "Zombie_56",
+        57 => "Zombie_57",
+        58 => "Zombie_58",
+        59 => "Zombie_59",
+        60 => "Zombie_60",
+        61 => "Zombie_61",
+        62 => "Zombie_62",
+        63 => "Zombie_63",
+        64 => "Zombie_64",
+        65 => "Zombie_65",
+        66 => "Zombie_66",
+        67 => "Zombie_67",
+        68 => "Zombie_68",
+        69 => "Zombie_69",
+        70 => "Zombie_70",
+        71 => "Zombie_71",
+        72 => "Zombie_72",
+        73 => "Zombie_73",
+        74 => "Zombie_74",
+        75 => "Zombie_75",
+        76 => "Zombie_76",
+        77 => "Zombie_77",
+        78 => "Zombie_78",
+        79 => "Zombie_79",
+        80 => "Zombie_80",
+        81 => "Zombie_81",
+        82 => "Zombie_82",
+        83 => "Zombie_83",
+        84 => "Zombie_84",
+        85 => "Zombie_85",
+        86 => "Zombie_86",
+        87 => "Zombie_87",
         109 => "Zombie_109",
         _ => "Zombie_0",
     }
@@ -952,6 +1019,94 @@ pub fn fighter_ambient_moans(
     // `:57364-57367` — the armored-bones 269-280 range's 1000-roll, case 14.
     if (269..=280).contains(&npc_type) && rng.next_max(1000) == 0 {
         play(14, 1, rng);
+    }
+}
+
+/// W4-f2 — `NPC.IdleSounds` (`NPC.cs:90075-90208`), called from
+/// `UpdateNPC` at `:90422` immediately BEFORE `AI()`: ONE else-if chain
+/// of per-type `Main.rand.Next(N) == 0` gates, each playing legacy case
+/// 29 (the Style-is-the-slot zombie bank, `LegacySoundPlayer.cs:
+/// 1008-1050` — the full per-style switch S1-E-21e ported "for the later
+/// waves' callers"; every style this chain names sits in the 24-87
+/// ×0.5 band). The chain is ELSE-IF — a type matches at most one arm,
+/// and the FIRST matching arm's gate roll is the only one consumed
+/// (a failed gate draws once and falls out; the later arms' rolls never
+/// run for that type). The `shimmerTransparency > 0` head gate
+/// (`:90077`) wraps the whole chain; arm 6 carries the `base.wet` term
+/// (`:90099`) INSIDE its condition, so a dry 63/64/103 falls through to
+/// the later arms' type tests (none match those types — the chain ends
+/// draw-free for them).
+///
+/// The caller's `play` is [`crate::audio::Audio::play_fighter_moan`]
+/// with legacy id 29 — the attenuation gate runs FIRST inside it, then
+/// the case-29 playing guard, then the one `Next(-10, 11)` pitch draw,
+/// all on the `UpdateNPCs` stream (`Main.cs:17767`). The style-roll
+/// arms (`Next(24, 26)` etc.) draw AFTER the gate roll passed and
+/// BEFORE the play's own guard/pitch (the C#'s argument evaluation
+/// order, `:90081`).
+pub fn idle_sounds(
+    npc_type: i32,
+    wet: bool,
+    shimmer_transparency: f32,
+    rng: &mut tr_core::UnifiedRandom,
+    play: &mut dyn FnMut(u32, i32, &mut tr_core::UnifiedRandom),
+) {
+    // `:90077` — the shimmered state silences the whole chain.
+    if shimmer_transparency > 0.0 {
+        return;
+    }
+    // `:90079-90082` — the Hungry pair's 900-roll, styles Next(24, 26).
+    if (npc_type == 239 || npc_type == 240) && rng.next_max(900) == 0 {
+        let style = rng.next_range(24, 26);
+        play(29, style, rng);
+    }
+    // `:90083-90086` — the 62/156 pair's 700-roll, Next(26, 30).
+    else if (npc_type == 62 || npc_type == 156) && rng.next_max(700) == 0 {
+        let style = rng.next_range(26, 30);
+        play(29, style, rng);
+    }
+    // `:90087-90090` — type 177's 600-roll, Next(30, 32).
+    else if npc_type == 177 && rng.next_max(600) == 0 {
+        let style = rng.next_range(30, 32);
+        play(29, style, rng);
+    }
+    // `:90091-90094` — type 226's 800-roll, pinned style 32.
+    else if npc_type == 226 && rng.next_max(800) == 0 {
+        play(29, 32, rng);
+    }
+    // `:90095-90098` — type 153's 1000-roll, pinned style 33.
+    else if npc_type == 153 && rng.next_max(1000) == 0 {
+        play(29, 33, rng);
+    }
+    // `:90099-90102` — the wet 63/64/103 trio's 1000-roll, Next(34, 36).
+    // The `base.wet` term is INSIDE the condition: a dry trio member
+    // falls through (no later arm names those types — zero further draws).
+    else if wet && (npc_type == 63 || npc_type == 64 || npc_type == 103)
+        && rng.next_max(1000) == 0
+    {
+        let style = rng.next_range(34, 36);
+        play(29, style, rng);
+    }
+    // `:90103-90106` — the 198/199 pair's 1000-roll, Next(36, 38).
+    else if (npc_type == 198 || npc_type == 199) && rng.next_max(1000) == 0 {
+        let style = rng.next_range(36, 38);
+        play(29, style, rng);
+    }
+    // `:90107-90110` — the 170/180/171 trio's 600-roll, Next(38, 41).
+    else if (npc_type == 170 || npc_type == 180 || npc_type == 171)
+        && rng.next_max(600) == 0
+    {
+        let style = rng.next_range(38, 41);
+        play(29, style, rng);
+    }
+    // `:90111-90114` — the Angry Nimbus's 700-roll, Next(41, 44).
+    else if npc_type == 250 && rng.next_max(700) == 0 {
+        let style = rng.next_range(41, 44);
+        play(29, style, rng);
+    }
+    // `:90115-90118` — type 580's 800-roll, pinned style 44.
+    else if npc_type == 580 && rng.next_max(800) == 0 {
+        play(29, 44, rng);
     }
 }
 
@@ -1877,5 +2032,134 @@ mod tests {
         assert!(gate(299, true), "the critter set returns true");
         assert!(gate(425, true), "the case list breaks to true");
         assert!(gate(528, true), "the 528-532 break arm");
+    }
+
+    /// W4-f2 — `IdleSounds`' else-if chain (`NPC.cs:90079-90118`, arms
+    /// 1-10): a matching type consumes its gate roll, then (on a hit) the
+    /// style roll, then the play's case-29 pitch draw — in that order, on
+    /// the caller's stream. Seed 146 draws 0 on every gate (the derived
+    /// witness seed); the `play` stand-in consumes the one
+    /// `Next(-10, 11)` pitch like `play_fighter_moan`'s case-29 path.
+    #[test]
+    fn w4_f2_idle_sounds_the_first_ten_arms_draw_in_the_c_order() {
+        use tr_core::UnifiedRandom;
+        // (type, wet, gate N, style roll range or None for a pinned style,
+        //  expected style) — the C#'s arms 1-10 in chain order.
+        let arms: &[(i32, bool, i32, Option<(i32, i32)>, i32)] = &[
+            (239, false, 900, Some((24, 26)), 25),
+            (240, false, 900, Some((24, 26)), 25),
+            (62, false, 700, Some((26, 30)), 28),
+            (156, false, 700, Some((26, 30)), 28),
+            (177, false, 600, Some((30, 32)), 31),
+            (226, false, 800, None, 32),
+            (153, false, 1000, None, 33),
+            (63, true, 1000, Some((34, 36)), 35),
+            (64, true, 1000, Some((34, 36)), 35),
+            (103, true, 1000, Some((34, 36)), 35),
+            (198, false, 1000, Some((36, 38)), 37),
+            (199, false, 1000, Some((36, 38)), 37),
+            (170, false, 600, Some((38, 41)), 39),
+            (180, false, 600, Some((38, 41)), 39),
+            (171, false, 600, Some((38, 41)), 39),
+            (250, false, 700, Some((41, 44)), 42),
+            (580, false, 800, None, 44),
+        ];
+        for &(ty, wet, gate, style_roll, style) in arms {
+            let mut rng = UnifiedRandom::new(146);
+            let mut witness = UnifiedRandom::new(146);
+            let _gate = witness.next_max(gate);
+            if let Some((lo, hi)) = style_roll {
+                let _style = witness.next_range(lo, hi);
+            }
+            let _pitch = witness.next_range(-10, 11);
+            let mut plays: Vec<(u32, i32)> = Vec::new();
+            idle_sounds(ty, wet, 0.0, &mut rng, &mut |case, st, r| {
+                plays.push((case, st));
+                // The case-29 play's one pitch draw (the guard is free
+                // headless — the fresh-slot table, the E21e precedent).
+                let _ = r.next_range(-10, 11);
+            });
+            assert_eq!(plays, vec![(29, style)], "type {ty}");
+            assert_eq!(rng.peek(), witness.peek(), "type {ty}: gate+style+pitch");
+        }
+    }
+
+    /// W4-f2 — the chain's draw-free paths: the shimmer head gate
+    /// (`:90077`), a failed gate (ONE draw, the else-if falls out — no
+    /// later arm's roll runs), the dry wet-trio fall-through (`:90099`'s
+    /// `base.wet` term is inside the condition), and an unlisted type
+    /// (zero draws — no arm's type test matches).
+    #[test]
+    fn w4_f2_idle_sounds_the_gates_and_fall_throughs_draw_nothing_extra() {
+        use tr_core::UnifiedRandom;
+        // The shimmer gate wraps the whole chain — zero draws.
+        let mut rng = UnifiedRandom::new(146);
+        let peek = rng.peek();
+        let mut plays = 0;
+        idle_sounds(239, false, 1.0, &mut rng, &mut |_, _, _| plays += 1);
+        assert_eq!(plays, 0);
+        assert_eq!(rng.peek(), peek, "the shimmer head gate draws nothing");
+        // A failed gate: seed 1 draws 223 on Next(900) — ONE draw, no play,
+        // and the else-if chain ends (no later arm's roll for type 239).
+        let mut rng = UnifiedRandom::new(1);
+        let mut witness = UnifiedRandom::new(1);
+        let g = witness.next_max(900);
+        assert_ne!(g, 0, "the witness seed's gate must fail");
+        let mut plays = 0;
+        idle_sounds(239, false, 0.0, &mut rng, &mut |_, _, _| plays += 1);
+        assert_eq!(plays, 0);
+        assert_eq!(rng.peek(), witness.peek(), "the failed gate's one draw only");
+        // The dry 63/64/103 trio: the wet term fails INSIDE arm 6's
+        // condition; no later arm names those types — zero draws.
+        for ty in [63, 64, 103] {
+            let mut rng = UnifiedRandom::new(146);
+            let peek = rng.peek();
+            let mut plays = 0;
+            idle_sounds(ty, false, 0.0, &mut rng, &mut |_, _, _| plays += 1);
+            assert_eq!(plays, 0, "dry type {ty}");
+            assert_eq!(rng.peek(), peek, "dry type {ty}: the chain falls out");
+        }
+        // An unlisted type (the zombie 3): no arm matches — zero draws.
+        let mut rng = UnifiedRandom::new(146);
+        let peek = rng.peek();
+        let mut plays = 0;
+        idle_sounds(3, false, 0.0, &mut rng, &mut |_, _, _| plays += 1);
+        assert_eq!(plays, 0);
+        assert_eq!(rng.peek(), peek, "an unlisted type draws nothing");
+    }
+
+    /// W4-f2 — the case-29 bank rows this wave registers: every
+    /// IdleSounds style 24-87 resolves to its `Zombie_<style>` asset at
+    /// the ×0.5 band (`LegacySoundPlayer.cs:1009-1011`), and the asset
+    /// table names each slot (the `zombie_asset` arms).
+    #[test]
+    fn w4_f2_the_idle_case29_slots_resolve_the_bank() {
+        for style in 24u32..=87 {
+            let voice = critter_legacy_voice(
+                29,
+                style,
+                &mut |_, _| 0,
+                &|_| false,
+            )
+            .expect("a free slot plays");
+            assert_eq!(voice.slot, style as usize);
+            assert_eq!(voice.volume_mult, 0.5, "the 24-87 band is x0.5");
+            assert_eq!(voice.pitch, 0.0, "the forced 0 pitch roll");
+            // The asset name is the slot's own file — the Zombie_0
+            // fallback would mean a missing `zombie_asset` arm.
+            assert_ne!(voice.asset, "Zombie_0", "style {style} has no asset arm");
+        }
+        assert_eq!(zombie_asset(24), "Zombie_24");
+        assert_eq!(zombie_asset(87), "Zombie_87");
+        // The busy-slot guard refuses BEFORE the pitch draw (the case-29
+        // contract the idle plays inherit).
+        let mut state = Rolls::new();
+        assert!(
+            critter_legacy_voice(29, 25, &mut signed_roll(&mut state, &|_, _, _| Some(0)), &|s| s
+                == 25)
+            .is_none(),
+            "a busy idle slot blocks the cue"
+        );
+        assert_eq!(state.calls, 0, "the guard precedes the pitch draw");
     }
 }

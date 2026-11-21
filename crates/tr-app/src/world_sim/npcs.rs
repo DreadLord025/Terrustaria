@@ -4431,6 +4431,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                                 player_intersects,
                             );
                         }
+                        // W4-f2 — `NPC.IdleSounds` (`NPC.cs:90075-90208`,
+                        // called at `:90422` immediately BEFORE `AI()`):
+                        // the per-type case-29 idle chain runs HERE, at the
+                        // C# call position, on the `UpdateNPCs` stream ahead
+                        // of the machine's own draws. The else-if chain's
+                        // gate roll is the only draw a non-matching type
+                        // consumes (a matching type's failed gate draws once
+                        // and falls out); the style/pitch draws ride inside
+                        // `play_fighter_moan` after the attenuation gate.
+                        {
+                            let (nx, ny) = (n.x, n.y);
+                            crate::ambient_sound::idle_sounds(
+                                n.kind.cs_id() as i32,
+                                n.wet,
+                                n.shimmer_transparency,
+                                npcs_rng,
+                                &mut |legacy_case, style, rng| {
+                                    audio.play_fighter_moan(legacy_case, style, nx, ny, rng);
+                                },
+                            );
+                        }
                     }
                     // The DungeonSpirit's arm (`NPC.AI()`'s aiStyle-56
                     // block, `NPC.cs:32742-32760`): TargetClosest + the

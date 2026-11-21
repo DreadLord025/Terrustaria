@@ -415,6 +415,74 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Zombie_21", 14),
     ("Zombie_22", 14),
     ("Zombie_23", 14),
+    // W4-f2 - the IdleSounds case-29 slots (NPC.cs:90081-90205, the
+    // Style-is-the-slot rows 24-87, LegacySoundPlayer.cs:1009-1011's
+    // x0.5 band): the full switch S1-E-21e ported 'for the later waves'
+    // callers' - this wave wires them. Case 29 is NOT ambient-scaling.
+    ("Zombie_24", 29),
+    ("Zombie_25", 29),
+    ("Zombie_26", 29),
+    ("Zombie_27", 29),
+    ("Zombie_28", 29),
+    ("Zombie_29", 29),
+    ("Zombie_30", 29),
+    ("Zombie_31", 29),
+    ("Zombie_32", 29),
+    ("Zombie_33", 29),
+    ("Zombie_34", 29),
+    ("Zombie_35", 29),
+    ("Zombie_36", 29),
+    ("Zombie_37", 29),
+    ("Zombie_38", 29),
+    ("Zombie_39", 29),
+    ("Zombie_40", 29),
+    ("Zombie_41", 29),
+    ("Zombie_42", 29),
+    ("Zombie_43", 29),
+    ("Zombie_44", 29),
+    ("Zombie_45", 29),
+    ("Zombie_46", 29),
+    ("Zombie_47", 29),
+    ("Zombie_48", 29),
+    ("Zombie_49", 29),
+    ("Zombie_50", 29),
+    ("Zombie_51", 29),
+    ("Zombie_52", 29),
+    ("Zombie_53", 29),
+    ("Zombie_54", 29),
+    ("Zombie_55", 29),
+    ("Zombie_56", 29),
+    ("Zombie_57", 29),
+    ("Zombie_58", 29),
+    ("Zombie_59", 29),
+    ("Zombie_60", 29),
+    ("Zombie_61", 29),
+    ("Zombie_62", 29),
+    ("Zombie_63", 29),
+    ("Zombie_64", 29),
+    ("Zombie_65", 29),
+    ("Zombie_66", 29),
+    ("Zombie_67", 29),
+    ("Zombie_68", 29),
+    ("Zombie_69", 29),
+    ("Zombie_70", 29),
+    ("Zombie_71", 29),
+    ("Zombie_72", 29),
+    ("Zombie_73", 29),
+    ("Zombie_74", 29),
+    ("Zombie_75", 29),
+    ("Zombie_76", 29),
+    ("Zombie_77", 29),
+    ("Zombie_78", 29),
+    ("Zombie_79", 29),
+    ("Zombie_80", 29),
+    ("Zombie_81", 29),
+    ("Zombie_82", 29),
+    ("Zombie_83", 29),
+    ("Zombie_84", 29),
+    ("Zombie_85", 29),
+    ("Zombie_86", 29),
+    ("Zombie_87", 29),
     ("Zombie_109", 45),
 ];
 
@@ -4080,6 +4148,30 @@ mod tests {
             "Zombie_109",
         ] {
             assert!(SFX_CUES.iter().any(|(n, _)| *n == name), "{name} in the table");
+        }
+    }
+
+    /// W4-f2 — the IdleSounds case-29 bank rows (styles 24-87,
+    /// `NPC.cs:90081-90205`): every slot registers at legacy id 29, the
+    /// play resolves the slot's own asset with ONE pitch draw on the
+    /// passed stream (the case-29 contract), and the ×0.5 band rides the
+    /// volume (the headless play returns the asset name).
+    #[test]
+    fn w4_f2_the_idle_case29_bank_rows_play_with_one_pitch_draw() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        for style in 24i32..=87 {
+            let name = format!("Zombie_{style}");
+            assert!(
+                SFX_CUES.iter().any(|(n, t)| *n == name && *t == 29),
+                "{name} registers at legacy id 29"
+            );
+            let mut rng = UnifiedRandom::new(7);
+            let mut witness = UnifiedRandom::new(7);
+            let _pitch = witness.next_range(-10, 11);
+            let played = audio.play_fighter_moan(29, style, 0.0, 0.0, &mut rng);
+            assert_eq!(played.map(|s| s.to_string()), Some(name.clone()));
+            assert_eq!(rng.peek(), witness.peek(), "style {style}: one pitch draw");
         }
     }
 
