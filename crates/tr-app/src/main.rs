@@ -44,6 +44,8 @@ mod eoc_fight;
 mod input_map;
 mod inv;
 mod luck;
+mod torch_god;
+mod projectile_ai_torch_god;
 mod wiring_stub;
 mod yoyo_string;
 mod item;

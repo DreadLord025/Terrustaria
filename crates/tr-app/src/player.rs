@@ -1106,9 +1106,22 @@ pub struct Player {
     pub ate_artisan_bread: bool,
     /// `Player.unlockedBiomeTorches` (`Player.cs:2046`): the Torch God's
     /// biome torches — the gate on the `needTorchGodsFavor` recipes
-    /// (`Recipe.cs:353-356`). The unlock itself (the Torch God's dialogue)
-    /// is unported, so the flag stays false in play.
+    /// (`Recipe.cs:353-356`). The grant rides the Torch God event's favor
+    /// item (W4-f33 owns the grant; a6 owns the 5043 use arm,
+    /// `Player.cs:45226-45243`).
     pub unlocked_biome_torches: bool,
+    /// The Torch God event state (`Player.cs:3066-3080`, W4-f33) — the
+    /// `happyFunTorchTime` machine; see `torch_god.rs`.
+    pub torch_god: crate::torch_god::TorchGodState,
+    /// The tick's deferred Torch God writes (the `pending_*` convention):
+    /// the decision + RNG run inside `update_luck`, the world_sim drain
+    /// applies the tile snuff/relight, the 949 spawn and the favor drop.
+    pub pending_torch_god: crate::torch_god::TorchGodPending,
+    /// The trigger's inventory scan (`Player.cs:18069-18076`): any of the
+    /// 59 inventory slots holds the favor (5043). Fed per tick by
+    /// `world_sim::update_player` beside `held_torch_style` (the player
+    /// tick does not see the App's inventory arrays).
+    pub has_torch_gods_favor: bool,
     /// The `TR_JUMPS`/`TR_BOOTS`/`TR_WINGS` pins: the debug stand-ins for the
     /// granting equipment, re-applied by the accessory pass every tick (the
     /// vanilla `ResetEffects` clears the flags and the grants re-set them).
@@ -2699,6 +2712,9 @@ impl Player {
             void_vault_enabled: false,
             ate_artisan_bread: false,
             unlocked_biome_torches: false,
+            torch_god: crate::torch_god::TorchGodState::default(),
+            pending_torch_god: crate::torch_god::TorchGodPending::default(),
+            has_torch_gods_favor: false,
             pinned_jumps: [false; 9],
             pinned_balloon: false,
             pinned_rocket_boots: 0,
@@ -3683,6 +3699,13 @@ impl Player {
         // flag splits the two counters; the port has no PVP, so every
         // death is PVE.
         self.deaths_pve = self.deaths_pve.saturating_add(1);
+        // `Player.KillMe`'s Torch God abort (`Player.cs:38855-38858`,
+        // W4-f33): dying ends the event — the relight + cooldown arm here
+        // (the C# order: after the counters, before the coin loss), the
+        // tile loop defers to the world_sim drain.
+        if crate::torch_god::end_ongoing_torch_god_event(&mut self.torch_god) {
+            self.pending_torch_god.relight = true;
+        }
         self.dead = true;
         self.dead_time = 0;
         self.respawn_timer = Player::get_respawn_time(boss_near, expert);
@@ -6994,8 +7017,9 @@ impl Player {
         }
         // `Player.Update` → `UpdateLuck` (`Player.cs:25645` → `:29041`): the
         // decay timers + `RecalculateLuck`, after the buff effects derived
-        // stinky/luckPotion/kiteLuckLevel above and before movement.
-        self.update_luck(world);
+        // stinky/luckPotion/kiteLuckLevel above and before movement. The
+        // Torch God event's draws ride the same UpdatePlayers stream.
+        self.update_luck(world, rng);
         // `Player.cs:26004-26009`: the run-speed merge runs AFTER `UpdateEquips`
         // (`:25633`) - the accessory/prefix `moveSpeed` adds ride the debuff
         // multiply too. `oldStyleParkour` (the `:26007` gate) is unported
@@ -10562,22 +10586,40 @@ impl Player {
     /// decay for `Main.myPlayer` only (the port's single player). The torch
     /// slot fills with the 1-row-per-tick scan in the M2-BUFF-6 phase 2; the
     /// `luckNeedsSync` tail is net-only.
-    fn update_luck(&mut self, world: &World) {
+    fn update_luck(&mut self, world: &World, rng: &mut dyn tr_core::loot::DropRng) {
         let day_rate = world.day_rate();
         self.luck_state.update_lady_bug_decay(day_rate);
         self.luck_state.update_coin_decay(day_rate);
         // `TryRecalculatingTorchLuck` + the diff check (`Player.cs:29126-29130`
         // — the diff half is net-only): `Main.myPlayer`-only in the C#, which
-        // is the port's single player.
+        // is the port's single player. W4-f33: the event head/trigger tail
+        // ride the seam — the decision + all `UpdatePlayers` draws run here
+        // (the C# call position); the tile/pool/item writes defer to the
+        // world_sim drain (`pending_torch_god`).
         let center = self.center();
-        crate::luck::torch_scan_step(
+        let mut event = crate::torch_god::TorchGodEventCtx {
+            state: &mut self.torch_god,
+            buffs: &mut self.buffs,
+            unlocked_biome_torches: self.unlocked_biome_torches,
+            pos_y: self.y,
+            has_favor: self.has_torch_gods_favor,
+            // `Main.Difficulty` — the port's single-difficulty Classic 1.0
+            // fold (the `World::MOON_POINT_SCALAR` precedent).
+            difficulty: 1.0,
+        };
+        let pending = crate::luck::torch_scan_step_event(
             &mut self.luck_state,
             world,
             center,
             self.dead,
             self.held_torch_style,
             self.zones,
+            &mut event,
+            rng,
         );
+        // The pending struct accumulates nothing across ticks (the drain
+        // runs every fixed step right after the tick) — a plain write.
+        self.pending_torch_god = pending;
         self.luck_state.update_broken_mirror_decay(day_rate);
         self.luck_state.recalculate_luck();
     }

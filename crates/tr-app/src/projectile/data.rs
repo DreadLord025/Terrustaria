@@ -76,6 +76,9 @@ pub const SQUIRREL_HOOK: u16 = 865;
 /// `ProjectileID.QueenSlimeHook` (935) — the `extraUpdates = 3` hook whose
 /// latch teleports its owner.
 pub const QUEEN_SLIME_HOOK: u16 = 935;
+/// `ProjectileID.TorchGod` (949) — the Torch God event's snuffed-torch
+/// shot (`Projectile.cs:8948-8955`, W4-f33).
+pub const TORCH_GOD: u16 = 949;
 pub const SHURIKEN: u16 = 3;
 /// `ProjectileID.VilethornBase` (7) — the Vilethorn's first segment
 /// (`Projectile.cs:874-884`).
@@ -3669,6 +3672,14 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // `Projectile.cs:8884-8894` — the Queen Slime Hook (935): 18x18,
             // `extraUpdates = 3`.
             QUEEN_SLIME_HOOK => (18.0, 18.0, 7, -1, HOOK_TIME_LEFT, 3, false, false, false, RESET_STATE),
+            // W4-f33 — `Projectile.cs:8948-8955`: the Torch God shot (949):
+            // 4x4, aiStyle 184 (`AI_184_BadTorchLuck`), `penetrate = -1`,
+            // `tileCollide = false` (the AI's ai[1] budget arms it later).
+            // The stock `friendly`/`hostile` stay false (`:788`/`:764` —
+            // the arm touches neither): the hurt rides the AI's own
+            // `SelfHurtPlayers`, never the pool's PVE/EVP lanes. The stock
+            // timeLeft 3600 (`:787`) / extraUpdates 0 (`:771`) stand.
+            TORCH_GOD => (4.0, 4.0, 184, -1, TIME_LEFT_DEFAULT, 0, false, false, false, RESET_STATE),
             // The dungeon-debris trio (`Projectile.cs:7748-7755`): 10x10,
             // aiStyle 10, `penetrate = -1`; everything else keeps the reset
             // (`tileCollide` true `:775`, `timeLeft` 3600 `:787`,
