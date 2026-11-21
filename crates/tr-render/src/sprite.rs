@@ -1408,6 +1408,27 @@ impl SpriteRenderer {
         stats
     }
 
+    /// S1-G-13 consumers: the world-effect range ALONE, under the UI camera
+    /// (the fx passes are screen-space — rain/gore/dust/projectiles pushed
+    /// via `push_fx_*`). The gated frame path renders them over the tile
+    /// composite, under the water composite (`Main.cs:62279-62315`). Same
+    /// mechanism as [`Self::render_back`]: back/world are temporarily emptied.
+    pub fn render_fx_only(
+        &mut self,
+        gpu: &Gpu,
+        view: &wgpu::TextureView,
+        camera: [f32; 2],
+        zoom: f32,
+        time: f32,
+    ) -> RenderStats {
+        let back = std::mem::take(&mut self.back);
+        let world = std::mem::take(&mut self.world);
+        let stats = self.draw_ranges(gpu, view, camera, zoom, time, None, true, false);
+        self.back = back;
+        self.world = world;
+        stats
+    }
+
     fn draw_ranges(
         &mut self,
         gpu: &Gpu,

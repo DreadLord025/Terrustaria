@@ -2160,6 +2160,8 @@ pub(crate) mod front_flow_tests {
             noise_tex: None,
             water_mask: None,
             targets: None,
+            target_compositor: None,
+            layer_render_count: 1,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(1),
             filter_driver: crate::app::filters::FilterDriver::new(),

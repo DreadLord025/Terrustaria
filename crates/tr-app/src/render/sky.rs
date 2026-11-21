@@ -650,6 +650,11 @@ pub(crate) fn draw_sky(
     counter: u32,
     // `Main.mouseTextColor` (`Main.cs:1683`): the Mushroom glow's pulse.
     mouse_text_color: u8,
+    // S1-G-13 consumers: skip the underground backdrop tail
+    // (`DrawBackground`, `Main.cs:52798`) — the gated layer path renders it
+    // into the backgroundTarget via the `RenderBackground` callback
+    // (`Main.cs:55200-55218`) instead. The fused default passes `false`.
+    skip_underground_background: bool,
 ) {
     // `Background_0.png` is the game's own 48x1400 sky gradient: deep blue at the top,
     // pale near the horizon. It is anchored to `Main.worldSurface`.
@@ -1533,7 +1538,7 @@ pub(crate) fn draw_sky(
     // the rock bands, the animated magma and the underworld black box below it. (A
     // per-column gradient used to hang a dark "wall" underneath every player-placed
     // row of blocks.)
-    if !crate::env::no_bg() {
+    if !crate::env::no_bg() && !skip_underground_background {
         draw_background(
             r,
             camera,

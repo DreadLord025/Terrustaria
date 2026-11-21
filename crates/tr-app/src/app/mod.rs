@@ -12,6 +12,7 @@ pub(crate) mod equip_swap;
 pub(crate) mod filters;
 pub(crate) mod flow;
 pub(crate) mod frame;
+pub(crate) mod layer_targets;
 mod r#loop;
 pub(crate) mod net_npc_sync;
 pub(crate) mod netglue;
@@ -109,6 +110,16 @@ pub(crate) struct App {
     /// "The render-target family (S1-G-13)"). The capture mode's
     /// `DrawCapture` chunk render is the consumer this seam waits for.
     pub(crate) targets: Option<tr_render::RenderTargetFamily>,
+    /// S1-G-13 consumers: the one `TargetCompositor` the six composite sites
+    /// share (`Main.DoDraw`'s `spriteBatch.Draw(target.Texture, ...)` — the
+    /// port rebuilds the bind group per draw, the instance buffer persists).
+    /// Allocated lazily beside the family.
+    pub(crate) target_compositor: Option<tr_render::TargetCompositor>,
+    /// S1-G-13 consumers: `Main.renderCount`'s port for the gated layer path
+    /// — the lighting phase index `LightingEngine.ProcessArea` publishes
+    /// (`LightingEngine.cs:90-103`: MinimapUpdate→3, ExportMetrics→0, Scan→1,
+    /// Blur→2, cycling every frame). Starts at 1 (the first frame's Scan).
+    pub(crate) layer_render_count: i32,
     /// `Main.SceneState` — the phase-1 tr-core port; `update_scene` steps its
     /// fades and the filter driver reads its intensities.
     pub(crate) scene_state: tr_core::scene::SceneState,
@@ -3556,6 +3567,8 @@ impl App {
             },
             water_mask: None,
             targets: None,
+            target_compositor: None,
+            layer_render_count: 1,
             scene_state: tr_core::scene::SceneState::new(),
             sandstorm: tr_core::scene::Sandstorm::new(world_seed),
             filter_driver: crate::app::filters::FilterDriver::new(),

@@ -643,7 +643,15 @@ pub(crate) fn draw_tiles(
     let mut vine_roots: Vec<(i32, i32)> = Vec::new();
     let mut vine_roots_seen: std::collections::HashSet<(i32, i32)> =
         std::collections::HashSet::new();
+    // S1-G-13 consumers: the direct-screen blocks draw NO tile cells — the
+    // tile targets own them, and re-walking the cells here would re-roll the
+    // leaf RNG (`EmitTreeLeaves`) the tile halves already rolled. The cell
+    // loop runs only for the fused default and the tile-target callbacks.
+    let skip_cells = matches!(tile_filter, TileFilter::ScreenExtras | TileFilter::Screen);
     for ty in y0..=y1 {
+        if skip_cells {
+            break;
+        }
         scratch.cur.clear();
         let mut run_start = -1i32;
         let cy = ty / chunk;
