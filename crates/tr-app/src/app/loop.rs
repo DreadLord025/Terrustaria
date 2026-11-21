@@ -381,6 +381,10 @@ impl ApplicationHandler for App {
                 if self.reports_wheel(d.round() as i32) {
                     return;
                 }
+                // The secret-seeds list's wheel (W4-d85 row 12).
+                if self.secret_seeds_wheel(d.round() as i32) {
+                    return;
+                }
                 if self.map.as_ref().is_some_and(|m| m.open) {
                     // `Player.cs:25190-25197`: while the map is fullscreen the wheel
                     // zooms it instead of cycling the hotbar.

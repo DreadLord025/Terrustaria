@@ -2453,6 +2453,12 @@ impl App {
             // (`open_reports`), not here — the Back hop re-enters the
             // parked screen, never the reports page itself.
             FrontScreen::Reports(_) => {}
+            // The Advanced tab + seeds list build their pages in the ctor
+            // (`UIWorldCreationAdvanced.cs:53-60`,
+            // `UIWorldCreationAdvancedSecretSeedsList.cs:41-46`) — the
+            // draft rode in from the flow row; no re-list.
+            FrontScreen::WorldCreationAdvanced(_) => {}
+            FrontScreen::SecretSeedsList(_) => {}
         }
         self.park_menu();
         self.front = Some(front);
@@ -2584,13 +2590,41 @@ impl App {
                 }
                 self.enter_front(back);
             }
-            // `OnFinishedSettingSeed` (`:817-831`): the trimmed seed lands
-            // (`TryApplyingCopiedSeed`'s secret-seed paths are the out-of-
-            // scope Advanced tab, plan Uncertainty 4).
+            // `OnFinishedSettingSeed` (`:817-898`): the trimmed seed lands;
+            // a classic option text selects the option (sound 24, `:834`),
+            // a micro-seed text joins the entered list and re-enables the
+            // parked ones (`:836-842`); the special-seed ring particles
+            // are not drawn (W4-d85 deviation).
             KeyboardTail::WorldSeed => {
                 let mut back = back.expect("the world-seed tail is built with a back screen");
-                if let FrontScreen::WorldCreation(draft) = &mut back {
+                let draft = match &mut back {
+                    FrontScreen::WorldCreation(draft)
+                    | FrontScreen::WorldCreationAdvanced(draft) => Some(draft),
+                    _ => None,
+                };
+                if let Some(draft) = draft {
                     draft.seed = name;
+                    // `GetOptionFromSeedText` (`:829`) + `SelectOption`.
+                    if let Some(option) = tr_core::seeds::option_for_seed_text(&draft.seed) {
+                        draft.is_special_seed_text = true;
+                        draft.select_option(option);
+                        self.audio.play("Chat"); // `SoundEngine.PlaySound(24)` (`:834`)
+                    } else {
+                        draft.is_special_seed_text = false;
+                    }
+                    // `CheckInputForSecretSeed` (`:836-842`): a new micro
+                    // seed joins the entered list, `EnableSecretSeedOptions`
+                    // re-enables the parked texts, then `ClearSeedText`
+                    // (`:887`) blanks the box.
+                    if tr_core::seeds::check_input_for_secret_seed(&draft.seed).is_some()
+                        && !draft.secret_texts.contains(&draft.seed)
+                    {
+                        let text = draft.seed.clone();
+                        draft.secret_texts.push(text);
+                        draft.enable_secret_seed_options(true);
+                        draft.seed.clear();
+                        draft.is_special_seed_text = false;
+                    }
                 }
                 self.enter_front(back);
             }

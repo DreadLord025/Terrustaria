@@ -81,6 +81,29 @@ impl App {
                 self.enter_front(FrontScreen::WorldSelect);
                 self.open_reports();
             }
+            TrUiPreset::WorldAdvanced => {
+                // The Advanced-tab screenshot (`TR_UI=worldadvanced`): a
+                // fresh draft through the base screen's opener, then the
+                // seed icon's hop (`ClickAdvancedSeedMenu`).
+                self.preset_ui(TrUiPreset::WorldNew);
+                if let Some(front) = self.front.clone() {
+                    self.apply_front_flow(front, crate::app::flow::FlowClick::WorldAdvancedOpen);
+                }
+            }
+            TrUiPreset::SecretSeeds => {
+                // The seeds-list screenshot (`TR_UI=secretseeds`): the
+                // Advanced tab with the two known micro-seed plaintexts
+                // entered (the game's own revealed words — `pumpkinseason`
+                // and `arachnophobia`), then the secret cell's hop.
+                self.preset_ui(TrUiPreset::WorldAdvanced);
+                if let Some(FrontScreen::WorldCreationAdvanced(draft)) = self.front.as_mut() {
+                    draft.add_seed_from_seedmenu("pumpkin season");
+                    draft.add_seed_from_seedmenu("arachnophobia");
+                }
+                if let Some(front) = self.front.clone() {
+                    self.apply_front_flow(front, crate::app::flow::FlowClick::SecretSeedsOpen);
+                }
+            }
             TrUiPreset::Credits => {
                 self.front = None;
                 self.front_backup = None;

@@ -39333,3 +39333,51 @@ The `UIReportsPage` port (`ui/reports.rs`, table row 10):
   `FlowClick::ReportsBack` row carries both.
 - Code-only mode: the witness tests (`reports.rs` 4 + `flow.rs` 2) are
   WRITTEN, NOT RUN.
+
+## Advanced world creation (W4-d85, 2026-11-20, code-only)
+
+The `UIWorldCreationAdvanced` + `UIWorldCreationAdvancedSecretSeedsList`
+ports (`ui/world_creation_advanced.rs` + `ui/secret_seeds_list.rs`,
+table rows 11-12; the research/18 task seed "M — UIWorldCreationAdvanced
++ secret-seeds list" closes):
+
+- **Draft extension**: `NewWorldDraft` carries the Advanced tab's state
+  — `options_enabled` (the ten `WorldGenerationOptions` registrations),
+  `is_special_seed_text`, `secret_texts` / `disabled_secret_texts`
+  (`_secretSeedTextsEntered` / `_disabledSecretSeedTextsEntered`). The
+  `AWorldGenerationOption.Enabled` cascades are ported as
+  `set_option_enabled`: Normal's enable clears the rest, its subscriber
+  re-derives Normal = all-others-off; Everything's enable/disable carries
+  its seven dependencies (the early-return disable guard included), its
+  subscriber re-derives Everything = all-seven-on.
+- **Seed keyboard tail**: `OnFinishedSettingSeed`
+  (`UIWorldCreation.cs:817-898`) now runs the classic-option select
+  (sound 24) and the micro-seed enable + park-restore + `ClearSeedText`;
+  the tail returns to the Advanced tab when the keyboard opened from it
+  (`GoBackHere` → `_goBackTarget`). `TryApplyingCopiedSeed`'s four
+  leading `.`-separated paste values stay unported (the M5-SEED-1
+  deviation stands).
+- **Generation**: `WorldGenJob::start` + `create_world_in` join the
+  entered micro-seed texts onto the base seed
+  (`FinishCreatingWorld`, `:991-995`) and OR the toggled option flags
+  into the classic flags.
+- **Geometry**: the 500-wide root at Top 202 (MaxHeight 400), the -102
+  panel, the 40x40 randomize + seed plate row, the 6-per-row 60x60 grid
+  at 67 px pitch (`HAlign = col/5`), the 88 px description panel
+  (title 0.82 / separator Top 22 / wrapped body 0.7), the fat Apply
+  panel at Top -43. The seeds list: the 40+5 rows in the (-20, -60)
+  container, the 56 px description, the attach-on-overflow scrollbar.
+- **Deviations**: (1) the special-seed ring + particle systems
+  (`DrawSeedSystems`, `SpawnParticles`, `DrawSpecialSeedRingCallback`)
+  are not drawn; (2) `SecretSeedsTracker`'s settings persistence is not
+  ported — the interface rows derive from the draft's entered/parked
+  lists (a removed text leaves the list, where the C#'s tracker keeps
+  it); (3) the option list's scrollbar only exists under
+  `allowScrolling` (ctor default false) — the port draws none; (4) the
+  `MouseOverSeed` held-button re-click (`:174-177`) is not ported; (5)
+  the gamepad snap points are out of scope (§J.3); (6) the base screen's
+  seed-icon degradation is GONE — the icon opens the Advanced tab
+  (`Click::AdvancedSeed`).
+- Code-only mode: the witness tests (`world_creation.rs` 2 cascade tests
+  + `world_creation_advanced.rs` 5 + `secret_seeds_list.rs` 5 +
+  `flow.rs` 2) are WRITTEN, NOT RUN.

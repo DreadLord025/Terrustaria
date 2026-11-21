@@ -1093,6 +1093,20 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "UI/WorldCreation/PreviewSizeSmall",
         "UI/WorldCreation/PreviewSizeMedium",
         "UI/WorldCreation/PreviewSizeLarge",
+        // W4-d85: the Advanced tab's seed-option icons
+        // (`AWorldGenerationOption.cs:61` — `Images/UI/WorldCreation/{KeyName}`)
+        // and the secret-seed button's icon (`UIWorldCreationAdvanced.cs:182`).
+        "UI/WorldCreation/Seed_Normal",
+        "UI/WorldCreation/Seed_NotTheBees",
+        "UI/WorldCreation/Seed_Drunk",
+        "UI/WorldCreation/Seed_Celebration",
+        "UI/WorldCreation/Seed_TheConstant",
+        "UI/WorldCreation/Seed_ForTheWorthy",
+        "UI/WorldCreation/Seed_NoTraps",
+        "UI/WorldCreation/Seed_Remix",
+        "UI/WorldCreation/Seed_Everything",
+        "UI/WorldCreation/Seed_Skyblock",
+        "UI/WorldCreation/Seed_Secret",
         "UI/VK_Shift",
         "UI/VK_Backspace",
         // Found by the M4-NPC-3v sheet-packing guard: a draw arm asked the atlas
@@ -2254,6 +2268,13 @@ pub struct Lookups {
     pub wc_preview_evil: [Option<tr_render::SheetRect>; 3],
     /// `PreviewSizeSmall/Medium/Large` 76x76 (`:60-62`).
     pub wc_preview_size: [Option<tr_render::SheetRect>; 3],
+    /// W4-d85: the Advanced tab's seed-option icons, in the
+    /// `WorldGenerationOptions` registration order
+    /// (`AWorldGenerationOption.cs:61`, `UIWorldCreationAdvanced.cs:241-250`).
+    pub wc_seed_icons: [Option<tr_render::SheetRect>; 10],
+    /// `UI/WorldCreation/Seed_Secret` — the secret-seed button's icon
+    /// (`UIWorldCreationAdvanced.cs:182`).
+    pub wc_seed_secret: Option<tr_render::SheetRect>,
     /// `UI/VK_Shift` 26x26 (`UIVirtualKeyboard.cs:171`).
     pub vk_shift: Option<tr_render::SheetRect>,
     /// `UI/VK_Backspace` 54x26 (`UIVirtualKeyboard.cs:172`).
@@ -2789,6 +2810,20 @@ impl Lookups {
                 "UI/WorldCreation/PreviewSizeLarge",
             ]
             .map(|n| atlas.sheet(n).copied()),
+            wc_seed_icons: [
+                "UI/WorldCreation/Seed_Normal",
+                "UI/WorldCreation/Seed_NotTheBees",
+                "UI/WorldCreation/Seed_Drunk",
+                "UI/WorldCreation/Seed_Celebration",
+                "UI/WorldCreation/Seed_TheConstant",
+                "UI/WorldCreation/Seed_ForTheWorthy",
+                "UI/WorldCreation/Seed_NoTraps",
+                "UI/WorldCreation/Seed_Remix",
+                "UI/WorldCreation/Seed_Everything",
+                "UI/WorldCreation/Seed_Skyblock",
+            ]
+            .map(|n| atlas.sheet(n).copied()),
+            wc_seed_secret: atlas.sheet("UI/WorldCreation/Seed_Secret").copied(),
             vk_shift: atlas.sheet("UI/VK_Shift").copied(),
             vk_backspace: atlas.sheet("UI/VK_Backspace").copied(),
             minimap_frames: std::array::from_fn(|i| {

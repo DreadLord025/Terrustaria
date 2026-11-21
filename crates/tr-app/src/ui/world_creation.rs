@@ -6,9 +6,10 @@
 //! (plan §"Screen-model ruling").
 //!
 //! The Advanced seed tab (`ClickAdvancedSeedMenu` -> `UIWorldCreationAdvanced`)
-//! is out of scope (spec §9.4 / plan Uncertainty 4): the seed icon's click
-//! degrades to the plain seed keyboard, and the special-seed ring effect
-//! (`DrawSpecialSeedRingCallback`) is not drawn — both documented deviations.
+//! is ported by W4-d85 (`ui/world_creation_advanced.rs` +
+//! `ui/secret_seeds_list.rs`): the seed icon opens it. The special-seed
+//! ring effect (`DrawSpecialSeedRingCallback`) is still not drawn — a
+//! documented deviation.
 //!
 //! Every draw reads the sheets from `Lookups` `Option`s: a missing sheet draws
 //! nothing, so `Lookups::default()` renders blank chrome and panics nowhere
@@ -63,6 +64,24 @@ pub struct NewWorldDraft {
     pub difficulty: u8,
     /// `_optionEvil` (`WorldEvilId`): 0 Random / 1 Corruption / 2 Crimson.
     pub evil: u8,
+    /// W4-d85: the Advanced tab's `WorldGenerationOptions` enabled state
+    /// (`AWorldGenerationOption.Enabled`, the registration order of
+    /// `WorldGenerationOptions.cs:30-41` — index 0 is Normal). The C#
+    /// statics start ALL false (the ctor never calls `Reset`); Normal's
+    /// `UpdateDependentState` subscriber keeps it true while nothing else
+    /// is on. The `Normal`/`Everything` event cascades live in
+    /// [`NewWorldDraft::toggle_seed_option`].
+    pub options_enabled: [bool; 10],
+    /// `_isSpecialSeedText` (`UIWorldCreation.cs:145`'s field) — the seed
+    /// text names a classic option (`OnFinishedSettingSeed`, `:830`).
+    pub is_special_seed_text: bool,
+    /// `_secretSeedTextsEntered` (`:137`) — the micro-seed plaintexts the
+    /// Advanced tab / seed keyboard enabled (`AddSeedFromSeedmenu`,
+    /// `:1363-1366`).
+    pub secret_texts: Vec<String>,
+    /// `_disabledSecretSeedTextsEntered` (`:139`) — the texts parked by
+    /// `EnableSecretSeedOptions(false)` (`:777-783`).
+    pub disabled_secret_texts: Vec<String>,
 }
 
 impl Default for NewWorldDraft {
@@ -85,6 +104,163 @@ impl NewWorldDraft {
             // this._optionDifficulty = WorldDifficultyId.Creative;` (`:319-322`).
             difficulty: if active_difficulty == 3 { 3 } else { 0 },
             evil: 0, // `WorldEvilId.Random` (`:323`)
+            // `WorldGenerationOptions.Reset` — Normal enabled, the rest
+            // off (`WorldGenerationOptions.cs:52-55`).
+            options_enabled: [true, false, false, false, false, false, false, false, false, false],
+            is_special_seed_text: false,
+            secret_texts: Vec::new(),
+            disabled_secret_texts: Vec::new(),
+        }
+    }
+
+    /// `HasEnteredSpecialSeed` (`UIWorldCreation.cs:145`).
+    pub fn has_entered_special_seed(&self) -> bool {
+        !self.secret_texts.is_empty()
+    }
+
+    /// `HasDisabledSecretSeed` (`:147`).
+    pub fn has_disabled_secret_seed(&self) -> bool {
+        !self.disabled_secret_texts.is_empty()
+    }
+
+    /// `FinishCreatingWorld`'s seed join (`UIWorldCreation.cs:991-995`):
+    /// the entered micro-seed plaintexts prepend the base seed text with
+    /// `|` — the form `resolve_seed_text` re-splits.
+    pub fn effective_seed_text(&self) -> String {
+        if self.secret_texts.is_empty() {
+            return self.seed.clone();
+        }
+        format!("{}|{}", self.secret_texts.join("|"), self.seed)
+    }
+
+    /// `AddSeedFromSeedmenu` (`:1363-1366`).
+    pub fn add_seed_from_seedmenu(&mut self, seed: &str) {
+        self.secret_texts.push(seed.to_string());
+    }
+
+    /// `RemoveSeedFromSeedMenu` (`:1368-1371`) — the first matching text.
+    pub fn remove_seed_from_seed_menu(&mut self, seed: &str) {
+        if let Some(i) = self.secret_texts.iter().position(|s| s == seed) {
+            self.secret_texts.remove(i);
+        }
+    }
+
+    /// The `OPTION_TABLE` index of a `SeedOptionId` (the registration
+    /// order both tables share, `WorldGenerationOptions.cs:30-41`).
+    pub fn option_index(id: tr_core::seeds::SeedOptionId) -> usize {
+        tr_core::seeds::OPTION_TABLE
+            .iter()
+            .position(|o| o.id == id)
+            .expect("every option is registered")
+    }
+
+    /// The enabled classic flags the Advanced tab's toggles carry — the
+    /// `WorldGen.Reset()` read (`WorldGen.cs:11115-11123`) over the live
+    /// `Enabled` states, plus the Everything dependency mix.
+    pub fn option_flags(&self) -> tr_core::seeds::SeedFlags {
+        let mut flags = tr_core::seeds::SeedFlags::none();
+        for (i, opt) in tr_core::seeds::OPTION_TABLE.iter().enumerate() {
+            if self.options_enabled[i] {
+                flags |= tr_core::seeds::flags_for_option(opt.id);
+            }
+        }
+        flags
+    }
+
+    /// `AWorldGenerationOption.Enabled`'s setter (`AWorldGenerationOption.
+    /// cs:16-31`) for one option: the state flips, then
+    /// `OnEnabledStateChanged` (the option's own cascade) and the static
+    /// `OnOptionStateChanged` subscribers (Normal's all-off read,
+    /// Everything's dependency read) run. The subscriber order is the
+    /// registration order — Normal (index 0) subscribes first, Everything
+    /// (index 8) second (`WorldSeedOption_Normal.cs:15`,
+    /// `WorldSeedOption_Everything.cs:41`).
+    fn set_option_enabled(&mut self, index: usize, enabled: bool) {
+        if self.options_enabled[index] == enabled {
+            return; // `if (this._enabled != value)` (`:24`)
+        }
+        self.options_enabled[index] = enabled;
+        // `OnEnabledStateChanged` — the option's own cascade.
+        match index {
+            // Normal: enabling clears every other option
+            // (`WorldSeedOption_Normal.cs:23-36`). Each clear is itself a
+            // setter call (the cascades recurse, as in the C#).
+            0 if enabled => {
+                for i in 1..10 {
+                    self.set_option_enabled(i, false);
+                }
+            }
+            // Everything: enabling sets all seven dependencies, disabling
+            // clears them — but a disable with any dependency already off
+            // returns early (`WorldSeedOption_Everything.cs:52-61`).
+            8 => {
+                const DEPS: [usize; 7] = [7, 2, 1, 6, 4, 3, 5]; // registration indices: Remix, Drunk, NotTheBees, NoTraps, DontStarve, Anniversary, ForTheWorthy
+                if !enabled && DEPS.iter().any(|&d| !self.options_enabled[d]) {
+                    // the early return (`:54-57`) — the subscribers still run
+                } else {
+                    for d in DEPS {
+                        self.set_option_enabled(d, enabled);
+                    }
+                }
+            }
+            _ => {}
+        }
+        // `OnOptionStateChanged(this)` — the static subscribers.
+        // Normal's `UpdateDependentState` (`WorldSeedOption_Normal.cs:
+        // 18-21`): Normal is enabled iff every other option is off.
+        let normal = self.options_enabled[1..].iter().all(|&e| !e);
+        self.set_option_enabled(0, normal);
+        // Everything's `UpdateDependentState` (`WorldSeedOption_
+        // Everything.cs:44-50`): a changed dependency re-derives
+        // Everything = all seven on.
+        const DEPS: [usize; 7] = [7, 2, 1, 6, 4, 3, 5];
+        if DEPS.contains(&index) && self.options_enabled[index] != self.options_enabled[8] {
+            let all = DEPS.iter().all(|&d| self.options_enabled[d]);
+            self.set_option_enabled(8, all);
+        }
+    }
+
+    /// `ToggleSeedOption` (`UIWorldCreation.cs:750-761`): a special seed
+    /// text clears first (`ClearSeedText`'s field writes, `:513-518`),
+    /// then the option flips through the cascade setter.
+    pub fn toggle_seed_option(&mut self, id: tr_core::seeds::SeedOptionId) {
+        if self.is_special_seed_text {
+            self.seed.clear();
+            self.is_special_seed_text = false;
+        }
+        let index = Self::option_index(id);
+        let next = !self.options_enabled[index];
+        self.set_option_enabled(index, next);
+    }
+
+    /// `WorldGenerationOptions.SelectOption` (`WorldGenerationOptions.cs:
+    /// 57-64`): `Reset()` (Normal on) then the option enables — the
+    /// `OnFinishedSettingSeed` classic-text arm (`UIWorldCreation.cs:833`).
+    pub fn select_option(&mut self, id: tr_core::seeds::SeedOptionId) {
+        self.set_option_enabled(0, true);
+        self.set_option_enabled(Self::option_index(id), true);
+    }
+
+    /// `EnableSecretSeedOptions` (`UIWorldCreation.cs:763-784`): enabling
+    /// re-adds the parked texts whose seeds are not already enabled;
+    /// disabling parks every entered text and clears the entered list.
+    /// The port's `SecretSeed.Enable` state IS the entered-text list
+    /// (`seed_identity` re-derives the flags), so the "not already
+    /// enabled" gate is the list membership.
+    pub fn enable_secret_seed_options(&mut self, enabled: bool) {
+        if enabled {
+            let parked = std::mem::take(&mut self.disabled_secret_texts);
+            for text in parked {
+                if tr_core::seeds::check_input_for_secret_seed(&text).is_some()
+                    && !self.secret_texts.contains(&text)
+                {
+                    self.secret_texts.push(text);
+                }
+            }
+        } else {
+            self.disabled_secret_texts.clear();
+            self.disabled_secret_texts
+                .extend(self.secret_texts.drain(..));
         }
     }
 
@@ -524,10 +700,12 @@ pub enum Click {
     /// `:497-503`).
     RandomName,
     /// The seed row: the plate's `Click_SetSeed` -> `OpenSeedInputMenu`
-    /// (`:697-708`) and the icon's `ClickAdvancedSeedMenu` (`:505-511`) — the
-    /// Advanced tab is out of scope (plan Uncertainty 4), so the icon's click
-    /// degrades to the same plain seed keyboard (documented deviation).
+    /// (`:697-708`).
     Seed,
+    /// The seed icon's `ClickAdvancedSeedMenu` (`:505-511`) — W4-d85
+    /// ports the Advanced tab, so the icon opens it (the old degradation
+    /// to the plain keyboard is gone).
+    AdvancedSeed,
     /// A size option (`ClickSizeOption`, `:541-551`) — the `WorldSizeId`.
     Size(u8),
     /// A difficulty option (`ClickDifficultyOption`, `:553-563`) — the
@@ -555,7 +733,7 @@ pub fn click_at(l: &Layout, mouse: Vec2) -> Click {
         return Click::RandomName; // `:497-503`
     }
     if in_rect(mouse, l.seed_button) {
-        return Click::Seed; // `:505-511` degraded, see `Click::Seed`
+        return Click::AdvancedSeed; // `:505-511` — the Advanced tab (W4-d85)
     }
     if in_rect(mouse, l.name_button) {
         return Click::Name; // `:689-695`
@@ -750,8 +928,13 @@ pub fn seed_identity(seed_text: &str) -> (tr_core::seeds::SeedFlags, tr_core::se
 pub fn create_world_in(worlds_dir: &Path, draft: &NewWorldDraft) -> anyhow::Result<PathBuf> {
     let name = draft.name.trim();
     let (width, height) = size_dimensions(draft.size);
-    let seed = seed_value(name, &draft.seed);
-    let (flags, micro_flags) = seed_identity(&draft.seed);
+    // W4-d85: the entered micro-seed texts join the base seed
+    // (`FinishCreatingWorld`, `UIWorldCreation.cs:991-995`); the Advanced
+    // tab's toggled options carry the classic flags.
+    let seed_text = draft.effective_seed_text();
+    let seed = seed_value(name, &seed_text);
+    let (text_flags, micro_flags) = seed_identity(&seed_text);
+    let flags = text_flags | draft.option_flags();
     // The chest loot stocks at GENERATION time (S1-A-4): the hook rolls
     // `AddBuriedChest`'s block at each placement site, and the records ride
     // the save's native v7 section (`SaveChests`, `WorldFile.cs:1606-1676`).
@@ -849,7 +1032,7 @@ fn seed_empty() -> String { crate::lang::text("UI.WorldCreationSeedEmpty") }
 /// `TrimDisplayIfOverElementDimensions` — 27 for the name, 40 for the seed
 /// (`UIWorldCreation.cs:737, 746`) — which the port does not port; it draws
 /// the raw strings (documented deviation).
-fn draw_plate(
+pub(crate) fn draw_plate(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     rect: [f32; 4],
@@ -911,7 +1094,7 @@ fn draw_plate(
 /// the row tint, centred 8px right of the button's centre: the rows build the
 /// title UIText with `titleAlignmentX = 1f, titleWidthReduction = 16f`
 /// (`UIWorldCreation.cs:388, 437, 482`) — `Width (-16, 1)`, `HAlign 1`.
-fn draw_option_button(
+pub(crate) fn draw_option_button(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     rect: [f32; 4],
@@ -1004,7 +1187,7 @@ fn draw_option_button(
 /// construct `option: true` (`:223`, `:250`) and are never re-optioned, so
 /// `IsSelected` always holds (`GroupOptionButton.cs:68`) and the icon keeps
 /// `IconColor` = White in every state.
-fn draw_icon_button(
+pub(crate) fn draw_icon_button(
     r: &mut SpriteRenderer,
     lookups: &assets::Lookups,
     rect: [f32; 4],
@@ -1276,6 +1459,76 @@ mod tests {
     // Expected values hand-derived from the C# (`UIWorldCreation.cs:163-663`,
     // `UIWorldCreationPreview.cs:44-132`, `GroupOptionButton.cs:118-260`,
     // `UICharacterNameButton.cs:34-99`) — never from this code.
+
+    /// W4-d85 — the option cascades (`AWorldGenerationOption.Enabled`'s
+    /// setter + the Normal/Everything subscribers): enabling any option
+    /// clears Normal; clearing the last option re-enables Normal;
+    /// Everything carries its seven dependencies both ways.
+    #[test]
+    fn w4_d85_the_option_cascades_match_the_subscribers() {
+        use tr_core::seeds::SeedOptionId as O;
+        let mut d = NewWorldDraft::new(0, 0);
+        let idx = |id: O| NewWorldDraft::option_index(id);
+        // The default: Normal on, everything else off.
+        assert!(d.options_enabled[idx(O::Normal)]);
+        // Enable Drunk → Normal clears (`WorldSeedOption_Normal.cs:18-21`).
+        d.toggle_seed_option(O::Drunk);
+        assert!(d.options_enabled[idx(O::Drunk)]);
+        assert!(!d.options_enabled[idx(O::Normal)]);
+        // Disable Drunk → Normal returns (every other option off).
+        d.toggle_seed_option(O::Drunk);
+        assert!(d.options_enabled[idx(O::Normal)]);
+        // Everything enables its seven dependencies
+        // (`WorldSeedOption_Everything.cs:52-61`).
+        d.toggle_seed_option(O::Everything);
+        for dep in [O::Remix, O::Drunk, O::NotTheBees, O::NoTraps, O::DontStarve, O::Anniversary, O::ForTheWorthy] {
+            assert!(d.options_enabled[idx(dep)], "{dep:?} rides Everything");
+        }
+        assert!(!d.options_enabled[idx(O::Skyblock)], "skyblock is NOT a dependency");
+        // Disabling one dependency clears Everything
+        // (`UpdateDependentState`, `:44-50`).
+        d.toggle_seed_option(O::Drunk);
+        assert!(!d.options_enabled[idx(O::Everything)]);
+        // Re-enabling it restores Everything (all seven on again).
+        d.toggle_seed_option(O::Drunk);
+        assert!(d.options_enabled[idx(O::Everything)]);
+        // Disabling Everything clears all seven (`OnEnabledStateChanged`).
+        d.toggle_seed_option(O::Everything);
+        for dep in [O::Remix, O::Drunk, O::NotTheBees, O::NoTraps, O::DontStarve, O::Anniversary, O::ForTheWorthy] {
+            assert!(!d.options_enabled[idx(dep)]);
+        }
+        assert!(d.options_enabled[idx(O::Normal)], "Normal returns");
+        // Enabling Normal clears every other option
+        // (`WorldSeedOption_Normal.cs:23-36`).
+        d.toggle_seed_option(O::Skyblock);
+        d.set_option_enabled(idx(O::Normal), true);
+        assert!(!d.options_enabled[idx(O::Skyblock)]);
+    }
+
+    /// W4-d85 — `ToggleSeedOption` clears a special seed text first
+    /// (`UIWorldCreation.cs:750-759`); `EnableSecretSeedOptions` parks and
+    /// restores the entered texts (`:763-784`).
+    #[test]
+    fn w4_d85_the_seed_text_and_park_rules() {
+        use tr_core::seeds::SeedOptionId as O;
+        let mut d = NewWorldDraft::new(0, 0);
+        d.seed = "fortheworthy".into();
+        d.is_special_seed_text = true;
+        d.toggle_seed_option(O::Drunk);
+        assert!(d.seed.is_empty(), "the special text cleared");
+        assert!(!d.is_special_seed_text);
+        // The park round-trip.
+        d.secret_texts = vec!["pumpkinseason".into(), "arachnophobia".into()];
+        d.enable_secret_seed_options(false);
+        assert!(d.secret_texts.is_empty());
+        assert_eq!(d.disabled_secret_texts.len(), 2);
+        d.enable_secret_seed_options(true);
+        assert_eq!(d.secret_texts, ["pumpkinseason", "arachnophobia"]);
+        assert!(d.disabled_secret_texts.is_empty());
+        // The join (`FinishCreatingWorld`, `:991-995`).
+        d.seed = "12345".into();
+        assert_eq!(d.effective_seed_text(), "pumpkinseason|arachnophobia|12345");
+    }
 
     /// The full 1600x900 layout, asserted against the C#-derived table.
     #[test]
@@ -1559,7 +1812,7 @@ mod tests {
         let l = layout(Vec2::new(1600.0, 900.0), 40.0);
         let centre = |r: [f32; 4]| Vec2::new(r[0] + r[2] * 0.5, r[1] + r[3] * 0.5);
         assert_eq!(click_at(&l, centre(l.random_name_icon)), Click::RandomName);
-        assert_eq!(click_at(&l, centre(l.seed_button)), Click::Seed);
+        assert_eq!(click_at(&l, centre(l.seed_button)), Click::AdvancedSeed);
         assert_eq!(click_at(&l, centre(l.name_button)), Click::Name);
         assert_eq!(click_at(&l, centre(l.seed_plate)), Click::Seed);
         assert_eq!(click_at(&l, centre(l.size_buttons[0])), Click::Size(0));

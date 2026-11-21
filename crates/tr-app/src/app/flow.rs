@@ -60,6 +60,24 @@ pub(crate) enum FrontScreen {
     /// `GoToBottom`, `:124`) and the Back target (`_previousUIState` +
     /// `_menuIdToGoBackTo`, `:36-41`).
     Reports(Box<ReportsState>),
+    /// W4-d85's `UIWorldCreationAdvanced` (`UIWorldCreationAdvanced.cs:16`)
+    /// — the Advanced seed tab `ClickAdvancedSeedMenu` opens
+    /// (`UIWorldCreation.cs:505-511`). The payload is the shared draft
+    /// (the C#'s `_creationState` reference — the toggles write through).
+    WorldCreationAdvanced(ui::world_creation::NewWorldDraft),
+    /// W4-d85's `UIWorldCreationAdvancedSecretSeedsList`
+    /// (`UIWorldCreationAdvancedSecretSeedsList.cs:17`) — the unlocked
+    /// micro-seed toggles. The payload carries the shared draft and the
+    /// list's own `UIScrollbar.ViewPosition`.
+    SecretSeedsList(Box<SecretSeedsState>),
+}
+
+/// The `UIWorldCreationAdvancedSecretSeedsList` payload — the shared
+/// draft plus the screen's scroll (`_scrollbar`, `:27`).
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct SecretSeedsState {
+    pub(crate) draft: ui::world_creation::NewWorldDraft,
+    pub(crate) scroll: f32,
 }
 
 /// The `UIReportsPage` payload — the screen's own state
@@ -188,6 +206,18 @@ pub(crate) enum FlowClick {
     /// `MenuUI.SetState(_previousUIState)` + sound 11 + `menuMode =
     /// _menuIdToGoBackTo` — the parked front screen or legacy page returns.
     ReportsBack,
+    /// `ClickAdvancedSeedMenu` (`UIWorldCreation.cs:505-511`): the seed
+    /// icon opens the Advanced tab over the live draft.
+    WorldAdvancedOpen,
+    /// `UIWorldCreationAdvanced.GoBack` (`UIWorldCreationAdvanced.cs:
+    /// 475-481`): sound 11, the base creation screen returns.
+    WorldAdvancedBack,
+    /// `SecretSeedButton_OnLeftClick` (`:206-211`): sound 12, the
+    /// secret-seeds list opens.
+    SecretSeedsOpen,
+    /// `UIWorldCreationAdvancedSecretSeedsList.GoBack` (`:386-391`):
+    /// sound 11, the Advanced tab returns.
+    SecretSeedsBack,
     /// The confirm pages' Yes row (`selectedMenu == 1`, `Main.cs:49431`,
     /// `:49681`, `:49454`).
     ConfirmYes,
@@ -272,6 +302,48 @@ pub(crate) fn next_flow_state(
                 (front, backup, page)
             }
         }
+        // `ClickAdvancedSeedMenu` (`UIWorldCreation.cs:505-511`): the
+        // draft rides into the Advanced tab (the C# keeps the reference).
+        FlowClick::WorldAdvancedOpen => {
+            if let Some(FrontScreen::WorldCreation(draft)) = front {
+                (Some(FrontScreen::WorldCreationAdvanced(draft)), backup, page)
+            } else {
+                (front, backup, page)
+            }
+        }
+        // `UIWorldCreationAdvanced.GoBack` (`:475-481`): the base screen
+        // returns with the toggled draft.
+        FlowClick::WorldAdvancedBack => {
+            if let Some(FrontScreen::WorldCreationAdvanced(draft)) = front {
+                (Some(FrontScreen::WorldCreation(draft)), backup, page)
+            } else {
+                (front, backup, page)
+            }
+        }
+        // `SecretSeedButton_OnLeftClick` (`:206-211`): the seeds list
+        // opens over the same draft.
+        FlowClick::SecretSeedsOpen => {
+            if let Some(FrontScreen::WorldCreationAdvanced(draft)) = front {
+                (
+                    Some(FrontScreen::SecretSeedsList(Box::new(SecretSeedsState {
+                        draft,
+                        scroll: 0.0,
+                    }))),
+                    backup,
+                    page,
+                )
+            } else {
+                (front, backup, page)
+            }
+        }
+        // `UIWorldCreationAdvancedSecretSeedsList.GoBack` (`:386-391`).
+        FlowClick::SecretSeedsBack => {
+            if let Some(FrontScreen::SecretSeedsList(state)) = front {
+                (Some(FrontScreen::WorldCreationAdvanced(state.draft)), backup, page)
+            } else {
+                (front, backup, page)
+            }
+        }
         // Any other combination is a no-op (a click kind its screen never
         // sends); the state passes through unchanged.
         _ => (front, backup, page),
@@ -294,6 +366,10 @@ pub(crate) enum TrUiPreset {
     WorldLoad,
     /// W4-d85's reports page (`UIReportsPage`).
     Reports,
+    /// W4-d85's Advanced seed tab (`UIWorldCreationAdvanced`).
+    WorldAdvanced,
+    /// W4-d85's secret-seeds list (`UIWorldCreationAdvancedSecretSeedsList`).
+    SecretSeeds,
     /// menuMode 3000.
     Credits,
     /// menuMode 5.
@@ -316,6 +392,8 @@ pub(crate) fn tr_ui_preset(name: &str) -> Option<TrUiPreset> {
         "vk" => TrUiPreset::Keyboard,
         "worldload" => TrUiPreset::WorldLoad,
         "reports" => TrUiPreset::Reports,
+        "worldadvanced" => TrUiPreset::WorldAdvanced,
+        "secretseeds" => TrUiPreset::SecretSeeds,
         "credits" => TrUiPreset::Credits,
         "delplayer" => TrUiPreset::DelPlayer,
         "delworld" => TrUiPreset::DelWorld,
@@ -547,6 +625,30 @@ impl FrontScreenBehaviours for FrontScreen {
                     d.lookups,
                     d.screen,
                     &state.reports,
+                    state.scroll,
+                    d.mouse,
+                );
+            }
+            FrontScreen::WorldCreationAdvanced(draft) => {
+                // `UIWorldCreationAdvanced.Draw` (`:496-501`, minus the
+                // gamepad points and DrawSeedSystems).
+                ui::world_creation_advanced::draw_screen(
+                    d.renderer,
+                    d.lookups,
+                    draft,
+                    d.screen,
+                    d.mouse,
+                );
+            }
+            FrontScreen::SecretSeedsList(state) => {
+                // `UIWorldCreationAdvancedSecretSeedsList.Draw`
+                // (`:431-436`, minus the gamepad points and the particle
+                // systems).
+                ui::secret_seeds_list::draw_screen(
+                    d.renderer,
+                    d.lookups,
+                    &state.draft,
+                    d.screen,
                     state.scroll,
                     d.mouse,
                 );
@@ -888,10 +990,13 @@ impl FrontScreenBehaviours for FrontScreen {
                         ui::world_creation::Click::Name => nav = Nav::Name(draft.clone()),
                         // `Click_SetSeed` -> `OpenSeedInputMenu` (`:697-708`):
                         // "UI.EnterSeed", `allowEmpty: true`, no cap (the
-                        // source's `int.MaxValue`); the icon's Advanced-tab
-                        // click degrades to the same keyboard (plan
-                        // Uncertainty 4).
+                        // source's `int.MaxValue`).
                         ui::world_creation::Click::Seed => nav = Nav::Seed(draft.clone()),
+                        // `ClickAdvancedSeedMenu` (`:505-511`): the
+                        // Advanced tab opens over the live draft (W4-d85).
+                        ui::world_creation::Click::AdvancedSeed => {
+                            flow = Some(FlowClick::WorldAdvancedOpen);
+                        }
                         // `Click_NamingAndCreating` (`:710-724`): an empty
                         // name opens the naming keyboard (`allowEmpty: false`,
                         // 27), a filled one finishes (`:722`).
@@ -1127,6 +1232,97 @@ impl FrontScreenBehaviours for FrontScreen {
                     None
                 }
             }
+            FrontScreen::WorldCreationAdvanced(_) => {
+                // The Advanced tab's click table (`UIWorldCreationAdvanced`'s
+                // handlers through the draft): the randomize icon, the seed
+                // plate, the option grid, the secret cell, Apply.
+                let Some(FrontScreen::WorldCreationAdvanced(draft)) = app.front.as_mut() else {
+                    return None;
+                };
+                match ui::world_creation_advanced::click_at(draft, screen, mouse) {
+                    // `ClickRandomizeSeed` (`:441-445`) → `RandomizeSeed`
+                    // (`UIWorldCreation.cs:532-539`): `Main.rand.Next()` —
+                    // the bare global stand-in (the front end runs outside
+                    // every swap).
+                    ui::world_creation_advanced::Click::Randomize => {
+                        draft.seed = app.rngs.global().next().to_string();
+                        draft.is_special_seed_text = false;
+                        None
+                    }
+                    // `Click_SetSeed` → `OpenSeedInputMenu` (`:447-450`):
+                    // the same keyboard the base screen opens, returning
+                    // to the Advanced tab (`GoBackHere` → `_goBackTarget`).
+                    ui::world_creation_advanced::Click::Seed => {
+                        let back = FrontScreen::WorldCreationAdvanced(draft.clone());
+                        app.open_keyboard_with_tail(
+                            ui::keyboard::Request {
+                                label: ui::keyboard::enter_seed(),
+                                initial: String::new(),
+                                allow_empty: true,
+                                max_length: usize::MAX,
+                                context: ui::keyboard::Context::Text,
+                            },
+                            Some(back),
+                            KeyboardTail::WorldSeed,
+                        );
+                        None
+                    }
+                    // `ClickSeedOption` (`:255-260`): the toggle runs the
+                    // Enabled cascades; sound 12 (`GroupOptionButton.
+                    // LeftMouseDown`, `:253-257`).
+                    ui::world_creation_advanced::Click::Option(i) => {
+                        app.audio.play("Menu_Tick");
+                        draft.toggle_seed_option(tr_core::seeds::OPTION_TABLE[i].id);
+                        None
+                    }
+                    // `SecretSeedButton_OnLeftClick` (`:206-211`): sound 12
+                    // rides the flow hop's open cue — the C# plays 12 here,
+                    // the port's table plays 10; the explicit tick keeps
+                    // the source's cue.
+                    ui::world_creation_advanced::Click::SecretSeeds => {
+                        Some(FlowClick::SecretSeedsOpen)
+                    }
+                    // `Click_GoBack` → `GoBack` (`:470-481`): sound 11 +
+                    // the base creation screen.
+                    ui::world_creation_advanced::Click::Apply => {
+                        Some(FlowClick::WorldAdvancedBack)
+                    }
+                    ui::world_creation_advanced::Click::None => None,
+                }
+            }
+            FrontScreen::SecretSeedsList(_) => {
+                let (rows, attached, scroll) = {
+                    let Some(FrontScreen::SecretSeedsList(state)) = app.front.as_ref() else {
+                        return None;
+                    };
+                    let rows = ui::secret_seeds_list::interface_rows(&state.draft);
+                    let root = ui::secret_seeds_list::root_rect(screen);
+                    let panel = ui::secret_seeds_list::panel_rect(&root);
+                    let inner = ui::secret_seeds_list::list_container_inner(&panel);
+                    let attached = ui::secret_seeds_list::content_height(rows.len()) > inner[3];
+                    (rows, attached, state.scroll)
+                };
+                match ui::secret_seeds_list::click_at(
+                    screen,
+                    mouse,
+                    rows.len(),
+                    scroll,
+                    attached,
+                ) {
+                    // `ClickSecretSeed` (`:219-236`): the toggle + sound 12.
+                    ui::secret_seeds_list::Click::Row(i) => {
+                        app.audio.play("Menu_Tick");
+                        if let Some(FrontScreen::SecretSeedsList(state)) = app.front.as_mut() {
+                            let row = rows[i].clone();
+                            ui::secret_seeds_list::toggle_row(&mut state.draft, &row);
+                        }
+                        None
+                    }
+                    // `GoBack` (`:386-391`): sound 11 + the Advanced tab.
+                    ui::secret_seeds_list::Click::Apply => Some(FlowClick::SecretSeedsBack),
+                    ui::secret_seeds_list::Click::None => None,
+                }
+            }
         }
     }
 
@@ -1212,6 +1408,25 @@ impl App {
             back_front,
             back_page,
         })));
+    }
+
+    /// The secret-seeds list's wheel (`UIList.ScrollWheel` through the
+    /// attach-on-overflow scrollbar, `Recalculate` `:343-361`).
+    pub(crate) fn secret_seeds_wheel(&mut self, delta: i32) -> bool {
+        let Some(FrontScreen::SecretSeedsList(state)) = self.front.as_mut() else {
+            return false;
+        };
+        let (sw, sh) = self.screen_size();
+        let screen = Vec2::new(sw, sh);
+        let rows = ui::secret_seeds_list::interface_rows(&state.draft).len();
+        let root = ui::secret_seeds_list::root_rect(screen);
+        let panel = ui::secret_seeds_list::panel_rect(&root);
+        let inner = ui::secret_seeds_list::list_container_inner(&panel);
+        let content = ui::secret_seeds_list::content_height(rows);
+        if ui::secret_seeds_list::wheel_target(screen, self.mouse_pos, rows) {
+            state.scroll = ui::char_select::scroll_wheel(state.scroll, delta, inner[3], content);
+        }
+        true
     }
 
     /// `UIReportsPage`'s wheel (`UIList.ScrollWheel` through
@@ -1401,6 +1616,8 @@ impl App {
                     | FlowClick::WorldBack
                     | FlowClick::WorldCreateBack
                     | FlowClick::ReportsBack
+                    | FlowClick::WorldAdvancedBack
+                    | FlowClick::SecretSeedsBack
                     | FlowClick::ConfirmNo
             ) {
                 self.audio.play("Menu_Close"); // `SoundEngine.PlaySound(11)`
@@ -1622,6 +1839,69 @@ pub(crate) mod front_flow_tests {
             Some(FlowClick::ReportsBack)
         );
         assert_eq!(front.click(&mut app, screen, Vec2::new(800.0, 400.0), false), None);
+    }
+
+    /// W4-d85 rows 11-12 — the Advanced-tab hops carry the draft through:
+    /// base → Advanced (`ClickAdvancedSeedMenu`), Advanced → base
+    /// (`GoBack`), Advanced → seeds list → Advanced.
+    #[test]
+    fn w4_d85_the_advanced_hops_carry_the_draft() {
+        let mut draft = ui::world_creation::NewWorldDraft::new(0, 0);
+        draft.seed = "fortheworthy".into();
+        draft.toggle_seed_option(tr_core::seeds::SeedOptionId::Drunk);
+        let (front, _, _) = next_flow_state(
+            Some(FrontScreen::WorldCreation(draft.clone())),
+            None,
+            None,
+            FlowClick::WorldAdvancedOpen,
+        );
+        assert_eq!(front, Some(FrontScreen::WorldCreationAdvanced(draft.clone())));
+        // The seeds-list hop.
+        let (front, _, _) = next_flow_state(front, None, None, FlowClick::SecretSeedsOpen);
+        let Some(FrontScreen::SecretSeedsList(state)) = front.clone() else {
+            panic!("the seeds list opened");
+        };
+        assert_eq!(state.draft, draft);
+        assert_eq!(state.scroll, 0.0);
+        // Back to the Advanced tab, then to the base screen.
+        let (front, _, _) = next_flow_state(front, None, None, FlowClick::SecretSeedsBack);
+        assert_eq!(front, Some(FrontScreen::WorldCreationAdvanced(draft.clone())));
+        let (front, _, _) = next_flow_state(front, None, None, FlowClick::WorldAdvancedBack);
+        assert_eq!(front, Some(FrontScreen::WorldCreation(draft)));
+    }
+
+    /// W4-d85 row 11 — an option click toggles through the draft and the
+    /// Apply panel routes back; the seed plate opens the keyboard with
+    /// the Advanced tab as the return target.
+    #[test]
+    fn w4_d85_the_advanced_click_table_toggles_and_routes() {
+        let draft = ui::world_creation::NewWorldDraft::new(0, 0);
+        let front = FrontScreen::WorldCreationAdvanced(draft);
+        let mut app = flow_app(Some(front.clone()), vec![], vec![]);
+        let screen = Vec2::new(1600.0, 900.0);
+        // Option 0 (Normal) centre (614, 287): toggling Normal off leaves
+        // every option off (the subscriber re-derives Normal = all-off →
+        // true, so the flip is a no-op — the C#'s own behaviour).
+        let _ = front.click(&mut app, screen, Vec2::new(614.0, 287.0), false);
+        // Option 2 (Drunk) centre: x = 584 + 372*2/5 + 30 = 762.8.
+        let _ = front.click(&mut app, screen, Vec2::new(762.0, 287.0), false);
+        let Some(FrontScreen::WorldCreationAdvanced(d)) = app.front.as_ref() else {
+            panic!("the tab stays live");
+        };
+        assert!(d.options_enabled[2], "Drunk toggled on");
+        assert!(!d.options_enabled[0], "Normal cleared");
+        // Apply routes back.
+        assert_eq!(
+            front.click(&mut app, screen, Vec2::new(800.0, 520.0), false),
+            Some(FlowClick::WorldAdvancedBack)
+        );
+        // The seed plate opens the keyboard returning to the tab.
+        let _ = front.click(&mut app, screen, Vec2::new(800.0, 220.0), false);
+        let Some(FrontScreen::Keyboard(session)) = app.front.as_ref() else {
+            panic!("the keyboard opened");
+        };
+        assert_eq!(session.tail, KeyboardTail::WorldSeed);
+        assert!(matches!(session.back, Some(FrontScreen::WorldCreationAdvanced(_))));
     }
 
     #[test]
@@ -3082,8 +3362,8 @@ pub(crate) mod front_flow_tests {
     #[test]
     fn world_creation_seed_click_opens_the_seed_keyboard() {
         // `OpenSeedInputMenu` (`UIWorldCreation.cs:697-708`): "UI.EnterSeed",
-        // `allowEmpty: true`, `int.MaxValue`; the seed plate and the icon
-        // both route here (the Advanced tab is out of scope).
+        // `allowEmpty: true`, `int.MaxValue`; the seed plate routes here
+        // (the icon opens the Advanced tab since W4-d85).
         let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
         crate::lang::init(tr_core::localization::GameCulture::English);
         let mut app = world_creation_app();

@@ -116,8 +116,18 @@ impl WorldGenJob {
         let dir = tr_core::save::default_world_dir()?;
         let name = draft.name.trim().to_string();
         let (width, height) = world_creation::size_dimensions(draft.size);
-        let seed = world_creation::seed_value(&name, &draft.seed);
-        let (flags, micro_flags) = world_creation::seed_identity(&draft.seed);
+        // W4-d85: `FinishCreatingWorld`'s seed join (`UIWorldCreation.cs:
+        // 991-995`) — the entered micro-seed texts prepend the base seed.
+        let seed_text = draft.effective_seed_text();
+        let seed = world_creation::seed_value(&name, &seed_text);
+        let (text_flags, micro_flags) = world_creation::seed_identity(&seed_text);
+        // The Advanced tab's toggled options carry the classic flags the
+        // seed text does not name (`WorldGenerationOptions`' live Enabled
+        // states, `WorldGen.Reset()`'s read); a special seed TEXT takes
+        // `SetSeedToRandomWithCurrentEvents` instead (`:983-985`) — the
+        // port keeps the typed text's hash (the deterministic stand-in)
+        // but the option flags still apply.
+        let flags = text_flags | draft.option_flags();
         let crimson = match draft.evil {
             1 => false,
             2 => true,

@@ -37,7 +37,9 @@ pub mod slot;
 pub mod text;
 pub mod tooltip;
 pub mod uistate;
+pub mod secret_seeds_list;
 pub mod world_creation;
+pub mod world_creation_advanced;
 pub(crate) mod world_load;
 pub mod world_select;
 

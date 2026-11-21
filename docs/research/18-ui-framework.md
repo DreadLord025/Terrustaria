@@ -179,8 +179,8 @@ the `AWorkshopPublishInfoState` pair if not folded into d84).
 | `UIDebugLoadoutsList` | 146 | `ui/debug_loadouts.rs` + `loadout.rs` (W4-d85) | PORTED (immediate overlay; `/loadouts` opener, ScenarioTestLoadout JSON reader + Apply, static `_lastSearch`; minion respawn deferred — ANALYSIS "Debug lists (W4-d85)") |
 | `UIDebugLoadoutItem`-family screens | — | `ui/debug_commands.rs` + `ui/debug_loadouts.rs` row halves (W4-d85) | PORTED (the two row elements; hover tooltips not drawn) |
 | `UIReportsPage` | 248 | `ui/reports.rs` (W4-d85) | PORTED (immediate front screen; `TR_UI=reports`, empty-log initial message, attach-on-overflow scrollbar + GoToBottom, parked Back target; no issue-report pipeline — ANALYSIS "Reports page (W4-d85)") |
-| `UIWorldCreationAdvanced` | 16 | none | ROADMAP:953 lists it; world_creation.rs covers the base screen only |
-| `UIWorldCreationAdvancedSecretSeedsList` | 17 | none | same |
+| `UIWorldCreationAdvanced` | 532 | `ui/world_creation_advanced.rs` (W4-d85) | PORTED (immediate front screen; the seed icon opens it, the 10-option grid with the Normal/Everything cascades on the draft, the secret cell, the joined-seed description; ring/particles not drawn — ANALYSIS "Advanced world creation (W4-d85)") |
+| `UIWorldCreationAdvancedSecretSeedsList` | 459 | `ui/secret_seeds_list.rs` (W4-d85) | PORTED (the unlocked-seed rows from the draft's lists, CustomSort by unlock text, toggle + glow ring, attach-on-overflow scrollbar; particles + settings tracker not ported — same ANALYSIS section) |
 | `UIWorldGenDebug` | 27 | none | debug |
 | `UICreativePowersMenu` | 13 | none | journey-mode powers |
 | `UITextWrappingTest` | 14 | none | test-only screen |
