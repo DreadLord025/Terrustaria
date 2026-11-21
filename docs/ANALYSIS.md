@@ -1509,8 +1509,21 @@ Cloud deviations (W4-g69, deviation-fix round): `CloudEnv::gather` reads the LIV
 `WorldFile.cs:1281/2080` and the `.trwld` v18 tail; generation sets it from
 `GenOptions.crimson`) and `downed_eow` for `NPC.downedBoss2` — the shared flag covers
 both orb bosses (`NPC.cs:79443-79458`'s shared death case 13/14/15/266), so the
-`RollRareCloud` type-36 gate (`Cloud.cs:196`, `downedBoss2 && crimson`) is complete; the shop/lang/loot
-consumers keep their own documented folds (their lanes' rows). The drunk-menu type
+`RollRareCloud` type-36 gate (`Cloud.cs:196`, `downedBoss2 && crimson`) is complete.
+The DOC-SWEEP round (docs/research/117) wired the five small constants-false
+consumers to the live field — the Dryad chat lines (`NPC.cs:94038-94080`), the
+Dryad shop blood-moon seed + 3217/3218 painting splits (`Chest.cs:1571-1594`,
+`:1665-1672`), the angler quest re-roll (`Main.cs:3769-3817`), the EoC loot
+ore/seed split (`Conditions.IsCrimson/CorruptionAndNotExpert`) and the
+`WorldEvilStone` lang token (`Lang.cs:145`) — plus the drunk-world dawn evil flip
+(`Main.cs:65403-65406`, `clock.rs`, no draw). The large consumers (powder
+proj 10/11/463 + `AttemptToConvertNPCToEvil`, `GERunner` spread, mimic 473/474,
+WoF brick 347/140, altar drop 5532/5533, boss-bag open 3319, shimmer decraft
+variant preference, Painter case-11, Guide help-text) stay unported — their
+lanes' rows (117 §2). The `.trwld` v18 tail is a FIVE-block union conflict
+(c43 identity 44 / d109 variants w×h / g69 crimson 1 / g70 forest 16 / g71
+surface 3); g71b's `92-doc-sweep-bg.md` owns the layout, 117 §1 cross-notes the
+crimson byte at C#-order offset 16 (variants last). The drunk-menu type
 override's gen flags stay false in-world. `Rain::change_rain` reads the LIVE
 `CloudField.num_clouds`/`cloud_bg_active` (`Main.cs:64730`'s `cloudBGActive >= 1f ||
 (double)numClouds > 150.0` then `> 100.0` — all three bands reachable; the pinned
@@ -1530,6 +1543,21 @@ called in 1.4.5.8) are not ported — the passes draw the byte-chain colours dir
 The old 100 px screen cull is gone — the C# draws every active in-bucket cloud (the
 retire bounds of `Cloud.cs:417-420` keep them near the screen anyway).
 
+Rain-cloud darkening (W4-g69 DOC-SWEEP, docs/research/117 §4): `Cloud.cloudColor`
+(`Cloud.cs:227-235`) carries NO per-cloud rain tint — the darkening is the dark
+storm TYPES 18-21 (`addCloud` `:116-127`, landed) plus the GLOBAL `SetBackColor`
+dim `1 − cloudAlpha·0.9·atmo` (`Main.cs:63546-63552`, byte-truncated, gated
+`cloudAlpha>0 && !remixWorld`). The port's two sky-tint sites ran a divergent
+stand-in (clamped `visual_alpha`, no atmo, no remix exclusion, a 0.1 floor, no
+byte truncation); the shared `render::sky::rain_dim_sky` helper now ports the
+formula verbatim (byte-first truncation + the unchecked `as i32 as u8` wrap for
+over-1 pins) and both sites feed `modify_horizon_light` the RAW alpha. The
+`numCloudsTemp` spawn cadence (`Main.cs:58952-59036`) was re-verified VERBATIM;
+one init deviation: the C# re-rolls `numClouds = Next(200)` at content load
+(`:10876`) after the ctor 200 (`:66839-66840`), the port keeps 200 — the first
+tick's `weatherCounter` jump overwrites it before any in-world draw, and wiring
+the load-time draw would shift the bare global stream every sibling witness pins.
+
 Stars: `make_stars` ports `Star.SpawnStars` (`Star.cs:86-158`) in its RNG order вЂ” count
 `Next(200,400)`, positions in the 1920x1200 design space, `rotation Next(628)В·0.01`,
 `scale Next(70,130)В·0.006`, type `Next(0,4)`, the twinkle/rotation speeds with their sign
@@ -1546,6 +1574,20 @@ deviations: `DrawStar` builds its colour from `default` and assigns only R/G/B
 (`Main.cs:63083-63086`) вЂ” a zero alpha would make every star invisible, so the port draws
 them fully opaque at the computed brightness вЂ” and the per-tick twinkle/rotation advance
 is driven by the pinned animation clock instead of integrated state.
+
+Falling-star VISUAL (W4-g69 DOC-SWEEP census, docs/research/117 §5): the port's
+starfield is STATIC — `StarSprite` carries no `falling`/`hidden`/`fadeIn`/
+`fallSpeed`/`fallTime`, and `draw_sky` derives twinkle/rotation from `anim_time`,
+not integrated `Star.Update`. The C# falling-star chain (`Star.Fall`
+`Star.cs:160-169`, the `Update` falling branch `:173-205`, the `DrawStar` trail
+`Main.cs:63140-63171`, `Star.StarFall` `:62-84`, `NightSetup`'s `starfallBoost`
+`:41-60`, `UpdateStars` `:237-260`, the spawn triggers `Main.cs:17259-17272`/
+`:19865-19871`) is a coherent UNPORTED subsystem — a follow-up lane, not a small
+fix. The falling-star SOUND pair (cases 37/38) is g23b's (dormant); the
+sky-sweep visibility gate is g70b's. Cross-note: the port's star gate
+(`sky.rs:704`) reads `storm` (cloudBGAlpha) where the C# (`Main.cs:63051`) reads
+`cloudAlpha·atmo` — g70b's sky-sweep adds the `cloud_alpha` param; flagged so the
+two lanes don't both rewrite it.
 
 Screenshot harness: `TR_SHOT` runs pin `dt` to exactly 1/60 (so `anim_time`-driven phases
 land on the same value per frame) and `TR_MOUSE=x,y` pins the OS pointer вЂ” the vanilla
