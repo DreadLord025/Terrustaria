@@ -1176,7 +1176,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 327 | d16 | 327-kite-family-bible | DONE 346d55bb6 |
 | 328 | g68 | 328-g68-wind-seal | DONE 97a6fd083 |
 | 329 | c3 | 329-cursed-skull-family-bible | DONE ccb981eb3 |
-| 330 | d6 | 247-projectile-ai-51-60-band-bible | rename owed |
+| 330 | d6 | 330-projectile-ai-51-60-band-bible | DONE bd4728b6f |
 | 331 | d3 | 331-d3-boulder-family-seal | DONE c23b7b013 |
 | 332 | c27 | 332-c27-set-time-final | DONE 392da37b6 |
 | 333 | d119 | 333-housing-relocation-family-bible | DONE aaced1581 |
@@ -1202,7 +1202,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 353 | d13 | 353-projectile-ai-121-130-band-final | DONE 6850a19e5 |
 | 354 | d2 | 354-proj-ai-11-20-retire | DONE a070571ce (310-invalid-self corrected) |
 | 355 | d11 | 355-w4-d11-retire-final | DONE 7820a9466 |
-| 356 | c11 | 284-c11-martian-turret-final (9a9c2625e) | NEW rename owed |
+| 356 | c11 | 356-c11-martian-turret-final | DONE 466ffcae1 |
 | 357 | e26 | 357-e26-luck-final-census | DONE 35de96a5e |
 | 358 | g15 | 77-doc-sweep-items (§7.3's 284 target voided: 284=g52) | NEW rename owed |
 | 359 | g51 | 359-g51-net-te-family-seal | DONE 77db84121 |
@@ -1210,9 +1210,9 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 361 | d5 | 361-projectile-ai-41-50-final | DONE 0a1e4daa8 |
 | 362 | g55 | 362-g55-loadout-family-final | DONE f97f510eb |
 | 363 | d31 | 363-d31-style83-wiring-retire-final | DONE 3cd6d880c |
-| 364 | g16 | 360-proj-gore-family-final (1254ff5e0 17:40:42, third 360 claimant; g10 17:31 first) | NEW rename owed 360→364 |
+| 364 | g16 | 364-proj-gore-family-final | DONE d716c6c9c |
 | 365 | e21 | 365-e21-wiring-tail-seal | DONE 2fb0a36ee |
-| 366 | g18 | 360-addlight-family-bible (7b2b9acb7, fourth 360 claimant) | NEW rename owed 360→366 |
+| 366 | g18 | 366-addlight-family-bible | DONE d460345f4 |
 
 ### §9.3 — rules
 
