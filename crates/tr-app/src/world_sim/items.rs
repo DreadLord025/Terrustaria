@@ -589,6 +589,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
                 items[i].prefix,
                 |idx| app.favorite_slots.contains(&idx),
                 if vault_enabled { Some(&vault.banks[3]) } else { None },
+                |i| vault.vault_favorites[i],
             );
             if !status.can_take {
                 i += 1;

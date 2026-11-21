@@ -394,7 +394,9 @@ fn can_item_slot_accept_pickup(
 /// arm (`CanGoIntoAmmoOnPickup`, `:39237-39244`), the ungated same-kind ammo
 /// merge scan (`:39185-39191`), and the Cofveve void-vault scan
 /// (`ItemSpaceForCofveve`, `:39199-39218`). `vault` is `Some` only when
-/// `IsVoidVaultEnabled`.
+/// `IsVoidVaultEnabled`; `vault_favorite` reads the vault slot's own
+/// `favorited` flag for the Cofveve accept probe (W4-g56 — the vault slots
+/// CAN favorite, `canFavoriteAt[32]`; the other callers pass `|_| false`).
 pub(crate) fn item_space(
     inventory: &[ItemSlot; INV],
     ammo: &[ItemSlot; crate::inv::AMMO],
@@ -402,6 +404,7 @@ pub(crate) fn item_space(
     prefix: u16,
     favorite: impl Fn(usize) -> bool,
     vault: Option<&crate::bank::BankStore>,
+    vault_favorite: impl Fn(usize) -> bool,
 ) -> ItemSpaceStatus {
     if is_a_pickup(kind) {
         return ItemSpaceStatus { can_take: true, to_void_vault: false };
@@ -437,11 +440,13 @@ pub(crate) fn item_space(
             return ItemSpaceStatus { can_take: true, to_void_vault: false };
         }
     }
-    // `ItemSpaceForCofveve` (`:39199-39218`).
+    // `ItemSpaceForCofveve` (`:39199-39218`). The accept probe reads the
+    // vault slot's OWN favorited flag (`CanItemSlotAcceptPickup(item[i],
+    // newItem)`, `:39212` — W4-g56: the vault slots CAN favorite).
     if let Some(vault) = vault {
         if crate::bank::can_void_vault_accept(kind) {
-            for slot in vault.iter() {
-                if can_item_slot_accept_pickup(slot, kind, prefix, false) {
+            for (i, slot) in vault.iter().enumerate() {
+                if can_item_slot_accept_pickup(slot, kind, prefix, vault_favorite(i)) {
                     return ItemSpaceStatus { can_take: true, to_void_vault: true };
                 }
             }
@@ -1551,32 +1556,32 @@ mod s1_p_i47_tests {
     fn item_space_scans_grid_ammo_and_vault() {
         let no_fav = |_: usize| false;
         // An empty grid accepts.
-        let s = item_space(&empty_inv(), &[EMPTY_SLOT; 4], 3, 0, no_fav, None);
+        let s = item_space(&empty_inv(), &[EMPTY_SLOT; 4], 3, 0, no_fav, None, no_fav);
         assert!(s.can_take && !s.to_void_vault);
         // A full grid refuses…
         let full: [ItemSlot; INV] = std::array::from_fn(|_| slot(2, 9999));
-        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, None);
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, None, no_fav);
         assert!(!s.can_take);
         // …but a partial same-kind AMMO stack answers the ungated scan
         // (`:39185-39191`).
         let mut ammo = [EMPTY_SLOT; 4];
         ammo[2] = slot(3, 10);
-        let s = item_space(&full, &ammo, 3, 0, no_fav, None);
+        let s = item_space(&full, &ammo, 3, 0, no_fav, None, no_fav);
         assert!(s.can_take);
         // An empty ammo slot takes an arrow (`CanFillEmptyAmmoSlot`,
         // `Item.cs:1378-1385` — the wooden arrow 40 is not on the refusal
         // list), but not the gel 23 (`:1380`'s explicit id).
-        let s = item_space(&full, &[EMPTY_SLOT; 4], 40, 0, no_fav, None);
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 40, 0, no_fav, None, no_fav);
         assert!(s.can_take, "the arrow claims an empty ammo row");
-        let s = item_space(&full, &[EMPTY_SLOT; 4], 23, 0, no_fav, None);
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 23, 0, no_fav, None, no_fav);
         assert!(!s.can_take, "the gel never claims an empty ammo row");
         // The vault answers with the to-vault flag (`:39192-39195`).
         let vault: crate::bank::BankStore = [EMPTY_SLOT; 40];
-        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, Some(&vault));
+        let s = item_space(&full, &[EMPTY_SLOT; 4], 3, 0, no_fav, Some(&vault), no_fav);
         assert!(s.can_take && s.to_void_vault);
         // `IsAPickup` always fits (`:39155-39158`), even with everything full.
         let full_vault: crate::bank::BankStore = std::array::from_fn(|_| slot(2, 9999));
-        let s = item_space(&full, &[slot(2, 9999); 4], 58, 0, no_fav, Some(&full_vault));
+        let s = item_space(&full, &[slot(2, 9999); 4], 58, 0, no_fav, Some(&full_vault), no_fav);
         assert!(s.can_take && !s.to_void_vault);
         // The favorited one-per-inventory guard (`CanItemSlotAcceptPickup`
         // `:39226-39229`): the large gem 1522 is an override-true kind
@@ -1586,16 +1591,41 @@ mod s1_p_i47_tests {
         let mut inv = full;
         inv[0] = slot(1522, 1);
         let fav0 = |i: usize| i == 0;
-        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, fav0, None);
+        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, fav0, None, no_fav);
         assert!(!s.can_take, "the favorited gem stack refuses");
-        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, no_fav, None);
+        let s = item_space(&inv, &[slot(2, 9999); 4], 1522, 0, no_fav, None, no_fav);
         assert!(s.can_take, "unfavorited it merges");
         // A consumable favorite still merges (`OnlyNeedOneInInventory`
         // false for the dirt 2, `Item.cs:1183-1191`).
         let mut inv2 = full;
         inv2[0] = slot(2, 10);
-        let s = item_space(&inv2, &[EMPTY_SLOT; 4], 2, 0, fav0, None);
+        let s = item_space(&inv2, &[EMPTY_SLOT; 4], 2, 0, fav0, None, no_fav);
         assert!(s.can_take, "a consumable favorite still merges");
+    }
+
+    /// W4-g56 — `ItemSpaceForCofveve`'s accept probe reads the vault slot's
+    /// OWN favorited flag (`Player.cs:39212` → `CanItemSlotAcceptPickup`
+    /// `:39226-39229`): a PARTIAL favorited one-per-inventory vault stack
+    /// refuses the merge (the large gem 1522 is an override-true kind),
+    /// the same stack unfavorited accepts it. An EMPTY vault slot always
+    /// accepts regardless of the flag.
+    #[test]
+    fn w4_g56_the_cofveve_probe_reads_the_vault_favorite() {
+        let no_fav = |_: usize| false;
+        let full: [ItemSlot; INV] = std::array::from_fn(|_| slot(2, 9999));
+        let mut vault: crate::bank::BankStore = std::array::from_fn(|_| slot(2, 9999));
+        vault[0] = slot(1522, 1); // a partial favorited gem stack
+        let fav0 = |i: usize| i == 0;
+        let s = item_space(&full, &[slot(2, 9999); 4], 1522, 0, no_fav, Some(&vault), fav0);
+        assert!(!s.can_take, "the favorited vault gem refuses the merge");
+        let s = item_space(&full, &[slot(2, 9999); 4], 1522, 0, no_fav, Some(&vault), no_fav);
+        assert!(s.can_take && s.to_void_vault, "unfavorited it merges");
+        // An empty vault slot accepts even with the flag set (`:39222-39225`).
+        let mut vault2: crate::bank::BankStore = std::array::from_fn(|_| slot(2, 9999));
+        vault2[5] = EMPTY_SLOT;
+        let fav5 = |i: usize| i == 5;
+        let s = item_space(&full, &[slot(2, 9999); 4], 3, 0, no_fav, Some(&vault2), fav5);
+        assert!(s.can_take && s.to_void_vault, "the empty slot takes it");
     }
 
     /// `Item.FitsAmmoSlot`/`CanFillEmptyAmmoSlot` (`Item.cs:1369-1385`):

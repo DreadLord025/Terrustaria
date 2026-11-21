@@ -1509,6 +1509,7 @@ pub(crate) fn inventory_has_room_for(app: &App, kind: u16) -> bool {
         0,
         |idx| app.is_favorite(idx),
         if vault_enabled { vault } else { None },
+        |i| app.player.as_ref().is_some_and(|p| p.vault_favorites[i]),
     )
     .can_take
     {
