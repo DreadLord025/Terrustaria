@@ -3530,6 +3530,21 @@ pub(crate) fn draw_npcs(
                     | NpcKind::DukeFishron
                     | NpcKind::Sharkron
                     | NpcKind::Sharkron2
+                    // W4-d38 sheets phase (b2/b4) — the rotation whitelist:
+                    // ONLY kinds whose ported AI/FindFrame writes `rotation`
+                    // join (the C#'s generic draw rotates every NPC,
+                    // `Main.cs:26632`, but the port gates per kind). The
+                    // style-8 casters (281-286, `NPC.cs:20817-21376`), the
+                    // style-3 shooters (287/290-296), the style-1 slime hops
+                    // (302/304/333-336) and the style-7 critters
+                    // (299/300/303/337) write NONE (the slime balloon-freeze
+                    // zero is not a tilt) — they stay OUT. In here: the 289
+                    // skull's aim (`NPC.cs:21750-21766`), the 297/298 birds'
+                    // vx*0.1 (`:73634`), the 301 raven's vx*0.1 (`:73589`).
+                    | NpcKind::GiantCursedSkull
+                    | NpcKind::BirdBlue
+                    | NpcKind::BirdRed
+                    | NpcKind::Raven
                     // The small-kinds wiring wave: the BlazingWheel's spin
                     // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
                     // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
