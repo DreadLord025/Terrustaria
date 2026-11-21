@@ -45367,3 +45367,114 @@ mod w4_g3_doc_sweep_proj_hooks_tests {
     }
 }
 
+
+// --- W4-g3 DOC-SWEEP: the expert-mode + armorPenPercent witnesses (E + H) ---
+#[cfg(test)]
+mod w4_g3_doc_sweep_expert_tests {
+    use super::*;
+
+    fn air() -> World {
+        World::new("t".into(), 200, 200)
+    }
+
+    fn npc_at(kind: NpcKind, x: f32, y: f32) -> Npc {
+        let mut n = Npc::new(kind, x, y, 1, 0.0);
+        n.hp = 100_000;
+        n.max_hp = 100_000;
+        n
+    }
+
+    /// E — the expert-mode bee/grenade ÷5 vs the Eater of Worlds segments
+    /// (`Projectile.cs:13359-13362`). A grenade hit on an EoW segment in expert
+    /// mode deals far less than the same hit in classic mode.
+    #[test]
+    fn w4_g3_ds_the_expert_grenade_cut_vs_eow() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 300.0;
+        // Expert mode: the ÷5 cut fires.
+        player.buffs.expert_mode = true;
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(GRENADE, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the grenade row");
+        let mut eow = npc_at(NpcKind::EaterOfWorldsHead, 500.0, 500.0);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut eow), None,
+            Some(player.center()), Some(&mut player),
+            &mut tr_core::tile_light::FastRandom::new(7));
+        let dealt_expert = 100_000 - eow.hp;
+        // Classic mode: no cut.
+        player.buffs.expert_mode = false;
+        let mut pool2 = ProjectilePool::new();
+        let slot2 = pool2.spawn_with_data(GRENADE, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the grenade row");
+        let mut eow2 = npc_at(NpcKind::EaterOfWorldsHead, 500.0, 500.0);
+        pool2.damage_pve(&w, slot2, std::slice::from_mut(&mut eow2), None,
+            Some(player.center()), Some(&mut player),
+            &mut tr_core::tile_light::FastRandom::new(7));
+        let dealt_classic = 100_000 - eow2.hp;
+        assert!(dealt_expert < dealt_classic, "the expert ÷5 cut vs EoW");
+    }
+
+    /// E — the expert-mode 280 Golden Shower ×0.75 vs the Destroyer family
+    /// (`Projectile.cs:13363-13366`).
+    #[test]
+    fn w4_g3_ds_the_expert_golden_shower_cut_vs_destroyer() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 300.0;
+        player.buffs.expert_mode = true;
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(GOLDEN_SHOWER, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 280 row");
+        let mut destroyer = npc_at(NpcKind::TheDestroyer, 500.0, 500.0);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut destroyer), None,
+            Some(player.center()), Some(&mut player),
+            &mut tr_core::tile_light::FastRandom::new(7));
+        let dealt_expert = 100_000 - destroyer.hp;
+        player.buffs.expert_mode = false;
+        let mut pool2 = ProjectilePool::new();
+        let slot2 = pool2.spawn_with_data(GOLDEN_SHOWER, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 280 row");
+        let mut destroyer2 = npc_at(NpcKind::TheDestroyer, 500.0, 500.0);
+        pool2.damage_pve(&w, slot2, std::slice::from_mut(&mut destroyer2), None,
+            Some(player.center()), Some(&mut player),
+            &mut tr_core::tile_light::FastRandom::new(7));
+        let dealt_classic = 100_000 - destroyer2.hp;
+        assert!(dealt_expert < dealt_classic, "the expert ×0.75 cut vs Destroyer");
+    }
+
+    /// H — the 688/689/690 Lightning Aura's armorPenPercent=1 ignores the
+    /// target's defense (`Projectile.cs:13232-13235`). A high-defense NPC takes
+    /// more from the aura than from a plain shot (the full defense is added
+    /// back to the penetration).
+    #[test]
+    fn w4_g3_ds_the_lightning_aura_ignores_defense() {
+        let w = air();
+        let mut player = crate::player::Player::spawn(&w);
+        player.x = 400.0;
+        player.y = 300.0;
+        let mut pool = ProjectilePool::new();
+        let slot = pool.spawn_with_data(LIGHTNING_AURA_1, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 688 row");
+        let mut tank = npc_at(NpcKind::Slime, 500.0, 500.0);
+        tank.defense_override = Some(50);
+        pool.damage_pve(&w, slot, std::slice::from_mut(&mut tank), None,
+            Some(player.center()), Some(&mut player),
+            &mut tr_core::tile_light::FastRandom::new(7));
+        let dealt_aura = 100_000 - tank.hp;
+        // A plain shot (no armorPenPercent) vs the same 50-defense NPC.
+        let mut pool2 = ProjectilePool::new();
+        let slot2 = pool2.spawn_with_data(MAGIC_MISSILE, 500.0, 500.0, 0.0, 0.0, 100, 0.0)
+            .expect("the 16 row");
+        let mut tank2 = npc_at(NpcKind::Slime, 500.0, 500.0);
+        tank2.defense_override = Some(50);
+        pool2.damage_pve(&w, slot2, std::slice::from_mut(&mut tank2), None,
+            Some(player.center()), Some(&mut player),
+            &mut tr_core::tile_light::FastRandom::new(7));
+        let dealt_plain = 100_000 - tank2.hp;
+        assert!(dealt_aura > dealt_plain, "the aura's full armor pen beats the plain shot");
+    }
+}
+
