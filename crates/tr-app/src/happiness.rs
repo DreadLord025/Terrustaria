@@ -840,12 +840,16 @@ mod tests {
         |_n: i32| 0
     }
 
-    /// The forest test ground: dirt from y = 120 — no special zones (the
-    /// home rows sit below the beach's ocean level, so the Forest
-    /// fallthrough holds).
+    /// The forest test ground: dirt from y = 120 on a 1000-wide world —
+    /// no special zones. The width exceeds 2×`BEACH_DISTANCE` (380) so the
+    /// middle columns (x≈500) are NOT ocean (`WorldGen.oceanDepths`,
+    /// `WorldGen.cs:4447`); `worldSurface` 130 sits below the player row
+    /// (y≈110) so `ShoppingZone_BelowSurface` is false and the Forest
+    /// predicate (`!ShoppingZone_AnyBiome && !ShoppingZone_BelowSurface`,
+    /// `Player.cs:3837-3847`) holds. The action centres on x = 500.
     fn forest_world() -> World {
-        let mut w = World::new("t".into(), 200, 200);
-        for x in 0..200 {
+        let mut w = World::new("t".into(), 1000, 200);
+        for x in 0..1000 {
             for y in 120..200 {
                 let i = w.index(x, y);
                 w.tiles[i] = Tile {
@@ -855,8 +859,8 @@ mod tests {
                 w.tiles[i].flags |= FLAG_ACTIVE;
             }
         }
-        w.world_surface = 30.0;
-        w.rock_layer = 40.0;
+        w.world_surface = 130.0;
+        w.rock_layer = 140.0;
         w.compute_column_surface();
         w
     }
@@ -931,12 +935,12 @@ mod tests {
         // Like ×0.94 (`:27-30`'s Register(22)) = 0.893 → the cents round
         // 0.89 (`:176-181`).
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         let mood = process_mood(
             &w,
             std::slice::from_ref(&guide),
             &guide,
-            (60.0 * 16.0, 110.0 * 16.0),
+            (500.0 * 16.0, 110.0 * 16.0),
             false,
             &mut no_roll(),
         );
@@ -1012,15 +1016,15 @@ mod tests {
         // `:132-146`: the residents within 25 tiles past the third push
         // ×1.05 each; the LoveSpace gate closes (within_house > 2).
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         let mut all = vec![guide.clone()];
         for (dx, dy) in [(4, 0), (-4, 0), (0, -6), (7, 3)] {
-            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the neighbor spawns");
-            other.home = Some((60 + dx, 120 + dy));
+            let mut other = Npc::spawn_guide(&w, 500 + dx).expect("the neighbor spawns");
+            other.home = Some((500 + dx, 120 + dy));
             other.hp = other.max_hp;
             all.push(other);
         }
-        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
+        let mood = process_mood(&w, &all, &all[0], (500.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
         // 4 neighbors → 1 × 1.05; the forest Like ×0.94 → 0.987 → 0.99.
         assert!(
             (mood.multiplier - 0.99).abs() < 0.001,
@@ -1036,15 +1040,15 @@ mod tests {
         // `:147-151`: within_house ≤ 2 AND within_village < 4 — a packed
         // village (the neighbors 25..120 tiles out) keeps LoveSpace off.
         let w = forest_world();
-        let guide = housed_guide(&w, (60, 120));
+        let guide = housed_guide(&w, (500, 120));
         let mut all = vec![guide.clone()];
         for dx in [30, 60, 90, 110] {
-            let mut other = Npc::spawn_guide(&w, 60 + dx).expect("the villager spawns");
-            other.home = Some((60 + dx, 120));
+            let mut other = Npc::spawn_guide(&w, 500 + dx).expect("the villager spawns");
+            other.home = Some((500 + dx, 120));
             other.hp = other.max_hp;
             all.push(other);
         }
-        let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
+        let mood = process_mood(&w, &all, &all[0], (500.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
         // within_house = 0, within_village = 4 → no LoveSpace; the forest
         // Like alone → 0.94.
         assert!(
@@ -1243,12 +1247,12 @@ mod tests {
             // (the Tavernkeep is not in the Guide's rows, so no neighbor
             // factor) — the point is the Tavernkeep is COUNTED, not dropped.
             let w = forest_world();
-            let guide = housed_guide(&w, (60, 120));
-            let mut tk_npc = Npc::new(NpcKind::DD2Bartender, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-            tk_npc.home = Some((64, 120));
+            let guide = housed_guide(&w, (500, 120));
+            let mut tk_npc = Npc::new(NpcKind::DD2Bartender, 504.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            tk_npc.home = Some((504, 120));
             tk_npc.hp = tk_npc.max_hp;
             let all = vec![guide.clone(), tk_npc];
-            let mood = process_mood(&w, &all, &all[0], (60.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
+            let mood = process_mood(&w, &all, &all[0], (500.0 * 16.0, 110.0 * 16.0), false, &mut no_roll());
             // within_house = 1 (the Tavernkeep) → LoveSpace holds; the
             // forest Like ×0.94 × 0.95 = 0.893 → 0.89.
             assert!(mood.flags.contains(&MoodFlag::LoveSpace));
@@ -1268,15 +1272,16 @@ mod tests {
         #[test]
         fn the_biome_judge_reads_the_player_not_the_home() {
             let mut w = forest_world();
-            // The hallow around the PLAYER's centre (60, 110), above the
-            // surface; the Guide's home (60, 120) stays forest dirt.
-            hallow_patch(&mut w, 60, 110);
-            let guide = housed_guide(&w, (60, 120));
+            // The hallow around the PLAYER's centre (400, 110), above the
+            // surface and in the non-beach band (x∈[380,620]); the Guide's
+            // home (500, 120) stays forest dirt.
+            hallow_patch(&mut w, 400, 110);
+            let guide = housed_guide(&w, (500, 120));
             let mood = process_mood(
                 &w,
                 std::slice::from_ref(&guide),
                 &guide,
-                (60.0 * 16.0, 110.0 * 16.0),
+                (400.0 * 16.0, 110.0 * 16.0),
                 false,
                 &mut no_roll(),
             );
@@ -1304,14 +1309,15 @@ mod tests {
         #[test]
         fn the_biome_judge_forest_when_the_player_is_forest() {
             let mut w = forest_world();
-            hallow_patch(&mut w, 60, 110);
-            let guide = housed_guide(&w, (60, 120));
-            // The player stands far from the hallow patch, in plain forest.
+            hallow_patch(&mut w, 400, 110);
+            let guide = housed_guide(&w, (500, 120));
+            // The player stands far from the hallow patch (x=600, still in
+            // the non-beach band), in plain forest.
             let mood = process_mood(
                 &w,
                 std::slice::from_ref(&guide),
                 &guide,
-                (150.0 * 16.0, 110.0 * 16.0),
+                (600.0 * 16.0, 110.0 * 16.0),
                 false,
                 &mut no_roll(),
             );
@@ -1388,15 +1394,15 @@ mod tests {
         fn the_princess_hates_lonely() {
             let w = forest_world();
             // A housed Princess alone — 0 within-house, 0 within-village.
-            let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-            princess.home = Some((60, 120));
+            let mut princess = Npc::new(NpcKind::Princess, 500.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            princess.home = Some((500, 120));
             princess.hp = princess.max_hp;
             let mut roll = |_n: i32| 0;
             let mood = process_mood(
                 &w,
                 std::slice::from_ref(&princess),
                 &princess,
-                (60.0 * 16.0, 110.0 * 16.0),
+                (500.0 * 16.0, 110.0 * 16.0),
                 false,
                 &mut roll,
             );
@@ -1414,8 +1420,8 @@ mod tests {
         #[test]
         fn the_princess_three_loves_head_draws_the_global_rng() {
             let w = forest_world();
-            let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-            princess.home = Some((60, 120));
+            let mut princess = Npc::new(NpcKind::Princess, 500.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            princess.home = Some((500, 120));
             princess.hp = princess.max_hp;
             // Three housed neighbors within 25 tiles: the Nurse (18), the
             // Merchant (17), the Guide (22). Ascending NPCID: 17, 18, 22.
@@ -1425,20 +1431,21 @@ mod tests {
                 (NpcKind::Merchant, -4),
                 (NpcKind::Guide, 0),
             ] {
-                let mut n = Npc::new(kind, (60 + dx) as f32 * 16.0, 118.0 * 16.0, 1, 0.0);
-                n.home = Some((60 + dx, 120));
+                let mut n = Npc::new(kind, (500 + dx) as f32 * 16.0, 118.0 * 16.0, 1, 0.0);
+                n.home = Some((500 + dx, 120));
                 n.hp = n.max_hp;
                 all.push(n);
             }
             // within_house = 3 → no HateLonely (needs < 2). Draws [0,0,0]:
             // pick list[0]=17 (Merchant), then list[0]=18 (Nurse), then
             // list[0]=22 (Guide).
-            let mut roll = scripted_roll(&[0, 0, 0]);
+            let draws = [0, 0, 0];
+            let mut roll = scripted_roll(&draws);
             let mood = process_mood(
                 &w,
                 &all,
                 &all[0],
-                (60.0 * 16.0, 110.0 * 16.0),
+                (500.0 * 16.0, 110.0 * 16.0),
                 false,
                 &mut roll,
             );
@@ -1472,11 +1479,11 @@ mod tests {
         #[test]
         fn the_princess_head_stops_at_the_list_end() {
             let w = forest_world();
-            let mut princess = Npc::new(NpcKind::Princess, 60.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-            princess.home = Some((60, 120));
+            let mut princess = Npc::new(NpcKind::Princess, 500.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            princess.home = Some((500, 120));
             princess.hp = princess.max_hp;
-            let mut nurse = Npc::new(NpcKind::Nurse, 64.0 * 16.0, 118.0 * 16.0, 1, 0.0);
-            nurse.home = Some((64, 120));
+            let mut nurse = Npc::new(NpcKind::Nurse, 504.0 * 16.0, 118.0 * 16.0, 1, 0.0);
+            nurse.home = Some((504, 120));
             nurse.hp = nurse.max_hp;
             let all = vec![princess.clone(), nurse];
             // within_house = 1 < 2 AND within_village = 0 < 2 → HateLonely
@@ -1491,7 +1498,7 @@ mod tests {
                 &w,
                 &all,
                 &all[0],
-                (60.0 * 16.0, 110.0 * 16.0),
+                (500.0 * 16.0, 110.0 * 16.0),
                 false,
                 &mut roll,
             );
