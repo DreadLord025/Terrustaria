@@ -228,7 +228,8 @@ use crate::entity_lights::{tile_x, tile_y, XAnchor};
 use crate::projectile::{
     Projectile, DEADLY_SPHERE, GEM_BOLT_AMBER, GEM_BOLT_AMETHYST, GEM_BOLT_DIAMOND,
     GEM_BOLT_EMERALD, GEM_BOLT_RUBY, GEM_BOLT_SAPPHIRE, GEM_BOLT_TOPAZ, MOONLORD_TURRET,
-    NEBULA_ARCANUM, ORNAMENT_HOSTILE, RAINBOW_CRYSTAL_EXPLOSION, TERRARIAN_BEAM,
+    NEBULA_ARCANUM, NORTH_POLE, ORNAMENT_HOSTILE, RAINBOW_CRYSTAL_EXPLOSION, SPARKLE_GUITAR,
+    STARDUST_GUARDIAN, STORM_TIGER_1, STORM_TIGER_2, STORM_TIGER_3, TERRARIAN_BEAM,
     THUNDER_SPEAR_BOLT, VORTEX_RITUAL_BOLT,
 };
 
@@ -326,6 +327,52 @@ pub(crate) fn proj_lights_a(
         // then `AddLight(Center, num23·num25, num23·num26, num23·num27)`.
         // The 1120 ForbiddenMinionShot's default (1,1,1) has no row.
         out.push((cx, cy, rgb));
+    } else if p.kind == STARDUST_GUARDIAN {
+        // `:44662` — AI_120's 623 arm: (0.9, 0.9, 0.7) at the centre,
+        // unconditional inside the `flag` (623) block.
+        out.push((cx, cy, [0.9, 0.9, 0.7]));
+    } else if p.kind == NORTH_POLE {
+        // `:46037` — AI_019_Spears' 342 arm: (0.65, 0.9, 1) at the centre,
+        // unconditional (the trailing dust is the documented skip).
+        out.push((cx, cy, [0.65, 0.9, 1.0]));
+    } else if p.kind == SPARKLE_GUITAR {
+        // `:46588` — AI_167's 856 arm: `Color.HotPink.ToVector3() * 0.3f`.
+        // XNA's HotPink is (255, 105, 180); ToVector3 divides by 255.
+        out.push((
+            cx,
+            cy,
+            [
+                255.0 / 255.0 * 0.3,
+                105.0 / 255.0 * 0.3,
+                180.0 / 255.0 * 0.3,
+            ],
+        ));
+    } else if p.kind == STORM_TIGER_1 || p.kind == STORM_TIGER_2 || p.kind == STORM_TIGER_3 {
+        // `:49271-49292` — AI_067's `flag3` block, gated on `ai[0] != 4f`
+        // (the special-attack state). The tiger AI arm is deferred (the
+        // dispatch gates 833-835 out of `ai_freaking_pirates`), so `ai[0]`
+        // keeps its spawn value; a default spawn reads 0 (≠ 4) and the light
+        // is live, a spawn into the attack state reads 4 and stays dark. The
+        // colour/gate are faithful to the slot state (the e6 LaserDrill
+        // ported-but-dark precedent, here state-driven; ANALYSIS records it).
+        if p.ai[0] != 4.0 {
+            let rgb = match p.kind {
+                // `:49283` — 833: `Vector3.One * 0.5f`.
+                STORM_TIGER_1 => [0.5, 0.5, 0.5],
+                // `:49287` — 834: `Vector3.One * 0.8f`.
+                STORM_TIGER_2 => [0.8, 0.8, 0.8],
+                // `:49291` — 835: `Color.Lerp(Main.OurFavoriteColor,
+                // Color.White, 0.8f).ToVector3() * 1f`. OurFavoriteColor is
+                // (255, 231, 69) (`Main.cs:66748`); XNA's Color.Lerp truncates
+                // each byte (`(byte)MathHelper.Lerp`), giving (255, 250, 217).
+                _ => [
+                    255.0 / 255.0,
+                    250.0 / 255.0,
+                    217.0 / 255.0,
+                ],
+            };
+            out.push((cx, cy, rgb));
+        }
     }
     out
 }
@@ -477,6 +524,43 @@ mod tests {
     }
 
     #[test]
+    fn the_guardian_north_pole_and_guitar_light_fixed_colours() {
+        // `:44662` — 623 (0.9, 0.9, 0.7); `:46037` — 342 (0.65, 0.9, 1);
+        // `:46588` — 856 HotPink(255,105,180)/255 · 0.3.
+        assert_eq!(
+            proj_lights_a(&slot(STARDUST_GUARDIAN), None)[0].2,
+            [0.9, 0.9, 0.7]
+        );
+        assert_eq!(
+            proj_lights_a(&slot(NORTH_POLE), None)[0].2,
+            [0.65, 0.9, 1.0]
+        );
+        assert_eq!(
+            proj_lights_a(&slot(SPARKLE_GUITAR), None)[0].2,
+            [255.0 / 255.0 * 0.3, 105.0 / 255.0 * 0.3, 180.0 / 255.0 * 0.3]
+        );
+    }
+
+    #[test]
+    fn the_storm_tigers_light_by_tier_and_gate_on_ai0() {
+        // `:49283`/`:49287`/`:49291` — 833 One·0.5, 834 One·0.8, 835
+        // Lerp(OurFavoriteColor(255,231,69), White, 0.8) = (255,250,217)/255.
+        let mut p = slot(STORM_TIGER_1);
+        p.ai[0] = 0.0;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.5, 0.5, 0.5]);
+        p.kind = STORM_TIGER_2;
+        assert_eq!(proj_lights_a(&p, None)[0].2, [0.8, 0.8, 0.8]);
+        p.kind = STORM_TIGER_3;
+        assert_eq!(
+            proj_lights_a(&p, None)[0].2,
+            [255.0 / 255.0, 250.0 / 255.0, 217.0 / 255.0]
+        );
+        // The `ai[0] != 4` gate: the attack state stays dark.
+        p.ai[0] = 4.0;
+        assert!(proj_lights_a(&p, None).is_empty());
+    }
+
+    #[test]
     fn every_ported_kind_has_a_proj_data_row() {
         // The absent-wholesale rule's invariant: every kind this feed serves
         // resolves a `proj_data` row (the spawn gate).
@@ -496,6 +580,12 @@ mod tests {
             GEM_BOLT_RUBY,
             GEM_BOLT_DIAMOND,
             GEM_BOLT_AMBER,
+            STARDUST_GUARDIAN,
+            NORTH_POLE,
+            SPARKLE_GUITAR,
+            STORM_TIGER_1,
+            STORM_TIGER_2,
+            STORM_TIGER_3,
         ] {
             assert!(
                 proj_data(kind).is_some(),
@@ -520,12 +610,15 @@ mod tests {
         // never reaches AI_196 (site 40). Sites 41-50 add the 1116
         // petalstorm (41), the 614 cell shot (42), the 636 daybreak (43),
         // the 1020 drone (44), the 973/972/984 sword beams (45-47), the
-        // 933/1100 fractals (48-49) and the 535 medusa head (50). A slot
-        // carrying any of them feeds no light.
+        // 933/1100 fractals (48-49), the 535 medusa head (50), the 855
+        // release lantern (54), the 1127 saber stab (55) and the 756 sharp
+        // tears (62) have no rows; the 849/912 whip lights (56-57) are
+        // rand-gated absent. A slot carrying any of them feeds no light.
         for kind in [
             502u16, 1092, 451, 464, 465, 466, 490, 492, 518, 575, 590, 602, 612, 953,
             978, 658, 1115, 731, 1105, 1098, 1059, 1074, 1091, 1117, 1078, 567, 568,
-            248, 1038, 1116, 614, 636, 1020, 973, 972, 984, 933, 1100, 535,
+            248, 1038, 1116, 614, 636, 1020, 973, 972, 984, 933, 1100, 535, 855, 1127,
+            849, 912, 756,
         ] {
             let p = slot(kind);
             assert!(proj_lights_a(&p, None).is_empty());
