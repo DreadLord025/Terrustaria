@@ -1,6 +1,7 @@
 //! W4-g59 — the NPC death DUST lane: `NPC.HitEffect`'s per-kind death-half
-//! dust bursts (`life <= 0`), kinds 1-230, batches 1-7 (64 kinds — every
-//! dust-first clean kind the port's kind set carries).
+//! dust bursts (`life <= 0`), kinds 1-230, batches 1-8 (74 kinds — every
+//! dust-first clean kind the port's kind set carries, plus the first 10
+//! d35 row-gated activations of the DOC-SWEEP phase).
 //!
 //! `HitEffect` runs inside `StrikeNPC_Inner` (`NPC.cs:81488`), BEFORE
 //! `checkDead` (`:81561` → `:78040`); the port batches deaths into the NPC
@@ -106,15 +107,41 @@
 //! ladder `:87495-87500`, the Umbrella's 314 and the painter/witch
 //! shimmer gates are constant data / field reads).
 //!
+//! ## Scope — batch 8 (the DOC-SWEEP: the first d35 row-gated activations)
+//!
+//! W4-d35's 33-kind SetDefaults wave (`eb0f1005`, kinds 73-140) landed 24
+//! kinds inside this lane's 107-kind UNWIRED remainder; 120/137 were
+//! ALREADY wired (batch 1's illuminant arm + batch 5's — their arms fire
+//! once d35's cs_id rows merge). 112 VileSpit's whole-arm burst
+//! (`:85395-85408`) fires on EVERY hit — g62 owns it (`npc_hit_dust.rs`,
+//! the `:85399` site). The sweep activates them in three batches; this
+//! is the first 10:
+//!
+//! | batch | C# type(s) | death arm | shape |
+//! | --- | --- | --- | --- |
+//! | 8 | 73 GoblinScout | `:89560` | 50× type-5 (the goblin arm) |
+//! | 8 | 75 Pixie | `:85527-85531` | 50× type-55 alpha 200 vel×2, dust-only |
+//! | 8 | 77/110 ArmoredSkeleton/SkeletonArcher | `:88537` | 20× type-26 |
+//! | 8 | 78/79/80 the mummy trio | `:88946-88951` | 20× type-31 scale 1.5 vel×2 noGrav |
+//! | 8 | 82 Wraith | `:88971-88976` | 20× type-54 alpha 50 scale 1.5 vel×2 noGrav |
+//! | 8 | 83/84 CursedHammer/EnchantedSword | `:87152-87163` | 20× type-31 + 6 gore ARG draws |
+//!
+//! The 83/84 pair is the SECOND gore-ARGUMENT arm: each of the 3 gores
+//! draws a `Next(-2, 3)` x/y velocity pair (`:87158`/`:87160`/`:87162`) —
+//! 6 draws consumed here in C# order, the bodies stay d55's (the g63
+//! rule). Every other batch-8 tail draws NO arguments (verified against
+//! the C#: constant types / `this.type` arithmetic / hitDirection).
+//!
 //! ## The lane's remainder (the census's absent kinds)
 //!
-//! The 173-kind dust-first clean census has 109 kinds with NO port kind
-//! row (the worm segments 8/9/11/12/14/15, the casters 31/37/39-41/43,
-//! the frost/martian/dd2 families, the 195-206/209/217-221/226/229
-//! bands, …). Their arms stay UNWIRED until the kind lands (the S1-F-9b
-//! row-gate convention); the census rows + arm citations live in
-//! docs/ANALYSIS.md. The 20 dust-only kinds' absent members (34/63/75/
-//! 112/120/122/137/141/169/204) are the same remainder.
+//! The 173-kind dust-first clean census had 109 kinds with NO port kind
+//! row at batch 7's close; the DOC-SWEEP re-census counts 107 UNWIRED
+//! (the 66 landed C# types cover 66 of the 173). Batch 8 activates 10 of
+//! the d35-rowed kinds; 97 stay row-gated UNWIRED until their kinds land
+//! (the S1-F-9b row-gate convention); the census rows + arm citations
+//! live in docs/ANALYSIS.md. The 20 dust-only kinds' still-absent members
+//! (34/63/112/141/169/204) are the same remainder (75/120/137 activated
+//! or already wired; 112 re-owned g62).
 //!
 //! The census (the full 1-230 walk, 173 dust-first clean kinds) and the
 //! batch split live in docs/ANALYSIS.md "The NPC death dust table (W4-g59)".
@@ -598,6 +625,94 @@ pub fn death_dust(
                     rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
                     Color::default(), 1.0,
                 );
+            }
+        }
+        // ---- batch 8 (the d35 row-gated activations: the goblin scout /
+        // pixie / skeleton pair / mummy trio / wraith / cursed pair).
+        // `NPC.cs:89560-89563` — the Goblin Scout (73): 50 type-5 puffs at
+        // 2.5×dir/-2.5 (the goblin arm, batch 3's shape; the 73 gore ladder
+        // `:89579-89584` is the 629/630/631 constants, no argument draws).
+        73 => {
+            for _ in 0..50 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 5, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:85527-85531` — the Pixie (75): 50 type-55 puffs at
+        // dir/0, alpha 200, `this.color` (the stand-in: default — the
+        // SetDefaults reset `:8526` is the only write for 75, the paint
+        // ladder `:60577-60692` is type-1-only), velocity×2. Dust-only.
+        75 => {
+            for _ in 0..50 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 55, dir, 0.0, 200,
+                    Color::default(), 1.0,
+                );
+                dust.slot_mut(idx).velocity *= 2.0;
+            }
+        }
+        // `NPC.cs:88537-88540` — the Armored Skeleton (77) / Skeleton
+        // Archer (110): 20 type-26 bone puffs at 2.5×dir/-2.5 (the big
+        // skeleton arm, batch 3's shape; the 77/110 gore ladders
+        // `:88624-88637` add the 106/130/131 constants, no argument draws).
+        77 | 110 => {
+            for _ in 0..20 {
+                dust.new_dust(
+                    rng, ctx, world, pos, w, h, 26, 2.5 * dir, -2.5, 0,
+                    Color::default(), 1.0,
+                );
+            }
+        }
+        // `NPC.cs:88946-88951` — the Mummy trio (78/79/80): 20 type-31
+        // puffs at (0,0), scale 1.5, velocity×2 + noGravity (the 61/62/63
+        // gore tail `:88952-88957` is constant types + hitDirection, no
+        // argument draws).
+        78 | 79 | 80 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 31, 0.0, 0.0, 0,
+                    Color::default(), 1.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
+        // `NPC.cs:88971-88976` — the Wraith (82): 20 type-54 puffs at
+        // (0,0), alpha 50, scale 1.5, velocity×2 + noGravity (the 99×3
+        // gore tail `:88977-88982` is constant + hitDirection, no draws).
+        82 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 54, 0.0, 0.0, 50,
+                    Color::default(), 1.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+        }
+        // `NPC.cs:87152-87163` — the Cursed Hammer (83) / Enchanted Sword
+        // (84): 20 type-31 puffs at (0,0), scale 1.5, velocity×2 +
+        // noGravity, THEN the gore tail's ARGUMENT draws — 3 gores each
+        // with a `Next(-2,3)` x/y velocity pair (`:87158`/`:87160`/
+        // `:87162`, 6 draws). The bodies + kicks stay d55's (the g63
+        // gore-sibling rule); the draws are consumed here in C# order.
+        83 | 84 => {
+            for _ in 0..20 {
+                let idx = dust.new_dust(
+                    rng, ctx, world, pos, w, h, 31, 0.0, 0.0, 0,
+                    Color::default(), 1.5,
+                );
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+            for _ in 0..3 {
+                let _gx = rng.next_range(-2, 3);
+                let _gy = rng.next_range(-2, 3);
             }
         }
         _ => return false,
@@ -1344,4 +1459,117 @@ mod tests {
             assert!(live.iter().all(|d| d.dust_type == 5));
         }
     }
+
+    // ---- batch 8 (the d35 row-gated activations). The d35 kinds
+    // (GoblinScout 73 … PossessedArmor 140) land with the d35 merge; the
+    // witnesses drive the RAW C# ids over a stand-in corpse shell (the
+    // batch-1 snowman-trio precedent — `death_dust` matches on the type
+    // argument, the shell only supplies the box/alpha/scale reads).
+
+    /// `NPC.cs:88946-88951` — the mummy trio (78/79/80): 20 type-31
+    /// puffs, scale 1.5, velocity×2 + noGravity; the wraith (82) shares
+    /// the shape at type 54, alpha 50.
+    #[test]
+    fn w4_g59_the_mummy_trio_and_wraith_shapes() {
+        let w = air();
+        for (ty, alpha) in [(78, 0), (79, 0), (80, 0), (82, 50)] {
+            let n = corpse(NpcKind::Skeleton);
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(139);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 20, "type {ty}");
+            let want_ty = if ty == 82 { 54 } else { 31 };
+            for d in &live {
+                assert_eq!(d.dust_type, want_ty);
+                assert_eq!(d.alpha, alpha);
+                assert!(d.no_gravity);
+                // scale = (1 + Next(-20,21)*0.01) × 1.5 ∈ [1.2, 1.8].
+                assert!(d.scale >= 1.2 - 1e-6 && d.scale <= 1.8 + 1e-6);
+                // The ×2 write: the pool's ±2 jitter doubled ∈ [-4, 4].
+                assert!(d.velocity.x.abs() <= 4.0 + 1e-6);
+                assert!(d.velocity.y.abs() <= 4.0 + 1e-6);
+            }
+        }
+    }
+
+    /// `NPC.cs:87152-87163` — the cursed pair (83/84): 20 type-31 puffs
+    /// then the 3-gore tail's 6 `Next(-2,3)` ARGUMENT draws — the twin
+    /// stream replays the exact ladder (the g63 gore-sibling rule).
+    #[test]
+    fn w4_g59_the_cursed_pair_consumes_the_gore_velocity_draws() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(149);
+        assert!(death_dust(&n, 83, &mut dust, &ctx(), &mut rng, &w));
+        let (bw, bh) = n.size();
+        let (bw, bh) = (bw as i32, bh as i32);
+        let mut twin = UnifiedRandom::new(149);
+        for _ in 0..20 {
+            let _px = twin.next_max(bw.max(5) - 4);
+            let _py = twin.next_max(bh.max(5) - 4);
+            let _vx = twin.next_range(-20, 21);
+            let _vy = twin.next_range(-20, 21);
+            let _row = twin.next_max(3);
+            let _scale = twin.next_range(-20, 21);
+        }
+        for _ in 0..3 {
+            let gx = twin.next_range(-2, 3);
+            let gy = twin.next_range(-2, 3);
+            assert!((-2..3).contains(&gx) && (-2..3).contains(&gy));
+        }
+        assert_eq!(rng, twin, "20×6 dust draws + 6 gore argument draws");
+        // 84 shares the census exactly.
+        let mut dust_b = DustPool::new();
+        let mut rng_b = UnifiedRandom::new(149);
+        assert!(death_dust(&n, 84, &mut dust_b, &ctx(), &mut rng_b, &w));
+        assert_eq!(rng_b, twin);
+        assert_eq!(dust.slots(), dust_b.slots());
+    }
+
+    /// `NPC.cs:85527-85531` — the Pixie (75): 50 type-55 puffs, alpha
+    /// 200, velocity×2 (dust-only; the twin pool pins the ×2 write).
+    #[test]
+    fn w4_g59_the_pixie_death_draws_fifty_type_fifty_fives() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(151);
+        assert!(death_dust(&n, 75, &mut dust, &ctx(), &mut rng, &w));
+        let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(live.len(), 50);
+        let mut twin = DustPool::new();
+        let mut twin_rng = UnifiedRandom::new(151);
+        let (bw, bh) = n.size();
+        let pos = Vec2::new(n.x, n.y);
+        for _ in 0..50 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx(), &w, pos, bw as i32, bh as i32,
+                55, -1.0, 0.0, 200, Color::default(), 1.0,
+            );
+            twin.slot_mut(idx).velocity *= 2.0;
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        assert!(live.iter().all(|d| d.dust_type == 55 && d.alpha == 200));
+    }
+
+    /// `NPC.cs:89560-89563` / `:88537-88540` — the goblin scout (73)
+    /// 50×5 and the skeleton pair (77/110) 20×26 ride the batch-3 shapes.
+    #[test]
+    fn w4_g59_the_goblin_scout_and_skeleton_pair_counts() {
+        let w = air();
+        let n = corpse(NpcKind::Skeleton);
+        for (ty, want_ty, count) in [(73, 5, 50), (77, 26, 20), (110, 26, 20)] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(163);
+            assert!(death_dust(&n, ty, &mut dust, &ctx(), &mut rng, &w));
+            let live: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), count, "type {ty}");
+            assert!(live.iter().all(|d| d.dust_type == want_ty));
+        }
+    }
+
+
 }
