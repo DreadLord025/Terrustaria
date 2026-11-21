@@ -2387,6 +2387,24 @@ pub(crate) fn king_slime_find_teleport_spot(
 ) -> (f32, f32) {
     let (pcx, pcy) = player.center();
     let player_bottom = (pcx, player.y + player.height);
+    king_slime_find_teleport_spot_at(world, pcx, pcy, player_bottom, anti_cheese, npc_height, rng)
+}
+
+/// The candidate-based core of [`king_slime_find_teleport_spot`] — the
+/// Queen Slime's aiStyle-121 teleport (`NPC.cs:45255`) shares the exact
+/// cache scan but reads its target through the `TargetCandidate` slice
+/// (the `npc_target.rs` seam), not a `&Player`. `pcx`/`pcy` are the
+/// target's centre, `player_bottom` its Bottom (the anti-cheese /
+/// no-cache fallback). W4-d33 style 121.
+pub(crate) fn king_slime_find_teleport_spot_at(
+    world: &World,
+    pcx: f32,
+    pcy: f32,
+    player_bottom: (f32, f32),
+    anti_cheese: bool,
+    npc_height: f32,
+    rng: &mut UnifiedRandom,
+) -> (f32, f32) {
     if anti_cheese {
         return player_bottom;
     }
