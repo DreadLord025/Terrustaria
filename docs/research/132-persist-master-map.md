@@ -16,7 +16,7 @@ the **single entry point** for the persist merge:
 | L1 `.plr` | **research/99** (71-row offset table + gate matrix) | THIS branch |
 | L2 `.trplayer` | **research/103** (**v11** superset FINAL — the torch fold landed) + **research/122** (line-8 addendum + the v11 post-receipt) | g88 tip `a9f1c29d8` (PUSHED — the v10/v11 folds are no longer worktree-only) |
 | L2 fold-inputs | **research/135** (g90 six-line v7 + token map — §2 rule LANDED in g88) + **research/138** (a6 4-way master reconcile — **PUSHED** at `d7de8bd53`; its verdicts seated in §3-L2 below) | g90 tip `94d33f2ca` / a6 tip `d7de8bd53` |
-| L3 `.trwld` union | **THIS doc §3-L3 is THE authoritative union** (107-byte head + W×H dense). research/92-doc-sweep-bg §1 (g71 five-branch 21-byte head, PUSHED at `f08e8d41e`) + research/64-v18-union-addendum (g72, PUSHED) + 135 §4 (g90 books) + 138 §5 (f45 identity) are the per-claimant inputs — each is a STRICT SUBSET of §3-L3; where they disagree on the total (21/53/65/97/98), §3-L3 wins | the union lands at the merge; no single branch carries it yet |
+| L3 `.trwld` union | **THIS doc §3-L3 is THE authoritative union** (107-byte head + W×H dense, the FINAL-SEAL order). research/92-doc-sweep-bg **§1-FULL** (g71's 13-branch registry, PUSHED at `f2d8c2c67` — the claimant registry of record; its §1-FULL.2 offsets re-seat per the mutual convergence receipt) + research/64-v18-union-addendum (g72, PUSHED) + 135 §4 (g90 books) + 138 §5 (f45 identity) are the per-claimant inputs; where they disagree on the total (21/53/65/97/98/100), §3-L3 wins | the union lands at the merge; no single branch carries it yet |
 | L3 `.wld` flags | `wld/sections/flags.rs` per-field C# gates; **f45's flags file is the merge base** (138 §5's verdict, re-verified this pass); f39 owns the force-today pair (f45 `9c1a01a42` defers it) | f45 tip `6352d3840` |
 
 Code-only lane: witnesses written, not run.
@@ -33,7 +33,7 @@ been superseded):
 | `origin/task/W4-a6-crystals-powerups` | **`d7de8bd53` (the 4-way master reconcile — PUSHED)** over `8ed96ee5d` | use arms + consumers; NO sidecar writer, NO `.trwld` claim; `.wld` book-two/satchel/bought-pets bytes — **research/138 pushed** (`138-powerup-master-reconcile.md`), its verdicts seated §3-L2/L3 |
 | `origin/task/W4-f33-torch-god-favor` | `8a000407f` (torch-favor v7-line: `6f2c122e8` use arm → `7954d6ed1` docs → `a429b37c0`/`8a000407f` shimmer+desert arms) | the v7 ONE 2-token pair-line fork — **FOLDED into g88f v11** (§2d's receipt); the event/favor/949 machines (`torch_god.rs`, keep-one over d19 per research/93) stay f33's |
 | `origin/task/W4-g72-bg-layers-3` | **`4a75715ef`** (final item 4: the `:11340` order-contract) over `39479b551` (the cave DRAW consumer) / `2b02345ce` (g72c persist) | `.trwld` v18 **31 B** cave block + `.wld` i32 arrays + net header; research/**64-v18-union-addendum PUSHED** (the 53-byte five-claimant proposal — a §3-L3 subset); the underworld seat it flagged FIRED (§3-L3) |
-| `origin/task/W4-g71-bg-layers-2` | **`f08e8d41e` (WIRING docs — PUSHED)** over `c13de6ee9` (rolls wired into `step_world_tail` + boot re-roll + atlas guard) / `e2d085ae4` | `.trwld` v18 3-byte surface tail + research/92 §1's five-branch 21-byte union (a §3-L3 subset); flags.rs now owns underworld/treeBG2..4/mushroom — the underworld `.trwld` seat FIRED |
+| `origin/task/W4-g71-bg-layers-2` | **`f2d8c2c67` (V18 FINAL CONSOLIDATION — PUSHED, the SEAL probe)** over `fc76a48b3` (keep-one FINAL) / `f08e8d41e` (WIRING docs) | `.trwld` v18 3-byte surface tail + the FIRED underworld seat; research/92-doc-sweep-bg **§1-FULL** (the 13-branch claimant registry + its own 107-byte union + §2.1-FINAL roll keep-one) — the convergence receipt + offset adjudication is §3-L3 rule 1 |
 | `origin/task/W4-g87-demon-heart-use` | **`dfbcaf94b` (PUSHED — the NEW claimant this probe)** | `.trplayer` **v7 `dh` sentinel line** (extraAccessory + unlockedSuperCart — §2e, a NEW self-identifying v7 shape after the 5 historical numeric ones + g90b's six-line + f33's pair-line); `.trwld` v18 **3-byte pet trio**; `.wld` pets gate 217 flips; the use arms (Demon Heart/Minecart Powerup/Pet License) |
 | `origin/task/W4-c39-lantern-birthday` | **`8ecb288aa` (exec — PUSHED — the NEW claimant)** | `.trwld` v18 **5-byte moon-boss downeds** (`:1347-1351`) + `.wld` five flips — **field-identical to f39's claim, dedup §3-L3**; the lantern/party/wind machine (research/114's KEEP pieces land at the merge) |
 | `origin/task/W4-f39-weather-slimerain` | **`bd5a5a24a` (Phase B — PUSHED — the NEW claimant)** | the SAME `.trwld` 5-byte downeds + `.wld` flips (dedup with c39) **PLUS the force-today pair** (`.wld` gate 212 — f45 defers it); `tr-core/season.rs` (the FixtureClock-pinned date gates) + `World.refresh_seasons` (the re-derivation carrier — no `.trwld` season bytes) |
@@ -54,7 +54,7 @@ been superseded):
 | --- | --- | --- | --- | --- |
 | **L1 `.plr`** | `Players/<name>.plr` | vanilla binary, AES-128-CBC, release **326** | `crates/tr-app/src/player_file.rs` | the CHARACTER: identity, appearance, stats, inventory/banks/loadouts, every per-player unlock/counter, the full `Player.Serialize` field set (`Player.cs:54750-54933`). Vanilla-interchangeable both ways. **Canonical field map: research/99's offset table** (71 rows, 3827-byte fresh layout). |
 | **L2 `.trplayer`** | `<world>.trplayer` | port-invented versioned TEXT | `crates/tr-app/src/persist.rs` | the LIVE SESSION next to a `.trwld`: position/hp/coins + the fields the live App mutates and must restore on world reload. NOT a `.plr` mirror — a lossy projection (kinds-only equips, 50-slot inventory). **Canonical contract: research/103 (v11 superset FINAL — the torch fold landed) + research/122 (line-8 addendum + the v11 post-receipt); fold-inputs: research/135 (g90, its §2 rule LANDED) + research/138 (a6, PUSHED — verdicts seated §3-L2); the f33 v7 fork: §2d's receipt; the g87 `dh` fork: §2e below.** |
-| **L3 world** | `<world>.trwld` (native) / `<name>.wld` (vanilla) | port binary v17→v18 union / vanilla sections release 326 | `tr-core/src/save.rs` / `tr-core/src/wld/` | the WORLD: tiles, chests, NPCs, world-global flags. **`.trwld` union contract: THIS doc §3-L3 — TEN claimants, the 107-byte fixed head + W×H dense (g70 forest 16 + g72 cave 31 + g71 surface 3 + underworld 1 + g69 crimson 1 + c39⨉f39 moon-boss 5 + g87 pets 3 + d125 empress 1 + g90 books 2 + c43/f45 identity 44).** The per-claimant docs (92 §1 / 64-add / 135 §4 / 138 §5) are subsets. `.wld` flags codec: `wld/sections/flags.rs` (the C# gates; f45's file is the merge base, f39 owns the force-today pair). |
+| **L3 world** | `<world>.trwld` (native) / `<name>.wld` (vanilla) | port binary v17→v18 union / vanilla sections release 326 | `tr-core/src/save.rs` / `tr-core/src/wld/` | the WORLD: tiles, chests, NPCs, world-global flags. **`.trwld` union contract: THIS doc §3-L3 — TEN claimants, the 107-byte fixed head + W×H dense (g70 forest 16 + g72 cave 31 + g71 surface 3 + g69 crimson 1 + c39⨉f39 moon-boss 5 + underworld 1 + g87 pets 3 + d125 empress 1 + g90 books 2 + c43/f45 identity 44 — the FINAL-SEAL order, mutual receipt with 92 §1-FULL).** The per-claimant docs (92 §1 / 64-add / 135 §4 / 138 §5) are subsets. `.wld` flags codec: `wld/sections/flags.rs` (the C# gates; f45's file is the merge base, f39 owns the force-today pair). |
 
 Side satellites (not layers): `<stem>.trfav` (the character star —
 vanilla's `favorites.json` store, `IO/FavoritesFile.cs:27-36`; the `.plr`
@@ -506,11 +506,13 @@ research/135 §6 + §2d/§2e above, in order:
 ### L3 world (save.rs `.trwld` + wld/ `.wld`)
 
 1. **`.trwld` base = THIS section's union — TEN claimants, 107-byte fixed
-   head + W×H dense.** This is THE authoritative layout: research/92 §1
-   (g71's five-branch 21-byte head, pushed `f08e8d41e`), research/64-add
+   head + W×H dense.** This is THE authoritative layout: research/92
+   §1-FULL (g71's 13-branch registry + its own 107-byte union, pushed
+   `f2d8c2c67` — the claimant registry of record, its offsets re-seated
+   by the convergence receipt below), research/64-add
    (g72's 53-byte five-claimant proposal), 135 §4 (g90's 21), 138 §5
    (f45's 65) and this doc's own FINAL "97" are all STRICT SUBSETS or
-   stale totals — each seats fewer claimants than the ten below.
+   stale totals/orders — the ten claimants below seat them all.
 
    **The arithmetic correction (the FINAL doc's slip):** the FINAL phase
    published "Fixed head = 97 bytes: 16+31+3+1+1+2+44" — that sum is
@@ -548,11 +550,61 @@ research/135 §6 + §2d/§2e above, in order:
      (`WorldFile.cs:1376`). A rolled-and-`.wld`-persisted style with NO
      `.trwld` byte would be lost on a native world reload — exactly the
      loss class the union exists to prevent. Per 64-add §3's flagged
-     seat: **1 byte between g71's surface group and g69's crimson**.
+     seat: **1 byte in the flags group at its C# position — after the
+     moon-boss downeds, before the pets (`:1376` between `:1351` and
+     `:1392`; the RETIRE phase's surface-adjacent seat is corrected by
+     the convergence receipt below)**.
 
-   The reconciled FINAL-FINAL layout (one fixed shared order — 92 §1's
+   **THE CONVERGENCE RECEIPT (the SEAL probe, mutual 132↔92):** g71's
+   V18-FINAL-CONSOLIDATION `f2d8c2c67` (PUSHED — research/92-doc-sweep-bg
+   §1-FULL, the 13-branch claimant registry) independently derived a
+   **SAME-SIZED 107-byte head** from a full-tip sweep (13 branches /
+   11 distinct blocks / 3 duplicate pairs). The seal probe byte-order-
+   compared the two independently-derived layouts field by field. The
+   claimant SETS are IDENTICAL (ten claimants after dedup; the same
+   three dedup pairs: e19=g69, f39=c39, f45=c43). The block INTERNALS
+   are byte-identical (forest tree_x 3×i32 LE + styles 4×u8; cave
+   cave_back_x[..3] 3×i32 + cave_back_style 4×i32 + ice/jungle/hell
+   3×u8, caveBackX[3] NEVER persisted `:1260-1262`; identity u64 + 16B
+   GUID + i32 + 2×i64 = 44). The OFFSETS DIFFER in the flag-singles
+   group — adjudicated below, **C#-write-order definitive**:
+
+   | Block | 132 RETIRE (ours) | 92 §1-FULL (theirs) | Δ |
+   | --- | --- | --- | --- |
+   | forest / cave / surface | [0..16] / [16..47] / [47..50] | same | 0 |
+   | crimson | [51] | [50] | −1 |
+   | books ×2 | [61..63] | [51..53] | −10 |
+   | moon-boss ×5 | [52..57] | [53..58] | +1 |
+   | underworld | [50] | [58] | +8 |
+   | pets ×3 | [57..60] | [59..62] | +2 |
+   | empress | [60] | [62] | +2 |
+   | identity 44 / dense | [63..107] / [107..] | same | 0 |
+
+   **The adjudication** (`WorldFile.cs:1240-1414` re-read at the seal
+   probe): the C# write order is crimson `:1281` < moon-boss
+   `:1347-1351` < underworldBG `:1376` < pets `:1392-1394` < empress
+   `:1395` < books `:1407-1408`. Their layout keeps g72's published
+   64a 53-byte prefix verbatim (books at [51..53], underworld at [58])
+   — a *published-offset-stability* rule for a proposal NO released
+   file ever carried; ours claimed strict C# order but placed
+   underworld BEFORE crimson (the RETIRE phase's "between the surface
+   group and crimson" seat — itself a 64a §3 carry-over, not C#
+   order). Under the definitive rule each layout is wrong in one
+   group: theirs moves books ahead of moon-boss/underworld/pets/
+   empress; ours moves underworld ahead of crimson/moon-boss. **The
+   reconciled FINAL-SEAL layout below keeps the strict-C# rule and
+   fixes the underworld seat** (their [50] crimson and our moon-boss-
+   before-pets/empress/books survive; books ride the tail of the
+   flags group where the C# writes them). Every move is free under
+   the forward-only rule: no released v18 exists, all claimants are
+   unmerged task work, and 92 §1-FULL.3's own back-compat matrix
+   already declares every single-branch v18 mis-parsing — the 64a
+   offsets carry no back-compat obligation.
+
+   The reconciled FINAL-SEAL layout (one fixed shared order — 92 §1's
    forest-first rationale extended through 64-add §2's C# field order,
-   the flag singles in vanilla `.wld` write order, identity last):
+   the flag singles in strict vanilla `.wld` write order, identity
+   closing the head, dense LAST):
 
    ```
    … v17 downedFishron byte (1)
@@ -561,11 +613,12 @@ research/135 §6 + §2d/§2e above, in order:
      [16..47]   g72 cave block          (cave_back_x 3×i32 + cave_back_style
                                          4×i32 + ice/jungle/hell u8)  — 64-add §1
      [47..50]   g71 surface bytes       (snow/desert/ocean u8)
-     [50]       g71 underworld_bg_style u8   — the FIRED seat (:1376)
-     [51]       g69 crimson             u8   (:1281)
-     [52..57]   c39⨉f39 moon-boss downeds u8×5 (king/tree/iceQueen/
+     [50]       g69 crimson             u8   (:1281 — 92 §1-FULL's seat)
+     [51..56]   c39⨉f39 moon-boss downeds u8×5 (king/tree/iceQueen/
                                          santank/xmasTree — :1347-1351,
                                          ONE deduped block)
+     [56]       g71 underworld_bg_style u8   — the FIRED seat (:1376,
+                                         AFTER moon-boss per C# order)
      [57..60]   g87 bought-pet trio     u8×3 (cat/dog/bunny — :1392-1394)
      [60]       d125 downedEmpress      u8   (:1395)
      [61..63]   g90 book-two + satchel  u8×2 (:1407-1408)  — 135 §4
@@ -577,15 +630,22 @@ research/135 §6 + §2d/§2e above, in order:
                                          framing passes' resetFrame:false)
    ```
 
-   **Fixed head = 107 bytes: 16+31+3+1+1+5+3+1+2+44. Total = 107 + W×H.**
+   **Fixed head = 107 bytes: 16+31+3+1+5+1+3+1+2+44. Total = 107 + W×H.**
    (The flag singles ride strict C# `.wld` write order — crimson
-   `:1281` < moon-boss `:1347-1351` < pets `:1392-1394` < empress
-   `:1395` < books `:1407-1408`; the FINAL doc's empress-before-books
-   seat moves one slot later, a free move under the forward-only
-   rule. The identity block is not flags-family, so it closes the
-   head; the dense block stays LAST per 92 §1.)
+   `:1281` < moon-boss `:1347-1351` < underworld `:1376` < pets
+   `:1392-1394` < empress `:1395` < books `:1407-1408`. The identity
+   block is not flags-family — it rides `SaveWorldHeader:1225-1227` +
+   the two time fields `:1250-1251` ahead of the whole flags stream —
+   so as a self-contained header group it closes the head (both
+   derivations agree); the dense block stays LAST per 92 §1.)
    VERSION stays 18; forward-only (no released v18 — every claimant is
    unmerged task work). `v18_tail_len` returns `107 + width*height`.
+   **The mutual receipt:** 92 §1-FULL's registry (sizes, C# anchors,
+   dedup pairs, pre-v18 defaults, the truncation-move table §1-FULL.4,
+   the back-compat matrix §1-FULL.3) is CONSUMED VERBATIM — only its
+   §1-FULL.2 offsets [50..63] re-seat to the table above; THIS table
+   is the layout of record, 92 §1-FULL the claimant registry of
+   record. Both docs describe ONE union.
    The truncation-constant moves (every claimant's end-relative sites):
    g70/g71's 16/3 → 107 (92 §1.5's table), g69/d125's 1 → 107, g90's six
    sites 2 → 107 (135 §4's table), g72's eleven sites 31 → 107 (64-add
@@ -874,6 +934,20 @@ voice walk re-read (`:1159-1177`/`:1352-1353`/`:2085-2086` — the
 keep-one's u8 base verified). No cargo/tests/rustfmt/graphify per the
 lane constraint.
 
+**SEAL-phase verification (this pass, item 1 — the 132↔92 convergence):**
+g71 `f2d8c2c67` fetched + research/92-doc-sweep-bg §1-FULL read FULL
+(the 13-row claimant registry, the §1-FULL.2 layout + writer/reader
+code blocks, §1-FULL.3's back-compat matrix, §1-FULL.4's per-branch
+truncation-move table); the byte-order comparison ran block-by-block
+against this doc's RETIRE table (the Δ table in §3-L3 rule 1); the
+adjudication re-read `WorldFile.cs:1240-1414` directly (the flags
+write order: crimson `:1281`, moon-boss `:1347-1351`, underworldBG
+`:1376`, pets `:1392-1394`, empress `:1395`, books `:1407-1408`; the
+identity fields `:1225-1227`/`:1250-1251` confirmed ahead of the flags
+stream). Both layouts' 107-byte totals verified by summation
+(16+31+3+1+5+1+3+1+2+44). No cargo/tests/rustfmt/graphify per the lane
+constraint.
+
 ## 8. The FINAL-FINAL merger persist-checklist (THE merger-bible — all
 recognition rules, all claimants, all dedup steps, in order)
 
@@ -951,8 +1025,9 @@ merger executes, it does not re-decide.
 ### Step 3 — L3 world (`save.rs` `.trwld` + `wld/` `.wld`)
 
 1. Seat the **107-byte-head union** (§3-L3 rule 1's table — THE
-   authoritative layout): g70 16 + g72 31 + g71 3 + underworld 1 +
-   g69 1 + c39⨉f39 5 (ONE deduped block) + g87 3 + d125 1 + g90 2 +
+   authoritative layout, the FINAL-SEAL order after the 132↔92
+   convergence receipt): g70 16 + g72 31 + g71 3 + g69 1 + c39⨉f39 5
+   (ONE deduped block) + underworld 1 + g87 3 + d125 1 + g90 2 +
    c43/f45 44, then d109's W×H dense LAST. VERSION stays 18,
    forward-only. `v18_tail_len` → `107 + width*height`.
 2. Move EVERY claimant's truncation constants to 107 (§3-L3's list;
