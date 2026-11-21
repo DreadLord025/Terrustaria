@@ -21,6 +21,16 @@
 //! pieces stay untouched: the housing validation (`town.rs`), the chat
 //! selection (`npc_chat`), and the caster aiStyle-8 arm.
 //!
+//! W4-g90 UPDATE: the STAT LADDER half is now LIVE — the App town-tick
+//! feeder (`world_sim::npcs::town_stat_tick`, ahead of the slot loop)
+//! runs [`town_stat_bonuses`] per town NPC per tick on [`TownEnvFlags`]
+//! (the world flags incl. BOTH combat books + the boss progression), so
+//! the +250 HP / ×0.8 cooldown / +0.25 damage / +8 defense book rows and
+//! the boss ladder apply in play. The AI dispatch above stays the b3
+//! lane's (its phase-1 `ai_007_town_family` builds its own env; at the
+//! merge the feeder's ladder call dedupes onto b3's arm — the ladder is
+//! idempotent per tick, same inputs → same writes, zero draws).
+//!
 //! SCOPE — the whole arm's STRUCTURE with the branches the port's town
 //! kinds take (the ten housed kinds + the eleven town-like sellers,
 //! `npc/data.rs::is_town_npc_like`; every one is 18×40). Cited skips
@@ -624,6 +634,156 @@ pub struct TownEnv<'a> {
     pub breath: i32,
     /// `NPC.shimmering` (`NPC.cs:92141`) — the `:53296` home-stamp gate.
     pub shimmering: bool,
+}
+
+/// W4-g90 — the OWNED per-tick town inputs the App town-tick feeder
+/// (`world_sim::npcs::town_stat_tick`) builds: every `TownEnv`
+/// field that is not a borrow and not per-NPC. The stat-ladder feeder
+/// needs the world flags + the npc-side progression inputs WITHOUT the
+/// borrowed player/NPC lists (the full AI wiring — the b3 lane — builds
+/// those per slot); this struct owns the scalar half so the feeder can
+/// hold it across the `&mut app.npcs` walk and lend a `TownEnv` per NPC.
+#[derive(Clone, Debug)]
+pub struct TownEnvFlags {
+    pub day_time: bool,
+    pub raining: bool,
+    pub eclipse: bool,
+    pub slime_rain: bool,
+    pub storming: bool,
+    pub net_mode: i32,
+    pub expert_mode: bool,
+    pub master_mode: bool,
+    pub dungeon_x: i32,
+    pub dungeon_y: i32,
+    pub combat_book: bool,
+    pub combat_book_two: bool,
+    pub party_up: bool,
+    pub skyblock_low_tiles: bool,
+    pub infected_seed: bool,
+    pub only_shimmer_ocean: bool,
+    pub x_mas: bool,
+    pub town_damage_multiplier: f32,
+    pub downed_slime_king: bool,
+    pub downed_boss1: bool,
+    pub downed_deerclops: bool,
+    pub downed_boss2: bool,
+    pub downed_boss3: bool,
+    pub downed_queen_bee: bool,
+    pub hard_mode: bool,
+    pub downed_queen_slime: bool,
+    pub downed_mech1: bool,
+    pub downed_mech2: bool,
+    pub downed_mech3: bool,
+    pub downed_plant: bool,
+    pub downed_empress: bool,
+    pub downed_fishron: bool,
+    pub downed_golem: bool,
+    pub downed_cultist: bool,
+}
+
+impl TownEnvFlags {
+    /// The App town-tick feeder's world-flag half (the b3 phase-1
+    /// `ai_007_town_family` env shape, scalar fields only): the live
+    /// `World` flags, the unported statics folded false (the style31
+    /// CLASSIC_SOLO convention — storming/party/skyblock/xMas/dungeon
+    /// coordinates have no ported fields), the host net path and the
+    /// Classic damage multiplier. `expert_mode` is the session player's
+    /// buff mirror (`Main.expertMode`'s standing-in, the b3 feeder's
+    /// `player.buffs.expert_mode` read).
+    pub fn from_world(world: &World, expert_mode: bool) -> Self {
+        Self {
+            day_time: world.day_time,
+            raining: world.raining,
+            eclipse: world.eclipse,
+            slime_rain: world.slime_rain,
+            storming: false,
+            net_mode: 0,
+            expert_mode,
+            master_mode: false,
+            dungeon_x: 0,
+            dungeon_y: 0,
+            combat_book: world.combat_book_was_used,
+            combat_book_two: world.combat_book_volume_two_was_used,
+            party_up: false,
+            skyblock_low_tiles: false,
+            infected_seed: world.seeds.contains(tr_core::seeds::SeedFlags::ZENITH),
+            only_shimmer_ocean: false,
+            x_mas: false,
+            town_damage_multiplier: 1.0,
+            downed_slime_king: world.downed_slime_king,
+            downed_boss1: world.downed_eoc,
+            downed_deerclops: world.downed_deerclops,
+            downed_boss2: world.downed_eow,
+            downed_boss3: world.downed_skeletron,
+            downed_queen_bee: world.downed_queen_bee,
+            hard_mode: world.hard_mode,
+            downed_queen_slime: world.downed_queen_slime,
+            downed_mech1: world.downed_mech_boss1,
+            downed_mech2: world.downed_mech_boss2,
+            downed_mech3: world.downed_mech_boss3,
+            downed_plant: world.downed_plant_boss,
+            downed_empress: false, // no ported flag yet (the b3 fold)
+            downed_fishron: world.downed_fishron,
+            downed_golem: world.downed_golem,
+            downed_cultist: world.downed_ancient_cultist,
+        }
+    }
+
+    /// Lend the borrowed [`TownEnv`] view for ONE NPC's tick: the world
+    /// reference + this flag set + the per-NPC `homeless` seam (the
+    /// port's `home == None` fold). The player/NPC lists are EMPTY — the
+    /// stat ladder (`NPC.cs:52999-53157`) reads neither; the full AI
+    /// wiring (b3) builds its own env with the live lists.
+    pub fn env<'a>(
+        &'a self,
+        world: &'a World,
+        players: &'a [TownPlayer],
+        npcs: &'a [(usize, TownNpcView)],
+        homeless: bool,
+    ) -> TownEnv<'a> {
+        TownEnv {
+            world,
+            day_time: self.day_time,
+            raining: self.raining,
+            eclipse: self.eclipse,
+            slime_rain: self.slime_rain,
+            storming: self.storming,
+            net_mode: self.net_mode,
+            expert_mode: self.expert_mode,
+            master_mode: self.master_mode,
+            players,
+            npcs,
+            dungeon_x: self.dungeon_x,
+            dungeon_y: self.dungeon_y,
+            combat_book: self.combat_book,
+            combat_book_two: self.combat_book_two,
+            party_up: self.party_up,
+            skyblock_low_tiles: self.skyblock_low_tiles,
+            infected_seed: self.infected_seed,
+            only_shimmer_ocean: self.only_shimmer_ocean,
+            x_mas: self.x_mas,
+            town_damage_multiplier: self.town_damage_multiplier,
+            downed_slime_king: self.downed_slime_king,
+            downed_boss1: self.downed_boss1,
+            downed_deerclops: self.downed_deerclops,
+            downed_boss2: self.downed_boss2,
+            downed_boss3: self.downed_boss3,
+            downed_queen_bee: self.downed_queen_bee,
+            hard_mode: self.hard_mode,
+            downed_queen_slime: self.downed_queen_slime,
+            downed_mech1: self.downed_mech1,
+            downed_mech2: self.downed_mech2,
+            downed_mech3: self.downed_mech3,
+            downed_plant: self.downed_plant,
+            downed_empress: self.downed_empress,
+            downed_fishron: self.downed_fishron,
+            downed_golem: self.downed_golem,
+            downed_cultist: self.downed_cultist,
+            homeless,
+            breath: 200, // `NPC.breath` unported — the stock full breath
+            shimmering: false,
+        }
+    }
 }
 
 /// `NPC.UpdateHomeTileState` (`NPC.cs:52904-52914`) — the home-tile
@@ -4502,5 +4662,77 @@ mod tests {
         assert!(src.contains("NPC.cs:55750-55785"));
         assert!(src.contains("ID/NPCID.cs:10466"));
         assert!(src.contains("Collision.cs:3694-3697"));
+    }
+
+    // ---- W4-g90: the App town-tick feeder (WRITTEN NOT RUN, code-only) ----
+
+    /// The feeder's flag set carries BOTH combat books off the live
+    /// World flags (`NPC.cs:53018-53031` — book one AND volume two each
+    /// add +250 lifeMax / ×0.8 num3 / +0.25 num2 / +8 defense), plus the
+    /// boss ladder's world reads. This is the piece the b3 phase-1 env
+    /// folded false (`combat_book_two: false, // volume two unported`)
+    /// that the g90 world flag now feeds.
+    #[test]
+    fn w4_g90_the_env_flags_feed_both_books_and_the_boss_ladder() {
+        let mut w = ground();
+        w.combat_book_was_used = true;
+        w.combat_book_volume_two_was_used = true;
+        w.downed_slime_king = true;
+        w.hard_mode = true;
+        let flags = TownEnvFlags::from_world(&w, false);
+        assert!(flags.combat_book, "World.combat_book_was_used");
+        assert!(flags.combat_book_two, "World.combat_book_volume_two_was_used");
+        assert!(flags.downed_slime_king);
+        assert!(flags.hard_mode);
+        let e = flags.env(&w, &[], &[], false);
+        let mut n = guide(0.0, 0.0, None);
+        let (num2, num3) = town_stat_bonuses(&mut n, stats(), &e, false, false);
+        // num2 = 1 + 0.25 + 0.25 (both books) + 0.05 (SK) + 0.4 (hard).
+        assert!((num2 - 1.95).abs() < 1e-5, "num2 {num2}");
+        // num3 = 2 × 0.8 × 0.8 × 0.985 (SK) × 0.985 (hard).
+        let expect3 = 2.0f32 * 0.8 * 0.8 * 0.985 * 0.985;
+        assert!((num3 - expect3).abs() < 1e-5, "num3 {num3}");
+        assert_eq!(n.max_hp, 750, "250 + 250 + 250");
+        // defense = 15 + 8 + 8 + 2 (SK) + 12 (hard) = 45.
+        assert_eq!(n.defense_override, Some(45));
+        assert_eq!(n.hp, 750, "the full-heal-on-growth (`:53032-53035`)");
+    }
+
+    /// The feeder loop's exact shape (the reset-then-read base + the
+    /// per-NPC env lend) is IDEMPOTENT: two consecutive passes write the
+    /// same state — a stale `defense_override` never compounds into the
+    /// next tick's base (the `npc.rs` skeletron reset convention).
+    #[test]
+    fn w4_g90_the_feeder_pass_is_idempotent_across_ticks() {
+        let mut w = ground();
+        w.combat_book_was_used = true;
+        w.downed_eoc = true;
+        let flags = TownEnvFlags::from_world(&w, false);
+        let mut n = guide(0.0, 0.0, Some((10, 10)));
+        let mut pass = |n: &mut Npc| {
+            n.defense_override = None;
+            let stats = TownKindStats {
+                def_life_max: n.kind.max_hp(),
+                def_defense: n.defense(),
+            };
+            let env = flags.env(&w, &[], &[], n.home.is_none());
+            let dryad = n.buffs.find_buff_index(165).is_some();
+            let tipsy = n.buffs.find_buff_index(25).is_some();
+            town_stat_bonuses(n, stats, &env, dryad, tipsy)
+        };
+        let first = pass(&mut n);
+        let (hp1, def1) = (n.hp, n.defense_override);
+        let second = pass(&mut n);
+        assert_eq!(first.0, second.0);
+        assert_eq!(first.1, second.1);
+        assert_eq!(n.hp, hp1);
+        assert_eq!(n.defense_override, def1);
+        assert_eq!(n.defense_override, Some(15 + 8 + 2), "book + EoC");
+        // The tipsy buff feeds through the SAME seam (`NPC.cs:53151`).
+        n.buffs.add_buff(25, 600);
+        let (d2, d3) = pass(&mut n);
+        assert_eq!(n.defense_override, Some(((15 + 8 + 2) as f64 * 1.1) as i32));
+        assert!((d2 - first.0 * 1.1).abs() < 1e-5);
+        assert!((d3 - first.1 * 0.9).abs() < 1e-5);
     }
 }
