@@ -878,13 +878,18 @@ impl App {
             return false;
         }
         // `:42301-42305`: the buttons releasing reset the focus click's
-        // lock and the held-repeat's recipe pin.
-        if !self.mine_down {
+        // lock and the held-repeat's recipe pin — `flag2 = Main.mouseLeft
+        // || Main.mouseRight` (`:42255`), so EITHER held button keeps them.
+        let held = self.mine_down || self.place_down;
+        if !held {
             self.prevent_craft_click = false;
             self.current_recipe_being_crafted = -1;
             return false;
         }
-        if !self.ui_left_press && self.stack_split > 1 {
+        // `flag = (mouseLeftRelease && mouseLeft) || (mouseRightRelease &&
+        // mouseRight)` (`:42254`): either button's press edge selects.
+        let press_edge = self.ui_left_press || self.ui_right_press;
+        if !press_edge && self.stack_split > 1 {
             return true; // the held frame between repeats
         }
         let (sw, sh) = self.screen_size();
@@ -983,13 +988,18 @@ impl App {
         // `Main.cs:42256-42262` + `:42295-42299`: the first click on an
         // unfocused row selects it (`stackSplit = 15`, the click-consumed
         // lock, the MenuTick sound); the craft runs only on the focused row.
+        // `HandleCraftSlot`'s select arm takes EITHER button
+        // (`NewCraftingUI.cs:505`: `(mouseLeft && mouseLeftRelease) ||
+        // (mouseRight && mouseRightRelease)`), and so does
+        // `HoverOverCraftingItemButton`'s (`:42254`'s `flag`).
         if self.focus_recipe != available_index {
-            if self.ui_left_press {
+            if press_edge {
                 self.focus_recipe = available_index;
                 self.stack_split = 15;
                 self.prevent_craft_click = true;
                 self.audio.play("Menu_Tick"); // `SoundEngine.PlaySound(12)`
                 self.ui_left_press = false;
+                self.ui_right_press = false;
             }
             return true;
         }
@@ -1074,6 +1084,10 @@ impl App {
             };
         }
         self.ui_left_press = false;
+        // The right press edge is consumed by the craft the same way
+        // (`:42254`'s `flag` feeds both arms); the HELD right button keeps
+        // crafting through `flag2` (`:42255`) like the held left.
+        self.ui_right_press = false;
         true
     }
 
@@ -5491,6 +5505,81 @@ mod s1_h_7_tests {
             .find(|s| s.kind == 8)
             .expect("the partial craft");
         assert_eq!(torches.count, 9, "only 3 wood -> 3 crafts of 3");
+    }
+
+    /// W4-f23 doc-sweep: the RIGHT button crafts exactly like the left —
+    /// `HandleCraftSlot`'s select arm (`NewCraftingUI.cs:505`) and
+    /// `HoverOverCraftingItemButton` (`Main.cs:42254-42255`) OR both
+    /// buttons. There is no craft-max: the bulk arm is Shift x10 only
+    /// (`:42272-42274`).
+    #[test]
+    fn the_right_button_selects_and_crafts_like_the_left() {
+        let mut app = craft_app();
+        app.inventory[0] = crate::item::ItemSlot {
+            kind: 9,
+            name: "Wood",
+            count: 30,
+            prefix: 0,
+        };
+        app.inventory[1] = crate::item::ItemSlot {
+            kind: 23,
+            name: "Gel",
+            count: 30,
+            prefix: 0,
+        };
+        app.mouse_pos = torch_mouse(&app);
+        app.focus_recipe = 1; // park the focus off the torch row
+        // The right press edge selects (`:505`'s right arm).
+        app.ui_right_press = true;
+        app.place_down = true;
+        assert!(app.handle_crafting_clicks());
+        assert_eq!(app.focus_recipe, 0, "the right click focused the torch");
+        assert!(app.prevent_craft_click);
+        assert_eq!(app.stack_split, 15);
+        assert!(!app.ui_right_press, "the edge is consumed");
+        assert!(
+            !app.inventory.iter().any(|s| s.kind == 8),
+            "the select step crafts nothing"
+        );
+        // Release + re-press: the focused right click crafts ONE recipe
+        // (num = superFastStack + 1 = 1 — no craft-max).
+        app.place_down = false;
+        app.handle_crafting_clicks();
+        assert!(!app.prevent_craft_click, "both buttons released reset the lock");
+        app.stack_split = 0;
+        app.place_down = true;
+        app.ui_right_press = true;
+        assert!(app.handle_crafting_clicks());
+        let torches = app
+            .inventory
+            .iter()
+            .find(|s| s.kind == 8)
+            .expect("the right click crafted");
+        assert_eq!(torches.count, 3, "one craft = three torches, not the max");
+    }
+
+    /// W4-f23 doc-sweep: the HELD right button keeps the held-repeat alive
+    /// (`flag2 = mouseLeft || mouseRight`, `Main.cs:42255`) — the lock and
+    /// the recipe pin survive while either button is down (`:42301-42305`).
+    #[test]
+    fn a_held_right_button_keeps_the_craft_locks() {
+        let mut app = craft_app();
+        app.prevent_craft_click = true;
+        app.current_recipe_being_crafted = 5;
+        app.place_down = true; // right held, left up
+        app.mine_down = false;
+        app.stack_split = 0;
+        // No press edge and no pacing: the handler walks to the grid and
+        // returns without resetting the locks (the `!flag2` arm never runs).
+        app.mouse_pos = Vec2::new(-100.0, -100.0); // off every cell
+        app.handle_crafting_clicks();
+        assert!(app.prevent_craft_click, "the held right keeps the lock");
+        assert_eq!(app.current_recipe_being_crafted, 5);
+        // Both up: the reset arm fires.
+        app.place_down = false;
+        app.handle_crafting_clicks();
+        assert!(!app.prevent_craft_click);
+        assert_eq!(app.current_recipe_being_crafted, -1);
     }
 
     /// The mouse over the filter tab `i` — `ui::crafting::filter_button_rect`'s
