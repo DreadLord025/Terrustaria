@@ -285,3 +285,76 @@ The single entry point for the voice family at the merge, in fold order:
   51 unclaimed — unchanged from the DONE tip (the seal adds docs only).
 - research/32 rows + INDEX re-stamped SEALED for the voice lane (§5's
   contract is the row evidence).
+
+## 6. The 51-unclaimed-voice census note (census-only addendum)
+
+`python tools/_e10_final_census.py` re-run at this tip: **211 sites /
+160 claimed / 51 unclaimed** — unchanged. The context dump
+(`tools/_e10_census_ctx.py` over the `--json` output) resolves every
+unclaimed site's enclosing method. NONE of the 51 is a voice-family
+(case 1/2/3/4/20/42) site — the voice lane stays SEALED; the 51 are
+non-voice `PlaySound` callers the port has not cited yet. Owner-lane
+attribution, cross-checked against d79 `24ce8aa0d` §S4 (the six E21
+task-seeds):
+
+### 6.1 The d79-seed overlap — 16 of 51 strict, 18 seam-wide
+
+§S4's instrument seeds name `PlayGuitarChord` (`:46671-46702`) and
+`PlayDrums` (`:46705-46747`) as the unported callers; those are exactly
+16 census sites. Two more sit in `ItemCheck_PlayInstruments` itself —
+the same instrument-use seam (research/60 item-use census + e26 luck).
+The OTHER four seeds contribute **0 Player.cs sites**: 63/64 Journey
+(`ItemSlot.cs:1288-1297`, c24-journey-ui), 65 QueenSlime
+(`NPC.cs:45757-45759`, d33/d43), 66 type-75 (`Projectile.cs:46936-46941`,
+d8) all live in other files — they never appear in this Player.cs
+census.
+
+| sites | C# method | sound ids | owner-lane |
+| --- | --- | --- | --- |
+| 46681/46685/46689/46693/46697/46701 (6) | `PlayGuitarChord` range ladder | 49/48/47/51/52/50 + bad-luck pitchOffset | **d79-seed 47-52** → instrument-use seam (+e26 luck) |
+| 46710/46714/46718/46722/46726/46730/46734/46738/46742/46746 (10) | `PlayDrums` range ladder | 59/58/53/57/62/61/54/56/55/60 | **d79-seed 53-62** → same instrument seam |
+| 46543 (1) | `ItemCheck_PlayInstruments` | `type` = Item26, Item35 for type 507 | instrument seam (same lane, the use-cue twin) |
+| 46572 (1) | `ItemCheck_PlayInstruments` | Item47 (the Stellar Tune arm) | instrument seam (same lane) |
+
+### 6.2 The named-lane pickups — 2 of 51
+
+| site | C# method | sound | owner-lane |
+| --- | --- | --- | --- |
+| 35047 | `PickupItem` Nebula arm (`:35045-35058`) | 7 positioned | **d79** — §F1 keep-one: d79's pickup arm + `play_grab_sound` survive (f49's deletes) |
+| 35082 | `PickupItem` type-4143 mana arm | 7 | **f49** — §S1 identical-twin ruling: the 4143 arm resolves to f49's copy |
+
+### 6.3 The f3-seam-deferred DST recharge — 4 of 51
+
+The §4 compose-note's four `MountedCenter` recharge sites: 28333
+(`Update_TimerCrit`, Item28 −0.9/0.04), 28396 (`Update_SnappingStone`,
+Item30 −0.9/0.08), 28401 (Pyroclast, Item20), 28406 (ArmletOfRuin,
+Item28 −0.9/0.08). Deferred WITH f3's 65-seam re-siting — the census
+reads `mount.kind()` only, so the seam merge owns these.
+
+### 6.4 The unseeded remainder — 27 of 51 (no §S4 seed, no lane claim)
+
+| sites | C# method | sound | family |
+| --- | --- | --- | --- |
+| 5673 | `TrySwitchingLoadout` | 12 (menu tick) | loadout UI |
+| 15612 | `ApplyEquipFunctional` type-576 arm | Item166 | music-box record |
+| 15991 | `ApplyWilsonBeard` | Item60 | Wilson beard growth |
+| 17116/17120 | `HandleSpectatingControls` | Item197/Item198 | spectate cycle |
+| 43702/43706 | `ItemCheck_OwnerOnlyCode` spectate arm | Item197/Item198 | spectate cycle (twin) |
+| 17306 | `UpdatePet` | `miscEquips[0].UseSound` | pet buff grant |
+| 17338 | `UpdatePetLight` | `miscEquips[1].UseSound` | light-pet buff grant |
+| 18306 | `ResetEffects` shimmer-fade arm | 19 style 3 | shimmer exit |
+| 22287 | `WOFTongue` | 4 style 10 | WOF Horrified tick |
+| 26703/26710/26723/26730 | `Update` gravity-flip arms | Item8 ×4 | gravity flip |
+| 31637 | `ItemCheck_ManageRightClickFeatures` | `type` (item UseSound) | right-click item change |
+| 31724 | `..._ShieldRaise` parry-cooldown arm | 25 | shield parry ready |
+| 32134 | `TileInteractionsUse` type-212 arm | Item11 | snowball launcher |
+| 33354 | `PetMount` types 62-65 | PalChilletJoy | petting (NOT a mount arm) |
+| 33537/33547 | `CloseSign`/`OpenSign` | 11/10 | sign UI open/close |
+| 43364 | `TryUsingFoxparksAbility` | PalFoxparksAttack | Foxparks channel |
+| 46374/46435/46455/46475/46493 | `ItemCheck_UseBuckets` | 19 ×5 | bucket pour/place (water/lava/honey/shimmer) |
+
+**Breakdown: 18 instrument-seam (16 strict §S4) + 2 d79/f49 pickups +
+4 f3-seam DST + 27 unseeded = 51.** The 27 unseeded are e10-backlog /
+future item-use-census candidates, NOT voice work; no code ports in
+this pass (census-only). Verification: census re-run 211/160/51;
+context dump read for all 51; §S4 table read at `24ce8aa0d` verbatim.
