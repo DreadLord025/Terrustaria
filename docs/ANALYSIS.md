@@ -14942,8 +14942,33 @@ the base). The S1-E-26 wave C "Deferred" list above is now mostly closed.
     group orders by `OrderPriority` descending (biomes 0, Times -1,
     Events -2), `HideInPortraitInfo` (Blizzard) suppressed. The
     `bestiary_info_category` Misc arm now has live rows.
+11. **The bestiary NOTES writer wires (LANDED 2026-11-21, final phase).**
+    The e16 closeout's hover-gate dead code lifts: the drop-line draw feeds
+    `info_item_shows_tooltip` (`UIBestiaryInfoItemLine.DrawSelf:112-119`),
+    the hovered non-locked line builds its display item (fresh
+    `SetDefaults(itemId)` count 1) and calls `draw_item_tooltip` with the
+    ctor-cached `BestiaryNotes` (`SetBestiaryNotesOnItemCache:137-156`).
+    `TooltipContext.bestiary_notes` is the f28 `HoverFlags.bestiary_notes`
+    compose seam; `item_tooltip_lines`' tail prints the
+    `Main.cs:21334-21342` rows (`bestiary_note_rows`). The port's
+    `DropRateInfo` carries no condition objects (the `loot.rs` gap), so
+    the cache joins the empty list today — the seam is live.
+12. **The c8 SIGHT-unlock compose (LANDED 2026-11-21, final phase).** The
+    c37 gate table gains `Gate::GoldCritter` (the 13-row peer dictionary
+    `:703-720` + the 14-id `GoldCrittersCollection` + the four critter-twin
+    `Highest` folds `:721-730`); `eval_gate`'s gold arm ports
+    `GoldCritterUICollectionInfoProvider.cs:21-75` (max(own, peers) sights
+    behind the any-gold-seen gate). `scan_world_for_critter_sights` lands
+    at the `update_npcs` head (`Main.cs:17914`, the 300×200-inflated player
+    box, the `CountsAsACritter` gate, the idempotent insert + the
+    BOOK_WORM hook). The UI/completion/shop/achievement dispatch already
+    rides the WorldBestiary through the c37 table — the c8
+    `unlock_state_world` semantics ARE the port's shape, no parallel
+    dispatch. The c8 crawler ENTRIES rows await the roster union; the
+    gold gate's peer credits resolve through `credit_id_for_net` then.
 
-Tests (written, not run): `bestiary_filter::tests` (10 - the filter list,
+Tests (written, not run): `bestiary_filter::tests` (10 + the final-phase
+d42-band coverage witness - the filter list,
 the active-OR + search gate, the saucer boss removal, the wrap-membership
 rule, the sort chain + re-click, the hidden steps, the town-first sorting
 id [repointed to the full-vanilla numbers], the search providers, the
@@ -14956,9 +14981,18 @@ frame); the reworked `ui::bestiary::tests` (the grid paging + the
 completion-bar rect repointed, + the remainder witnesses: the 2x2 stat
 grid / coin strings / coin row / block height / kill-counter panel, the
 row layout / view height / SetView clamp / scrollbar press, the backdrop
-preference / fallback / world-evil / Moon Lord / no-provider picks);
+preference / fallback / world-evil / Moon Lord / no-provider picks,
++ the final-phase witnesses: the decorations-pass Visuals rows, the
+overlay fallback arm + priority order, the overlay Lerp tint, the
+biome-flavor fallback keys + tier gate, the Misc row order + Hide gate,
+the bestiary-notes compose contract);
 `ui::bestiary_hover::tests` (3 - the MouseOver edge, the per-button latch,
-the card-change-only tick).
+the card-change-only tick); `bestiary::tests` (+2 final-phase - the gold
+gate's three arms + the collection table, the completion sight-vs-kill);
+`world_sim::npcs::worm_tests` (+1 - the critter proximity scan
+once/far/zombie/dead/idempotent). The final-phase close-out report:
+`docs/research/237-bestiary-ui-final.md` (STATUS FINAL - the c8/f28/d42
+compose verdicts + the witness ledger).
 
 ## The pillar worms (M4-EVENT-14)
 
