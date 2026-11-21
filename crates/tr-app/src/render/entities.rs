@@ -447,6 +447,123 @@ fn npc_tex(atlas: &Atlas, name: &str) -> Option<BgTex> {
     sky_tex(atlas, name, None)
 }
 
+/// The draw's rotation gate: the C#'s generic draw rotates EVERY NPC by
+/// `npc.rotation` (`Main.cs:26632`), but the port admits only the kinds
+/// whose ported AI/FindFrame machines actually WRITE `rotation` — the
+/// census per wave is in `docs/ANALYSIS.md`. Extracted from the draw's
+/// inline `matches!` (behaviour unchanged — the W4-d38c extraction
+/// pattern) so the per-wave witnesses can pin the gate's membership.
+pub(crate) fn npc_rotation_allowed(kind: NpcKind) -> bool {
+    matches!(
+        kind,
+        NpcKind::DemonEye
+            | NpcKind::WanderingEye
+            | NpcKind::GolemFistLeft
+            | NpcKind::GolemFistRight
+            | NpcKind::Goldfish
+            | NpcKind::Piranha
+            | NpcKind::Shark
+            | NpcKind::CaveBat
+            | NpcKind::JungleBat
+            | NpcKind::Hellbat
+            | NpcKind::VoodooDemon
+            | NpcKind::DevourerHead
+            | NpcKind::DevourerBody
+            | NpcKind::DevourerTail
+            | NpcKind::GiantWormHead
+            | NpcKind::GiantWormBody
+            | NpcKind::GiantWormTail
+            | NpcKind::EaterOfWorldsHead
+            | NpcKind::EaterOfWorldsBody
+            | NpcKind::EaterOfWorldsTail
+            // The wyvern chain (`AI_006`'s `:51878` follower /
+            // `:52201` head rotations — the same atan2 tilt).
+            | NpcKind::WyvernHead
+            | NpcKind::WyvernLegs
+            | NpcKind::WyvernBody
+            | NpcKind::WyvernBody2
+            | NpcKind::WyvernBody3
+            | NpcKind::WyvernTail
+            // The saucer family (`Main.cs:24586-24612`) rotates
+            // about its CENTRE (the `origin = halfSize` draw point
+            // — the quad the anchors computed sits at that centre,
+            // the turret's 8 px lower), and the drone rides the
+            // velocity's folded rotation (`NPC.cs:35220-35229`).
+            | NpcKind::MartianSaucer
+            | NpcKind::MartianSaucerTurret
+            | NpcKind::MartianSaucerCannon
+            | NpcKind::MartianSaucerCore
+            | NpcKind::MartianDrone
+            // The Prime family (`AI_032`'s `rotation = velocity.X / 15`
+            // and its limbs' dock/aim rotations, `NPC.cs:27689`/
+            // `:28151`/`:28350`/`:28656`/`:28891`): the head rolls
+            // with its drift and the limbs aim their "up" along the
+            // dock or the player.
+            | NpcKind::SkeletronPrime
+            | NpcKind::PrimeCannon
+            | NpcKind::PrimeSaw
+            | NpcKind::PrimeVice
+            | NpcKind::PrimeLaser
+            // The Skeletron hand's dock/strike aim (`AI()`'s
+            // aiStyle-12 rotation writes, `NPC.cs:22500`/
+            // `:22508`/`:22559` — B-1 H8, the prime-limb v2
+            // precedent).
+            | NpcKind::SkeletronHand
+            // Betsy's body roll (`AI_110_Betsy`'s `AngleTowards`
+            // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
+            // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
+            | NpcKind::DD2Betsy
+            // The Destroyer family (`AI_037`'s follower snap +
+            // velocity tilt, `NPC.cs:50021-50033`/`:50206`) and the
+            // Probe's sprite-aim (`AI_005` `:50633-50641`).
+            | NpcKind::TheDestroyer
+            | NpcKind::TheDestroyerBody
+            | NpcKind::TheDestroyerTail
+            | NpcKind::Probe
+            // S1-D-3 W-9 fishron wiring — the boss's charge aim /
+            // spin rotation (`AI_069`'s rotation tracking,
+            // `NPC.cs:48888-48975`) and the Sharkron pair's dash
+            // tilt (`NPC.cs:35018-35022`/`:35073-35077`).
+            | NpcKind::DukeFishron
+            | NpcKind::Sharkron
+            | NpcKind::Sharkron2
+            // The small-kinds wiring wave: the BlazingWheel's spin
+            // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
+            // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
+            | NpcKind::BlazingWheel
+            | NpcKind::DungeonSpirit
+            // W4-d42 rotation census (research/143 §7) — ONLY the kinds
+            // whose PORTED machines write rotation join. IN: the 578
+            // bug's vx*0.1 (`NPC.cs:67876`, FindFrame), the fairies'
+            // vx*0.1 (`:69838`), the 593 walker's air tilt
+            // (`:75926`/`:75959`), the 603/609 waterfowl's vx*0.1
+            // (`:73870`/`:73802`), the Owl's vx*0.1 (`:73684`), the
+            // BloodSquid's hover Aim tilt (`HoverParams::BLOOD_SQUID`,
+            // `:50643-50646`) and the GoblinShark's spin wrap
+            // (`:68468-68499`, FindFrame). OUT (C# writes exist but the
+            // port's machine does not write yet — they join with their
+            // axis-wiring commits): 594 balloon (`AI_113` `:47919`),
+            // 618 nautilus (`AI_117` `:47248-47430`), 626/627 seahorses
+            // (`AI_118` `:47082`/`:47107`), 621-623 eel chain (`AI_006`
+            // — `is_worm` membership deferred, ANALYSIS deviation 6).
+            // The style-3 walkers (580/582/586/590/591/624/630) write
+            // NONE: `AI_003`'s rotation arms are type-471/427/185/428
+            // local (`:56507`/`:58627-58640`/`:58824-58840`), none of
+            // ours; the style-7 critters and the unwired 111-119 idle
+            // stand-ins write none either.
+            | NpcKind::DD2LightningBug
+            | NpcKind::FairyCritterPink
+            | NpcKind::FairyCritterGreen
+            | NpcKind::FairyCritterBlue
+            | NpcKind::GoldGoldfishWalker
+            | NpcKind::Seagull2
+            | NpcKind::Grebe2
+            | NpcKind::Owl
+            | NpcKind::BloodSquid
+            | NpcKind::GoblinShark
+    )
+}
+
 pub(crate) fn make_npc_assets(atlas: &Atlas) -> NpcAssets {
     NpcAssets {
         slime: npc_tex(atlas, "NPC_1"),
@@ -3451,87 +3568,7 @@ pub(crate) fn draw_npcs(
         } else {
             flip_uv(npc_frame_uv(tex, frame_h, n.frame()), flip_dir > 0)
         };
-        if n.rotation != 0.0
-            && matches!(
-                n.kind,
-                NpcKind::DemonEye
-                    | NpcKind::WanderingEye
-                    | NpcKind::GolemFistLeft
-                    | NpcKind::GolemFistRight
-                    | NpcKind::Goldfish
-                    | NpcKind::Piranha
-                    | NpcKind::Shark
-                    | NpcKind::CaveBat
-                    | NpcKind::JungleBat
-                    | NpcKind::Hellbat
-                    | NpcKind::VoodooDemon
-                    | NpcKind::DevourerHead
-                    | NpcKind::DevourerBody
-                    | NpcKind::DevourerTail
-                    | NpcKind::GiantWormHead
-                    | NpcKind::GiantWormBody
-                    | NpcKind::GiantWormTail
-                    | NpcKind::EaterOfWorldsHead
-                    | NpcKind::EaterOfWorldsBody
-                    | NpcKind::EaterOfWorldsTail
-                    // The wyvern chain (`AI_006`'s `:51878` follower /
-                    // `:52201` head rotations — the same atan2 tilt).
-                    | NpcKind::WyvernHead
-                    | NpcKind::WyvernLegs
-                    | NpcKind::WyvernBody
-                    | NpcKind::WyvernBody2
-                    | NpcKind::WyvernBody3
-                    | NpcKind::WyvernTail
-                    // The saucer family (`Main.cs:24586-24612`) rotates
-                    // about its CENTRE (the `origin = halfSize` draw point
-                    // — the quad the anchors computed sits at that centre,
-                    // the turret's 8 px lower), and the drone rides the
-                    // velocity's folded rotation (`NPC.cs:35220-35229`).
-                    | NpcKind::MartianSaucer
-                    | NpcKind::MartianSaucerTurret
-                    | NpcKind::MartianSaucerCannon
-                    | NpcKind::MartianSaucerCore
-                    | NpcKind::MartianDrone
-                    // The Prime family (`AI_032`'s `rotation = velocity.X / 15`
-                    // and its limbs' dock/aim rotations, `NPC.cs:27689`/
-                    // `:28151`/`:28350`/`:28656`/`:28891`): the head rolls
-                    // with its drift and the limbs aim their "up" along the
-                    // dock or the player.
-                    | NpcKind::SkeletronPrime
-                    | NpcKind::PrimeCannon
-                    | NpcKind::PrimeSaw
-                    | NpcKind::PrimeVice
-                    | NpcKind::PrimeLaser
-                    // The Skeletron hand's dock/strike aim (`AI()`'s
-                    // aiStyle-12 rotation writes, `NPC.cs:22500`/
-                    // `:22508`/`:22559` — B-1 H8, the prime-limb v2
-                    // precedent).
-                    | NpcKind::SkeletronHand
-                    // Betsy's body roll (`AI_110_Betsy`'s `AngleTowards`
-                    // tail, `NPC.cs:62256-62301`) — the C#'s generic draw
-                    // rotates every NPC by `npc.rotation` (`Main.cs:26632`).
-                    | NpcKind::DD2Betsy
-                    // The Destroyer family (`AI_037`'s follower snap +
-                    // velocity tilt, `NPC.cs:50021-50033`/`:50206`) and the
-                    // Probe's sprite-aim (`AI_005` `:50633-50641`).
-                    | NpcKind::TheDestroyer
-                    | NpcKind::TheDestroyerBody
-                    | NpcKind::TheDestroyerTail
-                    | NpcKind::Probe
-                    // S1-D-3 W-9 fishron wiring — the boss's charge aim /
-                    // spin rotation (`AI_069`'s rotation tracking,
-                    // `NPC.cs:48888-48975`) and the Sharkron pair's dash
-                    // tilt (`NPC.cs:35018-35022`/`:35073-35077`).
-                    | NpcKind::DukeFishron
-                    | NpcKind::Sharkron
-                    | NpcKind::Sharkron2
-                    // The small-kinds wiring wave: the BlazingWheel's spin
-                    // (`NPC.cs:24626`/`:24645`, ±0.13/tick) and the Dungeon
-                    // Spirit's aim (`NPC.cs:32753`, the atan2 - 1.57).
-                    | NpcKind::BlazingWheel
-                    | NpcKind::DungeonSpirit
-            )
-        {
+        if n.rotation != 0.0 && npc_rotation_allowed(n.kind) {
             // `Main.DrawNPC` draws every NPC at its centre with
             // `origin = frame size / 2` and `rotation = npc.rotation`
             // (`NPC.cs` draw pass); the demon eye aims along its flight
@@ -3665,6 +3702,123 @@ pub(crate) fn draw_npcs(
 #[cfg(test)]
 mod anchor_tests {
     use super::*;
+
+    /// W4-d42 rotation census (research/143 §7) — the draw gate CONSUMES
+    /// the writers: the ten IN kinds' ported machines write `rotation`
+    /// (the FindFrame arms / the BloodSquid's hover Aim preset), and
+    /// `npc_rotation_allowed` admits exactly those ten. The 33 OUT
+    /// kinds' ported machines write no tilt (the unwired 111-119 idle
+    /// stand-ins included — 594/618/626/627 join with their axis-wiring
+    /// commits) and stay OUT even with a rotation forced on.
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_the_rotation_gate_consumes_the_writers() {
+        // The FindFrame writers: run the real machine arms.
+        for (kind, vx, vy) in [
+            (NpcKind::DD2LightningBug, 3.0f32, 1.0f32),
+            (NpcKind::FairyCritterPink, -2.0, 1.0),
+            (NpcKind::FairyCritterGreen, 2.0, 0.0),
+            (NpcKind::FairyCritterBlue, -3.0, 0.0),
+            (NpcKind::Owl, 2.5, 1.0),
+        ] {
+            let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            n.vx = vx;
+            n.vy = vy;
+            n.find_frame();
+            // The vx*0.1 tilt (`NPC.cs:67876` 578, `:69838` the fairies,
+            // `:73684` the Owl).
+            assert!(
+                (n.rotation - vx * 0.1).abs() < 1e-6,
+                "{kind:?}: the machine writes vx*0.1"
+            );
+            assert!(npc_rotation_allowed(kind), "{kind:?}: the gate admits it");
+            // The gate + non-zero rotation is exactly the draw's rotated-path
+            // condition (`n.rotation != 0.0 && npc_rotation_allowed(kind)`).
+            assert!(n.rotation != 0.0 && npc_rotation_allowed(n.kind));
+        }
+        // The 593 walker's air tilt (`NPC.cs:75957-75959`: vy > 4 only).
+        let mut n = Npc::new(NpcKind::GoldGoldfishWalker, 100.0, 100.0, 1, 0.0);
+        n.vy = 5.0;
+        n.rotation = 0.2;
+        n.find_frame();
+        assert!((n.rotation - (0.2 - 5.0 * 0.01)).abs() < 1e-6, "the -= vy*0.01 air tilt");
+        assert!(npc_rotation_allowed(NpcKind::GoldGoldfishWalker));
+        // Grounded zeroes it (`:75926`).
+        n.vy = 0.0;
+        n.find_frame();
+        assert_eq!(n.rotation, 0.0, "the grounded zero");
+        // The 603/609 waterfowl's fly tilt (`NPC.cs:73870`/`:73802`): dry +
+        // moving = vx*0.1; wet or standing zeroes it (`:73860`/`:73866`).
+        for kind in [NpcKind::Seagull2, NpcKind::Grebe2] {
+            let mut n = Npc::new(kind, 100.0, 100.0, 1, 0.0);
+            n.vx = 2.0;
+            n.find_frame();
+            assert!((n.rotation - 0.2).abs() < 1e-6, "{kind:?}: the fly tilt");
+            assert!(npc_rotation_allowed(kind));
+            n.wet = true;
+            n.find_frame();
+            assert_eq!(n.rotation, 0.0, "{kind:?}: the wet zero");
+        }
+        // The GoblinShark's spin wrap (`NPC.cs:68463-68475`): the wet arm
+        // lerps rotation towards the direction-folded atan2 by /5.
+        let mut n = Npc::new(NpcKind::GoblinShark, 100.0, 100.0, 1, 0.0);
+        n.wet = true;
+        n.vx = 3.0;
+        n.vy = 1.0;
+        n.find_frame();
+        let num43 = (1.0f32).atan2(3.0);
+        assert!(
+            (n.rotation - num43 / 5.0).abs() < 1e-6,
+            "the (rot*4 + atan2)/5 lerp from zero"
+        );
+        assert!(npc_rotation_allowed(NpcKind::GoblinShark));
+        // The BloodSquid's hover Aim writer is witnessed in
+        // npc_ai::tests::w4_d42_the_blood_squid_hover_writes_the_aim_tilt
+        // (the `HoverParams::BLOOD_SQUID` preset, `NPC.cs:50643-50646`).
+        assert!(npc_rotation_allowed(NpcKind::BloodSquid));
+        // The 33 OUT kinds: the gate refuses them even with a non-zero
+        // rotation forced on (their ported machines never write one — a
+        // forced value must not leak into a rotated draw). 594/618/626/627
+        // have C# writers (AI_113/117/118) but their port arms are the
+        // unwired `{}` stand-ins — they join with the axis wiring.
+        for kind in [
+            NpcKind::BartenderUnconscious,
+            NpcKind::WalkingAntlion,
+            NpcKind::LarvaeAntlion,
+            NpcKind::ZombieMerman,
+            NpcKind::TorchZombie,
+            NpcKind::ArmedTorchZombie,
+            NpcKind::WindyBalloon,
+            NpcKind::BlackDragonfly,
+            NpcKind::BlueDragonfly,
+            NpcKind::GreenDragonfly,
+            NpcKind::OrangeDragonfly,
+            NpcKind::RedDragonfly,
+            NpcKind::YellowDragonfly,
+            NpcKind::GoldDragonfly,
+            NpcKind::Seagull,
+            NpcKind::Grebe,
+            NpcKind::Rat,
+            NpcKind::WaterStrider,
+            NpcKind::GoldWaterStrider,
+            NpcKind::ExplosiveBunny,
+            NpcKind::Turtle,
+            NpcKind::TurtleJungle,
+            NpcKind::BloodNautilus,
+            NpcKind::BloodEelHead,
+            NpcKind::BloodEelBody,
+            NpcKind::BloodEelTail,
+            NpcKind::Gnome,
+            NpcKind::SeaTurtle,
+            NpcKind::Seahorse,
+            NpcKind::GoldSeahorse,
+            NpcKind::Dandelion,
+            NpcKind::IceMimic,
+            NpcKind::BloodMummy,
+        ] {
+            assert!(!npc_rotation_allowed(kind), "{kind:?}: OUT");
+        }
+    }
 
     /// fix/player-motion-blur — the entity-snapping invariant: an unrotated
     /// sprite's top-left lands on a WHOLE screen pixel at every zoom, even

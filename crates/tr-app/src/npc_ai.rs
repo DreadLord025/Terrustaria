@@ -1250,6 +1250,37 @@ mod tests {
             "the Hornet must not ship type 205's constants"
         );
     }
+
+    /// W4-d42 rotation census (research/143 §7) — the BloodSquid's (619)
+    /// hover step WRITES the Aim tilt (`HoverParams::BLOOD_SQUID`,
+    /// `NPC.cs:50643-50646`: `rotation = atan2(num5, num4) - 1.57f`), the
+    /// writer `render::entities::npc_rotation_allowed` admits. The aim is
+    /// the 8-px-snapped target vector at the num=6 speed (`:50418-50426`).
+    /// WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn w4_d42_the_blood_squid_hover_writes_the_aim_tilt() {
+        let w = World::new("t".into(), 200, 200);
+        let mut n = Npc::new(NpcKind::BloodSquid, 160.0, 160.0, 1, 0.0);
+        let target = HoverTarget {
+            center_x: 400.0,
+            center_y: 240.0,
+            top_y: 220.0,
+            dead: false,
+        };
+        hover_step(&mut n, &w, target, HoverParams::BLOOD_SQUID);
+        // The aim: snap8(400) - snap8(160 + 44/2) = 400 - 176 = 224;
+        // snap8(240) - snap8(160 + 44/2) = 240 - 176 = 64 (the 44x44 box
+        // — `SetDefaults` 619, `NPC.cs:16937-16938`).
+        let (ax, ay) = (224.0f32, 64.0f32);
+        let len = (ax * ax + ay * ay).sqrt();
+        let want = (ay * 6.0 / len).atan2(ax * 6.0 / len) - 1.57;
+        assert!(
+            (n.rotation - want).abs() < 1e-5,
+            "the Aim tilt: got {} want {want}",
+            n.rotation
+        );
+        assert_ne!(n.rotation, 0.0);
+    }
 }
 
 

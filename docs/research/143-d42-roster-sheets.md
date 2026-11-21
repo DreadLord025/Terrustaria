@@ -161,7 +161,56 @@ delta.
 - The eight dropped kinds' sheets (581/587/592/604/605/606/607/615) are
   NOT d42 demand — c4/c4b/e26b/c8 own them (all already in the union).
 
-## 7. Reproduce
+## 7. The rotation write-census (the whitelist input, Phase 1b)
+
+Mechanical scan (`decompiled/Terraria/NPC.cs` FindFrame cases + the
+`AI_<style>_*` functions, cross-checked against the port's `find_frame`
+arms and `update_kind_ai`): which of the 43 kinds' machines write
+`rotation`, and which of those the PORT writes today.
+
+**IN — the ported machine writes rotation (10 kinds, the gate admits):**
+
+| kind(s) | id | writer | C# cite | port site |
+|---|---|---|---|---|
+| DD2LightningBug | 578 | `rotation = vx*0.1` | FindFrame `:67876` | `npc.rs` find_frame arm |
+| FairyCritterPink/Green/Blue | 583-585 | `rotation = vx*0.1` | FindFrame `:69838` | find_frame arm |
+| GoldGoldfishWalker | 593 | grounded `= 0`; air `vy>4`: `-= vy*0.01` | FindFrame `:75926`/`:75959` | find_frame arm |
+| Seagull2 | 603 | wet/stand `= 0`; fly `= vx*0.1` | FindFrame `:73860-73870` | find_frame arm |
+| Grebe2 | 609 | same shape | FindFrame `:73792-73802` | find_frame arm |
+| Owl | 611 | `rotation = vx*0.1` | FindFrame `:73684` | find_frame arm |
+| BloodSquid | 619 | hover Aim tilt `atan2(aim)-1.57` | `AI_005` `:50643-50646` | `HoverParams::BLOOD_SQUID` → `hover_step` |
+| GoblinShark | 620 | wet atan2 lerp `(rot*4+num43)/5` + wrap; dry decay `*0.9` | FindFrame `:68463-68503` | find_frame arm |
+
+**OUT — C# writers exist but the port's machine does not write yet (join
+with their axis-wiring commits):**
+
+| kind(s) | id | C# writer | why OUT now |
+|---|---|---|---|
+| WindyBalloon | 594 | `AI_113` `:47919` `vx*0.05` | style-113 unwired (`{}` stand-in) |
+| BloodNautilus | 618 | `AI_117` `:47248-47430` (AngleTowards/AngleLerp aim ladder) | style-117 unwired |
+| Seahorse/GoldSeahorse | 626/627 | `AI_118` `:47082` `+= (vx+vy)/2*0.05` air spin, `:47107` `vx*0.1` | style-118 unwired |
+| BloodEelHead/Body/Tail | 621-623 | `AI_006` `:51878`/`:52201` atan2+1.57 | `is_worm` membership deferred (ANALYSIS deviation 6) |
+
+**OUT — no rotation writer anywhere in the kind's C# machine:**
+579 (style 0 bound stand), 580/582/586/590/591/624/630 (style 3 — the
+`AI_003` rotation arms `:56507`/`:58627-58640`/`:58824-58840` are
+type-471/427/185/428-local, none of ours), 595-601 (style 114 —
+`AI_114` + FindFrame `:72722-72738` write none), 602/608 (style-7 walk
+FindFrame `:73819`/`:73747`), 610/614/616/617/625 (style 7), 612/613
+(style 116 — `AI_116` + FindFrame `:69773-69834` write none), 628
+(style 119), 629 (style 25 chest — the inline block `:25538-25630`
+writes none). The inline style-7/24/68 blocks (`:20812`/`:25313`/
+`:34623`) write none either (the Owl's tilt is FindFrame-side).
+
+The draw gate is extracted as `render::entities::npc_rotation_allowed`
+(the d38c pattern — behaviour unchanged for the pre-existing members)
+and gains exactly the ten IN kinds. Witnesses (WRITTEN NOT RUN,
+code-only): `render::entities::anchor_tests::w4_d42_the_rotation_gate_consumes_the_writers`
+(the FindFrame writers run the real arms; the 33 OUT kinds refused) +
+`npc_ai::tests::w4_d42_the_blood_squid_hover_writes_the_aim_tilt` (the
+hover Aim writer's snapped-vector value).
+
+## 8. Reproduce
 
 ```
 node tools/_d42_sheets.js --json tools/_d42_sheet_inventory.json
