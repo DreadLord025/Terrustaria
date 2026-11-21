@@ -480,7 +480,7 @@ pub fn item_tooltip_lines(
         };
         lines.push((row, [1.0, 1.0, 1.0, 1.0]));
     }
-    // `:20876-20893` — the life / mana restore rows (the Restoration Potion
+    // `:20876-20893` — the life / mana restore rows (the Strange Brew
     // 3001 prints the RANGE form).
     if d.heal_life > 0 {
         lines.push((

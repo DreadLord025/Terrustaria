@@ -781,8 +781,8 @@ pub fn equipable_row(kind: u16, npc_shop: bool) -> String {
     }
 }
 
-/// The life-restore row (`Main.cs:20876-20887`): the Restoration Potion
-/// 3001 prints the RANGE form (its own healLife..120).
+/// The life-restore row (`Main.cs:20876-20887`): the Strange Brew 3001
+/// prints the RANGE form (its own healLife..120).
 pub fn restores_life_row(kind: u16, heal_life: i32) -> String {
     if kind == 3001 {
         tr_core::localization::format_net(
@@ -905,7 +905,7 @@ mod w4_f28_tests {
                               "ArmorStatue": "Armor Statue",
                               "LivingWoodWand": "Living Wood Wand",
                               "StrangeBrew": "Strange Brew",
-                              "SlimeStaff": "Slime Staff", "FireWhip": "Flamarang",
+                              "SlimeStaff": "Slime Staff", "FireWhip": "Fire Whip",
                               "FalconBlade": "Falcon Blade",
                               "IronBroadsword": "Iron Broadsword",
                               "GravityGlobe": "Gravity Globe",
@@ -1055,6 +1055,9 @@ mod w4_f28_tests {
         };
         let rows = item_tooltip_lines(1127, def(1127), ctx);
         assert!(texts(&rows).contains(&"Burns you when touched without special protection"));
+        // The FTW row stays off in a plain world.
+        let rows = item_tooltip_lines(1127, def(1127), TooltipContext::default());
+        assert!(!texts(&rows).contains(&"Burns you when touched without special protection"));
         // The DD2 popper 3818 warns until the crystal has been defended.
         let warning = crate::lang::misc(104);
         let rows = item_tooltip_lines(3818, def(3818), TooltipContext::default());
@@ -1205,8 +1208,8 @@ mod w4_f28_tests {
 
     /// W4-f28 — the damage gate's coin-gun arm (`Main.cs:20669`): the
     /// Copper Coin's damage row appears only while the player carries the
-    /// Coin Gun 905; the Restoration Potion's life row prints the RANGE
-    /// form (`:20878-20882`).
+    /// Coin Gun 905; the Strange Brew's life row prints the RANGE form
+    /// (`:20878-20882`).
     #[test]
     fn w4_f28_the_coin_gun_gate_and_the_range_restore() {
         let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -1225,7 +1228,7 @@ mod w4_f28_tests {
 
     /// W4-f28 — the use-time row's whip gate (`Main.cs:20717`): the Slime
     /// Staff (summon, projectile 266 — no whip) prints NO use-time row;
-    /// the Flamarang 4912 (whip 913) does.
+    /// the Fire Whip 4912 (whip 913) does.
     #[test]
     fn w4_f28_the_summon_use_time_row_needs_a_whip() {
         let _g = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
@@ -1267,23 +1270,26 @@ mod w4_f28_tests {
         let rows = item_tooltip_lines(18, def(18), ctx);
         let fixed = format!("+1{}", crate::lang::tip(25));
         assert!(texts(&rows).contains(&fixed.as_str()), "{:?}", texts(&rows));
-        // The Warding 65… no — the Lucky 66: "+20 " + tip[31] (the space).
+        // The Arcane 66 accessory prefix: "+20 " + tip[31] (the literal
+        // carries the trailing space, `:21178`).
         let ctx = TooltipContext { prefix: 66, ..Default::default() };
         let rows = item_tooltip_lines(18, def(18), ctx);
         let fixed = format!("+20 {}", crate::lang::tip(31));
         assert!(texts(&rows).contains(&fixed.as_str()), "{:?}", texts(&rows));
-        // The Menacing 85 accessory prefix: +10 armor penetration, the
-        // {0:+0;-#} format; the tag damage row for the whips.
+        // The Fabled 85 accessory prefix: +10 armor penetration, the
+        // {0:+0;-#} format; the +3 summon tag damage row.
         let ctx = TooltipContext { prefix: 85, ..Default::default() };
         let rows = item_tooltip_lines(18, def(18), ctx);
         assert!(texts(&rows).contains(&"+10 armor penetration"), "{:?}", texts(&rows));
         assert!(texts(&rows).contains(&"+3 summon tag damage"), "{:?}", texts(&rows));
         // The Master row (`:21027`): the master trophy 4924 (rare −13)
-        // prints it; a prefix shifts the instance rare off −13 (the
-        // shift_rare clamp skips ≤ −11) and the row drops.
+        // prints it; the Guarding 63 prefix (×1.1 value ≥ 1.05) shifts the
+        // instance rare −13 → −12 (the shift_rare clamp skips ≤ −11) and
+        // the row drops. (The ×1.05 tier stays put — `1.05f` is
+        // 1.04999995 < 1.05, the `shift_rare` doc's quirk.)
         let rows = item_tooltip_lines(4924, def(4924), TooltipContext::default());
         assert!(texts(&rows).contains(&"Master"), "{:?}", texts(&rows));
-        let ctx = TooltipContext { prefix: 62, ..Default::default() };
+        let ctx = TooltipContext { prefix: 63, ..Default::default() };
         let rows = item_tooltip_lines(4924, def(4924), ctx);
         assert!(!texts(&rows).contains(&"Master"), "the prefix shifted rare off −13");
     }
@@ -1303,10 +1309,11 @@ mod w4_f28_tests {
         // 25 × 1.5 = 37.5 → 37.
         let damage = crate::lang::tip(2);
         assert!(texts(&rows).contains(&format!("37{damage}").as_str()), "{:?}", texts(&rows));
-        // The use-site charge: +0.12 capped at 0.62.
+        // The use-site charge: +0.12 capped at 0.62; the damage read uses
+        // the PRE-charge bonus (min(0.55, 0.5) = 0.5 → 25 × 1.5 = 37).
         p.rapid_attack_bonus = 0.55;
         let out = p.apply_rapid_attack_bonus(25, 2608, true);
-        assert_eq!(out, 38); // 25 × 1.55 = 38.75 → 38 (the PRE-charge read)
+        assert_eq!(out, 37);
         assert!((p.rapid_attack_bonus - 0.62).abs() < 1e-6, "the 0.62 cap");
         // A non-member passes through.
         assert_eq!(p.apply_rapid_attack_bonus(12, 4, true), 12);

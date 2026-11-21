@@ -12062,7 +12062,9 @@ per-item halves вЂ” see "The item tooltip rows (S1-E-20)" below):
   nine doubled ids ride a small table (`ItemID.cs:492`).
 - `notAmmo` is still not ported (no field), so the damage row's gate is the
   plain `damage > 0` (the coin-type exception and the ammo gate ride along
-  when the field lands).
+  when the field lands). **CLOSED (W4-f28)**: the field landed in GenItemData;
+  the gate repairs + the second half ride `tooltip_lines2.rs` — see "The
+  tooltip lines' second half (W4-f28)" below.
 - The line geometry (`tooltip_box_rect`, the `(14, 9)` inset, the shadow
   copies) is unchanged вЂ” only the row list changed.
 - Without the shipped `Terraria.Localization.Content.*.json` (the gitignored
@@ -12095,7 +12097,8 @@ Deviations:
   to `Main.mouseItem` (`Main.CraftItem_GrantItem`, `Main.cs:42607-42612`) and
   the tooltip reads that; the port's tooltip reads the hovered slot directly.
 - **The favourite / social rows are out** (`Main.cs:20646-20658`): the
-  tooltip has no favourite or social state to read.
+  tooltip has no favourite or social state to read. **CLOSED (W4-f28)**:
+  `HoverFlags` carries the `MouseHover` context stamps + the favourite flag.
 - **The shop and upgrade rows are out** (`MouseText_DrawItemTooltip_AddShopLines`,
   `Main.cs:20362`): the port's shop tooltip has no such rows.
 - **The bulk-buy / bulk-craft stack arms are out** (`ItemSlot.EstimateDisplayStack`,
@@ -12104,6 +12107,108 @@ Deviations:
   (`Lang.cs:150-161` в†’ `PlayerInput.GenerateRawInputList`,
   `PlayerInput.cs:1948`): the port has no gamepad glyph list, so the
   keyboard's key names stand in.
+
+## The tooltip lines' second half (W4-f28, 2026-11-21)
+
+`Main.MouseText_DrawItemTooltip_GetLinesInfo`'s tail (`Main.cs:20937-21342`)
+and the first half's gate repairs land in `crates/tr-app/src/ui/tooltip_lines2.rs`
+(the `append_second_half` seam + the shared gate helpers `tooltip.rs` calls).
+Code-only mode: no compiler invoked; 13 witnesses in `w4_f28_tests` WRITTEN
+NOT RUN, plus 3 in `tr-core`'s `format.rs` `w4_f28_tests`.
+
+What lands:
+
+- **The ItemDef flags** (`tools/GenItemData/gen.py`, regenerated): `expert`,
+  `hasVanityEffects`, `tileWand`, `notAmmo`,
+  `chlorophyteExtractinatorConsumable` — the `ResetStats` stock
+  (`Item.cs:48951/:48955/:48966/:48967/:49008`) plus the
+  `DefaultToInfoAccessory`/`DefaultToMusicBox`/`DefaultToGolfBall`/
+  `MakeUsableWithChlorophyteExtractinator` helper writes. The FNV freeze pin
+  re-derived (`itemdata_freeze.rs`, `0x1dd2_84fc_4b36_2f46`); the two
+  hand-written `ITEM_CORRECTIONS` rows carry the stock values.
+- **The second-half rows**: Wireable (`TileID.Sets.Wiring.IsATrigger` /
+  `IsAMechanism` — the generated `SET_IS_A_TRIGGER`/`SET_IS_A_MECHANISM`
+  bitsets — with the tile-105 `IsWireableStatue` exception, `ItemID.cs:1581`),
+  Container (tiles 21/467), WireTrigger (441/468), the cursed-by-Plantera
+  first-line swap (`UsesCursedByPlanteraTooltip`, `ItemID.cs:410`), the
+  anniversary Wizard Hat / FTW Crispy Honey rows, the Mechdusa summon
+  tail-replacement (`numLines--` arms, `:20983-20999`), the DD2 crystal-gear
+  warning (`Lang.misc[104]`), the well-fed expert row (`Lang.misc[40]`,
+  `BuffID.Sets.IsWellFed`), the buff-duration row (the INTEGER `/60` first,
+  then `Math.Round` banker's on the f64 quotient), the yoyo " " placeholder
+  (the 11 kinds, `:21016`), Expert (`GameUI.Expert`) and Master
+  (`GameUI.Master`, the INSTANCE rare — a prefix shifts −13 off and the row
+  drops, the `shift_rare` ≤ −11 clamp skip).
+- **The prefix comparison rows** (`:21032-21266`): each stat delta against
+  the fresh `SetDefaults` row through `prefix::prefixed_stats`, `Math.Round`
+  banker's on the f64 percentage, the `+` sign only on the positive arm, the
+  (190,120,120)/(120,190,120) colour pair with the MANA row's inversion; the
+  knockback row's `oldKB` is the instance knockback captured at `:20333`
+  BEFORE the draw pass's glove/buff/shroomite scaling; the armor-penetration
+  / tag-damage rows use the `{0:+0;-#}` section format (new in
+  `tr-core/src/localization/format.rs::apply_format_spec` — the .NET
+  positive;negative;zero section grammar with the digit-overflow prepend);
+  the accessory fixed rows 62-80 (the "+20 " literal's trailing space kept).
+- **The armor set-bonus row** (`:21267-21311`): the wave-D `armor_sets`
+  table's `tooltip_for_single_piece` (grey, alpha 190) unworn and
+  `best_worn_set` + `tooltip_for_worn_armor` (LimeGreen complete / grey
+  partial) worn.
+- **The first-half gate repairs**: the damage gate's `notAmmo`/`useStyle`
+  exclusion and the coin-gun `HasItem(905)` 58-slot scan (`:20669`); the
+  use-time row's summon-whip gate (`ProjectileID.Sets.IsAWhip`, `:20717`);
+  the knockback display chain's quiver/stake ×1.1 INT truncation and the
+  Psycho Knife 3106 self-hold stealth arm (`:20753-20765`); the equipable
+  row's shopping tip[60] swap (854/3035, `:20818`); the tile-wand row
+  (tip[52] + `Lang.GetItemNameValue`, `:20828`); the Strange Brew 3001
+  `RestoresLifeRange` form (`:20878`); the place/ammo/consumable ladder's
+  `PlaceTileOnAltUse` (`ItemID.cs:412`), `notAmmo` and extractinator
+  exclusions (`:20919-20936`); the favourite rows (tip[56]/[57] + the
+  bank-blocked notice, `ChestUI.cs:1291-1302`) and the social row (tip[61],
+  the `hasVanityEffects` exclusion).
+- **The prefixed-instance stats**: the stat rows read
+  `prefix::prefixed_stats(kind, prefix)` (the C#'s HoverItem IS the prefixed
+  instance), the crit row `Item.GetVisualCritChance` (the Revolver 2269's
+  charging bonus clamped [0,100]), the damage row the rapid-attack scale
+  (`Player.ApplyRapidAttackBonus`'s read-only half — `min(bonus, 0.5)` behind
+  the {2608, 3349, 672} set guard; the field + the 0.005/tick `ResetEffects`
+  decay land on `Player`, no use-site grants it yet).
+- **The name colour**: the expert −12 disco override (`Main.DiscoR/G/B`,
+  the existing `advance_disco` cycle) and the −13 master pulse
+  (`(255, (byte)(masterColor * 200), 0)` — the `master_color`/`master_color_dir`
+  animator lands on App, `DoUpdate_AnimateCursorColors`' ±0.05 half).
+- **The draw wiring**: `draw_hud` takes a `TooltipWorld` (the App fills
+  expert_mode/downed latches/seed flags/master/disco; `npc_shop` from the
+  shop panel), the hover's `HoverFlags` (favourite from `favorite_slots`,
+  wornArmor for armor[0..3), social for armor[10..20) — the `MouseHover`
+  context stamps), the inventory slice + held kind + open chest. The line
+  tint's byte multiply now TRUNCATES per channel (`(byte)(c * num2)`,
+  `:20406`) — the set-bonus row's 190 alpha does not survive, every line
+  draws at the tint.
+
+Deferred, cited:
+
+- **The loadout-share rows** (`:20638-20654`, `:21312-21317`): no loadout
+  system (`ItemSlot.canLoadoutShareAt`/`GetSharedLoadoutItem` unported).
+- **The Journey research rows** (`:21318-21333`): no session sacrifice
+  tracker wired (`research.rs`'s `ResearchTracker` exists but no App field
+  feeds it; the `tooltipContext` whitelist rides the loadout port).
+- **The bestiary-notes rows** (`:21334-21342`): `Item.BestiaryNotes`' only
+  writer is `UIBestiaryInfoItemLine.SetBestiaryNotesOnItemCache`
+  (`UIBestiaryInfoItemLine.cs:137-156`), whose hover line is unported; the
+  field rides `HoverFlags.bestiary_notes` for that port.
+- **The shop lines** (`MouseText_DrawItemTooltip_AddShopLines`,
+  `:20448-20555`): the recorded S1-P-i44 chrome follow-up (the
+  `display_price_row` helper stays pinned by its golden vectors).
+- **`NewCraftingUI.AddTooltipLines`** (`:20363-20366`): the crafting panel's
+  own rows ride the crafting UI port.
+- **The yoyo-logo draw arm** (`:20408-20439`): the " " placeholder row is
+  emitted and its index returned; the OneDropLogo texture pass (the 5-copy
+  shadow + the tinted logo) is render work.
+- **The `diff` 1/2 name colours** (`GetItemNameColor` `:20620-20627`): the
+  medium/hardcore character colours — the tooltip call always passes 0.
+- **The `RapidAttackBonusDamage` use-site grant**: the item-use wave's
+  rapid-attack arm is unported, so `rapid_attack_bonus` reads 0 in the sim
+  (the C# between swings); the tooltip read + the decay are live.
 
 
 ## Tile sections (M6-NET-3)
