@@ -39353,3 +39353,58 @@ stream-agnostic — the wiring wave hands the runtime `world.frame_rng`
 Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify
 invoked** (user directive). The 24 witnesses (7 + 7 + 10) are owed a
 compile window before merge.
+
+## W4-d54j orchestrator dispatch router (2026-11-21, code-only)
+
+`orch_dispatch.rs::spawn_orchestra_d54` completes the d54 half of the
+`SpawnParticlesDirect` port (`ParticleOrchestrator.cs:162-416`): the
+24-arm d54j catalog (28 kind bytes — the recharge trio 81/80/79 shares
+one InvokedPlayer-gated arm, 50/60 share RainbowBoulder4 with the pet
+flag, 58/59 share Shadowbeam with the hostile flag). The phase-1
+skeleton (8 arms) landed `e4671580c`; this round adds the remaining 16
+routing destinations + the four line-emitter wrappers
+(UFOLaser/MagnetSphereBolt/HeatRay/Shadowbeam, `:1950-1994`) on the
+batch-7 `spawn_in_line`/`single_line_dust` helpers. Full route table +
+contracts: research/370 (registry-150 §9 assignment — the 355
+provisional self-pick renumbered 355→370, d11 keeps 355; rename
+EXECUTED at this landing).
+
+Deliberate deviations (each cited in the module):
+
+1. **Merger composition.** This module IS the `_ => {}` arm of e4's
+   `spawn_orchestra` (`orchestrator_dust.rs:775`). Kind sets are
+   DISJOINT (e4: 1/3/5/7/8/9/12/13/14/15/25/37/55/72/77); the merge
+   composes ONE dispatch — never both routers for one kind. Keep-ones
+   owed: `D54Settings`→e4's `OrchestraSettings`, `d54_kind`→e4's
+   `orchestra_kind`.
+2. **StormLightning seam without an extra parameter.** The C#'s `:1038`
+   `settings.PositionInWorld = EndPosition` write-back is modelled as
+   the CALLER pre-resolving the bolt end into `settings.position`
+   before the drain (the router keeps the 9-parameter shape); the
+   camera-punch NextFloat (`:1041`) + `Main.NewLightning` thunder draws
+   (`Main.cs:58712-58726`) stay the caller's ordered draws.
+3. **Player resolution slice.** `players: &[Option<&Player>]` models
+   `Main.player` for the SP port: the recharge trio + LoadoutChange
+   resolve `settings.invoker` (LoadoutChange also gates `player.active`
+   — a `None` slot draws nothing); ShieldHit's two indices ride the
+   truncated position components through `Utils.IndexInRange`
+   (`Utils.cs:2441-2448`, `0 <= i < len`). LoadoutChange's Hitbox reads
+   truncate to ints (`Entity.getRect`) and `gravDir` folds to 1 (the
+   port has no gravity flip).
+4. **Router draws NOTHING itself** — every draw belongs to the routed
+   body on the caller's pass stream (S1-A-10); settings argument draws
+   run inline at the queue site (the e4 S1-E-21c convention). The
+   module is LATENT (`#![allow(dead_code)]`) until the queue-drain
+   wiring (`netmodules.rs:447`'s Particles drop / e4's pending_orchestra
+   shape).
+5. **Flint empty-world pin**: kind 41 with no tile hit returns before
+   the 30-dust tail (`:1874`) — zero draws, witnessed.
+
+7 witnesses WRITTEN NOT RUN (arm-count pin incl. the Flint early
+return + 29 unported strays, armlet draw-order replay, line-wrapper
+step ledger, TownSlimeTransform info switch, LoadoutChange active gate,
+ShieldHit index resolution, StormLightning delegation parity).
+research/131 §8.2 corrections landed in the same round: named machines
+87+36→79+36, Kill()-remainder-234 CLOSED (g65 406=399+7, 316-kind FINAL
+drain), e4 UNWIRED→WIRED (wiring batches 5-8 through SEAL `c38af30f3`).
+No cargo/tests/rustfmt/graphify invoked.

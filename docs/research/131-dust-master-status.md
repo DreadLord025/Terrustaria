@@ -56,7 +56,7 @@ work each lane still owes.
 | g12 | task/W4-g12-dust-main-sites-2 | `665cd1e8` | main_dust_b.rs sites 9-16 (teleport cases 10/11/13 STAGED + bone-arm puffs 22744/22820 + Moon Lord flag8 trio 24736/24748/24752), 7 witnesses, UNWIRED |
 | g13 | task/W4-g13-dust-main-sites-3 | `15fd99c9` | main_dust.rs sites 17-23 WIRED (draw-call feeds + DrawnThisUpdate relocation + item-sparkle 16px light-box fix + retro/Moon-Lord witness fixes), 18 witnesses |
 | g61 | task/W4-g61-npc-spawn-dust | `a9628928` | npc_spawn_visuals.rs — widest teleport (11 styles + pylon 9 + NPC driver + per-tick visuals + alt-texture) + spawn family, UNWIRED, 18 witnesses; particles.rs DustRng generalisation |
-| e4 | task/W4-e4-dust-sites-world-2 | `2a79551a` | orchestrator_dust.rs (orch 41-61, 9 witnesses) + mount_dust.rs (Mount 1-19, 10 witnesses), UNWIRED; lane complete 40/40 |
+| e4 | task/W4-e4-dust-sites-world-2 | `2a79551a` → SEAL `c38af30f3` | orchestrator_dust.rs (orch 41-61, 9 witnesses) + mount_dust.rs (Mount 1-19, 10 witnesses); **orch WIRED** (wiring batches 5-8 `ed7fff13e`/`1ac20a4c7`/`95d1a036d`/`e7bb2ff1d` — spawn_orchestra dispatch + pending_orchestra queue/drain + hit switch + post-strike chain + ClassyCane inline + FlameWaders/mount seams; the mount half DROPS to f6 per §8.3); lane complete 40/40 |
 | f6 | task/W4-f6-dust-world-3 | `0f9fd642f` (gap-closure re-read; was `5daa1d70`) | mount_dust.rs ALL 27 Mount sites + batch-4 world_dust.rs 13 sites + **the wiring wave 1-6 LANDED** (spawn/dismount channel, frame extras, UpdateEffects, chest/poof, pylon/void-lens, lava bubbles + the borrow fix) — **ALIVE, 3 unpushed local commits** incl `76aeaf3c3` consuming this doc's §7.1 atan2 hunk (§5 row 3 RESOLVED-LOCAL) |
 | g63 | task/W4-g63-proj-trail-dust-1 | `b1e78b19` | projectile_trail_dust.rs — rowed inline-machine kinds ≤400 re-armed end-to-end, WIRED via update_dust from world_sim/projectiles.rs, 19 witnesses |
 | g64 | task/W4-g64-proj-trail-dust-2 | `77616a7d` | proj_trail_dust.rs — kinds >400 superset, 42 emitters + 16 re-armed call sites on the UpdateProjectiles stream (WIRED), 44 witnesses; particles.rs DustRng generalisation (second copy) |
@@ -113,7 +113,7 @@ witnesses supplement minus the poof/pylon/splash duplicates.
 | ---- | -------------- | ------ |
 | `tr-app/mount_dust.rs` | **f6's superset (ALL 27 sites)** — CONFIRMED from tips: f6 `5daa1d70` carries batches 1-3 (10+10+7) incl. the lava-cart 5099 / pixie 5149 / failed-dismount 6339 / DoSpawnDust wolf-chillet-generic 6382-6493 + FairyQueen colour helper; e4's 19 are a subset (bodies spot-equivalent, research/66 §2). e4's mount-name correction stands (44=PirateShip, 45=SpookyWood — f6's names right) | e4's file DROPS at merge; its 10 witnesses supplement where f6's 24 don't pin the draws |
 | f6 `drill_beam_dust` atan2 | **STILL F32 at f6 tip** (`d.y.atan2(d.x)`, verified `5daa1d70`) — the double-atan2 fix (e4's caller-passes-aim shape, `Utils.ToRotation` = `(float)Math.Atan2` DOUBLE) is OUTSTANDING, owed at the mount resolve | one-edit fix + witness re-pin |
-| `tr-app/orchestrator_dust.rs` (e4) | **KEEP whole** — orch 41-61 DISJOINT from d54's 1-40 (boundary 2582/2653 verified, research/66 §2); the 272-draw RainbowRodHit pin is the prefix.rs count-only fold authority | UNWIRED; the prefix.rs fold is wiring-wave (never both — double-draw risk) |
+| `tr-app/orchestrator_dust.rs` (e4) | **KEEP whole** — orch 41-61 DISJOINT from d54's 1-40 (boundary 2582/2653 verified, research/66 §2); the 272-draw RainbowRodHit pin is the prefix.rs count-only fold authority | **WIRED on e4** (wiring batches 5-8: spawn_orchestra + queue/drain + hit/post-strike/kill/tag/ClassyCane/FlameWaders/mount seams, `ed7fff13e`..`e7bb2ff1d`); the prefix.rs fold LANDED as the reforge keep-one (count-only stays the reforge tail's ONE path — never both, double-draw risk). d54's 1-40 dispatch = `orch_dispatch.rs::spawn_orchestra_d54` (the `_ => {}` arm's d54 half, research/370) — LATENT until the queue-drain wiring |
 
 ### Projectile-trail lane (g63 vs g64 vs e3 — three DISJOINT scopes, one seam family)
 
@@ -561,7 +561,7 @@ research/68 §2, g62's ANALYSIS 629-census). Family =
 | **Main.cs — 23 spawn + 1 CloneDust** | 17 ND + 1 NDP + 5 NDD = 23 (+1 Clone :13410 rides g12's case-10) | g11 sites 1-8 (`98283df08`, snowing DEPRECATED→d130, teleport→dispatcher) + g12 sites 9-16 (`f24dd76ac`) + g13 sites 17-23 (`4444e1011`) | **ZERO** — g13 research/68 §2 + the COMPLETE declaration `4444e1011`; the DrawCapture cull (:56735-56744, non-spawn) ported `1af798478`; DrawDust generic draw = the DRAW lane's remainder, cull+else-kill landed d130 `16a792d56` |
 | **NPC.cs — 927 (+5 Clone = 932)** | 836 ND + 16 NDP + 75 NDD | AI/misc <50000: 159 → d52 (`231b31555`) + e2 (`6e304b960`) + f4 (`0b7b14e29`) per-kind batches; 50000-69999: 87 → e2 batch 5 + d52; spawn/Transform 70000-81653: 12 → g61 (`b5ff1803d` WIRED); **HitEffect :81654-89834: 629** → g62 live halves (`32af98b44`, "0 uncovered live sites" census) + g59/g60 death halves (`29c13d103`/`19431e385`); >89834: 40 → g61 teleport-visuals + buff-VFX lanes (the 235 soul-drain producer UNPORTED — npc_buffs.rs:619 note, G6) | the buff-VFX producers (>90322 remainder) ride their buff lanes (c16-c18/d71-d74); the 2 CloneDust in HitEffect ride g62's ledger |
 | **Player.cs — 215** | 182 ND + 16 NDP + 17 NDD (+4 Clone; e1 counts :24654 in its 40) | d51 26 (`0d0cf7c42`) + e1 40 (`3245d624c`) + g66 trails/wings/boots (`7213f3c71`) + main's recall/mirror 6 + sticky 6 + f48 dodge/parry (`69d499c6b`) + g15 item-use halves + f3 host census (pulley/carpet ZERO sites, `0b11548fb`) | e1's no-host remainder: 36005-36193 SetArmorEffectVisuals (no slot fields), 38873 anniversary death, 39038-39053 KillMe_DustExplosion (armor flags), 43242 rod-of-discord (item lane), 56850/56860/57020 minion rest — each cited with its missing host |
-| **Projectile.cs — 1195** | 890 ND + 112 NDP + 193 NDD (+21 Clone +1 QuickDust) | d53 :16851-22297 43 sites incl. the wet 8 (`6d09fe617`); e3 :22297-24328 42 + Kill_Bombs 15 (`1d26efa94` — 6 wired + 9 staged); f5 :24406-26501 43 (`d0619d8e9`); g63 per-kind ≤400 (`2ea3e7110`, batches 1-7 + the AI_001 remainder emitters); g64 kinds ≥401 + the remainder machines (`625c449e0` — pets-124/813/596 now WIRED); g65 Kill() ≈147 (`7f0dc8649`); main's stubs (rocket_kill_census etc.) | **e3 research/125's unclaimed windows, re-verified at the final tips:** Kill() remainder **234** (g65's continuation — its claim is the whole span); AI() inline **40** minus g64's remainder closures (the pets-124 :35601/:35681 + the 813 :33993/:34005/:34020 window now cited ⇒ ~35 remain, g63/g64 continuation); named machines **87+36** (the named-machine dust wave — unassigned); AI_001 **2** (:56049/:56748, g63 continuation — its batch 7 covered 55/174/176/299/374/376) |
+| **Projectile.cs — 1195** | 890 ND + 112 NDP + 193 NDD (+21 Clone +1 QuickDust) | d53 :16851-22297 43 sites incl. the wet 8 (`6d09fe617`); e3 :22297-24328 42 + Kill_Bombs 15 (`1d26efa94` — 6 wired + 9 staged); f5 :24406-26501 43 (`d0619d8e9`); g63 per-kind ≤400 (`2ea3e7110`, batches 1-7 + the AI_001 remainder emitters); g64 kinds ≥401 + the remainder machines (`625c449e0` — pets-124/813/596 now WIRED); g65 Kill() ≈147 (`7f0dc8649`); main's stubs (rocket_kill_census etc.) | **e3 research/125's unclaimed windows, re-verified at the final tips (d54j corrections applied):** Kill() remainder ~~234~~ **CLOSED** — g65's independent re-scan `f6e07bb90`/`c356cb99c`: 406 sites = 399 NewDust + 7 CloneDust; 393 drain-covered (the FINAL census 316 distinct kinds, the 309/317 counts corrected) + 6 other-lane (442-i16/608-d12) + 7 documented-deferred cross-seam/App-frame (S1-P-i58/59/60); **0 unclaimed**; AI() inline **40** minus g64's remainder closures (the pets-124 :35601/:35681 + the 813 :33993/:34005/:34020 window now cited ⇒ ~35 remain, g63/g64 continuation); named machines ~~87+36~~ **79+36** (the named-machine dust wave — unassigned; the 8-site overcount corrected); AI_001 **2** (:56049/:56748, g63 continuation — its batch 7 covered 55/174/176/299/374/376) |
 | **WorldGen.cs — 29 (KillTile et al.)** | 29 ND | g14 trio folded into d54 (`a35efec26` → d54 `8f8471cb`/`74ba4a2e`/`e41a90f0`); latent at runtime (isGeneratingOrLoadingWorld returns 6000) but ported + witnessed | **ZERO** |
 | **ParticleOrchestrator.cs — 61 sites (+7 Clone = 68)** | 16 ND + 37 NDP + 8 NDD | d54 orch 1-40 (4 modules) + e4 orch 41-61 (`2a79551ab`) — DISJOINT, boundary 2582/2653 | **ZERO** (the prefix.rs RainbowRodHit count-only→emitter fold is wiring, not coverage) |
 | **Mount.cs — 27** | 27 | f6 ALL 27 (`0f9fd642f` + local wiring wave); e4's 19 subset DROPS | **ZERO** |
@@ -828,3 +828,35 @@ blob. The §8.4 witness counts are `#[test]` greps / delta-vs-main per
 file at the exact tips; the 492 gross sum machine-checked. The
 d53×e3 projectile_dust.rs fn-name sets diffed (disjoint; only the test
 helper `ctx` shared). No cargo/tests/rustfmt/graphify invoked.
+
+## Addendum — d54j dispatch-router round (§8.2 corrections, 2026-11-21)
+
+Code-only round on `task/W4-d54-dust-sites-world`: the d54 orchestrator
+dispatch router `orch_dispatch.rs::spawn_orchestra_d54` landed (the
+`SpawnParticlesDirect` port for the d54j catalog's 24 routed arms / 28
+kind bytes — `ParticleOrchestrator.cs:162-416`, the `_ => {}` arm of
+e4's `spawn_orchestra`; full route table + contracts in research/370 —
+registry-150 §9 assignment, the 355 provisional self-pick renumbered
+355→370 at this landing, d11 keeps 355). Three §8.2/§2 corrections
+applied in place above:
+
+1. **Projectile named machines 87+36 → 79+36** (§8.2 row): the 87 was an
+   8-site overcount of the named-machine window; the corrected count is
+   79+36, still the unassigned named-machine dust wave.
+2. **Kill() remainder 234 → CLOSED** (§8.2 row): g65's independent
+   re-scan (`f6e07bb90` keep-one receipt, `c356cb99c` FINAL seal,
+   renumbered bible 346 per registry s8.7) closed the whole Kill span —
+   406 sites = 399 NewDust + 7 CloneDust; 393 drain-covered (316 distinct
+   kinds FINAL; the 309 batch-28 census and 317 +1 miscount corrected),
+   6 other-lane (442-i16/608-d12), 7 documented-deferred
+   (S1-P-i58/59/60); 0 unclaimed. The §5 g65 probe row (`7f0dc8649`,
+   ≈147 of 399) is a HISTORICAL tip record, left as-was.
+3. **e4 UNWIRED → WIRED** (§2 lane table + §2 orch file row): e4's
+   wiring batches 5-8 (`ed7fff13e` dispatch + reforge keep-one,
+   `1ac20a4c7` projectile queue/drain + hit/post-strike/kill/tag seams,
+   `95d1a036d` ClassyCane inline, `e7bb2ff1d` mount/FlameWaders) landed
+   through SEAL `c38af30f3`. The mount half still DROPS to f6 (§8.3
+   step 7); the reforge tail keeps prefix.rs count-only as its ONE path.
+   d54's own 1-40 dispatch is LATENT (the router body + 7 witnesses
+   WRITTEN NOT RUN) until the queue-drain wiring folds it into the same
+   `SpawnParticlesDirect` port — never both routers for one kind.
