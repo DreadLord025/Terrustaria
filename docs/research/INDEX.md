@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base — no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 133 | Wiring union-sync: the f11 unique folds for c42c (per-fix cherry-pick hunks + DEPRECATED-BY-UNION inventory per 95/71-EXECUTED + the OLD 144/421/422/506 cross-note; code-only) | `133-f11-unique-folds.md` | ✅ |
+| 134 | Wiring light-family unification (95 §4/§8.5): the forced-state gates LANDED on the f11 Toggle* methods (wire path None, behaviour frozen) + the campfire skips out-collector; the final c42c hunks (the 8 skips collectors + try_toggle_light re-point + skip_wires=true closure; code-only) | `134-light-family-unification.md` | ✅ f11 half / hunks for c42c |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the
