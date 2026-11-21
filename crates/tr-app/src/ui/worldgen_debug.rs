@@ -140,8 +140,9 @@ pub(crate) fn step_icon(step: &ExecutedStep) -> IconSpec {
 
 /// The icon's draw rect inside a row — `AddIcon` (`UIWorldGenDebug.cs:431-443`):
 /// the `UIImage` child centred in the 26 px box with integer halving
-/// (`icon_child_offsets`), at the row's `PaddingLeft` (7) + the panel padding
-/// (2). Returns `(left, top, width, height)` relative to the row origin.
+/// (`icon_child_offsets`), positioned in the panel's padded inner area
+/// (PaddingLeft 7 `:1065`, PaddingTop 2 `:449`). Returns
+/// `(left, top, width, height)` relative to the row origin.
 pub(crate) fn icon_rect(spec: IconSpec, tex_size: [i32; 2]) -> [f32; 4] {
     let entry = match spec {
         IconSpec::Bestiary(i) => PassIconEntry::from_bestiary_icon(i, tex_size),
@@ -152,7 +153,10 @@ pub(crate) fn icon_rect(spec: IconSpec, tex_size: [i32; 2]) -> [f32; 4] {
     };
     let (ox, oy) = elements::icon_child_offsets(&entry);
     [
-        ROW_PADDING_LEFT + 2.0 + ox as f32,
+        // The panel's inner area starts at PaddingLeft 7 (`:1065` overrides
+        // the ctor's SetPadding(2) left), PaddingTop 2 (`:449`); the UIImage
+        // child's Left/Top (`:438-439`) ride the inner area.
+        ROW_PADDING_LEFT + ox as f32,
         2.0 + oy as f32,
         entry.width as f32,
         entry.height as f32,
@@ -210,10 +214,14 @@ pub(crate) fn draw(
 
         // The index (`UIText(this.Index.ToString(), 0.5f)`, Left 2, Top 2,
         // `:455-460`) and the name (`UIText(pass.Name)`, Left 32, Top 4,
-        // `:462-467`), both in `pass_text_color` (`:468-473`).
+        // `:462-467`), both in `pass_text_color` (`:468-473`) — child
+        // positions ride the panel's padded inner area (PaddingLeft 7,
+        // PaddingTop 2, `:1065`/`:449`).
         let text_col = color::tint(elements::pass_text_color(&state));
-        hud_text(r, lookups, row[0] + 2.0, row[1] + 2.0, 0.5, text_col, &i.to_string());
-        hud_text(r, lookups, row[0] + 32.0, row[1] + 4.0, 1.0, text_col, step.name);
+        let ix = row[0] + ROW_PADDING_LEFT;
+        let iy = row[1] + 2.0;
+        hud_text(r, lookups, ix + 2.0, iy + 2.0, 0.5, text_col, &i.to_string());
+        hud_text(r, lookups, ix + 32.0, iy + 4.0, 1.0, text_col, step.name);
 
         if is_hover {
             // `TooltipElement` (`:41-56`): the title + description publish
