@@ -33168,6 +33168,10 @@ PORT_MAP, ROADMAP re-pointed. WRITTEN, NOT RUN (code-only).
 
 ## The FINAL style-44/16 band table (W4-c4 lane close, 2026-11-21, code-only)
 
+The lane-close declaration (the family-complete statement + the merger
+checklist + the d43-band 688/692 conditional):
+`docs/research/148-fish-family-declaration.md`.
+
 The lane's complete status after the renumber execution + the all-tips
 census (`tools/_w4c4_proto_census.js`, 354 tips). "Merge action" is the
 contract the merger/d40b/d42b lanes execute; every row's AI/FindFrame/
