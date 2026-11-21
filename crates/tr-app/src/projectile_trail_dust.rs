@@ -82,6 +82,10 @@ pub(crate) struct TrailSlot {
     pub scale: f32,
     pub alpha: i32,
     pub direction: i32,
+    /// `base.oldVelocity` — the sub-step start velocity the aiStyle-27
+    /// trident trail reads (`Projectile.cs:26451` passim). ZERO for the
+    /// arms that don't read it.
+    pub old_vel: Vec2,
 }
 
 impl TrailSlot {
@@ -94,6 +98,7 @@ impl TrailSlot {
             scale: p.scale,
             alpha: p.alpha,
             direction: p.direction,
+            old_vel: p.old_velocity,
         }
     }
     fn center(&self) -> Vec2 {
@@ -830,6 +835,300 @@ pub(crate) fn bunny_burst(
 }
 
 // ---------------------------------------------------------------------------
+// aiStyle 27 — the Unholy Trident family (`Projectile.cs:26420-26548`).
+// ---------------------------------------------------------------------------
+
+/// Site 26451 — the friendly Trident 114's per-tick trail (`Projectile.cs:
+/// 26449-26456`): the `Next(2) == 0 && NextFloat() + 0.2 < num211` gate
+/// (num211 = the cached-speed Remap the machine already computed), then
+/// one dust 27 at `(x, y+4)`, box 8×8, speeds = oldVelocity, scale
+/// `1 + 0.6*NextFloat()`; post-spawn velocity ×−0.5, position += vel×5,
+/// position += NextVector2Circular(16,16), velocity ×−1. The C# draw
+/// order: the Next(2) gate, the NextFloat gate, the scale NextFloat
+/// ARGUMENT, the NewDust internals, then the circular pair (TWO floats).
+pub(crate) fn trident_trail(
+    p: &TrailSlot,
+    cached_speed_remap: f32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:26449` — the two-part gate (the `&&` short-circuit: the float
+    // gate draws only when the Next(2) passes).
+    if rng.next_range(0, 2) != 0 {
+        return;
+    }
+    if rng.next_float() + 0.2 >= cached_speed_remap {
+        return;
+    }
+    // `:26451` — the scale argument draws BEFORE the call.
+    let scale = 1.0 + 0.6 * rng.next_float();
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world,
+        Vec2::new(p.pos.x, p.pos.y + 4.0), 8, 8,
+        27, p.old_vel.x, p.old_vel.y, 100, Color::default(), scale,
+    );
+    let d = dust.slot_mut(idx);
+    d.velocity *= -0.5; // `:26452`
+    d.position += d.velocity * 5.0; // `:26453`
+    // `:26454` — the circular jitter (two NextFloat draws).
+    d.position += next_vector2_circular(rng, 16.0, 16.0);
+    d.velocity *= -1.0; // `:26455`
+}
+
+/// Site 26465 — the hostile twin 115's first-hit 20-step trail
+/// (`Projectile.cs:26458-26468`): on the `localAI[1] < 5` latch tick,
+/// 20 dusts 27 at `position - velocity*(30/i)*80` (i = 5..24), box 8×8,
+/// speeds = oldVelocity, scale 0.9; velocity ×0.25 then −= velocity×5.
+/// No gate draws — the loop is unconditional inside the latch.
+pub(crate) fn trident_hostile_latch_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for i in 5..25 {
+        // `:26463-26464` — the per-step offsets (f32 × (30/i)).
+        let ox = p.vel.x * (30.0 / i as f32);
+        let oy = p.vel.y * (30.0 / i as f32);
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world,
+            Vec2::new(p.pos.x - ox * 80.0, p.pos.y - oy * 80.0), 8, 8,
+            27, p.old_vel.x, p.old_vel.y, 100, Color::default(), 0.9,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= 0.25; // `:26466`
+        d.velocity -= p.vel * 5.0; // `:26467`
+    }
+}
+
+/// Site 26472 — the Enchanted Beam 173's post-7 pulse sparkle
+/// (`Projectile.cs:26470-26479`): the `Next(3)` type pick (0→15, 1→57,
+/// else 58) draws FIRST (the C# named-argument `Type:` evaluates before
+/// the call), then one dust at `position - velocity*4 + (2,2)`, box
+/// 8×8, speeds 0, alpha 100, scale 1.25; velocity ×0.1.
+pub(crate) fn enchanted_beam_sparkle(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    // `:26472-26477` — the type argument draw.
+    let dust_type = match rng.next_range(0, 3) {
+        0 => 15,
+        1 => 57,
+        _ => 58,
+    };
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world,
+        Vec2::new(p.pos.x - p.vel.x * 4.0 + 2.0, p.pos.y + 2.0 - p.vel.y * 4.0),
+        8, 8, dust_type, 0.0, 0.0, 100, Color::default(), 1.25,
+    );
+    dust.slot_mut(idx).velocity *= 0.1; // `:26478`
+}
+
+/// Site 26482/26484 — the Terra Beam 132's post-7 pulse pair
+/// (`Projectile.cs:26480-26487`): two dusts 107 at the same
+/// `position - velocity*4 + (2,2)` point, box 8×8, speeds = oldVelocity,
+/// scale 1.25; both velocity ×−0.25, the second position −= velocity×0.5.
+pub(crate) fn terra_beam_pulse(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let at = Vec2::new(p.pos.x - p.vel.x * 4.0 + 2.0, p.pos.y + 2.0 - p.vel.y * 4.0);
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, at, 8, 8,
+        107, p.old_vel.x, p.old_vel.y, 100, Color::default(), 1.25,
+    );
+    dust.slot_mut(idx).velocity *= -0.25; // `:26483`
+    let idx = dust.new_dust(
+        &mut DustDraw(rng), ctx, world, at, 8, 8,
+        107, p.old_vel.x, p.old_vel.y, 100, Color::default(), 1.25,
+    );
+    let d = dust.slot_mut(idx);
+    d.velocity *= -0.25; // `:26485`
+    d.position -= p.vel * 0.5; // `:26486`
+}
+
+/// Sites 26496/26501 — the post-15 pulse dust (`Projectile.cs:
+/// 26492-26504`): the 114/115 pair one dust 27 at `(x, y+4)` (scale 0.6,
+/// velocity ×−0.25); the 116 Sword Beam one dust 64 at
+/// `position - velocity*5 + (2,2)` (scale 1.5, ×−0.25, noGravity).
+/// `kind` picks the arm (the C# if/else-if). No gate draws.
+pub(crate) fn trident_pulse_dust(
+    p: &TrailSlot,
+    kind: u16,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    if kind == 114 || kind == 115 {
+        // `:26494-26498`.
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world,
+            Vec2::new(p.pos.x, p.pos.y + 4.0), 8, 8,
+            27, p.old_vel.x, p.old_vel.y, 100, Color::default(), 0.6,
+        );
+        dust.slot_mut(idx).velocity *= -0.25; // `:26497`
+    } else if kind == 116 {
+        // `:26499-26504`.
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world,
+            Vec2::new(p.pos.x - p.vel.x * 5.0 + 2.0, p.pos.y + 2.0 - p.vel.y * 5.0),
+            8, 8, 64, p.old_vel.x, p.old_vel.y, 100, Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.velocity *= -0.25; // `:26502`
+        d.no_gravity = true; // `:26503`
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 28 — the Frost Bolt family (`Projectile.cs:26555-26675`).
+// ---------------------------------------------------------------------------
+
+/// Site 26633 — the Frost Blast 309's per-tick 3× dust 185
+/// (`Projectile.cs:26629-26637`): speeds = velocity, alpha 50, scale
+/// 1.2, noGravity, velocity ×0.3. The 118/119/128/129/177 variants
+/// (`:26602-26647`) are unrowed — their emitters land with their rows.
+pub(crate) fn frost_blast_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..3 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            185, p.vel.x, p.vel.y, 50, Color::default(), 1.2,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:26634`
+        d.velocity *= 0.3; // `:26635`
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 50 — the Inferno Fork family (`Projectile.cs:28323-28401`).
+// ---------------------------------------------------------------------------
+
+/// Site 28354 — the Inferno bolt 295's whole AI arm: 8× dust 174
+/// (`Projectile.cs:28350-28359`), alpha 100, scale 1.2, noGravity,
+/// velocity ×0.5 + v×0.1. No gate draws.
+pub(crate) fn inferno_bolt_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..8 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            174, 0.0, 0.0, 100, Color::default(), 1.2,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:28355`
+        d.velocity *= 0.5; // `:28356`
+        d.velocity += p.vel * 0.1; // `:28357`
+    }
+}
+
+/// Site 28392 — the Inferno blast 296's fade-window burst
+/// (`Projectile.cs:28371-28400`): `num350 = 25 - (ai[0]-180)/2` once
+/// `ai[0] > 540`, ×0.7 for the 296; the loop spawns that many dusts 174
+/// (scale 1.5), each with the THREE argument draws (Next(-10,11) ×2 +
+/// Next(3,9) the speed divisor) BEFORE the call, then the position
+/// jitter Next(-10,11) ×2 AFTER. `count` is the machine's resolved
+/// num350 (the kill at <= 0 already ran). The velocity is the
+/// normalized jitter × the speed factor.
+pub(crate) fn inferno_blast_burst(
+    p: &TrailSlot,
+    count: i32,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    let center = p.center();
+    for _ in 0..count {
+        // `:28387-28391` — the three argument draws + the normalize.
+        let mut jx = rng.next_range(-10, 11) as f32;
+        let mut jy = rng.next_range(-10, 11) as f32;
+        let factor = rng.next_range(3, 9) as f32 / (jx * jx + jy * jy).sqrt();
+        jx *= factor;
+        jy *= factor;
+        // `:28392` — the spawn (scale 1.5).
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            174, 0.0, 0.0, 100, Color::default(), 1.5,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:28393`
+        d.position.x = center.x; // `:28394`
+        d.position.y = center.y; // `:28395`
+        d.position.x += rng.next_range(-10, 11) as f32; // `:28396`
+        d.position.y += rng.next_range(-10, 11) as f32; // `:28397`
+        d.velocity.x = jx; // `:28398`
+        d.velocity.y = jy; // `:28399`
+    }
+}
+
+// ---------------------------------------------------------------------------
+// aiStyle 51 — the Spectre Staff family (`Projectile.cs:28402-28503`).
+// ---------------------------------------------------------------------------
+
+/// Site 28411 — the friendly Lost Soul 297's post-4 burst
+/// (`Projectile.cs:28404-28415`): once `localAI[0] > 4`, 5× dust 175
+/// (scale 2, noGravity, velocity zeroed). No gate draws.
+pub(crate) fn spectre_soul_burst(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..5 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            175, 0.0, 0.0, 100, Color::default(), 2.0,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:28412`
+        d.velocity *= 0.0; // `:28413`
+    }
+}
+
+/// Site 28426 — the hostile Lost Soul 293's per-tick 9× dust 175
+/// (`Projectile.cs:28424-28429`): scale 1.3, noGravity, velocity zeroed.
+/// No gate draws (the sound latch is the machine's).
+pub(crate) fn spectre_hostile_trail(
+    p: &TrailSlot,
+    rng: &mut dyn DropRng,
+    dust: &mut DustPool,
+    ctx: &SpawnCtx,
+    world: &World,
+) {
+    for _ in 0..9 {
+        let idx = dust.new_dust(
+            &mut DustDraw(rng), ctx, world, p.pos, p.w as i32, p.h as i32,
+            175, 0.0, 0.0, 100, Color::default(), 1.3,
+        );
+        let d = dust.slot_mut(idx);
+        d.no_gravity = true; // `:28427`
+        d.velocity *= 0.0; // `:28428`
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Witnesses — WRITTEN NOT RUN (code-only mode). Each mirrors the C#
 // draw sequence on a recording stream + a scratch pool with the
 // permissive ctx (the npc.rs `dust_ctx` convention), so the pool never
@@ -891,6 +1190,7 @@ mod tests {
             scale: 1.0,
             alpha: 0,
             direction: 1,
+            old_vel: Vec2::ZERO,
         }
     }
 
@@ -1100,5 +1400,116 @@ mod tests {
         thorn_fade_burst(&p, false, &mut rng, &mut dust, &c, &w);
         assert_eq!(live(&dust), 4);
         assert_eq!(dust.slot(3).dust_type, 14);
+    }
+
+    /// W4-g63 — the 114 trident trail's two-part gate: the Next(2)
+    /// short-circuits the float gate; a taken pair draws the scale
+    /// argument BEFORE the spawn and the circular pair AFTER (the
+    /// C# order: 2 gates + 1 scale + 6 internals + 2 circular floats).
+    #[test]
+    fn w4_g63_the_trident_trail_gate_order() {
+        let w = world();
+        let c = ctx(&w);
+        let mut p = slot(Vec2::new(100.0, 100.0), Vec2::new(6.0, 0.0));
+        p.old_vel = Vec2::new(5.0, 1.0);
+        // Refused Next(2) (roll 1): one draw, no dust, no floats.
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(1);
+        trident_trail(&p, 1.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges, vec![(0, 2)]);
+        assert_eq!(rng.floats, 0);
+        assert_eq!(live(&dust), 0);
+        // Taken pair (roll 0, float 0.5 + 0.2 < 1.0): the scale float,
+        // the spawn, the circular pair (2 floats) — 3 floats total.
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        trident_trail(&p, 1.0, &mut rng, &mut dust, &c, &w);
+        assert_eq!(rng.ranges[0], (0, 2), "the Next(2) gate first");
+        assert_eq!(rng.floats, 3, "the float gate + the scale + the circular pair");
+        assert_eq!(live(&dust), 1);
+        assert_eq!(dust.slot(0).dust_type, 27);
+    }
+
+    /// W4-g63 — the 115 hostile latch trail: 20 dusts 27 at the
+    /// velocity*(30/i)*80 offsets (i = 5..24), no gate draws.
+    #[test]
+    fn w4_g63_the_hostile_latch_trail_draws_twenty() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(1000.0, 1000.0), Vec2::new(1.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        trident_hostile_latch_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 20);
+        assert!(dust.slots()[..20].iter().all(|d| d.dust_type == 27));
+        // The first offset: velocity.X * (30/5) * 80 = 480.
+        let d = dust.slot(0);
+        assert!((d.position.x - (1000.0 - 480.0)).abs() < 1.0, "the i=5 offset");
+    }
+
+    /// W4-g63 — the 173 enchanted sparkle: the Next(3) type pick draws
+    /// FIRST (0→15, 1→57, else 58), then the spawn.
+    #[test]
+    fn w4_g63_the_enchanted_sparkle_type_pick() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(4.0, 0.0));
+        for (roll, want) in [(0, 15), (1, 57), (2, 58)] {
+            let mut dust = DustPool::new();
+            let mut rng = Recorder::new(roll);
+            enchanted_beam_sparkle(&p, &mut rng, &mut dust, &c, &w);
+            assert_eq!(rng.ranges[0], (0, 3), "the type pick first");
+            assert_eq!(dust.slot(0).dust_type, want);
+        }
+    }
+
+    /// W4-g63 — the 295 inferno bolt: 8× dust 174, noGravity, the
+    /// velocity ×0.5 + v×0.1; no gate draws.
+    #[test]
+    fn w4_g63_the_inferno_bolt_trail_draws_eight() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(10.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        inferno_bolt_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 8);
+        assert!(dust.slots()[..8].iter().all(|d| d.dust_type == 174 && d.no_gravity));
+    }
+
+    /// W4-g63 — the 296 inferno blast burst: each dust draws 3 argument
+    /// ranges + 2 position-jitter ranges (5 per dust), the velocity is
+    /// the normalized jitter.
+    #[test]
+    fn w4_g63_the_inferno_blast_burst_draw_order() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(0.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        inferno_blast_burst(&p, 3, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 3);
+        // Per dust: (-10,11) ×2 + (3,9) the arguments, then (-10,11) ×2
+        // the position jitter (the 6 NewDust internals interleave).
+        let arg_ranges: Vec<_> = rng.ranges.iter().filter(|r| **r == (3, 9)).collect();
+        assert_eq!(arg_ranges.len(), 3, "one speed divisor per dust");
+    }
+
+    /// W4-g63 — the 297 spectre burst (5× dust 175, scale 2) vs the 293
+    /// hostile trail (9× dust 175, scale 1.3); both velocity-zeroed.
+    #[test]
+    fn w4_g63_the_spectre_burst_and_trail() {
+        let w = world();
+        let c = ctx(&w);
+        let p = slot(Vec2::new(100.0, 100.0), Vec2::new(3.0, 0.0));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        spectre_soul_burst(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 5);
+        assert!(dust.slots()[..5].iter().all(|d| d.dust_type == 175 && d.velocity == Vec2::ZERO));
+        let mut dust = DustPool::new();
+        let mut rng = Recorder::new(0);
+        spectre_hostile_trail(&p, &mut rng, &mut dust, &c, &w);
+        assert_eq!(live(&dust), 9);
     }
 }

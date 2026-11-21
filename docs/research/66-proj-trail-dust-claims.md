@@ -102,6 +102,16 @@ lands.
   burst emitter, UNWIRED — no row). The `update`/`update_dust`
   scratch-pool seam (the `Npc::update_rng` precedent) threads the
   live `app.dust` + `spawn_ctx` from `world_sim/projectiles.rs`.
+- batch 2: 114, 115, 116, 132, 173, 293, 295, 296, 297, 309 — the
+  rowed caster machines (styles 27/51/50/28). The trident family's
+  `base.oldVelocity` latch lands as the slot's `old_velocity` field
+  (stamped at the sub-step start, `Projectile.cs:16766`); the 114
+  Next(2)+NextFloat trail, the 115 20-step latch trail, the 173
+  Next(3) type-pick sparkle, the 132 2×107 pulse, the post-15 114/115
+  27 + 116 64 pulse; the 293 9×175 + 297 post-4 5×175 spectre dusts;
+  the 295 8×174 bolt trail + the 296 fade-window burst (3 argument +
+  2 jitter draws per dust); the 309 3×185 frost trail. The 156/157
+  beams ride the shared pulse (no own dust block ≤400).
 - (following batches recorded in their commit messages + this table)
 
 Kinds with NO ported `proj_data` row keep their dust arm UNWIRED (the

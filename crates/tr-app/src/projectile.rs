@@ -551,6 +551,15 @@ pub struct Projectile {
     /// AI_026 slice C latches it in `ai026_c_tick`; the other arms keep
     /// the stock ZERO until their movement ports land.
     pub old_position: Vec2,
+    /// `Entity.oldVelocity` (`Projectile.cs:16766`) — the velocity latch
+    /// taken at the START of every sub-step (`base.oldVelocity =
+    /// base.velocity`), before the AI runs. W4-g63: the aiStyle-27
+    /// trident family's trail dust reads it (`:26451/:26465/:26482/
+    /// :26496/:26501` — the `base.oldVelocity.X/Y` speed arguments); the
+    /// pool's sub-step loop stamps it (the `old_velocity` local, which
+    /// the bee-swarm death hook already reads). Every other arm keeps
+    /// the stock ZERO until its consumer lands.
+    pub old_velocity: Vec2,
     /// `Projectile.oldPos` (`Projectile.cs:388`) — the 10-entry position ring the
     /// `TrailingMode` chain shifts once per update call (`:17091-17195`),
     /// newest first (index 0 = this tick's position). M4-PROJ-6b Phase 7's
@@ -4022,7 +4031,13 @@ impl Projectile {
     /// The AI body carries no movement of its own — `HandleMovement`
     /// (`:17469`) integrates the position, so the per-kind collision arms of
     /// that half close the arm here (see `unholy_step`).
-    fn ai_unholy_trident(&mut self, world: &World) {
+    fn ai_unholy_trident(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:26422-26429` — the hostile twin: `ai[0]++` and the ×1.125 while
         // `ai[0] < 30f`, freezing the speed from the 30th sub-step on.
         if self.kind == UNHOLY_TRIDENT_HOSTILE {
@@ -4054,34 +4069,70 @@ impl Projectile {
             }
             let cached_speed = remap(self.local_ai[0], 2.0, 0.0, 1.0, 0.0);
             self.alpha = (cached_speed * 255.0) as i32;
+            // `:26449-26456` — W4-g63: the per-tick trail RE-ARMED (the
+            // Next(2) + NextFloat gate, the scale argument, the circular
+            // jitter pair — all on the pass stream in the C# order).
+            crate::projectile_trail_dust::trident_trail(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                cached_speed, rng, dust, dust_ctx, world,
+            );
         }
-        // `:26468-26470` — the hostile twin's first-hit trail latch: the pulse
-        // counter is pinned to 5 on the first sub-step (the 19-step dust
-        // skipped), so the shared pulse starts a full 15 away from the cap.
+        // `:26458-26468` — the hostile twin's first-hit trail latch: the pulse
+        // counter is pinned to 5 on the first sub-step. W4-g63: the 20-step
+        // dust 27 trail RE-ARMED (`:26461-26468`, the velocity*(30/i)*80
+        // offsets, no gate draws).
         if self.kind == UNHOLY_TRIDENT_HOSTILE && self.local_ai[1] < 5.0 {
             self.local_ai[1] = 5.0;
+            crate::projectile_trail_dust::trident_hostile_latch_trail(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                rng, dust, dust_ctx, world,
+            );
         }
-        // `:26507-26525` — the shared pulse: `localAI[1]` counts up to 15 and
+        // `:26470-26487` — W4-g63: the post-7 rider sparkles RE-ARMED —
+        // the 173 Enchanted Beam's Next(3) type pick (`:26472-26478`)
+        // and the 132 Terra Beam's 2× dust 107 pair (`:26480-26486`).
+        if self.local_ai[1] > 7.0 && self.kind == ENCHANTED_BEAM {
+            crate::projectile_trail_dust::enchanted_beam_sparkle(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                rng, dust, dust_ctx, world,
+            );
+        }
+        if self.local_ai[1] > 7.0 && self.kind == TERRA_BEAM {
+            crate::projectile_trail_dust::terra_beam_pulse(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                rng, dust, dust_ctx, world,
+            );
+        }
+        // `:26488-26527` — the shared pulse: `localAI[1]` counts up to 15 and
         // holds there; past it every non-114 kind oscillates its scale ±0.02
         // against alpha ±30, flipping phase through `localAI[0]` at the 250
         // ceiling and the 0 floor. 114 spends `localAI[0]` on its cached speed,
         // so it never enters the oscillation — the C# `type != 114` guard.
         if self.local_ai[1] < 15.0 {
             self.local_ai[1] += 1.0;
-        } else if self.kind != UNHOLY_TRIDENT {
-            if self.local_ai[0] == 0.0 {
-                self.scale -= 0.02;
-                self.alpha += 30;
-                if self.alpha >= 250 {
-                    self.alpha = 255;
-                    self.local_ai[0] = 1.0;
-                }
-            } else if self.local_ai[0] == 1.0 {
-                self.scale += 0.02;
-                self.alpha -= 30;
-                if self.alpha <= 0 {
-                    self.alpha = 0;
-                    self.local_ai[0] = 0.0;
+        } else {
+            // `:26494-26504` — W4-g63: the post-15 pulse dust RE-ARMED
+            // (the 114/115 dust 27, the 116 dust 64 — before the
+            // oscillation, the C# order).
+            crate::projectile_trail_dust::trident_pulse_dust(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                self.kind, rng, dust, dust_ctx, world,
+            );
+            if self.kind != UNHOLY_TRIDENT {
+                if self.local_ai[0] == 0.0 {
+                    self.scale -= 0.02;
+                    self.alpha += 30;
+                    if self.alpha >= 250 {
+                        self.alpha = 255;
+                        self.local_ai[0] = 1.0;
+                    }
+                } else if self.local_ai[0] == 1.0 {
+                    self.scale += 0.02;
+                    self.alpha -= 30;
+                    if self.alpha <= 0 {
+                        self.alpha = 0;
+                        self.local_ai[0] = 0.0;
+                    }
                 }
             }
         }
@@ -4177,6 +4228,9 @@ impl Projectile {
         npcs: &[Npc],
         owner: Option<(f32, f32)>,
         player: Option<&crate::player::Player>,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
     ) {
         let _ = owner;
         if self.kind != LOST_SOUL {
@@ -4186,6 +4240,12 @@ impl Projectile {
                 self.wants_sound = Some((2, 8, self.pos.x, self.pos.y, 0.0));
                 self.local_ai[0] += 1.0;
             }
+            // `:28424-28429` — W4-g63: the 293's per-tick 9× dust 175
+            // trail RE-ARMED (after the sound latch, before the hunt).
+            crate::projectile_trail_dust::spectre_hostile_trail(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                rng, dust, dust_ctx, world,
+            );
             // `:28448-28475` — the player hunt: `num362` resets to 200f and the
             // scan walks `Main.player` for `active && !dead`, keeping the
             // tightest Manhattan centre-to-centre distance. The port's single
@@ -4209,9 +4269,15 @@ impl Projectile {
             self.kill_step(world);
             return;
         }
-        // `:28404-28412` — the dust latch: `localAI[0]++` gates the burst that
-        // only opens past 4 (the five no-gravity dust SKIPPED, no dust layer).
+        // `:28404-28415` — the dust latch: `localAI[0]++` gates the burst that
+        // only opens past 4. W4-g63: the five no-gravity dust 175 RE-ARMED.
         self.local_ai[0] += 1.0;
+        if self.local_ai[0] > 4.0 {
+            crate::projectile_trail_dust::spectre_soul_burst(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                rng, dust, dust_ctx, world,
+            );
+        }
         // `:28413-28474` — the acquire scan. `num362` opens at 400 and carries
         // the *running minimum*, which both of the C#'s tests read: the
         // centre-to-centre `Distance` gate and the Manhattan tie-break that
@@ -8024,13 +8090,28 @@ impl Projectile {
         self.kill_step(world);
     }
 
-    fn ai_frost_bolt(&mut self, world: &World) {
+    fn ai_frost_bolt(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        // `:26629-26637` — W4-g63: the 309 Frost Blast's per-tick 3× dust
+        // 185 trail RE-ARMED (the C# block runs EVERY tick, before the
+        // ai[1] latch below; the 118/119/128/129/177 variants are unrowed).
+        if self.kind == FROST_BLAST_FRIENDLY {
+            crate::projectile_trail_dust::frost_blast_trail(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                rng, dust, dust_ctx, world,
+            );
+        }
         if self.ai[1] == 0.0 {
             self.ai[1] = 1.0;
             // `:26648-26674` — the first-tick cue: the Houndius Shootius
             // fireball 967 plays `SoundID.Item60`, the rest `SoundID.Item28`
-            // (`:26661`/`:26673`, S1-E-21h). The per-kind dust blocks
-            // (`:26572-26609`) stay SKIPPED — noted for ANALYSIS.
+            // (`:26661`/`:26673`, S1-E-21h). The 967's 10× dust 219 burst
+            // (`:26655-26660`, kind > 400) stays W4-g64's.
             let style = if self.kind == HOUNDIUS_SHOOTIUS_FIREBALL { 60 } else { 28 };
             self.wants_sound = Some((2, style, self.pos.x, self.pos.y, 0.0));
         }
@@ -8045,15 +8126,25 @@ impl Projectile {
     /// the counter `ai[0]++` (+3 for the blast 296) and the kill at
     /// `ai[0] > 540f`, where the C#'s dust count `25 - (ai[0] - 180) / 2`
     /// reaches zero.
-    fn ai_inferno_fork(&mut self, world: &World) {
-        // `:28333-28340`: the bolt 295's whole AI arm is its 8× dust 174 and
+    fn ai_inferno_fork(
+        &mut self,
+        world: &World,
+        rng: &mut dyn tr_core::loot::DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        // `:28350-28359`: the bolt 295's whole AI arm is its 8× dust 174 and
         // nothing else — the counter, the fade kill and the `+3` belong to the
         // blast 296 alone, so the bolt flies straight and dies on its
         // `timeLeft` (the `SetDefaults` default 3600, `:787`) or its
-        // `penetrate`, whichever comes first. The dust is SKIPPED (no dust
-        // layer in the pool) and the movement is the blocked-move default the
-        // bolt shares with every other style-50 shot.
+        // `penetrate`, whichever comes first. W4-g63: the 8× trail RE-ARMED;
+        // the movement is the blocked-move default the bolt shares with every
+        // other style-50 shot.
         if self.kind == INFERNO_FORK_BOLT {
+            crate::projectile_trail_dust::inferno_bolt_trail(
+                &crate::projectile_trail_dust::TrailSlot::of(self),
+                rng, dust, dust_ctx, world,
+            );
             self.kill_step(world);
             return;
         }
@@ -8067,15 +8158,30 @@ impl Projectile {
         if self.kind == INFERNO_BLAST {
             self.ai[0] += 3.0;
         }
-        // `:28376-28379`: `num350 = 25 - (ai[0] - 180) / 2` once
-        // `ai[0] > 540f`. It is `<= 0` for every `ai[0] > 540f` (the smallest
-        // gives 25 - 180.5), so the first tick past the window kills. The
-        // blast's ×0.7 scaling (`:28385`) cannot clear it (25 × 0.7 > 0).
+        // `:28371-28384`: `num350 = 25 - (ai[0] - 180) / 2` once
+        // `ai[0] > 540f`, ×0.7 for the blast 296; `<= 0` kills. It is `<= 0`
+        // for every `ai[0] > 540f` (the smallest gives 25 - 180.5), so the
+        // first tick past the window kills and the burst loop below runs
+        // ZERO times on the kill tick — the C# order kept.
+        let mut num350 = 25.0f32;
         if self.ai[0] > 540.0 {
+            num350 -= (self.ai[0] - 180.0) / 2.0;
+        }
+        if num350 <= 0.0 {
             self.active = false;
             self.time_left = 0;
             return;
         }
+        if self.kind == INFERNO_BLAST {
+            num350 *= 0.7;
+        }
+        // `:28385-28400` — W4-g63: the fade-window burst RE-ARMED (the
+        // per-dust 3 argument draws + the 2 position-jitter draws, the
+        // normalized velocity — the C# order).
+        crate::projectile_trail_dust::inferno_blast_burst(
+            &crate::projectile_trail_dust::TrailSlot::of(self),
+            num350 as i32, rng, dust, dust_ctx, world,
+        );
         self.kill_step(world);
     }
 
@@ -16870,8 +16976,13 @@ impl ProjectilePool {
             }
             for sub in 0..sub_steps {
                 // `Projectile.cs:16766` — the sub-step's start velocity
-                // (the bee swarm's `oldVelocity` read, S1-P-i17).
+                // (the bee swarm's `oldVelocity` read, S1-P-i17). W4-g63:
+                // also stamped onto the slot's `old_velocity` field — the
+                // aiStyle-27 trident trail reads `base.oldVelocity` at its
+                // C# dust sites (the field is the slot-visible form of the
+                // same latch).
                 old_velocity = self.slots[i].vel;
+                self.slots[i].old_velocity = old_velocity;
                 // `Projectile.cs:16679-16683` — the 640 MoonlordArrowTrail's
                 // spawn-delay countdown: while `ai[1] > 0` the WHOLE
                 // sub-step is skipped (ahead of the out-of-world guard, the
@@ -17711,20 +17822,20 @@ impl ProjectilePool {
                                 p.time_left = 60;
                             }
                         }
-                        28 => self.slots[i].ai_frost_bolt(world),
-                        50 => self.slots[i].ai_inferno_fork(world),
+                        28 => self.slots[i].ai_frost_bolt(world, rng, dust, dust_ctx),
+                        50 => self.slots[i].ai_inferno_fork(world, rng, dust, dust_ctx),
                         // The aiStyle-27 followup caster family
                         // (`Projectile.cs:26420-26554`): the Unholy Trident
                         // plus its riders and the hostile twin. The arm reads
                         // only the tiles, so it rides the plain
                         // `(world)` shape.
-                        27 => self.slots[i].ai_unholy_trident(world),
+                        27 => self.slots[i].ai_unholy_trident(world, rng, dust, dust_ctx),
                         // The aiStyle-51 Spectre Staff (`:28402-28503`): the
                         // 297's NPC scan and blend plus the 293 hostile twin's
                         // player hunt, on the family signature (`owner` centre,
                         // `player` for the dead gate).
                         51 => {
-                            self.slots[i].ai_spectre_shot(world, &npcs[..], owner, player.as_deref())
+                            self.slots[i].ai_spectre_shot(world, &npcs[..], owner, player.as_deref(), rng, dust, dust_ctx)
                         }
                         // The Spectre Wrath (`:28938-28993`): the hostile
                         // window, the uniform re-pick (one rng draw) and the
@@ -23760,9 +23871,9 @@ mod s1_e_21h_sound_tests {
             let mut rng = tr_core::tile_light::FastRandom::new(7);
             match proj_data(kind).map(|d| d.ai_style) {
                 Some(8) => p.ai_ball_of_fire(&w, &mut rng, &mut dust, &dctx),
-                Some(27) => p.ai_unholy_trident(&w),
-                Some(28) => p.ai_frost_bolt(&w),
-                Some(50) => p.ai_inferno_fork(&w),
+                Some(27) => p.ai_unholy_trident(&w, &mut rng, &mut dust, &dctx),
+                Some(28) => p.ai_frost_bolt(&w, &mut rng, &mut dust, &dctx),
+                Some(50) => p.ai_inferno_fork(&w, &mut rng, &mut dust, &dctx),
                 other => panic!("kind {kind}'s arm: {other:?}"),
             }
             assert_eq!(
@@ -23774,9 +23885,9 @@ mod s1_e_21h_sound_tests {
             p.wants_sound = None;
             match proj_data(kind).map(|d| d.ai_style) {
                 Some(8) => p.ai_ball_of_fire(&w, &mut rng, &mut dust, &dctx),
-                Some(27) => p.ai_unholy_trident(&w),
-                Some(28) => p.ai_frost_bolt(&w),
-                Some(50) => p.ai_inferno_fork(&w),
+                Some(27) => p.ai_unholy_trident(&w, &mut rng, &mut dust, &dctx),
+                Some(28) => p.ai_frost_bolt(&w, &mut rng, &mut dust, &dctx),
+                Some(50) => p.ai_inferno_fork(&w, &mut rng, &mut dust, &dctx),
                 _ => unreachable!(),
             }
             assert_eq!(p.wants_sound, None, "kind {kind}: one cue per life");
@@ -23791,11 +23902,21 @@ mod s1_e_21h_sound_tests {
             tile_collide: false,
             ..Default::default()
         };
-        p.ai_spectre_shot(&w, &[], None, None);
+        let mut dust = tr_core::particles::DustPool::new();
+        let dctx = tr_core::particles::SpawnCtx {
+            game_menu: false,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(w.width as f32 * TILE_PX, w.height as f32 * TILE_PX),
+            max_dust_to_draw: 6000,
+        };
+        let mut rng = tr_core::tile_light::FastRandom::new(7);
+        p.ai_spectre_shot(&w, &[], None, None, &mut rng, &mut dust, &dctx);
         assert_eq!(p.wants_sound, Some((2, 8, 64.0, 64.0, 0.0)));
         assert_eq!(p.local_ai[0], 1.0);
         p.wants_sound = None;
-        p.ai_spectre_shot(&w, &[], None, None);
+        p.ai_spectre_shot(&w, &[], None, None, &mut rng, &mut dust, &dctx);
         assert_eq!(p.wants_sound, None, "the twin's one cue per life");
     }
 
