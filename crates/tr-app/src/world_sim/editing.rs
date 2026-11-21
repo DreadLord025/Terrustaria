@@ -8984,38 +8984,46 @@ mod tests {
     // W4-g17 wiring — the ItemCheck per-tick visual arms.
     // ------------------------------------------------------------------
 
-    /// W4-g17 — `Player.cs:44796-44806`: the Starfury (65) swing runs the
-    /// type-65 arm every animation tick — the Next(5) dust gate and the
-    /// Next(10) gore gate ALWAYS draw. Over a full 20-tick swing the
-    /// stream advances by exactly 2 draws per tick (the gates), plus the
-    /// hit spawns' own draws; the twin ledger replays the gate order.
+    /// W4-g17 — `Player.cs:45024-45027`: the Zombie Arm (1304, no
+    /// projectile — the swing draws ONLY the visual gate) runs the
+    /// Next(60) gate every animation tick, ALWAYS drawing. The witness
+    /// drives `item_use_visuals_tick` directly (the drain IS the wiring
+    /// seam) and replays the full draw ledger: one gate draw per tick,
+    /// plus the rare hit's two NextFloats + type + kicks.
     #[test]
-    fn w4_g17_the_starfury_swing_draws_the_use_gates() {
+    fn w4_g17_the_zombie_arm_swing_draws_the_use_gate() {
         let mut app = melee_app();
-        app.inventory[app.selected] = slot(65, 1);
+        app.inventory[app.selected] = slot(1304, 1);
         app.npcs.clear();
         // Start the swing directly (the use-start seam).
         start_use_timers(&mut app, app.inventory[app.selected]);
         let mut ledger = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
-        // The use-start's own sound draws already ran; replay only the
-        // per-tick visual gates from here.
         let mut ticks = 0;
         while app.swing > 0.0 && ticks < 40 {
-            let before = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
-            update_editing(&mut app, 1.0 / 60.0, MINE_SCREEN);
-            let after = app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone();
-            // The twin: the two gates draw unconditionally each tick.
-            let _dust_gate = ledger.next_max(5);
-            let _gore_gate = ledger.next_max(10);
-            // The hit arms' draws are seed-dependent; re-anchor the
-            // ledger to the live stream after each tick (the gate-order
-            // pin is the per-tick slice, the full-stream parity is the
-            // module's own witnesses).
-            assert_ne!(before, after, "tick {ticks}: the gates drew");
-            ledger = after;
+            // The per-tick head decay the real pass runs before the drain.
+            app.swing = (app.swing - 1.0 / 60.0).max(0.0);
+            if app.swing <= 0.0 {
+                break;
+            }
+            item_use_visuals_tick(&mut app);
+            // The twin: the Next(60) gate draws unconditionally each tick.
+            let gate = ledger.next_max(60);
+            if gate == 0 {
+                // The hit: two NextFloats + the Next(3,6) type + the kicks.
+                let _vx = ledger.next_float();
+                let _vy = ledger.next_float();
+                let _ty = ledger.next_range(3, 6);
+                let _ky = ledger.next_range(10, 31);
+                let _kx = ledger.next_range(-20, 21);
+            }
+            assert_eq!(
+                *app.rngs.stream(crate::app::RngKey::UpdatePlayers),
+                ledger,
+                "tick {ticks}: the drain matches the C# draw ledger"
+            );
             ticks += 1;
         }
-        assert!(ticks >= 19, "the 20-tick animation ran, got {ticks}");
+        assert!(ticks >= 20, "the 22-tick animation ran, got {ticks}");
     }
 
     /// W4-g17 — `Player.cs:45050-45080`: the Bubble Wand (1450) swing
