@@ -1063,14 +1063,26 @@ impl ItemDrop {
     /// survivor (`:172-174`), and airs the drained source out. The gates:
     /// `shimmerTime == 0`, `CanPassivelyStackInWorld`, `stack < maxStack`
     /// (`:159`); per target `CanStack` + equal `shimmered` (`:167`). The
-    /// reservation equality is the net-only term (the host owns every drop
-    /// in the port). RNG-free. Returns the indices the caller must remove
+    /// reservation equality is the net-only term — the caller passes the
+    /// `net_reserved` answer (`reserved_elsewhere`, the `:159` gate; the
+    /// host owns every drop in SP so it is false there). RNG-free. Returns
+    /// the indices the caller must remove
     /// (descending — the caller `swap_remove`s them highest-first so the
     /// lower indices stay valid; the port's compaction deviation).
-    pub(crate) fn combine_nearby(drops: &mut [ItemDrop], i: usize) -> Vec<usize> {
+    /// W4-g15 lane 5 — the reservation gate `playerIndexTheItemIsReservedFor
+    /// != Main.myPlayer` (`WorldItem.cs:159`): a drop reserved for ANOTHER
+    /// peer does not combine. The port's host owns every drop in SP (the
+    /// gate is vacuous there); the MP reservation lives in `net_reserved`
+    /// and the caller passes the answer.
+    pub(crate) fn combine_nearby(
+        drops: &mut [ItemDrop],
+        i: usize,
+        reserved_elsewhere: bool,
+    ) -> Vec<usize> {
         let mut drained = Vec::new();
         let max = registry::max_stack(drops[i].kind);
-        if drops[i].shimmer_time != 0.0
+        if reserved_elsewhere
+            || drops[i].shimmer_time != 0.0
             || !can_passively_stack_in_world(drops[i].kind)
             || drops[i].count >= max
         {
@@ -2184,7 +2196,7 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 20, 0, 110.0, 105.0, 0.0, 0.0, 0.0),
             ItemDrop::new(9, 5, 0, 200.0, 100.0, 0.0, 0.0, 0.0), // out of range
         ];
-        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        let drained = ItemDrop::combine_nearby(&mut drops, 0, false);
         assert!(drained.is_empty(), "the source kept 10 — no TurnToAir");
         assert_eq!(drops[0].count, 9999, "the cap");
         assert_eq!(drops[1].count, 11, "20 - 9");
@@ -2198,7 +2210,7 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
             ItemDrop::new(9, 3, 0, 110.0, 100.0, 0.0, 0.0, 0.0),
         ];
-        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        let drained = ItemDrop::combine_nearby(&mut drops, 0, false);
         assert_eq!(drained, vec![1]);
         assert_eq!(drops[0].count, 8);
         // The Manhattan window: |dx| + |dy| <= 30 (`:167`).
@@ -2206,7 +2218,7 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
             ItemDrop::new(9, 3, 0, 120.0, 111.0, 0.0, 0.0, 0.0), // 20+11=31
         ];
-        let drained = ItemDrop::combine_nearby(&mut drops, 0);
+        let drained = ItemDrop::combine_nearby(&mut drops, 0, false);
         assert!(drained.is_empty());
         assert_eq!(drops[0].count, 5, "31 > 30 — no merge");
         // A different prefix never stacks (`Item.CanStack`).
@@ -2214,7 +2226,7 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 5, 0, 100.0, 100.0, 0.0, 0.0, 0.0),
             ItemDrop::new(9, 3, 81, 105.0, 100.0, 0.0, 0.0, 0.0),
         ];
-        assert!(ItemDrop::combine_nearby(&mut drops, 0).is_empty());
+        assert!(ItemDrop::combine_nearby(&mut drops, 0, false).is_empty());
         assert_eq!(drops[0].count, 5);
         // The shimmering drop waits (`:159`'s shimmerTime gate).
         let mut drops = vec![
@@ -2222,7 +2234,12 @@ mod s1_p_i47_tests {
             ItemDrop::new(9, 3, 0, 105.0, 100.0, 0.0, 0.0, 0.0),
         ];
         drops[0].shimmer_time = 0.5;
-        assert!(ItemDrop::combine_nearby(&mut drops, 0).is_empty());
+        assert!(ItemDrop::combine_nearby(&mut drops, 0, false).is_empty());
+        // W4-g15 lane 5 — the reservation gate (`:159`): a drop reserved
+        // for another peer never combines, even inside the window.
+        drops[0].shimmer_time = 0.0;
+        assert!(ItemDrop::combine_nearby(&mut drops, 0, true).is_empty());
+        assert_eq!(drops[0].count, 5, "the reserved drop kept its stack");
     }
 
     /// `WorldItem.UpdateItem`'s grabbed arm (`:425-435` → `ApplyMovement`

@@ -648,11 +648,22 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
+            // W4-g15 lane 5 — the reservation gate
+            // `playerIndexTheItemIsReservedFor != Main.myPlayer`
+            // (`WorldItem.cs:683` CheckLavaDeath / `:159` TryCombining):
+            // a drop reserved for ANOTHER peer neither burns nor combines.
+            // The port's host owns every drop in SP (the map is empty);
+            // the MP reservation lives in `net_reserved` (the same read
+            // the grab gate above uses).
+            let reserved_elsewhere = app
+                .net_reserved
+                .get(&(i as i16))
+                .is_some_and(|(who, _)| *who != app.local_id as u8 && *who != 255);
             // `WorldItem.CheckLavaDeath`'s voodoo arm (`WorldItem.cs:418-421`,
             // `:681-763`): the doll in lava is consumed and the sacrifice
             // runs (the resolve rides the post-tick pass — the closure holds
             // the items borrow).
-            if drop.kind == 267 {
+            if drop.kind == 267 && !reserved_elsewhere {
                 let tx = (drop.center().x / TILE_PX) as i32;
                 let ty = (drop.center().y / TILE_PX) as i32;
                 let in_lava = world.tile(tx, ty).is_some_and(|t| {
@@ -675,7 +686,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             let in_lava = world.tile(tx, ty).is_some_and(|t| {
                 t.liquid > 0 && t.liquid_kind() == tr_core::tile::LiquidKind::Lava
             });
-            if in_lava && (rare == 0 || rare == -1) && !lava_immune {
+            if in_lava && !reserved_elsewhere && (rare == 0 || rare == -1) && !lava_immune {
                 // `TurnToAirAndSync` — the drop vanishes.
                 items.swap_remove(i);
                 continue;
@@ -812,7 +823,7 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             // differ by one tick of motion — ANALYSIS S1-P-i47). The
             // drained sources are later indices, removed highest-first.
             if !was_grabbed {
-                let drained = crate::item::ItemDrop::combine_nearby(items, i);
+                let drained = crate::item::ItemDrop::combine_nearby(items, i, reserved_elsewhere);
                 for j in drained.into_iter().rev() {
                     items.swap_remove(j);
                 }
@@ -1873,6 +1884,39 @@ mod lava_burn_tests {
             app.npcs.iter().any(|n| n.kind == NpcKind::WallOfFlesh),
             "the wall awoke"
         );
+    }
+
+    /// W4-g15 lane 5 — the reservation gate (`WorldItem.cs:683` / `:159`):
+    /// a drop reserved for ANOTHER peer neither burns in lava nor combines
+    /// with its neighbours. The port's `net_reserved` map carries the MP
+    /// reservation; SP leaves it empty (the gate is vacuous there).
+    #[test]
+    fn w4_g15_a_foreign_reserved_drop_neither_burns_nor_combines() {
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = hell_world();
+        let mut player = crate::player::Player::spawn(&app.world);
+        player.x = 150.0 * TILE_PX;
+        player.y = 496.0 * TILE_PX;
+        app.player = Some(player);
+        // Two rare-0 dirt drops inside the 30 px merge window, both in the
+        // lava pool; slot 0 is reserved for peer 3 (not us, not 255).
+        app.items.push(ItemDrop::new(
+            2, 5, 0, 200.0 * TILE_PX, 498.0 * TILE_PX, 0.0, 0.0, 0.0,
+        ));
+        app.items.push(ItemDrop::new(
+            2, 3, 0, 200.0 * TILE_PX + 10.0, 498.0 * TILE_PX, 0.0, 0.0, 0.0,
+        ));
+        app.net_reserved.insert(0, (3, 15));
+        update_items(&mut app, 1.0 / 60.0);
+        assert_eq!(app.items.len(), 2, "the reserved drop did not burn");
+        assert_eq!(app.items[0].count, 5, "and did not combine");
+        assert_eq!(app.items[1].count, 3);
+        // The reservation cleared: the next tick burns BOTH (the player is
+        // far outside the grab rectangle, so the grab pass never touches
+        // them — the lava check is the only consumer).
+        app.net_reserved.remove(&0);
+        update_items(&mut app, 1.0 / 60.0);
+        assert!(app.items.is_empty(), "the unreserved drops burned");
     }
 }
 
