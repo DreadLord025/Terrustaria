@@ -1230,6 +1230,24 @@ pub struct Npc {
     /// per NPC update (`NPC.cs:90516`). NOT the ~11-tick `hurt_cd`
     /// cooldown (the retired `update_creeper` stand-in's W95 defect).
     pub just_hit: bool,
+    /// `NPC.oldPos` (`NPC.cs:6119`): the 10-slot position trail
+    /// `UpdateNPC_UpdateTrails` shifts once per NPC update (`:90779-
+    /// 90875`, called at `:90512` after `FindFrame`). Only the 402
+    /// Stardust Worm Head's TrailingMode-7 arm rides it so far
+    /// (`NPCID.cs:10430`: 402 → 7 — the position+rotation shift every
+    /// tick); the death dust feed's trail loop reads it
+    /// (`npc_death_dust.rs`, the W4-g60 wiring wave replaces the
+    /// all-zero stand-in). `netOffset` is 0 in the single-player port.
+    /// W4-g62: the SAME mode-7 census row maps 519 → 7 (the SolarGoop's
+    /// hit arm reads it, `npc_hit_dust.rs` `:83008-83022`); the C#'s
+    /// per-type `TrailCacheLength` (402→36, 519→20, `NPCID.cs:10450`,
+    /// `SetDefaults` resize `NPC.cs:8453-8468`) is NOT carried — the
+    /// keep-one merge contract (ANALYSIS) records the 10-slot shape
+    /// both lanes adopt verbatim.
+    pub old_pos: [Vec2; 10],
+    /// `NPC.oldRot` (`NPC.cs:6121`): the trail's rotation twin — the
+    /// mode-7 shift copies `rotation` alongside the position.
+    pub old_rot: [f32; 10],
     /// `NPC.immune[256]`: per-owner i-frame ticks, applied by projectile hits
     /// (`Projectile.cs:14087-14119`) and decremented once per NPC update
     /// (`NPC.cs:90454-90459`).
@@ -2939,6 +2957,10 @@ impl Npc {
             // `SetDefaults`' field reset (`NPC.cs:8506`) — also the
             // Hungry's strike-tick read (S1-D-3 W-1/W-2 shared field).
             just_hit: false,
+            // `NPC.oldPos`'s field init (`NPC.cs:6119`: `new Vector2[10]`)
+            // — all-zero until the first `UpdateNPC_UpdateTrails` shift.
+            old_pos: [Vec2::ZERO; 10],
+            old_rot: [0.0; 10],
             immune: [0; 256],
             player_interaction: [false; 256],
             spawned_from_statue: false,
@@ -4964,7 +4986,39 @@ impl Npc {
         // the NEXT tick's AI, exactly like the C#'s player-update strike.
         self.just_hit = false;
         self.find_frame();
+        // `NPC.UpdateNPC`'s trail shift (`NPC.cs:90512` calls
+        // `UpdateNPC_UpdateTrails`, `:90779-90875`), AFTER `FindFrame`:
+        // the W4-g60 wiring wave — the 402 arm's mode-7 ring so the death
+        // dust feed reads the LIVE trail (the all-zero stand-in retired).
+        // W4-g62 adopts the SAME call + fn shape (keep-one at merge).
+        self.update_trails();
         self.contact(player, rng);
+    }
+
+    /// `NPC.UpdateNPC_UpdateTrails` (`NPC.cs:90779-90875`): the per-type
+    /// `NPCID.Sets.TrailingMode` shift of the `oldPos`/`oldRot` rings.
+    /// Only the 402 Stardust Worm Head rides it in this wave
+    /// (`NPCID.cs:10430`: 402 → 7 — shift both rings every tick,
+    /// `oldPos[0] = position + netOffset` (0 in single-player),
+    /// `oldRot[0] = rotation`); every other kind's modes wait on their
+    /// wiring lanes (the -1 default draws/shifts nothing).
+    /// W4-g62 mode census: the SAME row maps 519 → 7 (SolarGoop) — when
+    /// the goop KIND lands (`npc_ai_pillar.rs`'s spawn request today),
+    /// the gate below widens to it; the shift body is shared verbatim.
+    /// KEEP-ONE: W4-g60 landed this fn identically (0e0fbd6c7) — the
+    /// merge keeps ONE copy (identical shape; ANALYSIS contract).
+    pub fn update_trails(&mut self) {
+        // `NPCID.Sets.TrailingMode[402] == 7` — the `case 7` arm
+        // (`NPC.cs:90863-90872`).
+        if self.kind != NpcKind::StardustWormHead {
+            return;
+        }
+        for i in (1..self.old_pos.len()).rev() {
+            self.old_pos[i] = self.old_pos[i - 1];
+            self.old_rot[i] = self.old_rot[i - 1];
+        }
+        self.old_pos[0] = Vec2::new(self.x, self.y);
+        self.old_rot[0] = self.rotation;
     }
 
     /// The Martian Officer's bubble lifecycle — `AI_003_Fighters`'s
@@ -20471,6 +20525,50 @@ mod tests {
             }
             assert_eq!(e.frame, expect);
         }
+    }
+
+    /// W4-g60 wiring — `UpdateNPC_UpdateTrails`'s 402 mode-7 arm
+    /// (`NPC.cs:90863-90872`): each call shifts both rings down and
+    /// stamps `oldPos[0] = position` / `oldRot[0] = rotation`
+    /// (`netOffset` 0, single-player). The fresh ring is all-zero
+    /// (`NPC.cs:6119`'s `new Vector2[10]`); after 10 shifts every slot
+    /// carries a recorded position — the death feed's trail loop then
+    /// reads a FULL ring instead of breaking at slot 0.
+    /// W4-g62 adopts this witness VERBATIM (the keep-one merge dedupes
+    /// the identical test — g60 0e0fbd6c7 owns the original).
+    #[test]
+    fn w4_g60_the_worm_head_trail_shifts_mode_7() {
+        let mut n = bare(NpcKind::StardustWormHead);
+        assert_eq!(n.old_pos, [Vec2::ZERO; 10], "the field init");
+        n.rotation = 0.25;
+        n.update_trails();
+        assert_eq!(n.old_pos[0], Vec2::new(100.0, 100.0));
+        assert_eq!(n.old_rot[0], 0.25);
+        assert_eq!(n.old_pos[1], Vec2::ZERO, "the shift pulls the zero down");
+        // Move + shift again: slot 1 takes the OLD slot-0 stamp.
+        n.x = 106.0;
+        n.y = 103.0;
+        n.rotation = 0.5;
+        n.update_trails();
+        assert_eq!(n.old_pos[0], Vec2::new(106.0, 103.0));
+        assert_eq!(n.old_pos[1], Vec2::new(100.0, 100.0));
+        assert_eq!(n.old_rot[1], 0.25);
+        assert_eq!(n.old_pos[2], Vec2::ZERO);
+        // Eight more shifts fill the ring — no zero slot remains.
+        for _ in 0..8 {
+            n.update_trails();
+        }
+        assert!(n.old_pos.iter().all(|&p| p != Vec2::ZERO));
+    }
+
+    /// The other kinds' TrailingMode arms are unwired: their rings stay
+    /// all-zero (the -1 default shifts nothing, `NPCID.cs:10430`).
+    #[test]
+    fn w4_g60_other_kinds_do_not_shift_the_trail() {
+        let mut n = bare(NpcKind::Zombie);
+        n.update_trails();
+        assert_eq!(n.old_pos, [Vec2::ZERO; 10]);
+        assert_eq!(n.old_rot, [0.0; 10]);
     }
 
     pub(super) fn bare(kind: NpcKind) -> Npc {
