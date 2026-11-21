@@ -411,6 +411,23 @@
 //!   loop (bodies d55's).
 //! - 82070 — 676 (`:82058-82077`): LIVE FLAT 8 dust 310, alpha 80,
 //!   scale 1.1, the gate, then velocity ×1.5 + base.velocity·0.1.
+//! Batch 29 (the Queen Slime herself + the crystal ring):
+//! - 81980 — the Queen Slime 657 (`:81974-81988`): LIVE FLAT 12 dust 4,
+//!   (2·dir,-1), alpha 50, the GetDustColor double-Lerp (TWO NextFloat
+//!   draws: inner grey↔pink first, outer blue↔inner second,
+//!   `NPC.cs:45121-45124`), A=150; velocity ×0.3 + base.velocity·0.3;
+//!   Next(3)==0 → noGravity + scale ×1.2.
+//! - 83031 — the Eternia Crystal 522 (`:83024-83037`): EVERY strike,
+//!   the RotatedByRandom(π) spinning point (TWO NextDouble draws,
+//!   Utils.cs:1697-1700), then FLAT 24 dust 66 in the 0×0 Centre box,
+//!   position = Centre, velocity = spin.RotatedBy(2π·i/24) × (1.05,1)
+//!   × (0.8+NextFloat·0.4) × 2, SkyBlue, noGravity, scale +=
+//!   0.5+NextFloat.
+//! DEFERRED (documented): the 519 oldPos trail (`:83008-83022`) and the
+//! 402 oldPos trail (`:83579-83596`) need the NPC oldPos ring the port
+//! does not carry yet; the 661/657 DEATH halves, the 371 bubble ring
+//! (`:84239`), the 686/594 gore-only deaths and the daybreak prologue
+//! (`:81735`) are g59/g60's death lane.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -505,6 +522,24 @@ fn hit_color(n: &Npc) -> Color {
         NpcKind::MotherSlime => Color::new(0, 0, 0, 50),
         _ => Color::default(),
     }
+}
+
+/// `Main.hslToRgb`-free helper: `Color.Lerp` (MonoGame float lerp + the
+/// truncating byte cast, the dust_table convention).
+fn lerp_color(a: Color, b: Color, t: f32) -> Color {
+    let ch = |x: u8, y: u8| (x as f32 + (y as f32 - x as f32) * t) as u8;
+    Color::new(ch(a.r, b.r), ch(a.g, b.g), ch(a.b, b.b), ch(a.a, b.a))
+}
+
+/// `NPC.AI_121_QueenSlime_GetDustColor` (`NPC.cs:45121-45124`):
+/// `Lerp((0,160,255), Lerp((200,200,200), (255,80,255), NextFloat()),
+/// NextFloat())` — the INNER lerp's draw rides FIRST (argument
+/// evaluation), then the outer's.
+fn queen_slime_dust_color(rng: &mut UnifiedRandom) -> Color {
+    let inner_t = rng.next_float();
+    let outer_t = rng.next_float();
+    let inner = lerp_color(Color::new(200, 200, 200, 255), Color::new(255, 80, 255, 255), inner_t);
+    lerp_color(Color::new(0, 160, 255, 255), inner, outer_t)
 }
 
 /// The C# live-loop bound: `for (int i = 0; (double)i < dmg /
@@ -683,6 +718,52 @@ pub fn replay_hit_dust(
             if s.npc_type == 676 {
                 d.velocity *= 1.5; // `:82075`
                 d.velocity += Vec2::new(s.vx, s.vy) * 0.1; // `:82076`
+            }
+        }
+        return;
+    }
+    // `:83024-83037` — the Eternia Crystal's ring: EVERY strike. The
+    // spinning point's RotatedByRandom(π) draws TWO NextDoubles (left
+    // operand first, Utils.cs:1697-1700); then FLAT 24 dust 66 in the
+    // 0×0 Centre box, position = Centre, the per-i rotated velocity,
+    // SkyBlue, noGravity, scale += 0.5 + NextFloat.
+    if s.npc_type == 522 {
+        let max = std::f64::consts::PI;
+        let angle = rng.next_double() * max - rng.next_double() * max;
+        let spin = crate::bow_launch::rotated_by(Vec2::new(0.0, -3.0), angle);
+        for i in 0..24u32 {
+            let idx = dust.new_dust(
+                rng, ctx, world, Vec2::new(s.cx, s.cy), 0, 0, 66,
+                0.0, 0.0, 0, Color::TRANSPARENT, 1.0,
+            );
+            let d = dust.slot_mut(idx);
+            d.position = Vec2::new(s.cx, s.cy); // `:83032`
+            // `:83033` — RotatedBy((float)(π·2·i/24)).
+            let a = (std::f32::consts::PI * 2.0 * i as f32 / 24.0) as f64;
+            let v = crate::bow_launch::rotated_by(spin, a);
+            let f = 0.8 + rng.next_float() * 0.4;
+            d.velocity = v * Vec2::new(1.05, 1.0) * f * 2.0;
+            d.color = Color::new(135, 206, 235, 255); // Color.SkyBlue `:83034`
+            d.no_gravity = true; // `:83035`
+            d.scale += 0.5 + rng.next_float(); // `:83036`
+        }
+        return;
+    }
+    // `:81974-81988` — the Queen Slime's LIVE shimmer: FLAT 12 dust 4,
+    // (2·dir,-1), alpha 50, the GetDustColor double-Lerp (A=150),
+    // velocity ×0.3 + base.velocity·0.3, Next(3)==0 → noGravity +
+    // scale ×1.2. The death half's 150-count burst is g60's.
+    if s.npc_type == 657 && s.life > 0 {
+        for _ in 0..12 {
+            let mut tint = queen_slime_dust_color(rng);
+            tint.a = 150; // `:81979`
+            let idx = live_dust(s, 4, 2.0 * dir, -1.0, 50, tint, 1.0, rng, dust, ctx, world);
+            let d = dust.slot_mut(idx);
+            d.velocity *= 0.3; // `:81981`
+            d.velocity += Vec2::new(s.vx, s.vy) * 0.3; // `:81982`
+            if rng.next_max(3) == 0 {
+                d.no_gravity = true; // `:81985`
+                d.scale *= 1.2; // `:81986`
             }
         }
         return;
@@ -3744,6 +3825,85 @@ mod tests {
         let d = twin.slot_mut(idx);
         d.no_gravity = true;
         d.velocity *= 5.0;
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+    }
+
+    /// W4-g62 batch 29 — the Queen Slime's live double-Lerp colour
+    /// (`NPC.cs:81978-81987`): the INNER NextFloat rides first, A=150,
+    /// the ×0.3 velocity + 0.3·vel add, the Next(3)==0 gate.
+    #[test]
+    fn w4_g62_the_queen_slime_live_shimmer() {
+        let world = air();
+        let ctx = ctx();
+        let mut s = snap(657, 100, 100, 10.0);
+        s.vx = 1.0;
+        s.vy = -2.0;
+        let mut rng = UnifiedRandom::new(241);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(241);
+        let mut twin = DustPool::new();
+        for _ in 0..12 {
+            let inner_t = twin_rng.next_float();
+            let outer_t = twin_rng.next_float();
+            let inner = lerp_color(Color::new(200, 200, 200, 255), Color::new(255, 80, 255, 255), inner_t);
+            let mut tint = lerp_color(Color::new(0, 160, 255, 255), inner, outer_t);
+            tint.a = 150;
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(100.0, 100.0), 24, 18, 4,
+                2.0, -1.0, 50, tint, 1.0,
+            );
+            let d = twin.slot_mut(idx);
+            d.velocity *= 0.3;
+            d.velocity += Vec2::new(1.0, -2.0) * 0.3;
+            if twin_rng.next_max(3) == 0 {
+                d.no_gravity = true;
+                d.scale *= 1.2;
+            }
+        }
+        assert_eq!(rng, twin_rng);
+        assert_eq!(dust.slots(), twin.slots());
+        // A dead Queen draws nothing (the 150-burst is g60's).
+        let dead = snap(657, 0, 100, 10.0);
+        let mut r2 = UnifiedRandom::new(241);
+        let t2 = UnifiedRandom::new(241);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&dead, &mut r2, &mut p2, &ctx, &world);
+        assert_eq!(r2, t2);
+    }
+
+    /// W4-g62 batch 29 — the crystal ring (`NPC.cs:83026-83036`): the
+    /// two NextDouble spin draws FIRST, then 24 × (spawn, rotated
+    /// velocity with one NextFloat, SkyBlue, scale add NextFloat).
+    #[test]
+    fn w4_g62_the_crystal_ring_mirrors() {
+        let world = air();
+        let ctx = ctx();
+        let s = snap(522, -1, 1000, 5.0); // every strike
+        let mut rng = UnifiedRandom::new(251);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
+        let mut twin_rng = UnifiedRandom::new(251);
+        let mut twin = DustPool::new();
+        let max = std::f64::consts::PI;
+        let angle = twin_rng.next_double() * max - twin_rng.next_double() * max;
+        let spin = crate::bow_launch::rotated_by(Vec2::new(0.0, -3.0), angle);
+        for i in 0..24u32 {
+            let idx = twin.new_dust(
+                &mut twin_rng, &ctx, &world, Vec2::new(112.0, 109.0), 0, 0, 66,
+                0.0, 0.0, 0, Color::TRANSPARENT, 1.0,
+            );
+            let d = twin.slot_mut(idx);
+            d.position = Vec2::new(112.0, 109.0);
+            let a = (std::f32::consts::PI * 2.0 * i as f32 / 24.0) as f64;
+            let v = crate::bow_launch::rotated_by(spin, a);
+            let f = 0.8 + twin_rng.next_float() * 0.4;
+            d.velocity = v * Vec2::new(1.05, 1.0) * f * 2.0;
+            d.color = Color::new(135, 206, 235, 255);
+            d.no_gravity = true;
+            d.scale += 0.5 + twin_rng.next_float();
+        }
         assert_eq!(rng, twin_rng);
         assert_eq!(dust.slots(), twin.slots());
     }
