@@ -14828,7 +14828,8 @@ call sites are wired.
 The five sibling lanes (c46/d70/c24/f47/d2) landed their overlapping halves
 on their own unmerged branches; the keep-one verdicts + the exact drop-hunks
 + the compose meeting points are published in
-`docs/research/240-f30-systems-retire.md` (the FINAL systems-family census is
+`docs/research/335-f30-systems-retire.md` (renamed 240→335 per the d54 registry
+150 §9.2; the FINAL systems-family census is
 its §6). The deviations that CHANGE at merge:
 
 - **Hardcore (35):** f30's `erase_player` superset + the `session_draft`

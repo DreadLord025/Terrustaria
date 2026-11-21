@@ -1,9 +1,12 @@
-# 240 — W4-f30 SYSTEMS RETIRE: keep-one drop-hunks + compose meeting points + the FINAL notify census
+# 335 — W4-f30 SYSTEMS RETIRE: keep-one drop-hunks + compose meeting points + the FINAL notify census
 
-Number per the collision registry (`150-research-number-registry.md`, W4-d54):
+**Renamed 240→335** per the collision registry (`150-research-number-registry.md`,
+W4-d54, `b243c7086` §9.2 row 335): g58's `143→240` self-rename (`cdfe3d108`,
+12:16:37) WINS key 240; f30's first-add (`973ec04c4`) loses → 335. Chain 240→335.
+The original numbering paragraph (historical):
 free block 237+; the tip scan of all `task/W4-*` remotes shows 237 (e23 + g48),
-238 (c8 + d42 + g61), 239 (d42) already claimed — **240 is the first free
-number**. Branch `task/W4-f30-achievement-notify-2`, worktree TR-W4-f30,
+238 (c8 + d42 + g61), 239 (d42) already claimed — 240 was scanned as the first
+free number (superseded by the §9 adjudication above). Branch `task/W4-f30-achievement-notify-2`, worktree TR-W4-f30,
 code-only (no cargo/tests/rustfmt; witnesses WRITTEN NOT RUN).
 
 The f30 owning-systems batch landed six systems (gravestone-36, sun-scorch-33,
@@ -403,7 +406,8 @@ the merger's to write.
   — the §3 load-path rule), `NPC.cs:53187-53277`, `Projectile.cs:1258-1270/
   :2872-2936/:10876-10877/:25316-25366`.
 - The free-number scan: all `task/W4-*` remote tips, `docs/research/` filenames
-  ≥150 — 237/238/239 claimed, 240 free (this doc).
+  ≥150 — 237/238/239 claimed, 240 scanned free at the time (superseded: g58's
+  earlier rename wins 240; registry §9.2 assigns this doc **335**, chain 240→335).
 - No cargo/tests/rustfmt/graphify (code-only order). No code edited by this
   retire phase — the drop/compose tables ARE the deliverable (the sibling
   tips are unmerged; on-branch drops would break this branch's anchors).
