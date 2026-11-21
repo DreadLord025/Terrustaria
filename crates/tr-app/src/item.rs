@@ -1125,6 +1125,15 @@ impl ItemDrop {
             // survivor that filled mid-scan keeps "merging" 0 with
             // `amount = 0`, lerping its position onto each further
             // same-kind neighbour (`:169-174`, the vanilla quirk kept).
+            // `Item.CanStack` (`Item.cs:49865-49872`) is type + prefix
+            // equality; the `!IsAir` gate is `count > 0` (the port's list
+            // has no air slots, but a drained source keeps count 0 until
+            // the caller removes it). The reservation-equality term
+            // (`worldItem.playerIndexTheItemIsReservedFor == this.…`,
+            // `:167`) is the MP per-target gate — the port's host owns
+            // every drop in SP (all reserved for the local player), so it
+            // is vacuous there; the caller's `reserved_elsewhere` covers
+            // the survivor's own `:159` gate.
             let same = drops[j].count > 0
                 && drops[j].kind == drops[i].kind
                 && drops[j].prefix == drops[i].prefix
