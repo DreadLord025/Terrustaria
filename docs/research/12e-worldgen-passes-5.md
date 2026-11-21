@@ -129,3 +129,37 @@ Jungle `:20813` are already executed steps; #46 Settle Liquids Again
       `w4_d105_the_larva_step_sits_after_the_muds_walls` + 3 unit tests.
 
 **Lane 5 complete: all nine passes (#37-45) landed, one per commit.**
+
+## Doc-sweep phase (lane 39, 2026-11-21)
+
+The six residuals over the landed passes were re-censused against the C#
+source; the full census + verdicts live in
+`docs/research/129-doc-sweep-wg-37.md`. Three REAL gaps ported (one commit
+each), the rest verified-present or cross-lane:
+
+- [x] Herb growth tick — `growth/herbs.rs::grow_alch`: the generic 1/50
+      bloom gate's frame-108 condition was INVERTED
+      (`WorldGen.cs:45798-45811`) + the 1/30 fireblossom maturity tail
+      (`:45890-45898`) was missing; 2 witnesses (`35ccf38ea`).
+- [x] Runtime dye twin — `growth/decorations.rs::plant_dye`: the remix
+      bypass halves (`:71298` / `:71378`) + the lava/honey-only exotic
+      liquid veto (`:71318-71321`, shimmer passes); 2 witnesses
+      (`52978903f`). The gen-time twin already carried all three.
+- [x] Sunflower happiness — the `player.sunflower` flag now feeds
+      `SpawnFlags.sunflower` in the live spawn context
+      (`world_sim/npcs.rs`), arming `NPC.GetSpawnRate`'s `:712-716`
+      modifier; 1 witness (`7eb486f07`).
+- [x] Guide starter-NPC spawn — VERIFIED PRESENT (full arm census +
+      `GetAdjustedFloorPosition`/`Scan3By3` + the name-category table);
+      the copper tools are the player start inventory (already ported),
+      not the guide pass.
+- [x] GlowTulips glow — VERIFIED PRESENT (`TileLightScanner.cs:389-393`
+      `[0.2, 0.55, 0.5]` == `scanner.rs:751`); cross-note: outside the
+      g18/e8 Main.cs AddLight scope (a scanner seed, already landed).
+- [x] ChilletEggs — gen placement + mount data + recipes PRESENT; the
+      egg-tile-break drop (Check2x2-752) and the bag-open
+      (OpenChilletEgg) are real gaps but CROSS-LANE (tile-framing / UI
+      container-opening), recorded not ported.
+
+No generation-time tile writes in any of the three ports — neither
+`world_hash.rs` pin moves; the lane-5 gen pins stay stale-by-design.
