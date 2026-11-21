@@ -6581,10 +6581,10 @@ impl Npc {
             // `Transform(427)`.
             NpcKind::VortexHunter => self.update_vortex_hunter(world, player, rng),
             NpcKind::VortexAlien => self.update_vortex_alien(world, player, rng),
-            NpcKind::VortexHeadcrab => self.update_vortex_headcrab(world, player),
+            NpcKind::VortexHeadcrab => self.update_vortex_headcrab(world, player, rng),
             // The pillar shards: the aiStyle-95/96/85/26 machines and the
             // Vortex pair's aiStyle-3 riders.
-            NpcKind::StardustCellSmall => self.update_stardust_cell(world, player),
+            NpcKind::StardustCellSmall => self.update_stardust_cell(world, player, rng),
             NpcKind::StardustJellyfishBig => self.update_stardust_jellyfish(world, player, rng),
             NpcKind::StardustCellBig => self.update_stardust_cell_big(world, player),
             NpcKind::NebulaBeast => self.update_nebula_beast(world, player, rng),
@@ -13662,7 +13662,7 @@ impl Npc {
     /// `Transform(405)` at the end, and the rotation bob.
     ///
     /// Deviations: the 226-dust ring (`:39403-39427`) is unmodelled.
-    fn update_stardust_cell(&mut self, _world: &World, _player: &Player) {
+    fn update_stardust_cell(&mut self, _world: &World, _player: &Player, rng: &mut UnifiedRandom) {
         // `:39386-39391`'s damping: above 4 px/tick the velocity damps to
         // 0.95, then every tick drifts by the flat 0.99.
         let sp = (self.vx * self.vx + self.vy * self.vy).sqrt();
@@ -13683,6 +13683,16 @@ impl Npc {
             self.ai = [0.0; 4];
             self.frame = 0;
             self.frame_counter = 0.0;
+            // W4-c10 final — `Transform`'s visuals half (`TransformVisuals`,
+            // `NPC.cs:81136` → `:80991-81007`): the 406→405 growth ring,
+            // Next(10,21) count + NextFloat angle + count×(6 NewDust
+            // internals + scale/fadeIn floats) on the UpdateNPCs stream.
+            // The dust bodies stay the documented visual skip; the draw
+            // census keeps the stream order (the waterfowl silence pair).
+            // The NEW type's box (44x44) — the body runs after SetDefaults;
+            // the ring passes Center with w/h 0 so the box is unused here.
+            let cue = crate::npc_transform_visuals::transform_visuals(406, 405, 44, 44, rng);
+            debug_assert_eq!(cue, None, "the stardust growth is cue-free");
             return;
         }
         self.rotation += self.vx * 0.1;
@@ -16015,7 +16025,7 @@ impl Npc {
     /// accel pairs over the ±6 caps, the 0.98 damping, the 20-px deadband,
     /// the 0.05 separation), the leap arm (`velocity.Y = -5`) and the
     /// 1200-tick `Transform(426)` behind the empty 5x5 box.
-    fn update_vortex_alien(&mut self, world: &World, player: &Player, _rng: &mut UnifiedRandom) {
+    fn update_vortex_alien(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         let (cx, cy) = (self.x + w * 0.5, self.y + h * 0.5);
         let (pcx, pcy) = player.center();
@@ -16049,6 +16059,14 @@ impl Npc {
                 self.frame = 0;
                 self.frame_counter = 0.0;
                 self.caster_counter = 0;
+                // W4-c10 final — `TransformVisuals` (`NPC.cs:81020-81031`):
+                // the 427→426 queen ring, 30×(SelectRandom Next(3) type pick
+                // + 6 NewDust internals + scale NextFloat) = 240 draws on
+                // the UpdateNPCs stream; the dust bodies stay the documented
+                // visual skip. The NEW type's box (50x62) feeds the internals.
+                let cue =
+                    crate::npc_transform_visuals::transform_visuals(427, 426, 50, 62, rng);
+                debug_assert_eq!(cue, None, "the queen ring is cue-free");
                 return;
             }
         }
@@ -16104,7 +16122,7 @@ impl Npc {
     /// rotation + `:56855-56869`'s metamorphosis) — the headcrab rides the
     /// generic walker (no speed override in the C#) and `Transform(427)`s
     /// on the 300-tick counter behind the empty 3x2 box above its centre.
-    fn update_vortex_headcrab(&mut self, world: &World, player: &Player) {
+    fn update_vortex_headcrab(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
         let (pcx, pcy) = player.center();
         // S1-D-3: the 428 slow arm (`NPC.cs:57881-57906`'s 0.5/0.03/0.7).
         crate::npc_ai::walker_step_ladder(
@@ -16159,6 +16177,14 @@ impl Npc {
                 self.frame = 0;
                 self.frame_counter = 0.0;
                 self.caster_counter = 0;
+                // W4-c10 final — `TransformVisuals` (`NPC.cs:81008-81019`):
+                // the 428→427 larva ring, 20×(SelectRandom Next(2) type pick
+                // + 6 NewDust internals + scale NextFloat) = 160 draws on
+                // the UpdateNPCs stream; the dust bodies stay the documented
+                // visual skip. The NEW type's box (40x28) feeds the internals.
+                let cue =
+                    crate::npc_transform_visuals::transform_visuals(428, 427, 40, 28, rng);
+                debug_assert_eq!(cue, None, "the larva ring is cue-free");
             }
         }
     }
@@ -25198,6 +25224,123 @@ mod tests {
             n.update_rng(&w, &mut player, 1.0 / 60.0, &mut a);
             assert!(n.kind == walker || n.kind == swimmer, "the walker cycle");
         }
+    }
+
+    /// W4-c10 final — the stardust growth flip's census wiring
+    /// (`NPC.cs:39394-39401` Transform(405) → `:81136` TransformVisuals
+    /// → `:80991-81007`): the 300th tick flips the kind AND draws the
+    /// growth ring on the SAME stream — Next(10,21) count + NextFloat
+    /// angle + count×(6 NewDust internals + scale/fadeIn floats). The
+    /// mirrored-stream witness replays the exact order; the pre-flip
+    /// ticks draw nothing (the 226-dust ring `:39403-39427` stays the
+    /// documented unmodelled skip). WRITTEN, NOT RUN (code-only mode).
+    #[test]
+    fn w4_c10_final_the_stardust_growth_flip_draws_the_ring() {
+        let w = ground();
+        let player = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::StardustCellSmall, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        n.ai[0] = 299.0; // increments to 300 this tick
+        let mut a = UnifiedRandom::new(5);
+        let mut b = UnifiedRandom::new(5);
+        n.update_stardust_cell(&w, &player, &mut a);
+        assert_eq!(n.kind, NpcKind::StardustCellBig, "the Transform(405)");
+        assert_eq!(n.ai, [0.0; 4], "the ai reset");
+        assert_eq!(n.scale, 1.0);
+        assert_eq!(n.frame, 0);
+        // The census mirror: count, angle, then count dust bodies.
+        let count = b.next_range(10, 21);
+        let _ = b.next_float(); // the angle (:80994)
+        for _ in 0..count {
+            // NewDust(Center, 0, 0, 229): the 5-clamp internals.
+            let _ = b.next_max(1);
+            let _ = b.next_max(1);
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_max(3);
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_float(); // scale (:81003)
+            let _ = b.next_float(); // fadeIn (:81005)
+        }
+        assert_eq!(a, b, "2 + count×8 draws, the C# order");
+    }
+
+    /// W4-c10 final — the vortex larva metamorphosis flip's census
+    /// wiring (`NPC.cs:56857-56867` Transform(427) → `:81008-81019`):
+    /// the 300-tick counter behind the empty 3x2 probe flips the kind,
+    /// heals to the NEW max (the C#'s life=lifeMax then the Transform
+    /// rescale nets full) and draws the 160-draw ring — per dust the
+    /// SelectRandom Next(2) type pick FIRST, then the six internals
+    /// over the NEW 40x28 box, then the scale float. WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c10_final_the_larva_flip_draws_the_160_ring() {
+        let w = ground();
+        let player = Player::spawn(&w);
+        // High in the air (the ground() tiles start at y=30): the 3x2
+        // probe around the centre is empty → the flip fires.
+        let mut n = Npc::new(NpcKind::VortexHeadcrab, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        n.caster_counter = 299; // increments to 300 this tick
+        let mut a = UnifiedRandom::new(6);
+        let mut b = UnifiedRandom::new(6);
+        n.update_vortex_headcrab(&w, &player, &mut a);
+        assert_eq!(n.kind, NpcKind::VortexAlien, "the Transform(427)");
+        assert_eq!(n.max_hp, NpcKind::VortexAlien.max_hp());
+        assert_eq!(n.hp, n.max_hp, "the heal + rescale nets full");
+        assert_eq!(n.ai, [0.0; 4]);
+        assert_eq!(n.caster_counter, 0);
+        for _ in 0..20 {
+            let _ = b.next_max(2); // SelectRandom(229, 240) (:81012)
+            let _ = b.next_max(36); // max(40,5)-4
+            let _ = b.next_max(24); // max(28,5)-4
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_max(3);
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_float(); // scale (:81015)
+        }
+        assert_eq!(a, b, "the larva ring: 160 draws");
+    }
+
+    /// W4-c10 final — the vortex hornet metamorphosis flip's census
+    /// wiring (`NPC.cs:56888-56897` Transform(426) → `:81020-81031`):
+    /// the 1200 counter (localAI[0] + |vx|/2) behind the empty 5x5
+    /// probe flips to the queen, heals full and draws the 240-draw
+    /// ring — SelectRandom Next(3) FIRST, six internals over the NEW
+    /// 50x62 box, scale float. The boxed probe keeps the hornet (zero
+    /// draws — the counter keeps climbing). WRITTEN, NOT RUN.
+    #[test]
+    fn w4_c10_final_the_hornet_flip_draws_the_240_ring() {
+        let w = ground();
+        let player = Player::spawn(&w);
+        let mut n = Npc::new(NpcKind::VortexAlien, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
+        n.caster_counter = 1199; // vx 0 → +1 → 1200 this tick
+        let mut a = UnifiedRandom::new(7);
+        let mut b = UnifiedRandom::new(7);
+        n.update_vortex_alien(&w, &player, &mut a);
+        assert_eq!(n.kind, NpcKind::VortexHunter, "the Transform(426)");
+        assert_eq!(n.max_hp, NpcKind::VortexHunter.max_hp());
+        assert_eq!(n.hp, n.max_hp);
+        assert_eq!(n.ai, [0.0; 4]);
+        assert_eq!(n.caster_counter, 0);
+        for _ in 0..30 {
+            let _ = b.next_max(3); // SelectRandom(229, 240, 240) (:81024)
+            let _ = b.next_max(46); // max(50,5)-4
+            let _ = b.next_max(58); // max(62,5)-4
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_max(3);
+            let _ = b.next_range(-20, 21);
+            let _ = b.next_float(); // scale (:81027)
+        }
+        assert_eq!(a, b, "the queen ring: 240 draws");
+        // The boxed probe: a hornet embedded in the ground keeps its
+        // kind and draws NOTHING (the flip is the only draw site).
+        let mut boxed = Npc::new(NpcKind::VortexAlien, 20.0 * TILE_PX, 32.0 * TILE_PX, 1, 0.0);
+        boxed.caster_counter = 1199;
+        let mut c = UnifiedRandom::new(8);
+        let before = c.clone();
+        boxed.update_vortex_alien(&w, &player, &mut c);
+        assert_eq!(boxed.kind, NpcKind::VortexAlien, "the solid probe blocks");
+        assert_eq!(c, before, "the blocked flip draws nothing");
     }
 
     /// W4-c10 roster tail — the twelve critters' `SetDefaults` rows pin

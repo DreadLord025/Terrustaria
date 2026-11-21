@@ -40,25 +40,41 @@
 //!   internals) THEN the scale `NextFloat` (`:81003`) THEN the
 //!   fadeIn `NextFloat` (`:81005`) — the position/velocity writes
 //!   between them draw nothing. 2 + count×8 draws. Both kinds ARE
-//!   ported (`update_stardust_cell`'s growth flip, `npc.rs`); the
-//!   wiring of this census into that flip is the pillar lane's
-//!   (the shared-file co-lane note, ANALYSIS).
+//!   ported; WIRED (W4-c10 final): `update_stardust_cell`'s growth
+//!   flip calls the census at the C# position (after the kind swap).
 //! * 428→427 (VortexLarva→VortexHornet, `:81008-81019`): TWENTY
 //!   dust, each `Utils.SelectRandom(Main.rand, 229, 240)` =
 //!   `Next(2)` (`Utils.cs:2459-2462`, drawn as the NewDust type
 //!   ARGUMENT, before the six internals) then the scale `NextFloat`
 //!   (`:81015`). 20×8 = 160 draws. Ported as VortexHeadcrab→
-//!   VortexAlien (`update_vortex_headcrab`'s flip).
+//!   VortexAlien; WIRED (W4-c10 final): `update_vortex_headcrab`'s
+//!   metamorphosis flip calls the census.
 //! * 427→426 (VortexHornet→VortexHornetQueen, `:81020-81031`):
 //!   THIRTY dust, each `SelectRandom(Main.rand, 229, 240, 240)` =
 //!   `Next(3)` then six internals then the scale `NextFloat`
 //!   (`:81027`). 30×8 = 240 draws. Ported as VortexAlien→
-//!   VortexHunter (`update_vortex_alien`'s flip).
+//!   VortexHunter; WIRED (W4-c10 final): `update_vortex_alien`'s
+//!   metamorphosis flip calls the census.
+//!
+//! ACTIVATION CONTRACT (W4-c10 final, the per-kind flip-site census):
+//! the three PORTED pairs above are wired at their in-place kind
+//! flips (`npc.rs`); the two UNPORTED pairs stay module-ready —
+//! 158↔159 (VampireBat/Vampire) is claimed by W4-d36's band
+//! (research/109-d36: 159 Vampire ports at proto 762+; 158 VampireBat
+//! skipped to g8 per 108-E2; the flip callers `NPC.cs:23353`/`:58850`
+//! ride `npc_ai_style14::bat_ai`'s cited unported branch + the
+//! aiStyle-3 vampire arm), and 478→479 (MothronEgg/MothronSpawn) is
+//! claimed by W4-d40's 421-490 band (both kinds rostered on their tip,
+//! the aiStyle-89 egg timer's `Transform(479)` at `NPC.cs:38380` is
+//! their wiring step). When those lanes land their flips they call
+//! `transform_visuals(old, new, w, h, rng)` with the NEW type's
+//! SetDefaults box — the vampire arm's cue returns `Item8` for the
+//! caller's `wants_sound` queue.
 //!
 //! CODE-ONLY MODE (W4-c10 sweep): the witnesses at the bottom are
 //! WRITTEN NOT RUN; every expected count is hand-derived from the
 //! cited lines.
-#![allow(dead_code)] // the pillar-kind transform sites' wiring is their lane's (ANALYSIS co-lane note)
+#![allow(dead_code)] // the vampire/mothron arms await their lanes' kinds (the activation contract above)
 
 use tr_core::UnifiedRandom;
 
