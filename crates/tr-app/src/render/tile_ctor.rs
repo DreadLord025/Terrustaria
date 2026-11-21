@@ -14,22 +14,25 @@
 //! This module closes the LAST ctor draw: the noise table and its only
 //! draw-side consumer chain.
 //!
-//! UNWIRED beyond the table: the `case 717` glowmask arm's bind-contract
-//! is published in `docs/research/136-tilepass-d-hunks.md` §3 — the f15
-//! co-lane (`8ca19097`) wires the SECOND-switch glow record (`:1343-1403`)
-//! but explicitly scopes OUT the `Main.tileGlowMask` table pass
-//! (`:1178-1342`) where the 717 case lives, so the bind targets the
-//! table-pass lane / family merge, NOT f15's seam: mask 362
-//! (`Main.cs:10056`), `Color(v, v, v, v/2)` per-channel truncation, the
-//! `:971` gate coupling (d56 `tile_draw_gate(glow_mask_id: 362)`),
-//! stream-free. The maths here is pure and complete so that bind is a
+//! The 717 bind (TILEPASS final, EXECUTED as a shadow PLAN): the `case
+//! 717` glowmask arm lives in the `Main.tileGlowMask` TABLE pass
+//! (`:1178-1342`) which the f15 co-lane (`8ca19097`) explicitly scopes
+//! OUT (its seam is the SECOND-switch record bind, `:1343-1403`) — so
+//! `tile_attach.rs::classify_and_draw_cell` plans the bind per drawn 717
+//! cell (`lava_glows`): mask 362 (`Main.cs:10056`), `Color(v, v, v, v/2)`
+//! per-channel truncation, stream-free. The PIXEL push (the `Glow_362`
+//! sheet rect at the cell's `vector`, behind the `:971` gate coupling —
+//! d56 `tile_draw_gate(glow_mask_id: 362)` keeps a dark 717 cell out of
+//! the black merge) lands with the table-pass lane / family merge;
+//! the bind-contract is `docs/research/136-tilepass-d-hunks.md` §3.
+//! The maths here is pure and complete so that bind is a
 //! one-liner. The table is built
 //! through the port's oracle-pinned `UnifiedRandom` (`System.Random`'s
 //! Knuth subtractive stream — `UnifiedRandom.cs` IS the .NET Framework
 //! algorithm, `unified_random.rs` module doc), seed 0, 256 `NextDouble`
 //! draws in index order.
 
-#![allow(dead_code)] // the 717 glowmask bind-contract: research/136 §3 (the tileGlowMask table pass, NOT f15's :1343 record seam).
+#![allow(dead_code)] // the ctor chain beyond lava_light_a (the 717 shadow-plan consumer, tile_attach.rs) has no other caller yet: research/136 §3.
 
 use std::sync::OnceLock;
 use tr_core::{UnifiedRandom, World};

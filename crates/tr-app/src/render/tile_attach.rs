@@ -13,7 +13,10 @@
 //!   quad;
 //! * classify: g30 `classify_tile` + `apply_cell_class` into a
 //!   shadow-owned `SpecialPoints` registry (the vine crawls are pure
-//!   world reads; `LiquidDrops` cells recorded for d60);
+//!   world reads; `LiquidDrops` cells recorded for d60); the 717 glowmask
+//!   table-pass colour is PLANNED per drawn cell (`lava_glows`,
+//!   research/136 §3 — mask 362, the `Color(v,v,v,v/2)` truncation of
+//!   `tile_ctor::lava_light_a`);
 //! * post: g29 `post_draw_tiles` → g31 `drain_pass_for_post_step` →
 //!   `drain_one_pass` over `&reg.buckets`, ONE shadow-owned
 //!   `UnifiedRandom` shared across the ten nature passes (the C# `_rand`
@@ -118,6 +121,12 @@ pub(crate) struct ShadowSeams<'a> {
     /// One entry per sequenced C# call the pixel merge must bind.
     pub log: Vec<String>,
     pub strips: Vec<BlackStrip>,
+    /// The 717 glowmask table-pass PLAN (research/136 §3, the :1178-1342
+    /// pass f15 explicitly scopes OUT): one entry per drawn 717 cell —
+    /// `(x, y, color_bytes)` where the colour is the XNA
+    /// `Color(v, v, v, v/2)` truncation of `tile_ctor::lava_light_a`.
+    /// PLAN-ONLY like every other shadow output (no pushes).
+    pub lava_glows: Vec<(i32, i32, [u8; 4])>,
 }
 
 /// The `PortedBodyDrain` shadow: the five ported bodies need the
@@ -175,6 +184,7 @@ impl<'a> ShadowSeams<'a> {
             flames: Vec::new(),
             log: Vec::new(),
             strips: Vec::new(),
+            lava_glows: Vec::new(),
         }
     }
 
@@ -261,6 +271,25 @@ impl TilePassSeams for ShadowSeams<'_> {
         );
         if special_points::apply_cell_class(self.world, x, y, tile.kind, class, &mut self.reg) {
             self.reg.single_tiles += 1;
+            // The 717 glowmask table-pass bind (research/136 §3): the pass
+            // runs at CAD step 14 (AFTER DrawBasicTile's flames tail :1723,
+            // BEFORE f15's :1343 record bind). PLAN-ONLY: the colour is the
+            // exact XNA `Color(v, v, v, v/2)` truncation of `lava_light_a`
+            // (mask 362, Main.cs:10056); the pixel push lands with the
+            // table-pass lane / family merge. `time_for_visual_effects` =
+            // `(anim_time * 60) % 216000` (the frame/draw.rs:374 convention).
+            // Streams: NONE (the noise table is the seed-0 OnceLock).
+            if tile.kind == 717 {
+                let v = crate::render::tile_ctor::lava_light_a(
+                    self.world,
+                    x,
+                    y,
+                    (self.inputs.anim_time * 60.0) % 216000.0,
+                );
+                let b = (v * 255.0) as u8;
+                let a = ((v / 2.0) * 255.0) as u8;
+                self.lava_glows.push((x, y, [b, b, b, a]));
+            }
         }
     }
     fn draw_black_strip(&mut self, strip: BlackStrip) {
@@ -345,7 +374,7 @@ impl ShadowSeams<'_> {
         let buckets: usize = self.reg.buckets.iter().map(Vec::len).sum();
         format!(
             "cells={} buckets={} sprites={} jars={} rising={} jar_items={} flames={} \
-             ported(t/v/l/p/tr)={}/{}/{}/{}/{} strips={} steps={} legacy={} martian={} tiers={:?}",
+             ported(t/v/l/p/tr)={}/{}/{}/{}/{} strips={} steps={} legacy={} martian={} lava={} tiers={:?}",
             self.reg.single_tiles,
             buckets,
             self.sprites.len(),
@@ -362,6 +391,7 @@ impl ShadowSeams<'_> {
             self.log.len(),
             self.caches.legacy_points.len(),
             self.martian_glow[0],
+            self.lava_glows.len(),
             self.tiers.map(|t| (t.high, t.medium)),
         )
     }
@@ -492,6 +522,41 @@ mod tests {
             assert_eq!(x.rot, y.rot);
         }
         assert_eq!(a.summary(), b.summary());
+    }
+
+    /// The 717 glowmask bind (research/136 §3): a drawn 717 cell plans
+    /// ONE glow entry whose colour is the `Color(v, v, v, v/2)` XNA
+    /// truncation of `tile_ctor::lava_light_a` — `[b,b,b,a]` with
+    /// `a == ((v/2)*255) as u8` (NOT `b/2`: the two truncations differ,
+    /// e.g. v≈0.999 → b=254, a=127). The clock is
+    /// `(anim_time*60) % 216000` (frame/draw.rs:374's convention).
+    #[test]
+    fn w4_g31_attach_717_glow_plan_is_the_lava_light_truncation() {
+        let mut w = world(128, 128);
+        // Two lava blocks; a stone above the first (the [0,1] band arm),
+        // open air above the second (the [0.8,1] band, tile_ctor.rs:162).
+        put(&mut w, 30, 31, 1, 0, 0);
+        put(&mut w, 30, 32, 717, 0, 0);
+        put(&mut w, 40, 32, 717, 0, 0);
+        let wind = Wind::new(7);
+        let light = LightMap::default();
+        let inp = inputs();
+        let s = run_shadow(&w, &wind, &light, &inp);
+        assert_eq!(s.lava_glows.len(), 2, "one plan entry per drawn 717 cell");
+        assert_eq!(s.lava_glows[0].0, 30);
+        assert_eq!(s.lava_glows[1].0, 40);
+        for &(x, y, c) in &s.lava_glows {
+            let v = crate::render::tile_ctor::lava_light_a(&w, x, y, (inp.anim_time * 60.0) % 216000.0);
+            let b = (v * 255.0) as u8;
+            assert_eq!(c, [b, b, b, ((v / 2.0) * 255.0) as u8]);
+            // The open-air cell rides the [0.8,1] band; the covered cell
+            // may sit anywhere in [0,1].
+            if x == 40 {
+                assert!(v >= 0.8, "the SolidTile-above arm lifts toMin");
+            }
+        }
+        // The A/B summary carries the lava count.
+        assert!(s.summary().contains("lava=2"));
     }
 
     /// The tiles.rs attach site: exactly one gated call, AFTER the
