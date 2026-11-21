@@ -1,10 +1,12 @@
 # 132 — The persist MASTER MAP: three layers, one owner per field
 
-**Status: SEALED — THE PERSIST-FAMILY BIBLE FINAL (seal phase).** Written
+**Status: SEALED + RE-PINNED — THE PERSIST-FAMILY BIBLE FINAL (seal
+phase + the post-seal receipts pass).** Written
 by W4-f44 crosspersist (branch `task/W4-f44-save-plr-2`, base `180b7430`
 audit DONE + the `d331ea7c` timestamp residual fix), closed by the FINAL
 phase (`63204f85` slot-11 property fix), re-opened and closed by the
-RETIRE phase (`d35876af9`), and SEALED by this phase: (1) the 132↔92
+RETIRE phase (`d35876af9`), and SEALED by the seal phase (`0d1ee2045`
+docs over the `5c8bbb160` hydration port): (1) the 132↔92
 convergence receipt — g71 `f2d8c2c67`'s independently-derived 107-byte
 union byte-order-compared, the offsets adjudicated C#-write-order
 definitive, the FINAL-SEAL layout published (§3-L3); (2) the g88h seal
@@ -12,6 +14,14 @@ receipt — `6a829a0e8`'s 100-byte step-10 superseded, the `dh` line
 adjudicated DEFAULT-DROP with §2e as the conditional seat (§2f);
 (3) the character-load hydration hunk CLOSED by the code port — the
 e10c receipt (§4), the exit-save the one remaining shared remainder.
+The post-seal receipts pass adds: (4) the **D5-A3 re-pin receipt** —
+g88 `d09d7e10a`'s L3-ARBITER FINAL read FULL, its A4 132-row owed
+re-pin EXECUTED (§3-L3 rule 1 — the FINAL-SEAL table already carried
+A3's layout; the receipt + the historical Δ pins close the loop,
+g71 `b27474a44`'s "owes" row now CLOSED); (5) the **g56 `.trvault`
+fold-contract receipt** (§2g — the two-seam retire gate composed with
+this doc's exit-save remainder: condition (a) MET by the hydration
+port, condition (b) the ONE shared gate both contracts wait on).
 This doc sits ABOVE the per-layer contracts and is the **single entry
 point** for the persist merge:
 
@@ -20,7 +30,7 @@ point** for the persist merge:
 | L1 `.plr` | **research/99** (71-row offset table + gate matrix) | THIS branch |
 | L2 `.trplayer` | **research/103** (**v11** superset FINAL — the torch fold landed) + **research/122** (line-8 addendum + the v11 post-receipt) | g88 tip `a9f1c29d8` (PUSHED — the v10/v11 folds are no longer worktree-only) |
 | L2 fold-inputs | **research/135** (g90 six-line v7 + token map — §2 rule LANDED in g88) + **research/138** (a6 4-way master reconcile — **PUSHED** at `d7de8bd53`; its verdicts seated in §3-L2 below) | g90 tip `94d33f2ca` / a6 tip `d7de8bd53` |
-| L3 `.trwld` union | **THIS doc §3-L3 is THE authoritative union** (107-byte head + W×H dense, the FINAL-SEAL order). research/92-doc-sweep-bg **§1-FULL** (g71's 13-branch registry, PUSHED at `f2d8c2c67` — the claimant registry of record; its §1-FULL.2 offsets re-seat per the mutual convergence receipt) + research/64-v18-union-addendum (g72, PUSHED) + 135 §4 (g90 books) + 138 §5 (f45 identity) are the per-claimant inputs; where they disagree on the total (21/53/65/97/98/100), §3-L3 wins | the union lands at the merge; no single branch carries it yet |
+| L3 `.trwld` union | **THIS doc §3-L3 is THE authoritative union** (107-byte head + W×H dense, the FINAL-SEAL order = **103 L3-ARBITER A3 / D5-A3**, `d09d7e10a` — the byte-order authority of record, re-pin receipt §3-L3 rule 1). research/92-doc-sweep-bg **§1-FULL** (g71's 13-branch registry — the claimant registry of record; its §1-FULL.2 re-pinned to A3 at `8224c94f1`, receipts closed `b27474a44`) + research/64-v18-union-addendum (g72, PUSHED, D5-RE-PIN `aa1645481`) + 135 §4 (g90 books) + 138 §5 (f45 identity) are the per-claimant inputs; where they disagree on the total (21/53/65/97/98/100), §3-L3 wins | the union lands at the merge; no single branch carries it yet |
 | L3 `.wld` flags | `wld/sections/flags.rs` per-field C# gates; **f45's flags file is the merge base** (138 §5's verdict, re-verified this pass); f39 owns the force-today pair (f45 `9c1a01a42` defers it) | f45 tip `6352d3840` |
 
 Code-only lane: witnesses written, not run.
@@ -32,12 +42,13 @@ been superseded):
 | Ref | Tip read | Persist state |
 | --- | --- | --- |
 | `origin/task/W4-g89-aegis-fruit-use` | `598642563` (g89f over g89e `e9ec8dcfc` / g89d `4344bd50`) | `.trplayer` **v9** 3-token unlock line (research/122); `.plr` fruit/gummy/ambrosia bools both halves; `.wld` book-two byte (g89e); `.trwld` stays **v17** |
-| `origin/task/W4-g88-life-fruit-use` | **`6a829a0e8` (g88h receipts-phase FINAL-FINAL — PUSHED, the SEAL probe)** over `a9f1c29d8` (g88f fold 7, the v11 code tip) | `.trplayer` **v11 SUPERSET** (research/103 FINAL — g89c+g90b+a6+f33 folded; the torch pair is LINE 16, both v7 recognition rules landed); carries research/122 + the v11 post-receipt; its four-receipt table + the dh-DROP + the 100-byte step-10 arithmetic adjudicated §2f |
+| `origin/task/W4-g88-life-fruit-use` | **`d09d7e10a` (L3-ARBITER FINAL — PUSHED, the post-seal receipts pass)** over `fc5cf11ae` (L3-DEFINITIVE seal) / `6a829a0e8` (g88h receipts-phase FINAL-FINAL, the SEAL probe) / `a9f1c29d8` (g88f fold 7, the v11 code tip) | `.trplayer` **v11 SUPERSET** (research/103 FINAL — g89c+g90b+a6+f33 folded; the torch pair is LINE 16, both v7 recognition rules landed); carries research/122 + the v11 post-receipt; its four-receipt table + the dh-DROP + the 100-byte step-10 arithmetic adjudicated §2f; its **L3-ARBITER A1-A4** (the verbatim C# write rows, the ONE A3 table, the five-dependent notify list incl. THIS doc's one-move re-pin) consumed §3-L3 rule 1's D5-A3 receipt |
 | `origin/task/W4-g90-artisan-bread-use` | **`94d33f2ca`** (reconcile over `b3b82d071` / lane 7 `73367e0af`) | `.trplayer` **v7** six 1-token lines + `.plr` bools 1/3/4/5/6 + `.trwld` **v18** 2-byte tail; research/**135** pushed (`135-g90-persist-folds.md`) — its §2 rule LANDED in g88f |
 | `origin/task/W4-a6-crystals-powerups` | **`d7de8bd53` (the 4-way master reconcile — PUSHED)** over `8ed96ee5d` | use arms + consumers; NO sidecar writer, NO `.trwld` claim; `.wld` book-two/satchel/bought-pets bytes — **research/138 pushed** (`138-powerup-master-reconcile.md`), its verdicts seated §3-L2/L3 |
 | `origin/task/W4-f33-torch-god-favor` | `8a000407f` (torch-favor v7-line: `6f2c122e8` use arm → `7954d6ed1` docs → `a429b37c0`/`8a000407f` shimmer+desert arms) | the v7 ONE 2-token pair-line fork — **FOLDED into g88f v11** (§2d's receipt); the event/favor/949 machines (`torch_god.rs`, keep-one over d19 per research/93) stay f33's |
-| `origin/task/W4-g72-bg-layers-3` | **`4a75715ef`** (final item 4: the `:11340` order-contract) over `39479b551` (the cave DRAW consumer) / `2b02345ce` (g72c persist) | `.trwld` v18 **31 B** cave block + `.wld` i32 arrays + net header; research/**64-v18-union-addendum PUSHED** (the 53-byte five-claimant proposal — a §3-L3 subset); the underworld seat it flagged FIRED (§3-L3) |
-| `origin/task/W4-g71-bg-layers-2` | **`f2d8c2c67` (V18 FINAL CONSOLIDATION — PUSHED, the SEAL probe)** over `fc76a48b3` (keep-one FINAL) / `f08e8d41e` (WIRING docs) | `.trwld` v18 3-byte surface tail + the FIRED underworld seat; research/92-doc-sweep-bg **§1-FULL** (the 13-branch claimant registry + its own 107-byte union + §2.1-FINAL roll keep-one) — the convergence receipt + offset adjudication is §3-L3 rule 1 |
+| `origin/task/W4-g72-bg-layers-3` | **`aa1645481` (D5-RE-PIN — PUSHED, the post-seal receipts pass)** over `b069439eb` (retire) / `4a75715ef` (final item 4: the `:11340` order-contract) / `39479b551` (the cave DRAW consumer) / `2b02345ce` (g72c persist) | `.trwld` v18 **31 B** cave block + `.wld` i32 arrays + net header; research/**64-v18-union-addendum PUSHED** (the 53-byte five-claimant proposal — a §3-L3 subset, its prefix RETIRED by the D5 re-pin: underworld [58]→[56], sites 53→107); the underworld seat it flagged FIRED (§3-L3) |
+| `origin/task/W4-g71-bg-layers-2` | **`b27474a44` (BG-SEAL RECEIPT — PUSHED, the post-seal receipts pass)** over `8224c94f1` (the 92-side A3 re-pin) / `f2d8c2c67` (V18 FINAL CONSOLIDATION, the SEAL probe) / `fc76a48b3` (keep-one FINAL) / `f08e8d41e` (WIRING docs) | `.trwld` v18 3-byte surface tail + the FIRED underworld seat; research/92-doc-sweep-bg **§1-FULL** (the 13-branch claimant registry + its own 107-byte union + §2.1-FINAL roll keep-one) — the convergence receipt + offset adjudication is §3-L3 rule 1; its §1-FULL.2 now re-pinned to A3 (`8224c94f1`), its §1-SEAL.5 records THIS doc's one-move re-pin as owed — EXECUTED by the D5-A3 receipt (§3-L3 rule 1) |
+| `origin/task/W4-g56-ui-void-vault` | **`54c63d8d4` (RETIRE — PUSHED, the post-seal receipts pass)** over `3ab631923` (witness/parity fixes) / `9f6d2df51` (the `.trvault` sidecar) | research/**239 FINAL** (the void-family bible): the `<world>.trvault` interim favorites carrier + its **fold-contract vs THIS doc's `.plr` bank4 rows 47/48** — COEXIST through the folds, the sidecar write retires ONLY at the two-seam gate (character-load hydration AND exit-save); consumed §2g |
 | `origin/task/W4-g87-demon-heart-use` | **`dfbcaf94b` (PUSHED — the NEW claimant this probe)** | `.trplayer` **v7 `dh` sentinel line** (extraAccessory + unlockedSuperCart — §2e, a NEW self-identifying v7 shape after the 5 historical numeric ones + g90b's six-line + f33's pair-line); `.trwld` v18 **3-byte pet trio**; `.wld` pets gate 217 flips; the use arms (Demon Heart/Minecart Powerup/Pet License) |
 | `origin/task/W4-c39-lantern-birthday` | **`8ecb288aa` (exec — PUSHED — the NEW claimant)** | `.trwld` v18 **5-byte moon-boss downeds** (`:1347-1351`) + `.wld` five flips — **field-identical to f39's claim, dedup §3-L3**; the lantern/party/wind machine (research/114's KEEP pieces land at the merge) |
 | `origin/task/W4-f39-weather-slimerain` | **`bd5a5a24a` (Phase B — PUSHED — the NEW claimant)** | the SAME `.trwld` 5-byte downeds + `.wld` flips (dedup with c39) **PLUS the force-today pair** (`.wld` gate 212 — f45 defers it); `tr-core/season.rs` (the FixtureClock-pinned date gates) + `World.refresh_seasons` (the re-derivation carrier — no `.trwld` season bytes) |
@@ -62,7 +73,9 @@ been superseded):
 
 Side satellites (not layers): `<stem>.trfav` (the character star —
 vanilla's `favorites.json` store, `IO/FavoritesFile.cs:27-36`; the `.plr`
-metadata bit is dead in vanilla too), `<world>.map` (explored map),
+metadata bit is dead in vanilla too), `<world>.trvault` (g56's interim
+bank4-favorites carrier — the fold-contract §2g, retires at the
+exit-save gate, never an L2 line), `<world>.map` (explored map),
 `achievements.trdat`.
 
 **The routing rule that keeps the layers apart** (`saveglue::save_world`,
@@ -143,6 +156,7 @@ the same field must ride the `.plr` or a vanilla round-trip loses it.
 | `extraAccessory` | row 18 (`:54776`, gate 125) | g87 v7 `dh` line token 1 → fold per §2e | g87 (transport); was L1-only, §2a's note updated |
 | `unlockedSuperCart` | row 64 (the `:54914-54918` BitsByte bit 0, gate 253) | g87 v7 `dh` line token 2 → fold per §2e | g87 (transport); bit 1 `enabledSuperCart` stays L1-only |
 | `CurrentLoadoutIndex` + `Loadouts[3]` | rows 65-66 | lines 12-15 (g55, folded g88) | g55 |
+| bank4 favorites (the fav bool per slot) | row 47 (the fav byte @ 2001+10·i+9, gate 255) | **`<world>.trvault`** — g56's SEPARATE 40-char sidecar, NOT a `.trplayer` line (239 §1; the superset never grows a vault line) | g56 interim carrier; the `.plr` byte-shape THIS lane — the retire gate §2g |
 | inventory/armor/dye/coins/hp/pos | rows 40-42 (+ stats) | lines 2-7 (v1-v6 prefix) | pre-existing |
 
 **The no-dup-write rules for the merged save funnel:**
@@ -440,6 +454,78 @@ The verdicts, item by item against THIS doc:
    stays until (b); the restore precedence (character first, sidecar
    second, sidecar wins) becomes the LIVE order in `App::new` (§4).
 
+### 2g. The g56 `.trvault` fold-contract receipt (the post-seal receipts pass — the two-seam gate COMPOSED)
+
+`origin/task/W4-g56-ui-void-vault` tip **`54c63d8d4`** (RETIRE, PUSHED
+over `3ab631923`) read FULL — research/239 FINAL (the void-family
+bible), its §1 fold-contract + §3 zero-touch compose + §5 family map.
+The contract, consumed:
+
+1. **The three carriers.** The `.plr` bank4 quadruples (row 47 —
+   `Player.cs:54856-54862`, read gate 198 `:55488`, the fav bool gate
+   255 `:55495-55498` at offset **2001 + 10·i + 9**) + the
+   `voidVaultInfo` BitsByte (row 48 — `:54863`, gate 199
+   `:55501-55503`, bit 0 = `IsVoidVaultEnabled`, `Player.cs:3900-3910`)
+   are THIS lane's byte-shape (`PlayerFile.bank4`, the aired-slot
+   policy keeps stack+fav). g88's v11 superset carries **NO vault
+   line** (239 §1a's writer-arm census). g56's `<world>.trvault`
+   (40-char 0/1, `persist.rs::save_vault_favorites`/
+   `load_vault_favorites`, wired saveglue save + `App::new` load) is
+   the interim LIVE carrier — per-world, not per-character (the
+   port's session model).
+2. **Keep-one TODAY = the sidecar; COEXIST through the folds.** This
+   lane's bank4 model is a file-shape claim, not a live carrier: the
+   only `.plr` write seams are the creation save (fresh-ctor bank4)
+   and the fixtures — no live-session re-save exists (§1's routing
+   rule). The SEAL-phase hydration (§4) applies stats/unlocks/voice/
+   counters only; **the inventory/equip/bank payloads stay the
+   App-level restore's scope** (`player.rs:2513-2515`'s own scope
+   note). So a mid-session vault star STILL has only `.trvault` to
+   ride — retiring the sidecar at the `.plr` fold would silently drop
+   it (the same corruption class §2b's conditional-drop rule
+   prevents). f44 owns the byte-shape, g56 owns the interim carrier;
+   no dup-write today (different files, §2b rule 1 holds).
+3. **The retire gate = THIS doc's exit-save remainder, COMPOSED.**
+   239 §1c gates the `.trvault` write-retire on (a) character-load
+   hydration applying bank4 + favorites AND (b) the exit-save writing
+   the LIVE bank4 quadruples + `voidVaultInfo`. Condition (a)'s
+   PLAYER-state half is MET by the SEAL port (`5c8bbb160`); its
+   bank4-payload half rides the App-level restore extension that the
+   exit-save lane lands WITH the payload writer — so **both contracts
+   (239 §1c's vault gate + 103 §2b rule 3's torch-line gate + §2f's
+   dh conditional) wait on the SAME one remaining seam: the
+   exit-save** (§4's remainder, §8 step 4 item 3). When it lands: the
+   merger drops the `.trvault` WRITE (the saveglue call + optionally
+   the writer fn), KEEPS `load_vault_favorites` as a one-release
+   back-read fallback (the `.trplayer` back-compat precedent),
+   restore order `.plr` first / `.trvault` second for pre-fold files
+   only (post-fold the sidecar is never written — the fallback is
+   naturally inert). **NO g88 v12 vault line ever** — a new L2 token
+   would re-create the dual-carrier the contract retires (the
+   favorites are `.plr`-resident in vanilla).
+4. **The `voidVaultInfo` bit-0 nuance (row 48).** The C# RE-DERIVES
+   `IsVoidVaultEnabled` per tick from `HasItem(4131)`
+   (`Player.cs:24550-24553`); the saved bit is a one-tick-stale
+   mirror in vanilla too. The exit-save writes it for byte parity;
+   the hydration must NEVER apply it against the per-tick refresh
+   (the refresh wins, C#-identical). This lane's model carries the
+   byte untouched; g56 keeps no runtime field for the BitsByte.
+5. **The merger conflict notes (239 §1d/§3, consumed verbatim).**
+   `persist.rs`: g56's `vault_favorites_path` + the two fns insert
+   between `player_path` and `map_path` (`@@ -33`), g88's
+   `loadout_item` at the SAME seam — both pure insertions, keep
+   both; g56 touches NEITHER `save`/`load` body (its only other hunk
+   is `@@ -274` tests). `saveglue.rs`: g88's widened `persist::save`
+   call + g56's appended `.trvault` write after the error arm —
+   verbatim both. `app/mod.rs::new`: g56's restore sits AFTER g88's
+   superset block (`loaded_kills = saved.kills` seam) — pure
+   insertions; with THIS lane's hydration FIRST (§2c/§4) the merged
+   order is **hydration → g88 superset restore → g56 `.trvault`
+   read**, already the contract's sidecar-second precedence. The
+   e19 auto-pickup disjointness + the 16-box repin + the glow
+   keep-one (239 §2/§4) are g56-lane verdicts — no `.plr`/`.trwld`
+   byte involvement, nothing owed here.
+
 ## 3. Per-layer merge order (the FINAL merger persist-checklist)
 
 **Order: L1 → L2 → L3.** L1 first because the `.plr` is the vanilla
@@ -662,6 +748,10 @@ research/135 §6 + §2d/§2e above, in order:
    | empress | [60] | [62] | +2 |
    | identity 44 / dense | [63..107] / [107..] | same | 0 |
 
+   (The Δ table is the HISTORICAL RETIRE-vs-92 audit trail — both
+   columns superseded by the FINAL-SEAL layout below, which the D5-A3
+   re-pin receipt confirms as 103 L3-ARBITER A3 verbatim.)
+
    **The adjudication** (`WorldFile.cs:1240-1414` re-read at the seal
    probe): the C# write order is crimson `:1281` < moon-boss
    `:1347-1351` < underworldBG `:1376` < pets `:1392-1394` < empress
@@ -728,6 +818,44 @@ research/135 §6 + §2d/§2e above, in order:
    §1-FULL.2 offsets [50..63] re-seat to the table above; THIS table
    is the layout of record, 92 §1-FULL the claimant registry of
    record. Both docs describe ONE union.
+
+   **THE D5-A3 RE-PIN RECEIPT (the post-seal receipts pass — 103 A4's
+   132-row EXECUTED).** g88 `d09d7e10a` (L3-ARBITER FINAL, PUSHED over
+   its L3-DEFINITIVE seal `fc5cf11ae`) read FULL: A1 quotes every
+   disputed `writer.Write` verbatim (`WorldFile.cs` identity
+   `:1225-1227`/`:1250-1251`, crimson `:1281`, moon quintet
+   `:1347-1351`, underworldBG `:1376`, pets `:1392-1394`, empress
+   `:1395` AFTER pets, books `:1407-1408` the LAST two flag writes;
+   the order-proof interstitials — first `combatBookWasUsed` `:1380`
+   already `.wld`-owned so books stays 2 B, force-today `:1386-1387`
+   `.wld`-ONLY, journey/bread carriers NONE, `Main.GameMode` `:1240`
+   pre-v18); A2 overrules BOTH consolidators' non-matching middles
+   (92's books-in-prefix AND our RETIRE underworld-before-crimson)
+   under the C#-actual-write-order-definitive brief; **A3 restates
+   the ONE table — field-for-field IDENTICAL to the FINAL-SEAL table
+   above** (this lane's convergence adjudication had already landed
+   A3's exact layout; the arbiter confirms it independently). A4's
+   notify table names THIS doc at `d35876af9` with the one-move
+   delta (underworld [50]→[56], crimson [51]→[50], moon
+   [52..57]→[51..56]) — that delta is the RETIRE table's, already
+   fixed by the FINAL-SEAL layout; **this receipt closes the owed
+   re-pin on the published record**. The Δ table above is the
+   historical RETIRE-vs-92 comparison (audit trail), NOT a live
+   layout. The cross-receipt state at the current tips: 92 re-pinned
+   to A3 at g71 `8224c94f1`, its §1-SEAL.5 (`b27474a44`) recording
+   this lane's re-pin as owed — now CLOSED; g72 `aa1645481` D5-RE-PIN
+   (64a prefix retired, underworld [58]→[56], sites 53→107); a6 138
+   `9a4acd729` D5-RE-PIN (pets 57-59, books 61/62) AGREES; g90 135
+   `43fee29a4` ALREADY on A3 — **ALL FIVE L3 dependents now seat the
+   identical strict-C#-row middle; the persist-order dispute is
+   RESOLVED family-wide, zero open re-pins.** The arbiter's closing
+   rule adopted: the C# rows (A1) are the tie-breaker for any later
+   revision — not publication timestamp, not designation. The
+   direct C# re-read this pass (`WorldFile.cs:1270-1414`) agrees
+   line-for-line. Authority chain: THIS table = A3 = D3 = D5; 103
+   L3-ARBITER the byte-order authority of record; 92 §1-FULL the
+   claimant registry of record; this doc's L1/L2 + §8 merger-bible
+   authority unchanged (A4's own 132-row pins that scope).
    The truncation-constant moves (every claimant's end-relative sites):
    g70/g71's 16/3 → 107 (92 §1.5's table), g69/d125's 1 → 107, g90's six
    sites 2 → 107 (135 §4's table), g72's eleven sites 31 → 107 (64-add
@@ -778,6 +906,12 @@ research/135 §6 + §2d/§2e above, in order:
      g72's arrays must survive it). g71's underworld/treeBG2..4/mushroom
      flips (`f08e8d41e` flags.rs) are independent bytes — they ride.
 4. This lane contributes NOTHING to L3 (no save.rs/wld change).
+5. **The g56 `.trvault` sidecar is NOT an L3 claimant** (§2g's
+   receipt): a per-world PLAYER-favorites satellite (the `.trfav`
+   precedent class), zero `.trwld`/`.wld` bytes — it never enters
+   this union. Its write-retire rides the exit-save gate (§2g rule
+   3), not the L3 merge; the back-read fallback stays inert
+   post-fold.
 
 ## 4. The e10 voice co-lane (research/99 rows 67-68 — the retire receipt)
 
@@ -904,7 +1038,17 @@ is ported on the canonical walk:
 re-save at world exit — the save funnel writes the sidecar only):
 103 §2b rule 3's condition (b). Condition (a) — this hunk — is MET.
 The save direction casts back (`file.voice_variant = p.voice_variant
-as u8`) when that lane lands. e10 owns the CONSUMERS (the voice
+as u8`) when that lane lands. **The exit-save is now the ONE shared
+gate for THREE published contracts** (the post-seal compose, §2g):
+103 §2b rule 3's torch-line drop, §2f's `dh` conditional (its only
+activation trigger is an in-session carrier need BEFORE the
+exit-save), and g56 239 §1c's `.trvault` write-retire (+ its bank4/
+favorites payload half of condition (a), which lands WITH the
+exit-save's App-level payload writer). One seam, three dependents —
+no lane blocks another; the exit-save lane owns the bank4 quadruples,
+the `voidVaultInfo` bit-0 write (parity-only mirror, §2g rule 4) and
+the bank-payload hydration extension in the same pass.
+e10 owns the CONSUMERS (the voice
 trees, the pitch remap `Utils.Remap(-1,1,-0.7,0.7)`); this lane owns
 the TRANSPORT + the HYDRATION. The picker UI seam was CLOSED by e10's
 push; the hydration seam is CLOSED by this port — the e10c receipt.
@@ -938,6 +1082,8 @@ push; the hydration seam is CLOSED by this port — the e10c receipt.
 | `.trwld` ≤17 | L3 | any v18 reader | union tail unread, Reset defaults (each claimant's own: g72 the `World::new` zeros, g71 the setBG slot-0 defaults, c39/f39 the downs, g87/g90 false, c43/f45 the identity zeros + the re-stamp funnel) |
 | `.trwld` v18 single-claimant (g70 16B / g71 3B / g69 1B / d125 1B / g90 2B / g72 31B / c43-f45 44B / g87 3B / c39-f39 5B / d109 dense-only) | L3 | the 107-byte-head union reader | **EOF/garbage — not back-compat** (92 §1 + 64-add §3: forward-only, no released v18; all ten are unmerged task work) |
 | `.wld` any release | L3 | `wld::parse` gates | per-field gates; book-two 259 / satchel 260 / pets 217 / moon-boss v131+ ride f45's flags base; the force-today pair 212 rides f39's hunk; the cave arrays ride g72/f45-Ph6's one codec half; the underworld/treeBG2..4 flips ride g71's |
+| `<world>.trvault` (g56 40-char 0/1) | satellite | `load_vault_favorites` | loads today (the interim carrier, §2g); post-exit-save it is the ONE-RELEASE back-read fallback for pre-fold saves — `.plr` first, `.trvault` second, naturally inert once the write retires (239 §1c) |
+| no `.trvault` beside a post-fold save | satellite | the fallback | favorites come from the `.plr` bank4 fav bytes (row 47) through the payload hydration — no sidecar file expected (the write retired, §2g rule 3) |
 
 ## 6. The six pre-existing divergences — re-verified (C# re-read)
 
@@ -1119,6 +1265,35 @@ rustfmt/graphify per the lane constraint. The golden `.plr` parity
 is untouched (no codec change — the port is apply-side only; the
 `None` park keeps every existing boot/screenshot path byte-identical).
 
+**Post-seal receipts-pass verification (this pass — the D5-A3 re-pin +
+the g56 compose):** g88 `d09d7e10a` fetched + research/103's
+L3-ARBITER FINAL (A1-A4) read FULL — A3's table byte-compared against
+this doc's FINAL-SEAL layout field-for-field (IDENTICAL: same claimant
+order, same offsets, same 107 sum, dense LAST); A4's 132-row move list
+re-derived against the RETIRE Δ table (the owed one-move delta is the
+RETIRE column's, already fixed at the seal). g71 `b27474a44` fetched +
+research/92 §1-FULL.2 (re-pinned `8224c94f1`) + §1-SEAL.5 read — its
+132-owes row consumed and closed by §3-L3 rule 1's receipt; g72
+`aa1645481`'s D5-RE-PIN + a6 `9a4acd729` + g90 `43fee29a4` states read
+via 92 §1-SEAL.5's cross-receipt table (four-of-five closed there, the
+fifth — this doc — closed here). g56 `54c63d8d4` fetched + research/239
+FINAL read FULL (§1a-§1d, §2, §3, §5 — the fold-contract, the
+zero-touch compose, the family map); its bank4 anchors re-verified
+against research/99 rows 47/48 (offsets 2001/2401, gates 198/255/199)
+and the hydration's scope note re-read in the landed code
+(`player.rs:2503-2560` — stats/unlocks/voice/counters only, the bank
+payloads explicitly deferred). The C# flags stream re-read directly
+(`WorldFile.cs:1270-1414` — crimson `:1281`, quintet `:1347-1351`,
+underworld `:1376`, pets `:1392-1394`, empress `:1395`, books
+`:1407-1408`, the interstitials `:1380`/`:1386-1387` confirmed). The
+landed hydration port re-verified at HEAD `0d1ee2045` (the `CharPlay`
+park `flow.rs:1302-1304`, the `App::new` apply `app/mod.rs:2848-2857`
+BEFORE the sidecar block, `player.rs::hydrate_from_file`, the
+name/favourites landing `:3445`/`:3645`, `save.rs` VERSION still 17 —
+no code touched by this pass). Docs-only pass; no cargo/tests/
+rustfmt/graphify per the lane constraint; the golden `.plr` parity
+untouched.
+
 ## 8. The SEALED merger persist-checklist (THE persist-family bible — all
 recognition rules, all claimants, all dedup steps, in order)
 
@@ -1197,8 +1372,22 @@ merger executes, it does not re-decide.
    license/torch arms, g90 owns the loaf + the Player-field consumer
    anchors, c36's `complete_condition` is the shared dispatch).
 6. The torch line's conditional DROP (103 §2b rule 3): revisit ONLY
-   when the character-load hydration AND the exit-save both land.
-7. **Recognition rules summary (the complete registry)**: 103 §3's
+   when the character-load hydration AND the exit-save both land —
+   (a) is MET (the SEAL port), so the trigger is the exit-save alone
+   (the same shared gate as §2f's dh conditional + §2g's vault
+   retire; §4's compose).
+7. **The g56 `.trvault` compose (§2g's receipt — execute at the
+   folds, retire at the gate):** keep g56's three sidecar fns + its
+   saveglue write + its `App::new` read alongside g88's superset
+   (pure insertions at the shared seams, 239 §1d — hydration FIRST,
+   superset restore SECOND, `.trvault` read THIRD); NO vault line in
+   the `.trplayer` writer ever. AT the exit-save landing: drop the
+   `.trvault` WRITE, keep `load_vault_favorites` as the one-release
+   back-read, extend the hydration + the exit-save writer with the
+   bank4 quadruples (LIVE favorites, fav byte @ 2001+10·i+9) +
+   `voidVaultInfo` bit 0 (parity-only — never hydrate it against the
+   per-tick `HasItem(4131)` refresh, §2g rule 4).
+8. **Recognition rules summary (the complete registry)**: 103 §3's
    positional v8-v11 unlock line + the shape walk (1-token bread /
    2-token pairs / the pre-41 index line / 41-token sets / the v11
    last-2-token torch line) + 135 §2's six-line + §2d's all-0/1 pair +
@@ -1209,10 +1398,13 @@ merger executes, it does not re-decide.
 
 1. Seat the **107-byte-head union** (§3-L3 rule 1's table — THE
    authoritative layout, the FINAL-SEAL order after the 132↔92
-   convergence receipt): g70 16 + g72 31 + g71 3 + g69 1 + c39⨉f39 5
-   (ONE deduped block) + underworld 1 + g87 3 + d125 1 + g90 2 +
-   c43/f45 44, then d109's W×H dense LAST. VERSION stays 18,
-   forward-only. `v18_tail_len` → `107 + width*height`.
+   convergence receipt, CONFIRMED VERBATIM by 103 L3-ARBITER A3 /
+   D5-A3 `d09d7e10a` — the re-pin receipt; ALL FIVE dependents
+   re-pinned, zero open order disputes): g70 16 + g72 31 + g71 3 +
+   g69 1 + c39⨉f39 5 (ONE deduped block) + underworld 1 + g87 3 +
+   d125 1 + g90 2 + c43/f45 44, then d109's W×H dense LAST. VERSION
+   stays 18, forward-only. `v18_tail_len` → `107 + width*height`.
+   The `.trvault` satellite NEVER enters this union (§3-L3 rule 5).
 2. Move EVERY claimant's truncation constants to 107 (§3-L3's list;
    the stale 21/53/65/97/98 totals in 92/64-add/135/138/this-doc's-
    FINAL are superseded).
@@ -1241,7 +1433,12 @@ merger executes, it does not re-decide.
 3. The character-load hydration is LANDED on this branch (§4's e10c
    receipt — the SEAL-phase port). The EXIT-SAVE (the `.plr` re-save
    at world exit) is the one remaining SHARED remainder (§2c/§4) —
-   a seam, not a conflict; no lane blocks another.
+   a seam, not a conflict; no lane blocks another. It is the SINGLE
+   gate for the torch-line drop (103 §2b rule 3), the dh conditional
+   (§2f) AND the `.trvault` write-retire (239 §1c, §2g's compose) —
+   the exit-save pass also lands the bank4/favorites payload
+   hydration + writer and the `voidVaultInfo` parity byte (§8 step 2
+   item 7).
 
 ### Step 5 — canaries
 

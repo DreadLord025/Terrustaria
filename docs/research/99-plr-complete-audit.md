@@ -338,6 +338,20 @@ is DEFAULT-DROP at the merge (132 §2f's g88h receipt — the L1 rows +
 the hydration are the carrier). The byte layout of this table is
 untouched by the seal pass (no codec change).
 
+**Post-seal receipts postscript (research/132 §2g):** rows 47/48
+(bank4 + `voidVaultInfo`) gained a THIRD carrier census — g56's
+`<world>.trvault` interim favorites sidecar (`54c63d8d4`, research/239
+§1's fold-contract, consumed 132 §2g): keep-one TODAY = the sidecar
+(the `.plr` bank4 rows here are the byte-shape of record but write
+only at creation/fresh-ctor defaults — no live re-save yet); the
+sidecar write RETIRES at the exit-save gate (132 §4's one shared
+remainder), which lands the LIVE bank4 quadruple writer (the fav byte
+@ 2001+10·i+9 from the live favorites) + the payload hydration
+extension + the `voidVaultInfo` bit-0 parity write (never hydrated
+against the per-tick `HasItem(4131)` refresh, `Player.cs:24550-24553`).
+The offsets/gates of rows 47/48 are unchanged — this table stays the
+canonical byte map for that writer.
+
 ## 6. Witnesses (written, code-only — not run)
 
 New: `the_unlock_and_counter_header_fields_round_trip` (the G7 block, byte

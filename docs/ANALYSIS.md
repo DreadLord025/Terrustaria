@@ -19142,6 +19142,42 @@ remainder. 3 witnesses written not run (code-only); golden `.plr`
 parity untouched — no codec change, the `None` park keeps every
 boot/screenshot path byte-identical.
 
+**W4-f44 SEAL-VERIFY (2026-11-21, this commit): the post-seal receipts
+pass — the D5-A3 re-pin EXECUTED + the g56 `.trvault` compose.** Two
+receipts landed on 132 (docs-only): (1) **the D5-A3 re-pin** — g88
+`d09d7e10a`'s L3-ARBITER FINAL read FULL (A1's verbatim `writer.Write`
+rows, A2's overrule of both non-matching middles, A3's ONE table, A4's
+five-dependent notify list): A3 is field-for-field IDENTICAL to 132's
+FINAL-SEAL layout (the seal's convergence adjudication had already
+landed the arbiter's exact order), so the owed re-pin (A4's 132-row at
+`d35876af9`, echoed by g71 `b27474a44` §1-SEAL.5: "132 owes its
+one-move underworld re-pin") closes as a RECEIPT — the RETIRE Δ table
+marked historical, the authority chain pinned (132 §3-L3 = 103 A3 =
+D3 = D5; the C# rows the tie-breaker, not timestamp/designation). All
+five L3 dependents now seat the identical strict-C#-row middle (92
+`8224c94f1`, 64b `aa1645481`, 138 `9a4acd729`, 135 `43fee29a4`, 132
+here) — the persist-order dispute RESOLVED family-wide. The C# stream
+re-read directly (`WorldFile.cs:1270-1414`) agrees line-for-line.
+(2) **the g56 `.trvault` fold-contract** (`54c63d8d4`, research/239 §1
+consumed as 132 §2g): the 40-char favorites sidecar COEXISTS through
+the folds (keep-one TODAY = the sidecar — 132's bank4 rows 47/48 are
+the byte-shape, not a live carrier; the hydration applies player-state
+only, bank payloads deferred), its write RETIRES only at the two-seam
+gate — composed with 132's remainder: **the exit-save is the ONE
+shared gate for the torch-line drop (103 §2b rule 3), the dh
+conditional (§2f) and the vault retire (239 §1c)**; the exit-save pass
+lands the bank4/favorites payload writer + hydration extension +
+`voidVaultInfo` bit-0 parity byte (never hydrated against the per-tick
+`HasItem(4131)` refresh, `Player.cs:24550-24553`); NO g88 v12 vault
+line ever; the reader keeps a one-release back-read; the merger
+conflict notes (persist.rs/saveglue.rs/mod.rs pure insertions) seated,
+the restore order hydration → superset → `.trvault`. The landed
+hydration port re-verified at the seal tip (`flow.rs:1302-1304` park,
+`app/mod.rs:2848-2857` apply-before-sidecar,
+`player.rs::hydrate_from_file`, `save.rs` VERSION 17). Docs-only — no
+code change, no cargo/tests/rustfmt/graphify; golden `.plr` parity
+untouched.
+
 ## The world-format contract (S1-J-8)
 
 **Decision: the two-format split stays, as a documented contract.** The port
