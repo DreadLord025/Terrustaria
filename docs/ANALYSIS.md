@@ -6956,6 +6956,15 @@ NPCChatPanel dialog's sign half. **Code-only mode**: no compiler/tests were
 invoked; the 14 witnesses are written not run (4 in `ui/keyboard.rs`, 9 in
 `signs.rs`, 1 in `ui/npc_chat.rs`), verified by re-reading the C#.
 
+**The 2026-11-21 follow-up round** (code-only, 7 new witnesses in `signs.rs`,
+written not run) landed the four hover/break deviations: the signHover
+tooltip (`Main.cs:42940-42986`), the SignTileBubble
+(`Main.cs:45739-45760` + the `Player.cs:32098-32115` latch), the lazy
+kill-on-break (`WorldGen.cs:43686-43689`) and the tombstone epitaph display
+census; the IME/clrInput/blockKey skip is final (input-system scope) and the
+1200-cap scroll census confirms the source carries no scroll (the dialog's
+10-line wrap is the display cap). See the deviation bullets below.
+
 **The census pin: the sign text cap is 1200, NOT 500.** `IngameFancyUI.cs:145`
 passes `allowEmpty: false, 1200` to the `UIVirtualKeyboard` ctor (the ctor
 default `maxLength` is 20, `:159`); pinned as `signs::SIGN_MAX_TEXT_LENGTH`
@@ -7033,24 +7042,86 @@ Deliberate deviations / deferred:
   (`UIVirtualKeyboard.cs:1022-1029`) falls back to the inline
   `Main.InputTextSign` editor (`Main.cs:19782-19799`) on short screens; the
   port carries no inline editor, so the keyboard opens at every height.
-- **IME / input plumbing** — `Main.instance.HandleIME()` /
-  `SetIMEPanelAnchor` (`UIVirtualKeyboard.cs:747-749`), the composition
-  string draw + anchor (`NPCChatPanel.cs:242-253`), `Main.clrInput()`
-  (`IngameFancyUI.cs:128`) and `Main.blockKey` (`Main.cs:19820`) have no
-  port route (the winit text path replaces `GetInputText`'s key polling).
-- **The sign hover surfaces are unported** — the `Player.cs:32101-32115`
-  hover latch (`Main.signBubble`/`signX`/`signY`/`signHover`), the
-  `signHover` mouse tooltip (`Main.cs:42940-42964`, the 460 px/10-line wrap
-  at the cursor) and `DrawInterface_19_SignTileBubble`
-  (`Main.cs:45739-45760`, the `Chat2` bubble over the sign — including its
-  `gravDir == -1` flip `:45745-45747`, unreachable while the port keeps
-  `gravDir = 1`). The sign text is readable only through the open dialog.
-- **Kill-on-break is lazy** — `WorldGen.KillTile`'s `Sign.KillSign`
-  (`WorldGen.cs:43686-43689`, every type except 395) is not wired into the
-  port's tile-break path; `signs::kill_sign` exists but runs only through
-  `ReadSign`'s non-sign-origin kill (`Sign.cs:30-34`) and `TextSign`'s
-  dead-tile splice (`Sign.cs:77-80`) — a broken sign's record dies on the
-  next read/write, not on the break tick.
+- **IME / input plumbing — FINAL SKIP (input-system scope, W4-f22
+  2026-11-21)** — `Main.instance.HandleIME()` / `SetIMEPanelAnchor`
+  (`UIVirtualKeyboard.cs:747-749`), the composition string draw + anchor
+  (`NPCChatPanel.cs:242-253`, `UITextBox.cs:26-33`/`:92-98`),
+  `Main.clrInput()` (`Main.cs:20001-20005` — `keyCount = 0`,
+  `inputTextEscape = false`; called at `IngameFancyUI.cs:128`) and
+  `Main.blockKey` (`Main.cs:1751`, set at `:19820`/`:67025`) have no port
+  route and are deliberately NOT ported: they ride the XNA key-polling
+  input system (`Main.GetInputText`, `Main.cs:20010`) and the ReLogic
+  `IImeService` platform layer, both replaced wholesale by the port's winit
+  text path. This is a final scope decision, not a deferral — the IME
+  composition window, the per-key `clrInput` flush and the `blockKey`
+  one-frame key suppression belong to an input-system port the project
+  does not carry.
+- **The sign hover surfaces landed (W4-f22 follow-up, 2026-11-21)** — the
+  `Player.cs:32098-32115` hover latch (`signs::sign_hover_scan` +
+  `mouse_overs_clear`, run per player tick in `world_sim/player.rs`):
+  `Main.signBubble`/`signX`/`signY` (`App.sign_bubble`/`sign_x`/`sign_y`) and
+  `Main.signHover` (`App.sign_hover`, init -1 `Main.cs:67189`). The
+  `signHover` mouse tooltip (`Main.cs:42940-42986`,
+  `ui/tooltip.rs::draw_sign_hover_tooltip` — the 460 px/10-line wrap at the
+  cursor, the `mouse + 16` origin + the opaque-box `(8, 2)` offset and the
+  `screenHeight − 30·lines` / `screenWidth − width` clamps, the
+  `DrawInvBG(23,25,81)·0.925·0.85` box and the four-way ±2 px border) draws
+  as the LAST interface layer (`DrawInterface_39_MouseOver`,
+  `Main.cs:44904-44908`), gated on `!mouseText && !mouseInterface`.
+  `DrawInterface_19_SignTileBubble` (`Main.cs:45739-45760`,
+  `ui/npc_chat.rs::draw_sign_bubble` — the `Chat2` sheet over the sign, the
+  `signX > position.X + width` horizontal flip + `−8 − width` / `+8` shift,
+  the `−22` y lift, tint `mouseTextColor ×4`) draws under the world→UI zoom
+  transform before the dialog (layer 19 < 23). The `Chat2` sheet
+  (`AssetInitializer.cs:564`) joins the packing list + `Lookups`
+  (`ui_sign_bubble`). **The `gravDir == -1` flip** (`:45745-45748`) stays
+  unreachable: the port keeps `gravDir = 1` (the same fold as the NPC
+  bubble's `:43149-43153` arm). The `mouseInterface` gate is a
+  pointer-over-panel stand-in (the open inventory/shop grid rects, the
+  chest panel, the dialog box, the fullscreen bestiary) — the C# sets the
+  flag from the per-cell `ItemSlot.Handle` hits (`Main.cs:41811-41813`);
+  the `cursorItemIcon*` clears (`:32112-32113`, `:46507-46510`) have no port
+  state (the cursor-icon system is unported). The smart-interact target
+  override (`Player.cs:31930-31934`) is unported: the cursor cell IS
+  `tileTargetX/Y`.
+- **Kill-on-break landed (W4-f22 follow-up, 2026-11-21)** —
+  `WorldGen.CheckSign`'s destroy tail `Sign.KillSign`
+  (`WorldGen.cs:43686-43689`, every type except 395) is wired into
+  `world_sim/editing.rs::break_tile` through `signs::kill_broken_sign_record`:
+  the hit cell's pre-kill frames decode the origin (`frameX/18 % 2`,
+  `frameY/18 % 2`, `WorldGen.cs:43573-43578`) and the record dies there.
+  The port has no `CheckSign` cascade arm (the remaining cells float — the
+  pre-existing deviation), so the sweep is LAZY per hit cell. The C# nulls
+  the slot in place; the port's dense store SPLICES, so the open
+  `Player.sign` / `signHover` indices remap through the surviving records —
+  a killed open record becomes a NULL SLOT (an index past the store, the
+  module's `Main.sign[i] == null` convention) so the lazy `sign_tick`
+  (`Player.cs:27509-27513`) closes the dialog + editor with sound 11 on the
+  next tick, exactly like the C#; a surviving open record keeps its
+  identity across the splice. The 395 item frame is not a `tileSign` kind,
+  so it never reaches the sweep (`type != 395`, `:43686`).
+- **The tombstone epitaph DISPLAY (W4-f22 follow-up, 2026-11-21)** — tile 85
+  IS a `tileSign` kind (`Main.cs:10082`), so the C# carries NO read-only
+  difference for tombstones: the sign-read path shows the epitaph exactly
+  like any sign text. The d2 sweep (`origin/task/W4-d2-proj-ai-11-20`,
+  `projectile_ai_tombstone.rs`) owns the `misc_text` WRITE
+  (`Sign.ReadSign`/`TextSign` at the tile-85 origin, `Projectile.cs:25358-
+  25363`); f22's read/display half (the `OpenSign` `npcChatText` read, the
+  hover tooltip, the editor prefill) surfaces it unchanged — witnessed by
+  `the_tombstone_epitaph_reads_through_the_sign_path`. The editor is NOT
+  read-only for tombstones (the C# has no such lock).
+- **The 1200-cap multi-line scroll census (W4-f22 follow-up, 2026-11-21)** —
+  `UIVirtualKeyboard` carries NO scroll mechanism (a `scroll`/`Scroll` grep
+  over `UIVirtualKeyboard.cs` is empty): the textbox is a `UITextBox`
+  (`UITextBox.cs`, a `UITextPanel<string>`) whose `DrawSelf` draws the whole
+  text centred, and the sign context parks the textbox off-screen (`-5000`,
+  `:176`) — the text edits in the NPCChatPanel dialog, whose
+  `TextDisplayCache` wraps at 460 px / **10 lines** (`TextDisplayCache.cs:27`,
+  `Utils.WordwrapString`). So a 1200-char sign shows its first 10 wrapped
+  lines in the dialog (the C# behaviour — no scroll, the tail is clipped by
+  the line cap), and the 1200 cap is the only length gate (the submit-gate
+  `SetTextMaxLength`, `:428`). The port's `panel_lines` already caps at 10;
+  no scroll is ported because none exists in the source.
 - **The front-screen keyboard pauses the sim** — the chest-rename precedent
   (ANALYSIS "Chest UI + world chests (M3-CHEST-UI)"): vanilla keeps the
   world ticking and draws the game UI under `InGameUI`; the port's keyboard

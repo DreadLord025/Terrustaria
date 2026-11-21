@@ -541,9 +541,27 @@ row (`Lang.inter[47]`) — `Main.SubmitSignText` (`Main.cs:40694-40704`): sound 
 **Restore** key (`UIVirtualKeyboard.cs:1039-1047`) which spends it. The sign closes
 on walk-away (the `Simple` reach region, `Player.cs:27504-27518`), death
 (`:17014`), Escape (`ToggleInv`'s sign arm, `:5017-5020`) or the dialog's Close
-(`CloseNPCChatOrSign`'s `CloseSign(quiet)` half). Deviations (the sim pause, the
-screenHeight>700 gate, IME, the unported signHover tooltip/bubble, lazy
-kill-on-break): ANALYSIS "The sign keyboard (W4-f22)".
+(`CloseNPCChatOrSign`'s `CloseSign(quiet)` half).
+
+The hover surfaces (W4-f22 follow-up, 2026-11-21): hovering a sign tile latches
+`Main.signBubble`/`signX`/`signY`/`signHover` (`Player.cs:32098-32115`,
+`signs::sign_hover_scan` + `mouse_overs_clear` per player tick). The placed-sign
+bubble (`DrawInterface_19_SignTileBubble`, `Main.cs:45739-45760`,
+`ui/npc_chat.rs::draw_sign_bubble`) draws the `Chat2` sheet over the sign under the
+world→UI zoom transform — flipped horizontally + shifted `−8 − width` when the sign
+sits right of the player, `+8` otherwise, lifted `−22`, tinted `mouseTextColor ×4`.
+The signHover tooltip (`Main.cs:42940-42986`, `ui/tooltip.rs::draw_sign_hover_tooltip`)
+prints the text preview at the cursor as the LAST interface layer
+(`DrawInterface_39_MouseOver`): the 460 px/10-line wrap, the `mouse + 16` origin +
+opaque-box `(8, 2)` offset, the on-screen clamps and the four-way ±2 px border,
+gated on `!mouseText && !mouseInterface`. Breaking a sign kills its record
+(`WorldGen.cs:43686-43689`, `signs::kill_broken_sign_record` in `break_tile`); the
+open/hover indices remap through the dense-store splice and the lazy `sign_tick`
+closes the dialog + editor. Tombstones (tile 85) are `tileSign` kinds with NO
+read-only difference — the epitaph (the d2 sweep's `misc_text` write) reads through
+the same path. Deviations (the sim pause, the screenHeight>700 gate, the final
+IME/clrInput/blockKey skip, the unreachable gravDir flip, the no-source-scroll
+1200 cap): ANALYSIS "The sign keyboard (W4-f22)".
 
 ### Minimap frame (`ui/minimap.rs`, `MinimapFrame.cs`)
 
