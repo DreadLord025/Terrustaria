@@ -106,6 +106,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     // laser wind-up, `:41838`/`:42338`/`:42611`) is already above.
     ("NPC_Killed_13", 4),
     ("NPC_Killed_61", 4),
+    // S1-E-21h d77 — the Sharknado bolt's death cry (`Projectile.cs:73763`,
+    // `PlaySound(4, Center, 19)` — the int overload, case 4 style 19; the
+    // `Sounds/NPC_Killed_19.xnb` asset verified on disk).
+    ("NPC_Killed_19", 4),
     // S1-E-21g — the attack/shot cues the caster teleport plays
     // (`SoundID.Item8`, `NPC.cs:20862`/`:20931`) and the EoC servant
     // launch (`SoundID.Item14`, the goblin-fist arm `:19415`) — Item_8
@@ -255,6 +259,20 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_17", 2),
     ("Item_33", 2),
     ("Item_74", 2),
+    // S1-E-21h d77 — the Kill()-tail bank gaps: the Flairon bubble's Item54
+    // (`Projectile.cs:72851`), the snowball's Item51 (`:74762`), the
+    // Houndius fireball's Item45 (`:75278`), the electrosphere's Item94
+    // (`:73530`), the Xenopopper's Item96 (`:73400`), the barnacle's
+    // Item167 (`:75288`) and the rocket families' Item62
+    // (`Kill_Bombs_DoUsualKillCode` `:77737`-`:78146`). All seven `.xnb`
+    // assets verified on disk.
+    ("Item_45", 2),
+    ("Item_51", 2),
+    ("Item_54", 2),
+    ("Item_62", 2),
+    ("Item_94", 2),
+    ("Item_96", 2),
+    ("Item_167", 2),
     ("Item_15", 2),
     ("Item_16", 2),
     ("Item_18", 2),
@@ -315,6 +333,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_108", 2),
     ("Item_109", 2),
     ("Item_111", 2),
+    // S1-E-21h d77 — the Crystal Pulse's death cue (`Projectile.cs:73294`,
+    // `SoundID.Item110`; the `.xnb` verified on disk).
+    ("Item_110", 2),
     ("Item_113", 2),
     ("Item_117", 2),
     ("Item_128", 2),
@@ -1363,6 +1384,8 @@ impl Audio {
     /// wave-G call sites: the tower dissolve's `PlaySound(4, Center, 22)`
     /// (`NPC.cs:39059`) and the Moon parts' laser wind-up
     /// `PlaySound(4, pos, 6)` (`NPC.cs:41838`/`:42338`/`:42611`).
+    /// S1-E-21h d77 adds style 19 — the Sharknado bolt's `Kill()` cry
+    /// (`Projectile.cs:73763`), drained on the `UpdateProjectiles` stream.
     pub fn play_npc_death_int(
         &mut self,
         style_num: i32,
@@ -1375,6 +1398,7 @@ impl Audio {
         let (x, y) = (x.trunc(), y.trunc());
         let cue = match style_num {
             6 => "NPC_Killed_6",
+            19 => "NPC_Killed_19",
             22 => "NPC_Killed_22",
             _ => return None,
         };

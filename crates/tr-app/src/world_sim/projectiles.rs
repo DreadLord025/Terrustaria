@@ -467,6 +467,21 @@ pub(crate) fn update_projectiles(app: &mut App, dt: f32) {
         // id-2 styles keep the wave-A façade.
         if id == 0 {
             app.audio.play_place_sound((0, 0), x, y, rng);
+        } else if id == 13 || id == 6 {
+            // S1-E-21h d77 — the Kill()-tail Shatter (13) and Grass (6)
+            // plays: the water bottles' `PlaySound(13, pos)`
+            // (`Projectile.cs:77018`/`:77033`/`:77048`) and the molotov's
+            // (`:73923`), the spore cloud's `PlaySound(6, pos)`
+            // (`:74517`). Both ride the wall-break façade's int arms
+            // (`LegacySoundPlayer.cs:783-792` no draws / `:706-716` one
+            // `Next(-30, 31)`), attenuation gate first.
+            app.audio.play_wall_break_sound((id, 1), x, y, rng);
+        } else if id == 4 {
+            // S1-E-21h d77 — the Sharknado bolt's death cry
+            // (`Projectile.cs:73763`, `PlaySound(4, Center, 19)`): the
+            // int-overload case-4 façade (one `Next(-10, 11)` pitch after
+            // the gate, the 10 playing guard).
+            app.audio.play_npc_death_int(style, x, y, rng);
         } else {
             app.audio.play_proj_sound((id, style), x, y, pitch_offset, rng);
         }

@@ -19957,6 +19957,13 @@ impl ProjectilePool {
                     if let Some(p) = player.as_deref_mut() {
                         self.try_cancel_channel(i, p);
                     }
+                    // S1-E-21h d77 — `Kill()`'s sound-only / cue-first arms
+                    // (`Projectile.cs:70978-77195`): the death-cue map queues
+                    // its intent at the death hook (the C# plays inside
+                    // `Kill()` while the slot is still active, so the cue
+                    // rides every Kill()-shaped death; the out-of-world
+                    // guard's direct deactivate never reaches `Kill()`).
+                    self.kill_tail_cue(i);
                 }
                 self.spawn_inferno_blast(i);
                 // S1-P-i21 — `Kill()`'s type-237 arm (`:74535-74538`): the
@@ -20078,6 +20085,71 @@ impl ProjectilePool {
                     self.slots[s].time_left -= tl_delta;
                 }
             }
+        }
+    }
+
+    /// S1-E-21h d77 — `Kill()`'s sound-only / cue-first death arms
+    /// (`Projectile.cs:70978-77195`, the line-order remainder after the
+    /// landed 24-site wave): one cue per death, queued straight into the
+    /// pool's sound queue (the death hook runs AFTER the sub-step loop's
+    /// `wants_sound` forward, so the intent cannot ride the slot field).
+    /// The C# plays inside `Kill()` while the slot is still active
+    /// (`active = false` lands at `:77262`); the port's death hook is the
+    /// same once-per-death seam, and the cue reads the PRE-hook position
+    /// (every mapped arm plays before its own state writes, or has none).
+    /// The dust/gore bodies stay skipped (the module's RNG note); the
+    /// style-facade plays ride id 2, the int-overload Dig/Grass/Shatter
+    /// plays ride ids 0/6/13 and the Sharknado cry rides id 4 — the drain
+    /// (`world_sim/projectiles.rs`) routes each to its case façade.
+    /// Positions ride untruncated (the landed 21h queue convention; the
+    /// id-4 façade truncates itself). Deferred arms (state-first resizes,
+    /// unported kinds, the 0.5-volume DD2 style) are listed in ANALYSIS
+    /// "The projectile sound wave, part 3".
+    fn kill_tail_cue(&mut self, slot: usize) {
+        let p = &self.slots[slot];
+        let pos = p.pos;
+        let center = Vec2::new(p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5);
+        let cue: Option<(u16, i32, f32, f32)> = match p.kind {
+            // `:71112` — the Fairy Queen shot's Item10 at Center (the dust
+            // census rides `fairy_queen_death_draws` below the hook).
+            932 => Some((2, 10, center.x, center.y)),
+            // `:71782`/`:71802` — the DD2 javelin/ballista Dig thud.
+            662 | 685 | 680 => Some((0, 0, pos.x, pos.y)),
+            // `:72015` — the Nebula Blaze's Item14 BEFORE the centre-snap
+            // (`:72016`); the resize/Damage/dust burst is the unported
+            // state remainder (the cue precedes every write).
+            634 | 635 => Some((2, 14, pos.x, pos.y)),
+            // `:72716` — the Blood Arrow's Dig thud.
+            819 => Some((0, 0, pos.x, pos.y)),
+            // `:72851` — the Flairon bubble's Item54 pop.
+            405 => Some((2, 54, pos.x, pos.y)),
+            // `:73294` — the Crystal Pulse's Item110 (the 522 shard ring
+            // `:73324` is the unported state remainder).
+            521 => Some((2, 110, pos.x, pos.y)),
+            // `:73400` — the Xenopopper's Item96 (the payload release rides
+            // `xenopopper_bubble_kill` below the hook).
+            444 => Some((2, 96, pos.x, pos.y)),
+            // `:73530` — the Electrosphere's Item94 (the sphere spawn rides
+            // `dart_electro_firework_kill`).
+            442 => Some((2, 94, pos.x, pos.y)),
+            // `:73605` — the Saucer Missile's Item14 BEFORE the centre-snap
+            // (`:73606`); the resize/Damage burst is the unported remainder.
+            448 => Some((2, 14, pos.x, pos.y)),
+            // `:73634` — the Celebration rockets' Item14 (the resize/burst
+            // rides `celeb2_death`).
+            715..=718 => Some((2, 14, pos.x, pos.y)),
+            // `:73763` — the Sharknado bolt's case-4 style-19 cry at Center
+            // (the cloud spawn rides `sharknado_bolt_kill`).
+            385 => Some((4, 19, center.x, center.y)),
+            // `:73923` — the Molotov's Shatter (the greek-fire burst rides
+            // `thrown_consumable_death`).
+            399 => Some((13, 0, pos.x, pos.y)),
+            // `:73965`/`:73982` — the Javelin / Bone Javelin Dig thud.
+            507 | 598 => Some((0, 0, pos.x, pos.y)),
+            _ => None,
+        };
+        if let Some((id, style, x, y)) = cue {
+            self.pending_proj_sounds.push((id, style, x, y, 0.0));
         }
     }
 
@@ -23750,6 +23822,66 @@ mod s1_e_21h_sound_tests {
             true,
         );
         assert_eq!(pool.slots()[slot].sound_delay, -1, "the latch holds");
+    }
+
+    /// S1-E-21h d77 — the Kill()-tail cue map (batch 1, sites `:71112`-
+    /// `:73982`): one queued intent per death at the C#'s pre-hook
+    /// position, the payload's id/style exact, and a non-mapped kind
+    /// queues nothing. WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn s1_e_21h_d77_the_kill_tail_cue_map_batch1() {
+        let mut pool = ProjectilePool::new();
+        // (kind, expected (id, style), position mode: 0 = pos, 1 = center)
+        let cases: [(u16, (u16, i32), u8); 17] = [
+            (932, (2, 10), 1),
+            (662, (0, 0), 0),
+            (685, (0, 0), 0),
+            (680, (0, 0), 0),
+            (634, (2, 14), 0),
+            (635, (2, 14), 0),
+            (819, (0, 0), 0),
+            (405, (2, 54), 0),
+            (521, (2, 110), 0),
+            (444, (2, 96), 0),
+            (442, (2, 94), 0),
+            (448, (2, 14), 0),
+            (715, (2, 14), 0),
+            (385, (4, 19), 1),
+            (399, (13, 0), 0),
+            (507, (0, 0), 0),
+            (598, (0, 0), 0),
+        ];
+        for (kind, want, mode) in cases {
+            let slot = pool
+                .spawn_with_data_ai_owned(kind, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+                .expect("the row spawns");
+            let p = &pool.slots()[slot];
+            let (x, y) = if mode == 1 {
+                (p.pos.x + p.w * 0.5, p.pos.y + p.h * 0.5)
+            } else {
+                (p.pos.x, p.pos.y)
+            };
+            pool.kill_tail_cue(slot);
+            let queued = pool.drain_proj_sounds();
+            assert_eq!(queued.len(), 1, "kind {kind}: one cue per death");
+            assert_eq!(
+                (queued[0].0, queued[0].1, queued[0].2, queued[0].3, queued[0].4),
+                (want.0, want.1, x, y, 0.0),
+                "kind {kind}'s cue payload"
+            );
+            // The map is idempotent per call site: a second call queues a
+            // second intent (the death hook runs once — the slot never
+            // returns to active), so the once-per-death guarantee is the
+            // hook's, not the map's.
+            pool.kill(slot);
+        }
+        // A kind outside the map queues nothing (the bomb's cue rides its
+        // own detonation latch, not the death map).
+        let slot = pool
+            .spawn_with_data_ai_owned(28, 0, 80.0, 80.0, 0.0, 0.0, 10, 0.0, 0.0, 0.0)
+            .expect("the bomb row spawns");
+        pool.kill_tail_cue(slot);
+        assert!(pool.drain_proj_sounds().is_empty(), "the bomb keeps its latch cue");
     }
 }
 
