@@ -1227,35 +1227,70 @@ the shell, the patch tunnels).
 
 ## Rain and weather
 
-`rain.rs` ports the shape of `Rain.MakeRain`/`Rain.Update`/`Main.DrawRain` and
-`Main.UpdateWeather`'s intensity ramp: a weather event has a target (`maxRaining`),
-`cloudAlpha` moves toward it at `0.0005` per 60 Hz tick, and drops spawn per tick with
-`25 * (0.25 + cloudAlpha)` attempts per 1920 px of screen width, capped at
-`Main.maxRain = 750`. A drop spawns only into a tile with no wall and no solid block,
-falls at `(windSpeedCurrent * 18, 14)` px/tick, and dies on solid or wet collision or below
-the view, spawning the water `Dust` frame with 10 % of its velocity. `SetBackColor`'s
-`1 - cloudAlpha * 0.9 * atmo` multiplies the sky colour, which also dims surface sunlight
-via `ApplyColorOfTheSkiesToTiles`. Drops are drawn with the `Rain` texture's 2x40 frames,
-rotated by `atan2(vx, -vy)`, tinted by `Lighting.GetColor` * 0.85.
+`rain.rs` ports `Rain.MakeRain`/`Rain.NewRain`/`Rain.Update`/`Main.DrawRain` verbatim
+(W4-d130) plus `Main.UpdateWeather`'s intensity ramp: a weather event has a target
+(`maxRaining`), `cloudAlpha` moves toward it at `0.0005` per 60 Hz tick, and `MakeRain`
+runs `screenWidth / 1920 * 25 * (0.25 + cloudAlpha)` attempts per tick (the C#'s float
+`i < num` loop, `Rain.cs:47`), with the `NPC.AnyDanger` 0.05 throttle (`:37-45`). Each
+attempt rolls the x-window then the y (`:54-55`), shapes them with the player velocity
+and the `windSpeedCurrent * 15 * 40` lead (`:50-57`), clamps to the world edges and
+gates on open sky (`!SolidTile && wall <= 0`, `:84`); `NewRain` then budgets the FIRST
+inactive slot within `maxRain * cloudAlpha` scaled by gfxQuality (< 0.9), the snow-tile
+suppression `(1 - (count/1500)^2)` and `atmo^9` (0 below 0.4) (`:166-207`), and rolls the
+scale (`1 + Next(-20,21)*0.01`) then the `waterStyle*3 + Next(3)` frame. The fall velocity
+is the LIVE `(windSpeedCurrent * 18, 14) * scale` (`GetRainFallVelocity`, `:91-94`) — the
+old frozen seed-time wind snapshot + sine term is retired. `Rain.Update` (`:96-133`)
+moves the drop and kills it on the real `Collision.SolidCollision`/`WetCollision` 2x2
+probes or below the view; the impact dust's `Next(100) < gfxQuality*100` roll fires only
+on the collision arms. The pool is the C#'s fixed 750 slots (`Main.cs:66801`) — slot
+order IS the draw/update order, never compacted. `DrawRain` (`Main.cs:38800-38826`)
+samples the light at `(int)(pos + 4) >> 4` per axis and tints through the XNA byte chain
+(`GetColor` → `* 0.85` → shimmer `* (1 - shimmerAlpha)`, alpha included), rotated about
+the top-left origin. `SetBackColor`'s `1 - cloudAlpha * 0.9 * atmo` multiplies the sky
+colour, which also dims surface sunlight via `ApplyColorOfTheSkiesToTiles`.
 
 Storms add two pieces from `Main.DrawSurfaceBG`/`Main.SpawnStormLightning`: the
 `cloudBG` layers (`Background_112/113`, scale 1.65/1.85, parallax 0.09/0.12) fade in with a
 `cloudBGAlpha`-style ramp tied to the rain intensity, and heavy rain (> 0.65) throws a
-lightning flash every 5вЂ“15 s. The flash is a 0.38-alpha full-screen white overlay that
+lightning flash every 5–15 s. The flash is a 0.38-alpha full-screen white overlay that
 decays over ~11 ticks; there is no bolt geometry or thunder audio yet.
 
-Snow biomes use vanilla's `DustID.Snowflake` (type 76): rain drops are suppressed and the
-ambient snow dust is spawned at `500 * screenWidth/1920` per second (scaled by
-`1 + 2*cloudAlpha`), falling at 2вЂ“5 px/tick with a per-flake sine sway and the storm wind.
-Flakes die on solid or wet tiles and are drawn from `Dust` frame 76 (X = 760, Y = 0/10/20).
+The ambient snowfall is `Main.snowing()` (`Main.cs:13032-13116`), ported verbatim as
+`crate::snow` (W4-d130) — NOT a rain mode: it spawns `Dust` type 76 into the shared pool
+wherever the scene metrics count snow tiles at the surface, storm or no storm. The
+intensity is `pow(count/6000, 4 - 3*cloudAlpha)`, the per-screen budget
+`(int)(500 * viewWidth/1920) * (1 + 2*cloudAlpha)`, the attempt count `1 + 50*cloudAlpha`,
+and the `Main.snowDust` population gates the loop (`:13057`, a BREAK not a skip). The
+Deerclops-near fades divide the intensity by 20 and the budget by 3 (`:13047-13052`) and
+drop each flake's scale 0.5. The flake recipe branches on `Main.raining`: dry drift is
+`wind + Next(-10,10)*0.1 + wind*15`, storm drift is
+`sqrt(|wind|)*sign(wind)*(cloudAlpha+0.5)*10 + NextFloat()*0.2 - 0.1` with the fall halved
+(`Math.Sign(0) = 0` mirrored). The type-76 AI (`Dust.cs:1745-1763`) plus the shared
+second-chain tails (the `*0.99` drag `:2073`, the rotation rebuild `:2081`, the `-0.01`
+fade `:2127`) ride the shared `UpdateDust` tick; `Main.snowDust` lands on `DustPool`
+(head reset `:428`, `++` per live flake `:1747`). The draw is `DrawDust`'s generic path
+(`Main.cs:38968-39018`) with the 8x8 frame at the `(4,4)` origin and the full-dark kill.
+The old biome-gated rain-rig flake approximation (per-flake sine sway, `snow_cap`) is
+retired.
 
 First-pass simplifications, as updated by later tasks: the session-local weather
-schedule is **retired** вЂ” M1.4-BG-22 landed the vanilla `rainTime`/`maxRaining` pair
+schedule is **retired** — M1.4-BG-22 landed the vanilla `rainTime`/`maxRaining` pair
 and the `UpdateTime` start/stop rolls on the shared 60 Hz world tick (see "dayRate
 consumers (M1.4-BG-22)" below); the wind-gusts gap was closed by WEATHER-1 (the
 "gusts" ARE vanilla's `extremeWindCounter` tiered re-rolls plus the proportional
-easing, already ported). Still first-pass: no lightning bolt geometry and no thunder
-audio вЂ” the flash rides WEATHER-1's tiered thunder chain, not a bolt mesh.
+easing, already ported). W4-d130 landed the verbatim rain fall/draw core and
+`Main.snowing()`. Deliberate deviations (W4-d130): (a) the C# runs `Rain.Update` INSIDE
+`DrawRain` per drawn frame (`Main.cs:38819-38822`) and `MakeRain`/`snowing` per
+`Main.Update`; the port keeps the drop/snow sim on the 60 Hz accumulator and the spawn
+on the frame's scene slot — the recorded cadence fold, same as the rest of the weather
+rig. (b) `Main.maxScreenW` is pinned at its Reach value 1920 (`Main.cs:66715`/`:3715`);
+the HiDef 4096 arm (`:3709`) is dropped. (c) the impact splash is still the port's
+stand-in puff — the verbatim `Dust.NewDust(..., dustWater())` splash + its AI/draw are
+g67's scope (weather-rain-splash); the `Next(100)` roll and the collision-only gate are
+verbatim. (d) `NewRain`'s depth factor (`Rain.cs:174-175`) is computed-and-discarded in
+the C# (a bare `Math.Max` statement) — ported as a note, no effect. Still first-pass: no
+lightning bolt geometry and no thunder audio — the flash rides WEATHER-1's tiered
+thunder chain, not a bolt mesh.
 
 ## Biomes
 

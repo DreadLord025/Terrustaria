@@ -1339,13 +1339,18 @@ mod tests {
     }
 
     #[test]
-    fn the_any_danger_throttle_floors_at_one_attempt() {
-        // `Rain.cs:37-45`: `num *= 0.05`, floored to 1 when the unthrottled
-        // rate was > 1 and the throttled one < 1. At the 1600-px storm rate
-        // 26.04 → 1.302 → the float loop admits i = 0,1 → 2 attempts.
+    fn the_any_danger_throttle_cuts_the_attempt_rate() {
+        // `Rain.cs:37-45`: `num *= 0.05` under AnyDanger. At the 1600-px
+        // storm rate 26.04 → 1.302 → the float loop admits i = 0,1 → 2
+        // attempts (vs 27 open). The `num2 > 1 && num < 1 → num = 1` floor
+        // is count-invisible (the loop admits i=0 for any num > 0, floored
+        // or not) — the observable is the 27 → 2 cut.
         let w = ground();
-        let mut rain = Rain::with_forced(29, Some(1.0), false);
+        let mut open = Rain::with_forced(29, Some(1.0), false);
         let mut i = inputs();
+        open.update(&w, &i, 1.0 / 60.0);
+        assert_eq!(open.drop_count(), 27, "the open rate");
+        let mut rain = Rain::with_forced(29, Some(1.0), false);
         i.any_danger = true;
         rain.update(&w, &i, 1.0 / 60.0);
         let throttled = 1600.0 / 1920.0 * 25.0 * 1.25 * 0.05;
@@ -1356,20 +1361,8 @@ mod tests {
             n += 1;
         }
         assert_eq!(rain.drop_count(), n, "the throttled attempt count");
+        assert_eq!(n, 2);
         assert!(n < 27, "throttled below the open rate");
-        // A tiny screen whose UNTHROTTLED rate is <= 1 keeps the fractional
-        // rate (the floor only fires when num2 > 1): 50/1920*25*1.25 = 0.814,
-        // throttled 0.041 → 0 attempts.
-        let mut tiny = Rain::with_forced(29, Some(1.0), false);
-        i.screen.x = 50.0;
-        tiny.update(&w, &i, 1.0 / 60.0);
-        assert_eq!(tiny.drop_count(), 0);
-        // And the floor arm itself: 100 px unthrottled 1.628 > 1, throttled
-        // 0.081 < 1 → num = 1 → exactly one attempt (`Rain.cs:41-44`).
-        let mut floored = Rain::with_forced(29, Some(1.0), false);
-        i.screen.x = 100.0;
-        floored.update(&w, &i, 1.0 / 60.0);
-        assert_eq!(floored.drop_count(), 1, "the >1 → <1 floor");
     }
 
     #[test]
