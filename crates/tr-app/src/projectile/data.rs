@@ -3502,6 +3502,19 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             DD2_BETSY_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
             // `Projectile.cs:9908-9917` (1046 Pufferfish): 26x26.
             PUFFERFISH => (26.0, 26.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // W4-d20 T4a — the pet-buff shoot arm's spawn kinds (the
+            // `Player.cs:48561-48583` arm needs a row to spawn through
+            // `spawn_with_data_ai`; the row-less fallback would carry no
+            // box/aiStyle). The C# rows verbatim:
+            // `Projectile.cs:8451-8460` (881 KingSlimePet): 20x20,
+            // aiStyle 26, friendly, pen -1, timeLeft *= 5, netImportant.
+            KING_SLIME_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:8874-8883` (934 QueenSlimePet): the 881 shape.
+            QUEEN_SLIME_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9436-9445` (994 JunimoPet): the 881 shape.
+            JUNIMO_PET => (20.0, 20.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
+            // `Projectile.cs:9024-9033` (956 BerniePet): 20x28, the 881 shape.
+            BERNIE_PET => (20.0, 28.0, 26, -1, 18000, 0, true, false, false, RESET_STATE),
             // The sentries: the aiStyle-53 placeable staff sentries —
             // FrostHydra (`Projectile.cs:3997`; the `light = 0.25f`/
             // `coldDamage` lines have no port consumer, the module doc),
@@ -4210,6 +4223,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // AI_026 slice B: the boss-head pets' `netImportant = true`
             // (`Projectile.cs:8488`/`:8523`).
             || matches!(kind, SKELETRON_PET | SKELETRON_PRIME_PET)
+            // W4-d20 T4a — the pet-buff shoot arm's spawn kinds set
+            // `netImportant = true` (`Projectile.cs:8453`/`:8876`/
+            // `:9438`/`:9026`).
+            || matches!(kind, KING_SLIME_PET | QUEEN_SLIME_PET | JUNIMO_PET | BERNIE_PET)
             // AI_026 slice A: the flyer pets' `netImportant = true`
             // (`Projectile.cs:2833/2843/2853/2994/4647/7913/7965/7985/
             // 8488/8523/8545/8591/9910`; the 175's block `:2612-2620`
@@ -4531,6 +4548,20 @@ pub const DUKE_FISHRON_PET: u16 = 892;
 pub const MOON_LORD_PET: u16 = 894;
 pub const DD2_BETSY_PET: u16 = 901;
 pub const PUFFERFISH: u16 = 1046;
+/// `ProjectileID.KingSlimePet` (881, `ProjectileID.cs:2316`) — the King
+/// Slime pet, aiStyle 26 (`Projectile.cs:8451-8460`). W4-d20 T4a (the
+/// pet-buff shoot arm's spawn kind; the aiStyle-26 slice C owns the AI).
+pub const KING_SLIME_PET: u16 = 881;
+/// `ProjectileID.QueenSlimePet` (934, `ProjectileID.cs:2422`) — the Queen
+/// Slime pet, aiStyle 26 (`Projectile.cs:8874-8883`). W4-d20 T4a.
+pub const QUEEN_SLIME_PET: u16 = 934;
+/// `ProjectileID.JunimoPet` (994, `ProjectileID.cs:2542`) — the Jumino
+/// pet, aiStyle 26 (`Projectile.cs:9436-9445`). W4-d20 T4a (the 5276
+/// gift item's pet; the aiStyle-26 slice C owns the AI).
+pub const JUNIMO_PET: u16 = 994;
+/// `ProjectileID.BerniePet` (956, `ProjectileID.cs:2466`) — Bernie the
+/// button-eyed pet, aiStyle 26 (`Projectile.cs:9024-9033`). W4-d20 T4a.
+pub const BERNIE_PET: u16 = 956;
 pub const STORM_TIGER_1: u16 = 833;
 pub const STORM_TIGER_2: u16 = 834;
 pub const STORM_TIGER_3: u16 = 835;

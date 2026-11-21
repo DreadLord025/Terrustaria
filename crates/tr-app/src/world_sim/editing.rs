@@ -3191,6 +3191,77 @@ fn fire_non_ammo_shot(
             app.projectiles.set_armor_penetration(slot, arpen);
             app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
         }
+    } else if proj > 0
+        && !def.summon
+        && (crate::projectile::PROJ_PET.contains(&proj)
+            || matches!(proj, 72 | 18 | 500 | 650))
+    {
+        // W4-d20 T4a — `Player.ItemCheck_Shoot`'s pet-buff shoot arm
+        // (`Player.cs:48561-48583`): `sItem.shoot > 0 && (Main.projPet
+        // [sItem.shoot] || shoot == 72 || 18 || 500 || 650) && !sItem
+        // .summon`. Every vanity/light-pet item (the Jumino 5276 → 994
+        // included) rides THIS arm, not the generic tail: kill the
+        // owner's same-kind pets, then spawn ONE at `pointPosition` with
+        // the aim velocity, damage 0, knockback 0, ai0/ai1/ai2 = 0. The
+        // generic tail fired the pet with the item's damage/kb and no
+        // same-kind cull — every pet item was broken (the T4 census).
+        // The C# `return`s; the shared sentry/consumable tail below
+        // still runs (a pet item is neither). ZERO `Main.rand` draws.
+        // The kill scan (`:48563-48581`): the owner's active slots, in
+        // pool order. The 72 light-pet cross-kills its 86/87 aliases;
+        // the 5131 item (the King/Queen Slime pet duo) cross-kills
+        // 881/934; every other kind kills its own.
+        let owner = app.local_id as u8;
+        for i in 0..app.projectiles.slots().len() {
+            let q = &app.projectiles.slots()[i];
+            if !q.active || q.owner != owner {
+                continue;
+            }
+            let kill = if proj == 72 {
+                matches!(q.kind, 72 | 86 | 87)
+            } else if held.kind == 5131 {
+                matches!(q.kind, 881 | 934)
+            } else {
+                q.kind == proj
+            };
+            if kill {
+                app.projectiles.kill(i);
+            }
+        }
+        // `NewProjectile(pointPosition, num4, num5, projToShoot, 0, 0f,
+        // i)` (`:48582`): damage 0, knockback 0, no ai payload. The
+        // point is the C#'s `pointPosition` (the port's `spawn`, the
+        // centre + dir*10 stand-in the generic tail shares); the box
+        // centres on it (`Projectile.cs:10876-10877`). A row-less pet
+        // kind falls back to the plain spawn (the `spawn_pet_if_needed`
+        // precedent — the pet-AI lane owns the rows).
+        let slot = match crate::projectile::proj_data(proj) {
+            Some(row) => app.projectiles.spawn_with_data_ai(
+                proj,
+                spawn.x - row.w * 0.5,
+                spawn.y - row.h * 0.5,
+                shot.x,
+                shot.y,
+                0,
+                0.0,
+                0.0,
+                0.0,
+            ),
+            None => app.projectiles.spawn(
+                proj,
+                owner,
+                spawn,
+                shot,
+                0,
+                0.0,
+                false,
+            ),
+        };
+        if let Some(slot) = slot {
+            // `ApplyStatsFromSource` (`Projectile.cs:11128`/`:11131`).
+            app.projectiles.set_armor_penetration(slot, arpen);
+            app.projectiles.set_bonus_crit_chance(slot, revolver_bonus);
+        }
     // S1-P-i25 — the summon-staff minion spawn arm
     // (`Player.ItemCheck_Shoot`'s per-item `SpawnMinionOnCursor`
     // arms, `Player.cs:48067-48085`/`:48436-48496`/`:48556-48559`).
@@ -19049,5 +19120,77 @@ mod wall_placement_tests {
             assert_eq!(stream_of(&mut app), before, "{name}: zero draws");
             assert_eq!(sword_slots(&app).len(), 2, "{name}: the pair spawned");
         }
+    }
+
+    // ---- W4-d20 T4a: the pet-buff shoot arm — WRITTEN NOT RUN ----
+
+    /// The four pet rows carry the aiStyle-26 census slice
+    /// (`Projectile.cs:8451-8460`/`:8874-8883`/`:9436-9445`/`:9024-9033`):
+    /// 20x20 (956 is 20x28), pen -1, timeLeft 18000 (3600×5), friendly,
+    /// netImportant. The 994 row is the Jumino gift chain's pet (T4c's
+    /// row half, landed here so the T4a shoot arm spawns it).
+    #[test]
+    fn w4_d20_t4a_the_pet_rows_carry_style_26() {
+        for (kind, h) in [(881u16, 20.0), (934, 20.0), (994, 20.0), (956, 28.0)] {
+            let d = crate::projectile::proj_data(kind).unwrap();
+            assert_eq!(d.ai_style, 26, "kind {kind}");
+            assert_eq!((d.w, d.h), (20.0, h), "kind {kind}");
+            assert_eq!(d.penetrate, -1, "kind {kind}");
+            assert_eq!(d.time_left, 18000, "kind {kind} timeLeft *= 5");
+            assert!(d.net_important, "kind {kind} overlay");
+        }
+    }
+
+    /// The Jumino pet item 5276 (`DefaultToVanitypet(994, 345)`,
+    /// `Item.cs:41867-41872`): the pet-buff shoot arm (`Player.cs:48561-
+    /// 48583`) spawns ONE 994 with damage 0, knockback 0, ai0/ai1/ai2 = 0
+    /// and ZERO velocity (the item's shootSpeed is 0). The generic tail
+    /// would have fired it with the item's damage/kb — the T4 census bug.
+    #[test]
+    fn w4_d20_t4a_the_jumino_spawns_a_damage_zero_pet() {
+        let mut app = boomerang_app(5276, "Junimo Pet Item");
+        seed_stream(&mut app, 7);
+        let before = stream_of(&mut app);
+        let held = app.inventory[app.selected];
+        let def = registry::get(held.kind).unwrap();
+        let proj = registry::projectile(held.kind).unwrap();
+        assert_eq!(proj, 994, "the Jumino shoots 994");
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let (sw, sh) = app.screen_size();
+        assert!(fire_non_ammo_shot(
+            &mut app, held, None, Vec2::new(cx + 80.0, cy), proj, def, Vec2::new(sw, sh),
+        ));
+        let pets: Vec<usize> = app.projectiles.slots().iter().enumerate()
+            .filter(|(_, p)| p.active && p.kind == 994).map(|(i, _)| i).collect();
+        assert_eq!(pets.len(), 1, "exactly one pet spawned");
+        let p = &app.projectiles.slots()[pets[0]];
+        assert_eq!(p.damage, 0, "the pet deals no damage");
+        assert_eq!(p.knock_back, 0.0, "no knockback");
+        assert_eq!(p.ai, [0.0, 0.0, 0.0, 0.0], "no ai payload");
+        assert_eq!(p.vel, Vec2::ZERO, "shootSpeed 0 → zero velocity");
+        assert_eq!(stream_of(&mut app), before, "the pet arm spends no draw");
+    }
+
+    /// The same-kind cull (`:48563-48581`): a second use kills the owner's
+    /// existing 994 before spawning the new one — exactly one pet alive.
+    /// A foreign-owner pet is never culled.
+    #[test]
+    fn w4_d20_t4a_the_reuse_culls_the_same_kind_pet() {
+        let mut app = boomerang_app(5276, "Junimo Pet Item");
+        // A pre-existing own 994 and a foreign-owner 994.
+        let own = app.projectiles.spawn_with_data_ai(994, 600.0, 4200.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0).unwrap();
+        let foreign = app.projectiles.spawn_with_data_ai_owned(994, 1, 700.0, 4200.0, 0.0, 0.0, 0, 0.0, 0.0, 0.0).unwrap();
+        let held = app.inventory[app.selected];
+        let def = registry::get(held.kind).unwrap();
+        let (cx, cy) = app.player.as_ref().unwrap().center();
+        let (sw, sh) = app.screen_size();
+        assert!(fire_non_ammo_shot(
+            &mut app, held, None, Vec2::new(cx + 80.0, cy), 994, def, Vec2::new(sw, sh),
+        ));
+        assert!(!app.projectiles.slots()[own].active, "the own pet was culled");
+        assert!(app.projectiles.slots()[foreign].active, "the foreign pet survives");
+        let live: Vec<usize> = app.projectiles.slots().iter().enumerate()
+            .filter(|(_, p)| p.active && p.kind == 994 && p.owner == 0).map(|(i, _)| i).collect();
+        assert_eq!(live.len(), 1, "exactly one own pet alive after the re-use");
     }
 }
