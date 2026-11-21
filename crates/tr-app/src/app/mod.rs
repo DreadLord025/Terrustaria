@@ -183,10 +183,18 @@ pub(crate) struct App {
     pub(crate) next_npc_uid: u32,
     /// The Journey powers (`GameContent/Creative/CreativePowers.cs`).
     pub(crate) creative_powers: crate::creative::CreativePowers,
+    /// `Main._gameModeDifficultyOverride` (`Main.cs:359`,
+    /// `UpdateCreativeGameModeOverride` `:17294-17305`): the Journey
+    /// difficulty slider's NPC strength multiplier, re-derived once per
+    /// game update (`DoUpdate`, `:16847`). `None` outside a Journey world —
+    /// `Main.Difficulty` then answers the world's own GameMode (the port is
+    /// single-difficulty classic, so 1.0).
+    pub(crate) game_mode_difficulty_override: Option<f32>,
     /// `Main.LocalPlayerCreativeTracker.ItemSacrifices`
-    /// (`ItemsSacrificedUnlocksTracker.cs`) — the per-world research counts
-    /// (W4-c24). In-memory for now; the save rides M6-SAVE's world sections
-    /// (the `Save`/`Load` codec, `:157-196`, is a later task).
+    /// (`ItemsSacrificedUnlocksTracker.cs`) — the research counts (W4-c24).
+    /// The `.plr` `creativeTracker` block (`Player.cs:54911`/`:55696-55699`)
+    /// carries them through `research::save_pairs`/`load_pairs` (the W4-f44
+    /// serialization seam's `research: Vec<(String, i32)>` shape).
     pub(crate) research: crate::research::ResearchTracker,
     /// `Main.CreativeMenu` (`CreativeUI.cs`) + `UICreativePowersMenu`'s state
     /// (W4-c24): the toggle, the open category, the sacrifice slot and the
@@ -3614,6 +3622,7 @@ impl App {
             discount_available: false,
             shop_closed_flag: false,
             creative_powers,
+            game_mode_difficulty_override: None,
             research: crate::research::ResearchTracker::default(),
             journey: ui::journey::JourneyMenu::default(),
             #[cfg(feature = "debug")]

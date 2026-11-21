@@ -89,6 +89,16 @@ impl App {
     /// filter's `RecipeFilterHack` gate).
     fn world_step_head(&mut self) {
     self.game_update_count = self.game_update_count.wrapping_add(1);
+    // `Main.UpdateCreativeGameModeOverride` (`Main.cs:16847` → `:17294-
+    // 17305`): once per game update, the Journey difficulty slider's
+    // strength becomes `Main._gameModeDifficultyOverride`; outside a
+    // Journey world it clears (the world's own GameMode answers). The
+    // port's Journey stand-in is the session difficulty (the same one
+    // `journey_available` reads — a Journey character only joins a
+    // Journey world, `UIWorldSelect.cs:177-180`).
+    self.game_mode_difficulty_override = self
+        .creative_powers
+        .game_mode_difficulty_override(self.active_player_difficulty() == 3);
     // `WorldUpdateStepper.DrawnThisUpdate = false` at the step
     // head (`Main.cs:17747`, right after `_gameUpdateCount++`).
     self.stepper.drawn_this_update = false;
