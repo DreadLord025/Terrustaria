@@ -632,6 +632,11 @@ pub(crate) fn update_items(app: &mut App, dt: f32) {
             i += 1;
         }
         // --- `WorldItem.UpdateItem`'s physics half -------------------------
+        // W4-f47 — the shimmered-repulsion pre-pass (`WorldItem.cs:789-848`):
+        // the scan reads the whole live list and arms `repulsion_brake`,
+        // which each drop's MoveInWorld spends on the extra ×0.8 X friction.
+        // RNG-free; runs before the per-drop physics loop.
+        crate::item::ItemDrop::shimmered_repulsion(items);
         let mut i = 0;
         while i < items.len() {
             let mut drop = items[i].clone();
@@ -1386,8 +1391,18 @@ mod shimmer_tests {
         d.vel = Vec2::ZERO;
         app.items.push(d);
         let before = app.items[0].pos.y;
+        // W4-f47 re-derivation onto the faithful MoveInWorld: `wetVelocity`
+        // is captured at UpdateItem's head (`WorldItem.cs:379-384`) from the
+        // PRE-UpdateShimmer velocity (0 here), so the rise UpdateShimmer arms
+        // (`velocity.Y -= 0.05`, `:486-489`) does not integrate until the
+        // NEXT tick — the C#'s ref-wetVelocity lag. Tick 1 holds position
+        // but arms the rise velocity.
         update_items(&mut app, 1.0 / 60.0);
-        // The rise: `velocity.Y -= 0.05` while over shimmer (`WorldItem.cs:474-483`).
+        assert_eq!(app.items[0].pos.y, before, "tick 1 holds (pre-rise wetVelocity capture)");
+        assert!(app.items[0].vel.y < 0.0, "the rise velocity armed");
+        // Tick 2: wetVelocity = velocity * 0.375 (the shimmer scale, `:384`)
+        // integrates the rise (`ApplyMovement`, `:1076-1078`).
+        update_items(&mut app, 1.0 / 60.0);
         assert!(app.items[0].pos.y < before, "the item rises");
     }
 }
