@@ -526,6 +526,147 @@ fn dandelion_death(
     gore.new_gore(rng, world, pos, vel, 1207, 1.0); // :85896
 }
 
+/// The 646-652 Gem Bunny death (`NPC.cs:85898-85920`, sites 39-40): the
+/// dust type is the gem's own (`num468 = 86 + (type - 646)`, except the
+/// 652 Amber Topaz variant's 138 — `:85900-85904`), 10x burst, then
+/// `num471 = (type - 646) * 2` picks the pair 1234+n/1235+n at position,
+/// scale 1f.
+fn gem_bunny_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85900-85904` — the gem dust type.
+    let num468 = if npc_type < 652 { 86 + (npc_type - 646) } else { 138 };
+    // `:85913-85916` — the 10x gem-dust burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        num468,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    // `:85917` — the per-variant offset.
+    let num471 = (npc_type - 646) * 2;
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1234 + num471, 1.0); // :85918
+    gore.new_gore(rng, world, pos, vel, 1235 + num471, 1.0); // :85919
+}
+
+/// The 639-645 Gem Squirrel death (`NPC.cs:85921-85941`, site 41): the
+/// same gem-dust shape (`num472 = 86 + (type - 639)`, the 645's 138), 10x
+/// burst, then ONE gore `1227 + (type - 639)` at position, scale 1f.
+fn gem_squirrel_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85923-85927` — the gem dust type.
+    let num472 = if npc_type < 645 { 86 + (npc_type - 639) } else { 138 };
+    // `:85936-85939` — the 10x gem-dust burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        num472,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 1227 + (npc_type - 639), 1.0); // :85940
+}
+
+/// The 29-type critter arm's death (`NPC.cs:85942-86091`): the 10x dust-5
+/// burst, then the per-kind sub-branch. The branches land in source order
+/// — this batch ports the first two: 46/303/337/540 → 76/77 (+ the
+/// 303's extra 10x dust-193 AFTER the two gores, + the 540's extra gore
+/// 926, `:85956-85971`), 67 → 95/95/96 (`:85972-85977`). The remaining
+/// sub-branches land in later batches; an unported kind in the arm spawns
+/// the dust burst only (the census note — the gores follow in source
+/// order).
+fn critter_arm_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85952-85955` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if matches!(npc_type, 46 | 303 | 337 | 540) {
+        gore.new_gore(rng, world, pos, vel, 76, 1.0); // :85958
+        gore.new_gore(rng, world, pos, vel, 77, 1.0); // :85959
+        if npc_type == 303 {
+            // `:85960-85966` — the 303 Bunny's extra 10x dust-193 burst,
+            // AFTER the two gores (the C# order).
+            let (w, h) = npc.size();
+            for _ in 0..10 {
+                dust.new_dust(
+                    rng,
+                    dust_ctx,
+                    world,
+                    pos,
+                    w as i32,
+                    h as i32,
+                    193,
+                    2.0 * hit_direction,
+                    -2.0,
+                    0,
+                    Color::default(),
+                    1.0,
+                );
+            }
+        }
+        if npc_type == 540 {
+            gore.new_gore(rng, world, pos, vel, 926, 1.0); // :85969
+        }
+    } else if npc_type == 67 {
+        gore.new_gore(rng, world, pos, vel, 95, 1.0); // :85974
+        gore.new_gore(rng, world, pos, vel, 95, 1.0); // :85975
+        gore.new_gore(rng, world, pos, vel, 96, 1.0); // :85976
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -588,6 +729,49 @@ pub fn hit_effect_d(
     // `:85879-85897` — the 628 Dandelion arm (sites 35-38).
     else if npc_type == 628 {
         dandelion_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85898-85920` — the 646-652 Gem Bunny arm (sites 39-40).
+    else if (646..=652).contains(&npc_type) {
+        gem_bunny_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85921-85941` — the 639-645 Gem Squirrel arm (site 41).
+    else if (639..=645).contains(&npc_type) {
+        gem_squirrel_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85942-86091` — the 29-type critter arm; the 46/303/337/540 + 67
+    // sub-branches are live (sites 42-47), the rest land later.
+    else if matches!(
+        npc_type,
+        46 | 55
+            | 67
+            | 74
+            | 102
+            | 224
+            | 230
+            | 297
+            | 298
+            | 299
+            | 300
+            | 303
+            | 337
+            | 538
+            | 540
+            | 587
+            | 610
+            | 614
+            | 616
+            | 617
+            | 625
+            | 626
+            | 627
+            | 615
+            | 671
+            | 672
+            | 673
+            | 674
+            | 675
+    ) {
+        critter_arm_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -997,5 +1181,134 @@ mod tests {
             let _kx = twin.next_range(-20, 21);
         }
         assert_eq!(rng.peek(), twin.peek(), "the dandelion death mirrors the C# draws");
+    }
+
+    /// `NPC.cs:85918-85919` — the Gem Bunny pair: per-variant offset
+    /// (type-646)*2, the 652 variant's dust type is 138 (not 92).
+    #[test]
+    fn w4_f5d_the_gem_bunny_deaths_pick_the_variant_pair() {
+        let w = air();
+        let n = mob(100.0, 100.0, 22.0, 20.0);
+        for (kind, want, dust_type) in [
+            (646, vec![1234, 1235], 86),
+            (649, vec![1240, 1241], 89),
+            (652, vec![1246, 1247], 138),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(59);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "gem bunny {kind}");
+            let gem = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(gem.dust_type, dust_type, "gem bunny {kind} dust");
+            let mut twin = UnifiedRandom::new(59);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 22, 20);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "gem bunny {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85940` — the Gem Squirrel single gore: 1227+(type-639),
+    /// the 645 variant's dust type is 138.
+    #[test]
+    fn w4_f5d_the_gem_squirrel_deaths_spawn_one_gore() {
+        let w = air();
+        let n = mob(100.0, 100.0, 22.0, 20.0);
+        for (kind, want, dust_type) in [(639, 1227, 86), (645, 1233, 138)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(61);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "gem squirrel {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+            let gem = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(gem.dust_type, dust_type, "gem squirrel {kind} dust");
+            let mut twin = UnifiedRandom::new(61);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 22, 20);
+            }
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(rng.peek(), twin.peek(), "gem squirrel {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85958-85969` — the critter arm's first branch: 46/337 →
+    /// 76/77; the 303 Bunny adds the 10x dust-193 burst AFTER the gores
+    /// (the stream order: 10 dust-5, 2 gores' kicks, 10 dust-193); the
+    /// 540 adds the extra gore 926.
+    #[test]
+    fn w4_f5d_the_bunny_branch_spawns_the_pair_plus_extras() {
+        let w = air();
+        let n = mob(100.0, 100.0, 24.0, 22.0);
+        for (kind, want) in [
+            (46, vec![76, 77]),
+            (337, vec![76, 77]),
+            (303, vec![76, 77]),
+            (540, vec![76, 77, 926]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(67);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "critter {kind}");
+            let mut twin = UnifiedRandom::new(67);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 24, 22);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            if kind == 303 {
+                // The extra dust-193 burst runs AFTER the two gores.
+                for _ in 0..10 {
+                    twin_dust(&mut twin, 24, 22);
+                }
+                let has193 = dust.slots().iter().any(|d| d.active && d.dust_type == 193);
+                assert!(has193, "the 303's extra dust-193 burst spawned");
+            }
+            if kind == 540 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "critter {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85974-85976` — the 67 Goldfish branch: 95/95/96 after the
+    /// 10x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_goldfish_branch_spawns_the_triple() {
+        let w = air();
+        let n = mob(100.0, 100.0, 22.0, 18.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(71);
+        let _ = hit_effect_d(&n, 67, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![95, 95, 96]);
+        assert!(!gore.slot(3).active, "exactly three gores");
+        let mut twin = UnifiedRandom::new(71);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 22, 18);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the goldfish branch mirrors the C# draws");
     }
 }
