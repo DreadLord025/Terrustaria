@@ -440,6 +440,64 @@ pub fn trunk_sheet_offset_at(
     crate::drawdata::tree_frame_x_offset(world, x, y, frame_x, frame_y)
 }
 
+/// `WorldGen.IsTileATreeBranch(x, y, out offsetToTrunk)`
+/// (`WorldGen.cs:29717-29740`, W4-f25 helper C6): the cell is a trunk-kind
+/// tile (NOT the palm 323) whose marker frame is a BRANCH — frameX 44 at
+/// frameY 198/220/242 or frameX 66 at frameY 0/22/44 reads offset +1 (the
+/// trunk sits one column right); frameX 66 at frameY 198/220/242 or frameX
+/// 88 at frameY 66/88/110 reads offset -1. `None` = not a branch (the C#'s
+/// false + offset 0). UNWIRED (ConvertTreeAndGround C7 +
+/// ConsideredSolidTileForAnchor :53903 are its consumers).
+pub fn is_tile_a_tree_branch(world: &World, x: i32, y: i32) -> Option<i32> {
+    // `:29720-29723` — InWorld(2).
+    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
+        return None;
+    }
+    // `:29724-29728` — null / inactive / palm / non-trunk refuse.
+    let t = world.tile(x, y)?;
+    if !t.active() || t.kind == 323 || !is_tree_trunk(t.kind) {
+        return None;
+    }
+    // `:29729-29733` — the +1 markers.
+    if (t.frame_x == 44 && matches!(t.frame_y, 198 | 220 | 242))
+        || (t.frame_x == 66 && matches!(t.frame_y, 0 | 22 | 44))
+    {
+        return Some(1);
+    }
+    // `:29734-29738` — the -1 markers.
+    if (t.frame_x == 66 && matches!(t.frame_y, 198 | 220 | 242))
+        || (t.frame_x == 88 && matches!(t.frame_y, 66 | 88 | 110))
+    {
+        return Some(-1);
+    }
+    None
+}
+
+/// `WorldGen.IsTileATreeRoot(x, y, out offsetToTrunk)`
+/// (`WorldGen.cs:29742-29765`, W4-f25 helper C6): the same trunk-kind gate,
+/// the ROOT markers — frameX 44 at frameY 132/154/176 reads offset +1,
+/// frameX 22 at the same rows reads offset -1. UNWIRED (C7's consumer).
+pub fn is_tile_a_tree_root(world: &World, x: i32, y: i32) -> Option<i32> {
+    // `:29745-29748` — InWorld(2).
+    if x < 2 || y < 2 || x >= world.width - 2 || y >= world.height - 2 {
+        return None;
+    }
+    // `:29749-29753`.
+    let t = world.tile(x, y)?;
+    if !t.active() || t.kind == 323 || !is_tree_trunk(t.kind) {
+        return None;
+    }
+    // `:29754-29758` — the +1 root markers.
+    if t.frame_x == 44 && matches!(t.frame_y, 132 | 154 | 176) {
+        return Some(1);
+    }
+    // `:29759-29763` — the -1 root markers.
+    if t.frame_x == 22 && matches!(t.frame_y, 132 | 154 | 176) {
+        return Some(-1);
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -532,5 +590,75 @@ mod tests {
         let i = w.index(20, 11);
         w.tiles[i] = t; // inactive corruption
         assert_eq!(trunk_sheet_offset_at(&w, 20, 10, 5, 0, 0), 0);
+    }
+
+    // W4-f25 helper C6 — IsTileATreeBranch / IsTileATreeRoot
+    // (`WorldGen.cs:29717-29765`). WRITTEN NOT RUN (code-only round).
+
+    #[test]
+    fn w4_f25_c6_the_branch_markers_and_offsets() {
+        let mut w = World::new("t".into(), 64, 64);
+        // The +1 markers (`:29729-29733`).
+        for (fx, fy) in [(44i16, 198i16), (44, 220), (44, 242), (66, 0), (66, 22), (66, 44)] {
+            put(&mut w, 20, 10, 5);
+            let i = w.index(20, 10);
+            w.tiles[i].frame_x = fx;
+            w.tiles[i].frame_y = fy;
+            assert_eq!(is_tile_a_tree_branch(&w, 20, 10), Some(1), "{fx},{fy}");
+        }
+        // The -1 markers (`:29734-29738`).
+        for (fx, fy) in [(66i16, 198i16), (66, 220), (66, 242), (88, 66), (88, 88), (88, 110)] {
+            let i = w.index(20, 10);
+            w.tiles[i].frame_x = fx;
+            w.tiles[i].frame_y = fy;
+            assert_eq!(is_tile_a_tree_branch(&w, 20, 10), Some(-1), "{fx},{fy}");
+        }
+        // A plain trunk frame is not a branch; the palm 323 never is.
+        let i = w.index(20, 10);
+        w.tiles[i].frame_x = 0;
+        w.tiles[i].frame_y = 0;
+        assert_eq!(is_tile_a_tree_branch(&w, 20, 10), None);
+        put(&mut w, 21, 10, 323);
+        let i = w.index(21, 10);
+        w.tiles[i].frame_x = 66;
+        w.tiles[i].frame_y = 0;
+        assert_eq!(is_tile_a_tree_branch(&w, 21, 10), None, "the palm refuses");
+        // The variant trunk kinds count (IsATreeTrunk).
+        put(&mut w, 22, 10, 596);
+        let i = w.index(22, 10);
+        w.tiles[i].frame_x = 44;
+        w.tiles[i].frame_y = 198;
+        assert_eq!(is_tile_a_tree_branch(&w, 22, 10), Some(1));
+        // The InWorld(2) border band refuses.
+        put(&mut w, 1, 10, 5);
+        let i = w.index(1, 10);
+        w.tiles[i].frame_x = 44;
+        w.tiles[i].frame_y = 198;
+        assert_eq!(is_tile_a_tree_branch(&w, 1, 10), None);
+    }
+
+    #[test]
+    fn w4_f25_c6_the_root_markers_and_offsets() {
+        let mut w = World::new("t".into(), 64, 64);
+        for fy in [132i16, 154, 176] {
+            put(&mut w, 20, 10, 5);
+            let i = w.index(20, 10);
+            w.tiles[i].frame_x = 44;
+            w.tiles[i].frame_y = fy;
+            assert_eq!(is_tile_a_tree_root(&w, 20, 10), Some(1), "44,{fy}");
+            w.tiles[i].frame_x = 22;
+            assert_eq!(is_tile_a_tree_root(&w, 20, 10), Some(-1), "22,{fy}");
+            // A branch marker is not a root.
+            w.tiles[i].frame_x = 44;
+            w.tiles[i].frame_y = 198;
+            assert_eq!(is_tile_a_tree_root(&w, 20, 10), None);
+        }
+        // Inactive refuses.
+        put(&mut w, 21, 10, 5);
+        let i = w.index(21, 10);
+        w.tiles[i].flags &= !FLAG_ACTIVE;
+        w.tiles[i].frame_x = 44;
+        w.tiles[i].frame_y = 132;
+        assert_eq!(is_tile_a_tree_root(&w, 21, 10), None);
     }
 }
