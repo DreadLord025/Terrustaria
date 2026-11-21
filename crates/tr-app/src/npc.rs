@@ -6683,6 +6683,58 @@ impl Npc {
         self.sprite_dir = s.sprite_dir;
     }
 
+    /// W4-d44 wire (f26 slice 6) — the bridge into
+    /// `npc_findframe_extra6`'s pure machines: copy the three
+    /// `FindFrame` fields out, run one tick, copy them back (the
+    /// `find_frame_wave_extra5` precedent). No slice-6 arm writes
+    /// `rotation` (the module does not carry the field). `direction`
+    /// is `facing` (the C#'s `Entity.direction`); the inputs are
+    /// vx/vy/direction + the four `ai` slots — the casters' `ai[1]`
+    /// windup (`NPC.cs:77046-77049`), the Paladin's `ai[1]`/`ai[2]`
+    /// hammer ladder (`:75974-75989`), the sniper's `ai[2]` draw pose
+    /// (`:76151-76157`). No slice-6 arm reads `wet` or `aiAction` and
+    /// none reads the world, so the bridge rides the world-free
+    /// `find_frame` hook directly.
+    fn find_frame_wave_extra6(
+        &mut self,
+        kind: crate::npc_findframe_extra6::FindFrameExtra6Kind,
+    ) {
+        let mut s = crate::npc_findframe_extra6::FrameState {
+            row: self.frame,
+            counter: self.frame_counter,
+            sprite_dir: self.sprite_dir,
+        };
+        let i = crate::npc_findframe_extra6::FrameInput {
+            vx: self.vx,
+            vy: self.vy,
+            direction: self.facing,
+            ai: self.ai,
+        };
+        crate::npc_findframe_extra6::find_frame_extra6(kind, &mut s, &i);
+        self.frame = s.row;
+        self.frame_counter = s.counter;
+        self.sprite_dir = s.sprite_dir;
+    }
+
+    /// W4-d44 wire — the extra-6 claim set: the FIRST 11 slice-6 ids
+    /// 278-287 + 290 (the three Hell Armored Bones, the six post-
+    /// Plantera dungeon casters, the Bone Lee, the Paladin). The
+    /// in-module lookup's 291/292/293/295 arms are EXCLUDED this round
+    /// (the ≤11-kind wire cap; they ride a later batch). The band
+    /// edges stay outside.
+    fn find_frame_kind_extra6_claimed(
+        cs_id: u16,
+    ) -> Option<crate::npc_findframe_extra6::FindFrameExtra6Kind> {
+        use crate::npc_findframe_extra6::FindFrameExtra6Kind as K;
+        match crate::npc_findframe_extra6::find_frame_kind_extra6(cs_id as i16) {
+            Some(
+                K::SkeletonSniper | K::TacticalSkeleton | K::SkeletonCommando
+                | K::AngryBonesBigMuscle,
+            ) => None,
+            other => other,
+        }
+    }
+
     /// W4-d44 wire — the extra-5 claim set: the FULL slice-5 band
     /// 254-258 + 268-277, all 15 kinds (the in-module lookup verbatim).
     fn find_frame_kind_extra5_claimed(
@@ -6762,6 +6814,20 @@ impl Npc {
         // and none reads the world. The d45 hook precedent.
         if let Some(kind) = Self::find_frame_kind_extra5_claimed(self.kind.cs_id()) {
             self.find_frame_wave_extra5(kind);
+            return;
+        }
+        // W4-d44 wire (f26 slice 6) — the `cs_id`-keyed hook into the
+        // extra-wave-6 pure machines (`npc_findframe_extra6.rs`) via
+        // `find_frame_kind_extra6_claimed`: the FIRST 11 ids 278-287 +
+        // 290 (the three Hell Armored Bones, the six dungeon casters,
+        // the Bone Lee, the Paladin); 291/292/293/295 ride a later
+        // batch (the ≤11-kind cap). NO current kind's `cs_id` lands in
+        // the set (verified over the hand rows + the bestiary net ids),
+        // so this is stream-inert today; the arms draw no RNG (the
+        // f26 wave-6 mechanical grep over all eight cited ranges =
+        // ZERO) and none reads the world. The extra5 hook precedent.
+        if let Some(kind) = Self::find_frame_kind_extra6_claimed(self.kind.cs_id()) {
+            self.find_frame_wave_extra6(kind);
             return;
         }
         // `NPC.cs:66696-66704` — `num2` is the velocity class only while
@@ -33818,6 +33884,153 @@ mod w4_d44_wire_tests {
         assert_eq!(Npc::find_frame_kind_extra5_claimed(259), None);
         assert_eq!(Npc::find_frame_kind_extra5_claimed(267), None);
         assert_eq!(Npc::find_frame_kind_extra5_claimed(278), None);
+    }
+
+    /// The extra-6 hook fires for NO current kind — the inertness
+    /// proof (278-287/290 skip the hand rows + net ids).
+    #[test]
+    fn w4_d44_the_extra6_hook_is_inert_for_every_current_kind() {
+        for kind in ALL_KINDS {
+            assert_eq!(
+                Npc::find_frame_kind_extra6_claimed(kind.cs_id()),
+                None,
+                "{kind:?} cs_id {} must not ride the extra-6 hook yet",
+                kind.cs_id()
+            );
+        }
+    }
+
+    /// The extra-6 claim set is the FIRST 11 slice-6 ids 278-287 + 290;
+    /// the module mapper's 291/292/293/295 arms are EXCLUDED this round
+    /// (the ≤11-kind cap); the band edges stay outside.
+    #[test]
+    fn w4_d44_the_extra6_claim_set_is_the_first_eleven() {
+        use crate::npc_findframe_extra6::FindFrameExtra6Kind as K;
+        let table = [
+            (278u16, K::HellArmoredBonesSpikeShield),
+            (279, K::HellArmoredBonesMace),
+            (280, K::HellArmoredBonesSword),
+            (281, K::RaggedCaster),
+            (282, K::RaggedCasterOpenCoat),
+            (283, K::Necromancer),
+            (284, K::NecromancerArmored),
+            (285, K::DiabolistRed),
+            (286, K::DiabolistWhite),
+            (287, K::BoneLee),
+            (290, K::Paladin),
+        ];
+        for (id, k) in table {
+            assert_eq!(Npc::find_frame_kind_extra6_claimed(id), Some(k), "{id}");
+        }
+        // The four later-batch ids are EXCLUDED (the cap).
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(291), None);
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(292), None);
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(293), None);
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(295), None);
+        // The band edges + the port-covered 288/289/294/296 stay outside.
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(277), None);
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(288), None);
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(289), None);
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(294), None);
+        assert_eq!(Npc::find_frame_kind_extra6_claimed(296), None);
+    }
+
+    /// The extra-6 bridge copies the three fields both ways and feeds
+    /// vx/vy/facing/ai through — pinned on the Hell Armored Bones walk
+    /// (the |vx|*2+1 accumulator, `NPC.cs:75861-75875`), the caster
+    /// pose group (the row-0-every-tick + air-2/windup-1, `:77041-
+    /// 77049`), the Bone Lee fighter delegate (the full-16 wrap + the
+    /// air row 1, `:68647-69655`) and the Paladin hammer ladder (the
+    /// ai[2] pose rows 11/10/9 + the |vx|*1 NO-+1 walk + the STRICT >8
+    /// wrap, `:75963-76016`).
+    #[test]
+    fn w4_d44_the_extra6_bridge_copies_the_three_fields_both_ways() {
+        use crate::npc_findframe_extra6::FindFrameExtra6Kind as K;
+        let mut n = bare(NpcKind::Piranha);
+        // Hell Armored Bones grounded walk: row 0 lifts to 2, the
+        // |vx|*2+1 accumulator (vx 1 → +3) stays < 6 → row 2 holds.
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.sprite_dir = 1;
+        n.facing = -1;
+        n.vx = 1.0;
+        n.vy = 0.0;
+        n.find_frame_wave_extra6(K::HellArmoredBonesSpikeShield);
+        assert_eq!((n.frame, n.frame_counter, n.sprite_dir), (2, 3.0, -1));
+        // The idle snaps row 0 + zeroes the counter.
+        n.vx = 0.0;
+        n.frame = 5;
+        n.frame_counter = 4.0;
+        n.find_frame_wave_extra6(K::HellArmoredBonesMace);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // The air zeroes the counter and pins row 0.
+        n.vy = 1.0;
+        n.frame = 7;
+        n.frame_counter = 3.0;
+        n.find_frame_wave_extra6(K::HellArmoredBonesSword);
+        assert_eq!((n.frame, n.frame_counter), (0, 0.0));
+        // Caster grounded idle: row 0 every tick, the counter UNTOUCHED.
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.frame = 2;
+        n.frame_counter = 9.0;
+        n.ai = [0.0; 4];
+        n.find_frame_wave_extra6(K::RaggedCaster);
+        assert_eq!((n.frame, n.frame_counter), (0, 9.0));
+        // Caster windup (ai[1] > 0): row 1.
+        n.ai[1] = 3.0;
+        n.find_frame_wave_extra6(K::Necromancer);
+        assert_eq!(n.frame, 1);
+        // Caster air: row 2 (the windup is overridden).
+        n.vy = -1.0;
+        n.find_frame_wave_extra6(K::DiabolistRed);
+        assert_eq!(n.frame, 2);
+        // Bone Lee grounded walk: the fighter delegate lifts row 0 to 2,
+        // |vx|*2+1 (vx 1 → +3) < 6 → row 2; the air holds row 1 (287 is
+        // NOT in the :69647 pin list).
+        n.vy = 0.0;
+        n.ai = [0.0; 4];
+        n.frame = 0;
+        n.frame_counter = 0.0;
+        n.vx = 1.0;
+        n.find_frame_wave_extra6(K::BoneLee);
+        assert_eq!((n.frame, n.frame_counter), (2, 3.0));
+        n.vy = 1.0;
+        n.find_frame_wave_extra6(K::BoneLee);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
+        // Paladin hammer pose (ai[2] > 0): ai[1] < 10 → row 11, the
+        // counter UNTOUCHED (the BREAK).
+        n.vy = 0.0;
+        n.vx = 0.0;
+        n.ai[2] = 1.0;
+        n.ai[1] = 5.0;
+        n.frame = 0;
+        n.frame_counter = 7.0;
+        n.find_frame_wave_extra6(K::Paladin);
+        assert_eq!((n.frame, n.frame_counter), (11, 7.0));
+        // ai[1] < 20 → row 10; else row 9.
+        n.ai[1] = 15.0;
+        n.find_frame_wave_extra6(K::Paladin);
+        assert_eq!(n.frame, 10);
+        n.ai[1] = 25.0;
+        n.find_frame_wave_extra6(K::Paladin);
+        assert_eq!(n.frame, 9);
+        // Paladin walk (ai[2] == 0): the |vx|*1 NO-+1 accumulator, the
+        // STRICT >8 wrap (row 9 wraps to 2, NOT the full 12).
+        n.ai[2] = 0.0;
+        n.ai[1] = 0.0;
+        n.vx = 1.0;
+        n.frame = 8;
+        n.frame_counter = 6.0;
+        n.find_frame_wave_extra6(K::Paladin);
+        // counter 6 + 1 = 7 > 6 → row 9, counter 0; row 9 > 8 → wrap 2.
+        assert_eq!((n.frame, n.frame_counter), (2, 0.0));
+        // Paladin air: row 1, counter zeroed.
+        n.vy = 1.0;
+        n.frame = 5;
+        n.frame_counter = 3.0;
+        n.find_frame_wave_extra6(K::Paladin);
+        assert_eq!((n.frame, n.frame_counter), (1, 0.0));
     }
 
     /// The wave-C bridge copies the five fields both ways and feeds
