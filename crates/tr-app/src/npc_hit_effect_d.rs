@@ -370,6 +370,51 @@ fn salamander_death(
     gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 18.0), vel, 759 + num459, 1.0); // :85795
 }
 
+/// The bat family death (`NPC.cs:85797-85841`): the 15x dust-5 burst,
+/// then the per-kind gore(s) at position, scale 1f. The arm's sub-branches
+/// land in source order: 51 Jungle Bat → 83 (`:85813`), 93 Giant Bat → 107
+/// (`:85817`), 150 Ice Bat → 164/165 (`:85821-85822`), 152 Giant Flying
+/// Fox → 175/176/176 (`:85826-85828`); the 226/49 tail lands next batch.
+fn bat_family_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:85807-85810` — the 15x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        15,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 51 {
+        gore.new_gore(rng, world, pos, vel, 83, 1.0); // :85813
+    } else if npc_type == 93 {
+        gore.new_gore(rng, world, pos, vel, 107, 1.0); // :85817
+    } else if npc_type == 150 {
+        gore.new_gore(rng, world, pos, vel, 164, 1.0); // :85821
+        gore.new_gore(rng, world, pos, vel, 165, 1.0); // :85822
+    } else if npc_type == 152 {
+        gore.new_gore(rng, world, pos, vel, 175, 1.0); // :85826
+        gore.new_gore(rng, world, pos, vel, 176, 1.0); // :85827
+        gore.new_gore(rng, world, pos, vel, 176, 1.0); // :85828
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -415,6 +460,12 @@ pub fn hit_effect_d(
     // `:85778-85796` — the 498-506 Salamander arm (sites 13-15 per variant).
     else if (498..=506).contains(&npc_type) {
         salamander_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:85797-85841` — the bat family arm (49/51/93/150/152/226); the
+    // 51/93/150/152 sub-branches are live (sites 16-22), the 226/49 tail
+    // lands next batch.
+    else if matches!(npc_type, 49 | 51 | 93 | 150 | 152 | 226) {
+        bat_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -665,6 +716,59 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:85813-85828` — the bat family's per-kind gores: 51→83,
+    /// 93→107, 150→164/165, 152→175/176/176, all at position scale 1f.
+    #[test]
+    fn w4_f5d_the_bat_family_deaths_spawn_the_kind_gores() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, want) in [
+            (51, vec![83]),
+            (93, vec![107]),
+            (150, vec![164, 165]),
+            (152, vec![175, 176, 176]),
+        ] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(31);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "bat kind {kind}");
+            for (i, _) in want.iter().enumerate() {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0));
+            }
+        }
+    }
+
+    /// `NPC.cs:85807-85828` — the bat deaths draw the 15x6 dust census
+    /// then only their gores' two kicks each; the twin replay pins the
+    /// stream for every live sub-branch.
+    #[test]
+    fn w4_f5d_the_bat_deaths_mirror_the_csharp_draws() {
+        let w = air();
+        let n = mob(100.0, 100.0, 30.0, 26.0);
+        for (kind, gores) in [(51, 1), (93, 1), (150, 2), (152, 3)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(37);
+            let _ = hit_effect_d(&n, kind, -1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let mut twin = UnifiedRandom::new(37);
+            for _ in 0..15 {
+                twin_dust(&mut twin, 30, 26);
+            }
+            for _ in 0..gores {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "bat kind {kind} mirrors the C# draws");
         }
     }
 }
