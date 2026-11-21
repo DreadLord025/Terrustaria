@@ -7452,14 +7452,25 @@ impl Projectile {
     /// (`:24599`/`:24604`/`:24622`) draw on the pass's stream in the C#'s
     /// order — the `ai[1] != 0f && Next(2) != 0` early-return (`:24604-24607`)
     /// is kept (it skips the trailing dust, not the movement).
-    fn ai_aqua_scepter(&mut self, world: &World, rng: &mut dyn DropRng) {
+    fn ai_aqua_scepter(
+        &mut self,
+        world: &World,
+        rng: &mut dyn DropRng,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        let mut d = crate::projectile_dust3::ProjDust3 {
+            pool: dust,
+            ctx: dust_ctx,
+            rng: &mut *rng,
+        };
         // Gate-merge (i20+i21): ONE aiStyle-12 arm serves both families — the
         // C# `else if (this.aiStyle == 12)` (`:24501-24635`) branches on type:
         // 280 (the Golden Shower) takes the `:24508-24546` head (0.002 decay,
-        // 0.075 arc, its dust draws SKIPPED per the i21 convention) and
-        // returns; 22 (the Aqua Scepter) runs the body below.
+        // 0.075 arc, its dust trail wired W4-f5) and returns; 22 (the Aqua
+        // Scepter) runs the body below.
         if self.kind == GOLDEN_SHOWER {
-            self.ai_golden_shower(world);
+            self.ai_golden_shower(world, &mut d);
             return;
         }
         // `:24548-24553`: the type-22 constants.
@@ -7486,13 +7497,15 @@ impl Projectile {
                 self.vel.y = lcg.next_float() * -4.0 - 4.0;
                 self.vel.x = (lcg.next_float() - 0.5) * 5.0;
                 self.ai[1] = 1.0;
-                // The bounce's dust/gore (`:24575-24587`) are SKIPPED; the
-                // `Main.rand.Next(3)` gore gate (`:24581`) still draws, and
-                // the taken branch's `Gore.NewGore` type roll `Next(61, 64)`
-                // (`:24583`) stays on the stream (the gore-type-roll
-                // convention, `ai_freaking_pirates`' `Next(580,583)`).
-                if rng.next_range(0, 3) == 0 {
-                    let _ = rng.next_range(61, 64);
+                // `:24575-24580` — the bounce's four dust-31 (W4-f5). The
+                // trailing `Main.rand.Next(3)` gore gate (`:24581`) still
+                // draws, and the taken branch's `Gore.NewGore` type roll
+                // `Next(61, 64)` (`:24583`) stays on the stream (the
+                // gore-type-roll convention, `ai_freaking_pirates`'
+                // `Next(580,583)`); the gore body is the d55/e5 lane's skip.
+                crate::projectile_dust3::style12_lava_burst(self, world, &mut d);
+                if d.rng.next_range(0, 3) == 0 {
+                    let _ = d.rng.next_range(61, 64);
                 }
             }
         }
@@ -7509,21 +7522,21 @@ impl Projectile {
         // `:24596-24634`: the gravity arm (`ai[0] > 3f`) or the counter.
         if self.ai[0] > 3.0 {
             self.vel.y += gravity;
-            // `:24599-24603`: the bounced stream's 1-in-2 dust gate.
-            if self.ai[1] == 1.0 && rng.next_range(0, 2) == 0 {
-                // dust 31 SKIPPED.
+            // `:24599-24603`: the bounced stream's 1-in-2 dust-31 puff (W4-f5).
+            if self.ai[1] == 1.0 && d.rng.next_range(0, 2) == 0 {
+                crate::projectile_dust3::style12_bounced_puff(self, world, &mut d);
             }
             // `:24604-24607`: `ai[1] != 0f && Next(2) != 0` returns early
             // (the trailing dust is skipped, the movement below still runs —
             // the C# `return` leaves AI(), not Update(), and HandleMovement
             // runs at `:17015` regardless of `active`).
-            if self.ai[1] != 0.0 && rng.next_range(0, 2) != 0 {
+            if self.ai[1] != 0.0 && d.rng.next_range(0, 2) != 0 {
                 self.kill_step(world);
                 return;
             }
-            // `:24608-24629`: the trail dust (3× dust 172 + the 1-in-8 extra)
-            // is SKIPPED; the `Next(8)` gate (`:24622`) still draws.
-            let _ = rng.next_range(0, 8);
+            // `:24608-24629`: the trail dust (3× dust 172 + the 1-in-8 extra),
+            // W4-f5 — the `Next(8)` gate draws inside the emitter.
+            crate::projectile_dust3::style12_aqua_trail(self, world, &mut d);
         } else {
             // `:24631-24634`: the launch counter.
             self.ai[0] += 1.0;
@@ -8567,20 +8580,29 @@ impl Projectile {
     /// Shower's stream (280). The scale shrinks 0.002/tick and kills at ≤0;
     /// `ai[0]` counts up to 3 then rests while `velocity.Y += 0.075f` arcs the
     /// stream down. The three-dust trail and the `Next(8)` sparkle roll
-    /// (`:24522-24540`) are dust-only — SKIPPED with their draws (the pool's
-    /// dust convention, ANALYSIS). The 288 hostile twin's sound/`ai[0]=4`
-    /// latch is not a ported kind.
-    fn ai_golden_shower(&mut self, world: &World) {
-        // `:24510-24514`: the scale decay + the kill.
+    /// (`:24522-24540`) spawn through the `projectile_dust3` seam (W4-f5).
+    /// The C# `Kill()` does NOT return from `AI()` — the trail still runs on
+    /// the dying sub-step (`:24511-24514` falls through to `:24519`), so the
+    /// port marks the slot dead and falls through to keep the draws. The 288
+    /// hostile twin's sound/`ai[0]=4` latch is not a ported kind (its
+    /// `:24527/:24537` sites stay latent, W4-f5).
+    fn ai_golden_shower(
+        &mut self,
+        world: &World,
+        d: &mut crate::projectile_dust3::ProjDust3,
+    ) {
+        // `:24510-24514`: the scale decay + the kill (no return — the C#
+        // falls through to the arc/trail below).
         self.scale -= 0.002;
         if self.scale <= 0.0 {
             self.active = false;
             self.time_left = 0;
-            return;
         }
         // `:24519-24545`: the arc — past 3 the stream falls, else it counts.
         if self.ai[0] > 3.0 {
             self.vel.y += 0.075;
+            // `:24522-24540` — the three-dust-170 trail + the 1-in-8 sparkle.
+            crate::projectile_dust3::style12_golden_trail(self, world, d);
         } else {
             self.ai[0] += 1.0;
         }
@@ -17331,7 +17353,7 @@ impl ProjectilePool {
                         // water stream (22): the scale decay, the gravity and
                         // the LCG-seeded lava bounce. The dust gates draw the
                         // pass's threaded stream (`UpdateProjectiles`).
-                        12 => self.slots[i].ai_aqua_scepter(world, rng),
+                        12 => self.slots[i].ai_aqua_scepter(world, rng, dust, dust_ctx),
                         // (Resync keep-one: the aiStyle-36 bees ride main's
                         // i28 `projectile_ai_thrown::bee_step` arm below —
                         // ONE arm per style, the deny(unreachable_patterns)
