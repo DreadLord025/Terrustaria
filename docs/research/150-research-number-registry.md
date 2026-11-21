@@ -1214,7 +1214,7 @@ e26-248 correction + the post-§8.7 self-pick wave into ONE executable table.
 | 365 | e21 | 365-e21-wiring-tail-seal | DONE 2fb0a36ee |
 | 366 | g18 | 366-addlight-family-bible | DONE d460345f4 |
 | 367 | d54 | 367-merger-order-dag (Lead-assigned, in flight) | reserved |
-| 368 | f43 | 352-pet-arrival-family-final (88acb11c8, post-§9 self-pick into d1's executed 352) | NEW rename owed 352→368 |
+| 368 | f43 | 368-pet-arrival-family-final | DONE ffadc1f49 |
 | 369 | d34 | 347-band-211-280-seal-bible (d652e147e on task/W4-d34-npc-kinds-211-280, post-§9 self-pick into g15's executed 347) | NEW rename owed 347→369 |
 
 ### §9.3 — rules
