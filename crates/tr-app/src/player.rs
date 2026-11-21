@@ -6986,6 +6986,17 @@ impl Player {
         if self.chilled {
             self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(0.75);
         }
+        // `Player.cs:25955-25962`: the raised shield caps the move speed at
+        // 1/3 (the strongest debuff wins) and halves a grounded |vx| > 3.
+        // The sibling `slowOgreSpit` (:25931-25938) / `dazed` (:25939-25942)
+        // / `burned` (:25943-25946) 1/3-and-0.5 caps are unported rows —
+        // only the shield arm lands here (W4-f48 lane 20).
+        if self.shield_raised {
+            self.strongest_move_speed_debuff = self.strongest_move_speed_debuff.min(1.0 / 3.0);
+            if self.vy == 0.0 && self.vx.abs() > 3.0 {
+                self.vx /= 2.0;
+            }
+        }
         if self.webbed {
             // `:11866-11872`: velocity zeroed (airborne keeps a 1e-6 fall),
             // jump height 0, gravity 0 — the player hangs in the web.
@@ -7163,6 +7174,14 @@ impl Player {
             && !self.lava_wet
             && (!self.mount.is_active() || !self.mount.is_considered_a_slime_mount());
         self.merman = self.acc_merman && merman_wet;
+        // `Player.cs:25714-25717`: the raised shield grants +20 defense —
+        // after the equip pass (`UpdateEquips` `:25633`), before the floor
+        // below. `shieldRaised` toggles in ItemCheck (`:28283`, after
+        // `Player.Update`), so this reads the previous tick's guard state,
+        // exactly like the C#.
+        if self.shield_raised {
+            self.stat_defense += 20;
+        }
         // `Player.cs:25927-25930`: the defense floor — a pile of debuffs (Ichor
         // −15, Weak −4 a slot, Tipsy −4) may overshoot the armor's total, and
         // the C# never lets `statDefense` go negative (a negative value would
@@ -15977,6 +15996,75 @@ mod tests {
         p.update(&w, PlayerInput::default()); // ticks to 0, purged
         p.update(&w, PlayerInput::default());
         assert!(!p.parry_damage_buff, "the expiry folds the flag back");
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_grants_20_defense_per_tick() {
+        // `Player.cs:25714-25717`: `shieldRaised` adds +20 AFTER the equip
+        // pass, before the defense floor (`:25927-25930`). The flag itself
+        // is not a ResetEffects clear — ItemCheck owns the toggle — so it
+        // persists across the fold until lowered.
+        let mut p = player_with_accessory(156); // Cobalt Shield, +1 defense
+        let base = p.stat_defense;
+        assert_eq!(base, 1);
+        p.shield_raised = true;
+        let w = ground_world();
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base + 20, "the raised shield grants +20");
+        // The grant re-folds per tick (statDefense resets in ResetEffects).
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base + 20, "no accumulation");
+        p.shield_raised = false;
+        p.update(&w, PlayerInput::default());
+        assert_eq!(p.stat_defense, base, "the lower folds it back");
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_caps_the_move_speed_at_one_third() {
+        // `Player.cs:25955-25957`: `strongestMoveSpeedDebuff = min(1/3)` —
+        // the strongest debuff wins, and the run-speed merge (`:26004-26009`)
+        // multiplies the accessory moveSpeed adds by it too.
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        p.shield_raised = true;
+        p.update(&w, PlayerInput::default());
+        assert!((p.strongest_move_speed_debuff - 1.0 / 3.0).abs() < 1e-6);
+        assert!((p.move_speed - 1.0 / 3.0).abs() < 1e-6);
+        // Panic! (63) doubles moveSpeed BEFORE the merge — the shield cap
+        // rides the doubled value (`2 × 1/3`), it does not replace it.
+        p.buffs.add_buff(63, 480);
+        p.update(&w, PlayerInput::default());
+        assert!((p.move_speed - 2.0 / 3.0).abs() < 1e-6, "the cap multiplies");
+        // The lower restores the full panic speed.
+        p.shield_raised = false;
+        p.update(&w, PlayerInput::default());
+        assert!((p.strongest_move_speed_debuff - 1.0).abs() < 1e-6);
+        assert!((p.move_speed - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn w4_f48_raised_shield_halves_a_fast_grounded_run() {
+        // `Player.cs:25958-25961`: grounded (`velocity.Y == 0`) with
+        // `|velocity.X| > 3` halves vx — BEFORE HorizontalMovement's
+        // friction (the grounded no-input arm subtracts runSlowdown 0.2).
+        let (w, mut p) = settled();
+        p.shield_raised = true;
+        p.vx = 6.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        // 6 → 3 (the halve) → 2.8 (the friction).
+        assert!((p.vx - 2.8).abs() < 1e-4, "halved then frictioned: {}", p.vx);
+        // The boundary: exactly 3 is NOT > 3 — no halve, friction only.
+        p.vx = 3.0;
+        p.vy = 0.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.vx - 2.8).abs() < 1e-4);
+        // Airborne: the halve refuses (vy != 0); the airborne friction is
+        // half the grounded one (0.1).
+        p.vx = 6.0;
+        p.vy = -2.0;
+        p.update(&w, PlayerInput::default());
+        assert!((p.vx - 5.9).abs() < 1e-4, "no halve airborne: {}", p.vx);
     }
 
     #[test]
