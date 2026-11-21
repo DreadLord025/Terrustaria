@@ -1593,7 +1593,11 @@ fn beetle_orb_layers(s: &PlayerCompositeState, a: &PlayerAssets) -> Vec<LayerSpr
         return out;
     };
     let uv = beetle_orb_uv(&tex, s.beetle_frame);
-    let center = [s.origin[0] + 20.0, s.origin[1] + 10.0 + s.gfx_off_y];
+    // `drawinfo.Position` = `player.position + (0, gfxOffY)`
+    // (`LegacyPlayerRenderer.cs:468`), so the orb centre is `Position +
+    // (width/2, height/2)` = the hitbox centre (`origin + (20, 31)`, the
+    // 40x56 art box straddles the 20x42 hitbox at `(-10, -10)`).
+    let center = [s.origin[0] + 20.0, s.origin[1] + 31.0 + s.gfx_off_y];
     let size = [tex.w, (tex.h as i32 / 3 - 2) as f32];
     let flip = s.facing < 0.0;
     for i in 0..s.beetle_orbs.max(0) as usize {
@@ -3125,9 +3129,10 @@ mod tests {
         assert!((ghost1_pos[0] - (body_pos[0] - 1.0)).abs() < 1e-6);
         assert!((ghost1_pos[1] - (body_pos[1] - 2.0)).abs() < 1e-6);
         // The origin (W/2, H/6) = (10, 10): the body centres on the integer
-        // player centre + beetlePos. origin [100,200] → centre [120,210].
+        // player centre + beetlePos. origin [100,200] → centre [120,231]
+        // (the hitbox centre, `Position + (width/2, height/2)`).
         assert!((body_pos[0] - (120.0 + 5.0 - 10.0)).abs() < 1e-6);
-        assert!((body_pos[1] - (210.0 - 3.0 - 10.0)).abs() < 1e-6);
+        assert!((body_pos[1] - (231.0 - 3.0 - 10.0)).abs() < 1e-6);
         // Without the set, nothing draws.
         s.beetle_set = false;
         assert!(beetle_orb_layers(&s, &a).is_empty());
