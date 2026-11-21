@@ -5569,6 +5569,71 @@ fn hornet_family_death(
     gore.new_gore(rng, world, pos, vel, 71, s); // :89740
 }
 
+/// The 43/56 Man Eater/Snatcher death (`NPC.cs:89742-89758`, sites
+/// 843-844): the 50x dust-40 burst carrying `this.alpha`/`this.color`
+/// (color default stand-in) at scale 1.2f, speed (hd, −2) — the 1×
+/// hitDirection — then TWO gores 72 at position, scale 1f (the C# passes
+/// no `this.scale`).
+fn man_eater_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89752-89755` — the 50x dust-40 burst, alpha carried, scale 1.2f.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        40,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        1.2,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 72, 1.0); // :89756
+    gore.new_gore(rng, world, pos, vel, 72, 1.0); // :89757
+}
+
+/// The 175 Angry Trapper death (`NPC.cs:89759-89775`, sites 845-846):
+/// the same 50x dust-40 census, then 227/228 at position, scale 1f.
+fn angry_trapper_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89769-89772` — the 50x dust-40 burst, alpha carried, scale 1.2f.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        40,
+        hit_direction / 2.0, // the helper doubles hd; the C# passes 1x
+        50,
+        npc.alpha as i32,
+        Color::default(),
+        1.2,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 227, 1.0); // :89773
+    gore.new_gore(rng, world, pos, vel, 228, 1.0); // :89774
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -6244,6 +6309,14 @@ pub fn hit_effect_d(
     // (sites 839-842).
     else if matches!(npc_type, 42 | 176 | 205 | 231..=235) {
         hornet_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89742-89758` — the 43/56 Man Eater/Snatcher arm (sites 843-844).
+    else if npc_type == 43 || npc_type == 56 {
+        man_eater_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89759-89775` — the 175 Angry Trapper arm (sites 845-846).
+    else if npc_type == 175 {
+        angry_trapper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10828,6 +10901,42 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "hornet {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89756-89757` / `:89773-89774` — the Man Eater/Snatcher
+    /// 72+72 and the Angry Trapper 227/228 after the 50x dust-40 census
+    /// (this.alpha, scale 1.2f); the gores ride scale 1f.
+    #[test]
+    fn w4_f5d_the_trapper_pairs_after_the_dust40_census() {
+        for (kind, want) in [(43, vec![72, 72]), (56, vec![72, 72]), (175, vec![227, 228])] {
+            let w = air();
+            let mut n = mob(100.0, 100.0, 30.0, 30.0);
+            n.alpha = 77;
+            n.scale = 1.25;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(877);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "trapper {kind}");
+            for i in 0..2 {
+                assert_eq!(gore.slot(i).position, Vec2::new(100.0, 100.0), "trapper {kind} gore {i}");
+                assert_eq!(gore.slot(i).scale, 1.0, "trapper {kind} gore {i} scale 1f");
+            }
+            assert!(!gore.slot(2).active, "exactly two gores");
+            let dyed = dust.slots().iter().find(|d| d.active).unwrap();
+            assert_eq!(dyed.dust_type, 40);
+            assert_eq!(dyed.alpha, 77, "the dust carries this.alpha");
+            let mut twin = UnifiedRandom::new(877);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 30);
+            }
+            for _ in 0..2 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "trapper {kind} mirrors the C# draws");
         }
     }
 }
