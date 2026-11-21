@@ -67,17 +67,23 @@ pub(crate) struct DrawScratch {
     pub(crate) water_rects: Vec<[f32; 4]>,
 }
 
-/// `WallID.EchoWall`. `WallDrawing.DrawWalls` skips it unless
-/// `DebugOptions.ShowInvisibleWalls` is on, so it contributes neither a sprite nor a
-/// black quad. (`tile.invisibleWall()` is checked too, but nothing in the original's
-/// code ever sets that bit, and our packed tile does not store it.)
+/// `WallID.EchoWall` (`WallID.cs:741`). `WallDrawing.DrawWalls` skips it
+/// unless `Main.ShouldShowInvisibleBlocksAndWalls()` grants sight
+/// (`WallDrawing.cs:91`'s `_shouldShowInvisibleWalls`, W4-g78 wired) —
+/// hidden, it contributes neither a sprite nor a black quad.
 pub(crate) const WALL_ECHO: u16 = 318;
 
-/// `WallDrawing.DrawWalls` draw test: a wall is visible when it exists and is not an
-/// echo wall.
+/// `WallDrawing.DrawWalls` draw test (`WallDrawing.cs:91`), verbatim:
+/// `wall <= 0 || (wall == 318 && !sight) || (tile.invisibleWall() && !sight)`.
+/// The `FullTile` cull is the caller's separate gate (`tile_hides_wall`).
+/// W4-g78: `show_invisible` is `Main.ShouldShowInvisibleBlocksAndWalls()`
+/// (`Main.cs:58023-58030`) — the Echo Monolith / Spectre Goggles grants;
+/// before this wave it was hardwired false.
 #[inline]
-pub(crate) fn wall_visible(wall: u16) -> bool {
-    wall != 0 && wall != WALL_ECHO
+pub(crate) fn wall_visible(wall: u16, invisible_wall: bool, show_invisible: bool) -> bool {
+    wall != 0
+        && (wall != WALL_ECHO || show_invisible)
+        && (!invisible_wall || show_invisible)
 }
 
 /// Vanilla stores light as bytes; a channel below `1/255` is zero. Such a cell is
@@ -512,13 +518,17 @@ pub(crate) fn draw_tiles(
         for ty in y0..=y1 {
             for tx in x0..=x1 {
                 let tile = &world.tiles[ty as usize * width + tx as usize];
-                if !wall_visible(tile.wall) {
+                if tile.wall == 0 {
                     continue;
                 }
-                let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
-                    continue;
-                };
+                // `WallDrawing.cs:91` evaluates `FullTile` BEFORE the echo
+                // gates. `FullTile` (`WallDrawing.cs:258-261`, W4-g78): a
+                // hidden Echo-coated block does NOT hide its wall — the wall
+                // draws behind it (the `invisibleBlock() &&
+                // !_shouldShowInvisibleWalls → return false` arm; the raw
+                // coating bit, NOT the IsVisible overrides).
                 if tile.active()
+                    && (!world.invisible_block(tx, ty) || show_invisible_blocks)
                     && tile_hides_wall(
                         lookups,
                         atlas,
@@ -532,15 +542,20 @@ pub(crate) fn draw_tiles(
                     stats.walls_culled += 1;
                     continue;
                 }
-                // `WallDrawing.cs:91`: Echo-coated walls are hidden unless the
-                // Echo Monolith or an Echo item grants sight (the port has
-                // neither yet, so they stay hidden; wall 318 is handled above).
-                if world.invisible_wall(tx, ty) {
+                // `WallDrawing.cs:91` (W4-g78): the echo wall 318 AND the
+                // Echo-coating bit both ride `ShouldShowInvisibleBlocksAndWalls`
+                // — the monolith/goggles sight lifts them together.
+                if !wall_visible(tile.wall, world.invisible_wall(tx, ty), show_invisible_blocks) {
                     continue;
                 }
-                // `WallDrawing.DrawWalls` skips black cells; the tile pass merges the
-                // fully covered ones into black rectangles.
-                if light_is_zero(light.get(tx, ty)) {
+                let Some(wf) = lookups.wall_tex(tile.wall, tile.wall_col(), tile.wall_row()) else {
+                    continue;
+                };
+                // `WallDrawing.DrawWalls` skips black cells (`:104-115`);
+                // the tile pass merges the fully covered ones into black
+                // rectangles. The shown echo wall is EXEMPT: `:100-103`
+                // repaints it white BEFORE the black test (W4-g78).
+                if light_is_zero(light.get(tx, ty)) && tile.wall != WALL_ECHO {
                     continue;
                 }
                 // The 32 px sprite is centred on the 16 px cell (`x*16 - 8`), like
@@ -555,7 +570,10 @@ pub(crate) fn draw_tiles(
                     ty,
                     anim_time,
                     world.wall_paint(tx, ty),
-                    world.fullbright_wall(tx, ty),
+                    // `WallDrawing.cs:96-103`: a Glow-coated wall AND the
+                    // echo wall 318 both sample white (W4-g78 — the shown
+                    // echo wall draws its sprite white, never black).
+                    world.fullbright_wall(tx, ty) || tile.wall == WALL_ECHO,
                 );
                 stats.walls += 1;
             }
@@ -786,9 +804,31 @@ pub(crate) fn draw_tiles(
                 let flame_tile = active
                     && (tr_core::flame::tile_flame(tile.kind)
                         || tr_core::flame::has_glow_branch(tile.kind));
-                if light_is_zero(l)
-                    && !flame_tile
-                    && (active || (crate::env::walls_enabled() && wall_visible(tile.wall)))
+                // W4-g78: a shown echo wall (318) draws WHITE
+                // (`WallDrawing.cs:100-103`, `Main.wallLight[318] = true`
+                // `Main.cs:10580` takes the flat-colour arm) — its dark cell
+                // is NOT black coverage, so the merge must not claim it.
+                let echo_wall_lit = tile.wall == WALL_ECHO && show_invisible_blocks;
+                // W4-g78: hidden Echo-coated cells paint NO black coverage —
+                // `DrawSingleTile`'s `DrawBlack` needs `flag2` (`:988`, the
+                // IsVisible veto) and `Main.DrawBlackTiles`' block/wall arms
+                // both carry `(!invisible… || flag)` (`Main.cs:58006-58007`).
+                // The port's merged rectangle is the fold of both passes, so
+                // the coverage test rides the same sight gates (the parallax
+                // shows through a hidden echo block in a dark cave, exactly
+                // like the C#).
+                let block_covers = active
+                    && tr_core::scene::tile_is_visible(
+                        tile.kind,
+                        tile.frame_y,
+                        world.invisible_block(tx, ty),
+                        show_invisible_blocks,
+                    );
+                let wall_covers = crate::env::walls_enabled()
+                    && tile.wall != 0
+                    && (!world.invisible_wall(tx, ty) || show_invisible_blocks)
+                    && (tile.wall != WALL_ECHO || show_invisible_blocks);
+                if light_is_zero(l) && !flame_tile && !echo_wall_lit && (block_covers || wall_covers)
                 {
                     if run_start < 0 {
                         run_start = tx;
@@ -839,11 +879,18 @@ pub(crate) fn draw_tiles(
                 let Some(tf) = tile_frame else {
                     continue;
                 };
-                // `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): an
-                // Echo-coated block is hidden unless the Echo Monolith or an
-                // Echo item grants sight (the port has neither yet, so the
-                // blocks stay hidden).
-                if world.invisible_block(tx, ty) {
+                // `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`),
+                // W4-g78: the shared verbatim port — the Echo-coating bit
+                // hides unless sight is granted (Echo Monolith / Spectre
+                // Goggles / vanity 5345), and the platform row 48 + the
+                // always-invisible kinds 541/631 ride the flag regardless
+                // of the coating bit (the pre-wave port missed all three).
+                if !tr_core::scene::tile_is_visible(
+                    tile.kind,
+                    tile.frame_y,
+                    world.invisible_block(tx, ty),
+                    show_invisible_blocks,
+                ) {
                     continue;
                 }
                 stats.visible += 1;
@@ -1182,6 +1229,7 @@ pub(crate) fn draw_tiles(
             wind,
             vine_wind_counter,
             &vine_roots,
+            show_invisible_blocks,
         );
     }
     // Main.cs:22320,63305 — normal NPC pass (non-behind-tiles).
@@ -1873,6 +1921,54 @@ mod tests {
         assert!(body.contains("weather_vane_bobframe: tile_anim.weather_vane_bobframe"));
     }
 
+    /// W4-g78 draw-feed witness (WRITTEN NOT RUN): the tile pass's three
+    /// Echo gates read the ONE sight input — the wall layer
+    /// (`WallDrawing.cs:91`), the dark-coverage merge
+    /// (`Main.DrawBlackTiles` `:58006-58007`) and the per-cell `IsVisible`
+    /// (`TileDrawing.cs:983`) — and the per-cell gate is the shared
+    /// `scene::tile_is_visible` port (the row-48/541/631 overrides included),
+    /// not the bare coating bit the pre-wave pass read.
+    #[test]
+    fn w4_g78_the_echo_gates_ride_the_sight_input() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        // The wall layer: one wall_visible call with the coating bit + sight.
+        assert!(body.contains(
+            "wall_visible(tile.wall, world.invisible_wall(tx, ty), show_invisible_blocks)"
+        ));
+        // The per-cell gate: the shared IsVisible port, sight-fed.
+        assert_eq!(body.matches("tr_core::scene::tile_is_visible").count(), 2,
+            "the dark-coverage arm + the per-cell IsVisible gate");
+        assert!(body.contains("world.invisible_block(tx, ty),\n                        show_invisible_blocks,")
+            || body.contains("show_invisible_blocks,\n                ) {"));
+        // No bare-coating `continue` survives (the pre-wave gate).
+        assert!(!body.contains("if world.invisible_block(tx, ty) {"));
+        assert!(!body.contains("if world.invisible_wall(tx, ty) {"));
+        // The vine strips receive the same sight value.
+        assert!(body.contains("&vine_roots,\n            show_invisible_blocks,"));
+    }
+
+    /// W4-g78: the shown echo wall (318) draws WHITE and never merges into
+    /// black coverage — `WallDrawing.cs:100-103` (`color = Color.White` for
+    /// wall 318) + `Main.wallLight[318] = true` (`Main.cs:10580`) take the
+    /// flat-colour arm regardless of the cell light. The wall pass feeds
+    /// the white flag as `fullbright || kind == WALL_ECHO`.
+    #[test]
+    fn w4_g78_the_shown_echo_wall_feeds_white() {
+        let src = include_str!("tiles.rs");
+        let body = &src[src.find("pub(crate) fn draw_tiles(").unwrap()..];
+        let body = &body[..body.find("#[cfg(test)]").unwrap()];
+        assert!(
+            body.contains("world.fullbright_wall(tx, ty) || tile.wall == WALL_ECHO"),
+            "the echo wall rides the white-light flag (WallDrawing.cs:100-103)"
+        );
+        assert!(
+            body.contains("let echo_wall_lit = tile.wall == WALL_ECHO && show_invisible_blocks;"),
+            "a shown echo wall is never dark coverage"
+        );
+    }
+
     // S1-G-9: `DrawSingleTile_SlicedBlock`'s per-slice light chain
     // (`TileDrawing.cs:3578-3581` high arm, `:3634-3637` medium arm): the
     // slice averages the neighbourhood colour with the tile's own RAW light
@@ -2209,7 +2305,7 @@ mod tests {
             None,
         );
         // The dirt wall is visible (not 0, not the echo wall 318).
-        assert!(wall_visible(2), "WallID.DirtUnsafe draws");
+        assert!(wall_visible(2, false, false), "WallID.DirtUnsafe draws");
         // The vine cell does NOT hide its wall — the wall pass draws it.
         assert!(
             !tile_hides_wall(&mut lookups, Some(&atlas), 62, 0, 0, 0, false),

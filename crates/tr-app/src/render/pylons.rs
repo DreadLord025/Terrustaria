@@ -141,17 +141,17 @@ pub(crate) fn selection_glow_color(selected: bool, avg: i32) -> [f32; 4] {
     }
 }
 
-/// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): an Echo-coated block
-/// hides unless sight is granted; platforms on row 48 and the two invisible
-/// wiring tiles (541/631) always ride the flag.
+/// `TileDrawing.IsVisible` (`TileDrawing.cs:1411-1432`): the shared verbatim
+/// port (`tr_core::scene::tile_is_visible`, W4-g78 keep-one — the pylon pass
+/// was the first landing of this gate; the tile/vine passes now ride the
+/// same seam).
 fn is_visible(world: &World, x: i32, y: i32, tile: &tr_core::Tile, show_invisible: bool) -> bool {
-    let mut flag = world.invisible_block(x, y);
-    match tile.kind {
-        19 if tile.frame_y / 18 == 48 => flag = true,
-        541 | 631 => flag = true,
-        _ => {}
-    }
-    !flag || show_invisible
+    tr_core::scene::tile_is_visible(
+        tile.kind,
+        tile.frame_y,
+        world.invisible_block(x, y),
+        show_invisible,
+    )
 }
 
 /// `Point.ToWorldCoordinates(autoAddX, autoAddY)` (`Utils.cs`): `p * 16 + add`.
