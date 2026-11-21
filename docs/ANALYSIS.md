@@ -39766,6 +39766,28 @@ the 1005/763 counts, the 772 33-count + gem split + loot determinism, the
 723-family counts + gore determinism, the 1053 105-count/gravity split —
 WRITTEN NOT RUN.
 
+### Batch 22 (10 kinds, the head-block sparkle/Perfect rings `:70749-71098`)
+
+1098/1123 (50× dust-306 Direct (100,210,255,127) vel×2 X×0.5), 1020/1105
+(15× dust-31 Direct Transparent scale 0.8 fadeIn 0 vel×0.5 + 5 pairs
+dust-228 + 3× dust-226, all Transparent; the 2×2 corner Next(5)==0 gore-
+Direct census; the 1020 achievement/sound-stop draw nothing), 1085 (the
+broken mirror: oldVel×0.2 THEN position −= oldVel — the dust reads the
+shifted box; 10× dust-330 vel −= oldVel + 4 fixed-type gores 1394-1397
+kicks census; the bad-luck buff unported), 1080 (30× dust-329 at Center
+box 1×1 vel×0.8 Y×0.2 Y−=NextFloat×3, the Next(2) scale gate; the buff +
+active=false/return unported), 1038 (4× dust-166 Perfect at Center+
+Circular(10,10)×scale vel Zero scale 1.5+NextFloat×0.25 noGravity), 1036
+(3× dust-5 Perfect Circular(4,4) scale 1.5 noGravity), 756/961 (the
+f32-step trail rings num+=0.025/0.25 → 40/4 iters, dust-5/16 Perfect at
+Center+Circular(16,16)×scale+vel.SafeNormalize(UnitY)×num×200×scale, vel
+=Circular(3,3) Y−=0.3 +=baseVel×0.2 scale 1 alpha 100; the SafeNormalize
+UnitY fallback on zero). The 1116 (CloneDust) + 962 + 1084/949 (the
+TorchID.Dust table + Main.DiscoR/G/B App-frame colour, not in the drain's
+World/SpawnCtx) stay DEFERRED. Witnesses: the 1098/1123 colour, the
+1020/1105 28-count/Transparent/gravity split + determinism, the 1085/
+1080 counts, the Perfect-ring counts/flags — WRITTEN NOT RUN.
+
 ### The re-census (all Kill dust arms vs the 104 + d12 + i17/i18 + g16)
 
 A full re-grep of `Projectile.cs:70642-77262` for `Dust.NewDust*` sites,

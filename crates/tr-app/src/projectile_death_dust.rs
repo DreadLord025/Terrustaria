@@ -3062,6 +3062,154 @@ fn death_bursts(
                 let _ = rng.next_range(-20, 21);
             }
         }
+        // `:70749-70757` — the 1098/1123: 50× dust-306 Direct alpha 0
+        // (100,210,255,127) defaults, vel×2 X×0.5.
+        1098 | 1123 => {
+            for _ in 0..50 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 306, 0.0, 0.0, 0, Color::new(100, 210, 255, 127), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.velocity.x *= 0.5;
+            }
+        }
+        // `:70855-70901` — the 1020/1105: 15× dust-31 Direct alpha 100
+        // Transparent scale 0.8 fadeIn 0 vel×0.5; 5 PAIRS dust-228 Direct
+        // alpha 100 Transparent (scale 2.5 noGravity vel×2.5, then scale
+        // 1.1 vel×2 noGravity); 3× dust-226 Direct alpha 100 Transparent
+        // scale 1.1 vel×2 noGravity; then a 2×2 corner loop, each a
+        // Next(5)==0 gate → one gore-Direct (Next(61,64) type + kicks,
+        // bodies skipped). The 1020 achievement/sound-stop draw nothing.
+        1020 | 1105 => {
+            for _ in 0..15 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 31, 0.0, 0.0, 100, Color::TRANSPARENT, 0.8);
+                let d = dust.slot_mut(idx);
+                d.fade_in = 0.0;
+                d.velocity *= 0.5;
+            }
+            for _ in 0..5 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 228, 0.0, 0.0, 100, Color::TRANSPARENT, 2.5);
+                let d = dust.slot_mut(idx);
+                d.no_gravity = true;
+                d.velocity *= 2.5;
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 228, 0.0, 0.0, 100, Color::TRANSPARENT, 1.1);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+            for _ in 0..3 {
+                let idx = dust.new_dust_direct(rng, ctx, world, s.pos, s.w, s.h, 226, 0.0, 0.0, 100, Color::TRANSPARENT, 1.1);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 2.0;
+                d.no_gravity = true;
+            }
+            for _ in 0..4 {
+                if rng.next_max(5) == 0 {
+                    let _ = rng.next_range(61, 64);
+                    let _ = rng.next_range(10, 31);
+                    let _ = rng.next_range(-20, 21);
+                }
+            }
+        }
+        // `:70902-70923` — the 1085 broken mirror: oldVelocity×0.2 THEN
+        // position −= oldVelocity (the dust reads the shifted box); 10×
+        // dust-330 defaults vel −= oldVelocity; 4 gores 1394-1397 at
+        // Center vel −oldVelocity (the kicks census, fixed types no draw);
+        // the bad-luck buff is unported state.
+        1085 => {
+            let old_vel = s.old_vel * 0.2;
+            let pos = s.pos - old_vel;
+            for _ in 0..10 {
+                let idx = dust.new_dust(rng, ctx, world, pos, s.w, s.h, 330, 0.0, 0.0, 0, Color::default(), 1.0);
+                dust.slot_mut(idx).velocity -= old_vel;
+            }
+            for _ in 0..4 {
+                let _ = rng.next_range(10, 31);
+                let _ = rng.next_range(-20, 21);
+            }
+        }
+        // `:70926-70954` — the 1080: 30× dust-329 at Center box 1×1
+        // defaults, vel×0.8 Y×0.2 Y −= NextFloat×3; a Next(2) gate 0 →
+        // noGravity scale NextFloat×0.6+0.6, else scale NextFloat×0.5+0.5.
+        // The buff + active=false/return are unported state.
+        1080 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..30 {
+                let idx = dust.new_dust(rng, ctx, world, center, 1, 1, 329, 0.0, 0.0, 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity *= 0.8;
+                d.velocity.y *= 0.2;
+                d.velocity.y -= rng.next_float() * 3.0;
+                if rng.next_max(2) == 0 {
+                    d.no_gravity = true;
+                    d.scale = rng.next_float() * 0.6 + 0.6;
+                } else {
+                    d.scale = rng.next_float() * 0.5 + 0.5;
+                }
+            }
+        }
+        // `:71043-71051` — the 1038: 4× dust-166 Perfect at Center +
+        // NextVector2Circular(10,10)×scale, vel Zero, scale 1.5+NextFloat×
+        // 0.25 noGravity.
+        1038 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..4 {
+                let pos = center + next_vector2_circular(rng, 10.0, 10.0) * s.scale;
+                let idx = dust.new_dust_perfect(rng, ctx, world, pos, 166, Some(Vec2::ZERO), 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale = 1.5 + rng.next_float() * 0.25;
+                d.no_gravity = true;
+            }
+        }
+        // `:71068-71076` — the 1036: 3× dust-5 Perfect at Center +
+        // NextVector2Circular(4,4)×scale, vel Zero, scale 1.5 noGravity.
+        1036 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            for _ in 0..3 {
+                let pos = center + next_vector2_circular(rng, 4.0, 4.0) * s.scale;
+                let idx = dust.new_dust_perfect(rng, ctx, world, pos, 5, Some(Vec2::ZERO), 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.scale = 1.5;
+                d.no_gravity = true;
+            }
+        }
+        // `:71077-71087` — the 756: a f32-step ring (num += 0.025, 40
+        // iters) of dust-5 Perfect at Center + Circular(16,16)×scale +
+        // vel.SafeNormalize(UnitY)×num×200×scale, vel = Circular(3,3),
+        // Y −= 0.3, += baseVel×0.2, scale 1 alpha 100.
+        756 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let dir = if s.vel == Vec2::ZERO { Vec2::Y } else { safe_normalize(s.vel) };
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let pos = center + next_vector2_circular(rng, 16.0, 16.0) * s.scale + dir * num * 200.0 * s.scale;
+                let vel = next_vector2_circular(rng, 3.0, 3.0);
+                let idx = dust.new_dust_perfect(rng, ctx, world, pos, 5, Some(vel), 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity.y += -0.3;
+                d.velocity += s.vel * 0.2;
+                d.scale = 1.0;
+                d.alpha = 100;
+                num += 0.025;
+            }
+        }
+        // `:71088-71098` — the 961: the 756 shape at dust-16, num += 0.25
+        // (4 iters).
+        961 => {
+            let center = Vec2::new(s.pos.x + s.w as f32 * 0.5, s.pos.y + s.h as f32 * 0.5);
+            let dir = if s.vel == Vec2::ZERO { Vec2::Y } else { safe_normalize(s.vel) };
+            let mut num = 0.0f32;
+            while num < 1.0 {
+                let pos = center + next_vector2_circular(rng, 16.0, 16.0) * s.scale + dir * num * 200.0 * s.scale;
+                let vel = next_vector2_circular(rng, 3.0, 3.0);
+                let idx = dust.new_dust_perfect(rng, ctx, world, pos, 16, Some(vel), 0, Color::default(), 1.0);
+                let d = dust.slot_mut(idx);
+                d.velocity.y += -0.3;
+                d.velocity += s.vel * 0.2;
+                d.scale = 1.0;
+                d.alpha = 100;
+                num += 0.25;
+            }
+        }
         _ => {}
     }
 }
@@ -5418,5 +5566,80 @@ mod tests {
         assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 25);
         assert!(active[..25].iter().all(|d| !d.no_gravity));
         assert_eq!(active[25..].iter().filter(|d| d.no_gravity).count(), 40);
+    }
+
+    /// The 1098/1123: 50 dust-306, the (100,210,255,127) colour.
+    #[test]
+    fn w4_g65_the_1098_1123_bursts() {
+        let w = world();
+        for kind in [1098u16, 1123] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 50, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == 306 && d.color == Color::new(100, 210, 255, 127)));
+        }
+    }
+
+    /// The 1020/1105: 15 + 10 + 3 = 28 dust (31/228/226), all Transparent;
+    /// the 228/226 noGravity, the 31 gravity. The corner gore census
+    /// rides the stream (determinism).
+    #[test]
+    fn w4_g65_the_1020_1105_bursts() {
+        let w = world();
+        for kind in [1020u16, 1105] {
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust, &mut rng, &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), 28, "kind {kind}");
+            assert_eq!(active.iter().filter(|d| d.dust_type == 31).count(), 15);
+            assert_eq!(active.iter().filter(|d| d.dust_type == 228).count(), 10);
+            assert_eq!(active.iter().filter(|d| d.dust_type == 226).count(), 3);
+            assert!(active.iter().all(|d| d.color == Color::TRANSPARENT));
+            assert!(active[..15].iter().all(|d| !d.no_gravity));
+            assert!(active[15..].iter().all(|d| d.no_gravity));
+            let mut dust2 = DustPool::new();
+            let mut rng2 = UnifiedRandom::new(7);
+            drain(&[snap(kind)], &mut dust2, &mut rng2, &ctx(), &w);
+            assert_eq!(dust.slots(), dust2.slots());
+            assert_eq!(rng, rng2);
+        }
+    }
+
+    /// The 1085/1080: 10 dust-330 / 30 dust-329; the 1080's scale gate
+    /// gives [0.5,1.2] ranges.
+    #[test]
+    fn w4_g65_the_1085_1080_bursts() {
+        let w = world();
+        let mut dust = DustPool::new();
+        drain(&[snap(1085)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 10);
+        assert!(active.iter().all(|d| d.dust_type == 330));
+        let mut dust = DustPool::new();
+        drain(&[snap(1080)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+        let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+        assert_eq!(active.len(), 30);
+        assert!(active.iter().all(|d| d.dust_type == 329 && d.scale >= 0.49 && d.scale <= 1.21));
+    }
+
+    /// The 1038/1036/756/961 Perfect rings: 4/3/40/4 dust, all noGravity
+    /// (the 756/961 alpha 100 scale 1).
+    #[test]
+    fn w4_g65_the_perfect_rings() {
+        let w = world();
+        for (kind, count, dust_type) in [(1038u16, 4, 166), (1036, 3, 5), (756, 40, 5), (961, 4, 16)] {
+            let mut dust = DustPool::new();
+            drain(&[snap(kind)], &mut dust, &mut UnifiedRandom::new(7), &ctx(), &w);
+            let active: Vec<_> = dust.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(active.len(), count, "kind {kind}");
+            assert!(active.iter().all(|d| d.dust_type == dust_type), "kind {kind}");
+            if kind == 1038 || kind == 1036 {
+                assert!(active.iter().all(|d| d.no_gravity), "kind {kind}");
+            } else {
+                assert!(active.iter().all(|d| d.alpha == 100 && d.scale == 1.0), "kind {kind}");
+            }
+        }
     }
 }
