@@ -5955,6 +5955,16 @@ fn break_drop_events(
             .or_else(|| registry::tile_drop(drop.tile_kind, 0));
         if let Some(id) = id {
             events.push((id, 1, drop.x, drop.y));
+            // W4-g85 — `CheckOrb` case 31's case-0 pair (`WorldGen.cs:
+            // :54248-54249` / `:54275-54276`): the gun (Musket 96 / The
+            // Undertaker 800) spawns WITH a Musket Ball 97 stack of
+            // `genRand.Next(100, 101)` — the single-value range always
+            // returns 100 but CONSUMES one draw (genRand IS Main.rand,
+            // `:4445`); the stack spawns at the same rect, after the gun.
+            if matches!(id, 96 | 800) && drop.tile_kind == 31 {
+                let stack = main_rng.next_range(100, 101) as u32;
+                events.push((97, stack, drop.x, drop.y));
+            }
         }
     }
     // The killed tree cells' wood and acorns (`WorldGen.KillTile_GetTreeDrops`,
@@ -9287,6 +9297,86 @@ mod tests {
             vec![(3, 1, 9, 17), (25, 1, 9, 18)],
             "legacy hit drop plus the chained open-door object drop"
         );
+    }
+
+    /// W4-g85 — `CheckOrb` case 31's case-0 pair (`WorldGen.cs:54248-54249`
+    /// / `:54275-54276`): the gun record spawns the Musket Ball 97 stack of
+    /// 100 AFTER it (`genRand.Next(100, 101)` — the single-value range
+    /// always returns 100 but consumes one draw). The other four table
+    /// items and the non-31 records pair nothing.
+    #[test]
+    fn w4_g85_the_musket_ball_stack_pairs_the_case0_gun() {
+        for (gun, tile_kind) in [(96i32, 31u16), (800, 31)] {
+            let kill = edit::TileKill {
+                kind: 31,
+                object_drops: vec![edit::ObjectDrop {
+                    tile_kind,
+                    x: 10,
+                    y: 19,
+                    item: Some(gun),
+                }],
+                ..Default::default()
+            };
+            let (drops, _) = drop_events(&kill, None);
+            assert_eq!(
+                drops,
+                vec![(gun as u16, 1, 10, 19), (97, 100, 10, 19)],
+                "the gun then the 100-stack at the same rect"
+            );
+        }
+        // A non-case-0 table item pairs nothing.
+        let kill = edit::TileKill {
+            kind: 31,
+            object_drops: vec![edit::ObjectDrop {
+                tile_kind: 31,
+                x: 10,
+                y: 19,
+                item: Some(64), // Vilethorn
+            }],
+            ..Default::default()
+        };
+        assert_eq!(drop_events(&kill, None).0, vec![(64, 1, 10, 19)]);
+        // The replica/heart/crystal records never pair (their ids are not
+        // the guns; the tile_kind gate also holds).
+        for (item, tk) in [(5469i32, 696u16), (29, 12), (109, 639)] {
+            let kill = edit::TileKill {
+                kind: tk,
+                object_drops: vec![edit::ObjectDrop {
+                    tile_kind: tk,
+                    x: 10,
+                    y: 19,
+                    item: Some(item),
+                }],
+                ..Default::default()
+            };
+            assert_eq!(drop_events(&kill, None).0, vec![(item as u16, 1, 10, 19)]);
+        }
+        // The stack draw rides the caller's Main.rand stream: the resolver
+        // consumes exactly one Next(100,101) per gun record.
+        let kill = edit::TileKill {
+            kind: 31,
+            object_drops: vec![edit::ObjectDrop {
+                tile_kind: 31,
+                x: 10,
+                y: 19,
+                item: Some(96),
+            }],
+            ..Default::default()
+        };
+        let mut main = tr_core::UnifiedRandom::new(11);
+        let mirror = main.clone();
+        let _ = break_drop_events(
+            &kill,
+            &object_world(),
+            None,
+            false,
+            0,
+            &mut main,
+            &DropCtx::default(),
+        );
+        let mut want = mirror;
+        let _ = want.next_range(100, 101);
+        assert_eq!(main, want, "one Next(100,101) — the dead-range draw kept");
     }
 
     #[test]

@@ -647,9 +647,11 @@ fn check_object(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         11 => check_door_open(world, x, y),
         13 | 33 | 49 | 78 => check_on_table_1x1(world, x, y),
         29 => check_piggy(world, x, y),
-        // `WorldGen.cs:85249-85252`'s TileFrameImportant arm: 12 (Crimson
-        // Heart), 31 (Shadow Orb), 639 (Mana Crystal).
-        12 | 31 | 639 => check_orb(world, x, y),
+        // `WorldGen.cs:85248-85252`'s TileFrameImportant arm: 12 (the
+        // Heart / Life Crystal object), 31 (Shadow Orb — the crimson
+        // heart is its frameX >= 36 half), 639 (Mana Crystal), 696 (the
+        // placeable replica, W4-g85).
+        12 | 31 | 639 | 696 => check_orb(world, x, y),
         14 | 87 | 88 | 186 | 187 => check_3x2(world, x, y, kind),
         15 => check_chair(world, x, y),
         18 => check_bench(world, x, y),
@@ -1084,15 +1086,17 @@ fn check_cactus(
     false
 }
 
-/// `WorldGen.CheckOrb` (`WorldGen.cs:54169-54344`) — the 2x2 object arm shared
-/// by the Shadow Orb (31), the Crimson Heart (12, the +36 frameX) and
-/// the Mana Crystal (639): the top-left anchor snap, the integrity scan,
-/// the break plan, and the world-state flags (`shadowOrbSmashed =
-/// true`, the shared `shadowOrbCount++`). The 5-way drop tables
-/// (`:54226-54290`) need the two-item `ObjectDrop` extension — the
-/// documented follow-up; the boss-summon edge (`:54294-54321`'s
-/// `count >= 3`) rides the sim pass (the app's `update_npcs` reads the
-/// count delta).
+/// `WorldGen.CheckOrb` (`WorldGen.cs:54169-54344`) — the 2x2 object arm
+/// shared by the Shadow Orb (31 — the crimson heart is its `frameX >= 36`
+/// half, NOT tile 12), the Heart/Life Crystal object (12), the Mana
+/// Crystal (639) and the placeable replica (696, W4-g85): the top-left
+/// anchor snap, the integrity scan, the break plan and the drop switch
+/// (`:54226-54333` — 696 → 5469/5470, 12 → 29, 639 → 109, 31 → the 5-way
+/// tables). ONLY case 31 raises `shadowOrbSmashed`/`shadowOrbCount`
+/// (`:54292-54293`); the boss-summon edge (`:54294-54321`'s `count >= 3`)
+/// rides the sim pass (the app's `update_npcs` reads the count delta).
+/// The case-0 gun + Musket Ball 100-stack pair resolves app-side
+/// (`break_drop_events`, W4-g85).
 fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
     let t = world.tile(x, y)?;
     let kind = t.kind;
@@ -1126,45 +1130,56 @@ fn check_orb(world: &mut World, x: i32, y: i32) -> Option<CheckPlan> {
         // break that triggered this check is a different cell.
         return None;
     }
-    // `:54226-54290`'s drop switch: the 5-way roll, the forced case 0
-    // until the world's first smash (`:54240`/`:54268`'s `!shadowOrbSmashed`
-    // arm). The port rolls the deterministic position seed (the vanilla's
-    // `Main.rand`); the case-0 Musket Ball stack rolls into the documented
-    // note (the ObjectDrop carries the single item).
+    // `:54226-54333`'s drop switch (W4-g85 census fix): the four cases are
+    // NOT one table — 696 drops the replica item (5469 orb / 5470 heart),
+    // 12 drops the Life Crystal 29, 639 the Mana Crystal 109, all three
+    // with NO roll and NO world flags; ONLY case 31 rolls the 5-way table
+    // and raises `shadowOrbSmashed`/`shadowOrbCount` (`:54292-54293` sits
+    // inside case 31). The 31 roll: `Main.rand.Next(5)` is drawn EVEN on
+    // the forced first smash (`:54240`/`:54267` draw, then the
+    // `!shadowOrbSmashed` override to 0). The port rolls the deterministic
+    // position seed (the vanilla's `Main.rand` — the documented M4-EVENT-3c
+    // stand-in); the case-0 Musket Ball stack (`genRand.Next(100, 101)` ≡
+    // 100, one draw) pairs app-side in `break_drop_events` (the ObjectDrop
+    // carries the single item — the two-item extension folds into the
+    // gun-id pairing, W4-g85).
     let mut seed = crate::flame::frame_seed_for(0x5EAF_00D5, ox, oy);
     let forced = !world.shadow_orb_smashed;
-    let pick = if forced {
-        0
-    } else {
-        crate::flame::random_int(&mut seed, 0, 5)
-    };
-    let item = if crimson {
-        match pick {
+    let roll = crate::flame::random_int(&mut seed, 0, 5);
+    let pick = if forced { 0 } else { roll };
+    let item = match kind {
+        // `:54228-54230` — the replica: `(!flag) ? 5469 : 5470`.
+        696 => Some(if crimson { 5470 } else { 5469 }),
+        // `:54231-54233` — the Heart object drops the Life Crystal.
+        12 => Some(29),
+        // `:54234-54236`.
+        639 => Some(109),
+        // `:54237-54291` — case 31, the crimson/orb 5-way tables.
+        _ if crimson => match pick {
             0 => Some(800),  // The Undertaker
             1 => Some(1256), // Crimson Rod
             2 => Some(802),  // The Rotted Fork
             3 => Some(3062), // Crimson Heart (the pet item)
             _ => Some(1290), // Panic Necklace
-        }
-    } else if kind == 639 {
-        Some(109) // the Mana Crystal
-    } else {
-        match pick {
+        },
+        _ => match pick {
             0 => Some(96),  // The Musket
             1 => Some(64),  // Vilethorn
             2 => Some(162), // Ball O' Hurt
             3 => Some(115), // Shadow Orb (the pet item)
             _ => Some(111), // Band of Starpower
-        }
+        },
     };
     // The 2x2's drop position: the orb's centre tile (`Item.NewItem`'s
     // spawn at the object centre).
     let cx = ox + 1;
     let cy = oy + 1;
-    // `:54292-54293`'s flags (outside the drop switch — all three kinds
-    // count toward the same world counter).
-    world.shadow_orb_smashed = true;
-    world.shadow_orb_count += 1;
+    // `:54292-54293`'s flags — INSIDE case 31 only (the 12/639/696 breaks
+    // never count toward the orb counter or arm the goblin rolls).
+    if kind == 31 {
+        world.shadow_orb_smashed = true;
+        world.shadow_orb_count += 1;
+    }
     Some(CheckPlan {
         drop: Some(crate::edit::ObjectDrop {
             tile_kind: kind,
@@ -5064,5 +5079,68 @@ mod tests {
             drop2.item
         );
         assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
+    }
+
+    /// W4-g85 — the drop-switch census fix (`WorldGen.cs:54226-54333`):
+    /// tile 12 is the Heart/Life Crystal object (drops 29, NO roll, NO
+    /// flags), 639 the Mana Crystal (109), 696 the replica (5469 orb /
+    /// 5470 heart by the frameX >= 36 bit); only case 31 raises the smash
+    /// flag + counter. The pre-fix port rolled the 5-way table for 12 and
+    /// counted every kind — both wrong against the C# switch.
+    #[test]
+    fn w4_g85_the_orb_drop_switch_is_four_cases_not_one_table() {
+        use crate::worldgen::evil::add_shadow_orb;
+        let mut w = World::new("t".into(), 200, 200);
+        for x in 0..200 {
+            for y in 0..200 {
+                let i = w.index(x, y);
+                w.tiles[i] = crate::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= crate::tile::FLAG_ACTIVE;
+            }
+        }
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        for k in [12usize, 31, 639, 696] {
+            w.frame_important[k] = true;
+        }
+        // A 2x2 of `kind` with the orb frame layout (the AddShadowOrb
+        // writes, re-keyed): frames 0/18 (+36 for the crimson half).
+        let place = |w: &mut World, kind: u16, ox: i32, oy: i32, crimson: bool| {
+            let num: i16 = if crimson { 36 } else { 0 };
+            for (dx, dy, fx, fy) in
+                [(0, 0, num, 0), (1, 0, 18 + num, 0), (0, 1, num, 18), (1, 1, 18 + num, 18)]
+            {
+                let t = w.tile_mut(ox + dx, oy + dy).unwrap();
+                t.flags |= crate::tile::FLAG_ACTIVE;
+                t.kind = kind;
+                t.frame_x = fx;
+                t.frame_y = fy;
+            }
+        };
+        // Tile 12 → the Life Crystal 29; the flags stay down.
+        place(&mut w, 12, 20, 20, false);
+        let kill = super::kill_tile(&mut w, 20, 20, false).expect("the 12 break");
+        assert_eq!(kill.object_drops.first().unwrap().item, Some(29));
+        assert!(!w.shadow_orb_smashed, "12 never arms the goblin rolls");
+        assert_eq!(w.shadow_orb_count, 0);
+        // Tile 639 → 109, flags still down.
+        place(&mut w, 639, 40, 20, false);
+        let kill = super::kill_tile(&mut w, 40, 20, false).expect("the 639 break");
+        assert_eq!(kill.object_drops.first().unwrap().item, Some(109));
+        assert!(!w.shadow_orb_smashed);
+        // Tile 696 orb half → 5469; crimson half → 5470; flags still down.
+        place(&mut w, 696, 60, 20, false);
+        let kill = super::kill_tile(&mut w, 60, 20, false).expect("the 696 break");
+        assert_eq!(kill.object_drops.first().unwrap().item, Some(5469));
+        place(&mut w, 696, 80, 20, true);
+        let kill = super::kill_tile(&mut w, 80, 20, false).expect("the 696 heart break");
+        assert_eq!(kill.object_drops.first().unwrap().item, Some(5470));
+        assert!(!w.shadow_orb_smashed, "the replica never counts");
+        assert_eq!(w.shadow_orb_count, 0);
+        // Tile 31 crimson half → the forced Undertaker 800 + the flags.
+        add_shadow_orb(&mut w, 100, 100, true);
+        let kill = super::kill_tile(&mut w, 99, 99, false).expect("the heart break");
+        assert_eq!(kill.object_drops.first().unwrap().item, Some(800));
+        assert!(w.shadow_orb_smashed, "31 arms the flag");
+        assert_eq!(w.shadow_orb_count, 1);
     }
 }
