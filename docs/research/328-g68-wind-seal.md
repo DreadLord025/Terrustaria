@@ -372,3 +372,31 @@ documented deviations, not new gaps. The `TR_WIND_FORCE` clamp ±1.24
 (`draw.rs:825`) matches the rain-scaled current's max `0.8*(1+5/9)` ≈
 1.244 — the screenshot pin, not a sim arm.
 
+### 8.2 The wind PARTICLE interplay census (item 2) — complete
+
+Every wind-consuming particle family, its stream, and its owner:
+
+| family | C# | port | wind input | owner |
+| --- | --- | --- | --- | --- |
+| wind leaves (tree sheds) | TileDrawing.cs:7779-7891 + :7549-7592 | `foliage.rs::emit_tree_leaves` + the `emit_living_tree_leaf` trio, the `tiles.rs:1107-1131` 192/384 arm | `speed_current` via `leaf_frequency` + the ±0.2 two-cell gates | **g68** (wired, the §1 census) |
+| leaf PHYSICS drift | Gore.cs:1126 (water rest `vector3.X = WindForVisuals`), :1166 (fall `+= wind*4` above surface) | `gore.rs:1605/:1647` (`update_leaf`, the gores phase `world.rs:273-292` on the UpdateGores stream) | `wind_for_visuals` = `speed_current` (`world.rs:277`) | **g68** (S1-E-4 + the g68 pins) |
+| drips (vine/stalactite/candle) | TileDrawing.cs:7594-7674 | `foliage.rs::emit_liquid_drops(_area)`, `draw.rs:1250-1269` | none (the gate is `Next(num*2)`; the wind lane owns the SEAM) | **g68** (wiring-1; the §8.5 receipt below) |
+| sandstorm debris | Sandstorm.cs:144-192 | `sand.rs::emit_dust` (`scene_scan.rs:403` feeds `speed_current`) | `sign(wind)*Lerp(0.9,1,|wind|)` drift + `num13*20` push, dead-calm <0.01 refusal | **c40** severity machine (`scene.rs::Sandstorm`, wind-only) + the S1-E-1/E-3 dust lane; the g68 wind-coupling witness (`sand.rs`) |
+| rain drift | Rain.cs:56-57 (spawn `wind*15*40`), :91-94 (`GetRainFallVelocity` = `(wind*18, 14)`) | g67 `534ba9a35` rain.rs:1183/:1201 through the gathered `RainInputs.wind_current`; the FOLD into d130 (`b8f655708`) per the g67 seal | `speed_current` read-only | **g67→d130** (the mutual receipt §4; g67's drop-wholesale carries no wind hunks) |
+| Eyebrella drip | Player.cs:14328 (`Rain.NewRainForced(wind*3, 9)`) | d130's R6 fold (`df28ea1ac`) | `speed_current` read-only | **d130** (the bible row) |
+| lava leaf puff | Gore.cs:1119-1122 | `gore.rs:1578-1604` (the DustFromGore seam, UpdateGores stream) | none directly (the leaf's drift carried it) | **g68** (deferred-1, wired) |
+| vision dust / petals / smoke | TileDrawing.cs:897-962, :6796-6847 etc. | d56 `animated_tiles.rs` / d60 `tile_draw_particles.rs` | none (the `_rand` gates only) | **d56/d60** (the deferred-4 census; the wiring-4 cross-note verified the stream orders) |
+
+**Completeness verdict: YES** — every `Main.windSpeedCurrent` /
+`WindForVisuals` particle consumer in the C# (the grep census over
+Cloud/Gore/Main/Mount/NPC/Player/Projectile/Rain/SceneState/WorldGen/
+TileDrawing/AmbientWind) maps to a ported family above or to a
+non-particle consumer (the vane/flag tile counters
+`drawdata_anim.rs:440-448`, the water-distortion `scene.rs:2400`, the
+bubble NPC jitter `npc_ai_style70.rs:262`, the kite/leaf loot gates,
+the mount pose `Mount.cs:3572` — all read-only, all accounted). The
+ONE interplay seam between families: the leaf's water-rest drift reads
+the SAME live flag the rain spawn does — no stream coupling (the leaf
+physics rolls UpdateGores, the rain spawn rolls its own), so the
+families compose without ordering constraints.
+
