@@ -518,6 +518,25 @@ pub(crate) fn sfx_cue_registered(cue: &str) -> bool {
     SFX_CUES.iter().any(|(n, _)| *n == cue)
 }
 
+/// `SoundID.MenuAccept` (`SoundID.cs:1068`/:1710,
+/// `CreateTrackable("menu_accept")` — one variation, volume 1, no pitch
+/// variance, `SoundType.Sound`, uncapped): the tracked style the quit-path
+/// witnesses register their pool entry through (the W4-g24 doc-sweep seam,
+/// kept by the W4-g73 quit-stop keep-one; g24's `WorldGen.SecretSeed.Enable`
+/// caller rides the g24 branch, so the default build has no production
+/// reader here — the allow keeps it warning-clean until that merge).
+#[allow(dead_code)]
+pub fn menu_accept_style() -> crate::tracked_sound::TrackedStyle {
+    crate::tracked_sound::TrackedStyle {
+        cue: "menu_accept",
+        variations: 1,
+        volume: 1.0,
+        pitch_variance: 0.0,
+        sound_type: crate::tracked_sound::SoundType::Sound,
+        max_tracked_instances: 0,
+    }
+}
+
 /// S1-E-21 wave C — resolve an NPC hit/death cue name to its
 /// `LegacySoundStyle` row (`crate::soundid::SOUND_STYLES`): the legacy
 /// `NPC_Hit_N`/`NPC_Killed_N` asset maps to `NPCHitN`/`NPCDeathN`
@@ -596,6 +615,10 @@ pub struct Audio {
     /// The live pan gains the playing liquid-loop sources read (the XNA
     /// `Pan` write reaches the instance mid-play, `:1267`/`:1297`).
     liquid_pans: [Option<LiquidPanGains>; 2],
+    /// The `StopWaterfallAmbienceAudio` call count (a test seam — the
+    /// headless Apps have no liquid sink, so the quit flows assert the
+    /// sentinel-stop pair through this; the W4-g24/g73 quit-stop keep-one).
+    liquid_ambience_stops: u64,
     /// The decoded SceneState ambient loops (`blizzard_strong_loop` /
     /// `blizzard_inside_building_loop`, from `Sounds/Custom/<name>.xnb` —
     /// the trackable path, `LegacySoundPlayer.cs:257`). The blizzard loops
@@ -749,6 +772,7 @@ impl Audio {
             played: Default::default(),
             liquid_loops: [None, None],
             liquid_pans: [None, None],
+            liquid_ambience_stops: 0,
             tracked: crate::tracked_sound::SoundPlayer::default(),
             sound_style_random: tr_core::unified_random::UnifiedRandom::new(1),
             liquid_cues,
@@ -2190,22 +2214,48 @@ impl Audio {
     }
 
     /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`): the
-    /// two `SoundEngine.PlaySound(34/35, -1, -1, 0)` calls. The (-1, -1)
-    /// sentinel position takes the case bodies' stop arm outright
-    /// (`LegacySoundPlayer.cs:1257`/`:1287` — `x == -1 || y == -1` ORs into
-    /// the stop condition BEFORE the volume walk matters), which stops the
-    /// playing `SoundInstanceLiquid[0]/[1]` — so the port routes both
-    /// channels through `set_liquid_loop(ch, 0.0)`'s stop arm (stopping a
-    /// dead slot is a no-op, the same as the C#'s null/Playing guard).
-    /// Called by `WorldGen.SaveAndQuit` (`:6704`, the port's `save_and_quit`)
-    /// and `WorldGen.JustQuit` (`:6631-6632`, inlined there — `JustQuit`'s
-    /// only C# caller is the debug chat command, the port has no caller yet).
-    /// W4-g73 closeout: g24's sounds wave recorded this as a deferral
-    /// ("no port caller") — the `save_and_quit` seam is that caller.
+    /// `PlaySound(34, -1, -1, 0)` + `PlaySound(35, -1, -1, 0)` pair — the
+    /// sentinel stop arm of both liquid-loop cases (`LegacySoundPlayer.cs:
+    /// 1257-1262`/:1287-1292: `x == -1 || y == -1` ORs into the stop
+    /// condition BEFORE the volume walk matters and `Stop()`s the live
+    /// `SoundInstanceLiquid[n]` outright — no attenuation, no fade, no RNG:
+    /// the case bodies never reach a pitch draw). Called by `SaveAndQuit`
+    /// (`:6704`) and inlined by `JustQuit` (`:6631-6632`) BEFORE
+    /// `StopTrackedSounds`, so the loops die at the quit moment rather than
+    /// at the next ¼ s `Main.Ambience` re-volume tick. The port kills the
+    /// sinks DIRECTLY (the g24 shape — `set_liquid_loop(ch, 0.0)`'s stop arm
+    /// gates on the decoded cue + output handle first, so the headless
+    /// no-device path would never reach it); stopping a dead slot is a
+    /// no-op, the C# null/Playing guard's equivalent.
+    /// Keep-one (W4-g73 retire): the g24 doc-sweep `c3eccb77` and this
+    /// branch's closeout `4e7e3f58` both wired `:6704` — ONE seam survives
+    /// (this fn + the one `save_and_quit` call), g24's counter seam kept,
+    /// the closeout's route-through-`set_liquid_loop` body retired.
     pub fn stop_waterfall_ambience(&mut self) {
+        self.liquid_ambience_stops += 1;
         for channel in 0..2 {
-            self.set_liquid_loop(channel, 0.0, 0.0, None);
+            if let Some(Some(sink)) = self.liquid_loops.get_mut(channel) {
+                sink.stop();
+                self.liquid_loops[channel] = None;
+            }
         }
+    }
+
+    /// The `StopWaterfallAmbienceAudio` call count (the headless test seam,
+    /// the `played_count` convention).
+    #[allow(dead_code)] // test-only reader on this branch (the quit witnesses)
+    pub fn liquid_ambience_stop_count(&self) -> u64 {
+        self.liquid_ambience_stops
+    }
+
+    /// `SoundEngine.StopTrackedSounds` (`SoundEngine.cs:151-157` →
+    /// `SoundPlayer.StopAll`, `SoundPlayer.cs:79-86`): every tracked
+    /// instance stops and the pool clears. The `!Main.dedServ &&
+    /// IsAudioSupported` gate is the port's always-true stand-in (the
+    /// headless pool still tracks entries). Called by `SaveAndQuit`
+    /// (`WorldGen.cs:6715`) and `JustQuit` (`:6646`).
+    pub fn stop_tracked_sounds(&mut self) {
+        self.tracked.stop_all();
     }
 
     /// `SoundEngine.PlayTrackedSound(SoundStyle)`'s global arm
@@ -2370,6 +2420,25 @@ impl Audio {
         style: &crate::tracked_sound::TrackedStyle,
     ) -> Option<&crate::tracked_sound::ActiveSound> {
         self.tracked.find_active_sound(style)
+    }
+
+    /// The pool-entry count of one tracked style (no `IsPlaying` filter —
+    /// the `find_active_sound` semantics) — the headless test seam: no
+    /// output device drains an entry, so the count is the number of plays
+    /// landed (the W4-g24 quit-path witnesses, kept by the keep-one).
+    #[allow(dead_code)] // test-only reader on this branch (the quit witnesses)
+    pub fn tracked_count_for(&self, style: &crate::tracked_sound::TrackedStyle) -> usize {
+        self.tracked.count_style_entries(style)
+    }
+
+    /// The test seam: register a silent one-sample cue under `name` so the
+    /// tracked/slot paths can run headless (the real decode needs the
+    /// retail Content junction; `Audio::new(None)` loads nothing). The
+    /// vanilla `SoundEngine.IsAudioSupported` gate is the port's
+    /// always-true headless stand-in — a registered cue plays.
+    #[cfg(test)]
+    pub(crate) fn insert_test_cue(&mut self, name: &'static str) {
+        self.cues.insert(name, (1, 22050, vec![0]));
     }
 }
 
@@ -3297,24 +3366,34 @@ mod tests {
         assert!(!audio.liquid_loop_playing(1));
     }
 
-    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`, W4-g73
-    /// closeout): the 34/35 (-1, -1, 0) plays take the case bodies' stop arm
-    /// (`LegacySoundPlayer.cs:1257`/`:1287`), which the port routes through
-    /// `set_liquid_loop(ch, 0.0)` — both channels stop, a dead slot stays
-    /// dead, and the headless no-device path is a safe no-op (the C# null
-    /// guard's equivalent). `save_and_quit` calls it after the 11
-    /// (`WorldGen.cs:6703-6704` order).
+    /// `WorldGen.StopWaterfallAmbienceAudio` (`WorldGen.cs:6689-6699`) +
+    /// `StopTrackedSounds` (`:6646`/`:6715` → `SoundPlayer.StopAll`,
+    /// `SoundPlayer.cs:79-86`): the sentinel pair stops BOTH liquid
+    /// channels draw-free and the tracked pool empties. Headless there is
+    /// no sink, so the stop count is the witness seam; a tracked entry
+    /// registered through the test cue proves the pool drain. (The
+    /// W4-g24/g73 quit-stop keep-one: this supersedes the closeout's
+    /// `the_quit_stop_kills_both_liquid_loop_channels` — same stop, the
+    /// counter + RNG-neutral + drain assertions are the superset.)
     #[test]
-    fn the_quit_stop_kills_both_liquid_loop_channels() {
+    fn w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain() {
         let mut audio = Audio::new(None);
-        // Stopping dead slots is a no-op — no panic, both stay dead.
+        let mut rng = tr_core::unified_random::UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(audio.liquid_ambience_stop_count(), 0);
         audio.stop_waterfall_ambience();
-        assert!(!audio.liquid_loop_playing(0));
-        assert!(!audio.liquid_loop_playing(1));
-        // The stop seam is idempotent (the C# try/catch swallows repeats).
         audio.stop_waterfall_ambience();
-        assert!(!audio.liquid_loop_playing(0));
+        assert_eq!(audio.liquid_ambience_stop_count(), 2, "each call counts");
+        assert!(!audio.liquid_loop_playing(0), "dead slots stay dead");
         assert!(!audio.liquid_loop_playing(1));
+        assert_eq!(rng.peek(), peek, "the sentinel pair draws nothing");
+        // The tracked pool: one entry lands, StopAll clears it.
+        audio.insert_test_cue("menu_accept");
+        let style = menu_accept_style();
+        let _ = audio.play_tracked_global(style.clone());
+        assert_eq!(audio.tracked_count_for(&style), 1, "the entry landed");
+        audio.stop_tracked_sounds();
+        assert_eq!(audio.tracked_count_for(&style), 0, "StopAll cleared the pool");
     }
 
     /// S1-E-21g — the int-overload peers draw exactly ONE case pitch on

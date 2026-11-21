@@ -1213,19 +1213,29 @@ five items, each re-verified against the cited C# windows:
      fountain's water recolour does not reach the liquid/waterfall passes
      yet. End-to-end status: **place → switch → scene metric work; the
      water-style head arm is the remaining gap** (a biome-lane item).
-4. **StopWaterfallAmbienceAudio claimed from g24's deferral.** g24's tip
-   (`4c410bd1`, `task/W4-g24-sounds-worldgen`) records the 34/35 stops as
-   deferred ("no port caller"); the port DOES have the caller —
-   `saveglue::save_and_quit` (`WorldGen.SaveAndQuit` `:6701-6704`). New
-   `Audio::stop_waterfall_ambience` routes both channels through
-   `set_liquid_loop(ch, 0.0)`'s stop arm (the (-1, -1) sentinel takes
-   `LegacySoundPlayer.cs:1257`/`:1287`'s stop branch outright), called
-   after the Menu_Close 11 in the C# order. `JustQuit` (`:6627-6632`)
-   stays unported — its only C# caller is the debug chat command
-   (`ToolkitDebugCommands.cs:235`). The menu-mode mute
-   (`frame.rs`'s `game_menu` listener flag) still covers the general
-   menu case; this is the IMMEDIATE stop the C# does at quit time.
-   Witness `the_quit_stop_kills_both_liquid_loop_channels` + anchors row.
+4. **StopWaterfallAmbienceAudio — the g24/g73 quit-stop KEEP-ONE (retire
+   phase).** The closeout (`4e7e3f58`) claimed g24's recorded deferral and
+   wired `save_and_quit` → `stop_waterfall_ambience` (`:6704`), routing the
+   stop through `set_liquid_loop(ch, 0.0)`; g24's doc-sweep (`c3eccb77`,
+   tip `7ca8b087`) then landed the SAME stop PLUS the superset: the
+   `liquid_ambience_stops` headless counter, `stop_tracked_sounds`
+   (`:6715`), the full `JustQuit` port (`:6627-6662` — the `/quit` debug
+   chat command `ToolkitDebugCommands.cs:232-237`, the F3 World tab row
+   15 stand-in) and the `#[allow(dead_code)]` forward seam. **Verdict:
+   g24b is the superset — keep ONE `:6704` call site and ONE stop fn.**
+   The retire phase folds g24's shape onto this branch: the direct
+   sink-kill body (the closeout's route-through-`set_liquid_loop` would
+   no-op headless — `set_liquid_loop` gates on the decoded cue + output
+   handle BEFORE its stop arm), the counter seam, `JustQuit` + the F3
+   row, `menu_accept_style`/`tracked_count_for`/`insert_test_cue`/
+   `count_style_entries` (the witness support g24's tests need). The
+   closeout's `the_quit_stop_kills_both_liquid_loop_channels` witness is
+   retired into `w4_g24_the_ambience_stop_pair_and_the_tracked_pool_drain`
+   (its dead-slot/idempotence assertions carried over). At the family
+   merge the g24 branch's `stop_waterfall_ambience`/`just_quit` hunks are
+   ALREADY HERE — the merger keeps this branch's copies (identical
+   semantics; g24's `SecretSeed.Enable` `menu_accept_style` caller stays
+   on the g24 branch).
 5. **The retro `oldDrawWater` ambient-lava writer is now PORTED** (was the
    documented-unported item). The scan is small (`Main.cs:57615-57634` +
    the `:57932-57936` store) and has a live consumer
