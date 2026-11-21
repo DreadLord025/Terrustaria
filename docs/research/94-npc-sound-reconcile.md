@@ -890,3 +890,104 @@ Pixie hum; `NPCID.cs:11843-11847`/`:11983-11987` the fairy/hell-critter
 ids; `ContentSamples.cs:1019-1025` the d41 folds). The 232 count ran
 as a read-only `Select-String`. The one code change (the critter
 re-key + the adapted witness) is WRITTEN NOT RUN.
+
+### 14.7 The EXACT exit-LAVA fix-hunk for the e9 lane / merger (§2's quirk #2, still open on e9's tip)
+
+Re-confirmed at e9's CURRENT tip `f78613cf` (= `origin/task/W4-e9-npc-sounds-2`):
+`crates/tr-app/src/npc.rs:98` still carries `&& npc_type != 147` inside
+`honey_splash_gate` (:94), and the exit-LAVA arm at :176 still calls it —
+the SECOND 147-quirk (§2's exit-lava row, §14.1 item 8) remains MISSED.
+The C# re-read (four ≤4-line windows): `:93136` honey-entry, `:93169`
+lava-entry and `:93234` honey-exit ALL carry `this.type != 147`; ONLY
+`:93267` (lava-exit) drops it — its full term set is
+`aiStyle != 1 && type != 1 && type != 16 && type != 59 && type != 300
+&& aiStyle != 39 && !noGravity`. The quirk is latent (147 IceSlime is
+aiStyle 1, blocked by the style term) but the gate must be verbatim.
+e9 has NO test pinning the 147 gate terms (mechanical grep at
+`f78613cf`: the only 147 hits in npc.rs are the water gate :78 + the
+:65-68/:170 comments + unrelated line cites; none in
+npc_water_collision.rs), so the hunk needs no witness edit.
+
+**The ONE exact hunk** (mirrors e9's own exit-water pattern at :72/:78 —
+a flag selects the `:93267` term set; `honey_splash_gate` has exactly
+four callers :135/:144/:165/:176, all inside `water_collision_splash`;
+only the :176 exit-LAVA caller passes `true`):
+
+```diff
+--- a/crates/tr-app/src/npc.rs   (e9 tip f78613cf)
++++ b/crates/tr-app/src/npc.rs
+@@ :91-103 — the gate: flag + the 147 term
+-/// The honey/lava type gate (`:93136`/`:93169`/`:93234`/`:93267` — the
+-/// shorter set: no 376/579/68/362/364/361/445 terms, no 615 override).
++/// The honey/lava type gate (`:93136`/`:93169`/`:93234`/`:93267` — the
++/// shorter set: no 376/579/68/362/364/361/445 terms, no 615 override).
++/// THE EXIT-LAVA 147-QUIRK (f2 research/94 §2, adopted): `:93267` DROPS
++/// the `type != 147` term its entry twin `:93169` carries — `exit_lava`
++/// selects the `:93267` term set (latent: 147 is aiStyle 1).
+ #[allow(dead_code)] // reachable only through the wiring-gated decision fn
+-fn honey_splash_gate(npc_type: i32, ai_style: i32, no_gravity: bool) -> bool {
++fn honey_splash_gate(npc_type: i32, ai_style: i32, no_gravity: bool, exit_lava: bool) -> bool {
+     ai_style != 1
+         && npc_type != 1
+         && npc_type != 16
+-        && npc_type != 147
++        && (exit_lava || npc_type != 147)
+         && npc_type != 59
+         && npc_type != 300
+         && ai_style != 39
+         && !no_gravity
+ }
+@@ :135 / :144 / :165 — the honey-entry / lava-entry / honey-exit callers (identical one-liners)
+-                if honey_splash_gate(npc_type, ai_style, no_gravity) {
++                if honey_splash_gate(npc_type, ai_style, no_gravity, false) {
+@@ :176 — the exit-LAVA caller (the `:93256-93270` arm)
+-        } else if honey_splash_gate(npc_type, ai_style, no_gravity) {
++        } else if honey_splash_gate(npc_type, ai_style, no_gravity, true) {
+```
+
+(The :144 and :176 callers share the same `        } else if` indent —
+the hunk applies :144 `false` in the `wet_now` half, :176 `true` in the
+`was_wet` half; :135/:165 are the 16-space `if` lines.)
+
+**Merger note:** if the §4/§9b DROP list is applied as adjudicated
+(e9's decision fn retires, f2's `water_collision_sounds` is the keeper),
+this hunk is MOOT — f2 already carries both quirks verbatim as two
+distinct gates (`lava_entry_gate` :1392-1399 WITH 147 at :1395,
+`lava_exit_gate` :1400-1406 WITHOUT, ambient_sound.rs, cited
+`:93169`/`:93267`), witnessed by the §2 quirk test
+(`ambient_sound.rs:2687-2698` region). Apply this hunk ONLY if e9's
+decision survives any partial merge.
+
+## 15. SEALED — the NPC-sound-family one-paragraph (final)
+
+> **🔒 SEALED — research/94 is CLOSED. No further phases, no open questions.**
+> The NPC-sound family's union branch is **f2-canonical**: f2's
+> `ambient_sound.rs` bank/dispatch/idle-ladder/critter-key (`cs_id`,
+> `c3e5b814`) and the `water_collision_sounds` pass — carrying BOTH
+> 147-quirks verbatim (`water_exit_gate` :1375, `lava_exit_gate` :1400)
+> plus the shimmer-latch arm that absorbs f47's buff-353 add
+> (`:93068-93074`) — are the keepers of every contested site; **e9 is a
+> wholesale DROP** (§4 + §9b items 1-12: the water module, the decision
+> fn + gates, the 25 tail helpers, the 14 witnesses, the wet-field
+> quintet + tail-cue duplicates), its two fidelity fixes adopted both
+> ways (exit-water 147 on e9 `712e3c54`, critter cs_id on f2 `c3e5b814`)
+> and its one surviving gap — the exit-LAVA `type != 147` at
+> `honey_splash_gate`, still present at tip `f78613cf` — closed either by
+> the DROP or by §14.7's exact hunk; the **d-band machines keep their
+> sites as one-call consumers** of f2's bank (d33's wired-114 out.sounds
+> per §13's keep-one map, d38's NpcDeath55 repointed per §12's one-line
+> hunk, d41 rows 494-506 with the Crawdad2→494 feed fix cross-noted,
+> d42's tail kinds unwired stand-ins, d40 data-only, d43 zero — the 27
+> tail sites stay staged until their machines land), and the two
+> unclaimed sites stay staged in f2's own module; the mechanical
+> 232-PlaySound count (§13, ledger 163+32+8+2+27) is the family's final
+> census.
+
+### 15.1 Verification (this seal phase)
+
+Code-only: **no cargo/tests/rustfmt/graphify invoked.** Direct reads
+only: e9's `npc.rs:55-184` window at `f78613cf` via `git show` (the
+gate fns + the four callers), the mechanical 147-grep at that tip, and
+the C# `NPC.cs` windows `:93135-93138`, `:93168-93171`, `:93233-93236`,
+`:93256-93273` (≤18 lines each) plus f2's own gate region
+(`ambient_sound.rs:1375-1406`) at HEAD `a702ad34f`. No code changed.
