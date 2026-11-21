@@ -153,6 +153,7 @@
 //! | 639-646 | `:86058-86075` | the critter family: flying fish 224, eyeball flying fish 587, turtle 616 |
 //! | 647-654 | `:86079-86089` | the critter family: jungle turtle 617, sea turtle 625 (completes the block) |
 //! | 655-663 | `:86108-86125` | the penguin family 148/149/168/470 death (per-type gore pairs/triple) |
+//! | 664-665 | `:86142-86143` | the 361 Frog death (2 gores 551/552) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4126,6 +4127,30 @@ fn penguin_family_death(
     }
 }
 
+/// The 361 Frog death (`NPC.cs:86138-86143`, sites 664-665): the 10-dust
+/// type-5 burst, then the 2 gores 551/552 at position. Scale defaults to 1.
+fn frog_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..10 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 551, 1.0); // :86142
+    gore.new_gore(rng, world, pos, vel, 552, 1.0); // :86143
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -4617,6 +4642,10 @@ pub fn hit_effect_c(
     // `:86092-86127` — the penguin family arm (sites 655-663).
     if (npc_type == 148 || npc_type == 149 || npc_type == 168 || npc_type == 470) && npc.hp <= 0 {
         penguin_family_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86128-86144` — the 361 Frog arm (sites 664-665).
+    if npc_type == 361 && npc.hp <= 0 {
+        frog_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7342,6 +7371,20 @@ mod tests {
             let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "penguin {ty}");
         }
+    }
+
+    /// `NPC.cs:86142-86143` — the Frog death: the 2 gores 551/552 at
+    /// position, after the 10-dust type-5 burst.
+    #[test]
+    fn w4_f10_the_frog_death_spawns_the_two_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 24.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(617);
+        frog_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![551, 552]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
