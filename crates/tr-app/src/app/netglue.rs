@@ -862,10 +862,15 @@ impl App {
     }
 
     /// The move-driven section catch-up (the C#'s per-tick
-    /// `RemoteClient.CheckSection`, `RemoteClient.cs:126-188`): the sections
-    /// each remote peer lacks, collected without borrowing `self` mutably
-    /// (the send pass runs inside the `net_tick` match).
-    fn pending_sections(&self, server: &net::Server) -> Vec<(u32, i32, i32)> {
+    /// `RemoteClient.CheckSection`, `RemoteClient.cs:126-188`, called from
+    /// `Main.UpdateServer`'s per-player loop `Main.cs:64620-64623`): the
+    /// sections each remote peer lacks, collected without borrowing `self`
+    /// mutably (the send pass runs inside the `net_tick` match). Returns
+    /// `(id, sx, sy, announce)` — `announce` is the count of missing sections
+    /// in the fluff box, non-zero only on the FIRST missing section of a
+    /// peer's pass (`RemoteClient.cs:177-181`: one `9 Status` before the
+    /// `SendSection` walk, `Lang.inter[44]` "Receiving tile data").
+    fn pending_sections(&self, server: &net::Server) -> Vec<(u32, i32, i32, i32)> {
         let (w, h) = (self.world.width, self.world.height);
         let (gx, gy) = (net::sections_x(w), net::sections_y(h));
         let mut out = Vec::new();
@@ -873,10 +878,25 @@ impl App {
             server.ensure_sections(*id, w, h);
             let psx = net::section_x(p.x as i32 / tr_core::TILE_PX as i32).clamp(0, gx - 1);
             let psy = net::section_y(p.y as i32 / tr_core::TILE_PX as i32).clamp(0, gy - 1);
+            // `CheckSection_ForClient`'s fluff box (`RemoteClient.cs:158-176`):
+            // count the missing sections first — the `9` announces the count.
+            let mut missing = 0;
             for sy in (psy - 1).max(0)..=(psy + 1).min(gy - 1) {
                 for sx in (psx - 1).max(0)..=(psx + 1).min(gx - 1) {
                     if !server.is_section_sent(*id, sx, sy) {
-                        out.push((*id, sx, sy));
+                        missing += 1;
+                    }
+                }
+            }
+            if missing == 0 {
+                continue; // `RemoteClient.cs:177-180` — nothing to stream
+            }
+            let mut announced = false;
+            for sy in (psy - 1).max(0)..=(psy + 1).min(gy - 1) {
+                for sx in (psx - 1).max(0)..=(psx + 1).min(gx - 1) {
+                    if !server.is_section_sent(*id, sx, sy) {
+                        out.push((*id, sx, sy, if announced { 0 } else { missing }));
+                        announced = true;
                     }
                 }
             }
@@ -1214,6 +1234,18 @@ impl App {
             return;
         };
         self.net_last_recv = Instant::now();
+        // `MessageBuffer.GetData`'s head (`MessageBuffer.cs:144-147`): EVERY
+        // received message counts while a load status is pending — not just
+        // the tile blocks. The completion walk (`Netplay.cs:526-534`) clears
+        // the status once the count reaches the max.
+        if self.net_status_max > 0 {
+            self.net_status_count += 1;
+            if self.net_status_count >= self.net_status_max {
+                self.net_status_text = String::new();
+                self.net_status_max = 0;
+                self.net_status_count = 0;
+            }
+        }
         match msg {
             // `case 37` — the server wants the password; auto-pass is on for
             // the join the user started (`MessageBuffer.cs:2203-2216`).
@@ -1250,11 +1282,11 @@ impl App {
                 self.net_state = net::client_state::SPAWN_REQUESTED;
             }
             // `case 9` — the load progress (`MessageBuffer.cs:143-146` counts
-            // received messages while `StatusMax > 0`).
+            // EVERY received message while `StatusMax > 0`; the writer's max
+            // ACCUMULATES, `MessageBuffer.cs:880` `StatusMax += ReadInt32`).
             S2c::Status { text, max } => {
-                self.net_status_text = text;
-                self.net_status_max = max;
-                self.net_status_count = 0;
+                self.net_status_max += max; // `:880` — `+=`, not `=`
+                self.net_status_text = text; // `:881`
                 if let Some(m) = self.menu.as_mut() {
                     m.connecting = true;
                 }
@@ -1272,9 +1304,8 @@ impl App {
                 } else {
                     self.net_pending_sections.push(*block);
                 }
-                if self.net_status_max > 0 {
-                    self.net_status_count += 1;
-                }
+                // The status count rides the GetData head above
+                // (`MessageBuffer.cs:144-147` counts EVERY message).
             }
             // `case 20` — a rectangle of tile changes; applied straight into
             // the tiles (the C#'s reader writes the fields, no
@@ -2100,6 +2131,10 @@ impl App {
         self.net_state = net::client_state::NOT_CONNECTED;
         self.remote_players.clear();
         self.local_id = 0;
+        // W4-c28: the load status clears on the drop (`Netplay.cs:573-575`).
+        self.net_status_count = 0;
+        self.net_status_max = 0;
+        self.net_status_text = String::new();
         if self.menu.is_none() {
             let mut m = menu::Menu::new(self.settings.clone(), self.player_name.clone());
             m.error = Some(format!("Disconnected: {reason}"));
@@ -4729,6 +4764,49 @@ mod handshake_tests {
             9,
             "the approached section streamed"
         );
+        if let NetRole::Host(server) = &host_app.net {
+            assert!(server.is_section_sent(1, 4, 3));
+        }
+    }
+
+    /// W4-c28: the move-driven catch-up announces its missing-section count
+    /// as ONE `9 Status` before the `SendSection` walk
+    /// (`RemoteClient.cs:177-188`), and the client's status count rides the
+    /// GetData head (`MessageBuffer.cs:144-147` — every message counts, the
+    /// `9` writer ACCUMULATES the max `:880`); the completion walk clears it
+    /// (`Netplay.cs:528-533`).
+    #[test]
+    fn the_section_catch_up_announces_a_status_and_the_count_completes() {
+        let (mut host_app, mut client_app) = big_world_pair();
+        client_app.player = Some(player::Player::spawn(&client_app.world));
+        pump(&mut host_app, &mut client_app, 15);
+        // Move the peer to the far corner: the fluff box around section
+        // (4,3) clips to (3..4, 2..3) — 4 sections, none latched.
+        {
+            let peer = host_app.remote_players.get_mut(&1).expect("the client peer");
+            peer.x = 860.0 * tr_core::TILE_PX;
+            peer.y = 560.0 * tr_core::TILE_PX;
+        }
+        // One host cadence tick collects the pass: the first entry carries
+        // the announce count, the rest ride 0 (one 9 per pass).
+        let pending = {
+            let NetRole::Host(server) = &host_app.net else { panic!("host lost its role") };
+            host_app.pending_sections(server)
+        };
+        assert_eq!(pending.len(), 4, "the clipped fluff box is 2x2");
+        assert_eq!(pending[0].3, 4, "the first missing section announces the count");
+        assert!(pending[1..].iter().all(|p| p.3 == 0), "one 9 per pass");
+        // Drive the wire: the client's status completes and clears. The
+        // host's 10 Hz tick also streams the host's OWN snapshot + time +
+        // item messages, all of which count toward the status
+        // (`MessageBuffer.cs:144-147` counts EVERY message) — 25 frames is
+        // well past the 4-section announce.
+        pump(&mut host_app, &mut client_app, 25);
+        assert_eq!(
+            client_app.net_status_max, 0,
+            "the completion walk cleared the status (Netplay.cs:528-533)"
+        );
+        assert!(client_app.net_status_text.is_empty());
         if let NetRole::Host(server) = &host_app.net {
             assert!(server.is_section_sent(1, 4, 3));
         }
