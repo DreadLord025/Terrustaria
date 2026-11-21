@@ -7150,16 +7150,19 @@ impl Npc {
                     crate::npc_findframe_extra12::FindFrameExtra12Kind::DD2Betsy,
                 );
             }
-            // The WitherBeast: `Main.npcFrameCount[568/569]` = 17 rows.
+            // The WitherBeast T2 (`NPC.cs:67025-67257`, the 17-row
+            // sheet): the ai[0] > 0 aura ladder (the 27-rung 5-tick
+            // machine + the >= 270 counter-10 tail) + the walk (air 4,
+            // idle 6, the |vx| >= 56 reset + counter/8 row 0-6). W4-f27
+            // slice 12: the v1 `(vx != 0) + 0.6 >= 8` free strip was
+            // WRONG (the M4-EVENT-19 stand-in — no aura ladder, no
+            // air/idle pins); the arm delegates to the extra-12 machine
+            // (the 549-fix bridge shape). cs_id 568 via the bestiary
+            // net_id row.
             NpcKind::DD2WitherBeast => {
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(
-                            crate::render::entities::texture_net_id(self.kind),
-                        );
-                }
+                self.find_frame_extra12(
+                    crate::npc_findframe_extra12::FindFrameExtra12Kind::DD2WitherBeastT2,
+                );
             }
             // The tavernkeeper (`NPC.cs:68616` in the humanoid group,
             // the 25-row sheet): the TOWN walk — num57 =
@@ -7234,16 +7237,16 @@ impl Npc {
                         );
                 }
             }
+            // The WitherBeast T3 (`NPC.cs:67025-67257`, the 17-row
+            // sheet): the SAME aura-ladder + walk machine as the T2
+            // (the shared case). W4-f27 slice 12: the v1 free strip was
+            // WRONG; the arm delegates to the extra-12 machine (the
+            // 549-fix bridge shape). cs_id 569 via the bestiary net_id
+            // row.
             NpcKind::DD2WitherBeastT3 => {
-                // `Main.npcFrameCount[568/569]` = 17.
-                self.frame_counter += (self.vx != 0.0) as i32 as f32 + 0.6;
-                if self.frame_counter >= 8.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = (self.frame + 1)
-                        % crate::render::entities::npc_rows(
-                            crate::render::entities::texture_net_id(self.kind),
-                        );
-                }
+                self.find_frame_extra12(
+                    crate::npc_findframe_extra12::FindFrameExtra12Kind::DD2WitherBeastT3,
+                );
             }
             // The DD2 drakins (`NPC.cs:67711-67755`, the 16-row sheet):
             // the ai[1] > 0 && ai[0] > 0 attack ladder rows 10-15 (the
@@ -27855,6 +27858,71 @@ mod s1_d_3b_tests {
         n.rotation = 0.5;
         n.find_frame();
         assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5));
+    }
+
+    #[test]
+    fn f27s12_the_wither_beasts_ride_the_extra12_aura_ladder() {
+        // W4-f27 slice 12: the wither beasts' v1 `(vx != 0) + 0.6 >= 8`
+        // free strip (the M4-EVENT-19 stand-in) was WRONG — the C#'s
+        // ai[0] > 0 aura ladder (the 27-rung 5-tick machine + the
+        // >= 270 counter-10 tail) + the walk (air 4, idle 6, the |vx|
+        // >= 56 reset). The arms now delegate to the extra-12 machine;
+        // expectations identical to the e12 module witness (mechanical
+        // replay). cs_id 568/569 via the bestiary net_id rows.
+        assert_eq!(NpcKind::DD2WitherBeast.cs_id(), 568);
+        assert_eq!(NpcKind::DD2WitherBeastT3.cs_id(), 569);
+        for kind in [NpcKind::DD2WitherBeast, NpcKind::DD2WitherBeastT3] {
+            // The aura ladder (ai0 1): the entry row-0 reset fires, the
+            // first tick is row 7 counter 1; the 5-tick rungs 8 at 5,
+            // 9 at 10, 10 at 15, then the 7/8/9/10 cycle.
+            let mut n = bare(kind);
+            n.ai[0] = 1.0;
+            n.frame = 0;
+            n.frame_counter = 99.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (7, 1.0));
+            // The >= 270 tail: counter 268 → 269 (row 14), then 270 →
+            // 260 (row 14, the counter-10 cycle).
+            let mut n = bare(kind);
+            n.ai[0] = 1.0;
+            n.frame = 7;
+            n.frame_counter = 268.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (14, 269.0));
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (14, 260.0));
+            // The walk (ai0 0): vx 4 — the (int)(counter/8) row, the
+            // >= 56 reset tick shows row 0.
+            let mut n = bare(kind);
+            n.vx = 4.0;
+            let mut rows = Vec::new();
+            for _ in 0..15 {
+                n.find_frame();
+                rows.push(n.frame);
+            }
+            assert_eq!(rows, vec![0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 0, 0]);
+            // The air pin row 4, the idle snap row 6.
+            let mut n = bare(kind);
+            n.vx = 4.0;
+            n.vy = 2.0;
+            n.frame = 9;
+            n.frame_counter = 40.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (4, 0.0));
+            n.vy = 0.0;
+            n.vx = 0.0;
+            n.find_frame();
+            assert_eq!((n.frame, n.frame_counter), (6, 0.0));
+            // The aura ladder's UNCONDITIONAL sprite copy; no rotation
+            // write (the bridge copies it back unchanged).
+            let mut n = bare(kind);
+            n.ai[0] = 1.0;
+            n.facing = -1;
+            n.sprite_dir = 1;
+            n.rotation = 0.5;
+            n.find_frame();
+            assert_eq!((n.sprite_dir, n.rotation), (-1, 0.5));
+        }
     }
 
     #[test]
