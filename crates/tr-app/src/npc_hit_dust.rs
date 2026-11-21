@@ -452,6 +452,16 @@
 //! - 84025 — 469 (`:84019-84026`): ×100 dust 5.
 //! - 84047 — 463 (`:84041-84048`): ×100 dust 5.
 //! - 84069 — 461 (`:84063-84070`): ×100 dust 5.
+//! Batch 32 (the final live census tail):
+//! - 84091 — 462 (`:84085-84092`): ×100 dust 5.
+//! - 84287 — 381 (`:84281-84288`): the martian divisor, dust 227.
+//! - 87612 — the EoW segments 95/96/97 (`:87606-87613`): ×50 dust 5.
+//! - 89173 — the Skeletron hands 35/36/68 (`:89167-89174`): ×100 dust
+//!   26.
+//! - 88648 — the Deerclops 694 (`:88641-88650`): NO dust — the LIVE
+//!   arm's gore siblings' ARGUMENT draws ride here (the clamped
+//!   `max(1,min(5,(int)(dmg/lifeMax·3)))` count, 2 NextFloat per gore;
+//!   the bodies are d55's).
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1643,6 +1653,45 @@ pub fn replay_hit_dust(
         466 | 468 | 469 | 463 | 461 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
                 live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:84085-84092` — 462: ×100 dust 5.
+        462 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:84281-84288` — 381: the martian divisor, dust 227.
+        381 => {
+            let bound = s.dmg / (s.life_max * 50) as f64;
+            let mut count = 0u32;
+            while (count as f64) < bound {
+                live_dust(s, 227, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+                count += 1;
+            }
+        }
+        // `:87606-87613` — the EoW segments 95/96/97: ×50 dust 5.
+        95 | 96 | 97 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 50.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:89167-89174` — the Skeletron hands (35/36/68): ×100 dust 26.
+        35 | 36 | 68 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 100.0) {
+                live_dust(s, 26, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:88641-88650` — the Deerclops: NO live dust; the gore
+        // siblings' ARGUMENT draws ride here — the clamped count
+        // max(1, min(5, (int)(dmg/lifeMax·3))), 2 NextFloat per gore
+        // (the position expression, `:88648`; the bodies are d55's).
+        694 => {
+            let raw = (s.dmg / s.life_max as f64 * 3.0) as i32;
+            let count = raw.clamp(1, 5);
+            for _ in 0..count {
+                let _ = rng.next_float();
+                let _ = rng.next_float();
             }
         }
         // `:85027-85034` — 225: ×100 dust 4, alpha 100, the blue tint.
@@ -4101,5 +4150,51 @@ mod tests {
             replay_hit_dust(&s2, &mut r2, &mut p2, &ctx, &world);
             assert_eq!(p2.slots().iter().filter(|d| d.active).count() as u32, want, "type {t}");
         }
+    }
+
+    /// W4-g62 batch 32 — the Deerclops live gore-arg clamp (`NPC.cs:
+    /// 88645-88648`): max(1,min(5,(int)(dmg/lifeMax·3))) × 2 NextFloat,
+    /// NO dust; the Skeletron hands ×100 dust 26; 381's martian divisor.
+    #[test]
+    fn w4_g62_the_deerclops_clamp_and_the_final_tail() {
+        let world = air();
+        let ctx = ctx();
+        // A tiny hit still draws ONE gore's 2 floats (the max(1,..)).
+        let tiny = snap(694, 100, 100, 1.0);
+        let mut rng = UnifiedRandom::new(269);
+        let mut dust = DustPool::new();
+        replay_hit_dust(&tiny, &mut rng, &mut dust, &ctx, &world);
+        let mut twin = UnifiedRandom::new(269);
+        let _ = twin.next_float();
+        let _ = twin.next_float();
+        assert_eq!(rng, twin);
+        assert!(dust.slots().iter().all(|d| !d.active), "no live dust");
+        // An overkill clamps at 5 gores = 10 floats.
+        let big = snap(694, 100, 100, 9999.0);
+        let mut r2 = UnifiedRandom::new(269);
+        let mut p2 = DustPool::new();
+        replay_hit_dust(&big, &mut r2, &mut p2, &ctx, &world);
+        let mut t2 = UnifiedRandom::new(269);
+        for _ in 0..10 {
+            let _ = t2.next_float();
+        }
+        assert_eq!(r2, t2);
+        // The hands: ×100 dust 26; the EoW segments ×50 dust 5.
+        for (t, dt, mult) in [(35, 26, 100.0), (36, 26, 100.0), (68, 26, 100.0), (95, 5, 50.0), (462, 5, 100.0)] {
+            let s = snap(t, 100, 100, 10.0);
+            let want = hit_count(10.0, 100, mult);
+            let mut r3 = UnifiedRandom::new(269);
+            let mut p3 = DustPool::new();
+            replay_hit_dust(&s, &mut r3, &mut p3, &ctx, &world);
+            let live: Vec<_> = p3.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
+        }
+        let m = snap(381, 300, 300, 15000.0); // divisor → 1
+        let mut r4 = UnifiedRandom::new(269);
+        let mut p4 = DustPool::new();
+        replay_hit_dust(&m, &mut r4, &mut p4, &ctx, &world);
+        assert_eq!(p4.slots().iter().filter(|d| d.active).count(), 1);
+        assert!(p4.slots().iter().filter(|d| d.active).all(|d| d.dust_type == 227));
     }
 }
