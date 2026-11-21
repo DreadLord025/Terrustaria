@@ -242,6 +242,59 @@ pub struct TooltipContext<'a> {
     /// `Main.DiscoR/G/B` (`Main.cs:20564-20567`): the −12 expert name
     /// colour; the caller passes the shared cycle (`App.disco`).
     pub disco: [u8; 3],
+    /// `Item.favorited` (`Main.cs:20645-20663`): the favourite rows — the
+    /// loadout-share arm's "Shared with other loadouts" or the plain
+    /// tip[56]/tip[57] pair.
+    pub favorited: bool,
+    /// `Item.tooltipContext` (`ItemSlot.cs:3184`): the hovered slot's
+    /// `ItemSlot.Draw` context — 8/10 worn armour, 9/11 social vanity,
+    /// 8-12 the loadout-share contexts. −1 = no slot context (the
+    /// crafting-recipe hover passes 22).
+    pub context: i32,
+    /// The open bank's index when `Player.chest` is −2..−5
+    /// (`bank::bank_for_chest`): the favourite row's
+    /// `IsBlockedFromTransferIntoChest` arm (`Main.cs:20659`).
+    pub open_bank: Option<usize>,
+    /// `Player.Settings.ShowLoadoutShareHint` (`Player.cs:372`, static
+    /// ctor true `:412`): the share-hint row (`Main.cs:21312`).
+    pub show_loadout_share_hint: bool,
+}
+
+/// The world-side gates the tooltip rows read (`Main.cs:20961-21031`) —
+/// the `draw_hud` caller derives them from the `World` once per frame.
+#[derive(Clone, Copy, Debug)]
+pub struct TooltipWorld {
+    /// `NPC.downedPlantBoss` (`Main.cs:20961`).
+    pub downed_plant_boss: bool,
+    /// `Main.tenthAnniversaryWorld` (`Main.cs:20973`).
+    pub anniversary: bool,
+    /// `Main.getGoodWorld` (`Main.cs:20978`).
+    pub get_good_world: bool,
+    /// `SpecialSeedFeatures.Mechdusa` (`SpecialSeedFeatures.cs:119-128`).
+    pub mechdusa: bool,
+    /// `Main.player[myPlayer].downedDD2EventAnyDifficulty`
+    /// (`Main.cs:21000`) — the port derives it from the three tier
+    /// latches (`world.rs:450-452`, the `sentry.rs:341` precedent).
+    pub downed_dd2_any: bool,
+    /// `Main.expertMode` (`Main.cs:21005`) — the player's difficulty flag
+    /// (`buffs.expert_mode`, the `world_sim/items.rs:1556` precedent).
+    pub expert_mode: bool,
+    /// `Main.DiscoR/G/B` — the shared cycle (`App.disco`).
+    pub disco: [u8; 3],
+}
+
+impl Default for TooltipWorld {
+    fn default() -> Self {
+        Self {
+            downed_plant_boss: false,
+            anniversary: false,
+            get_good_world: false,
+            mechdusa: false,
+            downed_dd2_any: false,
+            expert_mode: false,
+            disco: [255, 0, 0],
+        }
+    }
 }
 
 impl Default for TooltipContext<'_> {
@@ -262,6 +315,10 @@ impl Default for TooltipContext<'_> {
             expert_mode: false,
             master_color: 1.0,
             disco: [255, 0, 0],
+            favorited: false,
+            context: -1,
+            open_bank: None,
+            show_loadout_share_hint: true,
         }
     }
 }
@@ -315,6 +372,15 @@ pub fn item_tooltip_lines(
     // (`:20333-20350`): the prefix comparison (`:21124`) reads the
     // PREFIX-only knockback, while the word tier reads the scaled one.
     let old_kb = ps.knock_back;
+    // `:20636-20663` — the favourite / loadout-share head. `flag` latches
+    // the loadout-share arm (it suppresses the equipable row, `:20816`);
+    // `flag2` latches the unfavourited shareable slot (the share-hint row
+    // at the tail, `:21312`). The port has no loadout system, so
+    // `GetSharedLoadoutItem` never answers (`ItemSlot.cs:3171-3174`'s
+    // shared-item arm is unreachable) — the favourited arm prints
+    // `UI.ItemLoadoutShared` directly.
+    let mut loadout_share_flag = false;
+    let mut share_hint_flag = false;
     let mut lines: Vec<(String, [f32; 4])> = vec![(
         hover_name(kind, ctx.prefix, ctx.stack),
         // `:20328-20332` — the expert items force rare −12 (the disco
@@ -331,6 +397,35 @@ pub fn item_tooltip_lines(
             item_name_color(ps.rare)
         },
     )];
+    if ctx.context >= 0 && super::tooltip_sets::can_loadout_share_at(ctx.context) {
+        if ctx.favorited {
+            lines.push((
+                crate::lang::text("UI.ItemLoadoutShared"),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
+        } else {
+            share_hint_flag = true;
+        }
+        loadout_share_flag = true;
+    } else if ctx.favorited {
+        lines.push((crate::lang::tip(56), [1.0, 1.0, 1.0, 1.0]));
+        lines.push((crate::lang::tip(57), [1.0, 1.0, 1.0, 1.0]));
+        // `:20659-20662` — the favorited bank-bound items refuse their own
+        // container (`ChestUI.IsBlockedFromTransferIntoChest`).
+        if super::tooltip_sets::blocked_from_transfer_into_chest(kind, ctx.open_bank) {
+            lines.push((
+                crate::lang::text("UI.ItemCannotBePlacedInsideItself"),
+                [1.0, 1.0, 1.0, 1.0],
+            ));
+        }
+    }
+    // `:20664-20668` — the social-slot row: contexts 9/11 set `social`
+    // (`ItemSlot.cs:3191-3194`); the vanity kinds and the info accessories
+    // / music boxes (hasVanityEffects) keep their function.
+    let social = matches!(ctx.context, 9 | 11);
+    if social && !d.vanity && !super::tooltip_sets::has_vanity_effects(kind) {
+        lines.push((crate::lang::tip(61), [1.0, 1.0, 1.0, 1.0]));
+    }
     // `:20669` — the damage gate: `damage > 0 && (!notAmmo || useStyle != 0)
     // && (type < 71 || type > 74 || HasItem(905))`. The coins 71-74 are
     // notAmmo placeables — their damage row only shows while the Coin Gun
@@ -498,9 +593,8 @@ pub fn item_tooltip_lines(
     // `:20816-20830` — the equipable row. The C#'s gate also admits the
     // hook projectiles (`Main.projHook[item.shoot]`), the mounts
     // (`item.mountType != -1`) and the light / vanity pets. `flag` is the
-    // loadout-share arm's latch (`:20653`) — the favourite/loadout family
-    // sets it; until then it stays false (the plain-inventory default).
-    let loadout_share_flag = false;
+    // loadout-share arm's latch (`:20653`) — a shared slot never prints
+    // the equipable row.
     let hook = d
         .projectile
         .map_or(false, |p| crate::projectile_id::is_hook_projectile(p as i32));
@@ -757,6 +851,55 @@ pub fn item_tooltip_lines(
     // `:21032-21265` — the prefix comparison rows (the red/green deltas
     // against a fresh SetDefaults copy) + the accessory fixed rows.
     append_prefix_lines(d, &ps, old_kb, ctx.prefix, &mut lines);
+    // `:21267-21311` — the armor-set bonus row. `wornArmor` is context 8
+    // (`ItemSlot.cs:3188-3189`): the worn piece queries the local player's
+    // equipped head/body/legs and picks the best set (`:21280-21306`);
+    // every other context prints the single-piece grey row.
+    if let Some((row, result)) = crate::armor_sets::best_worn_set(
+        kind as i32,
+        ctx.player.map_or(0, |p| p.equipped[0] as i32),
+        ctx.player.map_or(0, |p| p.equipped[1] as i32),
+        ctx.player.map_or(0, |p| p.equipped[2] as i32),
+    ) {
+        if ctx.context != 8 {
+            lines.push((
+                crate::armor_sets::tooltip_for_single_piece(row, kind as i32),
+                // `new Color(130, 130, 130, 190)` (`:21275`).
+                super::color::tint([130, 130, 130, 190]),
+            ));
+        } else {
+            let color = if result.complete() {
+                // `Color.LimeGreen` (`:21307`) = (50, 205, 50).
+                super::color::tint([50, 205, 50, 255])
+            } else {
+                super::color::tint([130, 130, 130, 255])
+            };
+            lines.push((
+                crate::armor_sets::tooltip_for_worn_armor(
+                    row,
+                    ctx.player.map_or(0, |p| p.equipped[0] as i32),
+                    ctx.player.map_or(0, |p| p.equipped[1] as i32),
+                    ctx.player.map_or(0, |p| p.equipped[2] as i32),
+                    result,
+                ),
+                color,
+            ));
+        }
+    }
+    // `:21312-21317` — the loadout share hint (flag2 && the setting), in
+    // `Main.OurFavoriteColor` (255, 231, 69) at alpha 190 (`Main.cs:66748`).
+    if share_hint_flag && ctx.show_loadout_share_hint {
+        lines.push((
+            crate::lang::text("UI.ItemLoadoutShareHint"),
+            super::color::tint([255, 231, 69, 190]),
+        ));
+    }
+    // `:21318-21333` — the journey creative-sacrifice rows: CONSTANTS-OFF
+    // (the port has no journey difficulty, `Main.LocalPlayer.difficulty
+    // == 3` never holds — the `player.rs:4494` precedent).
+    // `:21334-21342` — `Item.BestiaryNotes`: only the bestiary's item
+    // cache ever writes the field (`UIBestiaryInfoItemLine.cs:155`); the
+    // port's bestiary drop rows never build an item tooltip — cited drop.
     lines
 }
 
@@ -959,10 +1102,14 @@ pub fn draw_item_tooltip(
     let tint = pulse.text;
     let mut line_y = 0.0;
     for (text, color) in &lines {
+        // `:20406` — `(byte)(channel * mouseTextColor/255f)` per channel
+        // (truncated), alpha the RAW `mouseTextColor`. The byte truncation
+        // matters for the sub-white row colours (the grey set-bonus row,
+        // the red/green prefix deltas).
         let line = [
-            color[0] * tint,
-            color[1] * tint,
-            color[2] * tint,
+            (color[0] * 255.0 * tint) as u8 as f32 / 255.0,
+            (color[1] * 255.0 * tint) as u8 as f32 / 255.0,
+            (color[2] * 255.0 * tint) as u8 as f32 / 255.0,
             tint,
         ];
         // `ChatManager.DrawColorCodedStringWithShadow` (`ChatManager.cs:333-344`):
@@ -2047,5 +2194,166 @@ mod tests {
         );
         // The word tier reads the glove-scaled 12.65 → tip[22].
         assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(22)), "{rows:?}");
+    }
+
+    // --- W4-e16 family 4: favourite/social/loadout + armor-set + hint ---------
+
+    /// `Main.cs:20655-20663`: the favorited grid item prints tip[56]/[57];
+    /// the favorited Money Trough 3213 with the piggy bank open adds the
+    /// "Placing into itself will be blocked" row.
+    #[test]
+    fn w4_e16_the_favorite_rows_and_the_bank_block() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let sword = crate::registry::get(4).expect("the iron broadsword row");
+        let rows = item_tooltip_lines(
+            4,
+            sword,
+            TooltipContext { favorited: true, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(56)), "{rows:?}");
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(57)));
+        let trough = crate::registry::get(3213).expect("the money trough row");
+        let rows = item_tooltip_lines(
+            3213,
+            trough,
+            TooltipContext { favorited: true, open_bank: Some(0), ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, _)| *t == crate::lang::text("UI.ItemCannotBePlacedInsideItself")),
+            "{rows:?}"
+        );
+        // The same item over a world chest (no bank) keeps the plain pair.
+        let rows = item_tooltip_lines(
+            3213,
+            trough,
+            TooltipContext { favorited: true, ..Default::default() },
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::text("UI.ItemCannotBePlacedInsideItself"))
+        );
+    }
+
+    /// `Main.cs:20638-20654` + `:20816`: a shareable context (8-12) latches
+    /// `flag` — the favorited piece prints UI.ItemLoadoutShared and the
+    /// equipable row drops; the unfavourited piece latches flag2 (the
+    /// share hint at the tail).
+    #[test]
+    fn w4_e16_the_loadout_share_arm_suppresses_the_equipable_row() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let helmet = crate::registry::get(123).expect("the meteor helmet row");
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { context: 8, favorited: true, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(t, _)| *t == crate::lang::text("UI.ItemLoadoutShared")),
+            "{rows:?}"
+        );
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(23)));
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(56)));
+        // The unfavourited shareable slot: the hint row, OurFavoriteColor
+        // at alpha 190 (`Main.cs:21315`, `Main.cs:66748`).
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { context: 8, ..Default::default() },
+        );
+        let hint = rows
+            .iter()
+            .find(|(t, _)| *t == crate::lang::text("UI.ItemLoadoutShareHint"))
+            .expect("the share hint");
+        assert_eq!(hint.1, super::color::tint([255, 231, 69, 190]));
+        // The setting off drops the hint.
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { context: 8, show_loadout_share_hint: false, ..Default::default() },
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::text("UI.ItemLoadoutShareHint"))
+        );
+    }
+
+    /// `Main.cs:20664-20668`: the social vanity slot (context 9/11) prints
+    /// tip[61] — except the vanity kinds and the hasVanityEffects kinds
+    /// (the Compass 393 keeps its function).
+    #[test]
+    fn w4_e16_the_social_row_skips_the_vanity_and_info_kinds() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let helmet = crate::registry::get(123).expect("the meteor helmet row");
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { context: 9, ..Default::default() },
+        );
+        assert!(rows.iter().any(|(t, _)| *t == crate::lang::tip(61)), "{rows:?}");
+        let compass = crate::registry::get(393).expect("the compass row");
+        let rows = item_tooltip_lines(
+            393,
+            compass,
+            TooltipContext { context: 9, ..Default::default() },
+        );
+        assert!(
+            !rows.iter().any(|(t, _)| *t == crate::lang::tip(61)),
+            "the info accessory keeps its function: {rows:?}"
+        );
+        let box_row = crate::registry::get(562).expect("the music box row");
+        let rows = item_tooltip_lines(
+            562,
+            box_row,
+            TooltipContext { context: 9, ..Default::default() },
+        );
+        assert!(!rows.iter().any(|(t, _)| *t == crate::lang::tip(61)));
+    }
+
+    /// `Main.cs:21267-21311`: the Meteor Helmet 123 in the grid prints the
+    /// grey single-piece set row; worn (context 8) with the full set
+    /// equipped it prints the LimeGreen found/needed row.
+    #[test]
+    fn w4_e16_the_armor_set_row_grey_unworn_green_complete() {
+        let _guard = crate::lang::test_lock().lock().unwrap_or_else(|e| e.into_inner());
+        register_tail_language();
+        let helmet = crate::registry::get(123).expect("the meteor helmet row");
+        let world = tr_core::World::new("t".into(), 10, 10);
+        let mut player = crate::player::Player::spawn(&world);
+        player.equipped[0] = 123;
+        player.equipped[1] = 124;
+        player.equipped[2] = 125;
+        // Unworn (grid context 0): the grey (130,130,130,190) single piece.
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { player: Some(&player), ..Default::default() },
+        );
+        let set_row = rows
+            .iter()
+            .find(|(_, c)| *c == super::color::tint([130, 130, 130, 190]))
+            .expect("the grey single-piece row");
+        assert!(!set_row.0.is_empty());
+        // Worn (context 8) + complete: LimeGreen (50,205,50).
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { player: Some(&player), context: 8, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(_, c)| *c == super::color::tint([50, 205, 50, 255])),
+            "{rows:?}"
+        );
+        // Worn but incomplete: the grey (130,130,130,255) found/needed row.
+        player.equipped[2] = 0;
+        let rows = item_tooltip_lines(
+            123,
+            helmet,
+            TooltipContext { player: Some(&player), context: 8, ..Default::default() },
+        );
+        assert!(
+            rows.iter().any(|(_, c)| *c == super::color::tint([130, 130, 130, 255])),
+            "{rows:?}"
+        );
     }
 }

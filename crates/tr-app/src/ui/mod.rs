@@ -717,6 +717,11 @@ pub fn draw_hud(
     // bubble's hover pick reads the NPC list + player already passed above.
     talk_npc: Option<usize>,
     npc_chat_text: &str,
+    // The item tooltip's world gates (W4-e16, `Main.cs:20961-21031`):
+    // `NPC.downedPlantBoss`, the seed flags (anniversary / getGoodWorld /
+    // Mechdusa), `downedDD2EventAnyDifficulty` and `Main.expertMode`, plus
+    // the shared disco cycle for the −12 expert name colour.
+    tooltip_world: tooltip::TooltipWorld,
 ) {
     // `DrawInterface_25_...` (`Main.cs:43181`): the classic life / mana / breath
     // resources are the first interface layer, before the inventory (27) and the
@@ -1028,6 +1033,16 @@ pub fn draw_hud(
                     pulse,
                     tooltip::TooltipContext {
                         player,
+                        // `ItemSlot.MouseHover(22)` (`Main.cs:42258`): the
+                        // crafting-material context.
+                        context: 22,
+                        downed_plant_boss: tooltip_world.downed_plant_boss,
+                        anniversary: tooltip_world.anniversary,
+                        get_good_world: tooltip_world.get_good_world,
+                        mechdusa: tooltip_world.mechdusa,
+                        downed_dd2_any: tooltip_world.downed_dd2_any,
+                        expert_mode: tooltip_world.expert_mode,
+                        disco: tooltip_world.disco,
                         ..Default::default()
                     },
                     // `Main.SettingsEnabled_OpaqueBoxBehindTooltips` — the
@@ -1179,6 +1194,46 @@ pub fn draw_hud(
     // held item's own crit, which the tooltip's crit row subtracts
     // (`Main.cs:20701`).
     let held_crit = crate::registry::get(inventory[selected].kind).map_or(0, |d| d.crit);
+    // The hovered slot's `ItemSlot.Draw` context + favourite bit
+    // (`ItemSlot.MouseHover`, `ItemSlot.cs:3184-3198`): the grid/coin/ammo
+    // favourites ride the side set; the equip columns' contexts decide
+    // wornArmor (8) / social (9/11) and the loadout-share arm (8-12).
+    let (hover_context, hover_favorited) = if inventory_open {
+        match open_hover {
+            Some(inventory::HoverRef::Grid(i)) => (0, favorites.contains(&i)),
+            Some(inventory::HoverRef::Coin(i)) => {
+                (1, favorites.contains(&crate::inv::coin_slot_index(i)))
+            }
+            Some(inventory::HoverRef::Ammo(i)) => {
+                (2, favorites.contains(&crate::inv::ammo_slot_index(i)))
+            }
+            Some(inventory::HoverRef::Armor(i)) => {
+                // `Main.cs:41396-41496`: armour 0-2 ctx 8, accessories 3-9
+                // ctx 10; vanity 10-12 ctx 9, vanity accessories 13-19 ctx 11.
+                let ctx = match i {
+                    0..=2 => 8,
+                    3..=9 => 10,
+                    10..=12 => 9,
+                    _ => 11,
+                };
+                (ctx, false)
+            }
+            Some(inventory::HoverRef::Dye(_)) => (12, false),
+            Some(inventory::HoverRef::MiscEquip(i)) => {
+                // `MISC_CONTEXT` (`ui/inventory.rs:379`): grapple 16,
+                // mount 17, minecart 18, pet 19, light 20.
+                ([16, 17, 18, 19, 20][i.min(4)], false)
+            }
+            Some(inventory::HoverRef::MiscDye(_)) => (33, false),
+            Some(inventory::HoverRef::Trash) => (6, false),
+            Some(inventory::HoverRef::Bank(_)) => (4, false),
+            _ => (-1, false),
+        }
+    } else {
+        // The closed hotbar: context 13, the grid favourites still apply.
+        let hovered = tooltip::hovered_slot(mouse_pos, false, selected, hotbar_scales, inventory);
+        (13, hovered.map_or(false, |i| favorites.contains(&i)))
+    };
     tooltip::draw_item_tooltip(
         r,
         lookups,
@@ -1190,6 +1245,25 @@ pub fn draw_hud(
             prefix: hover_item.map_or(0, |h| h.prefix),
             player,
             held_crit,
+            held_kind: inventory[selected].kind,
+            // `Player.HasItem(905)` (`Player.cs:55894-55904`): the 58-slot
+            // scan — the grid plus the coin/ammo rows (`inv::INV_SLOTS`).
+            has_coin_gun: inventory.iter().any(|s| s.count > 0 && s.kind == 905)
+                || equip.coins.iter().any(|s| s.count > 0 && s.kind == 905)
+                || equip.ammo.iter().any(|s| s.count > 0 && s.kind == 905),
+            shop_open: shop.is_some(),
+            downed_plant_boss: tooltip_world.downed_plant_boss,
+            anniversary: tooltip_world.anniversary,
+            get_good_world: tooltip_world.get_good_world,
+            mechdusa: tooltip_world.mechdusa,
+            downed_dd2_any: tooltip_world.downed_dd2_any,
+            expert_mode: tooltip_world.expert_mode,
+            disco: tooltip_world.disco,
+            favorited: hover_favorited,
+            context: hover_context,
+            open_bank: bank.and_then(|(_, chest)| crate::bank::bank_for_chest(chest)),
+            show_loadout_share_hint: ingame_options
+                .map_or(true, |(s, _)| s.show_loadout_share_hint),
             ..Default::default()
         },
         ingame_options.map_or(true, |(s, _)| s.opaque_tooltip_box),

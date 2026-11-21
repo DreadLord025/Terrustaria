@@ -240,6 +240,14 @@ pub struct Settings {
     /// `Get` `:4542`). With it off the item tooltip draws its lines without
     /// the `DrawInvBG` box (`Main.cs:20398-20403`).
     pub opaque_tooltip_box: bool,
+    /// `Player.Settings.ShowLoadoutShareHint` (`Player.cs:372`, static
+    /// ctor **true** `:412`): the unfavourited equip-slot tooltip's
+    /// "{Favorite} to share across loadouts" hint (`Main.cs:21312-21317`).
+    /// `ToggleLoadoutShare` clears it on the first share
+    /// (`ItemSlot.cs:886` → `DisableLoadoutShareHint`, `Player.cs:394-401`).
+    /// Vanilla key `"ShowLoadoutShareHint"` (`Put` `Main.cs:4219`,
+    /// `Get` `:4553`).
+    pub show_loadout_share_hint: bool,
     /// `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`): the 14 gameplay
     /// binds of the menuMode 27 list, in the vanilla's declaration order
     /// (`cUp, cLeft, cDown, cRight, ...` — **not** the typing order).
@@ -319,6 +327,7 @@ impl Default for Settings {
             boss_bar_text: true,                  // BigProgressBarSystem.cs:259
             flashy_effects_interface: true,       // Main.cs:66578
             opaque_tooltip_box: true,             // Main.cs:66513
+            show_loadout_share_hint: true,        // Player.cs:412
             keybinds: crate::input_map::default_binds(),
             map_binds: crate::input_map::default_map_binds(),
         }
@@ -653,6 +662,10 @@ impl Settings {
                 "SettingsEnabled_OpaqueBoxBehindTooltips" => {
                     me.opaque_tooltip_box = boolean(value)
                 }
+                // `configuration.Put("ShowLoadoutShareHint",
+                // Player.Settings.ShowLoadoutShareHint)` (`Main.cs:4219`,
+                // read back at `:4553`).
+                "ShowLoadoutShareHint" => me.show_loadout_share_hint = boolean(value),
                 // The 14 gameplay binds (`Main.cs:4582-4595`) and the 6 map
                 // binds (`:4596-4600`). A name the reader does not know keeps
                 // the row's default, like the vanilla `Get` leaving the field
@@ -716,6 +729,7 @@ impl Settings {
              \"PlayerResourcesSet\": \"{}\",\n  \"PortraitPreference\": {},\n  \
              \"ShowBossBarHealthText\": {},\n  \"FlashyEffectsInterface\": {},\n  \
              \"SettingsEnabled_OpaqueBoxBehindTooltips\": {},\n  \
+             \"ShowLoadoutShareHint\": {},\n  \
              \"MinimapFrame\": \"{}\"{}\n}}\n",
             self.auto_save,
             self.auto_pause,
@@ -791,6 +805,7 @@ impl Settings {
             self.boss_bar_text,
             self.flashy_effects_interface,
             self.opaque_tooltip_box,
+            self.show_loadout_share_hint,
             self.minimap_frame,
             self.bind_block(),
         )
@@ -1495,6 +1510,20 @@ mod tests {
         assert_eq!(back.keybinds[crate::input_map::Action::Jump.index()], "Space");
     }
 
+    /// W4-e16: `Player.Settings.ShowLoadoutShareHint` round-trips under the
+    /// vanilla key (`Main.cs:4219` Put / `:4553` Get); the static-ctor
+    /// default is true (`Player.cs:412`), a missing key keeps it.
+    #[test]
+    fn w4_e16_the_loadout_share_hint_round_trips() {
+        assert!(Settings::default().show_loadout_share_hint, "Player.cs:412");
+        let s = Settings::parse("{\n \"ShowLoadoutShareHint\": false\n}");
+        assert!(!s.show_loadout_share_hint);
+        let mut w = Settings::default();
+        w.show_loadout_share_hint = false;
+        assert!(w.to_json().contains("\"ShowLoadoutShareHint\": false,"));
+        assert!(Settings::parse("{}").show_loadout_share_hint);
+    }
+
     fn test_DW_2_3_to_json_writes_the_vanilla_key_names() {
         let json = Settings::default().to_json();
         // The exact key sequence, in the writer's own order (the order the port
@@ -1548,6 +1577,8 @@ mod tests {
                 "PortraitPreference",
                 "ShowBossBarHealthText",
                 "FlashyEffectsInterface",
+                "SettingsEnabled_OpaqueBoxBehindTooltips",
+                "ShowLoadoutShareHint",
                 "MinimapFrame",
                 // `Main.cUp`..`Main.cMount` (`Main.cs:67163-67176`) and the 6
                 // map binds (`:67190-67195`), written under the names

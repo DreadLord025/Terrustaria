@@ -11,6 +11,100 @@ pub(super) fn is_well_fed(buff_type: i32) -> bool {
     matches!(buff_type, 26 | 206 | 207)
 }
 
+/// `Item.hasVanityEffects` — the 21 writes: the direct kinds
+/// (`Item.cs:7164,7307,11468,21270,28801,30254,32304,34739,38188,39183,
+/// 39687,40271,40689,40698,40962,42290,42988,43719`), `DefaultToGolfBall`
+/// (`:35459` — 3989, 4242-4255), `DefaultToInfoAccessory` (`:48622` — the
+/// watches/compass/GPS family) and `DefaultToMusicBox` (`:48650` — also
+/// `vanity=true`, so the social row's `!vanity` gate already excludes
+/// them). The social row (`Main.cs:20664`) reads it.
+pub(super) fn has_vanity_effects(kind: u16) -> bool {
+    matches!(
+        kind,
+        485 | 497
+            | 861
+            | 1987
+            | 3110
+            | 3305
+            | 3581
+            | 3929
+            | 4563
+            | 4762
+            | 4874
+            | 5000
+            | 5075
+            | 5076
+            | 5113
+            | 5331
+            | 5452
+            | 5547
+            // DefaultToGolfBall.
+            | 3989
+            | 4242..=4255
+            // DefaultToInfoAccessory.
+            | 15..=18
+            | 393
+            | 395
+            | 707..=709
+            | 3036
+            | 3037
+            | 3084
+            | 3095
+            | 3096
+            | 3099
+            | 3102
+            | 3118..=3123
+            // DefaultToMusicBox (vanity=true as well).
+            | 562..=574
+            | 1596..=1610
+            | 1963..=1965
+            | 2742
+            | 3044
+            | 3235..=3237
+            | 3370
+            | 3371
+            | 3796
+            | 3869
+            | 4077..=4082
+            | 4237
+            | 4356..=4358
+            | 4421
+            | 4606
+            | 4979
+            | 4985
+            | 4990..=4992
+            | 5006
+            | 5014..=5040
+            | 5044
+            | 5112
+            | 5362
+            | 5538
+            | 5539
+            | 5578..=5582
+            | 5637..=5639
+            | 6144..=6146
+    )
+}
+
+/// `ItemSlot.canLoadoutShareAt` (`ItemSlot.cs:395-399`): contexts 8-12
+/// (the armour/vanity/accessory/dye columns) — the loadout-share arm of
+/// the tooltip head (`Main.cs:20638`).
+pub(super) fn can_loadout_share_at(context: i32) -> bool {
+    matches!(context, 8..=12)
+}
+
+/// `ChestUI.IsBlockedFromTransferIntoChest` (`ChestUI.cs:1291-1302`): the
+/// favorited Money Trough 3213 refuses the piggy bank (bank index 0), the
+/// favorited Void Bag 4131 / Void Vault 5325 refuse bank4 (index 3). The
+/// tooltip prints `UI.ItemCannotBePlacedInsideItself` (`Main.cs:20659`).
+pub(super) fn blocked_from_transfer_into_chest(kind: u16, bank: Option<usize>) -> bool {
+    match bank {
+        Some(0) => kind == 3213,
+        Some(3) => kind == 4131 || kind == 5325,
+        _ => false,
+    }
+}
+
 /// `ItemID.Sets.UsesCursedByPlanteraTooltip` (`ItemID.cs:410`): the biome
 /// keys + the Lightning Carrot — their first tooltip line becomes
 /// `Lang.tip[59]` until Plantera falls (`Main.cs:20961-20965`).

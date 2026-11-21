@@ -1780,6 +1780,28 @@ impl App {
                             // draws while the talk latch holds.
                             self.talk_npc,
                             &self.npc_chat_text,
+                            // The item tooltip's world gates (W4-e16,
+                            // `Main.cs:20961-21031`).
+                            ui::tooltip::TooltipWorld {
+                                downed_plant_boss: world.downed_plant_boss,
+                                anniversary: world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::TENTH_ANNIVERSARY),
+                                get_good_world: world
+                                    .seeds
+                                    .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                                // `SpecialSeedFeatures.Mechdusa`
+                                // (`SpecialSeedFeatures.cs:119-128`).
+                                mechdusa: world.seeds.contains(tr_core::seeds::SeedFlags::REMIX)
+                                    && world
+                                        .seeds
+                                        .contains(tr_core::seeds::SeedFlags::FOR_THE_WORTHY),
+                                downed_dd2_any: world.dd2_downed_t1
+                                    || world.dd2_downed_t2
+                                    || world.dd2_downed_t3,
+                                expert_mode: player.as_ref().map_or(false, |p| p.buffs.expert_mode),
+                                disco: self.disco,
+                            },
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
