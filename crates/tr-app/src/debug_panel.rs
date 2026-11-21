@@ -812,11 +812,15 @@ fn world_click(app: &mut App, row: usize) {
         }
         12 => {
             // The `/map pretty` chat command (`ToolkitDebugCommands.cs:480-494`):
-            // `DebugOptions.unlockMap = 2` then `Main.refreshMap = true`, which
-            // Main consumes by walking `sectionManager`'s draw queue and calling
-            // `Main.Map.UnlockMapSection` on every loaded section (`:61873-61877`).
-            // The port has no section manager (the whole world is resident), so
-            // the walk covers every section directly.
+            // `Main.clearMap = true`, `DebugOptions.unlockMap = 2` and
+            // `Main.refreshMap = true`. The reveal itself rides the section-draw
+            // driver (`Main.cs:61871-61883`): the `refreshMap` re-walk
+            // (`:61888-61892`) clears the drawn bits and the spiral re-visits
+            // every section, calling `Main.Map.UnlockMapSection` on each
+            // (`:61873-61877`). W4-f46: the command only arms the flags now —
+            // the port's `WorldMap::unlock_map` is the verbatim flag path, and
+            // the section walk (drawn per frame in `frame/draw.rs`) does the
+            // reveal. The headless test drives the walk directly.
             if let Some(m) = app.map.as_mut() {
                 m.unlock_map(&app.world, true);
             }
@@ -1132,7 +1136,10 @@ mod tests {
     }
 
     /// S1-L-3 — the tail row runs the `/map pretty` reveal
-    /// (`ToolkitDebugCommands.cs:480-494`).
+    /// (`ToolkitDebugCommands.cs:480-494`). W4-f46: the command arms the
+    /// flags (`clearMap`/`unlockMap = 2`/`refreshMap`); the reveal rides the
+    /// section-draw driver's spiral walk (`Main.cs:61871-61883`), which the
+    /// test drives directly through the GPU-free core.
     #[test]
     fn s1_l_3_the_reveal_row_unlocks_the_map() {
         let mut app = flow_app();
@@ -1141,7 +1148,24 @@ mod tests {
         app.world = tr_core::World::new("reveal".into(), 260, 200);
         app.map = Some(crate::map::WorldMap::new(&app.world));
         click_world(&mut app, 12);
-        let m = app.map.as_ref().unwrap();
+        let m = app.map.as_mut().unwrap();
+        // The command armed the flags (`ToolkitDebugCommands.cs:483-488`).
+        assert_eq!(m.unlock_map_mode, 2, "pretty mode armed");
+        assert!(m.refresh_map, "the re-walk armed");
+        assert!(m.clear_map, "the texture wipe armed");
+        // The `refreshMap` re-walk clears the drawn bits and re-arms the
+        // spiral (`Main.cs:61888-61892`); arm `updateMap` so the consumer
+        // runs (the C# light export sets it every cycle).
+        m.update_map = Some([0, 0, 0, 0]);
+        m.consume_update_map(false, true);
+        assert!(!m.refresh_map, "the consumer cleared the re-walk");
+        // The spiral walk unlocks every section as it draws
+        // (`Main.cs:61873-61877`); a large budget drains it in one call.
+        // The grid is INTEGER division (`WorldGen.cs:7150`): 260/200 = 1,
+        // 200/150 = 1 → one section.
+        let (num3, drawn) = m.section_walk_core(&app.world, [0.0, 0.0], 10_000.0);
+        assert_eq!(num3, 1, "the floor grid is 1x1");
+        assert_eq!(drawn, vec![(0, 0)]);
         assert!(
             m.tiles.iter().any(|t| t.light > 0),
             "the reveal walked every section"

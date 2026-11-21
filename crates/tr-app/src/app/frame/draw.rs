@@ -802,10 +802,21 @@ impl App {
                         );
                         // Consume the seam (ending its tile/counter borrows)
                         // before re-borrowing the map for the dirty push.
-                        let changed = export.map(|e| e.changed);
-                        if let Some(changed) = changed {
-                            if let Some(m) = map.as_mut() {
+                        // W4-f46: the seam's `Main.updateMap` rect
+                        // (`LegacyLighting.cs:432`) rides onto the map — the
+                        // section-draw driver's `updateMap` consumer
+                        // (`Main.cs:61886-61894`) reads it. The C# `try/catch`
+                        // abort leaves it untouched (`None` here).
+                        let (changed, update_map) = match export {
+                            Some(e) => (Some(e.changed), e.update_map),
+                            None => (None, None),
+                        };
+                        if let Some(m) = map.as_mut() {
+                            if let Some(changed) = changed {
                                 m.push_dirty(changed);
+                            }
+                            if let Some(rect) = update_map {
+                                m.update_map = Some(rect);
                             }
                         }
                         engine.present_into(light);
@@ -1871,6 +1882,34 @@ impl App {
                             // `ViewPosition = item.Top.Pixels`) — applied
                             // after the gpu block releases the field borrows.
                             popup_goto = Some(name);
+                        }
+                    }
+                    // W4-f46: the section-draw driver (`Main.cs:61863-61899`,
+                    // the `DoDraw` tail after `MapUpdateQueue.Update`): the
+                    // 5 ms-budgeted spiral walk paints the map texture one
+                    // 200x150 section at a time (`WorldSections.GetNextMapDraw`
+                    // → `MapRenderer.DrawToMap_Section`), unlocking each while
+                    // `DebugOptions.unlockMap != 0`, then the `updateMap` /
+                    // `refreshMap` / `clearMap` flag lifecycle. The
+                    // `!Main.loadMap` / `!gameMenu` / `!generatingWorld` gates
+                    // (`:61863-61865`) are the in-world gate here (the map is
+                    // `Some` only in-world; the port loads synchronously).
+                    // `player_pos` is `Main.player[myPlayer].position` in world
+                    // PIXELS (`:61871`); `[0, 0]` without a player
+                    // (`TR_NOPLAYER` — the C# always has one).
+                    if menu.is_none() && front.is_none() {
+                        if let Some(m) = map.as_mut() {
+                            let player_pos = player
+                                .as_ref()
+                                .map_or([0.0, 0.0], |p| [p.x, p.y]);
+                            m.draw_map_sections(
+                                renderer,
+                                gpu,
+                                world,
+                                player_pos,
+                                self.game_paused,
+                                settings.map_enabled,
+                            );
                         }
                     }
                     // Task 6b: upload the revealed tiles into the world-sized map texture

@@ -6,8 +6,8 @@
 use glam::Vec2;
 use tr_core::lighting::LightMap;
 use tr_core::map::{
-    MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect, section_rect,
-    unlock_map_section, unlock_map_tile_pretty, update_map_lighting, update_type,
+    MapDrawQueue, MapTile, clear_edges, get_map_tile_color, queue_update, reveal_rect,
+    section_rect, unlock_map_section, unlock_map_tile_pretty, update_map_lighting, update_type,
 };
 use tr_core::{TILE_PX, World};
 use tr_render::SpriteRenderer;
@@ -407,6 +407,32 @@ pub struct WorldMap {
     pub map_time_max: i32,
     /// Tiles revealed/changed since the last `take_dirty` (Task 6 uploads these).
     dirty: Vec<(i32, i32)>,
+    /// `Main.sectionManager`'s map-draw half (`WorldGen.cs:7150`): the
+    /// `maxTilesX / 200` x `maxTilesY / 150` INTEGER-division section grid
+    /// whose spiral walk (`WorldSections.GetNextMapDraw`) paints the map
+    /// texture one section at a time (`Main.cs:61871-61879`).
+    pub sections: MapDrawQueue,
+    /// `DebugOptions.unlockMap` (`DebugOptions.cs:34`): 0 off, 1 the flat
+    /// 255 sweep, 2 the pretty falloff. The `/map` command arms it
+    /// (`ToolkitDebugCommands.cs:480-494`); the section walk consumes it
+    /// per drawn section (`Main.cs:61873-61877`) and clears it when a
+    /// frame drew nothing (`:61880-61883`).
+    pub unlock_map_mode: i32,
+    /// `Main.refreshMap` (`Main.cs:789`): the re-walk flag — the
+    /// `updateMap` consumer clears it and re-arms `sections` through
+    /// `ClearMapDraw` (`Main.cs:61888-61892`).
+    pub refresh_map: bool,
+    /// `Main.clearMap` (`Main.cs:805`): the texture wipe flag — the
+    /// worldgen reset arms it (`WorldGen.cs:6982`), the map load arms it
+    /// (`WorldMap.cs:211`) and `DrawToMap` consumes it
+    /// (`MapRenderer.cs:161-173`). The port's single texture is cleared
+    /// by the full-upload sweep.
+    pub clear_map: bool,
+    /// `Main.updateMap` (`Main.cs:799`): the rect the light export
+    /// revealed this cycle (`LightingEngine.cs:269`,
+    /// `LegacyLighting.cs:432`), consumed by the section-draw driver
+    /// (`Main.cs:61886-61894`). `[x, y, w, h]`, half-open edges.
+    pub update_map: Option<[i32; 4]>,
     /// The world-sized map texture exists (`ensure_map_texture` has run).
     uploaded: bool,
     /// A `.map` was loaded into `tiles`: upload the whole texture on the next
@@ -437,6 +463,20 @@ impl WorldMap {
             map_time: 0,
             map_time_max: 0,
             dirty: Vec::new(),
+            // `WorldGen.cs:7150`: `new WorldSections(Main.maxTilesX / 200,
+            // Main.maxTilesY / 150)` — INTEGER division (every vanilla world
+            // size is an exact multiple, so the grid covers the world).
+            sections: MapDrawQueue::new(world.width / 200, world.height / 150),
+            unlock_map_mode: 0,
+            refresh_map: false,
+            // `WorldGen.clearWorld` (`WorldGen.cs:6982`): every world load
+            // arms `Main.clearMap = true` (the texture wipe the first
+            // `DrawToMap` consumes). `WorldMap::new` is the port's
+            // world-load construction (boot / swap / net install), so the
+            // flag arms here; `mapTime = 0` / `updateMap = null` /
+            // `refreshMap = false` (`:6983-6986`) are the defaults above.
+            clear_map: true,
+            update_map: None,
             uploaded: false,
             needs_full_upload: false,
             reset_pos: true,
@@ -518,12 +558,19 @@ impl WorldMap {
         y0 = y0.max(cy - zh / 2);
         x1 = x1.min(cx - zw / 2 + zw);
         y1 = y1.min(cy - zh / 2 + zh);
-        // `Rectangle.Intersect`: an empty overlap has Left >= Right.
+        // `Rectangle.Intersect`: an empty overlap has Left >= Right — XNA
+        // returns `Rectangle.Empty` (0, 0, 0, 0), not the inverted rect.
         if x0 >= x1 || y0 >= y1 {
+            // `LightingEngine.cs:269` arms `Main.updateMap = area` even
+            // when the intersect came back empty — the driver still runs
+            // its `DrawToMap` consumer (`Main.cs:61886-61894`).
+            self.update_map = Some([0, 0, 0, 0]);
             return;
         }
         let changed = reveal_rect(world, &mut self.tiles, light, x0, y0, x1, y1);
         self.dirty.extend(changed);
+        // `LightingEngine.cs:269`: `Main.updateMap = area`.
+        self.update_map = Some([x0, y0, x1 - x0, y1 - y0]);
     }
 
     /// `WorldMap.UpdateType` (`WorldMap.cs:65-93`) — see the tr-core free fn.
@@ -569,18 +616,223 @@ impl WorldMap {
         }
     }
 
-    /// The `/map` chat command's reveal (`ToolkitDebugCommands.cs:480-494`):
-    /// every section of the world, as the C# does by walking
-    /// `Main.sectionManager`'s draw queue. `pretty` selects
-    /// `UnlockMapTilePretty` (the 11x11 Manhattan falloff) over the flat 255.
-    pub fn unlock_map(&mut self, world: &World, pretty: bool) {
-        let sx = (world.width as f32 / 200.0).ceil() as i32;
-        let sy = (world.height as f32 / 150.0).ceil() as i32;
-        for y in 0..sy {
-            for x in 0..sx {
-                self.unlock_section(world, x, y, pretty);
+    /// The `/map` chat command (`ToolkitDebugCommands.cs:480-494`): the
+    /// command only arms flags — `Main.clearMap = true`, then
+    /// `DebugOptions.unlockMap = 1` (flat) or `2` (pretty) plus
+    /// `Main.refreshMap = true` when off, or `unlockMap = 0` when already
+    /// on. The reveal itself rides the section-draw driver
+    /// ([`Self::draw_map_sections`], `Main.cs:61871-61883`): the
+    /// `refreshMap` re-walk (`:61888-61892`) clears the drawn bits and the
+    /// spiral re-visits every section, unlocking each as it draws.
+    pub fn unlock_map(&mut self, _world: &World, pretty: bool) {
+        self.clear_map = true; // `:483`
+        if self.unlock_map_mode == 0 {
+            // `:484-488`.
+            self.unlock_map_mode = if pretty { 2 } else { 1 };
+            self.refresh_map = true;
+        } else {
+            // `:489-492`: a second `/map` turns the reveal off.
+            self.unlock_map_mode = 0;
+        }
+    }
+
+    /// `MapRenderer.DrawToMap_Section` (`MapRenderer.cs:306-355`): paint
+    /// one 200x150 section into the map texture. The C# walks the section
+    /// row-major (`i` = y outer, `j` = x inner, `:328-335`) through
+    /// `GetMapTileXnaColor` and blits the 200x150 cache at the target
+    /// offset; the port writes the same pixels as one region upload. The
+    /// section rect is NOT inset-clamped here (that clamp is
+    /// `UnlockMapSection`'s, `WorldMap.cs:111-119`) — the draw covers the
+    /// full section, clipped to the world bounds (the C# target grid
+    /// covers every vanilla world size exactly, `MapRenderer.cs:93-102`).
+    pub fn draw_to_map_section(
+        &mut self,
+        r: &mut SpriteRenderer,
+        gpu: &tr_render::Gpu,
+        world: &World,
+        sx: i32,
+        sy: i32,
+    ) {
+        let Some((x0, y0, w, h, rgba)) = self.section_pixels(world, sx, sy) else {
+            return;
+        };
+        r.write_map_region(gpu, x0 as u32, y0 as u32, w, h, &rgba);
+    }
+
+    /// The GPU-free pixel half of [`Self::draw_to_map_section`]
+    /// (`MapRenderer.cs:314-335`): the section's clamped rect and its
+    /// row-major colour cache. Returns `None` for an off-world section.
+    /// The witnesses exercise this directly (no renderer needed).
+    pub fn section_pixels(
+        &self,
+        world: &World,
+        sx: i32,
+        sy: i32,
+    ) -> Option<(i32, i32, u32, u32, Vec<[u8; 4]>)> {
+        let x0 = sx * 200;
+        let y0 = sy * 150;
+        let x1 = (x0 + 200).min(world.width);
+        let y1 = (y0 + 150).min(world.height);
+        if x0 >= x1 || y0 >= y1 {
+            return None;
+        }
+        let w = (x1 - x0) as u32;
+        let h = (y1 - y0) as u32;
+        let mut rgba = vec![[0u8; 4]; (w * h) as usize];
+        // `:328-335`: row-major over the section, `GetMapTileXnaColor` per
+        // tile. The C# blits the colour unconditionally (`:350`) and the
+        // alpha rides `colorLookup[0] = Color.Transparent`
+        // (`MapHelper.cs:1714`); the port's alpha convention is the
+        // reveal's (`prepare`'s two upload paths): a revealed tile
+        // (`light > 0`) is opaque, an unrevealed one transparent — a dark
+        // tile never carries a non-zero type in practice (every
+        // `CreateMapTile` arm that sets a type forces light > 0).
+        for y in y0..y1 {
+            for x in x0..x1 {
+                let t = self.tiles[world.index(x, y)];
+                if t.light > 0 {
+                    let [cr, cg, cb] = get_map_tile_color(t, x, y);
+                    rgba[((y - y0) as u32 * w + (x - x0) as u32) as usize] = [cr, cg, cb, 255];
+                }
             }
         }
+        Some((x0, y0, w, h, rgba))
+    }
+
+    /// The section-draw driver (`Main.cs:61863-61899`, the `DoDraw` tail
+    /// after `MapUpdateQueue.Update`): the 5 ms-budgeted spiral walk that
+    /// paints the map texture one section at a time, then the
+    /// `updateMap`/`refreshMap` consumer. `player_pos` is
+    /// `Main.player[myPlayer].position` in world PIXELS (`:61871`); the
+    /// port falls back to `[0, 0]` without a player (`TR_NOPLAYER` — the
+    /// C# always has one). `game_paused` gates only the `updateMap`
+    /// consumer (`:61886`), not the walk. `map_enabled` is
+    /// `Main.mapEnabled`, the `DrawToMap` gate (`MapRenderer.cs:130`). The
+    /// `!Main.loadMap` / `!gameMenu` / `!generatingWorld` gates
+    /// (`:61863-61865`) ride the caller (the draw pass only runs in-world).
+    pub fn draw_map_sections(
+        &mut self,
+        r: &mut SpriteRenderer,
+        gpu: &tr_render::Gpu,
+        world: &World,
+        player_pos: [f32; 2],
+        game_paused: bool,
+        map_enabled: bool,
+    ) {
+        // `MapRenderer.checkMap` (`MapRenderer.cs:322`, called inside
+        // `DrawToMap_Section`): the render target is created on demand before
+        // the first section paints. The port's single world-sized texture is
+        // the same — `ensure_map_texture` is idempotent (only recreates on a
+        // size change), so it arms here ahead of `prepare`'s own ensure. The
+        // section walk runs regardless of `mapEnabled` (the C# gates it on
+        // `!gameMenu && !generatingWorld` only, `Main.cs:61865`), so this is
+        // the texture's first creation when the map is disabled.
+        r.ensure_map_texture(gpu, world.width as u32, world.height as u32);
+        // `:61867-61883`: the budgeted spiral walk (the 5 ms `Stopwatch`,
+        // `:61871`) — the state half plus the per-section paint.
+        let (_num3, drawn) = self.section_walk_core(world, player_pos, 5.0);
+        for (x, y) in drawn {
+            // `:61877`: `MapRenderer.DrawToMap_Section(x, y)`.
+            self.draw_to_map_section(r, gpu, world, x, y);
+        }
+        // `:61886-61898`: the `updateMap` / `ChangesQueued` consumer.
+        self.consume_update_map(game_paused, map_enabled);
+    }
+
+    /// The GPU-free core of [`Self::draw_map_sections`] — the spiral walk's
+    /// STATE half (`Main.cs:61867-61883`): mark sections drawn, unlock each
+    /// while `DebugOptions.unlockMap != 0`, and clear the unlock flag when
+    /// a frame drew nothing. Returns the drawn section count (`num3`).
+    /// The GPU wrapper paints each returned section; this core is what the
+    /// witnesses exercise (no renderer needed). `budget_ms` stands in for
+    /// the C# `Stopwatch`'s 5 ms — a test passes a large budget to drain
+    /// the whole spiral in one call.
+    pub fn section_walk_core(
+        &mut self,
+        world: &World,
+        player_pos: [f32; 2],
+        budget_ms: f64,
+    ) -> (i32, Vec<(i32, i32)>) {
+        let start = std::time::Instant::now();
+        let mut num3 = 0i32;
+        let mut drawn = Vec::new();
+        while start.elapsed().as_secs_f64() * 1000.0 < budget_ms {
+            let Some((x, y)) = self.sections.get_next_map_draw(player_pos) else {
+                break;
+            };
+            // `:61873-61876`: `DebugOptions.unlockMap != 0 &&
+            // SectionLoaded(x, y)` — the loaded gate passes (SP resident).
+            if self.unlock_map_mode != 0 {
+                self.unlock_section(world, x, y, self.unlock_map_mode == 2);
+            }
+            drawn.push((x, y));
+            num3 += 1;
+        }
+        // `:61880-61883`: a frame that drew nothing clears the unlock flag
+        // (unless a refresh is pending).
+        if num3 == 0 && !self.refresh_map {
+            self.unlock_map_mode = 0;
+        }
+        (num3, drawn)
+    }
+
+    /// The `updateMap` / `ChangesQueued` consumer (`Main.cs:61886-61898`),
+    /// GPU-free: the `refreshMap` re-walk (`:61888-61892`) and the
+    /// `DrawToMap` flag lifecycle. The C# branches on
+    /// `updateMap.HasValue && !gamePaused`; the port's `dirty` list is the
+    /// `MapRenderer.ChangesQueued` else-arm's change queue, and its upload
+    /// rides `prepare` — so both arms collapse to the same `draw_to_map`
+    /// flag consumption here (the tile upload is consolidated).
+    pub fn consume_update_map(&mut self, game_paused: bool, map_enabled: bool) {
+        if self.update_map.is_some() && !game_paused {
+            // `:61886-61894`.
+            if self.refresh_map {
+                self.refresh_map = false;
+                self.sections.clear_map_draw(); // `:61891`
+            }
+            self.draw_to_map(map_enabled); // `:61893`
+            self.update_map = None; // `:61894`
+        } else if !self.dirty.is_empty() {
+            // `:61896-61898`: `else if (MapRenderer.ChangesQueued)` →
+            // `DrawToMap(Rectangle.Empty)`. The empty rect's area walk is
+            // empty, but the change-queue drain + flag lifecycle still run.
+            self.draw_to_map(map_enabled);
+        }
+    }
+
+    /// `MapRenderer.DrawToMap` (`MapRenderer.cs:128-201`): the area sweep's
+    /// FLAG lifecycle, GPU-free. The port's single world-sized texture
+    /// stands in for the C# 5x2 render-target grid (`MapRenderer.cs:62-65`),
+    /// and its `DrawChangesToMap` tile upload is consolidated into
+    /// [`Self::prepare`]'s `dirty` drain + `needs_full_upload` sweep (every
+    /// changed tile the reveal / `UpdateType` produces rides `dirty`, so
+    /// the C# `DrawAreaToMap` `IsChanged` scan has no separate population).
+    /// What remains is the `clearMap` / `refreshMap` consumption:
+    /// the change-queue clear (`:148-160`) and the `clearMap` transparent
+    /// wipe + re-upload (`:161-173`) — the latter is exactly the port's
+    /// `needs_full_upload` full sweep (transparent for dark tiles, colour
+    /// for revealed), so it arms that flag instead of a separate wipe. The
+    /// `mapEnabled` gate (`:130`) returns before any flag is consumed.
+    fn draw_to_map(&mut self, map_enabled: bool) {
+        if !map_enabled {
+            return; // `MapRenderer.cs:130-133`
+        }
+        // `:148-160`: `clearMap || refreshMap` clears the change queues —
+        // the port's `dirty` list is that queue.
+        if self.clear_map || self.refresh_map {
+            self.dirty.clear();
+        }
+        // `:161-173`: `clearMap` wipes every target to transparent, then
+        // `DrawAreaToMap` re-uploads the changed tiles — the port's
+        // `needs_full_upload` sweep is that wipe + re-upload in one.
+        if self.clear_map {
+            self.needs_full_upload = true;
+            self.clear_map = false; // `:172`
+        }
+        // `:196-199`: `mapReady = true; loadMap = false; loadMapLock =
+        // false` — the port has no staged map load (the `.map` load arms
+        // `needs_full_upload`, which `prepare` consumes), so these are
+        // structural no-ops.
     }
 
     /// The edit-queue drain's push (the `MapRenderer.QueueChange` analog —
@@ -676,6 +928,13 @@ impl WorldMap {
         // Drop any pending single-tile writes; the full upload replaces them.
         self.dirty.clear();
         self.needs_full_upload = true;
+        // `WorldMap.cs:211-214`: the load arms `clearMap`/`loadMap`/
+        // `loadMapLock` and disarms `refreshMap`. The port has no staged
+        // load (`loadMap`/`loadMapLock` gate the C#'s chunked upload, the
+        // `needs_full_upload` sweep replaces it), so only the two flags
+        // the section driver reads are modelled.
+        self.clear_map = true;
+        self.refresh_map = false;
         true
     }
 
@@ -1589,6 +1848,160 @@ mod tests {
         assert!(dirty.contains(&(159, 87)));
         assert!(!dirty.contains(&(160, 87)), "x1 exclusive");
         assert!(!dirty.contains(&(159, 88)), "y1 exclusive");
+    }
+
+    // ---- W4-f46: the section-draw driver (`Main.cs:61863-61899`) ----
+
+    /// W4-f46 witness (written, not run — code-only): the `/map` command
+    /// (`ToolkitDebugCommands.cs:480-494`) only arms flags — `clearMap`,
+    /// `unlockMap` (1 flat / 2 pretty) and `refreshMap` when off, or
+    /// `unlockMap = 0` when already on. The reveal rides the section walk.
+    #[test]
+    fn w4_f46_map_command_arms_the_flags_and_toggles_off() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        m.clear_map = false; // isolate the command's own arming
+        m.unlock_map(&world, true); // `/map pretty`
+        assert!(m.clear_map, "`:483`");
+        assert_eq!(m.unlock_map_mode, 2, "`:486` pretty");
+        assert!(m.refresh_map, "`:487`");
+        // A second `/map` turns the reveal off (`:489-492`).
+        m.unlock_map(&world, true);
+        assert_eq!(m.unlock_map_mode, 0, "the toggle off");
+        // The flat mode arms 1 (`:486`'s non-pretty arm).
+        m.unlock_map(&world, false);
+        assert_eq!(m.unlock_map_mode, 1, "flat");
+    }
+
+    /// W4-f46 witness (written, not run — code-only): the spiral walk
+    /// unlocks each drawn section while `unlockMap != 0`
+    /// (`Main.cs:61873-61877`) and marks it drawn; a frame that drew
+    /// nothing clears the unlock flag (`:61880-61883`). The 400x300 world
+    /// is a 2x2 section grid (`WorldGen.cs:7150`'s integer division).
+    #[test]
+    fn w4_f46_section_walk_unlocks_and_drains_the_spiral() {
+        let world = World::new("sections".into(), 400, 300);
+        let mut m = WorldMap::new(&world);
+        m.unlock_map_mode = 1; // flat 255
+        // Player pixel (100*16, 75*16) → tile (100, 75) → section (0, 0).
+        let (num3, drawn) = m.section_walk_core(&world, [100.0 * 16.0, 75.0 * 16.0], 10_000.0);
+        assert_eq!(num3, 4, "the 2x2 grid drains in one call");
+        assert_eq!(drawn[0], (0, 0), "the player's section draws first");
+        assert_eq!(m.sections.sections_left(), 0);
+        // Every section's clamped interior revealed at 255.
+        assert!(m.tiles.iter().any(|t| t.light == 255), "the flat unlock");
+        // A second call draws nothing and clears the unlock flag
+        // (`:61880-61883`, `refresh_map` is false).
+        let (num3, drawn) = m.section_walk_core(&world, [100.0 * 16.0, 75.0 * 16.0], 10_000.0);
+        assert_eq!(num3, 0);
+        assert!(drawn.is_empty());
+        assert_eq!(m.unlock_map_mode, 0, "the empty frame clears the flag");
+    }
+
+    /// W4-f46 witness (written, not run — code-only): the `refreshMap`
+    /// re-walk (`Main.cs:61888-61892`) — the `updateMap` consumer clears
+    /// `refreshMap`, re-arms the spiral through `ClearMapDraw` and nulls
+    /// `updateMap`; the `gamePaused` gate (`:61886`) freezes the consumer.
+    #[test]
+    fn w4_f46_refresh_map_rearms_the_spiral_through_the_consumer() {
+        let world = World::new("refresh".into(), 400, 300);
+        let mut m = WorldMap::new(&world);
+        // Drain the spiral first.
+        let _ = m.section_walk_core(&world, [0.0, 0.0], 10_000.0);
+        assert_eq!(m.sections.sections_left(), 0);
+        // Arm the re-walk + an updateMap rect (the light export's arm).
+        m.refresh_map = true;
+        m.update_map = Some([0, 0, 100, 100]);
+        // Paused: the consumer refuses (`:61886`), nothing consumed.
+        m.consume_update_map(true, true);
+        assert!(m.refresh_map, "paused keeps the re-walk");
+        assert!(m.update_map.is_some(), "paused keeps updateMap");
+        assert_eq!(m.sections.sections_left(), 0, "the spiral stays drained");
+        // Unpaused: the consumer re-arms the spiral and nulls updateMap.
+        m.consume_update_map(false, true);
+        assert!(!m.refresh_map, "`:61890`");
+        assert_eq!(m.sections.sections_left(), 4, "`ClearMapDraw` re-arms");
+        assert!(m.update_map.is_none(), "`:61894`");
+        // The re-armed spiral draws again.
+        let (num3, _) = m.section_walk_core(&world, [0.0, 0.0], 10_000.0);
+        assert_eq!(num3, 4, "the re-walk covers every section again");
+    }
+
+    /// W4-f46 witness (written, not run — code-only): `DrawToMap`'s
+    /// `clearMap` wipe (`MapRenderer.cs:161-173`) arms the port's
+    /// `needs_full_upload` full sweep (transparent for dark tiles, colour
+    /// for revealed — the C# wipe + `DrawAreaToMap` re-upload in one) and
+    /// clears the flag; the `mapEnabled` gate (`:130`) refuses before any
+    /// flag is consumed, and `clearMap || refreshMap` clears the change
+    /// queue (`:148-160`).
+    #[test]
+    fn w4_f46_clear_map_arms_the_full_sweep_and_gates_on_map_enabled() {
+        let world = ground_world();
+        let mut m = WorldMap::new(&world);
+        m.clear_map = true;
+        m.dirty.push((100, 70));
+        // Disabled: nothing consumed (`MapRenderer.cs:130-133`).
+        m.consume_update_map(false, false);
+        assert!(m.clear_map, "the gate refuses the wipe");
+        assert!(!m.needs_full_upload);
+        assert_eq!(m.dirty.len(), 1, "the change queue stays");
+        // Enabled: the wipe arms the full sweep, clears the flag + queue.
+        m.update_map = Some([0, 0, 0, 0]);
+        m.consume_update_map(false, true);
+        assert!(!m.clear_map, "`:172`");
+        assert!(m.needs_full_upload, "the wipe + re-upload is the full sweep");
+        assert!(m.dirty.is_empty(), "`:148-160` clears the change queue");
+    }
+
+    /// W4-f46 witness (written, not run — code-only): `DrawToMap_Section`'s
+    /// pixel cache (`MapRenderer.cs:328-335`) — the section's clamped rect,
+    /// row-major, revealed tiles opaque and unrevealed transparent. The
+    /// 200x150 section at (0, 0) on the 200x128 world clips to 200x128.
+    #[test]
+    fn w4_f46_section_pixels_paint_revealed_opaque_and_dark_transparent() {
+        let world = ground_world(); // 200x128
+        let mut m = WorldMap::new(&world);
+        // Reveal one interior tile; the rest stay dark.
+        assert!(update_map_lighting(&world, &mut m.tiles, 100, 70, 200));
+        let (x0, y0, w, h, rgba) = m.section_pixels(&world, 0, 0).unwrap();
+        assert_eq!((x0, y0, w, h), (0, 0, 200, 128), "the section clips to the world");
+        assert_eq!(rgba.len(), 200 * 128);
+        // The revealed tile is opaque; a dark tile is transparent.
+        let lit = rgba[70 * 200 + 100];
+        assert_eq!(lit[3], 255, "the revealed tile is opaque");
+        assert_ne!(&lit[..3], &[0, 0, 0], "the revealed tile carries colour");
+        assert_eq!(rgba[0], [0, 0, 0, 0], "a dark tile is transparent");
+        // An off-world section paints nothing.
+        assert!(m.section_pixels(&world, 5, 5).is_none());
+    }
+
+    /// W4-f46 witness (written, not run — code-only): the light export arms
+    /// `Main.updateMap` (`LightingEngine.cs:269`) on every export — even an
+    /// empty intersect (`Rectangle.Empty`, XNA returns (0,0,0,0)) — so the
+    /// driver's consumer always has a rect to consume.
+    #[test]
+    fn w4_f46_the_export_arms_update_map_even_on_an_empty_intersect() {
+        let world = ground_world();
+        let mut p = Player::spawn(&world);
+        p.x = 100.0 * TILE_PX;
+        let px = (p.x / TILE_PX) as i32;
+        let py = (p.y / TILE_PX) as i32;
+        let light = LightMap::compute(
+            &world,
+            px - 40,
+            py - 30,
+            px + 40,
+            py + 30,
+            &LightParams::default(),
+        );
+        let mut m = WorldMap::new(&world);
+        m.update(&world, Some(&p), &light, true, 0.016);
+        assert!(m.update_map.is_some(), "`LightingEngine.cs:269` arms the rect");
+        // The consumer nulls `updateMap` (`Main.cs:61894`) even though this
+        // 200x128 world's floor section grid is 1x0 = 0 sections (the spiral
+        // has nothing to paint — `WorldGen.cs:7150`'s integer division).
+        m.consume_update_map(false, true);
+        assert!(m.update_map.is_none());
     }
 
     // ---- Task 6b: fullscreen zoom / pan / minimap geometry ----
