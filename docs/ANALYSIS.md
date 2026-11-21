@@ -39548,3 +39548,49 @@ c4's crimsongoldfish retire-hunk):
   BESTIARY portraits, a different system, so the chat-portrait lane is
   unclaimed. Witnesses: the_portrait_hop_lift_matches_the_bounce +
   the_portrait_hop_resets_on_the_talk_and_the_report.
+
+The RETIRE round (2026-11-21, code-only; research/241 + the chat-portrait
+port):
+
+- **The chat-portrait DRAW, Detailed arm** — LANDED
+  (`ui/chat_portrait.rs` + `ui/chat_portrait_data.rs`, the hop-state's
+  first consumer). `Main.DrawNPCPortrait` (`Main.cs:40318-40447`) from
+  `NPCChatPanel.Draw` (`:79`): the `Portrait_Window` backdrop
+  (`AssetInitializer.cs:650`) at the chatBack tint
+  `Color(200,200,200,200)` + the provider-resolved portrait sheet at
+  `Color.White`, both centre-origin at
+  `panelTopLeft + (-62, 62) + (0, hop_lift)` (`:40337`/`:40358`), + the
+  `GivenOrTypeName` label (`NPC.cs:6743-6753`) in `FontAssets.ItemStack`
+  at `+(0, 57)` centre-origin (`:40444-40446`). The provider table ports
+  the 21 talkable kinds' `NPCPortraits` rows (`NPCID.cs:5894-6073`): the
+  shimmer condition (`IsShimmerVariant` = variation 1 ∧
+  `ShimmerTownTransform`, `NPC.cs:6713-6723`) swaps the `_shimmer` twin;
+  the Zoologist's four-way lycanthrope selector (`:6010-6012`) resolves
+  in entry order. 44 sheets pack eagerly (the E-4b precedent) through
+  `packed_sheet_names`; the `Lookups.chat_portraits` map + the
+  `npc_portrait_background` rect feed the draw. The hop counter's tick
+  stays at the caller (`frame/draw.rs`, gated `talk_npc.is_some()`),
+  matching the C#'s read-then-increment BEFORE the mode branch.
+  DEVIATIONS (deliberate): the `CloseUp`/`FullBodyRetro` dummy-NPC arms
+  (`:40379-40443`, scissored `DrawNPCDirect` scale 3/2 + the offset
+  dictionaries) draw NOTHING — they need the portrait-dummy system
+  (S1-E-10b's successor lane; the f22 task-seed carries the contract);
+  `Disabled` (preference 3) returns exactly; the dead wobble/sway arms
+  (`:40347-40372`) are dropped as in the hop port; the label's shadow is
+  the port's ±2 four-way ring (the `DrawColorCodedStringWithShadow`
+  stand-in, the panel-text precedent). Witnesses (WRITTEN NOT RUN):
+  the_provider_resolves_the_roster_and_the_conditions (21 kinds + the
+  Zoologist four-way + the 44-sheet packing dedupe) +
+  the_shimmer_gate_needs_variation_one_and_the_transform_set +
+  the_anchor_rides_the_hop_lift (frame 0 → −14, frame 10 → −10.71875,
+  80+/120+ → 0).
+- **The f37 latch-repoint** — published as EXACT HUNKS (research/241)
+  for the f37 lane/merger: five `shop_mood` →
+  `shopping_settings.price_adjustment` swaps at f37 tip `908482d52`
+  (`app/mod.rs:1696`/`:1759`/`:1849`/`:2090`,
+  `frame/draw.rs:1694`/`:1746`); the f37 tip probe found it 8.5 h parked
+  with research/68 published (the key-68 registry winner) — not
+  confirmed dead, so no f37-branch edit (the own-branch rule).
+- **The research renumber** — 143 → 240 per registry-150 §2 (143 stays
+  with c4; the late-push scan assigns d120→237, d42→238, c8→239,
+  g58→240; refs updated, zero `research/143` hits remain).

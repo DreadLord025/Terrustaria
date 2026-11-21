@@ -10,11 +10,12 @@
 //! Deferred (documented in docs/ANALYSIS.md "Town chatter UI (S1-E-10b)"):
 //! the interaction buttons other than Close (`NPCInteractions.All`,
 //! `NPCInteractions.cs:486-531` — shop/happiness/housing/reforge/… ride
-//! systems the panel task does not own), the NPC portrait
-//! (`Main.DrawNPCPortrait`, `Main.cs:40318`), the corner item
+//! systems the panel task does not own), the corner item
 //! (`Main.DrawNPCChatBottomRightItem`, `:39789`), the sign-editing blinker
 //! (`NPCChatPanel.cs:236-262`), the Dryad Stardew override (`:195-213`)
-//! and the gamepad/virtual-keyboard arms.
+//! and the gamepad/virtual-keyboard arms. The NPC portrait's Detailed
+//! arm landed with the W4-g58 retire (`ui::chat_portrait`, the `:79`
+//! call site); its hop math lives below (`portrait_hop_lift`).
 
 use glam::Vec2;
 use tr_render::SpriteRenderer;

@@ -1799,6 +1799,18 @@ impl App {
                             // coin cells (`ItemSlot.DrawSavings`,
                             // `Main.cs:41791`, W4-g58 D5).
                             &mut self.coin_slot,
+                            // The chat portrait (W4-g58 retire): the hop
+                            // clock's pre-increment value (`Main.cs:40335`
+                            // reads THEN increments — the tick below), the
+                            // `DialoguePortraitPreference` setting and the
+                            // Zoologist lycanthrope predicate.
+                            self.npc_chat_portrait_frame_counter,
+                            self.settings.portrait_preference,
+                            crate::happiness::should_bestiary_girl_be_lycantrope(
+                                self.world.blood_moon,
+                                self.world.day_time,
+                                self.world.moon_phase,
+                            ),
                         );
                         // `CoinSlot.UpdateSlotAnims()` (`Main.cs:44936`, S1-H-9):
                         // the coin cells' animation clocks step per frame after
@@ -1807,11 +1819,15 @@ impl App {
                         // `Main.DrawNPCPortrait` (`Main.cs:40335`): while the
                         // chat panel draws, the hop counter reads THEN
                         // increments (`npcChatPortraitFrameCounter++`). The
-                        // portrait draw is deferred (S1-E-10b), but the
-                        // counter ticks on the same gate — the panel draws
-                        // iff `talk_npc` holds, and every ported town kind
-                        // has an `NPCPortraits` row (`NPCID.cs:5894+`), so
-                        // the provider/texture null-gates never bind.
+                        // Detailed-arm DRAW now consumes the pre-increment
+                        // value inside `draw_hud` (`ui::chat_portrait`,
+                        // W4-g58 retire); the tick stays on the same gate —
+                        // the panel draws iff `talk_npc` holds, and every
+                        // ported town kind has an `NPCPortraits` row
+                        // (`NPCID.cs:5894+`), so the provider/texture
+                        // null-gates never bind (the Disabled/CloseUp/
+                        // FullBodyRetro preferences still tick — the C#
+                        // increments BEFORE the mode branch).
                         if self.talk_npc.is_some() {
                             self.npc_chat_portrait_frame_counter =
                                 self.npc_chat_portrait_frame_counter.wrapping_add(1);

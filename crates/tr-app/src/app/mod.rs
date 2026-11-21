@@ -170,9 +170,8 @@ pub(crate) struct App {
     /// `Main.npcChatPortraitFrameCounter` (`Main.cs:1771`) — the portrait
     /// hop clock: `DrawNPCPortrait` reads THEN increments it per drawn
     /// frame (`:40335`), `DoNPCPortraitHop` (`:40675-40678`) resets it to 0.
-    /// The portrait DRAW is deferred (no portrait system, S1-E-10b); the
-    /// counter + the hop math (`ui::npc_chat::portrait_hop_lift`) are
-    /// ported so the animation state is faithful when the draw lands
+    /// The Detailed-arm DRAW consumes it (`ui::chat_portrait`, W4-g58
+    /// retire); CloseUp/FullBodyRetro stay deferred (portrait-system lane)
     /// (research/240's portrait census).
     pub(crate) npc_chat_portrait_frame_counter: i32,
     /// `Player.currentShoppingSettings` (`Player.cs:2916`) — latched by

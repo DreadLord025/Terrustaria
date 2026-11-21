@@ -12,6 +12,10 @@ pub mod char_creation;
 pub mod char_select;
 pub mod clipboard;
 pub(crate) mod chest;
+pub(crate) mod chat_portrait;
+pub(crate) mod chat_portrait_data;
+#[cfg(test)]
+mod chat_portrait_tests;
 pub mod chrome;
 pub(crate) mod coin_slot;
 pub mod color;
@@ -723,6 +727,15 @@ pub fn draw_hud(
     // (`NPC.CanShowHomelessText`, `NPC.cs:94828-94841`) and the latched
     // `currentShoppingSettings.HappinessReport` is non-empty.
     happiness_button: bool,
+    // The chat portrait (W4-g58 retire, `Main.DrawNPCPortrait`,
+    // `Main.cs:40318-40447`): the hop clock (`npcChatPortraitFrameCounter`,
+    // read-then-increment at `:40335` — the caller ticks it after this
+    // pass), `Main.DialoguePortraitPreference` (`Settings.
+    // portrait_preference`) and the Zoologist lycanthrope predicate
+    // (`NPC.ShouldBestiaryGirlBeLycantrope`, the world flags ride the App).
+    portrait_frame_counter: i32,
+    portrait_preference: u8,
+    portrait_lycanthrope: bool,
     // `CoinSlot.Savings` (`CoinSlot.cs:341`): the shop savings pile's coin
     // cells (`ItemSlot.DrawSavings`, `Main.cs:41791`, W4-g58 D5). The
     // banks ride the `player` already passed above.
@@ -811,6 +824,24 @@ pub fn draw_hud(
             pulse,
             mouse_pos,
         );
+        // `NPCChatPanel.cs:79` — `Main.DrawNPCPortrait(color,
+        // rectangle.TopLeft())` right after the text, before the buttons
+        // (the port draws the buttons inside `draw_panel`; the portrait
+        // overlays the panel's top-left corner either way — it sits
+        // OUTSIDE the 500-wide box at x−62). The Detailed arm ports;
+        // CloseUp/FullBodyRetro/Disabled gate inside (`chat_portrait`).
+        if let Some(n) = talk_npc.and_then(|i| npcs.get(i)) {
+            let panel = npc_chat::panel_rect(lookups, screen, npc_chat_text, happiness_button);
+            chat_portrait::draw_portrait(
+                r,
+                lookups,
+                n,
+                Vec2::new(panel[0], panel[1]),
+                portrait_frame_counter,
+                portrait_preference,
+                portrait_lycanthrope,
+            );
+        }
     }
 
     // `Main.DrawBestiaryIcon(num, num2)` (`Main.cs:41013`): the button rides

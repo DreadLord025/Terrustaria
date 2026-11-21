@@ -878,6 +878,14 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // W4-g58: the shop happiness icon strip (`TextureAssets.NPCHappiness`,
         // `Main.cs:41792-41796` — `Images/UI/NPCHappiness`, 4 frames).
         "UI/NPCHappiness",
+        // W4-g58 retire: the chat-portrait backdrop
+        // (`TextureAssets.NpcPortraitBackground`,
+        // `AssetInitializer.cs:650` — `Images/TownNPCs/Portraits/
+        // Portrait_Window`). The per-NPC portrait sheets pack in
+        // `load_static_sheets` through
+        // `ui::chat_portrait_data::packed_sheet_names` (the provider
+        // table's expansion — `NPCID.cs:5894-6073`).
+        "TownNPCs/Portraits/Portrait_Window",
         "Extra_48",
         // The emote wheel's per-cell border (`EmoteButton._textureBorder`,
         // `EmoteButton.cs:25`: `Images/UI/EmoteBubbleBorder`, 36x30) — the
@@ -1292,6 +1300,19 @@ pub fn load_static_sheets(dir: &Path) -> Vec<AtlasImage> {
         match load_png(dir, name, SheetLayout::Raw) {
             Ok(img) => images.push(img),
             Err(_) => log::warn!("missing background texture {name}"),
+        }
+    }
+    // W4-g58 retire: the chat-portrait sheets (`NPCID.Sets.NPCPortraits`,
+    // `NPCID.cs:5894-6073`). The C# requests each lazily on first draw
+    // (`BasicNPCPortrait.GetDrawData`, `NPCID.cs:77-80`); the port packs
+    // the ported roster's stems + `_shimmer` twins + the Zoologist `b`
+    // pair up front (the eager static-pack precedent, E-4b) — a missing
+    // file just leaves that portrait undrawn (the texture null-gate,
+    // `Main.cs:40331-40334`).
+    for stem in crate::ui::chat_portrait_data::packed_sheet_names() {
+        let name = format!("TownNPCs/Portraits/{stem}");
+        if let Ok(img) = load_png(dir, &name, SheetLayout::Raw) {
+            images.push(img);
         }
     }
     // The projectile sprites (`TextureAssets.Projectile[type]`, the
@@ -2177,6 +2198,16 @@ pub struct Lookups {
     /// frames, the band rides `currentShoppingSettings.PriceAdjustment`
     /// (`:41794`).
     pub ui_npc_happiness: Option<tr_render::SheetRect>,
+    /// `Images/TownNPCs/Portraits/Portrait_Window`
+    /// (`TextureAssets.NpcPortraitBackground`, `AssetInitializer.cs:650`):
+    /// the chat portrait's backdrop (`Main.DrawNPCPortrait`,
+    /// `Main.cs:40338`/`:40373`).
+    pub npc_portrait_background: Option<tr_render::SheetRect>,
+    /// The per-NPC chat-portrait sheets (`NPCID.Sets.NPCPortraits`,
+    /// `NPCID.cs:5894-6073`) keyed by sheet name (`Portrait_Merchant`,
+    /// `Portrait_Merchant_shimmer`, … — `ui::chat_portrait` resolves the
+    /// provider's name). The Detailed arm draws them (`Main.cs:40377`).
+    pub chat_portraits: std::collections::HashMap<String, tr_render::SheetRect>,
     /// `Images/Extra_48`: the emote sheet (`EmoteBubble.Draw`, `:209`).
     pub ui_emote_sheet: Option<tr_render::SheetRect>,
     /// `Images/UI/EmoteBubbleBorder`: the emote wheel cell's 36x30 border
@@ -2699,6 +2730,16 @@ impl Lookups {
             ui_chat_bubble: atlas.sheet("Chat").copied(),
             ui_chat_back: atlas.sheet("Chat_Back").copied(),
             ui_npc_happiness: atlas.sheet("UI/NPCHappiness").copied(),
+            npc_portrait_background: atlas.sheet("TownNPCs/Portraits/Portrait_Window").copied(),
+            chat_portraits: crate::ui::chat_portrait_data::packed_sheet_names()
+                .into_iter()
+                .filter_map(|name| {
+                    atlas
+                        .sheet(&format!("TownNPCs/Portraits/{name}"))
+                        .copied()
+                        .map(|s| (name, s))
+                })
+                .collect(),
             ui_emote_sheet: atlas.sheet("Extra_48").copied(),
             ui_emote_border: atlas.sheet("UI/EmoteBubbleBorder").copied(),
             ui_hue: atlas.sheet("Hue").copied(),
