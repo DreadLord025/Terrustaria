@@ -1023,9 +1023,12 @@ pub fn convert_spray_cell(world: &mut World, x: i32, y: i32, conversion_type: u8
 // ---------------------------------------------------------------------------
 // `WorldGen.Convert` — the chlorophyte cells (W4-f25 helper C5, conversion
 // types 8/9/10). The consumers: hardUpdateWorld's chlorophyte arms
-// (`:69658`/`:69686` type 8, `:69697` type 9 — the ported `convert_cell(..,
-// chlorophyte: true)` approximation stays, unwired) and ChlorophyteDefense's
-// remix-only type 10 (`:69460`). UNWIRED.
+// (`:69658`/`:69686` type 8, `:69697` type 9) and ChlorophyteDefense's
+// remix-only type 10 (`:69460`). STAYS UNWIRED — d103's pushed P8 slice
+// (014cf2937) owns the verbatim hardUpdateWorld rewrite with its own
+// `convert_purge_cell`; wiring these cells there would collide. The helpers
+// remain available for that lane / the merger (the wiring census, the
+// `12g-f25-worldgen-helpers.md` ledger).
 
 /// `WorldGen.Convert(i, j, conversionType, size)` for the chlorophyte types
 /// 8/9/10 (`WorldGen.cs:55067-55083` walk): the square walk with the

@@ -438,6 +438,15 @@ fn square_tile_frame(
             check_mushroom_tree(world, cx, cy, no_item, destroy_object, kill);
             continue;
         }
+        // `TileFrameImportant`'s `case 184` (`WorldGen.cs:85149-85213`,
+        // W4-f25 C8 wiring): the loose moss re-picks its colour column from
+        // the moss neighbours (`GetTileMossColor`) or dies. Like the tree
+        // arms it carries no `destroyObject` guard (a switch arm, not a
+        // `Check*` routine).
+        if cell.kind == 184 {
+            check_long_moss(world, cx, cy, no_item, destroy_object, kill);
+            continue;
+        }
         // `TileFrame`'s non-solid arm (`WorldGen.cs:81361-81374`): the cactus
         // 80 is NOT frame-important, but its `CheckCactus` runs before the
         // cosmetic framing — a cactus that lost its sand dies (and the kill
@@ -1006,6 +1015,80 @@ fn check_mushroom_tree(
     // `:85855-85873`: the top cell's canopy re-roll.
     if above != kind && fx == 0 {
         kill.mushroom_frame_rolls.push((x, y));
+    }
+}
+
+/// `WorldGen.TileFrameImportant`'s `case 184` (`WorldGen.cs:85149-85213`,
+/// W4-f25 C8 wiring): the loose moss picks its colour column from the first
+/// moss-coloured neighbour in the C#'s order — below (`num14`, gated
+/// `!halfBrick && !topSlope`), above (`num15`, gated `!bottomSlope`), left
+/// (`num16`), right (`num17`) — via [`crate::framing::get_tile_moss_color`];
+/// `frameX = 22 * colour`, and `frameY` re-rolls to the arm's band
+/// (0/54/108/162 + `genRand.Next(3) * 18`) only when it sits outside that
+/// band. The `Next(3)` draw (`:85175`) happens for EVERY framed 184 cell,
+/// before the colour tests. No colour neighbour → `KillTile(i, j)`.
+/// The roll rides the port's `frame_rng` runtime genRand stand-in (the C#
+/// `genRand == Main.rand`), taken/restored around the write.
+fn check_long_moss(
+    world: &mut World,
+    x: i32,
+    y: i32,
+    no_item: bool,
+    destroy_object: &mut bool,
+    kill: &mut TileKill,
+) {
+    let Some(cell) = world.tile(x, y) else {
+        return;
+    };
+    if !cell.active() || cell.kind != 184 {
+        return;
+    }
+    // `:85151-85174` — the four neighbour types (the C# reads them into
+    // num15/num14/num16/num17 in the above/below/left/right order, each with
+    // its own slope gate; -1 when the gate fails).
+    let above = world
+        .tile(x, y - 1)
+        .filter(|t| t.active() && !t.bottom_slope())
+        .map(|t| t.kind);
+    let below = world
+        .tile(x, y + 1)
+        .filter(|t| t.active() && !t.half_brick() && !t.top_slope())
+        .map(|t| t.kind);
+    let left = world.tile(x - 1, y).filter(|t| t.active()).map(|t| t.kind);
+    let right = world.tile(x + 1, y).filter(|t| t.active()).map(|t| t.kind);
+    // `:85175` — the frameY variant roll, drawn before the colour tests.
+    let mut rng = std::mem::take(&mut world.frame_rng);
+    let num18 = (rng.next_max(3) * 18) as i16;
+    world.frame_rng = rng;
+    // `:85176-85207` — the else-if colour ladder in source order: below,
+    // above, left, right. `(band_lo, band_hi)` is the arm's frameY window.
+    let pick = below
+        .and_then(crate::framing::get_tile_moss_color)
+        .map(|c| (c, 0i16, 36i16))
+        .or_else(|| {
+            above
+                .and_then(crate::framing::get_tile_moss_color)
+                .map(|c| (c, 54, 90))
+        })
+        .or_else(|| {
+            left.and_then(crate::framing::get_tile_moss_color)
+                .map(|c| (c, 108, 144))
+        })
+        .or_else(|| {
+            right
+                .and_then(crate::framing::get_tile_moss_color)
+                .map(|c| (c, 162, 198))
+        });
+    if let Some((colour, lo, hi)) = pick {
+        if let Some(t) = world.tile_mut(x, y) {
+            t.frame_x = (22 * colour) as i16;
+            if t.frame_y < lo || t.frame_y > hi {
+                t.frame_y = lo + num18;
+            }
+        }
+    } else {
+        // `:85208-85211` — no moss colour neighbour: the loose moss dies.
+        kill_tree_cell(world, x, y, no_item, destroy_object, kill);
     }
 }
 
@@ -5064,5 +5147,97 @@ mod tests {
             drop2.item
         );
         assert_eq!(w.shadow_orb_count, 2, "both breaks counted");
+    }
+
+    // W4-f25 wiring (moss family) — TileFrameImportant case 184
+    // (`WorldGen.cs:85149-85213`), the C8 GetTileMossColor consumer.
+    // WRITTEN NOT RUN (code-only round).
+
+    /// A loose moss 184 at (20, 20) with the given neighbour kinds; the
+    /// frame_important[184] bit set so the kill cascade reaches the arm.
+    fn moss_world(below: u16, above: u16, left: u16, right: u16) -> World {
+        let mut w = World::new("t".into(), 60, 60);
+        w.frame_important = vec![false; crate::tiledata::TILE_COUNT];
+        w.frame_important[184] = true;
+        w.seed_frame_rng();
+        let put = |w: &mut World, x: i32, y: i32, kind: u16| {
+            let i = w.index(x, y);
+            w.tiles[i] = Tile { kind, flags: FLAG_ACTIVE, ..Default::default() };
+        };
+        put(&mut w, 20, 20, 184);
+        put(&mut w, 20, 21, below);
+        put(&mut w, 20, 19, above);
+        put(&mut w, 19, 20, left);
+        put(&mut w, 21, 20, right);
+        w
+    }
+
+    #[test]
+    fn w4_f25_c8_the_below_moss_sets_the_colour_column() {
+        // The below neighbour is the moss 180 (colour 1) — frameX = 22,
+        // and the frameY (0, inside the 0..36 band) keeps its value.
+        let mut w = moss_world(180, 1, 1, 1);
+        let i = w.index(20, 20);
+        w.tiles[i].frame_y = 18; // inside the below band
+        let mut destroy = false;
+        let mut kill = TileKill::default();
+        check_long_moss(&mut w, 20, 20, true, &mut destroy, &mut kill);
+        let t = w.tile(20, 20).unwrap();
+        assert_eq!(t.frame_x, 22, "colour 1 → frameX 22");
+        assert_eq!(t.frame_y, 18, "the in-band frameY keeps");
+        assert!(t.active(), "the moss survives");
+    }
+
+    #[test]
+    fn w4_f25_c8_the_colour_order_below_beats_above_left_right() {
+        // All four neighbours moss-coloured: below 179 (0), above 180 (1),
+        // left 181 (2), right 182 (3) — the below arm wins (colour 0).
+        let mut w = moss_world(179, 180, 181, 182);
+        let mut destroy = false;
+        let mut kill = TileKill::default();
+        check_long_moss(&mut w, 20, 20, true, &mut destroy, &mut kill);
+        assert_eq!(w.tile(20, 20).unwrap().frame_x, 0, "the below colour wins");
+        // With the below gone (stone 1), the above 180 (colour 1) wins.
+        let mut w2 = moss_world(1, 180, 181, 182);
+        check_long_moss(&mut w2, 20, 20, true, &mut destroy, &mut kill);
+        assert_eq!(w2.tile(20, 20).unwrap().frame_x, 22, "the above colour");
+    }
+
+    #[test]
+    fn w4_f25_c8_the_out_of_band_frame_y_rerolls_into_the_band() {
+        // The below moss 180 (colour 1, band 0..36); the frameY 200 sits
+        // outside — it re-rolls to 0 + Next(3)*18 (0/18/36).
+        let mut w = moss_world(180, 1, 1, 1);
+        let i = w.index(20, 20);
+        w.tiles[i].frame_y = 200;
+        let mut destroy = false;
+        let mut kill = TileKill::default();
+        check_long_moss(&mut w, 20, 20, true, &mut destroy, &mut kill);
+        let fy = w.tile(20, 20).unwrap().frame_y;
+        assert!(matches!(fy, 0 | 18 | 36), "the re-rolled band: {fy}");
+    }
+
+    #[test]
+    fn w4_f25_c8_no_moss_colour_neighbour_kills_the_loose_moss() {
+        // All four neighbours stone 1 (no moss colour) — the KillTile arm.
+        let mut w = moss_world(1, 1, 1, 1);
+        let mut destroy = false;
+        let mut kill = TileKill::default();
+        check_long_moss(&mut w, 20, 20, true, &mut destroy, &mut kill);
+        assert!(!w.tile(20, 20).unwrap().active(), "the loose moss dies");
+    }
+
+    #[test]
+    fn w4_f25_c8_the_half_brick_below_gate_refuses_the_colour() {
+        // The below moss 180 is a half-brick — the `!halfBrick` gate fails,
+        // so the below colour is skipped; with no other moss neighbour the
+        // moss dies (`:85163`).
+        let mut w = moss_world(180, 1, 1, 1);
+        let b = w.index(20, 21);
+        w.tiles[b].flags |= crate::tile::FLAG_HALF_BRICK;
+        let mut destroy = false;
+        let mut kill = TileKill::default();
+        check_long_moss(&mut w, 20, 20, true, &mut destroy, &mut kill);
+        assert!(!w.tile(20, 20).unwrap().active(), "the half-brick below refuses");
     }
 }

@@ -1316,9 +1316,10 @@ pub fn reframe_area(world: &mut World, cx: i32, cy: i32, radius: i32, reset: boo
 /// `WorldGen.GetTileMossColor(tileType)` (`WorldGen.cs:81215-81255`, W4-f25
 /// helper C8): the moss tile / moss-brick pairs map to their colour index
 /// 0-10 (the loose-moss 184 frame column = `22 * colour`, `TileFrame` case
-/// 184 `:85176-85202`); every other kind reads -1 (`None`). UNWIRED (the
-/// port's `frame_of` does not carry the case-184 arm yet — the consumer is
-/// the framing lane's).
+/// 184 `:85176-85202`); every other kind reads -1 (`None`). WIRED: the
+/// case-184 arm lives in `edit/kill.rs::check_long_moss` (the port's
+/// `TileFrameImportant` dispatch), which calls this for the four-neighbour
+/// colour pick.
 pub fn get_tile_moss_color(tile_type: u16) -> Option<i32> {
     Some(match tile_type {
         179 | 512 => 0,

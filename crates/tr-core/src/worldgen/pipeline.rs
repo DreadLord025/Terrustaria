@@ -2823,6 +2823,11 @@ pub(crate) fn boot_statics(world: &mut World) {
     world.frame_important[82] = true;
     world.frame_important[83] = true;
     world.frame_important[84] = true;
+    // The loose moss 184 (`Main.cs:7414`) — W4-f25 C8 wiring: the growth
+    // moss arm (`growth/grass.rs::grow_moss_arm`) and d105's Moss Grass pass
+    // write its frames; the framer must keep them and the kill cascade must
+    // reach `TileFrameImportant`'s case-184 colour pick (`WorldGen.cs:85149`).
+    world.frame_important[184] = true;
     world.frame_important[185] = true;
     world.frame_important[186] = true;
     world.frame_important[187] = true;
