@@ -169,6 +169,17 @@ CreativePowers, CreativeUnlocksReport, TeleportPylon, Particles,
 CreativePowerPermissions — `netmodules.rs::module_id` (34-45). **NetDebugModule has no
 Rust counterpart** (module 11).
 
+> **W4-g51 SEAL cross-note (2026-11-21, research/309):** the NOT-FOUND rows
+> above are the BASE-trunk census — the g48-g51 apply lanes landed the tail
+> on their branches. For the g51 range: 129/138/139/145/146/148/152/160/161
+> (the f21 cross-check lifts) + the 8 BIG TE/dryad arms
+> 121/122/123/124/133/144/149/156 (the FINAL phase) are WIRED on
+> `task/W4-g51-net-apply-arms-4`; 139's join push is the g52c master input
+> (`Server::slot_counts_as_host`, IPv4-loopback-exact). The per-id verdict
+> table + the union keep-one hunks + the net-121-family bible:
+> `309-g51-net-te-family-seal.md`; the sibling coverage census:
+> f21b's `276-f21b-net-apply-audit.md` (239→276 per registry 150 §6.3).
+
 ## SendData call-site census (subsystems calling the writer)
 
 `grep -c "NetMessage.SendData("` over `decompiled/` — **774 sites in 68 files**:

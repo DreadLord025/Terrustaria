@@ -1202,8 +1202,19 @@ impl App {
                 let occupied = self.net_te_anchors.iter().any(|(slot, (eid, _, _))| {
                     *eid == t.entity_id && self.net_player_slot_active(*slot)
                 });
+                // `TryGet` fails on a removed `ByID` entry (`:126`/`:159-167`);
+                // the port's tombstoned slot must read as missing (the
+                // `broadcast_tile_entity` liveness pattern). SEAL re-pin.
                 let entity = if t.entity_id >= 0 {
-                    self.world.tile_entities.get_by_id(t.entity_id as u32)
+                    self.world
+                        .tile_entities
+                        .get_by_id(t.entity_id as u32)
+                        .filter(|e| {
+                            self.world
+                                .tile_entities
+                                .get_at(e.x, e.y)
+                                .is_some_and(|live| live.id == e.id)
+                        })
                 } else {
                     None
                 };
@@ -1233,6 +1244,14 @@ impl App {
                         .get_by_id(h.entity_id as u32)
                         .is_some_and(|e| {
                             e.kind == tr_core::tile_entities::TeKind::HatRack
+                                // `TryGet` fails on a removed `ByID` entry —
+                                // the tombstoned slot reads as missing (the
+                                // SEAL re-pin, the 122 gate's pattern).
+                                && self
+                                    .world
+                                    .tile_entities
+                                    .get_at(e.x, e.y)
+                                    .is_some_and(|live| live.id == e.id)
                         });
                 if !ok {
                     return; // `:4010-4015` — the refusal consumes the tail
@@ -1424,12 +1443,27 @@ impl App {
         if d.entity_id < 0 {
             return false; // `TryGet` fails → ReadDummySync, no relay
         }
+        // `TryGet<TEDisplayDoll>`'s `as T` type gate + the removed-`ByID`
+        // failure (the tombstoned slot reads as missing — the SEAL re-pin,
+        // the 122/124 gates' pattern). Checked before the mutable borrow.
+        let live = self
+            .world
+            .tile_entities
+            .get_by_id(d.entity_id as u32)
+            .is_some_and(|e| {
+                e.kind == tr_core::tile_entities::TeKind::DisplayDoll
+                    && self
+                        .world
+                        .tile_entities
+                        .get_at(e.x, e.y)
+                        .is_some_and(|live| live.id == e.id)
+            });
+        if !live {
+            return false;
+        }
         let Some(e) = self.world.tile_entities.by_id_mut(d.entity_id as u32) else {
             return false;
         };
-        if e.kind != tr_core::tile_entities::TeKind::DisplayDoll {
-            return false; // `TryGet<TEDisplayDoll>`'s `as T` type gate
-        }
         let tr_core::tile_entities::TeData::DisplayDoll {
             equip,
             dye,
@@ -1485,7 +1519,17 @@ impl App {
     fn doll_sync_relay(&self, d: net::DisplayDollSync) -> net::DisplayDollSync {
         let mut out = d;
         let entity = if d.entity_id >= 0 {
-            self.world.tile_entities.get_by_id(d.entity_id as u32)
+            // The writer's `TryGet<TEDisplayDoll>` (`:1465`): a removed
+            // `ByID` entry falls to `WriteDummySync` (SEAL re-pin).
+            self.world
+                .tile_entities
+                .get_by_id(d.entity_id as u32)
+                .filter(|e| {
+                    self.world
+                        .tile_entities
+                        .get_at(e.x, e.y)
+                        .is_some_and(|live| live.id == e.id)
+                })
         } else {
             None
         };
@@ -1558,7 +1602,17 @@ impl App {
         let mut out = h;
         let idx = h.slot_index() as usize;
         let entity = if h.entity_id >= 0 {
-            self.world.tile_entities.get_by_id(h.entity_id as u32)
+            // The writer's `TryGet<TEHatRack>` (`:1500`): a removed `ByID`
+            // entry falls to the air-triple fallback (SEAL re-pin).
+            self.world
+                .tile_entities
+                .get_by_id(h.entity_id as u32)
+                .filter(|e| {
+                    self.world
+                        .tile_entities
+                        .get_at(e.x, e.y)
+                        .is_some_and(|live| live.id == e.id)
+                })
         } else {
             None
         };
@@ -1641,14 +1695,18 @@ impl App {
         let spawn = (base.0, base.1 - 52.0);
         // `Projectile.NewProjectile(…, 995, 0, 0f, Main.myPlayer)`
         // (`:19226`): the host's own player owns it (slot 0). The 995 row
-        // (`Projectile.cs:9446-9457`): 240×104, aiStyle 192, friendly,
-        // penetrate -1, tileCollide false, ignoreWater, timeLeft *= 5.
+        // (`Projectile.cs:9446-9457`): 240×104, aiStyle 192, friendly (the
+        // pool's spawn default), penetrate -1, tileCollide false,
+        // ignoreWater, timeLeft *= 5. The X/Y overload CENTRES the box on
+        // the spawn point (`Projectile.cs:10876-10877`: `X - width*0.5,
+        // Y - height*0.5` → −120, −52 for the 240×104 row) — the SEAL
+        // re-pin, the f30 local twin's convention.
         let owner = 0u8;
         if let Some(ps) = self.projectiles.spawn_with_data_owned(
             995,
             owner,
-            spawn.0,
-            spawn.1,
+            spawn.0 - 120.0,
+            spawn.1 - 52.0,
             0.0,
             0.0,
             0,
@@ -3137,7 +3195,19 @@ impl App {
                 if t.entity_id < 0 {
                     return;
                 }
-                let Some(e) = self.world.tile_entities.get_by_id(t.entity_id as u32) else {
+                let Some(e) = self
+                    .world
+                    .tile_entities
+                    .get_by_id(t.entity_id as u32)
+                    .filter(|e| {
+                        // `TryGet` fails on a removed `ByID` entry — the
+                        // tombstoned slot reads as missing (SEAL re-pin).
+                        self.world
+                            .tile_entities
+                            .get_at(e.x, e.y)
+                            .is_some_and(|live| live.id == e.id)
+                    })
+                else {
                     return; // `TryGet` fails
                 };
                 let (ex, ey) = (e.x as i32, e.y as i32);
@@ -3178,7 +3248,16 @@ impl App {
                     .world
                     .tile_entities
                     .get_by_id(h.entity_id as u32)
-                    .is_some_and(|e| e.kind == tr_core::tile_entities::TeKind::HatRack);
+                    .is_some_and(|e| {
+                        e.kind == tr_core::tile_entities::TeKind::HatRack
+                            // The tombstoned slot reads as missing (the
+                            // host gate's SEAL re-pin).
+                            && self
+                                .world
+                                .tile_entities
+                                .get_at(e.x, e.y)
+                                .is_some_and(|live| live.id == e.id)
+                    });
                 if ok {
                     self.apply_hat_rack_item(h.entity_id as u32, slot, dye, h.item);
                 }
@@ -7644,6 +7723,59 @@ mod message_family_tests {
         assert!(!client_app.net_te_anchors.contains_key(&1));
     }
 
+    /// SEAL re-pin: a tombstoned TE id is NOT a `TryGet` hit — the removed
+    /// `ByID` entry (`TileEntity.cs:126`) makes the host's 122 `TryGet` gate
+    /// refuse (no anchor, no relay) and the 124 gate consume-and-drop.
+    /// `remove_at` leaves the port's cleared slot; the liveness filter is
+    /// what keeps the gates faithful.
+    #[test]
+    fn w4_g51_a_tombstoned_te_id_refuses_the_interaction_and_the_hat_sync() {
+        let (mut host_app, mut client_app) = te_world_pair();
+        let (x, y) = (34i16, 39i16);
+        let i = host_app.world.index(x as i32, y as i32);
+        host_app.world.tiles[i] = tr_core::Tile { kind: 475, ..Default::default() };
+        host_app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        let rack_id = host_app
+            .world
+            .tile_entities
+            .place(&host_app.world.clone(), tr_core::tile_entities::TeKind::HatRack, x, y)
+            .expect("valid");
+        // Tombstone it on BOTH sides (the anchor tile broke; the id slot
+        // stays in the book with `TeData::None`). The kind STILL reads
+        // HatRack — only the liveness filter refuses the frame.
+        host_app.world.tile_entities.remove_at(x, y).expect("live");
+        client_app
+            .world
+            .tile_entities
+            .place_unchecked(tr_core::tile_entities::TeKind::HatRack, x, y);
+        client_app.world.tile_entities.remove_at(x, y).expect("live");
+        host_app.remote_players.entry(1).or_default().hp = 100;
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TileEntityInteraction(net::TileEntityInteraction {
+                entity_id: rack_id as i32,
+                player_id: 0,
+            }));
+            // A hat-rack frame naming the dead id: consume-and-drop.
+            client.send(&C2s::HatRackItemSync(net::HatRackItemSync {
+                player_id: 0,
+                entity_id: rack_id as i32,
+                wire_slot: 0,
+                item: net::TeItem { kind: 3454, prefix: 0, stack: 1 },
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 20);
+        assert!(
+            !host_app.net_te_anchors.contains_key(&1),
+            "the tombstoned id refuses the interaction"
+        );
+        assert!(!client_app.net_te_anchors.contains_key(&1));
+        // The dead slot's payload stays tombstoned (no hat-rack write).
+        assert_eq!(
+            host_app.world.tile_entities.get_by_id(rack_id).unwrap().data,
+            tr_core::tile_entities::TeData::None
+        );
+    }
+
     /// `124` hat-rack sync: the dye fold routes to the dye array; the host
     /// applies + relays; the client's store takes it. `TEHatRack.ReadItem`
     /// (`TEHatRack.cs:390-403`).
@@ -7698,11 +7830,11 @@ mod message_family_tests {
     fn w4_g51_the_dryad_stardew_writes_the_ai_and_spawns_the_jumino() {
         let (mut host_app, mut client_app) = te_world_pair();
         // A dryad standing on the dirt row (y=40 is the surface; the NPC's
-        // bottom rests at y=40*16=640, so top = 640 - 40 = 600). The probe
-        // Bottom+(100,0) = (109, 640) → tile (6, 40), Y=Clamp(30,10,54)=30;
-        // the first solid row is y=40 (not the first scanned row 30), so the
-        // spawn uses the probe tile's world coords (6*16+8, 40*16)=(104,640)
-        // + (0,-52) = (104, 588).
+        // bottom rests at y=40*16=640, so top = 640 - 40 = 600). Bottom =
+        // (x + w/2, y + h) = (109, 640); the probe +(100,0) = (209, 640) →
+        // tile (13, 40), Y=Clamp(30,10,54)=30; the first solid row is y=40
+        // (not the first scanned row 30), so the spawn uses the probe tile's
+        // world coords (13*16+8, 40*16)=(216,640) + (0,-52) = (216, 588).
         let mut dryad = crate::npc::Npc::new(crate::npc::NpcKind::Dryad, 100.0, 600.0, 1, 0.0);
         dryad.hp = dryad.max_hp;
         host_app.npcs.push(dryad);
@@ -7731,6 +7863,21 @@ mod message_family_tests {
             .filter(|p| p.active && p.kind == 995)
             .count();
         assert_eq!(jumino_after, jumino_before + 1, "the Jumino spawned");
+        // The box centres on the spawn point (the `NewProjectile` X/Y
+        // overload, `Projectile.cs:10876-10877`): (216, 588) − (120, 52)
+        // = (96, 536) for the 240×104 row.
+        let jum = host_app
+            .projectiles
+            .slots()
+            .iter()
+            .find(|p| p.active && p.kind == 995)
+            .unwrap();
+        assert_eq!((jum.pos.x, jum.pos.y), (96.0, 536.0));
+        assert!(jum.friendly);
+        assert!(!jum.tile_collide);
+        assert!(jum.ignore_water);
+        assert!(jum.net_important);
+        assert_eq!(jum.time_left, 3600 * 5);
         // The client received the 995 via the 27 broadcast.
         let client_jumino = client_app
             .projectiles
