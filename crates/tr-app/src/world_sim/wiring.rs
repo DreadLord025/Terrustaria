@@ -597,7 +597,7 @@ fn coins_split(count: i64) -> [i64; 4] {
 fn try_move_coins_in_chest(
     drop_kind: u16,
     drop_count: u32,
-    slots: &mut [crate::item::ItemSlot],
+    slots: &mut Vec<crate::item::ItemSlot>,
     max_items: usize,
 ) -> bool {
     if !crate::registry::is_coin(drop_kind) {
@@ -694,7 +694,7 @@ fn try_adding_to_stack(
 /// caller runs its `PlaySound(7)` (`:2765`) on the wiring stream.
 fn try_put_item_in_chest(
     drop: &crate::item::ItemDrop,
-    slots: &mut [crate::item::ItemSlot],
+    slots: &mut Vec<crate::item::ItemSlot>,
     max_items: usize,
 ) -> (bool, u32, bool) {
     if crate::registry::is_coin(drop.kind) {
@@ -788,8 +788,10 @@ fn hopper_pull(app: &mut App, i: i32, j: i32, kind: u16) {
         if !crate::item::rects_intersect(drop.pos.x, drop.pos.y, crate::item::SIZE, crate::item::SIZE, gx, gy, 192.0, 192.0) {
             continue;
         }
-        let slots = crate::chest::chest_slots_mut(&mut app.world_chests, idx)
-            .expect("the chest exists");
+        // The chest's slot Vec directly (the empty-slot / coin arms grow it —
+        // `Chest.Resize`, `Chest.cs:118-130`); a removed chest slot can't be
+        // reached here (`find_chest` above returned this index).
+        let slots = &mut app.world_chests[idx].slots;
         let (placed, remaining, via_empty_slot) = try_put_item_in_chest(drop, slots, max_items);
         if placed {
             // `:2765` — `TryAddingToEmptySlot`'s `SoundEngine.PlaySound(7)`:
