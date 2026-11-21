@@ -816,17 +816,29 @@ pub fn update_world_overground_tile(
         return;
     }
     if grass_pass {
-        update_world_grass_growth(
-            world,
-            x,
-            y,
-            x - 1,
-            x + 2,
-            y - 1,
-            y + 2,
-            true,
-            rng,
-        );
+        // The mushroom grass 70 on the OVERGROUND path rides the overworld
+        // `case 70` arm (`:74704-74750`), NOT the underground slice — the C#
+        // `UpdateWorld_GrassGrowth` returns from the underground block at
+        // `:74508` before the overworld `switch (num10)` (`:74510`). The port's
+        // `update_world_grass_growth` carries the underground slice (its
+        // `allowed_to_spread` arg stands in for the C# `underground` flag the
+        // overground caller passes true); routing 70 through it would double
+        // the plant roll, so the overworld arm replaces it here (W4-g42 tail).
+        if kind == 70 {
+            overworld_mushroom_growth(world, x, y, x - 1, x + 2, y - 1, y + 2, rng);
+        } else {
+            update_world_grass_growth(
+                world,
+                x,
+                y,
+                x - 1,
+                x + 2,
+                y - 1,
+                y + 2,
+                true,
+                rng,
+            );
+        }
         // The thorn arms (:72362-72370): the corruption thorn 32 grows into
         // the corrupt grass 23 and the crimson thorn 352 into the crimson
         // grass 199, both at `Next(3)` — the C# triggers on the THORN tile,
@@ -842,6 +854,85 @@ pub fn update_world_overground_tile(
         // walk with no roll.
         if kind == 69 {
             grow_spike(world, x, y, 69, 60, rng);
+        }
+    }
+}
+
+/// `UpdateWorld_GrassGrowth`'s overworld `case 70` arm (`WorldGen.cs:74704-
+/// 74750`), verbatim (W4-g42 tail): the mushroom-grass runtime growth. Behind
+/// the `!inActive()` gate (`:74706`): the `Next(10)` plant-71 roll places a
+/// glowing mushroom on the free cell above with `CopyPaintAndCoating`
+/// (`:74708-74719`), then the `Next(300)` `TryGrowingTreeByType(5)` roll grows
+/// a giant mushroom tree (`:74720-74727`). The 3×3 scan spreads the mushroom
+/// grass over the mud 59 neighbours (`:74731-74745`).
+///
+/// Deviations (ANALYSIS): `PlayerLOS` / `TreeGrowFXCheck` (`:74722-74725`)
+/// are the unported grow-FX (the `attempt_grow_tree_from_sapling` precedent);
+/// the `SquareTileFrame` re-frame and the netMode sends are the framer's /
+/// MP's job. The `&` conjunction (`TryGrowingTreeByType(5) & flag10`,
+/// `:74723`) evaluates BOTH sides — the tree grow draws even when the LOS
+/// gate is off, so the port always grows. (The UNDERGROUND case-70 arm
+/// `:74497-74506` carries the liquid-above `PlaceCatTail` branch — c33's
+/// helper — and the `Next(250)` tree roll; it rides the underground
+/// dispatcher, a separate documented follow-up.)
+fn overworld_mushroom_growth(
+    world: &mut World,
+    i: i32,
+    j: i32,
+    min_i: i32,
+    max_i: i32,
+    min_j: i32,
+    max_j: i32,
+    rng: &mut UnifiedRandom,
+) {
+    // `if (!Main.tile[i, j].inActive())` (`:74706`).
+    if !world.tile(i, j).is_some_and(|t| t.inactive()) {
+        // The plant-71 roll (`:74708-74719`): the free cell above, Next(10).
+        if !world.tile(i, min_j).is_some_and(|t| t.active()) && rng.next_max(10) == 0 {
+            // `PlaceTile(i, minJ, 71, mute: true)` — the below-gate (active,
+            // flat, type 70) then `frameX = Next(5) * 18` (`:59652-59676`).
+            let below_ok = min_j + 1 < world.height
+                && world.tile(i, min_j + 1).is_some_and(|t| {
+                    t.active() && t.slope() == 0 && !t.half_brick() && t.kind == 70
+                });
+            if below_ok {
+                let fx = (rng.next_max(5) * 18) as i16;
+                let idx = world.index(i, min_j);
+                let t = &mut world.tiles[idx];
+                t.flags |= FLAG_ACTIVE;
+                t.kind = 71;
+                t.frame_x = fx;
+                // `CopyPaintAndCoating(Main.tile[i, j])` (`:74713`).
+                let (src_meta, src_extras) = {
+                    let si = world.index(i, j);
+                    (world.tiles[si].meta, world.extras_at(si))
+                };
+                let di = world.index(i, min_j);
+                world.tiles[di].meta = src_meta;
+                world.set_extras_at(di, src_extras);
+                if world.frame_important.len() <= 71 {
+                    world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+                }
+                world.frame_important[71] = true;
+            }
+        }
+        // The tree roll (`:74720-74727`): Next(300), then TryGrowingTreeByType(5).
+        // The `& flag10` (PlayerLOS) evaluates the grow regardless — the FX
+        // gate only suppresses the cosmetic shake (unported).
+        if rng.next_max(300) == 0 {
+            let _ = crate::growth::try_growing_tree_by_type(world, 5, i, j, rng);
+        }
+    }
+    // The 3×3 mud→mushroom-grass scan (`:74731-74745`).
+    for num23 in min_i..max_i {
+        for num24 in min_j..max_j {
+            if (i != num23 || j != num24)
+                && world
+                    .tile(num23, num24)
+                    .is_some_and(|t| t.active() && t.kind == 59)
+            {
+                spread_grass(world, num23, num24, 59, 70);
+            }
         }
     }
 }
@@ -1648,6 +1739,61 @@ pub(super) mod tests {
         // (`:71502-71507`).
         let picks = update_world(&mut w, 1, false, false, false, true, 0.0, 0.0, &mut rng);
         assert_eq!(picks, 50 + 25);
+    }
+
+    /// W4-g42 tail: the overworld mushroom-grass arm (`UpdateWorld_GrassGrowth`
+    /// `case 70`, `:74704-74750`) grows the giant mushroom tree on the
+    /// `Next(300)` roll — the runtime tree growth the old port lacked (it ran
+    /// the underground slice, which has no overworld tree roll). A mushroom
+    /// grass cell with a tree-soil neighbour grows a tile-5 trunk eventually.
+    #[test]
+    fn w4_g42_tail_overworld_mushroom_grass_grows_the_giant_tree() {
+        let mut grew = false;
+        for seed in 1i32..400 {
+            let mut w = world();
+            w.world_surface = 250.0;
+            // The mushroom grass ground row + a soil neighbour (the tree gate).
+            for dx in -2i32..=2 {
+                put(&mut w, 100 + dx, 200, 70, 0);
+            }
+            let mut rng = UnifiedRandom::new(seed);
+            overworld_mushroom_growth(&mut w, 100, 200, 99, 102, 199, 202, &mut rng);
+            if w.tile(100, 199).is_some_and(|t| t.active() && t.kind == 5) {
+                grew = true;
+                break;
+            }
+        }
+        assert!(grew, "the Next(300) roll grows a giant mushroom tree eventually");
+    }
+
+    /// W4-g42 tail: the overworld mushroom arm's `Next(10)` plant roll places a
+    /// glowing mushroom 71 on the free cell above (`:74708-74719`), and the
+    /// 3×3 scan spreads the mushroom grass over the mud 59 neighbours
+    /// (`:74731-74745`).
+    #[test]
+    fn w4_g42_tail_overworld_mushroom_plant_and_mud_spread() {
+        // The plant roll: a free cell above the mushroom grass, over many seeds.
+        let mut planted = false;
+        for seed in 1i32..200 {
+            let mut w = world();
+            w.world_surface = 250.0;
+            put(&mut w, 100, 200, 70, 0);
+            let mut rng = UnifiedRandom::new(seed);
+            overworld_mushroom_growth(&mut w, 100, 200, 99, 102, 199, 202, &mut rng);
+            if w.tile(100, 199).is_some_and(|t| t.active() && t.kind == 71) {
+                planted = true;
+                break;
+            }
+        }
+        assert!(planted, "the Next(10) roll places the glowing mushroom 71");
+        // The mud spread: an exposed mud neighbour converts to mushroom grass.
+        let mut w = world();
+        w.world_surface = 250.0;
+        put(&mut w, 100, 200, 70, 0);
+        put(&mut w, 101, 200, 59, 0); // the mud neighbour (air above → exposed)
+        let mut rng = UnifiedRandom::new(7);
+        overworld_mushroom_growth(&mut w, 100, 200, 99, 102, 199, 202, &mut rng);
+        assert_eq!(w.tile(101, 200).unwrap().kind, 70, "the mud spreads to mushroom grass");
     }
 
 }
