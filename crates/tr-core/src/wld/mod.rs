@@ -1815,6 +1815,13 @@ mod tests {
         // W4-f45: the booster pair (the g89b lane's co-claim).
         world.combat_book_volume_two_was_used = true;
         world.peddlers_satchel_was_used = true;
+        // W4-f45: the five remaining slime-colour unlocks (the town-slime kinds
+        // are unported; the latches round-trip).
+        world.unlocked_slime_green_spawn = true;
+        world.unlocked_slime_old_spawn = true;
+        world.unlocked_slime_purple_spawn = true;
+        world.unlocked_slime_yellow_spawn = true;
+        world.unlocked_slime_copper_spawn = true;
         world
     }
 
@@ -2194,6 +2201,26 @@ mod tests {
             got.peddlers_satchel_was_used, want.peddlers_satchel_was_used,
             "{context}: peddlersSatchelWasUsed"
         );
+        assert_eq!(
+            got.unlocked_slime_green_spawn, want.unlocked_slime_green_spawn,
+            "{context}: unlockedSlimeGreenSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_old_spawn, want.unlocked_slime_old_spawn,
+            "{context}: unlockedSlimeOldSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_purple_spawn, want.unlocked_slime_purple_spawn,
+            "{context}: unlockedSlimePurpleSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_yellow_spawn, want.unlocked_slime_yellow_spawn,
+            "{context}: unlockedSlimeYellowSpawn"
+        );
+        assert_eq!(
+            got.unlocked_slime_copper_spawn, want.unlocked_slime_copper_spawn,
+            "{context}: unlockedSlimeCopperSpawn"
+        );
     }
 
     #[test]
@@ -2408,8 +2435,14 @@ mod tests {
         tail[2026 + d] = u8::from(world.downed_deerclops); // downedDeerclops (`:1397`)
         // The rainbow slime in the 7-slime run at 2038 (`:1410-1414`):
         // green/old/purple, then rainbow@2041, red@2042 (gate V3, i35).
+        // W4-f45: the five remaining slime-colour unlocks join the owned set.
+        tail[2038 + d] = u8::from(world.unlocked_slime_green_spawn);
+        tail[2039 + d] = u8::from(world.unlocked_slime_old_spawn);
+        tail[2040 + d] = u8::from(world.unlocked_slime_purple_spawn);
         tail[2041 + d] = u8::from(world.unlocked_slime_rainbow_spawn);
         tail[2042 + d] = u8::from(world.unlocked_slime_red_spawn);
+        tail[2043 + d] = u8::from(world.unlocked_slime_yellow_spawn);
+        tail[2044 + d] = u8::from(world.unlocked_slime_copper_spawn);
         tail[2045 + d] = u8::from(world.fast_forward_to_dusk); // fastForwardTimeToDusk (`:1416`)
         tail[2046 + d] = world.moondial_cooldown; // moondialCooldown (`:1417`)
         // W4-f45: the eight secret-seed bytes — the `InitializeSecretSeeds`
@@ -4769,6 +4802,55 @@ mod tests {
         let d = 4 * world.party_celebrants.len();
         assert_eq!(buf[tail_at + 2036 + d], 1, "combatBookTwo round-trips");
         assert_eq!(buf[tail_at + 2037 + d], 1, "peddlersSatchel round-trips");
+        assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
+    }
+
+    /// W4-f45 — the five remaining slime-colour unlocks land at tail
+    /// 2038/2039/2040/2043/2044 (`WorldFile.cs:1409-1415`) and follow the v261
+    /// read gate (`:2433-2451`). The town-slime kinds are unported, so the
+    /// latches round-trip (the green arrival setter rides the f43 town-slime
+    /// lane; the doom party clears green). Written, NOT run (code-only mode).
+    #[test]
+    fn w4_f45_the_remaining_slime_unlocks_land_and_gate() {
+        let mut data = fixture();
+        let tail_at = tail_offset_in_synthetic(&data, VER);
+        data[tail_at + 2038] = 1; // green
+        data[tail_at + 2040] = 1; // purple (old stays 0)
+        data[tail_at + 2044] = 1; // copper (yellow stays 0)
+        let w = parse(&data).expect("the patched fixture parses");
+        assert!(w.unlocked_slime_green_spawn, "green at tail 2038");
+        assert!(!w.unlocked_slime_old_spawn, "the old byte between stays 0");
+        assert!(w.unlocked_slime_purple_spawn, "purple at tail 2040");
+        assert!(!w.unlocked_slime_yellow_spawn, "the yellow byte stays 0");
+        assert!(w.unlocked_slime_copper_spawn, "copper at tail 2044");
+        // The rainbow/red pair between them stays 0 (the patch skipped them).
+        assert!(!w.unlocked_slime_rainbow_spawn && !w.unlocked_slime_red_spawn);
+        // v260: the slime run does not exist yet — all stay false.
+        let w = parse(&synthetic_file(260, &[2, 144], 160, 11)).expect("v260 loads");
+        assert!(!w.unlocked_slime_green_spawn, "below 261: green stays false");
+        assert!(!w.unlocked_slime_copper_spawn, "below 261: copper stays false");
+        // v261: the run lands. The v261 tail lacks the 264 moondial (2) + the
+        // 287+ seeds — all AFTER the slime run, so the offsets stay 2038..2044.
+        let mut data = synthetic_file(261, &[2, 144], 160, 11);
+        let tail_at = tail_offset_in_synthetic(&data, 261);
+        data[tail_at + 2039] = 1; // old
+        data[tail_at + 2043] = 1; // yellow
+        let w = parse(&data).expect("v261 loads");
+        assert!(w.unlocked_slime_old_spawn, "old reads from 261");
+        assert!(w.unlocked_slime_yellow_spawn, "yellow reads from 261");
+        assert!(!w.unlocked_slime_green_spawn, "the green byte before stays 0");
+        // The writer's own block carries the owned world's five (d=8 shift).
+        let world = owned_world();
+        let buf = to_bytes(&world, &SectionData::default(), 1).expect("writes");
+        let block = expected_flags_block(&world);
+        let ptr1 = i32::from_le_bytes(buf[30..34].try_into().unwrap()) as usize;
+        let flags_at = ptr1 - block.len();
+        let prefix_len = block.len() - flags_tail(VER).len() - 4 * world.party_celebrants.len();
+        let tail_at = flags_at + prefix_len;
+        let d = 4 * world.party_celebrants.len();
+        for off in [2038, 2039, 2040, 2043, 2044] {
+            assert_eq!(buf[tail_at + off + d], 1, "slime unlock at tail {off}+d");
+        }
         assert_eq!(&buf[flags_at..ptr1], &block[..], "the owned block matches the table");
     }
 

@@ -253,13 +253,13 @@ pub fn write(w: &mut Writer, world: &World) {
     w.boolean(world.unlocked_princess); // unlockedPrincessSpawn
     w.boolean(world.combat_book_volume_two_was_used); // combatBookVolumeTwoWasUsed (W4-f45, `:1407`; g89b co-claim)
     w.boolean(world.peddlers_satchel_was_used); // peddlersSatchelWasUsed (`:1408`; g89b co-claim)
-    w.boolean(false); // unlockedSlimeGreenSpawn
-    w.boolean(false); // unlockedSlimeOldSpawn
-    w.boolean(false); // unlockedSlimePurpleSpawn
+    w.boolean(world.unlocked_slime_green_spawn); // unlockedSlimeGreenSpawn (W4-f45, `:1409`)
+    w.boolean(world.unlocked_slime_old_spawn); // unlockedSlimeOldSpawn (`:1410`)
+    w.boolean(world.unlocked_slime_purple_spawn); // unlockedSlimePurpleSpawn (`:1411`)
     w.boolean(world.unlocked_slime_rainbow_spawn); // unlockedSlimeRainbowSpawn
     w.boolean(world.unlocked_slime_red_spawn); // unlockedSlimeRedSpawn
-    w.boolean(false); // unlockedSlimeYellowSpawn
-    w.boolean(false); // unlockedSlimeCopperSpawn
+    w.boolean(world.unlocked_slime_yellow_spawn); // unlockedSlimeYellowSpawn (`:1414`)
+    w.boolean(world.unlocked_slime_copper_spawn); // unlockedSlimeCopperSpawn (`:1415`)
     // WorldFile.cs:1416-1423: the moondial, the forced seasons and the secret
     // seeds — W4-f45 claims the eight `Main.*` seed bytes: they are the
     // `InitializeSecretSeeds` mirrors of `World.micro_seeds` (`WorldGen.cs:
@@ -734,10 +734,17 @@ pub(crate) fn read(r: &mut Reader, world: &mut World, version: i32) -> Result<()
         world.peddlers_satchel_was_used = r.bool()?; // peddlersSatchelWasUsed (`:2426`)
     }
     if version >= 261 {
-        r.skip(3)?; // unlockedSlimeGreen/Old/Purple
+        // W4-f45: the five remaining slime-colour unlocks land beside the
+        // rainbow/red pair (`:2434-2440`). The town-slime kinds are unported,
+        // so the latches round-trip (the green arrival setter rides the f43
+        // town-slime lane; the doom party clears green, `Main.cs:17940`).
+        world.unlocked_slime_green_spawn = r.bool()?; // unlockedSlimeGreenSpawn
+        world.unlocked_slime_old_spawn = r.bool()?; // unlockedSlimeOldSpawn
+        world.unlocked_slime_purple_spawn = r.bool()?; // unlockedSlimePurpleSpawn
         world.unlocked_slime_rainbow_spawn = r.bool()?; // unlockedSlimeRainbowSpawn
         world.unlocked_slime_red_spawn = r.bool()?; // unlockedSlimeRedSpawn
-        r.skip(2)?; // unlockedSlimeYellow/Copper
+        world.unlocked_slime_yellow_spawn = r.bool()?; // unlockedSlimeYellowSpawn
+        world.unlocked_slime_copper_spawn = r.bool()?; // unlockedSlimeCopperSpawn
     }
     // WorldFile.cs:2306-2319 — the moondial, the forced seasons, the secret seeds, the
     // meteor shower, the team spawns and the extra spawn points.
