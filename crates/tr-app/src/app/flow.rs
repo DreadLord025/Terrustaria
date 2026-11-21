@@ -613,11 +613,25 @@ impl FrontScreenBehaviours for FrontScreen {
                     Create(ui::char_creation::CreationState),
                     Back(ui::char_creation::CreationState),
                 }
+                // W4-g22 DOC-SWEEP — the per-site inline cue
+                // (`UICharacterCreation.cs`'s `Click_*` `PlaySound`s,
+                // `click_cue`'s census): the categories and the cloth
+                // variant play 12 before their state write. The click
+                // resolves against the live category first; the play runs
+                // before the borrow block (the audio seam needs the App).
+                let category = match app.front.as_ref() {
+                    Some(FrontScreen::CharCreation(state)) => state.category,
+                    _ => return None,
+                };
+                let click = ui::char_creation::click_at(&l, category, mouse);
+                if let Some(id) = ui::char_creation::click_cue(click) {
+                    crate::chest::play_menu_sound(app, id);
+                }
                 let nav = {
                     let Some(FrontScreen::CharCreation(state)) = app.front.as_mut() else {
                         return None;
                     };
-                    match ui::char_creation::click_at(&l, state.category, mouse) {
+                    match click {
                         // `SelectColorPicker`/`Click_*` (`:1810-1833`): the
                         // picker selects and the middle menu follows
                         // (`middle_for`), seeding `_currentColorHSL` from the
@@ -1560,6 +1574,36 @@ pub(crate) mod front_flow_tests {
             assert_eq!(front, Some(parked), "the exact parked screen returns");
             assert!((backup.is_none()) && page.is_none());
         }
+    }
+
+    /// W4-g22 DOC-SWEEP wiring witness — a category click on the live
+    /// creator plays ONE Menu_Tick (`Click_CharInfo`'s 12,
+    /// `UICharacterCreation.cs:1270`) and the category lands; a dead click
+    /// on the panel plays nothing.
+    #[test]
+    fn doc_sweep_a_category_click_plays_one_tick() {
+        let mut app = flow_app(
+            Some(FrontScreen::CharCreation(ui::char_creation::CreationState::new())),
+            Vec::new(),
+            Vec::new(),
+        );
+        app.pointer.tick(300.0);
+        let (sw, sh) = app.screen_size();
+        let l = ui::char_creation::layout(Vec2::new(sw, sh), 0.0);
+        // The Clothing category button (id 1).
+        app.mouse_pos = centre(l.categories[1]);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before + 1, "one 12 on the category");
+        assert!(matches!(
+            app.front,
+            Some(FrontScreen::CharCreation(ref s)) if s.category == 1
+        ));
+        // A click on empty panel space is silent.
+        app.mouse_pos = Vec2::new(l.panel[0] + 4.0, l.panel[1] + 4.0);
+        let before = app.audio.played_count();
+        front_press(&mut app);
+        assert_eq!(app.audio.played_count(), before, "a dead click is silent");
     }
 
     #[test]

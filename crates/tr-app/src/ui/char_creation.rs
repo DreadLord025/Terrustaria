@@ -1504,6 +1504,28 @@ pub enum Click {
     None,
 }
 
+/// W4-g22 DOC-SWEEP — the per-site click cue of the creator's `Click_*`
+/// handlers (the 888 inline-cue census, `UICharacterCreation.cs`). Every
+/// handler plays its own `SoundEngine.PlaySound` BEFORE its state write;
+/// `None` means the port has no live control for the site (the armor row's
+/// seven `EquipArmor*` handlers `:532-599`, the voice-pitch click `:1042`
+/// and the gamepad `HandleBackButtonUsage` `:2370` are census-only — the
+/// armor/voice state is not ported). The App plays the answer through
+/// `chest::play_menu_sound` (10/11/12 → Menu_Open/Menu_Close/Menu_Tick).
+pub fn click_cue(click: Click) -> Option<u32> {
+    Some(match click {
+        // `Click_ColorPicker` (`:1239`), `Click_ClothStyles` (`:1252`),
+        // `Click_HairStyles` (`:1261`), `Click_CharInfo` (`:1270`) — all
+        // four category handlers play 12.
+        Click::Category(_) => 12,
+        // `Click_CharClothStyle` (`:1288`) — the variant pick plays 12
+        // (the armor-guard re-entry through `EquipArmorNone` `:1281`
+        // plays the same 12, `:532`).
+        Click::ClothStyle(_) => 12,
+        _ => return None,
+    })
+}
+
 /// The click table over the live geometry: the categories bar (always), the
 /// Back/Create pair (always), and the active middle menu's own controls —
 /// the name plate + difficulty column (Info), the hair grid (Hairstyles), the
@@ -2679,6 +2701,23 @@ mod tests {
         assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[0])), Click::CopyHex);
         assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[1])), Click::PasteHex);
         assert_eq!(click_at(&l, 3, centre(l.hsl_buttons[2])), Click::RandomizeColor);
+    }
+
+    /// W4-g22 DOC-SWEEP witness — the creator's per-site click cues
+    /// (`UICharacterCreation.cs`): the four category handlers play 12
+    /// (`:1239`/`:1252`/`:1261`/`:1270`), the cloth variant plays 12
+    /// (`:1288`); the unported armor/voice sites stay census-only (`None`).
+    #[test]
+    fn doc_sweep_category_and_cloth_clicks_play_12() {
+        for id in CATEGORY_IDS {
+            assert_eq!(click_cue(Click::Category(id)), Some(12), "category {id}");
+        }
+        for style in VALID_CLOTH_STYLES {
+            assert_eq!(click_cue(Click::ClothStyle(style)), Some(12), "style {style}");
+        }
+        // The remaining sites land in their own witnesses (the naming pair,
+        // Back, the clipboard rows); a dead click is silent.
+        assert_eq!(click_cue(Click::None), None);
     }
 
     #[test]
