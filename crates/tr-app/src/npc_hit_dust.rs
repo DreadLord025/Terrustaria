@@ -350,6 +350,18 @@
 //!   652, else 138.
 //! - 85933 — 639-645 (`:85921-85934`): ×20, dust 86+(type-639) below
 //!   645, else 138.
+//! Batch 25 (the critter ×20 groups):
+//! - 85948 — the big critter group (`:85942-85949`, 46/55/67/74/102/
+//!   224/230/297-300/303/337/538/540/587/610/614-617/625-627/615/
+//!   671-675): ×20 dust 5.
+//! - 86098 — 148/149/168/470 (`:86092-86099`): ×20 dust 5.
+//! - 86134 — 361 (`:86128-86135`): ×20 dust 5.
+//! - 86151 — 687 (`:86145-86152`): ×20 dust 16.
+//! - 86165 — 685 (`:86159-86166`): ×20 dust 0.
+//! - 86179 — 607 (`:86173-86180`): ×20 dust 45.
+//! - 86196 — 688 (`:86190-86197`): ×20 dust 45.
+//! - 86223 — the scorpions 366/367 (`:86217-86224`): ×20 dust 203.
+//! - 86250 — the ducks 362-365 (`:86244-86251`): ×20 dust 5.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -1654,6 +1666,36 @@ pub fn replay_hit_dust(
             };
             for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
                 live_dust(s, t, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:85942-85949`/`:86092-86135`/`:86244-86251` — the ×20 dust-5
+        // critter groups: the big list, the penguins/168/470, 361, the
+        // ducks.
+        46 | 55 | 67 | 74 | 102 | 224 | 230 | 297 | 298 | 299 | 300 | 303 | 337 | 538
+        | 540 | 587 | 610 | 614 | 616 | 617 | 625 | 626 | 627 | 615 | 671..=675
+        | 148 | 149 | 168 | 470 | 361 | 362..=365 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 5, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86145-86166` — the bound town slimes: 687 → dust 16, 685 →
+        // dust 0 (the death PoofOfSmoke is g60's).
+        687 | 685 => {
+            let t = if s.npc_type == 687 { 16 } else { 0 };
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, t, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86173-86197` — the fish pair 607/688: ×20 dust 45.
+        607 | 688 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 45, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
+            }
+        }
+        // `:86217-86224` — the scorpions: ×20 dust 203.
+        366 | 367 => {
+            for _ in 0..hit_count(s.dmg, s.life_max, 20.0) {
+                live_dust(s, 203, dir, -1.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
             }
         }
         // `:89526-89548`/`:89690-89700` — the three spheres are handled
@@ -3218,6 +3260,27 @@ mod tests {
             replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
             let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
             assert_eq!(live.len() as u32, want, "type {t}");
+            assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
+        }
+    }
+
+    /// W4-g62 batch 25 — the critter ×20 rows: the big group dust 5,
+    /// 687/685 the 16/0 pair, 607/688 dust 45, scorpions dust 203.
+    #[test]
+    fn w4_g62_the_batch25_rows() {
+        let world = air();
+        let ctx = ctx();
+        for (t, dt) in [
+            (46, 5), (303, 5), (540, 5), (671, 5), (148, 5), (470, 5),
+            (361, 5), (362, 5), (687, 16), (685, 0), (607, 45), (688, 45),
+            (366, 203), (367, 203),
+        ] {
+            let s = snap(t, 100, 100, 25.0); // ×20 → 5
+            let mut r = UnifiedRandom::new(211);
+            let mut p = DustPool::new();
+            replay_hit_dust(&s, &mut r, &mut p, &ctx, &world);
+            let live: Vec<_> = p.slots().iter().filter(|d| d.active).collect();
+            assert_eq!(live.len(), 5, "type {t}");
             assert!(live.iter().all(|d| d.dust_type == dt), "type {t}");
         }
     }
