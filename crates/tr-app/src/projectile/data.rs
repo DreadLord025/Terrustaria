@@ -1080,6 +1080,16 @@ pub const FIREWORK_FOUNTAINS: [u16; 4] = [
 /// (aiStyle 74, `Projectile.cs:5047-5055`: 1x1, extraUpdates 100, penetrate
 /// −1). The Update-tail charge latch (`:17079-17086`) flips extraUpdates to 1.
 pub const SCUTLIX_LASER_FRIENDLY: u16 = 434;
+/// `ProjectileID.ScutlixLaser` (606, `ProjectileID.cs:1766`) — the Scutlix
+/// mount's ACTUAL fired laser (`Mount.UseAbility` case 9, `Mount.cs:3264`/
+/// `:3287`: two eye beams, damage 150, velocity 14 toward the clamped
+/// cursor). aiStyle 1 (`Projectile.cs:6530-6541`: 5x5, alpha 255,
+/// extraUpdates 2, timeLeft 600, ignoreWater). W4-d8 DOC-SWEEP (3): the
+/// 434 "ScutlixLaserFriendly" has NO spawner in the 1.4.5.8 decompile —
+/// the mount fires 606; the 434 row + aiStyle-74 arm stay for the census
+/// (the id is live in `Damage_CanDealDamage`/the Update tails) but the
+/// mount's beam is this kind.
+pub const SCUTLIX_LASER: u16 = 606;
 /// `ProjectileID.ScutlixLaserCrosshair` (441) — the Scutlix mount's aim
 /// crosshair (aiStyle 76, `Projectile.cs:5117-5125`: 1x1, hide, ignoreWater,
 /// tileCollide false).
@@ -1751,6 +1761,25 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 false,
                 false,
                 RESET_STATE,
+            ),
+            // W4-d8 DOC-SWEEP (3) — the Scutlix mount's fired laser (606,
+            // `Projectile.cs:6530-6541`): 5x5, aiStyle 1, friendly, alpha
+            // 255, extraUpdates 2, scale 1, timeLeft 600, ignoreWater. The
+            // stock penetrate 1 / tileCollide true stand. The AI_001 ramp
+            // (`:54772-54828`) rides slice B's Martian-laser group: +5/tick
+            // to the 150 cap while ai[1] == 0, −5/tick with the ≤ 0 kill
+            // once the blocked-move latch (`:18278-18286`) sets ai[1] = 1.
+            SCUTLIX_LASER => (
+                5.0,
+                5.0,
+                1,
+                1,
+                600,
+                2,
+                true,
+                false,
+                true,
+                (false, -2, false, -1, 255, 1.0),
             ),
             // W4-d8 — the mount crosshairs (441 Scutlix / 453 Drill,
             // `Projectile.cs:5117-5125`/`:5250-5258`): 1x1, aiStyle 76,
@@ -4330,6 +4359,9 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
             // the two aiStyle-76 mount crosshairs (441/453,
             // `:5123`/`:5256`) set `ignoreWater = true`.
             || matches!(kind, BUBBLE | SCUTLIX_LASER_CROSSHAIR | DRILL_MOUNT_CROSSHAIR)
+            // W4-d8 DOC-SWEEP (3) — the Scutlix mount's fired laser (606,
+            // `Projectile.cs:6540`) sets `ignoreWater = true`.
+            || kind == SCUTLIX_LASER
             // S1-P-i55 — `Projectile.cs:7642`: the club helper (722) sets
             // `ignoreWater = true`.
             || kind == GOLF_CLUB_HELPER,

@@ -18,6 +18,17 @@
 //! (`SetAsMinecart` `Mount.cs:2747-2799`, SuperCart — M2-MOUNT-3), the
 //! per-type abilities (`UpdateDrill`/`UseAbility` — M2-MOUNT-4), the net sync
 //! (msg 13 — no multiplayer), and the draw path (Phase 5 of the plan).
+//!
+//! W4-d8 DOC-SWEEP (3)/(4) exception: the Scutlix (9) ability's
+//! SELF-CONTAINED half is ported here — `AimAbility`'s head aim
+//! (`Mount.cs:5340-5421`), `UseAbility`'s two-beam fire (`:3258-3289`),
+//! `ClampToDeadZone` (`:5296-5333`), the eye-offset table (`:1398-1421`),
+//! `StopAbilityCharge` (`:2922-2931`) and the remote charge/active flag
+//! writes — the 441/453 crosshair AI (`Projectile.cs:30621-30670`) calls
+//! them. The Drill (8) mining payload (`DrillMountData`, `UpdateDrill`/
+//! `UseDrill` `:3036-3180`) and the Santank (46) ability stay M2-MOUNT-4.
+
+use glam::Vec2;
 
 /// `Mount.MountData` frame-set triple (`Mount.cs:207-249`): start/count/delay
 /// (+ `idleFrameLoop` :237). A `count` of 0 means the set is unused.
@@ -2866,6 +2877,237 @@ impl MountState {
         }
     }
 
+    /// `Mount.StartAbilityCharge`'s REMOTE branch (`Mount.cs:2916-2919`):
+    /// the non-local owner only sets the flag — the local-owner 441 spawn
+    /// (`:2905-2914`) is the auto-aim's `UpdateEffects` path (M2-MOUNT-4).
+    /// The 441 crosshair's remote gate (`Projectile.cs:30660-30663`) calls
+    /// it when not already charging.
+    pub(crate) fn start_ability_charge_remote(&mut self) {
+        if self.kind == 9 {
+            self.ability_charging = true;
+        }
+    }
+
+    /// `Mount.AbilityActive` (`Mount.cs:626`) — the Drill's mining gate
+    /// (`UseDrill` `:3061`, the 453 crosshair's remote check
+    /// `Projectile.cs:30665`).
+    pub(crate) fn ability_active(&self) -> bool {
+        self.ability_active
+    }
+
+    /// `Mount.UseAbility`'s Drill (8) `_abilityActive` write
+    /// (`Mount.cs:3317-3335`): `toggleOn: false` clears it (the local
+    /// release / the remote 453 gate), `toggleOn: true` sets it (the
+    /// `ItemCheck_HandleMount` press, `Player.cs:52944` — the 453 spawn
+    /// itself is the mining layer's, M2-MOUNT-4).
+    pub(crate) fn set_ability_active(&mut self, value: bool) {
+        if self.kind == 8 {
+            self.ability_active = value;
+        }
+    }
+
+    /// `Mount.StopAbilityCharge` (`Mount.cs:2922-2931`): the Scutlix (9) /
+    /// Santank (46) drop the charge flag and re-arm the row's cooldown +
+    /// duration. W4-d8 DOC-SWEEP (3): the 441 crosshair's `Kill()` arm
+    /// (`Projectile.cs:73394-73397`) calls it on EVERY 441 death.
+    pub(crate) fn stop_ability_charge(&mut self) {
+        if matches!(self.kind, 9 | 46) {
+            self.ability_charging = false;
+            if let Some(row) = self.data() {
+                self.ability_cooldown = row.ability_cooldown;
+                self.ability_duration = row.ability_duration;
+            }
+        }
+    }
+
+    /// `Mount.AbilityCharging` (`Mount.cs:624`) / `Mount.AbilityCharge`
+    /// (`:620`) — the crosshair's remote-owner gate (`Projectile.cs:30660`)
+    /// and the aim's eye-glow read (`Mount.cs:5394`).
+    pub(crate) fn ability_charging(&self) -> bool {
+        self.ability_charging
+    }
+
+    pub(crate) fn ability_charge(&self) -> i32 {
+        self.ability_charge
+    }
+
+    /// `Mount._frameExtra` — the Scutlix head's aim frame (6/7/8/9/10, the
+    /// `AimAbility` buckets `Mount.cs:5367-5393`); the eye-position index
+    /// `(frameExtra - 6) * 2` reads it (`:3269`/`:5400`).
+    pub(crate) fn frame_extra(&self) -> i32 {
+        self.frame_extra
+    }
+
+    /// The Scutlix eye offsets — `Mount.scutlixEyePositions`
+    /// (`Mount.cs:1398-1421`): the ten raw pairs MINUS the 45×54 texture
+    /// size (`:1418-1420`), so index 0 = (60−45, 2−54) = (15, −52). The
+    /// aim/fire reads `[(frameExtra − 6) * 2 + i]` for the two eyes.
+    pub(crate) fn scutlix_eye_positions() -> [(f32, f32); 10] {
+        // `:1399-1408` — the raw pairs, verbatim.
+        const RAW: [(f32, f32); 10] = [
+            (60.0, 2.0),
+            (70.0, 6.0),
+            (68.0, 6.0),
+            (76.0, 12.0),
+            (80.0, 10.0),
+            (84.0, 18.0),
+            (74.0, 20.0),
+            (76.0, 24.0),
+            (70.0, 34.0),
+            (76.0, 34.0),
+        ];
+        // `:1409` + `:1418-1420` — the (45, 54) subtract.
+        let mut out = [(0.0f32, 0.0f32); 10];
+        for i in 0..10 {
+            out[i] = (RAW[i].0 - 45.0, RAW[i].1 - 54.0);
+        }
+        out
+    }
+
+    /// `Mount.ClampToDeadZone` (`Mount.cs:5296-5333`) — the Scutlix (9) /
+    /// Drill (8) half: a cursor INSIDE the mount's texture box (±45×±54
+    /// for the Scutlix, `scutlixTextureSize` `:1409`; ±80×±80 for the
+    /// Drill, `drillTextureSize` `:1333`) projects onto the box edge
+    /// along the smaller scale; outside, the point stands. The Santank
+    /// (46) row is its own ability's (M2-MOUNT-4). `center` is the
+    /// player's Centre; the return is the clamped world point.
+    pub(crate) fn clamp_to_dead_zone(&self, center: Vec2, position: Vec2) -> Vec2 {
+        let (half_w, half_h) = match self.kind {
+            9 => (45.0f32, 54.0f32), // `:5303-5304` (Y, X) = (54, 45)
+            8 => (80.0, 80.0),       // `:5311-5312`
+            _ => return position,    // `:5314-5315`
+        };
+        let mut rel = position - center;
+        if rel.x > -half_w && rel.x < half_w && rel.y > -half_h && rel.y < half_h {
+            // `:5321-5330` — the two edge scales; the SMALLER wins (the
+            // C# `num3 > num4 → *= num4` else `*= num3`). The abs-zero
+            // divide is the C#'s own infinity (a centred cursor projects
+            // to the box edge on the other axis).
+            let sx = half_w / rel.x.abs();
+            let sy = half_h / rel.y.abs();
+            rel *= if sx > sy { sy } else { sx };
+        }
+        rel + center
+    }
+
+    /// `Mount.AimAbility`'s Scutlix (9) half (`Mount.cs:5340-5421`) — the
+    /// head's aim: the dead-zone-clamped cursor angle picks the facing
+    /// (±90° fold), the flip-draw flag (facing against the velocity) and
+    /// the `_frameExtra` bucket (8 level / 9,10 up / 7,6 down, the 22.5° /
+    /// 67.5° / 112.5° gates). Returns the C#'s `bool` — true when the
+    /// frame or the facing changed (`:5416-5420`). The eye-glow light
+    /// (`:5394-5414`, `Lighting.AddLight` per eye while the charge > 0)
+    /// is the light layer's — skipped. W4-d8 DOC-SWEEP (4): the 441/453
+    /// crosshair's local + remote aim calls (`Projectile.cs:30648`/
+    /// `:30669`) reach this; the Drill (8) half writes the unported
+    /// `DrillMountData` diode rotation (`:5466-5494`, M2-MOUNT-4) and
+    /// folds out with it.
+    pub(crate) fn aim_ability_scutlix(
+        &mut self,
+        center: Vec2,
+        facing: &mut i32,
+        vx: f32,
+        mouse: Vec2,
+    ) -> bool {
+        // `:5337` — `_aiming = true` for EVERY type (the switch's head).
+        self.aiming = true;
+        if self.kind != 9 {
+            return false; // `:5496-5497` — the default arm
+        }
+        let old_frame = self.frame_extra;
+        let old_facing = *facing;
+        // `:5344` — the clamped cursor's angle in DEGREES.
+        let clamped = self.clamp_to_dead_zone(center, mouse);
+        let mut deg = (clamped - center).y.atan2((clamped - center).x).to_degrees();
+        // `:5345-5358` — the ±90° facing fold.
+        if deg > 90.0 {
+            *facing = -1;
+            deg = 180.0 - deg;
+        } else if deg < -90.0 {
+            *facing = -1;
+            deg = -180.0 - deg;
+        } else {
+            *facing = 1;
+        }
+        // `:5359-5366` — the flip-draw: facing against the velocity sign.
+        self.flip_draw = (*facing > 0 && vx < 0.0) || (*facing < 0 && vx > 0.0);
+        // `:5367-5393` — the frame buckets. The C# compares the f32
+        // degree value against the widened doubles (22.5 / 67.5 / 112.5).
+        if deg >= 0.0 {
+            if (deg as f64) < 22.5 {
+                self.frame_extra = 8;
+            } else if (deg as f64) < 67.5 {
+                self.frame_extra = 9;
+            } else if (deg as f64) < 112.5 {
+                self.frame_extra = 10;
+            }
+        } else if (deg as f64) > -22.5 {
+            self.frame_extra = 8;
+        } else if (deg as f64) > -67.5 {
+            self.frame_extra = 7;
+        } else if (deg as f64) > -112.5 {
+            self.frame_extra = 6;
+        }
+        // `:5416-5420` — the change verdict.
+        if self.frame_extra == old_frame {
+            return *facing != old_facing;
+        }
+        true
+    }
+
+    /// `Mount.UseAbility`'s Scutlix (9) half (`Mount.cs:3258-3289`) — the
+    /// laser fire: TWO 606 beams from the head's eyes toward the
+    /// dead-zone-clamped cursor, each at velocity 14 (the normalized
+    /// eye→cursor delta × 14), damage 150, knockback 0, spawned 14 px
+    /// along the aim from the eye. Returns the two `(x, y, vx, vy)` spawn
+    /// tuples (the eye anchor + the beam velocity); the caller spawns
+    /// them through the pool (`NewProjectile` centres the box, the port's
+    /// seam takes the top-left — the half-box subtract is the caller's).
+    /// The eye anchor: `(position.X + width/2, position.Y + height)` +
+    /// the eye offset (X mirrored by the facing, ± xOffset; Y + yOffset).
+    /// W4-d8 DOC-SWEEP (3): the 441 crosshair's channel-release
+    /// `UseAbility` (`Projectile.cs:30651`) reaches this. The Santank
+    /// (46) / Drill (8) halves are their own abilities (M2-MOUNT-4).
+    pub(crate) fn scutlix_laser_fire(
+        &self,
+        pos: Vec2,
+        width: f32,
+        height: f32,
+        facing: i32,
+        mouse: Vec2,
+    ) -> Option<[(f32, f32, f32, f32); 2]> {
+        if self.kind != 9 {
+            return None; // `:3256-3258` — the switch's case 9 only
+        }
+        let row = self.data()?;
+        let center = Vec2::new(pos.x + width * 0.5, pos.y + height * 0.5);
+        let mouse = self.clamp_to_dead_zone(center, mouse);
+        // `:3266-3268` — the head anchor (the player's bottom-centre).
+        let anchor = Vec2::new(pos.x + (width as i32 / 2) as f32, pos.y + height);
+        let eyes = Self::scutlix_eye_positions();
+        let base = (self.frame_extra - 6) * 2; // `:3269`
+        let mut out = [(0.0f32, 0.0f32, 0.0f32, 0.0f32); 2];
+        for i in 0..2 {
+            // `:3273-3281` — the eye point: Y + yOffset, X ± xOffset by
+            // the facing.
+            let eye = Vec2::new(
+                if facing == -1 {
+                    anchor.x - eyes[base as usize + i].0 - row.x_offset as f32
+                } else {
+                    anchor.x + eyes[base as usize + i].0 + row.x_offset as f32
+                },
+                anchor.y + eyes[base as usize + i].1 + row.y_offset as f32,
+            );
+            // `:3282-3286` — the normalized aim × 14, the spawn 14 px out.
+            let mut aim = mouse - eye;
+            aim = aim.normalize_or_zero();
+            aim *= 14.0;
+            let spawn = eye + aim;
+            out[i] = (spawn.x, spawn.y, aim.x, aim.y);
+        }
+        Some(out)
+    }
+
     /// `Mount.ExtraFall` / `Mount.FallDamage` (:183/:181 read via properties).
     pub(crate) fn extra_fall(&self) -> i32 {
         self.data().map_or(0, |d| d.extra_fall)
@@ -3053,6 +3295,91 @@ mod tests {
         assert!(!m.allow_direction_change(), "10 is not < 10");
         m.ability_recovery();
         assert!(m.allow_direction_change(), "9 < 10 allows the turn");
+    }
+
+    /// W4-d8 DOC-SWEEP (3)/(4) — the Scutlix ability's self-contained half
+    /// (WRITTEN NOT RUN, code-only): the eye table, the dead-zone clamp,
+    /// the aim buckets, the two-beam fire and the charge-stop. Every
+    /// expected value is hand-derived from the cited C# lines.
+    #[test]
+    fn w4_d8_the_scutlix_ability_math() {
+        use super::*;
+        let mut m = MountState::default();
+        assert!(m.set_mount(9, false).is_some());
+        // The eye table (`Mount.cs:1399-1420`): raw (60, 2) − (45, 54).
+        let eyes = MountState::scutlix_eye_positions();
+        assert_eq!(eyes[0], (15.0, -52.0), "index 0 = (60−45, 2−54)");
+        assert_eq!(eyes[9], (31.0, -20.0), "index 9 = (76−45, 34−54)");
+        // The dead-zone clamp (`:5319-5330`): a cursor inside the ±45×±54
+        // box projects onto the edge. Center (1000, 500), cursor
+        // (1010, 510): rel (10, 10), sx = 45/10 = 4.5, sy = 54/10 = 5.4;
+        // sx < sy → *= sx → rel (45, 45) → (1045, 545).
+        let c = Vec2::new(1000.0, 500.0);
+        let clamped = m.clamp_to_dead_zone(c, Vec2::new(1010.0, 510.0));
+        assert_eq!(clamped, Vec2::new(1045.0, 545.0), "the smaller scale wins");
+        // Outside the box: the point stands.
+        let far = Vec2::new(1200.0, 500.0);
+        assert_eq!(m.clamp_to_dead_zone(c, far), far);
+        // The aim buckets (`:5367-5393`): a level-right cursor → frame 8,
+        // facing +1. The player centre (1000, 500), the cursor (1200, 500)
+        // is outside the dead zone → angle 0°.
+        let mut facing = -1;
+        let changed = m.aim_ability_scutlix(c, &mut facing, 0.0, Vec2::new(1200.0, 500.0));
+        assert_eq!(facing, 1, "the right cursor faces right (`:5357`)");
+        assert_eq!(m.frame_extra(), 8, "0° < 22.5 → frame 8 (`:5371`)");
+        assert!(changed, "the facing flipped");
+        assert!(!m.flip_draw, "vx 0 → no flip (`:5359-5366`)");
+        // A straight-up cursor (1000, 300): angle −90° → the < −90 branch
+        // is NOT taken (−90 is not < −90) → facing +1, deg −90 → the
+        // > −112.5 bucket → frame 6.
+        let mut facing2 = 1;
+        let _ = m.aim_ability_scutlix(c, &mut facing2, 0.0, Vec2::new(1000.0, 300.0));
+        assert_eq!(m.frame_extra(), 6, "−90° > −112.5 → frame 6 (`:5392`)");
+        // A left cursor (800, 500): angle 180° > 90 → facing −1,
+        // deg = 180 − 180 = 0 → frame 8.
+        let mut facing3 = 1;
+        let _ = m.aim_ability_scutlix(c, &mut facing3, 0.0, Vec2::new(800.0, 500.0));
+        assert_eq!(facing3, -1, "the left fold (`:5347`)");
+        assert_eq!(m.frame_extra(), 8);
+        // The fire (`:3266-3287`): frame 8 → eye base (8−6)×2 = 4, the
+        // eyes[4] = (80−45, 10−54) = (35, −44), eyes[5] = (39, −36).
+        // Player pos (980, 458), width 20, height 42 → anchor
+        // (980 + 20/2, 458 + 42) = (990, 500). Facing +1, xOffset 1,
+        // yOffset 6: eye0 = (990 + 35 + 1, 500 − 44 + 6) = (1026, 462).
+        // The cursor (1200, 500) is outside the dead zone (rel 200, 0).
+        // aim = normalize((1200, 500) − (1026, 462)) × 14.
+        m.aim_ability_scutlix(c, &mut { 1 }, 0.0, Vec2::new(1200.0, 500.0));
+        let beams = m
+            .scutlix_laser_fire(
+                Vec2::new(980.0, 458.0),
+                20.0,
+                42.0,
+                1,
+                Vec2::new(1200.0, 500.0),
+            )
+            .expect("the Scutlix fires");
+        let d = Vec2::new(1200.0 - 1026.0, 500.0 - 462.0).normalize_or_zero() * 14.0;
+        assert!((beams[0].0 - (1026.0 + d.x)).abs() < 1e-4, "eye0 + the aim");
+        assert!((beams[0].1 - (462.0 + d.y)).abs() < 1e-4);
+        assert!((beams[0].2 - d.x).abs() < 1e-4, "the ×14 velocity");
+        assert!((beams[0].3 - d.y).abs() < 1e-4);
+        // The second eye: eyes[5] = (39, −36) → (990 + 39 + 1, 500 − 36 + 6)
+        // = (1030, 470).
+        let d2 = Vec2::new(1200.0 - 1030.0, 500.0 - 470.0).normalize_or_zero() * 14.0;
+        assert!((beams[1].0 - (1030.0 + d2.x)).abs() < 1e-4, "eye1 + the aim");
+        // A non-Scutlix mount never fires.
+        let mut u = MountState::default();
+        assert!(u.set_mount(10, false).is_some());
+        assert!(u.scutlix_laser_fire(Vec2::ZERO, 20.0, 42.0, 1, Vec2::X).is_none());
+        // StopAbilityCharge (`:2922-2931`): the flag drops, the row's
+        // cooldown 20 / duration 0 re-arm.
+        m.start_ability_charge_remote();
+        assert!(m.ability_charging());
+        m.ability_cooldown = 3;
+        m.stop_ability_charge();
+        assert!(!m.ability_charging());
+        assert_eq!(m.ability_cooldown, 20, "the row's cooldown (`:1351`)");
+        assert_eq!(m.ability_duration, 0, "the row's duration (`:1352`)");
     }
 
     #[test]

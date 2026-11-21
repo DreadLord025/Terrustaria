@@ -751,6 +751,14 @@ pub struct Projectile {
     /// them after the sub-steps. `time_left_delta` is subtracted from the
     /// spawned row's `timeLeft` (the cluster ring's `-= Next(30)`, `:78084`).
     pub(crate) wants_dart_spawns: Vec<(u16, f32, f32, f32, f32, i32, f32, f32, f32, i32)>,
+    /// W4-d8 DOC-SWEEP (3) — the Scutlix crosshair's channel-release fire
+    /// (`Mount.UseAbility` case 9, `Mount.cs:3258-3289` via
+    /// `Projectile.cs:30651`): the two 606 beams' `(x, y, vx, vy)` — the
+    /// eye anchor + the ×14 aim velocity, damage 150 / knockback 0. The
+    /// slot arm cannot reach the pool's array, so it parks the pair here
+    /// (the `wants_dart_spawns` pattern) and the dispatch resolves them
+    /// after the sub-steps through `spawn_with_data_ai_owned`.
+    pub(crate) wants_scutlix_beams: Vec<(f32, f32, f32, f32)>,
     // S1-P-i35 — the fishing bobber's liquid flags (`Projectile.cs:376-382`,
     // reset false `:756-760`). The generic `Update` wet block
     // (`:16790-17007`) writes them AFTER the AI; the port's bobber arm
@@ -857,6 +865,7 @@ impl Default for Projectile {
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
             wants_dart_spawns: Vec::new(),
+            wants_scutlix_beams: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -20128,6 +20137,30 @@ impl ProjectilePool {
                 // `Kill()`'s MoonlordArrow arm (`Projectile.cs:73431-73452`,
                 // S1-D-4): the 639's death spawns its 640 trail.
                 self.moonlord_arrow_kill(i);
+                // W4-d8 DOC-SWEEP (3) — `Kill()`'s mount-crosshair arms
+                // (`Projectile.cs:73390-73397`, ABOVE the 444 arm below):
+                // the remote 453's death clears the Drill's ability flag
+                // (`UseAbility(toggleOn: false)` `:3332-3335`), and EVERY
+                // 441 death calls `StopAbilityCharge` (`Mount.cs:2922-
+                // 2931`: the charge flag drops, the row's cooldown +
+                // duration re-arm). The C# reads `Main.player[owner]`
+                // unconditionally; the port's single player is the local
+                // owner's (the foreign-owned slot reads the same snapshot,
+                // the ai_drill precedent).
+                if self.slots[i].kind == DRILL_MOUNT_CROSSHAIR
+                    && self.slots[i].owner != local_owner
+                {
+                    if let Some(pl) = player.as_deref_mut() {
+                        if pl.mount.ability_active() {
+                            pl.mount.set_ability_active(false);
+                        }
+                    }
+                }
+                if self.slots[i].kind == SCUTLIX_LASER_CROSSHAIR {
+                    if let Some(pl) = player.as_deref_mut() {
+                        pl.mount.stop_ability_charge();
+                    }
+                }
                 // S1-P-i14 (V5 gate) — `Kill()`'s Xenopopper-bubble arm
                 // (`Projectile.cs:73398-73419`): the 444's death releases
                 // its deferred payload (`localAI[0]` bullet kind,
@@ -20197,6 +20230,27 @@ impl ProjectilePool {
                 ) {
                     self.slots[s].time_left -= tl_delta;
                 }
+            }
+            // W4-d8 DOC-SWEEP (3) — the Scutlix crosshair's channel-release
+            // beams (`Mount.cs:3287`): the two 606 spawns at the eye anchor
+            // + the ×14 aim, damage 150 / knockback 0. The C# passes the
+            // CENTRE; the port's seam takes the top-left — the 606 row's
+            // 5×5 half-box comes off (the xenopopper precedent).
+            let beams = std::mem::take(&mut self.slots[i].wants_scutlix_beams);
+            for (x, y, vx, vy) in beams {
+                let (bw, bh) = proj_data(SCUTLIX_LASER).map_or((5.0, 5.0), |d| (d.w, d.h));
+                self.spawn_with_data_ai_owned(
+                    SCUTLIX_LASER,
+                    owner,
+                    x - bw * 0.5,
+                    y - bh * 0.5,
+                    vx,
+                    vy,
+                    150,
+                    0.0,
+                    0.0,
+                    0.0,
+                );
             }
         }
     }
@@ -30572,6 +30626,7 @@ mod phasmal_projectile_tests {
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
             wants_dart_spawns: Vec::new(),
+            wants_scutlix_beams: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
@@ -30982,6 +31037,7 @@ mod ritual_projectile_tests {
             applies_immunity_time_on_single_hits: false,
             bonus_crit_chance: 0,
             wants_dart_spawns: Vec::new(),
+            wants_scutlix_beams: Vec::new(),
             wet: false,
             lava_wet: false,
             honey_wet: false,
