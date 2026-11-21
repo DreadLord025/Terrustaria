@@ -519,6 +519,12 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         | NpcKind::ThePossessed
         | NpcKind::CrimsonPenguin => &[],
         NpcKind::ShadowFlameApparition => &[31, 153],
+        // W4-d40: the `DebuffImmunitySets` rows (`NPCID.cs`).
+        NpcKind::BigMimicCorruption
+        | NpcKind::BigMimicCrimson
+        | NpcKind::BigMimicHallow
+        | NpcKind::BigMimicJungle => &[20, 24, 31, 323],
+        NpcKind::Mothron => &[31],
         // S1-D-3 W-9 fishron wiring — 370/371/372/373 have NO
         // `DebuffImmunitySets` rows (`NPCID.cs:6075+`'s dictionary carries
         // no 370-373 keys) — the null-row else-branch, no immunity.

@@ -160,6 +160,10 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("NPC_Killed_38", 4),
     ("NPC_Killed_49", 4),
     ("NPC_Killed_55", 4),
+    // W4-d40: the roster wave's NPC hit/death cues (the `Sounds/NPC_*.xnb`
+    // assets ship with the content; the S1-E-21 bank-gap close).
+    ("NPC_Hit_44", 3),
+    ("NPC_Killed_46", 4),
     ("NPC_Killed_1", 4),
     ("NPC_Killed_2", 4),
     ("NPC_Killed_3", 4),

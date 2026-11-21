@@ -1086,6 +1086,22 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // W4-d40 (NPCID 421-490 roster wave): BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron.
+    /// `NPCID.BigMimicCorruption` (473): 28x44, aiStyle 87, dmg 90, def 34, 3500 HP,
+    /// kb 0.1, value 30000 (`NPC.cs` SetDefaults arm).
+    BigMimicCorruption,
+    /// `NPCID.BigMimicCrimson` (474): 28x44, aiStyle 87, dmg 90, def 34, 3500 HP,
+    /// kb 0.1, value 30000 (`NPC.cs` SetDefaults arm).
+    BigMimicCrimson,
+    /// `NPCID.BigMimicHallow` (475): 28x44, aiStyle 87, dmg 90, def 34, 3500 HP,
+    /// kb 0.1, value 30000 (`NPC.cs` SetDefaults arm).
+    BigMimicHallow,
+    /// `NPCID.BigMimicJungle` (476): 28x44, aiStyle 87, dmg 90, def 34, 3500 HP,
+    /// kb 0.1, value 30000 (`NPC.cs` SetDefaults arm).
+    BigMimicJungle,
+    /// `NPCID.Mothron` (477): 80x50, aiStyle 88, dmg 80, def 30, 6000 HP,
+    /// kb 0.2, value 50000 (`NPC.cs` SetDefaults arm).
+    Mothron,
     // W4-d40 (NPCID 421-490 roster wave): DeadlySphere, DrManFly, ThePossessed, CrimsonPenguin, ShadowFlameApparition.
     /// `NPCID.DeadlySphere` (467): 22x22, aiStyle 85, dmg 100, def 80, 350 HP,
     /// kb 0.7, value 900 (`NPC.cs` SetDefaults arm).
@@ -3726,6 +3742,12 @@ impl Npc {
             NpcKind::ThePossessed => 0.35,
             NpcKind::CrimsonPenguin => 0.4,
             NpcKind::ShadowFlameApparition => 0.0,
+            // W4-d40: the SetDefaults knockBackResist rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption => 0.1,
+            NpcKind::BigMimicCrimson => 0.1,
+            NpcKind::BigMimicHallow => 0.1,
+            NpcKind::BigMimicJungle => 0.1,
+            NpcKind::Mothron => 0.2,
             NpcKind::DungeonSpirit => 0.2,
             _ => 0.4,
         }
@@ -4154,6 +4176,12 @@ impl Npc {
             NpcKind::ThePossessed => 28,
             NpcKind::CrimsonPenguin => 5,
             NpcKind::ShadowFlameApparition => 18,
+            // W4-d40: the SetDefaults defense rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption => 34,
+            NpcKind::BigMimicCrimson => 34,
+            NpcKind::BigMimicHallow => 34,
+            NpcKind::BigMimicJungle => 34,
+            NpcKind::Mothron => 30,
             NpcKind::DungeonSpirit => 30,
             NpcKind::Slime => unreachable!(),
         }
@@ -4574,6 +4602,12 @@ impl Npc {
             NpcKind::ThePossessed => 1300.0,
             NpcKind::CrimsonPenguin => 500.0,
             NpcKind::ShadowFlameApparition => 0.0,
+            // W4-d40: the SetDefaults value rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption => 30000.0,
+            NpcKind::BigMimicCrimson => 30000.0,
+            NpcKind::BigMimicHallow => 30000.0,
+            NpcKind::BigMimicJungle => 30000.0,
+            NpcKind::Mothron => 50000.0,
             NpcKind::DungeonSpirit => 500.0,
             NpcKind::Slime => unreachable!(),
         }
@@ -6642,6 +6676,13 @@ impl Npc {
             | NpcKind::ThePossessed => self.update_skeleton(world, player, dt),
             // W4-d40: CrimsonPenguin ride the family machine.
             NpcKind::CrimsonPenguin => self.update_zombie(world, player, dt),
+            // W4-d40: BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron - the aiStyle machine is UNWIRED
+            // (the style73 precedent); the kind arm keeps the match exhaustive.
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle
+            | NpcKind::Mothron => {}
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
@@ -9709,6 +9750,13 @@ impl Npc {
                     self.frame_counter = 0.0;
                     self.frame = 2 + n40;
                 }
+            }
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle
+            | NpcKind::Mothron => {
+                self.frame = 0;
             }
             NpcKind::DukeFishron => {
                 if self.ai[0] == 0.0 || self.ai[0] == 5.0 {
@@ -19380,6 +19428,12 @@ impl Npc {
             NpcKind::ThePossessed => 469,
             NpcKind::CrimsonPenguin => 470,
             NpcKind::ShadowFlameApparition => 472,
+            // W4-d40: the vanilla type ids (the G6 key stays injective).
+            NpcKind::BigMimicCorruption => 473,
+            NpcKind::BigMimicCrimson => 474,
+            NpcKind::BigMimicHallow => 475,
+            NpcKind::BigMimicJungle => 476,
+            NpcKind::Mothron => 477,
             NpcKind::WyvernTail => 228,
         } << 5;
         if self.kind == NpcKind::Slime {
@@ -24449,7 +24503,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 310] = [
+    pub(super) const ALL_KINDS: [NpcKind; 315] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24728,6 +24782,12 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-d40: BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron.
+        NpcKind::BigMimicCorruption,
+        NpcKind::BigMimicCrimson,
+        NpcKind::BigMimicHallow,
+        NpcKind::BigMimicJungle,
+        NpcKind::Mothron,
         // W4-d40: DeadlySphere, DrManFly, ThePossessed, CrimsonPenguin, ShadowFlameApparition.
         NpcKind::DeadlySphere,
         NpcKind::DrManFly,
@@ -28387,7 +28447,7 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            310,
+            315,
             "every decodable kind resolves (the wire roster's size - 270 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds, L-B gate)"
         );
         assert!(
@@ -34888,5 +34948,68 @@ mod w4_d40_deadlysphere_drmanfly_tests {
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ThePossessed, SlimeVariant::Blue).net_id, 469);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::CrimsonPenguin, SlimeVariant::Blue).net_id, 470);
         assert_eq!(crate::bestiary::entry_for_npc(NpcKind::ShadowFlameApparition, SlimeVariant::Blue).net_id, 472);
+    }
+}
+
+/// W4-d40 (NPCID 421-490 roster wave): the BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron
+/// `SetDefaults` rows pin against the C# through the port's piecewise
+/// tables (the small-kinds pin's shape). WRITTEN, NOT RUN (code-only).
+#[cfg(test)]
+mod w4_d40_bigmimiccorruption_bigmimiccrimson_tests {
+    use super::*;
+
+    #[test]
+    fn w4_d40_the_defaults_match_the_csharp_rows() {
+        // (kind, vanilla type, aiStyle, w, h, dmg, def, life, kb, value)
+        let rows = [
+            (NpcKind::BigMimicCorruption, 473u16, 87u8, 28.0, 44.0, 90, 34, 3500, 0.1f32, 30000.0),
+            (NpcKind::BigMimicCrimson, 474u16, 87u8, 28.0, 44.0, 90, 34, 3500, 0.1f32, 30000.0),
+            (NpcKind::BigMimicHallow, 475u16, 87u8, 28.0, 44.0, 90, 34, 3500, 0.1f32, 30000.0),
+            (NpcKind::BigMimicJungle, 476u16, 87u8, 28.0, 44.0, 90, 34, 3500, 0.1f32, 30000.0),
+            (NpcKind::Mothron, 477u16, 88u8, 80.0, 50.0, 80, 30, 6000, 0.2f32, 50000.0),
+        ];
+        for (kind, ty, ai, ww, hh, dmg, def, life, kb, value) in rows {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.ai_style(), ai, "{kind:?} aiStyle");
+            assert_eq!(kind.size(), (ww, hh), "{kind:?} size");
+            assert_eq!(shell.size(), (ww, hh), "{kind:?} npc size");
+            assert_eq!(kind.contact_damage(), dmg, "{kind:?} damage");
+            assert_eq!(shell.defense(), def, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), life, "{kind:?} lifeMax");
+            assert_eq!(shell.hp, life, "{kind:?} spawn hp");
+            assert_eq!(shell.knock_back_resist(), kb, "{kind:?} kb");
+            assert_eq!(shell.value(), value, "{kind:?} value");
+        }
+        // The HitSound/DeathSound rows (`NPC.cs` SetDefaults).
+        assert_eq!(NpcKind::BigMimicCorruption.hit_sound(), Some("NPC_Hit_4"));
+        assert_eq!(NpcKind::BigMimicCorruption.death_sound(), Some("NPC_Killed_6"));
+        assert_eq!(NpcKind::BigMimicCrimson.hit_sound(), Some("NPC_Hit_4"));
+        assert_eq!(NpcKind::BigMimicCrimson.death_sound(), Some("NPC_Killed_6"));
+        assert_eq!(NpcKind::BigMimicHallow.hit_sound(), Some("NPC_Hit_4"));
+        assert_eq!(NpcKind::BigMimicHallow.death_sound(), Some("NPC_Killed_6"));
+        assert_eq!(NpcKind::BigMimicJungle.hit_sound(), Some("NPC_Hit_4"));
+        assert_eq!(NpcKind::BigMimicJungle.death_sound(), Some("NPC_Killed_6"));
+        assert_eq!(NpcKind::Mothron.hit_sound(), Some("NPC_Hit_44"));
+        assert_eq!(NpcKind::Mothron.death_sound(), Some("NPC_Killed_46"));
+        // The noGravity rows.
+        assert!(NpcKind::Mothron.no_gravity());
+        // The protocol ids keep their vanilla slots (free in the space).
+        assert_eq!(NpcKind::BigMimicCorruption.to_u16(), 473);
+        assert_eq!(NpcKind::from_u16(473), Some(NpcKind::BigMimicCorruption));
+        assert_eq!(NpcKind::BigMimicCrimson.to_u16(), 474);
+        assert_eq!(NpcKind::from_u16(474), Some(NpcKind::BigMimicCrimson));
+        assert_eq!(NpcKind::BigMimicHallow.to_u16(), 475);
+        assert_eq!(NpcKind::from_u16(475), Some(NpcKind::BigMimicHallow));
+        assert_eq!(NpcKind::BigMimicJungle.to_u16(), 476);
+        assert_eq!(NpcKind::from_u16(476), Some(NpcKind::BigMimicJungle));
+        assert_eq!(NpcKind::Mothron.to_u16(), 477);
+        assert_eq!(NpcKind::from_u16(477), Some(NpcKind::Mothron));
+        // The bestiary credits (own entry or the credit-fold).
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::BigMimicCorruption, SlimeVariant::Blue).net_id, 473);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::BigMimicCrimson, SlimeVariant::Blue).net_id, 474);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::BigMimicHallow, SlimeVariant::Blue).net_id, 475);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::BigMimicJungle, SlimeVariant::Blue).net_id, 476);
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::Mothron, SlimeVariant::Blue).net_id, 477);
     }
 }

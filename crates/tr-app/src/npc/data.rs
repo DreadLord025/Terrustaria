@@ -633,6 +633,12 @@ impl NpcKind {
             NpcKind::ThePossessed => 469,
             NpcKind::CrimsonPenguin => 470,
             NpcKind::ShadowFlameApparition => 472,
+            // W4-d40: BigMimicCorruption, BigMimicCrimson, BigMimicHallow, BigMimicJungle, Mothron keep their vanilla ids (free in the protocol space).
+            NpcKind::BigMimicCorruption => 473,
+            NpcKind::BigMimicCrimson => 474,
+            NpcKind::BigMimicHallow => 475,
+            NpcKind::BigMimicJungle => 476,
+            NpcKind::Mothron => 477,
             NpcKind::WyvernTail => 228,
         }
     }
@@ -1011,6 +1017,12 @@ impl NpcKind {
             469 => NpcKind::ThePossessed,
             470 => NpcKind::CrimsonPenguin,
             472 => NpcKind::ShadowFlameApparition,
+            // W4-d40: the vanilla ids (`to_u16` above).
+            473 => NpcKind::BigMimicCorruption,
+            474 => NpcKind::BigMimicCrimson,
+            475 => NpcKind::BigMimicHallow,
+            476 => NpcKind::BigMimicJungle,
+            477 => NpcKind::Mothron,
             228 => NpcKind::WyvernTail,
             _ => return None,
         })
@@ -1935,6 +1947,12 @@ impl NpcKind {
             NpcKind::ThePossessed => "NPC_Hit_47",
             NpcKind::CrimsonPenguin => "NPC_Hit_1",
             NpcKind::ShadowFlameApparition => "NPC_Hit_52",
+            // W4-d40: the SetDefaults HitSound rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle => "NPC_Hit_4",
+            NpcKind::Mothron => "NPC_Hit_44",
             // The wyvern family: `SoundID.NPCHit7` (`NPC.cs:9950`/`:9967`/
             // `:9984`/`:10002`/`:10020`/`:10038`).
             NpcKind::WyvernHead
@@ -2287,6 +2305,12 @@ impl NpcKind {
             NpcKind::ThePossessed => "NPC_Killed_49",
             NpcKind::CrimsonPenguin => "NPC_Killed_1",
             NpcKind::ShadowFlameApparition => "NPC_Killed_55",
+            // W4-d40: the SetDefaults DeathSound rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle => "NPC_Killed_6",
+            NpcKind::Mothron => "NPC_Killed_46",
             // The wyvern family: `SoundID.NPCDeath8` (`NPC.cs:9951`/
             // `:9968`/`:9985`/`:10003`/`:10021`/`:10039`).
             NpcKind::WyvernHead
@@ -2411,6 +2435,8 @@ impl NpcKind {
             NpcKind::CrimsonGoldfish => true,
             // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
             NpcKind::DeadlySphere => true,
+            // W4-d40: the SetDefaults noGravity rows (`NPC.cs`).
+            NpcKind::Mothron => true,
             NpcKind::AngryNimbus => true,
             _ => false,
         }
@@ -2710,6 +2736,12 @@ impl NpcKind {
             | NpcKind::ThePossessed
             | NpcKind::CrimsonPenguin => 3,
             NpcKind::ShadowFlameApparition => 86,
+            // W4-d40: the SetDefaults aiStyle rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle => 87,
+            NpcKind::Mothron => 88,
             NpcKind::DungeonSpirit => 56,
         }
     }
@@ -3288,6 +3320,12 @@ impl NpcKind {
             NpcKind::ThePossessed => (38.0, 26.0),
             NpcKind::CrimsonPenguin => (16.0, 34.0),
             NpcKind::ShadowFlameApparition => (40.0, 24.0),
+            // W4-d40: the SetDefaults width/height boxes (`NPC.cs`).
+            NpcKind::BigMimicCorruption
+            | NpcKind::BigMimicCrimson
+            | NpcKind::BigMimicHallow
+            | NpcKind::BigMimicJungle => (28.0, 44.0),
+            NpcKind::Mothron => (80.0, 50.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
         }
     }
@@ -3984,6 +4022,12 @@ impl NpcKind {
             NpcKind::ThePossessed => 600,
             NpcKind::CrimsonPenguin => 75,
             NpcKind::ShadowFlameApparition => 180,
+            // W4-d40: the SetDefaults lifeMax rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption => 3500,
+            NpcKind::BigMimicCrimson => 3500,
+            NpcKind::BigMimicHallow => 3500,
+            NpcKind::BigMimicJungle => 3500,
+            NpcKind::Mothron => 6000,
             NpcKind::DungeonSpirit => 200,
         }
     }
@@ -4396,6 +4440,12 @@ impl NpcKind {
             NpcKind::ThePossessed => 68,
             NpcKind::CrimsonPenguin => 21,
             NpcKind::ShadowFlameApparition => 50,
+            // W4-d40: the SetDefaults damage rows (`NPC.cs`).
+            NpcKind::BigMimicCorruption => 90,
+            NpcKind::BigMimicCrimson => 90,
+            NpcKind::BigMimicHallow => 90,
+            NpcKind::BigMimicJungle => 90,
+            NpcKind::Mothron => 80,
             NpcKind::DungeonSpirit => 70,
         }
     }

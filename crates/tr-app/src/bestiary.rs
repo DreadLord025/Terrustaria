@@ -2370,6 +2370,47 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Shadowflame Apparition",
     },
+    // W4-d40: the new kinds' own bestiary entries (`BestiaryDatabaseNPCsPopulator`).
+    BestiaryEntryDef {
+        credit_id: "BigMimicCorruption",
+        net_id: 473,
+        kind: NpcKind::BigMimicCorruption,
+        variant: None,
+        quick_unlock: false,
+        name: "Corrupt Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "BigMimicCrimson",
+        net_id: 474,
+        kind: NpcKind::BigMimicCrimson,
+        variant: None,
+        quick_unlock: false,
+        name: "Crimson Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "BigMimicHallow",
+        net_id: 475,
+        kind: NpcKind::BigMimicHallow,
+        variant: None,
+        quick_unlock: false,
+        name: "Hallowed Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "BigMimicJungle",
+        net_id: 476,
+        kind: NpcKind::BigMimicJungle,
+        variant: None,
+        quick_unlock: false,
+        name: "Jungle Mimic",
+    },
+    BestiaryEntryDef {
+        credit_id: "Mothron",
+        net_id: 477,
+        kind: NpcKind::Mothron,
+        variant: None,
+        quick_unlock: false,
+        name: "Mothron",
+    },
 ];
 
 /// `CommonEnemyUICollectionInfoProvider.GetEntryUICollectionInfo`
