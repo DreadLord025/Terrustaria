@@ -39246,8 +39246,9 @@ closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
 ## The Demon Heart / Minecart / Pet License use arms (W4-g87)
 
-**Status: DONE (code-only, 2026-11-21; closeout folded the a6 deltas + the
-slot-8 UI port, see research/143).** The unclaimed remainder of the
+**Status: DONE + RETIRED (code-only, 2026-11-21; closeout folded the a6
+deltas + the slot-8 UI port; g87c retire receipts research/263 §6, the doc
+renumbered 143→263 per the research/150 registry).** The unclaimed remainder of the
 `Player.ItemCheck_OwnerOnlyCode` permanent-item cluster (`Player.cs:45192-
 45424`). The sibling lanes own the rest (the g90 DOC-SWEEP census is the
 authoritative lane map): the Life Crystal 29 / Mana Crystal 109 / Life Fruit
@@ -39256,8 +39257,12 @@ Torch God's Favor 5043 (f33), the Combat Book 4382 / Volume Two 5336 + the
 Peddler's Satchel 5343 (g89/g90), and the shimmer permanents 5337/5338/5339/
 5340/5341/5342 (g89/g90). **W4-a6 (`origin/task/W4-a6-crystals-powerups`
 tip `8ed96ee5`) independently ported the SAME three families on
-`powerups.rs`** — the closeout adjudication (research/143) keeps THIS lane's
-module as the carrier and folded a6's four fidelity deltas in:
+`powerups.rs`** — the closeout adjudication (research/263 §1) folded a6's
+four fidelity deltas into THIS lane's module, making the three families
+shape-identical; the SEALED merger direction (138 §12.3 / 103 §9 / 132 §8,
+receipted research/263 §6.5) seats the surviving use-arm copy on **a6's
+machine** — this module's arms + witness assertions dedup onto it at the
+merge; the slot-8 UI port below stays g87's unique keep:
 
 * **Demon Heart 3335** (`ItemCheck_UseDemonHeart` `:45192-45200`, called
   `:43598`): the permanent expert accessory slot. The gate `!extraAccessory
@@ -39279,7 +39284,7 @@ module as the carrier and folded a6's four fidelity deltas in:
   other permanents the use has NO flag gate (`:45204`) — a re-use still
   spawns a Mech and pays the stack (**both lanes agree; the census's
   "flag-gate" reading of a6 was wrong** — a6 `bb36e6ee`'s
-  `use_minecart_powerup` has no flag gate either, research/143 §2). The
+  `use_minecart_powerup` has no flag gate either, research/263 §1b). The
   closeout upgraded `QuickSpawnItem` to a6's full `GetItem` deposit walk
   (`item::deposit_pickup` + the per-slot chime/`NotifyItemPickup` + the void
   vault LAST resort + the prefix-preserved overflow at `base.Center`,
@@ -39314,10 +39319,18 @@ fn-pointer machine's per-item closure).
 **Deviations (recorded):**
 * The Pet License exchange (`NPC.UnlockOrExchangePet`'s `RerollVariation`
   arms, `NPC.cs:80910-80917`) needs a live TownCat/Dog/Bunny NPC + the
-  `TownNPCProfiles` variation table — neither is shipped. The LIVE
-  `NPC.AnyNPCs` net-id scan therefore never answers today (a re-use refuses)
-  and the exchange folds to the `Misc.PetExchangeFail` line; the
-  first-purchase unlock is the live path. The
+  `TownNPCProfiles` variation table — neither is shipped ON THIS BRANCH
+  (g10 `5dee28650` landed ALL-11 town-pet kinds WIRED on its own branch;
+  f43 `79a037f5e` carries the whole exchange chain as UNWIRED pure fns).
+  The LIVE `NPC.AnyNPCs` net-id scan therefore never answers here (a
+  re-use refuses) and the exchange folds to the `Misc.PetExchangeFail`
+  line; the first-purchase unlock is the live path. **The Success leg
+  (`Misc.PetExchangeSuccess`, `:80910-80912`) is the ONE remaining
+  use-arm debt, SHARED with a6** — the three-leg activation contract
+  (g10-kinds-DONE → f43b-splice → the else-arm one-line dispatch) is
+  published in a6 research/138 §12.2 + research/263 §6.3, and the exact
+  g87-side hunk is recorded in the `try_use_pet_license` else-arm
+  comment; it lands WITH the f43b splice, not before. The
   `NetMessage.TrySendData(7)` world sync (`:80908`) has no SP port.
 * The `NetMessage.SendData(4)` player-info syncs (`:45198`/`:45210`) have no
   single-player port.
@@ -39354,18 +39367,29 @@ through the g55 loadout block's hide flags.
 **Persistence.** The `.plr` (vanilla `Player.Serialize`) halves of
 `extraAccessory` (`:54776`) and the super-cart BitsByte (`:54914-54918`) are
 the f44 verify-sweep's lane (`player_file.rs`, the G7 unlock-header block) —
-NOT this lane's scope. The `.trplayer` live-session sidecar (`persist.rs`)
-carries `extra_accessory` + `unlocked_super_cart` on a new self-identifying
-`dh <extra> <cart>` sentinel line (version 7 on this branch's base; the g88
-research/103 §6 rule-5 contract — a new post-dye line appends with a shape
-distinct from the numeric pair/flag/loadout lines, so the superset reader's
-shape walk never misparses it; the merge folds it into the v9+ superset).
-The pet `bought_*` flags are WORLD globals: the `.wld` flags block
+NOT this lane's scope (f44's hydration port `5c8bbb160` applies both at
+character load — `Player::hydrate_from_file`). The `.trplayer` live-session
+sidecar (`persist.rs`) carries `extra_accessory` + `unlocked_super_cart` on
+a new self-identifying `dh <extra> <cart>` sentinel line (version 7 on this
+branch's base) — **the g87c RETIRE receipts the merger DEFAULT-DROP**
+(a6 138 §10.4 + f44 132 §2f SEALED, research/263 §6.2): the g88 v11 superset
+stays the sole L2 writer, the v11 reader tolerates this branch's `dh` line
+lossy-not-corrupt (the 3-token `_ => {}` arm), both flags ride f44's L1
+walk + hydration, and DD2 keeps its v12 token-7 reservation (132 §2e's
+line-17-at-v12 fold survives only as the CONDITIONAL in-session seat). The
+branch keeps its v7 writer/reader as the in-session carrier until the
+merge. The pet `bought_*` flags are WORLD globals: the `.wld` flags block
 (`WorldFile.cs:1392-1394`, write + read gate 217, the golden-fixture tail
-offsets 2021/2022/2023) and the `.trwld` v18 three-byte tail (the v15
-queen-slime byte's shape; pre-v18 loads false). The combat-book-vol-two /
-peddler-satchel `.trwld` v18 pair is the g90 lane's — the Lead merges the two
-v18 tails.
+offsets 2021/2022/2023 — f45's flags superset keeps the bytes, this lane's
+flips dedup) and the `.trwld` v18 three-byte tail (the v15 queen-slime
+byte's shape; pre-v18 loads false). **The v18 union is SEALED at 107 bytes**
+(g88 research/103 §L3-ARBITER FINAL A3, 13 claimants): the pets seat
+**[57..60]** in the strict-C#-row flag middle (crimson [50] / moon
+[51..56] / underworld [56] / pets [57..60] / empress [60] / books
+[61..63]), identity 44 B [63..107] closes the head, W×H dense LAST —
+research/263 §6.4 re-pins the closeout's 24/68-byte tables and the
+truncation-move column 3→107; the branch keeps its own 3-byte tail until
+the g71c union lands once at merge (forward-only, zero back-compat cost).
 
 **Verification (code-only).** 8 use-arm witnesses (the closeout added the
 used-heart START refusal + the resident-non-pet exchange refusal, extended
@@ -39377,4 +39401,9 @@ RUN (the lane's no-cargo constraint). Every touched file parse-checked via
 `rustfmt --edition 2024 --check` (the closeout's delta vs HEAD is
 non-positive on every file — the repo carries pre-existing fmt drift the
 lane does not widen). The a6 fold-input adjudication + the g88f/g71c
-persistence fold recipes: `docs/research/143-g87-fold-input.md`.
+persistence fold recipes: `docs/research/263-g87-fold-input.md` (§1-§5 the
+closeout record; **§6 the g87c RETIRE** — the 143→263 registry renumber,
+the dh DEFAULT-DROP receipt, the Success-leg g87-side hunk, the 107-A3
+pets re-pin, the a6 keep-one direction receipt, and the FINAL
+demonheart-family bible; the retire pass is comment/doc-only, no behaviour
+changed, no cargo/tests/rustfmt/graphify).

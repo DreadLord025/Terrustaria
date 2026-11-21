@@ -43,7 +43,8 @@
 //! answers today (a re-use refuses) and the exchange's `RerollVariation`
 //! folds to the `Misc.PetExchangeFail` line — the unlock (first purchase) is
 //! the live path (ANALYSIS deviation; a6 `d46221b2`'s scan + `!bought` guard
-//! shape, research/143).
+//! shape, research/263 — the Success leg is the shared f43b contract,
+//! 263 §6.3 / a6 research/138 §12.2).
 //!
 //! ## Persistence
 //!
@@ -53,8 +54,14 @@
 //!   NOT this module's scope.
 //! * The `.trplayer` live-session sidecar (`persist.rs`) carries
 //!   `extra_accessory` + `unlocked_super_cart` on a new self-identifying
-//!   post-loadout line (the g88 research/103 §6 rule-5 contract); the pet
-//!   `bought_*` flags are WORLD globals (`.wld`/`.trwld`, never the sidecar).
+//!   post-loadout line (the g88 research/103 §6 rule-5 contract) — the
+//!   line DEFAULT-DROPs at merge (research/263 §6.2: a6 138 §10.4 + f44
+//!   132 §2f; the flags ride f44's L1 hydration); the pet `bought_*` flags
+//!   are WORLD globals (`.wld`/`.trwld` — the SEALED 107-byte v18 union
+//!   seats them [57..60], research/263 §6.4 — never the sidecar).
+//! * MERGE DIRECTION (research/263 §6.5): the three use arms dedup onto
+//!   a6's `powerups.rs` machine (138 §12.3 SEALED); this module's witness
+//!   assertions ride the surviving arms, the slot-8 UI port is g87's keep.
 //!
 //! RNG: the Demon Heart + Pet Licenses draw NOTHING. The Minecart Powerup's
 //! `QuickSpawnItem` rolls the Mech's `Prefix(-1)` on the use's `UpdatePlayers`
@@ -119,7 +126,7 @@ fn consume_one(app: &mut App) {
 /// `Player.ItemCheck_CheckCanUse_Inner`'s Demon Heart refusal
 /// (`Player.cs:52051-52054`): `extraAccessory || !Main.expertMode` refuses
 /// the use START — no swing, no UseSound, no consume. The W4-a6 fold-input
-/// adjudication (research/143): a6 `ea478936`'s `use_start_refused` is the
+/// adjudication (research/263): a6 `ea478936`'s `use_start_refused` is the
 /// faithful half the grant gate alone misses — `ItemCheck_TryStartUse`
 /// (`:52021-52023`) runs CheckCanUse BEFORE StartActualUse, so a used heart
 /// or a classic world never even swings. The crystal/fruit caps gate the
@@ -274,7 +281,7 @@ pub(crate) fn minecart_powerup_item_check(app: &mut App, press_edge: bool) -> bo
 /// spawns a world drop at `base.Center` with the prefix PRESERVED
 /// (`Item.RequestNewItem`, `:7196-7199` — no fresh roll; the reforge-return
 /// overflow precedent's velocity/phase triplet). The a6 `bb36e6ee`
-/// fold-input shape (research/143): the C# rolls `Prefix(-1)` ONCE on the
+/// fold-input shape (research/263): the C# rolls `Prefix(-1)` ONCE on the
 /// fresh instance (`:7176`) under the use's `UpdatePlayers` swap
 /// (`Item.cs:528`'s `Main.rand`) — the Minecart Mech is in NO prefixable set
 /// (`rollable_prefixes` → None: not a weapon, `accessory: false`), so the
@@ -356,7 +363,7 @@ fn try_use_pet_license(app: &mut App, held: ItemSlot, npc_type: i32, key: &str) 
     };
     // `NPC.AnyNPCs(npcType)` (`NPC.cs:89873-89883`): active && type match.
     // No ported kind carries these net ids today, so the scan never answers
-    // — kept LIVE for the shape (a6 `d46221b2`'s arm, research/143): when a
+    // — kept LIVE for the shape (a6 `d46221b2`'s arm, research/263): when a
     // town-pet kind lands, the exchange gate starts answering without a
     // re-edit here.
     let any_npcs = app
@@ -375,7 +382,7 @@ fn try_use_pet_license(app: &mut App, held: ItemSlot, npc_type: i32, key: &str) 
     // (`:80910-80917`, the bought && AnyNPCs pass) need the variation profile
     // — unported, they fold to the `Misc.PetExchangeFail` line WITHOUT a
     // re-raise or a license re-print (a6 `d46221b2`'s `!bought` guard,
-    // research/143). The `NetMessage.TrySendData(7)` sync `:80908` has no SP
+    // research/263). The `NetMessage.TrySendData(7)` sync `:80908` has no SP
     // port.
     if !bought {
         match npc_type {
@@ -387,7 +394,20 @@ fn try_use_pet_license(app: &mut App, held: ItemSlot, npc_type: i32, key: &str) 
             .new_text(crate::lang::text(key), crate::chat::COLOR_WORLD);
     } else {
         // `RerollVariationForNPCType` (`:80910`) — no TownNPCProfiles in the
-        // port, always false → the fail line (`:80914-80917`).
+        // port, always false → the fail line (`:80914-80917`). THE SUCCESS
+        // LEG (g87c, research/263 §6.3, a6 138 §12.2's shared contract):
+        // when f43b splices `town_arrival_pets::reroll_variation_for_npc_type`
+        // (f43 `79a037f5e` :150-184, first-resident-only, the ≤100-draw cap,
+        // the legacy-0 roll, the heal :178-179) onto the live Npc roster
+        // (`PetVariationSlot` = active/npc_type/variation_index/hp/max_hp,
+        // the roll on `RngKey::UpdatePlayers` next_max — `Profiles.cs:216`
+        // Next(6), the §10.2 quick_spawn_item precedent; the name draw is
+        // WorldGen.genRand, a DIFFERENT stream), this arm becomes:
+        //   let success = reroll_variation_for_npc_type(&mut slots, npc_type,
+        //       &mut |n| roll_rng.next_max(n));
+        //   key = if success { "Misc.PetExchangeSuccess" } else { Fail };
+        // — Success/Fail both consume one (`:45442`), no flag re-raise, no
+        // license re-print; g10 `5dee28650`'s kinds make the scan answer.
         app.chat.new_text(
             crate::lang::text("Misc.PetExchangeFail"),
             crate::chat::COLOR_WORLD,
@@ -556,7 +576,7 @@ mod tests {
 
     /// `:52051`: a USED heart (`extraAccessory` already true) refuses the
     /// start too — the second half of the CheckCanUse gate (a6's
-    /// `a_second_demon_heart_refuses` twin, research/143).
+    /// `a_second_demon_heart_refuses` twin, research/263).
     #[test]
     fn w4_g87_a_used_demon_heart_refuses_the_start() {
         let mut app = rig(DEMON_HEART, 2, true);
@@ -573,7 +593,7 @@ mod tests {
     /// `:45204-45212`: the Minecart Powerup unlocks the Super Cart AND spawns
     /// the Minecart Mech (3353) into the inventory; a second use still spawns
     /// a Mech (no flag gate on the use, `:45204` — BOTH lanes agree, the
-    /// census's "flag-gate" reading is wrong, research/143).
+    /// census's "flag-gate" reading is wrong, research/263).
     #[test]
     fn w4_g87_the_minecart_powerup_unlocks_the_cart_and_spawns_the_mech() {
         let mut app = rig(MINECART_POWERUP, 2, false);

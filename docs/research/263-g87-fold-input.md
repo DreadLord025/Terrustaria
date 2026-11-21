@@ -1,4 +1,11 @@
-# 143 - W4-g87 closeout fold-input: the a6 dup adjudication, the dh-line g88f fold, the .trwld g71c union extension, the slot-8 consumer census
+# 263 - W4-g87 closeout fold-input: the a6 dup adjudication, the dh-line g88f fold, the .trwld g71c union extension, the slot-8 consumer census
+
+> **RENUMBERED 143 → 263** per the research/150 registry §6.3 (origin/task/W4-d54
+> `72226e500`): key 143 became a full 6-way collision — c4's
+> `143-d40-crimsongoldfish-retire-hunk.md` KEEPS 143 (earliest first-add); the
+> other claimants renumbered (d42→238, g58→240, d120→261, this doc→263,
+> c8→238→262). Every former research-143 citation on this branch now reads
+> `research/263`.
 
 **Lane:** `task/W4-g87-demon-heart-use` (base `dfbcaf94`, closeout commits
 `26620538` use-arm deltas + `236c0d5a` slot-8 UI + this doc).
@@ -190,7 +197,7 @@ from any future numeric 3-token line.
    `:256`, before `std::fs::write` `:257`):
    ```rust
    // W4-g87: the Demon Heart / Super Cart unlock line — the self-
-   // identifying `dh` sentinel (research/103 §6 rule 5, research/143 §2).
+   // identifying `dh` sentinel (research/103 §6 rule 5, research/263 §2).
    s.push_str(&format!(
        "dh {} {}\n",
        u8::from(player.extra_accessory),
@@ -293,7 +300,7 @@ fields `WorldFile.cs:1225-1227`/`:1250-1251`, W4-c43's port). It is
 header-shaped, not flags-shaped; the vanilla writes it at the file HEAD,
 but the port's `.trwld` tails are forward-only append. **Recommendation
 for g71c: identity LAST** (it is the only non-flags block; keeping the
-flags-shaped bytes contiguous preserves the 92/135/143 offset tables):
+flags-shaped bytes contiguous preserves the 92/135/263 offset tables):
 
 ```
   [24..68] f45 identity block (8 + 16 + 4 + 8 + 8 = 44 bytes)
@@ -416,3 +423,213 @@ Verification: `rustfmt --edition 2024 --check` on every touched file —
 the closeout's diff-count vs HEAD is non-positive per file (the repo
 carries pre-existing fmt drift; the lane does not widen it). No cargo, no
 tests run, no graphify (lane constraint).
+
+---
+
+## 6. RETIRE (g87c, 2026-11-21) — the post-closeout receipts, the renumber, the FINAL demonheart-family bible
+
+**Status: RETIRE/FINAL.** §1-§5 above stand AS PUBLISHED at `e3f81d0b`
+(the closeout record); this section carries every later authority that
+supersedes their fold tables, the registry renumber, the Success-leg
+g87-side hunk, and the family declaration. Tips read at THIS pass (fetched
+2026-11-21, `git fetch origin --prune`):
+
+| Lane | Tip read | What was read |
+| --- | --- | --- |
+| a6 `task/W4-a6-crystals-powerups` | `0766c8df9` (ARBITER receipt) | research/138 FULL (§10.1-10.5, §11.3, §12.1-12.5) + `powerups.rs` fail-chat arm (`:447`) |
+| g88 `task/W4-g88-life-fruit-use` | `5469d5872` (SEAL-VERIFY, A5) | research/103 §5a/§9 + L3-ARBITER A1-A4 + the SEAL bible; `persist.rs` `_ => {}` tolerate arm verified at the v11 tip |
+| f44 `task/W4-f44-save-plr-2` | `a46e798f3` (SEAL-VERIFY) | research/132 §2e/§2f/§8; `Player::hydrate_from_file` (`player.rs:2516`, `extra_accessory` `:2524`, `super_cart & 1` `:2548`) — the L1 carrier is LIVE on load |
+| g71 `task/W4-g71-bg-layers-2` | `b27474a44` (BG-SEAL RECEIPT) | research/92 §1-FULL.2 (A3-corrected) + §1-FULL.4 site table (g87 column) |
+| f45 `task/W4-f45-wld-header-2` | `82a006dcf` (REGISTRY-RENAME) | research/137→**279**-wld-final-audit (the .wld ownership table + SEALED banner) |
+| g90 `task/W4-g90-artisan-bread-use` | `43fee29a4` (BOOSTER SEAL) | research/135 s10g (books [61]/[62] on A3) |
+| f43 `task/W4-f43-town-spawn-2` | `79a037f5e` (census, UNCHANGED) | `town_arrival_pets.rs` full re-read: `license_gate`/`unlock_or_exchange_pet`/`reroll_variation`/`reroll_variation_for_npc_type`/`PetVariationSlot` |
+| g10 `task/W4-g10-npc-kind-wire-3` | `5dee28650` | the ALL-11 town-pet kinds WIRED (138 §12.2's census receipted) |
+| d54 `task/W4-d54-dust-sites-world` | `72226e500` (registry round 2) | research/150 §6.1 key-143 row + §6.3's g87 rename instruction |
+
+C# re-reads this pass (direct paths, ≤100-line windows, no junction
+recursion): `NPC.cs:80880-80969` (`UnlockOrExchangePet` +
+`RerollVariationForNPCType` + `RerollVariation` verbatim),
+`IO/WorldFile.cs:1385-1410` (the pets :1392-1394 → empress :1395 → books
+:1407-1408 write rows). No cargo/tests/rustfmt/graphify (lane constraint);
+witnesses WRITTEN NOT RUN.
+
+### 6.1 The renumber receipt (143 → 263)
+
+The registry (research/150) round 1 (`38bfd1d22`) ruled key 143 ONE-SIDED
+for c4; round 2 (`72226e500`, §6.1) re-scanned it as a FULL 6-way collision
+and assigned **g87 fold-input → 263** (§6.3's instruction row, refs
+`docs/ANALYSIS.md` + `docs/research/INDEX.md`). This pass EXECUTES it: the
+file renamed (`git mv`, the RENUMBERED banner at the head), and every
+citation re-pinned — ANALYSIS ×4 (incl. the filename cite), PORT_MAP ×1,
+INDEX row, `permanent_upgrades.rs` ×7 doc/witness comments. The doc's own
+internal §-cites ride the banner. d120's 143→261 and c8's 143→238→262 are
+those lanes' own executions (registry rule: own branch only). **263 is
+this doc's FINAL number.**
+
+### 6.2 The dh sentinel line — g88h DEFAULT-DROP CONFIRMED (supersedes §2's fold hunks)
+
+§2 published the g88f fold (line 17 / sentinel arm / VERSION stays 10) at
+the g88 v10 tip `c8985b53`. The authorities have since RULED:
+
+* **a6 138 §10.4: DROP** — the version collision (g88 owns v7-v11) + the
+  L1-only ruling (132 §2a rows 18/64).
+* **f44 132 §2f item 2 (SEALED): the DROP is the merger DEFAULT.** The
+  §2e line-17-at-v12 fold survives only as the CONDITIONAL seat (in-session
+  dual-carrier before the exit-save); under the default the v11 writer
+  stands and **DD2 keeps its v12 token-7 reservation** (132 §2e's v13
+  re-seat VOID). g88 103 §5a/§9 receipt the same.
+* **The DROP is SAFE on the published record:** f44's hydration port
+  landed (`5c8bbb160`, `Player::hydrate_from_file` applies
+  `extra_accessory` + the super-cart BitsByte split at load — condition
+  (a) of 103 §2b MET); the v11 superset reader tolerates this branch's v7
+  `dh` line lossy-not-corrupt (the 3-token line falls to the `_ => {}`
+  arm — re-verified at the g88 tip this pass); the remaining condition (b)
+  (the exit-save `.plr` re-write) is f44's recorded open remainder, NOT
+  this lane's.
+
+**This branch keeps its v7 writer/reader AS LANDED** (`persist.rs:64`/
+`:84-95`/`:169-179` + the two round-trip witnesses) — they are the
+in-session carrier until the merge; at the merge the whole `dh` cluster
+(SavedPlayer fields, the v7 bump, the reader arm, both witnesses, the
+`app/mod.rs:2944-2945` restore pair) DROPS per 138 §10.4 / 132 §2f, and
+the flags ride f44's hydration (character-first, sidecar-second
+precedence, 132 §2c). §2's hunk list is SUPERSEDED — the merger does NOT
+apply it under the default. The dh-fold witnesses §2 item 5 lists are
+VOID under the default (they activate only with the conditional seat).
+
+### 6.3 The pet-license Success leg — the g87-side hunk (a6 138 §12.2's contract)
+
+§1c's "unwitnessable until a TownCat/Dog/Bunny kind ships" boundary is
+STALE at the merged horizon: **g10 `5dee28650` landed ALL-11 town pets
+WIRED** (637/638/656/670/678-684; the live `AnyNPCs` scan ANSWERS on g10's
+tip). The one remaining use-arm debt is the **Success dispatch**
+(`NPC.cs:80910-80912`, `Misc.PetExchangeSuccess`), shared a6 × g87, with
+the three-leg activation contract (138 §12.2):
+
+1. **g10 kinds — DONE** (`5dee28650`).
+2. **f43-splice (the f43b lane)** — splice `tail_can_spawn`'s pet arms +
+   expose a wired `reroll_variation_for_npc_type`
+   (`town_arrival_pets.rs:150-184`) over the live `Npc` roster
+   (`PetVariationSlot` adapter: active/npc_type/variation_index/hp/max_hp);
+   the variant roll on `Main.rand` = `RngKey::UpdatePlayers`
+   (`Profiles.cs:216` `Next(6)` — the ONLY Main.rand slot in the chain),
+   the name draw on `WorldGen.genRand` (a DIFFERENT stream).
+3. **The else-arm one-line dispatch** — a6's published hunk (138 §12.2)
+   swaps the hardcoded Fail chat for the reroll result.
+
+**g87's arm takes the SAME hunk** — the exact g87-side seat is now recorded
+IN CODE (`permanent_upgrades.rs`, the `try_use_pet_license` else-arm
+comment): `success = reroll_variation_for_npc_type(&mut slots, npc_type,
+&mut |n| roll_rng.next_max(n))` then the
+`if success { "Misc.PetExchangeSuccess" } else { "Misc.PetExchangeFail" }`
+key select, World colour, consume either way (`:45442`), no flag re-raise,
+no license re-print. **g87 is ALREADY the PetExchangeFail superset** (§1c:
+the Fail chat a6 lacked landed here first at `26620538`; a6 reciprocally
+folded it, 138 §11.3 — verified at `0766c8df9` `powerups.rs:447`), so the
+Success hunk is the ONLY behavioural delta left on either arm. NOT wired
+on this branch (f43's chain is UNWIRED pure fns at `79a037f5e`; the splice
+is f43b's lane — wiring here would duplicate it). The positive Success
+witness lands WITH the f43b splice + this hunk (138 §12.2's boundary);
+this branch's `w4_g87_a_resident_non_pet_does_not_open_the_exchange`
+stays the negative pin. The C# legs re-verified verbatim this pass
+(`NPC.cs:80894-80961`: the first-resident-only scan `:80922-80930`, the
+no-profile false `:80935-80938`, the ≤100-draw cap `:80941-80944`, the
+`GetNameForVariant` + `life = lifeMax` heal `:80949-80950`, the
+PetExchange particle + `TrySendData(56)` `:80951-80959`).
+
+### 6.4 The .trwld pets seat — 107-A3 RE-PIN (supersedes §3's 24/68-byte tables)
+
+§3's union extension (pets [19..22], books [22]/[23], identity LAST,
+68-byte full union) was the FOUR-claimant view at closeout. The union has
+since been arbitrated at THIRTEEN claimants: **g88 research/103
+§L3-ARBITER FINAL A3 (`d09d7e10a`, A5-verified `5469d5872`) is THE
+authority** — the 107-byte fixed head + W×H dense LAST, VERSION 18
+forward-only, the flag middle in STRICT C# row order. This lane's pets
+seat:
+
+```
+[57] bought_cat   u8   (WorldFile.cs:1392)
+[58] bought_dog   u8   (:1393)
+[59] bought_bunny u8   (:1394)
+```
+
+— after crimson [50] / moon quintet [51..56] / underworld [56], BEFORE
+empress [60] and books [61..63]; identity 44 B [63..107] closes the head.
+The C# rows re-read verbatim this pass (`:1385-1410`). §3's [19..22] seat
+and its "135's offsets move to [22]/[23]" instruction are SUPERSEDED: g90's
+pair sits [61]/[62] (135 s10g, on A3), f45's identity is NOT last-flag-
+shaped but head-closing [63..107] — the four-claimant arithmetic did not
+know the crimson/moon/underworld/cave blocks. **The truncation-move table
+(§3) re-pins 3 → 107** per 92 §1-FULL.4's g87 column (order-agnostic, the
+sites stand): `save.rs:1300` (`+3`→`+107`), `:1329` EMPTY_V16_TAIL
+(`+3`→`+107`), `:1518` (`-3`→`-107`), `:1542` (`len-3`→`len-107`); the
+mid-record cuts `:1093`/`:1700`/`:2163` re-arm `-3`→`-3-107` per the same
+table; `:1238`/back_flags/back_micro ride EMPTY_V16_TAIL. **NOT executed
+on this branch** — the branch keeps its own 3-byte tail (every claimant
+does; the union lands ONCE at the g71c merge, forward-only, zero
+back-compat cost). The `.wld` side (§1d/§3 tail) is UNCHANGED: f45's
+flags superset keeps the write/read-gate-217 bytes (137→279's ownership
+table), this lane's flips dedup, the 2021/2022/2023 golden pins stand.
+
+### 6.5 The a6 keep-one direction — 138's verdict RECEIPTED (supersedes §1's KEEP-g87 direction)
+
+§1 adjudicated KEEP-g87/DROP-a6 per family from THIS lane's side. a6's
+138 (§10.1-10.3, §11.3, §12.3 SEALED + ARBITER) adjudicated the mirror:
+**a6's single-seam `powerups.rs` machine owns the use-arm cluster; g87's
+three arms DROP at merge.** Both verdicts agree on the SEMANTICS (the
+closeout made all three families shape-identical — 138 §11.3's
+cross-receipt confirms every fold leg by leg); they differ only on WHICH
+copy survives, and the SEALED merger authorities (103 §9 step 8 / 132 §8
+step 2 item 3 / 138 §12.3) all seat the survivor on **a6's machine**.
+This lane receipts that direction: at the merge
+`permanent_upgrades.rs`'s three use arms + their 8 witnesses dedup onto
+a6's `powerups.rs` (g87's witness ASSERTIONS survive on the surviving
+arm — the no-swing START pins, the second-Mech re-use leg, the
+resident-non-pet refusal, the zero-draw census); the `editing.rs:2019-
+2025` dispatch calls dedup onto a6's `:2013` seam at the same C#-order
+slots. **What g87 UNIQUELY keeps** (no a6 twin): the slot-8 UI/draw port
+(`236c0d5a` — `Player.can_demon_heart_accessory_be_shown` +
+`ui::inventory::ExtraAccessoryShow` + the 3 UI witnesses; 138 has no UI
+scope), the `.wld`/`.trwld` carrier flips (dedup per §1d/§6.4), and the
+dh-sidecar cluster until its §6.2 DROP. The §1e "a6 keeps
+drone_destroy_check" note stands (138 §12.3's bible seats the drones on
+a6 too).
+
+### 6.6 The demonheart-family bible (FINAL, one paragraph)
+
+The Demon Heart family seals as: **use arms** — a6's `powerups.rs`
+machine owns 3335 (with the CheckCanUse START refusal g87 folded), 5289
+(ALWAYS-spawn + the full GetItem QuickSpawnItem walk, `Prefix(-1)` on
+UpdatePlayers, zero draws — the flag-gate hypothesis REFUTED on both
+lanes) and 4829/4830/4910 (the live AnyNPCs scan + `!bought` guard + the
+PetExchangeFail chat both lanes carry; the Success leg is the ONE
+remaining debt, activation-contracted g10-DONE → f43b-splice → the
+one-line dispatch, §6.3); **flags** — `Player.extra_accessory` /
+`unlocked_super_cart` are L1 `.plr` fields (f44's complete walk +
+hydration LIVE, gate 125 / super-cart BitsByte 253), the g87 v7 `dh`
+sidecar line DROPS at merge under the 132 §2f DEFAULT (the conditional
+line-17-at-v12 seat stays published, DD2 keeps v12); **world flags** —
+`bought_cat/dog/bunny` ride f45's `.wld` flags superset (gate 217, golden
+pins 2021-2023) + the 107-byte `.trwld` v18 union at [57..60] under 103
+L3-ARBITER A3; **consumers** — the slot-8 sim gate (`player.rs:4880` +
+`equip_swap.rs:104`, S1-H-5/i48) and the slot-8 UI row (g87's `236c0d5a`
+port, `Player.cs:4276-4306` + `Main.cs:41381-41524`) are LIVE; the Super
+Cart ride gate (`player.rs:9501`) is LIVE; the world-space accessory
+visuals stay unported SYSTEM-WIDE (not a slot-8 gap). Every carrier has
+one owner, every arm one survivor, one debt one contract — the family is
+RETIRED on this branch; nothing further is owed here.
+
+### 6.7 Retire verification
+
+* Registry: research/150 round 2 (`72226e500`) §6.1/§6.3 read FULL; the
+  rename executed per its instruction row (file + banner + ANALYSIS ×4 +
+  PORT_MAP ×1 + INDEX ×1 + code comments ×7); the stale-name grep
+  (the old `143-` prefix joined to this doc's slug) returns ZERO after
+  the pass (the banner's historical chain mentions excepted).
+* The §6.2/§6.4/§6.5 supersessions verified against the CURRENT tips
+  (table above), not the closeout-era tips; the C# rows re-read directly.
+* The §6.3 hunk is comment-only in code (the else-arm's contract note);
+  no behaviour changed on this branch this pass — the 8+3+3 witnesses
+  and every landed pin stand as written (WRITTEN NOT RUN).
+* No cargo/tests/rustfmt/graphify invoked (lane constraint). Comment-only
+  code delta; docs + the rename are the pass's whole diff.
