@@ -417,9 +417,11 @@ fn draw_pretty_star_sparkle(
 }
 
 /// One peer the `DrawPaladinsShield` loops read (`Main.cs:57205-57231`): the
-/// fields `CanDefendWithPaladinsShield` + `MountedCenter` need. The port's
-/// `PlayerNet` carries no team/shield/dead state, so single-player passes an
-/// empty slice and both loops no-op (the C# skips `Main.myPlayer`).
+/// fields `CanDefendWithPaladinsShield` + `MountedCenter` need. W4-d70
+/// DOC-SWEEP: the peers are the `PlayerNet` snapshots (team/dead ride the
+/// `13`/`12`/`45` wires, the shield flag re-derives from the synced
+/// inventory — `PlayerNet::paladin_shield`); single-player passes an empty
+/// slice (the C# skips `Main.myPlayer`).
 #[derive(Clone, Copy)]
 pub(crate) struct PaladinPeer {
     pub mounted_center: [f32; 2],
@@ -446,8 +448,7 @@ impl PaladinPeer {
 /// `Main.DrawPaladinsShield` (`Main.cs:57196-57232`): the two boundary loops.
 /// The local player's shield reaches out to same-team shield-bearing peers
 /// (`hasPaladinShield`), and a `defendedByPaladin` local player is reached by
-/// peers who can defend. Single-player has no peers, so this is a no-op until
-/// the net layer carries team/shield state.
+/// peers who can defend. Single-player has no peers, so both loops no-op.
 pub(crate) fn draw_paladins_shield(
     r: &mut SpriteRenderer,
     lookups: &Lookups,

@@ -1500,7 +1500,21 @@ impl App {
                         }
                         // `:42765-42770`: `SendData(157)` in MP, else the
                         // team-based-spawns respawn in SP (`teamBasedSpawnsSeed`
-                        // is not ported — no team spawn seeds yet).
+                        // is not ported — no team spawn seeds yet). The port
+                        // sends the `45` body (the `157` tail is the unported
+                        // team-spawn seed; `MessageBuffer.cs:2325-2364` reads
+                        // both through the same arm).
+                        let me = self.local_id as u8;
+                        let msg = crate::net::TeamChange { player_id: me, team: i as u8 };
+                        match &self.net {
+                            crate::app::NetRole::Host(server) => {
+                                server.broadcast(&crate::net::S2c::TeamChange(msg));
+                            }
+                            crate::app::NetRole::Client(client) => {
+                                client.send(&crate::net::C2s::TeamChange(msg));
+                            }
+                            crate::app::NetRole::Off => {}
+                        }
                     }
                     None => {}
                 }

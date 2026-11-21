@@ -357,6 +357,13 @@ impl App {
                     server.set_state(id, slot_state::IN_WORLD);
                     self.host_slot_join_complete(server, id, s);
                 }
+                // `MessageBuffer.cs:914-918`: the team byte + the
+                // `respawnTimer > 0 → dead` arm land on the peer copy
+                // (AFTER the join insert, which resets it).
+                if let Some(p) = self.remote_players.get_mut(&id) {
+                    p.team = s.team as i32;
+                    p.dead = s.respawn_timer > 0;
+                }
             }
             // `case 154` — the server echoes the probe straight back
             // (`MessageBuffer.cs:4419-4423`); the port's relay is the same
@@ -411,6 +418,8 @@ impl App {
                 entry.body_frame = ps.body_frame;
                 entry.hp = ps.hp;
                 entry.max_hp = ps.max_hp;
+                entry.team = ps.team;
+                entry.dead = ps.dead;
                 let mut relay = ps.clone();
                 relay.player_id = id as u8;
                 // The C# never echoes a snapshot back to its sender
@@ -807,13 +816,28 @@ impl App {
                     })); // `:2573`
                 }
             }
+            // `case 45` — a client changed team (`MessageBuffer.cs:2325-2342`):
+            // the server forces the subject to the sender, writes the team
+            // and relays the `45` to everyone else (the chat announcement
+            // `:2343-2353` is unported — no MP chat yet).
+            C2s::TeamChange(t) => {
+                if let Some(p) = self.remote_players.get_mut(&id) {
+                    p.team = t.team as i32;
+                }
+                server.broadcast_except(
+                    &S2c::TeamChange(net::TeamChange {
+                        player_id: id as u8,
+                        team: t.team,
+                    }),
+                    id,
+                );
+            }
             // S1-I-1 wave A: the join bundle's client-sent ids have bodies +
             // codecs (`net.rs`); the host apply/relay arms
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
+            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`,
             // `:4282-4297`, `:4328-4343`) land with the send-path pass (S1-I-4).
             C2s::TogglePvp(_)
             | C2s::PlayerMana(_)
-            | C2s::TeamChange(_)
             | C2s::ProjectileTrackers(_)
             | C2s::SyncLoadout(_) => {}
         }
@@ -1096,6 +1120,15 @@ impl App {
         for p in self.remote_players.values() {
             if p.id != id {
                 server.send(id, &S2c::PlayerState(Box::new(self.player_state_of(p))));
+                // `SyncOnePlayer`'s `45` row (`NetMessage.cs:2903`): the
+                // peer's team rides the join bundle too.
+                server.send(
+                    id,
+                    &S2c::TeamChange(net::TeamChange {
+                        player_id: p.id as u8,
+                        team: p.team as u8,
+                    }),
+                );
                 if !p.name.is_empty() {
                     server.send(
                         id,
@@ -1294,7 +1327,10 @@ impl App {
                             respawn_timer: 0,
                             deaths_pve: 0,
                             deaths_pvp: 0,
-                            team: 0,
+                            // `Player.cs:37578-37581` re-sends 12 with the
+                            // live team (`NetMessage.cs`'s 12 body reads
+                            // `player.team`).
+                            team: self.player.as_ref().map_or(0, |p| p.team as u8),
                             // `PlayerSpawnContext.SpawningIntoWorld` (`= 1`):
                             // `Player.Spawn(context)` re-sends `12` with
                             // `(int)(byte)context` (`Player.cs:37578-37581`).
@@ -1432,6 +1468,8 @@ impl App {
                 entry.body_frame = ps.body_frame;
                 entry.hp = ps.hp;
                 entry.max_hp = ps.max_hp;
+                entry.team = ps.team;
+                entry.dead = ps.dead;
             }
             S2c::Time { time, day } => {
                 self.world.time = time;
@@ -1841,15 +1879,23 @@ impl App {
                     }
                 }
             }
+            // `case 45` on a client (`MessageBuffer.cs:2325-2336`): the
+            // relayed team byte lands on the peer copy.
+            S2c::TeamChange(t) => {
+                if (t.player_id as u32) != self.local_id {
+                    if let Some(p) = self.remote_players.get_mut(&(t.player_id as u32)) {
+                        p.team = t.team as i32;
+                    }
+                }
+            }
             // S1-I-1 wave A: the join bundle's server-sent ids have bodies +
             // codecs (`net.rs`); the client read sites
-            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`, `:2325-2364`,
+            // (`MessageBuffer.cs:1851-1867`, `:2290-2306`,
             // `:2695-2739`, `:3118-3126`, `:3147-3153`, `:4043-4048`,
             // `:4195-4203`, `:4238-4249`, `:4282-4297`, `:4328-4343`) land
             // with the send-path pass (S1-I-4) — nothing sends them yet.
             S2c::TogglePvp(_)
             | S2c::PlayerMana(_)
-            | S2c::TeamChange(_)
             | S2c::NpcHouse(_)
             | S2c::TravelShop(_)
             | S2c::AnglerQuest(_)
@@ -2641,6 +2687,8 @@ impl App {
             on_ground: p.on_ground,
             leg_frame: p.leg_frame,
             body_frame: p.body_frame,
+            team: p.team,
+            dead: p.dead,
             ..Default::default()
         };
         // The ambience spawn relay (`AmbienceServer.SpawnForPlayer`): the
@@ -2652,10 +2700,43 @@ impl App {
         // The NPC outbox + despawns leave the store before the role borrow.
         let npc_outbox = std::mem::take(&mut self.net_npc_outbox);
         let npc_despawns = std::mem::take(&mut self.net_npc_despawns);
+        // W4-d70 DOC-SWEEP: the local armour block's `5` diff — the C# sends
+        // on every equip change (`PlayerItemSlotID.CanRelay` covers the
+        // armour block, `PlayerItemSlotID.cs:168-186`); the port batches it
+        // on the cadence tick. The paladin peer loops re-derive the shield
+        // flag from these slots on the other side.
+        let armor_changes: Vec<(i16, net::NetItem)> = p
+            .equipped
+            .iter()
+            .enumerate()
+            .filter(|(i, &kind)| kind != self.net_armor_last[*i])
+            .map(|(i, &kind)| {
+                (
+                    player_item_slot::ARMOR_0 + i as i16,
+                    net::NetItem {
+                        kind: kind as i16,
+                        stack: if kind == 0 { 0 } else { 1 },
+                        prefix: p.equipped_prefix[i].min(255) as u8,
+                        favorited: false,
+                    },
+                )
+            })
+            .collect();
+        if !armor_changes.is_empty() {
+            self.net_armor_last = p.equipped;
+        }
         match &self.net {
             NetRole::Host(server) => {
                 // The host's own snapshot, as `13 PlayerState`.
                 server.broadcast(&S2c::PlayerState(Box::new(self.player_state_of(&me))));
+                for (slot, item) in &armor_changes {
+                    server.set_slot_inventory(0, *slot as u8, *item);
+                    server.broadcast(&S2c::Inventory {
+                        player_id: 0,
+                        slot: *slot,
+                        item: *item,
+                    });
+                }
                 for (ty, seed) in ambience_spawns {
                     let body = crate::app::netmodules::AmbienceSpawn {
                         player: 0,
@@ -2750,7 +2831,9 @@ impl App {
                         || me.body_frame != self.net_ps_last.body_frame
                         || me.on_ground != self.net_ps_last.on_ground
                         || me.hp != self.net_ps_last.hp
-                        || me.max_hp != self.net_ps_last.max_hp;
+                        || me.max_hp != self.net_ps_last.max_hp
+                        || me.team != self.net_ps_last.team
+                        || me.dead != self.net_ps_last.dead;
                     self.net_beat = self.net_beat.wrapping_add(1);
                     if !changed && self.net_beat % NET_HEARTBEAT_TICKS == 0 {
                         changed = true; // the heartbeat (420 ticks ≈ 7 s)
@@ -2758,6 +2841,11 @@ impl App {
                     if changed {
                         client.send(&C2s::PlayerState(self.player_state_of(&me)));
                         self.net_ps_last = self.player_state_of(&me);
+                    }
+                    // The client's own armour `5` diff (the host relays it
+                    // through `case 5`'s `CanRelay` arm).
+                    for (slot, item) in &armor_changes {
+                        client.send(&C2s::Inventory { slot: *slot, item: *item });
                     }
                 }
             }
@@ -2905,6 +2993,8 @@ impl App {
             body_frame: p.body_frame,
             hp: p.hp,
             max_hp: p.max_hp,
+            team: p.team,
+            dead: p.dead,
         }
     }
 
@@ -3813,6 +3903,9 @@ mod handshake_tests {
         drive_to(&mut host_app, &mut client_app, net::client_state::IN_WORLD);
         assert_eq!(client_app.net_state, net::client_state::IN_WORLD);
         host_app.player = Some(player::Player::spawn(&host_app.world));
+        // The join push already streamed this armour block; seed the diff
+        // so the cadence only re-sends real changes.
+        host_app.net_armor_last = host_app.player.as_ref().unwrap().equipped;
         host_app.player_name = "host".into();
         (host_app, client_app)
     }
@@ -4098,6 +4191,57 @@ mod handshake_tests {
         let peer = client_app.remote_players.get(&0).expect("host peer stored");
         assert!((peer.x - 42.0).abs() < 0.01);
         assert_eq!(peer.leg_frame, 5);
+    }
+
+    /// W4-d70 DOC-SWEEP — the paladin peer loops' wire fields: the host's
+    /// team/dead ride the `13` extension, and the shield flag re-derives
+    /// from the synced armour slots (`PlayerNet::paladin_shield`).
+    #[test]
+    fn the_paladin_peer_fields_ride_the_snapshot_and_the_inventory() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let p = host_app.player.as_mut().unwrap();
+        p.team = 2;
+        p.hp = 200;
+        p.max_hp = 400;
+        // A worn Paladin's Shield in functional slot 3 (wire slot 62).
+        p.equipped[3] = 938;
+        pump(&mut host_app, &mut client_app, 15);
+        let peer = client_app.remote_players.get(&0).expect("host peer stored");
+        assert_eq!(peer.team, 2, "the 13 extension carries the team");
+        assert!(!peer.dead);
+        assert!(
+            peer.paladin_shield(),
+            "938 in armour slot 3 above 25% life derives the shield flag"
+        );
+        // Below the quarter-life gate the flag drops (Player.cs:15351).
+        host_app.player.as_mut().unwrap().hp = 100;
+        pump(&mut host_app, &mut client_app, 15);
+        let peer = client_app.remote_players.get(&0).unwrap();
+        assert!(!peer.paladin_shield(), "hp <= max/4 drops the shield");
+        // The dead flag rides the snapshot too.
+        host_app.player.as_mut().unwrap().hp = 200;
+        host_app.player.as_mut().unwrap().dead = true;
+        pump(&mut host_app, &mut client_app, 15);
+        let peer = client_app.remote_players.get(&0).unwrap();
+        assert!(peer.dead, "the 13 extension carries dead");
+    }
+
+    /// W4-d70 DOC-SWEEP — `45 TeamChange`: the client's team click relays
+    /// through the host to the host's own peer copy
+    /// (`MessageBuffer.cs:2325-2342`).
+    #[test]
+    fn a_team_change_relays_to_the_host_peer_copy() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        pump(&mut host_app, &mut client_app, 12);
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::TeamChange(net::TeamChange {
+                player_id: 1,
+                team: 3,
+            }));
+        }
+        pump(&mut host_app, &mut client_app, 12);
+        let peer = host_app.remote_players.get(&1).expect("client peer stored");
+        assert_eq!(peer.team, 3, "the host applied the relayed team");
     }
 
     /// A pair whose host world spans 5x4 sections (900x600) with the spawn at

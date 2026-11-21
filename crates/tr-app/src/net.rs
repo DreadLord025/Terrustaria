@@ -575,6 +575,41 @@ pub struct PlayerNet {
     /// has open, fed by `80 SyncPlayerChestIndex`
     /// (`MessageBuffer.cs:3216-3227`). `None` = closed (`-1`), the `Default`.
     pub chest: Option<i16>,
+    /// `Main.player[id].team` (`Player.cs:1050`): fed by `12 PlayerSpawn`
+    /// (`MessageBuffer.cs:914`) and `45 TeamChange` (`:2325-2336`).
+    pub team: i32,
+    /// `Main.player[id].dead` (`Player.cs:1069`): the `12 PlayerSpawn`
+    /// `respawnTimer > 0` arm (`MessageBuffer.cs:915-918`); the port also
+    /// derives it from the snapshot's `hp <= 0` (the two-client extension's
+    /// dead stand-in — the C# simulates every player locally).
+    pub dead: bool,
+}
+
+impl PlayerNet {
+    /// The `PlayerItemSlotID.Armor0..19` block's wire indices
+    /// (`PlayerItemSlotID.cs`; the port's `player_item_slot::ARMOR_0` is
+    /// private to netglue, so the constant is repeated here with the same
+    /// citation). The functional accessories the paladin loops read live at
+    /// the block's slots 3..10.
+    const ARMOR_0: u8 = 59;
+
+    /// `Player.hasPaladinShield` for a remote peer, derived from its synced
+    /// inventory: a worn Paladin's/Frozen/Hero shield (938/3997/3998,
+    /// `ApplyEquipFunctional` `Player.cs:15348-15353`) in a functional slot
+    /// (3..10, the `UpdateEquips` loop `:12946-12952`) while above 25% life.
+    /// The port does not simulate remote equips, so the flag is re-derived
+    /// here from the `5 PlayerInventory` copies (deviation: the C# reads the
+    /// peer's own live `hasPaladinShield`).
+    pub fn paladin_shield(&self) -> bool {
+        if !(self.hp as f32 > self.max_hp as f32 * 0.25) {
+            return false;
+        }
+        (3..10).any(|s| {
+            self.inventory
+                .get(&(Self::ARMOR_0 + s))
+                .is_some_and(|it| matches!(it.kind, 938 | 3997 | 3998) && it.stack > 0)
+        })
+    }
 }
 
 /// `msg 13 PlayerState`'s body (`NetMessage.cs:446-513`): the player id, four
@@ -606,6 +641,14 @@ pub struct PlayerState {
     pub body_frame: u32,
     pub hp: i32,
     pub max_hp: i32,
+    /// `Player.team` — the C# syncs it via `45 TeamChange`; the port also
+    /// rides it on the snapshot so a relayed `13` refreshes the peer loops
+    /// without waiting for a team message (two-client extension).
+    pub team: i32,
+    /// `Player.dead` — the C# derives it from its own simulation
+    /// (`respawnTimer > 0`, `MessageBuffer.cs:915-918`); the snapshot carries
+    /// it for the paladin peer loops (two-client extension).
+    pub dead: bool,
 }
 
 impl PlayerState {
@@ -629,6 +672,8 @@ impl PlayerState {
             .u32(self.body_frame)
             .i32(self.hp)
             .i32(self.max_hp)
+            .i32(self.team)
+            .bool(self.dead)
     }
 
     fn read_from(r: &mut NetReader) -> Option<Self> {
@@ -650,6 +695,8 @@ impl PlayerState {
         let body_frame = r.u32()?;
         let hp = r.i32()?;
         let max_hp = r.i32()?;
+        let team = r.i32()?;
+        let dead = r.bool()?;
         Some(Self {
             player_id,
             flags_a,
@@ -666,6 +713,8 @@ impl PlayerState {
             body_frame,
             hp,
             max_hp,
+            team,
+            dead,
         })
     }
 }
@@ -3790,6 +3839,66 @@ mod tests {
 
     use super::*;
 
+    /// W4-d70 DOC-SWEEP — `PlayerNet::paladin_shield`: the shield flag
+    /// re-derives from the synced armour block (`Player.cs:15348-15353`'s
+    /// 938/3997/3998 + quarter-life gate, the `UpdateEquips` 3..10 loop).
+    #[test]
+    fn the_paladin_shield_derives_from_the_synced_armour() {
+        let mut p = PlayerNet {
+            hp: 200,
+            max_hp: 400,
+            ..Default::default()
+        };
+        assert!(!p.paladin_shield(), "no shield worn");
+        // Slot 3 of the armour block = wire slot 62.
+        p.inventory.insert(
+            62,
+            NetItem { kind: 938, stack: 1, prefix: 0, favorited: false },
+        );
+        assert!(p.paladin_shield(), "938 above the quarter-life gate");
+        // The Frozen/Hero shields count too.
+        p.inventory.insert(
+            62,
+            NetItem { kind: 3997, stack: 1, prefix: 0, favorited: false },
+        );
+        assert!(p.paladin_shield());
+        // At exactly 25% life the strict > refuses (Player.cs:15351).
+        p.hp = 100;
+        assert!(!p.paladin_shield(), "hp == max/4 is not above it");
+        // A non-functional armour slot (head, slot 0) does not grant.
+        p.hp = 200;
+        p.inventory.remove(&62);
+        p.inventory.insert(
+            59,
+            NetItem { kind: 938, stack: 1, prefix: 0, favorited: false },
+        );
+        assert!(!p.paladin_shield(), "the head slot is not functional");
+    }
+
+    /// W4-d70 DOC-SWEEP — the `13` extension's team/dead fields round-trip.
+    #[test]
+    fn the_player_state_extension_carries_team_and_dead() {
+        let ps = PlayerState {
+            player_id: 2,
+            team: 4,
+            dead: true,
+            hp: 0,
+            max_hp: 400,
+            ..Default::default()
+        };
+        let frame = S2c::PlayerState(Box::new(ps)).encode();
+        let back =
+            S2c::decode(frame[2], &mut NetReader::new(&frame[3..])).expect("decode");
+        match back {
+            S2c::PlayerState(d) => {
+                assert_eq!(d.team, 4);
+                assert!(d.dead);
+                assert_eq!(d.hp, 0);
+            }
+            other => panic!("wrong message: {other:?}"),
+        }
+    }
+
     #[test]
     fn writer_reader_round_trip_primitives() {
         let w = NetWriter::open(id::WORLD_INFO)
@@ -4240,6 +4349,8 @@ mod tests {
                 body_frame: 7,
                 hp: 80,
                 max_hp: 100,
+                team: 2,
+                dead: false,
             })),
             S2c::NpcInfo(Box::new(NpcInfo {
                 slot: 3,

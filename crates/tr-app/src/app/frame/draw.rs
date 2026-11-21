@@ -1391,15 +1391,34 @@ impl App {
                         );
                     }
                     if let Some(p) = player.as_ref() {
-                        // The C# walks `Main.player[0..255]`; the port's
-                        // `PlayerNet` carries no team/shield/dead state, so the
-                        // peer loops no-op until the net layer carries them
-                        // (single-player has no peers either way).
+                        // The C# walks `Main.player[0..255]` skipping
+                        // `Main.myPlayer` (`Main.cs:57205-57231`); the port's
+                        // peers are the `remote_players` snapshots, whose
+                        // team/dead ride the `13`/`12`/`45` wires and whose
+                        // shield flag re-derives from the synced inventory
+                        // (`PlayerNet::paladin_shield`). Slot order, like the
+                        // C#'s array walk.
+                        let mut peers: Vec<_> = remote_players.values().collect();
+                        peers.sort_by_key(|rp| rp.id);
+                        let peers: Vec<_> = peers
+                            .into_iter()
+                            .map(|rp| crate::render::screen_fx::PaladinPeer {
+                                mounted_center: [
+                                    rp.x + crate::player::WIDTH * 0.5,
+                                    rp.y + crate::player::HEIGHT * 0.5,
+                                ],
+                                team: rp.team,
+                                has_paladin_shield: rp.paladin_shield(),
+                                dead: rp.dead,
+                                hp: rp.hp,
+                                max_hp: rp.max_hp,
+                            })
+                            .collect();
                         crate::render::screen_fx::draw_paladins_shield(
                             renderer,
                             lookups,
                             p,
-                            &[],
+                            &peers,
                             draw_cam,
                             world_zoom,
                             screen,

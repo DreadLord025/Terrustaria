@@ -543,6 +543,10 @@ pub(crate) struct App {
     pub(crate) net_reserved: HashMap<i16, (u8, u32)>,
     /// The client's last-sent `13 PlayerState` — the change-driven send test.
     pub(crate) net_ps_last: net::PlayerState,
+    /// W4-d70 DOC-SWEEP: the local player's last-sent armour block
+    /// (`PlayerItemSlotID.Armor0..19`) — the `5 PlayerInventory` diff the
+    /// paladin peer loops' shield re-derivation reads on the other side.
+    pub(crate) net_armor_last: [u16; 20],
     /// The heartbeat counter for the `13` cadence (`net_tick` calls).
     pub(crate) net_beat: u32,
     /// `Main.netPlayCounter` (`Main.cs:64557`): the host's per-tick server
@@ -3891,6 +3895,7 @@ impl App {
             net_item_last: HashMap::new(),
             net_reserved: HashMap::new(),
             net_ps_last: net::PlayerState::default(),
+            net_armor_last: [0; 20],
             net_beat: 0,
             net_play_counter: 0,
             last_item_update: 0,
