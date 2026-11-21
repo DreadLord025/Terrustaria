@@ -221,6 +221,18 @@ const SFX_CUES: &[(&str, u32)] = &[
     // (`SoundID.cs:72`), the `Sounds/MaxMana` cue
     // (`LegacySoundPlayer.cs:239`, case 25 `:963-968`).
     ("MaxMana", 25),
+    // W4-d79 — the Moon Lord crash cry's single-instance slot
+    // (`SoundInstanceMoonlordCry`, `LegacySoundPlayer.cs:82`/:301, case 41
+    // `:1369-1375`): `SoundID.MoonLord = 41` (`SoundID.cs:104`). The case
+    // re-creates from `SoundNpcKilled[10]` — the SAME `Sounds/NPC_Killed_10`
+    // asset the case-4 death family loads (`:251`), so the bank resolves the
+    // cry through that name; the dedicated `Moonlord_Cry` row pins the case
+    // id 41 for the attenuation gate (the custom player-distance volume rides
+    // `play_moonlord_cry`, NOT the draw-free `play_single_voice` pool — the
+    // case draws one `Next(-10, 11)` pitch). Orphaned: no `PlaySound(41)`
+    // caller exists in the decompile (the E21 class — the seam is
+    // table-complete for the future Moon Lord death wiring).
+    ("Moonlord_Cry", 41),
     // `SoundEngine.PlaySound(40)` — the capture camera's shutter
     // (`CaptureInterface.cs:1592`); `SoundID.Camera = 40` (`SoundID.cs:102`),
     // the `Sounds/Camera` cue (`LegacySoundPlayer.cs:210`, case 40 `:1359`).
@@ -679,6 +691,15 @@ pub struct Audio {
     /// `NPC.cs:24853-24856`); no ported Pixie kind yet — the seam is
     /// table-complete for the future kind.
     pixie_slot: Option<rodio::Sink>,
+    /// W4-d79 — the `SoundInstanceMoonlordCry` slot
+    /// (`LegacySoundPlayer.cs:82`/:301): case 41 (`:1369-1375`) overwrites
+    /// WITHOUT a Stop (the Coins/Chat/MaxMana no-Stop family), re-creating
+    /// from `SoundNpcKilled[10]`. The custom player-distance volume
+    /// (`1/(1+dist)`) + the one `Next(-10, 11)` pitch ride
+    /// [`Audio::play_moonlord_cry`], NOT the draw-free single-voice pool.
+    /// Orphaned (no `PlaySound(41)` caller in the decompile) — the seam is
+    /// table-complete for the future Moon Lord death wiring (the E21 class).
+    moonlord_cry_slot: Option<rodio::Sink>,
     /// `SoundInstanceDig[3]` (`LegacySoundPlayer.cs:18`): case 0 stops the
     /// picked variation's old instance then re-creates it (`:443-447`) —
     /// one voice per Dig slot, research/32 D4 closure.
@@ -702,6 +723,14 @@ pub struct Audio {
     /// 18/22/23/24/25/40 — every one but Coins (18), Chat (24) and MaxMana
     /// (25) stops the old instance before the re-create (the per-case
     /// citations ride the table).
+    ///
+    /// W4-d79 SINGLE_SLOT_CUES audit: the C# declares 19 single-instance
+    /// `SoundEffectInstance` fields (`:56-150`). These 17 rows + the dedicated
+    /// `pixie_slot` (case 27, the live-instance re-draw branch) + the dedicated
+    /// `moonlord_cry_slot` (case 41, the player-distance volume + pitch draw)
+    /// cover all 19. The two dedicated slots stay OUT of this draw-free pool
+    /// because their cases draw `Main.rand` (the pool's `play_single_voice`
+    /// is stream-neutral by contract).
     single_slots: [Option<rodio::Sink>; 17],
 }
 
@@ -745,7 +774,12 @@ impl Audio {
                 Err(e) => log::warn!("audio: no output device ({e})"),
             }
             for (name, _) in SFX_CUES {
-                let path = dir.join(format!("{name}.xnb"));
+                // W4-d79 — the Moon Lord cry re-creates from `SoundNpcKilled[10]`
+                // (`LegacySoundPlayer.cs:1370`), the `NPC_Killed_10` asset —
+                // the `Moonlord_Cry` bank row aliases that file (no separate
+                // `Moonlord_Cry.xnb` ships).
+                let asset = if *name == "Moonlord_Cry" { "NPC_Killed_10" } else { name };
+                let path = dir.join(format!("{asset}.xnb"));
                 match load_sound(&path) {
                     Ok(s) => {
                         let samples = s
@@ -831,6 +865,7 @@ impl Audio {
             mech_slots: [None],
             roar_slots: [None, None, None],
             pixie_slot: None,
+            moonlord_cry_slot: None,
             dig_slots: [None, None, None],
             item_slots: HashMap::new(),
             tink_slots: [None, None, None],
@@ -1672,6 +1707,85 @@ impl Audio {
         }
         self.pixie_slot = self.emit("Pixie", x, y, 1.0, pitch.clamp(-1.0, 1.0));
         Some("Pixie")
+    }
+
+    /// W4-d79 — one case-41 Moon Lord crash-cry play
+    /// (`LegacySoundPlayer.cs:1369-1375`, `SoundID.MoonLord = 41`
+    /// `SoundID.cs:104`). The int overload draws no `GetRandomPitch`
+    /// NextFloat. The attenuation gate (`:369-436`) runs FIRST — a muted or
+    /// out-of-range play consumes nothing — then ONE `Main.rand.Next(-10, 11)
+    /// * 0.01` pitch draw (`:1373`) rides the caller's stream. The case
+    /// OVERRIDES the attenuated volume with the player-distance falloff
+    /// `1/(1 + |(x,y) - player.position|)` (`:1371` — the cry's own loudness
+    /// curve, NOT the camera attenuation), keeps the gate's pan, and
+    /// overwrites the `SoundInstanceMoonlordCry` slot WITHOUT a Stop (the
+    /// Coins/Chat/MaxMana no-Stop family — the old cry plays out, detach).
+    /// The asset is `SoundNpcKilled[10]` (`NPC_Killed_10`, the bank alias).
+    /// Orphaned: no `PlaySound(41)` caller exists in the decompile — the seam
+    /// is table-complete for the future Moon Lord death wiring (the E21
+    /// class, the Pixie precedent). `player_pos` is the local player's
+    /// `position` (the C# `Main.player[Main.myPlayer].position`). Returns the
+    /// cue; `None` when the gate refused (no draw spent).
+    pub fn play_moonlord_cry(
+        &mut self,
+        x: f32,
+        y: f32,
+        player_pos: (f32, f32),
+        rng: &mut tr_core::unified_random::UnifiedRandom,
+    ) -> Option<&'static str> {
+        // The attenuation gate first (`LegacySoundPlayer.cs:369-436`) — the
+        // positioned walk; the cry's custom volume replaces `num2` AFTER the
+        // gate decides audibility.
+        let playback = sound::play_sound(41, x, y, self.listener, 1.0)?;
+        // `:1373` — the one pitch draw, only past the gate.
+        let pitch = (rng.next_range(-10, 11) as f32 * 0.01).clamp(-1.0, 1.0);
+        // `:1371` — the player-distance volume override.
+        let dx = x - player_pos.0;
+        let dy = y - player_pos.1;
+        let volume = 1.0 / (1.0 + (dx * dx + dy * dy).sqrt());
+        self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        // The custom-volume emit: resample for the pitch, pan from the gate,
+        // the cry's own falloff (NOT `prepared.volume`).
+        let sink = self.emit_custom_volume("Moonlord_Cry", volume, playback.pan, pitch);
+        // `:1370` — the slot overwrites WITHOUT a Stop (detach the old cry).
+        if let Some(old) = self.moonlord_cry_slot.take() {
+            old.detach();
+        }
+        self.moonlord_cry_slot = sink;
+        Some("Moonlord_Cry")
+    }
+
+    /// The custom-volume emit tail (the case-41 cry's player-distance
+    /// falloff): resample the cue's PCM for the pitch, then append one panned
+    /// source at the CALLER's volume (bypassing [`Audio::prepare`]'s
+    /// attenuation volume). Headless this is a no-op past the cue lookup.
+    fn emit_custom_volume(
+        &self,
+        name: &str,
+        volume: f32,
+        pan: f32,
+        pitch: f32,
+    ) -> Option<rodio::Sink> {
+        let (channels, rate, samples) = self.cues.get(name)?;
+        let handle = self.handle.as_ref()?;
+        let sink = rodio::Sink::try_new(handle).ok()?;
+        let ratio = 2.0f32.powf(pitch.clamp(-1.0, 1.0));
+        let samples = if (ratio - 1.0).abs() < f32::EPSILON {
+            samples.clone()
+        } else {
+            resample_i16(samples, *channels, ratio)
+        };
+        let (left, right) = sound::pan_gains(pan);
+        let buf = rodio::buffer::SamplesBuffer::new(*channels, *rate, samples)
+            .convert_samples::<f32>();
+        sink.append(Panned {
+            inner: buf,
+            channels: *channels,
+            left: volume * left,
+            right: volume * right,
+            channel: 0,
+        });
+        Some(sink)
     }
 
     /// S1-E-21g — one `SoundID.ItemN` style play from an NPC AI site
@@ -3565,6 +3679,57 @@ mod tests {
         let peek = rng.peek();
         assert_eq!(audio.play_pixie(5000.0, 0.0, &mut rng), None);
         assert_eq!(rng.peek(), peek, "the inaudible play is draw-free");
+    }
+
+    /// W4-d79 — the Moon Lord crash cry (case 41, `LegacySoundPlayer.cs:1369-
+    /// 1375`): the SINGLE_SLOT_CUES audit's one missing single-instance field
+    /// (`SoundInstanceMoonlordCry`, `:82`). ONE `Next(-10, 11)` pitch draw
+    /// past the attenuation gate, the player-distance volume override, the
+    /// no-Stop slot overwrite. The bank row resolves to id 41 and aliases the
+    /// `NPC_Killed_10` asset. Orphaned (no caller) — the seam is table-complete.
+    #[test]
+    fn w4_d79_the_moonlord_cry_draws_one_pitch_and_overwrites_without_stop() {
+        use tr_core::unified_random::UnifiedRandom;
+        let mut audio = Audio::new(None);
+        // The bank row pins the case id 41.
+        assert_eq!(sound_type("Moonlord_Cry"), 41);
+        assert!(SFX_CUES.iter().any(|(c, _)| *c == "Moonlord_Cry"));
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = UnifiedRandom::new(7);
+        let _ = witness.next_range(-10, 11); // `:1373`
+        assert_eq!(
+            audio.play_moonlord_cry(0.0, 0.0, (0.0, 0.0), &mut rng),
+            Some("Moonlord_Cry")
+        );
+        assert_eq!(rng.peek(), witness.peek(), "exactly one pitch draw");
+        // A second play overwrites the slot (no Stop — the old cry detaches).
+        let mut rng = UnifiedRandom::new(9);
+        let mut witness = UnifiedRandom::new(9);
+        let _ = witness.next_range(-10, 11);
+        assert_eq!(
+            audio.play_moonlord_cry(10.0, 0.0, (0.0, 0.0), &mut rng),
+            Some("Moonlord_Cry")
+        );
+        assert_eq!(rng.peek(), witness.peek());
+        // The gate refuses before the draw (out of attenuation range).
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_moonlord_cry(5000.0, 0.0, (0.0, 0.0), &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the inaudible cry is draw-free");
+        // Muted: the gate refuses draw-free too.
+        let mut l = audio.listener;
+        l.sound_volume = 0.0;
+        audio.set_listener(l);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        assert_eq!(
+            audio.play_moonlord_cry(0.0, 0.0, (0.0, 0.0), &mut rng),
+            None
+        );
+        assert_eq!(rng.peek(), peek, "the muted cry is draw-free");
     }
 
     /// S1-P-i41 — the QuickMount no-space tink (`Player.cs:6057`): the int
