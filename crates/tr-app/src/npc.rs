@@ -6016,6 +6016,16 @@ impl Npc {
             // S1-D-3 golem-audit: all four arms ride the faithful
             // `update_golem_rng` (the numeric cores in npc_ai_golem.rs).
             // The fists' aiStyle-47 axis claim above delegates to the same
+            // W4-c10 sweep — `NPC.Transform`'s visuals half
+            // (`TransformVisuals`, `NPC.cs:81136` → `:80963-81033`):
+            // the waterfowl pairs match NO arm — visually silent, zero
+            // draws (the census verdict, `npc_transform_visuals.rs`).
+            // The call keeps the seam explicit for the merge; the cue
+            // intent is None for every waterfowl pair by construction.
+            let cue = crate::npc_transform_visuals::transform_visuals(
+                ty, new_ty, 22, 26, rng,
+            );
+            debug_assert_eq!(cue, None, "the waterfowl transforms are silent");
             // machine (the three-way reconcile, TR-D3s48 note: the most
             // complete faithful version per arm wins - golem-audit's fists
             // carry the full-velocity anchor, the balance ladders, the real
@@ -6312,7 +6322,7 @@ impl Npc {
             // (`NPC.cs:53180-53184`). The full `AI_007_TownEntities`
             // migration is `npc_ai_town.rs`'s wiring step.
             NpcKind::Duck | NpcKind::DuckWhite | NpcKind::Seagull | NpcKind::Grebe => {
-                self.waterfowl_walker_step(world, player, dt);
+                self.waterfowl_walker_step(world, player, dt, rng);
             }
             // W4-c10 — the waterfowl SWIMMERS (363/365/603/609, aiStyle
             // 68): the axis' 68 arm claims them first (`ai_068_waterfowl`);
@@ -10353,7 +10363,7 @@ impl Npc {
     /// migration); the full `AI_007` body's other gates (the shimmer
     /// state 25, the resting-spot scan, the flee ladder) are that
     /// module's wiring step.
-    fn waterfowl_walker_step(&mut self, world: &World, player: &mut Player, dt: f32) {
+    fn waterfowl_walker_step(&mut self, world: &World, player: &mut Player, dt: f32, rng: &mut UnifiedRandom) {
         let (w, h) = self.size();
         self.wet = is_wet(world, self.x, self.y, w, h);
         // `:53180-53184` — the takeoff gate (the port runs netMode 0).
@@ -11012,6 +11022,7 @@ impl Npc {
             self.wants_sphere.push((shot.kind, shot.x, shot.y, shot.ai3));
         }
     }
+            let old_ty = self.kind.cs_id() as i32;
 
     // `AI_043`'s Queen Bee v1 — RETIRED (S1-D-3 W-3). The faithful
     // aiStyle-43 machine (`npc_ai_style43::queen_bee_ai`, the W86 re-port
@@ -11023,6 +11034,15 @@ impl Npc {
 
     /// `AI_005_EaterOfSouls`'s type-210/211 branch — the Queen Bee's
     /// volley bees (`NPC.cs:50384-50413`): `ai[1]++`, num3 =
+            // W4-c10 sweep — `TransformVisuals` (`NPC.cs:81136` →
+            // `:80963-81033`): the waterfowl takeoff pairs match NO arm
+            // — visually silent, zero draws (the census verdict,
+            // `npc_transform_visuals.rs`). The explicit call keeps the
+            // seam for the merge.
+            let cue = crate::npc_transform_visuals::transform_visuals(
+                old_ty, old_ty + 1, 28, 22, rng,
+            );
+            debug_assert_eq!(cue, None, "the waterfowl takeoff is silent");
     /// `(ai[1] - 60) / 60` clamped at 1; while num3 <= 1 the velocity
     /// clamps ±6 on both axes; num = 5, num2 = `0.1 * num3`. The shared
     /// fly core (`:50418-50579`) runs with `flag5 = true` (210/211 are

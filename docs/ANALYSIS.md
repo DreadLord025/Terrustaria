@@ -36017,7 +36017,8 @@ blocked-step splat granularity, `TransformVisuals`/gore/sound folds and
 the netMode-2 SendData pair (no MP consumer) — all listed in the family
 section's folds above. The module's pure fns and its 16 witnesses are
 UNCHANGED; `STYLE68_BIRDS` stays as the census fixture (the live kinds
-carry the same boxes through `NpcKind::size`).
+carry the same boxes through `NpcKind::size`). (Sweep update:
+`TransformVisuals` censused + wired — see the phase-4 section below.)
 
 **Verification.** Code-only: every cross-module reference re-checked by
 read/grep (the `Style68Ctx`/`Style68Outcome` shapes, the
@@ -36120,6 +36121,40 @@ gained the corpse drift (`pos += vel` after the kill: the C#
 the drift re-pin. The Stinky consumer chain: the town arm's flee-target
 gate reads buff 120 (`npc_ai_town.rs`'s `TownPlayer::stinky`), so the
 drop now feeds the town flee behaviour end-to-end.
+
+### TransformVisuals (item 3 — CENSUSED + WIRED)
+
+`NPC.TransformVisuals(oldType, newType)` (`NPC.cs:80963-81033`, called
+from `Transform` at `:81136`) censused WHOLE into the new
+`npc_transform_visuals.rs` module (the draw-census convention: every
+`Main.rand` draw in C# order, the dust/gore bodies the documented skip,
+the one cue returned as an intent). **The waterfowl verdict: all EIGHT
+transform pairs are VISUALLY SILENT** — the dry landing's 363→362 /
+365→364 / 603→602 / 609→608 (`:34760`) and the takeoff's 362→363 /
+364→365 / 602→603 / 608→609 (`:53182`) match NO arm (the arms are
+158↔159 vampire, 478→479 mothron, 406→405 stardust, 428→427 /
+427→426 vortex). So the "dust/sound on waterfowl takeoff/landing"
+question resolves to: there IS none in the C# — the transform's only
+waterfowl observables are the SetDefaults swap + the ai reset (already
+landed). Both transform sites now call the census explicitly (the
+adapter's kind flip + `waterfowl_walker_step`, whose signature gained
+the `rng` seam): zero draws, `None` cue, `debug_assert`-pinned. The
+module ports all five arms for the kinds that DO transform visually:
+the vampire flip (Item8 + 3×2 gore kicks — neither kind ported), the
+mothron hatch (219 draws — neither ported), the stardust growth
+(2 + Next(10,21)×8 — both ported, `update_stardust_cell`'s flip), the
+two vortex rings (160/240 draws — ported as VortexHeadcrab→Alien→
+Hunter). The `SelectRandom` type pick draws BEFORE the NewDust
+internals (the argument order); the NewDust internals are the six-draw
+`npc_ai_empress.rs::new_dust_draws` shape (kept local). The
+`netOffset` bracket folds to a no-op (zero on the host). **Co-lane
+note:** the pillar-kind transform sites (`npc.rs`'s
+`update_stardust_cell` / `update_vortex_alien` / `update_vortex_headcrab`
+flips) are NOT rewired here — `npc.rs` carries the roster-tail lane's
+in-flight edits; their census wiring is that lane's or the merge's
+(the module is ready: `transform_visuals(406, 405, w, h, rng)` etc.).
+5 witnesses (the eight-pair silence, the vampire cue+kicks, the 219
+order, the drawn-count stardust replay, the two vortex rings).
 
 ## The mana machinery (S1-P-i19)
 

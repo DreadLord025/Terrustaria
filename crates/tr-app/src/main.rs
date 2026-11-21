@@ -162,6 +162,10 @@ mod npc_buffs;
 mod npc_findframe_a;
 mod npc_findframe_b;
 mod persist;
+// W4-c10 sweep — NPC.TransformVisuals (NPC.cs:80963-81033): the
+// transform-visuals draw census + the Item8 cue intent; the eight
+// waterfowl pairs are VISUALLY SILENT (the census verdict, witnessed).
+mod npc_transform_visuals;
 mod grapple;
 mod gore_seam;
 mod creative;
