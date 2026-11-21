@@ -35,6 +35,7 @@ use super::caves;
 use super::desert;
 use super::desert_dunes;
 use super::finish_seeds;
+use super::finish_no_traps;
 use super::config::{ConfigSection, WorldGenConfig};
 use super::dungeon;
 use super::evil;
@@ -1433,6 +1434,12 @@ fn step_seed_finish(
     _noise: &Noise,
     _pass_config: &ConfigSection,
 ) {
+    // The vanilla no-traps slot (`WorldGen.cs:22423-22426`): `FinishNoTraps`
+    // runs FIRST of the classic tails, before the anniversary tail —
+    // W4-g41's finish-gap port (the heart/statue/plate-chest re-wiring).
+    if opts.flags.contains(crate::seeds::SeedFlags::NO_TRAPS) {
+        finish_no_traps::finish_no_traps(world, streams, opts);
+    }
     if opts.flags.contains(crate::seeds::SeedFlags::DRUNK) {
         finish_seeds::finish_drunk_gen(world, streams, opts);
     }
