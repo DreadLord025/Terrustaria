@@ -4967,7 +4967,10 @@ impl Npc {
         // in here — a thorns reflect landing in `contact` must survive to
         // the NEXT tick's AI, exactly like the C#'s player-update strike.
         self.just_hit = false;
-        self.find_frame();
+        // W4-f4: the core's FindFrame open burst (the 50×209 loop) rolls
+        // the live pool on the same stream — every other kind's frame
+        // step is unchanged.
+        self.find_frame_dust(world, rng, dust, dust_ctx);
         self.contact(player, rng);
     }
 
@@ -6166,10 +6169,10 @@ impl Npc {
                 );
             }
             // The Moon Lord family: aiStyles 77/78/79/81/82.
-            NpcKind::MoonLordCore => self.update_moon_lord_core(world, player, rng),
+            NpcKind::MoonLordCore => self.update_moon_lord_core(world, player, rng, dust, dust_ctx),
             NpcKind::MoonLordHand => self.update_moon_lord_hand(world, player, rng),
-            NpcKind::MoonLordHead => self.update_moon_lord_head(world, player, rng),
-            NpcKind::MoonLordFreeEye => self.update_true_eye(world, player, rng),
+            NpcKind::MoonLordHead => self.update_moon_lord_head(world, player, rng, dust, dust_ctx),
+            NpcKind::MoonLordFreeEye => self.update_true_eye(world, player, rng, dust, dust_ctx),
             NpcKind::MoonLordLeechBlob => self.update_moon_leech_blob(world, player),
             // The etherian crystal: aiStyle 105's machine.
             NpcKind::DD2EterniaCrystal => self.update_eternia_crystal(world, player, rng, dust, dust_ctx),
@@ -6687,6 +6690,65 @@ impl Npc {
         self.frame_counter = s.counter;
         self.sprite_dir = s.sprite_dir;
         self.rotation = s.rotation;
+    }
+
+    /// W4-f4 — `FindFrame`'s case-398 open burst (`NPC.cs:71929-71939`):
+    /// when `ai[0] > 0` and the frame row is 0, the core opens — the four
+    /// gores 619-622 (the E-lane's `moon_lord_core_open_gores`, the gore
+    /// pool is the sim's) then the 50× type-209 dust loop, each over the
+    /// FULL box at the defaults (the 4-arg overload: velocity 0/0, alpha
+    /// 0, default colour, scale 1f — ZERO explicit draws, type 209 hits
+    /// no per-type tweak). The loop writes `frame.Y = num` per iteration
+    /// (a no-op after the first — the row is the strip's row 1). The
+    /// burst fires ONCE per open: the row leaves 0 and the 30-tick cycle
+    /// never returns to it while `ai[0] > 0`.
+    fn moon_core_open_burst(
+        &mut self,
+        world: &World,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        if self.ai[0] <= 0.0 {
+            self.frame = 0;
+            return;
+        }
+        if self.frame == 0 {
+            let (w, h) = self.size();
+            for _ in 0..50 {
+                self.frame = 1;
+                dust.new_dust(
+                    rng, dust_ctx, world,
+                    Vec2::new(self.x, self.y), w as i32, h as i32, 209,
+                    0.0, 0.0, 0,
+                    tr_core::particles::Color::default(), 1.0,
+                );
+            }
+        }
+        self.frame_counter += 1.0;
+        if self.frame_counter >= 30.0 {
+            self.frame_counter = 6.0;
+        }
+        self.frame = ((self.frame_counter as i32 % 30) / 6) as u32;
+    }
+
+    /// W4-f4 — the dust-aware frame seam: the core's case-398 open burst
+    /// rolls the live pool (the 50×209 loop, `NPC.cs:71935-71939`); every
+    /// other kind rides the plain `find_frame`. The C#'s `FindFrame` runs
+    /// inside `UpdateNPC` (`:90511`) on the `UpdateNPCs` stream — the
+    /// caller passes the same rng the AI drew from.
+    pub(crate) fn find_frame_dust(
+        &mut self,
+        world: &World,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        if self.kind == NpcKind::MoonLordCore {
+            self.moon_core_open_burst(world, rng, dust, dust_ctx);
+            return;
+        }
+        self.find_frame();
     }
 
     pub(crate) fn find_frame(&mut self) {
@@ -7763,11 +7825,22 @@ impl Npc {
                 self.frame = ((self.frame_counter / 7.0) as u32).min(3);
             }
             NpcKind::MoonLordCore => {
-                self.frame_counter += 1.0;
-                if self.frame_counter >= 30.0 {
-                    self.frame_counter = 6.0;
+                // `NPC.cs:71922-71948`'s case 398 (frame-only — the dust
+                // burst rides `find_frame_dust`/`moon_core_open_burst`):
+                // `ai[0] <= 0` holds row 0; the open (row 0 → 1) is the
+                // gore/dust burst's frame write; then the 30-tick cycle.
+                if self.ai[0] <= 0.0 {
+                    self.frame = 0;
+                } else {
+                    if self.frame == 0 {
+                        self.frame = 1; // the open burst's row write
+                    }
+                    self.frame_counter += 1.0;
+                    if self.frame_counter >= 30.0 {
+                        self.frame_counter = 6.0;
+                    }
+                    self.frame = ((self.frame_counter as i32 % 30) / 6) as u32;
                 }
-                self.frame = ((self.frame_counter as i32 % 30) / 6) as u32;
             }
             NpcKind::MoonLordFreeEye => {
                 self.frame_counter += 1.0;
@@ -13431,15 +13504,25 @@ impl Npc {
     /// >2400-px enrage hop.
     ///
     /// Deviations: `MoonlordDeathDrama` (the light/explosion/pieces event)
-    /// is unmodelled — the port's drama is the timer + the 622 smoke; the
-    /// death/despawn sound cues are unmodelled (their RNG draws are still
-    /// consumed); the phase-2 dust storm's DUST-INTERNAL draws (the
-    /// `Dust.NewDust` streams, `:41365-41403`) are unmodelled — the
-    /// unconditional top-level draws are consumed, the dust-gated ones
-    /// deferred; the enrage hop's same-tick part/400 ride
-    /// (`:41551-41574`) rides the pre-pass anchor one tick later
-    /// (documented, S1-D-3).
-    fn update_moon_lord_core(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    /// is unmodelled — the port's drama is the timer + the 622 smoke +
+    /// (W4-f4) the dust storm; the death/despawn sound cues are unmodelled
+    /// (their RNG draws are still consumed); the enrage hop's same-tick
+    /// part/400 ride (`:41551-41574`) rides the pre-pass anchor one tick
+    /// later (documented, S1-D-3). W4-f4: the dust storm's dust-gated
+    /// draws (the `num4*2` fan `:41365-41373` + the inner `Dust.NewDust`
+    /// streams `:41396-41401`) now roll the live pool — the d31 deferral
+    /// closed. The storm's centre reads the PRE-integration box (the C#
+    /// integrates at `:90498`, after the AI; the port's inline
+    /// integration already moved — the `(cx, cy)` captured at the arm
+    /// top is the pre-move centre, exact).
+    fn update_moon_lord_core(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:41159-41162`'s roar: the gate excludes the spawn-in and the
         // drama; the sound is unmodelled but BOTH draws ride the stream
         // (S1-D-3: the port omitted them).
@@ -13549,28 +13632,109 @@ impl Npc {
                 self.wants_moon_sweep = 1;
             }
             if (self.ai[1] as i64) % 3 == 0 && self.ai[1] < 580.0 && self.ai[1] > 60.0 {
-                // `:41336-41403`'s dust storm: the dust is unmodelled, but
-                // the UNCONDITIONAL top-level draws ride the stream in the
-                // C#'s order (S1-D-3): RandomVector2 (two NextDouble), the
-                // radius NextFloat, Next(6, 19), four NextFloats (the
-                // angle/speed/scale/fadeIn), the SelectRandom pick, then
-                // per inner-loop iteration another RandomVector2 + radius.
-                // The dust-GATED draws (the `num4 * 2` fan + the inner
-                // Dust.NewDust streams) are deferred with the dust engine.
-                let _ = rng.next_double();
-                let _ = rng.next_double();
-                let _ = rng.next_float();
-                let _ = rng.next_range(6, 19);
-                let _ = rng.next_float();
-                let _ = rng.next_float();
-                let _ = rng.next_float();
-                let _ = rng.next_float();
-                let _ = rng.next_max(2); // Utils.SelectRandom(31, 229)
+                // W4-f4 — `:41336-41403`'s dust storm, the FULL port (the
+                // d31 deferral closed): the unconditional top-level draws
+                // in the C#'s order — RandomVector2 (two NextDouble, X
+                // first), the radius NextFloat, Next(6,19), four
+                // NextFloats (angle/speed/scale/fadeIn), the SelectRandom
+                // pick — then the dust-GATED fan and inner streams roll
+                // the live pool.
+                let mut ox = rng.next_double() as f32 * 2.0 - 1.0;
+                let mut oy = rng.next_double() as f32 * 2.0 - 1.0;
+                let ol = (ox * ox + oy * oy).sqrt();
+                if ol != 0.0 {
+                    ox /= ol;
+                    oy /= ol;
+                }
+                let r = 20.0 + rng.next_float() * 400.0;
+                let (v4x, v4y) = (cx + ox * r, cy + oy * r);
+                // `:41346-41354` — flag3: in-world AND not solid. The
+                // tile probe is `(int)x >> 4` (`Utils.cs:1807-1810`);
+                // the smoke arm below uses the same probe (the port's
+                // `/16` truncation matches for the in-world band).
+                let (tx, ty) = ((v4x as i32) >> 4, (v4y as i32) >> 4);
+                let in_world = tx >= 0 && ty >= 0 && tx < world.width && ty < world.height;
+                let solid = in_world
+                    && world
+                        .tile(tx, ty)
+                        .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+                let flag3 = in_world && !solid;
+                let num4 = rng.next_range(6, 19) as f32;
+                let num5 = std::f32::consts::TAU / num4;
+                let num6 = std::f32::consts::TAU * rng.next_float();
+                let num7 = 1.0 + rng.next_float() * 2.0;
+                let num8 = 1.0 + rng.next_float();
+                let fade_in = 0.4 + rng.next_float();
+                // `:41361` — Utils.SelectRandom(31, 229): Next(2) indexes
+                // the list, 0 → 31, 1 → 229.
+                let num9 = if rng.next_max(2) == 0 { 31 } else { 229 };
+                if flag3 {
+                    // `:41364`'s MoonlordDeathDrama.AddExplosion is the
+                    // unmodelled light/event ride (no draws).
+                    // `:41365-41373` — the num4*2 fan: each dust spawns
+                    // at vector4 over a 0×0 box (type 229, the defaults),
+                    // then position = vector4, velocity = UnitY rotated
+                    // by (num6 + num5*num10) × num7 × (NextFloat*1.6+1.6)
+                    // — ONE NextFloat per fan dust AFTER the pool
+                    // internals — fadeIn/scale the shared draws.
+                    let mut num10 = 0.0f32;
+                    while num10 < num4 * 2.0 {
+                        let idx = dust.new_dust(
+                            rng, dust_ctx, world,
+                            Vec2::new(v4x, v4y), 0, 0, 229, 0.0, 0.0, 0,
+                            tr_core::particles::Color::default(), 1.0,
+                        );
+                        let dd = dust.slot_mut(idx);
+                        dd.no_gravity = true;
+                        dd.position = Vec2::new(v4x, v4y);
+                        let ang = num6 + num5 * num10;
+                        // UnitY.RotatedBy(ang) = (−sin, cos) — the XNA
+                        // matrix over f64 trig (`Utils.cs:1675-1684`).
+                        let (sn, cs) = ((ang as f64).sin() as f32, (ang as f64).cos() as f32);
+                        let speed = num7 * (rng.next_float() * 1.6 + 1.6);
+                        dd.velocity = Vec2::new(-sn, cs) * speed;
+                        dd.fade_in = fade_in;
+                        dd.scale = num8;
+                        num10 += 1.0;
+                    }
+                }
+                // `:41375-41403` — the inner loop: `num11 < ai[1]/60` is
+                // a FLOAT counter stepping 1 — ceil(ai[1]/60) iterations
+                // for the non-multiples (the port's census). Each draws
+                // RandomVector2 + the radius (2 NextDouble + NextFloat),
+                // probes the tile, and on a clear spot spawns ONE dust
+                // (type num9) + its velocity NextFloat.
                 let inner = (self.ai[1] / 60.0).ceil() as i32;
                 for _ in 0..inner {
-                    let _ = rng.next_double();
-                    let _ = rng.next_double();
-                    let _ = rng.next_float();
+                    let mut ix = rng.next_double() as f32 * 2.0 - 1.0;
+                    let mut iy = rng.next_double() as f32 * 2.0 - 1.0;
+                    let il = (ix * ix + iy * iy).sqrt();
+                    if il != 0.0 {
+                        ix /= il;
+                        iy /= il;
+                    }
+                    let ir = 20.0 + rng.next_float() * 800.0;
+                    let (vx, vy) = (cx + ix * ir, cy + iy * ir);
+                    let (itx, ity) = ((vx as i32) >> 4, (vy as i32) >> 4);
+                    let i_in = itx >= 0 && ity >= 0 && itx < world.width && ity < world.height;
+                    let i_solid = i_in
+                        && world
+                            .tile(itx, ity)
+                            .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+                    if i_in && !i_solid {
+                        let idx = dust.new_dust(
+                            rng, dust_ctx, world,
+                            Vec2::new(vx, vy), 0, 0, num9, 0.0, 0.0, 0,
+                            tr_core::particles::Color::default(), 1.0,
+                        );
+                        let dd = dust.slot_mut(idx);
+                        dd.no_gravity = true;
+                        dd.position = Vec2::new(vx, vy);
+                        let speed = num7 * (rng.next_float() * 0.9 + 1.6);
+                        dd.velocity = Vec2::new(0.0, -speed);
+                        dd.fade_in = fade_in;
+                        dd.scale = num8;
+                    }
                 }
             }
             if self.ai[1] >= 90.0 && self.ai[1] < 480.0 && (self.ai[1] as i64) % 15 == 0 {
@@ -14011,7 +14175,14 @@ impl Npc {
     /// row of `MoonLordAttacksArray`, the eye's open/close factor, the
     /// phantom deathray (455), the Moon Leech summon (456) and the
     /// retargeting laser (462).
-    fn update_moon_lord_head(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    fn update_moon_lord_head(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:42086-42091`'s orphan guard (the pre-pass owns the link): the
         // `active = false` bypasses checkDead (the flag, S1-D-3).
         if !self.moon_core_alive {
@@ -14105,9 +14276,43 @@ impl Npc {
                 // port closed from tick 0).
                 if num < 180.0 {
                     self.moon_local[1] = (self.moon_local[1] - 0.05).max(0.0);
-                    // `:42204-42227`'s 229 dust (60..120: one, 120..180:
-                    // two) is unmodelled — its NextDouble draws are absent
-                    // (documented, S1-D-3).
+                    // W4-f4 — `:42204-42227`'s 229 fan (the d31 deferral
+                    // closed): 60..120 one dust, 120..180 two. Each draws
+                    // ONE NextDouble (the angle) BEFORE the spawn:
+                    // vector2 = centre + (NextDouble*2π).ToRotationVector2
+                    // * vector/2 (the (27,59) ellipse halved — (13.5,
+                    // 29.5)); the dust spawns at vector2 − (8,8) over a
+                    // 16×16 box, type 229, velocity (vx/2, vy/2), the
+                    // defaults; posts: velocity = Normalize(centre −
+                    // vector2) × 3.5 × (10 − num9*2)/10, noGravity,
+                    // scale 0.8 (j0) / 1.65 (j1). `customData = this` is
+                    // the dropped field (the UpdateDust follower arms).
+                    if num >= 60.0 {
+                        let num9 = if num >= 120.0 { 1 } else { 0 };
+                        for j in 0..(1 + num9) {
+                            let num11 = if j % 2 == 1 { 1.65 } else { 0.8 };
+                            let ang = (rng.next_double() as f32) * std::f32::consts::TAU;
+                            let (ux, uy) = (
+                                (ang as f64).cos() as f32,
+                                (ang as f64).sin() as f32,
+                            );
+                            let (v2x, v2y) = (cx + ux * 13.5, cy + uy * 29.5);
+                            let idx = dust.new_dust(
+                                rng, dust_ctx, world,
+                                Vec2::new(v2x - 8.0, v2y - 8.0), 16, 16, 229,
+                                self.vx / 2.0, self.vy / 2.0, 0,
+                                tr_core::particles::Color::default(), 1.0,
+                            );
+                            let dd = dust.slot_mut(idx);
+                            let (dx, dy) = (cx - v2x, cy - v2y);
+                            let dl = (dx * dx + dy * dy).sqrt();
+                            let (nx, ny) = if dl > 0.0 { (dx / dl, dy / dl) } else { (0.0, 0.0) };
+                            let speed = 3.5 * (10.0 - num9 as f32 * 2.0) / 10.0;
+                            dd.velocity = Vec2::new(nx * speed, ny * speed);
+                            dd.no_gravity = true;
+                            dd.scale = num11;
+                        }
+                    }
                 } else if num < dur - 15.0 {
                     if num == 180.0 {
                         let (dx, dy) = (pcx - cx, pcy - cy);
@@ -14227,7 +14432,6 @@ impl Npc {
         if self.moon_local[3] > 15.0 {
             self.moon_local[2] = 15.0;
         }
-        let _ = rng;
     }
 
     /// `AI_081_TrueEyeOfCthulhu` (`NPC.cs:42459-42922`) — the 400: the
@@ -14238,11 +14442,19 @@ impl Npc {
     /// Deviations: the 454/452 projectile engines (the vanilla's aiStyle
     /// 82/83) are unmodelled — the orbit's owned-454 velocity boosts
     /// (`:42699-42707`/`:42722-42731`) fold into the release shot; the
-    /// 229 dust (the orbit's pair, the deathray's 60/120 fan) is
-    /// unmodelled, so its draws are absent; the eye's rotation eases are
-    /// render-only and unmodelled; the drift's 100-px sibling separation
-    /// (`:42556-42577`) needs the sibling list and is deferred (S1-D-3).
-    fn update_true_eye(&mut self, _world: &World, player: &Player, rng: &mut UnifiedRandom) {
+    /// eye's rotation eases are render-only and unmodelled; the drift's
+    /// 100-px sibling separation (`:42556-42577`) needs the sibling list
+    /// and is deferred (S1-D-3). W4-f4: the 229 dust (the orbit's pair
+    /// `:42673-42678`, the deathray's 60/120 fan `:42857-42878`) now
+    /// rolls the live pool — the d31 deferral closed.
+    fn update_true_eye(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:42461-42464`'s roar (S1-D-3: both draws were missing — they
         // ride the stream BEFORE the orphan guard, every tick the eye
         // lives): `Next(420) == 0` gates the `Next(100, 101)` pitch draw
@@ -14368,6 +14580,23 @@ impl Npc {
                     let len = (sx * sx + sy * sy).sqrt();
                     self.moon_local[0] = sy.atan2(sx);
                     self.moon_local[1] += (len / 30.0 - self.moon_local[1]) * 0.5;
+                    // W4-f4 — `:42673-42678`'s orbit dust pair (the d31
+                    // deferral closed): EVERY tick in the spoke band, 2×
+                    // type-229 at centre + vector5 − (4,4) over a 0×0
+                    // box (the defaults, ZERO explicit draws — 229 hits
+                    // no per-type tweak); posts: velocity += vector5/15,
+                    // noGravity.
+                    for _ in 0..2 {
+                        let idx = dust.new_dust(
+                            rng, dust_ctx, world,
+                            Vec2::new(cx + sx - 4.0, cy + sy - 4.0), 0, 0, 229,
+                            0.0, 0.0, 0,
+                            tr_core::particles::Color::default(), 1.0,
+                        );
+                        let dd = dust.slot_mut(idx);
+                        dd.velocity += Vec2::new(sx / 15.0, sy / 15.0);
+                        dd.no_gravity = true;
+                    }
                     if ((num as i64) - 15) % 10 == 0 {
                         // `:42679-42688`: the 454 from the spoke point at
                         // speed 4 (ai0 = 30, ai1 = the owner — the port's
@@ -14498,8 +14727,39 @@ impl Npc {
                         self.vx = 0.0;
                         self.vy = 0.0;
                     }
-                    // `:42857-42878`'s 229 dust is unmodelled (its
-                    // NextDouble draws are absent — documented).
+                    // W4-f4 — `:42857-42878`'s deathray fan (the d31
+                    // deferral closed): the same shape as the head's
+                    // (`:42204-42227`), the eye's `vector` = (30,30)
+                    // (`:42465`) halved to (15,15); 60..120 one dust,
+                    // 120..180 two, ONE NextDouble angle each, the
+                    // centre−vector2 normalize × 3.5 × (10−num19*2)/10
+                    // velocity post, noGravity, scale 0.8/1.65.
+                    if num >= 60.0 {
+                        let num19 = if num >= 120.0 { 1 } else { 0 };
+                        for n in 0..(1 + num19) {
+                            let num21 = if n % 2 == 1 { 1.65 } else { 0.8 };
+                            let ang = (rng.next_double() as f32) * std::f32::consts::TAU;
+                            let (ux, uy) = (
+                                (ang as f64).cos() as f32,
+                                (ang as f64).sin() as f32,
+                            );
+                            let (v12x, v12y) = (cx + ux * 15.0, cy + uy * 15.0);
+                            let idx = dust.new_dust(
+                                rng, dust_ctx, world,
+                                Vec2::new(v12x - 8.0, v12y - 8.0), 16, 16, 229,
+                                self.vx / 2.0, self.vy / 2.0, 0,
+                                tr_core::particles::Color::default(), 1.0,
+                            );
+                            let dd = dust.slot_mut(idx);
+                            let (dx, dy) = (cx - v12x, cy - v12y);
+                            let dl = (dx * dx + dy * dy).sqrt();
+                            let (nx, ny) = if dl > 0.0 { (dx / dl, dy / dl) } else { (0.0, 0.0) };
+                            let speed = 3.5 * (10.0 - num19 as f32 * 2.0) / 10.0;
+                            dd.velocity = Vec2::new(nx * speed, ny * speed);
+                            dd.no_gravity = true;
+                            dd.scale = num21;
+                        }
+                    }
                 } else if num < dur - 15.0 {
                     if num == 180.0 {
                         let (dx, dy) = (pcx - cx, pcy - cy);
@@ -19143,12 +19403,101 @@ mod s1_d_3_moonlord_rng_witnesses {
     //! S1-D-3 (code-only): the Moon Lord family's RNG census, WRITTEN NOT
     //! RUN. Every `Main.rand` draw the ported arms consume is cited and
     //! replayed against a mirrored `UnifiedRandom` (the stream-state
-    //! comparison — the `golden` pattern in `unified_random.rs`). The
-    //! dust-gated draws (the drama fan `NPC.cs:41365-41373`, the head's
-    //! 229 fan `:42221`, the eye's dust pairs) stay deferred with the dust
-    //! engine — their absence is the documented deviation, not a stream
-    //! drift inside the ported blocks.
+    //! comparison — the `golden` pattern in `unified_random.rs`). W4-f4:
+    //! the dust-gated draws (the drama fan `NPC.cs:41365-41373` + the
+    //! inner streams `:41396-41401`, the head's 229 fan `:42221`, the
+    //! eye's dust pairs `:42675`/`:42873`) now roll the live pool — the
+    //! d31 deferral closed; the storm witnesses re-mirror the FULL
+    //! ledger (the fan/inner dust internals + their velocity NextFloats)
+    //! draw-for-draw against a mirrored `DustPool`.
     use super::*;
+
+    /// W4-f4: the storm mirror — replays the C#'s full draw ledger
+    /// (the top-level nine, the num4*2 fan with its per-dust NextFloat,
+    /// the inner loop's offset triple + gated dust + NextFloat) against
+    /// a mirrored pool, returning the mirror rng for the smoke leg.
+    fn mirror_storm(
+        core: &Npc,
+        w: &World,
+        dctx: &tr_core::particles::SpawnCtx,
+        witness: &mut UnifiedRandom,
+        mirror: &mut tr_core::particles::DustPool,
+        ai1: f32,
+        cx: f32,
+        cy: f32,
+    ) {
+        let mut ox = witness.next_double() as f32 * 2.0 - 1.0;
+        let mut oy = witness.next_double() as f32 * 2.0 - 1.0;
+        let ol = (ox * ox + oy * oy).sqrt();
+        if ol != 0.0 {
+            ox /= ol;
+            oy /= ol;
+        }
+        let r = 20.0 + witness.next_float() * 400.0;
+        let (v4x, v4y) = (cx + ox * r, cy + oy * r);
+        let (tx, ty) = ((v4x as i32) >> 4, (v4y as i32) >> 4);
+        let in_world = tx >= 0 && ty >= 0 && tx < w.width && ty < w.height;
+        let solid = in_world
+            && w.tile(tx, ty)
+                .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+        let flag3 = in_world && !solid;
+        let num4 = witness.next_range(6, 19) as f32;
+        let num5 = std::f32::consts::TAU / num4;
+        let num6 = std::f32::consts::TAU * witness.next_float();
+        let num7 = 1.0 + witness.next_float() * 2.0;
+        let num8 = 1.0 + witness.next_float();
+        let fade_in = 0.4 + witness.next_float();
+        let num9 = if witness.next_max(2) == 0 { 31 } else { 229 };
+        if flag3 {
+            let mut num10 = 0.0f32;
+            while num10 < num4 * 2.0 {
+                let idx = mirror.new_dust(
+                    witness, dctx, w, Vec2::new(v4x, v4y), 0, 0, 229,
+                    0.0, 0.0, 0, tr_core::particles::Color::default(), 1.0,
+                );
+                let dd = mirror.slot_mut(idx);
+                dd.no_gravity = true;
+                dd.position = Vec2::new(v4x, v4y);
+                let ang = num6 + num5 * num10;
+                let (sn, cs) = ((ang as f64).sin() as f32, (ang as f64).cos() as f32);
+                let speed = num7 * (witness.next_float() * 1.6 + 1.6);
+                dd.velocity = Vec2::new(-sn, cs) * speed;
+                dd.fade_in = fade_in;
+                dd.scale = num8;
+                num10 += 1.0;
+            }
+        }
+        let inner = (ai1 / 60.0).ceil() as i32;
+        for _ in 0..inner {
+            let mut ix = witness.next_double() as f32 * 2.0 - 1.0;
+            let mut iy = witness.next_double() as f32 * 2.0 - 1.0;
+            let il = (ix * ix + iy * iy).sqrt();
+            if il != 0.0 {
+                ix /= il;
+                iy /= il;
+            }
+            let ir = 20.0 + witness.next_float() * 800.0;
+            let (vx, vy) = (cx + ix * ir, cy + iy * ir);
+            let (itx, ity) = ((vx as i32) >> 4, (vy as i32) >> 4);
+            let i_in = itx >= 0 && ity >= 0 && itx < w.width && ity < w.height;
+            let i_solid = i_in
+                && w.tile(itx, ity)
+                    .is_some_and(|t| t.active() && tr_core::tiledata::TILE_SOLID.has(t.kind));
+            if i_in && !i_solid {
+                let idx = mirror.new_dust(
+                    witness, dctx, w, Vec2::new(vx, vy), 0, 0, num9,
+                    0.0, 0.0, 0, tr_core::particles::Color::default(), 1.0,
+                );
+                let dd = mirror.slot_mut(idx);
+                dd.no_gravity = true;
+                dd.position = Vec2::new(vx, vy);
+                let speed = num7 * (witness.next_float() * 0.9 + 1.6);
+                dd.velocity = Vec2::new(0.0, -speed);
+                dd.fade_in = fade_in;
+                dd.scale = num8;
+            }
+        }
+    }
 
     fn world() -> World {
         let mut w = World::new("t".into(), 300, 200);
@@ -19177,8 +19526,10 @@ mod s1_d_3_moonlord_rng_witnesses {
         core.moon_parts = [1, 2, 3];
         let mut rng = UnifiedRandom::new(42);
         let mut mirror = UnifiedRandom::new(42);
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut dust = tr_core::particles::DustPool::new();
         for _ in 0..30 {
-            core.update_moon_lord_core(&w, &p, &mut rng);
+            core.update_moon_lord_core(&w, &p, &mut rng, &mut dust, &dctx);
             if mirror.next_max(200) == 0 {
                 let _ = mirror.next_range(93, 100);
             }
@@ -19189,7 +19540,7 @@ mod s1_d_3_moonlord_rng_witnesses {
             core.ai[0] = phase;
             core.ai[1] = 0.0;
             let before = rng.peek();
-            core.update_moon_lord_core(&w, &p, &mut rng);
+            core.update_moon_lord_core(&w, &p, &mut rng, &mut dust, &dctx);
             // The drama's first tick: ai[1] = 1 — no storm (needs >60),
             // no smoke (needs >=90), so the whole tick is draw-free.
             assert_eq!(rng.peek(), before, "phase {phase} draws no roar");
@@ -19200,8 +19551,12 @@ mod s1_d_3_moonlord_rng_witnesses {
     fn the_drama_storm_draws_the_unconditional_nine_plus_three_per_iteration() {
         // `NPC.cs:41336-41403` at ai[1] % 3 == 0, 60 < ai[1] < 580:
         // RandomVector2 (2 NextDouble), radius NextFloat, Next(6,19),
-        // four NextFloats, SelectRandom's Next(2), then per inner
-        // iteration (ceil(ai[1]/60)) another 2 NextDouble + NextFloat.
+        // four NextFloats, SelectRandom's Next(2), then the num4*2 fan
+        // (each: the pool internals + ONE velocity NextFloat) and per
+        // inner iteration (ceil(ai[1]/60)) another 2 NextDouble +
+        // NextFloat + the gated dust's internals + NextFloat. W4-f4:
+        // the FULL ledger now rolls — the mirror replays it draw-for-
+        // draw (the air world: every spot in-world, none solid).
         let w = world();
         let p = player(&w);
         let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
@@ -19209,24 +19564,31 @@ mod s1_d_3_moonlord_rng_witnesses {
         core.ai[0] = 2.0;
         core.ai[1] = 122.0; // -> 123: %3 == 0, inner = ceil(123/60) = 3
         core.moon_spawn_latch = true;
+        let dctx = crate::npc::permissive_dust_ctx(&w);
         let mut rng = UnifiedRandom::new(42);
-        let mut mirror = UnifiedRandom::new(42);
-        core.update_moon_lord_core(&w, &p, &mut rng);
-        for _ in 0..2 {
-            let _ = mirror.next_double();
+        let mut witness = UnifiedRandom::new(42);
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::particles::DustPool::new();
+        let (cw, ch) = core.size();
+        let (cx, cy) = (core.x + cw * 0.5, core.y + ch * 0.5);
+        core.update_moon_lord_core(&w, &p, &mut rng, &mut dust, &dctx);
+        mirror_storm(&core, &w, &dctx, &mut witness, &mut mirror, 123.0, cx, cy);
+        assert_eq!(rng, witness, "the full storm census at 123");
+        // The dust records match draw-for-draw (the fan + the inner).
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        let mact: Vec<usize> = (0..6000).filter(|&i| mirror.slot(i).active).collect();
+        assert_eq!(act.len(), mact.len(), "the storm's dust count");
+        assert!(act.len() >= 12, "the num4*2 fan alone is >= 12");
+        for (j, &i) in act.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(mact[j]);
+            assert_eq!(d.position, m.position);
+            assert_eq!(d.velocity, m.velocity);
+            assert_eq!(d.scale, m.scale);
+            assert_eq!(d.fade_in, m.fade_in);
+            assert!(d.no_gravity);
+            assert!(d.dust_type == 229 || d.dust_type == 31);
         }
-        let _ = mirror.next_float();
-        let _ = mirror.next_range(6, 19);
-        for _ in 0..4 {
-            let _ = mirror.next_float();
-        }
-        let _ = mirror.next_max(2);
-        for _ in 0..3 {
-            let _ = mirror.next_double();
-            let _ = mirror.next_double();
-            let _ = mirror.next_float();
-        }
-        assert_eq!(rng.peek(), mirror.peek(), "the storm census at 123");
     }
 
     #[test]
@@ -19245,24 +19607,17 @@ mod s1_d_3_moonlord_rng_witnesses {
         // but the storm gate needs > 60 AND %3 — 90 qualifies for BOTH;
         // use the storm census too).
         core.moon_spawn_latch = true;
+        let dctx = crate::npc::permissive_dust_ctx(&w);
         let mut rng = UnifiedRandom::new(42);
         let mut mirror = UnifiedRandom::new(42);
-        core.update_moon_lord_core(&w, &p, &mut rng);
-        // The storm at 90: inner = ceil(90/60) = 2.
-        for _ in 0..2 {
-            let _ = mirror.next_double();
-        }
-        let _ = mirror.next_float();
-        let _ = mirror.next_range(6, 19);
-        for _ in 0..4 {
-            let _ = mirror.next_float();
-        }
-        let _ = mirror.next_max(2);
-        for _ in 0..2 {
-            let _ = mirror.next_double();
-            let _ = mirror.next_double();
-            let _ = mirror.next_float();
-        }
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mpool = tr_core::particles::DustPool::new();
+        let (cw0, ch0) = core.size();
+        let (cx0, cy0) = (core.x + cw0 * 0.5, core.y + ch0 * 0.5);
+        core.update_moon_lord_core(&w, &p, &mut rng, &mut dust, &dctx);
+        // The storm at 90: inner = ceil(90/60) = 2 — the FULL ledger
+        // (W4-f4: the fan + inner dust internals now roll).
+        mirror_storm(&core, &w, &dctx, &mut mirror, &mut mpool, 90.0, cx0, cy0);
         // The smoke: the offset pair + radius, then the gated triple.
         let ox = (mirror.next_double() as f32) * 2.0 - 1.0;
         let oy = (mirror.next_double() as f32) * 2.0 - 1.0;
@@ -19307,9 +19662,11 @@ mod s1_d_3_moonlord_rng_witnesses {
         core.ai[1] = 59.0;
         core.moon_spawn_latch = true;
         core.moon_parts = [1, 2, 3];
+        let dctx = crate::npc::permissive_dust_ctx(&w);
         let mut rng = UnifiedRandom::new(42);
         let mut mirror = UnifiedRandom::new(42);
-        core.update_moon_lord_core(&w, &p, &mut rng);
+        let mut dust = tr_core::particles::DustPool::new();
+        core.update_moon_lord_core(&w, &p, &mut rng, &mut dust, &dctx);
         // The roar gate excludes only -1/2 (`:41159`), so the -2 tick
         // draws Next(200) too, then the dead Next(3) at the 60th.
         if mirror.next_max(200) == 0 {
@@ -19330,8 +19687,10 @@ mod s1_d_3_moonlord_rng_witnesses {
         let mut eye = Npc::new(NpcKind::MoonLordFreeEye, 140.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
         eye.hp = eye.max_hp;
         eye.moon_core_alive = true;
+        let dctx = crate::npc::permissive_dust_ctx(&w);
         let mut rng = UnifiedRandom::new(42);
         let mut mirror = UnifiedRandom::new(42);
+        let mut dust = tr_core::particles::DustPool::new();
         for _ in 0..50 {
             // The sequencer overwrites ai[0] from the table every tick
             // (`:42495`); row 0 is the drift (53 ticks) — reset the timer
@@ -19339,7 +19698,7 @@ mod s1_d_3_moonlord_rng_witnesses {
             // their own witnesses).
             eye.ai[0] = 0.0;
             eye.ai[1] = 0.0;
-            eye.update_true_eye(&w, &p, &mut rng);
+            eye.update_true_eye(&w, &p, &mut rng, &mut dust, &dctx);
             if mirror.next_max(420) == 0 {
                 let _ = mirror.next_range(100, 101);
             }
@@ -19389,6 +19748,178 @@ mod s1_d_3_moonlord_rng_witnesses {
             + std::f32::consts::PI / 180.0 * -1.0;
         assert_eq!(shot.ai1, want, "the ai1 draw");
         assert_eq!(rng.peek(), mirror.peek(), "one draw per shot");
+    }
+
+    // ---- W4-f4 witnesses: the Moon Lord dust sites (d31-deferred) ----
+    // WRITTEN NOT RUN (code-only). The head/eye fans and the orbit pair
+    // roll the live pool; each mirror replays the angle NextDouble +
+    // the pool internals + the posts draw-for-draw.
+
+    /// W4-f4 — the head's 229 fan (`NPC.cs:42204-42227`, site 42222):
+    /// at num 60..120 ONE dust, 120..180 TWO; each draws ONE NextDouble
+    /// (the angle) before the 16×16-box spawn at vector2−(8,8), the
+    /// (vx/2, vy/2) velocity argument, then the normalize×3.5×(10−2·num9)
+    /// /10 post + noGravity + the 0.8/1.65 scale.
+    #[test]
+    fn w4_f4_the_head_fan_mirrors_site_42222() {
+        let w = world();
+        let p = player(&w);
+        let mut head = Npc::new(NpcKind::MoonLordHead, 150.0 * TILE_PX, 60.0 * TILE_PX, 1, 0.0);
+        head.hp = head.max_hp;
+        head.moon_core_alive = true;
+        head.carrier_x = 150.0 * TILE_PX;
+        head.carrier_y = 100.0 * TILE_PX;
+        // Attack 1 (the deathray), num = 130 -> the two-dust band. The
+        // sequencer's rows are (3,180),(0,30),(2,435),(3,180),(1,375):
+        // attack 1 starts at 180+30+435+180 = 825; num 130 -> ai[1] 955.
+        head.ai[0] = 1.0;
+        head.ai[1] = 954.0; // -> 955: attack 1, num = 130
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(77);
+        let mut witness = rng.clone();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::particles::DustPool::new();
+        let (cx, cy) = (head.carrier_x, head.carrier_y - 400.0);
+        // The mirror: two fan dusts, num9 = 1 (num >= 120).
+        for j in 0..2 {
+            let num11 = if j % 2 == 1 { 1.65 } else { 0.8 };
+            let ang = (witness.next_double() as f32) * std::f32::consts::TAU;
+            let (ux, uy) = ((ang as f64).cos() as f32, (ang as f64).sin() as f32);
+            let (v2x, v2y) = (cx + ux * 13.5, cy + uy * 29.5);
+            let idx = mirror.new_dust(
+                &mut witness, &dctx, &w,
+                Vec2::new(v2x - 8.0, v2y - 8.0), 16, 16, 229,
+                head.vx / 2.0, head.vy / 2.0, 0,
+                tr_core::particles::Color::default(), 1.0,
+            );
+            let dd = mirror.slot_mut(idx);
+            let (dx, dy) = (cx - v2x, cy - v2y);
+            let dl = (dx * dx + dy * dy).sqrt();
+            let (nx, ny) = if dl > 0.0 { (dx / dl, dy / dl) } else { (0.0, 0.0) };
+            let speed = 3.5 * (10.0 - 1.0 * 2.0) / 10.0;
+            dd.velocity = Vec2::new(nx * speed, ny * speed);
+            dd.no_gravity = true;
+            dd.scale = num11;
+        }
+        head.update_moon_lord_head(&w, &p, &mut rng, &mut dust, &dctx);
+        assert_eq!(rng, witness, "the fan's 2 NextDouble + 2x6 internals");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(act.len(), 2, "the two-dust band");
+        for (j, &i) in act.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(j);
+            assert_eq!(d.dust_type, 229);
+            assert_eq!(d.position, m.position);
+            assert_eq!(d.velocity, m.velocity, "the normalize×2.8 post");
+            assert_eq!(d.scale, m.scale, "0.8 then 1.65");
+            assert!(d.no_gravity);
+        }
+    }
+
+    /// W4-f4 — the eye's orbit dust pair (`NPC.cs:42673-42678`, site
+    /// 42675): EVERY tick in the spoke band (num 15..75), 2× type-229 at
+    /// centre+vector5−(4,4) over a 0×0 box, ZERO explicit draws; posts
+    /// velocity += vector5/15 + noGravity.
+    #[test]
+    fn w4_f4_the_eye_orbit_pair_mirrors_site_42675() {
+        let w = world();
+        let p = player(&w);
+        let mut eye = Npc::new(NpcKind::MoonLordFreeEye, 140.0 * TILE_PX, 90.0 * TILE_PX, 1, 0.0);
+        eye.hp = eye.max_hp;
+        eye.moon_core_alive = true;
+        // Attack 2 (the orbit): rows (0,53),(1,90),(0,53),(2,135)...
+        // attack 2 starts at 53+90+53 = 196; num 20 -> ai[1] 216.
+        eye.ai[0] = 2.0;
+        eye.ai[1] = 215.0; // -> 216: attack 2, num = 20 (the spoke band)
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut rng = UnifiedRandom::new(13);
+        let mut witness = rng.clone();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::particles::DustPool::new();
+        // The mirror: the roar gate first (Next(420)), then the pair.
+        if witness.next_max(420) == 0 {
+            let _ = witness.next_range(100, 101);
+        }
+        // vector5 at num 20: f = (20-15)/10 = 0.5 — the (0,2)->(2,5)
+        // spoke pair lerped at t 0.5.
+        let spoke = |k: i32| -> (f32, f32) {
+            let ang = k as f32 * std::f32::consts::TAU / 6.0;
+            (30.0 * ang.sin(), -30.0 * ang.cos())
+        };
+        let (ax, ay) = spoke(0);
+        let (bx, by) = spoke(2);
+        let (sx, sy) = (ax + (bx - ax) * 0.5, ay + (by - ay) * 0.5);
+        let (cw, ch) = eye.size();
+        let (cx, cy) = (eye.x + cw * 0.5, eye.y + ch * 0.5);
+        for _ in 0..2 {
+            let idx = mirror.new_dust(
+                &mut witness, &dctx, &w,
+                Vec2::new(cx + sx - 4.0, cy + sy - 4.0), 0, 0, 229,
+                0.0, 0.0, 0, tr_core::particles::Color::default(), 1.0,
+            );
+            let dd = mirror.slot_mut(idx);
+            dd.velocity += Vec2::new(sx / 15.0, sy / 15.0);
+            dd.no_gravity = true;
+        }
+        eye.update_true_eye(&w, &p, &mut rng, &mut dust, &dctx);
+        assert_eq!(rng, witness, "the roar + the pair's 12 internals");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(act.len(), 2, "the orbit pair");
+        for (j, &i) in act.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(j);
+            assert_eq!(d.dust_type, 229);
+            assert_eq!(d.position, m.position);
+            assert_eq!(d.velocity, m.velocity, "the vector5/15 boost");
+            assert!(d.no_gravity);
+        }
+    }
+
+    /// W4-f4 — the core's FindFrame open burst (`NPC.cs:71935-71939`,
+    /// site 71938): 50× type-209 over the full box at the defaults,
+    /// ZERO explicit draws; fires once (the row leaves 0), the 30-tick
+    /// cycle then runs; `ai[0] <= 0` holds row 0 and draws nothing.
+    #[test]
+    fn w4_f4_the_core_open_burst_mirrors_site_71938() {
+        let w = world();
+        let dctx = crate::npc::permissive_dust_ctx(&w);
+        let mut core = Npc::new(NpcKind::MoonLordCore, 150.0 * TILE_PX, 100.0 * TILE_PX, 1, 0.0);
+        core.hp = core.max_hp;
+        core.ai[0] = 1.0; // the vulnerable phase — the open arm
+        let mut rng = UnifiedRandom::new(3);
+        let mut witness = rng.clone();
+        let mut dust = tr_core::particles::DustPool::new();
+        let mut mirror = tr_core::particles::DustPool::new();
+        let (cw, ch) = core.size();
+        for _ in 0..50 {
+            mirror.new_dust(
+                &mut witness, &dctx, &w,
+                Vec2::new(core.x, core.y), cw as i32, ch as i32, 209,
+                0.0, 0.0, 0, tr_core::particles::Color::default(), 1.0,
+            );
+        }
+        core.find_frame_dust(&w, &mut rng, &mut dust, &dctx);
+        assert_eq!(rng, witness, "the 50x6 internals, zero explicit");
+        let act: Vec<usize> = (0..6000).filter(|&i| dust.slot(i).active).collect();
+        assert_eq!(act.len(), 50, "the 50-dust burst");
+        for (j, &i) in act.iter().enumerate() {
+            let d = dust.slot(i);
+            let m = mirror.slot(j);
+            assert_eq!(d.dust_type, 209);
+            assert_eq!(d.position, m.position);
+            assert_eq!(d.velocity, m.velocity);
+            assert_eq!(d.scale, m.scale);
+        }
+        // The next tick: the row left 0 — no second burst.
+        let before = rng.peek();
+        core.find_frame_dust(&w, &mut rng, &mut dust, &dctx);
+        assert_eq!(rng.peek(), before, "the burst fires once per open");
+        // ai[0] <= 0: row 0, no draws.
+        core.ai[0] = 0.0;
+        core.frame = 0;
+        core.find_frame_dust(&w, &mut rng, &mut dust, &dctx);
+        assert_eq!(rng.peek(), before, "the closed core draws nothing");
+        assert_eq!(core.frame, 0);
     }
 }
 

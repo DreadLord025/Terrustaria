@@ -4705,8 +4705,9 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                             npcs[i].wants_transform = Some(ty);
                         }
                         // `out.died`: hp is already 0 — the death pass owns
-                        // the HitEffect + deactivation pair.
-                        npcs[i].find_frame();
+                        // the HitEffect + deactivation pair. W4-f4: the
+                        // dust-aware frame seam (the core's open burst).
+                        npcs[i].find_frame_dust(world, npcs_rng, dust, &dust_spawn_ctx);
                         npcs[i].contact(player, npcs_rng);
                     }
                     let n = &mut npcs[i];
