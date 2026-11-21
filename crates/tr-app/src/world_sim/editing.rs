@@ -15050,6 +15050,49 @@ mod tests {
         );
     }
 
+    /// W4-d4 verify item 4 — the BeachBall 859 / PiranhaGun 1156 ITEM rows
+    /// (the DOC-SWEEP census re-pinned against the generated table):
+    /// `Item.cs:11439-11450` (859: useStyle 1, shoot 155, shootSpeed 6,
+    /// consumable, useTime/useAnimation 20, value 20, 44×44, UseSound
+    /// Item1 = SOUND_STYLES index 126) and `Item.cs:14213-14230` (1156:
+    /// channel TRUE, useStyle 5, shoot 190, shootSpeed 14, ranged, damage
+    /// 40, kb 1, scale 1.1, rare 8, value sellPrice(0,20) = 1_000_000,
+    /// 30×10, UseSound Item10 = index 135). The generator carries both
+    /// (`python tools/GenItemData/gen.py --check` → check ok, 6196 rows);
+    /// noUseGraphic/noMelee are the generator's documented
+    /// not-provisioned flags (`gen.py:410`) — the port's melee lane never
+    /// swings a shoot-carrying useStyle-1/5 item, so the fold is
+    /// observationally inert. Written NOT run (code-only).
+    #[test]
+    fn w4_d4_verify_the_beach_ball_and_piranha_gun_item_rows() {
+        let b = registry::get(859).expect("the 859 row");
+        assert_eq!(b.projectile, Some(155), "`Item.cs:11442`");
+        assert_eq!(b.shoot_speed, 6.0, "`:11441`");
+        assert_eq!(b.use_style, 1, "`:11440`");
+        assert_eq!((b.use_time, b.use_animation), (20, 20), "`:11447-11448`");
+        assert!(b.consumable, "`:11445`");
+        assert!(!b.channel, "no channel write in the case");
+        assert_eq!((b.width, b.height), (44, 44), "`:11443-11444`");
+        assert_eq!(b.value, 20, "`:11451`");
+        assert_eq!(b.damage, -1, "the stock −1 (`Item.cs` field default)");
+        assert_eq!(b.use_sound, Some(126), "SoundID.Item1 (`:11446`, SOUND_STYLES[126])");
+        let g = registry::get(1156).expect("the 1156 row");
+        assert_eq!(g.projectile, Some(190), "`Item.cs:14223`");
+        assert_eq!(g.shoot_speed, 14.0, "`:14224`");
+        assert!(g.channel, "`:14214`");
+        assert_eq!(g.use_style, 5, "`:14215`");
+        assert_eq!((g.use_time, g.use_animation), (30, 30), "`:14216-14217`");
+        assert_eq!(g.damage, 40, "`:14221`");
+        assert_eq!(g.knock_back, 1.0, "`:14218`");
+        assert_eq!(g.scale, 1.1, "`:14222`");
+        assert!(g.ranged, "`:14228`");
+        assert_eq!(g.rare, 8, "`:14226`");
+        assert_eq!(g.value, 1_000_000, "sellPrice(0,20) (`:14227`)");
+        assert_eq!((g.width, g.height), (30, 10), "`:14219-14220`");
+        assert_eq!(g.use_sound, Some(135), "SoundID.Item10 (`:14225`, SOUND_STYLES[135])");
+        assert!(!g.consumable, "no consumable write in the case");
+    }
+
     /// W4-d4 DOC-SWEEP item 3 — the Piranha Gun ITEM use (1156,
     /// `ItemID.cs:3995`; NOT 3061 — that is the Architect Gizmo Pack).
     /// `Item.cs:14213-14230`: channel TRUE, useStyle 5, shoot 190,
