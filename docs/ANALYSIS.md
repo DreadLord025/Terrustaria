@@ -21043,7 +21043,11 @@ The arm now carries both halves:
 Deviations:
 
 * **The dust and the gore are SKIPPED** (the shell's burst) вЂ” no dust/gore
-  layer.
+  layer. *(W4-e3 update, 2026-11-21: the dust half is superseded — the
+  240 shell's `ai[0]==3` 7×31 + 3×6-pair burst (`:23386-23396`) now spawns
+  through `projectile_dust::style2_burst_31_6` on the UpdateProjectiles
+  stream, the gore TYPE draw `Next(61,64)` kept; the gore BODIES stay the
+  d55/e5 skip.)*
 * **The cannon inherits the Dutchman's velocity and `timeLeft`** in the C#;
   the port's carrier link carries the position and the timers only, so the
   cannon keeps its own movement.
@@ -21104,6 +21108,15 @@ precedent): the 93 dust `Next(5)` (`:23211`), the 968 dust loop's 16
 the 54 dust `Next(20)` (`:23685`). No roll is consumed for an unrendered
 effect; the counting-stream tests pin the draw counts per arm
 (`s1_d_4b_8_tests`).
+
+*(W4-e3 update, 2026-11-21: this proof's dust-skip list is superseded on
+the e3 branch — the 93/968/162/281/240/497 head sites (batch 1), the spark
+window / 306 trail / 54 tail (batch 2) now spawn through the
+`projectile_dust` seam WITH their gates and `NewDust` internals on the
+stream (the gore TYPE draws stay, the bodies skip); the `s1_d_4b_8` RNG
+counts were re-pinned in batch 1 (the 968's 32 floats / 48 ranges, the 93
+gate+delay+internals mirror). The proof above describes the pre-seam
+count-only state.)*
 
 Deviations: the dust/gore/sound spawns are SKIPPED (no dust/gore/sound
 layer вЂ” the state each block writes is ported where the trajectory or
@@ -24593,6 +24606,14 @@ Skipped in place: every dust/gore/sound spawn of both branches (no
 dust/gore/sound layer in the pool), the MP-only town-NPC kill of the snowball
 (`:23568-23588`) and the 150-152/493-494 Vilethorn variants (their kinds are
 not ported). `cs-cite`: 55 citations resolved.
+
+*(W4-e3 update, 2026-11-21: the dust half of this skip is superseded — the
+aiStyle-4 fade sites (`:23790`/`:23799`/`:23808`/`:23810`, the 170-crossing
+Nettle 8×7 + the 493/494 `Next(68,71)` type-arg draws + the Vilethorn
+3×18+1×14) now spawn through `projectile_dust::style4_fade_burst` with
+world+DustPool+SpawnCtx threaded through `vilethorn_step`; the aiStyle-2
+dust sites ride the same seam (batches 1-2). The gore/sound halves stay
+their lanes' skips.)*
 
 ## Day cycle: time, spawn gates, sky (daycycle slice, 2026-11-17)
 
@@ -39244,3 +39265,85 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## The W4-e3 window census + the merge keep-one contracts (W4-e3, 2026-11-21, code-only mode)
+
+**Window census (`Projectile.cs:22297-24318`).** A fresh `Dust.NewDust`
+line scan of the window finds **41 sites** (22297/22308/22336/22345,
+23213/23229/23296/23302/23306/23341/23347/23351/23386/23392/23396/23413,
+23543/23618/23687, 23790/23799/23808/23810,
+23959/23985/24003/24008/24023/24026/24041/24056/24070/24080/24092,
+24134, 24261/24276/24286/24296/24311/24318) plus the 42nd at **24328**
+(the style-8 default pair's second dust, one line past the window edge —
+ported with batch 4). All 42 are ported on this branch: batch 1 (12,
+the aiStyle-2 head), batch 2 (7, spark/306/54 + the aiStyle-4 fade),
+batch 3 (11, the aiStyle-5 family), batch 4 (12, the aiStyle-6 burst +
+the aiStyle-8 chain + the STAGED 152 emitters). **Zero unported sites
+remain in the window** — the 42-of-42 claim verifies complete. The
+`:22297-22345` four are STAGED (below); the other 38 are wired through
+the `update_dust` seam's kind-gated arms.
+
+**The STAGED 152 drop-in contract (vs W4-d16 tip e122a6b2, verified).**
+d16's `projectile_ai_misc::ai_super_star_slash` is still count-only at
+its pushed tip (the aiStyle-160 Kites commit changed nothing in the 152
+arm): the 977/1045 `Next(8)` gate keeps only the `NextVector2Circular`
+float pair, the 976's `Next(3)` trail block is empty, the one-shot burst
+keeps only the 10×2 `NextFloat` loop. The merge reconciliation is THREE
+edits on the d16 side (the full contract sits above `star_slash_dust`
+in `projectile_dust.rs`): thread `DustPool`+`SpawnCtx` into the arm (the
+dispatch already carries both), REPLACE the `Next(8)` block per kind arm
+with one `star_slash_dust` call (the emitter re-draws the gate — leaving
+d16's float pair beside the call DOUBLE-DRAWS), REPLACE the
+`Next(3)`+`localAI[1]` blocks with one `star_slash_976` call and move the
+`local_ai[1] = 1.0` latch AFTER it (the emitter reads the pre-latch
+value). Draw order per dust: `NewDustDirect` internals FIRST, then the
+velocity overwrite's draws (`:22300`/`:22345` evaluate after the call).
+
+**The 1051 keep-one (vs W4-d1 tip e271b5bc).** d1's
+`projectile_ai_powder::step` owns the full aiStyle-6 machine WITH the
+five rows (10/11/463/1019/1051), the Convert tile scan and the
+sapling-growth defer — but its burst is count-only: the 1051 keeps only
+the 50 per-dust `Next(3)` picks (`:24132`), the bodies + internals skip.
+The e3 `style6_burst` is the full-bodied twin: the SAME explicit pick
+FIRST per dust, then the `NewDust` internals + the flag2 post-arms (the
+`num53%3` noGravity ladder). KEEP-ONE: d1's machine + rows survive; its
+burst loop takes `style6_burst`; the e3 `ai_style6` duplicate arm + its
+`6 =>` kind gate retire (they would double-run the machine). The e3
+1051 witness mirrors the FULL sequence (pick + internals + post-arms)
+and stays the stream-parity pin; the new
+`w4_e3_keep_one_1051_picks_match_d1_count_only` witness pins the
+pick-first order against d1's bare-pick stream on a twin seed. d1's
+`w4_d1_the_super_fertilizer_burst_draws_50` (50 ranges, zero floats) is
+the count-only pin and must be RE-DERIVED at the swap — the internals
+add draws between picks.
+
+**The aiStyle-5 row census (kind-gated emitters).** The cloak five
+723/724/725/726/1133 are ROWED on the pushed W4-f48 lane (bba610bb — the
+shared `:7646-7658` row + `ai_cloak_star` + the retaliate spawn seam);
+the 503/1037/1049 have NO rows on any pushed tip (the id table names
+them, `projectile_id.rs`, but `proj_data` declines). The e3
+`ai_falling_star_family` gate therefore stays a no-op for the
+503/1037/1049 until their rows land; for the cloak five the merge must
+keep ONE machine — f48's rowed `ai_cloak_star` is the natural survivor
+(it owns the spawn seam) and takes the cloak half of
+`style5_shooting_star` (`:23988-24031`); note f48 draws the twinkle
+`Next(40)` inline while the e3 arm leaves it to the sound lane — the
+survivor's draw order wins, the loser's witness re-derives. The g64 lane
+(bfd7e930) ALSO ports the 503/723/1133 dust bodies UNWIRED
+(`proj_trail_dust::trail_503` etc., same draws, different seam) — a
+second keep-one against `style5_spark_503`/`style5_shooting_star` at the
+wiring wave; g64's 497/504 twins overlap the e3 batch-1/2 sites the same
+way.
+
+**Doc sweep.** The pre-seam dust-skip deviations in this window's
+records are marked superseded in place: the S1-D-4b-5e shell-burst skip
+(the 240 burst now spawns), the S1-D-4b-8 RNG proof's dust-skip list
+(the counts re-pinned in e3 batch 1), the aiStyle-2/4 slice's
+"every dust/gore/sound spawn skipped" (the dust half now rides the
+seam). The gore/sound/light halves stay their lanes' documented skips.
+
+**Code-only round.** The 1 new witness
+(`w4_e3_keep_one_1051_picks_match_d1_count_only`) is WRITTEN, NOT RUN —
+no cargo/rustc/rustfmt/tests/dotnet/graphify invoked. Verified by
+re-reading the cited C# (`:22230-22351`, `:23830-24099`, `:24110-24150`),
+the d16/d1/f48/g64 pushed tips via `git show`, and the 42-site line scan.
