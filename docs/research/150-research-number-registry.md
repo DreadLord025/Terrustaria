@@ -8,12 +8,67 @@ blob-identity checked, and first-add commit per filename per branch via
 **committer dates (%cI, +02:00)** of the doc's first add on the branch — the
 first-push proxy; ties broken by lane name.
 
-**Result: the 7-collision brief undercounts. The full scan finds 32 colliding
-number keys** (26 bare numbers 08, 61–71, 90–95, 97, 101, 109, 125, 133–136 plus
-6 letter-suffixed keys 12g, 12i, 12j, 26d, 26e, 26f), **86 rename assignments
-(81 distinct losing docs + 5 same-path fork copies) across 64 lanes**. Free
-renumber block assigned: **151–236, sequential** (150 = this registry; max
-number seen at any tip was 144).
+**Result (round 1, commit `38bfd1d22`): the 7-collision brief undercounts. The
+full scan found 32 colliding number keys** (26 bare numbers 08, 61–71, 90–95,
+97, 101, 109, 125, 133–136 plus 6 letter-suffixed keys 12g, 12i, 12j, 26d, 26e,
+26f), **86 rename assignments (81 distinct losing docs + 5 same-path fork
+copies) across 64 lanes**. Free renumber block assigned: **151–236, sequential**
+(150 = this registry; max number seen at any tip then was 144).
+
+> ## 🔄 §4-REFRESH (round 2, same scan date, six fetches) — READ THIS FIRST
+>
+> Re-scanned **all 358 `task/W4-*` remote tips** (`git ls-tree docs/research/`
+> per tip, **21 038 rows** at the final sweep). The lane wave since round 1
+> landed new collisions and several lanes self-renamed mid-flight —
+> including INTO each other (c8/d42/g61 all picked 238; d53/c42 both picked
+> 240). Current state:
+>
+> - **47 colliding number keys** at the tips (40 bare + 7 letter-suffixed:
+>   12g, 12i, 12j, 12k, 26d, 26e, 26f).
+>   New since round 1: **12k, 96, 108, 111, 129, 130, 137, 143, 144, 145,
+>   146, 147, 148, 149, 237, 238, 239, 240**; extended: **26d, 26e, 64, 68**
+>   (key 70 gained a same-path fork). New same-path fork families (single
+>   filename, diverged blobs): **18b, 83, 84, 122** (+ the key-70 fork).
+>   Resolved by self-rename: **134/135/136** (f11 executed 134→151→**233**,
+>   135→152→**234**, 136→153→**235**; interim 151/152/153 collided with this
+>   registry's block, corrected at f11 `14ca0a8d5` — **CONFIRMED at tips**).
+>   g64 executed round-1's 66-fork→**196** — CONFIRMED.
+> - **Consumed free numbers at tips (winners, NOT assignments): 237 = e23
+>   bestiary-ui-final (10:53:03), 238 = d42 roster-sheets (12:15:55), 239 =
+>   d42 final-keep-one-and-band (12:55:30), 240/241/242/243 = g58
+>   happiness-final (143 self-rename 12:16:37) / f37-latch-repoint-hunks /
+>   chat-portrait-seed / seal-verification. Executed pushes beat unpublished
+>   registry drafts.**
+> - **§6 assigns 37 new losers → 244–280** (31 new losing docs + 6 new
+>   same-path fork copies). Total assignments: **123 (151–236 + 244–280),
+>   machine-checked unique, no gaps within each block**. **Numbers 281+ are
+>   FREE.** 237–243 are taken; do not reuse them.
+> - Self-renames reconciled (§6.2): g24 107→**146 KEEPS**; g67 134→146→**267**;
+>   e20's c42-repick 146→**266**; c10 145→149→**270**; e23 **237 KEEPS**;
+>   g89 139→**145 KEEPS**; c4 **143/144/148 KEEP**, 145-addendum→**265**;
+>   e20 **149/147/71 KEEP**, 148→**269**; f11 →233/234/235 **CONFIRMED**;
+>   **d42 143→238 EXECUTED and CONFIRMED (238+239 winner)**; **g58 143→240
+>   EXECUTED and CONFIRMED (240/241/242/243 winner)**; **c8 143→238 EXECUTED
+>   but 238 collides → 262**; **g61 237→238 EXECUTED but both collide →
+>   273**; g48's fresh 237 → **272**; g56's fresh 239 → **274**; f21's fresh
+>   239 (the round-1 brief's unpushed f21b doc!) → **276**; d53's fresh 240 →
+>   **275**; c42's fresh 240 → **280**; f47's two fresh 144 docs →
+>   **277/278**; f45's fresh 137 → **279**; g50's fresh 154 (registry-
+>   reserved for c33) → **271**. Authoritative numbers are ONLY the §6
+>   tables.
+> - **150 present at origin tip**: `origin/task/W4-d54-dust-sites-world` =
+>   `38bfd1d22` carried `docs/research/150-research-number-registry.md`
+>   (blob `cf077631f`) at the refresh fetch — the g67 report of tip
+>   `1d16ef4ea` WITHOUT 150 was a stale fetch on their side (`1d16ef4ea` is
+>   3 commits behind `38bfd1d22` on the same branch); no re-publish from blob
+>   needed. This refresh commit rides the same branch.
+> - Round-1 tables (§1–§3) remain valid for every row NOT superseded by §6.
+>   107 is now EMPTY (g24 renamed to 146); 139 stays RESERVED for
+>   g52c-net-master (g89's doc self-renamed 139→145 at `41dabfbc8`, g50's
+>   cross-note explicitly does not take 139); if g52c pushes a 139 doc it
+>   keeps 139 (single claimant).
+> - **Cutoff:** pushes after the final sweep (fetch 6) are not covered; see
+>   the §6.3 cutoff note.
 
 Rules:
 - **First-pushed timestamp wins** the contested number. Losers rename on their
@@ -66,9 +121,11 @@ Branch names abbreviated: `W4-x` = `task/W4-x`. ts = first-add committer date.
 | 135 | W4-g90 | `135-g90-persist-folds.md` 11-21T06:39:48 `b3b82d071` | W4-f11 wires-radial 09:03:29 → **234** |
 | 136 | W4-g31 | `136-tilepass-d-hunks.md` 11-21T06:47:18 `5b8899541` | W4-f11 grand-design-activation 09:21:26 → **235** |
 
-**Free block actually consumed: 151–236 (86 unique assignments = 81 distinct
-losing docs + 5 same-path fork copies).** Numbers 237+ stay FREE for future
-lanes. 150 is this registry.
+**Free block actually consumed (round 1): 151–236 (86 unique assignments = 81
+distinct losing docs + 5 same-path fork copies).** ~~Numbers 237+ stay FREE~~
+**SUPERSEDED by the refresh: 237–243 consumed by winner pushes
+(e23/d42/d42/g58×4); the assignment block now runs 151–236 + 244–280 (§6),
+numbers 281+ are FREE.** 150 is this registry.
 
 Doc titles of every loser are in §3 (header line quoted where present; two f35
 docs use `//!` banner comments instead of a `#` header).
@@ -86,8 +143,18 @@ docs use `//!` banner comments instead of a `#` header).
 | 136 g31e-tilepass-dhunks × f11d-kite | **CONFIRMED** — key 136 row; f11 `136-grand-design-activation.md` → 235. |
 
 The four one-sided entries are unpushed sub-round docs; if those lanes later
-push them, they MUST take free numbers 237+ (107/139/143/144 are taken at the
-tips). The scan found **29 additional colliding keys** the brief missed.
+push them, they MUST take free numbers ~~237+~~ **281+ (refresh: 237–243
+consumed by winner pushes; assignment block now ends at 280)**. The scan
+found **29 additional colliding keys** the brief missed.
+
+**REFRESH update (§6):** 143 became a FULL 6-way collision (c4 keeps; d42
+self-renamed →238 and KEEPS 238; g58 self-renamed →240 and KEEPS 240; d120/g87
+→ 261/263; c8's 143→238 rename lost 238 to d42 → 262); 144 became 3-way (c4
+keeps; f22 → 264; f47's two mid-round docs → 277/278); the f21b doc FINALLY
+pushed — on 239 (14:11:45), losing to d42 → 276; 107 and 139 are now EMPTY at
+tips (g24 renamed 107→146 and KEEPS 146; g89 renamed 139→145 and KEEPS 145 —
+139 stays RESERVED for g52c). f11's 134/135/136 losses are EXECUTED as
+233/234/235 (via an interim 151/152/153 wave that this registry superseded).
 
 ## 3. Per-lane rename-INSTRUCTION table (lanes execute on OWN branches)
 
@@ -169,7 +236,8 @@ only the file + its own header. Do NOT touch this registry or other branches.
 | g4-npc-style3-fighter | `91-addendum-d22r-fold-list.md` → `216-addendum-d22r-fold-list.md` | 91 — ADDENDUM A: the d22r RESUME fold-list (g4 lane 15 residuals) | `docs/ANALYSIS.md`, `docs/research/INDEX.md` |
 | g22-sounds-main-2 | `91-g23-branch-deprecated.md` → `217-g23-branch-deprecated.md` | 91 — g23-branch-DEPRECATED: merge-direction recommendation (MENU RETIRE) | `docs/research/90-doc-sweep-menu-sounds.md` (→`213-…`), `docs/research/91-g23-refold-g22-doc-sweep.md` (→`215-…`) |
 | g71-bg-layers-2 | `92-doc-sweep-bg.md` → `218-doc-sweep-bg.md` | 92 — DOC-SWEEP: background variants (lane 16, W4-g71) | `docs/ANALYSIS.md`, `docs/research/INDEX.md` |
-| f33-torch-god-favor | `93-torch-god-949-keep-one.md` → `219-torch-god-949-keep-one.md` | 93 — The 949 Torch God duplicate: W4-f33 vs W4-d19 keep-one | `docs/ANALYSIS.md`, `docs/research/93-torch-god-fold-input-addendum.md` (→`221-…`), `docs/research/INDEX.md` |
+| f33-torch-god-favor | `93-torch-god-949-keep-one.md` → `219-torch-god-949-keep-one.md` | 93 — The 949 Torch God duplicate: W4-f33 vs W4-d19 keep-one | `docs/ANALYSIS.md`, `docs/research/93-torch-god-fold-input-addendum.md` (becomes `221-torch-god-fold-input-addendum.md`), `docs/research/INDEX.md` |
+| f33-torch-god-favor | `93-torch-god-fold-input-addendum.md` → `221-torch-god-fold-input-addendum.md` | 93 addendum — W4-f33 persist fold-input + the d19 949 drop-hunks (closeout) | `docs/ANALYSIS.md`, `docs/research/93-torch-god-949-keep-one.md` (becomes `219-…` — same-lane rename), `docs/research/INDEX.md` — round-1 §1 assigned 221 but the §3 row was missing; refresh backfill |
 | g40-biome-marble-granite | `94-w4g40-biome-residual-census.md` → `222-w4g40-biome-residual-census.md` | 94 — Biome-residual census (W4-g40 continuation, code-only) | `docs/ANALYSIS.md`, `docs/research/INDEX.md` |
 | f2-npc-sounds-3 | `94-npc-sound-reconcile.md` → `223-npc-sound-reconcile.md` | 94 — NPC-sound dup-reconcile: W4-e9 (3793fef8) vs W4-f2 (9de95697) | `docs/ANALYSIS.md`, `docs/ROADMAP.md` |
 | c29-deadmans-chest-biome | `95-gem-moss-census.md` → `224-gem-moss-census.md` | 95 — Gem-moss biome gen census + fidelity port (W4-c29) | `docs/research/INDEX.md` |
@@ -213,7 +281,154 @@ wins 109 outright; d20 →228, d36x →229 per §3, and **d36's own
 `109-d36-npc-kinds-141-210-census.md` → 236** (first free number after the
 block). d36 refs-to-update: (none outside self at tip).
 
+## 6. REFRESH (round 2) — new collisions, self-rename reconciliation, block 244–280
+
+Re-scan: **358 tips, 21 038 ls-tree rows, 47 colliding keys** (40 bare + 7
+letter-suffixed), six fetches (lanes pushed mid-round; the final sweep is
+the authority). Same rules as round 1: first-add `%cI` per filename per
+branch wins; fork tiebreak by lane name; letter-suffixed losers drop the
+letter. All timestamps 2026-11-21 +02:00 unless noted.
+
+**Free numbers consumed by WINNER pushes before this refresh published (not
+assignments): 237 (e23), 238 (d42), 239 (d42), 240/241/242/243 (g58).**
+Executed pushes beat unpublished registry drafts — g58's 143→240 self-rename
+(`cdfe3d108` 12:16:37) and its new 241/242/243 docs are VALID takes (240 wins
+vs d53 14:08:36 / c42 14:17:05; 243 single claimant). The round-2 assignment
+block therefore starts at **244**.
+
+### 6.1 New / extended collision keys (winner keeps, losers → 244–280)
+
+| Key | Winner (keeps number) | Winner doc / ts | Losing claimants → FREE number |
+| --- | --- | --- | --- |
+| 12k | W4-f24 | `12k-f24-worldgen-gated.md` 00:09:38 `f353e13f6` | W4-c31 `12k-c31-jungle-residuals.md` 05:10:24 → **244** |
+| 18b (FORK) | W4-d82 (+d83 identical) | `18b-element-census.md` 11-20T18:38:12 `d4a4e7fda` blob `21808dd38` (d82=d83 IDENTICAL) | FORK: W4-d81 copy (add `44744efa5` 11-20T19:41:08, blob `ba85736f1`) → **245**; W4-g53 copy is IDENTICAL to d81's (same add commit+blob) → rides 245, merger keep-one, NO extra number; FORK: W4-e23 copy (same add commit 19:41:08, diverged blob `fc715ca4f`; lane tiebreak d81 < e23) → **246** |
+| 26d (+1) | W4-d12 (round 1) | 00:06:06 | W4-d10 `26d-projectile-ai-91-100-final.md` 12:07:11 (NEW third d10 doc) → **247** |
+| 26e (+1) | W4-d7 (round 1) | 01:30:11 | W4-g82 `26e-f-rope-union-final.md` 09:31:06 → **248** |
+| 64 (+2) | W4-d64 (round 1) | 11-20T18:54:02 | W4-f18 `64-npc-kinds-351-697-census.md` 05:02:54 → **249**; W4-e2 `64-npc-dust-window-coverage.md` 10:48:45 → **250** |
+| 68 (+1) | W4-f37 (round 1) | 02:48:30 | W4-f26 `68-findframe-census-addendum-7g.md` 11:12:33 → **251** |
+| 70 (FORK) | W4-d53 (round 1) keeps 70; g47 keeps its **209** assignment | `70-liquid-merge-order.md` g47 first add 05:56:14 `fdeb897ca` blob `266e2d011` | FORK: W4-g46 copy of `70-liquid-merge-order.md` (first add 10:00:03 `9bc722e5f`, diverged blob `e29d0864d`) → **252** |
+| 83 (FORK) | W4-d130 | `83-weather-reconcile.md` 04:12:25 `50c845e5e` (tip blob advanced to `f0c1c80c9` mid-round; first-add unchanged) | FORK: W4-g11 copy (first add 05:25:53 `d892d8d43`, blob `555ccff03`) → **253** |
+| 84 (FORK) | W4-f46 | `84-map-reconcile.md` 03:54:03 `38c283a0d` blob `92ef798cf` | FORK: W4-e18 copy (first add 05:57:51 `0bd346e78`; tip blob moved `052859ca4`→`2a6b3a231`→`a0d6956a8` mid-round — first-add unchanged) → **254** |
+| 96 | W4-d8 | `96-doc-sweep-proj-misc.md` 06:17:01 `35bacbb6e` | W4-g41 `96-biome-retire-receipts.md` 10:33:31 → **255** |
+| 108 | W4-d37 | `108-roster-master-reconcile.md` 05:31:28 `08f7d25cf` | W4-f42 `108-input-f42.md` 12:02:51 → **256** |
+| 111 | W4-d70 | `111-doc-sweep-screenfx.md` 10:38:01 `a7620eec3` | W4-f5 `111-gore-final-verification.md` 12:37:04 → **257** |
+| 122 (FORK) | W4-g89 | `122-persist-v9-addendum.md` 05:21:18 `4344bd50e` blob `f92eaec98` | FORK: W4-g88 copy (first add 06:16:30 `6998a4ecb`, diverged blob `4eeaad66d`) → **258** |
+| 129 | W4-f28 | `129-f28-deferred-families.md` 08:33:30 `9ca48c496` | W4-d105 `129-doc-sweep-wg-37.md` 12:32:10 → **259** |
+| 130 | W4-f28 | `130-f28-retire.md` 09:45:35 `922e4fd25` | W4-c29 `130-doc-sweep-gem-moss.md` 12:04:03 → **260** |
+| 137 | W4-g84 | `137-g84-g31-keep-one.md` 09:37:33 `e6c2dcd0d` | W4-f45 `137-wld-final-audit.md` 14:14:09 `d2a8276a2` → **279** |
+| 143 | W4-c4 | `143-d40-crimsongoldfish-retire-hunk.md` 09:02:12 `90fd242d9` (round-1 one-sided entry became a FULL 6-way collision; d42/c8/g58 have since renamed away, 3 claimants remain at tips) | W4-d120 chatter-retire 09:46:26 → **261**; W4-g87 fold-input 11:08:00 → **263**; W4-c8 crawler-final-census 10:03:55 (self-renamed 143→238 at `2a0b5c701`, 238 collides → chain) → **262**; W4-d42 roster-sheets 09:50:22 self-renamed 143→238 at `9eadc3043` 12:15:55 and **WINS 238 — CONFIRMED**; W4-g58 happiness-final 10:26:59 self-renamed 143→240 at `cdfe3d108` 12:16:37 and **WINS 240 — CONFIRMED** |
+| 144 | W4-c4 | `144-orca-npc692-census-input.md` 09:15:20 `479d70ad2` (now 3-way: f47 pushed TWO 144 docs mid-round) | W4-f22 `144-f22-ui-screens-retire.md` 12:04:59 → **264**; W4-f47 `144-item-splash-keep-one.md` 12:39:05 `f80490bcf` → **277**; W4-f47 `144-ARBITER-FINAL.md` 13:52:51 `18fe75f2e` → **278** |
+| 145 | W4-g89 | `145-rod-teleport-union-composition.md` 09:48:08 `41dabfbc8` (g89 SELF-RENAMED 139→145; 145 free at that moment) | W4-c4 `145-d42-keep-d42-verdicts-addendum.md` 10:12:10 → **265** |
+| 146 | W4-g24 | `146-wg-sounds-final.md` 10:02:44 `2678cfae4` (g24 SELF-RENAMED 107→146) | W4-e20 `146-c42-repick-critical.md` 10:22:27 → **266**; W4-g67 `146-g67-post-union-folds.md` 10:32:09 (g67 SELF-RENAMED 134→146) → **267** |
+| 147 | W4-e20 | `147-c42e-session-probe.md` 10:25:00 `038af46cf` | W4-e19 `147-quicksell-ui-hint-census.md` 12:52:51 → **268** |
+| 148 | W4-c4 | `148-fish-family-declaration.md` 10:16:16 `0df6964be` | W4-e20 `148-brokentrapcleanup-wg-seed.md` 10:28:49 → **269** |
+| 149 | W4-e20 | `149-devices-family-bible.md` 10:31:10 `46fdcfd8e` | W4-c10 `149-waterfowl-band-final.md` 10:49:53 (c10 SELF-RENAMED 145→149) → **270** |
+| 154 (reserved) | W4-c33 (round-1 ASSIGNMENT `12i-c33…`→154, not yet executed) | registry reservation `38bfd1d22` 10:22:14 | W4-g50 `154-g52c-cross-input-40-statuses.md` 12:01:55 (picked "max-on-origin 153 + 1" from f11's INTERIM wave — the registry block 151–236 was already reserved) → **271** |
+| 237 | W4-e23 | `237-bestiary-ui-final.md` 10:53:03 `7a7779690` (took 237 per round-1 free-block guidance — VALID, 237 was free) | W4-g48 `237-f11-tail-fix.md` 12:15:09 `34029437a` → **272**; W4-g61's 237 doc self-renamed →238 mid-round (chain below) |
+| 238 | W4-d42 | `238-d42-roster-sheets.md` 12:15:55 `9eadc3043` (self-rename from 143, first to land 238) | W4-c8 `238-c8-crawler-final-census.md` 12:24:19 `2a0b5c701` (chain 143→238) → **262** (counted in the 143 row); W4-g61 `238-g61-spawn-family-final.md` 12:55:22 `6e922fc60` (chain 237→238) → **273** |
+| 239 | W4-d42 | `239-d42-final-keep-one-and-band.md` 12:55:30 `bac408be0` | W4-g56 `239-void-family-bible.md` 13:57:53 `54c63d8d4` → **274**; W4-f21 `239-f21b-net-apply-audit.md` 14:11:45 `f7bc25471` → **276** (the long-awaited f21b sub-round doc from the round-1 brief — pushed late, loses) |
+| 240 | W4-g58 | `240-happiness-final.md` 12:16:37 `cdfe3d108` (143 self-rename; 241/242/243 g58 docs all single-claimant, **KEEP**) | W4-d53 `240-proj-dust-retire.md` 14:08:36 `df3355c36` → **275**; W4-c42 `240-c42-wiring-seal.md` 14:17:05 `2910a7209` → **280** |
+
+Single-claimant new numbers verified FREE (no action): **140** (f29
+map-overlay-reconcile), **141** (e9 npc-sound-final-census), **142** (d122
+savings-keep-one), **121** (f47 doc-sweep-shimmer, unchanged). Round-1
+execution spotted: **g64 landed `196-proj-trail-dust-claims-g64.md`** per §3
+— CONFIRMED. **107** and **139** are now EMPTY at all tips (g24/g89 renamed
+away); 139 stays RESERVED for g52c-net-master per the g50 cross-note — a
+future g52c 139 doc keeps 139.
+
+### 6.2 Self-rename reconciliation (rename chains)
+
+| Lane | Chain | Verdict |
+| --- | --- | --- |
+| g24-sounds-worldgen | 107 → 146 | **146 KEEPS** — first-add winner 10:02:44 vs e20 10:22:27 / g67 10:32:09. No further rename. |
+| g67-weather-rain-splash | 134 → 146 → **267** | 146 collides, g67 is LAST of the three → rename again to 267 (§6.3). |
+| e20-wiring-device-arms-2 | (c42-repick) 146 → **266** | second of the three → 266. e20's **149 KEEPS** (10:31:10 < c10 10:49:53); e20's **147 KEEPS** (10:25:00 < e19 12:52:51); e20's **148 → 269** (c4 earlier); e20's `71-wiring-device-reconcile.md` keeps 71 (round-1 winner). |
+| c10-style68-waterfowl | 145 → 149 → **270** | 149 collides with e20's earlier devices-bible → rename again to 270. |
+| e23-bestiary-ui-grid | → 237 | **237 KEEPS** (10:53:03 < g61 12:12:59 < g48 12:15:09). e23's `18b-element-census.md` fork copy is a SEPARATE loss → 246. |
+| g61-npc-spawn-dust | 237 → 238 → **273** | 237 taken by e23; the self-rename to 238 (`6e922fc60` 12:55:22) landed AFTER d42's 238 (12:15:55) and c8's 238 (12:24:19) → rename again to 273. |
+| c8-style66-crawling-critters | 143 → 238 → **262** | 143 belongs to c4; the self-rename to 238 (`2a0b5c701` 12:24:19) lost to d42's earlier 238 (12:15:55) → rename again to 262. |
+| d42-npc-kinds-561-630 | 143 → **238 KEEPS**; new doc **239 KEEPS** | d42's rename (`9eadc3043` 12:15:55) is the FIRST 238 at any tip → wins the key vs c8/g61. `239-d42-final-keep-one-and-band.md` (12:55:30) beats g56's 239 (13:57:53) and f21's 239 (14:11:45). **CONFIRMED — no further action.** |
+| g58-ui-shop-happiness | 143 → **240 KEEPS**; new docs **241/242/243 KEEP** | `cdfe3d108` 12:16:37 renamed 143→240; beats d53's 240 (14:08:36) and c42's 240 (14:17:05). `241-f37-latch-repoint-hunks.md` 12:25:26, `242-chat-portrait-seed-happiness-sealed.md` 13:12:35, `243-seal-verification.md` 14:08:18 single claimants. Executed pushes beat this refresh's unpublished draft reservations → **CONFIRMED, no further action** (the draft's c31/d81/e23 shifted to 244/245/246). |
+| d53-dust-sites-projectile | (new) 240 → **275** | pushed 14:08:36, after g58's 240 (12:16:37) → loser, rename to 275. d53's round-1 70 win is unaffected. |
+| c42-wiring-device-arms | (new) 240 → **280** | pushed 14:17:05, last of the three 240s → rename to 280. c42's round-1 assignments (71-fork→212, 133→232) still owed. |
+| f21-net-ids-verify-tail | (new) 239 → **276** | the f21b sub-round doc the round-1 brief flagged as unpushed FINALLY landed (14:11:45) — on 239, taken by d42 at 12:55:30 → rename to 276. |
+| g56-ui-void-vault | (new) 239 → **274** | pushed 13:57:53, after d42's 239 (12:55:30) → loser, rename to 274. |
+| g48-net-apply-arms-1 | (new) 237 → **272** | pushed 237 at 12:15:09 citing the round-1 free block, but e23's 237 (10:53:03) was already at its tip → loser, rename to 272. |
+| g84-plantera-bulb-draw | 137 pushed first | **137 KEEPS** (09:37:33 vs f45 14:14:09). |
+| f45-wld-header-2 | (new) 137 → **279** | pushed 14:14:09, after g84's 137 → rename to 279. |
+| g89-aegis-fruit-use | 139 → 145 | **145 KEEPS** (09:48:08 < c4 10:12:10). g89's `122-persist-v9-addendum.md` keeps 122 (fork winner vs g88). |
+| c4-style44-flying-fish | 143 / 144 / 148 pushed first | **all three KEEP**; c4's later `145-d42-keep-d42-verdicts-addendum.md` loses 145 → **265**. |
+| f47-liquid-shimmer-2 | (new) 144 ×2 → **277/278** | both 144 docs pushed after c4's orca (09:15:20): splash-keep-one 12:39:05 → 277, ARBITER-FINAL 13:52:51 → 278. |
+| f11-wiring-arms-4 | 134/135/136 → 151/152/153 → **233/234/235** | Interim pick (`b03d53f1d` 10:32:33, "150 not yet landed") collided with the registry block (151=d113, 152=g36, 153=f25). f11 SELF-CORRECTED at `14ca0a8d5` 12:07:51 citing this registry: 233/234/235 now at tip, all refs re-pointed (wiring.rs comments, INDEX, ANALYSIS/ROADMAP, anchors.txt). **CONFIRMED — matches round-1 §3 assignments; no further action.** |
+| g50-net-apply-arms-3 | (new) 154 → **271** | picked max-on-origin+1 from f11's interim wave; 154 belongs to c33 per round-1 §3. Rename to 271. Its "139 RESERVED for g52c" note is honored by this registry. |
+| g64-proj-trail-dust-2 | 66-fork → **196 EXECUTED** | round-1 §3 assignment landed at tip (`196-proj-trail-dust-claims-g64.md`). **CONFIRMED.** |
+
+### 6.3 Per-lane rename-INSTRUCTION table (round 2; lanes execute on OWN branches)
+
+Same procedure as §3: `git mv`, update the doc's number header, update every
+listed ref file (`git grep -l -F <oldname> <tip> -- docs/`, self excluded).
+Old filenames are the CURRENT tip names (c8/g61 already carry their interim
+238 names).
+
+| Lane (branch `task/W4-…`) | old filename → new filename | doc title (first header) | refs-to-update on own branch |
+| --- | --- | --- | --- |
+| c31-hive-rewrite | `12k-c31-jungle-residuals.md` → `244-c31-jungle-residuals.md` | 12k — W4-c31 jungle residuals census + gap-fill | `docs/ANALYSIS.md` |
+| d81-ui-elements-1 | `18b-element-census.md` (d81 fork copy) → `245-element-census-d81.md` | 18b — UIElement class census + the d81/d82/d83 range split | (none) |
+| g53-ui-achievement-screen | `18b-element-census.md` — IDENTICAL blob to d81's copy | (same header) | rename to the SAME `245-element-census-d81.md` (or drop the copy); merger keep-one with d81. No separate number. |
+| e23-bestiary-ui-grid | `18b-element-census.md` (e23 fork copy) → `246-element-census-e23.md` | 18b — UIElement class census + the d81/d82/d83 range split | (none) — e23's `237-bestiary-ui-final.md` KEEPS 237 |
+| d10-proj-ai-91-100 | `26d-projectile-ai-91-100-final.md` → `247-projectile-ai-91-100-final.md` | 26d — W4-d10 FINAL: the projectile aiStyles 91-100 band table | (none) — d10's OTHER two 26d docs keep their round-1 assignments 165/166 |
+| g82-rope-coil-draw | `26e-f-rope-union-final.md` → `248-rope-union-final.md` | 26e-f — Rope-coil FINAL union (W4-g82 final phase) | `docs/ANALYSIS.md`, `docs/PORT_MAP.md`, `docs/research/90-consolidated-findings.md` |
+| f18-npc-kinds-verify-2 | `64-npc-kinds-351-697-census.md` → `249-npc-kinds-351-697-census.md` | 64 — NPC kinds 351–697 SetDefaults census + first-20 port (W4-f18) | (none) |
+| e2-dust-sites-npc-2 | `64-npc-dust-window-coverage.md` → `250-npc-dust-window-coverage.md` | 64 — NPC.cs dust-site window coverage | (none) |
+| f26-findframe-extra-3 | `68-findframe-census-addendum-7g.md` → `251-findframe-census-addendum-7g.md` | 68 addendum — FindFrame census after f26 slice 7g (code-only) | `docs/ANALYSIS.md`, `docs/PORT_MAP.md` — f26's 7c/7e/7f keep round-1 assignments 201/203/205 |
+| g46-liquid-evaporation | `70-liquid-merge-order.md` (g46 fork copy) → `252-liquid-merge-order-g46.md` | 70 — FINAL liquid merge order (W4-g47, the closing verdict) | `docs/ANALYSIS.md`; `docs/research/69-liquid-reconcile.md` stays (g46 keeps 69) |
+| g11-dust-main-sites-1 | `83-weather-reconcile.md` (g11 fork copy) → `253-weather-reconcile-g11.md` | 83 — Weather reconcile: the g11-side addendum (snowing keep-one) | `docs/research/INDEX.md` |
+| e18-minimap-reveal-queue | `84-map-reconcile.md` (e18 fork copy) → `254-map-reconcile-e18.md` | 84 — Map reveal dup-reconcile: W4-e18 vs W4-f46 | `docs/ANALYSIS.md` |
+| g41-biome-spider-cave | `96-biome-retire-receipts.md` → `255-biome-retire-receipts.md` | 96 — W4-g41 BIOME RETIRE: cross-lane receipts + the FINAL declaration | `docs/research/INDEX.md` — g41's 93/94 wins and 95→225 assignment unchanged |
+| f42-sandstorm-2 | `108-input-f42.md` → `256-input-f42.md` | 108-input-f42 — W4-f42 kind claims (input for the d37 roster matrix) | (none) |
+| f5-dust-proj-3 | `111-gore-final-verification.md` → `257-gore-final-verification.md` | 111 — Gore-family FINAL verification + completion receipt (W4-f5) | `docs/research/INDEX.md` |
+| g88-life-fruit-use | `122-persist-v9-addendum.md` (g88 fork copy) → `258-persist-v9-addendum-g88.md` | 122 — .trplayer v9 addendum: the sidecar contract AFTER dye | `docs/ANALYSIS.md`, `docs/PORT_MAP.md`, `docs/research/103-persist-v7-layout.md`, `docs/research/INDEX.md` |
+| d105-worldgen-passes-5 | `129-doc-sweep-wg-37.md` → `259-doc-sweep-wg-37.md` | 129 — Doc-sweep lane 39: worldgen #37-45 residuals (W4-d105 sweep phase) | `docs/research/12e-worldgen-passes-5.md` |
+| c29-deadmans-chest-biome | `130-doc-sweep-gem-moss.md` → `260-doc-sweep-gem-moss.md` | 130 — DOC-SWEEP lane 40: the gem/moss residuals (W4-c29 sweep phase) | `docs/ANALYSIS.md`, `docs/research/INDEX.md` — c29's 95→224 assignment unchanged |
+| d120-town-chatter | `143-d120-chatter-retire.md` → `261-d120-chatter-retire.md` | 143 — W4-d120 town chatter RETIRE | (none) |
+| c8-style66-crawling-critters | `238-c8-crawler-final-census.md` → `262-c8-crawler-final-census.md` | 238 — W4-c8 crawler FINAL census | `docs/ANALYSIS.md`, `docs/research/INDEX.md` — rename-chain note: 143→238→262 (238 belongs to d42's earlier rename); update the doc's RENUMBERED provenance block |
+| g87-demon-heart-use | `143-g87-fold-input.md` → `263-g87-fold-input.md` | 143 - W4-g87 closeout fold-input | `docs/ANALYSIS.md`, `docs/research/INDEX.md` |
+| f22-ui-screens-4 | `144-f22-ui-screens-retire.md` → `264-f22-ui-screens-retire.md` | 144 — W4-f22 UI screens RETIRE | `docs/research/18d-ui-screens-4-census.md` |
+| c4-style44-flying-fish | `145-d42-keep-d42-verdicts-addendum.md` → `265-d42-keep-d42-verdicts-addendum.md` | 145 — Claims-table addendum: the d42 keep-d42 verdicts are SUPERSEDED | `docs/ANALYSIS.md`, `docs/research/INDEX.md`; `docs/research/143-d40-crimsongoldfish-retire-hunk.md` stays (c4 keeps 143) |
+| e20-wiring-device-arms-2 | `146-c42-repick-critical.md` → `266-c42-repick-critical.md` | 146 — c42 re-pick CRITICAL: device-arm halves CANNOT MERGE AS-IS | `docs/research/149-devices-family-bible.md`, `docs/research/71-wiring-device-reconcile.md` (both KEEP their numbers on e20 — refs stay, only this doc's own name/header changes) |
+| g67-weather-rain-splash | `146-g67-post-union-folds.md` → `267-g67-post-union-folds.md` | 146 — W4-g67 post-union fold-list (for W4-d130f) | `docs/research/INDEX.md` — rename-chain note: 134→146→267; record the chain in the header like f11 did |
+| e19-liquid-quicksell-shimmer | `147-quicksell-ui-hint-census.md` → `268-quicksell-ui-hint-census.md` | 147 — The quicksell SHIFT-click UI-hint census (W4-e19 final, SHIMMER item 4) | `docs/research/INDEX.md` |
+| e20-wiring-device-arms-2 | `148-brokentrapcleanup-wg-seed.md` → `269-brokentrapcleanup-wg-seed.md` | 148 — BrokenTrapCleanup wg-seed: census + dedupe | `docs/research/149-devices-family-bible.md`, `docs/research/71-wiring-device-reconcile.md` (both keep) |
+| c10-style68-waterfowl | `149-waterfowl-band-final.md` → `270-waterfowl-band-final.md` | 149 — W4-c10 waterfowl band FINAL | `docs/ANALYSIS.md`, `docs/research/INDEX.md` — rename-chain note: 145→149→270 |
+| g50-net-apply-arms-3 | `154-g52c-cross-input-40-statuses.md` → `271-g52c-cross-input-40-statuses.md` | 154 — g52c cross-input: research/40's DONE statuses × the g50 net lane | `docs/research/INDEX.md` — keep the doc's "139 RESERVED for g52c" note; fix its numbering paragraph (154 was registry-reserved for c33) |
+| g48-net-apply-arms-1 | `237-f11-tail-fix.md` → `272-f11-tail-fix.md` | 237 — W4-g48: the f11 minecart fail-tile tail-fix hunk (upstream publish) | `docs/research/INDEX.md` (also re-check the PORT_MAP minecart row cited in the add commit) — 237 belongs to e23's earlier push |
+| g61-npc-spawn-dust | `238-g61-spawn-family-final.md` → `273-g61-spawn-family-final.md` | 238 — W4-g61 NPC spawn / teleport-in dust: FINAL (SEALED) | `docs/research/INDEX.md` — rename-chain note: 237→238→273 (237=e23, 238=d42) |
+| g56-ui-void-vault | `239-void-family-bible.md` → `274-void-family-bible.md` | 239 — The VOID-FAMILY BIBLE + the g56 RETIRE verdicts | `docs/research/INDEX.md` — 239 belongs to d42's earlier push (12:55:30) |
+| d53-dust-sites-projectile | `240-proj-dust-retire.md` → `275-proj-dust-retire.md` | 240 — PROJ-DUST RETIRE (W4-d53): wetVelocity census + family declaration | `docs/research/90-consolidated-findings.md`, `docs/research/INDEX.md` — 240 belongs to g58's earlier rename (12:16:37) |
+| f21-net-ids-verify-tail | `239-f21b-net-apply-audit.md` → `276-f21b-net-apply-audit.md` | 239 — Net APPLY audit (W4-f21b, code-only) | `docs/research/17-netcode.md`, `docs/research/INDEX.md` — the round-1 brief's unpushed f21b doc landed late on a taken number |
+| f47-liquid-shimmer-2 | `144-item-splash-keep-one.md` → `277-item-splash-keep-one.md` | 144 — the item entry/exit splash KEEP-ONE (W4-f47 × W4-e19, 2-way) | `docs/ANALYSIS.md`, `docs/research/121-doc-sweep-shimmer.md`, `docs/research/144-ARBITER-FINAL.md` (becomes `278-…` — same-lane rename), `docs/research/INDEX.md` |
+| f47-liquid-shimmer-2 | `144-ARBITER-FINAL.md` → `278-ARBITER-FINAL.md` | 144 ARBITER FINAL — the splash keep-one, definitive (merger-blocker resolved) | `docs/research/144-item-splash-keep-one.md` (becomes `277-…`), `docs/research/INDEX.md` — 144 belongs to c4's orca (09:15:20) |
+| f45-wld-header-2 | `137-wld-final-audit.md` → `279-wld-final-audit.md` | 137 — WLD FINAL: the full SaveWorldFlags/LoadWorldFlags walk audit (W4-f45) | `docs/ANALYSIS.md`, `docs/research/INDEX.md` — 137 belongs to g84 (09:37:33) |
+| c42-wiring-device-arms | `240-c42-wiring-seal.md` → `280-c42-wiring-seal.md` | 240 — W4-c42 WIRING SEAL: research/146 re-pick verdict + wiring-family bible | (none outside self at tip) — 240 belongs to g58; c42's round-1 renames (71-fork→212, 133→232) still owed |
+
+**Round-2 block consumed: 244–280 (37 assignments = 31 distinct losing docs +
+6 same-path fork copies; 237–243 consumed by winner pushes
+e23/d42/d42/g58×4). Combined with round 1: 123 assignments (151–236 +
+244–280), machine-checked unique, no gaps within each block (§5). Numbers
+281+ are FREE.** New lanes must NOT pick "max-on-origin + 1" or "first free
+at my last fetch" — take the next number ≥281 and re-check this registry AND
+a fresh all-tip sweep first (the f11/151-153, g50/154, g48/237, g56+f21/239,
+d53+c42/240 and c8-d42-g61/238 incidents all came from racing picks).
+
+**Cutoff note:** this refresh adjudicates every push visible at the final
+sweep (fetch 6, 21 038 rows). Docs pushed AFTER that sweep are NOT covered —
+their lanes must self-adjudicate per the rules (first-add wins; losers take
+≥281 after a fresh sweep) or request a round-3 refresh.
+
 ## 5. Verification record
+
+### Round 1 (commit `38bfd1d22`)
 
 - `git fetch origin +refs/heads/task/W4-*:refs/remotes/origin/task/W4-*` — 355 tips.
 - Per-tip `git ls-tree` scan: 20 071 rows; number-key grouping: **32 keys with
@@ -229,3 +444,57 @@ block). d36 refs-to-update: (none outside self at tip).
 - Refs lists: `git grep -l -F <filename> <tip> -- docs/` per losing doc.
 - No cargo/tests/rustfmt run (docs-only task, per mandate). No other branch
   touched; publication on `task/W4-d54-dust-sites-world` only.
+
+### Round 2 (refresh, this commit)
+
+- `git fetch origin --prune` ×6 (first attempt hit a connection reset;
+  retried after 90 s per mandate) — **358 tips** each time; mid-round fetches
+  caught live lane pushes: f11 `14ca0a8d5` self-correction (151/152/153→
+  233/234/235), d42 `9eadc3043` 143→238 + `bac408be0` new 239, c8 `2a0b5c701`
+  143→238, g61 `6e922fc60` 237→238, g48 `34029437a` new 237, g58 `cdfe3d108`
+  143→240 + `30bb6e2b1` new 241 + `d0f6275a5` new 242 + `c9af393dd` new 243,
+  g56 `54c63d8d4` new 239, f21 `f7bc25471` new 239 (the brief's f21b doc),
+  d53 `df3355c36` new 240, c42 `2910a7209` new 240, f47
+  `f80490bcf`/`18fe75f2e` two new 144 docs, f45 `d2a8276a2` new 137, f5 new
+  111, d105 new 129, e19 new 147, g64 executed round-1's 196; e18/d130/g45
+  tip blobs advanced (84/83/69 forks — first-add timestamps unaffected).
+  The FINAL sweep (fetch 6, 21 038 rows) is the authority for §6; pushes
+  after it are out of scope (§6.3 cutoff note).
+- Per-tip `git ls-tree docs/research/` scans: 21 000 → 21 019 → 21 029 →
+  **21 038 rows** (final); grouping: **47 colliding keys** = 40 bare (08,
+  61–71, 90–97, 101, 108, 109, 111, 125, 129, 130, 133, 137, 143–149, 237,
+  238, 239, 240) + 7 letter-suffixed (12g, 12i, 12j, 12k, 26d, 26e, 26f).
+  134/135/136 left the set (f11 executed 233/234/235); 241/242/243
+  single-claimant (g58).
+- **10 same-path diverged fork families** found by blob-identity grouping
+  (`git rev-parse <tip>:docs/research/<file>`): 18b (d82=d83 identical keep;
+  d81=g53 identical pair; e23 diverged), 65-dust-world-sites (d54/f6),
+  66-proj-trail (g63 keep / g64 EXECUTED →196), 69-liquid (g46/g45),
+  70-liquid-merge-order (g47/g46 NEW), 71-wiring (e20/c42), 83-weather
+  (d130/g11 NEW), 84-map (f46/e18 NEW), 109-d36 (d36/d36x), 122-persist-v9
+  (g89/g88 NEW).
+- First-add adjudication: `git log <tip> --diff-filter=A --format='%H|%cI' -1
+  -- docs/research/<file>` for all 51 (file, lane) pairs of the new/extended
+  keys + forks, plus 18 more for the mid-round waves (111/129/147/237/238/
+  239×3/240×3/241/242/243/144×2/137×2).
+- Refs lists: `git grep -l -F <filename> <tip> -- docs/` for all 37 round-2
+  losers (g53 checked separately: no refs; c42's 240 none outside self).
+- 150-at-origin-tip check: `git ls-tree origin/task/W4-d54-dust-sites-world
+  docs/research/150-research-number-registry.md` → blob `cf077631f` PRESENT
+  at tip `38bfd1d22` before this refresh commit; g67's `1d16ef4ea` report was
+  a stale view (1d16ef4ea is 3 commits behind 38bfd1d22 on the same branch).
+- **Machine check (assignments unique / no gaps):** parse the §3 + §6.3
+  rename-table target numbers (`→ \`NNN-\``); assert unique set ==
+  {151..236} ∪ {244..280}, count == 123 targets (g53 rides d81's 245;
+  237–243 are winner numbers, not assignments), no duplicates; cross-check
+  §6.1/§6.2 bold-arrow numbers against the same set (+233/234/235 confirms).
+  **First run FAILED: 221 missing — round-1 §1 assigned f33's
+  `93-torch-god-fold-input-addendum.md` → 221 but the §3 instruction row was
+  never written. Backfilled with fresh git-grep refs.** Final run (python,
+  regex over §3+§6.3 arrow-backtick targets + §6.1/§6.2 bold-arrow
+  cross-check): `target rows: 123 unique: 123 expected: 123 / dups: [] /
+  missing: [] / extra: [] / 6.1 bold assignments: 37 outside-block: [] /
+  MACHINE-CHECK PASS: 123 unique assignments, 151-236 + 244-280, no gaps,
+  no dups`.
+- No cargo/tests/rustfmt/graphify run (docs-only refresh, per mandate). No
+  other branch touched; publication on `task/W4-d54-dust-sites-world` only.
