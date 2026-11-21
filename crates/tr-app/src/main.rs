@@ -157,6 +157,12 @@ mod npc_ai_cultist;
 mod npc_ai_pillar;
 mod npc_ai_style71;
 mod npc_target;
+// W4-g62 — the NPC HIT dust lane: NPC.HitEffect's LIVE per-kind dust
+// arms (NPC.cs:81654-89834) reached from StrikeNPC_Inner's :81488 tail;
+// the strike captures a HitDustSnapshot, update_npcs drains it on the
+// UpdateNPCs stream through the verbatim DustPool::new_dust (the death
+// halves are g59/g60's, the spawn dust g61's, the sounds c13's).
+mod npc_hit_dust;
 mod npc_ai_style21;
 mod npc_buffs;
 mod npc_findframe_a;

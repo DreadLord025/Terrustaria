@@ -3802,6 +3802,27 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         }
         app.next_npc_uid = next;
     }
+    // W4-g62 — the strike-queued `HitEffect` dust (`NPC.cs:81488`): the
+    // melee/projectile strikes captured their snapshots last frame (the
+    // C# runs HitEffect at STRIKE time, before this UpdateNPCs pass);
+    // the drain replays the LIVE arms on the UpdateNPCs stream through
+    // the verbatim DustPool::new_dust, in slot order, BEFORE the death
+    // retain below drops the dead slots (the wants_gallop_dust queue
+    // precedent; the stream-placement fold is the recorded deviation,
+    // ANALYSIS "The NPC hit-dust lane (W4-g62)").
+    {
+        let mut hits = Vec::new();
+        for n in app.npcs.iter_mut() {
+            hits.append(&mut n.wants_hit_dust);
+        }
+        if !hits.is_empty() {
+            let ctx = app.spawn_ctx();
+            let rng = app.rngs.stream(RngKey::UpdateNpcs);
+            for s in hits {
+                crate::npc_hit_dust::replay_hit_dust(&s, rng, &mut app.dust, &ctx, &app.world);
+            }
+        }
+    }
     // S1-D-3: `NPC.checkDead`'s Moon Lord arms (`NPC.cs:78060-78078`) +
     // `PrepareForDeathAnimation` (`:78032-78038`). The C# runs checkDead
     // at STRIKE time (before `UpdateNPCs`), so the restore rides ahead of

@@ -1665,6 +1665,14 @@ pub struct Npc {
     /// `wants_hostile_shot` shape). Empty for every kind whose machine
     /// has no wired cue.
     pub wants_sound: Vec<NpcSoundRequest>,
+    /// W4-g62 — the strike's `HitEffect(hitDirection, num)` dust capture
+    /// (`NPC.cs:81488`): the LIVE-arm snapshot taken AFTER the damage +
+    /// knockback writes; `world_sim/npcs.rs::update_npcs` drains it on
+    /// the `UpdateNPCs` stream through `npc_hit_dust::replay_hit_dust`
+    /// (the `wants_gallop_dust` queue precedent — the pool-pass fold is
+    /// the recorded deviation, ANALYSIS "The NPC hit-dust lane"). The
+    /// death halves ride the same capture shape for g59/g60's lane.
+    pub wants_hit_dust: Vec<crate::npc_hit_dust::HitDustSnapshot>,
     /// Plantera's hook spawn request (`NPC.cs:31736-31742` — the first
     /// tick's three `NewNPC(..., 263)` calls). The count is 3; kinds
     /// 263/264/265 have no port arms yet, so the sim records the request
@@ -3078,6 +3086,7 @@ impl Npc {
             wants_hostile_shot_ai: Vec::new(),
             wants_gallop_dust: Vec::new(),
             wants_sound: Vec::new(),
+            wants_hit_dust: Vec::new(),
             wants_plantera_hooks: 0,
             wants_plantera_tentacles: 0,
             wants_plantera_spore: None,
@@ -4410,6 +4419,11 @@ impl Npc {
         if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(self);
         }
+        // W4-g62 — the no-list contact strike's `HitEffect` capture
+        // (`NPC.cs:81488`; the EoC dash/thorns callers run `StrikeNPC`
+        // in the C#, `Player.cs:21049-21116`/`:31387`).
+        self.wants_hit_dust
+            .push(crate::npc_hit_dust::HitDustSnapshot::capture(self, amount, dir));
         true
     }
 
@@ -4458,6 +4472,9 @@ impl Npc {
         if self.kind == NpcKind::DetonatingBubble && self.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(self);
         }
+        // W4-g62 — the `HitEffect` capture (the `hurt` twin above).
+        self.wants_hit_dust
+            .push(crate::npc_hit_dust::HitDustSnapshot::capture(self, amount, dir));
         true
     }
 
@@ -4573,6 +4590,13 @@ impl Npc {
         if n.kind == NpcKind::DetonatingBubble && n.hp <= 0 {
             crate::npc_ai_style70::bubble_check_dead(n);
         }
+        // W4-g62 — `StrikeNPC_Inner`'s `HitEffect(hitDirection, num)`
+        // tail (`NPC.cs:81476-81489`): the dust capture at the C# call
+        // moment (post-damage, post-knockback, post bubble re-arm). The
+        // 113/114 every-segment fan (`:81476-81484`) is the WoF death
+        // lane's (g60); the plain strike captures its own slot.
+        n.wants_hit_dust
+            .push(crate::npc_hit_dust::HitDustSnapshot::capture(n, amount, dir));
         true
     }
 
@@ -33544,5 +33568,39 @@ mod s1_f_13d_tests {
             assert_eq!(n.vy, 0.0);
             assert!(n.wants_hostile_shot.is_empty(), "{kind:?} fires nothing");
         }
+    }
+
+    /// W4-g62 — the strike seam: every accepted `StrikeNPC` entry point
+    /// queues exactly ONE `HitEffect` capture (`NPC.cs:81488`) with the
+    /// post-damage life and the knockback side; a refused strike queues
+    /// nothing. The drain itself is `world_sim/npcs.rs`'s (the
+    /// `replay_hit_dust` witnesses pin the draws).
+    #[test]
+    fn w4_g62_every_landed_strike_queues_one_hit_dust_capture() {
+        let mut npcs = vec![Npc::new(NpcKind::Slime, 100.0, 100.0, 1, 0.0)];
+        npcs[0].hp = npcs[0].max_hp;
+        assert!(Npc::strike_melee(&mut npcs, 0, 5, 0.0, 5.0, false, Some(0), false));
+        assert_eq!(npcs[0].wants_hit_dust.len(), 1);
+        let s = npcs[0].wants_hit_dust[0];
+        assert_eq!(s.npc_type, 1);
+        assert_eq!(s.life, npcs[0].hp, "the post-damage life");
+        assert_eq!(s.dmg, 5.0);
+        assert_eq!(s.hit_dir, 1, "the NPC right of the striker is pushed right");
+        // The hurt_cd window refuses the second melee strike — no queue.
+        assert!(!Npc::strike_melee(&mut npcs, 0, 5, 0.0, 5.0, false, Some(0), false));
+        assert_eq!(npcs[0].wants_hit_dust.len(), 1);
+        // The projectile path has no hurt_cd gate — it queues its own.
+        assert!(Npc::strike_projectile(&mut npcs, 0, 5, 200.0, 5.0, false, Some(0), false));
+        assert_eq!(npcs[0].wants_hit_dust.len(), 2);
+        assert_eq!(npcs[0].wants_hit_dust[1].hit_dir, -1);
+        // The no-list contact twins queue too.
+        let mut n = Npc::new(NpcKind::Zombie, 100.0, 100.0, 1, 0.0);
+        n.hp = n.max_hp;
+        assert!(n.hurt(3, 0.0, 5.0, false, false));
+        assert_eq!(n.wants_hit_dust.len(), 1);
+        assert_eq!(n.wants_hit_dust[0].npc_type, 3);
+        n.hurt_cd = 0.0;
+        assert!(n.hurt_from_projectile(3, 200.0, 5.0, false, false));
+        assert_eq!(n.wants_hit_dust.len(), 2);
     }
 }
