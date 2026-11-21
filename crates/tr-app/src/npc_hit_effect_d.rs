@@ -846,6 +846,83 @@ fn frog_361_death(
     gore.new_gore(rng, world, pos, vel, 552, 1.0); // :86143
 }
 
+/// The 688 Pufferfish death (`NPC.cs:86190-86216`, sites 107-112): the
+/// 10x dust-5 burst, then the `ai[2] == 1f` puffed branch spawns
+/// 1388/1388/1389/1390, else the deflated pair 1386/1387 — all at
+/// position, scale 1f. The `ai[2]` axis rides the NPC's own ai array.
+fn pufferfish_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86200-86203` — the 10x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc.ai[2] == 1.0 {
+        gore.new_gore(rng, world, pos, vel, 1388, 1.0); // :86206
+        gore.new_gore(rng, world, pos, vel, 1388, 1.0); // :86207
+        gore.new_gore(rng, world, pos, vel, 1389, 1.0); // :86208
+        gore.new_gore(rng, world, pos, vel, 1390, 1.0); // :86209
+    } else {
+        gore.new_gore(rng, world, pos, vel, 1386, 1.0); // :86213
+        gore.new_gore(rng, world, pos, vel, 1387, 1.0); // :86214
+    }
+}
+
+/// The 366/367 scorpion death (`NPC.cs:86217-86243`): the 10x dust-203
+/// burst (the golden dust, NOT 5), then the per-kind triple — 366 Black
+/// Scorpion → 561/562/563 (`:86233-86235`, sites 113-115), 367 Scorpion →
+/// 564/565/566 (`:86239-86241`, next batch). All at position, scale 1f.
+fn scorpion_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86227-86230` — the 10x dust-203 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        203,
+        hit_direction,
+        10,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 366 {
+        gore.new_gore(rng, world, pos, vel, 561, 1.0); // :86233
+        gore.new_gore(rng, world, pos, vel, 562, 1.0); // :86234
+        gore.new_gore(rng, world, pos, vel, 563, 1.0); // :86235
+    }
+}
+
 /// The 607 Pupfish death (`NPC.cs:86173-86189`, sites 105-106): the hit
 /// half puffs dust-45 (g62's), the death half the 10x dust-5 burst then
 /// 1152/1153 at position, scale 1f.
@@ -1002,6 +1079,16 @@ pub fn hit_effect_d(
     // `:86173-86189` — the 607 Pupfish arm (sites 105-106).
     else if npc_type == 607 {
         pupfish_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86190-86216` — the 688 Pufferfish arm (sites 107-112, the ai[2]
+    // puffed/deflated split).
+    else if npc_type == 688 {
+        pufferfish_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86217-86243` — the 366/367 scorpion arm; the 366 triple is live
+    // (sites 113-115), the 367 tail lands next batch.
+    else if npc_type == 366 || npc_type == 367 {
+        scorpion_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -1825,5 +1912,62 @@ mod tests {
             }
             assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
         }
+    }
+
+    /// `NPC.cs:86204-86214` — the Pufferfish split: ai[2]==1 puffs
+    /// 1388/1388/1389/1390, else the deflated pair 1386/1387; the draw
+    /// census pinned for both branches.
+    #[test]
+    fn w4_f5d_the_pufferfish_splits_on_ai_two() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 26.0, 24.0);
+        for (puffed, want) in [(true, vec![1388, 1388, 1389, 1390]), (false, vec![1386, 1387])] {
+            n.ai[2] = if puffed { 1.0 } else { 0.0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(113);
+            let _ = hit_effect_d(&n, 688, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(types, want, "puffed={puffed}");
+            let mut twin = UnifiedRandom::new(113);
+            for _ in 0..10 {
+                twin_dust(&mut twin, 26, 24);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "puffed={puffed} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86233-86235` — the 366 Black Scorpion triple 561/562/563
+    /// after the 10x dust-203 burst (the golden dust, NOT 5).
+    #[test]
+    fn w4_f5d_the_black_scorpion_puffs_golden_dust() {
+        let w = air();
+        let n = mob(100.0, 100.0, 26.0, 20.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(127);
+        let _ = hit_effect_d(&n, 366, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![561, 562, 563]);
+        let golden = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(golden.dust_type, 203, "the scorpion puffs type 203");
+        let mut twin = UnifiedRandom::new(127);
+        for _ in 0..10 {
+            twin_dust(&mut twin, 26, 20);
+        }
+        for _ in 0..3 {
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+        }
+        assert_eq!(rng.peek(), twin.peek(), "the black scorpion mirrors the C# draws");
     }
 }
