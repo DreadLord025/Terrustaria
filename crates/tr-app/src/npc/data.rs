@@ -3099,6 +3099,26 @@ impl NpcKind {
         }
     }
 
+    /// `NPCID.Sets.TrailCacheLength` (`NPCID.cs:10450`), the FULL
+    /// table: `CreateIntSet(10, 402, 36, 519, 20, 522, 20, 620, 20,
+    /// 677, 60, 685, 10)` — default 10; only four kinds deviate
+    /// (685's explicit 10 IS the default; the max is 677's 60).
+    /// `SetDefaults` reads it at `NPC.cs:8456` and resizes
+    /// `oldPos`/`oldRot` (`:8458-8462`), then zeroes the whole array
+    /// (`:8463-8468`). The port keeps max-size `[Vec2; 60]` storage
+    /// and this logical length (`Npc.trail_len`); kinds not yet rowed
+    /// (519 SolarGoop / 522 AncientLight / 620 GoblinShark / 677
+    /// Shimmerfly / 685 BoundTownSlimeOld) fall through to 10 — their
+    /// wiring lanes add the row here when the KIND lands (the same
+    /// day their `update_trails` gate widens).
+    pub fn trail_cache_length(self) -> usize {
+        match self {
+            // 402 — the Stardust Worm Head, 36 slots (`:10450`).
+            NpcKind::StardustWormHead => 36,
+            _ => 10,
+        }
+    }
+
     /// The humanoid walkers' `Main.npcFrameCount` rows (`Main.cs:67082`):
     /// the town group (17 Merchant / 18 Nurse / 19 ArmsDealer / 20 Dryad /
     /// 22 Guide / 38 Demolitionist / 54 Clothier / 107 Tinkerer / 227

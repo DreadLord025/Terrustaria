@@ -472,7 +472,9 @@
 //!   spawns at (0,0)), FLAT 5 per slot: the SelectRandom(6,259,158)
 //!   Next(3) arg FIRST (Utils.cs:2459-2462), (2.5·dir,-2.5), alpha 200,
 //!   velocity ×2.4, scale += NextFloat. Mode census: 519→7, the SAME
-//!   TrailingMode row as 402 (`NPCID.cs:10430`).
+//!   TrailingMode row as 402 (`NPCID.cs:10430`). TRAILCACHE WIDENING:
+//!   the walk covers the RESIZED 20-slot ring (`NPCID.cs:10450`
+//!   519→20) — 7 stride-3 groups (0,3,…,18), FLAT 35 spawns.
 //! Batch 34 (the 402 LIVE hit arm — the death half is g60's :83611):
 //! - 83573/83577/83589/83593 — the Stardust Worm Head 402 (`:83565-
 //!   83598`): ×(dmg/lifeMax·3); per iteration the Next(3)==0 head 17
@@ -480,6 +482,8 @@
 //!   then EVERY oldPos slot draws Next(4); on ==0 a zero slot BREAKS
 //!   (inside the gate — later slots draw nothing), else the same
 //!   17/229 gated pair AT the slot (raw float position, no (int) cast).
+//!   TRAILCACHE WIDENING: the walk covers the RESIZED 36-slot ring
+//!   (`NPCID.cs:10450` 402→36) — up to 36 gate draws per iteration.
 //! WRITTEN NOT RUN (code-only mode): the witnesses below are compiled
 //! by the merge-verify wave, not executed here.
 
@@ -531,11 +535,17 @@ pub struct HitDustSnapshot {
     /// arm walks (`:83011-83014`, every 3rd slot, no zero-break) and the
     /// 402 worm head's hit loop gates on (`:83579-83596`). Captured at
     /// strike time like every other field; `Npc::update_trails`'s mode-7
-    /// shift fills it (`NPCID.cs:10430`: 402→7 AND 519→7). The g60
-    /// 10-slot shape verbatim — the C#'s per-type TrailCacheLength
-    /// (402→36, 519→20, `NPCID.cs:10450`) is the recorded keep-one
-    /// deviation (ANALYSIS).
-    pub old_pos: [Vec2; 10],
+    /// shift fills it (`NPCID.cs:10430`: 402→7 AND 519→7). TRAILCACHE
+    /// WIDENING: max-size storage (677's 60, `NPCID.cs:10450`) + the
+    /// strike-time logical length below — the C# arms bound on
+    /// `this.oldPos.Length`, the RESIZED length (`NPC.cs:8453-8462`).
+    pub old_pos: [Vec2; 60],
+    /// `this.oldPos.Length` at the strike — the kind's
+    /// `TrailCacheLength` row (`NPCID.cs:10450`: 402→36, 519→20,
+    /// default 10). Every trail loop bounds on THIS, not the storage:
+    /// the 519 walk visits ceil(20/3) = 7 slot groups (0,3,…,18), the
+    /// 402 gate walks all 36 slots per iteration.
+    pub trail_len: usize,
 }
 
 impl HitDustSnapshot {
@@ -565,6 +575,7 @@ impl HitDustSnapshot {
             ai3: n.ai[3],
             ai1: n.ai[1],
             old_pos: n.old_pos,
+            trail_len: n.trail_len,
         }
     }
 }
@@ -751,14 +762,15 @@ pub fn replay_hit_dust(
     }
     // `:83008-83023` — the SolarGoop 519: EVERY strike (a standalone if,
     // NO life gate). The hitbox walks every 3rd oldPos slot (`+= 3` over
-    // the ring's length), X/Y take the C# `(int)` truncation of the
-    // slot; NO zero-break — an unfilled slot spawns at (0,0) exactly
-    // like the C#. Per slot FLAT 5: the Type argument's SelectRandom
-    // (6, 259, 158) draws Next(3) FIRST (Utils.cs:2459-2462), then the
-    // spawn at hitbox2.TopLeft() with (2.5·dir, -2.5), alpha 200,
-    // velocity ×2.4, scale += NextFloat.
+    // `oldPos.Length` — the RESIZED 20, `NPCID.cs:10450` 519→20, so
+    // slots 0,3,6,9,12,15,18: FLAT 7 groups × 5 = 35 spawns), X/Y take
+    // the C# `(int)` truncation of the slot; NO zero-break — an unfilled
+    // slot spawns at (0,0) exactly like the C#. Per slot FLAT 5: the
+    // Type argument's SelectRandom (6, 259, 158) draws Next(3) FIRST
+    // (Utils.cs:2459-2462), then the spawn at hitbox2.TopLeft() with
+    // (2.5·dir, -2.5), alpha 200, velocity ×2.4, scale += NextFloat.
     if s.npc_type == 519 {
-        for slot_idx in (0..s.old_pos.len()).step_by(3) {
+        for slot_idx in (0..s.trail_len).step_by(3) {
             let slot = s.old_pos[slot_idx];
             // `:83013-83014` — `hitbox2.X = (int)oldPos[i].X` (truncate).
             let pos = Vec2::new(slot.x as i32 as f32, slot.y as i32 as f32);
@@ -1319,11 +1331,12 @@ pub fn replay_hit_dust(
         // the DEATH half `:83599-83632`, a different site): ×(dmg/
         // lifeMax·3), per iteration the Next(3)==0 head dust 17 (dir,
         // -1, Transparent, scale 0.75) + the Next(2)==0 head dust-229
-        // noGravity child, THEN the oldPos trail loop — EVERY slot
-        // draws Next(4) FIRST (`:83581`); on == 0 a zero slot BREAKS
-        // (`:83583-83586`, inside the gate — later slots draw nothing),
-        // else the SAME 17/229 gated pair spawns AT the slot
-        // (`:83587-83594`, raw float position, no (int) cast here).
+        // noGravity child, THEN the oldPos trail loop — EVERY slot of
+        // the RESIZED 36 (`NPCID.cs:10450` 402→36) draws Next(4) FIRST
+        // (`:83581`); on == 0 a zero slot BREAKS (`:83583-83586`,
+        // inside the gate — later slots draw nothing), else the SAME
+        // 17/229 gated pair spawns AT the slot (`:83587-83594`, raw
+        // float position, no (int) cast here).
         402 => {
             for _ in 0..hit_count(s.dmg, s.life_max, 3.0) {
                 if rng.next_max(3) == 0 {
@@ -1336,7 +1349,7 @@ pub fn replay_hit_dust(
                     let idx = live_dust(s, 229, 0.0, 0.0, 0, Color::default(), 1.0, rng, dust, ctx, world);
                     dust.slot_mut(idx).no_gravity = true; // `:83577`
                 }
-                for &slot in &s.old_pos {
+                for &slot in &s.old_pos[..s.trail_len] {
                     if rng.next_max(4) == 0 {
                         if slot == Vec2::ZERO {
                             break; // `:83583-83586` — an unfilled slot
@@ -2306,7 +2319,14 @@ mod tests {
             wet: false,
             ai3: 0.0,
             ai1: 0.0,
-            old_pos: [Vec2::ZERO; 10],
+            old_pos: [Vec2::ZERO; 60],
+            // The test helper's kinds: 519→20, 402→36, everything else
+            // the default 10 (`NPCID.cs:10450`'s full table).
+            trail_len: match npc_type {
+                519 => 20,
+                402 => 36,
+                _ => 10,
+            },
         }
     }
 
@@ -4299,31 +4319,37 @@ mod tests {
     }
 
     /// W4-g62 batch 33 — the SolarGoop's trail walk (`NPC.cs:83008-
-    /// 83023`): EVERY strike (even a killing blow — no life gate), slots
-    /// 0/3/6/9 of the 10-ring, (int)-truncated positions, NO zero-break
-    /// (an all-zero fresh ring spawns its 4×5 dusts AT (0,0), the C#'s
-    /// fresh-NPC shape). Per dust: the SelectRandom Next(3) arg FIRST,
-    /// then the pool internals, then alpha 200 / ×2.4 / scale +=
-    /// NextFloat. Draw-for-draw twin.
+    /// 83023`): EVERY strike (even a killing blow — no life gate), the
+    /// stride-3 walk over the RESIZED 20-slot ring (`NPCID.cs:10450`
+    /// 519→20): slots 0/3/6/9/12/15/18 — FLAT 7 groups × 5 = 35 spawns
+    /// (the TRAILCACHE WIDENING; the 10-ring stand-in walked only 4
+    /// groups). (int)-truncated positions, NO zero-break (an all-zero
+    /// fresh ring spawns its 7×5 dusts AT (0,0), the C#'s fresh-NPC
+    /// shape). Per dust: the SelectRandom Next(3) arg FIRST, then the
+    /// pool internals, then alpha 200 / ×2.4 / scale += NextFloat.
+    /// Draw-for-draw twin.
     #[test]
     fn w4_g62_the_goop_trail_walks_every_third_slot_without_a_break() {
         let world = air();
         let ctx = ctx();
-        // A filled ring with fractional slots: the (int) cast truncates.
-        // life < 0 — a KILLING blow still fires (no life gate).
+        // A filled 20-ring with fractional visited slots: the (int)
+        // cast truncates. life < 0 — a KILLING blow still fires.
         let mut s = snap(519, -1, 1, 9999.0); // the goop's lifeMax 1
-        s.old_pos = [
-            Vec2::new(100.9, 200.9),
-            Vec2::new(1.0, 1.0),
-            Vec2::new(2.0, 2.0),
-            Vec2::new(88.5, 190.25),
-            Vec2::new(3.0, 3.0),
-            Vec2::new(4.0, 4.0),
-            Vec2::new(76.0, 180.0),
-            Vec2::new(5.0, 5.0),
-            Vec2::new(6.0, 6.0),
-            Vec2::new(64.0, 170.0),
+        assert_eq!(s.trail_len, 20, "the 519 TrailCacheLength row");
+        // The visited slots 0,3,6,9,12,15,18 carry positions; the rest
+        // are non-visited filler (the walk never reads them).
+        let visited = [
+            Vec2::new(100.9, 200.9), // slot 0
+            Vec2::new(88.5, 190.25), // slot 3
+            Vec2::new(76.0, 180.0),  // slot 6
+            Vec2::new(64.0, 170.0),  // slot 9
+            Vec2::new(52.5, 160.5),  // slot 12
+            Vec2::new(40.25, 150.75),// slot 15
+            Vec2::new(28.9, 140.1),  // slot 18
         ];
+        for (g, &p) in visited.iter().enumerate() {
+            s.old_pos[g * 3] = p;
+        }
         let mut rng = UnifiedRandom::new(271);
         let mut dust = DustPool::new();
         replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
@@ -4334,6 +4360,9 @@ mod tests {
             Vec2::new(88.0, 190.0),
             Vec2::new(76.0, 180.0),
             Vec2::new(64.0, 170.0),
+            Vec2::new(52.0, 160.0),
+            Vec2::new(40.0, 150.0),
+            Vec2::new(28.0, 140.0),
         ] {
             for _ in 0..5 {
                 let t = [6, 259, 158][twin_rng.next_max(3) as usize];
@@ -4349,7 +4378,7 @@ mod tests {
         }
         assert_eq!(rng, twin_rng, "the stream matches call-for-call");
         assert_eq!(dust.slots(), twin.slots());
-        // The fresh all-zero ring still fires all four slot groups —
+        // The fresh all-zero ring still fires all SEVEN slot groups —
         // at (0,0) (NO zero-break, unlike the 402 arm).
         let z = snap(519, 1, 1, 0.0);
         let mut rz = UnifiedRandom::new(271);
@@ -4357,7 +4386,7 @@ mod tests {
         replay_hit_dust(&z, &mut rz, &mut pz, &ctx, &world);
         let mut tz = UnifiedRandom::new(271);
         let mut qz = DustPool::new();
-        for _ in 0..4 {
+        for _ in 0..7 {
             for _ in 0..5 {
                 let t = [6, 259, 158][tz.next_max(3) as usize];
                 let idx = qz.new_dust(
@@ -4378,25 +4407,21 @@ mod tests {
     /// 83565-83598`): ×(dmg/lifeMax·3) iterations of (Next(3) head 17 +
     /// Next(2) head 229 + the per-slot Next(4) trail gate). The LIVE
     /// ring: slots 0-2 filled, slot 3 zero — a passing gate on slot 3
-    /// BREAKS (slots 4-9 draw nothing THAT iteration; the next
-    /// iteration starts its walk over). The twin mirrors every draw.
+    /// BREAKS (slots 4-35 draw nothing THAT iteration; the next
+    /// iteration starts its walk over). TRAILCACHE WIDENING: the walk
+    /// covers the RESIZED 36 slots (`NPCID.cs:10450` 402→36); the
+    /// fresh-ring twin draws up to 36 gates per iteration, not 10.
+    /// The twin mirrors every draw.
     #[test]
     fn w4_g62_the_worm_head_live_trail_gates_per_slot() {
         let world = air();
         let ctx = ctx();
         let mut s = snap(402, 700, 700, 700.0); // ×3 → 3 iterations
-        s.old_pos = [
-            Vec2::new(100.0, 100.0),
-            Vec2::new(94.0, 101.0),
-            Vec2::new(88.0, 103.0),
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-            Vec2::ZERO,
-        ];
+        assert_eq!(s.trail_len, 36, "the 402 TrailCacheLength row");
+        s.old_pos[0] = Vec2::new(100.0, 100.0);
+        s.old_pos[1] = Vec2::new(94.0, 101.0);
+        s.old_pos[2] = Vec2::new(88.0, 103.0);
+        // Slots 3..36 stay ZERO — the fresh-tail shape.
         let mut rng = UnifiedRandom::new(277);
         let mut dust = DustPool::new();
         replay_hit_dust(&s, &mut rng, &mut dust, &ctx, &world);
@@ -4416,7 +4441,7 @@ mod tests {
                 );
                 twin.slot_mut(idx).no_gravity = true;
             }
-            for &slot in &s.old_pos {
+            for &slot in &s.old_pos[..s.trail_len] {
                 if twin_rng.next_max(4) == 0 {
                     if slot == Vec2::ZERO {
                         break;
@@ -4441,7 +4466,8 @@ mod tests {
         assert_eq!(dust.slots(), twin.slots());
         // The fresh all-zero ring: each iteration's walk draws gates
         // until the FIRST passing one breaks at slot 0 (the C#'s
-        // never-updated shape — g60's death witness precedent).
+        // never-updated shape — g60's death witness precedent). Up to
+        // 36 gate draws per iteration now (the widened ring).
         let z = snap(402, 700, 700, 700.0);
         let mut rz = UnifiedRandom::new(277);
         let mut pz = DustPool::new();
@@ -4462,7 +4488,7 @@ mod tests {
                 );
                 qz.slot_mut(idx).no_gravity = true;
             }
-            for _ in 0..10 {
+            for _ in 0..36 {
                 if tz.next_max(4) == 0 {
                     break; // slot 0 is zero
                 }
