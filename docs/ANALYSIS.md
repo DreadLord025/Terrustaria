@@ -39319,7 +39319,8 @@ Code-only mode: **written NOT run, no cargo/rustc/rustfmt/tests/graphify invoked
 
 `crates/tr-app/src/proj_trail_dust.rs` ports the REPEATING in-flight dust
 sites of `Projectile.AI()`'s per-kind arms for **kinds ≥ 401** — 41 kinds in
-5 commits of ≤ 10 (the claim ledger `docs/research/66-proj-trail-dust-claims.md`
+5 commits of ≤ 10 (the claim ledger `docs/research/196-proj-trail-dust-claims-g64.md`
+— renumbered 66 → 196 per the d54 registry 150; g63 keeps 66 —
 pins the split: g63 takes kinds ≤ 400, g65 the Kill-family death sites; the
 d53/e3/f5 co-lanes were probed at claim time — unpushed, f5's tip was the bare
 d50 foundation). The branch base fast-forwards onto
@@ -39505,13 +39506,13 @@ d11's `ai_nebula_sphere` — the merge keep-one). The d11 module
 at merge; the slot-method shape is the `ai_spirit_flame` precedent).
 
 **Remainder 4 — the e3/g63 keep-one refresh (this commit).** The updated
-keep-one table is below; the research/66 matrix's wiring-wave snapshot is
+keep-one table is below; the research/196 (ex-66) matrix's wiring-wave snapshot is
 superseded in place (the d54e reads). Five new keep-one parity witnesses
 (`w4_g64_keep_one_*`: the 497 body, the 504 gate/body split, the 503 gore
 gate AFTER, the 1133 gore gate BEFORE, the 723 gore gate BEFORE) + the
 remainder witnesses (6 style-124, 3 813, 1 596) WRITTEN NOT RUN.
 
-#### The keep-one table (the merge contracts, superseding research/66's stale matrix)
+#### The keep-one table (the merge contracts, superseding research/196's stale ex-66 matrix)
 
 The g64 lane's WIRED superset vs the co-lanes' emitters, per contested
 site. "Survivor" = the machine/arm that stays at the merge; the dust half
@@ -39609,7 +39610,7 @@ row (its 92 mentions are the 1092 LunarHook kind — a different id). The
 the sole owner, no keep-one owed. The 950/476 per-kind overlays + the
 949 torch-god event are d19's (no g64 kind).
 
-**(4) The g63d 281/174/176 cross-activation notes** — see research/66
+**(4) The g63d 281/174/176 cross-activation notes** — see research/196 (ex-66)
 "the FINAL phase cross-activation census" (the rows stay unclaimed on
 every pushed tip; the g63 emitters stay UNWIRED; this branch's
 `old_position` latch stays golf-gated — the C# `:17013` latches every
@@ -39619,4 +39620,79 @@ projectile, the activating merge widens it).
 Verified by re-reading `:33679-34025` (the wind-up arm writes no scale),
 `:32558-32820` (the 92 arm draws no dust), `:5743-5756` + `:23830-24099`
 (the 503 row + arm), and the d13/d11/d19/g63/e3 tips via `git show`.
+
+## The TRAIL-DUST RETIRE round (2026-11-21, code-only) — research/196 FINAL + the family declaration
+
+The lane's closing round after the FINAL 1/2 landings: the five retire
+items adjudicated against the moved co-lane tips (`git show`, never
+merged). The claim ledger renumbered **66 → 196**
+(`docs/research/196-proj-trail-dust-claims-g64.md`) per the d54 collision
+registry 150 (`38bfd1d22`, §1 key-66 row + §3 g64 row: g63's first add
+00:30:45 keeps 66, this lane's diverged fork takes 196); refs updated
+here, PORT_MAP, `anchors.txt` and the two Rust doc comments.
+
+**(1) The `clone_dust` genericisation keep-one — CONFIRMED, either lands.**
+The e3 pool copy (`origin/task/W4-e3-dust-sites-proj-2` tip `ac6392cf2`,
+`particles.rs:692`) vs this lane's `853039bf` (`particles.rs:699`): a
+comment-stripped span comparison of all four blocks (`trait DustRng`,
+`new_dust_perfect`, `new_dust_direct`, `clone_dust`) is **byte-identical
+CODE**; the only diffs are doc-comment wording (the g64 seam notes + two
+em-dashes) — the same verdict the d54 bible §8.3 step 2 recorded against
+g61's copy. The f50 `BlastRng` (`6fc87fcbc`,
+`projectile_ai_misc.rs:599-627`) adapts this lane's `DustRng`/`GoreRng`
+over `&mut dyn DropRng` with the SAME three delegations as `DustDraw`
+(`Next(max) = Next(0, max)`, one `Sample()` step, `UnifiedRandom.cs:120-141`)
+plus the `GoreRng::next_float_direction` double-cast
+(`Utils.cs:1203-1206`) — no keep-one owed between the adapters (different
+files, different lanes; the pool traits are the shared seam). One new
+witness `w4_g64_retire_clone_dust_generic_seam_matches_the_concrete_stream`
+(the `DustDraw` clone path vs the concrete path, records + stream tail +
+the no-draw sentinel guard) WRITTEN NOT RUN.
+
+**(2) The g63 357-seam — DISJOINT, nothing owed.** The g63 tip
+`2ea3e7110`'s `pulse_bolt_trail` (`projectile_trail_dust.rs:1652`, site
+`:56761`, dust 206, the 207 twin) is UNWIRED there; the flight arm is
+f20 slice D (`4bd2f4966`, ancestry-in the f20 tip `31386266f` — exit 0),
+whose `PULSE_BOLT` arm (`projectile_ai001_d.rs:113-127`) fades 25 with the
+`:56755-56768` trail SKIPPED (dust-only) and NO gravity (the chain head,
+census F7). The 357 is ≤400 — g63's kind axis, zero g64 overlap; the
+activation contract is g63's research/67 seam row (one `step_dust`
+variant + the `alpha < 170` call BEFORE the fade-25, the dust copies the
+PRE-fade alpha). This lane owes nothing; the f20c slice-D merge unlocks
+the emitter as-is.
+
+**(3) The 608 row — f50 owns it, receipt confirmed.** The f50
+`6fc87fcbc` commit (`solar_flare_blast_bodies`,
+`Projectile.cs:72183-72224`: 4× dust-31 + 30× dust-6 pairs + 10× dust-6 +
+10× dust-31 + 2× gore 61-63, the RotatedByRandom(π) ring repositions +
+the noGravity/velocity-x/fadeIn-2.5 post-arms) cites this lane's ledger
+(`77616a7d6`) having NO 608 row — re-verified: zero `608`/`SOLAR_FLARE`
+hits in `proj_trail_dust.rs`, zero `solar_flare` hits in `projectile.rs`.
+The 608 burst is a HURT-reaction death burst (Kill-family axis), never a
+trail — correctly outside this lane's ≥401 in-flight scope. f50 owns the
+bodies + the BlastRng adapter; no g64 keep-one owed.
+
+**(4) The d54-bible §8.3 checklist — CONFIRMED at `59fe75547`/`38bfd1d22`.**
+The bible's step-9 keep-one rows match this lane's remainder keep-one
+table verbatim: ONE `ai_pets_style124` = g64's dust-wired port (d13's
+gates-only retires), ONE `ai_vortex_ritual` = g64's (813; d11/d13 census
+arms retire), 596 = d11's `ai_nebula_sphere` keeps the 575 + g64's
+`trail_596` bool seam feeds it, 497/504/503 → e3's arms survive (g64
+twins retire, parity witnesses pin), 723/1133 → f48's `ai_cloak_star`
+survives + takes the dust half. The pets124/813/596/497/504/503/723/1133
+list in the brief is exactly §8.3's g64 row. The bible's `particles.rs`
+row (step 2) matches item (1) above. The 503 activation (FINAL 2, the e3
+`80d47a568` row constants-copy, ancestry-in e3's tip — exit 0) is the
+bible's "g64's trail_503 wireable — same keep-one" row, now EXECUTED.
+
+**(5) The research FINAL + the trail-dust-family declaration** — see
+`docs/research/196-proj-trail-dust-claims-g64.md` "The TRAIL-DUST RETIRE
+round": the lane is COMPLETE (41 ledger kinds + 644 + the remainder
+machines; 21 unrowed kinds cited + witnessed; 63 witnesses WRITTEN NOT
+RUN — 46 `proj_trail_dust.rs` + 11 `projectile.rs` + 6 pets124) and the
+Projectile.cs trail-dust family's three axes (g63 ≤400,
+g64 ≥401, e3 aiStyle-generic) are declared disjoint-KEEP per the bible.
+
+**Code-only round.** Nothing compiled or run; the retire verdicts are
+`git show`/span-comparison receipts at the exact tips named above.
 

@@ -1,8 +1,16 @@
-# 66 — Projectile.cs per-kind TRAIL dust lanes (W4-g63 / W4-g64 / W4-g65): claims + census
+# 196 — Projectile.cs per-kind TRAIL dust lanes (W4-g64 fork): claims + census
 
-Status: CLAIM doc (W4-g64, lane 2). Written early per the lane's coordination
-rule — the branch list is the claim record; this doc pins the kind-order split
-so the three batches never overlap.
+Status: CLAIM doc (W4-g64, lane 2) — **RENUMBERED 66 → 196** per the d54
+collision registry (`docs/research/150-research-number-registry.md` on
+`task/W4-d54-dust-sites-world`, tip `38bfd1d22`): the number 66 belongs to
+W4-g63's `66-proj-trail-dust-claims.md` (first add 2026-11-21T00:30:45,
+`34bf98b39`); this lane's copy is a diverged same-path fork (first add
+01:53:25) and takes the assigned free number **196** with the `-g64` suffix.
+Content preserved; refs updated in `docs/ANALYSIS.md`, `docs/PORT_MAP.md`,
+`anchors.txt` and the two Rust doc comments per the registry's §3 row.
+Written early per the lane's coordination rule — the branch list is the
+claim record; this doc pins the kind-order split so the three batches never
+overlap.
 
 ## In-flight probe (2026-11-21)
 
@@ -316,3 +324,80 @@ byte-identical, the draws stream-exact
 `w4_g64_final_503_rowed_and_wired_gore_gate_after_the_spark`
 activation witness, WRITTEN NOT RUN). The unrowed list shrinks to 21
 (503 drops off).
+
+## The TRAIL-DUST RETIRE round — FINAL (2026-11-21, code-only)
+
+The lane's closing adjudication round. All co-lane reads via `git show`
+at the exact pushed tips (never merged); no cargo/tests run — every
+witness stays WRITTEN NOT RUN per the code-only mode.
+
+### The five retire items
+
+1. **`clone_dust` genericisation keep-one (e3 `ac6392cf2` vs g64
+   `853039bfc`) — CONFIRMED: either lands.** The four genericised blocks
+   (`trait DustRng`, `new_dust_perfect`, `new_dust_direct`, `clone_dust`)
+   are byte-identical CODE between the two `particles.rs` copies (a
+   comment-stripped span diff); the deltas are doc-comment wording only —
+   the same verdict as the d54 bible §8.3 step 2 (g61 × g64). The f50
+   `BlastRng` (`6fc87fcbc`, `projectile_ai_misc.rs:599`) adapts the SAME
+   pool traits over `&mut dyn DropRng` with `DustDraw`'s exact three
+   delegations (`Next(max) = Next(0, max)`, one `Sample()` step) plus
+   `GoreRng::next_float_direction` (`(float)NextDouble() * 2f − 1f`,
+   `Utils.cs:1203-1206`): the adapters are per-lane glue, no keep-one
+   between them. New witness
+   `w4_g64_retire_clone_dust_generic_seam_matches_the_concrete_stream`.
+2. **The g63 357-seam — DISJOINT.** g63's `pulse_bolt_trail`
+   (`2ea3e7110`, site `:56761`) waits on f20 slice D (`4bd2f4966`, in the
+   f20 tip `31386266f`): the `PULSE_BOLT` arm fades 25, skips the
+   dust-only trail, takes NO gravity (the chain head). 357 ≤ 400 — g63's
+   axis. Nothing owed by this lane; the contract is g63's research/67
+   (one `step_dust` variant, the call BEFORE the fade-25, the PRE-fade
+   alpha copied).
+3. **The 608 row — f50 owns it (receipt).** f50 `6fc87fcbc` ported
+   `solar_flare_blast_bodies` (`Projectile.cs:72183-72224`) citing this
+   ledger's `77616a7d6` no-608-row state; re-verified ZERO 608/SOLAR_FLARE
+   hits in `proj_trail_dust.rs` + `projectile.rs`. The 608 burst is a
+   hurt-reaction Kill-family burst — outside the ≥401 in-flight trail
+   scope by construction. No g64 keep-one owed.
+4. **The d54-bible §8.3 checklist (`59fe75547`, registry tip
+   `38bfd1d22`) — CONFIRMED.** The bible's step-9 g64 row lists exactly
+   this lane's remainder keep-ones: pets124 (`ai_pets_style124` g64
+   dust-wired survives), 813 (`ai_vortex_ritual` g64 survives), 596
+   (d11's 575 half + g64's bool seam), 497/504/503 (e3's arms survive),
+   723/1133 (f48's `ai_cloak_star` survives + takes the dust half). The
+   FINAL 2 503 activation executes the bible's "trail_503 wireable" row.
+5. **This renumber + the family declaration below.**
+
+### The trail-dust-family declaration (FINAL)
+
+The Projectile.cs in-flight trail-dust family is COMPLETE across three
+DISJOINT axes, all KEEP at merge (the d54 bible §8.3 step 9):
+
+| axis | lane | file | scope | tip |
+| --- | --- | --- | --- | --- |
+| per-kind ≤ 400 | W4-g63 | `projectile_trail_dust.rs` | the rowed kinds' arms + the unrowed emitters (research/67 activation checklist) | `2ea3e7110` |
+| per-kind ≥ 401 | W4-g64 (this lane) | `proj_trail_dust.rs` + the remainder machines (`projectile_ai_pets124.rs`, `ai_vortex_ritual`, `ai_djinn_curse`) | 41 ledger kinds + 644 + the remainder wave; WIRED via `ProjectilePool::update_dust` | this branch |
+| aiStyle-generic window | W4-e3 | `projectile_dust.rs` | `:22297-24318` styles 2/4/5/6/8/152 (a different axis, no body overlap; the d53×e3 filename union is the merger's naming call) | `ac6392cf2` |
+
+The keep-one contracts between the axes (the twins that retire) are the
+ANALYSIS keep-one table + the bible §8.3 — pinned by the
+`w4_g64_keep_one_*` parity witnesses. The Kill-family death sites stay
+g65's; the one-shot spawn-latch bursts stay d53/e3/f5's; the wet-entry /
+HandleMovement / enchant sites stay the movement/enchant lanes'.
+
+### FINAL census
+
+- **Ledger:** 41 kinds (5 batches) + the deferred 644 unblocked + the
+  remainder wave (813/957/895/898 rowed + wired, 596 activated, 503
+  activated FINAL 2). **21 unrowed kinds** stay cited + witnessed
+  (S1-F-9b) — the FINAL 2 census: the wiring-wave unrowed list (the
+  ledger table above) minus the 596/895/898/503 remainder-wave rows.
+- **Witnesses: 63** (46 `proj_trail_dust.rs` incl. the new retire witness
+  + 11 `projectile.rs` machine-side + 6 `projectile_ai_pets124.rs` — the
+  `fn w4_g64_*` census at this tip). ALL WRITTEN NOT RUN (code-only).
+- **Deferred residue (NOT this lane's):** 670 style-generic (the style
+  lane's), 493/494/836/968/1134 one-shot latches (co-lanes'), 1044/624
+  orchestrator/explosion (no trail), 590 light-only (e6/f7's).
+
+The lane is RETIRED: no further g64 trail-dust work is owed. The merge
+wave owns the keep-one executions + the witness compile/run.

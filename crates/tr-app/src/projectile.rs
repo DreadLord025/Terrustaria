@@ -17189,7 +17189,7 @@ impl ProjectilePool {
 
     /// W4-g64 — the full walk with the caller's RNG stream AND the live
     /// dust pool + spawn ctx (the W4-g63 `Npc::update_rng_dust` precedent):
-    /// the per-kind trail arms (research/66, kinds 401+) roll `Main.rand`
+    /// the per-kind trail arms (research/196, kinds 401+) roll `Main.rand`
     /// through the verbatim `DustPool::new_dust` on the SAME
     /// `UpdateProjectiles` stream the AI draws ride (`Main.cs:17775-17777`'s
     /// `SwapRandom("UpdateProjectiles")` wraps `UpdateWorld_Projectiles`,

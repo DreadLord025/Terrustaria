@@ -5,7 +5,7 @@
 //! Batch 4: 732 / 895 / 898 / 907 / 967 / 1026 / 1048 / 1053 / 1092 / 1114.
 //! Batch 5: 1133.
 //!
-//! Scope (docs/research/66-proj-trail-dust-claims.md): the REPEATING in-flight
+//! Scope (docs/research/196-proj-trail-dust-claims-g64.md): the REPEATING in-flight
 //! dust sites inside `AI()`'s per-kind arms — the dust a kind sheds while it
 //! flies. One-shot spawn-latch bursts stay with the d53/e3/f5 co-lanes; death
 //! bursts are g65's; kinds ≤ 400 are g63's.
@@ -3823,6 +3823,66 @@ mod tests {
                     assert_eq!(rng.next_range(0, 1000), mirror.next_range(0, 1000), "tail stream");
                 }
             }
+        }
+    }
+
+    /// TRAIL-DUST RETIRE — the `clone_dust` genericisation keep-one (the e3
+    /// `ac6392cf` pool copy vs this lane's `853039bf`): the two ports' CODE
+    /// is byte-identical (trait, signatures, bodies — the diff is comment
+    /// wording only), so either lands at merge. This witness pins the seam
+    /// the co-lanes ride: the pool's `clone_dust` through `DustDraw` over
+    /// `&mut dyn DropRng` (the f50 `BlastRng` adapter is the SAME three
+    /// delegations, `6fc87fcbc`) lands the SAME records and the SAME stream
+    /// tail as the concrete `UnifiedRandom` path — `Dust.cs:263-286`, the
+    /// sentinel early return consumes no draws. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g64_retire_clone_dust_generic_seam_matches_the_concrete_stream() {
+        let w = world();
+        let c = ctx();
+        let mut concrete_pool = DustPool::new();
+        let mut wire_pool = DustPool::new();
+        // Identical source records on both pools (the copy-list fields).
+        for pool in [&mut concrete_pool, &mut wire_pool] {
+            let rf = pool.slot_mut(7);
+            rf.active = true;
+            rf.position = Vec2::new(120.0, 240.0);
+            rf.velocity = Vec2::new(3.0, -4.0);
+            rf.fade_in = 1.5;
+            rf.no_gravity = true;
+            rf.scale = 0.75;
+            rf.rotation = 0.25;
+            rf.dust_type = 267;
+            rf.color = Color::new(9, 8, 7, 255);
+            rf.alpha = 3;
+            (rf.frame_x, rf.frame_y, rf.frame_w, rf.frame_h) = (13, 17, 8, 8);
+        }
+        let mut concrete = UnifiedRandom::new(233);
+        let mut wire = UnifiedRandom::new(233);
+        let a = concrete_pool.clone_dust(&mut concrete, &c, &w, 7);
+        let b = {
+            let dyn_rng: &mut dyn DropRng = &mut wire;
+            wire_pool.clone_dust(&mut DustDraw(dyn_rng), &c, &w, 7)
+        };
+        assert_eq!(a, b);
+        assert_eq!(concrete_pool.slot(a), wire_pool.slot(b), "the clone record");
+        assert_eq!(concrete_pool.slot(a).position, Vec2::new(120.0, 240.0));
+        assert_eq!(concrete_pool.slot(a).dust_type, 267);
+        for _ in 0..16 {
+            assert_eq!(concrete.next_max(1000), wire.next_max(1000), "stream tail");
+        }
+        // The sentinel guard: no draws on either path (`Dust.cs:265-268`).
+        let mut g1 = UnifiedRandom::new(233);
+        let mut g2 = UnifiedRandom::new(233);
+        assert_eq!(
+            concrete_pool.clone_dust(&mut g1, &c, &w, tr_core::particles::DUST_SENTINEL),
+            tr_core::particles::DUST_SENTINEL
+        );
+        assert_eq!(
+            wire_pool.clone_dust(&mut DustDraw(&mut g2), &c, &w, tr_core::particles::DUST_SENTINEL),
+            tr_core::particles::DUST_SENTINEL
+        );
+        for _ in 0..4 {
+            assert_eq!(g1.next_max(1000), g2.next_max(1000), "guard consumed no draws");
         }
     }
 }
