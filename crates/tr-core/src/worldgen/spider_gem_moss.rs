@@ -1996,7 +1996,7 @@ mod tests {
         // Carve a large cavern so the scatter has free cells with anchors.
         carve_pocket(&mut w, 400, 250, 1200, 200);
         let mut rng = Rng(0x77);
-        pass_random_gems(&mut w, &mut rng, 60.0, 300.0);
+        pass_random_gems(&mut w, &mut rng, 60.0, 200.0);
         let gems = w
             .tiles
             .iter()

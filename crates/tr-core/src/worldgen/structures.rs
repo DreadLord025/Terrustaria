@@ -805,33 +805,47 @@ mod tests {
     }
 
     /// The hive pass publishes the larva anchors into the ledger (the 1/2
-    /// roll), clamped to the 5-border.
+    /// roll), clamped to the 5-border; the Larva pass then places them.
     #[test]
     fn the_hive_pass_publishes_the_larva_ledger() {
-        let mut w = hive_world(400, 300);
-        w.world_surface = 75.0;
-        w.rock_layer = 150.0;
         let spans = super::super::biomes::BiomeSpans {
             jungle_start: 60,
             jungle_end: 340,
             dungeon_x: 40,
         };
-        let mut rng = crate::worldgen::noise::Rng::from_seed(11);
-        let mut larva = Vec::new();
-        let placed = pass_beehives(&mut w, &spans, 150.0, &mut rng, &mut larva);
-        assert!(placed >= 1, "the hive placed: {placed}");
-        // Every anchor is inside the 5-border.
-        for &(x, y) in &larva {
-            assert!(x >= 5 && x <= w.width - 5);
-            assert!(y >= 5 && y <= w.height - 5);
+        // Sweep seeds until the 1/2 larva rolls publish an anchor (the
+        // living-trees test's convention for roll-gated content).
+        let mut found = None;
+        for seed in 1..20u32 {
+            let mut w = hive_world(400, 300);
+            w.world_surface = 75.0;
+            w.rock_layer = 150.0;
+            let mut rng = crate::worldgen::noise::Rng::from_seed(seed);
+            let mut larva = Vec::new();
+            let placed = pass_beehives(&mut w, &spans, 150.0, &mut rng, &mut larva);
+            assert!(placed >= 1, "the hive placed: {placed}");
+            // Every anchor is inside the 5-border.
+            for &(x, y) in &larva {
+                assert!(x >= 5 && x <= w.width - 5);
+                assert!(y >= 5 && y <= w.height - 5);
+            }
+            // The larva tiles are NOT placed by the hive pass anymore —
+            // the Larva pass owns them.
+            let larva_tiles =
+                w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
+            assert_eq!(larva_tiles, 0, "the hive pass defers the larva placement");
+            if !larva.is_empty() {
+                found = Some((w, larva));
+                break;
+            }
         }
-        // The larva tiles are NOT placed by the hive pass anymore — the
-        // Larva pass owns them.
-        let larva_tiles = w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
-        assert_eq!(larva_tiles, 0, "the hive pass defers the larva placement");
-        // Running the Larva pass places them.
+        let (mut w, larva) = found.expect("a seed in 1..20 published a larva anchor");
+        // Running the Larva pass places the objects. Each anchor
+        // contributes a whole 3×3 object or nothing (the Place3x3 gate is
+        // all-or-nothing; overlapping boxes can overwrite cells).
         pass_larva(&mut w, &larva);
         let after = w.tiles.iter().filter(|t| t.active() && t.kind == TILE_LARVA).count();
-        assert_eq!(after, larva.len() * 9, "each anchor places a 3x3 larva");
+        assert!(after > 0, "the larva pass placed the objects");
+        assert!(after <= larva.len() * 9);
     }
 }
