@@ -231,6 +231,9 @@ const SFX_CUES: &[(&str, u32)] = &[
     ("Item_53", 2),
     ("Item_55", 2),
     ("Item_56", 2),
+    // W4-c14 - the Pogo Stick's hop cue (`SoundID.Item168`,
+    // `Player.cs:19784`/`:20764`; `Sounds/Item_168.xnb`).
+    ("Item_168", 2),
     // S1-E-21 wave A — the item-use family: every `Sounds/Item_<style>.xnb`
     // an `Item.UseSound` row names (`itemdata.rs::use_sound` →
     // `soundid.rs::SOUND_STYLES`, `SoundID.cs:1384-1582`'s

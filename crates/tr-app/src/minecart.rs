@@ -1304,6 +1304,48 @@ pub(crate) fn minecart_bumper_sound(
     });
 }
 
+/// W4-c14 - `DelegateMethods.Minecart.JumpingSoundFart`
+/// (`DelegateMethods.cs:308-312`, the Fart/Terra-Fart carts' delegate,
+/// `Mount.cs:1102`/`:1110`): Item16 at the same centre rule, then the
+/// fart cloud (the gore/dust visuals are the recorded seam). The base
+/// cart's `JumpingSound` is EMPTY (`:244-246`) - only the fart carts play.
+pub(crate) fn minecart_jumping_sound_fart(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    sounds.push(CartCue {
+        cue: "Item_16",
+        x: (position.x as i32 + width / 2) as f32,
+        y: (position.y as i32 + height / 2) as f32,
+    });
+}
+
+/// W4-c14 - `DelegateMethods.Minecart.LandingSoundFart`
+/// (`DelegateMethods.cs:314-319`, `Mount.cs:1101`/`:1109`): Item16 THEN
+/// Item53 - two plays in the C# order, both at the centre rule; the fart
+/// cloud is the visual seam.
+pub(crate) fn minecart_landing_sound_fart(
+    sounds: &mut Vec<CartCue>,
+    position: Vec2,
+    width: i32,
+    height: i32,
+) {
+    let x = (position.x as i32 + width / 2) as f32;
+    let y = (position.y as i32 + height / 2) as f32;
+    sounds.push(CartCue {
+        cue: "Item_16",
+        x,
+        y,
+    });
+    sounds.push(CartCue {
+        cue: "Item_53",
+        x,
+        y,
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3101,7 +3143,7 @@ mod tests {
     }
 
     /// The cue positions (`DelegateMethods.cs:248-256`): `(int)Position +
-    /// (Width/2, Height/2)` — C# int casts truncate toward zero.
+    /// (Width/2, Height/2)` - C# int casts truncate toward zero.
     #[test]
     fn landing_and_bumper_sounds_carry_the_c_sharp_positions() {
         let mut sounds = Vec::new();
@@ -3113,5 +3155,29 @@ mod tests {
         assert_eq!(sounds[1].cue, "Item_56");
         assert_eq!(sounds[1].x, 10.0, "(int)(-0.5) truncates to 0");
         assert_eq!(sounds[1].y, 26.0);
+    }
+
+    /// W4-c14 - the fart carts' delegates (`DelegateMethods.cs:308-319`):
+    /// the jump plays ONE Item16; the landing plays Item16 THEN Item53 in
+    /// the C# order, both at the same truncated centre.
+    #[test]
+    fn w4_c14_the_fart_delegates_play_their_cue_pairs_in_order() {
+        let mut sounds = Vec::new();
+        minecart_jumping_sound_fart(&mut sounds, Vec2::new(100.7, 208.9), 20, 52);
+        assert_eq!(
+            sounds,
+            vec![CartCue {
+                cue: "Item_16",
+                x: 110.0,
+                y: 234.0
+            }]
+        );
+        sounds.clear();
+        minecart_landing_sound_fart(&mut sounds, Vec2::new(100.7, 208.9), 20, 52);
+        assert_eq!(sounds.len(), 2);
+        assert_eq!(sounds[0].cue, "Item_16", "the fart first (`:316`)");
+        assert_eq!(sounds[1].cue, "Item_53", "then the landing (`:317`)");
+        assert_eq!((sounds[0].x, sounds[0].y), (110.0, 234.0));
+        assert_eq!((sounds[1].x, sounds[1].y), (110.0, 234.0));
     }
 }

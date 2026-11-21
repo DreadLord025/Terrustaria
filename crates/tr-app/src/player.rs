@@ -7214,9 +7214,20 @@ impl Player {
                     self.full_rotation = 0.0;
                 }
                 // `Player.cs:20766-20767`: the ground jump; the landing re-arm
-                // follows (`:20755-20758` — `RefreshDoubleJumps`). `:20678`
+                // follows (`:20755-20758` - `RefreshDoubleJumps`). `:20678`
                 // sets `justJumped` on the grounded trigger. `:20749-20750`:
                 // the trigger disarms the rocket (it re-arms midair).
+                // W4-c14 - `:20762-20764`: the Pogo Stick's (43) ground jump
+                // plays Item168 at the CENTRE before the velocity writes
+                // (the `pending_cart_sounds` drain, the hop arm above).
+                if self.mount.is_active() && self.mount.kind() == 43 {
+                    let (cx, cy) = self.center();
+                    self.pending_cart_sounds.push(crate::minecart::CartCue {
+                        cue: "Item_168",
+                        x: cx,
+                        y: cy,
+                    });
+                }
                 self.just_jumped = true;
                 self.can_rocket = false;
                 self.rocket_release = false;
@@ -7388,7 +7399,7 @@ impl Player {
         // `Player.cs:28093-28161`: the `Minecart.TrackCollision` slot — it runs
         // before the integration because it snaps Y itself and rewrites the
         // velocity (pitfall §10.3: X moves in the integration below).
-        let _was_on_track = self.on_track; // `:28091` `flag32` — the off-rail JumpingSound delegate is empty (see below)
+        let was_on_track = self.on_track; // `:28093` `flag32` - the off-rail JumpingSound delegate (the fart carts' Item16, see below)
         self.on_track = false; // `:28092`
         let mut hit_switch_flag = false; // `flag33`
         if self.cart_mounted {
@@ -7446,18 +7457,38 @@ impl Player {
                 self.full_rotation_origin = ((WIDTH / 2.0), body_h as f32);
             }
             // `:28117-28119`: the riding-off-rail `MinecartJumpingSound`
-            // delegate is EMPTY in C# (`DelegateMethods.cs:244-248`) — the
-            // `was_on_track` && !on_track edge plays nothing.
-            if flags.landing {
-                // `Minecart.cs:809-813`: the landing check —
-                // `MinecartLandingSound` (Item53) + a 10-spark burst, both
-                // with the pre-call position and rotation captured above.
-                minecart::minecart_landing_sound(
+            // delegate - EMPTY for the base cart (`DelegateMethods.cs:244-
+            // 246`); W4-c14: the Fart/Terra-Fart carts (51/53) play Item16
+            // (`JumpingSoundFart`, `:308-312`) at the POST-call position.
+            if was_on_track && !self.on_track && matches!(self.cart_mount, 51 | 53) {
+                minecart::minecart_jumping_sound_fart(
                     &mut self.pending_cart_sounds,
-                    pre_pos,
+                    pos,
                     WIDTH as i32,
                     body_h,
                 );
+            }
+            if flags.landing {
+                // `Minecart.cs:809-813`: the landing check -
+                // `MinecartLandingSound` (Item53) + a 10-spark burst, both
+                // with the pre-call position and rotation captured above.
+                // W4-c14: the fart carts' delegate plays Item16 THEN
+                // Item53 (`LandingSoundFart`, `DelegateMethods.cs:314-319`).
+                if matches!(self.cart_mount, 51 | 53) {
+                    minecart::minecart_landing_sound_fart(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                } else {
+                    minecart::minecart_landing_sound(
+                        &mut self.pending_cart_sounds,
+                        pre_pos,
+                        WIDTH as i32,
+                        body_h,
+                    );
+                }
                 minecart::wheel_sparks(
                     &mut self.pending_sparks,
                     &mut self.spark_rng,
@@ -10307,7 +10338,34 @@ impl Player {
     /// on-track friction (`:20023-20058`), and the grounded/airborne friction
     /// tails close the chain (`:20059-20087`).
     fn horizontal_movement(&mut self, input: PlayerInput) {
-        // `Player.cs:19779`: the fast-run threshold — halfway between the
+        // W4-c14 - `Player.cs:19782-19793`: the Pogo Stick's (mount 43)
+        // grounded hop - control key held, resting, jump not held: the
+        // Item168 cue at the CENTRE (`base.Center`, the Vector2 facade
+        // truncates), then the half-speed hop and the early return. The
+        // port queues the cue on the `pending_cart_sounds` drain (the
+        // Item55 convention - the drain's facade truncates too).
+        if (self.control_left || self.control_right)
+            && self.mount.is_active()
+            && self.mount.kind() == 43
+            && self.vy == 0.0
+            && !self.control_jump
+        {
+            let (cx, cy) = self.center();
+            self.pending_cart_sounds.push(crate::minecart::CartCue {
+                cue: "Item_168",
+                x: cx,
+                y: cy,
+            });
+            let mut hop = 5.01 * 0.5; // `Player.jumpSpeed` static × gravDir 1
+            if hop < 2.0 {
+                hop = 2.0;
+            }
+            self.vy = -(hop + 0.01);
+            self.jump = 15; // `Player.jumpHeight` - the STATIC 15 (`:19791`)
+            self.full_rotation = 0.0;
+            return;
+        }
+        // `Player.cs:19779`: the fast-run threshold - halfway between the
         // boot top speed and the base run speed.
         let fast_run_threshold = (self.acc_run_speed + self.max_run_speed) / 2.0;
         // `Player.cs:19818-19833`: the boost applies before any input reads
@@ -17835,7 +17893,52 @@ mod tests {
         unreachable!()
     }
 
-    /// DW-3.2 — the landing burst (`Minecart.cs:809-813` via the Phase-1
+    /// W4-c14 - the Pogo Stick's (mount 43) hop cue (`Player.cs:19782-19793`):
+    /// a direction key held while grounded with jump free queues Item168 at
+    /// the CENTRE and takes the half-speed hop (the early return - no run
+    /// accel that tick); the ground jump (`:20762-20764`) plays it too.
+    #[test]
+    fn w4_c14_the_pogo_hop_and_jump_queue_item168_at_the_centre() {
+        let w = ground_world();
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(43, false), "the pogo equips");
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        assert!(p.on_ground, "landed first");
+        let (cx, cy) = p.center();
+        p.update(
+            &w,
+            PlayerInput {
+                right: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the hop plays once");
+        assert_eq!(cues[0].cue, "Item_168");
+        assert_eq!((cues[0].x, cues[0].y), (cx, cy), "the centre position");
+        assert!(p.vy < 0.0, "the hop lifted");
+        assert_eq!(p.jump, 15, "the static jumpHeight");
+        // The ground jump (jump held on a resting tick) plays it too.
+        let mut p = Player::spawn(&w);
+        assert!(p.set_mount(43, false));
+        for _ in 0..120 {
+            p.update(&w, PlayerInput::default());
+        }
+        p.update(
+            &w,
+            PlayerInput {
+                jump: true,
+                ..Default::default()
+            },
+        );
+        let cues = p.take_cart_sounds();
+        assert_eq!(cues.len(), 1, "the ground jump plays once");
+        assert_eq!(cues[0].cue, "Item_168");
+    }
+
+    /// DW-3.2 - the landing burst (`Minecart.cs:809-813` via the Phase-1
     /// `TrackFlags::landing`): a real fall onto a rail queues the Item53 cue
     /// and exactly 10 sparks at the pre-call magnet point, with the
     /// pre-call rotation (`Player.cs:28110-28111` sets the emitter statics
