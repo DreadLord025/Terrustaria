@@ -24,22 +24,36 @@ fn in_world(world: &tr_core::World, x: i32, y: i32, fluff: i32) -> bool {
 /// live NPC refuse an occupied cell. The remote peers' positions are the
 /// host's `remote_players` snapshots (the C# walks all 255 `Main.player`).
 fn cell_blocked(app: &App, x: i32, y: i32) -> bool {
+    entity_cell_blocked(app.player.as_ref(), &app.remote_players, &app.npcs, x, y)
+}
+
+/// The field-wise form of [`cell_blocked`] — the `19` trapdoor arm's closure
+/// captures the three entity fields disjointly so the `&mut app.world` the
+/// shift seam takes stays free (the `doors.rs::cell_blocked_by_entity`
+/// convention, extended with the peer snapshots).
+fn entity_cell_blocked(
+    player: Option<&player::Player>,
+    peers: &std::collections::HashMap<u32, net::PlayerNet>,
+    npcs: &[crate::npc::Npc],
+    x: i32,
+    y: i32,
+) -> bool {
     let (x0, y0) = (x as f32 * TILE_PX, y as f32 * TILE_PX);
     let (x1, y1) = (x0 + TILE_PX, y0 + TILE_PX);
     let overlaps = |px: f32, py: f32, w: f32, h: f32| {
         x0 < px + w && x1 > px && y0 < py + h && y1 > py
     };
-    if let Some(p) = app.player.as_ref() {
+    if let Some(p) = player {
         if !p.dead && overlaps(p.x, p.y, player::WIDTH, p.height) {
             return true;
         }
     }
-    for peer in app.remote_players.values() {
+    for peer in peers.values() {
         if !peer.dead && overlaps(peer.x, peer.y, player::WIDTH, player::HEIGHT) {
             return true;
         }
     }
-    app.npcs.iter().any(|n| {
+    npcs.iter().any(|n| {
         let (w, h) = n.kind.size();
         overlaps(n.x, n.y, w, h)
     })
@@ -556,10 +570,10 @@ fn team_color(team: u8) -> [u8; 3] {
 /// The `19 ToggleDoorState` reader (`MessageBuffer.cs:1299-1334`): the
 /// action byte maps 0/1 door open/close, 2/3 trapdoor, 4/5 tall gate; the
 /// direction normalises `!= 0` to 1 else -1 (`:1306`) and the host relays
-/// the normalised byte (`:1330`). The trapdoor/tall-gate shifts
-/// (`WorldGen.ShiftTrapdoor` `:51447`, `ShiftTallGate` `:51723`) are unported
-/// (the `npc_ai_town.rs` cited skip) — those actions relay without a world
-/// change, exactly like the town-NPC gate arm.
+/// the normalised byte (`:1330`). The trapdoor/tall-gate shifts run the
+/// `edit::shift_trapdoor`/`shift_tall_gate` canonical bodies (W4-c42
+/// `edit/shift.rs`, the research/95 union-exec — landed byte-identical on
+/// this lane; the former `npc_ai_town.rs` cited skip is closed).
 pub(crate) fn host_door_toggle(app: &mut App, server: &net::Server, id: u32, d: net::DoorToggle) {
     let (x, y) = (d.x as i32, d.y as i32);
     if !in_world(&app.world, x, y, 3) {
@@ -625,12 +639,98 @@ fn apply_door_action(app: &mut App, action: u8, x: i32, y: i32, dir: i32) {
         }
         2 | 3 => {
             // `WorldGen.ShiftTrapdoor(x, y, num47 == 1, 1/0)` (`:1316`/
-            // `:1319`) — unported (the trapdoor 386/387 shift, the
-            // `npc_ai_town.rs` cited skip); the relay still runs.
+            // `:1319`): action 2 passes `onlyCloseOrOpen: 1` (CLOSE-only —
+            // the `:51450` open branch gates `!= 1`), action 3 passes 0
+            // (OPEN-only — the `:51534` close branch gates `!= 0`); the C#
+            // call sites, not the wiring default −1. The canonical body is
+            // the W4-c42 `edit/shift.rs`
+            // (research/95 §2 union-exec: paint + fullbright coating, the
+            // in-body per-site cues incl. the refusal thud, `touch()`, the
+            // injected `can_kill` slice). No wiring flood runs on the
+            // message handler — `wire_skips: None` (the C#
+            // `Main.netMode != 1 && Wiring.running` gate is false here).
+            let only = if action == 2 { 1 } else { 0 };
+            let mut drops = Vec::new();
+            let mut cues = Vec::new();
+            {
+                // The entity half of `Collision.EmptyTile(ignoreTiles:
+                // true)` (research/95 §8.1): the REAL player/peer/NPC box
+                // overlap (the `cell_blocked` reader convention) — tr-core
+                // carries no entity store, so the closure injects it; the
+                // field-wise capture keeps the `&mut app.world` borrow free
+                // (the block ends the borrows before the drop spawn).
+                let (player, peers, npcs) = (&app.player, &app.remote_players, &app.npcs);
+                let blocked =
+                    |x: i32, y: i32| entity_cell_blocked(player.as_ref(), peers, npcs, x, y);
+                // The close guard rides the FULL `WorldGen.CanKillTile` (the
+                // reader is the player path, not the wiring flood — the f11
+                // injection choice, research/95 §2): the chest-store scan
+                // reads the disjoint `world_chests` field.
+                let chests = &app.world_chests;
+                let can_kill = |w: &tr_core::World, x: i32, y: i32| {
+                    edit::can_kill_tile(w, x, y, |cx, cy| {
+                        chests
+                            .iter()
+                            .any(|c| c.tile == (cx, cy) && c.slots.iter().any(|s| s.count > 0))
+                    })
+                };
+                let _ = edit::shift_trapdoor(
+                    &mut app.world,
+                    x,
+                    y,
+                    dir == 1,
+                    only,
+                    &blocked,
+                    &can_kill,
+                    &mut drops,
+                    None,
+                    &mut cues,
+                );
+            }
+            // The in-body cues (`PlaySound(8/9)` at the adjusted anchor)
+            // play on the bare global stream — the message handler runs
+            // outside every SwapRandom (S1-E-21i).
+            for (open, px, py) in cues {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.global(),
+                );
+            }
+            spawn_object_drops(app, drops);
+            app.world_key = None;
         }
         4 | 5 => {
             // `WorldGen.ShiftTallGate(x, y, closing, forced: true)` (`:1322`/
-            // `:1325`) — unported (the tall gate 388/389, the same skip).
+            // `:1325`): action 4 opens (`closing: false`), 5 closes; the
+            // reader ALWAYS passes `forced: true` — the entity gate is
+            // skipped entirely (the closure is never consulted). The
+            // canonical W4-c42 body: alternate-0 def decode of kind 388,
+            // the padding-free row walk, the radius-4 reframe superset.
+            let mut drops = Vec::new();
+            let mut cues = Vec::new();
+            let _ = edit::shift_tall_gate(
+                &mut app.world,
+                x,
+                y,
+                action == 5,
+                true,
+                &|_, _| false,
+                &mut drops,
+                None,
+                &mut cues,
+            );
+            for (open, px, py) in cues {
+                app.audio.play_door_sound(
+                    open,
+                    px as f32,
+                    py as f32,
+                    app.rngs.global(),
+                );
+            }
+            spawn_object_drops(app, drops);
+            app.world_key = None;
         }
         _ => {}
     }

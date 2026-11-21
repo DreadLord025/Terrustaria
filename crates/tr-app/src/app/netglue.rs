@@ -6416,4 +6416,122 @@ mod g48_apply_tests {
             "the bestiary chat start registered (Player.cs:4381)"
         );
     }
+
+    /// `case 19` action 3 (`MessageBuffer.cs:1318-1320`): a client's
+    /// trapdoor-OPEN toggle (`ShiftTrapdoor(x, y, dir==1, 0)` — the 0 is
+    /// OPEN-only, the `:51534` close branch gates `!= 0`) runs the canonical
+    /// W4-c42 `edit::shift_trapdoor` on the host and relays; the receiving
+    /// client shifts its own copy. The closed 2x2 (386, styleX 0) opens
+    /// DOWNWARD: the top row clears, the bottom row becomes 387
+    /// (`WorldGen.cs:51471-51485`). WRITTEN NOT RUN (code-only).
+    #[test]
+    fn g48_19_trapdoor_open_toggle_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The closed trapdoor 2x2 at (3,3)..(4,4) (inside the fluff-3 box of
+        // the 8x8 flow world), overwriting the dirt row cells it covers.
+        for app in [&mut host_app, &mut client_app] {
+            for col in 0..2i32 {
+                for row in 0..2i32 {
+                    let i = app.world.index(3 + col, 3 + row);
+                    app.world.tiles[i] = tr_core::Tile {
+                        kind: 386,
+                        frame_x: (col * 18) as i16,
+                        frame_y: (row * 18) as i16,
+                        ..Default::default()
+                    };
+                    app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+                }
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DoorToggle(net::DoorToggle {
+                action: 3, // ShiftTrapdoor(..., onlyCloseOrOpen: 0) — open
+                x: 3,
+                y: 3,
+                direction: 1,
+            }));
+        }
+        let mut opened = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = host_app.world.tile(3, 4).is_some_and(|t| t.kind == 387)
+                && client_app.world.tile(3, 4).is_some_and(|t| t.kind == 387);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the trapdoor opened on both sides");
+        for app in [&host_app, &client_app] {
+            // The top row cleared (`Tile.ClearTile`, :51471-51478).
+            assert!(!app.world.tile_active(3, 3), "top-left cleared");
+            assert!(!app.world.tile_active(4, 3), "top-right cleared");
+            // The bottom row is the open trapdoor (:51479-51485).
+            for col in 0..2i32 {
+                let t = app.world.tile(3 + col, 4).unwrap();
+                assert_eq!(t.kind, 387);
+                assert_eq!((t.frame_x, t.frame_y), ((col * 18) as i16, 0));
+            }
+        }
+    }
+
+    /// `case 19` action 4 (`MessageBuffer.cs:1321-1323`): a client's
+    /// tall-gate-OPEN toggle (`ShiftTallGate(x, y, closing: false, forced:
+    /// true)`) runs the canonical W4-c42 `edit::shift_tall_gate` (alternate-0
+    /// def decode of kind 388, the padding-free row walk) on the host and
+    /// relays; the receiving client shifts its own copy. The 5-tall column
+    /// 388 → 389, the frames survive (`WorldGen.cs:51763-51766`); the hit
+    /// cell is mid-column so the row walk's anchor adjustment is exercised.
+    /// WRITTEN NOT RUN (code-only).
+    #[test]
+    fn g48_19_tall_gate_open_toggle_replicates() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        // The closed gate column x=3, rows 2..6 — the real placement grid
+        // (D_388 coordinate_heights [18,16,16,16,18] + 2px padding → frameY
+        // 0/20/38/56/74, the c42 23411fa7 fixture derivation).
+        for app in [&mut host_app, &mut client_app] {
+            for (row, fy) in [(0i32, 0i16), (1, 20), (2, 38), (3, 56), (4, 74)] {
+                let i = app.world.index(3, 2 + row);
+                app.world.tiles[i] = tr_core::Tile {
+                    kind: 388,
+                    frame_x: 0,
+                    frame_y: fy,
+                    ..Default::default()
+                };
+                app.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        if let NetRole::Client(client) = &client_app.net {
+            client.send(&C2s::DoorToggle(net::DoorToggle {
+                action: 4, // ShiftTallGate(closing: false, forced: true)
+                x: 3,
+                y: 3, // mid-column: frameY 20 → the walk steps one row up
+                direction: 0,
+            }));
+        }
+        let mut opened = false;
+        for _ in 0..90 {
+            host_app.net_tick(1.0 / 60.0);
+            client_app.net_tick(1.0 / 60.0);
+            host_app.poll_net();
+            client_app.poll_net();
+            opened = host_app.world.tile(3, 2).is_some_and(|t| t.kind == 389)
+                && client_app.world.tile(3, 2).is_some_and(|t| t.kind == 389);
+            if opened {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        assert!(opened, "the tall gate opened on both sides");
+        for app in [&host_app, &client_app] {
+            for (row, fy) in [(0i32, 0i16), (1, 20), (2, 38), (3, 56), (4, 74)] {
+                let t = app.world.tile(3, 2 + row).unwrap();
+                assert_eq!(t.kind, 389, "row {row} opened");
+                assert_eq!((t.frame_x, t.frame_y), (0, fy), "frames survive");
+            }
+        }
+    }
 }

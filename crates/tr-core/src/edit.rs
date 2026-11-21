@@ -30,6 +30,10 @@ pub use kill::{
     square_tile_frame_default, HerbEvent, KillSounds, ObjectDrop, PileLootEvent, PotEvent,
     SoundCue, TileKill, TreeDropEvent,
 };
+mod shift;
+// W4-c42 batch 2 — the wired trapdoor/tall-gate shifts (`WorldGen.cs:51447-
+// 51596`/`:51723-51775`), the `HitWireSingle` arms `Wiring.cs:1440-1460` call.
+pub use shift::{shift_tall_gate, shift_trapdoor};
 pub(crate) use kill::{
     remove_tile, solid_tile, solid_tile2, solid_tile_allow_bottom_slope, square_tile_frame_gen,
 };
@@ -930,7 +934,7 @@ pub fn close_door(
 /// active and of `kind`. Otherwise every matching cell is `KillTile`d (full
 /// cascade — drops collected) and `false` returned; an out-of-world square
 /// returns `false` without killing (`WorldGen.InWorld`, `:9688`).
-fn validate_tile_square(
+pub(crate) fn validate_tile_square(
     world: &mut World,
     x: i32,
     y: i32,
