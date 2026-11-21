@@ -103,9 +103,18 @@ pub struct RegenInputs {
     /// soulDrain / heartyMeal / honey / shinyStone-still regen adds
     /// (`:19156-19168`), folded by the owner.
     pub extra_regen: i32,
-    /// aegis +0.2, soulDrain +2, shinyStone-still +4, honey +2 time adds
-    /// (`:19112-19137`).
+    /// soulDrain +2, shinyStone-still +4, honey +2 time adds
+    /// (`:19121-19137`), folded by the owner (the aegis +0.2 has its OWN
+    /// slot below — the C# adds it BETWEEN the base +1 and these).
     pub extra_time: f32,
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 permanent
+    /// `lifeRegenTime += 0.2f` (`:19113-19116`) — its own slot so the add
+    /// runs BETWEEN the base `+1` (`:19112`) and the crimson `+1`
+    /// (`:19117-19120`)/soulDrain adds folded into `extra_time`, the C#'s
+    /// f32 accumulation order (W4-a6 reconcile: the g90 lane-7 shape,
+    /// research/138 §2 — pre-summing 0.2+1.0 into `extra_time` reorders
+    /// the f32 adds).
+    pub aegis_crystal: bool,
     /// crimson ×1.5 / shinyStone ×1.1 / rabid ramp scale (`:19247-19258`).
     pub extra_ramp_scale: f32,
     /// palladium's +4 straight into the counter (`:19264`).
@@ -141,6 +150,7 @@ impl Default for RegenInputs {
             used_arcane_crystal: false,
             extra_regen: 0,
             extra_time: 0.0,
+            aegis_crystal: false,
             extra_ramp_scale: 1.0,
             extra_count: 0,
             sitting_or_sleeping: false,
@@ -178,6 +188,12 @@ pub fn update_life_regen(
         state.life_regen_time = 0.0;
     }
     state.life_regen_time += 1.0; // (`:19112`)
+    // `:19113-19116` — the Aegis Crystal's +0.2, between the base +1 and
+    // the crimson/soulDrain adds folded into `extra_time` (W4-a6 reconcile,
+    // the g90 lane-7 slot — the C#'s f32 accumulation order).
+    if in_.aegis_crystal {
+        state.life_regen_time += 0.2;
+    }
     state.life_regen_time += in_.extra_time;
     state.life_regen += in_.extra_regen;
     if in_.campfire {
@@ -662,6 +678,28 @@ mod tests {
         st.mana_regen_delay = 0.0;
         update_mana_regen(&mut st, &in_, &mut mana, ManaRegenFlags::default());
         assert_eq!(st.mana_regen, (138.0 * 0.75) as i32, "the +max/50 row");
+    }
+
+    /// W4-a6 reconcile — the Aegis Crystal's +0.2 rides its OWN input slot
+    /// (`Player.cs:19113-19116`), added BETWEEN the base +1 (`:19112`) and
+    /// the crimson +1 folded into `extra_time` (`:19117-19120`) — the C#'s
+    /// f32 accumulation order (the g90 lane-7 shape, research/138 §2).
+    #[test]
+    fn the_aegis_crystal_adds_between_the_base_and_the_crimson() {
+        let mut st = RegenState::default();
+        let mut life = 100;
+        let mut in_ = inputs(400, 200);
+        in_.aegis_crystal = true;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        assert!(
+            (st.life_regen_time - 1.2).abs() < 1e-5,
+            "base +1 then crystal +0.2 (`:19112-19116`)"
+        );
+        // With the crimson row: +1 base, +0.2 crystal, +1 crimson = 2.2 —
+        // the crystal's add lands BEFORE the extra_time fold, verbatim.
+        in_.extra_time = 1.0;
+        let _ = update_life_regen(&mut st, &in_, &mut life);
+        assert!((st.life_regen_time - 3.4).abs() < 1e-5, "1.2 + 1.0 + 1.2");
     }
 
     #[test]

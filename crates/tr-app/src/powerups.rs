@@ -26,11 +26,14 @@
 //! The `NetMessage.SendData` rows are MP-only — the port is single-player
 //! (`chat.rs`'s netMode-0 note), so they fold out.
 //!
-//! Achievement deviation: the C#'s `HandleSpecialEvent` targets ONE row's
-//! condition (`GetCondition("STAR_POWER", "Use").Complete()`); the port's
-//! `notify_custom("Use")` completes every `Flag("Use")` row at once (the
-//! existing `potions.rs:491` drowning convention — the registry has no
-//! per-row targeting). Recorded in docs/ANALYSIS.md.
+//! Achievement targeting (W4-a6 reconcile fix): the C#'s
+//! `HandleSpecialEvent` completes ONE row's condition
+//! (`GetCondition("STAR_POWER", "Use").Complete()`,
+//! `AchievementsHelper.cs:288-379`); the port now carries the row-targeted
+//! `AchievementManager::complete_condition` (the g88 `complete_named` /
+//! c36 `complete_condition` shape, research/138 §3 keep-one) — the earlier
+//! `notify_custom("Use")` broadcast completed every `Flag("Use")` row at
+//! once and was LESS faithful than both claimants; replaced here.
 
 use crate::app::App;
 use crate::item::ItemSlot;
@@ -171,9 +174,9 @@ fn use_life_fruit(app: &mut App) -> bool {
         crate::potions::spawn_heal_text(app, 5);
         (p.life_max_base, p.mana_max_base)
     };
-    let _ = app.achievements.notify_custom("Use");
+    let _ = app.achievements.complete_condition("GET_A_LIFE", "Use"); // `:45302` case 2
     if life_after == 500 && mana_base == 200 {
-        let _ = app.achievements.notify_custom("Use");
+        let _ = app.achievements.complete_condition("TOPPED_OFF", "Use");
     }
     true
 }
@@ -352,7 +355,11 @@ fn use_torch_gods_favor(app: &mut App) -> bool {
         p.unlocked_biome_torches = true; // `:45231`
         p.builder_acc_status[11] = 0; // `UsingBiomeTorches = true`, `:3962`
     }
-    let _ = app.achievements.notify_custom("Use"); // `:45233`
+    // `HandleSpecialEvent(24)` (`:45233`) — ONE row's condition
+    // (`AchievementsHelper.cs:367-369`), the c36 keep-one shape.
+    let _ = app
+        .achievements
+        .complete_condition("GAIN_TORCH_GODS_FAVOR", "Use");
     // `Main.netMode == 0` — the port is SP, the kill always registers.
     app.bestiary.kills.register_kill("TorchGod"); // `:45236-45238`
     true
@@ -461,10 +468,12 @@ fn use_shimmer_permanent(app: &mut App, kind: u16) -> bool {
             p.used_arcane_crystal = true; // `:45402`
         }
         5340 => {
-            if p.luck_state.used_galaxy_pearl {
+            if p.used_galaxy_pearl {
                 return false;
             }
-            p.luck_state.used_galaxy_pearl = true; // `:45408`
+            p.used_galaxy_pearl = true; // `:45408` — the Player field is the
+            // persistence owner; `update_luck` mirrors it into LuckState
+            // (the g90 lane-7 shape, research/138 §2).
         }
         5341 => {
             if p.used_gummy_worm {
@@ -504,9 +513,9 @@ fn use_mana_crystal(app: &mut App) -> bool {
         p.queue_mana_effect(20);
         (p.life_max_base, p.mana_max_base)
     };
-    let _ = app.achievements.notify_custom("Use");
+    let _ = app.achievements.complete_condition("STAR_POWER", "Use"); // `:45286` case 1
     if life_base == 500 && mana_after == 200 {
-        let _ = app.achievements.notify_custom("Use");
+        let _ = app.achievements.complete_condition("TOPPED_OFF", "Use");
     }
     true
 }
@@ -1195,7 +1204,7 @@ mod tests {
                 p.used_aegis_crystal,
                 p.used_aegis_fruit,
                 p.used_arcane_crystal,
-                p.luck_state.used_galaxy_pearl,
+                p.used_galaxy_pearl,
                 p.used_gummy_worm,
                 p.used_ambrosia,
             ];
@@ -1246,7 +1255,8 @@ mod tests {
     }
 
     /// The Galaxy Pearl's +0.03 luck rides `RecalculateLuck`
-    /// (`luck.rs:201-203`) once the flag is set.
+    /// (`luck.rs:201-203`) once the flag is set — the use latches the
+    /// Player field, `update_luck` mirrors it into the LuckState consumer.
     #[test]
     fn galaxy_permanent_luck_rides_the_recalculation() {
         let mut app = rig(5340, 1);
@@ -1254,9 +1264,32 @@ mod tests {
         app.mine_down = true;
         tick(&mut app);
         let p = app.player.as_mut().unwrap();
-        assert!(p.luck_state.used_galaxy_pearl);
-        p.luck_state.recalculate_luck();
+        assert!(p.used_galaxy_pearl, "the Player field is the owner");
+        p.update(&app.world, crate::player::PlayerInput::default());
+        assert!(p.luck_state.used_galaxy_pearl, "the mirror seeds the state");
         assert!((p.luck_state.luck - 0.03).abs() < 1e-6, "the +0.03 row");
+    }
+
+    /// W4-a6 — the TRAINING_DAY hook (`Player.cs:25695-25698`): BOTH world
+    /// book flags standing fires progression 40 through the player pass
+    /// (the g90 lane-7 consumer); one book alone fires nothing.
+    #[test]
+    fn both_combat_books_fire_training_day() {
+        let mut app = rig(2, 1); // any non-powerup held item
+        app.world.combat_book_was_used = true;
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        let training = |app: &App| {
+            app.achievements
+                .list
+                .iter()
+                .find(|a| a.name == "TRAINING_DAY")
+                .unwrap()
+                .completed
+        };
+        assert!(!training(&app), "one book alone fires nothing");
+        app.world.combat_book_volume_two_was_used = true;
+        crate::world_sim::player::update_player(&mut app, 1.0 / 60.0);
+        assert!(training(&app), "the pair completes TRAINING_DAY (`:25697`)");
     }
 
     /// Plant a live owned projectile of `kind` in the pool + arm the count

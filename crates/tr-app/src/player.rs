@@ -2139,10 +2139,11 @@ pub struct Player {
     /// ResetEffects — a permanent unlock (the player-file field). The
     /// 5341 use rides `powerups::use_shimmer_permanent` (W4-a6).
     pub used_gummy_worm: bool,
-    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Vital Crystal
+    /// `Player.usedAegisCrystal` (`Player.cs:852`): the 5337 Aegis Crystal
     /// — the permanent +0.2 lifeRegenTime per tick (`:19113-19116`, the
-    /// `regen.rs` `extra_time` input). The 5337 use rides
-    /// `powerups::use_shimmer_permanent` (W4-a6).
+    /// `regen.rs` `aegis_crystal` input — its own slot so the add runs
+    /// BETWEEN the base +1 and the crimson +1 in the C#'s f32 order). The
+    /// 5337 use rides `powerups::use_shimmer_permanent` (W4-a6).
     pub used_aegis_crystal: bool,
     /// `Player.usedAegisFruit` (`Player.cs:854`): the 5338 Aegis Fruit —
     /// the permanent +4 defense (`UpdatePermanentBoosters`, `:12853-
@@ -2159,6 +2160,15 @@ pub struct Player {
     /// `:12861-12866`). The 5342 use rides `powerups::use_shimmer_permanent`
     /// (W4-a6).
     pub used_ambrosia: bool,
+    /// `Player.usedGalaxyPearl` (`Player.cs:858`): the 5340 Galaxy Pearl —
+    /// the permanent +0.03 luck (`RecalculateLuck`, `:29142-29145`). The
+    /// 5340 use rides `powerups::use_shimmer_permanent` (W4-a6). The
+    /// PERSISTENCE OWNER is this Player field (the `.plr` slot
+    /// `:54784`/`:55258`); `update_luck` mirrors it into the consumer
+    /// `LuckState.used_galaxy_pearl` before every recalculation (the g90
+    /// lane-7 shape, research/138 §2 — the C# reads the player field
+    /// directly, the LuckState copy is the port's consumer split).
+    pub used_galaxy_pearl: bool,
     /// (Gate merge i35 ⨉ i41: `can_float_in_water` and `no_items` are
     /// declared ONCE, with the mount block above — the i35 duplicates
     /// folded into them; the fishing float bonus / bobber kill gate read
@@ -2965,6 +2975,7 @@ impl Player {
             used_aegis_fruit: false,
             used_arcane_crystal: false,
             used_ambrosia: false,
+            used_galaxy_pearl: false, // `Player.cs:56081`
             acc_sentry_backpack: false,
             acc_sentry_backpack_grab_cooldown: 0,
             ballista_panic: false,
@@ -6892,20 +6903,21 @@ impl Player {
         // `set_player_caps` form (the same three C# `if`s, same order,
         // same values). i27's `add_player_scalars` twin was dropped at the
         // gate (it would double the adds); the seam stays available.
-        // S1-P-i35 — `UpdatePermanentBoosters`' Gummy Worm row
-        // (`Player.cs:12857-12860`): the permanent +3 fishing skill.
-        if self.used_gummy_worm {
-            self.fishing_skill += 3;
-        }
-        // W4-a6 — `UpdatePermanentBoosters`' Aegis Fruit + Ambrosia rows
-        // (`Player.cs:12853-12856`, `:12861-12866`): the permanent +4
-        // defense and the +0.05 pick/tile/wall speed triple. The C# runs
-        // the whole method after `UpdateEquips` (`:25644`); the port folds
-        // its rows into this post-equip seam (the Gummy Worm row's
-        // convention). `pickSpeed -= 0.05` is the port's signed bonus
-        // `pick_speed_bonus += 0.05` (`:4545`'s `1.0 - bonus` form).
+        // W4-a6 — `UpdatePermanentBoosters` (`Player.cs:12851-12867`,
+        // called at `:25644` right after `UpdateEquips`): the C#'s OWN row
+        // order — Aegis Fruit +4 (`:12853-12856`), Gummy Worm +3
+        // (`:12857-12860`, the S1-P-i35 row), Ambrosia's speed triple LAST
+        // (`:12861-12866`). The port folds the pass into this post-equip
+        // seam (the Gummy Worm row's convention); the reconcile re-ordered
+        // the fruit row AHEAD of the worm row to the C# order (g89's
+        // verbatim shape, research/138 §2). `pickSpeed -= 0.05` is the
+        // port's signed bonus `pick_speed_bonus += 0.05` (`:4545`'s
+        // `1.0 - bonus` form).
         if self.used_aegis_fruit {
             self.stat_defense += 4;
+        }
+        if self.used_gummy_worm {
+            self.fishing_skill += 3;
         }
         if self.used_ambrosia {
             self.pick_speed_bonus += 0.05;
@@ -10631,6 +10643,12 @@ impl Player {
             self.zones,
         );
         self.luck_state.update_broken_mirror_decay(day_rate);
+        // W4-a6 — the Galaxy Pearl mirror: `RecalculateLuck`
+        // (`Player.cs:29142-29145`) reads the player-file flag directly; the
+        // port's consumer lives in `LuckState.used_galaxy_pearl`, so the
+        // persistence owner (`Player.used_galaxy_pearl`, the 5340 use) seeds
+        // it before every recalculation (the g90 lane-7 shape, research/138).
+        self.luck_state.used_galaxy_pearl = self.used_galaxy_pearl;
         self.luck_state.recalculate_luck();
     }
 
@@ -11222,12 +11240,13 @@ impl Player {
                 // (`ArmorSetBonuses.cs:248-251` grants the flag):
                 // `lifeRegenTime++` (`Player.cs:19117-19120`) and the ramp
                 // ×1.5 (`:19242-19245`), in the engine's own input slots.
-                // W4-a6 — the Aegis Crystal's permanent +0.2 time add
-                // (`Player.cs:19113-19116`) rides the same slot, BEFORE the
-                // crimson row (the C# order: `:19113` < `:19117`).
-                extra_time: if self.used_aegis_crystal { 0.2 } else { 0.0 }
-                    + if self.crimson_regen { 1.0 } else { 0.0 },
+                extra_time: if self.crimson_regen { 1.0 } else { 0.0 },
                 extra_ramp_scale: if self.crimson_regen { 1.5 } else { 1.0 },
+                // W4-a6 — the Aegis Crystal's permanent +0.2 time add
+                // (`Player.cs:19113-19116`) rides its OWN slot so the add
+                // lands BETWEEN the base +1 and the crimson row (the C#'s
+                // f32 order; the g90 lane-7 shape, research/138 §2).
+                aegis_crystal: self.used_aegis_crystal,
                 ..RegenInputs::default()
             };
             if let Some(death) = update_life_regen(&mut self.regen, &in_, &mut self.hp) {

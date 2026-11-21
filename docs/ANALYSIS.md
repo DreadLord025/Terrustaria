@@ -36064,12 +36064,35 @@ the cadence and the generic consume tail (`:43280-43326`) pays ONE only
 when the grant fired. Refused arms keep re-checking each action tick and
 never consume.
 
-- **Achievement targeting**: the C# `HandleSpecialEvent` completes ONE
-  row's condition (`GetCondition("STAR_POWER", "Use").Complete()`); the
-  port's `notify_custom("Use")` completes every `Flag("Use")` row at
-  once (the existing `potions.rs` drowning convention — the registry has
-  no per-row targeting). Life crystal's event 0 is a NO-OP in the C# (no
-  case 0, `AchievementsHelper.cs:288-379`).
+- **Achievement targeting (reconcile fix, research/138)**: the C#
+  `HandleSpecialEvent` completes ONE row's condition
+  (`GetCondition("STAR_POWER", "Use").Complete()`); the first a6 pass used
+  the `notify_custom("Use")` broadcast (every `Flag("Use")` row at once) —
+  LESS faithful than g88's `complete_named` / c36's `complete_condition`.
+  The reconcile adds the row-targeted `AchievementManager::
+  complete_condition` (c36's shape, the keep-one at the merge) and the
+  crystal/fruit/torch arms now call it: STAR_POWER / GET_A_LIFE /
+  TOPPED_OFF / GAIN_TORCH_GODS_FAVOR each complete ONLY their own row.
+  Life crystal's event 0 stays a NO-OP (no case 0,
+  `AchievementsHelper.cs:288-379`).
+- **Galaxy Pearl ownership (reconcile fix)**: the persistence owner is
+  `Player.used_galaxy_pearl` (the `.plr` slot `:54784`/`:55258` — the C#
+  `RecalculateLuck` reads the player field directly, `:29142-29145`);
+  `update_luck` mirrors it into the `LuckState.used_galaxy_pearl` consumer
+  before every recalculation (the g90 lane-7 shape). The first a6 pass
+  latched the LuckState copy directly — no Player field to persist.
+- **Aegis Crystal f32 order (reconcile fix)**: the +0.2 `lifeRegenTime`
+  add rides its OWN `RegenInputs.aegis_crystal` slot, applied BETWEEN the
+  base +1 (`:19112`) and the crimson +1 folded into `extra_time`
+  (`:19117-19120`) — the g90 lane-7 shape. Pre-summing `0.2 + 1.0` into
+  `extra_time` (the first a6 pass) reorders the C#'s f32 accumulation.
+- **Booster row order (reconcile fix)**: `UpdatePermanentBoosters`' rows
+  now run in the C#'s own order — Aegis Fruit +4, Gummy Worm +3, Ambrosia
+  triple LAST (`:12853-12866`; g89's verbatim order).
+- **TRAINING_DAY (reconcile addition)**: both world book flags standing
+  fires progression 40 every tick from the player pass
+  (`Player.cs:25695-25698`, the g90 lane-7 hook; idempotent once
+  completed).
 - **NPC statics as World fields**: `combatBookWasUsed` /
   `combatBookVolumeTwoWasUsed` / `peddlersSatchelWasUsed` /
   `boughtCat/Dog/Bunny` are `Main`-global statics in the C#; the port
