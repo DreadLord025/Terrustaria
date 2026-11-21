@@ -297,6 +297,13 @@ pub struct PlayerFile {
     /// `Player.voicePitchOffset` (`Player.cs:1348`, `Serialize:54925` /
     /// `Deserialize:55738-55741`, gate 281; below 281 it is 0f `:55742-55745`).
     pub voice_pitch_offset: f32,
+    /// `Player._pendingRefunds` (`Deserialize:55746-55754`, gate 300) /
+    /// `CraftingRequests.SavePossibleRefunds` (`Serialize:54926` ->
+    /// `CraftingRequests.cs:353-362`): the sum of consumed items over the
+    /// pending crafts, as `(type, stack, prefix)` triples
+    /// (`Item.Serialize`/`DeserializeFrom`, no favourited). A fresh queue is
+    /// empty → count 0.
+    pub refunds: Vec<(i32, i32, u8)>,
 }
 
 /// The three `IPersistentPerPlayerContent` powers the `.plr` carries
@@ -1020,10 +1027,15 @@ fn read_player_fields(
         tail.voice_pitch_offset = 0.0; // `:55742-55745`
     }
     if version >= 300 {
-        // _pendingRefunds (`:55746-55754`): count + Item.DeserializeFrom triples.
+        // _pendingRefunds (`:55746-55754`): count + Item.DeserializeFrom
+        // triples. W4-f44 ph3: the triples ride; an over-count id airs after
+        // the whole record (`Item.cs:49930-49933`, the bank4 precedent).
         let n = r.i32().ok_or(PlayerFileError::Truncated("refundCount"))?;
         for _ in 0..n {
-            read_item_triple(r, "refundItem")?;
+            let id = r.i32().ok_or(PlayerFileError::Truncated("refundItem"))?;
+            let stack = r.i32().ok_or(PlayerFileError::Truncated("refundItem"))?;
+            let prefix = r.u8().ok_or(PlayerFileError::Truncated("refundItem"))?;
+            tail.refunds.push((if id < ITEM_ID_COUNT { id } else { 0 }, stack, prefix));
         }
     }
     if version >= 310 {
@@ -1091,6 +1103,7 @@ struct PlayerTail {
     super_cart: u8,
     voice_variant: u8,
     voice_pitch_offset: f32,
+    refunds: Vec<(i32, i32, u8)>,
 }
 
 impl Default for PlayerTail {
@@ -1132,6 +1145,7 @@ impl Default for PlayerTail {
             super_cart: 2,
             voice_variant: 1, // the ctor (`Player.cs:56045`)
             voice_pitch_offset: 0.0,
+            refunds: Vec::new(),
         }
     }
 }
@@ -1215,6 +1229,7 @@ fn finish_player_file(
         super_cart: tail.super_cart,
         voice_variant,
         voice_pitch_offset: tail.voice_pitch_offset,
+        refunds: tail.refunds,
     }
 }
 
@@ -1361,6 +1376,7 @@ fn read_legacy_port_subset(
         super_cart: 2,
         voice_variant: 1,
         voice_pitch_offset: 0.0,
+        refunds: Vec::new(),
     })
 }
 
@@ -1471,6 +1487,10 @@ pub struct PlayerFileWrite {
     /// The super-cart BitsByte (`:54914-54918`): bit 0 unlockedSuperCart,
     /// bit 1 enabledSuperCart — a fresh save is 2 (enabled true, `:2054`).
     pub super_cart: u8,
+    /// `CraftingRequests.SavePossibleRefunds` (`:54926` ->
+    /// `CraftingRequests.cs:353-362`): the consumed-item triples over the
+    /// pending crafts. A fresh queue is empty → count 0, no payloads.
+    pub refunds: Vec<(i32, i32, u8)>,
 }
 
 impl Default for PlayerFileWrite {
@@ -1527,6 +1547,7 @@ impl Default for PlayerFileWrite {
             super_cart: 2,
             voice_variant: 1, // the ctor (`Player.cs:56045`)
             voice_pitch_offset: 0.0,
+            refunds: Vec::new(),
         }
     }
 }
@@ -1801,10 +1822,16 @@ pub fn serialize_plaintext(file: &PlayerFileWrite) -> Vec<u8> {
     }
     w.u8(file.voice_variant); // `:54924` (byte)voiceVariant (ctor 1, `:56045`)
     w.f32(file.voice_pitch_offset); // `:54925` voicePitchOffset (`:1348`)
-                // `:54926` CraftingRequests.SavePossibleRefunds
-                // (`CraftingRequests.cs:353-362`): the sum of consumed items over _pendingCrafts
-                // — a fresh queue is empty → count 0, no item payloads.
-    w.i32(0);
+    // `:54926` CraftingRequests.SavePossibleRefunds
+    // (`CraftingRequests.cs:353-362`): the sum of consumed items over
+    // _pendingCrafts, each Item.Serialize (no favourited). W4-f44 ph3: the
+    // caller's triples ride; a fresh queue is empty → count 0, no payloads.
+    w.i32(file.refunds.len() as i32);
+    for (id, stack, prefix) in &file.refunds {
+        w.i32(*id);
+        w.i32(*stack);
+        w.u8(*prefix);
+    }
     // `:54927-54932` oneTimeDialoguesSeen (`Player.cs:3209`): a fresh empty
     // HashSet → count 0, no strings.
     w.i32(0);
@@ -2005,6 +2032,39 @@ mod tests {
         // A fresh write keeps the golden zeros (`:54754-54757`).
         let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
         assert_eq!((fresh.play_time_ticks, fresh.hair_dye, fresh.team), (0, 0, 0));
+    }
+
+    /// W4-f44 ph3: the crafting refunds round-trip as count + triples; an
+    /// over-count id airs after the whole record; a fresh queue is count 0.
+    #[test]
+    fn the_refunds_round_trip_as_count_and_triples() {
+        let refunds = vec![(757, 1, 81), (2, 999, 0), (3507, 1, 0)];
+        let written = PlayerFileWrite { refunds: refunds.clone(), ..sample() };
+        let plain = serialize_plaintext(&written);
+        // The refunds sit after the voice pair, before the dialogues. Walk
+        // to them: the tail's fixed prefix is 1425 - 4 dialogues - (4 + 9*n)
+        // refunds... simpler: read back and also pin the count bytes by
+        // locating the dialogue count at the very end.
+        let file = read_player_bytes(&plain).unwrap();
+        assert_eq!(file.refunds, refunds);
+        // The last 4 bytes are the dialogue count (0); the 4 before the
+        // refund payloads are the refund count.
+        let n = refunds.len();
+        let refund_count_at = plain.len() - 4 - (9 * n) - 4;
+        assert_eq!(
+            i32::from_le_bytes(plain[refund_count_at..refund_count_at + 4].try_into().unwrap()),
+            n as i32
+        );
+        // An over-count id airs id only, stack/prefix ride (`Item.cs:49930`).
+        let written = PlayerFileWrite {
+            refunds: vec![(ITEM_ID_COUNT + 2, 7, 9), (8, 99, 0)],
+            ..sample()
+        };
+        let file = read_player_bytes(&cbc_decrypt(&write_player_bytes(&written))).unwrap();
+        assert_eq!(file.refunds, vec![(0, 7, 9), (8, 99, 0)]);
+        // Fresh: count 0, no payloads (golden parity).
+        let fresh = read_player_bytes(&cbc_decrypt(&write_player_bytes(&sample()))).unwrap();
+        assert!(fresh.refunds.is_empty());
     }
 
     /// W4-f44 ph3: the voice pair round-trips; the read clamps the variant
