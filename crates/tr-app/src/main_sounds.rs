@@ -314,6 +314,56 @@ pub fn cycle_clothing_style(skin_variant: i32, male: bool) -> i32 {
     variant
 }
 
+/// The menuMode 2 char-creation row cues (`Main.cs:48985-49123`): the
+/// legacy preview screen's per-row `PlaySound` ids, superseded by the 888
+/// `UICharacterCreation` in the port (the rows are unwired — this pins the
+/// census). Row indices are the C# `selectedMenu`:
+///  * 0/1/2/3 — the Hair/Eyes/Skin/Clothes colour opens play 10
+///    (`:48991`/`:48997`/`:49003`/`:49009`);
+///  * 4 — the gender toggle plays 20 (male->female) or 1 (female->male)
+///    (`:49045`/`:49050`), see [`gender_toggle_cue`];
+///  * 5 — the difficulty open plays 10 (`:49070`, -> mode 222);
+///  * 6 — the Create/name row plays 10 (`:49119`, -> mode 3);
+///  * 7 — the Randomize row plays 12 (`:49075`);
+///  * 8 — the Back row plays 11 (`:49114`, -> mode 1).
+/// Returns the cue id for the row, or `None` for the gender row (its cue
+/// is gender-dependent — the caller uses [`gender_toggle_cue`]).
+pub fn char_creation_row_cue(row: i32) -> Option<u32> {
+    match row {
+        0 | 1 | 2 | 3 => Some(10), // `:48991`/`:48997`/`:49003`/`:49009`
+        4 => None,                 // gender-dependent, `:49045`/`:49050`
+        5 => Some(10),             // `:49070`
+        6 => Some(10),             // `:49119`
+        7 => Some(12),             // `:49075`
+        8 => Some(11),             // `:49114`
+        _ => None,
+    }
+}
+
+/// The menuMode 222 difficulty-select row cues (`Main.cs:49125-49169`):
+/// the three difficulty rows (Classic/Mediumcore/Hardcore, `selectedMenu`
+/// 1/2/3) set `PendingPlayer.difficulty` and return to mode 2 with NO
+/// `PlaySound` — the C# block has none. Returns `None` for every row (the
+/// census pin: the difficulty select is silent, unlike the mode-2 row 5
+/// open that plays 10).
+pub fn difficulty_select_cue(_row: i32) -> Option<u32> {
+    None // `:49154-49168` — no PlaySound in the block
+}
+
+/// The menuMode 20 clothes-colour row cues (`Main.cs:49170-49207`): the
+/// four colour opens (Shirt/Undershirt/Pants/Shoes, `selectedMenu` 0/1/2/3)
+/// play 10 (`:49176`/`:49182`/`:49188`/`:49195`); the Style cycle row
+/// (`selectedMenu == 4`) plays 12 (`:49205`) then `CycleClothingStyle`;
+/// the Back row (`selectedMenu == 5` | flag5) plays 11 (`:49200`).
+pub fn clothes_colour_row_cue(row: i32) -> Option<u32> {
+    match row {
+        0 | 1 | 2 | 3 => Some(10), // `:49176`/`:49182`/`:49188`/`:49195`
+        4 => Some(12),             // `:49205` — the Style cycle
+        5 => Some(11),             // `:49200` — Back
+        _ => None,
+    }
+}
+
 /// `Main.DrawSettingButton`'s hover-enter cue (`Main.cs:45595-45616`): the
 /// pointer entering the label rect plays ONE sound 12 (`:45601`) on the
 /// `!mouseOver` edge, then latches `mouseOver = true`; leaving the rect
@@ -564,5 +614,44 @@ mod tests {
         assert_eq!(cycle_clothing_style(9, false), 4);
         // An absent variant starts at index 0 (:52419 num=0), steps to [1].
         assert_eq!(cycle_clothing_style(99, true), 1);
+    }
+
+    // ---- char-creation row cues (Main.cs:48985-49207) --------------------
+
+    #[test]
+    fn g22_the_mode2_rows_cue_ten_twelve_eleven_and_gender_splits() {
+        // The four colour opens play 10 (:48991/:48997/:49003/:49009).
+        for row in 0..4 {
+            assert_eq!(char_creation_row_cue(row), Some(10));
+        }
+        // The gender row is gender-dependent (None here; gender_toggle_cue).
+        assert_eq!(char_creation_row_cue(4), None);
+        // Difficulty open 10 (:49070), Create/name 10 (:49119).
+        assert_eq!(char_creation_row_cue(5), Some(10));
+        assert_eq!(char_creation_row_cue(6), Some(10));
+        // Randomize 12 (:49075), Back 11 (:49114).
+        assert_eq!(char_creation_row_cue(7), Some(12));
+        assert_eq!(char_creation_row_cue(8), Some(11));
+        assert_eq!(char_creation_row_cue(9), None);
+    }
+
+    #[test]
+    fn g22_the_difficulty_select_is_silent() {
+        // :49154-49168 — the mode-222 block has NO PlaySound.
+        for row in 1..4 {
+            assert_eq!(difficulty_select_cue(row), None);
+        }
+    }
+
+    #[test]
+    fn g22_the_mode20_colour_rows_cue_ten_and_the_style_cycle_twelve() {
+        // The four colour opens play 10 (:49176/:49182/:49188/:49195).
+        for row in 0..4 {
+            assert_eq!(clothes_colour_row_cue(row), Some(10));
+        }
+        // Style cycle 12 (:49205), Back 11 (:49200).
+        assert_eq!(clothes_colour_row_cue(4), Some(12));
+        assert_eq!(clothes_colour_row_cue(5), Some(11));
+        assert_eq!(clothes_colour_row_cue(6), None);
     }
 }

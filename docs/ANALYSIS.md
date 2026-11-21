@@ -39397,3 +39397,42 @@ rows are unwired because the 888 screen superseded them.
 **Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
 5 `main_sounds` witnesses + 1 `audio` witness WRITTEN NOT RUN.
 
+## W4-g22 batch 4 (2026-11-21, code-only) — sites 136-150
+
+**Batch 4 (sites 136-150)** — the legacy char-creation colour/difficulty/
+clothes row cues (menuModes 2/20/222/17) land as pure census helpers behind
+witnesses (the 888 `UICharacterCreation` superseded these screens; the rows
+are unwired, the `npc_ai_style59` precedent):
+
+| site | C# | port |
+| --- | --- | --- |
+| 136 `:48997` | mode-2 Eyes colour open 10 | `char_creation_row_cue(1)` |
+| 137 `:49003` | mode-2 Skin colour open 10 | `char_creation_row_cue(2)` |
+| 138 `:49009` | mode-2 Clothes open 10 | `char_creation_row_cue(3)` |
+| 139 `:49045` | mode-2 gender male->female 20 | LANDED batch 3 — `gender_toggle_cue(true)` + `Audio::play_female_hit_sound` |
+| 140 `:49050` | mode-2 gender female->male 1 | LANDED batch 3 — `gender_toggle_cue(false)` (case-1 seam `sound::player_hit_case1`) |
+| 141 `:49070` | mode-2 difficulty open 10 | `char_creation_row_cue(5)` |
+| 142 `:49075` | mode-2 Randomize 12 | `char_creation_row_cue(7)` + `randomize_hair_legacy` (batch 3) |
+| 143 `:49114` | mode-2 Back 11 | `char_creation_row_cue(8)` |
+| 144 `:49119` | mode-2 Create/name 10 | `char_creation_row_cue(6)` |
+| 145 `:49176` | mode-20 Shirt colour open 10 | `clothes_colour_row_cue(0)` |
+| 146 `:49182` | mode-20 Undershirt colour open 10 | `clothes_colour_row_cue(1)` |
+| 147 `:49188` | mode-20 Pants colour open 10 | `clothes_colour_row_cue(2)` |
+| 148 `:49195` | mode-20 Shoes colour open 10 | `clothes_colour_row_cue(3)` |
+| 149 `:49200` | mode-20 Back 11 | `clothes_colour_row_cue(5)` |
+| 150 `:49205` | mode-20 Style cycle 12 | `clothes_colour_row_cue(4)` + `cycle_clothing_style` (batch 3) |
+
+**The pure helpers** (`main_sounds.rs`): `char_creation_row_cue` (the mode-2
+per-row ids, the gender row `None` — gender-dependent), `difficulty_select_cue`
+(the mode-222 block is SILENT — no `PlaySound`, `:49154-49168`),
+`clothes_colour_row_cue` (the mode-20 colour opens 10 / Style cycle 12 /
+Back 11).
+
+**RNG**: every batch-4 site is draw-free (ids 10/11/12 int overload; the
+case-20/case-1 gender picks landed batch 3). The Randomize row's `Next(51)`
+chain is batch 3's `randomize_hair_legacy` — the cue (12) precedes the draw
+in the C# order (`:49075` then `:49076`). No gameplay stream touched.
+
+**Verification**: code-only — no cargo/rustc/rustfmt/tests/graphify invoked;
+3 `main_sounds` witnesses WRITTEN NOT RUN.
+
