@@ -1,5 +1,11 @@
 # 144 — the item entry/exit splash KEEP-ONE (W4-f47 × W4-e19, 2-way)
 
+> **ARBITER FINAL: `144-ARBITER-FINAL.md`** — the e19 lane rendered a
+> divergent verdict at its tip `c7a38bea5` (keep e19, retire f47); the
+> arbitration UPHELD this doc's keeper (the f47 `Splash` shape) with
+> the sticky-vs-local lemma verified and the e19 census trio folded.
+> The merger reads the FINAL, not this receipt.
+
 > Coded 2026-11-21 on `task/W4-f47-liquid-shimmer-2` (base `a2561d6d`).
 > Code-only: no cargo/tests/rustfmt/graphify invoked; every verdict is a
 > re-read of the cited C# window (≤100 lines) against both lanes' pushed

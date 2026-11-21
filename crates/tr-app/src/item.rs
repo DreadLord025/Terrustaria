@@ -2158,6 +2158,13 @@ mod tests {
             _ => (190, 175, 255),
         };
         assert_eq!((d0.color.r, d0.color.g, d0.color.b), expect);
+        // ARBITER 144 fold — the e19 16-box anchor bands (its
+        // `..._draws_71_at_the_16_box` witness, re-driven through the
+        // keeper method): anchor x = pos.X−6, the roll +4..+27 → 298..321;
+        // anchor y = pos.Y + height/2 − 8 = pos.Y + 0 at the 16 box, the
+        // roll +4..+23 → 304..323. The old 14-box sat 1 px high.
+        assert!((298.0..=321.0).contains(&d0.position.x), "x: {}", d0.position.x);
+        assert!((304.0..=323.0).contains(&d0.position.y), "y: {}", d0.position.y);
     }
 
     /// `WorldItem.cs:944-953` — the lava gate WINS over shimmer/honey (the
@@ -2203,6 +2210,48 @@ mod tests {
         // the arm's −1.5 — the pin is overwritten by the arm's += only in
         // part: −0.5 + −1.5 = −2.0.
         assert_eq!(d0.velocity.y, -2.0);
+        assert!(d0.no_gravity);
+        // ARBITER 144 fold — the e19 lava census's family count: exactly 5
+        // active dust-35 slots, no 308/152 strays (the gate picks ONE arm).
+        let n35 = pool.slots().iter().filter(|d| d.active && d.dust_type == 35).count();
+        assert_eq!(n35, 5, "the lava family, not 308/152");
+    }
+
+    /// ARBITER 144 fold — the e19 `w4_e19_the_water_exit_anchor_drops_the_
+    /// minus_8` witness re-driven through the keeper method: the water EXIT
+    /// anchor drops the −8 (`WorldItem.cs:1011` vs `:932`); at the 16 box
+    /// the exit anchor is `pos.Y + 8` vs the entry's `pos.Y + 0`
+    /// (`height/2 − 8` cancels). Same seed → same rolls; the only delta is
+    /// the anchor's 8 px. WRITTEN NOT RUN (code-only lane).
+    #[test]
+    fn w4_f47k1_the_water_exit_anchor_drops_the_minus_8() {
+        let w = World::new("spw".into(), 40, 80);
+        let ctx = tr_core::particles::SpawnCtx {
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(1920.0, 1080.0),
+            max_dust_to_draw: 6000,
+            ..Default::default()
+        };
+        let mut ys = Vec::new();
+        for exit in [false, true] {
+            let mut pool = tr_core::particles::DustPool::new();
+            let mut audio = crate::audio::Audio::new(None);
+            let mut rng = tr_core::unified_random::UnifiedRandom::new(99);
+            let mut d = ItemDrop::new(2, 1, 0, 300.0, 300.0, 0.0, 0.0, 0.0);
+            d.splash_due = Some(Splash {
+                exit,
+                lava: false,
+                shimmer: false,
+                honey: false,
+                pos: d.pos,
+            });
+            d.splash(&mut pool, &ctx, &w, &mut audio, &mut rng, 0);
+            let d0 = pool.slot_mut(0);
+            assert_eq!(d0.dust_type, tr_core::particles::dust_water(0));
+            ys.push(d0.position.y);
+        }
+        assert_eq!(ys[1] - ys[0], 8.0, "entry {:?} exit {:?}", ys[0], ys[1]);
+        assert!((304.0..=323.0).contains(&ys[0]), "entry band at pos.Y+0");
     }
 }
 
