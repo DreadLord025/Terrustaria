@@ -293,7 +293,7 @@
 //! coin math's live inputs are wired, the rule gates are the full C#
 //! bodies, and the statue/entry/Twins refusals skip the whole NPCLoot.
 //! The OPEN side (the 58-kind OpenableBag set) landed in the widened
-//! scope. Witnesses: 12 f35-final (the soul-gate refusal table, the
+//! scope. Witnesses: 11 f35-final (the soul-gate refusal table, the
 //! DownedPlantera complement, the statue table/draw-shape, the midas/
 //! blood-moon stream deltas, the statue early-mode refusal, the
 //! loot-coins-heals order twin, the Twins first-death zero, the entry-gate

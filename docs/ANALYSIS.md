@@ -39512,7 +39512,7 @@ The death-side `NPC.NPCLoot` (`NPC.cs:78830-78899`) is fully wired in
 
 The Skyblock recovery arms (`:79559-79617`) stay OUT (the worldgen pass
 is unported, the latches constants-off); the seasonal-boss downed flags
-stay unowned (no live field). 12 f35-final witnesses WRITTEN NOT RUN (the
+stay unowned (no live field). 11 f35-final witnesses WRITTEN NOT RUN (the
 soul-gate refusal table, the DownedPlantera complement, the statue
 table/draw-shape, the midas/blood-moon stream deltas, the statue
 early-mode refusal, the loot-coins-heals order twin, the Twins
