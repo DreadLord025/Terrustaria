@@ -167,8 +167,13 @@ Traps, Final Cleanup.
   living-tree wall gate, then `PlaceChest(i-1, k-1)`. The stocking block
   (`:36218-37551`) rides the `chest_stock` hook (S1-A-4) with the layer-anchor
   save/restore (the mini_biomes.rs:1144 precedent).
-- **Pipeline**: `step!("surface chests", …)` after `cave houses`, before
-  `chests`; count 67→68; witness
+- **Pipeline**: `step!("surface chests", …)` in the port's chest-family
+  grouping — after `chests` (Jungle Chests Placement), before `water chests` /
+  `spider caves`. (The port's `chests` step already sits early in the executed
+  order; the vanilla Surface Chests anchor `:17130` precedes Jungle Chests
+  Placement `:17211`, so the grouping keeps the chest family together — the
+  isolated stream makes it RNG-neutral.) Count witness updated; the
+  `test_DW_5_6` spider-caves adjacency now reads `water chests + 1`; witness
   `w4_g37_the_surface_chests_step_follows_the_cave_houses`; progress `Gen(31)`
   (`:17134`).
 - **Hash notes**: BOTH pins move BY DESIGN (the surface band sits above
@@ -196,10 +201,10 @@ Traps, Final Cleanup.
   a waterless world); the port caps them at 10000 re-rolls (a degenerate-world
   guard, cited inline). The notTheBees/remix/extraLiquid/tenth arms are
   deferred.
-- **Pipeline**: `step!("water chests", …)` after `surface chests` (the port's
-  chest-family grouping; vanilla `:17245` sits after Jungle Chests Placement
-  `:17211`, before Spider Caves `:17356` — the isolated stream makes the
-  grouping RNG-neutral); count 68→69; witness
+- **Pipeline**: `step!("water chests", …)` in the chest-family grouping —
+  after `surface chests`, before `spider caves` (vanilla `:17245` sits after
+  Jungle Chests Placement `:17211`, before Spider Caves `:17356` — the
+  isolated stream makes the grouping RNG-neutral); witness
   `w4_g37_the_water_chests_step_follows_the_surface_chests`; progress `Gen(33)`
   (`:17249`).
 - **Hash notes**: both pins move BY DESIGN; deferred; `a == b` untouched.

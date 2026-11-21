@@ -1316,6 +1316,15 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     step!("exposed gems", "Gems In Ice Biome", step_exposed_gems),
     step!("jungle shrines", "Jungle Chests", step_jungle_shrines),
     step!("chests", "Jungle Chests Placement", step_chests),
+    // The vanilla Surface Chests + Water Chests slots (`WorldGen.cs:17130`,
+    // `:17245`): the port groups them with the chest family right after
+    // `chests` (Jungle Chests Placement), before `spider caves` — W4-g37 B2/B3.
+    // (The port's `chests` step already sits early in the executed order; the
+    // isolated per-pass streams make the grouping RNG-neutral. The Water
+    // Chests ocean-cave treasure anchors are produced by `ocean caves`,
+    // earlier.) Own `pass_rng("Surface Chests")` / `pass_rng("Water Chests")`.
+    step!("surface chests", "Surface Chests", step_surface_chests),
+    step!("water chests", "Water Chests", step_water_chests),
     // The vanilla slots (`WorldGen.cs:17356`, `:17428`, `:17472`): after the
     // chest family (the `UnderwaterChests` environs `:17245`, which the port's
     // "chests" step covers) and before the temple (`:17701`) — the M5-STRUCT-5
@@ -1361,16 +1370,6 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // Buried Chests (`:16971`) — W4-g37 B1. Own `pass_rng("Statues")` stream.
     step!("statues", "Statues", step_statues),
     step!("cave houses", "Buried Chests", step_cave_houses),
-    // The vanilla Surface Chests slot (`WorldGen.cs:17130`): after Buried
-    // Chests (`:16971`), before Jungle Chests Placement (`:17211`) — W4-g37
-    // B2. Own `pass_rng("Surface Chests")` stream.
-    step!("surface chests", "Surface Chests", step_surface_chests),
-    // The vanilla Water Chests slot (`WorldGen.cs:17245`): after Jungle Chests
-    // Placement (`:17211`), before Spider Caves (`:17356`) — W4-g37 B3. The
-    // port groups it right after `surface chests` (the chest family); the
-    // ocean-cave treasure anchors it reads are produced by `ocean caves`
-    // (earlier). Own `pass_rng("Water Chests")` stream.
-    step!("water chests", "Water Chests", step_water_chests),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -3503,6 +3502,11 @@ mod tests {
                 "exposed gems",
                 "jungle shrines",
                 "chests",
+                // W4-g37 B2/B3: the chest-family grouping — Surface Chests
+                // (`WorldGen.cs:17130`) + Water Chests (`:17245`) after
+                // Jungle Chests Placement, before Spider Caves.
+                "surface chests",
+                "water chests",
                 "spider caves",
                 "gem caves",
                 "moss",
@@ -3530,13 +3534,6 @@ mod tests {
                 // precedes Buried Chests (`:16971`).
                 "statues",
                 "cave houses",
-                // W4-g37 B2: the vanilla Surface Chests slot
-                // (`WorldGen.cs:17130`) follows Buried Chests (`:16971`).
-                "surface chests",
-                // W4-g37 B3: the vanilla Water Chests slot
-                // (`WorldGen.cs:17245`) — the port groups it with the chest
-                // family, after Surface Chests.
-                "water chests",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3719,7 +3716,9 @@ mod tests {
     fn test_DW_5_6_cave_decor_steps_sit_in_their_vanilla_positions() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("spider caves"), pos("chests") + 1);
+        // W4-g37 B2/B3: the chest-family grouping inserts `surface chests` +
+        // `water chests` between `chests` and `spider caves`.
+        assert_eq!(pos("spider caves"), pos("water chests") + 1);
         assert_eq!(pos("gem caves"), pos("spider caves") + 1);
         assert_eq!(pos("moss"), pos("gem caves") + 1);
         assert_eq!(names[pos("moss") + 1], "altars");
@@ -3786,15 +3785,18 @@ mod tests {
         assert!(cpos("Life Crystals") < cpos("Statues"));
     }
 
-    /// W4-g37 B2: `surface chests` sits in its vanilla slot — after
-    /// `cave houses` (Buried Chests, `WorldGen.cs:16971`) and before `chests`
-    /// (Jungle Chests Placement, `:17211`).
+    /// W4-g37 B2: `surface chests` sits in the port's chest-family grouping —
+    /// after `chests` (Jungle Chests Placement), before `water chests`. The
+    /// vanilla Surface Chests anchor `WorldGen.cs:17130` precedes Jungle
+    /// Chests Placement `:17211`; the port's `chests` step already sits early
+    /// in the executed order, so the grouping keeps the chest family together
+    /// (the isolated stream makes it RNG-neutral).
     #[test]
     fn w4_g37_the_surface_chests_step_follows_the_cave_houses() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("surface chests"), pos("cave houses") + 1);
-        assert!(pos("surface chests") < pos("chests"));
+        assert_eq!(pos("surface chests"), pos("chests") + 1);
+        assert!(pos("surface chests") < pos("spider caves"));
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
             .filter(|p| p.gate.is_empty())
