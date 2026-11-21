@@ -3566,10 +3566,11 @@ fn npc_seed(
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?
         }
-        // The waterfowl walkers (W4-e26): the Frog/Duck plant their feet
-        // on the column surface (the generic surface ctor; the aiStyle-7
-        // machine takes over on the first tick — DATA-ONLY until then).
-        crate::npc::NpcKind::Frog | crate::npc::NpcKind::Duck => {
+        // The Frog walker (W4-e26, E8 keep-one): plants its feet on the
+        // column surface (the generic surface ctor; the aiStyle-7 machine
+        // takes over on the first tick — DATA-ONLY until then). The Duck
+        // dropped to c10 (the waterfowl owner, SEAL S1).
+        crate::npc::NpcKind::Frog => {
             crate::npc::Npc::spawn_cave_walker(world, tx, kind)?
         }
         // The luck critters (W4-e26): the noGravity flyers' net seed rides

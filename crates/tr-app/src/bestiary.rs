@@ -2171,12 +2171,14 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         quick_unlock: false,
         name: "Force Bubble",
     },
-    // The luck critters + their waterfowl neighbours (W4-e26): the
-    // populator registers all four (`BestiaryDatabaseNPCsPopulator.cs`'s
+    // The luck critters (W4-e26, E8 keep-one): the populator registers
+    // all three (`BestiaryDatabaseNPCsPopulator.cs`'s
     // `AddEmptyEntries_CrittersAndEnemies_Automated` — the
     // `CountsAsACritter` set, `NPCID.cs:10460`). Display names ride
-    // `Lang.GetNPCNameValue` (`NPCs.json`: 361 "Frog", 362 "Duck",
-    // 604 "Ladybug", 605 "Gold Ladybug").
+    // `Lang.GetNPCNameValue` (`NPCs.json`: 361 "Frog", 604 "Ladybug",
+    // 605 "Gold Ladybug"). The Duck entry dropped to c10 (the waterfowl
+    // family's canonical owner, research/108 SEAL S1); the c8 generic
+    // sight gate auto-covers these rows at merge (research/238 §1).
     BestiaryEntryDef {
         credit_id: "Frog",
         net_id: 361,
@@ -2184,14 +2186,6 @@ pub const ENTRIES: &[BestiaryEntryDef] = &[
         variant: None,
         quick_unlock: false,
         name: "Frog",
-    },
-    BestiaryEntryDef {
-        credit_id: "Duck",
-        net_id: 362,
-        kind: NpcKind::Duck,
-        variant: None,
-        quick_unlock: false,
-        name: "Duck",
     },
     BestiaryEntryDef {
         credit_id: "LadyBug",

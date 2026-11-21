@@ -1086,20 +1086,18 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
-    /// `NPCID.Frog` (361, `NPCID.cs:11399`) — the hopping critter
+    /// `NPCID.Frog` (361, `NPCID.cs:11399`) — the jungle critter
     /// (`NPC.cs:13601-13612`): 12x10, aiStyle 7, dmg 0, def 0, 5 HP,
     /// kb 1 (the head default — the row writes none), value 0,
     /// catchItem 2121. DATA-ONLY (W4-e26): the aiStyle-7 town machine
     /// (~2600 lines, research/25 row 7 APPROXIMATE) is its own wave;
     /// the kind + stats land so the catch/release chain resolves.
+    /// E8 keep-one EXECUTED (research/108): e26 owns the Frog; the wire
+    /// id moves 361→744 (d37's Pirate owns proto 361), cs/net stay 361.
+    /// The Duck 362 variant DROPPED to c10 (the waterfowl family's
+    /// canonical owner, SEAL S1 — its walker/swim rows + Transform
+    /// chain land there; e26 keeps only the Frog + the ladybug pair).
     Frog,
-    /// `NPCID.Duck` (362, `NPCID.cs:11401`) — the walking waterfowl
-    /// (`NPC.cs:13613-13624`): 22x26, aiStyle 7, dmg 0, def 0, 5 HP,
-    /// kb 1, value 0, catchItem 2122. DATA-ONLY (W4-e26): the swim
-    /// form Duck2 (363, aiStyle 68) + the `Transform(type+1)` landing
-    /// cycle are the style-68 family's merge step (`npc_ai_style68.rs`,
-    /// W4-c10); this walker kind is the roster row that chain needs.
-    Duck,
     /// `NPCID.LadyBug` (604, `NPCID.cs:11885`) — the luck critter
     /// (`NPC.cs:16763-16780`): 10x10, aiStyle 115, dmg 0, def 0, 5 HP,
     /// kb 1, npcSlots 0.25, noGravity, catchItem 4361. WIRED (W4-e26):
@@ -3566,10 +3564,10 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 0.3,
             NpcKind::DungeonSpirit => 0.2,
-            // The luck critters + waterfowl (W4-e26): the `SetDefaults`
+            // The luck critters (W4-e26, E8 keep-one): the `SetDefaults`
             // rows write no knockBackResist — the head's 1f
             // (`NPC.cs:8533`) stands (the ForceBubble / W4-c9 precedent).
-            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => 1.0,
+            NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 1.0,
             _ => 0.4,
         }
     }
@@ -3950,9 +3948,9 @@ impl Npc {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 24,
             NpcKind::DungeonSpirit => 30,
-            // The luck critters + waterfowl (W4-e26): defense 0 each
-            // (`NPC.cs:13607` / `:13619` / `:16769`).
-            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0,
+            // The luck critters (W4-e26, E8 keep-one): defense 0 each
+            // (`NPC.cs:13607` / `:16769`).
+            NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -4325,9 +4323,9 @@ impl Npc {
             NpcKind::BlazingWheel => 0.0,
             NpcKind::AngryNimbus => 300.0,
             NpcKind::DungeonSpirit => 500.0,
-            // The luck critters + waterfowl (W4-e26): the rows write no
+            // The luck critters (W4-e26, E8 keep-one): the rows write no
             // value — the head's 0f (`NPC.cs:8544`) stands.
-            NpcKind::Frog | NpcKind::Duck | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0.0,
+            NpcKind::Frog | NpcKind::LadyBug | NpcKind::GoldLadyBug => 0.0,
             NpcKind::Slime => unreachable!(),
         }
     }
@@ -6374,12 +6372,12 @@ impl Npc {
             NpcKind::DukeFishron => self.ai_069_fishron(world, player, rng),
             NpcKind::DetonatingBubble => self.ai_070_bubble(world, player, rng),
             NpcKind::Sharkron | NpcKind::Sharkron2 => self.ai_071_sharkron(world, player),
-            // The waterfowl walkers (W4-e26): DATA-ONLY — the aiStyle-7
-            // town machine (~2600 lines, research/25 row 7) is its own
-            // wave; the kinds + stats land for the catch/release chain
-            // and the c10 swim-form Transform target. No-op until then
-            // (the W4-d35 data-wave precedent).
-            NpcKind::Frog | NpcKind::Duck => {}
+            // The Frog walker (W4-e26, E8 keep-one): DATA-ONLY — the
+            // aiStyle-7 town machine (~2600 lines, research/25 row 7) is
+            // its own wave; the kind + stats land for the catch/release
+            // chain. No-op until then (the W4-d35 data-wave precedent).
+            // The Duck dropped to c10 (the waterfowl owner, SEAL S1).
+            NpcKind::Frog => {}
             // The luck critters (W4-e26): claimed by the aiStyle-115 axis
             // above — these arms keep the kind match exhaustive and route
             // direct-kind callers to the same machine (the fishron /
@@ -6763,31 +6761,6 @@ impl Npc {
                 }
                 let cell = (self.frame_counter as i32 / 2) as u32;
                 self.frame = if self.vy == 0.0 { cell } else { 4 + cell };
-            }
-            // The Duck's `case 362` (`NPC.cs:73747-73771`, shared with
-            // 364/608): spriteDirection = direction; idle (vx == 0) →
-            // row 0 + counter reset; else the 4-tick advance over rows
-            // 3..9 (wrap at 10 back to 3, floor at 3).
-            // `Main.npcFrameCount[362]` = 15. DATA-ONLY kind (the aiStyle-7
-            // machine is its own wave) — the frame rests until then.
-            NpcKind::Duck => {
-                self.sprite_dir = self.facing;
-                if self.vx == 0.0 {
-                    self.frame_counter = 0.0;
-                    self.frame = 0;
-                } else {
-                    self.frame_counter += 1.0;
-                    if self.frame_counter >= 4.0 {
-                        self.frame += 1;
-                        self.frame_counter = 0.0;
-                    }
-                    if self.frame >= 10 {
-                        self.frame = 3;
-                    }
-                    if self.frame < 3 {
-                        self.frame = 3;
-                    }
-                }
             }
             // The Frog's `case 361` (`NPC.cs:76618-76685`, shared with
             // 445/687): the wet swim rows 10/11/12 by |vx| band; the
@@ -18777,10 +18750,11 @@ impl Npc {
             NpcKind::BlazingWheel => 353,
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
-            // The luck critters + waterfowl (W4-e26): the vanilla ids —
-            // unused by every arm above (the G6 key stays injective).
-            NpcKind::Frog => 361,
-            NpcKind::Duck => 362,
+            // The luck critters (W4-e26, E8 keep-one): the Frog rides the
+            // d37-E8 wire slot 744 (cs_id stays 361); the ladybug pair
+            // keeps the vanilla ids 604/605 (free slots, the d42 ownership
+            // flip). The Duck dropped to c10 (the waterfowl owner).
+            NpcKind::Frog => 744,
             NpcKind::LadyBug => 604,
             NpcKind::GoldLadyBug => 605,
             // The wyvern family (S1-D-3): the gate-reassigned protocol ids
@@ -23861,7 +23835,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 274] = [
+    pub(super) const ALL_KINDS: [NpcKind; 273] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -24140,9 +24114,9 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
-        // The luck critters + waterfowl (W4-e26).
+        // The luck critters (W4-e26, E8 keep-one): the Frog + the ladybug
+        // pair; the Duck dropped to c10 (the waterfowl owner, SEAL S1).
         NpcKind::Frog,
-        NpcKind::Duck,
         NpcKind::LadyBug,
         NpcKind::GoldLadyBug,
     ];
@@ -27756,8 +27730,8 @@ mod s1_f_3_tests {
         );
         assert_eq!(
             covered + sentinel,
-            274,
-            "every decodable kind resolves (the wire roster's size - 274 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-e26's four luck critters/waterfowl, L-B gate)"
+            273,
+            "every decodable kind resolves (the wire roster's size - 273 after S1-D-3ff wave A's 24 kinds + S1-F-13c slices A+B's frost fifteen + S1-D-3 W-3's two volley bees + S1-D-3-wire-plantera-minions' four + S1-D-3-wire-destroyer's three + W-9's fishron four + W-A2-3's LeechTail + S1-F-13d's ForceBubble/MartianTurret + S1-D-3 wyvern's six + S1-D-3z's seven zombies + S1-D-3-wire-smallkinds' three new kinds + W4-e26's three luck critters (the Duck dropped to c10, E8 keep-one), L-B gate)"
         );
         assert!(
             covered > 43,
@@ -31399,11 +31373,10 @@ mod s1_d_2_tests {
         (NpcKind::WyvernBody2, 6),
         (NpcKind::WyvernBody3, 6),
         (NpcKind::WyvernTail, 6),
-        // The luck critters + waterfowl (W4-e26): Frog/Duck aiStyle 7
-        // (`NPC.cs:13605`/`:13617`), the ladybug pair aiStyle 115
-        // (`:16767`).
+        // The luck critters (W4-e26, E8 keep-one): Frog aiStyle 7
+        // (`NPC.cs:13605`), the ladybug pair aiStyle 115 (`:16767`).
+        // The Duck dropped to c10 (the waterfowl owner, SEAL S1).
         (NpcKind::Frog, 7),
-        (NpcKind::Duck, 7),
         (NpcKind::LadyBug, 115),
         (NpcKind::GoldLadyBug, 115),
     ];
@@ -33753,20 +33726,21 @@ mod s1_f_13d_tests {
 
 #[cfg(test)]
 mod w4_e26_luck_critter_tests {
-    //! W4-e26 — the luck critters + waterfowl roster wiring. Every row
-    //! pins verbatim to the C# (`NPC.cs:13601-13612` Frog, `:13613-13624`
-    //! Duck, `:16763-16780` the ladybug pair). WRITTEN, NOT RUN
-    //! (code-only mode); the W4-d35 / W4-c9 stat-pin precedent.
+    //! W4-e26 — the luck critter roster wiring (E8 keep-one EXECUTED:
+    //! the Frog + the ladybug pair; the Duck 362 dropped to c10, the
+    //! waterfowl family's canonical owner — research/108 E8/SEAL S1).
+    //! Every row pins verbatim to the C# (`NPC.cs:13601-13612` Frog,
+    //! `:16763-16780` the ladybug pair). WRITTEN, NOT RUN (code-only
+    //! mode); the W4-d35 / W4-c9 stat-pin precedent.
     use super::*;
     use super::tests::ground;
 
-    /// The four kinds' `SetDefaults` rows through the port's tables.
+    /// The three kinds' `SetDefaults` rows through the port's tables.
     #[test]
     fn w4_e26_the_luck_critter_setdefaults_rows_match_the_csharp() {
         // (kind, vanilla, aiStyle, w, h, dmg, def, life, kb, value)
         let rows = [
             (NpcKind::Frog, 361u16, 7u8, 12.0, 10.0, 0, 0, 5, 1.0f32, 0.0f32),
-            (NpcKind::Duck, 362, 7, 22.0, 26.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::LadyBug, 604, 115, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
             (NpcKind::GoldLadyBug, 605, 115, 10.0, 10.0, 0, 0, 5, 1.0, 0.0),
         ];
@@ -33787,58 +33761,65 @@ mod w4_e26_luck_critter_tests {
             assert_eq!(shell.alpha, 0, "{kind:?} alpha (no row)");
         }
         // The sounds: NPCHit1 / NPCDeath1 each.
-        for kind in [NpcKind::Frog, NpcKind::Duck, NpcKind::LadyBug, NpcKind::GoldLadyBug] {
+        for kind in [NpcKind::Frog, NpcKind::LadyBug, NpcKind::GoldLadyBug] {
             assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
             assert_eq!(kind.death_sound(), Some("NPC_Killed_1"), "{kind:?} death");
         }
-        // noGravity: the ladybug pair only (`NPC.cs:16774`); the Frog/Duck
-        // rows write none (the aiStyle-7 walkers fall).
+        // noGravity: the ladybug pair only (`NPC.cs:16774`); the Frog
+        // row writes none (the aiStyle-7 walker falls).
         assert!(NpcKind::LadyBug.no_gravity());
         assert!(NpcKind::GoldLadyBug.no_gravity());
         assert!(!NpcKind::Frog.no_gravity());
-        assert!(!NpcKind::Duck.no_gravity());
     }
 
-    /// The protocol ids keep their vanilla slots (free in the port-local
-    /// space) and round-trip; the render key stays injective.
+    /// The wire ids (E8 keep-one): the Frog rides 744 (its vanilla proto
+    /// 361 is d37's Pirate — research/108 E8), the ladybug pair keeps the
+    /// free vanilla slots 604/605; the cs/net ids stay vanilla and the
+    /// catch/release chain resolves through them. The Duck's 362 decode
+    /// arm is GONE (dropped to c10) — `from_u16(362)` is None here.
     #[test]
     fn w4_e26_the_luck_critter_protocol_ids_round_trip() {
-        for (kind, id) in [
-            (NpcKind::Frog, 361u16),
-            (NpcKind::Duck, 362),
-            (NpcKind::LadyBug, 604),
-            (NpcKind::GoldLadyBug, 605),
+        for (kind, wire, net) in [
+            (NpcKind::Frog, 744u16, 361i32),
+            (NpcKind::LadyBug, 604, 604),
+            (NpcKind::GoldLadyBug, 605, 605),
         ] {
-            assert_eq!(kind.to_u16(), id, "{kind:?} proto");
-            assert_eq!(NpcKind::from_u16(id), Some(kind), "{kind:?} decode");
+            assert_eq!(kind.to_u16(), wire, "{kind:?} proto");
+            assert_eq!(NpcKind::from_u16(wire), Some(kind), "{kind:?} decode");
             assert_eq!(
-                crate::npc::kind_from_net_id(id as i32).map(|(k, _)| k),
+                crate::npc::kind_from_net_id(net).map(|(k, _)| k),
                 Some(kind),
                 "{kind:?} net-id resolution (the catch/release chain)"
             );
         }
+        // The dropped Duck: neither wire 362 nor wire 731 (c10's E8 slot)
+        // decodes on THIS branch — the row lands with the c10 merge.
+        assert_eq!(NpcKind::from_u16(362), None, "Duck dropped to c10");
+        assert_eq!(NpcKind::from_u16(731), None, "c10's Duck slot is not e26's");
+        // The Frog's old vanilla proto 361 is free again on this branch.
+        assert_eq!(NpcKind::from_u16(361), None, "Frog moved 361->744");
     }
 
     /// The catch/convert tables: the ladybug baits 4361/4362 and the
-    /// waterfowl items 2121/2122 (`NPC.cs:13611`/`:13623`/`:16779`), and
-    /// the makeNPC release items resolve back to the kinds.
+    /// Frog item 2121 (`NPC.cs:13611`/`:16779`), and the makeNPC release
+    /// items resolve back to the kinds. The Duck's 2122/362 chain stays
+    /// in the cs-id tables (the item registry is kind-independent) but
+    /// its release resolution waits for the c10 merge.
     #[test]
     fn w4_e26_the_luck_critter_catch_and_release_chain_resolves() {
         assert_eq!(crate::bug_net::catch_item(361, 0.0), 2121, "Frog");
-        assert_eq!(crate::bug_net::catch_item(362, 0.0), 2122, "Duck");
         assert_eq!(crate::bug_net::catch_item(604, 0.0), 4361, "LadyBug");
         assert_eq!(crate::bug_net::catch_item(605, 0.0), 4362, "GoldLadyBug");
-        for ty in [361, 362, 604, 605] {
+        for ty in [361, 604, 605] {
             assert!(crate::bug_net::npc_catchable(ty), "{ty} catchable");
         }
         // The release items' makeNPC fields ride the generated registry.
         assert_eq!(crate::registry::make_npc(2121), 361);
-        assert_eq!(crate::registry::make_npc(2122), 362);
         assert_eq!(crate::registry::make_npc(4361), 604);
         assert_eq!(crate::registry::make_npc(4362), 605);
         // The release plan keeps the type (no variant roll for these).
         let mut rng = UnifiedRandom::new(7);
-        for ty in [361, 362, 604, 605] {
+        for ty in [361, 604, 605] {
             let plan = crate::bug_net::release_plan(ty, 0, 1, &mut rng);
             assert_eq!(plan.spawn_type, ty, "{ty} release keeps its type");
         }
@@ -33850,7 +33831,6 @@ mod w4_e26_luck_critter_tests {
     fn w4_e26_the_luck_critter_bestiary_entries() {
         for (kind, net, credit, name) in [
             (NpcKind::Frog, 361, "Frog", "Frog"),
-            (NpcKind::Duck, 362, "Duck", "Duck"),
             (NpcKind::LadyBug, 604, "LadyBug", "Ladybug"),
             (NpcKind::GoldLadyBug, 605, "GoldLadyBug", "Gold Ladybug"),
         ] {
@@ -33862,18 +33842,18 @@ mod w4_e26_luck_critter_tests {
         }
     }
 
-    /// The debuff-immunity null-rows: none of the four has a
+    /// The debuff-immunity null-rows: none of the three has a
     /// `DebuffImmunitySets` entry (`NPCID.cs:6075+`).
     #[test]
     fn w4_e26_the_luck_critters_have_no_debuff_immunity() {
-        for kind in [NpcKind::Frog, NpcKind::Duck, NpcKind::LadyBug, NpcKind::GoldLadyBug] {
+        for kind in [NpcKind::Frog, NpcKind::LadyBug, NpcKind::GoldLadyBug] {
             let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
             assert!(!buffs.buff_immune[20], "{kind:?} not poison-immune");
             assert!(!buffs.buff_immune[31], "{kind:?} not on-fire-immune");
         }
     }
 
-    /// The Frog/Duck data-only kind arms hold still (the aiStyle-7 town
+    /// The Frog data-only kind arm holds still (the aiStyle-7 town
     /// machine is its own wave); the ladybugs ride the wired aiStyle-115
     /// axis (a full tick steps without panicking, inside the 8-row strip).
     #[test]
@@ -33881,7 +33861,7 @@ mod w4_e26_luck_critter_tests {
         let w = ground();
         let mut player = Player::spawn(&w);
         let mut rng = UnifiedRandom::new(7);
-        for kind in [NpcKind::Frog, NpcKind::Duck] {
+        for kind in [NpcKind::Frog] {
             let mut n = Npc::new(kind, 20.0 * TILE_PX, 10.0 * TILE_PX, 1, 0.0);
             let (x0, y0) = (n.x, n.y);
             for _ in 0..60 {

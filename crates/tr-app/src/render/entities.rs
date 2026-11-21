@@ -1248,12 +1248,13 @@ pub(crate) const SMALL_KIND_SHEETS: &[u32] = &[
     384, // the Force Bubble
 ];
 
-/// W4-e26 — the luck critters + waterfowl sheets: one sheet per kind,
+/// W4-e26 — the luck critter sheets (E8 keep-one): one sheet per kind,
 /// exactly as the vanilla's `TextureAssets.Npc[type]` — the Frog (361),
-/// the Duck (362), the Ladybug (604) and the Gold Ladybug (605) each draw
-/// their own `NPC_<id>` art. Keyed by the vanilla net id
-/// ([`NpcKind::cs_id`]) in [`NpcAssets::npc_sheet`].
-pub(crate) const LUCK_CRITTER_SHEETS: &[u32] = &[361, 362, 604, 605];
+/// the Ladybug (604) and the Gold Ladybug (605) each draw their own
+/// `NPC_<id>` art. Keyed by the vanilla net id ([`NpcKind::cs_id`]) in
+/// [`NpcAssets::npc_sheet`]. The Duck (362) sheet dropped to c10 (the
+/// waterfowl owner packs it; research/108 SEAL S1).
+pub(crate) const LUCK_CRITTER_SHEETS: &[u32] = &[361, 604, 605];
 
 /// `NPC.SetFrameSize`'s frame height: `TextureAssets.Npc[type].Height() /
 /// Main.npcFrameCount[type]` in INTEGER division (`NPC.cs:90780-90800`), so a
@@ -3178,17 +3179,16 @@ pub(crate) fn draw_npcs(
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }
-            // W4-e26 — the luck critters + waterfowl draw their own sheets
+            // W4-e26 — the luck critters draw their own sheets
             // (`LUCK_CRITTER_SHEETS`) at `SetFrameSize`'s integer-division
             // row height over `Main.npcFrameCount[type]` (361 thirteen
-            // rows, 362 fifteen, 604/605 eight — `Main.cs:67082`). The
-            // ladybugs' `NPC.scale` latch (0.7..0.9, `NPC.cs:47586`) rides
+            // rows, 604/605 eight — `Main.cs:67082`). The ladybugs'
+            // `NPC.scale` latch (0.7..0.9, `NPC.cs:47586`) rides
             // `scaled_anchor` (the BlazingWheel/firefly convention); the
-            // Frog/Duck keep scale 1 (the generic anchor). None rotates
-            // (the aiStyle-115 arm writes no rotation; the Frog/Duck
-            // FindFrame cases write none either).
+            // Frog keeps scale 1 (the generic anchor). None rotates (the
+            // aiStyle-115 arm writes no rotation; the Frog FindFrame case
+            // writes none either). The Duck dropped to c10 (E8 keep-one).
             NpcKind::Frog => pumpkin_moon_draw(assets.npc_sheet(361), npc_rows(361), n, w, h),
-            NpcKind::Duck => pumpkin_moon_draw(assets.npc_sheet(362), npc_rows(362), n, w, h),
             NpcKind::LadyBug => scaled_anchor(assets.npc_sheet(604), npc_rows(604), n, w, h),
             NpcKind::GoldLadyBug => scaled_anchor(assets.npc_sheet(605), npc_rows(605), n, w, h),
         };
