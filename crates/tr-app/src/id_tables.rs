@@ -1605,6 +1605,82 @@ pub const ARMOR_SHIELD: &[(i32, &str)] = &[
 /// `ArmorIDs.Shield.Count` (`ArmorIDs.cs`): 13.
 pub const ARMOR_SHIELD_COUNT: i32 = 13;
 
+/// `ImmunityCooldownID` (`ID/ImmunityCooldownID.cs:74-81`) — the seven
+/// per-source hurt-cooldown ids verbatim. `Player.hurtCooldowns` is a
+/// `Count`-sized array (`Player.cs:3160`); `General = -1` rides the
+/// `immune`/`immuneTime` pair instead (`Hurt` `:38208`).
+///
+/// W4-d115 lane 19 usage census (C# → port):
+/// * `General` −1 — `Hurt`'s default counter; the contact lane
+///   (`:31332`), the hostile-shot lane (`Projectile.cs:14779`) and the
+///   PVP sends (`:10260`/`:44144`, `Projectile.cs:14687`). Port: the
+///   single `hurt_cd` lane (the M4-HAZARD-1 collapse, ANALYSIS
+///   "S1-E-13" deviation 4) — every ported hurt rides General.
+/// * `TileContactDamage` 0 — spike/block hurt (`:28981`) and the
+///   cactus hurt (`:45723`). Port: `touch_damage.rs` collapses onto
+///   `hurt_cd`, `retaliate_lane = false` (not a Retaliate member).
+/// * `BossNoCheese` 1 — the no-cheese contact kinds 396/397/398/400/401
+///   (Moon Lord) + 636 (Empress, `:31335-31348`) and the hostile shots
+///   452/454/455/462 + 871-874/919/923/924 (`Projectile.cs:14782-14796`).
+///   Port: unported as a separate counter — the boss lanes collapse
+///   onto General (recorded gap; the C# lets these hits land THROUGH
+///   the General i-frames, `:38208`'s per-counter flag).
+/// * `LegacyUnused2` 2 — NO consumer anywhere in the C# (the definition
+///   is the only reference; the retired second legacy counter).
+/// * `WrongBugNet` 3 — the lava-bait bug-net burn (`:44723`). Port:
+///   `bug_net.rs`'s `LavaHurt` arm collapses onto `hurt_cd`,
+///   `retaliate_lane = false`.
+/// * `Lava` 4 — the lava hurt (`:27708`, gated `:27679`). Port: the
+///   lava lane collapses onto `hurt_cd`, `retaliate_lane = false`.
+/// * `PaladinsShield` 5 — the team-share redirect (`:38361`,
+///   `dodgeable: false`). Port: unported (MP team damage share).
+pub const IMMUNITY_COOLDOWN_ID: &[(i32, &str)] = &[
+    (-1, "General"),
+    (0, "TileContactDamage"),
+    (1, "BossNoCheese"),
+    (2, "LegacyUnused2"),
+    (3, "WrongBugNet"),
+    (4, "Lava"),
+    (5, "PaladinsShield"),
+];
+
+/// `ImmunityCooldownID.Count` (`:81`): 6 — the `hurtCooldowns` array
+/// size (`Player.cs:3160`); General's −1 lives outside it.
+pub const IMMUNITY_COOLDOWN_COUNT: i32 = 6;
+
+/// `ImmunityCooldownID.Sets.Retaliate` (`:49`) — {General, BossNoCheese,
+/// PaladinsShield}. Consumed at `Hurt`'s retaliate gate (`:38401`); the
+/// port carries the membership through `hurt_inner`'s `retaliate_lane`
+/// bool (`player.rs`, the S1-C-7 wave B convention).
+pub fn immunity_retaliate(id: i32) -> bool {
+    matches!(id, -1 | 1 | 5)
+}
+
+/// `ImmunityCooldownID.Sets.Counter` (`:50`) — {General, BossNoCheese}.
+/// Consumed at the Solar Flare consume gate (`:38305`,
+/// `ConsumeSolarFlare` — the solar set's dash charges; unported family).
+pub fn immunity_counter(id: i32) -> bool {
+    matches!(id, -1 | 1)
+}
+
+/// `ImmunityCooldownID.Sets.TeamDamageShare` (`:51`) — {General,
+/// BossNoCheese}. Consumed at the Paladin's Shield team-share gate
+/// (`:38338`, `defendedByPaladin && num2 >= 4 && Damage < 9999` —
+/// MP-only, unported).
+pub fn immunity_team_damage_share(id: i32) -> bool {
+    matches!(id, -1 | 1)
+}
+
+/// `ImmunityCooldownID.Sets.ImmuneTimerOnlyLimitsEffects` (`:52`) —
+/// {PaladinsShield}. Consumed at `Hurt`'s early-return (`:38210`): a
+/// cooldown-active PaladinsShield hit still runs the EFFECTS (the
+/// redirect bookkeeping) while the damage stays swallowed. The C#
+/// `BoolSet` indexer shifts by +1 (`:11-20`) so General's −1 maps to
+/// slot 0 — the port's membership fns need no array.
+pub fn immunity_timer_only_limits_effects(id: i32) -> bool {
+    id == 5
+}
+
 /// `ArmorIDs.Neck` — `(neck_id, const name)` verbatim.
 pub const ARMOR_NECK: &[(i32, &str)] = &[
     (1, "JellyfishNecklace"),
@@ -1788,5 +1864,38 @@ mod tests {
         assert_eq!(slots[2], ("Armor0", 59), "Armor0 follows the mouse slot");
         assert_eq!(slots[8], ("TrashItem", 499));
         assert_eq!(player_item_slot_count(), 990, "the ledger's total");
+    }
+
+    /// W4-d115 lane 19 — the ImmunityCooldownID table + the four sets
+    /// verbatim (`ID/ImmunityCooldownID.cs:47-82`).
+    #[test]
+    fn w4_d115_lane19_the_immunity_cooldown_table_matches_the_csharp() {
+        assert_eq!(IMMUNITY_COOLDOWN_ID.len(), 7, "the seven ids");
+        assert_eq!(IMMUNITY_COOLDOWN_COUNT, 6, "Count excludes General's -1");
+        assert_eq!(IMMUNITY_COOLDOWN_ID[0], (-1, "General"));
+        assert_eq!(IMMUNITY_COOLDOWN_ID[6], (5, "PaladinsShield"));
+        // The array-backed ids are 0..Count (the BoolSet's +1 shift).
+        for &(id, _) in &IMMUNITY_COOLDOWN_ID[1..] {
+            assert!((0..IMMUNITY_COOLDOWN_COUNT).contains(&id));
+        }
+        // Retaliate = {General, BossNoCheese, PaladinsShield} (`:49`).
+        for &(id, _) in IMMUNITY_COOLDOWN_ID {
+            assert_eq!(immunity_retaliate(id), matches!(id, -1 | 1 | 5), "id {id}");
+        }
+        // Counter = TeamDamageShare = {General, BossNoCheese} (`:50-51`).
+        for &(id, _) in IMMUNITY_COOLDOWN_ID {
+            assert_eq!(immunity_counter(id), matches!(id, -1 | 1), "id {id}");
+            assert_eq!(immunity_team_damage_share(id), matches!(id, -1 | 1), "id {id}");
+        }
+        // ImmuneTimerOnlyLimitsEffects = {PaladinsShield} (`:52`).
+        for &(id, _) in IMMUNITY_COOLDOWN_ID {
+            assert_eq!(immunity_timer_only_limits_effects(id), id == 5, "id {id}");
+        }
+        // The port's lane membership census: lava/tile/bug-net are NOT
+        // Retaliate members (the `retaliate_lane = false` lanes).
+        assert!(!immunity_retaliate(0), "TileContactDamage");
+        assert!(!immunity_retaliate(3), "WrongBugNet");
+        assert!(!immunity_retaliate(4), "Lava");
+        assert!(!immunity_retaliate(2), "LegacyUnused2 (no C# consumer)");
     }
 }
