@@ -1,28 +1,53 @@
 # 93 addendum — W4-f33 persist fold-input + the d19 949 drop-hunks (closeout)
 
-**Status: MECHANICAL FOLD-INPUT for the g88 superset owner + the merge
-keeper.** This branch (`task/W4-f33-torch-god-favor`, closeout atop
-`8a000407`) keeps its own persist shape — it does NOT rebase to v10/v11
-(the canonical union writer is g88's; the merger folds per this doc).
-Code-only lane: no cargo/tests/rustfmt/graphify; nothing here was run.
+**Status: FINAL — the fold-input LANDED on g88 (v11), the a6b re-compare
+adjudicated (§3), the event final-verify done (§7); §8 is the FINAL
+merger instruction.** This branch (`task/W4-f33-torch-god-favor`, retire
+pass atop `7b334ea7`) keeps its own persist shape — it does NOT rebase to
+v10/v11 (the canonical union writer is g88's; the merger folds per this
+doc). Code-only lane: no cargo/tests/rustfmt/graphify; nothing here was run.
 
-Inputs read at closeout probe (2026-11-21):
+Inputs read at closeout probe (2026-11-21), UPDATED at the retire pass:
 
 | Ref | Tip read | State |
 | --- | --- | --- |
-| `origin/task/W4-g88-life-fruit-use` | `c8985b53` (persist fold 6 — the **v10 crystal fold ACTIVE**) | writer v10, six-token unlock line; research/103 is THE merger contract (v10 final + §5a keep-own adjudication + §7 receipt) |
+| `origin/task/W4-g88-life-fruit-use` | ~~`c8985b53`~~ → **`a9f1c29d`** (persist fold 7 FINAL — the **v11 TORCH FOLD LANDED**) | writer v11: f33's pair IS line 16 (103 §2b); the v7 reader gained the f33 lone-all-0/1-pair rule (`f33s_torch_only_v7_loads_positionally`) + 135 §2's six-line rule; §1's fold-input is CONSUMED — receipt below |
 | `origin/task/W4-g89-aegis-fruit-use` | `59864256` (g89f) | research/122 carried on g88 (v9 addendum + §6/§7 fold receipts) |
 | `origin/task/W4-g90-artisan-bread-use` | `b3b82d07` (g90c) | research/**135** published (the mechanical fold-input); g88 fold 6 already folded g90b `e76ee133` |
-| `origin/task/W4-a6-crystals-powerups` | `8ed96ee5` | research/**138 NOT pushed** (`git ls-tree` verified — no `docs/research/13*` file on the tip). Its 5043 use arm `6e37aaac` is live on the tip. g88 103 §5a records the keep-own adjudication pending 138 |
+| `origin/task/W4-a6-crystals-powerups` | ~~`8ed96ee5`~~ → **`d7de8bd5`** (a6b — the POWERUP 4-way master reconcile) | research/**138 PUSHED** (`git ls-tree` verified on the new tip) + five fidelity fixes; its 5043 arm's achievement credit is now ROW-TARGETED `complete_condition` — the §3 keep-one re-compared below. NOTE: 138 §0 read f33 at `333479e0` ("completes NO achievement") — STALE: the f33 tip carries the full-body 5043 use arm + the named dispatcher (§3) |
 | `origin/task/W4-d19-proj-ai-181-190` | `1054c396` (**d19b active** — the parked-intents follow-up over `a4185f89`) | the 184 slice + the dodge witness + the f33 event-contract paragraph landed; §2 below pins its exact drop-hunks |
 | `origin/task/W4-c36-achievement-notify-save` | `585fa0a8` | the `GAIN_TORCH_GODS_FAVOR` row exists (blob-identical `achievements_data.rs`, §3 below); c36 carries its own 5043 use arm |
 | this branch | `8a000407` | `.trplayer` writer **v7** biome-torch pair; `.plr` pair both halves + the legacy-279 shim |
 
 research/135 (read) does NOT know f33's v7 line — its §2 recognition rule
-counts g90b's six 1-token lines only. research/138 (unread — unpushed)
-adjudicates the a6-vs-g90b shimmer use-arm keep-one per the brief; this
-doc's §1 mapping table is f33's input to that same adjudication for the
-5043 arm, and §3 pins the c36 row chain.
+counts g90b's six 1-token lines only. ~~research/138 (unread — unpushed)~~
+**138 is PUSHED (a6b `d7de8bd5`) and read at the retire pass** — it
+adjudicates the a6-vs-g90b shimmer use-arm keep-one AND claims the 5043
+arm for a6 on the pre-`8a000407` f33 probe; §3 below re-compares against
+the LANDED f33 arm and keeps the f33 full body. §1's mapping table was
+f33's input to the g88 fold — **CONSUMED at `a9f1c29d` (receipt below)**.
+
+### 1-receipt. The fold LANDED — 93a §1 ↔ 103 §2b (retire pass)
+
+g88 `a9f1c29d` (persist fold 7 FINAL) implemented §1a's recommended v11
+shape VERBATIM: the writer bumps v10 → **v11** appending
+`unlockedBiomeTorches UsingBiomeTorches` as the LAST post-dye line AFTER
+the loadout block (103 §2 line 16); token 7 stays DD2-RESERVED (the pair
+is NOT an unlock token — §1a's rejection of the token options upheld);
+the v7 reader gained the **f33 lone-all-0/1-pair rule** (§1's collision
+resolution — "no maxima pair can be all-0/1, the permanent halves start
+100/20", witness `f33s_torch_only_v7_loads_positionally`), which
+supersedes §1's life-pair-first bounded-loss recommendation with a
+LOSSLESS read (103 §4's matrix row: "LOSSLESS … NOT a life pair"). The
+`Player.using_biome_torches()`/`set_using_biome_torches()` accessors ride
+at f33's exact spot after `luck()`; the restore writes the setter. The
+sidecar line's conditional DROP-recommendation is published at 103 §2b
+rule 3 (gated on 132 §2c's character-load hydration + exit-save seams).
+**This branch's `persist.rs` writer/reader sites now carry
+DEPRECATED-BY-SUPERSET banner comments (commit `46ceb43d`, comments-only,
+still compiling) pointing at this receipt.** f33's four witnesses
+(§ "Witnesses on this branch") survive — g88 re-pinned the pair round-trip
+as `w4_f33_the_biome_torch_pair_round_trips_the_sidecar` on its v11 writer.
 
 ---
 
@@ -258,7 +283,7 @@ one uncategorised row), icon 109, one condition `Cond::Flag("Use")`
 | Lane | Arm | Seam | Achievement wire | Verdict |
 | --- | --- | --- | --- | --- |
 | f33 `8a000407` | `torch_god_favor_use.rs::torch_gods_favor_item_check` | the `:43600` permanent-item seam (`editing.rs:2007`), the recall press-edge machine | `handle_special_event(24)` → the NAMED dispatcher | **KEEP** — the full C# body: ApplyItemTime BEFORE the grant, the UsingBiomeTorches setter, the net-aware bestiary credit (host/client split + the msg-51 request), the generic consumable tail, the `.plr`/sidecar permanence |
-| a6 `8ed96ee5` (`6e37aaac`) | `powerups.rs:344-359::use_torch_gods_favor` | the `powerup_item_check` dispatch (`powerups.rs:101`) | `notify_custom("Use")` — the BROADCAST (completes all nine "Use" rows; a6's own module header records the deviation) | DROP — the broadcast over-completes STAR_POWER/GET_A_LIFE/…; no ApplyItemTime in the arm (the dispatch tail re-arms), no UsingBiomeTorches property, no persistence |
+| a6 `8ed96ee5` (`6e37aaac`) | `powerups.rs:344-359::use_torch_gods_favor` | the `powerup_item_check` dispatch (`powerups.rs:101`) | ~~`notify_custom("Use")` — the BROADCAST~~ **SUPERSEDED at a6b `d7de8bd5`**: row-targeted `complete_condition("GAIN_TORCH_GODS_FAVOR","Use")` (`powerups.rs:360-362`, 138 §3 fix 1) | DROP — re-compared at the retire pass (§3b): the broadcast is fixed but the arm is still not the full C# body (no setter accessor, no net split, no msg-51, SP-only credit, ApplyItemTime moved to the dispatch tail) |
 | c36 `585fa0a8` | `editing.rs:16332-16354::use_torch_gods_favor` | the summon-gate `is_summon` list (`editing.rs:2017`, the 5043 entry) + `:2092` | `complete_condition("GAIN_TORCH_GODS_FAVOR", "Use")` — named, correct | DROP — the arm is a reduced copy (no UsingBiomeTorches write, no net split, the stack pay inline); c36's enter-world re-check (`achievement_hooks.rs:173-176`, the `OnPlayerEnteredWorld` `:192-195` arm) is a SEPARATE wire and SURVIVES the dedupe — it re-completes the row for a character whose `.plr` carries the unlock (idempotent, `complete_condition` on a completed row is a no-op) |
 
 The merger drops a6's + c36's 5043 arms (and c36's `is_summon` 5043
@@ -277,6 +302,50 @@ Witnesses (f33, WRITTEN NOT RUN):
 rows stay open, the event queues once, the second 24 is a no-op) ·
 `torch_god_favor_use.rs` the use grants the achievement + the bestiary
 credit with the named-row isolation.
+
+### 3b. The a6b re-compare (retire pass — 138 read, `d7de8bd5` vs the f33 tip)
+
+138 §1's 5043 row keeps **a6's** use arm ("the faithful setter …
+supersedes c36") and records "f33 owns the EVENT machine + flag READS,
+completes NO achievement". **That f33 claim is STALE**: 138 §0's probe
+read f33 at `333479e0` (the event-machine commit, BEFORE the use arm
+landed). The pushed f33 tip (`8a000407` + closeout) carries the FULL
+`ItemCheck_UseTorchGodsFavor` body in `torch_god_favor_use.rs` AND the
+`HandleSpecialEvent(24)` named dispatcher. Re-comparison, C# re-read
+`Player.cs:45226-45243` (whole body, retire pass):
+
+| C# element | f33 (`torch_god_favor_use.rs`, tip) | a6b (`powerups.rs:347-366`, `d7de8bd5`) | verdict |
+| --- | --- | --- | --- |
+| Gate `:45228` (`itemAnimation > 0 && !unlocked && ItemTimeIsZero`) | `run_favor_arm`'s head verbatim + the press-edge machine + the CCed/dead refusals (`:42598-42603`) | `run_powerup_arm`'s head — the same two legs; the start gates ride a6's shared machine | both faithful (a6b §3's "not a gap" note holds) |
+| `ApplyItemTime(sItem)` `:45230` — BEFORE the grant | in-arm, first write (`torch_god_favor_use.rs:110`) | moved to the dispatch tail AFTER the arm returns true (`powerups.rs:115`) — observation-equal in SP, order deviates | **f33 faithful** (C# order) |
+| `unlockedBiomeTorches = true` `:45231` | `p.unlocked_biome_torches = true` | same | equal |
+| `UsingBiomeTorches = true` `:45232` (the property setter `:3960-3963`) | `p.set_using_biome_torches(true)` — the PROPERTY accessor pair f33 declared (`player.rs:10594-10602`), the getter is what the v11 writer reads (103 §2b rule 2) | `p.builder_acc_status[11] = 0` — the setter's BODY inlined, no property | **f33 faithful** (the property is the C# surface; 138's "faithful setter" claim describes the same write — both land `builderAccStatus[11] = 0`, but only f33 carries the accessor the superset writer/restore need) |
+| `HandleSpecialEvent(this, 24)` `:45233` | `handle_special_event(24)` — the event-id switch (`AchievementsHelper.cs:288-379` shape) → `complete_condition("GAIN_TORCH_GODS_FAVOR","Use")` | `complete_condition("GAIN_TORCH_GODS_FAVOR","Use")` direct (138 §3 fix 1 — the broadcast RETIRED) | **both faithful NOW** — one row, one condition; f33 keeps the dispatcher seam for future event ids, a6b calls the shared helper directly. Either dispatch survives; keep ONE helper |
+| Bestiary credit `:45234-45239` (`netMode == 0` leg) | host-or-SP register + `try_grant_bestiary_100_net` + the host `98` broadcast; a CLIENT skips the local register | SP-only register ("the port is SP"), no net split, no 100% hook | **f33 faithful** (the net-aware seam + `NPCKillsTracker.cs:46-49`'s hook) |
+| `SendData(4)` `:45240` | the identity re-push fold documented (the flags ride the next sync — recorded fold) | absent (folded silently, doc line only) | f33 documented |
+| `SendData(51, …, 5f)` `:45241` | `send_torch_god_bestiary_request()` — the CLIENT's msg-51 request (`MessageBuffer.cs:2514-2520`) | **absent** | **f33 only** |
+| Consumable tail `:43280-43326` | in-arm, with the `:43323` 0-stack `itemTime = itemAnimation` re-arm | a6's `consume_one` airs out but has no `:43323` re-arm | **f33 faithful** |
+| Persistence | the `.plr` pair both halves + the v7 sidecar line (deprecated-by-superset, §1-receipt) | none (138 §1 agrees: "NO sidecar. No `.wld`"; the `.plr` pair rides f44) | f33 owns the halves (dedup onto f44c's identical fields, 103 §2b rule 4) |
+
+**VERDICT (final): KEEP the f33 full-body arm
+(`torch_god_favor_use.rs` + its `editing.rs` seam + the named
+dispatcher), DROP a6b's 5043 arm** (`powerups.rs:347-366` + the `5043 =>`
+dispatch entry `:104` + the `5043` leg of `is_powerup` `:71` + a6b's two
+torch witnesses `:1071`/`:1093` — re-pin their assertions onto f33's six).
+The original broadcast objection is RETIRED (a6b fixed it — credit where
+due), but the surviving gaps (ApplyItemTime order, the property accessor,
+the net split, the msg-51 request, the `:43323` re-arm) all sit on the
+C# body f33 ports whole. **Both dispatchers are faithful now → keep one,
+either — pick the f33 full body** (its `handle_special_event(24)` switch
+lands on the SAME `complete_condition` seam a6b calls directly; the
+helper dedups a6b == c36 == f33, one copy). a6b keeps its machine for the
+REST of the powerup cluster (138 §8 rule 5's exceptions already list
+29/109/1291/5326; 5043 JOINS that exception list — this doc is the
+adjudication input g88's 103 §5a and a6b's 138 §1 both deferred).
+Everything else in 138 (the four other fidelity fixes, the persist-layer
+split, the `.wld` byte-compare, the v18 65-byte union) is UNAFFECTED —
+f33 endorses them; its five-fix consumer shapes match g90's, which 103
+§5a already keeps.
 
 ---
 
