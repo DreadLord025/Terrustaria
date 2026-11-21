@@ -195,6 +195,12 @@ mod projectile_ai001_c;
 // Projectile.cs:54002-57798); census research/26e F6/F7. Code-only mode —
 // witness tests written not run.
 mod projectile_ai001_d;
+// W4-f20 slice E — the AI_001 per-type arms for the aiStyle-1 kinds the
+// round-b row branches rowed but left on the generic ai_arrow (435/576/
+// 709, Projectile.cs:54002-57794); census research/26f. ROW-GATED INERT
+// until c11/d11/d15 merge (the d7 unwired precedent). Code-only mode —
+// witness tests written not run.
+mod projectile_ai001_e;
 mod projectile_ai067_b;
 mod projectile_ai026_a;
 mod projectile_ai026_b;

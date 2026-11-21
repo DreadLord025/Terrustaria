@@ -16809,6 +16809,20 @@ impl ProjectilePool {
                             kind if crate::projectile_ai001_d::covers(kind) => {
                                 crate::projectile_ai001_d::step(&mut self.slots[i], world)
                             }
+                            // W4-f20 slice E — the aiStyle-1 kinds the
+                            // round-b row branches ROWED but left on the
+                            // generic flight (435 MartianTurretBolt c11 /
+                            // 576 NebulaLaser d11 / 709 MonkStaffT3AltShot
+                            // d15, `Projectile.cs:54002-57794`), gated to
+                            // `projectile_ai001_e`'s own kind list ONLY
+                            // (disjoint from A/B/C/D and every other gate —
+                            // census research/26f). ROW-GATED INERT until
+                            // the row branches merge: `proj_data` returns
+                            // None for these kinds here, so this arm never
+                            // routes them yet (the d7 unwired precedent).
+                            kind if crate::projectile_ai001_e::covers(kind) => {
+                                crate::projectile_ai001_e::step(&mut self.slots[i], world)
+                            }
                             // S1-D-4 — the Frost Moon family's four
                             // aiStyle-1 kinds (345/348/349/350,
                             // `projectile_ai_frostmoon`): kind-disjoint
