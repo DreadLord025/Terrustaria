@@ -370,14 +370,18 @@ mod tests {
         app.rngs.stream(crate::app::RngKey::UpdatePlayers).clone()
     }
 
-    /// One `NewDust` default block on the mirror stream (six draws).
+    /// One `NewDust` default block on the mirror stream (six draws). `w`/`h`
+    /// are the spawn box (the pool clamps each to >= 5, then jitters
+    /// `Next(size - 4) + 4`).
     fn default_block(
         rng: &mut UnifiedRandom,
         pos: Vec2,
+        w: i32,
+        h: i32,
         scale: f32,
     ) -> (Vec2, Vec2, f32) {
-        let px = pos.x + rng.next_max(4) as f32 + 4.0;
-        let py = pos.y + rng.next_max(4) as f32 + 4.0;
+        let px = pos.x + rng.next_max(w.max(5) - 4) as f32 + 4.0;
+        let py = pos.y + rng.next_max(h.max(5) - 4) as f32 + 4.0;
         let vx = rng.next_range(-20, 21) as f32 * 0.1;
         let vy = rng.next_range(-20, 21) as f32 * 0.1;
         let _ = rng.next_max(3);
@@ -409,7 +413,7 @@ mod tests {
             let num2 = if i == 0 { 2.0 } else { -2.0 };
             let rx = if i == 0 { 296.0 } else { 316.0 };
             let (pos, vel, mut sc) =
-                default_block(&mut rng, Vec2::new(rx, 632.0), 2.5);
+                default_block(&mut rng, Vec2::new(rx, 632.0), 8, 8, 2.5);
             let vy = rng.next_range(-10, 6) as f32 * 0.1;
             sc *= 0.7;
             let kick = Vec2::new(-num2 - b.vx * 0.3, 2.0 - b.vy * 0.3);
@@ -436,7 +440,7 @@ mod tests {
             assert_eq!(d.alpha, 20);
             let num2 = if i == 0 { 2.0 } else { -2.0 };
             let rx = if i == 0 { 296.0 } else { 316.0 };
-            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(rx, 632.0), 1.0);
+            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(rx, 632.0), 8, 8, 1.0);
             let kick = Vec2::new(-num2 - b.vx * 0.3, 2.0 - b.vy * 0.3);
             let mut v = (vel + kick) * 0.05;
             v.y += 0.15;
@@ -471,7 +475,7 @@ mod tests {
             assert_eq!(d.alpha, 120);
             let num2 = if i == 0 { 2.0 } else { -2.0 };
             let rx = if i == 0 { 296.0 } else { 316.0 };
-            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(rx, 632.0), 2.0);
+            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(rx, 632.0), 8, 8, 2.0);
             let kick = Vec2::new(-num2 - b.vx * 0.3, 2.0 - b.vy * 0.3);
             let mut v = vel + kick;
             let mut sc = sc;
@@ -511,7 +515,7 @@ mod tests {
         let t = rng.next_float() * 0.3;
         let color = lerp_color(Color::new(50, 205, 50, 255), Color::WHITE, t);
         assert_eq!(d.color, color);
-        let (pos, vel, _) = default_block(&mut rng, Vec2::new(296.0, 634.0), 1.0);
+        let (pos, vel, _) = default_block(&mut rng, Vec2::new(296.0, 634.0), 8, 8, 1.0);
         let kick = Vec2::new(-2.0 - b.vx * 0.3, 2.0 - b.vy * 0.3);
         let mut v = vel * 0.25 - Vec2::new(b.vx, b.vy) * 0.5 + kick * 0.5;
         assert_eq!(d.position, pos + v * 4.0);
@@ -533,7 +537,7 @@ mod tests {
             let _ = rng.next_max(6);
             let num2 = if i == 0 { 2.0 } else { -2.0 };
             let rx = if i == 0 { 296.0 } else { 316.0 };
-            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(rx, 634.0), 0.7);
+            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(rx, 634.0), 8, 8, 0.7);
             let kick = Vec2::new(-num2 - b.vx * 0.3, 2.0 - b.vy * 0.3);
             assert_eq!(d.position, pos);
             assert_eq!(d.velocity, (vel + kick) * 0.5);
@@ -617,7 +621,7 @@ mod tests {
             num2 *= -1.0;
         }
         let center = Vec2::new(b.cx + num2 * -25.0, b.cy - 8.0);
-        let (pos, _, sc) = default_block(&mut rng, center, 1.0);
+        let (pos, _, sc) = default_block(&mut rng, center, 2, 2, 1.0);
         assert_eq!(d.position, pos);
         assert_eq!(d.scale, sc);
         assert_eq!(d.rotation, rng.next_float() * std::f32::consts::PI * 2.0);
@@ -653,7 +657,7 @@ mod tests {
             assert_eq!(d.fade_in, 1.5);
             let mut rng = UnifiedRandom::new(seed);
             let _ = rng.next_max(gate);
-            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(b.x, b.y), 0.75);
+            let (pos, vel, sc) = default_block(&mut rng, Vec2::new(b.x, b.y), 20, 42, 0.75);
             assert_eq!(d.position, pos);
             assert_eq!(d.velocity, vel * 0.3 + Vec2::new(b.vx, b.vy) * 0.2);
             assert_eq!(d.scale, sc);
@@ -675,7 +679,7 @@ mod tests {
         let trail = Vec2::new(b.x - b.vx * 2.0, b.y - 2.0 - b.vy * 2.0);
         for d in &slots {
             assert_eq!(d.dust_type, 6);
-            let (pos, vel, mut sc) = default_block(&mut rng, trail, 2.0);
+            let (pos, vel, mut sc) = default_block(&mut rng, trail, 20, 42, 2.0);
             let vy = rng.next_range(-10, 6) as f32 * 0.1;
             sc *= 0.7;
             assert_eq!(d.position, pos);
@@ -766,7 +770,7 @@ mod tests {
         let mut rng = UnifiedRandom::new(seed);
         let _ = rng.next_max(10);
         let trail = Vec2::new(b.x - b.vx * 2.0, b.y - 2.0 - b.vy * 2.0);
-        let (pos, _, sc) = default_block(&mut rng, trail, 0.3);
+        let (pos, _, sc) = default_block(&mut rng, trail, 20, 42, 0.3);
         assert_eq!(slots[0].position, pos);
         assert_eq!(slots[0].scale, sc);
         assert_eq!(stream_of(&mut app), rng);
@@ -792,7 +796,7 @@ mod tests {
             assert_eq!(d.dust_type, 106);
             assert_eq!(d.fade_in, 1.0);
             let (pos, vel, sc) =
-                default_block(&mut rng, Vec2::new(b.x, b.y + b.height - 2.0), 0.1);
+                default_block(&mut rng, Vec2::new(b.x, b.y + b.height - 2.0), 20, 6, 0.1);
             assert_eq!(d.position, pos);
             assert_eq!(d.velocity, vel * 0.2);
             assert_eq!(d.scale, sc);
@@ -810,7 +814,7 @@ mod tests {
             assert_eq!(d.dust_type, 76);
             let px = if j != 0 { b.x + 10.0 } else { b.x };
             let (pos, vel, mut sc) =
-                default_block(&mut rng, Vec2::new(px, b.y + b.height), 1.35);
+                default_block(&mut rng, Vec2::new(px, b.y + b.height), 10, 6, 1.35);
             sc *= 1.0 + rng.next_range(20, 40) as f32 * 0.01;
             assert_eq!(d.position, pos);
             let mut v = vel * 0.001;
