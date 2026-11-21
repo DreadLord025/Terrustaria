@@ -6793,7 +6793,9 @@ re-flag is itself stale — g88 fold 7 landed 33 min before it (135 §8.4's
 census). No `g87b-143` ref exists on origin; the re-adjudication is
 a6's own 138 §10.
 
-**W4-g90 RETIRE — the 68-vs-106 union receipt (research/135 §10)**: the
+**W4-g90 RETIRE — the 68-vs-106 union receipt (research/135 §10)**
+(*superseded again by the SEAL paragraph below — the 107-byte
+DEFINITIVE head, pair [61]/[62]*): the
 68-byte five-way table above is itself SUPERSEDED — c39's research/114
 §8 (tip `8e0946ff0`, read at retire) publishes the NINE-way **106-byte**
 fixed head: 138 §5a's five claimants miss FOUR pushed v18 writers (g72's
@@ -6866,13 +6868,45 @@ consumers) — are landed with every carrier (`.plr`/`.trplayer`/`.trwld`/
 `.wld`/net) and every live consumer; the retire anchor census (§11b)
 re-verified all 15 cited sites present at the tip. The merger's ordered
 checklist (§11b): L1 f44c's walk + the bool dedups, L2 g88 v11 (the v7
-block is the consumed fold source), L3 the 106-byte nine-way union
-(pair at 104/105, +106 constants) + f45's `.wld` superset, the use-arm
+block is the consumed fold source), L3 the **107-byte DEFINITIVE head**
+(g88 103 §L3-DEFINITIVE D3 — pair at **[61]/[62]**, **+107** constants,
+the §10g seal re-pin below) + f45's `.wld` superset, the use-arm
 keep-ones per 138, all consumers stay g90's, the 26 `w4_g90_*`
 witnesses re-pin. **No open g90 obligations remain** — the recorded
 remainders are other lanes' scope (b3 phase 2, d125's empress flag, the
 g71c union landing, the g88/f44/f45 persist bases). The branch is
 RETIRED: code-only, nothing run, every receipt published (135 §8-§11).
+
+**W4-g90 SEAL — the 106→107 re-pin + the lossless receipt (research/135
+§10g/§12)**: g88's SEAL tip **`fc5cf11ae`** read FULL — 103
+§L3-DEFINITIVE D1-D5 is **THE 107-authority**: 13 v18 claimants → 11
+blocks after three dedup pairs (e19≡g69 crimson, f39≡c39 moon-quintet,
+c43≡f45 identity), the 107-byte head = 16 forest + 31 cave + 3 surface
++ the STRICT-C#-row flag middle (crimson `:1281` [50] → moon
+`:1347-1351` [51..56] → underworld `:1376` [56] → pets `:1392-1394`
+[57..60] → empress `:1395` [60] → books `:1407-1408` [61..63]) +
+identity 44 [63..107], d109 dense LAST. **g90's pair IS the books-2
+block (D1 row 9) — PRESENT, seats [61]/[62]**, the LAST flags block;
+the journey 19/20 → 22/23 → 104/105 → **61/62**; the bread/journey
+flags never ride `.trwld` (L1/L2 carriers) — no missing claimant, the
+107 arithmetic stands (spot-verified against `WorldFile.cs:1392-1395/
+:1407-1408` directly this pass; the §10e empress-order nuance RESOLVED
+— D3 seats empress AFTER pets). The six truncation sites re-pinned
+**+107** comments-only (`save.rs:1206/:1320/:1351/:1541/:1566/:1596` at
+the seal tip) + the writer/reader seat notes; the branch keeps its
+2-byte tail. **b3 re-probe: tip UNCHANGED `96a5d88f0`, phase 1 only** —
+the feeder-contract unconsumed receipt stands (§11a banner).
+**The g88-v11 lossless receipt re-verified at `fc5cf11ae`** (the seal
+commit is doc-only, v11 code stands as `a9f1c29d8`): the six-line
+guard `persist.rs:463-465`, the positional reads `:470-481`, the
+witness `g90bs_six_line_v7_loads_positionally` `:1198`, the v11 writer
+`:230` + the torch-pair line-16 arm — all present, g90's v7 files load
+LOSSLESSLY on the superset reader; 132-RETIRE §2e's g87-`dh`-line-17
+fold (recommended over 138's DROP) would move DD2's bump to v13 —
+orthogonal to this lane. The booster-family bible published (135
+§12b): L1 f44c walk / L2 g88 v11 / L3 D3's 107 head + f45 `.wld` /
+a6 shimmer machine + g90 keep-own loaf + all g90 consumers. 135
+marked SEALED; code-only, nothing run.
 
 **W4-g90 artisan-loaf consumer census (`33d4b1625`)**: the
 `ateArtisanBread` full-source census is exactly four families — the

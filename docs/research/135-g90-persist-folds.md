@@ -1,22 +1,28 @@
 # 135 — W4-g90 persist fold-input: the exact token-lines, offsets and reader-gates
 
-**Status: FINAL-FINAL — CONSUMED by g88 fold 7 (`a9f1c29d8`, writer v11);
-the `.trwld` union SUPERSEDED TWICE: §8.2's 68-byte five-way table is
-itself superseded by §10's 106-byte NINE-way head (c39 research/114 §8,
-tip `8e0946ff0` read at retire).**
+**Status: SEALED (2026-11-21 seal pass) — CONSUMED by g88 fold 7
+(`a9f1c29d8`, writer v11; sealed at g88 `fc5cf11ae`); the `.trwld` union
+SUPERSEDED THREE TIMES: §8.2's 68-byte five-way table → §10's 106-byte
+NINE-way head (c39 114 §8) → §10g's **107-byte DEFINITIVE head** (g88
+research/103 §L3-DEFINITIVE D3, `fc5cf11ae` — THIS pair at **[61]/[62]**,
+the LAST flags block, truncation constants **+107**).**
 The fold-input below (§1–§6) stands as published; §8 records the
 consumption receipts and the two SUPERSESSIONS the pushed writers
 force: the unlock-token order (§3's recommendation overridden by g88's
 written crystal=4/arcane=5/pearl=6, per 103 §8 + 138 §6) and the `.trwld`
 union size (§4's 21 bytes overridden by 138 §5a's FIVE-way **68-byte**
 table — g87's pet trio at 19-21 moves this branch's pair to **22/23**;
-§10 then moves it again to **104/105** under the nine-way 106 head).
+§10 then moves it again to **104/105** under the nine-way 106 head;
+§10g moves it a third time to **[61]/[62]** under the 107 head).
 §9 records the 138 keep-one receipts (this lane's carrier-keep list).
 §10 records the retire-phase union receipt (68 vs 106) + the f44/g71
-consolidation reads; §11 the booster-family declaration.
+consolidation reads; §10g the SEAL re-pin (106→107); §11 the
+booster-family declaration; §12 the seal receipts — the g88-v11
+torch-line + six-line-rule lossless re-verification at `fc5cf11ae`
+(§12a) + the booster-family bible (§12b).
 This branch (`task/W4-g90-artisan-bread-use`) keeps its own persist
 shape — it does NOT rebase to v10/v11 (the canonical union writer is
-g88's; the merger folds per this doc + its §8/§9/§10 corrections).
+g88's; the merger folds per this doc + its §8/§9/§10g corrections).
 Code-only lane: no cargo/tests/rustfmt/graphify; nothing here was run.
 
 Inputs read at probe (2026-11-21):
@@ -206,11 +212,15 @@ subset keeps indices 3/4/6/7/8/9 (`:819-824`). The g89 merger flips
 > rides 24-67. Every truncation constant below moves to **+68**, not
 > +21. **§10 supersedes again: the nine-way 106-byte head (c39
 > research/114 §8) seats this pair at 104/105 and every constant moves
-> to +106.** The byte semantics/gates are unchanged at every step.
+> to +106. §10g supersedes a THIRD time: g88 103 §L3-DEFINITIVE D3's
+> 107-byte head seats this pair at [61]/[62], constants +107.** The
+> byte semantics/gates are unchanged at every step.
 
 `crates/tr-core/src/save.rs` on this branch: `VERSION = 18` (`:72`).
 Writer `:442-445` appends **2 bytes** directly after the v17
-`downedFishron` byte (`:434`); reader `:832-835` (`if version >= 18`):
+`downedFishron` byte (`:434`); reader `:832-835` (`if version >= 18`)
+(the pre-seal line cites — at the seal tip the writer is `:451-454` /
+the reader `:843-846`, the comments-only seat re-pins shifted them):
 
 | Offset in MY v18 block | Byte | Field | C# `.wld` anchor |
 | --- | --- | --- | --- |
@@ -337,7 +347,9 @@ writes are the live observable half.
 > activation are DONE on g88 (`a9f1c29d8`, v11 — the written token
 > order per §8.1, NOT 103 §2a's old reservation); step 3's union is
 > the 68-byte five-way table per §8.2/138 §5a, NOT 21 — and at retire
-> the 106-byte nine-way head per §10 (c39 research/114 §8), NOT 68.
+> the 106-byte nine-way head per §10 (c39 research/114 §8), NOT 68 —
+> and at seal the **107-byte DEFINITIVE head per §10g (g88 103
+> §L3-DEFINITIVE D3)**, pair [61]/[62], constants +107.
 > The checklist below stands as the original fold-input.
 
 1. Keep g88's superset `persist.rs` (103 §6 rule 1); extend its v7
@@ -483,12 +495,14 @@ positionally to the fields, so no line-order change is needed anywhere.
 
 ### 8.2 The `.trwld` union supersession — 21 → 68 bytes, pair at 22/23
 
-> **SUPERSEDED AGAIN (§10):** the 68-byte five-way table below is
-> missing FOUR pushed claimants (g72 cave 31 B, g69 crimson 1 B, c39
-> moon quintet 5 B, d109 dense W×H). The nine-way **106-byte** head
-> (c39 research/114 §8) is the retire-phase contract; this pair's FINAL
-> seat is **104/105**, every truncation constant **+106**. The 68 table
-> stands as the five-way step of the journey 21 → 68 → 106.
+> **SUPERSEDED AGAIN (§10, then §10g):** the 68-byte five-way table
+> below is missing FOUR pushed claimants (g72 cave 31 B, g69 crimson
+> 1 B, c39 moon quintet 5 B, d109 dense W×H). The nine-way **106-byte**
+> head (c39 research/114 §8) was the retire-phase contract (seat
+> 104/105, +106); the SEAL contract is g88 103 §L3-DEFINITIVE D3's
+> **107-byte** head — this pair's FINAL seat **[61]/[62]**, every
+> truncation constant **+107** (§10g). The 68 table stands as the
+> five-way step of the journey 21 → 68 → 106 → 107.
 
 §4's three-way 21-byte union predates two pushed v18 writers:
 - **f45** (`6352d3840`): a 44-byte world-identity block (138 §5).
@@ -586,9 +600,11 @@ merge regardless of the use-arm dedups):**
 4. The `.trplayer` v7 six-line block as the FOLD SOURCE (§1 — already
    folded into g88 v10/v11; the branch's own writer retires at merge).
 5. The `.trwld` v18 book-two/satchel pair — union offsets **22/23**
-   (138 §5a; a6 has no `.trwld` tail). **RETIRED seat (§10): the FINAL
-   union seat is 104/105 in the 106-byte nine-way head (c39 research/114
-   §8) — the LAST fixed-head block; the pair's bytes/gates are unchanged.**
+   (138 §5a; a6 has no `.trwld` tail). **RETIRED seat (§10): 104/105 in
+   the 106-byte nine-way head (c39 114 §8). SEALED seat (§10g): the
+   FINAL union seat is [61]/[62] in g88 103 D3's 107-byte head — the
+   LAST flags block before identity [63..107]; the pair's bytes/gates
+   are unchanged.**
 6. The `.wld` book-two/satchel bytes 2036/2037 — dedup onto f45's
    superset block (138 §4; same fields/gates/offsets, byte-identical).
 7. The net carriers: flags3 bits 0/2/3/4/5/6 + WorldInfo
@@ -623,6 +639,13 @@ in the 106-byte head, §10 below.)*
 ---
 
 ## 10. RETIRE — the 68-vs-106 union receipt: THIS pair's seat under the nine-way head
+
+> **SEAL SUPERSESSION (§10g below):** this section's 106 head / 104-105
+> seat / +106 constants are SUPERSEDED by g88's research/103
+> §L3-DEFINITIVE D3 (`fc5cf11ae`): the **107-byte definitive head**, THIS
+> pair at **[61]/[62]** (the LAST flags block), truncation constants
+> **+107**. The retire receipt below stands as the historical chain; the
+> FINAL seat/constants are §10g's.
 
 Inputs read at the retire probe (2026-11-21, fetched tips):
 
@@ -744,6 +767,12 @@ every claimant is unmerged task work off wave-3 `a725acb04`).
 
 ### 10f. Receipt state
 
+> **§10g supersedes the geometry below:** 114 §8's 106 is itself
+> superseded by 103 D3's 107 (the FIRED g71 underworld seat); the
+> verdicts (f44/g71 DIVERGE, the correction stands) carry forward — D5
+> confirms both consolidators' block sets against the independent
+> re-derivation and re-orders only their flag middles.
+
 - **138 §5a (68)**: SUPERSEDED by 114 §8 (106) — four claimants missing;
   this doc's §8.2 banner + §9 item 5 re-pinned. a6's keep-one VERDICTS
   (§9) are untouched — only the union geometry moves.
@@ -756,6 +785,77 @@ every claimant is unmerged task work off wave-3 `a725acb04`).
   at every affected site (`save.rs`) and in §10c. The `.wld` halves
   (2036/2037, gates 259/260) are INDEPENDENT of the union — f45's
   superset dedup (138 §4) stands unchanged.
+
+### 10g. SEAL — the 106→107 re-pin: g88's D3-DEFINITIVE head, THIS pair at [61]/[62]
+
+**The 107-authority:** g88 `origin/task/W4-g88-life-fruit-use` tip
+**`fc5cf11ae`** (SEAL phase, read FULL this pass — 103 §L3-DEFINITIVE
+D1-D5 + the SEAL merger-bible). Its D1 census: **13 branches at VERSION
+18 → 11 distinct blocks** after three dedup pairs (e19≡g69 crimson,
+f39≡c39 moon-quintet BYTE-IDENTICAL, c43≡f45 identity keep-one). The
+fixed-head sum **16+31+3+1+5+1+3+1+2+44 = 107**: c39 114 §8's 106 was
+the same block set MINUS g71's FIRED underworld seat (1 B, `:1376` —
+rolled `bg_rolls` setBG 9 + `.wld`-persisted `flags.rs:186/:577`), with
+identity FIRST and empress-before-pets inverted. D3 keeps the two
+consolidators' shared 64a forest-first frame and orders the 13-byte
+flag middle **STRICT C# row order**: crimson `:1281` [50] → moon
+`:1347-1351` [51..56] → underworld `:1376` [56] → pets `:1392-1394`
+[57..60] → empress `:1395` [60] → books `:1407-1408` [61..63]; identity
+44 B [63..107] closes the head; d109 dense LAST ([107..]).
+
+**YOUR-pair located in D1/D3: the books-2 block, D1 row 9 — PRESENT,
+not inside identity-44.** D1 row 9: "g90 `740650d75` | books:
+`combat_book_volume_two_was_used` + `peddlers_satchel_was_used` 2×u8 |
+2 | `:1407-1408`". D3 seats them **[61] combat-book-two / [62] satchel**
+— the LAST flags block before identity, flags LAST in the middle. The
+journey/bread-carrier flags are NOT `.trwld` bytes at all: the bread
+flag rides `.plr` gate 256 + `.trplayer` v7 line 8 (L1/L2, §1/§3), never
+the v18 tail — no MISSING claimant, **the 107 arithmetic NOT challenged**
+for this lane. Independent spot-check this pass (direct reads of
+`decompiled/Terraria/IO/WorldFile.cs`): `:1392-1394` boughtCat/Dog/Bunny
+→ `:1395` downedEmpressOfLight → `:1407-1408` combatBookVolumeTwoWasUsed
+/peddlersSatchelWasUsed — the books ARE the last C#-backed flag rows
+seated, and `:1221-1236` SaveWorldHeader confirms identity rides first
+in C# (the 64a frame's regroup is the published deviation, D2's
+adjudication). **The §10e nuance is RESOLVED by D3**: empress sits AFTER
+pets (strict row order adopted) — the 114 §8 inversion retired.
+
+**The seat journey FINAL:** 19/20 (§4, 21-byte) → 22/23 (138 §5a,
+68-byte) → 104/105 (114 §8, 106-byte) → **[61]/[62] (103 D3, 107-byte)**.
+Bytes, gates (259/260) and semantics unchanged at every step.
+
+**The truncation re-pin — every site → +107** (§10c's +106 superseded;
+the code constants stay THIS branch's 2-byte tail, comments-only notes
+re-landed at all six sites + the writer/reader seat notes):
+
+| Site (`save.rs`, seal tip) | Current | FINAL union (103 D3) |
+| --- | --- | --- |
+| `:1206` v6 downgrade truncate | `… + 1 + 2` | `… + 1 + 107` |
+| `:1320` v12 `let tail = …` | `… + 5 + 1 + 2` | `… + 5 + 1 + 107` |
+| `:1351` `EMPTY_V16_TAIL` | `… + 9 + 1 + 5 + 1 + 2` | `… + 1 + 107` |
+| `:1541` v14 queen-slime probe | `len - 1 - 5 - 1 - 2` | `len - 1 - 5 - 1 - 107` |
+| `:1566` pre-v18 probe | `len - 2` | `len - 107` |
+| `:1596` v5 downgrade truncate | `… + 4 + 2` | `… + 4 + 107` |
+
+End-relative sites go through `v18_tail_len` = **107 + W×H**. VERSION
+stays **18**, forward-only. Per 103 D3's delta table, relative to 114
+§8 the books move 104/105→61/62 because identity moves FIRST→LAST
+(−44) plus the underworld insert ahead of the flag middle (+1) plus the
+empress/pets swap (net 0 for this pair): −44+1 = −43 per byte.
+
+**D5 consolidation state (the broadcast this lane RECEIVES):** f44
+`d35876af9` (132-RETIRE FINAL-FINAL, 107, underworld-before-crimson) and
+g71 `f2d8c2c67` (92 §1-FULL, 107, books-in-prefix) both CONFIRMED on
+block sets/dedups/roll keep-one by D1's independent re-derivation; the
+ONLY delta is the flag-middle order — the merger takes D3's strict-row
+middle regardless of which consolidator lands first (C# rows are the
+tie-breaker, not timestamp). g71's registry tip-column hash slips
+(e19/d125/c43 rows carry each other's hashes) flagged by D5 — block
+attributions correct. **The L2-side input from the same read:**
+132-RETIRE §2e now proposes g87's `dh` sentinel as **line 17 at v12**
+(the fold option over 138's DROP — recommended, keeps g87's unlocks
+lossless); DD2's token-7 bump then moves **v13**. This lane's v7 fold
+source is unaffected (its six-line block is consumed already, §8.3).
 
 ---
 
@@ -773,8 +873,8 @@ b3 feeder receipt §11a (phase 3), this declaration (phase 4).
 | Family | Use arm (this branch) | Carriers (all landed) | Live consumers (all armed) | Merge owner (138/103) |
 | --- | --- | --- | --- | --- |
 | **BREAD** — Artisan Loaf 5326 | `editing.rs::use_artisan_loaf` `:15966`, dispatch `:2365` | `.plr` gate 256 (`player_file.rs`), `.trplayer` v7 line 8 (`persist.rs:103`), net flags3 bit 6 (`netglue.rs`) | the +4 crafting reach (`craft.rs::tile_reach:573` ← BOTH live crafting reads `clicks.rs:921-926` + `frame/draw.rs:1575-1583`), the skeleton-merchant stock gate (`shop.rs:1455-1457` ← `npcs.rs:969-972` ShopFlags) | **g90 KEEP-OWN** (138 §1 row 5326 — the consumer that won); a6's dup DROP. NO build-speed leg exists (census `33d4b1625`) |
-| **BOOKS** — Combat Book 4382 + Vol Two 5336 | `editing.rs::use_combat_book` `:16003`, dispatch `:2374` | `.wld` book-one 1939 (i35) + book-two 2036 gate 259 (`flags.rs`), `.trwld` v18 byte (union seat 104, §10), net WorldInfo bitsByte9[0]/bitsByte11[6] | the town stat ladder (BOTH books, `npc_ai_town.rs::town_stat_bonuses` ← the g90 feeder `8521139d`), fishing `DidNotUseCombatBook` (`fishing.rs:1450/:1691` ← `projectiles.rs:327`), TRAINING_DAY progression-40 (`world_sim/player.rs:1625`) | use arm keep-ONE (a6 recommended or g89e; g90's dedups) — **g90's consumers + carriers survive regardless** (§9 items 5-8); `.wld` byte dedups onto f45 |
-| **SATCHEL** — Peddler's Satchel 5343 | `editing.rs::use_peddlers_satchel` `:16041` | `.wld` 2037 gate 260, `.trwld` v18 byte (union seat 105), net bitsByte11[7] | the travel-shop +1 slot (`shop.rs:808-810` ← `weather.rs:559`, no RNG draw) | use arm keep-ONE (a6 or g90); the shop consumer identical on both; carriers g90's (§9) |
+| **BOOKS** — Combat Book 4382 + Vol Two 5336 | `editing.rs::use_combat_book` `:16003`, dispatch `:2374` | `.wld` book-one 1939 (i35) + book-two 2036 gate 259 (`flags.rs`), `.trwld` v18 byte (union seat [61], §10g), net WorldInfo bitsByte9[0]/bitsByte11[6] | the town stat ladder (BOTH books, `npc_ai_town.rs::town_stat_bonuses` ← the g90 feeder `8521139d`), fishing `DidNotUseCombatBook` (`fishing.rs:1450/:1691` ← `projectiles.rs:327`), TRAINING_DAY progression-40 (`world_sim/player.rs:1625`) | use arm keep-ONE (a6 recommended or g89e; g90's dedups) — **g90's consumers + carriers survive regardless** (§9 items 5-8); `.wld` byte dedups onto f45 |
+| **SATCHEL** — Peddler's Satchel 5343 | `editing.rs::use_peddlers_satchel` `:16041` | `.wld` 2037 gate 260, `.trwld` v18 byte (union seat [62], §10g), net bitsByte11[7] | the travel-shop +1 slot (`shop.rs:808-810` ← `weather.rs:559`, no RNG draw) | use arm keep-ONE (a6 or g90); the shop consumer identical on both; carriers g90's (§9) |
 | **SHIMMER-6** — 5337/5338/5339/5340/5341/5342 | `editing.rs::use_shimmer_permanent_item` `:16073` (the five non-5338 arms; **5338 Aegis Fruit is g89's lane** — its `.plr` bool 2 + sidecar token 1 ride g89's carriers) | `.plr` bools 1/3/4/5/6 (`player_file.rs:368-389/:989-996`), `.trplayer` v7 lines 9-13, net flags3 bits 0/2/3/4/5 | the aegis/arcane regen slots (`RegenInputs`, `player.rs`), the pearl luck mirror (`update_luck`), the gummy fishing +3, the ambrosia speed triple (`player.rs:6904-6908`) | **a6's `use_shimmer_permanent` machine owns all six arms**; g90's core dedups — **g90's Player field decls + consumer shapes are the merge anchors** (138 §3.2-3.4, a6 fixed to match); `.plr` dedups onto f44 `used_upgrades[6]`, sidecar onto g88 v11 |
 
 **The persist carriers, one owner per layer (103 §9 + 132 §3):**
@@ -791,10 +891,11 @@ b3 feeder receipt §11a (phase 3), this declaration (phase 4).
   `persist.rs` module doc + the v7 writer block + the v7 reader arm +
   the `app/mod.rs` restore block — each cites the superset owner and
   the lossless-recognition receipt.
-- **L3 `.trwld`**: the **106-byte nine-way union** (§10 — c39 114 §8),
-  this pair at 104/105 LAST-fixed, constants +106; VERSION 18,
-  forward-only. **L3 `.wld`**: f45's superset flags block (138 §4) —
-  g90's 2036/2037 flips dedup, same fields/gates/offsets.
+- **L3 `.trwld`**: the **107-byte DEFINITIVE head** (§10g — g88 103
+  §L3-DEFINITIVE D3, `fc5cf11ae`), this pair at **[61]/[62]** the LAST
+  flags block, constants **+107**; VERSION 18, forward-only. **L3
+  `.wld`**: f45's superset flags block (138 §4 / 103 D4) — g90's
+  2036/2037 flips dedup, same fields/gates/offsets.
 - **Net**: g90's netglue wiring is the live carrier (a6 folds all
   SendData out as MP-only) — flags3 bits 0/2/3/4/5/6 + the WorldInfo
   trio stay (§9 item 7).
@@ -808,6 +909,11 @@ recorded in ANALYSIS "W4-g90 retire: the b3 feeder receipt").
 ### 11a. The b3-receipt (retire probe — origin/task/W4-b3-npc-ai-town-wire)
 
 **b3 tip read: `96a5d88f0` — phase 1 ONLY; phase 2 has NOT landed.**
+(**SEAL re-probe 2026-11-21:** `origin/task/W4-b3-npc-ai-town-wire`
+re-fetched — tip UNCHANGED at `96a5d88f0` (2026-11-20 21:44), still
+phase 1; the feeder-contract unconsumed receipt STANDS as written
+below — the feeder stays canonical, the two dedup steps + the two
+b3-dedup witnesses are the merge input, nothing to re-derive.)
 The branch carries exactly two commits over wave-3 `a725acb04`: the
 phase-1 wiring (`96a5d88f0`) and nothing else. Phase 1 wires the
 aiStyle-7 axis (`npc.rs::update_rng_dust` → `Npc::ai_007_town_family` →
@@ -894,10 +1000,10 @@ Re-read at the retire tip (direct file reads, no junction recursion):
 | the satchel shop +1 | `shop.rs:808` (`world.peddlers_satchel_was_used`) | present |
 | TRAINING_DAY progression-40 | `world_sim/player.rs:1626` | present |
 | the town feeder pre-pass | `world_sim/npcs.rs:4414-4457` (`from_world` + the per-NPC ladder) | present |
-| the `.trwld` v18 pair | `save.rs` writer `:442-445` / reader `:832-835`, VERSION 18 `:72` | present (the 2-byte shape, union seat 104/105 annotated) |
+| the `.trwld` v18 pair | `save.rs` writer `:451-454` / reader `:843-846`, VERSION 18 `:72` | present (the 2-byte shape, union seat [61]/[62] annotated per §10g) |
 | the `.trplayer` v7 block | `persist.rs` writer `:103-112` / reader `:193-207` | present (DEPRECATED-BY-SUPERSET banners landed) |
 | the App restores | `app/mod.rs:2944-2952` | present (banner landed) |
-| the six truncation sites | `save.rs:1202/:1314/:1345/:1532/:1555/:1584` | present (+106 re-pin notes landed) |
+| the six truncation sites | `save.rs:1206/:1320/:1351/:1541/:1566/:1596` | present (+107 re-pin notes landed per §10g) |
 
 **The merger's ordered checklist for THIS lane (the retire summary):**
 1. **L1** `.plr`: f44c's walk is the base; dedup the bread + five bools
@@ -905,9 +1011,11 @@ Re-read at the retire tip (direct file reads, no junction recursion):
 2. **L2** `.trplayer`: g88 v11 is canonical; this branch's v7 block is
    the consumed fold source — drop the writer, dedup the fields +
    restores (103 §9 steps 6-9; the banners mark every site).
-3. **L3** `.trwld`: the 106-byte nine-way union (c39 114 §8, §10 here) —
-   this pair at 104/105, the six constants +106, VERSION 18. **L3**
-   `.wld`: f45's superset — the 2036/2037 flips dedup (138 §4).
+3. **L3** `.trwld`: the **107-byte DEFINITIVE head** (g88 103
+   §L3-DEFINITIVE D3, `fc5cf11ae`, §10g here) — this pair at
+   **[61]/[62]** the LAST flags block, the six constants **+107**,
+   VERSION 18. **L3** `.wld`: f45's superset — the 2036/2037 flips
+   dedup (138 §4 / 103 D4).
 4. **Use arms**: keep the loaf (g90 keep-own); the books/satchel
    keep-one (a6 or g89e/g90); the shimmer arms onto a6's machine with
    g90's field decls + consumer shapes as the anchors (138 §1/§3).
@@ -923,3 +1031,92 @@ OTHER lanes' scope, recorded not owned: b3 phase 2 (the `TownOutputs`
 drain), d125's empress flag wiring (the shared false fold), the g71c
 union landing (§10), the g88/f44/f45 persist bases (103 §9/132 §3).
 The branch is RETIRED — code-only, nothing run, every receipt published.
+
+---
+
+## 12. SEAL — the 107 re-pin + the g88-v11 lossless receipt + the booster-family bible
+
+**Seal pass 2026-11-21** (post-retire, same branch): g88's SEAL tip
+**`fc5cf11ae`** read FULL (103 §L3-DEFINITIVE D1-D5 + the SEAL bible);
+b3 re-probed (unchanged, §11a banner); the 135 geometry re-pinned
+106→107 (§10g) with comments-only seat/constant notes re-landed at the
+`save.rs` writer/reader + all six truncation sites. No code constant of
+THIS lane is the union's — the branch keeps its 2-byte tail (the
+standing decision); every seal diff line is a comment or doc.
+
+### 12a. The g88-v11 torch-line + six-line-rule lossless receipt (re-verified at fc5cf11ae)
+
+Direct reads of g88's pushed `crates/tr-app/src/persist.rs` at the SEAL
+tip (the SEAL commit itself is doc-only — its stat touches only
+ANALYSIS/103/INDEX; the v11 code stands as landed `a9f1c29d8`):
+
+- **The six-line guard** `:463-465`: `v7_flags && nonempty.len() == 6
+  && all 1-token` — present verbatim.
+- **The positional reads** `:470-481`: bread → aegis-crystal →
+  arcane-crystal → galaxy-pearl → gummy-worm → ambrosia (135 §1's
+  table), aegis-fruit stays false (g90b never wrote it), `post.clear()`
+  — present verbatim. **This lane's v7 files load LOSSLESSLY** on the
+  superset reader: the six 1-token lines are unambiguously the lane-7
+  shape (no other pushed v7 writer emits it — the guard comment
+  enumerates the five sibling shapes).
+- **The witness** `g90bs_six_line_v7_loads_positionally` `:1198`:
+  present — its fixture writes bread=1/crystal=1/arcane=0/pearl=1/
+  gummy=0/ambrosia=1 as six own-lines and asserts each positional
+  read + fruit-false + no maxima pairs + no torch pair. WITNESS
+  PRESENT (written not run — both lanes code-only).
+- **The v11 torch line**: writer header `format!("11\n…")` `:230`; the
+  f33 torch pair rides as the LAST post-dye 2-token line AFTER the
+  loadout block (`unlockedBiomeTorches`/`UsingBiomeTorches`,
+  `Player.cs:54777-54778/:55241-55242`); the lone-all-0/1-pair v7
+  recognition `v7_torch_only` `:466-469` + the v11 arm's last-pair
+  reader present; f33's witness `f33s_torch_only_v7_loads_positionally`
+  `:1233`. **Orthogonal to this lane's block** — the six-line rule
+  fires before the torch arm, `post.clear()` isolates them; no token
+  collision (the torch pair is a LINE, not tokens 7/8; token 7 stays
+  DD2-RESERVED, bump v12 — or **v13** if the merger takes 132-RETIRE
+  §2e's g87-`dh`-line-17 fold, the newer recommended input, §10g).
+
+**Verdict: the fold-source contract STANDS at the SEAL tip — 135 §2's
+collision remains CLOSED, nothing to re-land on this branch.**
+
+### 12b. The BOOSTER-FAMILY bible (one paragraph, the six anchors)
+
+**The whole booster-family merge in one paragraph:** merge **L1 → L2 →
+L3**. **L1** (`.plr`) takes **f44c's complete walk** as the base
+(132-RETIRE `d35876af9` §3-L1 — the slot-11 torch PROPERTY fix +
+the timestamp fix included); g90's bread bool + five shimmer named
+bools dedup onto `used_upgrades[6]` (`.plr` file order: crystal 0 /
+fruit 1 / arcane 2 / pearl 3 / worm 4 / ambrosia 5 — NOT the sidecar
+token order), the bread flag riding f44's gate-256 row. **L2**
+(`.trplayer`) takes **g88's v11 superset** (`a9f1c29d8`, sealed
+`fc5cf11ae` — 103 §2/§3: the tolerant v7-v11 reader, unlock tokens 1-6
+fruit-first, token 7 DD2-RESERVED, the f33 torch pair as line 16 NOT
+tokens, the six-line positional rule consuming **g90's carriers**
+losslessly — witness `g90bs_six_line_v7_loads_positionally` verified
+present at the seal tip, §12a); g90's v7 writer retires at the merge,
+its SavedPlayer fields + App restores dedup (character-first /
+sidecar-second, 132 §2c); g87's `dh` line folds as line 17 at v12
+(132-RETIRE §2e, recommended — DD2's bump then v13) or drops
+(138-FINAL). **L3** (`.trwld`) takes **103 §L3-DEFINITIVE D3's 107-byte
+head + W×H dense LAST** (`fc5cf11ae` — 13 claimants → 11 blocks after
+e19≡g69 / f39≡c39 / f45≡c43; forest 16 + cave 31 + surface 3, then the
+STRICT-C#-row flag middle crimson [50] / moon [51..56] / underworld
+[56] / pets [57..60] / empress [60] / **g90 books [61..63]**, identity
+44 [63..107] closes the head; every truncation constant +107,
+`v18_tail_len` = 107+W×H, VERSION 18 forward-only); the `.wld` flags
+file is **f45's superset** (103 D4 — g90's book-two 2036 gate 259 +
+satchel 2037 gate 260 flips dedup onto it, pets gate 217, the moon
+quintet keeps f45's writer half, force-today f39 ONLY, g72's cave i32
+arrays survive, d124's DD2 trio independent). The **use arms** per
+138/103 §5a: g90 KEEP-OWN the 5326 loaf (+4 reach + skeleton-merchant
+gate), ONE `use_combat_book`, the shimmer six onto **a6's
+`use_shimmer_permanent` machine** with g90's Player-field decls +
+consumer shapes as the anchors; **all g90 consumers stay** — the town
+feeder (`TownEnvFlags::from_world` + the `update_npcs` pre-pass; b3's
+phase-1 inline env dedups onto it, its `combat_book_two:false` fold
+flips to the live flag, tip still `96a5d88f0` phase-1-only at this
+seal), fishing `DidNotUseCombatBook`, TRAINING_DAY-40, the satchel shop
++1, the regen/luck/speed rows, the net carriers; the 26 `w4_g90_*`
+witnesses re-pin per 103 §4 + §10g and ride the merge — every witness
+in the family WRITTEN NOT RUN (all lanes code-only), the merger runs
+the catalog test command once after the three layers land.
