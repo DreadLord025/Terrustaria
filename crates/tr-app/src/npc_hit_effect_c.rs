@@ -166,6 +166,7 @@
 //! | 701-704 | `:86366-86369` | the 350 death (4 gores 533-536) |
 //! | 705-712 | `:86387-86406` | the corrupt/crimson critter family 47/57/58/464/465 death (per-type) |
 //! | 713-722 | `:86425-86446` | the crimson monster family 173/174/181/182/268 death (per-type, alpha dust) |
+//! | 723-732 | `:86465-86486` | the zombie family 190/191/192/193/194 death (2 gores each, +14 X offset) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -4495,6 +4496,46 @@ fn crimson_monster_death(
     }
 }
 
+/// The demon-eye family death (`NPC.cs:86459-86502`): the 50-dust type-5
+/// burst (SpeedX `2*hitDirection`, SpeedY -2), then 2 gores — the head at
+/// position and the tail at `position + (14, 0)`, both at `this.scale`.
+/// This commit ports the 190/191/192/193/194 variants (sites 723-732):
+/// 190 CataractEye → (249,2), 191 SleepyEye → (248,2), 192 DialatedEye →
+/// (247,2), 193 GreenEye → (252,253), 194 PurpleEye → (250,251). The
+/// 317/318/2 variants land with the next batch.
+fn demon_eye_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:86459-86462` — the 50-dust type-5 burst.
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    // `:86463-86502` — the per-type (head, tail) pair.
+    let (head, tail) = match npc_type {
+        190 => (249, 2),
+        191 => (248, 2),
+        192 => (247, 2),
+        193 => (252, 253),
+        _ => (250, 251), // 194 PurpleEye
+    };
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, head, s);
+    gore.new_gore(rng, world, pos + Vec2::new(14.0, 0.0), vel, tail, s);
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5039,6 +5080,14 @@ pub fn hit_effect_c(
         && npc.hp <= 0
     {
         crimson_monster_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86449-86503` — the demon-eye family arm; this commit owns the
+    // 190/191/192/193/194 variants (sites 723-732); the 317/318/2 variants
+    // land with the next batch.
+    if (npc_type == 190 || npc_type == 191 || npc_type == 192 || npc_type == 193 || npc_type == 194)
+        && npc.hp <= 0
+    {
+        demon_eye_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -7961,6 +8010,34 @@ mod tests {
             crimson_monster_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
             let types: Vec<i32> = gore.slots()[..gores.len()].iter().map(|g| g.gore_type).collect();
             assert_eq!(types, gores, "crimson monster {ty}");
+        }
+    }
+
+    /// `NPC.cs:86465-86486` — the demon-eye family: the (head, tail) pairs
+    /// 190→(249,2), 191→(248,2), 192→(247,2), 193→(252,253), 194→(250,251),
+    /// the tail at position+(14,0), both at this.scale.
+    #[test]
+    fn w4_f10_the_demon_eye_death_uses_the_per_type_pair() {
+        let w = air();
+        let cases: [(i32, i32, i32); 5] = [
+            (190, 249, 2),
+            (191, 248, 2),
+            (192, 247, 2),
+            (193, 252, 253),
+            (194, 250, 251),
+        ];
+        for (ty, head, tail) in cases {
+            let mut n = boss(100.0, 100.0, 30.0, 30.0);
+            n.scale = 1.2;
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(691);
+            demon_eye_death(&n, ty, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+            assert_eq!(gore.slot(0).gore_type, head, "eye {ty} head");
+            assert_eq!(gore.slot(1).gore_type, tail, "eye {ty} tail");
+            assert_eq!(gore.slot(0).position, Vec2::new(100.0, 100.0));
+            assert_eq!(gore.slot(1).position, Vec2::new(114.0, 100.0));
+            assert_eq!(gore.slot(0).scale, 1.2);
         }
     }
 
