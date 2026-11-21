@@ -18479,8 +18479,15 @@ Documented gaps, all deliberate:
   (`:10130-10133`, +1.0 on the base-1 multiplier, the Swiftness-3 wired
   convention). The squire `setSquireT2` twin (`AddBuff(205, 300)`) landed
   with the W4-f48 parry wave (see "The parry machine lands" below) - the
-  d123/f36 DD2 lanes carried no copy (censused), so `hurt_inner` holds the
-  one grant, right after the panic row.
+  d123/f36 DD2 lanes carried no copy (censused), so `hurt_inner` held the
+  one grant, right after the panic row. **SHIELDS RETIRE keep-one
+  (2026-11-21, `f4539c27e`)**: BOTH grants + the field + the equip panic
+  halves + the clear are now **f50-canonical** (`task/W4-f50-hurt-reactions`
+  51eefdf84's sub-receipt — f50 owns `hurt_inner`'s reaction head); the
+  inline buff-63 reader is **f12-canonical** (`DEBUFF_DISPATCH`,
+  `task/W4-f12-buff-frame-wiring` 22ce2a41f). This branch's copies are
+  DROPPED; the dodge block + the 1578 `honey_comb`/6187 `long_invince`
+  fold halves + the DD2 crystal-lane `add_buff(205, 3600)` stay.
 - **`brain_of_confusion_dodge_animation_counter`** has no render consumer
   (the S1-A-9 dead-slot convention) вЂ” carried for state parity.
 - **The contact/thorns restructure** (Phase 2, landed): the contact block runs
@@ -18560,9 +18567,11 @@ melee consumer 44307-44312), censused OUT with the Cross Necklace commit
 - **The Hurt squire twin** (`hurt_inner`): `AddBuff(205, 300)` right
   after the panic grant (`:38241-38244`), post-dodge, pre-defense. The
   d123 (OOA loss/medals) and f36 (medal drops) lanes were censused for
-  a copy — neither carried one; this is the single grant. The buff-205
+  a copy — neither carried one; this was the single grant. The buff-205
   ballista-reload consumers already existed (`Projectile.cs:68563-68570`
-  port).
+  port). **SHIELDS RETIRE keep-one (`f4539c27e`)**: the twin's grant now
+  lives ONLY in f50's head (receipt 51eefdf84 — f12's tree has no 205
+  hurt writer); this branch's copy is dropped, the witnesses retargeted.
 - **The ShieldRaise wiring** (`world_sim/player.rs`, the `:28283` seam
   after `dropItemCheck`/chest, before the editing pass): the general
   check (`:31528`) uses the port's stand-ins — `selected != 58`,
@@ -18731,7 +18740,9 @@ Documented deviations, all deliberate:
 - **The NPC `active` gate** folds to the `hp > 0` live-list convention (the
   `buff_effects_accessory` precedent).
 - **Deferred families**: 1578's `panic` hurt buff landed with W4-f48 (see
-  "The dodge family" вЂ” the flag, the grant and the buff-63 speed arm);
+  "The dodge family" вЂ” the flag, the grant and the buff-63 speed arm;
+  SHIELDS RETIRE keep-one: the panic family is now f50-canonical, the
+  63 reader f12-canonical — this branch keeps the `honey_comb` half);
   6184's `accPoisonBarb`/`accHoneyedBarb`, 6186's
   `accSnakeBand`, 4001's manaFlower auto-potion half (`:52588`, the port
   folds only the -0.08 `manaCost` row), 3251's `hasLuck_LuckyHorseshoe`
@@ -18842,13 +18853,115 @@ written not run. The deliberate deviations:
   `world_sim/player.rs:1689-1787`); no panic speed-lines exist (buff-63's
   only effect is `moveSpeed++`, already ported); the fast-run dust half of
   `SpawnFastRunParticles` (`Player.cs:20205-20299`) is an unported visual
-  seam (the sound half is ported). The ManaCloak magic-hit star proc
-  (`Projectile.cs:13831-13852`, ai2 = 1 / dmg 100 / cooldown 300) is
-  unported — out of the hurt-retaliate lane's scope.
+  seam ON THIS TREE (the sound half is ported; the dust half landed on
+  W4-d51 — see the SHIELDS RETIRE section below). The ManaCloak magic-hit
+  star proc (`Projectile.cs:13831-13852`, ai2 = 1 / dmg 100 / cooldown 300)
+  is unported — out of the hurt-retaliate lane's scope (task-seeded below).
 - **StarVeil damage-lands witness** (`projectile.rs`): the drain spawns
   kind 725 (dmg 75 classic / ×2 expert 150) and the star's contact lands
   through `damage_pve` — the end-to-end "the star hurts" pin the spawn
   seam + row + AI already implied but never witnessed.
+
+### SHIELDS RETIRE (W4-f48, 2026-11-21)
+
+The retire phase of the shields family: the raised-shield stats + the
+shield draw + proj 866 + the parry machine + the StarVeil witness all
+landed (the ledger above); this pass executes the cross-branch keep-one
+rulings, publishes the receipts, task-seeds the two out-of-scope seams
+and seals research/98. Code-only: witnesses written not run.
+
+1. **The f50 Panic-63 THIRD-copy drop — EXECUTED** (`f4539c27e`, per
+   f50's receipt 51eefdf84, sub-receipt "the f48 THIRD copy"; the ranges
+   re-pinned from 69d499c6b to the lane-20 tip e5b66bb06 before the cut).
+   DROPPED from `player.rs`: the hurt-head grants `AddBuff(63, 480)` +
+   `AddBuff(205, 300)` (the comment + both ifs), the `panic` field + doc +
+   spawn default, the 1578/6187 equip arms' panic halves (1578 keeps
+   `honey_comb`, 6187 keeps `long_invince` — both already f50/main
+   fields), the whole 1290 arm, the `ResetEffects` `:18616` clear, and
+   the inline buff-scan `63 => move_speed += 1.0` row (f12-canonical,
+   item 2). STAY: the dodge block (f48's own lane, re-verified on main),
+   the DD2 crystal-lane `add_buff(205, 3600)` (a DIFFERENT site — the
+   S1-D-4b-2 set-flags witness; f50's receipt: "lands clean"). Witness
+   retargets per the receipt: the dodged-hit-no-grant pin →
+   `w4_f48_a_dodged_hit_draws_only_the_belt_roll` (the roll order + the
+   draw census, the grant assertions ride f50's head witnesses); the
+   necklaces witness → `w4_f48_the_necklace_fold_halves_survive_the_
+   panic_keep_one` (the surviving halves only); the shield-cap witness's
+   Panic-63 `2 × 1/3` pin → Swiftness-3 `1.25 × 1/3` (the same
+   multiply-before-merge proof without the dropped reader); the
+   480-tick-grant / 205-hurt-twin / expiry witnesses retired onto f50's
+   `w4_f50_the_panic_necklace_grants_the_hurt_buff_and_arms_from_all_
+   three_sources` + `w4_f50_the_squire_t2_set_grants_ballista_panic_on_
+   hurt` + f12's wiring witness. **CENSUS NEGATIVE — the THIRD
+   `rederive_beetle_solar_buffs` claim is misattributed**: f50's receipt
+   head names "f48-69d499c6b THIRD rederive_beetle_solar_buffs+63-row
+   copy", but `git grep rederive 69d499c6b -- crates` and the same at
+   HEAD are EMPTY (the only `rederive` hits repo-wide are the unrelated
+   wld ore-tier tests + the biomes band test). f48 carries the panic
+   family + the 63 row ONLY — no beetle/solar ladder copy exists on any
+   f48 commit (`git log -S rederive_beetle_solar_buffs` over the branch:
+   zero). The g27-canonical ladder ruling stands for f50/f12; there is
+   no third ladder to drop here.
+2. **The f12 Panic-63 canonical receipt — PUBLISHED** (f12 22ce2a41f's
+   dispatch): three copies existed (f12's `DEBUFF_DISPATCH` 63 arm —
+   `buff_frame_wiring.rs:113`'s set carries 63, the `buff_effects.rs:149`
+   table row `63 => e.move_speed += 1`; f50's inline `63 => move_speed
+   += 1.0` at 18eeb4f44 :7168; f48's inline row, now dropped). KEEP ONE:
+   f12. f50's drop-hunks are f50's own ledger (51eefdf84 re-pinned them
+   at 18eeb4f44: the :7165-7168 row + the witness retarget :16199-16215);
+   f48's half is executed above. Merged as-is with both inline rows the
+   buff would grant +2 moveSpeed/tick (f12's ruling, unchanged).
+3. **The 866 d18/d12 boomerang keep-one — CENSUSED, COMPOSES**: the
+   `ai_boomerang` body at d18 tip 6e8083751 (8248a54be's FINAL census
+   commit), d12 tip c98bd8937 and f48's pre-866 base (42ffb0759^) are
+   BYTE-IDENTICAL (SHA256 head 2553EB9D1F0D over the fn body, all three)
+   — neither boomerang lane touched the machine; their 866 mentions are
+   the pre-existing 33/106/866 wall-bounce trio (`:19550-19560`) + the
+   301/866/902 NPC-hit-reverse exclusion, both already on main. f48's
+   42ffb0759 widening (`npcs`/`local_immunity`/`rng` params + the 866
+   arms + the 13 call sites: 1 live dispatch + 12 witnesses) is the ONLY
+   change to the machine — it composes onto either tip with no keep-one
+   cut needed; at merge the widened signature wins and d18/d12's
+   call-site lines take the three new arguments (empty slices + the
+   pass stream for the non-866 kinds, which draw nothing). No 866 row
+   exists on d18/d12 (`projectile/data.rs` grep: zero) — the row is
+   f48's alone.
+4. **The ManaCloak magic-hit proc — TASK SEED** (the lane-20 out-of-scope
+   note, `Projectile.cs:13831-13852`): a magic projectile's NPC hit with
+   the manaCloak override armed + `starCloakCooldown == 0` sets the
+   cooldown 300 and spawns ONE 723 star from above (`x + Next(-400,400)`,
+   `y − Next(500,800)`, the centre-seeking `23/len` speed with the
+   `Next(-100,101)` x-jitter, damage 100, kb 5, `ai2 = 1` — the manual
+   fall-through half `ai_cloak_star` already codes inert). The site is
+   `Damage_PVE_Inner`'s `flag10` block (`:13810`), beside the ghost
+   heal/hurt + the nebula-boost roll (`:13826-13830`) — the
+   projectile-on-hit accessory-proc family, NOT the hurt-retaliate lane.
+   SEED → the projectile on-hit accessory lane (the `damage_pve`
+   flag10 family: ghostHeal/ghostHurt/vampireHeal + nebula + manaCloak;
+   no origin/task branch carries any of them — censused). Prereqs: the
+   `starCloakCooldown` field (`Player.cs:1108`, the `:24626-24628` tick
+   decrement — unported), the magic-hit gate, the accessory-source
+   spawn seam (`spawn_with_data_ai_owned`, the StarVeil precedent).
+5. **SpawnFastRunParticles dust half — TASK SEED, ALREADY PORTED
+   ELSEWHERE** (`Player.cs:20205-20299`): the lane-20 note called it an
+   unported visual seam; the retire census finds the dust half LANDED on
+   **W4-d51** (`0d0cf7c42`, batch 3: the `FastRunArm` picker — wings-3/
+   rocket-6, sailDash, desertDash Direct, coldDash, fairyBoots one-roll,
+   hellfireTreads, plain — + the boot-run visual grants + the
+   `player_dust::drain_fast_run` replay after the footstep sound). The
+   `spawn_fast_run_particles` body is byte-identical (SHA256 head
+   653BEED04AEC) at d51 tip 0d0cf7c42, f3 tip 75f3f7347 and g66 tip
+   248f0ff4d (d51 is an ancestor of both — `merge-base --is-ancestor`
+   exit 0; NOT on main). KEEP ONE: the d51 copy, riding whichever of
+   f3/g66 merges (g66's RNG-order contract already names "fast-run
+   (W4-d51)" first in the `UpdatePlayers` drain order). f48's sound-only
+   body drops at merge in favour of the d51 shape; no f48 code change
+   needed (the seam note in research/98 is corrected below). The
+   gravDir == −1 foot-offset fold (`:20207-20211`) collapses to 0 on the
+   d51 port (no gravity flip) — its documented deviation.
+6. **research/98 SEALED + the shields-family bible** — the seal verdicts
+   + the family table live in `docs/research/98-doc-sweep-shields.md`
+   (the RETIRE section); the INDEX row flips to SEALED.
 
 ## The respawn fidelity (R-03-5, 2026-11-13)
 
