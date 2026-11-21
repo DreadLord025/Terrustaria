@@ -7249,7 +7249,8 @@ path — the two layers do not interact until a consumer wires
 `get_input_text` into a front screen.
 
 **The W4-f22 RETIRE declaration (2026-11-21, code-only)** — the UI-screens
-family is COMPLETE (research/144): all 28 `UIState` descendants accounted
+family is COMPLETE (research/264, renumbered 144→264 per registry
+research/150 §6.3 — c4 keeps 144): all 28 `UIState` descendants accounted
 — 26 ported (10 base re-verified in research/18d + 16 across the
 d84/d85/d86/c24 waves) and 2 standing scope-outs (`UIWorldGenDebug`
 dev-only, `UITextWrappingTest` test-only — d86's records). The f22 lane's

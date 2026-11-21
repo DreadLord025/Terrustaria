@@ -1,7 +1,8 @@
 # 18d — UIState screens coverage census (W4-f22, verify-only)
 
 > **FINAL (2026-11-21): the UI-screens family is COMPLETE — see
-> [research/144](144-f22-ui-screens-retire.md)** (the retire declaration:
+> [research/264](264-f22-ui-screens-retire.md)** (the retire declaration,
+> renumbered 144→264 per registry research/150 §6.3 — c4 keeps 144:
 > all 28 descendants accounted, the claim conflicts below resolved by the
 > landed d84/d85/d86/c24 code, the f22 retire round's five items).
 

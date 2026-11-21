@@ -1,4 +1,10 @@
-# 144 — W4-f22 UI screens RETIRE: research FINAL + the UI-screens-family COMPLETE declaration
+# 264 — W4-f22 UI screens RETIRE: research FINAL + the UI-screens-family COMPLETE declaration
+
+> **RENUMBERED 144 → 264** (registry research/150 §6.3 round 2, d54
+> `72226e500`): 144 belongs to c4's earlier `144-orca-npc692-census-input.md`
+> (first-add 09:15:20 vs this doc's 12:04:59); the 3-way collision also moved
+> f47's two 144 docs to 277/278. This doc takes 264 from the 244-280 block;
+> every ref on this branch updated (18d FINAL pointer, ANALYSIS, ROADMAP).
 
 Status: RETIRE (research FINAL; code-only mode — no cargo/tests/rustfmt/graphify
 invoked; every witness written not run, verified by re-reading the C#).
