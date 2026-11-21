@@ -221,6 +221,7 @@
 //! | 1039-1048 | `:87709-87733` | the 86 Unicorn (7 gores) + 155 Wolf (3 gores) death |
 //! | 1049-1056 | `:87749-87771` | the 329 Hellhound (3 gores) + 163/238 BlackRecluse (5 gores) death |
 //! | 1057-1061 | `:87787-87791` | the 164/165 WallCreeper death (5 gores 207/208/208/208/208) |
+//! | 1062-1071 | `:87807-87831` | the 239/240 BloodCrawler + 236/237 JungleCreeper death (5 gores each) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -6112,6 +6113,59 @@ fn wall_creeper_death(
     gore.new_gore(rng, world, pos, vel, 208, 1.0); // :87791
 }
 
+/// The 239/240 BloodCrawler death (`NPC.cs:87803-87811`, sites 1062-1066):
+/// the 50-dust type-5 burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then
+/// the 5 gores 351/352/352/353/353 at position. Scale defaults to 1.
+fn blood_crawler_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for ty in [351, 352, 352, 353, 353] {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
+/// The 236/237 JungleCreeper death (`NPC.cs:87823-87831`, sites
+/// 1067-1071): the 50-dust type-18 burst (SpeedX `2.5*hitDirection`, SpeedY
+/// -2.5), then the 5 gores 332/333/334/335/335 at position. Scale defaults
+/// to 1.
+fn jungle_creeper_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 18, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    for ty in [332, 333, 334, 335, 335] {
+        gore.new_gore(rng, world, pos, vel, ty, 1.0);
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -6857,6 +6911,14 @@ pub fn hit_effect_c(
     // `:87773-87792` — the 164/165 WallCreeper arm (sites 1057-1061).
     if (npc_type == 164 || npc_type == 165) && npc.hp <= 0 {
         wall_creeper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87793-87812` — the 239/240 BloodCrawler arm (sites 1062-1066).
+    if (npc_type == 239 || npc_type == 240) && npc.hp <= 0 {
+        blood_crawler_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87813-87832` — the 236/237 JungleCreeper arm (sites 1067-1071).
+    if (npc_type == 236 || npc_type == 237) && npc.hp <= 0 {
+        jungle_creeper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -10815,6 +10877,34 @@ mod tests {
         wall_creeper_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![207, 208, 208, 208, 208]);
+    }
+
+    /// `NPC.cs:87807-87811` — the BloodCrawler death: the 5 gores
+    /// 351/352/352/353/353.
+    #[test]
+    fn w4_f10_the_blood_crawler_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1039);
+        blood_crawler_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![351, 352, 352, 353, 353]);
+    }
+
+    /// `NPC.cs:87827-87831` — the JungleCreeper death: the 5 gores
+    /// 332/333/334/335/335.
+    #[test]
+    fn w4_f10_the_jungle_creeper_death_spawns_the_five_gores() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1049);
+        jungle_creeper_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![332, 333, 334, 335, 335]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
