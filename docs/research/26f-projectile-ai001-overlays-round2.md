@@ -203,14 +203,28 @@ the alias, this round's resolves it).
   (`w4_f20_f4_the_seeded_purple_laser_remaps_extra_updates_to_the_seed`,
   `w4_f20_f4_the_cap_is_inert_across_the_reachable_seed_range`), WRITTEN
   NOT RUN. No behaviour change.
-- **F5 (the projectile shimmer layer is unported).** The `Shimmer()`
-  family (`:22361-22530`, the `:17009-17011` shimmerWet gate) has no
-  projectile-side port — the AI_001-internal 1006 flag4 inversion is
-  ported (special_arrows), but the wet-shimmer bounce/lift/kill is the
-  f47/e19 item-side lane's sibling, deferred for projectiles (ANALYSIS
-  `:27666`, the g2 `26d` recorded gap). The rowed arrow kinds that ride
-  the `:22380`/`:22403` shimmer arms take no shimmer interaction until
-  that layer lands.
+- **F5 (the projectile shimmer layer — g2-owned, CROSS-NOTE updated this
+  round).** The `Shimmer()` family (`:22361-22530`, the `:17009-17011`
+  shimmerWet gate) had no projectile-side port at the census pass — the
+  AI_001-internal 1006 flag4 inversion is ported (special_arrows), but
+  the wet-shimmer bounce/lift/kill is the f47/e19 item-side lane's
+  sibling, deferred for projectiles (ANALYSIS `:27666`). Verify-round
+  re-read of `origin/task/W4-g2-proj-ai-missing-b` (tip `81c4ab85`,
+  advanced past the censused `8ac7d95e`): g2 has now PORTED the family
+  itself — phase 3 (`63a6db26`) lands `shimmer()` +
+  `shimmer_two_cell_kill()` VERBATIM (all 13 arms, `:22361-22516`,
+  RNG-neutral, 5 witnesses) as a STAGED/UNWIRED helper (the e3 staged
+  precedent), and phase 4 (`81c4ab85`) records it STAGED pending the
+  generic wet block. The single C# caller `:17011` sits inside the
+  UNPORTED generic wet block (`:16790-17007`, d53's cited skip "lands
+  with the generic wet subsystem"); only the bobber `probe_wet` writes
+  `shimmer_wet` today, so the rowed arrow kinds riding the
+  `:22380`/`:22403` shimmer arms still take no shimmer interaction until
+  that subsystem lands and the helper is wired. No `W4-g2c` branch
+  exists; `W4-g3-proj-ai-missing-c` carries only the flail-side
+  `shimmer_wet` halves (the `flail_shimmer_wet` refusal, also on g2's
+  tree). Nothing owed by this lane — the port + the wiring both stay
+  g2's claim. Cross-note only, no code change here.
 - **F6 (the magicQuiver Update-tail bump — PORTED this round).**
   `:17032-17035` bumps `extraUpdates` to 1 for the friendly arrow-flag
   kinds when the owner has magicQuiver. The `magic_quiver` flag was
