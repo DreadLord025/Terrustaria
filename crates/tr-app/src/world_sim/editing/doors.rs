@@ -767,6 +767,97 @@ pub(crate) fn cell_blocked_by_entity_pub(
     cell_blocked_by_entity(player, npcs, x, y)
 }
 
+/// The REAL `TownDoorOps` (W4-g24 doc-sweep — the W4-b3 phase-2 seam): the
+/// aiStyle-7 arm's inline door attempts (`npc_ai_town::town_npc_ai`,
+/// `NPC.cs:54047-54073`/`:53838-53854`) mutate the world through
+/// `tr_core::edit::{open_door, close_door, shift_tall_gate}` and play the
+/// success cues — b3's phase-1 `NoOpTownDoors` (every attempt false) is
+/// replaced by this adapter when the town lane adopts it. The cues ride
+/// the `UpdateNpcs` stream: the C# plays them inside `NPC.UpdateNPC` under
+/// the `Main.cs:17767` swap (the zombie bash drain's convention,
+/// `world_sim/npcs.rs`). The cleanup drops spawn on the same stream (the
+/// bash drain's shape).
+pub(crate) struct AppTownDoors<'a> {
+    pub app: &'a mut App,
+}
+
+impl crate::npc_ai_town::TownDoorOps for AppTownDoors<'_> {
+    /// `WorldGen.OpenDoor` (`WorldGen.cs:37630-37784`): the pitched 8 at
+    /// `(i*16, j*16)` (`:37727`) on success only; the refusal is silent.
+    fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool {
+        let mut drops = Vec::new();
+        let opened = edit::open_door(&mut self.app.world, x, y, direction, &mut drops);
+        if opened {
+            self.app.audio.play_door_sound(
+                true,
+                x as f32 * TILE_PX,
+                y as f32 * TILE_PX,
+                self.app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            );
+            self.app.world_key = None;
+        }
+        spawn_town_door_drops(self.app, &drops);
+        opened
+    }
+
+    /// `WorldGen.CloseDoor` (`WorldGen.cs:31805-31910`): the pitched 9 at
+    /// `(i*16, j*16)` (`:31908`) on success only. `forced = false` — the
+    /// town arm calls the plain overload (`NPC.cs:53838`).
+    fn close_door(&mut self, x: i32, y: i32) -> bool {
+        let mut drops = Vec::new();
+        let (player, npcs) = (&self.app.player, &self.app.npcs);
+        let blocked = |bx: i32, by: i32| cell_blocked_by_entity(player.as_ref(), npcs, bx, by);
+        let closed =
+            edit::close_door(&mut self.app.world, x, y, false, &blocked, &mut drops);
+        if closed {
+            self.app.audio.play_door_sound(
+                false,
+                x as f32 * TILE_PX,
+                y as f32 * TILE_PX,
+                self.app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            );
+            self.app.world_key = None;
+        }
+        spawn_town_door_drops(self.app, &drops);
+        closed
+    }
+
+    /// `WorldGen.ShiftTallGate` (`WorldGen.cs:51723-51775`, PORTED —
+    /// W4-g24 batch 2): the pitched 8 at the returned cue position
+    /// (`:51762`, both directions play the OPEN cue — one play site).
+    /// `forced = false` — the town arm calls the plain overload
+    /// (`NPC.cs:53850`/`:54065`).
+    fn shift_tall_gate(&mut self, x: i32, y: i32, closing: bool) -> bool {
+        let (player, npcs) = (&self.app.player, &self.app.npcs);
+        let blocked = |bx: i32, by: i32| cell_blocked_by_entity(player.as_ref(), npcs, bx, by);
+        let (res, cue) =
+            edit::shift_tall_gate(&mut self.app.world, x, y, closing, false, &blocked);
+        if let Some((cx, cy)) = cue {
+            self.app.audio.play_door_sound(
+                true,
+                cx as f32,
+                cy as f32,
+                self.app.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            );
+            self.app.world_key = None;
+        }
+        spawn_town_door_drops(self.app, &res.object_drops);
+        res.shifted
+    }
+}
+
+/// The town door attempts' cleanup drops — the bash drain's shape
+/// (`world_sim/npcs.rs`): the registry tile_drop at the record cell, the
+/// `UpdateNpcs` stream.
+fn spawn_town_door_drops(app: &mut App, drops: &[edit::ObjectDrop]) {
+    for d in drops {
+        if let Some(item) = registry::tile_drop(d.tile_kind, 0) {
+            let rng = app.rngs.stream(crate::app::RngKey::UpdateNpcs);
+            spawn_item_drop(&mut app.items, rng, item, 1, d.x, d.y);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -923,6 +1014,82 @@ mod tests {
         assert!(interact_tile(&mut app, 15, 16), "the gate click consumed");
         assert_eq!(app.world.tile(15, 14).unwrap().kind, 389, "the gate opened");
         assert!(app.audio.played_count() > before, "the gate cue played");
+    }
+
+    /// W4-g24 doc-sweep — the REAL `TownDoorOps` (`AppTownDoors`, the
+    /// W4-b3 phase-2 seam): the open/close/gate attempts mutate the world
+    /// AND play the pitched cues on the `UpdateNpcs` stream (the C# plays
+    /// inside `NPC.UpdateNPC`, `Main.cs:17767`). Each success draws exactly
+    /// ONE `Next(-20, 21)` pitch (`LegacySoundPlayer.cs:736`/:747); the
+    /// wrong-kind refusal is silent and draw-free.
+    #[test]
+    fn w4_g24_the_town_door_adapter_plays_the_real_cues() {
+        use crate::npc_ai_town::TownDoorOps;
+        let mut app = flow_app(None, vec![], vec![]);
+        app.world = object_world();
+        // A closed door (tile 10) at column 10, rows 17-19.
+        for (row, fy) in [(17, 0i16), (18, 18), (19, 36)] {
+            let i = app.world.index(10, row);
+            app.world.tiles[i] = Tile {
+                kind: 10,
+                frame_x: 0,
+                frame_y: fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[10] = true;
+        app.world.frame_important[11] = true;
+        let mut player = Player::spawn(&app.world);
+        player.x = 4.0 * 16.0;
+        player.y = 18.0 * 16.0;
+        app.player = Some(player);
+        // Open: one pitch draw on UpdateNpcs, the door turns to 11.
+        let mut witness = tr_core::unified_random::UnifiedRandom::new(0);
+        let _ = witness.next_range(-20, 21);
+        let before = app.audio.played_count();
+        assert!(AppTownDoors { app: &mut app }.open_door(10, 18, 1));
+        assert_eq!(app.world.tile(10, 18).unwrap().kind, 11, "the door opened");
+        assert_eq!(app.audio.played_count(), before + 1, "the pitched 8");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdateNpcs).peek(),
+            witness.peek(),
+            "exactly one door-pitch draw on UpdateNpcs"
+        );
+        // Close: the pitched 9, the hinge turns back to 10.
+        let before = app.audio.played_count();
+        assert!(AppTownDoors { app: &mut app }.close_door(10, 18));
+        assert_eq!(app.audio.played_count(), before + 1, "the pitched 9");
+        assert_eq!(app.world.tile(10, 18).unwrap().kind, 10, "the door closed");
+        // The tall gate: a closed 388 column at (15, 14-18) opens through
+        // the adapter (the core port, the pitched-8 cue at the gate centre).
+        let fys = [0i16, 18, 34, 50, 66];
+        for (row, fy) in fys.iter().enumerate() {
+            let i = app.world.index(15, 14 + row as i32);
+            app.world.tiles[i] = Tile {
+                kind: 388,
+                frame_x: 0,
+                frame_y: *fy,
+                flags: FLAG_ACTIVE,
+                ..Default::default()
+            };
+        }
+        app.world.frame_important[388] = true;
+        app.world.frame_important[389] = true;
+        let before = app.audio.played_count();
+        assert!(AppTownDoors { app: &mut app }.shift_tall_gate(15, 16, false));
+        assert_eq!(app.world.tile(15, 14).unwrap().kind, 389, "the gate opened");
+        assert_eq!(app.audio.played_count(), before + 1, "the gate cue");
+        // The wrong-kind refusal: silent, draw-free.
+        let peek = app.rngs.stream(crate::app::RngKey::UpdateNpcs).peek();
+        let before = app.audio.played_count();
+        assert!(!AppTownDoors { app: &mut app }.open_door(20, 18, 1));
+        assert_eq!(app.audio.played_count(), before, "no cue on refusal");
+        assert_eq!(
+            app.rngs.stream(crate::app::RngKey::UpdateNpcs).peek(),
+            peek,
+            "the refusal draws nothing"
+        );
     }
 
     #[test]

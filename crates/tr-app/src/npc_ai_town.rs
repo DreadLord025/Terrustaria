@@ -734,6 +734,9 @@ pub enum SavedState {
 /// social ladder later in the same tick), so the wiring implements
 /// this trait over `tr_core::edit::{open_door, close_door}` + the
 /// tall-gate port when it lands; the tests drive a recording fake.
+/// The REAL sound-complete adapter is `world_sim::editing::doors::
+/// AppTownDoors` (W4-g24 doc-sweep — the W4-b3 phase-2 seam): it plays
+/// the pitched 8/9 cues on `UpdateNpcs` and spawns the cleanup drops.
 pub trait TownDoorOps {
     /// `WorldGen.OpenDoor(x, y, direction)` (`WorldGen.cs:37630`).
     fn open_door(&mut self, x: i32, y: i32, direction: i32) -> bool;
@@ -741,10 +744,12 @@ pub trait TownDoorOps {
     fn close_door(&mut self, x: i32, y: i32) -> bool;
     /// `WorldGen.ShiftTallGate(x, y, closing)` — PORTED in tr-core
     /// (W4-g24, `edit::shift_tall_gate`, `WorldGen.cs:51723-51775`); the
-    /// wiring's impl still returns false until the town lane adopts it
-    /// (the cited skip: tall gates 388/389 never open/close through THIS
-    /// seam, the arm takes the all-fail flip — the player interact and the
-    /// zombie bash already drive the core function).
+    /// real adapter (`AppTownDoors`) drives it with the pitched-8 cue.
+    /// b3's phase-1 `NoOpTownDoors` still returns false until the town
+    /// lane adopts the adapter (the cited skip: tall gates 388/389 never
+    /// open/close through THAT seam, the arm takes the all-fail flip —
+    /// the player interact and the zombie bash already drive the core
+    /// function).
     fn shift_tall_gate(&mut self, x: i32, y: i32, closing: bool) -> bool;
 }
 
