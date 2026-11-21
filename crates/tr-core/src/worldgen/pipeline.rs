@@ -1376,6 +1376,13 @@ pub(crate) const EXECUTED_PIPELINE: &[Step] = &[
     // vegetation family). The pass draws only its own `pass_rng("Herbs")`
     // stream, so the insertion shifts no other step's ledger.
     step!("herbs", "Herbs", step_herbs),
+    // The vanilla Dye Plants slot (`WorldGen.cs:19981`, DyePlants): after
+    // Herbs (`:19964`, C7) and before Webs And Honey (`:19995`) — W4-g38
+    // C8. The port slots it after `herbs` (the nearest executed neighbour
+    // ahead of the grouped micro family). The pass draws only its own
+    // `pass_rng("Dye Plants")` stream, so the insertion shifts no other
+    // step's ledger.
+    step!("dye plants", "Dye Plants", step_dye_plants),
     // The vanilla slot (`WorldGen.cs:20941-20973`): the Micro Biomes
     // pass's thin-ice block runs FIRST among the port's grouped micro
     // steps — after the dead-man's-chest block (`:20922`, unported) and
@@ -2526,6 +2533,30 @@ fn step_herbs(
     );
 }
 
+/// The vanilla Dye Plants slot (`WorldGen.cs:19981-19994`, DyePlants) —
+/// W4-g38 C8: the w plantDye attempts + MatureTheHerbPlants +
+/// GrowGlowTulips + PlaceChilletEggs on the pass's own stream, gated by
+/// denyAllGeneration (skyblock only). No progress message (the C# only
+/// `Set(1.0)`).
+fn step_dye_plants(
+    world: &mut World,
+    gv: &mut GenVars,
+    streams: &mut Streams,
+    opts: &GenOptions,
+    _noise: &Noise,
+    _pass_config: &ConfigSection,
+) {
+    let layers = gv.layers();
+    let (world_surface, rock_layer) = (layers.world_surface, layers.rock_layer);
+    surface::pass_dye_plants(
+        world,
+        world_surface,
+        rock_layer,
+        &mut streams.pass_rng("Dye Plants"),
+        opts,
+    );
+}
+
 fn step_campsites(
     world: &mut World,
     _gv: &mut GenVars,
@@ -3316,6 +3347,14 @@ pub(crate) fn boot_statics(world: &mut World) {
     }
     world.frame_important[443] = true;
     world.frame_important[654] = true;
+    // The Dye-Plants-pass kinds (W4-g38 C8): the dye plants 227
+    // (`Main.cs:7394`), the glow tulip 656 (`Main.cs:7748`) and the
+    // chillet egg 752 (`Main.cs:9810`) are frame-important — the framer
+    // keeps the stored `PlaceDye`/`Place2x2` frames. (The herbs 82-84
+    // already above.)
+    world.frame_important[227] = true;
+    world.frame_important[656] = true;
+    world.frame_important[752] = true;
     // The ocean tiles the ocean passes write — the palm trunk 323, the
     // coral 81, the beach piles 324, the shell piles 495, the sea oats 529
     // (`Main.cs:7376`) and the oasis plants 530 (`:7385`) are all
@@ -3676,7 +3715,9 @@ mod tests {
         // `WorldGen.cs:19898`) after `guide`.
         // W4-g38 C7: + `herbs` (vanilla "Herbs", `WorldGen.cs:19964`)
         // after `sunflowers`.
-        assert_eq!(names.len(), 73);
+        // W4-g38 C8: + `dye plants` (vanilla "Dye Plants",
+        // `WorldGen.cs:19981`) after `herbs`.
+        assert_eq!(names.len(), 74);
         let mut sorted = names.clone();
         sorted.sort_unstable();
         let count = sorted.len();
@@ -3758,6 +3799,7 @@ mod tests {
                 "guide",
                 "sunflowers",
                 "herbs",
+                "dye plants",
                 "thin ice",
                 "campsites",
                 "spike pits",
@@ -3972,12 +4014,13 @@ mod tests {
     /// sword shrines (`:20979`), the campsites (`:21031`) and the
     /// mahogany block (`:21105`); the port groups it right after the
     /// cave houses, ahead of `campsites`. (W4-g38 C7 slots `herbs`
-    /// between `sunflowers` and `thin ice`.)
+    /// between `sunflowers` and `thin ice`, C8 slots `dye plants` after
+    /// `herbs`.)
     #[test]
     fn s1_k_2c_the_thin_ice_step_precedes_the_micro_group() {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
-        assert_eq!(pos("thin ice"), pos("herbs") + 1);
+        assert_eq!(pos("thin ice"), pos("dye plants") + 1);
         assert_eq!(pos("thin ice") + 1, pos("campsites"));
         assert!(pos("thin ice") < pos("sword shrines"));
         assert!(pos("thin ice") < pos("mahogany trees"));
@@ -4123,7 +4166,7 @@ mod tests {
         let names = executed_pass_names();
         let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
         assert_eq!(pos("herbs"), pos("sunflowers") + 1);
-        assert_eq!(pos("herbs") + 1, pos("thin ice"));
+        assert_eq!(pos("herbs") + 1, pos("dye plants"));
         // The vanilla chain carries the same relative order.
         let chain: Vec<&str> = VANILLA_CHAIN
             .iter()
@@ -4133,6 +4176,27 @@ mod tests {
         let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
         assert!(cpos("Planting Trees") < cpos("Herbs"));
         assert!(cpos("Herbs") < cpos("Dye Plants"));
+    }
+
+    /// W4-g38 C8: `dye plants` sits after `herbs` and before the grouped
+    /// micro family — the vanilla chain's relative order Herbs
+    /// (`WorldGen.cs:19964`) → Dye Plants (`:19981`) → Webs And Honey
+    /// (`:19995`) puts the pass ahead of the micro group.
+    #[test]
+    fn w4_g38_c8_the_dye_plants_step_sits_after_the_herbs() {
+        let names = executed_pass_names();
+        let pos = |n: &str| names.iter().position(|s| *s == n).unwrap();
+        assert_eq!(pos("dye plants"), pos("herbs") + 1);
+        assert_eq!(pos("dye plants") + 1, pos("thin ice"));
+        // The vanilla chain carries the same relative order.
+        let chain: Vec<&str> = VANILLA_CHAIN
+            .iter()
+            .filter(|p| p.gate.is_empty())
+            .map(|p| p.name)
+            .collect();
+        let cpos = |n: &str| chain.iter().position(|s| *s == n).unwrap();
+        assert!(cpos("Herbs") < cpos("Dye Plants"));
+        assert!(cpos("Dye Plants") < cpos("Webs And Honey"));
     }
 
     // --- W4-g38 C4: the Spawn Point pass unit witnesses ---------------------

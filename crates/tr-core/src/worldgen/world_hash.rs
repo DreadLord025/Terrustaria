@@ -300,6 +300,18 @@ mod tests {
     // (the x band `[20, 492)` spans the width) — the stage-0 tile-82 herbs
     // plant on their soils. Re-pin DEFERRED to the merge gate; a == b
     // stays green.
+    // W4-g38 C8 (2026-11-21, code-only): the `Dye Plants` pass
+    // (`DyePlants`, `WorldGen.cs:19981-19994` + `plantDye` `:71286-71455` +
+    // `PlaceDye` `:53988-54064` + `MatureTheHerbPlants` `:45748-45775` +
+    // `GrowGlowTulips` `:45622-45650` + `PlaceChilletEggs` `:45652-45678`)
+    // lands after `herbs` on a fresh `pass_rng("Dye Plants")` stream. This
+    // pin MOVES BY DESIGN: on the 512×512 world the w plantDye attempts
+    // roll the live [100, 412) × [100, 312) band (the 95-margin entry
+    // admits j ≤ 417), the maturity sweep rolls over every cell, and the
+    // glow-tulip/chillet budget loops run their y bands ([worldSurface,
+    // 312) / [rockLayer, 312)) — the tile-227 dye, the 82-84 stage rolls
+    // and the 656/752 objects move the hash. Re-pin DEFERRED to the merge
+    // gate; a == b stays green.
     const SEED42_512: u32 = 124297949;
     // Re-pinned by WORLDGEN-CAVES (task/worldgen-caves): the `Surface Caves`
     // pass (`WorldGen.cs:12162-12270`, groups 1-4) now digs its
@@ -388,6 +400,13 @@ mod tests {
     // y ladders, the ±15 count box) — this pin moves BY DESIGN. The pass
     // draws only its own fresh stream. Re-pin DEFERRED to the merge gate;
     // a == b stays green.
+    // W4-g38 C8 (2026-11-21, code-only): the Dye Plants pass (see
+    // SEED42_512 above) — on the 4200-wide default world the 4200 plantDye
+    // attempts plant the tile-227 dye family (styles 0-7), the maturity
+    // sweep advances the herb stages (82 → 83 → 84 + the deep-mud plants),
+    // and the budget loops place the 2 glow tulips (656) + the 6 chillet
+    // eggs (752) — this pin moves BY DESIGN. The pass draws only its own
+    // fresh stream. Re-pin DEFERRED to the merge gate; a == b stays green.
     const DEFAULT_WORLD: u32 = 3647283075;
     // Re-pinned by S1-A-4 (the gen-time chest stocking): the chest sites draw
     // on their pass's stream now — the shrines' jungle item + `Next(2)`
