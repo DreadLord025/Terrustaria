@@ -1248,8 +1248,10 @@ pub struct WaterWetState {
 /// 1; the exit edge (`!flag && wet && wetCount == 0`, `:93185`) plays
 /// shimmer 5 / honey 1 / water 0 / lava 1 — the exit arms read the OLD
 /// per-liquid latches. The per-liquid kind/noGravity exclusion gates
-/// ride each arm; the exit-lava gate (`:93267`) DROPS the `type != 147`
-/// term its entry twin (`:93169`) carries (the C# quirk kept verbatim).
+/// ride each arm; BOTH exit gates drop the `type != 147` term their
+/// entry twins carry — the exit-lava gate (`:93267` vs `:93169`) and the
+/// exit-WATER gate (`:93250` vs `:93152`, the reconcile finding,
+/// research/94 §6) — the C# quirks kept verbatim.
 ///
 /// RNG: the pass itself draws NOTHING — the case-19 pitch draw rides
 /// inside the caller's `play` (`Audio::play_splash_sound`) after the
@@ -1331,6 +1333,26 @@ pub fn water_collision_sounds(
         && npc_type != 300
         && ai_style != 39
         && !no_gravity;
+    // W4-f2 reconcile (research/94 §6) — the exit-WATER gate (`:93250`)
+    // DROPS the `type != 147` term its entry twin (`:93152`) carries —
+    // the SECOND 147-quirk (both e9 and the original f2 pass reused the
+    // entry gate here). Latent in practice (147 Pinky is aiStyle 1,
+    // excluded everywhere) but kept verbatim like the lava twin.
+    let water_exit_gate = (npc_type != 376
+        && npc_type != 579
+        && ai_style != 1
+        && npc_type != 1
+        && npc_type != 16
+        && npc_type != 59
+        && npc_type != 300
+        && ai_style != 39
+        && ai_style != 68
+        && npc_type != 362
+        && npc_type != 364
+        && npc_type != 361
+        && npc_type != 445
+        && !no_gravity)
+        || npc_type == 615;
     // The entry-lava gate (`:93169`) carries `type != 147`; the exit-lava
     // gate (`:93267`) drops it — two distinct gates, kept verbatim.
     let lava_entry_gate = ai_style != 1
@@ -1392,8 +1414,8 @@ pub fn water_collision_sounds(
                         play(1); // `:93236`
                     }
                 } else if npc_type != 617 && npc_type != 616 && npc_type != 625 {
-                    if water_gate {
-                        play(0); // `:93252`
+                    if water_exit_gate {
+                        play(0); // `:93252` — the gate at `:93250` drops 147
                     }
                 }
             } else if lava_exit_gate {
@@ -2573,7 +2595,8 @@ mod tests {
     /// zeroes the cooldown and forces lava false; the `wetCount != 0`
     /// cooldown suppresses the play; the noGravity/kind exclusion gates
     /// block the cue; the exit-lava gate drops the `type != 147` term
-    /// its entry twin carries (`:93169` vs `:93267`).
+    /// its entry twin carries (`:93169` vs `:93267`); the exit-WATER gate
+    /// (`:93250`) drops it too — the reconcile's second quirk pin.
     #[test]
     fn w4_f2_water_collision_the_gates_block_and_the_lava_quirk() {
         // The never-wet head: aiStyle 21 (the Blazing Wheel) — wetCount
@@ -2612,5 +2635,18 @@ mod tests {
         let mut plays: Vec<i32> = Vec::new();
         water_collision_sounds(147, 0, 0.0, false, &mut st, false, false, false, false, &mut |s| plays.push(s));
         assert_eq!(plays, vec![1], "the exit lava gate drops the 147 term");
+        // W4-f2 reconcile (research/94 §6) — the SECOND quirk: the
+        // exit-WATER gate (`:93250`) drops 147 too (the entry twin
+        // `:93152` carries it). Entry: type 147 @ aiStyle 0, water
+        // overlap — the entry gate blocks.
+        let mut st = WaterWetState::default();
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(147, 0, 0.0, false, &mut st, true, false, false, false, &mut |s| plays.push(s));
+        assert!(plays.is_empty(), "the entry water gate blocks type 147");
+        // Exit: the same body leaves the water — the exit gate plays.
+        let mut st = WaterWetState { wet: true, ..Default::default() };
+        let mut plays: Vec<i32> = Vec::new();
+        water_collision_sounds(147, 0, 0.0, false, &mut st, false, false, false, false, &mut |s| plays.push(s));
+        assert_eq!(plays, vec![0], "the exit water gate drops the 147 term");
     }
 }

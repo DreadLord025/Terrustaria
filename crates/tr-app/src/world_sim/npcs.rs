@@ -4440,7 +4440,12 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
                         // consumes (a matching type's failed gate draws once
                         // and falls out); the style/pitch draws ride inside
                         // `play_fighter_moan` after the attenuation gate.
-                        {
+                        // The `hp > 0` guard is the C#'s `life <= 0` early
+                        // return (`:90385-90392`) which precedes the call —
+                        // the e9 wiring's point, adopted in the reconcile
+                        // (research/94 §6): a mid-pass-killed NPC draws
+                        // nothing at its own slot turn.
+                        if n.hp > 0 {
                             let (nx, ny) = (n.x, n.y);
                             crate::ambient_sound::idle_sounds(
                                 n.kind.cs_id() as i32,
