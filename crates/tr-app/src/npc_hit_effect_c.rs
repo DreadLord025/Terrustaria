@@ -266,6 +266,7 @@
 //! | 1406-1414 | `:89597-89625` | the goblin block (per-type ladder + 111's 131) + 471 GoblinSummoner (distinct +20 pair) |
 //! | 1415-1422 | `:89651-89688` | the 472 ShadowFlameApparition (679/680) + 480 Medusa ladder + 185 SnowFlinx 240 |
 //! | 1423-1431 | `:89718-89757` | the hornet/moth block (205 quad, 176 pair, 70/1384/1385 + 71) + 43/56 ManEater 72 pair |
+//! | 1432-1438 | `:89773-89809` | the 175 AngryTrapper (227/228) + 48 Harpy (80/81) + 62/66 Demon (93/94/94) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -8761,6 +8762,85 @@ fn man_eater_death(
     gore.new_gore(rng, world, pos, vel, 72, 1.0); // :89757
 }
 
+/// The 175 AngryTrapper death (`NPC.cs:89769-89774`, sites 1432-1433): the
+/// 50-dust type-40 burst (SpeedX hitDirection, SpeedY -2, Alpha
+/// `this.alpha`, color `this.color` — the stand-in — scale 1.2), then the
+/// 227/228 pair at position with `base.velocity`. Scale defaults to 1.
+fn angry_trapper_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 40, hit_direction, -2.0,
+            npc.alpha as i32, Color::default(), 1.2,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 227, 1.0); // :89773
+    gore.new_gore(rng, world, pos, vel, 228, 1.0); // :89774
+}
+
+/// The 48 Harpy death (`NPC.cs:89786-89791`, sites 1434-1435): the 50-dust
+/// type-5 burst (SpeedX `2*hitDirection`, SpeedY -2 — the 2× multiplier,
+/// NOT 2.5), then the 80/81 pair at position with `base.velocity`. Scale
+/// defaults to 1.
+fn harpy_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 80, 1.0); // :89790
+    gore.new_gore(rng, world, pos, vel, 81, 1.0); // :89791
+}
+
+/// The 62 Demon / 66 VoodooDemon death (`NPC.cs:89803-89809`, sites
+/// 1436-1438): the 50-dust type-5 burst (SpeedX `2*hitDirection`, SpeedY
+/// -2), then the 93 head + 94/94 pair at position with `base.velocity`.
+/// Scale defaults to 1.
+fn demon_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.0 * hit_direction, -2.0, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, 93, 1.0); // :89807
+    gore.new_gore(rng, world, pos, vel, 94, 1.0); // :89808
+    gore.new_gore(rng, world, pos, vel, 94, 1.0); // :89809
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -9835,6 +9915,18 @@ pub fn hit_effect_c(
     // `:89742-89758` — the 43/56 ManEater/Snatcher arm (sites 1430-1431).
     if (npc_type == 43 || npc_type == 56) && npc.hp <= 0 {
         man_eater_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89759-89775` — the 175 AngryTrapper arm (sites 1432-1433).
+    if npc_type == 175 && npc.hp <= 0 {
+        angry_trapper_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89776-89792` — the 48 Harpy arm (sites 1434-1435).
+    if npc_type == 48 && npc.hp <= 0 {
+        harpy_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89793-89810` — the 62/66 Demon/VoodooDemon arm (sites 1436-1438).
+    if (npc_type == 62 || npc_type == 66) && npc.hp <= 0 {
+        demon_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -15444,6 +15536,49 @@ mod tests {
         assert_eq!(types, vec![72, 72]);
         let d = dust.slots().iter().find(|d| d.active).unwrap();
         assert_eq!(d.dust_type, 40);
+    }
+
+    /// `NPC.cs:89773-89774` — the AngryTrapper death: the 227/228 pair
+    /// after the type-40 burst.
+    #[test]
+    fn w4_f10_the_angry_trapper_death_spawns_the_pair() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1567);
+        angry_trapper_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![227, 228]);
+        let d = dust.slots().iter().find(|d| d.active).unwrap();
+        assert_eq!(d.dust_type, 40);
+    }
+
+    /// `NPC.cs:89790-89791` — the Harpy death: the 80/81 pair after the
+    /// 2×-hitDirection type-5 burst.
+    #[test]
+    fn w4_f10_the_harpy_death_spawns_the_pair() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1571);
+        harpy_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..2].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![80, 81]);
+    }
+
+    /// `NPC.cs:89807-89809` — the Demon death: the 93 head + 94/94 pair.
+    #[test]
+    fn w4_f10_the_demon_death_spawns_the_trio() {
+        let w = air();
+        let n = boss(100.0, 100.0, 30.0, 30.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(1579);
+        demon_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
+        let types: Vec<i32> = gore.slots()[..3].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![93, 94, 94]);
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
