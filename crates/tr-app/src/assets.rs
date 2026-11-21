@@ -1275,6 +1275,11 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         "NPC_72",
         "NPC_250",
         "NPC_288",
+        "NPC_684",
+        "NPC_685",
+        "NPC_686",
+        "NPC_687",
+        "NPC_688",
         "NPC_679",
         "NPC_680",
         "NPC_681",
@@ -1910,7 +1915,7 @@ pub struct AmbienceTex {
 /// the entry's `net_id` through `Lookups::bestiary_sheet_index` instead
 /// of a hand-maintained table — that table had drifted twice (the
 /// martian sheets' insert shifted the tower/shards rows again).
-pub const BESTIARY_NPC_SHEET_IDS: [u16; 231] = [
+pub const BESTIARY_NPC_SHEET_IDS: [u16; 236] = [
         1, 2, 133, 3, 50, 22, 21, 44, 49, 51,
         60, 66, 6, 42, 23, 29, 45, 32, 24, 30,
         25, 33, 55, 58, 65, 7, 17, 8, 9, 10,
@@ -1995,6 +2000,11 @@ pub const BESTIARY_NPC_SHEET_IDS: [u16; 231] = [
         681,
         682,
         683,
+        684,
+        685,
+        686,
+        687,
+        688,
     ];
 
 /// Precomputed texture information for every type present in the world.
@@ -2807,6 +2817,11 @@ impl Lookups {
                 atlas.sheet("NPC_681").copied(),
                 atlas.sheet("NPC_682").copied(),
                 atlas.sheet("NPC_683").copied(),
+                atlas.sheet("NPC_684").copied(),
+                atlas.sheet("NPC_685").copied(),
+                atlas.sheet("NPC_686").copied(),
+                atlas.sheet("NPC_687").copied(),
+                atlas.sheet("NPC_688").copied(),
             ],
             ui_search_icon: atlas.sheet("UI/Bestiary/Button_Search_2").copied(),
             ui_search_border: atlas.sheet("UI/Bestiary/Button_Search_Border").copied(),

@@ -586,6 +586,11 @@ impl NpcKind {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            NpcKind::TownSlimeCopper => 684,
+            NpcKind::BoundTownSlimeOld => 685,
+            NpcKind::BoundTownSlimePurple => 686,
+            NpcKind::BoundTownSlimeYellow => 687,
+            NpcKind::Pufferfish => 688,
             NpcKind::TownSlimeOld => 679,
             NpcKind::TownSlimePurple => 680,
             NpcKind::TownSlimeRainbow => 681,
@@ -966,6 +971,11 @@ impl NpcKind {
             226 => NpcKind::WyvernBody2,
             227 => NpcKind::WyvernBody3,
             228 => NpcKind::WyvernTail,
+            684 => NpcKind::TownSlimeCopper,
+            685 => NpcKind::BoundTownSlimeOld,
+            686 => NpcKind::BoundTownSlimePurple,
+            687 => NpcKind::BoundTownSlimeYellow,
+            688 => NpcKind::Pufferfish,
             679 => NpcKind::TownSlimeOld,
             680 => NpcKind::TownSlimePurple,
             681 => NpcKind::TownSlimeRainbow,
@@ -1059,6 +1069,7 @@ impl NpcKind {
                 | NpcKind::TownSlimeRainbow
                 | NpcKind::TownSlimeRed
                 | NpcKind::TownSlimeYellow
+                | NpcKind::TownSlimeCopper
                 | NpcKind::PartyGirl
         )
     }
@@ -1247,6 +1258,7 @@ impl NpcKind {
                 | NpcKind::TownSlimeRainbow
                 | NpcKind::TownSlimeRed
                 | NpcKind::TownSlimeYellow
+                | NpcKind::TownSlimeCopper
                 | NpcKind::WitchDoctor
         )
     }
@@ -1285,6 +1297,7 @@ impl NpcKind {
                 | NpcKind::TownSlimeRainbow
                 | NpcKind::TownSlimeRed
                 | NpcKind::TownSlimeYellow
+                    | NpcKind::TownSlimeCopper
                     | NpcKind::Mechanic
             )
     }
@@ -1926,6 +1939,10 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Hit_7",
+            NpcKind::TownSlimeCopper => "NPC_Hit_1",
+            NpcKind::BoundTownSlimeOld => "NPC_Hit_1",
+            NpcKind::BoundTownSlimeYellow => "NPC_Hit_1",
+            NpcKind::Pufferfish => "NPC_Hit_1",
             NpcKind::TownSlimeOld => "NPC_Hit_1",
             NpcKind::TownSlimePurple => "NPC_Hit_1",
             NpcKind::TownSlimeRainbow => "NPC_Hit_1",
@@ -2278,6 +2295,11 @@ impl NpcKind {
             | NpcKind::WyvernBody2
             | NpcKind::WyvernBody3
             | NpcKind::WyvernTail => "NPC_Killed_8",
+            NpcKind::TownSlimeCopper => "NPC_Killed_6",
+            NpcKind::BoundTownSlimeOld => "NPC_Killed_6",
+            NpcKind::BoundTownSlimePurple => "NPC_Killed_63",
+            NpcKind::BoundTownSlimeYellow => "NPC_Killed_6",
+            NpcKind::Pufferfish => "NPC_Killed_1",
             NpcKind::TownSlimeOld => "NPC_Killed_6",
             NpcKind::TownSlimePurple => "NPC_Killed_6",
             NpcKind::TownSlimeRainbow => "NPC_Killed_6",
@@ -2427,6 +2449,9 @@ impl NpcKind {
             // aiStyle-49 AI head sets `noGravity = true` every tick
             // (`NPC.cs:31589`); kb 0.3 (`:12231`).
             NpcKind::AngryNimbus => true,
+            // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
+            NpcKind::BoundTownSlimePurple
+            | NpcKind::Pufferfish => true,
             // W4-d43: the SetDefaults noGravity flyers (kb > 0) + the AI-head writers.
             NpcKind::YellowCockatiel
             | NpcKind::GrayCockatiel
@@ -2698,6 +2723,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 21,
             NpcKind::AngryNimbus => 49,
             NpcKind::DungeonSpirit => 56,
+            NpcKind::TownSlimeCopper => 7,
+            NpcKind::BoundTownSlimeOld => 1,
+            NpcKind::BoundTownSlimePurple => 125,
+            NpcKind::BoundTownSlimeYellow => 7,
+            NpcKind::Pufferfish => 16,
             NpcKind::TownSlimeOld => 7,
             NpcKind::TownSlimePurple => 7,
             NpcKind::TownSlimeRainbow => 7,
@@ -3281,6 +3311,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => (34.0, 34.0),
             NpcKind::AngryNimbus => (34.0, 26.0),
             NpcKind::DungeonSpirit => (20.0, 20.0),
+            NpcKind::TownSlimeCopper => (18.0, 20.0),
+            NpcKind::BoundTownSlimeOld => (30.0, 28.0),
+            NpcKind::BoundTownSlimePurple => (20.0, 20.0),
+            NpcKind::BoundTownSlimeYellow => (18.0, 20.0),
+            NpcKind::Pufferfish => (32.0, 16.0),
             NpcKind::TownSlimeOld => (18.0, 20.0),
             NpcKind::TownSlimePurple => (18.0, 20.0),
             NpcKind::TownSlimeRainbow => (18.0, 20.0),
@@ -3407,6 +3442,11 @@ impl NpcKind {
             NpcKind::AngryNimbus => 250,
             NpcKind::DungeonSpirit => 288,
             NpcKind::ForceBubble => 384,
+            NpcKind::TownSlimeCopper => 684,
+            NpcKind::BoundTownSlimeOld => 685,
+            NpcKind::BoundTownSlimePurple => 686,
+            NpcKind::BoundTownSlimeYellow => 687,
+            NpcKind::Pufferfish => 688,
             NpcKind::TownSlimeOld => 679,
             NpcKind::TownSlimePurple => 680,
             NpcKind::TownSlimeRainbow => 681,
@@ -4024,6 +4064,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 100,
             NpcKind::AngryNimbus => 300,
             NpcKind::DungeonSpirit => 200,
+            NpcKind::TownSlimeCopper => 250,
+            NpcKind::BoundTownSlimeOld => 250,
+            NpcKind::BoundTownSlimePurple => 1,
+            NpcKind::BoundTownSlimeYellow => 5,
+            NpcKind::Pufferfish => 5,
             NpcKind::TownSlimeOld => 250,
             NpcKind::TownSlimePurple => 250,
             NpcKind::TownSlimeRainbow => 250,
@@ -4438,6 +4483,11 @@ impl NpcKind {
             NpcKind::BlazingWheel => 24,
             NpcKind::AngryNimbus => 50,
             NpcKind::DungeonSpirit => 70,
+            NpcKind::TownSlimeCopper => 10,
+            NpcKind::BoundTownSlimeOld => 0,
+            NpcKind::BoundTownSlimePurple => 0,
+            NpcKind::BoundTownSlimeYellow => 0,
+            NpcKind::Pufferfish => 0,
             NpcKind::TownSlimeOld => 10,
             NpcKind::TownSlimePurple => 10,
             NpcKind::TownSlimeRainbow => 10,

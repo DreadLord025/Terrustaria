@@ -484,6 +484,11 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+            NpcKind::TownSlimeCopper => &[31],
+            NpcKind::BoundTownSlimeOld => &[31],
+            NpcKind::BoundTownSlimePurple => &[],
+            NpcKind::BoundTownSlimeYellow => &[],
+            NpcKind::Pufferfish => &[31],
             NpcKind::TownSlimeOld => &[31],
             NpcKind::TownSlimePurple => &[31],
             NpcKind::TownSlimeRainbow => &[31],
@@ -545,7 +550,15 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
 /// the pirate ship are on the ported roster — the whip tag gate
 /// (`WhipTagEffect.CanApplyTagToNPC`) reads this.
 pub fn whip_immune(kind: NpcKind) -> bool {
-    matches!(kind, NpcKind::MartianSaucer | NpcKind::FlyingDutchman)
+    // W4-d43: the bound town slimes (686/687) carry `ImmuneToWhips = true`
+    // (`NPCID.cs:10029-10043`).
+    matches!(
+        kind,
+        NpcKind::MartianSaucer
+            | NpcKind::FlyingDutchman
+            | NpcKind::BoundTownSlimePurple
+            | NpcKind::BoundTownSlimeYellow
+    )
 }
 
 impl NpcBuffs {

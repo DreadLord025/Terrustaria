@@ -3399,6 +3399,21 @@ pub(crate) fn draw_npcs(
             NpcKind::TownSlimeYellow => {
                 pumpkin_moon_draw(assets.npc_sheet(683), npc_rows(683), n, w, h)
             }
+            NpcKind::TownSlimeCopper => {
+                pumpkin_moon_draw(assets.npc_sheet(684), npc_rows(684), n, w, h)
+            }
+            NpcKind::BoundTownSlimeOld => {
+                pumpkin_moon_draw(assets.npc_sheet(685), npc_rows(685), n, w, h)
+            }
+            NpcKind::BoundTownSlimePurple => {
+                pumpkin_moon_draw(assets.npc_sheet(686), npc_rows(686), n, w, h)
+            }
+            NpcKind::BoundTownSlimeYellow => {
+                pumpkin_moon_draw(assets.npc_sheet(687), npc_rows(687), n, w, h)
+            }
+            NpcKind::Pufferfish => {
+                pumpkin_moon_draw(assets.npc_sheet(688), npc_rows(688), n, w, h)
+            }
             NpcKind::DungeonSpirit => {
                 pumpkin_moon_draw(assets.npc_sheet(288), npc_rows(288), n, w, h)
             }

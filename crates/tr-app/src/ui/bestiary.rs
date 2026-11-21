@@ -1595,6 +1595,36 @@ fn portrait_data(
         // 14608`), 490 the 28x30 flyer box (`:14621-14622`).
         (NpcKind::BloodZombie, _) => (sheet_i, 40.0, 18.0, 40.0, white),
         (NpcKind::Drippler, _) => (sheet_i, 30.0, 28.0, 30.0, white),
+        (NpcKind::TownSlimeCopper, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 14.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::BoundTownSlimeOld, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(28.0);
+            (sheet_i, h, 30.0, h, white)
+        }
+        (NpcKind::BoundTownSlimePurple, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 1.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 20.0, h, white)
+        }
+        (NpcKind::BoundTownSlimeYellow, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 13.0)
+                .unwrap_or(20.0);
+            (sheet_i, h, 18.0, h, white)
+        }
+        (NpcKind::Pufferfish, _) => {
+            let h = entry_sheet(lookups, entry)
+                .map(|s| s.height as f32 / 6.0)
+                .unwrap_or(16.0);
+            (sheet_i, h, 32.0, h, white)
+        }
         (NpcKind::TownSlimeOld, _) => {
             let h = entry_sheet(lookups, entry)
                 .map(|s| s.height as f32 / 14.0)
