@@ -4939,6 +4939,93 @@ fn possessed_armor_death(
     }
 }
 
+/// The 39/40/41 Bone Serpent segment death (`NPC.cs:89099-89114`, site
+/// 762): the 20x dust-26 burst at (2.5·hd, −2.5), then ONE gore
+/// `type - 39 + 67` (67/68/69), scale 1f.
+fn bone_serpent_segment_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89109-89112` — the 20x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..20 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    gore.new_gore(rng, world, pos, vel, npc_type - 39 + 67, 1.0); // :89113
+}
+
+/// `NPC.RedHatSkeletronAdjustmentsEnabled` (`NPC.cs:6470-6481`): true
+/// when (35 && ai[3]==1) || (36 && localAI[3]==1) || (32 &&
+/// localAI[3]==1) || (33 && ai[3]==1). The 68 Dungeon Guardian never
+/// qualifies (the port's caller passes the npc's own fields).
+fn red_hat_skeletron_adjustments(npc: &Npc, npc_type: i32) -> bool {
+    (npc_type == 35 && npc.ai[3] == 1.0)
+        || (npc_type == 36 && npc.local_ai[3] == 1.0)
+        || (npc_type == 32 && npc.local_ai[3] == 1.0)
+        || (npc_type == 33 && npc.ai[3] == 1.0)
+}
+
+/// The 35/36/68 Skeletron death (`NPC.cs:89167-89209`): the 150x
+/// dust-26 burst at (2.5·hd, −2.5), then the RedHat split — the 35/68
+/// head: RedHat → 1398/1399/1400 (`:89185-89187`, sites 763-765), else
+/// 54/55 (`:89191-89192`, sites 766-767); the 36 hand: RedHat →
+/// 1401/1402x3 (`:89197-89200`, sites 768-771), else 56/57x3
+/// (`:89204-89207`, sites 772-775). Scale 1f. NOTE the 68 takes the
+/// head branch but RedHat never enables for it (the fn's type gates).
+fn skeletron_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:89177-89180` — the 150x dust-26 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..150 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 26, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let red_hat = red_hat_skeletron_adjustments(npc, npc_type);
+    if npc_type == 35 || npc_type == 68 {
+        if red_hat {
+            gore.new_gore(rng, world, pos, vel, 1398, 1.0); // :89185
+            gore.new_gore(rng, world, pos, vel, 1399, 1.0); // :89186
+            gore.new_gore(rng, world, pos, vel, 1400, 1.0); // :89187
+        } else {
+            gore.new_gore(rng, world, pos, vel, 54, 1.0); // :89191
+            gore.new_gore(rng, world, pos, vel, 55, 1.0); // :89192
+        }
+    } else if red_hat {
+        gore.new_gore(rng, world, pos, vel, 1401, 1.0); // :89197
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0); // :89198
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0); // :89199
+        gore.new_gore(rng, world, pos, vel, 1402, 1.0); // :89200
+    } else {
+        gore.new_gore(rng, world, pos, vel, 56, 1.0); // :89204
+        gore.new_gore(rng, world, pos, vel, 57, 1.0); // :89205
+        gore.new_gore(rng, world, pos, vel, 57, 1.0); // :89206
+        gore.new_gore(rng, world, pos, vel, 57, 1.0); // :89207
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -5530,6 +5617,20 @@ pub fn hit_effect_d(
     // `:89081-89098` — the 140 Possessed Armor arm (sites 759-761).
     else if npc_type == 140 {
         possessed_armor_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89099-89114` — the 39/40/41 Bone Serpent segment arm (site
+    // 762).
+    else if matches!(npc_type, 39 | 40 | 41) {
+        bone_serpent_segment_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:89115-89143` — the 34 arm: NO gore sites (the paired dust-15/26
+    // census is the dust lanes'; recorded, not ported).
+    // `:89144-89166` — the 289 arm: NO gore sites (the dust-181 census;
+    // recorded, not ported).
+    // `:89167-89209` — the 35/36/68 Skeletron arm (sites 763-775, the
+    // RedHat split).
+    else if matches!(npc_type, 35 | 36 | 68) {
+        skeletron_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -9583,6 +9684,61 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:89113` — the Bone Serpent segment single 67/68/69;
+    /// `:89185-89207` — the Skeletron RedHat split (35 head ai[3]==1 →
+    /// 1398/1399/1400, else 54/55; 36 hand localAI[3]==1 →
+    /// 1401/1402x3, else 56/57x3; the 68 never RedHats).
+    #[test]
+    fn w4_f5d_the_bone_serpent_segments_and_the_skeletron_red_hat_split() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 40.0, 40.0);
+        for (kind, want) in [(39, 67), (40, 68), (41, 69)] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(773);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            assert_eq!(gore.slot(0).gore_type, want, "serpent {kind}");
+            assert!(!gore.slot(1).active, "exactly one gore");
+            let mut twin = UnifiedRandom::new(773);
+            for _ in 0..20 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            let _ky = twin.next_range(10, 31);
+            let _kx = twin.next_range(-20, 21);
+            assert_eq!(rng.peek(), twin.peek(), "serpent {kind} mirrors the C# draws");
+        }
+        for (kind, red_hat, want) in [
+            (35, false, vec![54, 55]),
+            (35, true, vec![1398, 1399, 1400]),
+            (36, false, vec![56, 57, 57, 57]),
+            (36, true, vec![1401, 1402, 1402, 1402]),
+            (68, true, vec![54, 55]), // the 68 never RedHats
+        ] {
+            n.ai[3] = if red_hat && kind == 35 { 1.0 } else { 0.0 };
+            n.local_ai[3] = if red_hat && kind == 36 { 1.0 } else { 0.0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(787);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let got: Vec<i32> = gore
+                .slots()
+                .iter()
+                .take_while(|g| g.active)
+                .map(|g| g.gore_type)
+                .collect();
+            assert_eq!(got, want, "skeletron {kind} red_hat={red_hat}");
+            let mut twin = UnifiedRandom::new(787);
+            for _ in 0..150 {
+                twin_dust(&mut twin, 40, 40);
+            }
+            for _ in 0..want.len() {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "skeletron {kind} red_hat={red_hat} mirrors");
         }
     }
 }
