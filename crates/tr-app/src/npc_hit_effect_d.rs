@@ -1771,6 +1771,43 @@ fn shark_death(
     }
 }
 
+/// The 195/196 Lost Girl/Nymph death (`NPC.cs:86787-86806`, sites
+/// 252-256): the 75x dust-5 burst, then the ladder 254/255/255/256/256
+/// at +0/+20/+20/+34/+34 Y, `this.scale` carried (the full velocity, no
+/// dampening).
+fn nymph_death(
+    npc: &Npc,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:86797-86800` — the 75x dust-5 burst.
+    death_dust_loop(
+        npc,
+        dust,
+        dust_ctx,
+        rng,
+        world,
+        5,
+        hit_direction,
+        75,
+        0,
+        Color::default(),
+        1.0,
+    );
+    let pos = Vec2::new(npc.x, npc.y);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    gore.new_gore(rng, world, pos, vel, 254, s); // :86801
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 255, s); // :86802
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, 255, s); // :86803
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 256, s); // :86804
+    gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, 256, s); // :86805
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -1986,6 +2023,10 @@ pub fn hit_effect_d(
     // `:86730-86786` — the shark arm, COMPLETE (sites 228-251).
     else if matches!(npc_type, 65 | 692 | 542 | 543 | 544 | 545) {
         shark_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86787-86806` — the 195/196 Lost Girl/Nymph arm (sites 252-256).
+    else if npc_type == 195 || npc_type == 196 {
+        nymph_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -3531,6 +3572,36 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "sand shark {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:86801-86805` — the Nymph ladder 254/255x2/256x2 at the
+    /// +20/+34 Y ladder, this.scale carried, full velocity (no 0.8
+    /// dampening), after the 75x dust-5 burst.
+    #[test]
+    fn w4_f5d_the_nymph_ladder_carries_the_scale() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        n.scale = 1.0;
+        for kind in [195, 196] {
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(241);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, vec![254, 255, 255, 256, 256], "nymph {kind}");
+            assert_eq!(gore.slot(1).position, Vec2::new(100.0, 120.0));
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            assert!(!gore.slot(5).active, "exactly five gores");
+            let mut twin = UnifiedRandom::new(241);
+            for _ in 0..75 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "nymph {kind} mirrors the C# draws");
         }
     }
 }
