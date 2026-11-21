@@ -76,6 +76,7 @@ per `docs/superpowers` agreements).
 | 62 | Ammo & Potion census (S1-P-i03: PickAmmo order/rolls vs ammo.rs; PotionSickness 21 / ManaSickness 94, per-item delays, quick-use keys; code-only) | `62-ammo-potion-census.md` | 🔴 P1 heal-gate + A1/A2 defects |
 | 63 | Special-bullet effects census & port (S1-P-i18: the 11 aiStyle-1 bullet specials + Luminite; all MISSING at base - no proj_data rows; code-only) | `63-special-bullets-census.md` | ✅ |
 | 68 | Mood reconcile (W4-f37 ProcessMood core × W4-g58 happiness UI: arm table, KEEP/DROP lists, capture-once integration contract, g58b deviation census; merger assist, code-only) | `68-mood-reconcile.md` | ✅ |
+| 73 | Doc-sweep town lane 2 (W4-f37: ANALYSIS + research/23/11/22/29 + shop/town docs mined for unported town mechanics; CollectTaxes anniversary pair + head-index payer filter, nurse heal presentation tail, tax payout dialog tail, Stylist hair-window state machine — each with C# cite + lane verdict; code-only) | `73-doc-sweep-town.md` | ✅ |
 
 ## Fog of war (not yet specified)
 - Mod-era entity families beyond 1.4.5.8 (Calamity/Fargo scale) вЂ” enters when the

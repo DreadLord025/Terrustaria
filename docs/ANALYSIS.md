@@ -18223,6 +18223,54 @@ this lane owns the multiplier/discount arithmetic only.
   ships. The `shopSpecialCurrency` arm still waits for the
   `CustomCurrencyManager` (the S1-C-11 note stands).
 
+### The doc-sweep town lane 2 (W4-f37, 2026-11-21)
+
+The DOC-SWEEP pass over ANALYSIS + research/23/11/22/29 + the shop/town docs
+for unported town mechanics with a C# source. Four real gaps landed (each
+its own commit, witnesses written not run); the rest are co-lane claims or
+recorded deviations. The full sweep table is `docs/research/73-doc-sweep-town.md`.
+
+- **CollectTaxes anniversary pair + head-index payer filter**
+  (`Player.cs:24129-24155`): `Main.tenthAnniversaryWorld` doubles BOTH the
+  50c rate and the 25g cap (`:24133-24137`) — `clock.rs::collect_taxes` reads
+  `SeedFlags::TENTH_ANNIVERSARY`, the `>=` gate and the strict `>` clamp ride
+  the doubled cap. The payer count is `!homeless && !IsTownPet &&
+  TypeToDefaultHeadIndex > 0` (`:24145`), NOT `is_town_resident` — the housed
+  DD2 Bartender (550, head 24) now PAYS, the bound/rescue six ride freed-row
+  `net_id`s and are excluded by kind, `is_town_pet` guards the future pets.
+- **The nurse heal presentation tail** (`Main.cs:40103-40178`): the paid arm
+  spawns `HealEffect(statLifeMax2 - statLife)` BEFORE the life fills
+  (`:40112`, the `potions.rs::spawn_heal_text_on` seam — the click draws the
+  `CombatText.cs:88-89` jitters on the bare-`Main.rand` global stand-in) +
+  the PRE-heal life-band dialog ladder 227/228/229/230 (`:40113-40128`,
+  strict `<` f64 compares); the poor purse answers `Next(3)` → 52/53/54,
+  nothing-to-heal draws `Next(3)` then RE-DRAWS `Next(1,3)` under ChildSafety
+  (`:40159-40162`, both draws spend the stream, the blood line 55 drops).
+  The sound-12/Item4 cues are g21's hunk; the portrait hop is g58's.
+- **The tax payout dialog tail** (`Main.cs:40217`/`:40222`): the paid arm
+  answers `Lang.dialog(Next(380,384))` AFTER the coin split BEFORE the purse
+  zero, the empty purse answers `Next(390,401)`; both draws ride the global
+  stand-in, the coin-spawn draws stay on UpdatePlayers. The latch divide +
+  player-centre origin are g58's `a027138d8` hunk (cross-noted).
+- **The Stylist hair-window STATE machine** (`Main.cs:43653-44138`):
+  `hair_window.rs` ports open/cancel/buy/force-close/price/buy-label/HSL-seed
+  + the stylist list (`HairstyleUnlocksHelper.cs:51-111`). `Player.hair`/
+  `hair_color` fields land (`Player.cs:2568`/`:2554`), the hair-layer tint
+  rides `PlayerCompositeState.hair_color` (the default reproduces the HAIR
+  constant), the `render_key` gates the tint mix on non-default (G6
+  bit-identical default frames). The panel DRAW stays M4-TOWN-17; the
+  scroll/cell pure fns are g22's; `UnlockedMaxHair` (`:43695`) is DEAD CODE
+  (zero callers) — unported. The `.trplayer` sidecar carries no hair row, so
+  a bought style does not survive a world swap (the M6-SAVE deviation).
+- **Co-lane claims verified, NOT duplicated**: the Zoologist `altTexture == 2`
+  report suffix (g58's `should_bestiary_girl_be_lycantrope` + the
+  `Transformed` category), the tax payout latch divide + player-centre
+  (g58 `a027138d8`), the Angler `(mood+1)/2` rarity (g58 `468db5928`, the
+  `angler.rs:164` formula already carries it), the nurse sound-12/Item4
+  (g21), the reforge latch read (g58 `13be13a6a`), the hair-window scroll/
+  cell (g22). The `UpdateAltTexture` state machine + transition effects are
+  g61's "alt-texture halves" claim — f37 adds no `alt_texture` field.
+
 ## The shop buy/sell transactions (S1-P-i44, 2026-11-19)
 
 The shop TRANSACTION layer over the S1-C-11 price chain: the buy/sell click
