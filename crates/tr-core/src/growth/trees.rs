@@ -69,6 +69,41 @@ fn ash_tree_ground_test(kind: u16) -> bool {
     kind == 633
 }
 
+/// `WorldGen.GemTreeWallTest` (`WorldGen.cs:30269-30302`): the default
+/// plant-wall set OR the gem trees' extra stone/dirt wall family — the gem
+/// profiles' `WallTest` delegate (`:3935` etc.). The vanity/ash profiles ride
+/// `DefaultTreeWallTest` (`:4005`/`:4025`). Hand-transcribed (the generated
+/// tables carry neither wall set).
+fn gem_tree_wall_test(wall: u16) -> bool {
+    ALLOWS_PLANTS_TO_GROW.contains(&wall)
+        || matches!(
+            wall,
+            2 | 54 | 55 | 56 | 57 | 58 | 59 | 61 | 185 | 196 | 197 | 198 | 199 | 208 | 209 | 210
+                | 211 | 212 | 213 | 214 | 215
+        )
+}
+
+/// The C#'s `GrowTreeSettings.WallTest` delegates (`WorldGen.cs:30260-30302`):
+/// `DefaultTreeWallTest` for the vanity/ash profiles, `GemTreeWallTest` for
+/// the seven gem profiles.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum WallTestKind {
+    /// `WorldGen.DefaultTreeWallTest` (`:30260-30267`).
+    Default,
+    /// `WorldGen.GemTreeWallTest` (`:30269-30302`).
+    Gem,
+}
+
+impl WallTestKind {
+    /// The delegate's call (the C#'s `profile.WallTest(wallType)`).
+    pub fn test(&self, wall: u16) -> bool {
+        match self {
+            WallTestKind::Default => ALLOWS_PLANTS_TO_GROW.contains(&wall),
+            WallTestKind::Gem => gem_tree_wall_test(wall),
+        }
+    }
+}
+
 /// `WorldGen.GrowTreeSettings` (`WorldGen.cs:3825-4048`'s struct): one
 /// gem/vanity/ash tree profile. The C#'s `GroundTest`/`WallTest` delegates
 /// are the port's [`GroundTestKind`]; the wall arm stays out — no
@@ -77,6 +112,10 @@ fn ash_tree_ground_test(kind: u16) -> bool {
 pub struct GrowTreeSettings {
     /// `GroundTest` — the delegate the C# stores per profile.
     pub ground: GroundTestKind,
+    /// `WallTest` — the delegate the C# stores per profile (W4-g42 tail:
+    /// the gem profiles carry `GemTreeWallTest`, the old port ran the
+    /// default set for every profile).
+    pub wall: WallTestKind,
     /// `TreeTileType` — the tree-top tile the profile grows.
     pub tree_tile_type: u16,
     /// `TreeHeightMin`.
@@ -119,6 +158,7 @@ impl GrowTreeSettings {
     /// the sakura's sapling is 595, the willow's 615 and the ash's 20.
     pub const GEM_TREE_RUBY: GrowTreeSettings = GrowTreeSettings {
         ground: GroundTestKind::Gem,
+        wall: WallTestKind::Gem,
         tree_tile_type: 587,
         tree_height_min: 7,
         tree_height_max: 12,
@@ -146,6 +186,7 @@ impl GrowTreeSettings {
     /// `Profiles.VanityTree_Sakura` (`WorldGen.cs:4002`).
     pub const VANITY_TREE_SAKURA: GrowTreeSettings = GrowTreeSettings {
         ground: GroundTestKind::Vanity,
+        wall: WallTestKind::Default,
         tree_tile_type: 596,
         tree_height_min: 7,
         tree_height_max: 12,
@@ -155,6 +196,7 @@ impl GrowTreeSettings {
     /// `Profiles.VanityTree_Willow` (`WorldGen.cs:4012`).
     pub const VANITY_TREE_WILLOW: GrowTreeSettings = GrowTreeSettings {
         ground: GroundTestKind::Vanity,
+        wall: WallTestKind::Default,
         tree_tile_type: 616,
         tree_height_min: 7,
         tree_height_max: 12,
@@ -164,6 +206,7 @@ impl GrowTreeSettings {
     /// `Profiles.Tree_Ash` (`WorldGen.cs:4022`).
     pub const TREE_ASH: GrowTreeSettings = GrowTreeSettings {
         ground: GroundTestKind::Ash,
+        wall: WallTestKind::Default,
         tree_tile_type: 634,
         tree_height_min: 7,
         tree_height_max: 12,
@@ -273,32 +316,31 @@ pub fn attempt_grow_tree_from_sapling(
     // The `frameX / 54` style the sapling carries (`TileObject`'s sapling
     // styles — the ash/gem/palm families).
     let style = t.frame_x.max(0) / 54;
+    // The kind-20 switch (`:72830-72853`): the style-10 sapling is the ash
+    // tree; the styles 6-9 are the palms; the default arm is the vanilla
+    // `GrowTree`. Both non-ash arms carry the underground gate
+    // (`underground && !notTheBeesWorld && !remixWorld` → false).
+    let bees = world.seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES);
+    let remix = world.seeds.contains(crate::seeds::SeedFlags::REMIX);
     match t.kind {
         20 => {
-            // The kind-20 switch (`:72825-72849`): the style-10 sapling is
-            // the ash tree; the styles 6-9 are the palms (their
-            // `GrowPalmTree` port rides the worldgen palms — parked); the
-            // default arm is the vanilla `GrowTree`.
             if style == 10 {
-                try_growing_tree_by_type(world, 634, x, y, rng);
-                true
+                // `:72833-72835` — `flag = TryGrowingTreeByType(634, …);
+                // return flag` (the result rides the grow, not a flat true).
+                try_growing_tree_by_type(world, 634, x, y, rng)
             } else if (6..=9).contains(&style) {
-                // The C#'s underground gate (`:72844-72847`): the
-                // underground call only proceeds on the notTheBees/remix
-                // seeds; the port's overground call always proceeds.
-                if underground
-                    && !world.seeds.contains(crate::seeds::SeedFlags::NOT_THE_BEES)
-                    && !world.seeds.contains(crate::seeds::SeedFlags::REMIX)
-                {
+                // `:72836-72845`.
+                if underground && !bees && !remix {
                     return false;
                 }
                 try_growing_tree_by_type(world, 323, x, y, rng)
             } else {
-                if underground {
-                    false
-                } else {
-                    grow_tree(world, x, y, rng)
+                // `:72846-72852` — the default arm's underground gate was
+                // missing the bees/remix exemption in the old port.
+                if underground && !bees && !remix {
+                    return false;
                 }
+                try_growing_tree_by_type(world, 5, x, y, rng)
             }
         }
         // The sakura (`:72850-72861`) and willow (`:72862-72873`) saplings.
@@ -310,6 +352,9 @@ pub fn attempt_grow_tree_from_sapling(
             if !underground {
                 return false;
             }
+            // `:72890-72915` — `num2 = 587` BEFORE the switch; styles 0-6
+            // remap, any style ≥ 7 keeps the 587 default (the old port's
+            // catch-all sent it to the amber 589).
             let tree = match style {
                 0 => 583,
                 1 => 584,
@@ -317,7 +362,8 @@ pub fn attempt_grow_tree_from_sapling(
                 3 => 586,
                 4 => 587,
                 5 => 588,
-                _ => 589,
+                6 => 589,
+                _ => 587,
             };
             try_growing_tree_by_type(world, tree, x, y, rng)
         }
@@ -542,7 +588,16 @@ pub fn grow_tree<R: WorldGenRand>(world: &mut World, i: i32, y: i32, rng: &mut R
 /// willow 616, the ash 634).
 fn profile_for_tree(kind: u16) -> Option<GrowTreeSettings> {
     Some(match kind {
-        583..=589 => GrowTreeSettings::GEM_TREE_RUBY,
+        // `TryGetFromTreeId` (`:3897-3917`) — the per-kind gem profile (the
+        // ground/wall delegates are shared, but the tree tile differs; the
+        // old port returned RUBY for all seven).
+        589 => GrowTreeSettings::GEM_TREE_AMBER,
+        584 => GrowTreeSettings::GEM_TREE_AMETHYST,
+        588 => GrowTreeSettings::GEM_TREE_DIAMOND,
+        586 => GrowTreeSettings::GEM_TREE_EMERALD,
+        587 => GrowTreeSettings::GEM_TREE_RUBY,
+        585 => GrowTreeSettings::GEM_TREE_SAPPHIRE,
+        583 => GrowTreeSettings::GEM_TREE_TOPAZ,
         596 => GrowTreeSettings::VANITY_TREE_SAKURA,
         616 => GrowTreeSettings::VANITY_TREE_WILLOW,
         634 => GrowTreeSettings::TREE_ASH,
@@ -653,8 +708,10 @@ pub fn try_growing_tree_by_type<R: WorldGenRand>(
 /// wall gates, the height roll, the trunk frame table (the `num5` branch
 /// shapes with the `num4` column pick, the left/right branch arms), the
 /// side-ground caps and the top cap, closing with `RangeFrame`. The
-/// `TreeHeightAddon`/`ignoreWalls` args and the errorWorld height arm park
-/// (the callers pass 0/false; M5-SEED-1).
+/// `TreeHeightAddon`/`ignoreWalls` args park (the callers pass 0/false);
+/// the errorWorld height arm (`:30420-30423`) and the profile `WallTest`
+/// delegates are verbatim (W4-g42 tail). The tenthAnniversary paint roll
+/// (`:30414-30417`) parks — runtime-only + seed-gated (M5-SEED-1).
 pub fn grow_tree_with_settings<R: WorldGenRand>(
     world: &mut World,
     checked_x: i32,
@@ -680,15 +737,19 @@ pub fn grow_tree_with_settings<R: WorldGenRand>(
             return false;
         }
     }
-    // The ground tile (`:30399-30404`): active, unsloped, no half-brick.
+    // The ground tile (`:30399-30403`): `nactive()` (the active bit set, the
+    // inActive bit clear), unsloped, no half-brick.
     let ground = match world.tile(checked_x, num) {
-        Some(t) if t.active() && !t.half_brick() && t.slope() == 0 => t,
+        Some(t) if t.active() && !t.inactive() && !t.half_brick() && t.slope() == 0 => t,
         _ => return false,
     };
-    // The wall test (`:30405-30411`) — `DefaultTreeWallTest`'s set.
+    // The wall test (`:30404-30408`) — the profile's `WallTest` delegate
+    // (`GemTreeWallTest` for the gem profiles, `DefaultTreeWallTest` for the
+    // vanity/ash ones; W4-g42 tail — the old port ran the default set for
+    // every profile, refusing gem saplings against the stone-wall family).
     let wall_ok = world
         .tile(checked_x, num - 1)
-        .is_some_and(|t| ALLOWS_PLANTS_TO_GROW.contains(&t.wall));
+        .is_some_and(|t| settings.wall.test(t.wall));
     if !settings.ground.test(ground.kind) || !wall_ok {
         return false;
     }
@@ -701,13 +762,31 @@ pub fn grow_tree_with_settings<R: WorldGenRand>(
     if !side_soil(-1) && !side_soil(1) {
         return false;
     }
-    // `BlockColorAndCoating` (`:30418`): the ground's paint rides onto every
-    // written tile. The tenthAnniversary colour roll (`:30419-30423`) is
-    // seed-gated (M5-SEED-1); the errorWorld height arm (`:30425`) likewise
-    // — the vanilla `getGoodWorld` callers park.
+    // `BlockColorAndCoating` (`:30413`): the ground's paint rides onto every
+    // written tile. The tenthAnniversary colour roll (`:30414-30417`) is
+    // seed-gated AND runtime-only (`!isGeneratingOrLoadingWorld`) and parks
+    // (M5-SEED-1).
     let paint = ground.paint();
-    // The height roll (`:30424`).
-    let num3 = rng.next_range(settings.tree_height_min, settings.tree_height_max + 1);
+    // The height roll (`:30418-30423`): `Next(min, max+1) + addon`, then the
+    // errorWorld re-roll — `Next(errorWorldAdjustment(2.0)) == 0` picks
+    // `Next(3, 15)` below the surface line or `Next(3, 50)` above it
+    // (W4-g42 tail; the addon parks at 0 — every ported caller's default).
+    let mut num3 = rng.next_range(settings.tree_height_min, settings.tree_height_max + 1);
+    if world
+        .micro_seeds
+        .contains(crate::seeds::MicroSeedFlags::ERROR_WORLD)
+    {
+        let active = crate::seeds::active_secret_seed_count(world.micro_seeds, world.seeds);
+        // `Variations.errorWorldAdjustment(2.0)` (`WorldGen.cs:329-336`).
+        let adj = if active < 1 { 4 } else { (2.0 * ((active + 3) / 4) as f64) as i32 };
+        if rng.next(adj) == 0 {
+            num3 = if (checked_y as f64) < world.world_surface {
+                rng.next_range(3, 50)
+            } else {
+                rng.next_range(3, 15)
+            };
+        }
+    }
     // The clear box (`:30426-30430`).
     if !empty_tile_check(
         world,
@@ -786,10 +865,13 @@ pub fn grow_tree_with_settings<R: WorldGenRand>(
             t.frame_y = fy as i16;
         }
     }
-    // The side grounds (`:30680-30703`).
+    // The side grounds (`:30686-30703`): `nactive()` + flat + tree-soil —
+    // the ACTIVE neighbours seed the side caps (W4-g42 tail: the old port
+    // read `!t.active()`, the inverted polarity, so the caps landed on the
+    // wrong side of the roll).
     let side_ground = |dx: i32| {
         world.tile(checked_x + dx, num).is_some_and(|t| {
-            !t.active() && !t.half_brick() && t.slope() == 0 && is_tile_type_fit_for_tree(t.kind)
+            t.active() && !t.inactive() && !t.half_brick() && t.slope() == 0 && is_tile_type_fit_for_tree(t.kind)
         })
     };
     let mut flag4 = side_ground(-1);
@@ -823,15 +905,25 @@ pub fn grow_tree_with_settings<R: WorldGenRand>(
     if flag4 || flag5 {
         write_tree_frame(world, checked_x, num - 1, settings.tree_tile_type, paint, fx, fy);
     }
-    // The top cap (`:30785-30818`): the 1/13 branch keeps the 22-column.
+    // The top cap (`:30803-30840`): the `Next(13)` gate draws FIRST, then the
+    // taken branch's `Next(3)` column pick (W4-g42 tail: the old port drew
+    // the column before the gate — one draw of the wrong modulus early).
+    let canopy = rng.next_max(13) != 0;
     let num4 = rng.next_max(3);
-    let (fx, fy) = if rng.next_max(13) != 0 {
+    let (fx, fy) = if canopy {
         (22, 198 + 22 * num4)
     } else {
         (0, 198 + 22 * num4)
     };
     write_tree_frame(world, checked_x, num - num3, settings.tree_tile_type, paint, fx, fy);
-    // `RangeFrame` (`:30820`).
+    // The frame-important boot bit for the grown tree kind (the `grow_tree`
+    // precedent — the runtime kill cascade / framer must recognise the tile).
+    if world.frame_important.len() <= settings.tree_tile_type as usize {
+        world.frame_important.resize(crate::tiledata::TILE_COUNT, false);
+    }
+    world.frame_important[settings.tree_tile_type as usize] = true;
+    // `RangeFrame(checkedX - 2, num - num3 - 1, checkedX + 2, num + 1)`
+    // (`:30841`) — the port's radius-clamped superset (reset: false, no draw).
     crate::framing::reframe_area(world, checked_x, num - num3, 3, false);
     true
 }
@@ -864,8 +956,9 @@ fn write_tree_frame(
 /// same frame table.
 ///
 /// `treeHeightAddon`/`ignoreWalls` park (every ported caller passes 0 /
-/// false) and the `RangeFrame`/`NetMessage` closing arms do not exist in
-/// the port (documented in ANALYSIS).
+/// false); the `RangeFrame`/`NetMessage` closing arms are the framer's /
+/// MP's job (the `grow_tree` convention). The lean walk's `num5 != num4`
+/// gate (`:27185`) is verbatim (W4-g42 tail).
 pub fn grow_palm_tree<R: WorldGenRand>(world: &mut World, i: i32, y: i32, rng: &mut R) -> bool {
     if i < 0 || y < 0 || i >= world.width || y >= world.height {
         return false;
@@ -935,10 +1028,13 @@ pub fn grow_palm_tree<R: WorldGenRand>(world: &mut World, i: i32, y: i32, rng: &
             t.frame_y = num5;
             continue;
         }
-        // The middle (`:27186-27200`): the lean advance first, then the
-        // 22·Next(0, 3) column — the vanilla draw order.
-        {
-            // The lean walk (`:27175-27183`): the decompiled guard is an
+        // The middle (`:27185-27198`): the lean advance first, then the
+        // 22·Next(0, 3) column — the vanilla draw order. The whole lean walk
+        // sits behind `num5 != num4` (`:27185`, W4-g42 tail — the old port
+        // omitted the gate, so a palm that reached its target lean kept
+        // drawing the Next(13)/Next(9)/Next(5) rolls every middle row).
+        if num5 != num4 as i16 {
+            // The lean walk (`:27187-27192`): the decompiled guard is an
             // always-true chain (`… || true`), so the advance fires whenever
             // the fraction `j / num3` is at or above 0.25 — the `Next(13)` /
             // `Next(9)` / `Next(5)` draws stay in their short-circuit order
@@ -1346,5 +1442,116 @@ mod tests {
         assert!(!empty_tile_check(&w, 99, 101, 189, 191, Some(20)), "the sapling-ignore rejects stone");
         // The None (-1) ignore rejects everything active.
         assert!(!empty_tile_check(&w, 99, 101, 189, 191, None), "the -1 ignore rejects");
+    }
+
+    /// W4-g42 tail T1: the gem profiles' `WallTest` is `GemTreeWallTest`
+    /// (`:30269-30302`, `:3935`), not the default set — a gem sapling with the
+    /// dirt wall 2 behind it (in the gem set, NOT in `AllowsPlantsToGrow`)
+    /// grows; a wall in neither set refuses. The old port ran the default set
+    /// for every profile and refused the gem sapling against wall 2.
+    #[test]
+    fn w4_g42_tail_gem_wall_test_accepts_the_stone_wall_family() {
+        let grow_with_wall = |wall: u16| -> bool {
+            let mut w = world();
+            for dx in -2i32..=2 {
+                put(&mut w, 100 + dx, 210, 1, 0); // the stone ground (gem soil)
+            }
+            put(&mut w, 100, 209, 590, 0); // the gem sapling, style 0 (topaz)
+            let i = w.index(100, 209);
+            w.tiles[i].wall = wall; // the wall behind the tree (num-1)
+            let mut rng = UnifiedRandom::new(7);
+            attempt_grow_tree_from_sapling(&mut w, 100, 209, true, &mut rng)
+        };
+        assert!(grow_with_wall(2), "the dirt wall 2 is in GemTreeWallTest");
+        assert!(grow_with_wall(54), "the stone wall 54 is in GemTreeWallTest");
+        assert!(!grow_with_wall(1), "a wall in neither set refuses");
+    }
+
+    /// W4-g42 tail T10: the gem sapling's style switch (`:72890-72915`) keeps
+    /// `num2 = 587` (ruby) for any style ≥ 7 — the old port's catch-all sent it
+    /// to the amber 589. Style 6 → 589 (amber), style 7 → 587 (ruby).
+    #[test]
+    fn w4_g42_tail_gem_sapling_style_default_keeps_ruby() {
+        let trunk_kind = |style: i16| -> u16 {
+            let mut w = world();
+            for dx in -2i32..=2 {
+                put(&mut w, 100 + dx, 210, 1, 0);
+            }
+            put(&mut w, 100, 209, 590, style * 54);
+            let mut rng = UnifiedRandom::new(7);
+            attempt_grow_tree_from_sapling(&mut w, 100, 209, true, &mut rng);
+            // The trunk base over the sapling carries the grown tree kind.
+            w.tile(100, 209).map(|t| t.kind).unwrap_or(0)
+        };
+        assert_eq!(trunk_kind(6), 589, "style 6 → amber");
+        assert_eq!(trunk_kind(7), 587, "style 7 keeps the ruby default");
+        assert_eq!(trunk_kind(9), 587, "style 9 keeps the ruby default");
+    }
+
+    /// W4-g42 tail T8: the style-10 ash sapling arm returns the grow RESULT
+    /// (`:72833-72835` `return flag`), not a flat true — on ash grass 633 it
+    /// grows the ash tree 634 and returns true; on a non-ash ground it returns
+    /// false (the old port returned true regardless).
+    #[test]
+    fn w4_g42_tail_ash_sapling_returns_the_grow_result() {
+        // Ash grass 633 ground → grows 634, returns true.
+        let mut w = world();
+        for dx in -2i32..=2 {
+            put(&mut w, 100 + dx, 210, 633, 0);
+        }
+        put(&mut w, 100, 209, 20, 10 * 54); // the style-10 ash sapling
+        let mut rng = UnifiedRandom::new(7);
+        assert!(
+            attempt_grow_tree_from_sapling(&mut w, 100, 209, false, &mut rng),
+            "the ash sapling grows on ash grass"
+        );
+        assert!(w.tile(100, 209).is_some_and(|t| t.kind == 634), "the ash tree 634");
+        // A non-ash ground (forest grass) → the ash ground test refuses, false.
+        let mut w2 = world();
+        for dx in -2i32..=2 {
+            put(&mut w2, 100 + dx, 210, 2, 0);
+        }
+        put(&mut w2, 100, 209, 20, 10 * 54);
+        let mut rng2 = UnifiedRandom::new(7);
+        assert!(
+            !attempt_grow_tree_from_sapling(&mut w2, 100, 209, false, &mut rng2),
+            "the ash sapling on forest grass returns false (not flat true)"
+        );
+    }
+
+    /// W4-g42 tail T2/T3/T6: a gem sapling on stone with ACTIVE stone
+    /// neighbours grows the gem tree (the side-ground flags read `nactive()`,
+    /// the ground gate checks `!inactive()`) and boots the tree kind's
+    /// frame-important bit so the runtime kill cascade recognises it.
+    #[test]
+    fn w4_g42_tail_gem_tree_grows_and_boots_frame_important() {
+        let mut w = world();
+        for dx in -2i32..=2 {
+            put(&mut w, 100 + dx, 210, 1, 0); // active stone ground + neighbours
+        }
+        put(&mut w, 100, 209, 590, 4 * 54); // style 4 → ruby 587
+        let mut rng = UnifiedRandom::new(7);
+        assert!(
+            attempt_grow_tree_from_sapling(&mut w, 100, 209, true, &mut rng),
+            "the gem sapling grows on active stone"
+        );
+        assert!(w.tile(100, 209).is_some_and(|t| t.kind == 587), "the ruby tree 587");
+        assert!(
+            w.frame_important.get(587).copied().unwrap_or(false),
+            "the grown tree kind's frame-important bit is booted"
+        );
+        // An actuated (inactive) ground refuses (`nactive()` is false).
+        let mut w2 = world();
+        for dx in -2i32..=2 {
+            put(&mut w2, 100 + dx, 210, 1, 0);
+        }
+        let gi = w2.index(100, 210);
+        w2.tiles[gi].flags |= crate::tile::FLAG_INACTIVE;
+        put(&mut w2, 100, 209, 590, 4 * 54);
+        let mut rng2 = UnifiedRandom::new(7);
+        assert!(
+            !attempt_grow_tree_from_sapling(&mut w2, 100, 209, true, &mut rng2),
+            "the actuated ground refuses (nactive is false)"
+        );
     }
 }

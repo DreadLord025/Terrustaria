@@ -79,7 +79,8 @@ written not run.
 | 2 | G7 Convert type-3 cell + G6 DoSurfaceIsMushrooms verbatim (spread.rs + micro_surface.rs) | e2707f2d | landed |
 | 3 | G1-G4 pass_mushroom/ShroomPatch verbatim + desert veto + tidy re-mud (biomes.rs + pipeline.rs) | 67040975 | landed |
 | 4 | G5 GrowTree verbatim rewrite + case-5 dispatch + WorldGenRand generic + GrowShroom + EmptyTileCheck (growth/trees.rs) | b44db327 | landed |
-| 5 | G5 plants-pass mushroom arm verbatim + PlaceTile-71 (biome_detail.rs) + witnesses + hash notes + docs/anchors | (this commit) | landed |
+| 5 | G5 plants-pass mushroom arm verbatim + PlaceTile-71 (biome_detail.rs) + witnesses + hash notes + docs/anchors | d4836bbd | landed |
+| 6 | TAIL census: the other tree types riding the generic rewrite (gem 583-589 / palm 323 / vanity / ash) + the mushroom runtime growth + the glowing-mushroom drops | (this pass) | landed |
 
 All phases code-only (no cargo/tests/graphify invoked). 18 witnesses WRITTEN
 NOT RUN across spread.rs (2), micro_surface.rs (3 incl. the seed-world a==b),
@@ -93,3 +94,73 @@ column/row (G4), the cluster bound truncation differs at width 6400 (G1),
 the cap-gate accept retried instead of exiting (G1), and `GrowTree`'s port
 was a batch-write refactor with reversed trunk draw order + missing branch
 else-arms + missing top `Next(13)` gate (G5 — full verbatim rewrite).
+
+## The TAIL census (phase 6, 2026-11-21) — the other riders + runtime + drops
+
+The G5 `GrowTree` rewrite is generic; the tail censuses every OTHER tree type
+riding `TryGrowingTreeByType` (`WorldGen.cs:30343-30386`) and the mushroom
+runtime/drop consumers against the C#, reading the sibling claims (i30 axe
+arm landed on main `0c888e89`; c29 gem-moss co-lane = `spider_gem_moss.rs`
+`count_tiles` shared, no Convert(3) overlap; g14/d54 dust own the dust half).
+
+### The dispatch table (`:30348-30384`) — verdict: COMPLETE at G5
+
+Every C# case has a port arm in `try_growing_tree_by_type`: 5→`grow_tree`,
+323→`grow_palm_tree`, 587/588/583/584/589/586/585→the gem profiles,
+596/616→vanity, 634→ash. No missing case. The deltas are in the BODIES:
+
+| # | unit | C# anchor | port state at d4836bbd | verdict |
+| --- | --- | --- | --- | --- |
+| T1 | `GrowTreeWithSettings` wall test | `:30404` + `GemTreeWallTest :30269-30302` + profiles `:3935` | ran `DefaultTreeWallTest` for EVERY profile (the gem profiles' `WallTest = GemTreeWallTest` was dropped) | **MISSING** — gem saplings against the stone/dirt wall family {2,54-59,61,185,196-199,208-215} refused. Added `WallTestKind` + the gem set. |
+| T2 | `GrowTreeWithSettings` side-ground flags | `:30688-30694` `nactive()` | port read `!t.active()` — INVERTED polarity (the caps landed on the wrong side of the `Next(3)` rolls) | **MISSING** — fixed to `active() && !inactive()`. |
+| T3 | `GrowTreeWithSettings` ground gate | `:30400` `nactive()` | port checked `active()` only, missing `!inactive()` | **MISSING** — added. |
+| T4 | `GrowTreeWithSettings` top-cap draw order | `:30803` `Next(13)` THEN `:30805` `Next(3)` | port drew `Next(3)` before `Next(13)` | **MISSING** — one draw of the wrong modulus early; reordered. |
+| T5 | `GrowTreeWithSettings` errorWorld height arm | `:30420-30423` (`errorWorldAdjustment(2.0)`, `Next(3,15)`/`Next(3,50)` by surface) | parked ("the getGoodWorld callers park") | **MISSING** — ported (the `grow_tree` errorWorld precedent, adjustment 2.0). |
+| T6 | `GrowTreeWithSettings` frame-important boot bit | `grow_tree :30248` precedent | absent (the runtime kill cascade could not recognise a freshly-grown gem/vanity/ash tile) | **MISSING** — added. |
+| T7 | `profile_for_tree` (`TryGetFromTreeId`) | `:3890-3928` | mapped ALL gems 583-589 to `GEM_TREE_RUBY` | **WRONG (benign for the ground test, fixed for verbatim)** — per-kind profiles. |
+| T8 | `AttemptToGrowTreeFromSapling` style-10 return | `:72833-72835` `return flag` | port returned flat `true` after the ash grow | **MISSING** — returns the grow result. |
+| T9 | `AttemptToGrowTreeFromSapling` default-arm underground gate | `:72846-72852` (`underground && !bees && !remix`) | port refused ALL underground default grows (missing the bees/remix exemption) | **MISSING** — added. |
+| T10 | `AttemptToGrowTreeFromSapling` gem style ≥7 | `:72891` `num2 = 587` default | port's catch-all sent style ≥7 to amber 589 | **MISSING** — keeps the 587 default. |
+| T11 | `GrowPalmTree` lean gate | `:27185` `if (num5 != num4)` | port omitted the gate — a palm at its target lean kept drawing Next(13)/Next(9)/Next(5) every middle row | **MISSING** — added (RNG-stream delta on palm growth). |
+
+### The mushroom runtime growth — verdict: the Convert(3) cell is gen-only
+
+`Convert(i, j, 3, …)` has exactly THREE call sites in the whole decompile
+(`:2101`, `:2125`, `:2129` — all inside `DoSurfaceIsMushrooms`); there is NO
+runtime mushroom-spread Convert(3) (the runtime spread is `SpreadGrass(59,
+70)` `:74737`, already faithful in `growth/grass.rs`). The MushroomSpray
+solution (ammo 113) routes through the aiStyle-31 Clentaminator arm, which
+the port documents as type-0-only (`spread.rs:391-395`, S1-D-4) — the other
+spray kinds have no `proj_data` rows. **No missing Convert(3) runtime arm.**
+
+The OVERWORLD grass-growth case arms (`UpdateWorld_GrassGrowth`'s
+`switch (num10)` `:74510-74868`, incl. the mushroom case-70 arm `:74704-74750`:
+the `Next(10)` plant-71 roll + `CopyPaintAndCoating`, the `Next(300)`
+`TryGrowingTreeByType(5)` roll, the 59→70 spread scan) are a SEPARATE branch
+from the underground slice the port implements (`update_world_grass_growth`
+runs the `:74275-74413` underground body only). The overworld case-70 arm
+needs `PlaceCatTail` (c33's helper, `:74500`) for its liquid-above branch and
+`PlayerLOS`/`TreeGrowFXCheck` (unported) — **documented follow-up** (the
+overworld grass-growth dispatcher tail, shared with the jungle case-60 arm
+`:74752` and the hallow/ash arms; not mushroom-exclusive). The underground
+mushroom arm (`:74497-74506`: the `Next(250)` tree roll + the cattail
+liquid branch) shares the same dispatcher gap.
+
+### The glowing-mushroom drops (KillTile arms) — verdict: THREE missing
+
+The dust half is g14/d54's (the `KillTile_MakeTileDust` ladder, landed); the
+`KillTile` body (`:63517-63921`) carries ZERO gore calls (the pot shards
+`:56878-56953` are the documented deferred gore, `edit/kill.rs:2363`). The
+gore/drop-side census of the mushroom arms:
+
+| # | unit | C# anchor | port state at d4836bbd | verdict |
+| --- | --- | --- | --- | --- |
+| D1 | `KillTile_GetItemDrops` case 71 (the glowing-mushroom PLANT) | `:65642-65652` (`case 71: case 72:`) | `tree_drop_record` records ONLY 72; `by_tile(71)` = None (item 183 places tile 190, the potted mushroom) → a broken 71 plant drops NOTHING | **MISSING** — record 71 too (the `Mushroom` event: Next(40)→194 seeds, else Next(2)→183 mushroom). |
+| D2 | `KillTile_GetItemDrops` case 70 (mushroom GRASS) + 60/661/662 | `:64702-64704` (70→176 mud), `:64936-64941` (59/60/661/662→176) | `by_tile(70)` = 194 (the seeds item places 70) — WRONG, the grass drops the MUD block 176; 60/661/662 likewise leak their seed items | **MISSING** — `tile_drop` 70/60/661/662 → 176. |
+| D3 | `KillTile_GetItemDrops` case 227 (dye plants — the teal mushroom grows in mushroom biomes) | `:65048-65055` (`1107 + frameX/34`, styles 8-11 → `3385 + num - 8`) | `by_tile(227)` = 1107 FLAT — every style drops the teal mushroom | **MISSING** — the frameX/34 style ladder. |
+
+The mushroom-TREE (72) drops + support check + canopy re-roll landed with
+i30 (`check_mushroom_tree`, `TreeDropEvent::Mushroom`, `mushroom_frame_rolls`);
+the trunk `TreeType::Mushroom` arm (`KillTile_GetTreeDrops :66241-66250`,
+Next(2)→183) is faithful (`trunk_tree_drops`). The gem-tree drops
+(`SetGemTreeDrops :66094-66108`) are faithful (`gem_tree_drops`, i30).

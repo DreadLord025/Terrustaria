@@ -56,7 +56,7 @@ pub use trees::{
     attempt_grow_tree_from_sapling, empty_tile_check, grow_palm_tree, grow_shroom, grow_tree,
     grow_tree_profile_from_item, grow_tree_with_settings, is_common_sapling,
     is_tile_type_fit_for_tree, try_growing_tree_by_type, GrowTreeSettings, GroundTestKind,
-    COMMON_SAPLINGS, TREE_SOILS,
+    WallTestKind, COMMON_SAPLINGS, TREE_SOILS,
 };
 
 // S1-K-3b: the grass/spread family lives in `growth/grass.rs`; the public
