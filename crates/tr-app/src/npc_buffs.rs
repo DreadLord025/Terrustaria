@@ -484,6 +484,19 @@ fn debuff_immune_ids(kind: NpcKind) -> &'static [i32] {
         NpcKind::BlazingWheel
         | NpcKind::AngryNimbus
         | NpcKind::DungeonSpirit => &[],
+        // W4-g10 lane 3 — the town pets: `NPCID.cs`'s DebuffImmunitySets has
+        // no row for 637/638/656/670/678-683 — the null-row else-branch, no
+        // immunity (`NPC.cs:17826-17832`), same as the town residents.
+        NpcKind::TownCat
+        | NpcKind::TownDog
+        | NpcKind::TownBunny
+        | NpcKind::TownSlimeBlue
+        | NpcKind::TownSlimeGreen
+        | NpcKind::TownSlimeOld
+        | NpcKind::TownSlimePurple
+        | NpcKind::TownSlimeRainbow
+        | NpcKind::TownSlimeRed
+        | NpcKind::TownSlimeYellow => &[],
     }
 }
 

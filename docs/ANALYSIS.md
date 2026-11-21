@@ -39244,3 +39244,102 @@ tile_axe`, `extract::extractinator_mode`). The 30 witness tests
 cargo/rustc/rustfmt/tests/dotnet/graphify invoked**. The DW-4.2
 closed-hotbar click test was repointed to the buffered semantics (the
 click buffers; the player tick applies).
+
+## W4-g10 lane 3 — the town pets (637/638/656/670/678-683)
+
+The ten town pets (`NPCID.Sets.IsTownPet`, `NPCID.cs:10118`) land as
+`NpcKind` rows and wire to the ALREADY-LANDED pet-aware
+`npc_ai_town::town_npc_ai` machine (`AI_007_TownEntities`,
+`NPC.cs:52965-55561`). Every pet is `aiStyle 7` in `SetDefaults`
+(`NPC.cs:17207-17225` the 637/638 arm, `:17295-17309` 656,
+`:17481-17495` 670, `:17594-17608` the 678-684 arm): 18x20 (the dog
+18x28, the cat's 20-height override `:17213-17216`), dmg 10, def 15,
+250 HP, kb 0.5, value 0, `townNPC + friendly`, `housingCategory 1`.
+
+### The axis claim (disjoint from the in-flight W4-b3 town lane)
+
+The pets ride a KIND-GUARDED axis arm — `7 if self.kind.is_town_pet()`
+(the frost-mob `62 if ElfCopter` precedent) — so the 21 housed town
+residents keep their `update_guide` routing until the W4-b3 town lane
+lands its unguarded `7 =>` arm. The guard keeps the two claims disjoint;
+the merger dedupes the adapters. The pet adapter
+(`npc.rs::ai_007_town_pet_family`) owns only the seams the pure arm
+cannot: the solo `TownEnv` (empty NPC list, the world's live flags, the
+unported statics folded false), a fresh `TownDoorLatch` each tick (the
+pets never open a door — the `h / 16 < 3` gate plus the no-op
+`NoOpTownPetDoors`), and the generic `UpdateNPC` collision tail
+(`integrate_town_pet_collision`, the W4-b3 `integrate_town_collision`
+twin — kept separate so the lanes' edits stay disjoint). The
+`TownOutputs` drain is the town lane's phase 2; the requests are
+discarded but every RNG draw already ran on the caller's stream (the
+eye wiring's `let _ = out` precedent).
+
+### The town-flag predicates
+
+The pets join `is_town_npc()` (the `townNPC` flag — housing, the
+scene-metrics count `SceneMetrics.cs:739`, the Rotten Egg refusal
+`Projectile.cs:23572`, the world-file town block `WorldFile.cs:1717`),
+`is_town_npc_like()` (`isLikeATownNPC`, the stat-ladder gate) and
+`is_friendly()`. They do NOT join `is_town_resident()`: `CollectTaxes`
+(`Player.cs:24145`) and the arrival ladder exclude them, and the party
+refuses them (`BirthdayParty.CanNPCParty` `:66-69`, the
+`world_sim/clock.rs` partyable filter). The contact-damage gate
+(`npc.rs::contact`) skips them on the `friendly` flag
+(`Player.cs:31328`). The save filter (`app/saveglue.rs`) and `to_wld`
+write them in the town block (`SaveNPCs:1717`'s `active && townNPC`).
+
+### The FindFrame arm (`npc_findframe_pet.rs`)
+
+The pets ride `FindFrame`'s humanoid-group case list
+(`NPC.cs:68622-68633`) with the pet overrides: the slime
+`spriteDirection` flip (`:68657-68660`), the state-20/21/22 idle poses
+(`:68680-68917`), the cat's sit row 19 (`:68980-68983`), the dog's idle
+0..7 cycle (`:69491-69508`), the dog/bunny/slime walk stride 12 +
+start-row overrides (`:69532-69571`), the airborne slime hop rows /
+dog air row 8 (`:69601-69654`). `num58 = npcFrameCount -
+AttackFrameCount` and the pets' `AttackFrameCount` rows are 0
+(`NPCID.cs:10465`), so `num58` IS the full row count (28/28/27/14,
+`Main.cs:67147-67152`); `num57 = ExtraFramesCount` (`NPCID.cs:10464`:
+637=18, 638=11, 656=20, slimes=6) bounds the walk wrap.
+
+Deliberate skips: the disabled profile-texture block (`NPC.cs:68637`,
+`if (false && …)`), the `EmoteBubble` spawns (the port has no emote
+system), and the group arm's state branches UNREACHABLE for pets —
+dropped so those states fall through to the idle/walk tail exactly as
+the C#'s own gates make them do: state 6 party talk (`:55289`'s
+`!IsTownPet`), state 7/19 player talk (the branch's own `!IsTownPet`
+gate — a pet in state 7 falls through), state 11 grumble (type 229),
+state 18 Bartender talk (type 550), states 10/13/15/12/14/24 attacks
+(the pets' `AttackType`/`AttackTime` rows are -1, `NPCID.cs:10471-10473`),
+states 3/4/16/17 talk/gossip (`CanTalk` is false for pets,
+`NPC.cs:6633-6643`), state 25 shimmer + state 1001 sleep (unported
+systems). The state-2 small-talk blink and the state-23 ShowItem pose
+are carried verbatim although unreachable today (cheap, keeps the
+pose-reset shape complete). The sitting draw shift (`Main.cs:22178-
+22181`: the cat/bunny/slime sit 10 px deeper, the dog keeps the plain
+-4) lands in `render/entities.rs::npc_add_height`.
+
+### The pet idle RNG census
+
+`AI_007_AttemptToPlayIdleAnimationsForPets` (`NPC.cs:55750-55785`): the
+stationary pet rolls `Next(petIdleChance)` (num20 = 120, the dog 60,
+`:53636-53640`); on 0 the slime takes state 20 with NO state draw
+(num = 0), the cat/bunny roll `Next(20, 23)` (num = 3), the dog
+`Next(20, 22)` (num = 2); then `Next(300)` for the base timer, then the
+per-pet override — the cat state 20 `500 + Next(200)`, the dog state 21
+`100 + Next(100)`, the bunny state 22 `200 + Next(200)`, the slime
+state 20 `180 + Next(240)`. The witnesses pin the draw order + the
+stream position against a mirrored `UnifiedRandom`.
+
+### Verification
+
+Code-only: every row re-read against the cited C# windows; the
+exhaustive-match sites (`to_u16`/`from_u16`/`ai_style`/`size`/`max_hp`/
+`contact_damage`/`knock_back_resist`/`defense`/`value`/`render_key`/
+`find_frame`/`update_kind_ai`/`debuff_immune_ids`/`npc_seed`/
+`portrait_data`/the draw match) verified to carry the ten pet arms; the
+protocol ids are a bijection (280 arms, no dup); the bestiary credit
+ids are unique; `BESTIARY_NPC_SHEET_IDS` (191) matches the
+`bestiary_npc_sheets` vec (191). The 8 wiring witnesses
+(`npc.rs::w4_g10_town_pet_wiring`) are WRITTEN, NOT RUN — **no
+cargo/rustc/rustfmt/tests/dotnet/graphify invoked**.

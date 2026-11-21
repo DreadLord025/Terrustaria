@@ -912,6 +912,29 @@ fn portrait_data(
         (NpcKind::Princess, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::DyeTrader, _) => (sheet_i, 48.0, 38.0, 48.0, white),
         (NpcKind::PartyGirl, _) => (sheet_i, 48.0, 38.0, 48.0, white),
+        // W4-g10 lane 3 — the town pets: the sheet's own row height over
+        // the pet strip (28/28/27/14 rows, `Main.npcFrameCount`), the
+        // sheet's own width — the `humanoid_draw` shape the world draw
+        // rides (`render/entities.rs`'s pet arms).
+        (
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow,
+            _,
+        ) => {
+            let rows = entry.kind.humanoid_frame_count();
+            let (fw, fh) = entry_sheet(lookups, entry)
+                .map(|s| (s.width as f32, s.height as f32 / rows as f32))
+                .unwrap_or((38.0, 48.0));
+            (sheet_i, fh, fw, fh, white)
+        }
         (NpcKind::SleepingGolfer, _) => (sheet_i, 40.0, 38.0, 40.0, white),
         (NpcKind::WebbedStylist, _) => (sheet_i, 40.0, 38.0, 40.0, white),
         (NpcKind::EyeOfCthulhu, _) => (sheet_i, 110.0, 100.0, 110.0, white),

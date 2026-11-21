@@ -3239,6 +3239,19 @@ fn npc_seed(
         | crate::npc::NpcKind::DyeTrader
         | crate::npc::NpcKind::PartyGirl
         | crate::npc::NpcKind::GoblinTinkerer => crate::npc::Npc::spawn_guide(world, tx)?,
+        // W4-g10 lane 3 — the town pets seed on the column surface like the
+        // town residents (the generic ground ctor; the pet-aware aiStyle-7
+        // machine takes over on the first tick).
+        crate::npc::NpcKind::TownCat
+        | crate::npc::NpcKind::TownDog
+        | crate::npc::NpcKind::TownBunny
+        | crate::npc::NpcKind::TownSlimeBlue
+        | crate::npc::NpcKind::TownSlimeGreen
+        | crate::npc::NpcKind::TownSlimeOld
+        | crate::npc::NpcKind::TownSlimePurple
+        | crate::npc::NpcKind::TownSlimeRainbow
+        | crate::npc::NpcKind::TownSlimeRed
+        | crate::npc::NpcKind::TownSlimeYellow => crate::npc::Npc::spawn_guide(world, tx)?,
         crate::npc::NpcKind::EyeOfCthulhu => {
             let y = (y / TILE_PX) as i32;
             crate::npc::Npc::spawn_hover(world, tx, y, kind)?

@@ -197,7 +197,11 @@ impl App {
             let npcs: Vec<save::NpcRecord> = self
                 .npcs
                 .iter()
-                .filter(|n| n.kind.is_town_resident())
+                // W4-g10 lane 3: `SaveNPCs:1717`'s `active && townNPC &&
+                // type != 368` filter — the town pets write `townNPC = true`
+                // too, so they ride the town block (the resident-only filter
+                // would drop them; the C# saves every townNPC).
+                .filter(|n| n.kind.is_town_resident() || n.kind.is_town_pet())
                 .map(|n| save::NpcRecord {
                     kind: n.kind.to_u16(),
                     given_name: n.given_name.clone(),

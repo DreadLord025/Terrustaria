@@ -28,6 +28,29 @@ pub(crate) fn is_wet(world: &World, x: f32, y: f32, w: f32, h: f32) -> bool {
     false
 }
 
+/// W4-g10 lane 3 — the town-pet door seam: a NO-OP `TownDoorOps`. The pets
+/// never open a door (the arm's `h / 16 < 3` gate plus the pet walk's
+/// obstacle logic), and the port's door mutation is the town lane's phase 2
+/// (`tr_core::edit::{open_door, close_door}`); every attempt fails, so the
+/// arm takes the C#'s all-fail direction flip (`NPC.cs:54047-54078`) and the
+/// latch stays clear — tick-exact against a world where no door mutation
+/// runs yet. `shift_tall_gate` stays false even then (`WorldGen.ShiftTallGate`
+/// is UNPORTED in tr-core). The W4-b3 town lane's `NoOpTownDoors` is the same
+/// shape — kept separate so the two lanes' edits stay disjoint.
+struct NoOpTownPetDoors;
+
+impl crate::npc_ai_town::TownDoorOps for NoOpTownPetDoors {
+    fn open_door(&mut self, _x: i32, _y: i32, _direction: i32) -> bool {
+        false
+    }
+    fn close_door(&mut self, _x: i32, _y: i32) -> bool {
+        false
+    }
+    fn shift_tall_gate(&mut self, _x: i32, _y: i32, _closing: bool) -> bool {
+        false
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum NpcKind {
     Slime,
@@ -1086,6 +1109,55 @@ pub enum NpcKind {
     /// world-sim dust pre-pass runs `npc_ai_style56::style56_step`; the
     /// axis' 56 arm owns the noTileCollide integration tail.
     DungeonSpirit,
+    // ---- W4-g10 NPC kind AXIS WIRING lane 3 (vanilla ids 461-697): the
+    // town PETS — the `NPCID.Sets.IsTownPet` roster (`NPCID.cs:10118`:
+    // 637/638/656/670/678-684). Every one is `aiStyle 7` in `SetDefaults`
+    // and rides the landed pet-aware `npc_ai_town::town_npc_ai` machine
+    // (the `is_town_pet`/`is_town_slime` gates + `pet_idle_animation`);
+    // the axis' kind-guarded `7 if is_town_pet` arm claims them (the
+    // frost-mob kind-guard precedent — the 21 housed town kinds keep
+    // their own routing until the W4-b3 lane lands). `housingCategory 1`
+    // (`town.rs::housing_category` already keys these net ids).
+    /// `NPCID.TownCat` (637, `NPCID.cs:11951`) — the town cat
+    /// (`SetDefaults` `NPC.cs:17207-17225`, the 637/638 shared arm):
+    /// 18x20 (the 637-only height override `:17213-17216`), aiStyle 7,
+    /// dmg 10, def 15, 250 HP, kb 0.5, townNPC + friendly,
+    /// housingCategory 1; `npcFrameCount[637]` = 28 (`Main.cs:67082`),
+    /// `ExtraFramesCount` 18 (`NPCID.cs:10464`), AttackFrameCount 0.
+    TownCat,
+    /// `NPCID.TownDog` (638, `NPCID.cs:11953`) — the town dog (the same
+    /// 637/638 arm, the 28-height base): 18x28, aiStyle 7, dmg 10,
+    /// def 15, 250 HP, kb 0.5; `npcFrameCount[638]` = 28,
+    /// `ExtraFramesCount` 11.
+    TownDog,
+    /// `NPCID.TownBunny` (656, `NPCID.cs:11989`) — the town bunny
+    /// (`NPC.cs:17295-17309`): 18x20, aiStyle 7, dmg 10, def 15,
+    /// 250 HP, kb 0.5; `npcFrameCount[656]` = 27, `ExtraFramesCount` 20.
+    TownBunny,
+    /// `NPCID.TownSlimeBlue` (670, `NPCID.cs:12017`) — the first town
+    /// slime (`NPC.cs:17481-17495`): 18x20, aiStyle 7, dmg 10, def 15,
+    /// 250 HP, kb 0.5; `npcFrameCount[670]` = 14, `ExtraFramesCount` 6.
+    /// `NPCID.Sets.IsTownSlime` (`NPCID.cs:10119`) — NOT the 701-707
+    /// shimmer-slime band (those are `ShimmerSlime` variants, unported).
+    TownSlimeBlue,
+    /// `NPCID.TownSlimeGreen` (678, `NPCID.cs:12033`) — the 678-684
+    /// shared arm (`NPC.cs:17594-17608`): the same 18x20 / aiStyle 7 /
+    /// 250-HP row as 670; `npcFrameCount[678]` = 14.
+    TownSlimeGreen,
+    /// `NPCID.TownSlimeOld` (679, `NPCID.cs:12035`) — the elder slime.
+    TownSlimeOld,
+    /// `NPCID.TownSlimePurple` (680, `NPCID.cs:12037`) — the purple
+    /// slime (the `Slimefors` easter-egg target, `NPC.cs:52974-52976`,
+    /// already keyed by net id in `npc_ai_town`).
+    TownSlimePurple,
+    /// `NPCID.TownSlimeRainbow` (681, `NPCID.cs:12039`) — the rainbow
+    /// slime (the party-gated arrival).
+    TownSlimeRainbow,
+    /// `NPCID.TownSlimeRed` (682, `NPCID.cs:12041`) — the red slime.
+    TownSlimeRed,
+    /// `NPCID.TownSlimeYellow` (683, `NPCID.cs:12043`) — the yellow
+    /// slime.
+    TownSlimeYellow,
 }
 
 // The static data tables live in `npc/data.rs` (S1-G-1 data split); the
@@ -3045,6 +3117,9 @@ impl Npc {
             immortal: false,
             friendly: kind.is_town_resident()
                 || kind == NpcKind::SleepingAngler
+                // W4-g10 lane 3 — the town pets' `friendly = true` rows
+                // (`NPC.cs:17210`/`:17298`/`:17484`/`:17597`).
+                || kind.is_town_pet()
                 // `NPC.SetDefaults`' catchable arm (`NPC.cs:17851-17855`):
                 // every `Main.npcCatchable` kind spawns friendly with the
                 // 90-tick window (S1-P-i36).
@@ -3405,6 +3480,18 @@ impl Npc {
             NpcKind::BoundMechanic => 0.5,
             NpcKind::SleepingAngler => 0.5,
             NpcKind::TravellingMerchant => 0.5,
+            // W4-g10 lane 3 — the town pets' kb 0.5 rows (`NPC.cs:17223`/
+            // `:17307`/`:17493`/`:17606`).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow => 0.5,
             NpcKind::EyeOfCthulhu => 0.0,
             NpcKind::QueenBee => 0.0,
             // The volley bees: kb 0.5 (`NPC.cs:11705`/`:11718`).
@@ -3773,6 +3860,18 @@ impl Npc {
             NpcKind::BoundMechanic => 15,
             NpcKind::SleepingAngler => 15,
             NpcKind::TravellingMerchant => 15,
+            // W4-g10 lane 3 — the town pets' `defense = 15` rows
+            // (`NPC.cs:17219`/`:17303`/`:17489`/`:17602`).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow => 15,
             NpcKind::EyeOfCthulhu => 12,
             NpcKind::QueenBee => 8,
             // The volley bees' SetDefaults defense (`NPC.cs:11702`/`:11715`).
@@ -4159,6 +4258,19 @@ impl Npc {
             NpcKind::BoundMechanic => 0.0,
             NpcKind::SleepingAngler => 0.0,
             NpcKind::TravellingMerchant => 0.0,
+            // W4-g10 lane 3 — the town pets write no `value` row (the
+            // `SetDefaults` head's 0, `NPC.cs:8527`; the 637/638/656/670/
+            // 678-684 arms carry none).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow => 0.0,
             // `SetDefaults` case 4: value 30000 (the coin drop).
             NpcKind::EyeOfCthulhu => 30000.0,
             NpcKind::QueenBee => 50000.0,
@@ -4921,6 +5033,16 @@ impl Npc {
             63 if self.kind == NpcKind::Flocko => {
                 crate::npc_ai_frost_mob::frost_mob_step(self, world, player, rng);
             }
+            // W4-g10 lane 3 — `if (this.aiStyle == 7) { this.AI_007_TownEntities();
+            // return; }` (`NPC.cs:20812-20815`) for the town PETS (637/638/
+            // 656/670/678-684, `NPCID.Sets.IsTownPet`). The landed pet-aware
+            // `npc_ai_town::town_npc_ai` machine claims them through the
+            // kind-guarded arm (the frost-mob `62 if ElfCopter` precedent):
+            // the 21 housed town kinds keep their `update_guide` routing
+            // until the W4-b3 town lane lands its unguarded `7 =>` arm —
+            // the guard keeps the two claims disjoint. The adapter owns the
+            // solo seams + the generic UpdateNPC tail the arm never runs.
+            7 if self.kind.is_town_pet() => self.ai_007_town_pet_family(world, player, rng),
             // `else if (this.aiStyle == 75)` (`NPC.cs:35501-36070`) — the
             // mount/rider family (390/392/393/394/492/416). S1-D-3-wire-saucer:
             // the SOLO path (a test's bare `update_rng`) runs the faithful
@@ -5066,6 +5188,185 @@ impl Npc {
         self.wants_item_sounds.extend(out.sounds);
         // `out.died`: the module already set hp = 0; the death pass owns
         // the HitEffect + deactivation pair (the style72 pop precedent).
+    }
+
+    /// W4-g10 lane 3 — the town-PET aiStyle-7 family arm: `NPC.AI()`'s
+    /// `if (this.aiStyle == 7)` block (`NPC.cs:20812-20815`) through the
+    /// landed pet-aware `npc_ai_town::town_npc_ai` (`AI_007_TownEntities`,
+    /// `NPC.cs:52965-55561`). The machine is already pet-shaped — its
+    /// `is_town_pet`/`is_town_slime` gates key on `npc.kind.net_id()`
+    /// (the pets' bestiary rows carry the vanilla 637/638/656/670/678-684
+    /// ids), the sit-gate `num = 0` (`:52977-52981`), the pet idle rolls
+    /// (`pet_idle_animation`, `:55750-55785`) and the no-talk gate
+    /// (`:55240`) all fire once the kinds land. This adapter owns only
+    /// the seams the pure arm cannot (the `ai_002_eye_family` / W4-b3
+    /// precedent): this tick's `Entity.wet`, the SOLO session-player
+    /// candidate, the classic-solo `TownEnv` (empty NPC list, the world's
+    /// live flags, the unported statics folded false — the style31
+    /// CLASSIC_SOLO convention), the kind defaults from the port's tables,
+    /// a caller-carried door latch (the pets never open a door — the
+    /// `h / 16 < 3` gate plus the no-op ops keep it clear), a NO-OP
+    /// `TownDoorOps`, and the generic `UpdateNPC` tail the arm never runs
+    /// (`NPC.cs:90465-90498`: the depth-scaled 0.3 gravity + 10 fall cap,
+    /// the ±0.005 double deadband, `UpdateCollision`'s dry/wet move). The
+    /// `TownOutputs` drain is the town lane's phase 2 — the requests are
+    /// DISCARDED here but every DRAW already ran on the caller's stream
+    /// (the eye wiring's `let _ = out` precedent). RNG: the pets' idle
+    /// day tick draws the module header's per-state ladder on the
+    /// caller's `UpdateNPCs` stream (the slime's state-20 roll draws
+    /// `Next(petIdleChance)` + `Next(300)` + `Next(240)`, `:55752-55779`).
+    fn ai_007_town_pet_family(&mut self, world: &World, player: &Player, rng: &mut UnifiedRandom) {
+        let (w, h) = self.size();
+        // `Entity.wet` — the port latches it pre-AI (the eye convention);
+        // the wet flee/drown tails read it (`:53644`/`:53725`).
+        self.wet = is_wet(world, self.x, self.y, w, h);
+        let players = [crate::npc_ai_town::TownPlayer {
+            candidate: crate::npc_target::session_candidate(player),
+            // `Player.talkNPC` lives on the App, not the Player — the solo
+            // seam reads nobody talking (the pets never talk anyway,
+            // `:55240`'s `!is_town_pet` gate).
+            talk_npc: -1,
+            // Buff 120 (stink potion) — the flee-target gate (`:53534`).
+            stinky: player.buffs.buff_type.contains(&120),
+            sitting: player.sitting,
+            // `Player.CanBeTalkedTo` (`Player.cs:3888-3898`): active, alive,
+            // drawn, `stealth == 1f` — the port's stealth folds the INVERTED
+            // sense (0 = visible), so the stock player reads talkable.
+            can_be_talked_to: !player.dead && player.stealth == 0.0,
+        }];
+        let env = crate::npc_ai_town::TownEnv {
+            world,
+            day_time: world.day_time,
+            raining: world.raining,
+            eclipse: world.eclipse,
+            slime_rain: world.slime_rain,
+            storming: false, // `Main.IsItStorming` unported
+            net_mode: 0,     // the host path (the port's fold)
+            expert_mode: player.buffs.expert_mode,
+            master_mode: false, // single-difficulty (the style31 fold)
+            players: &players,
+            npcs: &[], // the solo seam — the town lane threads the live list
+            dungeon_x: 0,
+            dungeon_y: 0,
+            combat_book: world.combat_book_was_used,
+            combat_book_two: false,
+            party_up: false,
+            skyblock_low_tiles: false,
+            infected_seed: world.seeds.contains(tr_core::seeds::SeedFlags::ZENITH),
+            only_shimmer_ocean: false,
+            x_mas: false,
+            town_damage_multiplier: 1.0, // Classic
+            downed_slime_king: world.downed_slime_king,
+            downed_boss1: world.downed_eoc,
+            downed_deerclops: world.downed_deerclops,
+            downed_boss2: world.downed_eow,
+            downed_boss3: world.downed_skeletron,
+            downed_queen_bee: world.downed_queen_bee,
+            hard_mode: world.hard_mode,
+            downed_queen_slime: world.downed_queen_slime,
+            downed_mech1: world.downed_mech_boss1,
+            downed_mech2: world.downed_mech_boss2,
+            downed_mech3: world.downed_mech_boss3,
+            downed_plant: world.downed_plant_boss,
+            downed_empress: false,
+            downed_fishron: world.downed_fishron,
+            downed_golem: world.downed_golem,
+            downed_cultist: world.downed_ancient_cultist,
+            homeless: self.home.is_none(),
+            breath: 200, // `NPC.breath` unported — the stock full breath
+            shimmering: false,
+        };
+        // The kind defaults the stat ladder reads (every pet 250/15).
+        let stats = crate::npc_ai_town::TownKindStats {
+            def_life_max: self.kind.max_hp(),
+            def_defense: self.defense(),
+        };
+        // The pets never arm the door latch (the `h / 16 < 3` gate plus
+        // the no-op ops), so a fresh default each tick is exact.
+        let mut door = crate::npc_ai_town::TownDoorLatch::default();
+        let mut doors = NoOpTownPetDoors;
+        let mut out = crate::npc_ai_town::TownOutputs::default();
+        crate::npc_ai_town::town_npc_ai(
+            self, &env, stats, &mut door, &mut doors, 0, rng, &mut out,
+        );
+        // The out drain is the town lane's phase 2 (see the fn doc); the
+        // draws ran.
+        let _ = out;
+        self.integrate_town_pet_collision(world);
+    }
+
+    /// The generic `NPC.UpdateNPC` tail for the town-pet arm (`NPC.cs`
+    /// `:90465-90498` + `UpdateCollision` `:92523-92608`): the depth-scaled
+    /// gravity (`UpdateNPC_UpdateGravity` `:90878-90955` — the Golem body's
+    /// shared `body_gravity`, wet 0.2/7 override), the ±0.005 DOUBLE X
+    /// deadband, then `Collision_MoveNormal`'s `TileCollision` velocity clip
+    /// + the dry/wet move (`Collision_MoveWhileDry` `:92591-92608` /
+    /// `Collision_MoveWhileWet` `:92785-92805` — the wet move keeps the
+    /// CLIPPED axis at full speed, halves only the free one). The
+    /// oldVelocity latch feeds the town walk's stuck test (`:54226`). The
+    /// slope/stair pass is the recorded fold (the bat/fish tail's
+    /// convention, ANALYSIS). The W4-b3 town lane's `integrate_town_collision`
+    /// is the same body — kept separate here so the two lanes' edits stay
+    /// disjoint; the merger dedupes them.
+    fn integrate_town_pet_collision(&mut self, world: &World) {
+        let (w, h) = self.size();
+        let (gravity, max_fall) = if self.wet {
+            (0.2, 7.0)
+        } else {
+            (
+                crate::npc_ai_golem::body_gravity(self.y, world.width as i32, world.world_surface),
+                10.0,
+            )
+        };
+        self.vy = (self.vy + gravity).min(max_fall);
+        // `:90473-90476` — the double-compare deadband.
+        if (self.vx as f64) < 0.005 && (self.vx as f64) > -0.005 {
+            self.vx = 0.0;
+        }
+        // `:92538-92540` — oldVelocity captured, the collide flags reset.
+        self.old_vx = self.vx;
+        self.old_vy = self.vy;
+        self.collide_x = false;
+        self.collide_y = false;
+        // `Collision_MoveNormal` (`:92723-92726`): the velocity clip
+        // (fallThrough false — the town DecideFallThroughPlatforms arm is
+        // the recorded fold).
+        let tc = crate::collision::tile_collision(
+            world, [self.x, self.y], [self.vx, self.vy], w, h, false, false,
+        );
+        self.vx = tc.vel[0];
+        self.vy = tc.vel[1];
+        if self.wet {
+            // `:92785-92805` — ×0.5 on the FREE axes; a clipped axis moves
+            // at full clipped speed and raises its collide flag.
+            let mut mx = self.vx * 0.5;
+            let mut my = self.vy * 0.5;
+            if self.vx != self.old_vx {
+                mx = self.vx;
+                self.collide_x = true;
+            }
+            if self.vy != self.old_vy {
+                my = self.vy;
+                self.collide_y = true;
+            }
+            self.x += mx;
+            self.y += my;
+        } else {
+            // `:92591-92608` — the ceiling bump's 0.01, the flags on the
+            // clip, full-speed integration.
+            if tc.up {
+                self.vy = 0.01;
+            }
+            if self.old_vx != self.vx {
+                self.collide_x = true;
+            }
+            if self.old_vy != self.vy {
+                self.collide_y = true;
+            }
+            self.x += self.vx;
+            self.y += self.vy;
+        }
+        self.on_ground = self.collide_y && self.vy >= 0.0;
     }
 
     /// `NPC.Transform(int newType, ...)` (`NPC.cs:81084-81114`) with the
@@ -5751,6 +6052,23 @@ impl Npc {
             | NpcKind::DyeTrader
             | NpcKind::PartyGirl
             | NpcKind::GoblinTinkerer => self.update_guide(world, dt),
+            // W4-g10 lane 3 — the town pets' aiStyle 7 rides the kind-guarded
+            // style axis above (`ai_007_town_pet_family` → the landed
+            // `npc_ai_town::town_npc_ai`); `ai_style()` maps them
+            // unconditionally, so the fallthrough never reaches them (the
+            // aiStyle-5/9 marker precedent).
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow => {
+                unreachable!("aiStyle 7 rides the style axis (W4-g10 town-pet wiring)")
+            }
             NpcKind::QueenBee => {
                 unreachable!("aiStyle 43 rides the style axis (S1-D-3 W-3)")
             }
@@ -6667,6 +6985,23 @@ impl Npc {
             NpcKind::Golfer => {}
             NpcKind::Zoologist | NpcKind::Princess => {}
             NpcKind::DyeTrader | NpcKind::PartyGirl => {}
+            // W4-g10 lane 3 — the town pets ride `FindFrame`'s humanoid-
+            // group case list (`NPC.cs:68622-68633`) with the pet
+            // overrides (the slime flip, the idle poses, the dog's idle
+            // cycle + walk stride, the airborne hop rows) — the dedicated
+            // arm carries the whole body.
+            NpcKind::TownCat
+            | NpcKind::TownDog
+            | NpcKind::TownBunny
+            | NpcKind::TownSlimeBlue
+            | NpcKind::TownSlimeGreen
+            | NpcKind::TownSlimeOld
+            | NpcKind::TownSlimePurple
+            | NpcKind::TownSlimeRainbow
+            | NpcKind::TownSlimeRed
+            | NpcKind::TownSlimeYellow => {
+                crate::npc_findframe_pet::town_pet_find_frame(self);
+            }
             // The Prime's limbs: `Main.npcFrameCount` 128 = 1, 129 = 2,
             // 130 = 2, 131 = 1 (`Main.cs:67082`) — the cannon and the
             // laser have NO `FindFrame` case at all (row 0 forever), while
@@ -18221,6 +18556,20 @@ impl Npc {
                     | NpcKind::EyeOfCthulhu
                     | NpcKind::BoundGoblin
                     | NpcKind::GoblinTinkerer
+                    // W4-g10 lane 3 — the town pets: `friendly = true`
+                    // (`NPC.cs:17210`/`:17298`/`:17484`/`:17597`), so
+                    // `Update_NPCCollision`'s head skips them
+                    // (`Player.cs:31328`'s `npc.friendly` continue).
+                    | NpcKind::TownCat
+                    | NpcKind::TownDog
+                    | NpcKind::TownBunny
+                    | NpcKind::TownSlimeBlue
+                    | NpcKind::TownSlimeGreen
+                    | NpcKind::TownSlimeOld
+                    | NpcKind::TownSlimePurple
+                    | NpcKind::TownSlimeRainbow
+                    | NpcKind::TownSlimeRed
+                    | NpcKind::TownSlimeYellow
             ) {
                 let base_dmg = if self.kind == NpcKind::Slime {
                     self.slime.stats().damage
@@ -18601,6 +18950,18 @@ impl Npc {
             NpcKind::WyvernBody2 => 226,
             NpcKind::WyvernBody3 => 227,
             NpcKind::WyvernTail => 228,
+            // W4-g10 lane 3 — the town pets' vanilla types (the G6 key
+            // stays injective; 637/638/656/670/678-683 are unused above).
+            NpcKind::TownCat => 637,
+            NpcKind::TownDog => 638,
+            NpcKind::TownBunny => 656,
+            NpcKind::TownSlimeBlue => 670,
+            NpcKind::TownSlimeGreen => 678,
+            NpcKind::TownSlimeOld => 679,
+            NpcKind::TownSlimePurple => 680,
+            NpcKind::TownSlimeRainbow => 681,
+            NpcKind::TownSlimeRed => 682,
+            NpcKind::TownSlimeYellow => 683,
         } << 5;
         if self.kind == NpcKind::Slime {
             h ^= (self.slime as u32) << 9;
@@ -18740,6 +19101,300 @@ pub fn to_wld(npcs: &[Npc]) -> tr_core::wld::sections::WldNpcs {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod w4_g10_town_pet_wiring {
+    //! W4-g10 lane 3 (code-only): the town-pet wiring witnesses, WRITTEN
+    //! NOT RUN. The ten pets (637/638/656/670/678-683) ride the kind-
+    //! guarded aiStyle-7 axis arm into the landed pet-aware
+    //! `npc_ai_town::town_npc_ai`; these pin the `SetDefaults` rows, the
+    //! protocol round-trip, the town-flag predicates, the pet idle RNG
+    //! draw order (`NPC.cs:55750-55785`) and the axis claim itself.
+    use super::*;
+    use crate::npc_ai_town::{TownDoorLatch, TownEnv, TownKindStats, TownOutputs, TownPlayer};
+
+    /// The ten batch-1 pets with their vanilla ids.
+    const PETS: [(NpcKind, u16); 10] = [
+        (NpcKind::TownCat, 637),
+        (NpcKind::TownDog, 638),
+        (NpcKind::TownBunny, 656),
+        (NpcKind::TownSlimeBlue, 670),
+        (NpcKind::TownSlimeGreen, 678),
+        (NpcKind::TownSlimeOld, 679),
+        (NpcKind::TownSlimePurple, 680),
+        (NpcKind::TownSlimeRainbow, 681),
+        (NpcKind::TownSlimeRed, 682),
+        (NpcKind::TownSlimeYellow, 683),
+    ];
+
+    #[test]
+    fn w4_g10_the_pet_defaults_match_the_csharp_rows() {
+        // `SetDefaults`' pet arms: the 637/638 shared arm
+        // (`NPC.cs:17207-17225`, the 637-only 20-height override), 656
+        // (`:17295-17309`), 670 (`:17481-17495`), the 678-684 arm
+        // (`:17594-17608`). Every pet: aiStyle 7, dmg 10, def 15,
+        // 250 HP, kb 0.5, value 0, townNPC + friendly, housingCategory 1.
+        for (kind, ty) in PETS {
+            let shell = Npc::new(kind, 0.0, 0.0, 1, 0.0);
+            assert_eq!(kind.cs_id(), ty, "{kind:?} vanilla type");
+            assert_eq!(kind.net_id(), ty as i32, "{kind:?} net id");
+            assert_eq!(kind.ai_style(), 7, "{kind:?} aiStyle");
+            assert_eq!(kind.contact_damage(), 10, "{kind:?} damage");
+            assert_eq!(shell.defense(), 15, "{kind:?} defense");
+            assert_eq!(kind.max_hp(), 250, "{kind:?} lifeMax");
+            assert_eq!(shell.max_hp, 250, "{kind:?} npc lifeMax");
+            assert_eq!(shell.knock_back_resist(), 0.5, "{kind:?} kb");
+            assert_eq!(shell.value(), 0.0, "{kind:?} value");
+            assert!(shell.friendly, "{kind:?} friendly");
+            let expect_size = match kind {
+                NpcKind::TownCat => (18.0, 20.0),
+                NpcKind::TownDog => (18.0, 28.0),
+                _ => (18.0, 20.0),
+            };
+            assert_eq!(kind.size(), expect_size, "{kind:?} size");
+            assert_eq!(shell.size(), expect_size, "{kind:?} npc size");
+            assert_eq!(kind.hit_sound(), Some("NPC_Hit_1"), "{kind:?} hit");
+            assert_eq!(kind.death_sound(), Some("NPC_Killed_6"), "{kind:?} death");
+        }
+    }
+
+    #[test]
+    fn w4_g10_the_pet_protocol_ids_round_trip_at_the_vanilla_ids() {
+        // The pets ride their VANILLA ids in the protocol space (the
+        // pumpkin/frost precedent — 637/638/656/670/678-683 are free).
+        for (kind, ty) in PETS {
+            assert_eq!(kind.to_u16(), ty, "{kind:?} encodes its vanilla id");
+            assert_eq!(NpcKind::from_u16(ty), Some(kind), "{kind:?} decodes");
+        }
+    }
+
+    #[test]
+    fn w4_g10_the_pet_town_flags_and_exclusions() {
+        // The pets are town NPCs (`townNPC = true`) but NOT residents:
+        // `CollectTaxes` (`Player.cs:24145`) and the arrival ladder
+        // exclude them; the party refuses them (`BirthdayParty.cs:66-69`).
+        for (kind, _) in PETS {
+            assert!(kind.is_town_pet(), "{kind:?} is a pet");
+            assert!(kind.is_town_npc(), "{kind:?} is a town NPC");
+            assert!(kind.is_town_npc_like(), "{kind:?} isLikeATownNPC");
+            assert!(kind.is_friendly(), "{kind:?} friendly");
+            assert!(!kind.is_town_resident(), "{kind:?} is NOT a resident");
+        }
+        // The residents stay pet-free.
+        assert!(!NpcKind::Guide.is_town_pet());
+        assert!(!NpcKind::Merchant.is_town_pet());
+        // The frame-count rows (`Main.cs:67147-67152` + `NPCID.cs:10464`).
+        assert_eq!(NpcKind::TownCat.humanoid_frame_count(), 28);
+        assert_eq!(NpcKind::TownDog.humanoid_frame_count(), 28);
+        assert_eq!(NpcKind::TownBunny.humanoid_frame_count(), 27);
+        assert_eq!(NpcKind::TownSlimeBlue.humanoid_frame_count(), 14);
+        assert_eq!(NpcKind::TownCat.extra_frames_count(), 18);
+        assert_eq!(NpcKind::TownDog.extra_frames_count(), 11);
+        assert_eq!(NpcKind::TownBunny.extra_frames_count(), 20);
+        assert_eq!(NpcKind::TownSlimeBlue.extra_frames_count(), 6);
+    }
+
+    #[test]
+    fn w4_g10_the_pet_bestiary_entries_and_sheets() {
+        // Each pet carries its OWN bestiary entry (the populator's
+        // `BestiaryEntry.TownNPC` rows, `BestiaryDatabaseNPCsPopulator.cs:833-842`)
+        // and its own sheet slot in `BESTIARY_NPC_SHEET_IDS`.
+        for (kind, ty) in PETS {
+            let entry = crate::bestiary::entry_for_npc(kind, SlimeVariant::Blue);
+            assert_eq!(entry.net_id, ty as i32, "{kind:?} entry net id");
+            assert_eq!(entry.kind, kind, "{kind:?} entry kind");
+            assert!(
+                crate::assets::BESTIARY_NPC_SHEET_IDS.contains(&ty),
+                "{kind:?} sheet packed"
+            );
+        }
+        // The cat/dog/bunny name plates ride the `Friends.*` override
+        // (`:646-648`); the slimes keep `NPCName.TownSlime*`.
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::TownCat, SlimeVariant::Blue).name, "Town Cat");
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::TownSlimeBlue, SlimeVariant::Blue).name, "Nerdy Slime");
+        assert_eq!(crate::bestiary::entry_for_npc(NpcKind::TownSlimeYellow, SlimeVariant::Blue).name, "Mystic Slime");
+    }
+
+    #[test]
+    fn w4_g10_the_pet_debuff_immunity_is_empty() {
+        // `NPCID.cs`'s DebuffImmunitySets has no row for the pet ids —
+        // the null-row else-branch, no immunity (`NPC.cs:17826-17832`).
+        for (kind, _) in PETS {
+            let buffs = crate::npc_buffs::NpcBuffs::for_kind(kind);
+            assert!(!buffs.buff_immune[20], "{kind:?} not Poisoned-immune");
+            assert!(!buffs.buff_immune[31], "{kind:?} not Confused-immune");
+        }
+    }
+
+    /// A grounded pet at its home tile, daytime, no danger — the idle
+    /// state's resting path. The world is a flat floor at y = 30.
+    fn resting_pet(kind: NpcKind) -> (World, Npc) {
+        let mut w = World::new("t".into(), 64, 64);
+        for x in 0..64 {
+            for y in 30..64 {
+                let i = w.index(x, y);
+                w.tiles[i] = tr_core::tile::Tile { kind: 1, ..Default::default() };
+                w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+            }
+        }
+        w.spawn_x = 20;
+        w.spawn_y = 20;
+        w.compute_column_surface();
+        w.compute_chunks();
+        let (pw, ph) = kind.size();
+        // Centre on tile 20, feet on the y = 30 floor.
+        let mut n = Npc::new(kind, 20.0 * 16.0 + 8.0 - pw / 2.0, 30.0 * 16.0 - ph, 1, 0.0);
+        n.home = Some((20, 30));
+        n.ai[0] = 0.0;
+        n.ai[1] = 120.0; // inside the pet idle window [100, 150]
+        n.vx = 0.0;
+        n.vy = 0.0;
+        (w, n)
+    }
+
+    fn solo_env<'a>(w: &'a World, players: &'a [TownPlayer]) -> TownEnv<'a> {
+        TownEnv {
+            world: w,
+            day_time: true,
+            raining: false,
+            eclipse: false,
+            slime_rain: false,
+            storming: false,
+            net_mode: 0,
+            expert_mode: false,
+            master_mode: false,
+            players,
+            npcs: &[],
+            dungeon_x: 0,
+            dungeon_y: 0,
+            combat_book: false,
+            combat_book_two: false,
+            party_up: false,
+            skyblock_low_tiles: false,
+            infected_seed: false,
+            only_shimmer_ocean: false,
+            x_mas: false,
+            town_damage_multiplier: 1.0,
+            downed_slime_king: false,
+            downed_boss1: false,
+            downed_deerclops: false,
+            downed_boss2: false,
+            downed_boss3: false,
+            downed_queen_bee: false,
+            hard_mode: false,
+            downed_queen_slime: false,
+            downed_mech1: false,
+            downed_mech2: false,
+            downed_mech3: false,
+            downed_plant: false,
+            downed_empress: false,
+            downed_fishron: false,
+            downed_golem: false,
+            downed_cultist: false,
+            homeless: false,
+            breath: 200,
+            shimmering: false,
+        }
+    }
+
+    #[test]
+    fn w4_g10_the_slime_pet_idle_draws_chance_then_300_then_240() {
+        // `NPC.cs:55750-55785`: the slime takes state 20 with NO state
+        // draw (num = 0), then Next(300) for the base timer, then
+        // Next(240) for the slime override (180 + Next(240)). The idle
+        // gate is Next(petIdleChance) with petIdleChance = num20 = 120
+        // (`:53636-53640`, the slime keeps 120).
+        let (w, mut n) = resting_pet(NpcKind::TownSlimeBlue);
+        let players: Vec<TownPlayer> = Vec::new();
+        let env = solo_env(&w, &players);
+        let stats = TownKindStats { def_life_max: 250, def_defense: 15 };
+        // Find a seed whose FIRST draw Next(120) == 0 (the idle gate).
+        let mut seed = 0;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            if r.next_max(120) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        let mut door = TownDoorLatch::default();
+        let mut doors = super::NoOpTownPetDoors;
+        let mut out = TownOutputs::default();
+        crate::npc_ai_town::town_npc_ai(&mut n, &env, stats, &mut door, &mut doors, 0, &mut rng, &mut out);
+        // The idle fired: state 20, the slime timer 180 + Next(240).
+        assert_eq!(n.ai[0], 20.0, "the slime takes state 20");
+        let mut witness = UnifiedRandom::new(seed);
+        let _ = witness.next_max(120); // the idle gate
+        let base = 200.0 + witness.next_max(300) as f32; // the base timer (overwritten)
+        let slime_timer = 180.0 + witness.next_max(240) as f32;
+        assert_eq!(n.ai[1], slime_timer, "the slime's 180 + Next(240) timer");
+        assert_ne!(n.ai[1], base, "the base 200 + Next(300) is overwritten");
+        // The stream position matches the mirror exactly.
+        assert_eq!(rng.peek(), witness.peek(), "the slime idle census");
+    }
+
+    #[test]
+    fn w4_g10_the_cat_pet_idle_state20_draws_500_plus_200() {
+        // `NPC.cs:55768-55771`: the cat's state 20 overrides the timer to
+        // 500 + Next(200). The cat's num = 3, so the state draw is
+        // Next(20, 23); force state 20 by picking a seed whose Next(20,23)
+        // returns 20.
+        let (w, mut n) = resting_pet(NpcKind::TownCat);
+        let players: Vec<TownPlayer> = Vec::new();
+        let env = solo_env(&w, &players);
+        let stats = TownKindStats { def_life_max: 250, def_defense: 15 };
+        let mut seed = 0;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            if r.next_max(120) == 0 && r.next_range(20, 23) == 20 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        let mut door = TownDoorLatch::default();
+        let mut doors = super::NoOpTownPetDoors;
+        let mut out = TownOutputs::default();
+        crate::npc_ai_town::town_npc_ai(&mut n, &env, stats, &mut door, &mut doors, 0, &mut rng, &mut out);
+        assert_eq!(n.ai[0], 20.0, "the cat's state 20");
+        let mut witness = UnifiedRandom::new(seed);
+        let _ = witness.next_max(120);
+        let state = witness.next_range(20, 23);
+        assert_eq!(state, 20);
+        let _ = 200.0 + witness.next_max(300) as f32; // base (overwritten)
+        let cat_timer = 500.0 + witness.next_max(200) as f32;
+        assert_eq!(n.ai[1], cat_timer, "the cat's 500 + Next(200) timer");
+        assert_eq!(rng.peek(), witness.peek(), "the cat idle census");
+    }
+
+    #[test]
+    fn w4_g10_the_axis_claims_the_pets_through_the_kind_guard() {
+        // The kind-guarded `7 if is_town_pet` arm routes the pets into
+        // `ai_007_town_pet_family` (the landed town machine), NOT the
+        // housed residents' `update_guide`. Drive one full `update_rng`
+        // tick on a resting pet and confirm the town machine's idle
+        // state write (the pet idle roll) landed — the guide routing
+        // would never set ai[0] = 20.
+        let (w, mut n) = resting_pet(NpcKind::TownSlimeBlue);
+        let mut p = Player::spawn(&w);
+        p.x = 40.0 * 16.0; // far from the pet (no danger / talk)
+        p.y = 28.0 * 16.0;
+        let mut seed = 0;
+        loop {
+            let mut r = UnifiedRandom::new(seed);
+            if r.next_max(120) == 0 {
+                break;
+            }
+            seed += 1;
+        }
+        let mut rng = UnifiedRandom::new(seed);
+        n.update_rng(&w, &mut p, 1.0 / 60.0, &mut rng);
+        // The town machine ran: the slime's idle pose state 20 is set
+        // (the guide routing leaves ai[0] at its own wander states).
+        assert_eq!(n.ai[0], 20.0, "the axis routed the pet to the town machine");
+    }
 }
 
 #[cfg(test)]
@@ -23669,7 +24324,7 @@ mod tests {
     /// `the_protocol_id_space_round_trips_every_kind`; a new variant breaks
     /// `to_u16`/`from_u16`'s exhaustive matches first (the compiler forces
     /// the new arm), then this array's length.
-    pub(super) const ALL_KINDS: [NpcKind; 270] = [
+    pub(super) const ALL_KINDS: [NpcKind; 280] = [
         NpcKind::Slime,
         NpcKind::DemonEye,
         NpcKind::WanderingEye,
@@ -23948,6 +24603,17 @@ mod tests {
         NpcKind::WyvernBody2,
         NpcKind::WyvernBody3,
         NpcKind::WyvernTail,
+        // W4-g10 lane 3 — the town pets (637/638/656/670/678-683).
+        NpcKind::TownCat,
+        NpcKind::TownDog,
+        NpcKind::TownBunny,
+        NpcKind::TownSlimeBlue,
+        NpcKind::TownSlimeGreen,
+        NpcKind::TownSlimeOld,
+        NpcKind::TownSlimePurple,
+        NpcKind::TownSlimeRainbow,
+        NpcKind::TownSlimeRed,
+        NpcKind::TownSlimeYellow,
     ];
 
     #[test]
