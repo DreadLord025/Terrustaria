@@ -4362,9 +4362,10 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                     | FLOWER_POW_PETAL | FLAIRON_BUBBLE | DRIPPLER_EXTRA_BALL
                     // W4-g2 (d5 F6): the Partisan's orb sets `melee = true`
                     // (`Projectile.cs:3157`). The 228/732 siblings set it too
-                    // (`:3144`/`:7713`) — their rows predate the melee census
-                    // and keep false (a recorded gap, NOT fixed here).
-                    | CHLOROPHYTE_ORB
+                    // (`:3144`/`:7713`) — the W4-g2 reconciliation round closes
+                    // the recorded gap (the spore cloud 228 and the Thunder
+                    // Spear's bolt 732 join the melee census).
+                    | CHLOROPHYTE_ORB | CHLOROPHYTE_SPORE_CLOUD | THUNDER_SPEAR_BOLT
             ),
         ranged: matches!(
             kind,
@@ -4430,10 +4431,12 @@ pub fn proj_data(kind: u16) -> Option<ProjData> {
                 // W4-g2 (d5 F5/F4/F1): the blood drop 245 (`Projectile.cs:
                 // 3284`), the hostile inferno pair 290/291/292 (`:3799`/
                 // `:3811`/`:3822`). The 294/239 siblings' magic writes were
-                // missed by the earlier census — a recorded gap, NOT fixed
-                // here; the 264/433 set NO class flag (`:3491-3502`/`:5037-
-                // 5046`).
+                // missed by the earlier census — the W4-g2 reconciliation
+                // round closes them: the Shadowbeam 294 (`:3844`) and the
+                // rain drop 239 (`:3214`) join the magic census. The 264/433
+                // set NO class flag (`:3491-3502`/`:5037-5046`).
                 | BLOOD_RAIN | SHADOWBEAM_HOSTILE | INFERNO_HOSTILE_BOLT | INFERNO_HOSTILE_BLAST
+                | SHADOWBEAM | RAIN_FRIENDLY
         ),
         // `appliesImmunityTimeOnSingleHits` (`:717` reset false): the
         // ported setters are the 1134 crystal shard (`:10643`), the
@@ -4914,6 +4917,26 @@ mod tests {
         assert_eq!(flags(DYNAMITE), (false, false, false));
         assert_eq!(flags(STICKY_BOMB), (false, false, false));
         assert_eq!(flags(BOMB_FISH), (false, false, false));
+    }
+
+    /// W4-g2 reconciliation — the four sibling rows the first census missed
+    /// (`26d-projectile-rowless-kinds-w4-g2.md` "Recorded gaps"): the melee
+    /// 228/732 (`Projectile.cs:3144`/`:7713`) and the magic 239/294
+    /// (`:3214`/`:3844`). WRITTEN NOT RUN (code-only mode).
+    #[test]
+    fn the_w4_g2_sibling_class_flags_are_census_complete() {
+        let flags = |k: u16| {
+            let d = proj_data(k).expect("a row");
+            (d.melee, d.ranged, d.magic)
+        };
+        // The Partisan's spore cloud 228: melee (`:3144`), no ranged/magic.
+        assert_eq!(flags(CHLOROPHYTE_SPORE_CLOUD), (true, false, false));
+        // The Thunder Spear's bolt 732: melee (`:7713`).
+        assert_eq!(flags(THUNDER_SPEAR_BOLT), (true, false, false));
+        // The Nimbus Rod's rain drop 239: magic (`:3214`).
+        assert_eq!(flags(RAIN_FRIENDLY), (false, false, true));
+        // The Shadowbeam Staff's beam 294: magic (`:3844`).
+        assert_eq!(flags(SHADOWBEAM), (false, false, true));
     }
 
     #[test]
