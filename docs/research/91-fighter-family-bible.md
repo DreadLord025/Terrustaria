@@ -92,18 +92,20 @@ merging it wholesale. The corrected instruction (g4 seal §2):
 2. Merge **f35** (`1abae9ade`) — owns the heal seam (§0) + the
    bag/crate/present openers; the `spawn_heals` call resolves AFTER
    `spawn_loot` on the death path.
-3. **Cherry-apply g4's TWO unique hunks after d22+f35** (if a
-   `W4-d22 g4d` fold commits them on d22 BEFORE the merge — the
-   live wiring + the three witnesses were observed in flight in
-   this worktree at the correction — step 3 is satisfied in-branch:
-   verify by SYMBOL at the merged tip, not by re-cherrying):
+3. **Cherry-apply g4's TWO unique hunks after d22+f35** — **SATISFIED
+   IN-BRANCH by the g4d fold** (the "in flight" wiring the FC observed,
+   now committed; ANALYSIS "The g4d fold"): verify by SYMBOL at the
+   merged tip, do NOT re-cherry:
    * the `spawn_coins` midas/blood-moon LIVE inputs — the 2-argument
      hunk (`npc.buffs.has_buff(72)` `NPC.cs:79631` +
      `world.blood_moon` `:79660`) + the witness
      `w4_g4_spawn_coins_midas_and_blood_moon_inputs_are_live` (g4
      `npcs.rs:8116`) + its anchors row. **Re-verified: d22 tip
      `world_sim/npcs.rs:7218-7219` AND f35 tip `:6954-6955` both still
-     `false, false`** — neither lane carries the wiring; the hunk
+     `false, false`** — neither lane carried the wiring at the FC;
+     **the g4d fold has now landed the 2-argument hunk + the witness
+     on d22** (f35's copy stays `false, false` — the merge keeps d22's
+     LIVE form); the hunk
      applies cleanly to either body (otherwise identical).
    * the two scan witnesses — `w4_g4_the_goblin_thief_bash_adds_one`
      (g4 `npc_ai_fighter_scan.rs:652`) +
@@ -111,7 +113,10 @@ merging it wholesale. The corrected instruction (g4 seal §2):
      **Re-verified: d22 has NO Thief/Skeleton bonus witness** (grep at
      its tip, zero hits). Both call the UNION signature
      (`npc_ai_fighter_scan.rs:271`) — they compile against d22
-     unchanged.
+     unchanged. **The g4d fold has now landed both on d22** (the Thief
+     fixture's door row corrected to 27 — the port's 18×38 Thief box,
+     `npc/data.rs` `SetDefaults` case 27, puts the probe row at
+     `num199 - 1 = 27`, not g4's zombie-box 28).
 4. **DROP g4-side (re-verified against d22's tip):**
    * the scan type-bonus arms — d22 `npc_ai_fighter_scan.rs:498-513`
      carries the SAME code (`t == 27` +1 `:498`,
@@ -214,7 +219,8 @@ numeric mirror verifies it: speed 5.955 / vy −2.5 / y 2165 at tick
 merge (research/238 §6). **Added by the correction:** the f35 heal
 seam's 10 witnesses (incl. the 33-kind × 5-seed × both-expert
 same-seed stream-equality replays), the cherry-applied g4
-`spawn_coins` LIVE-inputs witness + the Thief/Skeleton scan pair, and
+`spawn_coins` LIVE-inputs witness + the Thief/Skeleton scan pair (all
+three landed IN-BRANCH by the g4d fold), and
 the Peon-smash witness re-derived against d22's `kill_tile` form
 (§2.4).
 
@@ -230,7 +236,8 @@ the Peon-smash witness re-derived against d22's `kill_tile` form
 | S1 | `3ec231f9` | the c8 110-tick pin consumed (`npc.rs` fixture) |
 | S2 | `3ec231f9` | the fighter_walker_kind exact-hunk obligation |
 | S3+S4 | `3ec231f9` | the KEEP/DROP confirmation + this bible |
-| FC (this correction) | (this commit) | the FIGHTER-CORRECTION: the stale S3 probe owned, f35-owns-heal-seam (§0), merge d22+f35 never g4-wholesale + the 2 cherry hunks (§2), the 520 d41 task seed (§4.5), this receipt |
+| FC (this correction) | `7307eaae` | the FIGHTER-CORRECTION: the stale S3 probe owned, f35-owns-heal-seam (§0), merge d22+f35 never g4-wholesale + the 2 cherry hunks (§2), the 520 d41 task seed (§4.5), this receipt |
+| g4d (the cherry fold) | (this commit) | the §2.3 hunks landed IN-BRANCH: the spawn_coins LIVE inputs + witness, the Thief/Skeleton scan pair (the Thief fixture row corrected 28->27 for the 18x38 box), the scan comment's AngryBones census fix; the Peon-smash witness stays gate-deferred |
 
 The g4-side receipt (read at `e5915bfab`): DONE base `69d7737b` →
 SEAL `e5915bfab`; f35 tip `1abae9ade` (heal port `b72cdfbfc` 08:19 +
@@ -251,4 +258,9 @@ Thief/Skeleton witnesses (zero grep hits) and the f35 anchor/PORT_MAP
 rows all re-read at the named tips; the C# 520 params re-read in
 ≤100-line windows (`NPC.cs:59105-59112`/`:59249-59256`/`:59440-59448`/
 `:59733-59740`/`:59760-59770`/`:59790-59800`); docs-only, no .rs
-touched by the correction.
+touched by the correction. The g4d fold adds: the C# heal seam +
+`:78897-78898` order + `:79631`/`:79660` gates + `:60027-60034` bonus
+arms re-read (≤100-line windows); the g4 `55840d9a` diff read hunk by
+hunk; the f35 `npc_death_heals.rs` superset re-read at `1abae9ade`
+(the keep-one CONFIRMED — no heal code folded into d22); brace-balance
+delta 0/0 on both touched .rs.

@@ -492,7 +492,10 @@ pub(crate) fn fighter_obstacle_scan_g(
                 npc.ai[1] += num200;
                 // `:60023-60034` — the +6 unbreakable bonus (flag26, never
                 // fires), the type-27 GoblinThief +1 and the 31/294-296
-                // mummy +6 (`else if` chain).
+                // AngryBones-family +6 (`else if` chain — the W4-g4 FINAL
+                // census, `55840d9a`: NOT the mummies 78-80/630; the
+                // AngryBones kinds are unported, the cs_id gate keeps the
+                // arm verbatim for their landing).
                 if flag26 {
                     npc.ai[1] += 6.0;
                 } else if t == 27 {
@@ -822,6 +825,57 @@ mod tests {
         fighter_obstacle_scan(&mut z, &w, &mut UnifiedRandom::new(0));
         assert_eq!(z.ai[1], 5.0, "the flag24 zombie resets on a normal night");
         assert!(!z.wants_door_bash.expect("the request").3);
+    }
+
+    /// W4-d22 g4d (the g4 FINAL fold, `55840d9a`) — the type-bonus bash
+    /// arms (`NPC.cs:60027-60030`): the GoblinThief (27, NOT in flag24)
+    /// adds +1 per bash. The Thief accumulates on a normal night
+    /// (non-flag24) and reaches the open in TWO bashes (6 + 6 = 12 →
+    /// cap 10), one fewer than the plain +5 fighter. WRITTEN NOT RUN.
+    /// (The g4 witness's door row corrected for the port: the Thief's
+    /// 18×38 box — `npc/data.rs` `SetDefaults` case 27 — puts the probe
+    /// row at `num199 - 1 = (440 + 38 - 15)/16 - 1 = 27`, not the
+    /// zombie-box row 28.)
+    #[test]
+    fn w4_g4_the_goblin_thief_bash_adds_one() {
+        let mut w = ground();
+        let i = w.index(21, 27);
+        w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: 0, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.blood_moon = false; // normal night — the Thief is NOT in flag24
+        let mut n = zombie_at(&w, 20);
+        n.kind = NpcKind::GoblinThief;
+        n.ai[2] = 59.0;
+        fighter_obstacle_scan(&mut n, &w, &mut UnifiedRandom::new(0));
+        assert_eq!(n.ai[1], 6.0, "+5 door bash +1 Thief bonus");
+        n.ai[2] = 59.0;
+        fighter_obstacle_scan(&mut n, &w, &mut UnifiedRandom::new(0));
+        assert_eq!(n.ai[1], 10.0, "6 + 6 caps at 10");
+        assert!(n.wants_door_bash.expect("the second request").3, "the open armed in two bashes");
+    }
+
+    /// W4-d22 g4d (the g4 FINAL fold, `55840d9a`) — the +6 arm's census
+    /// correction (`NPC.cs:60031-60034`): the arm names the AngryBones
+    /// family 31/294-296 ONLY — NOT the Skeleton 21. The Skeleton (in
+    /// flag24) takes the normal-night reset then the plain +5; the
+    /// AngryBones kinds are unported (the d38 lane rows 294-296), so the
+    /// scan-level control pins the negative census. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g4_the_skeleton_family_bash_bonus_census() {
+        let mut w = ground();
+        let i = w.index(21, 28);
+        w.tiles[i] = Tile { kind: 10, frame_x: 0, frame_y: 0, ..Default::default() };
+        w.tiles[i].flags |= FLAG_ACTIVE;
+        w.blood_moon = false; // normal night — the Skeleton IS in flag24
+        let mut n = zombie_at(&w, 20);
+        n.kind = NpcKind::Skeleton;
+        n.ai[1] = 8.0;
+        n.ai[2] = 59.0;
+        fighter_obstacle_scan(&mut n, &w, &mut UnifiedRandom::new(0));
+        // flag27 resets to 0, then the plain +5 (21 is NOT in the
+        // 31/294-296 +6 arm — the census correction).
+        assert_eq!(n.ai[1], 5.0, "the Skeleton takes the plain +5 reset");
+        assert!(!n.wants_door_bash.expect("the request").3);
     }
 
     /// The else-flag8 reset (`NPC.cs:60280-60284`): with no floor under

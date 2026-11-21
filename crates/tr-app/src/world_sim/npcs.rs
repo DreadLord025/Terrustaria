@@ -7215,8 +7215,16 @@ fn spawn_coins(app: &mut App, npc: &Npc) {
         // the port's single player; the `|luck|` double-roll gate lives in
         // `drop_money` (`loot.rs:316-318`).
         app.player.as_ref().map(|p| p.luck()).unwrap_or(0.0),
-        false,                  // Midas
-        false,                  // Main.bloodMoon
+        // W4-d22 g4d — the two false stand-ins wired to their live inputs
+        // (the g4 FINAL fold, `55840d9a`): `this.midas` (`NPC.cs:79631`)
+        // is the NPC's Midas debuff (72 — the Flask of Gold / Golden
+        // Bullet inflict, `projectile_special_bullets.rs`);
+        // `Main.bloodMoon` (`:79660`) is the world's live flag. The
+        // midas `Next(30, 51)` and the blood-moon `Next(101)` bumps draw
+        // ONLY when their gates are up — a clean classic kill stays
+        // byte-identical to the pre-wiring stream.
+        npc.buffs.has_buff(72), // `this.midas` (:79631)
+        app.world.blood_moon,   // `Main.bloodMoon` (:79660)
         npc.extra_value as f32, // `NPCLoot_DropMoney`'s `+= extraValue` (:79680)
         &mut out,
     );
@@ -8240,6 +8248,52 @@ mod tests {
             *a.rngs.stream(crate::app::RngKey::UpdateNpcs),
             state_0,
             "luck 1.0 takes the hit branches"
+        );
+    }
+
+    /// W4-d22 g4d (the g4 FINAL fold, `55840d9a`) — the money stand-ins
+    /// are LIVE: a Midas-debuffed NPC spends the extra `Next(30, 51)`
+    /// bump draw; a blood moon spends the extra `Next(101)` — both on
+    /// the UpdateNPCs stream, both absent on a clean classic kill (the
+    /// pre-wiring byte-identity). `NPC.cs:79631`/`:79660`, the bump arms
+    /// in `tr_core::loot::drop_money`. WRITTEN NOT RUN.
+    #[test]
+    fn w4_g4_spawn_coins_midas_and_blood_moon_inputs_are_live() {
+        let mut a = crate::app::flow::front_flow_tests::flow_app(None, vec![], vec![]);
+        // A floor row gives the spawner a surface (the twin test above).
+        for x in 0..a.world.width {
+            let i = a.world.index(x, 5);
+            a.world.tiles[i] = tr_core::Tile { kind: 1, ..Default::default() };
+            a.world.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
+        }
+        a.world.compute_column_surface();
+        a.player = Some(crate::player::Player::spawn(&a.world));
+        let npc = Npc::spawn_slime_variant(
+            &a.world,
+            (a.player.as_ref().unwrap().x / 16.0) as i32,
+            SlimeVariant::Blue,
+        )
+        .expect("the surface spawns a blue slime");
+        spawn_coins(&mut a, &npc);
+        let clean = a.rngs.stream(crate::app::RngKey::UpdateNpcs).clone();
+        // Midas up: the same kill from a pristine stream draws MORE.
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        let mut midas_npc = npc.clone();
+        midas_npc.buffs.add_buff(72, 120);
+        spawn_coins(&mut a, &midas_npc);
+        assert_ne!(
+            *a.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            clean,
+            "the midas Next(30,51) bump joins the stream"
+        );
+        // Blood moon up: the Next(101) bump joins too.
+        a.rngs = crate::app::rng::NamedRngs::new(a.world.seed as i32);
+        a.world.blood_moon = true;
+        spawn_coins(&mut a, &npc);
+        assert_ne!(
+            *a.rngs.stream(crate::app::RngKey::UpdateNpcs),
+            clean,
+            "the blood-moon Next(101) bump joins the stream"
         );
     }
 

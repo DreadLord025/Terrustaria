@@ -39536,6 +39536,31 @@ keep-one and this lane CONSUMES it (the bible §0/§2/§4.5/§6 rewritten,
 Docs-only correction (no .rs touched); code-only lane — no
 cargo/tests/rustfmt/graphify invoked; witnesses stay written-not-run.
 
+#### The g4d fold — the two cherry hunks landed IN-BRANCH
+
+The FC's step-3 cherry hunks are committed on d22 (the "in-flight g4d
+fold" the FC observed): `world_sim/npcs.rs` `spawn_coins`' two false
+stand-ins wired LIVE (`npc.buffs.has_buff(72)` — `this.midas`,
+`NPC.cs:79631`; `app.world.blood_moon` — `Main.bloodMoon`, `:79660`;
+the bump draws `Next(30,51)`/`Next(101)` join ONLY when their gates
+are up — a clean classic kill stays byte-identical) + the witness
+`w4_g4_spawn_coins_midas_and_blood_moon_inputs_are_live`; the two scan
+witnesses `w4_g4_the_goblin_thief_bash_adds_one` +
+`w4_g4_the_skeleton_family_bash_bonus_census`
+(`npc_ai_fighter_scan.rs`, compiled against the union signature
+unchanged — the Thief fixture's door row corrected to 27 for the
+port's 18×38 Thief box, `npc/data.rs` `SetDefaults` case 27: the
+probe row is `num199 - 1 = (440+38-15)/16 - 1 = 27`, not the g4
+zombie-box row 28). The scan comment's "mummy +6" mislabel corrected
+to the AngryBones family (31/294-296 — the C# `:60031` census; the
+mummies are 78-80/630). The Peon-smash witness stays deferred to the
+merge gate (the FC §2.4 re-derivation against d22's `kill_tile`
+form). The g4 heal-seam code was NEVER folded here (f35 owns it, FC
+§0). Merger: verify by SYMBOL at the merged tip (`has_buff(72)` in
+`spawn_coins`, the three `w4_g4_*` witnesses) — do NOT re-cherry.
+Brace-balance delta 0/0 on both touched .rs; code-only, witnesses
+written not run.
+
 ## W4-d22 — the aiStyle-4 EoC RNG census + fix (code-only)
 
 The Eye of Cthulhu (`NPC.cs:19960-20801`) rode the kind-match arm
