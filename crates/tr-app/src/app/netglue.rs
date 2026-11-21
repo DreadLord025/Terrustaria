@@ -2889,7 +2889,8 @@ impl App {
     }
 
     /// Builds the `21 ItemDrop` body for one live drop (`NetMessage.cs:646-669`
-    /// minus the ownership/enemy-delay bits the port does not carry yet).
+    /// minus the ownership bits the port does not carry yet; the enemy-delay
+    /// byte landed in W4-g15 lane 5).
     fn item_state_of(slot: i16, it: &item::ItemDrop) -> net::ItemState {
         net::ItemState {
             slot,
