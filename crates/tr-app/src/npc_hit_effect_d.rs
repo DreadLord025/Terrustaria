@@ -3365,6 +3365,46 @@ fn blood_jelly_death(
     }
 }
 
+/// The 105-108 bound-town arm (`NPC.cs:87870-87901`): the 50x dust-5
+/// burst at (2.5·hd, −2.5), then the shimmer ladder. The live branch:
+/// 105/107 Bound Goblin/Goblin Tinkerer → 124/125x2/126x2 (shimmer
+/// 1308/1309x2/1310x2) + return (`:87886-87890`, sites 495-499); the
+/// 106/108 Wizard branch (the altTexture head gate + the 128/128 vs
+/// shimmer 1374/1375 mid split) lands next batch.
+fn bound_town_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+) {
+    // `:87880-87883` — the 50x dust-5 burst at the wider velocity.
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let shimmer =
+        npc.variation_index == 1 && crate::npc_ai_town::shimmer_town_transform(npc_type);
+    let vel = Vec2::new(npc.vx, npc.vy);
+    if npc_type == 105 || npc_type == 107 {
+        // `:87884-87892` — the goblin ladder + return.
+        let (head, mid, legs) = if shimmer { (1308, 1309, 1310) } else { (124, 125, 126) };
+        gore.new_gore(rng, world, pos, vel, head, 1.0); // :87886
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87887
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 20.0), vel, mid, 1.0); // :87888
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87889
+        gore.new_gore(rng, world, Vec2::new(pos.x, pos.y + 34.0), vel, legs, 1.0); // :87890
+        return;
+    }
+}
+
 /// The classic-mob chain's death halves (`NPC.cs:85560-89835`), in source
 /// order. The dispatcher mirrors the C# else-if chain: the FIRST matching
 /// arm runs (the arms are mutually exclusive on `this.type`). Every arm
@@ -3764,6 +3804,12 @@ pub fn hit_effect_d(
     // `:87850-87869` — the 242 Blood Jelly arm (sites 490-494).
     else if npc_type == 242 {
         blood_jelly_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:87870-87901` — the 105-108 bound-town arm; the 105/107 goblin
+    // ladder is live (sites 495-499), the 106/108 wizard branch lands
+    // next batch.
+    else if (105..=108).contains(&npc_type) {
+        bound_town_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction);
     }
     outcome
 }
@@ -6615,6 +6661,37 @@ mod tests {
                 let _kx = twin.next_range(-20, 21);
             }
             assert_eq!(rng.peek(), twin.peek(), "kind {kind} mirrors the C# draws");
+        }
+    }
+
+    /// `NPC.cs:87886-87890` — the goblin ladder: 105/107 normal
+    /// 124/125x2/126x2 vs shimmer 1308/1309x2/1310x2.
+    #[test]
+    fn w4_f5d_the_goblin_town_ladder_splits_on_shimmer() {
+        let w = air();
+        let mut n = mob(100.0, 100.0, 30.0, 44.0);
+        for (kind, shimmer, want) in [
+            (105, false, vec![124, 125, 125, 126, 126]),
+            (107, false, vec![124, 125, 125, 126, 126]),
+            (107, true, vec![1308, 1309, 1309, 1310, 1310]),
+        ] {
+            n.variation_index = if shimmer { 1 } else { 0 };
+            let mut gore = GorePool::new();
+            let mut dust = DustPool::new();
+            let mut rng = UnifiedRandom::new(521);
+            let _ = hit_effect_d(&n, kind, 1.0, 10.0, &mut gore, &mut dust, &ctx(), &mut rng, &w);
+            let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+            assert_eq!(types, want, "goblin {kind} shimmer={shimmer}");
+            assert_eq!(gore.slot(3).position, Vec2::new(100.0, 134.0));
+            let mut twin = UnifiedRandom::new(521);
+            for _ in 0..50 {
+                twin_dust(&mut twin, 30, 44);
+            }
+            for _ in 0..5 {
+                let _ky = twin.next_range(10, 31);
+                let _kx = twin.next_range(-20, 21);
+            }
+            assert_eq!(rng.peek(), twin.peek(), "goblin {kind} shimmer={shimmer} mirrors");
         }
     }
 }
