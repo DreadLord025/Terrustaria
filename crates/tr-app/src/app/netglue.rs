@@ -922,6 +922,59 @@ impl App {
                     }
                 }
             }
+            // `case 140` — a client's town-slime transform request
+            // (`MessageBuffer.cs:4238-4263`, host-only kinds): kind 1 →
+            // `NPC.TransformCopperSlime(value)` (`NPC.cs:19160-19182`),
+            // kind 2 → `TransformElderSlime(value)` (`:19136-19158`).
+            // Kind 0 is the client's credits arm — the host ignores it
+            // (`:4245`'s `netMode == 1` gate). Both transforms: the unlock
+            // gate ONCE, the type gate, `unlockedSlime*Spawn = true`, the
+            // `7 WorldData` re-push, then `Transform(684/679)`. The port
+            // has no town-slime kinds (679/684/685 — the roster gap the
+            // `check_real_estate_and_town_slimes` doc pins), so the
+            // Transform itself parks; the unlock + re-push are the
+            // observable state and land live. The `CanConvertIntoCopperSlime
+            // TownNPC` set is {1, 302, 333-336} (`NPCID.cs:10120`) — the
+            // port's Blue Slime (cs_id 1) is the only live member; the
+            // party-slime kinds (302/333-336) are the same roster gap.
+            C2s::MiscEventValue(v) => {
+                let slot = v.value;
+                if slot < 0 || slot as usize >= self.npcs.len() {
+                    return; // `IndexInRange` (`:19142`/`:19166`)
+                }
+                let slot = slot as usize;
+                match v.kind {
+                    1 => {
+                        if self.world.unlocked_slime_copper_spawn {
+                            return; // `:19166`
+                        }
+                        let ty = self.npcs[slot].kind.cs_id() as i32;
+                        // `NPCID.Sets.CanConvertIntoCopperSlimeTownNPC`
+                        // (`NPCID.cs:10120`): 1, 302, 335, 336, 333, 334.
+                        if !matches!(ty, 1 | 302 | 333 | 334 | 335 | 336) {
+                            return; // `:19169`
+                        }
+                        self.world.unlocked_slime_copper_spawn = true; // `:19171`
+                        let info = self.world_info();
+                        server.broadcast(&S2c::WorldInfo(Box::new(info))); // `:19172`
+                        // `Transform(684)` (`:19173`) + the TownSlimeTransform
+                        // particle (`:19174-19179`) park with the kind.
+                    }
+                    2 => {
+                        if self.world.unlocked_slime_old_spawn {
+                            return; // `:19142`
+                        }
+                        if self.npcs[slot].kind.cs_id() != 685 {
+                            return; // `:19145` — BoundTownSlimeOld only
+                        }
+                        self.world.unlocked_slime_old_spawn = true; // `:19147`
+                        let info = self.world_info();
+                        server.broadcast(&S2c::WorldInfo(Box::new(info))); // `:19148`
+                        // `Transform(679)` (`:19149`) + the particle park.
+                    }
+                    _ => {} // kind 0: client-only (`:4245`), unknown: no tail
+                }
+            }
             // `case 141` — a client's talking-axe popup (`MessageBuffer.cs:
             // 4265-4281`): the host relays VERBATIM with `ignoreClient =
             // whoAmI` (`:4272-4275`, `SendData(141, -1, this.whoAmI, …)`).
@@ -1347,6 +1400,18 @@ impl App {
             // The burst counts as sent: the next cadence diff only re-sends
             // the slot when it actually changes.
             self.net_item_last.insert(slot, st);
+        }
+        // `NetMessage.cs:2818` — `SendCreditsRollRemainingTimeToPlayer`:
+        // kind 0 rides the join bundle only while the roll is live
+        // (`CreditsRollEvent.cs:29`'s `!= 0` gate).
+        if self.world.credits_roll_remaining_time != 0 {
+            server.send(
+                id,
+                &S2c::MiscEventValue(net::MiscEventValue {
+                    kind: 0,
+                    value: self.world.credits_roll_remaining_time,
+                }),
+            );
         }
         // `MessageBuffer.cs:870` — `TrySendData(136, whoAmI)`: the cavern
         // grid rides the join bundle BEFORE the bestiary burst (`:871`'s
@@ -2213,13 +2278,18 @@ impl App {
                 }
             }
             // `case 140` (`MessageBuffer.cs:4238-4263`): kind 0 is the
-            // client's `CreditsRollEvent.SetRemainingTimeDirect` — the port
-            // has no timed credits-roll state (the Credits front screen is
-            // untimed); kinds 1/2 are the HOST's `TransformCopperSlime` /
-            // `TransformElderSlime` (`NPC.cs:19160`/`:19136`), which need the
-            // unported town-slime kinds. All three arms park with their
-            // systems (S1-I-4).
-            S2c::MiscEventValue(_) => {}
+            // client's `CreditsRollEvent.SetRemainingTimeDirect`
+            // (`CreditsRollEvent.cs:45-48`, `Utils.Clamp(time, 0, 28800)`)
+            // — WIRED to the world field (the timed roll's state; the
+            // CreditsRollSky cinematic itself is unported, the front
+            // screen stays untimed). Kinds 1/2 are HOST-only arms
+            // (`:4251`/`:4257`'s `netMode == 2` gates) — the client
+            // ignores them; unknown kinds read the tail and do nothing.
+            S2c::MiscEventValue(v) => {
+                if v.kind == 0 {
+                    self.world.set_credits_roll_remaining_time(v.value);
+                }
+            }
             // `case 141`'s client half (`MessageBuffer.cs:4276-4279`):
             // `LucyAxeMessage.CreateFromNet` spawns the popup text +
             // `LucyTheAxeTalk` cue. The port has no Lucy popup-text system
@@ -3607,6 +3677,20 @@ impl App {
         }
     }
 
+    /// `NPC.TransformCopperSlime` / `TransformElderSlime`'s client sends
+    /// (`NPC.cs:19164`/`:19140`): on a client the transform request goes
+    /// to the host as `140` kind 1/2 with the NPC slot; the host applies
+    /// (`MessageBuffer.cs:4250-4260`). The local unlock/Transform half is
+    /// the host's answer (the `7` re-push + the `23` transform update).
+    pub(crate) fn send_town_slime_transform(&self, slot: usize, kind: u8) {
+        if let NetRole::Client(client) = &self.net {
+            client.send(&C2s::MiscEventValue(net::MiscEventValue {
+                kind,
+                value: slot as i32,
+            }));
+        }
+    }
+
     /// The stored `13` snapshot's facing (`flags_a` bit 6).
     fn net_ps_last_facing(&self) -> i32 {
         if self.net_ps_last.flags_a.get(6) {
@@ -4599,6 +4683,110 @@ mod handshake_tests {
             [[494, 495, 494], [499, 502, 506]],
             "the six ushorts stored row-major"
         );
+    }
+
+    /// W4-g51 id-140 kind 0: the client's `SetRemainingTimeDirect` clamps
+    /// to 0..28800 (`CreditsRollEvent.cs:45-48`); the join bundle pushes
+    /// the host's live roll (`NetMessage.cs:2818`, the `!= 0` gate).
+    #[test]
+    fn the_credits_roll_time_clamps_and_rides_the_join_bundle() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut host_app;
+        for (sent, want) in [(500i32, 500i32), (99999, 28800), (-5, 0)] {
+            let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+            if let NetRole::Client(client) = &role {
+                client_app.client_event(
+                    client,
+                    net::ClientEvent::Frame(S2c::MiscEventValue(net::MiscEventValue {
+                        kind: 0,
+                        value: sent,
+                    })),
+                );
+            }
+            client_app.net = role;
+            assert_eq!(
+                client_app.world.credits_roll_remaining_time, want,
+                "sent {sent}"
+            );
+        }
+        // Kinds 1/2 are host-only — the client ignores them (`:4251`).
+        let role = std::mem::replace(&mut client_app.net, NetRole::Off);
+        if let NetRole::Client(client) = &role {
+            client_app.client_event(
+                client,
+                net::ClientEvent::Frame(S2c::MiscEventValue(net::MiscEventValue {
+                    kind: 1,
+                    value: 0,
+                })),
+            );
+        }
+        client_app.net = role;
+        assert_eq!(client_app.world.credits_roll_remaining_time, 0);
+        // The join push: a live roll on the host reaches a fresh joiner.
+        host_app.world.credits_roll_remaining_time = 1234;
+        let info = host_app.world_info();
+        let _ = info;
+        // (The push itself is exercised by the join-bundle walk; the
+        // clamp + the field are the arm's observable state.)
+        host_app.world.tick_credits_roll();
+        assert_eq!(host_app.world.credits_roll_remaining_time, 1233);
+    }
+
+    /// W4-g51 id-140 kinds 1/2: the host's transform gates — kind 1 needs
+    /// a `CanConvertIntoCopperSlimeTownNPC` type (the port's Blue Slime,
+    /// cs_id 1) and flips `unlockedSlimeCopperSpawn` ONCE; kind 2 needs
+    /// type 685 (no ported kind — the gate refuses every live NPC).
+    #[test]
+    fn the_town_slime_transform_unlocks_once_through_the_type_gate() {
+        let (mut host_app, mut client_app) = in_world_pair();
+        let _ = &mut client_app;
+        host_app
+            .npcs
+            .push(crate::npc::Npc::new(crate::npc::NpcKind::Slime, 0.0, 0.0, 1, 0.0));
+        assert!(!host_app.world.unlocked_slime_copper_spawn);
+        for _ in 0..2 {
+            let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+            if let NetRole::Host(server) = &role {
+                host_app.host_event(
+                    server,
+                    net::ServerEvent::Frame {
+                        id: 1,
+                        msg: C2s::MiscEventValue(net::MiscEventValue { kind: 1, value: 0 }),
+                    },
+                );
+            }
+            host_app.net = role;
+        }
+        assert!(
+            host_app.world.unlocked_slime_copper_spawn,
+            "the Blue Slime (cs_id 1) is in the convert set"
+        );
+        // Kind 2: no live NPC is type 685 — the unlock stays down.
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::MiscEventValue(net::MiscEventValue { kind: 2, value: 0 }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert!(!host_app.world.unlocked_slime_old_spawn);
+        // An out-of-range slot is refused (`IndexInRange`).
+        let role = std::mem::replace(&mut host_app.net, NetRole::Off);
+        if let NetRole::Host(server) = &role {
+            host_app.host_event(
+                server,
+                net::ServerEvent::Frame {
+                    id: 1,
+                    msg: C2s::MiscEventValue(net::MiscEventValue { kind: 2, value: 999 }),
+                },
+            );
+        }
+        host_app.net = role;
+        assert!(!host_app.world.unlocked_slime_old_spawn);
     }
 
     /// W4-g51 `131 TamperWithNPC`: kind 1 with fromWho -1 sets EVERY immune

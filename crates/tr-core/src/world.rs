@@ -305,6 +305,21 @@ pub struct World {
     /// 682 raises it; `Projectile.cs:20819`'s enemy roll gates on it) — the
     /// same Main-global standing-in (S1-P-i35).
     pub unlocked_slime_red_spawn: bool,
+    /// `NPC.unlockedSlimeOldSpawn` (`NPC.TransformElderSlime`,
+    /// `NPC.cs:19142-19147` — the 685 → 679 transform raises it once, then
+    /// re-pushes `7 WorldData`) — the same standing-in (W4-g51 id-140).
+    pub unlocked_slime_old_spawn: bool,
+    /// `NPC.unlockedSlimeCopperSpawn` (`NPC.TransformCopperSlime`,
+    /// `NPC.cs:19166-19171` — a `CanConvertIntoCopperSlimeTownNPC` NPC →
+    /// 684 raises it once) — the same standing-in (W4-g51 id-140).
+    pub unlocked_slime_copper_spawn: bool,
+    /// `CreditsRollEvent._creditsRollRemainingTime`
+    /// (`CreditsRollEvent.cs:10`) — the end-game credits roll's remaining
+    /// frames, clamped 0..28800 (`:8`'s MAX_TIME). A private static in the
+    /// C#; a world field is the port's standing-in (W4-g51 id-140). The
+    /// `140` kind-0 client arm writes it (`SetRemainingTimeDirect`,
+    /// `:45-48`); `UpdateTime` decrements (`:35-38`, `Main.cs:64968`).
+    pub credits_roll_remaining_time: i32,
     /// `NPC.combatBookWasUsed` (`WorldFile.cs`'s combatBookWasUsed flag;
     /// `FishingConditions.DidNotUseCombatBook` reads it, `Projectile.cs`'s
     /// `PrepareFishingContext` context) — the world-field standing-in
@@ -690,6 +705,9 @@ impl World {
             golem_fist_right_alive: false,
             unlocked_slime_rainbow_spawn: false,
             unlocked_slime_red_spawn: false,
+            unlocked_slime_old_spawn: false,
+            unlocked_slime_copper_spawn: false,
+            credits_roll_remaining_time: 0,
             combat_book_was_used: false,
             golem_vx: 0.0,
             slime_rain: false,
@@ -840,6 +858,29 @@ impl World {
                 };
             }
         }
+    }
+
+    /// `CreditsRollEvent.MAX_TIME_FOR_CREDITS_ROLL_IN_FRAMES`
+    /// (`CreditsRollEvent.cs:8`).
+    pub const CREDITS_ROLL_MAX_TIME: i32 = 28800;
+
+    /// `CreditsRollEvent.IsEventOngoing` (`CreditsRollEvent.cs:12`).
+    pub fn credits_roll_ongoing(&self) -> bool {
+        self.credits_roll_remaining_time > 0
+    }
+
+    /// `CreditsRollEvent.SetRemainingTimeDirect` (`CreditsRollEvent.cs:45-48`):
+    /// `Utils.Clamp(time, 0, 28800)` — the `140` kind-0 client arm.
+    pub fn set_credits_roll_remaining_time(&mut self, time: i32) {
+        self.credits_roll_remaining_time = time.clamp(0, Self::CREDITS_ROLL_MAX_TIME);
+    }
+
+    /// `CreditsRollEvent.UpdateTime` (`CreditsRollEvent.cs:35-38`):
+    /// `Clamp(remaining - 1, 0, 28800)` — one tick, called from
+    /// `Main.UpdateTime` (`Main.cs:64968`) regardless of the day rate.
+    pub fn tick_credits_roll(&mut self) {
+        self.credits_roll_remaining_time =
+            (self.credits_roll_remaining_time - 1).clamp(0, Self::CREDITS_ROLL_MAX_TIME);
     }
 
     /// `Main.IsFastForwardingTime` (`Main.cs:6160-6167`): a dial fast-forward is

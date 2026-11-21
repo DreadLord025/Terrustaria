@@ -216,7 +216,11 @@ pub mod id {
     pub const DEAD_PLAYER: u8 = 135; // MessageID.cs:284 / NetMessage.cs:1569-1571 / MessageBuffer.cs:4195-4203
     /// `140 SetMiscEventValues` (`MessageID.cs:294`) — kind 0 is the credits
     /// roll's remaining time (`NetMessage.cs:1591-1594`,
-    /// `CreditsRollEvent.cs:27-33`, `MessageBuffer.cs:4238-4249`).
+    /// `CreditsRollEvent.cs:27-33`, `MessageBuffer.cs:4238-4249`); kinds 1/2
+    /// are the client's town-slime transform requests (`NPC.cs:19164`/
+    /// `:19140`). W4-g51 wired kind 0 (the world field + the join push) and
+    /// the host's kind 1/2 unlock gates; the Transform halves park with the
+    /// unported town-slime kinds.
     pub const MISC_EVENT_VALUES: u8 = 140;
     pub const PROJECTILE_TRACKERS: u8 = 142; // MessageID.cs:298 / NetMessage.cs:1603-1610 / MessageBuffer.cs:4282-4297
     pub const SYNC_LOADOUT: u8 = 147; // MessageID.cs:308 / NetMessage.cs:1624-1628 / MessageBuffer.cs:4328-4343
@@ -1588,9 +1592,10 @@ pub struct RevengeMarker {
 }
 
 /// `msg 140 SetMiscEventValues`'s body (`NetMessage.cs:1591-1594`): a kind
-/// byte then an `int`. The join bundle only sends kind 0 — the credits roll's
-/// remaining frames (`CreditsRollEvent.cs:27-33`); kinds 1/2 are the server's
-/// slime transforms (`MessageBuffer.cs:4250-4260`) and stay unported.
+/// byte then an `int`. Kind 0 is the credits roll's remaining frames
+/// (`CreditsRollEvent.cs:27-33`, S2c); kinds 1/2 are the client's town-slime
+/// transform requests (`NPC.cs:19164`/`:19140`, C2s) — the host applies
+/// (`MessageBuffer.cs:4250-4260`). Both directions since W4-g51 id-140.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MiscEventValue {
     pub kind: u8,
@@ -1934,6 +1939,12 @@ pub enum C2s {
     /// `137 RequestNPCBuffRemoval` - a client asks the host to drop an NPC
     /// buff (`NPC.cs:89995-89998`; `MessageBuffer.cs:4219-4229`).
     NpcBuffRemovalRequest(NpcBuffRemovalRequest),
+    /// `140 SetMiscEventValues` - kinds 1/2 are the CLIENT's town-slime
+    /// transform requests (`NPC.TransformCopperSlime`/`TransformElderSlime`'s
+    /// `netMode == 1` arms, `NPC.cs:19164`/`:19140`); the host applies
+    /// (`MessageBuffer.cs:4250-4260`). Kind 0 is host-sent only (the credits
+    /// roll, `S2c::MiscEventValue`).
+    MiscEventValue(MiscEventValue),
     /// `141 LucyTheAxeMessage` - a talking-axe popup
     /// (`LucyAxeMessage.cs:133`; the host relays, `:4274`).
     LucyPopup(LucyPopup),
@@ -2214,6 +2225,7 @@ impl C2s {
             Self::FishOutNpc(_) => id::FISH_OUT_NPC,
             Self::UpdatePlayerLuckFactors(_) => id::UPDATE_PLAYER_LUCK_FACTORS,
             Self::NpcBuffRemovalRequest(_) => id::NPC_BUFF_REMOVAL_REQUEST,
+            Self::MiscEventValue(_) => id::MISC_EVENT_VALUES,
             Self::LucyPopup(_) => id::LUCY_POPUP,
             Self::CrystalInvasionSkip => id::CRYSTAL_INVASION_SKIP,
             Self::SpectatePlayer(_) => id::SPECTATE_PLAYER,
@@ -2300,6 +2312,8 @@ impl C2s {
             Self::UpdatePlayerLuckFactors(l) => l.write_to(w),
             // `NetMessage.cs:1583-1586`: (short)npc, (ushort)buff type.
             Self::NpcBuffRemovalRequest(q) => w.i16(q.npc).u16(q.buff_type),
+            // `NetMessage.cs:1591-1594`: (byte)kind + (int)number.
+            Self::MiscEventValue(v) => w.u8(v.kind).i32(v.value),
             // `NetMessage.cs:1595-1602`: (byte)source + (byte)variation +
             // the velocity floats + (int)x + (int)y.
             Self::LucyPopup(l) => w
@@ -2473,6 +2487,11 @@ impl C2s {
             id::NPC_BUFF_REMOVAL_REQUEST => Self::NpcBuffRemovalRequest(NpcBuffRemovalRequest {
                 npc: r.i16()?,
                 buff_type: r.u16()?,
+            }),
+            // `MessageBuffer.cs:4240-4241`: (byte)kind + (int)value.
+            id::MISC_EVENT_VALUES => Self::MiscEventValue(MiscEventValue {
+                kind: r.u8()?,
+                value: r.i32()?,
             }),
             // `MessageBuffer.cs:4267-4271`: source, variation, velocity
             // floats, then the position ints.
@@ -5438,6 +5457,26 @@ mod tests {
         match S2c::decode(f[2], &mut NetReader::new(&f[3..])).expect("decode") {
             S2c::LucyPopup(d) => assert_eq!(d, l),
             other => panic!("expected 141, got {:?}", other.msg_id()),
+        }
+    }
+
+    /// W4-g51 id-140: the `140` C2s twin (kinds 1/2, the client's town-slime
+    /// transform requests) byte-pins the kind byte + int value
+    /// (`NetMessage.cs:1591-1594`) and round-trips — the same body the S2c
+    /// kind-0 credits arm carries.
+    #[test]
+    fn w4_g51_misc_event_value_c2s_round_trips() {
+        for (kind, value) in [(1u8, 7i32), (2, 12), (0, 28800)] {
+            let v = MiscEventValue { kind, value };
+            let mut body = vec![kind];
+            body.extend_from_slice(&value.to_le_bytes());
+            let c = C2s::MiscEventValue(v).encode();
+            assert_eq!(c[2], 140);
+            assert_eq!(&c[3..], &body);
+            match C2s::decode(c[2], &mut NetReader::new(&c[3..])).expect("decode") {
+                C2s::MiscEventValue(d) => assert_eq!(d, v),
+                other => panic!("expected 140, got {:?}", other.msg_id()),
+            }
         }
     }
 

@@ -351,6 +351,12 @@ impl App {
     // `Main.UpdateWorld_Time` (`Main.cs:18083`) — `Main.UpdateTime`
     // runs after the entity half, never before it.
     self.phase("time");
+    // `CreditsRollEvent.UpdateTime` (`Main.cs:64968` →
+    // `CreditsRollEvent.cs:35-38`): one decrement per UpdateTime call,
+    // independent of the day rate — the C# runs UpdateTime even while
+    // the creative freeze holds `Main.time` (dayRate 0), so the tick
+    // sits OUTSIDE the port's rate gate (W4-g51 id-140).
+    self.world.tick_credits_roll();
     if !crate::env::day_pinned() {
         // `FreezeTime`/`ModifyTimeRate` (`CreativePowers.cs:861-1000`/
         // `:1441`): the powers' multiplier folds into the clock tick
