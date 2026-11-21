@@ -39332,3 +39332,90 @@ are unreachable in classic, so the census is complete for the live path.
 Verification: code-only — every draw site re-read against the cited C#
 windows; the pool signatures checked by read/grep. The 2 stream-parity
 witnesses (`npc.rs`) are WRITTEN, NOT RUN — no cargo/tests invoked.
+## W4-d22 — the aiStyle-5 census fix (code-only)
+
+`AI_005_EaterOfSouls` (`NPC.cs:50244-50916`) is the shared hover family
+for the ported kinds Eater of Souls (6), Hornet (42), Meteor Head (23),
+Servant of Cthulhu (5) and the volley bees (210/211); the Probe (139)
+rides the sim's `update_destroyers` pass. The pre-W4-d22 port
+(`npc_ai::hover_step` + the `update_hover`/`update_servant_of_cthulhu`/
+`update_bee_hover` wrappers) was a movement stand-in: the fly core's
+num/num2 approach was faithful, but the arm's per-tick RNG draws, the
+drift, the wet rows, the flee and the Hornet's attack ladder were all
+missing or invented. The census (classic solo; expert/remix/getGood
+constants-off):
+
+RNG / UpdateNPCs stream (the critical deltas — the family arm took no
+rng, so every draw below was skipped, desyncing the stream each tick):
+
+- `:50695-50704` — the bounce-list dust gate: `Next(20)` EVERY tick for
+  the types on the `:50656` list (6/23 here); on 0 a type-18 dust at
+  `this.color`/`this.scale`. The EoS and Meteor Head draw this.
+- `:50708-50712` — the ELSE dust gate: `Next(40)` EVERY tick for the
+  kinds off the list (the servant, 5); on 0 a type-5 dust at the stock
+  colour/scale. The servant draws this.
+- `:50754-50810` — the Hornet stinger ladder: the `ai[1] == 101` tick
+  plays `SoundID.Item17` (`:50756`); every tick climbs `ai[1]` by
+  `Next(5,20) * 0.1 * scale` (`:50761`); at `>= 130` the shot rolls the
+  ±20 jitter pair X-then-Y (`:50784-50785`) and fires the hostile 55
+  (`timeLeft = 300`, `:50797`). The whole arm was absent.
+- The bees (210/211) draw NOTHING — the `:50695` type list excludes them
+  and the arm has no other draw site (pinned by a witness).
+
+Behavioural deltas restored:
+
+- `:50250-50253` — the target re-pick gate `target < 0 || target <= 255
+  || dead` is ALWAYS true (`target <= 255` covers every slot), so
+  `TargetClosest()` runs EVERY tick. The stand-in never re-picked.
+- `:50448-50478` — the `num8 | flag4` drift: `ai[0]++` with ±0.023 on Y
+  by the counter sign / ±0.023 on X by the ±100 band / the 200 wrap,
+  gated `num7 > 100` for num8 (the EoS) and unconditional for flag4 (the
+  Hornet, the bees); the EoS also takes the `< 150` near blend (×0.007).
+  The bees' old inline drift ran BEFORE the aim normalize; the C# order
+  (normalize → drift → flee → approach) is restored inside `hover_step`.
+- `:50656-50688` — the tile bounce reads the PREVIOUS tick's
+  `collideX`/`collideY` latches and `oldVelocity` (`NPC.cs:92538`'s
+  capture), NOT a same-tick wall probe with a mid-step velocity capture
+  (the `npc_ai_eye` precedent). The integration moved OUT of the core
+  into the wrapper's tail (`NPC.cs:90490-90498` — the C# integrates in
+  `UpdateCollision` AFTER `AI()`): noTileCollide kinds fly raw, the
+  others ride `integrate_flyer_collision` (the `update_cave_bat` tail).
+- `:50714-50753` — the wet rows: EoS ×0.95/−0.3/−2, Hornet
+  ×0.95/−0.5/−4 + a wet `TargetClosest` re-pick (`:50752`).
+- `:50906-50910` — the day/dead flee `velocity.Y -= num2*2` +
+  `EncourageDespawn(10)`. The exemption list holds 6/23/42/210/211 — the
+  servant (5) is NOT exempt, so it climbs away at dawn (−0.06/tick).
+- `:50911-50914` — the velocity sign-flip netUpdate tail (vs oldVelocity,
+  gated !justHit).
+- The servant's inline 2-frame flap is REMOVED — `AI_005` does no frame
+  work; the clock lives in `find_frame`'s case-5 arm alone (the inline
+  flap double-counted it). The case-5 arm's borrowed `num2` velocity
+  bump is also removed (C# `:76931-76942` is a plain 8-tick counter).
+
+Structure: `hover_step` is now the AI-only fly core (drift/approach/
+rotation/bounce-latches); `hover_dust_wet` owns the dust gate + wet lift;
+`hover_flee` owns the flee + netUpdate tail. The wrapper interleaves the
+Hornet ladder between the wet lift and the flee (the C# order). The
+stinger (55) lands as a `proj_data` row + the `ai_hornet_stinger` arm
+(the `flag3 = false` resting-counter flight, `Projectile.cs:55954` —
+dead straight, no gravity; the `:55490-55494` trail dust is the
+pool-wide dust skip) + the sim's `timeLeft = 300` list. The Item17 cue
+joins `NpcSoundCue` (the sim drains it on the UpdateNPCs stream).
+
+DELIBERATE FIDELITY DELTA: the S1-D-2 A/B pin
+(`s1_d_2_the_style_axis_keeps_the_hover_behaviour`) froze the stand-in's
+byte sequence and is RETIRED (the style-3 scarecrow precedent) — the fix
+changes behaviour on purpose. Six stream-parity witnesses replace it
+(one gate draw per dust kind, one ladder draw for the Hornet, the
+three-draw shot sequence, zero for the bees) plus the preset-row pin.
+
+ORDER DEVIATION (documented, inherited): the wet flag is latched at the
+wrapper head (`is_wet`, the `update_cave_bat` convention) rather than a
+tick later in `UpdateCollision`; the Item17 cue queues on `wants_sound`
+and drains after the machine (the S1-E-21g convention) — the draw COUNT
+is exact, the within-tick placement is the deferred sound-inline seam.
+
+Verification: code-only — every draw/behaviour site re-read against the
+cited C# windows; the pool/signature seams checked by read/grep. The 6
+witnesses (`npc.rs` + `npc_ai.rs`) are WRITTEN, NOT RUN — no cargo/tests
+invoked.

@@ -5269,6 +5269,18 @@ impl Projectile {
         self.ai_style1_flight(world, true);
     }
 
+    /// W4-d22: the Hornet's stinger (55) — `AI_001` with the flight counter
+    /// at rest. The kind is on the `flag3 = false` list (`Projectile.cs:
+    /// 55954`), so `ai[0]` never climbs and the `>= 15` gravity never fires
+    /// (`:57568-57579`); the generic rotation (`:57750`) + the ±16 clamp
+    /// (`:57764`) + the tile-kill movement stand. The `:55490-55494` trail
+    /// dust (one dust 18, noGravity) is the pool-wide dust skip (no RNG in
+    /// the pool — the slice-A precedent), so the `UpdateProjectiles` stream
+    /// stays untouched by construction.
+    fn ai_hornet_stinger(&mut self, world: &World) {
+        self.ai_style1_flight(world, false);
+    }
+
     /// The aiStyle-14 core (`Projectile()`'s `else if (this.aiStyle == 14)`
     /// branch, the default arm `Projectile.cs:25143-25158` + the tile-kill
     /// scan `:25726-25737` + the lava/shimmer kills `:25739-25750`): the
@@ -16911,6 +16923,14 @@ impl ProjectilePool {
                                     world,
                                 )
                             }
+                            // W4-d22 — the Hornet's stinger (55): on the
+                            // `flag3 = false` flight-counter list
+                            // (`Projectile.cs:55954`), so the counter rests
+                            // and the generic gravity never fires — it flies
+                            // dead straight. The `:55490-55494` trail dust
+                            // (one dust 18, noGravity) is the pool-wide dust
+                            // skip (no RNG in the pool, the slice-A precedent).
+                            HORNET_STINGER => self.slots[i].ai_hornet_stinger(world),
                             _ => self.slots[i].ai_arrow(world),
                         },
                         3 => {

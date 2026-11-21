@@ -1143,6 +1143,9 @@ fn play_npc_sound_request(
         NpcSoundCue::Item14 => {
             audio.play_npc_item_cue(14, req.x, req.y, rng);
         }
+        NpcSoundCue::Item17 => {
+            audio.play_npc_item_cue(17, req.x, req.y, rng);
+        }
         NpcSoundCue::Item34 => {
             audio.play_npc_item_cue(34, req.x, req.y, rng);
         }
@@ -5924,6 +5927,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
         // (`NPC.cs:31307`/`:31333`/`:31568` - S1-D-3), Plantera's seeds
         // (`NPC.cs:31966-31969` - every volley kind except the 277 thorn
         // ball), the Queen Bee's stinger (`NPC.cs:30743` - S1-D-3 W-3),
+        // the Hornet's stinger (`NPC.cs:50797` - W4-d22 style-5),
         // the VoodooDemon's DemonSickle (`NPC.cs:23450` — the S1-D-3 bat
         // reconcile's `bat_ai` shot drain) and the Skeletron head's
         // spin-shot Skull (`NPC.cs:22013` - B-1).
@@ -5934,6 +5938,7 @@ pub(crate) fn update_npcs(app: &mut App, dt: f32) {
             || kind == crate::projectile::SEED_PLANTERA
             || kind == crate::projectile::POISON_SEED_PLANTERA
             || kind == crate::projectile::QUEEN_BEE_STINGER
+            || kind == crate::projectile::HORNET_STINGER
             || kind == crate::projectile::DEMON_SICKLE
             || kind == crate::projectile::SKULL
         {

@@ -1158,6 +1158,9 @@ pub enum NpcSoundCue {
     /// `PlaySound(SoundID.Item14, pos)` — the Golem fist's dash launch
     /// (`NPC.cs:19415`, `AI_047_GolemFist`'s `ai[1] == 1` tick); case 2.
     Item14,
+    /// `PlaySound(SoundID.Item17, pos)` — the Hornet's stinger shot
+    /// (`NPC.cs:50756`, `AI_005`'s `ai[1] == 101` tick); case 2.
+    Item17,
     /// `PlaySound(SoundID.Item34, pos)` — the Spazmatism flamethrower
     /// loop (`NPC.cs:27493`, the 23-tick `localAI[2]` wrap); case 2.
     Item34,
@@ -4697,8 +4700,14 @@ impl Npc {
             // desyncing the UpdateNPCs stream every tick.
             4 => self.update_eye_of_cthulhu(world, player, rng, dust, dust_ctx, gore),
             // `if (this.aiStyle == 5) { this.AI_005_EaterOfSouls(); return; }`
-            // (`NPC.cs:20802-20806`).
-            5 => self.ai_005_hover_family(world, player),
+            // (`NPC.cs:20802-20806`). W4-d22: the family rides the axis with
+            // the caller's stream + the live dust pool — the EoS/MeteorHead
+            // per-tick `Next(20)` dust gate (`:50695`), the servant's
+            // `Next(40)` gate (`:50708`) and the Hornet's stinger ladder
+            // (`Next(5,20)` + the ±20 jitter pair, `:50761`/`:50784-50785`)
+            // were SKIPPED by the kind-arm entry (no rng), desyncing the
+            // UpdateNPCs stream every tick.
+            5 => self.ai_005_hover_family(world, player, rng, dust, dust_ctx),
             // `else if (this.aiStyle == 21)` (`NPC.cs:24615-24665`) — the
             // BlazingWheel (72), the style's only user. The small-kinds
             // wiring wave: the ricochet machine rides `npc_ai_style21`
@@ -5172,23 +5181,45 @@ impl Npc {
         self.wants_transform = None;
     }
 
-    /// S1-D-2: the aiStyle-5 family arm — `AI_005_EaterOfSouls`
-    /// (`NPC.cs:50244-50700`), shared by every style-5 kind. The per-type
+    /// S1-D-2 / W4-d22: the aiStyle-5 family arm — `AI_005_EaterOfSouls`
+    /// (`NPC.cs:50244-50916`), shared by every style-5 kind. The per-type
     /// rows (`num`/`num2`/`flag5`/the rotation arms) are the kind dispatch
-    /// inside the one family machine; behaviour is the pre-axis arms',
-    /// verbatim (the A/B pin `s1_d_2_the_style_axis_keeps_the_hover_behaviour`).
-    fn ai_005_hover_family(&mut self, world: &World, player: &Player) {
+    /// inside the one family machine. W4-d22 threads the caller's stream +
+    /// the live dust pool so the per-tick dust gates (`:50695`/`:50708`)
+    /// and the Hornet's stinger ladder (`:50754-50810`) ride the
+    /// `UpdateNPCs` stream (the pre-W4-d22 kind-arm entry took no rng and
+    /// skipped every draw). The per-kind wrappers own the target re-pick,
+    /// the fly core, the dust/wet tail, the integration and the flee tail.
+    fn ai_005_hover_family(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         match self.kind {
-            // The type-5 branch (`NPC.cs:50379-50383` + `:50418-50579`):
-            // the servant's own snapped-aim machine (S1-D-3k).
-            NpcKind::ServantOfCthulhu => self.update_servant_of_cthulhu(player),
-            NpcKind::EaterOfSouls => self.update_hover(world, player, HoverParams::EATER_OF_SOULS),
-            NpcKind::Hornet => self.update_hover(world, player, HoverParams::HORNET),
-            NpcKind::MeteorHead => self.update_hover(world, player, HoverParams::METEOR_HEAD),
+            // The type-5 branch (`NPC.cs:50379-50383` + `:50418-50916`):
+            // the servant's snapped-aim machine (S1-D-3k) + the `:50708`
+            // Next(40) dust gate and the dawn flee (W4-d22).
+            NpcKind::ServantOfCthulhu => {
+                self.update_servant_of_cthulhu(world, player, rng, dust, dust_ctx)
+            }
+            NpcKind::EaterOfSouls => {
+                self.update_hover(world, player, HoverParams::EATER_OF_SOULS, rng, dust, dust_ctx)
+            }
+            NpcKind::Hornet => {
+                self.update_hover(world, player, HoverParams::HORNET, rng, dust, dust_ctx)
+            }
+            NpcKind::MeteorHead => {
+                self.update_hover(world, player, HoverParams::METEOR_HEAD, rng, dust, dust_ctx)
+            }
             // The Queen Bee's volley bees — `AI_005_EaterOfSouls`'s
             // type-210/211 branch (`NPC.cs:50384-50413`): num 5, num2
             // 0.1·num3 with the (ai[1]-60)/60 ramp and the ±6 clamps.
-            NpcKind::Bee | NpcKind::BeeSmall => self.update_bee_hover(world, player),
+            NpcKind::Bee | NpcKind::BeeSmall => {
+                self.update_bee_hover(world, player, rng, dust, dust_ctx)
+            }
             // The Probe (139): its laser/rotation arm runs in the sim's
             // `update_destroyers` pass (`npc_ai_style37::probe_step` — the
             // shot needs the hostile-shot seam); the per-NPC step is the
@@ -7853,7 +7884,10 @@ impl Npc {
                 self.frame = row;
             }
             NpcKind::ServantOfCthulhu => {
-                self.frame_counter += 1.0 + (num2 > 0) as i32 as f32 + (num2 == 4) as i32 as f32;
+                // `case 5` (`NPC.cs:76931-76942`): the plain 8-tick counter
+                // over the 2-frame strip — NO num2 velocity term (the
+                // pre-W4-d22 arm borrowed the case-49 group's +vy bump).
+                self.frame_counter += 1.0;
                 if self.frame_counter >= 8.0 {
                     self.frame_counter = 0.0;
                     self.frame = if self.frame + 1 >= 2 {
@@ -9863,9 +9897,8 @@ impl Npc {
     }
 
     /// `AI_005_EaterOfSouls`'s type-5 branch (`NPC.cs:50379-50383` — the
-    /// `num`/`num2` pair) + the shared fly core (`:50418-50579`) + the
-    /// type-5 rotation (`:50652-50655`) — the Servant of Cthulhu, the
-    /// Eye's minion.
+    /// `num`/`num2` pair) + the shared fly core (`:50418-50916`) — the
+    /// Servant of Cthulhu, the Eye's minion.
     ///
     /// The servant flies on the 8-px snapped aim (`(int)(x / 8f) * 8` on
     /// both the target's centre and its own), approaches it at the 5-speed
@@ -9875,76 +9908,41 @@ impl Npc {
     ///
     /// `SetDefaults` case 5 gives it `noGravity` + `noTileCollide`, so the
     /// step is a raw integration (no tile collision, no gravity).
-    fn update_servant_of_cthulhu(&mut self, player: &Player) {
-        let (w, h) = self.size();
+    ///
+    /// W4-d22: the inline fly core is retired in favour of the shared
+    /// `hover_step` (the SERVANT_OF_CTHULHU preset carries the identical
+    /// 5/0.03 pair, flag5 double-add and velocity tilt). The wrapper adds
+    /// the every-tick target re-pick (`:50250`), the `:50708` Next(40)
+    /// dust gate (`hover_dust_wet`), the dawn/dead flee (`hover_flee` —
+    /// the servant is NOT on the `:50906` exemption list, so it climbs
+    /// away at dawn, `velocity.Y -= 0.06`) and the raw integration tail.
+    /// The inline 2-frame flap is REMOVED — the C# `AI_005` does no frame
+    /// work; the clock lives in `find_frame`'s case-5 arm alone (the
+    /// pre-W4-d22 inline flap double-counted it).
+    fn update_servant_of_cthulhu(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        // `:50250-50253` — the target re-pick (always-true gate).
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        crate::npc_target::target_closest(self, world, &[cand], true, 5, 0);
         let (pcx, pcy) = player.center();
-        // The `num`/`num2` pair (`NPC.cs:50379-50383` — type 5): the speed
-        // 5 and the accel 0.03, the shared table's servant row.
+        let target = crate::npc_ai::HoverTarget {
+            center_x: pcx,
+            center_y: pcy,
+            top_y: player.y,
+            dead: player.hp <= 0,
+        };
         let params = HoverParams::SERVANT_OF_CTHULHU;
-        // `:50418-50426` — the 8-px grid snap: the target's centre and the
-        // NPC's own centre both floor to the 8-px grid, and the aim is the
-        // difference of the snapped values.
-        let mut num4 = ((pcx / 8.0) as i32 * 8) as f32;
-        let mut num5 = ((pcy / 8.0) as i32 * 8) as f32;
-        let own_x = ((self.x + w * 0.5) / 8.0) as i32 * 8;
-        let own_y = ((self.y + h * 0.5) / 8.0) as i32 * 8;
-        num4 -= own_x as f32;
-        num5 -= own_y as f32;
-        // `:50427-50444` — the normalized aim at the `num` speed; a zero
-        // distance keeps the current velocity (`num4 = velocity.X`).
-        let num6 = (num4 * num4 + num5 * num5).sqrt();
-        if num6 == 0.0 {
-            num4 = self.vx;
-            num5 = self.vy;
-        } else {
-            let scale = params.max_speed / num6;
-            num4 *= scale;
-            num5 *= scale;
-        }
-        // `:50480-50484` — a dead target: the servant flies off along the
-        // facing direction (`num`/`2` sideways, `-num`/`2` down).
-        if player.hp <= 0 {
-            num4 = self.facing as f32 * params.max_speed / 2.0;
-            num5 = -params.max_speed / 2.0;
-        }
-        // `:50547-50578` — the approach (`num2`) with the `flag5` double-add
-        // on the sign flips (type 5 keeps `flag5` true).
-        if self.vx < num4 {
-            self.vx += params.accel;
-            if self.vx < 0.0 && num4 > 0.0 {
-                self.vx += params.accel;
-            }
-        } else if self.vx > num4 {
-            self.vx -= params.accel;
-            if self.vx > 0.0 && num4 < 0.0 {
-                self.vx -= params.accel;
-            }
-        }
-        if self.vy < num5 {
-            self.vy += params.accel;
-            if self.vy < 0.0 && num5 > 0.0 {
-                self.vy += params.accel;
-            }
-        } else if self.vy > num5 {
-            self.vy -= params.accel;
-            if self.vy > 0.0 && num5 < 0.0 {
-                self.vy -= params.accel;
-            }
-        }
-        // `:50652-50655` — the rotation: the velocity tilt (the servant is
-        // in the `else` arm — the aim-tilt types are 6/94/173/619).
-        self.rotation = self.vy.atan2(self.vx) - 1.57;
+        crate::npc_ai::hover_step(self, world, target, params);
+        crate::npc_ai::hover_dust_wet(self, world, params, rng, dust, dust_ctx);
+        crate::npc_ai::hover_flee(self, world, target, params);
+        // `NPC.cs:90495-90498` — noTileCollide: the raw integration.
         self.integrate_no_tile_collide();
-        // The 2-frame flap (`Main.npcFrameCount[5] = 2`).
-        self.frame_counter += 1.0;
-        if self.frame_counter >= 8.0 {
-            self.frame_counter = 0.0;
-            self.frame = if self.frame + 1 >= 2 {
-                0
-            } else {
-                self.frame + 1
-            };
-        }
     }
 
     /// `AI_015_KingSlime` (`NPC.cs:43121-43414`) — the King Slime's machine:
@@ -10665,7 +10663,36 @@ impl Npc {
     /// `hover_step` — the no-gravity fly toward the player with the vanilla
     /// tunables. The frame cycles live in `find_frame` (the C#'s
     /// `NPC.FindFrame`), not here.
-    fn update_hover(&mut self, world: &World, player: &Player, params: HoverParams) {
+    ///
+    /// W4-d22: the full `NPC.cs:50244-50916` sequence — the every-tick
+    /// target re-pick (the C# gate `target < 0 || target <= 255 || dead`
+    /// at `:50250` is ALWAYS true: `target <= 255` covers every slot, so
+    /// `TargetClosest()` runs each tick), the wet flag, the fly core, the
+    /// dust gate + wet lift (`hover_dust_wet`), the Hornet's stinger
+    /// ladder (`:50754-50810`, between the wet lift and the flee), the
+    /// flee/netUpdate tail (`hover_flee`) and the `UpdateNPC` integration
+    /// (`NPC.cs:90490-90498` — the C# integrates AFTER `AI()`; the
+    /// noTileCollide kinds fly raw, the others ride the flyer collision
+    /// tail that latches `collideX/Y` + captures `oldVelocity` for the
+    /// NEXT tick's bounce, the `update_cave_bat` precedent).
+    fn update_hover(
+        &mut self,
+        world: &World,
+        player: &Player,
+        params: HoverParams,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
+        // `:50250-50253` — the target re-pick (always-true gate, above).
+        let cand = crate::npc_target::session_candidate_for(player, self.kind);
+        crate::npc_target::target_closest(self, world, &[cand], true, 5, 0);
+        let (w, h) = self.size();
+        // This tick's `Entity.wet` (the `is_wet` pass, the `update_cave_bat`
+        // convention — the C# latches it in UpdateCollision, a tick later;
+        // the documented stand-in granularity, ANALYSIS "The bat/fish
+        // reconcile").
+        self.wet = is_wet(world, self.x, self.y, w, h);
         let (pcx, pcy) = player.center();
         // `NPC.GetTargetData`: the centre drives the velocity aim, the top
         // edge (`Player.position.Y`) the surface-damping gate (`NPC.cs:50354`),
@@ -10677,6 +10704,128 @@ impl Npc {
             dead: player.hp <= 0,
         };
         crate::npc_ai::hover_step(self, world, target, params);
+        crate::npc_ai::hover_dust_wet(self, world, params, rng, dust, dust_ctx);
+        // `:50739-50810` — the Hornet row: the wet TargetClosest re-pick
+        // (`:50752`) then the stinger ladder. The solo fold keeps one
+        // player, so the re-pick re-commits the same slot; `targetData`
+        // was captured at `:50293` BEFORE it, so the ladder reads the
+        // pre-wet snapshot (the `target` above).
+        if self.kind == NpcKind::Hornet {
+            if self.wet {
+                crate::npc_target::target_closest(self, world, &[cand], true, 5, 0);
+            }
+            self.hornet_stinger_ladder(world, player, target, rng);
+        }
+        crate::npc_ai::hover_flee(self, world, target, params);
+        // `NPC.cs:90490-90498` — the integration tail.
+        if params.no_tile_collide {
+            self.integrate_no_tile_collide();
+        } else {
+            self.integrate_flyer_collision(world);
+        }
+    }
+
+    /// W4-d22: the Hornet's stinger ladder — `AI_005`'s type-42/176/231-235
+    /// attack arm (`NPC.cs:50754-50810`). The `ai[1] == 101` tick plays
+    /// `SoundID.Item17` (`:50756`, queued on `wants_sound` — the sim drains
+    /// it after the machine, the S1-E-21g convention) and resets; every
+    /// tick climbs `ai[1]` by `Next(5,20) * 0.1 * scale` (`:50761`; the
+    /// type-176 double and the getGoodWorld triple are constants-off —
+    /// the ported kind is 42, the classic solo env), an unstealthed idle
+    /// player zeroes it (`:50770-50777`), and at `>= 130` the shot rolls:
+    /// the firing-distance rect (`flag2`, `:50300`) + `Collision.CanHit`
+    /// gate, the ±20 jitter pair (X then Y, `:50784-50785`), the
+    /// same-sign velocity gate (`:50786`), the 8-speed normalize and the
+    /// `(int)(10*scale)` damage (`:50791`). The shot queues as the hostile
+    /// 55 with the sim's `timeLeft = 300` override (`:50797`); `ai[1]`
+    /// latches 101 + netUpdate (`:50798-50799`), every refusal zeroes it.
+    fn hornet_stinger_ladder(
+        &mut self,
+        world: &World,
+        player: &Player,
+        target: crate::npc_ai::HoverTarget,
+        rng: &mut UnifiedRandom,
+    ) {
+        // `:50754-50758` — the shot-cue tick.
+        if self.ai[1] == 101.0 {
+            self.wants_sound.push(NpcSoundRequest {
+                cue: NpcSoundCue::Item17,
+                x: self.x,
+                y: self.y,
+            });
+            self.ai[1] = 0.0;
+        }
+        // `:50759-50811` — `Main.netMode != 1` folds true (single-player).
+        // `:50761` — the per-tick climb draw.
+        self.ai[1] += rng.next_range(5, 20) as f32 * 0.1 * self.scale;
+        // `:50762-50769` — the type-176 double / getGoodWorld triple:
+        // constants-off (the ported kind is 42, `getGoodWorld` false).
+        // `:50770-50777` — the aggro reset: an unstealthed, idle player
+        // keeps the hornet calm (`targetData.Type == Player` holds for a
+        // dead player too — no dead gate in the C#).
+        if player.stealth == 0.0 && player.frame_inputs.swing_anim == 0 {
+            self.ai[1] = 0.0;
+        }
+        if self.ai[1] >= 130.0 {
+            // `:50780` — `(targetData.Type != None) & flag2` + CanHit.
+            // The solo target is always the player slot (Type != None);
+            // `flag2` = `AI_GlobalFiringDistanceCheck(base.Center,
+            // player.Center)` (`:50300`, the 1820×1100 deflated rect).
+            let (w, h) = self.size();
+            let (cx, cy) = self.center();
+            let flag2 = crate::npc_ai_bat::global_firing_distance_check(
+                (cx, cy),
+                player.center(),
+            );
+            let can_hit = crate::projectile::can_hit(
+                world,
+                self.x,
+                self.y,
+                w,
+                h,
+                player.x,
+                player.y,
+                crate::player::WIDTH,
+                crate::player::HEIGHT,
+            );
+            if flag2 && can_hit {
+                // `:50782-50785` — the 8-speed shot with the ±20 jitter
+                // pair (X draw first, then Y — the C# argument order).
+                // The origin (`vector4`, `:50783`) is position + width*0.5
+                // / INTEGER height/2 — the aim reads the same origin.
+                let num19 = 8.0f32;
+                let sx = self.x + w * 0.5;
+                let sy = self.y + (h as i32 / 2) as f32;
+                let mut num20 = target.center_x - sx + rng.next_range(-20, 21) as f32;
+                let mut num21 = target.center_y - sy + rng.next_range(-20, 21) as f32;
+                // `:50786-50804` — the same-sign gate: the hornet only
+                // fires while moving toward the target's side.
+                if (num20 < 0.0 && self.vx < 0.0) || (num20 > 0.0 && self.vx > 0.0) {
+                    let num22 = num19 / (num20 * num20 + num21 * num21).sqrt();
+                    num20 *= num22;
+                    num21 *= num22;
+                    // `:50791` — `(int)(10f * this.scale)` (the type-176
+                    // 30-row is constants-off).
+                    let num23 = (10.0 * self.scale) as i32;
+                    // `:50796-50797` — the hostile 55, `timeLeft = 300`
+                    // (the sim's timed-shot list applies the override).
+                    self.wants_hostile_shot.push((
+                        crate::projectile::HORNET_STINGER,
+                        sx,
+                        sy,
+                        num20,
+                        num21,
+                        num23,
+                    ));
+                    self.ai[1] = 101.0;
+                    self.net_update = true;
+                } else {
+                    self.ai[1] = 0.0;
+                }
+            } else {
+                self.ai[1] = 0.0;
+            }
+        }
     }
 
     /// Goblin Summoner (471). C# `NPC.cs:15728` SetDefaults aiStyle 3 and the
@@ -10912,15 +11061,28 @@ impl Npc {
     /// volley bees (`NPC.cs:50384-50413`): `ai[1]++`, num3 =
     /// `(ai[1] - 60) / 60` clamped at 1; while num3 <= 1 the velocity
     /// clamps ±6 on both axes; num = 5, num2 = `0.1 * num3`. The shared
-    /// fly core (`:50418-50579`) runs with `flag5 = true` (210/211 are
+    /// fly core (`:50418-50916`) runs with `flag5 = true` (210/211 are
     /// outside the exclusion list, `:50447`) and `flag4 = true` (the
-    /// ±0.023 ai[0] drift, `:50446-50471`); the rotation is the generic
-    /// `atan2(vy, vx) - 1.57` arm (`:50652-50655`); the tile bounce is
-    /// the family's ×0.7 (`:50656-50688` — the bees set noGravity only,
-    /// `SetDefaults` `:11696-11721`). The `TargetClosestNonBees` call
-    /// (`:50246-50249`) folds to the single session player (the port
-    /// has no NPC targets — the `npc_target` convention).
-    fn update_bee_hover(&mut self, world: &World, player: &Player) {
+    /// ±0.023 ai[0] drift, `:50446-50471` — W4-d22: the drift now lives
+    /// INSIDE `hover_step` in the C# order, normalize → drift → approach;
+    /// the pre-W4-d22 inline drift ran before the normalize and is gone);
+    /// the rotation is the generic `atan2(vy, vx) - 1.57` arm
+    /// (`:50652-50655`); the tile bounce is the family's ×0.7
+    /// (`:50656-50688` — the bees set noGravity only, `SetDefaults`
+    /// `:11696-11721`). The bees take NO dust gate (`:50695` excludes
+    /// 210/211), no wet row and ARE on the dawn-flee exemption list
+    /// (`:50906`). The `TargetClosestNonBees` call (`:50246-50249`) folds
+    /// to the single session player (the port has no NPC targets — the
+    /// `npc_target` convention; the NonBeeNPCs filter only excludes bee
+    /// NPCs, players always pass, `NPCUtils.cs:29-36`/`:221-257`).
+    fn update_bee_hover(
+        &mut self,
+        world: &World,
+        player: &Player,
+        rng: &mut UnifiedRandom,
+        dust: &mut tr_core::particles::DustPool,
+        dust_ctx: &tr_core::particles::SpawnCtx,
+    ) {
         // `:50386-50412` — the branch's own num/num2 + the ramp clamps.
         self.ai[1] += 1.0;
         let mut num3 = (self.ai[1] - 60.0) / 60.0;
@@ -10948,30 +11110,17 @@ impl Npc {
             no_tile_collide: false,
             bounce: 0.7,
             rotation: HoverRotation::Velocity,
+            drift: crate::npc_ai::HoverDrift::Flag4,
+            wet: crate::npc_ai::HoverWet::None,
+            dust: None,
+            dawn_exempt: true,
         };
-        // `:50446-50471` — flag4's drift runs BEFORE the velocity
-        // approach (`:50540-50578`): ai[0]++ every tick (the bees are in
-        // the flag4 set unconditionally); ±0.023 on Y by the ai[0] sign,
-        // ±0.023 on X by the ±100 band, the 200 wrap. (The C#'s aim
-        // normalize at `:50427-50444` precedes the drift; its only
-        // velocity read is the degenerate num6 == 0 fallback — the
-        // port's hover_step computes the aim after the drift, a
-        // zero-distance-only deviation, recorded in ANALYSIS.)
-        self.ai[0] += 1.0;
-        if self.ai[0] > 0.0 {
-            self.vy += 0.023;
-        } else {
-            self.vy -= 0.023;
-        }
-        if self.ai[0] < -100.0 || self.ai[0] > 100.0 {
-            self.vx += 0.023;
-        } else {
-            self.vx -= 0.023;
-        }
-        if self.ai[0] > 200.0 {
-            self.ai[0] = -200.0;
-        }
-        self.update_hover(world, player, params);
+        // The bees draw NOTHING per tick (the dust gate excludes them) —
+        // the live seams pass through untouched by construction (no gate
+        // row, no ladder). The UpdateNPCs stream sees zero draws from a
+        // bee tick, exactly the C# (`:50695`'s type list excludes 210/211,
+        // no other draw site in the arm).
+        self.update_hover(world, player, params, rng, dust, dust_ctx);
     }
 
     /// `NPC.TargetClosest()` (`NPC.cs:77652-77666`) through the shared
@@ -19268,6 +19417,10 @@ mod tests {
                 target,
                 crate::npc_ai::HoverParams::EATER_OF_SOULS,
             );
+            // W4-d22: the core is AI-only — the C# integrates in
+            // UpdateCollision AFTER AI() (`NPC.cs:90495-90498`); the
+            // noTileCollide raw step stands in for the wrapper's tail.
+            npc.integrate_no_tile_collide();
         }
         let dist = ((npc.x - target.center_x) / 16.0).abs();
         assert!(dist < 20.0, "the hover homed (dist {dist} tiles)");
@@ -19282,8 +19435,12 @@ mod tests {
         // The target sits at the NPC's own centre, so the velocity aim is a
         // no-op (`dist == 0` ⇒ the desired velocity = the current velocity)
         // and the damping is the only `vy` change. The climb arm wants the
-        // target top 300+ px below the NPC top and an upward `vy`.
+        // target top 300+ px below the NPC top and an upward `vy`. W4-d22:
+        // the probe zeroes the drift (the Hornet's flag4 ±0.023 would
+        // otherwise stack on top of the damping) to isolate the ×0.97 term.
         let probe = |params: crate::npc_ai::HoverParams, y: f32| {
+            let mut p = params;
+            p.drift = crate::npc_ai::HoverDrift::None;
             let mut npc = Npc::new(NpcKind::Hornet, 32.0 * 16.0, y, 1, 0.0);
             npc.vy = -5.0;
             let target = crate::npc_ai::HoverTarget {
@@ -19292,7 +19449,7 @@ mod tests {
                 top_y: npc.y + 400.0,
                 dead: false,
             };
-            crate::npc_ai::hover_step(&mut npc, &w, target, params);
+            crate::npc_ai::hover_step(&mut npc, &w, target, p);
             npc.vy
         };
         // The Hornet above the surface damps the climb (×0.97).
@@ -19311,7 +19468,8 @@ mod tests {
         // `NPC.cs:50421-50424`: the target's centre and the NPC's own
         // centre both floor to the 8-px grid and the aim is the difference
         // of the snapped values — a 4-px offset inside one cell aims
-        // straight down.
+        // straight down. W4-d22: the probe zeroes the drift (the EoS's
+        // num8 ±0.023 fires at num7 > 100 and would nudge vx off zero).
         let w = World::new("t".into(), 200, 200);
         let mut npc = Npc::new(NpcKind::EaterOfSouls, 985.0, 985.0, 1, 0.0);
         let target = crate::npc_ai::HoverTarget {
@@ -19320,12 +19478,9 @@ mod tests {
             top_y: 1400.0,
             dead: false,
         };
-        crate::npc_ai::hover_step(
-            &mut npc,
-            &w,
-            target,
-            crate::npc_ai::HoverParams::EATER_OF_SOULS,
-        );
+        let mut params = crate::npc_ai::HoverParams::EATER_OF_SOULS;
+        params.drift = crate::npc_ai::HoverDrift::None;
+        crate::npc_ai::hover_step(&mut npc, &w, target, params);
         assert!(
             npc.vx.abs() < 0.001,
             "the snapped aim keeps the x still ({})",
@@ -19341,6 +19496,10 @@ mod tests {
         // (5), false for the Eater of Souls (6) and the Hornet (42).
         let w = World::new("t".into(), 200, 200);
         let step = |kind: NpcKind, params: crate::npc_ai::HoverParams| {
+            let mut p = params;
+            // W4-d22: isolate the approach — the EoS's num8 drift would
+            // otherwise subtract 0.023 from vx before the single add.
+            p.drift = crate::npc_ai::HoverDrift::None;
             let mut npc = Npc::new(kind, 100.0 * 16.0, 100.0 * 16.0, 1, 0.0);
             npc.vx = -1.0;
             let target = crate::npc_ai::HoverTarget {
@@ -19349,7 +19508,7 @@ mod tests {
                 top_y: npc.y,
                 dead: false,
             };
-            crate::npc_ai::hover_step(&mut npc, &w, target, params);
+            crate::npc_ai::hover_step(&mut npc, &w, target, p);
             npc.vx
         };
         // The Meteor Head (flag5): the add happens twice (-1 + 0.03 + 0.03).
@@ -19430,55 +19589,57 @@ mod tests {
     }
 
     #[test]
-    fn the_hover_tile_bounce_is_gated_by_no_tile_collide() {
-        // `NPC.cs:50656-50688`: the bounce arm covers the kinds that
-        // collide with the tiles (the Hornet, `num14` = 0.7); the
-        // `noTileCollide` kinds (the Eater of Souls, the Meteor Head) fly
-        // straight through.
-        let mut w = World::new("t".into(), 64, 64);
-        for y in 0..64 {
-            let i = w.index(19, y);
-            w.tiles[i] = tr_core::Tile {
-                kind: 1,
-                ..Default::default()
-            };
-            w.tiles[i].flags |= tr_core::tile::FLAG_ACTIVE;
-        }
-        // The target sits in the NPC's own 8-px cell, so the snapped aim is
-        // zero and the desired velocity keeps the current one.
+    fn the_hover_tile_bounce_reads_the_previous_tick_latches() {
+        // `NPC.cs:50656-50688`: the bounce arm reads the PREVIOUS tick's
+        // `collideX`/`collideY` latches and `oldVelocity` (`NPC.cs:92538`'s
+        // capture) — the `npc_ai_eye` precedent. W4-d22: the pre-W4-d22
+        // stand-in bounced off a same-tick wall probe with a mid-step
+        // velocity capture; the faithful arm flips `old_vx` with `num14`
+        // when the latch is set, and the integration tail (the wrapper's
+        // job) blocks the move.
+        let w = World::new("t".into(), 64, 64);
         let target_for = |npc: &Npc| crate::npc_ai::HoverTarget {
             center_x: npc.x + npc.size().0 * 0.5 + 4.0,
             center_y: npc.y + npc.size().1 * 0.5,
             top_y: npc.y,
             dead: false,
         };
-        // The Hornet: the wall blocks the move and the velocity bounces.
+        // The Hornet: the previous tick's X collision latched; the bounce
+        // flips old_vx (12) with num14 = 0.7 → −8.4 (the approach's aim is
+        // the current velocity — the zero-distance fallback — so it does
+        // not move vx before the bounce).
         let mut hornet = Npc::new(NpcKind::Hornet, 260.0, 32.0 * 16.0, 1, 0.0);
         hornet.vx = 12.0;
+        hornet.old_vx = 12.0;
+        hornet.collide_x = true;
         let target = target_for(&hornet);
         crate::npc_ai::hover_step(&mut hornet, &w, target, crate::npc_ai::HoverParams::HORNET);
-        assert!(hornet.vx < 0.0, "the hornet bounced ({})", hornet.vx);
-        // The approach first trims the 12 px velocity to the snapped aim
-        // (8 px at the Hornet's 3.5 speed → 3.5, the 0.021 step), then the
-        // bounce flips it with `num14` = 0.7.
-        let expected = -(12.0 - 0.021) * 0.7;
+        let expected = -12.0 * 0.7;
         assert!(
             (hornet.vx - expected).abs() < 0.01,
-            "the ×0.7 bounce ({})",
+            "the ×0.7 oldVelocity bounce ({})",
             hornet.vx
         );
-        assert_eq!(hornet.x, 260.0, "the wall blocks the move");
-        // The Eater of Souls flies through the same wall.
-        let mut eater = Npc::new(NpcKind::EaterOfSouls, 260.0, 32.0 * 16.0, 1, 0.0);
-        eater.vx = 12.0;
-        let target = target_for(&eater);
-        crate::npc_ai::hover_step(
-            &mut eater,
-            &w,
-            target,
-            crate::npc_ai::HoverParams::EATER_OF_SOULS,
-        );
-        assert!(eater.x > 260.0, "the eater passed through ({})", eater.x);
+        assert!(hornet.net_update, "the bounce arms netUpdate (:50665)");
+        // No latch: no bounce — the approach keeps the velocity.
+        let mut calm = Npc::new(NpcKind::Hornet, 260.0, 32.0 * 16.0, 1, 0.0);
+        calm.vx = 12.0;
+        calm.old_vx = 12.0;
+        let target = target_for(&calm);
+        crate::npc_ai::hover_step(&mut calm, &w, target, crate::npc_ai::HoverParams::HORNET);
+        assert!(calm.vx > 0.0, "no latch, no bounce ({})", calm.vx);
+        // The small-velocity floors (`:50667-50674`): a facing −1 hornet
+        // whose bounce lands in (0, 2) floors to 2. vx = 0 keeps the
+        // zero-distance aim from moving it before the bounce (old_vx −1
+        // flips to +0.7, inside the (0, 2) floor band).
+        let mut floor = Npc::new(NpcKind::Hornet, 260.0, 32.0 * 16.0, 1, 0.0);
+        floor.facing = -1;
+        floor.vx = 0.0;
+        floor.old_vx = -1.0;
+        floor.collide_x = true;
+        let target = target_for(&floor);
+        crate::npc_ai::hover_step(&mut floor, &w, target, crate::npc_ai::HoverParams::HORNET);
+        assert_eq!(floor.vx, 2.0, "the (0,2) floor (:50667-50670)");
     }
 
     #[test]
@@ -19490,7 +19651,11 @@ mod tests {
             let mut npc = Npc::new(NpcKind::Hornet, 300.0 * 16.0, 100.0 * 16.0, 1, 0.0);
             npc.scale = scale;
             // Far to the left so the desired speed saturates before the NPC
-            // reaches the target (no overshoot).
+            // reaches the target (no overshoot). W4-d22: zero the drift to
+            // isolate the 2-scale speed cap (the flag4 ±0.023 is comparable
+            // to the 0.021 accel and would noise the saturation).
+            let mut params = crate::npc_ai::HoverParams::HORNET;
+            params.drift = crate::npc_ai::HoverDrift::None;
             let target = crate::npc_ai::HoverTarget {
                 center_x: npc.x - 8000.0,
                 center_y: npc.y + npc.size().1 * 0.5,
@@ -19498,7 +19663,7 @@ mod tests {
                 dead: false,
             };
             for _ in 0..600 {
-                crate::npc_ai::hover_step(&mut npc, &w, target, crate::npc_ai::HoverParams::HORNET);
+                crate::npc_ai::hover_step(&mut npc, &w, target, params);
             }
             npc.vx
         };
@@ -31416,63 +31581,171 @@ mod s1_d_2_tests {
         w
     }
 
-    /// The frozen-behaviour A/B: the axis-routed family arm must produce the
-    /// exact pre-axis state sequence (the old `match self.kind` arms called
-    /// the same `update_hover`/servant machines with the same params). Both
-    /// runs share one world/player stream; every tick's kinematics + frame
-    /// state must be bit-equal.
+    /// W4-d22: the S1-D-2 A/B pin
+    /// (`s1_d_2_the_style_axis_keeps_the_hover_behaviour`) is RETIRED —
+    /// it froze the pre-W4-d22 hover stand-in (no dust gates, no stinger
+    /// ladder, no drift, inline same-tick bounce, double-counted servant
+    /// flap). The style-5 census fix is a DELIBERATE fidelity delta
+    /// (ANALYSIS "The aiStyle-5 census fix (W4-d22)"), so the byte-identical
+    /// fold cannot hold. The replacement witnesses pin the C# draw counts
+    /// on the UpdateNPCs stream: one gate roll per tick for the dust
+    /// kinds, one ladder roll for the Hornet, ZERO for the bees.
+    ///
+    /// The dust ctx carries `game_menu = true` so `DustPool::new_dust`
+    /// refuses BEFORE any pool-internal draw (`Dust.cs:77-79`'s guard,
+    /// the particles.rs port) — the only stream draw left is the AI-level
+    /// gate roll, which the twin replays exactly.
     #[test]
-    fn s1_d_2_the_style_axis_keeps_the_hover_behaviour() {
-        let w = open_world();
-        for kind in [
-            NpcKind::EaterOfSouls,
-            NpcKind::Hornet,
-            NpcKind::MeteorHead,
-            NpcKind::ServantOfCthulhu,
-        ] {
-            let mut player_a = Player::spawn(&w);
-            let mut player_b = Player::spawn(&w);
-            for _ in 0..60 {
-                player_a.update(&w, crate::player::PlayerInput::default());
-                player_b.update(&w, crate::player::PlayerInput::default());
-            }
-            let mut axis = Npc::new(kind, 90.0 * 16.0, 100.0 * 16.0, 1, 0.0);
-            let mut legacy = axis.clone();
-            let mut rng_a = UnifiedRandom::new(123);
-            let mut rng_b = UnifiedRandom::new(123);
-            for tick in 0..300 {
-                axis.update_rng(&w, &mut player_a, 1.0 / 60.0, &mut rng_a);
-                // The pre-axis arm, verbatim (the kind match's old bodies).
-                match kind {
-                    NpcKind::ServantOfCthulhu => legacy.update_servant_of_cthulhu(&player_b),
-                    NpcKind::EaterOfSouls => {
-                        legacy.update_hover(&w, &player_b, HoverParams::EATER_OF_SOULS)
-                    }
-                    NpcKind::Hornet => legacy.update_hover(&w, &player_b, HoverParams::HORNET),
-                    NpcKind::MeteorHead => {
-                        legacy.update_hover(&w, &player_b, HoverParams::METEOR_HEAD)
-                    }
-                    _ => unreachable!(),
-                }
-                legacy.find_frame();
-                legacy.contact(&mut player_b, &mut rng_b);
-                assert_eq!(axis.x.to_bits(), legacy.x.to_bits(), "{kind:?} x @{tick}");
-                assert_eq!(axis.y.to_bits(), legacy.y.to_bits(), "{kind:?} y @{tick}");
-                assert_eq!(axis.vx.to_bits(), legacy.vx.to_bits(), "{kind:?} vx @{tick}");
-                assert_eq!(axis.vy.to_bits(), legacy.vy.to_bits(), "{kind:?} vy @{tick}");
-                assert_eq!(axis.frame, legacy.frame, "{kind:?} frame @{tick}");
-                assert_eq!(
-                    axis.frame_counter.to_bits(),
-                    legacy.frame_counter.to_bits(),
-                    "{kind:?} frame_counter @{tick}"
-                );
-                assert_eq!(axis.rotation.to_bits(), legacy.rotation.to_bits(), "{kind:?} rot @{tick}");
-                assert_eq!(axis.sprite_dir, legacy.sprite_dir, "{kind:?} dir @{tick}");
-                assert_eq!(axis.facing, legacy.facing, "{kind:?} facing @{tick}");
-                assert_eq!(axis.on_ground, legacy.on_ground, "{kind:?} ground @{tick}");
-                assert_eq!(player_a.hp, player_b.hp, "{kind:?} player hp @{tick}");
-            }
-        }
+    fn w4_d22_the_eos_tick_draws_the_one_next20_dust_gate() {
+        let mut w = open_world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        let mut npc = Npc::new(NpcKind::EaterOfSouls, 40.0 * 16.0, 60.0 * 16.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = rng.clone();
+        // The gate roll is the ONLY stream draw: `game_menu = true` makes
+        // `new_dust` refuse at the `Dust.cs:77-79` guard BEFORE any
+        // pool-internal draw, so a gate hit adds nothing to the stream.
+        let _gate = witness.next_max(20);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: true,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        npc.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(rng.peek(), witness.peek(), "one Next(20) gate draw (:50695)");
+        assert_eq!(npc.ai[0], 1.0, "the num8 drift climbed (:50452)");
+    }
+
+    /// The servant takes the ELSE dust arm (`NPC.cs:50708`): Next(40),
+    /// not the bounce-list's Next(20). It is also NOT dawn-exempt — at
+    /// day it climbs (`velocity.Y -= 0.06`) and arms the 10-tick despawn.
+    #[test]
+    fn w4_d22_the_servant_tick_draws_the_one_next40_dust_gate() {
+        let mut w = open_world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        let mut npc = Npc::spawn_servant_of_cthulhu(40.0 * 16.0, 60.0 * 16.0, 0.0, 0.0);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = rng.clone();
+        let _gate = witness.next_max(40);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: true,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        npc.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(rng.peek(), witness.peek(), "one Next(40) gate draw (:50708)");
+        assert_eq!(npc.despawn_timer, -1, "night: no flee, the timer stays unset");
+        // The dawn flee: day_time true → EncourageDespawn(10) (`:50909`).
+        // The servant is NOT on the `:50906` exemption list, so the day
+        // term fires (the vy -= 0.06 climb is order-dependent against the
+        // approach; the despawn arm is the definitive marker).
+        w.day_time = true;
+        npc.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(npc.despawn_timer, 10, "EncourageDespawn(10) (:50909)");
+    }
+
+    /// The Hornet's per-tick draw is the stinger ladder's `Next(5,20)`
+    /// climb (`NPC.cs:50761`) — NOT a dust gate (type 42 is excluded,
+    /// `:50695`). A fresh hornet (ai[1] = 0) never reaches the 130 shot
+    /// threshold in one tick, so the ±20 jitter pair does not roll.
+    #[test]
+    fn w4_d22_the_hornet_tick_draws_the_one_ladder_climb() {
+        let mut w = open_world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        let mut npc = Npc::new(NpcKind::Hornet, 40.0 * 16.0, 60.0 * 16.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = rng.clone();
+        let _climb = witness.next_range(5, 20);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: true,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        npc.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(rng.peek(), witness.peek(), "one Next(5,20) ladder draw (:50761)");
+        assert_eq!(npc.ai[0], 1.0, "the flag4 drift climbed (:50452)");
+        assert!(npc.wants_hostile_shot.is_empty(), "no shot below 130");
+    }
+
+    /// The bees draw NOTHING per tick — the `:50695` dust gate's type
+    /// list excludes 210/211 and the arm has no other draw site. The
+    /// caller's stream is untouched by construction.
+    #[test]
+    fn w4_d22_the_bee_tick_is_draw_free() {
+        let mut w = open_world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        let mut npc = Npc::new(NpcKind::Bee, 40.0 * 16.0, 60.0 * 16.0, 1, 0.0);
+        let mut rng = UnifiedRandom::new(7);
+        let peek = rng.peek();
+        npc.update_rng(&w, &mut player, 1.0 / 60.0, &mut rng);
+        assert_eq!(rng.peek(), peek, "the bee tick draws nothing");
+        assert_eq!(npc.ai[0], 1.0, "the flag4 drift climbed (:50452)");
+        assert_eq!(npc.ai[1], 1.0, "the (ai[1]-60)/60 ramp counter (:50386)");
+    }
+
+    /// W4-d22: the Hornet's stinger ladder at the shot threshold
+    /// (`NPC.cs:50778-50804`): `ai[1] >= 130` rolls the ±20 jitter pair
+    /// (X then Y) AFTER the per-tick climb draw, and the same-sign gate
+    /// fires the hostile 55. The witness pins the three-draw sequence
+    /// (climb + jitter X + jitter Y) and the shot request. The player is
+    /// parked mid-swing (`swing_anim > 0`) so the aggro reset (`:50773`)
+    /// does not zero the ladder; the hornet moves toward the target's
+    /// side so the same-sign gate (`:50786`) passes.
+    #[test]
+    fn w4_d22_the_hornet_stinger_ladder_draws_climb_then_jitter_pair() {
+        let mut w = open_world();
+        w.day_time = false;
+        let mut player = Player::spawn(&w);
+        // Park the player to the RIGHT of the hornet, mid-swing.
+        player.x = 80.0 * 16.0;
+        player.y = 60.0 * 16.0;
+        player.frame_inputs.swing_anim = 5.0;
+        let mut npc = Npc::new(NpcKind::Hornet, 40.0 * 16.0, 60.0 * 16.0, 1, 0.0);
+        npc.vx = 2.0; // moving toward the player's side (the same-sign gate)
+        npc.ai[1] = 129.5; // one climb draw (>= 0.5) crosses 130
+        let mut rng = UnifiedRandom::new(7);
+        let mut witness = rng.clone();
+        let _climb = witness.next_range(5, 20);
+        let _jx = witness.next_range(-20, 21);
+        let _jy = witness.next_range(-20, 21);
+        let mut dust = tr_core::particles::DustPool::new();
+        let ctx = tr_core::particles::SpawnCtx {
+            game_menu: true,
+            game_paused: false,
+            generating: false,
+            screen_position: Vec2::ZERO,
+            screen_size: Vec2::new(8000.0, 8000.0),
+            max_dust_to_draw: 6000,
+        };
+        npc.update_rng_dust(&w, &mut player, 1.0 / 60.0, &mut rng, &mut dust, &ctx);
+        assert_eq!(
+            rng.peek(),
+            witness.peek(),
+            "climb + jitter X + jitter Y, nothing else (:50761/:50784-50785)"
+        );
+        assert_eq!(npc.wants_hostile_shot.len(), 1, "the stinger fired");
+        let (kind, _sx, _sy, svx, _svy, dmg) = npc.wants_hostile_shot[0];
+        assert_eq!(kind, crate::projectile::HORNET_STINGER, "type 55 (:50796)");
+        assert_eq!(dmg, 10, "(int)(10*scale) (:50791)");
+        assert!(svx > 0.0, "the shot flies toward the target's side");
+        assert_eq!(npc.ai[1], 101.0, "the shot latches 101 (:50798)");
+        assert!(npc.net_update, "the shot arms netUpdate (:50799)");
     }
 
     // ---- S1-D-3ff wave A — the `find_frame` wiring into `npc_findframe_a` ----

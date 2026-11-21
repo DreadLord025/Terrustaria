@@ -288,7 +288,7 @@ Roster gaps vs C# (kinds with NO NpcKind row, modules landed or styles known): D
 
 | style | C# anchor (NPC.cs) | Rust arm | status |
 | --- | --- | --- | --- |
-| 5 | :20802-20806 → AI_005_EaterOfSouls :50244-50916 | `ai_005_hover_family` :3699-3709 (Servant→own machine; EoW/Hornet/MeteorHead→`update_hover`→`npc_ai::hover_step`) | WIRED-DELEGATE (hover core faithful-claimed; per-type rows need a verify pass) |
+| 5 | :20802-20806 → AI_005_EaterOfSouls :50244-50916 | `ai_005_hover_family` (Servant→`update_servant_of_cthulhu`; EoS/Hornet/MeteorHead→`update_hover`→`npc_ai::hover_step`+`hover_dust_wet`+`hover_flee`; Bee/BeeSmall→`update_bee_hover`; Probe→sim `update_destroyers`) | FULL-PORT-WIRED (W4-d22 style-5 census+fix: per-tick dust gates Next(20)/Next(40) :50695/:50708, Hornet stinger ladder Next(5,20)+±20 jitter pair + hostile 55 + Item17 :50754-50810, num8/flag4 ±0.023 drift :50448-50478, wet rows :50714-50753, dawn/dead flee :50906-50910, prev-tick collide-latch bounce :50656-50688, every-tick TargetClosest :50250, servant double-flap removed; 6 stream-parity witnesses written not run — ANALYSIS "The aiStyle-5 census fix (W4-d22)") |
 | 9 | :21377-21571 inline | `ai_009_sphere_family` :3718-3731 → `npc_ai_style9::sphere_family_step` | FULL-PORT-WIRED (W42 ef07892e; ftw flags parked false, dust draws documented-skip) |
 | 31 | :27015-27625 inline | `npc_ai_style31::spazmatism_ai` :3665-3671, CLASSIC_SOLO env | FULL-PORT-WIRED (twin-list/expert/getGood env parked) |
 | 47 | :31347-31350 → AI_047_GolemFist :19231-19504 | `ai_047_golem_fist_family` :3678 → `update_golem_rng` fists arm (three-way reconcile TR-D3s48; `npc_ai_style47` stays test-only reference) | FULL-PORT-WIRED (W65+W77) |
