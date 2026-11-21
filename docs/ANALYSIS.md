@@ -36120,6 +36120,57 @@ Mana Sickness (buff 94) — **not for weapons**:
   `DebugOptions.ManaPotionDelay` halves (`:10320-10323`, `:51939-51943`) are
   false in the shipped statics (`DebugOptions.cs:86`) — folded out.
 
+## The UI doc-sweep residuals (W4-g53 lane 10, code-only)
+
+Four small UI mechanics ported after a census of ANALYSIS/UI.md/research
+18-19 (full report: `docs/research/81-doc-sweep-ui.md`); two candidates
+verified already-landed (the achievement toast, S1-E-26 wave A — including
+the ItemStack plate measure vs the MouseText title draw; the buff
+right-click cancel, S1-P-i53 — **no confirmation dialog exists in the
+C#**, `Main.cs:43329-43349` removes directly).
+
+- **F11 hide-UI** (`6aad8504`): `Main.DoUpdate_F11_ToggleUI`
+  (`Main.cs:18402-18424`) + the layer-8 stop (`:46175-46183`).
+  `App.hide_ui`/`release_ui`; the emote/NPC-chat bubbles (layer 1_1)
+  keep drawing, everything after layer 8 hides (HUD, minimap, toasts,
+  death text, invasion bar, combat text `:62334`, health bars, the game
+  cursor). Deviation: the `maxQ = true` force-max arm
+  (`:46179`/`:16983-16987`) has no port writer (the gfx-quality
+  adaptive loop's `maxQ` is unported); the smart-cursor highlight gate
+  (`:3948-3951`) is moot (the highlight is unported).
+- **Minimap/overlay map keys + Tab cycle** (`a9774d2a`):
+  `Player.cs:24909-24965`'s not-fullscreen block — minimap zoom
+  ×1.025/×0.975 (the `MinimapFrame` multipliers, NOT the fullscreen's
+  1.05/0.95), alpha ±0.015, the overlay's own ×1.05/×0.95 state, the
+  draw-side clamps (`Main.cs:55515-55530`/`:55550-55566`), Tab cycles
+  `mapStyle` on the `releaseMapStyle` latch with sound 12.
+  `WorldMap` carries the alpha/overlay state; the tile pass tints
+  `Color(b×4)` (`MapRenderer.cs:438`). Deviation: the overlay DRAW
+  stays out of P4 scope — the state rides for the keys.
+- **Hotbar wheel fancy-UI gate** (`05ff5c56`): the i54 wheel arm now
+  reads `!Main.inFancyUI && !Main.ingameOptionsWindow`
+  (`Player.cs:31788-31791`) — the bestiary/emotes overlays and the
+  options window eat the notch (`App::hotbar_wheel_allowed`).
+- **In-world mouse-over** (`f7bb95f8`): `Main.DrawMouseOver`
+  (`Main.cs:42871-42988`, layer 39) — the dropped item's affix name +
+  stack in its rare colour over the `GetDrawHitbox` rect (the atlas-icon
+  stand-in, the 16×16 `WorldItem` fallback), the NPC's
+  `GivenOrTypeName` + carrier `life/lifeMax` with the `ShowLife`
+  gate, the special hover boxes (87-92/677/695-696) and the buried-mimic
+  exclusions; both through the plain `MouseTextInner` arm (mouse+14,
+  +34 carrying, the 40px int clamp, the 4-pass shadow, NO box).
+  Deviations: the hover box uses `Npc::size()` (the `bubble_npc`
+  stand-in, not the C# frame rect); the stealth-remote hover, the sign
+  hover (claim f22b), the elder-slime arm, the `cursorItemIcon`
+  interact-icon family and the talk arm's smart-interact/stinky/651/
+  mouseInterface gates are unported (documented in `ui/world_hover.rs`).
+
+Recorded gaps (not ported, too large for the lane): the
+`cursorItemIcon`/`TileInteractionsMouseOver` interact-icon subsystem
+(`Player.cs:33587+`), the `DrawNPCMapIcons2` minimap head hover
+(`Main.cs:56144-56220`, rides the unported map-content icons), the
+gamepad radial hotbar (`Player.cs:31769-31787`).
+
 ### Deliberate folds / gaps (recorded)
 - The QuickMana potion seam (`QuickMana` `:5598-5627`,
   `QuickMana_GetItemToUse` `:5629-5649`) is unported; under ManaV2 the

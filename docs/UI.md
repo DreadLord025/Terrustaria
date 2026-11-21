@@ -319,6 +319,7 @@ original, in its own `ui/` module, called by `ui::draw_hud` in the vanilla pass 
 | `ui/inventory.rs` | `Main.DrawInventory` | 10×5 grid, coins/ammo, equipment columns, misc page, trash, labels |
 | `ui/chrome.rs` | `DrawPageIcons`/`DrawDefenseCounter`/`DrawGuideCraftText`/`DrawPVPIcons` + `Main.DrawInventory`'s map-style row | page tabs (**drawn and clickable**: per-tab mouse-item gates, the same-tab→page-0 toggle, `EquipPageSelected` + `ItemSlot.SelectEquipPage`), defence shield, guide text, the PVP toggle + six team-select cells (drawn **and** hit-tested: hover text, `teamCooldown` dim, `PVP_2` hover ring, the click chain), the four map-style icons |
 | `ui/minimap.rs` | `MinimapFrame`/`MinimapFrameManager`/`MinimapFrameTemplate` (+ `SelectionHolder.CycleSelection`) | the minimap frame chrome: 9 style table, backdrop, frame + button hover sheets, zoom buttons |
+| `ui/world_hover.rs` | `Main.DrawMouseOver` + `HoverOverNPCs` (`Main.cs:42871-43114`, layer 39) | the in-world hover texts: the dropped item's affix name + stack in its rare colour, the NPC's `GivenOrTypeName` + carrier `life/lifeMax` — the plain `MouseTextInner` arm (no box), gated on the earlier slot/PVP/housing texts (W4-g53 doc-sweep, `docs/research/81-doc-sweep-ui.md`) |
 | `ui/bars.rs` | `BigProgressBarHelper.DrawFancyBar` (+ `DrawHealthText`) | the boss health bar: 516×58 `UI_BossBar` rows, 456×22 bar, boss head icon, `current / max` text |
 | `ui/crafting.rs` | `NewCraftingUI.cs` (+ `UIWrappedSearchBar`, `UICreativeItemsInfiniteFilteringOptions`, `CraftingUI.DrawGridToggle`) | the modern crafting panel: frame, title, search bar, filter strip, separator, empty grid, scrollbar, detail area, toggles |
 | `ui/chest.rs` | `Terraria/UI/ChestUI.cs` | the world-chest panel: name line, rename buttons, the Loot All/Deposit All/Quick Stack/Restock button row, the 10×4 chest slot window, context-3 slot backgrounds |
@@ -547,6 +548,21 @@ Key geometry (1600×900, `MapScale = 1`):
   so hearts and the inventory paint over the frame where they overlap.
 * Hovering a button sets the vanilla `mouseInterface` behaviour: mine/place
   inputs are suppressed behind the frame (`MinimapFrame.cs:164`).
+* The map keys (W4-g53 doc-sweep): with the map NOT fullscreen,
+  MapZoomIn/Out (`Add`/`Subtract`) step the minimap scale ×1.025/×0.975
+  (`Player.cs:24913-24920` — the button multipliers, not the fullscreen's
+  1.05/0.95) and MapAlphaUp/Down (`PageUp`/`PageDown`) step the alpha
+  ±0.015 (`:24921-24928`), clamped 0.2..3 / 0.01..1 at draw
+  (`Main.cs:55515-55530`); the overlay (`mapStyle == 2`) carries its own
+  scale/alpha state (×1.05/×0.95, `:24930-24947`). Tab (`cMapStyle`)
+  cycles `Main.mapStyle` 0→1→2→0 on the press latch with sound 12
+  (`:24949-24965`). `App::update_map_style_keys`.
+* F11 hides the interface (W4-g53 doc-sweep): `Main.DoUpdate_F11_ToggleUI`
+  (`Main.cs:18402-18424`) flips `Main.hideUI` on the press latch with
+  sound 12; the layer-8 check (`:46175-46183`) stops the interface draw —
+  the emote/NPC-chat bubbles (layer 1_1) keep drawing, the combat text
+  skips (`:62334`), and the game cursor hides with the rest.
+  `App::toggle_hide_ui` / `App.hide_ui`.
 
 Deviations: `MapScale` is `1.0` only (no scale slider — the `CreateScale(MapScale)`
 transforms of `Main.cs:55308-55329,55768` cite the single reference value), the
