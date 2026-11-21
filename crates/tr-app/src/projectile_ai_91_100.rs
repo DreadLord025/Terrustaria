@@ -9,7 +9,7 @@
 //! | style | C# arm | kinds (SetDefaults) | port state at base |
 //! |-------|--------|---------------------|--------------------|
 //! | 91 | inline `AI()` `:32515-32557` | ShadowFlame 496 (`:5692-5704`) | MISSING → this module |
-//! | 92 | inline `:32558-32820` | ToxicCloud 511/512/513 (`:5805-5840`), GasTrap 1007 (`:9558-9569`), ChlorophyteClaymoreSporeCloud 1128 (`:10565-10579`) | MISSING → this module |
+//! | 92 | inline `:32558-32820` | ToxicCloud 511/512/513 (`:5805-5840`), GasTrap 1007 (`:9558-9569`), ChlorophyteClaymoreSporeCloud 1128 (`:10565-10579`) | MISSING → this module (the 1128 row is d10's keep-one — g2's 229 Kill burst declines the rowless child until this lands, `81c4ab85`; the crosschecks doc) |
 //! | 93 | inline `:32821-32882` | NailFriendly 514 (`:5841-5850`) | MISSING → this module |
 //! | 94 | inline `:32883-32963` | CoinPortal 518 (`:5879-5888`) | MISSING → this module |
 //! | 95 | inline `:32964-33003` | ToxicBubble 523 (`:5929-5938`) | MISSING → this module |
@@ -72,9 +72,12 @@
 //! - `CurrentFrameFlags.HadAnActiveInteractableProjectile` (`:33070`) and
 //!   the piggy bank's container UI (`TryGetContainerIndex` `:78815`) have
 //!   no port consumer.
-//! - the 535's rays are the aiStyle-101 kind 536 — d11's claim; until its
-//!   row lands the ray spawns decline (`spawn_with_data`'s no-row no-op)
-//!   and the Medusa Head deals no damage (the dependency is recorded).
+//! - the 535's rays are the aiStyle-101 kind 536 — d11's claim (`6aca9b7f`
+//!   landed the row + arm); until the merge the ray spawns decline
+//!   (`spawn_with_data`'s no-row no-op) and the Medusa Head deals no damage.
+//!   The composition is verified (the key link + the strike walk + the
+//!   scatter rolls); the shared `MEDUSA_HEAD_RAY` const is a keep-one merge
+//!   conflict (`docs/research/26d-projectile-ai-91-100-crosschecks.md`).
 //! - `hide` (1007) / `drawLayer` / `usesOwnerLight` (535) have no port
 //!   slot fields — draw-layer state, the module doc convention.
 //!
@@ -2762,7 +2765,9 @@ mod tests {
         assert!(d.magic);
         assert!(d.ignore_water);
         assert_eq!(proj_frames(535), 12);
-        // The ray kind has NO row — d11's claim (the spawn declines).
+        // The ray kind has NO row on THIS branch — d11's claim (the spawn
+        // declines). At merge d11's row lands and this flips to is_some()
+        // (the keep-one const + the re-pin: the crosschecks doc).
         assert!(proj_data(536).is_none());
     }
 

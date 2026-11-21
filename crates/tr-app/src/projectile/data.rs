@@ -751,9 +751,12 @@ pub const CULTIST_BOSS_PARTICLE: u16 = 526;
 pub const MEDUSA_HEAD: u16 = 535;
 /// `ProjectileID.MedusaHeadRay` (536, `ProjectileID.cs:1626`) — the head's
 /// petrifying ray, aiStyle 101 (`Projectile.cs:6107-6119`). The row + AI
-/// are d11's claim — until they land the 535's ray spawns decline
-/// (`spawn_with_data`'s no-row no-op) and the head deals no damage (the
-/// dependency is recorded in the module doc). W4-d10.
+/// are d11's claim (`6aca9b7f`, the 101 arm) — until they land the 535's
+/// ray spawns decline (`spawn_with_data`'s no-row no-op) and the head
+/// deals no damage. KEEP-ONE at merge: d11 adds the SAME const with its
+/// row — drop this duplicate, keep d11's (the composition verdict +
+/// the conflict note: `docs/research/26d-projectile-ai-91-100-crosschecks.md`).
+/// W4-d10.
 pub const MEDUSA_HEAD_RAY: u16 = 536;
 /// `ProjectileID.LeafBlower` (`Projectile.cs:2937-2945`): the Leaf Blower's
 /// 14x14 petal, aiStyle 40 (`AI_040_LeafBlower` `:38003-38082`).
