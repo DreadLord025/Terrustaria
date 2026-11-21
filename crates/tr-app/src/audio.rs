@@ -1145,11 +1145,14 @@ impl Audio {
             )
         };
         // Resolve against the loaded bank's static names (the cue is always
-        // in SFX_CUES/ITEM_CUSTOM_CUES — an unregistered name is a bank gap).
+        // in SFX_CUES/ITEM_CUSTOM_CUES/PLAYER_VOICE_CUES — an unregistered
+        // name is a bank gap). W4-e10: the player-voice trackables join the
+        // resolution chain (the hurt/death style arms ride this façade).
         let name = SFX_CUES
             .iter()
             .map(|(n, _)| *n)
             .chain(ITEM_CUSTOM_CUES.iter().copied())
+            .chain(PLAYER_VOICE_CUES.iter().copied())
             .find(|n| *n == cue);
         self.played.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some(name) = name else { return None };
