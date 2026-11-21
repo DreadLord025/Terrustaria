@@ -1284,6 +1284,12 @@ pub(crate) const STATIC_SHEET_NAMES: &[&str] = &[
         // wave's (research/113 on task/W4-d35-npc-kinds-71-140).
         "NPC_636",
         "NPC_661",
+        // W4-d125 draw phase: the HallowBoss arm's halo ring (Extra_188,
+        // 166x174 — the ONLY one of the six overlay strips that fits the
+        // solo headroom: +25 px at 8141/8141 main/font; the five tall
+        // strips Extra_157/158/159/160/187 overflow +64..+214 and stay
+        // deferred to the repack wave, research/125 §2).
+        "Extra_188",
 ];
 
 /// The world-independent half of [`load_world_images`]: the backgrounds, the
@@ -2669,7 +2675,7 @@ impl Lookups {
                 atlas.sheet("NPC_72").copied(),
                 atlas.sheet("NPC_250").copied(),
                 atlas.sheet("NPC_288").copied(),
-                // W4-d125 sheets phase — the Empress's 2-row NPC_636 strip
+                        // W4-d125 sheets phase — the Empress's 2-row NPC_636 strip
                 // + the Lacewing's 3-row NPC_661 strip.
                 atlas.sheet("NPC_636").copied(),
                 atlas.sheet("NPC_661").copied(),

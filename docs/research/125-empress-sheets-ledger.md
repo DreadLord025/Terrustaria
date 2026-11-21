@@ -90,3 +90,33 @@ side before the packs).
   `AI_120`'s `:46982` end), so there is nothing to whitelist yet.
 
 Witnesses WRITTEN NOT RUN (code-only mode).
+
+## 2. The draw phase's overlay census (the HallowBoss arm's six strips)
+
+`Main.DrawNPCDirect_HallowBoss` (`Main.cs:26471-26652`) reads six
+`TextureAssets.Extra` strips (`AssetInitializer.cs:363-365`,
+`Images/Extra_<id>`). Real dims + the greedy fit on the both-packed base
+(the harness's `overlay PICK/SKIP` rows):
+
+| sheet | role (C# line) | w×h | solo height main/font | verdict |
+|---|---|---|---|---|
+| `Extra_157` | the shader-pass body copy (`:26482`/`:26602`) | 195×1221 | 8330/8330 (+138) | DEFER |
+| `Extra_158` | the left arm, 7 frames (`:26480`) | 174×1204 | 8256/8256 (+64) | DEFER |
+| `Extra_159` | the wing strip, 11 frames (`:26477`) | 195×1221 | 8330/8330 (+138) | DEFER |
+| `Extra_160` | the right arm, 7 frames (`:26481`) | 174×1204 | 8256/8256 (+64) | DEFER |
+| `Extra_187` | the phase-2 wings, 8 frames (`:26624`) | 178×1488 | 8208/8208 (+16) | DEFER |
+| `Extra_188` | the halo ring (`:26635`) | 166×174 | **8141/8141 (+25)** | **PACK** |
+
+(The solo heights above were measured on the pre-Extra_188 base at
+8116/8117; the final three-sheet set re-measures 8141/8141 — 51 px
+headroom, verify() + determinism. The harness's `base` scenarios now
+read the landed assets.rs, so they re-measure the final state.)
+
+**Ledger addition (draw phase): +1 packed name (`Extra_188`, +0.030 Mpx),
++5 deferred names (`Extra_157/158/159/160/187`, +0.985 Mpx — the five
+tall strips are ~1.0 Mpx of page-1 pressure, rank ~40-60 by area).**
+The deferred five are the arm's wings/arms/shader-body — HIGH visibility
+(the boss draws body-only until they land); they admit on page 1 under
+research/113's form. The pure draw geometry (the arm-frame picker, the
+state factors, the ghost rings, the halo offsets) is ported NOW in
+`render/empress_draw.rs` so the repack wave's wiring is sheet-only.

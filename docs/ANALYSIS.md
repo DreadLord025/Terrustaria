@@ -35931,6 +35931,53 @@ incremental two-page form) is `docs/research/125-empress-sheets-ledger.md`.
 Witnesses: `the_d125_strips_divide_into_their_vanilla_rows`
 (render/entities.rs) + `the_d125_portraits_ride_the_real_sheet_dims`
 (ui/bestiary.rs) — WRITTEN NOT RUN.
+
+### The d125 draw phase (2026-11-21 — code-only mode)
+
+Remainders 2+5 (the OurFavoriteColor tint + the trail/draw work) close
+together — both live in `Main.DrawNPCDirect_HallowBoss`
+(`Main.cs:26471-26652`, case 636 at `:24150-24152`). **The census
+correction**: `Main.OurFavoriteColor` is a STATIC `new Color(255,231,69)`
+(`Main.cs:66748`, the only write in the whole decompile — no hue-cycle on
+the static). The hue-cycle is the arm's GLOW colour (`:26611-26614`):
+`hslToRgb((sin(GlobalTimeWrappedHourly·2π·0.5)·0.5+0.5)·0.08+0.6, 1, 0.5)`,
+A=0, ×0.6; the ENRAGED branch (`:26615-26620`,
+`NPC.ShouldEmpressBeEnraged()`) swaps in `OurFavoriteColor`, A=0, ×0.3;
+both ×`num4·Opacity` (`:26621`). The 636 `GetAlpha` arm
+(`NPC.cs:93501-93505`) is `Lerp(light, White, 0.25) * Opacity` — the
+body's own tint, ported through the G6 byte-multiply seam.
+
+`crates/tr-app/src/render/empress_draw.rs` (NEW) ports the arm's pure
+geometry: the GetAlpha 636 tint, the glow colour (both branches, the XNA
+two-step truncations), the arm-frame picker
+(`DrawNPCDirect_GetHallowBossArmFrame`, `:26654-26807` — every state
+ladder incl. the dash's ai[3]-sign swap + the sun dance's expert tail),
+the state-8/9/10 factors + ghost rings (the 3-D `Matrix.CreateRotationX/
+Y/Z` Forward spin reproduced as the composed row-vector rotation), the
+trail offsets, the wing-frame counters, the halo-ring offsets, and the
+661 Lacewing afterimage ring (`:23270-23275`/`:23429-23440`). 15
+witnesses WRITTEN NOT RUN.
+
+The wiring (`render/entities.rs::draw_empress`, the Deerclops
+dedicated-arm precedent): the Centre anchor, the GetAlpha tint + the
+state white-lerp, the body draw at `npc.rotation` with the
+spriteDirection flip, and the phase-2 halo ring — `Extra_188` (166×174)
+drawed FOUR times at the pulsing `Lerp(2,8,num14)` radius with the
+glow colour. `Extra_188` is PACKED (+25 px, the final set 8141/8141 —
+51 px headroom); the five tall strips (`Extra_157/158/159/160/187`, the
+arms/wings/shader-body) each overflow solo (+16..+138) and stay DEFERRED
+to the repack wave (research/125 §2's ledger: +1 packed, +5 deferred).
+The `GameShaders.Misc["HallowBoss"]` body pass (`:26599-26610`) is a
+compiled HLSL effect not in the decompile — the body draws once with the
+plain tint (the pillar-glow precedent). The state-8/9/10 ghost rings +
+the arm/wing overlays are pure-port-ready but sheet-gated. The enrage
+gate rides the sim's own `should_empress_be_enraged` (one source of
+truth); `Main.expertMode` rides the player-buff mirror (the npc.rs
+adapter's convention). The 661 afterimage ring is pure-ported
+(`lacewing_afterimage`) but unwired — the generic 661 draw keeps its
+single quad (the ring's wiring is the repack wave's, it needs no new
+sheet but shares the draw pass). Witness:
+`the_empress_draw_arm_is_wired_with_its_halo`.
 ## The waterfowl family (S1-D-3 aiStyle-68, task/S1-D-3-aistyle68, 2026-11-19, code-only mode)
 
 `crates/tr-app/src/npc_ai_style68.rs` ports `NPC.AI()`'s

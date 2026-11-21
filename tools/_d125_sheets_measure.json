@@ -1,71 +1,85 @@
 [
  {
   "label": "base (d125 HEAD, no sheet adds)",
-  "sheets": 9497,
-  "height": 8115,
+  "sheets": 9500,
+  "height": 8141,
   "overflow": false,
   "deterministic": true
  },
  {
   "label": "base + boot font",
-  "sheets": 9498,
-  "height": 8119,
+  "sheets": 9501,
+  "height": 8141,
   "overflow": false,
   "deterministic": true
  },
  {
   "label": "base + NPC_661 solo",
-  "sheets": 9498,
-  "height": 8113,
+  "sheets": 9500,
+  "height": 8141,
   "overflow": false,
   "deterministic": true
  },
  {
   "label": "base + font + NPC_661 solo",
-  "sheets": 9499,
-  "height": 8118,
+  "sheets": 9501,
+  "height": 8141,
   "overflow": false,
   "deterministic": true
  },
  {
   "label": "base + NPC_636 solo",
-  "sheets": 9498,
-  "height": 8118,
+  "sheets": 9500,
+  "height": 8141,
   "overflow": false,
   "deterministic": true
  },
  {
   "label": "base + font + NPC_636 solo",
-  "sheets": 9499,
-  "height": 8125,
+  "sheets": 9501,
+  "height": 8141,
   "overflow": false,
   "deterministic": true
  },
  {
   "label": "base + both (636 then 661)",
-  "sheets": 9499,
-  "height": 8116,
+  "sheets": 9500,
+  "height": 8141,
   "overflow": false,
   "deterministic": true
  },
  {
   "label": "base + font + both",
+  "sheets": 9501,
+  "height": 8141,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + both + Extra_188 (the draw phase)",
   "sheets": 9500,
-  "height": 8117,
+  "height": 8141,
+  "overflow": false,
+  "deterministic": true
+ },
+ {
+  "label": "base + font + both + Extra_188",
+  "sheets": 9501,
+  "height": 8141,
   "overflow": false,
   "deterministic": true
  },
  {
   "label": "base + pushed union (198) + both",
-  "sheets": 9697,
-  "height": 8541,
+  "sheets": 9698,
+  "height": 8554,
   "overflow": true,
   "deterministic": true
  },
  {
   "label": "base + font + pushed union + both",
-  "sheets": 9698,
-  "height": 8541,
+  "sheets": 9699,
+  "height": 8554,
   "overflow": true,
   "deterministic": true
  }

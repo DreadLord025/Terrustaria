@@ -8,6 +8,13 @@
 // overflow-ledger context (research/113 on task/W4-d35-npc-kinds-71-140).
 // Every layout: verify() (no overlap incl. PAD, in-bounds) + double-run
 // determinism. Run: node tools/_d125_sheets_measure.js  (repo root).
+//
+// NOTE (draw phase): the harness reads THIS branch's assets.rs, so after
+// the sheets+draw phases landed the "base" scenarios already include the
+// three packed sheets (NPC_636/NPC_661/Extra_188) — they re-measure the
+// FINAL state (8141/8141, 51 px headroom). The pre-landing base numbers
+// (8115/8119) and the per-sheet solo deltas are recorded in
+// docs/research/125-empress-sheets-ledger.md from the first run.
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -33,6 +40,8 @@ const fn = new Function('require', '__dirname', 'pushed', head + `
   const baseFont = buildSheetList({ font: true });
   const union = [...new Set(Object.values(pushed).flat())];
   const mine = ['NPC_636', 'NPC_661'];
+  // The draw phase's halo ring (the only overlay strip that fits solo).
+  const halo = ['Extra_188'];
   const scenarios = [
     ['base (d125 HEAD, no sheet adds)', base],
     ['base + boot font', baseFont],
@@ -42,6 +51,8 @@ const fn = new Function('require', '__dirname', 'pushed', head + `
     ['base + font + NPC_636 solo', addNew(baseFont, ['NPC_636'])],
     ['base + both (636 then 661)', addNew(base, mine)],
     ['base + font + both', addNew(baseFont, mine)],
+    ['base + both + Extra_188 (the draw phase)', addNew(base, mine.concat(halo))],
+    ['base + font + both + Extra_188', addNew(baseFont, mine.concat(halo))],
     ['base + pushed union (' + union.length + ') + both', addNew(addNew(base, union), mine)],
     ['base + font + pushed union + both', addNew(addNew(baseFont, union), mine)],
   ];
@@ -57,9 +68,19 @@ const fn = new Function('require', '__dirname', 'pushed', head + `
       ' px ' + (over ? 'OVERFLOW (+' + (sky.height - 8192) + ')' : '(headroom ' + (8192 - sky.height) + ')'));
     results.push({ label, sheets: sheets.length, height: sky.height, overflow: over, deterministic: det });
   }
-  for (const n of mine) {
+  for (const n of mine.concat(halo)) {
     const d = sheetDims(n);
     console.log(n + ': ' + d.w + 'x' + d.h + ' (padded ' + (d.w + 2) + 'x' + (d.h + 2) + ')');
+  }
+  // The five deferred overlay strips (the draw phase's census): each
+  // overflows at its greedy turn on the both-packed base.
+  let keep = [];
+  for (const n of ['Extra_157', 'Extra_158', 'Extra_159', 'Extra_160', 'Extra_187', 'Extra_188']) {
+    const trial = keep.concat([n]);
+    const hm = skylinePack(addNew(base, mine.concat(trial)), 'waste').height;
+    const hf = skylinePack(addNew(baseFont, mine.concat(trial)), 'waste').height;
+    if (hm <= 8192 && hf <= 8192) { keep = trial; console.log('overlay PICK ' + n + ' -> main ' + hm + ' font ' + hf); }
+    else console.log('overlay SKIP ' + n + ' (main ' + hm + ' font ' + hf + ')');
   }
   return results;
 `);
