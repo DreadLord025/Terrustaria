@@ -190,6 +190,7 @@
 //! | 838-843 | `:86884-86896` | the 338-340 ZombieElf death (per-type head + shared 497/498/499 tails) |
 //! | 844-847 | `:86912-86915` | the 343 Yeti death (4 gores 503/504/505/506, distinct +20 pair) |
 //! | 848-852 | `:86931-86935` | the 691 MossZombie death (5 gores 1391/1392/1392/1393/1393) |
+//! | 853-862 | `:86982-86995` | the zombie block: 104 Werewolf + 632 MaggotZombie (5-gore ladders, 632 spawn seam) |
 //!
 //! Later commits extend the table through `:82559`. The hit (`life > 0`)
 //! halves are dmg-scaled dust loops with NO gore — they ride the wiring
@@ -306,6 +307,12 @@ pub struct HitEffectOutcomeC {
     /// randomize within; the count draw + the per-spawn draws + the NPC
     /// spawns are the wiring wave's.
     pub king_slime_babies: Option<(f32, f32, f32, f32)>,
+    /// The 632 MaggotZombie's maggot-spawn seam (`NPC.cs:86997-87006`):
+    /// `Next(2)+2` (2-3) NPC-606s at `(pos.X + width/2, pos.Y +
+    /// Next(height/2) + 10)` with per-spawn velocity draws. `Some((x,y,w,h))`
+    /// = the position/box; the count draw + the per-spawn draws + the NPC
+    /// spawns are the wiring wave's.
+    pub maggot_zombie_spawns: Option<(f32, f32, f32, f32)>,
 }
 
 /// `Utils.RotatedBy` (`Utils.cs:1675-1684`), centre default (0,0): the
@@ -5091,6 +5098,60 @@ fn moss_zombie_death(
     five_gore_ladder(npc, dust, dust_ctx, gore, rng, world, hit_direction, 5, 50, 2.5, -2.5, 1391, 1392, 1393);
 }
 
+/// The big zombie block death (`NPC.cs:86937-87139`): the 50-dust type-5
+/// burst (SpeedX `2.5*hitDirection`, SpeedY -2.5), then the per-type gores.
+/// This commit ports the 104 Werewolf (sites 853-857: ladder 117/118/119)
+/// and the 632 MaggotZombie (sites 858-862: ladder 1214/1215/1216 + the
+/// maggot-spawn seam RETURNED). The remaining zombie types land with the
+/// next batches. The 187/433 SlimedZombie adds a 25-dust type-4 blue burst
+/// (the wiring wave's hit-half detail is noted per arm).
+fn zombie_block_death(
+    npc: &Npc,
+    npc_type: i32,
+    dust: &mut DustPool,
+    dust_ctx: &SpawnCtx,
+    gore: &mut GorePool,
+    rng: &mut UnifiedRandom,
+    world: &World,
+    hit_direction: f32,
+    outcome: &mut HitEffectOutcomeC,
+) {
+    let (w, h) = npc.size();
+    let pos = Vec2::new(npc.x, npc.y);
+    // `:86969-86972` — the 50-dust type-5 burst (SpeedX 2.5*dir).
+    for _ in 0..50 {
+        dust.new_dust(
+            rng, dust_ctx, world, pos, w as i32, h as i32, 5, 2.5 * hit_direction, -2.5, 0,
+            Color::default(), 1.0,
+        );
+    }
+    let vel = Vec2::new(npc.vx, npc.vy);
+    let s = npc.scale;
+    let mid = Vec2::new(pos.x, pos.y + 20.0);
+    let low = Vec2::new(pos.x, pos.y + 34.0);
+    // `:86980-86987` — the 104 Werewolf ladder.
+    if npc_type == 104 {
+        gore.new_gore(rng, world, pos, vel, 117, s); // :86982
+        gore.new_gore(rng, world, mid, vel, 118, s); // :86983
+        gore.new_gore(rng, world, mid, vel, 118, s); // :86984
+        gore.new_gore(rng, world, low, vel, 119, s); // :86985
+        gore.new_gore(rng, world, low, vel, 119, s); // :86986
+        return;
+    }
+    // `:86989-87007` — the 632 MaggotZombie ladder + the maggot-spawn seam.
+    if npc_type == 632 {
+        gore.new_gore(rng, world, pos, vel, 1214, s); // :86991
+        gore.new_gore(rng, world, mid, vel, 1215, s); // :86992
+        gore.new_gore(rng, world, mid, vel, 1215, s); // :86993
+        gore.new_gore(rng, world, low, vel, 1216, s); // :86994
+        gore.new_gore(rng, world, low, vel, 1216, s); // :86995
+        // `:86997-87006` — the maggot-spawn seam (the count + the per-spawn
+        // draws + the spawns are the caller's).
+        outcome.maggot_zombie_spawns = Some((npc.x, npc.y, w, h));
+        return;
+    }
+}
+
 /// `NPC.HitEffect(hitDirection, dmg)` (`NPC.cs:81654+`) — wave C: the third
 /// batch of gore sites, `:82206` onward. `npc.hp` is `this.life` AT THE CALL
 /// (the strike writes it before calling, `:81488`); the death (`life <= 0`)
@@ -5724,6 +5785,11 @@ pub fn hit_effect_c(
     // `:86917-86936` — the 691 MossZombie arm (sites 848-852).
     if npc_type == 691 && npc.hp <= 0 {
         moss_zombie_death(npc, dust, dust_ctx, gore, rng, world, hit_direction);
+    }
+    // `:86937-87139` — the big zombie block; this commit owns the 104/632
+    // (sites 853-862); the rest lands with the next batches.
+    if (npc_type == 104 || npc_type == 632) && npc.hp <= 0 {
+        zombie_block_death(npc, npc_type, dust, dust_ctx, gore, rng, world, hit_direction, &mut outcome);
     }
     outcome
 }
@@ -9005,6 +9071,33 @@ mod tests {
         moss_zombie_death(&n, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0);
         let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
         assert_eq!(types, vec![1391, 1392, 1392, 1393, 1393]);
+    }
+
+    /// `NPC.cs:86982-86995` — the zombie block: 104 Werewolf ladder
+    /// 117/118/119, 632 MaggotZombie ladder 1214/1215/1216 + the maggot
+    /// spawn seam returned.
+    #[test]
+    fn w4_f10_the_zombie_block_werewolf_and_maggot() {
+        let w = air();
+        // The Werewolf 104.
+        let n = boss(100.0, 100.0, 40.0, 56.0);
+        let mut gore = GorePool::new();
+        let mut dust = DustPool::new();
+        let mut rng = UnifiedRandom::new(811);
+        let mut out = HitEffectOutcomeC::default();
+        zombie_block_death(&n, 104, &mut dust, &ctx(), &mut gore, &mut rng, &w, 1.0, &mut out);
+        let types: Vec<i32> = gore.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types, vec![117, 118, 118, 119, 119]);
+        assert!(out.maggot_zombie_spawns.is_none());
+        // The MaggotZombie 632.
+        let mut gore2 = GorePool::new();
+        let mut dust2 = DustPool::new();
+        let mut rng2 = UnifiedRandom::new(811);
+        let mut out2 = HitEffectOutcomeC::default();
+        zombie_block_death(&n, 632, &mut dust2, &ctx(), &mut gore2, &mut rng2, &w, 1.0, &mut out2);
+        let types2: Vec<i32> = gore2.slots()[..5].iter().map(|g| g.gore_type).collect();
+        assert_eq!(types2, vec![1214, 1215, 1215, 1216, 1216]);
+        assert_eq!(out2.maggot_zombie_spawns, Some((100.0, 100.0, 40.0, 56.0)));
     }
 
     /// The wave-C dispatch gates the flipped Betsy branch on
